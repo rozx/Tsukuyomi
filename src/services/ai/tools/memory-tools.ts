@@ -272,17 +272,18 @@ export const memoryTools: ToolDefinition[] = [
       function: {
         name: 'create_memory',
         description:
-          '创建新的 Memory 记录（请谨慎使用）。优先用 search/list 找到相关记忆并用 update_memory 合并更新；仅当不存在任何可更新的相关记忆时才创建。记忆应短且可检索（summary 含关键词，content 用少量要点），系统会基于内容自动进行打分召回。',
+          '创建新的 Memory 记录（请谨慎使用）。优先用 search/list 找到相关记忆并用 update_memory 合并更新；仅当不存在任何可更新的相关记忆时才创建。一条 memory 尽量只解决一个问题（称呼规则、关系、术语翻译等分开写）。系统按部分子串匹配召回，summary 是"检索标题"权重最高；务必在 summary 中塞入所有同义表达以提高命中率，例如：「イレギュラー / irregular / 异常者 / 不规则者 的统一翻译」「セラ / 塞拉 / 塞拉小姐 / 塞拉菲娜 的称呼规则」「おまけ / 附属品 / 顺带送的 / 附带品 的翻译」。content 用少量要点表达。',
         parameters: {
           type: 'object',
           properties: {
             content: {
               type: 'string',
-              description: '要存储的实际内容',
+              description: '要存储的实际内容（少量要点）',
             },
             summary: {
               type: 'string',
-              description: '内容的摘要（由 AI 生成，用于后续搜索）',
+              description:
+                '摘要 / 检索标题。建议在摘要中并列写出所有可能被搜索到的同义表达（原文术语、别名、俗称、不同语言版本），以"/"分隔，例如「イレギュラー / 异常者 / 不规则者 的统一翻译」。summary 的命中权重远高于 content，直接决定能否被检索到。',
             },
           },
           required: ['content', 'summary'],

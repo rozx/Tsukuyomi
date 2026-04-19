@@ -606,10 +606,6 @@ export class MemoryService {
     }
 
     const queryText = query.trim();
-    const queryTokens = queryText
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((t) => t.length > 0);
 
     try {
       const allMemories = await this.getAllBookMemories(bookId);
@@ -630,21 +626,20 @@ export class MemoryService {
         // 语义搜索不可用时静默降级
       }
 
-      const { scoreMemoriesBatch, filterByRelativeRanking, DEFAULT_MIN_SCORE } = await import(
-        'src/services/memory-scoring'
-      );
+      const { scoreMemoriesBatch, filterByRelativeRanking, DEFAULT_MIN_SCORE } =
+        await import('src/services/memory-scoring');
       const now = Date.now();
-      const chunkEntities = queryTokens.map((t) => ({ name: t }));
-      // 用 batch 版打分:对本批 raw cosine 做 z-score 归一化,spread 太小时整批
-      // 把 semantic 记为 0(权重仍 0.6/0.3/0.1)— 避免多语言 BERT 向量抱团把噪声当信号
+      // 传 rawQuery(不是 whitespace-split 出来的 token),让 scoreMemoriesBatch 走
+      // 部分匹配打分 — 对无空格 CJK 自然语言查询友好很多。chunkEntities 传空即可。
       const scored = scoreMemoriesBatch(allMemories, {
-        chunkEntities,
+        chunkEntities: [],
+        rawQuery: queryText,
         chunkEmbedding,
         now,
         expectedModelVersion,
       });
 
-      // 默认阈值与 selectByBudget 保持一致(DEFAULT_MIN_SCORE = 0.38),
+      // 默认阈值与 selectByBudget 保持一致(DEFAULT_MIN_SCORE = 0.3),
       // 让"搜索工具"和"翻译注入"走相同的过滤规则,避免 AI 通过 search_memories
       // 看到注入阶段会被过滤掉的低分项,产生行为不一致。
       let minScore = DEFAULT_MIN_SCORE;

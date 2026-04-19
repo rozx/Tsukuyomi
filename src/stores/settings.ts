@@ -29,7 +29,7 @@ const SETTINGS_DB_KEY = 'app';
 const DEFAULT_MEMORY_INJECTION: MemoryInjectionSettings = {
   charBudget: 2000,
   enableSemantic: true,
-  minScoreThreshold: 0.38,
+  minScoreThreshold: 0.3,
   hasSeenIntro: false,
   embeddingModelCached: false,
 };
@@ -628,9 +628,7 @@ export const useSettingsStore = defineStore('settings', {
      * - minScoreThreshold: clamp 到 [0, 1.0]
      * - enableSemantic 切换时:true→resume / false→pause EmbeddingQueue
      */
-    async updateMemoryInjection(
-      updates: Partial<MemoryInjectionSettings>,
-    ): Promise<void> {
+    async updateMemoryInjection(updates: Partial<MemoryInjectionSettings>): Promise<void> {
       const current = this.settings.memoryInjection ?? { ...DEFAULT_MEMORY_INJECTION };
       const merged = { ...current, ...updates };
 
@@ -639,7 +637,10 @@ export const useSettingsStore = defineStore('settings', {
       merged.minScoreThreshold = Math.min(1.0, Math.max(0, merged.minScoreThreshold));
 
       // 副作用:enableSemantic 变更时联动 EmbeddingQueue
-      if (updates.enableSemantic !== undefined && updates.enableSemantic !== current.enableSemantic) {
+      if (
+        updates.enableSemantic !== undefined &&
+        updates.enableSemantic !== current.enableSemantic
+      ) {
         try {
           const { EmbeddingQueue } = await import('src/services/embedding-queue');
           if (updates.enableSemantic) {
@@ -864,20 +865,16 @@ export const useSettingsStore = defineStore('settings', {
       const lastRemoteUpdatedAt =
         updates.lastRemoteUpdatedAt ?? existingConfig?.lastRemoteUpdatedAt;
 
-      const lastRemoteETag =
-        updates.lastRemoteETag ?? existingConfig?.lastRemoteETag;
+      const lastRemoteETag = updates.lastRemoteETag ?? existingConfig?.lastRemoteETag;
 
-      const knownRemoteHashes =
-        updates.knownRemoteHashes ?? existingConfig?.knownRemoteHashes;
+      const knownRemoteHashes = updates.knownRemoteHashes ?? existingConfig?.knownRemoteHashes;
 
-      const knownRemoteEntries =
-        updates.knownRemoteEntries ?? existingConfig?.knownRemoteEntries;
+      const knownRemoteEntries = updates.knownRemoteEntries ?? existingConfig?.knownRemoteEntries;
 
       const knownRemoteTombstones =
         updates.knownRemoteTombstones ?? existingConfig?.knownRemoteTombstones;
 
-      const forceSyncMode =
-        updates.forceSyncMode ?? existingConfig?.forceSyncMode;
+      const forceSyncMode = updates.forceSyncMode ?? existingConfig?.forceSyncMode;
 
       const updatedConfig: SyncConfig = {
         enabled: updates.enabled ?? existingConfig?.enabled ?? defaultConfig.enabled,
@@ -1090,9 +1087,10 @@ export const useSettingsStore = defineStore('settings', {
      * 更新强制推送模式状态
      * 传 { active: false } 时会同时清除 lastFailedAt
      */
-    async updateForceSyncMode(
-      partial: { active: boolean; lastFailedAt?: number | undefined },
-    ): Promise<void> {
+    async updateForceSyncMode(partial: {
+      active: boolean;
+      lastFailedAt?: number | undefined;
+    }): Promise<void> {
       // active=false 时强制清除 lastFailedAt，保证语义：关闭 = 完全退出强制模式
       const next: { active: boolean; lastFailedAt?: number } = partial.active
         ? {

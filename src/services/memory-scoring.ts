@@ -19,7 +19,7 @@ export const MAX_TOTAL_SCORE = 1.0;
 
 export const DEFAULT_CHAR_BUDGET = 2000;
 export const HARD_ITEM_CAP = 25;
-export const DEFAULT_MIN_SCORE = 0.38;
+export const DEFAULT_MIN_SCORE = 0.3;
 
 /**
  * 相对排名参数 — 解决"mean-pooled 多语言向量绝对余弦噪声地板高"导致的
@@ -64,20 +64,29 @@ export interface ScoredMemory {
 }
 
 export interface ScoringContext {
+  /**
+   * 实体列表(翻译注入路径传 terms+characters)。与 `rawQuery` 二选一:
+   * 传 entities 走字面 includes 匹配,适合 proper noun 集合。
+   */
   chunkEntities: Array<{ name: string }>;
+  /**
+   * 自然语言查询原文(搜索路径传)。传入时优先用部分匹配打分 ——
+   * 按 CJK 连续块切"语义单元",每个单元取在 memory 里的最长公共子串 / 单元长度
+   * 作为命中度,对无空格 CJK 查询比字面 includes 友好得多。
+   */
+  rawQuery?: string | undefined;
   chunkEmbedding?: Float32Array | number[] | undefined;
   now: number;
   /**
    * 期望的 embedding 模型版本。传入时,`memory.embeddingModel` 与之不匹配的记录
-   * 会被视为无语义向量(走 FALLBACK_WEIGHTS),避免跨 embedding 空间的余弦相似度退化成噪声。
-   * 不传入则保持向后兼容,只做"有/无 embedding"的弱检查。
+   * 会被视为无语义向量,避免跨 embedding 空间的余弦相似度退化成噪声。
    */
   expectedModelVersion?: string | undefined;
 }
 
 /**
- * 计算关键词命中比例。
- * 统计 chunkEntities 中有多少名称出现在 memory.summary + memory.content 中。
+ * 计算关键词命中比例(基于实体集合)。
+ * 统计 chunkEntities 中有多少名称字面出现在 memory.summary + memory.content 中。
  * 空集合时返回 0。
  */
 export function calculateKeywordHitRatio(
@@ -101,6 +110,114 @@ export function calculateKeywordHitRatio(
 }
 
 /**
+ * 从自然语言 query 里抽出"语义单元"——用于搜索场景的部分匹配打分。
+ *
+ * 单元 = CJK 连续块(汉字/假名)∪ 字母数字词。忽略标点和空白分隔符。
+ * 只保留长度 ≥ 2 的单元,避免单字噪声(单个汉字在大量 memory 里都能命中)。
+ */
+const CJK_RUN = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff々ー〇]+/g;
+const ALPHA_RUN = /[a-z0-9]{2,}/g;
+
+function extractQueryUnits(query: string): string[] {
+  const units: string[] = [];
+  const lower = query.toLowerCase();
+  for (const m of lower.matchAll(CJK_RUN)) {
+    if (m[0].length >= 2) units.push(m[0]);
+  }
+  for (const m of lower.matchAll(ALPHA_RUN)) {
+    units.push(m[0]);
+  }
+  return units;
+}
+
+/**
+ * 复合 query 切分:按 CJK/西文标点和空白断句,过滤掉太短的片段。
+ * 单问题返回 [原 query];多子问题返回 [原 query, 子 1, 子 2, ...]
+ * —— 保留原 query 作为基线,让恰好能精确匹配整句的 memory 不被拆分稀释。
+ *
+ * 例:"老瓦的称号是什么，他和芬恩是什么关系" →
+ *   ["老瓦的称号是什么，他和芬恩是什么关系",
+ *    "老瓦的称号是什么",
+ *    "他和芬恩是什么关系"]
+ */
+const COMPOUND_SPLIT_RE = /[，,、；;。？?！!\s]+/;
+export function splitCompoundQuery(query: string): string[] {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const parts = trimmed.split(COMPOUND_SPLIT_RE).filter((p) => p.length >= 2);
+  if (parts.length <= 1) return [trimmed];
+  return [trimmed, ...parts];
+}
+
+/**
+ * summary 是"检索标题",命中权重 1.0;content-only 命中按 0.5 折算。
+ * 目的:同样部分匹配的两条 memory,summary 含字面的排在前面
+ * (之前 summary 与 content 合成 haystack,summary 命中被 content 长度稀释)。
+ */
+const SUMMARY_HIT_WEIGHT = 1.0;
+const CONTENT_HIT_WEIGHT = 0.5;
+
+/**
+ * 单条(不含子拆分)query 对 memory 的关键词部分匹配分。
+ * summary / content 分别打分,取 max,再按单元平均。
+ */
+function scoreSingleQueryAgainstMemory(query: string, memory: Memory): number {
+  const units = extractQueryUnits(query);
+  if (units.length === 0) return 0;
+  const summary = (memory.summary ?? '').toLowerCase();
+  const content = (memory.content ?? '').toLowerCase();
+  if (!summary && !content) return 0;
+
+  let totalScore = 0;
+  for (const unit of units) {
+    const sRatio = summary ? partialMatchLength(unit, summary) / unit.length : 0;
+    const cRatio = content ? partialMatchLength(unit, content) / unit.length : 0;
+    // summary 命中完整权重,content-only 折半 —— 对同一字段的最高匹配胜出
+    const unitScore = Math.max(sRatio * SUMMARY_HIT_WEIGHT, cRatio * CONTENT_HIT_WEIGHT);
+    totalScore += unitScore;
+  }
+  return totalScore / units.length;
+}
+
+/**
+ * 部分匹配打分:对每个语义单元,找它在 memory 里的最长公共子串,
+ * 把长度 / 单元长度作为该单元的命中分(0~1)。两层改进:
+ *
+ * 1. **summary / content 分别打分**:summary 命中权重 1.0,content-only 权重 0.5。
+ *    这样 summary 含关键字面的 memory 排序更靠前,不再被 content 长度稀释。
+ * 2. **复合 query 拆分取 max**:按标点切子 query,分别打分取最大值。
+ *    "老瓦的称号，他和芬恩的关系"只覆盖其中一问的 memory 也能拿到高分,
+ *    不被不相关的子问题拖累。
+ *
+ * 例:query "闇のマリアンヌ" 对 memory(summary="闇の[角色名]") →
+ *   sRatio = 2/7 ≈ 0.286,content=0 → unitScore = 0.286。
+ */
+export function calculateQueryKeywordScore(query: string, memory: Memory): number {
+  const subQueries = splitCompoundQuery(query);
+  let maxScore = 0;
+  for (const sub of subQueries) {
+    const score = scoreSingleQueryAgainstMemory(sub, memory);
+    if (score > maxScore) maxScore = score;
+  }
+  return maxScore;
+}
+
+/**
+ * 返回 unit 在 haystack 中的最长公共子串长度。从大到小试,首次命中即返回
+ * (早停,避免 O(n²) 完整扫)。unit 长度 < 2 时返回 0 以避免噪声。
+ */
+function partialMatchLength(unit: string, haystack: string): number {
+  if (unit.length < 2) return 0;
+  if (haystack.includes(unit)) return unit.length;
+  for (let len = unit.length - 1; len >= 2; len--) {
+    for (let i = 0; i + len <= unit.length; i++) {
+      if (haystack.includes(unit.slice(i, i + len))) return len;
+    }
+  }
+  return 0;
+}
+
+/**
  * 计算时间衰减因子:exp(-ageDays / 30)
  * lastAccessedAt 越新,返回值越接近 1。
  */
@@ -118,17 +235,42 @@ function hasEmbeddings(
   memoryEmbedding: number[] | Float32Array | undefined | null,
   chunkEmbedding: number[] | Float32Array | undefined | null,
 ): boolean {
-  return !!(memoryEmbedding && memoryEmbedding.length > 0 && chunkEmbedding && chunkEmbedding.length > 0);
+  return !!(
+    memoryEmbedding &&
+    memoryEmbedding.length > 0 &&
+    chunkEmbedding &&
+    chunkEmbedding.length > 0
+  );
+}
+
+/**
+ * 无语义信号时的降级权重:把原本给语义的 0.6 按 3:1 重新分配到 keyword 和 recency,
+ * 使 keyword=0.75、recency=0.25,最大分仍为 1.0。
+ *
+ * 目的是让"有嵌入"与"无嵌入"两种模式的分数处于同一量级 —— 否则无嵌入时 max=0.4
+ * 远低于用户习惯的 0.38 阈值,相关记忆会被误杀。FALLBACK 维持了 kw:rec = 3:1
+ * 的相对比例(和主模式的 0.3:0.1 一致),只是把 semantic 空出来的权重补回去。
+ */
+export const FALLBACK_WEIGHTS = {
+  keyword: 0.75,
+  recency: 0.25,
+} as const;
+
+/**
+ * 根据 context 选择关键词信号:
+ * - 有 rawQuery → 部分匹配打分(搜索路径,CJK 自然语言查询友好)
+ * - 否则 → 实体字面匹配(翻译注入路径)
+ */
+function resolveKeyword(memory: Memory, context: ScoringContext): number {
+  if (context.rawQuery && context.rawQuery.trim().length > 0) {
+    return calculateQueryKeywordScore(context.rawQuery, memory);
+  }
+  return calculateKeywordHitRatio(memory, context.chunkEntities);
 }
 
 /**
  * 对单条记忆打分,返回完整 breakdown 结构体。
- *
- * 权重固定为 SCORING_WEIGHTS(0.6 / 0.3 / 0.1)—— 不再按 embedding 可用性重新分配。
- * 当 embedding 不可用(关闭本地嵌入、版本不匹配、缺失等)时,semantic 记为 0,
- * 该条的最大总分回落到 0.4(keyword=1 + recency=1),用户的 minScore 阈值在
- * 这种模式下应当相应下调 —— 这是刻意的设计,让"有/无嵌入"模式下的权重含义一致,
- * 而不是靠重新分配权重人为抬高无嵌入模式的分数上限。
+ * 当 embedding 不可用时切换 FALLBACK_WEIGHTS,避免分数天花板跌到 0.4。
  */
 export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreakdown {
   const versionOk =
@@ -137,12 +279,21 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
   const semantic = canUseSemantic
     ? calculateSemanticSim(memory.embedding, context.chunkEmbedding)
     : 0;
-  const keyword = calculateKeywordHitRatio(memory, context.chunkEntities);
+  const keyword = resolveKeyword(memory, context);
   const recency = calculateRecencyFactor(memory, context.now);
 
-  const semanticWeighted = semantic * SCORING_WEIGHTS.semantic;
-  const keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
-  const recencyWeighted = recency * SCORING_WEIGHTS.recency;
+  let semanticWeighted: number;
+  let keywordWeighted: number;
+  let recencyWeighted: number;
+  if (canUseSemantic) {
+    semanticWeighted = semantic * SCORING_WEIGHTS.semantic;
+    keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
+    recencyWeighted = recency * SCORING_WEIGHTS.recency;
+  } else {
+    semanticWeighted = 0;
+    keywordWeighted = keyword * FALLBACK_WEIGHTS.keyword;
+    recencyWeighted = recency * FALLBACK_WEIGHTS.recency;
+  }
   const total = semanticWeighted + keywordWeighted + recencyWeighted;
 
   return {
@@ -163,25 +314,20 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
  * 1. 先算所有 memory 的 raw cosine,再对**本批**做 z-score 归一化,映射回 [0, 1]
  *    作为语义信号。这样即使绝对值全部在 0.92 附近,分数也能按相对偏离度拉开。
  * 2. 若本批 raw cosine 的 stddev 低于 `SPREAD_FLOOR`(或有效样本 <2),整批
- *    把 semantic 记为 0 —— 权重仍是 SCORING_WEIGHTS,不做重新分配。
- * 3. 单条无 embedding 或版本不匹配的 memory 同样 semantic=0,独立降级不影响其它条。
+ *    视为语义不可用,走 FALLBACK_WEIGHTS(keyword 0.75 / recency 0.25)。
+ * 3. 单条无 embedding 或版本不匹配的 memory 也按 per-item 走 FALLBACK_WEIGHTS。
  *
  * 返回与输入下标一一对应的 ScoredMemory 数组(未排序,保持输入顺序)。
  *
- * `breakdown.semantic` 存归一化后的值(UI 展示的就是"在本批中的相对排名信号"),
- * 这样 `semantic * SCORING_WEIGHTS.semantic === semanticWeighted` 的不变式始终成立。
+ * `breakdown.semantic` 存归一化后的值(UI 展示的就是"在本批中的相对排名信号")。
  */
-export function scoreMemoriesBatch(
-  memories: Memory[],
-  context: ScoringContext,
-): ScoredMemory[] {
+export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext): ScoredMemory[] {
   if (!memories || memories.length === 0) return [];
 
   // Pass 1:算所有 memory 的 raw cosine(不可用的记为 null)
   const rawSemantics: Array<number | null> = memories.map((memory) => {
     const versionOk =
-      !context.expectedModelVersion ||
-      memory.embeddingModel === context.expectedModelVersion;
+      !context.expectedModelVersion || memory.embeddingModel === context.expectedModelVersion;
     if (!versionOk) return null;
     if (!hasEmbeddings(memory.embedding, context.chunkEmbedding)) return null;
     return calculateSemanticSim(memory.embedding, context.chunkEmbedding);
@@ -193,8 +339,7 @@ export function scoreMemoriesBatch(
   let stddev = 0;
   if (valid.length >= 2) {
     mean = valid.reduce((a, b) => a + b, 0) / valid.length;
-    const variance =
-      valid.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / valid.length;
+    const variance = valid.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / valid.length;
     stddev = Math.sqrt(variance);
   }
   // 只有一条 memory 或 spread 太小 → 语义不可用,整批降级
@@ -208,18 +353,25 @@ export function scoreMemoriesBatch(
     // z-normalize 到 [0, 1]:(z + Z_CLAMP) / (2·Z_CLAMP),clamp 两端
     const normalized =
       itemCanUse && raw !== null
-        ? Math.min(
-            1,
-            Math.max(0, ((raw - mean) / stddev + Z_CLAMP) / (2 * Z_CLAMP)),
-          )
+        ? Math.min(1, Math.max(0, ((raw - mean) / stddev + Z_CLAMP) / (2 * Z_CLAMP)))
         : 0;
 
-    const keyword = calculateKeywordHitRatio(memory, context.chunkEntities);
+    const keyword = resolveKeyword(memory, context);
     const recency = calculateRecencyFactor(memory, context.now);
 
-    const semanticWeighted = normalized * SCORING_WEIGHTS.semantic;
-    const keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
-    const recencyWeighted = recency * SCORING_WEIGHTS.recency;
+    let semanticWeighted: number;
+    let keywordWeighted: number;
+    let recencyWeighted: number;
+    if (itemCanUse) {
+      semanticWeighted = normalized * SCORING_WEIGHTS.semantic;
+      keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
+      recencyWeighted = recency * SCORING_WEIGHTS.recency;
+    } else {
+      // 语义不可用(整批 spread 太小 / 该条版本不符 / 无向量)→ FALLBACK
+      semanticWeighted = 0;
+      keywordWeighted = keyword * FALLBACK_WEIGHTS.keyword;
+      recencyWeighted = recency * FALLBACK_WEIGHTS.recency;
+    }
 
     return {
       memory,

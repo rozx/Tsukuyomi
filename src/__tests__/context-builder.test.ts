@@ -114,8 +114,9 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
       [],
     );
 
-    // 两条 memory 的 chunkEntities 都为空,keyword=0,recency ≈ 1 / ≈ 0
-    // total = 0 × 0.6 + 0 × 0.3 + recency × 0.1 ≤ 0.1,远低于 0.38 minScore → 全部过滤
+    // 两条 memory 都无 keyword 命中,FALLBACK_WEIGHTS 下 total = kw × 0.75 + rec × 0.25:
+    //   recent 条:0 + 1 × 0.25 = 0.25 < 0.38 → 过滤
+    //   old 条:0 + ≈0 × 0.25 ≈ 0 → 过滤
     expect(result).toBe('');
   });
 
