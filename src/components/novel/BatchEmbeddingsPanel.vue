@@ -4,7 +4,9 @@ import { useRoute } from 'vue-router';
 import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
+import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
+import { useSettingsStore } from 'src/stores/settings';
 import { EmbeddingQueue, type EmbeddingQueueProgress } from 'src/services/embedding-queue';
 import {
   EmbeddingService,
@@ -15,9 +17,21 @@ import {
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import { MemoryService } from 'src/services/memory-service';
 import BatchEmbeddingsTestQueryDialog from 'src/components/dialogs/BatchEmbeddingsTestQueryDialog.vue';
+import {
+  isLocalEmbeddingEffectivelyEnabled,
+  isMobileDevice,
+} from 'src/utils/local-embedding';
 
 const route = useRoute();
+const router = useRouter();
 const booksStore = useBooksStore();
+const settingsStore = useSettingsStore();
+
+/** 本地嵌入是否实际可用(手机端强制 off + 用户总开关)。决定 popup 显示哪种视图 */
+const isEmbeddingEnabled = computed(() =>
+  isLocalEmbeddingEffectivelyEnabled(settingsStore.settings.enableLocalEmbedding),
+);
+const isMobile = computed(() => isMobileDevice());
 
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
@@ -168,6 +182,10 @@ const etaText = computed(() => {
 });
 
 const statusLabel = computed(() => {
+  // 嵌入功能总开关关闭(含手机端强制关)优先显示,避免用"未就绪"误导用户以为是加载问题
+  if (!isEmbeddingEnabled.value) {
+    return { text: '已禁用', color: 'text-moon/50' };
+  }
   switch (embeddingStatus.value) {
     case 'ready':
       return { text: '就绪', color: 'text-green-400' };
@@ -211,6 +229,11 @@ const openTestDialog = () => {
   testDialogVisible.value = true;
 };
 
+const openSettings = () => {
+  popoverRef.value?.hide();
+  void router.push('/settings');
+};
+
 defineExpose({ toggle });
 </script>
 
@@ -241,8 +264,39 @@ defineExpose({ toggle });
           </div>
         </div>
 
+        <!-- 功能未启用时的提示 + 前往设置按钮(替代全部操作按钮) -->
+        <div
+          v-if="!isEmbeddingEnabled"
+          class="flex flex-col gap-2 p-3 bg-moon/5 border border-moon/10 rounded text-xs text-moon-50"
+        >
+          <div class="flex items-start gap-2">
+            <i class="pi pi-info-circle mt-0.5 text-amber-300 shrink-0"></i>
+            <div class="flex-1 min-w-0">
+              <template v-if="isMobile">
+                <div class="font-medium text-moon-100">移动设备不支持本地嵌入</div>
+                <p class="mt-1">模型过大、WebGPU 在移动浏览器上不稳定,本功能在移动端被强制禁用。
+                  请在桌面端开启并生成向量,手机端只读使用。</p>
+              </template>
+              <template v-else>
+                <div class="font-medium text-moon-100">本地嵌入未启用</div>
+                <p class="mt-1">启用后可在本地下载嵌入模型(约 340–465 MB),支持语义记忆检索与章节向量搜索。
+                  关闭状态下所有相关操作按钮均已隐藏。</p>
+              </template>
+            </div>
+          </div>
+          <Button
+            v-if="!isMobile"
+            label="前往设置开启"
+            size="small"
+            severity="primary"
+            icon="pi pi-cog"
+            class="w-full"
+            @click="openSettings"
+          />
+        </div>
+
         <!-- 章节 Embedding -->
-        <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
+        <div v-if="isEmbeddingEnabled" class="flex flex-col gap-2 p-2 bg-white/5 rounded">
           <div class="flex items-center justify-between">
             <div class="text-sm font-medium text-moon-100">章节 Embedding</div>
             <div class="text-xs text-moon-50">
@@ -277,7 +331,7 @@ defineExpose({ toggle });
         </div>
 
         <!-- 记忆 Embedding -->
-        <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
+        <div v-if="isEmbeddingEnabled" class="flex flex-col gap-2 p-2 bg-white/5 rounded">
           <div class="flex items-center justify-between">
             <div class="text-sm font-medium text-moon-100">记忆 Embedding</div>
             <div class="text-xs text-moon-50">
@@ -304,6 +358,7 @@ defineExpose({ toggle });
 
         <!-- 测试查询入口 -->
         <Button
+          v-if="isEmbeddingEnabled"
           label="测试向量查询"
           size="small"
           severity="secondary"
@@ -315,7 +370,7 @@ defineExpose({ toggle });
 
         <!-- 队列当前任务提示(跨书时高亮) -->
         <div
-          v-if="activeTask && activeTask.bookId"
+          v-if="isEmbeddingEnabled && activeTask && activeTask.bookId"
           :class="[
             'flex items-start gap-2 p-2 rounded text-xs min-w-0',
             isProcessingOtherBook
