@@ -2441,76 +2441,67 @@ export class SyncDataService {
 
     for (const { key, deletedAt } of deletions) {
       try {
-        // novel:<id> — 删除本地书籍（包括章节内容与 memories）
         if (key.startsWith('novel:')) {
-          const bookId = key.slice('novel:'.length);
-          const localBook = booksStore.books.find((b) => b.id === bookId);
-          if (!localBook) continue; // 本地已无——什么都不做
-
-          const localTime = localBook.lastEdited
-            ? new Date(localBook.lastEdited).getTime()
-            : 0;
-          const threshold = thresholdFor(deletedAt);
-          if (localTime > threshold) {
-            // 本地编辑晚于删除时间（或 lastSyncTime）——保留本地
-            console.info(
-              `[SyncDataService] 跳过远端删除 ${key}：本地编辑 ${new Date(localTime).toISOString()} 晚于阈值 ${new Date(threshold).toISOString()}`,
-            );
-            continue;
-          }
-
-          try {
-            await booksStore.deleteBook(bookId);
-          } catch (e) {
-            console.warn(`[SyncDataService] 删除本地书籍 ${bookId} 失败:`, e);
-          }
+          await SyncDataService.applyRemoteNovelDeletion(
+            key,
+            thresholdFor(deletedAt),
+            booksStore,
+          );
           continue;
         }
-
-        // memories:<bookId> — 清空该书的所有 memories（无墓碑，回退 lastSyncTime 启发式）
         if (key.startsWith('memories:')) {
-          const bookId = key.slice('memories:'.length);
-          const localMemories = await MemoryService.getAllMemories(bookId);
-          if (localMemories.length === 0) continue;
-
-          const threshold = thresholdFor(deletedAt);
-          const hasRecent = localMemories.some(
-            (m) => m.lastAccessedAt > threshold,
-          );
-          if (hasRecent) {
-            console.info(
-              `[SyncDataService] 跳过远端删除 ${key}：本地有较新的 memory 活动`,
-            );
-            continue;
-          }
-
-          for (const m of localMemories) {
-            try {
-              await MemoryService.deleteMemory(bookId, m.id);
-            } catch (e) {
-              console.warn(`[SyncDataService] 删除 Memory ${m.id} 失败:`, e);
-            }
-          }
+          await SyncDataService.applyRemoteMemoriesDeletion(key, thresholdFor(deletedAt));
           continue;
         }
-
-        // 聚合条目（ai-models / cover-history / settings）：不做整体删除
-        if (
-          key === 'ai-models' ||
-          key === 'cover-history' ||
-          key === 'settings'
-        ) {
-          console.info(
-            `[SyncDataService] 忽略聚合条目的远端删除 ${key}（需手动确认）`,
-          );
+        if (key === 'ai-models' || key === 'cover-history' || key === 'settings') {
+          console.info(`[SyncDataService] 忽略聚合条目的远端删除 ${key}（需手动确认）`);
           void aiModelsStore;
           continue;
         }
       } catch (error) {
-        console.error(
-          `[SyncDataService] applyRemoteDeletions 处理 ${key} 失败:`,
-          error,
-        );
+        console.error(`[SyncDataService] applyRemoteDeletions 处理 ${key} 失败:`, error);
+      }
+    }
+  }
+
+  private static async applyRemoteNovelDeletion(
+    key: string,
+    threshold: number,
+    booksStore: ReturnType<typeof useBooksStore>,
+  ): Promise<void> {
+    const bookId = key.slice('novel:'.length);
+    const localBook = booksStore.books.find((b) => b.id === bookId);
+    if (!localBook) return;
+    const localTime = localBook.lastEdited ? new Date(localBook.lastEdited).getTime() : 0;
+    if (localTime > threshold) {
+      console.info(
+        `[SyncDataService] 跳过远端删除 ${key}：本地编辑 ${new Date(localTime).toISOString()} 晚于阈值 ${new Date(threshold).toISOString()}`,
+      );
+      return;
+    }
+    try {
+      await booksStore.deleteBook(bookId);
+    } catch (e) {
+      console.warn(`[SyncDataService] 删除本地书籍 ${bookId} 失败:`, e);
+    }
+  }
+
+  private static async applyRemoteMemoriesDeletion(
+    key: string,
+    threshold: number,
+  ): Promise<void> {
+    const bookId = key.slice('memories:'.length);
+    const localMemories = await MemoryService.getAllMemories(bookId);
+    if (localMemories.length === 0) return;
+    if (localMemories.some((m) => m.lastAccessedAt > threshold)) {
+      console.info(`[SyncDataService] 跳过远端删除 ${key}：本地有较新的 memory 活动`);
+      return;
+    }
+    for (const m of localMemories) {
+      try {
+        await MemoryService.deleteMemory(bookId, m.id);
+      } catch (e) {
+        console.warn(`[SyncDataService] 删除 Memory ${m.id} 失败:`, e);
       }
     }
   }

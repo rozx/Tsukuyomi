@@ -5,8 +5,162 @@ import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
-import type { Chapter, Novel } from 'src/models/novel';
+import type { Chapter, Novel, Volume } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
+
+type AdjacentChapterDirection = 'previous' | 'next';
+
+function getTitleOriginal(chapter: Chapter): string {
+  return typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
+}
+
+function getTitleTranslation(chapter: Chapter): string {
+  return typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '';
+}
+
+function getVolumeTitleOriginal(volume: Volume | null | undefined): string {
+  if (!volume) return '';
+  return typeof volume.title === 'string' ? volume.title : volume.title.original || '';
+}
+
+function getVolumeTitleTranslation(volume: Volume | null | undefined): string {
+  if (!volume) return '';
+  return typeof volume.title === 'string' ? '' : volume.title.translation?.translation || '';
+}
+
+async function loadChapterContentIfNeeded(chapter: Chapter): Promise<string> {
+  if (chapter.content === undefined) {
+    const content = await ChapterContentService.loadChapterContent(chapter.id);
+    if (content) {
+      chapter.content = content;
+      chapter.contentLoaded = true;
+    }
+  }
+  return getChapterContentText(chapter);
+}
+
+function countTranslatedParagraphs(chapter: Chapter): number {
+  return (
+    chapter.content?.filter(
+      (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
+    ).length || 0
+  );
+}
+
+async function loadRelatedMemoriesForChapter(
+  bookId: string | undefined,
+  chapter: Chapter,
+  includeMemory: boolean,
+): Promise<Array<{ id: string; summary: string }>> {
+  if (!includeMemory || !bookId) return [];
+  const titleOriginal = getTitleOriginal(chapter);
+  return searchRelatedMemoriesHybrid(
+    bookId,
+    [{ type: 'chapter', id: chapter.id }],
+    titleOriginal ? [titleOriginal] : [],
+    5,
+  );
+}
+
+function buildAdjacentChapterResponse(
+  chapter: Chapter,
+  volume: { id: string; title: Chapter['title'] } | null | undefined,
+  chapterContent: string,
+  relatedMemories: Array<{ id: string; summary: string }>,
+  includeMemory: boolean,
+): string {
+  const chapterTitle = getChapterDisplayTitle(chapter);
+  return JSON.stringify({
+    success: true,
+    chapter: {
+      id: chapter.id,
+      title: chapterTitle,
+      title_original: getTitleOriginal(chapter),
+      title_translation: getTitleTranslation(chapter),
+      content: chapterContent,
+      paragraphCount: chapter.content?.length || 0,
+      translatedCount: countTranslatedParagraphs(chapter),
+      volume: volume
+        ? {
+            id: volume.id,
+            title: getVolumeTitleOriginal(volume),
+            title_translation: getVolumeTitleTranslation(volume),
+          }
+        : null,
+    },
+    ...(includeMemory && relatedMemories.length > 0
+      ? { related_memories: relatedMemories }
+      : {}),
+  });
+}
+
+async function handleAdjacentChapter(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+  direction: AdjacentChapterDirection,
+): Promise<string> {
+  const { bookId, onAction } = ctx;
+  const parsedArgs = parseToolArgs<{
+    chapter_id: string;
+    include_memory?: boolean;
+    summary_only?: boolean;
+  }>(args);
+  if (!bookId) {
+    return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
+  }
+  const { chapter_id, include_memory = true, summary_only = false } = parsedArgs;
+  if (!chapter_id) {
+    return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
+  }
+
+  const toolName = direction === 'previous' ? 'get_previous_chapter' : 'get_next_chapter';
+  const notFoundError =
+    direction === 'previous'
+      ? '没有前一个章节（当前章节是第一个章节）'
+      : '没有下一个章节（当前章节是最后一个章节）';
+  const failureError = direction === 'previous' ? '获取前一个章节失败' : '获取下一个章节失败';
+
+  try {
+    const book = await BookService.getBookById(bookId);
+    if (!book) {
+      return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
+    }
+    const lookup =
+      direction === 'previous'
+        ? ChapterService.getPreviousChapter(book, chapter_id)
+        : ChapterService.getNextChapter(book, chapter_id);
+    if (!lookup) {
+      return JSON.stringify({ success: false, error: notFoundError });
+    }
+
+    const { chapter, volume } = lookup;
+    const chapterTitle = getChapterDisplayTitle(chapter);
+    onAction?.({
+      type: 'read',
+      entity: 'chapter',
+      data: {
+        chapter_id: chapter.id,
+        chapter_title: chapterTitle,
+        tool_name: toolName,
+      },
+    });
+
+    const chapterContent = summary_only ? '' : await loadChapterContentIfNeeded(chapter);
+    const relatedMemories = await loadRelatedMemoriesForChapter(bookId, chapter, include_memory);
+    return buildAdjacentChapterResponse(
+      chapter,
+      volume ?? null,
+      chapterContent,
+      relatedMemories,
+      include_memory,
+    );
+  } catch (error) {
+    return JSON.stringify({
+      success: false,
+      error: error instanceof Error ? error.message : failureError,
+    });
+  }
+}
 
 export const bookTools: ToolDefinition[] = [
   {
@@ -649,117 +803,7 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{
-        chapter_id: string;
-        include_memory?: boolean;
-        summary_only?: boolean;
-      }>(args);
-      if (!bookId) {
-        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
-      }
-      const { chapter_id, include_memory = true, summary_only = false } = parsedArgs;
-      if (!chapter_id) {
-        return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
-      }
-
-      try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
-        }
-
-        const previousChapterInfo = ChapterService.getPreviousChapter(book, chapter_id);
-        if (!previousChapterInfo) {
-          return JSON.stringify({
-            success: false,
-            error: '没有前一个章节（当前章节是第一个章节）',
-          });
-        }
-
-        const { chapter, volume } = previousChapterInfo;
-        const chapterTitle = getChapterDisplayTitle(chapter);
-
-        // 报告读取操作
-        if (onAction) {
-          onAction({
-            type: 'read',
-            entity: 'chapter',
-            data: {
-              chapter_id: chapter.id,
-              chapter_title: chapterTitle,
-              tool_name: 'get_previous_chapter',
-            },
-          });
-        }
-
-        // 如果章节内容未加载，从 IndexedDB 加载
-        let chapterContent = '';
-        if (!summary_only) {
-          if (chapter.content === undefined) {
-            const content = await ChapterContentService.loadChapterContent(chapter.id);
-            if (content) {
-              chapter.content = content;
-              chapter.contentLoaded = true;
-            }
-          }
-          chapterContent = getChapterContentText(chapter);
-        }
-
-        const paragraphCount = chapter.content?.length || 0;
-        const translatedCount =
-          chapter.content?.filter(
-            (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
-          ).length || 0;
-
-        // 搜索相关记忆（使用章节标题作为关键词）
-        let relatedMemories: Array<{ id: string; summary: string }> = [];
-        if (include_memory && bookId) {
-          const titleOriginal =
-            typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
-          relatedMemories = await searchRelatedMemoriesHybrid(
-            bookId,
-            [{ type: 'chapter', id: chapter.id }],
-            titleOriginal ? [titleOriginal] : [],
-            5,
-          );
-        }
-
-        return JSON.stringify({
-          success: true,
-          chapter: {
-            id: chapter.id,
-            title: chapterTitle,
-            title_original:
-              typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
-            title_translation:
-              typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
-            content: chapterContent,
-            paragraphCount,
-            translatedCount,
-            volume: volume
-              ? {
-                  id: volume.id,
-                  title:
-                    typeof volume.title === 'string' ? volume.title : volume.title.original || '',
-                  title_translation:
-                    typeof volume.title === 'string'
-                      ? ''
-                      : volume.title.translation?.translation || '',
-                }
-              : null,
-          },
-          ...(include_memory && relatedMemories.length > 0
-            ? { related_memories: relatedMemories }
-            : {}),
-        });
-      } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '获取前一个章节失败',
-        });
-      }
-    },
+    handler: (args, ctx) => handleAdjacentChapter(args, ctx, 'previous'),
   },
   {
     definition: {
@@ -788,117 +832,7 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{
-        chapter_id: string;
-        include_memory?: boolean;
-        summary_only?: boolean;
-      }>(args);
-      if (!bookId) {
-        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
-      }
-      const { chapter_id, include_memory = true, summary_only = false } = parsedArgs;
-      if (!chapter_id) {
-        return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
-      }
-
-      try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
-        }
-
-        const nextChapterInfo = ChapterService.getNextChapter(book, chapter_id);
-        if (!nextChapterInfo) {
-          return JSON.stringify({
-            success: false,
-            error: '没有下一个章节（当前章节是最后一个章节）',
-          });
-        }
-
-        const { chapter, volume } = nextChapterInfo;
-        const chapterTitle = getChapterDisplayTitle(chapter);
-
-        // 报告读取操作
-        if (onAction) {
-          onAction({
-            type: 'read',
-            entity: 'chapter',
-            data: {
-              chapter_id: chapter.id,
-              chapter_title: chapterTitle,
-              tool_name: 'get_next_chapter',
-            },
-          });
-        }
-
-        // 如果章节内容未加载，从 IndexedDB 加载
-        let chapterContent = '';
-        if (!summary_only) {
-          if (chapter.content === undefined) {
-            const content = await ChapterContentService.loadChapterContent(chapter.id);
-            if (content) {
-              chapter.content = content;
-              chapter.contentLoaded = true;
-            }
-          }
-          chapterContent = getChapterContentText(chapter);
-        }
-
-        const paragraphCount = chapter.content?.length || 0;
-        const translatedCount =
-          chapter.content?.filter(
-            (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
-          ).length || 0;
-
-        // 搜索相关记忆（使用章节标题作为关键词）
-        let relatedMemories: Array<{ id: string; summary: string }> = [];
-        if (include_memory && bookId) {
-          const titleOriginal =
-            typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
-          relatedMemories = await searchRelatedMemoriesHybrid(
-            bookId,
-            [{ type: 'chapter', id: chapter.id }],
-            titleOriginal ? [titleOriginal] : [],
-            5,
-          );
-        }
-
-        return JSON.stringify({
-          success: true,
-          chapter: {
-            id: chapter.id,
-            title: chapterTitle,
-            title_original:
-              typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
-            title_translation:
-              typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
-            content: chapterContent,
-            paragraphCount,
-            translatedCount,
-            volume: volume
-              ? {
-                  id: volume.id,
-                  title:
-                    typeof volume.title === 'string' ? volume.title : volume.title.original || '',
-                  title_translation:
-                    typeof volume.title === 'string'
-                      ? ''
-                      : volume.title.translation?.translation || '',
-                }
-              : null,
-          },
-          ...(include_memory && relatedMemories.length > 0
-            ? { related_memories: relatedMemories }
-            : {}),
-        });
-      } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '获取下一个章节失败',
-        });
-      }
-    },
+    handler: (args, ctx) => handleAdjacentChapter(args, ctx, 'next'),
   },
   {
     definition: {
