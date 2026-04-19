@@ -10,7 +10,7 @@
 
 **Tsukuyomi (月詠)** 是一个利用最先进 AI 模型（如 **GPT-5.2**, **Claude 4.6**, **Gemini 3 Pro** 等）进行外语文本（专为日本轻小说设计）阅读和翻译的综合平台。无论您是想快速阅读"生肉"的读者，还是追求"信达雅"专业水平的译者，Tsukuyomi 都能为您提供全方位的支持。
 
-<img width="2552" height="1330" alt="Tsukuyomi - 2" src="https://github.com/user-attachments/assets/b91535f7-d606-4358-8921-509648cd7d2b" />
+![Tsukuyomi Dashboard](public/screenshots/index-desktop.png)
 
 ## ✨ 核心功能详情
 
@@ -90,6 +90,64 @@ Tsukuyomi 采用 "Bring Your Own Key" 模式，支持接入全球顶尖 AI 模�
 - **桌面 / 平板 / 移动**: Dispatcher + 三变体架构，桌面保持信息密度、平板提供双面板阅读与可停靠 AI 助手、移动端采用底部 Tab 栏 + BottomSheet 的原生化体验。
 - **Electron 桌面版**: 一套代码同时打包 Web SPA 与跨平台桌面客户端，桌面端强制使用 Desktop 变体。
 
+## 📸 界面预览
+
+自 v0.10.1 起，所有页面在桌面 / 平板 / 手机上都有专属模板（而不是简单拉伸）。以下为各设备的实际运行截图。
+
+### 🏠 首页 · Dashboard
+
+![桌面首页](public/screenshots/index-desktop.png)
+
+|                                    平板 · Tablet                                    |                                   手机 · Mobile                                    |
+| :---------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------: |
+| <img src="public/screenshots/index-tablet.png" alt="平板首页" width="100%" /> | <img src="public/screenshots/index-mobile.png" alt="手机首页" width="100%" /> |
+
+### 📚 书库 · Library
+
+![桌面书库](public/screenshots/library-desktop.png)
+
+|                                    平板 · Tablet                                    |                                   手机 · Mobile                                    |
+| :---------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------: |
+| <img src="public/screenshots/library-tablet.png" alt="平板书库" width="100%" /> | <img src="public/screenshots/library-mobile.png" alt="手机书库" width="100%" /> |
+
+### 📖 书籍详情 / 阅读器 · Book Details & Reader
+
+> 桌面与平板采用双面板布局，将章节树、元数据、段落阅读合并为同一视图；手机端则拆分为独立页面以适配竖屏空间。
+
+![桌面书籍详情](public/screenshots/book-details-desktop.png)
+
+|                                       平板 · Tablet                                       |                                     手机 (书籍详情)                                      |                                     手机 (阅读器)                                      |
+| :---------------------------------------------------------------------------------------: | :---------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------: |
+| <img src="public/screenshots/book-details-tablet.png" alt="平板书籍详情" width="100%" /> | <img src="public/screenshots/book-details-mobile.png" alt="手机书籍详情" width="100%" /> | <img src="public/screenshots/reader-mobile.png" alt="手机阅读器" width="100%" /> |
+
+### 💬 AI 助手协作 · Reader + Chat Workspace
+
+右侧面板可停靠，随时召唤 AI 助手；启用本地嵌入后可使用 `query_chapter` / `search_memories` 工具跨章节、跨记忆检索上下文。
+
+![桌面阅读器 + AI 助手](public/screenshots/reader-desktop-with-chat.png)
+
+|                                         平板 · Tablet                                         |                                        手机 · Mobile                                        |
+| :-------------------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------------: |
+| <img src="public/screenshots/reader-tablet-with-chat.png" alt="平板阅读器 + AI 助手" width="100%" /> | <img src="public/screenshots/reader-mobile-with-chat.png" alt="手机 AI 助手" width="100%" /> |
+
+### 🤖 AI 模型管理 · Model Management
+
+![桌面 AI 模型](public/screenshots/ai-models-desktop.png)
+
+|                                       平板 · Tablet                                       |                                      手机 · Mobile                                      |
+| :---------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------: |
+| <img src="public/screenshots/ai-models-tablet.png" alt="平板 AI 模型" width="100%" /> | <img src="public/screenshots/ai-models-mobile.png" alt="手机 AI 模型" width="100%" /> |
+
+## 🔒 隐私与数据主权
+
+Tsukuyomi 从架构设计起便把"数据属于你"作为第一原则：
+
+- **本地优先架构**: 所有书籍、翻译、术语、记忆与配置默认存储在浏览器 IndexedDB（或 Electron 桌面版的本地磁盘），**完全离线可用**。
+- **BYOK（Bring Your Own Key）**: API Key 只在本地保存，请求直连 AI 厂商（或你自选的 CORS 代理 / 网关），不经过任何第三方中继。
+- **本地语义嵌入**: 启用"本地嵌入"后，记忆库与章节语义索引使用 Transformers.js 在浏览器 / Electron 内部运行，**不上传任何文本到外部嵌入服务**；模型文件下载后自动缓存到浏览器 Cache Storage。
+- **可选 Gist 云同步**: 云备份仅写入你自己的私有 GitHub Gist，基于 Manifest + SHA-256 哈希的条件 GET 最小化流量，Token 本地加密保存；关闭同步即可完全脱网使用。
+- **无追踪 · 无埋点**: 不收集使用数据，不接入任何统计或广告 SDK。
+
 ## 🚀 快速开始
 
 ### 1. 安装与运行
@@ -125,16 +183,51 @@ bun run dev
 
 > 📖 **在线文档**: 完整的帮助文档已同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)，提供更好的浏览体验。
 
+## 🧱 技术栈
+
+| 层级                      | 技术                                                                                                                                 |
+| :------------------------ | :----------------------------------------------------------------------------------------------------------------------------------- |
+| **前端框架**              | Vue 3.5 · Quasar 2.18 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US)                |
+| **桌面封装**              | Electron 39（Web SPA 与桌面端共用同一份代码，通过 `useDeviceVariant` 强制 Desktop 变体）                                             |
+| **运行时 / 构建**         | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                                        |
+| **AI SDK**                | OpenAI SDK · Google Generative AI · 自定义 Claude 集成 · Moonshot Kimi 等兼容 OpenAI 协议的模型（BYOK）                              |
+| **本地嵌入**              | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · WebGPU + q4f16（优先）/ WASM + q8（回退）                             |
+| **存储 / 同步**           | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 哈希 manifest · 条件 GET + 伪 CAS 并发保护                               |
+| **抓取**                  | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ HTTP 代理轮询（Web 版）                                             |
+| **测试**                  | Bun test · fake-indexeddb                                                                                                            |
+
 ## 🛠️ 开发与构建
 
 | 命令                     | 用途                               |
 | :----------------------- | :--------------------------------- |
-| `bun run build`          | 构建生产环境 Web 版本              |
+| `bun install`            | 安装依赖                           |
+| `bun run dev`            | 启动 Web 开发模式（前端:9000, 后端:8080） |
+| `bun run dev:electron`   | 启动 Electron 开发模式             |
+| `bun run build:spa`      | 构建生产环境 Web SPA               |
 | `bun run build:electron` | 打包跨平台桌面客户端 (dmg/exe/deb) |
-| `bun run bump`           | 手动/自动更新版本号                |
 | `bun run lint`           | 代码规范性检测                     |
+| `bun run type-check`     | TypeScript 类型检查                |
+| `bun test`               | 运行测试套件                       |
+| `bun run bump`           | 手动/自动更新版本号                |
 
-**开发者文档**: [构建故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主题指南](docs/THEME_GUIDE.md) \| [翻译指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md)
+**开发者文档**: [构建故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主题指南](docs/THEME_GUIDE.md) \| [翻译指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md) \| [贡献者指南](AGENTS.md) \| [项目约定 (Claude Code)](CLAUDE.md)
+
+## 📦 最新发布
+
+- **v0.10.1** — [完整发布说明](public/releaseNotes/RELEASE_NOTES_v0.10.1.md) · 记忆系统三信号评分、章节语义索引、Manifest 增量同步、移动 / 平板全新设计。
+- 历史版本：见 `public/releaseNotes/` 目录或应用内"帮助 → 更新日志"。
+
+## 🤝 贡献
+
+欢迎 Issue、PR、以及翻译器使用反馈。提交代码前请：
+
+1. `bun run lint && bun run type-check` 通过本地检查；
+2. 新增功能请配套写测试（`src/__tests__/`）；
+3. UI 改动需在桌面 / 平板 / 手机三个断点手动验证，遵循 `CLAUDE.md` 的"设备变体规则"。
+
+## 📄 许可证
+
+[Apache License 2.0](LICENSE) — 可自由用于个人与商业用途，请在二次分发时保留版权声明。
 
 ---
 
