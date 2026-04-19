@@ -331,225 +331,165 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
 /**
  * 从 localStorage 迁移数据到 IndexedDB
  */
+async function migrateBooks(db: IDBPDatabase<TsukuyomiDB>): Promise<void> {
+  const booksData =
+    localStorage.getItem('luna-ai-books') || localStorage.getItem('tsukuyomi-books');
+  if (!booksData) return;
+  const books = JSON.parse(booksData) as Novel[];
+  const tx = db.transaction('books', 'readwrite');
+  const store = tx.objectStore('books');
+  for (const book of books) {
+    await store.put({
+      ...book,
+      lastEdited: new Date(book.lastEdited),
+      createdAt: new Date(book.createdAt),
+    });
+  }
+  await tx.done;
+  localStorage.removeItem('luna-ai-books');
+  localStorage.removeItem('tsukuyomi-books');
+}
+
+async function migrateAiModels(db: IDBPDatabase<TsukuyomiDB>): Promise<void> {
+  const modelsData =
+    localStorage.getItem('luna-ai-models') || localStorage.getItem('tsukuyomi-models');
+  if (!modelsData) return;
+  const models = JSON.parse(modelsData) as AIModel[];
+  const tx = db.transaction('ai-models', 'readwrite');
+  const store = tx.objectStore('ai-models');
+  for (const model of models) {
+    await store.put(model);
+  }
+  await tx.done;
+  localStorage.removeItem('luna-ai-models');
+  localStorage.removeItem('tsukuyomi-models');
+}
+
+async function migrateSettings(db: IDBPDatabase<TsukuyomiDB>): Promise<void> {
+  const settingsData =
+    localStorage.getItem('luna-ai-settings') || localStorage.getItem('tsukuyomi-settings');
+  if (!settingsData) return;
+  const settings = JSON.parse(settingsData) as AppSettings;
+  await db.put('settings', { key: 'app', ...settings } as AppSettings & { key: string });
+  localStorage.removeItem('luna-ai-settings');
+  localStorage.removeItem('tsukuyomi-settings');
+}
+
+async function migrateCoverHistory(db: IDBPDatabase<TsukuyomiDB>): Promise<void> {
+  const coverHistoryData =
+    localStorage.getItem('luna-ai-cover-history') ||
+    localStorage.getItem('tsukuyomi-cover-history');
+  if (!coverHistoryData) return;
+  const coverHistory = JSON.parse(coverHistoryData) as CoverHistoryItem[];
+  const tx = db.transaction('cover-history', 'readwrite');
+  const store = tx.objectStore('cover-history');
+  for (const cover of coverHistory) {
+    await store.put({
+      ...cover,
+      addedAt: cover.addedAt instanceof Date ? cover.addedAt : new Date(cover.addedAt),
+    });
+  }
+  await tx.done;
+  localStorage.removeItem('luna-ai-cover-history');
+  localStorage.removeItem('tsukuyomi-cover-history');
+}
+
+async function migrateSyncConfigs(db: IDBPDatabase<TsukuyomiDB>): Promise<void> {
+  const syncData = localStorage.getItem('luna-ai-sync') || localStorage.getItem('tsukuyomi-sync');
+  if (!syncData) return;
+  const syncs = JSON.parse(syncData) as SyncConfig[];
+  const tx = db.transaction('sync-configs', 'readwrite');
+  const store = tx.objectStore('sync-configs');
+  for (let i = 0; i < syncs.length; i++) {
+    const sync = syncs[i];
+    if (!sync) continue;
+    await store.put({
+      id: `sync-${i}`,
+      enabled: sync.enabled,
+      lastSyncTime: sync.lastSyncTime,
+      syncInterval: sync.syncInterval,
+      syncType: sync.syncType,
+      syncParams: sync.syncParams,
+      secret: sync.secret,
+      apiEndpoint: sync.apiEndpoint,
+      ...(sync.lastSyncedModelIds !== undefined
+        ? { lastSyncedModelIds: sync.lastSyncedModelIds }
+        : {}),
+    });
+  }
+  await tx.done;
+  localStorage.removeItem('luna-ai-sync');
+  localStorage.removeItem('tsukuyomi-sync');
+}
+
+async function migrateToastHistory(db: IDBPDatabase<TsukuyomiDB>): Promise<void> {
+  const toastHistoryData =
+    localStorage.getItem('luna-toast-history') ||
+    localStorage.getItem('luna-ai-toast-history') ||
+    localStorage.getItem('tsukuyomi-toast-history');
+  if (!toastHistoryData) return;
+  const toastHistory = JSON.parse(toastHistoryData) as ToastHistoryItem[];
+  const tx = db.transaction('toast-history', 'readwrite');
+  const store = tx.objectStore('toast-history');
+  for (const item of toastHistory) {
+    await store.put(item);
+  }
+  await tx.done;
+  localStorage.removeItem('luna-toast-history');
+  localStorage.removeItem('luna-ai-toast-history');
+  localStorage.removeItem('tsukuyomi-toast-history');
+}
+
+async function migrateToastLastViewed(db: IDBPDatabase<TsukuyomiDB>): Promise<void> {
+  const lastViewedData =
+    localStorage.getItem('luna-toast-last-viewed') ||
+    localStorage.getItem('luna-ai-toast-last-viewed') ||
+    localStorage.getItem('tsukuyomi-toast-last-viewed');
+  if (!lastViewedData) return;
+  const timestamp = parseInt(lastViewedData, 10);
+  if (!isNaN(timestamp)) {
+    await db.put('toast-last-viewed', { key: 'last-viewed', timestamp });
+  }
+  localStorage.removeItem('luna-toast-last-viewed');
+  localStorage.removeItem('luna-ai-toast-last-viewed');
+  localStorage.removeItem('tsukuyomi-toast-last-viewed');
+}
+
+async function migrateBookDetailsUiBackToLocalStorage(
+  db: IDBPDatabase<TsukuyomiDB>,
+): Promise<void> {
+  const stored = await db.get('book-details-ui', 'state');
+  if (!stored) return;
+  const { key: _key, ...state } = stored;
+  localStorage.setItem('tsukuyomi-book-details-ui', JSON.stringify(state));
+}
+
+async function migrateUiStateBackToLocalStorage(db: IDBPDatabase<TsukuyomiDB>): Promise<void> {
+  const stored = await db.get('ui-state', 'state');
+  if (!stored) return;
+  const { key: _key, ...state } = stored;
+  localStorage.setItem('tsukuyomi-ui-state', JSON.stringify(state));
+}
+
+async function runMigrationStep(step: () => Promise<void>): Promise<void> {
+  try {
+    await step();
+  } catch {
+    // 忽略迁移错误
+  }
+}
+
 export async function migrateFromLocalStorage(): Promise<void> {
   const db = await getDB();
-
-  // 迁移 books
-  try {
-    // 先检查旧键，再检查新键
-    const booksData =
-      localStorage.getItem('luna-ai-books') || localStorage.getItem('tsukuyomi-books');
-    if (booksData) {
-      const books = JSON.parse(booksData) as Novel[];
-
-      const tx = db.transaction('books', 'readwrite');
-      const store = tx.objectStore('books');
-
-      for (const book of books) {
-        // 确保日期字段是 Date 对象
-        const migratedBook = {
-          ...book,
-          lastEdited: new Date(book.lastEdited),
-          createdAt: new Date(book.createdAt),
-        };
-        await store.put(migratedBook);
-      }
-
-      await tx.done;
-      // 删除旧键和新键（如果存在）
-      localStorage.removeItem('luna-ai-books');
-      localStorage.removeItem('tsukuyomi-books');
-    }
-  } catch {
-    // 忽略迁移错误
-  }
-
-  // 迁移 ai-models
-  try {
-    // 先检查旧键，再检查新键
-    const modelsData =
-      localStorage.getItem('luna-ai-models') || localStorage.getItem('tsukuyomi-models');
-    if (modelsData) {
-      const models = JSON.parse(modelsData) as AIModel[];
-
-      const tx = db.transaction('ai-models', 'readwrite');
-      const store = tx.objectStore('ai-models');
-
-      for (const model of models) {
-        await store.put(model);
-      }
-
-      await tx.done;
-      // 删除旧键和新键（如果存在）
-      localStorage.removeItem('luna-ai-models');
-      localStorage.removeItem('tsukuyomi-models');
-    }
-  } catch {
-    // 忽略迁移错误
-  }
-
-  // 迁移 settings
-  try {
-    // 先检查旧键，再检查新键
-    const settingsData =
-      localStorage.getItem('luna-ai-settings') || localStorage.getItem('tsukuyomi-settings');
-    if (settingsData) {
-      const settings = JSON.parse(settingsData) as AppSettings;
-
-      await db.put('settings', { key: 'app', ...settings } as AppSettings & {
-        key: string;
-      });
-
-      // 删除旧键和新键（如果存在）
-      localStorage.removeItem('luna-ai-settings');
-      localStorage.removeItem('tsukuyomi-settings');
-    }
-  } catch {
-    // 忽略迁移错误
-  }
-
-  // 迁移 cover-history
-  try {
-    // 先检查旧键，再检查新键
-    const coverHistoryData =
-      localStorage.getItem('luna-ai-cover-history') ||
-      localStorage.getItem('tsukuyomi-cover-history');
-    if (coverHistoryData) {
-      const coverHistory = JSON.parse(coverHistoryData) as CoverHistoryItem[];
-
-      const tx = db.transaction('cover-history', 'readwrite');
-      const store = tx.objectStore('cover-history');
-
-      for (const cover of coverHistory) {
-        const migratedCover = {
-          ...cover,
-          addedAt: cover.addedAt instanceof Date ? cover.addedAt : new Date(cover.addedAt),
-        };
-        await store.put(migratedCover);
-      }
-
-      await tx.done;
-      // 删除旧键和新键（如果存在）
-      localStorage.removeItem('luna-ai-cover-history');
-      localStorage.removeItem('tsukuyomi-cover-history');
-    }
-  } catch {
-    // 忽略迁移错误
-  }
-
-  // 迁移 sync-configs
-  try {
-    // 先检查旧键，再检查新键
-    const syncData = localStorage.getItem('luna-ai-sync') || localStorage.getItem('tsukuyomi-sync');
-    if (syncData) {
-      const syncs = JSON.parse(syncData) as SyncConfig[];
-
-      const tx = db.transaction('sync-configs', 'readwrite');
-      const store = tx.objectStore('sync-configs');
-
-      for (let i = 0; i < syncs.length; i++) {
-        const sync = syncs[i];
-        if (!sync) continue;
-        await store.put({
-          id: `sync-${i}`,
-          enabled: sync.enabled,
-          lastSyncTime: sync.lastSyncTime,
-          syncInterval: sync.syncInterval,
-          syncType: sync.syncType,
-          syncParams: sync.syncParams,
-          secret: sync.secret,
-          apiEndpoint: sync.apiEndpoint,
-          ...(sync.lastSyncedModelIds !== undefined
-            ? { lastSyncedModelIds: sync.lastSyncedModelIds }
-            : {}),
-        });
-      }
-
-      await tx.done;
-      // 删除旧键和新键（如果存在）
-      localStorage.removeItem('luna-ai-sync');
-      localStorage.removeItem('tsukuyomi-sync');
-    }
-  } catch {
-    // 忽略迁移错误
-  }
-
-  // 迁移 toast-history
-  try {
-    // 先检查最旧的键，再检查较新的键，最后检查最新的键
-    const toastHistoryData =
-      localStorage.getItem('luna-toast-history') ||
-      localStorage.getItem('luna-ai-toast-history') ||
-      localStorage.getItem('tsukuyomi-toast-history');
-    if (toastHistoryData) {
-      const toastHistory = JSON.parse(toastHistoryData) as ToastHistoryItem[];
-
-      const tx = db.transaction('toast-history', 'readwrite');
-      const store = tx.objectStore('toast-history');
-
-      for (const item of toastHistory) {
-        await store.put(item);
-      }
-
-      await tx.done;
-      // 删除所有可能的旧键（如果存在）
-      localStorage.removeItem('luna-toast-history');
-      localStorage.removeItem('luna-ai-toast-history');
-      localStorage.removeItem('tsukuyomi-toast-history');
-    }
-  } catch {
-    // 忽略迁移错误
-  }
-
-  // 迁移 toast-last-viewed
-  try {
-    // 先检查最旧的键，再检查较新的键，最后检查最新的键
-    const lastViewedData =
-      localStorage.getItem('luna-toast-last-viewed') ||
-      localStorage.getItem('luna-ai-toast-last-viewed') ||
-      localStorage.getItem('tsukuyomi-toast-last-viewed');
-    if (lastViewedData) {
-      const timestamp = parseInt(lastViewedData, 10);
-      if (!isNaN(timestamp)) {
-        await db.put('toast-last-viewed', {
-          key: 'last-viewed',
-          timestamp,
-        });
-      }
-      // 删除所有可能的旧键（如果存在）
-      localStorage.removeItem('luna-toast-last-viewed');
-      localStorage.removeItem('luna-ai-toast-last-viewed');
-      localStorage.removeItem('tsukuyomi-toast-last-viewed');
-    }
-  } catch {
-    // 忽略迁移错误
-  }
-
-  // 迁移 book-details-ui：从 IndexedDB 迁移回 localStorage（如果存在）
-  try {
-    const stored = await db.get('book-details-ui', 'state');
-    if (stored) {
-      const { key: _key, ...state } = stored;
-      localStorage.setItem('tsukuyomi-book-details-ui', JSON.stringify(state));
-      // 可选：从 IndexedDB 删除，因为现在使用 localStorage
-      // await db.delete('book-details-ui', 'state');
-    }
-  } catch {
-    // 忽略迁移错误
-  }
-
-  // 迁移 ui-state：从 IndexedDB 迁移回 localStorage（如果存在）
-  try {
-    const stored = await db.get('ui-state', 'state');
-    if (stored) {
-      const { key: _key, ...state } = stored;
-      localStorage.setItem('tsukuyomi-ui-state', JSON.stringify(state));
-      // 可选：从 IndexedDB 删除，因为现在使用 localStorage
-      // await db.delete('ui-state', 'state');
-    }
-  } catch {
-    // 忽略迁移错误
-  }
+  await runMigrationStep(() => migrateBooks(db));
+  await runMigrationStep(() => migrateAiModels(db));
+  await runMigrationStep(() => migrateSettings(db));
+  await runMigrationStep(() => migrateCoverHistory(db));
+  await runMigrationStep(() => migrateSyncConfigs(db));
+  await runMigrationStep(() => migrateToastHistory(db));
+  await runMigrationStep(() => migrateToastLastViewed(db));
+  await runMigrationStep(() => migrateBookDetailsUiBackToLocalStorage(db));
+  await runMigrationStep(() => migrateUiStateBackToLocalStorage(db));
 }
 
 /**
