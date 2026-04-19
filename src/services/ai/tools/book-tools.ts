@@ -131,7 +131,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'list_chapters',
         description:
-          '获取书籍的所有章节列表，包括每个章节的 ID、原文标题、翻译标题和章节摘要。当需要查看所有可用章节并选择参考章节时使用此工具。支持分页（offset/limit）。',
+          '获取书籍的所有章节列表，包括每个章节的 ID、原文标题、翻译标题。当需要查看所有可用章节并选择参考章节时使用此工具。支持分页（offset/limit）。如需按语义查找相关章节,请用 query_chapter。',
         parameters: {
           type: 'object',
           properties: {
@@ -414,7 +414,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'get_chapter_info',
         description:
-          '获取章节的详细信息，包括标题、原文内容、段落列表、章节摘要、翻译进度等。当需要了解当前章节的完整信息时使用此工具。',
+          '获取章节的详细信息，包括标题、原文内容、段落列表、翻译进度等。当需要了解当前章节的完整信息时使用此工具。',
         parameters: {
           type: 'object',
           properties: {
@@ -581,7 +581,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'get_previous_chapter',
         description:
-          '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容、章节摘要等，帮助理解上下文和保持翻译一致性。',
+          '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
         parameters: {
           type: 'object',
           properties: {
@@ -720,7 +720,7 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'get_next_chapter',
         description:
-          '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容、章节摘要等，帮助理解上下文和保持翻译一致性。',
+          '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
         parameters: {
           type: 'object',
           properties: {

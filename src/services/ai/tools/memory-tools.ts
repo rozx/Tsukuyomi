@@ -128,7 +128,7 @@ export const memoryTools: ToolDefinition[] = [
       function: {
         name: 'get_memory',
         description:
-          '根据 Memory ID 获取指定的 Memory 内容。当需要查看之前存储的背景设定、章节摘要等记忆内容时使用此工具。',
+          '根据 Memory ID 获取指定的 Memory 内容。当需要查看之前存储的背景设定、关键情节等记忆内容时使用此工具。',
         parameters: {
           type: 'object',
           properties: {
@@ -204,7 +204,7 @@ export const memoryTools: ToolDefinition[] = [
       function: {
         name: 'search_memories',
         description:
-          '搜索 Memory（混合检索：关键词匹配 + 语义相似度）。当需要查找相关记忆内容（如背景设定、章节摘要等）时使用此工具。传入自然语言查询，自动结合关键词匹配和语义向量进行排序。[警告] **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。[警告] **敬语翻译**：翻译敬语时，必须**首先**使用此工具搜索记忆中关于该角色敬语翻译的相关信息（如角色关系、敬语使用习惯等），然后再使用 find_paragraph_by_keywords 搜索段落。',
+          '搜索 Memory（混合检索：关键词匹配 + 语义相似度）。当需要查找相关记忆内容（如背景设定、关键情节、角色关系等）时使用此工具。传入自然语言查询，自动结合关键词匹配和语义向量进行排序。[警告] **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。[警告] **敬语翻译**：翻译敬语时，必须**首先**使用此工具搜索记忆中关于该角色敬语翻译的相关信息（如角色关系、敬语使用习惯等），然后再使用 find_paragraph_by_keywords 搜索段落。',
         parameters: {
           type: 'object',
           properties: {

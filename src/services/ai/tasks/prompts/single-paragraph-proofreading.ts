@@ -48,8 +48,8 @@ export function buildSingleParagraphProofreadingSystemPrompt(
 ${getToolScopeRules(tools)}
 
 【工具使用建议】
-- 默认上下文已包含前后段落、角色、术语、书籍信息和章节摘要
-- 仅在需要更多信息时使用工具（如查询更多段落、搜索记忆、搜索章节摘要等）
+- 默认上下文已包含前后段落、角色、术语、书籍信息
+- 仅在需要更多信息时使用工具（如查询更多段落、搜索记忆、用 query_chapter 语义搜索相关章节等）
 - 使用 \`add_translation_batch\` 提交校对结果（单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段）
 - ⛔ **禁止**创建/修改/删除术语或角色设定，本次任务只做校对
 - **最小必要**：拿到信息后立刻提交结果

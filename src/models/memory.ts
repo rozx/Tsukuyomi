@@ -1,6 +1,6 @@
 /**
  * Memory 模型
- * 用于存储 AI 记忆的大块内容（如背景设定、章节摘要等）
+ * 用于存储 AI 记忆的大块内容（如背景设定、关键情节、角色关系等）
  */
 export interface Memory {
   id: string; // 短 ID（8 位十六进制字符串）
