@@ -142,76 +142,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="p-4 space-y-6">
-    <!-- 注入策略 -->
-    <div>
-      <h3 class="text-sm font-medium text-moon/90 mb-3">注入策略</h3>
-      <div class="space-y-4">
-        <!-- 字符预算 -->
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between">
-            <label class="text-xs text-moon/80">字符预算</label>
-            <span class="text-xs text-moon/60 tabular-nums">{{ charBudget }}</span>
-          </div>
-          <Slider
-            v-model="charBudget"
-            :min="500"
-            :max="5000"
-            :step="100"
-            class="w-full"
-            @slideend="updateCharBudget($event)"
-          />
-          <div class="flex justify-between text-xs text-moon/40">
-            <span>500</span>
-            <span>5000</span>
-          </div>
-        </div>
-
-        <!-- 最低分数阈值 -->
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between">
-            <label class="text-xs text-moon/80">最低相关度</label>
-            <span class="text-xs text-moon/60 tabular-nums">{{ minScoreThreshold.toFixed(2) }}</span>
-          </div>
-          <Slider
-            v-model="minScoreThreshold"
-            :min="0"
-            :max="0.5"
-            :step="0.01"
-            class="w-full"
-            @slideend="updateMinScoreThreshold($event)"
-          />
-          <div class="flex justify-between text-xs text-moon/40">
-            <span>0（全部注入）</span>
-            <span>0.5</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 语义检索开关(记忆打分) -->
-    <div class="border-t border-moon/10 pt-5">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <h3 class="text-sm font-medium text-moon/90">记忆的语义检索</h3>
-          <p class="text-xs text-moon/50 mt-0.5">
-            关闭后记忆打分只靠关键词和时间衰减
-          </p>
-        </div>
-        <ToggleSwitch
-          :model-value="enableSemantic"
-          @update:model-value="updateEnableSemantic($event as boolean)"
-        />
-      </div>
-    </div>
-
-    <!-- 本地嵌入模型(共享:记忆 + 章节) -->
-    <div class="border-t border-moon/10 pt-5">
+  <div class="p-4 space-y-8">
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 组 1: 嵌入模型 (共享基础设施)                            -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <section>
       <div class="mb-3">
-        <h3 class="text-sm font-medium text-moon/90">本地嵌入模型</h3>
+        <h2 class="text-base font-semibold text-moon/95">嵌入模型</h2>
         <p class="text-xs text-moon/50 mt-0.5">
-          同时用于<strong class="text-moon/70">记忆注入打分</strong>与
-          <strong class="text-moon/70">章节语义查询</strong>(AI 工具 query_chapter)
+          本地运行的嵌入模型,为下面的记忆注入与章节嵌入提供向量
         </p>
       </div>
 
@@ -257,20 +196,101 @@ onUnmounted(() => {
           {{ lastError }}
         </p>
 
-        <p class="text-xs text-moon/40">{{ MODEL_ID }} (~195 MB,本地运行)</p>
+        <p class="text-xs text-moon/40">{{ MODEL_ID }} (~195 MB,首次使用需下载到浏览器缓存)</p>
       </div>
-    </div>
+    </section>
 
-    <!-- 说明 -->
-    <div class="p-3 bg-moon/5 rounded-lg border border-moon/10 space-y-1.5">
-      <p class="text-xs text-moon/60">
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 组 2: 记忆注入                                           -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <section class="border-t border-moon/10 pt-6">
+      <div class="mb-4">
+        <h2 class="text-base font-semibold text-moon/95">记忆注入</h2>
+        <p class="text-xs text-moon/50 mt-0.5">
+          翻译时自动选择最相关的记忆作为上下文
+        </p>
+      </div>
+
+      <div class="space-y-5">
+        <!-- 字符预算 -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="text-xs text-moon/80">字符预算</label>
+            <span class="text-xs text-moon/60 tabular-nums">{{ charBudget }}</span>
+          </div>
+          <Slider
+            v-model="charBudget"
+            :min="500"
+            :max="5000"
+            :step="100"
+            class="w-full"
+            @slideend="updateCharBudget($event)"
+          />
+          <div class="flex justify-between text-xs text-moon/40">
+            <span>500</span>
+            <span>5000</span>
+          </div>
+        </div>
+
+        <!-- 最低分数阈值 -->
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <label class="text-xs text-moon/80">最低相关度</label>
+            <span class="text-xs text-moon/60 tabular-nums">{{ minScoreThreshold.toFixed(2) }}</span>
+          </div>
+          <Slider
+            v-model="minScoreThreshold"
+            :min="0"
+            :max="0.5"
+            :step="0.01"
+            class="w-full"
+            @slideend="updateMinScoreThreshold($event)"
+          />
+          <div class="flex justify-between text-xs text-moon/40">
+            <span>0(全部注入)</span>
+            <span>0.5</span>
+          </div>
+        </div>
+
+        <!-- 语义信号开关 -->
+        <div class="flex items-center justify-between pt-1">
+          <div class="pr-3">
+            <label class="text-xs text-moon/80 block">启用语义信号</label>
+            <p class="text-xs text-moon/50 mt-0.5">
+              关闭后记忆打分仅用关键词和时间衰减
+            </p>
+          </div>
+          <ToggleSwitch
+            :model-value="enableSemantic"
+            @update:model-value="updateEnableSemantic($event as boolean)"
+          />
+        </div>
+
+        <p class="text-xs text-moon/50 bg-moon/5 rounded px-3 py-2 border border-moon/10">
+          <span class="pi pi-info-circle mr-1"></span>
+          评分基于三信号(语义相似度 + 关键词匹配 + 时间衰减),即使关闭语义信号,关键词与时间衰减仍会工作。
+        </p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- 组 3: 章节嵌入                                           -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <section class="border-t border-moon/10 pt-6">
+      <div class="mb-3">
+        <h2 class="text-base font-semibold text-moon/95">章节嵌入</h2>
+        <p class="text-xs text-moon/50 mt-0.5">
+          为每章生成多段向量,让 AI 按剧情/事件/人物语义找相关章节
+        </p>
+      </div>
+
+      <p class="text-xs text-moon/50 bg-moon/5 rounded px-3 py-2 border border-moon/10 space-y-1">
         <span class="pi pi-info-circle mr-1"></span>
-        <strong>记忆注入</strong>:翻译时自动选择最相关的记忆作为上下文。评分基于语义相似度、关键词匹配和时间衰减三个信号,即使未启用语义检索仍可工作。
+        章节嵌入在后台自动运行,段落或译文变更后 60 秒防抖重算。无可配置项。
+        <br />
+        要查看 / 回填 / 重算进度,请在书籍详情页顶部的
+        <strong class="text-moon/70">向量索引</strong> popup 中操作。
       </p>
-      <p class="text-xs text-moon/60">
-        <span class="pi pi-info-circle mr-1"></span>
-        <strong>章节语义查询</strong>:AI 可通过 query_chapter 按剧情/事件/人物描述找相关章节。该功能始终使用本地嵌入模型,不受上方"记忆的语义检索"开关影响。
-      </p>
-    </div>
+    </section>
   </div>
 </template>
