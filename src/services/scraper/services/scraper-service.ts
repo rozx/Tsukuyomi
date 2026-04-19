@@ -24,7 +24,7 @@ export interface BatchFetchResult {
  * 爬虫服务
  * 提供批量获取章节内容等功能，包含并发控制
  */
-class ScraperService {
+export class ScraperService {
   /**
    * 批量获取章节内容，使用并发控制
    * @param chapters 章节信息数组，包含 chapterId, webUrl, title

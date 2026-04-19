@@ -689,7 +689,7 @@ export function findUniqueCharactersInText(
  * @param names 名称列表
  * @returns 出现次数
  */
-function countNamesInText(text: string, names: string[]): number {
+export function countNamesInText(text: string, names: string[]): number {
   if (!text || !names || names.length === 0) return 0;
 
   // 过滤空值并按长度降序排序

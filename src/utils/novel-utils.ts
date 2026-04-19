@@ -169,7 +169,7 @@ export async function getChapterCharCountAsync(chapter: Chapter): Promise<number
  * @param volume 卷对象
  * @returns 总字符数
  */
-function getVolumeCharCount(volume: Volume): number {
+export function getVolumeCharCount(volume: Volume): number {
   if (!volume.chapters || volume.chapters.length === 0) {
     return 0;
   }
@@ -181,7 +181,7 @@ function getVolumeCharCount(volume: Volume): number {
  * @param volume 卷对象
  * @returns Promise<number> 总字符数
  */
-async function getVolumeCharCountAsync(volume: Volume): Promise<number> {
+export async function getVolumeCharCountAsync(volume: Volume): Promise<number> {
   if (!volume.chapters || volume.chapters.length === 0) {
     return 0;
   }
