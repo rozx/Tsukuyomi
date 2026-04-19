@@ -29,6 +29,56 @@ interface ImportCounts {
   appSettings: boolean;
 }
 
+interface BookImportShape {
+  novels: unknown[];
+  rawMemories: unknown[];
+  memoriesAnchorBookId: string | undefined;
+}
+
+function extractBookImportShape(data: Record<string, unknown>): BookImportShape {
+  if (Array.isArray(data)) {
+    return { novels: data, rawMemories: [], memoriesAnchorBookId: undefined };
+  }
+  if (data.novels && Array.isArray(data.novels)) {
+    const rawMemories =
+      data.memories && Array.isArray(data.memories) ? (data.memories as unknown[]) : [];
+    return { novels: data.novels, rawMemories, memoriesAnchorBookId: undefined };
+  }
+  if (data.novel && typeof data.novel === 'object') {
+    const rawMemories =
+      data.memories && Array.isArray(data.memories) ? (data.memories as unknown[]) : [];
+    const memoriesAnchorBookId = (data.novel as Record<string, unknown>).id as string | undefined;
+    return { novels: [data.novel], rawMemories, memoriesAnchorBookId };
+  }
+  if (data.title) {
+    return { novels: [data], rawMemories: [], memoriesAnchorBookId: undefined };
+  }
+  throw new Error('无法识别的文件格式。请确保文件包含书籍数据。');
+}
+
+function groupMemoriesByBookId(
+  rawMemories: unknown[],
+  anchorBookId: string | undefined,
+): Map<string, Memory[]> {
+  const map = new Map<string, Memory[]>();
+  if (rawMemories.length === 0) return map;
+  if (anchorBookId) {
+    map.set(anchorBookId, rawMemories as Memory[]);
+    return map;
+  }
+  for (const mem of rawMemories) {
+    const bookId = (mem as Record<string, unknown>).bookId as string | undefined;
+    if (!bookId) continue;
+    let list = map.get(bookId);
+    if (!list) {
+      list = [];
+      map.set(bookId, list);
+    }
+    list.push(mem as Memory);
+  }
+  return map;
+}
+
 function buildImportMessage(counts: ImportCounts): string {
   const parts: string[] = [];
   if (counts.models > 0) parts.push(`${counts.models} 个 AI 模型配置`);
@@ -165,56 +215,17 @@ export class SettingsService {
       throw new Error('无法识别的文件格式。请确保文件包含书籍数据。');
     }
 
-    const data = raw as Record<string, unknown>;
-    let novels: unknown[] = [];
-    let rawMemories: unknown[] = [];
-    let memoriesAnchorBookId: string | undefined;
-
-    if (Array.isArray(data)) {
-      novels = data;
-    } else if (data.novels && Array.isArray(data.novels)) {
-      novels = data.novels;
-      if (data.memories && Array.isArray(data.memories)) {
-        rawMemories = data.memories;
-      }
-    } else if (data.novel && typeof data.novel === 'object') {
-      novels = [data.novel];
-      if (data.memories && Array.isArray(data.memories)) {
-        rawMemories = data.memories;
-        memoriesAnchorBookId = (data.novel as Record<string, unknown>).id as string | undefined;
-      }
-    } else if (data.title) {
-      novels = [data];
-    } else {
-      throw new Error('无法识别的文件格式。请确保文件包含书籍数据。');
-    }
+    const { novels, rawMemories, memoriesAnchorBookId } = extractBookImportShape(
+      raw as Record<string, unknown>,
+    );
 
     if (novels.length === 0) {
       throw new Error('文件中没有找到有效的书籍数据');
     }
 
-    const memoriesByBookId = new Map<string, Memory[]>();
-    if (rawMemories.length > 0) {
-      if (memoriesAnchorBookId) {
-        memoriesByBookId.set(memoriesAnchorBookId, rawMemories as Memory[]);
-      } else {
-        for (const mem of rawMemories) {
-          const m = mem as Record<string, unknown>;
-          if (m.bookId) {
-            let list = memoriesByBookId.get(m.bookId as string);
-            if (!list) {
-              list = [];
-              memoriesByBookId.set(m.bookId as string, list);
-            }
-            list.push(mem as Memory);
-          }
-        }
-      }
-    }
-
     return {
       novels: novels as Novel[],
-      memoriesByBookId,
+      memoriesByBookId: groupMemoriesByBookId(rawMemories, memoriesAnchorBookId),
     };
   }
 }

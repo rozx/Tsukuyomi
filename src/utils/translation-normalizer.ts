@@ -276,93 +276,66 @@ function areQuotesProperlyNested(text: string, openChar: string, closeChar: stri
  * @param text 要修复的文本
  * @returns 修复后的文本
  */
+function countOccurrences(text: string, char: string): number {
+  let count = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === char) count++;
+  }
+  return count;
+}
+
+function replaceLastOccurrences(text: string, char: string, replacement: string, n: number): string {
+  if (n <= 0) return text;
+  const chars = text.split('');
+  let count = 0;
+  for (let i = chars.length - 1; i >= 0 && count < n; i--) {
+    if (chars[i] === char) {
+      chars[i] = replacement;
+      count++;
+    }
+  }
+  return chars.join('');
+}
+
+function replaceFirstOccurrences(
+  text: string,
+  char: string,
+  replacement: string,
+  n: number,
+): string {
+  if (n <= 0) return text;
+  let count = 0;
+  return text
+    .split('')
+    .map((c) => {
+      if (c === char && count < n) {
+        count++;
+        return replacement;
+      }
+      return c;
+    })
+    .join('');
+}
+
+function fixQuotePair(text: string, open: string, close: string): string {
+  if (areQuotesProperlyNested(text, open, close)) return text;
+
+  const openCount = countOccurrences(text, open);
+  const closeCount = countOccurrences(text, close);
+
+  if (openCount > closeCount) {
+    return replaceLastOccurrences(text, open, close, (openCount - closeCount) / 2);
+  }
+  if (closeCount > openCount) {
+    return replaceFirstOccurrences(text, close, open, (closeCount - openCount) / 2);
+  }
+  return text;
+}
+
 function fixMismatchedQuotes(text: string): string {
-  if (!text || typeof text !== 'string') {
-    return text;
-  }
-
-  let result = text;
-
-  // 检查双引号「」是否已正确嵌套，如果是则跳过修复
-  if (areQuotesProperlyNested(result, '「', '」')) {
-    // 引号已正确嵌套，不需要修复
-  } else {
-    // 修复双引号「」的不匹配
-    // 统计开引号和闭引号的数量
-    const openDoubleQuotes = (result.match(/「/g) || []).length;
-    const closeDoubleQuotes = (result.match(/」/g) || []).length;
-
-    // 如果开引号多于闭引号，将多余的最后一个开引号改为闭引号
-    if (openDoubleQuotes > closeDoubleQuotes) {
-      const diff = openDoubleQuotes - closeDoubleQuotes;
-      // 从后往前找到最后一个开引号，将其改为闭引号
-      let count = 0;
-      const chars = result.split('');
-      // 从后往前遍历，找到需要修改的开引号
-      for (let i = chars.length - 1; i >= 0 && count < diff / 2; i--) {
-        if (chars[i] === '「') {
-          chars[i] = '」';
-          count++;
-        }
-      }
-      result = chars.join('');
-    }
-    // 如果闭引号多于开引号，将多余的第一个闭引号改为开引号
-    else if (closeDoubleQuotes > openDoubleQuotes) {
-      const diff = closeDoubleQuotes - openDoubleQuotes;
-      // 从前往后找到第一个闭引号，将其改为开引号
-      let count = 0;
-      result = result
-        .split('')
-        .map((char) => {
-          if (char === '」' && count < diff / 2) {
-            count++;
-            return '「';
-          }
-          return char;
-        })
-        .join('');
-    }
-  }
-
-  // 检查单引号『』是否已正确嵌套，如果是则跳过修复
-  if (areQuotesProperlyNested(result, '『', '』')) {
-    // 引号已正确嵌套，不需要修复
-  } else {
-    // 修复单引号『』的不匹配
-    const openSingleQuotes = (result.match(/『/g) || []).length;
-    const closeSingleQuotes = (result.match(/』/g) || []).length;
-
-    // 如果开引号多于闭引号，将多余的最后一个开引号改为闭引号
-    if (openSingleQuotes > closeSingleQuotes) {
-      const diff = openSingleQuotes - closeSingleQuotes;
-      let count = 0;
-      const chars = result.split('');
-      for (let i = chars.length - 1; i >= 0; i--) {
-        if (chars[i] === '『' && count < diff / 2) {
-          chars[i] = '』';
-          count++;
-        }
-      }
-      result = chars.join('');
-    }
-    // 如果闭引号多于开引号，将多余的第一个闭引号改为开引号
-    else if (closeSingleQuotes > openSingleQuotes) {
-      const diff = closeSingleQuotes - openSingleQuotes;
-      let count = 0;
-      result = result
-        .split('')
-        .map((char) => {
-          if (char === '』' && count < diff / 2) {
-            count++;
-            return '『';
-          }
-          return char;
-        })
-        .join('');
-    }
-  }
-
+  if (!text || typeof text !== 'string') return text;
+  let result = fixQuotePair(text, '「', '」');
+  result = fixQuotePair(result, '『', '』');
   return result;
 }
 

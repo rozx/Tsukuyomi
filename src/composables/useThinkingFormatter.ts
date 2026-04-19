@@ -55,6 +55,47 @@ interface BracketMarkerMatch {
   content: string;
 }
 
+function findMatchingCloseBracket(message: string, from: number): number {
+  let inString = false;
+  let quoteChar = '';
+  let escaped = false;
+  let bracketDepth = 0;
+
+  for (let i = from; i < message.length; i++) {
+    const char = message[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (inString) {
+      if (char === quoteChar) {
+        inString = false;
+        quoteChar = '';
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      inString = true;
+      quoteChar = char;
+      continue;
+    }
+    if (char === '[') {
+      bracketDepth++;
+      continue;
+    }
+    if (char === ']') {
+      if (bracketDepth === 0) return i;
+      bracketDepth--;
+    }
+  }
+
+  return -1;
+}
+
 function extractBracketBalancedMarkerMatches(
   message: string,
   prefix: string,
@@ -67,30 +108,9 @@ function extractBracketBalancedMarkerMatches(
     if (startIndex === -1) break;
 
     const contentStart = startIndex + prefix.length;
-    let i = contentStart;
-    let inString = false;
-    let quoteChar = '';
-    let escaped = false;
-    let bracketDepth = 0;
-    let closeIndex = -1;
-
-    for (; i < message.length; i++) {
-      const char = message[i];
-      if (escaped) { escaped = false; continue; }
-      if (char === '\\') { escaped = true; continue; }
-      if (inString) {
-        if (char === quoteChar) { inString = false; quoteChar = ''; }
-        continue;
-      }
-      if (char === '"' || char === "'") { inString = true; quoteChar = char; continue; }
-      if (char === '[') { bracketDepth++; continue; }
-      if (char === ']') {
-        if (bracketDepth === 0) { closeIndex = i; break; }
-        bracketDepth--;
-      }
-    }
-
+    const closeIndex = findMatchingCloseBracket(message, contentStart);
     if (closeIndex === -1) break;
+
     matches.push({
       index: startIndex,
       fullText: message.slice(startIndex, closeIndex + 1),

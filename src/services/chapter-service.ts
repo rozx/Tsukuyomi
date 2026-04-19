@@ -44,6 +44,61 @@ function hasParagraphContent(paragraph: Paragraph | null | undefined): boolean {
   return !!paragraph?.text && paragraph.text.trim().length > 0;
 }
 
+function shouldPreserveExistingContent(existing: Chapter, incoming: Chapter): boolean {
+  if (existing.content === undefined || existing.content === null) return false;
+  if (incoming.content === undefined || incoming.content === null) return true;
+  return Array.isArray(incoming.content) && incoming.content.length === 0;
+}
+
+function applyChapterReplace(existing: Chapter, incoming: Chapter): Chapter {
+  const lastUpdated = incoming.lastUpdated ?? existing.lastUpdated;
+  const updated: Chapter = {
+    ...incoming,
+    id: existing.id,
+    createdAt: existing.createdAt,
+    lastEdited: new Date(),
+  };
+  if (lastUpdated !== undefined) updated.lastUpdated = lastUpdated;
+  return updated;
+}
+
+function applyChapterMerge(existing: Chapter, incoming: Chapter): Chapter {
+  const lastUpdated = incoming.lastUpdated ?? existing.lastUpdated;
+  const preserveContent = shouldPreserveExistingContent(existing, incoming);
+  const updated: Chapter = {
+    ...existing,
+    ...incoming,
+    id: existing.id,
+    createdAt: existing.createdAt,
+    lastEdited: new Date(),
+    ...(preserveContent ? { content: existing.content } : {}),
+  };
+  if (lastUpdated !== undefined) updated.lastUpdated = lastUpdated;
+  return updated;
+}
+
+function mergeChapterInto(
+  mergedChapters: Chapter[],
+  newChapter: Chapter,
+  updateStrategy: 'replace' | 'merge',
+): void {
+  if (!newChapter.webUrl) {
+    mergedChapters.push(newChapter);
+    return;
+  }
+  const existingIndex = mergedChapters.findIndex((ch) => ch.webUrl === newChapter.webUrl);
+  if (existingIndex < 0) {
+    mergedChapters.push(newChapter);
+    return;
+  }
+  const existing = mergedChapters[existingIndex];
+  if (!existing) return;
+  mergedChapters[existingIndex] =
+    updateStrategy === 'replace'
+      ? applyChapterReplace(existing, newChapter)
+      : applyChapterMerge(existing, newChapter);
+}
+
 /**
  * 统计文本末尾的换行符数量（统一按 LF 计数）
  * @param text 输入文本
@@ -298,68 +353,9 @@ export class ChapterService {
     updateStrategy: 'replace' | 'merge' = 'merge',
   ): Chapter[] {
     const mergedChapters = [...existingChapters];
-
-    newChapters.forEach((newChapter) => {
-      if (newChapter.webUrl) {
-        // 查找同 URL 的现有章节
-        const existingChapterIndex = mergedChapters.findIndex(
-          (ch) => ch.webUrl === newChapter.webUrl,
-        );
-
-        if (existingChapterIndex >= 0) {
-          // 章节已存在，更新内容
-          const existingChapter = mergedChapters[existingChapterIndex];
-          if (existingChapter) {
-            // 保留 lastUpdated：如果新章节有 lastUpdated 则使用新的，否则保留原有的
-            const lastUpdated = newChapter.lastUpdated ?? existingChapter.lastUpdated;
-
-            if (updateStrategy === 'replace') {
-              // 替换整个章节
-              const updatedChapter: Chapter = {
-                ...newChapter,
-                id: existingChapter.id, // 保留原有 ID
-                createdAt: existingChapter.createdAt, // 保留原有的创建时间
-                lastEdited: new Date(), // 内容更新，更新时间
-              };
-              if (lastUpdated !== undefined) {
-                updatedChapter.lastUpdated = lastUpdated;
-              }
-              mergedChapters[existingChapterIndex] = updatedChapter;
-            } else {
-              // 合并章节属性
-              // 重要：保留现有章节的 content，如果新章节没有 content 或 content 为空
-              const preserveContent =
-                existingChapter.content !== undefined &&
-                existingChapter.content !== null &&
-                (newChapter.content === undefined ||
-                  newChapter.content === null ||
-                  (Array.isArray(newChapter.content) && newChapter.content.length === 0));
-
-              const updatedChapter: Chapter = {
-                ...existingChapter,
-                ...newChapter,
-                id: existingChapter.id, // 保留原有 ID
-                createdAt: existingChapter.createdAt, // 保留原有的创建时间
-                lastEdited: new Date(), // 内容更新，更新时间
-                // 如果新章节没有内容，保留原有内容
-                ...(preserveContent ? { content: existingChapter.content } : {}),
-              };
-              if (lastUpdated !== undefined) {
-                updatedChapter.lastUpdated = lastUpdated;
-              }
-              mergedChapters[existingChapterIndex] = updatedChapter;
-            }
-          }
-        } else {
-          // 章节不存在，添加新章节（保留 newChapter 的 lastEdited，应该等于 createdAt）
-          mergedChapters.push(newChapter);
-        }
-      } else {
-        // 没有 URL 的章节，直接添加
-        mergedChapters.push(newChapter);
-      }
-    });
-
+    for (const newChapter of newChapters) {
+      mergeChapterInto(mergedChapters, newChapter, updateStrategy);
+    }
     return mergedChapters;
   }
 
