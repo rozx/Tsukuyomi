@@ -13,6 +13,98 @@ import type { DeletionRecord } from 'src/models/sync';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasNovelChangesToUpload(localNovels: any[], remoteNovels: any[] | undefined): boolean {
+  const remote = remoteNovels || [];
+  if (localNovels.length !== remote.length) return true;
+  const remoteMap = new Map(remote.map((n) => [n.id, n]));
+  for (const localNovel of localNovels) {
+    const remoteNovel = remoteMap.get(localNovel.id);
+    if (!remoteNovel) return true;
+    if (isTimeDifferent(localNovel.lastEdited, remoteNovel.lastEdited)) return true;
+  }
+  return false;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasAiModelChangesToUpload(localModels: any[], remoteModels: any[] | undefined): boolean {
+  const remote = remoteModels || [];
+  if (localModels.length !== remote.length) return true;
+  const remoteMap = new Map(remote.map((m) => [m.id, m]));
+  for (const localModel of localModels) {
+    const remoteModel = remoteMap.get(localModel.id);
+    if (!remoteModel) return true;
+    const localForCompare = omit(localModel, 'apiKey', 'lastEdited');
+    const remoteForCompare = omit(remoteModel, 'apiKey', 'lastEdited');
+    if (!isEqual(localForCompare, remoteForCompare)) return true;
+  }
+  return false;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function prepareAppSettingsForCompare(settings: any): any {
+  const omitted = omit(settings, 'lastEdited');
+  if (omitted.syncs && Array.isArray(omitted.syncs)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    omitted.syncs = omitted.syncs.map((sync: any) =>
+      omit(
+        sync,
+        'lastSyncTime',
+        'lastSyncedModelIds',
+        'lastRemoteUpdatedAt',
+        'deletedNovelIds',
+        'deletedModelIds',
+        'deletedCoverIds',
+        'deletedCoverUrls',
+        'deletedMemoryIds',
+      ),
+    );
+  }
+  return omitted;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasAppSettingsChangesToUpload(local: any, remote: any): boolean {
+  if (remote && !isTimeDifferent(local.lastEdited, remote.lastEdited)) return false;
+  const localForCompare = prepareAppSettingsForCompare(local);
+  const remoteForCompare = prepareAppSettingsForCompare(remote || {});
+  if (isEqual(localForCompare, remoteForCompare)) return false;
+  if (!remote && Object.keys(local).length > 0) return true;
+  return !!remote;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasCoverHistoryChangesToUpload(localCovers: any[], remoteCovers: any[] | undefined): boolean {
+  const remote = remoteCovers || [];
+  if (localCovers.length !== remote.length) return true;
+  const remoteMap = new Map(remote.map((c) => [c.id, c]));
+  for (const localCover of localCovers) {
+    const remoteCover = remoteMap.get(localCover.id);
+    if (!remoteCover) return true;
+    if (isTimeDifferent(localCover.addedAt, remoteCover.addedAt)) return true;
+  }
+  return false;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hasMemoryChangesToUpload(localMemories: any[], remoteMemories: any[] | undefined): boolean {
+  const remote = remoteMemories || [];
+  if (localMemories.length !== remote.length) return true;
+  const remoteMap = new Map(remote.map((m) => [m.id, m]));
+  for (const localMemory of localMemories) {
+    const remoteMemory = remoteMap.get(localMemory.id);
+    if (!remoteMemory) return true;
+    if (isTimeDifferent(localMemory.lastAccessedAt, remoteMemory.lastAccessedAt)) return true;
+    if (
+      localMemory.content !== remoteMemory.content ||
+      localMemory.summary !== remoteMemory.summary
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 
 /**
  * 合并段落翻译
@@ -1935,110 +2027,11 @@ export class SyncDataService {
       memories?: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     },
   ): boolean {
-    // 1. 检查书籍
-    if (local.novels.length !== (remote.novels || []).length) return true;
-
-    const remoteNovelMap = new Map((remote.novels || []).map((n) => [n.id, n]));
-    for (const localNovel of local.novels) {
-      const remoteNovel = remoteNovelMap.get(localNovel.id);
-      if (!remoteNovel) return true; // 本地有新书籍
-
-      // 检查更新时间
-      if (isTimeDifferent(localNovel.lastEdited, remoteNovel.lastEdited)) {
-        return true;
-      }
-
-    }
-
-    // 2. 检查 AI 模型
-    if (local.aiModels.length !== (remote.aiModels || []).length) return true;
-
-    const remoteModelMap = new Map((remote.aiModels || []).map((m) => [m.id, m]));
-    for (const localModel of local.aiModels) {
-      const remoteModel = remoteModelMap.get(localModel.id);
-      if (!remoteModel) return true;
-
-      // 比较内容（使用 lodash 深度比较，排除 apiKey 和 lastEdited）
-      const localForCompare = omit(localModel, 'apiKey', 'lastEdited');
-      const remoteForCompare = omit(remoteModel, 'apiKey', 'lastEdited');
-      if (!isEqual(localForCompare, remoteForCompare)) {
-        return true;
-      }
-    }
-
-    // 3. 检查设置（使用 lodash 深度比较，排除 lastEdited）
-    // 还需要排除 syncs 中的 lastSyncTime 和 lastSyncedModelIds，因为每次同步都会更新
-    // 如果远程有设置且时间戳相同，则认为没有变更（避免因 merge 导致的差异触发上传）
-    if (
-      !remote.appSettings ||
-      isTimeDifferent(local.appSettings.lastEdited, remote.appSettings.lastEdited)
-    ) {
-      const prepareSettingsForCompare = (settings: any) => {
-        const omitted = omit(settings, 'lastEdited');
-        if (omitted.syncs && Array.isArray(omitted.syncs)) {
-          omitted.syncs = omitted.syncs.map((sync: any) =>
-            omit(
-              sync,
-              'lastSyncTime',
-              'lastSyncedModelIds',
-              'lastRemoteUpdatedAt',
-              // 删除记录在 applyDownloadedData 中会被合并/清理，
-              // 导致本地与远程出现差异，不应作为"需要上传"的判断依据
-              'deletedNovelIds',
-              'deletedModelIds',
-              'deletedCoverIds',
-              'deletedCoverUrls',
-              'deletedMemoryIds',
-            ),
-          );
-        }
-        return omitted;
-      };
-
-      const localSettingsForCompare = prepareSettingsForCompare(local.appSettings);
-      const remoteSettingsForCompare = prepareSettingsForCompare(remote.appSettings || {});
-
-      if (!isEqual(localSettingsForCompare, remoteSettingsForCompare)) {
-        if (!remote.appSettings && Object.keys(local.appSettings).length > 0) return true;
-        if (remote.appSettings) return true;
-      }
-    }
-
-    // 4. 检查封面历史
-    if (local.coverHistory.length !== (remote.coverHistory || []).length) return true;
-
-    const remoteCoverMap = new Map((remote.coverHistory || []).map((c) => [c.id, c]));
-    for (const localCover of local.coverHistory) {
-      const remoteCover = remoteCoverMap.get(localCover.id);
-      if (!remoteCover) return true;
-
-      if (isTimeDifferent(localCover.addedAt, remoteCover.addedAt)) {
-        return true;
-      }
-    }
-
-    // 5. 检查 Memory
-    if (local.memories.length !== (remote.memories || []).length) return true;
-
-    const remoteMemoryMap = new Map((remote.memories || []).map((m) => [m.id, m]));
-    for (const localMemory of local.memories) {
-      const remoteMemory = remoteMemoryMap.get(localMemory.id);
-      if (!remoteMemory) return true;
-
-      // 比较 lastAccessedAt 时间
-      if (isTimeDifferent(localMemory.lastAccessedAt, remoteMemory.lastAccessedAt)) {
-        return true;
-      }
-
-      // 比较内容和摘要（如果时间相同）
-      if (
-        localMemory.content !== remoteMemory.content ||
-        localMemory.summary !== remoteMemory.summary
-      ) {
-        return true;
-      }
-    }
-
+    if (hasNovelChangesToUpload(local.novels, remote.novels)) return true;
+    if (hasAiModelChangesToUpload(local.aiModels, remote.aiModels)) return true;
+    if (hasAppSettingsChangesToUpload(local.appSettings, remote.appSettings)) return true;
+    if (hasCoverHistoryChangesToUpload(local.coverHistory, remote.coverHistory)) return true;
+    if (hasMemoryChangesToUpload(local.memories, remote.memories)) return true;
     return false;
   }
 

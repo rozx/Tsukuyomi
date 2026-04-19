@@ -89,6 +89,179 @@ export function useChatSending(
     reset: resetInternalSummarization,
   } = useInternalSummarization(messages, scrollToBottom, chatSessionsStore);
 
+  const enforceMessageLimitBeforeSend = async (): Promise<{
+    aborted: boolean;
+    uiPerformedSummarization: boolean;
+  }> => {
+    const sessionForLimit = chatSessionsStore.currentSession;
+    let messageCountSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionForLimit);
+    const willExceedLimit = messageCountSinceSummary + 1 >= MESSAGE_LIMIT_THRESHOLD;
+    const willReachLimit = messageCountSinceSummary + 1 >= MAX_MESSAGES_PER_SESSION;
+    if (!(willExceedLimit || willReachLimit) || messages.value.length === 0) {
+      return { aborted: false, uiPerformedSummarization: false };
+    }
+    const summarizationResult = await chatSummarizer.performUISummarization(
+      willReachLimit,
+      (val) => (isSending.value = val),
+    );
+    if (!summarizationResult.success) {
+      return { aborted: willReachLimit, uiPerformedSummarization: false };
+    }
+    const updatedSession = chatSessionsStore.currentSession;
+    messageCountSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(updatedSession);
+    if (messageCountSinceSummary + 1 >= MAX_MESSAGES_PER_SESSION) {
+      toast.add({
+        severity: 'warn',
+        summary: '会话消息数仍达上限',
+        detail: '请创建新会话继续对话',
+        life: 3000,
+      });
+      return { aborted: true, uiPerformedSummarization: true };
+    }
+    return { aborted: false, uiPerformedSummarization: true };
+  };
+
+  const pushUserAndAssistantPlaceholder = (
+    message: string,
+  ): { assistantMessageIdRef: { value: string } } => {
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: message,
+      timestamp: Date.now(),
+    };
+    messages.value.push(userMessage);
+    inputMessage.value = '';
+    isSending.value = true;
+    scrollToBottom();
+    const assistantMessageIdRef = { value: (Date.now() + 1).toString() };
+    messages.value.push({
+      id: assistantMessageIdRef.value,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+    });
+    return { assistantMessageIdRef };
+  };
+
+  const buildChatCallbacks = (assistantMessageIdRef: { value: string }, sessionIdForSummary: string | undefined) => ({
+    onTaskCreated: (id: string) => {
+      currentTaskId.value = id;
+    },
+    onSummarizingStart: () => {
+      handleSummarizingStart(assistantMessageIdRef, sessionIdForSummary);
+    },
+    onSummarizingEnd: () => {
+      handleSummarizingEnd(assistantMessageIdRef);
+    },
+    onChunk: (chunk: { text?: string }) => {
+      if (isSummarizingInternally.value) return;
+      const msg = messages.value.find((m) => m.id === assistantMessageIdRef.value);
+      if (msg && chunk.text) {
+        msg.content += chunk.text;
+        scrollToBottomThrottled();
+      }
+    },
+    onThinkingChunk: (text: string) => {
+      if (isSummarizingInternally.value) return;
+      const msg = messages.value.find((m) => m.id === assistantMessageIdRef.value);
+      if (!msg) return;
+      if (!msg.thinkingProcess) msg.thinkingProcess = '';
+      msg.thinkingProcess += text;
+      thinkingDisplay.setDisplayedThinkingImmediatelyIfEmpty(
+        assistantMessageIdRef.value,
+        msg.thinkingProcess,
+      );
+      thinkingDisplay.updateDisplayedThinkingProcess(
+        assistantMessageIdRef.value,
+        msg.thinkingProcess,
+      );
+      thinkingDisplay.markThinkingActive(assistantMessageIdRef.value);
+      if (thinkingDisplay.thinkingExpanded.value.get(assistantMessageIdRef.value)) {
+        thinkingDisplay.requestScrollThinkingToBottom(assistantMessageIdRef.value);
+      }
+      scrollToBottomThrottled();
+    },
+    onToast: (m: Parameters<typeof toast.add>[0]) => {
+      toast.add(m);
+    },
+    onAction: (action: Parameters<typeof handleAction>[0]) => {
+      handleAction(action, assistantMessageIdRef);
+    },
+  });
+
+  const persistChatResult = (chatResult: Awaited<ReturnType<typeof AssistantService.chat>>) => {
+    const finalSession = chatSessionsStore.currentSession;
+    if (!finalSession) return;
+    if (chatResult.needsReset && chatResult.summary) {
+      chatSessionsStore.summarizeAndReset(chatResult.summary);
+    }
+    if (chatResult.toolCallTokenOverhead !== undefined) {
+      chatSessionsStore.updateToolCallTokenOverhead(
+        finalSession.id,
+        chatResult.toolCallTokenOverhead,
+      );
+    }
+    if (chatResult.messageHistory && !chatResult.needsReset) {
+      const apiMessages: ApiMessage[] = chatResult.messageHistory
+        .filter((msg) => msg.role !== 'system')
+        .map((msg) => ({
+          role: msg.role as 'user' | 'assistant' | 'tool',
+          content: msg.content ?? null,
+          ...(msg.name ? { name: msg.name } : {}),
+          ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
+          ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
+          ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}),
+        }));
+      const serialized = JSON.stringify(apiMessages);
+      if (serialized.length <= 512_000) {
+        chatSessionsStore.updateApiMessageHistory(finalSession.id, apiMessages);
+      } else {
+        console.warn(
+          `[ChatSending] API 消息历史过大 (${Math.round(serialized.length / 1024)}KB)，跳过保存`,
+        );
+      }
+    }
+  };
+
+  const handleChatSendError = (error: unknown, assistantMessageIdRef: { value: string }) => {
+    const isCancelled = isCancelledError(error);
+    if (error instanceof Error && error.message === 'Task aborted') {
+      // ignore
+    } else if (!isCancelled) {
+      console.error('Failed to send message:', error);
+      toast.add({
+        severity: 'error',
+        summary: '发送失败',
+        detail: error instanceof Error ? error.message : 'Unknown error',
+        life: 5000,
+      });
+    }
+    const index = messages.value.findIndex((m) => m.id === assistantMessageIdRef.value);
+    if (index !== -1) {
+      const msg = messages.value[index];
+      if (msg && !msg.content && !msg.thinkingProcess) {
+        messages.value.splice(index, 1);
+      }
+    }
+  };
+
+  const finalizeChatSend = (assistantMessageIdRef: { value: string }) => {
+    isSending.value = false;
+    currentTaskId.value = null;
+    if (thinkingDisplay.setThinkingActive) {
+      thinkingDisplay.setThinkingActive(assistantMessageIdRef.value, false);
+    }
+    resetInternalSummarization();
+    const sessionAfter = chatSessionsStore.currentSession;
+    if (!sessionAfter) return;
+    chatSessionsStore.updateSessionMessages(sessionAfter.id, messages.value);
+    const msgsSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionAfter);
+    if (msgsSinceSummary >= MESSAGE_LIMIT_THRESHOLD) {
+      void chatSummarizer.performUISummarization(false);
+    }
+  };
+
   const sendMessage = async () => {
     const message = inputMessage.value.trim();
     if (!message || isSending.value) return;
@@ -103,63 +276,10 @@ export function useChatSending(
       return;
     }
 
-    // 检查是否达到限制（在添加新消息之前）
-    const sessionForLimit = chatSessionsStore.currentSession;
-    let messageCountSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionForLimit);
-    const willExceedLimit = messageCountSinceSummary + 1 >= MESSAGE_LIMIT_THRESHOLD;
-    const willReachLimit = messageCountSinceSummary + 1 >= MAX_MESSAGES_PER_SESSION;
+    const { aborted, uiPerformedSummarization } = await enforceMessageLimitBeforeSend();
+    if (aborted) return;
 
-    let uiPerformedSummarization = false;
-
-    if ((willExceedLimit || willReachLimit) && messages.value.length > 0) {
-      const summarizationResult = await chatSummarizer.performUISummarization(
-        willReachLimit,
-        (val) => (isSending.value = val),
-      );
-
-      if (!summarizationResult.success) {
-        if (willReachLimit) {
-          return;
-        }
-      } else {
-        uiPerformedSummarization = true;
-        const updatedSession = chatSessionsStore.currentSession;
-        messageCountSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(updatedSession);
-        if (messageCountSinceSummary + 1 >= MAX_MESSAGES_PER_SESSION) {
-          toast.add({
-            severity: 'warn',
-            summary: '会话消息数仍达上限',
-            detail: '请创建新会话继续对话',
-            life: 3000,
-          });
-          return;
-        }
-      }
-    }
-
-    // 添加用户消息
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: message,
-      timestamp: Date.now(),
-    };
-    messages.value.push(userMessage);
-    inputMessage.value = '';
-    isSending.value = true;
-    scrollToBottom();
-
-    // 添加占位符助手消息
-    const assistantMessageIdRef = { value: (Date.now() + 1).toString() };
-
-    const assistantMessage: ChatMessage = {
-      id: assistantMessageIdRef.value,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-    };
-    messages.value.push(assistantMessage);
-
+    const { assistantMessageIdRef } = pushUserAndAssistantPlaceholder(message);
     const currentSession = chatSessionsStore.currentSession;
     const sessionId = currentSession?.id ?? null;
     const sessionSummary = currentSession?.summary;
@@ -167,147 +287,19 @@ export function useChatSending(
     try {
       const messageHistory = buildAssistantMessageHistory(currentSession);
       resetInternalSummarization();
-
       const chatResult = await AssistantService.chat(assistantModel.value, message, {
         ...(sessionSummary ? { sessionSummary } : {}),
         ...(messageHistory ? { messageHistory: messageHistory as ChatMessage[] } : {}),
         ...(sessionId ? { sessionId } : {}),
         ...(uiPerformedSummarization ? { skipTokenLimitSummarization: true } : {}),
-        aiProcessingStore, // Pass the store object for internal task management
-        onTaskCreated: (id) => {
-          currentTaskId.value = id;
-        },
-        onSummarizingStart: () => {
-          handleSummarizingStart(assistantMessageIdRef, currentSession?.id);
-        },
-        onSummarizingEnd: () => {
-          handleSummarizingEnd(assistantMessageIdRef);
-        },
-        onChunk: (chunk) => {
-          if (isSummarizingInternally.value) {
-            return;
-          }
-          const msg = messages.value.find((m) => m.id === assistantMessageIdRef.value);
-          if (msg) {
-            if (chunk.text) {
-              msg.content += chunk.text;
-              scrollToBottomThrottled();
-            }
-          }
-        },
-        onThinkingChunk: (text) => {
-          if (isSummarizingInternally.value) {
-            return;
-          }
-          const msg = messages.value.find((m) => m.id === assistantMessageIdRef.value);
-          if (msg) {
-            if (!msg.thinkingProcess) {
-              msg.thinkingProcess = '';
-            }
-            msg.thinkingProcess += text;
-            thinkingDisplay.setDisplayedThinkingImmediatelyIfEmpty(
-              assistantMessageIdRef.value,
-              msg.thinkingProcess,
-            );
-            thinkingDisplay.updateDisplayedThinkingProcess(
-              assistantMessageIdRef.value,
-              msg.thinkingProcess,
-            );
-            thinkingDisplay.markThinkingActive(assistantMessageIdRef.value);
-            if (thinkingDisplay.thinkingExpanded.value.get(assistantMessageIdRef.value)) {
-              thinkingDisplay.requestScrollThinkingToBottom(assistantMessageIdRef.value);
-            }
-            scrollToBottomThrottled();
-          }
-        },
-        onToast: (message) => {
-          toast.add(message);
-        },
-        onAction: (action) => {
-          handleAction(action, assistantMessageIdRef);
-        },
+        aiProcessingStore,
+        ...buildChatCallbacks(assistantMessageIdRef, currentSession?.id),
       });
-
-      // 处理内部摘要后的会话状态更新
-      // 注意：摘要消息的显示更新已在 onSummarizingEnd 回调中完成
-      const finalSession = chatSessionsStore.currentSession;
-      if (finalSession && chatResult.needsReset && chatResult.summary) {
-        // 如果服务返回了摘要，更新会话的摘要状态
-        chatSessionsStore.summarizeAndReset(chatResult.summary);
-      }
-
-      // 更新工具调用 token 开销，使 UI 进度条反映真实的上下文占用
-      if (finalSession && chatResult.toolCallTokenOverhead !== undefined) {
-        chatSessionsStore.updateToolCallTokenOverhead(
-          finalSession.id,
-          chatResult.toolCallTokenOverhead,
-        );
-      }
-
-      // 保存完整的 API 消息历史（包含工具调用和结果），确保下轮对话上下文连续
-      if (finalSession && chatResult.messageHistory && !chatResult.needsReset) {
-        const apiMessages: ApiMessage[] = chatResult.messageHistory
-          .filter((msg) => msg.role !== 'system')
-          .map((msg) => ({
-            role: msg.role as 'user' | 'assistant' | 'tool',
-            content: msg.content ?? null,
-            ...(msg.name ? { name: msg.name } : {}),
-            ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
-            ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
-            ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}),
-          }));
-        // 防止 localStorage 溢出：API 消息（含工具结果）可能很大，限制在 500KB 以内
-        const serialized = JSON.stringify(apiMessages);
-        if (serialized.length <= 512_000) {
-          chatSessionsStore.updateApiMessageHistory(finalSession.id, apiMessages);
-        } else {
-          // 超出限制时不保存，下轮将回退到基于 UI 消息的历史重建
-          console.warn(
-            `[ChatSending] API 消息历史过大 (${Math.round(serialized.length / 1024)}KB)，跳过保存`,
-          );
-        }
-      }
+      persistChatResult(chatResult);
     } catch (error) {
-      const isCancelled = isCancelledError(error);
-      if (error instanceof Error && error.message === 'Task aborted') {
-        // Ignore
-      } else if (!isCancelled) {
-        console.error('Failed to send message:', error);
-        toast.add({
-          severity: 'error',
-          summary: '发送失败',
-          detail: error instanceof Error ? error.message : 'Unknown error',
-          life: 5000,
-        });
-      }
-
-      const index = messages.value.findIndex((m) => m.id === assistantMessageIdRef.value);
-      if (index !== -1) {
-        const message = messages.value[index];
-        if (message && !message.content && !message.thinkingProcess) {
-          messages.value.splice(index, 1);
-        }
-      }
+      handleChatSendError(error, assistantMessageIdRef);
     } finally {
-      isSending.value = false;
-      currentTaskId.value = null;
-
-      if (thinkingDisplay.setThinkingActive) {
-        thinkingDisplay.setThinkingActive(assistantMessageIdRef.value, false);
-      }
-      resetInternalSummarization();
-
-      const sessionAfter = chatSessionsStore.currentSession;
-      if (sessionAfter) {
-        chatSessionsStore.updateSessionMessages(sessionAfter.id, messages.value);
-        // 响应完成后，检查是否接近消息限制，主动执行摘要以便下次发送时不被阻塞
-        // 使用 MESSAGE_LIMIT_THRESHOLD 作为阈值，避免过早触发摘要
-        const msgsSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionAfter);
-        if (msgsSinceSummary >= MESSAGE_LIMIT_THRESHOLD) {
-          // 不传递 updateIsSending：这是 fire-and-forget 摘要，不应影响发送状态
-          void chatSummarizer.performUISummarization(false);
-        }
-      }
+      finalizeChatSend(assistantMessageIdRef);
     }
   };
 
