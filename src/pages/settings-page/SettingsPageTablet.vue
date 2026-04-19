@@ -6,14 +6,14 @@ import ApiKeysSettingsTab from 'src/components/settings/ApiKeysSettingsTab.vue';
 import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
 import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
 import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
-import MemoryInjectionTab from 'src/components/settings/MemoryInjectionTab.vue';
+import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
 
 const ctx = injectSettingsPage();
 
 // 将 tab value 映射到对应的面板组件。Electron 与非 Electron 顺序略有差异，
 // 已由 composable 的 `tabs` 列表处理，本文件只需按 value 字符串分派。
-// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=爬虫 · 5=导入导出 · 6=记忆注入
-// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=爬虫 · 4=导入导出 · 5=记忆注入
+// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=爬虫 · 5=导入导出 · 6=本地嵌入
+// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=爬虫 · 4=导入导出 · 5=本地嵌入
 function panelFor(value: string) {
   if (ctx.isElectron.value) {
     if (value === '0') return AIModelSettingsTab;
@@ -21,7 +21,7 @@ function panelFor(value: string) {
     if (value === '2') return SyncSettingsTab;
     if (value === '3') return ScraperSettingsTab;
     if (value === '4') return ImportExportTab;
-    if (value === '5') return MemoryInjectionTab;
+    if (value === '5') return EmbeddingSettingsTab;
   } else {
     if (value === '0') return AIModelSettingsTab;
     if (value === '1') return ProxySettingsTab;
@@ -29,7 +29,7 @@ function panelFor(value: string) {
     if (value === '3') return SyncSettingsTab;
     if (value === '4') return ScraperSettingsTab;
     if (value === '5') return ImportExportTab;
-    if (value === '6') return MemoryInjectionTab;
+    if (value === '6') return EmbeddingSettingsTab;
   }
   return AIModelSettingsTab;
 }
