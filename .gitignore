@@ -40,3 +40,6 @@ yarn-error.log*
 
 # Playwright MCP artifacts
 .playwright-mcp/
+
+# Fallow local cache
+.fallow/

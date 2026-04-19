@@ -21,6 +21,7 @@ bun run build:electron   # 构建 Electron 桌面应用
 # 代码质量 (修改后必须运行)
 bun run lint             # ESLint 检查
 bun run type-check       # TypeScript 类型检查 (vue-tsc --noEmit)
+bun run quality-check    # Fallow 代码质量检查 (bunx fallow)
 bun run format           # Prettier 格式化
 
 # 测试
@@ -30,7 +31,7 @@ bun test -t "应该保存书籍"         # 按测试名匹配
 bun test --watch                   # 监听模式
 ```
 
-**修改代码后必须运行**: `bun run lint && bun run type-check`
+**修改代码后必须运行**: `bun run lint && bun run type-check && bun run quality-check`
 
 ---
 
@@ -256,7 +257,7 @@ AI: OpenAI SDK + Google Generative AI | 存储: IndexedDB (idb) + GitHub Gist (@
 ## 重要提醒
 
 1. **中文优先**: 代码注释、UI 文本、回答均用简体中文
-2. **修改后检查**: 必须运行 `bun run lint && bun run type-check`
+2. **修改后检查**: 必须运行 `bun run lint && bun run type-check && bun run quality-check`
 3. **遵循现有风格**: 创建新文件前参考现有实现
 4. **DRY 原则**: 不重复代码，提取可复用函数
 5. **路径别名**: 使用 `src/` 前缀导入模块 (tsconfig paths 配置)

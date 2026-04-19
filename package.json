@@ -14,6 +14,7 @@
   "scripts": {
     "lint": "bunx eslint --quiet .",
     "type-check": "bunx vue-tsc --noEmit",
+    "quality-check": "bunx fallow",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
     "test": "bun test",
     "bump": "bun scripts/bump-version.ts",
