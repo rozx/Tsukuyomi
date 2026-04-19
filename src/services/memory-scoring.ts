@@ -21,6 +21,20 @@ export const DEFAULT_CHAR_BUDGET = 2000;
 export const HARD_ITEM_CAP = 25;
 export const DEFAULT_MIN_SCORE = 0.38;
 
+/**
+ * 相对排名参数 — 解决"mean-pooled 多语言向量绝对余弦噪声地板高"导致的
+ * 分数膨胀问题(无关记忆也常 >0.5,所有记忆都越过绝对阈值)。
+ *
+ * 排序后:
+ * - 只保留前 DEFAULT_TOP_K 条(硬上限,防止"全员注入"的极端)
+ * - 再剔除分数比 top 低超过 DEFAULT_RELATIVE_DELTA 的条目(质量地板,
+ *   top 1 很弱时整体注入数量也相应减少,而不是强行凑满 K 条)
+ *
+ * 值按经验选定 — 可通过调用 filterByRelativeRanking 覆写。
+ */
+export const DEFAULT_TOP_K = 8;
+export const DEFAULT_RELATIVE_DELTA = 0.08;
+
 const RECENCY_HALF_LIFE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -141,12 +155,36 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
 }
 
 /**
+ * 相对排名过滤:先按 total 降序,再做两步收缩
+ *
+ * 1. 只保留 top-K(硬上限,防止"全员注入")
+ * 2. 在 top-K 内进一步剔除分数比 top 低超过 relativeDelta 的条目(质量地板)
+ *
+ * 这一步独立于 minScore 的绝对阈值 — 用于应对 mean-pooled 多语言向量
+ * 绝对余弦分布偏高、绝对阈值无区分度的情况。调用方可在此之前先用绝对
+ * 阈值滤掉噪声地板以下的条目,再交给这里做相对收缩。
+ */
+export function filterByRelativeRanking(
+  scoredMemories: ScoredMemory[],
+  topK: number = DEFAULT_TOP_K,
+  relativeDelta: number = DEFAULT_RELATIVE_DELTA,
+): ScoredMemory[] {
+  if (!scoredMemories || scoredMemories.length === 0) return [];
+  const sorted = [...scoredMemories].sort((a, b) => b.breakdown.total - a.breakdown.total);
+  const capped = sorted.slice(0, Math.max(0, topK));
+  if (capped.length === 0) return [];
+  const topScore = capped[0]!.breakdown.total;
+  const threshold = topScore - relativeDelta;
+  return capped.filter((s) => s.breakdown.total >= threshold);
+}
+
+/**
  * 贪心填充:按分数降序,遇到超预算/超上限/低于阈值即停止/跳过。
  *
- * - 先按 total 降序排序
- * - 过滤掉 total < minScore 的项
- * - 限制条目数 ≤ hardCap
- * - 按 summary 字符长度累加,超过 charBudget 则停止继续添加
+ * 流程:
+ * 1. 绝对阈值过滤(total >= minScore),滤掉噪声地板以下的条目
+ * 2. 相对排名收缩(top-K + relativeDelta 窗口),解决"无关记忆也分数高"的膨胀
+ * 3. 字符预算贪心填充
  *
  * 返回被选中的原始 Memory 数组(保持分数降序)。
  */
@@ -155,17 +193,20 @@ export function selectByBudget(
   charBudget: number = DEFAULT_CHAR_BUDGET,
   hardCap: number = HARD_ITEM_CAP,
   minScore: number = DEFAULT_MIN_SCORE,
+  topK: number = DEFAULT_TOP_K,
+  relativeDelta: number = DEFAULT_RELATIVE_DELTA,
 ): Memory[] {
   if (!scoredMemories || scoredMemories.length === 0) return [];
 
-  const filtered = scoredMemories
-    .filter((s) => s.breakdown.total >= minScore)
-    .sort((a, b) => b.breakdown.total - a.breakdown.total);
+  const absoluteFiltered = scoredMemories.filter((s) => s.breakdown.total >= minScore);
+  // 绝对阈值通过后再做相对排名收缩 — 即便 minScore 对当前分布无效,
+  // top-K + delta 窗口依然能把"全员膨胀"压回到少数几条真正突出的记忆
+  const ranked = filterByRelativeRanking(absoluteFiltered, topK, relativeDelta);
 
   const selected: Memory[] = [];
   let usedChars = 0;
 
-  for (const item of filtered) {
+  for (const item of ranked) {
     if (selected.length >= hardCap) break;
     const cost = (item.memory.summary ?? '').length;
     if (usedChars + cost > charBudget && selected.length > 0) break;

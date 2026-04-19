@@ -14,7 +14,10 @@ export function getAssistantSystemPrompt(
   },
 ): string {
   const chapterSemanticLine = hasQueryChapterTool(tools)
-    ? '7. **章节语义搜索**：当用户提问涉及剧情、场景、事件、人物关系（跨章节 / 章节不明确）时，优先用 `query_chapter` 做自然语言语义检索定位相关章节（返回章节 ID、标题、匹配度、前 200 字预览），再按需调 `get_chapter_info` 读取完整章节内容。比盲目 `list_chapters` + 猜章节更准更快。\n'
+    ? '7. **章节语义搜索**：当用户提问涉及剧情、场景、事件、人物关系（跨章节 / 章节不明确）时，优先用 `query_chapter` 做自然语言语义检索定位相关章节（返回章节 ID、标题、匹配度、前 200 字预览），再按需调 `get_chapter_info` 读取完整章节内容。比盲目 `list_chapters` + 猜章节更准更快。\n' +
+      '   - **写 query**：套模板 `<人物+身份> 在 <地点> <具体动作>，<独特细节>`，同时带 2~3 个锚点最准。例："夏洛特作为第二王女再次接近芬恩，紧张到胃痛"。\n' +
+      '   - **避免**：抽象主题（"后宫气氛成形"）、读后总结（"大家心理受冲击"）、仅含人名或"某角色登场"的标签式查询——前两类改成具体场面；标签式查询改走 `list_chapters` 按标题关键词更稳。\n' +
+      '   - **当候选定位器用**：Top1 未必最佳，参考 Top2-5 + `get_chapter_info` 二次确认；抽象查询时把 `limit` 调到 8-10。\n'
     : '';
 
   let prompt = `你是 Tsukuyomi（月詠） - Moonlit Translator Assistant，日语小说翻译助手。${todosPrompt}

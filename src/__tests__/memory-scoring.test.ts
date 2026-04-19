@@ -6,12 +6,19 @@ import {
   calculateSemanticSim,
   scoreMemory,
   selectByBudget,
+  filterByRelativeRanking,
   SCORING_WEIGHTS,
   FALLBACK_WEIGHTS,
   MAX_TOTAL_SCORE,
   DEFAULT_MIN_SCORE,
 } from 'src/services/memory-scoring';
 import type { ScoredMemory } from 'src/services/memory-scoring';
+
+// 部分测试只关心"绝对阈值 / 预算 / hardCap"这一层,不测相对排名收缩。
+// 用这两个参数关掉默认的 top-K + delta 收缩,避免 test fixture 的大幅分差
+// 被相对窗口过滤掉。新行为由专门的 describe 块覆盖。
+const LOOSE_TOPK = 999;
+const LOOSE_DELTA = 999;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -239,7 +246,7 @@ describe('memory-scoring - selectByBudget', () => {
 
   test('全部低于阈值返回空数组', () => {
     const list = [scored('a', 'x', 0.1), scored('b', 'y', 0.2)];
-    expect(selectByBudget(list, 2000, 25, 0.3)).toEqual([]);
+    expect(selectByBudget(list, 2000, 25, 0.3, LOOSE_TOPK, LOOSE_DELTA)).toEqual([]);
   });
 
   test('按分数降序返回', () => {
@@ -248,7 +255,7 @@ describe('memory-scoring - selectByBudget', () => {
       scored('high', 'bb', 5.0),
       scored('mid', 'cc', 3.0),
     ];
-    const result = selectByBudget(list, 2000, 25, 0.3);
+    const result = selectByBudget(list, 2000, 25, 0.3, LOOSE_TOPK, LOOSE_DELTA);
     expect(result.map((m) => m.id)).toEqual(['high', 'mid', 'low']);
   });
 
@@ -259,7 +266,7 @@ describe('memory-scoring - selectByBudget', () => {
       scored('c', 'z'.repeat(60), 3.0),
     ];
     // 预算 100,只能装第一条(60),第二条会使总量到 120 超预算
-    const result = selectByBudget(list, 100, 25, 0.3);
+    const result = selectByBudget(list, 100, 25, 0.3, LOOSE_TOPK, LOOSE_DELTA);
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('a');
   });
@@ -268,7 +275,7 @@ describe('memory-scoring - selectByBudget', () => {
     const list = Array.from({ length: 30 }, (_, i) =>
       scored(`m${i}`, 's', 5.0 - i * 0.1),
     );
-    const result = selectByBudget(list, 100_000, 5, 0.3);
+    const result = selectByBudget(list, 100_000, 5, 0.3, LOOSE_TOPK, LOOSE_DELTA);
     expect(result).toHaveLength(5);
     expect(result.map((m) => m.id)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4']);
   });
@@ -279,13 +286,93 @@ describe('memory-scoring - selectByBudget', () => {
       scored('b', 's', 0.25), // 低于默认阈值
       scored('c', 's', 1.0),
     ];
-    const result = selectByBudget(list, 2000, 25, 0.3);
+    const result = selectByBudget(list, 2000, 25, 0.3, LOOSE_TOPK, LOOSE_DELTA);
     expect(result.map((m) => m.id)).toEqual(['a', 'c']);
   });
 
   test('首条就超预算时仍选入(避免空返回)', () => {
     const list = [scored('big', 'x'.repeat(5000), 5.0)];
-    const result = selectByBudget(list, 100, 25, 0.3);
+    const result = selectByBudget(list, 100, 25, 0.3, LOOSE_TOPK, LOOSE_DELTA);
     expect(result).toHaveLength(1);
+  });
+
+  test('默认参数下 top-K + delta 收缩压制"全员高分"', () => {
+    // 模拟 mean-pooled 向量噪声地板高的场景:所有记忆分数都在 0.6+
+    // 但 top 1 明显高于其它 — 期望只留下靠近 top 的少数几条
+    const list = [
+      scored('a', 's', 0.85),
+      scored('b', 's', 0.82),
+      scored('c', 's', 0.70), // 距 top 0.15 > 默认 delta 0.08
+      scored('d', 's', 0.66),
+      scored('e', 's', 0.60),
+    ];
+    const result = selectByBudget(list);
+    // a、b 在 0.08 窗口内被保留;c、d、e 被挤出
+    expect(result.map((m) => m.id)).toEqual(['a', 'b']);
+  });
+});
+
+describe('memory-scoring - filterByRelativeRanking', () => {
+  function scored(id: string, total: number): ScoredMemory {
+    return {
+      memory: makeMemory({ id }),
+      breakdown: {
+        semantic: 0,
+        keyword: 0,
+        recency: 0,
+        semanticWeighted: 0,
+        keywordWeighted: 0,
+        recencyWeighted: 0,
+        total,
+      },
+    };
+  }
+
+  test('空候选返回空数组', () => {
+    expect(filterByRelativeRanking([])).toEqual([]);
+  });
+
+  test('top-K 硬上限限制返回数量', () => {
+    const list = Array.from({ length: 20 }, (_, i) => scored(`m${i}`, 5.0 - i * 0.001));
+    // delta 足够大以禁用窗口过滤,仅考察 top-K
+    const result = filterByRelativeRanking(list, 5, 999);
+    expect(result).toHaveLength(5);
+    expect(result.map((s) => s.memory.id)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4']);
+  });
+
+  test('relativeDelta 窗口剔除远低于 top 的条目', () => {
+    const list = [
+      scored('a', 0.85),
+      scored('b', 0.80), // 距 top 0.05,在 delta=0.08 内
+      scored('c', 0.70), // 距 top 0.15,被剔除
+      scored('d', 0.50),
+    ];
+    const result = filterByRelativeRanking(list, 999, 0.08);
+    expect(result.map((s) => s.memory.id)).toEqual(['a', 'b']);
+  });
+
+  test('所有分数都接近 top 时保留所有(质量均衡)', () => {
+    const list = [scored('a', 0.80), scored('b', 0.79), scored('c', 0.78)];
+    const result = filterByRelativeRanking(list, 999, 0.08);
+    expect(result).toHaveLength(3);
+  });
+
+  test('top-K 与 delta 同时生效:先截 top-K 再在窗口内收缩', () => {
+    const list = [
+      scored('a', 0.90),
+      scored('b', 0.85),
+      scored('c', 0.80), // top-K=3 边界
+      scored('d', 0.79), // 被 top-K 切掉
+    ];
+    // topK=3 先切到 [a,b,c],delta=0.08 窗口内 a(0.90)、b(0.85 在 0.82 以上)、c(0.80 低于 0.82 剔除)
+    const result = filterByRelativeRanking(list, 3, 0.08);
+    expect(result.map((s) => s.memory.id)).toEqual(['a', 'b']);
+  });
+
+  test('不修改输入数组', () => {
+    const list = [scored('a', 0.5), scored('b', 0.9), scored('c', 0.7)];
+    const snapshot = list.map((s) => s.memory.id);
+    filterByRelativeRanking(list);
+    expect(list.map((s) => s.memory.id)).toEqual(snapshot);
   });
 });

@@ -630,7 +630,9 @@ export class MemoryService {
         // 语义搜索不可用时静默降级
       }
 
-      const { scoreMemory } = await import('src/services/memory-scoring');
+      const { scoreMemory, filterByRelativeRanking } = await import(
+        'src/services/memory-scoring'
+      );
       const now = Date.now();
       const chunkEntities = queryTokens.map((t) => ({ name: t }));
       const scored = allMemories.map((memory) => {
@@ -652,10 +654,13 @@ export class MemoryService {
         /* 保持默认 */
       }
 
-      const filtered = scored.filter(
+      // 绝对阈值兜底:有关键词命中或 total 超过 minScore 的才进入候选集
+      const absoluteFiltered = scored.filter(
         (s) => s.breakdown.keyword > 0 || s.breakdown.total > minScore,
       );
-      filtered.sort((a, b) => b.breakdown.total - a.breakdown.total);
+      // 相对排名收缩:针对语义余弦噪声地板高的场景,把候选从"全员高分"压成
+      // "top 附近的少数突出项",避免工具向 AI 返回一大堆中庸匹配。
+      const filtered = filterByRelativeRanking(absoluteFiltered);
 
       const resultIds = filtered.map((s) => s.memory.id);
       if (resultIds.length > 0) {
