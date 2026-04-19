@@ -102,6 +102,48 @@ export type BookDetailsPageContext = ReturnType<typeof createBookDetailsPageCont
 
 const BOOK_DETAILS_PAGE_KEY: InjectionKey<BookDetailsPageContext> = Symbol('book-details-page');
 
+function findChapterInBook(book: Novel, chapterId: string): Chapter | undefined {
+  if (!book.volumes) return undefined;
+  for (const volume of book.volumes) {
+    const match = volume.chapters?.find((ch) => ch.id === chapterId);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+async function resolveChapterWithContent(
+  updatedChapter: Chapter,
+  previousChapter: Chapter,
+): Promise<Chapter> {
+  if (updatedChapter.content !== undefined && Array.isArray(updatedChapter.content)) {
+    return updatedChapter;
+  }
+  try {
+    return await ChapterService.loadChapterContent(updatedChapter);
+  } catch (error) {
+    console.error('Failed to reload chapter content after undo/redo:', error);
+    return { ...previousChapter, ...updatedChapter };
+  }
+}
+
+async function syncSelectedChapterAfterUndoRedo(
+  updatedBook: Novel,
+  selectedChapterId: string | null,
+  selectedChapterRef: Ref<Chapter | null>,
+): Promise<void> {
+  if (!selectedChapterId) return;
+  const updatedChapter = findChapterInBook(updatedBook, selectedChapterId);
+  if (!updatedChapter) {
+    if (selectedChapterRef.value) selectedChapterRef.value = null;
+    return;
+  }
+  if (!selectedChapterRef.value && updatedChapter.content === undefined) return;
+  selectedChapterRef.value = await resolveChapterWithContent(
+    updatedChapter,
+    selectedChapterRef.value ?? updatedChapter,
+  );
+}
+
 export function provideBookDetailsPage(): BookDetailsPageContext {
   const ctx = createBookDetailsPageContext();
   provide(BOOK_DETAILS_PAGE_KEY, ctx);
@@ -255,42 +297,13 @@ function createBookDetailsPageContext() {
   } = useUndoRedo(
     book,
     async (updatedBook) => {
-      if (updatedBook) {
-        await booksStore.updateBook(updatedBook.id, updatedBook);
-
-        if (selectedChapterId.value && updatedBook.volumes) {
-          let foundChapter = false;
-          for (const volume of updatedBook.volumes) {
-            if (volume.chapters) {
-              const updatedChapter = volume.chapters.find(
-                (ch) => ch.id === selectedChapterId.value,
-              );
-              if (updatedChapter) {
-                foundChapter = true;
-                if (updatedChapter.content !== undefined && Array.isArray(updatedChapter.content)) {
-                  selectedChapterWithContent.value = updatedChapter;
-                } else if (selectedChapterWithContent.value) {
-                  try {
-                    const chapterWithContent =
-                      await ChapterService.loadChapterContent(updatedChapter);
-                    selectedChapterWithContent.value = chapterWithContent;
-                  } catch (error) {
-                    console.error('Failed to reload chapter content after undo/redo:', error);
-                    selectedChapterWithContent.value = {
-                      ...selectedChapterWithContent.value,
-                      ...updatedChapter,
-                    };
-                  }
-                }
-                break;
-              }
-            }
-          }
-          if (!foundChapter && selectedChapterWithContent.value) {
-            selectedChapterWithContent.value = null;
-          }
-        }
-      }
+      if (!updatedBook) return;
+      await booksStore.updateBook(updatedBook.id, updatedBook);
+      await syncSelectedChapterAfterUndoRedo(
+        updatedBook,
+        selectedChapterId.value,
+        selectedChapterWithContent,
+      );
     },
     getEnhancedBook,
   );

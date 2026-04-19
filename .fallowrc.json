@@ -41,11 +41,12 @@
     "mode": "mild",
     "minTokens": 50,
     "minLines": 5,
-    "threshold": 10
+    "threshold": 10,
+    "ignore": ["*.test.ts"]
   },
   "health": {
     "maxCyclomatic": 30,
     "maxCognitive": 30,
-    "ignore": ["src/components/settings/**", "src/__tests__/**"]
+    "ignore": ["*.test.ts"]
   }
 }

@@ -54,6 +54,54 @@ const MAX_OUTPUT_LENGTH_RATIO = 2;
  */
 const HIGH_REPETITION_RATIO = 0.8;
 
+function countConsecutiveRepeats(text: string, pattern: string, startAfter: number): number {
+  let repeatCount = 1;
+  let cursor = startAfter;
+  while (cursor + pattern.length <= text.length) {
+    if (text.slice(cursor, cursor + pattern.length) !== pattern) break;
+    repeatCount++;
+    cursor += pattern.length;
+  }
+  return repeatCount;
+}
+
+function countConsecutiveRepeatsBackward(
+  text: string,
+  pattern: string,
+  startBefore: number,
+): number {
+  let repeatCount = 1;
+  let cursor = startBefore;
+  while (cursor >= 0) {
+    if (text.slice(cursor, cursor + pattern.length) !== pattern) break;
+    repeatCount++;
+    cursor -= pattern.length;
+  }
+  return repeatCount;
+}
+
+function maxTailRepeatForPatternLength(text: string, patternLen: number): number {
+  let maxRepeat = 0;
+  for (let offset = 0; offset < patternLen; offset++) {
+    const endPos = text.length - offset;
+    if (endPos < patternLen * 2) continue;
+    const pattern = text.slice(endPos - patternLen, endPos);
+    const repeatCount = countConsecutiveRepeatsBackward(text, pattern, endPos - patternLen * 2);
+    if (repeatCount > 1) maxRepeat = Math.max(maxRepeat, repeatCount);
+  }
+  return maxRepeat;
+}
+
+function maxAnyPositionRepeatForPatternLength(text: string, patternLen: number): number {
+  let maxRepeat = 0;
+  for (let start = 0; start <= text.length - patternLen * 2; start++) {
+    const pattern = text.slice(start, start + patternLen);
+    const repeatCount = countConsecutiveRepeats(text, pattern, start + patternLen);
+    if (repeatCount > 1) maxRepeat = Math.max(maxRepeat, repeatCount);
+  }
+  return maxRepeat;
+}
+
 /**
  * 检测文本中是否有过多的重复字符（AI降级检测）
  * @param text 要检测的文本（AI生成的结果）
@@ -94,68 +142,19 @@ export function detectRepeatingCharacters(
   // 获取原文中任意模式的最大重复次数（用于模式重复检测的比较）
   // 因为原文和译文的模式长度可能不同，所以检查所有可能的模式长度
   const getOriginalMaxPatternRepeatCount = () => {
-    if (!originalText) {
-      return 0;
-    }
-    // 去除尾部空白和换行符，因为 chunkText 格式可能包含 \n\n 等格式化字符
+    if (!originalText) return 0;
     const trimmedOriginal = originalText.trimEnd();
     const originalWindow = Math.min(effectiveWindow, trimmedOriginal.length);
     const originalRecent = trimmedOriginal.slice(-originalWindow);
     let maxRepeatCount = 0;
 
-    // 检查所有可能的模式长度（2-5字符）
     for (let patternLen = MIN_PATTERN_LENGTH; patternLen <= MAX_PATTERN_LENGTH; patternLen++) {
-      if (originalRecent.length < patternLen * 2) {
-        continue;
-      }
-
-      // 优先检查从窗口末尾开始的连续重复（这是最常见的场景）
-      // 从末尾向前检查，找到最长的连续重复
-      for (let offset = 0; offset < patternLen; offset++) {
-        const endPos = originalRecent.length - offset;
-        if (endPos < patternLen * 2) {
-          continue;
-        }
-
-        // 从末尾开始，尝试找到连续重复的模式
-        const pattern = originalRecent.slice(endPos - patternLen, endPos);
-        let repeatCount = 1;
-        let cursor = endPos - patternLen * 2;
-
-        // 向前查找连续重复
-        while (cursor >= 0) {
-          if (originalRecent.slice(cursor, cursor + patternLen) === pattern) {
-            repeatCount++;
-            cursor -= patternLen;
-          } else {
-            break;
-          }
-        }
-
-        if (repeatCount > 1) {
-          maxRepeatCount = Math.max(maxRepeatCount, repeatCount);
-        }
-      }
-
-      // 也检查其他位置（作为后备，但优先级较低）
-      for (let start = 0; start <= originalRecent.length - patternLen * 2; start++) {
-        const pattern = originalRecent.slice(start, start + patternLen);
-        let repeatCount = 1;
-        let cursor = start + patternLen;
-
-        while (cursor + patternLen <= originalRecent.length) {
-          if (originalRecent.slice(cursor, cursor + patternLen) === pattern) {
-            repeatCount++;
-            cursor += patternLen;
-          } else {
-            break;
-          }
-        }
-
-        if (repeatCount > 1) {
-          maxRepeatCount = Math.max(maxRepeatCount, repeatCount);
-        }
-      }
+      if (originalRecent.length < patternLen * 2) continue;
+      maxRepeatCount = Math.max(
+        maxRepeatCount,
+        maxTailRepeatForPatternLength(originalRecent, patternLen),
+        maxAnyPositionRepeatForPatternLength(originalRecent, patternLen),
+      );
     }
 
     return maxRepeatCount;

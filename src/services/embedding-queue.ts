@@ -418,6 +418,70 @@ export class EmbeddingQueue {
     }
   }
 
+  private static async takeNextBatch(): Promise<{
+    head: QueueItem;
+    headBookId: string | null;
+    batchItems: QueueItem[];
+  }> {
+    // 取下一批:同 kind + 同 bookId 连续合批(memory 合到 BATCH_SIZE;chapter 单个)。
+    // 串行化到单本书是为了让 UI 面板有清晰的"当前在处理哪本书"语义——避免 A/B 两本书
+    // 的 chunk 交叉穿插让进度条来回跳。bookId 解析不出(记录已删)的 item 单独一批。
+    const head = this.pending[0]!;
+    const headBookId = await this.resolveBookId(head);
+    if (head.kind !== 'memory') {
+      return { head, headBookId, batchItems: [this.pending.shift()!] };
+    }
+    const take = Math.min(BATCH_SIZE, this.pending.length);
+    const batchItems: QueueItem[] = [];
+    for (let i = 0; i < take; i++) {
+      const item = this.pending[i]!;
+      if (item.kind !== 'memory') break;
+      const itemBook = await this.resolveBookId(item);
+      if (itemBook !== headBookId) break;
+      batchItems.push(item);
+    }
+    this.pending.splice(0, batchItems.length);
+    return { head, headBookId, batchItems };
+  }
+
+  private static async runNextBatch(
+    head: QueueItem,
+    headBookId: string | null,
+    batchItems: QueueItem[],
+  ): Promise<void> {
+    // 广播 currentTask,让 UI 能感知"队列在处理哪本书"
+    this.currentTask = {
+      kind: head.kind,
+      bookId: headBookId,
+      itemCount: batchItems.length,
+    };
+    this.emitProgress();
+
+    const startedAt = Date.now();
+    try {
+      if (head.kind === 'memory') {
+        await this.processMemoryBatch(batchItems.map((item) => item.id));
+      } else {
+        await this.processChapter(batchItems[0]!.id);
+      }
+    } catch (error) {
+      console.warn('[EmbeddingQueue] 批处理失败,继续下一批:', error);
+      this.dispatch('error', { error, batchItems });
+      if (head.kind === 'memory') this.completed.memory += batchItems.length;
+      else this.completed.chapter += 1;
+    }
+    const durationMs = Date.now() - startedAt;
+    this.recordTiming(batchItems.length, durationMs);
+    this.currentTask = null;
+    this.dispatch('batch-complete', {
+      kind: head.kind,
+      batchSize: batchItems.length,
+      durationMs,
+      remaining: this.pending.length,
+    });
+    this.emitProgress();
+  }
+
   private static async run(): Promise<void> {
     if (this.processing) return;
     this.processing = true;
@@ -450,59 +514,8 @@ export class EmbeddingQueue {
           console.info('[EmbeddingQueue] 本地嵌入被关闭,停止处理剩余 pending');
           break;
         }
-        // 取下一批:同 kind + 同 bookId 连续合批(memory 合到 BATCH_SIZE;chapter 单个)。
-        // 串行化到单本书是为了让 UI 面板有清晰的"当前在处理哪本书"语义——避免 A/B 两本书
-        // 的 chunk 交叉穿插让进度条来回跳。bookId 解析不出(记录已删)的 item 单独一批。
-        const head = this.pending[0]!;
-        const headBookId = await this.resolveBookId(head);
-        let batchItems: QueueItem[] = [];
-        if (head.kind === 'memory') {
-          const take = Math.min(BATCH_SIZE, this.pending.length);
-          for (let i = 0; i < take; i++) {
-            const item = this.pending[i]!;
-            if (item.kind !== 'memory') break;
-            const itemBook = await this.resolveBookId(item);
-            if (itemBook !== headBookId) break;
-            batchItems.push(item);
-          }
-          this.pending.splice(0, batchItems.length);
-        } else {
-          batchItems = [this.pending.shift()!];
-        }
-
-        // 广播 currentTask,让 UI 能感知"队列在处理哪本书"
-        this.currentTask = {
-          kind: head.kind,
-          bookId: headBookId,
-          itemCount: batchItems.length,
-        };
-        this.emitProgress();
-
-        const startedAt = Date.now();
-        try {
-          if (head.kind === 'memory') {
-            await this.processMemoryBatch(batchItems.map((item) => item.id));
-          } else {
-            await this.processChapter(batchItems[0]!.id);
-          }
-        } catch (error) {
-          console.warn('[EmbeddingQueue] 批处理失败,继续下一批:', error);
-          this.dispatch('error', { error, batchItems });
-          // 失败也计入 completed,避免进度卡住
-          if (head.kind === 'memory') this.completed.memory += batchItems.length;
-          else this.completed.chapter += 1;
-        }
-        const durationMs = Date.now() - startedAt;
-        this.recordTiming(batchItems.length, durationMs);
-        this.currentTask = null;
-        this.dispatch('batch-complete', {
-          kind: head.kind,
-          batchSize: batchItems.length,
-          durationMs,
-          remaining: this.pending.length,
-        });
-        this.emitProgress();
-
+        const { head, headBookId, batchItems } = await this.takeNextBatch();
+        await this.runNextBatch(head, headBookId, batchItems);
         await new Promise((r) => setTimeout(r, 0));
       }
 
