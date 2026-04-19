@@ -86,61 +86,57 @@ export class FullTextIndexService {
   /**
    * 从章节和段落构建索引文档
    */
+  private static collectChapterDocuments(
+    chapter: Chapter,
+    chapters: Map<string, Chapter>,
+    volumeIndex: number,
+    chapterIndex: number,
+  ): IndexDocument[] {
+    const chapterWithContent = chapters.get(chapter.id) || chapter;
+    if (!chapterWithContent.content) return [];
+
+    const chapterTitleOriginal =
+      typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
+    const chapterTitleTranslation =
+      typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '';
+
+    const docs: IndexDocument[] = [];
+    for (let pIndex = 0; pIndex < chapterWithContent.content.length; pIndex++) {
+      const paragraph = chapterWithContent.content[pIndex];
+      if (!paragraph) continue;
+      const translations = paragraph.translations
+        ? paragraph.translations.map((t) => t.translation || '').filter((t) => t.trim())
+        : [];
+      docs.push({
+        paragraphId: paragraph.id,
+        chapterId: chapter.id,
+        volumeIndex,
+        chapterIndex,
+        paragraphIndex: pIndex,
+        originalText: paragraph.text || '',
+        translations,
+        chapterTitleOriginal,
+        chapterTitleTranslation,
+      });
+    }
+    return docs;
+  }
+
   private static buildIndexDocuments(
     novel: Novel,
     chapters: Map<string, Chapter>,
   ): IndexDocument[] {
+    if (!novel.volumes) return [];
     const documents: IndexDocument[] = [];
-
-    if (!novel.volumes) {
-      return documents;
-    }
-
     for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
       const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
+      if (!volume?.chapters) continue;
       for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
         const chapter = volume.chapters[cIndex];
         if (!chapter) continue;
-
-        // 获取章节内容（可能已加载或需要从独立存储加载）
-        let chapterWithContent = chapters.get(chapter.id) || chapter;
-        if (!chapterWithContent.content && chapter.contentLoaded !== false) {
-          // 如果章节内容未加载，尝试从缓存中获取
-          chapterWithContent = chapter;
-        }
-
-        const chapterTitleOriginal =
-          typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
-        const chapterTitleTranslation =
-          typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '';
-
-        if (chapterWithContent.content) {
-          for (let pIndex = 0; pIndex < chapterWithContent.content.length; pIndex++) {
-            const paragraph = chapterWithContent.content[pIndex];
-            if (!paragraph) continue;
-
-            const translations = paragraph.translations
-              ? paragraph.translations.map((t) => t.translation || '').filter((t) => t.trim())
-              : [];
-
-            documents.push({
-              paragraphId: paragraph.id,
-              chapterId: chapter.id,
-              volumeIndex: vIndex,
-              chapterIndex: cIndex,
-              paragraphIndex: pIndex,
-              originalText: paragraph.text || '',
-              translations,
-              chapterTitleOriginal,
-              chapterTitleTranslation,
-            });
-          }
-        }
+        documents.push(...this.collectChapterDocuments(chapter, chapters, vIndex, cIndex));
       }
     }
-
     return documents;
   }
 

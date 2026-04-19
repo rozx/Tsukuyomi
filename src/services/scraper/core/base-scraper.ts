@@ -10,6 +10,82 @@ import { UniqueIdGenerator, generateShortId } from 'src/utils/id-generator';
 import { ProxyService } from 'src/services/proxy-service';
 import { useElectron } from 'src/composables/useElectron';
 
+const DESKTOP_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+async function fetchPageViaElectron(url: string, proxiedUrl: string): Promise<string> {
+  if (!window.electronAPI?.fetch) {
+    throw new Error('Electron API 未正确加载，请检查 preload 脚本');
+  }
+  const headers: Record<string, string> = {
+    'User-Agent': DESKTOP_USER_AGENT,
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    Referer: new URL(url).origin,
+  };
+  const response = await window.electronAPI.fetch(proxiedUrl, {
+    method: 'GET',
+    headers,
+    timeout: 60000,
+  });
+  if (response.status >= 400) throw new Error(`目标网站返回错误: ${response.status}`);
+  if (response.data) return response.data;
+  throw new Error('返回的内容为空');
+}
+
+function extractHtmlFromProxyResponse(
+  responseData: unknown,
+  contentType: string,
+): string | null {
+  const dataStr = typeof responseData === 'string' ? responseData : String(responseData);
+  const looksLikeJson = contentType.includes('application/json') || dataStr.trim().startsWith('{');
+  if (!looksLikeJson) return dataStr;
+  try {
+    const jsonData =
+      typeof responseData === 'string' ? JSON.parse(responseData) : (responseData as any);
+    if (jsonData.contents && typeof jsonData.contents === 'string') return jsonData.contents;
+    if (jsonData.data && typeof jsonData.data === 'string') return jsonData.data;
+    if (dataStr.includes('<html') || dataStr.includes('<!DOCTYPE')) return dataStr;
+    console.error('[BaseScraper] JSON 响应中未找到 HTML 内容', {
+      keys: Object.keys(jsonData),
+      jsonPreview: JSON.stringify(jsonData).substring(0, 500),
+    });
+    return null;
+  } catch {
+    return dataStr;
+  }
+}
+
+async function fetchPageViaAxios(
+  url: string,
+  proxiedUrl: string,
+  isBrowser: boolean,
+): Promise<string> {
+  const headers: Record<string, string> = {
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+  };
+  if (!isBrowser) {
+    headers['User-Agent'] = DESKTOP_USER_AGENT;
+    headers['Accept-Encoding'] = 'gzip, deflate, br';
+    headers['Referer'] = url.startsWith('https://') ? new URL(url).origin : 'https://kakuyomu.jp/';
+  }
+
+  const response = await axios.get(proxiedUrl, {
+    timeout: 60000,
+    headers,
+    validateStatus: (status) => status >= 200 && status < 400,
+  });
+  if (response.status >= 400) throw new Error(`目标网站返回错误: ${response.status}`);
+  if (!response.data) throw new Error('返回的内容为空');
+
+  const contentType = response.headers['content-type'] || '';
+  const html = extractHtmlFromProxyResponse(response.data, contentType);
+  if (html === null) throw new Error('返回的内容为空');
+  return html;
+}
+
 /**
  * 爬虫服务基类
  * 提供通用的错误处理和工具方法
@@ -70,111 +146,10 @@ export abstract class BaseScraper implements NovelScraper {
       // 使用代理服务的自动切换功能执行请求
       return await ProxyService.executeWithAutoSwitch(
         url,
-        async (proxiedUrl: string) => {
-          // 在 Electron 环境中，使用 Electron 的 net 模块
-          if (isElectron.value) {
-            if (!window.electronAPI?.fetch) {
-              throw new Error('Electron API 未正确加载，请检查 preload 脚本');
-            }
-
-            const headers: Record<string, string> = {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-              'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-              'Accept-Encoding': 'gzip, deflate, br',
-            };
-
-            // 设置 Referer
-            const urlObj = new URL(url);
-            headers['Referer'] = urlObj.origin;
-
-            const response = await window.electronAPI.fetch(proxiedUrl, {
-              method: 'GET',
-              headers,
-              timeout: 60000,
-            });
-
-            if (response.status >= 400) {
-              throw new Error(`目标网站返回错误: ${response.status}`);
-            }
-
-            if (response.data) {
-              return response.data;
-            }
-
-            throw new Error('返回的内容为空');
-          }
-
-          // 在浏览器环境（非 Electron）或 Node.js/Bun 环境中，使用 axios
-          const headers: Record<string, string> = {
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-          };
-
-          // 只在非浏览器环境（如 Node.js/Bun）中设置这些请求头
-          if (!isBrowser.value) {
-            headers['User-Agent'] =
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-            headers['Accept-Encoding'] = 'gzip, deflate, br';
-            headers['Referer'] = url.startsWith('https://')
-              ? new URL(url).origin
-              : 'https://kakuyomu.jp/';
-          }
-
-          const response = await axios.get(proxiedUrl, {
-            timeout: 60000, // 60 秒超时（与代理服务器超时时间一致）
-            headers,
-            validateStatus: (status) => status >= 200 && status < 400,
-          });
-
-          if (response.status >= 400) {
-            throw new Error(`目标网站返回错误: ${response.status}`);
-          }
-
-          if (response.data) {
-            // 检查返回的内容类型
-            const contentType = response.headers['content-type'] || '';
-            const dataStr =
-              typeof response.data === 'string' ? response.data : String(response.data);
-
-            // 检查是否是 JSON 响应（可能是代理服务返回的 JSON 格式）
-            if (contentType.includes('application/json') || dataStr.trim().startsWith('{')) {
-              // 尝试解析 JSON 以获取实际内容
-              try {
-                const jsonData =
-                  typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-
-                // 某些代理服务（如 AllOrigins）返回 JSON，内容在 contents 字段
-                if (jsonData.contents && typeof jsonData.contents === 'string') {
-                  return jsonData.contents;
-                }
-
-                // 某些代理服务返回 JSON，内容在 data 字段
-                if (jsonData.data && typeof jsonData.data === 'string') {
-                  return jsonData.data;
-                }
-
-                // cors.lol 可能直接返回 HTML（即使 Content-Type 是 JSON）
-                // 检查是否包含 HTML 标签
-                if (dataStr.includes('<html') || dataStr.includes('<!DOCTYPE')) {
-                  return dataStr;
-                }
-
-                console.error('[BaseScraper] JSON 响应中未找到 HTML 内容', {
-                  keys: Object.keys(jsonData),
-                  jsonPreview: JSON.stringify(jsonData).substring(0, 500),
-                });
-              } catch {
-                // 不是有效的 JSON，可能是 HTML 但被误判为 JSON
-              }
-            }
-
-            return response.data;
-          }
-
-          throw new Error('返回的内容为空');
-        },
+        async (proxiedUrl: string) =>
+          isElectron.value
+            ? fetchPageViaElectron(url, proxiedUrl)
+            : fetchPageViaAxios(url, proxiedUrl, isBrowser.value),
         {
           skipInternalProxy: isElectron.value, // Electron 环境不使用内部代理路径
           maxRetries: 3,

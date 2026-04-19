@@ -52,76 +52,65 @@ export function useElectronSettings() {
     }
   };
 
+  const importAiModels = async (
+    models: Exclude<ReturnType<typeof SettingsService.validateAndParseSettings>['data'], undefined>['models'],
+  ): Promise<void> => {
+    if (models && models.length > 0) {
+      await aiModelsStore.bulkImportModels(models);
+    }
+  };
+
+  const importNovels = async (novels: Array<Parameters<typeof booksStore.bulkAddBooks>[0][number]> | undefined): Promise<void> => {
+    if (novels && novels.length > 0) {
+      await booksStore.clearBooks();
+      await booksStore.bulkAddBooks(novels);
+    }
+  };
+
+  const importCoverHistory = async (
+    covers: Array<Parameters<typeof coverHistoryStore.addCover>[0]> | undefined,
+  ): Promise<void> => {
+    if (!covers || covers.length === 0) return;
+    await coverHistoryStore.clearHistory();
+    for (const cover of covers) {
+      await coverHistoryStore.addCover(cover);
+    }
+  };
+
+  const importMemories = async (memories: Memory[] | undefined): Promise<void> => {
+    if (!memories || memories.length === 0) return;
+    const memoriesByBook = new Map<string, Memory[]>();
+    for (const memory of memories) {
+      if (!memoriesByBook.has(memory.bookId)) memoriesByBook.set(memory.bookId, []);
+      memoriesByBook.get(memory.bookId)!.push(memory);
+    }
+    for (const [bookId, list] of memoriesByBook.entries()) {
+      try {
+        for (const memory of list) {
+          await MemoryService.createMemory(bookId, memory.content, memory.summary);
+        }
+      } catch (error) {
+        console.warn(`[useElectronSettings] 导入书籍 ${bookId} 的 Memory 失败:`, error);
+      }
+    }
+  };
+
   // 处理导入设置数据
   const handleImportData = async (content: string) => {
     try {
-      // 解析 JSON
       const settings = JSON.parse(content);
-
-      // 使用 SettingsService 验证和解析
       const result = SettingsService.validateAndParseSettings(settings);
-
-      if (result.success && result.data) {
-        // 导入 AI 模型（与网页端导入保持一致：覆盖导入）
-        if (result.data.models && result.data.models.length > 0) {
-          await aiModelsStore.bulkImportModels(result.data.models);
-        }
-
-        // 导入书籍（与网页端导入保持一致：覆盖导入）
-        if (result.data.novels && result.data.novels.length > 0) {
-          await booksStore.clearBooks();
-          await booksStore.bulkAddBooks(result.data.novels);
-        }
-
-        // 导入封面历史
-        if (result.data.coverHistory && result.data.coverHistory.length > 0) {
-          await coverHistoryStore.clearHistory();
-          for (const cover of result.data.coverHistory) {
-            await coverHistoryStore.addCover(cover);
-          }
-        }
-
-        // 导入 Memory 数据
-        if (result.data.memories && result.data.memories.length > 0) {
-          // Memory 按 bookId 分组并导入
-          const memoriesByBook = new Map<string, Memory[]>();
-          for (const memory of result.data.memories) {
-            if (!memoriesByBook.has(memory.bookId)) {
-              memoriesByBook.set(memory.bookId, []);
-            }
-            memoriesByBook.get(memory.bookId)!.push(memory);
-          }
-
-          // 为每本书导入 Memory
-          for (const [bookId, memories] of memoriesByBook.entries()) {
-            try {
-              for (const memory of memories) {
-                await MemoryService.createMemory(
-                  bookId,
-                  memory.content,
-                  memory.summary,
-                );
-              }
-            } catch (error) {
-              console.warn(`[useElectronSettings] 导入书籍 ${bookId} 的 Memory 失败:`, error);
-            }
-          }
-        }
-
-        // 导入应用设置
-        if (result.data.appSettings) {
-          // 使用 importSettings：保留 lastEdited、深合并 taskDefaultModels，并写入 IndexedDB
-          await settingsStore.importSettings(result.data.appSettings);
-        }
-
-        // 导入同步配置
-        if (result.data.sync && result.data.sync.length > 0) {
-          // 与网页端导入保持一致：覆盖导入 syncs
-          await settingsStore.importSyncs(result.data.sync);
-        }
-      } else {
+      if (!result.success || !result.data) {
         console.error('Import validation failed:', result.error);
+        return;
       }
+      const data = result.data;
+      await importAiModels(data.models);
+      await importNovels(data.novels);
+      await importCoverHistory(data.coverHistory);
+      await importMemories(data.memories);
+      if (data.appSettings) await settingsStore.importSettings(data.appSettings);
+      if (data.sync && data.sync.length > 0) await settingsStore.importSyncs(data.sync);
     } catch (error) {
       console.error('Import settings error:', error);
     }
