@@ -436,6 +436,13 @@ export class EmbeddingQueue {
       }
 
       while (this.pending.length > 0 && !this.paused) {
+        // 每轮循环开始时重新读取总开关:用户在 UI 上关闭嵌入应该立刻停下一批工作,
+        // 不能让队列把剩下的 pending 全部跑完。正在跑的这一批无法中途 abort
+        // (Transformers.js pipeline 调用不支持),所以只能做到"当前批次完成后立即停"。
+        if (!(await this.isLocalEmbeddingEnabled())) {
+          console.info('[EmbeddingQueue] 本地嵌入被关闭,停止处理剩余 pending');
+          break;
+        }
         // 取下一批:同 kind + 同 bookId 连续合批(memory 合到 BATCH_SIZE;chapter 单个)。
         // 串行化到单本书是为了让 UI 面板有清晰的"当前在处理哪本书"语义——避免 A/B 两本书
         // 的 chunk 交叉穿插让进度条来回跳。bookId 解析不出(记录已删)的 item 单独一批。

@@ -103,6 +103,44 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     expect((embedBatchSpy.mock.calls[1]?.[0] as string[]).length).toBe(2);
   });
 
+  test('总开关在处理过程中被关闭时:当前批次完成后立即停,剩余 pending 保留', async () => {
+    useSettingsStore().settings.enableLocalEmbedding = true;
+    spyOn(MemoryService, 'getMemoryByIdOnly').mockImplementation(async (id: string) =>
+      makeMemory(id),
+    );
+    spyOn(MemoryService, 'updateMemoryEmbeddingOnly').mockResolvedValue(undefined);
+
+    // 第一批 memory 的 embedBatch 在返回前把总开关关闭。两个 chapter 在它之后入队,
+    // 应该被循环里新增的"每轮重读开关"守卫挡下,不会进入处理。
+    const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockImplementation(
+      async (texts: string[]) => {
+        useSettingsStore().settings.enableLocalEmbedding = false;
+        return texts.map(() => new Float32Array([0.1]));
+      },
+    );
+    const embedChapterSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(
+      undefined,
+    );
+
+    EmbeddingQueue.enqueueMemory('a');
+    EmbeddingQueue.enqueueChapter('ch-1');
+    EmbeddingQueue.enqueueChapter('ch-2');
+
+    // 等待 run() 结束(processing 回到 false)。pending 不会清空,所以不能用 waitForIdle
+    const start = Date.now();
+    while (EmbeddingQueue.isRunning()) {
+      if (Date.now() - start > 2000) throw new Error('run did not stop');
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    await new Promise((r) => setTimeout(r, 5)); // 让 finalizer 跑一圈
+
+    // 第一批(memory 'a')完成了;循环里的守卫生效,章节批一个都没启动
+    expect(embedBatchSpy).toHaveBeenCalledTimes(1);
+    expect(embedChapterSpy).not.toHaveBeenCalled();
+    // 两个 chapter 仍在 pending 里等用户重新开启
+    expect(EmbeddingQueue.getProgress().breakdown.chapter.pending).toBe(2);
+  });
+
   test('总开关关闭时:不处理 pending,也不调用 embedBatch', async () => {
     useSettingsStore().settings.enableLocalEmbedding = false;
     const getMemSpy = spyOn(MemoryService, 'getMemoryByIdOnly').mockResolvedValue(makeMemory('a'));
