@@ -30,11 +30,11 @@ function makeFloat32(values: number[]): Float32Array {
 }
 
 /**
- * 构造 mean-pooled 的模拟输出:形状 [batch, 768]。
+ * 构造 last-token pooled 的模拟输出:形状 [batch, 1024](Qwen3-Embedding 原生维度)。
  * 前几维为 fill,其余为 0。
  */
 function fakePooledOutput(batch: number, fill: number) {
-  const hidden = 768;
+  const hidden = 1024;
   const data = new Float32Array(batch * hidden);
   for (let b = 0; b < batch; b++) {
     for (let i = 0; i < hidden; i++) {
@@ -217,7 +217,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     // mock 会把输入文本回传,我们用它构造基于前缀长度差异的输出
     mockPipelineImpl = async (input: unknown) => {
       const texts = Array.isArray(input) ? (input as string[]) : [input as string];
-      const hidden = 768;
+      const hidden = 1024;
       const data = new Float32Array(texts.length * hidden);
       for (let b = 0; b < texts.length; b++) {
         const t = texts[b] ?? '';
@@ -279,7 +279,91 @@ describe('EmbeddingService - cosineSimilarity', () => {
 
 describe('EmbeddingService - 常量', () => {
   test('MODEL_VERSION 与 DIMENSIONS 与 spec 一致', () => {
-    expect(MODEL_VERSION).toBe('embeddinggemma-300m@256-v2');
+    expect(MODEL_VERSION).toBe('qwen3-embedding-0.6b@256');
     expect(DIMENSIONS).toBe(256);
+  });
+});
+
+describe('EmbeddingService - cleanupLegacyModelCache', () => {
+  // 用一个简易的内存 caches 替身替换 globalThis.caches,精确断言删除行为
+  type FakeReq = { url: string };
+  interface FakeCache {
+    name: string;
+    entries: FakeReq[];
+    keys: () => Promise<FakeReq[]>;
+    delete: (req: FakeReq) => Promise<boolean>;
+  }
+
+  function installFakeCaches(caches: FakeCache[]): () => void {
+    const original = (globalThis as { caches?: unknown }).caches;
+    (globalThis as { caches: unknown }).caches = {
+      keys: async () => caches.map((c) => c.name),
+      open: async (name: string) => {
+        const cache = caches.find((c) => c.name === name);
+        if (!cache) throw new Error(`cache not found: ${name}`);
+        return cache;
+      },
+    };
+    return () => {
+      if (original === undefined) delete (globalThis as { caches?: unknown }).caches;
+      else (globalThis as { caches: unknown }).caches = original;
+    };
+  }
+
+  function makeCache(name: string, urls: string[]): FakeCache {
+    const entries: FakeReq[] = urls.map((url) => ({ url }));
+    return {
+      name,
+      entries,
+      keys: async () => [...entries],
+      delete: async (req) => {
+        const idx = entries.findIndex((e) => e.url === req.url);
+        if (idx < 0) return false;
+        entries.splice(idx, 1);
+        return true;
+      },
+    };
+  }
+
+  test('删除所有匹配历史模型 URL 片段的条目,保留当前模型', async () => {
+    const cache = makeCache('transformers-cache', [
+      'https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/onnx/model_q4.onnx',
+      'https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/main/tokenizer.json',
+      'https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/main/onnx/model_q8.onnx',
+    ]);
+    const restore = installFakeCaches([cache]);
+    try {
+      const deleted = await EmbeddingService.cleanupLegacyModelCache();
+      expect(deleted).toBe(2);
+      expect(cache.entries).toHaveLength(1);
+      expect(cache.entries[0]!.url).toContain('Qwen3-Embedding');
+    } finally {
+      restore();
+    }
+  });
+
+  test('没有匹配项时返回 0 不抛错', async () => {
+    const cache = makeCache('transformers-cache', [
+      'https://huggingface.co/onnx-community/Qwen3-Embedding-0.6B-ONNX/resolve/main/onnx/model_q8.onnx',
+    ]);
+    const restore = installFakeCaches([cache]);
+    try {
+      const deleted = await EmbeddingService.cleanupLegacyModelCache();
+      expect(deleted).toBe(0);
+      expect(cache.entries).toHaveLength(1);
+    } finally {
+      restore();
+    }
+  });
+
+  test('caches API 不可用时返回 0', async () => {
+    const original = (globalThis as { caches?: unknown }).caches;
+    delete (globalThis as { caches?: unknown }).caches;
+    try {
+      const deleted = await EmbeddingService.cleanupLegacyModelCache();
+      expect(deleted).toBe(0);
+    } finally {
+      if (original !== undefined) (globalThis as { caches: unknown }).caches = original;
+    }
   });
 });

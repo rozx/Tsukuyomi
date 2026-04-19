@@ -31,12 +31,27 @@ export type QueueKind = 'memory' | 'chapter';
 interface QueueItem {
   kind: QueueKind;
   id: string;
+  /**
+   * 所属书籍 ID。enqueue 时由调用方传入,未传则在进入 run 循环前懒解析并缓存。
+   * 未能解析(记录被删、章节无归属)时为 null,将按单独一批处理,不与其它 item 混批。
+   */
+  bookId?: string | null;
 }
 
 export interface EmbeddingQueueBreakdown {
   total: number;
   completed: number;
   pending: number;
+}
+
+/**
+ * 当前正在处理的批次元信息。用于 UI 跨书籍提示:
+ * 用户在 Book A 的面板里看到 currentTask.bookId === Book B 就知道队列在别处忙。
+ */
+export interface EmbeddingQueueCurrentTask {
+  kind: QueueKind;
+  bookId: string | null;
+  itemCount: number;
 }
 
 export interface EmbeddingQueueProgress {
@@ -50,6 +65,7 @@ export interface EmbeddingQueueProgress {
     memory: EmbeddingQueueBreakdown;
     chapter: EmbeddingQueueBreakdown;
   };
+  currentTask: EmbeddingQueueCurrentTask | null;
 }
 
 interface BatchTiming {
@@ -80,6 +96,7 @@ export class EmbeddingQueue {
   private static processing = false;
   private static paused = false;
   private static runScheduled = false;
+  private static currentTask: EmbeddingQueueCurrentTask | null = null;
 
   // 分 kind 的会话统计
   private static totalEnqueued = { memory: 0, chapter: 0 };
@@ -88,6 +105,38 @@ export class EmbeddingQueue {
   private static recentTimings: BatchTiming[] = [];
 
   private static readonly events = new EventTarget();
+
+  /**
+   * 懒解析 item 的 bookId 并缓存在 item 上。
+   * - memory:查 MemoryService.getMemoryByIdOnly
+   * - chapter:扫 booksStore 找所属书
+   * 解析失败(记录已删/Pinia 未初始化)返回 null,由批处理策略单独走一批不混批。
+   */
+  private static async resolveBookId(item: QueueItem): Promise<string | null> {
+    if (item.bookId !== undefined) return item.bookId;
+    let resolved: string | null = null;
+    try {
+      if (item.kind === 'memory') {
+        const mem = await MemoryService.getMemoryByIdOnly(item.id);
+        resolved = mem?.bookId ?? null;
+      } else {
+        const { useBooksStore } = await import('src/stores/books');
+        const store = useBooksStore();
+        outer: for (const book of store.books) {
+          for (const v of book.volumes || []) {
+            if (v.chapters?.some((c) => c.id === item.id)) {
+              resolved = book.id;
+              break outer;
+            }
+          }
+        }
+      }
+    } catch {
+      resolved = null;
+    }
+    item.bookId = resolved;
+    return resolved;
+  }
 
   private static scheduleRun(): void {
     if (this.processing || this.paused || this.runScheduled) return;
@@ -129,25 +178,30 @@ export class EmbeddingQueue {
   // 入队 / 取消
   // ==========================================================================
   /**
-   * 兼容旧接口:memory 入队。
+   * 兼容旧接口:memory 入队。可选 bookId 用于让队列按书籍串行化批处理;
+   * 不传则在 run 循环里懒解析。
    */
-  static enqueue(memoryId: string): void {
-    this.enqueueMemory(memoryId);
+  static enqueue(memoryId: string, bookId?: string): void {
+    this.enqueueMemory(memoryId, bookId);
   }
 
-  static enqueueMemory(memoryId: string): void {
+  static enqueueMemory(memoryId: string, bookId?: string): void {
     if (!memoryId) return;
     if (this.pending.some((item) => item.kind === 'memory' && item.id === memoryId)) return;
-    this.pending.push({ kind: 'memory', id: memoryId });
+    const item: QueueItem = { kind: 'memory', id: memoryId };
+    if (bookId) item.bookId = bookId;
+    this.pending.push(item);
     this.totalEnqueued.memory += 1;
     this.emitProgress();
     this.scheduleRun();
   }
 
-  static enqueueChapter(chapterId: string): void {
+  static enqueueChapter(chapterId: string, bookId?: string): void {
     if (!chapterId) return;
     if (this.pending.some((item) => item.kind === 'chapter' && item.id === chapterId)) return;
-    this.pending.push({ kind: 'chapter', id: chapterId });
+    const item: QueueItem = { kind: 'chapter', id: chapterId };
+    if (bookId) item.bookId = bookId;
+    this.pending.push(item);
     this.totalEnqueued.chapter += 1;
     this.emitProgress();
     this.scheduleRun();
@@ -190,7 +244,7 @@ export class EmbeddingQueue {
       for (const mem of memories) {
         if (!memoryNeedsEmbedding(mem)) continue;
         if (this.pending.some((item) => item.kind === 'memory' && item.id === mem.id)) continue;
-        this.pending.push({ kind: 'memory', id: mem.id });
+        this.pending.push({ kind: 'memory', id: mem.id, bookId });
         added += 1;
       }
       if (added > 0) {
@@ -215,7 +269,7 @@ export class EmbeddingQueue {
       let added = 0;
       for (const chId of chapterIds) {
         if (this.pending.some((item) => item.kind === 'chapter' && item.id === chId)) continue;
-        this.pending.push({ kind: 'chapter', id: chId });
+        this.pending.push({ kind: 'chapter', id: chId, bookId });
         added += 1;
       }
       if (added > 0) {
@@ -243,7 +297,7 @@ export class EmbeddingQueue {
       for (const v of book.volumes) {
         for (const ch of v.chapters || []) {
           if (this.pending.some((item) => item.kind === 'chapter' && item.id === ch.id)) continue;
-          this.pending.push({ kind: 'chapter', id: ch.id });
+          this.pending.push({ kind: 'chapter', id: ch.id, bookId });
           added += 1;
         }
       }
@@ -313,6 +367,7 @@ export class EmbeddingQueue {
       running: this.processing,
       paused: this.paused,
       breakdown,
+      currentTask: this.currentTask,
     };
   }
 
@@ -357,21 +412,33 @@ export class EmbeddingQueue {
       }
 
       while (this.pending.length > 0 && !this.paused) {
-        // 取下一批:同 kind 连续合批(memory 合到 BATCH_SIZE;chapter 单个)
+        // 取下一批:同 kind + 同 bookId 连续合批(memory 合到 BATCH_SIZE;chapter 单个)。
+        // 串行化到单本书是为了让 UI 面板有清晰的"当前在处理哪本书"语义——避免 A/B 两本书
+        // 的 chunk 交叉穿插让进度条来回跳。bookId 解析不出(记录已删)的 item 单独一批。
         const head = this.pending[0]!;
+        const headBookId = await this.resolveBookId(head);
         let batchItems: QueueItem[] = [];
         if (head.kind === 'memory') {
           const take = Math.min(BATCH_SIZE, this.pending.length);
-          let i = 0;
-          for (; i < take; i++) {
+          for (let i = 0; i < take; i++) {
             const item = this.pending[i]!;
             if (item.kind !== 'memory') break;
+            const itemBook = await this.resolveBookId(item);
+            if (itemBook !== headBookId) break;
             batchItems.push(item);
           }
           this.pending.splice(0, batchItems.length);
         } else {
           batchItems = [this.pending.shift()!];
         }
+
+        // 广播 currentTask,让 UI 能感知"队列在处理哪本书"
+        this.currentTask = {
+          kind: head.kind,
+          bookId: headBookId,
+          itemCount: batchItems.length,
+        };
+        this.emitProgress();
 
         const startedAt = Date.now();
         try {
@@ -389,6 +456,7 @@ export class EmbeddingQueue {
         }
         const durationMs = Date.now() - startedAt;
         this.recordTiming(batchItems.length, durationMs);
+        this.currentTask = null;
         this.dispatch('batch-complete', {
           kind: head.kind,
           batchSize: batchItems.length,
@@ -410,6 +478,7 @@ export class EmbeddingQueue {
       }
     } finally {
       this.processing = false;
+      this.currentTask = null;
       this.emitProgress();
     }
   }
@@ -481,6 +550,7 @@ export class EmbeddingQueue {
     this.processing = false;
     this.paused = false;
     this.runScheduled = false;
+    this.currentTask = null;
     this.totalEnqueued = { memory: 0, chapter: 0 };
     this.completed = { memory: 0, chapter: 0 };
     this.recentTimings = [];

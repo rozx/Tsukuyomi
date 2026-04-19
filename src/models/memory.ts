@@ -10,5 +10,5 @@ export interface Memory {
   createdAt: number; // 创建时间戳
   lastAccessedAt: number; // 最后访问时间戳（用于 LRU）
   embedding?: number[]; // 语义向量（256 维 Matryoshka 截断，L2 归一化）
-  embeddingModel?: string; // 生成该向量的模型版本标识，例如 "embeddinggemma-300m@256"
+  embeddingModel?: string; // 生成该向量的模型版本标识，例如 "qwen3-embedding-0.6b@256"
 }

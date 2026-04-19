@@ -409,6 +409,69 @@ describe('EmbeddingQueue - chapter kind', () => {
     await waitForIdle();
   });
 
+  test('不同 bookId 的 memory 不会合批', async () => {
+    spyOn(MemoryService, 'getMemoryByIdOnly').mockImplementation(async (id: string) => {
+      // m1,m2 属于 book-1;m3,m4 属于 book-2
+      const bookId = id === 'm1' || id === 'm2' ? 'book-1' : 'book-2';
+      return makeMemory(id, { bookId });
+    });
+    spyOn(MemoryService, 'updateMemoryEmbeddingOnly').mockResolvedValue(undefined);
+    const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockImplementation(
+      async (texts: string[]) => texts.map(() => new Float32Array([0.1])),
+    );
+
+    // 交叉入队 —— 应被切成两批(book-1 的 [m1,m2] 和 book-2 的 [m3,m4])
+    EmbeddingQueue.enqueueMemory('m1');
+    EmbeddingQueue.enqueueMemory('m2');
+    EmbeddingQueue.enqueueMemory('m3');
+    EmbeddingQueue.enqueueMemory('m4');
+
+    await waitForIdle();
+
+    // 两批,每批各自包含同书的两条
+    expect(embedBatchSpy).toHaveBeenCalledTimes(2);
+    const batch1 = embedBatchSpy.mock.calls[0]?.[0] as string[];
+    const batch2 = embedBatchSpy.mock.calls[1]?.[0] as string[];
+    expect(batch1.length).toBe(2);
+    expect(batch2.length).toBe(2);
+  });
+
+  test('enqueue 传入 bookId 后 currentTask 暴露该 bookId', async () => {
+    spyOn(MemoryService, 'getMemoryByIdOnly').mockResolvedValue(makeMemory('m1', { bookId: 'book-X' }));
+    spyOn(MemoryService, 'updateMemoryEmbeddingOnly').mockResolvedValue(undefined);
+
+    let releaseBatch!: () => void;
+    const block = new Promise<void>((r) => {
+      releaseBatch = r;
+    });
+    spyOn(EmbeddingService, 'embedBatch').mockImplementation(async (texts: string[]) => {
+      await block;
+      return texts.map(() => new Float32Array([0.1]));
+    });
+
+    const seenTasks: Array<{ bookId: string | null; kind: string }> = [];
+    const off = EmbeddingQueue.addEventListener('progress', (e) => {
+      const task = (e.detail as { currentTask?: { bookId: string | null; kind: string } })
+        ?.currentTask;
+      if (task) seenTasks.push({ bookId: task.bookId, kind: task.kind });
+    });
+
+    EmbeddingQueue.enqueueMemory('m1', 'book-X');
+    // 等调度跑起来
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(seenTasks.length).toBeGreaterThan(0);
+    expect(seenTasks[0]!.bookId).toBe('book-X');
+    expect(seenTasks[0]!.kind).toBe('memory');
+
+    releaseBatch();
+    await waitForIdle();
+    off();
+
+    // 队列空后 currentTask 应被清空
+    expect(EmbeddingQueue.getProgress().currentTask).toBeNull();
+  });
+
   test('chapter 批失败不影响后续队列', async () => {
     spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(async (id: string) => {
       if (id === 'ch-bad') throw new Error('boom');

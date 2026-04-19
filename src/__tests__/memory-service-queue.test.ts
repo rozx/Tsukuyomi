@@ -31,7 +31,8 @@ describe('MemoryService - EmbeddingQueue 联动', () => {
   test('createMemory 成功后 enqueue 新记忆 id', async () => {
     const mem = await MemoryService.createMemory('book-q', '内容', '摘要');
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
-    expect(enqueueSpy).toHaveBeenCalledWith(mem.id);
+    // enqueue(memoryId, bookId):队列按书串行化需要 bookId
+    expect(enqueueSpy).toHaveBeenCalledWith(mem.id, 'book-q');
   });
 
   test('updateMemory 文本变化时 enqueue', async () => {
@@ -40,7 +41,7 @@ describe('MemoryService - EmbeddingQueue 联动', () => {
 
     await MemoryService.updateMemory('book-q', mem.id, '新内容', '新摘要');
     expect(enqueueSpy).toHaveBeenCalledTimes(1);
-    expect(enqueueSpy).toHaveBeenCalledWith(mem.id);
+    expect(enqueueSpy).toHaveBeenCalledWith(mem.id, 'book-q');
   });
 
   test('updateMemory 文本未变时不 enqueue', async () => {

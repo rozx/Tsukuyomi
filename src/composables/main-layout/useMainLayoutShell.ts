@@ -185,6 +185,18 @@ export function useMainLayoutShell() {
     }
     if (settings.settings.memoryInjection?.enableSemantic !== false) {
       const { EmbeddingService } = await import('src/services/embedding-service');
+
+      // 清理历史模型在 Cache Storage 里的残留(例如切到 Qwen3 后 EmbeddingGemma 的 ~195MB)。
+      // 如果清到过东西,原先的 `embeddingModelCached` 标记对应的是已失效的旧模型 → 复位,
+      // 避免让 warmup 以为新模型也已缓存,进而静默触发 ~600MB 的意外下载。
+      const legacyCleaned = await EmbeddingService.cleanupLegacyModelCache();
+      if (
+        legacyCleaned > 0 &&
+        settings.settings.memoryInjection?.embeddingModelCached === true
+      ) {
+        await settings.updateMemoryInjection({ embeddingModelCached: false });
+      }
+
       if (!EmbeddingService.isReady()) {
         const flagSet = settings.settings.memoryInjection?.embeddingModelCached === true;
         const cacheHit = flagSet ? true : await EmbeddingService.isModelCachedInBrowser();

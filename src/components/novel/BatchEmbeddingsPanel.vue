@@ -116,6 +116,27 @@ const totalChapters = computed(() => {
 const chapterPendingInQueue = computed(() => progress.value.breakdown.chapter.pending);
 const memoryPendingInQueue = computed(() => progress.value.breakdown.memory.pending);
 
+/** 队列当前正在处理的任务(可能属于别的书) */
+const activeTask = computed(() => progress.value.currentTask);
+
+/** 当 panel 开在 Book A,但队列实际在处理 Book B 时为 true */
+const isProcessingOtherBook = computed(() => {
+  const task = activeTask.value;
+  if (!task || !task.bookId) return false;
+  return task.bookId !== bookId.value;
+});
+
+const activeBookTitle = computed(() => {
+  const task = activeTask.value;
+  if (!task?.bookId) return '';
+  const book = booksStore.getBookById(task.bookId);
+  return book?.title ?? task.bookId;
+});
+
+const activeKindLabel = computed(() =>
+  activeTask.value?.kind === 'chapter' ? '章节' : '记忆',
+);
+
 const chapterPercent = computed(() => {
   const { embedded, total } = chapterStats.value;
   if (total === 0) return 100;
@@ -283,6 +304,29 @@ defineExpose({ toggle });
           :disabled="embeddingStatus !== 'ready'"
           @click="openTestDialog"
         />
+
+        <!-- 队列当前任务提示(跨书时高亮) -->
+        <div
+          v-if="activeTask && activeTask.bookId"
+          :class="[
+            'flex items-center gap-2 p-2 rounded text-xs',
+            isProcessingOtherBook
+              ? 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
+              : 'bg-primary-500/10 border border-primary-500/20 text-primary-300',
+          ]"
+        >
+          <i class="pi pi-spin pi-spinner"></i>
+          <span class="flex-1 min-w-0 truncate">
+            <template v-if="isProcessingOtherBook">
+              正在处理其它书籍:
+              <span class="font-medium">{{ activeBookTitle }}</span>
+              ({{ activeKindLabel }} ×{{ activeTask.itemCount }})
+            </template>
+            <template v-else>
+              正在处理本书 {{ activeKindLabel }} ×{{ activeTask.itemCount }}
+            </template>
+          </span>
+        </div>
 
         <!-- 全局状态 -->
         <div class="flex flex-col gap-1 text-xs text-moon-50 px-1">

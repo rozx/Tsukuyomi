@@ -2,36 +2,42 @@
  * EmbeddingService — 基于 Transformers.js 的本地特征提取
  *
  * 约定:
- * - 使用 EmbeddingGemma 300M ONNX(Google Sept 2025),q4 量化 ~195MB
- * - 采用 Matryoshka 表征:从原生 768 维中截取前 256 维,再 L2 归一化
+ * - 使用 Qwen3-Embedding-0.6B ONNX(Alibaba 2025),q8 量化 ~600MB;多语言 RAG SOTA,
+ *   中日文表现明显优于 EmbeddingGemma-300m
+ * - 采用 Matryoshka 表征:从原生 1024 维中截取前 256 维,再 L2 归一化
+ *   (Qwen3 官方支持 32–1024 任意输出维度,256 维保留 ~95% 质量)
  * - 模型加载走动态 import,确保 Transformers.js 不进主 bundle
  * - 失败时静默降级:调用方通过 getStatus() 感知,不会抛到 UI 顶层
  */
 
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
 
-export const MODEL_ID = 'onnx-community/embeddinggemma-300m-ONNX';
-// v2: 引入 EmbeddingGemma 官方要求的非对称 task 前缀(query / document)。
-// 旧 embedding 在没有前缀的情况下计算,与 query 不在同一语义空间,必须重算。
-export const MODEL_VERSION = 'embeddinggemma-300m@256-v2';
+export const MODEL_ID = 'onnx-community/Qwen3-Embedding-0.6B-ONNX';
+// 模型 id + 截取维度 + 前缀方案 共同构成 embedding 空间身份,任一变化必须 bump 版本号,
+// EmbeddingQueue backlog 扫描会把版本不匹配的记录当作 stale 自动重算。
+export const MODEL_VERSION = 'qwen3-embedding-0.6b@256';
 export const DIMENSIONS = 256;
-const NATIVE_DIMENSIONS = 768;
+const NATIVE_DIMENSIONS = 1024;
 
 export type EmbeddingStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 /**
- * EmbeddingGemma 官方任务前缀。
- * 模型是非对称检索模型:query 和 document 必须使用不同前缀,否则两侧落在不同的语义空间,
- * 余弦相似度会退化成噪声(参见 Google 模型卡)。
+ * Qwen3-Embedding 官方非对称检索方案(参见 Qwen 模型卡):
+ * - query 端:`Instruct: {task}\nQuery:{text}` — 带指令提示输出空间
+ * - document 端:原文不加任何前缀 — 直接 encode
+ *
+ * 两侧必须严格配对:若 query 漏加 instruct 或 document 误加前缀,余弦相似度会退化。
+ * 指令要求用英文,文档/查询本体可任意语言(模型原生多语言)。
  */
 export type EmbeddingTask = 'query' | 'document';
-const TASK_PREFIX: Record<EmbeddingTask, string> = {
-  query: 'task: search result | query: ',
-  document: 'title: none | text: ',
-};
+const QUERY_INSTRUCTION =
+  'Given a search query about a Japanese light novel (plot, characters, events, settings, or terminology), retrieve the most semantically relevant chapter passages or memory summaries.';
 
 function applyTaskPrefix(text: string, task: EmbeddingTask): string {
-  return TASK_PREFIX[task] + text;
+  if (task === 'query') {
+    return `Instruct: ${QUERY_INSTRUCTION}\nQuery:${text}`;
+  }
+  return text; // document 侧不加前缀
 }
 
 export interface EmbeddingProgressEvent {
@@ -165,7 +171,7 @@ export class EmbeddingService {
       for (const name of cacheNames) {
         const cache = await caches.open(name);
         const keys = await cache.keys();
-        if (keys.some((req) => req.url.includes('embeddinggemma'))) {
+        if (keys.some((req) => req.url.toLowerCase().includes('qwen3-embedding'))) {
           return true;
         }
       }
@@ -173,6 +179,44 @@ export class EmbeddingService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * 历史模型在浏览器 Cache Storage 中的 URL 片段列表。
+   * 每次切换嵌入模型时,往这里追加旧模型的 URL 关键词,启动清理会把它们从 Cache API 中删除。
+   * 匹配采用小写 `includes`,不区分大小写。
+   */
+  private static readonly LEGACY_MODEL_URL_PATTERNS: readonly string[] = ['embeddinggemma'];
+
+  /**
+   * 清理历史嵌入模型在浏览器 Cache Storage 中的残留文件。
+   * 用于模型升级后回收空间(例如 EmbeddingGemma-300m 的 ~195MB 权重在切到 Qwen3 后就废了)。
+   * - 不阻塞启动,失败静默
+   * - 返回被删除的条目数,调用方可据此决定是否重置其它相关标记(如 `embeddingModelCached`)
+   */
+  static async cleanupLegacyModelCache(): Promise<number> {
+    if (typeof caches === 'undefined') return 0;
+    let deleted = 0;
+    try {
+      const cacheNames = await caches.keys();
+      for (const name of cacheNames) {
+        const cache = await caches.open(name);
+        const requests = await cache.keys();
+        for (const req of requests) {
+          const url = req.url.toLowerCase();
+          if (EmbeddingService.LEGACY_MODEL_URL_PATTERNS.some((p) => url.includes(p))) {
+            const ok = await cache.delete(req);
+            if (ok) deleted += 1;
+          }
+        }
+      }
+      if (deleted > 0) {
+        console.info(`[EmbeddingService] 清理历史模型缓存: 删除 ${deleted} 个文件`);
+      }
+    } catch (error) {
+      console.warn('[EmbeddingService] cleanupLegacyModelCache 失败:', error);
+    }
+    return deleted;
   }
 
   static getStatus(): EmbeddingStatus {
@@ -205,8 +249,10 @@ export class EmbeddingService {
           options: Record<string, unknown>,
         ) => Promise<FeatureExtractionPipeline>;
 
+        // Qwen3-Embedding-0.6B ONNX 目前仅提供 fp32 / fp16 / q8 三种权重,
+        // q8 约 600MB,是可接受的"质量/体积"平衡点(fp16 ~1.2GB 太大)。
         const extractor = await pipeline('feature-extraction', MODEL_ID, {
-          dtype: 'q4',
+          dtype: 'q8',
           device: 'auto',
           progress_callback: (event: EmbeddingProgressEvent) => {
             this.dispatch('progress', this.enrichWithAggregate(event));
@@ -287,8 +333,8 @@ export class EmbeddingService {
     try {
 
       const output = await this.pipeline!(applyTaskPrefix(text, task), {
-        pooling: 'mean',
-        normalize: false, // 我们手动处理截断 + 归一化
+        pooling: 'last_token', // Qwen3-Embedding 官方要求 last-token pooling
+        normalize: false, // 我们手动处理截断 + 归一化(Matryoshka 截前 DIMENSIONS 维后再 L2)
       });
       return this.extractFirstVector(output);
     } catch (error) {
@@ -323,7 +369,7 @@ export class EmbeddingService {
       const output = await this.pipeline!(
         indexed.map((e) => applyTaskPrefix(e.text, task)),
         {
-          pooling: 'mean',
+          pooling: 'last_token',
           normalize: false,
         },
       );

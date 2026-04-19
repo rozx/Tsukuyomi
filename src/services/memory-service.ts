@@ -254,7 +254,7 @@ export class MemoryService {
 
       this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'created' });
 
-      EmbeddingQueue.enqueue(result.id);
+      EmbeddingQueue.enqueue(result.id, bookId);
 
       return result;
     } catch (error) {
@@ -332,7 +332,7 @@ export class MemoryService {
     await tx.done;
 
     if (shouldEnqueueRecompute) {
-      EmbeddingQueue.enqueue(memory.id);
+      EmbeddingQueue.enqueue(memory.id, memory.bookId);
     }
 
     const cachedMemory: Memory = {
@@ -425,7 +425,7 @@ export class MemoryService {
         this.dispatchMemoryChanged({ bookId, memoryId, action: 'imported' });
 
         if (existing.content !== content || existing.summary !== summary) {
-          EmbeddingQueue.enqueue(memoryId);
+          EmbeddingQueue.enqueue(memoryId, bookId);
         }
 
         return result;
@@ -487,7 +487,7 @@ export class MemoryService {
 
       this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'imported' });
 
-      EmbeddingQueue.enqueue(result.id);
+      EmbeddingQueue.enqueue(result.id, bookId);
 
       return result;
     } catch (error) {
@@ -732,7 +732,7 @@ export class MemoryService {
       const oldSummary = (memory as MemoryStorage).summary;
       const oldContent = (memory as MemoryStorage).content;
       if (oldSummary !== summary || oldContent !== content) {
-        EmbeddingQueue.enqueue(memoryId);
+        EmbeddingQueue.enqueue(memoryId, bookId);
       }
 
       return result;

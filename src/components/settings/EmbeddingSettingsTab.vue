@@ -192,7 +192,7 @@ onUnmounted(() => {
 
         <p class="text-xs text-moon/60">
           <span class="pi pi-info-circle mr-1"></span>
-          {{ MODEL_ID }} (~195 MB,首次使用需下载到浏览器缓存)
+          {{ MODEL_ID }} (~600 MB q8,首次使用需下载到浏览器缓存)
         </p>
       </div>
     </div>
