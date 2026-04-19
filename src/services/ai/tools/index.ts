@@ -211,7 +211,7 @@ export class ToolRegistry {
       // 书籍工具（只读）
       'get_book_info',
       'get_chapter_info',
-      'search_chapter_summaries',
+      'query_chapter',
       // 网络搜索
       'search_web',
       'fetch_webpage',

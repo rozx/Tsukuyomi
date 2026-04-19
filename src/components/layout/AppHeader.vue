@@ -11,7 +11,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
-import BatchSummaryPanel from 'src/components/novel/BatchSummaryPanel.vue';
+import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
 import { debounce } from 'lodash';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
@@ -77,7 +77,7 @@ const toastHistoryRef = ref<ComponentPublicInstance<{ toggle: (event: Event) => 
 );
 const thinkingPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const syncPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
-const batchSummaryPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
+const batchEmbeddingsPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
 
 const toggleHistoryDialog = (event: Event) => {
   toastHistoryRef.value?.toggle(event);
@@ -87,8 +87,8 @@ const toggleThinkingPanel = (event: Event) => {
   thinkingPanelRef.value?.toggle(event);
 };
 
-const toggleBatchSummaryPanel = (event: Event) => {
-  batchSummaryPanelRef.value?.toggle(event);
+const toggleBatchEmbeddingsPanel = (event: Event) => {
+  batchEmbeddingsPanelRef.value?.toggle(event);
 };
 
 const toggleSyncPanel = (event: Event) => {
@@ -372,15 +372,15 @@ onUnmounted(() => {
             >
           </Button>
 
-          <!-- AI 批量摘要按钮 -->
+          <!-- 本地向量索引按钮 -->
           <Button
             v-if="$route.params.id"
-            aria-label="批量摘要"
+            aria-label="向量索引"
             class="p-button-text p-button-rounded relative flex items-center gap-2 text-moon-70 transition-colors hover:text-moon-100"
-            @click="toggleBatchSummaryPanel"
+            @click="toggleBatchEmbeddingsPanel"
           >
             <i class="pi pi-bolt text-lg" />
-            <span class="text-sm text-moon-70 hidden sm:inline">批量摘要</span>
+            <span class="text-sm text-moon-70 hidden sm:inline">向量索引</span>
           </Button>
 
           <!-- 消息历史按钮 -->
@@ -427,8 +427,8 @@ onUnmounted(() => {
     <!-- AI 思考过程 Popover -->
     <ThinkingProcessPanel ref="thinkingPanelRef" />
 
-    <!-- 批量摘要生成 Popover -->
-    <BatchSummaryPanel ref="batchSummaryPanelRef" />
+    <!-- 本地向量索引 Popover -->
+    <BatchEmbeddingsPanel ref="batchEmbeddingsPanelRef" />
   </header>
 </template>
 

@@ -384,7 +384,6 @@ const ctx = injectBookDetailsPage();
             :is-keyboard-selected="ctx.isKeyboardSelected.value"
             :is-click-selected="ctx.isClickSelected.value"
             :paragraph-card-refs="ctx.paragraphCardRefs"
-            :is-summarizing="ctx.isSummarizing.value"
             :prev-chapter="ctx.prevChapter.value"
             :next-chapter="ctx.nextChapter.value"
             @update:original-text-edit-value="
@@ -409,7 +408,6 @@ const ctx = injectBookDetailsPage();
             @paragraph-click="ctx.handleParagraphClick"
             @paragraph-edit-start="ctx.handleParagraphEditStart"
             @paragraph-edit-stop="ctx.handleParagraphEditStop"
-            @re-summarize-chapter="ctx.handleReSummarizeChapter"
             @navigate-to-chapter="ctx.onNavigateToChapter"
             @navigate-to-chapter-list="ctx.onNavigateToChapterList"
           />

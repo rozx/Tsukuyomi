@@ -11,7 +11,6 @@ const TODO_TASK_LABELS: Record<string, string> = {
   polish: '润色',
   proofreading: '校对',
   assistant: '助手',
-  chapter_summary: '章节摘要',
 };
 
 /**

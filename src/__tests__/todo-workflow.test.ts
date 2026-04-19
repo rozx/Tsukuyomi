@@ -52,21 +52,6 @@ describe('TodoWorkflow', () => {
       expect(todos[2]!.text).toContain('add_translation_batch');
     });
 
-    test('chapter_summary planning 应生成 2 个预定义待办', () => {
-      const workflow = new TodoWorkflow('chapter_summary', taskId);
-      const todos = workflow.generateForState('planning');
-
-      expect(todos).toHaveLength(2);
-    });
-
-    test('chapter_summary working 应生成 1 个预定义待办', () => {
-      const workflow = new TodoWorkflow('chapter_summary', taskId);
-      const todos = workflow.generateForState('working');
-
-      expect(todos).toHaveLength(1);
-      expect(todos[0]!.text).toContain('生成章节摘要');
-    });
-
     test('end 状态不应生成任何待办', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('end');
@@ -218,7 +203,7 @@ describe('TodoWorkflow', () => {
     });
 
     test('所有待办完成时应显示完成消息', () => {
-      const workflow = new TodoWorkflow('chapter_summary', taskId);
+      const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('planning');
 
       todos.forEach((t) => TodoListService.markTodoAsDone(t.id));

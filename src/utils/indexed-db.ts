@@ -6,6 +6,7 @@ import type { CoverHistoryItem } from 'src/models/novel';
 import type { SyncConfig } from 'src/models/sync';
 import type { ToastHistoryItem } from 'src/stores/toast-history';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
+import type { ChapterEmbedding } from 'src/models/chapter-embedding';
 
 /**
  * 书籍详情页面 UI 状态
@@ -108,10 +109,18 @@ interface TsukuyomiDB extends DBSchema {
       lastUpdated: string; // ISO 日期字符串
     };
   };
+  'chapter-embeddings': {
+    key: string; // `${chapterId}:${chunkIndex}`
+    value: ChapterEmbedding;
+    indexes: {
+      'by-chapterId': string;
+      'by-bookId': string;
+    };
+  };
 }
 
 const DB_NAME = 'tsukuyomi';
-const DB_VERSION = 9; // v9 硬迁移：清理旧 attachedTo 字段残留（memory-attachment 系统已移除）
+const DB_VERSION = 10; // v10 新增 `chapter-embeddings` store 用于章节级多向量嵌入
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 let dbBlocked = false;
@@ -236,6 +245,13 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
         // 创建 full-text-indexes 存储（版本 6 新增）
         if (!db.objectStoreNames.contains('full-text-indexes')) {
           db.createObjectStore('full-text-indexes', { keyPath: 'bookId' });
+        }
+
+        // 创建 chapter-embeddings 存储（版本 10 新增）
+        if (!db.objectStoreNames.contains('chapter-embeddings')) {
+          const chapterEmbeddingsStore = db.createObjectStore('chapter-embeddings');
+          chapterEmbeddingsStore.createIndex('by-chapterId', 'chapterId', { unique: false });
+          chapterEmbeddingsStore.createIndex('by-bookId', 'bookId', { unique: false });
         }
 
         // 版本 9：硬迁移清理旧 attachedTo 字段
@@ -541,6 +557,7 @@ export async function clearAllData(): Promise<void> {
     'chapter-contents',
     'memories',
     'full-text-indexes',
+    'chapter-embeddings',
   ] as const;
 
   for (const storeName of storeNames) {

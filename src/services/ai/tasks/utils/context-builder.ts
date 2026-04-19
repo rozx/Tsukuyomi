@@ -68,7 +68,6 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
     translation: `\n[提示] 空段落已过滤（无需输出/无需补回）。`,
     proofreading: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
     polish: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
-    chapter_summary: '',
   };
   return reminders[taskType];
 }
@@ -91,23 +90,14 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
 }
 
 /**
- * 构建前一个章节的上下文信息（用于系统提示词）
+ * 构建前一个章节的上下文信息(仅标题,保持时序感知)。
+ * 章节摘要字段已移除,AI 如需前一章具体内容可调用 `query_chapter` / `get_chapter_info`。
  * @param title 前一章节标题
- * @param summary 前一章节摘要
- * @returns 格式化的前文信息，如果都没有则返回空字符串
+ * @returns 格式化的前文信息,无 title 时返回空字符串
  */
-export function buildPreviousChapterSection(title?: string, summary?: string): string {
-  if (!title && !summary) return '';
-
-  const parts: string[] = [];
-  if (title) {
-    parts.push(`**前一章节标题**: ${title}`);
-  }
-  if (summary) {
-    parts.push(`**前一章节摘要**: ${summary}`);
-  }
-
-  return `\n\n【前文信息】\n${parts.join('\n')}\n`;
+export function buildPreviousChapterSection(title?: string): string {
+  if (!title) return '';
+  return `\n\n【前文信息】\n**前一章节标题**: ${title}\n`;
 }
 
 /**
@@ -807,22 +797,7 @@ export async function buildSingleParagraphDefaultContext(options: {
   const chapterContext = buildChapterContextSection(chapterId, chapterTitle);
   if (chapterContext) parts.push(chapterContext);
 
-  // 3. 章节摘要
-  if (bookId && chapterId) {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-    if (book) {
-      for (const volume of book.volumes || []) {
-        const chapter = volume.chapters?.find((c) => c.id === chapterId);
-        if (chapter?.summary) {
-          parts.push(`\n\n【当前章节摘要】\n${chapter.summary}\n`);
-          break;
-        }
-      }
-    }
-  }
-
-  // 4. 本章角色
+  // 3. 本章角色
   if (bookId) {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
@@ -835,7 +810,7 @@ export async function buildSingleParagraphDefaultContext(options: {
     }
   }
 
-  // 5. 相关术语（基于当前段落文本匹配）
+  // 4. 相关术语（基于当前段落文本匹配）
   if (bookId) {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
@@ -854,7 +829,7 @@ export async function buildSingleParagraphDefaultContext(options: {
     }
   }
 
-  // 6. 前后段落上下文
+  // 5. 前后段落上下文
   const surroundingContext = buildSurroundingParagraphsContext(
     currentParagraphId,
     allChapterParagraphs,

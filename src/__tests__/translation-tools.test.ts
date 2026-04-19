@@ -1070,7 +1070,7 @@ describe('add_translation_batch', () => {
   describe('任务类型验证', () => {
     test('当任务类型不是 translation/polish/proofreading 时应返回错误', async () => {
       const tool = getTool();
-      const mockStore = createMockAIProcessingStore('task-1', 'working', 'chapter_summary');
+      const mockStore = createMockAIProcessingStore('task-1', 'working', 'other' as any);
 
       const result = await tool.handler(
         {

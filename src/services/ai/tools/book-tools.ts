@@ -178,7 +178,6 @@ export const bookTools: ToolDefinition[] = [
           id: string;
           title_original: string;
           title_translation: string;
-          summary: string;
         }> = [];
 
         if (book.volumes) {
@@ -201,7 +200,6 @@ export const bookTools: ToolDefinition[] = [
                 id: chapter.id,
                 title_original: titleOriginal,
                 title_translation: titleTranslation,
-                summary: chapter.summary || '',
               });
             }
           }
@@ -288,7 +286,6 @@ export const bookTools: ToolDefinition[] = [
             id: string;
             title_original: string;
             title_translation: string;
-            summary: string;
           }>;
           chapterCount: number;
         }> = [];
@@ -312,7 +309,6 @@ export const bookTools: ToolDefinition[] = [
                     typeof chapter.title === 'string'
                       ? ''
                       : chapter.title.translation?.translation || '',
-                  summary: chapter.summary || '',
                 })) || [];
 
               volumes.push({
@@ -344,106 +340,70 @@ export const bookTools: ToolDefinition[] = [
     definition: {
       type: 'function',
       function: {
-        name: 'search_chapter_summaries',
+        name: 'query_chapter',
         description:
-          '通过关键词搜索章节摘要。当需要根据剧情内容、特定事件或人物行为查找对应章节时使用此工具。返回包含关键词的章节列表（含ID、标题、摘要片段），使用中文搜索。',
+          '通过自然语言语义搜索章节。根据剧情、事件、人物关系等描述找出全书中最相关的章节。返回章节 ID、标题、匹配度以及匹配片段预览(前 200 字);如需章节完整内容请再调用 `get_chapter_info`。注意:本地嵌入模型未就绪时返回结构化错误,应稍后重试。',
         parameters: {
           type: 'object',
           properties: {
-            keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description: '搜索关键词列表（至少提供一个）',
+            query: {
+              type: 'string',
+              description: '自然语言查询(中日文皆可),用于语义匹配章节内容',
             },
             limit: {
               type: 'number',
-              description: '限制返回结果的数量（默认 10）',
+              description: '限制返回结果的数量,默认 5',
             },
           },
-          required: ['keywords'],
+          required: ['query'],
         },
       },
     },
     handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{ keywords: string[]; limit?: number }>(args);
+      const parsedArgs = parseToolArgs<{ query: string; limit?: number }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
-      const { keywords, limit = 10 } = parsedArgs;
-
-      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-        return JSON.stringify({ success: false, error: '必须提供搜索关键词' });
+      const { query, limit = 5 } = parsedArgs;
+      if (!query || typeof query !== 'string' || !query.trim()) {
+        return JSON.stringify({ success: false, error: 'query 不能为空' });
       }
 
       try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
+        const { EmbeddingService } = await import('src/services/embedding-service');
+        if (!EmbeddingService.isReady()) {
+          return JSON.stringify({
+            success: false,
+            error: '章节嵌入服务未就绪,请稍后重试或让用户在设置里启用本地嵌入模型',
+            service_status: EmbeddingService.getStatus(),
+          });
         }
 
-        // 报告读取操作
         if (onAction) {
           onAction({
             type: 'search',
             entity: 'chapter',
             data: {
               book_id: bookId,
-              tool_name: 'search_chapter_summaries',
-              keywords,
+              tool_name: 'query_chapter',
+              query,
             },
           });
         }
 
-        const matches: Array<{
-          id: string;
-          title: string;
-          summary: string;
-          match_score: number;
-          matched_keywords: string[];
-        }> = [];
-
-        if (book.volumes) {
-          for (const volume of book.volumes) {
-            if (!volume.chapters) continue;
-            for (const chapter of volume.chapters) {
-              if (!chapter.summary) continue;
-
-              const matchedKeywords: string[] = [];
-              let score = 0;
-
-              for (const keyword of keywords) {
-                if (chapter.summary.includes(keyword)) {
-                  matchedKeywords.push(keyword);
-                  score++;
-                }
-              }
-
-              if (score > 0) {
-                matches.push({
-                  id: chapter.id,
-                  title: getChapterDisplayTitle(chapter),
-                  summary: chapter.summary,
-                  match_score: score,
-                  matched_keywords: matchedKeywords,
-                });
-              }
-            }
-          }
-        }
-
-        // 按匹配分数排序（降序）并应用限制
-        const sortedMatches = matches.sort((a, b) => b.match_score - a.match_score).slice(0, limit);
+        const { ChapterEmbeddingService } = await import(
+          'src/services/chapter-embedding-service'
+        );
+        const matches = await ChapterEmbeddingService.queryChapters(bookId, query, limit);
 
         return JSON.stringify({
           success: true,
-          matches: sortedMatches,
+          matches,
         });
       } catch (error) {
         return JSON.stringify({
           success: false,
-          error: error instanceof Error ? error.message : '搜索章节摘要失败',
+          error: error instanceof Error ? error.message : '章节语义查询失败',
         });
       }
     },
@@ -587,7 +547,6 @@ export const bookTools: ToolDefinition[] = [
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
               typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
-            summary: chapter.summary || '',
             content: chapterContent,
             paragraphCount,
             translatedCount,
@@ -728,7 +687,6 @@ export const bookTools: ToolDefinition[] = [
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
               typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
-            summary: chapter.summary || '',
             content: chapterContent,
             paragraphCount,
             translatedCount,
@@ -868,7 +826,6 @@ export const bookTools: ToolDefinition[] = [
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
               typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
-            summary: chapter.summary || '',
             content: chapterContent,
             paragraphCount,
             translatedCount,

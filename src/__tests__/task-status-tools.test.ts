@@ -647,63 +647,6 @@ describe('update_task_status', () => {
     });
   });
 
-  describe('章节摘要任务状态转换', () => {
-    test('planning -> working 应成功', async () => {
-      const tool = getTool();
-      const mockStore = createMockAIProcessingStore([
-        { id: 'task-1', workflowStatus: 'planning', type: 'chapter_summary' },
-      ]);
-
-      const result = await tool.handler(
-        { status: 'working' },
-        {
-          taskId: 'task-1',
-          aiProcessingStore: mockStore,
-        },
-      );
-
-      const resultObj = JSON.parse(result);
-      expect(resultObj.success).toBe(true);
-    });
-
-    test('working -> end 应成功', async () => {
-      const tool = getTool();
-      const mockStore = createMockAIProcessingStore([
-        { id: 'task-1', workflowStatus: 'working', type: 'chapter_summary' },
-      ]);
-
-      const result = await tool.handler(
-        { status: 'end' },
-        {
-          taskId: 'task-1',
-          aiProcessingStore: mockStore,
-        },
-      );
-
-      const resultObj = JSON.parse(result);
-      expect(resultObj.success).toBe(true);
-    });
-
-    test('working -> review 应失败（章节摘要任务不支持 review）', async () => {
-      const tool = getTool();
-      const mockStore = createMockAIProcessingStore([
-        { id: 'task-1', workflowStatus: 'working', type: 'chapter_summary' },
-      ]);
-
-      const result = await tool.handler(
-        { status: 'review' },
-        {
-          taskId: 'task-1',
-          aiProcessingStore: mockStore,
-        },
-      );
-
-      const resultObj = JSON.parse(result);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('章节摘要任务不支持 review 状态');
-    });
-  });
-
   describe('状态更新执行', () => {
     test('应调用 updateTask 更新状态', async () => {
       const tool = getTool();

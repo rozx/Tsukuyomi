@@ -5,6 +5,7 @@ import './setup';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import { MemoryService } from 'src/services/memory-service';
+import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import type { Memory } from 'src/models/memory';
 
 function makeMemory(id: string, overrides: Partial<Memory> = {}): Memory {
@@ -249,5 +250,182 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     expect(EmbeddingQueue.isRunning()).toBe(false);
     // pending 仍保留,等下次 service 就绪再处理
     expect(EmbeddingQueue.getProgress().pending).toBe(1);
+  });
+});
+
+describe('EmbeddingQueue - chapter kind', () => {
+  beforeEach(() => {
+    EmbeddingQueue.__resetForTesting();
+    spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
+    spyOn(EmbeddingService, 'init').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    EmbeddingQueue.__resetForTesting();
+    mock.restore();
+  });
+
+  test('enqueueChapter 入队后调用 ChapterEmbeddingService.embedChapter', async () => {
+    const embedSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(undefined);
+
+    EmbeddingQueue.enqueueChapter('ch-1');
+    await waitForIdle();
+
+    expect(embedSpy).toHaveBeenCalledTimes(1);
+    expect(embedSpy.mock.calls[0]?.[0]).toBe('ch-1');
+  });
+
+  test('重复 enqueueChapter 同一 id 不会重复处理', async () => {
+    const embedSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(undefined);
+
+    EmbeddingQueue.enqueueChapter('ch-dup');
+    EmbeddingQueue.enqueueChapter('ch-dup');
+    EmbeddingQueue.enqueueChapter('ch-dup');
+    await waitForIdle();
+
+    expect(embedSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('cancelChapter 从 pending 中移除', async () => {
+    // 阻塞 embedChapter 让队列保持运行
+    let release!: () => void;
+    const block = new Promise<void>((r) => {
+      release = r;
+    });
+    spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(async () => {
+      await block;
+    });
+
+    EmbeddingQueue.enqueueChapter('ch-0');
+    EmbeddingQueue.enqueueChapter('ch-1');
+    EmbeddingQueue.enqueueChapter('ch-2');
+
+    await new Promise((r) => setTimeout(r, 5));
+    // ch-0 被取走正在处理,ch-1 / ch-2 在 pending
+    expect(EmbeddingQueue.getProgress().breakdown.chapter.pending).toBe(2);
+
+    EmbeddingQueue.cancelChapter('ch-1');
+    expect(EmbeddingQueue.getProgress().breakdown.chapter.pending).toBe(1);
+
+    release();
+    await waitForIdle();
+  });
+
+  test('chapter 与 memory 混合入队时 memory 合批,chapter 单独处理', async () => {
+    spyOn(MemoryService, 'getMemoryByIdOnly').mockImplementation(async (id: string) =>
+      makeMemory(id),
+    );
+    spyOn(MemoryService, 'updateMemoryEmbeddingOnly').mockResolvedValue(undefined);
+    const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([
+      new Float32Array([0.1]),
+    ]);
+    const embedChapterSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(
+      undefined,
+    );
+
+    // chapter 在前,memory 在后,memory 应独立合批
+    EmbeddingQueue.enqueueChapter('ch-A');
+    EmbeddingQueue.enqueueMemory('m1');
+    EmbeddingQueue.enqueueMemory('m2');
+    EmbeddingQueue.enqueueChapter('ch-B');
+    EmbeddingQueue.enqueueMemory('m3');
+
+    await waitForIdle();
+
+    // chapter 各处理一次(两次)
+    expect(embedChapterSpy).toHaveBeenCalledTimes(2);
+    // memory 之间被合批,而 ch-B 隔开第一批和第三批:ch-A → [m1,m2] → ch-B → [m3]
+    expect(embedBatchSpy).toHaveBeenCalledTimes(2);
+    expect((embedBatchSpy.mock.calls[0]?.[0] as string[]).length).toBe(2);
+    expect((embedBatchSpy.mock.calls[1]?.[0] as string[]).length).toBe(1);
+  });
+
+  test('breakdown 字段分别统计 memory / chapter', async () => {
+    // 阻塞两类处理
+    let release!: () => void;
+    const block = new Promise<void>((r) => {
+      release = r;
+    });
+    spyOn(MemoryService, 'getMemoryByIdOnly').mockImplementation(async (id: string) =>
+      makeMemory(id),
+    );
+    spyOn(MemoryService, 'updateMemoryEmbeddingOnly').mockResolvedValue(undefined);
+    spyOn(EmbeddingService, 'embedBatch').mockImplementation(async (texts: string[]) => {
+      await block;
+      return texts.map(() => new Float32Array([0.1]));
+    });
+    spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(async () => {
+      await block;
+    });
+
+    EmbeddingQueue.enqueueMemory('m1');
+    EmbeddingQueue.enqueueMemory('m2');
+    EmbeddingQueue.enqueueChapter('ch-1');
+    EmbeddingQueue.enqueueChapter('ch-2');
+
+    const progress = EmbeddingQueue.getProgress();
+    expect(progress.breakdown.memory.total).toBe(2);
+    expect(progress.breakdown.chapter.total).toBe(2);
+    expect(progress.breakdown.memory.pending + progress.breakdown.chapter.pending).toBe(4);
+
+    release();
+    await waitForIdle();
+  });
+
+  test('enqueueChapterBacklog 只入队需要嵌入的章节', async () => {
+    spyOn(ChapterEmbeddingService, 'findChaptersNeedingEmbedding').mockResolvedValue([
+      'ch-need-1',
+      'ch-need-2',
+    ]);
+    const embedSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(undefined);
+
+    const added = await EmbeddingQueue.enqueueChapterBacklog('book-1');
+    expect(added).toBe(2);
+    await waitForIdle();
+
+    expect(embedSpy).toHaveBeenCalledTimes(2);
+    const calledIds = (embedSpy.mock.calls.map((c) => c[0]) as string[]).sort();
+    expect(calledIds).toEqual(['ch-need-1', 'ch-need-2']);
+  });
+
+  test('enqueueChapterBacklog 已在 pending 中的 id 不重复入队', async () => {
+    spyOn(ChapterEmbeddingService, 'findChaptersNeedingEmbedding').mockResolvedValue([
+      'ch-A',
+      'ch-B',
+    ]);
+    spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(undefined);
+
+    // 先暂停队列,手动入队 ch-A,此时 ch-A 在 pending 中
+    EmbeddingQueue.pause();
+    EmbeddingQueue.enqueueChapter('ch-A');
+    expect(EmbeddingQueue.getProgress().breakdown.chapter.pending).toBe(1);
+
+    // backlog 扫描发现 ch-A 已在 pending,只应新增 ch-B
+    const added = await EmbeddingQueue.enqueueChapterBacklog('book-1');
+    expect(added).toBe(1);
+    expect(EmbeddingQueue.getProgress().breakdown.chapter.pending).toBe(2);
+
+    EmbeddingQueue.resume();
+    await waitForIdle();
+  });
+
+  test('chapter 批失败不影响后续队列', async () => {
+    spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(async (id: string) => {
+      if (id === 'ch-bad') throw new Error('boom');
+    });
+
+    let errorCount = 0;
+    const off = EmbeddingQueue.addEventListener('error', () => {
+      errorCount += 1;
+    });
+
+    EmbeddingQueue.enqueueChapter('ch-bad');
+    EmbeddingQueue.enqueueChapter('ch-good');
+    await waitForIdle();
+    off();
+
+    expect(errorCount).toBe(1);
+    // 两个 chapter 都被尝试处理
+    expect(EmbeddingQueue.getProgress().pending).toBe(0);
   });
 });

@@ -39,7 +39,7 @@ export function getSymbolFormatRules(): string {
 /**
  * 获取规划阶段描述
  */
-function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolean): string {
+function getPlanningStateDescription(_taskLabel: string, isBriefPlanning?: boolean): string {
   if (isBriefPlanning) {
     return `**当前状态：简短规划阶段 (planning)**
 已继承前一部分的规划上下文。如需补充信息可调用工具。
@@ -67,9 +67,6 @@ function getWorkingStateDescription(taskType: TaskType): string {
   switch (taskType) {
     case 'translation':
       focusDesc = '1:1翻译，敬语按流程处理';
-      break;
-    case 'chapter_summary':
-      focusDesc = '生成章节摘要，概括主要情节';
       break;
     case 'polish':
       focusDesc = '语气词优化、摆脱翻译腔、节奏调整';
@@ -102,7 +99,7 @@ ${dataWriteRestrictionLine}- 使用 \`add_translation_batch\` 提交结果 ${onl
 /**
  * 获取复核阶段描述
  */
-function getReviewStateDescription(taskLabel: string): string {
+function getReviewStateDescription(_taskLabel: string): string {
   return `**当前状态：复核阶段 (review)**
 按待办清单逐项检查，发现问题可直接用 \`add_translation_batch\` 修正。
 可创建/更新术语、角色、记忆。

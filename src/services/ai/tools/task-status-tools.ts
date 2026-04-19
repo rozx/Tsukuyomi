@@ -32,11 +32,6 @@ const TRANSITION_RULES: Record<TaskType, StateTransitionRules> = {
     working: ['end'],
     end: [],
   },
-  chapter_summary: {
-    planning: ['working'],
-    working: ['end'],
-    end: [],
-  },
 };
 
 /**
@@ -69,9 +64,6 @@ function getTransitionErrorMessage(
     }
     if (taskType === 'proofreading') {
       return '校对任务不支持 review 状态';
-    }
-    if (taskType === 'chapter_summary') {
-      return '章节摘要任务不支持 review 状态';
     }
   }
 
