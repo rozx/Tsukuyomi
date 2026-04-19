@@ -313,6 +313,7 @@ export function getToolUsageInstructions(
 【工具使用建议】
 - 用途：获取上下文、维护术语/角色/记忆、查询历史翻译、查询待办事项。
 - 优先用本地数据，网络工具仅用于外部知识
+- **章节语义搜索**：需要跨章节回忆剧情 / 场景 / 人物关系 / 设定时，用 \`query_chapter\` 做自然语言语义搜索（返回匹配章节 ID、标题、匹配度、前 200 字片段预览），再按需调 \`get_chapter_info\` 读完整章节。典型触发：发现"回想起前面某章的对话 / 战斗 / 约定"之类代词或指代不清的上下文。
 ${askUserLine}- 最小必要：拿到信息后立刻回到${taskLabel}输出
 - ${getTodoToolsDescription(taskType)}`;
 }
