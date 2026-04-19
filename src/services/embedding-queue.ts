@@ -19,7 +19,7 @@
  */
 
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
-import { MemoryService } from 'src/services/memory-service';
+import { MemoryService, isMemoryEmbeddingStale } from 'src/services/memory-service';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import type { Memory } from 'src/models/memory';
 
@@ -73,14 +73,8 @@ interface BatchTiming {
   durationMs: number;
 }
 
-/**
- * 判断一条 Memory 是否需要(重新)嵌入
- */
-function memoryNeedsEmbedding(memory: Memory): boolean {
-  if (!memory.embedding || memory.embedding.length === 0) return true;
-  if (memory.embeddingModel !== MODEL_VERSION) return true;
-  return false;
-}
+// memoryNeedsEmbedding 已收敛到 memory-service.isMemoryEmbeddingStale(单一事实源)。
+// 其它处也通过该 helper 判定 stale,保证 UI / backlog / 测试三方语义一致。
 
 function buildMemoryInput(memory: Memory): string {
   const summary = (memory.summary ?? '').trim();
@@ -242,7 +236,7 @@ export class EmbeddingQueue {
       const memories = await MemoryService.getAllBookMemories(bookId);
       let added = 0;
       for (const mem of memories) {
-        if (!memoryNeedsEmbedding(mem)) continue;
+        if (!isMemoryEmbeddingStale(mem)) continue;
         if (this.pending.some((item) => item.kind === 'memory' && item.id === mem.id)) continue;
         this.pending.push({ kind: 'memory', id: mem.id, bookId });
         added += 1;

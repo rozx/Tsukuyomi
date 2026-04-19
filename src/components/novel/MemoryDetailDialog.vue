@@ -10,7 +10,7 @@ import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Memory } from 'src/models/memory';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import { MemoryService } from 'src/services/memory-service';
-import { MODEL_VERSION } from 'src/services/embedding-service';
+import { isMemoryEmbeddingStale } from 'src/services/memory-service';
 
 interface Props {
   visible: boolean;
@@ -45,9 +45,9 @@ const dialogHeader = computed(() => {
 // 嵌入状态
 const embeddingStatus = computed<'ready' | 'pending' | 'stale'>(() => {
   if (!props.memory) return 'pending';
-  const { embedding, embeddingModel } = props.memory;
+  const { embedding } = props.memory;
   if (!embedding || embedding.length === 0) return 'pending';
-  if (!embeddingModel || embeddingModel !== MODEL_VERSION) return 'stale';
+  if (isMemoryEmbeddingStale(props.memory)) return 'stale';
   return 'ready';
 });
 

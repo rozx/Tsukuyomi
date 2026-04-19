@@ -46,7 +46,7 @@ export function buildTranslationSystemPrompt(params: TranslationSystemPromptPara
   } = params;
 
   const chapterLookupHint = hasQueryChapterTool(tools)
-    ? '需要章节语义上下文时用 query_chapter（query 带人物+身份+具体动作+独特细节，避免抽象主题/读后总结；Top1 未必最佳，参考 Top2-5），再按需调 get_chapter_info 读全文。"某角色登场"类标签式需求改用 list_chapters 按标题关键词匹配。'
+    ? '需要章节上下文时用 query_chapter（三类最稳 query：标题/系列名直搜、人物+具体动作+独特细节、事件锚点；中文转述日文标题字面差异大时优先用原文；避免抽象读后感、仅人名无动作；Top1 未必最佳默认看 Top3-5），再按需调 get_chapter_info 读全文。'
     : '需要章节上下文时用 list_chapters 找到章节 ID 后调 get_chapter_info 读全文。';
 
   return `你是专业的日轻小说翻译助手，将日语翻译为自然流畅的简体中文。${todosPrompt}${bookContextSection}${chapterContextSection}${previousChapterSection}${specialInstructionsSection}

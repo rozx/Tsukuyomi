@@ -10,7 +10,8 @@ import {
   type ChapterQueryMatch,
 } from 'src/services/chapter-embedding-service';
 import { MemoryService } from 'src/services/memory-service';
-import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
+import { EmbeddingService } from 'src/services/embedding-service';
+import { isMemoryEmbeddingStale } from 'src/services/memory-service';
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -107,8 +108,7 @@ async function runQuery(target: TestTarget): Promise<void> {
       const memories = await MemoryService.getAllBookMemories(id);
       const scored: TestResultItem[] = [];
       for (const m of memories) {
-        if (!m.embedding || m.embedding.length === 0) continue;
-        if (m.embeddingModel !== MODEL_VERSION) continue;
+        if (isMemoryEmbeddingStale(m)) continue;
         const score = cosineSimilarity(queryVec, m.embedding);
         const title = (m.summary ?? '').trim() || '(无摘要)';
         const preview = (m.content ?? '').trim().slice(0, 160);

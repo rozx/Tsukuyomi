@@ -6,7 +6,8 @@ import {
   CHUNK_TARGET_CHARS,
   PREVIEW_CHARS,
 } from 'src/services/chapter-embedding-service';
-import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
+import { EmbeddingService } from 'src/services/embedding-service';
+import { CHAPTER_MODEL_VERSION } from 'src/services/chapter-embedding-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import * as BooksStoreModule from 'src/stores/books';
 import type { Paragraph, Novel } from 'src/models/novel';
@@ -152,9 +153,9 @@ describe('ChapterEmbeddingService.writeChunksForChapter + getChunksForChapter', 
 
   test('写入后能按 chapterId 读回,chunkIndex 升序', async () => {
     await ChapterEmbeddingService.writeChunksForChapter('ch-1', 'book-1', [
-      { chunkIndex: 1, vector: [0.2], textSnippet: 'b' },
-      { chunkIndex: 0, vector: [0.1], textSnippet: 'a' },
-      { chunkIndex: 2, vector: [0.3], textSnippet: 'c' },
+      { kind: 'content', chunkIndex: 1, vector: [0.2], textSnippet: 'b' },
+      { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 'a' },
+      { kind: 'content', chunkIndex: 2, vector: [0.3], textSnippet: 'c' },
     ]);
 
     const chunks = await ChapterEmbeddingService.getChunksForChapter('ch-1');
@@ -163,19 +164,19 @@ describe('ChapterEmbeddingService.writeChunksForChapter + getChunksForChapter', 
     expect(chunks[1]!.chunkIndex).toBe(1);
     expect(chunks[2]!.chunkIndex).toBe(2);
     expect(chunks[0]!.textSnippet).toBe('a');
-    expect(chunks[0]!.model).toBe(MODEL_VERSION);
+    expect(chunks[0]!.model).toBe(CHAPTER_MODEL_VERSION);
     expect(chunks[0]!.bookId).toBe('book-1');
   });
 
   test('二次写入会原子替换(旧 chunk 被清除)', async () => {
     await ChapterEmbeddingService.writeChunksForChapter('ch-1', 'book-1', [
-      { chunkIndex: 0, vector: [0.1], textSnippet: 'old-a' },
-      { chunkIndex: 1, vector: [0.2], textSnippet: 'old-b' },
-      { chunkIndex: 2, vector: [0.3], textSnippet: 'old-c' },
+      { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 'old-a' },
+      { kind: 'content', chunkIndex: 1, vector: [0.2], textSnippet: 'old-b' },
+      { kind: 'content', chunkIndex: 2, vector: [0.3], textSnippet: 'old-c' },
     ]);
 
     await ChapterEmbeddingService.writeChunksForChapter('ch-1', 'book-1', [
-      { chunkIndex: 0, vector: [0.9], textSnippet: 'new-a' },
+      { kind: 'content', chunkIndex: 0, vector: [0.9], textSnippet: 'new-a' },
     ]);
 
     const chunks = await ChapterEmbeddingService.getChunksForChapter('ch-1');
@@ -185,10 +186,10 @@ describe('ChapterEmbeddingService.writeChunksForChapter + getChunksForChapter', 
 
   test('deleteChunksForChapter 清空指定章节', async () => {
     await ChapterEmbeddingService.writeChunksForChapter('ch-1', 'book-1', [
-      { chunkIndex: 0, vector: [0.1], textSnippet: 'a' },
+      { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 'a' },
     ]);
     await ChapterEmbeddingService.writeChunksForChapter('ch-2', 'book-1', [
-      { chunkIndex: 0, vector: [0.2], textSnippet: 'b' },
+      { kind: 'content', chunkIndex: 0, vector: [0.2], textSnippet: 'b' },
     ]);
 
     await ChapterEmbeddingService.deleteChunksForChapter('ch-1');
@@ -199,13 +200,13 @@ describe('ChapterEmbeddingService.writeChunksForChapter + getChunksForChapter', 
 
   test('getChunksForBook 返回整本书的 chunk', async () => {
     await ChapterEmbeddingService.writeChunksForChapter('ch-1', 'book-1', [
-      { chunkIndex: 0, vector: [0.1], textSnippet: 'a' },
+      { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 'a' },
     ]);
     await ChapterEmbeddingService.writeChunksForChapter('ch-2', 'book-1', [
-      { chunkIndex: 0, vector: [0.2], textSnippet: 'b' },
+      { kind: 'content', chunkIndex: 0, vector: [0.2], textSnippet: 'b' },
     ]);
     await ChapterEmbeddingService.writeChunksForChapter('ch-3', 'book-2', [
-      { chunkIndex: 0, vector: [0.3], textSnippet: 'c' },
+      { kind: 'content', chunkIndex: 0, vector: [0.3], textSnippet: 'c' },
     ]);
 
     const book1 = await ChapterEmbeddingService.getChunksForBook('book-1');
@@ -227,7 +228,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
 
   test('章节不存在于 store 时清空已有 chunks', async () => {
     await ChapterEmbeddingService.writeChunksForChapter('orphan', 'book-X', [
-      { chunkIndex: 0, vector: [0.5], textSnippet: 'stale' },
+      { kind: 'content', chunkIndex: 0, vector: [0.5], textSnippet: 'stale' },
     ]);
     expect(await ChapterEmbeddingService.getChunksForChapter('orphan')).toHaveLength(1);
 
@@ -240,7 +241,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
 
   test('段落为空时清空已有 chunks,不调用 embedBatch', async () => {
     await ChapterEmbeddingService.writeChunksForChapter('ch-empty', 'book-1', [
-      { chunkIndex: 0, vector: [0.5], textSnippet: 'stale' },
+      { kind: 'content', chunkIndex: 0, vector: [0.5], textSnippet: 'stale' },
     ]);
 
     const book: Novel = {
@@ -346,7 +347,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
     expect(chunks[0]!.vector).toHaveLength(2);
     expect(chunks[0]!.vector[0]).toBeCloseTo(0.1, 5);
     expect(chunks[0]!.vector[1]).toBeCloseTo(0.2, 5);
-    expect(chunks[0]!.model).toBe(MODEL_VERSION);
+    expect(chunks[0]!.model).toBe(CHAPTER_MODEL_VERSION);
   });
 });
 
@@ -407,14 +408,14 @@ describe('ChapterEmbeddingService.queryChapters', () => {
     mockBooksStoreWith(book);
 
     await ChapterEmbeddingService.writeChunksForChapter('ch-A', 'book-1', [
-      { chunkIndex: 0, vector: [0.3, 1], textSnippet: 'A-0 (low)' },
-      { chunkIndex: 1, vector: [0.9, 1], textSnippet: 'A-1 (high)' },
+      { kind: 'content', chunkIndex: 0, vector: [0.3, 1], textSnippet: 'A-0 (low)' },
+      { kind: 'content', chunkIndex: 1, vector: [0.9, 1], textSnippet: 'A-1 (high)' },
     ]);
     await ChapterEmbeddingService.writeChunksForChapter('ch-B', 'book-1', [
-      { chunkIndex: 0, vector: [0.5, 1], textSnippet: 'B-0' },
+      { kind: 'content', chunkIndex: 0, vector: [0.5, 1], textSnippet: 'B-0' },
     ]);
     await ChapterEmbeddingService.writeChunksForChapter('ch-C', 'book-1', [
-      { chunkIndex: 0, vector: [0.1, 1], textSnippet: 'C-0' },
+      { kind: 'content', chunkIndex: 0, vector: [0.1, 1], textSnippet: 'C-0' },
     ]);
 
     const result = await ChapterEmbeddingService.queryChapters('book-1', 'q', 2);
@@ -445,7 +446,7 @@ describe('ChapterEmbeddingService.queryChapters', () => {
     mockBooksStoreWith(book);
     for (let i = 0; i < 8; i++) {
       await ChapterEmbeddingService.writeChunksForChapter(`ch-${i}`, 'book-1', [
-        { chunkIndex: 0, vector: [1], textSnippet: `snippet-${i}` },
+        { kind: 'content', chunkIndex: 0, vector: [1], textSnippet: `snippet-${i}` },
       ]);
     }
 
@@ -507,7 +508,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding', () => {
     mockBooksStoreWith(book);
 
     await ChapterEmbeddingService.writeChunksForChapter('ch-current', 'book-1', [
-      { chunkIndex: 0, vector: [0.1], textSnippet: 's' },
+      { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 's' },
     ]);
     const db = await getDB();
     const tx = db.transaction('chapter-embeddings', 'readwrite');
@@ -515,13 +516,14 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding', () => {
       {
         chapterId: 'ch-stale',
         bookId: 'book-1',
+        kind: 'content',
         chunkIndex: 0,
         vector: [0.2],
         textSnippet: 'stale',
         model: 'old-model@128',
         updatedAt: Date.now(),
       },
-      'ch-stale:0',
+      'ch-stale:content:0',
     );
     await tx.done;
 

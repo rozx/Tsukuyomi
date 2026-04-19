@@ -3,8 +3,27 @@ import { generateShortId } from 'src/utils/id-generator';
 import type { Memory } from 'src/models/memory';
 import { useSettingsStore } from 'src/stores/settings';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
+import { MODEL_VERSION } from 'src/services/embedding-service';
 
 const MAX_MEMORIES_PER_BOOK = 500;
+
+/**
+ * 单一事实源 — 判定一条 memory 是否需要(重新)嵌入:无 vector 或 model 版本不匹配。
+ *
+ * 集中在这里避免 `!memory.embedding || memory.embeddingModel !== MODEL_VERSION` 这种
+ * 比对在 EmbeddingQueue / MemoryCard / MemoryPanel / Dialog 各处独立漂移。
+ *
+ * 语义:返回 true 表示"stale 或缺失",一概视为需要嵌入(EmbeddingQueue.memoryNeedsEmbedding
+ * 与 UI 的 stale 标识沿用同一语义,backlog 入队 / UI 显示 / 测试查询过滤都用它)。
+ */
+export function isMemoryEmbeddingStale(memory: {
+  embedding?: number[] | undefined;
+  embeddingModel?: string | undefined;
+}): boolean {
+  if (!memory.embedding || memory.embedding.length === 0) return true;
+  if (memory.embeddingModel !== MODEL_VERSION) return true;
+  return false;
+}
 
 /**
  * Memory 存储结构（用于 IndexedDB）

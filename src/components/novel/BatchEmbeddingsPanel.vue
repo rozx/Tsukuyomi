@@ -18,8 +18,12 @@ import {
   type EmbeddingBackend,
   MODEL_VERSION,
 } from 'src/services/embedding-service';
-import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
-import { MemoryService } from 'src/services/memory-service';
+import {
+  ChapterEmbeddingService,
+  CHAPTER_MODEL_VERSION,
+  isChapterChunkStale,
+} from 'src/services/chapter-embedding-service';
+import { MemoryService, isMemoryEmbeddingStale } from 'src/services/memory-service';
 import BatchEmbeddingsTestQueryDialog from 'src/components/dialogs/BatchEmbeddingsTestQueryDialog.vue';
 import {
   isLocalEmbeddingEffectivelyEnabled,
@@ -47,7 +51,7 @@ const activeBackend = ref<EmbeddingBackend | null>(EmbeddingService.getActiveBac
 // DB 实际已嵌入统计（独立于 queue session 计数）
 const chapterStats = ref<{ embedded: number; total: number }>({ embedded: 0, total: 0 });
 const memoryStats = ref<{ embedded: number; total: number }>({ embedded: 0, total: 0 });
-// 存在 embedding 但 model 版本与当前 MODEL_VERSION 不符的 stale 数量。
+// 存在 embedding 但 model 版本与当前 MODEL_VERSION / CHAPTER_MODEL_VERSION 不符的 stale 数量。
 // 非零说明 embedding 空间刚升级但 backlog 还没重算完 — 此时 search 会自动把这部分降级,
 // UI 要给用户一条横幅解释为什么"已嵌入"数字突然掉到 0 / 需要重建。
 const staleCounts = ref<{ chapter: number; memory: number }>({ chapter: 0, memory: 0 });
@@ -78,7 +82,8 @@ async function refreshStats(): Promise<void> {
     // 按 chapterId 聚合:当前版本 chunk 才算 embedded;完全由 stale chunk 组成的章节计入 stale
     const statusByChapter = new Map<string, 'current' | 'stale'>();
     for (const c of chunks) {
-      if (c.model === MODEL_VERSION) {
+      // 走单一事实源 isChapterChunkStale(避免散落的版本号比对漂移)
+      if (!isChapterChunkStale(c)) {
         statusByChapter.set(c.chapterId, 'current');
       } else if (!statusByChapter.has(c.chapterId)) {
         statusByChapter.set(c.chapterId, 'stale');
@@ -103,8 +108,9 @@ async function refreshStats(): Promise<void> {
     for (const m of memories) {
       const hasVec = !!(m.embedding && m.embedding.length > 0);
       if (!hasVec) continue;
-      if (m.embeddingModel === MODEL_VERSION) embedded += 1;
-      else memoryStale += 1;
+      // 有向量但 stale → 计 stale;有向量且非 stale → 计 embedded
+      if (isMemoryEmbeddingStale(m)) memoryStale += 1;
+      else embedded += 1;
     }
     memoryStats.value = { embedded, total: memories.length };
   } catch (error) {
@@ -495,7 +501,7 @@ defineExpose({ toggle });
         <div class="flex flex-col gap-1 text-xs text-moon-50 px-1">
           <div class="flex items-center justify-between">
             <span>模型:</span>
-            <span class="font-mono">{{ MODEL_VERSION }}</span>
+            <span class="font-mono">{{ MODEL_VERSION }}<span class="text-moon-300">(章节: @{{ CHAPTER_MODEL_VERSION.split('@').pop() }})</span></span>
           </div>
           <div class="flex items-center justify-between">
             <span>后端:</span>

@@ -19,7 +19,7 @@ import { SettingsService } from 'src/services/settings-service';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import type { EmbeddingQueueProgress } from 'src/services/embedding-queue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { MODEL_VERSION } from 'src/services/embedding-service';
+import { isMemoryEmbeddingStale } from 'src/services/memory-service';
 
 const props = defineProps<{
   book: Novel | null;
@@ -67,7 +67,7 @@ const hasActiveFilters = computed(() => {
 });
 
 function isMemoryUnembedded(memory: Memory): boolean {
-  return !memory.embedding || memory.embeddingModel !== MODEL_VERSION;
+  return isMemoryEmbeddingStale(memory);
 }
 
 // 混合搜索结果（异步）

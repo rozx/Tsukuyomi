@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import type { Memory } from 'src/models/memory';
-import { MODEL_VERSION } from 'src/services/embedding-service';
+import { isMemoryEmbeddingStale } from 'src/services/memory-service';
 
 interface Props {
   memory: Memory;
@@ -25,9 +25,11 @@ const emit = defineEmits<{
 
 // 向量状态：ready（已向量化）/ pending（待向量化）/ stale（版本过期）
 const embeddingStatus = computed<'ready' | 'pending' | 'stale'>(() => {
-  const { embedding, embeddingModel } = props.memory;
+  const { embedding } = props.memory;
   if (!embedding || embedding.length === 0) return 'pending';
-  if (!embeddingModel || embeddingModel !== MODEL_VERSION) return 'stale';
+  // 有向量但 stale → 版本过期(isMemoryEmbeddingStale 同时覆盖"无向量"与"版本不一致",
+  // 这里 pending 已经先排除了无向量,所以剩下的 stale 必然是版本过期)
+  if (isMemoryEmbeddingStale(props.memory)) return 'stale';
   return 'ready';
 });
 

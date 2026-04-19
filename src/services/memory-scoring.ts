@@ -112,13 +112,22 @@ export function calculateKeywordHitRatio(
 /**
  * 从自然语言 query 里抽出"语义单元"——用于搜索场景的部分匹配打分。
  *
- * 单元 = CJK 连续块(汉字/假名)∪ 字母数字词。忽略标点和空白分隔符。
- * 只保留长度 ≥ 2 的单元,避免单字噪声(单个汉字在大量 memory 里都能命中)。
+ * 单元 = CJK 连续块(汉字/假名)∪ 字母数字词 ∪ identifier 字符。忽略标点和空白分隔符。
+ * - CJK / ALPHA_RUN:长度 ≥ 2 才入,避免单字噪声(单个汉字在大量 memory 里都能命中)
+ * - IDENTIFIER_RUN:**单字符即入**,因为圈号/罗马数字本身就是完整的章节序号 token
+ *   (轻小说章节标题大量用 ① ⑥ Ⅴ 这类),长度过滤会把它们误删
  */
 const CJK_RUN = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff々ー〇]+/g;
 const ALPHA_RUN = /[a-z0-9]{2,}/g;
+/**
+ * Identifier 字符:
+ * - U+2460–U+24FF: 圈号(① ② ⑥ ⑳ ㈠ ㊀ etc.)
+ * - U+2160–U+217F: 罗马数字(Ⅰ Ⅱ Ⅲ ⅷ ⅹ etc.)
+ * 单字符即一个 unit;不与相邻 CJK / ALPHA 合并(它们各自有独立扫描)。
+ */
+const IDENTIFIER_RUN = /[\u2460-\u24ff\u2160-\u217f]/g;
 
-function extractQueryUnits(query: string): string[] {
+export function extractQueryUnits(query: string): string[] {
   const units: string[] = [];
   const lower = query.toLowerCase();
   for (const m of lower.matchAll(CJK_RUN)) {
@@ -127,7 +136,29 @@ function extractQueryUnits(query: string): string[] {
   for (const m of lower.matchAll(ALPHA_RUN)) {
     units.push(m[0]);
   }
+  for (const m of lower.matchAll(IDENTIFIER_RUN)) {
+    units.push(m[0]);
+  }
   return units;
+}
+
+/**
+ * 判断 unit 是不是 "identifier" — 章节序号/卷号性质的强结构信号。
+ *
+ * 包含:
+ * - 纯阿拉伯数字(`83`、`100`)
+ * - 纯中文数字(`〇一二三四五六七八九十百千` 组合,如 `八十三`)
+ * - 圈号(① ⑥ etc.,U+2460–U+24FF)
+ * - 罗马数字(Ⅰ Ⅴ Ⅹ,U+2160–U+217F)
+ *
+ * 这类 unit 在打分和惩罚时都享有比专名更强的权重 — query 里出现 identifier 通常
+ * 表示用户想精确命中某个具体章节(83 / 第六章 / ⑥),系统应据此严格匹配。
+ */
+const ARABIC_NUMBER = /^\d+$/;
+const CHINESE_NUMBER = /^[〇一二三四五六七八九十百千]+$/;
+const CIRCLED_OR_ROMAN = /^[\u2460-\u24ff\u2160-\u217f]$/;
+export function isIdentifierUnit(unit: string): boolean {
+  return ARABIC_NUMBER.test(unit) || CIRCLED_OR_ROMAN.test(unit) || CHINESE_NUMBER.test(unit);
 }
 
 /**
@@ -158,22 +189,74 @@ const SUMMARY_HIT_WEIGHT = 1.0;
 const CONTENT_HIT_WEIGHT = 0.5;
 
 /**
+ * 可选的关键词打分上下文,由调用方(章节检索)注入,让专名 / identifier / 稀有词
+ * 命中获得额外加权。
+ *
+ * 加权优先级(按 unit 选**第一项匹配**,不复合):
+ * 1. **identifierBoost**: 当 unit 是 identifier(圈号/罗马数字/纯数字/纯中文数字)时,
+ *    命中分乘以此系数。Identifier 是最强的精确定位信号(结构性),应永远独占。
+ * 2. **idfWeights**: 数据驱动的稀有度加权。Map<unit, idf ∈ [0, 1]>。
+ *    multiplier = 0.3 + 1.7 × idf,即稀有 unit 拿 2.0×、最常见 unit 仅 0.3× 抑制。
+ *    (round 5 收紧:常见词从 0.5× 进一步压到 0.3×,让锚点稀有词对排序的影响更激进)。
+ *    比固定 properNoun boost 鲁棒 — 角色名在很多章出现时不会被误抬。
+ * 3. **properNouns + boost**(fallback): 没传 idfWeights 时回落到固定 boost,
+ *    保持 round 2 的向后兼容(memory 注入路径仍走这条)。
+ * 加权后 clamp 到 [0, 1]。
+ *
+ * 不传 / 传空 → 行为与旧逻辑完全一致(memory-scoring 自身不维护这些表)。
+ */
+export interface KeywordScoringOptions {
+  properNouns?: Set<string>;
+  boost?: number;
+  identifierBoost?: number;
+  idfWeights?: Map<string, number>;
+}
+
+/**
  * 单条(不含子拆分)query 对 memory 的关键词部分匹配分。
  * summary / content 分别打分,取 max,再按单元平均。
  */
-function scoreSingleQueryAgainstMemory(query: string, memory: Memory): number {
+function scoreSingleQueryAgainstMemory(
+  query: string,
+  memory: Memory,
+  options?: KeywordScoringOptions,
+): number {
   const units = extractQueryUnits(query);
   if (units.length === 0) return 0;
   const summary = (memory.summary ?? '').toLowerCase();
   const content = (memory.content ?? '').toLowerCase();
   if (!summary && !content) return 0;
 
+  const properNouns = options?.properNouns;
+  const boost = options?.boost ?? 1;
+  const identifierBoost = options?.identifierBoost ?? 1;
+  const idfWeights = options?.idfWeights;
+
   let totalScore = 0;
   for (const unit of units) {
     const sRatio = summary ? partialMatchLength(unit, summary) / unit.length : 0;
     const cRatio = content ? partialMatchLength(unit, content) / unit.length : 0;
     // summary 命中完整权重,content-only 折半 —— 对同一字段的最高匹配胜出
-    const unitScore = Math.max(sRatio * SUMMARY_HIT_WEIGHT, cRatio * CONTENT_HIT_WEIGHT);
+    let unitScore = Math.max(sRatio * SUMMARY_HIT_WEIGHT, cRatio * CONTENT_HIT_WEIGHT);
+    if (unitScore > 0) {
+      // 加权优先级:identifier(结构性)→ idf(数据驱动)→ properNoun(配置 fallback)
+      // 三者**互斥**(不复合):一旦匹配上一档就不再看下一档,避免角色名同时拿 boost+idf
+      // 这种"先验+后验"复合放大。multiplier > 1 时 clamp [0, 1];multiplier < 1 时不 clamp
+      // (允许 0.5x 抑制泛词)。
+      let multiplier = 1;
+      if (identifierBoost > 1 && isIdentifierUnit(unit)) {
+        multiplier = identifierBoost;
+      } else if (idfWeights && idfWeights.has(unit)) {
+        // idf ∈ [0, 1]: 越稀有越大 → multiplier ∈ [0.3, 2.0]
+        // round 5 收紧:常见词从 0.5× 压到 0.3×,稀有上限不变
+        multiplier = 0.3 + 1.7 * idfWeights.get(unit)!;
+      } else if (boost > 1 && properNouns && properNouns.has(unit)) {
+        multiplier = boost;
+      }
+      if (multiplier !== 1) {
+        unitScore = Math.min(1, unitScore * multiplier);
+      }
+    }
     totalScore += unitScore;
   }
   return totalScore / units.length;
@@ -192,11 +275,15 @@ function scoreSingleQueryAgainstMemory(query: string, memory: Memory): number {
  * 例:query "闇のマリアンヌ" 对 memory(summary="闇の[角色名]") →
  *   sRatio = 2/7 ≈ 0.286,content=0 → unitScore = 0.286。
  */
-export function calculateQueryKeywordScore(query: string, memory: Memory): number {
+export function calculateQueryKeywordScore(
+  query: string,
+  memory: Memory,
+  options?: KeywordScoringOptions,
+): number {
   const subQueries = splitCompoundQuery(query);
   let maxScore = 0;
   for (const sub of subQueries) {
-    const score = scoreSingleQueryAgainstMemory(sub, memory);
+    const score = scoreSingleQueryAgainstMemory(sub, memory, options);
     if (score > maxScore) maxScore = score;
   }
   return maxScore;
@@ -204,10 +291,17 @@ export function calculateQueryKeywordScore(query: string, memory: Memory): numbe
 
 /**
  * 返回 unit 在 haystack 中的最长公共子串长度。从大到小试,首次命中即返回
- * (早停,避免 O(n²) 完整扫)。unit 长度 < 2 时返回 0 以避免噪声。
+ * (早停,避免 O(n²) 完整扫)。
+ *
+ * 长度处理:
+ * - length === 1:由 extractQueryUnits 的契约保证只有 identifier 字符(圈号 / 罗马数字)
+ *   才会以单字符进来,所以直接 includes 检查即可 — 它们都是低噪声字符,不会像
+ *   单字汉字那样到处误命中。
+ * - length >= 2:正常的最长公共子串扫描。
  */
 function partialMatchLength(unit: string, haystack: string): number {
-  if (unit.length < 2) return 0;
+  if (unit.length === 0) return 0;
+  if (unit.length === 1) return haystack.includes(unit) ? 1 : 0;
   if (haystack.includes(unit)) return unit.length;
   for (let len = unit.length - 1; len >= 2; len--) {
     for (let i = 0; i + len <= unit.length; i++) {
