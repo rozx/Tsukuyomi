@@ -857,49 +857,92 @@ export class AssistantService {
         ...(sessionId ? { sessionId } : {}),
       });
 
-      const summarizeOutcome =
-        summarizationCount < MAX_IN_LOOP_SUMMARIZATIONS
-          ? await this.maybeSummarizeInLoop({
-              messages,
-              model,
-              tools,
-              bookId,
-              aiService,
-              config,
-              options,
-              toolSchemaTokens,
-              ...(taskId ? { taskId } : {}),
-              ...(signal ? { signal } : {}),
-            })
-          : null;
-      if (summarizeOutcome) {
-        summarizationCount++;
-        if (summarizeOutcome.finalText && summarizeOutcome.finalText.trim()) {
-          finalText = summarizeOutcome.finalText;
-        }
-        toolCalls = summarizeOutcome.toolCalls;
-        if (toolCalls.length === 0) break;
-        continue;
-      }
-
-      const followUp = await this.executeFollowUpRound({
+      const roundOutcome = await this.runNextToolCallRound({
         messages,
         tools,
         model,
+        bookId,
+        aiService,
+        config,
+        options,
+        toolSchemaTokens,
+        summarizationCount,
+        ...(taskId ? { taskId } : {}),
+        ...(signal ? { signal } : {}),
+      });
+      if (roundOutcome.finalText) finalText = roundOutcome.finalText;
+      if (roundOutcome.summarized) summarizationCount++;
+      toolCalls = roundOutcome.toolCalls;
+      if (toolCalls.length === 0) break;
+    }
+
+    return { finalText, actions: allActions };
+  }
+
+  private static async runNextToolCallRound(params: {
+    messages: ChatMessage[];
+    tools: AITool[];
+    model: AIModel;
+    bookId: string | null;
+    aiService: ReturnType<typeof AIServiceFactory.getService>;
+    config: AIServiceConfig;
+    options: AssistantServiceOptions;
+    toolSchemaTokens: number;
+    summarizationCount: number;
+    taskId?: string;
+    signal?: AbortSignal;
+  }): Promise<{ finalText: string; toolCalls: AIToolCall[]; summarized: boolean }> {
+    const {
+      messages,
+      tools,
+      model,
+      bookId,
+      aiService,
+      config,
+      options,
+      toolSchemaTokens,
+      summarizationCount,
+      taskId,
+      signal,
+    } = params;
+
+    if (summarizationCount < MAX_IN_LOOP_SUMMARIZATIONS) {
+      const summarizeOutcome = await this.maybeSummarizeInLoop({
+        messages,
+        model,
+        tools,
+        bookId,
         aiService,
         config,
         options,
         toolSchemaTokens,
         ...(taskId ? { taskId } : {}),
+        ...(signal ? { signal } : {}),
       });
-      if (followUp.text && followUp.text.trim()) {
-        finalText = followUp.text;
+      if (summarizeOutcome) {
+        return {
+          finalText: summarizeOutcome.finalText?.trim() ? summarizeOutcome.finalText : '',
+          toolCalls: summarizeOutcome.toolCalls,
+          summarized: true,
+        };
       }
-      toolCalls = followUp.toolCalls;
-      if (toolCalls.length === 0) break;
     }
 
-    return { finalText, actions: allActions };
+    const followUp = await this.executeFollowUpRound({
+      messages,
+      tools,
+      model,
+      aiService,
+      config,
+      options,
+      toolSchemaTokens,
+      ...(taskId ? { taskId } : {}),
+    });
+    return {
+      finalText: followUp.text?.trim() ? followUp.text : '',
+      toolCalls: followUp.toolCalls,
+      summarized: false,
+    };
   }
 
   private static async executeToolsAndUpdateUsage(params: {

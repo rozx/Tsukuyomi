@@ -1,7 +1,7 @@
 import { TerminologyService } from 'src/services/terminology-service';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
-import type { Terminology } from 'src/models/novel';
+import type { Novel, Terminology } from 'src/models/novel';
 import type { ToolDefinition } from './types';
 import { cloneDeep } from 'lodash';
 import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
@@ -11,6 +11,28 @@ import { searchRelatedMemoriesHybrid } from './memory-helper';
 
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
+
+function findChapterById(book: Novel, chapterId: string): Chapter | null {
+  for (const volume of book.volumes || []) {
+    for (const chapter of volume.chapters || []) {
+      if (chapter.id === chapterId) return chapter;
+    }
+  }
+  return null;
+}
+
+async function filterTermsForChapter(
+  book: Novel,
+  chapterId: string,
+  allTerms: Terminology[],
+): Promise<Terminology[]> {
+  const foundChapter = findChapterById(book, chapterId);
+  if (!foundChapter) return [];
+  const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
+  const chapterText = getChapterContentText(chapterWithContent);
+  if (!chapterText) return [];
+  return findUniqueTermsInText(chapterText, allTerms);
+}
 
 export const terminologyTools: ToolDefinition[] = [
   {
@@ -384,77 +406,28 @@ export const terminologyTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+      if (!bookId) throw new Error('书籍 ID 不能为空');
       const {
         chapter_id,
         all_chapters = false,
         limit,
-      } = args as {
-        chapter_id?: string;
-        all_chapters?: boolean;
-        limit?: number;
-      };
+      } = args as { chapter_id?: string; all_chapters?: boolean; limit?: number };
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      if (!book) throw new Error(`书籍不存在: ${bookId}`);
 
-      // 报告读取操作
-      if (onAction) {
-        onAction({
-          type: 'read',
-          entity: 'term',
-          data: {
-            tool_name: 'list_terms',
-            chapter_id,
-          },
-        });
-      }
+      onAction?.({
+        type: 'read',
+        entity: 'term',
+        data: { tool_name: 'list_terms', chapter_id },
+      });
 
-      let terms: Terminology[] = book.terminologies || [];
-
-      // 如果 all_chapters 为 false，需要按章节过滤
-      if (!all_chapters) {
-        // 如果提供了 chapter_id，使用文本匹配方法（与章节工具栏相同的方法）
-        if (chapter_id) {
-          // 查找章节
-          let foundChapter: Chapter | null = null;
-          for (const volume of book.volumes || []) {
-            for (const chapter of volume.chapters || []) {
-              if (chapter.id === chapter_id) {
-                foundChapter = chapter;
-                break;
-              }
-            }
-            if (foundChapter) break;
-          }
-
-          if (foundChapter) {
-            // 确保章节内容已加载
-            const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
-            // 获取章节文本内容
-            const chapterText = getChapterContentText(chapterWithContent);
-            if (chapterText) {
-              // 使用文本匹配方法查找在该章节中出现的术语（与章节工具栏相同的方法）
-              terms = findUniqueTermsInText(chapterText, terms);
-            } else {
-              // 如果章节没有内容，返回空数组
-              terms = [];
-            }
-          } else {
-            // 如果找不到章节，返回空数组
-            terms = [];
-          }
-        }
-        // 如果没有提供 chapter_id，保持现有行为（返回所有）
-      }
-
-      if (limit && limit > 0) {
-        terms = terms.slice(0, limit);
-      }
+      const allTerms: Terminology[] = book.terminologies || [];
+      let terms =
+        !all_chapters && chapter_id
+          ? await filterTermsForChapter(book, chapter_id, allTerms)
+          : allTerms;
+      if (limit && limit > 0) terms = terms.slice(0, limit);
 
       return JSON.stringify({
         success: true,
@@ -465,7 +438,7 @@ export const terminologyTools: ToolDefinition[] = [
           description: term.description,
         })),
         total: terms.length,
-        all_terms_count: book.terminologies?.length || 0,
+        all_terms_count: allTerms.length,
         ...(chapter_id ? { chapter_id } : {}),
         ...(all_chapters ? { all_chapters: true } : {}),
       });

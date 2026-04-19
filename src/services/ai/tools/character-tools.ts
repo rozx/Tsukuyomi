@@ -1,7 +1,7 @@
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
-import type { CharacterSetting } from 'src/models/novel';
+import type { CharacterSetting, Novel } from 'src/models/novel';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
 import { cloneDeep } from 'lodash';
 import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
@@ -11,6 +11,51 @@ import { searchRelatedMemoriesHybrid } from './memory-helper';
 
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
+
+function findChapterById(book: Novel, chapterId: string): Chapter | null {
+  for (const volume of book.volumes || []) {
+    for (const chapter of volume.chapters || []) {
+      if (chapter.id === chapterId) return chapter;
+    }
+  }
+  return null;
+}
+
+async function filterCharactersForChapter(
+  book: Novel,
+  chapterId: string,
+  allCharacters: CharacterSetting[],
+): Promise<CharacterSetting[]> {
+  const foundChapter = findChapterById(book, chapterId);
+  if (!foundChapter) return [];
+  const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
+  const chapterText = getChapterContentText(chapterWithContent);
+  if (!chapterText) return [];
+  return findUniqueCharactersInText(chapterText, allCharacters);
+}
+
+function serializeCharacter(char: CharacterSetting): {
+  id: string;
+  name: string;
+  translation: string;
+  sex: CharacterSetting['sex'];
+  description: CharacterSetting['description'];
+  speaking_style: CharacterSetting['speakingStyle'];
+  aliases: { name: string; translation: string }[] | undefined;
+} {
+  return {
+    id: char.id,
+    name: char.name,
+    translation: char.translation.translation,
+    sex: char.sex,
+    description: char.description,
+    speaking_style: char.speakingStyle,
+    aliases: char.aliases?.map((alias) => ({
+      name: alias.name,
+      translation: alias.translation.translation,
+    })),
+  };
+}
 
 export const characterTools: ToolDefinition[] = [
   {
@@ -685,86 +730,30 @@ export const characterTools: ToolDefinition[] = [
         all_chapters?: boolean;
         limit?: number;
       }>(args);
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+      if (!bookId) throw new Error('书籍 ID 不能为空');
       const { chapter_id, all_chapters = false, limit } = parsedArgs;
       const booksStore = useBooksStore();
       const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      if (!book) throw new Error(`书籍不存在: ${bookId}`);
 
-      // 报告读取操作
-      if (onAction) {
-        onAction({
-          type: 'read',
-          entity: 'character',
-          data: {
-            tool_name: 'list_characters',
-            chapter_id,
-          },
-        });
-      }
+      onAction?.({
+        type: 'read',
+        entity: 'character',
+        data: { tool_name: 'list_characters', chapter_id },
+      });
 
-      let characters: CharacterSetting[] = book.characterSettings || [];
-
-      // 如果 all_chapters 为 false，需要按章节过滤
-      if (!all_chapters) {
-        // 如果提供了 chapter_id，使用文本匹配方法（与章节工具栏相同的方法）
-        if (chapter_id) {
-          // 查找章节
-          let foundChapter: Chapter | null = null;
-          for (const volume of book.volumes || []) {
-            for (const chapter of volume.chapters || []) {
-              if (chapter.id === chapter_id) {
-                foundChapter = chapter;
-                break;
-              }
-            }
-            if (foundChapter) break;
-          }
-
-          if (foundChapter) {
-            // 确保章节内容已加载
-            const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
-            // 获取章节文本内容
-            const chapterText = getChapterContentText(chapterWithContent);
-            if (chapterText) {
-              // 使用文本匹配方法查找在该章节中出现的角色（与章节工具栏相同的方法）
-              characters = findUniqueCharactersInText(chapterText, characters);
-            } else {
-              // 如果章节没有内容，返回空数组
-              characters = [];
-            }
-          } else {
-            // 如果找不到章节，返回空数组
-            characters = [];
-          }
-        }
-        // 如果没有提供 chapter_id，保持现有行为（返回所有）
-      }
-
-      if (limit && limit > 0) {
-        characters = characters.slice(0, limit);
-      }
+      const allCharacters: CharacterSetting[] = book.characterSettings || [];
+      let characters =
+        !all_chapters && chapter_id
+          ? await filterCharactersForChapter(book, chapter_id, allCharacters)
+          : allCharacters;
+      if (limit && limit > 0) characters = characters.slice(0, limit);
 
       return JSON.stringify({
         success: true,
-        characters: characters.map((char) => ({
-          id: char.id,
-          name: char.name,
-          translation: char.translation.translation,
-          sex: char.sex,
-          description: char.description,
-          speaking_style: char.speakingStyle,
-          aliases: char.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        })),
+        characters: characters.map(serializeCharacter),
         total: characters.length,
-        all_characters_count: book.characterSettings?.length || 0,
+        all_characters_count: allCharacters.length,
         ...(chapter_id ? { chapter_id } : {}),
         ...(all_chapters ? { all_chapters: true } : {}),
       });
