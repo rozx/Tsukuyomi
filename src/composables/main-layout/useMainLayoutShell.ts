@@ -183,8 +183,9 @@ export function useMainLayoutShell() {
     if (!settings.isLoaded) {
       await settings.loadSettings();
     }
-    // 本地嵌入是总电源(默认 false),关闭时连模型缓存扫描都跳过 — 避免无意义 IO。
-    if (settings.settings.enableLocalEmbedding === true) {
+    // 本地嵌入是总电源(默认 false),关闭或手机端时连模型缓存扫描都跳过 — 避免无意义 IO。
+    const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
+    if (isLocalEmbeddingEffectivelyEnabled(settings.settings.enableLocalEmbedding)) {
       const { EmbeddingService } = await import('src/services/embedding-service');
 
       // 清理历史模型在 Cache Storage 里的残留(例如从 Qwen3 切到 gte 后的 ~567MB)。

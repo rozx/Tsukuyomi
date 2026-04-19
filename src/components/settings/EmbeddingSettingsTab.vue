@@ -9,6 +9,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { EmbeddingService } from 'src/services/embedding-service';
 import type { EmbeddingStatus, EmbeddingProgressEvent } from 'src/services/embedding-service';
 import { MODEL_ID } from 'src/services/embedding-service';
+import { isMobileDevice } from 'src/utils/local-embedding';
 
 const settingsStore = useSettingsStore();
 
@@ -17,6 +18,12 @@ const enableLocalEmbedding = ref(false);
 const charBudget = ref(2000);
 const enableSemantic = ref(true);
 const minScoreThreshold = ref(0.38);
+
+const isMobile = computed(() => isMobileDevice());
+/** 手机端强制禁用 — 与 `utils/local-embedding` 的判定保持一致 */
+const effectiveEnableLocalEmbedding = computed(
+  () => !isMobile.value && enableLocalEmbedding.value,
+);
 
 const embeddingStatus = ref<EmbeddingStatus>(EmbeddingService.getStatus());
 const downloadProgress = ref<number | null>(null);
@@ -74,6 +81,8 @@ const updateEnableSemantic = async (value: boolean) => {
 };
 
 const updateEnableLocalEmbedding = async (value: boolean) => {
+  // 手机端强制禁用:拦截任何 update,防止通过 Gist 同步悄悄同步到移动端。
+  if (isMobile.value) return;
   enableLocalEmbedding.value = value;
   await settingsStore.updateSettings({ enableLocalEmbedding: value });
   // 开启后 UI 自然会亮起"下载模型"按钮,用户点按才真正拉 ~340-465MB 权重 —
@@ -152,28 +161,41 @@ onUnmounted(() => {
     <div
       class="p-3 rounded-lg border space-y-2"
       :class="
-        enableLocalEmbedding
+        effectiveEnableLocalEmbedding
           ? 'bg-primary-500/5 border-primary-500/30'
           : 'bg-moon/5 border-moon/10'
       "
     >
       <div class="flex items-start justify-between gap-3">
         <div class="flex-1 min-w-0">
-          <label class="text-sm font-medium text-moon/90 block">启用本地嵌入</label>
-          <p class="text-xs text-moon/70 mt-0.5">
-            启用后下载嵌入模型到浏览器,支持语义记忆检索与章节向量搜索;
-            关闭时仅用关键词匹配,节省 ~340–465 MB 存储。
+          <label
+            class="text-sm font-medium block"
+            :class="isMobile ? 'text-moon/50' : 'text-moon/90'"
+          >
+            启用本地嵌入
+          </label>
+          <p class="text-xs mt-0.5" :class="isMobile ? 'text-moon/50' : 'text-moon/70'">
+            <template v-if="isMobile">
+              <span class="pi pi-mobile mr-1"></span>
+              移动设备不支持本地嵌入(模型过大、WebGPU 不稳定)。请在桌面端开启此功能,
+              所有向量检索将改为由桌面端生成、同步后共享。
+            </template>
+            <template v-else>
+              启用后下载嵌入模型到浏览器,支持语义记忆检索与章节向量搜索;
+              关闭时仅用关键词匹配,节省 ~340–465 MB 存储。
+            </template>
           </p>
         </div>
         <ToggleSwitch
-          :model-value="enableLocalEmbedding"
+          :model-value="effectiveEnableLocalEmbedding"
+          :disabled="isMobile"
           @update:model-value="updateEnableLocalEmbedding($event as boolean)"
         />
       </div>
     </div>
 
     <!-- 嵌入模型 -->
-    <div v-if="enableLocalEmbedding" class="space-y-3">
+    <div v-if="effectiveEnableLocalEmbedding" class="space-y-3">
       <div>
         <h3 class="text-sm font-medium text-moon/90 mb-1">嵌入模型</h3>
         <p class="text-xs text-moon/70">
@@ -286,13 +308,19 @@ onUnmounted(() => {
           <div class="pr-3">
             <label
               class="text-xs block"
-              :class="enableLocalEmbedding ? 'text-moon/80' : 'text-moon/40'"
+              :class="effectiveEnableLocalEmbedding ? 'text-moon/80' : 'text-moon/40'"
             >
               启用语义信号
             </label>
-            <p class="text-xs mt-0.5" :class="enableLocalEmbedding ? 'text-moon/60' : 'text-moon/40'">
-              <template v-if="enableLocalEmbedding">
+            <p
+              class="text-xs mt-0.5"
+              :class="effectiveEnableLocalEmbedding ? 'text-moon/60' : 'text-moon/40'"
+            >
+              <template v-if="effectiveEnableLocalEmbedding">
                 关闭后记忆打分仅用关键词和时间衰减
+              </template>
+              <template v-else-if="isMobile">
+                移动设备上本地嵌入被强制禁用,仅用关键词和时间衰减
               </template>
               <template v-else>
                 需要先在上方开启"本地嵌入"总开关
@@ -301,7 +329,7 @@ onUnmounted(() => {
           </div>
           <ToggleSwitch
             :model-value="enableSemantic"
-            :disabled="!enableLocalEmbedding"
+            :disabled="!effectiveEnableLocalEmbedding"
             @update:model-value="updateEnableSemantic($event as boolean)"
           />
         </div>

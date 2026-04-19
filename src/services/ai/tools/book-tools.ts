@@ -371,11 +371,18 @@ export const bookTools: ToolDefinition[] = [
 
       try {
         const { useSettingsStore } = await import('src/stores/settings');
-        if (useSettingsStore().settings.enableLocalEmbedding !== true) {
+        const { isLocalEmbeddingEffectivelyEnabled, isMobileDevice } = await import(
+          'src/utils/local-embedding'
+        );
+        const stored = useSettingsStore().settings.enableLocalEmbedding;
+        if (!isLocalEmbeddingEffectivelyEnabled(stored)) {
           return JSON.stringify({
             success: false,
-            error: '本地嵌入功能未启用,请让用户在「设置 → 本地嵌入」中打开总开关',
+            error: isMobileDevice()
+              ? '当前为移动设备,本地嵌入被强制禁用 — 请在桌面端使用此功能'
+              : '本地嵌入功能未启用,请让用户在「设置 → 本地嵌入」中打开总开关',
             feature_disabled: true,
+            reason: isMobileDevice() ? 'mobile_device' : 'user_disabled',
           });
         }
 

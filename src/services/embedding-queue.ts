@@ -402,8 +402,9 @@ export class EmbeddingQueue {
   private static async isLocalEmbeddingEnabled(): Promise<boolean> {
     try {
       const { useSettingsStore } = await import('src/stores/settings');
+      const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
       const store = useSettingsStore();
-      return store.settings.enableLocalEmbedding === true;
+      return isLocalEmbeddingEffectivelyEnabled(store.settings.enableLocalEmbedding);
     } catch {
       // Pinia 还没挂起来时,按"未启用"保守处理,避免测试环境误触发下载
       return false;
