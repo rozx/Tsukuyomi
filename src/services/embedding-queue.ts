@@ -395,12 +395,35 @@ export class EmbeddingQueue {
   // ==========================================================================
   // 处理循环
   // ==========================================================================
+  /**
+   * 检查总电源 `enableLocalEmbedding` — 关闭时 run 直接退出,pending 保留待重开。
+   * 读 store 放在 try/catch 里,兼容测试环境(未初始化 Pinia)和启动早期路径。
+   */
+  private static async isLocalEmbeddingEnabled(): Promise<boolean> {
+    try {
+      const { useSettingsStore } = await import('src/stores/settings');
+      const store = useSettingsStore();
+      return store.settings.enableLocalEmbedding === true;
+    } catch {
+      // Pinia 还没挂起来时,按"未启用"保守处理,避免测试环境误触发下载
+      return false;
+    }
+  }
+
   private static async run(): Promise<void> {
     if (this.processing) return;
     this.processing = true;
     this.emitProgress();
 
     try {
+      if (!(await this.isLocalEmbeddingEnabled())) {
+        // 总电源关 → 保留 pending,等用户开启后 resume() / scheduleRun() 再消费
+        console.info('[EmbeddingQueue] 本地嵌入未启用,保留 pending 任务');
+        this.processing = false;
+        this.emitProgress();
+        return;
+      }
+
       if (!EmbeddingService.isReady()) {
         await EmbeddingService.init();
       }

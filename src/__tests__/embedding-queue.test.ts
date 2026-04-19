@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
 import './setup';
+import { createPinia, setActivePinia } from 'pinia';
 
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import { MemoryService } from 'src/services/memory-service';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
+import { useSettingsStore } from 'src/stores/settings';
 import type { Memory } from 'src/models/memory';
 
 function makeMemory(id: string, overrides: Partial<Memory> = {}): Memory {
@@ -34,6 +36,9 @@ async function waitForIdle(timeoutMs = 2000): Promise<void> {
 
 describe('EmbeddingQueue - 入队与批处理', () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
+    // 总开关默认为 false,测试默认打开以复用既有断言
+    useSettingsStore().settings.enableLocalEmbedding = true;
     EmbeddingQueue.__resetForTesting();
     // 默认让 service "已就绪"
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
@@ -96,6 +101,24 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     // 第一批 8 条,第二批 2 条
     expect((embedBatchSpy.mock.calls[0]?.[0] as string[]).length).toBe(8);
     expect((embedBatchSpy.mock.calls[1]?.[0] as string[]).length).toBe(2);
+  });
+
+  test('总开关关闭时:不处理 pending,也不调用 embedBatch', async () => {
+    useSettingsStore().settings.enableLocalEmbedding = false;
+    const getMemSpy = spyOn(MemoryService, 'getMemoryByIdOnly').mockResolvedValue(makeMemory('a'));
+    const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([
+      new Float32Array([0.1]),
+    ]);
+
+    EmbeddingQueue.enqueue('a');
+    // 给 scheduleRun 一点时间(microtask + 若干 tick)
+    await new Promise((r) => setTimeout(r, 30));
+
+    // 总电源关,run 直接退出 → 依赖服务链一个都不该被调用
+    expect(embedBatchSpy).not.toHaveBeenCalled();
+    expect(getMemSpy).not.toHaveBeenCalled();
+    // pending 保留,等用户开总开关后再 resume/scheduleRun 消费
+    expect(EmbeddingQueue.getProgress().pending).toBe(1);
   });
 
   test('cancel 从 pending 中移除并使进度前进', async () => {

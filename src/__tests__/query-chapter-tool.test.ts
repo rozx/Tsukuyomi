@@ -1,8 +1,10 @@
 import './setup';
-import { describe, test, expect, afterEach, spyOn, mock } from 'bun:test';
+import { describe, test, expect, afterEach, beforeEach, spyOn, mock } from 'bun:test';
+import { createPinia, setActivePinia } from 'pinia';
 import { bookTools } from 'src/services/ai/tools/book-tools';
 import { EmbeddingService } from 'src/services/embedding-service';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
+import { useSettingsStore } from 'src/stores/settings';
 import type { ToolContext } from 'src/services/ai/tools/types';
 
 function getQueryChapterTool() {
@@ -12,6 +14,12 @@ function getQueryChapterTool() {
 }
 
 describe('AI tool: query_chapter', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    // 默认开启总开关,让原有断言关注服务层逻辑
+    useSettingsStore().settings.enableLocalEmbedding = true;
+  });
+
   afterEach(() => {
     mock.restore();
   });
@@ -58,6 +66,24 @@ describe('AI tool: query_chapter', () => {
 
     expect(parsed.success).toBe(false);
     expect(parsed.error).toContain('query 不能为空');
+  });
+
+  test('总开关关闭时返回 feature_disabled 错误,不访问 EmbeddingService', async () => {
+    useSettingsStore().settings.enableLocalEmbedding = false;
+    const isReadySpy = spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
+
+    const tool = getQueryChapterTool();
+    const result = await tool.handler(
+      { query: '主角醒来' },
+      { bookId: 'book-1' } as ToolContext,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(false);
+    expect(parsed.feature_disabled).toBe(true);
+    expect(parsed.error).toContain('本地嵌入功能未启用');
+    // 开关关闭的分支应在进入 EmbeddingService 前就返回
+    expect(isReadySpy).not.toHaveBeenCalled();
   });
 
   test('EmbeddingService 未就绪时返回结构化错误与 service_status', async () => {

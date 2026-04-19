@@ -13,6 +13,7 @@ import { MODEL_ID } from 'src/services/embedding-service';
 const settingsStore = useSettingsStore();
 
 const memoryInjection = computed(() => settingsStore.settings.memoryInjection);
+const enableLocalEmbedding = ref(false);
 const charBudget = ref(2000);
 const enableSemantic = ref(true);
 const minScoreThreshold = ref(0.38);
@@ -23,6 +24,7 @@ const downloadFile = ref('');
 const lastError = ref<string | null>(null);
 
 const syncFormState = () => {
+  enableLocalEmbedding.value = settingsStore.settings.enableLocalEmbedding === true;
   charBudget.value = memoryInjection.value?.charBudget ?? 2000;
   enableSemantic.value = memoryInjection.value?.enableSemantic ?? true;
   minScoreThreshold.value = memoryInjection.value?.minScoreThreshold ?? 0.38;
@@ -69,6 +71,13 @@ const updateCharBudget = async (event: SliderSlideEndEvent) => {
 const updateEnableSemantic = async (value: boolean) => {
   enableSemantic.value = value;
   await settingsStore.updateMemoryInjection({ enableSemantic: value });
+};
+
+const updateEnableLocalEmbedding = async (value: boolean) => {
+  enableLocalEmbedding.value = value;
+  await settingsStore.updateSettings({ enableLocalEmbedding: value });
+  // 开启后 UI 自然会亮起"下载模型"按钮,用户点按才真正拉 ~340-465MB 权重 —
+  // 避免 toggle 瞬间静默触发大下载把用户带宽吃光。
 };
 
 const updateMinScoreThreshold = async (event: SliderSlideEndEvent) => {
@@ -139,8 +148,32 @@ onUnmounted(() => {
 
 <template>
   <div class="p-4 space-y-5">
+    <!-- 本地嵌入总开关 -->
+    <div
+      class="p-3 rounded-lg border space-y-2"
+      :class="
+        enableLocalEmbedding
+          ? 'bg-primary-500/5 border-primary-500/30'
+          : 'bg-moon/5 border-moon/10'
+      "
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex-1 min-w-0">
+          <label class="text-sm font-medium text-moon/90 block">启用本地嵌入</label>
+          <p class="text-xs text-moon/70 mt-0.5">
+            启用后下载嵌入模型到浏览器,支持语义记忆检索与章节向量搜索;
+            关闭时仅用关键词匹配,节省 ~340–465 MB 存储。
+          </p>
+        </div>
+        <ToggleSwitch
+          :model-value="enableLocalEmbedding"
+          @update:model-value="updateEnableLocalEmbedding($event as boolean)"
+        />
+      </div>
+    </div>
+
     <!-- 嵌入模型 -->
-    <div class="space-y-3">
+    <div v-if="enableLocalEmbedding" class="space-y-3">
       <div>
         <h3 class="text-sm font-medium text-moon/90 mb-1">嵌入模型</h3>
         <p class="text-xs text-moon/70">
@@ -251,13 +284,24 @@ onUnmounted(() => {
         <!-- 语义信号开关 -->
         <div class="flex items-center justify-between pt-1">
           <div class="pr-3">
-            <label class="text-xs text-moon/80 block">启用语义信号</label>
-            <p class="text-xs text-moon/60 mt-0.5">
-              关闭后记忆打分仅用关键词和时间衰减
+            <label
+              class="text-xs block"
+              :class="enableLocalEmbedding ? 'text-moon/80' : 'text-moon/40'"
+            >
+              启用语义信号
+            </label>
+            <p class="text-xs mt-0.5" :class="enableLocalEmbedding ? 'text-moon/60' : 'text-moon/40'">
+              <template v-if="enableLocalEmbedding">
+                关闭后记忆打分仅用关键词和时间衰减
+              </template>
+              <template v-else>
+                需要先在上方开启"本地嵌入"总开关
+              </template>
             </p>
           </div>
           <ToggleSwitch
             :model-value="enableSemantic"
+            :disabled="!enableLocalEmbedding"
             @update:model-value="updateEnableSemantic($event as boolean)"
           />
         </div>

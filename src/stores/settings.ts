@@ -48,6 +48,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   booksSortOption: 'default',
   quickStartDismissed: false,
   memoryInjection: { ...DEFAULT_MEMORY_INJECTION },
+  enableLocalEmbedding: false, // 默认关闭,用户在设置页主动开启以触发模型下载
 };
 
 /**

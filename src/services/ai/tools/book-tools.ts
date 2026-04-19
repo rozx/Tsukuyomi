@@ -370,11 +370,20 @@ export const bookTools: ToolDefinition[] = [
       }
 
       try {
+        const { useSettingsStore } = await import('src/stores/settings');
+        if (useSettingsStore().settings.enableLocalEmbedding !== true) {
+          return JSON.stringify({
+            success: false,
+            error: '本地嵌入功能未启用,请让用户在「设置 → 本地嵌入」中打开总开关',
+            feature_disabled: true,
+          });
+        }
+
         const { EmbeddingService } = await import('src/services/embedding-service');
         if (!EmbeddingService.isReady()) {
           return JSON.stringify({
             success: false,
-            error: '章节嵌入服务未就绪,请稍后重试或让用户在设置里启用本地嵌入模型',
+            error: '章节嵌入服务未就绪,请稍后重试或让用户在设置里完成嵌入模型下载',
             service_status: EmbeddingService.getStatus(),
           });
         }
