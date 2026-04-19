@@ -16,7 +16,7 @@ import {
   DEFAULT_MIN_SCORE,
   type ScoredMemory,
 } from 'src/services/memory-scoring';
-import { EmbeddingService } from 'src/services/embedding-service';
+import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
 import { getPostToolCallReminder } from './todo-helper';
@@ -382,14 +382,17 @@ export async function selectRelevantMemoriesForChunk(
   // 3. 可选语义向量
   const chunkEmbedding = await computeChunkEmbedding(chunkText);
 
-  // 4. 逐条打分
+  // 4. 逐条打分 — chunkEmbedding 存在时传入 expectedModelVersion,
+  //    让跨版本的 stale 记忆退回到 keyword+recency 降级权重,不被当前空间的 query 向量污染
   const now = Date.now();
+  const expectedModelVersion = chunkEmbedding ? MODEL_VERSION : undefined;
   const scored: ScoredMemory[] = allMemories.map((memory) => ({
     memory,
     breakdown: scoreMemory(memory, {
       chunkEntities,
       chunkEmbedding: chunkEmbedding ?? undefined,
       now,
+      expectedModelVersion,
     }),
   }));
 

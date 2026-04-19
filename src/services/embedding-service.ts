@@ -14,9 +14,9 @@
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
 
 export const MODEL_ID = 'onnx-community/gte-multilingual-base';
-// 模型 id + 截取维度 + 前缀方案 共同构成 embedding 空间身份,任一变化必须 bump 版本号,
+// 模型 id + 截取维度 + 前缀方案 + pooling 方案 共同构成 embedding 空间身份,任一变化必须 bump 版本号,
 // EmbeddingQueue backlog 扫描会把版本不匹配的记录当作 stale 自动重算。
-export const MODEL_VERSION = 'gte-multilingual-base@256';
+export const MODEL_VERSION = 'gte-multilingual-base@256@mean';
 export const DIMENSIONS = 256;
 const NATIVE_DIMENSIONS = 768;
 
@@ -52,6 +52,14 @@ function hasWebGPU(): boolean {
  */
 export type EmbeddingTask = 'query' | 'document';
 const QUERY_PREFIX = 'Represent this sentence for searching relevant passages: ';
+
+/**
+ * Pooling 方案 — gte-multilingual-base 是 encoder-only BERT,官方指定 mean pooling。
+ * 单条 embed() 与批处理 embedBatch() 必须使用同一方案,否则 query 向量和 document 向量
+ * 落到不同空间,余弦相似度退化成噪声。集中在此常量避免两处手写漂移。
+ * 该值也是 MODEL_VERSION 的一部分——变更 pooling 必须同时 bump 版本号。
+ */
+const POOLING = 'mean' as const;
 
 function applyTaskPrefix(text: string, task: EmbeddingTask): string {
   if (task === 'query') return QUERY_PREFIX + text;
@@ -398,7 +406,7 @@ export class EmbeddingService {
     try {
 
       const output = await this.pipeline!(applyTaskPrefix(text, task), {
-        pooling: 'mean', // gte-multilingual-base 官方使用 mean pooling
+        pooling: POOLING,
         normalize: false, // 我们手动处理截断 + 归一化(Matryoshka 截前 DIMENSIONS 维后再 L2)
       });
       return this.extractFirstVector(output);
@@ -434,7 +442,7 @@ export class EmbeddingService {
       const output = await this.pipeline!(
         indexed.map((e) => applyTaskPrefix(e.text, task)),
         {
-          pooling: 'last_token',
+          pooling: POOLING,
           normalize: false,
         },
       );

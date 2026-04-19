@@ -615,11 +615,16 @@ export class MemoryService {
       const allMemories = await this.getAllBookMemories(bookId);
 
       let chunkEmbedding: Float32Array | undefined;
+      let expectedModelVersion: string | undefined;
       try {
-        const { EmbeddingService } = await import('src/services/embedding-service');
+        const { EmbeddingService, MODEL_VERSION } = await import('src/services/embedding-service');
         if (EmbeddingService.isReady()) {
           const vec = await EmbeddingService.embed(queryText, 'query');
-          if (vec) chunkEmbedding = vec;
+          if (vec) {
+            chunkEmbedding = vec;
+            // 当前 query 向量已对齐到 MODEL_VERSION,传入让 scoreMemory 跳过版本不符的 stale 记录
+            expectedModelVersion = MODEL_VERSION;
+          }
         }
       } catch {
         // 语义搜索不可用时静默降级
@@ -629,7 +634,12 @@ export class MemoryService {
       const now = Date.now();
       const chunkEntities = queryTokens.map((t) => ({ name: t }));
       const scored = allMemories.map((memory) => {
-        const breakdown = scoreMemory(memory, { chunkEntities, chunkEmbedding, now });
+        const breakdown = scoreMemory(memory, {
+          chunkEntities,
+          chunkEmbedding,
+          now,
+          expectedModelVersion,
+        });
         return { memory, breakdown };
       });
 

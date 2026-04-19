@@ -296,8 +296,17 @@ export class ChapterEmbeddingService {
     const queryVec = await EmbeddingService.embed(query, 'query');
     if (!queryVec) throw new Error('query embedding 计算失败');
 
-    const chunks = await this.getChunksForBook(bookId);
-    if (chunks.length === 0) return [];
+    const allChunks = await this.getChunksForBook(bookId);
+    if (allChunks.length === 0) return [];
+
+    // 过滤掉 embedding 空间不匹配的 stale chunk — 否则旧向量和当前 query 向量
+    // 做余弦相似度会退化成噪声,排序结果比纯关键词还差。
+    const chunks = allChunks.filter((c) => c.model === MODEL_VERSION);
+    if (chunks.length === 0) {
+      throw new Error(
+        '章节向量空间已升级,正在后台重算。请稍后重试,或在设置中查看重建进度。',
+      );
+    }
 
     // 按 chapterId 聚合 max
     type Agg = { chapterId: string; score: number; preview: string };

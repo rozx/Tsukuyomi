@@ -43,6 +43,10 @@ const activeBackend = ref<EmbeddingBackend | null>(EmbeddingService.getActiveBac
 // DB 实际已嵌入统计（独立于 queue session 计数）
 const chapterStats = ref<{ embedded: number; total: number }>({ embedded: 0, total: 0 });
 const memoryStats = ref<{ embedded: number; total: number }>({ embedded: 0, total: 0 });
+// 存在 embedding 但 model 版本与当前 MODEL_VERSION 不符的 stale 数量。
+// 非零说明 embedding 空间刚升级但 backlog 还没重算完 — 此时 search 会自动把这部分降级,
+// UI 要给用户一条横幅解释为什么"已嵌入"数字突然掉到 0 / 需要重建。
+const staleCounts = ref<{ chapter: number; memory: number }>({ chapter: 0, memory: 0 });
 
 const bookId = computed(() => route.params.id as string | undefined);
 const currentBook = computed(() =>
@@ -54,40 +58,57 @@ async function refreshStats(): Promise<void> {
   if (!id) {
     chapterStats.value = { embedded: 0, total: 0 };
     memoryStats.value = { embedded: 0, total: 0 };
+    staleCounts.value = { chapter: 0, memory: 0 };
     return;
   }
 
-  // 章节：从 books store 拿总数，从 DB 查缺失
+  // 章节：从 books store 拿总数，从 DB chunk 判定当前版本匹配 / stale / 未嵌入
   const book = booksStore.getBookById(id);
   let chapTotal = 0;
   for (const v of book?.volumes ?? []) {
     chapTotal += v.chapters?.length ?? 0;
   }
+  let chapterStale = 0;
   try {
-    const missing = await ChapterEmbeddingService.findChaptersNeedingEmbedding(id);
-    chapterStats.value = {
-      embedded: Math.max(0, chapTotal - missing.length),
-      total: chapTotal,
-    };
+    const chunks = await ChapterEmbeddingService.getChunksForBook(id);
+    // 按 chapterId 聚合:当前版本 chunk 才算 embedded;完全由 stale chunk 组成的章节计入 stale
+    const statusByChapter = new Map<string, 'current' | 'stale'>();
+    for (const c of chunks) {
+      if (c.model === MODEL_VERSION) {
+        statusByChapter.set(c.chapterId, 'current');
+      } else if (!statusByChapter.has(c.chapterId)) {
+        statusByChapter.set(c.chapterId, 'stale');
+      }
+    }
+    let embedded = 0;
+    for (const status of statusByChapter.values()) {
+      if (status === 'current') embedded += 1;
+      else chapterStale += 1;
+    }
+    chapterStats.value = { embedded, total: chapTotal };
   } catch (error) {
     console.warn('[BatchEmbeddingsPanel] refresh chapter stats 失败:', error);
     chapterStats.value = { embedded: 0, total: chapTotal };
   }
 
   // 记忆：查询该书所有 memory，按 embedding + 模型版本判定
+  let memoryStale = 0;
   try {
     const memories = await MemoryService.getAllBookMemories(id);
     let embedded = 0;
     for (const m of memories) {
-      if (m.embedding && m.embedding.length > 0 && m.embeddingModel === MODEL_VERSION) {
-        embedded += 1;
-      }
+      const hasVec = !!(m.embedding && m.embedding.length > 0);
+      if (!hasVec) continue;
+      if (m.embeddingModel === MODEL_VERSION) embedded += 1;
+      else memoryStale += 1;
     }
     memoryStats.value = { embedded, total: memories.length };
   } catch (error) {
     console.warn('[BatchEmbeddingsPanel] refresh memory stats 失败:', error);
     memoryStats.value = { embedded: 0, total: 0 };
   }
+
+  staleCounts.value = { chapter: chapterStale, memory: memoryStale };
 }
 
 // 订阅 EmbeddingQueue 进度事件
@@ -222,6 +243,22 @@ const backfillMemories = () => {
 const pauseQueue = () => EmbeddingQueue.pause();
 const resumeQueue = () => EmbeddingQueue.resume();
 
+const hasStale = computed(
+  () => staleCounts.value.chapter > 0 || staleCounts.value.memory > 0,
+);
+
+// 一键重建 stale:本质就是 backlog 扫描(版本不匹配已被判为 needs-embed),
+// 对章节和记忆各跑一次即可把 stale 全部入队。
+const rebuildStale = () => {
+  if (!bookId.value) return;
+  if (staleCounts.value.chapter > 0) {
+    void EmbeddingQueue.enqueueChapterBacklog(bookId.value);
+  }
+  if (staleCounts.value.memory > 0) {
+    void EmbeddingQueue.enqueueBacklog(bookId.value);
+  }
+};
+
 // 测试查询对话框
 const testDialogVisible = ref(false);
 const openTestDialog = () => {
@@ -292,6 +329,36 @@ defineExpose({ toggle });
             icon="pi pi-cog"
             class="w-full"
             @click="openSettings"
+          />
+        </div>
+
+        <!-- Embedding 空间升级横幅:存在 stale(版本不匹配)向量时显示,
+             解释"已嵌入"数字为什么会掉,并提供一键重建入口 -->
+        <div
+          v-if="isEmbeddingEnabled && hasStale"
+          class="flex flex-col gap-2 p-3 rounded text-xs bg-amber-500/10 border border-amber-500/30 text-amber-200"
+        >
+          <div class="flex items-start gap-2">
+            <i class="pi pi-exclamation-triangle mt-0.5 text-amber-300 shrink-0"></i>
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-amber-100">Embedding 空间已升级</div>
+              <p class="mt-1 leading-relaxed text-amber-200/90">
+                检测到
+                <span v-if="staleCounts.chapter > 0">{{ staleCounts.chapter }} 个章节</span>
+                <span v-if="staleCounts.chapter > 0 && staleCounts.memory > 0"> / </span>
+                <span v-if="staleCounts.memory > 0">{{ staleCounts.memory }} 条记忆</span>
+                使用旧版向量,检索时会自动降级(章节搜索暂不可用)。重建后即可恢复语义召回。
+              </p>
+            </div>
+          </div>
+          <Button
+            label="立即重建"
+            size="small"
+            severity="warn"
+            icon="pi pi-sync"
+            class="w-full"
+            :disabled="embeddingStatus !== 'ready'"
+            @click="rebuildStale"
           />
         </div>
 

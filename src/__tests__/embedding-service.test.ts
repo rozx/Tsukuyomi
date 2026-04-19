@@ -213,6 +213,45 @@ describe('EmbeddingService - embed / embedBatch', () => {
     expect(vecs).toEqual([null, null]);
   });
 
+  test('embed 与 embedBatch 对同一文本 + task 产出一致向量(防 pooling 漂移)', async () => {
+    // 回归测试:历史上 embed 用 mean pooling 而 embedBatch 误用 last_token,
+    // 导致 query 向量(单条)和 document 向量(批量)落到不同 embedding 空间,
+    // 余弦相似度退化成噪声。这里拦截 pipeline 调用,断言两条路径传入的 pooling
+    // 选项一致,并且同文本输出向量完全相同。
+    const capturedOptions: Array<Record<string, unknown>> = [];
+    mockPipelineImpl = async (input: unknown, options?: unknown) => {
+      capturedOptions.push((options ?? {}) as Record<string, unknown>);
+      const texts = Array.isArray(input) ? (input as string[]) : [input as string];
+      const hidden = 768;
+      const data = new Float32Array(texts.length * hidden);
+      for (let b = 0; b < texts.length; b++) {
+        const t = texts[b] ?? '';
+        for (let i = 0; i < hidden; i++) {
+          data[b * hidden + i] = i < 10 ? (t.length + i) * 0.01 : 0;
+        }
+      }
+      return { data, dims: [texts.length, hidden] };
+    };
+    await EmbeddingService.init();
+
+    const single = await EmbeddingService.embed('hello world', 'document');
+    const batch = await EmbeddingService.embedBatch(['hello world'], 'document');
+
+    expect(single).not.toBeNull();
+    expect(batch[0]).not.toBeNull();
+
+    // 两处传入的 pooling 必须一致 — 这是 embedding 空间身份的组成部分
+    expect(capturedOptions).toHaveLength(2);
+    expect(capturedOptions[0]!.pooling).toBe(capturedOptions[1]!.pooling);
+    expect(capturedOptions[0]!.pooling).toBe('mean');
+
+    // 同文本 + 同 task 下,两条路径必须产出完全相同的向量
+    expect(batch[0]!.length).toBe(single!.length);
+    for (let i = 0; i < single!.length; i++) {
+      expect(batch[0]![i]).toBeCloseTo(single![i]!, 6);
+    }
+  });
+
   test('不同 task 对同一文本得到不同向量(验证前缀生效)', async () => {
     // mock 会把输入文本回传,我们用它构造基于前缀长度差异的输出
     mockPipelineImpl = async (input: unknown) => {
@@ -279,7 +318,7 @@ describe('EmbeddingService - cosineSimilarity', () => {
 
 describe('EmbeddingService - 常量', () => {
   test('MODEL_VERSION 与 DIMENSIONS 与 spec 一致', () => {
-    expect(MODEL_VERSION).toBe('gte-multilingual-base@256');
+    expect(MODEL_VERSION).toBe('gte-multilingual-base@256@mean');
     expect(DIMENSIONS).toBe(256);
   });
 });

@@ -33,6 +33,12 @@ export interface ScoringContext {
   chunkEntities: Array<{ name: string }>;
   chunkEmbedding?: Float32Array | number[] | undefined;
   now: number;
+  /**
+   * 期望的 embedding 模型版本。传入时,`memory.embeddingModel` 与之不匹配的记录
+   * 会被视为无语义向量(走 FALLBACK_WEIGHTS),避免跨 embedding 空间的余弦相似度退化成噪声。
+   * 不传入则保持向后兼容,只做"有/无 embedding"的弱检查。
+   */
+  expectedModelVersion?: string | undefined;
 }
 
 /**
@@ -96,7 +102,9 @@ export const FALLBACK_WEIGHTS = {
  * 避免语义信号缺失导致分数天花板过低。
  */
 export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreakdown {
-  const canUseSemantic = hasEmbeddings(memory.embedding, context.chunkEmbedding);
+  const versionOk =
+    !context.expectedModelVersion || memory.embeddingModel === context.expectedModelVersion;
+  const canUseSemantic = versionOk && hasEmbeddings(memory.embedding, context.chunkEmbedding);
   const semantic = canUseSemantic
     ? calculateSemanticSim(memory.embedding, context.chunkEmbedding)
     : 0;
