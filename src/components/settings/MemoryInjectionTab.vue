@@ -189,21 +189,33 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 语义检索 -->
+    <!-- 语义检索开关(记忆打分) -->
     <div class="border-t border-moon/10 pt-5">
       <div class="flex items-center justify-between mb-3">
         <div>
-          <h3 class="text-sm font-medium text-moon/90">语义检索</h3>
-          <p class="text-xs text-moon/50 mt-0.5">本地嵌入模型，提升记忆匹配精度</p>
+          <h3 class="text-sm font-medium text-moon/90">记忆的语义检索</h3>
+          <p class="text-xs text-moon/50 mt-0.5">
+            关闭后记忆打分只靠关键词和时间衰减
+          </p>
         </div>
         <ToggleSwitch
           :model-value="enableSemantic"
           @update:model-value="updateEnableSemantic($event as boolean)"
         />
       </div>
+    </div>
 
-      <!-- 嵌入模型状态 -->
-      <div v-if="enableSemantic" class="p-3 bg-moon/5 rounded-lg border border-moon/10 space-y-2">
+    <!-- 本地嵌入模型(共享:记忆 + 章节) -->
+    <div class="border-t border-moon/10 pt-5">
+      <div class="mb-3">
+        <h3 class="text-sm font-medium text-moon/90">本地嵌入模型</h3>
+        <p class="text-xs text-moon/50 mt-0.5">
+          同时用于<strong class="text-moon/70">记忆注入打分</strong>与
+          <strong class="text-moon/70">章节语义查询</strong>(AI 工具 query_chapter)
+        </p>
+      </div>
+
+      <div class="p-3 bg-moon/5 rounded-lg border border-moon/10 space-y-2">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-2">
             <span :class="[statusIcon, statusClass]"></span>
@@ -245,15 +257,19 @@ onUnmounted(() => {
           {{ lastError }}
         </p>
 
-        <p class="text-xs text-moon/40">{{ MODEL_ID }} (~195 MB)</p>
+        <p class="text-xs text-moon/40">{{ MODEL_ID }} (~195 MB,本地运行)</p>
       </div>
     </div>
 
     <!-- 说明 -->
-    <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
+    <div class="p-3 bg-moon/5 rounded-lg border border-moon/10 space-y-1.5">
       <p class="text-xs text-moon/60">
         <span class="pi pi-info-circle mr-1"></span>
-        翻译时自动选择最相关的记忆注入上下文。评分基于语义相似度、关键词匹配和时间衰减三个信号，即使未启用语义检索仍可工作。
+        <strong>记忆注入</strong>:翻译时自动选择最相关的记忆作为上下文。评分基于语义相似度、关键词匹配和时间衰减三个信号,即使未启用语义检索仍可工作。
+      </p>
+      <p class="text-xs text-moon/60">
+        <span class="pi pi-info-circle mr-1"></span>
+        <strong>章节语义查询</strong>:AI 可通过 query_chapter 按剧情/事件/人物描述找相关章节。该功能始终使用本地嵌入模型,不受上方"记忆的语义检索"开关影响。
       </p>
     </div>
   </div>
