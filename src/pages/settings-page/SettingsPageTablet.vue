@@ -12,24 +12,24 @@ const ctx = injectSettingsPage();
 
 // 将 tab value 映射到对应的面板组件。Electron 与非 Electron 顺序略有差异，
 // 已由 composable 的 `tabs` 列表处理，本文件只需按 value 字符串分派。
-// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=爬虫 · 5=导入导出 · 6=本地嵌入
-// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=爬虫 · 4=导入导出 · 5=本地嵌入
+// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入导出
+// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入导出
 function panelFor(value: string) {
   if (ctx.isElectron.value) {
     if (value === '0') return AIModelSettingsTab;
     if (value === '1') return ApiKeysSettingsTab;
     if (value === '2') return SyncSettingsTab;
-    if (value === '3') return ScraperSettingsTab;
-    if (value === '4') return ImportExportTab;
-    if (value === '5') return EmbeddingSettingsTab;
+    if (value === '3') return EmbeddingSettingsTab;
+    if (value === '4') return ScraperSettingsTab;
+    if (value === '5') return ImportExportTab;
   } else {
     if (value === '0') return AIModelSettingsTab;
     if (value === '1') return ProxySettingsTab;
     if (value === '2') return ApiKeysSettingsTab;
     if (value === '3') return SyncSettingsTab;
-    if (value === '4') return ScraperSettingsTab;
-    if (value === '5') return ImportExportTab;
-    if (value === '6') return EmbeddingSettingsTab;
+    if (value === '4') return EmbeddingSettingsTab;
+    if (value === '5') return ScraperSettingsTab;
+    if (value === '6') return ImportExportTab;
   }
   return AIModelSettingsTab;
 }
