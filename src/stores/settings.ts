@@ -233,6 +233,9 @@ async function saveSettingsToDB(settings: AppSettings): Promise<void> {
       ...(rawSettings.memoryInjection !== undefined
         ? { memoryInjection: cloneDeep(rawSettings.memoryInjection) }
         : {}),
+      ...(rawSettings.enableLocalEmbedding !== undefined
+        ? { enableLocalEmbedding: rawSettings.enableLocalEmbedding }
+        : {}),
     };
 
     await db.put('settings', { key: SETTINGS_DB_KEY, ...clean });
