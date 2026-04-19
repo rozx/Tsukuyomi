@@ -1,17 +1,7 @@
-import {
-  computed,
-  inject,
-  onMounted,
-  provide,
-  ref,
-  type InjectionKey,
-  type Ref,
-} from 'vue';
+import { computed, inject, onMounted, provide, ref, type InjectionKey, type Ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { useToast } from 'primevue/usetoast';
 import { useSettingsStore } from 'src/stores/settings';
 import { useElectron } from 'src/composables/useElectron';
-import { isMobileDevice } from 'src/utils/platform';
 
 /**
  * Shared state + logic for the `/settings` page. Used by the dispatcher
@@ -34,8 +24,6 @@ export interface SettingsPageContext {
   tabs: Ref<SettingsTab[]>;
   embeddingSettingsTabValue: Ref<string>;
   handleTabChange: (value: string | number) => void;
-  dismissIntro: () => Promise<void>;
-  handleIntroLearnMore: () => Promise<void>;
   goBack: () => void;
 }
 
@@ -59,7 +47,6 @@ export function injectSettingsPage(): SettingsPageContext {
 
 function createSettingsPageContext(): SettingsPageContext {
   const settingsStore = useSettingsStore();
-  const toast = useToast();
   const router = useRouter();
   const { isElectron } = useElectron();
 
@@ -146,39 +133,9 @@ function createSettingsPageContext(): SettingsPageContext {
     }
   };
 
-  // 本地嵌入首次提示(引导记忆注入 + 章节语义查询)
-  // 手机端永久禁用本地嵌入(见 isLocalEmbeddingEffectivelyEnabled 说明),
-  // 这条引导 toast 也跳过 —— 向手机用户推销他们用不上的功能只是噪音。
-  const showMemoryIntroToast = () => {
-    if (isMobileDevice()) return;
-    const mi = settingsStore.settings.memoryInjection;
-    if (mi && mi.hasSeenIntro) return;
-    toast.add({
-      group: 'memory-intro',
-      severity: 'info',
-      summary: '新功能：本地嵌入模型',
-      detail: '翻译时自动匹配相关记忆,AI 也能用 query_chapter 语义检索章节。',
-      closable: false,
-      life: 0,
-    });
-  };
-
-  const dismissIntro = async () => {
-    toast.removeGroup('memory-intro');
-    await settingsStore.updateMemoryInjection({ hasSeenIntro: true });
-  };
-
-  const handleIntroLearnMore = async () => {
-    activeTab.value = embeddingSettingsTabValue.value;
-    const savedIndex = convertTabValueToIndex(embeddingSettingsTabValue.value);
-    void settingsStore.setLastOpenedSettingsTab(savedIndex);
-    await dismissIntro();
-  };
-
   // 返回上一页：优先使用浏览器历史，若无历史则回到首页
   const goBack = () => {
-    const hasHistory =
-      typeof window !== 'undefined' && window.history && window.history.length > 1;
+    const hasHistory = typeof window !== 'undefined' && window.history && window.history.length > 1;
     if (hasHistory) {
       router.back();
     } else {
@@ -186,10 +143,9 @@ function createSettingsPageContext(): SettingsPageContext {
     }
   };
 
-  // 页面挂载时初始化 + 首次提示
+  // 页面挂载时初始化
   onMounted(async () => {
     await initializeActiveTab();
-    showMemoryIntroToast();
   });
 
   return {
@@ -198,8 +154,6 @@ function createSettingsPageContext(): SettingsPageContext {
     tabs,
     embeddingSettingsTabValue,
     handleTabChange,
-    dismissIntro,
-    handleIntroLearnMore,
     goBack,
   };
 }
