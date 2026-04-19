@@ -7,6 +7,7 @@ import {
   type InjectionKey,
   type Ref,
 } from 'vue';
+import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { useSettingsStore } from 'src/stores/settings';
 import { useElectron } from 'src/composables/useElectron';
@@ -34,6 +35,7 @@ export interface SettingsPageContext {
   handleTabChange: (value: string | number) => void;
   dismissIntro: () => Promise<void>;
   handleIntroLearnMore: () => Promise<void>;
+  goBack: () => void;
 }
 
 const SETTINGS_PAGE_KEY: InjectionKey<SettingsPageContext> = Symbol('settings-page');
@@ -57,6 +59,7 @@ export function injectSettingsPage(): SettingsPageContext {
 function createSettingsPageContext(): SettingsPageContext {
   const settingsStore = useSettingsStore();
   const toast = useToast();
+  const router = useRouter();
   const { isElectron } = useElectron();
 
   // 当前选中的标签页值（字符串）
@@ -168,6 +171,17 @@ function createSettingsPageContext(): SettingsPageContext {
     await dismissIntro();
   };
 
+  // 返回上一页：优先使用浏览器历史，若无历史则回到首页
+  const goBack = () => {
+    const hasHistory =
+      typeof window !== 'undefined' && window.history && window.history.length > 1;
+    if (hasHistory) {
+      router.back();
+    } else {
+      void router.push('/');
+    }
+  };
+
   // 页面挂载时初始化 + 首次提示
   onMounted(async () => {
     await initializeActiveTab();
@@ -182,5 +196,6 @@ function createSettingsPageContext(): SettingsPageContext {
     handleTabChange,
     dismissIntro,
     handleIntroLearnMore,
+    goBack,
   };
 }
