@@ -254,10 +254,10 @@ const handleClose = () => emit('update:visible', false);
     :visible="visible"
     header="测试向量查询"
     eyebrow="EMBEDDING"
-    desktop-width="36rem"
+    desktop-width="52rem"
     @update:visible="emit('update:visible', $event)"
   >
-    <div class="flex flex-col gap-4">
+    <div class="flex flex-col gap-4 min-w-0">
       <div class="space-y-2">
         <label class="text-sm text-moon/80">查询语句</label>
         <InputText
@@ -316,26 +316,26 @@ const handleClose = () => emit('update:visible', false);
           无匹配结果
         </div>
 
-        <ul v-else class="flex flex-col gap-2 m-0 p-0 list-none">
+        <ul v-else class="flex flex-col gap-2 m-0 p-0 list-none min-w-0">
           <li
             v-for="(item, idx) in results"
             :key="idx"
             role="button"
             tabindex="0"
-            class="flex flex-col gap-1 p-3 bg-white/5 rounded border border-white/5 result-row cursor-pointer transition-colors"
+            class="flex flex-col gap-1 p-3 bg-white/5 rounded border border-white/5 result-row cursor-pointer transition-colors min-w-0 overflow-hidden"
             @click="handleResultClick(item)"
             @keydown.enter.prevent="handleResultClick(item)"
             @keydown.space.prevent="handleResultClick(item)"
           >
-            <div class="flex items-center justify-between gap-3">
-              <span class="font-medium text-moon-100 truncate">
+            <div class="flex items-center justify-between gap-3 min-w-0">
+              <span class="font-medium text-moon-100 truncate min-w-0 flex-1">
                 {{ idx + 1 }}. {{ item.title }}
               </span>
               <span class="font-mono text-xs text-primary-400 shrink-0">
                 {{ item.score.toFixed(3) }}
               </span>
             </div>
-            <div v-if="item.preview" class="text-sm text-moon/70 line-clamp-3">
+            <div v-if="item.preview" class="text-sm text-moon/70 line-clamp-3 preview-text">
               {{ item.preview }}
             </div>
           </li>
@@ -366,5 +366,9 @@ const handleClose = () => emit('update:visible', false);
 .result-row:focus-visible {
   outline: 2px solid var(--primary-400, #a5b4fc);
   outline-offset: 2px;
+}
+.preview-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 </style>
