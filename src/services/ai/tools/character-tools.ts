@@ -178,18 +178,7 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: '角色创建成功',
-        character: {
-          id: character.id,
-          name: character.name,
-          translation: character.translation.translation,
-          sex: character.sex,
-          description: character.description,
-          speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias: any) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        },
+        character: serializeCharacter(character),
       });
     },
   },
@@ -277,18 +266,7 @@ export const characterTools: ToolDefinition[] = [
             message: `精确匹配未找到 "${name}"。已返回相关的模糊匹配结果${
               truncated ? `（前 ${MAX_FALLBACK_RESULTS} 条，共 ${fallbackMatches.length} 条）` : ''
             }。`,
-            characters: limitedMatches.map((char) => ({
-              id: char.id,
-              name: char.name,
-              translation: char.translation.translation,
-              sex: char.sex,
-              description: char.description,
-              speaking_style: char.speakingStyle,
-              aliases: char.aliases?.map((alias) => ({
-                name: alias.name,
-                translation: alias.translation.translation,
-              })),
-            })),
+            characters: limitedMatches.map(serializeCharacter),
             total_matches: fallbackMatches.length,
             truncated,
           });
@@ -326,18 +304,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        character: {
-          id: character.id,
-          name: character.name,
-          translation: character.translation.translation,
-          sex: character.sex,
-          description: character.description,
-          speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        },
+        character: serializeCharacter(character),
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
           : {}),
@@ -495,18 +462,7 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: '角色更新成功',
-        character: {
-          id: character.id,
-          name: character.name,
-          translation: character.translation.translation,
-          sex: character.sex,
-          description: character.description,
-          speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        },
+        character: serializeCharacter(character),
       });
     },
   },
@@ -675,18 +631,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        characters: filteredCharacters.map((char: CharacterSetting) => ({
-          id: char.id,
-          name: char.name,
-          translation: char.translation.translation,
-          sex: char.sex,
-          description: char.description,
-          speaking_style: char.speakingStyle,
-          aliases: char.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        })),
+        characters: filteredCharacters.map(serializeCharacter),
         count: filteredCharacters.length,
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }

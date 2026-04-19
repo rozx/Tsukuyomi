@@ -444,6 +444,69 @@ function countTrailingLineBreaks(text: string | null | undefined): number {
 }
 
 /**
+ * 扫描单个章节内所有段落，将命中项追加到 `results`。
+ *
+ * 由 `searchParagraphsSyncShared` / `searchParagraphsAsyncShared` 共用，封装了：
+ *   - 章节内容未加载时直接跳过（`chapter.content` falsy）
+ *   - 逐段落调用 `match(paragraph)` 判定命中
+ *   - 可选的 `onlyWithTranslation` 过滤（段落需至少有一条非空翻译）
+ *   - 达到 `maxParagraphs` 后立即停止并返回 true，供调用方在外层循环中一并中断
+ *
+ * @returns 若结果数量已达到 `maxParagraphs` 返回 true，表示外层应停止继续扫描。
+ */
+function collectParagraphMatchesInChapter(
+  chapter: Chapter,
+  volume: Volume,
+  vIndex: number,
+  cIndex: number,
+  match: (paragraph: Paragraph) => boolean,
+  onlyWithTranslation: boolean,
+  maxParagraphs: number,
+  results: ParagraphSearchResult[],
+): boolean {
+  if (!chapter.content) return false;
+
+  for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+    // 如果已达到最大返回数量，停止搜索
+    if (results.length >= maxParagraphs) {
+      return true;
+    }
+
+    const paragraph = chapter.content[pIndex];
+    if (!paragraph) continue;
+
+    if (!match(paragraph)) continue;
+
+    // 如果要求只返回有翻译的段落，检查段落是否有翻译
+    if (onlyWithTranslation) {
+      const hasTranslation =
+        paragraph.translations &&
+        paragraph.translations.length > 0 &&
+        paragraph.translations.some((t) => t.translation && t.translation.trim().length > 0);
+      if (!hasTranslation) {
+        continue; // 跳过没有翻译的段落
+      }
+    }
+
+    results.push({
+      paragraph,
+      paragraphIndex: pIndex,
+      chapter,
+      chapterIndex: cIndex,
+      volume,
+      volumeIndex: vIndex,
+    });
+
+    // 如果已达到最大返回数量，停止搜索
+    if (results.length >= maxParagraphs) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * 同步版扫描逻辑，供 `searchParagraphsByKeyword` 复用。
  * 与 `searchParagraphsAsyncShared` 的差异：
  *   - 同步执行，不做任何章节内容的按需加载；仅扫描 `chapter.content` 已存在的章节
@@ -507,57 +570,24 @@ function searchParagraphsSyncShared(
     const endChapterIndex =
       chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
 
-    // 遍历章节
+    // 遍历章节（同步版本不加载：内容未加载的章节由 helper 直接跳过）
     for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
       const chapter = volume.chapters[cIndex];
       if (!chapter) continue;
 
-      // 搜索段落（同步版本不加载：内容未加载的章节直接跳过）
-      if (chapter.content) {
-        for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-          // 如果已达到最大返回数量，停止搜索
-          if (results.length >= maxParagraphs) {
-            break;
-          }
-
-          const paragraph = chapter.content[pIndex];
-          if (!paragraph) continue;
-
-          if (match(paragraph)) {
-            // 如果要求只返回有翻译的段落，检查段落是否有翻译
-            if (onlyWithTranslation) {
-              const hasTranslation =
-                paragraph.translations &&
-                paragraph.translations.length > 0 &&
-                paragraph.translations.some(
-                  (t) => t.translation && t.translation.trim().length > 0,
-                );
-              if (!hasTranslation) {
-                continue; // 跳过没有翻译的段落
-              }
-            }
-
-            results.push({
-              paragraph,
-              paragraphIndex: pIndex,
-              chapter,
-              chapterIndex: cIndex,
-              volume,
-              volumeIndex: vIndex,
-            });
-
-            // 如果已达到最大返回数量，停止搜索
-            if (results.length >= maxParagraphs) {
-              break;
-            }
-          }
-        }
-      }
+      const reachedLimit = collectParagraphMatchesInChapter(
+        chapter,
+        volume,
+        vIndex,
+        cIndex,
+        match,
+        onlyWithTranslation,
+        maxParagraphs,
+        results,
+      );
 
       // 如果已达到最大返回数量，停止搜索章节
-      if (results.length >= maxParagraphs) {
-        break;
-      }
+      if (reachedLimit) break;
     }
 
     // 如果已达到最大返回数量，停止搜索卷
@@ -697,51 +727,19 @@ async function searchParagraphsAsyncShared(
       }
 
       // 搜索段落
-      if (chapter.content) {
-        for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-          // 如果已达到最大返回数量，停止搜索
-          if (results.length >= maxParagraphs) {
-            break;
-          }
-
-          const paragraph = chapter.content[pIndex];
-          if (!paragraph) continue;
-
-          if (match(paragraph)) {
-            // 如果要求只返回有翻译的段落，检查段落是否有翻译
-            if (onlyWithTranslation) {
-              const hasTranslation =
-                paragraph.translations &&
-                paragraph.translations.length > 0 &&
-                paragraph.translations.some(
-                  (t) => t.translation && t.translation.trim().length > 0,
-                );
-              if (!hasTranslation) {
-                continue; // 跳过没有翻译的段落
-              }
-            }
-
-            results.push({
-              paragraph,
-              paragraphIndex: pIndex,
-              chapter,
-              chapterIndex: cIndex,
-              volume,
-              volumeIndex: vIndex,
-            });
-
-            // 如果已达到最大返回数量，停止搜索
-            if (results.length >= maxParagraphs) {
-              break;
-            }
-          }
-        }
-      }
+      const reachedLimit = collectParagraphMatchesInChapter(
+        chapter,
+        volume,
+        vIndex,
+        cIndex,
+        match,
+        onlyWithTranslation,
+        maxParagraphs,
+        results,
+      );
 
       // 如果已达到最大返回数量，停止搜索章节
-      if (results.length >= maxParagraphs) {
-        break;
-      }
+      if (reachedLimit) break;
     }
 
     // 如果已达到最大返回数量，停止搜索卷
