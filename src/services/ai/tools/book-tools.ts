@@ -28,6 +28,81 @@ function getVolumeTitleTranslation(volume: Volume | null | undefined): string {
   return typeof volume.title === 'string' ? '' : volume.title.translation?.translation || '';
 }
 
+function buildUpdatedChapterTitle(
+  existingTitle: Chapter['title'],
+  titleOriginal: string | undefined,
+  titleTranslation: string | undefined,
+): Chapter['title'] {
+  if (typeof existingTitle === 'string') {
+    return buildTitleFromString(existingTitle, titleOriginal, titleTranslation);
+  }
+  return buildTitleFromObject(existingTitle, titleOriginal, titleTranslation);
+}
+
+function buildTitleFromString(
+  existingTitle: string,
+  titleOriginal: string | undefined,
+  titleTranslation: string | undefined,
+): Chapter['title'] {
+  if (titleOriginal && titleTranslation) {
+    return {
+      original: titleOriginal.trim(),
+      translation: {
+        id: generateShortId(),
+        translation: titleTranslation.trim(),
+        aiModelId: '',
+      },
+    };
+  }
+  if (titleOriginal) {
+    return {
+      original: titleOriginal.trim(),
+      translation: { id: generateShortId(), translation: '', aiModelId: '' },
+    };
+  }
+  if (titleTranslation) {
+    return {
+      original: existingTitle,
+      translation: {
+        id: generateShortId(),
+        translation: titleTranslation.trim(),
+        aiModelId: '',
+      },
+    };
+  }
+  return existingTitle;
+}
+
+function buildTitleFromObject(
+  existingTitle: Exclude<Chapter['title'], string>,
+  titleOriginal: string | undefined,
+  titleTranslation: string | undefined,
+): Chapter['title'] {
+  const mergeTranslation = (text: string) =>
+    existingTitle.translation
+      ? { ...existingTitle.translation, translation: text }
+      : { id: generateShortId(), translation: text, aiModelId: '' };
+  if (titleOriginal && titleTranslation) {
+    return {
+      original: titleOriginal.trim(),
+      translation: mergeTranslation(titleTranslation.trim()),
+    };
+  }
+  if (titleOriginal) {
+    return {
+      original: titleOriginal.trim(),
+      ...(existingTitle.translation ? { translation: existingTitle.translation } : {}),
+    } as Chapter['title'];
+  }
+  if (titleTranslation) {
+    return {
+      original: existingTitle.original,
+      translation: mergeTranslation(titleTranslation.trim()),
+    };
+  }
+  return existingTitle;
+}
+
 function collectAllChapterSummaries(book: Novel): Array<{
   id: string;
   title_original: string;
@@ -854,7 +929,6 @@ export const bookTools: ToolDefinition[] = [
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
-
       if (!title_original && !title_translation) {
         return JSON.stringify({
           success: false,
@@ -868,114 +942,27 @@ export const bookTools: ToolDefinition[] = [
         if (!book) {
           return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
         }
-
-        // 查找章节
         const chapterInfo = ChapterService.findChapterById(book, chapter_id);
         if (!chapterInfo) {
-          return JSON.stringify({
-            success: false,
-            error: `章节不存在: ${chapter_id}`,
-          });
+          return JSON.stringify({ success: false, error: `章节不存在: ${chapter_id}` });
         }
 
         const { chapter: existingChapter } = chapterInfo;
         const oldTitle = getChapterDisplayTitle(existingChapter);
-        const oldOriginal =
-          typeof existingChapter.title === 'string'
-            ? existingChapter.title
-            : existingChapter.title.original;
-        const oldTranslation =
-          typeof existingChapter.title === 'string'
-            ? ''
-            : existingChapter.title.translation?.translation || '';
+        const oldOriginal = getTitleOriginal(existingChapter);
+        const oldTranslation = getTitleTranslation(existingChapter);
 
-        // 构建更新数据
-        let updatedTitle: Chapter['title'];
-        if (typeof existingChapter.title === 'string') {
-          // 旧数据格式，转换为新格式
-          if (title_original && title_translation) {
-            updatedTitle = {
-              original: title_original.trim(),
-              translation: {
-                id: generateShortId(),
-                translation: title_translation.trim(),
-                aiModelId: '',
-              },
-            };
-          } else if (title_original) {
-            updatedTitle = {
-              original: title_original.trim(),
-              translation: {
-                id: generateShortId(),
-                translation: '',
-                aiModelId: '',
-              },
-            };
-          } else if (title_translation) {
-            // 只更新翻译
-            updatedTitle = {
-              original: existingChapter.title,
-              translation: {
-                id: generateShortId(),
-                translation: title_translation.trim(),
-                aiModelId: '',
-              },
-            };
-          } else {
-            // 不应该到达这里，因为前面有逻辑检查
-            updatedTitle = existingChapter.title;
-          }
-        } else {
-          // 新数据格式
-          if (title_original && title_translation) {
-            updatedTitle = {
-              original: title_original.trim(),
-              translation: existingChapter.title.translation
-                ? {
-                    ...existingChapter.title.translation,
-                    translation: title_translation.trim(),
-                  }
-                : {
-                    id: generateShortId(),
-                    translation: title_translation.trim(),
-                    aiModelId: '',
-                  },
-            };
-          } else if (title_original) {
-            updatedTitle = {
-              original: title_original.trim(),
-              translation: existingChapter.title.translation,
-            };
-          } else if (title_translation) {
-            // 只更新翻译
-            updatedTitle = {
-              original: existingChapter.title.original,
-              translation: existingChapter.title.translation
-                ? {
-                    ...existingChapter.title.translation,
-                    translation: title_translation.trim(),
-                  }
-                : {
-                    id: generateShortId(),
-                    translation: title_translation.trim(),
-                    aiModelId: '',
-                  },
-            };
-          } else {
-            // 不应该发生
-            updatedTitle = existingChapter.title;
-          }
-        }
+        const updatedTitle = buildUpdatedChapterTitle(
+          existingChapter.title,
+          title_original,
+          title_translation,
+        );
 
-        // 使用 ChapterService 更新章节
         const updatedVolumes = ChapterService.updateChapter(book, chapter_id, {
           title: updatedTitle,
         });
-
-        // 保存更改
         await booksStore.updateBook(bookId, { volumes: updatedVolumes });
 
-        // 获取更新后的章节信息
         const updatedBook = booksStore.getBookById(bookId);
         const updatedChapterInfo = updatedBook
           ? ChapterService.findChapterById(updatedBook, chapter_id)
@@ -984,24 +971,21 @@ export const bookTools: ToolDefinition[] = [
           ? getChapterDisplayTitle(updatedChapterInfo.chapter)
           : oldTitle;
 
-        // 报告操作
-        if (onAction) {
-          onAction({
-            type: 'update',
-            entity: 'chapter',
-            data: {
-              chapter_id,
-              chapter_title: newTitle,
-              old_title: oldTitle,
-              new_title: newTitle,
-              tool_name: 'update_chapter_title',
-            },
-            previousData: {
-              title_original: oldOriginal,
-              title_translation: oldTranslation,
-            },
-          });
-        }
+        onAction?.({
+          type: 'update',
+          entity: 'chapter',
+          data: {
+            chapter_id,
+            chapter_title: newTitle,
+            old_title: oldTitle,
+            new_title: newTitle,
+            tool_name: 'update_chapter_title',
+          },
+          previousData: {
+            title_original: oldOriginal,
+            title_translation: oldTranslation,
+          },
+        });
 
         return JSON.stringify({
           success: true,
