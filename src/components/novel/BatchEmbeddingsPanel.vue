@@ -25,10 +25,8 @@ import {
 } from 'src/services/chapter-embedding-service';
 import { MemoryService, isMemoryEmbeddingStale } from 'src/services/memory-service';
 import BatchEmbeddingsTestQueryDialog from 'src/components/dialogs/BatchEmbeddingsTestQueryDialog.vue';
-import {
-  isLocalEmbeddingEffectivelyEnabled,
-  isMobileDevice,
-} from 'src/utils/local-embedding';
+import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
+import { isMobileDevice } from 'src/utils/platform';
 
 const route = useRoute();
 const router = useRouter();

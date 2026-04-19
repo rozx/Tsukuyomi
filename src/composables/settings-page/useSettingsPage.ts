@@ -11,6 +11,7 @@ import { useRouter } from 'vue-router';
 import { useToast } from 'primevue/usetoast';
 import { useSettingsStore } from 'src/stores/settings';
 import { useElectron } from 'src/composables/useElectron';
+import { isMobileDevice } from 'src/utils/platform';
 
 /**
  * Shared state + logic for the `/settings` page. Used by the dispatcher
@@ -146,7 +147,10 @@ function createSettingsPageContext(): SettingsPageContext {
   };
 
   // 本地嵌入首次提示(引导记忆注入 + 章节语义查询)
+  // 手机端永久禁用本地嵌入(见 isLocalEmbeddingEffectivelyEnabled 说明),
+  // 这条引导 toast 也跳过 —— 向手机用户推销他们用不上的功能只是噪音。
   const showMemoryIntroToast = () => {
+    if (isMobileDevice()) return;
     const mi = settingsStore.settings.memoryInjection;
     if (mi && mi.hasSeenIntro) return;
     toast.add({

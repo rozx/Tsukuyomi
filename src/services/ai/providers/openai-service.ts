@@ -11,6 +11,7 @@ import type { ParsedResponse } from 'src/services/ai/types/interfaces';
 import { BaseAIService, AIEmptyResponseError } from '../core';
 import { DEFAULT_TEMPERATURE, OPENAI_MAX_TOKENS_LIMIT } from 'src/constants/ai';
 import { ProxyService } from 'src/services/proxy-service';
+import { isElectron } from 'src/utils/platform';
 
 /**
  * OpenAI AI 服务实现
@@ -77,11 +78,8 @@ export class OpenAIService extends BaseAIService {
   private createProxiedFetch(
     useCorsProxy?: boolean,
   ): ((input: RequestInfo | URL, init?: RequestInit) => Promise<Response>) | undefined {
-    // 检测是否为 Electron 环境
-    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
-
     // 仅在浏览器模式下使用自定义 fetch
-    if (!isElectron && typeof fetch !== 'undefined') {
+    if (!isElectron() && typeof fetch !== 'undefined') {
       return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         // 将 input 转换为 URL 字符串
         let url: string;

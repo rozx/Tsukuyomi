@@ -1,5 +1,6 @@
 import { DEFAULT_CORS_PROXY_FOR_AI } from 'src/constants/proxy';
 import { extractRootDomain } from 'src/utils/domain-utils';
+import { isElectron } from 'src/utils/platform';
 import co from 'co';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { useSettingsStore } from 'src/stores/settings';
@@ -54,8 +55,7 @@ export class ProxyService {
       return originalUrl;
     }
 
-    // 检测是否为 Electron 环境（静态方法中不能使用 composable）
-    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
+    const inElectron = isElectron();
 
     // 检查是否启用了代理
     const proxyEnabled = GlobalConfig.getProxyEnabled();
@@ -95,7 +95,7 @@ export class ProxyService {
       // 为了简化逻辑，我们统一直接使用代理 URL，让代理服务处理 CORS
       return proxiedUrl;
     }
-    if (!skipInternalProxy && !isElectron) {
+    if (!skipInternalProxy && !inElectron) {
       // 在浏览器环境中（非 Electron），使用服务器代理路径
       const urlObj = new URL(originalUrl);
       let internalProxyUrl: string | null = null;
@@ -167,11 +167,8 @@ export class ProxyService {
       return originalUrl;
     }
 
-    // 检测是否为 Electron 环境
-    const isElectron = typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
-
     // 仅在浏览器模式下使用 CORS 代理
-    if (!isElectron) {
+    if (!isElectron()) {
       // 使用用户设置中的代理 URL，回退到默认常量
       const proxyUrlTemplate = GlobalConfig.getProxyUrl() || DEFAULT_CORS_PROXY_FOR_AI;
       const proxiedUrl = proxyUrlTemplate.replace('{url}', encodeURIComponent(originalUrl));

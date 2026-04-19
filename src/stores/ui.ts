@@ -1,11 +1,23 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import {
   DEFAULT_BOOK_WORKSPACE_MODE,
+  getDeviceTypeByWidth,
   type BookWorkspaceMode,
   type DeviceType,
 } from 'src/constants/responsive';
 
 const STORAGE_KEY = 'tsukuyomi-ui-state';
+
+/**
+ * 尽量在 store 初始化时就给出正确的 deviceType，避免首次渲染
+ * （早于 useResponsiveLayout 跑）时把手机当成 desktop，导致 QuickStartGuideDialog
+ * 等 AdaptiveDialog 消费者短暂以桌面 Dialog 形式挂载，再被 teleport 切换为手机
+ * BottomSheet 时 transition 已过，出现"首次没有底部弹层"的观感。
+ */
+function detectInitialDeviceType(): DeviceType {
+  if (typeof window === 'undefined') return 'desktop';
+  return getDeviceTypeByWidth(window.innerWidth);
+}
 
 /**
  * 从 localStorage 加载 UI 状态
@@ -69,7 +81,7 @@ export const useUiStore = defineStore('ui', {
     sideMenuOpen: true,
     rightPanelOpen: false,
     rightPanelWidth: 384, // 默认 384px (w-96)
-    deviceType: 'desktop',
+    deviceType: detectInitialDeviceType(),
     bookWorkspaceMode: DEFAULT_BOOK_WORKSPACE_MODE,
     isLoaded: false,
     isInitialDataLoading: false,
@@ -87,8 +99,13 @@ export const useUiStore = defineStore('ui', {
       }
 
       const state = loadUiStateFromStorage();
-      this.sideMenuOpen = state.sideMenuOpen;
-      this.rightPanelOpen = state.rightPanelOpen;
+      // 手机端侧栏默认收起：首次进入 / localStorage 里残留的 sideMenuOpen=true
+      // 会让 phone-sidebar-wrapper 滑出 + 遮罩盖住整个主区域；桌面切换手机时已有
+      // watcher 处理，这里兜住"初始即手机"的场景（watcher 无 immediate，初始值
+      // 相同不触发）。
+      const phoneOverride = this.deviceType === 'phone';
+      this.sideMenuOpen = phoneOverride ? false : state.sideMenuOpen;
+      this.rightPanelOpen = phoneOverride ? false : state.rightPanelOpen;
       this.rightPanelWidth = state.rightPanelWidth;
       this.bookWorkspaceMode = state.bookWorkspaceMode;
       this.isLoaded = true;

@@ -6,6 +6,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
+import { isElectron } from 'src/utils/platform';
 import type { Memory } from 'src/models/memory';
 
 /**
@@ -131,17 +132,14 @@ export function useElectronSettings() {
   let cleanupImport: (() => void) | null = null;
 
   onMounted(() => {
-    // 只在 Electron 环境中注册监听器
-    if (typeof window !== 'undefined' && window.electronAPI?.isElectron) {
-      try {
-        if (window.electronAPI.settings) {
-          // 保存清理函数，以便在卸载时调用
-          cleanupExport = window.electronAPI.settings.onExportRequest(handleExportRequest);
-          cleanupImport = window.electronAPI.settings.onImportData(handleImportData);
-        }
-      } catch (error) {
-        console.error('Failed to setup Electron IPC:', error);
-      }
+    if (!isElectron()) return;
+    const api = window.electronAPI;
+    if (!api?.settings) return;
+    try {
+      cleanupExport = api.settings.onExportRequest(handleExportRequest);
+      cleanupImport = api.settings.onImportData(handleImportData);
+    } catch (error) {
+      console.error('Failed to setup Electron IPC:', error);
     }
   });
 

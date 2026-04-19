@@ -9,9 +9,8 @@ describe('isLocalEmbeddingEffectivelyEnabled', () => {
     mock.module('quasar', () => ({
       Platform: { is: { mobile: true, desktop: false } },
     }));
-    const { isLocalEmbeddingEffectivelyEnabled, isMobileDevice } = await import(
-      'src/utils/local-embedding'
-    );
+    const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
+    const { isMobileDevice } = await import('src/utils/platform');
 
     expect(isMobileDevice()).toBe(true);
     expect(isLocalEmbeddingEffectivelyEnabled(true)).toBe(false);
@@ -23,9 +22,8 @@ describe('isLocalEmbeddingEffectivelyEnabled', () => {
     mock.module('quasar', () => ({
       Platform: { is: { mobile: false, desktop: true } },
     }));
-    const { isLocalEmbeddingEffectivelyEnabled, isMobileDevice } = await import(
-      'src/utils/local-embedding'
-    );
+    const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
+    const { isMobileDevice } = await import('src/utils/platform');
 
     expect(isMobileDevice()).toBe(false);
     expect(isLocalEmbeddingEffectivelyEnabled(true)).toBe(true);
@@ -37,9 +35,8 @@ describe('isLocalEmbeddingEffectivelyEnabled', () => {
     mock.module('quasar', () => ({
       Platform: undefined,
     }));
-    const { isLocalEmbeddingEffectivelyEnabled, isMobileDevice } = await import(
-      'src/utils/local-embedding'
-    );
+    const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
+    const { isMobileDevice } = await import('src/utils/platform');
 
     expect(isMobileDevice()).toBe(false);
     expect(isLocalEmbeddingEffectivelyEnabled(true)).toBe(true);

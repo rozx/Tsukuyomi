@@ -10,7 +10,7 @@ import { EmbeddingService } from 'src/services/embedding-service';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import type { EmbeddingStatus, EmbeddingProgressEvent } from 'src/services/embedding-service';
 import { MODEL_ID } from 'src/services/embedding-service';
-import { isMobileDevice } from 'src/utils/local-embedding';
+import { isMobileDevice } from 'src/utils/platform';
 
 const settingsStore = useSettingsStore();
 
@@ -191,8 +191,8 @@ onUnmounted(() => {
           <p class="text-xs mt-0.5" :class="isMobile ? 'text-moon/50' : 'text-moon/70'">
             <template v-if="isMobile">
               <span class="pi pi-mobile mr-1"></span>
-              移动设备不支持本地嵌入(模型过大、WebGPU 不稳定)。请在桌面端开启此功能,
-              所有向量检索将改为由桌面端生成、同步后共享。
+              移动设备不支持本地嵌入(模型过大、WebGPU 不稳定)。手机端检索仅用关键词匹配 ——
+              向量是设备本地状态,不参与同步;在桌面端启用后也只影响桌面端自己的语义检索。
             </template>
             <template v-else>
               启用后下载嵌入模型到浏览器,支持语义记忆检索与章节向量搜索;

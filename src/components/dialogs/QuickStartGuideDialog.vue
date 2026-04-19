@@ -5,6 +5,7 @@
     desktop-width="min(960px, 92vw)"
     desktop-height="90vh"
     eyebrow="GUIDE"
+    dialog-class="quick-start-dialog"
     @update:visible="handleVisibleChange"
   >
     <div class="quick-start-content">
@@ -96,11 +97,15 @@ watch(
 </script>
 
 <style scoped>
+/*
+ * 不再给内容层加 overflow/max-height —— 外层 AdaptiveDialog（桌面是 PrimeVue
+ * Dialog body，手机是 MobileBottomSheet 的 .mbs-body）已经负责滚动。
+ * 之前双层 overflow 导致桌面出现两条滚动条。
+ */
 .quick-start-content {
-  max-height: calc(90vh - 170px);
-  overflow-y: auto;
   padding-right: 0.25rem;
 }
+
 
 .state-box {
   min-height: 240px;
@@ -156,5 +161,18 @@ watch(
 
 .doc-content :deep(a) {
   color: rgb(var(--primary-rgb));
+}
+</style>
+
+<style>
+/*
+ * 桌面 Dialog footer 默认 padding-top=0，与滚动内容没有视觉分隔 —— 滚到底时
+ * 最后一行正文紧贴按钮。补上 top padding 与顶部细线，形成清晰的动作区。
+ * 非 scoped：PrimeVue Dialog teleport 到 body，scoped CSS 的 data-v 属性
+ * 不会随之迁移，`:deep()` 匹配失败，必须使用全局选择器。
+ */
+.quick-start-dialog .p-dialog-footer {
+  padding-top: 1rem;
+  border-top: 1px solid rgb(255 255 255 / 0.08);
 }
 </style>

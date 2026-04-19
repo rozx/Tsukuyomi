@@ -372,9 +372,10 @@ export const bookTools: ToolDefinition[] = [
 
       try {
         const { useSettingsStore } = await import('src/stores/settings');
-        const { isLocalEmbeddingEffectivelyEnabled, isMobileDevice } = await import(
+        const { isLocalEmbeddingEffectivelyEnabled } = await import(
           'src/utils/local-embedding'
         );
+        const { isMobileDevice } = await import('src/utils/platform');
         const stored = useSettingsStore().settings.enableLocalEmbedding;
         if (!isLocalEmbeddingEffectivelyEnabled(stored)) {
           return JSON.stringify({

@@ -49,7 +49,7 @@ useOverlayCloseStack({
 </script>
 
 <template>
-  <div class="h-screen overflow-hidden bg-tsukuyomi-sky text-moon-100 flex flex-col">
+  <div class="h-[100dvh] overflow-hidden bg-tsukuyomi-sky text-moon-100 flex flex-col">
     <MobileSysBar />
 
     <div class="flex flex-1 overflow-hidden min-h-0 relative max-w-full">

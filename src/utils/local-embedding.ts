@@ -10,19 +10,7 @@
  * 2. 用户设置:`AppSettings.enableLocalEmbedding` 的总开关。
  */
 
-import { Platform } from 'quasar';
-
-/**
- * 是否为"真移动设备"(Quasar 基于 UA 判定)。
- * 在单元测试等无 Quasar 环境中 Platform.is 可能是空对象,返回 false。
- */
-export function isMobileDevice(): boolean {
-  try {
-    return Platform?.is?.mobile === true;
-  } catch {
-    return false;
-  }
-}
+import { isMobileDevice } from 'src/utils/platform';
 
 /**
  * 结合"设备门"和"用户设置"计算本地嵌入是否有效启用。
