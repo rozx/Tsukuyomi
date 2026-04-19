@@ -9,7 +9,7 @@
  * 两处通过 Pinia 共享 `settingsStore.forceSyncMode` 状态，任一处切换立即反映到另一处。
  * 关闭 toggle 时同时清除 lastFailedAt。
  */
-import { computed } from 'vue';
+import { computed, useId } from 'vue';
 import Checkbox from 'primevue/checkbox';
 import { useSettingsStore } from 'src/stores/settings';
 
@@ -23,6 +23,9 @@ const props = withDefaults(
 );
 
 const settingsStore = useSettingsStore();
+
+// 组件可能同时渲染在设置页和同步面板，必须用 per-instance id 避免重复 DOM id 破坏 label 关联
+const inputId = useId();
 
 const active = computed({
   get: () => settingsStore.forceSyncMode.active,
@@ -43,11 +46,11 @@ const hasFailure = computed(
       <Checkbox
         :binary="true"
         :model-value="active"
-        input-id="force-sync-mode"
+        :input-id="inputId"
         :disabled="props.disabled"
         @update:model-value="(value) => (active = value as boolean)"
       />
-      <label for="force-sync-mode" class="flex-1 cursor-pointer">
+      <label :for="inputId" class="flex-1 cursor-pointer">
         <div class="text-xs text-moon/90 leading-tight">强制推送本地数据到远程（覆盖远程）</div>
         <div class="text-[10px] text-moon/60 mt-0.5 leading-snug">
           开启后，点击同步会将本地数据完全覆盖远程，远程上本地没有的条目将被删除

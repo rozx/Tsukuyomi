@@ -20,47 +20,44 @@ export function useForceSync() {
    * @param options.onBeforeConfirm 弹出对话框前的副作用（如关闭父 Popover）
    * @param options.config 可选的同步配置覆盖（设置页传入未持久化的表单值）
    */
-  const confirmAndForceSync = async (options?: {
+  const confirmAndForceSync = (options?: {
     onBeforeConfirm?: () => void;
     config?: SyncConfig;
   }): Promise<void> => {
     options?.onBeforeConfirm?.();
 
+    const runForceSync = () => (options?.config ? forceSync(options.config) : forceSync());
+
     const gistId = (options?.config ?? settingsStore.gistSync).syncParams.gistId ?? '';
 
     // 无 gistId 时跳过确认：executeForceSync 内部会退化为普通首次上传路径
     if (!gistId) {
-      if (options?.config) {
-        await forceSync(options.config);
-      } else {
-        await forceSync();
-      }
-      return;
+      return runForceSync();
     }
 
-    confirm.require({
-      group: 'force-sync',
-      header: '确认强制推送',
-      message:
-        '这将用本地数据完全覆盖远程 Gist。远程上本地没有的书籍、记忆、AI 模型配置将被永久删除。此操作不可撤销。确认继续？',
-      icon: 'pi pi-exclamation-triangle',
-      rejectProps: {
-        label: '取消',
-        severity: 'secondary',
-      },
-      acceptProps: {
-        label: '强制推送',
-        severity: 'danger',
-      },
-      accept: () => {
-        void (async () => {
-          if (options?.config) {
-            await forceSync(options.config);
-          } else {
-            await forceSync();
-          }
-        })();
-      },
+    // 返回的 Promise 在用户 accept + forceSync 结束后 resolve，reject 视为取消（resolve 不抛）
+    return new Promise<void>((resolve, reject) => {
+      confirm.require({
+        group: 'force-sync',
+        header: '确认强制推送',
+        message:
+          '这将用本地数据完全覆盖远程 Gist。远程上本地没有的书籍、记忆、AI 模型配置将被永久删除。此操作不可撤销。确认继续？',
+        icon: 'pi pi-exclamation-triangle',
+        rejectProps: {
+          label: '取消',
+          severity: 'secondary',
+        },
+        acceptProps: {
+          label: '强制推送',
+          severity: 'danger',
+        },
+        accept: () => {
+          runForceSync().then(resolve).catch(reject);
+        },
+        reject: () => {
+          resolve();
+        },
+      });
     });
   };
 
