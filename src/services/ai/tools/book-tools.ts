@@ -431,13 +431,21 @@ export const bookTools: ToolDefinition[] = [
       function: {
         name: 'get_chapter_info',
         description:
-          '获取章节的详细信息，包括标题、原文内容、段落列表、翻译进度等。当需要了解当前章节的完整信息时使用此工具。',
+          '获取章节的详细信息，包括标题、段落列表（默认分页）、翻译进度等。章节可能很长，返回内容会按 limit/offset 分页；先用小 limit 确认方向，需要更多段落再通过 offset 继续读取，避免一次性拉整章把上下文塞满。',
         parameters: {
           type: 'object',
           properties: {
             chapter_id: {
               type: 'string',
               description: '章节 ID',
+            },
+            limit: {
+              type: 'number',
+              description: '返回的段落数量上限（默认 30，最大 200）。章节可能有上百段，默认只取前 30 段避免 context 爆炸。',
+            },
+            offset: {
+              type: 'number',
+              description: '起始段落索引（0-based，默认 0）。配合 limit 翻页读取。',
             },
             include_memory: {
               type: 'boolean',
@@ -449,11 +457,20 @@ export const bookTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{ chapter_id: string; include_memory?: boolean }>(args);
+      const parsedArgs = parseToolArgs<{
+        chapter_id: string;
+        limit?: number;
+        offset?: number;
+        include_memory?: boolean;
+      }>(args);
       if (!bookId) {
         return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
       }
       const { chapter_id, include_memory = true } = parsedArgs;
+      const rawLimit = typeof parsedArgs.limit === 'number' ? parsedArgs.limit : 30;
+      const limit = Math.max(1, Math.min(200, Math.floor(rawLimit)));
+      const rawOffset = typeof parsedArgs.offset === 'number' ? parsedArgs.offset : 0;
+      const offset = Math.max(0, Math.floor(rawOffset));
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }
@@ -520,27 +537,32 @@ export const bookTools: ToolDefinition[] = [
             },
           });
         }
-        const chapterContent = getChapterContentText(chapter);
         const paragraphCount = chapter.content?.length || 0;
         const translatedCount =
           chapter.content?.filter(
             (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
           ).length || 0;
 
+        // 分页：根据 offset/limit 切片段落，避免一次性返回整章把 context 塞满
+        const effectiveOffset = Math.min(offset, paragraphCount);
+        const effectiveEnd = Math.min(effectiveOffset + limit, paragraphCount);
+        const slicedParagraphs = chapter.content?.slice(effectiveOffset, effectiveEnd) || [];
+        const hasMore = effectiveEnd < paragraphCount;
+        const chapterContent = slicedParagraphs.map((para) => para.text).join('\n');
+
         // 构建段落信息
-        const paragraphs =
-          chapter.content?.map((para) => {
-            const selectedTranslation = para.translations?.find(
-              (t) => t.id === para.selectedTranslationId,
-            );
-            return {
-              id: para.id,
-              text: para.text,
-              translation: selectedTranslation?.translation || '',
-              hasTranslation: !!selectedTranslation,
-              translationCount: para.translations?.length || 0,
-            };
-          }) || [];
+        const paragraphs = slicedParagraphs.map((para) => {
+          const selectedTranslation = para.translations?.find(
+            (t) => t.id === para.selectedTranslationId,
+          );
+          return {
+            id: para.id,
+            text: para.text,
+            translation: selectedTranslation?.translation || '',
+            hasTranslation: !!selectedTranslation,
+            translationCount: para.translations?.length || 0,
+          };
+        });
 
         // 搜索相关记忆（使用章节标题作为关键词）
         let relatedMemories: Array<{ id: string; summary: string }> = [];
@@ -568,6 +590,13 @@ export const bookTools: ToolDefinition[] = [
             paragraphCount,
             translatedCount,
             paragraphs,
+            pagination: {
+              offset: effectiveOffset,
+              limit,
+              returned: paragraphs.length,
+              hasMore,
+              nextOffset: hasMore ? effectiveEnd : null,
+            },
             volume: volume
               ? {
                   id: volume.id,
