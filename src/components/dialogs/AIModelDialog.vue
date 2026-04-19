@@ -11,6 +11,7 @@ import Slider from 'primevue/slider';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useElectron } from 'src/composables/useElectron';
+import { useUnsavedChangesDialog } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from 'src/services/ai';
@@ -82,7 +83,6 @@ const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
 
 // 表单验证错误
 const formErrors = ref<Record<string, string>>({});
-const showUnsavedCloseConfirm = ref(false);
 const initialFormSnapshot = ref<(Partial<AIModel> & { isDefault: AIModel['isDefault'] }) | null>(
   null,
 );
@@ -92,6 +92,23 @@ const hasUnsavedChanges = computed(() => {
     return false;
   }
   return !isEqual(initialFormSnapshot.value, formData.value);
+});
+
+const closeDialogImmediately = () => {
+  emit('cancel');
+  emit('update:visible', false);
+};
+
+const {
+  showUnsavedCloseConfirm,
+  requestCloseDialog,
+  confirmDiscardAndClose,
+  cancelDiscardAndKeepEditing,
+  handleDialogVisibleChange,
+} = useUnsavedChangesDialog({
+  hasUnsavedChanges,
+  emit,
+  closeDialogImmediately,
 });
 
 const hasChildDialogOpen = computed(() => showUnsavedCloseConfirm.value);
@@ -293,36 +310,6 @@ const handleSave = () => {
 
 const captureSnapshot = () => {
   initialFormSnapshot.value = cloneDeep(formData.value);
-};
-
-const closeDialogImmediately = () => {
-  emit('cancel');
-  emit('update:visible', false);
-};
-
-const requestCloseDialog = () => {
-  if (hasUnsavedChanges.value) {
-    showUnsavedCloseConfirm.value = true;
-    return;
-  }
-  closeDialogImmediately();
-};
-
-const confirmDiscardAndClose = () => {
-  showUnsavedCloseConfirm.value = false;
-  closeDialogImmediately();
-};
-
-const cancelDiscardAndKeepEditing = () => {
-  showUnsavedCloseConfirm.value = false;
-};
-
-const handleDialogVisibleChange = (nextVisible: boolean) => {
-  if (nextVisible) {
-    emit('update:visible', true);
-    return;
-  }
-  requestCloseDialog();
 };
 
 // 获取可用模型列表

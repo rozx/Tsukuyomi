@@ -24,6 +24,7 @@ import { MemoryService } from 'src/services/memory-service';
 import { SettingsService } from 'src/services/settings-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useChapterCharCount } from 'src/composables/useChapterCharCount';
+import { useUnsavedChangesDialog } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import { useUiStore } from 'src/stores/ui';
 import { formatCharCount, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 
@@ -109,7 +110,6 @@ const expandedVolumes = ref<Set<string>>(new Set());
 // 清除确认对话框
 const showClearConfirm = ref(false);
 const clearConfirmInput = ref('');
-const showUnsavedCloseConfirm = ref(false);
 const initialFormSnapshot = ref<Partial<Novel> | null>(null);
 
 const hasUnsavedChanges = computed(() => {
@@ -117,6 +117,24 @@ const hasUnsavedChanges = computed(() => {
     return false;
   }
   return !isEqual(initialFormSnapshot.value, formData.value);
+});
+
+const closeDialogImmediately = () => {
+  emit('cancel');
+  emit('update:visible', false);
+};
+
+const {
+  showUnsavedCloseConfirm,
+  requestCloseDialog,
+  confirmDiscardAndClose,
+  cancelDiscardAndKeepEditing,
+  handleDialogVisibleChange,
+} = useUnsavedChangesDialog({
+  hasUnsavedChanges,
+  loading: computed(() => props.loading),
+  emit,
+  closeDialogImmediately,
 });
 
 const hasChildDialogOpen = computed(
@@ -245,41 +263,6 @@ const handleExportJson = async () => {
       life: 3000,
     });
   }
-};
-
-const closeDialogImmediately = () => {
-  emit('cancel');
-  emit('update:visible', false);
-};
-
-const requestCloseDialog = () => {
-  if (props.loading) {
-    return;
-  }
-
-  if (hasUnsavedChanges.value) {
-    showUnsavedCloseConfirm.value = true;
-    return;
-  }
-
-  closeDialogImmediately();
-};
-
-const confirmDiscardAndClose = () => {
-  showUnsavedCloseConfirm.value = false;
-  closeDialogImmediately();
-};
-
-const cancelDiscardAndKeepEditing = () => {
-  showUnsavedCloseConfirm.value = false;
-};
-
-const handleDialogVisibleChange = (nextVisible: boolean) => {
-  if (nextVisible) {
-    emit('update:visible', true);
-    return;
-  }
-  requestCloseDialog();
 };
 
 // 处理特殊指令标签页切换
