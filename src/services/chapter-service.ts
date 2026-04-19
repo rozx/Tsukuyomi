@@ -198,6 +198,68 @@ async function performChapterExportAction(
   URL.revokeObjectURL(url);
 }
 
+function buildParagraphSearchResult(
+  paragraph: Paragraph,
+  paragraphIndex: number,
+  chapter: Chapter,
+  chapterIndex: number,
+  volume: Volume,
+  volumeIndex: number,
+): ParagraphSearchResult {
+  return { paragraph, paragraphIndex, chapter, chapterIndex, volume, volumeIndex };
+}
+
+function findParagraphInLoadedChapters(
+  novel: Novel,
+  paragraphId: string,
+  chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[],
+): ParagraphSearchResult | null {
+  const volumes = novel.volumes || [];
+  for (let vIndex = 0; vIndex < volumes.length; vIndex++) {
+    const volume = volumes[vIndex];
+    if (!volume?.chapters) continue;
+    for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
+      const chapter = volume.chapters[cIndex];
+      if (!chapter) continue;
+      if (chapter.content === undefined) {
+        chaptersToLoad.push({ chapter, vIndex, cIndex });
+        continue;
+      }
+      if (!chapter.content) continue;
+      for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+        const paragraph = chapter.content[pIndex];
+        if (paragraph && paragraph.id === paragraphId) {
+          return buildParagraphSearchResult(paragraph, pIndex, chapter, cIndex, volume, vIndex);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function findParagraphInBatchLoadedChapters(
+  novel: Novel,
+  paragraphId: string,
+  chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[],
+  contentsMap: Map<string, Paragraph[] | undefined>,
+): ParagraphSearchResult | null {
+  const volumes = novel.volumes || [];
+  for (const { chapter, vIndex, cIndex } of chaptersToLoad) {
+    const content = contentsMap.get(chapter.id);
+    chapter.content = content || [];
+    chapter.contentLoaded = true;
+    if (!chapter.content) continue;
+    for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+      const paragraph = chapter.content[pIndex];
+      if (!paragraph || paragraph.id !== paragraphId) continue;
+      const volume = volumes[vIndex];
+      if (!volume) continue;
+      return buildParagraphSearchResult(paragraph, pIndex, chapter, cIndex, volume, vIndex);
+    }
+  }
+  return null;
+}
+
 function shouldPreserveExistingContent(existing: Chapter, incoming: Chapter): boolean {
   if (existing.content === undefined || existing.content === null) return false;
   if (incoming.content === undefined || incoming.content === null) return true;
@@ -1606,81 +1668,16 @@ export class ChapterService {
     novel: Novel | null | undefined,
     paragraphId: string,
   ): Promise<ParagraphSearchResult | null> {
-    if (!novel || !novel.volumes || !paragraphId) {
-      return null;
-    }
+    if (!novel || !novel.volumes || !paragraphId) return null;
 
-    // 收集需要加载的章节 ID（批量加载优化）
     const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
+    const loadedHit = findParagraphInLoadedChapters(novel, paragraphId, chaptersToLoad);
+    if (loadedHit) return loadedHit;
+    if (chaptersToLoad.length === 0) return null;
 
-    // 第一遍：收集需要加载的章节
-    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
-      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter) continue;
-
-        // 如果章节内容已加载，直接检查
-        if (chapter.content !== undefined) {
-          if (chapter.content) {
-            for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-              const paragraph = chapter.content[pIndex];
-              if (paragraph && paragraph.id === paragraphId) {
-                return {
-                  paragraph,
-                  paragraphIndex: pIndex,
-                  chapter,
-                  chapterIndex: cIndex,
-                  volume,
-                  volumeIndex: vIndex,
-                };
-              }
-            }
-          }
-        } else {
-          // 需要加载的章节
-          chaptersToLoad.push({ chapter, vIndex, cIndex });
-        }
-      }
-    }
-
-    // 如果所有章节都已加载但没找到，返回 null
-    if (chaptersToLoad.length === 0) {
-      return null;
-    }
-
-    // 批量加载章节内容
     const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
     const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-
-    // 第二遍：在加载的章节中查找
-    for (const { chapter, vIndex, cIndex } of chaptersToLoad) {
-      const content = contentsMap.get(chapter.id);
-      chapter.content = content || [];
-      chapter.contentLoaded = true;
-
-      if (chapter.content) {
-        for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-          const paragraph = chapter.content[pIndex];
-          if (paragraph && paragraph.id === paragraphId) {
-            const volume = novel.volumes[vIndex];
-            if (!volume) continue;
-            return {
-              paragraph,
-              paragraphIndex: pIndex,
-              chapter,
-              chapterIndex: cIndex,
-              volume,
-              volumeIndex: vIndex,
-            };
-          }
-        }
-      }
-    }
-
-    return null;
+    return findParagraphInBatchLoadedChapters(novel, paragraphId, chaptersToLoad, contentsMap);
   }
 
   static findParagraphLocation(

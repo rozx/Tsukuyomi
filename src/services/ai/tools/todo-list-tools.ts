@@ -57,6 +57,101 @@ function createBatchTodos(
   });
 }
 
+type UpdateTodoAction = {
+  type: 'update';
+  entity: 'todo';
+  data: TodoItem;
+  previousData?: TodoItem;
+};
+
+const VALID_TODO_STATUSES: readonly TodoStatus[] = ['pending', 'working', 'done'];
+
+function dispatchTodoUpdated(
+  previous: TodoItem | undefined,
+  updated: TodoItem,
+  onAction: ((action: UpdateTodoAction) => void) | undefined,
+): void {
+  if (!onAction) return;
+  onAction({
+    type: 'update',
+    entity: 'todo',
+    data: updated,
+    ...(previous ? { previousData: previous } : {}),
+  });
+}
+
+function updateSingleTodoItem(
+  item: { id: string; text?: string; status?: TodoStatus },
+  onAction: ((action: UpdateTodoAction) => void) | undefined,
+  errors: string[],
+): TodoItem | null {
+  if (!item.id) {
+    errors.push('待办事项 ID 不能为空');
+    return null;
+  }
+  if (item.status !== undefined && !VALID_TODO_STATUSES.includes(item.status)) {
+    errors.push(
+      `待办事项 "${item.id}" 状态无效: "${item.status}"，有效值为: ${VALID_TODO_STATUSES.join(', ')}`,
+    );
+    return null;
+  }
+  try {
+    const updates: { text?: string; status?: TodoStatus } = {};
+    if (item.text !== undefined) updates.text = item.text;
+    if (item.status !== undefined) updates.status = item.status;
+    const previousTodo = TodoListService.getTodoById(item.id);
+    const updatedTodo = TodoListService.updateTodo(item.id, updates);
+    dispatchTodoUpdated(previousTodo, updatedTodo, onAction);
+    return updatedTodo;
+  } catch (error) {
+    errors.push(
+      `更新待办事项 "${item.id}" 失败: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
+}
+
+function updateBatchTodos(
+  items: Array<{ id: string; text?: string; status?: TodoStatus }>,
+  onAction: ((action: UpdateTodoAction) => void) | undefined,
+): string {
+  const updatedTodos: TodoItem[] = [];
+  const errors: string[] = [];
+  for (const item of items) {
+    const updated = updateSingleTodoItem(item, onAction, errors);
+    if (updated) updatedTodos.push(updated);
+  }
+  if (updatedTodos.length === 0) {
+    throw new Error(`批量更新待办事项失败：${errors.join('; ')}`);
+  }
+  return JSON.stringify({
+    success: true,
+    message: `成功更新 ${updatedTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
+    todos: updatedTodos.map((todo) => ({ id: todo.id, text: todo.text, status: todo.status })),
+    count: updatedTodos.length,
+    ...(errors.length > 0 ? { errors } : {}),
+  });
+}
+
+function updateOneTodo(
+  id: string,
+  text: string | undefined,
+  status: TodoStatus | undefined,
+  onAction: ((action: UpdateTodoAction) => void) | undefined,
+): string {
+  const updates: { text?: string; status?: TodoStatus } = {};
+  if (text !== undefined) updates.text = text;
+  if (status !== undefined) updates.status = status;
+  const previousTodo = TodoListService.getTodoById(id);
+  const updatedTodo = TodoListService.updateTodo(id, updates);
+  dispatchTodoUpdated(previousTodo, updatedTodo, onAction);
+  return JSON.stringify({
+    success: true,
+    message: '待办事项更新成功',
+    todo: { id: updatedTodo.id, text: updatedTodo.text, status: updatedTodo.status },
+  });
+}
+
 function createSingleTodo(
   text: string,
   taskId: string,
@@ -180,93 +275,13 @@ export const todoListTools: ToolDefinition[] = [
         status?: TodoStatus;
         items?: Array<{ id: string; text?: string; status?: TodoStatus }>;
       };
-
       if (items && Array.isArray(items) && items.length > 0) {
-        const updatedTodos: TodoItem[] = [];
-        const errors: string[] = [];
-
-        for (const item of items) {
-          if (!item.id) {
-            errors.push('待办事项 ID 不能为空');
-            continue;
-          }
-
-          try {
-            const VALID_STATUSES: readonly string[] = ['pending', 'working', 'done'];
-            if (item.status !== undefined && !VALID_STATUSES.includes(item.status)) {
-              errors.push(
-                `待办事项 "${item.id}" 状态无效: "${item.status}"，有效值为: ${VALID_STATUSES.join(', ')}`,
-              );
-              continue;
-            }
-
-            const updates: { text?: string; status?: TodoStatus } = {};
-            if (item.text !== undefined) updates.text = item.text;
-            if (item.status !== undefined) updates.status = item.status;
-
-            const previousTodo = TodoListService.getTodoById(item.id);
-            const updatedTodo = TodoListService.updateTodo(item.id, updates);
-            updatedTodos.push(updatedTodo);
-
-            if (onAction) {
-              onAction({
-                type: 'update',
-                entity: 'todo',
-                data: updatedTodo,
-                ...(previousTodo ? { previousData: previousTodo } : {}),
-              });
-            }
-          } catch (error) {
-            errors.push(
-              `更新待办事项 "${item.id}" 失败: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-        }
-
-        if (updatedTodos.length === 0) {
-          throw new Error(`批量更新待办事项失败：${errors.join('; ')}`);
-        }
-
-        return JSON.stringify({
-          success: true,
-          message: `成功更新 ${updatedTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
-          todos: updatedTodos.map((todo) => ({
-            id: todo.id,
-            text: todo.text,
-            status: todo.status,
-          })),
-          count: updatedTodos.length,
-          ...(errors.length > 0 ? { errors } : {}),
-        });
-      } else if (id) {
-        const updates: { text?: string; status?: TodoStatus } = {};
-        if (text !== undefined) updates.text = text;
-        if (status !== undefined) updates.status = status;
-
-        const previousTodo = TodoListService.getTodoById(id);
-        const updatedTodo = TodoListService.updateTodo(id, updates);
-
-        if (onAction) {
-          onAction({
-            type: 'update',
-            entity: 'todo',
-            data: updatedTodo,
-            ...(previousTodo ? { previousData: previousTodo } : {}),
-          });
-        }
-
-        return JSON.stringify({
-          success: true,
-          message: '待办事项更新成功',
-          todo: {
-            id: updatedTodo.id,
-            text: updatedTodo.text,
-            status: updatedTodo.status,
-          },
-        });
-      } else {
-        throw new Error('必须提供 id 或 items 参数之一');
+        return updateBatchTodos(items, onAction as never);
       }
+      if (id) {
+        return updateOneTodo(id, text, status, onAction as never);
+      }
+      throw new Error('必须提供 id 或 items 参数之一');
     },
   },
   {

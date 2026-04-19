@@ -7,6 +7,105 @@ import type {
 } from 'src/stores/ask-user';
 import { GlobalConfig } from 'src/services/global-config-cache';
 
+type AskUserOnAction = ToolContext['onAction'];
+
+function handleAskUserSkipped(
+  question: string,
+  parsedArgs: AskUserPayload,
+  onAction: AskUserOnAction,
+): string {
+  onAction?.({
+    type: 'ask',
+    entity: 'user',
+    data: {
+      tool_name: 'ask_user',
+      question,
+      cancelled: true,
+      ...(Array.isArray(parsedArgs.suggested_answers)
+        ? { suggested_answers: parsedArgs.suggested_answers }
+        : {}),
+    },
+  });
+  return JSON.stringify({ success: false, cancelled: true, question });
+}
+
+function buildAskUserPayload(question: string, parsedArgs: AskUserPayload): AskUserPayload {
+  return {
+    question,
+    ...(Array.isArray(parsedArgs.suggested_answers)
+      ? { suggested_answers: parsedArgs.suggested_answers }
+      : {}),
+    ...(typeof parsedArgs.allow_free_text === 'boolean'
+      ? { allow_free_text: parsedArgs.allow_free_text }
+      : {}),
+    ...(typeof parsedArgs.placeholder === 'string'
+      ? { placeholder: parsedArgs.placeholder }
+      : {}),
+    ...(typeof parsedArgs.submit_label === 'string'
+      ? { submit_label: parsedArgs.submit_label }
+      : {}),
+    ...(typeof parsedArgs.cancel_label === 'string'
+      ? { cancel_label: parsedArgs.cancel_label }
+      : {}),
+    ...(typeof parsedArgs.max_length === 'number' ? { max_length: parsedArgs.max_length } : {}),
+  };
+}
+
+function resolveAskUserBridge(): ((p: AskUserPayload) => Promise<AskUserResult>) | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as unknown as { __lunaAskUser?: (p: AskUserPayload) => Promise<AskUserResult> })
+    .__lunaAskUser;
+}
+
+async function invokeAskUserBridge(
+  question: string,
+  payload: AskUserPayload,
+  askFn: (p: AskUserPayload) => Promise<AskUserResult>,
+  onAction: AskUserOnAction,
+): Promise<string> {
+  try {
+    const result = await askFn(payload);
+    onAction?.({
+      type: 'ask',
+      entity: 'user',
+      data: {
+        tool_name: 'ask_user',
+        question,
+        ...(Array.isArray(payload.suggested_answers)
+          ? { suggested_answers: payload.suggested_answers }
+          : {}),
+        ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
+        ...(typeof result.selected_index === 'number'
+          ? { selected_index: result.selected_index }
+          : {}),
+        ...(result.cancelled ? { cancelled: true } : {}),
+      },
+    });
+    if (result.cancelled) {
+      return JSON.stringify({
+        success: false,
+        cancelled: true,
+        question,
+        ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
+        ...(typeof result.selected_index === 'number'
+          ? { selected_index: result.selected_index }
+          : {}),
+      });
+    }
+    return JSON.stringify({
+      success: true,
+      question,
+      answer: result.answer,
+      ...(typeof result.selected_index === 'number'
+        ? { selected_index: result.selected_index }
+        : {}),
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    return JSON.stringify({ success: false, error: msg, question });
+  }
+}
+
 export const askUserTools: ToolDefinition[] = [
   {
     definition: {
@@ -55,118 +154,25 @@ export const askUserTools: ToolDefinition[] = [
     handler: async (args, context: ToolContext) => {
       const { onAction } = context;
       const parsedArgs = parseToolArgs<AskUserPayload>(args);
-
       const question = typeof parsedArgs?.question === 'string' ? parsedArgs.question.trim() : '';
       if (!question) {
         return JSON.stringify({ success: false, error: 'question 不能为空' });
       }
 
-      // 书籍级配置：若开启“跳过 AI 追问”，则直接返回 cancelled（不弹 UI）
       const bookId = typeof context?.bookId === 'string' ? context.bookId : undefined;
       if (bookId && (await GlobalConfig.isSkipAskUserEnabledForBook(bookId))) {
-        if (onAction) {
-          onAction({
-            type: 'ask',
-            entity: 'user',
-            data: {
-              tool_name: 'ask_user',
-              question,
-              cancelled: true,
-              ...(Array.isArray(parsedArgs.suggested_answers)
-                ? { suggested_answers: parsedArgs.suggested_answers }
-                : {}),
-            },
-          });
-        }
-
-        return JSON.stringify({
-          success: false,
-          cancelled: true,
-          question,
-        });
+        return handleAskUserSkipped(question, parsedArgs, onAction);
       }
 
-      const payload: AskUserPayload = {
-        question,
-        ...(Array.isArray(parsedArgs.suggested_answers)
-          ? { suggested_answers: parsedArgs.suggested_answers }
-          : {}),
-        ...(typeof parsedArgs.allow_free_text === 'boolean'
-          ? { allow_free_text: parsedArgs.allow_free_text }
-          : {}),
-        ...(typeof parsedArgs.placeholder === 'string'
-          ? { placeholder: parsedArgs.placeholder }
-          : {}),
-        ...(typeof parsedArgs.submit_label === 'string'
-          ? { submit_label: parsedArgs.submit_label }
-          : {}),
-        ...(typeof parsedArgs.cancel_label === 'string'
-          ? { cancel_label: parsedArgs.cancel_label }
-          : {}),
-        ...(typeof parsedArgs.max_length === 'number' ? { max_length: parsedArgs.max_length } : {}),
-      };
-
-      // 通过全局桥接等待用户回答（类似 __lunaToast 的思路）
-      const askFn =
-        typeof window !== 'undefined'
-          ? (window as unknown as { __lunaAskUser?: (p: AskUserPayload) => Promise<AskUserResult> })
-              .__lunaAskUser
-          : undefined;
-
+      const payload = buildAskUserPayload(question, parsedArgs);
+      const askFn = resolveAskUserBridge();
       if (!askFn) {
         return JSON.stringify({
           success: false,
           error: 'AskUser UI 不可用（无法弹出对话框）',
         });
       }
-
-      try {
-        const result = await askFn(payload);
-
-        // 记录 action（用于聊天历史与上下文摘要）
-        if (onAction) {
-          onAction({
-            type: 'ask',
-            entity: 'user',
-            data: {
-              tool_name: 'ask_user',
-              question,
-              ...(Array.isArray(payload.suggested_answers)
-                ? { suggested_answers: payload.suggested_answers }
-                : {}),
-              ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
-              ...(typeof result.selected_index === 'number'
-                ? { selected_index: result.selected_index }
-                : {}),
-              ...(result.cancelled ? { cancelled: true } : {}),
-            },
-          });
-        }
-
-        if (result.cancelled) {
-          return JSON.stringify({
-            success: false,
-            cancelled: true,
-            question,
-            ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
-            ...(typeof result.selected_index === 'number'
-              ? { selected_index: result.selected_index }
-              : {}),
-          });
-        }
-
-        return JSON.stringify({
-          success: true,
-          question,
-          answer: result.answer,
-          ...(typeof result.selected_index === 'number'
-            ? { selected_index: result.selected_index }
-            : {}),
-        });
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        return JSON.stringify({ success: false, error: msg, question });
-      }
+      return invokeAskUserBridge(question, payload, askFn, onAction);
     },
   },
   {
