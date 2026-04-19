@@ -28,6 +28,27 @@ function getVolumeTitleTranslation(volume: Volume | null | undefined): string {
   return typeof volume.title === 'string' ? '' : volume.title.translation?.translation || '';
 }
 
+function collectAllChapterSummaries(book: Novel): Array<{
+  id: string;
+  title_original: string;
+  title_translation: string;
+}> {
+  const out: Array<{ id: string; title_original: string; title_translation: string }> = [];
+  if (!book.volumes) return out;
+  for (const volume of book.volumes) {
+    if (!volume?.chapters) continue;
+    for (const chapter of volume.chapters) {
+      if (!chapter) continue;
+      out.push({
+        id: chapter.id,
+        title_original: getTitleOriginal(chapter),
+        title_translation: getTitleTranslation(chapter),
+      });
+    }
+  }
+  return out;
+}
+
 async function loadChapterContentIfNeeded(chapter: Chapter): Promise<string> {
   if (chapter.content === undefined) {
     const content = await ChapterContentService.loadChapterContent(chapter.id);
@@ -315,56 +336,15 @@ export const bookTools: ToolDefinition[] = [
           return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
         }
 
-        // 报告读取操作
-        if (onAction) {
-          onAction({
-            type: 'read',
-            entity: 'chapter',
-            data: {
-              book_id: bookId,
-              tool_name: 'list_chapters',
-            },
-          });
-        }
+        onAction?.({
+          type: 'read',
+          entity: 'chapter',
+          data: { book_id: bookId, tool_name: 'list_chapters' },
+        });
 
-        // 收集所有章节
-        const allChapters: Array<{
-          id: string;
-          title_original: string;
-          title_translation: string;
-        }> = [];
-
-        if (book.volumes) {
-          for (let volumeIndex = 0; volumeIndex < book.volumes.length; volumeIndex++) {
-            const volume = book.volumes[volumeIndex];
-            if (!volume || !volume.chapters) continue;
-
-            for (let chapterIndex = 0; chapterIndex < volume.chapters.length; chapterIndex++) {
-              const chapter = volume.chapters[chapterIndex];
-              if (!chapter) continue;
-
-              const titleOriginal =
-                typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
-              const titleTranslation =
-                typeof chapter.title === 'string'
-                  ? ''
-                  : chapter.title.translation?.translation || '';
-
-              allChapters.push({
-                id: chapter.id,
-                title_original: titleOriginal,
-                title_translation: titleTranslation,
-              });
-            }
-          }
-        }
-
-        // 应用分页 (limit / offset)
-        // offset: 跳过的数量
-        // limit: 返回的数量
+        const allChapters = collectAllChapterSummaries(book);
         const startIndex = offset && offset > 0 ? offset : 0;
         const endIndex = limit && limit > 0 ? startIndex + limit : undefined;
-
         const chapters = allChapters.slice(startIndex, endIndex);
 
         return JSON.stringify({

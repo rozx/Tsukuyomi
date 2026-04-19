@@ -842,101 +842,146 @@ export class AssistantService {
 
     while (toolCalls.length > 0 && currentTurnCount < MAX_TOOL_CALL_TURNS) {
       currentTurnCount++;
+      if (signal?.aborted) throw new Error('请求已取消');
 
-      if (signal?.aborted) {
-        throw new Error('请求已取消');
-      }
-
-      // 执行工具调用
-      const toolResults = await this.handleToolCalls(
+      await this.executeToolsAndUpdateUsage({
         toolCalls,
+        messages,
         tools,
         bookId,
-        (action) => {
-          allActions.push(action);
-          options.onAction?.(action);
-        },
-        options.onToast,
-        taskId,
-        sessionId,
-        model.id,
-      );
-
-      messages.push(...toolResults);
-
-      // 工具结果累积后检查 context 使用量，超出时主动压缩早期工具消息
-      this.trimToolMessagesIfNeeded(messages, model, toolSchemaTokens);
-
-      await this.updateTaskContextUsage({
-        messages,
+        allActions,
+        options,
         model,
-        ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-        aiProcessingStore: options.aiProcessingStore,
-        taskId,
+        toolSchemaTokens,
+        ...(taskId ? { taskId } : {}),
+        ...(sessionId ? { sessionId } : {}),
       });
 
-      // trim 救不回来时，在循环内主动触发摘要，避免 followUp 请求超出 context
-      if (summarizationCount < MAX_IN_LOOP_SUMMARIZATIONS) {
-        const summarizeResult = await this.maybeSummarizeInLoop({
-          messages,
-          model,
-          tools,
-          bookId,
-          aiService,
-          config,
-          options,
-          toolSchemaTokens,
-          ...(taskId ? { taskId } : {}),
-          ...(signal ? { signal } : {}),
-        });
-        if (summarizeResult) {
-          summarizationCount++;
-          if (summarizeResult.finalText && summarizeResult.finalText.trim()) {
-            finalText = summarizeResult.finalText;
-          }
-          toolCalls = summarizeResult.toolCalls;
-          if (toolCalls.length === 0) {
-            break;
-          }
-          continue;
+      const summarizeOutcome =
+        summarizationCount < MAX_IN_LOOP_SUMMARIZATIONS
+          ? await this.maybeSummarizeInLoop({
+              messages,
+              model,
+              tools,
+              bookId,
+              aiService,
+              config,
+              options,
+              toolSchemaTokens,
+              ...(taskId ? { taskId } : {}),
+              ...(signal ? { signal } : {}),
+            })
+          : null;
+      if (summarizeOutcome) {
+        summarizationCount++;
+        if (summarizeOutcome.finalText && summarizeOutcome.finalText.trim()) {
+          finalText = summarizeOutcome.finalText;
         }
+        toolCalls = summarizeOutcome.toolCalls;
+        if (toolCalls.length === 0) break;
+        continue;
       }
 
-      // 跟进请求
-      const followUpRequest = this.buildTextRequest(messages, tools, {
-        temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-        maxOutputTokens: model.maxOutputTokens,
-      });
-
-      const followUpResult = await this.executeAIRequest({
+      const followUp = await this.executeFollowUpRound({
+        messages,
+        tools,
+        model,
         aiService,
         config,
-        request: followUpRequest,
-        messages,
         options,
-        taskId,
-        isInitialRequest: false,
+        toolSchemaTokens,
+        ...(taskId ? { taskId } : {}),
       });
-
-      if (followUpResult.text && followUpResult.text.trim()) {
-        finalText = followUpResult.text;
+      if (followUp.text && followUp.text.trim()) {
+        finalText = followUp.text;
       }
-      toolCalls = followUpResult.toolCalls;
-
-      await this.updateTaskContextUsage({
-        messages,
-        model,
-        ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-        aiProcessingStore: options.aiProcessingStore,
-        taskId,
-      });
-
-      if (toolCalls.length === 0) {
-        break;
-      }
+      toolCalls = followUp.toolCalls;
+      if (toolCalls.length === 0) break;
     }
 
     return { finalText, actions: allActions };
+  }
+
+  private static async executeToolsAndUpdateUsage(params: {
+    toolCalls: AIToolCall[];
+    messages: ChatMessage[];
+    tools: AITool[];
+    bookId: string | null;
+    allActions: ActionInfo[];
+    options: AssistantServiceOptions;
+    model: AIModel;
+    toolSchemaTokens: number;
+    taskId?: string;
+    sessionId?: string;
+  }): Promise<void> {
+    const {
+      toolCalls,
+      messages,
+      tools,
+      bookId,
+      allActions,
+      options,
+      model,
+      toolSchemaTokens,
+      taskId,
+      sessionId,
+    } = params;
+    const toolResults = await this.handleToolCalls(
+      toolCalls,
+      tools,
+      bookId,
+      (action) => {
+        allActions.push(action);
+        options.onAction?.(action);
+      },
+      options.onToast,
+      taskId,
+      sessionId,
+      model.id,
+    );
+    messages.push(...toolResults);
+    this.trimToolMessagesIfNeeded(messages, model, toolSchemaTokens);
+    await this.updateTaskContextUsage({
+      messages,
+      model,
+      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+      aiProcessingStore: options.aiProcessingStore,
+      taskId,
+    });
+  }
+
+  private static async executeFollowUpRound(params: {
+    messages: ChatMessage[];
+    tools: AITool[];
+    model: AIModel;
+    aiService: ReturnType<typeof AIServiceFactory.getService>;
+    config: AIServiceConfig;
+    options: AssistantServiceOptions;
+    toolSchemaTokens: number;
+    taskId?: string;
+  }): Promise<{ text: string; toolCalls: AIToolCall[] }> {
+    const { messages, tools, model, aiService, config, options, toolSchemaTokens, taskId } = params;
+    const followUpRequest = this.buildTextRequest(messages, tools, {
+      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
+      maxOutputTokens: model.maxOutputTokens,
+    });
+    const result = await this.executeAIRequest({
+      aiService,
+      config,
+      request: followUpRequest,
+      messages,
+      options,
+      taskId,
+      isInitialRequest: false,
+    });
+    await this.updateTaskContextUsage({
+      messages,
+      model,
+      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+      aiProcessingStore: options.aiProcessingStore,
+      taskId,
+    });
+    return { text: result.text || '', toolCalls: result.toolCalls };
   }
 
   /**

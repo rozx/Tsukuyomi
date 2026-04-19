@@ -3,7 +3,7 @@ import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
-import type { Novel, Paragraph } from 'src/models/novel';
+import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
 import { TodoListService } from 'src/services/todo-list-service';
@@ -631,63 +631,54 @@ function findBestParagraphIdMatch(
 /**
  * 加载指定段落 ID 对应的原文文本（用于纠错时做 original_text_prefix 二次确认）。
  */
+async function ensureChapterContentLoaded(chapter: Chapter): Promise<Paragraph[]> {
+  if (chapter.content === undefined) {
+    const content = await ChapterContentService.loadChapterContent(chapter.id);
+    chapter.content = content || [];
+    chapter.contentLoaded = true;
+  }
+  return chapter.content || [];
+}
+
+function collectMatchingParagraphs(
+  content: Paragraph[],
+  paragraphIds: Set<string>,
+  target: Map<string, string>,
+): boolean {
+  for (const paragraph of content) {
+    if (paragraphIds.has(paragraph.id)) {
+      target.set(paragraph.id, paragraph.text);
+      if (target.size === paragraphIds.size) return true;
+    }
+  }
+  return false;
+}
+
 async function loadParagraphTextMapByIds(
   book: Novel,
   paragraphIds: Set<string>,
   chapterId?: string,
 ): Promise<Map<string, string>> {
   const paragraphTextMap = new Map<string, string>();
-  if (paragraphIds.size === 0) {
-    return paragraphTextMap;
-  }
-
-  if (!book.volumes) {
-    return paragraphTextMap;
-  }
+  if (paragraphIds.size === 0 || !book.volumes) return paragraphTextMap;
 
   if (chapterId) {
     const found = ChapterService.findChapterById(book, chapterId);
-    if (!found) {
-      return paragraphTextMap;
-    }
-
-    const chapter = found.chapter;
-    if (chapter.content === undefined) {
-      const content = await ChapterContentService.loadChapterContent(chapterId);
-      chapter.content = content || [];
-      chapter.contentLoaded = true;
-    }
-
-    for (const paragraph of chapter.content || []) {
-      if (paragraphIds.has(paragraph.id)) {
-        paragraphTextMap.set(paragraph.id, paragraph.text);
-      }
-    }
-
+    if (!found) return paragraphTextMap;
+    const content = await ensureChapterContentLoaded(found.chapter);
+    collectMatchingParagraphs(content, paragraphIds, paragraphTextMap);
     return paragraphTextMap;
   }
 
   for (const volume of book.volumes) {
     for (const chapter of volume.chapters || []) {
       if (!chapter) continue;
-
-      if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
-        chapter.content = content || [];
-        chapter.contentLoaded = true;
-      }
-
-      for (const paragraph of chapter.content || []) {
-        if (paragraphIds.has(paragraph.id)) {
-          paragraphTextMap.set(paragraph.id, paragraph.text);
-          if (paragraphTextMap.size === paragraphIds.size) {
-            return paragraphTextMap;
-          }
-        }
+      const content = await ensureChapterContentLoaded(chapter);
+      if (collectMatchingParagraphs(content, paragraphIds, paragraphTextMap)) {
+        return paragraphTextMap;
       }
     }
   }
-
   return paragraphTextMap;
 }
 

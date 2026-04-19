@@ -34,6 +34,75 @@ const GIST_FILE_NAMES = {
   MEMORIES_CHUNK_PREFIX: 'memories-chunk-',
 } as const;
 
+interface UploadStat {
+  novelId: string;
+  title: string;
+  size: number;
+  chunked: boolean;
+  chunkCount?: number;
+}
+
+interface UploadedFileInfo {
+  size?: number;
+  content?: string;
+}
+
+function checkFileSizeMismatch(
+  fileName: string,
+  expectedFile: { content: string },
+  uploadedFile: UploadedFileInfo | undefined,
+): string | null {
+  if (!uploadedFile) return `文件缺失: ${fileName}`;
+  const expectedSize = new Blob([expectedFile.content]).size;
+  const uploadedSize = uploadedFile.size || 0;
+  const sizeDiff = Math.abs(uploadedSize - expectedSize);
+  const sizeDiffPercent = expectedSize > 0 ? (sizeDiff / expectedSize) * 100 : 0;
+  if (sizeDiffPercent > 5) {
+    return `文件大小不匹配: ${fileName} (期望: ${(expectedSize / 1024).toFixed(2)} KB, 实际: ${(uploadedSize / 1024).toFixed(2)} KB, 差异: ${sizeDiffPercent.toFixed(2)}%)`;
+  }
+  return null;
+}
+
+function checkChunkedNovelMetadata(
+  stat: UploadStat,
+  metadataFile: UploadedFileInfo | undefined,
+  metadataFileName: string,
+): string[] {
+  if (!metadataFile) {
+    return [`书籍 "${stat.title}" 的元数据文件缺失: ${metadataFileName}`];
+  }
+  if (!metadataFile.content) return [];
+  try {
+    const metadata = JSON.parse(metadataFile.content) as { chunks: number; totalSize: number };
+    if (metadata.chunks !== stat.chunkCount) {
+      return [
+        `书籍 "${stat.title}" 的元数据块数量不匹配: 期望 ${stat.chunkCount}, 实际 ${metadata.chunks}`,
+      ];
+    }
+    return [];
+  } catch {
+    return [`书籍 "${stat.title}" 的元数据解析失败`];
+  }
+}
+
+function checkChunkedNovelIntegrity(
+  stat: UploadStat,
+  uploadedFiles: Record<string, UploadedFileInfo | undefined | null>,
+): string[] {
+  const errors: string[] = [];
+  for (let i = 0; i < (stat.chunkCount ?? 0); i++) {
+    const chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${stat.novelId}_${i}.json`;
+    if (!uploadedFiles[chunkFileName]) {
+      errors.push(`书籍 "${stat.title}" 的分块 ${i} 缺失: ${chunkFileName}`);
+    }
+  }
+  const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${stat.novelId}.meta.json`;
+  errors.push(
+    ...checkChunkedNovelMetadata(stat, uploadedFiles[metadataFileName] ?? undefined, metadataFileName),
+  );
+  return errors;
+}
+
 /**
  * 从分块文件名中提取书籍 ID
  * 支持两种格式：
@@ -505,64 +574,14 @@ export class GistSyncService {
 
     const errors: string[] = [];
 
-    // 检查每个期望的文件
     for (const [fileName, expectedFile] of Object.entries(expectedFiles)) {
-      const uploadedFile = uploadedFiles[fileName];
-
-      if (!uploadedFile) {
-        errors.push(`文件缺失: ${fileName}`);
-        continue;
-      }
-
-      const expectedSize = new Blob([expectedFile.content]).size;
-      const uploadedSize = uploadedFile.size || 0;
-
-      // 检查文件大小是否匹配
-      const sizeDiff = Math.abs(uploadedSize - expectedSize);
-      const sizeDiffPercent = expectedSize > 0 ? (sizeDiff / expectedSize) * 100 : 0;
-
-      if (sizeDiffPercent > 5) {
-        errors.push(
-          `文件大小不匹配: ${fileName} (期望: ${(expectedSize / 1024).toFixed(2)} KB, 实际: ${(uploadedSize / 1024).toFixed(2)} KB, 差异: ${sizeDiffPercent.toFixed(2)}%)`,
-        );
-      }
+      const error = checkFileSizeMismatch(fileName, expectedFile, uploadedFiles[fileName] ?? undefined);
+      if (error) errors.push(error);
     }
 
-    // 验证每本书的分块完整性
     for (const stat of uploadStats) {
       if (stat.chunked && stat.chunkCount) {
-        for (let i = 0; i < stat.chunkCount; i++) {
-          // 使用 _ 作为分隔符
-          const chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${stat.novelId}_${i}.json`;
-          const chunkFile = uploadedFiles[chunkFileName];
-
-          if (!chunkFile) {
-            errors.push(`书籍 "${stat.title}" 的分块 ${i} 缺失: ${chunkFileName}`);
-          }
-        }
-
-        // 验证元数据文件
-        const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${stat.novelId}.meta.json`;
-        const metadataFile = uploadedFiles[metadataFileName];
-
-        if (!metadataFile) {
-          errors.push(`书籍 "${stat.title}" 的元数据文件缺失: ${metadataFileName}`);
-        } else if (metadataFile.content) {
-          try {
-            const metadata = JSON.parse(metadataFile.content) as {
-              chunks: number;
-              totalSize: number;
-            };
-
-            if (metadata.chunks !== stat.chunkCount) {
-              errors.push(
-                `书籍 "${stat.title}" 的元数据块数量不匹配: 期望 ${stat.chunkCount}, 实际 ${metadata.chunks}`,
-              );
-            }
-          } catch {
-            errors.push(`书籍 "${stat.title}" 的元数据解析失败`);
-          }
-        }
+        errors.push(...checkChunkedNovelIntegrity(stat, uploadedFiles));
       }
     }
 
