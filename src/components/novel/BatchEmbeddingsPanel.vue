@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import Popover from 'primevue/popover';
 import Button from 'primevue/button';
@@ -7,6 +7,9 @@ import ProgressBar from 'primevue/progressbar';
 import { useBooksStore } from 'src/stores/books';
 import { EmbeddingQueue, type EmbeddingQueueProgress } from 'src/services/embedding-queue';
 import { EmbeddingService, type EmbeddingStatus, MODEL_VERSION } from 'src/services/embedding-service';
+import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
+import { MemoryService } from 'src/services/memory-service';
+import BatchEmbeddingsTestQueryDialog from 'src/components/dialogs/BatchEmbeddingsTestQueryDialog.vue';
 
 const route = useRoute();
 const booksStore = useBooksStore();
@@ -17,6 +20,56 @@ const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const progress = ref<EmbeddingQueueProgress>(EmbeddingQueue.getProgress());
 const embeddingStatus = ref<EmbeddingStatus>(EmbeddingService.getStatus());
 
+// DB 实际已嵌入统计（独立于 queue session 计数）
+const chapterStats = ref<{ embedded: number; total: number }>({ embedded: 0, total: 0 });
+const memoryStats = ref<{ embedded: number; total: number }>({ embedded: 0, total: 0 });
+
+const bookId = computed(() => route.params.id as string | undefined);
+const currentBook = computed(() =>
+  bookId.value ? booksStore.getBookById(bookId.value) : undefined,
+);
+
+async function refreshStats(): Promise<void> {
+  const id = bookId.value;
+  if (!id) {
+    chapterStats.value = { embedded: 0, total: 0 };
+    memoryStats.value = { embedded: 0, total: 0 };
+    return;
+  }
+
+  // 章节：从 books store 拿总数，从 DB 查缺失
+  const book = booksStore.getBookById(id);
+  let chapTotal = 0;
+  for (const v of book?.volumes ?? []) {
+    chapTotal += v.chapters?.length ?? 0;
+  }
+  try {
+    const missing = await ChapterEmbeddingService.findChaptersNeedingEmbedding(id);
+    chapterStats.value = {
+      embedded: Math.max(0, chapTotal - missing.length),
+      total: chapTotal,
+    };
+  } catch (error) {
+    console.warn('[BatchEmbeddingsPanel] refresh chapter stats 失败:', error);
+    chapterStats.value = { embedded: 0, total: chapTotal };
+  }
+
+  // 记忆：查询该书所有 memory，按 embedding + 模型版本判定
+  try {
+    const memories = await MemoryService.getAllBookMemories(id);
+    let embedded = 0;
+    for (const m of memories) {
+      if (m.embedding && m.embedding.length > 0 && m.embeddingModel === MODEL_VERSION) {
+        embedded += 1;
+      }
+    }
+    memoryStats.value = { embedded, total: memories.length };
+  } catch (error) {
+    console.warn('[BatchEmbeddingsPanel] refresh memory stats 失败:', error);
+    memoryStats.value = { embedded: 0, total: 0 };
+  }
+}
+
 // 订阅 EmbeddingQueue 进度事件
 const unsubscribers: Array<() => void> = [];
 onMounted(() => {
@@ -24,23 +77,32 @@ onMounted(() => {
     EmbeddingQueue.addEventListener('progress', (e) => {
       progress.value = (e.detail as EmbeddingQueueProgress) ?? EmbeddingQueue.getProgress();
     }),
+    EmbeddingQueue.addEventListener('batch-complete', () => {
+      void refreshStats();
+    }),
+    EmbeddingQueue.addEventListener('idle', () => {
+      void refreshStats();
+    }),
     EmbeddingService.addEventListener('status-changed', () => {
       embeddingStatus.value = EmbeddingService.getStatus();
     }),
     EmbeddingService.addEventListener('ready', () => {
       embeddingStatus.value = EmbeddingService.getStatus();
     }),
+    MemoryService.addMemoryChangeListener((e) => {
+      if (e.detail?.bookId === bookId.value) void refreshStats();
+    }),
   );
+  void refreshStats();
 });
 onUnmounted(() => {
   unsubscribers.forEach((u) => u());
   unsubscribers.length = 0;
 });
 
-const bookId = computed(() => route.params.id as string | undefined);
-const currentBook = computed(() =>
-  bookId.value ? booksStore.getBookById(bookId.value) : undefined,
-);
+watch(bookId, () => {
+  void refreshStats();
+});
 
 const totalChapters = computed(() => {
   if (!currentBook.value?.volumes) return 0;
@@ -51,18 +113,18 @@ const totalChapters = computed(() => {
   return total;
 });
 
-const chapterBreakdown = computed(() => progress.value.breakdown.chapter);
-const memoryBreakdown = computed(() => progress.value.breakdown.memory);
+const chapterPendingInQueue = computed(() => progress.value.breakdown.chapter.pending);
+const memoryPendingInQueue = computed(() => progress.value.breakdown.memory.pending);
 
 const chapterPercent = computed(() => {
-  const { total, completed } = chapterBreakdown.value;
+  const { embedded, total } = chapterStats.value;
   if (total === 0) return 100;
-  return Math.min(100, Math.round((completed / total) * 100));
+  return Math.min(100, Math.round((embedded / total) * 100));
 });
 const memoryPercent = computed(() => {
-  const { total, completed } = memoryBreakdown.value;
+  const { embedded, total } = memoryStats.value;
   if (total === 0) return 100;
-  return Math.min(100, Math.round((completed / total) * 100));
+  return Math.min(100, Math.round((embedded / total) * 100));
 });
 
 const etaText = computed(() => {
@@ -91,6 +153,7 @@ const statusLabel = computed(() => {
 
 // 操作
 const toggle = (event: Event) => {
+  void refreshStats();
   popoverRef.value?.toggle(event);
 };
 
@@ -111,6 +174,13 @@ const backfillMemories = () => {
 
 const pauseQueue = () => EmbeddingQueue.pause();
 const resumeQueue = () => EmbeddingQueue.resume();
+
+// 测试查询对话框
+const testDialogVisible = ref(false);
+const openTestDialog = () => {
+  popoverRef.value?.hide();
+  testDialogVisible.value = true;
+};
 
 defineExpose({ toggle });
 </script>
@@ -147,13 +217,13 @@ defineExpose({ toggle });
           <div class="flex items-center justify-between">
             <div class="text-sm font-medium text-moon-100">章节 Embedding</div>
             <div class="text-xs text-moon-50">
-              已嵌入 {{ chapterBreakdown.completed }} / {{ chapterBreakdown.total }}
+              已嵌入 {{ chapterStats.embedded }} / {{ chapterStats.total }}
             </div>
           </div>
           <ProgressBar :value="chapterPercent" :show-value="false" style="height: 6px" />
           <div class="flex items-center justify-between text-xs text-moon-50">
-            <span>待处理: {{ chapterBreakdown.pending }}</span>
-            <span v-if="chapterBreakdown.pending > 0">ETA: {{ etaText }}</span>
+            <span>待处理: {{ chapterPendingInQueue }}</span>
+            <span v-if="chapterPendingInQueue > 0">ETA: {{ etaText }}</span>
           </div>
           <div class="flex gap-2 mt-1">
             <Button
@@ -182,13 +252,13 @@ defineExpose({ toggle });
           <div class="flex items-center justify-between">
             <div class="text-sm font-medium text-moon-100">记忆 Embedding</div>
             <div class="text-xs text-moon-50">
-              已嵌入 {{ memoryBreakdown.completed }} / {{ memoryBreakdown.total }}
+              已嵌入 {{ memoryStats.embedded }} / {{ memoryStats.total }}
             </div>
           </div>
           <ProgressBar :value="memoryPercent" :show-value="false" style="height: 6px" />
           <div class="flex items-center justify-between text-xs text-moon-50">
-            <span>待处理: {{ memoryBreakdown.pending }}</span>
-            <span v-if="memoryBreakdown.pending > 0">ETA: {{ etaText }}</span>
+            <span>待处理: {{ memoryPendingInQueue }}</span>
+            <span v-if="memoryPendingInQueue > 0">ETA: {{ etaText }}</span>
           </div>
           <div class="flex gap-2 mt-1">
             <Button
@@ -202,6 +272,17 @@ defineExpose({ toggle });
             />
           </div>
         </div>
+
+        <!-- 测试查询入口 -->
+        <Button
+          label="测试向量查询"
+          size="small"
+          severity="secondary"
+          icon="pi pi-search"
+          class="w-full"
+          :disabled="embeddingStatus !== 'ready'"
+          @click="openTestDialog"
+        />
 
         <!-- 全局状态 -->
         <div class="flex flex-col gap-1 text-xs text-moon-50 px-1">
@@ -235,6 +316,8 @@ defineExpose({ toggle });
       </template>
     </div>
   </Popover>
+
+  <BatchEmbeddingsTestQueryDialog v-model:visible="testDialogVisible" :book-id="bookId" />
 </template>
 
 <style scoped>
