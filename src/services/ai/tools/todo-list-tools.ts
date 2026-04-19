@@ -1,6 +1,80 @@
 import { TodoListService, type TodoItem, type TodoStatus } from 'src/services/todo-list-service';
 import type { ToolDefinition } from './types';
 
+type CreateTodoAction = {
+  type: 'create';
+  entity: 'todo';
+  data: TodoItem;
+};
+
+function dispatchTodoCreated(
+  todo: TodoItem,
+  onAction: ((action: CreateTodoAction) => void) | undefined,
+): void {
+  if (!onAction) return;
+  onAction({ type: 'create', entity: 'todo', data: todo });
+}
+
+function createBatchTodos(
+  items: string[],
+  taskId: string,
+  sessionId: string | undefined,
+  onAction: ((action: CreateTodoAction) => void) | undefined,
+): string {
+  const createdTodos: TodoItem[] = [];
+  const errors: string[] = [];
+
+  for (const itemText of items) {
+    if (!itemText || !itemText.trim()) {
+      errors.push('待办事项内容不能为空');
+      continue;
+    }
+    try {
+      const todo = TodoListService.createTodo(itemText.trim(), taskId, sessionId);
+      createdTodos.push(todo);
+      dispatchTodoCreated(todo, onAction);
+    } catch (error) {
+      errors.push(
+        `创建待办事项 "${itemText.slice(0, 20)}..." 失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  if (createdTodos.length === 0) {
+    throw new Error(`批量创建待办事项失败：${errors.join('; ')}`);
+  }
+
+  return JSON.stringify({
+    success: true,
+    message: `成功创建 ${createdTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
+    todos: createdTodos.map((todo) => ({
+      id: todo.id,
+      text: todo.text,
+      status: todo.status,
+    })),
+    count: createdTodos.length,
+    ...(errors.length > 0 ? { errors } : {}),
+  });
+}
+
+function createSingleTodo(
+  text: string,
+  taskId: string,
+  sessionId: string | undefined,
+  onAction: ((action: CreateTodoAction) => void) | undefined,
+): string {
+  if (!text || !text.trim()) {
+    throw new Error('待办事项内容不能为空');
+  }
+  const todo = TodoListService.createTodo(text, taskId, sessionId);
+  dispatchTodoCreated(todo, onAction);
+  return JSON.stringify({
+    success: true,
+    message: '待办事项创建成功',
+    todo: { id: todo.id, text: todo.text, status: todo.status },
+  });
+}
+
 export const todoListTools: ToolDefinition[] = [
   {
     definition: {
@@ -40,84 +114,13 @@ export const todoListTools: ToolDefinition[] = [
         );
       }
 
-      // 支持两种模式：单个创建（text）或批量创建（items）
-      // 优先检查 items 参数（如果提供了有效的数组）
       if (items && Array.isArray(items) && items.length > 0) {
-        // 批量创建模式
-        const createdTodos: TodoItem[] = [];
-        const errors: string[] = [];
-
-        for (const itemText of items) {
-          if (!itemText || !itemText.trim()) {
-            errors.push('待办事项内容不能为空');
-            continue;
-          }
-
-          try {
-            const todo = TodoListService.createTodo(itemText.trim(), taskId, sessionId);
-            createdTodos.push(todo);
-
-            // 通过 onAction 回调传递操作信息（不需要 toast）
-            if (onAction) {
-              onAction({
-                type: 'create',
-                entity: 'todo',
-                data: todo,
-              });
-            }
-          } catch (error) {
-            errors.push(
-              `创建待办事项 "${itemText.slice(0, 20)}..." 失败: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-        }
-
-        if (createdTodos.length === 0) {
-          throw new Error(`批量创建待办事项失败：${errors.join('; ')}`);
-        }
-
-        return JSON.stringify({
-          success: true,
-          message: `成功创建 ${createdTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
-          todos: createdTodos.map((todo) => ({
-            id: todo.id,
-            text: todo.text,
-            status: todo.status,
-          })),
-          count: createdTodos.length,
-          ...(errors.length > 0 ? { errors } : {}),
-        });
-      } else if (text !== undefined && text !== null) {
-        // 单个创建模式（向后兼容）
-        if (!text || !text.trim()) {
-          throw new Error('待办事项内容不能为空');
-        }
-
-        // taskId 和 sessionId 由服务层自动提供，AI 不需要知道任务 ID 或会话 ID
-        // 对于助手聊天，sessionId 会被传递并关联到待办事项
-        const todo = TodoListService.createTodo(text, taskId, sessionId);
-
-        // 通过 onAction 回调传递操作信息（不需要 toast）
-        if (onAction) {
-          onAction({
-            type: 'create',
-            entity: 'todo',
-            data: todo,
-          });
-        }
-
-        return JSON.stringify({
-          success: true,
-          message: '待办事项创建成功',
-          todo: {
-            id: todo.id,
-            text: todo.text,
-            status: todo.status,
-          },
-        });
-      } else {
-        throw new Error('必须提供 text 或 items 参数之一');
+        return createBatchTodos(items, taskId, sessionId, onAction as never);
       }
+      if (text !== undefined && text !== null) {
+        return createSingleTodo(text, taskId, sessionId, onAction as never);
+      }
+      throw new Error('必须提供 text 或 items 参数之一');
     },
   },
   {

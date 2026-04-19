@@ -1371,85 +1371,16 @@ export class SyncDataService {
     const settingsStore = useSettingsStore();
 
     try {
-      // 1. 清空本地已同步数据
-      // 1.1 删除所有书籍旧 memories（需要在清空 books 之前收集 bookId，
-      //     但我们直接使用备份中的书籍列表，避免与 clearBooks 的竞态）
-      for (const oldBook of backup.books) {
-        let oldMemories: Memory[] = [];
-        try {
-          oldMemories = await MemoryService.getAllMemories(oldBook.id);
-        } catch (error) {
-          console.warn(`[SyncDataService] 读取书籍 ${oldBook.id} 的旧 Memory 失败:`, error);
-        }
-        for (const memory of oldMemories) {
-          try {
-            await MemoryService.deleteMemory(oldBook.id, memory.id);
-          } catch (error) {
-            console.warn(`[SyncDataService] 删除旧 Memory ${memory.id} 失败:`, error);
-          }
-        }
-      }
-
-      // 1.2 清空书籍（含章节内容）、AI 模型、封面
+      await SyncDataService.clearLocalMemoriesForBooks(backup.books);
       await booksStore.clearBooks();
       await aiModelsStore.clearModels();
       await coverHistoryStore.clearHistory();
 
-      // 2. 按快照批量写入
-      const remoteNovels = Array.isArray(remoteData.novels) ? remoteData.novels : [];
-      if (remoteNovels.length > 0) {
-        await booksStore.bulkAddBooks(remoteNovels as Novel[]);
-      }
-
-      const remoteModels = Array.isArray(remoteData.aiModels) ? remoteData.aiModels : [];
-      for (const model of remoteModels) {
-        await aiModelService.saveModel(model);
-      }
-      aiModelsStore.models = remoteModels.map((m: any) => ({
-         
-        ...m,
-        lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
-      }));
-
-      const remoteCovers = Array.isArray(remoteData.coverHistory) ? remoteData.coverHistory : [];
-      for (const cover of remoteCovers) {
-        await coverHistoryStore.addCover(cover);
-      }
-
-      const remoteMemories = Array.isArray(remoteData.memories) ? remoteData.memories : [];
-      for (const memory of remoteMemories) {
-        try {
-          await MemoryService.createMemoryWithId(
-            memory.bookId,
-            memory.id,
-            memory.content,
-            memory.summary,
-            { createdAt: memory.createdAt, lastAccessedAt: memory.lastAccessedAt },
-          );
-        } catch (error) {
-          console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
-        }
-      }
-
-      // 3. 导入 appSettings（若快照包含），随后恢复本地 Gist 凭据
-      const currentGistSync = GlobalConfig.getGistSyncSnapshot();
-      if (remoteData.appSettings) {
-        await settingsStore.importSettings(remoteData.appSettings);
-      }
-
-      // 4. 保留本地 Gist 凭据与 lastSyncTime，并清空删除记录
-      if (currentGistSync) {
-        await settingsStore.updateGistSync({
-          ...currentGistSync,
-          deletedNovelIds: [],
-          deletedModelIds: [],
-        });
-      } else {
-        await settingsStore.updateGistSync({
-          deletedNovelIds: [],
-          deletedModelIds: [],
-        });
-      }
+      await SyncDataService.applyRemoteNovels(remoteData.novels, booksStore);
+      await SyncDataService.applyRemoteAiModels(remoteData.aiModels, aiModelsStore);
+      await SyncDataService.applyRemoteCovers(remoteData.coverHistory, coverHistoryStore);
+      await SyncDataService.applyRemoteMemories(remoteData.memories);
+      await SyncDataService.applyRemoteAppSettings(remoteData.appSettings, settingsStore);
     } catch (error) {
       console.error('[SyncDataService] 覆盖快照时发生错误，正在回滚:', error);
       try {
@@ -1463,6 +1394,95 @@ export class SyncDataService {
       }
       throw error;
     }
+  }
+
+  private static async clearLocalMemoriesForBooks(books: Novel[]): Promise<void> {
+    for (const oldBook of books) {
+      let oldMemories: Memory[] = [];
+      try {
+        oldMemories = await MemoryService.getAllMemories(oldBook.id);
+      } catch (error) {
+        console.warn(`[SyncDataService] 读取书籍 ${oldBook.id} 的旧 Memory 失败:`, error);
+      }
+      for (const memory of oldMemories) {
+        try {
+          await MemoryService.deleteMemory(oldBook.id, memory.id);
+        } catch (error) {
+          console.warn(`[SyncDataService] 删除旧 Memory ${memory.id} 失败:`, error);
+        }
+      }
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private static async applyRemoteNovels(
+    remoteNovels: any[] | null | undefined, // eslint-disable-line @typescript-eslint/no-explicit-any
+    booksStore: ReturnType<typeof useBooksStore>,
+  ): Promise<void> {
+    const novels = Array.isArray(remoteNovels) ? remoteNovels : [];
+    if (novels.length > 0) {
+      await booksStore.bulkAddBooks(novels as Novel[]);
+    }
+  }
+
+  private static async applyRemoteAiModels(
+    remoteModels: any[] | null | undefined, // eslint-disable-line @typescript-eslint/no-explicit-any
+    aiModelsStore: ReturnType<typeof useAIModelsStore>,
+  ): Promise<void> {
+    const models = Array.isArray(remoteModels) ? remoteModels : [];
+    for (const model of models) {
+      await aiModelService.saveModel(model);
+    }
+    aiModelsStore.models = models.map((m: any) => ({
+      // eslint-disable-line @typescript-eslint/no-explicit-any
+      ...m,
+      lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
+    }));
+  }
+
+  private static async applyRemoteCovers(
+    remoteCovers: any[] | null | undefined, // eslint-disable-line @typescript-eslint/no-explicit-any
+    coverHistoryStore: ReturnType<typeof useCoverHistoryStore>,
+  ): Promise<void> {
+    const covers = Array.isArray(remoteCovers) ? remoteCovers : [];
+    for (const cover of covers) {
+      await coverHistoryStore.addCover(cover);
+    }
+  }
+
+  private static async applyRemoteMemories(
+    remoteMemories: any[] | null | undefined, // eslint-disable-line @typescript-eslint/no-explicit-any
+  ): Promise<void> {
+    const memories = Array.isArray(remoteMemories) ? remoteMemories : [];
+    for (const memory of memories) {
+      try {
+        await MemoryService.createMemoryWithId(
+          memory.bookId,
+          memory.id,
+          memory.content,
+          memory.summary,
+          { createdAt: memory.createdAt, lastAccessedAt: memory.lastAccessedAt },
+        );
+      } catch (error) {
+        console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
+      }
+    }
+  }
+
+  private static async applyRemoteAppSettings(
+    appSettings: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+    settingsStore: ReturnType<typeof useSettingsStore>,
+  ): Promise<void> {
+    const currentGistSync = GlobalConfig.getGistSyncSnapshot();
+    if (appSettings) {
+      await settingsStore.importSettings(appSettings);
+    }
+    const base = currentGistSync ?? {};
+    await settingsStore.updateGistSync({
+      ...base,
+      deletedNovelIds: [],
+      deletedModelIds: [],
+    });
   }
 
   /**

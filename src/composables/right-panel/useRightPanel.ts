@@ -29,6 +29,34 @@ import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { Novel, Chapter } from 'src/models/novel';
 import type { ActionDetailsContext } from 'src/utils/action-info-utils';
 
+function findChapterInNovel(book: Novel, chapterId: string): Chapter | undefined {
+  if (!book.volumes) return undefined;
+  for (const volume of book.volumes) {
+    const found = volume.chapters?.find((c) => c.id === chapterId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function formatChapterInfo(
+  chapter: Chapter | undefined,
+  book: Novel | undefined,
+): string {
+  if (!chapter) return '当前章节';
+  const title = getChapterDisplayTitle(chapter, book);
+  return title ? `章节：${title}` : '当前章节';
+}
+
+function formatParagraphInfo(
+  chapter: Chapter | undefined,
+  paragraphId: string,
+): string {
+  const paraIndex = chapter?.content
+    ? chapter.content.findIndex((p) => p.id === paragraphId)
+    : -1;
+  return paraIndex >= 0 ? `段落：#${paraIndex + 1}` : '当前段落';
+}
+
 /**
  * AppRightPanel 的业务逻辑 composable。
  *
@@ -272,55 +300,24 @@ export function useRightPanel() {
   // 上下文信息
   const contextInfo = computed(() => {
     const context = contextStore.getContext;
+    const currentBook = context.currentBookId
+      ? booksStore.getBookById(context.currentBookId)
+      : undefined;
+    const currentChapter =
+      currentBook && context.currentChapterId
+        ? findChapterInNovel(currentBook, context.currentChapterId)
+        : undefined;
+
     const info: string[] = [];
-
-    let currentChapter: Chapter | undefined;
-    let currentBook: Novel | undefined;
-
     if (context.currentBookId) {
-      const book = booksStore.getBookById(context.currentBookId);
-      if (book) {
-        currentBook = book;
-        info.push(`书籍：${book.title}`);
-
-        if (context.currentChapterId && book.volumes) {
-          for (const volume of book.volumes) {
-            if (volume.chapters) {
-              const found = volume.chapters.find((c) => c.id === context.currentChapterId);
-              if (found) {
-                currentChapter = found;
-                break;
-              }
-            }
-          }
-        }
-      } else {
-        info.push('当前书籍');
-      }
+      info.push(currentBook ? `书籍：${currentBook.title}` : '当前书籍');
     }
-
     if (context.currentChapterId) {
-      if (currentChapter) {
-        const title = getChapterDisplayTitle(currentChapter, currentBook);
-        info.push(title ? `章节：${title}` : '当前章节');
-      } else {
-        info.push('当前章节');
-      }
+      info.push(formatChapterInfo(currentChapter, currentBook));
     }
-
     if (context.selectedParagraphId) {
-      let paraIndex = -1;
-      if (currentChapter && currentChapter.content) {
-        paraIndex = currentChapter.content.findIndex((p) => p.id === context.selectedParagraphId);
-      }
-
-      if (paraIndex >= 0) {
-        info.push(`段落：#${paraIndex + 1}`);
-      } else {
-        info.push('当前段落');
-      }
+      info.push(formatParagraphInfo(currentChapter, context.selectedParagraphId));
     }
-
     return info.length > 0 ? info.join(' | ') : '无上下文';
   });
 
