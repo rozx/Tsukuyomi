@@ -47,7 +47,6 @@ declare module 'vue' {
     EditChapterDialog: typeof import('./components/dialogs/EditChapterDialog.vue')['default']
     EditVolumeDialog: typeof import('./components/dialogs/EditVolumeDialog.vue')['default']
     EmbeddingSettingsTab: typeof import('./components/settings/EmbeddingSettingsTab.vue')['default']
-    EmbeddingSettingsTab: typeof import('./components/settings/EmbeddingSettingsTab.vue')['default']
     ImportExportTab: typeof import('./components/settings/ImportExportTab.vue')['default']
     KeyboardShortcutsPopover: typeof import('./components/novel/KeyboardShortcutsPopover.vue')['default']
     MemoryCard: typeof import('./components/novel/MemoryCard.vue')['default']
