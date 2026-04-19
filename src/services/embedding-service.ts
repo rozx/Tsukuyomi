@@ -22,6 +22,26 @@ const NATIVE_DIMENSIONS = 1024;
 export type EmbeddingStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 /**
+ * 运行后端:WebGPU 优先,不可用/初始化失败时回落 WASM(CPU)。
+ * 两者体积差不多,但 WebGPU 上推理速度可快 5-10 倍(尤其对 0.6B 级别模型)。
+ */
+export type EmbeddingBackend = 'webgpu' | 'wasm';
+
+interface PipelineConfig {
+  device: EmbeddingBackend;
+  dtype: 'q4f16' | 'q8';
+}
+
+/** WebGPU 上:4-bit 权重 + fp16 激活,~567MB,显存友好且推理快。 */
+const WEBGPU_CONFIG: PipelineConfig = { device: 'webgpu', dtype: 'q4f16' };
+/** WASM 上:8-bit 对称量化,~600MB,兼容性最好但速度慢于 WebGPU 许多。 */
+const WASM_CONFIG: PipelineConfig = { device: 'wasm', dtype: 'q8' };
+
+function hasWebGPU(): boolean {
+  return typeof navigator !== 'undefined' && 'gpu' in navigator;
+}
+
+/**
  * Qwen3-Embedding 官方非对称检索方案(参见 Qwen 模型卡):
  * - query 端:`Instruct: {task}\nQuery:{text}` — 带指令提示输出空间
  * - document 端:原文不加任何前缀 — 直接 encode
@@ -78,6 +98,14 @@ export class EmbeddingService {
   private static retryCount = 0;
   private static readonly MAX_RETRIES = 3;
   private static readonly RETRY_DELAYS = [3000, 8000, 20000]; // 递增延迟(ms)
+
+  /**
+   * WebGPU 初始化是否失败过:失败一次就不再重试,本会话内永久回落 WASM。
+   * 避免在无 WebGPU 的浏览器里每次重试都再次触发 WebGPU 探测。
+   */
+  private static webGpuBlacklisted = false;
+  /** 最终加载成功的后端,供 UI 展示(q4f16 / q8 速度差 5-10 倍,用户应该能看到) */
+  private static activeBackend: EmbeddingBackend | null = null;
 
   private static readonly events = new EventTarget();
 
@@ -157,6 +185,17 @@ export class EmbeddingService {
 
   static isReady(): boolean {
     return this.status === 'ready' && this.pipeline !== null;
+  }
+
+  /** 当前加载成功的后端,未 init 或失败时返回 null */
+  static getActiveBackend(): EmbeddingBackend | null {
+    return this.activeBackend;
+  }
+
+  /** 按当前会话状态决定本次 init 用什么后端 + dtype */
+  private static pickConfig(): PipelineConfig {
+    if (!this.webGpuBlacklisted && hasWebGPU()) return WEBGPU_CONFIG;
+    return WASM_CONFIG;
   }
 
   /**
@@ -249,20 +288,26 @@ export class EmbeddingService {
           options: Record<string, unknown>,
         ) => Promise<FeatureExtractionPipeline>;
 
-        // Qwen3-Embedding-0.6B ONNX 目前仅提供 fp32 / fp16 / q8 三种权重,
-        // q8 约 600MB,是可接受的"质量/体积"平衡点(fp16 ~1.2GB 太大)。
+        // 按 pickConfig 的结果决定 backend + dtype:
+        // - WebGPU 支持: q4f16 (~567MB, 推理 5-10x 快于 WASM)
+        // - WASM 回落:  q8  (~614MB, 兼容性最好)
+        const config = this.pickConfig();
+        console.info(
+          `[EmbeddingService] 使用后端 ${config.device} + dtype ${config.dtype}`,
+        );
         const extractor = await pipeline('feature-extraction', MODEL_ID, {
-          dtype: 'q8',
-          device: 'auto',
+          dtype: config.dtype,
+          device: config.device,
           progress_callback: (event: EmbeddingProgressEvent) => {
             this.dispatch('progress', this.enrichWithAggregate(event));
           },
         });
 
         this.pipeline = extractor;
+        this.activeBackend = config.device;
         this.retryCount = 0; // 成功后重置重试计数
         this.setStatus('ready');
-        this.dispatch('ready', { modelVersion: MODEL_VERSION });
+        this.dispatch('ready', { modelVersion: MODEL_VERSION, backend: config.device });
       } catch (error) {
         this.lastError = error instanceof Error ? error : new Error(String(error));
         this.pipeline = null;
@@ -271,7 +316,23 @@ export class EmbeddingService {
           this.lastError.message,
         );
 
-        // 自动重试(递增延迟）
+        // WebGPU 路径首次失败 → 把它拉黑,下一次 init 直接走 WASM。
+        // 不消耗正常重试预算:常见场景是 GPU 驱动不兼容,重试也是失败,不如立刻回落。
+        if (!this.webGpuBlacklisted && hasWebGPU()) {
+          this.webGpuBlacklisted = true;
+          console.info('[EmbeddingService] WebGPU 初始化失败,回落 WASM 重试');
+          this.setStatus('loading');
+          this.dispatch('error', {
+            error: this.lastError,
+            retrying: true,
+            fallbackToWasm: true,
+          });
+          this.initPromise = null;
+          void this.init();
+          return;
+        }
+
+        // 自动重试(递增延迟)
         if (this.retryCount < this.MAX_RETRIES) {
           const delay = this.RETRY_DELAYS[this.retryCount] ?? 20000;
           this.retryCount++;
@@ -312,6 +373,9 @@ export class EmbeddingService {
     this.initPromise = null;
     this.lastError = null;
     this.retryCount = 0;
+    this.activeBackend = null;
+    // reload 是用户主动触发,清空 WebGPU 黑名单 — 可能他们换了 GPU 驱动或启用了 flag
+    this.webGpuBlacklisted = false;
     this.setStatus('idle');
     await this.init();
   }
@@ -478,6 +542,8 @@ export class EmbeddingService {
     this.initPromise = null;
     this.lastError = null;
     this.retryCount = 0;
+    this.activeBackend = null;
+    this.webGpuBlacklisted = false;
   }
 
   /** 测试专用:跳过自动重试 */

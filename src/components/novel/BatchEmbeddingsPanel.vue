@@ -6,7 +6,12 @@ import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
 import { useBooksStore } from 'src/stores/books';
 import { EmbeddingQueue, type EmbeddingQueueProgress } from 'src/services/embedding-queue';
-import { EmbeddingService, type EmbeddingStatus, MODEL_VERSION } from 'src/services/embedding-service';
+import {
+  EmbeddingService,
+  type EmbeddingStatus,
+  type EmbeddingBackend,
+  MODEL_VERSION,
+} from 'src/services/embedding-service';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import { MemoryService } from 'src/services/memory-service';
 import BatchEmbeddingsTestQueryDialog from 'src/components/dialogs/BatchEmbeddingsTestQueryDialog.vue';
@@ -19,6 +24,7 @@ const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 // 进度状态
 const progress = ref<EmbeddingQueueProgress>(EmbeddingQueue.getProgress());
 const embeddingStatus = ref<EmbeddingStatus>(EmbeddingService.getStatus());
+const activeBackend = ref<EmbeddingBackend | null>(EmbeddingService.getActiveBackend());
 
 // DB 实际已嵌入统计（独立于 queue session 计数）
 const chapterStats = ref<{ embedded: number; total: number }>({ embedded: 0, total: 0 });
@@ -85,9 +91,11 @@ onMounted(() => {
     }),
     EmbeddingService.addEventListener('status-changed', () => {
       embeddingStatus.value = EmbeddingService.getStatus();
+      activeBackend.value = EmbeddingService.getActiveBackend();
     }),
     EmbeddingService.addEventListener('ready', () => {
       embeddingStatus.value = EmbeddingService.getStatus();
+      activeBackend.value = EmbeddingService.getActiveBackend();
     }),
     MemoryService.addMemoryChangeListener((e) => {
       if (e.detail?.bookId === bookId.value) void refreshStats();
@@ -332,6 +340,22 @@ defineExpose({ toggle });
           <div class="flex items-center justify-between">
             <span>模型:</span>
             <span class="font-mono">{{ MODEL_VERSION }}</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span>后端:</span>
+            <span
+              :class="
+                activeBackend === 'webgpu'
+                  ? 'text-green-400 font-medium'
+                  : activeBackend === 'wasm'
+                    ? 'text-amber-300'
+                    : 'text-moon-50'
+              "
+            >
+              <template v-if="activeBackend === 'webgpu'">WebGPU</template>
+              <template v-else-if="activeBackend === 'wasm'">WASM (慢)</template>
+              <template v-else>—</template>
+            </span>
           </div>
           <div class="flex items-center justify-between">
             <span>状态:</span>
