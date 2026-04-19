@@ -48,6 +48,38 @@ export default defineConfigWithVueTs(
       ],
     },
   },
+
+  // 禁止 services/ai 和 services/scraper 的内部文件从自身 barrel 导入,
+  // 以避免 "barrel ↔ 子文件" 形式的循环依赖。外部消费者仍可使用 barrel。
+  {
+    files: ['src/services/ai/**/*.ts', 'src/services/scraper/**/*.ts'],
+    ignores: ['src/services/ai/index.ts', 'src/services/scraper/index.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'src/services/ai',
+              message:
+                '在 services/ai 子目录内请使用具体文件路径（例如 src/services/ai/ai-service-factory），不要从 barrel 导入（防止循环依赖）。',
+            },
+            {
+              name: 'src/services/scraper',
+              message:
+                '在 services/scraper 子目录内请使用具体文件路径，不要从 barrel 导入（防止循环依赖）。',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/index', '../index', '../../index', '../../../index'],
+              message: '不要从 "./index" 或 "../index" 等 barrel 导入，请使用具体文件路径。',
+            },
+          ],
+        },
+      ],
+    },
+  },
   // https://github.com/vuejs/eslint-config-typescript
   vueTsConfigs.recommendedTypeChecked,
 

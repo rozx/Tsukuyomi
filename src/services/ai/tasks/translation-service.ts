@@ -15,8 +15,8 @@ import {
   type ParagraphExtractCallbackParams,
   type TitleExtractCallbackParams,
 } from './utils/text-task-processor';
-import { ToolRegistry } from 'src/services/ai/tools/index';
-import { buildTranslationSystemPrompt } from './prompts';
+import { ToolRegistry } from 'src/services/ai/tools/tool-registry';
+import { buildTranslationSystemPrompt } from './prompts/translation';
 
 /**
  * 翻译服务选项

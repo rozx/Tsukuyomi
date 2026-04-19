@@ -8,7 +8,7 @@ import type {
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
-import { AIServiceFactory } from '../index';
+import { AIServiceFactory } from '../ai-service-factory';
 import {
   buildChapterContextSection,
   buildBookContextSection,

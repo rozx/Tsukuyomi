@@ -9,7 +9,7 @@ import {
   getMemoryWorkflowRules,
   getToolUsageInstructions,
   getOutputFormatRules,
-} from './index';
+} from './common';
 import type { AITool } from 'src/services/ai/types/ai-service';
 
 export interface ProofreadingSystemPromptParams {

@@ -15,39 +15,43 @@ import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import { TASK_TYPE_LABELS, type TaskType, type AIProcessingStore } from './task-types';
 import type { TextChunk } from './chunk-formatter';
-import { AIServiceFactory } from '../../index';
-import { ToolRegistry } from '../../tools/index';
+import { AIServiceFactory } from '../../ai-service-factory';
+import { ToolRegistry } from '../../tools/tool-registry';
 import {
   buildOriginalTranslationsMap,
   getSelectedTranslation,
   filterChangedParagraphs,
   reconstructChunkText,
 } from 'src/utils';
+import { executeToolCallLoop } from './task-runner';
 import {
-  executeToolCallLoop,
   buildMaintenanceReminder,
-  DEFAULT_TASK_CHUNK_SIZE,
-  createUnifiedAbortController,
-  initializeTask,
   buildBookContextSection,
   getSpecialInstructions,
-  handleTaskError,
-  completeTask,
   buildIndependentChunkPrompt,
   buildChapterContextSection,
   buildSpecialInstructionsSection,
-  filterProcessedParagraphs,
-  markProcessedParagraphs,
-  markProcessedParagraphsFromMap,
   getChapterFirstNonEmptyParagraphId,
   getHasPreviousParagraphs,
   isSkipAskUserEnabled,
   isOriginalTextValidationEnabled,
+  buildPreviousChapterSection,
+} from './context-builder';
+import {
+  DEFAULT_TASK_CHUNK_SIZE,
+  filterProcessedParagraphs,
+  markProcessedParagraphs,
+  markProcessedParagraphsFromMap,
   buildFormattedChunks,
   buildChunks,
-  buildPreviousChapterSection,
   resolveRuntimeTaskChunkSize,
-} from './index';
+} from './chunk-formatter';
+import {
+  createUnifiedAbortController,
+  initializeTask,
+  handleTaskError,
+  completeTask,
+} from './stream-handler';
 import { getTodosSystemPrompt } from './todo-helper';
 import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 import { isSymbolOnly } from 'src/utils/text-utils';

@@ -9,8 +9,9 @@ import type {
   AIToolCall,
 } from 'src/services/ai/types/ai-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import { AIServiceFactory } from '../index';
-import { ToolRegistry, type ActionInfo } from '../tools';
+import { AIServiceFactory } from '../ai-service-factory';
+import { ToolRegistry } from '../tools/tool-registry';
+import type { ActionInfo } from '../tools/types';
 import type { ToastCallback } from '../tools/toast-helper';
 import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';

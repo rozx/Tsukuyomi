@@ -14,7 +14,7 @@ import type {
   ConfigParseResult,
 } from 'src/services/ai/types/interfaces';
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
-import { ConfigService } from '../tasks/config-service';
+import { CONFIG_DISCOVERY_PROMPT } from './config-prompt';
 
 /**
  * AI 服务基础抽象类
@@ -25,7 +25,7 @@ export abstract class BaseAIService implements AIService {
    * 获取配置信息的提示词
    */
   protected getConfigPrompt(): string {
-    return ConfigService.getConfigPrompt();
+    return CONFIG_DISCOVERY_PROMPT;
   }
 
   /**

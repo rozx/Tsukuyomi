@@ -1,5 +1,5 @@
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
-import { ToolRegistry } from 'src/services/ai/tools/index';
+import { ToolRegistry } from 'src/services/ai/tools/tool-registry';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import {

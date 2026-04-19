@@ -1,8 +1,8 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 export { MAX_TRANSLATION_BATCH_SIZE };
-import type { TaskType, TaskStatus } from '../utils';
-import { getTaskStateWorkflowText, TASK_TYPE_LABELS } from '../utils';
+import type { TaskType, TaskStatus } from '../utils/task-types';
+import { getTaskStateWorkflowText, TASK_TYPE_LABELS } from '../utils/task-types';
 
 /**
  * 判断本次请求是否提供了 `query_chapter` 工具。

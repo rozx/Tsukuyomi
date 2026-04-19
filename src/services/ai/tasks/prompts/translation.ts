@@ -10,7 +10,7 @@ import {
   getToolUsageInstructions,
   getOutputFormatRules,
   hasQueryChapterTool,
-} from './index';
+} from './common';
 import type { AITool } from 'src/services/ai/types/ai-service';
 
 export interface TranslationSystemPromptParams {

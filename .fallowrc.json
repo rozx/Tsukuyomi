@@ -28,5 +28,24 @@
     "vite-plugin-checker",
     "vite"
   ],
-  "rules": {}
+  "rules": {
+    "unused-files": "error",
+    "unused-exports": "warn",
+    "unused-types": "off",
+    "unresolved-imports": "error"
+  },
+  "duplicates": {
+    "mode": "mild",
+    "minTokens": 50,
+    "minLines": 5,
+    "threshold": 10
+  },
+  "health": {
+    "maxCyclomatic": 20,
+    "maxCognitive": 15,
+    "ignore": ["**/*.generated.ts"]
+  },
+  "boundaries": {
+    "preset": "bulletproof"
+  }
 }

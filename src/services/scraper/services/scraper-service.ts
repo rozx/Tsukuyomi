@@ -1,5 +1,5 @@
 import { runWithConcurrencyLimit } from 'src/utils/concurrency';
-import { NovelScraperFactory } from 'src/services/scraper';
+import { NovelScraperFactory } from 'src/services/scraper/novel-scraper-factory';
 
 /**
  * 章节内容获取结果
