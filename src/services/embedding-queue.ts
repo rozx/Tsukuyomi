@@ -438,7 +438,10 @@ export class EmbeddingQueue {
       return;
     }
 
-    const vectors = await EmbeddingService.embedBatch(valid.map((m) => m.text));
+    const vectors = await EmbeddingService.embedBatch(
+      valid.map((m) => m.text),
+      'document',
+    );
 
     await Promise.all(
       valid.map(async (entry, idx) => {

@@ -146,7 +146,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     mockPipelineImpl = async () => fakePooledOutput(1, 0.5);
     await EmbeddingService.init();
 
-    const vec = await EmbeddingService.embed('测试文本');
+    const vec = await EmbeddingService.embed('测试文本', 'document');
     expect(vec).not.toBeNull();
     expect(vec).toBeInstanceOf(Float32Array);
     expect(vec!.length).toBe(DIMENSIONS);
@@ -160,13 +160,13 @@ describe('EmbeddingService - embed / embedBatch', () => {
   test('embed 空文本返回 null', async () => {
     mockPipelineImpl = async () => fakePooledOutput(1, 0.5);
     await EmbeddingService.init();
-    expect(await EmbeddingService.embed('')).toBeNull();
-    expect(await EmbeddingService.embed('   ')).toBeNull();
+    expect(await EmbeddingService.embed('', 'document')).toBeNull();
+    expect(await EmbeddingService.embed('   ', 'document')).toBeNull();
   });
 
   test('未就绪时 embed 返回 null(不会抛异常)', async () => {
     // 未 init
-    const vec = await EmbeddingService.embed('hello');
+    const vec = await EmbeddingService.embed('hello', 'document');
     expect(vec).toBeNull();
   });
 
@@ -175,7 +175,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
       throw new Error('inference crash');
     };
     await EmbeddingService.init();
-    const vec = await EmbeddingService.embed('hello');
+    const vec = await EmbeddingService.embed('hello', 'document');
     expect(vec).toBeNull();
   });
 
@@ -186,7 +186,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     };
     await EmbeddingService.init();
 
-    const vecs = await EmbeddingService.embedBatch(['a', 'b', 'c']);
+    const vecs = await EmbeddingService.embedBatch(['a', 'b', 'c'], 'document');
     expect(vecs).toHaveLength(3);
     vecs.forEach((v) => {
       expect(v).toBeInstanceOf(Float32Array);
@@ -201,7 +201,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     };
     await EmbeddingService.init();
 
-    const vecs = await EmbeddingService.embedBatch(['a', '', 'c']);
+    const vecs = await EmbeddingService.embedBatch(['a', '', 'c'], 'document');
     expect(vecs).toHaveLength(3);
     expect(vecs[0]).not.toBeNull();
     expect(vecs[1]).toBeNull();
@@ -209,8 +209,40 @@ describe('EmbeddingService - embed / embedBatch', () => {
   });
 
   test('embedBatch 未就绪时全部返回 null', async () => {
-    const vecs = await EmbeddingService.embedBatch(['a', 'b']);
+    const vecs = await EmbeddingService.embedBatch(['a', 'b'], 'document');
     expect(vecs).toEqual([null, null]);
+  });
+
+  test('不同 task 对同一文本得到不同向量(验证前缀生效)', async () => {
+    // mock 会把输入文本回传,我们用它构造基于前缀长度差异的输出
+    mockPipelineImpl = async (input: unknown) => {
+      const texts = Array.isArray(input) ? (input as string[]) : [input as string];
+      const hidden = 768;
+      const data = new Float32Array(texts.length * hidden);
+      for (let b = 0; b < texts.length; b++) {
+        const t = texts[b] ?? '';
+        // 前 10 维用文本长度做简单映射,确保不同前缀 → 不同向量
+        for (let i = 0; i < 10; i++) {
+          data[b * hidden + i] = (t.length + i) * 0.01;
+        }
+      }
+      return { data, dims: [texts.length, hidden] };
+    };
+    await EmbeddingService.init();
+
+    const vQuery = await EmbeddingService.embed('hello', 'query');
+    const vDoc = await EmbeddingService.embed('hello', 'document');
+    expect(vQuery).not.toBeNull();
+    expect(vDoc).not.toBeNull();
+    // 前缀不同 → 至少一个维度必定不同
+    let anyDifferent = false;
+    for (let i = 0; i < vQuery!.length; i++) {
+      if (vQuery![i] !== vDoc![i]) {
+        anyDifferent = true;
+        break;
+      }
+    }
+    expect(anyDifferent).toBe(true);
   });
 });
 
@@ -247,7 +279,7 @@ describe('EmbeddingService - cosineSimilarity', () => {
 
 describe('EmbeddingService - 常量', () => {
   test('MODEL_VERSION 与 DIMENSIONS 与 spec 一致', () => {
-    expect(MODEL_VERSION).toBe('embeddinggemma-300m@256');
+    expect(MODEL_VERSION).toBe('embeddinggemma-300m@256-v2');
     expect(DIMENSIONS).toBe(256);
   });
 });

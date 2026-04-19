@@ -618,7 +618,7 @@ export class MemoryService {
       try {
         const { EmbeddingService } = await import('src/services/embedding-service');
         if (EmbeddingService.isReady()) {
-          const vec = await EmbeddingService.embed(queryText);
+          const vec = await EmbeddingService.embed(queryText, 'query');
           if (vec) chunkEmbedding = vec;
         }
       } catch {

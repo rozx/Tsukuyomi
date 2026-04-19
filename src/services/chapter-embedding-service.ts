@@ -248,7 +248,10 @@ export class ChapterEmbeddingService {
       throw new Error('EmbeddingService 未就绪');
     }
 
-    const vectors = await EmbeddingService.embedBatch(chunkDrafts.map((c) => c.text));
+    const vectors = await EmbeddingService.embedBatch(
+      chunkDrafts.map((c) => c.text),
+      'document',
+    );
 
     const chunks: Array<{ chunkIndex: number; vector: number[]; textSnippet: string }> = [];
     for (let i = 0; i < chunkDrafts.length; i++) {
@@ -290,7 +293,7 @@ export class ChapterEmbeddingService {
       throw new Error('EmbeddingService 未就绪');
     }
 
-    const queryVec = await EmbeddingService.embed(query);
+    const queryVec = await EmbeddingService.embed(query, 'query');
     if (!queryVec) throw new Error('query embedding 计算失败');
 
     const chunks = await this.getChunksForBook(bookId);

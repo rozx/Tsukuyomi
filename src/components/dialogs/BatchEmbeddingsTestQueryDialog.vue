@@ -102,7 +102,7 @@ async function runQuery(target: TestTarget): Promise<void> {
       if (!EmbeddingService.isReady()) {
         throw new Error('EmbeddingService 未就绪');
       }
-      const queryVec = await EmbeddingService.embed(q);
+      const queryVec = await EmbeddingService.embed(q, 'query');
       if (!queryVec) throw new Error('query embedding 计算失败');
       const memories = await MemoryService.getAllBookMemories(id);
       const scored: TestResultItem[] = [];

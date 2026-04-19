@@ -306,7 +306,7 @@ async function computeChunkEmbedding(chunkText: string): Promise<Float32Array | 
   if (cached !== undefined) return cached;
 
   try {
-    const vec = await EmbeddingService.embed(chunkText);
+    const vec = await EmbeddingService.embed(chunkText, 'query');
     if (chunkEmbeddingCache.size >= CHUNK_CACHE_MAX_SIZE) {
       const oldest = chunkEmbeddingCache.keys().next().value;
       if (oldest !== undefined) chunkEmbeddingCache.delete(oldest);

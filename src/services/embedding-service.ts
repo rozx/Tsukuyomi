@@ -11,11 +11,28 @@
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
 
 export const MODEL_ID = 'onnx-community/embeddinggemma-300m-ONNX';
-export const MODEL_VERSION = 'embeddinggemma-300m@256';
+// v2: 引入 EmbeddingGemma 官方要求的非对称 task 前缀(query / document)。
+// 旧 embedding 在没有前缀的情况下计算,与 query 不在同一语义空间,必须重算。
+export const MODEL_VERSION = 'embeddinggemma-300m@256-v2';
 export const DIMENSIONS = 256;
 const NATIVE_DIMENSIONS = 768;
 
 export type EmbeddingStatus = 'idle' | 'loading' | 'ready' | 'failed';
+
+/**
+ * EmbeddingGemma 官方任务前缀。
+ * 模型是非对称检索模型:query 和 document 必须使用不同前缀,否则两侧落在不同的语义空间,
+ * 余弦相似度会退化成噪声(参见 Google 模型卡)。
+ */
+export type EmbeddingTask = 'query' | 'document';
+const TASK_PREFIX: Record<EmbeddingTask, string> = {
+  query: 'task: search result | query: ',
+  document: 'title: none | text: ',
+};
+
+function applyTaskPrefix(text: string, task: EmbeddingTask): string {
+  return TASK_PREFIX[task] + text;
+}
 
 export interface EmbeddingProgressEvent {
   status: string;
@@ -257,16 +274,19 @@ export class EmbeddingService {
    * 对单条文本计算 embedding。
    * 返回 256 维 L2 归一化 Float32Array。
    * 未就绪或失败时返回 null(调用方 fallback 到纯关键词 + 时间衰减)。
+   *
+   * `task` 必填:'query' 用于检索查询,'document' 用于被检索的文档/记忆/章节 chunk。
+   * 两者走不同 prompt 前缀,必须与写入端严格一致,否则相似度会退化成噪声。
    */
-  static async embed(text: string): Promise<Float32Array | null> {
+  static async embed(text: string, task: EmbeddingTask): Promise<Float32Array | null> {
     if (!text || !text.trim()) return null;
     if (!this.isReady()) {
       // 不主动 init — 调用方应先显式 warmup/init
       return null;
     }
     try {
-       
-      const output = await this.pipeline!(text, {
+
+      const output = await this.pipeline!(applyTaskPrefix(text, task), {
         pooling: 'mean',
         normalize: false, // 我们手动处理截断 + 归一化
       });
@@ -280,8 +300,13 @@ export class EmbeddingService {
   /**
    * 批量 embed。相比逐条调用,transformers.js 会复用 tokenizer + 单次 forward。
    * 返回的数组下标与输入一一对应,失败或空文本对应位置为 null。
+   *
+   * `task` 必填,会给所有非空输入统一加前缀(见 `embed` 说明)。
    */
-  static async embedBatch(texts: string[]): Promise<Array<Float32Array | null>> {
+  static async embedBatch(
+    texts: string[],
+    task: EmbeddingTask,
+  ): Promise<Array<Float32Array | null>> {
     if (!texts || texts.length === 0) return [];
     if (!this.isReady()) return texts.map(() => null);
 
@@ -294,9 +319,9 @@ export class EmbeddingService {
 
     const result: Array<Float32Array | null> = texts.map(() => null);
     try {
-       
+
       const output = await this.pipeline!(
-        indexed.map((e) => e.text),
+        indexed.map((e) => applyTaskPrefix(e.text, task)),
         {
           pooling: 'mean',
           normalize: false,
