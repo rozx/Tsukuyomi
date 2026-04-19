@@ -7,7 +7,11 @@ import ProgressBar from 'primevue/progressbar';
 import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
 import { useSettingsStore } from 'src/stores/settings';
-import { EmbeddingQueue, type EmbeddingQueueProgress } from 'src/services/embedding-queue';
+import {
+  EmbeddingQueue,
+  type EmbeddingQueueCurrentTask,
+  type EmbeddingQueueProgress,
+} from 'src/services/embedding-queue';
 import {
   EmbeddingService,
   type EmbeddingStatus,
@@ -159,8 +163,24 @@ const totalChapters = computed(() => {
 const chapterPendingInQueue = computed(() => progress.value.breakdown.chapter.pending);
 const memoryPendingInQueue = computed(() => progress.value.breakdown.memory.pending);
 
-/** 队列当前正在处理的任务(可能属于别的书) */
-const activeTask = computed(() => progress.value.currentTask);
+/** 队列当前正在处理的任务(可能属于别的书)。
+ * 队列在两批之间会短暂把 currentTask 清成 null,直接绑定会让提示条反复显示/隐藏
+ * 造成整条 popup 闪烁。这里在 progress.running 为 true 期间保留最后一次看到的
+ * task,仅队列真正 idle 时才清掉,提示条内容随批次更新但容器保持挂载。 */
+const stickyTask = ref<EmbeddingQueueCurrentTask | null>(progress.value.currentTask);
+watch(
+  () => progress.value.currentTask,
+  (task) => {
+    if (task) stickyTask.value = task;
+  },
+);
+watch(
+  () => progress.value.running,
+  (running) => {
+    if (!running) stickyTask.value = null;
+  },
+);
+const activeTask = computed(() => stickyTask.value);
 
 /** 当 panel 开在 Book A,但队列实际在处理 Book B 时为 true */
 const isProcessingOtherBook = computed(() => {
@@ -247,10 +267,24 @@ const hasStale = computed(
   () => staleCounts.value.chapter > 0 || staleCounts.value.memory > 0,
 );
 
+// 队列正在处理任何嵌入任务时,禁用会新增队列工作的按钮,避免用户重复触发或与
+// 正在进行的重建/回填冲突。
+const isBuilding = computed(() => progress.value.running);
+
+// 用户点击"立即重建"后立即隐藏升级横幅,避免在 refreshStats 追上之前横幅还显眼。
+// 队列从 running 回落到 idle 时再复位,让 hasStale 决定是否重新显示。
+const rebuildDismissed = ref(false);
+watch(isBuilding, (running, wasRunning) => {
+  if (wasRunning && !running) {
+    rebuildDismissed.value = false;
+  }
+});
+
 // 一键重建 stale:本质就是 backlog 扫描(版本不匹配已被判为 needs-embed),
 // 对章节和记忆各跑一次即可把 stale 全部入队。
 const rebuildStale = () => {
   if (!bookId.value) return;
+  rebuildDismissed.value = true;
   if (staleCounts.value.chapter > 0) {
     void EmbeddingQueue.enqueueChapterBacklog(bookId.value);
   }
@@ -335,7 +369,7 @@ defineExpose({ toggle });
         <!-- Embedding 空间升级横幅:存在 stale(版本不匹配)向量时显示,
              解释"已嵌入"数字为什么会掉,并提供一键重建入口 -->
         <div
-          v-if="isEmbeddingEnabled && hasStale"
+          v-if="isEmbeddingEnabled && hasStale && !rebuildDismissed"
           class="flex flex-col gap-2 p-3 rounded text-xs bg-amber-500/10 border border-amber-500/30 text-amber-200"
         >
           <div class="flex items-start gap-2">
@@ -357,7 +391,7 @@ defineExpose({ toggle });
             severity="warn"
             icon="pi pi-sync"
             class="w-full"
-            :disabled="embeddingStatus !== 'ready'"
+            :disabled="embeddingStatus !== 'ready' || isBuilding"
             @click="rebuildStale"
           />
         </div>
@@ -382,7 +416,7 @@ defineExpose({ toggle });
               severity="secondary"
               icon="pi pi-refresh"
               @click="backfillChapters"
-              :disabled="embeddingStatus !== 'ready'"
+              :disabled="embeddingStatus !== 'ready' || isBuilding"
               class="flex-1"
             />
             <Button
@@ -391,7 +425,7 @@ defineExpose({ toggle });
               severity="secondary"
               icon="pi pi-sync"
               @click="recomputeAllChapters"
-              :disabled="embeddingStatus !== 'ready'"
+              :disabled="embeddingStatus !== 'ready' || isBuilding"
               class="flex-1"
             />
           </div>
@@ -417,7 +451,7 @@ defineExpose({ toggle });
               severity="secondary"
               icon="pi pi-refresh"
               @click="backfillMemories"
-              :disabled="embeddingStatus !== 'ready'"
+              :disabled="embeddingStatus !== 'ready' || isBuilding"
               class="flex-1"
             />
           </div>
