@@ -147,6 +147,132 @@ export async function resetDbForTests(): Promise<void> {
  * 测试专用：重置模块内缓存的 dbPromise，使得下次 getDB() 调用会重新打开数据库。
  * 用于需要测试 schema upgrade 路径的场景。
  */
+function nowMs(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
+function ensureObjectStores(db: IDBPDatabase<TsukuyomiDB>): void {
+  if (!db.objectStoreNames.contains('books')) {
+    const booksStore = db.createObjectStore('books', { keyPath: 'id' });
+    booksStore.createIndex('by-lastEdited', 'lastEdited');
+    booksStore.createIndex('by-createdAt', 'createdAt');
+  }
+  if (!db.objectStoreNames.contains('ai-models')) {
+    db.createObjectStore('ai-models', { keyPath: 'id' });
+  }
+  if (!db.objectStoreNames.contains('settings')) {
+    db.createObjectStore('settings', { keyPath: 'key' });
+  }
+  if (!db.objectStoreNames.contains('sync-configs')) {
+    db.createObjectStore('sync-configs', { keyPath: 'id' });
+  }
+  if (!db.objectStoreNames.contains('cover-history')) {
+    const coverStore = db.createObjectStore('cover-history', { keyPath: 'id' });
+    coverStore.createIndex('by-addedAt', 'addedAt', { unique: false });
+  }
+  if (!db.objectStoreNames.contains('toast-history')) {
+    db.createObjectStore('toast-history', { keyPath: 'id' });
+  }
+  if (!db.objectStoreNames.contains('toast-last-viewed')) {
+    db.createObjectStore('toast-last-viewed', { keyPath: 'key' });
+  }
+  if (!db.objectStoreNames.contains('book-details-ui')) {
+    db.createObjectStore('book-details-ui', { keyPath: 'key' });
+  }
+  if (!db.objectStoreNames.contains('ui-state')) {
+    db.createObjectStore('ui-state', { keyPath: 'key' });
+  }
+  if (!db.objectStoreNames.contains('thinking-processes')) {
+    const thinkingStore = db.createObjectStore('thinking-processes', { keyPath: 'id' });
+    thinkingStore.createIndex('by-startTime', 'startTime', { unique: false });
+  }
+  if (!db.objectStoreNames.contains('chapter-contents')) {
+    const chapterContentStore = db.createObjectStore('chapter-contents', {
+      keyPath: 'chapterId',
+    });
+    chapterContentStore.createIndex('by-lastModified', 'lastModified', { unique: false });
+  }
+  if (!db.objectStoreNames.contains('memories')) {
+    const memoriesStore = db.createObjectStore('memories', { keyPath: 'id' });
+    memoriesStore.createIndex('by-bookId', 'bookId', { unique: false });
+    memoriesStore.createIndex('by-lastAccessedAt', 'lastAccessedAt', { unique: false });
+  }
+  if (!db.objectStoreNames.contains('full-text-indexes')) {
+    db.createObjectStore('full-text-indexes', { keyPath: 'bookId' });
+  }
+  if (!db.objectStoreNames.contains('chapter-embeddings')) {
+    const chapterEmbeddingsStore = db.createObjectStore('chapter-embeddings');
+    chapterEmbeddingsStore.createIndex('by-chapterId', 'chapterId', { unique: false });
+    chapterEmbeddingsStore.createIndex('by-bookId', 'bookId', { unique: false });
+  }
+}
+
+async function migrateChapterEmbeddingsToV11(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  transaction: any,
+): Promise<void> {
+  const startedAt = nowMs();
+  const store = transaction.objectStore('chapter-embeddings');
+  type MigrationOp = { oldKey: string; newKey: string; value: ChapterEmbedding };
+  const ops: MigrationOp[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let cursor = await (store as any).openCursor();
+  while (cursor) {
+    const oldKey = cursor.key as string;
+    const record = cursor.value as ChapterEmbedding & { kind?: ChapterEmbeddingKind };
+    const value: ChapterEmbedding = {
+      chapterId: record.chapterId,
+      bookId: record.bookId,
+      kind: 'content',
+      chunkIndex: record.chunkIndex,
+      vector: record.vector,
+      textSnippet: record.textSnippet,
+      model: record.model,
+      updatedAt: record.updatedAt,
+    };
+    ops.push({ oldKey, newKey: `${value.chapterId}:content:${value.chunkIndex}`, value });
+    cursor = await cursor.continue();
+  }
+  let migrated = 0;
+  for (const op of ops) {
+    await store.delete(op.oldKey);
+    await store.put(op.value, op.newKey);
+    migrated += 1;
+  }
+  console.info(
+    `[indexed-db] v11 迁移完成:回填 ${migrated} 条 chapter-embeddings 的 kind 字段并重写 key,耗时 ${Math.round(
+      nowMs() - startedAt,
+    )} ms`,
+  );
+}
+
+async function migrateMemoriesToV9(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  transaction: any,
+): Promise<void> {
+  const startedAt = nowMs();
+  const memoriesStore = transaction.objectStore('memories');
+  let migrated = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let cursor = await (memoriesStore as any).openCursor();
+  while (cursor) {
+    const record = cursor.value as Record<string, unknown> | undefined;
+    if (record && 'attachedTo' in record) {
+      delete record.attachedTo;
+      await cursor.update(record);
+      migrated += 1;
+    }
+    cursor = await cursor.continue();
+  }
+  console.info(
+    `[indexed-db] v9 迁移完成:清理 ${migrated} 条 memory 记录的 attachedTo 字段,耗时 ${Math.round(
+      nowMs() - startedAt,
+    )} ms`,
+  );
+}
+
 export async function __resetDbPromiseForTesting(): Promise<void> {
   if (dbPromise) {
     try {
@@ -169,177 +295,12 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
     dbPromise = openDB<TsukuyomiDB>(DB_NAME, DB_VERSION, {
       async upgrade(db, oldVersion, _newVersion, transaction) {
         console.info(`[indexed-db] 执行升级: v${oldVersion} → v${_newVersion}`);
-        // 创建 books 存储
-        if (!db.objectStoreNames.contains('books')) {
-          const booksStore = db.createObjectStore('books', { keyPath: 'id' });
-          booksStore.createIndex('by-lastEdited', 'lastEdited');
-          booksStore.createIndex('by-createdAt', 'createdAt');
-        }
-
-        // 创建 ai-models 存储
-        if (!db.objectStoreNames.contains('ai-models')) {
-          db.createObjectStore('ai-models', { keyPath: 'id' });
-        }
-
-        // 创建 settings 存储
-        if (!db.objectStoreNames.contains('settings')) {
-          db.createObjectStore('settings', { keyPath: 'key' });
-        }
-
-        // 创建 sync-configs 存储（版本 2 新增）
-        if (!db.objectStoreNames.contains('sync-configs')) {
-          db.createObjectStore('sync-configs', { keyPath: 'id' });
-        }
-
-        // 创建 cover-history 存储
-        if (!db.objectStoreNames.contains('cover-history')) {
-          const coverStore = db.createObjectStore('cover-history', {
-            keyPath: 'id',
-          });
-          coverStore.createIndex('by-addedAt', 'addedAt', { unique: false });
-        }
-
-        // 创建 toast-history 存储
-        if (!db.objectStoreNames.contains('toast-history')) {
-          db.createObjectStore('toast-history', { keyPath: 'id' });
-        }
-
-        // 创建 toast-last-viewed 存储（版本 2 新增）
-        if (!db.objectStoreNames.contains('toast-last-viewed')) {
-          db.createObjectStore('toast-last-viewed', { keyPath: 'key' });
-        }
-
-        // 创建 book-details-ui 存储（版本 2 新增）
-        if (!db.objectStoreNames.contains('book-details-ui')) {
-          db.createObjectStore('book-details-ui', { keyPath: 'key' });
-        }
-
-        // 创建 ui-state 存储（版本 2 新增）
-        if (!db.objectStoreNames.contains('ui-state')) {
-          db.createObjectStore('ui-state', { keyPath: 'key' });
-        }
-
-        // 创建 thinking-processes 存储（版本 3 新增）
-        if (!db.objectStoreNames.contains('thinking-processes')) {
-          const thinkingStore = db.createObjectStore('thinking-processes', {
-            keyPath: 'id',
-          });
-          thinkingStore.createIndex('by-startTime', 'startTime', { unique: false });
-        }
-
-        // 创建 chapter-contents 存储（版本 4 新增）
-        if (!db.objectStoreNames.contains('chapter-contents')) {
-          const chapterContentStore = db.createObjectStore('chapter-contents', {
-            keyPath: 'chapterId',
-          });
-          chapterContentStore.createIndex('by-lastModified', 'lastModified', { unique: false });
-        }
-
-        // 创建 memories 存储（版本 5 新增）
-        if (!db.objectStoreNames.contains('memories')) {
-          const memoriesStore = db.createObjectStore('memories', {
-            keyPath: 'id',
-          });
-          memoriesStore.createIndex('by-bookId', 'bookId', { unique: false });
-          memoriesStore.createIndex('by-lastAccessedAt', 'lastAccessedAt', { unique: false });
-        }
-        // 版本 8：不再使用 by-attachedTo 索引（已废弃）
-
-        // 创建 full-text-indexes 存储（版本 6 新增）
-        if (!db.objectStoreNames.contains('full-text-indexes')) {
-          db.createObjectStore('full-text-indexes', { keyPath: 'bookId' });
-        }
-
-        // 创建 chapter-embeddings 存储（版本 10 新增）
-        if (!db.objectStoreNames.contains('chapter-embeddings')) {
-          const chapterEmbeddingsStore = db.createObjectStore('chapter-embeddings');
-          chapterEmbeddingsStore.createIndex('by-chapterId', 'chapterId', { unique: false });
-          chapterEmbeddingsStore.createIndex('by-bookId', 'bookId', { unique: false });
-        }
-
-        // 版本 11:给 chapter-embeddings 旧记录回填 `kind: 'content'`,并按新 key 格式
-        // `${chapterId}:content:${chunkIndex}` 重写。
-        // 旧 v10 key 为 `${chapterId}:${chunkIndex}`,字段无 kind。整批在同一 upgrade 事务内
-        // 完成,任一失败回滚到 v10。索引 by-chapterId / by-bookId 字段名未变,无需重建。
+        ensureObjectStores(db);
         if (oldVersion < 11 && db.objectStoreNames.contains('chapter-embeddings')) {
-          const startedAt =
-            typeof performance !== 'undefined' && typeof performance.now === 'function'
-              ? performance.now()
-              : Date.now();
-          const store = transaction.objectStore('chapter-embeddings');
-          let migrated = 0;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          let cursor = await (store as any).openCursor();
-          // 收集 [oldKey, newKey, value] 后批量删/写,避免在 cursor 迭代过程中边删边写
-          // 触发 fake-indexeddb 时序问题(v9 迁移踩过同样的坑)。
-          type MigrationOp = { oldKey: string; newKey: string; value: ChapterEmbedding };
-          const ops: MigrationOp[] = [];
-          while (cursor) {
-            const oldKey = cursor.key as string;
-            const record = cursor.value as ChapterEmbedding & { kind?: ChapterEmbeddingKind };
-            const value: ChapterEmbedding = {
-              chapterId: record.chapterId,
-              bookId: record.bookId,
-              kind: 'content',
-              chunkIndex: record.chunkIndex,
-              vector: record.vector,
-              textSnippet: record.textSnippet,
-              model: record.model,
-              updatedAt: record.updatedAt,
-            };
-            const newKey = `${value.chapterId}:content:${value.chunkIndex}`;
-            ops.push({ oldKey, newKey, value });
-            cursor = await cursor.continue();
-          }
-          for (const op of ops) {
-            await store.delete(op.oldKey);
-            await store.put(op.value, op.newKey);
-            migrated += 1;
-          }
-          const endedAt =
-            typeof performance !== 'undefined' && typeof performance.now === 'function'
-              ? performance.now()
-              : Date.now();
-          console.info(
-            `[indexed-db] v11 迁移完成:回填 ${migrated} 条 chapter-embeddings 的 kind 字段并重写 key,耗时 ${Math.round(
-              endedAt - startedAt,
-            )} ms`,
-          );
+          await migrateChapterEmbeddingsToV11(transaction);
         }
-
-        // 版本 9：硬迁移清理旧 attachedTo 字段
-        // 历史版本的 Memory 记录含有 attachedTo 字段，本次将其从每条记录中物理删除，
-        // 确保 DevTools / 单元测试观察到的数据形态与 TS 类型一致。
-        // 迁移在同一 upgrade 事务内完成，失败时整个升级回滚到原版本。
         if (oldVersion < 9 && db.objectStoreNames.contains('memories')) {
-          // 使用 idb 库的 Promise-based cursor 迭代，避免 raw IDB cursor 在 fake-indexeddb
-          // 下的时序问题(cursor.update + cursor.continue 回调在同一事务中交错导致字段未被清理)。
-          const startedAt =
-            typeof performance !== 'undefined' && typeof performance.now === 'function'
-              ? performance.now()
-              : Date.now();
-          const memoriesStore = transaction.objectStore('memories');
-          let migrated = 0;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          let cursor = await (memoriesStore as any).openCursor();
-          while (cursor) {
-            const record = cursor.value as Record<string, unknown> | undefined;
-            if (record && 'attachedTo' in record) {
-              delete record.attachedTo;
-              await cursor.update(record);
-              migrated += 1;
-            }
-            cursor = await cursor.continue();
-          }
-          const endedAt =
-            typeof performance !== 'undefined' && typeof performance.now === 'function'
-              ? performance.now()
-              : Date.now();
-          console.info(
-            `[indexed-db] v9 迁移完成:清理 ${migrated} 条 memory 记录的 attachedTo 字段,耗时 ${Math.round(
-              endedAt - startedAt,
-            )} ms`,
-          );
+          await migrateMemoriesToV9(transaction);
         }
       },
       blocked() {

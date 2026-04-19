@@ -198,6 +198,120 @@ async function performChapterExportAction(
   URL.revokeObjectURL(url);
 }
 
+interface BackwardCursor {
+  volumeIndex: number;
+  chapterIndex: number;
+  paragraphIndex: number;
+}
+
+interface BackwardStep {
+  cursor: BackwardCursor;
+  result?: ParagraphSearchResult;
+  done?: boolean;
+}
+
+function rewindToPreviousVolumeLastChapter(
+  novel: Novel,
+  volumeIndex: number,
+): { volumeIndex: number; chapterIndex: number; paragraphIndex: number; done: boolean } {
+  const vi = volumeIndex - 1;
+  if (vi < 0) {
+    return { volumeIndex: -1, chapterIndex: -1, paragraphIndex: -1, done: true };
+  }
+  const prevVolume = novel.volumes?.[vi];
+  if (!prevVolume?.chapters || prevVolume.chapters.length === 0) {
+    return { volumeIndex: vi, chapterIndex: -1, paragraphIndex: -1, done: false };
+  }
+  const chapterIndex = prevVolume.chapters.length - 1;
+  const prevChapter = prevVolume.chapters[chapterIndex];
+  const paragraphIndex =
+    prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+  return { volumeIndex: vi, chapterIndex, paragraphIndex, done: false };
+}
+
+function stepBackward(novel: Novel, cursor: BackwardCursor): BackwardStep {
+  const { volumeIndex, chapterIndex, paragraphIndex } = cursor;
+  const volumes = novel.volumes || [];
+  const volume = volumes[volumeIndex];
+
+  if (!volume?.chapters) {
+    const moved = rewindToPreviousVolumeLastChapter(novel, volumeIndex);
+    if (moved.done) return { cursor, done: true };
+    return {
+      cursor: {
+        volumeIndex: moved.volumeIndex,
+        chapterIndex: moved.chapterIndex,
+        paragraphIndex: moved.paragraphIndex,
+      },
+    };
+  }
+
+  if (chapterIndex < 0) {
+    const moved = rewindToPreviousVolumeLastChapter(novel, volumeIndex);
+    if (moved.done) return { cursor, done: true };
+    return {
+      cursor: {
+        volumeIndex: moved.volumeIndex,
+        chapterIndex: moved.chapterIndex,
+        paragraphIndex: moved.paragraphIndex,
+      },
+    };
+  }
+
+  const chapter = volume.chapters[chapterIndex];
+  if (!chapter || !chapter.content) {
+    return {
+      cursor: { volumeIndex, chapterIndex: chapterIndex - 1, paragraphIndex: -1 },
+    };
+  }
+
+  if (paragraphIndex < 0) {
+    const nextChapterIndex = chapterIndex - 1;
+    if (nextChapterIndex < 0) {
+      const moved = rewindToPreviousVolumeLastChapter(novel, volumeIndex);
+      if (moved.done) return { cursor, done: true };
+      return {
+        cursor: {
+          volumeIndex: moved.volumeIndex,
+          chapterIndex: moved.chapterIndex,
+          paragraphIndex: moved.paragraphIndex,
+        },
+      };
+    }
+    const prevChapter = volume.chapters[nextChapterIndex];
+    const nextParagraphIndex =
+      prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+    return {
+      cursor: {
+        volumeIndex,
+        chapterIndex: nextChapterIndex,
+        paragraphIndex: nextParagraphIndex,
+      },
+    };
+  }
+
+  const paragraph = chapter.content[paragraphIndex];
+  const nextCursor: BackwardCursor = {
+    volumeIndex,
+    chapterIndex,
+    paragraphIndex: paragraphIndex - 1,
+  };
+  if (paragraph && hasParagraphContent(paragraph)) {
+    return {
+      cursor: nextCursor,
+      result: {
+        paragraph,
+        paragraphIndex,
+        chapter,
+        chapterIndex,
+        volume,
+        volumeIndex,
+      },
+    };
+  }
+  return { cursor: nextCursor };
+}
+
 function buildParagraphSearchResult(
   paragraph: Paragraph,
   paragraphIndex: number,
@@ -1968,96 +2082,23 @@ export class ChapterService {
     paragraphId: string,
     count: number,
   ): ParagraphSearchResult[] {
-    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
-      return [];
-    }
-
+    if (!novel || !novel.volumes || !paragraphId || count <= 0) return [];
     const location = ChapterService.findParagraphLocation(novel, paragraphId);
-    if (!location) {
-      return [];
-    }
+    if (!location) return [];
 
     const results: ParagraphSearchResult[] = [];
-    let { volumeIndex, chapterIndex, paragraphIndex } = location;
+    let cursor: BackwardCursor = {
+      volumeIndex: location.volumeIndex,
+      chapterIndex: location.chapterIndex,
+      paragraphIndex: location.paragraphIndex - 1,
+    };
 
-    // 从当前段落的前一个开始，向前遍历
-    paragraphIndex--;
-
-    while (results.length < count && volumeIndex >= 0) {
-      const volume = novel.volumes[volumeIndex];
-      if (!volume || !volume.chapters) {
-        volumeIndex--;
-        chapterIndex =
-          volumeIndex >= 0 && novel.volumes[volumeIndex]?.chapters
-            ? novel.volumes[volumeIndex]!.chapters!.length - 1
-            : -1;
-        paragraphIndex = -1;
-        continue;
-      }
-
-      // 如果 chapterIndex 无效，移动到上一卷的最后一章
-      if (chapterIndex < 0) {
-        volumeIndex--;
-        if (volumeIndex < 0) break;
-        const prevVolume = novel.volumes[volumeIndex];
-        if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-          chapterIndex = -1;
-          paragraphIndex = -1;
-          continue;
-        }
-        chapterIndex = prevVolume.chapters.length - 1;
-        const prevChapter = prevVolume.chapters[chapterIndex];
-        paragraphIndex = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-        continue;
-      }
-
-      const chapter = volume.chapters[chapterIndex];
-      if (!chapter || !chapter.content) {
-        chapterIndex--;
-        paragraphIndex = -1;
-        continue;
-      }
-
-      // 如果 paragraphIndex 无效，移动到上一章的最后一个段落
-      if (paragraphIndex < 0) {
-        chapterIndex--;
-        if (chapterIndex < 0) {
-          // 移动到上一卷
-          volumeIndex--;
-          if (volumeIndex < 0) break;
-          const prevVolume = novel.volumes[volumeIndex];
-          if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-            chapterIndex = -1;
-            paragraphIndex = -1;
-            continue;
-          }
-          chapterIndex = prevVolume.chapters.length - 1;
-          const prevChapter = prevVolume.chapters[chapterIndex];
-          paragraphIndex = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-          continue;
-        }
-        const prevChapter = volume.chapters[chapterIndex];
-        paragraphIndex = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-        continue;
-      }
-
-      // 获取当前段落
-      const paragraph = chapter.content[paragraphIndex];
-      // 只添加有内容的段落
-      if (paragraph && hasParagraphContent(paragraph)) {
-        results.unshift({
-          paragraph,
-          paragraphIndex,
-          chapter,
-          chapterIndex,
-          volume,
-          volumeIndex,
-        });
-      }
-
-      paragraphIndex--;
+    while (results.length < count && cursor.volumeIndex >= 0) {
+      const step = stepBackward(novel, cursor);
+      if (step.done) break;
+      cursor = step.cursor;
+      if (step.result) results.unshift(step.result);
     }
-
     return results;
   }
 
