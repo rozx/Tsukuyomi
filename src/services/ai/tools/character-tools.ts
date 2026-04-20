@@ -1,61 +1,19 @@
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
-import type { CharacterSetting, Novel } from 'src/models/novel';
+import type { CharacterSetting } from 'src/models/novel';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
 import { cloneDeep } from 'lodash';
-import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
 import { findUniqueCharactersInText } from 'src/utils/text-matcher';
-import type { Chapter } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
+import {
+  filterEntitiesForChapter,
+  requireValidKeywords,
+  resolveBookSync,
+} from './chapter-scope-helpers';
 
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
-
-function findChapterById(book: Novel, chapterId: string): Chapter | null {
-  for (const volume of book.volumes || []) {
-    for (const chapter of volume.chapters || []) {
-      if (chapter.id === chapterId) return chapter;
-    }
-  }
-  return null;
-}
-
-async function filterCharactersForChapter(
-  book: Novel,
-  chapterId: string,
-  allCharacters: CharacterSetting[],
-): Promise<CharacterSetting[]> {
-  const foundChapter = findChapterById(book, chapterId);
-  if (!foundChapter) return [];
-  const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
-  const chapterText = getChapterContentText(chapterWithContent);
-  if (!chapterText) return [];
-  return findUniqueCharactersInText(chapterText, allCharacters);
-}
-
-function serializeCharacter(char: CharacterSetting): {
-  id: string;
-  name: string;
-  translation: string;
-  sex: CharacterSetting['sex'];
-  description: CharacterSetting['description'];
-  speaking_style: CharacterSetting['speakingStyle'];
-  aliases: { name: string; translation: string }[] | undefined;
-} {
-  return {
-    id: char.id,
-    name: char.name,
-    translation: char.translation.translation,
-    sex: char.sex,
-    description: char.description,
-    speaking_style: char.speakingStyle,
-    aliases: char.aliases?.map((alias) => ({
-      name: alias.name,
-      translation: alias.translation.translation,
-    })),
-  };
-}
 
 export const characterTools: ToolDefinition[] = [
   {
@@ -178,7 +136,18 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: '角色创建成功',
-        character: serializeCharacter(character),
+        character: {
+          id: character.id,
+          name: character.name,
+          translation: character.translation.translation,
+          sex: character.sex,
+          description: character.description,
+          speaking_style: character.speakingStyle,
+          aliases: character.aliases?.map((alias: any) => ({
+            name: alias.name,
+            translation: alias.translation.translation,
+          })),
+        },
       });
     },
   },
@@ -266,7 +235,18 @@ export const characterTools: ToolDefinition[] = [
             message: `精确匹配未找到 "${name}"。已返回相关的模糊匹配结果${
               truncated ? `（前 ${MAX_FALLBACK_RESULTS} 条，共 ${fallbackMatches.length} 条）` : ''
             }。`,
-            characters: limitedMatches.map(serializeCharacter),
+            characters: limitedMatches.map((char) => ({
+              id: char.id,
+              name: char.name,
+              translation: char.translation.translation,
+              sex: char.sex,
+              description: char.description,
+              speaking_style: char.speakingStyle,
+              aliases: char.aliases?.map((alias) => ({
+                name: alias.name,
+                translation: alias.translation.translation,
+              })),
+            })),
             total_matches: fallbackMatches.length,
             truncated,
           });
@@ -304,7 +284,18 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        character: serializeCharacter(character),
+        character: {
+          id: character.id,
+          name: character.name,
+          translation: character.translation.translation,
+          sex: character.sex,
+          description: character.description,
+          speaking_style: character.speakingStyle,
+          aliases: character.aliases?.map((alias) => ({
+            name: alias.name,
+            translation: alias.translation.translation,
+          })),
+        },
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
           : {}),
@@ -462,7 +453,18 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: '角色更新成功',
-        character: serializeCharacter(character),
+        character: {
+          id: character.id,
+          name: character.name,
+          translation: character.translation.translation,
+          sex: character.sex,
+          description: character.description,
+          speaking_style: character.speakingStyle,
+          aliases: character.aliases?.map((alias) => ({
+            name: alias.name,
+            translation: alias.translation.translation,
+          })),
+        },
       });
     },
   },
@@ -559,23 +561,9 @@ export const characterTools: ToolDefinition[] = [
         throw new Error('书籍 ID 不能为空');
       }
       const { keywords, translation_only = false, include_memory = true } = parsedArgs;
-      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-        throw new Error('关键词数组不能为空');
-      }
+      const validKeywords = requireValidKeywords(keywords);
 
-      // 过滤掉空字符串
-      const validKeywords = keywords.filter(
-        (k) => k && typeof k === 'string' && k.trim().length > 0,
-      );
-      if (validKeywords.length === 0) {
-        throw new Error('关键词数组不能为空');
-      }
-
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const book = resolveBookSync(bookId);
 
       // 报告读取操作
       if (onAction) {
@@ -631,7 +619,18 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        characters: filteredCharacters.map(serializeCharacter),
+        characters: filteredCharacters.map((char: CharacterSetting) => ({
+          id: char.id,
+          name: char.name,
+          translation: char.translation.translation,
+          sex: char.sex,
+          description: char.description,
+          speaking_style: char.speakingStyle,
+          aliases: char.aliases?.map((alias) => ({
+            name: alias.name,
+            translation: alias.translation.translation,
+          })),
+        })),
         count: filteredCharacters.length,
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
@@ -675,30 +674,56 @@ export const characterTools: ToolDefinition[] = [
         all_chapters?: boolean;
         limit?: number;
       }>(args);
-      if (!bookId) throw new Error('书籍 ID 不能为空');
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { chapter_id, all_chapters = false, limit } = parsedArgs;
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) throw new Error(`书籍不存在: ${bookId}`);
+      const book = resolveBookSync(bookId);
 
-      onAction?.({
-        type: 'read',
-        entity: 'character',
-        data: { tool_name: 'list_characters', chapter_id },
-      });
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'character',
+          data: {
+            tool_name: 'list_characters',
+            chapter_id,
+          },
+        });
+      }
 
-      const allCharacters: CharacterSetting[] = book.characterSettings || [];
-      let characters =
-        !all_chapters && chapter_id
-          ? await filterCharactersForChapter(book, chapter_id, allCharacters)
-          : allCharacters;
-      if (limit && limit > 0) characters = characters.slice(0, limit);
+      let characters: CharacterSetting[] = book.characterSettings || [];
+
+      // 如果 all_chapters 为 false 且提供了 chapter_id，按章节文本过滤
+      if (!all_chapters && chapter_id) {
+        characters = await filterEntitiesForChapter(
+          book,
+          chapter_id,
+          characters,
+          findUniqueCharactersInText,
+        );
+      }
+
+      if (limit && limit > 0) {
+        characters = characters.slice(0, limit);
+      }
 
       return JSON.stringify({
         success: true,
-        characters: characters.map(serializeCharacter),
+        characters: characters.map((char) => ({
+          id: char.id,
+          name: char.name,
+          translation: char.translation.translation,
+          sex: char.sex,
+          description: char.description,
+          speaking_style: char.speakingStyle,
+          aliases: char.aliases?.map((alias) => ({
+            name: alias.name,
+            translation: alias.translation.translation,
+          })),
+        })),
         total: characters.length,
-        all_characters_count: allCharacters.length,
+        all_characters_count: book.characterSettings?.length || 0,
         ...(chapter_id ? { chapter_id } : {}),
         ...(all_chapters ? { all_chapters: true } : {}),
       });

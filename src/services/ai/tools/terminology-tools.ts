@@ -1,38 +1,19 @@
 import { TerminologyService } from 'src/services/terminology-service';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
-import type { Novel, Terminology } from 'src/models/novel';
+import type { Terminology } from 'src/models/novel';
 import type { ToolDefinition } from './types';
 import { cloneDeep } from 'lodash';
-import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
 import { findUniqueTermsInText } from 'src/utils/text-matcher';
-import type { Chapter } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
+import {
+  filterEntitiesForChapter,
+  requireValidKeywords,
+  resolveBookSync,
+} from './chapter-scope-helpers';
 
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
-
-function findChapterById(book: Novel, chapterId: string): Chapter | null {
-  for (const volume of book.volumes || []) {
-    for (const chapter of volume.chapters || []) {
-      if (chapter.id === chapterId) return chapter;
-    }
-  }
-  return null;
-}
-
-async function filterTermsForChapter(
-  book: Novel,
-  chapterId: string,
-  allTerms: Terminology[],
-): Promise<Terminology[]> {
-  const foundChapter = findChapterById(book, chapterId);
-  if (!foundChapter) return [];
-  const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
-  const chapterText = getChapterContentText(chapterWithContent);
-  if (!chapterText) return [];
-  return findUniqueTermsInText(chapterText, allTerms);
-}
 
 export const terminologyTools: ToolDefinition[] = [
   {
@@ -406,28 +387,47 @@ export const terminologyTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
-      if (!bookId) throw new Error('书籍 ID 不能为空');
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const {
         chapter_id,
         all_chapters = false,
         limit,
-      } = args as { chapter_id?: string; all_chapters?: boolean; limit?: number };
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) throw new Error(`书籍不存在: ${bookId}`);
+      } = args as {
+        chapter_id?: string;
+        all_chapters?: boolean;
+        limit?: number;
+      };
+      const book = resolveBookSync(bookId);
 
-      onAction?.({
-        type: 'read',
-        entity: 'term',
-        data: { tool_name: 'list_terms', chapter_id },
-      });
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'term',
+          data: {
+            tool_name: 'list_terms',
+            chapter_id,
+          },
+        });
+      }
 
-      const allTerms: Terminology[] = book.terminologies || [];
-      let terms =
-        !all_chapters && chapter_id
-          ? await filterTermsForChapter(book, chapter_id, allTerms)
-          : allTerms;
-      if (limit && limit > 0) terms = terms.slice(0, limit);
+      let terms: Terminology[] = book.terminologies || [];
+
+      // 如果 all_chapters 为 false 且提供了 chapter_id，按章节文本过滤
+      if (!all_chapters && chapter_id) {
+        terms = await filterEntitiesForChapter(
+          book,
+          chapter_id,
+          terms,
+          findUniqueTermsInText,
+        );
+      }
+
+      if (limit && limit > 0) {
+        terms = terms.slice(0, limit);
+      }
 
       return JSON.stringify({
         success: true,
@@ -438,7 +438,7 @@ export const terminologyTools: ToolDefinition[] = [
           description: term.description,
         })),
         total: terms.length,
-        all_terms_count: allTerms.length,
+        all_terms_count: book.terminologies?.length || 0,
         ...(chapter_id ? { chapter_id } : {}),
         ...(all_chapters ? { all_chapters: true } : {}),
       });
@@ -487,23 +487,9 @@ export const terminologyTools: ToolDefinition[] = [
         translation_only?: boolean;
         include_memory?: boolean;
       };
-      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-        throw new Error('关键词数组不能为空');
-      }
+      const validKeywords = requireValidKeywords(keywords);
 
-      // 过滤掉空字符串
-      const validKeywords = keywords.filter(
-        (k) => k && typeof k === 'string' && k.trim().length > 0,
-      );
-      if (validKeywords.length === 0) {
-        throw new Error('关键词数组不能为空');
-      }
-
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const book = resolveBookSync(bookId);
 
       // 报告读取操作
       if (onAction) {
