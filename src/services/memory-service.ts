@@ -107,6 +107,34 @@ export class MemoryService {
   /**
    * 获取缓存键（bookId:memoryId）
    */
+  /**
+   * 创建 / 导入 Memory 后的共用收尾步骤：
+   * 构建对外的 Memory 对象、更新缓存、失效书籍缓存、派发变更事件、入列 embedding 队列。
+   */
+  private static finalizeMemoryPersistence(
+    memory: MemoryStorage,
+    action: 'created' | 'imported',
+  ): Memory {
+    const result: Memory = {
+      id: memory.id,
+      bookId: memory.bookId,
+      content: memory.content,
+      summary: memory.summary,
+      createdAt: memory.createdAt,
+      lastAccessedAt: memory.lastAccessedAt,
+    };
+
+    const cacheKey = this.getCacheKey(memory.bookId, memory.id);
+    this.memoryCache.set(cacheKey, result);
+    this.evictCacheIfNeeded();
+
+    this.invalidateBookMemoryCache(memory.bookId);
+    this.dispatchMemoryChanged({ bookId: memory.bookId, memoryId: result.id, action });
+    EmbeddingQueue.enqueue(result.id, memory.bookId);
+
+    return result;
+  }
+
   private static getCacheKey(bookId: string, memoryId: string): string {
     return `${bookId}:${memoryId}`;
   }
@@ -239,29 +267,7 @@ export class MemoryService {
       await store.put(memory);
       await tx.done;
 
-      const result: Memory = {
-        id: memory.id,
-        bookId: memory.bookId,
-        content: memory.content,
-        summary: memory.summary,
-        createdAt: memory.createdAt,
-        lastAccessedAt: memory.lastAccessedAt,
-      };
-
-      // 更新缓存
-      const cacheKey = this.getCacheKey(bookId, memory.id);
-      this.memoryCache.set(cacheKey, result);
-      this.evictCacheIfNeeded();
-
-      // 清除该书籍的搜索结果缓存（因为新增了记忆）
-
-      this.invalidateBookMemoryCache(bookId);
-
-      this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'created' });
-
-      EmbeddingQueue.enqueue(result.id, bookId);
-
-      return result;
+      return this.finalizeMemoryPersistence(memory, 'created');
     } catch (error) {
       console.error('Failed to create memory:', error);
       throw new Error('创建 Memory 失败');
@@ -475,26 +481,7 @@ export class MemoryService {
       await store.put(memory);
       await tx.done;
 
-      const result: Memory = {
-        id: memory.id,
-        bookId: memory.bookId,
-        content: memory.content,
-        summary: memory.summary,
-        createdAt: memory.createdAt,
-        lastAccessedAt: memory.lastAccessedAt,
-      };
-
-      const cacheKey = this.getCacheKey(bookId, memory.id);
-      this.memoryCache.set(cacheKey, result);
-      this.evictCacheIfNeeded();
-
-      this.invalidateBookMemoryCache(bookId);
-
-      this.dispatchMemoryChanged({ bookId, memoryId: result.id, action: 'imported' });
-
-      EmbeddingQueue.enqueue(result.id, bookId);
-
-      return result;
+      return this.finalizeMemoryPersistence(memory, 'imported');
     } catch (error) {
       console.error('Failed to create memory with id:', error);
       if (error instanceof Error) {
