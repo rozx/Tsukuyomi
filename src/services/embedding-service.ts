@@ -13,6 +13,7 @@
 
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
 
+// fallow-ignore-next-line unused-export
 export const MODEL_ID = 'onnx-community/gte-multilingual-base';
 // 模型 id + 截取维度 + 前缀方案 + pooling 方案 共同构成 embedding 空间身份,任一变化必须 bump 版本号,
 // EmbeddingQueue backlog 扫描会把版本不匹配的记录当作 stale 自动重算。
@@ -209,6 +210,7 @@ export class EmbeddingService {
    * Transformers.js 通过 Cache API 持久化模型权重,命中则说明之前在本设备加载过。
    * 用于启动时判断是否可以静默 warmup(无需等用户再次触发下载)。
    */
+  // fallow-ignore-next-line unused-class-member
   static async isModelCachedInBrowser(): Promise<boolean> {
     try {
       if (typeof caches === 'undefined') return false;

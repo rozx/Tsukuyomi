@@ -91,6 +91,7 @@ export class TermTranslationService {
    * @param options 翻译选项（可选）
    * @returns 翻译后的文本和任务 ID（如果使用了任务管理）
    */
+  // fallow-ignore-next-line unused-class-member
   static async translate(
     text: string,
     model: AIModel,

@@ -44,6 +44,7 @@ export class AIServiceFactory {
    * @param config 服务配置（至少需要 apiKey 和可选的 baseUrl）
    * @returns 可用模型列表
    */
+  // fallow-ignore-next-line unused-class-member
   static async getAvailableModels(
     provider: AIProvider,
     config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,

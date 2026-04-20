@@ -32,6 +32,7 @@ export abstract class BaseAIService implements AIService {
    * 获取模型配置信息
    * 子类需要实现 makeConfigRequest 方法
    */
+  // fallow-ignore-next-line unused-class-member
   async getConfig(config: AIServiceConfig): Promise<AIConfigResult> {
     try {
       // 验证配置
@@ -105,6 +106,7 @@ export abstract class BaseAIService implements AIService {
    * @param onChunk 流式数据回调函数，每次收到数据块时调用
    * @returns 生成的完整文本结果
    */
+  // fallow-ignore-next-line unused-class-member
   async generateText(
     config: AIServiceConfig,
     request: TextGenerationRequest,
@@ -164,6 +166,7 @@ export abstract class BaseAIService implements AIService {
    * 获取可用的模型列表
    * 子类需要实现 makeAvailableModelsRequest 方法
    */
+  // fallow-ignore-next-line unused-class-member
   async getAvailableModels(
     config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
   ): Promise<AvailableModelsResult> {

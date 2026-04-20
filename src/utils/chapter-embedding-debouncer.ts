@@ -41,6 +41,7 @@ export function markChapterDirty(chapterId: string): void {
 /**
  * 取消防抖(通常用于章节被删除)。
  */
+// fallow-ignore-next-line unused-export
 export function cancelChapterDirty(chapterId: string): void {
   if (!chapterId) return;
   const existing = timers.get(chapterId);

@@ -352,6 +352,7 @@ function replaceKeywordInCjkFallback(text: string, keyword: string, replacement:
   return parts.join('');
 }
 
+// fallow-ignore-next-line unused-export
 export function replaceWholeKeyword(text: string, keyword: string, replacement: string): string {
   if (!text || !keyword) return text;
   const { isEnglishWord, containsCJK, textHasCJK, escapedKeyword } = classifyKeywordContext(

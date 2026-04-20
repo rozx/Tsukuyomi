@@ -51,6 +51,7 @@ export class SyosetuScraper extends BaseScraper {
    * @param url syosetu.org 小说 URL（可以是章节 URL，会自动提取小说主页）
    * @returns Promise<FetchNovelResult> 获取结果
    */
+  // fallow-ignore-next-line unused-class-member
   async fetchNovel(url: string): Promise<FetchNovelResult> {
     try {
       // 验证 URL
@@ -84,6 +85,7 @@ export class SyosetuScraper extends BaseScraper {
    * @returns Promise<string> 章节内容
    * @throws {Error} 如果获取失败
    */
+  // fallow-ignore-next-line unused-class-member
   async fetchChapterContent(chapterUrl: string): Promise<string> {
     const html = await this.fetchPage(chapterUrl, '/api/syosetu');
     const paragraphs = this.extractParagraphsFromHtml(html);

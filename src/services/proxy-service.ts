@@ -117,63 +117,6 @@ export class ProxyService {
   }
 
   /**
-   * 获取下一个代理服务 URL
-   * @param originalUrl 原始 URL（用于查找网站特定的代理）
-   * @returns 下一个代理服务 URL 或 null（如果没有更多代理服务）
-   */
-  static getNextProxyUrl(originalUrl?: string | null): string | null {
-    const currentUrl = GlobalConfig.getProxyUrl();
-
-    // 如果提供了原始 URL，优先使用网站特定的代理列表
-    if (originalUrl) {
-      const domain = this.extractDomain(originalUrl);
-      if (domain) {
-        const rootDomain = extractRootDomain(domain);
-        if (rootDomain) {
-          const siteProxies = GlobalConfig.getProxiesForSite(rootDomain);
-          if (siteProxies.length > 0) {
-            // 查找当前代理在网站特定列表中的索引
-            const currentIndex = siteProxies.findIndex((url) => url === currentUrl);
-            if (currentIndex >= 0) {
-              // 切换到下一个网站特定的代理
-              const nextIndex = (currentIndex + 1) % siteProxies.length;
-              const nextProxy = siteProxies[nextIndex];
-              return nextProxy ?? null;
-            } else if (siteProxies.length > 0) {
-              // 如果当前代理不在列表中，使用第一个
-              const firstProxy = siteProxies[0];
-              return firstProxy ?? null;
-            }
-          }
-        }
-      }
-    }
-
-    // 查找当前代理在代理列表中的索引
-    const proxyList = GlobalConfig.getProxyList();
-    const currentIndex = proxyList.findIndex((proxy) => proxy.url === currentUrl);
-
-    // 如果找到当前代理，切换到下一个
-    if (currentIndex >= 0 && proxyList.length > 0) {
-      const nextIndex = (currentIndex + 1) % proxyList.length;
-      const nextProxy = proxyList[nextIndex];
-      if (nextProxy) {
-        return nextProxy.url;
-      }
-    }
-
-    // 如果当前代理不在列表中，尝试使用第一个代理
-    if (proxyList.length > 0) {
-      const firstProxy = proxyList[0];
-      if (firstProxy) {
-        return firstProxy.url;
-      }
-    }
-
-    return null;
-  }
-
-  /**
    * 检查错误是否是网络错误（需要切换代理的错误）
    * @param error 错误对象
    * @returns 是否是网络错误

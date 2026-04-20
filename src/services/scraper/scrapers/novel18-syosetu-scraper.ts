@@ -56,6 +56,7 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
    * @param url novel18.syosetu.com 小说 URL（可以是章节 URL，会自动提取小说主页）
    * @returns Promise<FetchNovelResult> 获取结果
    */
+  // fallow-ignore-next-line unused-class-member
   override async fetchNovel(url: string): Promise<FetchNovelResult> {
     try {
       // 验证 URL

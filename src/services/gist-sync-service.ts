@@ -14,7 +14,6 @@ import {
   downloadWithManifest,
   uploadIncremental,
   conditionalGetGist,
-  remoteManifestToHashes,
   type IncrementalDownloadResult,
   type IncrementalUploadResult,
   type UploadPayload,
@@ -2312,16 +2311,6 @@ export class GistSyncService {
     }
     return { status: 'changed', etag: result.etag, files: result.files };
   }
-
-  /**
-   * 将 manifest 中的条目哈希提取为平面字典，供 SyncConfig 持久化。
-   */
-  static manifestToKnownHashes = remoteManifestToHashes;
-
-  /**
-   * manifest 文件的固定名称（导出以便外部一致使用）
-   */
-  static readonly MANIFEST_FILE_NAME = MANIFEST_FILE_NAME;
 
   /**
    * 删除 Gist

@@ -129,6 +129,7 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 获取章节内容
    */
+  // fallow-ignore-next-line unused-class-member
   async fetchChapterContent(chapterUrl: string): Promise<string> {
     const html = await this.fetchPage(chapterUrl);
     const paragraphs = this.extractParagraphsFromHtml(html);

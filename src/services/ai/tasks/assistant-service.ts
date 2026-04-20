@@ -1612,6 +1612,7 @@ export class AssistantService {
    * @param userMessage 用户消息
    * @param options 选项
    */
+  // fallow-ignore-next-line unused-class-member
   static async chat(
     model: AIModel,
     userMessage: string,

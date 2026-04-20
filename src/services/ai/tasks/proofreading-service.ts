@@ -104,6 +104,7 @@ export class ProofreadingService {
    * @param options 校对选项（可选）
    * @returns 校对后的文本和任务 ID（如果使用了任务管理）
    */
+  // fallow-ignore-next-line unused-class-member
   static async proofread(
     content: Paragraph[],
     model: AIModel,
@@ -159,6 +160,7 @@ export class ProofreadingService {
    * @param model AI 模型配置
    * @param options 校对选项
    */
+  // fallow-ignore-next-line unused-class-member
   static async proofreadSingle(
     paragraph: Paragraph,
     model: AIModel,

@@ -104,6 +104,7 @@ export abstract class BaseScraper implements NovelScraper {
    * @param url 要验证的 URL
    * @returns 是否为支持的 URL
    */
+  // fallow-ignore-next-line unused-class-member
   abstract isValidUrl(url: string): boolean;
 
   /**
@@ -111,6 +112,7 @@ export abstract class BaseScraper implements NovelScraper {
    * @param url 小说 URL
    * @returns Promise<FetchNovelResult> 获取结果
    */
+  // fallow-ignore-next-line unused-class-member
   abstract fetchNovel(url: string): Promise<FetchNovelResult>;
 
   /**
@@ -119,6 +121,7 @@ export abstract class BaseScraper implements NovelScraper {
    * @returns Promise<string> 章节内容
    * @throws {Error} 如果获取失败
    */
+  // fallow-ignore-next-line unused-class-member
   abstract fetchChapterContent(chapterUrl: string): Promise<string>;
 
   /**

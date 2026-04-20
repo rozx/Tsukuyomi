@@ -290,6 +290,7 @@ export class FullTextIndexService {
   /**
    * 搜索段落
    */
+  // fallow-ignore-next-line unused-class-member
   static async search(
     bookId: string,
     keywords: string[],
@@ -456,6 +457,7 @@ export class FullTextIndexService {
   /**
    * 更新索引（当章节内容改变时）
    */
+  // fallow-ignore-next-line unused-class-member
   static async updateIndexForChapter(bookId: string, _chapterId: string): Promise<void> {
     // 使索引失效，下次搜索时重建
     await this.invalidateIndex(bookId);
