@@ -601,6 +601,66 @@ export class GistSyncService {
   }
 
   /**
+   * 读取设置文件（含截断 raw_url 回退）并把 aiModels / appSettings / coverHistory / memories 填入 result。
+   * 解析失败只打 warn/error，不抛出。
+   */
+  private async applySettingsFileToResult(
+    settingsFile: GistFileLike | null | undefined,
+    result: GistSyncData,
+    rawUrlLabel: string,
+    errorLogLabel: string,
+  ): Promise<void> {
+    if (!settingsFile) return;
+
+    try {
+      let settingsContent = settingsFile.content;
+
+      // 检查设置文件是否被截断（GitHub API 对大文件返回 truncated=true）
+      const isSettingsTruncated = settingsFile.truncated === true || !settingsContent;
+
+      // 如果文件被截断，尝试从 raw_url 获取完整内容（带重试）
+      if (isSettingsTruncated && settingsFile.raw_url) {
+        const rawUrl = settingsFile.raw_url;
+        try {
+          settingsContent = await withRetry(async () => {
+            const rawResponse = await fetch(rawUrl);
+            if (!rawResponse.ok) {
+              throw new Error(`HTTP ${rawResponse.status}: ${rawResponse.statusText}`);
+            }
+            return rawResponse.text();
+          }, rawUrlLabel);
+        } catch (fetchError) {
+          console.warn('[GistSyncService] 从 raw_url 获取设置文件失败（已重试）:', fetchError);
+        }
+      }
+
+      if (settingsContent) {
+        const settingsData = (await this.parseGistContent(settingsContent)) as {
+          aiModels?: AIModel[];
+          appSettings?: AppSettings;
+          coverHistory?: CoverHistoryItem[];
+          memories?: Memory[];
+        };
+
+        if (settingsData.aiModels) {
+          result.aiModels = this.deserializeDates(settingsData.aiModels);
+        }
+        if (settingsData.appSettings) {
+          result.appSettings = this.deserializeDates(settingsData.appSettings);
+        }
+        if (settingsData.coverHistory) {
+          result.coverHistory = this.deserializeDates(settingsData.coverHistory);
+        }
+        if (settingsData.memories) {
+          result.memories = this.deserializeDates(settingsData.memories);
+        }
+      }
+    } catch (parseError) {
+      console.error(errorLogLabel, parseError);
+    }
+  }
+
+  /**
    * 将 Date 对象转换为可序列化的格式
    */
   private serializeDates<T>(obj: T): T {
@@ -1422,59 +1482,12 @@ export class GistSyncService {
       }
 
       // 1. 读取设置文件
-      const settingsFile = gistFiles[GIST_FILE_NAMES.SETTINGS];
-      if (settingsFile) {
-        try {
-          let settingsContent = settingsFile.content;
-
-          // 检查设置文件是否被截断（GitHub API 对大文件返回 truncated=true）
-          const isSettingsTruncated = settingsFile.truncated === true || !settingsContent;
-
-          // 如果文件被截断，尝试从 raw_url 获取完整内容（带重试）
-          if (isSettingsTruncated && settingsFile.raw_url) {
-            const rawUrl = settingsFile.raw_url;
-            try {
-              settingsContent = await withRetry(async () => {
-                const rawResponse = await fetch(rawUrl);
-                if (!rawResponse.ok) {
-                  throw new Error(`HTTP ${rawResponse.status}: ${rawResponse.statusText}`);
-                }
-                return rawResponse.text();
-              }, '获取设置文件 raw_url');
-            } catch (fetchError) {
-              console.warn('[GistSyncService] 从 raw_url 获取设置文件失败（已重试）:', fetchError);
-            }
-          }
-
-          if (settingsContent) {
-            const settingsData = (await this.parseGistContent(settingsContent)) as {
-              aiModels?: AIModel[];
-              appSettings?: AppSettings;
-              coverHistory?: CoverHistoryItem[];
-              memories?: Memory[];
-            };
-
-            if (settingsData.aiModels) {
-              result.aiModels = this.deserializeDates(settingsData.aiModels);
-            }
-            if (settingsData.appSettings) {
-              result.appSettings = this.deserializeDates(settingsData.appSettings);
-            }
-            if (settingsData.coverHistory) {
-              result.coverHistory = this.deserializeDates(settingsData.coverHistory);
-            }
-            if (settingsData.memories) {
-              result.memories = this.deserializeDates(settingsData.memories);
-            }
-          }
-        } catch (parseError) {
-          // 记录设置文件解析错误，但继续处理书籍
-          console.error(
-            '[GistSyncService] 设置文件解析失败，aiModels/appSettings/coverHistory 可能为空:',
-            parseError,
-          );
-        }
-      }
+      await this.applySettingsFileToResult(
+        gistFiles[GIST_FILE_NAMES.SETTINGS],
+        result,
+        '获取设置文件 raw_url',
+        '[GistSyncService] 设置文件解析失败，aiModels/appSettings/coverHistory 可能为空:',
+      );
 
       // 2. 读取所有书籍文件
       // 首先收集所有书籍 ID（包括分块的和未分块的）
@@ -2094,59 +2107,12 @@ export class GistSyncService {
       };
 
       // 读取设置文件
-      const settingsFile = gistFiles[GIST_FILE_NAMES.SETTINGS];
-      if (settingsFile) {
-        try {
-          let settingsContent = settingsFile.content;
-
-          // 检查设置文件是否被截断（GitHub API 对大文件返回 truncated=true）
-          const isSettingsTruncated = settingsFile.truncated === true || !settingsContent;
-
-          // 如果文件被截断，尝试从 raw_url 获取完整内容（带重试）
-          if (isSettingsTruncated && settingsFile.raw_url) {
-            const rawUrl = settingsFile.raw_url;
-            try {
-              settingsContent = await withRetry(async () => {
-                const rawResponse = await fetch(rawUrl);
-                if (!rawResponse.ok) {
-                  throw new Error(`HTTP ${rawResponse.status}: ${rawResponse.statusText}`);
-                }
-                return rawResponse.text();
-              }, '获取设置文件 raw_url（历史版本）');
-            } catch (fetchError) {
-              console.warn('[GistSyncService] 从 raw_url 获取设置文件失败（已重试）:', fetchError);
-            }
-          }
-
-          if (settingsContent) {
-            const settingsData = (await this.parseGistContent(settingsContent)) as {
-              aiModels?: AIModel[];
-              appSettings?: AppSettings;
-              coverHistory?: CoverHistoryItem[];
-              memories?: Memory[];
-            };
-
-            if (settingsData.aiModels) {
-              result.aiModels = this.deserializeDates(settingsData.aiModels);
-            }
-            if (settingsData.appSettings) {
-              result.appSettings = this.deserializeDates(settingsData.appSettings);
-            }
-            if (settingsData.coverHistory) {
-              result.coverHistory = this.deserializeDates(settingsData.coverHistory);
-            }
-            if (settingsData.memories) {
-              result.memories = this.deserializeDates(settingsData.memories);
-            }
-          }
-        } catch (parseError) {
-          // 记录设置文件解析错误，但继续处理
-          console.error(
-            '[GistSyncService] 设置文件解析失败（历史版本），aiModels/appSettings/coverHistory 可能为空:',
-            parseError,
-          );
-        }
-      }
+      await this.applySettingsFileToResult(
+        gistFiles[GIST_FILE_NAMES.SETTINGS],
+        result,
+        '获取设置文件 raw_url（历史版本）',
+        '[GistSyncService] 设置文件解析失败（历史版本），aiModels/appSettings/coverHistory 可能为空:',
+      );
 
       // 收集书籍 ID
       const novelIds = new Set<string>();
