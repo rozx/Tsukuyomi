@@ -60,8 +60,9 @@ const modelOptions = computed(() => {
   }));
 });
 
-// 表单数据
-const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
+type AIModelFormData = Partial<AIModel> & { isDefault: AIModel['isDefault'] };
+
+const createEmptyAIModelForm = (): AIModelFormData => ({
   name: '',
   provider: 'openai',
   model: '',
@@ -81,6 +82,9 @@ const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
   customHeaders: {},
 });
 
+// 表单数据
+const formData = ref<AIModelFormData>(createEmptyAIModelForm());
+
 // 表单验证错误
 const formErrors = ref<Record<string, string>>({});
 
@@ -93,7 +97,7 @@ const {
   confirmDiscardAndClose,
   cancelDiscardAndKeepEditing,
   handleDialogVisibleChange,
-} = useFormDialogCloseGuard<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
+} = useFormDialogCloseGuard<AIModelFormData>({
   formData,
   visible: computed(() => props.visible),
   emit,
@@ -109,25 +113,7 @@ const providerOptions = [
 
 // 重置表单
 const resetForm = () => {
-  formData.value = {
-    name: '',
-    provider: 'openai',
-    model: '',
-    temperature: 0.7,
-    maxInputTokens: 0, // 0 表示无限制
-    maxOutputTokens: 0, // 0 表示无限制
-    apiKey: '',
-    baseUrl: '',
-    enabled: true,
-    useCorsProxy: true,
-    isDefault: {
-      translation: { enabled: false, temperature: 0.7 },
-      proofreading: { enabled: false, temperature: 0.7 },
-      termsTranslation: { enabled: false, temperature: 0.7 },
-      assistant: { enabled: false, temperature: 0.7 },
-    },
-    customHeaders: {},
-  } as typeof formData.value;
+  formData.value = createEmptyAIModelForm();
   formErrors.value = {};
   aiConfig.value = null;
 };

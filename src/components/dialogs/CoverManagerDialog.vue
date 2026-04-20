@@ -113,6 +113,24 @@ watch(
   }
 );
 
+// 新封面统一入库 + 选中 + 成功 toast
+const registerAndSelectCover = (
+  newCover: CoverImage,
+  toastContent: { summary: string; detail: string },
+) => {
+  void coverHistoryStore.addCover(newCover);
+  const addedCover = allCovers.value.find((c) => c.url === newCover.url);
+  if (addedCover) {
+    selectedCoverId.value = addedCover.id;
+  }
+  emit('update:cover', newCover);
+  toast.add({
+    severity: 'success',
+    ...toastContent,
+    life: 2000,
+  });
+};
+
 // 上传封面图片
 const handleFileSelect = async (event: Event) => {
   const input = event.target as HTMLInputElement;
@@ -130,22 +148,7 @@ const handleFileSelect = async (event: Event) => {
       ...(result.deleteUrl && { deleteUrl: result.deleteUrl }),
     };
 
-    // 添加到历史记录
-    void coverHistoryStore.addCover(newCover);
-
-    // 选中新上传的封面
-    const addedCover = allCovers.value.find((c) => c.url === newCover.url);
-    if (addedCover) {
-      selectedCoverId.value = addedCover.id;
-    }
-
-    emit('update:cover', newCover);
-    toast.add({
-      severity: 'success',
-      summary: '上传成功',
-      detail: '封面图片已上传',
-      life: 2000,
-    });
+    registerAndSelectCover(newCover, { summary: '上传成功', detail: '封面图片已上传' });
 
     // 重置文件输入
     if (fileInputRef.value) {
@@ -208,24 +211,9 @@ const handleAddByUrl = () => {
     url: url,
   };
 
-  // 添加到历史记录
-  void coverHistoryStore.addCover(newCover);
-
-  // 选中新添加的封面
-  const addedCover = allCovers.value.find((c) => c.url === newCover.url);
-  if (addedCover) {
-    selectedCoverId.value = addedCover.id;
-  }
-
-  emit('update:cover', newCover);
+  registerAndSelectCover(newCover, { summary: '添加成功', detail: '封面已通过 URL 添加' });
   urlInput.value = '';
   showUrlInput.value = false;
-  toast.add({
-    severity: 'success',
-    summary: '添加成功',
-    detail: '封面已通过 URL 添加',
-    life: 2000,
-  });
 };
 
 // 选择封面
