@@ -86,46 +86,19 @@ export function buildFormattedChunks(
   chunkSize: number,
   originalIndices?: Map<string, number>,
 ): Array<{ text: string; paragraphIds: string[] }> {
-  const chunks: Array<{ text: string; paragraphIds: string[] }> = [];
-  let currentChunkText = '';
-  let currentChunkParagraphIds: string[] = [];
-
-  for (let i = 0; i < paragraphs.length; i++) {
-    const paragraph = paragraphs[i];
-    if (!paragraph) continue;
-
-    // 获取段落的当前翻译
-    const currentTranslation = getSelectedTranslation(paragraph);
-
-    // 使用原始索引（如果提供），否则使用数组索引
-    const originalIndex = originalIndices?.get(paragraph.id) ?? i;
-    // 展示索引从 1 开始（仍保持章节原始位置语义）
-    const displayIndex = originalIndex + 1;
-    // 格式化段落：[{displayIndex}] [ID: {id}] 原文: {原文}\n翻译: {当前翻译}
-    const paragraphText = `[${displayIndex}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
-
-    // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
-    if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
-      chunks.push({
-        text: currentChunkText,
-        paragraphIds: currentChunkParagraphIds,
-      });
-      currentChunkText = '';
-      currentChunkParagraphIds = [];
-    }
-    currentChunkText += paragraphText;
-    currentChunkParagraphIds.push(paragraph.id);
-  }
-
-  // 添加最后一个块
-  if (currentChunkText.length > 0) {
-    chunks.push({
-      text: currentChunkText,
-      paragraphIds: currentChunkParagraphIds,
-    });
-  }
-
-  return chunks;
+  return buildChunks(
+    paragraphs,
+    chunkSize,
+    (paragraph, arrayIndex) => {
+      const currentTranslation = getSelectedTranslation(paragraph);
+      // 使用原始索引（如果提供），否则使用数组索引；展示索引从 1 开始
+      const originalIndex = originalIndices?.get(paragraph.id) ?? arrayIndex;
+      const displayIndex = originalIndex + 1;
+      return `[${displayIndex}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
+    },
+    // 调用方已提前过滤空段落，这里保留所有段落，仅按 chunkSize 切分
+    () => true,
+  );
 }
 
 /**
