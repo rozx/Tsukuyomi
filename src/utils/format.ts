@@ -31,6 +31,31 @@ export function formatWordCount(count: number | null): string {
 }
 
 /**
+ * 相对时间 + 自定义 fallback 的共享核心实现。
+ * 距今 < 7 天按"刚刚 / N 分钟前 / N 小时前 / N 天前"展示；
+ * 超过则调用 `fallback` 自定义远期格式。
+ */
+export function formatRelativeTimeWithFallback(
+  timestamp: number,
+  fallback: (date: Date) => string,
+  nowMs?: number,
+): string {
+  const date = new Date(timestamp);
+  const now = nowMs !== undefined ? new Date(nowMs) : new Date();
+  const diff = now.getTime() - date.getTime();
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (seconds < 60) return '刚刚';
+  if (minutes < 60) return `${minutes} 分钟前`;
+  if (hours < 24) return `${hours} 小时前`;
+  if (days < 7) return `${days} 天前`;
+  return fallback(date);
+}
+
+/**
  * 将日期格式化为 YYYY-MM-DD 字符串。无效日期或空值返回空字符串。
  */
 export function formatDate(date: Date | string | undefined | null): string {
@@ -56,30 +81,17 @@ export function formatRelativeTime(
   if (!timestamp || timestamp === 0) {
     return '从未';
   }
-  const date = new Date(timestamp);
-  const now = nowMs !== undefined ? new Date(nowMs) : new Date();
-  const diff = now.getTime() - date.getTime();
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (seconds < 60) {
-    return '刚刚';
-  } else if (minutes < 60) {
-    return `${minutes} 分钟前`;
-  } else if (hours < 24) {
-    return `${hours} 小时前`;
-  } else if (days < 7) {
-    return `${days} 天前`;
-  } else {
-    return date.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
+  return formatRelativeTimeWithFallback(
+    timestamp,
+    (date) =>
+      date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    nowMs,
+  );
 }
 
