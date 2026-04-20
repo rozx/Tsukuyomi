@@ -1,5 +1,11 @@
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { ComputedRef, Ref } from 'vue';
+import { isEqual } from 'lodash';
+
+interface UnsavedDialogEmit {
+  (event: 'cancel'): void;
+  (event: 'update:visible', value: boolean): void;
+}
 
 /**
  * 对话框「未保存更改」关闭确认 composable。
@@ -15,7 +21,7 @@ import type { ComputedRef, Ref } from 'vue';
 export function useUnsavedChangesDialog(params: {
   hasUnsavedChanges: Ref<boolean> | ComputedRef<boolean>;
   loading?: Ref<boolean> | ComputedRef<boolean>;
-  emit: (event: 'update:visible', value: boolean) => void;
+  emit: UnsavedDialogEmit;
   closeDialogImmediately: () => void;
 }) {
   const { hasUnsavedChanges, loading, emit, closeDialogImmediately } = params;
@@ -64,5 +70,49 @@ export function useUnsavedChangesDialog(params: {
     confirmDiscardAndClose,
     cancelDiscardAndKeepEditing,
     handleDialogVisibleChange,
+  };
+}
+
+/**
+ * 表单对话框的完整关闭守卫，包含初始快照、`hasUnsavedChanges` 计算以及
+ * `closeDialogImmediately` 默认实现（emit 'cancel' + 'update:visible=false'）。
+ *
+ * 适用于 AIModelDialog / BookDialog 等「打开时保存快照、关闭时比较 formData」的表单弹窗。
+ * 宿主只需提供表单数据 Ref、对话框 visible 状态以及 emit。
+ */
+export function useFormDialogCloseGuard<T>(params: {
+  formData: Ref<T>;
+  visible: Ref<boolean> | ComputedRef<boolean>;
+  loading?: Ref<boolean> | ComputedRef<boolean>;
+  emit: UnsavedDialogEmit;
+}) {
+  const { formData, visible, loading, emit } = params;
+
+  const initialFormSnapshot = ref<T | null>(null) as Ref<T | null>;
+
+  const hasUnsavedChanges = computed(() => {
+    if (!visible.value || !initialFormSnapshot.value) {
+      return false;
+    }
+    return !isEqual(initialFormSnapshot.value, formData.value);
+  });
+
+  const closeDialogImmediately = () => {
+    emit('cancel');
+    emit('update:visible', false);
+  };
+
+  const guards = useUnsavedChangesDialog({
+    hasUnsavedChanges,
+    ...(loading ? { loading } : {}),
+    emit,
+    closeDialogImmediately,
+  });
+
+  return {
+    initialFormSnapshot,
+    hasUnsavedChanges,
+    closeDialogImmediately,
+    ...guards,
   };
 }

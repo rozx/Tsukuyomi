@@ -31,6 +31,19 @@ export function formatWordCount(count: number | null): string {
 }
 
 /**
+ * 将日期格式化为 YYYY-MM-DD 字符串。无效日期或空值返回空字符串。
+ */
+export function formatDate(date: Date | string | undefined | null): string {
+  if (!date) return '';
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * 格式化时间戳为相对时间（如：刚刚、x 分钟前、x 小时前等）
  * @param timestamp 时间戳（毫秒）
  * @param nowMs 当前时间戳（毫秒，可选）。传入该参数可用于让 UI 基于响应式 now 刷新显示。

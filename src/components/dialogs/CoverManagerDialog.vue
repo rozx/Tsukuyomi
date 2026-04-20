@@ -6,6 +6,7 @@ import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ImageUploadService } from 'src/services/image-upload-service';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
+import { copyTextWithToast } from 'src/utils/clipboard';
 import type { CoverImage } from 'src/models/novel';
 
 const props = defineProps<{
@@ -287,25 +288,10 @@ const formatFileSize = (bytes: number): string => {
 
 // 复制封面 URL
 const handleCopyUrl = async () => {
-  if (!selectedCover.value?.url) return;
-
-  try {
-    await navigator.clipboard.writeText(selectedCover.value.url);
-    toast.add({
-      severity: 'success',
-      summary: '已复制',
-      detail: '封面 URL 已复制到剪贴板',
-      life: 2000,
-    });
-  } catch (error) {
-    console.error('复制失败:', error);
-    toast.add({
-      severity: 'error',
-      summary: '复制失败',
-      detail: '无法复制 URL 到剪贴板',
-      life: 3000,
-    });
-  }
+  await copyTextWithToast(selectedCover.value?.url, toast, {
+    successDetail: '封面 URL 已复制到剪贴板',
+    errorDetail: '无法复制 URL 到剪贴板',
+  });
 };
 
 // 关闭对话框

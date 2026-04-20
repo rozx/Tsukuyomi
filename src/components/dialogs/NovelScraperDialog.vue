@@ -19,21 +19,11 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useUiStore } from 'src/stores/ui';
 import {
   formatWordCount,
+  formatDate,
   UniqueIdGenerator,
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
 } from 'src/utils';
-
-// 格式化日期显示
-const formatDate = (date: Date | string | undefined): string => {
-  if (!date) return '';
-  const d = date instanceof Date ? date : new Date(date);
-  if (isNaN(d.getTime())) return '';
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 const props = withDefaults(
   defineProps<{

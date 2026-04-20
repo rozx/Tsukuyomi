@@ -11,7 +11,7 @@ import Slider from 'primevue/slider';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useElectron } from 'src/composables/useElectron';
-import { useUnsavedChangesDialog } from 'src/composables/dialogs/useUnsavedChangesDialog';
+import { useFormDialogCloseGuard } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from 'src/services/ai';
@@ -83,32 +83,20 @@ const formData = ref<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
 
 // 表单验证错误
 const formErrors = ref<Record<string, string>>({});
-const initialFormSnapshot = ref<(Partial<AIModel> & { isDefault: AIModel['isDefault'] }) | null>(
-  null,
-);
-
-const hasUnsavedChanges = computed(() => {
-  if (!props.visible || !initialFormSnapshot.value) {
-    return false;
-  }
-  return !isEqual(initialFormSnapshot.value, formData.value);
-});
-
-const closeDialogImmediately = () => {
-  emit('cancel');
-  emit('update:visible', false);
-};
 
 const {
+  initialFormSnapshot,
+  hasUnsavedChanges,
+  closeDialogImmediately,
   showUnsavedCloseConfirm,
   requestCloseDialog,
   confirmDiscardAndClose,
   cancelDiscardAndKeepEditing,
   handleDialogVisibleChange,
-} = useUnsavedChangesDialog({
-  hasUnsavedChanges,
+} = useFormDialogCloseGuard<Partial<AIModel> & { isDefault: AIModel['isDefault'] }>({
+  formData,
+  visible: computed(() => props.visible),
   emit,
-  closeDialogImmediately,
 });
 
 const hasChildDialogOpen = computed(() => showUnsavedCloseConfirm.value);
