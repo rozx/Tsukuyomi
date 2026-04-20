@@ -1,4 +1,4 @@
-import type { Novel, Chapter } from 'src/models/novel';
+import type { Novel, Chapter, Paragraph } from 'src/models/novel';
 import { normalizeTranslationSymbols } from './translation-normalizer';
 
 /**
@@ -59,5 +59,24 @@ export function formatTranslationForDisplay(
   }
 
   return result;
+}
+
+/**
+ * 读取段落的"当前选中"翻译文本并应用显示层格式化。
+ * 如果段落没有 selectedTranslationId 或没有匹配的 translation，返回空字符串。
+ */
+export function getSelectedParagraphTranslationText(
+  paragraph: Paragraph,
+  book?: Novel | null,
+  chapter?: Chapter | null,
+): string {
+  if (!paragraph.selectedTranslationId || !paragraph.translations) {
+    return '';
+  }
+  const selected = paragraph.translations.find(
+    (t) => t.id === paragraph.selectedTranslationId,
+  );
+  const translation = selected?.translation || '';
+  return formatTranslationForDisplay(translation, book || undefined, chapter || undefined);
 }
 

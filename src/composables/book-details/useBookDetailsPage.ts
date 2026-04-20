@@ -34,8 +34,8 @@ import {
   getChapterDisplayTitle,
   findUniqueTermsInText,
   findUniqueCharactersInText,
-  formatTranslationForDisplay,
 } from 'src/utils';
+import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { toMillis } from 'src/utils/time-utils';
 import { cloneDeep } from 'lodash';
@@ -1416,16 +1416,8 @@ function createBookDetailsPageContext() {
     }
   });
 
-  const getParagraphTranslationText = (paragraph: Paragraph): string => {
-    if (!paragraph.selectedTranslationId || !paragraph.translations) {
-      return '';
-    }
-    const selectedTranslation = paragraph.translations.find(
-      (t) => t.id === paragraph.selectedTranslationId,
-    );
-    const translation = selectedTranslation?.translation || '';
-    return formatTranslationForDisplay(translation, book.value, selectedChapter.value || undefined);
-  };
+  const getParagraphTranslationText = (paragraph: Paragraph): string =>
+    getSelectedParagraphTranslationText(paragraph, book.value, selectedChapter.value);
 
   const translatedCharCount = computed(() => {
     if (!selectedChapterParagraphs.value.length) return 0;
