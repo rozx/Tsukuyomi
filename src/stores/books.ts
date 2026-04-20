@@ -94,11 +94,12 @@ export const useBooksStore = defineStore('books', {
      * 批量添加书籍（一次性保存到 IndexedDB）
      */
     async bulkAddBooks(books: Novel[]): Promise<void> {
+      const existingBooksMap = new Map(this.books.map((b) => [b.id, b]));
       const newBooksMap = new Map<string, Novel>();
       const removedChapterIdsByBook = new Map<string, string[]>();
       for (const book of books) {
         newBooksMap.set(book.id, book);
-        const existingBook = this.books.find((existing) => existing.id === book.id);
+        const existingBook = existingBooksMap.get(book.id);
         if (existingBook && book.volumes !== undefined) {
           const removedChapterIds = collectRemovedChapterIds(existingBook.volumes, book.volumes);
           if (removedChapterIds.length > 0) {
@@ -107,8 +108,6 @@ export const useBooksStore = defineStore('books', {
         }
       }
 
-      const existingIds = new Set(this.books.map((b) => b.id));
-
       // 保留现有书籍的顺序，如果在新数据中存在则更新，不存在则保留原样
       const ordered: Novel[] = this.books.map((b) =>
         newBooksMap.has(b.id) ? newBooksMap.get(b.id)! : b,
@@ -116,7 +115,7 @@ export const useBooksStore = defineStore('books', {
 
       // 追加完全新增的书籍（不在现有列表中的）
       for (const book of newBooksMap.values()) {
-        if (!existingIds.has(book.id)) {
+        if (!existingBooksMap.has(book.id)) {
           ordered.push(book);
         }
       }
@@ -128,9 +127,11 @@ export const useBooksStore = defineStore('books', {
       const booksToSave = Array.from(newBooksMap.values());
       await BookService.bulkSaveBooks(booksToSave);
 
-      for (const [bookId, removedChapterIds] of removedChapterIdsByBook) {
-        await cleanupRemovedChapterData(bookId, removedChapterIds);
-      }
+      await Promise.all(
+        Array.from(removedChapterIdsByBook, ([bookId, removedChapterIds]) =>
+          cleanupRemovedChapterData(bookId, removedChapterIds),
+        ),
+      );
     },
 
     /**
