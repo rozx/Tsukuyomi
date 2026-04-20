@@ -10,6 +10,29 @@ import { searchRelatedMemoriesHybrid } from './memory-helper';
 
 type AdjacentChapterDirection = 'previous' | 'next';
 
+/**
+ * 工具共用：校验 bookId 并按 ID 查找书籍。
+ * 失败时返回可直接 return 给工具的 JSON 错误字符串；成功时返回 Novel 实例。
+ */
+async function resolveBookForTool(
+  bookId: string | undefined,
+): Promise<{ ok: true; book: Novel } | { ok: false; response: string }> {
+  if (!bookId) {
+    return {
+      ok: false,
+      response: JSON.stringify({ success: false, error: '书籍 ID 不能为空' }),
+    };
+  }
+  const book = await BookService.getBookById(bookId);
+  if (!book) {
+    return {
+      ok: false,
+      response: JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` }),
+    };
+  }
+  return { ok: true, book };
+}
+
 function getTitleOriginal(chapter: Chapter): string {
   return typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
 }
@@ -201,8 +224,9 @@ async function handleAdjacentChapter(
     include_memory?: boolean;
     summary_only?: boolean;
   }>(args);
-  if (!bookId) {
-    return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
+  const resolved = await resolveBookForTool(bookId);
+  if (!resolved.ok) {
+    return resolved.response;
   }
   const { chapter_id, include_memory = true, summary_only = false } = parsedArgs;
   if (!chapter_id) {
@@ -217,10 +241,7 @@ async function handleAdjacentChapter(
   const failureError = direction === 'previous' ? '获取前一个章节失败' : '获取下一个章节失败';
 
   try {
-    const book = await BookService.getBookById(bookId);
-    if (!book) {
-      return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
-    }
+    const book = resolved.book;
     const lookup =
       direction === 'previous'
         ? ChapterService.getPreviousChapter(book, chapter_id)
@@ -400,16 +421,14 @@ export const bookTools: ToolDefinition[] = [
     },
     handler: async (args, { bookId, onAction }) => {
       const parsedArgs = parseToolArgs<{ limit?: number; offset?: number }>(args);
-      if (!bookId) {
-        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
+      const resolved = await resolveBookForTool(bookId);
+      if (!resolved.ok) {
+        return resolved.response;
       }
       const { limit, offset = 0 } = parsedArgs;
 
       try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
-        }
+        const { book } = resolved;
 
         onAction?.({
           type: 'read',
@@ -459,8 +478,9 @@ export const bookTools: ToolDefinition[] = [
     },
     handler: async (args, { bookId, onAction }) => {
       const parsedArgs = parseToolArgs<{ volume_ids: string[] }>(args);
-      if (!bookId) {
-        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
+      const resolved = await resolveBookForTool(bookId);
+      if (!resolved.ok) {
+        return resolved.response;
       }
       const { volume_ids } = parsedArgs;
 
@@ -469,10 +489,7 @@ export const bookTools: ToolDefinition[] = [
       }
 
       try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
-        }
+        const { book } = resolved;
 
         // 报告读取操作
         if (onAction) {
@@ -673,8 +690,9 @@ export const bookTools: ToolDefinition[] = [
         offset?: number;
         include_memory?: boolean;
       }>(args);
-      if (!bookId) {
-        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
+      const resolved = await resolveBookForTool(bookId);
+      if (!resolved.ok) {
+        return resolved.response;
       }
       const { chapter_id, include_memory = true } = parsedArgs;
       const rawLimit = typeof parsedArgs.limit === 'number' ? parsedArgs.limit : 30;
@@ -686,10 +704,7 @@ export const bookTools: ToolDefinition[] = [
       }
 
       try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
-        }
+        const { book } = resolved;
 
         // 查找章节
         let chapter: Chapter | null = null;
