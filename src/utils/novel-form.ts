@@ -1,4 +1,38 @@
 import type { Novel } from 'src/models/novel';
+import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * 从 BookDialog 的 `Partial<Novel>` 表单数据构造新增书籍对象（含自生成 UUID 和时间戳）。
+ * - 仅写入非空可选字段（空字符串/空数组视为"未填"）
+ * - `title` 来自表单，调用方负责校验非空
+ */
+export function buildNovelFromFormData(formData: Partial<Novel>): Novel {
+  const now = new Date();
+  return {
+    id: uuidv4(),
+    title: formData.title!,
+    ...(formData.alternateTitles && formData.alternateTitles.length > 0
+      ? { alternateTitles: formData.alternateTitles }
+      : {}),
+    ...(formData.author?.trim() ? { author: formData.author.trim() } : {}),
+    ...(formData.description?.trim() ? { description: formData.description.trim() } : {}),
+    ...(formData.tags && formData.tags.length > 0 ? { tags: formData.tags } : {}),
+    ...(formData.webUrl && formData.webUrl.length > 0 ? { webUrl: formData.webUrl } : {}),
+    ...(formData.cover ? { cover: formData.cover } : {}),
+    ...(formData.volumes && formData.volumes.length > 0 ? { volumes: formData.volumes } : {}),
+    ...(formData.translationInstructions !== undefined
+      ? { translationInstructions: formData.translationInstructions }
+      : {}),
+    ...(formData.polishInstructions !== undefined
+      ? { polishInstructions: formData.polishInstructions }
+      : {}),
+    ...(formData.proofreadingInstructions !== undefined
+      ? { proofreadingInstructions: formData.proofreadingInstructions }
+      : {}),
+    createdAt: now,
+    lastEdited: now,
+  };
+}
 
 /**
  * 从 BookDialog 的 `Partial<Novel>` 表单数据构造书籍更新对象。

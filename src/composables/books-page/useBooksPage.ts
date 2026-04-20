@@ -18,7 +18,7 @@ import {
   formatRelativeBookDate,
   getTotalChapters as utilGetTotalChapters,
 } from 'src/utils';
-import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
+import { buildNovelFromFormData, buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { cloneDeep } from 'lodash';
 
 export type BooksPageContext = ReturnType<typeof createBooksPageContext>;
@@ -490,26 +490,6 @@ function createBooksPageContext() {
   const navigateToBookDetails = (book: Novel) => {
     void router.push(`/books/${book.id}`);
   };
-
-  const buildNovelFromFormData = (formData: Partial<Novel>): Novel => {
-    const now = new Date();
-    return {
-      id: uuidv4(),
-      title: formData.title!,
-      ...(formData.alternateTitles && formData.alternateTitles.length > 0
-        ? { alternateTitles: formData.alternateTitles }
-        : {}),
-      ...(formData.author?.trim() ? { author: formData.author.trim() } : {}),
-      ...(formData.description?.trim() ? { description: formData.description.trim() } : {}),
-      ...(formData.tags && formData.tags.length > 0 ? { tags: formData.tags } : {}),
-      ...(formData.webUrl && formData.webUrl.length > 0 ? { webUrl: formData.webUrl } : {}),
-      ...(formData.cover ? { cover: formData.cover } : {}),
-      ...(formData.volumes && formData.volumes.length > 0 ? { volumes: formData.volumes } : {}),
-      createdAt: now,
-      lastEdited: now,
-    };
-  };
-
 
   const saveNewBook = async (formData: Partial<Novel>): Promise<void> => {
     const newBook = buildNovelFromFormData(formData);

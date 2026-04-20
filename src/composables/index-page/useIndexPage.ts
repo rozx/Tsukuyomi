@@ -13,7 +13,7 @@ import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { createImportBookHandler } from 'src/composables/shared/useBookImportActions';
-import { v4 as uuidv4 } from 'uuid';
+import { buildNovelFromFormData } from 'src/utils/novel-form';
 
 /**
  * IndexPage 业务逻辑 composable + provide/inject 辅助。
@@ -105,31 +105,7 @@ function createIndexPageContext() {
   });
 
   const handleSave = async (formData: Partial<Novel>) => {
-    const now = new Date();
-    const newBook: Novel = {
-      id: uuidv4(),
-      title: formData.title!,
-      ...(formData.alternateTitles && formData.alternateTitles.length > 0
-        ? { alternateTitles: formData.alternateTitles }
-        : {}),
-      ...(formData.author?.trim() ? { author: formData.author.trim() } : {}),
-      ...(formData.description?.trim() ? { description: formData.description.trim() } : {}),
-      ...(formData.tags && formData.tags.length > 0 ? { tags: formData.tags } : {}),
-      ...(formData.webUrl && formData.webUrl.length > 0 ? { webUrl: formData.webUrl } : {}),
-      ...(formData.cover ? { cover: formData.cover } : {}),
-      ...(formData.volumes && formData.volumes.length > 0 ? { volumes: formData.volumes } : {}),
-      ...(formData.translationInstructions !== undefined
-        ? { translationInstructions: formData.translationInstructions }
-        : {}),
-      ...(formData.polishInstructions !== undefined
-        ? { polishInstructions: formData.polishInstructions }
-        : {}),
-      ...(formData.proofreadingInstructions !== undefined
-        ? { proofreadingInstructions: formData.proofreadingInstructions }
-        : {}),
-      createdAt: now,
-      lastEdited: now,
-    };
+    const newBook = buildNovelFromFormData(formData);
     await booksStore.addBook(newBook);
 
     if (newBook.cover) {
