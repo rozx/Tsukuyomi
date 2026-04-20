@@ -2,10 +2,10 @@
 /**
  * 批量 Action 列表面板（例如"创建 N 个待办"）—— 桌面 Popover、手机 MobileBottomSheet。
  */
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import Popover from 'primevue/popover';
-import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from './MobileBottomSheet.vue';
+import { usePopoverBottomSheet } from 'src/composables/layout/usePopoverBottomSheet';
 import type { MessageAction } from 'src/stores/chat-sessions';
 
 interface Props {
@@ -18,42 +18,15 @@ const emit = defineEmits<{
   hide: [];
 }>();
 
-const uiStore = useUiStore();
-const isPhone = computed(() => uiStore.deviceType === 'phone');
-
-const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
-const mobileVisible = ref(false);
+const { isPhone, popoverRef, mobileVisible, onMobileVisibleChange, toggle, hide } =
+  usePopoverBottomSheet(() => emit('hide'));
 
 const title = computed(() => {
   const count = props.actions?.length ?? 0;
   return `创建 ${count} 个待办事项`;
 });
 
-const onMobileVisibleChange = (visible: boolean) => {
-  const wasOpen = mobileVisible.value;
-  mobileVisible.value = visible;
-  if (wasOpen && !visible) emit('hide');
-};
-
-defineExpose({
-  toggle: (event: Event) => {
-    if (isPhone.value) {
-      mobileVisible.value = !mobileVisible.value;
-    } else {
-      popoverRef.value?.toggle(event);
-    }
-  },
-  hide: () => {
-    if (isPhone.value) {
-      if (mobileVisible.value) {
-        mobileVisible.value = false;
-        emit('hide');
-      }
-    } else {
-      popoverRef.value?.hide();
-    }
-  },
-});
+defineExpose({ toggle, hide });
 </script>
 
 <template>

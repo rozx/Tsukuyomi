@@ -3,10 +3,10 @@
  * 单个 Action 的详情面板 —— 桌面 Popover、手机 MobileBottomSheet。
  * 对外仍暴露 `toggle(event)` / `hide()`，兼容 useRightPanel 对 Ref 的既有调用。
  */
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import Popover from 'primevue/popover';
-import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from './MobileBottomSheet.vue';
+import { usePopoverBottomSheet } from 'src/composables/layout/usePopoverBottomSheet';
 import type { MessageAction } from 'src/stores/chat-sessions';
 import type { ActionDetailsContext } from 'src/utils/action-info-utils';
 import { getActionDetails, ACTION_LABELS, ENTITY_LABELS } from 'src/utils/action-info-utils';
@@ -22,42 +22,15 @@ const emit = defineEmits<{
   hide: [];
 }>();
 
-const uiStore = useUiStore();
-const isPhone = computed(() => uiStore.deviceType === 'phone');
-
-const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
-const mobileVisible = ref(false);
+const { isPhone, popoverRef, mobileVisible, onMobileVisibleChange, toggle, hide } =
+  usePopoverBottomSheet(() => emit('hide'));
 
 const getActionTitle = (action: MessageAction): string =>
   `${ACTION_LABELS[action.type] ?? ''}${ENTITY_LABELS[action.entity] ?? ''}`;
 
 const title = computed(() => (props.action ? getActionTitle(props.action) : ''));
 
-const onMobileVisibleChange = (visible: boolean) => {
-  const wasOpen = mobileVisible.value;
-  mobileVisible.value = visible;
-  if (wasOpen && !visible) emit('hide');
-};
-
-defineExpose({
-  toggle: (event: Event) => {
-    if (isPhone.value) {
-      mobileVisible.value = !mobileVisible.value;
-    } else {
-      popoverRef.value?.toggle(event);
-    }
-  },
-  hide: () => {
-    if (isPhone.value) {
-      if (mobileVisible.value) {
-        mobileVisible.value = false;
-        emit('hide');
-      }
-    } else {
-      popoverRef.value?.hide();
-    }
-  },
-});
+defineExpose({ toggle, hide });
 </script>
 
 <template>
