@@ -3,10 +3,10 @@ import type {
   TextGenerationStreamCallback,
   AITool,
 } from 'src/services/ai/types/ai-service';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph, ScoreBreakdown } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
+import type { AIProcessingStore } from './utils/task-types';
 import { getLastScoreBreakdowns } from 'src/services/ai/tasks/utils/context-builder';
 import {
   processTextTask,
@@ -69,14 +69,7 @@ export interface TranslationServiceOptions {
   /**
    * AI 处理 Store
    */
-  aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
-    appendThinkingMessage: (id: string, text: string) => Promise<void>;
-    appendOutputContent: (id: string, text: string) => Promise<void>;
-    removeTask: (id: string) => Promise<void>;
-    activeTasks: AIProcessingTask[];
-  };
+  aiProcessingStore?: AIProcessingStore;
   /**
    * 分块大小
    */

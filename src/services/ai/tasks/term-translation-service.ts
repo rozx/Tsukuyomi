@@ -5,9 +5,9 @@ import type {
   TextGenerationStreamCallback,
   ChatMessage,
 } from 'src/services/ai/types/ai-service';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
+import type { AIProcessingStore } from './utils/task-types';
 import { AIServiceFactory } from '../ai-service-factory';
 import {
   buildChapterContextSection,
@@ -69,14 +69,7 @@ export interface TermTranslationServiceOptions {
   /**
    * AI 处理 Store（可选），如果提供，将自动创建和管理任务
    */
-  aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
-    appendThinkingMessage: (id: string, text: string) => Promise<void>;
-    appendOutputContent: (id: string, text: string) => Promise<void>;
-    removeTask: (id: string) => Promise<void>;
-    activeTasks: AIProcessingTask[];
-  };
+  aiProcessingStore?: AIProcessingStore;
 }
 
 /**

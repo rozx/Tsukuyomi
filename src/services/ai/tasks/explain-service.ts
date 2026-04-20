@@ -1,8 +1,8 @@
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { AssistantServiceOptions, AssistantResult } from './assistant-service';
 import type { ActionInfo } from '../tools/types';
 import type { ToastCallback } from '../tools/toast-helper';
+import type { AIProcessingStore } from './utils/task-types';
 import { buildExplainPrompt } from './prompts';
 
 /**
@@ -28,14 +28,7 @@ export interface ExplainServiceOptions {
   /**
    * AI 处理 Store（可选），如果提供，将自动创建和管理任务
    */
-  aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
-    appendThinkingMessage: (id: string, text: string) => Promise<void>;
-    appendOutputContent: (id: string, text: string) => Promise<void>;
-    removeTask: (id: string) => Promise<void>;
-    activeTasks: AIProcessingTask[];
-  };
+  aiProcessingStore?: AIProcessingStore;
   /**
    * 对话历史（可选），如果提供，将作为初始对话历史，实现连续对话
    */

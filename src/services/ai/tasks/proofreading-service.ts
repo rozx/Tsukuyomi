@@ -1,9 +1,9 @@
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
+import type { AIProcessingStore } from './utils/task-types';
 import { processTextTask } from './utils/text-task-processor';
 import { buildChangedParagraphsExtractCallback } from './utils/paragraph-task-shared';
 import { buildProofreadingSystemPrompt } from './prompts';
@@ -68,14 +68,7 @@ export interface ProofreadingServiceOptions {
   /**
    * AI 处理 Store
    */
-  aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
-    appendThinkingMessage: (id: string, text: string) => Promise<void>;
-    appendOutputContent: (id: string, text: string) => Promise<void>;
-    removeTask: (id: string) => Promise<void>;
-    activeTasks: AIProcessingTask[];
-  };
+  aiProcessingStore?: AIProcessingStore;
   /**
    * 章节全量段落（包含空段落），用于构建正确的原始索引映射
    */

@@ -8,11 +8,11 @@ import type {
   AITool,
   AIToolCall,
 } from 'src/services/ai/types/ai-service';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { AIServiceFactory } from '../ai-service-factory';
 import { ToolRegistry } from '../tools/tool-registry';
 import type { ActionInfo } from '../tools/types';
 import type { ToastCallback } from '../tools/toast-helper';
+import type { AIProcessingStore } from './utils/task-types';
 import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';
 import { getTodosSystemPrompt } from './utils/todo-helper';
@@ -101,16 +101,10 @@ export interface AssistantServiceOptions {
    */
   signal?: AbortSignal;
   /**
-   * AI 处理 Store（可选），如果提供，将自动创建和管理任务
+   * AI 处理 Store（可选），如果提供，将自动创建和管理任务。
+   * activeTasks 用于获取任务的 abortController。
    */
-  aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
-    appendThinkingMessage: (id: string, text: string) => Promise<void>;
-    appendOutputContent: (id: string, text: string) => Promise<void>;
-    removeTask: (id: string) => Promise<void>;
-    activeTasks: AIProcessingTask[]; // 用于获取任务的 abortController
-  };
+  aiProcessingStore?: AIProcessingStore;
   /**
    * 会话总结（可选），如果提供，将添加到系统提示词中
    */
