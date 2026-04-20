@@ -18,7 +18,7 @@ interface UnsavedDialogEmit {
  * @param params.emit               宿主组件的 emit 函数，用于触发 `update:visible`
  * @param params.closeDialogImmediately  实际关闭对话框的函数（通常会 emit `cancel` + `update:visible=false`）
  */
-export function useUnsavedChangesDialog(params: {
+function useUnsavedChangesDialog(params: {
   hasUnsavedChanges: Ref<boolean> | ComputedRef<boolean>;
   loading?: Ref<boolean> | ComputedRef<boolean>;
   emit: UnsavedDialogEmit;
