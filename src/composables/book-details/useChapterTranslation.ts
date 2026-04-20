@@ -11,6 +11,7 @@ import { isEmptyParagraph, hasParagraphTranslation } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
 import { selectChangedParagraphTranslations } from 'src/utils/translation-updates';
 import type { Chapter, Novel, Paragraph, ScoreBreakdown } from 'src/models/novel';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { MenuItem } from 'primevue/menuitem';
 
@@ -564,53 +565,80 @@ export function useChapterTranslation(
     return chapterProofreadingStates.value.get(chapterId)!;
   };
 
-  // 润色单个段落
-  const polishParagraph = async (paragraphId: string) => {
+  /**
+   * 单段落任务的公共前置校验：检查 book/章节/段落/模型可用性。
+   * - 任何一项不满足时返回 null 并推送对应 toast
+   * - 命中时返回已解析好的上下文，调用方可直接使用
+   */
+  const resolveSingleParagraphContext = (
+    paragraphId: string,
+    taskLabel: string,
+    modelTaskKey: 'translation' | 'proofreading',
+    noModelDetail: string,
+    options: { requireTranslation: boolean },
+  ): {
+    paragraph: Paragraph;
+    bookId: string;
+    chapterId: string;
+    selectedModel: AIModel;
+  } | null => {
     if (
       !book.value ||
       !selectedChapterWithContent.value ||
       !selectedChapterWithContent.value.content
     ) {
-      return;
+      return null;
     }
 
-    const targetChapterId = selectedChapterWithContent.value.id;
-    const targetBookId = book.value.id;
+    const chapterId = selectedChapterWithContent.value.id;
+    const bookId = book.value.id;
 
-    // 查找段落
     const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
     if (!paragraph) {
       toast.add({
         severity: 'error',
-        summary: '润色失败',
-        detail: '未找到要润色的段落',
+        summary: `${taskLabel}失败`,
+        detail: `未找到要${taskLabel}的段落`,
         life: 3000,
       });
-      return;
+      return null;
     }
 
-    // 检查段落是否有翻译
-    if (!hasParagraphTranslation(paragraph)) {
+    if (options.requireTranslation && !hasParagraphTranslation(paragraph)) {
       toast.add({
         severity: 'error',
-        summary: '润色失败',
+        summary: `${taskLabel}失败`,
         detail: '该段落还没有翻译，请先翻译段落',
         life: 3000,
       });
-      return;
+      return null;
     }
 
-    // 检查是否有可用的润色模型（使用校对模型配置）
-    const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
+    const selectedModel = aiModelsStore.getDefaultModelForTask(modelTaskKey);
     if (!selectedModel) {
       toast.add({
         severity: 'error',
-        summary: '润色失败',
-        detail: '未找到可用的润色模型，请在设置中配置',
+        summary: `${taskLabel}失败`,
+        detail: noModelDetail,
         life: 3000,
       });
-      return;
+      return null;
     }
+
+    return { paragraph, bookId, chapterId, selectedModel };
+  };
+
+  // 润色单个段落
+  const polishParagraph = async (paragraphId: string) => {
+    const ctx = resolveSingleParagraphContext(
+      paragraphId,
+      '润色',
+      'proofreading',
+      '未找到可用的润色模型，请在设置中配置',
+      { requireTranslation: true },
+    );
+    if (!ctx) return;
+    const { paragraph, bookId: targetBookId, chapterId: targetChapterId, selectedModel } = ctx;
 
     // 获取该章节的状态
     const state = getOrCreatePolishState(targetChapterId);
@@ -625,7 +653,7 @@ export function useChapterTranslation(
     try {
       // 调用单段落润色服务（简化模式，无状态机）
       await PolishService.polishSingle(paragraph, selectedModel, {
-        bookId: book.value.id,
+        bookId: targetBookId,
         chapterId: targetChapterId,
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
@@ -664,51 +692,15 @@ export function useChapterTranslation(
 
   // 校对单个段落
   const proofreadParagraph = async (paragraphId: string) => {
-    if (
-      !book.value ||
-      !selectedChapterWithContent.value ||
-      !selectedChapterWithContent.value.content
-    ) {
-      return;
-    }
-
-    const targetChapterId = selectedChapterWithContent.value.id;
-    const targetBookId = book.value.id;
-
-    // 查找段落
-    const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
-    if (!paragraph) {
-      toast.add({
-        severity: 'error',
-        summary: '校对失败',
-        detail: '未找到要校对的段落',
-        life: 3000,
-      });
-      return;
-    }
-
-    // 检查段落是否有翻译
-    if (!hasParagraphTranslation(paragraph)) {
-      toast.add({
-        severity: 'error',
-        summary: '校对失败',
-        detail: '该段落还没有翻译，请先翻译段落',
-        life: 3000,
-      });
-      return;
-    }
-
-    // 检查是否有可用的校对模型
-    const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
-    if (!selectedModel) {
-      toast.add({
-        severity: 'error',
-        summary: '校对失败',
-        detail: '未找到可用的校对模型，请在设置中配置',
-        life: 3000,
-      });
-      return;
-    }
+    const ctx = resolveSingleParagraphContext(
+      paragraphId,
+      '校对',
+      'proofreading',
+      '未找到可用的校对模型，请在设置中配置',
+      { requireTranslation: true },
+    );
+    if (!ctx) return;
+    const { paragraph, bookId: targetBookId, chapterId: targetChapterId, selectedModel } = ctx;
 
     // 获取该章节的状态
     const state = getOrCreateProofreadingState(targetChapterId);
@@ -723,7 +715,7 @@ export function useChapterTranslation(
     try {
       // 调用单段落校对服务（简化模式，无状态机）
       await ProofreadingService.proofreadSingle(paragraph, selectedModel, {
-        bookId: book.value.id,
+        bookId: targetBookId,
         chapterId: targetChapterId,
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
@@ -762,40 +754,15 @@ export function useChapterTranslation(
 
   // 重新翻译单个段落
   const retranslateParagraph = async (paragraphId: string) => {
-    if (
-      !book.value ||
-      !selectedChapterWithContent.value ||
-      !selectedChapterWithContent.value.content
-    ) {
-      return;
-    }
-
-    const targetChapterId = selectedChapterWithContent.value.id;
-    const targetBookId = book.value.id;
-
-    // 查找段落
-    const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
-    if (!paragraph) {
-      toast.add({
-        severity: 'error',
-        summary: '翻译失败',
-        detail: '未找到要翻译的段落',
-        life: 3000,
-      });
-      return;
-    }
-
-    // 检查是否有可用的翻译模型
-    const selectedModel = aiModelsStore.getDefaultModelForTask('translation');
-    if (!selectedModel) {
-      toast.add({
-        severity: 'error',
-        summary: '翻译失败',
-        detail: '未找到可用的翻译模型，请在设置中配置',
-        life: 3000,
-      });
-      return;
-    }
+    const ctx = resolveSingleParagraphContext(
+      paragraphId,
+      '翻译',
+      'translation',
+      '未找到可用的翻译模型，请在设置中配置',
+      { requireTranslation: false },
+    );
+    if (!ctx) return;
+    const { paragraph, bookId: targetBookId, chapterId: targetChapterId, selectedModel } = ctx;
 
     // 获取该章节的状态
     const state = getOrCreateTranslationState(targetChapterId);
@@ -812,7 +779,7 @@ export function useChapterTranslation(
       const chunkSize = book.value?.translationChunkSize;
       // 调用翻译服务
       await TranslationService.translate([paragraph], selectedModel, {
-        bookId: book.value.id,
+        bookId: targetBookId,
         chapterId: targetChapterId,
         ...(chunkSize !== undefined ? { chunkSize } : {}),
         allChapterParagraphs: selectedChapterParagraphs.value,
