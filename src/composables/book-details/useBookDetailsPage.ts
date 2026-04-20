@@ -35,8 +35,10 @@ import {
   findUniqueTermsInText,
   findUniqueCharactersInText,
   getChapterTranslationStats,
+  formatRelativeBookDate,
 } from 'src/utils';
 import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
+import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { toMillis } from 'src/utils/time-utils';
 import { cloneDeep } from 'lodash';
@@ -867,16 +869,7 @@ function createBookDetailsPageContext() {
 
   const formatRelativeDate = (date: Date | string | number | null | undefined): string => {
     if (date === null || date === undefined) return '—';
-    const d = new Date(date);
-    if (Number.isNaN(d.getTime())) return '—';
-    const now = new Date();
-    const days = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
-    if (days <= 0) return '今天';
-    if (days === 1) return '昨天';
-    if (days < 7) return `${days} 天前`;
-    if (days < 30) return `${Math.floor(days / 7)} 周前`;
-    if (days < 365) return `${Math.floor(days / 30)} 个月前`;
-    return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
+    return formatRelativeBookDate(date as Date | string);
   };
 
   const continueReadingOnPhone = () => {
@@ -2019,28 +2012,7 @@ function createBookDetailsPageContext() {
     try {
       saveState('编辑书籍信息');
 
-      const updates: Partial<Novel> = {
-        title: formData.title!,
-        lastEdited: new Date(),
-      };
-      if (formData.alternateTitles && formData.alternateTitles.length > 0) {
-        updates.alternateTitles = formData.alternateTitles;
-      }
-      if (formData.author?.trim()) updates.author = formData.author.trim();
-      if (formData.description?.trim()) updates.description = formData.description.trim();
-      if (formData.tags && formData.tags.length > 0) updates.tags = formData.tags;
-      if (formData.webUrl && formData.webUrl.length > 0) updates.webUrl = formData.webUrl;
-      if (formData.cover !== undefined) updates.cover = formData.cover;
-      if (formData.volumes !== undefined) updates.volumes = formData.volumes;
-      if (formData.translationInstructions !== undefined) {
-        updates.translationInstructions = formData.translationInstructions;
-      }
-      if (formData.polishInstructions !== undefined) {
-        updates.polishInstructions = formData.polishInstructions;
-      }
-      if (formData.proofreadingInstructions !== undefined) {
-        updates.proofreadingInstructions = formData.proofreadingInstructions;
-      }
+      const updates = buildNovelUpdatesFromFormData(formData);
       const oldBook = cloneDeep(book.value);
       await booksStore.updateBook(book.value.id, updates);
       showBookDialog.value = false;

@@ -1,5 +1,5 @@
 export { generateShortId, UniqueIdGenerator, extractIds } from './id-generator';
-export { formatCharCount, formatWordCount, formatDate } from './format';
+export { formatCharCount, formatWordCount, formatDate, formatRelativeBookDate } from './format';
 export {
   getChapterCharCount,
   getChapterCharCountAsync,

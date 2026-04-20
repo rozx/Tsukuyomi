@@ -13,7 +13,12 @@ import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
 import { SettingsService } from 'src/services/settings-service';
 import type { Novel } from 'src/models/novel';
-import { formatWordCount, getTotalChapters as utilGetTotalChapters } from 'src/utils';
+import {
+  formatWordCount,
+  formatRelativeBookDate,
+  getTotalChapters as utilGetTotalChapters,
+} from 'src/utils';
+import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { cloneDeep } from 'lodash';
 
 export type BooksPageContext = ReturnType<typeof createBooksPageContext>;
@@ -222,24 +227,7 @@ function createBooksPageContext() {
 
   const getCoverUrl = (book: Novel): string => CoverService.getCoverUrl(book);
 
-  const formatDate = (date: Date): string => {
-    const d = new Date(date);
-    const now = new Date();
-    const diff = now.getTime() - d.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (days === 0) return '今天';
-    if (days === 1) return '昨天';
-    if (days < 7) return `${days}天前`;
-    if (days < 30) return `${Math.floor(days / 7)}周前`;
-    if (days < 365) return `${Math.floor(days / 30)}个月前`;
-
-    return d.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  const formatDate = formatRelativeBookDate;
 
   const addBook = () => {
     selectedBook.value = null;
@@ -522,31 +510,6 @@ function createBooksPageContext() {
     };
   };
 
-  const buildNovelUpdatesFromFormData = (formData: Partial<Novel>): Partial<Novel> => {
-    const updates: Partial<Novel> = {
-      title: formData.title!,
-      lastEdited: new Date(),
-    };
-    if (formData.alternateTitles && formData.alternateTitles.length > 0) {
-      updates.alternateTitles = formData.alternateTitles;
-    }
-    if (formData.author?.trim()) updates.author = formData.author.trim();
-    if (formData.description?.trim()) updates.description = formData.description.trim();
-    if (formData.tags && formData.tags.length > 0) updates.tags = formData.tags;
-    if (formData.webUrl && formData.webUrl.length > 0) updates.webUrl = formData.webUrl;
-    if (formData.cover !== undefined) updates.cover = formData.cover;
-    if (formData.volumes !== undefined) updates.volumes = formData.volumes;
-    if (formData.translationInstructions !== undefined) {
-      updates.translationInstructions = formData.translationInstructions;
-    }
-    if (formData.polishInstructions !== undefined) {
-      updates.polishInstructions = formData.polishInstructions;
-    }
-    if (formData.proofreadingInstructions !== undefined) {
-      updates.proofreadingInstructions = formData.proofreadingInstructions;
-    }
-    return updates;
-  };
 
   const saveNewBook = async (formData: Partial<Novel>): Promise<void> => {
     const newBook = buildNovelFromFormData(formData);

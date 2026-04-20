@@ -56,6 +56,26 @@ export function formatRelativeTimeWithFallback(
 }
 
 /**
+ * 书籍列表显示用的相对日期：今天 / 昨天 / N 天前 / N 周前 / N 个月前，
+ * 超过一年回落到 `YYYY-MM-DD`（zh-CN 短日期）。
+ *
+ * 与 `formatRelativeTime` 不同的是：这里以"天"为最小粒度、不显示小时/分钟，
+ * 适合书库卡片、首页"最近阅读"等粗粒度时间展示。
+ */
+export function formatRelativeBookDate(date: Date | string): string {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '—';
+  const now = new Date();
+  const days = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
+  if (days <= 0) return '今天';
+  if (days === 1) return '昨天';
+  if (days < 7) return `${days} 天前`;
+  if (days < 30) return `${Math.floor(days / 7)} 周前`;
+  if (days < 365) return `${Math.floor(days / 30)} 个月前`;
+  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/**
  * 将日期格式化为 YYYY-MM-DD 字符串。无效日期或空值返回空字符串。
  */
 export function formatDate(date: Date | string | undefined | null): string {

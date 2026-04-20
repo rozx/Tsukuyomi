@@ -2,7 +2,12 @@ import { computed, onMounted, watch, ref, inject, provide, type InjectionKey } f
 import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
-import { getTotalChapters, getAssetUrl, formatWordCount } from 'src/utils';
+import {
+  getTotalChapters,
+  getAssetUrl,
+  formatWordCount,
+  formatRelativeBookDate,
+} from 'src/utils';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
@@ -78,24 +83,7 @@ function createIndexPageContext() {
     return '晚上好';
   });
 
-  const formatDate = (date: Date): string => {
-    const d = new Date(date);
-    const now = new Date();
-    const diff = now.getTime() - d.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (days === 0) return '今天';
-    if (days === 1) return '昨天';
-    if (days < 7) return `${days}天前`;
-    if (days < 30) return `${Math.floor(days / 7)}周前`;
-    if (days < 365) return `${Math.floor(days / 30)}个月前`;
-
-    return d.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  const formatDate = formatRelativeBookDate;
 
   const getCoverUrl = (book: Novel): string => CoverService.getCoverUrl(book);
 
