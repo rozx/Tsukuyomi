@@ -234,41 +234,8 @@ export class NcodeSyosetuScraper extends BaseScraper {
         )
         .remove();
 
-      // 提取后记内容，保留格式
-      const extractAfterwordText = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-
-            if (tagName === 'br') {
-              text += '\n';
-            } else if (tagName === 'p') {
-              const innerText = extractAfterwordText($node);
-              if (innerText.trim()) {
-                text += innerText + '\n';
-              } else {
-                text += '\n';
-              }
-            } else {
-              const innerText = extractAfterwordText($node);
-              if (innerText.trim()) {
-                text += innerText;
-              }
-            }
-          }
-        });
-
-        return text;
-      };
-
-      const afterwordText = extractAfterwordText(afterwordElement).trim();
+      // 提取后记内容（保留 <br>/<p> 换行），共用 extractParagraphText
+      const afterwordText = extractParagraphText($, afterwordElement).trim();
       if (afterwordText) {
         // 按行分割后记内容
         const afterwordLines = afterwordText.split(/\r?\n/);

@@ -44,6 +44,44 @@ export function extractParagraphText(
 }
 
 /**
+ * 简介/描述文本提取：处理 `<br>` 为换行，跳过 `<a name="img">` 图片链接，
+ * 其它标签递归提取原文。用于 syosetu.org 的 `.ss` 描述区块。
+ */
+export function extractDescriptionText(
+  $: cheerio.CheerioAPI,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  element: cheerio.Cheerio<any>,
+): string {
+  let text = '';
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  element.contents().each((_, node: any) => {
+    const nodeType = String(node.type);
+    if (nodeType === 'text') {
+      text += $(node).text();
+      return;
+    }
+    if (nodeType !== 'tag') return;
+
+    const $node = $(node);
+    const tagName = node.tagName?.toLowerCase() || '';
+
+    if (tagName === 'br') {
+      text += '\n';
+      return;
+    }
+    if (tagName === 'a' && $node.attr('name') === 'img') {
+      // 跳过图片链接标记（如【挿絵表示】）
+      return;
+    }
+    const innerText = extractDescriptionText($, $node);
+    if (innerText) text += innerText;
+  });
+
+  return text;
+}
+
+/**
  * 无 `<p>` 标签时的正文兜底提取：把 `<p>` / `<div>` 视为行容器，
  * 纯文本节点原样追加，`<br>` 换行。
  *

@@ -3,7 +3,11 @@ import type { Novel } from 'src/models/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/services/scraper/scrapers/syosetu-types';
 import type { FetchNovelResult } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
-import { extractParagraphText, extractTextWithFormatting } from '../core/cheerio-text-extract';
+import {
+  extractDescriptionText,
+  extractParagraphText,
+  extractTextWithFormatting,
+} from '../core/cheerio-text-extract';
 
 /**
  * syosetu.org 小说爬虫服务
@@ -361,36 +365,8 @@ export class SyosetuScraper extends BaseScraper {
         // 跳过第一个（标题/作者部分），提取第二个的内容
         const secondSsDiv = ssDivs.eq(1);
         if (secondSsDiv.length > 0) {
-          // 使用递归方法提取完整的文本内容，处理 <br> 标签为换行
-          const extractDescriptionText = (element: cheerio.Cheerio<any>): string => {
-            let text = '';
-            element.contents().each((_, node: any) => {
-              const nodeType = String(node.type);
-              if (nodeType === 'text') {
-                // 文本节点，直接添加
-                const nodeText = $(node).text();
-                text += nodeText;
-              } else if (nodeType === 'tag') {
-                const $node = $(node);
-                const tagName = node.tagName?.toLowerCase() || '';
-                if (tagName === 'br') {
-                  // <br> 标签转换为换行
-                  text += '\n';
-                } else if (tagName === 'a' && $node.attr('name') === 'img') {
-                  // 跳过图片链接标记（如【挿絵表示】）
-                  return;
-                } else {
-                  // 其他标签，递归提取内容
-                  const innerText = extractDescriptionText($node);
-                  if (innerText) {
-                    text += innerText;
-                  }
-                }
-              }
-            });
-            return text;
-          };
-          const descText = extractDescriptionText(secondSsDiv);
+          // 使用共享的 extractDescriptionText 提取完整的文本内容，处理 <br> 换行、跳过图片链接
+          const descText = extractDescriptionText($, secondSsDiv);
           description = descText.trim();
           // 如果提取到的内容为空或太短，可能不是描述
           if (description && description.length < 10) {
@@ -403,32 +379,7 @@ export class SyosetuScraper extends BaseScraper {
         const divText = ssDiv.text();
         // 如果包含常见的描述特征（对话、较长的文本），可能是描述
         if (divText.length > 50 && (divText.includes('「') || divText.includes('」'))) {
-          // 使用递归方法提取完整的文本内容
-          const extractDescriptionText = (element: cheerio.Cheerio<any>): string => {
-            let text = '';
-            element.contents().each((_, node: any) => {
-              const nodeType = String(node.type);
-              if (nodeType === 'text') {
-                const nodeText = $(node).text();
-                text += nodeText;
-              } else if (nodeType === 'tag') {
-                const $node = $(node);
-                const tagName = node.tagName?.toLowerCase() || '';
-                if (tagName === 'br') {
-                  text += '\n';
-                } else if (tagName === 'a' && $node.attr('name') === 'img') {
-                  return;
-                } else {
-                  const innerText = extractDescriptionText($node);
-                  if (innerText) {
-                    text += innerText;
-                  }
-                }
-              }
-            });
-            return text;
-          };
-          const descText = extractDescriptionText(ssDiv);
+          const descText = extractDescriptionText($, ssDiv);
           description = descText.trim();
         }
       }
