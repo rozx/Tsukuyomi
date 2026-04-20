@@ -1,5 +1,5 @@
 import './setup';
-import { beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn, mock } from 'bun:test';
 import { createPinia, setActivePinia } from 'pinia';
 import { resetDbForTests } from 'src/utils/indexed-db';
 import { useQuickStartGuide } from 'src/composables/useQuickStartGuide';
@@ -10,6 +10,10 @@ describe('useQuickStartGuide', () => {
     await resetDbForTests();
     localStorage.clear();
     setActivePinia(createPinia());
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('首次加载时应显示快速开始弹窗', async () => {
@@ -46,6 +50,7 @@ describe('useQuickStartGuide', () => {
   });
 
   it('读取设置异常时应回退为未关闭并继续展示', async () => {
+    const consoleErrorSpy = spyOn(console, 'error').mockImplementation(() => undefined);
     localStorage.setItem('tsukuyomi-settings', '{invalid json');
 
     const settingsStore = useSettingsStore();
@@ -56,5 +61,6 @@ describe('useQuickStartGuide', () => {
 
     expect(settingsStore.settings.quickStartDismissed).toBe(false);
     expect(quickStartGuideVisible.value).toBe(true);
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
   });
 });

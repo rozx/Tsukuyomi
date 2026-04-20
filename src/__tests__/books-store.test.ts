@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import type { Novel } from 'src/models/novel';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { FullTextIndexService } from 'src/services/full-text-index-service';
 import { useBooksStore } from 'src/stores/books';
 
 function createBook(): Novel {
@@ -57,10 +58,12 @@ describe('books store removed chapter cleanup', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     spyOn(BookService, 'saveBook').mockResolvedValue(undefined);
+    spyOn(BookService, 'bulkSaveBooks').mockResolvedValue(undefined);
     bulkDeleteChapterContentSpy = spyOn(
       ChapterContentService,
       'bulkDeleteChapterContent',
     ).mockResolvedValue(undefined);
+    spyOn(FullTextIndexService, 'invalidateIndex').mockResolvedValue(undefined);
   });
 
   afterEach(() => {

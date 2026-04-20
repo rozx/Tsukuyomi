@@ -1,5 +1,9 @@
 import './setup';
 import { describe, expect, it, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import * as AIModelsStore from 'src/stores/ai-models';
+import * as BooksStore from 'src/stores/books';
+import * as CoverHistoryStore from 'src/stores/cover-history';
+import * as SettingsStore from 'src/stores/settings';
 
 /**
  * 强制推送模式测试
@@ -11,8 +15,7 @@ import { describe, expect, it, beforeEach, afterEach, mock, spyOn } from 'bun:te
  *   - 失败后保留 forceSyncMode.active 并写入 lastFailedAt
  *   - 无 gistId 时退化为 executeSync 并重置 toggle
  *
- * 注意：使用 mock.module 隔离是为了避免 bun test 运行整套 sync-* 测试时，
- * 其他文件的 mock.module('src/stores/...') 污染我们依赖的真实 store API。
+ * 注意：使用 spyOn 隔离 store 访问，避免 mock.module 在 bun:test 中跨文件污染模块缓存。
  */
 
 // ── 可变的 mock store 状态 —— 每个测试在 beforeEach 中重置 ──
@@ -66,7 +69,10 @@ const makeMockSettingsStore = () => ({
   },
   updateForceSyncMode: (partial: ForceSyncMode) => {
     mockSettings.syncState.forceSyncMode = partial.active
-      ? { active: true, ...(partial.lastFailedAt !== undefined ? { lastFailedAt: partial.lastFailedAt } : {}) }
+      ? {
+          active: true,
+          ...(partial.lastFailedAt !== undefined ? { lastFailedAt: partial.lastFailedAt } : {}),
+        }
       : { active: false };
     return Promise.resolve();
   },
@@ -76,20 +82,6 @@ const mockBooksStore = { books: [] as unknown[] };
 const mockAIModelsStore = { models: [] as unknown[] };
 const mockCoverHistoryStore = { covers: [] as unknown[] };
 
-await mock.module('src/stores/settings', () => ({
-  useSettingsStore: () => makeMockSettingsStore(),
-}));
-await mock.module('src/stores/books', () => ({
-  useBooksStore: () => mockBooksStore,
-}));
-await mock.module('src/stores/ai-models', () => ({
-  useAIModelsStore: () => mockAIModelsStore,
-}));
-await mock.module('src/stores/cover-history', () => ({
-  useCoverHistoryStore: () => mockCoverHistoryStore,
-}));
-
-// ── 其余 import 必须放在 mock.module 之后 ──
 const { useSyncExecutor } = await import('src/composables/useSyncExecutor');
 const { GistSyncService } = await import('src/services/gist-sync-service');
 const { ChapterContentService } = await import('src/services/chapter-content-service');
@@ -97,6 +89,11 @@ const { MemoryService } = await import('src/services/memory-service');
 
 describe('executeForceSync', () => {
   beforeEach(() => {
+    spyOn(SettingsStore, 'useSettingsStore').mockImplementation(makeMockSettingsStore as any);
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue(mockBooksStore as any);
+    spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue(mockAIModelsStore as any);
+    spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue(mockCoverHistoryStore as any);
+
     mockSettings.syncState = {
       gistId: 'abc',
       username: 'u',
@@ -141,9 +138,10 @@ describe('executeForceSync', () => {
   it('跳过 pseudo-CAS —— 不调用 verifyRemoteUnchanged', async () => {
     stubSuccessfulDownload();
     stubSuccessfulUpload();
-    const verifySpy = spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockResolvedValue(
-      { status: 'unchanged', etag: 'etag' },
-    );
+    const verifySpy = spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockResolvedValue({
+      status: 'unchanged',
+      etag: 'etag',
+    });
 
     const { executeForceSync } = useSyncExecutor();
     const result = await executeForceSync({

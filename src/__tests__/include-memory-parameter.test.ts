@@ -11,6 +11,8 @@ import { BookService } from 'src/services/book-service';
 import type { ToolContext } from 'src/services/ai/tools/types';
 import type { Memory } from 'src/models/memory';
 import type { Novel } from 'src/models/novel';
+import * as AIModelsStore from 'src/stores/ai-models';
+import * as BooksStore from 'src/stores/books';
 
 // Mock searchRelatedMemoriesHybrid（局部使用，不在文件顶层全局 mock）
 const mockSearchRelatedMemoriesHybrid = mock(
@@ -40,18 +42,11 @@ const mockUseAIModelsStore = mock(() => ({
   })),
 }));
 
-await mock.module('src/stores/ai-models', () => ({
-  useAIModelsStore: mockUseAIModelsStore,
-}));
-
 // Mock useBooksStore
 const mockBooksStore = {
   getBookById: mock((_id: string): Novel | undefined => undefined),
   updateBook: mock(() => Promise.resolve()),
 };
-await mock.module('src/stores/books', () => ({
-  useBooksStore: () => mockBooksStore,
-}));
 
 // 使用 spyOn 替代 mock.module 来 mock BookService（避免全局污染模块缓存）
 let mockBookServiceGetBookById: ReturnType<typeof spyOn<typeof BookService, 'getBookById'>>;
@@ -65,6 +60,9 @@ describe('include_memory 参数测试', () => {
   };
 
   beforeEach(() => {
+    spyOn(AIModelsStore, 'useAIModelsStore').mockImplementation(mockUseAIModelsStore as any);
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue(mockBooksStore as any);
+
     mockSearchRelatedMemoriesHybrid.mockClear();
     mockSearchRelatedMemoriesHybrid.mockReset();
     mockSearchRelatedMemoriesHybrid.mockResolvedValue([]);
