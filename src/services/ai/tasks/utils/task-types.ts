@@ -86,6 +86,28 @@ export interface AIProcessingStore {
 }
 
 /**
+ * 将 Pinia store 包装成服务层消费的 AIProcessingStore 适配器。
+ * 所有方法绑定到 store 实例以避免 this 绑定丢失。
+ */
+export function createAIProcessingStoreAdapter(store: {
+  addTask: AIProcessingStore['addTask'];
+  updateTask: AIProcessingStore['updateTask'];
+  appendThinkingMessage: AIProcessingStore['appendThinkingMessage'];
+  appendOutputContent: AIProcessingStore['appendOutputContent'];
+  removeTask: AIProcessingStore['removeTask'];
+  activeTasks: AIProcessingTask[];
+}): AIProcessingStore {
+  return {
+    addTask: store.addTask.bind(store),
+    updateTask: store.updateTask.bind(store),
+    appendThinkingMessage: store.appendThinkingMessage.bind(store),
+    appendOutputContent: store.appendOutputContent.bind(store),
+    removeTask: store.removeTask.bind(store),
+    activeTasks: store.activeTasks,
+  };
+}
+
+/**
  * 是否为翻译相关任务类型（翻译、润色、校对）。
  * 这些任务共享相同的段落处理流程和工具集，因此统称"翻译相关"。
  */

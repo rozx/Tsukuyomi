@@ -5,6 +5,7 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useUiStore } from 'src/stores/ui';
 import { TranslationService, PolishService, ProofreadingService } from 'src/services/ai';
+import { createAIProcessingStoreAdapter } from 'src/services/ai/tasks/utils/task-types';
 import { ChapterService } from 'src/services/chapter-service';
 import { isEmptyParagraph, hasParagraphTranslation } from 'src/utils';
 import { generateShortId } from 'src/utils/id-generator';
@@ -628,14 +629,7 @@ export function useChapterTranslation(
         chapterId: targetChapterId,
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
-        aiProcessingStore: {
-          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
-          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
-          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
-          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
-          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
-          activeTasks: aiProcessingStore.activeTasks,
-        },
+        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
         onToast: (message) => {
           toast.add(message);
         },
@@ -733,14 +727,7 @@ export function useChapterTranslation(
         chapterId: targetChapterId,
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
-        aiProcessingStore: {
-          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
-          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
-          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
-          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
-          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
-          activeTasks: aiProcessingStore.activeTasks,
-        },
+        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
         onToast: (message) => {
           toast.add(message);
         },
@@ -830,14 +817,7 @@ export function useChapterTranslation(
         ...(chunkSize !== undefined ? { chunkSize } : {}),
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
-        aiProcessingStore: {
-          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
-          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
-          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
-          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
-          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
-          activeTasks: aiProcessingStore.activeTasks,
-        },
+        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
         onToast: (message) => {
           toast.add(message);
         },
@@ -956,14 +936,7 @@ export function useChapterTranslation(
         ...(chunkSize !== undefined ? { chunkSize } : {}),
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
-        aiProcessingStore: {
-          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
-          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
-          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
-          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
-          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
-          activeTasks: aiProcessingStore.activeTasks,
-        },
+        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
         onProgress: (progress) => {
           const newProgress = {
             current: state.progress.current,
@@ -1198,14 +1171,7 @@ export function useChapterTranslation(
         ...(chunkSize !== undefined ? { chunkSize } : {}),
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
-        aiProcessingStore: {
-          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
-          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
-          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
-          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
-          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
-          activeTasks: aiProcessingStore.activeTasks,
-        },
+        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
         onProgress: (progress) => {
           const newProgress = {
             current: state.progress.current,
@@ -1361,14 +1327,7 @@ export function useChapterTranslation(
         ...(chunkSize !== undefined ? { chunkSize } : {}),
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
-        aiProcessingStore: {
-          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
-          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
-          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
-          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
-          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
-          activeTasks: aiProcessingStore.activeTasks,
-        },
+        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
         onProgress: (progress) => {
           const newProgress = {
             current: progress.current,
@@ -1606,14 +1565,7 @@ export function useChapterTranslation(
         ...(chunkSize !== undefined ? { chunkSize } : {}),
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
-        aiProcessingStore: {
-          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
-          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
-          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
-          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
-          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
-          activeTasks: aiProcessingStore.activeTasks,
-        },
+        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
         onProgress: (progress) => {
           const newProgress = {
             current: progress.current,

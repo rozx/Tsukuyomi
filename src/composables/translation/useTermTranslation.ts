@@ -4,6 +4,7 @@ import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TermTranslationService } from 'src/services/ai';
+import { createAIProcessingStoreAdapter } from 'src/services/ai/tasks/utils/task-types';
 
 /**
  * 可翻译输入控件共享的术语翻译逻辑。
@@ -90,14 +91,7 @@ export function useTermTranslation() {
       // 构建选项对象，只在有值时才传递 bookId 和 chapterId
       const options: Parameters<typeof TermTranslationService.translate>[2] = {
         taskType: 'termsTranslation',
-        aiProcessingStore: {
-          addTask: aiProcessingStore.addTask.bind(aiProcessingStore),
-          updateTask: aiProcessingStore.updateTask.bind(aiProcessingStore),
-          appendThinkingMessage: aiProcessingStore.appendThinkingMessage.bind(aiProcessingStore),
-          appendOutputContent: aiProcessingStore.appendOutputContent.bind(aiProcessingStore),
-          removeTask: aiProcessingStore.removeTask.bind(aiProcessingStore),
-          activeTasks: aiProcessingStore.activeTasks,
-        },
+        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
       };
 
       // 只在有值时才添加 bookId 和 chapterId
