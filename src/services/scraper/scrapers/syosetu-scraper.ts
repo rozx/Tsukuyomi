@@ -1,9 +1,9 @@
 import * as cheerio from 'cheerio';
-import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/models/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/services/scraper/scrapers/syosetu-types';
-import type { FetchNovelResult, ParsedChapterInfo, ParsedVolumeInfo } from 'src/services/scraper/types';
+import type { FetchNovelResult } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
+import { extractParagraphText, extractTextWithFormatting } from '../core/cheerio-text-extract';
 
 /**
  * syosetu.org 小说爬虫服务
@@ -227,46 +227,7 @@ export class SyosetuScraper extends BaseScraper {
       });
 
       // 提取段落文本，保留内部格式（如 <br> 换行）
-      // 使用递归函数来正确处理所有节点，包括嵌套标签
-      const extractParagraphText = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            // 文本节点，直接添加（保留原始文本，包括空格）
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-
-            if (tagName === 'br') {
-              // <br> 标签转换为换行
-              text += '\n';
-            } else if (tagName === 'p') {
-              // 嵌套的 <p> 标签，递归提取并添加换行
-              const innerText = extractParagraphText($node);
-              if (innerText.trim()) {
-                text += innerText + '\n';
-              } else {
-                // 嵌套的空 <p> 标签也添加换行
-                text += '\n';
-              }
-            } else {
-              // 其他标签，递归提取内容（保留内部结构）
-              const innerText = extractParagraphText($node);
-              if (innerText) {
-                text += innerText;
-              }
-            }
-          }
-        });
-
-        return text;
-      };
-
-      const extractedText = extractParagraphText($p);
+      const extractedText = extractParagraphText($, $p);
 
       // 保持原始段落格式，只移除导航文本
       // 不清理空白字符，以保持原始格式（包括缩进等）
@@ -282,45 +243,7 @@ export class SyosetuScraper extends BaseScraper {
     // 如果没有找到 <p> 标签，回退到原来的方法
     const hasTitle = paragraphs.length > 0 && paragraphs[0] !== '\n' && paragraphs[0] !== '';
     if (paragraphs.length === (hasTitle ? 2 : 0)) {
-      // 使用递归方法提取所有文本
-      const extractTextWithFormatting = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-
-            if (tagName === 'br') {
-              text += '\n';
-            } else if (tagName === 'p' || tagName === 'div') {
-              const innerText = extractTextWithFormatting($node);
-              if (innerText.trim()) {
-                text += innerText;
-                if (tagName === 'p') {
-                  text += '\n';
-                }
-              } else if (tagName === 'p') {
-                // 空的 <p> 标签也添加换行
-                text += '\n';
-              }
-            } else {
-              const innerText = extractTextWithFormatting($node);
-              if (innerText.trim()) {
-                text += innerText;
-              }
-            }
-          }
-        });
-
-        return text;
-      };
-
-      const fallbackText = extractTextWithFormatting(contentElement);
+      const fallbackText = extractTextWithFormatting($, contentElement);
       const trimmedFallback = fallbackText.trim();
 
       if (trimmedFallback) {
@@ -781,55 +704,6 @@ export class SyosetuScraper extends BaseScraper {
    * @returns Novel 对象
    */
   private convertToNovel(info: SyosetuNovelInfo): Novel {
-    const now = new Date();
-
-    // 将 SyosetuChapter 转换为 ParsedChapterInfo
-    const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
-      const parsedChapter: ParsedChapterInfo = {
-        title: chapter.title,
-        url: chapter.url,
-      };
-      if (chapter.date) {
-        parsedChapter.date = chapter.date;
-      }
-      if (chapter.lastUpdated) {
-        parsedChapter.lastUpdated = chapter.lastUpdated;
-      }
-      return parsedChapter;
-    });
-
-    // 将 SyosetuVolumeInfo 转换为 ParsedVolumeInfo
-    const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes?.map((volume) => ({
-      title: volume.title,
-      startIndex: volume.startIndex,
-    }));
-
-    // 使用基类的通用方法将章节分组到卷中
-    const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, '正文');
-
-    // Novel 的 ID 使用完整的 uuidv4（不在短 ID 范围内）
-    // 注意：根据要求，只有 chapter/volume/paragraph/translation/note/terminology/character settings 使用短 ID
-    const novel: Novel = {
-      id: uuidv4(),
-      title: info.title,
-      volumes,
-      webUrl: [info.webUrl],
-      lastEdited: now,
-      createdAt: now,
-    };
-
-    if (info.author) {
-      novel.author = info.author;
-    }
-
-    if (info.description) {
-      novel.description = info.description;
-    }
-
-    if (info.tags) {
-      novel.tags = info.tags;
-    }
-
-    return novel;
+    return this.buildNovelFromInfo(info);
   }
 }

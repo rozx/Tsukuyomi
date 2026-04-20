@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
 import type {
   NovelScraper,
   FetchNovelResult,
@@ -386,5 +387,62 @@ export abstract class BaseScraper implements NovelScraper {
     }
 
     return volumes;
+  }
+
+  /**
+   * 将解析后的小说信息组装为 Novel（通用方法）。
+   * 各站点的 fetch 路径解析出统一的信息对象后即可直接调用本方法。
+   *
+   * - 章节按 `volumes` + `groupChaptersIntoVolumes` 规则分组
+   * - Novel.id 使用完整 uuid v4；章节/卷的 ID 使用短 ID
+   * - `author` / `description` / `tags` 为空时不写入目标对象（遵守 exactOptionalPropertyTypes）
+   */
+  protected buildNovelFromInfo(info: {
+    title: string;
+    author?: string;
+    description?: string;
+    tags?: string[];
+    chapters: ParsedChapterInfo[];
+    volumes?: ParsedVolumeInfo[];
+    webUrl: string;
+    defaultVolumeTitle?: string;
+  }): Novel {
+    const now = new Date();
+
+    const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
+      const parsedChapter: ParsedChapterInfo = {
+        title: chapter.title,
+        url: chapter.url,
+      };
+      if (chapter.date) parsedChapter.date = chapter.date;
+      if (chapter.lastUpdated) parsedChapter.lastUpdated = chapter.lastUpdated;
+      return parsedChapter;
+    });
+
+    const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes?.map((volume) => ({
+      title: volume.title,
+      startIndex: volume.startIndex,
+    }));
+
+    const volumes = this.groupChaptersIntoVolumes(
+      parsedChapters,
+      parsedVolumes,
+      info.defaultVolumeTitle ?? '正文',
+    );
+
+    const novel: Novel = {
+      id: uuidv4(),
+      title: info.title,
+      volumes,
+      webUrl: [info.webUrl],
+      lastEdited: now,
+      createdAt: now,
+    };
+
+    if (info.author) novel.author = info.author;
+    if (info.description) novel.description = info.description;
+    if (info.tags) novel.tags = info.tags;
+
+    return novel;
   }
 }
