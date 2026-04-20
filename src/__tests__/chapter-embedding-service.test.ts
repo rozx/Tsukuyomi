@@ -33,13 +33,22 @@ function makeParagraph(
 }
 
 /** 构造一个最小 books store mock 对象,仅含 embedChapter/queryChapters/findChaptersNeedingEmbedding 读到的字段 */
-function mockBooksStoreWith(book?: Novel) {
+async function mockBooksStoreWith(book?: Novel): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fakeStore: any = {
     books: book ? [book] : [],
     getBookById: (id: string) => (book && book.id === id ? book : undefined),
   };
   spyOn(BooksStoreModule, 'useBooksStore').mockReturnValue(fakeStore);
+  // 同时写入 IndexedDB，供 lookupChapterBookFromDB / loadBookMetaFromDB 使用
+  // 跨文件运行时 fake-indexeddb 的 reset 可能有时序残留，显式清一次 books
+  const db = await getDB();
+  const clearTx = db.transaction('books', 'readwrite');
+  await clearTx.store.clear();
+  await clearTx.done;
+  if (book) {
+    await db.put('books', book);
+  }
 }
 
 /**
@@ -232,7 +241,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
     ]);
     expect(await ChapterEmbeddingService.getChunksForChapter('orphan')).toHaveLength(1);
 
-    mockBooksStoreWith(undefined);
+    await mockBooksStoreWith(undefined);
 
     await ChapterEmbeddingService.embedChapter('orphan');
 
@@ -264,7 +273,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
         },
       ],
     };
-    mockBooksStoreWith(book);
+    await mockBooksStoreWith(book);
 
     spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([]);
     const embedSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([]);
@@ -297,7 +306,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
         },
       ],
     };
-    mockBooksStoreWith(book);
+    await mockBooksStoreWith(book);
     spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
       makeParagraph('p1', '原文', '译文'),
     ]);
@@ -329,7 +338,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
         },
       ],
     };
-    mockBooksStoreWith(book);
+    await mockBooksStoreWith(book);
     spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
       makeParagraph('p1', '原文1', '译文1'),
       makeParagraph('p2', '原文2', '译文2'),
@@ -363,7 +372,7 @@ describe('ChapterEmbeddingService.queryChapters', () => {
 
   test('无 chunk 时返回空数组', async () => {
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
-    mockBooksStoreWith(undefined);
+    await mockBooksStoreWith(undefined);
 
     const result = await ChapterEmbeddingService.queryChapters('book-empty', 'query');
     expect(result).toEqual([]);
@@ -405,7 +414,7 @@ describe('ChapterEmbeddingService.queryChapters', () => {
         },
       ],
     };
-    mockBooksStoreWith(book);
+    await mockBooksStoreWith(book);
 
     await ChapterEmbeddingService.writeChunksForChapter('ch-A', 'book-1', [
       { kind: 'content', chunkIndex: 0, vector: [0.3, 1], textSnippet: 'A-0 (low)' },
@@ -443,7 +452,7 @@ describe('ChapterEmbeddingService.queryChapters', () => {
       createdAt: new Date(),
       volumes: [{ id: 'v1', title: 'V', chapters }],
     };
-    mockBooksStoreWith(book);
+    await mockBooksStoreWith(book);
     for (let i = 0; i < 8; i++) {
       await ChapterEmbeddingService.writeChunksForChapter(`ch-${i}`, 'book-1', [
         { kind: 'content', chunkIndex: 0, vector: [1], textSnippet: `snippet-${i}` },
@@ -482,7 +491,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding', () => {
         },
       ],
     };
-    mockBooksStoreWith(book);
+    await mockBooksStoreWith(book);
 
     const result = await ChapterEmbeddingService.findChaptersNeedingEmbedding('book-1');
     expect(result.sort()).toEqual(['ch-1', 'ch-2']);
@@ -505,7 +514,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding', () => {
         },
       ],
     };
-    mockBooksStoreWith(book);
+    await mockBooksStoreWith(book);
 
     await ChapterEmbeddingService.writeChunksForChapter('ch-current', 'book-1', [
       { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 's' },

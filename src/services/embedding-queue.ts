@@ -114,16 +114,10 @@ export class EmbeddingQueue {
         const mem = await MemoryService.getMemoryByIdOnly(item.id);
         resolved = mem?.bookId ?? null;
       } else {
-        const { useBooksStore } = await import('src/stores/books');
-        const store = useBooksStore();
-        outer: for (const book of store.books) {
-          for (const v of book.volumes || []) {
-            if (v.chapters?.some((c) => c.id === item.id)) {
-              resolved = book.id;
-              break outer;
-            }
-          }
-        }
+        // 直接从 IndexedDB 反查,避免 import stores/books 形成循环依赖
+        const { lookupChapterBookFromDB } = await import('src/utils/chapter-book-lookup');
+        const lookup = await lookupChapterBookFromDB(item.id);
+        resolved = lookup?.bookId ?? null;
       }
     } catch {
       resolved = null;
@@ -284,8 +278,9 @@ export class EmbeddingQueue {
   static async enqueueAllChaptersForRecompute(bookId: string): Promise<number> {
     if (!bookId) return 0;
     try {
-      const { useBooksStore } = await import('src/stores/books');
-      const book = useBooksStore().getBookById(bookId);
+      // 直接从 IndexedDB 加载 book 元数据,避免 import stores/books 形成循环依赖
+      const { loadBookMetaFromDB } = await import('src/utils/chapter-book-lookup');
+      const book = await loadBookMetaFromDB(bookId);
       if (!book?.volumes) return 0;
       let added = 0;
       for (const v of book.volumes) {

@@ -27,7 +27,10 @@ import type { Novel, Paragraph } from 'src/models/novel';
 import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
-import { useBooksStore } from 'src/stores/books';
+import {
+  lookupChapterBookFromDB,
+  loadBookMetaFromDB,
+} from 'src/utils/chapter-book-lookup';
 import {
   calculateQueryKeywordScore,
   extractQueryUnits,
@@ -549,27 +552,15 @@ export class ChapterEmbeddingService {
   static async embedChapter(chapterId: string): Promise<void> {
     if (!chapterId) return;
 
-    // 定位 book 与 chapter title(同时拿到原始 chapter 用于 title chunk 输入)
-    const booksStore = useBooksStore();
-    let bookId: string | undefined;
-    let chapterTitle = '';
-    outer: for (const book of booksStore.books) {
-      for (const volume of book.volumes || []) {
-        const found = volume.chapters?.find((c) => c.id === chapterId);
-        if (found) {
-          bookId = book.id;
-          chapterTitle =
-            typeof found.title === 'string' ? found.title : found.title?.original ?? '';
-          break outer;
-        }
-      }
-    }
-
-    if (!bookId) {
+    // 定位 book 与 chapter title(直接扫 IndexedDB books,
+    // 避免 import stores/books 形成循环依赖)
+    const lookup = await lookupChapterBookFromDB(chapterId);
+    if (!lookup) {
       // 章节已不存在(可能已被删除),顺便清一下残留
       await this.deleteChunksForChapter(chapterId);
       return;
     }
+    const { bookId, chapterTitle } = lookup;
 
     const paragraphs = await ChapterContentService.loadChapterContent(chapterId);
     if (!paragraphs || paragraphs.length === 0) {
@@ -725,8 +716,8 @@ export class ChapterEmbeddingService {
     }
 
     // ===== 解析标题 + 卷标题(章节 → 卷 反向查找) =====
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
+    // 直接从 IndexedDB 加载 book 元数据,避免 import stores/books 形成循环依赖
+    const book = await loadBookMetaFromDB(bookId);
     const chapterTitleLookup = new Map<string, string>();
     const volumeTitleLookup = new Map<string, string>();
     if (book?.volumes) {
@@ -853,8 +844,8 @@ export class ChapterEmbeddingService {
    */
   static async findChaptersNeedingEmbedding(bookId: string): Promise<string[]> {
     if (!bookId) return [];
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
+    // 直接从 IndexedDB 加载 book 元数据,避免 import stores/books 形成循环依赖
+    const book = await loadBookMetaFromDB(bookId);
     if (!book?.volumes) return [];
 
     const allChapterIds: string[] = [];

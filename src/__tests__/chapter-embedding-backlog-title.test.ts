@@ -28,28 +28,35 @@ function mkPara(id: string, text: string): Paragraph {
   } as unknown as Paragraph;
 }
 
-function seedBook(bookId: string, chapterIds: string[]): void {
+async function seedBook(bookId: string, chapterIds: string[]): Promise<void> {
+  const book = {
+    id: bookId,
+    title: 'Test',
+    volumes: [
+      {
+        id: 'v',
+        title: 'V',
+        chapters: chapterIds.map((id) => ({
+          id,
+          title: `Title-${id}`,
+          paragraphs: [],
+          createdAt: new Date(),
+          lastEdited: new Date(),
+        })),
+      },
+    ],
+  } as unknown as Novel;
   const store = useBooksStore();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (store as any).books = [
-    {
-      id: bookId,
-      title: 'Test',
-      volumes: [
-        {
-          id: 'v',
-          title: 'V',
-          chapters: chapterIds.map((id) => ({
-            id,
-            title: `Title-${id}`,
-            paragraphs: [],
-            createdAt: new Date(),
-            lastEdited: new Date(),
-          })),
-        },
-      ],
-    } as unknown as Novel,
-  ];
+  (store as any).books = [book];
+  // 同时写入 IndexedDB,供 lookupChapterBookFromDB / loadBookMetaFromDB 使用
+  // 跨文件运行时 fake-indexeddb 的 reset 可能有时序残留,显式清一次 books
+  const { getDB } = await import('src/utils/indexed-db');
+  const db = await getDB();
+  const clearTx = db.transaction('books', 'readwrite');
+  await clearTx.store.clear();
+  await clearTx.done;
+  await db.put('books', book);
 }
 
 async function clearChapterEmbeddingsStore(): Promise<void> {
@@ -73,7 +80,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding — title chunk �
 
   it('章节有当前 content chunks 但缺 title chunk + 段落非空 → 入队', async () => {
     const bookId = 'b';
-    seedBook(bookId, ['ch-A']);
+    await seedBook(bookId, ['ch-A']);
 
     // 写当前 model 的 content chunk,不写 title
     await ChapterEmbeddingService.writeChunksForChapter('ch-A', bookId, [
@@ -90,7 +97,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding — title chunk �
 
   it('章节段落全空(无法生成 title) → 不入队,避免无限重试', async () => {
     const bookId = 'b';
-    seedBook(bookId, ['ch-A']);
+    await seedBook(bookId, ['ch-A']);
 
     await ChapterEmbeddingService.writeChunksForChapter('ch-A', bookId, [
       { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 's' },
@@ -107,7 +114,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding — title chunk �
 
   it('章节段落未加载(loadChapterContent 返回空) → 不入队', async () => {
     const bookId = 'b';
-    seedBook(bookId, ['ch-A']);
+    await seedBook(bookId, ['ch-A']);
 
     await ChapterEmbeddingService.writeChunksForChapter('ch-A', bookId, [
       { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 's' },
@@ -121,7 +128,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding — title chunk �
 
   it('章节同时有当前 content 和 title chunk → 不入队', async () => {
     const bookId = 'b';
-    seedBook(bookId, ['ch-A']);
+    await seedBook(bookId, ['ch-A']);
 
     await ChapterEmbeddingService.writeChunksForChapter('ch-A', bookId, [
       { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 's' },
@@ -140,7 +147,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding — title chunk �
 
   it('原有条件 1:章节无任何 chunk → 入队', async () => {
     const bookId = 'b';
-    seedBook(bookId, ['ch-A', 'ch-B']);
+    await seedBook(bookId, ['ch-A', 'ch-B']);
 
     // 只给 ch-A 写 chunk
     await ChapterEmbeddingService.writeChunksForChapter('ch-A', bookId, [
@@ -155,7 +162,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding — title chunk �
 
   it('原有条件 2:任一 chunk model 过期 → 入队(无论 kind)', async () => {
     const bookId = 'b';
-    seedBook(bookId, ['ch-A']);
+    await seedBook(bookId, ['ch-A']);
 
     // 直接绕过 writeChunksForChapter 写一条 stale 记录
     const { getDB } = await import('src/utils/indexed-db');
