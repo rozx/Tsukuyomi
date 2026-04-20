@@ -1,5 +1,15 @@
 import { getDB } from 'src/utils/indexed-db';
 import type { Paragraph, Novel } from 'src/models/novel';
+import {
+  loadChapterContent as loaderLoadChapterContent,
+  loadChapterContentsBatch as loaderLoadChapterContentsBatch,
+  peekCacheEntry,
+  setCacheEntry,
+  setCacheMiss,
+  deleteCacheEntry,
+  clearCache as loaderClearCache,
+  touch,
+} from 'src/utils/chapter-content-loader';
 
 /**
  * 章节内容存储结构
@@ -12,7 +22,16 @@ interface ChapterContent {
 
 /**
  * 章节内容服务类
- * 负责章节内容的独立存储和懒加载
+ * 负责章节内容的独立存储和懒加载。
+ *
+ * 只读 + 缓存逻辑已下沉到叶子模块 `utils/chapter-content-loader`，
+ * 本类只保留写路径（save / delete / 批处理）与依赖这些写操作触发的
+ * 副作用编排（embedding 防抖、全文索引失效等）。缓存由 loader 模块独占
+ * 管理，本类通过 `setCacheEntry` / `deleteCacheEntry` 等 API 保持一致。
+ *
+ * 叶子化的目的：让只读消费者（chapter-embedding-service / full-text-index-service /
+ * novel-utils 等）可以直接 import loader 模块，不再 import 本服务，从而切断
+ * 循环依赖。
  */
 export class ChapterContentService {
   /**
@@ -22,15 +41,6 @@ export class ChapterContentService {
   private static serializeContent(content: Paragraph[]): string {
     return JSON.stringify(content);
   }
-
-  /**
-   * 缓存条目：同时保存解析后的对象与不可变序列化快照（用于变更检测）
-   */
-  private static contentCache = new Map<
-    string,
-    { parsed: Paragraph[]; serialized: string } | null
-  >();
-  private static readonly CACHE_MAX_SIZE = 100; // 最多缓存 100 个章节
 
   /**
    * 检查章节内容是否已修改（与缓存或已保存的内容比较）
@@ -45,24 +55,14 @@ export class ChapterContentService {
     newSerialized?: string,
   ): Promise<boolean> {
     const serialized = newSerialized ?? this.serializeContent(newContent);
-    // 先检查缓存
-    if (this.contentCache.has(chapterId)) {
-      const cached = this.contentCache.get(chapterId);
-      // 更新访问顺序（LRU 行为）
-      this.touchCacheEntry(chapterId);
-      // 理论上 has() 为 true 时 get() 不应返回 undefined，但 TS 无法收窄，且这里兜底更安全
-      if (cached === undefined) {
-        return true;
-      }
-      // 如果缓存为 null（表示不存在），则认为已修改
-      if (cached === null) {
-        return true;
-      }
-      // 重要：缓存中的 parsed 可能与 UI/AI 工具共享引用并被就地修改，
-      // 因此不能用对象深比较或引用相等来判断是否变化。
-      // 必须对比不可变的序列化快照，才能同时正确处理：
-      // - 同引用但未修改（应返回 false）
-      // - 同引用但已就地修改（应返回 true）
+    // 先检查 loader 缓存（loader 独占管理缓存 + LRU 顺序）
+    const cached = peekCacheEntry(chapterId);
+    if (cached !== undefined) {
+      touch(chapterId);
+      // 缓存 null 表示不存在 → 认为已修改
+      if (cached === null) return true;
+      // 对比序列化快照（parsed 可能与 UI/AI 工具共享引用并被就地修改，
+      // 所以不能用引用/深比较，只有序列化快照能捕捉"同引用被就地改"的变化）
       return cached.serialized !== serialized;
     }
 
@@ -71,27 +71,17 @@ export class ChapterContentService {
       const db = await getDB();
       const chapterContent = await db.get('chapter-contents', chapterId);
       if (!chapterContent?.content) {
-        // 不存在，缓存 null 表示不存在，避免重复查询
-        this.contentCache.set(chapterId, null);
-        this.evictCacheIfNeeded();
+        setCacheMiss(chapterId);
         return true;
       }
       const savedSerialized = chapterContent.content;
-      // 反序列化并写入缓存（后续加载可直接复用解析结果）
       const saved = JSON.parse(savedSerialized) as Paragraph[];
-      // 更新缓存，避免下次再次从 IndexedDB 加载
-      this.contentCache.set(chapterId, { parsed: saved, serialized: savedSerialized });
-      this.evictCacheIfNeeded();
-      // 更新访问顺序（LRU 行为）
-      this.touchCacheEntry(chapterId);
-      // 使用序列化快照比较，避免“共享引用就地修改”导致的误判
+      setCacheEntry(chapterId, { parsed: saved, serialized: savedSerialized });
+      touch(chapterId);
       return savedSerialized !== serialized;
     } catch (error) {
-      // 加载失败，为了安全起见，认为已修改
-      // 缓存 null 表示加载失败，避免重复尝试
       console.warn(`Failed to check content changes for ${chapterId}:`, error);
-      this.contentCache.set(chapterId, null);
-      this.evictCacheIfNeeded();
+      setCacheMiss(chapterId);
       return true;
     }
   }
@@ -131,9 +121,8 @@ export class ChapterContentService {
       };
 
       await db.put('chapter-contents', chapterContent);
-      // 更新缓存
-      this.contentCache.set(chapterId, { parsed: content, serialized });
-      this.evictCacheIfNeeded();
+      // 更新 loader 缓存
+      setCacheEntry(chapterId, { parsed: content, serialized });
 
       // 段落内容(原文或译文)变动 → 触发章节 embedding 防抖重算(异步,不阻塞保存)
       try {
@@ -158,173 +147,20 @@ export class ChapterContentService {
     }
   }
 
-  // LRU 内存缓存，避免重复加载
-  // 使用 Map 的插入顺序实现 LRU：最近访问的条目会被移动到末尾
-  // （定义见文件顶部：contentCache 与 CACHE_MAX_SIZE）
-
   /**
-   * 清理缓存（当缓存过大时）
-   * 使用 LRU 策略：删除最久未使用的 20% 的缓存项（Map 开头的条目）
-   */
-  private static evictCacheIfNeeded(): void {
-    if (this.contentCache.size > this.CACHE_MAX_SIZE) {
-      // 删除最旧的 20% 的缓存项
-      const entriesToDelete = Math.floor(this.CACHE_MAX_SIZE * 0.2);
-      const keysToDelete = Array.from(this.contentCache.keys()).slice(0, entriesToDelete);
-      for (const key of keysToDelete) {
-        this.contentCache.delete(key);
-      }
-    }
-  }
-
-  /**
-   * 更新缓存条目的访问顺序（LRU 行为）
-   * 将指定的缓存条目移动到 Map 末尾，表示最近使用
-   * @param chapterId 章节 ID
-   */
-  private static touchCacheEntry(chapterId: string): void {
-    if (this.contentCache.has(chapterId)) {
-      const cached = this.contentCache.get(chapterId)!;
-      // 删除并重新添加，移动到末尾（最近使用）
-      this.contentCache.delete(chapterId);
-      this.contentCache.set(chapterId, cached);
-    }
-  }
-
-  /**
-   * 加载章节内容（带缓存）
-   * @param chapterId 章节 ID
-   * @returns 章节内容，如果不存在则返回 undefined
+   * 加载章节内容（带缓存）。代理给 loader 叶子模块。
    */
   static async loadChapterContent(chapterId: string): Promise<Paragraph[] | undefined> {
-    // 检查缓存
-    if (this.contentCache.has(chapterId)) {
-      const cached = this.contentCache.get(chapterId);
-      // 更新访问顺序（LRU 行为）
-      this.touchCacheEntry(chapterId);
-      // 兜底：如果出现 has()==true 但 get()==undefined，则当作缓存未命中，继续走 DB 加载
-      if (cached === undefined) {
-        this.contentCache.delete(chapterId);
-      } else {
-        return cached === null ? undefined : cached.parsed;
-      }
-    }
-
-    try {
-      const db = await getDB();
-      const chapterContent = await db.get('chapter-contents', chapterId);
-      if (!chapterContent?.content) {
-        // 缓存 null 表示不存在，避免重复查询
-        this.contentCache.set(chapterId, null);
-        this.evictCacheIfNeeded();
-        return undefined;
-      }
-      // 反序列化 JSON 字符串为段落数组
-      const serialized = chapterContent.content;
-      const parsed = JSON.parse(serialized) as Paragraph[];
-      // 缓存结果
-      this.contentCache.set(chapterId, { parsed, serialized });
-      this.evictCacheIfNeeded();
-      return parsed;
-    } catch (error) {
-      console.error(`Failed to load chapter content for ${chapterId}:`, error);
-      // 缓存 null 表示加载失败
-      this.contentCache.set(chapterId, null);
-      this.evictCacheIfNeeded();
-      return undefined;
-    }
+    return loaderLoadChapterContent(chapterId);
   }
 
   /**
-   * 批量加载章节内容（优化性能，使用单个事务）
-   * @param chapterIds 章节 ID 数组
-   * @returns 章节内容映射，key 为章节 ID，value 为段落数组或 undefined
+   * 批量加载章节内容（优化性能，使用单个事务）。代理给 loader 叶子模块。
    */
   static async loadChapterContentsBatch(
     chapterIds: string[],
   ): Promise<Map<string, Paragraph[] | undefined>> {
-    const result = new Map<string, Paragraph[] | undefined>();
-    const uncachedIds: string[] = [];
-
-    // 先检查缓存
-    for (const chapterId of chapterIds) {
-      if (this.contentCache.has(chapterId)) {
-        const cached = this.contentCache.get(chapterId);
-        // 更新访问顺序（LRU 行为）
-        this.touchCacheEntry(chapterId);
-        // 兜底：如果出现 has()==true 但 get()==undefined，则当作缓存未命中
-        if (cached === undefined) {
-          this.contentCache.delete(chapterId);
-          uncachedIds.push(chapterId);
-        } else {
-          result.set(chapterId, cached === null ? undefined : cached.parsed);
-        }
-      } else {
-        uncachedIds.push(chapterId);
-      }
-    }
-
-    // 如果所有章节都在缓存中，直接返回
-    if (uncachedIds.length === 0) {
-      return result;
-    }
-
-    try {
-      const db = await getDB();
-      // 使用单个事务批量读取（优化：使用 IDBKeyRange 和 getAll 如果可能）
-      const tx = db.transaction('chapter-contents', 'readonly');
-      const store = tx.objectStore('chapter-contents');
-
-      // 优化：对于少量章节，使用并行 get；对于大量章节，可以考虑分批处理
-      // 当前实现：并行获取所有章节（在单个事务中）
-      const batchSize = 50; // 每批最多 50 个章节，避免一次性加载过多
-      const batches: string[][] = [];
-      for (let i = 0; i < uncachedIds.length; i += batchSize) {
-        batches.push(uncachedIds.slice(i, i + batchSize));
-      }
-
-      // 分批处理，但每批内部并行
-      for (const batch of batches) {
-        const promises = batch.map(async (chapterId) => {
-          try {
-            const chapterContent = await store.get(chapterId);
-            if (!chapterContent?.content) {
-              this.contentCache.set(chapterId, null);
-              return { chapterId, content: undefined };
-            }
-            const serialized = chapterContent.content;
-            const parsed = JSON.parse(serialized) as Paragraph[];
-            this.contentCache.set(chapterId, { parsed, serialized });
-            return { chapterId, content: parsed };
-          } catch (error) {
-            console.error(`Failed to load chapter content for ${chapterId}:`, error);
-            this.contentCache.set(chapterId, null);
-            return { chapterId, content: undefined };
-          }
-        });
-
-        const batchResults = await Promise.all(promises);
-        // 将结果添加到映射中
-        for (const { chapterId, content } of batchResults) {
-          result.set(chapterId, content);
-        }
-      }
-
-      await tx.done;
-
-      // 清理缓存
-      this.evictCacheIfNeeded();
-
-      return result;
-    } catch (error) {
-      console.error('Failed to batch load chapter contents:', error);
-      // 如果批量加载失败，回退到单个加载
-      for (const chapterId of uncachedIds) {
-        const content = await this.loadChapterContent(chapterId);
-        result.set(chapterId, content);
-      }
-      return result;
-    }
+    return loaderLoadChapterContentsBatch(chapterIds);
   }
 
   /**
@@ -332,14 +168,14 @@ export class ChapterContentService {
    * @param chapterId 章节 ID
    */
   static clearCache(chapterId: string): void {
-    this.contentCache.delete(chapterId);
+    deleteCacheEntry(chapterId);
   }
 
   /**
    * 清除所有缓存
    */
   static clearAllCache(): void {
-    this.contentCache.clear();
+    loaderClearCache();
   }
 
   /**
@@ -357,7 +193,7 @@ export class ChapterContentService {
       const db = await getDB();
       await db.delete('chapter-contents', chapterId);
       // 清除缓存
-      this.contentCache.delete(chapterId);
+      deleteCacheEntry(chapterId);
 
       // 清理章节 embedding(异步,不阻塞删除)
       try {
@@ -406,7 +242,7 @@ export class ChapterContentService {
       for (const chapterId of chapterIds) {
         await store.delete(chapterId);
         // 清除缓存
-        this.contentCache.delete(chapterId);
+        deleteCacheEntry(chapterId);
       }
 
       await tx.done;
@@ -449,7 +285,7 @@ export class ChapterContentService {
       const db = await getDB();
       await db.clear('chapter-contents');
       // 清除所有缓存
-      this.contentCache.clear();
+      loaderClearCache();
     } catch (error) {
       console.error('Failed to clear all chapter contents:', error);
       throw error;

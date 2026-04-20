@@ -15,7 +15,7 @@ import {
   ChapterEmbeddingService,
   TITLE_CHUNK_INDEX,
 } from 'src/services/chapter-embedding-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
+import * as chapterContentLoader from 'src/utils/chapter-content-loader';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel, Paragraph } from 'src/models/novel';
 
@@ -87,7 +87,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding â€” title chunk ç
       { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 's' },
     ]);
 
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       mkPara('p1', 'æœ‰å†…å®¹'),
     ]);
 
@@ -103,7 +103,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding â€” title chunk ç
       { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 's' },
     ]);
 
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       mkPara('p1', ''),
       mkPara('p2', '   '),
     ]);
@@ -120,7 +120,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding â€” title chunk ç
       { kind: 'content', chunkIndex: 0, vector: [0.1], textSnippet: 's' },
     ]);
 
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([]);
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([]);
 
     const ids = await ChapterEmbeddingService.findChaptersNeedingEmbedding(bookId);
     expect(ids).toEqual([]);
@@ -137,7 +137,7 @@ describe('ChapterEmbeddingService.findChaptersNeedingEmbedding â€” title chunk ç
       { kind: 'title', chunkIndex: TITLE_CHUNK_INDEX, vector: [0.2], textSnippet: 't' },
     ]);
 
-    const loadSpy = spyOn(ChapterContentService, 'loadChapterContent');
+    const loadSpy = spyOn(chapterContentLoader, 'loadChapterContent');
 
     const ids = await ChapterEmbeddingService.findChaptersNeedingEmbedding(bookId);
     expect(ids).toEqual([]);

@@ -8,7 +8,7 @@ import {
 } from 'src/services/chapter-embedding-service';
 import { EmbeddingService } from 'src/services/embedding-service';
 import { CHAPTER_MODEL_VERSION } from 'src/services/chapter-embedding-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
+import * as chapterContentLoader from 'src/utils/chapter-content-loader';
 import * as BooksStoreModule from 'src/stores/books';
 import type { Paragraph, Novel } from 'src/models/novel';
 import { getDB } from 'src/utils/indexed-db';
@@ -275,7 +275,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
     };
     await mockBooksStoreWith(book);
 
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([]);
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([]);
     const embedSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([]);
 
     await ChapterEmbeddingService.embedChapter('ch-empty');
@@ -307,7 +307,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
       ],
     };
     await mockBooksStoreWith(book);
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       makeParagraph('p1', '原文', '译文'),
     ]);
 
@@ -339,7 +339,7 @@ describe('ChapterEmbeddingService.embedChapter', () => {
       ],
     };
     await mockBooksStoreWith(book);
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       makeParagraph('p1', '原文1', '译文1'),
       makeParagraph('p2', '原文2', '译文2'),
     ]);

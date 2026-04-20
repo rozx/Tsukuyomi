@@ -1,6 +1,6 @@
 import Fuse from 'fuse.js';
 import { getDB } from 'src/utils/indexed-db';
-import { ChapterContentService } from 'src/services/chapter-content-service';
+import { loadChapterContent } from 'src/utils/chapter-content-loader';
 import type { Novel, Chapter } from 'src/models/novel';
 import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 import { findChapterById } from 'src/utils/novel-utils';
@@ -143,8 +143,24 @@ export class FullTextIndexService {
    * 构建全文索引
    */
   static async buildIndex(bookId: string, novel: Novel): Promise<Fuse<IndexDocument>> {
-    // 加载所有章节内容
-    await ChapterContentService.loadAllChapterContents(novel);
+    // 加载所有未加载章节的内容（直接通过 loader 读，避免 import
+    // chapter-content-service 形成循环依赖）
+    if (novel.volumes) {
+      for (const volume of novel.volumes) {
+        if (!volume.chapters) continue;
+        for (let i = 0; i < volume.chapters.length; i++) {
+          const chapter = volume.chapters[i];
+          if (chapter && chapter.content === undefined) {
+            const content = await loadChapterContent(chapter.id);
+            volume.chapters[i] = {
+              ...chapter,
+              content: content || [],
+              contentLoaded: true,
+            };
+          }
+        }
+      }
+    }
 
     // 构建章节映射（包含已加载的内容）
     const chaptersMap = new Map<string, Chapter>();
@@ -413,7 +429,7 @@ export class FullTextIndexService {
 
       // 如果章节内容未加载，加载它（会写回到传入的 novel 引用中）
       if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
+        const content = await loadChapterContent(chapter.id);
         chapter.content = content || [];
         chapter.contentLoaded = true;
       }

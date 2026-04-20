@@ -1,6 +1,5 @@
 import type { Novel, Chapter, Volume, Paragraph } from 'src/models/novel';
-// ChapterContentService 使用动态 import 打破 novel-utils →
-// chapter-content-service → ... → novel-utils 的循环依赖
+import { loadChapterContent } from 'src/utils/chapter-content-loader';
 
 /**
  * 通过章节 ID 查找章节及其在小说中的位置。
@@ -186,8 +185,7 @@ export async function getChapterCharCountAsync(chapter: Chapter): Promise<number
   }
 
   // 如果都没有，尝试从 IndexedDB 加载内容
-  const { ChapterContentService } = await import('src/services/chapter-content-service');
-  const content = await ChapterContentService.loadChapterContent(chapter.id);
+  const content = await loadChapterContent(chapter.id);
   if (content && content.length > 0) {
     return content.reduce((total, para) => total + para.text.length, 0);
   }
@@ -399,8 +397,7 @@ export async function ensureChapterContentLoaded(chapter: Chapter): Promise<Chap
     return chapter;
   }
 
-  const { ChapterContentService } = await import('src/services/chapter-content-service');
-  const content = await ChapterContentService.loadChapterContent(chapter.id);
+  const content = await loadChapterContent(chapter.id);
   if (content) {
     return {
       ...chapter,

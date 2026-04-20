@@ -11,7 +11,7 @@ import {
   TITLE_INPUT_MAX_CHARS,
   composeTitleChunkInput,
 } from 'src/services/chapter-embedding-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
+import * as chapterContentLoader from 'src/utils/chapter-content-loader';
 import { EmbeddingService } from 'src/services/embedding-service';
 import { CHAPTER_MODEL_VERSION } from 'src/services/chapter-embedding-service';
 import { useBooksStore } from 'src/stores/books';
@@ -136,7 +136,7 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
 
   it('正常嵌入:同一章节同时写入 content + title chunk', async () => {
     const { chapterId } = await seedBook('第二王女');
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       mkPara('p1', '夏洛特推开沉重的橡木门,深呼吸。'),
       mkPara('p2', '“殿下,该出发了。”'),
     ]);
@@ -164,7 +164,7 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
 
   it('章节无段落:既不写 content 也不写 title,清空残留', async () => {
     const { chapterId } = await seedBook('某章');
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([]);
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([]);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
     const embedSpy = spyOn(EmbeddingService, 'embedBatch');
 
@@ -177,7 +177,7 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
 
   it('段落全空白:既不写 content 也不写 title', async () => {
     const { chapterId } = await seedBook('某章');
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       mkPara('p1', ''),
       mkPara('p2', '   '),
     ]);
@@ -193,7 +193,7 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
 
   it('标题为空但首段有内容:title chunk 仍写入(嵌入输入只是首段)', async () => {
     const { chapterId } = await seedBook('');
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       mkPara('p1', '没有标题但有内容'),
     ]);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);

@@ -26,7 +26,7 @@ import { cosineSimilarity } from 'src/utils/cosine-similarity';
 import type { Novel, Paragraph } from 'src/models/novel';
 import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
+import { loadChapterContent } from 'src/utils/chapter-content-loader';
 import {
   lookupChapterBookFromDB,
   loadBookMetaFromDB,
@@ -562,7 +562,7 @@ export class ChapterEmbeddingService {
     }
     const { bookId, chapterTitle } = lookup;
 
-    const paragraphs = await ChapterContentService.loadChapterContent(chapterId);
+    const paragraphs = await loadChapterContent(chapterId);
     if (!paragraphs || paragraphs.length === 0) {
       await this.deleteChunksForChapter(chapterId);
       return;
@@ -885,7 +885,7 @@ export class ChapterEmbeddingService {
       // 条件 3:无 title chunk 且段落非全空(可生成 title chunk)
       const hasTitle = arr.some((c) => c.kind === 'title');
       if (!hasTitle) {
-        const paragraphs = (await ChapterContentService.loadChapterContent(chId)) ?? [];
+        const paragraphs = (await loadChapterContent(chId)) ?? [];
         const canMakeTitle = paragraphs.some((p) => (p.text ?? '').trim().length > 0);
         if (canMakeTitle) {
           needsEmbed.push(chId);
