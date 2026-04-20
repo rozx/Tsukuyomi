@@ -101,16 +101,20 @@ export class ChapterContentService {
    * @param chapterId 章节 ID
    * @param content 章节内容（段落数组）
    * @param options 保存选项
+   * @param options.bookId 所属书籍 ID（必填，用于让全文索引定向失效；
+   *   由调用方显式传入以避免 chapter-content-service 反向 lookup books
+   *   形成循环依赖）
    * @param options.skipIfUnchanged 如果内容未修改则跳过保存，默认为 false
    */
   static async saveChapterContent(
     chapterId: string,
     content: Paragraph[],
-    options?: { skipIfUnchanged?: boolean },
+    options: { bookId: string; skipIfUnchanged?: boolean },
   ): Promise<boolean> {
+    const { bookId, skipIfUnchanged } = options;
     const serialized = this.serializeContent(content);
     // 如果启用了 skipIfUnchanged，先检查内容是否已修改
-    if (options?.skipIfUnchanged) {
+    if (skipIfUnchanged) {
       const hasChanged = await this.hasContentChanged(chapterId, content, serialized);
       if (!hasChanged) {
         // 内容未修改，跳过保存
@@ -140,23 +144,9 @@ export class ChapterContentService {
       }
 
       // 使全文索引失效（异步，不阻塞保存操作）
-      // 从章节内容中提取 bookId（需要从 books store 查找）
       try {
         const { FullTextIndexService } = await import('src/services/full-text-index-service');
-        // 尝试从 books store 查找包含此章节的书籍
-        const { BookService } = await import('src/services/book-service');
-        const books = await BookService.getAllBooks();
-        for (const book of books) {
-          if (book.volumes) {
-            for (const volume of book.volumes) {
-              if (volume.chapters?.some((c) => c.id === chapterId)) {
-                // 找到包含此章节的书籍，使索引失效
-                await FullTextIndexService.updateIndexForChapter(book.id, chapterId);
-                break;
-              }
-            }
-          }
-        }
+        await FullTextIndexService.updateIndexForChapter(bookId, chapterId);
       } catch (error) {
         // 索引更新失败不影响内容保存
         console.warn('Failed to update full-text index after saving chapter content:', error);
@@ -355,8 +345,14 @@ export class ChapterContentService {
   /**
    * 删除章节内容
    * @param chapterId 章节 ID
+   * @param options.bookId 所属书籍 ID（必填，用于全文索引失效；由调用
+   *   方显式传入以避免循环依赖）
    */
-  static async deleteChapterContent(chapterId: string): Promise<void> {
+  static async deleteChapterContent(
+    chapterId: string,
+    options: { bookId: string },
+  ): Promise<void> {
+    const { bookId } = options;
     try {
       const db = await getDB();
       await db.delete('chapter-contents', chapterId);
@@ -381,20 +377,7 @@ export class ChapterContentService {
       // 使全文索引失效（异步，不阻塞删除操作）
       try {
         const { FullTextIndexService } = await import('src/services/full-text-index-service');
-        // 尝试从 books store 查找包含此章节的书籍
-        const { BookService } = await import('src/services/book-service');
-        const books = await BookService.getAllBooks();
-        for (const book of books) {
-          if (book.volumes) {
-            for (const volume of book.volumes) {
-              if (volume.chapters?.some((c) => c.id === chapterId)) {
-                // 找到包含此章节的书籍，使索引失效
-                await FullTextIndexService.updateIndexForChapter(book.id, chapterId);
-                break;
-              }
-            }
-          }
-        }
+        await FullTextIndexService.updateIndexForChapter(bookId, chapterId);
       } catch (error) {
         // 索引更新失败不影响内容删除
         console.warn('Failed to update full-text index after deleting chapter content:', error);
@@ -408,8 +391,13 @@ export class ChapterContentService {
   /**
    * 批量删除章节内容
    * @param chapterIds 章节 ID 数组
+   * @param options.bookId 所属书籍 ID（必填，用于全文索引失效）
    */
-  static async bulkDeleteChapterContent(chapterIds: string[]): Promise<void> {
+  static async bulkDeleteChapterContent(
+    chapterIds: string[],
+    options: { bookId: string },
+  ): Promise<void> {
+    const { bookId } = options;
     try {
       const db = await getDB();
       const tx = db.transaction('chapter-contents', 'readwrite');
@@ -438,6 +426,14 @@ export class ChapterContentService {
         }
       } catch (error) {
         console.warn('Failed to cleanup chapter embeddings on bulk delete:', error);
+      }
+
+      // 批量删除章节后让书籍的全文索引整体失效一次
+      try {
+        const { FullTextIndexService } = await import('src/services/full-text-index-service');
+        await FullTextIndexService.invalidateIndex(bookId);
+      } catch (error) {
+        console.warn('Failed to invalidate full-text index after bulk delete:', error);
       }
     } catch (error) {
       console.error('Failed to bulk delete chapter contents:', error);

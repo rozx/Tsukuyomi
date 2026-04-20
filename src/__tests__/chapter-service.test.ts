@@ -36,10 +36,17 @@ const mockLoadChapterContent = mock((_chapterId: string) =>
   Promise.resolve(undefined as Paragraph[] | undefined),
 );
 const mockSaveChapterContent = mock(
-  (_chapterId: string, _content: Paragraph[], _options?: { skipIfUnchanged?: boolean }) =>
-    Promise.resolve(true),
+  (
+    _chapterId: string,
+    _content: Paragraph[],
+    _options: { bookId: string; skipIfUnchanged?: boolean },
+  ) => Promise.resolve(true),
 );
-const mockDeleteChapterContent = mock((_chapterId: string) => Promise.resolve());
+const mockDeleteChapterContent = mock(
+  (_chapterId: string, _options: { bookId: string }) => Promise.resolve(),
+);
+
+const TEST_BOOK_ID = 'test-book';
 
 describe('ChapterService', () => {
   beforeEach(() => {
@@ -454,9 +461,11 @@ describe('ChapterService', () => {
         createdAt: new Date(),
       };
 
-      await ChapterService.saveChapterContent(chapter);
+      await ChapterService.saveChapterContent(chapter, TEST_BOOK_ID);
 
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', content);
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', content, {
+        bookId: TEST_BOOK_ID,
+      });
     });
 
     it('应该跳过没有内容的章节', async () => {
@@ -470,7 +479,7 @@ describe('ChapterService', () => {
         createdAt: new Date(),
       };
 
-      await ChapterService.saveChapterContent(chapter);
+      await ChapterService.saveChapterContent(chapter, TEST_BOOK_ID);
 
       expect(mockSaveChapterContent).not.toHaveBeenCalled();
     });
@@ -487,7 +496,7 @@ describe('ChapterService', () => {
         createdAt: new Date(),
       };
 
-      await ChapterService.saveChapterContent(chapter);
+      await ChapterService.saveChapterContent(chapter, TEST_BOOK_ID);
 
       expect(mockSaveChapterContent).not.toHaveBeenCalled();
     });
@@ -497,9 +506,11 @@ describe('ChapterService', () => {
     it('应该删除章节内容', async () => {
       const chapterId = 'chapter-1';
 
-      await ChapterService.deleteChapterContent(chapterId);
+      await ChapterService.deleteChapterContent(chapterId, TEST_BOOK_ID);
 
-      expect(mockDeleteChapterContent).toHaveBeenCalledWith(chapterId);
+      expect(mockDeleteChapterContent).toHaveBeenCalledWith(chapterId, {
+        bookId: TEST_BOOK_ID,
+      });
     });
   });
 

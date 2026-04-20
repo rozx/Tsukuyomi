@@ -43,7 +43,7 @@ export function useParagraphTranslation(
       content: updatedContent,
       lastEdited: new Date(),
     };
-    await ChapterService.saveChapterContent(updatedChapter);
+    await ChapterService.saveChapterContent(updatedChapter, book.value.id);
 
     // 立即更新 UI，避免等待 updateBook 完成
     selectedChapterWithContent.value = updatedChapter;

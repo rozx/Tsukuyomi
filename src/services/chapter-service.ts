@@ -1972,19 +1972,21 @@ export class ChapterService {
   /**
    * 保存章节内容到独立存储
    * @param chapter 章节对象
+   * @param bookId 所属书籍 ID（用于全文索引失效，必填）
    */
-  static async saveChapterContent(chapter: Chapter): Promise<void> {
+  static async saveChapterContent(chapter: Chapter, bookId: string): Promise<void> {
     if (chapter.content && chapter.content.length > 0) {
-      await ChapterContentService.saveChapterContent(chapter.id, chapter.content);
+      await ChapterContentService.saveChapterContent(chapter.id, chapter.content, { bookId });
     }
   }
 
   /**
    * 删除章节内容（从独立存储）
    * @param chapterId 章节 ID
+   * @param bookId 所属书籍 ID（用于全文索引失效，必填）
    */
-  static async deleteChapterContent(chapterId: string): Promise<void> {
-    await ChapterContentService.deleteChapterContent(chapterId);
+  static async deleteChapterContent(chapterId: string, bookId: string): Promise<void> {
+    await ChapterContentService.deleteChapterContent(chapterId, { bookId });
   }
 
   /**

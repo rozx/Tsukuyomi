@@ -1,7 +1,6 @@
 import Fuse from 'fuse.js';
 import { getDB } from 'src/utils/indexed-db';
 import { ChapterContentService } from 'src/services/chapter-content-service';
-import { BookService } from 'src/services/book-service';
 import type { Novel, Chapter } from 'src/models/novel';
 import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 import { findChapterById } from 'src/utils/novel-utils';
@@ -259,7 +258,10 @@ export class FullTextIndexService {
   /**
    * 加载索引（从内存缓存或 IndexedDB）
    */
-  static async loadIndex(bookId: string): Promise<Fuse<IndexDocument> | null> {
+  static async loadIndex(
+    bookId: string,
+    novelForBuild?: Novel,
+  ): Promise<Fuse<IndexDocument> | null> {
     // 检查内存缓存
     if (this.indexCache.has(bookId)) {
       this.touchCacheEntry(bookId);
@@ -274,14 +276,15 @@ export class FullTextIndexService {
       return fuse;
     }
 
-    // 如果索引不存在，尝试构建
-    try {
-      const novel = await BookService.getBookById(bookId, true);
-      if (novel) {
-        return await this.buildIndex(bookId, novel);
+    // 如果索引不存在且调用方提供了 novel，尝试就地构建；
+    // 否则返回 null，让调用方走降级路径或显式调 buildIndex。
+    // （移除对 BookService.getBookById 的反向 lookup 是为了打破 ftis → book-service 的循环依赖）
+    if (novelForBuild) {
+      try {
+        return await this.buildIndex(bookId, novelForBuild);
+      } catch (error) {
+        console.error(`Failed to build index for ${bookId}:`, error);
       }
-    } catch (error) {
-      console.error(`Failed to build index for ${bookId}:`, error);
     }
 
     return null;
@@ -309,8 +312,8 @@ export class FullTextIndexService {
       return [];
     }
 
-    // 加载索引
-    const fuse = await this.loadIndex(bookId);
+    // 加载索引（若不存在，传入 novelOverride 以供就地构建）
+    const fuse = await this.loadIndex(bookId, novelOverride);
     if (!fuse) {
       console.warn(`Index not available for book ${bookId}, falling back to linear search`);
       return [];
@@ -343,10 +346,14 @@ export class FullTextIndexService {
 
     // 转换为 ParagraphSearchResult
     const results: ParagraphSearchResult[] = [];
-    const novel = novelOverride ?? (await BookService.getBookById(bookId, false));
-    if (!novel || !novel.volumes) {
+    // novelOverride 应由调用方传入；若缺失则无法把索引匹配映射回具体段落/章节引用
+    if (!novelOverride || !novelOverride.volumes) {
       return [];
     }
+    // 重新绑定以保留 volumes 的非 undefined 窄化
+    const novel: Novel & { volumes: NonNullable<Novel['volumes']> } = novelOverride as Novel & {
+      volumes: NonNullable<Novel['volumes']>;
+    };
 
     for (const result of searchResults) {
       const doc = result.item;

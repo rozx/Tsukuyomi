@@ -309,7 +309,7 @@ export function useSearchReplace(
     };
 
     try {
-      await ChapterService.saveChapterContent(updatedChapter);
+      await ChapterService.saveChapterContent(updatedChapter, bookValue.id);
 
       const updatedVolumes = ChapterService.updateChapter(bookValue, chapter.id, {
         content: updatedContent,

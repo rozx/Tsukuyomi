@@ -175,6 +175,7 @@ export class BookService {
             if (chapter.content && chapter.content.length > 0) {
               // 只保存修改过的章节内容
               await ChapterContentService.saveChapterContent(chapter.id, chapter.content, {
+                bookId: book.id,
                 skipIfUnchanged: true,
               });
             }
@@ -203,7 +204,9 @@ export class BookService {
           if (volume.chapters) {
             for (const chapter of volume.chapters) {
               if (chapter.content && chapter.content.length > 0) {
-                await ChapterContentService.saveChapterContent(chapter.id, chapter.content);
+                await ChapterContentService.saveChapterContent(chapter.id, chapter.content, {
+                  bookId: book.id,
+                });
               }
             }
           }
@@ -247,7 +250,7 @@ export class BookService {
 
       // 2. 删除所有章节内容
       if (chapterIds.length > 0) {
-        await ChapterContentService.bulkDeleteChapterContent(chapterIds);
+        await ChapterContentService.bulkDeleteChapterContent(chapterIds, { bookId: id });
       }
     }
 

@@ -239,7 +239,7 @@ export function useChapterTranslation(
     // 保存章节内容到 IndexedDB（必须等待完成，否则切换章节时翻译可能丢失）
     if (updatedChapter?.content) {
       try {
-        await ChapterService.saveChapterContent(updatedChapter);
+        await ChapterService.saveChapterContent(updatedChapter, currentBook.id);
       } catch (error) {
         console.error('[useChapterTranslation] 保存章节内容失败:', error);
       }
@@ -276,7 +276,7 @@ export function useChapterTranslation(
     try {
       // 先直接落盘当前章节内容，避免把整本 volumes 快照传入 updateBook
       // 导致并发翻译章节在 await 间隙被旧快照覆盖。
-      await ChapterService.saveChapterContent(chapterToSave);
+      await ChapterService.saveChapterContent(chapterToSave, currentBookId);
 
       // 仅更新书籍元数据时间戳（不传 volumes），让 booksStore.updateBook
       // 自动走 metadata-only 分支，避免触发章节内容重建/合并流程。
