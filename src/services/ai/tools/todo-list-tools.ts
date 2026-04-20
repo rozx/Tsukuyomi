@@ -7,6 +7,21 @@ type CreateTodoAction = {
   data: TodoItem;
 };
 
+/**
+ * 按 ID 操作单个待办事项工具（mark_todo_done / mark_todo_working / delete_todo）
+ * 共用的 parameters schema：仅 id: string 必填。
+ */
+const TODO_BY_ID_PARAMETERS = {
+  type: 'object' as const,
+  properties: {
+    id: {
+      type: 'string',
+      description: '待办事项的 ID',
+    },
+  },
+  required: ['id'],
+};
+
 function dispatchTodoCreated(
   todo: TodoItem,
   onAction: ((action: CreateTodoAction) => void) | undefined,
@@ -290,16 +305,7 @@ export const todoListTools: ToolDefinition[] = [
       function: {
         name: 'mark_todo_done',
         description: '将待办事项标记为完成。',
-        parameters: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: '待办事项的 ID',
-            },
-          },
-          required: ['id'],
-        },
+        parameters: TODO_BY_ID_PARAMETERS,
       },
     },
     handler: (args, { onAction }) => {
@@ -340,16 +346,7 @@ export const todoListTools: ToolDefinition[] = [
       function: {
         name: 'mark_todo_working',
         description: '将待办事项标记为进行中。在开始处理某个待办事项之前调用此工具。',
-        parameters: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: '待办事项的 ID',
-            },
-          },
-          required: ['id'],
-        },
+        parameters: TODO_BY_ID_PARAMETERS,
       },
     },
     handler: (args, { onAction }) => {
@@ -389,16 +386,7 @@ export const todoListTools: ToolDefinition[] = [
       function: {
         name: 'delete_todo',
         description: '删除待办事项。',
-        parameters: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: '待办事项的 ID',
-            },
-          },
-          required: ['id'],
-        },
+        parameters: TODO_BY_ID_PARAMETERS,
       },
     },
     handler: (args, { onAction }) => {
