@@ -3,8 +3,8 @@ import { getDB } from 'src/utils/indexed-db';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { BookService } from 'src/services/book-service';
 import type { Novel, Chapter } from 'src/models/novel';
-import type { ParagraphSearchResult } from 'src/services/chapter-service';
-import { ChapterService } from 'src/services/chapter-service';
+import type { ParagraphSearchResult } from 'src/models/paragraph-search';
+import { findChapterById } from 'src/utils/novel-utils';
 
 /**
  * 索引文档结构
@@ -394,7 +394,7 @@ export class FullTextIndexService {
       let chapter: Chapter | undefined = volume?.chapters?.[doc.chapterIndex];
 
       if (!chapter || chapter.id !== doc.chapterId) {
-        const chapterLocation = ChapterService.findChapterById(novel, doc.chapterId);
+        const chapterLocation = findChapterById(novel, doc.chapterId);
         if (!chapterLocation) {
           continue;
         }

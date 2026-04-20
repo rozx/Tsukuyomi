@@ -1,24 +1,16 @@
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-generator';
 import {
+  findChapterById,
   getChapterContentText,
   getChapterDisplayTitle,
   normalizeChapterTitle,
 } from 'src/utils/novel-utils';
 import { formatTranslationForDisplay } from 'src/utils/translation-utils';
 import { ChapterContentService } from './chapter-content-service';
+import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 
-/**
- * 段落搜索结果接口
- */
-export interface ParagraphSearchResult {
-  paragraph: Paragraph;
-  paragraphIndex: number;
-  chapter: Chapter;
-  chapterIndex: number;
-  volume: Volume;
-  volumeIndex: number;
-}
+export type { ParagraphSearchResult };
 
 /**
  * 获取段落的翻译文本
@@ -587,33 +579,12 @@ export class ChapterService {
   }
 
   /**
-   * 通过章节 ID 查找章节
+   * 通过章节 ID 查找章节（委托给 utils/novel-utils 的纯函数）。
    * @param novel 小说对象
    * @param chapterId 章节 ID
    * @returns 找到的章节及其位置信息，如果不存在则返回 null
    */
-  static findChapterById(
-    novel: Novel | null | undefined,
-    chapterId: string,
-  ): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
-    if (!novel || !novel.volumes || !chapterId) {
-      return null;
-    }
-
-    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (volume && volume.chapters) {
-        for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
-          const chapter = volume.chapters[cIndex];
-          if (chapter && chapter.id === chapterId) {
-            return { chapter, volume, volumeIndex: vIndex, chapterIndex: cIndex };
-          }
-        }
-      }
-    }
-
-    return null;
-  }
+  static findChapterById = findChapterById;
 
   /**
    * 获取指定章节的前一个章节

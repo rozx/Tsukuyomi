@@ -1,5 +1,35 @@
 import type { Novel, Chapter, Volume, Paragraph } from 'src/models/novel';
-import { ChapterContentService } from 'src/services/chapter-content-service';
+// ChapterContentService 使用动态 import 打破 novel-utils →
+// chapter-content-service → ... → novel-utils 的循环依赖
+
+/**
+ * 通过章节 ID 查找章节及其在小说中的位置。
+ *
+ * 纯函数，不做任何 IO。供 chapter-service 与 full-text-index-service
+ * 等共享，避免双方为此互相 import 形成循环依赖。
+ */
+export function findChapterById(
+  novel: Novel | null | undefined,
+  chapterId: string,
+): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
+  if (!novel || !novel.volumes || !chapterId) {
+    return null;
+  }
+
+  for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+    const volume = novel.volumes[vIndex];
+    if (volume && volume.chapters) {
+      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
+        const chapter = volume.chapters[cIndex];
+        if (chapter && chapter.id === chapterId) {
+          return { chapter, volume, volumeIndex: vIndex, chapterIndex: cIndex };
+        }
+      }
+    }
+  }
+
+  return null;
+}
 
 /**
  * 获取卷的显示标题（优先使用翻译，否则使用原文）
@@ -156,6 +186,7 @@ export async function getChapterCharCountAsync(chapter: Chapter): Promise<number
   }
 
   // 如果都没有，尝试从 IndexedDB 加载内容
+  const { ChapterContentService } = await import('src/services/chapter-content-service');
   const content = await ChapterContentService.loadChapterContent(chapter.id);
   if (content && content.length > 0) {
     return content.reduce((total, para) => total + para.text.length, 0);
@@ -368,6 +399,7 @@ export async function ensureChapterContentLoaded(chapter: Chapter): Promise<Chap
     return chapter;
   }
 
+  const { ChapterContentService } = await import('src/services/chapter-content-service');
   const content = await ChapterContentService.loadChapterContent(chapter.id);
   if (content) {
     return {
