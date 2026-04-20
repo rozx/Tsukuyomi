@@ -9,6 +9,43 @@ import { GlobalConfig } from 'src/services/global-config-cache';
 
 type AskUserOnAction = ToolContext['onAction'];
 
+/**
+ * ask_user / ask_user_batch 共用的单题 JSON Schema 字段：一个问题 + 候选答案 + 自由输入控制。
+ */
+const ASK_USER_QUESTION_PROPERTIES = {
+  question: {
+    type: 'string',
+    description: '要向用户展示的问题（必填）',
+  },
+  suggested_answers: {
+    type: 'array',
+    description: '可选的候选答案列表（用户可一键选择）',
+    items: { type: 'string' },
+  },
+  allow_free_text: {
+    type: 'boolean',
+    description: '是否允许用户输入自定义答案（默认 true）',
+  },
+  placeholder: {
+    type: 'string',
+    description: '自定义输入框的占位符（可选）',
+  },
+  submit_label: {
+    type: 'string',
+    description: '提交按钮文本（可选）',
+  },
+  cancel_label: {
+    type: 'string',
+    description: '取消按钮文本（可选）',
+  },
+  max_length: {
+    type: 'number',
+    description: '自定义输入最大长度（可选）',
+  },
+} as const;
+
+const ASK_USER_QUESTION_REQUIRED: string[] = ['question'];
+
 function handleAskUserSkipped(
   question: string,
   parsedArgs: AskUserPayload,
@@ -116,38 +153,8 @@ export const askUserTools: ToolDefinition[] = [
           '向用户提问并等待用户回答。会弹出全屏对话框展示问题与候选答案，用户也可以输入自定义答案。适用于关键歧义、缺失信息或需要用户偏好决策的场景。',
         parameters: {
           type: 'object',
-          properties: {
-            question: {
-              type: 'string',
-              description: '要向用户展示的问题（必填）',
-            },
-            suggested_answers: {
-              type: 'array',
-              description: '可选的候选答案列表（用户可一键选择）',
-              items: { type: 'string' },
-            },
-            allow_free_text: {
-              type: 'boolean',
-              description: '是否允许用户输入自定义答案（默认 true）',
-            },
-            placeholder: {
-              type: 'string',
-              description: '自定义输入框的占位符（可选）',
-            },
-            submit_label: {
-              type: 'string',
-              description: '提交按钮文本（可选）',
-            },
-            cancel_label: {
-              type: 'string',
-              description: '取消按钮文本（可选）',
-            },
-            max_length: {
-              type: 'number',
-              description: '自定义输入最大长度（可选）',
-            },
-          },
-          required: ['question'],
+          properties: ASK_USER_QUESTION_PROPERTIES,
+          required: ASK_USER_QUESTION_REQUIRED,
         },
       },
     },
@@ -190,38 +197,8 @@ export const askUserTools: ToolDefinition[] = [
               description: '问题列表（必填，至少 1 题）',
               items: {
                 type: 'object',
-                properties: {
-                  question: {
-                    type: 'string',
-                    description: '要向用户展示的问题（必填）',
-                  },
-                  suggested_answers: {
-                    type: 'array',
-                    description: '可选的候选答案列表（用户可一键选择）',
-                    items: { type: 'string' },
-                  },
-                  allow_free_text: {
-                    type: 'boolean',
-                    description: '是否允许用户输入自定义答案（默认 true）',
-                  },
-                  placeholder: {
-                    type: 'string',
-                    description: '自定义输入框的占位符（可选）',
-                  },
-                  submit_label: {
-                    type: 'string',
-                    description: '提交按钮文本（可选）',
-                  },
-                  cancel_label: {
-                    type: 'string',
-                    description: '取消按钮文本（可选）',
-                  },
-                  max_length: {
-                    type: 'number',
-                    description: '自定义输入最大长度（可选）',
-                  },
-                },
-                required: ['question'],
+                properties: ASK_USER_QUESTION_PROPERTIES,
+                required: ASK_USER_QUESTION_REQUIRED,
               },
             },
           },
