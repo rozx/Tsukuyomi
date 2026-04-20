@@ -629,6 +629,39 @@ export function useChapterTranslation(
   };
 
   /**
+   * 生成单段落润色/校对服务共用的 options 字典。两个服务接收完全相同的字段，
+   * 这里集中构造，避免每个调用点重复 9 行样板。
+   */
+  const buildSingleParagraphServiceOptions = (
+    ctx: {
+      bookId: string;
+      chapterId: string;
+      selectedModel: { id: string };
+    },
+    signal: AbortSignal,
+  ) => ({
+    bookId: ctx.bookId,
+    chapterId: ctx.chapterId,
+    allChapterParagraphs: selectedChapterParagraphs.value,
+    signal,
+    aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
+    onToast: (message: Parameters<typeof toast.add>[0]) => {
+      toast.add(message);
+    },
+    onParagraphResult: (paragraphResults: { id: string; translation: string }[]) => {
+      void updateParagraphsFromResults(
+        paragraphResults,
+        ctx.selectedModel.id,
+        ctx.chapterId,
+        ctx.bookId,
+      );
+    },
+    onAction: (action: ActionInfo) => {
+      handleActionInfoToast(action, { severity: 'info' });
+    },
+  });
+
+  /**
    * 构建批量任务（翻译/润色/校对全章）完成后的 toast 详情文案。
    * 包含"成功处理 N 个段落"主句；如果 AI 执行了术语/角色 CRUD 工具，则附加
    * "并执行了 X 个术语操作、Y 个角色操作" 后缀。
@@ -673,27 +706,14 @@ export function useChapterTranslation(
 
     try {
       // 调用单段落润色服务（简化模式，无状态机）
-      await PolishService.polishSingle(paragraph, selectedModel, {
-        bookId: targetBookId,
-        chapterId: targetChapterId,
-        allChapterParagraphs: selectedChapterParagraphs.value,
-        signal: abortController.signal,
-        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
-        onToast: (message) => {
-          toast.add(message);
-        },
-        onParagraphResult: (paragraphResults) => {
-          void updateParagraphsFromResults(
-            paragraphResults,
-            selectedModel.id,
-            targetChapterId,
-            targetBookId,
-          );
-        },
-        onAction: (action) => {
-          handleActionInfoToast(action, { severity: 'info' });
-        },
-      });
+      await PolishService.polishSingle(
+        paragraph,
+        selectedModel,
+        buildSingleParagraphServiceOptions(
+          { bookId: targetBookId, chapterId: targetChapterId, selectedModel },
+          abortController.signal,
+        ),
+      );
 
       toast.add({
         severity: 'success',
@@ -735,27 +755,14 @@ export function useChapterTranslation(
 
     try {
       // 调用单段落校对服务（简化模式，无状态机）
-      await ProofreadingService.proofreadSingle(paragraph, selectedModel, {
-        bookId: targetBookId,
-        chapterId: targetChapterId,
-        allChapterParagraphs: selectedChapterParagraphs.value,
-        signal: abortController.signal,
-        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
-        onToast: (message) => {
-          toast.add(message);
-        },
-        onParagraphResult: (paragraphResults) => {
-          void updateParagraphsFromResults(
-            paragraphResults,
-            selectedModel.id,
-            targetChapterId,
-            targetBookId,
-          );
-        },
-        onAction: (action) => {
-          handleActionInfoToast(action, { severity: 'info' });
-        },
-      });
+      await ProofreadingService.proofreadSingle(
+        paragraph,
+        selectedModel,
+        buildSingleParagraphServiceOptions(
+          { bookId: targetBookId, chapterId: targetChapterId, selectedModel },
+          abortController.signal,
+        ),
+      );
 
       toast.add({
         severity: 'success',
