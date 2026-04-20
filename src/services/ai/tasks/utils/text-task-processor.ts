@@ -105,6 +105,26 @@ export interface TextTaskOptions {
 }
 
 /**
+ * 从服务层 options（PolishServiceOptions / ProofreadingServiceOptions / TranslationServiceOptions）
+ * 提取 processTextTask 需要的 TextTaskOptions 字段。
+ */
+export function pickTextTaskOptions(options: TextTaskOptions | undefined): TextTaskOptions {
+  return {
+    onChunk: options?.onChunk,
+    onProgress: options?.onProgress,
+    onAction: options?.onAction,
+    onToast: options?.onToast,
+    signal: options?.signal,
+    bookId: options?.bookId,
+    chapterId: options?.chapterId,
+    chapterTitle: options?.chapterTitle,
+    chunkSize: options?.chunkSize,
+    allChapterParagraphs: options?.allChapterParagraphs,
+    aiProcessingStore: options?.aiProcessingStore,
+  };
+}
+
+/**
  * 段落提取回调参数
  */
 export interface ParagraphExtractCallbackParams {

@@ -9,6 +9,7 @@ import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import type { AIProcessingStore } from './utils/task-types';
 import { getLastScoreBreakdowns } from 'src/services/ai/tasks/utils/context-builder';
 import {
+  pickTextTaskOptions,
   processTextTask,
   type ParagraphExtractCallbackParams,
   type TitleExtractCallbackParams,
@@ -192,19 +193,7 @@ export class TranslationService {
     return processTextTask(
       content,
       model,
-      {
-        onChunk: options?.onChunk,
-        onProgress: options?.onProgress,
-        onAction: options?.onAction,
-        onToast: options?.onToast,
-        signal: options?.signal,
-        bookId: options?.bookId,
-        chapterId: options?.chapterId,
-        chapterTitle: options?.chapterTitle,
-        chunkSize: options?.chunkSize,
-        allChapterParagraphs: options?.allChapterParagraphs,
-        aiProcessingStore: options?.aiProcessingStore,
-      },
+      pickTextTaskOptions(options),
       {
         taskType: 'translation',
         logLabel: 'TranslationService',

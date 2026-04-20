@@ -4,7 +4,7 @@ import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import type { AIProcessingStore } from './utils/task-types';
-import { processTextTask } from './utils/text-task-processor';
+import { pickTextTaskOptions, processTextTask } from './utils/text-task-processor';
 import { buildChangedParagraphsExtractCallback } from './utils/paragraph-task-shared';
 import { buildProofreadingSystemPrompt } from './prompts';
 import {
@@ -113,19 +113,7 @@ export class ProofreadingService {
     return processTextTask(
       content,
       model,
-      {
-        onChunk: options?.onChunk,
-        onProgress: options?.onProgress,
-        onAction: options?.onAction,
-        onToast: options?.onToast,
-        signal: options?.signal,
-        bookId: options?.bookId,
-        chapterId: options?.chapterId,
-        chapterTitle: options?.chapterTitle,
-        chunkSize: options?.chunkSize,
-        allChapterParagraphs: options?.allChapterParagraphs,
-        aiProcessingStore: options?.aiProcessingStore,
-      },
+      pickTextTaskOptions(options),
       {
         taskType: 'proofreading',
         logLabel: 'ProofreadingService',
