@@ -7,7 +7,10 @@ import { useSettingsStore } from 'src/stores/settings';
 import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
-import { createImportBookHandler } from 'src/composables/shared/useBookImportActions';
+import {
+  createImportBookHandler,
+  createSaveNewBookHandler,
+} from 'src/composables/shared/useBookImportActions';
 import { CoverService } from 'src/services/cover-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
@@ -18,7 +21,7 @@ import {
   formatRelativeBookDate,
   getTotalChapters as utilGetTotalChapters,
 } from 'src/utils';
-import { buildNovelFromFormData, buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
+import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { cloneDeep } from 'lodash';
 
 export type BooksPageContext = ReturnType<typeof createBooksPageContext>;
@@ -491,21 +494,14 @@ function createBooksPageContext() {
     void router.push(`/books/${book.id}`);
   };
 
-  const saveNewBook = async (formData: Partial<Novel>): Promise<void> => {
-    const newBook = buildNovelFromFormData(formData);
-    await booksStore.addBook(newBook);
-    if (newBook.cover) {
-      void coverHistoryStore.addCover(newBook.cover);
-    }
-    showAddDialog.value = false;
-    toast.add({
-      severity: 'success',
-      summary: '添加成功',
-      detail: `已成功添加书籍 "${newBook.title}"`,
-      life: 3000,
-      onRevert: () => booksStore.deleteBook(newBook.id),
-    });
-  };
+  const saveNewBook = createSaveNewBookHandler({
+    booksStore,
+    coverHistoryStore,
+    toast,
+    onAfterImport: () => {
+      showAddDialog.value = false;
+    },
+  });
 
   const saveEditedBook = async (formData: Partial<Novel>): Promise<void> => {
     if (!selectedBook.value) return;

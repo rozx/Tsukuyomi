@@ -12,8 +12,10 @@ import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { createImportBookHandler } from 'src/composables/shared/useBookImportActions';
-import { buildNovelFromFormData } from 'src/utils/novel-form';
+import {
+  createImportBookHandler,
+  createSaveNewBookHandler,
+} from 'src/composables/shared/useBookImportActions';
 
 /**
  * IndexPage 业务逻辑 composable + provide/inject 辅助。
@@ -104,23 +106,14 @@ function createIndexPageContext() {
     },
   });
 
-  const handleSave = async (formData: Partial<Novel>) => {
-    const newBook = buildNovelFromFormData(formData);
-    await booksStore.addBook(newBook);
-
-    if (newBook.cover) {
-      void coverHistoryStore.addCover(newBook.cover);
-    }
-
-    showAddDialog.value = false;
-    toast.add({
-      severity: 'success',
-      summary: '添加成功',
-      detail: `已成功添加书籍 "${newBook.title}"`,
-      life: 3000,
-      onRevert: () => booksStore.deleteBook(newBook.id),
-    });
-  };
+  const handleSave = createSaveNewBookHandler({
+    booksStore,
+    coverHistoryStore,
+    toast,
+    onAfterImport: () => {
+      showAddDialog.value = false;
+    },
+  });
 
   const navigateToBookDetails = (book: Novel) => {
     void router.push(`/books/${book.id}`);
