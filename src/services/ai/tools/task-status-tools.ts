@@ -4,7 +4,8 @@ import type {
   TaskStatus,
   AIProcessingStore,
 } from 'src/services/ai/tasks/utils/task-types';
-import { TodoListService } from 'src/services/todo-list-service';
+import type { TodoReminder } from './task-status-helpers';
+import { buildIncompleteTodoReminder } from './task-status-helpers';
 
 const VALID_STATUSES: TaskStatus[] = ['planning', 'preparing', 'working', 'review', 'end'];
 
@@ -440,18 +441,9 @@ export const taskStatusTools: ToolDefinition[] = [
         }
 
         // 当状态变更为 review 时，获取并提醒未完成的待办事项（仅当有待办时返回，减少 token 消耗）
-        let todoReminder:
-          | { incomplete_count: number; todos: Array<{ id: string; text: string }> }
-          | undefined;
+        let todoReminder: TodoReminder | undefined;
         if (status === 'review') {
-          const todos = TodoListService.getTodosByTaskId(taskId);
-          const incompleteTodos = todos.filter((t) => t.status !== 'done');
-          if (incompleteTodos.length > 0) {
-            todoReminder = {
-              incomplete_count: incompleteTodos.length,
-              todos: incompleteTodos.map((t) => ({ id: t.id, text: t.text })),
-            };
-          }
+          todoReminder = buildIncompleteTodoReminder(taskId);
         }
 
         const result: Record<string, unknown> = {
