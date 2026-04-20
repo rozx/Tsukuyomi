@@ -1,6 +1,7 @@
 import './setup';
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import type { Novel } from '../models/novel';
+import * as BooksStore from '../stores/books';
 
 // Mock updateBook
 const mockUpdateBook = mock((_bookId: string, _updates: Partial<Novel>) => Promise.resolve());
@@ -14,19 +15,12 @@ const mockBooksStore: any = {
   updateBook: mockUpdateBook,
 };
 
-// Mock useBooksStore
-const mockUseBooksStore = mock(() => mockBooksStore);
-await mock.module('src/stores/books', () => ({
-  useBooksStore: mockUseBooksStore,
-}));
-
-// Import tools after mock
 const { characterTools } = await import('../services/ai/tools/character-tools');
 const { terminologyTools } = await import('../services/ai/tools/terminology-tools');
 
 describe('Fallback Search for AI Tools', () => {
   beforeEach(() => {
-    mockUseBooksStore.mockClear();
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue(mockBooksStore as any);
 
     // Create test book with characters and terms
     const testBook: Novel = {

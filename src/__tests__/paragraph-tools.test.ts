@@ -4,6 +4,7 @@ import { containsWholeKeyword, replaceWholeKeyword } from '../services/ai/tools/
 import { paragraphTools } from '../services/ai/tools/paragraph-tools';
 import { ChapterContentService } from '../services/chapter-content-service';
 import * as BooksStore from '../stores/books';
+import * as AIModelsStore from '../stores/ai-models';
 import type { Novel, Volume, Chapter, Paragraph, Translation } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 
@@ -238,11 +239,6 @@ const mockBooksStore: {
   updateBook: mockUpdateBook,
 };
 
-// Mock useBooksStore 在文件顶部
-await mock.module('src/stores/books', () => ({
-  useBooksStore: () => mockBooksStore,
-}));
-
 // Mock useAIModelsStore
 const mockUseAIModelsStore = mock(() => ({
   getModelById: mock((id: string) => ({
@@ -251,10 +247,6 @@ const mockUseAIModelsStore = mock(() => ({
     provider: 'openai',
     model: 'gpt-4',
   })),
-}));
-
-await mock.module('src/stores/ai-models', () => ({
-  useAIModelsStore: mockUseAIModelsStore,
 }));
 
 describe('batch_replace_translations', () => {
@@ -280,6 +272,7 @@ describe('batch_replace_translations', () => {
 
     // Mock useBooksStore 返回我们的 mock store（用于直接导入的情况）
     spyOn(BooksStore, 'useBooksStore').mockReturnValue(mockBooksStore as any);
+    spyOn(AIModelsStore, 'useAIModelsStore').mockImplementation(mockUseAIModelsStore as any);
   });
 
   afterEach(() => {
@@ -871,6 +864,8 @@ describe('chunk boundary enforcement', () => {
   beforeEach(() => {
     // 重置 mock store
     mockBooksStore.books = [];
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue(mockBooksStore as any);
+    spyOn(AIModelsStore, 'useAIModelsStore').mockImplementation(mockUseAIModelsStore as any);
   });
 
   afterEach(() => {

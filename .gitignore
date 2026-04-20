@@ -43,3 +43,6 @@ yarn-error.log*
 
 # Fallow local cache
 .fallow/
+
+# TypeScript incremental build info
+tsconfig.tsbuildinfo

@@ -8,6 +8,7 @@ import { MAX_TRANSLATION_BATCH_SIZE } from '../services/ai/constants';
 // 使用 spyOn 替代 mock.module，避免全局污染 BookService 模块缓存
 import { BookService } from '../services/book-service';
 import { ChapterContentService } from '../services/chapter-content-service';
+import * as BooksStore from '../stores/books';
 
 // 辅助函数：创建测试用小说
 function createTestNovel(volumes: Volume[] = []): Novel {
@@ -94,13 +95,6 @@ const mockBooksStore: {
   // Fix TS error since useBooksStore expects specific store interface, we cast later
 };
 
-// Mock useBooksStore（注意：useBooksStore 在运行时调用，不在模块加载时，所以 mock.module 可接受）
-const mockUseBooksStore = mock(() => mockBooksStore);
-await mock.module('src/stores/books', () => ({
-  useBooksStore: mockUseBooksStore,
-}));
-
-// Import translationTools AFTER useBooksStore mock
 const { createTranslationTools } = await import('../services/ai/tools/translation-tools');
 const translationTools = createTranslationTools();
 const { calculateAllowedBatchSize } = await import('../services/ai/tools/translation-tools');
@@ -117,7 +111,8 @@ describe('add_translation_batch', () => {
   beforeEach(() => {
     mockLoadChapterContentsBatch.mockClear();
     mockUpdateBook.mockClear();
-    mockUseBooksStore.mockClear();
+
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue(mockBooksStore as any);
 
     // 使用 spyOn 拦截 BookService 静态方法（不污染模块缓存）
     mockGetBookById = spyOn(BookService, 'getBookById').mockImplementation(
@@ -130,9 +125,6 @@ describe('add_translation_batch', () => {
     spyOn(ChapterContentService, 'loadChapterContentsBatch').mockImplementation(
       mockLoadChapterContentsBatch,
     );
-
-    mockUseBooksStore.mockImplementation(() => mockBooksStore);
-
     // 重置 mock store
     mockBooksStore.books = [];
   });

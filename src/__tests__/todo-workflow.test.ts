@@ -29,24 +29,24 @@ describe('TodoWorkflow', () => {
       });
     });
 
-    test('translation preparing 应生成 3 个预定义待办', () => {
+    test('translation preparing 应生成 3 个预定义待办（含补充说明）', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('preparing');
 
       expect(todos).toHaveLength(3);
-      expect(todos[0]!.text).toContain('术语');
-      expect(todos[1]!.text).toContain('角色');
-      expect(todos[2]!.text).toContain('记忆');
+      expect(todos[0]!.text).toContain('若术语描述缺失或者不准确');
+      expect(todos[1]!.text).toContain('若角色描述、口吻、别名、全名等缺失或者不准确');
+      expect(todos[2]!.text).toContain('推荐更新记忆取代添加新的记忆');
     });
 
-    test('polish preparing 应生成 3 个预定义待办', () => {
+    test('polish preparing 应生成 3 个预定义待办（含补充说明）', () => {
       const workflow = new TodoWorkflow('polish', taskId);
       const todos = workflow.generateForState('preparing');
 
       expect(todos).toHaveLength(3);
-      expect(todos[0]!.text).toContain('术语');
-      expect(todos[1]!.text).toContain('角色');
-      expect(todos[2]!.text).toContain('记忆');
+      expect(todos[0]!.text).toContain('若术语描述缺失或者不准确');
+      expect(todos[1]!.text).toContain('若角色描述、口吻、别名、全名等缺失或者不准确');
+      expect(todos[2]!.text).toContain('推荐更新记忆取代添加新的记忆');
     });
 
     test('translation review 应生成 5 个预定义待办', () => {
@@ -56,6 +56,7 @@ describe('TodoWorkflow', () => {
       expect(todos).toHaveLength(5);
       expect(todos[0]!.text).toContain('翻译与原文一致性');
       expect(todos[2]!.text).toContain('add_translation_batch');
+      expect(todos[4]!.text).toContain('角色说话口吻的一致性');
     });
 
     test('end 状态不应生成任何待办', () => {

@@ -58,7 +58,9 @@ describe('EmbeddingQueue - 入队与批处理', () => {
   test('enqueue 单条后自动处理并写回 embedding', async () => {
     const memoryA = makeMemory('a');
     spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockResolvedValue(memoryA);
-    const updateSpy = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(undefined);
+    const updateSpy = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(
+      undefined,
+    );
     spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([new Float32Array([0.1, 0.2])]);
 
     EmbeddingQueue.enqueue('a');
@@ -76,7 +78,9 @@ describe('EmbeddingQueue - 入队与批处理', () => {
 
   test('重复 enqueue 同一 id 不会重复处理', async () => {
     spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockResolvedValue(makeMemory('a'));
-    const updateSpy = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(undefined);
+    const updateSpy = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(
+      undefined,
+    );
     spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([new Float32Array([0.5])]);
 
     EmbeddingQueue.enqueue('a');
@@ -315,8 +319,8 @@ describe('EmbeddingQueue - 入队与批处理', () => {
       }),
     ];
     spyOn(memoryEmbeddingLookup, 'getAllBookMemoriesFromDB').mockResolvedValue(memories);
-    spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockImplementation(async (id: string) =>
-      memories.find((m) => m.id === id) ?? null,
+    spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockImplementation(
+      async (id: string) => memories.find((m) => m.id === id) ?? null,
     );
     spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(undefined);
     const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockImplementation(
@@ -333,8 +337,12 @@ describe('EmbeddingQueue - 入队与批处理', () => {
   });
 
   test('EmbeddingService 未就绪时清空处理但保留 pending', async () => {
-    (EmbeddingService.isReady as unknown as { mockReturnValue: (v: boolean) => void }).mockReturnValue(false);
-    (EmbeddingService.init as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue(undefined);
+    (
+      EmbeddingService.isReady as unknown as { mockReturnValue: (v: boolean) => void }
+    ).mockReturnValue(false);
+    (
+      EmbeddingService.init as unknown as { mockResolvedValue: (v: unknown) => void }
+    ).mockResolvedValue(undefined);
 
     EmbeddingQueue.enqueue('a');
     // 等待 run() 完成其未就绪分支
@@ -348,6 +356,8 @@ describe('EmbeddingQueue - 入队与批处理', () => {
 
 describe('EmbeddingQueue - chapter kind', () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
+    useSettingsStore().settings.enableLocalEmbedding = true;
     EmbeddingQueue.__resetForTesting();
     // 该 describe 不依赖总开关的切换,默认启用
     spyOn(settingsLookup, 'readEnableLocalEmbeddingFromDB').mockResolvedValue(true);
@@ -532,7 +542,9 @@ describe('EmbeddingQueue - chapter kind', () => {
   });
 
   test('enqueue 传入 bookId 后 currentTask 暴露该 bookId', async () => {
-    spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockResolvedValue(makeMemory('m1', { bookId: 'book-X' }));
+    spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockResolvedValue(
+      makeMemory('m1', { bookId: 'book-X' }),
+    );
     spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(undefined);
 
     let releaseBatch!: () => void;

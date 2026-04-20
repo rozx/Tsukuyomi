@@ -2,6 +2,10 @@ import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:te
 import { SyncDataService } from '../services/sync-data-service';
 import { ChapterContentService } from '../services/chapter-content-service';
 import { aiModelService } from '../services/ai-model-service';
+import * as AIModelsStore from 'src/stores/ai-models';
+import * as BooksStore from 'src/stores/books';
+import * as CoverHistoryStore from 'src/stores/cover-history';
+import * as SettingsStore from 'src/stores/settings';
 
 // Mock aiModelService methods
 const mockSaveModel = mock((_model: unknown) => Promise.resolve());
@@ -66,29 +70,17 @@ const mockMemoryService = {
   deleteMemory: mock((_bookId: string, _memoryId: string) => Promise.resolve()),
 };
 
-// Mock Modules
-await mock.module('src/stores/ai-models', () => ({
-  useAIModelsStore: () => mockAIModelsStore,
-}));
-
-await mock.module('src/stores/books', () => ({
-  useBooksStore: () => mockBooksStore,
-}));
-
-await mock.module('src/stores/cover-history', () => ({
-  useCoverHistoryStore: () => mockCoverHistoryStore,
-}));
-
-await mock.module('src/stores/settings', () => ({
-  useSettingsStore: () => mockSettingsStore,
-}));
-
 import { MemoryService } from 'src/services/memory-service';
 
 // Mock ChapterContentService
 
 describe('数据同步服务 (SyncDataService)', () => {
   beforeEach(() => {
+    spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue(mockAIModelsStore as any);
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue(mockBooksStore as any);
+    spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue(mockCoverHistoryStore as any);
+    spyOn(SettingsStore, 'useSettingsStore').mockReturnValue(mockSettingsStore as any);
+
     spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([]);
     spyOn(ChapterContentService, 'clearAllCache').mockImplementation(() => {});
     spyOn(ChapterContentService, 'clearCache').mockImplementation(() => {});
