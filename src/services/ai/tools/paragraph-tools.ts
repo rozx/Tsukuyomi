@@ -182,6 +182,57 @@ async function resolveTranslationTarget(
 }
 
 /**
+ * `update_translation` / `remove_translation` 共享的翻译查找+校验流程：
+ * 校验段落是否存在翻译历史 → 按 id 定位目标翻译。
+ * 返回 discriminated union：ok=true 提供索引与条目，
+ * ok=false 携带可直接返回给工具的 JSON 字符串（软失败）。
+ */
+function locateTranslationById(
+  paragraph: Paragraph,
+  translation_id: string,
+  action: 'update' | 'delete',
+):
+  | { ok: true; index: number; translation: Translation }
+  | { ok: false; response: string } {
+  if (!paragraph.translations || paragraph.translations.length === 0) {
+    return {
+      ok: false,
+      response: JSON.stringify({
+        success: false,
+        error: `段落没有翻译历史`,
+      }),
+    };
+  }
+
+  const index = paragraph.translations.findIndex((t) => t.id === translation_id);
+  if (index === -1) {
+    return {
+      ok: false,
+      response: JSON.stringify({
+        success: false,
+        error: `翻译 ID 不存在: ${translation_id}`,
+      }),
+    };
+  }
+
+  const translation = paragraph.translations[index];
+  if (!translation) {
+    // 非软失败场景，理论上 findIndex 命中则元素必然存在，
+    // 这里仅是 TypeScript 的 noUncheckedIndexedAccess 防御。
+    const verb = action === 'update' ? '更新' : '删除';
+    return {
+      ok: false,
+      response: JSON.stringify({
+        success: false,
+        error: `无法找到要${verb}的翻译`,
+      }),
+    };
+  }
+
+  return { ok: true, index, translation };
+}
+
+/**
  * `get_previous_paragraphs` 与 `get_next_paragraphs` 共享的处理逻辑。
  * 两者除了调用的 ChapterService 方法以及上报的 tool_name 外完全一致。
  */
@@ -1309,29 +1360,12 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 查找要更新的翻译
-      if (!paragraph.translations || paragraph.translations.length === 0) {
-        return JSON.stringify({
-          success: false,
-          error: `段落没有翻译历史`,
-        });
+      const locateResult = locateTranslationById(paragraph, translation_id, 'update');
+      if (!locateResult.ok) {
+        return locateResult.response;
       }
-
-      const translationIndex = paragraph.translations.findIndex((t) => t.id === translation_id);
-      if (translationIndex === -1) {
-        return JSON.stringify({
-          success: false,
-          error: `翻译 ID 不存在: ${translation_id}`,
-        });
-      }
-
+      const translationToUpdate = locateResult.translation;
       // 保存原始翻译用于撤销
-      const translationToUpdate = paragraph.translations[translationIndex];
-      if (!translationToUpdate) {
-        return JSON.stringify({
-          success: false,
-          error: `无法找到要更新的翻译`,
-        });
-      }
       const originalTranslation = { ...translationToUpdate };
 
       // 更新翻译内容（原样保存，不进行任何处理）
@@ -1631,29 +1665,11 @@ export const paragraphTools: ToolDefinition[] = [
       const { bookId, book, paragraph, paragraph_id, translation_id, booksStore } = resolved;
 
       // 验证翻译是否存在
-      if (!paragraph.translations || paragraph.translations.length === 0) {
-        return JSON.stringify({
-          success: false,
-          error: `段落没有翻译历史`,
-        });
+      const locateResult = locateTranslationById(paragraph, translation_id, 'delete');
+      if (!locateResult.ok) {
+        return locateResult.response;
       }
-
-      const translationIndex = paragraph.translations.findIndex((t) => t.id === translation_id);
-      if (translationIndex === -1) {
-        return JSON.stringify({
-          success: false,
-          error: `翻译 ID 不存在: ${translation_id}`,
-        });
-      }
-
-      // 保存要删除的翻译信息用于报告
-      const translationToDelete = paragraph.translations[translationIndex];
-      if (!translationToDelete) {
-        return JSON.stringify({
-          success: false,
-          error: `无法找到要删除的翻译`,
-        });
-      }
+      const { index: translationIndex, translation: translationToDelete } = locateResult;
 
       const wasSelected = paragraph.selectedTranslationId === translation_id;
 
