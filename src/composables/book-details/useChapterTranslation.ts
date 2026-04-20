@@ -628,6 +628,27 @@ export function useChapterTranslation(
     return { paragraph, bookId, chapterId, selectedModel };
   };
 
+  /**
+   * 构建批量任务（翻译/润色/校对全章）完成后的 toast 详情文案。
+   * 包含"成功处理 N 个段落"主句；如果 AI 执行了术语/角色 CRUD 工具，则附加
+   * "并执行了 X 个术语操作、Y 个角色操作" 后缀。
+   */
+  const buildBulkTaskCompletionDetail = (
+    taskVerb: string,
+    count: number,
+    actions: ActionInfo[] | undefined,
+  ): string => {
+    let detail = `已成功${taskVerb} ${count} 个段落`;
+    const actionList = actions || [];
+    if (actionList.length === 0) return detail;
+    const { terms, characters } = countUniqueActions(actionList);
+    const parts: string[] = [];
+    if (terms > 0) parts.push(`${terms} 个术语操作`);
+    if (characters > 0) parts.push(`${characters} 个角色操作`);
+    if (parts.length > 0) detail += `，并执行了 ${parts.join('、')}`;
+    return detail;
+  };
+
   // 润色单个段落
   const polishParagraph = async (paragraphId: string) => {
     const ctx = resolveSingleParagraphContext(
@@ -987,28 +1008,10 @@ export function useChapterTranslation(
         },
       });
 
-      // 构建成功消息
-      const actions = result.actions || [];
-      const totalTranslatedCount = lastAppliedTranslations.size;
-      let messageDetail = `已成功翻译 ${totalTranslatedCount} 个段落`;
-      if (actions.length > 0) {
-        const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
-        const actionDetails: string[] = [];
-        if (termActions > 0) {
-          actionDetails.push(`${termActions} 个术语操作`);
-        }
-        if (characterActions > 0) {
-          actionDetails.push(`${characterActions} 个角色操作`);
-        }
-        if (actionDetails.length > 0) {
-          messageDetail += `，并执行了 ${actionDetails.join('、')}`;
-        }
-      }
-
       toast.add({
         severity: 'success',
         summary: '翻译完成',
-        detail: messageDetail,
+        detail: buildBulkTaskCompletionDetail('翻译', lastAppliedTranslations.size, result.actions),
         life: 3000,
       });
     } catch (error) {
@@ -1342,27 +1345,10 @@ export function useChapterTranslation(
       });
 
       // 构建成功消息（所有段落都已通过 onParagraphPolish 回调立即更新）
-      const actions = result.actions || [];
-      const totalPolishedCount = lastAppliedTranslations.size;
-      let messageDetail = `已成功润色 ${totalPolishedCount} 个段落`;
-      if (actions.length > 0) {
-        const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
-        const actionDetails: string[] = [];
-        if (termActions > 0) {
-          actionDetails.push(`${termActions} 个术语操作`);
-        }
-        if (characterActions > 0) {
-          actionDetails.push(`${characterActions} 个角色操作`);
-        }
-        if (actionDetails.length > 0) {
-          messageDetail += `，并执行了 ${actionDetails.join('、')}`;
-        }
-      }
-
       toast.add({
         severity: 'success',
         summary: '润色完成',
-        detail: messageDetail,
+        detail: buildBulkTaskCompletionDetail('润色', lastAppliedTranslations.size, result.actions),
         life: 3000,
       });
     } catch (error) {
@@ -1580,27 +1566,10 @@ export function useChapterTranslation(
       });
 
       // 构建成功消息（所有段落都已通过 onParagraphProofreading 回调立即更新）
-      const actions = result.actions || [];
-      const totalProofreadCount = lastAppliedTranslations.size;
-      let messageDetail = `已成功校对 ${totalProofreadCount} 个段落`;
-      if (actions.length > 0) {
-        const { terms: termActions, characters: characterActions } = countUniqueActions(actions);
-        const actionDetails: string[] = [];
-        if (termActions > 0) {
-          actionDetails.push(`${termActions} 个术语操作`);
-        }
-        if (characterActions > 0) {
-          actionDetails.push(`${characterActions} 个角色操作`);
-        }
-        if (actionDetails.length > 0) {
-          messageDetail += `，并执行了 ${actionDetails.join('、')}`;
-        }
-      }
-
       toast.add({
         severity: 'success',
         summary: '校对完成',
-        detail: messageDetail,
+        detail: buildBulkTaskCompletionDetail('校对', lastAppliedTranslations.size, result.actions),
         life: 3000,
       });
     } catch (error) {
