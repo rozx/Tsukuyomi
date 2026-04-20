@@ -2,6 +2,7 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
+import type { GistSyncData } from 'src/services/gist-sync-service';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { aiModelService } from 'src/services/ai-model-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
@@ -12,126 +13,367 @@ import type { DeletionRecord } from 'src/models/sync';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 
-function validateRemoteCollection(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  collection: any[] | null | undefined,
-  entityLabel: string,
-  requiredStringFields: string[],
+function mergeUniqueById<T extends { id: string }>(
+  primaryItems: T[] | undefined,
+  secondaryItems: T[] | undefined,
+  resolveDuplicate?: (primaryItem: T, secondaryItem: T) => T,
+): T[] | undefined {
+  if (!primaryItems || primaryItems.length === 0) {
+    return secondaryItems;
+  }
+  if (!secondaryItems || secondaryItems.length === 0) {
+    return primaryItems;
+  }
+
+  const secondaryMap = new Map<string, T>();
+  for (const item of secondaryItems) {
+    secondaryMap.set(item.id, item);
+  }
+
+  const seenIds = new Set<string>();
+  const merged = primaryItems.map((item) => {
+    seenIds.add(item.id);
+    const secondaryItem = secondaryMap.get(item.id);
+    if (!secondaryItem || !resolveDuplicate) {
+      return item;
+    }
+    return resolveDuplicate(item, secondaryItem);
+  });
+
+  for (const item of secondaryItems) {
+    if (!seenIds.has(item.id)) {
+      seenIds.add(item.id);
+      merged.push(item);
+    }
+  }
+
+  return merged;
+}
+
+function mergeUniqueStrings(
+  primaryItems: string[] | undefined,
+  secondaryItems: string[] | undefined,
+): string[] | undefined {
+  if (!primaryItems || primaryItems.length === 0) {
+    return secondaryItems;
+  }
+  if (!secondaryItems || secondaryItems.length === 0) {
+    return primaryItems;
+  }
+
+  return Array.from(new Set([...primaryItems, ...secondaryItems]));
+}
+
+function getMergeTimestamp(value: Date | number | string | undefined): number {
+  if (value === undefined || value === null) {
+    return 0;
+  }
+
+  const timestamp = typeof value === 'number' ? value : new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getVolumeMergeTimestamp(volume: Volume): number {
+  if (!volume.chapters || volume.chapters.length === 0) {
+    return 0;
+  }
+
+  let latestTimestamp = 0;
+  for (const chapter of volume.chapters) {
+    latestTimestamp = Math.max(latestTimestamp, getMergeTimestamp(chapter.lastEdited));
+  }
+  return latestTimestamp;
+}
+
+function shouldKeepLocalOnlyItem(
+  localItemTime: number,
+  remoteNovelTime: number,
+  lastSyncTime: number,
 ): boolean {
-  if (collection === null || collection === undefined) return true;
-  if (!Array.isArray(collection)) {
-    console.error(`[SyncDataService] 验证失败: ${entityLabel}s 必须是数组`);
-    return false;
+  if (lastSyncTime === 0 || remoteNovelTime === 0) {
+    return true;
   }
-  for (const item of collection) {
-    if (!item || typeof item !== 'object') {
-      console.error(`[SyncDataService] 验证失败: ${entityLabel} 必须是对象`);
-      return false;
+
+  if (remoteNovelTime <= lastSyncTime) {
+    return true;
+  }
+
+  return localItemTime > lastSyncTime;
+}
+
+function mergeNotes(primaryNotes: Novel['notes'], secondaryNotes: Novel['notes']): Novel['notes'] {
+  return mergeUniqueById(primaryNotes, secondaryNotes, (primaryNote, secondaryNote) => {
+    const primaryTime = getMergeTimestamp(primaryNote.lastEdited);
+    const secondaryTime = getMergeTimestamp(secondaryNote.lastEdited);
+    return secondaryTime > primaryTime ? secondaryNote : primaryNote;
+  });
+}
+
+async function loadChapterContentForNovelMerge(chapter: Chapter | undefined): Promise<Paragraph[]> {
+  if (!chapter) {
+    return [];
+  }
+
+  if (
+    chapter.content !== undefined &&
+    chapter.content !== null &&
+    Array.isArray(chapter.content) &&
+    chapter.content.length > 0
+  ) {
+    return chapter.content;
+  }
+
+  const loadedContent = await ChapterContentService.loadChapterContent(chapter.id);
+  return loadedContent ?? [];
+}
+
+async function ensureChapterContentLoadedForNovelMerge(chapter: Chapter): Promise<Chapter> {
+  const content = await loadChapterContentForNovelMerge(chapter);
+  if (content.length === 0) {
+    return chapter;
+  }
+
+  return {
+    ...chapter,
+    content,
+  };
+}
+
+async function mergeNovelChapters(
+  primaryChapters: Chapter[] | undefined,
+  secondaryChapters: Chapter[] | undefined,
+  preferRemoteSelection: boolean,
+  primaryNovelLastEdited?: Date | number | string,
+  secondaryNovelLastEdited?: Date | number | string,
+  lastSyncTime = 0,
+): Promise<Chapter[] | undefined> {
+  const primaryIsRemote = preferRemoteSelection;
+  const remoteNovelTime = primaryIsRemote
+    ? getMergeTimestamp(primaryNovelLastEdited)
+    : getMergeTimestamp(secondaryNovelLastEdited);
+  const shouldKeepChapterWithoutCounterpart = (chapter: Chapter): boolean => {
+    const chapterTime = getMergeTimestamp(chapter.lastEdited);
+    return shouldKeepLocalOnlyItem(chapterTime, remoteNovelTime, lastSyncTime);
+  };
+
+  if (!primaryChapters || primaryChapters.length === 0) {
+    if (!secondaryChapters || secondaryChapters.length === 0) {
+      return primaryChapters;
     }
-    for (const field of requiredStringFields) {
-      if (!item[field] || typeof item[field] !== 'string') {
-        console.error(
-          `[SyncDataService] 验证失败: ${entityLabel} 必须包含有效的 ${field}`,
-        );
-        return false;
+    const chapters = secondaryChapters.filter(shouldKeepChapterWithoutCounterpart);
+    return Promise.all(chapters.map(ensureChapterContentLoadedForNovelMerge));
+  }
+  if (!secondaryChapters || secondaryChapters.length === 0) {
+    const chapters = primaryIsRemote
+      ? primaryChapters
+      : primaryChapters.filter(shouldKeepChapterWithoutCounterpart);
+    return Promise.all(chapters.map(ensureChapterContentLoadedForNovelMerge));
+  }
+
+  const secondaryChapterMap = new Map<string, Chapter>();
+  for (const chapter of secondaryChapters) {
+    secondaryChapterMap.set(chapter.id, chapter);
+  }
+
+  const mergedChapters = await Promise.all(
+    primaryChapters.map(async (primaryChapter) => {
+      const secondaryChapter = secondaryChapterMap.get(primaryChapter.id);
+      if (!secondaryChapter) {
+        if (!primaryIsRemote && !shouldKeepChapterWithoutCounterpart(primaryChapter)) {
+          return null;
+        }
+        return ensureChapterContentLoadedForNovelMerge(primaryChapter);
       }
+
+      const localChapter = primaryIsRemote ? secondaryChapter : primaryChapter;
+      const remoteChapter = primaryIsRemote ? primaryChapter : secondaryChapter;
+      const localTime = getMergeTimestamp(localChapter.lastEdited);
+      const remoteTime = getMergeTimestamp(remoteChapter.lastEdited);
+      const preferRemoteChapter =
+        remoteTime === localTime ? preferRemoteSelection : remoteTime > localTime;
+      const winningChapter = preferRemoteChapter ? remoteChapter : localChapter;
+
+      const localContent = await loadChapterContentForNovelMerge(localChapter);
+      const remoteContent = await loadChapterContentForNovelMerge(remoteChapter);
+
+      if (localContent.length === 0 && remoteContent.length === 0) {
+        return winningChapter;
+      }
+
+      return {
+        ...winningChapter,
+        content: mergeParagraphTranslations(localContent, remoteContent, preferRemoteChapter),
+      };
+    }),
+  );
+  const compactMergedChapters = mergedChapters.filter((chapter): chapter is Chapter => !!chapter);
+
+  const seenChapterIds = new Set(primaryChapters.map((chapter) => chapter.id));
+  for (const secondaryChapter of secondaryChapters) {
+    if (seenChapterIds.has(secondaryChapter.id)) continue;
+    if (!shouldKeepChapterWithoutCounterpart(secondaryChapter)) continue;
+    compactMergedChapters.push(await ensureChapterContentLoadedForNovelMerge(secondaryChapter));
+  }
+
+  return compactMergedChapters;
+}
+
+async function mergeNovelVolumes(
+  primaryVolumes: Volume[] | undefined,
+  secondaryVolumes: Volume[] | undefined,
+  preferRemoteSelection: boolean,
+  primaryNovelLastEdited?: Date | number | string,
+  secondaryNovelLastEdited?: Date | number | string,
+  lastSyncTime = 0,
+): Promise<Volume[] | undefined> {
+  const primaryIsRemote = preferRemoteSelection;
+  const remoteNovelTime = primaryIsRemote
+    ? getMergeTimestamp(primaryNovelLastEdited)
+    : getMergeTimestamp(secondaryNovelLastEdited);
+  const localNovelTime = primaryIsRemote
+    ? getMergeTimestamp(secondaryNovelLastEdited)
+    : getMergeTimestamp(primaryNovelLastEdited);
+  const shouldKeepVolumeWithoutCounterpart = (volume: Volume): boolean => {
+    const volumeTimestamp = getVolumeMergeTimestamp(volume);
+    const effectiveLocalTime = volumeTimestamp > 0 ? volumeTimestamp : localNovelTime;
+    return shouldKeepLocalOnlyItem(effectiveLocalTime, remoteNovelTime, lastSyncTime);
+  };
+
+  if (!primaryVolumes || primaryVolumes.length === 0) {
+    if (!secondaryVolumes || secondaryVolumes.length === 0) {
+      return primaryVolumes;
     }
-  }
-  return true;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasNovelChangesToUpload(localNovels: any[], remoteNovels: any[] | undefined): boolean {
-  const remote = remoteNovels || [];
-  if (localNovels.length !== remote.length) return true;
-  const remoteMap = new Map(remote.map((n) => [n.id, n]));
-  for (const localNovel of localNovels) {
-    const remoteNovel = remoteMap.get(localNovel.id);
-    if (!remoteNovel) return true;
-    if (isTimeDifferent(localNovel.lastEdited, remoteNovel.lastEdited)) return true;
-  }
-  return false;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasAiModelChangesToUpload(localModels: any[], remoteModels: any[] | undefined): boolean {
-  const remote = remoteModels || [];
-  if (localModels.length !== remote.length) return true;
-  const remoteMap = new Map(remote.map((m) => [m.id, m]));
-  for (const localModel of localModels) {
-    const remoteModel = remoteMap.get(localModel.id);
-    if (!remoteModel) return true;
-    const localForCompare = omit(localModel, 'apiKey', 'lastEdited');
-    const remoteForCompare = omit(remoteModel, 'apiKey', 'lastEdited');
-    if (!isEqual(localForCompare, remoteForCompare)) return true;
-  }
-  return false;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function prepareAppSettingsForCompare(settings: any): any {
-  const omitted = omit(settings, 'lastEdited');
-  if (omitted.syncs && Array.isArray(omitted.syncs)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    omitted.syncs = omitted.syncs.map((sync: any) =>
-      omit(
-        sync,
-        'lastSyncTime',
-        'lastSyncedModelIds',
-        'lastRemoteUpdatedAt',
-        'deletedNovelIds',
-        'deletedModelIds',
-        'deletedCoverIds',
-        'deletedCoverUrls',
-        'deletedMemoryIds',
-      ),
+    const volumes = secondaryVolumes.filter(shouldKeepVolumeWithoutCounterpart);
+    return Promise.all(
+      volumes.map(async (volume) => ({
+        ...volume,
+        chapters: await mergeNovelChapters(
+          volume.chapters,
+          undefined,
+          preferRemoteSelection,
+          primaryNovelLastEdited,
+          secondaryNovelLastEdited,
+          lastSyncTime,
+        ),
+      })),
     );
   }
-  return omitted;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasAppSettingsChangesToUpload(local: any, remote: any): boolean {
-  if (remote && !isTimeDifferent(local.lastEdited, remote.lastEdited)) return false;
-  const localForCompare = prepareAppSettingsForCompare(local);
-  const remoteForCompare = prepareAppSettingsForCompare(remote || {});
-  if (isEqual(localForCompare, remoteForCompare)) return false;
-  if (!remote && Object.keys(local).length > 0) return true;
-  return !!remote;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasCoverHistoryChangesToUpload(localCovers: any[], remoteCovers: any[] | undefined): boolean {
-  const remote = remoteCovers || [];
-  if (localCovers.length !== remote.length) return true;
-  const remoteMap = new Map(remote.map((c) => [c.id, c]));
-  for (const localCover of localCovers) {
-    const remoteCover = remoteMap.get(localCover.id);
-    if (!remoteCover) return true;
-    if (isTimeDifferent(localCover.addedAt, remoteCover.addedAt)) return true;
+  if (!secondaryVolumes || secondaryVolumes.length === 0) {
+    const volumes = primaryIsRemote
+      ? primaryVolumes
+      : primaryVolumes.filter(shouldKeepVolumeWithoutCounterpart);
+    return Promise.all(
+      volumes.map(async (volume) => ({
+        ...volume,
+        chapters: await mergeNovelChapters(
+          volume.chapters,
+          undefined,
+          preferRemoteSelection,
+          primaryNovelLastEdited,
+          secondaryNovelLastEdited,
+          lastSyncTime,
+        ),
+      })),
+    );
   }
-  return false;
-}
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function hasMemoryChangesToUpload(localMemories: any[], remoteMemories: any[] | undefined): boolean {
-  const remote = remoteMemories || [];
-  if (localMemories.length !== remote.length) return true;
-  const remoteMap = new Map(remote.map((m) => [m.id, m]));
-  for (const localMemory of localMemories) {
-    const remoteMemory = remoteMap.get(localMemory.id);
-    if (!remoteMemory) return true;
-    if (isTimeDifferent(localMemory.lastAccessedAt, remoteMemory.lastAccessedAt)) return true;
-    if (
-      localMemory.content !== remoteMemory.content ||
-      localMemory.summary !== remoteMemory.summary
-    ) {
-      return true;
+  const secondaryVolumeMap = new Map<string, Volume>();
+  for (const volume of secondaryVolumes) {
+    secondaryVolumeMap.set(volume.id, volume);
+  }
+
+  const mergedVolumes = await Promise.all(
+    primaryVolumes.map(async (primaryVolume) => {
+      const secondaryVolume = secondaryVolumeMap.get(primaryVolume.id);
+      if (!secondaryVolume) {
+        if (!primaryIsRemote && !shouldKeepVolumeWithoutCounterpart(primaryVolume)) {
+          return null;
+        }
+        return {
+          ...primaryVolume,
+          chapters: await mergeNovelChapters(
+            primaryVolume.chapters,
+            undefined,
+            preferRemoteSelection,
+            primaryNovelLastEdited,
+            secondaryNovelLastEdited,
+            lastSyncTime,
+          ),
+        };
+      }
+
+      return {
+        ...primaryVolume,
+        chapters: await mergeNovelChapters(
+          primaryVolume.chapters,
+          secondaryVolume.chapters,
+          preferRemoteSelection,
+          primaryNovelLastEdited,
+          secondaryNovelLastEdited,
+          lastSyncTime,
+        ),
+      };
+    }),
+  );
+  const compactMergedVolumes = mergedVolumes.filter((volume) => volume !== null) as Volume[];
+
+  const seenVolumeIds = new Set(primaryVolumes.map((volume) => volume.id));
+  for (const secondaryVolume of secondaryVolumes) {
+    if (!seenVolumeIds.has(secondaryVolume.id)) {
+      if (!shouldKeepVolumeWithoutCounterpart(secondaryVolume)) {
+        continue;
+      }
+      compactMergedVolumes.push({
+        ...secondaryVolume,
+        chapters: await mergeNovelChapters(
+          secondaryVolume.chapters,
+          undefined,
+          preferRemoteSelection,
+          primaryNovelLastEdited,
+          secondaryNovelLastEdited,
+          lastSyncTime,
+        ),
+      });
     }
   }
-  return false;
+
+  return compactMergedVolumes;
 }
 
+async function mergeNovelKeepingPrimary(
+  primaryNovel: Novel,
+  secondaryNovel: Novel | undefined,
+  preferRemoteSelection: boolean,
+  lastSyncTime = 0,
+): Promise<Novel> {
+  if (!secondaryNovel) {
+    return primaryNovel;
+  }
+
+  return {
+    ...primaryNovel,
+    alternateTitles: mergeUniqueStrings(
+      primaryNovel.alternateTitles,
+      secondaryNovel.alternateTitles,
+    ),
+    tags: mergeUniqueStrings(primaryNovel.tags, secondaryNovel.tags),
+    webUrl: mergeUniqueStrings(primaryNovel.webUrl, secondaryNovel.webUrl),
+    characterSettings: mergeUniqueById(
+      primaryNovel.characterSettings,
+      secondaryNovel.characterSettings,
+    ),
+    terminologies: mergeUniqueById(primaryNovel.terminologies, secondaryNovel.terminologies),
+    notes: mergeNotes(primaryNovel.notes, secondaryNovel.notes),
+    volumes: await mergeNovelVolumes(
+      primaryNovel.volumes,
+      secondaryNovel.volumes,
+      preferRemoteSelection,
+      primaryNovel.lastEdited,
+      secondaryNovel.lastEdited,
+      lastSyncTime,
+    ),
+  };
+}
 
 /**
  * 合并段落翻译
@@ -219,8 +461,7 @@ function mergeParagraphTranslations(
       !!selectedTranslationId && merged.some((t) => t.id === selectedTranslationId);
     if (!primarySelectedValid) {
       const secondarySelectedValid =
-        !!match.selectedTranslationId &&
-        merged.some((t) => t.id === match.selectedTranslationId);
+        !!match.selectedTranslationId && merged.some((t) => t.id === match.selectedTranslationId);
       if (secondarySelectedValid) {
         selectedTranslationId = match.selectedTranslationId;
       } else if (merged.length > 0 && merged[0]) {
@@ -247,7 +488,6 @@ function mergeParagraphTranslations(
   return result;
 }
 
-
 /**
  * 将远程翻译合并到本地书籍中
  * 当本地书籍较新时使用，保留本地结构但合并远程翻译
@@ -258,117 +498,9 @@ function mergeParagraphTranslations(
 async function mergeRemoteTranslationsIntoLocalNovel(
   localNovel: Novel,
   remoteNovel: Novel | undefined,
+  lastSyncTime = 0,
 ): Promise<Novel> {
-  // 如果远程没有书籍，直接返回本地书籍
-  if (!remoteNovel) {
-    return localNovel;
-  }
-
-  // 如果本地或远程没有 volumes，直接返回本地书籍
-  if (
-    !localNovel.volumes ||
-    localNovel.volumes.length === 0 ||
-    !remoteNovel.volumes ||
-    remoteNovel.volumes.length === 0
-  ) {
-    return localNovel;
-  }
-
-  // 创建远程卷和章节的映射
-  const remoteVolumeMap = new Map<string, Volume>();
-  const remoteChapterMap = new Map<string, Chapter>();
-
-  for (const volume of remoteNovel.volumes) {
-    remoteVolumeMap.set(volume.id, volume);
-    if (volume.chapters) {
-      for (const chapter of volume.chapters) {
-        remoteChapterMap.set(chapter.id, chapter);
-      }
-    }
-  }
-
-  // 合并翻译到本地书籍
-  const mergedVolumes = await Promise.all(
-    localNovel.volumes.map(async (localVolume) => {
-      if (!localVolume.chapters || localVolume.chapters.length === 0) {
-        return localVolume;
-      }
-
-      const mergedChapters = await Promise.all(
-        localVolume.chapters.map(async (localChapter) => {
-          const remoteChapter = remoteChapterMap.get(localChapter.id);
-
-          // 如果远程没有这个章节，保持本地章节不变
-          if (!remoteChapter) {
-            return localChapter;
-          }
-
-          // 获取本地章节内容
-          let localContent: Paragraph[] | undefined;
-          if (
-            localChapter.content !== undefined &&
-            localChapter.content !== null &&
-            Array.isArray(localChapter.content) &&
-            localChapter.content.length > 0
-          ) {
-            localContent = localChapter.content;
-          } else {
-            // 从 IndexedDB 加载本地内容
-            localContent = await ChapterContentService.loadChapterContent(localChapter.id);
-          }
-
-          // 如果本地没有内容，保持不变
-          if (!localContent || localContent.length === 0) {
-            return localChapter;
-          }
-
-          // 获取远程章节内容
-          const remoteContent = remoteChapter.content;
-
-          // 合并翻译
-          const mergedContent = mergeParagraphTranslations(localContent, remoteContent);
-
-          return {
-            ...localChapter,
-            content: mergedContent,
-          };
-        }),
-      );
-
-      return {
-        ...localVolume,
-        chapters: mergedChapters,
-      };
-    }),
-  );
-
-  return {
-    ...localNovel,
-    volumes: mergedVolumes,
-  };
-}
-
-/**
- * 根据 useRemote 判断选择合并策略，返回合并后的书籍：
- * - useRemote=true: 以远程书籍为主，但保留本地章节内容
- * - useRemote=false: 以本地书籍为主（先加载本地章节内容），再合并远程翻译
- *
- * 抽取自 applyDownloadedData 和 mergeData 中的重复分支，
- * 两处判断 useRemote 的默认值不同（下载方向默认 true，上传方向默认 false），
- * 因此由调用方先算好 useRemote 再传入，helper 只负责合并。
- */
-async function mergeNovelPreferringNewer(
-  localNovel: Novel,
-  remoteNovel: Novel,
-  useRemote: boolean,
-): Promise<Novel> {
-  if (useRemote) {
-    // 使用远程书籍，但需要保留本地章节内容
-    return await SyncDataService.mergeNovelWithLocalContent(remoteNovel, localNovel);
-  }
-  // 使用本地书籍，但需要合并远程翻译（远程可能有新翻译）
-  const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(localNovel);
-  return await mergeRemoteTranslationsIntoLocalNovel(localNovelWithContent, remoteNovel);
+  return mergeNovelKeepingPrimary(localNovel, remoteNovel, false, lastSyncTime);
 }
 
 /**
@@ -395,7 +527,6 @@ function normalizeCoverUrl(url: unknown): string {
 function dedupeCoverHistoryByUrl(
   covers: any[], // eslint-disable-line @typescript-eslint/no-explicit-any
 ): any[] {
-   
   const map = new Map<string, any>(); // eslint-disable-line @typescript-eslint/no-explicit-any
   for (const cover of covers) {
     const url = normalizeCoverUrl(cover?.url);
@@ -467,11 +598,13 @@ export class SyncDataService {
     if (!memory || typeof memory !== 'object') {
       return memory as Memory;
     }
-     
-    const { attachedTo: _a, embedding: _e, embeddingModel: _m, ...clean } = memory as Record<
-      string,
-      unknown
-    >;
+
+    const {
+      attachedTo: _a,
+      embedding: _e,
+      embeddingModel: _m,
+      ...clean
+    } = memory as Record<string, unknown>;
     return clean as unknown as Memory;
   }
 
@@ -486,7 +619,7 @@ export class SyncDataService {
 
     const stripTranslation = (t: unknown): unknown => {
       if (!t || typeof t !== 'object') return t;
-       
+
       const { memoryScoreBreakdown: _b, ...rest } = t as Record<string, unknown>;
       return rest;
     };
@@ -524,11 +657,91 @@ export class SyncDataService {
       memories?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
     } | null,
   ): boolean {
-    if (!remoteData) return true;
-    if (!validateRemoteCollection(remoteData.novels, 'novel', ['id'])) return false;
-    if (!validateRemoteCollection(remoteData.aiModels, 'model', ['id'])) return false;
-    if (!validateRemoteCollection(remoteData.coverHistory, 'cover', ['id'])) return false;
-    if (!validateRemoteCollection(remoteData.memories, 'memory', ['id', 'bookId'])) return false;
+    if (!remoteData) {
+      return true; // null 数据是有效的（表示没有远程数据）
+    }
+
+    // 验证 novels 数组
+    if (remoteData.novels !== null && remoteData.novels !== undefined) {
+      if (!Array.isArray(remoteData.novels)) {
+        console.error('[SyncDataService] 验证失败: novels 必须是数组');
+        return false;
+      }
+      // 验证每个 novel 的基本结构
+      for (const novel of remoteData.novels) {
+        if (!novel || typeof novel !== 'object') {
+          console.error('[SyncDataService] 验证失败: novel 必须是对象');
+          return false;
+        }
+        if (!novel.id || typeof novel.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: novel 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // 验证 aiModels 数组
+    if (remoteData.aiModels !== null && remoteData.aiModels !== undefined) {
+      if (!Array.isArray(remoteData.aiModels)) {
+        console.error('[SyncDataService] 验证失败: aiModels 必须是数组');
+        return false;
+      }
+      // 验证每个 model 的基本结构
+      for (const model of remoteData.aiModels) {
+        if (!model || typeof model !== 'object') {
+          console.error('[SyncDataService] 验证失败: model 必须是对象');
+          return false;
+        }
+        if (!model.id || typeof model.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: model 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // 验证 coverHistory 数组
+    if (remoteData.coverHistory !== null && remoteData.coverHistory !== undefined) {
+      if (!Array.isArray(remoteData.coverHistory)) {
+        console.error('[SyncDataService] 验证失败: coverHistory 必须是数组');
+        return false;
+      }
+      // 验证每个 cover 的基本结构
+      for (const cover of remoteData.coverHistory) {
+        if (!cover || typeof cover !== 'object') {
+          console.error('[SyncDataService] 验证失败: cover 必须是对象');
+          return false;
+        }
+        if (!cover.id || typeof cover.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: cover 必须包含有效的 id');
+          return false;
+        }
+      }
+    }
+
+    // 验证 memories 数组
+    if (remoteData.memories !== null && remoteData.memories !== undefined) {
+      if (!Array.isArray(remoteData.memories)) {
+        console.error('[SyncDataService] 验证失败: memories 必须是数组');
+        return false;
+      }
+      // 验证每个 memory 的基本结构
+      for (const memory of remoteData.memories) {
+        if (!memory || typeof memory !== 'object') {
+          console.error('[SyncDataService] 验证失败: memory 必须是对象');
+          return false;
+        }
+        if (!memory.id || typeof memory.id !== 'string') {
+          console.error('[SyncDataService] 验证失败: memory 必须包含有效的 id');
+          return false;
+        }
+        if (!memory.bookId || typeof memory.bookId !== 'string') {
+          console.error('[SyncDataService] 验证失败: memory 必须包含有效的 bookId');
+          return false;
+        }
+      }
+    }
+
+    // appSettings 可以是任何对象，不需要严格验证
     return true;
   }
 
@@ -580,7 +793,6 @@ export class SyncDataService {
       }
       // 确保 lastEdited 是 Date 对象（backup 经过 JSON 序列化，Date 会变成字符串）
       aiModelsStore.models = backup.models.map((m: any) => ({
-         
         ...m,
         lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
       }));
@@ -723,7 +935,7 @@ export class SyncDataService {
                   restorableItems.push({
                     id: remoteModel.id,
                     type: 'model',
-                    title: (remoteModel).name || remoteModel.id,  
+                    title: remoteModel.name || remoteModel.id,
                     deletedAt: deletionRecord,
                     data: remoteModel,
                   });
@@ -832,12 +1044,26 @@ export class SyncDataService {
           const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
           if (localNovel) {
             // 比较 lastEdited 时间，使用最新的
-            const mergedNovel = await mergeNovelPreferringNewer(
-              localNovel,
-              remoteNovel as Novel,
-              shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited),
-            );
-            finalBooks.push(mergedNovel);
+            if (shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited)) {
+              // 使用远程书籍，但需要保留本地章节内容
+              const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
+                remoteNovel as Novel,
+                localNovel,
+                syncTime,
+              );
+              finalBooks.push(mergedNovel);
+            } else {
+              // 使用本地书籍，但需要合并远程翻译（远程可能有新翻译）
+              const localNovelWithContent =
+                await SyncDataService.ensureNovelContentLoaded(localNovel);
+              // 合并远程翻译到本地书籍
+              const mergedNovel = await mergeRemoteTranslationsIntoLocalNovel(
+                localNovelWithContent,
+                remoteNovel as Novel,
+                syncTime,
+              );
+              finalBooks.push(mergedNovel);
+            }
           } else {
             // 本地不存在，检查是否在删除记录中
             const deletionRecord = deletedNovelIdsMap.get(remoteNovel.id);
@@ -986,7 +1212,7 @@ export class SyncDataService {
                   restorableItems.push({
                     id: remoteCover.id,
                     type: 'cover',
-                    title: (remoteCover).url || remoteCover.id,  
+                    title: remoteCover.url || remoteCover.id,
                     deletedAt: deletionRecord,
                     data: remoteCover,
                   });
@@ -1044,10 +1270,8 @@ export class SyncDataService {
           const existsInRemote =
             !!remoteData.coverHistory.find((c) => c.id === localCover.id) ||
             (localUrl
-              ? !!remoteData.coverHistory.find(
-                  (c) => normalizeCoverUrl((c)?.url) === localUrl,
-                )
-              : false);  
+              ? !!remoteData.coverHistory.find((c) => normalizeCoverUrl(c?.url) === localUrl)
+              : false);
           if (!existsInRemote) {
             // 检查是否是本地新增的（在上次同步后添加）
             // 如果远程封面列表为空，保留所有本地封面
@@ -1336,8 +1560,8 @@ export class SyncDataService {
             gistSync.deletedCoverIds,
           );
           const mergedDeletedCoverUrls = mergeUrlDeletionRecords(
-            (localGistSync).deletedCoverUrls,  
-            (gistSync).deletedCoverUrls,  
+            localGistSync.deletedCoverUrls,
+            gistSync.deletedCoverUrls,
           );
           const mergedDeletedMemoryIds = mergeDeletionRecords(
             localGistSync.deletedMemoryIds,
@@ -1421,16 +1645,84 @@ export class SyncDataService {
     const settingsStore = useSettingsStore();
 
     try {
-      await SyncDataService.clearLocalMemoriesForBooks(backup.books);
+      // 1. 清空本地已同步数据
+      // 1.1 删除所有书籍旧 memories（需要在清空 books 之前收集 bookId，
+      //     但我们直接使用备份中的书籍列表，避免与 clearBooks 的竞态）
+      for (const oldBook of backup.books) {
+        let oldMemories: Memory[] = [];
+        try {
+          oldMemories = await MemoryService.getAllMemories(oldBook.id);
+        } catch (error) {
+          console.warn(`[SyncDataService] 读取书籍 ${oldBook.id} 的旧 Memory 失败:`, error);
+        }
+        for (const memory of oldMemories) {
+          try {
+            await MemoryService.deleteMemory(oldBook.id, memory.id);
+          } catch (error) {
+            console.warn(`[SyncDataService] 删除旧 Memory ${memory.id} 失败:`, error);
+          }
+        }
+      }
+
+      // 1.2 清空书籍（含章节内容）、AI 模型、封面
       await booksStore.clearBooks();
       await aiModelsStore.clearModels();
       await coverHistoryStore.clearHistory();
 
-      await SyncDataService.applyRemoteNovels(remoteData.novels, booksStore);
-      await SyncDataService.applyRemoteAiModels(remoteData.aiModels, aiModelsStore);
-      await SyncDataService.applyRemoteCovers(remoteData.coverHistory, coverHistoryStore);
-      await SyncDataService.applyRemoteMemories(remoteData.memories);
-      await SyncDataService.applyRemoteAppSettings(remoteData.appSettings, settingsStore);
+      // 2. 按快照批量写入
+      const remoteNovels = Array.isArray(remoteData.novels) ? remoteData.novels : [];
+      if (remoteNovels.length > 0) {
+        await booksStore.bulkAddBooks(remoteNovels as Novel[]);
+      }
+
+      const remoteModels = Array.isArray(remoteData.aiModels) ? remoteData.aiModels : [];
+      for (const model of remoteModels) {
+        await aiModelService.saveModel(model);
+      }
+      aiModelsStore.models = remoteModels.map((m: any) => ({
+        ...m,
+        lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
+      }));
+
+      const remoteCovers = Array.isArray(remoteData.coverHistory) ? remoteData.coverHistory : [];
+      for (const cover of remoteCovers) {
+        await coverHistoryStore.addCover(cover);
+      }
+
+      const remoteMemories = Array.isArray(remoteData.memories) ? remoteData.memories : [];
+      for (const memory of remoteMemories) {
+        try {
+          await MemoryService.createMemoryWithId(
+            memory.bookId,
+            memory.id,
+            memory.content,
+            memory.summary,
+            { createdAt: memory.createdAt, lastAccessedAt: memory.lastAccessedAt },
+          );
+        } catch (error) {
+          console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
+        }
+      }
+
+      // 3. 导入 appSettings（若快照包含），随后恢复本地 Gist 凭据
+      const currentGistSync = GlobalConfig.getGistSyncSnapshot();
+      if (remoteData.appSettings) {
+        await settingsStore.importSettings(remoteData.appSettings);
+      }
+
+      // 4. 保留本地 Gist 凭据与 lastSyncTime，并清空删除记录
+      if (currentGistSync) {
+        await settingsStore.updateGistSync({
+          ...currentGistSync,
+          deletedNovelIds: [],
+          deletedModelIds: [],
+        });
+      } else {
+        await settingsStore.updateGistSync({
+          deletedNovelIds: [],
+          deletedModelIds: [],
+        });
+      }
     } catch (error) {
       console.error('[SyncDataService] 覆盖快照时发生错误，正在回滚:', error);
       try {
@@ -1446,93 +1738,40 @@ export class SyncDataService {
     }
   }
 
-  private static async clearLocalMemoriesForBooks(books: Novel[]): Promise<void> {
-    for (const oldBook of books) {
-      let oldMemories: Memory[] = [];
-      try {
-        oldMemories = await MemoryService.getAllMemories(oldBook.id);
-      } catch (error) {
-        console.warn(`[SyncDataService] 读取书籍 ${oldBook.id} 的旧 Memory 失败:`, error);
-      }
-      for (const memory of oldMemories) {
-        try {
-          await MemoryService.deleteMemory(oldBook.id, memory.id);
-        } catch (error) {
-          console.warn(`[SyncDataService] 删除旧 Memory ${memory.id} 失败:`, error);
-        }
-      }
+  /**
+   * 创建安全的远程数据对象（确保 novels 和 aiModels 是数组）
+   */
+  static createSafeRemoteData(data: GistSyncData | null | undefined): {
+    novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    appSettings?: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+    coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    memories: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  } {
+    if (!data) {
+      return {
+        novels: [],
+        aiModels: [],
+        coverHistory: [],
+        memories: [],
+      };
     }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private static async applyRemoteNovels(
-    remoteNovels: any[] | null | undefined, // eslint-disable-line @typescript-eslint/no-explicit-any
-    booksStore: ReturnType<typeof useBooksStore>,
-  ): Promise<void> {
-    const novels = Array.isArray(remoteNovels) ? remoteNovels : [];
-    if (novels.length > 0) {
-      await booksStore.bulkAddBooks(novels as Novel[]);
-    }
-  }
-
-  private static async applyRemoteAiModels(
-    remoteModels: any[] | null | undefined, // eslint-disable-line @typescript-eslint/no-explicit-any
-    aiModelsStore: ReturnType<typeof useAIModelsStore>,
-  ): Promise<void> {
-    const models = Array.isArray(remoteModels) ? remoteModels : [];
-    for (const model of models) {
-      await aiModelService.saveModel(model);
-    }
-    aiModelsStore.models = models.map((m: any) => ({
-      // eslint-disable-line @typescript-eslint/no-explicit-any
-      ...m,
-      lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
-    }));
-  }
-
-  private static async applyRemoteCovers(
-    remoteCovers: any[] | null | undefined, // eslint-disable-line @typescript-eslint/no-explicit-any
-    coverHistoryStore: ReturnType<typeof useCoverHistoryStore>,
-  ): Promise<void> {
-    const covers = Array.isArray(remoteCovers) ? remoteCovers : [];
-    for (const cover of covers) {
-      await coverHistoryStore.addCover(cover);
-    }
-  }
-
-  private static async applyRemoteMemories(
-    remoteMemories: any[] | null | undefined, // eslint-disable-line @typescript-eslint/no-explicit-any
-  ): Promise<void> {
-    const memories = Array.isArray(remoteMemories) ? remoteMemories : [];
-    for (const memory of memories) {
-      try {
-        await MemoryService.createMemoryWithId(
-          memory.bookId,
-          memory.id,
-          memory.content,
-          memory.summary,
-          { createdAt: memory.createdAt, lastAccessedAt: memory.lastAccessedAt },
-        );
-      } catch (error) {
-        console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
-      }
-    }
-  }
-
-  private static async applyRemoteAppSettings(
-    appSettings: any, // eslint-disable-line @typescript-eslint/no-explicit-any
-    settingsStore: ReturnType<typeof useSettingsStore>,
-  ): Promise<void> {
-    const currentGistSync = GlobalConfig.getGistSyncSnapshot();
-    if (appSettings) {
-      await settingsStore.importSettings(appSettings);
-    }
-    const base = currentGistSync ?? {};
-    await settingsStore.updateGistSync({
-      ...base,
-      deletedNovelIds: [],
-      deletedModelIds: [],
-    });
+    // 下载路径防御性 strip：清理旧版本 Gist payload 里可能带的 attachedTo 字段，
+    // 以及其他本地才关心的字段（embedding / embeddingModel / memoryScoreBreakdown）。
+    // 这样后续的合并逻辑不需要处理跨版本字段形态差异。
+    const rawMemories = Array.isArray(data.memories) ? data.memories : [];
+    const strippedMemories = rawMemories.map((m) => SyncDataService.stripLocalFieldsFromMemory(m));
+    const rawNovels = Array.isArray(data.novels) ? data.novels : [];
+    const strippedNovels = rawNovels.map((n) =>
+      n && typeof n === 'object' ? SyncDataService.stripLocalFieldsFromNovel(n) : (n as Novel),
+    );
+    return {
+      novels: strippedNovels,
+      aiModels: Array.isArray(data.aiModels) ? data.aiModels : [],
+      appSettings: data.appSettings,
+      coverHistory: Array.isArray(data.coverHistory) ? data.coverHistory : [],
+      memories: strippedMemories,
+    };
   }
 
   /**
@@ -1667,12 +1906,25 @@ export class SyncDataService {
     for (const localNovel of localData.novels) {
       const remoteNovel = remoteNovelMap.get(localNovel.id);
       if (remoteNovel) {
-        const mergedNovel = await mergeNovelPreferringNewer(
-          localNovel,
-          remoteNovel as Novel,
-          shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited),
-        );
-        finalBooks.push(mergedNovel);
+        if (shouldUseRemote(localNovel.lastEdited, remoteNovel.lastEdited)) {
+          // 使用远程书籍，但保留本地章节内容
+          const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
+            remoteNovel as Novel,
+            localNovel,
+            lastSyncTime,
+          );
+          finalBooks.push(mergedNovel);
+        } else {
+          // 使用本地书籍，但需要合并远程翻译（远程可能有新翻译）
+          const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(localNovel);
+          // 合并远程翻译到本地书籍
+          const mergedNovel = await mergeRemoteTranslationsIntoLocalNovel(
+            localNovelWithContent,
+            remoteNovel as Novel,
+            lastSyncTime,
+          );
+          finalBooks.push(mergedNovel);
+        }
       } else {
         // 本地独有的书籍，检查是否是新增的
         // 如果 lastEdited 未设置，保守处理：视为新增（避免丢失数据）
@@ -1716,7 +1968,7 @@ export class SyncDataService {
           remoteCoverMap.get(localCover.id) ||
           (localUrl
             ? remoteCovers.find((c: any) => normalizeCoverUrl(c?.url) === localUrl)
-            : undefined);  
+            : undefined);
         if (remoteCover) {
           if (shouldUseRemote(localCover.addedAt, remoteCover.addedAt)) {
             finalCovers.push(remoteCover);
@@ -1737,8 +1989,8 @@ export class SyncDataService {
         const existsInLocal =
           !!localData.coverHistory.find((c) => c.id === remoteCover.id) ||
           (remoteUrl
-            ? !!localData.coverHistory.find((c) => normalizeCoverUrl((c)?.url) === remoteUrl)
-            : false);  
+            ? !!localData.coverHistory.find((c) => normalizeCoverUrl(c?.url) === remoteUrl)
+            : false);
         if (!existsInLocal) {
           // 检查是否在本地删除记录中
           const deletionRecordById = deletedCoverIdsMap.get(remoteCover.id);
@@ -1847,9 +2099,8 @@ export class SyncDataService {
       let winner: Memory;
       if (remoteMemory) {
         // 比较 lastAccessedAt 时间，使用最新的
-        winner = remoteMemory.lastAccessedAt > localMemory.lastAccessedAt
-          ? remoteMemory
-          : localMemory;
+        winner =
+          remoteMemory.lastAccessedAt > localMemory.lastAccessedAt ? remoteMemory : localMemory;
         remoteMemoryMap.delete(localMemory.id);
       } else {
         // 本地独有的 Memory
@@ -1934,11 +2185,201 @@ export class SyncDataService {
       memories?: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     },
   ): boolean {
-    if (hasNovelChangesToUpload(local.novels, remote.novels)) return true;
-    if (hasAiModelChangesToUpload(local.aiModels, remote.aiModels)) return true;
-    if (hasAppSettingsChangesToUpload(local.appSettings, remote.appSettings)) return true;
-    if (hasCoverHistoryChangesToUpload(local.coverHistory, remote.coverHistory)) return true;
-    if (hasMemoryChangesToUpload(local.memories, remote.memories)) return true;
+    // 1. 检查书籍
+    if (local.novels.length !== (remote.novels || []).length) return true;
+
+    const remoteNovelMap = new Map((remote.novels || []).map((n) => [n.id, n]));
+    for (const localNovel of local.novels) {
+      const remoteNovel = remoteNovelMap.get(localNovel.id);
+      if (!remoteNovel) return true; // 本地有新书籍
+
+      // 检查更新时间
+      if (isTimeDifferent(localNovel.lastEdited, remoteNovel.lastEdited)) {
+        return true;
+      }
+    }
+
+    // 2. 检查 AI 模型
+    if (local.aiModels.length !== (remote.aiModels || []).length) return true;
+
+    const remoteModelMap = new Map((remote.aiModels || []).map((m) => [m.id, m]));
+    for (const localModel of local.aiModels) {
+      const remoteModel = remoteModelMap.get(localModel.id);
+      if (!remoteModel) return true;
+
+      // 比较内容（使用 lodash 深度比较，排除 apiKey 和 lastEdited）
+      const localForCompare = omit(localModel, 'apiKey', 'lastEdited');
+      const remoteForCompare = omit(remoteModel, 'apiKey', 'lastEdited');
+      if (!isEqual(localForCompare, remoteForCompare)) {
+        return true;
+      }
+    }
+
+    // 3. 检查设置（使用 lodash 深度比较，排除 lastEdited）
+    // 还需要排除 syncs 中的 lastSyncTime 和 lastSyncedModelIds，因为每次同步都会更新
+    // 如果远程有设置且时间戳相同，则认为没有变更（避免因 merge 导致的差异触发上传）
+    if (
+      !remote.appSettings ||
+      isTimeDifferent(local.appSettings.lastEdited, remote.appSettings.lastEdited)
+    ) {
+      const prepareSettingsForCompare = (settings: any) => {
+        const omitted = omit(settings, 'lastEdited');
+        if (omitted.syncs && Array.isArray(omitted.syncs)) {
+          omitted.syncs = omitted.syncs.map((sync: any) =>
+            omit(
+              sync,
+              'lastSyncTime',
+              'lastSyncedModelIds',
+              'lastRemoteUpdatedAt',
+              // 删除记录在 applyDownloadedData 中会被合并/清理，
+              // 导致本地与远程出现差异，不应作为"需要上传"的判断依据
+              'deletedNovelIds',
+              'deletedModelIds',
+              'deletedCoverIds',
+              'deletedCoverUrls',
+              'deletedMemoryIds',
+            ),
+          );
+        }
+        return omitted;
+      };
+
+      const localSettingsForCompare = prepareSettingsForCompare(local.appSettings);
+      const remoteSettingsForCompare = prepareSettingsForCompare(remote.appSettings || {});
+
+      if (!isEqual(localSettingsForCompare, remoteSettingsForCompare)) {
+        if (!remote.appSettings && Object.keys(local.appSettings).length > 0) return true;
+        if (remote.appSettings) return true;
+      }
+    }
+
+    // 4. 检查封面历史
+    if (local.coverHistory.length !== (remote.coverHistory || []).length) return true;
+
+    const remoteCoverMap = new Map((remote.coverHistory || []).map((c) => [c.id, c]));
+    for (const localCover of local.coverHistory) {
+      const remoteCover = remoteCoverMap.get(localCover.id);
+      if (!remoteCover) return true;
+
+      if (isTimeDifferent(localCover.addedAt, remoteCover.addedAt)) {
+        return true;
+      }
+    }
+
+    // 5. 检查 Memory
+    if (local.memories.length !== (remote.memories || []).length) return true;
+
+    const remoteMemoryMap = new Map((remote.memories || []).map((m) => [m.id, m]));
+    for (const localMemory of local.memories) {
+      const remoteMemory = remoteMemoryMap.get(localMemory.id);
+      if (!remoteMemory) return true;
+
+      // 比较 lastAccessedAt 时间
+      if (isTimeDifferent(localMemory.lastAccessedAt, remoteMemory.lastAccessedAt)) {
+        return true;
+      }
+
+      // 比较内容和摘要（如果时间相同）
+      if (
+        localMemory.content !== remoteMemory.content ||
+        localMemory.summary !== remoteMemory.summary
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * 检查自上次同步以来本地数据是否有变更（不需要远程数据做比较）
+   * 用于 downloadSkipped 场景：远程无变更，只需判断本地是否有新修改
+   *
+   * 检查逻辑：
+   * 1. 书籍：任何书籍的 lastEdited > lastSyncTime
+   * 2. AI 模型：任何模型的 lastEdited > lastSyncTime
+   * 3. 设置：settings 的 lastEdited > lastSyncTime
+   * 4. 封面历史：任何封面的 addedAt > lastSyncTime
+   * 5. Memory：任何记忆的 lastAccessedAt > lastSyncTime
+   *
+   * @param localData 当前本地数据
+   * @param lastSyncTime 上次同步时间（毫秒时间戳），0 表示首次同步（视为有变更）
+   * @returns 如果本地有变更返回 true
+   * @deprecated 由 `hasLocalChangesByHash` 取代——manifest 驱动路径使用哈希比对，
+   *   不再依赖基于 `lastSyncTime` 的启发式。保留仅用于遗留路径与回归测试对比。
+   */
+  static hasLocalChangesSinceLastSync(
+    localData: {
+      novels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      aiModels: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      appSettings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      coverHistory: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+      memories: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    },
+    lastSyncTime: number,
+  ): boolean {
+    // 首次同步（lastSyncTime === 0）：视为有变更，需要上传
+    if (lastSyncTime <= 0) return true;
+
+    // 1. 检查书籍
+    for (const novel of localData.novels) {
+      if (novel.lastEdited && checkIsNewlyAdded(novel.lastEdited, lastSyncTime)) {
+        return true;
+      }
+    }
+
+    // 2. 检查 AI 模型
+    for (const model of localData.aiModels) {
+      if (model.lastEdited && checkIsNewlyAdded(model.lastEdited, lastSyncTime)) {
+        return true;
+      }
+    }
+
+    // 3. 检查设置
+    if (
+      localData.appSettings?.lastEdited &&
+      checkIsNewlyAdded(localData.appSettings.lastEdited, lastSyncTime)
+    ) {
+      return true;
+    }
+
+    // 4. 检查封面历史
+    for (const cover of localData.coverHistory) {
+      if (cover.addedAt && checkIsNewlyAdded(cover.addedAt, lastSyncTime)) {
+        return true;
+      }
+    }
+
+    // 5. 检查 Memory
+    for (const memory of localData.memories) {
+      if (memory.lastAccessedAt && checkIsNewlyAdded(memory.lastAccessedAt, lastSyncTime)) {
+        return true;
+      }
+    }
+
+    // 6. 检查删除记录（用户删除了书籍/模型/封面，删除项不在上面的列表中，必须单独检测）
+    const syncs = localData.appSettings?.syncs || [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gistSync = syncs.find((s: any) => s.syncType === 'gist');
+    if (gistSync) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hasNewDeletion = (records: any[] | undefined): boolean => {
+        if (!records || records.length === 0) return false;
+        return records.some(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (record: any) => record.deletedAt && record.deletedAt > lastSyncTime,
+        );
+      };
+      if (
+        hasNewDeletion(gistSync.deletedNovelIds) ||
+        hasNewDeletion(gistSync.deletedModelIds) ||
+        hasNewDeletion(gistSync.deletedCoverIds) ||
+        hasNewDeletion(gistSync.deletedCoverUrls)
+      ) {
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -1993,6 +2434,8 @@ export class SyncDataService {
     const booksStore = useBooksStore();
     const coverHistoryStore = useCoverHistoryStore();
     const settingsStore = useSettingsStore();
+    const gistSync = GlobalConfig.getGistSyncSnapshot();
+    const lastSyncTime = gistSync?.lastSyncTime ?? 0;
 
     for (const [entryKey, entry] of Object.entries(changedEntries)) {
       if (!entry || typeof entry !== 'object' || !('kind' in entry)) continue;
@@ -2028,14 +2471,18 @@ export class SyncDataService {
               // 本地无此模型——检查是否被本地删除（防止跨设备恢复）
               const deletedAt = deletedModelMap.get(rmId);
               if (deletedAt !== undefined && deletedAt > lastSyncTime) continue;
-              await aiModelService.saveModel(rm as unknown as Parameters<typeof aiModelService.saveModel>[0]);
+              await aiModelService.saveModel(
+                rm as unknown as Parameters<typeof aiModelService.saveModel>[0],
+              );
               aiModelsStore.models.push(rm as unknown as (typeof aiModelsStore.models)[number]);
               continue;
             }
             const lt = localModel.lastEdited ? new Date(localModel.lastEdited).getTime() : 0;
             const rt = rm.lastEdited ? new Date(rm.lastEdited as string).getTime() : 0;
             if (rt > lt) {
-              await aiModelService.saveModel(rm as unknown as Parameters<typeof aiModelService.saveModel>[0]);
+              await aiModelService.saveModel(
+                rm as unknown as Parameters<typeof aiModelService.saveModel>[0],
+              );
               const idx = aiModelsStore.models.findIndex((m) => m.id === rmId);
               if (idx >= 0) {
                 aiModelsStore.models[idx] = rm as unknown as (typeof aiModelsStore.models)[number];
@@ -2074,7 +2521,9 @@ export class SyncDataService {
             remoteCoverIds.add(rcId);
             const deletedAt = deletedCoverMap.get(rcId);
             if (deletedAt !== undefined && deletedAt > lastSyncTime) continue;
-            await coverHistoryStore.addCover(rc as unknown as Parameters<typeof coverHistoryStore.addCover>[0]);
+            await coverHistoryStore.addCover(
+              rc as unknown as Parameters<typeof coverHistoryStore.addCover>[0],
+            );
           }
 
           // 跨设备删除传播：远端聚合条目不再包含某个封面且本地自上次同步后未新增，
@@ -2097,8 +2546,6 @@ export class SyncDataService {
           const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
           if (!localNovel) {
             // 本地无此书籍——检查是否被本地删除（防止跨设备恢复）
-            const gistSync = GlobalConfig.getGistSyncSnapshot();
-            const lastSyncTime = gistSync?.lastSyncTime ?? 0;
             const deletedNovelMap = new Map<string, number>(
               (gistSync?.deletedNovelIds ?? []).map((r) => [r.id, r.deletedAt]),
             );
@@ -2109,9 +2556,15 @@ export class SyncDataService {
             await booksStore.bulkAddBooks([remoteNovel]);
           } else {
             const localTime = localNovel.lastEdited ? new Date(localNovel.lastEdited).getTime() : 0;
-            const remoteTime = remoteNovel.lastEdited ? new Date(remoteNovel.lastEdited).getTime() : 0;
+            const remoteTime = remoteNovel.lastEdited
+              ? new Date(remoteNovel.lastEdited).getTime()
+              : 0;
             if (remoteTime > localTime) {
-              const merged = await SyncDataService.mergeNovelWithLocalContent(remoteNovel, localNovel);
+              const merged = await SyncDataService.mergeNovelWithLocalContent(
+                remoteNovel,
+                localNovel,
+                lastSyncTime,
+              );
               await booksStore.bulkAddBooks([merged]);
             } else {
               // 本地较新：仍然防御性地把远端独有的翻译合入本地。
@@ -2123,6 +2576,7 @@ export class SyncDataService {
                 const mergedNovel = await mergeRemoteTranslationsIntoLocalNovel(
                   localNovelWithContent,
                   remoteNovel,
+                  lastSyncTime,
                 );
                 await booksStore.bulkAddBooks([mergedNovel]);
               } catch (e) {
@@ -2172,8 +2626,7 @@ export class SyncDataService {
               }
               continue;
             }
-            const isFreshLocal =
-              lastSyncTime === 0 || local.lastAccessedAt > lastSyncTime;
+            const isFreshLocal = lastSyncTime === 0 || local.lastAccessedAt > lastSyncTime;
             if (isFreshLocal || remoteMemories.length === 0) {
               finalMap.set(local.id, local);
             }
@@ -2249,18 +2702,54 @@ export class SyncDataService {
 
     for (const { key, deletedAt } of deletions) {
       try {
+        // novel:<id> — 删除本地书籍（包括章节内容与 memories）
         if (key.startsWith('novel:')) {
-          await SyncDataService.applyRemoteNovelDeletion(
-            key,
-            thresholdFor(deletedAt),
-            booksStore,
-          );
+          const bookId = key.slice('novel:'.length);
+          const localBook = booksStore.books.find((b) => b.id === bookId);
+          if (!localBook) continue; // 本地已无——什么都不做
+
+          const localTime = localBook.lastEdited ? new Date(localBook.lastEdited).getTime() : 0;
+          const threshold = thresholdFor(deletedAt);
+          if (localTime > threshold) {
+            // 本地编辑晚于删除时间（或 lastSyncTime）——保留本地
+            console.info(
+              `[SyncDataService] 跳过远端删除 ${key}：本地编辑 ${new Date(localTime).toISOString()} 晚于阈值 ${new Date(threshold).toISOString()}`,
+            );
+            continue;
+          }
+
+          try {
+            await booksStore.deleteBook(bookId);
+          } catch (e) {
+            console.warn(`[SyncDataService] 删除本地书籍 ${bookId} 失败:`, e);
+          }
           continue;
         }
+
+        // memories:<bookId> — 清空该书的所有 memories（无墓碑，回退 lastSyncTime 启发式）
         if (key.startsWith('memories:')) {
-          await SyncDataService.applyRemoteMemoriesDeletion(key, thresholdFor(deletedAt));
+          const bookId = key.slice('memories:'.length);
+          const localMemories = await MemoryService.getAllMemories(bookId);
+          if (localMemories.length === 0) continue;
+
+          const threshold = thresholdFor(deletedAt);
+          const hasRecent = localMemories.some((m) => m.lastAccessedAt > threshold);
+          if (hasRecent) {
+            console.info(`[SyncDataService] 跳过远端删除 ${key}：本地有较新的 memory 活动`);
+            continue;
+          }
+
+          for (const m of localMemories) {
+            try {
+              await MemoryService.deleteMemory(bookId, m.id);
+            } catch (e) {
+              console.warn(`[SyncDataService] 删除 Memory ${m.id} 失败:`, e);
+            }
+          }
           continue;
         }
+
+        // 聚合条目（ai-models / cover-history / settings）：不做整体删除
         if (key === 'ai-models' || key === 'cover-history' || key === 'settings') {
           console.info(`[SyncDataService] 忽略聚合条目的远端删除 ${key}（需手动确认）`);
           void aiModelsStore;
@@ -2272,48 +2761,6 @@ export class SyncDataService {
     }
   }
 
-  private static async applyRemoteNovelDeletion(
-    key: string,
-    threshold: number,
-    booksStore: ReturnType<typeof useBooksStore>,
-  ): Promise<void> {
-    const bookId = key.slice('novel:'.length);
-    const localBook = booksStore.books.find((b) => b.id === bookId);
-    if (!localBook) return;
-    const localTime = localBook.lastEdited ? new Date(localBook.lastEdited).getTime() : 0;
-    if (localTime > threshold) {
-      console.info(
-        `[SyncDataService] 跳过远端删除 ${key}：本地编辑 ${new Date(localTime).toISOString()} 晚于阈值 ${new Date(threshold).toISOString()}`,
-      );
-      return;
-    }
-    try {
-      await booksStore.deleteBook(bookId);
-    } catch (e) {
-      console.warn(`[SyncDataService] 删除本地书籍 ${bookId} 失败:`, e);
-    }
-  }
-
-  private static async applyRemoteMemoriesDeletion(
-    key: string,
-    threshold: number,
-  ): Promise<void> {
-    const bookId = key.slice('memories:'.length);
-    const localMemories = await MemoryService.getAllMemories(bookId);
-    if (localMemories.length === 0) return;
-    if (localMemories.some((m) => m.lastAccessedAt > threshold)) {
-      console.info(`[SyncDataService] 跳过远端删除 ${key}：本地有较新的 memory 活动`);
-      return;
-    }
-    for (const m of localMemories) {
-      try {
-        await MemoryService.deleteMemory(bookId, m.id);
-      } catch (e) {
-        console.warn(`[SyncDataService] 删除 Memory ${m.id} 失败:`, e);
-      }
-    }
-  }
-
   /**
    * 合并远程书籍数据与本地章节内容
    * 当应用远程书籍数据时，保留本地书籍的章节内容
@@ -2321,136 +2768,17 @@ export class SyncDataService {
    * @param localNovel 本地书籍数据
    * @returns 合并后的书籍数据
    */
-  static async mergeNovelWithLocalContent(remoteNovel: Novel, localNovel: Novel): Promise<Novel> {
-    // 使用远程书籍的元数据，但保留本地书籍的章节内容
-    const mergedNovel: Novel = {
-      ...remoteNovel,
-      // 保留本地书籍的创建时间（如果远程没有）
+  static async mergeNovelWithLocalContent(
+    remoteNovel: Novel,
+    localNovel: Novel,
+    lastSyncTime = 0,
+  ): Promise<Novel> {
+    const mergedNovel = await mergeNovelKeepingPrimary(remoteNovel, localNovel, true, lastSyncTime);
+    return {
+      ...mergedNovel,
       createdAt: remoteNovel.createdAt || localNovel.createdAt,
-      // 保留远程书籍的 lastEdited（这是合并操作，使用远程的 lastEdited）
       lastEdited: remoteNovel.lastEdited || localNovel.lastEdited,
     };
-
-    // 使用远程的 volumes 结构（如果远程有 volumes，使用远程的；如果远程没有，清空 volumes）
-    // 但保留本地章节内容（如果章节 ID 匹配）
-    if (remoteNovel.volumes && remoteNovel.volumes.length > 0) {
-      // 远程有 volumes，使用远程的 volumes 结构，但保留本地章节内容
-      mergedNovel.volumes = await Promise.all(
-        remoteNovel.volumes.map(async (remoteVolume) => {
-          // 查找对应的本地卷
-          const localVolume = localNovel.volumes?.find((v) => v.id === remoteVolume.id);
-
-          if (localVolume && localVolume.chapters && remoteVolume.chapters) {
-            // 合并章节，保留本地章节内容
-            const mergedChapters = await Promise.all(
-              remoteVolume.chapters.map(async (remoteChapter) => {
-                const localChapter = localVolume.chapters?.find((ch) => ch.id === remoteChapter.id);
-
-                // 摘要字段已移除,章节合并不再带 summary
-                const remoteChapterWithMergedSummary: Chapter = remoteChapter;
-
-                // 如果本地章节存在，尝试保留其内容并合并远程翻译
-                if (localChapter) {
-                  let localContent: Paragraph[] | undefined;
-
-                  // 首先尝试从本地章节获取（如果已加载）
-                  if (
-                    localChapter.content !== undefined &&
-                    localChapter.content !== null &&
-                    Array.isArray(localChapter.content) &&
-                    localChapter.content.length > 0
-                  ) {
-                    localContent = localChapter.content;
-                  } else {
-                    // 如果本地章节没有 content，从 IndexedDB 加载
-                    localContent = await ChapterContentService.loadChapterContent(localChapter.id);
-                  }
-
-                  // 如果找到了本地内容，保留它并合并远程翻译
-                  if (localContent !== undefined && localContent.length > 0) {
-                    // 获取远程章节内容（如果有的话）
-                    const remoteContent = remoteChapter.content;
-
-                    // 合并翻译：将远程翻译添加到本地段落中
-                    const mergedContent = mergeParagraphTranslations(
-                      localContent,
-                      remoteContent,
-                      true,
-                    );
-
-                    return {
-                      ...remoteChapterWithMergedSummary,
-                      content: mergedContent,
-                    } as Chapter;
-                  }
-                }
-
-                // 如果远程章节有内容，使用远程内容
-                // 否则尝试从 IndexedDB 加载（如果章节 ID 相同）
-                if (
-                  (!remoteChapter.content ||
-                    (Array.isArray(remoteChapter.content) && remoteChapter.content.length === 0)) &&
-                  localChapter
-                ) {
-                  const contentFromDB = await ChapterContentService.loadChapterContent(
-                    remoteChapter.id,
-                  );
-                  if (contentFromDB && contentFromDB.length > 0) {
-                    return {
-                      ...remoteChapterWithMergedSummary,
-                      content: contentFromDB,
-                    } as Chapter;
-                  }
-                }
-
-                return remoteChapterWithMergedSummary;
-              }),
-            );
-
-            return {
-              ...remoteVolume,
-              chapters: mergedChapters,
-            } as Volume;
-          }
-
-          // 远程 volume 在本地不存在，直接使用远程 volume
-          // 但尝试从 IndexedDB 加载章节内容（如果章节 ID 匹配）
-          if (remoteVolume.chapters) {
-            const chaptersWithContent = await Promise.all(
-              remoteVolume.chapters.map(async (remoteChapter) => {
-                // 如果远程章节没有内容，尝试从 IndexedDB 加载
-                if (
-                  !remoteChapter.content ||
-                  (Array.isArray(remoteChapter.content) && remoteChapter.content.length === 0)
-                ) {
-                  const contentFromDB = await ChapterContentService.loadChapterContent(
-                    remoteChapter.id,
-                  );
-                  if (contentFromDB && contentFromDB.length > 0) {
-                    return {
-                      ...remoteChapter,
-                      content: contentFromDB,
-                    } as Chapter;
-                  }
-                }
-                return remoteChapter;
-              }),
-            );
-            return {
-              ...remoteVolume,
-              chapters: chaptersWithContent,
-            } as Volume;
-          }
-
-          return remoteVolume;
-        }),
-      );
-    } else {
-      // 远程没有 volumes，清空 volumes（删除本地的 volumes）
-      mergedNovel.volumes = [];
-    }
-
-    return mergedNovel;
   }
 
   /**

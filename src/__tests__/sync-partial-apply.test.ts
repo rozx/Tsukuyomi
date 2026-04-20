@@ -9,10 +9,7 @@ import * as SettingsStore from '../stores/settings';
 import * as BooksStore from '../stores/books';
 import * as AIModelsStore from '../stores/ai-models';
 import * as CoverHistoryStore from '../stores/cover-history';
-import {
-  filenamesForEntry,
-  matchFilenamesInSnapshot,
-} from '../services/gist-sync-incremental';
+import { filenamesForEntry, matchFilenamesInSnapshot } from '../services/gist-sync-incremental';
 import { manifestToEntries } from '../services/sync-manifest-builder';
 import { MANIFEST_SCHEMA_VERSION, novelEntryKey } from '../models/manifest';
 import type { SyncConfig } from '../models/sync';
@@ -306,9 +303,7 @@ describe('applyPartialRemoteData: memories deletion propagation (C2)', () => {
     getAllSpy = spyOn(MemoryService, 'getAllMemories').mockImplementation(() =>
       Promise.resolve(localMemories.map((m) => ({ ...m })) as any),
     );
-    createSpy = spyOn(MemoryService, 'upsertMemoryForSync').mockResolvedValue(
-      undefined as any,
-    );
+    createSpy = spyOn(MemoryService, 'upsertMemoryForSync').mockResolvedValue(undefined as any);
     deleteSpy = spyOn(MemoryService, 'deleteMemory').mockResolvedValue(undefined);
   });
 
@@ -428,6 +423,619 @@ describe('applyPartialRemoteData: memories deletion propagation (C2)', () => {
 
     const createCalls = createSpy.mock.calls.map((c: unknown[]) => c[1]);
     expect(createCalls).not.toContain('m-deleted');
+  });
+});
+
+describe('applyPartialRemoteData: novel structure merge regression', () => {
+  let localBooks: Array<Record<string, unknown>>;
+  let bulkAddBooksSpy: ReturnType<typeof mock>;
+
+  beforeEach(() => {
+    localBooks = [];
+    bulkAddBooksSpy = mock((books: Array<Record<string, unknown>>) => Promise.resolve(books));
+
+    spyOn(GlobalConfig, 'ensureInitialized').mockResolvedValue(undefined);
+    spyOn(GlobalConfig, 'getGistSyncSnapshot').mockImplementation(() => makeConfig());
+    spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue({ models: [] } as any);
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+      books: localBooks,
+      bulkAddBooks: bulkAddBooksSpy,
+    } as any);
+    spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
+      covers: [],
+      addCover: mock(() => Promise.resolve()),
+      removeCover: mock(() => Promise.resolve()),
+    } as any);
+    spyOn(SettingsStore, 'useSettingsStore').mockReturnValue({
+      getAllSettings: () => ({ lastEdited: new Date(0) }),
+      importSettings: mock(() => Promise.resolve()),
+    } as any);
+  });
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  it('当本地时间更新但远端 novel 结构更完整时，仍保留远端新增章节和实体', async () => {
+    localBooks.push({
+      id: 'book-1',
+      title: 'Local Book',
+      lastEdited: new Date(LAST_SYNC + 5_000),
+      createdAt: new Date(LAST_SYNC - 5_000),
+      terminologies: [],
+      characterSettings: [],
+      volumes: [
+        {
+          id: 'v1',
+          title: '卷一',
+          chapters: [
+            {
+              id: 'c1',
+              title: '第一章',
+              lastEdited: new Date(LAST_SYNC + 5_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              content: [
+                {
+                  id: 'p1',
+                  text: '原文',
+                  selectedTranslationId: 't-local',
+                  translations: [{ id: 't-local', translation: '本地译文', aiModelId: 'm1' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      'novel:book-1': {
+        kind: 'novel',
+        bookId: 'book-1',
+        value: {
+          id: 'book-1',
+          title: 'Remote Book',
+          lastEdited: new Date(LAST_SYNC + 1_000),
+          createdAt: new Date(LAST_SYNC - 5_000),
+          terminologies: [
+            {
+              id: 'term-1',
+              name: '魔法',
+              translation: { id: 'term-t1', translation: 'Magic', aiModelId: 'm1' },
+            },
+          ],
+          characterSettings: [
+            {
+              id: 'char-1',
+              name: '露娜',
+              sex: 'female',
+              translation: { id: 'char-t1', translation: 'Luna', aiModelId: 'm1' },
+              aliases: [],
+            },
+          ],
+          volumes: [
+            {
+              id: 'v1',
+              title: '卷一',
+              chapters: [
+                {
+                  id: 'c1',
+                  title: '第一章',
+                  lastEdited: new Date(LAST_SYNC + 1_000),
+                  createdAt: new Date(LAST_SYNC - 5_000),
+                  content: [
+                    {
+                      id: 'p1',
+                      text: '原文',
+                      selectedTranslationId: 't-remote',
+                      translations: [{ id: 't-remote', translation: '远端译文', aiModelId: 'm1' }],
+                    },
+                  ],
+                },
+                {
+                  id: 'c2',
+                  title: '第二章',
+                  lastEdited: new Date(LAST_SYNC + 1_000),
+                  createdAt: new Date(LAST_SYNC - 4_000),
+                  content: [
+                    {
+                      id: 'p2',
+                      text: '新增章节',
+                      selectedTranslationId: 't2',
+                      translations: [{ id: 't2', translation: '新增译文', aiModelId: 'm1' }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    expect(bulkAddBooksSpy).toHaveBeenCalledTimes(1);
+    const mergedBook = bulkAddBooksSpy.mock.calls[0]?.[0]?.[0] as {
+      terminologies?: Array<{ id: string }>;
+      characterSettings?: Array<{ id: string }>;
+      volumes?: Array<{ chapters?: Array<{ id: string }> }>;
+    };
+    expect(mergedBook.terminologies?.map((term) => term.id)).toContain('term-1');
+    expect(mergedBook.characterSettings?.map((character) => character.id)).toContain('char-1');
+    expect(mergedBook.volumes?.[0]?.chapters?.map((chapter) => chapter.id)).toContain('c2');
+  });
+
+  it('当 book 级时间戳本地更大但远端章节本身更新更晚时，应采用远端章节元数据', async () => {
+    localBooks.push({
+      id: 'book-2',
+      title: 'Local Book',
+      lastEdited: new Date(LAST_SYNC + 10_000),
+      createdAt: new Date(LAST_SYNC - 5_000),
+      volumes: [
+        {
+          id: 'v1',
+          title: '卷一',
+          chapters: [
+            {
+              id: 'c1',
+              title: '旧标题',
+              lastEdited: new Date(LAST_SYNC + 1_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              content: [
+                {
+                  id: 'p1',
+                  text: '原文',
+                  selectedTranslationId: 't-local',
+                  translations: [{ id: 't-local', translation: '本地译文', aiModelId: 'm1' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      'novel:book-2': {
+        kind: 'novel',
+        bookId: 'book-2',
+        value: {
+          id: 'book-2',
+          title: 'Remote Book',
+          lastEdited: new Date(LAST_SYNC + 5_000),
+          createdAt: new Date(LAST_SYNC - 5_000),
+          volumes: [
+            {
+              id: 'v1',
+              title: '卷一',
+              chapters: [
+                {
+                  id: 'c1',
+                  title: '新标题',
+                  lastEdited: new Date(LAST_SYNC + 8_000),
+                  createdAt: new Date(LAST_SYNC - 5_000),
+                  content: [
+                    {
+                      id: 'p1',
+                      text: '原文',
+                      selectedTranslationId: 't-remote',
+                      translations: [{ id: 't-remote', translation: '远端译文', aiModelId: 'm2' }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const mergedBook = bulkAddBooksSpy.mock.calls[0]?.[0]?.[0] as {
+      volumes?: Array<{
+        chapters?: Array<{
+          title: string;
+          content?: Array<{
+            selectedTranslationId: string;
+            translations: Array<{ id: string }>;
+          }>;
+        }>;
+      }>;
+    };
+    const mergedChapter = mergedBook.volumes?.[0]?.chapters?.[0];
+    expect(mergedChapter?.title).toBe('新标题');
+    expect(mergedChapter?.content?.[0]?.selectedTranslationId).toBe('t-remote');
+    expect(mergedChapter?.content?.[0]?.translations.map((translation) => translation.id)).toEqual([
+      't-remote',
+      't-local',
+    ]);
+  });
+
+  it('当本地保留了陈旧章节但远端书籍版本已删掉它时，不应在合并后复活该章节', async () => {
+    localBooks.push({
+      id: 'book-3',
+      title: 'Local Book',
+      lastEdited: new Date(LAST_SYNC + 12_000),
+      createdAt: new Date(LAST_SYNC - 5_000),
+      volumes: [
+        {
+          id: 'v1',
+          title: '卷一',
+          chapters: [
+            {
+              id: 'c-keep',
+              title: '保留章节',
+              lastEdited: new Date(LAST_SYNC + 2_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              content: [],
+            },
+            {
+              id: 'c-deleted',
+              title: '已删章节',
+              lastEdited: new Date(LAST_SYNC - 1_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              content: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      'novel:book-3': {
+        kind: 'novel',
+        bookId: 'book-3',
+        value: {
+          id: 'book-3',
+          title: 'Remote Book',
+          lastEdited: new Date(LAST_SYNC + 9_000),
+          createdAt: new Date(LAST_SYNC - 5_000),
+          volumes: [
+            {
+              id: 'v1',
+              title: '卷一',
+              chapters: [
+                {
+                  id: 'c-keep',
+                  title: '保留章节',
+                  lastEdited: new Date(LAST_SYNC + 2_000),
+                  createdAt: new Date(LAST_SYNC - 5_000),
+                  content: [],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const mergedBook = bulkAddBooksSpy.mock.calls[0]?.[0]?.[0] as {
+      volumes?: Array<{ chapters?: Array<{ id: string }> }>;
+    };
+    expect(mergedBook.volumes?.[0]?.chapters?.map((chapter) => chapter.id)).toContain('c-keep');
+    expect(mergedBook.volumes?.[0]?.chapters?.map((chapter) => chapter.id)).not.toContain(
+      'c-deleted',
+    );
+  });
+
+  it('当本地较新且本地章节在上次同步后离线新增时，不应被远端缺失结构误删', async () => {
+    localBooks.push({
+      id: 'book-3b',
+      title: 'Local Book',
+      lastEdited: new Date(LAST_SYNC + 12_000),
+      createdAt: new Date(LAST_SYNC - 5_000),
+      volumes: [
+        {
+          id: 'v1',
+          title: '卷一',
+          chapters: [
+            {
+              id: 'c-remote',
+              title: '远端已知章节',
+              lastEdited: new Date(LAST_SYNC - 1_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              content: [],
+            },
+            {
+              id: 'c-local-offline',
+              title: '本地离线新增章节',
+              lastEdited: new Date(LAST_SYNC + 5_000),
+              createdAt: new Date(LAST_SYNC + 5_000),
+              content: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      'novel:book-3b': {
+        kind: 'novel',
+        bookId: 'book-3b',
+        value: {
+          id: 'book-3b',
+          title: 'Remote Book',
+          lastEdited: new Date(LAST_SYNC + 9_000),
+          createdAt: new Date(LAST_SYNC - 5_000),
+          volumes: [
+            {
+              id: 'v1',
+              title: '卷一',
+              chapters: [
+                {
+                  id: 'c-remote',
+                  title: '远端已知章节',
+                  lastEdited: new Date(LAST_SYNC + 9_000),
+                  createdAt: new Date(LAST_SYNC - 5_000),
+                  content: [],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const mergedBook = bulkAddBooksSpy.mock.calls[0]?.[0]?.[0] as {
+      volumes?: Array<{ chapters?: Array<{ id: string }> }>;
+    };
+    expect(mergedBook.volumes?.[0]?.chapters?.map((chapter) => chapter.id)).toContain('c-remote');
+    expect(mergedBook.volumes?.[0]?.chapters?.map((chapter) => chapter.id)).toContain(
+      'c-local-offline',
+    );
+  });
+
+  it('当远端较新且本地章节在上次同步后离线新增时，不应被误删', async () => {
+    localBooks.push({
+      id: 'book-3c',
+      title: 'Local Book',
+      lastEdited: new Date(LAST_SYNC + 7_000),
+      createdAt: new Date(LAST_SYNC - 5_000),
+      volumes: [
+        {
+          id: 'v1',
+          title: '卷一',
+          chapters: [
+            {
+              id: 'c-remote',
+              title: '远端已知章节',
+              lastEdited: new Date(LAST_SYNC - 1_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              content: [],
+            },
+            {
+              id: 'c-local-offline',
+              title: '本地离线新增章节',
+              lastEdited: new Date(LAST_SYNC + 5_000),
+              createdAt: new Date(LAST_SYNC + 5_000),
+              content: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      'novel:book-3c': {
+        kind: 'novel',
+        bookId: 'book-3c',
+        value: {
+          id: 'book-3c',
+          title: 'Remote Book',
+          lastEdited: new Date(LAST_SYNC + 9_000),
+          createdAt: new Date(LAST_SYNC - 5_000),
+          volumes: [
+            {
+              id: 'v1',
+              title: '卷一',
+              chapters: [
+                {
+                  id: 'c-remote',
+                  title: '远端已知章节',
+                  lastEdited: new Date(LAST_SYNC + 9_000),
+                  createdAt: new Date(LAST_SYNC - 5_000),
+                  content: [],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const mergedBook = bulkAddBooksSpy.mock.calls[0]?.[0]?.[0] as {
+      volumes?: Array<{ chapters?: Array<{ id: string }> }>;
+    };
+    expect(mergedBook.volumes?.[0]?.chapters?.map((chapter) => chapter.id)).toContain('c-remote');
+    expect(mergedBook.volumes?.[0]?.chapters?.map((chapter) => chapter.id)).toContain(
+      'c-local-offline',
+    );
+  });
+
+  it('当本地较新但远端已删除旧卷时，不应在合并后复活该卷', async () => {
+    localBooks.push({
+      id: 'book-3d',
+      title: 'Local Book',
+      lastEdited: new Date(LAST_SYNC + 12_000),
+      createdAt: new Date(LAST_SYNC - 5_000),
+      volumes: [
+        {
+          id: 'v-keep',
+          title: '保留卷',
+          chapters: [
+            {
+              id: 'c-keep',
+              title: '保留章节',
+              lastEdited: new Date(LAST_SYNC + 11_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              content: [],
+            },
+          ],
+        },
+        {
+          id: 'v-stale',
+          title: '陈旧卷',
+          chapters: [
+            {
+              id: 'c-stale',
+              title: '陈旧章节',
+              lastEdited: new Date(LAST_SYNC - 1_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              content: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      'novel:book-3d': {
+        kind: 'novel',
+        bookId: 'book-3d',
+        value: {
+          id: 'book-3d',
+          title: 'Remote Book',
+          lastEdited: new Date(LAST_SYNC + 9_000),
+          createdAt: new Date(LAST_SYNC - 5_000),
+          volumes: [
+            {
+              id: 'v-keep',
+              title: '保留卷',
+              chapters: [
+                {
+                  id: 'c-keep',
+                  title: '保留章节',
+                  lastEdited: new Date(LAST_SYNC + 9_000),
+                  createdAt: new Date(LAST_SYNC - 5_000),
+                  content: [],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const mergedBook = bulkAddBooksSpy.mock.calls[0]?.[0]?.[0] as {
+      volumes?: Array<{ id: string }>;
+    };
+    expect(mergedBook.volumes?.map((volume) => volume.id)).toContain('v-keep');
+    expect(mergedBook.volumes?.map((volume) => volume.id)).not.toContain('v-stale');
+  });
+
+  it('当本地较新但远端保留着本地已删除的旧章节时，不应在合并后复活该章节', async () => {
+    localBooks.push({
+      id: 'book-3e',
+      title: 'Local Book',
+      lastEdited: new Date(LAST_SYNC + 12_000),
+      createdAt: new Date(LAST_SYNC - 5_000),
+      volumes: [
+        {
+          id: 'v1',
+          title: '卷一',
+          chapters: [
+            {
+              id: 'c-keep',
+              title: '保留章节',
+              lastEdited: new Date(LAST_SYNC + 11_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              content: [],
+            },
+          ],
+        },
+      ],
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      'novel:book-3e': {
+        kind: 'novel',
+        bookId: 'book-3e',
+        value: {
+          id: 'book-3e',
+          title: 'Remote Book',
+          lastEdited: new Date(LAST_SYNC + 9_000),
+          createdAt: new Date(LAST_SYNC - 5_000),
+          volumes: [
+            {
+              id: 'v1',
+              title: '卷一',
+              chapters: [
+                {
+                  id: 'c-keep',
+                  title: '保留章节',
+                  lastEdited: new Date(LAST_SYNC + 9_000),
+                  createdAt: new Date(LAST_SYNC - 5_000),
+                  content: [],
+                },
+                {
+                  id: 'c-stale',
+                  title: '陈旧章节',
+                  lastEdited: new Date(LAST_SYNC - 1_000),
+                  createdAt: new Date(LAST_SYNC - 5_000),
+                  content: [],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const mergedBook = bulkAddBooksSpy.mock.calls[0]?.[0]?.[0] as {
+      volumes?: Array<{ chapters?: Array<{ id: string }> }>;
+    };
+    const mergedChapterIds = mergedBook.volumes?.[0]?.chapters?.map((chapter) => chapter.id);
+    expect(mergedChapterIds).toContain('c-keep');
+    expect(mergedChapterIds).not.toContain('c-stale');
+  });
+
+  it('当同 ID note 的 lastEdited 更晚时，应采用较新的 note 内容', async () => {
+    localBooks.push({
+      id: 'book-4',
+      title: 'Local Book',
+      lastEdited: new Date(LAST_SYNC + 20_000),
+      createdAt: new Date(LAST_SYNC - 5_000),
+      notes: [
+        {
+          id: 'note-1',
+          text: '本地旧笔记',
+          aiResults: [],
+          defaultAIModelId: 'm1',
+          lastEdited: new Date(LAST_SYNC + 1_000),
+          createdAt: new Date(LAST_SYNC - 5_000),
+          references: [],
+        },
+      ],
+      volumes: [],
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      'novel:book-4': {
+        kind: 'novel',
+        bookId: 'book-4',
+        value: {
+          id: 'book-4',
+          title: 'Remote Book',
+          lastEdited: new Date(LAST_SYNC + 10_000),
+          createdAt: new Date(LAST_SYNC - 5_000),
+          notes: [
+            {
+              id: 'note-1',
+              text: '远端新笔记',
+              aiResults: [],
+              defaultAIModelId: 'm1',
+              lastEdited: new Date(LAST_SYNC + 15_000),
+              createdAt: new Date(LAST_SYNC - 5_000),
+              references: [],
+            },
+          ],
+          volumes: [],
+        },
+      },
+    });
+
+    const mergedBook = bulkAddBooksSpy.mock.calls[0]?.[0]?.[0] as {
+      notes?: Array<{ text: string }>;
+    };
+    expect(mergedBook.notes?.[0]?.text).toBe('远端新笔记');
   });
 });
 
