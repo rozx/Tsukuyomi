@@ -4,6 +4,46 @@ import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useSettingsStore } from 'src/stores/settings';
 
+function collectRemovedChapterIds(
+  previousVolumes: Volume[] | undefined,
+  nextVolumes: Volume[] | undefined,
+): string[] {
+  if (!previousVolumes || !nextVolumes) {
+    return [];
+  }
+
+  const nextChapterIds = new Set<string>();
+  for (const volume of nextVolumes) {
+    for (const chapter of volume.chapters || []) {
+      nextChapterIds.add(chapter.id);
+    }
+  }
+
+  const removedChapterIds: string[] = [];
+  for (const volume of previousVolumes) {
+    for (const chapter of volume.chapters || []) {
+      if (!nextChapterIds.has(chapter.id)) {
+        removedChapterIds.push(chapter.id);
+      }
+    }
+  }
+
+  return removedChapterIds;
+}
+
+async function cleanupRemovedChapterData(
+  bookId: string,
+  removedChapterIds: string[],
+): Promise<void> {
+  if (removedChapterIds.length === 0) {
+    return;
+  }
+
+  await ChapterContentService.bulkDeleteChapterContent(removedChapterIds);
+  const { FullTextIndexService } = await import('src/services/full-text-index-service');
+  await FullTextIndexService.invalidateIndex(bookId);
+}
+
 export const useBooksStore = defineStore('books', {
   state: () => ({
     books: [] as Novel[],
@@ -55,8 +95,16 @@ export const useBooksStore = defineStore('books', {
      */
     async bulkAddBooks(books: Novel[]): Promise<void> {
       const newBooksMap = new Map<string, Novel>();
+      const removedChapterIdsByBook = new Map<string, string[]>();
       for (const book of books) {
         newBooksMap.set(book.id, book);
+        const existingBook = this.books.find((existing) => existing.id === book.id);
+        if (existingBook && book.volumes !== undefined) {
+          const removedChapterIds = collectRemovedChapterIds(existingBook.volumes, book.volumes);
+          if (removedChapterIds.length > 0) {
+            removedChapterIdsByBook.set(book.id, removedChapterIds);
+          }
+        }
       }
 
       const existingIds = new Set(this.books.map((b) => b.id));
@@ -79,6 +127,10 @@ export const useBooksStore = defineStore('books', {
       // 因此只需保存本次批量更新和新增的书籍（增量保存），大幅提升效率
       const booksToSave = Array.from(newBooksMap.values());
       await BookService.bulkSaveBooks(booksToSave);
+
+      for (const [bookId, removedChapterIds] of removedChapterIdsByBook) {
+        await cleanupRemovedChapterData(bookId, removedChapterIds);
+      }
     },
 
     /**
@@ -93,6 +145,8 @@ export const useBooksStore = defineStore('books', {
       if (index > -1) {
         const existingBook = this.books[index];
         const persist = options?.persist !== false;
+        const removedChapterIds = collectRemovedChapterIds(existingBook?.volumes, updates.volumes);
+
         // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
         const updatesWithLastEdited: Partial<Novel> = {
           ...updates,
@@ -249,6 +303,8 @@ export const useBooksStore = defineStore('books', {
           await BookService.saveBook(updatedBook, {
             saveChapterContent,
           });
+
+          await cleanupRemovedChapterData(id, removedChapterIds);
         }
       }
     },
