@@ -117,13 +117,19 @@ export abstract class BaseScraper implements NovelScraper {
   abstract fetchNovel(url: string): Promise<FetchNovelResult>;
 
   /**
-   * 获取章节内容
+   * 获取章节内容：默认实现 = 抓 HTML → extractParagraphsFromHtml → mergeParagraphs。
+   * kakuyomu / syosetu / ncode-syosetu 三站的流程完全一致，仅段落提取规则不同（由子类覆盖 extractParagraphsFromHtml）。
+   * 如有特殊需求可继续覆盖此方法。
    * @param chapterUrl 章节 URL
    * @returns Promise<string> 章节内容
    * @throws {Error} 如果获取失败
    */
   // fallow-ignore-next-line unused-class-member
-  abstract fetchChapterContent(chapterUrl: string): Promise<string>;
+  async fetchChapterContent(chapterUrl: string): Promise<string> {
+    const html = await this.fetchPage(chapterUrl);
+    const paragraphs = this.extractParagraphsFromHtml(html);
+    return this.mergeParagraphs(paragraphs);
+  }
 
   /**
    * 从 HTML 中提取段落（抽象方法，由子类实现）
@@ -131,6 +137,12 @@ export abstract class BaseScraper implements NovelScraper {
    * @returns 段落数组，每个元素是一个段落文本
    */
   protected abstract extractParagraphsFromHtml(html: string): string[];
+
+  /**
+   * 将提取到的段落数组合并为最终章节内容文本（抽象方法，由子类实现）。
+   * 各站点对空段落、换行的处理方式不同，因此保留为抽象。
+   */
+  protected abstract mergeParagraphs(paragraphs: string[]): string;
 
   /**
    * 获取页面 HTML（通用方法）

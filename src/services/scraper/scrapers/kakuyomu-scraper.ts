@@ -127,16 +127,6 @@ export class KakuyomuScraper extends BaseScraper {
   }
 
   /**
-   * 获取章节内容
-   */
-  // fallow-ignore-next-line unused-class-member
-  async fetchChapterContent(chapterUrl: string): Promise<string> {
-    const html = await this.fetchPage(chapterUrl);
-    const paragraphs = this.extractParagraphsFromHtml(html);
-    return this.mergeParagraphs(paragraphs);
-  }
-
-  /**
    * 从 HTML 中提取段落
    * 保留原始格式，包括换行和段落结构
    */
@@ -229,7 +219,7 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 合并段落
    */
-  private mergeParagraphs(paragraphs: string[]): string {
+  protected mergeParagraphs(paragraphs: string[]): string {
     return paragraphs.join('\n\n');
   }
 

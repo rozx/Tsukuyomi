@@ -88,19 +88,6 @@ export class NcodeSyosetuScraper extends BaseScraper {
   }
 
   /**
-   * 获取章节内容
-   * @param chapterUrl 章节 URL
-   * @returns Promise<string> 章节内容
-   * @throws {Error} 如果获取失败
-   */
-  // fallow-ignore-next-line unused-class-member
-  async fetchChapterContent(chapterUrl: string): Promise<string> {
-    const html = await this.fetchPage(chapterUrl);
-    const paragraphs = this.extractParagraphsFromHtml(html);
-    return this.mergeParagraphs(paragraphs);
-  }
-
-  /**
    * 从 HTML 中提取段落（实现抽象方法）
    * @param html 章节 HTML 内容
    * @returns 段落数组，每个元素是一个段落文本
