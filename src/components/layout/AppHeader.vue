@@ -22,13 +22,7 @@ const aiProcessing = useAIProcessingStore();
 const settingsStore = useSettingsStore();
 const isPhone = computed(() => ui.deviceType === 'phone');
 
-const activeTranslationTaskCount = computed(() =>
-  aiProcessing.activeTasks.filter(
-    (t) =>
-      (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
-      (t.status === 'thinking' || t.status === 'processing'),
-  ).length,
-);
+const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslationTaskCount);
 
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 

@@ -495,13 +495,7 @@ function createBookDetailsPageContext() {
 
   const isMovingChapter = ref(false);
 
-  const activeTranslationTaskCount = computed(() =>
-    aiProcessingStore.activeTasks.filter(
-      (t) =>
-        (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
-        (t.status === 'thinking' || t.status === 'processing'),
-    ).length,
-  );
+  const activeTranslationTaskCount = computed(() => aiProcessingStore.activeTranslationTaskCount);
 
   const switchWorkspaceMode = (mode: BookWorkspaceMode) => {
     workspaceMode.value = mode;

@@ -82,14 +82,7 @@ export function useRightPanel() {
   const activeRightTab = computed(() => ui.activeRightTab);
 
   // 活跃的翻译类任务数量（用于角标）
-  const activeTranslationTaskCount = computed(
-    () =>
-      aiProcessingStore.activeTasks.filter(
-        (t) =>
-          (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
-          (t.status === 'thinking' || t.status === 'processing'),
-      ).length,
-  );
+  const activeTranslationTaskCount = computed(() => aiProcessingStore.activeTranslationTaskCount);
 
   // 面板与布局
   const { panelContainerRef, resizeHandleRef, isResizing, handleResizeStart } = usePanelResize();

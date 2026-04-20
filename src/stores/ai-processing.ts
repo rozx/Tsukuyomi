@@ -424,6 +424,17 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     },
 
     /**
+     * 正在进行的翻译类任务数量（翻译 / 润色 / 校对），用于状态栏角标。
+     */
+    activeTranslationTaskCount(state): number {
+      return state.activeTasks.filter(
+        (t) =>
+          (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
+          (t.status === 'thinking' || t.status === 'processing'),
+      ).length;
+    },
+
+    /**
      * 已复核的任务列表（包括已复核、错误、已取消，按开始时间倒序，最新的在最前面）
      */
     reviewedTasksList(state): AIProcessingTask[] {
