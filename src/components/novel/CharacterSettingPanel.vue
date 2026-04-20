@@ -11,6 +11,7 @@ import SettingCard from './SettingCard.vue';
 import CharacterEditDialog from 'src/components/dialogs/CharacterEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias } from 'src/models/novel';
@@ -89,7 +90,7 @@ const selectedCharacter = ref<(typeof characterSettings.value)[0] | null>(null);
 const isSaving = ref(false);
 
 // 文件输入引用（用于导入 JSON）
-const fileInputRef = ref<HTMLInputElement | null>(null);
+const { fileInputRef, triggerFilePicker: handleImport, createFileSelectHandler } = useFilePicker();
 
 // 打开添加对话框
 const openAddDialog = () => {
@@ -283,20 +284,8 @@ const handleExport = () => {
   }
 };
 
-// 导入角色设定
-const handleImport = () => {
-  fileInputRef.value?.click();
-};
-
 // 处理文件选择
-const handleFileSelect = async (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
-
-  if (!file) {
-    return;
-  }
-
+const handleFileSelect = createFileSelectHandler(async (file) => {
   try {
     const importedCharacters = await CharacterSettingService.importCharacterSettingsFromFile(file);
 
@@ -307,7 +296,6 @@ const handleFileSelect = async (event: Event) => {
         detail: '文件中没有有效的角色设定数据',
         life: 3000,
       });
-      target.value = '';
       return;
     }
 
@@ -318,7 +306,6 @@ const handleFileSelect = async (event: Event) => {
         detail: '没有选择书籍',
         life: 3000,
       });
-      target.value = '';
       return;
     }
 
@@ -434,10 +421,7 @@ const handleFileSelect = async (event: Event) => {
       life: 5000,
     });
   }
-
-  // 清空输入
-  target.value = '';
-};
+});
 </script>
 
 <template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import Button from 'primevue/button';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
@@ -17,7 +17,11 @@ const booksStore = useBooksStore();
 const coverHistoryStore = useCoverHistoryStore();
 const settingsStore = useSettingsStore();
 
-const fileInputRef = ref<HTMLInputElement | null>(null);
+const {
+  fileInputRef,
+  triggerFilePicker: importSettings,
+  createFileSelectHandler,
+} = useFilePicker();
 
 /**
  * 导出设置到 JSON 文件
@@ -62,24 +66,9 @@ const exportSettings = async () => {
 };
 
 /**
- * 导入设置
- */
-const importSettings = () => {
-  // 触发文件选择
-  fileInputRef.value?.click();
-};
-
-/**
  * 处理文件选择
  */
-const handleFileSelect = async (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
-
-  if (!file) {
-    return;
-  }
-
+const handleFileSelect = createFileSelectHandler(async (file) => {
   // 使用设置服务导入文件
   const result = await SettingsService.importSettingsFromFile(file);
 
@@ -155,10 +144,7 @@ const handleFileSelect = async (event: Event) => {
       life: 5000,
     });
   }
-
-  // 清空输入
-  target.value = '';
-};
+});
 </script>
 
 <template>

@@ -19,6 +19,7 @@ import { SettingsService } from 'src/services/settings-service';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import type { EmbeddingQueueProgress } from 'src/services/embedding-queue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { isMemoryEmbeddingStale } from 'src/services/memory-service';
 
 const props = defineProps<{
@@ -154,7 +155,7 @@ const selectedMemory = ref<Memory | null>(null);
 const deletingMemory = ref<Memory | null>(null);
 
 // 文件输入引用（用于导入 JSON）
-const fileInputRef = ref<HTMLInputElement | null>(null);
+const { fileInputRef, triggerFilePicker: handleImport, createFileSelectHandler } = useFilePicker();
 
 // 表单数据
 const formData = ref({
@@ -471,20 +472,8 @@ const handleExport = () => {
   }
 };
 
-// 导入 Memory
-const handleImport = () => {
-  fileInputRef.value?.click();
-};
-
 // 处理文件选择
-const handleFileSelect = async (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
-
-  if (!file) {
-    return;
-  }
-
+const handleFileSelect = createFileSelectHandler(async (file) => {
   try {
     const data = await SettingsService.readJsonFile(file);
     const importedMemories = data as Partial<Memory>[];
@@ -496,7 +485,6 @@ const handleFileSelect = async (event: Event) => {
         detail: '文件中没有有效的 记忆数据',
         life: 3000,
       });
-      target.value = '';
       return;
     }
 
@@ -507,7 +495,6 @@ const handleFileSelect = async (event: Event) => {
         detail: '没有选择书籍',
         life: 3000,
       });
-      target.value = '';
       return;
     }
 
@@ -556,10 +543,7 @@ const handleFileSelect = async (event: Event) => {
       life: 5000,
     });
   }
-
-  // 清空输入
-  target.value = '';
-};
+});
 </script>
 
 <template>
