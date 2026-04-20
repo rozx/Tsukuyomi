@@ -3,27 +3,13 @@ import { generateShortId } from 'src/utils/id-generator';
 import type { Memory } from 'src/models/memory';
 import { useSettingsStore } from 'src/stores/settings';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
-import { MODEL_VERSION } from 'src/services/embedding-service';
+// isMemoryEmbeddingStale 的真实定义已下沉到 `utils/memory-embedding-lookup`
+// 叶子模块（为了让 embedding-queue 不必 import MemoryService）。本文件从
+// 叶子重新导出，保持既有消费者（MemoryCard / MemoryPanel / Dialog 等）的
+// import 路径稳定。
+export { isMemoryEmbeddingStale } from 'src/utils/memory-embedding-lookup';
 
 const MAX_MEMORIES_PER_BOOK = 500;
-
-/**
- * 单一事实源 — 判定一条 memory 是否需要(重新)嵌入:无 vector 或 model 版本不匹配。
- *
- * 集中在这里避免 `!memory.embedding || memory.embeddingModel !== MODEL_VERSION` 这种
- * 比对在 EmbeddingQueue / MemoryCard / MemoryPanel / Dialog 各处独立漂移。
- *
- * 语义:返回 true 表示"stale 或缺失",一概视为需要嵌入(EmbeddingQueue.memoryNeedsEmbedding
- * 与 UI 的 stale 标识沿用同一语义,backlog 入队 / UI 显示 / 测试查询过滤都用它)。
- */
-export function isMemoryEmbeddingStale(memory: {
-  embedding?: number[] | undefined;
-  embeddingModel?: string | undefined;
-}): boolean {
-  if (!memory.embedding || memory.embedding.length === 0) return true;
-  if (memory.embeddingModel !== MODEL_VERSION) return true;
-  return false;
-}
 
 /**
  * Memory 存储结构（用于 IndexedDB）
@@ -885,24 +871,6 @@ export class MemoryService {
     } catch (error) {
       console.error('Failed to get all book memories:', error);
       throw new Error('获取书籍全部 Memory 失败');
-    }
-  }
-
-  /**
-   * 按 memoryId 读取单条 Memory(无副作用:不更新 lastAccessedAt,不触发任何事件)。
-   * 供嵌入队列、后台任务等"只读"场景使用,返回值保留 embedding 字段。
-   * 未找到或失败时返回 null(而非抛异常)。
-   */
-  static async getMemoryByIdOnly(memoryId: string): Promise<Memory | null> {
-    if (!memoryId) return null;
-    try {
-      const db = await getDB();
-      const storage = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
-      if (!storage) return null;
-      return this.storageToMemoryWithEmbedding(storage);
-    } catch (error) {
-      console.warn(`[MemoryService] getMemoryByIdOnly 失败 (${memoryId}):`, error);
-      return null;
     }
   }
 

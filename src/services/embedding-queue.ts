@@ -4,7 +4,7 @@
  * 职责:
  * - 将待嵌入的目标(memory / chapter)排队,按 BATCH_SIZE 切片调用 EmbeddingService
  * - 完成批次后按 kind 分流持久化:
- *   · memory → MemoryService.updateMemoryEmbeddingOnly
+ *   · memory → updateMemoryEmbeddingInDB
  *   · chapter → ChapterEmbeddingService.embedChapter(整章一次,不与 memory 混批)
  * - 每批之间 yield 一次事件循环,避免长任务阻塞 UI
  * - 暴露进度事件(含 memory / chapter 分解)、暂停/恢复、ETA
@@ -19,7 +19,12 @@
  */
 
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
-import { MemoryService, isMemoryEmbeddingStale } from 'src/services/memory-service';
+import {
+  getMemoryByIdFromDB,
+  getAllBookMemoriesFromDB,
+  updateMemoryEmbeddingInDB,
+  isMemoryEmbeddingStale,
+} from 'src/utils/memory-embedding-lookup';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import type { Memory } from 'src/models/memory';
 
@@ -102,7 +107,7 @@ export class EmbeddingQueue {
 
   /**
    * 懒解析 item 的 bookId 并缓存在 item 上。
-   * - memory:查 MemoryService.getMemoryByIdOnly
+   * - memory:查 getMemoryByIdFromDB
    * - chapter:扫 booksStore 找所属书
    * 解析失败(记录已删/Pinia 未初始化)返回 null,由批处理策略单独走一批不混批。
    */
@@ -111,7 +116,7 @@ export class EmbeddingQueue {
     let resolved: string | null = null;
     try {
       if (item.kind === 'memory') {
-        const mem = await MemoryService.getMemoryByIdOnly(item.id);
+        const mem = await getMemoryByIdFromDB(item.id);
         resolved = mem?.bookId ?? null;
       } else {
         // 直接从 IndexedDB 反查,避免 import stores/books 形成循环依赖
@@ -227,7 +232,7 @@ export class EmbeddingQueue {
   static async enqueueBacklog(bookId: string): Promise<number> {
     if (!bookId) return 0;
     try {
-      const memories = await MemoryService.getAllBookMemories(bookId);
+      const memories = await getAllBookMemoriesFromDB(bookId);
       let added = 0;
       for (const mem of memories) {
         if (!isMemoryEmbeddingStale(mem)) continue;
@@ -403,12 +408,13 @@ export class EmbeddingQueue {
    */
   private static async isLocalEmbeddingEnabled(): Promise<boolean> {
     try {
-      const { useSettingsStore } = await import('src/stores/settings');
+      // 直接从 IndexedDB 读 settings,避免 import stores/settings 形成循环依赖
+      const { readEnableLocalEmbeddingFromDB } = await import('src/utils/settings-lookup');
       const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
-      const store = useSettingsStore();
-      return isLocalEmbeddingEffectivelyEnabled(store.settings.enableLocalEmbedding);
+      const value = await readEnableLocalEmbeddingFromDB();
+      return isLocalEmbeddingEffectivelyEnabled(value);
     } catch {
-      // Pinia 还没挂起来时,按"未启用"保守处理,避免测试环境误触发下载
+      // 读取失败时,按"未启用"保守处理,避免测试环境误触发下载
       return false;
     }
   }
@@ -536,7 +542,7 @@ export class EmbeddingQueue {
     const memories: Array<{ id: string; text: string } | null> = await Promise.all(
       ids.map(async (id) => {
         try {
-          const mem = await MemoryService.getMemoryByIdOnly(id);
+          const mem = await getMemoryByIdFromDB(id);
           if (!mem) return null;
           const text = buildMemoryInput(mem);
           if (!text) return null;
@@ -563,7 +569,7 @@ export class EmbeddingQueue {
         const vec = vectors[idx];
         if (!vec) return;
         try {
-          await MemoryService.updateMemoryEmbeddingOnly(
+          await updateMemoryEmbeddingInDB(
             entry.id,
             Array.from(vec),
             MODEL_VERSION,
