@@ -2,39 +2,74 @@ import { nextTick, type Ref, type ComputedRef } from 'vue';
 import type { Chapter, Paragraph } from 'src/models/novel';
 import { isEmptyParagraph } from 'src/utils';
 
-export function useKeyboardShortcuts(
+/**
+ * useKeyboardShortcuts 的参数选项。
+ * 将原先 20+ 个位置参数整合成单一对象，降低调用端的重复样板代码。
+ */
+export interface ShortcutRegistrationOptions {
   // 搜索替换相关
-  isSearchVisible: Ref<boolean>,
-  toggleSearch: () => void,
-  showReplace: Ref<boolean>,
-  nextMatch: () => void,
-  prevMatch: () => void,
+  isSearchVisible: Ref<boolean>;
+  toggleSearch: () => void;
+  showReplace: Ref<boolean>;
+  nextMatch: () => void;
+  prevMatch: () => void;
   // 导出相关
-  copyAllTranslatedText: () => Promise<void>,
-  selectedChapterWithContent: Ref<Chapter | null>,
-  selectedChapterParagraphs: ComputedRef<Paragraph[]>,
+  copyAllTranslatedText: () => Promise<void>;
+  selectedChapterWithContent: Ref<Chapter | null>;
+  selectedChapterParagraphs: ComputedRef<Paragraph[]>;
   // 组件状态
-  selectedChapter: Ref<Chapter | null>,
-  selectedSettingMenu: Ref<'terms' | 'characters' | 'memory' | null>,
-  editMode: Ref<'original' | 'translation' | 'preview'>,
+  selectedChapter: Ref<Chapter | null>;
+  selectedSettingMenu: Ref<'terms' | 'characters' | 'memory' | null>;
+  editMode: Ref<'original' | 'translation' | 'preview'>;
   // 段落导航相关
-  selectedParagraphIndex: Ref<number | null>,
-  isKeyboardNavigating: Ref<boolean>,
-  isKeyboardSelected: Ref<boolean>,
-  isClickSelected: Ref<boolean>,
-  isProgrammaticScrolling: Ref<boolean>,
-  lastKeyboardNavigationTime: Ref<number | null>,
-  resetNavigationTimeoutId: Ref<ReturnType<typeof setTimeout> | null>,
-  getNonEmptyParagraphIndices: () => number[],
-  findNextNonEmptyParagraph: (currentIndex: number, direction: 'up' | 'down') => number | null,
-  navigateToParagraph: (index: number, scroll?: boolean, isKeyboard?: boolean) => void,
-  startEditingSelectedParagraph: () => void,
+  selectedParagraphIndex: Ref<number | null>;
+  isKeyboardNavigating: Ref<boolean>;
+  isKeyboardSelected: Ref<boolean>;
+  isClickSelected: Ref<boolean>;
+  isProgrammaticScrolling: Ref<boolean>;
+  lastKeyboardNavigationTime: Ref<number | null>;
+  resetNavigationTimeoutId: Ref<ReturnType<typeof setTimeout> | null>;
+  getNonEmptyParagraphIndices: () => number[];
+  findNextNonEmptyParagraph: (currentIndex: number, direction: 'up' | 'down') => number | null;
+  navigateToParagraph: (index: number, scroll?: boolean, isKeyboard?: boolean) => void;
+  startEditingSelectedParagraph: () => void;
   // 撤销/重做
-  canUndo: ComputedRef<boolean>,
-  undo: () => Promise<void>,
-  canRedo: ComputedRef<boolean>,
-  redo: () => Promise<void>,
-) {
+  canUndo: ComputedRef<boolean>;
+  undo: () => Promise<void>;
+  canRedo: ComputedRef<boolean>;
+  redo: () => Promise<void>;
+}
+
+export function useKeyboardShortcuts(opts: ShortcutRegistrationOptions) {
+  const {
+    isSearchVisible,
+    toggleSearch,
+    showReplace,
+    nextMatch,
+    prevMatch,
+    copyAllTranslatedText,
+    selectedChapterWithContent,
+    selectedChapterParagraphs,
+    selectedChapter,
+    selectedSettingMenu,
+    editMode,
+    selectedParagraphIndex,
+    isKeyboardNavigating,
+    isKeyboardSelected,
+    isClickSelected,
+    isProgrammaticScrolling,
+    lastKeyboardNavigationTime,
+    resetNavigationTimeoutId,
+    getNonEmptyParagraphIndices,
+    findNextNonEmptyParagraph,
+    navigateToParagraph,
+    startEditingSelectedParagraph,
+    canUndo,
+    undo,
+    canRedo,
+    redo,
+  } = opts;
+
   const INTERACTIVE_OVERLAY_SELECTOR = [
     // PrimeVue 常见 overlay/popup 容器
     '.p-tieredmenu',

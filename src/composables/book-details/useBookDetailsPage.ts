@@ -1319,7 +1319,7 @@ function createBookDetailsPageContext() {
     }
   });
 
-  const { handleKeydown, handleClick, handleMouseMove, handleScroll } = useKeyboardShortcuts(
+  const { handleKeydown, handleClick, handleMouseMove, handleScroll } = useKeyboardShortcuts({
     isSearchVisible,
     toggleSearch,
     showReplace,
@@ -1346,7 +1346,7 @@ function createBookDetailsPageContext() {
     undo,
     canRedo,
     redo,
-  );
+  });
 
   const {
     isTranslatingChapter,
