@@ -75,6 +75,27 @@ import { BookService } from 'src/services/book-service';
 - `@typescript-eslint/no-misused-promises`: warn
 - TypeScript strict 模式已启用 (quasar.config.ts)
 
+### Fallow 误报抑制
+
+`bun run quality-check` 跑的 fallow 无法识别 Vue `<template>` 消费者、动态 import、抽象基类多态调用等路径。遇到 `unused-export` / `unused-class-member` 告警：
+
+1. **优先删真死代码** — 别急着抑制，先用 Grep 确认是否真的没人用
+2. **确认是误报** 就用**行内注释**抑制，**不要**往 `.fallowrc.json` 加 `ignoreExports` / `usedClassMembers`（用户明确反对根配置里的符号白名单）
+3. 规则名是**单数**：`unused-export` / `unused-class-member`（不是复数）
+
+```ts
+// fallow-ignore-next-line unused-export
+export const MODEL_ID = '...';
+
+/**
+ * 抽象方法，子类实现通过 NovelScraperFactory 多态分派
+ */
+// fallow-ignore-next-line unused-class-member
+abstract fetchNovel(url: string): Promise<Novel>;
+```
+
+注释放在声明**正上方一行**；有 JSDoc 时夹在 JSDoc 的 `*/` 与声明之间。
+
 ---
 
 ## 架构分层

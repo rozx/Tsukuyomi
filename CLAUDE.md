@@ -105,6 +105,25 @@ src/composables/<name-kebab>/use<Name>.ts         # 业务逻辑，通过 provid
 - **Vue**: `<script setup lang="ts">`，Props 用 `defineProps<Props>()`，Emits 类型安全
 - **命名**: 文件 kebab-case (`book-service.ts`)，Service PascalCase (`BookService`)，变量 camelCase
 
+## Fallow 误报抑制
+
+Fallow 无法追踪 Vue `<template>` 消费者、动态 import、抽象基类多态调用等。遇到误报（`unused-export` / `unused-class-member`）**优先删真死代码**；确认是误报才抑制。
+
+**用行内注释**，**不要**往 `.fallowrc.json` 加 `ignoreExports` / `usedClassMembers`（用户明确要求）：
+
+```ts
+// fallow-ignore-next-line unused-export
+export const MODEL_ID = '...';
+
+/**
+ * 抽象方法，子类实现通过 NovelScraperFactory 多态分派
+ */
+// fallow-ignore-next-line unused-class-member
+abstract fetchNovel(url: string): Promise<Novel>;
+```
+
+注释放在目标声明**正上方一行**；有 JSDoc 时夹在 JSDoc 的 `*/` 与声明之间。规则名是**单数**（`unused-export` / `unused-class-member`），不是复数。
+
 ## 测试
 
 使用 Bun 内置测试框架，测试文件位于 `src/__tests__/`：
