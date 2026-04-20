@@ -122,3 +122,71 @@ export function useSyncPendingChanges() {
 
   return { pendingCount, hasPendingChanges, pendingItems };
 }
+
+export interface SyncStatusDescriptor {
+  icon: string;
+  color: string;
+  label: string;
+}
+
+export interface SyncStatusColors {
+  disabled: string;
+  syncing: string;
+  pending: string;
+  synced: string;
+  unsynced: string;
+}
+
+/**
+ * 状态栏共享的「同步状态指示器 + 下次同步时间戳」计算。
+ *
+ * AppHeader 和 SyncStatusBody 在视觉风格上颜色不同，因此把 color 作为入参注入；
+ * 图标、文案、状态判定逻辑完全一致，集中在这里维护。
+ */
+export function useSyncStatusDisplay(colors: SyncStatusColors) {
+  const settingsStore = useSettingsStore();
+  const gistSync = computed(() => settingsStore.gistSync);
+  const isSyncing = computed(() => settingsStore.isSyncing);
+  const { pendingCount, hasPendingChanges, pendingItems } = useSyncPendingChanges();
+
+  const syncStatus = computed<SyncStatusDescriptor>(() => {
+    if (!gistSync.value.enabled) {
+      return { icon: 'pi pi-cloud', color: colors.disabled, label: '未启用' };
+    }
+    if (isSyncing.value) {
+      return { icon: 'pi pi-spin pi-spinner', color: colors.syncing, label: '同步中' };
+    }
+    if (hasPendingChanges.value) {
+      return {
+        icon: 'pi pi-cloud-upload',
+        color: colors.pending,
+        label: `${pendingCount.value} 项变更`,
+      };
+    }
+    if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) {
+      return { icon: 'pi pi-cloud-check', color: colors.synced, label: '已同步' };
+    }
+    return { icon: 'pi pi-cloud', color: colors.unsynced, label: '未同步' };
+  });
+
+  const nextSyncTime = computed(() => {
+    if (
+      !gistSync.value.enabled ||
+      !gistSync.value.lastSyncTime ||
+      gistSync.value.syncInterval <= 0
+    ) {
+      return null;
+    }
+    return gistSync.value.lastSyncTime + gistSync.value.syncInterval;
+  });
+
+  return {
+    gistSync,
+    isSyncing,
+    pendingCount,
+    hasPendingChanges,
+    pendingItems,
+    syncStatus,
+    nextSyncTime,
+  };
+}
