@@ -34,6 +34,7 @@ import {
   getChapterDisplayTitle,
   findUniqueTermsInText,
   findUniqueCharactersInText,
+  getChapterTranslationStats,
 } from 'src/utils';
 import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -961,14 +962,9 @@ function createBookDetailsPageContext() {
     return model?.name ?? '未配置模型';
   });
 
-  const mobileReaderStats = computed(() => {
-    const paras = selectedChapterParagraphs.value || [];
-    const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
-    return {
-      total: nonEmpty.length,
-      translated: nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length,
-    };
-  });
+  const mobileReaderStats = computed(() =>
+    getChapterTranslationStats(selectedChapterParagraphs.value),
+  );
 
   // 段落翻译 composable
   const {

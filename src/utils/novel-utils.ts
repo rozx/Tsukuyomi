@@ -375,6 +375,21 @@ export function getCharacterNameVariants(name: string): string[] {
 }
 
 /**
+ * 统计章节段落的翻译进度：忽略纯空白段落，返回有实际文本的段落总数 + 已有翻译的段落数。
+ */
+export function getChapterTranslationStats(paragraphs: Paragraph[] | null | undefined): {
+  total: number;
+  translated: number;
+} {
+  const paras = paragraphs || [];
+  const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
+  return {
+    total: nonEmpty.length,
+    translated: nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length,
+  };
+}
+
+/**
  * 检查段落是否有翻译
  * @param paragraph 段落对象
  * @returns 如果段落有翻译返回 true，否则返回 false

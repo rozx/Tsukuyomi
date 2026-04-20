@@ -10,6 +10,7 @@ export {
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
   hasParagraphTranslation,
+  getChapterTranslationStats,
   ensureChapterContentLoaded,
 } from './novel-utils';
 export { normalizeTranslationQuotes } from './translation-normalizer';
