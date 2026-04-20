@@ -18,6 +18,7 @@ import {
   collectChapterLocationsInRange,
   ensureChaptersLoaded,
   filterValidKeywords,
+  resolveBookAndParagraphLocation,
   resolveSearchRange,
 } from './paragraph-search-helpers';
 
@@ -149,9 +150,6 @@ async function resolveTranslationTarget(
     }
   | { ok: false; response: string }
 > {
-  if (!bookId) {
-    throw new Error('书籍 ID 不能为空');
-  }
   const { paragraph_id, translation_id } = args as {
     paragraph_id: string;
     translation_id: string;
@@ -160,32 +158,19 @@ async function resolveTranslationTarget(
     throw new Error('段落 ID 和翻译 ID 不能为空');
   }
 
-  const booksStore = useBooksStore();
-  const book = booksStore.getBookById(bookId);
-  if (!book) {
-    throw new Error(`书籍不存在: ${bookId}`);
-  }
-
-  // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
-  const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
-  if (!location) {
-    return {
-      ok: false,
-      response: JSON.stringify({
-        success: false,
-        error: `段落不存在: ${paragraph_id}`,
-      }),
-    };
+  const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
+  if (!resolved.ok) {
+    return resolved;
   }
 
   return {
     ok: true,
-    bookId,
-    book,
-    paragraph: location.paragraph,
+    bookId: resolved.bookId,
+    book: resolved.book,
+    paragraph: resolved.location.paragraph,
     paragraph_id,
     translation_id,
-    booksStore,
+    booksStore: resolved.booksStore,
   };
 }
 
@@ -475,30 +460,17 @@ export const paragraphTools: ToolDefinition[] = [
         previous_count?: number;
         next_count?: number;
       };
-      if (!paragraph_id) {
-        throw new Error('段落 ID 不能为空');
-      }
-
       // 检查段落是否在块边界内 (Removed restriction to allow context view)
       // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
       //   return getOutOfBoundsError(chunkBoundaries);
       // }
 
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
+      const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
+      if (!resolved.ok) {
+        return resolved.response;
       }
 
-      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
-      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
-      if (!location) {
-        return JSON.stringify({
-          success: false,
-          error: `段落不存在: ${paragraph_id}`,
-        });
-      }
-
+      const { book } = resolved;
       const {
         paragraph,
         chapter,
@@ -506,7 +478,7 @@ export const paragraphTools: ToolDefinition[] = [
         chapterIndex: _chapterIndex,
         volume: _volume,
         volumeIndex: _volumeIndex,
-      } = location;
+      } = resolved.location;
 
       // 报告读取操作
       if (onAction) {
@@ -640,26 +612,13 @@ export const paragraphTools: ToolDefinition[] = [
         paragraph_id: string;
         include_memory?: boolean;
       };
-      if (!paragraph_id) {
-        throw new Error('段落 ID 不能为空');
+
+      const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
+      if (!resolved.ok) {
+        return resolved.response;
       }
 
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
-
-      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
-      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
-      if (!location) {
-        return JSON.stringify({
-          success: false,
-          error: `段落不存在: ${paragraph_id}`,
-        });
-      }
-
-      const { paragraph, chapter, volume } = location;
+      const { paragraph, chapter, volume } = resolved.location;
       const chapterTitle = getChapterDisplayTitle(chapter);
 
       // 报告读取操作
@@ -722,9 +681,9 @@ export const paragraphTools: ToolDefinition[] = [
                     : volume.title.translation?.translation || '',
               }
             : null,
-          paragraphIndex: toDisplayParagraphIndex(location.paragraphIndex),
-          chapterIndex: location.chapterIndex,
-          volumeIndex: location.volumeIndex,
+          paragraphIndex: toDisplayParagraphIndex(resolved.location.paragraphIndex),
+          chapterIndex: resolved.location.chapterIndex,
+          volumeIndex: resolved.location.volumeIndex,
         },
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
@@ -1367,9 +1326,6 @@ export const paragraphTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
       const { paragraph_id, translation_id, new_translation } = args as {
         paragraph_id: string;
         translation_id: string;
@@ -1379,22 +1335,13 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error('段落 ID、翻译 ID 和新翻译内容不能为空');
       }
 
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
+      const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
+      if (!resolved.ok) {
+        return resolved.response;
       }
 
-      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
-      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
-      if (!location) {
-        return JSON.stringify({
-          success: false,
-          error: `段落不存在: ${paragraph_id}`,
-        });
-      }
-
-      const { paragraph } = location;
+      const { bookId: resolvedBookId, book, booksStore } = resolved;
+      const { paragraph } = resolved.location;
 
       // 检查是否为空段落
       if (isEmptyParagraph(paragraph.text)) {
@@ -1437,7 +1384,7 @@ export const paragraphTools: ToolDefinition[] = [
       // 更新书籍（保存更改）
       // 注意：booksStore.updateBook 会调用 BookService.saveBook，章节内容保存会启用 skipIfUnchanged。
       // ChapterContentService 使用“序列化快照”检测变化（含就地修改），既能正确持久化修改，也能避免未修改内容的重复写入。
-      await booksStore.updateBook(bookId, { volumes: book.volumes });
+      await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
 
       // 报告操作
       if (onAction) {
