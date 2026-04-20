@@ -1,6 +1,7 @@
 // Configuration for your app
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file
 
+// fallow-ignore-next-line unresolved-import
 import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
 import { PrimeVueResolver } from 'unplugin-vue-components/resolvers';

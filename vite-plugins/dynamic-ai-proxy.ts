@@ -1,7 +1,9 @@
 import type { Plugin } from 'vite';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import type { IncomingMessage, ServerResponse } from 'http';
-import type { NextFunction } from 'connect';
+
+// 内联定义以避免声明 `connect` 依赖（运行期由 vite 传递带入 @types/connect）
+type NextFunction = (err?: unknown) => void;
 
 /**
  * 扩展的请求类型，包含动态代理目标

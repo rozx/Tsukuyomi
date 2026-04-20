@@ -1,3 +1,4 @@
+// fallow-ignore-next-line unresolved-import
 import { defineBoot } from '#q-app/wrappers';
 import PrimeVue from 'primevue/config';
 import TsukuyomiPreset from 'src/theme/tsukuyomi-preset';
