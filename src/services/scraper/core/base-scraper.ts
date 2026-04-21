@@ -74,7 +74,16 @@ async function fetchViaAxios(
   if (!response.data) throw new Error('返回的内容为空');
 
   // 某些代理服务返回 JSON 包装，需要拆出实际 HTML
-  const contentType = response.headers['content-type'] || '';
+  // axios 头部值的类型是 `string | number | true | string[] | AxiosHeaders`，统一转成字符串
+  const contentTypeRaw = response.headers['content-type'];
+  const contentType =
+    typeof contentTypeRaw === 'string'
+      ? contentTypeRaw
+      : Array.isArray(contentTypeRaw)
+        ? contentTypeRaw.join(', ')
+        : typeof contentTypeRaw === 'number' || contentTypeRaw === true
+          ? String(contentTypeRaw)
+          : '';
   const dataStr = typeof response.data === 'string' ? response.data : String(response.data);
   if (contentType.includes('application/json') || dataStr.trim().startsWith('{')) {
     const html = extractHtmlFromJsonProxyResponse(response.data, dataStr);

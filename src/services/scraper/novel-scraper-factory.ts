@@ -25,27 +25,34 @@ export class NovelScraperFactory {
    * @param url 小说 URL
    * @returns 爬虫服务实例，如果找不到则返回 null
    */
+  /**
+   * 按主机名匹配（不是 URL 子串），避免 `evil.com/?r=syosetu.org` 或
+   * `syosetu.org.attacker.com` 这样的绕过 —— CodeQL JS "incomplete URL
+   * substring sanitization" 专门检查这种模式。
+   */
+  private static hostMatches(url: string, host: string): boolean {
+    try {
+      const parsed = new URL(url);
+      return parsed.hostname === host || parsed.hostname.endsWith(`.${host}`);
+    } catch {
+      return false;
+    }
+  }
+
   static getScraper(url: string): NovelScraper | null {
-    // Kakuyomu
-    if (url.includes('kakuyomu.jp')) {
+    if (this.hostMatches(url, 'kakuyomu.jp')) {
       return this.kakuyomuScraper.isValidUrl(url) ? this.kakuyomuScraper : null;
     }
-
-    // novel18.syosetu.com (小説家になろう R18)
-    if (url.includes('novel18.syosetu.com')) {
+    if (this.hostMatches(url, 'novel18.syosetu.com')) {
       return this.novel18SyosetuScraper.isValidUrl(url) ? this.novel18SyosetuScraper : null;
     }
-
-    // ncode.syosetu.com (小説家になろう)
-    if (url.includes('ncode.syosetu.com')) {
+    if (this.hostMatches(url, 'ncode.syosetu.com')) {
       return this.ncodeSyosetuScraper.isValidUrl(url) ? this.ncodeSyosetuScraper : null;
     }
-
     // Syosetu.org (注意：这是不同的网站)
-    if (url.includes('syosetu.org')) {
+    if (this.hostMatches(url, 'syosetu.org')) {
       return this.syosetuScraper.isValidUrl(url) ? this.syosetuScraper : null;
     }
-
     return null;
   }
 
