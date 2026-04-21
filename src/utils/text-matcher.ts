@@ -292,6 +292,23 @@ function scanCharacterMatches(
  * @param parsedText 可选的预解析文本
  * @returns 匹配结果数组
  */
+/**
+ * 按（上下文得分 + 本地得分）的合计降序排序。
+ * 同时被 matchCharactersInText 的候选排序和 calculateCharacterScores 的位置列表排序共用。
+ */
+function compareByCombinedScore(
+  a: { id: string },
+  b: { id: string },
+  contextScores: Map<string, number> | undefined,
+  localScores: Map<string, number>,
+): number {
+  const contextScoreA = contextScores?.get(a.id) || 0;
+  const contextScoreB = contextScores?.get(b.id) || 0;
+  const localScoreA = localScores.get(a.id) || 0;
+  const localScoreB = localScores.get(b.id) || 0;
+  return contextScoreB + localScoreB - (contextScoreA + localScoreA);
+}
+
 export function matchCharactersInText(
   text: string,
   characters: CharacterSetting[],
@@ -315,17 +332,9 @@ export function matchCharactersInText(
     if (possibleChars && possibleChars.length > 0) {
       // 如果有多个可能的角色，按得分排序（用于后续显示顺序）
       // 但返回所有匹配的角色，而不仅仅是得分最高的
-      const sortedChars = [...possibleChars].sort((a, b) => {
-        const contextScoreA = contextScores?.get(a.id) || 0;
-        const contextScoreB = contextScores?.get(b.id) || 0;
-        const localScoreA = localScores.get(a.id) || 0;
-        const localScoreB = localScores.get(b.id) || 0;
-
-        const scoreA = contextScoreA + localScoreA;
-        const scoreB = contextScoreB + localScoreB;
-
-        return scoreB - scoreA;
-      });
+      const sortedChars = [...possibleChars].sort((a, b) =>
+        compareByCombinedScore(a, b, contextScores, localScores),
+      );
 
       // 为每个匹配的角色创建一个 MatchResult
       for (const char of sortedChars) {
@@ -456,18 +465,10 @@ export function parseTextForHighlighting(
   // 对每个位置的角色列表按出现次数排序（上下文得分 + 本地得分）
   for (const entry of positionMap.values()) {
     if (entry.characters.length > 1) {
-      entry.characters.sort((a, b) => {
-        const contextScoreA = contextScores?.get(a.id) || 0;
-        const contextScoreB = contextScores?.get(b.id) || 0;
-        const localScoreA = localScores.get(a.id) || 0;
-        const localScoreB = localScores.get(b.id) || 0;
-
-        const scoreA = contextScoreA + localScoreA;
-        const scoreB = contextScoreB + localScoreB;
-
-        // 按得分降序排序（出现次数多的在前）
-        return scoreB - scoreA;
-      });
+      // 按得分降序排序（出现次数多的在前）
+      entry.characters.sort((a, b) =>
+        compareByCombinedScore(a, b, contextScores, localScores),
+      );
     }
   }
 
