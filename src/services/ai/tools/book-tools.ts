@@ -220,10 +220,10 @@ function snapshotBookInfoForUndo(book: Novel): BookInfoSnapshot {
  * 将 update_book_info 的参数转换为可传入 booksStore.updateBook 的 Partial<Novel>
  */
 function buildBookInfoUpdates(params: {
-  description?: string;
-  tags?: string[];
-  author?: string;
-  alternate_titles?: string[];
+  description?: string | undefined;
+  tags?: string[] | undefined;
+  author?: string | undefined;
+  alternate_titles?: string[] | undefined;
 }): Partial<Novel> {
   const updates: Partial<Novel> = {};
   if (params.description !== undefined) {
@@ -246,10 +246,10 @@ function buildBookInfoUpdates(params: {
  * 收集用户可读的已更新字段中文标签
  */
 function collectUpdatedFieldLabels(params: {
-  description?: string;
-  tags?: string[];
-  author?: string;
-  alternate_titles?: string[];
+  description?: string | undefined;
+  tags?: string[] | undefined;
+  author?: string | undefined;
+  alternate_titles?: string[] | undefined;
 }): string[] {
   const labels: string[] = [];
   if (params.description !== undefined) labels.push('描述');
@@ -263,10 +263,10 @@ function collectUpdatedFieldLabels(params: {
  * 构建返回体中 updated_fields 的 old/new 对比结构
  */
 function buildBookInfoUpdatedFieldsDiff(params: {
-  description?: string;
-  tags?: string[];
-  author?: string;
-  alternate_titles?: string[];
+  description?: string | undefined;
+  tags?: string[] | undefined;
+  author?: string | undefined;
+  alternate_titles?: string[] | undefined;
   previousData: BookInfoSnapshot;
   updates: Partial<Novel>;
 }): Record<string, unknown> {

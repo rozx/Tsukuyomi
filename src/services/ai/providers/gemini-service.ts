@@ -370,7 +370,7 @@ function mapToolCallsToGeminiParts(
  * 将 tool 消息转换为 Gemini 的 functionResponse 消息
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildGeminiToolMessage(msg: { content?: string; name?: string }): any {
+function buildGeminiToolMessage(msg: { content?: string | null; name?: string }): any {
   const content = msg.content;
   let capturedError: unknown;
   let response: unknown = safeJSONParse(content, (parseError) => {

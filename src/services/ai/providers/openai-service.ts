@@ -251,7 +251,7 @@ export class OpenAIService extends BaseAIService {
  * 将上层的 tool 消息转换为 OpenAI SDK 要求的格式（兼容空 content）
  */
 function toOpenAIToolMessage(msg: {
-  content?: string;
+  content?: string | null;
   tool_call_id?: string;
   name?: string;
 }): OpenAI.Chat.Completions.ChatCompletionToolMessageParam {
@@ -273,9 +273,9 @@ function toOpenAIToolMessage(msg: {
  * 将 assistant 消息（含 tool_calls）转换为 OpenAI SDK 要求的格式
  */
 function toOpenAIAssistantWithToolCalls(msg: {
-  content?: string | null;
+  content?: string | null | undefined;
   tool_calls: Array<{ id: string; function: { name: string; arguments: string } }>;
-  reasoning_content?: string | null;
+  reasoning_content?: string | null | undefined;
 }): OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam {
   // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
   const safeAssistantContent =
