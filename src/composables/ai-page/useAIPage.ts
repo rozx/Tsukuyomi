@@ -43,6 +43,20 @@ export function injectAIPage(): AIPageContext {
   return ctx;
 }
 
+/**
+ * 构造 AIModel.isDefault 的补齐对象：四个任务若 formData 未提供则回退到 `{enabled:false,temperature:0.7}`。
+ * 由 addModel 与 editModel 共用。
+ */
+function buildAIModelDefaults(formData: Partial<AIModel>): AIModel['isDefault'] {
+  const defaultTask = { enabled: false, temperature: 0.7 };
+  return {
+    translation: formData.isDefault?.translation ?? { ...defaultTask },
+    proofreading: formData.isDefault?.proofreading ?? { ...defaultTask },
+    termsTranslation: formData.isDefault?.termsTranslation ?? { ...defaultTask },
+    assistant: formData.isDefault?.assistant ?? { ...defaultTask },
+  };
+}
+
 function createAIPageContext() {
   const aiModelsStore = useAIModelsStore();
   const settingsStore = useSettingsStore();
@@ -237,15 +251,7 @@ function createAIPageContext() {
         baseUrl: formData.baseUrl!,
         enabled: formData.enabled ?? true,
         useCorsProxy: formData.useCorsProxy,
-        isDefault: {
-          translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
-          proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },
-          termsTranslation: formData.isDefault?.termsTranslation ?? {
-            enabled: false,
-            temperature: 0.7,
-          },
-          assistant: formData.isDefault?.assistant ?? { enabled: false, temperature: 0.7 },
-        },
+        isDefault: buildAIModelDefaults(formData),
         lastEdited: new Date(),
       };
       void aiModelsStore.addModel(newModel);
@@ -269,15 +275,7 @@ function createAIPageContext() {
         baseUrl: formData.baseUrl!,
         enabled: formData.enabled ?? true,
         useCorsProxy: formData.useCorsProxy,
-        isDefault: {
-          translation: formData.isDefault?.translation ?? { enabled: false, temperature: 0.7 },
-          proofreading: formData.isDefault?.proofreading ?? { enabled: false, temperature: 0.7 },
-          termsTranslation: formData.isDefault?.termsTranslation ?? {
-            enabled: false,
-            temperature: 0.7,
-          },
-          assistant: formData.isDefault?.assistant ?? { enabled: false, temperature: 0.7 },
-        },
+        isDefault: buildAIModelDefaults(formData),
       };
 
       if (formData.rateLimit !== undefined && formData.rateLimit !== null) {
