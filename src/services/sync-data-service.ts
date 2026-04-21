@@ -50,6 +50,34 @@ function mergeUniqueById<T extends { id: string }>(
   return merged;
 }
 
+// 通用删除记录合并：按 key 去重，保留 deletedAt 更晚的一侧
+// key 返回 null 表示跳过该条目（例如 URL 规范化失败）
+function mergeDeletionsByKey<T extends { deletedAt: number }>(
+  local: T[] = [],
+  remote: T[] = [],
+  getKey: (record: T) => string | null,
+  buildValue: (record: T, key: string) => T = (record) => record,
+): T[] {
+  const mergedMap = new Map<string, T>();
+
+  for (const record of local) {
+    const key = getKey(record);
+    if (!key) continue;
+    mergedMap.set(key, buildValue(record, key));
+  }
+
+  for (const record of remote) {
+    const key = getKey(record);
+    if (!key) continue;
+    const existing = mergedMap.get(key);
+    if (!existing || record.deletedAt > existing.deletedAt) {
+      mergedMap.set(key, buildValue(record, key));
+    }
+  }
+
+  return Array.from(mergedMap.values());
+}
+
 function mergeUniqueStrings(
   primaryItems: string[] | undefined,
   secondaryItems: string[] | undefined,
@@ -1443,48 +1471,19 @@ export class SyncDataService {
           const mergeDeletionRecords = (
             local: DeletionRecord[] = [],
             remote: DeletionRecord[] = [],
-          ): DeletionRecord[] => {
-            const mergedMap = new Map<string, DeletionRecord>();
+          ): DeletionRecord[] => mergeDeletionsByKey(local, remote, (record) => record.id);
 
-            // 添加本地删除记录
-            for (const record of local) {
-              mergedMap.set(record.id, record);
-            }
-
-            // 合并远程删除记录（保留最新的删除时间）
-            for (const record of remote) {
-              const existing = mergedMap.get(record.id);
-              if (!existing || record.deletedAt > existing.deletedAt) {
-                mergedMap.set(record.id, record);
-              }
-            }
-
-            return Array.from(mergedMap.values());
-          };
-
-          // 合并按 URL 的删除记录（用于封面）
+          // 合并按 URL 的删除记录（用于封面）：用规范化后的 URL 作为键和值
           const mergeUrlDeletionRecords = (
             local: Array<{ url: string; deletedAt: number }> = [],
             remote: Array<{ url: string; deletedAt: number }> = [],
-          ): Array<{ url: string; deletedAt: number }> => {
-            const mergedMap = new Map<string, { url: string; deletedAt: number }>();
-
-            for (const record of local) {
-              const key = normalizeCoverUrl(record.url);
-              if (key) mergedMap.set(key, { url: key, deletedAt: record.deletedAt });
-            }
-
-            for (const record of remote) {
-              const key = normalizeCoverUrl(record.url);
-              if (!key) continue;
-              const existing = mergedMap.get(key);
-              if (!existing || record.deletedAt > existing.deletedAt) {
-                mergedMap.set(key, { url: key, deletedAt: record.deletedAt });
-              }
-            }
-
-            return Array.from(mergedMap.values());
-          };
+          ): Array<{ url: string; deletedAt: number }> =>
+            mergeDeletionsByKey(
+              local,
+              remote,
+              (record) => normalizeCoverUrl(record.url),
+              (record, key) => ({ url: key, deletedAt: record.deletedAt }),
+            );
 
           const mergedDeletedNovelIds = mergeDeletionRecords(
             localGistSync.deletedNovelIds,
