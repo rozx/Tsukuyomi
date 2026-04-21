@@ -458,22 +458,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
 
             if (href && chapterTitle && !href.includes('index.html')) {
               // 构建完整 URL
-              let fullUrl: string;
-              if (href.startsWith('http')) {
-                // 已经是完整 URL
-                fullUrl = href;
-              } else if (href.startsWith('/')) {
-                // 绝对路径
-                fullUrl = `${SyosetuScraper.BASE_URL}${href}`;
-              } else if (href.startsWith('./')) {
-                // 相对路径（如 ./1.html），需要基于 baseUrl 解析
-                const baseUrlObj = new URL(baseUrl);
-                fullUrl = new URL(href, baseUrlObj.href).href;
-              } else {
-                // 相对路径（如 1.html），需要基于 baseUrl 解析
-                const baseUrlObj = new URL(baseUrl);
-                fullUrl = new URL(href, baseUrlObj.href).href;
-              }
+              const fullUrl = this.resolveChapterUrl(href, baseUrl);
 
               // 查找日期（通常在最后一列）
               // syosetu.org 的日期格式可能是：
@@ -537,22 +522,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
           !href.includes('rank')
         ) {
           // 构建完整 URL
-          let fullUrl: string;
-          if (href.startsWith('http')) {
-            // 已经是完整 URL
-            fullUrl = href;
-          } else if (href.startsWith('/')) {
-            // 绝对路径
-            fullUrl = `${SyosetuScraper.BASE_URL}${href}`;
-          } else if (href.startsWith('./')) {
-            // 相对路径（如 ./1.html），需要基于 baseUrl 解析
-            const baseUrlObj = new URL(baseUrl);
-            fullUrl = new URL(href, baseUrlObj.href).href;
-          } else {
-            // 相对路径（如 1.html），需要基于 baseUrl 解析
-            const baseUrlObj = new URL(baseUrl);
-            fullUrl = new URL(href, baseUrlObj.href).href;
-          }
+          const fullUrl = this.resolveChapterUrl(href, baseUrl);
           chapters.push({
             title: text,
             url: fullUrl,
@@ -585,6 +555,33 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
     }
 
     return result;
+  }
+
+  /**
+   * 将章节链接的 href 解析为完整 URL
+   * 支持四种情况：
+   * - 已是完整 URL（以 http 开头）
+   * - 绝对路径（以 / 开头），基于 BASE_URL 拼接
+   * - 显式相对路径（以 ./ 开头），基于 baseUrl 解析
+   * - 其他相对路径（如 1.html），基于 baseUrl 解析
+   */
+  private resolveChapterUrl(href: string, baseUrl: string): string {
+    if (href.startsWith('http')) {
+      // 已经是完整 URL
+      return href;
+    }
+    if (href.startsWith('/')) {
+      // 绝对路径
+      return `${SyosetuScraper.BASE_URL}${href}`;
+    }
+    if (href.startsWith('./')) {
+      // 相对路径（如 ./1.html），需要基于 baseUrl 解析
+      const baseUrlObj = new URL(baseUrl);
+      return new URL(href, baseUrlObj.href).href;
+    }
+    // 相对路径（如 1.html），需要基于 baseUrl 解析
+    const baseUrlObj = new URL(baseUrl);
+    return new URL(href, baseUrlObj.href).href;
   }
 
   /**
