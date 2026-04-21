@@ -18,9 +18,9 @@ export function dispatchCustomEvent(
 
 /**
  * 在事件源上注册 `CustomEvent` 监听器并返回取消订阅函数。
- * EmbeddingService / EmbeddingQueue 等多处共用，避免重复手写解绑闭包。
+ * 被 createCustomEventSubscriber 工厂内部共用。
  */
-export function subscribeCustomEvent(
+function subscribeCustomEvent(
   target: EventTarget,
   type: string,
   listener: (event: CustomEvent) => void,
@@ -28,4 +28,15 @@ export function subscribeCustomEvent(
   const handler = (e: Event) => listener(e as CustomEvent);
   target.addEventListener(type, handler);
   return () => target.removeEventListener(type, handler);
+}
+
+/**
+ * 为单一事件源构建一个受类型约束的 addEventListener 包装器。
+ * EmbeddingService / EmbeddingQueue 等类各自维护不同的 type 字面量联合，
+ * 通过本工厂把那层类型窄化的样板一次性消去（共享 subscribeCustomEvent 底层）。
+ */
+export function createCustomEventSubscriber<TType extends string>(
+  target: EventTarget,
+): (type: TType, listener: (event: CustomEvent) => void) => () => void {
+  return (type, listener) => subscribeCustomEvent(target, type, listener);
 }

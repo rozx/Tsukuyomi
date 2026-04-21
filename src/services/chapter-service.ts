@@ -13,6 +13,15 @@ import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 
 export type { ParagraphSearchResult };
 
+/** 两遍扫描共用的章节索引记录，包含 { vIndex, cIndex } 用于跨卷回放 */
+type ChapterIndexEntry = { chapter: Chapter; vIndex: number; cIndex: number };
+
+/** 两遍扫描（pass1）共用的 chapter-id → (chapter, vIndex, cIndex) 映射 */
+type ChapterIndexMap = Map<string, ChapterIndexEntry>;
+
+/** 两遍扫描共用的扫描起点（绝对位置） */
+type ScanStart = { volumeIndex: number; chapterIndex: number; paragraphIndex: number };
+
 /**
  * 获取段落的翻译文本
  * @param paragraph 段落对象
@@ -1515,7 +1524,7 @@ export class ChapterService {
    */
   private static async batchLoadCollectedChapters(
     chaptersToLoad: Set<string>,
-    chapterMap: Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>,
+    chapterMap: ChapterIndexMap,
   ): Promise<void> {
     if (chaptersToLoad.size === 0) return;
 
@@ -1604,7 +1613,7 @@ export class ChapterService {
     vIndex: number,
     cIndex: number,
     chaptersToLoad: Set<string>,
-    chapterMap: Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>,
+    chapterMap: ChapterIndexMap,
   ): boolean {
     if (chapter && chapter.content === undefined) {
       chaptersToLoad.add(chapter.id);
@@ -1691,6 +1700,56 @@ export class ChapterService {
     cursor.cIdx = state.cIdx;
     cursor.pIdx = state.pIdx;
     return step.done ? 'done' : 'continue';
+  }
+
+  /**
+   * 把 `{ volumeIndex, chapterIndex, paragraphIndex }` 起点装成两遍扫描 / 跨卷助手共用的
+   * `{ vIdx, cIdx, pIdx }` 游标。该样板在 prev / next 的 pass1 / pass2 四处出现。
+   */
+  private static initScanCursor(start: ScanStart): { vIdx: number; cIdx: number; pIdx: number } {
+    return {
+      vIdx: start.volumeIndex,
+      cIdx: start.chapterIndex,
+      pIdx: start.paragraphIndex,
+    };
+  }
+
+  /**
+   * 向前扫描循环的「当前卷校验 + cIdx<0 跨卷」样板：
+   * - 当前卷不存在 / 无 chapters → 调用 stepBackToPrevVolume 并返回 'continue'
+   * - cIdx < 0 → 调用 crossToPrev 跨卷，根据结果返回 'break' / 'continue'
+   * - 其它情况返回 volume 让调用方继续处理
+   */
+  private static async resolvePrevScanVolumeStep(
+    cursor: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+    crossToPrev: () => Promise<{ done: boolean }>,
+  ): Promise<
+    | { kind: 'break' }
+    | { kind: 'continue' }
+    | {
+        kind: 'ready';
+        volume: Volume & { chapters: Chapter[] };
+        chapter: Chapter;
+      }
+  > {
+    const volume = novel.volumes![cursor.vIdx];
+    if (!volume || !volume.chapters) {
+      ChapterService.stepBackToPrevVolume(cursor, novel);
+      return { kind: 'continue' };
+    }
+    if (cursor.cIdx < 0) {
+      const { done } = await crossToPrev();
+      if (done) return { kind: 'break' };
+      return { kind: 'continue' };
+    }
+    const chapter = volume.chapters[cursor.cIdx];
+    if (!chapter) {
+      cursor.cIdx--;
+      cursor.pIdx = -1;
+      return { kind: 'continue' };
+    }
+    return { kind: 'ready', volume: volume as Volume & { chapters: Chapter[] }, chapter };
   }
 
   /**
@@ -1781,16 +1840,12 @@ export class ChapterService {
    */
   private static async collectPrevPassOneChapters(
     novel: Novel,
-    start: { volumeIndex: number; chapterIndex: number; paragraphIndex: number },
+    start: ScanStart,
     count: number,
     chaptersToLoad: Set<string>,
-    chapterMap: Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>,
+    chapterMap: ChapterIndexMap,
   ): Promise<void> {
-    const cursor = {
-      vIdx: start.volumeIndex,
-      cIdx: start.chapterIndex,
-      pIdx: start.paragraphIndex,
-    };
+    const cursor = ChapterService.initScanCursor(start);
     let collected = 0;
 
     const collectOnce = (chapter: Chapter, vi: number, ci: number): void => {
@@ -1806,22 +1861,14 @@ export class ChapterService {
     };
 
     while (collected < count * 2 && cursor.vIdx >= 0) {
-      const volume = novel.volumes![cursor.vIdx];
-      if (!volume || !volume.chapters) {
-        ChapterService.stepBackToPrevVolume(cursor, novel);
-        continue;
-      }
-      if (cursor.cIdx < 0) {
-        const { done } = await crossToPrevAndCollect();
-        if (done) break;
-        continue;
-      }
-      const chapter = volume.chapters[cursor.cIdx];
-      if (!chapter) {
-        cursor.cIdx--;
-        cursor.pIdx = -1;
-        continue;
-      }
+      const step = await ChapterService.resolvePrevScanVolumeStep(
+        cursor,
+        novel,
+        crossToPrevAndCollect,
+      );
+      if (step.kind === 'break') break;
+      if (step.kind === 'continue') continue;
+      const { volume, chapter } = step;
       collectOnce(chapter, cursor.vIdx, cursor.cIdx);
       if (cursor.pIdx < 0) {
         cursor.cIdx--;
@@ -1846,15 +1893,11 @@ export class ChapterService {
    */
   private static async gatherPrevPassTwoParagraphs(
     novel: Novel,
-    start: { volumeIndex: number; chapterIndex: number; paragraphIndex: number },
+    start: ScanStart,
     count: number,
     results: ParagraphSearchResult[],
   ): Promise<void> {
-    const cursor = {
-      vIdx: start.volumeIndex,
-      cIdx: start.chapterIndex,
-      pIdx: start.paragraphIndex,
-    };
+    const cursor = ChapterService.initScanCursor(start);
     const loadOnce = (chapter: Chapter): Promise<void> =>
       ChapterService.ensureChapterLoaded(chapter);
     const crossToPrevAndLoad = async (): Promise<{ done: boolean }> => {
@@ -1862,22 +1905,14 @@ export class ChapterService {
     };
 
     while (results.length < count && cursor.vIdx >= 0) {
-      const volume = novel.volumes![cursor.vIdx];
-      if (!volume || !volume.chapters) {
-        ChapterService.stepBackToPrevVolume(cursor, novel);
-        continue;
-      }
-      if (cursor.cIdx < 0) {
-        const { done } = await crossToPrevAndLoad();
-        if (done) break;
-        continue;
-      }
-      const chapter = volume.chapters[cursor.cIdx];
-      if (!chapter) {
-        cursor.cIdx--;
-        cursor.pIdx = -1;
-        continue;
-      }
+      const step = await ChapterService.resolvePrevScanVolumeStep(
+        cursor,
+        novel,
+        crossToPrevAndLoad,
+      );
+      if (step.kind === 'break') break;
+      if (step.kind === 'continue') continue;
+      const { volume, chapter } = step;
       await ChapterService.ensureChapterLoaded(chapter);
       if (!chapter.content) {
         cursor.cIdx--;
@@ -2019,16 +2054,12 @@ export class ChapterService {
    */
   private static collectNextPassOneChapters(
     novel: Novel,
-    start: { volumeIndex: number; chapterIndex: number; paragraphIndex: number },
+    start: ScanStart,
     count: number,
     chaptersToLoad: Set<string>,
-    chapterMap: Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>,
+    chapterMap: ChapterIndexMap,
   ): void {
-    const cursor = {
-      vIdx: start.volumeIndex,
-      cIdx: start.chapterIndex,
-      pIdx: start.paragraphIndex,
-    };
+    const cursor = ChapterService.initScanCursor(start);
     let collected = 0;
     while (collected < count * 2 && cursor.vIdx < novel.volumes!.length) {
       const step = ChapterService.nextChapterOrControl(cursor, novel);
@@ -2078,15 +2109,11 @@ export class ChapterService {
    */
   private static async gatherNextPassTwoParagraphs(
     novel: Novel,
-    start: { volumeIndex: number; chapterIndex: number; paragraphIndex: number },
+    start: ScanStart,
     count: number,
     results: ParagraphSearchResult[],
   ): Promise<void> {
-    const cursor = {
-      vIdx: start.volumeIndex,
-      cIdx: start.chapterIndex,
-      pIdx: start.paragraphIndex,
-    };
+    const cursor = ChapterService.initScanCursor(start);
     while (results.length < count && cursor.vIdx < novel.volumes!.length) {
       const step = ChapterService.nextChapterOrControl(cursor, novel);
       if (step.kind === 'break') break;

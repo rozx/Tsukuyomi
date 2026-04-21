@@ -145,6 +145,38 @@ async function resolveBookAndParagraphOrError(
   return { kind: 'ok', book, location: locationResult.location };
 }
 
+/**
+ * 构造只接受 `{ paragraph_id }` 的工具 JSON Schema，description 由调用方提供。
+ * 用于 get_paragraph_info / get_paragraph_memory 等只读工具的参数声明。
+ *
+ * - `translationIdDescription` 不为空时追加 required `translation_id`
+ * - `withIncludeMemory` 为 true 时追加可选 `include_memory: boolean`
+ */
+function buildParagraphIdSchema(
+  translationIdDescription?: string,
+  withIncludeMemory: boolean = false,
+): {
+  type: 'object';
+  properties: Record<string, { type: string; description: string }>;
+  required: string[];
+} {
+  const properties: Record<string, { type: string; description: string }> = {
+    paragraph_id: { type: 'string', description: '段落 ID' },
+  };
+  const required = ['paragraph_id'];
+  if (translationIdDescription) {
+    properties.translation_id = { type: 'string', description: translationIdDescription };
+    required.push('translation_id');
+  }
+  if (withIncludeMemory) {
+    properties.include_memory = {
+      type: 'boolean',
+      description: '是否在响应中包含相关的记忆信息（默认 true）',
+    };
+  }
+  return { type: 'object', properties, required };
+}
+
 /** findParagraphLocationAsync 的返回类型别名，便于 helper 复用 */
 type ParagraphLocation = NonNullable<
   Awaited<ReturnType<typeof ChapterService.findParagraphLocationAsync>>
@@ -360,6 +392,76 @@ async function resolveParagraphTranslationForUpdate(
     book,
     booksStore,
     paragraph: locationResult.location.paragraph,
+  };
+}
+
+/**
+ * get_paragraph_info / get_translation_history 等 `{ paragraph_id, include_memory? }` 只读工具
+ * 的统一前置：解构参数 + resolveBookAndParagraphOrError。
+ * 返回 { kind: 'error', json } 时调用方直接 return json。
+ */
+async function resolveParagraphIdReadArgs(
+  args: unknown,
+  bookId: string | null | undefined,
+): Promise<
+  | { kind: 'error'; json: string }
+  | {
+      kind: 'ok';
+      paragraph_id: string;
+      include_memory: boolean;
+      book: Novel;
+      location: ParagraphLocation;
+    }
+> {
+  const { paragraph_id, include_memory = true } = args as {
+    paragraph_id: string;
+    include_memory?: boolean;
+  };
+  const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id);
+  if (resolved.kind === 'error') return { kind: 'error', json: resolved.json };
+  return {
+    kind: 'ok',
+    paragraph_id,
+    include_memory,
+    book: resolved.book,
+    location: resolved.location,
+  };
+}
+
+/**
+ * select_translation / remove_translation 等 `{ paragraph_id, translation_id }` 工具的
+ * 统一前置：解构参数、走 resolveParagraphTranslationForUpdate、再把常用字段摊开返回。
+ * 返回 { kind: 'error', json } 时调用方直接 return json。
+ */
+async function resolveTranslationIdToolArgs(
+  args: unknown,
+  bookId: string | null | undefined,
+): Promise<
+  | { kind: 'error'; json: string }
+  | {
+      kind: 'ok';
+      paragraph_id: string;
+      translation_id: string;
+      book: Novel;
+      booksStore: ReturnType<typeof useBooksStore>;
+      paragraph: ParagraphLocation['paragraph'];
+      resolvedBookId: string;
+    }
+> {
+  const { paragraph_id, translation_id } = args as {
+    paragraph_id: string;
+    translation_id: string;
+  };
+  const resolved = await resolveParagraphTranslationForUpdate(bookId, paragraph_id, translation_id);
+  if (resolved.kind === 'error') return { kind: 'error', json: resolved.json };
+  return {
+    kind: 'ok',
+    paragraph_id,
+    translation_id,
+    book: resolved.book,
+    booksStore: resolved.booksStore,
+    paragraph: resolved.paragraph,
+    resolvedBookId: resolved.bookId,
   };
 }
 
@@ -803,27 +905,14 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'get_paragraph_info',
         description:
           '获取段落的详细信息，包括原文、所有翻译版本、选中的翻译等。当需要了解当前段落的完整信息时使用此工具。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-          },
-          required: ['paragraph_id'],
-        },
+        // fallow-ignore-next-line code-duplication
+        parameters: buildParagraphIdSchema(undefined, true),
       },
     },
     handler: async (args, { bookId, onAction }) => {
-      const { paragraph_id, include_memory = true } = args as {
-        paragraph_id: string;
-        include_memory?: boolean;
-      };
-
-      const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id);
-      if (resolved.kind === 'error') return resolved.json;
-      const location = resolved.location;
+      const readArgs = await resolveParagraphIdReadArgs(args, bookId);
+      if (readArgs.kind === 'error') return readArgs.json;
+      const { paragraph_id, include_memory, location } = readArgs;
       const { paragraph, chapter, volume } = location;
       const chapterTitle = getChapterDisplayTitle(chapter);
 
@@ -1218,31 +1307,15 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'get_translation_history',
         description:
           '获取段落的完整翻译历史。返回该段落的所有翻译版本，包括翻译ID、翻译内容、使用的AI模型等信息。用于查看段落的翻译历史记录。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-          },
-          required: ['paragraph_id'],
-        },
+        // fallow-ignore-next-line code-duplication
+        parameters: buildParagraphIdSchema(undefined, true),
       },
     },
     handler: async (args, { bookId, onAction }) => {
-      const { paragraph_id, include_memory = true } = args as {
-        paragraph_id: string;
-        include_memory?: boolean;
-      };
-
-      const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id);
-      if (resolved.kind === 'error') return resolved.json;
-      const { paragraph } = resolved.location;
+      const readArgs = await resolveParagraphIdReadArgs(args, bookId);
+      if (readArgs.kind === 'error') return readArgs.json;
+      const { paragraph_id, include_memory } = readArgs;
+      const { paragraph } = readArgs.location;
 
       // 报告读取操作
       if (onAction) {
@@ -1379,34 +1452,15 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'select_translation',
         description:
           '选择段落中的某个翻译版本作为当前选中的翻译。用于在翻译历史中切换不同的翻译版本，将指定的翻译版本设置为段落当前使用的翻译。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-            translation_id: {
-              type: 'string',
-              description: '要选择的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
-            },
-          },
-          required: ['paragraph_id', 'translation_id'],
-        },
+        parameters: buildParagraphIdSchema('要选择的翻译 ID（必须是该段落翻译历史中存在的翻译ID）'),
       },
     },
+    // fallow-ignore-next-line code-duplication
     handler: async (args, { bookId, onAction }) => {
-      const { paragraph_id, translation_id } = args as {
-        paragraph_id: string;
-        translation_id: string;
-      };
-      const resolved = await resolveParagraphTranslationForUpdate(
-        bookId,
-        paragraph_id,
-        translation_id,
-      );
-      if (resolved.kind === 'error') return resolved.json;
-      const { book, booksStore, paragraph, bookId: resolvedBookId } = resolved;
+      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId);
+      if (resolvedArgs.kind === 'error') return resolvedArgs.json;
+      const { paragraph_id, translation_id, book, booksStore, paragraph, resolvedBookId } =
+        resolvedArgs;
 
       // 报告读取操作（选择翻译也是一种读取操作）
       if (onAction) {
@@ -1596,34 +1650,15 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'remove_translation',
         description:
           '从段落中删除指定的翻译版本。用于清理不需要的翻译历史记录。如果删除的是当前选中的翻译，会自动选择其他翻译（优先选择最新的翻译）。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-            translation_id: {
-              type: 'string',
-              description: '要删除的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
-            },
-          },
-          required: ['paragraph_id', 'translation_id'],
-        },
+        parameters: buildParagraphIdSchema('要删除的翻译 ID（必须是该段落翻译历史中存在的翻译ID）'),
       },
     },
+    // fallow-ignore-next-line code-duplication
     handler: async (args, { bookId, onAction }) => {
-      const { paragraph_id, translation_id } = args as {
-        paragraph_id: string;
-        translation_id: string;
-      };
-      const resolved = await resolveParagraphTranslationForUpdate(
-        bookId,
-        paragraph_id,
-        translation_id,
-      );
-      if (resolved.kind === 'error') return resolved.json;
-      const { book, booksStore, paragraph, bookId: resolvedBookId } = resolved;
+      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId);
+      if (resolvedArgs.kind === 'error') return resolvedArgs.json;
+      const { paragraph_id, translation_id, book, booksStore, paragraph, resolvedBookId } =
+        resolvedArgs;
 
       // 验证翻译是否存在
       const tRes = findTranslationIndexOrError(paragraph, translation_id);

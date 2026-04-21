@@ -18,7 +18,10 @@
  * - chapter 因为一章本身就是多 chunk 的一次完整嵌入,每次只处理一个 chapter,不与 memory 同批
  */
 
-import { dispatchCustomEvent, subscribeCustomEvent } from 'src/utils/dispatch-custom-event';
+import {
+  createCustomEventSubscriber,
+  dispatchCustomEvent,
+} from 'src/utils/dispatch-custom-event';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import {
   getMemoryByIdFromDB,
@@ -146,16 +149,11 @@ export class EmbeddingQueue {
 
   // ==========================================================================
   // 事件订阅
-  // 结构同 EmbeddingService.addEventListener/dispatch，但 type 字面量联合不同，
-  // 抽象成泛型工厂会丢失 type 窄化，保留两份并共用底层 subscribeCustomEvent 工具。
+  // 通过 createCustomEventSubscriber 工厂注入共享底层，保留 type 字面量窄化。
   // ==========================================================================
-  // fallow-ignore-next-line code-duplication
-  static addEventListener(
-    type: 'progress' | 'batch-complete' | 'error' | 'idle',
-    listener: (event: CustomEvent) => void,
-  ): () => void {
-    return subscribeCustomEvent(this.events, type, listener);
-  }
+  static addEventListener = createCustomEventSubscriber<
+    'progress' | 'batch-complete' | 'error' | 'idle'
+  >(this.events);
 
   private static dispatch(type: string, detail?: unknown): void {
     dispatchCustomEvent(this.events, type, detail);

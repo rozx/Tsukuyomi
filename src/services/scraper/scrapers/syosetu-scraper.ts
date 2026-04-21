@@ -5,6 +5,7 @@ import { BaseScraper } from '../core';
 import {
   extractParagraphText,
   extractTextWithFormatting,
+  visitCheerioContents,
 } from '../core/cheerio-text-extract';
 
 /**
@@ -22,30 +23,14 @@ function collectUniqueTagTexts($: cheerio.CheerioAPI, nodes: cheerio.Cheerio<any
 }
 
 /** 递归提取文本；<br> 转换为 \n；跳过 img 占位锚点。提取描述/章节正文共用逻辑 */
-function extractTextWithBrAsNewline(
-  $: cheerio.CheerioAPI,
-  element: cheerio.Cheerio<any>,
-): string {
-  let text = '';
-  element.contents().each((_, node: any) => {
-    const nodeType = String(node.type);
-    if (nodeType === 'text') {
-      text += $(node).text();
-    } else if (nodeType === 'tag') {
-      const $node = $(node);
-      const tagName = node.tagName?.toLowerCase() || '';
-      if (tagName === 'br') {
-        text += '\n';
-      } else if (tagName === 'a' && $node.attr('name') === 'img') {
-        // 跳过图片链接占位（如【挿絵表示】）
-        return;
-      } else {
-        const innerText = extractTextWithBrAsNewline($, $node);
-        if (innerText) text += innerText;
-      }
-    }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTextWithBrAsNewline($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): string {
+  return visitCheerioContents($, element, ({ $node, tagName, recurse }) => {
+    if (tagName === 'br') return '\n';
+    // 跳过图片链接占位（如【挿絵表示】）
+    if (tagName === 'a' && $node.attr('name') === 'img') return '';
+    return recurse();
   });
-  return text;
 }
 
 /** 按回退顺序提取页面标题；均为空时返回「未知标题」 */
