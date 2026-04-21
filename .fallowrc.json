@@ -47,6 +47,7 @@
   "health": {
     "maxCyclomatic": 30,
     "maxCognitive": 30,
+    "maxCrap": 1000,
     "ignore": ["*.test.ts"]
   }
 }

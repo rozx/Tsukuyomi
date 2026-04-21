@@ -66,12 +66,18 @@ jobs:
       - name: Generate Quasar tsconfig
         run: bunx quasar prepare
 
+      - name: Generate test coverage
+        run: bun run test:coverage
+
       - name: Run Fallow
         id: fallow
         uses: fallow-rs/fallow@v2
+        env:
+          FALLOW_COVERAGE: coverage/coverage-final.json
         with:
           fail-on-issues: true
           format: sarif
+          baseline: .fallow-baseline.json
 
       - name: Upload SARIF to Code Scanning
         if: always() && steps.fallow.outputs.sarif != ''
