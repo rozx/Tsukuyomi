@@ -8,8 +8,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
-import { MemoryService } from 'src/services/memory-service';
-import type { Memory } from 'src/models/memory';
+import { importMemoriesPreservingIdentity } from 'src/services/settings/memory-import';
 
 const toast = useToastWithHistory();
 const aiModelsStore = useAIModelsStore();
@@ -88,40 +87,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       }
     }
 
-    // 覆盖当前的 Memory 数据
-    if (result.data.memories && result.data.memories.length > 0) {
-      // Memory 按 bookId 分组并导入
-      const memoriesByBook = new Map<string, Memory[]>();
-      for (const memory of result.data.memories) {
-        if (!memoriesByBook.has(memory.bookId)) {
-          memoriesByBook.set(memory.bookId, []);
-        }
-        memoriesByBook.get(memory.bookId)!.push(memory);
-      }
-
-      // 为每本书导入 Memory —— 保留原 ID / createdAt / lastAccessedAt，
-      // 否则同一条记忆在不同设备上导入后会重复，且时间线会被改写。
-      for (const [bookId, memories] of memoriesByBook.entries()) {
-        try {
-          for (const memory of memories) {
-            await MemoryService.createMemoryWithId(
-              bookId,
-              memory.id,
-              memory.content,
-              memory.summary,
-              {
-                ...(typeof memory.createdAt === 'number' ? { createdAt: memory.createdAt } : {}),
-                ...(typeof memory.lastAccessedAt === 'number'
-                  ? { lastAccessedAt: memory.lastAccessedAt }
-                  : {}),
-              },
-            );
-          }
-        } catch (error) {
-          console.warn(`[ImportExportTab] 导入书籍 ${bookId} 的 Memory 失败:`, error);
-        }
-      }
-    }
+    // 覆盖当前的 Memory 数据 —— 共享 leaf 保证 Electron/SPA 行为一致
+    await importMemoriesPreservingIdentity(result.data.memories, '[ImportExportTab]');
 
     // 覆盖当前的应用设置
     if (result.data.appSettings) {

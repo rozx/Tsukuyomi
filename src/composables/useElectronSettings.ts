@@ -6,6 +6,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
+import { importMemoriesPreservingIdentity } from 'src/services/settings/memory-import';
 import { isElectron } from 'src/utils/platform';
 import type { Memory } from 'src/models/memory';
 import type { Novel } from 'src/models/novel';
@@ -90,36 +91,8 @@ export function useElectronSettings() {
     }
   };
 
-  const importMemories = async (memories: Memory[] | undefined): Promise<void> => {
-    if (!memories || memories.length === 0) return;
-    const memoriesByBook = new Map<string, Memory[]>();
-    for (const memory of memories) {
-      if (!memoriesByBook.has(memory.bookId)) memoriesByBook.set(memory.bookId, []);
-      memoriesByBook.get(memory.bookId)!.push(memory);
-    }
-    // 保留原 memory.id / createdAt / lastAccessedAt —— 否则重复导入会生成重复数据，
-    // 同步去重语义也会被破坏。
-    for (const [bookId, list] of memoriesByBook.entries()) {
-      try {
-        for (const memory of list) {
-          await MemoryService.createMemoryWithId(
-            bookId,
-            memory.id,
-            memory.content,
-            memory.summary,
-            {
-              ...(typeof memory.createdAt === 'number' ? { createdAt: memory.createdAt } : {}),
-              ...(typeof memory.lastAccessedAt === 'number'
-                ? { lastAccessedAt: memory.lastAccessedAt }
-                : {}),
-            },
-          );
-        }
-      } catch (error) {
-        console.warn(`[useElectronSettings] 导入书籍 ${bookId} 的 Memory 失败:`, error);
-      }
-    }
-  };
+  const importMemories = (memories: Memory[] | undefined): Promise<void> =>
+    importMemoriesPreservingIdentity(memories, '[useElectronSettings]');
 
   // 处理导入设置数据
   const handleImportData = async (content: string) => {
