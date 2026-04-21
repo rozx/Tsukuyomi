@@ -130,7 +130,6 @@ type _MissingTextTaskOptionKey = Exclude<
   keyof TextTaskOptions,
   (typeof TEXT_TASK_OPTION_KEYS)[number]
 >;
-// fallow-ignore-next-line unused-export
 const _textTaskOptionsExhaustive: [_MissingTextTaskOptionKey] extends [never] ? true : never = true;
 void _textTaskOptionsExhaustive;
 
