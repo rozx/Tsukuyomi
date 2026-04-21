@@ -303,21 +303,13 @@ export const bookTools: ToolDefinition[] = [
       const { bookId, onAction } = context;
       const parsedArgs = parseToolArgs<{ include_memory?: boolean }>(args);
 
-      if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '未提供书籍 ID',
-        });
+      const resolved = await resolveBookForTool(bookId);
+      if (!resolved.ok) {
+        return resolved.response;
       }
 
       try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({
-            success: false,
-            error: `书籍不存在: ${bookId}`,
-          });
-        }
+        const { book } = resolved;
 
         // 报告读取操作
         if (onAction) {
@@ -1069,11 +1061,9 @@ export const bookTools: ToolDefinition[] = [
         alternate_titles?: string[];
       }>(args);
 
-      if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '未提供书籍 ID',
-        });
+      const resolved = await resolveBookForTool(bookId);
+      if (!resolved.ok) {
+        return resolved.response;
       }
 
       const { description, tags, author, alternate_titles } = parsedArgs;
@@ -1092,14 +1082,7 @@ export const bookTools: ToolDefinition[] = [
       }
 
       try {
-        // 获取当前书籍信息
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({
-            success: false,
-            error: `书籍不存在: ${bookId}`,
-          });
-        }
+        const { book } = resolved;
 
         // 保存原始数据用于撤销
         const previousData: {
@@ -1142,10 +1125,10 @@ export const bookTools: ToolDefinition[] = [
 
         // 更新书籍
         const booksStore = useBooksStore();
-        await booksStore.updateBook(bookId, updates);
+        await booksStore.updateBook(book.id, updates);
 
         // 获取更新后的书籍信息
-        const updatedBook = await BookService.getBookById(bookId);
+        const updatedBook = await BookService.getBookById(book.id);
 
         // 报告操作
         if (onAction) {
