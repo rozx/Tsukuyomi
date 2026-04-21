@@ -17,6 +17,30 @@ import {
  */
 export class TerminologyService {
   /**
+   * 根据书籍 ID 读取当前术语列表，集中处理"书籍不存在"校验与
+   * `terminologies ?? []` 兜底，避免在每个 CRUD 方法里重复 5 行模板。
+   * @param bookId 书籍 ID
+   * @returns Pinia books store 以及该书籍当前的 Terminology 数组
+   * @throws 书籍不存在时抛出统一错误
+   */
+  private static loadBookTerminologies(bookId: string): {
+    booksStore: ReturnType<typeof useBooksStore>;
+    currentTerminologies: Terminology[];
+  } {
+    const booksStore = useBooksStore();
+    const book = booksStore.getBookById(bookId);
+
+    if (!book) {
+      throw new Error(`书籍不存在: ${bookId}`);
+    }
+
+    return {
+      booksStore,
+      currentTerminologies: book.terminologies || [],
+    };
+  }
+
+  /**
    * 统计术语在书籍所有章节中的出现次数
    * 使用分批处理避免阻塞 UI
    * @param book 书籍对象
@@ -92,14 +116,7 @@ export class TerminologyService {
       description?: string;
     },
   ): Promise<Terminology> {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-
-    if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
-    }
-
-    const currentTerminologies = book.terminologies || [];
+    const { booksStore, currentTerminologies } = this.loadBookTerminologies(bookId);
 
     // 检查是否已存在同名术语
     const existingTerm = currentTerminologies.find((t) => t.name === termData.name);
@@ -157,14 +174,7 @@ export class TerminologyService {
       description?: string;
     },
   ): Promise<Terminology> {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-
-    if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
-    }
-
-    const currentTerminologies = book.terminologies || [];
+    const { booksStore, currentTerminologies } = this.loadBookTerminologies(bookId);
     const existingTerm = currentTerminologies.find((t) => t.id === termId);
 
     if (!existingTerm) {
