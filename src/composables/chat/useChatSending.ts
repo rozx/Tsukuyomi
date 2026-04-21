@@ -256,7 +256,7 @@ export function useChatSending(
   };
 
   const buildChatRequestOptions = (
-    currentSession: ReturnType<typeof chatSessionsStore.$state>['currentSession'] | null,
+    currentSession: ChatSession | null,
     assistantMessageIdRef: { value: string },
     uiPerformedSummarization: boolean,
   ): Parameters<typeof AssistantService.chat>[2] => {
