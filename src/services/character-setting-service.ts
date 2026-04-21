@@ -106,6 +106,19 @@ function composeUpdatedCharacter(
   return updatedChar;
 }
 
+/**
+ * add/update 角色设定共用的扁平数据形状（别名里 translation 已拉平成字符串）。
+ * add 需要 name，update 全部字段都是可选的 — 通过 Partial 派生 update 的入参类型。
+ */
+type CharacterMutationFields = {
+  name: string;
+  sex?: 'male' | 'female' | 'other' | undefined;
+  translation?: string;
+  description?: string;
+  speakingStyle?: string;
+  aliases?: Array<{ name: string; translation: string }>;
+};
+
 export class CharacterSettingService {
   /**
    * 添加新角色设定
@@ -121,14 +134,7 @@ export class CharacterSettingService {
    */
   static async addCharacterSetting(
     bookId: string,
-    charData: {
-      name: string;
-      sex?: 'male' | 'female' | 'other' | undefined;
-      translation?: string;
-      description?: string;
-      speakingStyle?: string;
-      aliases?: Array<{ name: string; translation: string }>;
-    },
+    charData: CharacterMutationFields,
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
@@ -205,14 +211,7 @@ export class CharacterSettingService {
   static async updateCharacterSetting(
     bookId: string,
     charId: string,
-    updates: {
-      name?: string;
-      sex?: 'male' | 'female' | 'other' | undefined;
-      translation?: string;
-      description?: string;
-      speakingStyle?: string;
-      aliases?: Array<{ name: string; translation: string }>;
-    },
+    updates: Partial<CharacterMutationFields>,
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
