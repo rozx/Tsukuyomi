@@ -1532,6 +1532,58 @@ export class ChapterService {
   }
 
   /**
+   * 计算向后遍历时、刚进入某章节应使用的 pIdx（指向该章节最后一段；章节无内容时返回 -1）。
+   */
+  private static lastParagraphIndexOf(chapter: Chapter | null | undefined): number {
+    return chapter && chapter.content ? chapter.content.length - 1 : -1;
+  }
+
+  /**
+   * 向前跨卷：将 state.vIdx 回退到上一个非空卷，把 state.cIdx 指向该卷最后一章，state.pIdx 指向该章最后一段。
+   * 若已无更早的卷，返回 done=true。若跳过的卷本身是空的，会将 cIdx/pIdx 置 -1 并返回 chapter=null 交给调用方 continue。
+   *
+   * 共用于 getPreviousParagraphsAsync 的两遍扫描，封装原来重复出现的「vIdx-- + 空卷兜底 + cIdx=last + pIdx=last」样板。
+   */
+  private static jumpToPrevVolumeLastChapter(
+    state: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+  ): { done: boolean; chapter: Chapter | null } {
+    state.vIdx--;
+    if (state.vIdx < 0) {
+      return { done: true, chapter: null };
+    }
+    const prevVolume = novel.volumes?.[state.vIdx];
+    if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
+      state.cIdx = -1;
+      state.pIdx = -1;
+      return { done: false, chapter: null };
+    }
+    state.cIdx = prevVolume.chapters.length - 1;
+    const prevChapter = prevVolume.chapters[state.cIdx] ?? null;
+    state.pIdx = ChapterService.lastParagraphIndexOf(prevChapter);
+    return { done: false, chapter: prevChapter };
+  }
+
+  /**
+   * 向后跨卷：将 state.vIdx 前进到下一个卷，把 state.cIdx/pIdx 置零。
+   * 若已无更晚的卷，返回 done=true。
+   *
+   * 共用于 getNextParagraphsAsync 的两遍扫描。
+   */
+  private static jumpToNextVolumeFirstChapter(
+    state: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+  ): { done: boolean } {
+    state.vIdx++;
+    if (!novel.volumes || state.vIdx >= novel.volumes.length) {
+      return { done: true };
+    }
+    state.cIdx = 0;
+    state.pIdx = 0;
+    return { done: false };
+  }
+
+  /**
    * 获取指定段落之前的 x 个段落（异步版本，按需加载章节内容，使用批量加载优化）
    * @param novel 小说对象
    * @param paragraphId 段落 ID
@@ -1583,22 +1635,23 @@ export class ChapterService {
       }
 
       if (cIdx < 0) {
-        vIdx--;
-        if (vIdx < 0) break;
-        const prevVolume = novel.volumes[vIdx];
-        if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-          cIdx = -1;
-          pIdx = -1;
-          continue;
+        const state = { vIdx, cIdx, pIdx };
+        const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+        ({ vIdx, cIdx, pIdx } = state);
+        if (step.done) break;
+        if (step.chapter) {
+          if (
+            ChapterService.collectChapterForLoad(
+              step.chapter,
+              vIdx,
+              cIdx,
+              chaptersToLoad,
+              chapterMap,
+            )
+          ) {
+            collected++;
+          }
         }
-        cIdx = prevVolume.chapters.length - 1;
-        const prevChapter = prevVolume.chapters[cIdx];
-        if (
-          ChapterService.collectChapterForLoad(prevChapter, vIdx, cIdx, chaptersToLoad, chapterMap)
-        ) {
-          collected++;
-        }
-        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
         continue;
       }
 
@@ -1616,22 +1669,23 @@ export class ChapterService {
       if (pIdx < 0) {
         cIdx--;
         if (cIdx < 0) {
-          vIdx--;
-          if (vIdx < 0) break;
-          const prevVolume = novel.volumes[vIdx];
-          if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-            cIdx = -1;
-            pIdx = -1;
-            continue;
+          const state = { vIdx, cIdx, pIdx };
+          const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+          ({ vIdx, cIdx, pIdx } = state);
+          if (step.done) break;
+          if (step.chapter) {
+            if (
+              ChapterService.collectChapterForLoad(
+                step.chapter,
+                vIdx,
+                cIdx,
+                chaptersToLoad,
+                chapterMap,
+              )
+            ) {
+              collected++;
+            }
           }
-          cIdx = prevVolume.chapters.length - 1;
-          const prevChapter = prevVolume.chapters[cIdx];
-          if (
-            ChapterService.collectChapterForLoad(prevChapter, vIdx, cIdx, chaptersToLoad, chapterMap)
-          ) {
-            collected++;
-          }
-          pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
           continue;
         }
         const prevChapter = volume.chapters[cIdx];
@@ -1640,7 +1694,7 @@ export class ChapterService {
         ) {
           collected++;
         }
-        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+        pIdx = ChapterService.lastParagraphIndexOf(prevChapter);
         continue;
       }
 
@@ -1668,19 +1722,16 @@ export class ChapterService {
       }
 
       if (cIdx < 0) {
-        vIdx--;
-        if (vIdx < 0) break;
-        const prevVolume = novel.volumes[vIdx];
-        if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-          cIdx = -1;
-          pIdx = -1;
-          continue;
+        const state = { vIdx, cIdx, pIdx };
+        const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+        ({ vIdx, cIdx, pIdx } = state);
+        if (step.done) break;
+        if (step.chapter) {
+          // 如果仍未加载，按需加载
+          await ChapterService.ensureChapterLoaded(step.chapter);
+          // ensureChapterLoaded 可能把 content 从 undefined 变为 []，重新计算 pIdx 以兼容空章节
+          pIdx = ChapterService.lastParagraphIndexOf(step.chapter);
         }
-        cIdx = prevVolume.chapters.length - 1;
-        const prevChapter = prevVolume.chapters[cIdx];
-        // 如果仍未加载，按需加载
-        await ChapterService.ensureChapterLoaded(prevChapter);
-        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
         continue;
       }
 
@@ -1703,23 +1754,19 @@ export class ChapterService {
       if (pIdx < 0) {
         cIdx--;
         if (cIdx < 0) {
-          vIdx--;
-          if (vIdx < 0) break;
-          const prevVolume = novel.volumes[vIdx];
-          if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-            cIdx = -1;
-            pIdx = -1;
-            continue;
+          const state = { vIdx, cIdx, pIdx };
+          const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+          ({ vIdx, cIdx, pIdx } = state);
+          if (step.done) break;
+          if (step.chapter) {
+            await ChapterService.ensureChapterLoaded(step.chapter);
+            pIdx = ChapterService.lastParagraphIndexOf(step.chapter);
           }
-          cIdx = prevVolume.chapters.length - 1;
-          const prevChapter = prevVolume.chapters[cIdx];
-          await ChapterService.ensureChapterLoaded(prevChapter);
-          pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
           continue;
         }
         const prevChapter = volume.chapters[cIdx];
         await ChapterService.ensureChapterLoaded(prevChapter);
-        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
+        pIdx = ChapterService.lastParagraphIndexOf(prevChapter);
         continue;
       }
 
@@ -1791,10 +1838,10 @@ export class ChapterService {
       }
 
       if (cIdx >= volume.chapters.length) {
-        vIdx++;
-        if (vIdx >= novel.volumes.length) break;
-        cIdx = 0;
-        pIdx = 0;
+        const state = { vIdx, cIdx, pIdx };
+        const step = ChapterService.jumpToNextVolumeFirstChapter(state, novel);
+        ({ vIdx, cIdx, pIdx } = state);
+        if (step.done) break;
         continue;
       }
 
@@ -1812,10 +1859,10 @@ export class ChapterService {
       if (pIdx >= (chapter.content?.length || 0)) {
         cIdx++;
         if (cIdx >= volume.chapters.length) {
-          vIdx++;
-          if (vIdx >= novel.volumes.length) break;
-          cIdx = 0;
-          pIdx = 0;
+          const state = { vIdx, cIdx, pIdx };
+          const step = ChapterService.jumpToNextVolumeFirstChapter(state, novel);
+          ({ vIdx, cIdx, pIdx } = state);
+          if (step.done) break;
           continue;
         } else {
           const nextChapter = volume.chapters[cIdx];
@@ -1850,10 +1897,10 @@ export class ChapterService {
       }
 
       if (cIdx >= volume.chapters.length) {
-        vIdx++;
-        if (vIdx >= novel.volumes.length) break;
-        cIdx = 0;
-        pIdx = 0;
+        const state = { vIdx, cIdx, pIdx };
+        const step = ChapterService.jumpToNextVolumeFirstChapter(state, novel);
+        ({ vIdx, cIdx, pIdx } = state);
+        if (step.done) break;
         continue;
       }
 
