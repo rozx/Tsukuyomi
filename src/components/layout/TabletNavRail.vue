@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router';
-import { useUiStore } from 'src/stores/ui';
 import { useMainNavActive, type MainNavTab } from 'src/composables/useMainNavActive';
+import { useMainNavDispatch } from 'src/composables/layout/useMainNavDispatch';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 
@@ -20,39 +19,11 @@ const secondaryItems: Item[] = [
   { id: 'settings', icon: 'pi-cog', label: '设置' },
 ];
 
-const router = useRouter();
-const route = useRoute();
-const ui = useUiStore();
-
 const activeTab = useMainNavActive();
 
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
-// 与 MobileTabBar.onTabClick 保持一致的分派逻辑。
-const onItemClick = (id: MainNavTab) => {
-  switch (id) {
-    case 'home':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (route.path !== '/') void router.push('/');
-      return;
-    case 'library':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (route.path !== '/books') void router.push('/books');
-      return;
-    case 'ai':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (route.path !== '/ai') void router.push('/ai');
-      return;
-    case 'help':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (!route.path.startsWith('/help')) void router.push('/help');
-      return;
-    case 'settings':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (!route.path.startsWith('/settings')) void router.push('/settings');
-      return;
-  }
-};
+const { dispatch: onItemClick } = useMainNavDispatch();
 </script>
 
 <template>

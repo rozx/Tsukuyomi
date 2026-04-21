@@ -168,310 +168,43 @@ export class OpenAIService extends BaseAIService {
   ): Promise<TextGenerationResult> {
     try {
       const client = this.createClient(config);
-
-      // 准备消息列表
-      let messages: Array<OpenAI.Chat.Completions.ChatCompletionMessageParam> = [];
-      if (request.messages && request.messages.length > 0) {
-        messages = request.messages.map((msg) => {
-          if (msg.role === 'tool') {
-            const toolMsg = {
-              role: 'tool',
-              // [兼容] 避免部分 OpenAI 兼容服务拒绝空 content
-              content: msg.content && msg.content.trim() ? msg.content : '（工具返回为空）',
-              tool_call_id: msg.tool_call_id!,
-            } as OpenAI.Chat.Completions.ChatCompletionToolMessageParam;
-            // [兼容] 部分 OpenAI 兼容服务（如部分 Moonshot/Kimi 配置）可能需要 name 字段
-            // OpenAI 官方规范中 tool 消息不需要 name，但添加不会影响大多数兼容实现
-            if (msg.name) {
-              (toolMsg as any).name = msg.name;
-            }
-            return toolMsg;
-          }
-          if (msg.role === 'assistant' && msg.tool_calls) {
-            // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
-            const safeAssistantContent =
-              typeof msg.content === 'string' && msg.content.trim() ? msg.content : '（调用工具）';
-            const assistantMsg: OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam = {
-              role: 'assistant',
-              content: safeAssistantContent,
-              tool_calls: msg.tool_calls.map((tc) => ({
-                id: tc.id,
-                type: 'function',
-                function: tc.function,
-              })),
-            };
-            // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content 字段（即使为 null）
-            // 如果消息包含 reasoning_content，添加到请求中（即使为 null 也要包含）
-            if (msg.reasoning_content !== undefined) {
-              (assistantMsg as any).reasoning_content = msg.reasoning_content;
-            } else {
-              // 如果未定义，设置为 null（DeepSeek 等模型需要此字段存在）
-              (assistantMsg as any).reasoning_content = null;
-            }
-            return assistantMsg;
-          }
-          return {
-            role: msg.role,
-            content: msg.content || '',
-            name: msg.name,
-          } as OpenAI.Chat.Completions.ChatCompletionMessageParam;
-        });
-
-        // [兼容] 清理空消息：部分 OpenAI 兼容服务会拒绝空 content（尤其是 assistant/user/system）
-        // - 保留 tool 消息（已在上面兜底 content）
-        // - 保留包含 tool_calls 的 assistant 消息（已在上面兜底 content）
-        messages = messages.filter((m) => {
-          if (m.role === 'tool') return true;
-          // assistant tool_calls 在上面分支已保证 content 非空，这里直接保留
-          if (m.role === 'assistant' && (m as any).tool_calls) return true;
-          const content = (m as any).content;
-          return typeof content === 'string' ? content.trim().length > 0 : Boolean(content);
-        });
-      } else {
-        messages = [{ role: 'user', content: request.prompt || '' }];
-      }
-
-      // 准备工具列表
-      let tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined;
-      if (request.tools && request.tools.length > 0) {
-        tools = request.tools.map((tool) => ({
-          type: 'function',
-          function: tool.function,
-        }));
-      }
-
-      const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
-        model: config.model,
-        messages,
-        stream: true, // 启用流式模式
-      };
-
-      // 如果提供了工具，添加到请求参数中
-      if (tools && tools.length > 0) {
-        requestParams.tools = tools;
-        // [重要] 一些 OpenAI 兼容服务在未显式指定 tool_choice 时不会触发工具调用（尤其是“thinking/推理”模式）
-        // 统一设置为 auto，让模型可以自由决定是否调用工具
-        (requestParams as any).tool_choice = 'auto';
-      }
-
-      // 如果提供了 signal，添加到请求参数中
-      if (config.signal) {
-        // @ts-expect-error OpenAI 类型定义可能不完全匹配 AbortSignal，但实际支持
-        requestParams.signal = config.signal;
-      }
-
-      const temperature = request.temperature ?? config.temperature;
-      if (temperature !== undefined) {
-        requestParams.temperature = temperature;
-      }
-
-      const maxOutputTokens = request.maxOutputTokens ?? config.maxOutputTokens;
-      // 只有当 maxOutputTokens 明确设置且大于 0 时才设置 max_tokens
-      // 如果 maxOutputTokens 是 0 或未定义，不设置 max_tokens，让 API 使用默认值（无限制）
-      if (maxOutputTokens !== undefined && maxOutputTokens > 0) {
-        // API 限制 max_tokens 有效范围为 [1, 65536]，超过此范围会被拒绝
-        // 如果配置的值超过限制，自动限制到 API 允许的最大值
-        // 确保值至少为 1（有效范围的最小值）
-        requestParams.max_tokens = Math.max(1, Math.min(maxOutputTokens, OPENAI_MAX_TOKENS_LIMIT));
-      }
+      const messages = prepareOpenAIMessages(request);
+      const requestParams = buildOpenAIRequestParams(config, request, messages);
 
       // 使用流式 API
       const stream = await client.chat.completions.create(requestParams);
-      let fullText = '';
-      let reasoningContent = ''; // 累积思考内容
-      let modelId = config.model;
-      let isThinking = false; // 是否正在处理思考内容（<think>标签）
+      const streamResult = await consumeOpenAIStream(stream, config, onChunk);
 
-      // 用于收集工具调用的片段
-      const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>();
-      // 用于兼容旧式 function_call（部分 OpenAI 兼容实现仍会返回 function_call 而非 tool_calls）
-      // 注意：旧式协议只能表达单一函数调用，因此统一使用 index=0
-      const legacyFunctionCall = { id: 'legacy_function_call', name: '', arguments: '' };
+      const finalToolCallsNormalized = finalizeOpenAIToolCalls(
+        streamResult.toolCallsMap,
+        streamResult.legacyFunctionCall,
+      );
 
-      // 处理流式响应
-      // 当 stream: true 时，返回的是 Stream<ChatCompletionChunk>
-      // 需要将其转换为异步迭代器
-      if (Symbol.asyncIterator in stream) {
-        for await (const chunk of stream as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>) {
-          // 检查是否已取消
-          if (config.signal?.aborted) {
-            throw new Error('请求已取消');
-          }
-
-          const delta = chunk.choices[0]?.delta;
-          if (!delta) {
-            continue;
-          }
-
-          // 处理工具调用
-          if (delta.tool_calls) {
-            for (const toolCall of delta.tool_calls) {
-              const index = toolCall.index;
-              if (!toolCallsMap.has(index)) {
-                toolCallsMap.set(index, { id: '', name: '', arguments: '' });
-              }
-              const current = toolCallsMap.get(index)!;
-
-              if (toolCall.id) current.id = toolCall.id;
-              if (toolCall.function?.name) current.name = toolCall.function.name;
-              if (toolCall.function?.arguments) current.arguments += toolCall.function.arguments;
-            }
-          }
-
-          // [兼容] 旧式 function_call（非 tool_calls）
-          const deltaFunctionCall = (delta as any).function_call as
-            | { name?: string; arguments?: string }
-            | undefined;
-          if (deltaFunctionCall) {
-            if (deltaFunctionCall.name) legacyFunctionCall.name = deltaFunctionCall.name;
-            if (deltaFunctionCall.arguments)
-              legacyFunctionCall.arguments += deltaFunctionCall.arguments;
-          }
-
-          // 获取思考内容 - 用于保存到思考过程
-          // 支持多种格式: reasoning_content (DeepSeek), reasoning/reasoning_details (Kimi K2.5 等)
-          let chunkReasoningContent = (delta as any).reasoning_content || '';
-          if (!chunkReasoningContent) {
-            const reasoningDetails = (delta as any).reasoning_details as
-              | { text?: string }[]
-              | undefined;
-            if (reasoningDetails?.length) {
-              chunkReasoningContent = reasoningDetails.map((d) => d.text || '').join('');
-            } else if ((delta as any).reasoning) {
-              chunkReasoningContent = (delta as any).reasoning;
-            }
-          }
-
-          // 获取原始内容（content）
-          const rawContent = delta.content || '';
-          let chunkText = '';
-
-          // 处理 <think> 标签过滤
-          // 即使 rawContent 为空，只要 processingThink 为 true，也可能需要在后续处理
-          if (rawContent) {
-            // 简单的状态机处理流式 <think> 标签
-            let processingContent = rawContent;
-
-            while (processingContent.length > 0) {
-              if (isThinking) {
-                // 正在思考模式中，寻找结束标签 </think>
-                const endTagIndex = processingContent.indexOf('</think>');
-                if (endTagIndex !== -1) {
-                  // 找到结束标签
-                  chunkReasoningContent += processingContent.substring(0, endTagIndex);
-                  isThinking = false;
-                  // 移除已处理部分和标签，继续处理剩余部分
-                  processingContent = processingContent.substring(endTagIndex + 8); // 8 is length of </think>
-                } else {
-                  // 未找到结束标签，全部内容由于思考
-                  chunkReasoningContent += processingContent;
-                  processingContent = '';
-                }
-              } else {
-                // 正常模式，寻找开始标签 <think>
-                const startTagIndex = processingContent.indexOf('<think>');
-                if (startTagIndex !== -1) {
-                  // 找到开始标签
-                  chunkText += processingContent.substring(0, startTagIndex); // 标签前的是文本
-                  isThinking = true;
-                  // 移除已处理部分和标签，继续处理剩余部分
-                  processingContent = processingContent.substring(startTagIndex + 7); // 7 is length of <think>
-                } else {
-                  // 未找到开始标签，全部内容视为文本
-                  chunkText += processingContent;
-                  processingContent = '';
-                }
-              }
-            }
-          }
-
-          // 只有实际内容（非思考内容）才累积到 fullText
-          if (chunkText) {
-            fullText += chunkText;
-          }
-
-          // 累积思考内容
-          if (chunkReasoningContent) {
-            reasoningContent += chunkReasoningContent;
-          }
-
-          // 如果提供了回调函数，传递实际内容和思考内容
-          if (onChunk && (chunkText || chunkReasoningContent)) {
-            const chunkData: TextGenerationChunk = {
-              text: chunkText, // 只传递经过过滤的实际内容
-              done: false,
-              model: chunk.model || modelId,
-              ...(chunkReasoningContent ? { reasoningContent: chunkReasoningContent } : {}), // 传递提取出的思考内容
-            };
-
-            await onChunk(chunkData);
-          }
-
-          // 更新模型 ID（可能在第一个块中）
-          if (chunk.model) {
-            modelId = chunk.model;
-          }
-        }
-      } else {
-        // 如果不是流式响应（不应该发生，因为 stream: true），回退到非流式处理
-        console.error('OpenAI: 流式响应格式错误，stream 不是异步迭代器');
-        throw new Error('流式响应格式错误');
-      }
-
-      // 构建工具调用结果
-      const finalToolCalls = Array.from(toolCallsMap.values())
-        .filter((tc) => tc.name && tc.name.trim().length > 0)
-        .map((tc) => ({
-          id: tc.id,
-          type: 'function' as const,
-          function: {
-            name: tc.name,
-            arguments: tc.arguments,
-          },
-        }));
-
-      // 如果没有 tool_calls，但收到了旧式 function_call，则也视为一个工具调用
-      if (finalToolCalls.length === 0 && legacyFunctionCall.name.trim()) {
-        finalToolCalls.push({
-          id: legacyFunctionCall.id,
-          type: 'function' as const,
-          function: {
-            name: legacyFunctionCall.name,
-            arguments: legacyFunctionCall.arguments,
-          },
-        });
-      }
-
-      const finalToolCallsWithDefaults = finalToolCalls.map((tc, idx) => ({
-        // 某些兼容服务可能不返回 id，这里补一个稳定 id（用于 tool_call_id 对齐）
-        id: tc.id && tc.id.trim() ? tc.id : `tool_call_${idx}`,
-        type: tc.type,
-        function: tc.function,
-      }));
-
-      const finalToolCallsNormalized = finalToolCallsWithDefaults;
-
-      const text = fullText.trim();
-      // 如果没有文本也没有工具调用，且不是空响应（虽然通常不应该发生），则报错
+      const text = streamResult.fullText.trim();
       if (!text && finalToolCallsNormalized.length === 0) {
         throw new AIEmptyResponseError();
       }
 
-      // 发送完成回调
       if (onChunk) {
         await onChunk({
           text: '',
           done: true,
-          model: modelId,
-          ...(finalToolCallsNormalized.length > 0 ? { toolCalls: finalToolCallsNormalized } : {}),
+          model: streamResult.modelId,
+          ...(finalToolCallsNormalized.length > 0
+            ? { toolCalls: finalToolCallsNormalized }
+            : {}),
         });
       }
 
       return {
         text,
-        model: modelId,
-        ...(finalToolCallsNormalized.length > 0 ? { toolCalls: finalToolCallsNormalized } : {}),
-        ...(reasoningContent ? { reasoningContent: reasoningContent.trim() } : {}),
+        model: streamResult.modelId,
+        ...(finalToolCallsNormalized.length > 0
+          ? { toolCalls: finalToolCallsNormalized }
+          : {}),
+        ...(streamResult.reasoningContent
+          ? { reasoningContent: streamResult.reasoningContent.trim() }
+          : {}),
       };
     } catch (error) {
       if (error instanceof Error) {
@@ -510,4 +243,371 @@ export class OpenAIService extends BaseAIService {
       throw new Error('获取 OpenAI 模型列表失败');
     }
   }
+}
+
+// ============ 模块级辅助函数：消息 / 参数 / 流处理 ============
+
+/**
+ * 将上层的 tool 消息转换为 OpenAI SDK 要求的格式（兼容空 content）
+ */
+function toOpenAIToolMessage(msg: {
+  content?: string | null;
+  tool_call_id?: string;
+  name?: string;
+}): OpenAI.Chat.Completions.ChatCompletionToolMessageParam {
+  const toolMsg = {
+    role: 'tool',
+    // [兼容] 避免部分 OpenAI 兼容服务拒绝空 content
+    content: msg.content && msg.content.trim() ? msg.content : '（工具返回为空）',
+    tool_call_id: msg.tool_call_id!,
+  } as OpenAI.Chat.Completions.ChatCompletionToolMessageParam;
+  // [兼容] 部分 OpenAI 兼容服务（如部分 Moonshot/Kimi 配置）可能需要 name 字段
+  // OpenAI 官方规范中 tool 消息不需要 name，但添加不会影响大多数兼容实现
+  if (msg.name) {
+    (toolMsg as any).name = msg.name;
+  }
+  return toolMsg;
+}
+
+/**
+ * 将 assistant 消息（含 tool_calls）转换为 OpenAI SDK 要求的格式
+ */
+function toOpenAIAssistantWithToolCalls(msg: {
+  content?: string | null | undefined;
+  tool_calls: Array<{ id: string; function: { name: string; arguments: string } }>;
+  reasoning_content?: string | null | undefined;
+}): OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam {
+  // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
+  const safeAssistantContent =
+    typeof msg.content === 'string' && msg.content.trim() ? msg.content : '（调用工具）';
+  const assistantMsg: OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam = {
+    role: 'assistant',
+    content: safeAssistantContent,
+    tool_calls: msg.tool_calls.map((tc) => ({
+      id: tc.id,
+      type: 'function',
+      function: tc.function,
+    })),
+  };
+  // DeepSeek 要求：如果有 tool_calls，必须包含 reasoning_content 字段（即使为 null）
+  if (msg.reasoning_content !== undefined) {
+    (assistantMsg as any).reasoning_content = msg.reasoning_content;
+  } else {
+    (assistantMsg as any).reasoning_content = null;
+  }
+  return assistantMsg;
+}
+
+/**
+ * 准备 OpenAI 格式的消息列表；适配 tool / assistant+tool_calls / 普通角色，并清理空内容
+ */
+function prepareOpenAIMessages(
+  request: TextGenerationRequest,
+): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  if (!request.messages || request.messages.length === 0) {
+    return [{ role: 'user', content: request.prompt || '' }];
+  }
+
+  const mapped = request.messages.map((msg) => {
+    if (msg.role === 'tool') {
+      return toOpenAIToolMessage(msg);
+    }
+    if (msg.role === 'assistant' && msg.tool_calls) {
+      return toOpenAIAssistantWithToolCalls({
+        content: msg.content,
+        tool_calls: msg.tool_calls,
+        reasoning_content: msg.reasoning_content,
+      });
+    }
+    return {
+      role: msg.role,
+      content: msg.content || '',
+      name: msg.name,
+    } as OpenAI.Chat.Completions.ChatCompletionMessageParam;
+  });
+
+  // [兼容] 清理空消息：部分 OpenAI 兼容服务会拒绝空 content（尤其是 assistant/user/system）
+  // - 保留 tool 消息（已兜底 content）
+  // - 保留包含 tool_calls 的 assistant 消息（已兜底 content）
+  return mapped.filter((m) => {
+    if (m.role === 'tool') return true;
+    if (m.role === 'assistant' && (m as any).tool_calls) return true;
+    const content = (m as any).content;
+    return typeof content === 'string' ? content.trim().length > 0 : Boolean(content);
+  });
+}
+
+/**
+ * 构造 OpenAI 流式请求参数（含 tools / signal / temperature / max_tokens）
+ */
+function buildOpenAIRequestParams(
+  config: AIServiceConfig,
+  request: TextGenerationRequest,
+  messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+): OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming {
+  const requestParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
+    model: config.model,
+    messages,
+    stream: true,
+  };
+
+  if (request.tools && request.tools.length > 0) {
+    const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = request.tools.map((tool) => ({
+      type: 'function',
+      function: tool.function,
+    }));
+    requestParams.tools = tools;
+    // [重要] 一些 OpenAI 兼容服务在未显式指定 tool_choice 时不会触发工具调用（尤其是"thinking/推理"模式）
+    // 统一设置为 auto，让模型可以自由决定是否调用工具
+    (requestParams as any).tool_choice = 'auto';
+  }
+
+  if (config.signal) {
+    // @ts-expect-error OpenAI 类型定义可能不完全匹配 AbortSignal，但实际支持
+    requestParams.signal = config.signal;
+  }
+
+  const temperature = request.temperature ?? config.temperature;
+  if (temperature !== undefined) {
+    requestParams.temperature = temperature;
+  }
+
+  const maxOutputTokens = request.maxOutputTokens ?? config.maxOutputTokens;
+  // 只有当 maxOutputTokens 明确设置且大于 0 时才设置 max_tokens
+  // 如果 maxOutputTokens 是 0 或未定义，不设置 max_tokens，让 API 使用默认值（无限制）
+  if (maxOutputTokens !== undefined && maxOutputTokens > 0) {
+    // API 限制 max_tokens 有效范围为 [1, 65536]，超过此范围会被拒绝；确保至少为 1
+    requestParams.max_tokens = Math.max(1, Math.min(maxOutputTokens, OPENAI_MAX_TOKENS_LIMIT));
+  }
+
+  return requestParams;
+}
+
+interface LegacyFunctionCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+interface StreamConsumeResult {
+  fullText: string;
+  reasoningContent: string;
+  modelId: string;
+  toolCallsMap: Map<number, { id: string; name: string; arguments: string }>;
+  legacyFunctionCall: LegacyFunctionCall;
+}
+
+interface ThinkTagState {
+  isThinking: boolean;
+}
+
+/**
+ * 用状态机在流式 content 中过滤 <think>…</think> 包裹的思考内容
+ * 返回正文 / 思考内容的增量
+ */
+function extractThinkTagContent(
+  rawContent: string,
+  state: ThinkTagState,
+): { chunkText: string; reasoningDelta: string } {
+  let chunkText = '';
+  let reasoningDelta = '';
+  let processingContent = rawContent;
+
+  while (processingContent.length > 0) {
+    if (state.isThinking) {
+      const endTagIndex = processingContent.indexOf('</think>');
+      if (endTagIndex !== -1) {
+        reasoningDelta += processingContent.substring(0, endTagIndex);
+        state.isThinking = false;
+        processingContent = processingContent.substring(endTagIndex + 8); // 8 is length of </think>
+      } else {
+        reasoningDelta += processingContent;
+        processingContent = '';
+      }
+    } else {
+      const startTagIndex = processingContent.indexOf('<think>');
+      if (startTagIndex !== -1) {
+        chunkText += processingContent.substring(0, startTagIndex);
+        state.isThinking = true;
+        processingContent = processingContent.substring(startTagIndex + 7); // 7 is length of <think>
+      } else {
+        chunkText += processingContent;
+        processingContent = '';
+      }
+    }
+  }
+
+  return { chunkText, reasoningDelta };
+}
+
+/**
+ * 从 delta 中提取思考内容（支持 DeepSeek 的 reasoning_content / Kimi 的 reasoning / reasoning_details）
+ */
+function extractDeltaReasoning(delta: any): string {
+  const direct = delta.reasoning_content || '';
+  if (direct) return direct;
+  const reasoningDetails = delta.reasoning_details as { text?: string }[] | undefined;
+  if (reasoningDetails?.length) {
+    return reasoningDetails.map((d) => d.text || '').join('');
+  }
+  if (delta.reasoning) return delta.reasoning;
+  return '';
+}
+
+/**
+ * 将 delta.tool_calls 增量累积到 toolCallsMap
+ */
+function accumulateDeltaToolCalls(
+  deltaToolCalls: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta.ToolCall[],
+  toolCallsMap: Map<number, { id: string; name: string; arguments: string }>,
+): void {
+  for (const toolCall of deltaToolCalls) {
+    const index = toolCall.index;
+    if (!toolCallsMap.has(index)) {
+      toolCallsMap.set(index, { id: '', name: '', arguments: '' });
+    }
+    const current = toolCallsMap.get(index)!;
+    if (toolCall.id) current.id = toolCall.id;
+    if (toolCall.function?.name) current.name = toolCall.function.name;
+    if (toolCall.function?.arguments) current.arguments += toolCall.function.arguments;
+  }
+}
+
+interface StreamAccumulators {
+  fullText: string;
+  reasoningContent: string;
+  modelId: string;
+  thinkTagState: ThinkTagState;
+  toolCallsMap: Map<number, { id: string; name: string; arguments: string }>;
+  legacyFunctionCall: LegacyFunctionCall;
+}
+
+/**
+ * 将 delta.function_call 增量累积到 legacyFunctionCall
+ */
+function accumulateLegacyFunctionCall(
+  delta: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta,
+  legacyFunctionCall: LegacyFunctionCall,
+): void {
+  const deltaFunctionCall = (delta as any).function_call as
+    | { name?: string; arguments?: string }
+    | undefined;
+  if (!deltaFunctionCall) return;
+  if (deltaFunctionCall.name) legacyFunctionCall.name = deltaFunctionCall.name;
+  if (deltaFunctionCall.arguments) legacyFunctionCall.arguments += deltaFunctionCall.arguments;
+}
+
+/**
+ * 处理单个流式 chunk：累积工具调用、文本、思考内容并触发 onChunk 回调
+ */
+async function processOpenAIStreamChunk(
+  chunk: OpenAI.Chat.Completions.ChatCompletionChunk,
+  acc: StreamAccumulators,
+  onChunk: TextGenerationStreamCallback | undefined,
+): Promise<void> {
+  const delta = chunk.choices[0]?.delta;
+  if (!delta) return;
+
+  if (delta.tool_calls) accumulateDeltaToolCalls(delta.tool_calls, acc.toolCallsMap);
+  // [兼容] 旧式 function_call（非 tool_calls）
+  accumulateLegacyFunctionCall(delta, acc.legacyFunctionCall);
+
+  let chunkReasoningContent = extractDeltaReasoning(delta);
+  const rawContent = delta.content || '';
+  let chunkText = '';
+  if (rawContent) {
+    const { chunkText: processedText, reasoningDelta } = extractThinkTagContent(
+      rawContent,
+      acc.thinkTagState,
+    );
+    chunkText = processedText;
+    chunkReasoningContent += reasoningDelta;
+  }
+
+  if (chunkText) acc.fullText += chunkText;
+  if (chunkReasoningContent) acc.reasoningContent += chunkReasoningContent;
+
+  if (onChunk && (chunkText || chunkReasoningContent)) {
+    const chunkData: TextGenerationChunk = {
+      text: chunkText,
+      done: false,
+      model: chunk.model || acc.modelId,
+      ...(chunkReasoningContent ? { reasoningContent: chunkReasoningContent } : {}),
+    };
+    await onChunk(chunkData);
+  }
+
+  if (chunk.model) acc.modelId = chunk.model;
+}
+
+/**
+ * 消费流式响应，处理工具调用、思考内容、<think> 标签及 onChunk 回调
+ */
+async function consumeOpenAIStream(
+  stream: unknown,
+  config: AIServiceConfig,
+  onChunk: TextGenerationStreamCallback | undefined,
+): Promise<StreamConsumeResult> {
+  const acc: StreamAccumulators = {
+    fullText: '',
+    reasoningContent: '',
+    modelId: config.model,
+    thinkTagState: { isThinking: false },
+    toolCallsMap: new Map(),
+    // 用于兼容旧式 function_call（部分 OpenAI 兼容实现仍会返回 function_call 而非 tool_calls）
+    legacyFunctionCall: { id: 'legacy_function_call', name: '', arguments: '' },
+  };
+
+  if (!(Symbol.asyncIterator in (stream as object))) {
+    console.error('OpenAI: 流式响应格式错误，stream 不是异步迭代器');
+    throw new Error('流式响应格式错误');
+  }
+
+  for await (const chunk of stream as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>) {
+    if (config.signal?.aborted) throw new Error('请求已取消');
+    await processOpenAIStreamChunk(chunk, acc, onChunk);
+  }
+
+  return {
+    fullText: acc.fullText,
+    reasoningContent: acc.reasoningContent,
+    modelId: acc.modelId,
+    toolCallsMap: acc.toolCallsMap,
+    legacyFunctionCall: acc.legacyFunctionCall,
+  };
+}
+
+/**
+ * 从累积的 toolCallsMap / 兼容旧式 function_call 中构造最终的 toolCalls 列表
+ */
+function finalizeOpenAIToolCalls(
+  toolCallsMap: Map<number, { id: string; name: string; arguments: string }>,
+  legacyFunctionCall: LegacyFunctionCall,
+): Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> {
+  const finalToolCalls = Array.from(toolCallsMap.values())
+    .filter((tc) => tc.name && tc.name.trim().length > 0)
+    .map((tc) => ({
+      id: tc.id,
+      type: 'function' as const,
+      function: { name: tc.name, arguments: tc.arguments },
+    }));
+
+  // 如果没有 tool_calls，但收到了旧式 function_call，则也视为一个工具调用
+  if (finalToolCalls.length === 0 && legacyFunctionCall.name.trim()) {
+    finalToolCalls.push({
+      id: legacyFunctionCall.id,
+      type: 'function' as const,
+      function: {
+        name: legacyFunctionCall.name,
+        arguments: legacyFunctionCall.arguments,
+      },
+    });
+  }
+
+  // 某些兼容服务可能不返回 id，这里补一个稳定 id（用于 tool_call_id 对齐）
+  return finalToolCalls.map((tc, idx) => ({
+    id: tc.id && tc.id.trim() ? tc.id : `tool_call_${idx}`,
+    type: tc.type,
+    function: tc.function,
+  }));
 }

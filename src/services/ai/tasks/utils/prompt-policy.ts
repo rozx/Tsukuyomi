@@ -1,6 +1,6 @@
+import { getCurrentStatusInfo } from '../prompts/common';
 import {
   getBriefPlanningToolWarningPrompt,
-  getCurrentStatusInfo,
   getMissingParagraphsPrompt,
   getPlanningLoopPrompt,
   getPreparingLoopPrompt,
@@ -11,7 +11,7 @@ import {
   getWorkingContinuePrompt,
   getWorkingFinishedPrompt,
   getWorkingLoopPrompt,
-} from '../prompts';
+} from '../prompts/runner';
 import type { TaskStatus, TaskType } from './task-types';
 
 /**

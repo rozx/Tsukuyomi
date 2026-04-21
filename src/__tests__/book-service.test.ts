@@ -7,8 +7,11 @@ import { generateShortId } from '../utils/id-generator';
 
 // Mock ChapterContentService
 const mockSaveChapterContent = mock(
-  (_chapterId: string, _content: Paragraph[], _options?: { skipIfUnchanged?: boolean }) =>
-    Promise.resolve(true),
+  (
+    _chapterId: string,
+    _content: Paragraph[],
+    _options: { bookId: string; skipIfUnchanged?: boolean },
+  ) => Promise.resolve(true),
 );
 
 describe('BookService', () => {
@@ -127,9 +130,11 @@ describe('BookService', () => {
       // 应该保存两个章节的内容
       expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
       expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
+        bookId: 'book-1',
         skipIfUnchanged: true,
       });
       expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
+        bookId: 'book-1',
         skipIfUnchanged: true,
       });
       // 应该保存书籍元数据
@@ -154,9 +159,11 @@ describe('BookService', () => {
       // 应该保存两个章节的内容
       expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
       expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
+        bookId: 'book-1',
         skipIfUnchanged: true,
       });
       expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
+        bookId: 'book-1',
         skipIfUnchanged: true,
       });
       // 应该保存书籍元数据
@@ -203,9 +210,11 @@ describe('BookService', () => {
       // 应该只保存有内容的章节（chapter-1 和 chapter-3）
       expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
       expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
+        bookId: 'book-1',
         skipIfUnchanged: true,
       });
       expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-3', chapter3.content, {
+        bookId: 'book-1',
         skipIfUnchanged: true,
       });
       expect(mockSaveChapterContent).not.toHaveBeenCalledWith('chapter-2', expect.anything());
@@ -263,9 +272,11 @@ describe('BookService', () => {
       // 应该保存所有章节的内容
       expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
       expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
+        bookId: 'book-1',
         skipIfUnchanged: true,
       });
       expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
+        bookId: 'book-1',
         skipIfUnchanged: true,
       });
     });

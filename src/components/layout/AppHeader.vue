@@ -5,7 +5,7 @@ import Button from 'primevue/button';
 import Badge from 'primevue/badge';
 import { useUiStore } from 'src/stores/ui';
 import { useToastHistory } from 'src/composables/useToastHistory';
-import { useSyncPendingChanges } from 'src/composables/useSyncPendingChanges';
+import { useSyncStatusDisplay } from 'src/composables/useSyncPendingChanges';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useSettingsStore } from 'src/stores/settings';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
@@ -22,13 +22,7 @@ const aiProcessing = useAIProcessingStore();
 const settingsStore = useSettingsStore();
 const isPhone = computed(() => ui.deviceType === 'phone');
 
-const activeTranslationTaskCount = computed(() =>
-  aiProcessing.activeTasks.filter(
-    (t) =>
-      (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
-      (t.status === 'thinking' || t.status === 'processing'),
-  ).length,
-);
+const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslationTaskCount);
 
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
@@ -110,38 +104,14 @@ const handleToggleRightPanel = () => {
 };
 
 // 同步相关（仅用于按钮状态显示）
-const gistSync = computed(() => settingsStore.gistSync);
-const isSyncing = computed(() => settingsStore.isSyncing);
-const { pendingCount, hasPendingChanges } = useSyncPendingChanges();
-
-// 计算同步状态（仅用于按钮图标）
-const syncStatus = computed(() => {
-  if (!gistSync.value.enabled) {
-    return { icon: 'pi pi-cloud', color: 'text-moon-400/70', label: '未启用' };
-  }
-  if (isSyncing.value) {
-    return { icon: 'pi pi-spin pi-spinner', color: 'text-primary-400', label: '同步中' };
-  }
-  if (hasPendingChanges.value) {
-    return {
-      icon: 'pi pi-cloud-upload',
-      color: 'text-amber-300',
-      label: `${pendingCount.value} 项变更`,
-    };
-  }
-  if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) {
-    return { icon: 'pi pi-cloud-check', color: 'text-accent-300', label: '已同步' };
-  }
-  return { icon: 'pi pi-cloud', color: 'text-moon-200', label: '未同步' };
-});
-
-// 计算下次同步时间（仅用于按钮标签）
-const nextSyncTime = computed(() => {
-  if (!gistSync.value.enabled || !gistSync.value.lastSyncTime || gistSync.value.syncInterval <= 0) {
-    return null;
-  }
-  return gistSync.value.lastSyncTime + gistSync.value.syncInterval;
-});
+const { gistSync, isSyncing, pendingCount, hasPendingChanges, syncStatus, nextSyncTime } =
+  useSyncStatusDisplay({
+    disabled: 'text-moon-400/70',
+    syncing: 'text-primary-400',
+    pending: 'text-amber-300',
+    synced: 'text-accent-300',
+    unsynced: 'text-moon-200',
+  });
 
 // 倒计时状态（秒数）
 const countdownSeconds = ref<number | null>(null);

@@ -11,6 +11,7 @@ import SettingCard from './SettingCard.vue';
 import CharacterEditDialog from 'src/components/dialogs/CharacterEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias } from 'src/models/novel';
@@ -89,7 +90,7 @@ const selectedCharacter = ref<(typeof characterSettings.value)[0] | null>(null);
 const isSaving = ref(false);
 
 // 文件输入引用（用于导入 JSON）
-const fileInputRef = ref<HTMLInputElement | null>(null);
+const { fileInputRef, triggerFilePicker: handleImport, createFileSelectHandler } = useFilePicker();
 
 // 打开添加对话框
 const openAddDialog = () => {
@@ -283,20 +284,32 @@ const handleExport = () => {
   }
 };
 
-// 导入角色设定
-const handleImport = () => {
-  fileInputRef.value?.click();
+/**
+ * 导入场景下把外部角色条目规整为 addCharacterSetting / updateCharacterSetting 所需的扁平载荷。
+ * add 分支会在外层加 `name` 字段，update 分支直接传该对象。
+ */
+type ImportedCharLike = {
+  sex?: 'male' | 'female' | 'other' | undefined;
+  translation: { translation: string };
+  description?: string | undefined;
+  speakingStyle?: string | undefined;
+  aliases: Array<{ name: string; translation: { translation: string } }>;
 };
+const buildImportedCharPayload = (importedChar: ImportedCharLike) => ({
+  ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
+  translation: importedChar.translation.translation,
+  ...(importedChar.description !== undefined ? { description: importedChar.description } : {}),
+  ...(importedChar.speakingStyle !== undefined
+    ? { speakingStyle: importedChar.speakingStyle }
+    : {}),
+  aliases: importedChar.aliases.map((a) => ({
+    name: a.name,
+    translation: a.translation.translation,
+  })),
+});
 
 // 处理文件选择
-const handleFileSelect = async (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
-
-  if (!file) {
-    return;
-  }
-
+const handleFileSelect = createFileSelectHandler(async (file) => {
   try {
     const importedCharacters = await CharacterSettingService.importCharacterSettingsFromFile(file);
 
@@ -307,7 +320,6 @@ const handleFileSelect = async (event: Event) => {
         detail: '文件中没有有效的角色设定数据',
         life: 3000,
       });
-      target.value = '';
       return;
     }
 
@@ -318,7 +330,6 @@ const handleFileSelect = async (event: Event) => {
         detail: '没有选择书籍',
         life: 3000,
       });
-      target.value = '';
       return;
     }
 
@@ -358,46 +369,29 @@ const handleFileSelect = async (event: Event) => {
           })),
         });
         // 更新现有角色
-        await CharacterSettingService.updateCharacterSetting(props.book.id, existingChar.id, {
-          ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
-          translation: importedChar.translation.translation,
-          ...(importedChar.description !== undefined
-            ? { description: importedChar.description }
-            : {}),
-          ...(importedChar.speakingStyle !== undefined
-            ? { speakingStyle: importedChar.speakingStyle }
-            : {}),
-          aliases: importedChar.aliases.map((a) => ({
-            name: a.name,
-            translation: a.translation.translation,
-          })),
-        });
+        await CharacterSettingService.updateCharacterSetting(
+          props.book.id,
+          existingChar.id,
+          buildImportedCharPayload(importedChar),
+        );
         updatedCount++;
       } else {
         // 添加新角色
         const newChar = await CharacterSettingService.addCharacterSetting(props.book.id, {
           name: importedChar.name,
-          ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
-          translation: importedChar.translation.translation,
-          ...(importedChar.description !== undefined
-            ? { description: importedChar.description }
-            : {}),
-          ...(importedChar.speakingStyle !== undefined
-            ? { speakingStyle: importedChar.speakingStyle }
-            : {}),
-          aliases: importedChar.aliases.map((a) => ({
-            name: a.name,
-            translation: a.translation.translation,
-          })),
+          ...buildImportedCharPayload(importedChar),
         });
         addedCharIds.push(newChar.id);
         addedCount++;
       }
     }
 
+    // 与 TerminologyPanel 的导入成功 toast 结构高度相似（onRevert 前序步骤一致），
+    // 但后续恢复更新逻辑各自维护不同字段集合，强行抽公共回调反而更复杂，保留两处实现。
     toast.add({
       severity: 'success',
       summary: '导入成功',
+      // fallow-ignore-next-line code-duplication
       detail: `已导入 ${importedCharacters.length} 个角色设定（新增 ${addedCount} 个，更新 ${updatedCount} 个）`,
       life: 3000,
       onRevert: async () => {
@@ -434,10 +428,7 @@ const handleFileSelect = async (event: Event) => {
       life: 5000,
     });
   }
-
-  // 清空输入
-  target.value = '';
-};
+});
 </script>
 
 <template>

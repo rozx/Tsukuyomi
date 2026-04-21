@@ -66,21 +66,10 @@ const messagesToText = (messages: ChatMessage[]): string => {
  * @param messages 消息数组
  * @returns token 数量
  */
-export const countMessagesTokens = (messages: ChatMessage[]): number => {
+const countMessagesTokens = (messages: ChatMessage[]): number => {
   if (!messages || messages.length === 0) return 0;
 
   const text = messagesToText(messages);
-  return gptCountTokens(text);
-};
-
-/**
- * 使用 gpt-tokenizer 精确计算文本的 token 数量
- *
- * @param text 要计算的文本
- * @returns token 数量
- */
-export const countTextTokens = (text: string): number => {
-  if (!text) return 0;
   return gptCountTokens(text);
 };
 

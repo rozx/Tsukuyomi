@@ -1,12 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, type ComponentPublicInstance } from 'vue';
+import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import Button from 'primevue/button';
-import { useToastHistory } from 'src/composables/useToastHistory';
-import { useSyncPendingChanges } from 'src/composables/useSyncPendingChanges';
 import { useUiStore } from 'src/stores/ui';
-import { useAIProcessingStore } from 'src/stores/ai-processing';
-import { useSettingsStore } from 'src/stores/settings';
+import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
@@ -17,35 +14,21 @@ import { APP_VERSION } from 'src/constants/version';
 const router = useRouter();
 const route = useRoute();
 const ui = useUiStore();
-const { unreadCount } = useToastHistory();
-const aiProcessing = useAIProcessingStore();
-const settingsStore = useSettingsStore();
 
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
-const gistSync = computed(() => settingsStore.gistSync);
-const isSyncing = computed(() => settingsStore.isSyncing);
-const { pendingCount, hasPendingChanges } = useSyncPendingChanges();
-
-const syncState = computed<'idle' | 'syncing' | 'changes' | 'ok' | 'pending'>(() => {
-  if (!gistSync.value.enabled) return 'idle';
-  if (isSyncing.value) return 'syncing';
-  if (hasPendingChanges.value) return 'changes';
-  if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) return 'ok';
-  return 'pending';
-});
-
-const thinking = computed(() => aiProcessing.hasActiveTasks);
-
-const toastHistoryRef = ref<ComponentPublicInstance<{ toggle: (event: Event) => void }> | null>(
-  null,
-);
-const thinkingPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
-const syncPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
-
-const toggleHistory = (event: Event) => toastHistoryRef.value?.toggle(event);
-const toggleThinking = (event: Event) => thinkingPanelRef.value?.toggle(event);
-const toggleSync = (event: Event) => syncPanelRef.value?.toggle(event);
+const {
+  unreadCount,
+  pendingCount,
+  syncState,
+  thinking,
+  toastHistoryRef,
+  thinkingPanelRef,
+  syncPanelRef,
+  toggleHistory,
+  toggleThinking,
+  toggleSync,
+} = useSystemBar();
 
 const isHelpActive = computed(() => route.path.startsWith('/help'));
 

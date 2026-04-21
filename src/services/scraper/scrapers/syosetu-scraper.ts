@@ -1,16 +1,169 @@
 import * as cheerio from 'cheerio';
-import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/models/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/services/scraper/scrapers/syosetu-types';
-import type { FetchNovelResult, ParsedChapterInfo, ParsedVolumeInfo } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
+import {
+  extractParagraphText,
+  extractTextWithFormatting,
+  visitCheerioContents,
+} from '../core/cheerio-text-extract';
+
+/**
+ * 从一批 Cheerio 链接/节点中提取 trim 后的文本，
+ * 去重后追加到 `tags` 数组（仅在文本非空、且不重复时 push）。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function collectUniqueTagTexts($: cheerio.CheerioAPI, nodes: cheerio.Cheerio<any>, tags: string[]): void {
+  nodes.each((_, el) => {
+    const tagText = $(el).text().trim();
+    if (tagText && !tags.includes(tagText)) {
+      tags.push(tagText);
+    }
+  });
+}
+
+/** 递归提取文本；<br> 转换为 \n；跳过 img 占位锚点。提取描述/章节正文共用逻辑 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTextWithBrAsNewline($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): string {
+  return visitCheerioContents($, element, ({ $node, tagName, recurse }) => {
+    if (tagName === 'br') return '\n';
+    // 跳过图片链接占位（如【挿絵表示】）
+    if (tagName === 'a' && $node.attr('name') === 'img') return '';
+    return recurse();
+  });
+}
+
+/** 按回退顺序提取页面标题；均为空时返回「未知标题」 */
+function extractSyosetuTitle($: cheerio.CheerioAPI): string {
+  const selectors = ['h1', 'title', '.novel_title'];
+  for (const sel of selectors) {
+    const text = $(sel).first().text().trim();
+    if (text) return text;
+  }
+  return '未知标题';
+}
+
+/** 按回退顺序提取作者；均为空时返回 undefined */
+function extractSyosetuAuthor($: cheerio.CheerioAPI): string | undefined {
+  const selectors = ['a[href*="/user/"]', '.novel_writername', 'a[href*="user"]'];
+  for (const sel of selectors) {
+    const text = $(sel).first().text().trim();
+    if (text) return text;
+  }
+  return undefined;
+}
+
+/**
+ * 优先从 div#maind 内 .ss div 提取完整描述（绕过 meta 截断）。未能识别时返回 undefined。
+ */
+function extractSyosetuPrimaryDescription($: cheerio.CheerioAPI): string | undefined {
+  const maind = $('#maind');
+  if (maind.length === 0) return undefined;
+  const ssDivs = maind.find('.ss');
+  if (ssDivs.length >= 2) {
+    // 跳过第一个（标题/作者部分），提取第二个
+    const secondSsDiv = ssDivs.eq(1);
+    if (secondSsDiv.length === 0) return undefined;
+    const text = extractTextWithBrAsNewline($, secondSsDiv).trim();
+    // 太短可能不是描述
+    return text && text.length >= 10 ? text : undefined;
+  }
+  if (ssDivs.length === 1) {
+    // 单个 .ss div：按对话特征判断是否为描述
+    const ssDiv = ssDivs.first();
+    const divText = ssDiv.text();
+    if (divText.length > 50 && (divText.includes('「') || divText.includes('」'))) {
+      return extractTextWithBrAsNewline($, ssDiv).trim() || undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 检查 tr 是否为卷标题行。卷标题行特征：td 带 colspan≥2、含 <strong>、且不含章节链接。
+ */
+function detectSyosetuVolumeTitle(
+  $: cheerio.CheerioAPI,
+  cells: cheerio.Cheerio<any>,
+): string | null {
+  let volumeTitle: string | null = null;
+  cells.each((_, cell: any) => {
+    if (volumeTitle) return;
+    const $cell = $(cell);
+    const colspan = $cell.attr('colspan');
+    const hasLink = $cell.find('a[href*=".html"]').length > 0;
+    const hasStrong = $cell.find('strong').length > 0;
+    if (
+      colspan &&
+      (colspan === '2' || parseInt(colspan, 10) >= 2) &&
+      hasStrong &&
+      !hasLink
+    ) {
+      // 优先 <strong>，否则回退整格文本
+      const strongText = $cell.find('strong').first().text().trim();
+      const cellText = $cell.text().trim();
+      volumeTitle = strongText || cellText;
+    }
+  });
+  return volumeTitle;
+}
+
+/**
+ * 将 href 解析为完整 URL。支持 http / 绝对 / ./ / 相对 四种形式。
+ */
+function resolveSyosetuHref(href: string, baseUrl: string): string {
+  if (href.startsWith('http')) return href;
+  if (href.startsWith('/')) return `${SyosetuScraper.BASE_URL}${href}`;
+  // ./ 或相对路径都走同一解析分支
+  const baseUrlObj = new URL(baseUrl);
+  return new URL(href, baseUrlObj.href).href;
+}
+
+/**
+ * 从章节行最后一列提取日期（支持 "(改)" 标记）。无 (改) 时 date 与 lastUpdated 一致。
+ */
+function extractSyosetuChapterDates(
+  cells: cheerio.Cheerio<any>,
+): { date?: string; lastUpdated?: string } {
+  if (cells.length < 2) return {};
+  const dateText = cells.last().text().trim();
+  if (!dateText || !dateText.match(/\d{4}年\d{1,2}月\d{1,2}日/)) return {};
+  if (dateText.includes('(改)')) {
+    // 明确的更新时间；date 保持 undefined
+    return { lastUpdated: dateText };
+  }
+  // 创建时间，但也作为 lastUpdated（站点获取的最新信息）
+  return { date: dateText, lastUpdated: dateText };
+}
+
+/**
+ * 解析单个章节 tr：不是章节行（无 .html 链接 / 是 index.html）时返回 null。
+ */
+function parseSyosetuChapterRow(
+  $row: cheerio.Cheerio<any>,
+  cells: cheerio.Cheerio<any>,
+  baseUrl: string,
+): SyosetuChapter | null {
+  const link = $row.find('a[href*=".html"]').first();
+  if (link.length === 0) return null;
+  const href = link.attr('href');
+  const chapterTitle = link.text().trim();
+  if (!href || !chapterTitle || href.includes('index.html')) return null;
+
+  const fullUrl = resolveSyosetuHref(href, baseUrl);
+  const chapter: SyosetuChapter = { title: chapterTitle, url: fullUrl };
+  const dates = extractSyosetuChapterDates(cells);
+  if (dates.date) chapter.date = dates.date;
+  if (dates.lastUpdated) chapter.lastUpdated = dates.lastUpdated;
+  return chapter;
+}
 
 /**
  * syosetu.org 小说爬虫服务
  * 用于从 syosetu.org 获取和解析小说信息
  */
-export class SyosetuScraper extends BaseScraper {
-  private static readonly BASE_URL = 'https://syosetu.org';
+export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
+  static readonly BASE_URL = 'https://syosetu.org';
   // 匹配所有以 syosetu.org/novel/:bookid 开头的 URL
   private static readonly NOVEL_URL_PATTERN = /^https?:\/\/syosetu\.org\/novel\/(\d+)(?:\/.*)?$/;
 
@@ -19,6 +172,7 @@ export class SyosetuScraper extends BaseScraper {
    * @param url 要验证的 URL
    * @returns 是否为有效的 URL
    */
+  // fallow-ignore-next-line unused-class-member
   isValidUrl(url: string): boolean {
     return SyosetuScraper.NOVEL_URL_PATTERN.test(url);
   }
@@ -38,7 +192,7 @@ export class SyosetuScraper extends BaseScraper {
    * @param url syosetu.org 小说 URL（可能是章节 URL）
    * @returns 小说主页 URL
    */
-  private getNovelIndexUrl(url: string): string {
+  protected override getNovelIndexUrl(url: string): string {
     const novelId = this.extractNovelId(url);
     if (novelId) {
       return `${SyosetuScraper.BASE_URL}/novel/${novelId}/`;
@@ -46,48 +200,17 @@ export class SyosetuScraper extends BaseScraper {
     return url;
   }
 
-  /**
-   * 获取并解析小说信息
-   * @param url syosetu.org 小说 URL（可以是章节 URL，会自动提取小说主页）
-   * @returns Promise<FetchNovelResult> 获取结果
-   */
-  async fetchNovel(url: string): Promise<FetchNovelResult> {
-    try {
-      // 验证 URL
-      if (!this.isValidUrl(url)) {
-        return this.createErrorResult('无效的 syosetu.org 小说 URL');
-      }
-
-      // 获取小说主页 URL（如果传入的是章节 URL，需要提取小说主页）
-      const novelIndexUrl = this.getNovelIndexUrl(url);
-
-      // 获取页面
-      const html = await this.fetchPage(novelIndexUrl, '/api/syosetu');
-
-      // 解析页面（使用小说主页 URL 作为 baseUrl）
-      const novelInfo = this.parseNovelPage(html, novelIndexUrl);
-
-      // 转换为 Novel 格式
-      const novel = this.convertToNovel(novelInfo);
-
-      return this.createSuccessResult(novel);
-    } catch (error) {
-      return this.createErrorResult(
-        error instanceof Error ? error : new Error('获取小说信息时发生未知错误'),
-      );
-    }
+  protected override getInvalidUrlError(): string {
+    return '无效的 syosetu.org 小说 URL';
   }
 
   /**
-   * 获取章节内容
-   * @param chapterUrl 章节 URL
-   * @returns Promise<string> 章节内容
-   * @throws {Error} 如果获取失败
+   * 从小说主页 URL 拉取 HTML 并解析为 SyosetuNovelInfo
    */
-  async fetchChapterContent(chapterUrl: string): Promise<string> {
-    const html = await this.fetchPage(chapterUrl, '/api/syosetu');
-    const paragraphs = this.extractParagraphsFromHtml(html);
-    return this.mergeParagraphs(paragraphs);
+  protected override async parseNovelInfoFromUrl(novelIndexUrl: string): Promise<SyosetuNovelInfo> {
+    // syosetu.org 在浏览器环境下通过 /api/syosetu 服务器代理访问
+    const html = await this.fetchPage(novelIndexUrl, '/api/syosetu');
+    return this.parseNovelPage(html, novelIndexUrl);
   }
 
   /**
@@ -109,30 +232,18 @@ export class SyosetuScraper extends BaseScraper {
     //   </div>
     // </div>
     // 优先查找 <div id="honbun">，这是正文容器
-    let contentElement = $('#honbun').first();
-    if (contentElement.length === 0) {
-      contentElement = $('div.ss').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('#novel_honbun').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('.novel_honbun').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('#novel_content').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('.novel_content').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('main').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('article').first();
-    }
+    const contentElement = this.selectContentElement($, [
+      '#honbun',
+      'div.ss',
+      '#novel_honbun',
+      '.novel_honbun',
+      '#novel_content',
+      '.novel_content',
+      'main',
+      'article',
+    ]);
 
-    if (contentElement.length === 0) {
+    if (!contentElement) {
       throw new Error('无法找到章节正文内容');
     }
 
@@ -195,76 +306,23 @@ export class SyosetuScraper extends BaseScraper {
     honbunElement.find('p').each((_, el: any) => {
       const $p = $(el);
 
-      // 检查段落是否为空（没有任何文本内容）
-      // 对于空的 <p> 标签（如 <p id="2"></p>），直接添加换行符
-      // 空段落被视为换行符
-      const paragraphHtml = $p.html() || '';
-      const paragraphText = $p.text() || '';
-
-      // 如果段落只包含空白字符（空格、制表符、换行符等），视为空段落
-      const hasOnlyWhitespace = paragraphText.trim().length === 0;
-
-      // 如果 HTML 也为空或只包含空白字符，也视为空段落
-      const htmlIsEmpty = paragraphHtml.trim().length === 0;
-
-      if (hasOnlyWhitespace || htmlIsEmpty) {
-        // 空的 <p> 标签被视为换行
-        // 每个空的 <p> 标签产生一个换行符
-        // 连续的空段落（如 <p id="78"></p><p id="79"></p>）会产生两个换行符
+      // 空的 <p> 标签（如 <p id="2"></p>）视为换行
+      // 连续的空段落（如 <p id="78"></p><p id="79"></p>）会产生多个换行符
+      if (this.isEmptyParagraphElement($p)) {
         paragraphs.push('\n');
-        return; // 跳过后续处理
+        return;
       }
 
       // 移除段落内的链接（可能是导航链接）
-      $p.find('a').each((_, linkEl) => {
-        const $link = $(linkEl);
-        const linkText = $link.text().trim();
-        if (/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(linkText)) {
-          $link.remove();
-        }
-      });
+      this.removeNavigationLinks(
+        $,
+        $p,
+        'a',
+        /目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</,
+      );
 
       // 提取段落文本，保留内部格式（如 <br> 换行）
-      // 使用递归函数来正确处理所有节点，包括嵌套标签
-      const extractParagraphText = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            // 文本节点，直接添加（保留原始文本，包括空格）
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-
-            if (tagName === 'br') {
-              // <br> 标签转换为换行
-              text += '\n';
-            } else if (tagName === 'p') {
-              // 嵌套的 <p> 标签，递归提取并添加换行
-              const innerText = extractParagraphText($node);
-              if (innerText.trim()) {
-                text += innerText + '\n';
-              } else {
-                // 嵌套的空 <p> 标签也添加换行
-                text += '\n';
-              }
-            } else {
-              // 其他标签，递归提取内容（保留内部结构）
-              const innerText = extractParagraphText($node);
-              if (innerText) {
-                text += innerText;
-              }
-            }
-          }
-        });
-
-        return text;
-      };
-
-      const extractedText = extractParagraphText($p);
+      const extractedText = extractParagraphText($, $p);
 
       // 保持原始段落格式，只移除导航文本
       // 不清理空白字符，以保持原始格式（包括缩进等）
@@ -280,45 +338,7 @@ export class SyosetuScraper extends BaseScraper {
     // 如果没有找到 <p> 标签，回退到原来的方法
     const hasTitle = paragraphs.length > 0 && paragraphs[0] !== '\n' && paragraphs[0] !== '';
     if (paragraphs.length === (hasTitle ? 2 : 0)) {
-      // 使用递归方法提取所有文本
-      const extractTextWithFormatting = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-
-            if (tagName === 'br') {
-              text += '\n';
-            } else if (tagName === 'p' || tagName === 'div') {
-              const innerText = extractTextWithFormatting($node);
-              if (innerText.trim()) {
-                text += innerText;
-                if (tagName === 'p') {
-                  text += '\n';
-                }
-              } else if (tagName === 'p') {
-                // 空的 <p> 标签也添加换行
-                text += '\n';
-              }
-            } else {
-              const innerText = extractTextWithFormatting($node);
-              if (innerText.trim()) {
-                text += innerText;
-              }
-            }
-          }
-        });
-
-        return text;
-      };
-
-      const fallbackText = extractTextWithFormatting(contentElement);
+      const fallbackText = extractTextWithFormatting($, contentElement);
       const trimmedFallback = fallbackText.trim();
 
       if (trimmedFallback) {
@@ -344,7 +364,7 @@ export class SyosetuScraper extends BaseScraper {
    * @param paragraphs 段落数组
    * @returns 合并后的内容字符串
    */
-  private mergeParagraphs(paragraphs: string[]): string {
+  protected mergeParagraphs(paragraphs: string[]): string {
     // 合并段落
     // 每个段落（无论是普通段落还是空段落）都应该产生换行符
     // 空的 <p> 标签只产生换行符，普通段落在内容后添加换行符
@@ -400,115 +420,10 @@ export class SyosetuScraper extends BaseScraper {
   private parseNovelPage(html: string, baseUrl: string): SyosetuNovelInfo {
     const $ = cheerio.load(html);
 
-    // 提取标题
-    let title = $('h1').first().text().trim();
-    if (!title) {
-      title = $('title').first().text().trim();
-    }
-    if (!title) {
-      title = $('.novel_title').first().text().trim();
-    }
-    if (!title) {
-      title = '未知标题';
-    }
+    const title = extractSyosetuTitle($);
+    const author = extractSyosetuAuthor($);
+    let description = extractSyosetuPrimaryDescription($);
 
-    // 提取作者
-    let author: string | undefined = $('a[href*="/user/"]').first().text().trim();
-    if (!author) {
-      author = $('.novel_writername').first().text().trim();
-    }
-    if (!author) {
-      author = $('a[href*="user"]').first().text().trim();
-    }
-    if (!author) {
-      author = undefined;
-    }
-
-    // 提取描述
-    // 优先从 div#maind 中的 .ss div 提取完整描述（而不是被截断的 meta 标签）
-    let description: string | undefined;
-    
-    // 首先尝试从 div#maind 中的 .ss div 中提取描述（完整内容）
-    const maind = $('#maind');
-    if (maind.length > 0) {
-      const ssDivs = maind.find('.ss');
-      if (ssDivs.length >= 2) {
-        // 跳过第一个（标题/作者部分），提取第二个的内容
-        const secondSsDiv = ssDivs.eq(1);
-        if (secondSsDiv.length > 0) {
-          // 使用递归方法提取完整的文本内容，处理 <br> 标签为换行
-          const extractDescriptionText = (element: cheerio.Cheerio<any>): string => {
-            let text = '';
-            element.contents().each((_, node: any) => {
-              const nodeType = String(node.type);
-              if (nodeType === 'text') {
-                // 文本节点，直接添加
-                const nodeText = $(node).text();
-                text += nodeText;
-              } else if (nodeType === 'tag') {
-                const $node = $(node);
-                const tagName = node.tagName?.toLowerCase() || '';
-                if (tagName === 'br') {
-                  // <br> 标签转换为换行
-                  text += '\n';
-                } else if (tagName === 'a' && $node.attr('name') === 'img') {
-                  // 跳过图片链接标记（如【挿絵表示】）
-                  return;
-                } else {
-                  // 其他标签，递归提取内容
-                  const innerText = extractDescriptionText($node);
-                  if (innerText) {
-                    text += innerText;
-                  }
-                }
-              }
-            });
-            return text;
-          };
-          const descText = extractDescriptionText(secondSsDiv);
-          description = descText.trim();
-          // 如果提取到的内容为空或太短，可能不是描述
-          if (description && description.length < 10) {
-            description = undefined;
-          }
-        }
-      } else if (ssDivs.length === 1) {
-        // 如果只有一个 .ss div，检查它是否包含描述内容（而不是标题/作者）
-        const ssDiv = ssDivs.first();
-        const divText = ssDiv.text();
-        // 如果包含常见的描述特征（对话、较长的文本），可能是描述
-        if (divText.length > 50 && (divText.includes('「') || divText.includes('」'))) {
-          // 使用递归方法提取完整的文本内容
-          const extractDescriptionText = (element: cheerio.Cheerio<any>): string => {
-            let text = '';
-            element.contents().each((_, node: any) => {
-              const nodeType = String(node.type);
-              if (nodeType === 'text') {
-                const nodeText = $(node).text();
-                text += nodeText;
-              } else if (nodeType === 'tag') {
-                const $node = $(node);
-                const tagName = node.tagName?.toLowerCase() || '';
-                if (tagName === 'br') {
-                  text += '\n';
-                } else if (tagName === 'a' && $node.attr('name') === 'img') {
-                  return;
-                } else {
-                  const innerText = extractDescriptionText($node);
-                  if (innerText) {
-                    text += innerText;
-                  }
-                }
-              }
-            });
-            return text;
-          };
-          const descText = extractDescriptionText(ssDiv);
-          description = descText.trim();
-        }
-      }
-    }
-    
     // 如果从 .ss div 中没有提取到描述，回退到其他选择器
     if (!description) {
       description = $('.novel_ex').first().text().trim();
@@ -530,7 +445,7 @@ export class SyosetuScraper extends BaseScraper {
 
     // 提取标签
     const tags: string[] = [];
-    
+
     // 首先尝试从第一个 .ss div 中提取标签（格式：タグ：<a class="alert_color">...</a>）
     const firstSsDiv = $('.ss').first();
     if (firstSsDiv.length > 0) {
@@ -555,26 +470,16 @@ export class SyosetuScraper extends BaseScraper {
           }
         }
       });
-      
+
       // 如果找到了标签，也尝试从该 div 中查找所有 alert_color 链接（以防万一）
       if (tags.length === 0) {
-        firstSsDiv.find('a.alert_color').each((_, el) => {
-          const tagText = $(el).text().trim();
-          if (tagText && !tags.includes(tagText)) {
-            tags.push(tagText);
-          }
-        });
+        collectUniqueTagTexts($, firstSsDiv.find('a.alert_color'), tags);
       }
     }
-    
+
     // 回退到原有的选择器
     if (tags.length === 0) {
-      $('.tag, .novel_tag, [class*="tag"]').each((_, el) => {
-        const tagText = $(el).text().trim();
-        if (tagText && !tags.includes(tagText)) {
-          tags.push(tagText);
-        }
-      });
+      collectUniqueTagTexts($, $('.tag, .novel_tag, [class*="tag"]'), tags);
     }
 
     // 提取章节列表和卷信息
@@ -593,108 +498,23 @@ export class SyosetuScraper extends BaseScraper {
       chapterTable.find('tr').each((_, row) => {
         const $row = $(row);
         const cells = $row.find('td');
-
-        // 检查是否是卷标题行
-        // 卷标题行的特征：有 <td colspan="2"> 且包含 <strong> 标签，且没有章节链接
-        let volumeTitle: string | null = null;
-        cells.each((_, cell: any) => {
-          const $cell = $(cell);
-          const colspan = $cell.attr('colspan');
-          const hasLink = $cell.find('a[href*=".html"]').length > 0;
-          const hasStrong = $cell.find('strong').length > 0;
-          // 如果有 colspan="2" 且有 <strong> 标签且没有章节链接，可能是卷标题
-          if (
-            colspan &&
-            (colspan === '2' || parseInt(colspan, 10) >= 2) &&
-            hasStrong &&
-            !hasLink &&
-            !volumeTitle
-          ) {
-            // 提取卷标题（从 <strong> 标签中提取，如果没有则从单元格文本中提取）
-            const strongText = $cell.find('strong').first().text().trim();
-            const cellText = $cell.text().trim();
-            volumeTitle = strongText || cellText;
-          }
-        });
-
+        const volumeTitle = detectSyosetuVolumeTitle($, cells);
         if (volumeTitle) {
-          // 这是一个卷标题行
-          // 保存当前卷的信息（如果有的话）
+          // 卷标题行：保存前一卷并切换到新卷（chapterIndex 不更新）
           if (currentVolumeTitle !== null) {
             volumeInfo.push({
               title: currentVolumeTitle,
               startIndex: currentVolumeStartIndex,
             });
           }
-          // 设置新的当前卷标题和起始索引
           currentVolumeTitle = volumeTitle;
-          currentVolumeStartIndex = chapterIndex; // 新卷从当前章节索引开始
-          // 注意：这里不更新 chapterIndex，因为卷标题行本身不是章节
-        } else {
-          // 检查是否是章节行（有章节链接）
-          const link = $row.find('a[href*=".html"]').first();
-          if (link.length > 0) {
-            const href = link.attr('href');
-            const chapterTitle = link.text().trim();
-
-            if (href && chapterTitle && !href.includes('index.html')) {
-              // 构建完整 URL
-              let fullUrl: string;
-              if (href.startsWith('http')) {
-                // 已经是完整 URL
-                fullUrl = href;
-              } else if (href.startsWith('/')) {
-                // 绝对路径
-                fullUrl = `${SyosetuScraper.BASE_URL}${href}`;
-              } else if (href.startsWith('./')) {
-                // 相对路径（如 ./1.html），需要基于 baseUrl 解析
-                const baseUrlObj = new URL(baseUrl);
-                fullUrl = new URL(href, baseUrlObj.href).href;
-              } else {
-                // 相对路径（如 1.html），需要基于 baseUrl 解析
-                const baseUrlObj = new URL(baseUrl);
-                fullUrl = new URL(href, baseUrlObj.href).href;
-              }
-
-              // 查找日期（通常在最后一列）
-              // syosetu.org 的日期格式可能是：
-              // - "2025年05月16日(金) 08:13" (创建时间，但也作为 lastUpdated)
-              // - "2025年05月16日(金) 08:13(改)" (更新时间)
-              // 无论是否有 (改) 标记，都设置 lastUpdated，因为这是从网站获取的最新信息
-              let date: string | undefined;
-              let lastUpdated: string | undefined;
-              if (cells.length >= 2) {
-                // 日期通常在最后一列
-                const dateText = cells.last().text().trim();
-                if (dateText && dateText.match(/\d{4}年\d{1,2}月\d{1,2}日/)) {
-                  // 检查是否包含 "(改)" 标记
-                  if (dateText.includes('(改)')) {
-                    // 如果有 "(改)"，这是明确的更新时间
-                    lastUpdated = dateText;
-                    // 通常这种情况下，date 保持 undefined（因为只有更新时间）
-                  } else {
-                    // 没有 "(改)"，这是创建时间，但也作为 lastUpdated（因为这是从网站获取的最新信息）
-                    date = dateText;
-                    lastUpdated = dateText; // 导入时，所有从网站获取的日期都作为 lastUpdated
-                  }
-                }
-              }
-
-              const chapter: SyosetuChapter = {
-                title: chapterTitle,
-                url: fullUrl,
-              };
-              if (date) {
-                chapter.date = date;
-              }
-              if (lastUpdated) {
-                chapter.lastUpdated = lastUpdated;
-              }
-              chapters.push(chapter);
-              chapterIndex++;
-            }
-          }
+          currentVolumeStartIndex = chapterIndex;
+          return;
         }
+        const parsed = parseSyosetuChapterRow($row, cells, baseUrl);
+        if (!parsed) return;
+        chapters.push(parsed);
+        chapterIndex++;
       });
 
       // 保存最后一个卷的信息
@@ -723,22 +543,7 @@ export class SyosetuScraper extends BaseScraper {
           !href.includes('rank')
         ) {
           // 构建完整 URL
-          let fullUrl: string;
-          if (href.startsWith('http')) {
-            // 已经是完整 URL
-            fullUrl = href;
-          } else if (href.startsWith('/')) {
-            // 绝对路径
-            fullUrl = `${SyosetuScraper.BASE_URL}${href}`;
-          } else if (href.startsWith('./')) {
-            // 相对路径（如 ./1.html），需要基于 baseUrl 解析
-            const baseUrlObj = new URL(baseUrl);
-            fullUrl = new URL(href, baseUrlObj.href).href;
-          } else {
-            // 相对路径（如 1.html），需要基于 baseUrl 解析
-            const baseUrlObj = new URL(baseUrl);
-            fullUrl = new URL(href, baseUrlObj.href).href;
-          }
+          const fullUrl = this.resolveChapterUrl(href, baseUrl);
           chapters.push({
             title: text,
             url: fullUrl,
@@ -774,60 +579,38 @@ export class SyosetuScraper extends BaseScraper {
   }
 
   /**
+   * 将章节链接的 href 解析为完整 URL
+   * 支持四种情况：
+   * - 已是完整 URL（以 http 开头）
+   * - 绝对路径（以 / 开头），基于 BASE_URL 拼接
+   * - 显式相对路径（以 ./ 开头），基于 baseUrl 解析
+   * - 其他相对路径（如 1.html），基于 baseUrl 解析
+   */
+  private resolveChapterUrl(href: string, baseUrl: string): string {
+    if (href.startsWith('http')) {
+      // 已经是完整 URL
+      return href;
+    }
+    if (href.startsWith('/')) {
+      // 绝对路径
+      return `${SyosetuScraper.BASE_URL}${href}`;
+    }
+    if (href.startsWith('./')) {
+      // 相对路径（如 ./1.html），需要基于 baseUrl 解析
+      const baseUrlObj = new URL(baseUrl);
+      return new URL(href, baseUrlObj.href).href;
+    }
+    // 相对路径（如 1.html），需要基于 baseUrl 解析
+    const baseUrlObj = new URL(baseUrl);
+    return new URL(href, baseUrlObj.href).href;
+  }
+
+  /**
    * 将 syosetu.org 小说信息转换为 Novel 格式
    * @param info syosetu.org 小说信息
    * @returns Novel 对象
    */
-  private convertToNovel(info: SyosetuNovelInfo): Novel {
-    const now = new Date();
-
-    // 将 SyosetuChapter 转换为 ParsedChapterInfo
-    const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
-      const parsedChapter: ParsedChapterInfo = {
-        title: chapter.title,
-        url: chapter.url,
-      };
-      if (chapter.date) {
-        parsedChapter.date = chapter.date;
-      }
-      if (chapter.lastUpdated) {
-        parsedChapter.lastUpdated = chapter.lastUpdated;
-      }
-      return parsedChapter;
-    });
-
-    // 将 SyosetuVolumeInfo 转换为 ParsedVolumeInfo
-    const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes?.map((volume) => ({
-      title: volume.title,
-      startIndex: volume.startIndex,
-    }));
-
-    // 使用基类的通用方法将章节分组到卷中
-    const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, '正文');
-
-    // Novel 的 ID 使用完整的 uuidv4（不在短 ID 范围内）
-    // 注意：根据要求，只有 chapter/volume/paragraph/translation/note/terminology/character settings 使用短 ID
-    const novel: Novel = {
-      id: uuidv4(),
-      title: info.title,
-      volumes,
-      webUrl: [info.webUrl],
-      lastEdited: now,
-      createdAt: now,
-    };
-
-    if (info.author) {
-      novel.author = info.author;
-    }
-
-    if (info.description) {
-      novel.description = info.description;
-    }
-
-    if (info.tags) {
-      novel.tags = info.tags;
-    }
-
-    return novel;
+  protected override convertToNovel(info: SyosetuNovelInfo): Novel {
+    return this.buildNovelFromParsedInfo(info);
   }
 }

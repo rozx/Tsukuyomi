@@ -22,7 +22,7 @@ export type ToastCallback = (message: ToastMessageWithHistoryOptions) => void;
  * @param options Toast 选项
  * @param onToast 可选的 toast 回调函数
  */
-export function showToolToast(
+function showToolToast(
   options: ToolToastOptions,
   onToast?: ToastCallback,
 ): void {

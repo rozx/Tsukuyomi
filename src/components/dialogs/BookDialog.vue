@@ -24,19 +24,10 @@ import { MemoryService } from 'src/services/memory-service';
 import { SettingsService } from 'src/services/settings-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useChapterCharCount } from 'src/composables/useChapterCharCount';
+import { useFormDialogCloseGuard } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import { useUiStore } from 'src/stores/ui';
-import { formatCharCount, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
-
-// 格式化日期显示
-const formatDate = (date: Date | string | undefined): string => {
-  if (!date) return '';
-  const d = date instanceof Date ? date : new Date(date);
-  if (isNaN(d.getTime())) return '';
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+import { formatCharCount, formatDate, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
+import { copyTextWithToast } from 'src/utils/clipboard';
 
 const props = withDefaults(
   defineProps<{
@@ -109,14 +100,21 @@ const expandedVolumes = ref<Set<string>>(new Set());
 // 清除确认对话框
 const showClearConfirm = ref(false);
 const clearConfirmInput = ref('');
-const showUnsavedCloseConfirm = ref(false);
-const initialFormSnapshot = ref<Partial<Novel> | null>(null);
 
-const hasUnsavedChanges = computed(() => {
-  if (!props.visible || !initialFormSnapshot.value) {
-    return false;
-  }
-  return !isEqual(initialFormSnapshot.value, formData.value);
+const {
+  initialFormSnapshot,
+  hasUnsavedChanges,
+  closeDialogImmediately,
+  showUnsavedCloseConfirm,
+  requestCloseDialog,
+  confirmDiscardAndClose,
+  cancelDiscardAndKeepEditing,
+  handleDialogVisibleChange,
+} = useFormDialogCloseGuard<Partial<Novel>>({
+  formData,
+  visible: computed(() => props.visible),
+  loading: computed(() => props.loading),
+  emit,
 });
 
 const hasChildDialogOpen = computed(
@@ -247,41 +245,6 @@ const handleExportJson = async () => {
   }
 };
 
-const closeDialogImmediately = () => {
-  emit('cancel');
-  emit('update:visible', false);
-};
-
-const requestCloseDialog = () => {
-  if (props.loading) {
-    return;
-  }
-
-  if (hasUnsavedChanges.value) {
-    showUnsavedCloseConfirm.value = true;
-    return;
-  }
-
-  closeDialogImmediately();
-};
-
-const confirmDiscardAndClose = () => {
-  showUnsavedCloseConfirm.value = false;
-  closeDialogImmediately();
-};
-
-const cancelDiscardAndKeepEditing = () => {
-  showUnsavedCloseConfirm.value = false;
-};
-
-const handleDialogVisibleChange = (nextVisible: boolean) => {
-  if (nextVisible) {
-    emit('update:visible', true);
-    return;
-  }
-  requestCloseDialog();
-};
-
 // 处理特殊指令标签页切换
 const handleSpecialInstructionsTabChange = (value: string | number) => {
   specialInstructionsActiveTab.value = String(value);
@@ -337,25 +300,10 @@ const handleApplyScrapedData = (novel: Novel) => {
 
 // 复制封面 URL
 const handleCopyUrl = async () => {
-  if (!formData.value.cover?.url) return;
-
-  try {
-    await navigator.clipboard.writeText(formData.value.cover.url);
-    toast.add({
-      severity: 'success',
-      summary: '已复制',
-      detail: '封面 URL 已复制到剪贴板',
-      life: 2000,
-    });
-  } catch (error) {
-    console.error('复制失败:', error);
-    toast.add({
-      severity: 'error',
-      summary: '复制失败',
-      detail: '无法复制 URL 到剪贴板',
-      life: 3000,
-    });
-  }
+  await copyTextWithToast(formData.value.cover?.url, toast, {
+    successDetail: '封面 URL 已复制到剪贴板',
+    errorDetail: '无法复制 URL 到剪贴板',
+  });
 };
 
 // 清除封面

@@ -8,7 +8,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import {
   useChatSessionsStore,
-  type ChatMessage,
+  type ChatSessionMessage,
   type MessageAction,
   MESSAGE_LIMIT_THRESHOLD,
 } from 'src/stores/chat-sessions';
@@ -28,6 +28,34 @@ import { useMarkdownRenderer } from 'src/composables/chat/useMarkdownRenderer';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { Novel, Chapter } from 'src/models/novel';
 import type { ActionDetailsContext } from 'src/utils/action-info-utils';
+
+function findChapterInNovel(book: Novel, chapterId: string): Chapter | undefined {
+  if (!book.volumes) return undefined;
+  for (const volume of book.volumes) {
+    const found = volume.chapters?.find((c) => c.id === chapterId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function formatChapterInfo(
+  chapter: Chapter | undefined,
+  book: Novel | undefined,
+): string {
+  if (!chapter) return '当前章节';
+  const title = getChapterDisplayTitle(chapter, book);
+  return title ? `章节：${title}` : '当前章节';
+}
+
+function formatParagraphInfo(
+  chapter: Chapter | undefined,
+  paragraphId: string,
+): string {
+  const paraIndex = chapter?.content
+    ? chapter.content.findIndex((p) => p.id === paragraphId)
+    : -1;
+  return paraIndex >= 0 ? `段落：#${paraIndex + 1}` : '当前段落';
+}
 
 /**
  * AppRightPanel 的业务逻辑 composable。
@@ -54,14 +82,7 @@ export function useRightPanel() {
   const activeRightTab = computed(() => ui.activeRightTab);
 
   // 活跃的翻译类任务数量（用于角标）
-  const activeTranslationTaskCount = computed(
-    () =>
-      aiProcessingStore.activeTasks.filter(
-        (t) =>
-          (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
-          (t.status === 'thinking' || t.status === 'processing'),
-      ).length,
-  );
+  const activeTranslationTaskCount = computed(() => aiProcessingStore.activeTranslationTaskCount);
 
   // 面板与布局
   const { panelContainerRef, resizeHandleRef, isResizing, handleResizeStart } = usePanelResize();
@@ -74,7 +95,7 @@ export function useRightPanel() {
   const inputRef = ref<InstanceType<typeof Textarea> | null>(null);
 
   // 会话输入状态
-  const messages = ref<ChatMessage[]>([]);
+  const messages = ref<ChatSessionMessage[]>([]);
   const inputMessage = ref('');
   const currentTaskId = ref<string | null>(null);
   const currentMessageActions = ref<MessageAction[]>([]);
@@ -259,70 +280,52 @@ export function useRightPanel() {
     hide: () => void;
   };
   const actionPopoverRef = ref<ActionPanelControl | null>(null);
-  const hoveredAction = ref<{ action: MessageAction; message: ChatMessage } | null>(null);
+  const hoveredAction = ref<{ action: MessageAction; message: ChatSessionMessage } | null>(null);
 
   // Grouped action panel：同样的 toggle/hide 接口
   const groupedActionPopoverRef = ref<ActionPanelControl | null>(null);
   const hoveredGroupedAction = ref<{
     actions: MessageAction[];
-    message: ChatMessage;
+    message: ChatSessionMessage;
     timestamp: number;
   } | null>(null);
 
   // 上下文信息
   const contextInfo = computed(() => {
     const context = contextStore.getContext;
+    const currentBook = context.currentBookId
+      ? booksStore.getBookById(context.currentBookId)
+      : undefined;
+    const currentChapter =
+      currentBook && context.currentChapterId
+        ? findChapterInNovel(currentBook, context.currentChapterId)
+        : undefined;
+
     const info: string[] = [];
-
-    let currentChapter: Chapter | undefined;
-    let currentBook: Novel | undefined;
-
     if (context.currentBookId) {
-      const book = booksStore.getBookById(context.currentBookId);
-      if (book) {
-        currentBook = book;
-        info.push(`书籍：${book.title}`);
-
-        if (context.currentChapterId && book.volumes) {
-          for (const volume of book.volumes) {
-            if (volume.chapters) {
-              const found = volume.chapters.find((c) => c.id === context.currentChapterId);
-              if (found) {
-                currentChapter = found;
-                break;
-              }
-            }
-          }
-        }
-      } else {
-        info.push('当前书籍');
-      }
+      info.push(currentBook ? `书籍：${currentBook.title}` : '当前书籍');
     }
-
     if (context.currentChapterId) {
-      if (currentChapter) {
-        const title = getChapterDisplayTitle(currentChapter, currentBook);
-        info.push(title ? `章节：${title}` : '当前章节');
-      } else {
-        info.push('当前章节');
-      }
+      info.push(formatChapterInfo(currentChapter, currentBook));
     }
-
     if (context.selectedParagraphId) {
-      let paraIndex = -1;
-      if (currentChapter && currentChapter.content) {
-        paraIndex = currentChapter.content.findIndex((p) => p.id === context.selectedParagraphId);
-      }
-
-      if (paraIndex >= 0) {
-        info.push(`段落：#${paraIndex + 1}`);
-      } else {
-        info.push('当前段落');
-      }
+      info.push(formatParagraphInfo(currentChapter, context.selectedParagraphId));
     }
-
     return info.length > 0 ? info.join(' | ') : '无上下文';
   });
+
+  const isAssistantMessageCountable = (msg: (typeof messages.value)[number]): boolean => {
+    if (msg.actions && msg.actions.length > 0) return false;
+    if (!msg.content || msg.content === '（调用工具）') return false;
+    return true;
+  };
+
+  const isMessageCountable = (msg: (typeof messages.value)[number]): boolean => {
+    if (msg.isSummarization || msg.isSummaryResponse || msg.isContextMessage) return false;
+    if (msg.role === 'user') return true;
+    if (msg.role === 'assistant') return isAssistantMessageCountable(msg);
+    return false;
+  };
 
   // 会话统计信息
   const sessionStats = computed(() => {
@@ -331,21 +334,7 @@ export function useRightPanel() {
     const currentSession = chatSessionsStore.currentSession;
     const cutoff = currentSession?.lastSummarizedMessageIndex ?? 0;
 
-    const messagesToCount = messages.value.slice(cutoff).filter((msg) => {
-      if (msg.isSummarization || msg.isSummaryResponse || msg.isContextMessage) return false;
-
-      if (msg.role === 'user') return true;
-
-      if (msg.role === 'assistant') {
-        if (msg.actions && msg.actions.length > 0) {
-          return false;
-        }
-        if (!msg.content || msg.content === '（调用工具）') return false;
-        return true;
-      }
-
-      return false;
-    });
+    const messagesToCount = messages.value.slice(cutoff).filter(isMessageCountable);
 
     const currentCount = messagesToCount.length;
 
@@ -433,6 +422,24 @@ export function useRightPanel() {
   );
 
   // 监听思考过程更新，如果已展开则滚动到底部
+  const hasThinkingGrowth = (
+    oldLen: number | undefined,
+    newLen: number,
+  ): oldLen is number => oldLen !== undefined && newLen > oldLen && newLen > 0;
+
+  const handleThinkingUpdate = (
+    id: string,
+    thinking: string | undefined,
+  ): void => {
+    if (thinkingExpanded.value.get(id)) {
+      requestScrollThinkingToBottom(id);
+    }
+    if (thinking) {
+      setDisplayedThinkingImmediatelyIfEmpty(id, thinking);
+      updateDisplayedThinkingProcess(id, thinking);
+    }
+  };
+
   watch(
     () =>
       messages.value.map((m) => ({
@@ -441,29 +448,13 @@ export function useRightPanel() {
       })),
     (newValues, oldValues) => {
       if (!oldValues) return;
-
       const oldLenById = new Map(oldValues.map((v) => [v.id, v.thinkingLen]));
       const msgById = new Map(messages.value.map((m) => [m.id, m]));
 
       for (const newVal of newValues) {
         const oldLen = oldLenById.get(newVal.id);
-        if (
-          oldLen !== undefined &&
-          newVal.thinkingLen > oldLen &&
-          newVal.thinkingLen > 0 &&
-          thinkingExpanded.value.get(newVal.id)
-        ) {
-          requestScrollThinkingToBottom(newVal.id);
-        }
-
-        if (oldLen !== undefined && newVal.thinkingLen > oldLen && newVal.thinkingLen > 0) {
-          const msg = msgById.get(newVal.id);
-          const thinking = msg?.thinkingProcess;
-          if (thinking) {
-            setDisplayedThinkingImmediatelyIfEmpty(newVal.id, thinking);
-            updateDisplayedThinkingProcess(newVal.id, thinking);
-          }
-        }
+        if (!hasThinkingGrowth(oldLen, newVal.thinkingLen)) continue;
+        handleThinkingUpdate(newVal.id, msgById.get(newVal.id)?.thinkingProcess);
       }
     },
     { flush: 'post' },
@@ -505,7 +496,7 @@ export function useRightPanel() {
   const toggleActionPopover = (
     event: Event,
     action: MessageAction,
-    message: ChatMessage,
+    message: ChatSessionMessage,
     _popoverKey: string,
   ) => {
     if (actionPopoverRef.value) {
@@ -527,7 +518,7 @@ export function useRightPanel() {
   const toggleGroupedActionPopover = (
     event: Event,
     actions: MessageAction[],
-    message: ChatMessage,
+    message: ChatSessionMessage,
     timestamp: number,
   ) => {
     if (groupedActionPopoverRef.value) {

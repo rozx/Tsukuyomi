@@ -1,11 +1,6 @@
 <script setup lang="ts">
-import { useRouter, useRoute } from 'vue-router';
-import { useUiStore } from 'src/stores/ui';
 import { useMainNavActive, type MainNavTab } from 'src/composables/useMainNavActive';
-
-const router = useRouter();
-const route = useRoute();
-const ui = useUiStore();
+import { useMainNavDispatch } from 'src/composables/layout/useMainNavDispatch';
 
 type Tab = { id: MainNavTab; icon: string; label: string };
 
@@ -22,38 +17,7 @@ const tabs: Tab[] = [
 ];
 
 const activeTab = useMainNavActive();
-
-const onTabClick = (id: MainNavTab) => {
-  switch (id) {
-    case 'home':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (route.path !== '/') void router.push('/');
-      return;
-    case 'library':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (route.path !== '/books') void router.push('/books');
-      return;
-    case 'chat':
-      // 右面板已打开且当前在 chat tab 上：再次点击关闭
-      // 右面板已打开但在其它 tab（如 progress）：切换到 chat，不关闭
-      // 右面板已关闭：打开并定位到 chat
-      if (ui.rightPanelOpen && ui.activeRightTab === 'chat') {
-        ui.closeRightPanel();
-      } else {
-        ui.setActiveRightTab('chat');
-        if (!ui.rightPanelOpen) ui.openRightPanel();
-      }
-      return;
-    case 'ai':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (route.path !== '/ai') void router.push('/ai');
-      return;
-    case 'settings':
-      if (ui.rightPanelOpen) ui.closeRightPanel();
-      if (!route.path.startsWith('/settings')) void router.push('/settings');
-      return;
-  }
-};
+const { dispatch: onTabClick } = useMainNavDispatch();
 </script>
 
 <template>

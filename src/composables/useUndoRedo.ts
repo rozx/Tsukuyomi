@@ -64,43 +64,19 @@ export function useUndoRedo(
    * @param description 操作描述（可选）
    */
   const saveState = (description?: string) => {
-    // 使用增强函数获取书籍对象，如果没有提供则使用原始的 bookRef.value
     const bookToSave = getEnhancedBook ? getEnhancedBook() : bookRef.value;
     if (!bookToSave || isUndoing.value) return;
 
-    // 深拷贝当前书籍状态
-    const currentState = cloneDeep(bookToSave);
-
-    // 检查是否与最后一个保存的状态相同（避免重复保存相同状态）
-    if (undoStack.value.length > 0) {
-      const lastItem = undoStack.value[undoStack.value.length - 1];
-      if (lastItem) {
-        // 简单比较：如果时间戳很近（1秒内）且描述相同，跳过保存
-        // 这样可以避免快速连续操作导致大量相同状态
-        const timeDiff = Date.now() - lastItem.timestamp;
-        if (timeDiff < 1000 && lastItem.description === description) {
-          // 可以考虑跳过，但为了安全起见，我们还是保存
-          // 只是不重复保存完全相同的状态
-        }
-      }
-    }
-
-    // 添加到撤销栈
     const historyItem: HistoryItem = {
-      book: currentState,
+      book: cloneDeep(bookToSave),
       timestamp: Date.now(),
     };
-    if (description !== undefined) {
-      historyItem.description = description;
-    }
+    if (description !== undefined) historyItem.description = description;
+
     undoStack.value.push(historyItem);
+    if (undoStack.value.length > maxHistorySize) undoStack.value.shift();
 
-    // 限制历史记录数量
-    if (undoStack.value.length > maxHistorySize) {
-      undoStack.value.shift();
-    }
-
-    // 执行新操作时，清空重做栈
+    // 新操作出现，作废之前的重做栈
     redoStack.value = [];
   };
 

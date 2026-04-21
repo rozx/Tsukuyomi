@@ -13,7 +13,7 @@ import {
   type ManifestEntry,
   type Tombstone,
 } from 'src/models/manifest';
-import { hashJson } from 'src/utils/content-hash';
+import { hashJson, hashString } from 'src/utils/content-hash';
 
 /**
  * 构造本地 manifest 时需要的全部数据输入
@@ -228,7 +228,7 @@ export async function rebuildManifestFromFiles(
     // 用分隔符拼接，避免两个连续 chunk 内容边界处产生误碰撞
     const combined = contents.join('\u0000');
     entries[entryKey] = {
-      hash: await hashJsonString(combined),
+      hash: await hashString(combined),
       lastEdited: nowIso,
     };
   }
@@ -238,19 +238,6 @@ export async function rebuildManifestFromFiles(
     updatedAt: new Date().toISOString(),
     entries,
   };
-}
-
-async function hashJsonString(value: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(value);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  const bytes = new Uint8Array(digest);
-  let hex = '';
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes[i] ?? 0;
-    hex += b.toString(16).padStart(2, '0');
-  }
-  return hex;
 }
 
 /**

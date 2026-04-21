@@ -5,10 +5,10 @@
  * 对外暴露 `toggle(event)` 与 `hide()`，兼容 useRightPanel 里对
  * sessionListPopoverRef 的既有调用（parent 拿 template ref 后直接调方法）。
  */
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import Popover from 'primevue/popover';
-import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from './MobileBottomSheet.vue';
+import { usePopoverBottomSheet } from 'src/composables/layout/usePopoverBottomSheet';
 import type { ChatSession } from 'src/stores/chat-sessions';
 
 interface Props {
@@ -25,11 +25,8 @@ const emit = defineEmits<{
   select: [sessionId: string];
 }>();
 
-const uiStore = useUiStore();
-const isPhone = computed(() => uiStore.deviceType === 'phone');
-
-const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
-const mobileVisible = ref(false);
+const { isPhone, popoverRef, mobileVisible, onMobileVisibleChange, toggle, hide } =
+  usePopoverBottomSheet(() => emit('hide'));
 
 const formatSessionTime = (timestamp: number): string => {
   const now = Date.now();
@@ -54,42 +51,10 @@ const sessionCount = computed(() => props.sessions.length);
 const onSelect = (sessionId: string) => {
   emit('select', sessionId);
   // 选中会话后统一关闭 popover / sheet，避免切换后列表仍覆盖在页面上方
-  if (isPhone.value) {
-    if (mobileVisible.value) {
-      mobileVisible.value = false;
-      emit('hide');
-    }
-  } else {
-    popoverRef.value?.hide();
-  }
+  hide();
 };
 
-// 手机抽屉关闭也要发 hide 事件，和桌面 Popover 保持一致
-const onMobileVisibleChange = (visible: boolean) => {
-  const wasOpen = mobileVisible.value;
-  mobileVisible.value = visible;
-  if (wasOpen && !visible) emit('hide');
-};
-
-defineExpose({
-  toggle: (event: Event) => {
-    if (isPhone.value) {
-      mobileVisible.value = !mobileVisible.value;
-    } else {
-      popoverRef.value?.toggle(event);
-    }
-  },
-  hide: () => {
-    if (isPhone.value) {
-      if (mobileVisible.value) {
-        mobileVisible.value = false;
-        emit('hide');
-      }
-    } else {
-      popoverRef.value?.hide();
-    }
-  },
-});
+defineExpose({ toggle, hide });
 </script>
 
 <template>

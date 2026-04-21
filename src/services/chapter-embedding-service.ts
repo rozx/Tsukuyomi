@@ -26,8 +26,11 @@ import { cosineSimilarity } from 'src/utils/cosine-similarity';
 import type { Novel, Paragraph } from 'src/models/novel';
 import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
-import { useBooksStore } from 'src/stores/books';
+import { loadChapterContent } from 'src/utils/chapter-content-loader';
+import {
+  lookupChapterBookFromDB,
+  loadBookMetaFromDB,
+} from 'src/utils/chapter-book-lookup';
 import {
   calculateQueryKeywordScore,
   extractQueryUnits,
@@ -235,7 +238,7 @@ export const CHUNK_TARGET_CHARS = 400;
  * 与 MODEL_VERSION 分离的目的:memory 也用 MODEL_VERSION,但 memory 没有 chunking
  * 概念。chapter chunking 改动不应触发 memory 重嵌。
  */
-export const CHAPTER_CHUNK_LAYOUT_VERSION = 'cs400';
+const CHAPTER_CHUNK_LAYOUT_VERSION = 'cs400';
 /**
  * 章节嵌入实际使用的版本号 = MODEL_VERSION + chunking version。
  * `writeChunksForChapter` 写入此值;`queryChapters` / `findChaptersNeedingEmbedding`
@@ -264,13 +267,13 @@ export const TITLE_CHUNK_INDEX = 0;
 // 与 [memory-scoring.ts] 的 SCORING_WEIGHTS(0.6/0.3/0.1)同源 — 这里去掉 recency
 // 那 0.1 重分配到 semantic(章节级 query 没有"新近性"概念,recency 不适用)。
 /** 章节级 semantic 在最终 total 中的权重 */
-export const CHAPTER_SEMANTIC_WEIGHT = 0.65;
+const CHAPTER_SEMANTIC_WEIGHT = 0.65;
 /** 章节级 keyword 在最终 total 中的权重 */
-export const CHAPTER_KEYWORD_WEIGHT = 0.35;
+const CHAPTER_KEYWORD_WEIGHT = 0.35;
 /** Title 字面命中权重(强信号 — 章节真就叫这个名;加性公式里仍是 1.0 满权重) */
-export const TITLE_KW_WEIGHT = 1.0;
+const TITLE_KW_WEIGHT = 1.0;
 /** content_top_k_mean 取前 K 个 content chunk 的均值,K = min(CONTENT_TOP_K, 实际数量) */
-export const CONTENT_TOP_K = 3;
+const CONTENT_TOP_K = 3;
 /**
  * Content 通道融合权重 — content_semantic = α × content_max + (1-α) × content_top_k_mean
  *
@@ -281,7 +284,7 @@ export const CONTENT_TOP_K = 3;
  * α = 0.6 偏向 max,保留"单段强命中"的检索效果(用户反馈已生效的场景);
  * 0.4 给 top_k_mean,提升"整章中等命中"的章节排名。
  */
-export const CONTENT_MAX_BLEND_ALPHA = 0.6;
+const CONTENT_MAX_BLEND_ALPHA = 0.6;
 /**
  * 专名命中加权系数。query unit 出现在书的专名表(terminologies + characterSettings + aliases
  * 双语)里时,该 unit 的命中分乘以此系数(再 clamp 到 [0, 1])。让"夏洛特"、"莉莉花园"
@@ -290,14 +293,14 @@ export const CONTENT_MAX_BLEND_ALPHA = 0.6;
  * 2.0 是经验值:足够把"全是泛词"的命中和"含一两个专名"的命中分开,但不会把
  * 单个专名命中放大到完全压制其它信号(clamp [0,1] 兜底)。
  */
-export const PROPER_NOUN_BOOST = 2.0;
+const PROPER_NOUN_BOOST = 2.0;
 /**
  * Identifier(章节序号 / 卷号:阿拉伯数字、中文数字、圈号 ①-⑳、罗马数字 Ⅰ-Ⅹ)
  * 命中加权系数。比专名更强,因为 identifier 通常表示用户想精确命中某一章。
  *
  * 配合 IDENTIFIER_MISMATCH_PENALTY 使用:identifier 命中时大幅加分,反之大幅减分。
  */
-export const IDENTIFIER_BOOST = 3.0;
+const IDENTIFIER_BOOST = 3.0;
 /**
  * 当 query 含 identifier 但候选章节标题(含卷标题)缺该 identifier 时,
  * 整章 total score 乘以此系数(强降权但不归零,留给"用户记错章号"等模糊场景兜底)。
@@ -305,9 +308,9 @@ export const IDENTIFIER_BOOST = 3.0;
  * 0.3 经验值:足够让"83 星天 ⑥" 类 query 把"星天 ⑤"压到正确"星天 ⑥"之下,
  * 又不会硬过滤掉所有非完美匹配。
  */
-export const IDENTIFIER_MISMATCH_PENALTY = 0.3;
+const IDENTIFIER_MISMATCH_PENALTY = 0.3;
 /** Title + content keyword 加性融合的 content 加成系数(round 2 改为加性 cap 1.0) */
-export const CONTENT_KW_ADDITIVE_WEIGHT = 0.4;
+const CONTENT_KW_ADDITIVE_WEIGHT = 0.4;
 /**
  * IDF 加权下界 — 即便单元出现在每一章(idf=0),也保留 IDF_FLOOR 的最低权重
  * 而不是把命中分压到 0;同时 1.0 + (1 - IDF_FLOOR) × idf 让最稀有单元 (idf=1) 拿
@@ -316,13 +319,13 @@ export const CONTENT_KW_ADDITIVE_WEIGHT = 0.4;
  * 实施在 [memory-scoring.ts] 内:`multiplier = 0.5 + 1.5 × idf`,即 IDF_FLOOR = 0.5。
  * 这里只放注释说明数值含义;memory-scoring 才是事实源。
  */
-export const IDF_FLOOR_FOR_DOC = 0.5;
+const IDF_FLOOR_FOR_DOC = 0.5;
 
 /**
  * IDB 复合 key 工厂。集中在一处避免多处手写出错。
  * v11 后所有新写入都用复合 key;v10 旧 key 已在 upgrade 里 migrate。
  */
-export function chunkKey(
+function chunkKey(
   chapterId: string,
   kind: ChapterEmbeddingKind,
   chunkIndex: number,
@@ -428,6 +431,148 @@ export function splitChapterIntoChunks(paragraphs: Paragraph[]): ChapterChunkDra
   }
   flush();
   return chunks;
+}
+
+/** queryChapters 内部聚合：按 chapterId 汇总 title / content 两路的归一化分与预览片段 */
+interface ChapterAgg {
+  chapterId: string;
+  titleNorm: number;
+  contentNorms: number[];
+  contentSnippets: Array<{ score: number; snippet: string }>;
+  titleSnippet: string;
+}
+
+/**
+ * 按 memory-scoring 的 z-score 公式做全池归一化：stddev < SPREAD_FLOOR 时整批降级为 0。
+ */
+function computeNormalizedCosines(
+  chunks: ChapterEmbedding[],
+  queryVec: Float32Array | number[],
+): number[] {
+  const rawCosines = chunks.map((c) => cosineSimilarity(queryVec, c.vector));
+  let mean = 0;
+  let stddev = 0;
+  if (rawCosines.length >= 2) {
+    mean = rawCosines.reduce((a, b) => a + b, 0) / rawCosines.length;
+    const variance =
+      rawCosines.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / rawCosines.length;
+    stddev = Math.sqrt(variance);
+  }
+  const semanticUsable = rawCosines.length >= 2 && stddev >= SPREAD_FLOOR;
+  return rawCosines.map((raw) => {
+    if (!semanticUsable) return 0;
+    const z = (raw - mean) / stddev;
+    const mapped = (z + Z_CLAMP) / (2 * Z_CLAMP);
+    return Math.min(1, Math.max(0, mapped));
+  });
+}
+
+/** 按 chapterId 聚合 chunks：title chunk 的归一化分走 titleNorm，其余进 content 两个数组 */
+function aggregateChunksByChapter(
+  chunks: ChapterEmbedding[],
+  normalized: number[],
+): Map<string, ChapterAgg> {
+  const byChapter = new Map<string, ChapterAgg>();
+  for (let i = 0; i < chunks.length; i++) {
+    const c = chunks[i]!;
+    const norm = normalized[i]!;
+    let agg = byChapter.get(c.chapterId);
+    if (!agg) {
+      agg = {
+        chapterId: c.chapterId,
+        titleNorm: 0,
+        contentNorms: [],
+        contentSnippets: [],
+        titleSnippet: '',
+      };
+      byChapter.set(c.chapterId, agg);
+    }
+    if (c.kind === 'title') {
+      agg.titleNorm = Math.max(agg.titleNorm, norm);
+      if (!agg.titleSnippet) agg.titleSnippet = c.textSnippet;
+    } else {
+      agg.contentNorms.push(norm);
+      agg.contentSnippets.push({ score: norm, snippet: c.textSnippet });
+    }
+  }
+  return byChapter;
+}
+
+/** 从 book.volumes 建章节 ID → 标题 / 卷标题的反向查找表 */
+function buildChapterTitleLookups(book: Novel | null | undefined): {
+  chapterTitleLookup: Map<string, string>;
+  volumeTitleLookup: Map<string, string>;
+} {
+  const chapterTitleLookup = new Map<string, string>();
+  const volumeTitleLookup = new Map<string, string>();
+  if (!book?.volumes) return { chapterTitleLookup, volumeTitleLookup };
+  for (const v of book.volumes) {
+    const volumeTitle = typeof v.title === 'string' ? v.title : '';
+    for (const ch of v.chapters || []) {
+      const title = typeof ch.title === 'string' ? ch.title : ch.title?.original || '';
+      chapterTitleLookup.set(ch.id, title);
+      volumeTitleLookup.set(ch.id, volumeTitle);
+    }
+  }
+  return { chapterTitleLookup, volumeTitleLookup };
+}
+
+/** content 通道：融合 max 与 top-K mean；semantic = max(title_norm, content_semantic) */
+function computeChapterSemanticScore(agg: ChapterAgg): number {
+  if (agg.contentNorms.length === 0) return agg.titleNorm;
+  const contentMax = Math.max(...agg.contentNorms);
+  const sortedDesc = [...agg.contentNorms].sort((a, b) => b - a);
+  const k = Math.min(CONTENT_TOP_K, sortedDesc.length);
+  const contentTopKMean = sortedDesc.slice(0, k).reduce((a, b) => a + b, 0) / k;
+  const contentSemantic =
+    CONTENT_MAX_BLEND_ALPHA * contentMax + (1 - CONTENT_MAX_BLEND_ALPHA) * contentTopKMean;
+  return Math.max(agg.titleNorm, contentSemantic);
+}
+
+/**
+ * keyword = min(1, title_kw + content_kw × 0.4)（加性 cap）。
+ * 单独标题命中仍可达 1.0 上限，正文加成助推双命中章节。
+ */
+function computeChapterKeywordScore(
+  agg: ChapterAgg,
+  chapterTitle: string,
+  volumeTitle: string,
+  expandedQuery: string,
+  properNouns: Set<string> | undefined,
+  idfWeights: Map<string, number> | undefined,
+): number {
+  const titleKwInput = `${chapterTitle} ${volumeTitle}`.trim();
+  const titleKw = titleKwInput
+    ? kwOnText(expandedQuery, titleKwInput, '', properNouns, idfWeights)
+    : 0;
+  let contentKw = 0;
+  for (const cs of agg.contentSnippets) {
+    const score = kwOnText(expandedQuery, '', cs.snippet, properNouns, idfWeights);
+    if (score > contentKw) contentKw = score;
+  }
+  return Math.min(1, titleKw * TITLE_KW_WEIGHT + contentKw * CONTENT_KW_ADDITIVE_WEIGHT);
+}
+
+/**
+ * Identifier mismatch 惩罚：query 含 identifier 但候选标题缺任一 → total × PENALTY。
+ */
+function applyIdentifierPenalty(
+  total: number,
+  queryIdentifiers: string[],
+  chapterTitle: string,
+  volumeTitle: string,
+): number {
+  if (queryIdentifiers.length === 0) return total;
+  const titleHay = `${chapterTitle} ${volumeTitle}`.toLowerCase();
+  const allMatched = queryIdentifiers.every((id) => titleHay.includes(id));
+  return allMatched ? total : total * IDENTIFIER_MISMATCH_PENALTY;
+}
+
+/** preview：最高得分的 content snippet；无 content chunk 时退回 title snippet */
+function pickChapterPreview(agg: ChapterAgg): string {
+  if (agg.contentSnippets.length === 0) return agg.titleSnippet;
+  const best = [...agg.contentSnippets].sort((a, b) => b.score - a.score)[0]!;
+  return best.snippet;
 }
 
 export class ChapterEmbeddingService {
@@ -549,29 +694,17 @@ export class ChapterEmbeddingService {
   static async embedChapter(chapterId: string): Promise<void> {
     if (!chapterId) return;
 
-    // 定位 book 与 chapter title(同时拿到原始 chapter 用于 title chunk 输入)
-    const booksStore = useBooksStore();
-    let bookId: string | undefined;
-    let chapterTitle = '';
-    outer: for (const book of booksStore.books) {
-      for (const volume of book.volumes || []) {
-        const found = volume.chapters?.find((c) => c.id === chapterId);
-        if (found) {
-          bookId = book.id;
-          chapterTitle =
-            typeof found.title === 'string' ? found.title : found.title?.original ?? '';
-          break outer;
-        }
-      }
-    }
-
-    if (!bookId) {
+    // 定位 book 与 chapter title(直接扫 IndexedDB books,
+    // 避免 import stores/books 形成循环依赖)
+    const lookup = await lookupChapterBookFromDB(chapterId);
+    if (!lookup) {
       // 章节已不存在(可能已被删除),顺便清一下残留
       await this.deleteChunksForChapter(chapterId);
       return;
     }
+    const { bookId, chapterTitle } = lookup;
 
-    const paragraphs = await ChapterContentService.loadChapterContent(chapterId);
+    const paragraphs = await loadChapterContent(chapterId);
     if (!paragraphs || paragraphs.length === 0) {
       await this.deleteChunksForChapter(chapterId);
       return;
@@ -674,163 +807,50 @@ export class ChapterEmbeddingService {
       );
     }
 
-    // ===== Pass 1:全池 raw cosine + z-score 归一化(沿用 memory-scoring 的公式) =====
-    const rawCosines = chunks.map((c) => cosineSimilarity(queryVec, c.vector));
-    let mean = 0;
-    let stddev = 0;
-    if (rawCosines.length >= 2) {
-      mean = rawCosines.reduce((a, b) => a + b, 0) / rawCosines.length;
-      const variance =
-        rawCosines.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / rawCosines.length;
-      stddev = Math.sqrt(variance);
-    }
-    const semanticUsable = rawCosines.length >= 2 && stddev >= SPREAD_FLOOR;
-    const normalized = rawCosines.map((raw) => {
-      if (!semanticUsable) return 0;
-      const z = (raw - mean) / stddev;
-      const mapped = (z + Z_CLAMP) / (2 * Z_CLAMP);
-      return Math.min(1, Math.max(0, mapped));
-    });
+    // ===== Pass 1:全池 raw cosine + z-score 归一化 =====
+    const normalized = computeNormalizedCosines(chunks, queryVec);
 
     // ===== Pass 2:按 chapterId 聚合 — 拆 title / content 两路 =====
-    type Agg = {
-      chapterId: string;
-      titleNorm: number; // 该章 title chunk 的归一化分(无则 0)
-      contentNorms: number[]; // 该章所有 content chunk 的归一化分
-      contentSnippets: Array<{ score: number; snippet: string }>; // 用于挑 preview
-      titleSnippet: string; // title chunk snippet 兜底 preview
-    };
-    const byChapter = new Map<string, Agg>();
-    for (let i = 0; i < chunks.length; i++) {
-      const c = chunks[i]!;
-      const norm = normalized[i]!;
-      let agg = byChapter.get(c.chapterId);
-      if (!agg) {
-        agg = {
-          chapterId: c.chapterId,
-          titleNorm: 0,
-          contentNorms: [],
-          contentSnippets: [],
-          titleSnippet: '',
-        };
-        byChapter.set(c.chapterId, agg);
-      }
-      if (c.kind === 'title') {
-        agg.titleNorm = Math.max(agg.titleNorm, norm);
-        if (!agg.titleSnippet) agg.titleSnippet = c.textSnippet;
-      } else {
-        agg.contentNorms.push(norm);
-        agg.contentSnippets.push({ score: norm, snippet: c.textSnippet });
-      }
-    }
+    const byChapter = aggregateChunksByChapter(chunks, normalized);
 
-    // ===== 解析标题 + 卷标题(章节 → 卷 反向查找) =====
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-    const chapterTitleLookup = new Map<string, string>();
-    const volumeTitleLookup = new Map<string, string>();
-    if (book?.volumes) {
-      for (const v of book.volumes) {
-        const volumeTitle = typeof v.title === 'string' ? v.title : '';
-        for (const ch of v.chapters || []) {
-          const title = typeof ch.title === 'string' ? ch.title : ch.title?.original || '';
-          chapterTitleLookup.set(ch.id, title);
-          volumeTitleLookup.set(ch.id, volumeTitle);
-        }
-      }
-    }
-
-    // ===== 别名索引 + query 跨语言扩展 =====
-    // 复用 Novel.terminologies / Novel.characterSettings.aliases(已含中日双语形态)
-    // 让中文 query 也能命中只含日文专名的章节、反之亦然。同时收集 properNouns 集合,
-    // 给 keyword 打分时给专名 unit 加权(2.0× clamp [0,1])。
+    // ===== 标题 / 卷标题 + 别名 / Identifier / IDF =====
+    // 直接从 IndexedDB 加载 book 元数据,避免 import stores/books 形成循环依赖
+    const book = await loadBookMetaFromDB(bookId);
+    const { chapterTitleLookup, volumeTitleLookup } = buildChapterTitleLookups(book);
     const aliasIndex = buildBookAliasIndex(book);
     const expandedQuery = expandQueryWithAliases(query, aliasIndex);
     const properNouns = aliasIndex.properNouns.size > 0 ? aliasIndex.properNouns : undefined;
-
-    // ===== Identifier 抽取(mismatch 惩罚用) =====
-    // 从原始 query 抽 identifier(章号 / 卷号 / 圈号 / 罗马数字)。后续每章打分后,
-    // 若 query 含 identifier 且候选章节标题(含卷标题)缺该 identifier,total × PENALTY。
-    // 用扩展后的 query 抽会污染(别名扩展可能带入数字),所以用原 query。
+    // 用原 query 抽 identifier,避免别名扩展污染
     const queryIdentifiers = extractIdentifiersFromQuery(query);
-
-    // ===== 在线 IDF(round 4): query 每个 unit 的稀有度权重 =====
-    // 用扩展后的 query(含中日同义词)抽 unit,这样别名也能拿到正确的 idf 权重。
-    // identifier unit 不进 IDF(它们走 IDENTIFIER_BOOST,优先级独立)。
+    // 用扩展后的 query 抽 IDF unit,让同义词拿到正确权重
     const idfWeights = computeQueryUnitIdf(expandedQuery, chunks);
     const idfWeightsToPass = idfWeights.size > 0 ? idfWeights : undefined;
 
-    // ===== Pass 3:每章计算 semantic + keyword + total =====
+    // ===== Pass 3:每章打分 =====
     const results: ChapterQueryMatch[] = [];
     for (const agg of byChapter.values()) {
-      // content 通道:融合 max 与 top-K mean(同章内 mean ≤ max,故必须 blend 而非 max)
-      const contentMax =
-        agg.contentNorms.length > 0 ? Math.max(...agg.contentNorms) : 0;
-      let contentTopKMean = 0;
-      if (agg.contentNorms.length > 0) {
-        const sortedDesc = [...agg.contentNorms].sort((a, b) => b - a);
-        const k = Math.min(CONTENT_TOP_K, sortedDesc.length);
-        const sum = sortedDesc.slice(0, k).reduce((a, b) => a + b, 0);
-        contentTopKMean = sum / k;
-      }
-      const contentSemantic =
-        agg.contentNorms.length > 0
-          ? CONTENT_MAX_BLEND_ALPHA * contentMax +
-            (1 - CONTENT_MAX_BLEND_ALPHA) * contentTopKMean
-          : 0;
-      // semantic = max(title_norm, content_semantic) — 标题 / 内容两路独立竞争
-      const semantic = Math.max(agg.titleNorm, contentSemantic);
-
-      // keyword = min(1, title_kw + content_kw × 0.4) — round 2:从原 max 改为加性 cap,
-      // 让"标题 + 正文双命中"的章节真正比"只标题命中"分高(原 max 公式两者并列 1.0)。
-      // 标题单独命中仍可达 1.0 上限,无正文加成。
-      // query 用别名扩展后的形态;专名 unit 命中按 PROPER_NOUN_BOOST 加权(boost 在 kwOnText 内实现)。
       const chapterTitle = chapterTitleLookup.get(agg.chapterId) ?? '';
       const volumeTitle = volumeTitleLookup.get(agg.chapterId) ?? '';
-      const titleKwInput = `${chapterTitle} ${volumeTitle}`.trim();
-      const titleKw = titleKwInput
-        ? kwOnText(expandedQuery, titleKwInput, '', properNouns, idfWeightsToPass)
-        : 0;
-      let contentKw = 0;
-      for (const cs of agg.contentSnippets) {
-        const score = kwOnText(expandedQuery, '', cs.snippet, properNouns, idfWeightsToPass);
-        if (score > contentKw) contentKw = score;
-      }
-      const keyword = Math.min(
-        1,
-        titleKw * TITLE_KW_WEIGHT + contentKw * CONTENT_KW_ADDITIVE_WEIGHT,
+      const semantic = computeChapterSemanticScore(agg);
+      const keyword = computeChapterKeywordScore(
+        agg,
+        chapterTitle,
+        volumeTitle,
+        expandedQuery,
+        properNouns,
+        idfWeightsToPass,
       );
-
-      let total =
-        CHAPTER_SEMANTIC_WEIGHT * semantic + CHAPTER_KEYWORD_WEIGHT * keyword;
-
-      // Identifier mismatch 惩罚:query 含 identifier(83 / ⑥ / Ⅴ / 第八十三章 等),
-      // 但候选章节标题(章+卷)缺其中任一 → total × PENALTY。
-      // 目的:对系列章节(星天 ① / ② / ⑥...)强制让"对的章节"压过"像的章节"。
-      // 用原始 chapter title + volume title(非 title chunk 的 textSnippet,后者带 [章] 前缀
-      // 但不影响 includes;不过用原文更直观,且和 title_kw 的 haystack 一致)。
-      if (queryIdentifiers.length > 0) {
-        const titleHay = `${chapterTitle} ${volumeTitle}`.toLowerCase();
-        const allMatched = queryIdentifiers.every((id) => titleHay.includes(id));
-        if (!allMatched) {
-          total *= IDENTIFIER_MISMATCH_PENALTY;
-        }
-      }
-
-      // preview:取最高 content snippet;无 content chunk 时 fallback 到 title snippet
-      let preview = '';
-      if (agg.contentSnippets.length > 0) {
-        const best = [...agg.contentSnippets].sort((a, b) => b.score - a.score)[0]!;
-        preview = best.snippet;
-      } else {
-        preview = agg.titleSnippet;
-      }
-
+      const total = applyIdentifierPenalty(
+        CHAPTER_SEMANTIC_WEIGHT * semantic + CHAPTER_KEYWORD_WEIGHT * keyword,
+        queryIdentifiers,
+        chapterTitle,
+        volumeTitle,
+      );
       results.push({
         chapter_id: agg.chapterId,
         title: chapterTitle,
         score: total,
-        preview,
+        preview: pickChapterPreview(agg),
       });
     }
 
@@ -853,8 +873,8 @@ export class ChapterEmbeddingService {
    */
   static async findChaptersNeedingEmbedding(bookId: string): Promise<string[]> {
     if (!bookId) return [];
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
+    // 直接从 IndexedDB 加载 book 元数据,避免 import stores/books 形成循环依赖
+    const book = await loadBookMetaFromDB(bookId);
     if (!book?.volumes) return [];
 
     const allChapterIds: string[] = [];
@@ -894,7 +914,7 @@ export class ChapterEmbeddingService {
       // 条件 3:无 title chunk 且段落非全空(可生成 title chunk)
       const hasTitle = arr.some((c) => c.kind === 'title');
       if (!hasTitle) {
-        const paragraphs = (await ChapterContentService.loadChapterContent(chId)) ?? [];
+        const paragraphs = (await loadChapterContent(chId)) ?? [];
         const canMakeTitle = paragraphs.some((p) => (p.text ?? '').trim().length > 0);
         if (canMakeTitle) {
           needsEmbed.push(chId);

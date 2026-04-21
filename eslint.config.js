@@ -15,10 +15,10 @@ export default defineConfigWithVueTs(
      *
      * ESLint requires "ignores" key to be the only one in this object
      */
-    // `.kilo/worktrees/*` 下是被 Kilo Code 代理维护的工作树副本，各自带独立的 .git。
-    // 其中的 .ts/.vue 文件未被项目 tsconfig 包含，启用 type-checked lint 会报
-    // "parserOptions.project" 错误——整目录忽略即可。
-    ignores: ['.kilo/**'],
+    // `.kilo/worktrees/*` 和 `.claude/worktrees/*` 下是被各自代理维护的工作树副本，
+    // 各自带独立的 .git。其中的 .ts/.vue 文件未被项目 tsconfig 包含，启用 type-checked
+    // lint 会报 "parserOptions.project" 错误——整目录忽略即可。
+    ignores: ['.kilo/**', '.claude/**'],
   },
 
   pluginQuasar.configs.recommended(),
@@ -45,6 +45,38 @@ export default defineConfigWithVueTs(
       '@typescript-eslint/no-unused-vars': [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
+
+  // 禁止 services/ai 和 services/scraper 的内部文件从自身 barrel 导入,
+  // 以避免 "barrel ↔ 子文件" 形式的循环依赖。外部消费者仍可使用 barrel。
+  {
+    files: ['src/services/ai/**/*.ts', 'src/services/scraper/**/*.ts'],
+    ignores: ['src/services/ai/index.ts', 'src/services/scraper/index.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'src/services/ai',
+              message:
+                '在 services/ai 子目录内请使用具体文件路径（例如 src/services/ai/ai-service-factory），不要从 barrel 导入（防止循环依赖）。',
+            },
+            {
+              name: 'src/services/scraper',
+              message:
+                '在 services/scraper 子目录内请使用具体文件路径，不要从 barrel 导入（防止循环依赖）。',
+            },
+          ],
+          patterns: [
+            {
+              group: ['**/index', '../index', '../../index', '../../../index'],
+              message: '不要从 "./index" 或 "../index" 等 barrel 导入，请使用具体文件路径。',
+            },
+          ],
+        },
       ],
     },
   },

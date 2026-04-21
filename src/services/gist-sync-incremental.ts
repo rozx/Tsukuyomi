@@ -154,6 +154,25 @@ async function parseStoredContent(content: string): Promise<unknown> {
 }
 
 /**
+ * 把 `knownRemoteHashes` 包装成一个只有 hash 的伪 manifest，用于 `diffManifests` 的对照输入。
+ * 被 download / upload 两处 diff 前置共用。
+ */
+function buildKnownAsManifest(knownHashes: Record<string, string> | undefined): {
+  schemaVersion: typeof MANIFEST_SCHEMA_VERSION;
+  updatedAt: string;
+  entries: Record<string, ManifestEntry>;
+} {
+  const hashes = knownHashes ?? {};
+  return {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
+    updatedAt: '',
+    entries: Object.fromEntries(
+      Object.entries(hashes).map(([k, h]) => [k, { hash: h, lastEdited: '' } as ManifestEntry]),
+    ),
+  };
+}
+
+/**
  * 按字节安全分块（不在多字节字符中间切断）
  */
 function splitIntoChunks(content: string): string[] {
@@ -593,18 +612,7 @@ export async function downloadWithManifest(
   }
 
   // 计算 diff：remote vs knownRemote
-  const knownHashes = config.knownRemoteHashes ?? {};
-  const knownAsManifest = {
-    schemaVersion: MANIFEST_SCHEMA_VERSION,
-    updatedAt: '',
-    entries: Object.fromEntries(
-      Object.entries(knownHashes).map(([k, h]) => [
-        k,
-        { hash: h, lastEdited: '' } as ManifestEntry,
-      ]),
-    ),
-  };
-  const diff = diffManifests(remoteManifest, knownAsManifest);
+  const diff = diffManifests(remoteManifest, buildKnownAsManifest(config.knownRemoteHashes));
 
   // 仅需要反序列化 changed + added（即远端有而本地尚未见过的）
   const toRead = [...diff.changed, ...diff.added];
@@ -688,19 +696,8 @@ export async function uploadIncremental(
     ...(payload.tombstones ? { tombstones: payload.tombstones } : {}),
   });
 
-  const knownHashes = config.knownRemoteHashes ?? {};
   const knownEntries = config.knownRemoteEntries ?? {};
-  const knownAsManifest = {
-    schemaVersion: MANIFEST_SCHEMA_VERSION,
-    updatedAt: '',
-    entries: Object.fromEntries(
-      Object.entries(knownHashes).map(([k, h]) => [
-        k,
-        { hash: h, lastEdited: '' } as ManifestEntry,
-      ]),
-    ),
-  };
-  const diff = diffManifests(localManifest, knownAsManifest);
+  const diff = diffManifests(localManifest, buildKnownAsManifest(config.knownRemoteHashes));
   const toUpload = [...diff.changed, ...diff.added];
   const toDelete = diff.deleted;
 
@@ -730,10 +727,82 @@ export async function uploadIncremental(
     return merged;
   };
 
+  await serializeEntriesIntoFiles(
+    toUpload,
+    payload,
+    allFiles,
+    localManifest,
+    resolveStaleFilenames,
+    PREP_END,
+    PROGRESS_TOTAL,
+    onProgress,
+  );
+
+  // 处理删除的 entry
+  for (const entryKey of toDelete) {
+    const toNull = resolveStaleFilenames(entryKey);
+    for (const name of toNull) {
+      allFiles[name] = null;
+    }
+  }
+
+  uploadedEntries.push(...toUpload);
+
+  onProgress?.({
+    current: PREP_END,
+    total: PROGRESS_TOTAL,
+    message: '正在上传...',
+  });
+
+  const additionBatches = buildAdditionBatches(allFiles);
+  appendDeletionsAndManifestToFinalBatch(additionBatches, allFiles, localManifest);
+
+  const { etag: newETag, htmlUrl, updatedAt: newUpdatedAt } = await executePatchBatches(
+    octokit,
+    gistId,
+    additionBatches,
+    PREP_END,
+    PROGRESS_TOTAL,
+    onProgress,
+  );
+
+  onProgress?.({
+    current: PROGRESS_TOTAL,
+    total: PROGRESS_TOTAL,
+    message: '上传完成',
+  });
+
+  return {
+    success: true,
+    gistId,
+    ...(htmlUrl ? { gistUrl: htmlUrl } : {}),
+    remoteETag: newETag,
+    remoteUpdatedAt: newUpdatedAt,
+    manifest: localManifest,
+    uploadedEntries,
+    deletedEntries: toDelete,
+  };
+}
+
+/**
+ * 序列化 toUpload 中的每个 entry 到 allFiles，并把孤儿文件（旧布局）标为 null 删除。
+ * 同步更新 manifest 条目的 chunks 字段反映实际布局。
+ */
+async function serializeEntriesIntoFiles(
+  toUpload: string[],
+  payload: UploadPayload,
+  allFiles: Record<string, { content: string } | null>,
+  localManifest: GistManifest,
+  resolveStaleFilenames: (entryKey: string) => string[],
+  PREP_END: number,
+  PROGRESS_TOTAL: number,
+  onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+): Promise<void> {
   for (let i = 0; i < toUpload.length; i++) {
     const entryKey = toUpload[i]!;
     const payloadValue = getPayloadForEntry(entryKey, payload);
     if (payloadValue === null) continue;
+
     // manifest 阶段占 5%；序列化线性占 5→PREP_END
     const serializeFraction = toUpload.length > 0 ? i / toUpload.length : 1;
     onProgress?.({
@@ -763,46 +832,86 @@ export async function uploadIncremental(
       }
     }
   }
+}
 
-  // 处理删除的 entry
-  for (const entryKey of toDelete) {
-    const toNull = resolveStaleFilenames(entryKey);
-    for (const name of toNull) {
-      allFiles[name] = null;
-    }
-  }
-
-  uploadedEntries.push(...toUpload);
-
-  onProgress?.({
-    current: PREP_END,
-    total: PROGRESS_TOTAL,
-    message: '正在上传...',
-  });
-
-  // 排序：先分批上传新增/变更内容（非 null），然后在最后一个原子 PATCH 里
-  // 同时写入 manifest 与所有删除标记（null）。
-  //
-  // 为什么删除必须与 manifest 同批：
-  // - 若先单独 PATCH 删除、再 PATCH manifest，中间任一失败都会留下
-  //   "旧 manifest 引用已被删除的文件"的坏状态，下次下载会读空。
-  // - 合并在一个 PATCH 里，GitHub 保证该请求要么全部生效要么全部回滚。
-  //
-  // 为什么 GitHub 不能接受"全 null"的 PATCH：
-  // - 只含 null 条目的 files 对象会被视作空，返回 422 missing_field:files。
-  //   把 manifest（非 null）和删除放一起顺带消除这个陷阱。
+/**
+ * 把 allFiles 中的新增/变更按字节预算 + 文件数双重上限切分为多个 PATCH 批次。
+ *
+ * 大 chunk 文件（接近 MAX_FILE_SIZE）单靠文件数截断容易凑出 ~9 MB 的巨型 PATCH 触发 409，
+ * 所以必须加字节预算上限。
+ */
+function buildAdditionBatches(
+  allFiles: Record<string, { content: string } | null>,
+): Array<Record<string, { content: string } | null>> {
   const BATCH_SIZE = 10;
-  // 单批请求体字节预算：GitHub Gist PATCH 的有效请求上限经验值约为 8-10 MB
-  // （超出会返回 `409 Gist cannot be updated`，并无具体错误信息）。
-  // 我们用 4 MB 留足 JSON 包裹 / header / base64 膨胀余量。
+  // 单批请求体字节预算：GitHub Gist PATCH 的有效请求上限经验值约为 8-10 MB，我们取 4 MB 留足余量
   const BATCH_BYTE_BUDGET = 4 * 1024 * 1024;
-  const nonManifestEntries = Object.entries(allFiles);
-  const additions = nonManifestEntries.filter(
+  const additions = Object.entries(allFiles).filter(
     (kv): kv is [string, { content: string }] => kv[1] !== null,
   );
-  const deletions = nonManifestEntries.filter(
+
+  const additionBatches: Array<Record<string, { content: string } | null>> = [];
+  let current: Record<string, { content: string } | null> = {};
+  let currentBytes = 0;
+  let currentCount = 0;
+
+  for (const [name, file] of additions) {
+    const itemBytes = file.content.length + name.length;
+    const wouldOverflowBytes = currentBytes + itemBytes > BATCH_BYTE_BUDGET;
+    const wouldOverflowCount = currentCount >= BATCH_SIZE;
+    if (currentCount > 0 && (wouldOverflowBytes || wouldOverflowCount)) {
+      additionBatches.push(current);
+      current = {};
+      currentBytes = 0;
+      currentCount = 0;
+    }
+    current[name] = file;
+    currentBytes += itemBytes;
+    currentCount += 1;
+  }
+  if (currentCount > 0) additionBatches.push(current);
+
+  // 纯删除场景保底：没有 additions 时留一个空批次，最后一步会写入 manifest
+  // （GitHub 对 "N null + 1 manifest" 请求会 422；见下方 append helper）
+  if (additionBatches.length === 0) additionBatches.push({});
+
+  return additionBatches;
+}
+
+/**
+ * 向最后一批追加 deletions 与 manifest，保证"指针切换"是一次原子 PATCH。
+ *
+ * - 若最后一批本已有非 null 内容 → 追加 deletions + manifest
+ * - 若最后一批为空（纯删除场景）→ 只写 manifest，跳过删除（被删条目因不在 manifest.entries
+ *   里，下载时不会被读取；Gist 上留下的旧文件成为孤儿，无害）
+ */
+function appendDeletionsAndManifestToFinalBatch(
+  additionBatches: Array<Record<string, { content: string } | null>>,
+  allFiles: Record<string, { content: string } | null>,
+  localManifest: GistManifest,
+): void {
+  const deletions = Object.entries(allFiles).filter(
     (kv): kv is [string, null] => kv[1] === null,
   );
+  const finalBatch = additionBatches[additionBatches.length - 1]!;
+  const lastBatchHasContent = Object.values(finalBatch).some((v) => v !== null);
+  if (lastBatchHasContent) {
+    for (const [name, f] of deletions) finalBatch[name] = f;
+  }
+  finalBatch[MANIFEST_FILE_NAME] = { content: JSON.stringify(localManifest) };
+}
+
+/**
+ * 顺序 PATCH 所有批次，返回最终的 etag / htmlUrl / updatedAt
+ */
+async function executePatchBatches(
+  octokit: Octokit,
+  gistId: string,
+  additionBatches: Array<Record<string, { content: string } | null>>,
+  PREP_END: number,
+  PROGRESS_TOTAL: number,
+  onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+): Promise<{ etag: string; htmlUrl: string | undefined; updatedAt: string }> {
   let newETag = '';
   let htmlUrl: string | undefined;
   let newUpdatedAt = '';
@@ -828,70 +937,20 @@ export async function uploadIncremental(
     }
   };
 
-  // 分批策略：把所有 additions 按 BATCH_SIZE 切块上传；最后一块额外附加
-  // 所有 deletions 与 manifest，保证"指针切换"是一次原子 PATCH。
-  //
-  // 为什么把 manifest + deletions 并入最后一个 additions 批次而不是单独一批：
-  // GitHub 的 Gist PATCH 在遇到"只有 manifest 内容 + 若干 null 删除"的请求时会
-  // 返回 422 missing_field:files（推测为空有效变更的启发式）。把它与真实的
-  // 内容写入同批，既避免触发这个陷阱，又保持 manifest 最后写入的原子语义——
-  // 前面的 N-1 批都是纯内容上传（若失败，旧 manifest 仍然指向旧布局，无害）。
-  const additionBatches: Array<Record<string, { content: string } | null>> = [];
-  {
-    // 按字节预算 + 文件数双重上限切分；大 chunk 文件（接近 MAX_FILE_SIZE）
-    // 单靠文件数截断容易凑出 ~9 MB 的巨型 PATCH，触发 409。
-    let current: Record<string, { content: string } | null> = {};
-    let currentBytes = 0;
-    let currentCount = 0;
-    for (const [name, file] of additions) {
-      const itemBytes = file.content.length + name.length;
-      const wouldOverflowBytes = currentBytes + itemBytes > BATCH_BYTE_BUDGET;
-      const wouldOverflowCount = currentCount >= BATCH_SIZE;
-      if (currentCount > 0 && (wouldOverflowBytes || wouldOverflowCount)) {
-        additionBatches.push(current);
-        current = {};
-        currentBytes = 0;
-        currentCount = 0;
-      }
-      current[name] = file;
-      currentBytes += itemBytes;
-      currentCount += 1;
-    }
-    if (currentCount > 0) additionBatches.push(current);
-  }
-
-  // 纯删除场景：没有任何 additions，只有 deletions + manifest
-  // GitHub 对 "N null + 1 content (manifest)" 这种形状会返回 422 missing_field:files。
-  // 解决：只写 manifest，跳过删除——被删条目因不在 manifest.entries 里，下载时不会被读取；
-  // Gist 上留下的旧文件成为孤儿，无害。下一次有 additions 的同步会在 last batch 里顺带清理。
-  if (additionBatches.length === 0) {
-    additionBatches.push({});
-  }
-
-  // 向最后一批追加 deletions 与 manifest（仅当该批已含非 null 内容时才追加 deletions）
-  const finalBatch = additionBatches[additionBatches.length - 1]!;
-  const lastBatchHasContent = Object.values(finalBatch).some((v) => v !== null);
-  if (lastBatchHasContent) {
-    for (const [name, f] of deletions) finalBatch[name] = f;
-  }
-  finalBatch[MANIFEST_FILE_NAME] = { content: JSON.stringify(localManifest) };
-
   const totalBatches = additionBatches.length;
-  const uploadSpan = PROGRESS_TOTAL - PREP_END; // 80
+  const uploadSpan = PROGRESS_TOTAL - PREP_END;
   let firstBatch = true;
+
   for (let bi = 0; bi < totalBatches; bi++) {
     const batch = additionBatches[bi]!;
-
     // 批次开始时先把进度推到该批的起点——否则在网络等待期间进度条不动
     onProgress?.({
       current: PREP_END + Math.round((bi / totalBatches) * uploadSpan),
       total: PROGRESS_TOTAL,
       message: `正在上传批次 ${bi + 1} / ${totalBatches} (${Object.keys(batch).length} 个文件)...`,
     });
-
     await runBatch(batch, firstBatch);
     firstBatch = false;
-
     onProgress?.({
       current: PREP_END + Math.round(((bi + 1) / totalBatches) * uploadSpan),
       total: PROGRESS_TOTAL,
@@ -899,22 +958,7 @@ export async function uploadIncremental(
     });
   }
 
-  onProgress?.({
-    current: PROGRESS_TOTAL,
-    total: PROGRESS_TOTAL,
-    message: '上传完成',
-  });
-
-  return {
-    success: true,
-    gistId,
-    ...(htmlUrl ? { gistUrl: htmlUrl } : {}),
-    remoteETag: newETag,
-    remoteUpdatedAt: newUpdatedAt,
-    manifest: localManifest,
-    uploadedEntries,
-    deletedEntries: toDelete,
-  };
+  return { etag: newETag, htmlUrl, updatedAt: newUpdatedAt };
 }
 
 /**
@@ -938,16 +982,4 @@ function getPayloadForEntry(entryKey: string, payload: UploadPayload): unknown {
   return null;
 }
 
-/**
- * 将 remote manifest 的 entries 表达为平面 hash 字典，供 SyncConfig 持久化
- */
-export function remoteManifestToHashes(manifest: GistManifest): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(manifest.entries)) {
-    out[k] = v.hash;
-  }
-  return out;
-}
 
-// 重新导出便于测试
-export { ENTRY_KEYS, FILE_NAMES };

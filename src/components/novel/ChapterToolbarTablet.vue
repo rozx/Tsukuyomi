@@ -14,7 +14,7 @@ import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
-import { getChapterDisplayTitle } from 'src/utils';
+import { getChapterDisplayTitle, getChapterTranslationStats } from 'src/utils';
 
 interface EditModeOption {
   value: EditMode;
@@ -67,14 +67,7 @@ const emit = defineEmits<{
 const overflowMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const translateMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
 
-const stats = computed(() => {
-  const paras = props.selectedChapterParagraphs || [];
-  const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
-  return {
-    total: nonEmpty.length,
-    translated: nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length,
-  };
-});
+const stats = computed(() => getChapterTranslationStats(props.selectedChapterParagraphs));
 
 const translatedCharLabel = computed(() => {
   const count = props.translatedCharCount;

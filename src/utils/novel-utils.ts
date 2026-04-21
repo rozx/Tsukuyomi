@@ -1,5 +1,34 @@
 import type { Novel, Chapter, Volume, Paragraph } from 'src/models/novel';
-import { ChapterContentService } from 'src/services/chapter-content-service';
+import { loadChapterContent } from 'src/utils/chapter-content-loader';
+
+/**
+ * 通过章节 ID 查找章节及其在小说中的位置。
+ *
+ * 纯函数，不做任何 IO。供 chapter-service 与 full-text-index-service
+ * 等共享，避免双方为此互相 import 形成循环依赖。
+ */
+export function findChapterById(
+  novel: Novel | null | undefined,
+  chapterId: string,
+): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
+  if (!novel || !novel.volumes || !chapterId) {
+    return null;
+  }
+
+  for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
+    const volume = novel.volumes[vIndex];
+    if (volume && volume.chapters) {
+      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
+        const chapter = volume.chapters[cIndex];
+        if (chapter && chapter.id === chapterId) {
+          return { chapter, volume, volumeIndex: vIndex, chapterIndex: cIndex };
+        }
+      }
+    }
+  }
+
+  return null;
+}
 
 /**
  * 获取卷的显示标题（优先使用翻译，否则使用原文）
@@ -121,22 +150,26 @@ export function getChapterDisplayTitle(chapter: Chapter, book?: Novel): string {
 }
 
 /**
+ * 同步 / 异步 char-count 共用的内存优先路径：若已加载 content 或 originalContent，
+ * 就地返回长度；否则返回 null，由调用方决定是否继续走异步 IndexedDB 加载。
+ */
+function getChapterCharCountFromMemory(chapter: Chapter): number | null {
+  if (chapter.content && chapter.content.length > 0) {
+    return chapter.content.reduce((total, para) => total + para.text.length, 0);
+  }
+  if (chapter.originalContent) {
+    return chapter.originalContent.length;
+  }
+  return null;
+}
+
+/**
  * 计算章节的总字符数（同步版本，仅用于已加载的内容）
  * @param chapter 章节对象
  * @returns 总字符数
  */
 export function getChapterCharCount(chapter: Chapter): number {
-  // 优先使用已加载的 content（段落数组）
-  if (chapter.content && chapter.content.length > 0) {
-    return chapter.content.reduce((total, para) => total + para.text.length, 0);
-  }
-
-  // 如果 content 未加载，使用 originalContent（原始文本，懒加载时仍可用）
-  if (chapter.originalContent) {
-    return chapter.originalContent.length;
-  }
-
-  return 0;
+  return getChapterCharCountFromMemory(chapter) ?? 0;
 }
 
 /**
@@ -145,18 +178,11 @@ export function getChapterCharCount(chapter: Chapter): number {
  * @returns Promise<number> 总字符数
  */
 export async function getChapterCharCountAsync(chapter: Chapter): Promise<number> {
-  // 优先使用已加载的 content（段落数组）
-  if (chapter.content && chapter.content.length > 0) {
-    return chapter.content.reduce((total, para) => total + para.text.length, 0);
-  }
+  const fromMemory = getChapterCharCountFromMemory(chapter);
+  if (fromMemory !== null) return fromMemory;
 
-  // 如果 content 未加载，使用 originalContent（原始文本，懒加载时仍可用）
-  if (chapter.originalContent) {
-    return chapter.originalContent.length;
-  }
-
-  // 如果都没有，尝试从 IndexedDB 加载内容
-  const content = await ChapterContentService.loadChapterContent(chapter.id);
+  // 内存中没有，按需从 IndexedDB 加载
+  const content = await loadChapterContent(chapter.id);
   if (content && content.length > 0) {
     return content.reduce((total, para) => total + para.text.length, 0);
   }
@@ -169,7 +195,7 @@ export async function getChapterCharCountAsync(chapter: Chapter): Promise<number
  * @param volume 卷对象
  * @returns 总字符数
  */
-export function getVolumeCharCount(volume: Volume): number {
+function getVolumeCharCount(volume: Volume): number {
   if (!volume.chapters || volume.chapters.length === 0) {
     return 0;
   }
@@ -181,7 +207,7 @@ export function getVolumeCharCount(volume: Volume): number {
  * @param volume 卷对象
  * @returns Promise<number> 总字符数
  */
-export async function getVolumeCharCountAsync(volume: Volume): Promise<number> {
+async function getVolumeCharCountAsync(volume: Volume): Promise<number> {
   if (!volume.chapters || volume.chapters.length === 0) {
     return 0;
   }
@@ -346,15 +372,18 @@ export function getCharacterNameVariants(name: string): string[] {
 }
 
 /**
- * 检查段落是否为空（无内容或只有空白字符）
- * @param paragraph 段落对象
- * @returns 如果段落为空返回 true，否则返回 false
+ * 统计章节段落的翻译进度：忽略纯空白段落，返回有实际文本的段落总数 + 已有翻译的段落数。
  */
-export function isEmptyParagraph(paragraph: Paragraph): boolean {
-  if (!paragraph.text) {
-    return true;
-  }
-  return paragraph.text.trim().length === 0;
+export function getChapterTranslationStats(paragraphs: Paragraph[] | null | undefined): {
+  total: number;
+  translated: number;
+} {
+  const paras = paragraphs || [];
+  const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
+  return {
+    total: nonEmpty.length,
+    translated: nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length,
+  };
 }
 
 /**
@@ -380,7 +409,7 @@ export async function ensureChapterContentLoaded(chapter: Chapter): Promise<Chap
     return chapter;
   }
 
-  const content = await ChapterContentService.loadChapterContent(chapter.id);
+  const content = await loadChapterContent(chapter.id);
   if (content) {
     return {
       ...chapter,

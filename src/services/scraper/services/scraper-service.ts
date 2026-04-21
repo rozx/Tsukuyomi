@@ -1,5 +1,5 @@
 import { runWithConcurrencyLimit } from 'src/utils/concurrency';
-import { NovelScraperFactory } from 'src/services/scraper';
+import { NovelScraperFactory } from 'src/services/scraper/novel-scraper-factory';
 
 /**
  * 章节内容获取结果
@@ -24,6 +24,7 @@ export interface BatchFetchResult {
  * 爬虫服务
  * 提供批量获取章节内容等功能，包含并发控制
  */
+// fallow-ignore-next-line unused-export
 export class ScraperService {
   /**
    * 批量获取章节内容，使用并发控制

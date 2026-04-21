@@ -1,8 +1,9 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 export { MAX_TRANSLATION_BATCH_SIZE };
-import type { TaskType, TaskStatus } from '../utils';
-import { getTaskStateWorkflowText, TASK_TYPE_LABELS } from '../utils';
+import type { TaskType, TaskStatus } from '../utils/task-types';
+import { getTaskStateWorkflowText } from '../utils/task-types';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 /**
  * 判断本次请求是否提供了 `query_chapter` 工具。
@@ -248,14 +249,14 @@ export function getMemoryWorkflowRules(): string {
 /**
  * 获取待办事项工具描述（精简版）
  */
-export function getTodoToolsDescription(_taskType: TaskType): string {
+function getTodoToolsDescription(_taskType: TaskType): string {
   return `**待办管理**: 系统自动生成待办清单，用 \`mark_todo_working\` 开始、\`mark_todo_done\` 完成。所有待办完成后方可切换阶段。`;
 }
 
 /**
  * 获取状态字段说明（精简版）
  */
-export function getStatusFieldDescription(taskType: TaskType): string {
+function getStatusFieldDescription(taskType: TaskType): string {
   return `**状态流程**: ${getTaskStateWorkflowText(taskType)}`;
 }
 

@@ -105,7 +105,7 @@ describe('books store removed chapter cleanup', () => {
       ],
     });
 
-    expect(bulkDeleteChapterContentSpy).toHaveBeenCalledWith(['c2']);
+    expect(bulkDeleteChapterContentSpy).toHaveBeenCalledWith(['c2'], { bookId: 'book-1' });
   });
 
   it('删除卷后应批量清理该卷下所有章节内容', async () => {
@@ -130,7 +130,7 @@ describe('books store removed chapter cleanup', () => {
       ],
     });
 
-    expect(bulkDeleteChapterContentSpy).toHaveBeenCalledWith(['c1', 'c2']);
+    expect(bulkDeleteChapterContentSpy).toHaveBeenCalledWith(['c1', 'c2'], { bookId: 'book-1' });
   });
 
   it('bulkAddBooks 覆盖同步后的删章结果时，应清理被移除的章节内容', async () => {
@@ -171,7 +171,7 @@ describe('books store removed chapter cleanup', () => {
       },
     ]);
 
-    expect(bulkDeleteChapterContentSpy).toHaveBeenCalledWith(['c2']);
+    expect(bulkDeleteChapterContentSpy).toHaveBeenCalledWith(['c2'], { bookId: 'book-1' });
   });
 
   it('bulkAddBooks 覆盖同步后的删卷结果时，应清理整卷下所有章节内容', async () => {
@@ -199,6 +199,6 @@ describe('books store removed chapter cleanup', () => {
       },
     ]);
 
-    expect(bulkDeleteChapterContentSpy).toHaveBeenCalledWith(['c1', 'c2']);
+    expect(bulkDeleteChapterContentSpy).toHaveBeenCalledWith(['c1', 'c2'], { bookId: 'book-1' });
   });
 });

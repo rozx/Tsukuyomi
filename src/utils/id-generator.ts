@@ -36,37 +36,6 @@ export class UniqueIdGenerator {
     throw new Error(`无法生成唯一 ID，已尝试 ${maxAttempts} 次`);
   }
 
-  /**
-   * 添加已使用的 ID
-   * @param id ID 字符串
-   */
-  addUsedId(id: string): void {
-    this.usedIds.add(id);
-  }
-
-  /**
-   * 添加多个已使用的 ID
-   * @param ids ID 字符串数组
-   */
-  addUsedIds(ids: string[]): void {
-    ids.forEach((id) => this.usedIds.add(id));
-  }
-
-  /**
-   * 检查 ID 是否已被使用
-   * @param id ID 字符串
-   * @returns 是否已被使用
-   */
-  isUsed(id: string): boolean {
-    return this.usedIds.has(id);
-  }
-
-  /**
-   * 清除所有已使用的 ID
-   */
-  clear(): void {
-    this.usedIds.clear();
-  }
 }
 
 /**

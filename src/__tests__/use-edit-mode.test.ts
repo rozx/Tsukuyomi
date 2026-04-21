@@ -1,4 +1,5 @@
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
+import { vi } from 'vitest';
 import { ref, computed } from 'vue';
 import { useEditMode } from '../composables/book-details/useEditMode';
 import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
@@ -8,20 +9,22 @@ import { CharacterSettingService } from 'src/services/character-setting-service'
 import * as BooksStore from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
 
-// Mock dependencies
-const mockToastAdd = mock(() => {});
-const mockUseToastWithHistory = mock(() => ({
-  add: mockToastAdd,
+const { mockToastAdd, mockUseToastWithHistory } = vi.hoisted(() => {
+  const add = vi.fn();
+  return {
+    mockToastAdd: add,
+    mockUseToastWithHistory: vi.fn(() => ({ add })),
+  };
+});
+
+vi.mock('src/composables/useToastHistory', () => ({
+  useToastWithHistory: mockUseToastWithHistory,
 }));
 
 const mockUpdateChapter = mock((): Volume[] => []);
 const mockBooksStoreUpdateBook = mock(() => Promise.resolve());
 const mockUseBooksStore = mock(() => ({
   updateBook: mockBooksStoreUpdateBook,
-}));
-
-await mock.module('src/composables/useToastHistory', () => ({
-  useToastWithHistory: mockUseToastWithHistory,
 }));
 
 

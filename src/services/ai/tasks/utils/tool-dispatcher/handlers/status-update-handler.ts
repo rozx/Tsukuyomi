@@ -1,5 +1,5 @@
 import type { AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
-import type { ToolExecutionResult, ToolHandler, ToolHandlerContext } from '../index';
+import type { ToolExecutionResult, ToolHandler, ToolHandlerContext } from '../types';
 import { applyPendingMessage, buildToolMessageBase } from './handler-utils';
 
 export function createStatusUpdateHandler(): ToolHandler {

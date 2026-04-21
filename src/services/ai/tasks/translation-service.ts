@@ -1,22 +1,20 @@
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
   TextGenerationStreamCallback,
-  AIToolCall,
-  AIToolCallResult,
   AITool,
 } from 'src/services/ai/types/ai-service';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph, ScoreBreakdown } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
+import type { AIProcessingStore } from './utils/task-types';
 import { getLastScoreBreakdowns } from 'src/services/ai/tasks/utils/context-builder';
 import {
+  pickTextTaskOptions,
   processTextTask,
   type ParagraphExtractCallbackParams,
   type TitleExtractCallbackParams,
 } from './utils/text-task-processor';
-import { ToolRegistry } from 'src/services/ai/tools/index';
-import { buildTranslationSystemPrompt } from './prompts';
+import { buildTranslationSystemPrompt } from './prompts/translation';
 
 /**
  * 翻译服务选项
@@ -72,14 +70,7 @@ export interface TranslationServiceOptions {
   /**
    * AI 处理 Store
    */
-  aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
-    appendThinkingMessage: (id: string, text: string) => Promise<void>;
-    appendOutputContent: (id: string, text: string) => Promise<void>;
-    removeTask: (id: string) => Promise<void>;
-    activeTasks: AIProcessingTask[];
-  };
+  aiProcessingStore?: AIProcessingStore;
   /**
    * 分块大小
    */
@@ -106,21 +97,6 @@ export interface TranslationResult {
  * 翻译服务
  */
 export class TranslationService {
-  static readonly CHUNK_SIZE = 8000;
-
-  /**
-   * 处理工具调用
-   */
-  static async handleToolCall(
-    toolCall: AIToolCall,
-    bookId: string,
-    onAction?: (action: ActionInfo) => void,
-    onToast?: ToastCallback,
-    taskId?: string,
-  ): Promise<AIToolCallResult> {
-    return ToolRegistry.handleToolCall(toolCall, bookId, onAction, onToast, taskId);
-  }
-
   /**
    * 翻译文本
    */
@@ -217,19 +193,7 @@ export class TranslationService {
     return processTextTask(
       content,
       model,
-      {
-        onChunk: options?.onChunk,
-        onProgress: options?.onProgress,
-        onAction: options?.onAction,
-        onToast: options?.onToast,
-        signal: options?.signal,
-        bookId: options?.bookId,
-        chapterId: options?.chapterId,
-        chapterTitle: options?.chapterTitle,
-        chunkSize: options?.chunkSize,
-        allChapterParagraphs: options?.allChapterParagraphs,
-        aiProcessingStore: options?.aiProcessingStore,
-      },
+      pickTextTaskOptions(options),
       {
         taskType: 'translation',
         logLabel: 'TranslationService',

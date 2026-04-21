@@ -1,47 +1,32 @@
 export { generateShortId, UniqueIdGenerator, extractIds } from './id-generator';
-export { runWithConcurrencyLimit } from './concurrency';
-export { formatNumber, formatCharCount, formatWordCount } from './format';
+export { formatCharCount, formatWordCount, formatDate, formatRelativeBookDate } from './format';
 export {
   getChapterCharCount,
   getChapterCharCountAsync,
-  getVolumeCharCount,
-  getVolumeCharCountAsync,
   getNovelCharCount,
   getNovelCharCountAsync,
   getTotalChapters,
   getChapterContentText,
   getVolumeDisplayTitle,
   getChapterDisplayTitle,
-  normalizeChapterTitle,
-  getCharacterNameVariants,
-  isEmptyParagraph,
   hasParagraphTranslation,
+  getChapterTranslationStats,
   ensureChapterContentLoaded,
 } from './novel-utils';
-export { normalizeTranslationQuotes, normalizeTranslationSymbols } from './translation-normalizer';
-export { filterIndents, formatTranslationForDisplay } from './translation-utils';
+export { normalizeTranslationQuotes } from './translation-normalizer';
+export { formatTranslationForDisplay } from './translation-utils';
 export {
-  escapeRegex,
-  matchTermsInText,
-  matchCharactersInText,
-  parseTextForHighlighting,
   findUniqueTermsInText,
   findUniqueCharactersInText,
-  countNamesInText,
-  calculateCharacterScores,
 } from './text-matcher';
 export { getAssetUrl } from './assets';
-export { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 export type { DegradationDetectionOptions } from 'src/services/ai/degradation-detector';
 export {
-  isEmptyOrSymbolOnly,
-  isSymbolOnly,
+  isEmptyParagraph,
   getSelectedTranslation,
   buildOriginalTranslationsMap,
-  hasTranslationChanged,
   filterChangedParagraphs,
   reconstructChunkText,
 } from './text-utils';
-export { isTimeDifferent, isNewlyAdded, formatTaskDuration } from './time-utils';
-export { yieldToEventLoop, processInBatches, processItemsInBatches } from './yield';
-export { extractRootDomain } from './domain-utils';
+export { formatTaskDuration } from './time-utils';
+export { processItemsInBatches } from './yield';

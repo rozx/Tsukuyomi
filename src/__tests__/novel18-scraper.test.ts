@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { Novel18SyosetuScraper } from '../services/scraper/scrapers/novel18-syosetu-scraper';
 import { join } from 'path';
+import { readFileSync } from 'node:fs';
 
 const examplePagesDir = join(__dirname, 'examplePages');
 const base = 'https://novel18.syosetu.com/n7686kd/';
@@ -8,16 +9,13 @@ const base = 'https://novel18.syosetu.com/n7686kd/';
 class TestNovel18Scraper extends Novel18SyosetuScraper {
   private pages: Map<string, string> = new Map();
 
-  async initialize() {
-    const page1 = await Bun.file(join(examplePagesDir, 'novel18-n7686kd-p1.html')).text();
-    const page2 = await Bun.file(join(examplePagesDir, 'novel18-n7686kd-p2.html')).text();
-    const chapterPage = await Bun.file(
-      join(examplePagesDir, 'novel18-n7686kd-p2-chapter-1.html'),
-    ).text();
-
-    this.pages.set('p1', page1);
-    this.pages.set('p2', page2);
-    this.pages.set('chapter', chapterPage);
+  initialize() {
+    this.pages.set('p1', readFileSync(join(examplePagesDir, 'novel18-n7686kd-p1.html'), 'utf-8'));
+    this.pages.set('p2', readFileSync(join(examplePagesDir, 'novel18-n7686kd-p2.html'), 'utf-8'));
+    this.pages.set(
+      'chapter',
+      readFileSync(join(examplePagesDir, 'novel18-n7686kd-p2-chapter-1.html'), 'utf-8'),
+    );
   }
 
   protected override fetchPage(url: string): Promise<string> {
@@ -44,8 +42,8 @@ class TestNovel18Scraper extends Novel18SyosetuScraper {
 describe('Novel18SyosetuScraper', () => {
   const scraper = new TestNovel18Scraper();
 
-  beforeAll(async () => {
-    await scraper.initialize();
+  beforeAll(() => {
+    scraper.initialize();
   });
 
   it('validates URL patterns', () => {

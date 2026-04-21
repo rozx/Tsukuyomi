@@ -12,7 +12,12 @@
  */
 
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
+import {
+  createCustomEventSubscriber,
+  dispatchCustomEvent,
+} from 'src/utils/dispatch-custom-event';
 
+// fallow-ignore-next-line unused-export
 export const MODEL_ID = 'onnx-community/gte-multilingual-base';
 // 模型 id + 截取维度 + 前缀方案 + pooling 方案 共同构成 embedding 空间身份,任一变化必须 bump 版本号,
 // EmbeddingQueue backlog 扫描会把版本不匹配的记录当作 stale 自动重算。
@@ -165,22 +170,15 @@ export class EmbeddingService {
    * - 'status-changed': 状态切换(idle/loading/ready/failed)
    * - 'ready': pipeline 首次就绪
    * - 'error': 初始化或推理失败
+   *
+   * 通过 createCustomEventSubscriber 工厂注入共享底层，保留 type 字面量窄化。
    */
-  static addEventListener(
-    type: 'progress' | 'status-changed' | 'ready' | 'error',
-    listener: (event: CustomEvent) => void,
-  ): () => void {
-    const handler = (e: Event) => listener(e as CustomEvent);
-    this.events.addEventListener(type, handler);
-    return () => this.events.removeEventListener(type, handler);
-  }
+  static addEventListener = createCustomEventSubscriber<
+    'progress' | 'status-changed' | 'ready' | 'error'
+  >(this.events);
 
   private static dispatch(type: string, detail?: unknown): void {
-    const hasCustomEvent = typeof (globalThis as any).CustomEvent !== 'undefined';
-    const event = hasCustomEvent
-      ? new CustomEvent(type, { detail })
-      : Object.assign(new Event(type), { detail });
-    this.events.dispatchEvent(event as Event);
+    dispatchCustomEvent(this.events, type, detail);
   }
 
   private static setStatus(next: EmbeddingStatus): void {
@@ -209,6 +207,7 @@ export class EmbeddingService {
    * Transformers.js 通过 Cache API 持久化模型权重,命中则说明之前在本设备加载过。
    * 用于启动时判断是否可以静默 warmup(无需等用户再次触发下载)。
    */
+  // fallow-ignore-next-line unused-class-member
   static async isModelCachedInBrowser(): Promise<boolean> {
     try {
       if (typeof caches === 'undefined') return false;

@@ -32,6 +32,48 @@ async function fetchHelpIndex(): Promise<{
 }
 
 /**
+ * 根据 doc_id 校验、获取索引并定位文档；失败时返回可直接 return 给工具的 JSON 错误字符串。
+ */
+async function resolveHelpDocById(
+  doc_id: unknown,
+): Promise<{ ok: true; doc: HelpDocIndex } | { ok: false; response: string }> {
+  if (!doc_id || typeof doc_id !== 'string') {
+    console.error('[HelpDocs] ❌ 无效的文档 ID', {
+      doc_id,
+      docIdType: typeof doc_id,
+    });
+    return {
+      ok: false,
+      response: JSON.stringify({ success: false, error: '文档 ID 不能为空' }),
+    };
+  }
+
+  const indexResult = await fetchHelpIndex();
+  if (!indexResult.success || !indexResult.data) {
+    return {
+      ok: false,
+      response: JSON.stringify({
+        success: false,
+        error: indexResult.error || '无法获取帮助文档索引',
+      }),
+    };
+  }
+
+  const doc = indexResult.data.find((d) => d.id === doc_id);
+  if (!doc) {
+    return {
+      ok: false,
+      response: JSON.stringify({
+        success: false,
+        error: `未找到 ID 为 "${doc_id}" 的帮助文档`,
+      }),
+    };
+  }
+
+  return { ok: true, doc };
+}
+
+/**
  * @param docPath 文档路径（来自 index.json 的 path 字段，如 "help" 或 "releaseNotes"）
  * @param file 文档文件名（来自 index.json 的 file 字段）
  */
@@ -170,33 +212,9 @@ export const helpDocsTools: ToolDefinition[] = [
       const { doc_id } = args;
       const { onAction } = context;
 
-      if (!doc_id || typeof doc_id !== 'string') {
-        console.error('[HelpDocs] ❌ 无效的文档 ID', {
-          doc_id,
-          docIdType: typeof doc_id,
-        });
-        return JSON.stringify({
-          success: false,
-          error: '文档 ID 不能为空',
-        });
-      }
-
-      const indexResult = await fetchHelpIndex();
-      if (!indexResult.success || !indexResult.data) {
-        return JSON.stringify({
-          success: false,
-          error: indexResult.error || '无法获取帮助文档索引',
-        });
-      }
-
-      // 查找指定 ID 的文档
-      const doc = indexResult.data.find((d) => d.id === doc_id);
-      if (!doc) {
-        return JSON.stringify({
-          success: false,
-          error: `未找到 ID 为 "${doc_id}" 的帮助文档`,
-        });
-      }
+      const resolved = await resolveHelpDocById(doc_id);
+      if (!resolved.ok) return resolved.response;
+      const { doc } = resolved;
 
       // 获取文档内容
       const contentResult = await fetchHelpDoc(doc.path, doc.file);
@@ -269,33 +287,9 @@ export const helpDocsTools: ToolDefinition[] = [
       };
       const { onAction } = context;
 
-      if (!doc_id || typeof doc_id !== 'string') {
-        console.error('[HelpDocs] ❌ 无效的文档 ID', {
-          doc_id,
-          docIdType: typeof doc_id,
-        });
-        return JSON.stringify({
-          success: false,
-          error: '文档 ID 不能为空',
-        });
-      }
-
-      const indexResult = await fetchHelpIndex();
-      if (!indexResult.success || !indexResult.data) {
-        return JSON.stringify({
-          success: false,
-          error: indexResult.error || '无法获取帮助文档索引',
-        });
-      }
-
-      // 查找指定 ID 的文档
-      const doc = indexResult.data.find((d) => d.id === doc_id);
-      if (!doc) {
-        return JSON.stringify({
-          success: false,
-          error: `未找到 ID 为 "${doc_id}" 的帮助文档`,
-        });
-      }
+      const resolved = await resolveHelpDocById(doc_id);
+      if (!resolved.ok) return resolved.response;
+      const { doc } = resolved;
 
       // 触发导航操作
       if (onAction) {

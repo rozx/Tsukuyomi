@@ -33,6 +33,25 @@ export function useParagraphNavigation(
   // 清除选中效果的 timeout ID
   const clearSelectionTimeoutId = ref<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * 清除三个与段落导航相关的 timeout（程序化滚动 / 重置导航防抖 / 清除选中效果）。
+   * 由 resetParagraphNavigation 与 cleanup 共用。
+   */
+  const clearAllNavigationTimeouts = () => {
+    if (programmaticScrollTimeoutId.value !== null) {
+      clearTimeout(programmaticScrollTimeoutId.value);
+      programmaticScrollTimeoutId.value = null;
+    }
+    if (resetNavigationTimeoutId.value !== null) {
+      clearTimeout(resetNavigationTimeoutId.value);
+      resetNavigationTimeoutId.value = null;
+    }
+    if (clearSelectionTimeoutId.value !== null) {
+      clearTimeout(clearSelectionTimeoutId.value);
+      clearSelectionTimeoutId.value = null;
+    }
+  };
+
   // 重置段落导航
   const resetParagraphNavigation = () => {
     selectedParagraphIndex.value = null;
@@ -40,21 +59,7 @@ export function useParagraphNavigation(
     isClickSelected.value = false;
     isKeyboardNavigating.value = false;
     lastKeyboardNavigationTime.value = null;
-    // 清除程序化滚动的 timeout
-    if (programmaticScrollTimeoutId.value !== null) {
-      clearTimeout(programmaticScrollTimeoutId.value);
-      programmaticScrollTimeoutId.value = null;
-    }
-    // 清除重置导航的防抖 timeout
-    if (resetNavigationTimeoutId.value !== null) {
-      clearTimeout(resetNavigationTimeoutId.value);
-      resetNavigationTimeoutId.value = null;
-    }
-    // 清除选中效果的 timeout
-    if (clearSelectionTimeoutId.value !== null) {
-      clearTimeout(clearSelectionTimeoutId.value);
-      clearSelectionTimeoutId.value = null;
-    }
+    clearAllNavigationTimeouts();
     isProgrammaticScrolling.value = false;
   };
 
@@ -135,7 +140,7 @@ export function useParagraphNavigation(
     const indices: number[] = [];
     for (let i = 0; i < paragraphs.length; i++) {
       const p = paragraphs[i];
-      if (p && !isEmptyParagraph(p)) {
+      if (p && !isEmptyParagraph(p.text)) {
         indices.push(i);
       }
     }
@@ -304,6 +309,69 @@ export function useParagraphNavigation(
     currentlyEditingParagraphId.value = null;
   };
 
+  const resolveNonEmptyTargetIndex = (targetIndex: number): number | null => {
+    const paragraph = selectedChapterParagraphs.value[targetIndex];
+    if (!paragraph || !isEmptyParagraph(paragraph.text)) return targetIndex;
+    const nextNonEmpty = findNextNonEmptyParagraph(targetIndex, 'down');
+    if (nextNonEmpty !== null) return nextNonEmpty;
+    const prevNonEmpty = findNextNonEmptyParagraph(targetIndex, 'up');
+    if (prevNonEmpty !== null) return prevNonEmpty;
+    return null;
+  };
+
+  const applyKeyboardSelectionEffect = () => {
+    isClickSelected.value = false;
+    if (clearSelectionTimeoutId.value !== null) {
+      clearTimeout(clearSelectionTimeoutId.value);
+    }
+    clearSelectionTimeoutId.value = setTimeout(() => {
+      isKeyboardSelected.value = false;
+      clearSelectionTimeoutId.value = null;
+    }, 2000);
+  };
+
+  const markProgrammaticKeyboardScroll = () => {
+    lastKeyboardNavigationTime.value = Date.now();
+    if (programmaticScrollTimeoutId.value !== null) {
+      clearTimeout(programmaticScrollTimeoutId.value);
+    }
+    isProgrammaticScrolling.value = true;
+    programmaticScrollTimeoutId.value = setTimeout(() => {
+      isProgrammaticScrolling.value = false;
+      programmaticScrollTimeoutId.value = null;
+    }, 600);
+  };
+
+  const focusParagraphElement = (element: HTMLElement) => {
+    nextTick(() => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        element.focus({ preventScroll: true } as any);
+      } catch {
+        element.focus();
+      }
+    });
+  };
+
+  const scrollAndFocusParagraph = (paragraphId: string, scroll: boolean) => {
+    const cardRef = paragraphCardRefs.get(paragraphId);
+    if (cardRef) {
+      const element =
+        (cardRef as { $el?: HTMLElement }).$el || (cardRef as unknown as HTMLElement);
+      if (element instanceof HTMLElement) {
+        if (scroll) scrollToElementFast(element);
+        focusParagraphElement(element);
+      }
+      return;
+    }
+    nextTick(() => {
+      const element = document.getElementById(`paragraph-${paragraphId}`);
+      if (!element) return;
+      if (scroll) scrollToElementFast(element);
+      focusParagraphElement(element);
+    });
+  };
+
   // 导航到指定段落（跳过空段落）
   const navigateToParagraph = (
     index: number,
@@ -312,112 +380,25 @@ export function useParagraphNavigation(
   ) => {
     if (!selectedChapterParagraphs.value.length) return;
 
-    // 限制索引范围
     const maxIndex = selectedChapterParagraphs.value.length - 1;
-    let targetIndex = Math.max(0, Math.min(index, maxIndex));
+    const clamped = Math.max(0, Math.min(index, maxIndex));
+    const resolved = resolveNonEmptyTargetIndex(clamped);
+    if (resolved === null) return;
+    const targetIndex = resolved;
 
-    // 如果目标段落是空的，查找最近的非空段落
-    const paragraph = selectedChapterParagraphs.value[targetIndex];
-    if (paragraph && isEmptyParagraph(paragraph)) {
-      // 先尝试向下查找
-      const nextNonEmpty = findNextNonEmptyParagraph(targetIndex, 'down');
-      if (nextNonEmpty !== null) {
-        targetIndex = nextNonEmpty;
-      } else {
-        // 如果向下找不到，尝试向上查找
-        const prevNonEmpty = findNextNonEmptyParagraph(targetIndex, 'up');
-        if (prevNonEmpty !== null) {
-          targetIndex = prevNonEmpty;
-        } else {
-          // 如果都找不到，说明没有非空段落，直接返回
-          return;
-        }
-      }
-    }
-
-    // 如果切换到不同的段落，取消当前正在编辑的段落
     const previousIndex = selectedParagraphIndex.value;
     if (previousIndex !== null && previousIndex !== targetIndex) {
       cancelCurrentEditing();
     }
 
     selectedParagraphIndex.value = targetIndex;
-    // 只有键盘导航时才显示选中效果
     isKeyboardSelected.value = isKeyboard;
-    // 如果是键盘导航，清除点击选中状态
-    if (isKeyboard) {
-      isClickSelected.value = false;
-      // 清除之前的定时器
-      if (clearSelectionTimeoutId.value !== null) {
-        clearTimeout(clearSelectionTimeoutId.value);
-      }
-      // 2 秒后清除键盘选中效果
-      clearSelectionTimeoutId.value = setTimeout(() => {
-        isKeyboardSelected.value = false;
-        clearSelectionTimeoutId.value = null;
-      }, 2000);
-    }
+    if (isKeyboard) applyKeyboardSelectionEffect();
 
-    // 自动滚动到选中的段落（如果启用）
-    if (scroll) {
-      // 如果是键盘导航触发的滚动，标记为程序化滚动
-      if (isKeyboard) {
-        // 更新最后一次键盘导航的时间
-        lastKeyboardNavigationTime.value = Date.now();
-        // 清除之前的 timeout（如果存在）
-        if (programmaticScrollTimeoutId.value !== null) {
-          clearTimeout(programmaticScrollTimeoutId.value);
-        }
-        isProgrammaticScrolling.value = true;
-        // 在滚动动画完成后清除标志（使用更快的动画，缩短到 600ms）
-        // 这样可以避免平滑滚动的余波被误判为用户滚动
-        programmaticScrollTimeoutId.value = setTimeout(() => {
-          isProgrammaticScrolling.value = false;
-          programmaticScrollTimeoutId.value = null;
-        }, 600);
-      }
-      const targetParagraph = selectedChapterParagraphs.value[targetIndex];
-      if (targetParagraph) {
-        const cardRef = paragraphCardRefs.get(targetParagraph.id);
-        if (cardRef) {
-          // 获取组件的 DOM 元素
-          const element =
-            (cardRef as { $el?: HTMLElement }).$el || (cardRef as unknown as HTMLElement);
-          if (element instanceof HTMLElement) {
-            if (scroll) {
-              scrollToElementFast(element);
-            }
-            // 将焦点转移到选中的段落
-            nextTick(() => {
-              // 避免 focus 触发浏览器自动滚动（会导致“看起来仍在居中/大幅跳动”）
-              try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                element.focus({ preventScroll: true } as any);
-              } catch {
-                element.focus();
-              }
-            });
-          }
-        } else {
-          // 如果 ref 还没有设置，使用 DOM 查询
-          nextTick(() => {
-            const element = document.getElementById(`paragraph-${targetParagraph.id}`);
-            if (element) {
-              if (scroll) {
-                scrollToElementFast(element);
-              }
-              // 将焦点转移到选中的段落
-              try {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                element.focus({ preventScroll: true } as any);
-              } catch {
-                element.focus();
-              }
-            }
-          });
-        }
-      }
-    }
+    if (!scroll) return;
+    if (isKeyboard) markProgrammaticKeyboardScroll();
+    const targetParagraph = selectedChapterParagraphs.value[targetIndex];
+    if (targetParagraph) scrollAndFocusParagraph(targetParagraph.id, scroll);
   };
 
   // 处理段落点击，设置选中段落
@@ -431,7 +412,7 @@ export function useParagraphNavigation(
 
       // 如果点击的是空段落，找到最近的非空段落
       let targetIndex = index;
-      if (isEmptyParagraph(paragraph)) {
+      if (isEmptyParagraph(paragraph.text)) {
         const nextNonEmpty = findNextNonEmptyParagraph(index, 'down');
         if (nextNonEmpty !== null) {
           targetIndex = nextNonEmpty;
@@ -533,18 +514,7 @@ export function useParagraphNavigation(
 
   // 清理所有 timeout（用于组件卸载时）
   const cleanup = () => {
-    if (programmaticScrollTimeoutId.value !== null) {
-      clearTimeout(programmaticScrollTimeoutId.value);
-      programmaticScrollTimeoutId.value = null;
-    }
-    if (resetNavigationTimeoutId.value !== null) {
-      clearTimeout(resetNavigationTimeoutId.value);
-      resetNavigationTimeoutId.value = null;
-    }
-    if (clearSelectionTimeoutId.value !== null) {
-      clearTimeout(clearSelectionTimeoutId.value);
-      clearSelectionTimeoutId.value = null;
-    }
+    clearAllNavigationTimeouts();
   };
 
   return {

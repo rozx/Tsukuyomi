@@ -3,11 +3,20 @@ import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
 import type { CharacterSetting } from 'src/models/novel';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
-import { cloneDeep } from 'lodash';
-import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
 import { findUniqueCharactersInText } from 'src/utils/text-matcher';
-import type { Chapter } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
+import {
+  filterEntitiesForChapter,
+  requireValidKeywords,
+  resolveBookSync,
+} from './chapter-scope-helpers';
+import {
+  assertAliasesNotBlank,
+  normalizeAliasList,
+  requireCharacterContext,
+  resolveCharacterForTool,
+  serializeCharacterForTool,
+} from './character-tool-helpers';
 
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
@@ -87,14 +96,7 @@ export const characterTools: ToolDefinition[] = [
       if (!name?.trim() || !translation?.trim()) {
         throw new Error('角色名称和翻译不能为空');
       }
-      if (aliases && Array.isArray(aliases)) {
-        const hasBlankAlias = aliases.some(
-          (alias) => !alias?.name?.trim() || !alias?.translation?.trim(),
-        );
-        if (hasBlankAlias) {
-          throw new Error('别名的名称和翻译不能为空');
-        }
-      }
+      assertAliasesNotBlank(aliases);
 
       const characterData: {
         name: string;
@@ -110,10 +112,7 @@ export const characterTools: ToolDefinition[] = [
 
       // 规范化别名翻译
       if (aliases && Array.isArray(aliases)) {
-        characterData.aliases = aliases.map((alias) => ({
-          name: alias.name.trim(),
-          translation: normalizeTranslationQuotes(alias.translation.trim()),
-        }));
+        characterData.aliases = normalizeAliasList(aliases);
       }
 
       if (sex) characterData.sex = sex as 'male' | 'female' | 'other';
@@ -133,18 +132,7 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: '角色创建成功',
-        character: {
-          id: character.id,
-          name: character.name,
-          translation: character.translation.translation,
-          sex: character.sex,
-          description: character.description,
-          speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias: any) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        },
+        character: serializeCharacterForTool(character),
       });
     },
   },
@@ -232,18 +220,7 @@ export const characterTools: ToolDefinition[] = [
             message: `精确匹配未找到 "${name}"。已返回相关的模糊匹配结果${
               truncated ? `（前 ${MAX_FALLBACK_RESULTS} 条，共 ${fallbackMatches.length} 条）` : ''
             }。`,
-            characters: limitedMatches.map((char) => ({
-              id: char.id,
-              name: char.name,
-              translation: char.translation.translation,
-              sex: char.sex,
-              description: char.description,
-              speaking_style: char.speakingStyle,
-              aliases: char.aliases?.map((alias) => ({
-                name: alias.name,
-                translation: alias.translation.translation,
-              })),
-            })),
+            characters: limitedMatches.map((char) => serializeCharacterForTool(char)),
             total_matches: fallbackMatches.length,
             truncated,
           });
@@ -281,18 +258,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        character: {
-          id: character.id,
-          name: character.name,
-          translation: character.translation.translation,
-          sex: character.sex,
-          description: character.description,
-          speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        },
+        character: serializeCharacterForTool(character),
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
           : {}),
@@ -360,7 +326,6 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
       const parsedArgs = parseToolArgs<{
         character_id: string;
         name?: string;
@@ -370,34 +335,20 @@ export const characterTools: ToolDefinition[] = [
         speaking_style?: string;
         aliases?: Array<{ name: string; translation: string }>;
       }>(args);
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
-      const { character_id, name, translation, sex, description, speaking_style, aliases } =
-        parsedArgs;
-      if (!character_id) {
-        throw new Error('角色 ID 不能为空');
-      }
+      const { bookId, onAction, character_id } = requireCharacterContext(context, parsedArgs);
+      const { name, translation, sex, description, speaking_style, aliases } = parsedArgs;
       if (name !== undefined && !name.trim()) {
         throw new Error('角色名称不能为空');
       }
       if (translation !== undefined && !translation.trim()) {
         throw new Error('角色翻译不能为空');
       }
-      if (aliases !== undefined && Array.isArray(aliases)) {
-        const hasBlankAlias = aliases.some(
-          (alias) => !alias?.name?.trim() || !alias?.translation?.trim(),
-        );
-        if (hasBlankAlias) {
-          throw new Error('别名的名称和翻译不能为空');
-        }
+      if (aliases !== undefined) {
+        assertAliasesNotBlank(aliases);
       }
 
       // 在更新前获取原始数据，用于 revert
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      const previousCharacter = book?.characterSettings?.find((c) => c.id === character_id);
-      const previousData = previousCharacter ? cloneDeep(previousCharacter) : undefined;
+      const { previousData } = resolveCharacterForTool(bookId, character_id);
 
       const updates: {
         name?: string;
@@ -424,12 +375,7 @@ export const characterTools: ToolDefinition[] = [
         updates.speakingStyle = speaking_style;
       }
       if (aliases !== undefined) {
-        updates.aliases = (aliases as Array<{ name: string; translation: string }>).map(
-          (alias: { name: string; translation: string }) => ({
-            name: alias.name.trim(),
-            translation: normalizeTranslationQuotes(alias.translation.trim()),
-          }),
-        );
+        updates.aliases = normalizeAliasList(aliases);
       }
 
       const character = await CharacterSettingService.updateCharacterSetting(
@@ -450,18 +396,7 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: '角色更新成功',
-        character: {
-          id: character.id,
-          name: character.name,
-          translation: character.translation.translation,
-          sex: character.sex,
-          description: character.description,
-          speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        },
+        character: serializeCharacterForTool(character),
       });
     },
   },
@@ -484,21 +419,11 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
       const parsedArgs = parseToolArgs<{ character_id: string }>(args);
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
-      const { character_id } = parsedArgs;
-      if (!character_id) {
-        throw new Error('角色 ID 不能为空');
-      }
+      const { bookId, onAction, character_id } = requireCharacterContext(context, parsedArgs);
 
       // 在删除前获取角色信息，以便在 toast 中显示详细信息和 revert
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      const character = book?.characterSettings?.find((c) => c.id === character_id);
-      const previousData = character ? cloneDeep(character) : undefined;
+      const { character, previousData } = resolveCharacterForTool(bookId, character_id);
 
       await CharacterSettingService.deleteCharacterSetting(bookId, character_id);
 
@@ -558,23 +483,9 @@ export const characterTools: ToolDefinition[] = [
         throw new Error('书籍 ID 不能为空');
       }
       const { keywords, translation_only = false, include_memory = true } = parsedArgs;
-      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-        throw new Error('关键词数组不能为空');
-      }
+      const validKeywords = requireValidKeywords(keywords);
 
-      // 过滤掉空字符串
-      const validKeywords = keywords.filter(
-        (k) => k && typeof k === 'string' && k.trim().length > 0,
-      );
-      if (validKeywords.length === 0) {
-        throw new Error('关键词数组不能为空');
-      }
-
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const book = resolveBookSync(bookId);
 
       // 报告读取操作
       if (onAction) {
@@ -630,18 +541,9 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        characters: filteredCharacters.map((char: CharacterSetting) => ({
-          id: char.id,
-          name: char.name,
-          translation: char.translation.translation,
-          sex: char.sex,
-          description: char.description,
-          speaking_style: char.speakingStyle,
-          aliases: char.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        })),
+        characters: filteredCharacters.map((char: CharacterSetting) =>
+          serializeCharacterForTool(char),
+        ),
         count: filteredCharacters.length,
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
@@ -689,11 +591,7 @@ export const characterTools: ToolDefinition[] = [
         throw new Error('书籍 ID 不能为空');
       }
       const { chapter_id, all_chapters = false, limit } = parsedArgs;
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const book = resolveBookSync(bookId);
 
       // 报告读取操作
       if (onAction) {
@@ -709,40 +607,14 @@ export const characterTools: ToolDefinition[] = [
 
       let characters: CharacterSetting[] = book.characterSettings || [];
 
-      // 如果 all_chapters 为 false，需要按章节过滤
-      if (!all_chapters) {
-        // 如果提供了 chapter_id，使用文本匹配方法（与章节工具栏相同的方法）
-        if (chapter_id) {
-          // 查找章节
-          let foundChapter: Chapter | null = null;
-          for (const volume of book.volumes || []) {
-            for (const chapter of volume.chapters || []) {
-              if (chapter.id === chapter_id) {
-                foundChapter = chapter;
-                break;
-              }
-            }
-            if (foundChapter) break;
-          }
-
-          if (foundChapter) {
-            // 确保章节内容已加载
-            const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
-            // 获取章节文本内容
-            const chapterText = getChapterContentText(chapterWithContent);
-            if (chapterText) {
-              // 使用文本匹配方法查找在该章节中出现的角色（与章节工具栏相同的方法）
-              characters = findUniqueCharactersInText(chapterText, characters);
-            } else {
-              // 如果章节没有内容，返回空数组
-              characters = [];
-            }
-          } else {
-            // 如果找不到章节，返回空数组
-            characters = [];
-          }
-        }
-        // 如果没有提供 chapter_id，保持现有行为（返回所有）
+      // 如果 all_chapters 为 false 且提供了 chapter_id，按章节文本过滤
+      if (!all_chapters && chapter_id) {
+        characters = await filterEntitiesForChapter(
+          book,
+          chapter_id,
+          characters,
+          findUniqueCharactersInText,
+        );
       }
 
       if (limit && limit > 0) {
@@ -751,18 +623,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        characters: characters.map((char) => ({
-          id: char.id,
-          name: char.name,
-          translation: char.translation.translation,
-          sex: char.sex,
-          description: char.description,
-          speaking_style: char.speakingStyle,
-          aliases: char.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        })),
+        characters: characters.map((char) => serializeCharacterForTool(char)),
         total: characters.length,
         all_characters_count: book.characterSettings?.length || 0,
         ...(chapter_id ? { chapter_id } : {}),

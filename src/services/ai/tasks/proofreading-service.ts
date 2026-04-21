@@ -1,12 +1,14 @@
+// fallow-ignore-next-line code-duplication
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
-import { processTextTask, type ParagraphExtractCallbackParams } from './utils/text-task-processor';
-import { buildProofreadingSystemPrompt } from './prompts';
+import type { AIProcessingStore } from './utils/task-types';
+import { pickTextTaskOptions, processTextTask } from './utils/text-task-processor';
+import { buildChangedParagraphsExtractCallback } from './utils/paragraph-task-shared';
 import {
+  buildProofreadingSystemPrompt,
   buildSingleParagraphProofreadingSystemPrompt,
   buildSingleParagraphProofreadingUserPrompt,
 } from './prompts';
@@ -67,14 +69,7 @@ export interface ProofreadingServiceOptions {
   /**
    * AI 处理 Store
    */
-  aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
-    appendThinkingMessage: (id: string, text: string) => Promise<void>;
-    appendOutputContent: (id: string, text: string) => Promise<void>;
-    removeTask: (id: string) => Promise<void>;
-    activeTasks: AIProcessingTask[];
-  };
+  aiProcessingStore?: AIProcessingStore;
   /**
    * 章节全量段落（包含空段落），用于构建正确的原始索引映射
    */
@@ -96,8 +91,6 @@ export interface ProofreadingResult {
  * 使用 AI 服务进行文本校对，检查并修正文字、内容和格式层面的错误
  */
 export class ProofreadingService {
-  static readonly CHUNK_SIZE = 8000;
-
   /**
    * 校对文本
    * @param content 要校对的段落列表（必须包含翻译）
@@ -105,51 +98,23 @@ export class ProofreadingService {
    * @param options 校对选项（可选）
    * @returns 校对后的文本和任务 ID（如果使用了任务管理）
    */
+  // fallow-ignore-next-line unused-class-member
   static async proofread(
     content: Paragraph[],
     model: AIModel,
     options?: ProofreadingServiceOptions,
   ): Promise<ProofreadingResult> {
     // 构建段落提取回调
-    const onParagraphsExtracted = options?.onParagraphProofreading
-      ? async (params: ParagraphExtractCallbackParams) => {
-          const { paragraphs, originalTranslations } = params;
-          // 过滤出有变化的段落
-          const changedParagraphs: { id: string; translation: string }[] = [];
-          for (const para of paragraphs) {
-            if (para.id && para.translation) {
-              const original = originalTranslations.get(para.id);
-              if (original !== para.translation) {
-                changedParagraphs.push(para);
-              }
-            }
-          }
-          if (changedParagraphs.length > 0) {
-            try {
-              await Promise.resolve(options.onParagraphProofreading!(changedParagraphs));
-            } catch (error) {
-              console.error('[ProofreadingService] ⚠️ 段落校对回调失败:', error);
-            }
-          }
-        }
-      : undefined;
+    const onParagraphsExtracted = buildChangedParagraphsExtractCallback({
+      onChangedParagraphs: options?.onParagraphProofreading,
+      logLabel: 'ProofreadingService',
+      taskLabel: '段落校对',
+    });
 
     return processTextTask(
       content,
       model,
-      {
-        onChunk: options?.onChunk,
-        onProgress: options?.onProgress,
-        onAction: options?.onAction,
-        onToast: options?.onToast,
-        signal: options?.signal,
-        bookId: options?.bookId,
-        chapterId: options?.chapterId,
-        chapterTitle: options?.chapterTitle,
-        chunkSize: options?.chunkSize,
-        allChapterParagraphs: options?.allChapterParagraphs,
-        aiProcessingStore: options?.aiProcessingStore,
-      },
+      pickTextTaskOptions(options),
       {
         taskType: 'proofreading',
         logLabel: 'ProofreadingService',
@@ -177,6 +142,7 @@ export class ProofreadingService {
    * @param model AI 模型配置
    * @param options 校对选项
    */
+  // fallow-ignore-next-line unused-class-member
   static async proofreadSingle(
     paragraph: Paragraph,
     model: AIModel,

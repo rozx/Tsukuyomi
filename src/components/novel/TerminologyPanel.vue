@@ -14,6 +14,7 @@ import type { Novel, Terminology } from 'src/models/novel';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { TerminologyService } from 'src/services/terminology-service';
 import { useBooksStore } from 'src/stores/books';
 import { cloneDeep } from 'lodash';
@@ -83,7 +84,7 @@ watch(bulkActionMode, (v) => {
 });
 
 // 文件输入引用（用于导入 JSON）
-const fileInputRef = ref<HTMLInputElement | null>(null);
+const { fileInputRef, triggerFilePicker: handleImport, createFileSelectHandler } = useFilePicker();
 
 // 打开添加对话框
 const openAddDialog = () => {
@@ -443,20 +444,8 @@ const handleExport = () => {
   }
 };
 
-// 导入术语
-const handleImport = () => {
-  fileInputRef.value?.click();
-};
-
 // 处理文件选择
-const handleFileSelect = async (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
-
-  if (!file) {
-    return;
-  }
-
+const handleFileSelect = createFileSelectHandler(async (file) => {
   try {
     const importedTerminologies = await TerminologyService.importTerminologiesFromFile(file);
 
@@ -467,7 +456,6 @@ const handleFileSelect = async (event: Event) => {
         detail: '文件中没有有效的术语数据',
         life: 3000,
       });
-      target.value = '';
       return;
     }
 
@@ -478,7 +466,6 @@ const handleFileSelect = async (event: Event) => {
         detail: '没有选择书籍',
         life: 3000,
       });
-      target.value = '';
       return;
     }
 
@@ -528,9 +515,12 @@ const handleFileSelect = async (event: Event) => {
       }
     }
 
+    // 与 CharacterSettingPanel 的导入成功 toast 结构高度相似（onRevert 前序步骤一致），
+    // 但后续恢复更新逻辑各自维护不同字段集合，强行抽公共回调反而更复杂，保留两处实现。
     toast.add({
       severity: 'success',
       summary: '导入成功',
+      // fallow-ignore-next-line code-duplication
       detail: `已导入 ${importedTerminologies.length} 个术语（新增 ${addedCount} 个，更新 ${updatedCount} 个）`,
       life: 3000,
       onRevert: async () => {
@@ -562,10 +552,7 @@ const handleFileSelect = async (event: Event) => {
       life: 5000,
     });
   }
-
-  // 清空输入
-  target.value = '';
-};
+});
 </script>
 
 <template>

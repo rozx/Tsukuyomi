@@ -34,3 +34,53 @@ jobs:
 
       - name: Run Type Check
         run: bun run type-check
+
+  fallow:
+    name: Fallow Codebase Health
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Quasar tsconfig
+        run: bunx quasar prepare
+
+      - name: Generate test coverage
+        run: bun run test:coverage
+
+      - name: Run Fallow
+        id: fallow
+        uses: fallow-rs/fallow@v2
+        env:
+          FALLOW_COVERAGE: coverage/coverage-final.json
+        with:
+          fail-on-issues: true
+          format: sarif
+          baseline: .fallow-baseline.json
+
+      - name: Upload SARIF to Code Scanning
+        if: always() && steps.fallow.outputs.sarif != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.fallow.outputs.sarif }}

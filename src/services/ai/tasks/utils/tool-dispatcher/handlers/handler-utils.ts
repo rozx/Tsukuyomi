@@ -1,5 +1,5 @@
 import type { AIToolCall, AIToolCallResult, ChatMessage } from 'src/services/ai/types/ai-service';
-import type { ToolExecutionResult, ToolHandlerContext } from '../index';
+import type { ToolExecutionResult, ToolHandlerContext } from '../types';
 
 /**
  * 从 toolCall 和 toolResult 中提取公共字段，

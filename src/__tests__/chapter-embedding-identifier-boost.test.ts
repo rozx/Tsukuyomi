@@ -34,34 +34,41 @@ function fakeMem(summary: string, content = ''): Memory {
   return { summary, content } as Pick<Memory, 'summary' | 'content'> as Memory;
 }
 
-function seedSeriesBook(
+async function seedSeriesBook(
   bookId: string,
   chapters: Array<{ id: string; title: string }>,
   volumeTitle = '本卷',
-): void {
+): Promise<void> {
+  const book = {
+    id: bookId,
+    title: 'Test',
+    lastEdited: new Date(),
+    createdAt: new Date(),
+    volumes: [
+      {
+        id: 'v',
+        title: volumeTitle,
+        chapters: chapters.map((c) => ({
+          id: c.id,
+          title: c.title,
+          paragraphs: [],
+          createdAt: new Date(),
+          lastEdited: new Date(),
+        })),
+      },
+    ],
+  } as unknown as Novel;
   const store = useBooksStore();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (store as any).books = [
-    {
-      id: bookId,
-      title: 'Test',
-      lastEdited: new Date(),
-      createdAt: new Date(),
-      volumes: [
-        {
-          id: 'v',
-          title: volumeTitle,
-          chapters: chapters.map((c) => ({
-            id: c.id,
-            title: c.title,
-            paragraphs: [],
-            createdAt: new Date(),
-            lastEdited: new Date(),
-          })),
-        },
-      ],
-    } as unknown as Novel,
-  ];
+  (store as any).books = [book];
+  // 同时写入 IndexedDB,供 lookupChapterBookFromDB / loadBookMetaFromDB 使用
+  // 跨文件运行时 fake-indexeddb 的 reset 可能有时序残留,显式清一次 books
+  const { getDB } = await import('src/utils/indexed-db');
+  const db = await getDB();
+  const clearTx = db.transaction('books', 'readwrite');
+  await clearTx.store.clear();
+  await clearTx.done;
+  await db.put('books', book);
 }
 
 async function putChunk(
@@ -197,7 +204,7 @@ describe('queryChapters — identifier-mismatch 惩罚', () => {
 
   it('星天系列(⑤ / ⑥):query "星天 ⑥" 应让 ⑥ 胜出', async () => {
     const bookId = 'b';
-    seedSeriesBook(bookId, [
+    await seedSeriesBook(bookId, [
       { id: 'ch-5', title: '星天 ⑤' },
       { id: 'ch-6', title: '星天 ⑥' },
     ]);
@@ -220,7 +227,7 @@ describe('queryChapters — identifier-mismatch 惩罚', () => {
 
   it('阿拉伯章号:query "83 星天" → 章 83 胜过章 82', async () => {
     const bookId = 'b';
-    seedSeriesBook(bookId, [
+    await seedSeriesBook(bookId, [
       { id: 'ch-82', title: '82 星天 ⑤' },
       { id: 'ch-83', title: '83 星天 ⑥' },
     ]);
@@ -242,7 +249,7 @@ describe('queryChapters — identifier-mismatch 惩罚', () => {
 
   it('query 不含 identifier → 不施加惩罚(回归测试)', async () => {
     const bookId = 'b';
-    seedSeriesBook(bookId, [
+    await seedSeriesBook(bookId, [
       { id: 'ch-1', title: '日常对话' },
       { id: 'ch-2', title: '另一章' },
     ]);
@@ -269,7 +276,7 @@ describe('queryChapters — identifier-mismatch 惩罚', () => {
     const bookId = 'b';
     // 两章语义/内容相同;卷标题里含 Ⅲ,章 1 标题也含 Ⅲ,章 2 不含 → query "Ⅲ" 时章 2 被惩罚
     // 这里只验"卷里有 → 章 1 不被惩罚"那一侧:章 2 略去对照即可
-    seedSeriesBook(bookId, [{ id: 'ch-1', title: '日常 Ⅲ' }], '卷 Ⅲ');
+    await seedSeriesBook(bookId, [{ id: 'ch-1', title: '日常 Ⅲ' }], '卷 Ⅲ');
 
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
     await putContentChunks('ch-1', bookId, [
@@ -286,7 +293,7 @@ describe('queryChapters — identifier-mismatch 惩罚', () => {
 
   it('卷标题含 identifier 章节不含 → 不被惩罚(章+卷拼接判定)', async () => {
     const bookId = 'b';
-    seedSeriesBook(bookId, [{ id: 'ch-1', title: '日常' }], '卷 ⑥');
+    await seedSeriesBook(bookId, [{ id: 'ch-1', title: '日常' }], '卷 ⑥');
 
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
     await putContentChunks('ch-1', bookId, [
@@ -302,7 +309,7 @@ describe('queryChapters — identifier-mismatch 惩罚', () => {
 
   it('章节标题完全缺 identifier → 候选总分 × 0.3', async () => {
     const bookId = 'b';
-    seedSeriesBook(bookId, [
+    await seedSeriesBook(bookId, [
       { id: 'ch-with-num', title: '83 章' }, // 含 83
       { id: 'ch-no-num', title: '日常' }, // 缺 83
     ]);

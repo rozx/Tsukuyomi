@@ -20,7 +20,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { formatRelativeTime } from 'src/utils/format';
 import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
 import { useForceSync } from 'src/composables/useForceSync';
-import { useSyncPendingChanges } from 'src/composables/useSyncPendingChanges';
+import { useSyncStatusDisplay } from 'src/composables/useSyncPendingChanges';
 import type { RestorableItem } from 'src/services/sync-data-service';
 
 const settingsStore = useSettingsStore();
@@ -46,14 +46,22 @@ onUnmounted(() => {
   }
 });
 
-const gistSync = computed(() => settingsStore.gistSync);
+// SyncStatusBody 需要可写的 isSyncing（以便内部触发/取消同步）, 因此单独保留。
+// 只读的同步状态指示器、nextSyncTime、pendingItems 走共享 composable。
 const isSyncing = computed({
   get: () => settingsStore.isSyncing,
   set: (value: boolean) => settingsStore.setSyncing(value),
 });
 const isRestoringRevision = computed(() => settingsStore.isRestoringSyncSnapshot);
 
-const { pendingCount, hasPendingChanges, pendingItems } = useSyncPendingChanges();
+const { gistSync, pendingCount, hasPendingChanges, pendingItems, syncStatus, nextSyncTime } =
+  useSyncStatusDisplay({
+    disabled: 'text-moon/50',
+    syncing: 'text-primary',
+    pending: 'text-amber-300',
+    synced: 'text-green-500',
+    unsynced: 'text-moon/70',
+  });
 
 const MAX_DETAIL_ITEMS = 8;
 const visiblePendingItems = computed(() => pendingItems.value.slice(0, MAX_DETAIL_ITEMS));
@@ -82,33 +90,6 @@ const actionLabel: Record<'edited' | 'added' | 'deleted', string> = {
   added: '新增',
   deleted: '删除',
 };
-
-const syncStatus = computed(() => {
-  if (!gistSync.value.enabled) {
-    return { icon: 'pi pi-cloud', color: 'text-moon/50', label: '未启用' };
-  }
-  if (isSyncing.value) {
-    return { icon: 'pi pi-spin pi-spinner', color: 'text-primary', label: '同步中' };
-  }
-  if (hasPendingChanges.value) {
-    return {
-      icon: 'pi pi-cloud-upload',
-      color: 'text-amber-300',
-      label: `${pendingCount.value} 项变更`,
-    };
-  }
-  if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) {
-    return { icon: 'pi pi-cloud-check', color: 'text-green-500', label: '已同步' };
-  }
-  return { icon: 'pi pi-cloud', color: 'text-moon/70', label: '未同步' };
-});
-
-const nextSyncTime = computed(() => {
-  if (!gistSync.value.enabled || !gistSync.value.lastSyncTime || gistSync.value.syncInterval <= 0) {
-    return null;
-  }
-  return gistSync.value.lastSyncTime + gistSync.value.syncInterval;
-});
 
 const formatNextSyncTime = computed(() => {
   const next = nextSyncTime.value;

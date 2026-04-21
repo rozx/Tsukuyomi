@@ -4,7 +4,9 @@
  * 职责:
  * - 将待嵌入的目标(memory / chapter)排队,按 BATCH_SIZE 切片调用 EmbeddingService
  * - 完成批次后按 kind 分流持久化:
- *   · memory → MemoryService.updateMemoryEmbeddingOnly
+ *   · memory → updateMemoryEmbeddingInDB + syncMemoryEmbeddingCaches + dispatchMemoryChanged
+ *              (leaf 组合: 写 IDB + 同步进程缓存 + 派发 embedding-updated 事件, 不反向 import
+ *              MemoryService, 避免循环依赖)
  *   · chapter → ChapterEmbeddingService.embedChapter(整章一次,不与 memory 混批)
  * - 每批之间 yield 一次事件循环,避免长任务阻塞 UI
  * - 暴露进度事件(含 memory / chapter 分解)、暂停/恢复、ETA
@@ -18,8 +20,22 @@
  * - chapter 因为一章本身就是多 chunk 的一次完整嵌入,每次只处理一个 chapter,不与 memory 同批
  */
 
+import {
+  createCustomEventSubscriber,
+  dispatchCustomEvent,
+} from 'src/utils/dispatch-custom-event';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
-import { MemoryService, isMemoryEmbeddingStale } from 'src/services/memory-service';
+import {
+  getMemoryByIdFromDB,
+  getAllBookMemoriesFromDB,
+  isMemoryEmbeddingStale,
+  updateMemoryEmbeddingInDB,
+  lookupMemoryBookId,
+} from 'src/utils/memory-embedding-lookup';
+import {
+  dispatchMemoryChanged,
+  syncMemoryEmbeddingCaches,
+} from 'src/services/memory-cache';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import type { Memory } from 'src/models/memory';
 
@@ -102,7 +118,7 @@ export class EmbeddingQueue {
 
   /**
    * 懒解析 item 的 bookId 并缓存在 item 上。
-   * - memory:查 MemoryService.getMemoryByIdOnly
+   * - memory:查 getMemoryByIdFromDB
    * - chapter:扫 booksStore 找所属书
    * 解析失败(记录已删/Pinia 未初始化)返回 null,由批处理策略单独走一批不混批。
    */
@@ -111,19 +127,13 @@ export class EmbeddingQueue {
     let resolved: string | null = null;
     try {
       if (item.kind === 'memory') {
-        const mem = await MemoryService.getMemoryByIdOnly(item.id);
+        const mem = await getMemoryByIdFromDB(item.id);
         resolved = mem?.bookId ?? null;
       } else {
-        const { useBooksStore } = await import('src/stores/books');
-        const store = useBooksStore();
-        outer: for (const book of store.books) {
-          for (const v of book.volumes || []) {
-            if (v.chapters?.some((c) => c.id === item.id)) {
-              resolved = book.id;
-              break outer;
-            }
-          }
-        }
+        // 直接从 IndexedDB 反查,避免 import stores/books 形成循环依赖
+        const { lookupChapterBookFromDB } = await import('src/utils/chapter-book-lookup');
+        const lookup = await lookupChapterBookFromDB(item.id);
+        resolved = lookup?.bookId ?? null;
       }
     } catch {
       resolved = null;
@@ -146,22 +156,14 @@ export class EmbeddingQueue {
 
   // ==========================================================================
   // 事件订阅
+  // 通过 createCustomEventSubscriber 工厂注入共享底层，保留 type 字面量窄化。
   // ==========================================================================
-  static addEventListener(
-    type: 'progress' | 'batch-complete' | 'error' | 'idle',
-    listener: (event: CustomEvent) => void,
-  ): () => void {
-    const handler = (e: Event) => listener(e as CustomEvent);
-    this.events.addEventListener(type, handler);
-    return () => this.events.removeEventListener(type, handler);
-  }
+  static addEventListener = createCustomEventSubscriber<
+    'progress' | 'batch-complete' | 'error' | 'idle'
+  >(this.events);
 
   private static dispatch(type: string, detail?: unknown): void {
-    const hasCustomEvent = typeof (globalThis as any).CustomEvent !== 'undefined';
-    const event = hasCustomEvent
-      ? new CustomEvent(type, { detail })
-      : Object.assign(new Event(type), { detail });
-    this.events.dispatchEvent(event as Event);
+    dispatchCustomEvent(this.events, type, detail);
   }
 
   private static emitProgress(): void {
@@ -233,7 +235,7 @@ export class EmbeddingQueue {
   static async enqueueBacklog(bookId: string): Promise<number> {
     if (!bookId) return 0;
     try {
-      const memories = await MemoryService.getAllBookMemories(bookId);
+      const memories = await getAllBookMemoriesFromDB(bookId);
       let added = 0;
       for (const mem of memories) {
         if (!isMemoryEmbeddingStale(mem)) continue;
@@ -284,8 +286,9 @@ export class EmbeddingQueue {
   static async enqueueAllChaptersForRecompute(bookId: string): Promise<number> {
     if (!bookId) return 0;
     try {
-      const { useBooksStore } = await import('src/stores/books');
-      const book = useBooksStore().getBookById(bookId);
+      // 直接从 IndexedDB 加载 book 元数据,避免 import stores/books 形成循环依赖
+      const { loadBookMetaFromDB } = await import('src/utils/chapter-book-lookup');
+      const book = await loadBookMetaFromDB(bookId);
       if (!book?.volumes) return 0;
       let added = 0;
       for (const v of book.volumes) {
@@ -408,14 +411,79 @@ export class EmbeddingQueue {
    */
   private static async isLocalEmbeddingEnabled(): Promise<boolean> {
     try {
-      const { useSettingsStore } = await import('src/stores/settings');
+      // 直接从 IndexedDB 读 settings,避免 import stores/settings 形成循环依赖
+      const { readEnableLocalEmbeddingFromDB } = await import('src/utils/settings-lookup');
       const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
-      const store = useSettingsStore();
-      return isLocalEmbeddingEffectivelyEnabled(store.settings.enableLocalEmbedding);
+      const value = await readEnableLocalEmbeddingFromDB();
+      return isLocalEmbeddingEffectivelyEnabled(value);
     } catch {
-      // Pinia 还没挂起来时,按"未启用"保守处理,避免测试环境误触发下载
+      // 读取失败时,按"未启用"保守处理,避免测试环境误触发下载
       return false;
     }
+  }
+
+  private static async takeNextBatch(): Promise<{
+    head: QueueItem;
+    headBookId: string | null;
+    batchItems: QueueItem[];
+  }> {
+    // 取下一批:同 kind + 同 bookId 连续合批(memory 合到 BATCH_SIZE;chapter 单个)。
+    // 串行化到单本书是为了让 UI 面板有清晰的"当前在处理哪本书"语义——避免 A/B 两本书
+    // 的 chunk 交叉穿插让进度条来回跳。bookId 解析不出(记录已删)的 item 单独一批。
+    const head = this.pending[0]!;
+    const headBookId = await this.resolveBookId(head);
+    if (head.kind !== 'memory') {
+      return { head, headBookId, batchItems: [this.pending.shift()!] };
+    }
+    const take = Math.min(BATCH_SIZE, this.pending.length);
+    const batchItems: QueueItem[] = [];
+    for (let i = 0; i < take; i++) {
+      const item = this.pending[i]!;
+      if (item.kind !== 'memory') break;
+      const itemBook = await this.resolveBookId(item);
+      if (itemBook !== headBookId) break;
+      batchItems.push(item);
+    }
+    this.pending.splice(0, batchItems.length);
+    return { head, headBookId, batchItems };
+  }
+
+  private static async runNextBatch(
+    head: QueueItem,
+    headBookId: string | null,
+    batchItems: QueueItem[],
+  ): Promise<void> {
+    // 广播 currentTask,让 UI 能感知"队列在处理哪本书"
+    this.currentTask = {
+      kind: head.kind,
+      bookId: headBookId,
+      itemCount: batchItems.length,
+    };
+    this.emitProgress();
+
+    const startedAt = Date.now();
+    try {
+      if (head.kind === 'memory') {
+        await this.processMemoryBatch(batchItems.map((item) => item.id));
+      } else {
+        await this.processChapter(batchItems[0]!.id);
+      }
+    } catch (error) {
+      console.warn('[EmbeddingQueue] 批处理失败,继续下一批:', error);
+      this.dispatch('error', { error, batchItems });
+      if (head.kind === 'memory') this.completed.memory += batchItems.length;
+      else this.completed.chapter += 1;
+    }
+    const durationMs = Date.now() - startedAt;
+    this.recordTiming(batchItems.length, durationMs);
+    this.currentTask = null;
+    this.dispatch('batch-complete', {
+      kind: head.kind,
+      batchSize: batchItems.length,
+      durationMs,
+      remaining: this.pending.length,
+    });
+    this.emitProgress();
   }
 
   private static async run(): Promise<void> {
@@ -450,59 +518,8 @@ export class EmbeddingQueue {
           console.info('[EmbeddingQueue] 本地嵌入被关闭,停止处理剩余 pending');
           break;
         }
-        // 取下一批:同 kind + 同 bookId 连续合批(memory 合到 BATCH_SIZE;chapter 单个)。
-        // 串行化到单本书是为了让 UI 面板有清晰的"当前在处理哪本书"语义——避免 A/B 两本书
-        // 的 chunk 交叉穿插让进度条来回跳。bookId 解析不出(记录已删)的 item 单独一批。
-        const head = this.pending[0]!;
-        const headBookId = await this.resolveBookId(head);
-        let batchItems: QueueItem[] = [];
-        if (head.kind === 'memory') {
-          const take = Math.min(BATCH_SIZE, this.pending.length);
-          for (let i = 0; i < take; i++) {
-            const item = this.pending[i]!;
-            if (item.kind !== 'memory') break;
-            const itemBook = await this.resolveBookId(item);
-            if (itemBook !== headBookId) break;
-            batchItems.push(item);
-          }
-          this.pending.splice(0, batchItems.length);
-        } else {
-          batchItems = [this.pending.shift()!];
-        }
-
-        // 广播 currentTask,让 UI 能感知"队列在处理哪本书"
-        this.currentTask = {
-          kind: head.kind,
-          bookId: headBookId,
-          itemCount: batchItems.length,
-        };
-        this.emitProgress();
-
-        const startedAt = Date.now();
-        try {
-          if (head.kind === 'memory') {
-            await this.processMemoryBatch(batchItems.map((item) => item.id));
-          } else {
-            await this.processChapter(batchItems[0]!.id);
-          }
-        } catch (error) {
-          console.warn('[EmbeddingQueue] 批处理失败,继续下一批:', error);
-          this.dispatch('error', { error, batchItems });
-          // 失败也计入 completed,避免进度卡住
-          if (head.kind === 'memory') this.completed.memory += batchItems.length;
-          else this.completed.chapter += 1;
-        }
-        const durationMs = Date.now() - startedAt;
-        this.recordTiming(batchItems.length, durationMs);
-        this.currentTask = null;
-        this.dispatch('batch-complete', {
-          kind: head.kind,
-          batchSize: batchItems.length,
-          durationMs,
-          remaining: this.pending.length,
-        });
-        this.emitProgress();
-
+        const { head, headBookId, batchItems } = await this.takeNextBatch();
+        await this.runNextBatch(head, headBookId, batchItems);
         await new Promise((r) => setTimeout(r, 0));
       }
 
@@ -528,7 +545,7 @@ export class EmbeddingQueue {
     const memories: Array<{ id: string; text: string } | null> = await Promise.all(
       ids.map(async (id) => {
         try {
-          const mem = await MemoryService.getMemoryByIdOnly(id);
+          const mem = await getMemoryByIdFromDB(id);
           if (!mem) return null;
           const text = buildMemoryInput(mem);
           if (!text) return null;
@@ -555,11 +572,16 @@ export class EmbeddingQueue {
         const vec = vectors[idx];
         if (!vec) return;
         try {
-          await MemoryService.updateMemoryEmbeddingOnly(
-            entry.id,
-            Array.from(vec),
-            MODEL_VERSION,
-          );
+          // 写 IDB（leaf）+ 同步进程内缓存 + 派发 'embedding-updated' 事件。
+          // 全部走叶子模块（memory-embedding-lookup / memory-cache），避免 EmbeddingQueue
+          // 反向 import MemoryService 形成循环依赖。
+          const embedding = Array.from(vec);
+          await updateMemoryEmbeddingInDB(entry.id, embedding, MODEL_VERSION);
+          const bookId = await lookupMemoryBookId(entry.id);
+          if (bookId) {
+            syncMemoryEmbeddingCaches(bookId, entry.id, embedding, MODEL_VERSION);
+            dispatchMemoryChanged({ bookId, memoryId: entry.id, action: 'embedding-updated' });
+          }
         } catch (error) {
           console.warn(`[EmbeddingQueue] 持久化 memory embedding 失败 (${entry.id}):`, error);
         }

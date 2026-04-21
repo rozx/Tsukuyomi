@@ -10,16 +10,21 @@ import type {
   TextGenerationRequest,
   ChatMessage,
   AITool,
+  AIToolCall,
 } from 'src/services/ai/types/ai-service';
 import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import type { AIProcessingStore, TaskType } from './task-types';
-import { TASK_TYPE_LABELS } from './task-types';
-import { AIServiceFactory } from '../../index';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { AIServiceFactory } from '../../ai-service-factory';
 import { AIEmptyResponseError } from '../../core';
-import { ToolRegistry } from '../../tools/index';
-import { createUnifiedAbortController, handleTaskError } from './stream-handler';
+import { ToolRegistry } from '../../tools/tool-registry';
+import {
+  createTaskChunkForwarder,
+  createUnifiedAbortController,
+  handleTaskError,
+} from './stream-handler';
 import { getSelectedTranslation } from 'src/utils/text-utils';
 import {
   buildBookContextSection,
@@ -72,6 +77,194 @@ interface SingleParagraphProcessConfig {
  * 处理单段落润色/校对
  * 无状态机，直接构建 prompt + 工具调用循环
  */
+interface TaskRegistration {
+  taskId: string | undefined;
+  abortController: AbortController | undefined;
+}
+
+async function registerSingleParagraphTask(
+  aiProcessingStore: SingleParagraphOptions['aiProcessingStore'],
+  model: AIModel,
+  taskType: TaskType,
+  taskLabel: string,
+  bookId?: string,
+  chapterId?: string,
+  chapterTitle?: string,
+): Promise<TaskRegistration> {
+  if (!aiProcessingStore) {
+    return { taskId: undefined, abortController: undefined };
+  }
+  const taskId = await aiProcessingStore.addTask({
+    type: taskType,
+    modelName: model.name,
+    status: 'thinking',
+    workflowStatus: 'working',
+    message: `正在${taskLabel}段落...`,
+    thinkingMessage: '',
+    isSingleParagraph: true,
+    ...(bookId ? { bookId } : {}),
+    ...(chapterId ? { chapterId } : {}),
+    ...(chapterTitle ? { chapterTitle } : {}),
+  });
+  const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
+  return { taskId, abortController: task?.abortController };
+}
+
+async function forwardAddTranslationBatchResult(
+  toolResultContent: string,
+  logLabel: string,
+  onParagraphResult: SingleParagraphOptions['onParagraphResult'],
+): Promise<void> {
+  if (!onParagraphResult) return;
+  let parsed;
+  try {
+    parsed = JSON.parse(toolResultContent);
+  } catch {
+    console.warn(`[${logLabel}] 解析 add_translation_batch 结果失败:`, toolResultContent);
+    return;
+  }
+  if (!parsed?.success || !parsed.accepted_paragraphs) return;
+  const translations = (
+    parsed.accepted_paragraphs as Array<{ paragraph_id: string; translated_text: string }>
+  ).map((p) => ({ id: p.paragraph_id, translation: p.translated_text }));
+  if (translations.length > 0) {
+    await onParagraphResult(translations);
+  }
+}
+
+interface SingleParagraphRoundContext {
+  service: ReturnType<typeof AIServiceFactory.getService>;
+  aiConfig: AIServiceConfig;
+  history: ChatMessage[];
+  tools: AITool[];
+  finalSignal: AbortSignal;
+  aiProcessingStore: SingleParagraphOptions['aiProcessingStore'];
+  taskId: string | undefined;
+  taskLabel: string;
+  logLabel: string;
+  onChunk: SingleParagraphOptions['onChunk'];
+  onAction: SingleParagraphOptions['onAction'];
+  onToast: SingleParagraphOptions['onToast'];
+  onParagraphResult: SingleParagraphOptions['onParagraphResult'];
+  paragraphId: string;
+  bookId: string | undefined;
+  model: AIModel;
+}
+
+async function runSingleParagraphRound(
+  ctx: SingleParagraphRoundContext,
+): Promise<{ text: string; done: boolean }> {
+  if (ctx.finalSignal.aborted) throw new Error('请求已取消');
+
+  if (ctx.aiProcessingStore && ctx.taskId) {
+    void ctx.aiProcessingStore.updateTask(ctx.taskId, {
+      status: 'processing',
+      message: `正在${ctx.taskLabel}中...`,
+    });
+  }
+
+  const request: TextGenerationRequest = {
+    messages: ctx.history,
+    ...(ctx.tools.length > 0 ? { tools: ctx.tools } : {}),
+  };
+
+  let result;
+  try {
+    result = await ctx.service.generateText(
+      ctx.aiConfig,
+      request,
+      createTaskChunkForwarder({
+        aiProcessingStore: ctx.aiProcessingStore,
+        taskId: ctx.taskId,
+        finalSignal: ctx.finalSignal,
+        processingMessage: `正在${ctx.taskLabel}中...`,
+        ...(ctx.onChunk ? { onChunk: ctx.onChunk } : {}),
+      }),
+    );
+  } catch (error) {
+    if (error instanceof AIEmptyResponseError) {
+      console.log(`[${ctx.logLabel}] AI 返回空响应（预期行为：无文本输出）`);
+      return { text: '', done: true };
+    }
+    throw error;
+  }
+
+  if (result.reasoningContent && ctx.aiProcessingStore && ctx.taskId) {
+    void ctx.aiProcessingStore.appendThinkingMessage(ctx.taskId, result.reasoningContent);
+  }
+
+  const text = result.text || '';
+
+  if (!result.toolCalls || result.toolCalls.length === 0) {
+    return { text, done: true };
+  }
+
+  await runToolCallsForSingleParagraph(
+    result,
+    ctx.history,
+    ctx.paragraphId,
+    ctx.bookId,
+    ctx.taskId,
+    ctx.model,
+    ctx.logLabel,
+    ctx.aiProcessingStore,
+    ctx.onAction,
+    ctx.onToast,
+    ctx.onParagraphResult,
+  );
+
+  return { text, done: false };
+}
+
+async function runToolCallsForSingleParagraph(
+  result: { text?: string; toolCalls?: AIToolCall[]; reasoningContent?: string | null },
+  history: ChatMessage[],
+  paragraphId: string,
+  bookId: string | undefined,
+  taskId: string | undefined,
+  model: AIModel,
+  logLabel: string,
+  aiProcessingStore: SingleParagraphOptions['aiProcessingStore'],
+  onAction: SingleParagraphOptions['onAction'],
+  onToast: SingleParagraphOptions['onToast'],
+  onParagraphResult: SingleParagraphOptions['onParagraphResult'],
+): Promise<void> {
+  if (!result.toolCalls || result.toolCalls.length === 0) return;
+
+  history.push({
+    role: 'assistant',
+    content: result.text || '（调用工具）',
+    tool_calls: result.toolCalls,
+    reasoning_content: result.reasoningContent || null,
+  });
+
+  for (const toolCall of result.toolCalls) {
+    console.log(`[${logLabel}] 处理工具调用: ${toolCall.function.name}`);
+
+    const toolResult = await ToolRegistry.handleToolCall(
+      toolCall,
+      bookId || '',
+      onAction,
+      onToast,
+      taskId,
+      undefined,
+      [paragraphId],
+      aiProcessingStore,
+      model.id,
+    );
+
+    if (toolCall.function.name === 'add_translation_batch') {
+      await forwardAddTranslationBatchResult(toolResult.content, logLabel, onParagraphResult);
+    }
+
+    history.push({
+      role: 'tool',
+      content: toolResult.content,
+      tool_call_id: toolResult.tool_call_id,
+    });
+  }
+}
+
 export async function processSingleParagraph(
   paragraph: Paragraph,
   model: AIModel,
@@ -97,28 +290,16 @@ export async function processSingleParagraph(
   // 创建简化的任务记录
   // 直接设置 workflowStatus: 'working'（不走状态机转换），
   // 因为 add_translation_batch 工具要求任务处于 working 状态
-  let taskId: string | undefined;
-  let taskAbortController: AbortController | undefined;
+  const { taskId, abortController: taskAbortController } = await registerSingleParagraphTask(
+    aiProcessingStore,
+    model,
+    taskType,
+    taskLabel,
+    bookId,
+    chapterId,
+    chapterTitle,
+  );
 
-  if (aiProcessingStore) {
-    taskId = await aiProcessingStore.addTask({
-      type: taskType,
-      modelName: model.name,
-      status: 'thinking',
-      workflowStatus: 'working',
-      message: `正在${taskLabel}段落...`,
-      thinkingMessage: '',
-      isSingleParagraph: true,
-      ...(bookId ? { bookId } : {}),
-      ...(chapterId ? { chapterId } : {}),
-      ...(chapterTitle ? { chapterTitle } : {}),
-    });
-
-    const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
-    taskAbortController = task?.abortController;
-  }
-
-  // 统一取消控制器
   const { controller: internalController, cleanup: cleanupAbort } = createUnifiedAbortController(
     signal,
     taskAbortController,
@@ -128,7 +309,6 @@ export async function processSingleParagraph(
   try {
     const service = AIServiceFactory.getService(model.provider);
 
-    // 构建上下文
     const bookContextSection = bookId ? await buildBookContextSection(bookId) : '';
     const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
     const specialInstructions = bookId
@@ -136,10 +316,8 @@ export async function processSingleParagraph(
       : undefined;
     const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
-    // 获取工具
     const tools = ToolRegistry.getSingleParagraphPolishTools(bookId);
 
-    // 构建系统提示词
     const systemPrompt = buildSystemPrompt({
       bookContextSection,
       chapterContextSection,
@@ -147,7 +325,6 @@ export async function processSingleParagraph(
       tools,
     });
 
-    // 构建默认上下文
     const defaultContext = await buildSingleParagraphDefaultContext({
       currentParagraphId: paragraph.id,
       allChapterParagraphs,
@@ -156,7 +333,6 @@ export async function processSingleParagraph(
       ...(chapterTitle ? { chapterTitle } : {}),
     });
 
-    // 构建用户提示词
     const currentTranslation = getSelectedTranslation(paragraph);
     const userPrompt = buildUserPrompt({
       paragraphId: paragraph.id,
@@ -165,7 +341,6 @@ export async function processSingleParagraph(
       defaultContext,
     });
 
-    // 创建消息历史
     const history: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
@@ -183,147 +358,32 @@ export async function processSingleParagraph(
 
     console.log(`[${logLabel}] 开始单段落${taskLabel}，段落ID: ${paragraph.id}`);
 
-    // 工具调用循环
-    let roundCount = 0;
+    const roundCtx: SingleParagraphRoundContext = {
+      service,
+      aiConfig,
+      history,
+      tools,
+      finalSignal,
+      aiProcessingStore,
+      taskId,
+      taskLabel,
+      logLabel,
+      onChunk,
+      onAction,
+      onToast,
+      onParagraphResult,
+      paragraphId: paragraph.id,
+      bookId,
+      model,
+    };
+
     let finalText = '';
-
-    while (roundCount < MAX_TOOL_CALL_ROUNDS) {
-      if (finalSignal.aborted) {
-        throw new Error('请求已取消');
-      }
-
-      roundCount++;
-
-      if (aiProcessingStore && taskId) {
-        void aiProcessingStore.updateTask(taskId, {
-          status: 'processing',
-          message: `正在${taskLabel}中...`,
-        });
-      }
-
-      const request: TextGenerationRequest = {
-        messages: history,
-        ...(tools.length > 0 ? { tools } : {}),
-      };
-
-      let firstChunkReceived = false;
-      const wrappedOnChunk: TextGenerationStreamCallback = async (chunk) => {
-        if (finalSignal?.aborted) {
-          throw new Error('请求已取消');
-        }
-
-        if (aiProcessingStore && taskId) {
-          if (!firstChunkReceived) {
-            void aiProcessingStore.updateTask(taskId, {
-              status: 'processing',
-              message: `正在${taskLabel}中...`,
-            });
-            firstChunkReceived = true;
-          }
-
-          if (chunk.reasoningContent) {
-            void aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
-          }
-
-          if (chunk.text) {
-            void aiProcessingStore.appendOutputContent(taskId, chunk.text);
-          }
-        }
-
-        if (onChunk) {
-          await onChunk(chunk);
-        }
-      };
-
-      let result;
-      try {
-        result = await service.generateText(aiConfig, request, wrappedOnChunk);
-      } catch (error) {
-        // 提示词要求 AI 不输出文本（直接调用工具或无需改动时直接结束），
-        // 所以空响应是预期行为，不应视为错误
-        if (error instanceof AIEmptyResponseError) {
-          console.log(`[${logLabel}] AI 返回空响应（预期行为：无文本输出）`);
-          break;
-        }
-        throw error;
-      }
-
-      if (result.reasoningContent && aiProcessingStore && taskId) {
-        void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
-      }
-
-      finalText = result.text || '';
-
-      // 处理工具调用
-      if (result.toolCalls && result.toolCalls.length > 0) {
-        // 将 assistant 的回复（含工具调用）添加到历史
-        // 必须包含 reasoning_content，否则 DeepSeek 等 thinking mode 模型会报错
-        history.push({
-          role: 'assistant',
-          content: result.text || '（调用工具）',
-          tool_calls: result.toolCalls,
-          reasoning_content: result.reasoningContent || null,
-        });
-
-        // 执行工具调用
-        for (const toolCall of result.toolCalls) {
-          console.log(`[${logLabel}] 处理工具调用: ${toolCall.function.name}`);
-
-          const toolResult = await ToolRegistry.handleToolCall(
-            toolCall,
-            bookId || '',
-            onAction,
-            onToast,
-            taskId,
-            undefined, // sessionId
-            [paragraph.id], // paragraphIds
-            aiProcessingStore,
-            model.id,
-          );
-
-          // add_translation_batch 工具只负责验证，不直接写入翻译。
-          // 需要从工具结果中提取已接受的段落，通过 onParagraphResult 回调完成实际写入。
-          if (toolCall.function.name === 'add_translation_batch' && onParagraphResult) {
-            let parsed;
-            try {
-              parsed = JSON.parse(toolResult.content);
-            } catch {
-              console.warn(`[${logLabel}] 解析 add_translation_batch 结果失败:`, toolResult.content);
-            }
-
-            if (parsed && parsed.success && parsed.accepted_paragraphs) {
-              const translations = (
-                parsed.accepted_paragraphs as Array<{
-                  paragraph_id: string;
-                  translated_text: string;
-                }>
-              ).map((p) => ({
-                id: p.paragraph_id,
-                translation: p.translated_text,
-              }));
-              if (translations.length > 0) {
-                await onParagraphResult(translations);
-              }
-            }
-          }
-
-          // 将工具结果添加到历史
-          history.push({
-            role: 'tool',
-            content: toolResult.content,
-            tool_call_id: toolResult.tool_call_id,
-          });
-        }
-
-        // 继续循环，让 AI 处理工具结果
-        continue;
-      }
-
-      // 没有工具调用，AI 已完成
-      break;
+    for (let roundCount = 0; roundCount < MAX_TOOL_CALL_ROUNDS; roundCount++) {
+      const round = await runSingleParagraphRound(roundCtx);
+      finalText = round.text || finalText;
+      if (round.done) break;
     }
 
-    // 任务完成
     if (aiProcessingStore && taskId) {
       void aiProcessingStore.updateTask(taskId, {
         status: 'end',
@@ -342,9 +402,7 @@ export async function processSingleParagraph(
     console.error(`[${logLabel}] 单段落${taskLabel}失败:`, error);
     await handleTaskError(error, taskId, aiProcessingStore, taskType);
 
-    if (error instanceof Error) {
-      throw error;
-    }
+    if (error instanceof Error) throw error;
     throw new Error(`${taskLabel}时发生未知错误`);
   } finally {
     cleanupAbort();

@@ -4,6 +4,7 @@ import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import type { Memory } from 'src/models/memory';
 import { isMemoryEmbeddingStale } from 'src/services/memory-service';
+import { formatRelativeTimeWithFallback } from 'src/utils/format';
 
 interface Props {
   memory: Memory;
@@ -64,25 +65,12 @@ const contentPreview = computed(() => {
   return content.slice(0, 100) + '...';
 });
 
-// 格式化相对时间
-const relativeTime = computed(() => {
-  const date = new Date(props.memory.lastAccessedAt);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (seconds < 60) return '刚刚';
-  if (minutes < 60) return `${minutes} 分钟前`;
-  if (hours < 24) return `${hours} 小时前`;
-  if (days < 7) return `${days} 天前`;
-  return date.toLocaleDateString('zh-CN', {
-    month: 'short',
-    day: 'numeric',
-  });
-});
+// 格式化相对时间（≥ 7 天回落到短日期格式）
+const relativeTime = computed(() =>
+  formatRelativeTimeWithFallback(props.memory.lastAccessedAt, (date) =>
+    date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
+  ),
+);
 
 // 处理卡片点击
 function handleCardClick() {

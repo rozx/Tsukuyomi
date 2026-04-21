@@ -1,15 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue';
 import Button from 'primevue/button';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
+import { loadBooksWithContentAndMemories } from 'src/composables/useElectronSettings';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
-import { MemoryService } from 'src/services/memory-service';
-import type { Memory } from 'src/models/memory';
+import { importMemoriesPreservingIdentity } from 'src/services/settings/memory-import';
 
 const toast = useToastWithHistory();
 const aiModelsStore = useAIModelsStore();
@@ -17,20 +16,19 @@ const booksStore = useBooksStore();
 const coverHistoryStore = useCoverHistoryStore();
 const settingsStore = useSettingsStore();
 
-const fileInputRef = ref<HTMLInputElement | null>(null);
+const {
+  fileInputRef,
+  triggerFilePicker: importSettings,
+  createFileSelectHandler,
+} = useFilePicker();
 
 /**
  * 导出设置到 JSON 文件
  */
 const exportSettings = async () => {
-  // 加载所有书籍的章节内容
-  const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
+  const { novelsWithContent, memories } = await loadBooksWithContentAndMemories(
     booksStore.books,
   );
-
-  // 使用批量加载方法加载所有 Memory 数据
-  const bookIds = booksStore.books.map((book) => book.id);
-  const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
 
   // 同步最新的 AI 模型、书籍数据、封面历史、Memory、同步设置和应用设置
   const settings = {
@@ -62,82 +60,45 @@ const exportSettings = async () => {
 };
 
 /**
- * 导入设置
- */
-const importSettings = () => {
-  // 触发文件选择
-  fileInputRef.value?.click();
-};
-
-/**
  * 处理文件选择
  */
-const handleFileSelect = async (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
-
-  if (!file) {
-    return;
-  }
-
+const handleFileSelect = createFileSelectHandler(async (file) => {
   // 使用设置服务导入文件
   const result = await SettingsService.importSettingsFromFile(file);
 
   if (result.success && result.data) {
+    // 覆盖语义：字段在快照里就替换（即便是空数组），与 UI "覆盖" 文案保持一致。
+    // 只有当字段 undefined（快照里根本没有该字段）时才跳过，避免无意义地抹掉本地数据。
+
     // 覆盖当前的 AI 模型数据
-    if (result.data.models.length > 0) {
+    if (result.data.models !== undefined) {
       await aiModelsStore.bulkImportModels(result.data.models);
     }
 
     // 覆盖当前的书籍数据
-    if (result.data.novels.length > 0) {
+    if (result.data.novels !== undefined) {
       await booksStore.clearBooks();
       await booksStore.bulkAddBooks(result.data.novels);
     }
 
     // 覆盖当前的封面历史数据
-    if (result.data.coverHistory.length > 0) {
-      // 先清空现有封面历史，然后添加导入的数据
+    if (result.data.coverHistory !== undefined) {
       await coverHistoryStore.clearHistory();
       for (const cover of result.data.coverHistory) {
         await coverHistoryStore.addCover(cover);
       }
     }
 
-    // 覆盖当前的 Memory 数据
-    if (result.data.memories && result.data.memories.length > 0) {
-      // Memory 按 bookId 分组并导入
-      const memoriesByBook = new Map<string, Memory[]>();
-      for (const memory of result.data.memories) {
-        if (!memoriesByBook.has(memory.bookId)) {
-          memoriesByBook.set(memory.bookId, []);
-        }
-        memoriesByBook.get(memory.bookId)!.push(memory);
-      }
-
-      // 为每本书导入 Memory
-      for (const [bookId, memories] of memoriesByBook.entries()) {
-        try {
-          for (const memory of memories) {
-            await MemoryService.createMemory(
-              bookId,
-              memory.content,
-              memory.summary,
-            );
-          }
-        } catch (error) {
-          console.warn(`[ImportExportTab] 导入书籍 ${bookId} 的 Memory 失败:`, error);
-        }
-      }
-    }
+    // 覆盖当前的 Memory 数据 —— 共享 leaf 保证 Electron/SPA 行为一致
+    await importMemoriesPreservingIdentity(result.data.memories, '[ImportExportTab]');
 
     // 覆盖当前的应用设置
     if (result.data.appSettings) {
       await settingsStore.importSettings(result.data.appSettings);
     }
 
-    // 覆盖当前的同步设置
-    if (result.data.sync && result.data.sync.length > 0) {
+    // 覆盖当前的同步设置（空数组也覆盖，清除残留本地同步配置）
+    if (result.data.sync !== undefined) {
       await settingsStore.importSyncs(result.data.sync);
     }
 
@@ -155,10 +116,7 @@ const handleFileSelect = async (event: Event) => {
       life: 5000,
     });
   }
-
-  // 清空输入
-  target.value = '';
-};
+});
 </script>
 
 <template>

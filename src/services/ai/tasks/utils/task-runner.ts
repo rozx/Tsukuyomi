@@ -1,14 +1,14 @@
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
-import { ToolRegistry } from 'src/services/ai/tools/index';
+import { ToolRegistry } from 'src/services/ai/tools/tool-registry';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import {
   getStatusLabel,
-  TASK_TYPE_LABELS,
   type TaskStatus,
   type TaskType,
   type AIProcessingStore,
 } from './task-types';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import type {
   TextGenerationRequest,
   TextGenerationStreamCallback,

@@ -1,5 +1,5 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
-import { getToolScopeRules, hasQueryChapterTool } from './index';
+import { getToolScopeRules, hasQueryChapterTool } from './common';
 
 /**
  * 获取 Assistant 系统提示词

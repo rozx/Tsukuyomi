@@ -31,10 +31,10 @@ async function clearChapterEmbeddingsStore(): Promise<void> {
 }
 
 /** 装一本书带 terminologies + characterSettings(后者带 aliases) */
-function seedBookWithTerms(
+async function seedBookWithTerms(
   bookId: string,
   chapters: Array<{ id: string; title: string }>,
-): Novel {
+): Promise<Novel> {
   const novel = {
     id: bookId,
     title: 'Test',
@@ -78,6 +78,14 @@ function seedBookWithTerms(
   const store = useBooksStore();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (store as any).books = [novel];
+  // 同时写入 IndexedDB,供 lookupChapterBookFromDB / loadBookMetaFromDB 使用
+  // 跨文件运行时 fake-indexeddb 的 reset 可能有时序残留,显式清一次 books
+  const { getDB } = await import('src/utils/indexed-db');
+  const db = await getDB();
+  const clearTx = db.transaction('books', 'readwrite');
+  await clearTx.store.clear();
+  await clearTx.done;
+  await db.put('books', novel);
   return novel;
 }
 
@@ -268,7 +276,7 @@ describe('queryChapters — round 2 集成', () => {
 
   it('中文 query "莉莉花园" 命中只含日文 "リリーガーデン" 的章节(别名扩展)', async () => {
     const bookId = 'b';
-    seedBookWithTerms(bookId, [
+    await seedBookWithTerms(bookId, [
       { id: 'ch-1', title: '日常' }, // 正文有日文 リリーガーデン,标题没词
       { id: 'ch-2', title: '其它章' }, // 完全无关
     ]);
@@ -295,7 +303,7 @@ describe('queryChapters — round 2 集成', () => {
   it('专名加权(round 4 IDF 主导):稀有词章节胜过常见词章节', async () => {
     const bookId = 'b';
     // 6 章:1 章稀有专名 シャルロット,1 章主命中泛词 马车,另 4 章用 decoy 让"马车"变常见
-    seedBookWithTerms(bookId, [
+    await seedBookWithTerms(bookId, [
       { id: 'ch-noun', title: '日常' },
       { id: 'ch-generic', title: '日常' },
       { id: 'd1', title: '日常' },
@@ -331,7 +339,7 @@ describe('queryChapters — round 2 集成', () => {
 
   it('加性 keyword:title + content 双命中分高于只 title 命中', async () => {
     const bookId = 'b';
-    seedBookWithTerms(bookId, [
+    await seedBookWithTerms(bookId, [
       { id: 'ch-both', title: '夏洛特出场' }, // title 部分命中 + content 完整命中
       { id: 'ch-title-only', title: '夏洛特出场' }, // title 部分命中 + content 完全无关
     ]);
@@ -367,31 +375,38 @@ describe('queryChapters — round 2 集成', () => {
   it('书无 terminologies / characterSettings:行为退化为旧逻辑(无 boost、无别名)', async () => {
     const bookId = 'b';
     // 不调 seedBookWithTerms,直接装一本无术语的书
+    const plainBook = {
+      id: bookId,
+      title: 'Plain',
+      lastEdited: new Date(),
+      createdAt: new Date(),
+      volumes: [
+        {
+          id: 'v',
+          title: 'V',
+          chapters: [
+            {
+              id: 'ch-1',
+              title: '只有标题',
+              paragraphs: [],
+              createdAt: new Date(),
+              lastEdited: new Date(),
+            },
+          ],
+        },
+      ],
+    } as unknown as Novel;
     const store = useBooksStore();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (store as any).books = [
-      {
-        id: bookId,
-        title: 'Plain',
-        lastEdited: new Date(),
-        createdAt: new Date(),
-        volumes: [
-          {
-            id: 'v',
-            title: 'V',
-            chapters: [
-              {
-                id: 'ch-1',
-                title: '只有标题',
-                paragraphs: [],
-                createdAt: new Date(),
-                lastEdited: new Date(),
-              },
-            ],
-          },
-        ],
-      } as unknown as Novel,
-    ];
+    (store as any).books = [plainBook];
+    // 同时写入 IndexedDB,供 lookupChapterBookFromDB / loadBookMetaFromDB 使用
+    // 跨文件运行时 fake-indexeddb 的 reset 可能有时序残留,显式清一次 books
+    const { getDB } = await import('src/utils/indexed-db');
+    const db = await getDB();
+    const clearTx = db.transaction('books', 'readwrite');
+    await clearTx.store.clear();
+    await clearTx.done;
+    await db.put('books', plainBook);
 
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 

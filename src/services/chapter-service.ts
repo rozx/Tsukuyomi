@@ -1,24 +1,26 @@
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-generator';
 import {
+  findChapterById,
   getChapterContentText,
   getChapterDisplayTitle,
   normalizeChapterTitle,
 } from 'src/utils/novel-utils';
+import { hasNonEmptyTranslation } from 'src/utils/text-utils';
 import { formatTranslationForDisplay } from 'src/utils/translation-utils';
 import { ChapterContentService } from './chapter-content-service';
+import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 
-/**
- * 段落搜索结果接口
- */
-export interface ParagraphSearchResult {
-  paragraph: Paragraph;
-  paragraphIndex: number;
-  chapter: Chapter;
-  chapterIndex: number;
-  volume: Volume;
-  volumeIndex: number;
-}
+export type { ParagraphSearchResult };
+
+/** 两遍扫描共用的章节索引记录，包含 { vIndex, cIndex } 用于跨卷回放 */
+type ChapterIndexEntry = { chapter: Chapter; vIndex: number; cIndex: number };
+
+/** 两遍扫描（pass1）共用的 chapter-id → (chapter, vIndex, cIndex) 映射 */
+type ChapterIndexMap = Map<string, ChapterIndexEntry>;
+
+/** 两遍扫描共用的扫描起点（绝对位置） */
+type ScanStart = { volumeIndex: number; chapterIndex: number; paragraphIndex: number };
 
 /**
  * 获取段落的翻译文本
@@ -44,6 +46,277 @@ function hasParagraphContent(paragraph: Paragraph | null | undefined): boolean {
   return !!paragraph?.text && paragraph.text.trim().length > 0;
 }
 
+function resolveExportChapterTitle(
+  chapter: Chapter,
+  type: 'original' | 'translation' | 'bilingual',
+  book?: Novel,
+): string {
+  if (type !== 'original') return getChapterDisplayTitle(chapter, book);
+  let title = '';
+  if (chapter.title) {
+    title = typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
+  }
+  const normalizeEnabled =
+    chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
+  return normalizeEnabled ? normalizeChapterTitle(title) : title;
+}
+
+function buildOriginalExportBody(paragraphs: Paragraph[]): string {
+  return paragraphs.reduce((acc, p, idx) => {
+    const text = p.text || '';
+    acc += text;
+    const isLast = idx === paragraphs.length - 1;
+    if (isLast) return acc;
+    if (text.trim() === '') return `${acc}\n`;
+    if (!acc.endsWith('\n')) return `${acc}\n`;
+    return acc;
+  }, '');
+}
+
+function buildTranslationExportBody(
+  paragraphs: Paragraph[],
+  book: Novel | undefined,
+  chapter: Chapter,
+): string {
+  let consecutiveReturnParagraphs = 0;
+  return paragraphs.reduce((acc, paragraph, idx, arr) => {
+    let translation = getParagraphTranslationText(paragraph);
+    translation = formatTranslationForDisplay(translation, book, chapter) ?? '';
+    const isLast = idx === arr.length - 1;
+    const isOriginalEmpty = !paragraph.text || paragraph.text.trim().length === 0;
+    const isReturnParagraph = isOriginalEmpty && translation.trim().length === 0;
+
+    let next = acc;
+    if (!isReturnParagraph && consecutiveReturnParagraphs > 0) {
+      next += '\n';
+      consecutiveReturnParagraphs = 0;
+    }
+    next += translation;
+
+    if (!isLast) {
+      const translationTrailingBreaks = countTrailingLineBreaks(translation);
+      const originalTrailingBreaks = countTrailingLineBreaks(paragraph.text);
+      const targetBreaks = Math.max(originalTrailingBreaks + 1, 1);
+      const missingBreaks = targetBreaks - translationTrailingBreaks;
+      if (missingBreaks > 0) next += '\n'.repeat(missingBreaks);
+    }
+
+    if (isReturnParagraph) {
+      consecutiveReturnParagraphs++;
+      if (isLast) {
+        next += '\n';
+        consecutiveReturnParagraphs = 0;
+      }
+    }
+    return next;
+  }, '');
+}
+
+function buildBilingualExportLines(
+  paragraphs: Paragraph[],
+  book: Novel | undefined,
+  chapter: Chapter,
+): string {
+  const lines = paragraphs.map((p) => {
+    const original = p.text;
+    let translation = getParagraphTranslationText(p);
+    translation = formatTranslationForDisplay(translation, book, chapter);
+    let normalizedTranslation = translation || original;
+    const originalTrailingNewlines = countTrailingLineBreaks(original);
+    normalizedTranslation = normalizedTranslation.replace(/\n+$/, '');
+    normalizedTranslation += '\n'.repeat(originalTrailingNewlines);
+    return `${original}\n${normalizedTranslation}\n`;
+  });
+  const processedLines = lines.map((line) => {
+    if (line.trim() === '') return '\n\n';
+    return line.endsWith('\n') ? line : `${line}\n`;
+  });
+  return processedLines.join('');
+}
+
+function buildExportChapterContent(
+  chapterWithContent: Chapter,
+  chapterTitle: string,
+  type: 'original' | 'translation' | 'bilingual',
+  format: 'txt' | 'json' | 'clipboard',
+  book?: Novel,
+): string {
+  const paragraphs = chapterWithContent.content || [];
+  if (format === 'json') {
+    const data = paragraphs.map((p) => ({
+      original: p.text,
+      translation: formatTranslationForDisplay(
+        getParagraphTranslationText(p),
+        book,
+        chapterWithContent,
+      ),
+    }));
+    return JSON.stringify({ title: chapterTitle, content: data }, null, 2);
+  }
+  if (type === 'original') {
+    return `${chapterTitle}\n\n${buildOriginalExportBody(paragraphs)}`;
+  }
+  if (type === 'translation') {
+    return `${chapterTitle}\n\n${buildTranslationExportBody(paragraphs, book, chapterWithContent)}`;
+  }
+  return `${chapterTitle}\n\n${buildBilingualExportLines(paragraphs, book, chapterWithContent)}`;
+}
+
+async function performChapterExportAction(
+  content: string,
+  format: 'txt' | 'json' | 'clipboard',
+  chapterTitle: string,
+): Promise<void> {
+  if (format === 'clipboard') {
+    try {
+      await navigator.clipboard.writeText(content);
+    } catch (err) {
+      throw new Error(
+        err instanceof Error
+          ? `复制到剪贴板失败：${err.message}`
+          : '复制到剪贴板失败：请重试或检查权限',
+      );
+    }
+    return;
+  }
+  const isWindows =
+    typeof navigator !== 'undefined' && typeof navigator.userAgent === 'string'
+      ? /Windows/i.test(navigator.userAgent)
+      : false;
+  const fileContent =
+    format === 'txt' && isWindows
+      ? content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n')
+      : content;
+  const blob = new Blob([fileContent], {
+    type: format === 'json' ? 'application/json' : 'text/plain;charset=utf-8',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${chapterTitle}.${format}`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function buildParagraphSearchResult(
+  paragraph: Paragraph,
+  paragraphIndex: number,
+  chapter: Chapter,
+  chapterIndex: number,
+  volume: Volume,
+  volumeIndex: number,
+): ParagraphSearchResult {
+  return { paragraph, paragraphIndex, chapter, chapterIndex, volume, volumeIndex };
+}
+
+function findParagraphInLoadedChapters(
+  novel: Novel,
+  paragraphId: string,
+  chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[],
+): ParagraphSearchResult | null {
+  const volumes = novel.volumes || [];
+  for (let vIndex = 0; vIndex < volumes.length; vIndex++) {
+    const volume = volumes[vIndex];
+    if (!volume?.chapters) continue;
+    for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
+      const chapter = volume.chapters[cIndex];
+      if (!chapter) continue;
+      if (chapter.content === undefined) {
+        chaptersToLoad.push({ chapter, vIndex, cIndex });
+        continue;
+      }
+      if (!chapter.content) continue;
+      for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+        const paragraph = chapter.content[pIndex];
+        if (paragraph && paragraph.id === paragraphId) {
+          return buildParagraphSearchResult(paragraph, pIndex, chapter, cIndex, volume, vIndex);
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function findParagraphInBatchLoadedChapters(
+  novel: Novel,
+  paragraphId: string,
+  chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[],
+  contentsMap: Map<string, Paragraph[] | undefined>,
+): ParagraphSearchResult | null {
+  const volumes = novel.volumes || [];
+  for (const { chapter, vIndex, cIndex } of chaptersToLoad) {
+    const content = contentsMap.get(chapter.id);
+    chapter.content = content || [];
+    chapter.contentLoaded = true;
+    if (!chapter.content) continue;
+    for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+      const paragraph = chapter.content[pIndex];
+      if (!paragraph || paragraph.id !== paragraphId) continue;
+      const volume = volumes[vIndex];
+      if (!volume) continue;
+      return buildParagraphSearchResult(paragraph, pIndex, chapter, cIndex, volume, vIndex);
+    }
+  }
+  return null;
+}
+
+function shouldPreserveExistingContent(existing: Chapter, incoming: Chapter): boolean {
+  if (existing.content === undefined || existing.content === null) return false;
+  if (incoming.content === undefined || incoming.content === null) return true;
+  return Array.isArray(incoming.content) && incoming.content.length === 0;
+}
+
+function applyChapterReplace(existing: Chapter, incoming: Chapter): Chapter {
+  const lastUpdated = incoming.lastUpdated ?? existing.lastUpdated;
+  const updated: Chapter = {
+    ...incoming,
+    id: existing.id,
+    createdAt: existing.createdAt,
+    lastEdited: new Date(),
+  };
+  if (lastUpdated !== undefined) updated.lastUpdated = lastUpdated;
+  return updated;
+}
+
+function applyChapterMerge(existing: Chapter, incoming: Chapter): Chapter {
+  const lastUpdated = incoming.lastUpdated ?? existing.lastUpdated;
+  const preserveContent = shouldPreserveExistingContent(existing, incoming);
+  const updated: Chapter = {
+    ...existing,
+    ...incoming,
+    id: existing.id,
+    createdAt: existing.createdAt,
+    lastEdited: new Date(),
+    ...(preserveContent ? { content: existing.content } : {}),
+  };
+  if (lastUpdated !== undefined) updated.lastUpdated = lastUpdated;
+  return updated;
+}
+
+function mergeChapterInto(
+  mergedChapters: Chapter[],
+  newChapter: Chapter,
+  updateStrategy: 'replace' | 'merge',
+): void {
+  if (!newChapter.webUrl) {
+    mergedChapters.push(newChapter);
+    return;
+  }
+  const existingIndex = mergedChapters.findIndex((ch) => ch.webUrl === newChapter.webUrl);
+  if (existingIndex < 0) {
+    mergedChapters.push(newChapter);
+    return;
+  }
+  const existing = mergedChapters[existingIndex];
+  if (!existing) return;
+  mergedChapters[existingIndex] =
+    updateStrategy === 'replace'
+      ? applyChapterReplace(existing, newChapter)
+      : applyChapterMerge(existing, newChapter);
+}
+
 /**
  * 统计文本末尾的换行符数量（统一按 LF 计数）
  * @param text 输入文本
@@ -56,6 +329,288 @@ function countTrailingLineBreaks(text: string | null | undefined): number {
   const normalized = text.replace(/\r\n?/g, '\n');
   const match = normalized.match(/\n+$/);
   return match ? match[0].length : 0;
+}
+
+/**
+ * 扫描单个章节内所有段落，将命中项追加到 `results`。
+ *
+ * 由 `searchParagraphsSyncShared` / `searchParagraphsAsyncShared` 共用，封装了：
+ *   - 章节内容未加载时直接跳过（`chapter.content` falsy）
+ *   - 逐段落调用 `match(paragraph)` 判定命中
+ *   - 可选的 `onlyWithTranslation` 过滤（段落需至少有一条非空翻译）
+ *   - 达到 `maxParagraphs` 后立即停止并返回 true，供调用方在外层循环中一并中断
+ *
+ * @returns 若结果数量已达到 `maxParagraphs` 返回 true，表示外层应停止继续扫描。
+ */
+function collectParagraphMatchesInChapter(
+  chapter: Chapter,
+  volume: Volume,
+  vIndex: number,
+  cIndex: number,
+  match: (paragraph: Paragraph) => boolean,
+  onlyWithTranslation: boolean,
+  maxParagraphs: number,
+  results: ParagraphSearchResult[],
+): boolean {
+  if (!chapter.content) return false;
+
+  for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+    // 如果已达到最大返回数量，停止搜索
+    if (results.length >= maxParagraphs) {
+      return true;
+    }
+
+    const paragraph = chapter.content[pIndex];
+    if (!paragraph) continue;
+
+    if (!match(paragraph)) continue;
+
+    // 如果要求只返回有翻译的段落，检查段落是否有翻译
+    if (onlyWithTranslation && !hasNonEmptyTranslation(paragraph)) {
+      continue;
+    }
+
+    results.push({
+      paragraph,
+      paragraphIndex: pIndex,
+      chapter,
+      chapterIndex: cIndex,
+      volume,
+      volumeIndex: vIndex,
+    });
+
+    // 如果已达到最大返回数量，停止搜索
+    if (results.length >= maxParagraphs) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * 根据 chapterId 定位目标卷/章索引。未提供 chapterId 时返回 `{}`；找不到则返回 null。
+ */
+function locateSearchTarget(
+  volumes: Volume[],
+  chapterId: string | undefined,
+): { targetVolumeIndex: number | null; targetChapterIndex: number | null } | null {
+  if (!chapterId) {
+    return { targetVolumeIndex: null, targetChapterIndex: null };
+  }
+  for (let vIndex = 0; vIndex < volumes.length; vIndex++) {
+    const volume = volumes[vIndex];
+    if (!volume || !volume.chapters) continue;
+    const cIndex = volume.chapters.findIndex((c) => c.id === chapterId);
+    if (cIndex !== -1) {
+      return { targetVolumeIndex: vIndex, targetChapterIndex: cIndex };
+    }
+  }
+  return null;
+}
+
+/**
+ * 根据是否指定了目标位置，返回卷/章节的遍历范围。
+ * 未指定时遍历全部；指定时只返回单卷 / 单章。
+ */
+function computeScanRange(
+  volumeCount: number,
+  targetVolumeIndex: number | null,
+): { start: number; end: number } {
+  if (targetVolumeIndex !== null) {
+    return { start: targetVolumeIndex, end: targetVolumeIndex };
+  }
+  return { start: 0, end: volumeCount - 1 };
+}
+
+/**
+ * 确保单个章节内容已加载：未加载时从 IndexedDB 读取并回填 content / contentLoaded。
+ * 导出供 paragraph-tools 等共用，避免多处重复抄写单章懒加载样板。
+ */
+export async function ensureSingleChapterContentLoaded(
+  chapter: Chapter | null | undefined,
+): Promise<void> {
+  if (!chapter || chapter.content !== undefined) return;
+  const content = await ChapterContentService.loadChapterContent(chapter.id);
+  chapter.content = content || [];
+  chapter.contentLoaded = true;
+}
+
+/**
+ * 批量加载一组待加载章节的内容，回填到 chapter.content / contentLoaded。
+ * 导出供 paragraph-tools 等共用，避免多处重复抄写批量加载样板。
+ */
+export async function bulkLoadMissingChapters(
+  chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[],
+): Promise<void> {
+  if (chaptersToLoad.length === 0) return;
+  const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
+  const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+  for (const { chapter } of chaptersToLoad) {
+    const content = contentsMap.get(chapter.id);
+    chapter.content = content || [];
+    chapter.contentLoaded = true;
+  }
+}
+
+/**
+ * 计算单卷内要遍历的章节范围：若指定 targetChapterIndex 则退化为单章。
+ */
+function resolveChapterRange(
+  volume: Volume,
+  targetChapterIndex: number | null,
+): { start: number; end: number } {
+  if (targetChapterIndex !== null) {
+    return { start: targetChapterIndex, end: targetChapterIndex };
+  }
+  return { start: 0, end: (volume.chapters?.length ?? 1) - 1 };
+}
+
+/**
+ * 遍历 [startV, endV] × [startC, endC] 内每个合法章节，逐个调用 visit。
+ * visit 返回 'stop-chapter' 中断章节循环、'stop-all' 中断整个遍历。供 pass 1/2 共用。
+ */
+function forEachChapterInRange(
+  volumes: Volume[],
+  startVolumeIndex: number,
+  endVolumeIndex: number,
+  targetChapterIndex: number | null,
+  visit: (ctx: { chapter: Chapter; volume: Volume; vIndex: number; cIndex: number }) => void | 'stop-chapter' | 'stop-all',
+): void {
+  for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
+    const volume = volumes[vIndex];
+    if (!volume || !volume.chapters) continue;
+    const { start: startC, end: endC } = resolveChapterRange(volume, targetChapterIndex);
+    let stopAll = false;
+    for (let cIndex = startC; cIndex <= endC; cIndex++) {
+      const chapter = volume.chapters[cIndex];
+      if (!chapter) continue;
+      const token = visit({ chapter, volume, vIndex, cIndex });
+      if (token === 'stop-all') {
+        stopAll = true;
+        break;
+      }
+      if (token === 'stop-chapter') break;
+    }
+    if (stopAll) break;
+  }
+}
+
+/**
+ * pass 1：扫描 `[startV, endV]` / `[startC, endC]` 范围内未加载的章节。
+ */
+function collectChaptersNeedingLoad(
+  volumes: Volume[],
+  startVolumeIndex: number,
+  endVolumeIndex: number,
+  targetChapterIndex: number | null,
+): { chapter: Chapter; vIndex: number; cIndex: number }[] {
+  const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
+  forEachChapterInRange(
+    volumes,
+    startVolumeIndex,
+    endVolumeIndex,
+    targetChapterIndex,
+    ({ chapter, vIndex, cIndex }) => {
+      if (chapter.content === undefined) {
+        chaptersToLoad.push({ chapter, vIndex, cIndex });
+      }
+    },
+  );
+  return chaptersToLoad;
+}
+
+/**
+ * pass 2：在指定范围内逐段落匹配、收集结果；超过 maxParagraphs 时提前退出。
+ */
+async function scanChaptersForMatches(
+  volumes: Volume[],
+  startVolumeIndex: number,
+  endVolumeIndex: number,
+  targetChapterIndex: number | null,
+  match: (paragraph: Paragraph) => boolean,
+  onlyWithTranslation: boolean,
+  maxParagraphs: number,
+): Promise<ParagraphSearchResult[]> {
+  const results: ParagraphSearchResult[] = [];
+  // 预加载未加载的章节（pass 2 之前可能有新章节未 pass 1 扫描到）
+  for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
+    const volume = volumes[vIndex];
+    if (!volume || !volume.chapters) continue;
+    const { start: startC, end: endC } = resolveChapterRange(volume, targetChapterIndex);
+    let reachedLimit = false;
+    for (let cIndex = startC; cIndex <= endC; cIndex++) {
+      const chapter = volume.chapters[cIndex];
+      if (!chapter) continue;
+      // 如果仍未加载，按需加载（可能是在第一遍之后添加的新章节）
+      await ensureSingleChapterContentLoaded(chapter);
+      reachedLimit = collectParagraphMatchesInChapter(
+        chapter,
+        volume,
+        vIndex,
+        cIndex,
+        match,
+        onlyWithTranslation,
+        maxParagraphs,
+        results,
+      );
+      if (reachedLimit) break;
+    }
+    if (results.length >= maxParagraphs) break;
+  }
+  return results;
+}
+
+/**
+ * `searchParagraphsByKeywordAsync` / `searchParagraphsByRegexAsync` 共享的扫描逻辑。
+ * 负责：
+ *   1. 根据 chapterId 定位目标卷/章索引（若提供）
+ *   2. 批量按需加载未加载的章节内容
+ *   3. 遍历指定范围的章节，对每个段落调用 `match(paragraph)` 决定是否命中
+ *   4. 应用 `onlyWithTranslation` 过滤、收集结果并在达到 `maxParagraphs` 时提前退出
+ *
+ * 行为与原内联实现完全等价；不同的匹配策略通过 `match` 回调注入。
+ */
+async function searchParagraphsAsyncShared(
+  novel: Novel,
+  chapterId: string | undefined,
+  maxParagraphs: number,
+  onlyWithTranslation: boolean,
+  match: (paragraph: Paragraph) => boolean,
+): Promise<ParagraphSearchResult[]> {
+  // 调用方已保证 novel.volumes 非空（两个调用点都做了前置判断）
+  const volumes = novel.volumes ?? [];
+
+  // 如果提供了 chapterId，需要找到该章节的位置
+  const target = locateSearchTarget(volumes, chapterId);
+  if (!target) return [];
+  const { targetVolumeIndex, targetChapterIndex } = target;
+
+  // 计算卷遍历范围（若指定 chapterId 则退化为单卷）
+  const { start: startVolumeIndex, end: endVolumeIndex } = computeScanRange(
+    volumes.length,
+    targetVolumeIndex,
+  );
+
+  // pass 1：收集需要加载的章节并批量加载
+  const chaptersToLoad = collectChaptersNeedingLoad(
+    volumes,
+    startVolumeIndex,
+    endVolumeIndex,
+    targetChapterIndex,
+  );
+  await bulkLoadMissingChapters(chaptersToLoad);
+
+  // pass 2：在加载的章节中搜索
+  return scanChaptersForMatches(
+    volumes,
+    startVolumeIndex,
+    endVolumeIndex,
+    targetChapterIndex,
+    match,
+    onlyWithTranslation,
+    maxParagraphs,
+  );
 }
 
 /**
@@ -101,27 +656,52 @@ export class ChapterService {
   }
 
   /**
-   * 通过章节 ID 查找章节
+   * 通过章节 ID 查找章节（委托给 utils/novel-utils 的纯函数）。
    * @param novel 小说对象
    * @param chapterId 章节 ID
    * @returns 找到的章节及其位置信息，如果不存在则返回 null
    */
-  static findChapterById(
+  static findChapterById = findChapterById;
+
+  /**
+   * 按指定方向查找相邻章节（同卷内相邻优先，否则跨卷找对端非空卷的首/末章节）
+   * - direction = -1：向前（同卷 chapterIndex-1，跨卷回溯找上一非空卷的**最后**一章）
+   * - direction = +1：向后（同卷 chapterIndex+1，跨卷前进找下一非空卷的**第一**章）
+   */
+  private static findAdjacentChapter(
     novel: Novel | null | undefined,
     chapterId: string,
+    direction: -1 | 1,
   ): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
-    if (!novel || !novel.volumes || !chapterId) {
-      return null;
+    const current = ChapterService.locateCurrentChapter(novel, chapterId);
+    if (!current) return null;
+    const { volumeIndex, chapterIndex } = current;
+    const volumes = novel?.volumes;
+    if (!volumes) return null;
+
+    // 同卷内相邻章节
+    const currentVolume = volumes[volumeIndex];
+    const nextInVolume = chapterIndex + direction;
+    const inBounds =
+      direction === -1
+        ? nextInVolume >= 0
+        : nextInVolume < (currentVolume?.chapters?.length ?? 0);
+    if (currentVolume && inBounds) {
+      const chapter = currentVolume.chapters?.[nextInVolume];
+      if (chapter) {
+        return { chapter, volume: currentVolume, volumeIndex, chapterIndex: nextInVolume };
+      }
     }
 
-    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (volume && volume.chapters) {
-        for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
-          const chapter = volume.chapters[cIndex];
-          if (chapter && chapter.id === chapterId) {
-            return { chapter, volume, volumeIndex: vIndex, chapterIndex: cIndex };
-          }
+    // 跨卷查找：-1 找上一非空卷的末章，+1 找下一非空卷的首章
+    const end = direction === -1 ? -1 : volumes.length;
+    for (let vIdx = volumeIndex + direction; vIdx !== end; vIdx += direction) {
+      const volume = volumes[vIdx];
+      if (volume && volume.chapters && volume.chapters.length > 0) {
+        const cIdx = direction === -1 ? volume.chapters.length - 1 : 0;
+        const chapter = volume.chapters[cIdx];
+        if (chapter) {
+          return { chapter, volume, volumeIndex: vIdx, chapterIndex: cIdx };
         }
       }
     }
@@ -139,37 +719,7 @@ export class ChapterService {
     novel: Novel | null | undefined,
     chapterId: string,
   ): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
-    const current = ChapterService.findChapterById(novel, chapterId);
-    if (!current) {
-      return null;
-    }
-
-    const { volumeIndex, chapterIndex } = current;
-
-    // 如果当前章节不是该卷的第一个章节，返回前一个章节
-    if (chapterIndex > 0) {
-      const volume = novel?.volumes?.[volumeIndex];
-      const chapter = volume?.chapters?.[chapterIndex - 1];
-      if (volume && chapter) {
-        return { chapter, volume, volumeIndex, chapterIndex: chapterIndex - 1 };
-      }
-    }
-
-    // 如果当前章节是该卷的第一个章节，查找上一卷的最后一个章节
-    if (volumeIndex > 0) {
-      for (let vIndex = volumeIndex - 1; vIndex >= 0; vIndex--) {
-        const volume = novel?.volumes?.[vIndex];
-        if (volume && volume.chapters && volume.chapters.length > 0) {
-          const lastChapterIndex = volume.chapters.length - 1;
-          const chapter = volume.chapters[lastChapterIndex];
-          if (chapter) {
-            return { chapter, volume, volumeIndex: vIndex, chapterIndex: lastChapterIndex };
-          }
-        }
-      }
-    }
-
-    return null;
+    return ChapterService.findAdjacentChapter(novel, chapterId, -1);
   }
 
   /**
@@ -182,36 +732,7 @@ export class ChapterService {
     novel: Novel | null | undefined,
     chapterId: string,
   ): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
-    const current = ChapterService.findChapterById(novel, chapterId);
-    if (!current) {
-      return null;
-    }
-
-    const { volumeIndex, chapterIndex } = current;
-    const volume = novel?.volumes?.[volumeIndex];
-
-    // 如果当前章节不是该卷的最后一个章节，返回下一个章节
-    if (volume && volume.chapters && chapterIndex < volume.chapters.length - 1) {
-      const chapter = volume.chapters[chapterIndex + 1];
-      if (chapter) {
-        return { chapter, volume, volumeIndex, chapterIndex: chapterIndex + 1 };
-      }
-    }
-
-    // 如果当前章节是该卷的最后一个章节，查找下一卷的第一个章节
-    if (novel?.volumes && volumeIndex < novel.volumes.length - 1) {
-      for (let vIndex = volumeIndex + 1; vIndex < novel.volumes.length; vIndex++) {
-        const nextVolume = novel.volumes[vIndex];
-        if (nextVolume && nextVolume.chapters && nextVolume.chapters.length > 0) {
-          const chapter = nextVolume.chapters[0];
-          if (chapter) {
-            return { chapter, volume: nextVolume, volumeIndex: vIndex, chapterIndex: 0 };
-          }
-        }
-      }
-    }
-
-    return null;
+    return ChapterService.findAdjacentChapter(novel, chapterId, 1);
   }
 
   /**
@@ -298,68 +819,9 @@ export class ChapterService {
     updateStrategy: 'replace' | 'merge' = 'merge',
   ): Chapter[] {
     const mergedChapters = [...existingChapters];
-
-    newChapters.forEach((newChapter) => {
-      if (newChapter.webUrl) {
-        // 查找同 URL 的现有章节
-        const existingChapterIndex = mergedChapters.findIndex(
-          (ch) => ch.webUrl === newChapter.webUrl,
-        );
-
-        if (existingChapterIndex >= 0) {
-          // 章节已存在，更新内容
-          const existingChapter = mergedChapters[existingChapterIndex];
-          if (existingChapter) {
-            // 保留 lastUpdated：如果新章节有 lastUpdated 则使用新的，否则保留原有的
-            const lastUpdated = newChapter.lastUpdated ?? existingChapter.lastUpdated;
-
-            if (updateStrategy === 'replace') {
-              // 替换整个章节
-              const updatedChapter: Chapter = {
-                ...newChapter,
-                id: existingChapter.id, // 保留原有 ID
-                createdAt: existingChapter.createdAt, // 保留原有的创建时间
-                lastEdited: new Date(), // 内容更新，更新时间
-              };
-              if (lastUpdated !== undefined) {
-                updatedChapter.lastUpdated = lastUpdated;
-              }
-              mergedChapters[existingChapterIndex] = updatedChapter;
-            } else {
-              // 合并章节属性
-              // 重要：保留现有章节的 content，如果新章节没有 content 或 content 为空
-              const preserveContent =
-                existingChapter.content !== undefined &&
-                existingChapter.content !== null &&
-                (newChapter.content === undefined ||
-                  newChapter.content === null ||
-                  (Array.isArray(newChapter.content) && newChapter.content.length === 0));
-
-              const updatedChapter: Chapter = {
-                ...existingChapter,
-                ...newChapter,
-                id: existingChapter.id, // 保留原有 ID
-                createdAt: existingChapter.createdAt, // 保留原有的创建时间
-                lastEdited: new Date(), // 内容更新，更新时间
-                // 如果新章节没有内容，保留原有内容
-                ...(preserveContent ? { content: existingChapter.content } : {}),
-              };
-              if (lastUpdated !== undefined) {
-                updatedChapter.lastUpdated = lastUpdated;
-              }
-              mergedChapters[existingChapterIndex] = updatedChapter;
-            }
-          }
-        } else {
-          // 章节不存在，添加新章节（保留 newChapter 的 lastEdited，应该等于 createdAt）
-          mergedChapters.push(newChapter);
-        }
-      } else {
-        // 没有 URL 的章节，直接添加
-        mergedChapters.push(newChapter);
-      }
-    });
-
+    for (const newChapter of newChapters) {
+      mergeChapterInto(mergedChapters, newChapter, updateStrategy);
+    }
     return mergedChapters;
   }
 
@@ -710,23 +1172,11 @@ export class ChapterService {
     targetVolumeId?: string,
   ): Volume[] {
     const existingVolumes = [...(novel.volumes || [])];
-    let sourceVolumeIndex = -1;
-    let chapterIndex = -1;
-    let chapterToUpdate: Chapter | null = null;
-
-    // 查找章节
-    for (let i = 0; i < existingVolumes.length; i++) {
-      const volume = existingVolumes[i];
-      if (volume && volume.chapters) {
-        const index = volume.chapters.findIndex((c) => c.id === chapterId);
-        if (index !== -1) {
-          sourceVolumeIndex = i;
-          chapterIndex = index;
-          chapterToUpdate = volume.chapters[index] || null;
-          break;
-        }
-      }
-    }
+    const {
+      sourceVolumeIndex,
+      chapterIndex,
+      chapter: chapterToUpdate,
+    } = ChapterService.findChapterSourceIndex(existingVolumes, chapterId);
 
     if (!chapterToUpdate || sourceVolumeIndex === -1) return existingVolumes;
 
@@ -779,18 +1229,18 @@ export class ChapterService {
     const targetVolumeIndex = existingVolumes.findIndex((v) => v.id === targetVolumeId);
     if (targetVolumeIndex === -1) return existingVolumes;
 
-    // 1. 从源卷移除
-    const sourceChapters = [...(sourceVolume.chapters || [])];
-    sourceChapters.splice(chapterIndex, 1);
-    existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: sourceChapters };
+    const moved = ChapterService.spliceSourceAndCloneTargetChapters(
+      existingVolumes,
+      sourceVolumeIndex,
+      sourceVolume,
+      chapterIndex,
+      targetVolumeIndex,
+    );
+    if (!moved) return existingVolumes;
 
-    // 2. 添加到目标卷
-    const targetVolume = existingVolumes[targetVolumeIndex];
-    if (!targetVolume) return existingVolumes;
-
-    const targetChapters = [...(targetVolume.chapters || [])];
-    targetChapters.push(updatedChapter);
-    existingVolumes[targetVolumeIndex] = { ...targetVolume, chapters: targetChapters };
+    // 添加到目标卷
+    moved.targetChapters.push(updatedChapter);
+    existingVolumes[targetVolumeIndex] = { ...moved.targetVolume, chapters: moved.targetChapters };
 
     return existingVolumes;
   }
@@ -840,23 +1290,11 @@ export class ChapterService {
     targetIndex?: number,
   ): Volume[] {
     const existingVolumes = [...(novel.volumes || [])];
-    let sourceVolumeIndex = -1;
-    let chapterIndex = -1;
-    let chapterToMove: Chapter | null = null;
-
-    // 查找并移除章节
-    for (let i = 0; i < existingVolumes.length; i++) {
-      const volume = existingVolumes[i];
-      if (volume && volume.chapters) {
-        const index = volume.chapters.findIndex((c) => c.id === chapterId);
-        if (index !== -1) {
-          sourceVolumeIndex = i;
-          chapterIndex = index;
-          chapterToMove = volume.chapters[index] || null;
-          break;
-        }
-      }
-    }
+    const {
+      sourceVolumeIndex,
+      chapterIndex,
+      chapter: chapterToMove,
+    } = ChapterService.findChapterSourceIndex(existingVolumes, chapterId);
 
     if (!chapterToMove || sourceVolumeIndex === -1) return existingVolumes;
 
@@ -864,28 +1302,28 @@ export class ChapterService {
     const targetVolumeIndex = existingVolumes.findIndex((v) => v.id === targetVolumeId);
     if (targetVolumeIndex === -1) return existingVolumes;
 
-    // 2. 从源卷移除
+    // 2. 从源卷移除 + 克隆目标卷 chapters
+    // 注意：如果源卷和目标卷相同，helper 内部会读取 splice 后写回 existingVolumes 的新对象
     const sourceVolume = existingVolumes[sourceVolumeIndex];
     if (!sourceVolume) return existingVolumes;
 
-    const sourceChapters = [...(sourceVolume.chapters || [])];
-    sourceChapters.splice(chapterIndex, 1);
-    existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: sourceChapters };
+    const moved = ChapterService.spliceSourceAndCloneTargetChapters(
+      existingVolumes,
+      sourceVolumeIndex,
+      sourceVolume,
+      chapterIndex,
+      targetVolumeIndex,
+    );
+    if (!moved) return existingVolumes;
 
-    // 3. 添加到目标卷
-    // 注意：如果源卷和目标卷相同，我们需要使用更新后的 existingVolumes[sourceVolumeIndex] 作为目标卷
-    // 因为上面已经修改了 existingVolumes[sourceVolumeIndex]
-
-    const targetVolume = existingVolumes[targetVolumeIndex];
-    if (!targetVolume) return existingVolumes;
-
-    const targetChapters = [...(targetVolume.chapters || [])];
-
+    // 3. 按指定位置插入目标章节
     const insertIndex =
-      targetIndex !== undefined && targetIndex !== null ? targetIndex : targetChapters.length;
+      targetIndex !== undefined && targetIndex !== null
+        ? targetIndex
+        : moved.targetChapters.length;
 
-    targetChapters.splice(insertIndex, 0, chapterToMove);
-    existingVolumes[targetVolumeIndex] = { ...targetVolume, chapters: targetChapters };
+    moved.targetChapters.splice(insertIndex, 0, chapterToMove);
+    existingVolumes[targetVolumeIndex] = { ...moved.targetVolume, chapters: moved.targetChapters };
 
     return existingVolumes;
   }
@@ -946,283 +1384,13 @@ export class ChapterService {
     // 回退到线性搜索
     const trimmedKeyword = keyword.trim().toLowerCase();
 
-    // 如果提供了 chapterId，需要找到该章节的位置
-    let targetVolumeIndex: number | null = null;
-    let targetChapterIndex: number | null = null;
-
-    if (chapterId) {
-      // 查找目标章节的位置
-      for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
-        const volume = novel.volumes[vIndex];
-        if (volume && volume.chapters) {
-          const cIndex = volume.chapters.findIndex((c) => c.id === chapterId);
-          if (cIndex !== -1) {
-            targetVolumeIndex = vIndex;
-            targetChapterIndex = cIndex;
-            break;
-          }
-        }
-      }
-
-      // 如果找不到指定的章节，返回空结果
-      if (targetVolumeIndex === null || targetChapterIndex === null) {
-        return [];
-      }
-    }
-
-    // 收集需要加载的章节（批量加载优化）
-    const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
-
-    // 第一遍：收集需要加载的章节
-    // 如果指定了章节，只加载该章节；否则加载所有章节
-    const startVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-    const endVolumeIndex =
-      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
-
-    for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
-      // 如果指定了章节，只处理目标卷
-      if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) {
-        continue;
-      }
-
-      // 确定章节范围：如果指定了章节，只处理该章节；否则处理所有章节
-      const startChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
-      const endChapterIndex =
-        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
-
-      // 遍历章节
-      for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter) continue;
-
-        // 如果需要加载，添加到列表
-        if (chapter.content === undefined) {
-          chaptersToLoad.push({ chapter, vIndex, cIndex });
-        }
-      }
-    }
-
-    // 批量加载需要的章节
-    if (chaptersToLoad.length > 0) {
-      const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
-      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-
-      // 更新章节内容
-      for (const { chapter } of chaptersToLoad) {
-        const content = contentsMap.get(chapter.id);
-        chapter.content = content || [];
-        chapter.contentLoaded = true;
-      }
-    }
-
-    // 第二遍：在加载的章节中搜索
-    const results: ParagraphSearchResult[] = [];
-
-    // 如果指定了章节，只搜索该章节；否则搜索所有章节
-    const searchStartVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-    const searchEndVolumeIndex =
-      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
-
-    for (let vIndex = searchStartVolumeIndex; vIndex <= searchEndVolumeIndex; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
-      // 如果指定了章节，只处理目标卷
-      if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) {
-        continue;
-      }
-
-      // 确定章节范围：如果指定了章节，只搜索该章节；否则搜索所有章节
-      const searchStartChapterIndex =
-        chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
-      const searchEndChapterIndex =
-        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
-
-      // 遍历章节
-      for (let cIndex = searchStartChapterIndex; cIndex <= searchEndChapterIndex; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter) continue;
-
-        // 如果仍未加载，按需加载（可能是在第一遍之后添加的新章节）
-        if (chapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(chapter.id);
-          chapter.content = content || [];
-          chapter.contentLoaded = true;
-        }
-
-        // 搜索段落
-        if (chapter.content) {
-          for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-            // 如果已达到最大返回数量，停止搜索
-            if (results.length >= maxParagraphs) {
-              break;
-            }
-
-            const paragraph = chapter.content[pIndex];
-            if (paragraph && paragraph.text.toLowerCase().includes(trimmedKeyword)) {
-              // 如果要求只返回有翻译的段落，检查段落是否有翻译
-              if (onlyWithTranslation) {
-                const hasTranslation =
-                  paragraph.translations &&
-                  paragraph.translations.length > 0 &&
-                  paragraph.translations.some(
-                    (t) => t.translation && t.translation.trim().length > 0,
-                  );
-                if (!hasTranslation) {
-                  continue; // 跳过没有翻译的段落
-                }
-              }
-
-              results.push({
-                paragraph,
-                paragraphIndex: pIndex,
-                chapter,
-                chapterIndex: cIndex,
-                volume,
-                volumeIndex: vIndex,
-              });
-
-              // 如果已达到最大返回数量，停止搜索
-              if (results.length >= maxParagraphs) {
-                break;
-              }
-            }
-          }
-        }
-
-        // 如果已达到最大返回数量，停止搜索章节
-        if (results.length >= maxParagraphs) {
-          break;
-        }
-      }
-
-      // 如果已达到最大返回数量，停止搜索卷
-      if (results.length >= maxParagraphs) {
-        break;
-      }
-    }
-
-    return results;
-  }
-
-  static searchParagraphsByKeyword(
-    novel: Novel | null | undefined,
-    keyword: string,
-    chapterId?: string,
-    maxParagraphs: number = 1,
-    onlyWithTranslation: boolean = false,
-  ): ParagraphSearchResult[] {
-    if (!novel || !novel.volumes || !keyword.trim()) {
-      return [];
-    }
-
-    const results: ParagraphSearchResult[] = [];
-    const trimmedKeyword = keyword.trim().toLowerCase();
-
-    // 如果提供了 chapterId，需要找到该章节的位置
-    let targetVolumeIndex: number | null = null;
-    let targetChapterIndex: number | null = null;
-
-    if (chapterId) {
-      // 查找目标章节的位置
-      for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
-        const volume = novel.volumes[vIndex];
-        if (volume && volume.chapters) {
-          const cIndex = volume.chapters.findIndex((c) => c.id === chapterId);
-          if (cIndex !== -1) {
-            targetVolumeIndex = vIndex;
-            targetChapterIndex = cIndex;
-            break;
-          }
-        }
-      }
-
-      // 如果找不到指定的章节，返回空结果
-      if (targetVolumeIndex === null || targetChapterIndex === null) {
-        return [];
-      }
-    }
-
-    // 如果指定了章节，只搜索该章节；否则搜索所有章节
-    const startVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-    const endVolumeIndex =
-      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
-
-    for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
-      // 如果指定了章节，只处理目标卷
-      if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) {
-        continue;
-      }
-
-      // 确定章节范围：如果指定了章节，只搜索该章节；否则搜索所有章节
-      const startChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
-      const endChapterIndex =
-        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
-
-      // 遍历章节
-      for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter) continue;
-
-        // 搜索段落
-        if (chapter.content) {
-          for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-            // 如果已达到最大返回数量，停止搜索
-            if (results.length >= maxParagraphs) {
-              break;
-            }
-
-            const paragraph = chapter.content[pIndex];
-            if (paragraph && paragraph.text.toLowerCase().includes(trimmedKeyword)) {
-              // 如果要求只返回有翻译的段落，检查段落是否有翻译
-              if (onlyWithTranslation) {
-                const hasTranslation =
-                  paragraph.translations &&
-                  paragraph.translations.length > 0 &&
-                  paragraph.translations.some(
-                    (t) => t.translation && t.translation.trim().length > 0,
-                  );
-                if (!hasTranslation) {
-                  continue; // 跳过没有翻译的段落
-                }
-              }
-
-              results.push({
-                paragraph,
-                paragraphIndex: pIndex,
-                chapter,
-                chapterIndex: cIndex,
-                volume,
-                volumeIndex: vIndex,
-              });
-
-              // 如果已达到最大返回数量，停止搜索
-              if (results.length >= maxParagraphs) {
-                break;
-              }
-            }
-          }
-        }
-
-        // 如果已达到最大返回数量，停止搜索章节
-        if (results.length >= maxParagraphs) {
-          break;
-        }
-      }
-
-      // 如果已达到最大返回数量，停止搜索卷
-      if (results.length >= maxParagraphs) {
-        break;
-      }
-    }
-
-    return results;
+    return searchParagraphsAsyncShared(
+      novel,
+      chapterId,
+      maxParagraphs,
+      onlyWithTranslation,
+      (paragraph) => paragraph.text.toLowerCase().includes(trimmedKeyword),
+    );
   }
 
   /**
@@ -1257,187 +1425,34 @@ export class ChapterService {
       return [];
     }
 
-    // 如果提供了 chapterId，需要找到该章节的位置
-    let targetVolumeIndex: number | null = null;
-    let targetChapterIndex: number | null = null;
-
-    if (chapterId) {
-      // 查找目标章节的位置
-      for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
-        const volume = novel.volumes[vIndex];
-        if (volume && volume.chapters) {
-          const cIndex = volume.chapters.findIndex((c) => c.id === chapterId);
-          if (cIndex !== -1) {
-            targetVolumeIndex = vIndex;
-            targetChapterIndex = cIndex;
-            break;
+    return searchParagraphsAsyncShared(
+      novel,
+      chapterId,
+      maxParagraphs,
+      onlyWithTranslation,
+      (paragraph) => {
+        // 确定要搜索的文本
+        let searchText: string;
+        if (searchInTranslation) {
+          // 在翻译文本中搜索
+          if (!paragraph.translations || paragraph.translations.length === 0) {
+            return false; // 如果没有翻译，跳过
           }
-        }
-      }
-
-      // 如果找不到指定的章节，返回空结果
-      if (targetVolumeIndex === null || targetChapterIndex === null) {
-        return [];
-      }
-    }
-
-    // 收集需要加载的章节（批量加载优化）
-    const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
-
-    // 第一遍：收集需要加载的章节
-    // 如果指定了章节，只加载该章节；否则加载所有章节
-    const startVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-    const endVolumeIndex =
-      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
-
-    for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
-      // 如果指定了章节，只处理目标卷
-      if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) {
-        continue;
-      }
-
-      // 确定章节范围：如果指定了章节，只处理该章节；否则处理所有章节
-      const startChapterIndex = chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
-      const endChapterIndex =
-        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
-
-      // 遍历章节
-      for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter) continue;
-
-        // 如果需要加载，添加到列表
-        if (chapter.content === undefined) {
-          chaptersToLoad.push({ chapter, vIndex, cIndex });
-        }
-      }
-    }
-
-    // 批量加载需要的章节
-    if (chaptersToLoad.length > 0) {
-      const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
-      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-
-      // 更新章节内容
-      for (const { chapter } of chaptersToLoad) {
-        const content = contentsMap.get(chapter.id);
-        chapter.content = content || [];
-        chapter.contentLoaded = true;
-      }
-    }
-
-    // 第二遍：在加载的章节中搜索
-    const results: ParagraphSearchResult[] = [];
-
-    // 如果指定了章节，只搜索该章节；否则搜索所有章节
-    const searchStartVolumeIndex = chapterId && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-    const searchEndVolumeIndex =
-      chapterId && targetVolumeIndex !== null ? targetVolumeIndex : novel.volumes.length - 1;
-
-    for (let vIndex = searchStartVolumeIndex; vIndex <= searchEndVolumeIndex; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
-      // 如果指定了章节，只处理目标卷
-      if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) {
-        continue;
-      }
-
-      // 确定章节范围：如果指定了章节，只搜索该章节；否则搜索所有章节
-      const searchStartChapterIndex =
-        chapterId && targetChapterIndex !== null ? targetChapterIndex : 0;
-      const searchEndChapterIndex =
-        chapterId && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
-
-      // 遍历章节
-      for (let cIndex = searchStartChapterIndex; cIndex <= searchEndChapterIndex; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter) continue;
-
-        // 如果仍未加载，按需加载（可能是在第一遍之后添加的新章节）
-        if (chapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(chapter.id);
-          chapter.content = content || [];
-          chapter.contentLoaded = true;
+          // 使用选中的翻译，如果没有则使用第一个翻译
+          const selectedTranslation = paragraph.translations.find(
+            (t) => t.id === paragraph.selectedTranslationId,
+          );
+          searchText =
+            selectedTranslation?.translation || paragraph.translations[0]?.translation || '';
+        } else {
+          // 在原文中搜索
+          searchText = paragraph.text;
         }
 
-        // 搜索段落
-        if (chapter.content) {
-          for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-            // 如果已达到最大返回数量，停止搜索
-            if (results.length >= maxParagraphs) {
-              break;
-            }
-
-            const paragraph = chapter.content[pIndex];
-            if (!paragraph) continue;
-
-            // 确定要搜索的文本
-            let searchText: string;
-            if (searchInTranslation) {
-              // 在翻译文本中搜索
-              if (!paragraph.translations || paragraph.translations.length === 0) {
-                continue; // 如果没有翻译，跳过
-              }
-              // 使用选中的翻译，如果没有则使用第一个翻译
-              const selectedTranslation = paragraph.translations.find(
-                (t) => t.id === paragraph.selectedTranslationId,
-              );
-              searchText =
-                selectedTranslation?.translation || paragraph.translations[0]?.translation || '';
-            } else {
-              // 在原文中搜索
-              searchText = paragraph.text;
-            }
-
-            // 使用正则表达式测试
-            if (regex.test(searchText)) {
-              // 如果要求只返回有翻译的段落，检查段落是否有翻译
-              if (onlyWithTranslation) {
-                const hasTranslation =
-                  paragraph.translations &&
-                  paragraph.translations.length > 0 &&
-                  paragraph.translations.some(
-                    (t) => t.translation && t.translation.trim().length > 0,
-                  );
-                if (!hasTranslation) {
-                  continue; // 跳过没有翻译的段落
-                }
-              }
-
-              results.push({
-                paragraph,
-                paragraphIndex: pIndex,
-                chapter,
-                chapterIndex: cIndex,
-                volume,
-                volumeIndex: vIndex,
-              });
-
-              // 如果已达到最大返回数量，停止搜索
-              if (results.length >= maxParagraphs) {
-                break;
-              }
-            }
-          }
-        }
-
-        // 如果已达到最大返回数量，停止搜索章节
-        if (results.length >= maxParagraphs) {
-          break;
-        }
-      }
-
-      // 如果已达到最大返回数量，停止搜索卷
-      if (results.length >= maxParagraphs) {
-        break;
-      }
-    }
-
-    return results;
+        // 使用正则表达式测试
+        return regex.test(searchText);
+      },
+    );
   }
 
   /**
@@ -1456,81 +1471,16 @@ export class ChapterService {
     novel: Novel | null | undefined,
     paragraphId: string,
   ): Promise<ParagraphSearchResult | null> {
-    if (!novel || !novel.volumes || !paragraphId) {
-      return null;
-    }
+    if (!novel || !novel.volumes || !paragraphId) return null;
 
-    // 收集需要加载的章节 ID（批量加载优化）
     const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
+    const loadedHit = findParagraphInLoadedChapters(novel, paragraphId, chaptersToLoad);
+    if (loadedHit) return loadedHit;
+    if (chaptersToLoad.length === 0) return null;
 
-    // 第一遍：收集需要加载的章节
-    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
-      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter) continue;
-
-        // 如果章节内容已加载，直接检查
-        if (chapter.content !== undefined) {
-          if (chapter.content) {
-            for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-              const paragraph = chapter.content[pIndex];
-              if (paragraph && paragraph.id === paragraphId) {
-                return {
-                  paragraph,
-                  paragraphIndex: pIndex,
-                  chapter,
-                  chapterIndex: cIndex,
-                  volume,
-                  volumeIndex: vIndex,
-                };
-              }
-            }
-          }
-        } else {
-          // 需要加载的章节
-          chaptersToLoad.push({ chapter, vIndex, cIndex });
-        }
-      }
-    }
-
-    // 如果所有章节都已加载但没找到，返回 null
-    if (chaptersToLoad.length === 0) {
-      return null;
-    }
-
-    // 批量加载章节内容
     const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
     const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-
-    // 第二遍：在加载的章节中查找
-    for (const { chapter, vIndex, cIndex } of chaptersToLoad) {
-      const content = contentsMap.get(chapter.id);
-      chapter.content = content || [];
-      chapter.contentLoaded = true;
-
-      if (chapter.content) {
-        for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-          const paragraph = chapter.content[pIndex];
-          if (paragraph && paragraph.id === paragraphId) {
-            const volume = novel.volumes[vIndex];
-            if (!volume) continue;
-            return {
-              paragraph,
-              paragraphIndex: pIndex,
-              chapter,
-              chapterIndex: cIndex,
-              volume,
-              volumeIndex: vIndex,
-            };
-          }
-        }
-      }
-    }
-
-    return null;
+    return findParagraphInBatchLoadedChapters(novel, paragraphId, chaptersToLoad, contentsMap);
   }
 
   static findParagraphLocation(
@@ -1569,6 +1519,484 @@ export class ChapterService {
   }
 
   /**
+   * 批量加载 chaptersToLoad 中记录的章节内容，并写回 chapterMap 里引用的 chapter 对象。
+   * 被 getPreviousParagraphsAsync / getNextParagraphsAsync 的第二遍扫描前共用。
+   */
+  private static async batchLoadCollectedChapters(
+    chaptersToLoad: Set<string>,
+    chapterMap: ChapterIndexMap,
+  ): Promise<void> {
+    if (chaptersToLoad.size === 0) return;
+
+    const chapterIds = Array.from(chaptersToLoad);
+    const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+
+    for (const [chapterId, content] of contentsMap) {
+      const chapterInfo = chapterMap.get(chapterId);
+      if (chapterInfo) {
+        chapterInfo.chapter.content = content || [];
+        chapterInfo.chapter.contentLoaded = true;
+      }
+    }
+  }
+
+  /**
+   * updateChapter / moveChapter 跨卷搬运的共用块：
+   *   1) 从源卷克隆一份 chapters 并 splice 掉第 chapterIndex 项，写回 existingVolumes；
+   *   2) 定位目标卷并克隆其 chapters 数组返回，供调用方 push 或 splice 插入。
+   * 若目标卷下标无效则返回 null，调用方应返回 existingVolumes。
+   */
+  private static spliceSourceAndCloneTargetChapters(
+    existingVolumes: Volume[],
+    sourceVolumeIndex: number,
+    sourceVolume: Volume,
+    chapterIndex: number,
+    targetVolumeIndex: number,
+  ): { targetVolume: Volume; targetChapters: Chapter[] } | null {
+    // 1. 从源卷移除
+    const sourceChapters = [...(sourceVolume.chapters || [])];
+    sourceChapters.splice(chapterIndex, 1);
+    existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: sourceChapters };
+
+    // 2. 定位目标卷（若源卷和目标卷相同，使用 splice 后的新对象）
+    const targetVolume = existingVolumes[targetVolumeIndex];
+    if (!targetVolume) return null;
+
+    const targetChapters = [...(targetVolume.chapters || [])];
+    return { targetVolume, targetChapters };
+  }
+
+  /**
+   * `getPreviousChapter` / `getNextChapter` 共用的定位前言：
+   * 通过 chapterId 找到当前章节位置，不存在则返回 null。
+   */
+  private static locateCurrentChapter(
+    novel: Novel | null | undefined,
+    chapterId: string,
+  ): { volumeIndex: number; chapterIndex: number } | null {
+    const current = ChapterService.findChapterById(novel, chapterId);
+    if (!current) return null;
+    const { volumeIndex, chapterIndex } = current;
+    return { volumeIndex, chapterIndex };
+  }
+
+  /**
+   * 在 `existingVolumes` 里查找某章所在的卷下标 / 章下标 / 章对象。
+   * updateChapter / moveChapter 等多个 mutation 入口共用。
+   */
+  private static findChapterSourceIndex(
+    existingVolumes: Volume[],
+    chapterId: string,
+  ): { sourceVolumeIndex: number; chapterIndex: number; chapter: Chapter | null } {
+    for (let i = 0; i < existingVolumes.length; i++) {
+      const volume = existingVolumes[i];
+      if (volume && volume.chapters) {
+        const index = volume.chapters.findIndex((c) => c.id === chapterId);
+        if (index !== -1) {
+          return {
+            sourceVolumeIndex: i,
+            chapterIndex: index,
+            chapter: volume.chapters[index] || null,
+          };
+        }
+      }
+    }
+    return { sourceVolumeIndex: -1, chapterIndex: -1, chapter: null };
+  }
+
+  /**
+   * 第一遍扫描的共用动作：若 chapter 内容未加载，则记入待加载集合，返回是否新增计数。
+   * 由 getPreviousParagraphsAsync / getNextParagraphsAsync 的 pass 1 使用。
+   */
+  private static collectChapterForLoad(
+    chapter: Chapter | null | undefined,
+    vIndex: number,
+    cIndex: number,
+    chaptersToLoad: Set<string>,
+    chapterMap: ChapterIndexMap,
+  ): boolean {
+    if (chapter && chapter.content === undefined) {
+      chaptersToLoad.add(chapter.id);
+      chapterMap.set(chapter.id, { chapter, vIndex, cIndex });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 第二遍扫描的共用动作：若 chapter 内容仍未加载，则按需懒加载。
+   * 由 getPreviousParagraphsAsync / getNextParagraphsAsync 的 pass 2 使用。
+   */
+  private static async ensureChapterLoaded(chapter: Chapter | null | undefined): Promise<void> {
+    await ensureSingleChapterContentLoaded(chapter);
+  }
+
+  /**
+   * 计算向后遍历时、刚进入某章节应使用的 pIdx（指向该章节最后一段；章节无内容时返回 -1）。
+   */
+  private static lastParagraphIndexOf(chapter: Chapter | null | undefined): number {
+    return chapter && chapter.content ? chapter.content.length - 1 : -1;
+  }
+
+  /**
+   * 向前跨卷：将 state.vIdx 回退到上一个非空卷，把 state.cIdx 指向该卷最后一章，state.pIdx 指向该章最后一段。
+   * 若已无更早的卷，返回 done=true。若跳过的卷本身是空的，会将 cIdx/pIdx 置 -1 并返回 chapter=null 交给调用方 continue。
+   *
+   * 共用于 getPreviousParagraphsAsync 的两遍扫描，封装原来重复出现的「vIdx-- + 空卷兜底 + cIdx=last + pIdx=last」样板。
+   */
+  private static jumpToPrevVolumeLastChapter(
+    state: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+  ): { done: boolean; chapter: Chapter | null } {
+    state.vIdx--;
+    if (state.vIdx < 0) {
+      return { done: true, chapter: null };
+    }
+    const prevVolume = novel.volumes?.[state.vIdx];
+    if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
+      state.cIdx = -1;
+      state.pIdx = -1;
+      return { done: false, chapter: null };
+    }
+    state.cIdx = prevVolume.chapters.length - 1;
+    const prevChapter = prevVolume.chapters[state.cIdx] ?? null;
+    state.pIdx = ChapterService.lastParagraphIndexOf(prevChapter);
+    return { done: false, chapter: prevChapter };
+  }
+
+  /**
+   * 向后跨卷：将 state.vIdx 前进到下一个卷，把 state.cIdx/pIdx 置零。
+   * 若已无更晚的卷，返回 done=true。
+   *
+   * 共用于 getNextParagraphsAsync 的两遍扫描。
+   */
+  private static jumpToNextVolumeFirstChapter(
+    state: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+  ): { done: boolean } {
+    state.vIdx++;
+    if (!novel.volumes || state.vIdx >= novel.volumes.length) {
+      return { done: true };
+    }
+    state.cIdx = 0;
+    state.pIdx = 0;
+    return { done: false };
+  }
+
+  /**
+   * 向后扫描循环中的共用模板：当 cIdx 已越过当前卷末尾时，调用
+   * jumpToNextVolumeFirstChapter 跳到下一卷首章，并把状态写回外层游标。
+   * 返回 'done'（外层应 break）或 'continue'（外层应 continue）。
+   *
+   * 共用于 getNextParagraphsAsync 两遍扫描中的 3 处跨卷前进分支。
+   */
+  private static advanceToNextVolumeOrDone(
+    cursor: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+  ): 'done' | 'continue' {
+    const state = { vIdx: cursor.vIdx, cIdx: cursor.cIdx, pIdx: cursor.pIdx };
+    const step = ChapterService.jumpToNextVolumeFirstChapter(state, novel);
+    cursor.vIdx = state.vIdx;
+    cursor.cIdx = state.cIdx;
+    cursor.pIdx = state.pIdx;
+    return step.done ? 'done' : 'continue';
+  }
+
+  /**
+   * 把 `{ volumeIndex, chapterIndex, paragraphIndex }` 起点装成两遍扫描 / 跨卷助手共用的
+   * `{ vIdx, cIdx, pIdx }` 游标。该样板在 prev / next 的 pass1 / pass2 四处出现。
+   */
+  private static initScanCursor(start: ScanStart): { vIdx: number; cIdx: number; pIdx: number } {
+    return {
+      vIdx: start.volumeIndex,
+      cIdx: start.chapterIndex,
+      pIdx: start.paragraphIndex,
+    };
+  }
+
+  /**
+   * 向前扫描循环的「当前卷校验 + cIdx<0 跨卷」样板：
+   * - 当前卷不存在 / 无 chapters → 调用 stepBackToPrevVolume 并返回 'continue'
+   * - cIdx < 0 → 调用 crossToPrev 跨卷，根据结果返回 'break' / 'continue'
+   * - 其它情况返回 volume 让调用方继续处理
+   */
+  private static async resolvePrevScanVolumeStep(
+    cursor: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+    crossToPrev: () => Promise<{ done: boolean }>,
+  ): Promise<
+    | { kind: 'break' }
+    | { kind: 'continue' }
+    | {
+        kind: 'ready';
+        volume: Volume & { chapters: Chapter[] };
+        chapter: Chapter;
+      }
+  > {
+    const volume = novel.volumes![cursor.vIdx];
+    if (!volume || !volume.chapters) {
+      ChapterService.stepBackToPrevVolume(cursor, novel);
+      return { kind: 'continue' };
+    }
+    if (cursor.cIdx < 0) {
+      const { done } = await crossToPrev();
+      if (done) return { kind: 'break' };
+      return { kind: 'continue' };
+    }
+    const chapter = volume.chapters[cursor.cIdx];
+    if (!chapter) {
+      cursor.cIdx--;
+      cursor.pIdx = -1;
+      return { kind: 'continue' };
+    }
+    return { kind: 'ready', volume: volume as Volume & { chapters: Chapter[] }, chapter };
+  }
+
+  /**
+   * getPreviousParagraphsAsync / getNextParagraphsAsync 共用的前言：
+   * 校验入参、异步定位段落位置，返回初始结果容器与起始游标。
+   * 返回 null 表示无需搜索（调用方应直接返回空数组）。
+   */
+  private static async resolveParagraphSearchStart(
+    novel: Novel | null | undefined,
+    paragraphId: string,
+    count: number,
+  ): Promise<{
+    results: ParagraphSearchResult[];
+    volumeIndex: number;
+    chapterIndex: number;
+    paragraphIndex: number;
+  } | null> {
+    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
+      return null;
+    }
+    const location = await ChapterService.findParagraphLocationAsync(novel, paragraphId);
+    if (!location) {
+      return null;
+    }
+    const { volumeIndex, chapterIndex, paragraphIndex } = location;
+    return { results: [], volumeIndex, chapterIndex, paragraphIndex };
+  }
+
+  /**
+   * 向前跨卷 + 针对新章节执行一次 onChapter 动作（可同步可异步）。
+   * 动作完成后会重算 state.pIdx（兼容 onChapter 把 undefined 的 content 填成 []）。
+   *
+   * 用于统一 getPreviousParagraphsAsync 两遍扫描里 cIdx<0 / pIdx<0 跨卷分支的「jumpToPrev + 动作 + pIdx 重算」样板。
+   */
+  private static async crossToPrevVolumeWithAction(
+    state: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+    onChapter: (chapter: Chapter) => void | Promise<void>,
+  ): Promise<{ done: boolean }> {
+    const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+    if (step.done) return { done: true };
+    if (step.chapter) {
+      await onChapter(step.chapter);
+      state.pIdx = ChapterService.lastParagraphIndexOf(step.chapter);
+    }
+    return { done: false };
+  }
+
+  /**
+   * 将当前游标位置的段落（若非空）追加到 results，参数顺序与 ParagraphSearchResult 对齐。
+   * 供 gatherPrev/NextPassTwoParagraphs 共用。
+   */
+  private static pushCursorParagraphToResults(
+    results: ParagraphSearchResult[],
+    paragraph: Paragraph | undefined,
+    chapter: Chapter,
+    volume: Volume,
+    cursor: { vIdx: number; cIdx: number; pIdx: number },
+  ): void {
+    if (paragraph && hasParagraphContent(paragraph)) {
+      results.push({
+        paragraph,
+        paragraphIndex: cursor.pIdx,
+        chapter,
+        chapterIndex: cursor.cIdx,
+        volume,
+        volumeIndex: cursor.vIdx,
+      });
+    }
+  }
+
+  /**
+   * 两遍扫描共用：当前卷无效时退一步（把 cIdx 指到上一卷最后一章，或 -1），清空 pIdx。
+   */
+  private static stepBackToPrevVolume(
+    cursor: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+  ): void {
+    cursor.vIdx--;
+    const prevVolume = cursor.vIdx >= 0 ? novel.volumes?.[cursor.vIdx] : undefined;
+    cursor.cIdx = prevVolume?.chapters?.length ? prevVolume.chapters.length - 1 : -1;
+    cursor.pIdx = -1;
+  }
+
+  /**
+   * getPreviousParagraphsAsync pass 1：从起点向前扫描，记录所有需加载的章节。
+   * 直到 collected 达到 count*2 或 vIdx 跑完为止。
+   */
+  private static async collectPrevPassOneChapters(
+    novel: Novel,
+    start: ScanStart,
+    count: number,
+    chaptersToLoad: Set<string>,
+    chapterMap: ChapterIndexMap,
+  ): Promise<void> {
+    const cursor = ChapterService.initScanCursor(start);
+    let collected = 0;
+
+    const collectOnce = (chapter: Chapter, vi: number, ci: number): void => {
+      if (ChapterService.collectChapterForLoad(chapter, vi, ci, chaptersToLoad, chapterMap)) {
+        collected++;
+      }
+    };
+
+    const crossToPrevAndCollect = async (): Promise<{ done: boolean }> => {
+      return ChapterService.crossToPrevVolumeWithAction(cursor, novel, (ch) =>
+        collectOnce(ch, cursor.vIdx, cursor.cIdx),
+      );
+    };
+
+    while (collected < count * 2 && cursor.vIdx >= 0) {
+      const step = await ChapterService.resolvePrevScanVolumeStep(
+        cursor,
+        novel,
+        crossToPrevAndCollect,
+      );
+      if (step.kind === 'break') break;
+      if (step.kind === 'continue') continue;
+      const { volume, chapter } = step;
+      collectOnce(chapter, cursor.vIdx, cursor.cIdx);
+      if (cursor.pIdx < 0) {
+        cursor.cIdx--;
+        if (cursor.cIdx < 0) {
+          const { done } = await crossToPrevAndCollect();
+          if (done) break;
+          continue;
+        }
+        const prevChapter = volume.chapters[cursor.cIdx];
+        if (prevChapter) {
+          collectOnce(prevChapter, cursor.vIdx, cursor.cIdx);
+        }
+        cursor.pIdx = ChapterService.lastParagraphIndexOf(prevChapter);
+        continue;
+      }
+      cursor.pIdx--;
+    }
+  }
+
+  /**
+   * getPreviousParagraphsAsync pass 2：从起点向前扫描、收集段落到 results。
+   */
+  private static async gatherPrevPassTwoParagraphs(
+    novel: Novel,
+    start: ScanStart,
+    count: number,
+    results: ParagraphSearchResult[],
+  ): Promise<void> {
+    const cursor = ChapterService.initScanCursor(start);
+    const loadOnce = (chapter: Chapter): Promise<void> =>
+      ChapterService.ensureChapterLoaded(chapter);
+    const crossToPrevAndLoad = async (): Promise<{ done: boolean }> => {
+      return ChapterService.crossToPrevVolumeWithAction(cursor, novel, loadOnce);
+    };
+
+    while (results.length < count && cursor.vIdx >= 0) {
+      const step = await ChapterService.resolvePrevScanVolumeStep(
+        cursor,
+        novel,
+        crossToPrevAndLoad,
+      );
+      if (step.kind === 'break') break;
+      if (step.kind === 'continue') continue;
+      const { volume, chapter } = step;
+      await ChapterService.ensureChapterLoaded(chapter);
+      if (!chapter.content) {
+        cursor.cIdx--;
+        cursor.pIdx = -1;
+        continue;
+      }
+      if (cursor.pIdx < 0) {
+        cursor.cIdx--;
+        if (cursor.cIdx < 0) {
+          const { done } = await crossToPrevAndLoad();
+          if (done) break;
+          continue;
+        }
+        const prevChapter = volume.chapters[cursor.cIdx];
+        await ChapterService.ensureChapterLoaded(prevChapter);
+        cursor.pIdx = ChapterService.lastParagraphIndexOf(prevChapter);
+        continue;
+      }
+      ChapterService.pushCursorParagraphToResults(
+        results,
+        chapter.content[cursor.pIdx],
+        chapter,
+        volume,
+        cursor,
+      );
+      cursor.pIdx--;
+    }
+  }
+
+  /**
+   * getPreviousParagraphsAsync / getNextParagraphsAsync 的共享外层：
+   *   1. 解析起点；2. 构造 startCursor；3. pass1 收集 + 批量加载；4. pass2 扫描出 results。
+   * direction 决定初始 paragraphIndex 的偏移与 pass1 / pass2 的方向。
+   */
+  private static async runDirectionalParagraphScan(
+    novel: Novel | null | undefined,
+    paragraphId: string,
+    count: number,
+    direction: 'prev' | 'next',
+  ): Promise<ParagraphSearchResult[]> {
+    const start = await ChapterService.resolveParagraphSearchStart(novel, paragraphId, count);
+    if (!start || !novel || !novel.volumes) {
+      return [];
+    }
+    const { results, volumeIndex, chapterIndex } = start;
+    const startCursor = {
+      volumeIndex,
+      chapterIndex,
+      paragraphIndex: start.paragraphIndex + (direction === 'prev' ? -1 : 1),
+    };
+
+    const chaptersToLoad = new Set<string>();
+    const chapterMap = new Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>();
+
+    if (direction === 'prev') {
+      await ChapterService.collectPrevPassOneChapters(
+        novel,
+        startCursor,
+        count,
+        chaptersToLoad,
+        chapterMap,
+      );
+    } else {
+      ChapterService.collectNextPassOneChapters(
+        novel,
+        startCursor,
+        count,
+        chaptersToLoad,
+        chapterMap,
+      );
+    }
+
+    await ChapterService.batchLoadCollectedChapters(chaptersToLoad, chapterMap);
+
+    if (direction === 'prev') {
+      await ChapterService.gatherPrevPassTwoParagraphs(novel, startCursor, count, results);
+    } else {
+      await ChapterService.gatherNextPassTwoParagraphs(novel, startCursor, count, results);
+    }
+
+    return results;
+  }
+
+  /**
    * 获取指定段落之前的 x 个段落（异步版本，按需加载章节内容，使用批量加载优化）
    * @param novel 小说对象
    * @param paragraphId 段落 ID
@@ -1580,338 +2008,7 @@ export class ChapterService {
     paragraphId: string,
     count: number,
   ): Promise<ParagraphSearchResult[]> {
-    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
-      return [];
-    }
-
-    const location = await ChapterService.findParagraphLocationAsync(novel, paragraphId);
-    if (!location) {
-      return [];
-    }
-
-    const results: ParagraphSearchResult[] = [];
-    const { volumeIndex, chapterIndex } = location;
-    let { paragraphIndex } = location;
-
-    // 从当前段落的前一个开始，向前遍历
-    paragraphIndex--;
-
-    // 收集需要加载的章节（批量加载优化）
-    const chaptersToLoad = new Set<string>();
-    const chapterMap = new Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>();
-
-    // 第一遍：收集需要加载的章节
-    let vIdx = volumeIndex;
-    let cIdx = chapterIndex;
-    let pIdx = paragraphIndex;
-    let collected = 0;
-
-    while (collected < count * 2 && vIdx >= 0) {
-      // 限制收集的章节数量，避免加载过多
-      const volume = novel.volumes[vIdx];
-      if (!volume || !volume.chapters) {
-        vIdx--;
-        cIdx =
-          vIdx >= 0 && novel.volumes[vIdx]?.chapters
-            ? novel.volumes[vIdx]!.chapters!.length - 1
-            : -1;
-        pIdx = -1;
-        continue;
-      }
-
-      if (cIdx < 0) {
-        vIdx--;
-        if (vIdx < 0) break;
-        const prevVolume = novel.volumes[vIdx];
-        if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-          cIdx = -1;
-          pIdx = -1;
-          continue;
-        }
-        cIdx = prevVolume.chapters.length - 1;
-        const prevChapter = prevVolume.chapters[cIdx];
-        if (prevChapter && prevChapter.content === undefined) {
-          chaptersToLoad.add(prevChapter.id);
-          chapterMap.set(prevChapter.id, { chapter: prevChapter, vIndex: vIdx, cIndex: cIdx });
-          collected++;
-        }
-        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-        continue;
-      }
-
-      const chapter = volume.chapters[cIdx];
-      if (!chapter) {
-        cIdx--;
-        pIdx = -1;
-        continue;
-      }
-
-      if (chapter.content === undefined) {
-        chaptersToLoad.add(chapter.id);
-        chapterMap.set(chapter.id, { chapter, vIndex: vIdx, cIndex: cIdx });
-        collected++;
-      }
-
-      if (pIdx < 0) {
-        cIdx--;
-        if (cIdx < 0) {
-          vIdx--;
-          if (vIdx < 0) break;
-          const prevVolume = novel.volumes[vIdx];
-          if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-            cIdx = -1;
-            pIdx = -1;
-            continue;
-          }
-          cIdx = prevVolume.chapters.length - 1;
-          const prevChapter = prevVolume.chapters[cIdx];
-          if (prevChapter && prevChapter.content === undefined) {
-            chaptersToLoad.add(prevChapter.id);
-            chapterMap.set(prevChapter.id, { chapter: prevChapter, vIndex: vIdx, cIndex: cIdx });
-            collected++;
-          }
-          pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-          continue;
-        }
-        const prevChapter = volume.chapters[cIdx];
-        if (prevChapter && prevChapter.content === undefined) {
-          chaptersToLoad.add(prevChapter.id);
-          chapterMap.set(prevChapter.id, { chapter: prevChapter, vIndex: vIdx, cIndex: cIdx });
-          collected++;
-        }
-        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-        continue;
-      }
-
-      pIdx--;
-    }
-
-    // 批量加载需要的章节
-    if (chaptersToLoad.size > 0) {
-      const chapterIds = Array.from(chaptersToLoad);
-      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-
-      // 更新章节内容
-      for (const [chapterId, content] of contentsMap) {
-        const chapterInfo = chapterMap.get(chapterId);
-        if (chapterInfo) {
-          chapterInfo.chapter.content = content || [];
-          chapterInfo.chapter.contentLoaded = true;
-        }
-      }
-    }
-
-    // 第二遍：重新遍历，这次所有需要的章节都已加载
-    vIdx = volumeIndex;
-    cIdx = chapterIndex;
-    pIdx = paragraphIndex;
-
-    while (results.length < count && vIdx >= 0) {
-      const volume = novel.volumes[vIdx];
-      if (!volume || !volume.chapters) {
-        vIdx--;
-        cIdx =
-          vIdx >= 0 && novel.volumes[vIdx]?.chapters
-            ? novel.volumes[vIdx]!.chapters!.length - 1
-            : -1;
-        pIdx = -1;
-        continue;
-      }
-
-      if (cIdx < 0) {
-        vIdx--;
-        if (vIdx < 0) break;
-        const prevVolume = novel.volumes[vIdx];
-        if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-          cIdx = -1;
-          pIdx = -1;
-          continue;
-        }
-        cIdx = prevVolume.chapters.length - 1;
-        const prevChapter = prevVolume.chapters[cIdx];
-        // 如果仍未加载，按需加载
-        if (prevChapter && prevChapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(prevChapter.id);
-          prevChapter.content = content || [];
-          prevChapter.contentLoaded = true;
-        }
-        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-        continue;
-      }
-
-      const chapter = volume.chapters[cIdx];
-      if (!chapter) {
-        cIdx--;
-        pIdx = -1;
-        continue;
-      }
-
-      // 如果仍未加载，按需加载
-      if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
-        chapter.content = content || [];
-        chapter.contentLoaded = true;
-      }
-
-      if (!chapter.content) {
-        cIdx--;
-        pIdx = -1;
-        continue;
-      }
-
-      if (pIdx < 0) {
-        cIdx--;
-        if (cIdx < 0) {
-          vIdx--;
-          if (vIdx < 0) break;
-          const prevVolume = novel.volumes[vIdx];
-          if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-            cIdx = -1;
-            pIdx = -1;
-            continue;
-          }
-          cIdx = prevVolume.chapters.length - 1;
-          const prevChapter = prevVolume.chapters[cIdx];
-          if (prevChapter && prevChapter.content === undefined) {
-            const content = await ChapterContentService.loadChapterContent(prevChapter.id);
-            prevChapter.content = content || [];
-            prevChapter.contentLoaded = true;
-          }
-          pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-          continue;
-        }
-        const prevChapter = volume.chapters[cIdx];
-        if (prevChapter && prevChapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(prevChapter.id);
-          prevChapter.content = content || [];
-          prevChapter.contentLoaded = true;
-        }
-        pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-        continue;
-      }
-
-      const paragraph = chapter.content[pIdx];
-      // 只添加有内容的段落
-      if (paragraph && hasParagraphContent(paragraph)) {
-        results.push({
-          paragraph,
-          paragraphIndex: pIdx,
-          chapter,
-          chapterIndex: cIdx,
-          volume,
-          volumeIndex: vIdx,
-        });
-      }
-
-      pIdx--;
-    }
-
-    return results;
-  }
-
-  /**
-   * 获取指定段落之前的 x 个段落
-   * @param novel 小说对象
-   * @param paragraphId 段落 ID
-   * @param count 要获取的段落数量
-   * @returns 段落位置信息数组，按从远到近的顺序排列（最远的在前）
-   */
-  static getPreviousParagraphs(
-    novel: Novel | null | undefined,
-    paragraphId: string,
-    count: number,
-  ): ParagraphSearchResult[] {
-    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
-      return [];
-    }
-
-    const location = ChapterService.findParagraphLocation(novel, paragraphId);
-    if (!location) {
-      return [];
-    }
-
-    const results: ParagraphSearchResult[] = [];
-    let { volumeIndex, chapterIndex, paragraphIndex } = location;
-
-    // 从当前段落的前一个开始，向前遍历
-    paragraphIndex--;
-
-    while (results.length < count && volumeIndex >= 0) {
-      const volume = novel.volumes[volumeIndex];
-      if (!volume || !volume.chapters) {
-        volumeIndex--;
-        chapterIndex =
-          volumeIndex >= 0 && novel.volumes[volumeIndex]?.chapters
-            ? novel.volumes[volumeIndex]!.chapters!.length - 1
-            : -1;
-        paragraphIndex = -1;
-        continue;
-      }
-
-      // 如果 chapterIndex 无效，移动到上一卷的最后一章
-      if (chapterIndex < 0) {
-        volumeIndex--;
-        if (volumeIndex < 0) break;
-        const prevVolume = novel.volumes[volumeIndex];
-        if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-          chapterIndex = -1;
-          paragraphIndex = -1;
-          continue;
-        }
-        chapterIndex = prevVolume.chapters.length - 1;
-        const prevChapter = prevVolume.chapters[chapterIndex];
-        paragraphIndex = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-        continue;
-      }
-
-      const chapter = volume.chapters[chapterIndex];
-      if (!chapter || !chapter.content) {
-        chapterIndex--;
-        paragraphIndex = -1;
-        continue;
-      }
-
-      // 如果 paragraphIndex 无效，移动到上一章的最后一个段落
-      if (paragraphIndex < 0) {
-        chapterIndex--;
-        if (chapterIndex < 0) {
-          // 移动到上一卷
-          volumeIndex--;
-          if (volumeIndex < 0) break;
-          const prevVolume = novel.volumes[volumeIndex];
-          if (!prevVolume || !prevVolume.chapters || prevVolume.chapters.length === 0) {
-            chapterIndex = -1;
-            paragraphIndex = -1;
-            continue;
-          }
-          chapterIndex = prevVolume.chapters.length - 1;
-          const prevChapter = prevVolume.chapters[chapterIndex];
-          paragraphIndex = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-          continue;
-        }
-        const prevChapter = volume.chapters[chapterIndex];
-        paragraphIndex = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
-        continue;
-      }
-
-      // 获取当前段落
-      const paragraph = chapter.content[paragraphIndex];
-      // 只添加有内容的段落
-      if (paragraph && hasParagraphContent(paragraph)) {
-        results.unshift({
-          paragraph,
-          paragraphIndex,
-          chapter,
-          chapterIndex,
-          volume,
-          volumeIndex,
-        });
-      }
-
-      paragraphIndex--;
-    }
-
-    return results;
+    return ChapterService.runDirectionalParagraphScan(novel, paragraphId, count, 'prev');
   }
 
   /**
@@ -1921,267 +2018,145 @@ export class ChapterService {
    * @param count 要获取的段落数量
    * @returns 段落位置信息数组，按从近到远的顺序排列（最近的在前）
    */
+  /**
+   * 向后扫描循环头：按 cursor 当前位置取下一个可处理章节。
+   * 返回 'break' / 'continue' 或就绪的 { volume, chapter }（volume.chapters 已保证非空）。
+   */
+  private static nextChapterOrControl(
+    cursor: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+  ):
+    | { kind: 'break' }
+    | { kind: 'continue' }
+    | { kind: 'ready'; volume: Volume & { chapters: Chapter[] }; chapter: Chapter } {
+    const volume = novel.volumes![cursor.vIdx];
+    if (!volume || !volume.chapters) {
+      cursor.vIdx++;
+      cursor.cIdx = 0;
+      cursor.pIdx = 0;
+      return { kind: 'continue' };
+    }
+    if (cursor.cIdx >= volume.chapters.length) {
+      const token = ChapterService.advanceToNextVolumeOrDone(cursor, novel);
+      return token === 'done' ? { kind: 'break' } : { kind: 'continue' };
+    }
+    const chapter = volume.chapters[cursor.cIdx];
+    if (!chapter) {
+      cursor.cIdx++;
+      cursor.pIdx = 0;
+      return { kind: 'continue' };
+    }
+    return { kind: 'ready', volume: volume as Volume & { chapters: Chapter[] }, chapter };
+  }
+
+  /**
+   * getNextParagraphsAsync pass 1：向后扫描、累积待加载章节，直到 collected 达到 count*2。
+   */
+  private static collectNextPassOneChapters(
+    novel: Novel,
+    start: ScanStart,
+    count: number,
+    chaptersToLoad: Set<string>,
+    chapterMap: ChapterIndexMap,
+  ): void {
+    const cursor = ChapterService.initScanCursor(start);
+    let collected = 0;
+    while (collected < count * 2 && cursor.vIdx < novel.volumes!.length) {
+      const step = ChapterService.nextChapterOrControl(cursor, novel);
+      if (step.kind === 'break') break;
+      if (step.kind === 'continue') continue;
+      const { chapter } = step;
+
+      if (
+        ChapterService.collectChapterForLoad(
+          chapter,
+          cursor.vIdx,
+          cursor.cIdx,
+          chaptersToLoad,
+          chapterMap,
+        )
+      ) {
+        collected++;
+      }
+
+      if (cursor.pIdx >= (chapter.content?.length || 0)) {
+        cursor.cIdx++;
+        if (cursor.cIdx >= step.volume.chapters.length) {
+          if (ChapterService.advanceToNextVolumeOrDone(cursor, novel) === 'done') break;
+          continue;
+        }
+        const nextChapter = step.volume.chapters[cursor.cIdx];
+        if (
+          ChapterService.collectChapterForLoad(
+            nextChapter,
+            cursor.vIdx,
+            cursor.cIdx,
+            chaptersToLoad,
+            chapterMap,
+          )
+        ) {
+          collected++;
+        }
+        cursor.pIdx = 0;
+        continue;
+      }
+      cursor.pIdx++;
+    }
+  }
+
+  /**
+   * getNextParagraphsAsync pass 2：从起点向后扫描、收集段落到 results。
+   */
+  private static async gatherNextPassTwoParagraphs(
+    novel: Novel,
+    start: ScanStart,
+    count: number,
+    results: ParagraphSearchResult[],
+  ): Promise<void> {
+    const cursor = ChapterService.initScanCursor(start);
+    while (results.length < count && cursor.vIdx < novel.volumes!.length) {
+      const step = ChapterService.nextChapterOrControl(cursor, novel);
+      if (step.kind === 'break') break;
+      if (step.kind === 'continue') continue;
+      const { volume, chapter } = step;
+
+      await ChapterService.ensureChapterLoaded(chapter);
+      if (!chapter.content) {
+        cursor.cIdx++;
+        cursor.pIdx = 0;
+        continue;
+      }
+
+      if (cursor.pIdx >= chapter.content.length) {
+        cursor.cIdx++;
+        if (cursor.cIdx >= volume.chapters.length) {
+          cursor.vIdx++;
+          if (cursor.vIdx >= novel.volumes!.length) break;
+          cursor.cIdx = 0;
+        }
+        const nextChapter = volume.chapters[cursor.cIdx];
+        await ChapterService.ensureChapterLoaded(nextChapter);
+        cursor.pIdx = 0;
+        continue;
+      }
+
+      ChapterService.pushCursorParagraphToResults(
+        results,
+        chapter.content[cursor.pIdx],
+        chapter,
+        volume,
+        cursor,
+      );
+      cursor.pIdx++;
+    }
+  }
+
   static async getNextParagraphsAsync(
     novel: Novel | null | undefined,
     paragraphId: string,
     count: number,
   ): Promise<ParagraphSearchResult[]> {
-    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
-      return [];
-    }
-
-    const location = await ChapterService.findParagraphLocationAsync(novel, paragraphId);
-    if (!location) {
-      return [];
-    }
-
-    const results: ParagraphSearchResult[] = [];
-    const { volumeIndex, chapterIndex } = location;
-    let { paragraphIndex } = location;
-
-    // 从当前段落的后一个开始，向后遍历
-    paragraphIndex++;
-
-    // 收集需要加载的章节（批量加载优化）
-    const chaptersToLoad = new Set<string>();
-    const chapterMap = new Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>();
-    let collected = 0;
-
-    // 第一遍：收集需要加载的章节
-    let vIdx = volumeIndex;
-    let cIdx = chapterIndex;
-    let pIdx = paragraphIndex;
-
-    while (collected < count * 2 && vIdx < novel.volumes.length) {
-      // 限制收集的章节数量，避免加载过多
-      const volume = novel.volumes[vIdx];
-      if (!volume || !volume.chapters) {
-        vIdx++;
-        cIdx = 0;
-        pIdx = 0;
-        continue;
-      }
-
-      if (cIdx >= volume.chapters.length) {
-        vIdx++;
-        if (vIdx >= novel.volumes.length) break;
-        cIdx = 0;
-        pIdx = 0;
-        continue;
-      }
-
-      const chapter = volume.chapters[cIdx];
-      if (!chapter) {
-        cIdx++;
-        pIdx = 0;
-        continue;
-      }
-
-      if (chapter.content === undefined) {
-        chaptersToLoad.add(chapter.id);
-        chapterMap.set(chapter.id, { chapter, vIndex: vIdx, cIndex: cIdx });
-        collected++;
-      }
-
-      if (pIdx >= (chapter.content?.length || 0)) {
-        cIdx++;
-        if (cIdx >= volume.chapters.length) {
-          vIdx++;
-          if (vIdx >= novel.volumes.length) break;
-          cIdx = 0;
-          pIdx = 0;
-          continue;
-        } else {
-          const nextChapter = volume.chapters[cIdx];
-          if (nextChapter && nextChapter.content === undefined) {
-            chaptersToLoad.add(nextChapter.id);
-            chapterMap.set(nextChapter.id, { chapter: nextChapter, vIndex: vIdx, cIndex: cIdx });
-            collected++;
-          }
-          pIdx = 0;
-          continue;
-        }
-      }
-
-      pIdx++;
-    }
-
-    // 批量加载需要的章节
-    if (chaptersToLoad.size > 0) {
-      const chapterIds = Array.from(chaptersToLoad);
-      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-
-      // 更新章节内容
-      for (const [chapterId, content] of contentsMap) {
-        const chapterInfo = chapterMap.get(chapterId);
-        if (chapterInfo) {
-          chapterInfo.chapter.content = content || [];
-          chapterInfo.chapter.contentLoaded = true;
-        }
-      }
-    }
-
-    // 第二遍：重新遍历，这次所有需要的章节都已加载
-    vIdx = volumeIndex;
-    cIdx = chapterIndex;
-    pIdx = paragraphIndex;
-
-    while (results.length < count && vIdx < novel.volumes.length) {
-      const volume = novel.volumes[vIdx];
-      if (!volume || !volume.chapters) {
-        vIdx++;
-        cIdx = 0;
-        pIdx = 0;
-        continue;
-      }
-
-      if (cIdx >= volume.chapters.length) {
-        vIdx++;
-        if (vIdx >= novel.volumes.length) break;
-        cIdx = 0;
-        pIdx = 0;
-        continue;
-      }
-
-      const chapter = volume.chapters[cIdx];
-      if (!chapter) {
-        cIdx++;
-        pIdx = 0;
-        continue;
-      }
-
-      // 如果仍未加载，按需加载
-      if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
-        chapter.content = content || [];
-        chapter.contentLoaded = true;
-      }
-
-      if (!chapter.content) {
-        cIdx++;
-        pIdx = 0;
-        continue;
-      }
-
-      if (pIdx >= chapter.content.length) {
-        cIdx++;
-        if (cIdx >= volume.chapters.length) {
-          vIdx++;
-          if (vIdx >= novel.volumes.length) break;
-          cIdx = 0;
-        }
-        const nextChapter = volume.chapters[cIdx];
-        if (nextChapter && nextChapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(nextChapter.id);
-          nextChapter.content = content || [];
-          nextChapter.contentLoaded = true;
-        }
-        pIdx = 0;
-        continue;
-      }
-
-      const paragraph = chapter.content[pIdx];
-      // 只添加有内容的段落
-      if (paragraph && hasParagraphContent(paragraph)) {
-        results.push({
-          paragraph,
-          paragraphIndex: pIdx,
-          chapter,
-          chapterIndex: cIdx,
-          volume,
-          volumeIndex: vIdx,
-        });
-      }
-
-      pIdx++;
-    }
-
-    return results;
-  }
-
-  /**
-   * 获取指定段落之后的 x 个段落
-   * @param novel 小说对象
-   * @param paragraphId 段落 ID
-   * @param count 要获取的段落数量
-   * @returns 段落位置信息数组，按从近到远的顺序排列（最近的在前）
-   */
-  static getNextParagraphs(
-    novel: Novel | null | undefined,
-    paragraphId: string,
-    count: number,
-  ): ParagraphSearchResult[] {
-    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
-      return [];
-    }
-
-    const location = ChapterService.findParagraphLocation(novel, paragraphId);
-    if (!location) {
-      return [];
-    }
-
-    const results: ParagraphSearchResult[] = [];
-    let { volumeIndex, chapterIndex, paragraphIndex } = location;
-
-    // 从当前段落的后一个开始，向后遍历
-    paragraphIndex++;
-
-    while (results.length < count && volumeIndex < novel.volumes.length) {
-      const volume = novel.volumes[volumeIndex];
-      if (!volume || !volume.chapters) {
-        volumeIndex++;
-        chapterIndex = 0;
-        paragraphIndex = 0;
-        continue;
-      }
-
-      // 如果 chapterIndex 超出范围，移动到下一卷的第一章
-      if (chapterIndex >= volume.chapters.length) {
-        volumeIndex++;
-        if (volumeIndex >= novel.volumes.length) break;
-        chapterIndex = 0;
-        paragraphIndex = 0;
-        continue;
-      }
-
-      const chapter = volume.chapters[chapterIndex];
-      if (!chapter || !chapter.content) {
-        chapterIndex++;
-        paragraphIndex = 0;
-        continue;
-      }
-
-      // 如果 paragraphIndex 超出范围，移动到下一章的第一个段落
-      if (paragraphIndex >= chapter.content.length) {
-        chapterIndex++;
-        if (chapterIndex >= volume.chapters.length) {
-          // 移动到下一卷
-          volumeIndex++;
-          if (volumeIndex >= novel.volumes.length) break;
-          chapterIndex = 0;
-        }
-        paragraphIndex = 0;
-        continue;
-      }
-
-      // 获取当前段落
-      const paragraph = chapter.content[paragraphIndex];
-      // 只添加有内容的段落
-      if (paragraph && hasParagraphContent(paragraph)) {
-        results.push({
-          paragraph,
-          paragraphIndex,
-          chapter,
-          chapterIndex,
-          volume,
-          volumeIndex,
-        });
-      }
-
-      paragraphIndex++;
-    }
-
-    return results;
+    return ChapterService.runDirectionalParagraphScan(novel, paragraphId, count, 'next');
   }
 
   /**
@@ -2215,215 +2190,15 @@ export class ChapterService {
     format: 'txt' | 'json' | 'clipboard',
     book?: Novel,
   ): Promise<void> {
-    if (!chapter) {
-      throw new Error('章节内容为空，无法导出');
-    }
-
-    // 确保章节内容已加载
+    if (!chapter) throw new Error('章节内容为空，无法导出');
     const chapterWithContent = await this.loadChapterContent(chapter);
-
     if (!chapterWithContent.content || chapterWithContent.content.length === 0) {
       throw new Error('章节内容为空，无法导出');
     }
 
-    // 根据导出类型选择标题（并应用“显示/导出层标题规范化”，不写回标题）
-    // - 译文/双语：与界面显示一致，优先使用翻译标题
-    // - 原文：强制使用原文标题（即使存在翻译标题）
-    let chapterTitle = '';
-    if (type === 'original') {
-      if (!chapter.title) {
-        chapterTitle = '';
-      } else if (typeof chapter.title === 'string') {
-        // 兼容旧数据
-        chapterTitle = chapter.title;
-      } else {
-        chapterTitle = chapter.title.original || '';
-      }
-
-      const normalizeEnabled =
-        chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
-      if (normalizeEnabled) {
-        chapterTitle = normalizeChapterTitle(chapterTitle);
-      }
-    } else {
-      chapterTitle = getChapterDisplayTitle(chapter, book);
-    }
-
-    let content = '';
-
-    // 构建导出内容
-    if (format === 'json') {
-      const data = chapterWithContent.content.map((p) => {
-        const translation = getParagraphTranslationText(p);
-        // 应用显示/导出层格式化（不写回译文）
-        const formattedTranslation = formatTranslationForDisplay(
-          translation,
-          book,
-          chapterWithContent,
-        );
-        return {
-          original: p.text,
-          translation: formattedTranslation,
-        };
-      });
-      content = JSON.stringify(
-        {
-          title: chapterTitle,
-          content: data,
-        },
-        null,
-        2,
-      );
-    } else {
-      // 原文导出：保持与应用内“章节文本合并”一致的逻辑（`getChapterContentText`）
-      // 避免导出时额外注入换行，导致在 Word 等软件中出现“回车数暴涨”。
-      if (type === 'original') {
-        // 注意：部分来源的段落 text 可能已经包含末尾换行符（例如爬取/导入数据）。
-        // 如果我们仍然用 '\n' join，会在段落之间“叠加”换行，导致空行数量被放大。
-        // 这里的规则是：只在“当前累计文本末尾不是 \n 且后面还有段落”时补 1 个 '\n' 作为分隔。
-        const body = chapterWithContent.content.reduce((acc, p, idx) => {
-          const text = p.text || '';
-          acc += text;
-
-          const isLast = idx === chapterWithContent.content!.length - 1;
-          if (isLast) return acc;
-
-          // 空段落本身不包含任何字符，但它代表一个段落分隔。
-          // 因此需要显式补 1 个换行，避免空段落在导出中“消失”。
-          if (text.trim() === '') {
-            return `${acc}\n`;
-          }
-
-          // 非空段落：仅当当前累计末尾不是换行时，补 1 个换行作为分隔
-          if (!acc.endsWith('\n')) {
-            return `${acc}\n`;
-          }
-
-          return acc;
-        }, '');
-        content = `${chapterTitle}\n\n${body}`;
-      } else if (type === 'translation') {
-        // 译文导出：在保持原有段落结构的基础上，确保“原文中 n 个空行 → 导出 n+1 个空行”
-        let consecutiveReturnParagraphs = 0;
-        const body = chapterWithContent.content.reduce((acc, paragraph, idx, arr) => {
-          let translation = getParagraphTranslationText(paragraph);
-          translation = formatTranslationForDisplay(translation, book, chapterWithContent) ?? '';
-
-          const isLast = idx === arr.length - 1;
-          const isOriginalEmpty = !paragraph.text || paragraph.text.trim().length === 0;
-          const isReturnParagraph = isOriginalEmpty && translation.trim().length === 0;
-
-          let next = acc;
-
-          // 如果前面累计了空段落（代表空行），在遇到下一段非空内容前额外补 1 个换行
-          if (!isReturnParagraph && consecutiveReturnParagraphs > 0) {
-            next += '\n';
-            consecutiveReturnParagraphs = 0;
-          }
-
-          next += translation;
-
-          if (!isLast) {
-            const translationTrailingBreaks = countTrailingLineBreaks(translation);
-            const originalTrailingBreaks = countTrailingLineBreaks(paragraph.text);
-            const targetBreaks = Math.max(originalTrailingBreaks + 1, 1);
-            const missingBreaks = targetBreaks - translationTrailingBreaks;
-
-            if (missingBreaks > 0) {
-              next += '\n'.repeat(missingBreaks);
-            }
-          }
-
-          if (isReturnParagraph) {
-            consecutiveReturnParagraphs++;
-            // 章节末尾如果以空段落结束，同样需要补 1 个换行来满足 n+1 的需求
-            if (isLast) {
-              next += '\n';
-              consecutiveReturnParagraphs = 0;
-            }
-          }
-
-          return next;
-        }, '');
-
-        content = `${chapterTitle}\n\n${body}`;
-      } else {
-        // 双语导出：type 只能是 'bilingual'
-        const lines = chapterWithContent.content.map((p) => {
-          const original = p.text;
-          let translation = getParagraphTranslationText(p);
-
-          // 应用显示/导出层格式化（不写回译文）
-          translation = formatTranslationForDisplay(translation, book, chapterWithContent);
-
-          // 规范化换行符：确保翻译文本的换行符数量与原文一致
-          // 如果原文没有换行符，翻译也不应有
-          // 如果原文末尾有换行符，翻译也应有
-          let normalizedTranslation = translation || original;
-
-          // 检测原文末尾的换行符数量
-          const originalTrailingNewlines = countTrailingLineBreaks(original);
-          // 移除翻译末尾的所有换行符
-          normalizedTranslation = normalizedTranslation.replace(/\n+$/, '');
-          // 添加与原文相同数量的换行符
-          normalizedTranslation += '\n'.repeat(originalTrailingNewlines);
-
-          // 双语导出：返回原文和翻译的组合
-          return `${original}\n${normalizedTranslation}\n`;
-        });
-        // 处理每一行：确保每行至少有一个换行符，空行替换为两个换行符
-        const processedLines = lines.map((line) => {
-          const trimmed = line.trim();
-          if (trimmed === '') {
-            // 空行替换为两个换行符
-            return '\n\n';
-          }
-
-          // 非空行：确保以至少一个换行符结尾
-          // 如果末尾已有换行符，保持不变；否则添加一个换行符
-          return line.endsWith('\n') ? line : `${line}\n`;
-        });
-        // 使用空字符串连接，因为每行已包含必要的换行符
-        content = `${chapterTitle}\n\n${processedLines.join('')}`;
-      }
-    }
-
-    // 执行导出动作
-    if (format === 'clipboard') {
-      try {
-        await navigator.clipboard.writeText(content);
-      } catch (err) {
-        throw new Error(
-          err instanceof Error
-            ? `复制到剪贴板失败：${err.message}`
-            : '复制到剪贴板失败：请重试或检查权限',
-        );
-      }
-    } else {
-      // Windows 下不少文本查看器（如记事本）要求 CRLF 才能正确显示换行。
-      // 剪贴板粘贴通常会自动处理，但下载的 txt 文件需要我们主动转换。
-      const isWindows =
-        typeof navigator !== 'undefined' && typeof navigator.userAgent === 'string'
-          ? /Windows/i.test(navigator.userAgent)
-          : false;
-
-      const fileContent =
-        format === 'txt' && isWindows
-          ? content.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n/g, '\r\n')
-          : content;
-
-      const blob = new Blob([fileContent], {
-        type: format === 'json' ? 'application/json' : 'text/plain;charset=utf-8',
-      });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${chapterTitle}.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    }
+    const chapterTitle = resolveExportChapterTitle(chapter, type, book);
+    const content = buildExportChapterContent(chapterWithContent, chapterTitle, type, format, book);
+    await performChapterExportAction(content, format, chapterTitle);
   }
 
   // --- 懒加载相关方法 ---
@@ -2452,19 +2227,21 @@ export class ChapterService {
   /**
    * 保存章节内容到独立存储
    * @param chapter 章节对象
+   * @param bookId 所属书籍 ID（用于全文索引失效，必填）
    */
-  static async saveChapterContent(chapter: Chapter): Promise<void> {
+  static async saveChapterContent(chapter: Chapter, bookId: string): Promise<void> {
     if (chapter.content && chapter.content.length > 0) {
-      await ChapterContentService.saveChapterContent(chapter.id, chapter.content);
+      await ChapterContentService.saveChapterContent(chapter.id, chapter.content, { bookId });
     }
   }
 
   /**
    * 删除章节内容（从独立存储）
    * @param chapterId 章节 ID
+   * @param bookId 所属书籍 ID（用于全文索引失效，必填）
    */
-  static async deleteChapterContent(chapterId: string): Promise<void> {
-    await ChapterContentService.deleteChapterContent(chapterId);
+  static async deleteChapterContent(chapterId: string, bookId: string): Promise<void> {
+    await ChapterContentService.deleteChapterContent(chapterId, { bookId });
   }
 
   /**

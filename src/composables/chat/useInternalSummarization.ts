@@ -1,10 +1,10 @@
 import { ref, type Ref } from 'vue';
-import type { ChatMessage } from 'src/stores/chat-sessions';
+import type { ChatSessionMessage } from 'src/stores/chat-sessions';
 import type { useChatSessionsStore } from 'src/stores/chat-sessions';
 import { SUMMARIZING_MESSAGE_CONTENT } from 'src/composables/chat/constants';
 
 export function useInternalSummarization(
-  messages: Ref<ChatMessage[]>,
+  messages: Ref<ChatSessionMessage[]>,
   scrollToBottom: () => void,
   chatSessionsStore: ReturnType<typeof useChatSessionsStore>,
 ) {
@@ -36,7 +36,7 @@ export function useInternalSummarization(
     }
 
     internalSummarizationMessageId.value = (Date.now() - 1).toString();
-    const summarizationMessage: ChatMessage = {
+    const summarizationMessage: ChatSessionMessage = {
       id: internalSummarizationMessageId.value,
       role: 'assistant',
       content: SUMMARIZING_MESSAGE_CONTENT,
@@ -71,7 +71,7 @@ export function useInternalSummarization(
 
     // 创建新的助手消息用于接收继续的聊天内容
     assistantMessageIdRef.value = (Date.now() + 2).toString();
-    const newAssistantMessage: ChatMessage = {
+    const newAssistantMessage: ChatSessionMessage = {
       id: assistantMessageIdRef.value,
       role: 'assistant',
       content: '',

@@ -1,25 +1,4 @@
-// Bun 测试框架提供全局函数，直接使用即可
-// 这些函数在运行时由 Bun 提供，无需导入
-// 使用函数签名类型避免 import() 类型注解（符合 ESLint 规范）
-
-declare const describe: (name: string, fn: () => void) => void;
-
-declare const test: (name: string, fn: () => void | Promise<void>) => void;
-
-declare const expect: (actual: unknown) => {
-  toBe: (expected: unknown) => void;
-  toBeNull: () => void;
-  toBeTruthy: () => void;
-  toBeFalsy: () => void;
-  toEqual: (expected: unknown) => void;
-  toThrow: (expected?: unknown) => void;
-  toHaveLength: (expected: number) => void;
-  toBeGreaterThanOrEqual: (expected: number) => void;
-  rejects: {
-    toThrow: (expected?: unknown) => Promise<void>;
-  };
-};
-
+import { describe, test, expect } from 'bun:test';
 import { normalizeChapterTitle, getChapterDisplayTitle } from '../utils/novel-utils';
 import type { Chapter, Novel } from '../models/novel';
 

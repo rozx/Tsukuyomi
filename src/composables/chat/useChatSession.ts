@@ -1,5 +1,5 @@
-import { ref, watch, onMounted, nextTick, type Ref } from 'vue';
-import { useChatSessionsStore, type ChatMessage } from 'src/stores/chat-sessions';
+import { watch, onMounted, nextTick, type Ref } from 'vue';
+import { useChatSessionsStore, type ChatSessionMessage } from 'src/stores/chat-sessions';
 import { useContextStore } from 'src/stores/context';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { throttle } from 'src/utils/throttle';
@@ -9,7 +9,7 @@ import { throttle } from 'src/utils/throttle';
  * @param messages 消息列表 Ref (外部传入)
  * @param onSessionSwitched 会话切换时的回调
  */
-export function useChatSession(messages: Ref<ChatMessage[]>, onSessionSwitched?: () => void) {
+export function useChatSession(messages: Ref<ChatSessionMessage[]>, onSessionSwitched?: () => void) {
   const chatSessionsStore = useChatSessionsStore();
   const contextStore = useContextStore();
   const aiProcessingStore = useAIProcessingStore();
@@ -23,7 +23,7 @@ export function useChatSession(messages: Ref<ChatMessage[]>, onSessionSwitched?:
   let isUpdatingFromStore = false;
 
   // 使用 throttle 工具函数
-  const syncMessagesToSessionThrottled = throttle((newMessages: ChatMessage[]) => {
+  const syncMessagesToSessionThrottled = throttle((newMessages: ChatSessionMessage[]) => {
     chatSessionsStore.updateCurrentSessionMessages(newMessages);
   }, 200).fn;
 

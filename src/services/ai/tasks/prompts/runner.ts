@@ -1,4 +1,5 @@
-import { TASK_TYPE_LABELS, type TaskStatus, type TaskType } from '../utils/task-types';
+import type { TaskStatus, TaskType } from '../utils/task-types';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { MAX_TRANSLATION_BATCH_SIZE } from './common';
 
 /**

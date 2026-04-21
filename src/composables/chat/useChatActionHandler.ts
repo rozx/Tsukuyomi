@@ -6,7 +6,7 @@ import { useBookDetailsStore } from 'src/stores/book-details';
 import { useContextStore } from 'src/stores/context';
 import {
   useChatSessionsStore,
-  type ChatMessage,
+  type ChatSessionMessage,
   type ChatSession,
   type MessageAction,
   MAX_MESSAGES_PER_SESSION,
@@ -28,7 +28,7 @@ export function useChatActionHandler(
   toast: { add: (msg: any) => void },
   scrollToBottom: () => void,
   loadTodos: () => void,
-  messages: Ref<ChatMessage[]>,
+  messages: Ref<ChatSessionMessage[]>,
   currentMessageActions: Ref<MessageAction[]>,
   setThinkingActive: (id: string, active: boolean) => void,
   getMessagesSinceSummaryCount: (session: ChatSession | null) => number,
@@ -38,70 +38,61 @@ export function useChatActionHandler(
   const contextStore = useContextStore();
   const chatSessionsStore = useChatSessionsStore();
 
+  const SEX_LABELS: Record<string, string> = {
+    male: '男',
+    female: '女',
+    other: '其他',
+  };
+
+  const formatEntityMainInfo = (entity: CharacterSetting | Terminology): string => {
+    if (!entity.name) return '';
+    const translation = entity.translation?.translation;
+    return translation ? `${entity.name} → ${translation}` : entity.name;
+  };
+
+  const formatCharacterDetails = (character: CharacterSetting): string[] => {
+    const details: string[] = [];
+    if (character.sex) {
+      details.push(`性别：${SEX_LABELS[character.sex] || character.sex}`);
+    }
+    if (character.speakingStyle) {
+      details.push(`口吻：${character.speakingStyle}`);
+    }
+    if (character.aliases && character.aliases.length > 0) {
+      details.push(`别名：${character.aliases.length} 个`);
+    }
+    return details;
+  };
+
+  const formatTermDetails = (term: Terminology): string[] =>
+    term.description ? [`描述：${term.description}`] : [];
+
+  const joinEntityParts = (
+    mainInfo: string,
+    details: string[],
+    entityType: 'character' | 'term',
+    fallbackName: string,
+  ): string => {
+    if (mainInfo && details.length > 0) return `${mainInfo} | ${details.join(' | ')}`;
+    if (mainInfo) return mainInfo;
+    if (details.length > 0) return details.join(' | ');
+    const entityLabel = entityType === 'character' ? '角色' : '术语';
+    return `${entityLabel} "${fallbackName}" 已处理`;
+  };
+
   /**
    * 格式化角色或术语信息为显示字符串
-   * @param entity - 实体对象
-   * @param entityType - 实体类型 ('character' 或 'term')
-   * @returns 格式化后的详情字符串
    */
   const formatEntityInfo = (
     entity: CharacterSetting | Terminology,
     entityType: 'character' | 'term',
   ): string => {
-    const parts: string[] = [];
-
-    // 名称和翻译（主要信息）
-    if (entity.name) {
-      const translation = entity.translation?.translation;
-      if (translation) {
-        parts.push(`${entity.name} → ${translation}`);
-      } else {
-        parts.push(entity.name);
-      }
-    }
-
-    // 其他详细信息
-    const details: string[] = [];
-
-    if (entityType === 'character') {
-      const character = entity as CharacterSetting;
-      // 性别
-      if (character.sex) {
-        const sexLabels: Record<string, string> = {
-          male: '男',
-          female: '女',
-          other: '其他',
-        };
-        details.push(`性别：${sexLabels[character.sex] || character.sex}`);
-      }
-      // 说话口吻
-      if (character.speakingStyle) {
-        details.push(`口吻：${character.speakingStyle}`);
-      }
-      // 别名数量
-      if (character.aliases && character.aliases.length > 0) {
-        details.push(`别名：${character.aliases.length} 个`);
-      }
-    } else if (entityType === 'term') {
-      const term = entity as Terminology;
-      // 描述
-      if (term.description) {
-        details.push(`描述：${term.description}`);
-      }
-    }
-
-    // 组合消息
-    const mainInfo = parts.join(' | ');
-    if (mainInfo && details.length > 0) {
-      return `${mainInfo} | ${details.join(' | ')}`;
-    } else if (mainInfo) {
-      return mainInfo;
-    } else if (details.length > 0) {
-      return details.join(' | ');
-    } else {
-      const entityLabel = entityType === 'character' ? '角色' : '术语';
-      return `${entityLabel} "${entity.name}" 已处理`;
-    }
+    const mainInfo = formatEntityMainInfo(entity);
+    const details =
+      entityType === 'character'
+        ? formatCharacterDetails(entity as CharacterSetting)
+        : formatTermDetails(entity as Terminology);
+    return joinEntityParts(mainInfo, details, entityType, entity.name ?? '');
   };
 
   /**
@@ -129,6 +120,34 @@ export function useChatActionHandler(
   };
 
   /**
+   * 将 CharacterSetting 展开为 add/update 接口所需的 payload（保留可选字段的 exactOptionalPropertyTypes 语义）。
+   */
+  const serializeCharacterForService = (character: CharacterSetting) => ({
+    name: character.name,
+    sex: character.sex,
+    translation: character.translation.translation,
+    ...(character.description !== undefined ? { description: character.description } : {}),
+    ...(character.speakingStyle !== undefined ? { speakingStyle: character.speakingStyle } : {}),
+    ...(character.aliases !== undefined
+      ? {
+          aliases: character.aliases.map((a: Alias) => ({
+            name: a.name,
+            translation: a.translation.translation,
+          })),
+        }
+      : {}),
+  });
+
+  /**
+   * 将 Terminology 展开为 add/update 接口所需的 payload。
+   */
+  const serializeTermForService = (term: Terminology) => ({
+    name: term.name,
+    translation: term.translation.translation,
+    ...(term.description !== undefined ? { description: term.description } : {}),
+  });
+
+  /**
    * 构建更新操作的 revert 回调（恢复到之前的数据）
    */
   const buildUpdateRevert = (
@@ -136,46 +155,22 @@ export function useChatActionHandler(
     previousData: CharacterSetting | Terminology,
   ): (() => Promise<void>) => {
     return async () => {
-      if (contextStore.getContext.currentBookId) {
-        if (entityType === 'character') {
-          const previousCharacter = previousData as CharacterSetting;
-          await CharacterSettingService.updateCharacterSetting(
-            contextStore.getContext.currentBookId,
-            previousCharacter.id,
-            {
-              name: previousCharacter.name,
-              sex: previousCharacter.sex,
-              translation: previousCharacter.translation.translation,
-              ...(previousCharacter.description !== undefined
-                ? { description: previousCharacter.description }
-                : {}),
-              ...(previousCharacter.speakingStyle !== undefined
-                ? { speakingStyle: previousCharacter.speakingStyle }
-                : {}),
-              ...(previousCharacter.aliases !== undefined
-                ? {
-                    aliases: previousCharacter.aliases.map((a: Alias) => ({
-                      name: a.name,
-                      translation: a.translation.translation,
-                    })),
-                  }
-                : {}),
-            },
-          );
-        } else {
-          const previousTerm = previousData as Terminology;
-          await TerminologyService.updateTerminology(
-            contextStore.getContext.currentBookId,
-            previousTerm.id,
-            {
-              name: previousTerm.name,
-              translation: previousTerm.translation.translation,
-              ...(previousTerm.description !== undefined
-                ? { description: previousTerm.description }
-                : {}),
-            },
-          );
-        }
+      const bookId = contextStore.getContext.currentBookId;
+      if (!bookId) return;
+      if (entityType === 'character') {
+        const previousCharacter = previousData as CharacterSetting;
+        await CharacterSettingService.updateCharacterSetting(
+          bookId,
+          previousCharacter.id,
+          serializeCharacterForService(previousCharacter),
+        );
+      } else {
+        const previousTerm = previousData as Terminology;
+        await TerminologyService.updateTerminology(
+          bookId,
+          previousTerm.id,
+          serializeTermForService(previousTerm),
+        );
       }
     };
   };
@@ -188,38 +183,18 @@ export function useChatActionHandler(
     previousData: CharacterSetting | Terminology,
   ): (() => Promise<void>) => {
     return async () => {
-      if (contextStore.getContext.currentBookId) {
-        if (entityType === 'character') {
-          const previousCharacter = previousData as CharacterSetting;
-          await CharacterSettingService.addCharacterSetting(contextStore.getContext.currentBookId, {
-            name: previousCharacter.name,
-            sex: previousCharacter.sex,
-            translation: previousCharacter.translation.translation,
-            ...(previousCharacter.description !== undefined
-              ? { description: previousCharacter.description }
-              : {}),
-            ...(previousCharacter.speakingStyle !== undefined
-              ? { speakingStyle: previousCharacter.speakingStyle }
-              : {}),
-            ...(previousCharacter.aliases !== undefined
-              ? {
-                  aliases: previousCharacter.aliases.map((a: Alias) => ({
-                    name: a.name,
-                    translation: a.translation.translation,
-                  })),
-                }
-              : {}),
-          });
-        } else {
-          const previousTerm = previousData as Terminology;
-          await TerminologyService.addTerminology(contextStore.getContext.currentBookId, {
-            name: previousTerm.name,
-            translation: previousTerm.translation.translation,
-            ...(previousTerm.description !== undefined
-              ? { description: previousTerm.description }
-              : {}),
-          });
-        }
+      const bookId = contextStore.getContext.currentBookId;
+      if (!bookId) return;
+      if (entityType === 'character') {
+        await CharacterSettingService.addCharacterSetting(
+          bookId,
+          serializeCharacterForService(previousData as CharacterSetting),
+        );
+      } else {
+        await TerminologyService.addTerminology(
+          bookId,
+          serializeTermForService(previousData as Terminology),
+        );
       }
     };
   };
@@ -279,433 +254,436 @@ export function useChatActionHandler(
     }
   };
 
-  const handleAction = (action: ActionInfo, assistantMessageIdRef: { value: string }) => {
-    // 记录操作到当前消息
-    const messageAction = createMessageActionFromActionInfo(action);
+  const performBookNavigate = (action: ActionInfo): void => {
+    if (action.type !== 'navigate' || !('book_id' in action.data)) return;
+    const bookId = action.data.book_id;
+    const chapterId = 'chapter_id' in action.data ? action.data.chapter_id : null;
+    const paragraphId = 'paragraph_id' in action.data ? action.data.paragraph_id : null;
 
-    // 处理导航操作
-    if (action.type === 'navigate' && 'book_id' in action.data) {
-      const bookId = action.data.book_id;
-      const chapterId = 'chapter_id' in action.data ? (action.data.chapter_id) : null;
-      const paragraphId =
-        'paragraph_id' in action.data ? (action.data.paragraph_id) : null;
-
-      // 导航到书籍详情页面
-      void co(function* () {
-        try {
-          yield router.push(`/books/${bookId}`);
-          // 等待路由完成后再设置选中的章节
+    void co(function* () {
+      try {
+        yield router.push(`/books/${bookId}`);
+        yield nextTick();
+        if (chapterId) {
+          bookDetailsStore.setSelectedChapter(bookId, chapterId);
+        }
+        if (paragraphId) {
           yield nextTick();
-          if (chapterId) {
-            bookDetailsStore.setSelectedChapter(bookId, chapterId);
-          }
-
-          // 如果有段落 ID，滚动到该段落
-          if (paragraphId) {
-            yield nextTick();
-            // 等待章节加载完成后再滚动
-            setTimeout(() => {
-              const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
-              if (paragraphElement) {
-                paragraphElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }, 500); // 给章节内容加载一些时间
-          }
-        } catch (error) {
-          console.error('[AppRightPanel] 导航失败:', error);
+          setTimeout(() => {
+            const el = document.getElementById(`paragraph-${paragraphId}`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 500);
         }
-      });
-    }
+      } catch (error) {
+        console.error('[AppRightPanel] 导航失败:', error);
+      }
+    });
+  };
 
-    // 处理帮助文档导航操作
-    if (action.type === 'navigate' && action.entity === 'help_doc' && 'doc_id' in action.data) {
-      const docId = action.data.doc_id;
-      const sectionId = 'section_id' in action.data ? (action.data.section_id) : null;
+  const performHelpDocNavigate = (action: ActionInfo): void => {
+    if (action.type !== 'navigate' || action.entity !== 'help_doc') return;
+    if (!('doc_id' in action.data)) return;
 
-      void co(function* () {
-        try {
-          const path = sectionId ? `/help/${docId}#${sectionId}` : `/help/${docId}`;
-          yield router.push(path);
-        } catch (error) {
-          console.error('[ChatActionHandler] 帮助文档导航失败:', error);
-        }
-      });
-    }
+    const docId = action.data.doc_id;
+    const sectionId = 'section_id' in action.data ? action.data.section_id : null;
 
-    // 立即将操作添加到临时数组（用于后续保存）
+    void co(function* () {
+      try {
+        const path = sectionId ? `/help/${docId}#${sectionId}` : `/help/${docId}`;
+        yield router.push(path);
+      } catch (error) {
+        console.error('[ChatActionHandler] 帮助文档导航失败:', error);
+      }
+    });
+  };
+
+  /**
+   * 把 messageAction 立即推到当前助手消息里，避免响应完成前无反馈。
+   */
+  const attachActionToAssistantMessage = (
+    messageAction: MessageAction,
+    assistantMessageId: string,
+  ): void => {
     currentMessageActions.value.push(messageAction);
 
-    // 立即将操作添加到当前助手消息，使其立即显示在 UI 中
-    const assistantMsg = messages.value.find((m) => m.id === assistantMessageIdRef.value);
-    if (assistantMsg) {
-      if (!assistantMsg.actions) {
-        assistantMsg.actions = [];
-      }
-      // 检查是否已经添加过（避免重复）
-      const existingAction = assistantMsg.actions.find(
-        (a) =>
-          a.timestamp === messageAction.timestamp &&
-          a.type === messageAction.type &&
-          a.entity === messageAction.entity &&
-          a.name === messageAction.name,
-      );
-      if (!existingAction) {
-        assistantMsg.actions.push(messageAction);
-        // 触发响应式更新并滚动到底部
-        void nextTick(() => {
-          scrollToBottom();
-        });
-      }
-    }
+    const assistantMsg = messages.value.find((m) => m.id === assistantMessageId);
+    if (!assistantMsg) return;
+    if (!assistantMsg.actions) assistantMsg.actions = [];
 
-    // 在调用工具后，创建新的助手消息用于后续回复
-    // 这样后续的 AI 回复会显示在新的消息气泡中
-    // 但对于 todo 操作，不创建新消息，以便多个 todo 可以在同一消息中分组显示
-    if (action.entity !== 'todo') {
-      // 检查是否接近消息限制，如果是，则不创建新消息，防止在单次响应中超出限制
-      const currentSessionForLimit = chatSessionsStore.currentSession;
-      const currentMsgCount = getMessagesSinceSummaryCount(currentSessionForLimit);
+    const duplicated = assistantMsg.actions.find(
+      (a) =>
+        a.timestamp === messageAction.timestamp &&
+        a.type === messageAction.type &&
+        a.entity === messageAction.entity &&
+        a.name === messageAction.name,
+    );
+    if (duplicated) return;
 
-      // 只有当消息数量未达到硬限制时才创建新消息
-      if (currentMsgCount < MAX_MESSAGES_PER_SESSION) {
-        // 首先，标记当前消息的思考过程为非活动状态
-        // 捕获旧 ID 以便在更新 assistantMessageId 后使用
-        const oldAssistantMessageId = assistantMessageIdRef.value;
-
-        const newAssistantMessageId = (Date.now() + 1).toString();
-        const newAssistantMessage: ChatMessage = {
-          id: newAssistantMessageId,
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-        };
-        messages.value.push(newAssistantMessage);
-
-        // 更新 assistantMessageId，使后续的 onChunk 和 onThinkingChunk 都更新到新消息
-        assistantMessageIdRef.value = newAssistantMessageId;
-
-        // 使用旧 ID 停止思考动画
-        setThinkingActive(oldAssistantMessageId, false);
-
-        // 重置当前消息操作列表，因为新消息还没有操作
-        currentMessageActions.value = [];
-
-        // 滚动到底部以显示新消息气泡
-        scrollToBottom();
-      }
-      // 如果已达到限制，继续使用当前消息，后续会在响应完成后触发自动总结
-    } else {
+    assistantMsg.actions.push(messageAction);
+    void nextTick(() => {
       scrollToBottom();
-    }
+    });
+  };
 
-    // 显示操作通知
-
-    // 处理网络搜索和网页获取操作（不显示 toast 通知）
-    if (action.type === 'web_search') {
-      return;
-    }
-
-    if (action.type === 'web_fetch') {
-      return;
-    }
-
-    // 处理读取和搜索操作（不显示 toast 通知，但会在消息中显示操作标签）
-    if (action.type === 'read' || action.type === 'search') {
-      return;
-    }
-
-    // 处理导航操作（不显示 toast 通知，导航已在上面处理）
-    if (action.type === 'navigate') {
-      return;
-    }
-
-    // 处理用户问答操作（不显示 toast 通知，已有全屏 UI）
-    if (action.type === 'ask') {
-      return;
-    }
-
-    // 处理待办事项操作（不显示 toast 通知，根据需求）
+  /**
+   * 工具调用后一般切出新助手消息气泡。todo 操作例外，保持分组显示。
+   */
+  const rotateAssistantMessage = (
+    action: ActionInfo,
+    assistantMessageIdRef: { value: string },
+  ): void => {
     if (action.entity === 'todo') {
-      // 刷新待办事项列表
-      loadTodos();
+      scrollToBottom();
       return;
     }
 
-    // 构建详细的 toast 消息
-    let detail = '';
-    let shouldShowRevertToast = false;
-    const shouldShowRevertToastRef = { value: false };
-
-    if (action.type === 'create' && 'name' in action.data) {
-      // 创建操作：显示详细信息
-      if (action.entity === 'character' && 'id' in action.data) {
-        handleEntityOperationToast(action, 'character', shouldShowRevertToastRef);
-        shouldShowRevertToast = shouldShowRevertToastRef.value;
-      } else if (action.entity === 'term' && 'id' in action.data) {
-        handleEntityOperationToast(action, 'term', shouldShowRevertToastRef);
-        shouldShowRevertToast = shouldShowRevertToastRef.value;
-      } else {
-        // 默认创建消息
-        detail = `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`;
-      }
-    } else if (action.type === 'update' && action.entity === 'character' && 'name' in action.data) {
-      // 角色更新操作：使用统一处理函数
-      handleEntityOperationToast(action, 'character', shouldShowRevertToastRef);
-      shouldShowRevertToast = shouldShowRevertToastRef.value;
-    } else if (action.type === 'update' && action.entity === 'term' && 'name' in action.data) {
-      // 术语更新操作：使用统一处理函数
-      handleEntityOperationToast(action, 'term', shouldShowRevertToastRef);
-      shouldShowRevertToast = shouldShowRevertToastRef.value;
-    } else if (action.type === 'update' && action.entity === 'translation') {
-      // 检查是否是批量替换操作
-      if ('tool_name' in action.data && action.data.tool_name === 'batch_replace_translations') {
-        // 批量替换操作：显示汇总信息
-        const batchData = action.data as {
-          tool_name: string;
-          replaced_paragraph_count: number;
-          replaced_translation_count: number;
-          keywords?: string[];
-          original_keywords?: string[];
-          replacement_text: string;
-          replace_all_translations: boolean;
-        };
-
-        const keywordParts: string[] = [];
-        if (batchData.keywords && batchData.keywords.length > 0) {
-          keywordParts.push(`翻译关键词: ${batchData.keywords.join(', ')}`);
-        }
-        if (batchData.original_keywords && batchData.original_keywords.length > 0) {
-          keywordParts.push(`原文关键词: ${batchData.original_keywords.join(', ')}`);
-        }
-
-        const keywordInfo = keywordParts.length > 0 ? ` | ${keywordParts.join(' | ')}` : '';
-        const replacementPreview =
-          batchData.replacement_text.length > 30
-            ? batchData.replacement_text.substring(0, 30) + '...'
-            : batchData.replacement_text;
-
-        detail = `已批量替换 ${batchData.replaced_paragraph_count} 个段落（共 ${batchData.replaced_translation_count} 个翻译版本） | 替换为: "${replacementPreview}"${keywordInfo}`;
-
-        // 获取 previousData 中的替换数据以便恢复
-        const previousData = action.previousData as
-          | {
-              replaced_paragraphs: Array<{
-                paragraph_id: string;
-                chapter_id: string;
-                old_selected_translation_id?: string;
-                old_translations: Array<{
-                  id: string;
-                  translation: string;
-                  aiModelId: string;
-                }>;
-              }>;
-            }
-          | undefined;
-
-        // 添加 revert 功能
-        if (
-          previousData &&
-          previousData.replaced_paragraphs &&
-          contextStore.getContext.currentBookId
-        ) {
-          toast.add({
-            severity: 'success',
-            summary: '批量替换翻译',
-            detail,
-            life: 5000,
-            onRevert: async () => {
-              if (
-                previousData &&
-                previousData.replaced_paragraphs &&
-                contextStore.getContext.currentBookId
-              ) {
-                const bookId = contextStore.getContext.currentBookId;
-                const book = booksStore.getBookById(bookId);
-                if (!book) return;
-
-                // 先按需加载“被影响的章节”，避免 findParagraphLocation 只能查已加载章节导致撤销失效
-                const chapterIds = Array.from(
-                  new Set(
-                    previousData.replaced_paragraphs
-                      .map((p) => p.chapter_id)
-                      .filter((id): id is string => !!id),
-                  ),
-                );
-                const chaptersToLoad: string[] = [];
-                for (const chapterId of chapterIds) {
-                  const found = ChapterService.findChapterById(book, chapterId);
-                  if (!found) continue;
-                  if (found.chapter.content === undefined) {
-                    chaptersToLoad.push(chapterId);
-                  }
-                }
-                if (chaptersToLoad.length > 0) {
-                  const contentsMap =
-                    await ChapterContentService.loadChapterContentsBatch(chaptersToLoad);
-                  for (const chapterId of chaptersToLoad) {
-                    const found = ChapterService.findChapterById(book, chapterId);
-                    if (!found) continue;
-                    const content = contentsMap.get(chapterId);
-                    found.chapter.content = content || [];
-                    found.chapter.contentLoaded = true;
-                  }
-                }
-
-                // 恢复所有被替换的翻译（基于 chapter_id 定位，避免全书遍历）
-                for (const replacedParagraph of previousData.replaced_paragraphs) {
-                  const chapterInfo = ChapterService.findChapterById(
-                    book,
-                    replacedParagraph.chapter_id,
-                  );
-                  if (!chapterInfo?.chapter.content) continue;
-                  const paragraph = chapterInfo.chapter.content.find(
-                    (p) => p?.id === replacedParagraph.paragraph_id,
-                  );
-                  if (!paragraph) continue;
-
-                  // 确保段落有翻译数组
-                  if (!paragraph.translations || paragraph.translations.length === 0) {
-                    continue;
-                  }
-
-                  // 恢复段落的选中翻译 ID（批量替换可能会在“无选中翻译”时自动设置）
-                  if ('old_selected_translation_id' in replacedParagraph) {
-                    paragraph.selectedTranslationId =
-                      replacedParagraph.old_selected_translation_id || '';
-                  }
-
-                  // 恢复每个翻译
-                  for (const oldTranslation of replacedParagraph.old_translations) {
-                    const translationIndex = paragraph.translations.findIndex(
-                      (t) => t.id === oldTranslation.id,
-                    );
-                    if (translationIndex !== -1 && paragraph.translations[translationIndex]) {
-                      // 恢复原始翻译文本
-                      paragraph.translations[translationIndex].translation =
-                        oldTranslation.translation;
-                      // 恢复原始模型信息（更完整的回滚）
-                      paragraph.translations[translationIndex].aiModelId =
-                        oldTranslation.aiModelId;
-                    }
-                  }
-                }
-
-                // 更新书籍
-                if (book.volumes) {
-                  await booksStore.updateBook(bookId, { volumes: book.volumes });
-                }
-              }
-            },
-          });
-        } else {
-          // 如果没有 previousData，仍然显示 toast（但不提供撤销）
-          toast.add({
-            severity: 'success',
-            summary: '批量替换翻译',
-            detail,
-            life: 5000,
-          });
-        }
-        return; // 批量替换操作已处理，不需要继续处理
-      }
-
-      // 翻译更新操作：显示详细信息
-      if (
-        'paragraph_id' in action.data &&
-        'translation_id' in action.data &&
-        'old_translation' in action.data &&
-        'new_translation' in action.data
-      ) {
-        const translationData = action.data as {
-          paragraph_id: string;
-          translation_id: string;
-          old_translation: string;
-          new_translation: string;
-        };
-        const previousTranslation = action.previousData as Translation | undefined;
-
-        // 构建详细信息
-        const oldText = translationData.old_translation;
-        const newText = translationData.new_translation;
-        const previewLength = 50;
-        const oldPreview =
-          oldText.length > previewLength ? oldText.substring(0, previewLength) + '...' : oldText;
-        const newPreview =
-          newText.length > previewLength ? newText.substring(0, previewLength) + '...' : newText;
-
-        detail = `段落翻译已更新 | 旧: "${oldPreview}" → 新: "${newPreview}"`;
-
-        // 添加 revert 功能
-        if (previousTranslation && contextStore.getContext.currentBookId) {
-          shouldShowRevertToast = true;
-          toast.add({
-            severity: 'success',
-            summary: `${ACTION_LABELS[action.type as keyof typeof ACTION_LABELS]}${ENTITY_LABELS[action.entity as keyof typeof ENTITY_LABELS]}`,
-            detail,
-            life: 3000,
-            onRevert: async () => {
-              if (previousTranslation && contextStore.getContext.currentBookId) {
-                const bookId = contextStore.getContext.currentBookId;
-                const book = booksStore.getBookById(bookId);
-                if (!book) return;
-
-                // 查找段落
-                const location = ChapterService.findParagraphLocation(
-                  book,
-                  translationData.paragraph_id,
-                );
-                if (!location) return;
-
-                const { paragraph } = location;
-
-                // 查找要恢复的翻译
-                const translationIndex = paragraph.translations.findIndex(
-                  (t) => t.id === translationData.translation_id,
-                );
-                if (translationIndex === -1) return;
-
-                // 恢复原始翻译
-                const translationToRestore = paragraph.translations[translationIndex];
-                if (translationToRestore) {
-                  translationToRestore.translation = previousTranslation.translation;
-                }
-
-                // 更新书籍
-                if (book.volumes) {
-                  await booksStore.updateBook(bookId, { volumes: book.volumes });
-                }
-              }
-            },
-          });
-        } else {
-          // 如果没有 previousData，仍然显示 toast（但不提供撤销）
-          toast.add({
-            severity: 'success',
-            summary: `${ACTION_LABELS[action.type as keyof typeof ACTION_LABELS]}${ENTITY_LABELS[action.entity as keyof typeof ENTITY_LABELS]}`,
-            detail,
-            life: 3000,
-          });
-        }
-      }
-    } else if (action.type === 'delete' && 'name' in action.data) {
-      // 删除操作：使用统一处理函数
-      if (action.entity === 'character' && action.previousData) {
-        handleEntityOperationToast(action, 'character', shouldShowRevertToastRef);
-        shouldShowRevertToast = shouldShowRevertToastRef.value;
-      } else if (action.entity === 'term' && action.previousData) {
-        handleEntityOperationToast(action, 'term', shouldShowRevertToastRef);
-        shouldShowRevertToast = shouldShowRevertToastRef.value;
-      } else {
-        // 默认删除消息
-        detail = `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`;
-      }
+    const currentMsgCount = getMessagesSinceSummaryCount(chatSessionsStore.currentSession);
+    if (currentMsgCount >= MAX_MESSAGES_PER_SESSION) {
+      // 达到限制就继续用现有消息，等自动总结
+      return;
     }
 
-    if (!shouldShowRevertToast && detail) {
+    const oldAssistantMessageId = assistantMessageIdRef.value;
+    const newAssistantMessageId = (Date.now() + 1).toString();
+    messages.value.push({
+      id: newAssistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+    });
+
+    assistantMessageIdRef.value = newAssistantMessageId;
+    setThinkingActive(oldAssistantMessageId, false);
+    currentMessageActions.value = [];
+    scrollToBottom();
+  };
+
+  /**
+   * 不需要 toast 反馈（导航/读取/搜索/ask/web_*）的 action 直接返回 true。
+   * 含副作用：todo 需要刷新列表。
+   */
+  const shouldSkipToast = (action: ActionInfo): boolean => {
+    if (
+      action.type === 'web_search' ||
+      action.type === 'web_fetch' ||
+      action.type === 'read' ||
+      action.type === 'search' ||
+      action.type === 'navigate' ||
+      action.type === 'ask'
+    ) {
+      return true;
+    }
+    if (action.entity === 'todo') {
+      loadTodos();
+      return true;
+    }
+    return false;
+  };
+
+  type BatchReplaceActionData = {
+    tool_name: string;
+    replaced_paragraph_count: number;
+    replaced_translation_count: number;
+    keywords?: string[];
+    original_keywords?: string[];
+    replacement_text: string;
+    replace_all_translations: boolean;
+  };
+
+  const formatBatchReplaceKeywords = (data: BatchReplaceActionData): string => {
+    const parts: string[] = [];
+    if (data.keywords && data.keywords.length > 0) {
+      parts.push(`翻译关键词: ${data.keywords.join(', ')}`);
+    }
+    if (data.original_keywords && data.original_keywords.length > 0) {
+      parts.push(`原文关键词: ${data.original_keywords.join(', ')}`);
+    }
+    return parts.length > 0 ? ` | ${parts.join(' | ')}` : '';
+  };
+
+  const formatBatchReplaceDetail = (data: BatchReplaceActionData): string => {
+    const replacementPreview =
+      data.replacement_text.length > 30
+        ? data.replacement_text.substring(0, 30) + '...'
+        : data.replacement_text;
+    const keywordInfo = formatBatchReplaceKeywords(data);
+    return `已批量替换 ${data.replaced_paragraph_count} 个段落（共 ${data.replaced_translation_count} 个翻译版本） | 替换为: "${replacementPreview}"${keywordInfo}`;
+  };
+
+  const handleBatchReplaceTranslationToast = (action: ActionInfo): void => {
+    const batchData = action.data as BatchReplaceActionData;
+    const previousData = action.previousData as
+      | {
+          replaced_paragraphs: Array<{
+            paragraph_id: string;
+            chapter_id: string;
+            old_selected_translation_id?: string;
+            old_translations: Array<{ id: string; translation: string; aiModelId: string }>;
+          }>;
+        }
+      | undefined;
+    const canRevert = !!(
+      previousData?.replaced_paragraphs && contextStore.getContext.currentBookId
+    );
+
+    const toastPayload: Record<string, unknown> = {
+      severity: 'success',
+      summary: '批量替换翻译',
+      detail: formatBatchReplaceDetail(batchData),
+      life: 5000,
+    };
+    if (canRevert && previousData) {
+      toastPayload.onRevert = () => revertBatchReplaceTranslations(previousData);
+    }
+    toast.add(toastPayload);
+  };
+
+  type ReplacedParagraph = {
+    paragraph_id: string;
+    chapter_id: string;
+    old_selected_translation_id?: string;
+    old_translations: Array<{ id: string; translation: string; aiModelId: string }>;
+  };
+
+  type BatchReplaceRevertData = {
+    replaced_paragraphs: ReplacedParagraph[];
+  };
+
+  const collectChaptersNeedingLoad = (
+    book: ReturnType<typeof booksStore.getBookById> & object,
+    replacedParagraphs: ReplacedParagraph[],
+  ): string[] => {
+    const chapterIds = Array.from(
+      new Set(replacedParagraphs.map((p) => p.chapter_id).filter((id): id is string => !!id)),
+    );
+    return chapterIds.filter((chapterId) => {
+      const found = ChapterService.findChapterById(book, chapterId);
+      return !!found && found.chapter.content === undefined;
+    });
+  };
+
+  const ensureChaptersLoadedForRevert = async (
+    book: ReturnType<typeof booksStore.getBookById> & object,
+    chaptersToLoad: string[],
+  ): Promise<void> => {
+    if (chaptersToLoad.length === 0) return;
+    const contentsMap = await ChapterContentService.loadChapterContentsBatch(chaptersToLoad);
+    for (const chapterId of chaptersToLoad) {
+      const found = ChapterService.findChapterById(book, chapterId);
+      if (!found) continue;
+      found.chapter.content = contentsMap.get(chapterId) || [];
+      found.chapter.contentLoaded = true;
+    }
+  };
+
+  const restoreTranslationsInPlace = (
+    paragraph: NonNullable<
+      NonNullable<ReturnType<typeof ChapterService.findChapterById>>['chapter']['content']
+    >[number],
+    oldTranslations: ReplacedParagraph['old_translations'],
+  ): void => {
+    if (!paragraph?.translations || paragraph.translations.length === 0) return;
+    for (const oldTranslation of oldTranslations) {
+      const idx = paragraph.translations.findIndex((t) => t.id === oldTranslation.id);
+      const target = paragraph.translations[idx];
+      if (idx !== -1 && target) {
+        target.translation = oldTranslation.translation;
+        target.aiModelId = oldTranslation.aiModelId;
+      }
+    }
+  };
+
+  const applyRevertToBook = (
+    book: ReturnType<typeof booksStore.getBookById> & object,
+    replacedParagraphs: ReplacedParagraph[],
+  ): void => {
+    for (const replaced of replacedParagraphs) {
+      const chapterInfo = ChapterService.findChapterById(book, replaced.chapter_id);
+      if (!chapterInfo?.chapter.content) continue;
+      const paragraph = chapterInfo.chapter.content.find((p) => p?.id === replaced.paragraph_id);
+      if (!paragraph?.translations || paragraph.translations.length === 0) continue;
+      if ('old_selected_translation_id' in replaced) {
+        paragraph.selectedTranslationId = replaced.old_selected_translation_id || '';
+      }
+      restoreTranslationsInPlace(paragraph, replaced.old_translations);
+    }
+  };
+
+  const revertBatchReplaceTranslations = async (
+    previousData: BatchReplaceRevertData,
+  ): Promise<void> => {
+    const bookId = contextStore.getContext.currentBookId;
+    if (!bookId) return;
+    const book = booksStore.getBookById(bookId);
+    if (!book) return;
+
+    // 按需加载尚未加载的章节，避免 findParagraphLocation 查不到导致撤销失效
+    const chaptersToLoad = collectChaptersNeedingLoad(book, previousData.replaced_paragraphs);
+    await ensureChaptersLoadedForRevert(book, chaptersToLoad);
+
+    applyRevertToBook(book, previousData.replaced_paragraphs);
+
+    if (book.volumes) {
+      await booksStore.updateBook(bookId, { volumes: book.volumes });
+    }
+  };
+
+  type SingleTranslationActionData = {
+    paragraph_id: string;
+    translation_id: string;
+    old_translation: string;
+    new_translation: string;
+  };
+
+  const isSingleTranslationAction = (
+    data: unknown,
+  ): data is SingleTranslationActionData =>
+    typeof data === 'object' &&
+    data !== null &&
+    'paragraph_id' in data &&
+    'translation_id' in data &&
+    'old_translation' in data &&
+    'new_translation' in data;
+
+  const truncateForPreview = (text: string, max = 50): string =>
+    text.length > max ? text.substring(0, max) + '...' : text;
+
+  const handleSingleTranslationUpdateToast = (action: ActionInfo): boolean => {
+    if (!isSingleTranslationAction(action.data)) return false;
+
+    const translationData = action.data;
+    const previousTranslation = action.previousData as Translation | undefined;
+    const detail = `段落翻译已更新 | 旧: "${truncateForPreview(translationData.old_translation)}" → 新: "${truncateForPreview(translationData.new_translation)}"`;
+    const summary = `${ACTION_LABELS[action.type as keyof typeof ACTION_LABELS]}${ENTITY_LABELS[action.entity as keyof typeof ENTITY_LABELS]}`;
+    const canRevert = !!(previousTranslation && contextStore.getContext.currentBookId);
+
+    const toastPayload: Record<string, unknown> = {
+      severity: 'success',
+      summary,
+      detail,
+      life: 3000,
+    };
+    if (canRevert && previousTranslation) {
+      toastPayload.onRevert = () =>
+        revertSingleTranslationUpdate(translationData, previousTranslation);
+    }
+    toast.add(toastPayload);
+    return canRevert;
+  };
+
+  const revertSingleTranslationUpdate = async (
+    translationData: { paragraph_id: string; translation_id: string },
+    previousTranslation: Translation,
+  ): Promise<void> => {
+    const bookId = contextStore.getContext.currentBookId;
+    if (!bookId) return;
+    const book = booksStore.getBookById(bookId);
+    if (!book) return;
+
+    const location = ChapterService.findParagraphLocation(book, translationData.paragraph_id);
+    if (!location) return;
+
+    const { paragraph } = location;
+    const translationIndex = paragraph.translations.findIndex(
+      (t) => t.id === translationData.translation_id,
+    );
+    if (translationIndex === -1) return;
+
+    const translationToRestore = paragraph.translations[translationIndex];
+    if (translationToRestore) {
+      translationToRestore.translation = previousTranslation.translation;
+    }
+
+    if (book.volumes) {
+      await booksStore.updateBook(bookId, { volumes: book.volumes });
+    }
+  };
+
+  type ToastOutcome = {
+    detail: string;
+    shouldShowRevertToast: boolean;
+    earlyReturn: boolean;
+  };
+
+  const resolveEntityToast = (
+    action: ActionInfo,
+    entityType: 'character' | 'term',
+  ): Pick<ToastOutcome, 'shouldShowRevertToast'> => {
+    const revertRef = { value: false };
+    handleEntityOperationToast(action, entityType, revertRef);
+    return { shouldShowRevertToast: revertRef.value };
+  };
+
+  const resolveDefaultDetail = (action: ActionInfo): string =>
+    'name' in action.data
+      ? `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`
+      : '';
+
+  const handleCreateToast = (action: ActionInfo): ToastOutcome => {
+    if (!('name' in action.data)) return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+    if (action.entity === 'character' && 'id' in action.data) {
+      return { detail: '', ...resolveEntityToast(action, 'character'), earlyReturn: false };
+    }
+    if (action.entity === 'term' && 'id' in action.data) {
+      return { detail: '', ...resolveEntityToast(action, 'term'), earlyReturn: false };
+    }
+    return { detail: resolveDefaultDetail(action), shouldShowRevertToast: false, earlyReturn: false };
+  };
+
+  const handleUpdateToast = (action: ActionInfo): ToastOutcome => {
+    if (action.entity === 'translation') {
+      if ('tool_name' in action.data && action.data.tool_name === 'batch_replace_translations') {
+        handleBatchReplaceTranslationToast(action);
+        return { detail: '', shouldShowRevertToast: false, earlyReturn: true };
+      }
+      const shouldShowRevertToast = handleSingleTranslationUpdateToast(action);
+      return { detail: '', shouldShowRevertToast, earlyReturn: false };
+    }
+    if (action.entity === 'character' && 'name' in action.data) {
+      return { detail: '', ...resolveEntityToast(action, 'character'), earlyReturn: false };
+    }
+    if (action.entity === 'term' && 'name' in action.data) {
+      return { detail: '', ...resolveEntityToast(action, 'term'), earlyReturn: false };
+    }
+    return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+  };
+
+  const handleDeleteToast = (action: ActionInfo): ToastOutcome => {
+    if (!('name' in action.data)) return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+    if (action.entity === 'character' && action.previousData) {
+      return { detail: '', ...resolveEntityToast(action, 'character'), earlyReturn: false };
+    }
+    if (action.entity === 'term' && action.previousData) {
+      return { detail: '', ...resolveEntityToast(action, 'term'), earlyReturn: false };
+    }
+    return { detail: resolveDefaultDetail(action), shouldShowRevertToast: false, earlyReturn: false };
+  };
+
+  const resolveActionToast = (action: ActionInfo): ToastOutcome => {
+    if (action.type === 'create') return handleCreateToast(action);
+    if (action.type === 'update') return handleUpdateToast(action);
+    if (action.type === 'delete') return handleDeleteToast(action);
+    return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+  };
+
+  const handleAction = (action: ActionInfo, assistantMessageIdRef: { value: string }) => {
+    const messageAction = createMessageActionFromActionInfo(action);
+
+    performBookNavigate(action);
+    performHelpDocNavigate(action);
+    attachActionToAssistantMessage(messageAction, assistantMessageIdRef.value);
+    rotateAssistantMessage(action, assistantMessageIdRef);
+
+    if (shouldSkipToast(action)) return;
+
+    const outcome = resolveActionToast(action);
+    if (outcome.earlyReturn) return;
+
+    if (!outcome.shouldShowRevertToast && outcome.detail) {
       toast.add({
         severity: 'success',
         summary: `${ACTION_LABELS[action.type as keyof typeof ACTION_LABELS]}${ENTITY_LABELS[action.entity as keyof typeof ENTITY_LABELS]}`,
-        detail,
+        detail: outcome.detail,
         life: 3000,
       });
     }

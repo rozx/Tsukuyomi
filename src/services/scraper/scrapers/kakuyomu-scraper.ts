@@ -1,12 +1,12 @@
 import * as cheerio from 'cheerio';
-import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/models/novel';
 import type {
-  FetchNovelResult,
   ParsedChapterInfo,
+  ParsedNovelInfo,
   ParsedVolumeInfo,
 } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
+import { visitCheerioContents } from '../core/cheerio-text-extract';
 
 /**
  * Kakuyomu Apollo State 数据结构
@@ -45,24 +45,13 @@ interface KakuyomuEpisode {
   publishedAt: string;
 }
 
-interface ParsedNovelInfo {
-  title: string;
-  author?: string | undefined;
-  description?: string | undefined;
-  tags?: string[] | undefined;
-  cover?: string | undefined;
-  chapters: ParsedChapterInfo[];
-  volumes?: ParsedVolumeInfo[] | undefined;
-  webUrl: string;
-}
-
 /**
  * kakuyomu.jp 小说爬虫服务
  * 用于从 kakuyomu.jp 获取和解析小说信息
  *
  * Kakuyomu 使用 Next.js，所有数据都嵌入在页面的 __NEXT_DATA__ JSON 中
  */
-export class KakuyomuScraper extends BaseScraper {
+export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
   protected override useProxy: boolean = false; // Kakuyomu 不使用代理，直接请求
 
   private static readonly BASE_URL = 'https://kakuyomu.jp';
@@ -71,6 +60,7 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 验证 URL 是否为有效的 kakuyomu.jp 小说 URL
    */
+  // fallow-ignore-next-line unused-class-member
   isValidUrl(url: string): boolean {
     return KakuyomuScraper.NOVEL_URL_PATTERN.test(url);
   }
@@ -86,7 +76,7 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 获取小说主页 URL
    */
-  private getNovelIndexUrl(url: string): string {
+  protected override getNovelIndexUrl(url: string): string {
     const novelId = this.extractNovelId(url);
     if (novelId) {
       return `${KakuyomuScraper.BASE_URL}/works/${novelId}`;
@@ -94,45 +84,26 @@ export class KakuyomuScraper extends BaseScraper {
     return url;
   }
 
-  /**
-   * 获取并解析小说信息
-   */
-  async fetchNovel(url: string): Promise<FetchNovelResult> {
-    try {
-      if (!this.isValidUrl(url)) {
-        return this.createErrorResult('无效的 kakuyomu.jp 小说 URL');
-      }
-
-      const novelIndexUrl = this.getNovelIndexUrl(url);
-      const html = await this.fetchPage(novelIndexUrl);
-
-      // 调试：记录返回的 HTML 信息
-      console.log('[KakuyomuScraper] fetchPage 返回', {
-        url: novelIndexUrl,
-        htmlLength: html.length,
-        htmlPreview: html.substring(0, 500),
-        hasNextData: html.includes('__NEXT_DATA__'),
-      });
-
-      // 解析页面中的 Next.js 数据
-      const novelInfo = this.parseNovelPage(html, novelIndexUrl);
-      const novel = this.convertToNovel(novelInfo);
-
-      return this.createSuccessResult(novel);
-    } catch (error) {
-      return this.createErrorResult(
-        error instanceof Error ? error : new Error('获取小说信息时发生未知错误'),
-      );
-    }
+  protected override getInvalidUrlError(): string {
+    return '无效的 kakuyomu.jp 小说 URL';
   }
 
   /**
-   * 获取章节内容
+   * 从小说主页 URL 拉取 HTML 并解析嵌入的 Next.js 数据
    */
-  async fetchChapterContent(chapterUrl: string): Promise<string> {
-    const html = await this.fetchPage(chapterUrl);
-    const paragraphs = this.extractParagraphsFromHtml(html);
-    return this.mergeParagraphs(paragraphs);
+  protected override async parseNovelInfoFromUrl(novelIndexUrl: string): Promise<ParsedNovelInfo> {
+    const html = await this.fetchPage(novelIndexUrl);
+
+    // 调试：记录返回的 HTML 信息
+    console.log('[KakuyomuScraper] fetchPage 返回', {
+      url: novelIndexUrl,
+      htmlLength: html.length,
+      htmlPreview: html.substring(0, 500),
+      hasNextData: html.includes('__NEXT_DATA__'),
+    });
+
+    // 解析页面中的 Next.js 数据
+    return this.parseNovelPage(html, novelIndexUrl);
   }
 
   /**
@@ -143,42 +114,33 @@ export class KakuyomuScraper extends BaseScraper {
     const $ = cheerio.load(html);
     const paragraphs: string[] = [];
 
-    // Kakuyomu 的章节内容在 .widget-episodeBody 中
-    let contentElement = $('.widget-episodeBody').first();
+    // Kakuyomu 的章节内容在 .widget-episodeBody 中，按优先级回退
+    const contentElement = this.selectContentElement($, [
+      '.widget-episodeBody',
+      '[class*="widget-episodeBody"]',
+      '.episodeBody',
+      '[class*="episodeBody"]',
+    ]);
 
-    // 如果找不到，尝试其他可能的选择器
-    if (contentElement.length === 0) {
-      contentElement = $('[class*="widget-episodeBody"]').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('.episodeBody').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('[class*="episodeBody"]').first();
-    }
-
-    if (contentElement.length === 0) {
+    if (!contentElement) {
       throw new Error('无法找到章节正文内容');
     }
 
-    // 移除导航链接等不需要的元素
-    contentElement.find('a[href*="episodes"]').each((_, linkEl) => {
-      const $link = $(linkEl);
-      const linkText = $link.text().trim();
-      // 移除导航链接（如"前の話"、"次の話"等）
-      if (/前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(linkText)) {
-        $link.remove();
-      }
-    });
+    // 移除导航链接（如"前の話"、"次の話"等）
+    this.removeNavigationLinks(
+      $,
+      contentElement,
+      'a[href*="episodes"]',
+      /前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</,
+    );
 
-    const extractText = (el: cheerio.Cheerio<any>) =>
-      this.extractTextFromElement($, el);
+    const extractText = (el: cheerio.Cheerio<any>) => this.extractTextFromElement($, el);
 
     // 提取所有段落 <p> 标签
     // 每个普通 <p> 标签作为新的一行（单换行）
     // 只有 class="blank" 的 <p> 才作为段落分隔（双换行）
     let currentParagraph = '';
-    
+
     contentElement.find('p').each((_, el) => {
       const $p = $(el);
       const hasBlankClass = $p.hasClass('blank');
@@ -228,7 +190,7 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 合并段落
    */
-  private mergeParagraphs(paragraphs: string[]): string {
+  protected mergeParagraphs(paragraphs: string[]): string {
     return paragraphs.join('\n\n');
   }
 
@@ -333,11 +295,11 @@ export class KakuyomuScraper extends BaseScraper {
     // 优先从 workData 获取完整描述（避免被截断）
     // workData.introduction 应该包含完整的描述，不会被"続きを読む"截断
     let description: string | undefined;
-    
+
     // 优先使用 workData 中的 catchphrase 和 introduction
     const catchphrase = workData.catchphrase || this.extractCatchphrase($);
     const introduction = workData.introduction;
-    
+
     if (introduction && introduction.trim().length > 0) {
       // 如果 introduction 存在，合并 catchphrase 和 introduction
       if (catchphrase) {
@@ -402,15 +364,8 @@ export class KakuyomuScraper extends BaseScraper {
    * 从页面中提取描述（catchphrase + introduction）
    */
   private extractDescription($: cheerio.CheerioAPI): string | undefined {
-    // 提取 catchphrase（第一行）- 使用更精确的选择器
-    let catchphraseEl = $('.EyeCatch_catchphrase__tT_m2').first();
-    if (catchphraseEl.length === 0) {
-      catchphraseEl = $('[class*="EyeCatch_catchphrase"]').first();
-    }
-    if (catchphraseEl.length === 0) {
-      catchphraseEl = $('[class*="EyeCatch_container"]').first();
-    }
-    const catchphrase = catchphraseEl.length > 0 ? catchphraseEl.text().trim() : '';
+    // 提取 catchphrase（第一行）- 复用 extractCatchphrase 的三级回退选择器
+    const catchphrase = this.extractCatchphrase($) ?? '';
 
     // 提取 introduction（第二行）- 保留原始格式（包括换行）
     let introductionEl = $('.CollapseTextWithKakuyomuLinks_collapseText__XSlmz').first();
@@ -442,51 +397,29 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 从 DOM 元素中递归提取纯文本，保留 <br> 换行，将 <ruby> 注音转为 漢字(かんじ) 格式
    */
-  private extractTextFromElement(
-    $: cheerio.CheerioAPI,
-    element: cheerio.Cheerio<any>,
-  ): string {
-    let text = '';
-
-    element.contents().each((_, node: any) => {
-      const nodeType = String(node.type);
-      if (nodeType === 'text') {
-        text += $(node).text();
-      } else if (nodeType === 'tag') {
-        const tagName = (node.tagName?.toLowerCase() || '') as string;
-
-        // 跳过 <rp> 括号标签（由下方 ruby 处理统一添加）
-        if (tagName === 'rp') return;
-
-        if (tagName === 'br') {
-          text += '\n';
-        } else if (tagName === 'ruby') {
-          // <ruby>漢字<rt>かんじ</rt></ruby> → 漢字(かんじ)
-          const $ruby = $(node);
-          const rt = $ruby.find('rt').first().text().trim();
-          // 提取 ruby 内非 rt/rp 的文本作为原文
-          const base = $ruby
-            .contents()
-            .filter((_, child: any) => {
-              const tag = child.tagName?.toLowerCase();
-              return tag !== 'rt' && tag !== 'rp';
-            })
-            .text()
-            .trim();
-          text += rt ? `${base}(${rt})` : base;
-        } else if (tagName === 'rt') {
-          // rt 在非 ruby 上下文中被单独遍历时跳过（正常情况由 ruby 分支处理）
-          return;
-        } else {
-          const innerText = this.extractTextFromElement($, $(node));
-          if (innerText) {
-            text += innerText;
-          }
-        }
+  private extractTextFromElement($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): string {
+    return visitCheerioContents($, element, ({ $node, tagName, recurse }) => {
+      // 跳过 <rp> 括号标签（由下方 ruby 处理统一添加）；
+      // rt 在非 ruby 上下文中被单独遍历时也跳过（正常情况由 ruby 分支处理）
+      if (tagName === 'rp' || tagName === 'rt') return '';
+      if (tagName === 'br') return '\n';
+      if (tagName === 'ruby') {
+        // <ruby>漢字<rt>かんじ</rt></ruby> → 漢字(かんじ)
+        const rt = $node.find('rt').first().text().trim();
+        // 提取 ruby 内非 rt/rp 的文本作为原文
+        const base = $node
+          .contents()
+          .filter((_, child: any) => {
+            const tag = child.tagName?.toLowerCase();
+            return tag !== 'rt' && tag !== 'rp';
+          })
+          .text()
+          .trim();
+        return rt ? `${base}(${rt})` : base;
       }
+      const innerText = recurse();
+      return innerText ? innerText : '';
     });
-
-    return text;
   }
 
   /**
@@ -589,41 +522,13 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 转换为 Novel 格式
    */
-  private convertToNovel(info: ParsedNovelInfo): Novel {
-    const now = new Date();
+  protected override convertToNovel(info: ParsedNovelInfo): Novel {
     const parsedChapters: ParsedChapterInfo[] = info.chapters;
     const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes;
 
     // 使用基类的通用方法将章节分组到卷中
     const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, '正文');
 
-    const novel: Novel = {
-      id: uuidv4(),
-      title: info.title,
-      volumes,
-      webUrl: [info.webUrl],
-      lastEdited: now,
-      createdAt: now,
-    };
-
-    if (info.author) {
-      novel.author = info.author;
-    }
-
-    if (info.description) {
-      novel.description = info.description;
-    }
-
-    if (info.tags && info.tags.length > 0) {
-      novel.tags = info.tags;
-    }
-
-    if (info.cover) {
-      novel.cover = {
-        url: info.cover,
-      };
-    }
-
-    return novel;
+    return this.buildNovel(info, volumes);
   }
 }

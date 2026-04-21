@@ -27,30 +27,9 @@ beforeEach(async () => {
   await resetDbForTests();
 });
 
-// Polyfill for localStorage
-if (typeof globalThis.localStorage === 'undefined') {
-  const storage = new Map<string, string>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).localStorage = {
-    getItem: (key: string) => storage.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      storage.set(key, value);
-    },
-    removeItem: (key: string) => {
-      storage.delete(key);
-    },
-    clear: () => {
-      storage.clear();
-    },
-    get length() {
-      return storage.size;
-    },
-    key: (index: number) => {
-      const keys = Array.from(storage.keys());
-      return keys[index] ?? null;
-    },
-  };
-}
+import { installLocalStoragePolyfill } from './local-storage-polyfill';
+
+installLocalStoragePolyfill();
 
 // Polyfill for FileReader
 class MockFileReader {

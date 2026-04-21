@@ -13,41 +13,46 @@ import type {
 import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
-import { TASK_TYPE_LABELS, type TaskType, type AIProcessingStore } from './task-types';
+import type { TaskType, AIProcessingStore } from './task-types';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import type { TextChunk } from './chunk-formatter';
-import { AIServiceFactory } from '../../index';
-import { ToolRegistry } from '../../tools/index';
+import { AIServiceFactory } from '../../ai-service-factory';
+import { ToolRegistry } from '../../tools/tool-registry';
 import {
   buildOriginalTranslationsMap,
   getSelectedTranslation,
   filterChangedParagraphs,
   reconstructChunkText,
 } from 'src/utils';
+import { executeToolCallLoop } from './task-runner';
 import {
-  executeToolCallLoop,
   buildMaintenanceReminder,
-  DEFAULT_TASK_CHUNK_SIZE,
-  createUnifiedAbortController,
-  initializeTask,
   buildBookContextSection,
   getSpecialInstructions,
-  handleTaskError,
-  completeTask,
   buildIndependentChunkPrompt,
   buildChapterContextSection,
   buildSpecialInstructionsSection,
-  filterProcessedParagraphs,
-  markProcessedParagraphs,
-  markProcessedParagraphsFromMap,
   getChapterFirstNonEmptyParagraphId,
   getHasPreviousParagraphs,
   isSkipAskUserEnabled,
   isOriginalTextValidationEnabled,
+  buildPreviousChapterSection,
+} from './context-builder';
+import {
+  DEFAULT_TASK_CHUNK_SIZE,
+  filterProcessedParagraphs,
+  markProcessedParagraphs,
+  markProcessedParagraphsFromMap,
   buildFormattedChunks,
   buildChunks,
-  buildPreviousChapterSection,
   resolveRuntimeTaskChunkSize,
-} from './index';
+} from './chunk-formatter';
+import {
+  createUnifiedAbortController,
+  initializeTask,
+  handleTaskError,
+  completeTask,
+} from './stream-handler';
 import { getTodosSystemPrompt } from './todo-helper';
 import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
 import { isSymbolOnly } from 'src/utils/text-utils';
@@ -97,6 +102,47 @@ export interface TextTaskOptions {
 
   // AI 处理 Store
   aiProcessingStore?: AIProcessingStore | undefined;
+}
+
+/**
+ * 从服务层 options（PolishServiceOptions / ProofreadingServiceOptions / TranslationServiceOptions）
+ * 提取 processTextTask 需要的 TextTaskOptions 字段。
+ *
+ * 用集中的 TEXT_TASK_OPTION_KEYS + 编译期穷尽检查，避免 TextTaskOptions 新增字段时此处
+ * 被遗忘导致静默丢字段。
+ */
+const TEXT_TASK_OPTION_KEYS = [
+  'onChunk',
+  'onProgress',
+  'onAction',
+  'onToast',
+  'signal',
+  'bookId',
+  'chapterId',
+  'chapterTitle',
+  'chunkSize',
+  'allChapterParagraphs',
+  'aiProcessingStore',
+] as const satisfies ReadonlyArray<keyof TextTaskOptions>;
+
+// 编译期检查：若 TextTaskOptions 新增键但忘了加到上面的数组，这里就会报错
+type _MissingTextTaskOptionKey = Exclude<
+  keyof TextTaskOptions,
+  (typeof TEXT_TASK_OPTION_KEYS)[number]
+>;
+const _textTaskOptionsExhaustive: [_MissingTextTaskOptionKey] extends [never] ? true : never = true;
+void _textTaskOptionsExhaustive;
+
+export function pickTextTaskOptions(options: TextTaskOptions | undefined): TextTaskOptions {
+  if (!options) return {};
+  const picked: TextTaskOptions = {};
+  for (const key of TEXT_TASK_OPTION_KEYS) {
+    if (key in options) {
+      // 保留 exactOptionalPropertyTypes 下的"仅在存在时赋值"语义
+      (picked as Record<string, unknown>)[key] = options[key];
+    }
+  }
+  return picked;
 }
 
 /**
@@ -217,6 +263,46 @@ function getReferencedMemoryIdsFromAction(action: ActionInfo): string[] {
 }
 
 /**
+ * 构建段落 ID → 章节原始位置索引映射
+ * 优先使用 allChapterParagraphs，否则退化为 content 的数组索引
+ */
+function buildOriginalIndices(
+  content: Paragraph[],
+  allChapterParagraphs: Paragraph[] | undefined,
+): Map<string, number> {
+  const originalIndices = new Map<string, number>();
+  const source =
+    allChapterParagraphs && allChapterParagraphs.length > 0 ? allChapterParagraphs : content;
+  for (let i = 0; i < source.length; i++) {
+    const paragraph = source[i];
+    if (paragraph) {
+      originalIndices.set(paragraph.id, i);
+    }
+  }
+  return originalIndices;
+}
+
+/**
+ * 过滤出有效段落（有文本 + 可选翻译要求）
+ */
+function filterValidParagraphs(content: Paragraph[], requiresTranslation: boolean): Paragraph[] {
+  const validParagraphs: Paragraph[] = [];
+  for (let i = 0; i < content.length; i++) {
+    const paragraph = content[i];
+    if (!paragraph) continue;
+
+    const hasText = paragraph.text?.trim();
+    const hasSelectedTranslation = getSelectedTranslation(paragraph).trim().length > 0;
+    const isValid = requiresTranslation ? hasText && hasSelectedTranslation : hasText;
+
+    if (isValid) {
+      validParagraphs.push(paragraph);
+    }
+  }
+  return validParagraphs;
+}
+
+/**
  * 通用文本任务处理器
  */
 export async function processTextTask(
@@ -260,45 +346,10 @@ export async function processTextTask(
     throw new Error(`要${taskLabel}的内容不能为空`);
   }
 
-  // 构建原始索引映射（章节位置，包含空段落计数）
-  // 如果提供了 allChapterParagraphs，使用它来构建正确的章节原始位置映射
-  // 否则退化为使用 content 的数组索引（调用方传入预过滤数组时索引会不正确）
-  const originalIndices = new Map<string, number>();
+  // 构建原始索引映射 + 过滤有效段落
   const allParagraphs = options.allChapterParagraphs;
-
-  if (allParagraphs && allParagraphs.length > 0) {
-    // 使用章节全量段落构建索引映射
-    for (let i = 0; i < allParagraphs.length; i++) {
-      const paragraph = allParagraphs[i];
-      if (paragraph) {
-        originalIndices.set(paragraph.id, i);
-      }
-    }
-  } else {
-    // 退化：使用 content 数组索引（调用方未传 allChapterParagraphs 时）
-    for (let i = 0; i < content.length; i++) {
-      const paragraph = content[i];
-      if (paragraph) {
-        originalIndices.set(paragraph.id, i);
-      }
-    }
-  }
-
-  // 过滤有效段落
-  const validParagraphs: Paragraph[] = [];
-
-  for (let i = 0; i < content.length; i++) {
-    const paragraph = content[i];
-    if (!paragraph) continue;
-
-    const hasText = paragraph.text?.trim();
-    const hasSelectedTranslation = getSelectedTranslation(paragraph).trim().length > 0;
-    const isValid = requiresTranslation ? hasText && hasSelectedTranslation : hasText;
-
-    if (isValid) {
-      validParagraphs.push(paragraph);
-    }
-  }
+  const originalIndices = buildOriginalIndices(content, allParagraphs);
+  const validParagraphs = filterValidParagraphs(content, requiresTranslation);
 
   if (validParagraphs.length === 0) {
     throw new Error(
@@ -376,22 +427,12 @@ export async function processTextTask(
     const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
     // 获取前一章节标题（仅翻译服务;摘要字段已移除,仅注入标题保持时序感知）
-    let previousChapterSection = '';
-    if (enablePreviousChapter && bookId && chapterId) {
-      try {
-        const booksStore = useBooksStore();
-        const book = booksStore.getBookById(bookId);
-        if (book) {
-          const prev = ChapterService.getPreviousChapter(book, chapterId);
-          if (prev) {
-            const prevTitle = getChapterDisplayTitle(prev.chapter);
-            previousChapterSection = buildPreviousChapterSection(prevTitle);
-          }
-        }
-      } catch (error) {
-        console.warn(`[${logLabel}] 获取前一章节信息失败:`, error);
-      }
-    }
+    const previousChapterSection = resolvePreviousChapterSection({
+      enablePreviousChapter,
+      bookId,
+      chapterId,
+      logLabel,
+    });
 
     // 构建系统提示词（第一个 chunk）
     const systemPromptFirst = buildSystemPrompt({
@@ -434,14 +475,14 @@ export async function processTextTask(
     // 当 continueTranslation 只传入未翻译段落时，validParagraphIds 仅包含这些段落的 ID
     // 这样 buildChunks 在遍历 allChapterParagraphs 时，只会包含目标段落，而非所有段落
     const validParagraphIds = new Set(validParagraphs.map((p) => p.id));
-    const chunks = requiresTranslation
-      ? buildFormattedChunks(validParagraphs, CHUNK_SIZE, originalIndices)
-      : buildChunks(
-          translationSourceParagraphs,
-          CHUNK_SIZE,
-          (p, idx) => `[${idx + 1}] [ID: ${p.id}] ${p.text}\n\n`,
-          (p) => !!p.text?.trim() && validParagraphIds.has(p.id),
-        );
+    const buildChunksForIds = makeBuildChunksForIds({
+      requiresTranslation,
+      validParagraphs,
+      translationSourceParagraphs,
+      chunkSize: CHUNK_SIZE,
+      originalIndices,
+    });
+    const chunks: TextChunk[] = buildChunksForIds(validParagraphIds);
 
     let resultText = '';
     const paragraphResults: { id: string; translation: string }[] = [];
@@ -462,352 +503,48 @@ export async function processTextTask(
 
     // 处理每个块
     const MAX_RETRIES = 2;
-    let chunkIndex = 0;
-
-    while (chunkIndex < chunks.length) {
-      if (finalSignal.aborted) {
-        throw new Error('请求已取消');
-      }
-
-      const chunk = chunks[chunkIndex];
-      if (!chunk) {
-        chunkIndex++;
-        continue;
-      }
-
-      // 过滤已处理的段落
-      const unprocessedParagraphIds = filterProcessedParagraphs(
-        chunk,
-        processedParagraphIds,
-        logLabel,
-        chunkIndex,
-        chunks.length,
-      );
-      if (!unprocessedParagraphIds) {
-        chunkIndex++;
-        continue;
-      }
-
-      // 重建 chunk（如果需要）
-      let actualChunk: TextChunk = chunk;
-      if (unprocessedParagraphIds.length < (chunk.paragraphIds?.length || 0)) {
-        // 重建时使用全量段落数组，保持章节原始索引一致性
-        const rebuiltChunks = requiresTranslation
-          ? buildFormattedChunks(
-              validParagraphs.filter((p) => unprocessedParagraphIds.includes(p.id)),
-              CHUNK_SIZE,
-              originalIndices,
-            )
-          : buildChunks(
-              translationSourceParagraphs,
-              CHUNK_SIZE,
-              (p, idx) => `[${idx + 1}] [ID: ${p.id}] ${p.text}\n\n`,
-              (p) => !!p.text?.trim() && unprocessedParagraphIds.includes(p.id),
-            );
-
-        if (rebuiltChunks.length > 0) {
-          // 如果重建产生了多个块，将它们插入到当前位置，替换原有的块
-          // 这样可以确保所有剩余内容都能被处理
-          chunks.splice(chunkIndex, 1, ...rebuiltChunks);
-          // 安全地赋值：我们知道 rebuiltChunks[0] 存在，且它现在就在 chunks[chunkIndex] 位置
-          // 但直接使用 chunks[chunkIndex] 会提示可能是 undefined，所以使用 rebuiltChunks[0]
-          actualChunk = rebuiltChunks[0]!;
-        } else {
-          // 如果重建后没有块（理论上不应发生，因为 invalidParagraphs 有内容），跳过
-          chunkIndex++;
-          continue;
-        }
-      }
-
-      const chunkText = actualChunk.text;
-
-      // 更新任务状态
-      if (aiProcessingStore && taskId) {
-        aiProcessingStore
-          .updateTask(taskId, {
-            message: `正在${taskLabel}第 ${chunkIndex + 1}/${chunks.length} 部分...`,
-            status: 'processing',
-            workflowStatus: 'planning',
-          })
-          .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
-        aiProcessingStore
-          .appendThinkingMessage(
-            taskId,
-            `\n\n[=== ${taskLabel}块 ${chunkIndex + 1}/${chunks.length} ===]\n\n`,
-          )
-          .catch((error) =>
-            console.error(`[${logLabel}] Failed to append thinking message:`, error),
-          );
-      }
-
-      // 进度回调
-      if (onProgress) {
-        const progress: ProgressInfo = {
-          total: chunks.length,
-          current: chunkIndex + 1,
-        };
-        if (actualChunk.paragraphIds) {
-          progress.currentParagraphs = actualChunk.paragraphIds;
-        }
-        onProgress(progress);
-      }
-
-      // 创建 chunk 历史（第一个和后续 chunk 使用不同的系统提示词）
-      const isFirstChunk = chunkIndex === 0;
-      const systemPrompt = isFirstChunk ? systemPromptFirst : systemPromptSubsequent;
-      const chunkHistory: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
-
-      // 构建 chunk 内容
-      const maintenanceReminder = buildMaintenanceReminder(taskType);
-      const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
-      const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。段落标签 [index] 为章节原始位置（从 1 开始，可能跳号），仅用于阅读定位。提交翻译必须使用 paragraph_id（即 [ID: ...] 中的值）。`;
-
-      const firstParagraphId = actualChunk.paragraphIds?.[0];
-      const hasPreviousParagraphs = getHasPreviousParagraphs(
-        chapterFirstNonEmptyParagraphId,
-        firstParagraphId,
-      );
-
-      const chunkContent = await buildIndependentChunkPrompt(
-        taskType,
-        chunkIndex,
-        chunks.length,
-        chunkText,
-        paragraphCountNote,
-        maintenanceReminder,
-        chapterId,
-        isFirstChunk ? chapterTitle : undefined,
-        bookId,
-        hasPreviousParagraphs,
-        firstParagraphId,
-      );
-
-      // 估算 token 数
-      if (aiProcessingStore && taskId) {
-        const messagesForEstimate: ChatMessage[] = [
-          ...chunkHistory,
-          { role: 'user', content: chunkContent },
-        ];
-        if (toolSchemaContent) {
-          messagesForEstimate.splice(1, 0, { role: 'system', content: toolSchemaContent });
-        }
-        const estimatedTokens = estimateMessagesTokenCount(messagesForEstimate);
-        const contextWindow = model.maxInputTokens || 0;
-        const contextPercentage =
-          contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
-        aiProcessingStore
-          .updateTask(taskId, {
-            contextTokens: estimatedTokens,
-            ...(contextWindow > 0 ? { contextWindow } : {}),
-            ...(contextPercentage !== undefined ? { contextPercentage } : {}),
-          })
-          .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
-      }
-
-      // 重试循环
-      let retryCount = 0;
-      let chunkProcessed = false;
-
-      while (retryCount <= MAX_RETRIES && !chunkProcessed) {
-        try {
-          // 重试时清理历史
-          if (retryCount > 0) {
-            while (
-              chunkHistory.length > 1 &&
-              chunkHistory[chunkHistory.length - 1]?.role === 'user'
-            ) {
-              chunkHistory.pop();
-            }
-            while (
-              chunkHistory.length > 1 &&
-              chunkHistory[chunkHistory.length - 1]?.role === 'assistant'
-            ) {
-              chunkHistory.pop();
-            }
-
-            console.warn(
-              `[${logLabel}] ⚠️ 检测到AI降级或错误，重试块 ${chunkIndex + 1}/${chunks.length}（第 ${retryCount}/${MAX_RETRIES} 次重试）`,
-            );
-
-            if (aiProcessingStore && taskId) {
-              aiProcessingStore
-                .updateTask(taskId, {
-                  message: `检测到AI降级，正在重试第 ${retryCount}/${MAX_RETRIES} 次...`,
-                  status: 'processing',
-                })
-                .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
-            }
-          }
-
-          chunkHistory.push({ role: 'user', content: chunkContent });
-
-          // 记录当前 chunk 开始时的 action 数量
-          const actionStartIndex = actions.length;
-
-          // 执行工具调用循环
-          const loopResult = await executeToolCallLoop({
-            history: chunkHistory,
-            tools,
-            generateText: service.generateText.bind(service),
-            aiServiceConfig: config,
-            taskType,
-            chunkText,
-            paragraphIds: actualChunk.paragraphIds,
-            bookId: bookId || '',
-            handleAction,
-            onToast: options.onToast,
-            taskId,
-            aiProcessingStore,
-            aiModelId: model.id,
-            logLabel,
-            chunkIndex,
-            isBriefPlanning: enableBriefPlanning && chunkIndex > 0,
-            collectedActions: actions,
-            verifyCompleteness:
-              verifyCompleteness ??
-              ((_expectedIds, _receivedTranslations) => ({
-                allComplete: onlyChangedParagraphs ? true : false,
-                missingIds: [],
-              })),
-            onParagraphsExtracted:
-              onParagraphsExtracted && actualChunk.paragraphIds
-                ? (paragraphs) => {
-                    markProcessedParagraphs(paragraphs, processedParagraphIds);
-                    // 必须返回 Promise，以便 task-runner 中的 await 能正确等待回调完成。
-                    // 之前使用 void 导致 fire-and-forget，翻译数据写入内存/存储的操作可能
-                    // 在 batchSaveChapter 之后才完成，造成切换页面时丢失最后批次翻译的 bug。
-                    return Promise.resolve(
-                      onParagraphsExtracted({
-                        paragraphs,
-                        paragraphIds: actualChunk.paragraphIds,
-                        originalTranslations,
-                        processedParagraphIds,
-                        chunkIndex,
-                        totalChunks: chunks.length,
-                        actions,
-                        actionStartIndex,
-                      }),
-                    ).catch((error) => {
-                      console.error(
-                        `[${logLabel}] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${chunks.length}）`,
-                        error,
-                      );
-                    });
-                  }
-                : undefined,
-            onTitleExtracted:
-              isFirstChunk && chapterTitle && onTitleExtracted
-                ? (title) => {
-                    titleTranslation = title;
-                    return Promise.resolve(onTitleExtracted({ title })).catch((error) => {
-                      console.error(`[${logLabel}] ⚠️ 标题回调失败`, error);
-                    });
-                  }
-                : undefined,
-            hasNextChunk: chunkIndex < chunks.length - 1,
-            enableOriginalTextValidation,
-            chapterTitle: isFirstChunk ? chapterTitle : undefined,
-          });
-
-          // 检查状态
-          if (loopResult.status !== 'end') {
-            throw new Error(`${taskLabel}任务未完成（状态: ${loopResult.status}）。请重试。`);
-          }
-
-          // 处理结果
-          const extractedResults = loopResult.paragraphs;
-          markProcessedParagraphsFromMap(extractedResults, processedParagraphIds);
-
-          if (extractedResults.size > 0 && actualChunk.paragraphIds) {
-            if (onlyChangedParagraphs) {
-              const changedParagraphs = filterChangedParagraphs(
-                actualChunk.paragraphIds,
-                extractedResults,
-                originalTranslations,
-              );
-
-              if (changedParagraphs.length > 0) {
-                const orderedText = reconstructChunkText(
-                  actualChunk.paragraphIds,
-                  extractedResults,
-                  originalTranslations,
-                );
-                resultText += orderedText;
-
-                for (const para of changedParagraphs) {
-                  paragraphResults.push(para);
-                }
-
-                if (onChunk) {
-                  await onChunk({ text: orderedText, done: false });
-                }
-              }
-            } else {
-              // 翻译模式：所有段落都需要返回
-              const orderedTranslations: string[] = [];
-              for (const paraId of actualChunk.paragraphIds) {
-                const translation = extractedResults.get(paraId);
-                if (translation) {
-                  orderedTranslations.push(translation);
-                  paragraphResults.push({ id: paraId, translation });
-                }
-              }
-              const orderedText = orderedTranslations.join('\n\n');
-              resultText += orderedText;
-
-              if (onChunk) {
-                await onChunk({ text: orderedText, done: false });
-              }
-            }
-          } else if (onlyChangedParagraphs && actualChunk.paragraphIds) {
-            // 没有变化，使用原始翻译
-            const fallbackTexts: string[] = [];
-            for (const paraId of actualChunk.paragraphIds) {
-              fallbackTexts.push(originalTranslations.get(paraId) || '');
-            }
-            const fallbackText = fallbackTexts.join('\n\n');
-            resultText += fallbackText;
-
-            if (onChunk) {
-              await onChunk({ text: fallbackText, done: false });
-            }
-          } else {
-            // 后备：使用响应文本
-            const fallbackText = loopResult.responseText || '';
-            resultText += fallbackText;
-
-            if (onChunk) {
-              await onChunk({ text: fallbackText, done: false });
-            }
-          }
-
-          chunkProcessed = true;
-          chunkIndex++;
-        } catch (error) {
-          const isDegradedError = isAIDegradationError(error);
-
-          if (isDegradedError) {
-            retryCount++;
-            if (retryCount > MAX_RETRIES) {
-              console.error(
-                `[${logLabel}] ❌ AI降级检测失败，块 ${chunkIndex + 1}/${chunks.length} 已重试 ${MAX_RETRIES} 次仍失败`,
-                {
-                  块索引: chunkIndex + 1,
-                  总块数: chunks.length,
-                  重试次数: MAX_RETRIES,
-                },
-              );
-              throw new Error(
-                `AI降级：检测到重复字符，已重试 ${MAX_RETRIES} 次仍失败。请检查AI服务状态或稍后重试。`,
-              );
-            }
-            continue;
-          } else {
-            throw error;
-          }
-        }
-      }
-    }
+    const appendedText = await runChunkProcessingLoop({
+      chunks,
+      buildChunksForIds,
+      finalSignal,
+      processedParagraphIds,
+      requiresTranslation,
+      onlyChangedParagraphs,
+      aiProcessingStore,
+      taskId,
+      taskLabel,
+      logLabel,
+      taskType,
+      onProgress,
+      systemPromptFirst,
+      systemPromptSubsequent,
+      chapterFirstNonEmptyParagraphId,
+      chapterId,
+      chapterTitle,
+      bookId,
+      toolSchemaContent,
+      maxInputTokens: model.maxInputTokens,
+      maxRetries: MAX_RETRIES,
+      tools,
+      service,
+      config,
+      handleAction,
+      onToast: options.onToast,
+      modelId: model.id,
+      enableBriefPlanning,
+      verifyCompleteness,
+      enableOriginalTextValidation,
+      actions,
+      onParagraphsExtracted,
+      onTitleExtracted,
+      originalTranslations,
+      paragraphResults,
+      onChunk,
+      setTitleTranslation: (title) => {
+        titleTranslation = title;
+      },
+    });
+    resultText += appendedText;
 
     // 完成流
     if (onChunk) {
@@ -816,23 +553,7 @@ export async function processTextTask(
 
     // 验证翻译完整性（仅翻译模式）
     if (taskType === 'translation') {
-      const paragraphsWithText = content.filter((p) => {
-        if (!p.text || p.text.trim().length === 0) return false;
-        return !isSymbolOnly(p.text);
-      });
-      const allParagraphIds = new Set(paragraphsWithText.map((p) => p.id));
-      const processedIds = new Set(paragraphResults.map((pt) => pt.id));
-      const missingParagraphIds = Array.from(allParagraphIds).filter((id) => !processedIds.has(id));
-
-      if (missingParagraphIds.length > 0) {
-        console.warn(
-          `[${logLabel}] ⚠️ 发现 ${missingParagraphIds.length}/${paragraphsWithText.length} 个段落缺少${taskLabel}`,
-        );
-      } else {
-        console.log(
-          `[${logLabel}] ✅ ${taskLabel}完成：所有 ${paragraphsWithText.length} 个有效段落都有${taskLabel}`,
-        );
-      }
+      verifyTranslationCompleteness(content, paragraphResults, logLabel, taskLabel);
     }
 
     // 完成任务
@@ -860,4 +581,751 @@ export async function processTextTask(
   } finally {
     cleanupAbort();
   }
+}
+
+/**
+ * 获取前一章节标题注入的 section（仅启用 enablePreviousChapter 时）
+ */
+function resolvePreviousChapterSection(params: {
+  enablePreviousChapter: boolean;
+  bookId: string | undefined;
+  chapterId: string | undefined;
+  logLabel: string;
+}): string {
+  const { enablePreviousChapter, bookId, chapterId, logLabel } = params;
+  if (!enablePreviousChapter || !bookId || !chapterId) {
+    return '';
+  }
+  try {
+    const booksStore = useBooksStore();
+    const book = booksStore.getBookById(bookId);
+    if (!book) {
+      return '';
+    }
+    const prev = ChapterService.getPreviousChapter(book, chapterId);
+    if (!prev) {
+      return '';
+    }
+    const prevTitle = getChapterDisplayTitle(prev.chapter);
+    return buildPreviousChapterSection(prevTitle);
+  } catch (error) {
+    console.warn(`[${logLabel}] 获取前一章节信息失败:`, error);
+    return '';
+  }
+}
+
+/**
+ * 统一的分块构造：翻译走 buildFormattedChunks（带 originalIndices），
+ * 其余任务走 buildChunks + ID 谓词。初次分块与后续重建都复用此闭包。
+ */
+function makeBuildChunksForIds(params: {
+  requiresTranslation: boolean;
+  validParagraphs: Paragraph[];
+  translationSourceParagraphs: Paragraph[];
+  chunkSize: number;
+  originalIndices: Map<string, number>;
+}): (targetIds: Set<string> | string[]) => TextChunk[] {
+  const {
+    requiresTranslation,
+    validParagraphs,
+    translationSourceParagraphs,
+    chunkSize,
+    originalIndices,
+  } = params;
+  return (targetIds: Set<string> | string[]): TextChunk[] => {
+    const idSet = targetIds instanceof Set ? targetIds : new Set(targetIds);
+    if (requiresTranslation) {
+      const filteredParagraphs = validParagraphs.filter((p) => idSet.has(p.id));
+      return buildFormattedChunks(filteredParagraphs, chunkSize, originalIndices);
+    }
+    return buildChunks(
+      translationSourceParagraphs,
+      chunkSize,
+      (p, idx) => `[${idx + 1}] [ID: ${p.id}] ${p.text}\n\n`,
+      (p) => !!p.text?.trim() && idSet.has(p.id),
+    );
+  };
+}
+
+/**
+ * 若 chunk 中还有未处理段落少于原始数量，重新切块
+ * 返回 'skip' 表示本次循环应直接跳过，否则返回实际应当处理的 chunk
+ */
+function maybeRebuildChunk(params: {
+  chunk: TextChunk;
+  unprocessedParagraphIds: string[];
+  chunks: TextChunk[];
+  chunkIndex: number;
+  buildChunksForIds: (targetIds: Set<string> | string[]) => TextChunk[];
+}): TextChunk | 'skip' {
+  const { chunk, unprocessedParagraphIds, chunks, chunkIndex, buildChunksForIds } = params;
+  if (unprocessedParagraphIds.length >= (chunk.paragraphIds?.length || 0)) {
+    return chunk;
+  }
+
+  // 重建时使用全量段落数组，保持章节原始索引一致性
+  const rebuiltChunks = buildChunksForIds(unprocessedParagraphIds);
+
+  if (rebuiltChunks.length === 0) {
+    // 如果重建后没有块（理论上不应发生），跳过
+    return 'skip';
+  }
+
+  // 将重建的多个块插入到当前位置，替换原有的块
+  chunks.splice(chunkIndex, 1, ...rebuiltChunks);
+  return rebuiltChunks[0]!;
+}
+
+/**
+ * Chunk 开始时更新任务状态并追加思考日志
+ */
+function updateChunkStartStatus(params: {
+  aiProcessingStore: AIProcessingStore | undefined;
+  taskId: string | undefined;
+  taskLabel: string;
+  chunkIndex: number;
+  totalChunks: number;
+  logLabel: string;
+}): void {
+  const { aiProcessingStore, taskId, taskLabel, chunkIndex, totalChunks, logLabel } = params;
+  if (!aiProcessingStore || !taskId) return;
+
+  aiProcessingStore
+    .updateTask(taskId, {
+      message: `正在${taskLabel}第 ${chunkIndex + 1}/${totalChunks} 部分...`,
+      status: 'processing',
+      workflowStatus: 'planning',
+    })
+    .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
+
+  aiProcessingStore
+    .appendThinkingMessage(
+      taskId,
+      `\n\n[=== ${taskLabel}块 ${chunkIndex + 1}/${totalChunks} ===]\n\n`,
+    )
+    .catch((error) => console.error(`[${logLabel}] Failed to append thinking message:`, error));
+}
+
+/**
+ * 调用外部进度回调
+ */
+function reportProgress(
+  onProgress: ((progress: ProgressInfo) => void) | undefined,
+  totalChunks: number,
+  chunkIndex: number,
+  currentParagraphs: string[] | undefined,
+): void {
+  if (!onProgress) return;
+  const progress: ProgressInfo = {
+    total: totalChunks,
+    current: chunkIndex + 1,
+  };
+  if (currentParagraphs) {
+    progress.currentParagraphs = currentParagraphs;
+  }
+  onProgress(progress);
+}
+
+/**
+ * 估算 chunk 所对应的 tokens，并写回任务状态
+ */
+function updateChunkTokenEstimate(params: {
+  aiProcessingStore: AIProcessingStore | undefined;
+  taskId: string | undefined;
+  chunkHistory: ChatMessage[];
+  chunkContent: string;
+  toolSchemaContent: string;
+  maxInputTokens: number | undefined;
+  logLabel: string;
+}): void {
+  const {
+    aiProcessingStore,
+    taskId,
+    chunkHistory,
+    chunkContent,
+    toolSchemaContent,
+    maxInputTokens,
+    logLabel,
+  } = params;
+  if (!aiProcessingStore || !taskId) return;
+
+  const messagesForEstimate: ChatMessage[] = [
+    ...chunkHistory,
+    { role: 'user', content: chunkContent },
+  ];
+  if (toolSchemaContent) {
+    messagesForEstimate.splice(1, 0, { role: 'system', content: toolSchemaContent });
+  }
+  const estimatedTokens = estimateMessagesTokenCount(messagesForEstimate);
+  const contextWindow = maxInputTokens || 0;
+  const contextPercentage =
+    contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
+  aiProcessingStore
+    .updateTask(taskId, {
+      contextTokens: estimatedTokens,
+      ...(contextWindow > 0 ? { contextWindow } : {}),
+      ...(contextPercentage !== undefined ? { contextPercentage } : {}),
+    })
+    .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
+}
+
+/**
+ * 重试前清理 chunkHistory 中末尾的 user / assistant 轮
+ * 并更新任务状态 / 日志
+ */
+function prepareChunkRetry(params: {
+  chunkHistory: ChatMessage[];
+  chunkIndex: number;
+  totalChunks: number;
+  retryCount: number;
+  maxRetries: number;
+  aiProcessingStore: AIProcessingStore | undefined;
+  taskId: string | undefined;
+  logLabel: string;
+}): void {
+  const {
+    chunkHistory,
+    chunkIndex,
+    totalChunks,
+    retryCount,
+    maxRetries,
+    aiProcessingStore,
+    taskId,
+    logLabel,
+  } = params;
+  while (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'user') {
+    chunkHistory.pop();
+  }
+  while (chunkHistory.length > 1 && chunkHistory[chunkHistory.length - 1]?.role === 'assistant') {
+    chunkHistory.pop();
+  }
+
+  console.warn(
+    `[${logLabel}] ⚠️ 检测到AI降级或错误，重试块 ${chunkIndex + 1}/${totalChunks}（第 ${retryCount}/${maxRetries} 次重试）`,
+  );
+
+  if (aiProcessingStore && taskId) {
+    aiProcessingStore
+      .updateTask(taskId, {
+        message: `检测到AI降级，正在重试第 ${retryCount}/${maxRetries} 次...`,
+        status: 'processing',
+      })
+      .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
+  }
+}
+
+/**
+ * 将 chunk 的解析结果写回 paragraphResults，并返回追加到 resultText 的文本片段
+ */
+async function writeChunkResult(params: {
+  loopResult: { paragraphs: Map<string, string>; responseText?: string | null | undefined };
+  actualChunk: TextChunk;
+  onlyChangedParagraphs: boolean;
+  originalTranslations: Map<string, string>;
+  paragraphResults: { id: string; translation: string }[];
+  onChunk: TextGenerationStreamCallback | undefined;
+}): Promise<string> {
+  const {
+    loopResult,
+    actualChunk,
+    onlyChangedParagraphs,
+    originalTranslations,
+    paragraphResults,
+    onChunk,
+  } = params;
+
+  const extractedResults = loopResult.paragraphs;
+
+  if (extractedResults.size > 0 && actualChunk.paragraphIds) {
+    if (onlyChangedParagraphs) {
+      return writeChangedParagraphsResult({
+        paragraphIds: actualChunk.paragraphIds,
+        extractedResults,
+        originalTranslations,
+        paragraphResults,
+        onChunk,
+      });
+    }
+    // 翻译模式：所有段落都需要返回
+    return writeTranslationResult({
+      paragraphIds: actualChunk.paragraphIds,
+      extractedResults,
+      paragraphResults,
+      onChunk,
+    });
+  }
+
+  if (onlyChangedParagraphs && actualChunk.paragraphIds) {
+    // 没有变化，使用原始翻译
+    const fallbackText = actualChunk.paragraphIds
+      .map((paraId) => originalTranslations.get(paraId) || '')
+      .join('\n\n');
+    if (onChunk) {
+      await onChunk({ text: fallbackText, done: false });
+    }
+    return fallbackText;
+  }
+
+  // 后备：使用响应文本
+  const fallbackText = loopResult.responseText || '';
+  if (onChunk) {
+    await onChunk({ text: fallbackText, done: false });
+  }
+  return fallbackText;
+}
+
+/**
+ * 润色/校对模式：只写回发生变化的段落
+ */
+async function writeChangedParagraphsResult(params: {
+  paragraphIds: string[];
+  extractedResults: Map<string, string>;
+  originalTranslations: Map<string, string>;
+  paragraphResults: { id: string; translation: string }[];
+  onChunk: TextGenerationStreamCallback | undefined;
+}): Promise<string> {
+  const { paragraphIds, extractedResults, originalTranslations, paragraphResults, onChunk } =
+    params;
+  const changedParagraphs = filterChangedParagraphs(
+    paragraphIds,
+    extractedResults,
+    originalTranslations,
+  );
+  if (changedParagraphs.length === 0) {
+    return '';
+  }
+  const orderedText = reconstructChunkText(paragraphIds, extractedResults, originalTranslations);
+  for (const para of changedParagraphs) {
+    paragraphResults.push(para);
+  }
+  if (onChunk) {
+    await onChunk({ text: orderedText, done: false });
+  }
+  return orderedText;
+}
+
+/**
+ * 翻译模式：全量段落都要写回
+ */
+async function writeTranslationResult(params: {
+  paragraphIds: string[];
+  extractedResults: Map<string, string>;
+  paragraphResults: { id: string; translation: string }[];
+  onChunk: TextGenerationStreamCallback | undefined;
+}): Promise<string> {
+  const { paragraphIds, extractedResults, paragraphResults, onChunk } = params;
+  const orderedTranslations: string[] = [];
+  for (const paraId of paragraphIds) {
+    const translation = extractedResults.get(paraId);
+    if (translation) {
+      orderedTranslations.push(translation);
+      paragraphResults.push({ id: paraId, translation });
+    }
+  }
+  const orderedText = orderedTranslations.join('\n\n');
+  if (onChunk) {
+    await onChunk({ text: orderedText, done: false });
+  }
+  return orderedText;
+}
+
+/**
+ * 处理 chunk 错误：降级错误允许重试，其他错误直接抛出
+ * 返回新的 retryCount
+ */
+function handleChunkError(params: {
+  error: unknown;
+  chunkIndex: number;
+  totalChunks: number;
+  retryCount: number;
+  maxRetries: number;
+  logLabel: string;
+}): number {
+  const { error, chunkIndex, totalChunks, retryCount, maxRetries, logLabel } = params;
+  if (!isAIDegradationError(error)) {
+    throw error;
+  }
+  const next = retryCount + 1;
+  if (next > maxRetries) {
+    console.error(
+      `[${logLabel}] ❌ AI降级检测失败，块 ${chunkIndex + 1}/${totalChunks} 已重试 ${maxRetries} 次仍失败`,
+      {
+        块索引: chunkIndex + 1,
+        总块数: totalChunks,
+        重试次数: maxRetries,
+      },
+    );
+    throw new Error(
+      `AI降级：检测到重复字符，已重试 ${maxRetries} 次仍失败。请检查AI服务状态或稍后重试。`,
+    );
+  }
+  return next;
+}
+
+/**
+ * 验证翻译完整性（仅翻译模式）
+ */
+function verifyTranslationCompleteness(
+  content: Paragraph[],
+  paragraphResults: { id: string; translation: string }[],
+  logLabel: string,
+  taskLabel: string,
+): void {
+  const paragraphsWithText = content.filter((p) => {
+    if (!p.text || p.text.trim().length === 0) return false;
+    return !isSymbolOnly(p.text);
+  });
+  const allParagraphIds = new Set(paragraphsWithText.map((p) => p.id));
+  const processedIds = new Set(paragraphResults.map((pt) => pt.id));
+  const missingParagraphIds = Array.from(allParagraphIds).filter((id) => !processedIds.has(id));
+
+  if (missingParagraphIds.length > 0) {
+    console.warn(
+      `[${logLabel}] ⚠️ 发现 ${missingParagraphIds.length}/${paragraphsWithText.length} 个段落缺少${taskLabel}`,
+    );
+  } else {
+    console.log(
+      `[${logLabel}] ✅ ${taskLabel}完成：所有 ${paragraphsWithText.length} 个有效段落都有${taskLabel}`,
+    );
+  }
+}
+
+/**
+ * 单个 chunk 处理所需的上下文
+ */
+interface ChunkProcessingContext {
+  chunks: TextChunk[];
+  buildChunksForIds: (targetIds: Set<string> | string[]) => TextChunk[];
+  finalSignal: AbortSignal;
+  processedParagraphIds: Set<string>;
+  requiresTranslation: boolean;
+  onlyChangedParagraphs: boolean;
+  aiProcessingStore: AIProcessingStore | undefined;
+  taskId: string | undefined;
+  taskLabel: string;
+  logLabel: string;
+  taskType: TaskType;
+  onProgress: ((progress: ProgressInfo) => void) | undefined;
+  systemPromptFirst: string;
+  systemPromptSubsequent: string;
+  chapterFirstNonEmptyParagraphId: string | undefined;
+  chapterId: string | undefined;
+  chapterTitle: string | undefined;
+  bookId: string | undefined;
+  toolSchemaContent: string;
+  maxInputTokens: number | undefined;
+  maxRetries: number;
+  tools: AITool[];
+  service: ReturnType<typeof AIServiceFactory.getService>;
+  config: AIServiceConfig;
+  handleAction: (action: ActionInfo) => void;
+  onToast: ToastCallback | undefined;
+  modelId: string;
+  enableBriefPlanning: boolean;
+  verifyCompleteness: TaskSpecificConfig['verifyCompleteness'];
+  enableOriginalTextValidation: boolean;
+  actions: ActionInfo[];
+  onParagraphsExtracted: TaskSpecificConfig['onParagraphsExtracted'];
+  onTitleExtracted: TaskSpecificConfig['onTitleExtracted'];
+  originalTranslations: Map<string, string>;
+  paragraphResults: { id: string; translation: string }[];
+  onChunk: TextGenerationStreamCallback | undefined;
+  setTitleTranslation: (title: string) => void;
+}
+
+/**
+ * 顶层 chunk 处理循环：遍历全部 chunks、根据需要重建、调用 processSingleChunk
+ */
+async function runChunkProcessingLoop(ctx: ChunkProcessingContext): Promise<string> {
+  let resultText = '';
+  let chunkIndex = 0;
+
+  while (chunkIndex < ctx.chunks.length) {
+    if (ctx.finalSignal.aborted) {
+      throw new Error('请求已取消');
+    }
+
+    const chunk = ctx.chunks[chunkIndex];
+    if (!chunk) {
+      chunkIndex++;
+      continue;
+    }
+
+    const unprocessedParagraphIds = filterProcessedParagraphs(
+      chunk,
+      ctx.processedParagraphIds,
+      ctx.logLabel,
+      chunkIndex,
+      ctx.chunks.length,
+    );
+    if (!unprocessedParagraphIds) {
+      chunkIndex++;
+      continue;
+    }
+
+    const rebuild = maybeRebuildChunk({
+      chunk,
+      unprocessedParagraphIds,
+      chunks: ctx.chunks,
+      chunkIndex,
+      buildChunksForIds: ctx.buildChunksForIds,
+    });
+    if (rebuild === 'skip') {
+      chunkIndex++;
+      continue;
+    }
+
+    resultText += await processSingleChunk(ctx, rebuild, chunkIndex);
+    chunkIndex++;
+  }
+
+  return resultText;
+}
+
+/**
+ * 处理单个 chunk（含重试循环）：返回本次 chunk 追加到 resultText 的文本
+ */
+async function processSingleChunk(
+  ctx: ChunkProcessingContext,
+  actualChunk: TextChunk,
+  chunkIndex: number,
+): Promise<string> {
+  const chunkText = actualChunk.text;
+
+  updateChunkStartStatus({
+    aiProcessingStore: ctx.aiProcessingStore,
+    taskId: ctx.taskId,
+    taskLabel: ctx.taskLabel,
+    chunkIndex,
+    totalChunks: ctx.chunks.length,
+    logLabel: ctx.logLabel,
+  });
+  reportProgress(ctx.onProgress, ctx.chunks.length, chunkIndex, actualChunk.paragraphIds);
+
+  const isFirstChunk = chunkIndex === 0;
+  const systemPrompt = isFirstChunk ? ctx.systemPromptFirst : ctx.systemPromptSubsequent;
+  const chunkHistory: ChatMessage[] = [{ role: 'system', content: systemPrompt }];
+
+  const chunkContent = await buildChunkUserContent({
+    ctx,
+    actualChunk,
+    chunkIndex,
+    chunkText,
+    isFirstChunk,
+  });
+
+  updateChunkTokenEstimate({
+    aiProcessingStore: ctx.aiProcessingStore,
+    taskId: ctx.taskId,
+    chunkHistory,
+    chunkContent,
+    toolSchemaContent: ctx.toolSchemaContent,
+    maxInputTokens: ctx.maxInputTokens,
+    logLabel: ctx.logLabel,
+  });
+
+  // 最多允许 maxRetries 次降级重试。handleChunkError 会在非降级错误或重试用完时抛出，
+  // 所以正常情况下不会走到循环末尾——保留 while 的显式上界让退出条件一目了然。
+  let retryCount = 0;
+  while (retryCount <= ctx.maxRetries) {
+    try {
+      if (retryCount > 0) {
+        prepareChunkRetry({
+          chunkHistory,
+          chunkIndex,
+          totalChunks: ctx.chunks.length,
+          retryCount,
+          maxRetries: ctx.maxRetries,
+          aiProcessingStore: ctx.aiProcessingStore,
+          taskId: ctx.taskId,
+          logLabel: ctx.logLabel,
+        });
+      }
+
+      chunkHistory.push({ role: 'user', content: chunkContent });
+      const actionStartIndex = ctx.actions.length;
+
+      const loopResult = await runToolLoopForChunk({
+        ctx,
+        chunkHistory,
+        chunkText,
+        actualChunk,
+        chunkIndex,
+        isFirstChunk,
+        actionStartIndex,
+      });
+
+      if (loopResult.status !== 'end') {
+        throw new Error(
+          `${ctx.taskLabel}任务未完成（状态: ${loopResult.status}）。请重试。`,
+        );
+      }
+
+      markProcessedParagraphsFromMap(loopResult.paragraphs, ctx.processedParagraphIds);
+      return await writeChunkResult({
+        loopResult,
+        actualChunk,
+        onlyChangedParagraphs: ctx.onlyChangedParagraphs,
+        originalTranslations: ctx.originalTranslations,
+        paragraphResults: ctx.paragraphResults,
+        onChunk: ctx.onChunk,
+      });
+    } catch (error) {
+      retryCount = handleChunkError({
+        error,
+        chunkIndex,
+        totalChunks: ctx.chunks.length,
+        retryCount,
+        maxRetries: ctx.maxRetries,
+        logLabel: ctx.logLabel,
+      });
+    }
+  }
+  // 防御性兜底：handleChunkError 应当已经抛出，这里仅为 TS 控制流
+  throw new Error(`${ctx.taskLabel}任务重试 ${ctx.maxRetries} 次后仍未完成`);
+}
+
+/**
+ * 构建 chunk 的用户消息内容
+ */
+async function buildChunkUserContent(params: {
+  ctx: ChunkProcessingContext;
+  actualChunk: TextChunk;
+  chunkIndex: number;
+  chunkText: string;
+  isFirstChunk: boolean;
+}): Promise<string> {
+  const { ctx, actualChunk, chunkIndex, chunkText, isFirstChunk } = params;
+  const maintenanceReminder = buildMaintenanceReminder(ctx.taskType);
+  const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
+  const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。段落标签 [index] 为章节原始位置（从 1 开始，可能跳号），仅用于阅读定位。提交翻译必须使用 paragraph_id（即 [ID: ...] 中的值）。`;
+
+  const firstParagraphId = actualChunk.paragraphIds?.[0];
+  const hasPreviousParagraphs = getHasPreviousParagraphs(
+    ctx.chapterFirstNonEmptyParagraphId,
+    firstParagraphId,
+  );
+
+  return buildIndependentChunkPrompt(
+    ctx.taskType,
+    chunkIndex,
+    ctx.chunks.length,
+    chunkText,
+    paragraphCountNote,
+    maintenanceReminder,
+    ctx.chapterId,
+    isFirstChunk ? ctx.chapterTitle : undefined,
+    ctx.bookId,
+    hasPreviousParagraphs,
+    firstParagraphId,
+  );
+}
+
+/**
+ * 执行 chunk 的工具调用循环
+ */
+async function runToolLoopForChunk(params: {
+  ctx: ChunkProcessingContext;
+  chunkHistory: ChatMessage[];
+  chunkText: string;
+  actualChunk: TextChunk;
+  chunkIndex: number;
+  isFirstChunk: boolean;
+  actionStartIndex: number;
+}) {
+  const { ctx, chunkHistory, chunkText, actualChunk, chunkIndex, isFirstChunk, actionStartIndex } =
+    params;
+
+  return executeToolCallLoop({
+    history: chunkHistory,
+    tools: ctx.tools,
+    generateText: ctx.service.generateText.bind(ctx.service),
+    aiServiceConfig: ctx.config,
+    taskType: ctx.taskType,
+    chunkText,
+    paragraphIds: actualChunk.paragraphIds,
+    bookId: ctx.bookId || '',
+    handleAction: ctx.handleAction,
+    onToast: ctx.onToast,
+    taskId: ctx.taskId,
+    aiProcessingStore: ctx.aiProcessingStore,
+    aiModelId: ctx.modelId,
+    logLabel: ctx.logLabel,
+    chunkIndex,
+    isBriefPlanning: ctx.enableBriefPlanning && chunkIndex > 0,
+    collectedActions: ctx.actions,
+    verifyCompleteness:
+      ctx.verifyCompleteness ??
+      ((_expectedIds, _receivedTranslations) => ({
+        allComplete: ctx.onlyChangedParagraphs ? true : false,
+        missingIds: [],
+      })),
+    onParagraphsExtracted: wrapOnParagraphsExtracted({ ctx, actualChunk, chunkIndex, actionStartIndex }),
+    onTitleExtracted: wrapOnTitleExtracted({ ctx, isFirstChunk }),
+    hasNextChunk: chunkIndex < ctx.chunks.length - 1,
+    enableOriginalTextValidation: ctx.enableOriginalTextValidation,
+    chapterTitle: isFirstChunk ? ctx.chapterTitle : undefined,
+  });
+}
+
+/**
+ * 包装 onParagraphsExtracted 回调，处理 processedParagraphIds 标记 + 错误日志
+ */
+function wrapOnParagraphsExtracted(params: {
+  ctx: ChunkProcessingContext;
+  actualChunk: TextChunk;
+  chunkIndex: number;
+  actionStartIndex: number;
+}) {
+  const { ctx, actualChunk, chunkIndex, actionStartIndex } = params;
+  if (!ctx.onParagraphsExtracted || !actualChunk.paragraphIds) {
+    return undefined;
+  }
+  const onParagraphsExtracted = ctx.onParagraphsExtracted;
+  const paragraphIds = actualChunk.paragraphIds;
+
+  return (paragraphs: { id: string; translation: string }[]) => {
+    markProcessedParagraphs(paragraphs, ctx.processedParagraphIds);
+    // 必须返回 Promise，以便 task-runner 中的 await 能正确等待回调完成。
+    // 之前使用 void 导致 fire-and-forget，翻译数据写入内存/存储的操作可能
+    // 在 batchSaveChapter 之后才完成，造成切换页面时丢失最后批次翻译的 bug。
+    return Promise.resolve(
+      onParagraphsExtracted({
+        paragraphs,
+        paragraphIds,
+        originalTranslations: ctx.originalTranslations,
+        processedParagraphIds: ctx.processedParagraphIds,
+        chunkIndex,
+        totalChunks: ctx.chunks.length,
+        actions: ctx.actions,
+        actionStartIndex,
+      }),
+    ).catch((error) => {
+      console.error(
+        `[${ctx.logLabel}] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${ctx.chunks.length}）`,
+        error,
+      );
+    });
+  };
+}
+
+/**
+ * 包装 onTitleExtracted 回调，处理 titleTranslation 回填
+ */
+function wrapOnTitleExtracted(params: {
+  ctx: ChunkProcessingContext;
+  isFirstChunk: boolean;
+}) {
+  const { ctx, isFirstChunk } = params;
+  if (!(isFirstChunk && ctx.chapterTitle && ctx.onTitleExtracted)) {
+    return undefined;
+  }
+  const onTitleExtracted = ctx.onTitleExtracted;
+
+  return (title: string) => {
+    ctx.setTitleTranslation(title);
+    return Promise.resolve(onTitleExtracted({ title })).catch((error) => {
+      console.error(`[${ctx.logLabel}] ⚠️ 标题回调失败`, error);
+    });
+  };
 }

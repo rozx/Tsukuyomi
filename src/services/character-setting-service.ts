@@ -1,5 +1,4 @@
-import type { CharacterSetting, Alias, Translation, Novel } from 'src/models/novel';
-import { flatMap, isEmpty, isArray, sortBy, isEqual } from 'lodash';
+import type { CharacterSetting, Alias, Translation } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 import { SettingsService } from 'src/services/settings-service';
 import {
@@ -7,16 +6,119 @@ import {
   extractIds,
   generateShortId,
   normalizeTranslationQuotes,
-  getCharacterNameVariants,
-  processItemsInBatches,
-  ensureChapterContentLoaded,
 } from 'src/utils';
-import { matchCharactersInText, calculateCharacterScores } from 'src/utils/text-matcher';
 
 /**
  * 角色设定服务
  * 负责管理小说中的角色设定（添加、更新、删除）
  */
+function assertCharacterNameAvailable(
+  currentSettings: CharacterSetting[],
+  charId: string,
+  newName: string | undefined,
+  existingName: string,
+): void {
+  if (!newName || newName === existingName) return;
+  const nameConflict = currentSettings.find((c) => c.id !== charId && c.name === newName);
+  if (nameConflict) throw new Error(`角色 "${newName}" 已存在`);
+}
+
+function buildUpdatedCharacterTranslation(
+  existing: CharacterSetting,
+  translationUpdate: string | undefined,
+): Translation {
+  if (translationUpdate === undefined) return existing.translation;
+  return {
+    id: existing.translation.id,
+    translation: normalizeTranslationQuotes(translationUpdate),
+    aiModelId: existing.translation.aiModelId,
+  };
+}
+
+function aliasBelongsToAnotherCharacter(
+  aliasName: string,
+  currentSettings: CharacterSetting[],
+  currentCharId: string,
+): boolean {
+  return currentSettings.some((c) => {
+    if (c.id === currentCharId) return false;
+    if (c.name === aliasName) return true;
+    return c.aliases?.some((a) => a.name === aliasName) ?? false;
+  });
+}
+
+function buildUpdatedCharacterAliases(
+  aliasUpdates: Array<{ name: string; translation: string }>,
+  currentSettings: CharacterSetting[],
+  currentCharId: string,
+  existingChar: CharacterSetting,
+): Alias[] {
+  const out: Alias[] = [];
+  for (const aliasData of aliasUpdates) {
+    if (!aliasData.name.trim()) continue;
+    if (aliasBelongsToAnotherCharacter(aliasData.name, currentSettings, currentCharId)) {
+      console.warn(
+        `[CharacterSettingService] 跳过别名 "${aliasData.name}"，因为它已属于其他角色`,
+      );
+      continue;
+    }
+    const existingAlias = (existingChar.aliases || []).find((a) => a.name === aliasData.name);
+    out.push({
+      name: aliasData.name,
+      translation: {
+        id: existingAlias?.translation.id ?? generateShortId(),
+        translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
+        aiModelId: existingAlias?.translation.aiModelId ?? '',
+      },
+    });
+  }
+  return out;
+}
+
+function composeUpdatedCharacter(
+  existing: CharacterSetting,
+  updates: {
+    name?: string;
+    sex?: 'male' | 'female' | 'other' | undefined;
+    description?: string;
+    speakingStyle?: string;
+  },
+  updatedTranslation: Translation,
+  updatedAliases: Alias[],
+): CharacterSetting {
+  const updatedChar: CharacterSetting = {
+    id: existing.id,
+    name: updates.name ?? existing.name,
+    sex: updates.sex !== undefined ? updates.sex : existing.sex,
+    translation: updatedTranslation,
+    aliases: updatedAliases,
+    description: existing.description,
+    speakingStyle: existing.speakingStyle,
+  };
+  if (updates.description !== undefined) {
+    if (updates.description) updatedChar.description = updates.description;
+    else delete updatedChar.description;
+  }
+  if (updates.speakingStyle !== undefined) {
+    if (updates.speakingStyle) updatedChar.speakingStyle = updates.speakingStyle;
+    else delete updatedChar.speakingStyle;
+  }
+  return updatedChar;
+}
+
+/**
+ * add/update 角色设定共用的扁平数据形状（别名里 translation 已拉平成字符串）。
+ * add 需要 name，update 全部字段都是可选的 — 通过 Partial 派生 update 的入参类型。
+ */
+type CharacterMutationFields = {
+  name: string;
+  sex?: 'male' | 'female' | 'other' | undefined;
+  translation?: string;
+  description?: string;
+  speakingStyle?: string;
+  aliases?: Array<{ name: string; translation: string }>;
+};
+
 export class CharacterSettingService {
   /**
    * 添加新角色设定
@@ -32,14 +134,7 @@ export class CharacterSettingService {
    */
   static async addCharacterSetting(
     bookId: string,
-    charData: {
-      name: string;
-      sex?: 'male' | 'female' | 'other' | undefined;
-      translation?: string;
-      description?: string;
-      speakingStyle?: string;
-      aliases?: Array<{ name: string; translation: string }>;
-    },
+    charData: CharacterMutationFields,
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
@@ -116,133 +211,26 @@ export class CharacterSettingService {
   static async updateCharacterSetting(
     bookId: string,
     charId: string,
-    updates: {
-      name?: string;
-      sex?: 'male' | 'female' | 'other' | undefined;
-      translation?: string;
-      description?: string;
-      speakingStyle?: string;
-      aliases?: Array<{ name: string; translation: string }>;
-    },
+    updates: Partial<CharacterMutationFields>,
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
-
-    if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
-    }
+    if (!book) throw new Error(`书籍不存在: ${bookId}`);
 
     const currentSettings = book.characterSettings || [];
     const existingChar = currentSettings.find((c) => c.id === charId);
+    if (!existingChar) throw new Error(`角色不存在: ${charId}`);
 
-    if (!existingChar) {
-      throw new Error(`角色不存在: ${charId}`);
-    }
+    assertCharacterNameAvailable(currentSettings, charId, updates.name, existingChar.name);
 
-    // 如果更新名称，检查是否与其他角色冲突
-    const nameChanged = updates.name && updates.name !== existingChar.name;
-    if (nameChanged) {
-      const nameConflict = currentSettings.find((c) => c.id !== charId && c.name === updates.name);
-      if (nameConflict) {
-        throw new Error(`角色 "${updates.name}" 已存在`);
-      }
-    }
+    const updatedTranslation = buildUpdatedCharacterTranslation(existingChar, updates.translation);
+    const updatedAliases =
+      updates.aliases === undefined
+        ? existingChar.aliases || []
+        : buildUpdatedCharacterAliases(updates.aliases, currentSettings, charId, existingChar);
 
-    // 准备更新后的数据
-    const updatedName = updates.name ?? existingChar.name;
+    const updatedChar = composeUpdatedCharacter(existingChar, updates, updatedTranslation, updatedAliases);
 
-    // 处理翻译更新
-    let updatedTranslation = existingChar.translation;
-    if (updates.translation !== undefined) {
-      // 保留原有的 ID 和 aiModelId，只更新翻译文本
-      updatedTranslation = {
-        id: existingChar.translation.id,
-        translation: normalizeTranslationQuotes(updates.translation),
-        aiModelId: existingChar.translation.aiModelId,
-      };
-    }
-
-    // 处理别名更新
-    let updatedAliases = existingChar.aliases || [];
-    if (updates.aliases !== undefined) {
-      updatedAliases = [];
-      for (const aliasData of updates.aliases) {
-        if (!aliasData.name.trim()) continue;
-
-        // 检查该别名是否属于其他角色（作为主名称或别名）
-        const aliasBelongsToOtherCharacter = currentSettings.some((c) => {
-          if (c.id === charId) return false; // 跳过当前角色
-          // 检查是否与其他角色的主名称冲突
-          if (c.name === aliasData.name) return true;
-          // 检查是否与其他角色的别名冲突
-          if (c.aliases?.some((a) => a.name === aliasData.name)) return true;
-          return false;
-        });
-
-        // 如果别名属于其他角色，跳过该别名
-        if (aliasBelongsToOtherCharacter) {
-          console.warn(
-            `[CharacterSettingService] 跳过别名 "${aliasData.name}"，因为它已属于其他角色`,
-          );
-          continue;
-        }
-
-        // 尝试查找现有的别名（按名称匹配）
-        const existingAlias = (existingChar.aliases || []).find((a) => a.name === aliasData.name);
-
-        if (existingAlias) {
-          // 保留现有别名，但更新翻译
-          updatedAliases.push({
-            name: aliasData.name,
-            translation: {
-              id: existingAlias.translation.id, // 保留原有 ID
-              translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
-              aiModelId: existingAlias.translation.aiModelId,
-            },
-          });
-        } else {
-          // 创建新别名
-          updatedAliases.push({
-            name: aliasData.name,
-            translation: {
-              id: generateShortId(),
-              translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
-              aiModelId: '',
-            },
-          });
-        }
-      }
-    }
-
-    const updatedChar: CharacterSetting = {
-      id: existingChar.id,
-      name: updatedName,
-      sex: updates.sex !== undefined ? updates.sex : existingChar.sex,
-      translation: updatedTranslation,
-      aliases: updatedAliases,
-      description: existingChar.description, // 默认保留
-      speakingStyle: existingChar.speakingStyle, // 默认保留
-    };
-
-    // 处理 description
-    if (updates.description !== undefined) {
-      if (updates.description) {
-        updatedChar.description = updates.description;
-      } else {
-        delete updatedChar.description;
-      }
-    }
-
-    // 处理 speakingStyle
-    if (updates.speakingStyle !== undefined) {
-      if (updates.speakingStyle) {
-        updatedChar.speakingStyle = updates.speakingStyle;
-      } else {
-        delete updatedChar.speakingStyle;
-      }
-    }
-
-    // 更新书籍
     const updatedSettings = currentSettings.map((c) => (c.id === charId ? updatedChar : c));
     await booksStore.updateBook(bookId, {
       characterSettings: updatedSettings,

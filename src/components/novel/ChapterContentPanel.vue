@@ -16,8 +16,8 @@ import {
   getChapterDisplayTitle,
   getChapterCharCount,
   formatWordCount,
-  formatTranslationForDisplay,
 } from 'src/utils';
+import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
 
 const props = defineProps<{
@@ -78,21 +78,8 @@ const selectedChapterStats = computed(() => {
 });
 
 // 获取段落的选中翻译文本（应用显示层格式化）
-const getParagraphTranslationText = (paragraph: Paragraph): string => {
-  if (!paragraph.selectedTranslationId || !paragraph.translations) {
-    return '';
-  }
-  const selectedTranslation = paragraph.translations.find(
-    (t) => t.id === paragraph.selectedTranslationId,
-  );
-  const translation = selectedTranslation?.translation || '';
-  // 应用显示层格式化（缩进过滤/符号规范化等）
-  return formatTranslationForDisplay(
-    translation,
-    props.book || undefined,
-    props.selectedChapterWithContent || undefined,
-  );
-};
+const getParagraphTranslationText = (paragraph: Paragraph): string =>
+  getSelectedParagraphTranslationText(paragraph, props.book, props.selectedChapterWithContent);
 
 const handleOriginalTextInput = (event: Event) => {
   const target = event.target as HTMLTextAreaElement;

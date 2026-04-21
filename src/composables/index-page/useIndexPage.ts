@@ -2,12 +2,20 @@ import { computed, onMounted, watch, ref, inject, provide, type InjectionKey } f
 import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
-import { getTotalChapters, getAssetUrl, formatWordCount } from 'src/utils';
+import {
+  getTotalChapters,
+  getAssetUrl,
+  formatWordCount,
+  formatRelativeBookDate,
+} from 'src/utils';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { v4 as uuidv4 } from 'uuid';
+import {
+  createImportBookHandler,
+  createSaveNewBookHandler,
+} from 'src/composables/shared/useBookImportActions';
 
 /**
  * IndexPage 业务逻辑 composable + provide/inject 辅助。
@@ -77,24 +85,7 @@ function createIndexPageContext() {
     return '晚上好';
   });
 
-  const formatDate = (date: Date): string => {
-    const d = new Date(date);
-    const now = new Date();
-    const diff = now.getTime() - d.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-    if (days === 0) return '今天';
-    if (days === 1) return '昨天';
-    if (days < 7) return `${days}天前`;
-    if (days < 30) return `${Math.floor(days / 7)}周前`;
-    if (days < 365) return `${Math.floor(days / 30)}个月前`;
-
-    return d.toLocaleDateString('zh-CN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  };
+  const formatDate = formatRelativeBookDate;
 
   const getCoverUrl = (book: Novel): string => CoverService.getCoverUrl(book);
 
@@ -106,71 +97,23 @@ function createIndexPageContext() {
     showImportDialog.value = true;
   };
 
-  const handleImportBook = async (novel: Novel) => {
-    const now = new Date();
-    const newBook: Novel = {
-      ...novel,
-      id: uuidv4(),
-      createdAt: now,
-      lastEdited: now,
-    };
-    await booksStore.addBook(newBook);
+  const handleImportBook = createImportBookHandler({
+    booksStore,
+    coverHistoryStore,
+    toast,
+    onAfterImport: () => {
+      showImportDialog.value = false;
+    },
+  });
 
-    if (newBook.cover) {
-      void coverHistoryStore.addCover(newBook.cover);
-    }
-
-    showImportDialog.value = false;
-    toast.add({
-      severity: 'success',
-      summary: '导入成功',
-      detail: `已成功从网站导入书籍 "${newBook.title}"`,
-      life: 3000,
-      onRevert: () => booksStore.deleteBook(newBook.id),
-    });
-  };
-
-  const handleSave = async (formData: Partial<Novel>) => {
-    const now = new Date();
-    const newBook: Novel = {
-      id: uuidv4(),
-      title: formData.title!,
-      ...(formData.alternateTitles && formData.alternateTitles.length > 0
-        ? { alternateTitles: formData.alternateTitles }
-        : {}),
-      ...(formData.author?.trim() ? { author: formData.author.trim() } : {}),
-      ...(formData.description?.trim() ? { description: formData.description.trim() } : {}),
-      ...(formData.tags && formData.tags.length > 0 ? { tags: formData.tags } : {}),
-      ...(formData.webUrl && formData.webUrl.length > 0 ? { webUrl: formData.webUrl } : {}),
-      ...(formData.cover ? { cover: formData.cover } : {}),
-      ...(formData.volumes && formData.volumes.length > 0 ? { volumes: formData.volumes } : {}),
-      ...(formData.translationInstructions !== undefined
-        ? { translationInstructions: formData.translationInstructions }
-        : {}),
-      ...(formData.polishInstructions !== undefined
-        ? { polishInstructions: formData.polishInstructions }
-        : {}),
-      ...(formData.proofreadingInstructions !== undefined
-        ? { proofreadingInstructions: formData.proofreadingInstructions }
-        : {}),
-      createdAt: now,
-      lastEdited: now,
-    };
-    await booksStore.addBook(newBook);
-
-    if (newBook.cover) {
-      void coverHistoryStore.addCover(newBook.cover);
-    }
-
-    showAddDialog.value = false;
-    toast.add({
-      severity: 'success',
-      summary: '添加成功',
-      detail: `已成功添加书籍 "${newBook.title}"`,
-      life: 3000,
-      onRevert: () => booksStore.deleteBook(newBook.id),
-    });
-  };
+  const handleSave = createSaveNewBookHandler({
+    booksStore,
+    coverHistoryStore,
+    toast,
+    onAfterImport: () => {
+      showAddDialog.value = false;
+    },
+  });
 
   const navigateToBookDetails = (book: Novel) => {
     void router.push(`/books/${book.id}`);

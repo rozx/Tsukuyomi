@@ -1,7 +1,8 @@
-import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import './setup';
 import { MemoryService } from 'src/services/memory-service';
 import { getDB } from 'src/utils/indexed-db';
+import * as memoryEmbeddingLookup from 'src/utils/memory-embedding-lookup';
 
 const BOOK_A = 'book-a-cache';
 const BOOK_B = 'book-b-cache';
@@ -196,5 +197,52 @@ describe('MemoryService - updateMemoryEmbeddingOnly', () => {
   test('不存在的 memoryId 静默跳过', async () => {
     // 不应抛异常
     await MemoryService.updateMemoryEmbeddingOnly('nonexistent-id', [0.1], 'v1');
+  });
+
+  test('leaf 写入失败时：抛出、不刷新缓存、不派发 embedding-updated 事件', async () => {
+    const db = await getDB();
+    const bookId = 'emb-fail-book';
+    await db.put('memories', {
+      id: 'emb-fail',
+      bookId,
+      content: 'c',
+      summary: 's',
+      createdAt: 1,
+      lastAccessedAt: 1,
+    });
+
+    // 先填好 book 级缓存，使得"缓存保持不变"能被真正观测到
+    const baseline = await MemoryService.getAllBookMemories(bookId);
+    expect(baseline[0]?.embedding).toBeUndefined();
+
+    // 模拟 IDB 写失败（配额 / 事务中止）
+    const quotaError = new Error('QuotaExceededError');
+    spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockRejectedValueOnce(quotaError);
+
+    // 订阅事件，断言不应派发
+    let dispatchedAction: string | null = null;
+    const unsubscribe = MemoryService.addMemoryChangeListener((event) => {
+      dispatchedAction = event.detail.action;
+    });
+
+    try {
+      let caught: unknown;
+      try {
+        await MemoryService.updateMemoryEmbeddingOnly('emb-fail', [0.9, 0.1], 'v1');
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBe(quotaError);
+
+      // 缓存未被污染：再读一次应仍无 embedding
+      const after = await MemoryService.getAllBookMemories(bookId);
+      expect(after[0]?.embedding).toBeUndefined();
+      expect(after[0]?.embeddingModel).toBeUndefined();
+
+      // 未派发 embedding-updated 事件
+      expect(dispatchedAction).toBeNull();
+    } finally {
+      unsubscribe();
+    }
   });
 });

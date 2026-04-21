@@ -1,11 +1,11 @@
 // Configuration for your app
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file
 
+// fallow-ignore-next-line unresolved-import
 import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
 import { PrimeVueResolver } from 'unplugin-vue-components/resolvers';
 import { dynamicAIProxy } from './vite-plugins/dynamic-ai-proxy';
-import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig((ctx: any) => {
   return {
@@ -71,23 +71,7 @@ export default defineConfig((ctx: any) => {
         // Suppress large chunk size warnings
         if (!viteConf.build) viteConf.build = {};
         viteConf.build.chunkSizeWarningLimit = 2000;
-
-        // 添加 Node.js polyfills 以支持 kuromojin
         if (!viteConf.plugins) viteConf.plugins = [];
-        viteConf.plugins.push(
-          nodePolyfills({
-            // 包含 path 模块的 polyfill
-            globals: {
-              Buffer: true,
-              global: true,
-              process: true,
-            },
-            // 包含 path 和其他 Node.js 模块
-            include: ['path', 'util', 'stream', 'buffer'],
-            // 排除一些不需要的模块
-            exclude: [],
-          }),
-        );
 
         // 配置开发服务器端口（避免与 Node.js 应用服务器冲突）
         if (!viteConf.server) viteConf.server = {};

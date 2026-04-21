@@ -13,7 +13,11 @@ import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
 import type { Volume, Chapter, Novel } from 'src/models/novel';
 import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
-import { canNavigateToChapter } from 'src/components/novel/volumes-list-utils';
+import {
+  canNavigateToChapter,
+  buildVolumeActionMenuItems,
+  buildChapterActionMenuItems,
+} from 'src/components/novel/volumes-list-utils';
 
 const props = defineProps<{
   volumes: Volume[];
@@ -48,64 +52,37 @@ type ActionTarget =
 const actionMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const actionTarget = ref<ActionTarget | null>(null);
 
+// 与 BooksPageTablet 的 ⋮ 菜单 dispatch 模板结构一致；callback 闭包不同无法抽成工厂
+// fallow-ignore-next-line code-duplication
 const actionMenuItems = computed<MenuItem[]>(() => {
   const target = actionTarget.value;
   if (!target) return [];
   if (target.kind === 'volume') {
-    return [
-      {
-        label: '编辑卷',
-        icon: 'pi pi-pencil',
-        command: () => emit('edit-volume', target.volume),
-      },
-      {
-        label: '删除卷',
-        icon: 'pi pi-trash',
-        class: 'p-menuitem-danger',
-        command: () => emit('delete-volume', target.volume),
-      },
-    ];
+    return buildVolumeActionMenuItems({
+      onEdit: () => emit('edit-volume', target.volume),
+      onDelete: () => emit('delete-volume', target.volume),
+    });
   }
-  const canUp = target.index > 0;
-  const canDown = target.index < target.chaptersLen - 1;
-  return [
-    {
-      label: '编辑章节',
-      icon: 'pi pi-pencil',
-      command: () => emit('edit-chapter', target.chapter),
-    },
-    {
-      label: '上移',
-      icon: 'pi pi-arrow-up',
-      disabled: !canUp,
-      command: () =>
-        emit('move-chapter', {
-          chapter: target.chapter,
-          volumeId: target.volumeId,
-          index: target.index,
-          direction: 'up',
-        }),
-    },
-    {
-      label: '下移',
-      icon: 'pi pi-arrow-down',
-      disabled: !canDown,
-      command: () =>
-        emit('move-chapter', {
-          chapter: target.chapter,
-          volumeId: target.volumeId,
-          index: target.index,
-          direction: 'down',
-        }),
-    },
-    { separator: true },
-    {
-      label: '删除章节',
-      icon: 'pi pi-trash',
-      class: 'p-menuitem-danger',
-      command: () => emit('delete-chapter', target.chapter),
-    },
-  ];
+  return buildChapterActionMenuItems({
+    canMoveUp: target.index > 0,
+    canMoveDown: target.index < target.chaptersLen - 1,
+    onEdit: () => emit('edit-chapter', target.chapter),
+    onMoveUp: () =>
+      emit('move-chapter', {
+        chapter: target.chapter,
+        volumeId: target.volumeId,
+        index: target.index,
+        direction: 'up',
+      }),
+    onMoveDown: () =>
+      emit('move-chapter', {
+        chapter: target.chapter,
+        volumeId: target.volumeId,
+        index: target.index,
+        direction: 'down',
+      }),
+    onDelete: () => emit('delete-chapter', target.chapter),
+  });
 });
 
 const openVolumeActions = (event: Event, volume: Volume) => {

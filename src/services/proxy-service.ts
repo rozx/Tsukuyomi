@@ -1,19 +1,24 @@
 import { DEFAULT_CORS_PROXY_FOR_AI } from 'src/constants/proxy';
 import { extractRootDomain } from 'src/utils/domain-utils';
 import { isElectron } from 'src/utils/platform';
-import co from 'co';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { useSettingsStore } from 'src/stores/settings';
 
 // 注意：代理列表现在从 settings store 中获取，不再使用硬编码的列表
 
-/**
- * 获取代理显示名称
- */
-function getProxyDisplayName(proxyUrl: string): string {
-  const proxyList = GlobalConfig.getProxyList();
-  const proxy = proxyList.find((p) => p.url === proxyUrl);
-  return proxy ? proxy.name : proxyUrl;
+const INTERNAL_PROXY_HOSTS: Record<string, string> = {
+  'kakuyomu.jp': '/api/kakuyomu',
+  'ncode.syosetu.com': '/api/ncode',
+  'novel18.syosetu.com': '/api/novel18',
+  'syosetu.org': '/api/syosetu',
+  'p.sda1.dev': '/api/sda1',
+};
+
+function buildInternalProxyPath(originalUrl: string): string | null {
+  const urlObj = new URL(originalUrl);
+  const prefix = INTERNAL_PROXY_HOSTS[urlObj.hostname];
+  if (!prefix) return null;
+  return `${prefix}${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
 }
 
 /**
@@ -31,110 +36,42 @@ export class ProxyService {
   static getProxiedUrl(
     originalUrl: string,
     options: {
-      /**
-       * 是否跳过代理（用于内部 API 请求）
-       * @default false
-       */
       skipProxy?: boolean;
-      /**
-       * 是否跳过内部代理路径（用于浏览器环境的 /api/ 路径）
-       * @default false
-       */
       skipInternalProxy?: boolean;
     } = {},
   ): string {
     const { skipProxy = false, skipInternalProxy = false } = options;
+    if (skipProxy) return originalUrl;
+    if (originalUrl.startsWith('/api/')) return originalUrl;
 
-    // 如果跳过代理，直接返回原始 URL
-    if (skipProxy) {
-      return originalUrl;
-    }
-
-    // 内部 API 请求（以 /api/ 开头）应该跳过代理
-    if (originalUrl.startsWith('/api/')) {
-      return originalUrl;
-    }
-
-    const inElectron = isElectron();
-
-    // 检查是否启用了代理
     const proxyEnabled = GlobalConfig.getProxyEnabled();
-    let proxyUrl = GlobalConfig.getProxyUrl();
-
-    // 如果启用了代理，优先使用网站特定的代理
     if (proxyEnabled) {
-      const domain = this.extractDomain(originalUrl);
-      if (domain) {
-        const rootDomain = extractRootDomain(domain);
-        if (rootDomain) {
-          const siteProxies = GlobalConfig.getProxiesForSite(rootDomain);
-          if (siteProxies.length > 0) {
-            // 如果当前代理在网站特定列表中，使用当前代理
-            // 否则使用网站特定列表中的第一个
-            if (proxyUrl && siteProxies.includes(proxyUrl)) {
-              // 使用当前代理
-            } else {
-              const siteProxy = siteProxies[0];
-              if (siteProxy) {
-                proxyUrl = siteProxy;
-              }
-            }
-          }
-        }
+      const resolvedProxyUrl = this.resolveExternalProxyUrl(originalUrl);
+      if (resolvedProxyUrl) {
+        return resolvedProxyUrl.replace('{url}', encodeURIComponent(originalUrl));
       }
     }
 
-    // 如果启用了代理且代理 URL 不为空，使用代理
-    if (proxyEnabled && proxyUrl && proxyUrl.trim()) {
-      // 替换 {url} 占位符为实际 URL
-      const proxiedUrl = proxyUrl.replace('{url}', encodeURIComponent(originalUrl));
-
-      // 在纯浏览器环境中，直接使用代理 URL（代理服务本身就是为了解决 CORS 问题）
-      // 在 Electron/Node.js 环境中，也可以直接使用代理 URL
-      // 只有在开发环境且有后端服务器支持时，才使用 /api/proxy（但这不是必需的）
-      // 为了简化逻辑，我们统一直接使用代理 URL，让代理服务处理 CORS
-      return proxiedUrl;
-    }
-    if (!skipInternalProxy && !inElectron) {
-      // 在浏览器环境中（非 Electron），使用服务器代理路径
-      const urlObj = new URL(originalUrl);
-      let internalProxyUrl: string | null = null;
-
-      if (urlObj.hostname === 'kakuyomu.jp') {
-        internalProxyUrl = `/api/kakuyomu${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      } else if (urlObj.hostname === 'ncode.syosetu.com') {
-        internalProxyUrl = `/api/ncode${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      } else if (urlObj.hostname === 'novel18.syosetu.com') {
-        internalProxyUrl = `/api/novel18${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      } else if (urlObj.hostname === 'syosetu.org') {
-        internalProxyUrl = `/api/syosetu${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      } else if (urlObj.hostname === 'p.sda1.dev') {
-        internalProxyUrl = `/api/sda1${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
-      }
-
-      if (internalProxyUrl) {
-        return internalProxyUrl;
-      }
+    if (!skipInternalProxy && !isElectron()) {
+      const internal = buildInternalProxyPath(originalUrl);
+      if (internal) return internal;
     }
 
-    // 默认返回原始 URL
     return originalUrl;
   }
 
-  /**
-   * 检查代理是否启用
-   * @returns 是否启用代理
-   */
-  static isProxyEnabled(): boolean {
-    return GlobalConfig.getProxyEnabled();
-  }
-
-  /**
-   * 获取代理 URL
-   * @returns 代理 URL 或空字符串
-   */
-  static getProxyUrl(): string {
-    return GlobalConfig.getProxyUrl();
+  private static resolveExternalProxyUrl(originalUrl: string): string | null {
+    let proxyUrl = GlobalConfig.getProxyUrl();
+    const domain = this.extractDomain(originalUrl);
+    const rootDomain = domain ? extractRootDomain(domain) : null;
+    if (rootDomain) {
+      const siteProxies = GlobalConfig.getProxiesForSite(rootDomain);
+      if (siteProxies.length > 0 && !(proxyUrl && siteProxies.includes(proxyUrl))) {
+        const siteProxy = siteProxies[0];
+        if (siteProxy) proxyUrl = siteProxy;
+      }
+    }
+    return proxyUrl && proxyUrl.trim() ? proxyUrl : null;
   }
 
   /**
@@ -177,63 +114,6 @@ export class ProxyService {
 
     // Electron 模式下直接返回原始 URL
     return originalUrl;
-  }
-
-  /**
-   * 获取下一个代理服务 URL
-   * @param originalUrl 原始 URL（用于查找网站特定的代理）
-   * @returns 下一个代理服务 URL 或 null（如果没有更多代理服务）
-   */
-  static getNextProxyUrl(originalUrl?: string | null): string | null {
-    const currentUrl = GlobalConfig.getProxyUrl();
-
-    // 如果提供了原始 URL，优先使用网站特定的代理列表
-    if (originalUrl) {
-      const domain = this.extractDomain(originalUrl);
-      if (domain) {
-        const rootDomain = extractRootDomain(domain);
-        if (rootDomain) {
-          const siteProxies = GlobalConfig.getProxiesForSite(rootDomain);
-          if (siteProxies.length > 0) {
-            // 查找当前代理在网站特定列表中的索引
-            const currentIndex = siteProxies.findIndex((url) => url === currentUrl);
-            if (currentIndex >= 0) {
-              // 切换到下一个网站特定的代理
-              const nextIndex = (currentIndex + 1) % siteProxies.length;
-              const nextProxy = siteProxies[nextIndex];
-              return nextProxy ?? null;
-            } else if (siteProxies.length > 0) {
-              // 如果当前代理不在列表中，使用第一个
-              const firstProxy = siteProxies[0];
-              return firstProxy ?? null;
-            }
-          }
-        }
-      }
-    }
-
-    // 查找当前代理在代理列表中的索引
-    const proxyList = GlobalConfig.getProxyList();
-    const currentIndex = proxyList.findIndex((proxy) => proxy.url === currentUrl);
-
-    // 如果找到当前代理，切换到下一个
-    if (currentIndex >= 0 && proxyList.length > 0) {
-      const nextIndex = (currentIndex + 1) % proxyList.length;
-      const nextProxy = proxyList[nextIndex];
-      if (nextProxy) {
-        return nextProxy.url;
-      }
-    }
-
-    // 如果当前代理不在列表中，尝试使用第一个代理
-    if (proxyList.length > 0) {
-      const firstProxy = proxyList[0];
-      if (firstProxy) {
-        return firstProxy.url;
-      }
-    }
-
-    return null;
   }
 
   /**
@@ -282,54 +162,6 @@ export class ProxyService {
     ];
 
     return networkErrorKeywords.some((keyword) => errorMessage.includes(keyword));
-  }
-
-  /**
-   * 切换到下一个代理服务
-   * @param originalUrl 原始 URL（用于查找网站特定的代理和记录映射）
-   * @returns 是否成功切换
-   */
-  private static switchToNextProxy(originalUrl?: string): boolean {
-    const settingsStore = useSettingsStore();
-    const nextProxyUrl = this.getNextProxyUrl(originalUrl);
-
-    if (nextProxyUrl) {
-      void co(function* () {
-        try {
-          yield settingsStore.setProxyUrl(nextProxyUrl);
-        } catch (error) {
-          console.error('[ProxyService] 切换代理 URL 失败:', error);
-        }
-      });
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * 处理代理错误，如果启用了自动切换，切换到下一个代理服务
-   * @param error 错误对象
-   * @returns 是否已切换到下一个代理服务
-   */
-  static handleProxyError(error: unknown): boolean {
-    const autoSwitch = GlobalConfig.getProxyAutoSwitch();
-
-    // 如果未启用自动切换，不处理
-    if (!autoSwitch) {
-      return false;
-    }
-
-    // 检查错误是否是网络错误
-    const isNetworkErr = this.isNetworkError(error);
-    if (!isNetworkErr) {
-      return false;
-    }
-
-    // 切换到下一个代理服务
-    // 注意：handleProxyError 没有 originalUrl 参数，所以无法使用网站特定代理
-    // 这个函数主要用于向后兼容，实际应该使用 executeWithAutoSwitch
-    return this.switchToNextProxy();
   }
 
   /**

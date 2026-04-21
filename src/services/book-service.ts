@@ -1,4 +1,5 @@
 import { getDB } from 'src/utils/indexed-db';
+import { serializeDates } from 'src/utils/serialize-dates';
 import type { Novel, Chapter } from 'src/models/novel';
 import { ChapterContentService } from './chapter-content-service';
 
@@ -40,32 +41,6 @@ export class BookService {
         chapters: volume.chapters?.map((chapter) => BookService.stripChapterContent(chapter)),
       })),
     };
-  }
-  /**
-   * 将 Date 对象转换为可序列化的格式（用于 IndexedDB）
-   */
-  private static serializeDatesForDB<T>(obj: T): T {
-    if (obj === null || obj === undefined) {
-      return obj;
-    }
-
-    if (obj instanceof Date) {
-      return obj.toISOString() as unknown as T;
-    }
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => BookService.serializeDatesForDB(item)) as unknown as T;
-    }
-
-    if (typeof obj === 'object') {
-      const serialized = {} as T;
-      for (const [key, value] of Object.entries(obj)) {
-        (serialized as Record<string, unknown>)[key] = BookService.serializeDatesForDB(value);
-      }
-      return serialized;
-    }
-
-    return obj;
   }
 
   /**
@@ -168,25 +143,36 @@ export class BookService {
 
     // 1. 先保存所有章节内容到独立存储（仅在需要时）
     // 优化：只保存修改过的章节内容
-    if (saveChapterContent && book.volumes) {
-      for (const volume of book.volumes) {
-        if (volume.chapters) {
-          for (const chapter of volume.chapters) {
-            if (chapter.content && chapter.content.length > 0) {
-              // 只保存修改过的章节内容
-              await ChapterContentService.saveChapterContent(chapter.id, chapter.content, {
-                skipIfUnchanged: true,
-              });
-            }
-          }
-        }
-      }
+    if (saveChapterContent) {
+      await BookService.saveChaptersContent(book, { skipIfUnchanged: true });
     }
 
     // 2. 剥离章节内容后保存书籍元数据
     const bookWithoutContent = BookService.stripNovelChapterContent(book);
-    const serializedBook = BookService.serializeDatesForDB(bookWithoutContent);
+    const serializedBook = serializeDates(bookWithoutContent);
     await db.put('books', serializedBook);
+  }
+
+  /**
+   * 遍历 book.volumes[].chapters[]，把含有内容的章节写入独立存储。
+   * 供 saveBook / bulkSaveBooks 复用，避免重复三层嵌套循环。
+   */
+  private static async saveChaptersContent(
+    book: Novel,
+    options: { skipIfUnchanged?: boolean } = {},
+  ): Promise<void> {
+    if (!book.volumes) return;
+    for (const volume of book.volumes) {
+      if (!volume.chapters) continue;
+      for (const chapter of volume.chapters) {
+        if (chapter.content && chapter.content.length > 0) {
+          await ChapterContentService.saveChapterContent(chapter.id, chapter.content, {
+            bookId: book.id,
+            ...(options.skipIfUnchanged ? { skipIfUnchanged: true } : {}),
+          });
+        }
+      }
+    }
   }
 
   /**
@@ -198,17 +184,7 @@ export class BookService {
 
     // 1. 先保存所有章节内容到独立存储
     for (const book of books) {
-      if (book.volumes) {
-        for (const volume of book.volumes) {
-          if (volume.chapters) {
-            for (const chapter of volume.chapters) {
-              if (chapter.content && chapter.content.length > 0) {
-                await ChapterContentService.saveChapterContent(chapter.id, chapter.content);
-              }
-            }
-          }
-        }
-      }
+      await BookService.saveChaptersContent(book);
     }
 
     // 2. 剥离章节内容后批量保存书籍元数据
@@ -217,7 +193,7 @@ export class BookService {
 
     for (const book of books) {
       const bookWithoutContent = BookService.stripNovelChapterContent(book);
-      const serializedBook = BookService.serializeDatesForDB(bookWithoutContent);
+      const serializedBook = serializeDates(bookWithoutContent);
       await store.put(serializedBook);
     }
 
@@ -247,7 +223,7 @@ export class BookService {
 
       // 2. 删除所有章节内容
       if (chapterIds.length > 0) {
-        await ChapterContentService.bulkDeleteChapterContent(chapterIds);
+        await ChapterContentService.bulkDeleteChapterContent(chapterIds, { bookId: id });
       }
     }
 
@@ -265,36 +241,4 @@ export class BookService {
     await ChapterContentService.clearAllChapterContent();
   }
 
-  /**
-   * 加载指定章节的内容
-   * @param book 小说对象
-   * @param chapterId 章节 ID
-   * @returns 包含内容的章节对象，如果找不到则返回 undefined
-   */
-  static async loadChapterContent(book: Novel, chapterId: string): Promise<Chapter | undefined> {
-    if (!book.volumes) return undefined;
-
-    // 查找章节
-    for (const volume of book.volumes) {
-      if (volume.chapters) {
-        const chapter = volume.chapters.find((ch) => ch.id === chapterId);
-        if (chapter) {
-          // 如果内容已加载，直接返回
-          if (chapter.content !== undefined) {
-            return chapter;
-          }
-
-          // 从独立存储加载内容
-          const content = await ChapterContentService.loadChapterContent(chapterId);
-          return {
-            ...chapter,
-            content: content || [],
-            contentLoaded: true,
-          };
-        }
-      }
-    }
-
-    return undefined;
-  }
 }

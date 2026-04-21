@@ -17,7 +17,11 @@ export const MAX_TASK_CHUNK_SIZE = 50000;
  *
  * 适用场景：书籍设置保存、UI 输入规范化
  */
-export function resolveTaskChunkSize(chunkSize?: number): number {
+/**
+ * resolveTaskChunkSize / resolveRuntimeTaskChunkSize 共用的钳制实现。
+ * 两者只在下限不同：持久化配置最小 MIN_TASK_CHUNK_SIZE (1000)，运行时参数最小 1。
+ */
+function clampChunkSize(chunkSize: number | undefined, minValue: number): number {
   if (chunkSize == null) {
     return DEFAULT_TASK_CHUNK_SIZE;
   }
@@ -29,14 +33,18 @@ export function resolveTaskChunkSize(chunkSize?: number): number {
   }
 
   const integerValue = Math.floor(normalized);
-  if (integerValue < MIN_TASK_CHUNK_SIZE) {
-    return MIN_TASK_CHUNK_SIZE;
+  if (integerValue < minValue) {
+    return minValue;
   }
   if (integerValue > MAX_TASK_CHUNK_SIZE) {
     return MAX_TASK_CHUNK_SIZE;
   }
 
   return integerValue;
+}
+
+export function resolveTaskChunkSize(chunkSize?: number): number {
+  return clampChunkSize(chunkSize, MIN_TASK_CHUNK_SIZE);
 }
 
 /**
@@ -53,25 +61,7 @@ export function resolveTaskChunkSize(chunkSize?: number): number {
  * 适用场景：翻译/润色/校对任务调用时传入的临时 chunkSize 参数
  */
 export function resolveRuntimeTaskChunkSize(chunkSize?: number): number {
-  if (chunkSize == null) {
-    return DEFAULT_TASK_CHUNK_SIZE;
-  }
-
-  const normalized = Number(chunkSize);
-
-  if (!Number.isFinite(normalized)) {
-    return DEFAULT_TASK_CHUNK_SIZE;
-  }
-
-  const integerValue = Math.floor(normalized);
-  if (integerValue < 1) {
-    return 1;
-  }
-  if (integerValue > MAX_TASK_CHUNK_SIZE) {
-    return MAX_TASK_CHUNK_SIZE;
-  }
-
-  return integerValue;
+  return clampChunkSize(chunkSize, 1);
 }
 
 /**
@@ -86,46 +76,19 @@ export function buildFormattedChunks(
   chunkSize: number,
   originalIndices?: Map<string, number>,
 ): Array<{ text: string; paragraphIds: string[] }> {
-  const chunks: Array<{ text: string; paragraphIds: string[] }> = [];
-  let currentChunkText = '';
-  let currentChunkParagraphIds: string[] = [];
-
-  for (let i = 0; i < paragraphs.length; i++) {
-    const paragraph = paragraphs[i];
-    if (!paragraph) continue;
-
-    // 获取段落的当前翻译
-    const currentTranslation = getSelectedTranslation(paragraph);
-
-    // 使用原始索引（如果提供），否则使用数组索引
-    const originalIndex = originalIndices?.get(paragraph.id) ?? i;
-    // 展示索引从 1 开始（仍保持章节原始位置语义）
-    const displayIndex = originalIndex + 1;
-    // 格式化段落：[{displayIndex}] [ID: {id}] 原文: {原文}\n翻译: {当前翻译}
-    const paragraphText = `[${displayIndex}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
-
-    // 如果当前块加上新段落超过限制，且当前块不为空，则先保存当前块
-    if (currentChunkText.length + paragraphText.length > chunkSize && currentChunkText.length > 0) {
-      chunks.push({
-        text: currentChunkText,
-        paragraphIds: currentChunkParagraphIds,
-      });
-      currentChunkText = '';
-      currentChunkParagraphIds = [];
-    }
-    currentChunkText += paragraphText;
-    currentChunkParagraphIds.push(paragraph.id);
-  }
-
-  // 添加最后一个块
-  if (currentChunkText.length > 0) {
-    chunks.push({
-      text: currentChunkText,
-      paragraphIds: currentChunkParagraphIds,
-    });
-  }
-
-  return chunks;
+  return buildChunks(
+    paragraphs,
+    chunkSize,
+    (paragraph, arrayIndex) => {
+      const currentTranslation = getSelectedTranslation(paragraph);
+      // 使用原始索引（如果提供），否则使用数组索引；展示索引从 1 开始
+      const originalIndex = originalIndices?.get(paragraph.id) ?? arrayIndex;
+      const displayIndex = originalIndex + 1;
+      return `[${displayIndex}] [ID: ${paragraph.id}] 原文: ${paragraph.text}\n翻译: ${currentTranslation}\n\n`;
+    },
+    // 调用方已提前过滤空段落，这里保留所有段落，仅按 chunkSize 切分
+    () => true,
+  );
 }
 
 /**

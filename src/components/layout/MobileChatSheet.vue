@@ -14,7 +14,7 @@ import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPop
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
-import { useRightPanel } from 'src/composables/right-panel/useRightPanel';
+import { useChatPanelSetup } from 'src/composables/right-panel/useChatPanelSetup';
 
 const props = defineProps<{
   visible: boolean;
@@ -29,13 +29,13 @@ const localVisible = computed({
   set: (v) => emit('update:visible', v),
 });
 
+// useRightPanel 解构 + bindXxxRef 样板已抽到 useChatPanelSetup，
+// Tablet 变体也走同一份 helper，保持两边行为一致。
+// fallow-ignore-next-line code-duplication
 const {
   chatSessionsStore,
   panelContainerRef,
   messagesContainerRef,
-  sessionListPopoverRef,
-  actionPopoverRef,
-  groupedActionPopoverRef,
   logoPath,
   messages,
   inputMessage,
@@ -67,17 +67,10 @@ const {
   toggleGroupedActionPopover,
   handleGroupedActionMouseLeave,
   handleGroupedActionPopoverHide,
-} = useRightPanel();
-
-const bindSessionListRef = (el: unknown) => {
-  sessionListPopoverRef.value = el as typeof sessionListPopoverRef.value;
-};
-const bindActionPopoverRef = (el: unknown) => {
-  actionPopoverRef.value = el as typeof actionPopoverRef.value;
-};
-const bindGroupedActionPopoverRef = (el: unknown) => {
-  groupedActionPopoverRef.value = el as typeof groupedActionPopoverRef.value;
-};
+  bindSessionListRef,
+  bindActionPopoverRef,
+  bindGroupedActionPopoverRef,
+} = useChatPanelSetup();
 </script>
 
 <template>

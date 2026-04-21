@@ -4,10 +4,13 @@ import { useBooksStore } from 'src/stores/books';
 import type { Terminology } from 'src/models/novel';
 import type { ToolDefinition } from './types';
 import { cloneDeep } from 'lodash';
-import { getChapterContentText, ensureChapterContentLoaded } from 'src/utils/novel-utils';
 import { findUniqueTermsInText } from 'src/utils/text-matcher';
-import type { Chapter } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
+import {
+  filterEntitiesForChapter,
+  requireValidKeywords,
+  resolveBookSync,
+} from './chapter-scope-helpers';
 
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
@@ -396,11 +399,7 @@ export const terminologyTools: ToolDefinition[] = [
         all_chapters?: boolean;
         limit?: number;
       };
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const book = resolveBookSync(bookId);
 
       // 报告读取操作
       if (onAction) {
@@ -416,40 +415,14 @@ export const terminologyTools: ToolDefinition[] = [
 
       let terms: Terminology[] = book.terminologies || [];
 
-      // 如果 all_chapters 为 false，需要按章节过滤
-      if (!all_chapters) {
-        // 如果提供了 chapter_id，使用文本匹配方法（与章节工具栏相同的方法）
-        if (chapter_id) {
-          // 查找章节
-          let foundChapter: Chapter | null = null;
-          for (const volume of book.volumes || []) {
-            for (const chapter of volume.chapters || []) {
-              if (chapter.id === chapter_id) {
-                foundChapter = chapter;
-                break;
-              }
-            }
-            if (foundChapter) break;
-          }
-
-          if (foundChapter) {
-            // 确保章节内容已加载
-            const chapterWithContent = await ensureChapterContentLoaded(foundChapter);
-            // 获取章节文本内容
-            const chapterText = getChapterContentText(chapterWithContent);
-            if (chapterText) {
-              // 使用文本匹配方法查找在该章节中出现的术语（与章节工具栏相同的方法）
-              terms = findUniqueTermsInText(chapterText, terms);
-            } else {
-              // 如果章节没有内容，返回空数组
-              terms = [];
-            }
-          } else {
-            // 如果找不到章节，返回空数组
-            terms = [];
-          }
-        }
-        // 如果没有提供 chapter_id，保持现有行为（返回所有）
+      // 如果 all_chapters 为 false 且提供了 chapter_id，按章节文本过滤
+      if (!all_chapters && chapter_id) {
+        terms = await filterEntitiesForChapter(
+          book,
+          chapter_id,
+          terms,
+          findUniqueTermsInText,
+        );
       }
 
       if (limit && limit > 0) {
@@ -514,23 +487,9 @@ export const terminologyTools: ToolDefinition[] = [
         translation_only?: boolean;
         include_memory?: boolean;
       };
-      if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-        throw new Error('关键词数组不能为空');
-      }
+      const validKeywords = requireValidKeywords(keywords);
 
-      // 过滤掉空字符串
-      const validKeywords = keywords.filter(
-        (k) => k && typeof k === 'string' && k.trim().length > 0,
-      );
-      if (validKeywords.length === 0) {
-        throw new Error('关键词数组不能为空');
-      }
-
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const book = resolveBookSync(bookId);
 
       // 报告读取操作
       if (onAction) {

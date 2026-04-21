@@ -11,6 +11,69 @@ import type { Ref } from 'vue';
  * @param actions 操作数组
  * @returns 包含术语和角色操作数量的对象
  */
+async function revertCreate(bookId: string, action: ActionInfo): Promise<void> {
+  const data = action.data as Terminology | CharacterSetting;
+  if (action.entity === 'term') {
+    await TerminologyService.deleteTerminology(bookId, data.id);
+  } else {
+    await CharacterSettingService.deleteCharacterSetting(bookId, data.id);
+  }
+}
+
+async function revertUpdate(bookId: string, action: ActionInfo): Promise<void> {
+  if (action.entity === 'term') {
+    const previousTerm = action.previousData as Terminology;
+    await TerminologyService.updateTerminology(bookId, previousTerm.id, {
+      name: previousTerm.name,
+      translation: previousTerm.translation.translation,
+      ...(previousTerm.description !== undefined
+        ? { description: previousTerm.description }
+        : {}),
+    });
+    return;
+  }
+  const previousChar = action.previousData as CharacterSetting;
+  await CharacterSettingService.updateCharacterSetting(bookId, previousChar.id, {
+    name: previousChar.name,
+    ...(previousChar.sex !== undefined ? { sex: previousChar.sex } : {}),
+    translation: previousChar.translation.translation,
+    ...(previousChar.description !== undefined ? { description: previousChar.description } : {}),
+    ...(previousChar.speakingStyle !== undefined
+      ? { speakingStyle: previousChar.speakingStyle }
+      : {}),
+    aliases: previousChar.aliases.map((a) => ({
+      name: a.name,
+      translation: a.translation.translation,
+    })),
+  });
+}
+
+async function revertDelete(
+  bookId: string,
+  action: ActionInfo,
+  booksStore: ReturnType<typeof useBooksStore>,
+): Promise<void> {
+  const currentBook = booksStore.getBookById(bookId);
+  if (!currentBook) return;
+  if (action.entity === 'term') {
+    const previousTerm = action.previousData as Terminology;
+    const current = currentBook.terminologies || [];
+    if (current.some((t) => t.id === previousTerm.id)) return;
+    await booksStore.updateBook(currentBook.id, {
+      terminologies: [...current, previousTerm],
+      lastEdited: new Date(),
+    });
+    return;
+  }
+  const previousChar = action.previousData as CharacterSetting;
+  const current = currentBook.characterSettings || [];
+  if (current.some((c) => c.id === previousChar.id)) return;
+  await booksStore.updateBook(currentBook.id, {
+    characterSettings: [...current, previousChar],
+    lastEdited: new Date(),
+  });
+}
+
 export function countUniqueActions(actions: ActionInfo[]): { terms: number; characters: number } {
   const termKeys = new Set<string>();
   const characterKeys = new Set<string>();
@@ -125,75 +188,16 @@ export function useActionInfoToast(book: Ref<Novel | undefined>) {
       }
     }
 
-    // 构建撤销回调（如果需要）
     const onRevert = withRevert
       ? async () => {
           if (!book.value) return;
-
+          const bookId = book.value.id;
           if (action.type === 'create') {
-            // 撤销创建：删除创建的项目
-            const data = action.data as Terminology | CharacterSetting;
-            if (action.entity === 'term') {
-              await TerminologyService.deleteTerminology(book.value.id, data.id);
-            } else {
-              await CharacterSettingService.deleteCharacterSetting(book.value.id, data.id);
-            }
+            await revertCreate(bookId, action);
           } else if (action.type === 'update' && action.previousData) {
-            // 撤销更新：恢复到之前的状态
-            if (action.entity === 'term') {
-              const previousTerm = action.previousData as Terminology;
-              await TerminologyService.updateTerminology(book.value.id, previousTerm.id, {
-                name: previousTerm.name,
-                translation: previousTerm.translation.translation,
-                ...(previousTerm.description !== undefined
-                  ? { description: previousTerm.description }
-                  : {}),
-              });
-            } else {
-              const previousChar = action.previousData as CharacterSetting;
-              await CharacterSettingService.updateCharacterSetting(book.value.id, previousChar.id, {
-                name: previousChar.name,
-                ...(previousChar.sex !== undefined ? { sex: previousChar.sex } : {}),
-                translation: previousChar.translation.translation,
-                ...(previousChar.description !== undefined
-                  ? { description: previousChar.description }
-                  : {}),
-                ...(previousChar.speakingStyle !== undefined
-                  ? { speakingStyle: previousChar.speakingStyle }
-                  : {}),
-                aliases: previousChar.aliases.map((a) => ({
-                  name: a.name,
-                  translation: a.translation.translation,
-                })),
-              });
-            }
+            await revertUpdate(bookId, action);
           } else if (action.type === 'delete' && action.previousData) {
-            // 撤销删除：恢复删除的项目
-            if (action.entity === 'term') {
-              const previousTerm = action.previousData as Terminology;
-              const currentBook = booksStore.getBookById(book.value.id);
-              if (currentBook) {
-                const current = currentBook.terminologies || [];
-                if (!current.some((t) => t.id === previousTerm.id)) {
-                  await booksStore.updateBook(currentBook.id, {
-                    terminologies: [...current, previousTerm],
-                    lastEdited: new Date(),
-                  });
-                }
-              }
-            } else {
-              const previousChar = action.previousData as CharacterSetting;
-              const currentBook = booksStore.getBookById(book.value.id);
-              if (currentBook) {
-                const current = currentBook.characterSettings || [];
-                if (!current.some((c) => c.id === previousChar.id)) {
-                  await booksStore.updateBook(currentBook.id, {
-                    characterSettings: [...current, previousChar],
-                    lastEdited: new Date(),
-                  });
-                }
-              }
-            }
+            await revertDelete(bookId, action, booksStore);
           }
         }
       : undefined;

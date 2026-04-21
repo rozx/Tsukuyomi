@@ -1,13 +1,12 @@
-import type { AIToolCall, AIToolCallResult, ChatMessage } from 'src/services/ai/types/ai-service';
-import type { ToolCallLoopConfig } from '../task-runner';
-import type { IPromptPolicy } from '../prompt-policy';
-import type { PerformanceMetrics } from '../tool-executor';
-import type { TaskStatus, TaskType } from '../task-types';
+import type { AIToolCall, ChatMessage } from 'src/services/ai/types/ai-service';
 import { isTranslationRelatedTask } from '../task-types';
 import { TOOL_CALL_LIMITS } from '../productivity-monitor';
 import { createStatusUpdateHandler } from './handlers/status-update-handler';
 import { createTranslationBatchHandler } from './handlers/translation-batch-handler';
 import { createDefaultToolHandler } from './handlers/default-tool-handler';
+import type { ToolExecutionResult, ToolHandler, ToolHandlerContext } from './types';
+
+export type { ToolExecutionResult, ToolHandler, ToolHandlerContext } from './types';
 
 /**
  * 写入类工具名称集合
@@ -21,50 +20,6 @@ const DATA_WRITE_TOOL_NAMES = new Set([
   'create_memory',
   'update_memory',
 ]);
-
-export interface ToolExecutionResult {
-  toolMessage?: ChatMessage;
-  pendingUserMessage?: ChatMessage;
-  hasProductiveTool?: boolean;
-}
-
-export interface ToolHandlerContext {
-  config: ToolCallLoopConfig;
-  metrics: PerformanceMetrics;
-  getCurrentStatus: () => TaskStatus;
-  setCurrentStatus: (status: TaskStatus) => void;
-  isValidTransition: (prev: TaskStatus, next: TaskStatus) => boolean;
-  trackStatusDuration: (prev: TaskStatus, next: TaskStatus) => void;
-  extractPlanningSummaryIfNeeded: (
-    prev: TaskStatus,
-    next: TaskStatus,
-    responseText: string,
-  ) => void;
-  captureToolCallResult: (toolName: string, content: string) => void;
-  applyPendingStatusUpdate: (toolName: string, assistantText: string) => ChatMessage | undefined;
-  handleBatchExtraction: (
-    toolName: string,
-    toolCall: AIToolCall,
-    toolResultContent: string,
-  ) => Promise<void>;
-  collectPlanningInfo: (toolName: string, content: string, toolCall: AIToolCall) => boolean;
-  executeToolCall: (toolCall: AIToolCall, toolName: string) => Promise<AIToolCallResult>;
-  incrementWorkingRejectedWriteCount: () => void;
-  logLabel: string;
-  promptPolicy: IPromptPolicy;
-  taskType: TaskType;
-}
-
-export interface ToolHandler {
-  name: string;
-  canHandle: (toolName: string) => boolean;
-  execute: (
-    toolCall: AIToolCall,
-    toolResult: AIToolCallResult,
-    assistantText: string,
-    context: ToolHandlerContext,
-  ) => Promise<ToolExecutionResult>;
-}
 
 interface DispatcherConstructorOptions {
   context: ToolHandlerContext;

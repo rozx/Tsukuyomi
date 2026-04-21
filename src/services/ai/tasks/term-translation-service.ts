@@ -5,17 +5,19 @@ import type {
   TextGenerationStreamCallback,
   ChatMessage,
 } from 'src/services/ai/types/ai-service';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
-import { AIServiceFactory } from '../index';
+import type { AIProcessingStore } from './utils/task-types';
+import { AIServiceFactory } from '../ai-service-factory';
 import {
   buildChapterContextSection,
   buildBookContextSection,
   getSpecialInstructions,
   buildSpecialInstructionsSection,
+  createTaskChunkForwarder,
+  createUnifiedAbortController,
+  formatCharacterAliases,
 } from './utils';
-import { createUnifiedAbortController } from './utils';
 import {
   buildTermTranslationSystemPromptBase,
   buildTermTranslationSystemPrompt,
@@ -25,6 +27,7 @@ import {
 import { BookService } from 'src/services/book-service';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueCharactersInText, findUniqueTermsInText } from 'src/utils/text-matcher';
+import type { CharacterSetting } from 'src/models/novel';
 
 /**
  * 术语翻译服务选项
@@ -69,14 +72,184 @@ export interface TermTranslationServiceOptions {
   /**
    * AI 处理 Store（可选），如果提供，将自动创建和管理任务
    */
-  aiProcessingStore?: {
-    addTask: (task: Omit<AIProcessingTask, 'id' | 'startTime'>) => Promise<string>;
-    updateTask: (id: string, updates: Partial<AIProcessingTask>) => Promise<void>;
-    appendThinkingMessage: (id: string, text: string) => Promise<void>;
-    appendOutputContent: (id: string, text: string) => Promise<void>;
-    removeTask: (id: string) => Promise<void>;
-    activeTasks: AIProcessingTask[];
+  aiProcessingStore?: AIProcessingStore;
+}
+
+type TaskType = NonNullable<TermTranslationServiceOptions['taskType']>;
+
+/**
+ * 校验模型是否启用且支持指定任务类型
+ */
+function assertModelSupportsTask(model: AIModel, taskType: TaskType): void {
+  if (!model.enabled) {
+    throw new Error('所选模型未启用');
+  }
+  if (taskType === 'termsTranslation') {
+    if (!model.isDefault.termsTranslation?.enabled) {
+      throw new Error('所选模型不支持术语翻译任务');
+    }
+  } else {
+    if (!model.isDefault.translation?.enabled) {
+      throw new Error('所选模型不支持翻译任务');
+    }
+  }
+}
+
+/**
+ * 在 aiProcessingStore 中创建任务并返回 taskId / abortController
+ */
+async function createProcessingTask(
+  store: AIProcessingStore,
+  taskType: TaskType,
+  modelName: string,
+): Promise<{ taskId: string; abortController: AbortController | undefined }> {
+  const taskId = await store.addTask({
+    type: taskType,
+    modelName,
+    status: 'thinking',
+    message: '正在分析文本...',
+    thinkingMessage: '',
+  });
+
+  const task = store.activeTasks.find((t) => t.id === taskId);
+  return { taskId, abortController: task?.abortController };
+}
+
+/**
+ * 构建系统提示词：无 bookId 时使用基础模板，有 bookId 时添加上下文信息
+ */
+async function buildSystemPrompt(
+  bookId: string | undefined,
+  chapterId: string | undefined,
+  chapterTitle: string | undefined,
+): Promise<string> {
+  if (!bookId) {
+    return buildTermTranslationSystemPromptBase();
+  }
+
+  const specialInstructions = getSpecialInstructions(bookId, chapterId, 'translation');
+  const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
+  const bookContextSection = await buildBookContextSection(bookId);
+  const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+
+  return buildTermTranslationSystemPrompt({
+    bookContextSection,
+    chapterContextSection,
+    specialInstructionsSection,
+  });
+}
+
+/**
+ * 将匹配到的角色信息格式化成一行描述
+ */
+function formatCharacterDetail(c: CharacterSetting): string {
+  const parts: string[] = [];
+  const sexLabels: Record<string, string> = {
+    male: '男',
+    female: '女',
+    other: '其他',
   };
+
+  parts.push(`ID：${c.id}`);
+  parts.push(`${c.name} → ${c.translation.translation}`);
+  parts.push(`性别：${c.sex ? sexLabels[c.sex] || c.sex : '未设置'}`);
+  parts.push(`描述：${c.description || '无'}`);
+  parts.push(`说话风格：${c.speakingStyle || '无'}`);
+
+  // 别名格式与 context-builder 共享；为空时输出占位符"别名：无"
+  parts.push(formatCharacterAliases(c.aliases) ?? '别名：无');
+  return parts.join(' | ');
+}
+
+/**
+ * 构建与当前待翻译文本相关的术语 / 角色上下文
+ */
+async function buildRelatedContextInfo(
+  bookId: string | undefined,
+  trimmedText: string,
+): Promise<string> {
+  if (!bookId) {
+    return '';
+  }
+
+  const booksStore = useBooksStore();
+  const novel =
+    booksStore.books.find((b) => b.id === bookId) ||
+    (await BookService.getBookById(bookId, false));
+  if (!novel) {
+    return '';
+  }
+
+  const foundTerms = findUniqueTermsInText(trimmedText, novel.terminologies || []);
+  const foundCharacters = findUniqueCharactersInText(trimmedText, novel.characterSettings || []);
+  if (foundTerms.length === 0 && foundCharacters.length === 0) {
+    return '';
+  }
+
+  let relatedContextInfo = '\n\n相关背景信息（从当前书籍中匹配到）：\n';
+  if (foundCharacters.length > 0) {
+    const characterDetails = foundCharacters.map(formatCharacterDetail).join('\n');
+    relatedContextInfo += `登场角色：\n${characterDetails}\n`;
+  }
+
+  if (foundTerms.length > 0) {
+    relatedContextInfo +=
+      '相关术语：\n' +
+      foundTerms
+        .map(
+          (t) =>
+            `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`,
+        )
+        .join('\n') +
+      '\n';
+  }
+
+  console.log('术语翻译 - 相关上下文信息：', relatedContextInfo);
+  return relatedContextInfo;
+}
+
+/**
+ * 解析 AI 响应文本为翻译结果，失败时抛出错误
+ */
+function parseTranslationResponse(responseText: string): string {
+  const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('未找到有效的 JSON 格式');
+  }
+
+  const parsed = JSON.parse(jsonMatch[0]);
+  // 支持简化格式 "t" 和完整格式 "translation"
+  const translation = parsed.t ?? parsed.translation;
+  if (!parsed || typeof translation !== 'string') {
+    throw new Error('JSON 中缺少 t/translation 字段');
+  }
+
+  return translation;
+}
+
+/**
+ * 错误分支下的任务状态更新（取消 / 错误）
+ */
+function handleErrorTaskUpdate(
+  store: AIProcessingStore,
+  taskId: string,
+  error: unknown,
+): void {
+  const isCancelled = error instanceof Error && error.message === '翻译已取消';
+  if (isCancelled) {
+    const currentTask = store.activeTasks.find((t) => t.id === taskId);
+    if (currentTask && currentTask.status !== 'cancelled') {
+      void store.updateTask(taskId, {
+        status: 'cancelled',
+        message: '已取消',
+      });
+    }
+  } else {
+    void store.updateTask(taskId, {
+      status: 'error',
+      message: error instanceof Error ? error.message : '翻译时发生未知错误',
+    });
+  }
 }
 
 /**
@@ -91,6 +264,7 @@ export class TermTranslationService {
    * @param options 翻译选项（可选）
    * @returns 翻译后的文本和任务 ID（如果使用了任务管理）
    */
+  // fallow-ignore-next-line unused-class-member
   static async translate(
     text: string,
     model: AIModel,
@@ -113,37 +287,16 @@ export class TermTranslationService {
       throw new Error('要翻译的文本不能为空');
     }
 
-    if (!model.enabled) {
-      throw new Error('所选模型未启用');
-    }
-
-    // 根据任务类型检查模型支持
-    if (taskType === 'termsTranslation') {
-      if (!model.isDefault.termsTranslation?.enabled) {
-        throw new Error('所选模型不支持术语翻译任务');
-      }
-    } else {
-      if (!model.isDefault.translation?.enabled) {
-        throw new Error('所选模型不支持翻译任务');
-      }
-    }
+    assertModelSupportsTask(model, taskType);
 
     // 如果提供了 aiProcessingStore，自动创建和管理任务
     let taskId: string | undefined;
     let abortController: AbortController | undefined;
 
     if (aiProcessingStore) {
-      taskId = await aiProcessingStore.addTask({
-        type: taskType,
-        modelName: model.name,
-        status: 'thinking',
-        message: '正在分析文本...',
-        thinkingMessage: '',
-      });
-
-      // 获取任务的 abortController
-      const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
-      abortController = task?.abortController;
+      const created = await createProcessingTask(aiProcessingStore, taskType, model.name);
+      taskId = created.taskId;
+      abortController = created.abortController;
     }
 
     const trimmedText = text.trim();
@@ -174,88 +327,8 @@ export class TermTranslationService {
         ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
       };
 
-      // 构建系统提示词
-      let systemPrompt = buildTermTranslationSystemPromptBase();
-
-      // 如果有 bookId 和 chapterId，添加上下文信息（禁止工具调用）
-      if (bookId) {
-        // 获取特殊指令
-        const specialInstructions = getSpecialInstructions(bookId, chapterId, 'translation');
-        const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
-        const bookContextSection = await buildBookContextSection(bookId);
-        const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
-
-        systemPrompt = buildTermTranslationSystemPrompt({
-          bookContextSection,
-          chapterContextSection,
-          specialInstructionsSection,
-        });
-      }
-
-      // 构建“相关术语/角色”上下文（仅提供与当前待翻译文本匹配的项）
-      let relatedContextInfo = '';
-      if (bookId) {
-        const booksStore = useBooksStore();
-        const novel =
-          booksStore.books.find((b) => b.id === bookId) ||
-          (await BookService.getBookById(bookId, false));
-        if (novel) {
-          const foundTerms = findUniqueTermsInText(trimmedText, novel.terminologies || []);
-          const foundCharacters = findUniqueCharactersInText(
-            trimmedText,
-            novel.characterSettings || [],
-          );
-
-          if (foundTerms.length > 0 || foundCharacters.length > 0) {
-            relatedContextInfo += '\n\n相关背景信息（从当前书籍中匹配到）：\n';
-            if (foundCharacters.length > 0) {
-              const characterDetails = foundCharacters
-                .map((c) => {
-                  const parts: string[] = [];
-                  const sexLabels: Record<string, string> = {
-                    male: '男',
-                    female: '女',
-                    other: '其他',
-                  };
-
-                  parts.push(`ID：${c.id}`);
-                  parts.push(`${c.name} → ${c.translation.translation}`);
-
-                  parts.push(`性别：${c.sex ? sexLabels[c.sex] || c.sex : '未设置'}`);
-                  parts.push(`描述：${c.description || '无'}`);
-                  parts.push(`说话风格：${c.speakingStyle || '无'}`);
-
-                  if (c.aliases && c.aliases.length > 0) {
-                    const aliasList = c.aliases
-                      .map((a) => `${a.name} → ${a.translation.translation}`)
-                      .join('、');
-                    parts.push(`别名：${aliasList}`);
-                  } else {
-                    parts.push('别名：无');
-                  }
-                  return parts.join(' | ');
-                })
-                .join('\n');
-
-              relatedContextInfo += `登场角色：\n${characterDetails}\n`;
-            }
-
-            if (foundTerms.length > 0) {
-              relatedContextInfo +=
-                '相关术语：\n' +
-                foundTerms
-                  .map(
-                    (t) =>
-                      `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`,
-                  )
-                  .join('\n') +
-                '\n';
-            }
-
-            console.log('术语翻译 - 相关上下文信息：', relatedContextInfo);
-          }
-        }
-      }
+      const systemPrompt = await buildSystemPrompt(bookId, chapterId, chapterTitle);
+      const relatedContextInfo = await buildRelatedContextInfo(bookId, trimmedText);
 
       // 构建用户提示词
       const userPrompt = buildTermTranslationUserPrompt({
@@ -270,95 +343,15 @@ export class TermTranslationService {
         { role: 'user', content: userPrompt },
       ];
 
-      const MAX_JSON_RETRIES = 3;
-      let jsonRetryCount = 0;
-      let finalText = '';
-
-      while (jsonRetryCount <= MAX_JSON_RETRIES) {
-        if (finalSignal.aborted) {
-          throw new Error('翻译已取消');
-        }
-
-        if (aiProcessingStore && taskId) {
-          void aiProcessingStore.updateTask(taskId, {
-            status: 'processing',
-            message: jsonRetryCount > 0 ? '正在重试获取规范 JSON 输出...' : '正在生成翻译...',
-          });
-        }
-
-        const request: TextGenerationRequest = {
-          messages: history,
-        };
-
-        let firstChunkReceived = false;
-        const wrappedOnChunk: TextGenerationStreamCallback = async (chunk) => {
-          if (finalSignal?.aborted) {
-            throw new Error('翻译已取消');
-          }
-
-          if (aiProcessingStore && taskId) {
-            if (!firstChunkReceived) {
-              void aiProcessingStore.updateTask(taskId, {
-                status: 'processing',
-                message: '正在生成翻译...',
-              });
-              firstChunkReceived = true;
-            }
-
-            if (chunk.reasoningContent) {
-              void aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
-            }
-
-            if (chunk.text) {
-              void aiProcessingStore.appendOutputContent(taskId, chunk.text);
-            }
-          }
-
-          if (onChunk) {
-            await onChunk(chunk);
-          }
-        };
-
-        const result = await service.generateText(config, request, wrappedOnChunk);
-
-        if (aiProcessingStore && taskId && result.reasoningContent) {
-          void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
-        }
-
-        const responseText = result.text || '';
-
-        try {
-          const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) {
-            throw new Error('未找到有效的 JSON 格式');
-          }
-
-          const parsed = JSON.parse(jsonMatch[0]);
-          // 支持简化格式 "t" 和完整格式 "translation"
-          const translation = parsed.t ?? parsed.translation;
-          if (!parsed || typeof translation !== 'string') {
-            throw new Error('JSON 中缺少 t/translation 字段');
-          }
-
-          finalText = translation;
-          break;
-        } catch (parseError) {
-          if (jsonRetryCount >= MAX_JSON_RETRIES) {
-            const errorMessage =
-              parseError instanceof Error ? parseError.message : String(parseError);
-            throw new Error(
-              `AI 响应格式错误：${errorMessage}。已达到最大重试次数，无法获取有效翻译。`,
-            );
-          }
-
-          jsonRetryCount++;
-          history.push({ role: 'assistant', content: responseText });
-          history.push({
-            role: 'user',
-            content: buildTermTranslationRetryPrompt(),
-          });
-        }
-      }
+      const finalText = await runTranslationLoop({
+        history,
+        finalSignal,
+        service,
+        config,
+        onChunk,
+        aiProcessingStore,
+        taskId,
+      });
 
       // 更新任务状态为完成（只在真正完成时更新）
       if (aiProcessingStore && taskId && finalText) {
@@ -370,23 +363,8 @@ export class TermTranslationService {
 
       return { text: finalText, ...(taskId ? { taskId } : {}) };
     } catch (error) {
-      // 如果使用了任务管理，更新任务状态为错误
       if (aiProcessingStore && taskId) {
-        const isCancelled = error instanceof Error && error.message === '翻译已取消';
-        if (isCancelled) {
-          const currentTask = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
-          if (currentTask && currentTask.status !== 'cancelled') {
-            void aiProcessingStore.updateTask(taskId, {
-              status: 'cancelled',
-              message: '已取消',
-            });
-          }
-        } else {
-          void aiProcessingStore.updateTask(taskId, {
-            status: 'error',
-            message: error instanceof Error ? error.message : '翻译时发生未知错误',
-          });
-        }
+        handleErrorTaskUpdate(aiProcessingStore, taskId, error);
       }
 
       if (error instanceof Error) {
@@ -398,4 +376,74 @@ export class TermTranslationService {
       cleanupAbort();
     }
   }
+}
+
+/**
+ * 运行 JSON 解析重试循环，直到拿到合法翻译或超过最大重试次数
+ */
+async function runTranslationLoop(params: {
+  history: ChatMessage[];
+  finalSignal: AbortSignal;
+  service: ReturnType<typeof AIServiceFactory.getService>;
+  config: AIServiceConfig;
+  onChunk: TextGenerationStreamCallback | undefined;
+  aiProcessingStore: AIProcessingStore | undefined;
+  taskId: string | undefined;
+}): Promise<string> {
+  const { history, finalSignal, service, config, onChunk, aiProcessingStore, taskId } = params;
+  const MAX_JSON_RETRIES = 3;
+  let jsonRetryCount = 0;
+
+  while (jsonRetryCount <= MAX_JSON_RETRIES) {
+    if (finalSignal.aborted) {
+      throw new Error('翻译已取消');
+    }
+
+    if (aiProcessingStore && taskId) {
+      void aiProcessingStore.updateTask(taskId, {
+        status: 'processing',
+        message: jsonRetryCount > 0 ? '正在重试获取规范 JSON 输出...' : '正在生成翻译...',
+      });
+    }
+
+    const request: TextGenerationRequest = { messages: history };
+    const wrappedOnChunk = createTaskChunkForwarder({
+      aiProcessingStore,
+      taskId,
+      finalSignal,
+      processingMessage: '正在生成翻译...',
+      abortMessage: '翻译已取消',
+      ...(onChunk ? { onChunk } : {}),
+    });
+
+    const result = await service.generateText(config, request, wrappedOnChunk);
+
+    if (aiProcessingStore && taskId && result.reasoningContent) {
+      void aiProcessingStore.appendThinkingMessage(taskId, result.reasoningContent);
+    }
+
+    const responseText = result.text || '';
+
+    try {
+      return parseTranslationResponse(responseText);
+    } catch (parseError) {
+      if (jsonRetryCount >= MAX_JSON_RETRIES) {
+        const errorMessage =
+          parseError instanceof Error ? parseError.message : String(parseError);
+        throw new Error(
+          `AI 响应格式错误：${errorMessage}。已达到最大重试次数，无法获取有效翻译。`,
+        );
+      }
+
+      jsonRetryCount++;
+      history.push({ role: 'assistant', content: responseText });
+      history.push({
+        role: 'user',
+        content: buildTermTranslationRetryPrompt(),
+      });
+    }
+  }
+
+  // 理论上不会执行到这里（循环内部必然 return/throw）
+  return '';
 }

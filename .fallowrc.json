@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "quasar.config.ts",
+    "src/App.vue",
+    "src/router/index.ts",
+    "src/router/routes.ts",
+    "src/stores/index.ts",
+    "src/layouts/**/*.vue",
+    "src/pages/**/*.vue",
+    "src/boot/**/*.ts",
+    "src/css/**/*.{css,scss}",
+    "src-electron/electron-main.ts",
+    "src-electron/electron-preload.ts",
+    "scripts/**/*.ts",
+    "src/__tests__/**",
+    "src/**/*.test.ts"
+  ],
+  "ignorePatterns": [
+    "src/__tests__/examplePages/**",
+    "src/auto-components.d.ts",
+    "src/auto-imports.d.ts"
+  ],
+  "ignoreDependencies": [
+    "@quasar/extras",
+    "@intlify/unplugin-vue-i18n",
+    "unplugin-auto-import",
+    "vite-plugin-checker",
+    "vite",
+    "openspec"
+  ],
+  "rules": {
+    "unused-files": "error",
+    "unused-exports": "warn",
+    "unused-types": "off",
+    "unused-class-members": "warn",
+    "unresolved-imports": "warn",
+    "circular-dependencies": "warn",
+    "duplicate-exports": "warn"
+  },
+  "duplicates": {
+    "mode": "mild",
+    "minTokens": 50,
+    "minLines": 5,
+    "threshold": 10,
+    "ignore": ["*.test.ts"]
+  },
+  "health": {
+    "maxCyclomatic": 30,
+    "maxCognitive": 30,
+    "maxCrap": 100,
+    "ignore": ["*.test.ts", "scripts/**"]
+  }
+}

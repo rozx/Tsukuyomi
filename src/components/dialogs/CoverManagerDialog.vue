@@ -6,6 +6,8 @@ import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ImageUploadService } from 'src/services/image-upload-service';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
+import { copyTextWithToast } from 'src/utils/clipboard';
+import { formatFileSize } from 'src/utils/format';
 import type { CoverImage } from 'src/models/novel';
 
 const props = defineProps<{
@@ -112,6 +114,25 @@ watch(
   }
 );
 
+// 新封面统一入库 + 选中 + 成功 toast
+const registerAndSelectCover = async (
+  newCover: CoverImage,
+  toastContent: { summary: string; detail: string },
+): Promise<void> => {
+  // 必须 await，否则 allCovers 上的 find 可能看不到刚加的那一条（addCover 是异步 store mutation）
+  await coverHistoryStore.addCover(newCover);
+  const addedCover = allCovers.value.find((c) => c.url === newCover.url);
+  if (addedCover) {
+    selectedCoverId.value = addedCover.id;
+  }
+  emit('update:cover', newCover);
+  toast.add({
+    severity: 'success',
+    ...toastContent,
+    life: 2000,
+  });
+};
+
 // 上传封面图片
 const handleFileSelect = async (event: Event) => {
   const input = event.target as HTMLInputElement;
@@ -129,22 +150,7 @@ const handleFileSelect = async (event: Event) => {
       ...(result.deleteUrl && { deleteUrl: result.deleteUrl }),
     };
 
-    // 添加到历史记录
-    void coverHistoryStore.addCover(newCover);
-
-    // 选中新上传的封面
-    const addedCover = allCovers.value.find((c) => c.url === newCover.url);
-    if (addedCover) {
-      selectedCoverId.value = addedCover.id;
-    }
-
-    emit('update:cover', newCover);
-    toast.add({
-      severity: 'success',
-      summary: '上传成功',
-      detail: '封面图片已上传',
-      life: 2000,
-    });
+    await registerAndSelectCover(newCover, { summary: '上传成功', detail: '封面图片已上传' });
 
     // 重置文件输入
     if (fileInputRef.value) {
@@ -164,7 +170,7 @@ const handleFileSelect = async (event: Event) => {
 };
 
 // 通过 URL 添加封面
-const handleAddByUrl = () => {
+const handleAddByUrl = async () => {
   const url = urlInput.value.trim();
   if (!url) {
     toast.add({
@@ -207,24 +213,9 @@ const handleAddByUrl = () => {
     url: url,
   };
 
-  // 添加到历史记录
-  void coverHistoryStore.addCover(newCover);
-
-  // 选中新添加的封面
-  const addedCover = allCovers.value.find((c) => c.url === newCover.url);
-  if (addedCover) {
-    selectedCoverId.value = addedCover.id;
-  }
-
-  emit('update:cover', newCover);
+  await registerAndSelectCover(newCover, { summary: '添加成功', detail: '封面已通过 URL 添加' });
   urlInput.value = '';
   showUrlInput.value = false;
-  toast.add({
-    severity: 'success',
-    summary: '添加成功',
-    detail: '封面已通过 URL 添加',
-    life: 2000,
-  });
 };
 
 // 选择封面
@@ -276,36 +267,14 @@ const handleDelete = async () => {
   });
 };
 
-// 格式化文件大小
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-};
+// 格式化文件大小（复用 utils/format 的共享实现）
 
 // 复制封面 URL
 const handleCopyUrl = async () => {
-  if (!selectedCover.value?.url) return;
-
-  try {
-    await navigator.clipboard.writeText(selectedCover.value.url);
-    toast.add({
-      severity: 'success',
-      summary: '已复制',
-      detail: '封面 URL 已复制到剪贴板',
-      life: 2000,
-    });
-  } catch (error) {
-    console.error('复制失败:', error);
-    toast.add({
-      severity: 'error',
-      summary: '复制失败',
-      detail: '无法复制 URL 到剪贴板',
-      life: 3000,
-    });
-  }
+  await copyTextWithToast(selectedCover.value?.url, toast, {
+    successDetail: '封面 URL 已复制到剪贴板',
+    errorDetail: '无法复制 URL 到剪贴板',
+  });
 };
 
 // 关闭对话框

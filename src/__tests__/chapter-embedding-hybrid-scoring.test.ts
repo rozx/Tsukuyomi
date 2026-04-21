@@ -18,32 +18,39 @@ import { useBooksStore } from 'src/stores/books';
 import type { Novel } from 'src/models/novel';
 
 /** 装一本含多章 + 卷标题的假书。每章只挂标题,内容由 chunk 提供。 */
-function seedBook(
+async function seedBook(
   bookId: string,
   volumeTitle: string,
   chapters: Array<{ id: string; title: string }>,
-): void {
+): Promise<void> {
+  const book = {
+    id: bookId,
+    title: 'Test Book',
+    volumes: [
+      {
+        id: 'v1',
+        title: volumeTitle,
+        chapters: chapters.map((c) => ({
+          id: c.id,
+          title: c.title,
+          paragraphs: [],
+          createdAt: new Date(),
+          lastEdited: new Date(),
+        })),
+      },
+    ],
+  } as unknown as Novel;
   const store = useBooksStore();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (store as any).books = [
-    {
-      id: bookId,
-      title: 'Test Book',
-      volumes: [
-        {
-          id: 'v1',
-          title: volumeTitle,
-          chapters: chapters.map((c) => ({
-            id: c.id,
-            title: c.title,
-            paragraphs: [],
-            createdAt: new Date(),
-            lastEdited: new Date(),
-          })),
-        },
-      ],
-    } as unknown as Novel,
-  ];
+  (store as any).books = [book];
+  // 同时写入 IndexedDB,供 lookupChapterBookFromDB / loadBookMetaFromDB 使用
+  // 跨文件运行时 fake-indexeddb 的 reset 可能有时序残留,显式清一次 books
+  const { getDB } = await import('src/utils/indexed-db');
+  const db = await getDB();
+  const clearTx = db.transaction('books', 'readwrite');
+  await clearTx.store.clear();
+  await clearTx.done;
+  await db.put('books', book);
 }
 
 /** 直接往 IDB 写一条 chunk(绕过 embedChapter,精确控制 vector / snippet) */
@@ -103,7 +110,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
 
   it('标题命中型 query:title_norm 通道赢(标题向量与 query 几乎一致)', async () => {
     const bookId = 'b';
-    seedBook(bookId, '王宫篇', [
+    await seedBook(bookId, '王宫篇', [
       { id: 'ch-1', title: '第二王女夏洛特' },
       { id: 'ch-2', title: '森林冒险' },
     ]);
@@ -129,7 +136,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
 
   it('具体场景型 query:content_max 通道赢(单个 content chunk 强命中)', async () => {
     const bookId = 'b';
-    seedBook(bookId, '森林篇', [
+    await seedBook(bookId, '森林篇', [
       { id: 'ch-1', title: '日常' },
       { id: 'ch-2', title: '日常' },
     ]);
@@ -161,7 +168,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     const v = (c: number): number[] => [c, Math.sqrt(1 - c * c)];
 
     const bookId = 'b';
-    seedBook(bookId, '本卷', [
+    await seedBook(bookId, '本卷', [
       { id: 'ch-1', title: '日常' }, // 整章都和 query 中等高度相似
       { id: 'ch-2', title: '日常' }, // 单个 outlier 略高,其余很低
     ]);
@@ -193,7 +200,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
   it('关键词命中型(标题字面):语义略低但标题字面命中胜出', async () => {
     const bookId = 'b';
     // 卷标题用中性词,避免两章 title_kw 都命中导致并列
-    seedBook(bookId, '本卷', [
+    await seedBook(bookId, '本卷', [
       { id: 'ch-1', title: '日常对话' }, // 语义略高
       { id: 'ch-2', title: '修学旅行 第一天' }, // 标题命中 query
     ]);
@@ -220,7 +227,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
 
   it('全书 chunk 抱团触发 SPREAD_FLOOR:降级到纯 keyword,字面命中赢', async () => {
     const bookId = 'b';
-    seedBook(bookId, '本卷', [
+    await seedBook(bookId, '本卷', [
       { id: 'ch-1', title: '芬恩的剑技' },
       { id: 'ch-2', title: '日常对话' },
     ]);
@@ -249,7 +256,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
 
   it('章节缺 title chunk:title_norm = 0,其它通道仍工作', async () => {
     const bookId = 'b';
-    seedBook(bookId, '本卷', [
+    await seedBook(bookId, '本卷', [
       { id: 'ch-1', title: '只有内容' },
       { id: 'ch-2', title: '另一章' },
     ]);
@@ -274,7 +281,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
 
   it('章节只有 1-2 chunk:top-K 自动退化为均值', async () => {
     const bookId = 'b';
-    seedBook(bookId, '本卷', [{ id: 'ch-1', title: '短章' }]);
+    await seedBook(bookId, '本卷', [{ id: 'ch-1', title: '短章' }]);
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
     await putContentChunks('ch-1', bookId, [
@@ -290,7 +297,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
 
   it('全部 chunk 都 stale(model 不一致):抛 structured error', async () => {
     const bookId = 'b';
-    seedBook(bookId, '本卷', [{ id: 'ch-1', title: '章' }]);
+    await seedBook(bookId, '本卷', [{ id: 'ch-1', title: '章' }]);
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
     // 直接写 stale 记录(绕过 writeChunksForChapter,后者强制写当前 MODEL_VERSION)
@@ -319,7 +326,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
 
   it('preview:content chunk 缺失时 fallback 到 title snippet', async () => {
     const bookId = 'b';
-    seedBook(bookId, '本卷', [{ id: 'ch-1', title: '只有标题章' }]);
+    await seedBook(bookId, '本卷', [{ id: 'ch-1', title: '只有标题章' }]);
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
     await putChunk(
@@ -339,7 +346,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
 
   it('总分公式:total = 0.65 × semantic + 0.35 × keyword', async () => {
     const bookId = 'b';
-    seedBook(bookId, '本卷', [
+    await seedBook(bookId, '本卷', [
       { id: 'ch-1', title: '完美命中' },
       { id: 'ch-2', title: '普通章' },
     ]);

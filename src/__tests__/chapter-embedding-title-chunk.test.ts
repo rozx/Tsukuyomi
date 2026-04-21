@@ -11,7 +11,7 @@ import {
   TITLE_INPUT_MAX_CHARS,
   composeTitleChunkInput,
 } from 'src/services/chapter-embedding-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
+import * as chapterContentLoader from 'src/utils/chapter-content-loader';
 import { EmbeddingService } from 'src/services/embedding-service';
 import { CHAPTER_MODEL_VERSION } from 'src/services/chapter-embedding-service';
 import { useBooksStore } from 'src/stores/books';
@@ -113,19 +113,30 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
     await clearChapterEmbeddingsStore();
   });
 
-  /** 装一本只有一个章节的假书,塞 books store */
-  function seedBook(chapterTitle: string): { bookId: string; chapterId: string } {
+  /** 装一本只有一个章节的假书,塞 books store + IndexedDB */
+  async function seedBook(
+    chapterTitle: string,
+  ): Promise<{ bookId: string; chapterId: string }> {
     const bookId = 'book-A';
     const chapterId = 'ch-1';
+    const book = mkBook(bookId, chapterId, chapterTitle);
     const store = useBooksStore();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (store as any).books = [mkBook(bookId, chapterId, chapterTitle)];
+    (store as any).books = [book];
+    // 同时写入 IndexedDB,供 lookupChapterBookFromDB 使用
+    // 跨文件运行时 fake-indexeddb 的 reset 可能有时序残留,显式清一次 books
+    const { getDB } = await import('src/utils/indexed-db');
+    const db = await getDB();
+    const clearTx = db.transaction('books', 'readwrite');
+    await clearTx.store.clear();
+    await clearTx.done;
+    await db.put('books', book);
     return { bookId, chapterId };
   }
 
   it('正常嵌入:同一章节同时写入 content + title chunk', async () => {
-    const { chapterId } = seedBook('第二王女');
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    const { chapterId } = await seedBook('第二王女');
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       mkPara('p1', '夏洛特推开沉重的橡木门,深呼吸。'),
       mkPara('p2', '“殿下,该出发了。”'),
     ]);
@@ -152,8 +163,8 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
   });
 
   it('章节无段落:既不写 content 也不写 title,清空残留', async () => {
-    const { chapterId } = seedBook('某章');
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([]);
+    const { chapterId } = await seedBook('某章');
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([]);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
     const embedSpy = spyOn(EmbeddingService, 'embedBatch');
 
@@ -165,8 +176,8 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
   });
 
   it('段落全空白:既不写 content 也不写 title', async () => {
-    const { chapterId } = seedBook('某章');
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    const { chapterId } = await seedBook('某章');
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       mkPara('p1', ''),
       mkPara('p2', '   '),
     ]);
@@ -181,8 +192,8 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
   });
 
   it('标题为空但首段有内容:title chunk 仍写入(嵌入输入只是首段)', async () => {
-    const { chapterId } = seedBook('');
-    spyOn(ChapterContentService, 'loadChapterContent').mockResolvedValue([
+    const { chapterId } = await seedBook('');
+    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
       mkPara('p1', '没有标题但有内容'),
     ]);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);

@@ -1,6 +1,6 @@
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { AIConfigResult, AIServiceConfig } from 'src/services/ai/types/ai-service';
-import { AIServiceFactory } from '../index';
+import { AIServiceFactory } from '../ai-service-factory';
 
 /**
  * 配置服务选项
@@ -17,26 +17,6 @@ export interface ConfigServiceOptions {
  * 管理 AI 模型配置相关的功能，包括配置获取提示词和配置获取
  */
 export class ConfigService {
-  /**
-   * 获取配置信息的提示词
-   * 要求 AI 以 JSON 格式返回最大输入 token 数和最大输出 token 数
-   */
-  static getConfigPrompt(): string {
-    return `请以 JSON 格式返回你的 token 限制信息：
-
-请只返回 JSON 对象，格式如下：
-{
-  "maxInputTokens": 数字,
-  "maxOutputTokens": 数字
-}
-
-其中：
-- maxInputTokens: 最大输入 token 数（上下文窗口大小）
-- maxOutputTokens: 最大输出 token 数（单次响应最大 token 数）
-
-如果你只知道其中一个，也可以只返回那个字段。`;
-  }
-
   /**
    * 获取模型配置信息
    * @param model AI 模型配置

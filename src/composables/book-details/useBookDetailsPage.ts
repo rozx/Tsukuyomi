@@ -34,8 +34,11 @@ import {
   getChapterDisplayTitle,
   findUniqueTermsInText,
   findUniqueCharactersInText,
-  formatTranslationForDisplay,
+  getChapterTranslationStats,
+  formatRelativeBookDate,
 } from 'src/utils';
+import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
+import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { toMillis } from 'src/utils/time-utils';
 import { cloneDeep } from 'lodash';
@@ -78,7 +81,6 @@ import {
   chapterStatusColor as chapterStatusColorPure,
   chapterStatusTextColor as chapterStatusTextColorPure,
   chapterStatusLabel as chapterStatusLabelPure,
-  type ChapterStatus as ChapterStatusType,
 } from 'src/utils/chapter-status';
 import { isPortrait } from 'src/utils/device-orientation';
 
@@ -96,11 +98,93 @@ import { isPortrait } from 'src/utils/device-orientation';
  */
 export type MobileActiveTab = 'chapters' | 'terms' | 'characters' | 'memory';
 export type SettingMenu = 'terms' | 'characters' | 'memory';
-export type ChapterStatus = ChapterStatusType;
 
 export type BookDetailsPageContext = ReturnType<typeof createBookDetailsPageContext>;
 
 const BOOK_DETAILS_PAGE_KEY: InjectionKey<BookDetailsPageContext> = Symbol('book-details-page');
+
+function findChapterInBook(book: Novel, chapterId: string): Chapter | undefined {
+  if (!book.volumes) return undefined;
+  for (const volume of book.volumes) {
+    const match = volume.chapters?.find((ch) => ch.id === chapterId);
+    if (match) return match;
+  }
+  return undefined;
+}
+
+async function resolveChapterWithContent(
+  updatedChapter: Chapter,
+  previousChapter: Chapter,
+): Promise<Chapter> {
+  if (updatedChapter.content !== undefined && Array.isArray(updatedChapter.content)) {
+    return updatedChapter;
+  }
+  try {
+    return await ChapterService.loadChapterContent(updatedChapter);
+  } catch (error) {
+    console.error('Failed to reload chapter content after undo/redo:', error);
+    return { ...previousChapter, ...updatedChapter };
+  }
+}
+
+function hasChapterMetadataChanged(current: Chapter, updated: Chapter): boolean {
+  return (
+    current.title !== updated.title ||
+    current.webUrl !== updated.webUrl ||
+    toMillis(current.lastEdited) !== toMillis(updated.lastEdited) ||
+    toMillis(current.createdAt) !== toMillis(updated.createdAt) ||
+    current.originalContent !== updated.originalContent ||
+    current.contentLoaded !== updated.contentLoaded ||
+    current.translationInstructions !== updated.translationInstructions ||
+    current.polishInstructions !== updated.polishInstructions ||
+    current.proofreadingInstructions !== updated.proofreadingInstructions
+  );
+}
+
+function detectExternalMetadataChange(current: Chapter, updated: Chapter): boolean {
+  const currentMs = toMillis(current.lastEdited);
+  const updatedMs = toMillis(updated.lastEdited);
+  return (
+    current.webUrl !== updated.webUrl ||
+    current.originalContent !== updated.originalContent ||
+    (updatedMs > currentMs && Math.abs(updatedMs - Date.now()) < 10000)
+  );
+}
+
+function buildMergedSelectedChapter(
+  current: Chapter,
+  updated: Chapter,
+  shouldUpdateMetadata: boolean,
+  shouldUpdateContent: boolean,
+): Chapter {
+  return {
+    ...current,
+    ...(shouldUpdateMetadata ? updated : {}),
+    content: shouldUpdateContent ? updated.content : (current.content ?? updated.content),
+    contentLoaded: shouldUpdateContent
+      ? true
+      : (current.contentLoaded ?? updated.contentLoaded),
+    lastEdited: shouldUpdateMetadata ? updated.lastEdited : current.lastEdited,
+  };
+}
+
+async function syncSelectedChapterAfterUndoRedo(
+  updatedBook: Novel,
+  selectedChapterId: string | null,
+  selectedChapterRef: Ref<Chapter | null>,
+): Promise<void> {
+  if (!selectedChapterId) return;
+  const updatedChapter = findChapterInBook(updatedBook, selectedChapterId);
+  if (!updatedChapter) {
+    if (selectedChapterRef.value) selectedChapterRef.value = null;
+    return;
+  }
+  if (!selectedChapterRef.value && updatedChapter.content === undefined) return;
+  selectedChapterRef.value = await resolveChapterWithContent(
+    updatedChapter,
+    selectedChapterRef.value ?? updatedChapter,
+  );
+}
 
 export function provideBookDetailsPage(): BookDetailsPageContext {
   const ctx = createBookDetailsPageContext();
@@ -255,42 +339,13 @@ function createBookDetailsPageContext() {
   } = useUndoRedo(
     book,
     async (updatedBook) => {
-      if (updatedBook) {
-        await booksStore.updateBook(updatedBook.id, updatedBook);
-
-        if (selectedChapterId.value && updatedBook.volumes) {
-          let foundChapter = false;
-          for (const volume of updatedBook.volumes) {
-            if (volume.chapters) {
-              const updatedChapter = volume.chapters.find(
-                (ch) => ch.id === selectedChapterId.value,
-              );
-              if (updatedChapter) {
-                foundChapter = true;
-                if (updatedChapter.content !== undefined && Array.isArray(updatedChapter.content)) {
-                  selectedChapterWithContent.value = updatedChapter;
-                } else if (selectedChapterWithContent.value) {
-                  try {
-                    const chapterWithContent =
-                      await ChapterService.loadChapterContent(updatedChapter);
-                    selectedChapterWithContent.value = chapterWithContent;
-                  } catch (error) {
-                    console.error('Failed to reload chapter content after undo/redo:', error);
-                    selectedChapterWithContent.value = {
-                      ...selectedChapterWithContent.value,
-                      ...updatedChapter,
-                    };
-                  }
-                }
-                break;
-              }
-            }
-          }
-          if (!foundChapter && selectedChapterWithContent.value) {
-            selectedChapterWithContent.value = null;
-          }
-        }
-      }
+      if (!updatedBook) return;
+      await booksStore.updateBook(updatedBook.id, updatedBook);
+      await syncSelectedChapterAfterUndoRedo(
+        updatedBook,
+        selectedChapterId.value,
+        selectedChapterWithContent,
+      );
     },
     getEnhancedBook,
   );
@@ -443,13 +498,7 @@ function createBookDetailsPageContext() {
 
   const isMovingChapter = ref(false);
 
-  const activeTranslationTaskCount = computed(() =>
-    aiProcessingStore.activeTasks.filter(
-      (t) =>
-        (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
-        (t.status === 'thinking' || t.status === 'processing'),
-    ).length,
-  );
+  const activeTranslationTaskCount = computed(() => aiProcessingStore.activeTranslationTaskCount);
 
   const switchWorkspaceMode = (mode: BookWorkspaceMode) => {
     workspaceMode.value = mode;
@@ -553,29 +602,39 @@ function createBookDetailsPageContext() {
     handleDragLeave();
   };
 
+  type MoveChapterPayload = {
+    chapter: Chapter;
+    volumeId: string;
+    index: number;
+    direction: 'up' | 'down';
+  };
+
+  const resolveMoveTargetIndex = (
+    bookValue: NonNullable<typeof book.value>,
+    payload: MoveChapterPayload,
+  ): number | null => {
+    const targetIndex =
+      payload.direction === 'up' ? payload.index - 1 : payload.index + 1;
+    if (targetIndex < 0) return null;
+    const targetVolume = bookValue.volumes?.find((volume) => volume.id === payload.volumeId);
+    if (!targetVolume?.chapters) return null;
+    if (targetIndex >= targetVolume.chapters.length) return null;
+    return targetIndex;
+  };
+
   const onMoveChapter = async (...args: unknown[]) => {
-    const payload = args[0] as
-      | { chapter: Chapter; volumeId: string; index: number; direction: 'up' | 'down' }
-      | undefined;
-
+    const payload = args[0] as MoveChapterPayload | undefined;
     if (!payload || !book.value || isMovingChapter.value) return;
-
-    const { chapter, volumeId, index, direction } = payload;
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0) return;
-
-    const targetVolume = book.value.volumes?.find((volume) => volume.id === volumeId);
-    if (!targetVolume?.chapters) return;
-    if (targetIndex >= targetVolume.chapters.length) return;
+    const targetIndex = resolveMoveTargetIndex(book.value, payload);
+    if (targetIndex === null) return;
 
     isMovingChapter.value = true;
     try {
       saveState?.('触控排序章节');
-
       const updatedVolumes = ChapterService.moveChapter(
         book.value,
-        chapter.id,
-        volumeId,
+        payload.chapter.id,
+        payload.volumeId,
         targetIndex,
       );
       await booksStore.updateBook(book.value.id, {
@@ -746,6 +805,45 @@ function createBookDetailsPageContext() {
   } | null>(null);
   const isCalculatingTranslationProgress = ref(false);
 
+  type ChapterProgress = { total: number; translated: number };
+  type AggregatedProgress = {
+    total: number;
+    translated: number;
+    firstIncompleteChapterId: string | null;
+    byChapter: Map<string, ChapterProgress>;
+  };
+
+  const computeChapterProgress = (
+    paragraphs: Paragraph[] | undefined,
+  ): ChapterProgress => {
+    const nonEmpty = (paragraphs ?? []).filter((p) => (p.text ?? '').trim().length > 0);
+    const total = nonEmpty.length;
+    const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
+    return { total, translated };
+  };
+
+  const aggregateProgressByChapter = (
+    chapterOrder: { id: string }[],
+    contentsMap: Map<string, Paragraph[] | undefined>,
+  ): AggregatedProgress => {
+    let total = 0;
+    let translated = 0;
+    let firstIncompleteChapterId: string | null = null;
+    const byChapter = new Map<string, ChapterProgress>();
+
+    for (const { id } of chapterOrder) {
+      const progress = computeChapterProgress(contentsMap.get(id));
+      total += progress.total;
+      translated += progress.translated;
+      byChapter.set(id, progress);
+      if (firstIncompleteChapterId === null && (progress.total === 0 || progress.translated < progress.total)) {
+        firstIncompleteChapterId = id;
+      }
+    }
+
+    return { total, translated, firstIncompleteChapterId, byChapter };
+  };
+
   async function calculateTranslationProgress() {
     if (!book.value || isCalculatingTranslationProgress.value) return;
     isCalculatingTranslationProgress.value = true;
@@ -772,64 +870,49 @@ function createBookDetailsPageContext() {
         chapterOrder.map((c) => c.id),
       );
 
-      let total = 0;
-      let translated = 0;
-      let firstIncompleteChapterId: string | null = null;
-      const byChapter = new Map<string, { total: number; translated: number }>();
-
-      for (const { id } of chapterOrder) {
-        const content = contentsMap.get(id);
-        const paras = content ?? [];
-        const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
-        const paraTotal = nonEmpty.length;
-        const paraDone = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
-        total += paraTotal;
-        translated += paraDone;
-        byChapter.set(id, { total: paraTotal, translated: paraDone });
-        if (firstIncompleteChapterId === null && (paraTotal === 0 || paraDone < paraTotal)) {
-          firstIncompleteChapterId = id;
-        }
-      }
-
-      translationProgressState.value = { total, translated, firstIncompleteChapterId, byChapter };
+      translationProgressState.value = aggregateProgressByChapter(chapterOrder, contentsMap);
     } finally {
       isCalculatingTranslationProgress.value = false;
     }
   }
 
-  const continueReadingChapter = computed<Chapter | null>(() => {
-    if (!book.value) return null;
-    if (selectedChapterId.value) {
-      for (const vol of book.value.volumes || []) {
-        const c = vol.chapters?.find((ch) => ch.id === selectedChapterId.value);
-        if (c) return c;
-      }
+  const findChapterInBook = (
+    bookValue: NonNullable<typeof book.value>,
+    chapterId: string,
+  ): Chapter | null => {
+    for (const vol of bookValue.volumes || []) {
+      const c = vol.chapters?.find((ch) => ch.id === chapterId);
+      if (c) return c;
     }
-    const firstIncompleteId = translationProgressState.value?.firstIncompleteChapterId;
-    if (firstIncompleteId) {
-      for (const vol of book.value.volumes || []) {
-        const c = vol.chapters?.find((ch) => ch.id === firstIncompleteId);
-        if (c) return c;
-      }
-    }
-    for (const vol of book.value.volumes || []) {
+    return null;
+  };
+
+  const firstChapterInBook = (
+    bookValue: NonNullable<typeof book.value>,
+  ): Chapter | null => {
+    for (const vol of bookValue.volumes || []) {
       for (const ch of vol.chapters || []) return ch;
     }
     return null;
+  };
+
+  const continueReadingChapter = computed<Chapter | null>(() => {
+    if (!book.value) return null;
+    if (selectedChapterId.value) {
+      const selected = findChapterInBook(book.value, selectedChapterId.value);
+      if (selected) return selected;
+    }
+    const firstIncompleteId = translationProgressState.value?.firstIncompleteChapterId;
+    if (firstIncompleteId) {
+      const incomplete = findChapterInBook(book.value, firstIncompleteId);
+      if (incomplete) return incomplete;
+    }
+    return firstChapterInBook(book.value);
   });
 
   const formatRelativeDate = (date: Date | string | number | null | undefined): string => {
     if (date === null || date === undefined) return '—';
-    const d = new Date(date);
-    if (Number.isNaN(d.getTime())) return '—';
-    const now = new Date();
-    const days = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
-    if (days <= 0) return '今天';
-    if (days === 1) return '昨天';
-    if (days < 7) return `${days} 天前`;
-    if (days < 30) return `${Math.floor(days / 7)} 周前`;
-    if (days < 365) return `${Math.floor(days / 30)} 个月前`;
-    return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
+    return formatRelativeBookDate(date as Date | string);
   };
 
   const continueReadingOnPhone = () => {
@@ -915,14 +998,9 @@ function createBookDetailsPageContext() {
     return model?.name ?? '未配置模型';
   });
 
-  const mobileReaderStats = computed(() => {
-    const paras = selectedChapterParagraphs.value || [];
-    const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
-    return {
-      total: nonEmpty.length,
-      translated: nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length,
-    };
-  });
+  const mobileReaderStats = computed(() =>
+    getChapterTranslationStats(selectedChapterParagraphs.value),
+  );
 
   // 段落翻译 composable
   const {
@@ -996,6 +1074,41 @@ function createBookDetailsPageContext() {
     currentlyEditingParagraphId,
   );
 
+  const resetToChapterListView = () => {
+    selectedChapterWithContent.value = null;
+    resetParagraphNavigation();
+    void scrollCurrentContentToTop();
+  };
+
+  const expandChapterContentIfPresent = (chapter: Chapter): boolean => {
+    if (chapter.content === undefined) return false;
+    selectedChapterWithContent.value = chapter;
+    resetParagraphNavigation();
+    void scrollCurrentContentToTop();
+    return true;
+  };
+
+  const loadChapterContentLazily = async (chapter: Chapter): Promise<void> => {
+    isLoadingChapterContent.value = true;
+    try {
+      const chapterWithContent = await ChapterService.loadChapterContent(chapter);
+      selectedChapterWithContent.value = chapterWithContent;
+    } catch (error) {
+      console.error('Failed to load chapter content:', error);
+      toast.add({
+        severity: 'error',
+        summary: '加载失败',
+        detail: '无法加载章节内容',
+        life: 3000,
+      });
+      selectedChapterWithContent.value = null;
+    } finally {
+      resetParagraphNavigation();
+      void scrollCurrentContentToTop();
+      isLoadingChapterContent.value = false;
+    }
+  };
+
   // 选中章节 watcher — 懒加载内容
   watch(
     selectedChapterId,
@@ -1005,9 +1118,7 @@ function createBookDetailsPageContext() {
       }
 
       if (!newChapterId || !selectedChapter.value) {
-        selectedChapterWithContent.value = null;
-        resetParagraphNavigation();
-        void scrollCurrentContentToTop();
+        resetToChapterListView();
         return;
       }
 
@@ -1015,33 +1126,8 @@ function createBookDetailsPageContext() {
         workspaceMode.value = 'content';
       }
 
-      if (selectedChapter.value.content !== undefined) {
-        selectedChapterWithContent.value = selectedChapter.value;
-        resetParagraphNavigation();
-        void scrollCurrentContentToTop();
-        return;
-      }
-
-      isLoadingChapterContent.value = true;
-      try {
-        const chapterWithContent = await ChapterService.loadChapterContent(selectedChapter.value);
-        selectedChapterWithContent.value = chapterWithContent;
-        resetParagraphNavigation();
-        void scrollCurrentContentToTop();
-      } catch (error) {
-        console.error('Failed to load chapter content:', error);
-        toast.add({
-          severity: 'error',
-          summary: '加载失败',
-          detail: '无法加载章节内容',
-          life: 3000,
-        });
-        selectedChapterWithContent.value = null;
-        resetParagraphNavigation();
-        void scrollCurrentContentToTop();
-      } finally {
-        isLoadingChapterContent.value = false;
-      }
+      if (expandChapterContentIfPresent(selectedChapter.value)) return;
+      await loadChapterContentLazily(selectedChapter.value);
     },
     { immediate: true },
   );
@@ -1055,68 +1141,51 @@ function createBookDetailsPageContext() {
     return null;
   });
 
+  const clearSelectionOnChapterRemoval = () => {
+    selectedChapterWithContent.value = null;
+    if (bookId.value) {
+      void bookDetailsStore.setSelectedChapter(bookId.value, null);
+    }
+  };
+
+  const shouldApplyChapterMerge = (
+    currentChapter: Chapter,
+    updatedChapter: Chapter,
+  ): { metadata: boolean; content: boolean } | null => {
+    const isUserEditing = isEditingOriginalText.value;
+    const hasMetadataChanged = hasChapterMetadataChanged(currentChapter, updatedChapter);
+    const hasContentUpdate =
+      Array.isArray(updatedChapter.content) && updatedChapter.content !== currentChapter.content;
+    const hasExternalMetadataChange = detectExternalMetadataChange(currentChapter, updatedChapter);
+
+    const shouldUpdateMetadata = !isUserEditing || hasExternalMetadataChange;
+    const shouldUpdateContent = hasContentUpdate && !isUserEditing;
+
+    if (!hasMetadataChanged && !shouldUpdateContent) return null;
+    if (!shouldUpdateMetadata && !shouldUpdateContent) return null;
+    return { metadata: shouldUpdateMetadata, content: shouldUpdateContent };
+  };
+
   watch(currentChapterInBook, (updatedChapter, oldChapter) => {
     if (oldChapter === undefined) return;
     if (!selectedChapterId.value || !selectedChapterWithContent.value) return;
 
     if (!updatedChapter) {
-      selectedChapterWithContent.value = null;
-      if (bookId.value) {
-        void bookDetailsStore.setSelectedChapter(bookId.value, null);
-      }
+      clearSelectionOnChapterRemoval();
       return;
     }
-
     if (updatedChapter === oldChapter) return;
 
     const currentChapter = selectedChapterWithContent.value;
+    const decision = shouldApplyChapterMerge(currentChapter, updatedChapter);
+    if (!decision) return;
 
-    // 注意：lastEdited / createdAt 的类型声明是 Date，但在某些跨序列化路径
-    // （例如同步合并，或旧数据兼容）下可能以字符串形式进入 store。直接调用
-    // `.getTime()` 会抛 TypeError，这里走 `toMillis` 做防御性归一。
-    const currentLastEditedMs = toMillis(currentChapter.lastEdited);
-    const updatedLastEditedMs = toMillis(updatedChapter.lastEdited);
-
-    const hasMetadataChanged =
-      currentChapter.title !== updatedChapter.title ||
-      currentChapter.webUrl !== updatedChapter.webUrl ||
-      currentLastEditedMs !== updatedLastEditedMs ||
-      toMillis(currentChapter.createdAt) !== toMillis(updatedChapter.createdAt) ||
-      currentChapter.originalContent !== updatedChapter.originalContent ||
-      currentChapter.contentLoaded !== updatedChapter.contentLoaded ||
-      currentChapter.translationInstructions !== updatedChapter.translationInstructions ||
-      currentChapter.polishInstructions !== updatedChapter.polishInstructions ||
-      currentChapter.proofreadingInstructions !== updatedChapter.proofreadingInstructions;
-
-    const hasContentUpdate =
-      Array.isArray(updatedChapter.content) && updatedChapter.content !== currentChapter.content;
-
-    const isUserEditing = isEditingOriginalText.value;
-
-    const hasExternalMetadataChange =
-      currentChapter.webUrl !== updatedChapter.webUrl ||
-      currentChapter.originalContent !== updatedChapter.originalContent ||
-      (updatedLastEditedMs > currentLastEditedMs &&
-        Math.abs(updatedLastEditedMs - Date.now()) < 10000);
-
-    const shouldUpdateMetadata = !isUserEditing || hasExternalMetadataChange;
-    const shouldUpdateContent = hasContentUpdate && !isUserEditing;
-
-    if (!hasMetadataChanged && !shouldUpdateContent) return;
-
-    if (shouldUpdateMetadata || shouldUpdateContent) {
-      selectedChapterWithContent.value = {
-        ...currentChapter,
-        ...(shouldUpdateMetadata ? updatedChapter : {}),
-        content: shouldUpdateContent
-          ? updatedChapter.content
-          : (currentChapter.content ?? updatedChapter.content),
-        contentLoaded: shouldUpdateContent
-          ? true
-          : (currentChapter.contentLoaded ?? updatedChapter.contentLoaded),
-        lastEdited: shouldUpdateMetadata ? updatedChapter.lastEdited : currentChapter.lastEdited,
-      };
-    }
+    selectedChapterWithContent.value = buildMergedSelectedChapter(
+      currentChapter,
+      updatedChapter,
+      decision.metadata,
+      decision.content,
+    );
   });
 
   watch(
@@ -1313,7 +1382,10 @@ function createBookDetailsPageContext() {
     }
   });
 
-  const { handleKeydown, handleClick, handleMouseMove, handleScroll } = useKeyboardShortcuts(
+  // 调用侧与 useKeyboardShortcuts 内部 opts 解构字段一一对应（API 契约），
+  // 看起来重复但无法合并：前者是跨 composable 依赖注入，后者是实现内局部变量。
+  const { handleKeydown, handleClick, handleMouseMove, handleScroll } = useKeyboardShortcuts({
+    // fallow-ignore-next-line code-duplication
     isSearchVisible,
     toggleSearch,
     showReplace,
@@ -1340,7 +1412,7 @@ function createBookDetailsPageContext() {
     undo,
     canRedo,
     redo,
-  );
+  });
 
   const {
     isTranslatingChapter,
@@ -1399,16 +1471,8 @@ function createBookDetailsPageContext() {
     }
   });
 
-  const getParagraphTranslationText = (paragraph: Paragraph): string => {
-    if (!paragraph.selectedTranslationId || !paragraph.translations) {
-      return '';
-    }
-    const selectedTranslation = paragraph.translations.find(
-      (t) => t.id === paragraph.selectedTranslationId,
-    );
-    const translation = selectedTranslation?.translation || '';
-    return formatTranslationForDisplay(translation, book.value, selectedChapter.value || undefined);
-  };
+  const getParagraphTranslationText = (paragraph: Paragraph): string =>
+    getSelectedParagraphTranslationText(paragraph, book.value, selectedChapter.value);
 
   const translatedCharCount = computed(() => {
     if (!selectedChapterParagraphs.value.length) return 0;
@@ -1639,7 +1703,7 @@ function createBookDetailsPageContext() {
     chapterSettingsPopover.value?.toggle(event);
   };
 
-  const handleSaveChapterSettings = async (data: {
+  type ChapterSettingsFormData = {
     preserveIndents?: boolean;
     normalizeSymbolsOnDisplay?: boolean;
     normalizeTitleOnDisplay?: boolean;
@@ -1649,60 +1713,55 @@ function createBookDetailsPageContext() {
     translationInstructions?: string;
     polishInstructions?: string;
     proofreadingInstructions?: string;
-  }) => {
-    if (!book.value) return;
+  };
 
-    try {
-      const preserveIndents = data.preserveIndents ?? true;
-      const normalizeSymbolsOnDisplay = data.normalizeSymbolsOnDisplay ?? false;
-      const normalizeTitleOnDisplay = data.normalizeTitleOnDisplay ?? false;
-      const translationChunkSize = resolveTaskChunkSize(data.translationChunkSize);
-      const skipAskUser = data.skipAskUser ?? false;
-      const enableOriginalTextValidation = data.enableOriginalTextValidation ?? false;
+  const buildNovelSettingsUpdate = (data: ChapterSettingsFormData): Partial<Novel> => ({
+    preserveIndents: data.preserveIndents ?? true,
+    normalizeSymbolsOnDisplay: data.normalizeSymbolsOnDisplay ?? false,
+    normalizeTitleOnDisplay: data.normalizeTitleOnDisplay ?? false,
+    translationChunkSize: resolveTaskChunkSize(data.translationChunkSize),
+    skipAskUser: data.skipAskUser ?? false,
+    enableOriginalTextValidation: data.enableOriginalTextValidation ?? false,
+    lastEdited: new Date(),
+  });
 
-      const translationInstructions = data.translationInstructions ?? '';
-      const polishInstructions = data.polishInstructions ?? '';
-      const proofreadingInstructions = data.proofreadingInstructions ?? '';
-
-      const updates: Partial<Novel> = {
-        preserveIndents,
-        normalizeSymbolsOnDisplay,
-        normalizeTitleOnDisplay,
-        translationChunkSize,
-        skipAskUser,
-        enableOriginalTextValidation,
-        lastEdited: new Date(),
+  const applyChapterInstructionOverrides = (
+    bookValue: NonNullable<typeof book.value>,
+    data: ChapterSettingsFormData,
+  ): Partial<Novel> | null => {
+    if (!selectedChapter.value) return null;
+    const translationInstructions = data.translationInstructions ?? '';
+    const polishInstructions = data.polishInstructions ?? '';
+    const proofreadingInstructions = data.proofreadingInstructions ?? '';
+    const updatedVolumes = ChapterService.updateChapter(bookValue, selectedChapter.value.id, {
+      translationInstructions,
+      polishInstructions,
+      proofreadingInstructions,
+    });
+    if (
+      selectedChapterWithContent.value &&
+      selectedChapterWithContent.value.id === selectedChapter.value.id
+    ) {
+      selectedChapterWithContent.value = {
+        ...selectedChapterWithContent.value,
+        translationInstructions,
+        polishInstructions,
+        proofreadingInstructions,
       };
+    }
+    return { volumes: updatedVolumes };
+  };
 
-      if (selectedChapter.value) {
-        const updatedVolumes = ChapterService.updateChapter(book.value, selectedChapter.value.id, {
-          translationInstructions,
-          polishInstructions,
-          proofreadingInstructions,
-        });
-        updates.volumes = updatedVolumes;
-
-        if (
-          selectedChapterWithContent.value &&
-          selectedChapterWithContent.value.id === selectedChapter.value.id
-        ) {
-          selectedChapterWithContent.value = {
-            ...selectedChapterWithContent.value,
-            translationInstructions,
-            polishInstructions,
-            proofreadingInstructions,
-          };
-        }
-      }
-
+  const handleSaveChapterSettings = async (data: ChapterSettingsFormData) => {
+    if (!book.value) return;
+    try {
+      const updates: Partial<Novel> = {
+        ...buildNovelSettingsUpdate(data),
+        ...(applyChapterInstructionOverrides(book.value, data) ?? {}),
+      };
       await booksStore.updateBook(book.value.id, updates);
-
-      const savedItems: string[] = [];
-      savedItems.push('全局设置');
-      if (selectedChapter.value) {
-        savedItems.push('章节特殊指令');
-      }
-
+      const savedItems = ['全局设置'];
+      if (selectedChapter.value) savedItems.push('章节特殊指令');
       toast.add({
         severity: 'success',
         summary: '保存成功',
@@ -1732,16 +1791,64 @@ function createBookDetailsPageContext() {
     closePopoverAndUpdateContext(characterPopover.value);
   };
 
-  const handleSaveCharacter = async (data: {
+  type CharacterFormData = {
     name: string;
     sex?: 'male' | 'female' | 'other' | undefined;
     translation: string;
     description: string;
     speakingStyle: string;
     aliases: Array<{ name: string; translation: string }>;
-  }) => {
-    if (!book.value) return;
+  };
 
+  const addCharacterFromForm = async (bookId: string, data: CharacterFormData): Promise<void> => {
+    saveState('添加角色设定');
+    await CharacterSettingService.addCharacterSetting(bookId, {
+      name: data.name,
+      sex: data.sex,
+      ...(data.translation ? { translation: data.translation } : {}),
+      ...(data.description ? { description: data.description } : {}),
+      ...(data.speakingStyle ? { speakingStyle: data.speakingStyle } : {}),
+      ...(data.aliases ? { aliases: data.aliases } : {}),
+    });
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: `已添加角色 "${data.name}"`,
+      life: 3000,
+    });
+  };
+
+  const updateExistingCharacter = async (
+    bookValue: NonNullable<typeof book.value>,
+    editing: CharacterSetting,
+    data: CharacterFormData,
+  ): Promise<boolean> => {
+    const currentCharacterSettings = bookValue.characterSettings || [];
+    const nameConflict = currentCharacterSettings.find(
+      (c) => c.id !== editing.id && c.name === data.name,
+    );
+    if (nameConflict) {
+      toast.add({
+        severity: 'warn',
+        summary: '保存失败',
+        detail: `角色 "${data.name}" 已存在`,
+        life: 3000,
+      });
+      return false;
+    }
+    saveState('保存角色设定');
+    await CharacterSettingService.updateCharacterSetting(bookValue.id, editing.id, data);
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: `已更新角色 "${data.name}"`,
+      life: 3000,
+    });
+    return true;
+  };
+
+  const handleSaveCharacter = async (data: CharacterFormData) => {
+    if (!book.value) return;
     if (!data.name) {
       toast.add({
         severity: 'error',
@@ -1753,65 +1860,19 @@ function createBookDetailsPageContext() {
     }
 
     isSavingCharacter.value = true;
-
     try {
       if (!editingCharacter.value) {
-        saveState('添加角色设定');
-        await CharacterSettingService.addCharacterSetting(book.value.id, {
-          name: data.name,
-          sex: data.sex,
-          ...(data.translation ? { translation: data.translation } : {}),
-          ...(data.description ? { description: data.description } : {}),
-          ...(data.speakingStyle ? { speakingStyle: data.speakingStyle } : {}),
-          ...(data.aliases ? { aliases: data.aliases } : {}),
-        });
-        toast.add({
-          severity: 'success',
-          summary: '保存成功',
-          detail: `已添加角色 "${data.name}"`,
-          life: 3000,
-        });
-        showEditCharacterDialog.value = false;
-        editingCharacter.value = null;
+        await addCharacterFromForm(book.value.id, data);
       } else {
-        saveState('保存角色设定');
-        const currentCharacterSettings = book.value.characterSettings || [];
-        const nameConflict = currentCharacterSettings.find(
-          (c) => c.id !== editingCharacter.value!.id && c.name === data.name,
-        );
-        if (nameConflict) {
-          toast.add({
-            severity: 'warn',
-            summary: '保存失败',
-            detail: `角色 "${data.name}" 已存在`,
-            life: 3000,
-          });
-          isSavingCharacter.value = false;
-          return;
-        }
-        await CharacterSettingService.updateCharacterSetting(
-          book.value.id,
-          editingCharacter.value.id,
-          data,
-        );
-        toast.add({
-          severity: 'success',
-          summary: '保存成功',
-          detail: `已更新角色 "${data.name}"`,
-          life: 3000,
-        });
-        showEditCharacterDialog.value = false;
-        editingCharacter.value = null;
+        const updated = await updateExistingCharacter(book.value, editingCharacter.value, data);
+        if (!updated) return;
       }
+      showEditCharacterDialog.value = false;
+      editingCharacter.value = null;
     } catch (error) {
       console.error('保存角色失败:', error);
       const errorMessage = error instanceof Error ? error.message : '保存角色时发生错误';
-      toast.add({
-        severity: 'error',
-        summary: '保存失败',
-        detail: errorMessage,
-        life: 3000,
-      });
+      toast.add({ severity: 'error', summary: '保存失败', detail: errorMessage, life: 3000 });
     } finally {
       isSavingCharacter.value = false;
     }
@@ -1865,13 +1926,80 @@ function createBookDetailsPageContext() {
     closePopoverAndUpdateContext(termPopover.value);
   };
 
-  const handleSaveTerm = async (data: {
-    name: string;
-    translation: string;
-    description: string;
-  }) => {
-    if (!book.value) return;
+  type TermFormData = { name: string; translation: string; description: string };
 
+  const addTerm = async (bookId: string, data: TermFormData): Promise<void> => {
+    saveState('添加术语');
+    await TerminologyService.addTerminology(bookId, {
+      name: data.name,
+      ...(data.translation ? { translation: data.translation } : {}),
+      ...(data.description ? { description: data.description } : {}),
+    });
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: `已添加术语 "${data.name}"`,
+      life: 3000,
+    });
+    termDialogMode.value = 'edit';
+  };
+
+  const buildUpdatedTerm = (
+    term: Terminology,
+    editingId: string,
+    data: TermFormData,
+  ): Terminology => {
+    if (term.id !== editingId) return term;
+    const updated: Terminology = {
+      ...term,
+      name: data.name,
+      translation: { ...term.translation, translation: data.translation },
+    };
+    if (data.description) {
+      updated.description = data.description;
+    } else {
+      delete updated.description;
+    }
+    return updated;
+  };
+
+  const updateExistingTerm = async (
+    bookValue: NonNullable<typeof book.value>,
+    editing: Terminology,
+    data: TermFormData,
+  ): Promise<boolean> => {
+    const currentTerminologies = bookValue.terminologies || [];
+    const nameConflict = currentTerminologies.find(
+      (t) => t.id !== editing.id && t.name === data.name,
+    );
+    if (nameConflict) {
+      toast.add({
+        severity: 'warn',
+        summary: '保存失败',
+        detail: `术语 "${data.name}" 已存在`,
+        life: 3000,
+      });
+      return false;
+    }
+    saveState('保存术语');
+    const updatedTerminologies = currentTerminologies.map((term) =>
+      buildUpdatedTerm(term, editing.id, data),
+    );
+    await booksStore.updateBook(bookValue.id, {
+      terminologies: updatedTerminologies,
+      lastEdited: new Date(),
+    });
+    toast.add({
+      severity: 'success',
+      summary: '保存成功',
+      detail: `已更新术语 "${data.name}"`,
+      life: 3000,
+    });
+    return true;
+  };
+
+  const handleSaveTerm = async (data: TermFormData) => {
+    if (!book.value) return;
     if (!data.name) {
       toast.add({
         severity: 'error',
@@ -1883,79 +2011,20 @@ function createBookDetailsPageContext() {
     }
 
     isSavingTerm.value = true;
-
     try {
       if (termDialogMode.value === 'add') {
-        saveState('添加术语');
-        await TerminologyService.addTerminology(book.value.id, {
-          name: data.name,
-          ...(data.translation ? { translation: data.translation } : {}),
-          ...(data.description ? { description: data.description } : {}),
-        });
-        toast.add({
-          severity: 'success',
-          summary: '保存成功',
-          detail: `已添加术语 "${data.name}"`,
-          life: 3000,
-        });
-        showEditTermDialog.value = false;
-        editingTerm.value = null;
-        termDialogMode.value = 'edit';
+        await addTerm(book.value.id, data);
       } else {
         if (!editingTerm.value) return;
-        saveState('保存术语');
-        const currentTerminologies = book.value.terminologies || [];
-        const nameConflict = currentTerminologies.find(
-          (t) => t.id !== editingTerm.value!.id && t.name === data.name,
-        );
-        if (nameConflict) {
-          toast.add({
-            severity: 'warn',
-            summary: '保存失败',
-            detail: `术语 "${data.name}" 已存在`,
-            life: 3000,
-          });
-          isSavingTerm.value = false;
-          return;
-        }
-        const updatedTerminologies = currentTerminologies.map((term) => {
-          if (term.id === editingTerm.value!.id) {
-            const updated: Terminology = {
-              ...term,
-              name: data.name,
-              translation: { ...term.translation, translation: data.translation },
-            };
-            if (data.description) {
-              updated.description = data.description;
-            } else {
-              delete updated.description;
-            }
-            return updated;
-          }
-          return term;
-        });
-        await booksStore.updateBook(book.value.id, {
-          terminologies: updatedTerminologies,
-          lastEdited: new Date(),
-        });
-        toast.add({
-          severity: 'success',
-          summary: '保存成功',
-          detail: `已更新术语 "${data.name}"`,
-          life: 3000,
-        });
-        showEditTermDialog.value = false;
-        editingTerm.value = null;
+        const updated = await updateExistingTerm(book.value, editingTerm.value, data);
+        if (!updated) return;
       }
+      showEditTermDialog.value = false;
+      editingTerm.value = null;
     } catch (error) {
       console.error('保存术语失败:', error);
       const errorMessage = error instanceof Error ? error.message : '保存术语时发生错误';
-      toast.add({
-        severity: 'error',
-        summary: '保存失败',
-        detail: errorMessage,
-        life: 3000,
-      });
+      toast.add({ severity: 'error', summary: '保存失败', detail: errorMessage, life: 3000 });
     } finally {
       isSavingTerm.value = false;
     }
@@ -2014,28 +2083,7 @@ function createBookDetailsPageContext() {
     try {
       saveState('编辑书籍信息');
 
-      const updates: Partial<Novel> = {
-        title: formData.title!,
-        lastEdited: new Date(),
-      };
-      if (formData.alternateTitles && formData.alternateTitles.length > 0) {
-        updates.alternateTitles = formData.alternateTitles;
-      }
-      if (formData.author?.trim()) updates.author = formData.author.trim();
-      if (formData.description?.trim()) updates.description = formData.description.trim();
-      if (formData.tags && formData.tags.length > 0) updates.tags = formData.tags;
-      if (formData.webUrl && formData.webUrl.length > 0) updates.webUrl = formData.webUrl;
-      if (formData.cover !== undefined) updates.cover = formData.cover;
-      if (formData.volumes !== undefined) updates.volumes = formData.volumes;
-      if (formData.translationInstructions !== undefined) {
-        updates.translationInstructions = formData.translationInstructions;
-      }
-      if (formData.polishInstructions !== undefined) {
-        updates.polishInstructions = formData.polishInstructions;
-      }
-      if (formData.proofreadingInstructions !== undefined) {
-        updates.proofreadingInstructions = formData.proofreadingInstructions;
-      }
+      const updates = buildNovelUpdatesFromFormData(formData);
       const oldBook = cloneDeep(book.value);
       await booksStore.updateBook(book.value.id, updates);
       showBookDialog.value = false;

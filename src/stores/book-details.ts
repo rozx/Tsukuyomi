@@ -41,35 +41,51 @@ interface BookDetailsUiState {
 /**
  * 从 localStorage 加载状态
  */
-function loadStateFromStorage(): BookDetailsUiState {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      // 确保向后兼容性：如果旧数据没有某些字段，提供默认值
-      const tp = parsed.translationProgress || {};
-      return {
-        expandedVolumes: parsed.expandedVolumes || {},
-        selectedChapter: parsed.selectedChapter || {},
-        showTranslationProgress: parsed.showTranslationProgress || {},
-        translationProgress: {
-          autoScrollEnabled: tp.autoScrollEnabled || {},
-          showOnlyCurrentChapter: tp.showOnlyCurrentChapter || false,
-          selectedTaskId: tp.selectedTaskId || null,
-          todoCollapsed: tp.todoCollapsed || false,
-          unseenActivity: tp.unseenActivity || {},
-        },
-      };
-    }
-  } catch (error) {
-    console.error('Failed to load book details UI state from storage:', error);
+type PersistedBookDetailsShape = Partial<
+  BookDetailsUiState & {
+    translationProgress?: Partial<BookDetailsUiState['translationProgress']>;
   }
+>;
+
+function buildEmptyBookDetailsState(): BookDetailsUiState {
   return {
     expandedVolumes: {},
     selectedChapter: {},
     showTranslationProgress: {},
     translationProgress: { ...DEFAULT_TRANSLATION_PROGRESS_STATE },
   };
+}
+
+function mergeTranslationProgress(
+  tp: Partial<BookDetailsUiState['translationProgress']> = {},
+): BookDetailsUiState['translationProgress'] {
+  return {
+    autoScrollEnabled: tp.autoScrollEnabled || {},
+    showOnlyCurrentChapter: tp.showOnlyCurrentChapter || false,
+    selectedTaskId: tp.selectedTaskId || null,
+    todoCollapsed: tp.todoCollapsed || false,
+    unseenActivity: tp.unseenActivity || {},
+  };
+}
+
+function mergeStoredBookDetailsState(parsed: PersistedBookDetailsShape): BookDetailsUiState {
+  return {
+    expandedVolumes: parsed.expandedVolumes || {},
+    selectedChapter: parsed.selectedChapter || {},
+    showTranslationProgress: parsed.showTranslationProgress || {},
+    translationProgress: mergeTranslationProgress(parsed.translationProgress),
+  };
+}
+
+function loadStateFromStorage(): BookDetailsUiState {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return buildEmptyBookDetailsState();
+    return mergeStoredBookDetailsState(JSON.parse(stored) as PersistedBookDetailsShape);
+  } catch (error) {
+    console.error('Failed to load book details UI state from storage:', error);
+    return buildEmptyBookDetailsState();
+  }
 }
 
 /**

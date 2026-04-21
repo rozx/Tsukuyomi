@@ -1,4 +1,4 @@
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { computed, watch, onMounted } from 'vue';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useBooksStore } from 'src/stores/books';
@@ -6,19 +6,22 @@ import { useContextStore } from 'src/stores/context';
 import { useUiStore } from 'src/stores/ui';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useThinkingFormatter } from 'src/composables/useThinkingFormatter';
-import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { formatTaskDuration } from 'src/utils';
+import { useMobilePanelData } from './useMobilePanelData';
+import { useTranslationTodos } from './useTranslationTodos';
+import { useNowClock } from './useNowClock';
 
 /**
  * TranslationProgress 面板的业务逻辑 composable。
  *
- * 负责：任务列表派生、当前选中任务、待办事项加载、思考消息格式化、自动滚动、
- * 活动未读检测、手机端派生数据（进度/ETA/工作流标签/统计/图例）、生命周期
- * 事件与计时器。所有变体（Desktop / Tablet / Mobile）通过调用此 composable
- * 获得同一份数据与操作，不得在变体中重新声明或实现这些状态。
+ * 负责：任务列表派生、当前选中任务、思考消息格式化、自动滚动、活动未读检测、
+ * 生命周期事件与计时器。手机端派生数据、待办事项、时钟等独立关注点拆到
+ * 同目录下的 useMobilePanelData / useTranslationTodos / useNowClock。
  *
- * 变体仅允许再额外声明纯视图局部状态（例如手机端的 `mobileTab` 分段选中项）。
+ * 所有变体（Desktop / Tablet / Mobile）通过调用此 composable 获得同一份数据
+ * 与操作，不得在变体中重新声明或实现这些状态。变体仅允许再额外声明纯视图局部
+ * 状态（例如手机端的 `mobileTab` 分段选中项）。
  */
 export function useTranslationProgressPanel() {
   const aiProcessingStore = useAIProcessingStore();
@@ -29,11 +32,7 @@ export function useTranslationProgressPanel() {
   const toast = useToastWithHistory();
 
   // 实时时钟（用于驱动持续刷新的时长 / ETA 计算）
-  const now = ref(Date.now());
-  let nowTimer: number | null = null;
-
-  // 待办事项
-  const todos = ref<TodoItem[]>([]);
+  const { now } = useNowClock();
 
   // ─── 任务列表（从 store 派生）───
 
@@ -77,21 +76,7 @@ export function useTranslationProgressPanel() {
 
   // ─── 待办事项 ───
 
-  const loadTodos = () => {
-    const allTodos = TodoListService.getAllTodos();
-    const taskIds = new Set(recentAITasks.value.map((t) => t.id));
-    todos.value = allTodos.filter((t) => taskIds.has(t.taskId));
-  };
-
-  const currentTaskTodos = computed(() =>
-    currentTask.value ? todos.value.filter((t) => t.taskId === currentTask.value!.id) : [],
-  );
-
-  const handleStorageChange = (e: StorageEvent) => {
-    if (e.key === 'tsukuyomi-todo-list') loadTodos();
-  };
-
-  watch(() => recentAITasks.value.map((t) => t.id), loadTodos);
+  const { todos, currentTaskTodos } = useTranslationTodos({ recentAITasks, currentTask });
 
   // ─── 自动滚动 ───
 
@@ -112,20 +97,24 @@ export function useTranslationProgressPanel() {
 
   // ─── 章节标题辅助 ───
 
+  const resolveChapterDisplayTitle = (bookId: string, chapterId: string): string | null => {
+    const book = booksStore.getBookById(bookId);
+    if (!book?.volumes) return null;
+    for (const volume of book.volumes) {
+      const chapter = volume.chapters?.find((c) => c.id === chapterId);
+      if (!chapter) continue;
+      const displayTitle = getChapterDisplayTitle(chapter, book).trim();
+      if (displayTitle) return displayTitle;
+    }
+    return null;
+  };
+
   const getWorkingChapterLabel = (task: AIProcessingTask): string | null => {
     const title = task.chapterTitle?.trim();
     if (title) return title;
     if (task.bookId && task.chapterId) {
-      const book = booksStore.getBookById(task.bookId);
-      if (book?.volumes) {
-        for (const volume of book.volumes) {
-          const chapter = volume.chapters?.find((c) => c.id === task.chapterId);
-          if (chapter) {
-            const displayTitle = getChapterDisplayTitle(chapter, book).trim();
-            if (displayTitle) return displayTitle;
-          }
-        }
-      }
+      const resolved = resolveChapterDisplayTitle(task.bookId, task.chapterId);
+      if (resolved) return resolved;
     }
     return task.chapterId || null;
   };
@@ -149,27 +138,39 @@ export function useTranslationProgressPanel() {
   //    保留用户的观察视图；否则切换到最新任务（新批量翻译 / 润色 / 校对启动即聚焦）
   // 注：immediate 首次触发时 oldIds 为 undefined，不视为"新任务出现"，避免挂载时覆盖用户上次的选择。
 
+  type SelectDecision = { kind: 'select'; taskId: string } | { kind: 'noop' };
+
+  const hasNewTaskAppearance = (newIds: string[], oldIds: string[] | undefined): boolean => {
+    if (!oldIds) return false;
+    const oldSet = new Set(oldIds);
+    return newIds.some((id) => !oldSet.has(id));
+  };
+
+  const isSelectedTaskActivelyRunning = (selectedId: string): boolean => {
+    const task = recentAITasks.value.find((t) => t.id === selectedId);
+    return task?.status === 'thinking' || task?.status === 'processing';
+  };
+
+  const pickTaskToSelect = (
+    newIds: string[],
+    oldIds: string[] | undefined,
+    selectedId: string | null,
+  ): SelectDecision => {
+    if (newIds.length === 0) return { kind: 'noop' };
+    const latest = newIds[0]!;
+    if (!selectedId) return { kind: 'select', taskId: latest };
+    if (!newIds.includes(selectedId)) return { kind: 'select', taskId: latest };
+    if (!hasNewTaskAppearance(newIds, oldIds)) return { kind: 'noop' };
+    if (isSelectedTaskActivelyRunning(selectedId)) return { kind: 'noop' };
+    return { kind: 'select', taskId: latest };
+  };
+
   watch(
     () => recentAITasks.value.map((t) => t.id),
     (newIds, oldIds) => {
-      if (newIds.length === 0) return;
-      if (!selectedTaskId.value) {
-        bookDetailsStore.selectTask(newIds[0]!);
-        return;
-      }
-      if (!newIds.includes(selectedTaskId.value)) {
-        bookDetailsStore.selectTask(newIds[0]!);
-        return;
-      }
-      if (!oldIds) return;
-      const oldSet = new Set(oldIds);
-      const hasNewTask = newIds.some((id) => !oldSet.has(id));
-      if (!hasNewTask) return;
-      const selectedTask = recentAITasks.value.find((t) => t.id === selectedTaskId.value);
-      const selectedIsRunning =
-        selectedTask?.status === 'thinking' || selectedTask?.status === 'processing';
-      if (selectedIsRunning) return;
-      bookDetailsStore.selectTask(newIds[0]!);
+      const decision = pickTaskToSelect(newIds, oldIds, selectedTaskId.value);
+      if (decision.kind === 'noop') return;
+      bookDetailsStore.selectTask(decision.taskId);
     },
     { flush: 'post', immediate: true },
   );
@@ -234,137 +235,19 @@ export function useTranslationProgressPanel() {
     uiStore.closeRightPanel();
   };
 
-  // ─── 生命周期 ───
+  // ─── 生命周期（仅主 composable 需要的清理）───
 
+  // onMounted 中唯一需要的主 composable 任务：清理过期的 localStorage 任务状态与确保 store 已加载
+  // （todos 的生命周期归属 useTranslationTodos；时钟归属 useNowClock）
   onMounted(() => {
     if (!bookDetailsStore.isLoaded) bookDetailsStore.loadState();
-    // 清理 localStorage 中废弃的 taskId 状态
     const activeIds = new Set(aiProcessingStore.activeTasks.map((t) => t.id));
     bookDetailsStore.cleanupStaleTaskState(activeIds);
-    loadTodos();
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('tsukuyomi-todos-updated', loadTodos);
-    nowTimer = window.setInterval(() => {
-      now.value = Date.now();
-    }, 1000);
   });
 
-  onUnmounted(() => {
-    window.removeEventListener('storage', handleStorageChange);
-    window.removeEventListener('tsukuyomi-todos-updated', loadTodos);
-    if (nowTimer !== null) {
-      clearInterval(nowTimer);
-      nowTimer = null;
-    }
-  });
+  // ─── 手机端派生数据 ───
 
-  // ─── 手机端：基于当前任务的派生数据 ───
-
-  // 进度：current/total
-  const mobileProgress = computed(() => {
-    const p = currentTask.value?.progress;
-    if (!p || !p.total) return { current: 0, total: 0, percent: 0 };
-    const percent = Math.min(100, Math.round((p.current / p.total) * 100));
-    return { current: p.current, total: p.total, percent };
-  });
-
-  // 手机端任务状态描述（ChineseWorkflow）
-  const mobileWorkflowLabel = computed<string>(() => {
-    const task = currentTask.value;
-    if (!task) return '';
-    if (task.status === 'end') return '已完成';
-    if (task.status === 'error') return '已失败';
-    if (task.status === 'cancelled') return '已取消';
-    switch (task.workflowStatus) {
-      case 'planning':
-        return '规划阶段';
-      case 'working':
-        return '翻译中';
-      case 'review':
-        return '审核阶段';
-      case 'end':
-        return '已完成';
-      default:
-        return task.status === 'thinking' ? '思考中' : '处理中';
-    }
-  });
-
-  // 预计剩余（线性外推）
-  const mobileEta = computed<string>(() => {
-    const task = currentTask.value;
-    if (!task) return '—';
-    if (task.status === 'end' || task.status === 'error' || task.status === 'cancelled')
-      return '已结束';
-    const { current, total } = mobileProgress.value;
-    if (!total || current <= 0) return '—';
-    if (current >= total) return '即将完成';
-    const elapsed = Math.max(0, now.value - task.startTime);
-    const rate = elapsed / current; // ms per unit
-    const remaining = (total - current) * rate;
-    const seconds = Math.max(0, Math.floor(remaining / 1000));
-    if (seconds < 60) return `~ ${seconds} 秒`;
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `~ ${mins} 分 ${String(secs).padStart(2, '0')} 秒`;
-  });
-
-  // 当前章节标题（用于副标题）
-  const mobileCurrentChapterLabel = computed<string>(() => {
-    const task = currentTask.value;
-    if (!task) return '';
-    const label = getWorkingChapterLabel(task);
-    return label || '';
-  });
-
-  // 手机端操作
-  const mobileIsRunning = computed(() => {
-    const s = currentTask.value?.status;
-    return s === 'thinking' || s === 'processing';
-  });
-
-  // 统计卡片数据
-  const mobileStatTotals = computed(() => {
-    const task = currentTask.value;
-    const total = task?.progress?.total ?? 0;
-    const current = task?.progress?.current ?? 0;
-    const elapsedMs = task ? Math.max(0, (task.endTime ?? now.value) - task.startTime) : 0;
-    const seconds = Math.floor(elapsedMs / 1000);
-    const mm = Math.floor(seconds / 60);
-    const ss = seconds % 60;
-    const elapsedLabel = seconds > 0 ? `${mm}:${String(ss).padStart(2, '0')}` : '—';
-    const avgMs = current > 0 ? Math.round(elapsedMs / current) : 0;
-    const avgLabel =
-      avgMs > 0 ? (avgMs >= 1000 ? `${(avgMs / 1000).toFixed(1)}s/段` : `${avgMs}ms/段`) : '—';
-    return [
-      { label: '总段数', value: String(total), icon: 'pi-list' },
-      { label: '已完成', value: String(current), icon: 'pi-check-circle' },
-      { label: '总耗时', value: elapsedLabel, icon: 'pi-clock' },
-      { label: '平均速度', value: avgLabel, icon: 'pi-bolt' },
-    ];
-  });
-
-  // 手机端状态图例（颜色 · 数量）
-  const mobileLegend = computed(() => {
-    const task = currentTask.value;
-    if (!task) {
-      return [
-        { color: '#A7D1B0', label: '成功', value: 0 },
-        { color: '#A3B7CF', label: '进行中', value: 0 },
-        { color: '#F2C037', label: '排队', value: 0 },
-        { color: '#EF5F5F', label: '失败', value: 0 },
-      ];
-    }
-    const { current, total } = mobileProgress.value;
-    const queued = Math.max(0, total - current - (mobileIsRunning.value ? 1 : 0));
-    const running = mobileIsRunning.value ? 1 : 0;
-    const failed = task.status === 'error' ? 1 : 0;
-    return [
-      { color: '#A7D1B0', label: '成功', value: current },
-      { color: '#A3B7CF', label: '进行中', value: running },
-      { color: '#F2C037', label: '排队', value: queued },
-      { color: '#EF5F5F', label: '失败', value: failed },
-    ];
-  });
+  const mobile = useMobilePanelData({ currentTask, now, getWorkingChapterLabel });
 
   return {
     // store refs variants may need
@@ -392,13 +275,13 @@ export function useTranslationProgressPanel() {
     clearCompletedTasks,
     toggleChapterFilter,
     closeMobilePanel,
-    // mobile-derived data
-    mobileProgress,
-    mobileEta,
-    mobileWorkflowLabel,
-    mobileCurrentChapterLabel,
-    mobileStatTotals,
-    mobileIsRunning,
-    mobileLegend,
+    // mobile-derived data (destructured from composable)
+    mobileProgress: mobile.mobileProgress,
+    mobileEta: mobile.mobileEta,
+    mobileWorkflowLabel: mobile.mobileWorkflowLabel,
+    mobileCurrentChapterLabel: mobile.mobileCurrentChapterLabel,
+    mobileStatTotals: mobile.mobileStatTotals,
+    mobileIsRunning: mobile.mobileIsRunning,
+    mobileLegend: mobile.mobileLegend,
   };
 }

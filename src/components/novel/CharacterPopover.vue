@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { toRef } from 'vue';
 import Popover from 'primevue/popover';
 import DataView from 'primevue/dataview';
 import Button from 'primevue/button';
+import { useEntityListPopover } from 'src/composables/novel/useEntityListPopover';
 import type { CharacterSetting } from 'src/models/novel';
 
 const props = defineProps<{
@@ -15,32 +16,17 @@ const emit = defineEmits<{
   create: [];
 }>();
 
-const popover = ref<InstanceType<typeof Popover> | null>(null);
-
-const usedCharacterCount = computed(() => props.usedCharacters.length);
-
-const handleEdit = (character: CharacterSetting) => {
-  emit('edit', character);
-};
-
-const handleDelete = (character: CharacterSetting) => {
-  emit('delete', character);
-};
-
-const handleCreate = () => {
-  emit('create');
-};
-
-// Expose popover ref for parent component to toggle
-defineExpose({
+const {
   popover,
-  toggle: (event: Event) => {
-    popover.value?.toggle(event);
-  },
-  hide: () => {
-    popover.value?.hide();
-  },
-});
+  count: usedCharacterCount,
+  handleEdit,
+  handleDelete,
+  handleCreate,
+  toggle,
+  hide,
+} = useEntityListPopover<CharacterSetting>(toRef(props, 'usedCharacters'), emit);
+
+defineExpose({ popover, toggle, hide });
 </script>
 
 <template>

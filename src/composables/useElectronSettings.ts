@@ -6,8 +6,27 @@ import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
+import { importMemoriesPreservingIdentity } from 'src/services/settings/memory-import';
 import { isElectron } from 'src/utils/platform';
 import type { Memory } from 'src/models/memory';
+import type { Novel } from 'src/models/novel';
+
+/**
+ * 汇总导出所需的所有书籍数据：带章节内容的 novels + 扁平 memories。
+ * 被 SPA 端（ImportExportTab.vue）与 Electron 端（useElectronSettings）共用，避免重复样板。
+ */
+export async function loadBooksWithContentAndMemories(
+  books: Novel[],
+): Promise<{ novelsWithContent: Novel[]; memories: Memory[] }> {
+  // 加载所有书籍的章节内容
+  const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(books);
+
+  // 使用批量加载方法加载所有 Memory 数据
+  const bookIds = books.map((book) => book.id);
+  const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+
+  return { novelsWithContent, memories };
+}
 
 /**
  * Electron 环境下的设置导入/导出处理
@@ -21,14 +40,9 @@ export function useElectronSettings() {
   // 处理导出设置请求
   const handleExportRequest = async (filePath: string) => {
     try {
-      // 加载所有书籍的章节内容
-      const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
+      const { novelsWithContent, memories } = await loadBooksWithContentAndMemories(
         booksStore.books,
       );
-
-      // 使用批量加载方法加载所有 Memory 数据
-      const bookIds = booksStore.books.map((book) => book.id);
-      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
 
       // 获取当前设置
       const settings = {
@@ -52,76 +66,52 @@ export function useElectronSettings() {
     }
   };
 
+  // 覆盖语义：字段在快照里就替换（即便是空数组）。undefined 才跳过。
+
+  const importAiModels = async (
+    models: Exclude<ReturnType<typeof SettingsService.validateAndParseSettings>['data'], undefined>['models'] | undefined,
+  ): Promise<void> => {
+    if (models === undefined) return;
+    await aiModelsStore.bulkImportModels(models);
+  };
+
+  const importNovels = async (
+    novels: Array<Parameters<typeof booksStore.bulkAddBooks>[0][number]> | undefined,
+  ): Promise<void> => {
+    if (novels === undefined) return;
+    await booksStore.clearBooks();
+    await booksStore.bulkAddBooks(novels);
+  };
+
+  const importCoverHistory = async (
+    covers: Array<Parameters<typeof coverHistoryStore.addCover>[0]> | undefined,
+  ): Promise<void> => {
+    if (covers === undefined) return;
+    await coverHistoryStore.clearHistory();
+    for (const cover of covers) {
+      await coverHistoryStore.addCover(cover);
+    }
+  };
+
+  const importMemories = (memories: Memory[] | undefined): Promise<void> =>
+    importMemoriesPreservingIdentity(memories, '[useElectronSettings]');
+
   // 处理导入设置数据
   const handleImportData = async (content: string) => {
     try {
-      // 解析 JSON
       const settings = JSON.parse(content);
-
-      // 使用 SettingsService 验证和解析
       const result = SettingsService.validateAndParseSettings(settings);
-
-      if (result.success && result.data) {
-        // 导入 AI 模型（与网页端导入保持一致：覆盖导入）
-        if (result.data.models && result.data.models.length > 0) {
-          await aiModelsStore.bulkImportModels(result.data.models);
-        }
-
-        // 导入书籍（与网页端导入保持一致：覆盖导入）
-        if (result.data.novels && result.data.novels.length > 0) {
-          await booksStore.clearBooks();
-          await booksStore.bulkAddBooks(result.data.novels);
-        }
-
-        // 导入封面历史
-        if (result.data.coverHistory && result.data.coverHistory.length > 0) {
-          await coverHistoryStore.clearHistory();
-          for (const cover of result.data.coverHistory) {
-            await coverHistoryStore.addCover(cover);
-          }
-        }
-
-        // 导入 Memory 数据
-        if (result.data.memories && result.data.memories.length > 0) {
-          // Memory 按 bookId 分组并导入
-          const memoriesByBook = new Map<string, Memory[]>();
-          for (const memory of result.data.memories) {
-            if (!memoriesByBook.has(memory.bookId)) {
-              memoriesByBook.set(memory.bookId, []);
-            }
-            memoriesByBook.get(memory.bookId)!.push(memory);
-          }
-
-          // 为每本书导入 Memory
-          for (const [bookId, memories] of memoriesByBook.entries()) {
-            try {
-              for (const memory of memories) {
-                await MemoryService.createMemory(
-                  bookId,
-                  memory.content,
-                  memory.summary,
-                );
-              }
-            } catch (error) {
-              console.warn(`[useElectronSettings] 导入书籍 ${bookId} 的 Memory 失败:`, error);
-            }
-          }
-        }
-
-        // 导入应用设置
-        if (result.data.appSettings) {
-          // 使用 importSettings：保留 lastEdited、深合并 taskDefaultModels，并写入 IndexedDB
-          await settingsStore.importSettings(result.data.appSettings);
-        }
-
-        // 导入同步配置
-        if (result.data.sync && result.data.sync.length > 0) {
-          // 与网页端导入保持一致：覆盖导入 syncs
-          await settingsStore.importSyncs(result.data.sync);
-        }
-      } else {
+      if (!result.success || !result.data) {
         console.error('Import validation failed:', result.error);
+        return;
       }
+      const data = result.data;
+      await importAiModels(data.models);
+      await importNovels(data.novels);
+      await importCoverHistory(data.coverHistory);
+      await importMemories(data.memories);
+      if (data.appSettings) await settingsStore.importSettings(data.appSettings);
+      if (data.sync !== undefined) await settingsStore.importSyncs(data.sync);
     } catch (error) {
       console.error('Import settings error:', error);
     }

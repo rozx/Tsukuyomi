@@ -157,25 +157,17 @@ export function useChapterManagement(
     showEditVolumeDialog.value = true;
   };
 
-  const openEditChapterDialog = (chapter: Chapter) => {
-    if (!book.value) return;
+  const extractTitleFields = (
+    title: Chapter['title'] | undefined,
+  ): { original: string; translation: string } => {
+    if (typeof title === 'string') return { original: title, translation: '' };
+    return {
+      original: title?.original || '',
+      translation: title?.translation?.translation || '',
+    };
+  };
 
-    // Find source volume
-    const sourceVolume = book.value.volumes?.find((volume) =>
-      volume.chapters?.some((c) => c.id === chapter.id),
-    );
-
-    editingChapterId.value = chapter.id;
-    // Compatibility with old data format
-    if (typeof chapter.title === 'string') {
-      editingChapterTitle.value = chapter.title;
-      editingChapterTranslation.value = '';
-    } else {
-      editingChapterTitle.value = chapter.title?.original || '';
-      editingChapterTranslation.value = chapter.title?.translation?.translation || '';
-    }
-    editingChapterSourceVolumeId.value = sourceVolume?.id || null;
-    editingChapterTargetVolumeId.value = sourceVolume?.id || null;
+  const primeChapterDialogInstructions = (chapter: Chapter): void => {
     editingChapterTranslationInstructions.value = chapter.translationInstructions || '';
     editingChapterPolishInstructions.value = chapter.polishInstructions || '';
     editingChapterProofreadingInstructions.value = chapter.proofreadingInstructions || '';
@@ -183,7 +175,37 @@ export function useChapterManagement(
     editingChapterLastUpdated.value = chapter.lastUpdated;
     editingChapterLastEdited.value = chapter.lastEdited;
     editingChapterCreatedAt.value = chapter.createdAt;
+  };
+
+  const openEditChapterDialog = (chapter: Chapter) => {
+    if (!book.value) return;
+
+    const sourceVolumeId =
+      book.value.volumes?.find((volume) => volume.chapters?.some((c) => c.id === chapter.id))
+        ?.id ?? null;
+    const titleFields = extractTitleFields(chapter.title);
+
+    editingChapterId.value = chapter.id;
+    editingChapterTitle.value = titleFields.original;
+    editingChapterTranslation.value = titleFields.translation;
+    editingChapterSourceVolumeId.value = sourceVolumeId;
+    editingChapterTargetVolumeId.value = sourceVolumeId;
+    primeChapterDialogInstructions(chapter);
     showEditChapterDialog.value = true;
+  };
+
+  type VolumeLike = { title?: { translation?: { id: string; aiModelId: string } } | string };
+
+  const resolveTranslationIdentity = (
+    entity: VolumeLike | null | undefined,
+  ): { translationId: string; aiModelId: string } => {
+    if (!entity || typeof entity.title === 'string') {
+      return { translationId: generateShortId(), aiModelId: '' };
+    }
+    return {
+      translationId: entity.title?.translation?.id || generateShortId(),
+      aiModelId: entity.title?.translation?.aiModelId || '',
+    };
   };
 
   const handleEditVolume = async () => {
@@ -199,20 +221,7 @@ export function useChapterManagement(
     isEditingVolume.value = true;
     try {
       const currentVolume = book.value.volumes?.find((v) => v.id === editingVolumeId.value);
-
-      let translationId = '';
-      let aiModelId = '';
-
-      if (currentVolume) {
-        if (typeof currentVolume.title === 'string') {
-          translationId = generateShortId();
-        } else {
-          translationId = currentVolume.title.translation?.id || generateShortId();
-          aiModelId = currentVolume.title.translation?.aiModelId || '';
-        }
-      } else {
-        translationId = generateShortId();
-      }
+      const { translationId, aiModelId } = resolveTranslationIdentity(currentVolume);
 
       // 保存原始数据用于撤销
       const oldVolumes = book.value.volumes ? cloneDeep(book.value.volumes) : null;
@@ -257,6 +266,71 @@ export function useChapterManagement(
     }
   };
 
+  const findChapterInAnyVolume = (chapterId: string): Chapter | null => {
+    if (!book.value) return null;
+    for (const volume of book.value.volumes || []) {
+      const chapter = volume.chapters?.find((c) => c.id === chapterId);
+      if (chapter) return chapter;
+    }
+    return null;
+  };
+
+  const buildChapterUpdatePayload = (
+    translationId: string,
+    aiModelId: string,
+  ): Parameters<typeof ChapterService.updateChapter>[2] => ({
+    title: {
+      original: editingChapterTitle.value.trim(),
+      translation: {
+        id: translationId,
+        translation: editingChapterTranslation.value.trim(),
+        aiModelId: aiModelId,
+      },
+    },
+    translationInstructions: editingChapterTranslationInstructions.value.trim() || undefined,
+    polishInstructions: editingChapterPolishInstructions.value.trim() || undefined,
+    proofreadingInstructions: editingChapterProofreadingInstructions.value.trim() || undefined,
+    webUrl: editingChapterWebUrl.value.trim() || undefined,
+  });
+
+  const resetChapterEditDialog = (): void => {
+    showEditChapterDialog.value = false;
+    editingChapterId.value = null;
+    editingChapterTitle.value = '';
+    editingChapterTranslation.value = '';
+    editingChapterSourceVolumeId.value = null;
+    editingChapterTargetVolumeId.value = null;
+    editingChapterTranslationInstructions.value = '';
+    editingChapterPolishInstructions.value = '';
+    editingChapterProofreadingInstructions.value = '';
+    editingChapterWebUrl.value = '';
+    editingChapterLastUpdated.value = undefined;
+    editingChapterLastEdited.value = undefined;
+    editingChapterCreatedAt.value = undefined;
+  };
+
+  const showChapterEditToast = (
+    oldVolumes: Volume[] | null,
+    bookValue: NonNullable<typeof book.value>,
+  ): void => {
+    const moved =
+      editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value;
+    toast.add({
+      severity: 'success',
+      summary: '更新成功',
+      detail: `已更新章节标题${moved ? '并移动到新卷' : ''}`,
+      life: 3000,
+      onRevert: async () => {
+        if (oldVolumes) {
+          await booksStore.updateBook(bookValue.id, {
+            volumes: oldVolumes,
+            lastEdited: new Date(),
+          });
+        }
+      },
+    });
+  };
+
   const handleEditChapter = async () => {
     if (
       !book.value ||
@@ -269,93 +343,24 @@ export function useChapterManagement(
     }
 
     isEditingChapter.value = true;
+    const bookValue = book.value;
     try {
-      let currentChapter: Chapter | null = null;
-      for (const volume of book.value.volumes || []) {
-        const chapter = volume.chapters?.find((c) => c.id === editingChapterId.value);
-        if (chapter) {
-          currentChapter = chapter;
-          break;
-        }
-      }
-
-      let translationId = '';
-      let aiModelId = '';
-
-      if (currentChapter) {
-        if (typeof currentChapter.title === 'string') {
-          translationId = generateShortId();
-        } else {
-          translationId = currentChapter.title.translation?.id || generateShortId();
-          aiModelId = currentChapter.title.translation?.aiModelId || '';
-        }
-      } else {
-        translationId = generateShortId();
-      }
-
-      // 保存原始数据用于撤销
-      const oldVolumes = book.value.volumes ? cloneDeep(book.value.volumes) : null;
+      const currentChapter = findChapterInAnyVolume(editingChapterId.value);
+      const { translationId, aiModelId } = resolveTranslationIdentity(currentChapter);
+      const oldVolumes = bookValue.volumes ? cloneDeep(bookValue.volumes) : null;
 
       const updatedVolumes = ChapterService.updateChapter(
-        book.value,
+        bookValue,
         editingChapterId.value,
-        {
-          title: {
-            original: editingChapterTitle.value.trim(),
-            translation: {
-              id: translationId,
-              translation: editingChapterTranslation.value.trim(),
-              aiModelId: aiModelId,
-            },
-          },
-          translationInstructions: editingChapterTranslationInstructions.value.trim() || undefined,
-          polishInstructions: editingChapterPolishInstructions.value.trim() || undefined,
-          proofreadingInstructions:
-            editingChapterProofreadingInstructions.value.trim() || undefined,
-          webUrl: editingChapterWebUrl.value.trim() || undefined,
-        },
+        buildChapterUpdatePayload(translationId, aiModelId),
         editingChapterTargetVolumeId.value,
       );
-
-      await booksStore.updateBook(book.value.id, {
+      await booksStore.updateBook(bookValue.id, {
         volumes: updatedVolumes,
         lastEdited: new Date(),
       });
-
-      const moveMessage =
-        editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value
-          ? '并移动到新卷'
-          : '';
-
-      toast.add({
-        severity: 'success',
-        summary: '更新成功',
-        detail: `已更新章节标题${moveMessage}`,
-        life: 3000,
-        onRevert: async () => {
-          if (book.value && oldVolumes) {
-            // 恢复原始 volumes（包括章节位置和标题）
-            await booksStore.updateBook(book.value.id, {
-              volumes: oldVolumes,
-              lastEdited: new Date(),
-            });
-          }
-        },
-      });
-
-      showEditChapterDialog.value = false;
-      editingChapterId.value = null;
-      editingChapterTitle.value = '';
-      editingChapterTranslation.value = '';
-      editingChapterSourceVolumeId.value = null;
-      editingChapterTargetVolumeId.value = null;
-      editingChapterTranslationInstructions.value = '';
-      editingChapterPolishInstructions.value = '';
-      editingChapterProofreadingInstructions.value = '';
-      editingChapterWebUrl.value = '';
-      editingChapterLastUpdated.value = undefined;
-      editingChapterLastEdited.value = undefined;
-      editingChapterCreatedAt.value = undefined;
+      showChapterEditToast(oldVolumes, bookValue);
+      resetChapterEditDialog();
     } finally {
       isEditingChapter.value = false;
     }

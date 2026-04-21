@@ -18,13 +18,14 @@ bun run build:electron         # 构建 Electron 桌面应用
 
 bun run lint                   # ESLint 检查
 bun run type-check             # TypeScript 类型检查
-bun run quality-check          # Fallow 代码质量检查 (bunx fallow)
+bun run quality-check          # Fallow 代码质量检查（要先跑 test:coverage 才有 CRAP 评分数据）
 bun run format                 # Prettier 格式化
 
-bun test                       # 运行所有测试
-bun test book-service          # 按文件名匹配
-bun test -t "测试描述"          # 按测试名匹配
-bun test --watch               # 监听模式
+bun run test                   # 运行所有测试（vitest）
+bun run test:watch             # 监听模式
+bun run test:coverage          # 生成 istanbul 覆盖率（coverage/coverage-final.json）
+bunx vitest run book-service   # 按文件名过滤
+bunx vitest run -t "测试描述"  # 按测试名过滤
 ```
 
 **修改代码后必须运行**: `bun run lint && bun run type-check && bun run quality-check`
@@ -105,25 +106,47 @@ src/composables/<name-kebab>/use<Name>.ts         # 业务逻辑，通过 provid
 - **Vue**: `<script setup lang="ts">`，Props 用 `defineProps<Props>()`，Emits 类型安全
 - **命名**: 文件 kebab-case (`book-service.ts`)，Service PascalCase (`BookService`)，变量 camelCase
 
+## Fallow 误报抑制
+
+Fallow 无法追踪 Vue `<template>` 消费者、动态 import、抽象基类多态调用等。遇到误报（`unused-export` / `unused-class-member`）**优先删真死代码**；确认是误报才抑制。
+
+**用行内注释**，**不要**往 `.fallowrc.json` 加 `ignoreExports` / `usedClassMembers`（用户明确要求）：
+
+```ts
+// fallow-ignore-next-line unused-export
+export const MODEL_ID = '...';
+
+/**
+ * 抽象方法，子类实现通过 NovelScraperFactory 多态分派
+ */
+// fallow-ignore-next-line unused-class-member
+abstract fetchNovel(url: string): Promise<Novel>;
+```
+
+注释放在目标声明**正上方一行**；有 JSDoc 时夹在 JSDoc 的 `*/` 与声明之间。规则名是**单数**（`unused-export` / `unused-class-member`），不是复数。
+
 ## 测试
 
-使用 Bun 内置测试框架，测试文件位于 `src/__tests__/`：
+使用 **Vitest (jsdom)** 运行测试。测试文件放在 `src/__tests__/`，沿用 `bun:test` 风格的 import（通过 `src/__tests__/bun-test-shim.ts` 别名映射到 vitest），新测试也可直接 `from 'vitest'`。全局 Pinia 与 PrimeVue `useToast` 在 `src/__tests__/vitest-setup.ts` 里预先 mock 好，无需每个文件重复。
 
 ```typescript
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
-import './setup'; // 必须导入，提供 IndexedDB polyfill
 
 describe('MyService', () => {
   afterEach(() => { mock.restore(); });
   it('should work', async () => {
-    spyOn(SomeService, 'method').mockImplementation(fn); // 使用 spyOn 局部 mock
+    spyOn(SomeService, 'method').mockImplementation(fn);
     const result = await MyService.doSomething();
     expect(result).toBe(expected);
   });
 });
 ```
 
-**注意**: 使用 `spyOn` 局部 mock，避免全局 `mock.module` 影响其他测试。
+**模块级 mock**（整个模块替换）必须用 `vi.mock('path', factory)`，并通过 `vi.hoisted(() => …)` 构造 factory 里引用的 spy —— vitest 会把 `vi.mock` 调用静态提升到所有 import 之前执行。**不要**用 `await mock.module(...)`，vite 的 transform 不会提升它。
+
+运行时 mock（根据每个测试动态换实现）用 `vi.doMock + vi.resetModules + 动态 `import()`，参考 `src/__tests__/local-embedding.test.ts`。
+
+`bun test` 仍可用于极少数依赖 Bun 专属 API 的文件（scraper 测试用 `Bun.file(...)`），通过 `bun run test:bun` 触发；但主要 runner 是 vitest。
 
 ## 技术栈
 

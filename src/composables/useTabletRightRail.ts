@@ -20,14 +20,7 @@ export function useTabletRightRail() {
     () => ui.rightPanelOpen && ui.activeRightTab === 'progress',
   );
 
-  const activeTranslationTaskCount = computed(
-    () =>
-      aiProcessing.activeTasks.filter(
-        (t) =>
-          (t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading') &&
-          (t.status === 'thinking' || t.status === 'processing'),
-      ).length,
-  );
+  const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslationTaskCount);
 
   const toggleRail = (tab: 'chat' | 'progress') => {
     if (ui.rightPanelOpen && ui.activeRightTab === tab) {

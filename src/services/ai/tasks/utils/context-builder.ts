@@ -18,7 +18,8 @@ import {
 } from 'src/services/memory-scoring';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import { useSettingsStore } from 'src/stores/settings';
-import { TASK_TYPE_LABELS, type TaskType, MAX_DESC_LEN } from './task-types';
+import { type TaskType, MAX_DESC_LEN } from './task-types';
+import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { getPostToolCallReminder } from './todo-helper';
 import { getCurrentStatusInfo } from '../prompts/common';
 import { useBooksStore } from 'src/stores/books';
@@ -343,6 +344,56 @@ export interface SelectedMemories {
  *
  * 同时写入 `lastScoreBreakdownsByBook`,供 translation-service 读取。
  */
+function buildChunkEntities(
+  terms: Terminology[] | undefined,
+  characters: CharacterSetting[] | undefined,
+): Array<{ name: string }> {
+  const out: Array<{ name: string }> = [];
+  if (terms) {
+    for (const t of terms) {
+      if (t?.name) out.push({ name: t.name });
+    }
+  }
+  if (characters) {
+    for (const c of characters) {
+      if (c?.name) out.push({ name: c.name });
+      if (c?.aliases) {
+        for (const alias of c.aliases) {
+          if (alias?.name) out.push({ name: alias.name });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function readMemoryInjectionBudget(): { charBudget: number; minScore: number } {
+  let charBudget = DEFAULT_CHAR_BUDGET;
+  let minScore = DEFAULT_MIN_SCORE;
+  try {
+    const settings = useSettingsStore();
+    const cfg = settings.settings?.memoryInjection;
+    if (cfg?.charBudget && cfg.charBudget > 0) charBudget = cfg.charBudget;
+    if (typeof cfg?.minScoreThreshold === 'number') minScore = cfg.minScoreThreshold;
+  } catch {
+    /* 保持默认 */
+  }
+  return { charBudget, minScore };
+}
+
+function collectBreakdownsForMemories(
+  memories: Memory[],
+  scored: ScoredMemory[],
+): Record<string, ScoreBreakdown> {
+  const breakdowns: Record<string, ScoreBreakdown> = {};
+  const scoredById = new Map(scored.map((s) => [s.memory.id, s.breakdown]));
+  for (const mem of memories) {
+    const bd = scoredById.get(mem.id);
+    if (bd) breakdowns[mem.id] = bd;
+  }
+  return breakdowns;
+}
+
 export async function selectRelevantMemoriesForChunk(
   bookId: string,
   chunkText: string,
@@ -357,69 +408,22 @@ export async function selectRelevantMemoriesForChunk(
   };
   if (!bookId || !chunkText) return empty;
 
-  // 1. 拉全量记忆(走缓存)
   const allMemories = await MemoryService.getAllBookMemories(bookId);
   if (allMemories.length === 0) return empty;
 
-  // 2. 构造实体集合 — terms.name + characters.name + aliases
-  const chunkEntities: Array<{ name: string }> = [];
-  if (existingTerms) {
-    for (const t of existingTerms) {
-      if (t?.name) chunkEntities.push({ name: t.name });
-    }
-  }
-  if (existingCharacters) {
-    for (const c of existingCharacters) {
-      if (c?.name) chunkEntities.push({ name: c.name });
-      if (c?.aliases) {
-        for (const alias of c.aliases) {
-          if (alias?.name) chunkEntities.push({ name: alias.name });
-        }
-      }
-    }
-  }
-
-  // 3. 可选语义向量
+  const chunkEntities = buildChunkEntities(existingTerms, existingCharacters);
   const chunkEmbedding = await computeChunkEmbedding(chunkText);
-
-  // 4. 批量打分 — chunkEmbedding 存在时传入 expectedModelVersion 过滤 stale 记忆;
-  //    batch 版会对本批 raw cosine 做 z-score 归一化,spread 过小时整批把 semantic 置 0(权重不变)
-  const now = Date.now();
-  const expectedModelVersion = chunkEmbedding ? MODEL_VERSION : undefined;
   const scored: ScoredMemory[] = scoreMemoriesBatch(allMemories, {
     chunkEntities,
     chunkEmbedding: chunkEmbedding ?? undefined,
-    now,
-    expectedModelVersion,
+    now: Date.now(),
+    expectedModelVersion: chunkEmbedding ? MODEL_VERSION : undefined,
   });
 
-  // 5. 字符预算填充 — 读取用户预算设置
-  let charBudget = DEFAULT_CHAR_BUDGET;
-  let minScore = DEFAULT_MIN_SCORE;
-  try {
-    const settings = useSettingsStore();
-    const cfg = settings.settings?.memoryInjection;
-    if (cfg?.charBudget && cfg.charBudget > 0) charBudget = cfg.charBudget;
-    if (typeof cfg?.minScoreThreshold === 'number') minScore = cfg.minScoreThreshold;
-  } catch {
-    /* 保持默认 */
-  }
+  const { charBudget, minScore } = readMemoryInjectionBudget();
+  const memories = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
+  const breakdowns = collectBreakdownsForMemories(memories, scored);
 
-  const selected = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
-
-  // 严格阈值策略:不走 LRU 兜底。minScore 以下的记忆一律不返回 —
-  // UI 预览和翻译注入共用同一函数,所以两边的过滤规则自动一致。
-  // 如果这一批全部不达标,用户看到"未参考记忆",这是正确的信号(说明当前
-  // chunk 没有足够相关的历史记忆,而不是用低分噪音凑数)。
-  const memories: Memory[] = selected;
-  const breakdowns: Record<string, ScoreBreakdown> = {};
-  const scoredById = new Map(scored.map((s) => [s.memory.id, s.breakdown]));
-  for (const mem of memories) {
-    const bd = scoredById.get(mem.id);
-    if (bd) breakdowns[mem.id] = bd;
-  }
-
-  // 供 translation-service 旁路读取
   lastScoreBreakdownsByBook.set(bookId, breakdowns);
 
   return {
@@ -527,36 +531,7 @@ export async function buildIndependentChunkPrompt(
       }
 
       if (characters.length > 0) {
-        const characterDetails = characters.map((c) => {
-          const parts: string[] = [];
-          parts.push(`${c.name} → ${c.translation.translation}`);
-
-          if (c.sex) {
-            const sexLabels: Record<string, string> = {
-              male: '男',
-              female: '女',
-              other: '其他',
-            };
-            parts.push(`性别：${sexLabels[c.sex] || c.sex}`);
-          }
-
-          if (c.description) {
-            parts.push(`描述：${c.description}`);
-          }
-
-          if (c.speakingStyle) {
-            parts.push(`说话风格：${c.speakingStyle}`);
-          }
-
-          if (c.aliases && c.aliases.length > 0) {
-            const aliasList = c.aliases
-              .map((a) => `${a.name} → ${a.translation.translation}`)
-              .join('、');
-            parts.push(`别名：${aliasList}`);
-          }
-
-          return parts.join(' | ');
-        });
+        const characterDetails = characters.map(formatCharacterDetail);
 
         contextParts.push(`**角色**：\n${characterDetails.map((d) => `  - ${d}`).join('\n')}`);
       }
@@ -696,7 +671,7 @@ export function getSpecialInstructions(
  * @param allParagraphs 全章段落数组
  * @param count 前后各取多少段（默认 3）
  */
-export function buildSurroundingParagraphsContext(
+function buildSurroundingParagraphsContext(
   currentParagraphId: string,
   allParagraphs: Paragraph[],
   count: number = 3,
@@ -733,38 +708,61 @@ export function buildSurroundingParagraphsContext(
 }
 
 /**
- * 构建章节角色上下文（用于单段落润色/校对）
- * @param characters 本章出场的角色列表
+ * 将角色别名数组格式化为 `别名：alias1 → 翻译1、alias2 → 翻译2` 形式的单行片段。
+ * 空/未定义别名时返回 null，由调用方决定是否输出占位符（例如"别名：无"）。
+ *
+ * 供 context-builder 与 term-translation-service 等多处复用，保证别名格式一致。
  */
-export function buildChapterCharactersContext(characters: CharacterSetting[]): string {
-  if (!characters || characters.length === 0) return '';
+export function formatCharacterAliases(
+  aliases: CharacterSetting['aliases'] | undefined,
+): string | null {
+  if (!aliases || aliases.length === 0) return null;
+  const aliasList = aliases.map((a) => `${a.name} → ${a.translation.translation}`).join('、');
+  return `别名：${aliasList}`;
+}
 
+/**
+ * 将单个角色格式化为单行详情字符串：`name → translation | 性别：... | 描述：... | 说话风格：... | 别名：...`
+ * 仅在文件内部使用，供多个上下文构建器复用，保证角色信息格式一致
+ */
+function formatCharacterDetail(c: CharacterSetting): string {
   const sexLabels: Record<string, string> = {
     male: '男',
     female: '女',
     other: '其他',
   };
 
-  const characterDetails = characters.map((c) => {
-    const parts: string[] = [];
-    parts.push(`${c.name} → ${c.translation.translation}`);
-    if (c.sex) {
-      parts.push(`性别：${sexLabels[c.sex] || c.sex}`);
-    }
-    if (c.description) {
-      parts.push(`描述：${c.description}`);
-    }
-    if (c.speakingStyle) {
-      parts.push(`说话风格：${c.speakingStyle}`);
-    }
-    if (c.aliases && c.aliases.length > 0) {
-      const aliasList = c.aliases
-        .map((a) => `${a.name} → ${a.translation.translation}`)
-        .join('、');
-      parts.push(`别名：${aliasList}`);
-    }
-    return `  - ${parts.join(' | ')}`;
-  });
+  const parts: string[] = [];
+  parts.push(`${c.name} → ${c.translation.translation}`);
+
+  if (c.sex) {
+    parts.push(`性别：${sexLabels[c.sex] || c.sex}`);
+  }
+
+  if (c.description) {
+    parts.push(`描述：${c.description}`);
+  }
+
+  if (c.speakingStyle) {
+    parts.push(`说话风格：${c.speakingStyle}`);
+  }
+
+  const aliasPart = formatCharacterAliases(c.aliases);
+  if (aliasPart) {
+    parts.push(aliasPart);
+  }
+
+  return parts.join(' | ');
+}
+
+/**
+ * 构建章节角色上下文（用于单段落润色/校对）
+ * @param characters 本章出场的角色列表
+ */
+function buildChapterCharactersContext(characters: CharacterSetting[]): string {
+  if (!characters || characters.length === 0) return '';
+
+  const characterDetails = characters.map((c) => `  - ${formatCharacterDetail(c)}`);
 
   return `\n\n【本章出场角色】\n${characterDetails.join('\n')}\n`;
 }

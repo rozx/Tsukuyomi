@@ -30,7 +30,7 @@ export const APP_NAME = {
 /**
  * 应用信息
  */
-export const APP_INFO = {
+const APP_INFO = {
   name: APP_NAME,
   description: {
     en: 'Moonlit Translator',

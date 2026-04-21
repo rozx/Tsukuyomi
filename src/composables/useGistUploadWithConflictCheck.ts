@@ -21,6 +21,32 @@ export function useGistSync() {
   const { executeSync, executeForceSync } = useSyncExecutor();
 
   /**
+   * 构造传给 executeSync / executeForceSync 的选项
+   * 两个入口共享相同的 toast 回调和默认参数，这里统一装配以消除重复
+   */
+  const buildExecutorOptions = (config?: SyncConfig) => ({
+    messagePrefix: '',
+    isManualRetrieval: true,
+    ...(config ? { configOverride: config } : {}),
+    onError: (summary: string, detail: string) => {
+      toast.add({
+        severity: 'error',
+        summary,
+        detail,
+        life: 5000,
+      });
+    },
+    onSuccess: (summary: string, detail: string) => {
+      toast.add({
+        severity: 'success',
+        summary,
+        detail,
+        life: 3000,
+      });
+    },
+  });
+
+  /**
    * 统一的双向同步操作
    * 流程：下载远程数据 → 应用/合并 → 检测本地变更 → 有变更才上传
    *
@@ -37,27 +63,7 @@ export function useGistSync() {
     settingsStore.setSyncing(true);
 
     try {
-      const result = await executeSync({
-        messagePrefix: '',
-        isManualRetrieval: true,
-        ...(config ? { configOverride: config } : {}),
-        onError: (summary, detail) => {
-          toast.add({
-            severity: 'error',
-            summary,
-            detail,
-            life: 5000,
-          });
-        },
-        onSuccess: (summary, detail) => {
-          toast.add({
-            severity: 'success',
-            summary,
-            detail,
-            life: 3000,
-          });
-        },
-      });
+      const result = await executeSync(buildExecutorOptions(config));
 
       return result.restorableItems;
     } catch (error) {
@@ -173,27 +179,7 @@ export function useGistSync() {
     settingsStore.setSyncing(true);
 
     try {
-      await executeForceSync({
-        messagePrefix: '',
-        isManualRetrieval: true,
-        ...(config ? { configOverride: config } : {}),
-        onError: (summary, detail) => {
-          toast.add({
-            severity: 'error',
-            summary,
-            detail,
-            life: 5000,
-          });
-        },
-        onSuccess: (summary, detail) => {
-          toast.add({
-            severity: 'success',
-            summary,
-            detail,
-            life: 3000,
-          });
-        },
-      });
+      await executeForceSync(buildExecutorOptions(config));
     } catch (error) {
       console.error('[useGistSync] 强制推送异常:', error);
       const errorMsg = error instanceof Error ? error.message : '强制推送时发生未知错误';

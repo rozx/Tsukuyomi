@@ -1,4 +1,4 @@
-import type { Novel, Chapter } from 'src/models/novel';
+import type { Novel, Chapter, Paragraph } from 'src/models/novel';
 import { normalizeTranslationSymbols } from './translation-normalizer';
 
 /**
@@ -10,7 +10,7 @@ import { normalizeTranslationSymbols } from './translation-normalizer';
  * @param chapter 章节对象（可选，用于获取章节级别的设置，优先级高于书籍级别）
  * @returns 过滤后的翻译文本
  */
-export function filterIndents(
+function filterIndents(
   translation: string,
   book?: Novel,
   chapter?: Chapter,
@@ -59,5 +59,24 @@ export function formatTranslationForDisplay(
   }
 
   return result;
+}
+
+/**
+ * 读取段落的"当前选中"翻译文本并应用显示层格式化。
+ * 如果段落没有 selectedTranslationId 或没有匹配的 translation，返回空字符串。
+ */
+export function getSelectedParagraphTranslationText(
+  paragraph: Paragraph,
+  book?: Novel | null,
+  chapter?: Chapter | null,
+): string {
+  if (!paragraph.selectedTranslationId || !paragraph.translations) {
+    return '';
+  }
+  const selected = paragraph.translations.find(
+    (t) => t.id === paragraph.selectedTranslationId,
+  );
+  const translation = selected?.translation || '';
+  return formatTranslationForDisplay(translation, book || undefined, chapter || undefined);
 }
 

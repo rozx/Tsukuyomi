@@ -123,7 +123,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('应该初始化 composable', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -150,13 +150,13 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     expect(handleKeydown).toBeDefined();
   });
 
   it('应该处理 Ctrl+F / Cmd+F 打开搜索', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -183,7 +183,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     const event = createMockKeyboardEvent('f', { ctrlKey: true });
     handleKeydown(event);
@@ -198,7 +198,7 @@ describe('useKeyboardShortcuts', () => {
     const inputElement = new MockHTMLElement();
     inputElement.tagName = 'INPUT';
 
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -225,7 +225,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     isSearchVisible.value = true;
     const event = createMockKeyboardEvent('f', { ctrlKey: true, target: inputElement as any });
@@ -236,7 +236,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('应该处理 Ctrl+H / Cmd+H 切换替换', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -263,7 +263,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     isSearchVisible.value = true;
     const event = createMockKeyboardEvent('h', { ctrlKey: true });
@@ -276,7 +276,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('在章节内容区域按上下方向键时，应屏蔽默认滚动（仅翻译模式）', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -303,7 +303,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     // 模拟已选中章节，且当前在翻译模式
     selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
@@ -319,7 +319,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('在原文编辑模式按上下方向键时，不应屏蔽默认行为', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -346,7 +346,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
     editMode.value = 'original';
@@ -360,7 +360,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('在译文预览模式按上下方向键时，不应屏蔽默认行为', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -387,7 +387,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
     editMode.value = 'preview';
@@ -401,7 +401,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('在设置面板中按上下方向键时，不应屏蔽默认行为（允许滚动/组件导航）', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -428,7 +428,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
     selectedSettingMenu.value = 'terms';
@@ -447,7 +447,7 @@ describe('useKeyboardShortcuts', () => {
     // 只要调用 closest(...) 就返回非空，模拟在 overlay 内
     overlayTarget.closest = mock(() => overlayTarget as unknown as Element);
 
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -474,7 +474,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     selectedChapter.value = { id: 'chapter-1' } as unknown as Chapter;
     editMode.value = 'original';
@@ -488,7 +488,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('应该处理 F3 下一个匹配', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -515,7 +515,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     isSearchVisible.value = true;
     const event = createMockKeyboardEvent('F3');
@@ -528,7 +528,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('应该处理 Shift+F3 上一个匹配', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -555,7 +555,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     isSearchVisible.value = true;
     const event = createMockKeyboardEvent('F3', { shiftKey: true });
@@ -568,7 +568,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('应该处理 Escape 关闭搜索', () => {
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -595,7 +595,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     isSearchVisible.value = true;
     const event = createMockKeyboardEvent('Escape');
@@ -616,7 +616,7 @@ describe('useKeyboardShortcuts', () => {
       createdAt: new Date(),
     };
 
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -643,7 +643,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     const event = createMockKeyboardEvent('c', { ctrlKey: true, shiftKey: true });
     handleKeydown(event);
@@ -657,7 +657,7 @@ describe('useKeyboardShortcuts', () => {
   it('应该处理 Ctrl+Z 撤销', () => {
     const canUndoRef = computed(() => true);
 
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -680,11 +680,11 @@ describe('useKeyboardShortcuts', () => {
       findNextNonEmptyParagraph,
       navigateToParagraph,
       startEditingSelectedParagraph,
-      canUndoRef,
+      canUndo: canUndoRef,
       undo,
       canRedo,
       redo,
-    );
+    });
 
     const event = createMockKeyboardEvent('z', { ctrlKey: true });
     handleKeydown(event);
@@ -698,7 +698,7 @@ describe('useKeyboardShortcuts', () => {
   it('应该处理 Ctrl+Y 重做', () => {
     const canRedoRef = computed(() => true);
 
-    const { handleKeydown } = useKeyboardShortcuts(
+    const { handleKeydown } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -723,9 +723,9 @@ describe('useKeyboardShortcuts', () => {
       startEditingSelectedParagraph,
       canUndo,
       undo,
-      canRedoRef,
+      canRedo: canRedoRef,
       redo,
-    );
+    });
 
     const event = createMockKeyboardEvent('y', { ctrlKey: true });
     handleKeydown(event);
@@ -737,7 +737,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('应该处理点击事件', () => {
-    const { handleClick } = useKeyboardShortcuts(
+    const { handleClick } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -764,7 +764,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     isKeyboardNavigating.value = true;
     const target = new MockHTMLElement();
@@ -776,7 +776,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('应该处理鼠标移动事件', () => {
-    const { handleMouseMove } = useKeyboardShortcuts(
+    const { handleMouseMove } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -803,7 +803,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     isKeyboardNavigating.value = true;
     lastKeyboardNavigationTime.value = Date.now() - 3000; // 3秒前
@@ -816,7 +816,7 @@ describe('useKeyboardShortcuts', () => {
   });
 
   it('应该处理滚动事件', () => {
-    const { handleScroll } = useKeyboardShortcuts(
+    const { handleScroll } = useKeyboardShortcuts({
       isSearchVisible,
       toggleSearch,
       showReplace,
@@ -843,7 +843,7 @@ describe('useKeyboardShortcuts', () => {
       undo,
       canRedo,
       redo,
-    );
+    });
 
     isKeyboardNavigating.value = true;
     lastKeyboardNavigationTime.value = Date.now() - 3000; // 3秒前
