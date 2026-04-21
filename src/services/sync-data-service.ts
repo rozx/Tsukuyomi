@@ -92,6 +92,23 @@ function mergeUniqueStrings(
   return Array.from(new Set([...primaryItems, ...secondaryItems]));
 }
 
+/**
+ * 基于 lastEdited 判定是否采用远程版本。当两端都有时间戳时用较新者；
+ * 只缺一侧时走 `defaultWhenMissing`（download 路径默认 true，upload 路径默认 false）。
+ */
+function shouldUseRemoteByLastEdited(
+  localLastEdited: Date | number | string | undefined,
+  remoteLastEdited: Date | number | string | undefined,
+  defaultWhenMissing: boolean,
+): boolean {
+  if (localLastEdited && remoteLastEdited) {
+    const localTime = new Date(localLastEdited).getTime();
+    const remoteTime = new Date(remoteLastEdited).getTime();
+    return remoteTime > localTime;
+  }
+  return defaultWhenMissing;
+}
+
 function getMergeTimestamp(value: Date | number | string | undefined): number {
   if (value === undefined || value === null) {
     return 0;
@@ -844,18 +861,11 @@ export class SyncDataService {
 
     try {
       // 辅助函数：决定是否使用远程数据（总是使用最新的 lastEdited 时间）
+      // 下载合并路径缺时间戳时默认采用远程（假设远程较新）
       const shouldUseRemote = (
         localLastEdited?: Date | number | string,
         remoteLastEdited?: Date | number | string,
-      ): boolean => {
-        if (localLastEdited && remoteLastEdited) {
-          const localTime = new Date(localLastEdited).getTime();
-          const remoteTime = new Date(remoteLastEdited).getTime();
-          return remoteTime > localTime;
-        }
-        // 如果缺少时间戳，默认使用远程（假设远程是新的）
-        return true;
-      };
+      ): boolean => shouldUseRemoteByLastEdited(localLastEdited, remoteLastEdited, true);
 
       // 处理 AI 模型（确保 aiModels 是数组）
       // 使用删除记录列表来判断是否恢复已删除的模型
@@ -1721,18 +1731,11 @@ export class SyncDataService {
     }
 
     // 辅助函数：决定是否使用远程数据（总是使用最新的 lastEdited 时间）
+    // 上传合并路径缺时间戳时默认采用本地
     const shouldUseRemote = (
       localLastEdited?: Date | number | string,
       remoteLastEdited?: Date | number | string,
-    ): boolean => {
-      if (localLastEdited && remoteLastEdited) {
-        const localTime = new Date(localLastEdited).getTime();
-        const remoteTime = new Date(remoteLastEdited).getTime();
-        return remoteTime > localTime;
-      }
-      // 如果缺少时间戳，默认使用本地（因为我们要上传）
-      return false;
-    };
+    ): boolean => shouldUseRemoteByLastEdited(localLastEdited, remoteLastEdited, false);
 
     // 获取删除记录，用于检查远程独有项是否在本地被删除过
     const gistSync = GlobalConfig.getGistSyncSnapshot();
