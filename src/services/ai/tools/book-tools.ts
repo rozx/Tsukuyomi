@@ -279,6 +279,45 @@ async function handleAdjacentChapter(
   }
 }
 
+/**
+ * 构造 get_previous_chapter / get_next_chapter 工具定义。
+ * 两者参数结构完全一致，仅 name/description 与方向参数不同。
+ */
+function createAdjacentChapterTool(
+  name: 'get_previous_chapter' | 'get_next_chapter',
+  description: string,
+  direction: AdjacentChapterDirection,
+): ToolDefinition {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name,
+        description,
+        parameters: {
+          type: 'object',
+          properties: {
+            chapter_id: {
+              type: 'string',
+              description: '当前章节 ID',
+            },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
+            summary_only: {
+              type: 'boolean',
+              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
+            },
+          },
+          required: ['chapter_id'],
+        },
+      },
+    },
+    handler: (args, ctx) => handleAdjacentChapter(args, ctx, direction),
+  };
+}
+
 export const bookTools: ToolDefinition[] = [
   {
     definition: {
@@ -838,64 +877,16 @@ export const bookTools: ToolDefinition[] = [
       }
     },
   },
-  {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_previous_chapter',
-        description:
-          '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
-        parameters: {
-          type: 'object',
-          properties: {
-            chapter_id: {
-              type: 'string',
-              description: '当前章节 ID',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-            summary_only: {
-              type: 'boolean',
-              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
-            },
-          },
-          required: ['chapter_id'],
-        },
-      },
-    },
-    handler: (args, ctx) => handleAdjacentChapter(args, ctx, 'previous'),
-  },
-  {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_next_chapter',
-        description:
-          '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
-        parameters: {
-          type: 'object',
-          properties: {
-            chapter_id: {
-              type: 'string',
-              description: '当前章节 ID',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-            summary_only: {
-              type: 'boolean',
-              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
-            },
-          },
-          required: ['chapter_id'],
-        },
-      },
-    },
-    handler: (args, ctx) => handleAdjacentChapter(args, ctx, 'next'),
-  },
+  createAdjacentChapterTool(
+    'get_previous_chapter',
+    '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
+    'previous',
+  ),
+  createAdjacentChapterTool(
+    'get_next_chapter',
+    '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
+    'next',
+  ),
   {
     definition: {
       type: 'function',
