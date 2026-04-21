@@ -17,7 +17,11 @@ export const MAX_TASK_CHUNK_SIZE = 50000;
  *
  * 适用场景：书籍设置保存、UI 输入规范化
  */
-export function resolveTaskChunkSize(chunkSize?: number): number {
+/**
+ * resolveTaskChunkSize / resolveRuntimeTaskChunkSize 共用的钳制实现。
+ * 两者只在下限不同：持久化配置最小 MIN_TASK_CHUNK_SIZE (1000)，运行时参数最小 1。
+ */
+function clampChunkSize(chunkSize: number | undefined, minValue: number): number {
   if (chunkSize == null) {
     return DEFAULT_TASK_CHUNK_SIZE;
   }
@@ -29,14 +33,18 @@ export function resolveTaskChunkSize(chunkSize?: number): number {
   }
 
   const integerValue = Math.floor(normalized);
-  if (integerValue < MIN_TASK_CHUNK_SIZE) {
-    return MIN_TASK_CHUNK_SIZE;
+  if (integerValue < minValue) {
+    return minValue;
   }
   if (integerValue > MAX_TASK_CHUNK_SIZE) {
     return MAX_TASK_CHUNK_SIZE;
   }
 
   return integerValue;
+}
+
+export function resolveTaskChunkSize(chunkSize?: number): number {
+  return clampChunkSize(chunkSize, MIN_TASK_CHUNK_SIZE);
 }
 
 /**
@@ -53,25 +61,7 @@ export function resolveTaskChunkSize(chunkSize?: number): number {
  * 适用场景：翻译/润色/校对任务调用时传入的临时 chunkSize 参数
  */
 export function resolveRuntimeTaskChunkSize(chunkSize?: number): number {
-  if (chunkSize == null) {
-    return DEFAULT_TASK_CHUNK_SIZE;
-  }
-
-  const normalized = Number(chunkSize);
-
-  if (!Number.isFinite(normalized)) {
-    return DEFAULT_TASK_CHUNK_SIZE;
-  }
-
-  const integerValue = Math.floor(normalized);
-  if (integerValue < 1) {
-    return 1;
-  }
-  if (integerValue > MAX_TASK_CHUNK_SIZE) {
-    return MAX_TASK_CHUNK_SIZE;
-  }
-
-  return integerValue;
+  return clampChunkSize(chunkSize, 1);
 }
 
 /**
