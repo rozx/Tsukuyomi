@@ -1,6 +1,6 @@
 import { ChapterService, type ParagraphSearchResult } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
-import { useBooksStore } from 'src/stores/books';
+import type { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import {
@@ -18,6 +18,7 @@ import {
   collectChapterLocationsInRange,
   ensureChaptersLoaded,
   filterValidKeywords,
+  resolveBook,
   resolveBookAndParagraphLocation,
   resolveSearchRange,
 } from './paragraph-search-helpers';
@@ -233,6 +234,29 @@ function locateTranslationById(
 }
 
 /**
+ * `get_previous_paragraphs` 与 `get_next_paragraphs` 共享的参数 schema。
+ * 两者接受完全相同的 paragraph_id / count / include_memory 参数。
+ */
+const NEIGHBOR_PARAGRAPHS_PARAMETERS: ToolDefinition['definition']['function']['parameters'] = {
+  type: 'object',
+  properties: {
+    paragraph_id: {
+      type: 'string',
+      description: '段落 ID（当前段落的 ID）',
+    },
+    count: {
+      type: 'number',
+      description: '要获取的段落数量（默认 3）',
+    },
+    include_memory: {
+      type: 'boolean',
+      description: '是否在响应中包含相关的记忆信息（默认 true）',
+    },
+  },
+  required: ['paragraph_id'],
+};
+
+/**
  * `get_previous_paragraphs` 与 `get_next_paragraphs` 共享的处理逻辑。
  * 两者除了调用的 ChapterService 方法以及上报的 tool_name 外完全一致。
  */
@@ -248,10 +272,7 @@ async function handleNeighborParagraphs(
     ) => Promise<ParagraphSearchResult[]>;
   },
 ): Promise<string> {
-  const { bookId, onAction } = context;
-  if (!bookId) {
-    throw new Error('书籍 ID 不能为空');
-  }
+  const { bookId: rawBookId, onAction } = context;
   const {
     paragraph_id,
     count = 3,
@@ -265,11 +286,7 @@ async function handleNeighborParagraphs(
     throw new Error('段落 ID 不能为空');
   }
 
-  const booksStore = useBooksStore();
-  const book = booksStore.getBookById(bookId);
-  if (!book) {
-    throw new Error(`书籍不存在: ${bookId}`);
-  }
+  const { bookId, book } = resolveBook(rawBookId);
 
   // 检查起始段落是否在块边界内
   // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
@@ -756,24 +773,7 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'get_previous_paragraphs',
         description:
           '获取指定段落之前的若干个段落。用于查看当前段落之前的上下文，帮助理解文本的连贯性。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID（当前段落的 ID）',
-            },
-            count: {
-              type: 'number',
-              description: '要获取的段落数量（默认 3）',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-          },
-          required: ['paragraph_id'],
-        },
+        parameters: NEIGHBOR_PARAGRAPHS_PARAMETERS,
       },
     },
     handler: async (args, context) =>
@@ -790,24 +790,7 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'get_next_paragraphs',
         description:
           '获取指定段落之后的若干个段落。用于查看当前段落之后的上下文，帮助理解文本的连贯性。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID（当前段落的 ID）',
-            },
-            count: {
-              type: 'number',
-              description: '要获取的段落数量（默认 3）',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-          },
-          required: ['paragraph_id'],
-        },
+        parameters: NEIGHBOR_PARAGRAPHS_PARAMETERS,
       },
     },
     handler: async (args, context) =>
@@ -865,10 +848,7 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+    handler: async (args, { bookId: rawBookId, onAction }) => {
       const {
         keywords,
         translation_keywords,
@@ -902,11 +882,7 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error('必须提供至少一个有效的关键词数组');
       }
 
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const { bookId, book } = resolveBook(rawBookId);
 
       // 报告读取操作
       if (onAction) {
@@ -1147,10 +1123,7 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+    handler: async (args, { bookId: rawBookId, onAction }) => {
       const {
         regex_pattern,
         chapter_id,
@@ -1172,11 +1145,7 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error('正则表达式模式不能为空');
       }
 
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const { bookId, book } = resolveBook(rawBookId);
 
       // 验证正则表达式是否有效
       try {
@@ -1768,10 +1737,7 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+    handler: async (args, { bookId: rawBookId, onAction }) => {
       const {
         keywords,
         original_keywords,
@@ -1806,11 +1772,7 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error('必须提供至少一个有效的关键词数组');
       }
 
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const { bookId, book, booksStore } = resolveBook(rawBookId);
 
       const buildEmptyResult = (message: string): string =>
         JSON.stringify({

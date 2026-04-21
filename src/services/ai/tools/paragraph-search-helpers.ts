@@ -11,6 +11,29 @@ export interface ChapterLocation {
 }
 
 /**
+ * 工具前置流程：校验 bookId → 查找书籍。
+ * 硬错误（bookId 为空、书不存在）通过 throw 抛出。
+ * 供仅需书籍上下文（不定位段落）的工具处理器复用。
+ */
+export function resolveBook(bookId: string | undefined): {
+  bookId: string;
+  book: Novel;
+  booksStore: ReturnType<typeof useBooksStore>;
+} {
+  if (!bookId) {
+    throw new Error('书籍 ID 不能为空');
+  }
+
+  const booksStore = useBooksStore();
+  const book = booksStore.getBookById(bookId);
+  if (!book) {
+    throw new Error(`书籍不存在: ${bookId}`);
+  }
+
+  return { bookId, book, booksStore };
+}
+
+/**
  * 工具前置流程：校验 bookId / paragraph_id → 查找书籍 → 异步定位目标段落。
  * 硬错误（bookId / paragraph_id 为空、书不存在）通过 throw 抛出；
  * 段落不存在以 { ok: false, response } 返回，response 已 JSON.stringify 好，
@@ -29,20 +52,13 @@ export async function resolveBookAndParagraphLocation(
     }
   | { ok: false; response: string }
 > {
-  if (!bookId) {
-    throw new Error('书籍 ID 不能为空');
-  }
   if (!paragraph_id) {
     throw new Error('段落 ID 不能为空');
   }
 
-  const booksStore = useBooksStore();
-  const book = booksStore.getBookById(bookId);
-  if (!book) {
-    throw new Error(`书籍不存在: ${bookId}`);
-  }
+  const resolved = resolveBook(bookId);
 
-  const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+  const location = await ChapterService.findParagraphLocationAsync(resolved.book, paragraph_id);
   if (!location) {
     return {
       ok: false,
@@ -53,7 +69,7 @@ export async function resolveBookAndParagraphLocation(
     };
   }
 
-  return { ok: true, bookId, book, booksStore, location };
+  return { ok: true, ...resolved, location };
 }
 
 /**
