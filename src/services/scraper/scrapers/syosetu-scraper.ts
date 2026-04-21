@@ -22,6 +22,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
    * @param url 要验证的 URL
    * @returns 是否为有效的 URL
    */
+  // fallow-ignore-next-line unused-class-member
   isValidUrl(url: string): boolean {
     return SyosetuScraper.NOVEL_URL_PATTERN.test(url);
   }
@@ -56,9 +57,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
   /**
    * 从小说主页 URL 拉取 HTML 并解析为 SyosetuNovelInfo
    */
-  protected override async parseNovelInfoFromUrl(
-    novelIndexUrl: string,
-  ): Promise<SyosetuNovelInfo> {
+  protected override async parseNovelInfoFromUrl(novelIndexUrl: string): Promise<SyosetuNovelInfo> {
     // syosetu.org 在浏览器环境下通过 /api/syosetu 服务器代理访问
     const html = await this.fetchPage(novelIndexUrl, '/api/syosetu');
     return this.parseNovelPage(html, novelIndexUrl);
@@ -299,7 +298,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
     // 提取描述
     // 优先从 div#maind 中的 .ss div 提取完整描述（而不是被截断的 meta 标签）
     let description: string | undefined;
-    
+
     // 首先尝试从 div#maind 中的 .ss div 中提取描述（完整内容）
     const maind = $('#maind');
     if (maind.length > 0) {
@@ -327,7 +326,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
         }
       }
     }
-    
+
     // 如果从 .ss div 中没有提取到描述，回退到其他选择器
     if (!description) {
       description = $('.novel_ex').first().text().trim();
@@ -349,7 +348,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
 
     // 提取标签
     const tags: string[] = [];
-    
+
     // 首先尝试从第一个 .ss div 中提取标签（格式：タグ：<a class="alert_color">...</a>）
     const firstSsDiv = $('.ss').first();
     if (firstSsDiv.length > 0) {
@@ -374,7 +373,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
           }
         }
       });
-      
+
       // 如果找到了标签，也尝试从该 div 中查找所有 alert_color 链接（以防万一）
       if (tags.length === 0) {
         firstSsDiv.find('a.alert_color').each((_, el) => {
@@ -385,7 +384,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
         });
       }
     }
-    
+
     // 回退到原有的选择器
     if (tags.length === 0) {
       $('.tag, .novel_tag, [class*="tag"]').each((_, el) => {

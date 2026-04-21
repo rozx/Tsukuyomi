@@ -2,10 +2,7 @@ import * as cheerio from 'cheerio';
 import type { Novel } from 'src/models/novel';
 import type { ParsedChapterInfo, ParsedNovelInfo } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
-import {
-  extractParagraphText,
-  extractTextWithFormatting,
-} from '../core/cheerio-text-extract';
+import { extractParagraphText, extractTextWithFormatting } from '../core/cheerio-text-extract';
 
 /**
  * ncode.syosetu.com 小说爬虫服务
@@ -27,6 +24,7 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
    * @param url 要验证的 URL
    * @returns 是否为有效的 URL
    */
+  // fallow-ignore-next-line unused-class-member
   isValidUrl(url: string): boolean {
     return NcodeSyosetuScraper.NOVEL_URL_PATTERN.test(url);
   }

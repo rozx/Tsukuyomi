@@ -59,6 +59,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
   /**
    * 验证 URL 是否为有效的 kakuyomu.jp 小说 URL
    */
+  // fallow-ignore-next-line unused-class-member
   isValidUrl(url: string): boolean {
     return KakuyomuScraper.NOVEL_URL_PATTERN.test(url);
   }
@@ -89,9 +90,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
   /**
    * 从小说主页 URL 拉取 HTML 并解析嵌入的 Next.js 数据
    */
-  protected override async parseNovelInfoFromUrl(
-    novelIndexUrl: string,
-  ): Promise<ParsedNovelInfo> {
+  protected override async parseNovelInfoFromUrl(novelIndexUrl: string): Promise<ParsedNovelInfo> {
     const html = await this.fetchPage(novelIndexUrl);
 
     // 调试：记录返回的 HTML 信息
@@ -136,14 +135,13 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
       }
     });
 
-    const extractText = (el: cheerio.Cheerio<any>) =>
-      this.extractTextFromElement($, el);
+    const extractText = (el: cheerio.Cheerio<any>) => this.extractTextFromElement($, el);
 
     // 提取所有段落 <p> 标签
     // 每个普通 <p> 标签作为新的一行（单换行）
     // 只有 class="blank" 的 <p> 才作为段落分隔（双换行）
     let currentParagraph = '';
-    
+
     contentElement.find('p').each((_, el) => {
       const $p = $(el);
       const hasBlankClass = $p.hasClass('blank');
@@ -298,11 +296,11 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
     // 优先从 workData 获取完整描述（避免被截断）
     // workData.introduction 应该包含完整的描述，不会被"続きを読む"截断
     let description: string | undefined;
-    
+
     // 优先使用 workData 中的 catchphrase 和 introduction
     const catchphrase = workData.catchphrase || this.extractCatchphrase($);
     const introduction = workData.introduction;
-    
+
     if (introduction && introduction.trim().length > 0) {
       // 如果 introduction 存在，合并 catchphrase 和 introduction
       if (catchphrase) {
@@ -400,10 +398,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
   /**
    * 从 DOM 元素中递归提取纯文本，保留 <br> 换行，将 <ruby> 注音转为 漢字(かんじ) 格式
    */
-  private extractTextFromElement(
-    $: cheerio.CheerioAPI,
-    element: cheerio.Cheerio<any>,
-  ): string {
+  private extractTextFromElement($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): string {
     let text = '';
 
     element.contents().each((_, node: any) => {
