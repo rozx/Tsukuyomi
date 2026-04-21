@@ -668,6 +668,81 @@ export function useChapterTranslation(
   };
 
   /**
+   * 整章翻译流程的公共前置步骤：校验翻译模型可用性、初始化翻译状态，并切换右侧面板到进度 Tab。
+   * - 模型不可用时推送 toast 并返回 null（调用方据此提前退出，不抛异常）
+   * - 成功时返回解析好的上下文供调用方继续使用
+   */
+  const prepareTranslationRun = (
+    currentChapter: Chapter,
+    currentBook: Novel,
+  ): {
+    selectedModel: AIModel;
+    targetChapterId: string;
+    targetBookId: string;
+    state: ChapterTranslationState;
+  } | null => {
+    const selectedModel = aiModelsStore.getDefaultModelForTask('translation');
+    if (!selectedModel) {
+      toast.add({
+        severity: 'error',
+        summary: '翻译失败',
+        detail: '未找到可用的翻译模型，请在设置中配置',
+        life: 3000,
+      });
+      return null;
+    }
+
+    const targetChapterId = currentChapter.id;
+    const targetBookId = currentBook.id;
+    const state = getOrCreateTranslationState(targetChapterId);
+
+    state.isTranslating = true;
+    state.translatingParagraphIds.clear();
+    uiStore.setActiveRightTab('progress');
+
+    return { selectedModel, targetChapterId, targetBookId, state };
+  };
+
+  /**
+   * 整章翻译两个入口（translateAllParagraphs / continueTranslation）共用的
+   * TranslationService.translate options 构造器。集中处理条件字段 (chapterTitle /
+   * customInstructions / chunkSize) 的可选展开，以及 aiProcessingStore 适配。
+   * 调用方需传入各自的段落/标题/进度回调，以保留各自的增量更新策略。
+   */
+  type TranslationServiceOptionsArg = NonNullable<
+    Parameters<typeof TranslationService.translate>[2]
+  >;
+  const buildTranslationServiceOptions = (params: {
+    bookId: string;
+    chapterId: string;
+    chapterTitle: string | undefined;
+    customInstructions: string | undefined;
+    chunkSize: number | undefined;
+    signal: AbortSignal;
+    onProgress: NonNullable<TranslationServiceOptionsArg['onProgress']>;
+    onParagraphTranslation: NonNullable<TranslationServiceOptionsArg['onParagraphTranslation']>;
+    onTitleTranslation: NonNullable<TranslationServiceOptionsArg['onTitleTranslation']>;
+    onAction: NonNullable<TranslationServiceOptionsArg['onAction']>;
+    onToast: NonNullable<TranslationServiceOptionsArg['onToast']>;
+  }): TranslationServiceOptionsArg => ({
+    bookId: params.bookId,
+    chapterId: params.chapterId,
+    ...(params.chapterTitle ? { chapterTitle: params.chapterTitle } : {}),
+    ...(params.customInstructions !== undefined
+      ? { customInstructions: params.customInstructions }
+      : {}),
+    ...(params.chunkSize !== undefined ? { chunkSize: params.chunkSize } : {}),
+    allChapterParagraphs: selectedChapterParagraphs.value,
+    signal: params.signal,
+    aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
+    onProgress: params.onProgress,
+    onParagraphTranslation: params.onParagraphTranslation,
+    onTitleTranslation: params.onTitleTranslation,
+    onAction: params.onAction,
+    onToast: params.onToast,
+  });
+
+  /**
    * 生成单段落润色/校对服务共用的 options 字典。两个服务接收完全相同的字段，
    * 这里集中构造，避免每个调用点重复 9 行样板。
    */
@@ -904,25 +979,10 @@ export function useChapterTranslation(
       return;
     }
 
-    // 检查是否有可用的翻译模型
-    const selectedModel = aiModelsStore.getDefaultModelForTask('translation');
-    if (!selectedModel) {
-      toast.add({
-        severity: 'error',
-        summary: '翻译失败',
-        detail: '未找到可用的翻译模型，请在设置中配置',
-        life: 3000,
-      });
-      return;
-    }
-
-    const targetChapterId = selectedChapter.value.id;
-    const targetBookId = book.value.id;
-    const state = getOrCreateTranslationState(targetChapterId);
-
-    state.isTranslating = true;
-    state.translatingParagraphIds.clear();
-    uiStore.setActiveRightTab('progress');
+    // 复用翻译前置准备：模型校验 + 状态初始化 + 切换进度 Tab
+    const prep = prepareTranslationRun(selectedChapter.value, book.value);
+    if (!prep) return;
+    const { selectedModel, targetChapterId, targetBookId, state } = prep;
 
     const paragraphs = selectedChapterParagraphs.value;
     const nonEmptyParagraphs = paragraphs.filter((para) => !isEmptyParagraph(para.text));
@@ -960,99 +1020,99 @@ export function useChapterTranslation(
       const chunkSize = book.value?.translationChunkSize;
 
       // 调用翻译服务
-      const result = await TranslationService.translate(paragraphs, selectedModel, {
-        bookId: book.value.id,
-        chapterId: targetChapterId,
-        ...(chapterTitle ? { chapterTitle } : {}),
-        ...(customInstructions?.translationInstructions !== undefined
-          ? { customInstructions: customInstructions.translationInstructions }
-          : {}),
-        ...(chunkSize !== undefined ? { chunkSize } : {}),
-        allChapterParagraphs: selectedChapterParagraphs.value,
-        signal: abortController.signal,
-        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
-        onProgress: (progress) => {
-          const newProgress = {
-            current: state.progress.current,
-            total: state.progress.total,
-            message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
-          };
-          state.progress = newProgress;
-          syncProgressToStore('translation', targetChapterId, newProgress);
-          // 更新正在翻译的段落 ID
-          if (progress.currentParagraphs) {
-            state.translatingParagraphIds = new Set(progress.currentParagraphs);
-          }
-          console.debug('翻译进度:', progress);
-        },
-        onAction: (action) => {
-          handleActionInfoToast(action, { severity: 'success', life: 4000, withRevert: true });
-        },
-        onToast: (message) => {
-          // 工具可以直接显示 toast
-          toast.add(message);
-        },
-        onParagraphTranslation: async (translations) => {
-          // 性能优化：使用 skipSave 模式，只更新内存，不立即保存到 IndexedDB
-          // 这样可以避免每个 chunk 都触发一次完整的保存流程
-          const chapterToSave = await updateParagraphsAndSave(
-            new Map(
-              translations.map((t) => [
-                t.id,
-                {
-                  translation: t.translation,
-                  ...(t.referencedMemories ? { referencedMemories: t.referencedMemories } : {}),
-                  ...(t.memoryScoreBreakdown
-                    ? { memoryScoreBreakdown: t.memoryScoreBreakdown }
-                    : {}),
-                },
-              ]),
-            ),
-            selectedModel.id,
-            targetChapterId,
-            {
-              updateSelected: true,
-              skipSave: true, // 跳过保存，只更新内存
-              targetBookId,
-            },
-          );
-
-          // 保存最新的章节对象，用于最后的批量保存
-          if (chapterToSave) {
-            latestChapterForBatchSave = chapterToSave;
-          }
-
-          // 记录已应用的翻译
-          for (const pt of translations) {
-            lastAppliedTranslations.set(pt.id, pt.translation);
-            if (targetParagraphIds.has(pt.id)) {
-              completedParagraphIds.add(pt.id);
+      const result = await TranslationService.translate(
+        paragraphs,
+        selectedModel,
+        buildTranslationServiceOptions({
+          bookId: book.value.id,
+          chapterId: targetChapterId,
+          chapterTitle,
+          customInstructions: customInstructions?.translationInstructions,
+          chunkSize,
+          signal: abortController.signal,
+          onProgress: (progress) => {
+            const newProgress = {
+              current: state.progress.current,
+              total: state.progress.total,
+              message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
+            };
+            state.progress = newProgress;
+            syncProgressToStore('translation', targetChapterId, newProgress);
+            // 更新正在翻译的段落 ID
+            if (progress.currentParagraphs) {
+              state.translatingParagraphIds = new Set(progress.currentParagraphs);
             }
-          }
+            console.debug('翻译进度:', progress);
+          },
+          onAction: (action) => {
+            handleActionInfoToast(action, { severity: 'success', life: 4000, withRevert: true });
+          },
+          onToast: (message) => {
+            // 工具可以直接显示 toast
+            toast.add(message);
+          },
+          onParagraphTranslation: async (translations) => {
+            // 性能优化：使用 skipSave 模式，只更新内存，不立即保存到 IndexedDB
+            // 这样可以避免每个 chunk 都触发一次完整的保存流程
+            const chapterToSave = await updateParagraphsAndSave(
+              new Map(
+                translations.map((t) => [
+                  t.id,
+                  {
+                    translation: t.translation,
+                    ...(t.referencedMemories ? { referencedMemories: t.referencedMemories } : {}),
+                    ...(t.memoryScoreBreakdown
+                      ? { memoryScoreBreakdown: t.memoryScoreBreakdown }
+                      : {}),
+                  },
+                ]),
+              ),
+              selectedModel.id,
+              targetChapterId,
+              {
+                updateSelected: true,
+                skipSave: true, // 跳过保存，只更新内存
+                targetBookId,
+              },
+            );
 
-          const updatedProgress = {
-            current: completedParagraphIds.size,
-            total: targetParagraphIds.size,
-            message: state.progress.message,
-          };
-          state.progress = updatedProgress;
-          syncProgressToStore('translation', targetChapterId, updatedProgress);
+            // 保存最新的章节对象，用于最后的批量保存
+            if (chapterToSave) {
+              latestChapterForBatchSave = chapterToSave;
+            }
 
-          // 从正在翻译的集合中移除已完成的段落 ID
-          translations.forEach((pt) => {
-            state.translatingParagraphIds.delete(pt.id);
-          });
-        },
-        onTitleTranslation: async (translation) => {
-          // 立即更新标题翻译（不等待整个翻译完成）
-          await updateTitleTranslation(
-            translation,
-            selectedModel.id,
-            targetChapterId,
-            targetBookId,
-          );
-        },
-      });
+            // 记录已应用的翻译
+            for (const pt of translations) {
+              lastAppliedTranslations.set(pt.id, pt.translation);
+              if (targetParagraphIds.has(pt.id)) {
+                completedParagraphIds.add(pt.id);
+              }
+            }
+
+            const updatedProgress = {
+              current: completedParagraphIds.size,
+              total: targetParagraphIds.size,
+              message: state.progress.message,
+            };
+            state.progress = updatedProgress;
+            syncProgressToStore('translation', targetChapterId, updatedProgress);
+
+            // 从正在翻译的集合中移除已完成的段落 ID
+            translations.forEach((pt) => {
+              state.translatingParagraphIds.delete(pt.id);
+            });
+          },
+          onTitleTranslation: async (translation) => {
+            // 立即更新标题翻译（不等待整个翻译完成）
+            await updateTitleTranslation(
+              translation,
+              selectedModel.id,
+              targetChapterId,
+              targetBookId,
+            );
+          },
+        }),
+      );
 
       toast.add({
         severity: 'success',
@@ -1130,25 +1190,10 @@ export function useChapterTranslation(
       return;
     }
 
-    // 检查是否有可用的翻译模型
-    const selectedModel = aiModelsStore.getDefaultModelForTask('translation');
-    if (!selectedModel) {
-      toast.add({
-        severity: 'error',
-        summary: '翻译失败',
-        detail: '未找到可用的翻译模型，请在设置中配置',
-        life: 3000,
-      });
-      return;
-    }
-
-    const targetChapterId = selectedChapter.value.id;
-    const targetBookId = book.value.id;
-    const state = getOrCreateTranslationState(targetChapterId);
-
-    state.isTranslating = true;
-    state.translatingParagraphIds.clear();
-    uiStore.setActiveRightTab('progress');
+    // 复用翻译前置准备：模型校验 + 状态初始化 + 切换进度 Tab
+    const prep = prepareTranslationRun(selectedChapter.value, book.value);
+    if (!prep) return;
+    const { selectedModel, targetChapterId, targetBookId, state } = prep;
 
     const targetParagraphIds = new Set(untranslatedParagraphs.map((para) => para.id));
 
@@ -1177,64 +1222,69 @@ export function useChapterTranslation(
       const chunkSize = book.value?.translationChunkSize;
 
       // 调用翻译服务，只翻译未翻译的段落
-      await TranslationService.translate(untranslatedParagraphs, selectedModel, {
-        bookId: book.value.id,
-        chapterId: targetChapterId,
-        ...(chapterTitle ? { chapterTitle } : {}),
-        ...(customInstructions?.translationInstructions !== undefined
-          ? { customInstructions: customInstructions.translationInstructions }
-          : {}),
-        ...(chunkSize !== undefined ? { chunkSize } : {}),
-        allChapterParagraphs: selectedChapterParagraphs.value,
-        signal: abortController.signal,
-        aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
-        onProgress: (progress) => {
-          const newProgress = {
-            current: state.progress.current,
-            total: state.progress.total,
-            message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
-          };
-          state.progress = newProgress;
-          syncProgressToStore('translation', targetChapterId, newProgress);
-          // 更新正在翻译的段落 ID
-          if (progress.currentParagraphs) {
-            state.translatingParagraphIds = new Set(progress.currentParagraphs);
-          }
-          console.debug('翻译进度:', progress);
-        },
-        onParagraphTranslation: (translations) => {
-          applyIncrementalAndTrackCompletion(
-            translations,
-            {
-              aiModelId: selectedModel.id,
+      await TranslationService.translate(
+        untranslatedParagraphs,
+        selectedModel,
+        buildTranslationServiceOptions({
+          bookId: book.value.id,
+          chapterId: targetChapterId,
+          chapterTitle,
+          customInstructions: customInstructions?.translationInstructions,
+          chunkSize,
+          signal: abortController.signal,
+          onProgress: (progress) => {
+            const newProgress = {
+              current: state.progress.current,
+              total: state.progress.total,
+              message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
+            };
+            state.progress = newProgress;
+            syncProgressToStore('translation', targetChapterId, newProgress);
+            // 更新正在翻译的段落 ID
+            if (progress.currentParagraphs) {
+              state.translatingParagraphIds = new Set(progress.currentParagraphs);
+            }
+            console.debug('翻译进度:', progress);
+          },
+          onParagraphTranslation: (translations) => {
+            applyIncrementalAndTrackCompletion(
+              translations,
+              {
+                aiModelId: selectedModel.id,
+                targetChapterId,
+                targetBookId,
+                lastAppliedTranslations,
+                targetParagraphIds,
+                completedParagraphIds,
+              },
+              () => {
+                const updatedProgress = {
+                  current: completedParagraphIds.size,
+                  total: targetParagraphIds.size,
+                  message: state.progress.message,
+                };
+                state.progress = updatedProgress;
+                syncProgressToStore('translation', targetChapterId, updatedProgress);
+              },
+            );
+          },
+          onTitleTranslation: (translation) => {
+            // 立即更新标题翻译（不等待整个翻译完成）
+            void updateTitleTranslation(
+              translation,
+              selectedModel.id,
               targetChapterId,
               targetBookId,
-              lastAppliedTranslations,
-              targetParagraphIds,
-              completedParagraphIds,
-            },
-            () => {
-              const updatedProgress = {
-                current: completedParagraphIds.size,
-                total: targetParagraphIds.size,
-                message: state.progress.message,
-              };
-              state.progress = updatedProgress;
-              syncProgressToStore('translation', targetChapterId, updatedProgress);
-            },
-          );
-        },
-        onTitleTranslation: (translation) => {
-          // 立即更新标题翻译（不等待整个翻译完成）
-          void updateTitleTranslation(translation, selectedModel.id, targetChapterId, targetBookId);
-        },
-        onAction: (action) => {
-          handleActionInfoToast(action, { severity: 'info' });
-        },
-        onToast: (message) => {
-          toast.add(message);
-        },
-      });
+            );
+          },
+          onAction: (action) => {
+            handleActionInfoToast(action, { severity: 'info' });
+          },
+          onToast: (message) => {
+            toast.add(message);
+          },
+        }),
+      );
 
       // 所有段落都已通过 onParagraphTranslation 回调立即更新
       const totalTranslatedCount = lastAppliedTranslations.size;
@@ -1668,10 +1718,7 @@ export function useChapterTranslation(
   watch(
     () =>
       aiProcessingStore.activeTasks
-        .filter(
-          (t) =>
-            t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading',
-        )
+        .filter((t) => t.type === 'translation' || t.type === 'polish' || t.type === 'proofreading')
         .map((t) => `${t.id}:${t.status}:${t.type}:${t.chapterId ?? ''}`)
         .join(','),
     (newKey, oldKey) => {
