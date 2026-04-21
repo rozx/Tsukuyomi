@@ -1,5 +1,23 @@
 import { MemoryService } from 'src/services/memory-service';
+import type { Memory } from 'src/models/memory';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
+
+/**
+ * 校验 memory_id 并获取对应 Memory；未提供 ID 或记录不存在时抛错
+ *
+ * 由 get_memory / update_memory / delete_memory 共用的前置校验，
+ * 抛出的错误会被调用方的 try/catch 统一包装成 error JSON。
+ */
+async function requireMemoryById(bookId: string, memoryId: string | undefined): Promise<Memory> {
+  if (!memoryId) {
+    throw new Error('Memory ID 不能为空');
+  }
+  const memory = await MemoryService.getMemory(bookId, memoryId);
+  if (!memory) {
+    throw new Error(`Memory 不存在: ${memoryId}`);
+  }
+  return memory;
+}
 
 function createListMemoriesHandler(toolName: 'list_memories') {
   return async (args: Record<string, unknown>, context: ToolContext) => {
@@ -151,22 +169,9 @@ export const memoryTools: ToolDefinition[] = [
         });
       }
       const { memory_id } = parsedArgs;
-      if (!memory_id) {
-        return JSON.stringify({
-          success: false,
-          error: 'Memory ID 不能为空',
-        });
-      }
 
       try {
-        const memory = await MemoryService.getMemory(bookId, memory_id);
-
-        if (!memory) {
-          return JSON.stringify({
-            success: false,
-            error: `Memory 不存在: ${memory_id}`,
-          });
-        }
+        const memory = await requireMemoryById(bookId, memory_id);
 
         // 报告读取操作
         if (onAction) {
@@ -385,12 +390,6 @@ export const memoryTools: ToolDefinition[] = [
         content: string;
         summary: string;
       };
-      if (!memory_id) {
-        return JSON.stringify({
-          success: false,
-          error: 'Memory ID 不能为空',
-        });
-      }
       if (!content?.trim()) {
         return JSON.stringify({
           success: false,
@@ -406,13 +405,7 @@ export const memoryTools: ToolDefinition[] = [
 
       try {
         // 在更新前获取 Memory 信息，以便在 action 中显示
-        const oldMemory = await MemoryService.getMemory(bookId, memory_id);
-        if (!oldMemory) {
-          return JSON.stringify({
-            success: false,
-            error: `Memory 不存在: ${memory_id}`,
-          });
-        }
+        const oldMemory = await requireMemoryById(bookId, memory_id);
 
         const memory = await MemoryService.updateMemory(
           bookId,
@@ -480,22 +473,10 @@ export const memoryTools: ToolDefinition[] = [
       const { memory_id } = args as {
         memory_id: string;
       };
-      if (!memory_id) {
-        return JSON.stringify({
-          success: false,
-          error: 'Memory ID 不能为空',
-        });
-      }
 
       try {
         // 在删除前获取 Memory 信息，以便在 action 中显示
-        const memory = await MemoryService.getMemory(bookId, memory_id);
-        if (!memory) {
-          return JSON.stringify({
-            success: false,
-            error: `Memory 不存在: ${memory_id}`,
-          });
-        }
+        const memory = await requireMemoryById(bookId, memory_id);
 
         await MemoryService.deleteMemory(bookId, memory_id);
 
