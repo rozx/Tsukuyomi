@@ -93,6 +93,10 @@ export async function getAllBookMemoriesFromDB(bookId: string): Promise<Memory[]
 /**
  * 只写入 embedding 字段（不更新 lastAccessedAt，不影响同步 dirty flag）。
  * 不同步 MemoryService 缓存、不派发事件 —— 见文件头注释。
+ *
+ * 错误处理：失败时抛出（配额、事务中止等），不吞掉。调用方（MemoryService.updateMemoryEmbeddingOnly
+ * 与 EmbeddingQueue.processMemoryBatch）各自 try/catch 决定是否跳过缓存同步 / 事件派发。
+ * 早期在此吞错会导致 IDB 写失败但缓存标记"已嵌入"，UI 读到假阳性。
  */
 export async function updateMemoryEmbeddingInDB(
   memoryId: string,
@@ -103,13 +107,10 @@ export async function updateMemoryEmbeddingInDB(
   if (!embedding || embedding.length === 0) throw new Error('embedding 不能为空');
   if (!embeddingModel) throw new Error('embeddingModel 不能为空');
 
-  try {
-    const db = await getDB();
-    const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
-    if (!existing) return;
-    const updated: MemoryStorage = { ...existing, embedding, embeddingModel };
-    await db.put('memories', updated);
-  } catch (error) {
-    console.warn(`[memory-embedding-lookup] 写入 embedding 失败 (${memoryId}):`, error);
-  }
+  const db = await getDB();
+  const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
+  // 记录被删除是合法状态（不是错误），直接 return；缓存侧也没有东西要更新
+  if (!existing) return;
+  const updated: MemoryStorage = { ...existing, embedding, embeddingModel };
+  await db.put('memories', updated);
 }
