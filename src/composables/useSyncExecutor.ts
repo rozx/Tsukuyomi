@@ -78,6 +78,25 @@ export function useSyncExecutor() {
   const gistSyncService = new GistSyncService();
 
   /**
+   * 下载阶段进度回调工厂：把 0..progress.total 线性映射到 [0, DOWNLOAD_PHASE_MAX]。
+   * executeSync / executeForceSync 都把该回调传进 downloadFromGistWithManifest。
+   */
+  const makeDownloadProgressHandler =
+    (prefixMsg: (msg: string) => string) =>
+    (progress: { current: number; total: number; message: string }): void => {
+      const mapped =
+        progress.total > 0
+          ? Math.round((progress.current / progress.total) * DOWNLOAD_PHASE_MAX)
+          : 0;
+      settingsStore.updateSyncProgress({
+        stage: 'downloading',
+        current: mapped,
+        total: OVERALL_TOTAL,
+        message: prefixMsg(progress.message),
+      });
+    };
+
+  /**
    * 收集所有书籍的 memories，按 bookId 分组
    */
   const collectMemoriesByBook = async (): Promise<Record<string, Memory[]>> => {
@@ -245,18 +264,7 @@ export function useSyncExecutor() {
         try {
           downloadResult = await gistSyncService.downloadFromGistWithManifest(
             config,
-            (progress) => {
-              const mapped =
-                progress.total > 0
-                  ? Math.round((progress.current / progress.total) * DOWNLOAD_PHASE_MAX)
-                  : 0;
-              settingsStore.updateSyncProgress({
-                stage: 'downloading',
-                current: mapped,
-                total: OVERALL_TOTAL,
-                message: prefixMsg(progress.message),
-              });
-            },
+            makeDownloadProgressHandler(prefixMsg),
           );
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : '下载时发生未知错误';
@@ -636,18 +644,7 @@ export function useSyncExecutor() {
       const forceFetchConfig: SyncConfig = configWithoutETag;
       const downloadResult = await gistSyncService.downloadFromGistWithManifest(
         forceFetchConfig,
-        (progress) => {
-          const mapped =
-            progress.total > 0
-              ? Math.round((progress.current / progress.total) * DOWNLOAD_PHASE_MAX)
-              : 0;
-          settingsStore.updateSyncProgress({
-            stage: 'downloading',
-            current: mapped,
-            total: OVERALL_TOTAL,
-            message: prefixMsg(progress.message),
-          });
-        },
+        makeDownloadProgressHandler(prefixMsg),
       );
       if (downloadResult.skipped) {
         // 绕过 ETag 后理论上不会走 304；保底兜底：没拿到 snapshot 直接上传所有本地条目
