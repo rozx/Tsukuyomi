@@ -689,6 +689,39 @@ export class GistSyncService {
   }
 
   /**
+   * 执行 Gist 批量创建的后续 update 批次，失败时统一打印 + 抛出一致性错误。
+   * 封装两处重复的 try/catch 块（创建新 Gist 的续批 / 分批创建的续批）。
+   */
+  private async runCreateBatchUpdate(
+    gistId: string,
+    batchFiles: Record<string, { content: string }>,
+    batchIndex: number,
+    totalCreateBatches: number,
+  ): Promise<void> {
+    if (!this.octokit) {
+      throw new Error('Octokit 客户端未初始化');
+    }
+    try {
+      await this.octokit.rest.gists.update({
+        gist_id: gistId,
+        files: batchFiles,
+      });
+    } catch (batchError) {
+      console.error(
+        `[GistSyncService] 创建批次 ${batchIndex + 1}/${totalCreateBatches} 失败，` +
+          `已完成 ${batchIndex}/${totalCreateBatches} 个批次。` +
+          `Gist 可能处于不一致状态。`,
+        batchError,
+      );
+      throw new Error(
+        `Gist 批量创建在第 ${batchIndex + 1}/${totalCreateBatches} 批次失败，` +
+          `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。` +
+          (batchError instanceof Error ? ` 原因: ${batchError.message}` : ''),
+      );
+    }
+  }
+
+  /**
    * 解析未分块的书籍文件（含截断 raw_url 回退 + gzip 解压 + 日期反序列化）。
    *
    * 返回值区分三种失败：
@@ -1395,25 +1428,8 @@ export class GistSyncService {
           const totalCreateBatches = Math.ceil(createEntries.length / CREATE_BATCH_SIZE);
           for (let i = CREATE_BATCH_SIZE; i < createEntries.length; i += CREATE_BATCH_SIZE) {
             const batchIndex = Math.floor(i / CREATE_BATCH_SIZE);
-            try {
-              const batchFiles = Object.fromEntries(createEntries.slice(i, i + CREATE_BATCH_SIZE));
-              await this.octokit.rest.gists.update({
-                gist_id: gistId!,
-                files: batchFiles,
-              });
-            } catch (batchError) {
-              console.error(
-                `[GistSyncService] 创建批次 ${batchIndex + 1}/${totalCreateBatches} 失败，` +
-                  `已完成 ${batchIndex}/${totalCreateBatches} 个批次。` +
-                  `Gist 可能处于不一致状态。`,
-                batchError,
-              );
-              throw new Error(
-                `Gist 批量创建在第 ${batchIndex + 1}/${totalCreateBatches} 批次失败，` +
-                  `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。` +
-                  (batchError instanceof Error ? ` 原因: ${batchError.message}` : ''),
-              );
-            }
+            const batchFiles = Object.fromEntries(createEntries.slice(i, i + CREATE_BATCH_SIZE));
+            await this.runCreateBatchUpdate(gistId!, batchFiles, batchIndex, totalCreateBatches);
           }
         }
       } else {
@@ -1479,24 +1495,7 @@ export class GistSyncService {
               });
             }
 
-            try {
-              await this.octokit.rest.gists.update({
-                gist_id: gistId!,
-                files: batchFiles,
-              });
-            } catch (batchError) {
-              console.error(
-                `[GistSyncService] 创建批次 ${batchIndex + 1}/${totalCreateBatches} 失败，` +
-                  `已完成 ${batchIndex}/${totalCreateBatches} 个批次。` +
-                  `Gist 可能处于不一致状态。`,
-                batchError,
-              );
-              throw new Error(
-                `Gist 批量创建在第 ${batchIndex + 1}/${totalCreateBatches} 批次失败，` +
-                  `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。` +
-                  (batchError instanceof Error ? ` 原因: ${batchError.message}` : ''),
-              );
-            }
+            await this.runCreateBatchUpdate(gistId!, batchFiles, batchIndex, totalCreateBatches);
           }
         }
 
