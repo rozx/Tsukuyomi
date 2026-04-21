@@ -24,25 +24,28 @@ export function useMobilePanelData(params: {
     return { current: p.current, total: p.total, percent };
   });
 
+  const TERMINAL_STATUS_LABELS: Record<string, string> = {
+    end: '已完成',
+    error: '已失败',
+    cancelled: '已取消',
+  };
+
+  const WORKFLOW_STATUS_LABELS: Record<string, string> = {
+    planning: '规划阶段',
+    working: '翻译中',
+    review: '审核阶段',
+    end: '已完成',
+  };
+
   // 手机端任务状态描述（ChineseWorkflow）
   const mobileWorkflowLabel = computed<string>(() => {
     const task = currentTask.value;
     if (!task) return '';
-    if (task.status === 'end') return '已完成';
-    if (task.status === 'error') return '已失败';
-    if (task.status === 'cancelled') return '已取消';
-    switch (task.workflowStatus) {
-      case 'planning':
-        return '规划阶段';
-      case 'working':
-        return '翻译中';
-      case 'review':
-        return '审核阶段';
-      case 'end':
-        return '已完成';
-      default:
-        return task.status === 'thinking' ? '思考中' : '处理中';
-    }
+    const terminal = TERMINAL_STATUS_LABELS[task.status];
+    if (terminal) return terminal;
+    const workflow = WORKFLOW_STATUS_LABELS[task.workflowStatus ?? ''];
+    if (workflow) return workflow;
+    return task.status === 'thinking' ? '思考中' : '处理中';
   });
 
   // 预计剩余（线性外推）
@@ -79,23 +82,31 @@ export function useMobilePanelData(params: {
   });
 
   // 统计卡片数据
+  const formatElapsedLabel = (elapsedMs: number): string => {
+    const seconds = Math.floor(elapsedMs / 1000);
+    if (seconds <= 0) return '—';
+    const mm = Math.floor(seconds / 60);
+    const ss = seconds % 60;
+    return `${mm}:${String(ss).padStart(2, '0')}`;
+  };
+
+  const formatAvgSpeed = (elapsedMs: number, current: number): string => {
+    if (current <= 0) return '—';
+    const avgMs = Math.round(elapsedMs / current);
+    if (avgMs <= 0) return '—';
+    return avgMs >= 1000 ? `${(avgMs / 1000).toFixed(1)}s/段` : `${avgMs}ms/段`;
+  };
+
   const mobileStatTotals = computed(() => {
     const task = currentTask.value;
     const total = task?.progress?.total ?? 0;
     const current = task?.progress?.current ?? 0;
     const elapsedMs = task ? Math.max(0, (task.endTime ?? now.value) - task.startTime) : 0;
-    const seconds = Math.floor(elapsedMs / 1000);
-    const mm = Math.floor(seconds / 60);
-    const ss = seconds % 60;
-    const elapsedLabel = seconds > 0 ? `${mm}:${String(ss).padStart(2, '0')}` : '—';
-    const avgMs = current > 0 ? Math.round(elapsedMs / current) : 0;
-    const avgLabel =
-      avgMs > 0 ? (avgMs >= 1000 ? `${(avgMs / 1000).toFixed(1)}s/段` : `${avgMs}ms/段`) : '—';
     return [
       { label: '总段数', value: String(total), icon: 'pi-list' },
       { label: '已完成', value: String(current), icon: 'pi-check-circle' },
-      { label: '总耗时', value: elapsedLabel, icon: 'pi-clock' },
-      { label: '平均速度', value: avgLabel, icon: 'pi-bolt' },
+      { label: '总耗时', value: formatElapsedLabel(elapsedMs), icon: 'pi-clock' },
+      { label: '平均速度', value: formatAvgSpeed(elapsedMs, current), icon: 'pi-bolt' },
     ];
   });
 

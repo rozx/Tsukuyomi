@@ -47,30 +47,30 @@ export function useSearchReplace(
    *
    * 如果段落正在编辑，从 DOM 中的 textarea 获取当前编辑内容（不应用任何显示层过滤器）
    */
-  const getParagraphRawTranslationText = (paragraph: Paragraph): string => {
-    // 如果段落正在编辑，尝试从 DOM 获取当前编辑内容（不应用过滤器）
-    if (currentlyEditingParagraphId?.value === paragraph.id) {
-      const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
-      if (paragraphElement) {
-        // 查找段落内的 textarea 元素（用于编辑翻译）
-        // PrimeVue Textarea 组件会将 textarea 包装在内部
-        const textarea = paragraphElement.querySelector<HTMLTextAreaElement>(
-          '.paragraph-translation-edit textarea',
-        );
-        if (textarea && textarea.value !== undefined) {
-          return textarea.value;
-        }
-      }
-    }
+  const getLiveTextareaValue = (paragraphId: string): string | undefined => {
+    const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
+    if (!paragraphElement) return undefined;
+    // PrimeVue Textarea 组件会把 textarea 包装在内部
+    const textarea = paragraphElement.querySelector<HTMLTextAreaElement>(
+      '.paragraph-translation-edit textarea',
+    );
+    return textarea?.value;
+  };
 
-    // 否则返回保存的翻译内容（原始值，不做任何格式化）
-    if (!paragraph.selectedTranslationId || !paragraph.translations) {
-      return '';
-    }
+  const getSavedTranslationText = (paragraph: Paragraph): string => {
+    if (!paragraph.selectedTranslationId || !paragraph.translations) return '';
     const selectedTranslation = paragraph.translations.find(
       (t) => t.id === paragraph.selectedTranslationId,
     );
     return selectedTranslation?.translation || '';
+  };
+
+  const getParagraphRawTranslationText = (paragraph: Paragraph): string => {
+    if (currentlyEditingParagraphId?.value === paragraph.id) {
+      const live = getLiveTextareaValue(paragraph.id);
+      if (live !== undefined) return live;
+    }
+    return getSavedTranslationText(paragraph);
   };
 
   // Regex escape helper（用于构建“严格匹配”模式）
@@ -261,6 +261,92 @@ export function useSearchReplace(
     }
   };
 
+  type ReplacementPlan = {
+    updates: Map<string, string>;
+    editedParagraphIds: string[];
+  };
+
+  const buildReplacementPlan = (paragraphs: readonly Paragraph[]): ReplacementPlan => {
+    const updates = new Map<string, string>();
+    const editedParagraphIds: string[] = [];
+
+    for (const match of searchMatches.value) {
+      const paragraph = paragraphs.find((p) => p.id === match.id);
+      if (!paragraph) continue;
+
+      const rawText = getParagraphRawTranslationText(paragraph);
+      const newText = replaceOnRawText(rawText);
+      if (newText === rawText) continue;
+
+      updates.set(paragraph.id, newText);
+      if (currentlyEditingParagraphId?.value === paragraph.id) {
+        editedParagraphIds.push(paragraph.id);
+      }
+    }
+
+    return { updates, editedParagraphIds };
+  };
+
+  const applyReplacementsToContent = (
+    paragraphs: readonly Paragraph[],
+    updates: Map<string, string>,
+  ): Paragraph[] =>
+    paragraphs.map((para) => {
+      const newTranslation = updates.get(para.id);
+      if (newTranslation === undefined) return para;
+      return {
+        ...para,
+        translations: para.translations
+          ? para.translations.map((t) =>
+              t.id === para.selectedTranslationId ? { ...t, translation: newTranslation } : t,
+            )
+          : para.translations,
+      };
+    });
+
+  const persistReplacedChapter = async (
+    chapter: Chapter,
+    updatedContent: Paragraph[],
+    bookValue: NonNullable<typeof book.value>,
+  ): Promise<boolean> => {
+    const booksStore = useBooksStore();
+    const updatedChapter: Chapter = {
+      ...chapter,
+      content: updatedContent,
+      lastEdited: new Date(),
+    };
+    try {
+      await ChapterService.saveChapterContent(updatedChapter, bookValue.id);
+      const updatedVolumes = ChapterService.updateChapter(bookValue, chapter.id, {
+        content: updatedContent,
+        lastEdited: new Date(),
+      });
+      await booksStore.updateBook(bookValue.id, {
+        volumes: updatedVolumes,
+        lastEdited: new Date(),
+      });
+      updateSelectedChapterWithContent?.(updatedVolumes);
+      return true;
+    } catch (error) {
+      console.error('Failed to replace all:', error);
+      toast.add({ severity: 'error', summary: '批量替换失败', detail: '无法保存更改', life: 3000 });
+      return false;
+    }
+  };
+
+  const syncEditingStateAfterReplace = (plan: ReplacementPlan): void => {
+    for (const [paragraphId, newText] of plan.updates.entries()) {
+      if (plan.editedParagraphIds.includes(paragraphId)) {
+        syncParagraphEditTextarea(paragraphId, newText);
+      }
+    }
+    for (const id of plan.editedParagraphIds) {
+      if (currentlyEditingParagraphId?.value === id) {
+        currentlyEditingParagraphId.value = null;
+      }
+    }
+  };
+
   const replaceAll = async () => {
     if (!searchMatches.value.length) return;
     const paragraphs = selectedChapterParagraphs.value;
@@ -272,81 +358,15 @@ export function useSearchReplace(
 
     saveState?.('批量替换');
 
-    const updates = new Map<string, string>();
-    const editedParagraphIds: string[] = [];
+    const plan = buildReplacementPlan(paragraphs);
+    if (plan.updates.size === 0) return;
 
-    for (const match of searchMatches.value) {
-      const paragraph = paragraphs.find((p) => p.id === match.id);
-      if (!paragraph) continue;
+    const updatedContent = applyReplacementsToContent(paragraphs, plan.updates);
+    const persisted = await persistReplacedChapter(chapter, updatedContent, bookValue);
+    if (!persisted) return;
 
-      const rawText = getParagraphRawTranslationText(paragraph);
-      const newText = replaceOnRawText(rawText);
-
-      if (newText !== rawText) {
-        updates.set(paragraph.id, newText);
-        if (currentlyEditingParagraphId?.value === paragraph.id) {
-          editedParagraphIds.push(paragraph.id);
-        }
-      }
-    }
-
-    if (updates.size === 0) return;
-
-    const booksStore = useBooksStore();
-    const updatedContent = selectedChapterParagraphs.value.map((para) => {
-      const newTranslation = updates.get(para.id);
-      if (newTranslation !== undefined) {
-        return {
-          ...para,
-          translations: para.translations
-            ? para.translations.map((t) =>
-                t.id === para.selectedTranslationId ? { ...t, translation: newTranslation } : t,
-              )
-            : para.translations,
-        };
-      }
-      return para;
-    });
-
-    const updatedChapter: Chapter = {
-      ...chapter,
-      content: updatedContent,
-      lastEdited: new Date(),
-    };
-
-    try {
-      await ChapterService.saveChapterContent(updatedChapter, bookValue.id);
-
-      const updatedVolumes = ChapterService.updateChapter(bookValue, chapter.id, {
-        content: updatedContent,
-        lastEdited: new Date(),
-      });
-
-      await booksStore.updateBook(bookValue.id, {
-        volumes: updatedVolumes,
-        lastEdited: new Date(),
-      });
-
-      updateSelectedChapterWithContent?.(updatedVolumes);
-    } catch (error) {
-      console.error('Failed to replace all:', error);
-      toast.add({ severity: 'error', summary: '批量替换失败', detail: '无法保存更改', life: 3000 });
-      return;
-    }
-
-    for (const [paragraphId, newText] of updates.entries()) {
-      if (editedParagraphIds.includes(paragraphId)) {
-        syncParagraphEditTextarea(paragraphId, newText);
-      }
-    }
-
-    for (const id of editedParagraphIds) {
-      if (currentlyEditingParagraphId?.value === id) {
-        currentlyEditingParagraphId.value = null;
-      }
-    }
-
-    toast.add({ severity: 'success', summary: `已替换 ${updates.size} 处内容`, life: 3000 });
+    syncEditingStateAfterReplace(plan);
+    toast.add({ severity: 'success', summary: `已替换 ${plan.updates.size} 处内容`, life: 3000 });
   };
 
   // Watchers

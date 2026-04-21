@@ -82,12 +82,17 @@ function createAIPageContext() {
     return provider === 'openai' ? 'OpenAI' : 'Gemini';
   };
 
+  const DEFAULT_TASK_LABELS: Array<{ key: keyof AIModel['isDefault']; label: string }> = [
+    { key: 'translation', label: TASK_TYPE_LABELS.translation },
+    { key: 'proofreading', label: '校对和润色' },
+    { key: 'termsTranslation', label: TASK_TYPE_LABELS.termsTranslation },
+    { key: 'assistant', label: TASK_TYPE_LABELS.assistant },
+  ];
+
   const getDefaultTasks = (model: AIModel) => {
-    const tasks: string[] = [];
-    if (model.isDefault.translation?.enabled) tasks.push(TASK_TYPE_LABELS.translation);
-    if (model.isDefault.proofreading?.enabled) tasks.push('校对和润色');
-    if (model.isDefault.termsTranslation?.enabled) tasks.push(TASK_TYPE_LABELS.termsTranslation);
-    if (model.isDefault.assistant?.enabled) tasks.push(TASK_TYPE_LABELS.assistant);
+    const tasks = DEFAULT_TASK_LABELS.filter(
+      ({ key }) => model.isDefault[key]?.enabled,
+    ).map(({ label }) => label);
     return tasks.join('、') || '无';
   };
 
@@ -234,67 +239,74 @@ function createAIPageContext() {
     });
   };
 
-  const handleSave = (formData: Partial<AIModel> & { isDefault: AIModel['isDefault'] }) => {
-    if (showAddDialog.value) {
-      const newModel: AIModel = {
-        id: generateId(),
-        name: formData.name!,
-        provider: formData.provider as AIProvider,
-        model: formData.model!,
-        temperature: formData.temperature!,
-        maxInputTokens: formData.maxInputTokens!,
-        maxOutputTokens: formData.maxOutputTokens!,
-        ...(formData.rateLimit !== undefined && formData.rateLimit !== null
-          ? { rateLimit: formData.rateLimit }
-          : {}),
-        apiKey: formData.apiKey!,
-        baseUrl: formData.baseUrl!,
-        enabled: formData.enabled ?? true,
-        useCorsProxy: formData.useCorsProxy,
-        isDefault: buildAIModelDefaults(formData),
-        lastEdited: new Date(),
-      };
-      void aiModelsStore.addModel(newModel);
-      showAddDialog.value = false;
-      toast.add({
-        severity: 'success',
-        summary: '添加成功',
-        detail: `已成功添加模型 "${newModel.name}"`,
-        life: 3000,
-        onRevert: () => aiModelsStore.deleteModel(newModel.id),
-      });
-    } else if (showEditDialog.value && selectedModel.value) {
-      const updates: Partial<AIModel> = {
-        name: formData.name!,
-        provider: formData.provider as AIProvider,
-        model: formData.model!,
-        temperature: formData.temperature!,
-        maxInputTokens: formData.maxInputTokens!,
-        maxOutputTokens: formData.maxOutputTokens!,
-        apiKey: formData.apiKey!,
-        baseUrl: formData.baseUrl!,
-        enabled: formData.enabled ?? true,
-        useCorsProxy: formData.useCorsProxy,
-        isDefault: buildAIModelDefaults(formData),
-      };
+  type SaveFormData = Partial<AIModel> & { isDefault: AIModel['isDefault'] };
 
-      if (formData.rateLimit !== undefined && formData.rateLimit !== null) {
-        updates.rateLimit = formData.rateLimit;
-      }
+  const handleSaveAdd = (formData: SaveFormData): void => {
+    const newModel: AIModel = {
+      id: generateId(),
+      name: formData.name!,
+      provider: formData.provider as AIProvider,
+      model: formData.model!,
+      temperature: formData.temperature!,
+      maxInputTokens: formData.maxInputTokens!,
+      maxOutputTokens: formData.maxOutputTokens!,
+      ...(formData.rateLimit !== undefined && formData.rateLimit !== null
+        ? { rateLimit: formData.rateLimit }
+        : {}),
+      apiKey: formData.apiKey!,
+      baseUrl: formData.baseUrl!,
+      enabled: formData.enabled ?? true,
+      useCorsProxy: formData.useCorsProxy,
+      isDefault: buildAIModelDefaults(formData),
+      lastEdited: new Date(),
+    };
+    void aiModelsStore.addModel(newModel);
+    showAddDialog.value = false;
+    toast.add({
+      severity: 'success',
+      summary: '添加成功',
+      detail: `已成功添加模型 "${newModel.name}"`,
+      life: 3000,
+      onRevert: () => aiModelsStore.deleteModel(newModel.id),
+    });
+  };
 
-      const oldModel = cloneDeep(selectedModel.value);
-      void aiModelsStore.updateModel(selectedModel.value.id, updates);
-      showEditDialog.value = false;
-      const modelName = updates.name || selectedModel.value.name;
-      selectedModel.value = null;
-      toast.add({
-        severity: 'success',
-        summary: '更新成功',
-        detail: `已成功更新模型 "${modelName}"`,
-        life: 3000,
-        onRevert: () => aiModelsStore.updateModel(oldModel.id, oldModel),
-      });
+  const handleSaveEdit = (formData: SaveFormData): void => {
+    const current = selectedModel.value;
+    if (!current) return;
+    const updates: Partial<AIModel> = {
+      name: formData.name!,
+      provider: formData.provider as AIProvider,
+      model: formData.model!,
+      temperature: formData.temperature!,
+      maxInputTokens: formData.maxInputTokens!,
+      maxOutputTokens: formData.maxOutputTokens!,
+      apiKey: formData.apiKey!,
+      baseUrl: formData.baseUrl!,
+      enabled: formData.enabled ?? true,
+      useCorsProxy: formData.useCorsProxy,
+      isDefault: buildAIModelDefaults(formData),
+    };
+    if (formData.rateLimit !== undefined && formData.rateLimit !== null) {
+      updates.rateLimit = formData.rateLimit;
     }
+    const oldModel = cloneDeep(current);
+    void aiModelsStore.updateModel(current.id, updates);
+    showEditDialog.value = false;
+    const modelName = updates.name || current.name;
+    selectedModel.value = null;
+    toast.add({
+      severity: 'success',
+      summary: '更新成功',
+      detail: `已成功更新模型 "${modelName}"`,
+      life: 3000,
+      onRevert: () => aiModelsStore.updateModel(oldModel.id, oldModel),
+    });
+  };
+
+  const handleSave = (formData: SaveFormData) => {
+    if (showAddDialog.value) return handleSaveAdd(formData);
+    if (showEditDialog.value && selectedModel.value) return handleSaveEdit(formData);
   };
 
   const deleteModel = (model: AIModel) => {

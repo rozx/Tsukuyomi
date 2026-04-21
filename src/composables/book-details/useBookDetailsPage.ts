@@ -795,6 +795,45 @@ function createBookDetailsPageContext() {
   } | null>(null);
   const isCalculatingTranslationProgress = ref(false);
 
+  type ChapterProgress = { total: number; translated: number };
+  type AggregatedProgress = {
+    total: number;
+    translated: number;
+    firstIncompleteChapterId: string | null;
+    byChapter: Map<string, ChapterProgress>;
+  };
+
+  const computeChapterProgress = (
+    paragraphs: Paragraph[] | undefined,
+  ): ChapterProgress => {
+    const nonEmpty = (paragraphs ?? []).filter((p) => (p.text ?? '').trim().length > 0);
+    const total = nonEmpty.length;
+    const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
+    return { total, translated };
+  };
+
+  const aggregateProgressByChapter = (
+    chapterOrder: { id: string }[],
+    contentsMap: Map<string, Paragraph[] | undefined>,
+  ): AggregatedProgress => {
+    let total = 0;
+    let translated = 0;
+    let firstIncompleteChapterId: string | null = null;
+    const byChapter = new Map<string, ChapterProgress>();
+
+    for (const { id } of chapterOrder) {
+      const progress = computeChapterProgress(contentsMap.get(id));
+      total += progress.total;
+      translated += progress.translated;
+      byChapter.set(id, progress);
+      if (firstIncompleteChapterId === null && (progress.total === 0 || progress.translated < progress.total)) {
+        firstIncompleteChapterId = id;
+      }
+    }
+
+    return { total, translated, firstIncompleteChapterId, byChapter };
+  };
+
   async function calculateTranslationProgress() {
     if (!book.value || isCalculatingTranslationProgress.value) return;
     isCalculatingTranslationProgress.value = true;
@@ -821,26 +860,7 @@ function createBookDetailsPageContext() {
         chapterOrder.map((c) => c.id),
       );
 
-      let total = 0;
-      let translated = 0;
-      let firstIncompleteChapterId: string | null = null;
-      const byChapter = new Map<string, { total: number; translated: number }>();
-
-      for (const { id } of chapterOrder) {
-        const content = contentsMap.get(id);
-        const paras = content ?? [];
-        const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
-        const paraTotal = nonEmpty.length;
-        const paraDone = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
-        total += paraTotal;
-        translated += paraDone;
-        byChapter.set(id, { total: paraTotal, translated: paraDone });
-        if (firstIncompleteChapterId === null && (paraTotal === 0 || paraDone < paraTotal)) {
-          firstIncompleteChapterId = id;
-        }
-      }
-
-      translationProgressState.value = { total, translated, firstIncompleteChapterId, byChapter };
+      translationProgressState.value = aggregateProgressByChapter(chapterOrder, contentsMap);
     } finally {
       isCalculatingTranslationProgress.value = false;
     }

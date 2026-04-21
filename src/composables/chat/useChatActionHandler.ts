@@ -38,70 +38,61 @@ export function useChatActionHandler(
   const contextStore = useContextStore();
   const chatSessionsStore = useChatSessionsStore();
 
+  const SEX_LABELS: Record<string, string> = {
+    male: '男',
+    female: '女',
+    other: '其他',
+  };
+
+  const formatEntityMainInfo = (entity: CharacterSetting | Terminology): string => {
+    if (!entity.name) return '';
+    const translation = entity.translation?.translation;
+    return translation ? `${entity.name} → ${translation}` : entity.name;
+  };
+
+  const formatCharacterDetails = (character: CharacterSetting): string[] => {
+    const details: string[] = [];
+    if (character.sex) {
+      details.push(`性别：${SEX_LABELS[character.sex] || character.sex}`);
+    }
+    if (character.speakingStyle) {
+      details.push(`口吻：${character.speakingStyle}`);
+    }
+    if (character.aliases && character.aliases.length > 0) {
+      details.push(`别名：${character.aliases.length} 个`);
+    }
+    return details;
+  };
+
+  const formatTermDetails = (term: Terminology): string[] =>
+    term.description ? [`描述：${term.description}`] : [];
+
+  const joinEntityParts = (
+    mainInfo: string,
+    details: string[],
+    entityType: 'character' | 'term',
+    fallbackName: string,
+  ): string => {
+    if (mainInfo && details.length > 0) return `${mainInfo} | ${details.join(' | ')}`;
+    if (mainInfo) return mainInfo;
+    if (details.length > 0) return details.join(' | ');
+    const entityLabel = entityType === 'character' ? '角色' : '术语';
+    return `${entityLabel} "${fallbackName}" 已处理`;
+  };
+
   /**
    * 格式化角色或术语信息为显示字符串
-   * @param entity - 实体对象
-   * @param entityType - 实体类型 ('character' 或 'term')
-   * @returns 格式化后的详情字符串
    */
   const formatEntityInfo = (
     entity: CharacterSetting | Terminology,
     entityType: 'character' | 'term',
   ): string => {
-    const parts: string[] = [];
-
-    // 名称和翻译（主要信息）
-    if (entity.name) {
-      const translation = entity.translation?.translation;
-      if (translation) {
-        parts.push(`${entity.name} → ${translation}`);
-      } else {
-        parts.push(entity.name);
-      }
-    }
-
-    // 其他详细信息
-    const details: string[] = [];
-
-    if (entityType === 'character') {
-      const character = entity as CharacterSetting;
-      // 性别
-      if (character.sex) {
-        const sexLabels: Record<string, string> = {
-          male: '男',
-          female: '女',
-          other: '其他',
-        };
-        details.push(`性别：${sexLabels[character.sex] || character.sex}`);
-      }
-      // 说话口吻
-      if (character.speakingStyle) {
-        details.push(`口吻：${character.speakingStyle}`);
-      }
-      // 别名数量
-      if (character.aliases && character.aliases.length > 0) {
-        details.push(`别名：${character.aliases.length} 个`);
-      }
-    } else if (entityType === 'term') {
-      const term = entity as Terminology;
-      // 描述
-      if (term.description) {
-        details.push(`描述：${term.description}`);
-      }
-    }
-
-    // 组合消息
-    const mainInfo = parts.join(' | ');
-    if (mainInfo && details.length > 0) {
-      return `${mainInfo} | ${details.join(' | ')}`;
-    } else if (mainInfo) {
-      return mainInfo;
-    } else if (details.length > 0) {
-      return details.join(' | ');
-    } else {
-      const entityLabel = entityType === 'character' ? '角色' : '术语';
-      return `${entityLabel} "${entity.name}" 已处理`;
-    }
+    const mainInfo = formatEntityMainInfo(entity);
+    const details =
+      entityType === 'character'
+        ? formatCharacterDetails(entity as CharacterSetting)
+        : formatTermDetails(entity as Terminology);
+    return joinEntityParts(mainInfo, details, entityType, entity.name ?? '');
   };
 
   /**
@@ -389,33 +380,38 @@ export function useChatActionHandler(
     return false;
   };
 
-  const handleBatchReplaceTranslationToast = (action: ActionInfo): void => {
-    const batchData = action.data as {
-      tool_name: string;
-      replaced_paragraph_count: number;
-      replaced_translation_count: number;
-      keywords?: string[];
-      original_keywords?: string[];
-      replacement_text: string;
-      replace_all_translations: boolean;
-    };
+  type BatchReplaceActionData = {
+    tool_name: string;
+    replaced_paragraph_count: number;
+    replaced_translation_count: number;
+    keywords?: string[];
+    original_keywords?: string[];
+    replacement_text: string;
+    replace_all_translations: boolean;
+  };
 
-    const keywordParts: string[] = [];
-    if (batchData.keywords && batchData.keywords.length > 0) {
-      keywordParts.push(`翻译关键词: ${batchData.keywords.join(', ')}`);
+  const formatBatchReplaceKeywords = (data: BatchReplaceActionData): string => {
+    const parts: string[] = [];
+    if (data.keywords && data.keywords.length > 0) {
+      parts.push(`翻译关键词: ${data.keywords.join(', ')}`);
     }
-    if (batchData.original_keywords && batchData.original_keywords.length > 0) {
-      keywordParts.push(`原文关键词: ${batchData.original_keywords.join(', ')}`);
+    if (data.original_keywords && data.original_keywords.length > 0) {
+      parts.push(`原文关键词: ${data.original_keywords.join(', ')}`);
     }
+    return parts.length > 0 ? ` | ${parts.join(' | ')}` : '';
+  };
 
-    const keywordInfo = keywordParts.length > 0 ? ` | ${keywordParts.join(' | ')}` : '';
+  const formatBatchReplaceDetail = (data: BatchReplaceActionData): string => {
     const replacementPreview =
-      batchData.replacement_text.length > 30
-        ? batchData.replacement_text.substring(0, 30) + '...'
-        : batchData.replacement_text;
+      data.replacement_text.length > 30
+        ? data.replacement_text.substring(0, 30) + '...'
+        : data.replacement_text;
+    const keywordInfo = formatBatchReplaceKeywords(data);
+    return `已批量替换 ${data.replaced_paragraph_count} 个段落（共 ${data.replaced_translation_count} 个翻译版本） | 替换为: "${replacementPreview}"${keywordInfo}`;
+  };
 
-    const detail = `已批量替换 ${batchData.replaced_paragraph_count} 个段落（共 ${batchData.replaced_translation_count} 个翻译版本） | 替换为: "${replacementPreview}"${keywordInfo}`;
-
+  const handleBatchReplaceTranslationToast = (action: ActionInfo): void => {
+    const batchData = action.data as BatchReplaceActionData;
     const previousData = action.previousData as
       | {
           replaced_paragraphs: Array<{
@@ -426,7 +422,6 @@ export function useChatActionHandler(
           }>;
         }
       | undefined;
-
     const canRevert = !!(
       previousData?.replaced_paragraphs && contextStore.getContext.currentBookId
     );
@@ -434,7 +429,7 @@ export function useChatActionHandler(
     const toastPayload: Record<string, unknown> = {
       severity: 'success',
       summary: '批量替换翻译',
-      detail,
+      detail: formatBatchReplaceDetail(batchData),
       life: 5000,
     };
     if (canRevert && previousData) {
@@ -533,35 +528,32 @@ export function useChatActionHandler(
     }
   };
 
+  type SingleTranslationActionData = {
+    paragraph_id: string;
+    translation_id: string;
+    old_translation: string;
+    new_translation: string;
+  };
+
+  const isSingleTranslationAction = (
+    data: unknown,
+  ): data is SingleTranslationActionData =>
+    typeof data === 'object' &&
+    data !== null &&
+    'paragraph_id' in data &&
+    'translation_id' in data &&
+    'old_translation' in data &&
+    'new_translation' in data;
+
+  const truncateForPreview = (text: string, max = 50): string =>
+    text.length > max ? text.substring(0, max) + '...' : text;
+
   const handleSingleTranslationUpdateToast = (action: ActionInfo): boolean => {
-    if (
-      !('paragraph_id' in action.data) ||
-      !('translation_id' in action.data) ||
-      !('old_translation' in action.data) ||
-      !('new_translation' in action.data)
-    ) {
-      return false;
-    }
+    if (!isSingleTranslationAction(action.data)) return false;
 
-    const translationData = action.data as {
-      paragraph_id: string;
-      translation_id: string;
-      old_translation: string;
-      new_translation: string;
-    };
+    const translationData = action.data;
     const previousTranslation = action.previousData as Translation | undefined;
-
-    const previewLength = 50;
-    const oldPreview =
-      translationData.old_translation.length > previewLength
-        ? translationData.old_translation.substring(0, previewLength) + '...'
-        : translationData.old_translation;
-    const newPreview =
-      translationData.new_translation.length > previewLength
-        ? translationData.new_translation.substring(0, previewLength) + '...'
-        : translationData.new_translation;
-
-    const detail = `段落翻译已更新 | 旧: "${oldPreview}" → 新: "${newPreview}"`;
+    const detail = `段落翻译已更新 | 旧: "${truncateForPreview(translationData.old_translation)}" → 新: "${truncateForPreview(translationData.new_translation)}"`;
     const summary = `${ACTION_LABELS[action.type as keyof typeof ACTION_LABELS]}${ENTITY_LABELS[action.entity as keyof typeof ENTITY_LABELS]}`;
     const canRevert = !!(previousTranslation && contextStore.getContext.currentBookId);
 

@@ -43,59 +43,61 @@ export function useSyncPendingChanges() {
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
-  const pendingItems = computed<PendingChangeItem[]>(() => {
-    const baseline = lastSyncTime.value;
-    if (!baseline) return [];
-
+  const collectEditedBooks = (baseline: number): PendingChangeItem[] => {
     const items: PendingChangeItem[] = [];
-
     for (const book of booksStore.books) {
       const ms = toMs(book.lastEdited);
-      if (ms > baseline) {
-        const createdMs = toMs(book.createdAt);
-        items.push({
-          kind: 'book',
-          action: createdMs > baseline ? 'added' : 'edited',
-          label: book.title || '未命名书籍',
-          changedAt: ms,
-        });
-      }
-    }
-
-    for (const model of aiModelsStore.models) {
-      const ms = toMs(model.lastEdited);
-      if (ms > baseline) {
-        items.push({
-          kind: 'ai-model',
-          action: 'edited',
-          label: model.name || model.model || 'AI 模型',
-          changedAt: ms,
-        });
-      }
-    }
-
-    for (const cover of coverHistoryStore.covers) {
-      const ms = toMs(cover.addedAt);
-      if (ms > baseline) {
-        items.push({
-          kind: 'cover',
-          action: 'added',
-          label: cover.url?.split('/').pop() || '封面',
-          changedAt: ms,
-        });
-      }
-    }
-
-    if (toMs(settingsStore.settings.lastEdited) > baseline) {
+      if (ms <= baseline) continue;
+      const createdMs = toMs(book.createdAt);
       items.push({
-        kind: 'settings',
-        action: 'edited',
-        label: '应用设置',
-        changedAt: toMs(settingsStore.settings.lastEdited),
+        kind: 'book',
+        action: createdMs > baseline ? 'added' : 'edited',
+        label: book.title || '未命名书籍',
+        changedAt: ms,
       });
     }
+    return items;
+  };
 
+  const collectEditedAiModels = (baseline: number): PendingChangeItem[] => {
+    const items: PendingChangeItem[] = [];
+    for (const model of aiModelsStore.models) {
+      const ms = toMs(model.lastEdited);
+      if (ms <= baseline) continue;
+      items.push({
+        kind: 'ai-model',
+        action: 'edited',
+        label: model.name || model.model || 'AI 模型',
+        changedAt: ms,
+      });
+    }
+    return items;
+  };
+
+  const collectAddedCovers = (baseline: number): PendingChangeItem[] => {
+    const items: PendingChangeItem[] = [];
+    for (const cover of coverHistoryStore.covers) {
+      const ms = toMs(cover.addedAt);
+      if (ms <= baseline) continue;
+      items.push({
+        kind: 'cover',
+        action: 'added',
+        label: cover.url?.split('/').pop() || '封面',
+        changedAt: ms,
+      });
+    }
+    return items;
+  };
+
+  const collectSettingsChange = (baseline: number): PendingChangeItem[] => {
+    const ms = toMs(settingsStore.settings.lastEdited);
+    if (ms <= baseline) return [];
+    return [{ kind: 'settings', action: 'edited', label: '应用设置', changedAt: ms }];
+  };
+
+  const collectDeletions = (baseline: number): PendingChangeItem[] => {
     const gistSync = settingsStore.gistSync;
+    const items: PendingChangeItem[] = [];
     const pushDeletions = (
       records: Array<{ deletedAt: number; id?: string; url?: string }> | undefined,
       kind: PendingChangeItem['kind'],
@@ -112,9 +114,20 @@ export function useSyncPendingChanges() {
     pushDeletions(gistSync.deletedModelIds, 'ai-model', (r) => `模型 ${r.id ?? ''}`.trim());
     pushDeletions(gistSync.deletedCoverIds, 'cover', (r) => `封面 ${r.id ?? ''}`.trim());
     pushDeletions(gistSync.deletedMemoryIds, 'memory', (r) => `记忆 ${r.id ?? ''}`.trim());
-
-    items.sort((a, b) => b.changedAt - a.changedAt);
     return items;
+  };
+
+  const pendingItems = computed<PendingChangeItem[]>(() => {
+    const baseline = lastSyncTime.value;
+    if (!baseline) return [];
+
+    return [
+      ...collectEditedBooks(baseline),
+      ...collectEditedAiModels(baseline),
+      ...collectAddedCovers(baseline),
+      ...collectSettingsChange(baseline),
+      ...collectDeletions(baseline),
+    ].sort((a, b) => b.changedAt - a.changedAt);
   });
 
   const pendingCount = computed(() => pendingItems.value.length);

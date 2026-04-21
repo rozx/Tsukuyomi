@@ -23,40 +23,43 @@ export function useMainNavDispatch() {
     if (!matcher(route.path)) void router.push(targetPath);
   };
 
-  const dispatch = (id: MainNavTarget) => {
-    switch (id) {
-      case 'home':
-        closeRightPanelIfOpen();
-        pushIfNeeded('/', (p) => p === '/');
-        return;
-      case 'library':
-        closeRightPanelIfOpen();
-        pushIfNeeded('/books', (p) => p === '/books');
-        return;
-      case 'chat':
-        // 右面板已打开且当前在 chat tab 上：再次点击关闭
-        // 右面板已打开但在其它 tab（如 progress）：切换到 chat，不关闭
-        // 右面板已关闭：打开并定位到 chat
-        if (ui.rightPanelOpen && ui.activeRightTab === 'chat') {
-          ui.closeRightPanel();
-        } else {
-          ui.setActiveRightTab('chat');
-          if (!ui.rightPanelOpen) ui.openRightPanel();
-        }
-        return;
-      case 'ai':
-        closeRightPanelIfOpen();
-        pushIfNeeded('/ai', (p) => p === '/ai');
-        return;
-      case 'help':
-        closeRightPanelIfOpen();
-        pushIfNeeded('/help', (p) => p.startsWith('/help'));
-        return;
-      case 'settings':
-        closeRightPanelIfOpen();
-        pushIfNeeded('/settings', (p) => p.startsWith('/settings'));
-        return;
+  const dispatchChatTab = () => {
+    // 右面板已打开且当前在 chat tab 上：再次点击关闭
+    // 右面板已打开但在其它 tab（如 progress）：切换到 chat，不关闭
+    // 右面板已关闭：打开并定位到 chat
+    if (ui.rightPanelOpen && ui.activeRightTab === 'chat') {
+      ui.closeRightPanel();
+      return;
     }
+    ui.setActiveRightTab('chat');
+    if (!ui.rightPanelOpen) ui.openRightPanel();
+  };
+
+  const navigateAndCloseRightPanel = (
+    targetPath: string,
+    matcher: (path: string) => boolean,
+  ) => {
+    closeRightPanelIfOpen();
+    pushIfNeeded(targetPath, matcher);
+  };
+
+  const ROUTE_TARGETS: Partial<
+    Record<MainNavTarget, { path: string; match: (p: string) => boolean }>
+  > = {
+    home: { path: '/', match: (p) => p === '/' },
+    library: { path: '/books', match: (p) => p === '/books' },
+    ai: { path: '/ai', match: (p) => p === '/ai' },
+    help: { path: '/help', match: (p) => p.startsWith('/help') },
+    settings: { path: '/settings', match: (p) => p.startsWith('/settings') },
+  };
+
+  const dispatch = (id: MainNavTarget) => {
+    if (id === 'chat') {
+      dispatchChatTab();
+      return;
+    }
+    const target = ROUTE_TARGETS[id];
+    if (target) navigateAndCloseRightPanel(target.path, target.match);
   };
 
   return { dispatch };

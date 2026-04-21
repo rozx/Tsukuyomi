@@ -314,6 +314,19 @@ export function useRightPanel() {
     return info.length > 0 ? info.join(' | ') : '无上下文';
   });
 
+  const isAssistantMessageCountable = (msg: (typeof messages.value)[number]): boolean => {
+    if (msg.actions && msg.actions.length > 0) return false;
+    if (!msg.content || msg.content === '（调用工具）') return false;
+    return true;
+  };
+
+  const isMessageCountable = (msg: (typeof messages.value)[number]): boolean => {
+    if (msg.isSummarization || msg.isSummaryResponse || msg.isContextMessage) return false;
+    if (msg.role === 'user') return true;
+    if (msg.role === 'assistant') return isAssistantMessageCountable(msg);
+    return false;
+  };
+
   // 会话统计信息
   const sessionStats = computed(() => {
     if (messages.value.length === 0) return null;
@@ -321,21 +334,7 @@ export function useRightPanel() {
     const currentSession = chatSessionsStore.currentSession;
     const cutoff = currentSession?.lastSummarizedMessageIndex ?? 0;
 
-    const messagesToCount = messages.value.slice(cutoff).filter((msg) => {
-      if (msg.isSummarization || msg.isSummaryResponse || msg.isContextMessage) return false;
-
-      if (msg.role === 'user') return true;
-
-      if (msg.role === 'assistant') {
-        if (msg.actions && msg.actions.length > 0) {
-          return false;
-        }
-        if (!msg.content || msg.content === '（调用工具）') return false;
-        return true;
-      }
-
-      return false;
-    });
+    const messagesToCount = messages.value.slice(cutoff).filter(isMessageCountable);
 
     const currentCount = messagesToCount.length;
 

@@ -97,20 +97,24 @@ export function useTranslationProgressPanel() {
 
   // ─── 章节标题辅助 ───
 
+  const resolveChapterDisplayTitle = (bookId: string, chapterId: string): string | null => {
+    const book = booksStore.getBookById(bookId);
+    if (!book?.volumes) return null;
+    for (const volume of book.volumes) {
+      const chapter = volume.chapters?.find((c) => c.id === chapterId);
+      if (!chapter) continue;
+      const displayTitle = getChapterDisplayTitle(chapter, book).trim();
+      if (displayTitle) return displayTitle;
+    }
+    return null;
+  };
+
   const getWorkingChapterLabel = (task: AIProcessingTask): string | null => {
     const title = task.chapterTitle?.trim();
     if (title) return title;
     if (task.bookId && task.chapterId) {
-      const book = booksStore.getBookById(task.bookId);
-      if (book?.volumes) {
-        for (const volume of book.volumes) {
-          const chapter = volume.chapters?.find((c) => c.id === task.chapterId);
-          if (chapter) {
-            const displayTitle = getChapterDisplayTitle(chapter, book).trim();
-            if (displayTitle) return displayTitle;
-          }
-        }
-      }
+      const resolved = resolveChapterDisplayTitle(task.bookId, task.chapterId);
+      if (resolved) return resolved;
     }
     return task.chapterId || null;
   };
