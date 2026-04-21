@@ -1648,6 +1648,16 @@ export class ChapterService {
       }
     };
 
+    // pass 1 共用动作：跨到上一个卷，对新章节执行 collectOnce，回写 vIdx/cIdx/pIdx。
+    const crossToPrevAndCollect = async (): Promise<{ done: boolean }> => {
+      const state = { vIdx, cIdx, pIdx };
+      const result = await ChapterService.crossToPrevVolumeWithAction(state, novel, (ch) =>
+        collectOnce(ch, state.vIdx, state.cIdx),
+      );
+      ({ vIdx, cIdx, pIdx } = state);
+      return result;
+    };
+
     while (collected < count * 2 && vIdx >= 0) {
       // 限制收集的章节数量，避免加载过多
       const volume = novel.volumes[vIdx];
@@ -1662,13 +1672,7 @@ export class ChapterService {
       }
 
       if (cIdx < 0) {
-        const state = { vIdx, cIdx, pIdx };
-        const { done } = await ChapterService.crossToPrevVolumeWithAction(
-          state,
-          novel,
-          (ch) => collectOnce(ch, state.vIdx, state.cIdx),
-        );
-        ({ vIdx, cIdx, pIdx } = state);
+        const { done } = await crossToPrevAndCollect();
         if (done) break;
         continue;
       }
@@ -1685,13 +1689,7 @@ export class ChapterService {
       if (pIdx < 0) {
         cIdx--;
         if (cIdx < 0) {
-          const state = { vIdx, cIdx, pIdx };
-          const { done } = await ChapterService.crossToPrevVolumeWithAction(
-            state,
-            novel,
-            (ch) => collectOnce(ch, state.vIdx, state.cIdx),
-          );
-          ({ vIdx, cIdx, pIdx } = state);
+          const { done } = await crossToPrevAndCollect();
           if (done) break;
           continue;
         }
