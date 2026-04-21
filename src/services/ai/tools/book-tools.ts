@@ -4,94 +4,116 @@ import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
-import { parseToolArgs, type ToolDefinition, type ToolContext, type ToolHandler } from './types';
+import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
 import type { Chapter, Novel } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
-import {
-  buildChapterTitleSummary,
-  buildVolumeTitleSummary,
-  getChapterTitleOriginal,
-  getChapterTitleTranslation,
-  getVolumeTitleOriginal,
-  getVolumeTitleTranslation,
-} from './title-helpers';
-
-type AdjacentChapterDirection = 'previous' | 'next';
 
 /**
- * 工具共用：不加载书籍，仅解析参数并校验 bookId 非空。
- * 失败时返回可直接 return 给工具的 JSON 错误字符串；成功时返回解析后的参数与已收窄的 bookId。
- *
- * 适用于不需要预加载 Novel 的 handler（例如仅依赖 embedding 服务或通过
- * booksStore 自行读取的场景），避免重复写 parseToolArgs + bookId 早退出样板。
+ * 统一的 JSON 错误响应构造器
  */
-function parseArgsRequireBookId<T>(
-  args: Record<string, unknown>,
-  bookId: string | undefined,
-): { ok: true; args: T; bookId: string } | { ok: false; response: string } {
-  const parsedArgs = parseToolArgs<T>(args);
-  if (!bookId) {
-    return {
-      ok: false,
-      response: JSON.stringify({ success: false, error: '书籍 ID 不能为空' }),
-    };
-  }
-  return { ok: true, args: parsedArgs, bookId };
+function jsonError(error: string): string {
+  return JSON.stringify({ success: false, error });
 }
 
 /**
- * 工具共用：校验 bookId 并按 ID 查找书籍。
- * 失败时返回可直接 return 给工具的 JSON 错误字符串；成功时返回 Novel 实例。
+ * 处理 chapter.content 的懒加载：从 IndexedDB 按需读取并回填
  */
-async function resolveBookForTool(
-  bookId: string | undefined,
-): Promise<{ ok: true; book: Novel } | { ok: false; response: string }> {
-  if (!bookId) {
-    return {
-      ok: false,
-      response: JSON.stringify({ success: false, error: '书籍 ID 不能为空' }),
-    };
-  }
-  const book = await BookService.getBookById(bookId);
-  if (!book) {
-    return {
-      ok: false,
-      response: JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` }),
-    };
-  }
-  return { ok: true, book };
+async function ensureChapterContentLoaded(chapter: Chapter): Promise<void> {
+  if (chapter.content !== undefined) return;
+  const content = await ChapterContentService.loadChapterContent(chapter.id);
+  chapter.content = content || [];
+  chapter.contentLoaded = true;
 }
 
 /**
- * 工具 handler 的高阶包装：
- * 自动处理 parseToolArgs + resolveBookForTool + 早退出，并把解析后的书籍注入到 handler 上下文。
- * 业务代码只需关心参数和书籍本身，不再重复写 seam 样板。
+ * 计算章节的段落总数和已翻译数
  */
-function withBookContext<T>(
-  fn: (args: T, context: ToolContext & { book: Novel }) => Promise<string> | string,
-): ToolHandler {
-  return async (rawArgs, context) => {
-    const resolved = await resolveBookForTool(context.bookId);
-    if (!resolved.ok) {
-      return resolved.response;
-    }
-    return fn(parseToolArgs<T>(rawArgs), { ...context, book: resolved.book });
+function countChapterTranslationStats(chapter: Chapter): {
+  paragraphCount: number;
+  translatedCount: number;
+} {
+  const content = chapter.content || [];
+  const translatedCount = content.filter(
+    (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
+  ).length;
+  return { paragraphCount: content.length, translatedCount };
+}
+
+/**
+ * 将章节 / 卷信息格式化为工具响应中常用的结构
+ */
+function formatChapterTitleFields(chapter: Chapter): {
+  title_original: string;
+  title_translation: string;
+} {
+  if (typeof chapter.title === 'string') {
+    return { title_original: chapter.title, title_translation: '' };
+  }
+  return {
+    title_original: chapter.title.original,
+    title_translation: chapter.title.translation?.translation || '',
   };
 }
 
-function buildUpdatedChapterTitle(
-  existingTitle: Chapter['title'],
-  titleOriginal: string | undefined,
-  titleTranslation: string | undefined,
-): Chapter['title'] {
-  if (typeof existingTitle === 'string') {
-    return buildTitleFromString(existingTitle, titleOriginal, titleTranslation);
-  }
-  return buildTitleFromObject(existingTitle, titleOriginal, titleTranslation);
+interface VolumeLike {
+  id: string;
+  title: string | { original: string; translation?: { translation?: string } | null };
 }
 
-function buildTitleFromString(
-  existingTitle: string,
+function formatVolumeResponse(
+  volume: VolumeLike | undefined | null,
+): { id: string; title: string; title_translation: string } | null {
+  if (!volume) return null;
+  if (typeof volume.title === 'string') {
+    return { id: volume.id, title: volume.title, title_translation: '' };
+  }
+  return {
+    id: volume.id,
+    title: volume.title.original || '',
+    title_translation: volume.title.translation?.translation || '',
+  };
+}
+
+/**
+ * 使用章节标题做一次混合记忆搜索（若启用 include_memory）
+ */
+async function fetchChapterRelatedMemories(
+  bookId: string,
+  chapter: Chapter,
+  includeMemory: boolean,
+): Promise<Array<{ id: string; summary: string }>> {
+  if (!includeMemory || !bookId) return [];
+  const titleOriginal =
+    typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+  return searchRelatedMemoriesHybrid(
+    bookId,
+    [{ type: 'chapter', id: chapter.id }],
+    titleOriginal ? [titleOriginal] : [],
+    5,
+  );
+}
+
+/**
+ * 从旧章节 title 中提取 old_original / old_translation 字段
+ */
+function extractExistingTitleFields(chapter: Chapter): {
+  oldOriginal: string;
+  oldTranslation: string;
+} {
+  if (typeof chapter.title === 'string') {
+    return { oldOriginal: chapter.title, oldTranslation: '' };
+  }
+  return {
+    oldOriginal: chapter.title.original,
+    oldTranslation: chapter.title.translation?.translation || '',
+  };
+}
+
+/**
+ * 将旧格式（字符串标题）升级为新格式（带翻译对象），并合并用户输入
+ */
+function upgradeLegacyChapterTitle(
+  oldTitleString: string,
   titleOriginal: string | undefined,
   titleTranslation: string | undefined,
 ): Chapter['title'] {
@@ -113,7 +135,7 @@ function buildTitleFromString(
   }
   if (titleTranslation) {
     return {
-      original: existingTitle,
+      original: oldTitleString,
       translation: {
         id: generateShortId(),
         translation: titleTranslation.trim(),
@@ -121,226 +143,353 @@ function buildTitleFromString(
       },
     };
   }
-  return existingTitle;
+  // 不应该到达这里，调用前已校验至少提供一个参数
+  return oldTitleString;
 }
 
-function buildTitleFromObject(
+/**
+ * 对新格式（对象标题）应用用户输入的 original / translation 更新
+ */
+function mergeModernChapterTitle(
   existingTitle: Exclude<Chapter['title'], string>,
   titleOriginal: string | undefined,
   titleTranslation: string | undefined,
 ): Chapter['title'] {
-  const mergeTranslation = (text: string) =>
-    existingTitle.translation
-      ? { ...existingTitle.translation, translation: text }
-      : { id: generateShortId(), translation: text, aiModelId: '' };
+  const existingTranslation = existingTitle.translation;
+  const buildTranslation = (text: string) =>
+    existingTranslation
+      ? { ...existingTranslation, translation: text.trim() }
+      : { id: generateShortId(), translation: text.trim(), aiModelId: '' };
+
   if (titleOriginal && titleTranslation) {
     return {
       original: titleOriginal.trim(),
-      translation: mergeTranslation(titleTranslation.trim()),
+      translation: buildTranslation(titleTranslation),
     };
   }
   if (titleOriginal) {
     return {
       original: titleOriginal.trim(),
-      ...(existingTitle.translation ? { translation: existingTitle.translation } : {}),
-    } as Chapter['title'];
+      translation: existingTranslation,
+    };
   }
   if (titleTranslation) {
     return {
       original: existingTitle.original,
-      translation: mergeTranslation(titleTranslation.trim()),
+      translation: buildTranslation(titleTranslation),
     };
   }
+  // 不应该到达这里
   return existingTitle;
 }
 
-function collectAllChapterSummaries(book: Novel): Array<{
-  id: string;
-  title_original: string;
-  title_translation: string;
-}> {
-  const out: Array<{ id: string; title_original: string; title_translation: string }> = [];
-  if (!book.volumes) return out;
+/**
+ * 根据用户输入构造新的章节 title（兼容旧字符串格式与新对象格式）
+ */
+function buildUpdatedChapterTitle(
+  existingTitle: Chapter['title'],
+  titleOriginal: string | undefined,
+  titleTranslation: string | undefined,
+): Chapter['title'] {
+  if (typeof existingTitle === 'string') {
+    return upgradeLegacyChapterTitle(existingTitle, titleOriginal, titleTranslation);
+  }
+  return mergeModernChapterTitle(existingTitle, titleOriginal, titleTranslation);
+}
+
+interface BookInfoSnapshot {
+  description?: string;
+  tags?: string[];
+  author?: string;
+  alternateTitles?: string[];
+}
+
+/**
+ * 保存书籍元信息原值，用于撤销
+ */
+function snapshotBookInfoForUndo(book: Novel): BookInfoSnapshot {
+  const snapshot: BookInfoSnapshot = {};
+  if (book.description !== undefined) snapshot.description = book.description;
+  if (book.tags !== undefined) snapshot.tags = [...book.tags];
+  if (book.author !== undefined) snapshot.author = book.author;
+  if (book.alternateTitles !== undefined) snapshot.alternateTitles = [...book.alternateTitles];
+  return snapshot;
+}
+
+/**
+ * 将 update_book_info 的参数转换为可传入 booksStore.updateBook 的 Partial<Novel>
+ */
+function buildBookInfoUpdates(params: {
+  description?: string;
+  tags?: string[];
+  author?: string;
+  alternate_titles?: string[];
+}): Partial<Novel> {
+  const updates: Partial<Novel> = {};
+  if (params.description !== undefined) {
+    updates.description = params.description.trim() || undefined;
+  }
+  if (params.tags !== undefined) {
+    updates.tags = params.tags.length > 0 ? params.tags : undefined;
+  }
+  if (params.author !== undefined) {
+    updates.author = params.author.trim() || undefined;
+  }
+  if (params.alternate_titles !== undefined) {
+    updates.alternateTitles =
+      params.alternate_titles.length > 0 ? params.alternate_titles : undefined;
+  }
+  return updates;
+}
+
+/**
+ * 收集用户可读的已更新字段中文标签
+ */
+function collectUpdatedFieldLabels(params: {
+  description?: string;
+  tags?: string[];
+  author?: string;
+  alternate_titles?: string[];
+}): string[] {
+  const labels: string[] = [];
+  if (params.description !== undefined) labels.push('描述');
+  if (params.tags !== undefined) labels.push('标签');
+  if (params.author !== undefined) labels.push('作者');
+  if (params.alternate_titles !== undefined) labels.push('别名');
+  return labels;
+}
+
+/**
+ * 构建返回体中 updated_fields 的 old/new 对比结构
+ */
+function buildBookInfoUpdatedFieldsDiff(params: {
+  description?: string;
+  tags?: string[];
+  author?: string;
+  alternate_titles?: string[];
+  previousData: BookInfoSnapshot;
+  updates: Partial<Novel>;
+}): Record<string, unknown> {
+  const { description, tags, author, alternate_titles, previousData, updates } = params;
+  return {
+    ...(description !== undefined
+      ? {
+          description: {
+            old: previousData.description || '无',
+            new: updates.description || '无',
+          },
+        }
+      : {}),
+    ...(tags !== undefined
+      ? { tags: { old: previousData.tags || [], new: updates.tags || [] } }
+      : {}),
+    ...(author !== undefined
+      ? { author: { old: previousData.author || '无', new: updates.author || '无' } }
+      : {}),
+    ...(alternate_titles !== undefined
+      ? {
+          alternate_titles: {
+            old: previousData.alternateTitles || [],
+            new: updates.alternateTitles || [],
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * 将整本书的章节扁平化为 list_chapters 工具使用的简化结构
+ */
+function flattenBookChaptersForList(
+  book: Novel,
+): Array<{ id: string; title_original: string; title_translation: string }> {
+  const result: Array<{ id: string; title_original: string; title_translation: string }> = [];
+  if (!book.volumes) return result;
   for (const volume of book.volumes) {
-    if (!volume?.chapters) continue;
+    if (!volume || !volume.chapters) continue;
     for (const chapter of volume.chapters) {
       if (!chapter) continue;
-      out.push({
-        id: chapter.id,
-        title_original: getChapterTitleOriginal(chapter),
-        title_translation: getChapterTitleTranslation(chapter),
-      });
+      const titleOriginal =
+        typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
+      const titleTranslation =
+        typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '';
+      result.push({ id: chapter.id, title_original: titleOriginal, title_translation: titleTranslation });
     }
   }
-  return out;
+  return result;
 }
 
-async function loadChapterContentIfNeeded(chapter: Chapter): Promise<string> {
-  if (chapter.content === undefined) {
-    const content = await ChapterContentService.loadChapterContent(chapter.id);
-    if (content) {
-      chapter.content = content;
-      chapter.contentLoaded = true;
-    }
+/**
+ * 根据 chapter_id 在书籍卷章结构中定位章节及所属卷
+ */
+function locateChapterInBook(
+  book: Novel,
+  chapterId: string,
+): { chapter: Chapter; volume: VolumeLike } | null {
+  if (!book.volumes) return null;
+  for (const vol of book.volumes) {
+    if (!vol.chapters) continue;
+    const found = vol.chapters.find((ch) => ch.id === chapterId);
+    if (found) return { chapter: found, volume: vol };
   }
-  return getChapterContentText(chapter);
+  return null;
 }
 
-function countTranslatedParagraphs(chapter: Chapter): number {
-  return (
-    chapter.content?.filter(
-      (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
-    ).length || 0
-  );
-}
-
-async function loadRelatedMemoriesForChapter(
-  bookId: string | undefined,
+/**
+ * 对章节段落做分页切片，返回切片后的段落数据与分页元信息
+ */
+function paginateChapterParagraphs(
   chapter: Chapter,
-  includeMemory: boolean,
-): Promise<Array<{ id: string; summary: string }>> {
-  if (!includeMemory || !bookId) return [];
-  const titleOriginal = getChapterTitleOriginal(chapter);
-  return searchRelatedMemoriesHybrid(
-    bookId,
-    [{ type: 'chapter', id: chapter.id }],
-    titleOriginal ? [titleOriginal] : [],
-    5,
-  );
-}
-
-function buildAdjacentChapterResponse(
-  chapter: Chapter,
-  volume: { id: string; title: Chapter['title'] } | null | undefined,
-  chapterContent: string,
-  relatedMemories: Array<{ id: string; summary: string }>,
-  includeMemory: boolean,
-): string {
-  const chapterTitle = getChapterDisplayTitle(chapter);
-  return JSON.stringify({
-    success: true,
-    chapter: {
-      id: chapter.id,
-      title: chapterTitle,
-      title_original: getChapterTitleOriginal(chapter),
-      title_translation: getChapterTitleTranslation(chapter),
-      content: chapterContent,
-      paragraphCount: chapter.content?.length || 0,
-      translatedCount: countTranslatedParagraphs(chapter),
-      volume: volume
-        ? {
-            id: volume.id,
-            title: getVolumeTitleOriginal(volume),
-            title_translation: getVolumeTitleTranslation(volume),
-          }
-        : null,
-    },
-    ...(includeMemory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
+  offset: number,
+  limit: number,
+  paragraphCount: number,
+): {
+  paragraphs: Array<{
+    id: string;
+    text: string;
+    translation: string;
+    hasTranslation: boolean;
+    translationCount: number;
+  }>;
+  chapterContent: string;
+  effectiveOffset: number;
+  effectiveEnd: number;
+  hasMore: boolean;
+} {
+  const effectiveOffset = Math.min(offset, paragraphCount);
+  const effectiveEnd = Math.min(effectiveOffset + limit, paragraphCount);
+  const slicedParagraphs = chapter.content?.slice(effectiveOffset, effectiveEnd) || [];
+  const paragraphs = slicedParagraphs.map((para) => {
+    const selectedTranslation = para.translations?.find(
+      (t) => t.id === para.selectedTranslationId,
+    );
+    return {
+      id: para.id,
+      text: para.text,
+      translation: selectedTranslation?.translation || '',
+      hasTranslation: !!selectedTranslation,
+      translationCount: para.translations?.length || 0,
+    };
   });
+  return {
+    paragraphs,
+    chapterContent: slicedParagraphs.map((p) => p.text).join('\n'),
+    effectiveOffset,
+    effectiveEnd,
+    hasMore: effectiveEnd < paragraphCount,
+  };
 }
 
-async function handleAdjacentChapter(
+/**
+ * 相邻章节（前/后一章）工具的共享处理函数
+ */
+async function handleAdjacentChapterTool(
   args: Record<string, unknown>,
-  ctx: ToolContext,
-  direction: AdjacentChapterDirection,
+  bookId: string | undefined,
+  onAction: ToolContext['onAction'],
+  config: {
+    direction: 'previous' | 'next';
+    toolName: 'get_previous_chapter' | 'get_next_chapter';
+    notFoundError: string;
+    errorMessage: string;
+  },
 ): Promise<string> {
-  const { bookId, onAction } = ctx;
   const parsedArgs = parseToolArgs<{
     chapter_id: string;
     include_memory?: boolean;
     summary_only?: boolean;
   }>(args);
-  const resolved = await resolveBookForTool(bookId);
-  if (!resolved.ok) {
-    return resolved.response;
+  if (!bookId) {
+    return jsonError('书籍 ID 不能为空');
   }
   const { chapter_id, include_memory = true, summary_only = false } = parsedArgs;
   if (!chapter_id) {
-    return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
+    return jsonError('章节 ID 不能为空');
   }
 
-  const toolName = direction === 'previous' ? 'get_previous_chapter' : 'get_next_chapter';
-  const notFoundError =
-    direction === 'previous'
-      ? '没有前一个章节（当前章节是第一个章节）'
-      : '没有下一个章节（当前章节是最后一个章节）';
-  const failureError = direction === 'previous' ? '获取前一个章节失败' : '获取下一个章节失败';
-
   try {
-    const book = resolved.book;
-    const lookup =
-      direction === 'previous'
-        ? ChapterService.getPreviousChapter(book, chapter_id)
-        : ChapterService.getNextChapter(book, chapter_id);
-    if (!lookup) {
-      return JSON.stringify({ success: false, error: notFoundError });
+    const book = await BookService.getBookById(bookId);
+    if (!book) {
+      return jsonError(`书籍不存在: ${bookId}`);
     }
 
-    const { chapter, volume } = lookup;
-    const chapterTitle = getChapterDisplayTitle(chapter);
-    onAction?.({
-      type: 'read',
-      entity: 'chapter',
-      data: {
-        chapter_id: chapter.id,
-        chapter_title: chapterTitle,
-        tool_name: toolName,
-      },
-    });
+    const adjacentInfo =
+      config.direction === 'previous'
+        ? ChapterService.getPreviousChapter(book, chapter_id)
+        : ChapterService.getNextChapter(book, chapter_id);
+    if (!adjacentInfo) {
+      return jsonError(config.notFoundError);
+    }
 
-    const chapterContent = summary_only ? '' : await loadChapterContentIfNeeded(chapter);
-    const relatedMemories = await loadRelatedMemoriesForChapter(bookId, chapter, include_memory);
-    return buildAdjacentChapterResponse(
-      chapter,
-      volume ?? null,
-      chapterContent,
-      relatedMemories,
-      include_memory,
+    const { chapter, volume } = adjacentInfo;
+    const chapterTitle = getChapterDisplayTitle(chapter);
+
+    // 报告读取操作
+    if (onAction) {
+      onAction({
+        type: 'read',
+        entity: 'chapter',
+        data: {
+          chapter_id: chapter.id,
+          chapter_title: chapterTitle,
+          tool_name: config.toolName,
+        },
+      });
+    }
+
+    // 如果章节内容未加载，从 IndexedDB 加载（summary_only 模式跳过 content 读取）
+    let chapterContent = '';
+    if (!summary_only) {
+      await ensureChapterContentLoaded(chapter);
+      chapterContent = getChapterContentText(chapter);
+    }
+
+    const { paragraphCount, translatedCount } = countChapterTranslationStats(chapter);
+    const relatedMemories = await fetchChapterRelatedMemories(bookId, chapter, include_memory);
+
+    return JSON.stringify(
+      buildAdjacentChapterResponse({
+        chapter,
+        volume,
+        chapterContent,
+        paragraphCount,
+        translatedCount,
+        relatedMemories,
+        includeMemory: include_memory,
+      }),
     );
   } catch (error) {
-    return JSON.stringify({
-      success: false,
-      error: error instanceof Error ? error.message : failureError,
-    });
+    return jsonError(error instanceof Error ? error.message : config.errorMessage);
   }
 }
 
 /**
- * 构造 get_previous_chapter / get_next_chapter 工具定义。
- * 两者参数结构完全一致，仅 name/description 与方向参数不同。
+ * 渲染相邻章节（前/后一章）工具的统一响应体
  */
-function createAdjacentChapterTool(
-  name: 'get_previous_chapter' | 'get_next_chapter',
-  description: string,
-  direction: AdjacentChapterDirection,
-): ToolDefinition {
+function buildAdjacentChapterResponse(params: {
+  chapter: Chapter;
+  volume: VolumeLike | null | undefined;
+  chapterContent: string;
+  paragraphCount: number;
+  translatedCount: number;
+  relatedMemories: Array<{ id: string; summary: string }>;
+  includeMemory: boolean;
+}): Record<string, unknown> {
+  const titleFields = formatChapterTitleFields(params.chapter);
   return {
-    definition: {
-      type: 'function',
-      function: {
-        name,
-        description,
-        parameters: {
-          type: 'object',
-          properties: {
-            chapter_id: {
-              type: 'string',
-              description: '当前章节 ID',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-            summary_only: {
-              type: 'boolean',
-              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
-            },
-          },
-          required: ['chapter_id'],
-        },
-      },
+    success: true,
+    chapter: {
+      id: params.chapter.id,
+      title: getChapterDisplayTitle(params.chapter),
+      ...titleFields,
+      content: params.chapterContent,
+      paragraphCount: params.paragraphCount,
+      translatedCount: params.translatedCount,
+      volume: formatVolumeResponse(params.volume ?? null),
     },
-    handler: (args, ctx) => handleAdjacentChapter(args, ctx, direction),
+    ...(params.includeMemory && params.relatedMemories.length > 0
+      ? { related_memories: params.relatedMemories }
+      : {}),
   };
 }
 
@@ -364,9 +513,26 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: withBookContext<{ include_memory?: boolean }>(async (parsedArgs, context) => {
-      const { bookId, onAction, book } = context;
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{ include_memory?: boolean }>(args);
+
+      if (!bookId) {
+        return JSON.stringify({
+          success: false,
+          error: '未提供书籍 ID',
+        });
+      }
+
       try {
+        const book = await BookService.getBookById(bookId);
+        if (!book) {
+          return JSON.stringify({
+            success: false,
+            error: `书籍不存在: ${bookId}`,
+          });
+        }
+
         // 报告读取操作
         if (onAction) {
           onAction({
@@ -442,7 +608,7 @@ export const bookTools: ToolDefinition[] = [
           error: error instanceof Error ? error.message : '获取书籍信息失败',
         });
       }
-    }),
+    },
   },
   {
     definition: {
@@ -467,34 +633,46 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: withBookContext<{ limit?: number; offset?: number }>(
-      (parsedArgs, { bookId, onAction, book }) => {
-        const { limit, offset = 0 } = parsedArgs;
-        try {
-          onAction?.({
+    handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{ limit?: number; offset?: number }>(args);
+      if (!bookId) {
+        return jsonError('书籍 ID 不能为空');
+      }
+      const { limit, offset = 0 } = parsedArgs;
+
+      try {
+        const book = await BookService.getBookById(bookId);
+        if (!book) {
+          return jsonError(`书籍不存在: ${bookId}`);
+        }
+
+        // 报告读取操作
+        if (onAction) {
+          onAction({
             type: 'read',
             entity: 'chapter',
-            data: { book_id: bookId, tool_name: 'list_chapters' },
-          });
-
-          const allChapters = collectAllChapterSummaries(book);
-          const startIndex = offset && offset > 0 ? offset : 0;
-          const endIndex = limit && limit > 0 ? startIndex + limit : undefined;
-          const chapters = allChapters.slice(startIndex, endIndex);
-
-          return JSON.stringify({
-            success: true,
-            chapters,
-            totalCount: allChapters.length,
-          });
-        } catch (error) {
-          return JSON.stringify({
-            success: false,
-            error: error instanceof Error ? error.message : '获取章节列表失败',
+            data: {
+              book_id: bookId,
+              tool_name: 'list_chapters',
+            },
           });
         }
-      },
-    ),
+
+        // 收集所有章节并应用分页
+        const allChapters = flattenBookChaptersForList(book);
+        const startIndex = offset && offset > 0 ? offset : 0;
+        const endIndex = limit && limit > 0 ? startIndex + limit : undefined;
+        const chapters = allChapters.slice(startIndex, endIndex);
+
+        return JSON.stringify({
+          success: true,
+          chapters,
+          totalCount: allChapters.length,
+        });
+      } catch (error) {
+        return jsonError(error instanceof Error ? error.message : '获取章节列表失败');
+      }
+    },
   },
   {
     definition: {
@@ -518,7 +696,11 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: withBookContext<{ volume_ids: string[] }>((parsedArgs, { bookId, onAction, book }) => {
+    handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{ volume_ids: string[] }>(args);
+      if (!bookId) {
+        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
+      }
       const { volume_ids } = parsedArgs;
 
       if (!volume_ids || !Array.isArray(volume_ids) || volume_ids.length === 0) {
@@ -526,6 +708,11 @@ export const bookTools: ToolDefinition[] = [
       }
 
       try {
+        const book = await BookService.getBookById(bookId);
+        if (!book) {
+          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
+        }
+
         // 报告读取操作
         if (onAction) {
           onAction({
@@ -595,7 +782,7 @@ export const bookTools: ToolDefinition[] = [
           error: error instanceof Error ? error.message : '获取分卷章节列表失败',
         });
       }
-    }),
+    },
   },
   {
     definition: {
@@ -614,25 +801,28 @@ export const bookTools: ToolDefinition[] = [
             },
             limit: {
               type: 'number',
-              description:
-                '默认 5。Top1 未必最佳 — 把它当候选定位器,默认看 Top3-5;抽象 / 不确定时调到 8-10,再用 get_chapter_info 二次确认',
+              description: '默认 5。Top1 未必最佳 — 把它当候选定位器,默认看 Top3-5;抽象 / 不确定时调到 8-10,再用 get_chapter_info 二次确认',
             },
           },
           required: ['query'],
         },
       },
     },
-    handler: async (args, { bookId: rawBookId, onAction }) => {
-      const parsed = parseArgsRequireBookId<{ query: string; limit?: number }>(args, rawBookId);
-      if (!parsed.ok) return parsed.response;
-      const { bookId, args: { query, limit = 5 } } = parsed;
+    handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{ query: string; limit?: number }>(args);
+      if (!bookId) {
+        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
+      }
+      const { query, limit = 5 } = parsedArgs;
       if (!query || typeof query !== 'string' || !query.trim()) {
         return JSON.stringify({ success: false, error: 'query 不能为空' });
       }
 
       try {
         const { useSettingsStore } = await import('src/stores/settings');
-        const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
+        const { isLocalEmbeddingEffectivelyEnabled } = await import(
+          'src/utils/local-embedding'
+        );
         const { isMobileDevice } = await import('src/utils/platform');
         const stored = useSettingsStore().settings.enableLocalEmbedding;
         if (!isLocalEmbeddingEffectivelyEnabled(stored)) {
@@ -667,7 +857,9 @@ export const bookTools: ToolDefinition[] = [
           });
         }
 
-        const { ChapterEmbeddingService } = await import('src/services/chapter-embedding-service');
+        const { ChapterEmbeddingService } = await import(
+          'src/services/chapter-embedding-service'
+        );
         const matches = await ChapterEmbeddingService.queryChapters(bookId, query, limit);
 
         return JSON.stringify({
@@ -698,8 +890,7 @@ export const bookTools: ToolDefinition[] = [
             },
             limit: {
               type: 'number',
-              description:
-                '返回的段落数量上限（默认 30，最大 200）。章节可能有上百段，默认只取前 30 段避免 context 爆炸。',
+              description: '返回的段落数量上限（默认 30，最大 200）。章节可能有上百段，默认只取前 30 段避免 context 爆炸。',
             },
             offset: {
               type: 'number',
@@ -714,63 +905,40 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: withBookContext<{
-      chapter_id: string;
-      limit?: number;
-      offset?: number;
-      include_memory?: boolean;
-    }>(async (parsedArgs, { bookId, onAction, book }) => {
+    handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{
+        chapter_id: string;
+        limit?: number;
+        offset?: number;
+        include_memory?: boolean;
+      }>(args);
+      if (!bookId) {
+        return jsonError('书籍 ID 不能为空');
+      }
       const { chapter_id, include_memory = true } = parsedArgs;
       const rawLimit = typeof parsedArgs.limit === 'number' ? parsedArgs.limit : 30;
       const limit = Math.max(1, Math.min(200, Math.floor(rawLimit)));
       const rawOffset = typeof parsedArgs.offset === 'number' ? parsedArgs.offset : 0;
       const offset = Math.max(0, Math.floor(rawOffset));
       if (!chapter_id) {
-        return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
+        return jsonError('章节 ID 不能为空');
       }
 
       try {
-        // 查找章节
-        let chapter: Chapter | null = null;
-        let volume = null;
-        if (book.volumes) {
-          for (const vol of book.volumes) {
-            if (vol.chapters) {
-              const found = vol.chapters.find((ch) => ch.id === chapter_id);
-              if (found) {
-                chapter = found;
-                volume = vol;
-                break;
-              }
-            }
-          }
+        const book = await BookService.getBookById(bookId);
+        if (!book) {
+          return jsonError(`书籍不存在: ${bookId}`);
         }
 
-        if (!chapter) {
-          return JSON.stringify({
-            success: false,
-            error: `章节不存在: ${chapter_id}`,
-          });
+        // 查找章节及其所属卷
+        const located = locateChapterInBook(book, chapter_id);
+        if (!located) {
+          return jsonError(`章节不存在: ${chapter_id}`);
         }
+        const { chapter, volume } = located;
 
         // 如果章节内容未加载，从 IndexedDB 加载
-        if (chapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(chapter.id);
-          if (content) {
-            chapter = {
-              ...chapter,
-              content,
-              contentLoaded: true,
-            };
-          } else {
-            // 如果加载失败，设置为空数组
-            chapter = {
-              ...chapter,
-              content: [],
-              contentLoaded: true,
-            };
-          }
-        }
+        await ensureChapterContentLoaded(chapter);
 
         const chapterTitle = getChapterDisplayTitle(chapter);
 
@@ -786,85 +954,113 @@ export const bookTools: ToolDefinition[] = [
             },
           });
         }
-        const paragraphCount = chapter.content?.length || 0;
-        const translatedCount =
-          chapter.content?.filter(
-            (p) => p.selectedTranslationId && p.translations && p.translations.length > 0,
-          ).length || 0;
+        const { paragraphCount, translatedCount } = countChapterTranslationStats(chapter);
 
         // 分页：根据 offset/limit 切片段落，避免一次性返回整章把 context 塞满
-        const effectiveOffset = Math.min(offset, paragraphCount);
-        const effectiveEnd = Math.min(effectiveOffset + limit, paragraphCount);
-        const slicedParagraphs = chapter.content?.slice(effectiveOffset, effectiveEnd) || [];
-        const hasMore = effectiveEnd < paragraphCount;
-        const chapterContent = slicedParagraphs.map((para) => para.text).join('\n');
-
-        // 构建段落信息
-        const paragraphs = slicedParagraphs.map((para) => {
-          const selectedTranslation = para.translations?.find(
-            (t) => t.id === para.selectedTranslationId,
-          );
-          return {
-            id: para.id,
-            text: para.text,
-            translation: selectedTranslation?.translation || '',
-            hasTranslation: !!selectedTranslation,
-            translationCount: para.translations?.length || 0,
-          };
-        });
+        const page = paginateChapterParagraphs(chapter, offset, limit, paragraphCount);
 
         // 搜索相关记忆（使用章节标题作为关键词）
-        let relatedMemories: Array<{ id: string; summary: string }> = [];
-        if (include_memory && bookId) {
-          const titleOriginal =
-            typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
-          relatedMemories = await searchRelatedMemoriesHybrid(
-            bookId,
-            [{ type: 'chapter', id: chapter.id }],
-            titleOriginal ? [titleOriginal] : [],
-            5,
-          );
-        }
+        const relatedMemories = await fetchChapterRelatedMemories(bookId, chapter, include_memory);
 
+        const titleFields = formatChapterTitleFields(chapter);
         return JSON.stringify({
           success: true,
           chapter: {
-            ...buildChapterTitleSummary(chapter),
-            content: chapterContent,
+            id: chapter.id,
+            title: chapterTitle,
+            ...titleFields,
+            content: page.chapterContent,
             paragraphCount,
             translatedCount,
-            paragraphs,
+            paragraphs: page.paragraphs,
             pagination: {
-              offset: effectiveOffset,
+              offset: page.effectiveOffset,
               limit,
-              returned: paragraphs.length,
-              hasMore,
-              nextOffset: hasMore ? effectiveEnd : null,
+              returned: page.paragraphs.length,
+              hasMore: page.hasMore,
+              nextOffset: page.hasMore ? page.effectiveEnd : null,
             },
-            volume: buildVolumeTitleSummary(volume),
+            volume: formatVolumeResponse(volume ?? null),
           },
           ...(include_memory && relatedMemories.length > 0
             ? { related_memories: relatedMemories }
             : {}),
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '获取章节信息失败',
-        });
+        return jsonError(error instanceof Error ? error.message : '获取章节信息失败');
       }
-    }),
+    },
   },
-  createAdjacentChapterTool(
-    'get_previous_chapter',
-    '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
-    'previous',
-  ),
-  createAdjacentChapterTool(
-    'get_next_chapter',
-    '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
-    'next',
-  ),
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_previous_chapter',
+        description:
+          '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
+        parameters: {
+          type: 'object',
+          properties: {
+            chapter_id: {
+              type: 'string',
+              description: '当前章节 ID',
+            },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
+            summary_only: {
+              type: 'boolean',
+              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
+            },
+          },
+          required: ['chapter_id'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) =>
+      handleAdjacentChapterTool(args, bookId, onAction, {
+        direction: 'previous',
+        toolName: 'get_previous_chapter',
+        notFoundError: '没有前一个章节（当前章节是第一个章节）',
+        errorMessage: '获取前一个章节失败',
+      }),
+  },
+  {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'get_next_chapter',
+        description:
+          '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
+        parameters: {
+          type: 'object',
+          properties: {
+            chapter_id: {
+              type: 'string',
+              description: '当前章节 ID',
+            },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
+            summary_only: {
+              type: 'boolean',
+              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
+            },
+          },
+          required: ['chapter_id'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) =>
+      handleAdjacentChapterTool(args, bookId, onAction, {
+        direction: 'next',
+        toolName: 'get_next_chapter',
+        notFoundError: '没有下一个章节（当前章节是最后一个章节）',
+        errorMessage: '获取下一个章节失败',
+      }),
+  },
   {
     definition: {
       type: 'function',
@@ -892,51 +1088,54 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId: rawBookId, onAction }) => {
-      const parsed = parseArgsRequireBookId<{
+    handler: async (args, { bookId, onAction }) => {
+      const parsedArgs = parseToolArgs<{
         chapter_id: string;
         title_original?: string;
         title_translation?: string;
-      }>(args, rawBookId);
-      if (!parsed.ok) return parsed.response;
-      const { bookId, args: { chapter_id, title_original, title_translation } } = parsed;
+      }>(args);
+      if (!bookId) {
+        return jsonError('书籍 ID 不能为空');
+      }
+      const { chapter_id, title_original, title_translation } = parsedArgs;
       if (!chapter_id) {
-        return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
+        return jsonError('章节 ID 不能为空');
       }
       if (!title_original && !title_translation) {
-        return JSON.stringify({
-          success: false,
-          error: '必须提供 title_original 或 title_translation 至少一个参数',
-        });
+        return jsonError('必须提供 title_original 或 title_translation 至少一个参数');
       }
 
       try {
         const booksStore = useBooksStore();
         const book = booksStore.getBookById(bookId);
         if (!book) {
-          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
+          return jsonError(`书籍不存在: ${bookId}`);
         }
+
+        // 查找章节
         const chapterInfo = ChapterService.findChapterById(book, chapter_id);
         if (!chapterInfo) {
-          return JSON.stringify({ success: false, error: `章节不存在: ${chapter_id}` });
+          return jsonError(`章节不存在: ${chapter_id}`);
         }
 
         const { chapter: existingChapter } = chapterInfo;
         const oldTitle = getChapterDisplayTitle(existingChapter);
-        const oldOriginal = getChapterTitleOriginal(existingChapter);
-        const oldTranslation = getChapterTitleTranslation(existingChapter);
-
+        const { oldOriginal, oldTranslation } = extractExistingTitleFields(existingChapter);
         const updatedTitle = buildUpdatedChapterTitle(
           existingChapter.title,
           title_original,
           title_translation,
         );
 
+        // 使用 ChapterService 更新章节
         const updatedVolumes = ChapterService.updateChapter(book, chapter_id, {
           title: updatedTitle,
         });
+
+        // 保存更改
         await booksStore.updateBook(bookId, { volumes: updatedVolumes });
 
+        // 获取更新后的章节信息
         const updatedBook = booksStore.getBookById(bookId);
         const updatedChapterInfo = updatedBook
           ? ChapterService.findChapterById(updatedBook, chapter_id)
@@ -945,21 +1144,24 @@ export const bookTools: ToolDefinition[] = [
           ? getChapterDisplayTitle(updatedChapterInfo.chapter)
           : oldTitle;
 
-        onAction?.({
-          type: 'update',
-          entity: 'chapter',
-          data: {
-            chapter_id,
-            chapter_title: newTitle,
-            old_title: oldTitle,
-            new_title: newTitle,
-            tool_name: 'update_chapter_title',
-          },
-          previousData: {
-            title_original: oldOriginal,
-            title_translation: oldTranslation,
-          },
-        });
+        // 报告操作
+        if (onAction) {
+          onAction({
+            type: 'update',
+            entity: 'chapter',
+            data: {
+              chapter_id,
+              chapter_title: newTitle,
+              old_title: oldTitle,
+              new_title: newTitle,
+              tool_name: 'update_chapter_title',
+            },
+            previousData: {
+              title_original: oldOriginal,
+              title_translation: oldTranslation,
+            },
+          });
+        }
 
         return JSON.stringify({
           success: true,
@@ -975,10 +1177,7 @@ export const bookTools: ToolDefinition[] = [
             typeof updatedTitle === 'string' ? '' : updatedTitle.translation?.translation || '',
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '更新章节标题失败',
-        });
+        return jsonError(error instanceof Error ? error.message : '更新章节标题失败');
       }
     },
   },
@@ -1019,12 +1218,19 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: withBookContext<{
-      description?: string;
-      tags?: string[];
-      author?: string;
-      alternate_titles?: string[];
-    }>(async (parsedArgs, { bookId, onAction, book }) => {
+    handler: async (args, context: ToolContext) => {
+      const { bookId, onAction } = context;
+      const parsedArgs = parseToolArgs<{
+        description?: string;
+        tags?: string[];
+        author?: string;
+        alternate_titles?: string[];
+      }>(args);
+
+      if (!bookId) {
+        return jsonError('未提供书籍 ID');
+      }
+
       const { description, tags, author, alternate_titles } = parsedArgs;
 
       // 检查是否至少提供了一个要更新的字段
@@ -1034,58 +1240,27 @@ export const bookTools: ToolDefinition[] = [
         author === undefined &&
         alternate_titles === undefined
       ) {
-        return JSON.stringify({
-          success: false,
-          error: '必须至少提供一个要更新的字段（description、tags、author 或 alternate_titles）',
-        });
+        return jsonError(
+          '必须至少提供一个要更新的字段（description、tags、author 或 alternate_titles）',
+        );
       }
 
       try {
-        // 保存原始数据用于撤销
-        const previousData: {
-          description?: string;
-          tags?: string[];
-          author?: string;
-          alternateTitles?: string[];
-        } = {};
-        if (book.description !== undefined) {
-          previousData.description = book.description;
-        }
-        if (book.tags !== undefined) {
-          previousData.tags = [...book.tags];
-        }
-        if (book.author !== undefined) {
-          previousData.author = book.author;
-        }
-        if (book.alternateTitles !== undefined) {
-          previousData.alternateTitles = [...book.alternateTitles];
+        // 获取当前书籍信息
+        const book = await BookService.getBookById(bookId);
+        if (!book) {
+          return jsonError(`书籍不存在: ${bookId}`);
         }
 
-        // 构建更新数据
-        const updates: Partial<Novel> = {};
-
-        if (description !== undefined) {
-          updates.description = description.trim() || undefined;
-        }
-
-        if (tags !== undefined) {
-          updates.tags = tags.length > 0 ? tags : undefined;
-        }
-
-        if (author !== undefined) {
-          updates.author = author.trim() || undefined;
-        }
-
-        if (alternate_titles !== undefined) {
-          updates.alternateTitles = alternate_titles.length > 0 ? alternate_titles : undefined;
-        }
+        const previousData = snapshotBookInfoForUndo(book);
+        const updates = buildBookInfoUpdates({ description, tags, author, alternate_titles });
 
         // 更新书籍
         const booksStore = useBooksStore();
-        await booksStore.updateBook(book.id, updates);
+        await booksStore.updateBook(bookId, updates);
 
         // 获取更新后的书籍信息
-        const updatedBook = await BookService.getBookById(book.id);
+        const updatedBook = await BookService.getBookById(bookId);
 
         // 报告操作
         if (onAction) {
@@ -1106,59 +1281,30 @@ export const bookTools: ToolDefinition[] = [
           });
         }
 
-        // 构建返回信息
-        const updatedFields: string[] = [];
-        if (description !== undefined) updatedFields.push('描述');
-        if (tags !== undefined) updatedFields.push('标签');
-        if (author !== undefined) updatedFields.push('作者');
-        if (alternate_titles !== undefined) updatedFields.push('别名');
+        const updatedFields = collectUpdatedFieldLabels({
+          description,
+          tags,
+          author,
+          alternate_titles,
+        });
 
         return JSON.stringify({
           success: true,
           message: `书籍信息已更新：${updatedFields.join('、')}`,
           book_id: bookId,
           book_title: updatedBook?.title || book.title,
-          updated_fields: {
-            ...(description !== undefined
-              ? {
-                  description: {
-                    old: previousData.description || '无',
-                    new: updates.description || '无',
-                  },
-                }
-              : {}),
-            ...(tags !== undefined
-              ? {
-                  tags: {
-                    old: previousData.tags || [],
-                    new: updates.tags || [],
-                  },
-                }
-              : {}),
-            ...(author !== undefined
-              ? {
-                  author: {
-                    old: previousData.author || '无',
-                    new: updates.author || '无',
-                  },
-                }
-              : {}),
-            ...(alternate_titles !== undefined
-              ? {
-                  alternate_titles: {
-                    old: previousData.alternateTitles || [],
-                    new: updates.alternateTitles || [],
-                  },
-                }
-              : {}),
-          },
+          updated_fields: buildBookInfoUpdatedFieldsDiff({
+            description,
+            tags,
+            author,
+            alternate_titles,
+            previousData,
+            updates,
+          }),
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '更新书籍信息失败',
-        });
+        return jsonError(error instanceof Error ? error.message : '更新书籍信息失败');
       }
-    }),
+    },
   },
 ];

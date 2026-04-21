@@ -1,6 +1,6 @@
 import { ChapterService, type ParagraphSearchResult } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
-import type { useBooksStore } from 'src/stores/books';
+import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import {
@@ -11,19 +11,9 @@ import {
   isEmptyOrSymbolOnly,
 } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
-import type { Novel, Paragraph, Translation } from 'src/models/novel';
-import type { ToolDefinition, ActionInfo, ToolContext } from './types';
+import type { Translation, Chapter, Novel, Volume } from 'src/models/novel';
+import type { ToolDefinition, ActionInfo, ToolContext, ChunkBoundaries } from './types';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
-import {
-  collectChapterLocationsInRange,
-  collectMatchingParagraphsFromLocations,
-  ensureChaptersLoaded,
-  filterValidKeywords,
-  resolveBook,
-  resolveBookAndParagraphLocation,
-  resolveSearchRange,
-} from './paragraph-search-helpers';
-import { buildChapterTitleSummary, buildVolumeTitleSummary } from './title-helpers';
 
 /**
  * 从段落文本中提取关键词（用于记忆搜索）
@@ -73,362 +63,132 @@ function toDisplayParagraphIndex(paragraphIndex: number): number {
 }
 
 /**
- * 选取段落的展示翻译文本：优先当前选中版本，其次第一条翻译，最后回退空字符串。
- * 被 `toSearchResponseItem` / `previous_paragraphs` / `next_paragraphs` 等多处共享。
+ * 转义正则特殊字符，生成可直接拼进 RegExp 的字面量片段。
+ * 被 replaceWholeKeyword / containsWholeKeyword 共用。
  */
-function pickDisplayTranslation(paragraph: Paragraph): string {
+function escapeRegex(keyword: string): string {
+  return keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * 依据关键词 / 文本是否含 CJK、关键词是否是纯英文单词，归一化为三种匹配策略。
+ * 被 replaceWholeKeyword / containsWholeKeyword 共用，以消除两处重复的分支判定。
+ */
+type WholeKeywordStrategy = 'english' | 'cjk' | 'latin';
+
+function pickWholeKeywordStrategy(text: string, keyword: string): WholeKeywordStrategy {
+  const keywordHasCJK = hasCJK(keyword);
+  const isEnglishWord = /^[a-zA-Z]+$/.test(keyword);
+  if (isEnglishWord && !keywordHasCJK) {
+    return 'english';
+  }
+  if (keywordHasCJK || hasCJK(text)) {
+    return 'cjk';
+  }
+  return 'latin';
+}
+
+/**
+ * `english` 策略下的完整词边界正则：前后允许文本边界、非字母数字、或 CJK 字符。
+ * `flags` 控制全局 / 大小写等；replace 用 'giu'，test 用 'iu'。
+ */
+function buildEnglishBoundaryPattern(escapedKeyword: string, flags: string): RegExp {
+  return new RegExp(
+    `(^|[^a-zA-Z0-9]|[${CJK_CHAR_CLASS}])${escapedKeyword}([^a-zA-Z0-9]|[${CJK_CHAR_CLASS}]|$)`,
+    flags,
+  );
+}
+
+/**
+ * `cjk` 策略下的「前后非 CJK / 文本边界」正则。CJK 子串在 CJK 字符中间的匹配由 fallback 处理。
+ */
+function buildCJKBoundaryPattern(escapedKeyword: string, flags: string): RegExp {
+  return new RegExp(`(^|[^${CJK_CHAR_CLASS}])${escapedKeyword}([^${CJK_CHAR_CLASS}]|$)`, flags);
+}
+
+/**
+ * `latin` 策略下的 Unicode 字母 / 数字边界正则（主要覆盖英文以外的纯拉丁语系文本）。
+ */
+function buildLatinBoundaryPattern(escapedKeyword: string, flags: string): RegExp {
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`, flags);
+}
+
+/**
+ * 判断关键词在 CJK 上下文里某一次命中的前后字符是否属于「可匹配」组合。
+ * 抽出后，手动扫描循环不再承担条件展开的认知负担。
+ */
+function isCJKContextBoundaryMatch(text: string, index: number, keywordLength: number): boolean {
+  const beforeChar: string = index > 0 ? (text[index - 1] ?? '') : '';
+  const afterChar: string =
+    index + keywordLength < text.length ? (text[index + keywordLength] ?? '') : '';
+
+  const beforeIsBoundary = index === 0 || !isCJK(beforeChar);
+  const afterIsBoundary = index + keywordLength === text.length || !isCJK(afterChar);
+  const beforeIsCJK = index > 0 && isCJK(beforeChar);
+  const afterIsCJK = index + keywordLength < text.length && isCJK(afterChar);
+
   return (
-    paragraph.translations.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
-    paragraph.translations[0]?.translation ||
-    ''
+    (beforeIsBoundary && afterIsBoundary) ||
+    (beforeIsCJK && afterIsCJK) ||
+    (beforeIsBoundary && afterIsCJK) ||
+    (beforeIsCJK && afterIsBoundary)
   );
 }
 
 /**
- * 构造段落翻译条目的基础结构（id / translation / aiModelId / aiModelName / isSelected）。
- * 被 `get_paragraph_info` 与 `get_translation_history` 共享；后者在返回时额外追加
- * index / isLatest 字段，调用方按需展开。
+ * CJK fallback：手动扫描 `text` 中所有 `keyword` 出现位置，命中「可匹配」组合时写替换。
+ * 只在正则方案未命中时调用，保持原有行为（replaceWholeKeyword 用）。
  */
-function buildTranslationBaseEntry(
-  translation: Translation,
-  paragraph: Paragraph,
-  aiModelsStore: ReturnType<typeof useAIModelsStore>,
-): {
-  id: string;
-  translation: string;
-  aiModelId: string;
-  aiModelName: string;
-  isSelected: boolean;
-} {
-  return {
-    id: translation.id,
-    translation: translation.translation,
-    aiModelId: translation.aiModelId,
-    aiModelName: aiModelsStore.getModelById(translation.aiModelId)?.name || '未知模型',
-    isSelected: translation.id === paragraph.selectedTranslationId,
-  };
-}
+function manualReplaceCJK(text: string, keyword: string, replacement: string): string {
+  let searchIndex = 0;
+  const parts: string[] = [];
+  let lastIndex = 0;
 
-/**
- * 基于段落文本提取关键词并查询相关记忆。
- * 多个工具（get_paragraph_info / get_translation_history / get_previous_paragraphs /
- * get_next_paragraphs）共享同一套「从段落文本提取关键词 → 混合记忆搜索」流程。
- * include_memory=false、bookId 缺失、text 为空、关键词为空等场景统一返回空数组。
- */
-async function fetchRelatedMemoriesFromParagraphText(
-  bookId: string | undefined,
-  text: string | undefined,
-  includeMemory: boolean,
-): Promise<Array<{ id: string; summary: string }>> {
-  if (!includeMemory || !bookId || !text) {
-    return [];
-  }
-  const keywords = extractKeywordsFromParagraph(text, 20);
-  if (keywords.length === 0) {
-    return [];
-  }
-  return searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
-}
+  while (true) {
+    const index = text.indexOf(keyword, searchIndex);
+    if (index === -1) break;
 
-/**
- * 将段落搜索结果序列化为工具返回的 JSON 字符串。
- * 被邻近段落查询 / 关键词搜索等多个工具共享的响应结构。
- * @param validResults 已经过空段落过滤的搜索结果
- * @param includeMemory 是否启用记忆联查
- * @param relatedMemories 已查询好的相关记忆（调用方负责决定关键词来源）
- */
-/**
- * 将 ParagraphSearchResult 序列化为工具返回 JSON 里的段落条目（含 chapter/volume 标题与翻译）。
- */
-function toSearchResponseItem(result: ParagraphSearchResult) {
-  return {
-    id: result.paragraph.id,
-    text: result.paragraph.text,
-    translation: pickDisplayTranslation(result.paragraph),
-    chapter: {
-      id: result.chapter.id,
-      title:
-        typeof result.chapter.title === 'string'
-          ? result.chapter.title
-          : result.chapter.title.original,
-      title_translation:
-        typeof result.chapter.title === 'string'
-          ? ''
-          : result.chapter.title.translation?.translation || '',
-    },
-    volume: {
-      id: result.volume.id,
-      title:
-        typeof result.volume.title === 'string'
-          ? result.volume.title
-          : result.volume.title.original,
-      title_translation:
-        typeof result.volume.title === 'string'
-          ? ''
-          : result.volume.title.translation?.translation || '',
-    },
-    paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
-    chapter_index: result.chapterIndex,
-    volume_index: result.volumeIndex,
-  };
-}
-
-function buildParagraphSearchResponse(
-  validResults: ParagraphSearchResult[],
-  includeMemory: boolean,
-  relatedMemories: Array<{ id: string; summary: string }>,
-): string {
-  return JSON.stringify({
-    success: true,
-    paragraphs: validResults.map(toSearchResponseItem),
-    count: validResults.length,
-    ...(includeMemory && relatedMemories.length > 0
-      ? { related_memories: relatedMemories }
-      : {}),
-  });
-}
-
-/**
- * `select_translation` / `remove_translation` 共享的前置流程：
- * 校验参数 → 查找书籍 → 定位目标段落。
- * 返回 discriminated union：ok=true 提供调用方继续处理需要的上下文，
- * ok=false 携带可直接返回给工具的 JSON 字符串（段落不存在的软失败）。
- * 硬错误（bookId / id 为空、书不存在）仍以 throw 抛出。
- *
- * 注意：不做 translations 非空校验 —— 两个调用方相对于 onAction 的顺序
- * 不同，需要各自保留原有副作用顺序。
- */
-async function resolveTranslationTarget(
-  bookId: string | undefined,
-  args: Record<string, unknown>,
-): Promise<
-  | {
-      ok: true;
-      bookId: string;
-      book: Novel;
-      paragraph: Paragraph;
-      paragraph_id: string;
-      translation_id: string;
-      booksStore: ReturnType<typeof useBooksStore>;
+    if (isCJKContextBoundaryMatch(text, index, keyword.length)) {
+      if (index > lastIndex) {
+        parts.push(text.substring(lastIndex, index));
+      }
+      parts.push(replacement);
+      lastIndex = index + keyword.length;
     }
-  | { ok: false; response: string }
-> {
-  const { paragraph_id, translation_id } = args as {
-    paragraph_id: string;
-    translation_id: string;
-  };
-  if (!paragraph_id || !translation_id) {
-    throw new Error('段落 ID 和翻译 ID 不能为空');
+    searchIndex = index + 1;
   }
 
-  const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
-  if (!resolved.ok) {
-    return resolved;
+  if (parts.length === 0) {
+    return text;
   }
-
-  return {
-    ok: true,
-    bookId: resolved.bookId,
-    book: resolved.book,
-    paragraph: resolved.location.paragraph,
-    paragraph_id,
-    translation_id,
-    booksStore: resolved.booksStore,
-  };
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  return parts.join('');
 }
 
 /**
- * `select_translation` / `remove_translation` 共享的 handler 包装器：
- * 先调用 resolveTranslationTarget 解析上下文；ok=false 时直接返回软失败 JSON，
- * ok=true 时把解析结果与原始 context 一并转交给业务回调。
- *
- * 封装目的：消除两个 handler 开头一模一样的 resolveTranslationTarget 预处理样板
- * （含 if (!resolved.ok) return 与同名解构），让各自的 handler 只保留差异部分。
+ * CJK fallback（containsWholeKeyword 用）：扫描命中组合只要任一匹配即返回 true。
  */
-function withResolvedTranslationTarget(
-  run: (
-    resolved: Extract<Awaited<ReturnType<typeof resolveTranslationTarget>>, { ok: true }>,
-    context: ToolContext,
-  ) => Promise<string>,
-): (args: Record<string, unknown>, context: ToolContext) => Promise<string> {
-  return async (args, context) => {
-    const resolved = await resolveTranslationTarget(context.bookId, args);
-    if (!resolved.ok) {
-      return resolved.response;
+function manualContainsCJK(text: string, keyword: string): boolean {
+  let searchIndex = 0;
+  while (true) {
+    const index = text.indexOf(keyword, searchIndex);
+    if (index === -1) return false;
+    if (isCJKContextBoundaryMatch(text, index, keyword.length)) {
+      return true;
     }
-    return run(resolved, context);
-  };
+    searchIndex = index + 1;
+  }
 }
 
 /**
- * `update_translation` / `remove_translation` 共享的翻译查找+校验流程：
- * 校验段落是否存在翻译历史 → 按 id 定位目标翻译。
- * 返回 discriminated union：ok=true 提供索引与条目，
- * ok=false 携带可直接返回给工具的 JSON 字符串（软失败）。
+ * replace 回调：把命中位置的前后边界字符原样保留，关键词本身替换为 replacement。
  */
-function locateTranslationById(
-  paragraph: Paragraph,
-  translation_id: string,
-  action: 'update' | 'delete',
-):
-  | { ok: true; index: number; translation: Translation }
-  | { ok: false; response: string } {
-  if (!paragraph.translations || paragraph.translations.length === 0) {
-    return {
-      ok: false,
-      response: JSON.stringify({
-        success: false,
-        error: `段落没有翻译历史`,
-      }),
-    };
-  }
-
-  const index = paragraph.translations.findIndex((t) => t.id === translation_id);
-  if (index === -1) {
-    return {
-      ok: false,
-      response: JSON.stringify({
-        success: false,
-        error: `翻译 ID 不存在: ${translation_id}`,
-      }),
-    };
-  }
-
-  const translation = paragraph.translations[index];
-  if (!translation) {
-    // 非软失败场景，理论上 findIndex 命中则元素必然存在，
-    // 这里仅是 TypeScript 的 noUncheckedIndexedAccess 防御。
-    const verb = action === 'update' ? '更新' : '删除';
-    return {
-      ok: false,
-      response: JSON.stringify({
-        success: false,
-        error: `无法找到要${verb}的翻译`,
-      }),
-    };
-  }
-
-  return { ok: true, index, translation };
-}
-
-/**
- * `select_translation` / `remove_translation` 共享的参数 schema 构造器。
- * 两者的 paragraph_id / translation_id 参数结构完全一致，仅 translation_id 的
- * 描述因动作不同（选择 / 删除）而有差异；通过传入 description 文本复用整个 schema。
- */
-function buildTranslationIdParametersSchema(
-  translationIdDescription: string,
-): ToolDefinition['definition']['function']['parameters'] {
-  return {
-    type: 'object',
-    properties: {
-      paragraph_id: {
-        type: 'string',
-        description: '段落 ID',
-      },
-      translation_id: {
-        type: 'string',
-        description: translationIdDescription,
-      },
-    },
-    required: ['paragraph_id', 'translation_id'],
-  };
-}
-
-/**
- * `get_previous_paragraphs` 与 `get_next_paragraphs` 共享的参数 schema。
- * 两者接受完全相同的 paragraph_id / count / include_memory 参数。
- */
-const NEIGHBOR_PARAGRAPHS_PARAMETERS: ToolDefinition['definition']['function']['parameters'] = {
-  type: 'object',
-  properties: {
-    paragraph_id: {
-      type: 'string',
-      description: '段落 ID（当前段落的 ID）',
-    },
-    count: {
-      type: 'number',
-      description: '要获取的段落数量（默认 3）',
-    },
-    include_memory: {
-      type: 'boolean',
-      description: '是否在响应中包含相关的记忆信息（默认 true）',
-    },
-  },
-  required: ['paragraph_id'],
-};
-
-/**
- * `get_previous_paragraphs` 与 `get_next_paragraphs` 共享的处理逻辑。
- * 两者除了调用的 ChapterService 方法以及上报的 tool_name 外完全一致。
- */
-async function handleNeighborParagraphs(
-  args: Record<string, unknown>,
-  context: ToolContext,
-  options: {
-    toolName: 'get_previous_paragraphs' | 'get_next_paragraphs';
-    fetch: (
-      book: Parameters<typeof ChapterService.getPreviousParagraphsAsync>[0],
-      paragraphId: string,
-      count: number,
-    ) => Promise<ParagraphSearchResult[]>;
-  },
-): Promise<string> {
-  const { bookId: rawBookId, onAction } = context;
-  const {
-    paragraph_id,
-    count = 3,
-    include_memory = true,
-  } = args as {
-    paragraph_id: string;
-    count?: number;
-    include_memory?: boolean;
-  };
-  if (!paragraph_id) {
-    throw new Error('段落 ID 不能为空');
-  }
-
-  const { bookId, book } = resolveBook(rawBookId);
-
-  // 检查起始段落是否在块边界内
-  // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
-  //   return getOutOfBoundsError(chunkBoundaries);
-  // }
-
-  // 报告读取操作
-  if (onAction) {
-    onAction({
-      type: 'read',
-      entity: 'paragraph',
-      data: {
-        paragraph_id,
-        tool_name: options.toolName,
-      },
-    });
-  }
-
-  // 使用优化的异步方法，按需加载章节内容
-  const results = await options.fetch(book, paragraph_id, count);
-
-  // 过滤掉空段落或仅包含符号的段落
-  const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
-
-  // 移除块边界限制，允许跨 chunk 获取上下文
-  // validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
-
-  // 如果过滤后没有结果，说明请求超出了块边界
-  // if (chunkBoundaries && validResults.length === 0) {
-  //   return getOutOfBoundsError(chunkBoundaries);
-  // }
-
-  // 搜索相关记忆（从第一个段落的文本中提取关键词）
-  const relatedMemories = await fetchRelatedMemoriesFromParagraphText(
-    bookId,
-    validResults[0]?.paragraph?.text,
-    include_memory,
-  );
-
-  return buildParagraphSearchResponse(validResults, include_memory, relatedMemories);
+function replaceKeepingBoundaries(
+  replacement: string,
+): (match: string, before: string, after: string) => string {
+  return (_match, before, after) => (before || '') + replacement + (after || '');
 }
 
 /**
@@ -438,96 +198,55 @@ async function handleNeighborParagraphs(
  * @param replacement 替换文本
  * @returns 替换后的文本
  */
-function classifyKeywordContext(
-  text: string,
-  keyword: string,
-): { isEnglishWord: boolean; containsCJK: boolean; textHasCJK: boolean; escapedKeyword: string } {
-  return {
-    isEnglishWord: /^[a-zA-Z]+$/.test(keyword),
-    containsCJK: hasCJK(keyword),
-    textHasCJK: hasCJK(text),
-    escapedKeyword: keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
-  };
-}
-
-function buildEnglishWordPattern(escapedKeyword: string, flags: string): RegExp {
-  return new RegExp(
-    `(^|[^a-zA-Z0-9]|[${CJK_CHAR_CLASS}])${escapedKeyword}([^a-zA-Z0-9]|[${CJK_CHAR_CLASS}]|$)`,
-    flags,
-  );
-}
-
-function buildCjkPattern(escapedKeyword: string, flags: string): RegExp {
-  return new RegExp(
-    `(^|[^${CJK_CHAR_CLASS}])${escapedKeyword}([^${CJK_CHAR_CLASS}]|$)`,
-    flags,
-  );
-}
-
-function buildAsciiWordPattern(escapedKeyword: string, flags: string): RegExp {
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`, flags);
-}
-
-function boundaryTypesAt(text: string, keyword: string, index: number): {
-  isValidBoundary: boolean;
-} {
-  const beforeChar = index > 0 ? (text[index - 1] ?? '') : '';
-  const afterChar =
-    index + keyword.length < text.length ? (text[index + keyword.length] ?? '') : '';
-  const beforeIsBoundary = index === 0 || !isCJK(beforeChar);
-  const afterIsBoundary = index + keyword.length === text.length || !isCJK(afterChar);
-  const beforeIsCJK = index > 0 && isCJK(beforeChar);
-  const afterIsCJK = index + keyword.length < text.length && isCJK(afterChar);
-  return {
-    isValidBoundary:
-      (beforeIsBoundary && afterIsBoundary) ||
-      (beforeIsCJK && afterIsCJK) ||
-      (beforeIsBoundary && afterIsCJK) ||
-      (beforeIsCJK && afterIsBoundary),
-  };
-}
-
-function replaceKeywordInCjkFallback(text: string, keyword: string, replacement: string): string {
-  const parts: string[] = [];
-  let lastIndex = 0;
-  let searchIndex = 0;
-  let anyMatch = false;
-  while (true) {
-    const index = text.indexOf(keyword, searchIndex);
-    if (index === -1) break;
-    if (boundaryTypesAt(text, keyword, index).isValidBoundary) {
-      if (index > lastIndex) parts.push(text.substring(lastIndex, index));
-      parts.push(replacement);
-      lastIndex = index + keyword.length;
-      anyMatch = true;
-    }
-    searchIndex = index + 1;
-  }
-  if (!anyMatch) return text;
-  if (lastIndex < text.length) parts.push(text.substring(lastIndex));
-  return parts.join('');
-}
-
-// fallow-ignore-next-line unused-export
 export function replaceWholeKeyword(text: string, keyword: string, replacement: string): string {
-  if (!text || !keyword) return text;
-  const { isEnglishWord, containsCJK, textHasCJK, escapedKeyword } = classifyKeywordContext(
-    text,
-    keyword,
+  if (!text || !keyword) {
+    return text;
+  }
+
+  const escapedKeyword = escapeRegex(keyword);
+  const strategy = pickWholeKeywordStrategy(text, keyword);
+
+  if (strategy === 'english') {
+    return text.replace(
+      buildEnglishBoundaryPattern(escapedKeyword, 'giu'),
+      replaceKeepingBoundaries(replacement),
+    );
+  }
+
+  if (strategy === 'latin') {
+    return text.replace(
+      buildLatinBoundaryPattern(escapedKeyword, 'giu'),
+      replaceKeepingBoundaries(replacement),
+    );
+  }
+
+  // strategy === 'cjk'
+  const regexResult = text.replace(
+    buildCJKBoundaryPattern(escapedKeyword, 'giu'),
+    replaceKeepingBoundaries(replacement),
   );
-
-  const applyBoundaryReplace = (pattern: RegExp) =>
-    text.replace(pattern, (_match, before, after) => `${before || ''}${replacement}${after || ''}`);
-
-  if (isEnglishWord && !containsCJK) {
-    return applyBoundaryReplace(buildEnglishWordPattern(escapedKeyword, 'giu'));
+  if (regexResult !== text) {
+    return regexResult;
   }
-  if (!containsCJK && !textHasCJK) {
-    return applyBoundaryReplace(buildAsciiWordPattern(escapedKeyword, 'giu'));
+  return manualReplaceCJK(text, keyword, replacement);
+}
+
+/**
+ * 尝试构造 CJK 场景下的后顾 / 前瞻正则（若运行时不支持则返回 null）。
+ * 独立出来只为给 containsWholeKeyword 降低一层 try/catch 带来的认知复杂度。
+ */
+function tryBuildCJKLookaroundPattern(escapedKeyword: string): RegExp | null {
+  try {
+    const pattern = new RegExp(
+      `(?<=[${CJK_CHAR_CLASS}]|^)${escapedKeyword}(?=[${CJK_CHAR_CLASS}]|$)`,
+      'iu',
+    );
+    // 触发一次以在不支持 lookbehind 的运行时抛错。
+    pattern.test('test');
+    return pattern;
+  } catch {
+    return null;
   }
-  const firstPass = applyBoundaryReplace(buildCjkPattern(escapedKeyword, 'giu'));
-  if (firstPass !== text) return firstPass;
-  return replaceKeywordInCjkFallback(text, keyword, replacement);
 }
 
 /**
@@ -536,46 +255,31 @@ export function replaceWholeKeyword(text: string, keyword: string, replacement: 
  * @param keyword 关键词
  * @returns 如果文本中包含完整的关键词，返回 true
  */
-function tryCjkLookbehindPattern(escapedKeyword: string): RegExp | null {
-  try {
-    const p = new RegExp(
-      `(?<=[${CJK_CHAR_CLASS}]|^)${escapedKeyword}(?=[${CJK_CHAR_CLASS}]|$)`,
-      'iu',
-    );
-    p.test('test');
-    return p;
-  } catch {
-    return null;
-  }
-}
-
-function containsKeywordInCjkFallback(text: string, keyword: string): boolean {
-  let searchIndex = 0;
-  while (true) {
-    const index = text.indexOf(keyword, searchIndex);
-    if (index === -1) return false;
-    if (boundaryTypesAt(text, keyword, index).isValidBoundary) return true;
-    searchIndex = index + 1;
-  }
-}
-
 export function containsWholeKeyword(text: string, keyword: string): boolean {
-  if (!text || !keyword) return false;
-  const { isEnglishWord, containsCJK, textHasCJK, escapedKeyword } = classifyKeywordContext(
-    text,
-    keyword,
-  );
+  if (!text || !keyword) {
+    return false;
+  }
 
-  if (isEnglishWord && !containsCJK) {
-    return buildEnglishWordPattern(escapedKeyword, 'iu').test(text);
+  const escapedKeyword = escapeRegex(keyword);
+  const strategy = pickWholeKeywordStrategy(text, keyword);
+
+  if (strategy === 'english') {
+    return buildEnglishBoundaryPattern(escapedKeyword, 'iu').test(text);
   }
-  if (!containsCJK && !textHasCJK) {
-    return buildAsciiWordPattern(escapedKeyword, 'iu').test(text);
+
+  if (strategy === 'latin') {
+    return buildLatinBoundaryPattern(escapedKeyword, 'iu').test(text);
   }
-  if (buildCjkPattern(escapedKeyword, 'iu').test(text)) return true;
-  const lookbehindPattern = tryCjkLookbehindPattern(escapedKeyword);
-  if (lookbehindPattern && lookbehindPattern.test(text)) return true;
-  return containsKeywordInCjkFallback(text, keyword);
+
+  // strategy === 'cjk'
+  if (buildCJKBoundaryPattern(escapedKeyword, 'iu').test(text)) {
+    return true;
+  }
+  const lookaround = tryBuildCJKLookaroundPattern(escapedKeyword);
+  if (lookaround && lookaround.test(text)) {
+    return true;
+  }
+  return manualContainsCJK(text, keyword);
 }
 
 export const paragraphTools: ToolDefinition[] = [
@@ -631,17 +335,30 @@ export const paragraphTools: ToolDefinition[] = [
         previous_count?: number;
         next_count?: number;
       };
+      if (!paragraph_id) {
+        throw new Error('段落 ID 不能为空');
+      }
+
       // 检查段落是否在块边界内 (Removed restriction to allow context view)
       // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
       //   return getOutOfBoundsError(chunkBoundaries);
       // }
 
-      const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
-      if (!resolved.ok) {
-        return resolved.response;
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      const { book } = resolved;
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
       const {
         paragraph,
         chapter,
@@ -649,7 +366,7 @@ export const paragraphTools: ToolDefinition[] = [
         chapterIndex: _chapterIndex,
         volume: _volume,
         volumeIndex: _volumeIndex,
-      } = resolved.location;
+      } = location;
 
       // 报告读取操作
       if (onAction) {
@@ -717,7 +434,12 @@ export const paragraphTools: ToolDefinition[] = [
         response.previous_paragraphs = validPreviousResults.map((result) => ({
           id: result.paragraph.id,
           text: result.paragraph.text,
-          translation: pickDisplayTranslation(result.paragraph),
+          translation:
+            result.paragraph.translations.find(
+              (t) => t.id === result.paragraph.selectedTranslationId,
+            )?.translation ||
+            result.paragraph.translations[0]?.translation ||
+            '',
           paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
         }));
       }
@@ -738,7 +460,12 @@ export const paragraphTools: ToolDefinition[] = [
         response.next_paragraphs = validNextResults.map((result) => ({
           id: result.paragraph.id,
           text: result.paragraph.text,
-          translation: pickDisplayTranslation(result.paragraph),
+          translation:
+            result.paragraph.translations.find(
+              (t) => t.id === result.paragraph.selectedTranslationId,
+            )?.translation ||
+            result.paragraph.translations[0]?.translation ||
+            '',
           paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
         }));
       }
@@ -773,13 +500,26 @@ export const paragraphTools: ToolDefinition[] = [
         paragraph_id: string;
         include_memory?: boolean;
       };
-
-      const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
-      if (!resolved.ok) {
-        return resolved.response;
+      if (!paragraph_id) {
+        throw new Error('段落 ID 不能为空');
       }
 
-      const { paragraph, chapter, volume } = resolved.location;
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph, chapter, volume } = location;
       const chapterTitle = getChapterDisplayTitle(chapter);
 
       // 报告读取操作
@@ -799,15 +539,22 @@ export const paragraphTools: ToolDefinition[] = [
       // 构建翻译信息（包含 aiModelId）
       const aiModelsStore = useAIModelsStore();
       const translations =
-        paragraph.translations?.map((t) => buildTranslationBaseEntry(t, paragraph, aiModelsStore)) ||
-        [];
+        paragraph.translations?.map((t) => ({
+          id: t.id,
+          translation: t.translation,
+          aiModelId: t.aiModelId,
+          aiModelName: aiModelsStore.getModelById(t.aiModelId)?.name || '未知模型',
+          isSelected: t.id === paragraph.selectedTranslationId,
+        })) || [];
 
       // 搜索相关记忆（从段落文本中提取关键词）
-      const relatedMemories = await fetchRelatedMemoriesFromParagraphText(
-        bookId,
-        paragraph.text,
-        include_memory,
-      );
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId && paragraph.text) {
+        const keywords = extractKeywordsFromParagraph(paragraph.text, 20);
+        if (keywords.length > 0) {
+          relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
+        }
+      }
 
       return JSON.stringify({
         success: true,
@@ -816,11 +563,28 @@ export const paragraphTools: ToolDefinition[] = [
           text: paragraph.text,
           selectedTranslationId: paragraph.selectedTranslationId || '',
           translations,
-          chapter: buildChapterTitleSummary(chapter),
-          volume: buildVolumeTitleSummary(volume),
-          paragraphIndex: toDisplayParagraphIndex(resolved.location.paragraphIndex),
-          chapterIndex: resolved.location.chapterIndex,
-          volumeIndex: resolved.location.volumeIndex,
+          chapter: {
+            id: chapter.id,
+            title: chapterTitle,
+            title_original:
+              typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
+            title_translation:
+              typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
+          },
+          volume: volume
+            ? {
+                id: volume.id,
+                title:
+                  typeof volume.title === 'string' ? volume.title : volume.title.original || '',
+                title_translation:
+                  typeof volume.title === 'string'
+                    ? ''
+                    : volume.title.translation?.translation || '',
+              }
+            : null,
+          paragraphIndex: toDisplayParagraphIndex(location.paragraphIndex),
+          chapterIndex: location.chapterIndex,
+          volumeIndex: location.volumeIndex,
         },
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
@@ -835,15 +599,136 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'get_previous_paragraphs',
         description:
           '获取指定段落之前的若干个段落。用于查看当前段落之前的上下文，帮助理解文本的连贯性。',
-        parameters: NEIGHBOR_PARAGRAPHS_PARAMETERS,
+        parameters: {
+          type: 'object',
+          properties: {
+            paragraph_id: {
+              type: 'string',
+              description: '段落 ID（当前段落的 ID）',
+            },
+            count: {
+              type: 'number',
+              description: '要获取的段落数量（默认 3）',
+            },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
+          },
+          required: ['paragraph_id'],
+        },
       },
     },
-    handler: async (args, context) =>
-      handleNeighborParagraphs(args, context, {
-        toolName: 'get_previous_paragraphs',
-        fetch: (book, paragraphId, count) =>
-          ChapterService.getPreviousParagraphsAsync(book, paragraphId, count),
-      }),
+    handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const {
+        paragraph_id,
+        count = 3,
+        include_memory = true,
+      } = args as {
+        paragraph_id: string;
+        count?: number;
+        include_memory?: boolean;
+      };
+      if (!paragraph_id) {
+        throw new Error('段落 ID 不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 检查起始段落是否在块边界内
+      // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
+      //   return getOutOfBoundsError(chunkBoundaries);
+      // }
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'paragraph',
+          data: {
+            paragraph_id,
+            tool_name: 'get_previous_paragraphs',
+          },
+        });
+      }
+
+      // 使用优化的异步方法，按需加载章节内容
+      const results = await ChapterService.getPreviousParagraphsAsync(book, paragraph_id, count);
+
+      // 过滤掉空段落或仅包含符号的段落
+      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
+
+      // 移除块边界限制，允许跨 chunk 获取上下文
+      // validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
+
+      // 如果过滤后没有结果，说明请求超出了块边界
+      // if (chunkBoundaries && validResults.length === 0) {
+      //   return getOutOfBoundsError(chunkBoundaries);
+      // }
+
+      // 搜索相关记忆（从段落文本中提取关键词）
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId && validResults.length > 0) {
+        // 从第一个段落中提取关键词
+        const firstResult = validResults[0];
+        if (firstResult?.paragraph?.text) {
+          const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
+          if (keywords.length > 0) {
+            relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
+          }
+        }
+      }
+
+      return JSON.stringify({
+        success: true,
+        paragraphs: validResults.map((result) => ({
+          id: result.paragraph.id,
+          text: result.paragraph.text,
+          translation:
+            result.paragraph.translations.find(
+              (t) => t.id === result.paragraph.selectedTranslationId,
+            )?.translation ||
+            result.paragraph.translations[0]?.translation ||
+            '',
+          chapter: {
+            id: result.chapter.id,
+            title:
+              typeof result.chapter.title === 'string'
+                ? result.chapter.title
+                : result.chapter.title.original,
+            title_translation:
+              typeof result.chapter.title === 'string'
+                ? ''
+                : result.chapter.title.translation?.translation || '',
+          },
+          volume: {
+            id: result.volume.id,
+            title:
+              typeof result.volume.title === 'string'
+                ? result.volume.title
+                : result.volume.title.original,
+            title_translation:
+              typeof result.volume.title === 'string'
+                ? ''
+                : result.volume.title.translation?.translation || '',
+          },
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
+          chapter_index: result.chapterIndex,
+          volume_index: result.volumeIndex,
+        })),
+        count: validResults.length,
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
+      });
+    },
   },
   {
     definition: {
@@ -852,15 +737,136 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'get_next_paragraphs',
         description:
           '获取指定段落之后的若干个段落。用于查看当前段落之后的上下文，帮助理解文本的连贯性。',
-        parameters: NEIGHBOR_PARAGRAPHS_PARAMETERS,
+        parameters: {
+          type: 'object',
+          properties: {
+            paragraph_id: {
+              type: 'string',
+              description: '段落 ID（当前段落的 ID）',
+            },
+            count: {
+              type: 'number',
+              description: '要获取的段落数量（默认 3）',
+            },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
+          },
+          required: ['paragraph_id'],
+        },
       },
     },
-    handler: async (args, context) =>
-      handleNeighborParagraphs(args, context, {
-        toolName: 'get_next_paragraphs',
-        fetch: (book, paragraphId, count) =>
-          ChapterService.getNextParagraphsAsync(book, paragraphId, count),
-      }),
+    handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const {
+        paragraph_id,
+        count = 3,
+        include_memory = true,
+      } = args as {
+        paragraph_id: string;
+        count?: number;
+        include_memory?: boolean;
+      };
+      if (!paragraph_id) {
+        throw new Error('段落 ID 不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 检查起始段落是否在块边界内
+      // if (!isParagraphInChunk(paragraph_id, chunkBoundaries)) {
+      //   return getOutOfBoundsError(chunkBoundaries);
+      // }
+
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'paragraph',
+          data: {
+            paragraph_id,
+            tool_name: 'get_next_paragraphs',
+          },
+        });
+      }
+
+      // 使用优化的异步方法，按需加载章节内容
+      const results = await ChapterService.getNextParagraphsAsync(book, paragraph_id, count);
+
+      // 过滤掉空段落或仅包含符号的段落
+      const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
+
+      // 移除块边界限制，允许跨 chunk 获取上下文
+      // validResults = filterResultsByChunkBoundary(validResults, chunkBoundaries);
+
+      // 如果过滤后没有结果，说明请求超出了块边界
+      // if (chunkBoundaries && validResults.length === 0) {
+      //   return getOutOfBoundsError(chunkBoundaries);
+      // }
+
+      // 搜索相关记忆（从段落文本中提取关键词）
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId && validResults.length > 0) {
+        // 从第一个段落中提取关键词
+        const firstResult = validResults[0];
+        if (firstResult?.paragraph?.text) {
+          const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
+          if (keywords.length > 0) {
+            relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
+          }
+        }
+      }
+
+      return JSON.stringify({
+        success: true,
+        paragraphs: validResults.map((result) => ({
+          id: result.paragraph.id,
+          text: result.paragraph.text,
+          translation:
+            result.paragraph.translations.find(
+              (t) => t.id === result.paragraph.selectedTranslationId,
+            )?.translation ||
+            result.paragraph.translations[0]?.translation ||
+            '',
+          chapter: {
+            id: result.chapter.id,
+            title:
+              typeof result.chapter.title === 'string'
+                ? result.chapter.title
+                : result.chapter.title.original,
+            title_translation:
+              typeof result.chapter.title === 'string'
+                ? ''
+                : result.chapter.title.translation?.translation || '',
+          },
+          volume: {
+            id: result.volume.id,
+            title:
+              typeof result.volume.title === 'string'
+                ? result.volume.title
+                : result.volume.title.original,
+            title_translation:
+              typeof result.volume.title === 'string'
+                ? ''
+                : result.volume.title.translation?.translation || '',
+          },
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
+          chapter_index: result.chapterIndex,
+          volume_index: result.volumeIndex,
+        })),
+        count: validResults.length,
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
+      });
+    },
   },
   {
     definition: {
@@ -910,7 +916,10 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId: rawBookId, onAction }) => {
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const {
         keywords,
         translation_keywords,
@@ -927,24 +936,17 @@ export const paragraphTools: ToolDefinition[] = [
         include_memory?: boolean;
       };
 
-      // 验证至少提供一个关键词数组
-      if (
-        (!keywords || !Array.isArray(keywords) || keywords.length === 0) &&
-        (!translation_keywords ||
-          !Array.isArray(translation_keywords) ||
-          translation_keywords.length === 0)
-      ) {
-        throw new Error('必须提供 keywords 或 translation_keywords 至少一个关键词数组');
+      // 校验并规范化关键词
+      const { validKeywords, validTranslationKeywords } = normalizeFindKeywords(
+        keywords,
+        translation_keywords,
+      );
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
       }
-
-      const validKeywords = filterValidKeywords(keywords);
-      const validTranslationKeywords = filterValidKeywords(translation_keywords);
-
-      if (validKeywords.length === 0 && validTranslationKeywords.length === 0) {
-        throw new Error('必须提供至少一个有效的关键词数组');
-      }
-
-      const { bookId, book } = resolveBook(rawBookId);
 
       // 报告读取操作
       if (onAction) {
@@ -964,142 +966,38 @@ export const paragraphTools: ToolDefinition[] = [
       // 收集所有匹配的段落
       const allResults: Map<string, ParagraphSearchResult> = new Map();
 
-      // 尝试使用全文索引搜索原文
+      // 第一阶段：用原文关键词搜索（优先索引、失败回退线性）
       if (validKeywords.length > 0) {
-        try {
-          const { FullTextIndexService } = await import('src/services/full-text-index-service');
-          const indexResults = await FullTextIndexService.search(bookId, validKeywords, {
-            ...(chapter_id ? { chapterId: chapter_id } : {}),
-            maxResults: max_paragraphs * validKeywords.length * 2, // 增加搜索数量以应对去重和后续过滤
-            onlyWithTranslation: only_with_translation,
-            searchInOriginal: true,
-            searchInTranslations: false,
-            // 传入当前 book 引用，确保返回的段落/章节对象与 booksStore 一致
-            novel: book,
-          });
-
-          // 将结果添加到 Map 中，使用段落 ID 作为 key 去重
-          for (const result of indexResults) {
-            if (!allResults.has(result.paragraph.id)) {
-              allResults.set(result.paragraph.id, result);
-            }
-          }
-        } catch (error) {
-          // 如果索引不可用，回退到线性搜索
-          console.warn('Full-text index search failed, falling back to linear search:', error);
-          for (const keyword of validKeywords) {
-            // 使用优化的异步方法，按需加载章节内容（只加载需要搜索的章节）
-            const results = await ChapterService.searchParagraphsByKeywordAsync(
-              book,
-              keyword,
-              chapter_id || undefined,
-              max_paragraphs * validKeywords.length, // 增加搜索数量以应对去重
-              only_with_translation,
-            );
-
-            // 将结果添加到 Map 中，使用段落 ID 作为 key 去重
-            for (const result of results) {
-              if (!allResults.has(result.paragraph.id)) {
-                allResults.set(result.paragraph.id, result);
-              }
-            }
-
-            // 如果已经收集到足够的段落，提前停止
-            if (allResults.size >= max_paragraphs * 2) {
-              // 乘以2是为了给后续的翻译文本搜索留出空间
-              break;
-            }
-          }
-        }
+        await searchByOriginalKeywords({
+          bookId,
+          book,
+          validKeywords,
+          chapter_id,
+          max_paragraphs,
+          only_with_translation,
+          allResults,
+        });
       }
 
-      // 如果提供了翻译关键词，需要搜索翻译文本
-      // 如果同时提供了两种关键词，需要过滤出同时满足两个条件的段落
+      // 第二阶段：按翻译关键词进一步过滤 / 搜索
       if (validTranslationKeywords.length > 0) {
-        // 如果同时提供了两种关键词，需要过滤出同时满足两个条件的段落
         if (validKeywords.length > 0) {
-          // 过滤结果：只保留同时满足翻译关键词条件的段落
-          // 首先确保包含这些段落的章节都已加载
-          const chaptersNeeded = new Set<string>();
-          for (const result of allResults.values()) {
-            const chapter = result.chapter;
-            if (chapter.content === undefined) {
-              chaptersNeeded.add(chapter.id);
-            }
-          }
-
-          // 加载需要的章节
-          if (chaptersNeeded.size > 0) {
-            const chapterIds = Array.from(chaptersNeeded);
-            const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-            for (const chapterId of chapterIds) {
-              const chapter = book.volumes
-                ?.flatMap((v) => v.chapters || [])
-                .find((c) => c.id === chapterId);
-              if (chapter) {
-                const content = contentsMap.get(chapterId);
-                chapter.content = content || [];
-                chapter.contentLoaded = true;
-              }
-            }
-          }
-
-          const filteredResults: Map<string, ParagraphSearchResult> = new Map();
-          const translationKeywordLower = validTranslationKeywords.map((k) => k.toLowerCase());
-
-          for (const [paragraphId, result] of allResults.entries()) {
-            const paragraph = result.paragraph;
-            if (!paragraph.translations || paragraph.translations.length === 0) {
-              continue;
-            }
-
-            // 检查翻译文本中是否包含任一翻译关键词
-            const hasTranslationKeyword = paragraph.translations.some((t) =>
-              translationKeywordLower.some((kw) => t.translation?.toLowerCase().includes(kw)),
-            );
-
-            if (hasTranslationKeyword) {
-              filteredResults.set(paragraphId, result);
-            }
-          }
-
-          allResults.clear();
-          for (const [id, result] of filteredResults.entries()) {
-            allResults.set(id, result);
-          }
+          await filterResultsByTranslationKeywords(book, allResults, validTranslationKeywords);
         } else {
-          // 只提供了翻译关键词，需要遍历所有段落
-          // 限制处理的章节数量，防止在没有 chapter_id 且索引失败时性能过低
-          const MAX_CHAPTERS_TO_LOAD = 50;
-
-          const searchRange = resolveSearchRange(book, chapter_id);
-          if (!searchRange) {
-            return JSON.stringify({ success: true, message: '书籍没有卷', replaced_count: 0 });
-          }
-
-          const locations = collectChapterLocationsInRange(book, searchRange);
-          const toLoad = locations
-            .filter((loc) => loc.chapter.content === undefined)
-            .slice(0, MAX_CHAPTERS_TO_LOAD);
-          if (locations.filter((loc) => loc.chapter.content === undefined).length > MAX_CHAPTERS_TO_LOAD) {
-            console.warn(`[paragraphTools] 搜索章节过多，限制在前 ${MAX_CHAPTERS_TO_LOAD} 章`);
-          }
-          await ensureChaptersLoaded(toLoad.map((loc) => loc.chapter));
-
-          const translationKeywordLower = validTranslationKeywords.map((k) => k.toLowerCase());
-          const paragraphHasTranslationKeyword = (paragraph: { translations?: Translation[] }) =>
-            !!paragraph.translations?.some((t) =>
-              translationKeywordLower.some((kw) => t.translation?.toLowerCase().includes(kw)),
-            );
-
-          await collectMatchingParagraphsFromLocations(locations, {
-            limit: max_paragraphs,
-            collected: allResults,
-            isMatch: (paragraph) =>
-              !!paragraph.translations &&
-              paragraph.translations.length > 0 &&
-              paragraphHasTranslationKeyword(paragraph),
+          const noVolumes = await searchByTranslationKeywordsOnly({
+            book,
+            validTranslationKeywords,
+            chapter_id,
+            max_paragraphs,
+            allResults,
           });
+          if (noVolumes) {
+            return JSON.stringify({
+              success: true,
+              message: '书籍没有卷',
+              replaced_count: 0,
+            });
+          }
         }
       }
 
@@ -1110,21 +1008,55 @@ export const paragraphTools: ToolDefinition[] = [
       const validResults = results.filter((result) => !isEmptyOrSymbolOnly(result.paragraph.text));
 
       // 搜索相关记忆（使用提供的 keywords 或 translation_keywords）
-      let relatedMemories: Array<{ id: string; summary: string }> = [];
-      if (include_memory && bookId) {
-        const searchKeywords: string[] = [];
-        if (validKeywords.length > 0) {
-          searchKeywords.push(...validKeywords);
-        }
-        if (validTranslationKeywords.length > 0) {
-          searchKeywords.push(...validTranslationKeywords);
-        }
-        if (searchKeywords.length > 0) {
-          relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], searchKeywords, 5);
-        }
-      }
+      const relatedMemories = await lookupRelatedMemoriesForFind({
+        bookId,
+        include_memory,
+        validKeywords,
+        validTranslationKeywords,
+      });
 
-      return buildParagraphSearchResponse(validResults, include_memory, relatedMemories);
+      return JSON.stringify({
+        success: true,
+        paragraphs: validResults.map((result) => ({
+          id: result.paragraph.id,
+          text: result.paragraph.text,
+          translation:
+            result.paragraph.translations.find(
+              (t) => t.id === result.paragraph.selectedTranslationId,
+            )?.translation ||
+            result.paragraph.translations[0]?.translation ||
+            '',
+          chapter: {
+            id: result.chapter.id,
+            title:
+              typeof result.chapter.title === 'string'
+                ? result.chapter.title
+                : result.chapter.title.original,
+            title_translation:
+              typeof result.chapter.title === 'string'
+                ? ''
+                : result.chapter.title.translation?.translation || '',
+          },
+          volume: {
+            id: result.volume.id,
+            title:
+              typeof result.volume.title === 'string'
+                ? result.volume.title
+                : result.volume.title.original,
+            title_translation:
+              typeof result.volume.title === 'string'
+                ? ''
+                : result.volume.title.translation?.translation || '',
+          },
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
+          chapter_index: result.chapterIndex,
+          volume_index: result.volumeIndex,
+        })),
+        count: validResults.length,
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
+      });
     },
   },
   {
@@ -1165,7 +1097,10 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId: rawBookId, onAction }) => {
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const {
         regex_pattern,
         chapter_id,
@@ -1187,7 +1122,11 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error('正则表达式模式不能为空');
       }
 
-      const { bookId, book } = resolveBook(rawBookId);
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
 
       // 验证正则表达式是否有效
       try {
@@ -1227,7 +1166,41 @@ export const paragraphTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        paragraphs: validResults.map(toSearchResponseItem),
+        paragraphs: validResults.map((result) => ({
+          id: result.paragraph.id,
+          text: result.paragraph.text,
+          translation:
+            result.paragraph.translations.find(
+              (t) => t.id === result.paragraph.selectedTranslationId,
+            )?.translation ||
+            result.paragraph.translations[0]?.translation ||
+            '',
+          chapter: {
+            id: result.chapter.id,
+            title:
+              typeof result.chapter.title === 'string'
+                ? result.chapter.title
+                : result.chapter.title.original,
+            title_translation:
+              typeof result.chapter.title === 'string'
+                ? ''
+                : result.chapter.title.translation?.translation || '',
+          },
+          volume: {
+            id: result.volume.id,
+            title:
+              typeof result.volume.title === 'string'
+                ? result.volume.title
+                : result.volume.title.original,
+            title_translation:
+              typeof result.volume.title === 'string'
+                ? ''
+                : result.volume.title.translation?.translation || '',
+          },
+          paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
+          chapter_index: result.chapterIndex,
+          volume_index: result.volumeIndex,
+        })),
         count: validResults.length,
         regex_pattern: regex_pattern.trim(),
         search_in_translation,
@@ -1258,18 +1231,34 @@ export const paragraphTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { paragraph_id, include_memory = true } = args as {
         paragraph_id: string;
         include_memory?: boolean;
       };
-
-      const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
-      if (!resolved.ok) {
-        return resolved.response;
+      if (!paragraph_id) {
+        throw new Error('段落 ID 不能为空');
       }
 
+      const booksStore = useBooksStore();
       const aiModelsStore = useAIModelsStore();
-      const { paragraph } = resolved.location;
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph } = location;
 
       // 报告读取操作
       if (onAction) {
@@ -1284,20 +1273,25 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 构建完整的翻译历史信息
-      const totalTranslations = paragraph.translations?.length || 0;
       const translationHistory =
         paragraph.translations?.map((t, index) => ({
-          ...buildTranslationBaseEntry(t, paragraph, aiModelsStore),
+          id: t.id,
+          translation: t.translation,
+          aiModelId: t.aiModelId,
+          aiModelName: aiModelsStore.getModelById(t.aiModelId)?.name || '未知模型',
+          isSelected: t.id === paragraph.selectedTranslationId,
           index: index + 1, // 从1开始的索引
-          isLatest: index === totalTranslations - 1, // 是否是最新的翻译
+          isLatest: index === (paragraph.translations?.length || 0) - 1, // 是否是最新的翻译
         })) || [];
 
       // 搜索相关记忆（从段落文本中提取关键词）
-      const relatedMemories = await fetchRelatedMemoriesFromParagraphText(
-        bookId,
-        paragraph.text,
-        include_memory,
-      );
+      let relatedMemories: Array<{ id: string; summary: string }> = [];
+      if (include_memory && bookId && paragraph.text) {
+        const keywords = extractKeywordsFromParagraph(paragraph.text, 20);
+        if (keywords.length > 0) {
+          relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
+        }
+      }
 
       return JSON.stringify({
         success: true,
@@ -1340,6 +1334,9 @@ export const paragraphTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const { paragraph_id, translation_id, new_translation } = args as {
         paragraph_id: string;
         translation_id: string;
@@ -1349,13 +1346,22 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error('段落 ID、翻译 ID 和新翻译内容不能为空');
       }
 
-      const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
-      if (!resolved.ok) {
-        return resolved.response;
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      const { bookId: resolvedBookId, book, booksStore } = resolved;
-      const { paragraph } = resolved.location;
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph } = location;
 
       // 检查是否为空段落
       if (isEmptyParagraph(paragraph.text)) {
@@ -1366,12 +1372,29 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 查找要更新的翻译
-      const locateResult = locateTranslationById(paragraph, translation_id, 'update');
-      if (!locateResult.ok) {
-        return locateResult.response;
+      if (!paragraph.translations || paragraph.translations.length === 0) {
+        return JSON.stringify({
+          success: false,
+          error: `段落没有翻译历史`,
+        });
       }
-      const translationToUpdate = locateResult.translation;
+
+      const translationIndex = paragraph.translations.findIndex((t) => t.id === translation_id);
+      if (translationIndex === -1) {
+        return JSON.stringify({
+          success: false,
+          error: `翻译 ID 不存在: ${translation_id}`,
+        });
+      }
+
       // 保存原始翻译用于撤销
+      const translationToUpdate = paragraph.translations[translationIndex];
+      if (!translationToUpdate) {
+        return JSON.stringify({
+          success: false,
+          error: `无法找到要更新的翻译`,
+        });
+      }
       const originalTranslation = { ...translationToUpdate };
 
       // 更新翻译内容（原样保存，不进行任何处理）
@@ -1381,7 +1404,7 @@ export const paragraphTools: ToolDefinition[] = [
       // 更新书籍（保存更改）
       // 注意：booksStore.updateBook 会调用 BookService.saveBook，章节内容保存会启用 skipIfUnchanged。
       // ChapterContentService 使用“序列化快照”检测变化（含就地修改），既能正确持久化修改，也能避免未修改内容的重复写入。
-      await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
+      await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告操作
       if (onAction) {
@@ -1415,14 +1438,50 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'select_translation',
         description:
           '选择段落中的某个翻译版本作为当前选中的翻译。用于在翻译历史中切换不同的翻译版本，将指定的翻译版本设置为段落当前使用的翻译。',
-        parameters: buildTranslationIdParametersSchema(
-          '要选择的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
-        ),
+        parameters: {
+          type: 'object',
+          properties: {
+            paragraph_id: {
+              type: 'string',
+              description: '段落 ID',
+            },
+            translation_id: {
+              type: 'string',
+              description: '要选择的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
+            },
+          },
+          required: ['paragraph_id', 'translation_id'],
+        },
       },
     },
-    handler: withResolvedTranslationTarget(async (resolved, context) => {
-      const { onAction } = context;
-      const { bookId, book, paragraph, paragraph_id, translation_id, booksStore } = resolved;
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const { paragraph_id, translation_id } = args as {
+        paragraph_id: string;
+        translation_id: string;
+      };
+      if (!paragraph_id || !translation_id) {
+        throw new Error('段落 ID 和翻译 ID 不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph } = location;
 
       // 报告读取操作（选择翻译也是一种读取操作）
       if (onAction) {
@@ -1471,7 +1530,7 @@ export const paragraphTools: ToolDefinition[] = [
         previous_selected_id: originalSelectedId || null,
         selected_translation: translation.translation,
       });
-    }),
+    },
   },
   {
     definition: {
@@ -1505,6 +1564,9 @@ export const paragraphTools: ToolDefinition[] = [
       },
     },
     handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const {
         paragraph_id,
         translation,
@@ -1516,18 +1578,27 @@ export const paragraphTools: ToolDefinition[] = [
         ai_model_id?: string;
         set_as_selected?: boolean;
       };
-      if (!translation) {
+      if (!paragraph_id || !translation) {
         throw new Error('段落 ID 和翻译内容不能为空');
       }
 
-      const resolved = await resolveBookAndParagraphLocation(bookId, paragraph_id);
-      if (!resolved.ok) {
-        return resolved.response;
+      const booksStore = useBooksStore();
+      const aiModelsStore = useAIModelsStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      const { bookId: resolvedBookId, book, booksStore } = resolved;
-      const aiModelsStore = useAIModelsStore();
-      const { paragraph } = resolved.location;
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph } = location;
 
       // 检查是否为空段落
       if (isEmptyParagraph(paragraph.text)) {
@@ -1595,7 +1666,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       // 更新书籍（保存更改）
       // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
-      await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
+      await booksStore.updateBook(bookId, { volumes: book.volumes });
 
       // 报告操作
       if (onAction) {
@@ -1631,21 +1702,75 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'remove_translation',
         description:
           '从段落中删除指定的翻译版本。用于清理不需要的翻译历史记录。如果删除的是当前选中的翻译，会自动选择其他翻译（优先选择最新的翻译）。',
-        parameters: buildTranslationIdParametersSchema(
-          '要删除的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
-        ),
+        parameters: {
+          type: 'object',
+          properties: {
+            paragraph_id: {
+              type: 'string',
+              description: '段落 ID',
+            },
+            translation_id: {
+              type: 'string',
+              description: '要删除的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
+            },
+          },
+          required: ['paragraph_id', 'translation_id'],
+        },
       },
     },
-    handler: withResolvedTranslationTarget(async (resolved, context) => {
-      const { onAction } = context;
-      const { bookId, book, paragraph, paragraph_id, translation_id, booksStore } = resolved;
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
+      const { paragraph_id, translation_id } = args as {
+        paragraph_id: string;
+        translation_id: string;
+      };
+      if (!paragraph_id || !translation_id) {
+        throw new Error('段落 ID 和翻译 ID 不能为空');
+      }
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 使用优化的异步查找方法，按需加载章节内容（只加载包含目标段落的章节）
+      const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
+      if (!location) {
+        return JSON.stringify({
+          success: false,
+          error: `段落不存在: ${paragraph_id}`,
+        });
+      }
+
+      const { paragraph } = location;
 
       // 验证翻译是否存在
-      const locateResult = locateTranslationById(paragraph, translation_id, 'delete');
-      if (!locateResult.ok) {
-        return locateResult.response;
+      if (!paragraph.translations || paragraph.translations.length === 0) {
+        return JSON.stringify({
+          success: false,
+          error: `段落没有翻译历史`,
+        });
       }
-      const { index: translationIndex, translation: translationToDelete } = locateResult;
+
+      const translationIndex = paragraph.translations.findIndex((t) => t.id === translation_id);
+      if (translationIndex === -1) {
+        return JSON.stringify({
+          success: false,
+          error: `翻译 ID 不存在: ${translation_id}`,
+        });
+      }
+
+      // 保存要删除的翻译信息用于报告
+      const translationToDelete = paragraph.translations[translationIndex];
+      if (!translationToDelete) {
+        return JSON.stringify({
+          success: false,
+          error: `无法找到要删除的翻译`,
+        });
+      }
 
       const wasSelected = paragraph.selectedTranslationId === translation_id;
 
@@ -1692,7 +1817,7 @@ export const paragraphTools: ToolDefinition[] = [
         new_selected_id: paragraph.selectedTranslationId || null,
         remaining_translations: paragraph.translations.length,
       });
-    }),
+    },
   },
   {
     definition: {
@@ -1744,7 +1869,10 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId: rawBookId, onAction }) => {
+    handler: async (args, { bookId, onAction }) => {
+      if (!bookId) {
+        throw new Error('书籍 ID 不能为空');
+      }
       const {
         keywords,
         original_keywords,
@@ -1764,24 +1892,21 @@ export const paragraphTools: ToolDefinition[] = [
         throw new Error('替换文本不能为空');
       }
 
-      // 验证至少提供一个关键词数组
-      if (
-        (!keywords || !Array.isArray(keywords) || keywords.length === 0) &&
-        (!original_keywords || !Array.isArray(original_keywords) || original_keywords.length === 0)
-      ) {
-        throw new Error('必须提供 keywords 或 original_keywords 至少一个关键词数组');
+      // 验证并规范化输入的关键词数组
+      const { validKeywords, validOriginalKeywords } = normalizeReplaceKeywords(
+        keywords,
+        original_keywords,
+      );
+
+      const booksStore = useBooksStore();
+      const book = booksStore.getBookById(bookId);
+      if (!book) {
+        throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      const validKeywords = filterValidKeywords(keywords);
-      const validOriginalKeywords = filterValidKeywords(original_keywords);
+      // 注意：不在这里发送 read action，批量替换完成后会发送一个汇总的 update action
 
-      if (validKeywords.length === 0 && validOriginalKeywords.length === 0) {
-        throw new Error('必须提供至少一个有效的关键词数组');
-      }
-
-      const { bookId, book, booksStore } = resolveBook(rawBookId);
-
-      const buildEmptyResult = (message: string): string =>
+      const emptyReplaceResponse = (message: string): string =>
         JSON.stringify({
           success: true,
           message,
@@ -1790,241 +1915,74 @@ export const paragraphTools: ToolDefinition[] = [
           original_keywords: validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
         });
 
-      const searchRange = resolveSearchRange(book, chapter_id);
-      if (!searchRange) {
-        return buildEmptyResult(chapter_id ? '未找到指定的章节' : '书籍没有卷');
+      // 如果提供了 chapter_id，定位目标章节；若找不到则提前返回
+      const target = locateTargetChapter(book, chapter_id);
+      if (chapter_id && !target) {
+        return emptyReplaceResponse('未找到指定的章节');
       }
+      const targetVolumeIndex = target?.volumeIndex ?? null;
+      const targetChapterIndex = target?.chapterIndex ?? null;
+
+      if (!book.volumes) {
+        return emptyReplaceResponse('书籍没有卷');
+      }
+
+      // 第一遍：批量加载需要的章节内容
+      await preloadReplaceRange(book, chapter_id, targetVolumeIndex, targetChapterIndex);
+
       // 收集所有匹配的段落
       const allResults: Map<string, ParagraphSearchResult> = new Map();
 
-      // 批量预加载范围内的所有章节
-      const chapterLocations = collectChapterLocationsInRange(book, searchRange);
-      await ensureChaptersLoaded(chapterLocations.map((loc) => loc.chapter));
-
-      const paragraphMatchesReplacementCriteria = (paragraph: {
-        text?: string;
-        translations?: Translation[];
-      }): boolean => {
-        if (isEmptyParagraph(paragraph.text)) return false;
-
-        // 无论哪种关键词，替换要求段落必须有翻译
-        if (!paragraph.translations || paragraph.translations.length === 0) {
-          return false;
+      const runLinearSearch = async (): Promise<string | null> => {
+        if (!book.volumes) {
+          return emptyReplaceResponse('书籍没有卷');
         }
-
-        // 原文关键词匹配
-        if (validOriginalKeywords.length > 0) {
-          const text = paragraph.text || '';
-          if (!validOriginalKeywords.some((kw) => containsWholeKeyword(text, kw))) {
-            return false;
-          }
-        }
-
-        // 翻译关键词匹配
-        if (validKeywords.length > 0) {
-          const hasMatch = paragraph.translations.some((t) =>
-            validKeywords.some((kw) => containsWholeKeyword(t.translation || '', kw)),
-          );
-          if (!hasMatch) return false;
-        }
-
-        return true;
-      };
-
-      const runLinearSearch = async (): Promise<void> => {
-        await collectMatchingParagraphsFromLocations(chapterLocations, {
-          limit: max_replacements,
-          collected: allResults,
-          isMatch: paragraphMatchesReplacementCriteria,
+        await collectLinearReplaceMatches({
+          book,
+          chapter_id,
+          targetVolumeIndex,
+          targetChapterIndex,
+          validKeywords,
+          validOriginalKeywords,
+          maxReplacements: max_replacements,
+          allResults,
         });
+        return null;
       };
 
-      // 第二遍：在加载的章节中搜索翻译文本
-      // 尝试使用全文索引
-      let shouldRunLinearSearch = false;
-      try {
-        const { FullTextIndexService } = await import('src/services/full-text-index-service');
-        const searchKeywords: string[] = [];
-        if (validOriginalKeywords.length > 0) {
-          searchKeywords.push(...validOriginalKeywords);
-        }
-        if (validKeywords.length > 0) {
-          searchKeywords.push(...validKeywords);
-        }
+      // 第二遍：优先使用全文索引定位段落
+      const indexSucceeded = await collectIndexReplaceMatches({
+        bookId,
+        book,
+        chapter_id,
+        validKeywords,
+        validOriginalKeywords,
+        maxReplacements: max_replacements,
+        allResults,
+      });
 
-        if (searchKeywords.length > 0) {
-          const indexResults = await FullTextIndexService.search(bookId, searchKeywords, {
-            ...(chapter_id ? { chapterId: chapter_id } : {}),
-            maxResults: max_replacements * 2, // 获取更多结果以便后续过滤
-            onlyWithTranslation: validKeywords.length > 0, // 如果搜索翻译关键词，只返回有翻译的段落
-            searchInOriginal: validOriginalKeywords.length > 0,
-            searchInTranslations: validKeywords.length > 0,
-            // 传入当前 book 引用，确保返回的段落/章节对象与 booksStore 一致
-            novel: book,
-          });
-
-          // 过滤结果：检查是否同时满足两个条件（如果提供了两种关键词）
-          // 注意：FullTextIndexService.search 已支持传入 novel 引用，这里拿到的 paragraph/chapter
-          // 应与当前 booksStore 中的 book 保持同一引用，可直接修改并保存。
-          for (const result of indexResults) {
-            if (allResults.size >= max_replacements) break;
-            if (allResults.has(result.paragraph.id)) continue;
-            if (!paragraphMatchesReplacementCriteria(result.paragraph)) continue;
-            allResults.set(result.paragraph.id, result);
-          }
+      if (!indexSucceeded || allResults.size < max_replacements) {
+        const fallbackResult = await runLinearSearch();
+        if (fallbackResult) {
+          return fallbackResult;
         }
-      } catch (error) {
-        // 如果索引不可用，回退到线性搜索
-        console.warn('Full-text index search failed, falling back to linear search:', error);
-        shouldRunLinearSearch = true;
-      }
-
-      if (shouldRunLinearSearch || allResults.size < max_replacements) {
-        await runLinearSearch();
       }
 
       // 转换为数组并限制数量
       const results = Array.from(allResults.values()).slice(0, max_replacements);
 
       if (results.length === 0) {
-        return JSON.stringify({
-          success: true,
-          message: '未找到匹配的段落',
-          replaced_count: 0,
-          keywords: validKeywords.length > 0 ? validKeywords : undefined,
-          original_keywords: validOriginalKeywords.length > 0 ? validOriginalKeywords : undefined,
-        });
+        return emptyReplaceResponse('未找到匹配的段落');
       }
 
       // 执行替换操作
-      const replacedParagraphs: Array<{
-        paragraph_id: string;
-        chapter_id: string;
-        old_selected_translation_id: string;
-        old_translations: Translation[];
-        new_translation: string;
-      }> = [];
-
-      for (const result of results) {
-        const { paragraph } = result;
-
-        if (!paragraph.translations || paragraph.translations.length === 0) {
-          continue;
-        }
-
-        // 保存段落原始选中翻译 ID（用于撤销时完整恢复）
-        const oldSelectedTranslationId = paragraph.selectedTranslationId || '';
-
-        // 保存完整的翻译对象以便恢复（包括 id, translation, aiModelId）
-        const oldTranslations: Translation[] = [];
-
-        // 找到匹配的关键词（用于替换）
-        let matchedKeyword: string | null = null;
-
-        // 如果提供了翻译关键词，找到匹配的关键词
-        if (validKeywords.length > 0) {
-          for (const translation of paragraph.translations) {
-            for (const keyword of validKeywords) {
-              if (containsWholeKeyword(translation.translation || '', keyword)) {
-                matchedKeyword = keyword;
-                break;
-              }
-            }
-            if (matchedKeyword) break;
-          }
-        }
-
-        // 如果没有找到匹配的翻译关键词，但提供了原文关键词
-        // 尝试在翻译文本中查找原文关键词（可能在某些情况下相同，如数字、专有名词等）
-        if (!matchedKeyword && validOriginalKeywords.length > 0) {
-          for (const translation of paragraph.translations) {
-            for (const originalKeyword of validOriginalKeywords) {
-              if (containsWholeKeyword(translation.translation || '', originalKeyword)) {
-                matchedKeyword = originalKeyword;
-                break;
-              }
-            }
-            if (matchedKeyword) break;
-          }
-        }
-
-        // 如果没有找到任何匹配的关键词，跳过这个段落（不替换整个段落）
-        if (!matchedKeyword) {
-          continue;
-        }
-
-        // 此时 matchedKeyword 一定不为 null，保存为常量以确保类型安全
-        const keywordToReplace = matchedKeyword;
-
-        // 执行替换的函数（只替换匹配的关键词部分）
-        const performReplacement = (translation: Translation) => {
-          const oldTranslation = translation.translation || '';
-
-          // 只替换匹配的关键词部分，不替换整个翻译
-          translation.translation = replaceWholeKeyword(
-            oldTranslation,
-            keywordToReplace,
-            replacement_text.trim(),
-          );
-        };
-
-        if (replace_all_translations) {
-          // 替换所有翻译版本
-          for (const translation of paragraph.translations) {
-            // 检查 translation 对象是否有效
-            if (!translation || !translation.id) {
-              continue;
-            }
-            // 保存完整的翻译对象（深拷贝）
-            oldTranslations.push({
-              id: translation.id,
-              translation: translation.translation || '',
-              aiModelId: translation.aiModelId || '',
-            });
-            performReplacement(translation);
-          }
-        } else {
-          // 只替换选中的翻译版本
-          if (paragraph.selectedTranslationId) {
-            const selectedTranslation = paragraph.translations.find(
-              (t) => t.id === paragraph.selectedTranslationId,
-            );
-            if (selectedTranslation && selectedTranslation.id) {
-              // 保存完整的翻译对象（深拷贝）
-              oldTranslations.push({
-                id: selectedTranslation.id,
-                translation: selectedTranslation.translation || '',
-                aiModelId: selectedTranslation.aiModelId || '',
-              });
-              performReplacement(selectedTranslation);
-            }
-          } else {
-            // 如果没有选中的翻译，替换第一个翻译
-            const firstTranslation = paragraph.translations[0];
-            if (firstTranslation && firstTranslation.id) {
-              // 保存完整的翻译对象（深拷贝）
-              oldTranslations.push({
-                id: firstTranslation.id,
-                translation: firstTranslation.translation || '',
-                aiModelId: firstTranslation.aiModelId || '',
-              });
-              performReplacement(firstTranslation);
-              // 同时设置为选中
-              paragraph.selectedTranslationId = firstTranslation.id;
-            }
-          }
-        }
-
-        if (oldTranslations.length > 0) {
-          replacedParagraphs.push({
-            paragraph_id: paragraph.id,
-            chapter_id: result.chapter.id,
-            old_selected_translation_id: oldSelectedTranslationId,
-            old_translations: oldTranslations,
-            new_translation: replacement_text.trim(),
-          });
-        }
-      }
+      const replacedParagraphs = applyKeywordReplacements({
+        results,
+        validKeywords,
+        validOriginalKeywords,
+        replacementText: replacement_text,
+        replaceAllTranslations: replace_all_translations,
+      });
 
       // 更新书籍（保存更改）
       // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
@@ -2032,35 +1990,13 @@ export const paragraphTools: ToolDefinition[] = [
 
       // 报告批量替换操作（单个汇总 action，而不是每个替换一个）
       if (onAction && replacedParagraphs.length > 0) {
-        // 计算总替换数量（包括所有翻译版本）
-        const totalTranslationCount = replacedParagraphs.reduce(
-          (sum, p) => sum + p.old_translations.length,
-          0,
-        );
-
-        onAction({
-          type: 'update',
-          entity: 'translation',
-          data: {
-            tool_name: 'batch_replace_translations',
-            replaced_paragraph_count: replacedParagraphs.length,
-            replaced_translation_count: totalTranslationCount,
-            ...(validKeywords.length > 0 ? { keywords: validKeywords } : {}),
-            ...(validOriginalKeywords.length > 0
-              ? { original_keywords: validOriginalKeywords }
-              : {}),
-            replacement_text: replacement_text.trim(),
-            replace_all_translations,
-          },
-          // 保存所有被替换的翻译数据以便恢复
-          previousData: {
-            replaced_paragraphs: replacedParagraphs.map((p) => ({
-              paragraph_id: p.paragraph_id,
-              chapter_id: p.chapter_id,
-              old_selected_translation_id: p.old_selected_translation_id,
-              old_translations: p.old_translations,
-            })),
-          },
+        emitReplaceAction({
+          onAction,
+          replacedParagraphs,
+          validKeywords,
+          validOriginalKeywords,
+          replacementText: replacement_text,
+          replaceAllTranslations: replace_all_translations,
         });
       }
 
@@ -2081,3 +2017,821 @@ export const paragraphTools: ToolDefinition[] = [
     },
   },
 ];
+
+/**
+ * 过滤字符串数组中的空值 / 非字符串值，返回 trim 后非空的项
+ */
+function filterValidKeywords(input: unknown): string[] {
+  if (!input || !Array.isArray(input)) return [];
+  return input.filter((k): k is string => !!k && typeof k === 'string' && k.trim().length > 0);
+}
+
+/**
+ * 校验 find_paragraph_by_keywords 的关键词参数
+ */
+function normalizeFindKeywords(
+  keywords: unknown,
+  translationKeywords: unknown,
+): { validKeywords: string[]; validTranslationKeywords: string[] } {
+  const hasKeywords = Array.isArray(keywords) && keywords.length > 0;
+  const hasTranslation = Array.isArray(translationKeywords) && translationKeywords.length > 0;
+  if (!hasKeywords && !hasTranslation) {
+    throw new Error('必须提供 keywords 或 translation_keywords 至少一个关键词数组');
+  }
+  const validKeywords = filterValidKeywords(keywords);
+  const validTranslationKeywords = filterValidKeywords(translationKeywords);
+  if (validKeywords.length === 0 && validTranslationKeywords.length === 0) {
+    throw new Error('必须提供至少一个有效的关键词数组');
+  }
+  return { validKeywords, validTranslationKeywords };
+}
+
+/**
+ * 用原文关键词在 book 中搜索段落：优先使用全文索引，索引失败时线性回退
+ */
+async function searchByOriginalKeywords(params: {
+  bookId: string;
+  book: Novel;
+  validKeywords: string[];
+  chapter_id: string | undefined;
+  max_paragraphs: number;
+  only_with_translation: boolean;
+  allResults: Map<string, ParagraphSearchResult>;
+}): Promise<void> {
+  const {
+    bookId,
+    book,
+    validKeywords,
+    chapter_id,
+    max_paragraphs,
+    only_with_translation,
+    allResults,
+  } = params;
+  try {
+    const { FullTextIndexService } = await import('src/services/full-text-index-service');
+    const indexResults = await FullTextIndexService.search(bookId, validKeywords, {
+      ...(chapter_id ? { chapterId: chapter_id } : {}),
+      maxResults: max_paragraphs * validKeywords.length * 2, // 增加搜索数量以应对去重和后续过滤
+      onlyWithTranslation: only_with_translation,
+      searchInOriginal: true,
+      searchInTranslations: false,
+      // 传入当前 book 引用，确保返回的段落/章节对象与 booksStore 一致
+      novel: book,
+    });
+    for (const result of indexResults) {
+      if (!allResults.has(result.paragraph.id)) {
+        allResults.set(result.paragraph.id, result);
+      }
+    }
+  } catch (error) {
+    console.warn('Full-text index search failed, falling back to linear search:', error);
+    for (const keyword of validKeywords) {
+      // 使用优化的异步方法，按需加载章节内容（只加载需要搜索的章节）
+      const results = await ChapterService.searchParagraphsByKeywordAsync(
+        book,
+        keyword,
+        chapter_id || undefined,
+        max_paragraphs * validKeywords.length,
+        only_with_translation,
+      );
+      for (const result of results) {
+        if (!allResults.has(result.paragraph.id)) {
+          allResults.set(result.paragraph.id, result);
+        }
+      }
+      // 乘以 2 是为了给后续的翻译文本搜索留出空间
+      if (allResults.size >= max_paragraphs * 2) break;
+    }
+  }
+}
+
+/**
+ * 若 allResults 中的章节尚未加载内容，批量加载所需章节
+ */
+async function ensureChaptersLoaded(
+  book: Novel,
+  allResults: Map<string, ParagraphSearchResult>,
+): Promise<void> {
+  const chaptersNeeded = new Set<string>();
+  for (const result of allResults.values()) {
+    if (result.chapter.content === undefined) {
+      chaptersNeeded.add(result.chapter.id);
+    }
+  }
+  if (chaptersNeeded.size === 0) return;
+  const chapterIds = Array.from(chaptersNeeded);
+  const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+  for (const chapterId of chapterIds) {
+    const chapter = book.volumes
+      ?.flatMap((v) => v.chapters || [])
+      .find((c) => c.id === chapterId);
+    if (chapter) {
+      const content = contentsMap.get(chapterId);
+      chapter.content = content || [];
+      chapter.contentLoaded = true;
+    }
+  }
+}
+
+/**
+ * 根据翻译关键词过滤已收集的段落（原文关键词同时生效的场景）
+ */
+async function filterResultsByTranslationKeywords(
+  book: Novel,
+  allResults: Map<string, ParagraphSearchResult>,
+  validTranslationKeywords: string[],
+): Promise<void> {
+  await ensureChaptersLoaded(book, allResults);
+  const translationKeywordLower = validTranslationKeywords.map((k) => k.toLowerCase());
+  const filtered: Map<string, ParagraphSearchResult> = new Map();
+  for (const [paragraphId, result] of allResults) {
+    const paragraph = result.paragraph;
+    if (!paragraph.translations || paragraph.translations.length === 0) continue;
+    const hasTranslationKeyword = paragraph.translations.some((t) =>
+      translationKeywordLower.some((kw) => t.translation?.toLowerCase().includes(kw)),
+    );
+    if (hasTranslationKeyword) {
+      filtered.set(paragraphId, result);
+    }
+  }
+  allResults.clear();
+  for (const [id, result] of filtered) {
+    allResults.set(id, result);
+  }
+}
+
+const MAX_FIND_CHAPTERS_TO_LOAD = 50;
+
+/**
+ * 收集仅用翻译关键词搜索时需要加载的章节
+ */
+function collectTranslationSearchChapters(
+  book: Novel,
+  chapter_id: string | undefined,
+  targetVolumeIndex: number | null,
+  targetChapterIndex: number | null,
+): { chapter: Chapter; vIndex: number; cIndex: number }[] {
+  const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
+  if (!book.volumes) return chaptersToLoad;
+
+  const startVolumeIndex = chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : 0;
+  const endVolumeIndex =
+    chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : book.volumes.length - 1;
+
+  for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
+    const volume = book.volumes[vIndex];
+    if (!volume || !volume.chapters) continue;
+    if (chapter_id && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) continue;
+
+    const startChapterIndex =
+      chapter_id && targetChapterIndex !== null ? targetChapterIndex : 0;
+    const endChapterIndex =
+      chapter_id && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
+
+    for (let cIndex = startChapterIndex; cIndex <= endChapterIndex; cIndex++) {
+      const chapter = volume.chapters[cIndex];
+      if (!chapter) continue;
+      if (chapter.content === undefined) {
+        if (chaptersToLoad.length >= MAX_FIND_CHAPTERS_TO_LOAD) {
+          console.warn(
+            `[paragraphTools] 搜索章节过多，限制在前 ${MAX_FIND_CHAPTERS_TO_LOAD} 章`,
+          );
+          return chaptersToLoad;
+        }
+        chaptersToLoad.push({ chapter, vIndex, cIndex });
+      }
+    }
+  }
+  return chaptersToLoad;
+}
+
+/**
+ * 在范围内扫描翻译文本，匹配的段落写入 allResults
+ */
+async function scanVolumesForTranslationKeyword(params: {
+  book: Novel;
+  chapter_id: string | undefined;
+  targetVolumeIndex: number | null;
+  targetChapterIndex: number | null;
+  translationKeywordLower: string[];
+  max_paragraphs: number;
+  allResults: Map<string, ParagraphSearchResult>;
+}): Promise<void> {
+  const {
+    book,
+    chapter_id,
+    targetVolumeIndex,
+    targetChapterIndex,
+    translationKeywordLower,
+    max_paragraphs,
+    allResults,
+  } = params;
+  if (!book.volumes) return;
+  const range = resolveReplaceRange(book, chapter_id, targetVolumeIndex, targetChapterIndex);
+
+  for (let vIndex = range.startVolumeIndex; vIndex <= range.endVolumeIndex; vIndex++) {
+    if (allResults.size >= max_paragraphs) break;
+    const volume = book.volumes[vIndex];
+    if (!volume || !volume.chapters) continue;
+    if (chapter_id && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) continue;
+    await scanVolumeForTranslationKeyword({
+      volume,
+      vIndex,
+      startC: range.startChapterIndex ?? 0,
+      endC: range.endChapterIndex ?? volume.chapters.length - 1,
+      translationKeywordLower,
+      max_paragraphs,
+      allResults,
+    });
+  }
+}
+
+/**
+ * 在单个卷内扫描翻译关键词
+ */
+async function scanVolumeForTranslationKeyword(params: {
+  volume: Volume;
+  vIndex: number;
+  startC: number;
+  endC: number;
+  translationKeywordLower: string[];
+  max_paragraphs: number;
+  allResults: Map<string, ParagraphSearchResult>;
+}): Promise<void> {
+  const {
+    volume,
+    vIndex,
+    startC,
+    endC,
+    translationKeywordLower,
+    max_paragraphs,
+    allResults,
+  } = params;
+  for (let cIndex = startC; cIndex <= endC; cIndex++) {
+    if (allResults.size >= max_paragraphs) break;
+    const chapter = volume.chapters?.[cIndex];
+    if (!chapter) continue;
+    if (chapter.content === undefined) {
+      const content = await ChapterContentService.loadChapterContent(chapter.id);
+      chapter.content = content || [];
+      chapter.contentLoaded = true;
+    }
+    if (!chapter.content) continue;
+    collectTranslationMatchesInChapter({
+      chapter,
+      cIndex,
+      volume,
+      vIndex,
+      translationKeywordLower,
+      max_paragraphs,
+      allResults,
+    });
+  }
+}
+
+/**
+ * 在单个章节中扫描翻译关键词匹配
+ */
+function collectTranslationMatchesInChapter(params: {
+  chapter: Chapter;
+  cIndex: number;
+  volume: Volume;
+  vIndex: number;
+  translationKeywordLower: string[];
+  max_paragraphs: number;
+  allResults: Map<string, ParagraphSearchResult>;
+}): void {
+  const { chapter, cIndex, volume, vIndex, translationKeywordLower, max_paragraphs, allResults } =
+    params;
+  const content = chapter.content;
+  if (!content) return;
+  for (let pIndex = 0; pIndex < content.length; pIndex++) {
+    if (allResults.size >= max_paragraphs) return;
+    const paragraph = content[pIndex];
+    if (!paragraph) continue;
+    if (!paragraph.translations || paragraph.translations.length === 0) continue;
+    const hasTranslationKeyword = paragraph.translations.some((t) =>
+      translationKeywordLower.some((kw) => t.translation?.toLowerCase().includes(kw)),
+    );
+    if (hasTranslationKeyword && !allResults.has(paragraph.id)) {
+      allResults.set(paragraph.id, {
+        paragraph,
+        paragraphIndex: pIndex,
+        chapter,
+        chapterIndex: cIndex,
+        volume,
+        volumeIndex: vIndex,
+      });
+    }
+  }
+}
+
+/**
+ * 仅提供翻译关键词时的搜索路径：加载候选章节并扫描。返回 true 表示书籍没有卷需要上层提前返回
+ */
+async function searchByTranslationKeywordsOnly(params: {
+  book: Novel;
+  validTranslationKeywords: string[];
+  chapter_id: string | undefined;
+  max_paragraphs: number;
+  allResults: Map<string, ParagraphSearchResult>;
+}): Promise<boolean> {
+  const { book, validTranslationKeywords, chapter_id, max_paragraphs, allResults } = params;
+  if (!book.volumes) return true;
+
+  const target = locateTargetChapter(book, chapter_id);
+  const targetVolumeIndex = target?.volumeIndex ?? null;
+  const targetChapterIndex = target?.chapterIndex ?? null;
+
+  const chaptersToLoad = collectTranslationSearchChapters(
+    book,
+    chapter_id,
+    targetVolumeIndex,
+    targetChapterIndex,
+  );
+  if (chaptersToLoad.length > 0) {
+    const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
+    const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+    for (const { chapter } of chaptersToLoad) {
+      const content = contentsMap.get(chapter.id);
+      chapter.content = content || [];
+      chapter.contentLoaded = true;
+    }
+  }
+
+  const translationKeywordLower = validTranslationKeywords.map((k) => k.toLowerCase());
+  await scanVolumesForTranslationKeyword({
+    book,
+    chapter_id,
+    targetVolumeIndex,
+    targetChapterIndex,
+    translationKeywordLower,
+    max_paragraphs,
+    allResults,
+  });
+  return false;
+}
+
+/**
+ * find_paragraph_by_keywords 的相关记忆查询
+ */
+async function lookupRelatedMemoriesForFind(params: {
+  bookId: string;
+  include_memory: boolean;
+  validKeywords: string[];
+  validTranslationKeywords: string[];
+}): Promise<Array<{ id: string; summary: string }>> {
+  const { bookId, include_memory, validKeywords, validTranslationKeywords } = params;
+  if (!include_memory || !bookId) return [];
+  const searchKeywords: string[] = [...validKeywords, ...validTranslationKeywords];
+  if (searchKeywords.length === 0) return [];
+  return searchRelatedMemoriesHybrid(bookId, [], searchKeywords, 5);
+}
+
+/**
+ * 验证 batch_replace_translations 关键词参数并返回规范化结果
+ */
+function normalizeReplaceKeywords(
+  keywords: unknown,
+  originalKeywords: unknown,
+): { validKeywords: string[]; validOriginalKeywords: string[] } {
+  const hasKeywords = Array.isArray(keywords) && keywords.length > 0;
+  const hasOriginal = Array.isArray(originalKeywords) && originalKeywords.length > 0;
+  if (!hasKeywords && !hasOriginal) {
+    throw new Error('必须提供 keywords 或 original_keywords 至少一个关键词数组');
+  }
+  const validKeywords = filterValidKeywords(keywords);
+  const validOriginalKeywords = filterValidKeywords(originalKeywords);
+  if (validKeywords.length === 0 && validOriginalKeywords.length === 0) {
+    throw new Error('必须提供至少一个有效的关键词数组');
+  }
+  return { validKeywords, validOriginalKeywords };
+}
+
+/**
+ * 定位指定 chapter_id 在 book.volumes 中的 (vIndex, cIndex)
+ */
+function locateTargetChapter(
+  book: Novel,
+  chapterId: string | undefined,
+): { volumeIndex: number; chapterIndex: number } | null {
+  if (!chapterId || !book.volumes) return null;
+  for (let vIndex = 0; vIndex < book.volumes.length; vIndex++) {
+    const volume = book.volumes[vIndex];
+    const chapters = volume?.chapters;
+    if (!chapters) continue;
+    const cIndex = chapters.findIndex((c) => c.id === chapterId);
+    if (cIndex !== -1) return { volumeIndex: vIndex, chapterIndex: cIndex };
+  }
+  return null;
+}
+
+/**
+ * 计算替换时需要遍历的卷 / 章节索引范围
+ */
+function resolveReplaceRange(
+  book: Novel,
+  chapterId: string | undefined,
+  targetVolumeIndex: number | null,
+  targetChapterIndex: number | null,
+): {
+  startVolumeIndex: number;
+  endVolumeIndex: number;
+  startChapterIndex: number | null;
+  endChapterIndex: number | null;
+} {
+  const hasTarget = !!chapterId && targetVolumeIndex !== null;
+  const volumes = book.volumes ?? [];
+  return {
+    startVolumeIndex: hasTarget ? targetVolumeIndex! : 0,
+    endVolumeIndex: hasTarget ? targetVolumeIndex! : volumes.length - 1,
+    startChapterIndex: hasTarget && targetChapterIndex !== null ? targetChapterIndex : null,
+    endChapterIndex: hasTarget && targetChapterIndex !== null ? targetChapterIndex : null,
+  };
+}
+
+/**
+ * 预加载替换范围内所有未加载的章节内容
+ */
+async function preloadReplaceRange(
+  book: Novel,
+  chapterId: string | undefined,
+  targetVolumeIndex: number | null,
+  targetChapterIndex: number | null,
+): Promise<void> {
+  if (!book.volumes) return;
+  const range = resolveReplaceRange(book, chapterId, targetVolumeIndex, targetChapterIndex);
+  const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
+
+  for (let vIndex = range.startVolumeIndex; vIndex <= range.endVolumeIndex; vIndex++) {
+    const volume = book.volumes[vIndex];
+    if (!volume || !volume.chapters) continue;
+    if (chapterId && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) continue;
+
+    const startC = range.startChapterIndex ?? 0;
+    const endC = range.endChapterIndex ?? volume.chapters.length - 1;
+    for (let cIndex = startC; cIndex <= endC; cIndex++) {
+      const chapter = volume.chapters[cIndex];
+      if (!chapter) continue;
+      if (chapter.content === undefined) {
+        chaptersToLoad.push({ chapter, vIndex, cIndex });
+      }
+    }
+  }
+
+  if (chaptersToLoad.length === 0) return;
+  const chapterIds = chaptersToLoad.map((item) => item.chapter.id);
+  const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+  for (const { chapter } of chaptersToLoad) {
+    const content = contentsMap.get(chapter.id);
+    chapter.content = content || [];
+    chapter.contentLoaded = true;
+  }
+}
+
+/**
+ * 检查段落是否同时满足原文 / 翻译两侧的关键词过滤条件
+ * 返回 null 表示不匹配（需要跳过）
+ */
+function evaluateKeywordMatch(
+  paragraph: { text?: string; translations?: Translation[] },
+  validKeywords: string[],
+  validOriginalKeywords: string[],
+): boolean | null {
+  const matchesOriginal =
+    validOriginalKeywords.length === 0 ||
+    validOriginalKeywords.some((kw) => containsWholeKeyword(paragraph.text || '', kw));
+
+  if (validKeywords.length > 0) {
+    if (!paragraph.translations || paragraph.translations.length === 0) return null;
+    const matchesTranslation = paragraph.translations.some((t) =>
+      validKeywords.some((kw) => containsWholeKeyword(t.translation || '', kw)),
+    );
+    return matchesOriginal && matchesTranslation;
+  }
+
+  // 仅原文关键词：仍要求段落存在翻译，否则无法替换
+  if (!paragraph.translations || paragraph.translations.length === 0) return null;
+  return matchesOriginal;
+}
+
+/**
+ * 使用全文索引服务收集匹配段落；索引失败或无可用关键词时返回 false
+ */
+async function collectIndexReplaceMatches(params: {
+  bookId: string;
+  book: Novel;
+  chapter_id: string | undefined;
+  validKeywords: string[];
+  validOriginalKeywords: string[];
+  maxReplacements: number;
+  allResults: Map<string, ParagraphSearchResult>;
+}): Promise<boolean> {
+  const {
+    bookId,
+    book,
+    chapter_id,
+    validKeywords,
+    validOriginalKeywords,
+    maxReplacements,
+    allResults,
+  } = params;
+  try {
+    const { FullTextIndexService } = await import('src/services/full-text-index-service');
+    const searchKeywords = [...validOriginalKeywords, ...validKeywords];
+    if (searchKeywords.length === 0) return true;
+
+    const indexResults = await FullTextIndexService.search(bookId, searchKeywords, {
+      ...(chapter_id ? { chapterId: chapter_id } : {}),
+      maxResults: maxReplacements * 2,
+      onlyWithTranslation: validKeywords.length > 0,
+      searchInOriginal: validOriginalKeywords.length > 0,
+      searchInTranslations: validKeywords.length > 0,
+      novel: book,
+    });
+
+    // 过滤结果：检查是否同时满足两个条件（如果提供了两种关键词）
+    // 注意：FullTextIndexService.search 已支持传入 novel 引用，这里拿到的 paragraph/chapter
+    // 应与当前 booksStore 中的 book 保持同一引用，可直接修改并保存。
+    for (const result of indexResults) {
+      if (allResults.size >= maxReplacements) break;
+      const paragraph = result.paragraph;
+      if (isEmptyParagraph(paragraph.text)) continue;
+      const matched = evaluateKeywordMatch(paragraph, validKeywords, validOriginalKeywords);
+      if (matched && !allResults.has(paragraph.id)) {
+        allResults.set(paragraph.id, result);
+      }
+    }
+    return true;
+  } catch (error) {
+    console.warn('Full-text index search failed, falling back to linear search:', error);
+    return false;
+  }
+}
+
+/**
+ * 对范围内的所有章节执行线性扫描，补充/替代索引匹配结果
+ */
+async function collectLinearReplaceMatches(params: {
+  book: Novel;
+  chapter_id: string | undefined;
+  targetVolumeIndex: number | null;
+  targetChapterIndex: number | null;
+  validKeywords: string[];
+  validOriginalKeywords: string[];
+  maxReplacements: number;
+  allResults: Map<string, ParagraphSearchResult>;
+}): Promise<void> {
+  const {
+    book,
+    chapter_id,
+    targetVolumeIndex,
+    targetChapterIndex,
+    validKeywords,
+    validOriginalKeywords,
+    maxReplacements,
+    allResults,
+  } = params;
+  if (!book.volumes) return;
+  const range = resolveReplaceRange(book, chapter_id, targetVolumeIndex, targetChapterIndex);
+
+  for (let vIndex = range.startVolumeIndex; vIndex <= range.endVolumeIndex; vIndex++) {
+    if (allResults.size >= maxReplacements) break;
+    const volume = book.volumes[vIndex];
+    if (!volume || !volume.chapters) continue;
+    if (chapter_id && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) continue;
+
+    const startC = range.startChapterIndex ?? 0;
+    const endC = range.endChapterIndex ?? volume.chapters.length - 1;
+    for (let cIndex = startC; cIndex <= endC; cIndex++) {
+      if (allResults.size >= maxReplacements) break;
+      const chapter = volume.chapters[cIndex];
+      if (!chapter) continue;
+      if (chapter.content === undefined) {
+        const content = await ChapterContentService.loadChapterContent(chapter.id);
+        chapter.content = content || [];
+        chapter.contentLoaded = true;
+      }
+      if (!chapter.content) continue;
+      scanChapterForReplaceMatches({
+        chapter,
+        cIndex,
+        volume,
+        vIndex,
+        validKeywords,
+        validOriginalKeywords,
+        maxReplacements,
+        allResults,
+      });
+    }
+  }
+}
+
+/**
+ * 扫描单个章节，将匹配的段落写入 allResults
+ */
+function scanChapterForReplaceMatches(params: {
+  chapter: Chapter;
+  cIndex: number;
+  volume: Volume;
+  vIndex: number;
+  validKeywords: string[];
+  validOriginalKeywords: string[];
+  maxReplacements: number;
+  allResults: Map<string, ParagraphSearchResult>;
+}): void {
+  const {
+    chapter,
+    cIndex,
+    volume,
+    vIndex,
+    validKeywords,
+    validOriginalKeywords,
+    maxReplacements,
+    allResults,
+  } = params;
+  const content = chapter.content;
+  if (!content) return;
+  for (let pIndex = 0; pIndex < content.length; pIndex++) {
+    if (allResults.size >= maxReplacements) return;
+    const paragraph = content[pIndex];
+    if (!paragraph) continue;
+    if (isEmptyParagraph(paragraph.text)) continue;
+
+    const matched = evaluateKeywordMatch(paragraph, validKeywords, validOriginalKeywords);
+    if (matched && !allResults.has(paragraph.id)) {
+      allResults.set(paragraph.id, {
+        paragraph,
+        paragraphIndex: pIndex,
+        chapter,
+        chapterIndex: cIndex,
+        volume,
+        volumeIndex: vIndex,
+      });
+    }
+  }
+}
+
+interface ReplacedParagraphRecord {
+  paragraph_id: string;
+  chapter_id: string;
+  old_selected_translation_id: string;
+  old_translations: Translation[];
+  new_translation: string;
+}
+
+/**
+ * 在候选翻译中找到第一个包含给定关键词集的关键词
+ */
+function findMatchedKeyword(
+  translations: Translation[],
+  keywords: string[],
+): string | null {
+  for (const translation of translations) {
+    for (const keyword of keywords) {
+      if (containsWholeKeyword(translation.translation || '', keyword)) {
+        return keyword;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * 对单个段落执行关键词替换，返回该段落的替换记录（若无任何替换则返回 null）
+ */
+function replaceParagraphTranslations(
+  result: ParagraphSearchResult,
+  params: {
+    validKeywords: string[];
+    validOriginalKeywords: string[];
+    replacementText: string;
+    replaceAllTranslations: boolean;
+  },
+): ReplacedParagraphRecord | null {
+  const { paragraph } = result;
+  if (!paragraph.translations || paragraph.translations.length === 0) return null;
+
+  // 依次尝试翻译关键词、原文关键词（后者用于数字、专有名词等场景）
+  const matchedKeyword =
+    (params.validKeywords.length > 0
+      ? findMatchedKeyword(paragraph.translations, params.validKeywords)
+      : null) ??
+    (params.validOriginalKeywords.length > 0
+      ? findMatchedKeyword(paragraph.translations, params.validOriginalKeywords)
+      : null);
+
+  if (!matchedKeyword) return null;
+  const keywordToReplace = matchedKeyword;
+  const replacement = params.replacementText.trim();
+
+  const oldSelectedTranslationId = paragraph.selectedTranslationId || '';
+  const oldTranslations: Translation[] = [];
+
+  const performReplacement = (translation: Translation) => {
+    translation.translation = replaceWholeKeyword(
+      translation.translation || '',
+      keywordToReplace,
+      replacement,
+    );
+  };
+
+  const snapshot = (t: Translation): Translation => ({
+    id: t.id,
+    translation: t.translation || '',
+    aiModelId: t.aiModelId || '',
+  });
+
+  if (params.replaceAllTranslations) {
+    for (const translation of paragraph.translations) {
+      if (!translation || !translation.id) continue;
+      oldTranslations.push(snapshot(translation));
+      performReplacement(translation);
+    }
+  } else if (paragraph.selectedTranslationId) {
+    const selected = paragraph.translations.find((t) => t.id === paragraph.selectedTranslationId);
+    if (selected && selected.id) {
+      oldTranslations.push(snapshot(selected));
+      performReplacement(selected);
+    }
+  } else {
+    const first = paragraph.translations[0];
+    if (first && first.id) {
+      oldTranslations.push(snapshot(first));
+      performReplacement(first);
+      paragraph.selectedTranslationId = first.id;
+    }
+  }
+
+  if (oldTranslations.length === 0) return null;
+  return {
+    paragraph_id: paragraph.id,
+    chapter_id: result.chapter.id,
+    old_selected_translation_id: oldSelectedTranslationId,
+    old_translations: oldTranslations,
+    new_translation: replacement,
+  };
+}
+
+/**
+ * 对所有候选段落执行替换并收集结果
+ */
+function applyKeywordReplacements(params: {
+  results: ParagraphSearchResult[];
+  validKeywords: string[];
+  validOriginalKeywords: string[];
+  replacementText: string;
+  replaceAllTranslations: boolean;
+}): ReplacedParagraphRecord[] {
+  const replaced: ReplacedParagraphRecord[] = [];
+  for (const result of params.results) {
+    const record = replaceParagraphTranslations(result, {
+      validKeywords: params.validKeywords,
+      validOriginalKeywords: params.validOriginalKeywords,
+      replacementText: params.replacementText,
+      replaceAllTranslations: params.replaceAllTranslations,
+    });
+    if (record) replaced.push(record);
+  }
+  return replaced;
+}
+
+/**
+ * 发送批量替换的汇总 action（包括撤销所需的 previousData）
+ */
+function emitReplaceAction(params: {
+  onAction: (action: ActionInfo) => void;
+  replacedParagraphs: ReplacedParagraphRecord[];
+  validKeywords: string[];
+  validOriginalKeywords: string[];
+  replacementText: string;
+  replaceAllTranslations: boolean;
+}): void {
+  const totalTranslationCount = params.replacedParagraphs.reduce(
+    (sum, p) => sum + p.old_translations.length,
+    0,
+  );
+  params.onAction({
+    type: 'update',
+    entity: 'translation',
+    data: {
+      tool_name: 'batch_replace_translations',
+      replaced_paragraph_count: params.replacedParagraphs.length,
+      replaced_translation_count: totalTranslationCount,
+      ...(params.validKeywords.length > 0 ? { keywords: params.validKeywords } : {}),
+      ...(params.validOriginalKeywords.length > 0
+        ? { original_keywords: params.validOriginalKeywords }
+        : {}),
+      replacement_text: params.replacementText.trim(),
+      replace_all_translations: params.replaceAllTranslations,
+    } as ActionInfo['data'],
+    previousData: {
+      replaced_paragraphs: params.replacedParagraphs.map((p) => ({
+        paragraph_id: p.paragraph_id,
+        chapter_id: p.chapter_id,
+        old_selected_translation_id: p.old_selected_translation_id,
+        old_translations: p.old_translations,
+      })),
+    },
+  });
+}
