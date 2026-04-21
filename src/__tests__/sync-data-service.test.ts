@@ -6,6 +6,8 @@ import * as AIModelsStore from 'src/stores/ai-models';
 import * as BooksStore from 'src/stores/books';
 import * as CoverHistoryStore from 'src/stores/cover-history';
 import * as SettingsStore from 'src/stores/settings';
+import type { AppSettings, MemoryInjectionSettings } from 'src/models/settings';
+import type { SyncConfig } from 'src/models/sync';
 
 // Mock aiModelService methods
 const mockSaveModel = mock((_model: unknown) => Promise.resolve());
@@ -46,6 +48,113 @@ const mockSettingsStore = {
   updateGistSync: mock((_config: unknown) => Promise.resolve()),
   getAllSettings: mock(() => ({ lastEdited: new Date(0) })),
   cleanupOldDeletionRecords: mock(() => Promise.resolve()),
+};
+
+type MockSettingsInput = Omit<
+  Partial<AppSettings>,
+  'lastEdited' | 'taskDefaultModels' | 'memoryInjection'
+> & {
+  lastEdited?: string | Date | undefined;
+  taskDefaultModels?: AppSettings['taskDefaultModels'] | undefined;
+  memoryInjection?: Partial<MemoryInjectionSettings> | undefined;
+  syncs?: SyncConfig[] | undefined;
+};
+
+const createMockMemoryInjection = (
+  overrides: Partial<MemoryInjectionSettings> = {},
+): MemoryInjectionSettings => ({
+  charBudget: 2000,
+  enableSemantic: true,
+  minScoreThreshold: 0.3,
+  hasSeenIntro: false,
+  embeddingModelCached: false,
+  ...overrides,
+});
+
+const createMockAppSettings = (overrides: MockSettingsInput = {}): AppSettings => {
+  const { memoryInjection, taskDefaultModels, lastEdited, syncs: _syncs, ...rest } = overrides;
+
+  const settings: AppSettings = {
+    lastEdited:
+      lastEdited !== undefined
+        ? typeof lastEdited === 'string'
+          ? new Date(lastEdited)
+          : lastEdited
+        : new Date(0),
+    scraperConcurrencyLimit: 3,
+    taskDefaultModels: { ...(taskDefaultModels ?? {}) },
+    proxyEnabled: true,
+    proxyUrl: '',
+    proxyAutoSwitch: true,
+    proxyAutoAddMapping: true,
+    proxyList: [],
+    proxySiteMapping: {},
+    booksSortOption: 'default',
+    quickStartDismissed: false,
+    memoryInjection: createMockMemoryInjection(memoryInjection),
+    enableLocalEmbedding: false,
+    ...rest,
+  };
+
+  settings.taskDefaultModels = { ...(taskDefaultModels ?? {}) };
+  settings.memoryInjection = createMockMemoryInjection(memoryInjection);
+
+  return settings;
+};
+
+const setMockSettings = (settings: MockSettingsInput = {}) => {
+  mockSettingsStore.settings = createMockAppSettings(settings);
+  mockSettingsStore.getAllSettings.mockReturnValue(mockSettingsStore.settings);
+};
+
+const mergeImportedMockSettings = (
+  currentSettings: AppSettings,
+  settings: MockSettingsInput = {},
+): AppSettings => {
+  const {
+    lastEdited,
+    syncs: _syncs,
+    memoryInjection,
+    taskDefaultModels,
+    ...settingsWithoutSpecial
+  } = settings;
+
+  return createMockAppSettings({
+    ...currentSettings,
+    ...settingsWithoutSpecial,
+    lastEdited: lastEdited ?? currentSettings.lastEdited,
+    taskDefaultModels:
+      taskDefaultModels !== undefined
+        ? {
+            ...currentSettings.taskDefaultModels,
+            ...taskDefaultModels,
+          }
+        : currentSettings.taskDefaultModels,
+    memoryInjection:
+      memoryInjection !== undefined
+        ? {
+            ...currentSettings.memoryInjection,
+            ...memoryInjection,
+            embeddingModelCached: currentSettings.memoryInjection?.embeddingModelCached ?? false,
+          }
+        : currentSettings.memoryInjection,
+  });
+};
+
+const replaceMockSettingsFromSnapshot = (
+  currentSettings: AppSettings,
+  settings: MockSettingsInput = {},
+): AppSettings => {
+  const { syncs: _syncs, ...snapshotSettings } = settings;
+  const nextSettings = createMockAppSettings(snapshotSettings);
+
+  return {
+    ...nextSettings,
+    memoryInjection: createMockMemoryInjection({
+      ...nextSettings.memoryInjection,
+      embeddingModelCached: currentSettings.memoryInjection?.embeddingModelCached ?? false,
+    }),
+  };
 };
 
 const mockMemoryService = {
@@ -107,28 +216,7 @@ describe('数据同步服务 (SyncDataService)', () => {
     mockSettingsStore.updateGistSync.mockClear();
     mockSettingsStore.cleanupOldDeletionRecords.mockClear();
     mockSettingsStore.getAllSettings.mockClear();
-    mockSettingsStore.settings = {
-      lastEdited: new Date(0),
-      scraperConcurrencyLimit: 3,
-      taskDefaultModels: {},
-      proxyEnabled: true,
-      proxyUrl: '',
-      proxyAutoSwitch: true,
-      proxyAutoAddMapping: true,
-      proxyList: [],
-      proxySiteMapping: {},
-      booksSortOption: 'default',
-      quickStartDismissed: false,
-      memoryInjection: {
-        charBudget: 2000,
-        enableSemantic: true,
-        minScoreThreshold: 0.3,
-        hasSeenIntro: false,
-        embeddingModelCached: false,
-      },
-      enableLocalEmbedding: false,
-    };
-    mockSettingsStore.getAllSettings.mockReturnValue(mockSettingsStore.settings);
+    setMockSettings();
     mockSettingsStore.gistSync = {
       lastSyncTime: 0,
       deletedNovelIds: [],
@@ -137,67 +225,14 @@ describe('数据同步服务 (SyncDataService)', () => {
       deletedCoverUrls: [],
       deletedMemoryIds: [],
     };
-    mockSettingsStore.importSettings.mockImplementation((settings: any) => {
-      const {
-        lastEdited: _removed,
-        syncs: _syncs,
-        ...settingsWithoutSpecial
-      } = settings ?? {};
-      const finalSettings = {
-        ...mockSettingsStore.settings,
-        ...settingsWithoutSpecial,
-        lastEdited:
-          settings?.lastEdited !== undefined
-            ? new Date(settings.lastEdited)
-            : mockSettingsStore.settings.lastEdited,
-      };
-
-      if (settings?.taskDefaultModels !== undefined) {
-        finalSettings.taskDefaultModels = {
-          ...mockSettingsStore.settings.taskDefaultModels,
-          ...settings.taskDefaultModels,
-        };
-      }
-
-      if (settings?.memoryInjection !== undefined) {
-        finalSettings.memoryInjection = {
-          ...mockSettingsStore.settings.memoryInjection,
-          ...settings.memoryInjection,
-          embeddingModelCached:
-            mockSettingsStore.settings.memoryInjection?.embeddingModelCached ?? false,
-        };
-      }
-
-      mockSettingsStore.settings = finalSettings;
-      mockSettingsStore.getAllSettings.mockReturnValue(mockSettingsStore.settings);
+    mockSettingsStore.importSettings.mockImplementation((settings: unknown) => {
+      setMockSettings(mergeImportedMockSettings(mockSettingsStore.settings, settings as MockSettingsInput));
       return Promise.resolve();
     });
-    mockSettingsStore.replaceSettingsFromSyncSnapshot.mockImplementation((settings: any) => {
-      const existingEmbeddingModelCached =
-        mockSettingsStore.settings.memoryInjection?.embeddingModelCached ?? false;
-      mockSettingsStore.settings = {
-        lastEdited:
-          settings?.lastEdited !== undefined ? new Date(settings.lastEdited) : new Date(0),
-        scraperConcurrencyLimit: settings?.scraperConcurrencyLimit ?? 3,
-        taskDefaultModels: { ...(settings?.taskDefaultModels ?? {}) },
-        proxyEnabled: settings?.proxyEnabled ?? true,
-        proxyUrl: settings?.proxyUrl ?? '',
-        proxyAutoSwitch: settings?.proxyAutoSwitch ?? true,
-        proxyAutoAddMapping: settings?.proxyAutoAddMapping ?? true,
-        proxyList: settings?.proxyList ?? [],
-        proxySiteMapping: settings?.proxySiteMapping ?? {},
-        booksSortOption: settings?.booksSortOption ?? 'default',
-        quickStartDismissed: settings?.quickStartDismissed ?? false,
-        memoryInjection: {
-          charBudget: settings?.memoryInjection?.charBudget ?? 2000,
-          enableSemantic: settings?.memoryInjection?.enableSemantic ?? true,
-          minScoreThreshold: settings?.memoryInjection?.minScoreThreshold ?? 0.3,
-          hasSeenIntro: settings?.memoryInjection?.hasSeenIntro ?? false,
-          embeddingModelCached: existingEmbeddingModelCached,
-        },
-        enableLocalEmbedding: settings?.enableLocalEmbedding ?? false,
-      };
-      mockSettingsStore.getAllSettings.mockReturnValue(mockSettingsStore.settings);
+    mockSettingsStore.replaceSettingsFromSyncSnapshot.mockImplementation((settings: unknown) => {
+      setMockSettings(
+        replaceMockSettingsFromSnapshot(mockSettingsStore.settings, settings as MockSettingsInput),
+      );
       return Promise.resolve();
     });
 

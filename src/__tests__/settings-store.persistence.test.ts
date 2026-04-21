@@ -70,4 +70,26 @@ describe('settings store persistence (taskDefaultModels)', () => {
     settingsStore.setRestoringSyncSnapshot(false);
     expect(settingsStore.isRestoringSyncSnapshot).toBe(false);
   });
+
+  it('replaceSettingsFromSyncSnapshot() 应忽略快照里的 syncs 字段，避免污染 settings', async () => {
+    const settingsStore = useSettingsStore();
+
+    await settingsStore.replaceSettingsFromSyncSnapshot({
+      proxyEnabled: false,
+      syncs: [
+        {
+          enabled: true,
+          lastSyncTime: 123,
+          syncInterval: 0,
+          syncType: 'gist',
+          syncParams: { gistId: 'remote-gist' },
+          secret: 'test-secret',
+          apiEndpoint: '',
+        },
+      ],
+    } as AnyRecord);
+
+    expect(settingsStore.settings.proxyEnabled).toBe(false);
+    expect((settingsStore.settings as AnyRecord).syncs).toBeUndefined();
+  });
 });

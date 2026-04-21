@@ -637,14 +637,15 @@ export const useSettingsStore = defineStore('settings', {
         this.settings.memoryInjection?.embeddingModelCached ??
         DEFAULT_MEMORY_INJECTION.embeddingModelCached;
 
-      const normalized = normalizeLoadedSettings(settings);
+      const { syncs: _syncs, ...snapshotSettings } = settings;
+      const normalized = normalizeLoadedSettings(snapshotSettings);
 
-      if (normalized.memoryInjection) {
-        normalized.memoryInjection = {
-          ...normalized.memoryInjection,
-          embeddingModelCached: localEmbeddingModelCached,
-        };
-      }
+      // normalizeLoadedSettings 会始终补齐 memoryInjection 默认值，这里直接覆盖设备本地缓存状态。
+      normalized.memoryInjection = {
+        ...DEFAULT_MEMORY_INJECTION,
+        ...normalized.memoryInjection,
+        embeddingModelCached: localEmbeddingModelCached,
+      };
 
       this.settings = normalized;
       await saveSettingsToDB(this.settings);
