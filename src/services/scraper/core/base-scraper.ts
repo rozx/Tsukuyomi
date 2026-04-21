@@ -1,9 +1,9 @@
 import axios from 'axios';
-import { v4 as uuidv4 } from 'uuid';
 import type {
   NovelScraper,
   FetchNovelResult,
   ParsedChapterInfo,
+  ParsedNovelInfo,
   ParsedVolumeInfo,
 } from 'src/services/scraper/types';
 import type { Novel, Chapter, Volume, Translation } from 'src/models/novel';
@@ -11,87 +11,15 @@ import { UniqueIdGenerator, generateShortId } from 'src/utils/id-generator';
 import { ProxyService } from 'src/services/proxy-service';
 import { useElectron } from 'src/composables/useElectron';
 
-const DESKTOP_USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
-async function fetchPageViaElectron(url: string, proxiedUrl: string): Promise<string> {
-  if (!window.electronAPI?.fetch) {
-    throw new Error('Electron API 未正确加载，请检查 preload 脚本');
-  }
-  const headers: Record<string, string> = {
-    'User-Agent': DESKTOP_USER_AGENT,
-    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-    'Accept-Encoding': 'gzip, deflate, br',
-    Referer: new URL(url).origin,
-  };
-  const response = await window.electronAPI.fetch(proxiedUrl, {
-    method: 'GET',
-    headers,
-    timeout: 60000,
-  });
-  if (response.status >= 400) throw new Error(`目标网站返回错误: ${response.status}`);
-  if (response.data) return response.data;
-  throw new Error('返回的内容为空');
-}
-
-function extractHtmlFromProxyResponse(
-  responseData: unknown,
-  contentType: string,
-): string | null {
-  const dataStr = typeof responseData === 'string' ? responseData : String(responseData);
-  const looksLikeJson = contentType.includes('application/json') || dataStr.trim().startsWith('{');
-  if (!looksLikeJson) return dataStr;
-  try {
-    const jsonData =
-      typeof responseData === 'string' ? JSON.parse(responseData) : (responseData as any);
-    if (jsonData.contents && typeof jsonData.contents === 'string') return jsonData.contents;
-    if (jsonData.data && typeof jsonData.data === 'string') return jsonData.data;
-    if (dataStr.includes('<html') || dataStr.includes('<!DOCTYPE')) return dataStr;
-    console.error('[BaseScraper] JSON 响应中未找到 HTML 内容', {
-      keys: Object.keys(jsonData),
-      jsonPreview: JSON.stringify(jsonData).substring(0, 500),
-    });
-    return null;
-  } catch {
-    return dataStr;
-  }
-}
-
-async function fetchPageViaAxios(
-  url: string,
-  proxiedUrl: string,
-  isBrowser: boolean,
-): Promise<string> {
-  const headers: Record<string, string> = {
-    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-  };
-  if (!isBrowser) {
-    headers['User-Agent'] = DESKTOP_USER_AGENT;
-    headers['Accept-Encoding'] = 'gzip, deflate, br';
-    headers['Referer'] = url.startsWith('https://') ? new URL(url).origin : 'https://kakuyomu.jp/';
-  }
-
-  const response = await axios.get(proxiedUrl, {
-    timeout: 60000,
-    headers,
-    validateStatus: (status) => status >= 200 && status < 400,
-  });
-  if (response.status >= 400) throw new Error(`目标网站返回错误: ${response.status}`);
-  if (!response.data) throw new Error('返回的内容为空');
-
-  const contentType = response.headers['content-type'] || '';
-  const html = extractHtmlFromProxyResponse(response.data, contentType);
-  if (html === null) throw new Error('返回的内容为空');
-  return html;
-}
-
 /**
  * 爬虫服务基类
  * 提供通用的错误处理和工具方法
+ *
+ * @template TNovelInfo 解析得到的小说信息类型，子类可以通过泛型参数指定站点特定的扩展字段
  */
-export abstract class BaseScraper implements NovelScraper {
+export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNovelInfo>
+  implements NovelScraper
+{
   /**
    * 是否使用服务器代理路径（在浏览器环境中使用 /api/... 代理）
    * 注意：在 Node.js/Bun 环境下不再使用 AllOrigins，而是直接访问或使用服务器代理
@@ -105,31 +33,69 @@ export abstract class BaseScraper implements NovelScraper {
    * @param url 要验证的 URL
    * @returns 是否为支持的 URL
    */
-  // fallow-ignore-next-line unused-class-member
   abstract isValidUrl(url: string): boolean;
 
   /**
-   * 获取并解析小说信息
+   * 获取并解析小说信息（模板方法）
+   * 统一处理 URL 校验、错误包装和结果构造；站点特定的解析逻辑通过以下抽象方法扩展：
+   * - {@link getInvalidUrlError}：无效 URL 时的错误消息
+   * - {@link getNovelIndexUrl}：根据任意 URL 推导出小说主页 URL
+   * - {@link parseNovelInfoFromUrl}：从小说主页 URL 拉取并解析得到站点特定的信息
+   * - {@link convertToNovel}：将解析结果转换为统一的 Novel 模型
    * @param url 小说 URL
    * @returns Promise<FetchNovelResult> 获取结果
    */
-  // fallow-ignore-next-line unused-class-member
-  abstract fetchNovel(url: string): Promise<FetchNovelResult>;
+  async fetchNovel(url: string): Promise<FetchNovelResult> {
+    try {
+      if (!this.isValidUrl(url)) {
+        return this.createErrorResult(this.getInvalidUrlError());
+      }
+
+      const novelIndexUrl = this.getNovelIndexUrl(url);
+      const novelInfo = await this.parseNovelInfoFromUrl(novelIndexUrl);
+      const novel = this.convertToNovel(novelInfo);
+
+      return this.createSuccessResult(novel);
+    } catch (error) {
+      return this.createErrorResult(
+        error instanceof Error ? error : new Error('获取小说信息时发生未知错误'),
+      );
+    }
+  }
 
   /**
-   * 获取章节内容：默认实现 = 抓 HTML → extractParagraphsFromHtml → mergeParagraphs。
-   * kakuyomu / syosetu / ncode-syosetu 三站的流程完全一致，仅段落提取规则不同（由子类覆盖 extractParagraphsFromHtml）。
-   * 如有特殊需求可继续覆盖此方法。
+   * 当传入的 URL 不符合该站点的格式时返回的错误消息
+   */
+  protected abstract getInvalidUrlError(): string;
+
+  /**
+   * 从任意 URL（小说主页或章节 URL）推导出小说主页 URL
+   * @param url 原始 URL
+   * @returns 小说主页 URL
+   */
+  protected abstract getNovelIndexUrl(url: string): string;
+
+  /**
+   * 从小说主页 URL 拉取并解析站点特定的小说信息
+   * @param novelIndexUrl 小说主页 URL
+   * @returns 解析后的小说信息
+   */
+  protected abstract parseNovelInfoFromUrl(novelIndexUrl: string): Promise<TNovelInfo>;
+
+  /**
+   * 将解析结果转换为统一的 Novel 模型
+   * @param info 解析后的小说信息
+   * @returns Novel 对象
+   */
+  protected abstract convertToNovel(info: TNovelInfo): Novel;
+
+  /**
+   * 获取章节内容
    * @param chapterUrl 章节 URL
    * @returns Promise<string> 章节内容
    * @throws {Error} 如果获取失败
    */
-  // fallow-ignore-next-line unused-class-member
-  async fetchChapterContent(chapterUrl: string): Promise<string> {
-    const html = await this.fetchPage(chapterUrl);
-    const paragraphs = this.extractParagraphsFromHtml(html);
-    return this.mergeParagraphs(paragraphs);
-  }
+  abstract fetchChapterContent(chapterUrl: string): Promise<string>;
 
   /**
    * 从 HTML 中提取段落（抽象方法，由子类实现）
@@ -137,12 +103,6 @@ export abstract class BaseScraper implements NovelScraper {
    * @returns 段落数组，每个元素是一个段落文本
    */
   protected abstract extractParagraphsFromHtml(html: string): string[];
-
-  /**
-   * 将提取到的段落数组合并为最终章节内容文本（抽象方法，由子类实现）。
-   * 各站点对空段落、换行的处理方式不同，因此保留为抽象。
-   */
-  protected abstract mergeParagraphs(paragraphs: string[]): string;
 
   /**
    * 获取页面 HTML（通用方法）
@@ -162,10 +122,111 @@ export abstract class BaseScraper implements NovelScraper {
       // 使用代理服务的自动切换功能执行请求
       return await ProxyService.executeWithAutoSwitch(
         url,
-        async (proxiedUrl: string) =>
-          isElectron.value
-            ? fetchPageViaElectron(url, proxiedUrl)
-            : fetchPageViaAxios(url, proxiedUrl, isBrowser.value),
+        async (proxiedUrl: string) => {
+          // 在 Electron 环境中，使用 Electron 的 net 模块
+          if (isElectron.value) {
+            if (!window.electronAPI?.fetch) {
+              throw new Error('Electron API 未正确加载，请检查 preload 脚本');
+            }
+
+            const headers: Record<string, string> = {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+              'Accept-Encoding': 'gzip, deflate, br',
+            };
+
+            // 设置 Referer
+            const urlObj = new URL(url);
+            headers['Referer'] = urlObj.origin;
+
+            const response = await window.electronAPI.fetch(proxiedUrl, {
+              method: 'GET',
+              headers,
+              timeout: 60000,
+            });
+
+            if (response.status >= 400) {
+              throw new Error(`目标网站返回错误: ${response.status}`);
+            }
+
+            if (response.data) {
+              return response.data;
+            }
+
+            throw new Error('返回的内容为空');
+          }
+
+          // 在浏览器环境（非 Electron）或 Node.js/Bun 环境中，使用 axios
+          const headers: Record<string, string> = {
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
+          };
+
+          // 只在非浏览器环境（如 Node.js/Bun）中设置这些请求头
+          if (!isBrowser.value) {
+            headers['User-Agent'] =
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+            headers['Accept-Encoding'] = 'gzip, deflate, br';
+            headers['Referer'] = url.startsWith('https://')
+              ? new URL(url).origin
+              : 'https://kakuyomu.jp/';
+          }
+
+          const response = await axios.get(proxiedUrl, {
+            timeout: 60000, // 60 秒超时（与代理服务器超时时间一致）
+            headers,
+            validateStatus: (status) => status >= 200 && status < 400,
+          });
+
+          if (response.status >= 400) {
+            throw new Error(`目标网站返回错误: ${response.status}`);
+          }
+
+          if (response.data) {
+            // 检查返回的内容类型
+            const contentType = response.headers['content-type'] || '';
+            const dataStr =
+              typeof response.data === 'string' ? response.data : String(response.data);
+
+            // 检查是否是 JSON 响应（可能是代理服务返回的 JSON 格式）
+            if (contentType.includes('application/json') || dataStr.trim().startsWith('{')) {
+              // 尝试解析 JSON 以获取实际内容
+              try {
+                const jsonData =
+                  typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+
+                // 某些代理服务（如 AllOrigins）返回 JSON，内容在 contents 字段
+                if (jsonData.contents && typeof jsonData.contents === 'string') {
+                  return jsonData.contents;
+                }
+
+                // 某些代理服务返回 JSON，内容在 data 字段
+                if (jsonData.data && typeof jsonData.data === 'string') {
+                  return jsonData.data;
+                }
+
+                // cors.lol 可能直接返回 HTML（即使 Content-Type 是 JSON）
+                // 检查是否包含 HTML 标签
+                if (dataStr.includes('<html') || dataStr.includes('<!DOCTYPE')) {
+                  return dataStr;
+                }
+
+                console.error('[BaseScraper] JSON 响应中未找到 HTML 内容', {
+                  keys: Object.keys(jsonData),
+                  jsonPreview: JSON.stringify(jsonData).substring(0, 500),
+                });
+              } catch {
+                // 不是有效的 JSON，可能是 HTML 但被误判为 JSON
+              }
+            }
+
+            return response.data;
+          }
+
+          throw new Error('返回的内容为空');
+        },
         {
           skipInternalProxy: isElectron.value, // Electron 环境不使用内部代理路径
           maxRetries: 3,
@@ -215,6 +276,38 @@ export abstract class BaseScraper implements NovelScraper {
   }
 
   /**
+   * 解析可能为 string 或 Date 的日期值
+   * 字符串会委托给 {@link parseDateString}，子类可覆盖该方法以支持站点特定格式
+   * @param value 日期值（string / Date / undefined）
+   * @returns Date 对象或 undefined（无法解析时）
+   */
+  protected parseChapterDate(value: string | Date | undefined): Date | undefined {
+    if (!value) return undefined;
+    if (value instanceof Date) return value;
+    return this.parseDateString(value);
+  }
+
+  /**
+   * 解析章节日期字符串
+   * 默认支持日本格式：`2025年05月16日(金) 08:13` 或 `2025年05月16日(金) 08:13(改)`
+   * 子类可以覆盖此方法以支持其他格式（例如 ncode.syosetu.com 的 `YYYY/MM/DD HH:mm`）
+   * @param dateString 日期字符串
+   * @returns Date 对象，如果解析失败则返回 undefined
+   */
+  protected parseDateString(dateString: string): Date | undefined {
+    // 移除 "(改)" 标记后解析
+    const cleaned = dateString.replace(/\(改\)/g, '').trim();
+    const match = cleaned.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+    if (match && match[1] && match[2] && match[3]) {
+      const year = parseInt(match[1], 10);
+      const month = parseInt(match[2], 10) - 1; // JavaScript 月份从 0 开始
+      const day = parseInt(match[3], 10);
+      return new Date(year, month, day);
+    }
+    return undefined;
+  }
+
+  /**
    * 创建章节对象（通用方法）
    * @param chapterInfo 解析后的章节信息
    * @param idGenerator 章节 ID 生成器
@@ -226,43 +319,12 @@ export abstract class BaseScraper implements NovelScraper {
     idGenerator: UniqueIdGenerator,
     defaultDate: Date = new Date(),
   ): Chapter {
-    // 解析创建日期
-    let chapterDate = defaultDate;
-    if (chapterInfo.date) {
-      if (chapterInfo.date instanceof Date) {
-        chapterDate = chapterInfo.date;
-      } else {
-        // 尝试解析日期字符串（格式：2025年05月16日(金) 08:13）
-        const dateMatch = chapterInfo.date.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-        if (dateMatch && dateMatch[1] && dateMatch[2] && dateMatch[3]) {
-          const year = parseInt(dateMatch[1], 10);
-          const month = parseInt(dateMatch[2], 10) - 1; // JavaScript 月份从 0 开始
-          const day = parseInt(dateMatch[3], 10);
-          chapterDate = new Date(year, month, day);
-        }
-      }
-    }
+    // 解析创建日期（解析失败时回退到 defaultDate）
+    const chapterDate = this.parseChapterDate(chapterInfo.date) ?? defaultDate;
 
     // 解析最后更新时间
-    // 只有当网站明确提供了 lastUpdated 时才设置，否则保持为空
-    let lastUpdatedDate: Date | undefined;
-    if (chapterInfo.lastUpdated) {
-      if (chapterInfo.lastUpdated instanceof Date) {
-        lastUpdatedDate = chapterInfo.lastUpdated;
-      } else {
-        // 尝试解析日期字符串（格式：2025年05月16日(金) 08:13 或 2025年05月16日(金) 08:13(改)）
-        // 移除 "(改)" 标记后解析
-        const cleanedDate = chapterInfo.lastUpdated.replace(/\(改\)/g, '').trim();
-        const dateMatch = cleanedDate.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-        if (dateMatch && dateMatch[1] && dateMatch[2] && dateMatch[3]) {
-          const year = parseInt(dateMatch[1], 10);
-          const month = parseInt(dateMatch[2], 10) - 1; // JavaScript 月份从 0 开始
-          const day = parseInt(dateMatch[3], 10);
-          lastUpdatedDate = new Date(year, month, day);
-        }
-      }
-    }
-    // 注意：如果只有 date 而没有 lastUpdated，则不设置 lastUpdated（保持 undefined）
+    // 只有当网站明确提供了 lastUpdated 时才设置，否则保持为 undefined
+    const lastUpdatedDate = this.parseChapterDate(chapterInfo.lastUpdated);
 
     const translation: Translation = {
       id: generateShortId(),
@@ -399,62 +461,5 @@ export abstract class BaseScraper implements NovelScraper {
     }
 
     return volumes;
-  }
-
-  /**
-   * 将解析后的小说信息组装为 Novel（通用方法）。
-   * 各站点的 fetch 路径解析出统一的信息对象后即可直接调用本方法。
-   *
-   * - 章节按 `volumes` + `groupChaptersIntoVolumes` 规则分组
-   * - Novel.id 使用完整 uuid v4；章节/卷的 ID 使用短 ID
-   * - `author` / `description` / `tags` 为空时不写入目标对象（遵守 exactOptionalPropertyTypes）
-   */
-  protected buildNovelFromInfo(info: {
-    title: string;
-    author?: string;
-    description?: string;
-    tags?: string[];
-    chapters: ParsedChapterInfo[];
-    volumes?: ParsedVolumeInfo[];
-    webUrl: string;
-    defaultVolumeTitle?: string;
-  }): Novel {
-    const now = new Date();
-
-    const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
-      const parsedChapter: ParsedChapterInfo = {
-        title: chapter.title,
-        url: chapter.url,
-      };
-      if (chapter.date) parsedChapter.date = chapter.date;
-      if (chapter.lastUpdated) parsedChapter.lastUpdated = chapter.lastUpdated;
-      return parsedChapter;
-    });
-
-    const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes?.map((volume) => ({
-      title: volume.title,
-      startIndex: volume.startIndex,
-    }));
-
-    const volumes = this.groupChaptersIntoVolumes(
-      parsedChapters,
-      parsedVolumes,
-      info.defaultVolumeTitle ?? '正文',
-    );
-
-    const novel: Novel = {
-      id: uuidv4(),
-      title: info.title,
-      volumes,
-      webUrl: [info.webUrl],
-      lastEdited: now,
-      createdAt: now,
-    };
-
-    if (info.author) novel.author = info.author;
-    if (info.description) novel.description = info.description;
-    if (info.tags) novel.tags = info.tags;
-
-    return novel;
   }
 }

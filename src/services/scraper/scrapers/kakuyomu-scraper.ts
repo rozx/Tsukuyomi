@@ -2,8 +2,8 @@ import * as cheerio from 'cheerio';
 import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/models/novel';
 import type {
-  FetchNovelResult,
   ParsedChapterInfo,
+  ParsedNovelInfo,
   ParsedVolumeInfo,
 } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
@@ -45,24 +45,13 @@ interface KakuyomuEpisode {
   publishedAt: string;
 }
 
-interface ParsedNovelInfo {
-  title: string;
-  author?: string | undefined;
-  description?: string | undefined;
-  tags?: string[] | undefined;
-  cover?: string | undefined;
-  chapters: ParsedChapterInfo[];
-  volumes?: ParsedVolumeInfo[] | undefined;
-  webUrl: string;
-}
-
 /**
  * kakuyomu.jp 小说爬虫服务
  * 用于从 kakuyomu.jp 获取和解析小说信息
  *
  * Kakuyomu 使用 Next.js，所有数据都嵌入在页面的 __NEXT_DATA__ JSON 中
  */
-export class KakuyomuScraper extends BaseScraper {
+export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
   protected override useProxy: boolean = false; // Kakuyomu 不使用代理，直接请求
 
   private static readonly BASE_URL = 'https://kakuyomu.jp';
@@ -86,7 +75,7 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 获取小说主页 URL
    */
-  private getNovelIndexUrl(url: string): string {
+  protected override getNovelIndexUrl(url: string): string {
     const novelId = this.extractNovelId(url);
     if (novelId) {
       return `${KakuyomuScraper.BASE_URL}/works/${novelId}`;
@@ -94,36 +83,28 @@ export class KakuyomuScraper extends BaseScraper {
     return url;
   }
 
+  protected override getInvalidUrlError(): string {
+    return '无效的 kakuyomu.jp 小说 URL';
+  }
+
   /**
-   * 获取并解析小说信息
+   * 从小说主页 URL 拉取 HTML 并解析嵌入的 Next.js 数据
    */
-  async fetchNovel(url: string): Promise<FetchNovelResult> {
-    try {
-      if (!this.isValidUrl(url)) {
-        return this.createErrorResult('无效的 kakuyomu.jp 小说 URL');
-      }
+  protected override async parseNovelInfoFromUrl(
+    novelIndexUrl: string,
+  ): Promise<ParsedNovelInfo> {
+    const html = await this.fetchPage(novelIndexUrl);
 
-      const novelIndexUrl = this.getNovelIndexUrl(url);
-      const html = await this.fetchPage(novelIndexUrl);
+    // 调试：记录返回的 HTML 信息
+    console.log('[KakuyomuScraper] fetchPage 返回', {
+      url: novelIndexUrl,
+      htmlLength: html.length,
+      htmlPreview: html.substring(0, 500),
+      hasNextData: html.includes('__NEXT_DATA__'),
+    });
 
-      // 调试：记录返回的 HTML 信息
-      console.log('[KakuyomuScraper] fetchPage 返回', {
-        url: novelIndexUrl,
-        htmlLength: html.length,
-        htmlPreview: html.substring(0, 500),
-        hasNextData: html.includes('__NEXT_DATA__'),
-      });
-
-      // 解析页面中的 Next.js 数据
-      const novelInfo = this.parseNovelPage(html, novelIndexUrl);
-      const novel = this.convertToNovel(novelInfo);
-
-      return this.createSuccessResult(novel);
-    } catch (error) {
-      return this.createErrorResult(
-        error instanceof Error ? error : new Error('获取小说信息时发生未知错误'),
-      );
-    }
+    // 解析页面中的 Next.js 数据
+    return this.parseNovelPage(html, novelIndexUrl);
   }
 
   /**
@@ -580,7 +561,7 @@ export class KakuyomuScraper extends BaseScraper {
   /**
    * 转换为 Novel 格式
    */
-  private convertToNovel(info: ParsedNovelInfo): Novel {
+  protected override convertToNovel(info: ParsedNovelInfo): Novel {
     const now = new Date();
     const parsedChapters: ParsedChapterInfo[] = info.chapters;
     const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes;

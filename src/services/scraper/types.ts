@@ -60,3 +60,18 @@ export interface ParsedVolumeInfo {
   startIndex: number; // 该卷开始的章节索引
 }
 
+/**
+ * 小说解析结果的通用接口
+ * 爬虫可以扩展此接口以支持站点特定字段
+ */
+export interface ParsedNovelInfo {
+  title: string;
+  author?: string | undefined;
+  description?: string | undefined;
+  tags?: string[] | undefined;
+  cover?: string | undefined;
+  chapters: ParsedChapterInfo[];
+  volumes?: ParsedVolumeInfo[] | undefined;
+  webUrl: string;
+}
+

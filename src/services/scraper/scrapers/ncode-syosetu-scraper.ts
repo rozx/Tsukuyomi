@@ -1,21 +1,19 @@
 import * as cheerio from 'cheerio';
-import type { Novel, Chapter, Translation } from 'src/models/novel';
+import { v4 as uuidv4 } from 'uuid';
+import type { Novel } from 'src/models/novel';
 import type {
-  FetchNovelResult,
   ParsedChapterInfo,
+  ParsedNovelInfo,
   ParsedVolumeInfo,
 } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
-import { extractParagraphText, extractTextWithFormatting } from '../core/cheerio-text-extract';
-import type { UniqueIdGenerator } from 'src/utils/id-generator';
-import { generateShortId } from 'src/utils/id-generator';
 
 /**
  * ncode.syosetu.com 小说爬虫服务
  * 用于从 ncode.syosetu.com 获取和解析小说信息
  * 注意：ncode.syosetu.com 和 syosetu.org 是两个不同的网站
  */
-export class NcodeSyosetuScraper extends BaseScraper {
+export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
   protected override useProxy: boolean = false; // ncode.syosetu.com 不使用代理
 
   protected static readonly BASE_URL: string = 'https://ncode.syosetu.com';
@@ -49,7 +47,7 @@ export class NcodeSyosetuScraper extends BaseScraper {
    * @param url ncode.syosetu.com 小说 URL（可能是章节 URL）
    * @returns 小说主页 URL
    */
-  protected getNovelIndexUrl(url: string): string {
+  protected override getNovelIndexUrl(url: string): string {
     const novelId = this.extractNovelId(url);
     if (novelId) {
       return `${NcodeSyosetuScraper.BASE_URL}/${novelId}/`;
@@ -57,34 +55,27 @@ export class NcodeSyosetuScraper extends BaseScraper {
     return url;
   }
 
+  protected override getInvalidUrlError(): string {
+    return '无效的 ncode.syosetu.com 小说 URL';
+  }
+
   /**
-   * 获取并解析小说信息（支持分页获取所有章节）
-   * @param url ncode.syosetu.com 小说 URL（可以是章节 URL，会自动提取小说主页）
-   * @returns Promise<FetchNovelResult> 获取结果
+   * 从小说主页 URL 拉取并解析所有页面的章节（支持分页）
    */
-  // fallow-ignore-next-line unused-class-member
-  async fetchNovel(url: string): Promise<FetchNovelResult> {
-    try {
-      // 验证 URL
-      if (!this.isValidUrl(url)) {
-        return this.createErrorResult('无效的 ncode.syosetu.com 小说 URL');
-      }
+  protected override parseNovelInfoFromUrl(novelIndexUrl: string): Promise<ParsedNovelInfo> {
+    return this.parseNovelPageWithPagination(novelIndexUrl);
+  }
 
-      // 获取小说主页 URL（如果传入的是章节 URL，需要提取小说主页）
-      const novelIndexUrl = this.getNovelIndexUrl(url);
-
-      // 获取并解析所有页面的章节（支持分页）
-      const novelInfo = await this.parseNovelPageWithPagination(novelIndexUrl);
-
-      // 转换为 Novel 格式
-      const novel = this.convertToNovel(novelInfo);
-
-      return this.createSuccessResult(novel);
-    } catch (error) {
-      return this.createErrorResult(
-        error instanceof Error ? error : new Error('获取小说信息时发生未知错误'),
-      );
-    }
+  /**
+   * 获取章节内容
+   * @param chapterUrl 章节 URL
+   * @returns Promise<string> 章节内容
+   * @throws {Error} 如果获取失败
+   */
+  async fetchChapterContent(chapterUrl: string): Promise<string> {
+    const html = await this.fetchPage(chapterUrl);
+    const paragraphs = this.extractParagraphsFromHtml(html);
+    return this.mergeParagraphs(paragraphs);
   }
 
   /**
@@ -164,7 +155,45 @@ export class NcodeSyosetuScraper extends BaseScraper {
         }
 
         // 提取段落文本，保留内部格式（如 <br> 换行）
-        const extractedText = extractParagraphText($, $p);
+        const extractParagraphText = (element: cheerio.Cheerio<any>): string => {
+          let text = '';
+
+          element.contents().each((_, node: any) => {
+            const nodeType = String(node.type);
+            if (nodeType === 'text') {
+              // 文本节点，直接添加（保留原始文本，包括空格）
+              const nodeText = $(node).text();
+              text += nodeText;
+            } else if (nodeType === 'tag') {
+              const $node = $(node);
+              const tagName = node.tagName?.toLowerCase() || '';
+
+              if (tagName === 'br') {
+                // <br> 标签转换为换行
+                text += '\n';
+              } else if (tagName === 'p') {
+                // 嵌套的 <p> 标签，递归提取并添加换行
+                const innerText = extractParagraphText($node);
+                if (innerText.trim()) {
+                  text += innerText + '\n';
+                } else {
+                  // 嵌套的空 <p> 标签也添加换行
+                  text += '\n';
+                }
+              } else {
+                // 其他标签，递归提取内容（保留内部结构）
+                const innerText = extractParagraphText($node);
+                if (innerText) {
+                  text += innerText;
+                }
+              }
+            }
+          });
+
+          return text;
+        };
+
+        const extractedText = extractParagraphText($p);
 
         // 保留原始段落格式，不清理空白字符
         if (extractedText.trim()) {
@@ -173,7 +202,44 @@ export class NcodeSyosetuScraper extends BaseScraper {
       });
     } else {
       // 如果没有 <p> 标签，直接提取所有文本，保留换行符
-      const fullText = extractTextWithFormatting($, contentElement);
+      const extractTextWithFormatting = (element: cheerio.Cheerio<any>): string => {
+        let text = '';
+
+        element.contents().each((_, node: any) => {
+          const nodeType = String(node.type);
+          if (nodeType === 'text') {
+            const nodeText = $(node).text();
+            text += nodeText;
+          } else if (nodeType === 'tag') {
+            const $node = $(node);
+            const tagName = node.tagName?.toLowerCase() || '';
+
+            if (tagName === 'br') {
+              text += '\n';
+            } else if (tagName === 'p' || tagName === 'div') {
+              const innerText = extractTextWithFormatting($node);
+              if (innerText.trim()) {
+                text += innerText;
+                if (tagName === 'p') {
+                  text += '\n';
+                }
+              } else if (tagName === 'p') {
+                // 空的 <p> 标签也添加换行
+                text += '\n';
+              }
+            } else {
+              const innerText = extractTextWithFormatting($node);
+              if (innerText.trim()) {
+                text += innerText;
+              }
+            }
+          }
+        });
+
+        return text;
+      };
+
+      const fullText = extractTextWithFormatting(contentElement);
       if (fullText.trim()) {
         // 按行分割，保留空行（用于保持格式）
         const lines = fullText.split(/\r?\n/);
@@ -221,8 +287,41 @@ export class NcodeSyosetuScraper extends BaseScraper {
         )
         .remove();
 
-      // 提取后记内容（保留 <br>/<p> 换行），共用 extractParagraphText
-      const afterwordText = extractParagraphText($, afterwordElement).trim();
+      // 提取后记内容，保留格式
+      const extractAfterwordText = (element: cheerio.Cheerio<any>): string => {
+        let text = '';
+
+        element.contents().each((_, node: any) => {
+          const nodeType = String(node.type);
+          if (nodeType === 'text') {
+            const nodeText = $(node).text();
+            text += nodeText;
+          } else if (nodeType === 'tag') {
+            const $node = $(node);
+            const tagName = node.tagName?.toLowerCase() || '';
+
+            if (tagName === 'br') {
+              text += '\n';
+            } else if (tagName === 'p') {
+              const innerText = extractAfterwordText($node);
+              if (innerText.trim()) {
+                text += innerText + '\n';
+              } else {
+                text += '\n';
+              }
+            } else {
+              const innerText = extractAfterwordText($node);
+              if (innerText.trim()) {
+                text += innerText;
+              }
+            }
+          }
+        });
+
+        return text;
+      };
+
+      const afterwordText = extractAfterwordText(afterwordElement).trim();
       if (afterwordText) {
         // 按行分割后记内容
         const afterwordLines = afterwordText.split(/\r?\n/);
@@ -647,15 +746,7 @@ export class NcodeSyosetuScraper extends BaseScraper {
    * @param baseUrl 小说主页 URL
    * @returns 解析后的小说信息（包含所有页面的章节）
    */
-  protected async parseNovelPageWithPagination(baseUrl: string): Promise<{
-    title: string;
-    author?: string;
-    description?: string;
-    tags?: string[];
-    chapters: ParsedChapterInfo[];
-    volumes?: ParsedVolumeInfo[];
-    webUrl: string;
-  }> {
+  protected async parseNovelPageWithPagination(baseUrl: string): Promise<ParsedNovelInfo> {
     // 获取第一页
     let firstPageHtml: string;
     try {
@@ -746,15 +837,7 @@ export class NcodeSyosetuScraper extends BaseScraper {
     }
 
     // 构建结果
-    const result: {
-      title: string;
-      author?: string;
-      description?: string;
-      tags?: string[];
-      chapters: ParsedChapterInfo[];
-      volumes?: ParsedVolumeInfo[];
-      webUrl: string;
-    } = {
+    const result: ParsedNovelInfo = {
       title: basicInfo.title,
       chapters: allChapters,
       webUrl: baseUrl,
@@ -784,12 +867,12 @@ export class NcodeSyosetuScraper extends BaseScraper {
   }
 
   /**
-   * 解析日期字符串为 Date 对象
+   * 解析日期字符串为 Date 对象（覆盖基类方法以支持 ncode.syosetu.com 的日期格式）
    * 支持格式：YYYY/MM/DD HH:mm
    * @param dateString 日期字符串
    * @returns Date 对象，如果解析失败则返回 undefined
    */
-  protected parseDateString(dateString: string): Date | undefined {
+  protected override parseDateString(dateString: string): Date | undefined {
     // 格式：YYYY/MM/DD HH:mm
     const match = dateString.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?/);
     if (match && match[1] && match[2] && match[3]) {
@@ -804,82 +887,59 @@ export class NcodeSyosetuScraper extends BaseScraper {
   }
 
   /**
-   * 创建章节对象（覆盖基类方法以支持 ncode.syosetu.com 的日期格式）
-   * @param chapterInfo 解析后的章节信息
-   * @param idGenerator 章节 ID 生成器
-   * @param defaultDate 默认日期（如果章节信息中没有日期）
-   * @returns Chapter 对象
+   * 将 ncode.syosetu.com 小说信息转换为 Novel 格式
+   * @param info 解析后的小说信息
+   * @returns Novel 对象
    */
-  protected override createChapter(
-    chapterInfo: ParsedChapterInfo,
-    idGenerator: UniqueIdGenerator,
-    defaultDate: Date = new Date(),
-  ): Chapter {
-    // 解析创建日期
-    let chapterDate = defaultDate;
-    if (chapterInfo.date) {
-      if (chapterInfo.date instanceof Date) {
-        chapterDate = chapterInfo.date;
-      } else {
-        // 尝试解析 ncode.syosetu.com 的日期格式：YYYY/MM/DD HH:mm
-        const parsedDate = this.parseDateString(chapterInfo.date);
-        if (parsedDate) {
-          chapterDate = parsedDate;
-        }
-      }
-    }
+  protected override convertToNovel(info: ParsedNovelInfo): Novel {
+    const now = new Date();
 
-    // 解析最后更新时间
-    let lastUpdatedDate: Date | undefined;
-    if (chapterInfo.lastUpdated) {
-      if (chapterInfo.lastUpdated instanceof Date) {
-        lastUpdatedDate = chapterInfo.lastUpdated;
-      } else {
-        // 尝试解析 ncode.syosetu.com 的日期格式：YYYY/MM/DD HH:mm
-        const parsedDate = this.parseDateString(chapterInfo.lastUpdated);
-        if (parsedDate) {
-          lastUpdatedDate = parsedDate;
-        }
+    // 将 ParsedChapterInfo 转换为章节
+    const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
+      const parsedChapter: ParsedChapterInfo = {
+        title: chapter.title,
+        url: chapter.url,
+      };
+      if (chapter.date) {
+        parsedChapter.date = chapter.date;
       }
-    }
+      if (chapter.lastUpdated) {
+        parsedChapter.lastUpdated = chapter.lastUpdated;
+      }
+      return parsedChapter;
+    });
 
-    const translation: Translation = {
-      id: generateShortId(),
-      translation: '',
-      aiModelId: '',
+    // 将 ParsedVolumeInfo 转换为卷信息
+    const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes?.map((volume) => ({
+      title: volume.title,
+      startIndex: volume.startIndex,
+    }));
+
+    // 使用基类的通用方法将章节分组到卷中
+    const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, '正文');
+
+    // Novel 的 ID 使用完整的 uuidv4（不在短 ID 范围内）
+    const novel: Novel = {
+      id: uuidv4(),
+      title: info.title,
+      volumes,
+      webUrl: [info.webUrl],
+      lastEdited: now,
+      createdAt: now,
     };
 
-    const chapter: Chapter = {
-      id: idGenerator.generate(),
-      title: {
-        original: chapterInfo.title,
-        translation,
-      },
-      webUrl: chapterInfo.url,
-      lastEdited: chapterDate,
-      createdAt: chapterDate,
-    };
-
-    // 只有当网站明确提供了 lastUpdated 时才设置
-    if (lastUpdatedDate) {
-      chapter.lastUpdated = lastUpdatedDate;
+    if (info.author) {
+      novel.author = info.author;
     }
 
-    return chapter;
-  }
+    if (info.description) {
+      novel.description = info.description;
+    }
 
-  /**
-   * 将 ncode.syosetu.com 小说信息转换为 Novel 格式（走基类通用实现）
-   */
-  protected convertToNovel(info: {
-    title: string;
-    author?: string;
-    description?: string;
-    tags?: string[];
-    chapters: ParsedChapterInfo[];
-    volumes?: ParsedVolumeInfo[];
-    webUrl: string;
-  }): Novel {
-    return this.buildNovelFromInfo(info);
+    if (info.tags) {
+      novel.tags = info.tags;
+    }
+
+    return novel;
   }
 }
