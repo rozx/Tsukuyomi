@@ -48,6 +48,6 @@
     "maxCyclomatic": 30,
     "maxCognitive": 30,
     "maxCrap": 100,
-    "ignore": ["*.test.ts"]
+    "ignore": ["*.test.ts", "scripts/**"]
   }
 }

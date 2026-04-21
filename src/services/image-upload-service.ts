@@ -76,89 +76,68 @@ export class ImageUploadService {
    * @returns Promise<UploadResult> 上传结果，包含图片 URL 和可选的删除 URL
    * @throws {Error} 如果上传失败
    */
+  private static async postImageBuffer(
+    apiUrl: string,
+    contentType: string,
+    imageBuffer: Uint8Array,
+  ): Promise<{ data?: { url?: string; delete_url?: string } }> {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': contentType,
+        'User-Agent': 'Tsukuyomi-Moonlit-Translator',
+        Connection: 'keep-alive',
+      },
+      body: imageBuffer as unknown as BodyInit,
+    });
+    if (!response.ok) {
+      throw new Error(`上传失败: ${response.status} ${response.statusText}`);
+    }
+    return (await response.json()) as { data?: { url?: string; delete_url?: string } };
+  }
+
+  private static parseUploadResult(
+    result: { data?: { url?: string; delete_url?: string } },
+  ): UploadResult {
+    const imageUrl = result.data?.url;
+    if (!imageUrl) {
+      console.error('上传响应:', result);
+      throw new Error('上传响应中未找到图片 URL');
+    }
+    const deleteUrl = result.data?.delete_url;
+    if (import.meta.env.DEV) {
+      if (deleteUrl) console.log('找到删除 URL:', deleteUrl);
+      else console.debug('未找到删除 URL，完整响应:', result);
+    }
+    return {
+      url: imageUrl,
+      ...(deleteUrl && { deleteUrl }),
+    };
+  }
+
+  private static translateUploadError(error: unknown): Error {
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      return new Error('网络连接失败，请检查网络设置');
+    }
+    return error instanceof Error ? error : new Error('上传图片时发生未知错误');
+  }
+
   static async uploadImage(file: File): Promise<UploadResult> {
-    // 验证文件
     this.validateFile(file);
+    const contentType = this.getContentType(file.name);
+    const imageBuffer = new Uint8Array(await file.arrayBuffer());
 
-    // 获取文件扩展名并确定 Content-Type
-    const fileName = file.name;
-    const contentType = this.getContentType(fileName);
-
-    // 读取文件为 ArrayBuffer
-    const arrayBuffer = await file.arrayBuffer();
-    const imageBuffer = new Uint8Array(arrayBuffer);
-
-    // 构建 API URL（文件名需要 URL 编码）
-    let apiUrl = `${this.BASE_API_URL}?filename=${encodeURIComponent(fileName)}`;
-
-    // 在 SPA 构建中，使用 CORS proxy
+    let apiUrl = `${this.BASE_API_URL}?filename=${encodeURIComponent(file.name)}`;
+    // SPA 构建走 CORS 代理
     if (apiUrl.startsWith('http://') || apiUrl.startsWith('https://')) {
       apiUrl = ProxyService.getProxiedUrlForAI(apiUrl);
     }
 
     try {
-      // 发送 POST 请求
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': contentType,
-          'User-Agent': 'Tsukuyomi-Moonlit-Translator',
-          Connection: 'keep-alive',
-        },
-        body: imageBuffer,
-      });
-
-      if (!response.ok) {
-        throw new Error(`上传失败: ${response.status} ${response.statusText}`);
-      }
-
-      // 解析 JSON 响应
-      const result = await response.json();
-
-      // 根据 picgo-plugin-sda1 的实现，图片 URL 在 data.url 中
-      // 参考：https://github.com/daitcl/picgo-plugin-sda1/blob/main/src/index.js
-      const imageUrl = result.data?.url;
-
-      if (!imageUrl) {
-        console.error('上传响应:', result);
-        throw new Error('上传响应中未找到图片 URL');
-      }
-
-      // 检查是否有删除 URL
-      // 根据实际 API 响应，删除 URL 在 data.delete_url 中
-      // 响应格式示例：
-      // {
-      //   "success": true,
-      //   "code": "success",
-      //   "message": "Successfully uploaded.",
-      //   "data": {
-      //     "url": "https://p.sda1.dev/...",
-      //     "delete_url": "https://p.sda1.dev/api/v1/delete/..."
-      //   }
-      // }
-      const deleteUrl = result.data?.delete_url;
-
-      // 记录调试信息（仅在开发环境）
-      if (import.meta.env.DEV) {
-        if (deleteUrl) {
-          console.log('找到删除 URL:', deleteUrl);
-        } else {
-          console.debug('未找到删除 URL，完整响应:', result);
-        }
-      }
-
-      return {
-        url: imageUrl,
-        ...(deleteUrl && { deleteUrl }),
-      };
+      const result = await this.postImageBuffer(apiUrl, contentType, imageBuffer);
+      return this.parseUploadResult(result);
     } catch (error) {
-      // 如果是网络错误，提供更友好的错误信息
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        throw new Error('网络连接失败，请检查网络设置');
-      }
-
-      // 重新抛出其他错误
-      throw error instanceof Error ? error : new Error('上传图片时发生未知错误');
+      throw this.translateUploadError(error);
     }
   }
 

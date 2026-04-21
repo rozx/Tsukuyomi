@@ -76,85 +76,61 @@ function createSettingsPageContext(): SettingsPageContext {
   // 新 UI tab value：
   //   非 Electron: 0=AI · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入/导出
   //   Electron:    0=AI · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入/导出
+  // 旧 savedIndex → 新 tab value 的映射表（按平台分）。
+  // 旧 savedIndex：0=AI 1=代理 2=同步 3=爬虫 4=导入/导出 6=API Keys 7=本地嵌入
+  // 新 tab value（非 Electron）：0=AI 1=代理 2=API Keys 3=同步 4=本地嵌入 5=爬虫 6=导入/导出
+  // 新 tab value（Electron，无代理）：0=AI 1=API Keys 2=同步 3=本地嵌入 4=爬虫 5=导入/导出
+  const SAVED_INDEX_TO_TAB_VALUE_ELECTRON: Record<number, string> = {
+    0: '0', // AI
+    1: '1', // 旧代理 → 退回 API Keys
+    2: '2', // 同步
+    3: '4', // 爬虫
+    4: '5', // 导入/导出
+    6: '1', // API Keys
+    7: '3', // 本地嵌入
+  };
+
+  const SAVED_INDEX_TO_TAB_VALUE_WEB: Record<number, string> = {
+    0: '0', // AI
+    1: '1', // 代理
+    2: '3', // 同步
+    3: '5', // 爬虫
+    4: '6', // 导入/导出
+    6: '2', // API Keys
+    7: '4', // 本地嵌入
+  };
+
+  const TAB_VALUE_TO_SAVED_INDEX_ELECTRON: Record<string, number> = {
+    '0': 0,
+    '1': 6,
+    '2': 2,
+    '3': 7,
+    '4': 3,
+    '5': 4,
+  };
+
+  const TAB_VALUE_TO_SAVED_INDEX_WEB: Record<string, number> = {
+    '0': 0,
+    '1': 1,
+    '2': 6,
+    '3': 2,
+    '4': 7,
+    '5': 3,
+    '6': 4,
+  };
+
   const convertSavedTabIndex = (savedIndex: number): string => {
-    if (isElectron.value) {
-      switch (savedIndex) {
-        case 0:
-          return '0'; // AI
-        case 1: // 旧代理（Electron 不显示）→ 退回 API Keys
-        case 6:
-          return '1'; // API Keys
-        case 2:
-          return '2'; // 同步
-        case 7:
-          return '3'; // 本地嵌入
-        case 3:
-          return '4'; // 爬虫
-        case 4:
-          return '5'; // 导入/导出
-        default:
-          return '0';
-      }
-    } else {
-      switch (savedIndex) {
-        case 0:
-          return '0'; // AI
-        case 1:
-          return '1'; // 代理
-        case 6:
-          return '2'; // API Keys
-        case 2:
-          return '3'; // 同步
-        case 7:
-          return '4'; // 本地嵌入
-        case 3:
-          return '5'; // 爬虫
-        case 4:
-          return '6'; // 导入/导出
-        default:
-          return '0';
-      }
-    }
+    const table = isElectron.value
+      ? SAVED_INDEX_TO_TAB_VALUE_ELECTRON
+      : SAVED_INDEX_TO_TAB_VALUE_WEB;
+    return table[savedIndex] ?? '0';
   };
 
   const convertTabValueToIndex = (tabValue: string): number => {
-    if (isElectron.value) {
-      switch (tabValue) {
-        case '0':
-          return 0; // AI
-        case '1':
-          return 6; // API Keys
-        case '2':
-          return 2; // 同步
-        case '3':
-          return 7; // 本地嵌入
-        case '4':
-          return 3; // 爬虫
-        case '5':
-          return 4; // 导入/导出
-        default:
-          return 0;
-      }
-    } else {
-      switch (tabValue) {
-        case '0':
-          return 0; // AI
-        case '1':
-          return 1; // 代理
-        case '2':
-          return 6; // API Keys
-        case '3':
-          return 2; // 同步
-        case '4':
-          return 7; // 本地嵌入
-        case '5':
-          return 3; // 爬虫
-        case '6':
-          return 4; // 导入/导出
-        default:
-          return 0;
-      }
-    }
+    const table = isElectron.value
+      ? TAB_VALUE_TO_SAVED_INDEX_ELECTRON
+      : TAB_VALUE_TO_SAVED_INDEX_WEB;
+    return table[tabValue] ?? 0;
   };
 
   // 确保 store 已加载

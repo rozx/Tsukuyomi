@@ -4,6 +4,7 @@ import { useToastHistory, useToastWithHistory } from 'src/composables/useToastHi
 import { useAutoSync } from 'src/composables/useAutoSync';
 import { useQuickStartGuide } from 'src/composables/useQuickStartGuide';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
+import type { useSettingsStore } from 'src/stores/settings';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import {
   useAskUserStore,
@@ -60,91 +61,90 @@ export function useMainLayoutShell() {
   // 性能优化：之前使用 `{ deep: true }`，会在每次 updateTask() 调用（流式响应每帧都可能触发）
   // 时对整个 activeTasks 数组做深度遍历。使用轻量签名字符串（id:status:type）替代：
   // 仅在任务数量、id、状态或类型真正变化时触发回调，流式文本长度变化不会触发。
+  const collectStatusTransitions = (
+    newTasks: AIProcessingTask[],
+  ): { errorTasks: AIProcessingTask[]; cancelledTasks: AIProcessingTask[] } => {
+    const errorTasks: AIProcessingTask[] = [];
+    const cancelledTasks: AIProcessingTask[] = [];
+    for (const task of newTasks) {
+      const oldTask = previousTasks.get(task.id);
+      if (oldTask && oldTask.status !== task.status) {
+        if (task.status === 'error') errorTasks.push(task);
+        else if (task.status === 'cancelled') cancelledTasks.push(task);
+      }
+      previousTasks.set(task.id, { ...task });
+    }
+    return { errorTasks, cancelledTasks };
+  };
+
+  const showTaskErrorToasts = (errorTasks: AIProcessingTask[]): void => {
+    for (const task of errorTasks) {
+      const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
+      toast.add({
+        severity: 'error',
+        summary: 'AI 任务失败',
+        detail: `${task.modelName} 执行${taskTypeLabel}任务时出错：${task.message || '未知错误'}`,
+        life: 5000,
+      });
+    }
+  };
+
+  const cancelToastDetail = (task: AIProcessingTask): string => {
+    const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
+    return `${task.modelName} 的${taskTypeLabel}任务已取消`;
+  };
+
+  const showAssistantCancelToast = (assistantCancelled: AIProcessingTask[]): void => {
+    if (assistantCancelled.length === 0) return;
+    if (assistantCancelled.length > 1) {
+      toast.add({
+        severity: 'warn',
+        summary: 'AI 任务已取消',
+        detail: `已取消 ${assistantCancelled.length} 个助手任务`,
+        life: 3000,
+      });
+      return;
+    }
+    const task = assistantCancelled[0];
+    if (!task) return;
+    toast.add({
+      severity: 'warn',
+      summary: 'AI 任务已取消',
+      detail: cancelToastDetail(task),
+      life: 3000,
+    });
+  };
+
+  const showTaskCancelToasts = (cancelledTasks: AIProcessingTask[]): void => {
+    if (cancelledTasks.length === 0) return;
+    const assistantCancelled = cancelledTasks.filter((t) => t.type === 'assistant');
+    const otherCancelled = cancelledTasks.filter((t) => t.type !== 'assistant');
+    showAssistantCancelToast(assistantCancelled);
+    for (const task of otherCancelled) {
+      toast.add({
+        severity: 'warn',
+        summary: 'AI 任务已取消',
+        detail: cancelToastDetail(task),
+        life: 3000,
+      });
+    }
+  };
+
+  const prunePreviousTasks = (newTasks: AIProcessingTask[]): void => {
+    const currentTaskIds = new Set(newTasks.map((t) => t.id));
+    for (const [taskId] of previousTasks) {
+      if (!currentTaskIds.has(taskId)) previousTasks.delete(taskId);
+    }
+  };
+
   watch(
     () => aiProcessingStore.activeTasks.map((t) => `${t.id}:${t.status}:${t.type}`).join(','),
-    (_newKey, _oldKey) => {
+    () => {
       const newTasks = aiProcessingStore.activeTasks;
-      // 收集本周期内取消的任务
-      const cancelledTasks: AIProcessingTask[] = [];
-      const errorTasks: AIProcessingTask[] = [];
-
-      // 处理新添加的任务
-      for (const task of newTasks) {
-        const oldTask = previousTasks.get(task.id);
-
-        // 如果任务状态发生变化
-        if (oldTask && oldTask.status !== task.status) {
-          // 不显示任务开始和完成的 toast，只显示错误和取消
-          if (task.status === 'error') {
-            errorTasks.push(task);
-          } else if (task.status === 'cancelled') {
-            cancelledTasks.push(task);
-          }
-        }
-
-        // 更新任务记录
-        previousTasks.set(task.id, { ...task });
-      }
-
-      // 处理错误任务（每个错误任务单独显示 toast）
-      for (const task of errorTasks) {
-        const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
-        const errorMessage = task.message || '未知错误';
-        toast.add({
-          severity: 'error',
-          summary: 'AI 任务失败',
-          detail: `${task.modelName} 执行${taskTypeLabel}任务时出错：${errorMessage}`,
-          life: 5000,
-        });
-      }
-
-      // 处理取消的任务
-      if (cancelledTasks.length > 0) {
-        // 分离助手任务和其他任务
-        const assistantCancelled = cancelledTasks.filter((t) => t.type === 'assistant');
-        const otherCancelled = cancelledTasks.filter((t) => t.type !== 'assistant');
-
-        // 如果多个助手任务被取消，显示一个合并的 toast
-        if (assistantCancelled.length > 1) {
-          toast.add({
-            severity: 'warn',
-            summary: 'AI 任务已取消',
-            detail: `已取消 ${assistantCancelled.length} 个助手任务`,
-            life: 3000,
-          });
-        } else if (assistantCancelled.length === 1) {
-          // 单个助手任务取消，显示单独的 toast
-          const task = assistantCancelled[0];
-          if (task) {
-            const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
-            toast.add({
-              severity: 'warn',
-              summary: 'AI 任务已取消',
-              detail: `${task.modelName} 的${taskTypeLabel}任务已取消`,
-              life: 3000,
-            });
-          }
-        }
-
-        // 其他类型的任务取消，每个单独显示 toast
-        for (const task of otherCancelled) {
-          const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
-          toast.add({
-            severity: 'warn',
-            summary: 'AI 任务已取消',
-            detail: `${task.modelName} 的${taskTypeLabel}任务已取消`,
-            life: 3000,
-          });
-        }
-      }
-
-      // 清理已移除的任务记录
-      const currentTaskIds = new Set(newTasks.map((t) => t.id));
-      for (const [taskId] of previousTasks) {
-        if (!currentTaskIds.has(taskId)) {
-          previousTasks.delete(taskId);
-        }
-      }
+      const { errorTasks, cancelledTasks } = collectStatusTransitions(newTasks);
+      showTaskErrorToasts(errorTasks);
+      showTaskCancelToasts(cancelledTasks);
+      prunePreviousTasks(newTasks);
     },
   );
 
@@ -170,43 +170,41 @@ export function useMainLayoutShell() {
     },
   );
 
+  const warmupEmbeddingIfCached = async (
+    settings: ReturnType<typeof useSettingsStore>,
+  ): Promise<void> => {
+    const { EmbeddingService } = await import('src/services/embedding-service');
+
+    // 清理历史模型在 Cache Storage 里的残留（例如从 Qwen3 切到 gte 后的 ~567MB）。
+    // 清到过东西说明原先的 embeddingModelCached 标记对应的是已失效的旧模型 → 复位，
+    // 避免 warmup 以为新模型也已缓存从而静默触发不必要的下载。
+    const legacyCleaned = await EmbeddingService.cleanupLegacyModelCache();
+    if (
+      legacyCleaned > 0 &&
+      settings.settings.memoryInjection?.embeddingModelCached === true
+    ) {
+      await settings.updateMemoryInjection({ embeddingModelCached: false });
+    }
+
+    if (EmbeddingService.isReady()) return;
+    const flagSet = settings.settings.memoryInjection?.embeddingModelCached === true;
+    const cacheHit = flagSet ? true : await EmbeddingService.isModelCachedInBrowser();
+    if (cacheHit) void EmbeddingService.warmup();
+  };
+
   onMounted(async () => {
     setupAutoSync();
 
     // 语义检索启用且模型已被缓存时，应用启动后自动预热（复用浏览器已缓存的模型文件，无需重新下载）
     // 注意：首次安装/首次启用时不会自动触发，需用户在设置页主动下载，避免意外产生 ~195MB 带宽消耗
-    // 检测路径双保险:
-    //   1. settings.embeddingModelCached 标记（App.vue 全局监听器负责维护）
-    //   2. 浏览器 Cache Storage 实测命中（兼容旧版本 / 标记缺失场景）
     const { useSettingsStore } = await import('src/stores/settings');
     const settings = useSettingsStore();
-    if (!settings.isLoaded) {
-      await settings.loadSettings();
-    }
-    // 本地嵌入是总电源(默认 false),关闭或手机端时连模型缓存扫描都跳过 — 避免无意义 IO。
+    if (!settings.isLoaded) await settings.loadSettings();
+
+    // 本地嵌入是总电源（默认 false），关闭或手机端时连模型缓存扫描都跳过，避免无意义 IO。
     const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
-    if (isLocalEmbeddingEffectivelyEnabled(settings.settings.enableLocalEmbedding)) {
-      const { EmbeddingService } = await import('src/services/embedding-service');
-
-      // 清理历史模型在 Cache Storage 里的残留(例如从 Qwen3 切到 gte 后的 ~567MB)。
-      // 如果清到过东西,原先的 `embeddingModelCached` 标记对应的是已失效的旧模型 → 复位,
-      // 避免让 warmup 以为新模型也已缓存,进而静默触发不必要的下载。
-      const legacyCleaned = await EmbeddingService.cleanupLegacyModelCache();
-      if (
-        legacyCleaned > 0 &&
-        settings.settings.memoryInjection?.embeddingModelCached === true
-      ) {
-        await settings.updateMemoryInjection({ embeddingModelCached: false });
-      }
-
-      if (!EmbeddingService.isReady()) {
-        const flagSet = settings.settings.memoryInjection?.embeddingModelCached === true;
-        const cacheHit = flagSet ? true : await EmbeddingService.isModelCachedInBrowser();
-        if (cacheHit) {
-          void EmbeddingService.warmup();
-        }
-      }
-    }
+    if (!isLocalEmbeddingEffectivelyEnabled(settings.settings.enableLocalEmbedding)) return;
+    await warmupEmbeddingIfCached(settings);
   });
 
   onUnmounted(() => {
