@@ -1678,7 +1678,7 @@ export class SyncDataService {
       // 3. 导入 appSettings（若快照包含），随后恢复本地 Gist 凭据
       const currentGistSync = GlobalConfig.getGistSyncSnapshot();
       if (remoteData.appSettings) {
-        await settingsStore.importSettings(remoteData.appSettings);
+        await settingsStore.replaceSettingsFromSyncSnapshot(remoteData.appSettings);
       }
 
       // 4. 保留本地 Gist 凭据与 lastSyncTime，并清空删除记录

@@ -20,6 +20,7 @@ import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
 import { useForceSync } from 'src/composables/useForceSync';
 import ForceSyncToggle from 'src/components/sync/ForceSyncToggle.vue';
 import RestoreDeletedItemsDialog from 'src/components/dialogs/RestoreDeletedItemsDialog.vue';
+import { isRevisionRestoreBlocked } from 'src/utils/sync-revision-guards';
 import co from 'co';
 
 // 格式化文件大小（复用 utils/format 的共享实现，此处保留 1 位小数）
@@ -248,6 +249,7 @@ const loadingRevisions = ref(false);
 const revertingVersion = ref<string | null>(null);
 const expandedRevisions = ref<Set<string>>(new Set());
 const loadingRevisionDetails = ref<Set<string>>(new Set());
+const isRestoringRevision = computed(() => settingsStore.isRestoringSyncSnapshot);
 
 // 同步相关 - 使用 composable
 const { sync: syncComposable, restoreDeletedItems: restoreDeletedItemsComposable } = useGistSync();
@@ -258,6 +260,10 @@ const forceMode = computed(() => settingsStore.forceSyncMode.active);
 
 // 触发强制推送：使用当前表单的配置作为 config 覆盖
 const triggerForceSync = () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   const baseConfig = settingsStore.gistSync;
   const currentConfig: SyncConfig = {
     ...baseConfig,
@@ -276,9 +282,32 @@ const triggerForceSync = () => {
 const showRestoreDialog = ref(false);
 const restorableItems = ref<RestorableItem[]>([]);
 
+const resetDeletedItemsRestoreDialog = () => {
+  showRestoreDialog.value = false;
+  restorableItems.value = [];
+};
+
+watch(isRestoringRevision, (restoring) => {
+  if (restoring) {
+    resetDeletedItemsRestoreDialog();
+  }
+});
+
+const isRevisionActionLocked = computed(() => gistSyncing.value || isRestoringRevision.value);
+
+const isRevisionRestoreDisabled = (version: string): boolean =>
+  isRevisionRestoreBlocked({
+    gistId: gistId.value,
+    gistEnabled: gistEnabled.value,
+    isSyncing: gistSyncing.value,
+    isRestoringRevision: isRestoringRevision.value,
+    revertingVersion: revertingVersion.value,
+    version,
+  });
+
 // 加载修订历史
 const loadRevisions = async () => {
-  if (!gistId.value || !gistEnabled.value) {
+  if (!gistId.value || !gistEnabled.value || gistSyncing.value || isRestoringRevision.value) {
     return;
   }
 
@@ -530,12 +559,7 @@ const revertToRevision = (version: string, event?: Event) => {
     event.preventDefault();
   }
 
-  if (!gistId.value || !gistEnabled.value) {
-    return;
-  }
-
-  // 如果正在恢复该版本，直接返回
-  if (revertingVersion.value === version) {
+  if (isRevisionRestoreDisabled(version)) {
     return;
   }
 
@@ -554,12 +578,13 @@ const revertToRevision = (version: string, event?: Event) => {
       severity: 'danger',
     },
     accept: () => {
-      // 防止重复调用：如果已经在恢复该版本，直接返回
-      if (revertingVersion.value === version) {
+      if (isRevisionRestoreDisabled(version)) {
         return;
       }
 
       void co(function* () {
+        resetDeletedItemsRestoreDialog();
+        settingsStore.setRestoringSyncSnapshot(true);
         revertingVersion.value = version;
         try {
           const baseConfig = settingsStore.gistSync;
@@ -607,6 +632,7 @@ const revertToRevision = (version: string, event?: Event) => {
             life: 5000,
           });
         } finally {
+          settingsStore.setRestoringSyncSnapshot(false);
           revertingVersion.value = null;
         }
       });
@@ -616,6 +642,10 @@ const revertToRevision = (version: string, event?: Event) => {
 
 // 保存 Gist 配置
 const saveGistConfig = (shouldRestartAutoSync = false) => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   void co(function* () {
     try {
       yield settingsStore.setGistSyncCredentials(gistUsername.value, gistToken.value);
@@ -641,8 +671,21 @@ const saveGistConfig = (shouldRestartAutoSync = false) => {
   }
 };
 
+const handleGistEnabledChange = (value: boolean) => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
+  gistEnabled.value = value;
+  saveGistConfig();
+};
+
 // 处理自动同步启用/禁用
 const handleAutoSyncEnabledChange = (value: boolean) => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   autoSyncEnabled.value = value;
   stopAutoSync(); // 立即停止自动同步
   if (value) {
@@ -668,6 +711,10 @@ const handleAutoSyncEnabledChange = (value: boolean) => {
 
 // 处理同步间隔更改
 const handleSyncIntervalChange = (value: number | null) => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   const newValue = Number(value) || 5;
   if (newValue !== syncIntervalMinutes.value) {
     syncIntervalMinutes.value = newValue;
@@ -696,6 +743,10 @@ const handleSyncIntervalChange = (value: number | null) => {
 
 // 验证 GitHub token
 const validateGistToken = async () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   if (!gistUsername.value.trim() || !gistToken.value.trim()) {
     toast.add({
       severity: 'warn',
@@ -750,6 +801,10 @@ const validateGistToken = async () => {
 
 // 同步到 Gist（统一的双向同步操作）
 const syncToGist = async () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   if (!gistUsername.value.trim() || !gistToken.value.trim()) {
     toast.add({
       severity: 'warn',
@@ -795,21 +850,42 @@ const syncToGist = async () => {
 
 // 处理恢复对话框
 const handleRestoreItems = async (items: RestorableItem[]) => {
+  if (isRestoringRevision.value) {
+    resetDeletedItemsRestoreDialog();
+    return;
+  }
+
   await restoreDeletedItemsComposable(items);
-  showRestoreDialog.value = false;
-  restorableItems.value = [];
+  resetDeletedItemsRestoreDialog();
   gistLastSyncTime.value = Date.now();
   // 重置自动同步定时器
   setupAutoSync();
 };
 
 const handleCancelRestore = () => {
-  showRestoreDialog.value = false;
-  restorableItems.value = [];
+  if (isRestoringRevision.value) {
+    resetDeletedItemsRestoreDialog();
+    return;
+  }
+
+  resetDeletedItemsRestoreDialog();
+};
+
+const handleDeletedItemsRestoreDialogVisibleChange = (visible: boolean) => {
+  if (isRestoringRevision.value) {
+    resetDeletedItemsRestoreDialog();
+    return;
+  }
+
+  showRestoreDialog.value = visible;
 };
 
 // 删除 Gist
 const deleteGist = () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   if (!gistId.value.trim()) {
     toast.add({
       severity: 'warn',
@@ -922,12 +998,8 @@ const deleteGist = () => {
           :binary="true"
           :model-value="gistEnabled"
           input-id="gist-enabled"
-          @update:model-value="
-            (value) => {
-              gistEnabled = value as boolean;
-              saveGistConfig();
-            }
-          "
+          :disabled="isRestoringRevision"
+          @update:model-value="(value) => handleGistEnabledChange(value as boolean)"
         />
         <label for="gist-enabled" class="text-xs text-moon/80 cursor-pointer">
           启用 Gist 同步
@@ -943,7 +1015,7 @@ const deleteGist = () => {
         v-model="gistUsername"
         placeholder="输入您的 GitHub 用户名"
         class="w-full"
-        :disabled="!gistEnabled"
+        :disabled="!gistEnabled || isRestoringRevision"
         @blur="() => saveGistConfig()"
       />
     </div>
@@ -956,7 +1028,7 @@ const deleteGist = () => {
         v-model="gistToken"
         placeholder="输入您的 GitHub token"
         class="w-full"
-        :disabled="!gistEnabled"
+        :disabled="!gistEnabled || isRestoringRevision"
         :feedback="false"
         toggle-mask
         @blur="() => saveGistConfig()"
@@ -974,7 +1046,7 @@ const deleteGist = () => {
         v-model="gistId"
         placeholder="留空将自动创建新的 Gist"
         class="w-full"
-        :disabled="!gistEnabled"
+        :disabled="!gistEnabled || isRestoringRevision"
         @blur="() => saveGistConfig()"
       />
       <p class="text-xs text-moon/60">如果已有 Gist，请输入 Gist ID。留空将自动创建新的 Gist</p>
@@ -987,7 +1059,7 @@ const deleteGist = () => {
           :binary="true"
           :model-value="autoSyncEnabled"
           input-id="auto-sync-enabled"
-          :disabled="!gistEnabled"
+          :disabled="!gistEnabled || isRestoringRevision"
           @update:model-value="handleAutoSyncEnabledChange"
         />
         <label for="auto-sync-enabled" class="text-xs text-moon/80 cursor-pointer">
@@ -1003,7 +1075,7 @@ const deleteGist = () => {
           :max="1440"
           :show-buttons="true"
           class="w-full"
-          :disabled="!gistEnabled"
+          :disabled="!gistEnabled || isRestoringRevision"
           @focus="stopAutoSync"
           @update:model-value="handleSyncIntervalChange"
         />
@@ -1021,12 +1093,12 @@ const deleteGist = () => {
 
     <!-- 操作按钮 -->
     <div class="space-y-3 pt-2">
-      <ForceSyncToggle :disabled="!gistEnabled || gistSyncing" />
+      <ForceSyncToggle :disabled="!gistEnabled || gistSyncing || isRestoringRevision" />
       <Button
         label="验证 Token"
         icon="pi pi-check-circle"
         class="p-button-outlined w-full"
-        :disabled="!gistEnabled || gistValidating"
+        :disabled="!gistEnabled || gistValidating || isRestoringRevision"
         :loading="gistValidating"
         @click="validateGistToken"
       />
@@ -1035,7 +1107,7 @@ const deleteGist = () => {
         icon="pi pi-sync"
         :severity="forceMode ? 'danger' : 'primary'"
         class="w-full"
-        :disabled="!gistEnabled || gistSyncing"
+        :disabled="!gistEnabled || gistSyncing || isRestoringRevision"
         :loading="gistSyncing"
         @click="forceMode ? triggerForceSync() : syncToGist()"
       />
@@ -1048,7 +1120,7 @@ const deleteGist = () => {
         <Button
           icon="pi pi-refresh"
           class="p-button-text p-button-sm"
-          :disabled="loadingRevisions"
+          :disabled="loadingRevisions || isRevisionActionLocked"
           :loading="loadingRevisions"
           @click="loadRevisions"
         />
@@ -1094,7 +1166,7 @@ const deleteGist = () => {
                 label="恢复"
                 icon="pi pi-undo"
                 class="p-button-text p-button-sm"
-                :disabled="revertingVersion === revision.version"
+                :disabled="isRevisionRestoreDisabled(revision.version)"
                 :loading="revertingVersion === revision.version"
                 @click.stop="(event) => revertToRevision(revision.version, event)"
               />
@@ -1160,7 +1232,7 @@ const deleteGist = () => {
         label="删除当前 Gist"
         icon="pi pi-trash"
         class="p-button-danger w-full"
-        :disabled="!gistEnabled || gistSyncing || !gistId"
+        :disabled="!gistEnabled || gistSyncing || isRestoringRevision || !gistId"
         :loading="gistSyncing"
         @click="deleteGist"
       />
@@ -1171,7 +1243,7 @@ const deleteGist = () => {
     <RestoreDeletedItemsDialog
       :visible="showRestoreDialog"
       :items="restorableItems"
-      @update:visible="showRestoreDialog = $event"
+      @update:visible="handleDeletedItemsRestoreDialogVisibleChange"
       @restore="handleRestoreItems"
       @cancel="handleCancelRestore"
     />
