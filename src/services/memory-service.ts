@@ -825,6 +825,21 @@ export class MemoryService {
   }
 
   /**
+   * 读取路径共用：把一组 MemoryStorage 转成对外 Memory，同时顺便把每条写入单条缓存，
+   * 最后触发一次 LRU 淘汰。由 getAll / getRecent 两个热读入口共用。
+   */
+  private static mapMemoriesWithCache(memories: MemoryStorage[], bookId: string): Memory[] {
+    const results = memories.map((memory) => {
+      const result = this.storageToMemoryWithEmbedding(memory);
+      const cacheKey = this.getCacheKey(bookId, memory.id);
+      this.memoryCache.set(cacheKey, result);
+      return result;
+    });
+    this.evictCacheIfNeeded();
+    return results;
+  }
+
+  /**
    * 清理指定书籍的全量缓存(在 CRUD 写路径调用)
    */
   private static invalidateBookMemoryCache(bookId: string): void {
@@ -951,18 +966,7 @@ export class MemoryService {
       // 按最后访问时间倒序排序
       allMemories.sort((a, b) => b.lastAccessedAt - a.lastAccessedAt);
 
-      const results = allMemories.map((memory) => {
-        const result = this.storageToMemoryWithEmbedding(memory as MemoryStorage);
-
-        // 更新缓存
-        const cacheKey = this.getCacheKey(bookId, memory.id);
-        this.memoryCache.set(cacheKey, result);
-        return result;
-      });
-
-      this.evictCacheIfNeeded();
-
-      return results;
+      return this.mapMemoriesWithCache(allMemories as MemoryStorage[], bookId);
     } catch (error) {
       console.error('Failed to get all memories:', error);
       throw new Error('获取所有 Memory 失败');
@@ -1077,16 +1081,7 @@ export class MemoryService {
       }
 
       // 返回未更新的记忆
-      const results = recentMemories.map((memory) => {
-        const result = this.storageToMemoryWithEmbedding(memory as MemoryStorage);
-
-        const cacheKey = this.getCacheKey(bookId, memory.id);
-        this.memoryCache.set(cacheKey, result);
-        return result;
-      });
-
-      this.evictCacheIfNeeded();
-      return results;
+      return this.mapMemoriesWithCache(recentMemories as MemoryStorage[], bookId);
     } catch (error) {
       console.error('Failed to get recent memories:', error);
       throw new Error('获取最近 Memory 失败');
