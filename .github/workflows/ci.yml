@@ -34,3 +34,28 @@ jobs:
 
       - name: Run Type Check
         run: bun run type-check
+
+  fallow:
+    name: Fallow Codebase Health
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Fallow
+        id: fallow
+        uses: fallow-rs/fallow@v2
+        with:
+          fail-on-issues: true
+          format: sarif
+
+      - name: Upload SARIF to Code Scanning
+        if: always() && steps.fallow.outputs.sarif != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.fallow.outputs.sarif }}
