@@ -108,156 +108,9 @@ export class GeminiService extends BaseAIService {
       const client = this.createClient(config);
       const modelName = this.normalizeModelName(config.model);
 
-      const generationConfig: {
-        temperature?: number;
-        maxOutputTokens?: number;
-        thinkingConfig?: {
-          includeThoughts?: boolean;
-        };
-      } = {};
-
-      const temperature = request.temperature ?? config.temperature;
-      if (temperature !== undefined) {
-        generationConfig.temperature = temperature;
-      }
-
-      const maxOutputTokens = request.maxOutputTokens ?? config.maxOutputTokens;
-      // 只有当 maxOutputTokens 明确设置且大于 0 时才设置 maxOutputTokens
-      // 如果 maxOutputTokens 是 0 或未定义，不设置 maxOutputTokens，让 API 使用默认值（无限制）
-      if (maxOutputTokens !== undefined && maxOutputTokens > 0) {
-        generationConfig.maxOutputTokens = maxOutputTokens;
-      }
-
-      // 为 Gemini 3 Pro 等支持思考的模型启用思考内容
-      // 检查模型名称是否包含 "gemini-3" 或 "gemini-2"
-      const modelNameLower = modelName.toLowerCase();
-      if (modelNameLower.includes('gemini-3') || modelNameLower.includes('gemini-2')) {
-        generationConfig.thinkingConfig = {
-          includeThoughts: true,
-        };
-      }
-
-      // 准备系统指令和消息内容
-      let systemInstruction: string | undefined;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let contents: any[] = [];
-
-      if (request.messages && request.messages.length > 0) {
-        // 处理系统消息
-        const systemMsg = request.messages.find((m) => m.role === 'system');
-        if (systemMsg) {
-          systemInstruction = systemMsg.content || undefined;
-        }
-
-        // 映射其他消息
-        contents = request.messages
-          .filter((m) => m.role !== 'system')
-          .map((msg) => {
-            if (msg.role === 'user') {
-              return { role: 'user', parts: [{ text: msg.content || '' }] };
-            }
-            if (msg.role === 'assistant') {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const parts: any[] = [];
-              if (msg.content) parts.push({ text: msg.content });
-              if (msg.tool_calls) {
-                msg.tool_calls.forEach((tc, idx) => {
-                  // 传递 Gemini 返回的签名；若缺失，在当前回合需要首个函数调用提供占位签名
-                  // OpenAI 兼容格式中，签名位于 tc.extra_content.google.thought_signature
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const sigFromModel = (tc as any)?.extra_content?.google?.thought_signature as
-                    | string
-                    | undefined;
-
-                  // 安全解析工具参数，处理可能的 JSON 解析错误
-                  let args: unknown;
-                  try {
-                    args = JSON.parse(tc.function.arguments);
-                  } catch (parseError) {
-                    console.warn(
-                      `[GeminiService] ⚠️ 工具参数 JSON 解析失败: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-                      {
-                        toolName: tc.function.name,
-                        argumentsPreview: tc.function.arguments?.slice(0, 100),
-                      },
-                    );
-                    // 如果解析失败，使用空对象作为后备
-                    args = {};
-                  }
-
-                  const basePart = {
-                    functionCall: {
-                      name: tc.function.name,
-                      args,
-                    },
-                  } as Record<string, unknown>;
-                  // 将签名置于 part 层级（与 functionCall 同级），符合文档示例
-                  if (sigFromModel) {
-                    (basePart as { [key: string]: unknown }).thought_signature = sigFromModel;
-                  } else if (idx === 0) {
-                    // 首个并行/顺序函数调用缺签名时，使用 FAQ 的占位值
-                    (basePart as { [key: string]: unknown }).thought_signature =
-                      'skip_thought_signature_validator';
-                  }
-                  parts.push(basePart);
-                });
-              }
-              return { role: 'model', parts };
-            }
-            if (msg.role === 'tool') {
-              // Gemini 期望 functionResponse
-              // 安全解析工具返回内容，处理可能的 JSON 解析错误
-              let response: unknown;
-              try {
-                // 尝试解析为 JSON
-                response = JSON.parse(msg.content || '{}');
-              } catch (parseError) {
-                // 如果解析失败，将内容作为字符串包装在对象中
-                console.warn(
-                  `[GeminiService] ⚠️ 工具返回内容 JSON 解析失败，使用字符串格式: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-                  { toolName: msg.name, contentPreview: msg.content?.slice(0, 100) },
-                );
-                // 将非 JSON 内容包装为对象，确保 Gemini 可以处理
-                response = {
-                  content: msg.content || '',
-                  _parseError: true,
-                  _originalError:
-                    parseError instanceof Error ? parseError.message : String(parseError),
-                };
-              }
-              return {
-                role: 'function',
-                parts: [
-                  {
-                    functionResponse: {
-                      name: msg.name, // 必须匹配函数调用名称
-                      response,
-                    },
-                  },
-                ],
-              };
-            }
-            return null;
-          })
-          .filter(Boolean);
-      } else {
-        contents = [{ role: 'user', parts: [{ text: request.prompt || '' }] }];
-      }
-
-      // 准备工具
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let tools: any[] | undefined;
-      if (request.tools && request.tools.length > 0) {
-        tools = [
-          {
-            functionDeclarations: request.tools.map((t) => ({
-              name: t.function.name,
-              description: t.function.description,
-              parameters: t.function.parameters,
-            })),
-          },
-        ];
-      }
+      const generationConfig = buildGeminiGenerationConfig(config, request, modelName);
+      const { systemInstruction, contents } = buildGeminiContents(request);
+      const tools = buildGeminiTools(request);
 
       const model = client.getGenerativeModel(
         {
@@ -271,126 +124,26 @@ export class GeminiService extends BaseAIService {
 
       // 使用流式 API
       const result = await model.generateContentStream(
-        {
-          contents,
-        },
-        {
-          signal: config.signal ?? AbortSignal.timeout(100000),
-        },
+        { contents },
+        { signal: config.signal ?? AbortSignal.timeout(100000) },
       );
 
-      let fullText = '';
-      let fullReasoningContent = '';
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const toolCalls: any[] = [];
+      const isThinkingEnabled = !!generationConfig.thinkingConfig?.includeThoughts;
+      const streamResult = await consumeGeminiStream(
+        result.stream,
+        config,
+        isThinkingEnabled,
+        onChunk,
+      );
 
-      // 处理流式响应
-      for await (const chunk of result.stream) {
-        // 检查是否已取消
-        if (config.signal?.aborted) {
-          throw new Error('请求已取消');
-        }
-
-        const chunkFunctionCalls = chunk.functionCalls();
-
-        // 优先从 parts 提取，因为 .text() 可能合并了思考过程
-        const isThinkingEnabled = !!generationConfig.thinkingConfig?.includeThoughts;
-        let chunkText = '';
-        let chunkReasoningContent = '';
-
-        try {
-          // 尝试从 chunk 的 parts 中提取内容
-          // Gemini SDK 的 chunk 对象可能包含 parts 属性，但类型定义可能不完整
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const chunkAny = chunk as any;
-          // 尝试从 candidates 中获取 parts，或者直接从 chunk 获取（如果 SDK 结构不同）
-          const parts = chunkAny.candidates?.[0]?.content?.parts || chunkAny.parts || [];
-
-          if (parts && parts.length > 0) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            for (const part of parts as any[]) {
-              if (part.text) {
-                // 检查是否有 thought 属性（Gemini 2/3 Flash Thinking 的思考内容）
-                // 只有当明确启用了思考模式时，才检查 thought 属性
-                if (isThinkingEnabled && part.thought === true) {
-                  chunkReasoningContent += part.text;
-                } else {
-                  // 如果未启用思考模式，或者 part.thought 不为 true，则视为普通文本
-                  chunkText += part.text;
-                }
-              }
-            }
-          } else if (!isThinkingEnabled) {
-            // 只有在未启用思考模式时，才回退到使用 chunk.text()
-            // 因为如果启用了思考模式，chunk.text() 会包含混杂的思考内容，导致泄露
-            // 如果 parts 为空且启用了思考模式，可能是纯工具调用 chunk，或者是解析问题
-            // 但为了安全起见，我们不使用 chunk.text()
-            const fallbackText = chunk.text();
-            if (fallbackText) {
-              chunkText = fallbackText;
-            }
-          }
-        } catch (error) {
-          console.debug('chunk 解析出错:', error);
-          // 出错时，仅在未启用思考模式时回退
-          if (!isThinkingEnabled) {
-            try {
-              const fallbackText = chunk.text();
-              if (fallbackText) {
-                chunkText = fallbackText;
-              }
-            } catch {
-              // ignore
-            }
-          } else {
-            console.warn('[GeminiService] 启用思考模式时解析出错，跳过 fallback 以防泄露', error);
-          }
-        }
-
-        if (chunkFunctionCalls) {
-          toolCalls.push(...chunkFunctionCalls);
-        }
-
-        // 处理实际响应文本（非思考内容）
-        if (chunkText) {
-          fullText += chunkText;
-
-          // 如果提供了回调函数，调用它
-          if (onChunk) {
-            await onChunk({
-              text: chunkText,
-              done: false,
-              model: config.model,
-            });
-          }
-        }
-
-        // 处理思考内容
-        // 思考内容应该单独传递，不包含在实际响应中
-        if (chunkReasoningContent) {
-          fullReasoningContent += chunkReasoningContent;
-
-          // 如果提供了回调函数，通过 reasoningContent 传递思考内容
-          if (onChunk) {
-            await onChunk({
-              text: '', // 思考内容不显示在聊天中
-              done: false,
-              model: config.model,
-              reasoningContent: chunkReasoningContent,
-            });
-          }
-        }
-      }
-
-      const text = fullText.trim();
+      const text = streamResult.fullText.trim();
       // 允许空文本，如果有工具调用
-      if (!text && toolCalls.length === 0) {
+      if (!text && streamResult.toolCalls.length === 0) {
         throw new AIEmptyResponseError();
       }
 
       // 转换工具调用格式
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const finalToolCalls = toolCalls.map((tc: any) => ({
+      const finalToolCalls = streamResult.toolCalls.map((tc: any) => ({
         id: `call_${Math.random().toString(36).substr(2, 9)}`, // Gemini 不返回 ID，生成一个
         type: 'function' as const,
         function: {
@@ -399,14 +152,15 @@ export class GeminiService extends BaseAIService {
         },
       }));
 
-      // 发送完成回调
       if (onChunk) {
         await onChunk({
           text: '',
           done: true,
           model: config.model,
           ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
-          ...(fullReasoningContent ? { reasoningContent: fullReasoningContent } : {}),
+          ...(streamResult.fullReasoningContent
+            ? { reasoningContent: streamResult.fullReasoningContent }
+            : {}),
         });
       }
 
@@ -414,7 +168,9 @@ export class GeminiService extends BaseAIService {
         text,
         model: config.model,
         ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
-        ...(fullReasoningContent ? { reasoningContent: fullReasoningContent } : {}),
+        ...(streamResult.fullReasoningContent
+          ? { reasoningContent: streamResult.fullReasoningContent }
+          : {}),
       };
     } catch (error) {
       if (error instanceof Error) {
@@ -498,4 +254,323 @@ export class GeminiService extends BaseAIService {
     }
   }
 
+}
+
+// ============ 模块级辅助函数：请求参数 / 消息转换 / 流处理 ============
+
+interface GeminiGenerationConfig {
+  temperature?: number;
+  maxOutputTokens?: number;
+  thinkingConfig?: {
+    includeThoughts?: boolean;
+  };
+}
+
+/**
+ * 构造 Gemini 的 generationConfig（含 temperature / maxOutputTokens / thinkingConfig）
+ */
+function buildGeminiGenerationConfig(
+  config: AIServiceConfig,
+  request: TextGenerationRequest,
+  modelName: string,
+): GeminiGenerationConfig {
+  const generationConfig: GeminiGenerationConfig = {};
+
+  const temperature = request.temperature ?? config.temperature;
+  if (temperature !== undefined) {
+    generationConfig.temperature = temperature;
+  }
+
+  const maxOutputTokens = request.maxOutputTokens ?? config.maxOutputTokens;
+  // 只有当 maxOutputTokens 明确设置且大于 0 时才设置 maxOutputTokens
+  if (maxOutputTokens !== undefined && maxOutputTokens > 0) {
+    generationConfig.maxOutputTokens = maxOutputTokens;
+  }
+
+  // 为 Gemini 3 Pro 等支持思考的模型启用思考内容
+  const modelNameLower = modelName.toLowerCase();
+  if (modelNameLower.includes('gemini-3') || modelNameLower.includes('gemini-2')) {
+    generationConfig.thinkingConfig = { includeThoughts: true };
+  }
+
+  return generationConfig;
+}
+
+/**
+ * 将 JSON 解析错误安全地转换为可打印字符串（避免 no-base-to-string lint 告警）
+ */
+function formatJSONParseError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return 'unknown parse error';
+  }
+}
+
+/**
+ * 安全地将 JSON 字符串转为对象；失败时调用 onError 并返回兜底值
+ */
+function safeJSONParse(input: string | undefined | null, onError: (err: unknown) => void): unknown {
+  try {
+    return JSON.parse(input || '{}');
+  } catch (err) {
+    onError(err);
+    return undefined;
+  }
+}
+
+/**
+ * 将 assistant 的 tool_calls 转换为 Gemini functionCall parts 数组
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapToolCallsToGeminiParts(
+  toolCalls: Array<{ function: { name: string; arguments: string } } & Record<string, unknown>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parts: any[] = [];
+  toolCalls.forEach((tc, idx) => {
+    // 传递 Gemini 返回的签名；若缺失，在当前回合需要首个函数调用提供占位签名
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sigFromModel = (tc as any)?.extra_content?.google?.thought_signature as
+      | string
+      | undefined;
+
+    const args = safeJSONParse(tc.function.arguments, (parseError) => {
+      const errMsg = formatJSONParseError(parseError);
+      console.warn(`[GeminiService] ⚠️ 工具参数 JSON 解析失败: ${errMsg}`, {
+        toolName: tc.function.name,
+        argumentsPreview: tc.function.arguments?.slice(0, 100),
+      });
+    });
+    // 如果解析失败，使用空对象作为后备
+    const safeArgs = args === undefined ? {} : args;
+
+    const basePart = {
+      functionCall: {
+        name: tc.function.name,
+        args: safeArgs,
+      },
+    } as Record<string, unknown>;
+    // 将签名置于 part 层级（与 functionCall 同级），符合文档示例
+    if (sigFromModel) {
+      basePart.thought_signature = sigFromModel;
+    } else if (idx === 0) {
+      // 首个并行/顺序函数调用缺签名时，使用 FAQ 的占位值
+      basePart.thought_signature = 'skip_thought_signature_validator';
+    }
+    parts.push(basePart);
+  });
+  return parts;
+}
+
+/**
+ * 将 tool 消息转换为 Gemini 的 functionResponse 消息
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildGeminiToolMessage(msg: { content?: string; name?: string }): any {
+  const content = msg.content;
+  let capturedError: unknown;
+  let response: unknown = safeJSONParse(content, (parseError) => {
+    capturedError = parseError;
+    const errMsg = formatJSONParseError(parseError);
+    console.warn(`[GeminiService] ⚠️ 工具返回内容 JSON 解析失败，使用字符串格式: ${errMsg}`, {
+      toolName: msg.name,
+      contentPreview: content?.slice(0, 100),
+    });
+  });
+  if (response === undefined) {
+    // 将非 JSON 内容包装为对象，确保 Gemini 可以处理
+    response = {
+      content: content || '',
+      _parseError: true,
+      _originalError: formatJSONParseError(capturedError),
+    };
+  }
+  return {
+    role: 'function',
+    parts: [
+      {
+        functionResponse: {
+          name: msg.name, // 必须匹配函数调用名称
+          response,
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * 准备 Gemini 的 contents 列表与 systemInstruction
+ */
+function buildGeminiContents(request: TextGenerationRequest): {
+  systemInstruction: string | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  contents: any[];
+} {
+  if (!request.messages || request.messages.length === 0) {
+    return {
+      systemInstruction: undefined,
+      contents: [{ role: 'user', parts: [{ text: request.prompt || '' }] }],
+    };
+  }
+
+  const systemMsg = request.messages.find((m) => m.role === 'system');
+  const systemInstruction = systemMsg?.content || undefined;
+
+  const contents = request.messages
+    .filter((m) => m.role !== 'system')
+    .map((msg) => {
+      if (msg.role === 'user') {
+        return { role: 'user', parts: [{ text: msg.content || '' }] };
+      }
+      if (msg.role === 'assistant') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const parts: any[] = [];
+        if (msg.content) parts.push({ text: msg.content });
+        if (msg.tool_calls) {
+          parts.push(...mapToolCallsToGeminiParts(msg.tool_calls as never[]));
+        }
+        return { role: 'model', parts };
+      }
+      if (msg.role === 'tool') {
+        return buildGeminiToolMessage(msg);
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  return { systemInstruction, contents };
+}
+
+/**
+ * 构造 Gemini 的 tools 声明
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildGeminiTools(request: TextGenerationRequest): any[] | undefined {
+  if (!request.tools || request.tools.length === 0) return undefined;
+  return [
+    {
+      functionDeclarations: request.tools.map((t) => ({
+        name: t.function.name,
+        description: t.function.description,
+        parameters: t.function.parameters,
+      })),
+    },
+  ];
+}
+
+/**
+ * 从单个 chunk 中提取文本 / 思考内容。优先解析 candidates[0].content.parts
+ */
+function extractGeminiChunkContent(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  chunk: any,
+  isThinkingEnabled: boolean,
+): { chunkText: string; chunkReasoningContent: string } {
+  let chunkText = '';
+  let chunkReasoningContent = '';
+  try {
+    // Gemini SDK 的 chunk 对象可能包含 parts 属性，但类型定义可能不完整
+    const parts = chunk.candidates?.[0]?.content?.parts || chunk.parts || [];
+
+    if (parts && parts.length > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const part of parts as any[]) {
+        if (!part.text) continue;
+        // 检查是否有 thought 属性（Gemini 2/3 Flash Thinking 的思考内容）
+        // 只有当明确启用了思考模式时，才检查 thought 属性
+        if (isThinkingEnabled && part.thought === true) {
+          chunkReasoningContent += part.text;
+        } else {
+          // 如果未启用思考模式，或者 part.thought 不为 true，则视为普通文本
+          chunkText += part.text;
+        }
+      }
+    } else if (!isThinkingEnabled) {
+      // 只有在未启用思考模式时，才回退到使用 chunk.text()
+      // 因为如果启用了思考模式，chunk.text() 会包含混杂的思考内容，导致泄露
+      const fallbackText = chunk.text?.();
+      if (fallbackText) {
+        chunkText = fallbackText;
+      }
+    }
+  } catch (error) {
+    console.debug('chunk 解析出错:', error);
+    // 出错时，仅在未启用思考模式时回退
+    if (!isThinkingEnabled) {
+      try {
+        const fallbackText = chunk.text?.();
+        if (fallbackText) {
+          chunkText = fallbackText;
+        }
+      } catch {
+        // ignore
+      }
+    } else {
+      console.warn('[GeminiService] 启用思考模式时解析出错，跳过 fallback 以防泄露', error);
+    }
+  }
+  return { chunkText, chunkReasoningContent };
+}
+
+interface GeminiStreamResult {
+  fullText: string;
+  fullReasoningContent: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  toolCalls: any[];
+}
+
+/**
+ * 消费 Gemini 流式响应，处理文本 / 思考内容 / 工具调用并转发到 onChunk 回调
+ */
+async function consumeGeminiStream(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  stream: AsyncIterable<any>,
+  config: AIServiceConfig,
+  isThinkingEnabled: boolean,
+  onChunk: TextGenerationStreamCallback | undefined,
+): Promise<GeminiStreamResult> {
+  let fullText = '';
+  let fullReasoningContent = '';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toolCalls: any[] = [];
+
+  for await (const chunk of stream) {
+    if (config.signal?.aborted) throw new Error('请求已取消');
+
+    const chunkFunctionCalls = chunk.functionCalls?.();
+    const { chunkText, chunkReasoningContent } = extractGeminiChunkContent(
+      chunk,
+      isThinkingEnabled,
+    );
+
+    if (chunkFunctionCalls) {
+      toolCalls.push(...chunkFunctionCalls);
+    }
+
+    if (chunkText) {
+      fullText += chunkText;
+      if (onChunk) {
+        await onChunk({ text: chunkText, done: false, model: config.model });
+      }
+    }
+
+    // 思考内容应该单独传递，不包含在实际响应中
+    if (chunkReasoningContent) {
+      fullReasoningContent += chunkReasoningContent;
+      if (onChunk) {
+        await onChunk({
+          text: '', // 思考内容不显示在聊天中
+          done: false,
+          model: config.model,
+          reasoningContent: chunkReasoningContent,
+        });
+      }
+    }
+  }
+
+  return { fullText, fullReasoningContent, toolCalls };
 }
