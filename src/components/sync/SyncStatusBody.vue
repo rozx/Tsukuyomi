@@ -51,6 +51,7 @@ const isSyncing = computed({
   get: () => settingsStore.isSyncing,
   set: (value: boolean) => settingsStore.setSyncing(value),
 });
+const isRestoringRevision = computed(() => settingsStore.isRestoringSyncSnapshot);
 
 const { pendingCount, hasPendingChanges, pendingItems } = useSyncPendingChanges();
 
@@ -137,6 +138,10 @@ const forceMode = computed(() => settingsStore.forceSyncMode.active);
 const closePanel = inject(SyncPanelCloseKey, undefined);
 
 const triggerForceSync = () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   const onBeforeConfirm = closePanel ? () => closePanel() : undefined;
   void confirmAndForceSync(onBeforeConfirm ? { onBeforeConfirm } : {});
 };
@@ -155,6 +160,10 @@ const handleRestoreDialogVisibleChange = (next: boolean) => {
 };
 
 const syncData = async () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   const config = gistSync.value;
   if (!config.enabled || !config.syncParams.username || !config.secret) {
     toast.add({
@@ -353,13 +362,13 @@ const syncStageLabel = computed(() => {
     </div>
 
     <div class="flex flex-col gap-3 pt-2 border-t border-white/10">
-      <ForceSyncToggle :disabled="!gistSync.enabled || isSyncing" />
+      <ForceSyncToggle :disabled="!gistSync.enabled || isSyncing || isRestoringRevision" />
       <Button
         :label="forceMode ? '强制推送到远程' : '同步'"
         icon="pi pi-sync"
         :severity="forceMode ? 'danger' : 'primary'"
         class="w-full"
-        :disabled="!gistSync.enabled || isSyncing"
+        :disabled="!gistSync.enabled || isSyncing || isRestoringRevision"
         :loading="isSyncing"
         @click="forceMode ? triggerForceSync() : syncData()"
       />

@@ -254,6 +254,7 @@ const loadingRevisions = ref(false);
 const revertingVersion = ref<string | null>(null);
 const expandedRevisions = ref<Set<string>>(new Set());
 const loadingRevisionDetails = ref<Set<string>>(new Set());
+const isRestoringRevision = computed(() => settingsStore.isRestoringSyncSnapshot);
 
 // 同步相关 - 使用 composable
 const { sync: syncComposable, restoreDeletedItems: restoreDeletedItemsComposable } = useGistSync();
@@ -264,6 +265,10 @@ const forceMode = computed(() => settingsStore.forceSyncMode.active);
 
 // 触发强制推送：使用当前表单的配置作为 config 覆盖
 const triggerForceSync = () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   const baseConfig = settingsStore.gistSync;
   const currentConfig: SyncConfig = {
     ...baseConfig,
@@ -284,7 +289,7 @@ const restorableItems = ref<RestorableItem[]>([]);
 
 // 加载修订历史
 const loadRevisions = async () => {
-  if (!gistId.value || !gistEnabled.value) {
+  if (!gistId.value || !gistEnabled.value || isRestoringRevision.value) {
     return;
   }
 
@@ -566,6 +571,7 @@ const revertToRevision = (version: string, event?: Event) => {
       }
 
       void co(function* () {
+        settingsStore.setRestoringSyncSnapshot(true);
         revertingVersion.value = version;
         try {
           const baseConfig = settingsStore.gistSync;
@@ -613,6 +619,7 @@ const revertToRevision = (version: string, event?: Event) => {
             life: 5000,
           });
         } finally {
+          settingsStore.setRestoringSyncSnapshot(false);
           revertingVersion.value = null;
         }
       });
@@ -702,6 +709,10 @@ const handleSyncIntervalChange = (value: number | null) => {
 
 // 验证 GitHub token
 const validateGistToken = async () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   if (!gistUsername.value.trim() || !gistToken.value.trim()) {
     toast.add({
       severity: 'warn',
@@ -756,6 +767,10 @@ const validateGistToken = async () => {
 
 // 同步到 Gist（统一的双向同步操作）
 const syncToGist = async () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   if (!gistUsername.value.trim() || !gistToken.value.trim()) {
     toast.add({
       severity: 'warn',
@@ -816,6 +831,10 @@ const handleCancelRestore = () => {
 
 // 删除 Gist
 const deleteGist = () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   if (!gistId.value.trim()) {
     toast.add({
       severity: 'warn',
@@ -1027,12 +1046,12 @@ const deleteGist = () => {
 
     <!-- 操作按钮 -->
     <div class="space-y-3 pt-2">
-      <ForceSyncToggle :disabled="!gistEnabled || gistSyncing" />
+      <ForceSyncToggle :disabled="!gistEnabled || gistSyncing || isRestoringRevision" />
       <Button
         label="验证 Token"
         icon="pi pi-check-circle"
         class="p-button-outlined w-full"
-        :disabled="!gistEnabled || gistValidating"
+        :disabled="!gistEnabled || gistValidating || isRestoringRevision"
         :loading="gistValidating"
         @click="validateGistToken"
       />
@@ -1041,7 +1060,7 @@ const deleteGist = () => {
         icon="pi pi-sync"
         :severity="forceMode ? 'danger' : 'primary'"
         class="w-full"
-        :disabled="!gistEnabled || gistSyncing"
+        :disabled="!gistEnabled || gistSyncing || isRestoringRevision"
         :loading="gistSyncing"
         @click="forceMode ? triggerForceSync() : syncToGist()"
       />
@@ -1054,7 +1073,7 @@ const deleteGist = () => {
         <Button
           icon="pi pi-refresh"
           class="p-button-text p-button-sm"
-          :disabled="loadingRevisions"
+          :disabled="loadingRevisions || isRestoringRevision"
           :loading="loadingRevisions"
           @click="loadRevisions"
         />
@@ -1100,7 +1119,7 @@ const deleteGist = () => {
                 label="恢复"
                 icon="pi pi-undo"
                 class="p-button-text p-button-sm"
-                :disabled="revertingVersion === revision.version"
+                :disabled="isRestoringRevision"
                 :loading="revertingVersion === revision.version"
                 @click.stop="(event) => revertToRevision(revision.version, event)"
               />
@@ -1166,7 +1185,7 @@ const deleteGist = () => {
         label="删除当前 Gist"
         icon="pi pi-trash"
         class="p-button-danger w-full"
-        :disabled="!gistEnabled || gistSyncing || !gistId"
+        :disabled="!gistEnabled || gistSyncing || isRestoringRevision || !gistId"
         :loading="gistSyncing"
         @click="deleteGist"
       />

@@ -58,4 +58,16 @@ describe('settings store persistence (taskDefaultModels)', () => {
       'model-translation-2',
     );
   });
+
+  it('恢复快照中的共享状态应可切换，供设置页和同步弹窗共同禁用操作按钮', () => {
+    const settingsStore = useSettingsStore();
+
+    expect(settingsStore.isRestoringSyncSnapshot).toBe(false);
+
+    settingsStore.setRestoringSyncSnapshot(true);
+    expect(settingsStore.isRestoringSyncSnapshot).toBe(true);
+
+    settingsStore.setRestoringSyncSnapshot(false);
+    expect(settingsStore.isRestoringSyncSnapshot).toBe(false);
+  });
 });

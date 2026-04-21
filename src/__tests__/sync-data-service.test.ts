@@ -32,6 +32,7 @@ const mockCoverHistoryStore = {
 };
 
 const mockSettingsStore = {
+  settings: {} as any,
   gistSync: {
     lastSyncTime: 0,
     deletedNovelIds: [] as Array<{ id: string; deletedAt: number }>,
@@ -41,6 +42,7 @@ const mockSettingsStore = {
     deletedMemoryIds: [] as Array<{ id: string; deletedAt: number }>,
   },
   importSettings: mock((_settings: unknown) => Promise.resolve()),
+  replaceSettingsFromSyncSnapshot: mock((_settings: unknown) => Promise.resolve()),
   updateGistSync: mock((_config: unknown) => Promise.resolve()),
   getAllSettings: mock(() => ({ lastEdited: new Date(0) })),
   cleanupOldDeletionRecords: mock(() => Promise.resolve()),
@@ -101,10 +103,32 @@ describe('数据同步服务 (SyncDataService)', () => {
     mockCoverHistoryStore.addCover.mockClear();
 
     mockSettingsStore.importSettings.mockClear();
+    mockSettingsStore.replaceSettingsFromSyncSnapshot.mockClear();
     mockSettingsStore.updateGistSync.mockClear();
     mockSettingsStore.cleanupOldDeletionRecords.mockClear();
     mockSettingsStore.getAllSettings.mockClear();
-    mockSettingsStore.getAllSettings.mockReturnValue({ lastEdited: new Date(0) });
+    mockSettingsStore.settings = {
+      lastEdited: new Date(0),
+      scraperConcurrencyLimit: 3,
+      taskDefaultModels: {},
+      proxyEnabled: true,
+      proxyUrl: '',
+      proxyAutoSwitch: true,
+      proxyAutoAddMapping: true,
+      proxyList: [],
+      proxySiteMapping: {},
+      booksSortOption: 'default',
+      quickStartDismissed: false,
+      memoryInjection: {
+        charBudget: 2000,
+        enableSemantic: true,
+        minScoreThreshold: 0.3,
+        hasSeenIntro: false,
+        embeddingModelCached: false,
+      },
+      enableLocalEmbedding: false,
+    };
+    mockSettingsStore.getAllSettings.mockReturnValue(mockSettingsStore.settings);
     mockSettingsStore.gistSync = {
       lastSyncTime: 0,
       deletedNovelIds: [],
@@ -113,6 +137,69 @@ describe('数据同步服务 (SyncDataService)', () => {
       deletedCoverUrls: [],
       deletedMemoryIds: [],
     };
+    mockSettingsStore.importSettings.mockImplementation((settings: any) => {
+      const {
+        lastEdited: _removed,
+        syncs: _syncs,
+        ...settingsWithoutSpecial
+      } = settings ?? {};
+      const finalSettings = {
+        ...mockSettingsStore.settings,
+        ...settingsWithoutSpecial,
+        lastEdited:
+          settings?.lastEdited !== undefined
+            ? new Date(settings.lastEdited)
+            : mockSettingsStore.settings.lastEdited,
+      };
+
+      if (settings?.taskDefaultModels !== undefined) {
+        finalSettings.taskDefaultModels = {
+          ...mockSettingsStore.settings.taskDefaultModels,
+          ...settings.taskDefaultModels,
+        };
+      }
+
+      if (settings?.memoryInjection !== undefined) {
+        finalSettings.memoryInjection = {
+          ...mockSettingsStore.settings.memoryInjection,
+          ...settings.memoryInjection,
+          embeddingModelCached:
+            mockSettingsStore.settings.memoryInjection?.embeddingModelCached ?? false,
+        };
+      }
+
+      mockSettingsStore.settings = finalSettings;
+      mockSettingsStore.getAllSettings.mockReturnValue(mockSettingsStore.settings);
+      return Promise.resolve();
+    });
+    mockSettingsStore.replaceSettingsFromSyncSnapshot.mockImplementation((settings: any) => {
+      const existingEmbeddingModelCached =
+        mockSettingsStore.settings.memoryInjection?.embeddingModelCached ?? false;
+      mockSettingsStore.settings = {
+        lastEdited:
+          settings?.lastEdited !== undefined ? new Date(settings.lastEdited) : new Date(0),
+        scraperConcurrencyLimit: settings?.scraperConcurrencyLimit ?? 3,
+        taskDefaultModels: { ...(settings?.taskDefaultModels ?? {}) },
+        proxyEnabled: settings?.proxyEnabled ?? true,
+        proxyUrl: settings?.proxyUrl ?? '',
+        proxyAutoSwitch: settings?.proxyAutoSwitch ?? true,
+        proxyAutoAddMapping: settings?.proxyAutoAddMapping ?? true,
+        proxyList: settings?.proxyList ?? [],
+        proxySiteMapping: settings?.proxySiteMapping ?? {},
+        booksSortOption: settings?.booksSortOption ?? 'default',
+        quickStartDismissed: settings?.quickStartDismissed ?? false,
+        memoryInjection: {
+          charBudget: settings?.memoryInjection?.charBudget ?? 2000,
+          enableSemantic: settings?.memoryInjection?.enableSemantic ?? true,
+          minScoreThreshold: settings?.memoryInjection?.minScoreThreshold ?? 0.3,
+          hasSeenIntro: settings?.memoryInjection?.hasSeenIntro ?? false,
+          embeddingModelCached: existingEmbeddingModelCached,
+        },
+        enableLocalEmbedding: settings?.enableLocalEmbedding ?? false,
+      };
+      mockSettingsStore.getAllSettings.mockReturnValue(mockSettingsStore.settings);
+      return Promise.resolve();
+    });
 
     mockMemoryService.getAllMemories.mockClear();
     mockMemoryService.updateMemory.mockClear();
@@ -2326,8 +2413,8 @@ describe('数据同步服务 (SyncDataService)', () => {
         },
       });
 
-      // appSettings 被导入
-      expect(mockSettingsStore.importSettings).toHaveBeenCalledWith(
+      // appSettings 走“按快照替换”入口
+      expect(mockSettingsStore.replaceSettingsFromSyncSnapshot).toHaveBeenCalledWith(
         expect.objectContaining({ theme: 'snap-theme' }),
       );
 
@@ -2340,6 +2427,75 @@ describe('数据同步服务 (SyncDataService)', () => {
         syncParams: { gistId: 'local-gist', username: 'local-user' },
         deletedNovelIds: [],
         deletedModelIds: [],
+      });
+    });
+
+    it('恢复旧快照时不应继续沿用本地缺省外的设置残留', async () => {
+      mockSettingsStore.settings = {
+        lastEdited: new Date('2026-04-20T10:00:00.000Z'),
+        scraperConcurrencyLimit: 9,
+        taskDefaultModels: {
+          translation: 'local-translation-model',
+          assistant: 'local-assistant-model',
+        },
+        proxyEnabled: false,
+        proxyUrl: 'https://local-proxy.example/{url}',
+        proxyAutoSwitch: false,
+        proxyAutoAddMapping: false,
+        proxyList: [
+          {
+            id: 'local-proxy',
+            name: '本地代理',
+            url: 'https://local-proxy.example/{url}',
+          },
+        ],
+        proxySiteMapping: {
+          'example.com': {
+            enabled: true,
+            proxies: ['https://local-proxy.example/{url}'],
+          },
+        },
+        booksSortOption: 'updatedAt-desc',
+        quickStartDismissed: true,
+        memoryInjection: {
+          charBudget: 3600,
+          enableSemantic: false,
+          minScoreThreshold: 0.9,
+          hasSeenIntro: true,
+          embeddingModelCached: true,
+        },
+        enableLocalEmbedding: true,
+      };
+      mockSettingsStore.getAllSettings.mockReturnValue(mockSettingsStore.settings);
+
+      await SyncDataService.overwriteFromSnapshot({
+        novels: [],
+        aiModels: [],
+        coverHistory: [],
+        memories: [],
+        appSettings: {
+          lastEdited: '2025-01-01T00:00:00.000Z',
+          proxyEnabled: true,
+          proxyUrl: 'https://remote-proxy.example/{url}',
+          memoryInjection: {
+            charBudget: 1800,
+            enableSemantic: true,
+            minScoreThreshold: 0.4,
+            hasSeenIntro: false,
+          },
+        },
+      });
+
+      expect(mockSettingsStore.settings.proxyEnabled).toBe(true);
+      expect(mockSettingsStore.settings.proxyUrl).toBe('https://remote-proxy.example/{url}');
+      expect(mockSettingsStore.settings.taskDefaultModels).toEqual({});
+      expect(mockSettingsStore.settings.enableLocalEmbedding).toBe(false);
+      expect(mockSettingsStore.settings.memoryInjection).toMatchObject({
+        charBudget: 1800,
+        enableSemantic: true,
+        minScoreThreshold: 0.4,
+        hasSeenIntro: false,
+        embeddingModelCached: true,
       });
     });
 
