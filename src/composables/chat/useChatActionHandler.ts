@@ -129,6 +129,34 @@ export function useChatActionHandler(
   };
 
   /**
+   * 将 CharacterSetting 展开为 add/update 接口所需的 payload（保留可选字段的 exactOptionalPropertyTypes 语义）。
+   */
+  const serializeCharacterForService = (character: CharacterSetting) => ({
+    name: character.name,
+    sex: character.sex,
+    translation: character.translation.translation,
+    ...(character.description !== undefined ? { description: character.description } : {}),
+    ...(character.speakingStyle !== undefined ? { speakingStyle: character.speakingStyle } : {}),
+    ...(character.aliases !== undefined
+      ? {
+          aliases: character.aliases.map((a: Alias) => ({
+            name: a.name,
+            translation: a.translation.translation,
+          })),
+        }
+      : {}),
+  });
+
+  /**
+   * 将 Terminology 展开为 add/update 接口所需的 payload。
+   */
+  const serializeTermForService = (term: Terminology) => ({
+    name: term.name,
+    translation: term.translation.translation,
+    ...(term.description !== undefined ? { description: term.description } : {}),
+  });
+
+  /**
    * 构建更新操作的 revert 回调（恢复到之前的数据）
    */
   const buildUpdateRevert = (
@@ -136,46 +164,22 @@ export function useChatActionHandler(
     previousData: CharacterSetting | Terminology,
   ): (() => Promise<void>) => {
     return async () => {
-      if (contextStore.getContext.currentBookId) {
-        if (entityType === 'character') {
-          const previousCharacter = previousData as CharacterSetting;
-          await CharacterSettingService.updateCharacterSetting(
-            contextStore.getContext.currentBookId,
-            previousCharacter.id,
-            {
-              name: previousCharacter.name,
-              sex: previousCharacter.sex,
-              translation: previousCharacter.translation.translation,
-              ...(previousCharacter.description !== undefined
-                ? { description: previousCharacter.description }
-                : {}),
-              ...(previousCharacter.speakingStyle !== undefined
-                ? { speakingStyle: previousCharacter.speakingStyle }
-                : {}),
-              ...(previousCharacter.aliases !== undefined
-                ? {
-                    aliases: previousCharacter.aliases.map((a: Alias) => ({
-                      name: a.name,
-                      translation: a.translation.translation,
-                    })),
-                  }
-                : {}),
-            },
-          );
-        } else {
-          const previousTerm = previousData as Terminology;
-          await TerminologyService.updateTerminology(
-            contextStore.getContext.currentBookId,
-            previousTerm.id,
-            {
-              name: previousTerm.name,
-              translation: previousTerm.translation.translation,
-              ...(previousTerm.description !== undefined
-                ? { description: previousTerm.description }
-                : {}),
-            },
-          );
-        }
+      const bookId = contextStore.getContext.currentBookId;
+      if (!bookId) return;
+      if (entityType === 'character') {
+        const previousCharacter = previousData as CharacterSetting;
+        await CharacterSettingService.updateCharacterSetting(
+          bookId,
+          previousCharacter.id,
+          serializeCharacterForService(previousCharacter),
+        );
+      } else {
+        const previousTerm = previousData as Terminology;
+        await TerminologyService.updateTerminology(
+          bookId,
+          previousTerm.id,
+          serializeTermForService(previousTerm),
+        );
       }
     };
   };
@@ -188,38 +192,18 @@ export function useChatActionHandler(
     previousData: CharacterSetting | Terminology,
   ): (() => Promise<void>) => {
     return async () => {
-      if (contextStore.getContext.currentBookId) {
-        if (entityType === 'character') {
-          const previousCharacter = previousData as CharacterSetting;
-          await CharacterSettingService.addCharacterSetting(contextStore.getContext.currentBookId, {
-            name: previousCharacter.name,
-            sex: previousCharacter.sex,
-            translation: previousCharacter.translation.translation,
-            ...(previousCharacter.description !== undefined
-              ? { description: previousCharacter.description }
-              : {}),
-            ...(previousCharacter.speakingStyle !== undefined
-              ? { speakingStyle: previousCharacter.speakingStyle }
-              : {}),
-            ...(previousCharacter.aliases !== undefined
-              ? {
-                  aliases: previousCharacter.aliases.map((a: Alias) => ({
-                    name: a.name,
-                    translation: a.translation.translation,
-                  })),
-                }
-              : {}),
-          });
-        } else {
-          const previousTerm = previousData as Terminology;
-          await TerminologyService.addTerminology(contextStore.getContext.currentBookId, {
-            name: previousTerm.name,
-            translation: previousTerm.translation.translation,
-            ...(previousTerm.description !== undefined
-              ? { description: previousTerm.description }
-              : {}),
-          });
-        }
+      const bookId = contextStore.getContext.currentBookId;
+      if (!bookId) return;
+      if (entityType === 'character') {
+        await CharacterSettingService.addCharacterSetting(
+          bookId,
+          serializeCharacterForService(previousData as CharacterSetting),
+        );
+      } else {
+        await TerminologyService.addTerminology(
+          bookId,
+          serializeTermForService(previousData as Terminology),
+        );
       }
     };
   };

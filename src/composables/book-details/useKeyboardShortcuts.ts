@@ -382,18 +382,17 @@ export function useKeyboardShortcuts(opts: ShortcutRegistrationOptions) {
     };
   };
 
-  // 处理鼠标移动事件，重新启用鼠标悬停逻辑
-  // 但忽略程序化滚动期间的鼠标移动（滚动时鼠标相对位置会变化，触发 mousemove）
-  const handleMouseMove = rafThrottle(() => {
+  // 鼠标移动 / 滚动后延迟重置键盘导航状态：
+  // - 忽略程序化滚动（键盘导航自身触发的 scrollIntoView）
+  // - 距离最后一次键盘操作超过 2 秒才考虑重置（避免滚动余波或鼠标相对位置变化误触发）
+  // - 300ms 防抖，停止事件后才真正重置
+  const scheduleResetKeyboardNavigationState = () => {
     const now = Date.now();
     const timeSinceLastKeyboardNav = lastKeyboardNavigationTime.value
       ? now - lastKeyboardNavigationTime.value
       : Infinity;
 
-    // 只有在非程序化滚动，且距离最后一次键盘导航超过 2 秒时才重置键盘导航状态
-    // 这样可以避免滚动时鼠标相对位置变化触发的 mousemove 重置状态
     if (!isProgrammaticScrolling.value && timeSinceLastKeyboardNav > 2000) {
-      // 使用防抖，避免频繁重置（只有在停止鼠标移动 300ms 后才真正重置）
       if (resetNavigationTimeoutId.value !== null) {
         clearTimeout(resetNavigationTimeoutId.value);
       }
@@ -405,34 +404,10 @@ export function useKeyboardShortcuts(opts: ShortcutRegistrationOptions) {
         resetNavigationTimeoutId.value = null;
       }, 300);
     }
-  });
+  };
 
-  // 处理滚动事件，重新启用鼠标悬停逻辑
-  // 但忽略程序化滚动（由键盘导航触发的滚动）
-  const handleScroll = rafThrottle(() => {
-    const now = Date.now();
-    const timeSinceLastKeyboardNav = lastKeyboardNavigationTime.value
-      ? now - lastKeyboardNavigationTime.value
-      : Infinity;
-
-    // 只有在非程序化滚动，且距离最后一次键盘导航超过 2 秒时才重置键盘导航状态
-    // 这样可以避免：
-    // 1. 键盘导航触发的 scrollIntoView 重置鼠标悬停状态
-    // 2. 平滑滚动的余波在 timeout 之后被误判为用户滚动
-    if (!isProgrammaticScrolling.value && timeSinceLastKeyboardNav > 2000) {
-      // 使用防抖，避免频繁重置（只有在停止滚动 300ms 后才真正重置）
-      if (resetNavigationTimeoutId.value !== null) {
-        clearTimeout(resetNavigationTimeoutId.value);
-      }
-      resetNavigationTimeoutId.value = setTimeout(() => {
-        if (isKeyboardNavigating.value) {
-          isKeyboardNavigating.value = false;
-          lastKeyboardNavigationTime.value = null;
-        }
-        resetNavigationTimeoutId.value = null;
-      }, 300);
-    }
-  });
+  const handleMouseMove = rafThrottle(scheduleResetKeyboardNavigationState);
+  const handleScroll = rafThrottle(scheduleResetKeyboardNavigationState);
 
   return {
     handleKeydown,
