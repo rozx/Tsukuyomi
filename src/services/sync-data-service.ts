@@ -239,42 +239,34 @@ async function mergeNovelVolumes(
     return shouldKeepLocalOnlyItem(effectiveLocalTime, remoteNovelTime, lastSyncTime);
   };
 
+  // 当一侧缺失时，对另一侧的卷逐一合并章节（始终以 undefined 作为对端章节集合）
+  const mergeVolumesWithoutCounterpart = (volumes: Volume[]): Promise<Volume[]> =>
+    Promise.all(
+      volumes.map(async (volume) => ({
+        ...volume,
+        chapters: await mergeNovelChapters(
+          volume.chapters,
+          undefined,
+          preferRemoteSelection,
+          primaryNovelLastEdited,
+          secondaryNovelLastEdited,
+          lastSyncTime,
+        ),
+      })),
+    );
+
   if (!primaryVolumes || primaryVolumes.length === 0) {
     if (!secondaryVolumes || secondaryVolumes.length === 0) {
       return primaryVolumes;
     }
     const volumes = secondaryVolumes.filter(shouldKeepVolumeWithoutCounterpart);
-    return Promise.all(
-      volumes.map(async (volume) => ({
-        ...volume,
-        chapters: await mergeNovelChapters(
-          volume.chapters,
-          undefined,
-          preferRemoteSelection,
-          primaryNovelLastEdited,
-          secondaryNovelLastEdited,
-          lastSyncTime,
-        ),
-      })),
-    );
+    return mergeVolumesWithoutCounterpart(volumes);
   }
   if (!secondaryVolumes || secondaryVolumes.length === 0) {
     const volumes = primaryIsRemote
       ? primaryVolumes
       : primaryVolumes.filter(shouldKeepVolumeWithoutCounterpart);
-    return Promise.all(
-      volumes.map(async (volume) => ({
-        ...volume,
-        chapters: await mergeNovelChapters(
-          volume.chapters,
-          undefined,
-          preferRemoteSelection,
-          primaryNovelLastEdited,
-          secondaryNovelLastEdited,
-          lastSyncTime,
-        ),
-      })),
-    );
+    return mergeVolumesWithoutCounterpart(volumes);
   }
 
   const secondaryVolumeMap = new Map<string, Volume>();
