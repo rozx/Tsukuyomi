@@ -4,10 +4,7 @@
   "unused_types": [],
   "unused_dependencies": [],
   "unused_dev_dependencies": [],
-  "circular_dependencies": [
-    "src/services/embedding-queue.ts->src/services/memory-service.ts",
-    "src/services/embedding-queue.ts->src/services/memory-service.ts->src/stores/settings.ts"
-  ],
+  "circular_dependencies": [],
   "unused_optional_dependencies": [],
   "unused_enum_members": [],
   "unused_class_members": [],

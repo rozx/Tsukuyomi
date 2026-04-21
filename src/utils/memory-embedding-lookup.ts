@@ -2,11 +2,10 @@
  * Memory embedding 查询/写入叶子工具 — 直接读写 IndexedDB 的 `memories` 表，
  * 供 embedding-queue 等不能 import `MemoryService`（会形成循环依赖）的模块使用。
  *
- * 关注点：只做 DB 层面的操作，不做 LRU 缓存同步、也不派发 'memory-changed'
- * 事件。MemoryService 的 `memoryCache` / `bookMemoryCache` 在下次读取时会
- * 因 TTL 刷新或自然命中 DB 读，从而与 embedding 字段最终一致。UI 的
- * 'embedding-updated' 通知在此路径下不会发送 —— 对 MemoryDetailDialog 等
- * 组件的影响是"嵌入完成后不自动刷新"，用户需要重新打开 Dialog。
+ * 关注点：只做 DB 层面的 get/put。LRU 缓存同步与 'embedding-updated' 事件派发
+ * 走 `services/memory-cache` 这个中性叶子，由调用方（MemoryService 和 EmbeddingQueue）
+ * 自行组合：先 `updateMemoryEmbeddingInDB` 再 `syncMemoryEmbeddingCaches + dispatchMemoryChanged`。
+ * 这样两个子系统都只依赖叶子，彼此之间没有反向依赖，循环依赖得以避免。
  */
 
 import { getDB } from 'src/utils/indexed-db';
@@ -113,4 +112,13 @@ export async function updateMemoryEmbeddingInDB(
   if (!existing) return;
   const updated: MemoryStorage = { ...existing, embedding, embeddingModel };
   await db.put('memories', updated);
+}
+
+/**
+ * 写入后读回记录所属 bookId（供写路径同步缓存用）。记录已删时返回 null。
+ */
+export async function lookupMemoryBookId(memoryId: string): Promise<string | null> {
+  const db = await getDB();
+  const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
+  return existing ? existing.bookId : null;
 }

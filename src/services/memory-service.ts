@@ -23,7 +23,20 @@ export { isMemoryEmbeddingStale } from 'src/utils/memory-embedding-lookup';
 import {
   storageToMemory as storageToMemoryWithEmbedding,
   updateMemoryEmbeddingInDB,
+  lookupMemoryBookId,
 } from 'src/utils/memory-embedding-lookup';
+import {
+  MEMORY_CACHE_MAX_SIZE,
+  BOOK_MEMORY_CACHE_TTL_MS,
+  memoryCache,
+  bookMemoryCache,
+  buildMemoryCacheKey,
+  dispatchMemoryChanged,
+  syncMemoryEmbeddingCaches,
+  addMemoryChangeListener,
+  trimMemoryCacheIfOverflow,
+  type MemoryChangedDetail,
+} from 'src/services/memory-cache';
 
 const MAX_MEMORIES_PER_BOOK = 500;
 
@@ -46,78 +59,37 @@ interface MemoryStorage {
  * 提供 Memory 的 CRUD 操作，支持 LRU 缓存和每本书最多 500 条记录的限制
  */
 export class MemoryService {
-  /**
-   * Memory 变更事件（用于让 UI 在 IndexedDB 变更后自动刷新）
-   * 注意：这是轻量事件总线，不做持久化。
-   */
-  private static readonly memoryEvents = new EventTarget();
+  // 事件订阅 / 缓存 / 分派行为已下沉到中性 `services/memory-cache` 叶子模块，
+  // 让 EmbeddingQueue 与 MemoryService 不再通过 MemoryService 互相依赖而形成循环。
+  static readonly addMemoryChangeListener = addMemoryChangeListener;
+  private static readonly memoryCache = memoryCache;
+  private static readonly bookMemoryCache = bookMemoryCache;
+  private static readonly CACHE_MAX_SIZE = MEMORY_CACHE_MAX_SIZE;
+  private static readonly BOOK_CACHE_TTL_MS = BOOK_MEMORY_CACHE_TTL_MS;
 
-  static addMemoryChangeListener(
-    listener: (event: CustomEvent<{ bookId: string; memoryId?: string; action: string }>) => void,
-  ): () => void {
-    const handler = (event: Event) => {
-      listener(event as CustomEvent<{ bookId: string; memoryId?: string; action: string }>);
-    };
-
-    this.memoryEvents.addEventListener('memory-changed', handler);
-    return () => this.memoryEvents.removeEventListener('memory-changed', handler);
+  private static dispatchMemoryChanged(detail: MemoryChangedDetail) {
+    dispatchMemoryChanged(detail);
   }
 
-  private static dispatchMemoryChanged(detail: {
-    bookId: string;
-    memoryId?: string;
-    action: string;
-  }) {
-    // Bun 测试环境可能没有 CustomEvent，做一个安全降级
-    const hasCustomEvent = typeof (globalThis as any).CustomEvent !== 'undefined';
-    const event = hasCustomEvent
-      ? new CustomEvent('memory-changed', { detail })
-      : (() => {
-          const e = new Event('memory-changed') as Event & { detail?: typeof detail };
-          (e as any).detail = detail;
-          return e;
-        })();
-
-    this.memoryEvents.dispatchEvent(event);
-  }
-
-  // LRU 内存缓存，避免重复访问数据库
-  // 使用 Map 的插入顺序实现 LRU：最近访问的条目会被移动到末尾
-  private static memoryCache = new Map<string, Memory>();
-  private static readonly CACHE_MAX_SIZE = 200; // 最多缓存 200 个记忆
-
-  // 书籍级全量缓存：记忆注入打分时一次性读取整本书的所有 Memory
-  // TTL 60s 足以覆盖同一翻译任务内多次分块的反复读取
-  private static bookMemoryCache = new Map<string, { data: Memory[]; expiresAt: number }>();
-  private static readonly BOOK_CACHE_TTL_MS = 60_000;
-
   /**
-   * 清理缓存（当缓存过大时）
-   * 使用 LRU 策略：删除最久未使用的 20% 的缓存项（Map 开头的条目）
+   * LRU 淘汰：保持 memoryCache 的上限，删除最久未使用的一批。
    */
   private static evictCacheIfNeeded(): void {
+    // 删除 20% 的冷条目，避免每次写都要淘汰一次；仅在超过上限时才触发。
     if (this.memoryCache.size > this.CACHE_MAX_SIZE) {
-      // 删除最旧的 20% 的缓存项
-      const entriesToDelete = Math.floor(this.CACHE_MAX_SIZE * 0.2);
-      const keysToDelete = Array.from(this.memoryCache.keys()).slice(0, entriesToDelete);
-      for (const key of keysToDelete) {
-        this.memoryCache.delete(key);
-      }
+      const target = this.CACHE_MAX_SIZE - Math.floor(this.CACHE_MAX_SIZE * 0.2);
+      trimMemoryCacheIfOverflow(target);
     }
   }
 
   /**
-   * 更新缓存条目的访问顺序（LRU 行为）
-   * 将指定的缓存条目移动到 Map 末尾，表示最近使用
-   * @param cacheKey 缓存键（格式：bookId:memoryId）
+   * 把命中的缓存条目挪到 Map 末尾，体现最近使用。
    */
   private static touchCache(cacheKey: string): void {
-    const memory = this.memoryCache.get(cacheKey);
-    if (memory) {
-      // 删除并重新添加，使其移动到 Map 末尾（最近使用）
-      this.memoryCache.delete(cacheKey);
-      this.memoryCache.set(cacheKey, memory);
-    }
+    const entry = this.memoryCache.get(cacheKey);
+    if (!entry) return;
+    this.memoryCache.delete(cacheKey);
+    this.memoryCache.set(cacheKey, entry);
   }
 
   /**
@@ -197,7 +169,7 @@ export class MemoryService {
   }
 
   private static getCacheKey(bookId: string, memoryId: string): string {
-    return `${bookId}:${memoryId}`;
+    return buildMemoryCacheKey(bookId, memoryId);
   }
 
   /**
@@ -885,53 +857,20 @@ export class MemoryService {
     embedding: number[],
     embeddingModel: string,
   ): Promise<void> {
-    if (!memoryId) {
-      throw new Error('Memory ID 不能为空');
-    }
-    if (!embedding || embedding.length === 0) {
-      throw new Error('embedding 不能为空');
-    }
-    if (!embeddingModel) {
-      throw new Error('embeddingModel 不能为空');
-    }
+    if (!memoryId) throw new Error('Memory ID 不能为空');
+    if (!embedding || embedding.length === 0) throw new Error('embedding 不能为空');
+    if (!embeddingModel) throw new Error('embeddingModel 不能为空');
 
-    // 直接 IDB put 沿用 leaf util，避免重复的 get/mutate/put 样板
-    // 失败直接抛出，下面的缓存刷新 / 事件派发只有在写入成功后才会执行
+    // 写 IDB：叶子函数。失败直接抛，下面的缓存刷新 / 事件派发只在写入成功后执行。
     await updateMemoryEmbeddingInDB(memoryId, embedding, embeddingModel);
 
-    const db = await getDB();
-    const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
-    if (!existing) return;
+    // 记录被删除的合法边界：没有 bookId 就跳过缓存 / 事件。
+    const bookId = await lookupMemoryBookId(memoryId);
+    if (!bookId) return;
 
-    // 同步内存缓存:单条 LRU
-    const cacheKey = this.getCacheKey(existing.bookId, memoryId);
-    const cachedSingle = this.memoryCache.get(cacheKey);
-    if (cachedSingle) {
-      this.memoryCache.set(cacheKey, {
-        ...cachedSingle,
-        embedding,
-        embeddingModel,
-      });
-    }
-
-    // 同步书级全量缓存(原地更新,避免整本缓存失效)
-    const cachedBook = this.bookMemoryCache.get(existing.bookId);
-    if (cachedBook) {
-      const next = cachedBook.data.map((m) =>
-        m.id === memoryId ? { ...m, embedding, embeddingModel } : m,
-      );
-      this.bookMemoryCache.set(existing.bookId, {
-        data: next,
-        expiresAt: cachedBook.expiresAt,
-      });
-    }
-
-    // 广播"embedding 已更新"事件供 UI 徽章订阅,复用 memory-changed 通道但 action 明确区分
-    this.dispatchMemoryChanged({
-      bookId: existing.bookId,
-      memoryId,
-      action: 'embedding-updated',
-    });
+    syncMemoryEmbeddingCaches(bookId, memoryId, embedding, embeddingModel);
+    // 'embedding-updated' 事件供 UI 徽章订阅；复用 memory-changed 通道但 action 明确区分。
+    this.dispatchMemoryChanged({ bookId, memoryId, action: 'embedding-updated' });
   }
 
   /**

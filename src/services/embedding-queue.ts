@@ -4,7 +4,9 @@
  * 职责:
  * - 将待嵌入的目标(memory / chapter)排队,按 BATCH_SIZE 切片调用 EmbeddingService
  * - 完成批次后按 kind 分流持久化:
- *   · memory → MemoryService.updateMemoryEmbeddingOnly (保留 cache 同步与 embedding-updated 事件)
+ *   · memory → updateMemoryEmbeddingInDB + syncMemoryEmbeddingCaches + dispatchMemoryChanged
+ *              (leaf 组合: 写 IDB + 同步进程缓存 + 派发 embedding-updated 事件, 不反向 import
+ *              MemoryService, 避免循环依赖)
  *   · chapter → ChapterEmbeddingService.embedChapter(整章一次,不与 memory 混批)
  * - 每批之间 yield 一次事件循环,避免长任务阻塞 UI
  * - 暴露进度事件(含 memory / chapter 分解)、暂停/恢复、ETA
@@ -27,8 +29,13 @@ import {
   getMemoryByIdFromDB,
   getAllBookMemoriesFromDB,
   isMemoryEmbeddingStale,
+  updateMemoryEmbeddingInDB,
+  lookupMemoryBookId,
 } from 'src/utils/memory-embedding-lookup';
-import { MemoryService } from 'src/services/memory-service';
+import {
+  dispatchMemoryChanged,
+  syncMemoryEmbeddingCaches,
+} from 'src/services/memory-cache';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import type { Memory } from 'src/models/memory';
 
@@ -565,13 +572,16 @@ export class EmbeddingQueue {
         const vec = vectors[idx];
         if (!vec) return;
         try {
-          // 走 MemoryService.updateMemoryEmbeddingOnly 以同步 memoryCache / bookMemoryCache
-          // 并派发 'embedding-updated' 事件（MemoryDetailDialog 等 UI 订阅这个事件来结束 loading）
-          await MemoryService.updateMemoryEmbeddingOnly(
-            entry.id,
-            Array.from(vec),
-            MODEL_VERSION,
-          );
+          // 写 IDB（leaf）+ 同步进程内缓存 + 派发 'embedding-updated' 事件。
+          // 全部走叶子模块（memory-embedding-lookup / memory-cache），避免 EmbeddingQueue
+          // 反向 import MemoryService 形成循环依赖。
+          const embedding = Array.from(vec);
+          await updateMemoryEmbeddingInDB(entry.id, embedding, MODEL_VERSION);
+          const bookId = await lookupMemoryBookId(entry.id);
+          if (bookId) {
+            syncMemoryEmbeddingCaches(bookId, entry.id, embedding, MODEL_VERSION);
+            dispatchMemoryChanged({ bookId, memoryId: entry.id, action: 'embedding-updated' });
+          }
         } catch (error) {
           console.warn(`[EmbeddingQueue] 持久化 memory embedding 失败 (${entry.id}):`, error);
         }
