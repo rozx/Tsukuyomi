@@ -367,15 +367,8 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
    * 从页面中提取描述（catchphrase + introduction）
    */
   private extractDescription($: cheerio.CheerioAPI): string | undefined {
-    // 提取 catchphrase（第一行）- 使用更精确的选择器
-    let catchphraseEl = $('.EyeCatch_catchphrase__tT_m2').first();
-    if (catchphraseEl.length === 0) {
-      catchphraseEl = $('[class*="EyeCatch_catchphrase"]').first();
-    }
-    if (catchphraseEl.length === 0) {
-      catchphraseEl = $('[class*="EyeCatch_container"]').first();
-    }
-    const catchphrase = catchphraseEl.length > 0 ? catchphraseEl.text().trim() : '';
+    // 提取 catchphrase（第一行）- 复用 extractCatchphrase 的三级回退选择器
+    const catchphrase = this.extractCatchphrase($) ?? '';
 
     // 提取 introduction（第二行）- 保留原始格式（包括换行）
     let introductionEl = $('.CollapseTextWithKakuyomuLinks_collapseText__XSlmz').first();
