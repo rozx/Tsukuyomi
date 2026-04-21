@@ -1103,23 +1103,11 @@ export class ChapterService {
     targetVolumeId?: string,
   ): Volume[] {
     const existingVolumes = [...(novel.volumes || [])];
-    let sourceVolumeIndex = -1;
-    let chapterIndex = -1;
-    let chapterToUpdate: Chapter | null = null;
-
-    // 查找章节
-    for (let i = 0; i < existingVolumes.length; i++) {
-      const volume = existingVolumes[i];
-      if (volume && volume.chapters) {
-        const index = volume.chapters.findIndex((c) => c.id === chapterId);
-        if (index !== -1) {
-          sourceVolumeIndex = i;
-          chapterIndex = index;
-          chapterToUpdate = volume.chapters[index] || null;
-          break;
-        }
-      }
-    }
+    const {
+      sourceVolumeIndex,
+      chapterIndex,
+      chapter: chapterToUpdate,
+    } = ChapterService.findChapterSourceIndex(existingVolumes, chapterId);
 
     if (!chapterToUpdate || sourceVolumeIndex === -1) return existingVolumes;
 
@@ -1233,23 +1221,11 @@ export class ChapterService {
     targetIndex?: number,
   ): Volume[] {
     const existingVolumes = [...(novel.volumes || [])];
-    let sourceVolumeIndex = -1;
-    let chapterIndex = -1;
-    let chapterToMove: Chapter | null = null;
-
-    // 查找并移除章节
-    for (let i = 0; i < existingVolumes.length; i++) {
-      const volume = existingVolumes[i];
-      if (volume && volume.chapters) {
-        const index = volume.chapters.findIndex((c) => c.id === chapterId);
-        if (index !== -1) {
-          sourceVolumeIndex = i;
-          chapterIndex = index;
-          chapterToMove = volume.chapters[index] || null;
-          break;
-        }
-      }
-    }
+    const {
+      sourceVolumeIndex,
+      chapterIndex,
+      chapter: chapterToMove,
+    } = ChapterService.findChapterSourceIndex(existingVolumes, chapterId);
 
     if (!chapterToMove || sourceVolumeIndex === -1) return existingVolumes;
 
@@ -1493,6 +1469,30 @@ export class ChapterService {
         chapterInfo.chapter.contentLoaded = true;
       }
     }
+  }
+
+  /**
+   * 在 `existingVolumes` 里查找某章所在的卷下标 / 章下标 / 章对象。
+   * updateChapter / moveChapter 等多个 mutation 入口共用。
+   */
+  private static findChapterSourceIndex(
+    existingVolumes: Volume[],
+    chapterId: string,
+  ): { sourceVolumeIndex: number; chapterIndex: number; chapter: Chapter | null } {
+    for (let i = 0; i < existingVolumes.length; i++) {
+      const volume = existingVolumes[i];
+      if (volume && volume.chapters) {
+        const index = volume.chapters.findIndex((c) => c.id === chapterId);
+        if (index !== -1) {
+          return {
+            sourceVolumeIndex: i,
+            chapterIndex: index,
+            chapter: volume.chapters[index] || null,
+          };
+        }
+      }
+    }
+    return { sourceVolumeIndex: -1, chapterIndex: -1, chapter: null };
   }
 
   /**
