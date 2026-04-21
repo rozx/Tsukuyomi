@@ -34,7 +34,7 @@ export function useAutoSync() {
     }
 
     // 使用同步锁防止并发同步（双重检查）
-    if (syncLock || settingsStore.isSyncing) {
+    if (syncLock || settingsStore.isSyncing || settingsStore.isRestoringSyncSnapshot) {
       console.warn('[useAutoSync] 同步已在进行中，跳过此次自动同步');
       return;
     }

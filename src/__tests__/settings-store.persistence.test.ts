@@ -1,6 +1,7 @@
 import './setup';
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { createPinia, setActivePinia } from 'pinia';
+import { EmbeddingQueue } from 'src/services/embedding-queue';
 
 /**
  * 这里用 mock DB 来测试：当 localStorage 被迁移逻辑清空后，
@@ -18,6 +19,12 @@ describe('settings store persistence (taskDefaultModels)', () => {
   beforeEach(() => {
     localStorage.clear();
     setActivePinia(createPinia());
+    EmbeddingQueue.__resetForTesting();
+  });
+
+  afterEach(() => {
+    EmbeddingQueue.__resetForTesting();
+    mock.restore();
   });
 
   it('当 localStorage 为空但 IndexedDB 已存在 settings 时，loadSettings() 不应丢失 taskDefaultModels', async () => {
@@ -91,5 +98,23 @@ describe('settings store persistence (taskDefaultModels)', () => {
 
     expect(settingsStore.settings.proxyEnabled).toBe(false);
     expect((settingsStore.settings as AnyRecord).syncs).toBeUndefined();
+  });
+
+  it('importSettings() 更新 enableSemantic 时应联动 EmbeddingQueue', async () => {
+    const settingsStore = useSettingsStore();
+    const pauseSpy = spyOn(EmbeddingQueue, 'pause').mockImplementation(() => {});
+
+    await settingsStore.importSettings({
+      memoryInjection: {
+        charBudget: 2000,
+        enableSemantic: false,
+        minScoreThreshold: 0.3,
+        hasSeenIntro: false,
+        embeddingModelCached: false,
+      },
+    });
+
+    expect(settingsStore.settings.memoryInjection?.enableSemantic).toBe(false);
+    expect(pauseSpy).toHaveBeenCalledTimes(1);
   });
 });

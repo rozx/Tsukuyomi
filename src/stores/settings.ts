@@ -560,6 +560,8 @@ export const useSettingsStore = defineStore('settings', {
      * 注意：syncs 配置不在此处处理，由同步逻辑单独处理
      */
     async importSettings(settings: Partial<AppSettings> & { syncs?: SyncConfig[] }): Promise<void> {
+      const previousEnableSemantic = this.settings.memoryInjection?.enableSemantic;
+
       // 处理 lastEdited：如果导入的设置包含 lastEdited，转换为 Date 对象并保留它
       let preservedLastEdited: Date | undefined;
       if (settings.lastEdited) {
@@ -618,6 +620,10 @@ export const useSettingsStore = defineStore('settings', {
 
       this.settings = finalSettings;
       await saveSettingsToDB(this.settings);
+      await applyMemoryInjectionSemanticSideEffect(
+        previousEnableSemantic,
+        this.settings.memoryInjection?.enableSemantic,
+      );
       await Promise.resolve();
     },
 
@@ -629,15 +635,15 @@ export const useSettingsStore = defineStore('settings', {
      * 仍需保留设备本地状态：
      * - memoryInjection.embeddingModelCached
      */
-    async replaceSettingsFromSyncSnapshot(
-      settings: Partial<AppSettings> & { syncs?: SyncConfig[] },
-    ): Promise<void> {
+    async replaceSettingsFromSyncSnapshot(settings: Partial<AppSettings>): Promise<void> {
       const previousEnableSemantic = this.settings.memoryInjection?.enableSemantic;
       const localEmbeddingModelCached =
         this.settings.memoryInjection?.embeddingModelCached ??
         DEFAULT_MEMORY_INJECTION.embeddingModelCached;
 
-      const { syncs: _syncs, ...snapshotSettings } = settings;
+      const { syncs: _syncs, ...snapshotSettings } = settings as Partial<AppSettings> & {
+        syncs?: SyncConfig[];
+      };
       const normalized = normalizeLoadedSettings(snapshotSettings);
 
       // normalizeLoadedSettings 会始终补齐 memoryInjection 默认值，这里直接覆盖设备本地缓存状态。
