@@ -1584,6 +1584,26 @@ export class ChapterService {
   }
 
   /**
+   * 向前跨卷 + 针对新章节执行一次 onChapter 动作（可同步可异步）。
+   * 动作完成后会重算 state.pIdx（兼容 onChapter 把 undefined 的 content 填成 []）。
+   *
+   * 用于统一 getPreviousParagraphsAsync 两遍扫描里 cIdx<0 / pIdx<0 跨卷分支的「jumpToPrev + 动作 + pIdx 重算」样板。
+   */
+  private static async crossToPrevVolumeWithAction(
+    state: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+    onChapter: (chapter: Chapter) => void | Promise<void>,
+  ): Promise<{ done: boolean }> {
+    const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+    if (step.done) return { done: true };
+    if (step.chapter) {
+      await onChapter(step.chapter);
+      state.pIdx = ChapterService.lastParagraphIndexOf(step.chapter);
+    }
+    return { done: false };
+  }
+
+  /**
    * 获取指定段落之前的 x 个段落（异步版本，按需加载章节内容，使用批量加载优化）
    * @param novel 小说对象
    * @param paragraphId 段落 ID
@@ -1621,6 +1641,13 @@ export class ChapterService {
     let pIdx = paragraphIndex;
     let collected = 0;
 
+    // pass 1 共用动作：首次进入章节时收集到待加载集合，并累加 collected。
+    const collectOnce = (chapter: Chapter, vi: number, ci: number): void => {
+      if (ChapterService.collectChapterForLoad(chapter, vi, ci, chaptersToLoad, chapterMap)) {
+        collected++;
+      }
+    };
+
     while (collected < count * 2 && vIdx >= 0) {
       // 限制收集的章节数量，避免加载过多
       const volume = novel.volumes[vIdx];
@@ -1636,22 +1663,13 @@ export class ChapterService {
 
       if (cIdx < 0) {
         const state = { vIdx, cIdx, pIdx };
-        const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+        const { done } = await ChapterService.crossToPrevVolumeWithAction(
+          state,
+          novel,
+          (ch) => collectOnce(ch, state.vIdx, state.cIdx),
+        );
         ({ vIdx, cIdx, pIdx } = state);
-        if (step.done) break;
-        if (step.chapter) {
-          if (
-            ChapterService.collectChapterForLoad(
-              step.chapter,
-              vIdx,
-              cIdx,
-              chaptersToLoad,
-              chapterMap,
-            )
-          ) {
-            collected++;
-          }
-        }
+        if (done) break;
         continue;
       }
 
@@ -1662,37 +1680,24 @@ export class ChapterService {
         continue;
       }
 
-      if (ChapterService.collectChapterForLoad(chapter, vIdx, cIdx, chaptersToLoad, chapterMap)) {
-        collected++;
-      }
+      collectOnce(chapter, vIdx, cIdx);
 
       if (pIdx < 0) {
         cIdx--;
         if (cIdx < 0) {
           const state = { vIdx, cIdx, pIdx };
-          const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+          const { done } = await ChapterService.crossToPrevVolumeWithAction(
+            state,
+            novel,
+            (ch) => collectOnce(ch, state.vIdx, state.cIdx),
+          );
           ({ vIdx, cIdx, pIdx } = state);
-          if (step.done) break;
-          if (step.chapter) {
-            if (
-              ChapterService.collectChapterForLoad(
-                step.chapter,
-                vIdx,
-                cIdx,
-                chaptersToLoad,
-                chapterMap,
-              )
-            ) {
-              collected++;
-            }
-          }
+          if (done) break;
           continue;
         }
         const prevChapter = volume.chapters[cIdx];
-        if (
-          ChapterService.collectChapterForLoad(prevChapter, vIdx, cIdx, chaptersToLoad, chapterMap)
-        ) {
-          collected++;
+        if (prevChapter) {
+          collectOnce(prevChapter, vIdx, cIdx);
         }
         pIdx = ChapterService.lastParagraphIndexOf(prevChapter);
         continue;
@@ -1709,6 +1714,10 @@ export class ChapterService {
     cIdx = chapterIndex;
     pIdx = paragraphIndex;
 
+    // pass 2 共用动作：首次进入章节时按需加载。
+    const loadOnce = (chapter: Chapter): Promise<void> =>
+      ChapterService.ensureChapterLoaded(chapter);
+
     while (results.length < count && vIdx >= 0) {
       const volume = novel.volumes[vIdx];
       if (!volume || !volume.chapters) {
@@ -1723,15 +1732,9 @@ export class ChapterService {
 
       if (cIdx < 0) {
         const state = { vIdx, cIdx, pIdx };
-        const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+        const { done } = await ChapterService.crossToPrevVolumeWithAction(state, novel, loadOnce);
         ({ vIdx, cIdx, pIdx } = state);
-        if (step.done) break;
-        if (step.chapter) {
-          // 如果仍未加载，按需加载
-          await ChapterService.ensureChapterLoaded(step.chapter);
-          // ensureChapterLoaded 可能把 content 从 undefined 变为 []，重新计算 pIdx 以兼容空章节
-          pIdx = ChapterService.lastParagraphIndexOf(step.chapter);
-        }
+        if (done) break;
         continue;
       }
 
@@ -1755,13 +1758,9 @@ export class ChapterService {
         cIdx--;
         if (cIdx < 0) {
           const state = { vIdx, cIdx, pIdx };
-          const step = ChapterService.jumpToPrevVolumeLastChapter(state, novel);
+          const { done } = await ChapterService.crossToPrevVolumeWithAction(state, novel, loadOnce);
           ({ vIdx, cIdx, pIdx } = state);
-          if (step.done) break;
-          if (step.chapter) {
-            await ChapterService.ensureChapterLoaded(step.chapter);
-            pIdx = ChapterService.lastParagraphIndexOf(step.chapter);
-          }
+          if (done) break;
           continue;
         }
         const prevChapter = volume.chapters[cIdx];
