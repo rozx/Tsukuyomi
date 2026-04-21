@@ -107,21 +107,43 @@ export interface TextTaskOptions {
 /**
  * 从服务层 options（PolishServiceOptions / ProofreadingServiceOptions / TranslationServiceOptions）
  * 提取 processTextTask 需要的 TextTaskOptions 字段。
+ *
+ * 用集中的 TEXT_TASK_OPTION_KEYS + 编译期穷尽检查，避免 TextTaskOptions 新增字段时此处
+ * 被遗忘导致静默丢字段。
  */
+const TEXT_TASK_OPTION_KEYS = [
+  'onChunk',
+  'onProgress',
+  'onAction',
+  'onToast',
+  'signal',
+  'bookId',
+  'chapterId',
+  'chapterTitle',
+  'chunkSize',
+  'allChapterParagraphs',
+  'aiProcessingStore',
+] as const satisfies ReadonlyArray<keyof TextTaskOptions>;
+
+// 编译期检查：若 TextTaskOptions 新增键但忘了加到上面的数组，这里就会报错
+type _MissingTextTaskOptionKey = Exclude<
+  keyof TextTaskOptions,
+  (typeof TEXT_TASK_OPTION_KEYS)[number]
+>;
+// fallow-ignore-next-line unused-export
+const _textTaskOptionsExhaustive: [_MissingTextTaskOptionKey] extends [never] ? true : never = true;
+void _textTaskOptionsExhaustive;
+
 export function pickTextTaskOptions(options: TextTaskOptions | undefined): TextTaskOptions {
-  return {
-    onChunk: options?.onChunk,
-    onProgress: options?.onProgress,
-    onAction: options?.onAction,
-    onToast: options?.onToast,
-    signal: options?.signal,
-    bookId: options?.bookId,
-    chapterId: options?.chapterId,
-    chapterTitle: options?.chapterTitle,
-    chunkSize: options?.chunkSize,
-    allChapterParagraphs: options?.allChapterParagraphs,
-    aiProcessingStore: options?.aiProcessingStore,
-  };
+  if (!options) return {};
+  const picked: TextTaskOptions = {};
+  for (const key of TEXT_TASK_OPTION_KEYS) {
+    if (key in options) {
+      // 保留 exactOptionalPropertyTypes 下的"仅在存在时赋值"语义
+      (picked as Record<string, unknown>)[key] = options[key];
+    }
+  }
+  return picked;
 }
 
 /**
@@ -1103,9 +1125,10 @@ async function processSingleChunk(
     logLabel: ctx.logLabel,
   });
 
+  // 最多允许 maxRetries 次降级重试。handleChunkError 会在非降级错误或重试用完时抛出，
+  // 所以正常情况下不会走到循环末尾——保留 while 的显式上界让退出条件一目了然。
   let retryCount = 0;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  while (retryCount <= ctx.maxRetries) {
     try {
       if (retryCount > 0) {
         prepareChunkRetry({
@@ -1159,6 +1182,8 @@ async function processSingleChunk(
       });
     }
   }
+  // 防御性兜底：handleChunkError 应当已经抛出，这里仅为 TS 控制流
+  throw new Error(`${ctx.taskLabel}任务重试 ${ctx.maxRetries} 次后仍未完成`);
 }
 
 /**
