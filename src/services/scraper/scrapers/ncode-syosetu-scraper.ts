@@ -5,6 +5,16 @@ import { BaseScraper } from '../core';
 import { extractParagraphText, extractTextWithFormatting } from '../core/cheerio-text-extract';
 
 /**
+ * 将 eplist 中的章节 href 解析为完整 URL。支持绝对 / 根相对 / 相对路径三种形式。
+ */
+function resolveEplistHref(href: string, baseUrl: string): string {
+  if (href.startsWith('http')) return href;
+  const baseUrlObj = new URL(baseUrl);
+  if (href.startsWith('/')) return `${baseUrlObj.origin}${href}`;
+  return new URL(href, baseUrlObj.href).href;
+}
+
+/**
  * ncode.syosetu.com 小说爬虫服务
  * 用于从 ncode.syosetu.com 获取和解析小说信息
  * 注意：ncode.syosetu.com 和 syosetu.org 是两个不同的网站
@@ -388,99 +398,25 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
 
       allElements.each((_, element) => {
         const $el = $(element);
-
-        // 检查是否是卷标题
         if ($el.hasClass('p-eplist__chapter-title')) {
           const volumeTitle = $el.text().trim();
-          if (volumeTitle) {
-            // 保存当前卷的信息（如果有的话）
-            if (currentVolumeTitle !== null) {
-              volumeInfo.push({
-                title: currentVolumeTitle,
-                startIndex: currentVolumeStartIndex,
-              });
-            }
-            // 设置新的当前卷标题和起始索引
-            currentVolumeTitle = volumeTitle;
-            currentVolumeStartIndex = chapterIndex;
+          if (!volumeTitle) return;
+          // 保存前一卷信息并切换到新卷
+          if (currentVolumeTitle !== null) {
+            volumeInfo.push({
+              title: currentVolumeTitle,
+              startIndex: currentVolumeStartIndex,
+            });
           }
+          currentVolumeTitle = volumeTitle;
+          currentVolumeStartIndex = chapterIndex;
+          return;
         }
-        // 检查是否是章节容器
-        else if ($el.hasClass('p-eplist__sublist')) {
-          // 查找章节链接
-          const chapterLink = $el.find('a.p-eplist__subtitle').first();
-          if (chapterLink.length > 0) {
-            const href = chapterLink.prop('href') || chapterLink.attr('href');
-            const chapterTitle = chapterLink.text().trim();
-
-            if (href && chapterTitle) {
-              // 构建完整 URL
-              let fullUrl: string;
-              if (href.startsWith('http')) {
-                fullUrl = href;
-              } else if (href.startsWith('/')) {
-                const baseUrlObj = new URL(baseUrl);
-                fullUrl = `${baseUrlObj.origin}${href}`;
-              } else {
-                const baseUrlObj = new URL(baseUrl);
-                fullUrl = new URL(href, baseUrlObj.href).href;
-              }
-
-              // 验证 URL 是否包含章节 ID（数字），并提供宽松的回退规则
-              const novelId = this.extractNovelId(baseUrl);
-              let accept = false;
-              try {
-                const u = new URL(fullUrl);
-                const path = u.pathname;
-                if (/\/\d+\/?$/.test(path)) accept = true;
-                if (!accept && novelId && path.includes(`/${novelId}/`)) accept = true;
-              } catch {
-                // 如果 URL 解析失败，保守接受
-                accept = true;
-              }
-
-              if (accept) {
-                // 提取日期信息
-                let date: string | Date | undefined;
-                let lastUpdated: string | Date | undefined;
-                const dateElement = $el.find('.p-eplist__update');
-                if (dateElement.length > 0) {
-                  // 首先尝试从 span[title] 中获取改稿日期
-                  const updateSpan = dateElement.find('span[title*="/"]');
-                  if (updateSpan.length > 0) {
-                    const dateTitle = updateSpan.attr('title');
-                    if (dateTitle) {
-                      // 提取日期部分（格式：YYYY/MM/DD HH:mm 改稿）
-                      const cleanedDate = dateTitle.replace(/改稿|^\s+|\s+$/g, '').trim();
-                      const parsedDate = this.parseDateString(cleanedDate);
-                      lastUpdated = parsedDate || cleanedDate;
-                    }
-                  }
-
-                  // 从文本中提取原始日期
-                  // 移除 span 标签后获取日期文本
-                  const dateText = dateElement.clone().find('span').remove().end().text().trim();
-                  if (dateText && dateText.match(/\d{4}\/\d{1,2}\/\d{1,2}/)) {
-                    const parsedDate = this.parseDateString(dateText);
-                    date = parsedDate || dateText;
-                    // 如果没有找到改稿日期，使用原始日期作为 lastUpdated
-                    if (!lastUpdated) {
-                      lastUpdated = parsedDate || dateText;
-                    }
-                  }
-                }
-
-                this.appendParsedChapter<string | Date, ParsedChapterInfo>(chapters, {
-                  title: chapterTitle,
-                  url: fullUrl,
-                  date,
-                  lastUpdated,
-                });
-                chapterIndex++;
-              }
-            }
-          }
-        }
+        if (!$el.hasClass('p-eplist__sublist')) return;
+        const parsed = this.parseEplistSublistItem($el, baseUrl);
+        if (!parsed) return;
+        chapters.push(parsed);
+        chapterIndex++;
       });
 
       // 保存最后一个卷的信息
@@ -501,6 +437,86 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
     }
 
     return { chapters, volumes: volumeInfo };
+  }
+
+  /**
+   * 解析单个 `.p-eplist__sublist` 元素，返回对应的 ParsedChapterInfo；
+   * 若缺链接 / 标题 / URL 校验失败则返回 null。
+   */
+  protected parseEplistSublistItem(
+    $el: cheerio.Cheerio<any>,
+    baseUrl: string,
+  ): ParsedChapterInfo | null {
+    const chapterLink = $el.find('a.p-eplist__subtitle').first();
+    if (chapterLink.length === 0) return null;
+    const href = chapterLink.prop('href') || chapterLink.attr('href');
+    const chapterTitle = chapterLink.text().trim();
+    if (!href || !chapterTitle) return null;
+
+    const fullUrl = resolveEplistHref(String(href), baseUrl);
+    if (!this.isValidChapterUrl(fullUrl, baseUrl)) return null;
+
+    const chapter: ParsedChapterInfo = { title: chapterTitle, url: fullUrl };
+    const dateInfo = this.extractEplistDates($el);
+    if (dateInfo.date) chapter.date = dateInfo.date;
+    if (dateInfo.lastUpdated) chapter.lastUpdated = dateInfo.lastUpdated;
+    return chapter;
+  }
+
+  /**
+   * 对解析后的章节 URL 做宽松校验：URL 解析失败时保守接受。
+   */
+  protected isValidChapterUrl(fullUrl: string, baseUrl: string): boolean {
+    const novelId = this.extractNovelId(baseUrl);
+    try {
+      const u = new URL(fullUrl);
+      const path = u.pathname;
+      if (/\/\d+\/?$/.test(path)) return true;
+      if (novelId && path.includes(`/${novelId}/`)) return true;
+      return false;
+    } catch {
+      // 解析失败则保守接受
+      return true;
+    }
+  }
+
+  /**
+   * 从 `.p-eplist__update` 提取 date 与 lastUpdated（优先采用 span[title] 的改稿日期）。
+   */
+  protected extractEplistDates(
+    $el: cheerio.Cheerio<any>,
+  ): { date?: string | Date; lastUpdated?: string | Date } {
+    const dateElement = $el.find('.p-eplist__update');
+    if (dateElement.length === 0) return {};
+
+    let date: string | Date | undefined;
+    let lastUpdated: string | Date | undefined;
+
+    const updateSpan = dateElement.find('span[title*="/"]');
+    if (updateSpan.length > 0) {
+      const dateTitle = updateSpan.attr('title');
+      if (dateTitle) {
+        // 提取日期部分（格式：YYYY/MM/DD HH:mm 改稿）
+        const cleanedDate = dateTitle.replace(/改稿|^\s+|\s+$/g, '').trim();
+        const parsedDate = this.parseDateString(cleanedDate);
+        lastUpdated = parsedDate || cleanedDate;
+      }
+    }
+
+    // 从文本中提取原始日期（移除 span 后）
+    const dateText = dateElement.clone().find('span').remove().end().text().trim();
+    if (dateText && dateText.match(/\d{4}\/\d{1,2}\/\d{1,2}/)) {
+      const parsedDate = this.parseDateString(dateText);
+      date = parsedDate || dateText;
+      if (!lastUpdated) {
+        lastUpdated = parsedDate || dateText;
+      }
+    }
+
+    const result: { date?: string | Date; lastUpdated?: string | Date } = {};
+    if (date) result.date = date;
+    if (lastUpdated) result.lastUpdated = lastUpdated;
+    return result;
   }
 
   /**

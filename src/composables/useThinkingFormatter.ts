@@ -186,101 +186,16 @@ export function formatThinkingMessage(
   if (!message) return [];
 
   const parts: FormattedMessagePart[] = [];
-  let currentIndex = 0;
-
-  const allMatches: Array<{
-    index: number;
-    type: 'chunk-separator' | 'state-transition' | 'tool-call' | 'tool-call-args' | 'tool-result';
-    match: RegExpMatchArray;
-  }> = [];
-
-  let match;
-  while ((match = CHUNK_SEPARATOR_PATTERN.exec(message)) !== null) {
-    allMatches.push({ index: match.index, type: 'chunk-separator', match });
-  }
-  CHUNK_SEPARATOR_PATTERN.lastIndex = 0;
-
-  while ((match = STATE_TRANSITION_PATTERN.exec(message)) !== null) {
-    allMatches.push({ index: match.index, type: 'state-transition', match });
-  }
-  STATE_TRANSITION_PATTERN.lastIndex = 0;
-
-  while ((match = TOOL_CALL_PATTERN.exec(message)) !== null) {
-    allMatches.push({ index: match.index, type: 'tool-call', match });
-  }
-  TOOL_CALL_PATTERN.lastIndex = 0;
-
-  for (const m of extractBracketBalancedMarkerMatches(message, TOOL_CALL_ARGS_PREFIX)) {
-    const syntheticMatch = [m.fullText, m.content] as unknown as RegExpMatchArray;
-    allMatches.push({ index: m.index, type: 'tool-call-args', match: syntheticMatch });
-  }
-
-  for (const m of extractBracketBalancedMarkerMatches(message, '[工具结果: ')) {
-    const syntheticMatch = [m.fullText, m.content] as unknown as RegExpMatchArray;
-    allMatches.push({ index: m.index, type: 'tool-result', match: syntheticMatch });
-  }
-
-  allMatches.sort((a, b) => a.index - b.index);
-
+  const allMatches = collectThinkingMarkerMatches(message);
   const pendingToolCallPartIndexes: number[] = [];
+  let currentIndex = 0;
 
   for (const { index, type, match: m } of allMatches) {
     if (index > currentIndex) {
       const text = message.slice(currentIndex, index).trim();
       if (text) parts.push({ type: 'content', text });
     }
-
-    if (type === 'chunk-separator') {
-      parts.push({
-        type: 'chunk-separator',
-        text: m[0],
-        chunkInfo: `${m[1]}块 ${m[2]}`,
-      });
-    } else if (type === 'state-transition') {
-      if (m[1] && m[2]) {
-        parts.push({
-          type: 'state-transition',
-          text: m[0],
-          fromStatus: m[1],
-          toStatus: m[2],
-        });
-      }
-    } else if (type === 'tool-call') {
-      if (m[1]) {
-        parts.push({ type: 'tool-call', text: m[0], toolName: m[1], toolCallTone: 'running' });
-        pendingToolCallPartIndexes.push(parts.length - 1);
-      }
-    } else if (type === 'tool-call-args') {
-      if (m[1] !== undefined) {
-        const lastIdx = pendingToolCallPartIndexes[pendingToolCallPartIndexes.length - 1];
-        if (lastIdx !== undefined) {
-          const toolCallPart = parts[lastIdx];
-          if (toolCallPart?.type === 'tool-call') {
-            toolCallPart.toolCallArgs = formatToolResultTooltip(m[1]);
-          }
-        }
-      }
-    } else if (type === 'tool-result') {
-      if (m[1]) {
-        const tone = detectToolResultTone(m[1]);
-        const toolCallTone = mapToolResultToneToToolCallTone(tone);
-        const matchedIdx = pendingToolCallPartIndexes.shift();
-        if (matchedIdx !== undefined) {
-          const matchedPart = parts[matchedIdx];
-          if (matchedPart?.type === 'tool-call') {
-            matchedPart.toolCallTone = toolCallTone;
-          }
-        }
-        parts.push({
-          type: 'tool-result',
-          text: m[0],
-          toolName: formatToolResultPreview(m[1]),
-          toolResult: formatToolResultTooltip(m[1]),
-          toolResultTone: tone,
-        });
-      }
-    }
-
+    applyThinkingMatchToParts(type, m, parts, pendingToolCallPartIndexes);
     currentIndex = index + m[0].length;
   }
 
@@ -293,19 +208,129 @@ export function formatThinkingMessage(
     parts.push({ type: 'content', text: message });
   }
 
-  if (pendingToolCallPartIndexes.length > 0) {
-    const fallbackTone: ToolCallTone =
-      taskStatus === 'cancelled' ? 'cancelled'
-        : taskStatus === 'error' ? 'error'
-          : taskStatus === 'end' ? 'success'
-            : 'running';
-    for (const idx of pendingToolCallPartIndexes) {
-      const p = parts[idx];
-      if (p?.type === 'tool-call') p.toolCallTone = fallbackTone;
-    }
+  applyFallbackToneToPendingToolCalls(parts, pendingToolCallPartIndexes, taskStatus);
+  return parts;
+}
+
+type ThinkingMatchType =
+  | 'chunk-separator'
+  | 'state-transition'
+  | 'tool-call'
+  | 'tool-call-args'
+  | 'tool-result';
+
+interface ThinkingMatch {
+  index: number;
+  type: ThinkingMatchType;
+  match: RegExpMatchArray;
+}
+
+/** 将 regex 全局扫描的结果按出现位置收集到数组（对正则 lastIndex 做幂等重置） */
+function collectGlobalRegexMatches(
+  message: string,
+  pattern: RegExp,
+  type: ThinkingMatchType,
+  out: ThinkingMatch[],
+): void {
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(message)) !== null) {
+    out.push({ index: match.index, type, match });
+  }
+  pattern.lastIndex = 0;
+}
+
+/** 汇总所有 thinking marker 的匹配并按 index 升序排序 */
+function collectThinkingMarkerMatches(message: string): ThinkingMatch[] {
+  const allMatches: ThinkingMatch[] = [];
+  collectGlobalRegexMatches(message, CHUNK_SEPARATOR_PATTERN, 'chunk-separator', allMatches);
+  collectGlobalRegexMatches(message, STATE_TRANSITION_PATTERN, 'state-transition', allMatches);
+  collectGlobalRegexMatches(message, TOOL_CALL_PATTERN, 'tool-call', allMatches);
+
+  for (const m of extractBracketBalancedMarkerMatches(message, TOOL_CALL_ARGS_PREFIX)) {
+    const syntheticMatch = [m.fullText, m.content] as unknown as RegExpMatchArray;
+    allMatches.push({ index: m.index, type: 'tool-call-args', match: syntheticMatch });
+  }
+  for (const m of extractBracketBalancedMarkerMatches(message, '[工具结果: ')) {
+    const syntheticMatch = [m.fullText, m.content] as unknown as RegExpMatchArray;
+    allMatches.push({ index: m.index, type: 'tool-result', match: syntheticMatch });
   }
 
-  return parts;
+  allMatches.sort((a, b) => a.index - b.index);
+  return allMatches;
+}
+
+/** 将单个 match 应用到 parts（根据 type 分派到对应 part 构造 / 关联逻辑） */
+function applyThinkingMatchToParts(
+  type: ThinkingMatchType,
+  m: RegExpMatchArray,
+  parts: FormattedMessagePart[],
+  pendingToolCallPartIndexes: number[],
+): void {
+  if (type === 'chunk-separator') {
+    parts.push({ type: 'chunk-separator', text: m[0], chunkInfo: `${m[1]}块 ${m[2]}` });
+    return;
+  }
+  if (type === 'state-transition') {
+    if (m[1] && m[2]) {
+      parts.push({ type: 'state-transition', text: m[0], fromStatus: m[1], toStatus: m[2] });
+    }
+    return;
+  }
+  if (type === 'tool-call') {
+    if (m[1]) {
+      parts.push({ type: 'tool-call', text: m[0], toolName: m[1], toolCallTone: 'running' });
+      pendingToolCallPartIndexes.push(parts.length - 1);
+    }
+    return;
+  }
+  if (type === 'tool-call-args') {
+    if (m[1] === undefined) return;
+    const lastIdx = pendingToolCallPartIndexes[pendingToolCallPartIndexes.length - 1];
+    if (lastIdx === undefined) return;
+    const toolCallPart = parts[lastIdx];
+    if (toolCallPart?.type === 'tool-call') {
+      toolCallPart.toolCallArgs = formatToolResultTooltip(m[1]);
+    }
+    return;
+  }
+  // type === 'tool-result'
+  if (!m[1]) return;
+  const tone = detectToolResultTone(m[1]);
+  const toolCallTone = mapToolResultToneToToolCallTone(tone);
+  const matchedIdx = pendingToolCallPartIndexes.shift();
+  if (matchedIdx !== undefined) {
+    const matchedPart = parts[matchedIdx];
+    if (matchedPart?.type === 'tool-call') matchedPart.toolCallTone = toolCallTone;
+  }
+  parts.push({
+    type: 'tool-result',
+    text: m[0],
+    toolName: formatToolResultPreview(m[1]),
+    toolResult: formatToolResultTooltip(m[1]),
+    toolResultTone: tone,
+  });
+}
+
+/** 根据 taskStatus 选择回退 tone */
+function pickFallbackTone(taskStatus: AIProcessingTask['status'] | undefined): ToolCallTone {
+  if (taskStatus === 'cancelled') return 'cancelled';
+  if (taskStatus === 'error') return 'error';
+  if (taskStatus === 'end') return 'success';
+  return 'running';
+}
+
+/** 消息解析结束后，给未闭合的 tool-call 套上 fallback tone */
+function applyFallbackToneToPendingToolCalls(
+  parts: FormattedMessagePart[],
+  pendingToolCallPartIndexes: number[],
+  taskStatus: AIProcessingTask['status'] | undefined,
+): void {
+  if (pendingToolCallPartIndexes.length === 0) return;
+  const fallbackTone = pickFallbackTone(taskStatus);
+  for (const idx of pendingToolCallPartIndexes) {
+    const p = parts[idx];
+    if (p?.type === 'tool-call') p.toolCallTone = fallbackTone;
+  }
 }
 
 // ─── 增量解析快速路径（纯函数，可独立测试）───

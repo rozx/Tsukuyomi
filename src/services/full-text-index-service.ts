@@ -1,10 +1,9 @@
 import Fuse from 'fuse.js';
 import { getDB } from 'src/utils/indexed-db';
 import { loadChapterContent } from 'src/utils/chapter-content-loader';
-import type { Novel, Chapter } from 'src/models/novel';
+import type { Novel, Chapter, Paragraph } from 'src/models/novel';
 import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 import { findChapterById } from 'src/utils/novel-utils';
-import { hasNonEmptyTranslation } from 'src/utils/text-utils';
 
 /**
  * 索引文档结构
@@ -47,6 +46,101 @@ export interface SearchOptions {
    * 这会导致返回的对象与 UI/store 中的对象不是同一引用，进而引发“修改后保存没生效”的问题。
    */
   novel?: Novel;
+}
+
+/**
+ * 对每个 keyword 分别用 Fuse.js 搜索（OR 语义），去重后按分值升序排序。
+ */
+function runFuseKeywordSearch(
+  fuse: Fuse<IndexDocument>,
+  keywords: string[],
+  maxResults: number,
+): Array<{ item: IndexDocument; score?: number }> {
+  const all: Array<{ item: IndexDocument; score?: number }> = [];
+  const seen = new Set<string>();
+  for (const keyword of keywords) {
+    const kwResults = fuse.search(keyword, { limit: maxResults * 2 });
+    for (const result of kwResults) {
+      if (seen.has(result.item.paragraphId)) continue;
+      seen.add(result.item.paragraphId);
+      all.push(result);
+    }
+  }
+  return all.sort((a, b) => (a.score ?? 1) - (b.score ?? 1));
+}
+
+/**
+ * Fuse.js 也会扫章节标题，因此需要按选项进一步验证匹配落在原文 / 翻译中（而非仅标题）。
+ */
+function keywordMatchesDocScope(
+  doc: IndexDocument,
+  keywords: string[],
+  searchInOriginal: boolean,
+  searchInTranslations: boolean,
+): boolean {
+  const inOriginal = (): boolean =>
+    keywords.some((kw) => doc.originalText.toLowerCase().includes(kw.toLowerCase()));
+  const inTranslations = (): boolean =>
+    doc.translations.some((t) =>
+      keywords.some((kw) => t.toLowerCase().includes(kw.toLowerCase())),
+    );
+  if (searchInOriginal && searchInTranslations) return inOriginal() || inTranslations();
+  if (searchInOriginal) return inOriginal();
+  if (searchInTranslations) return inTranslations();
+  return false;
+}
+
+/** 段落是否至少有一个非空翻译 */
+function paragraphHasTranslation(paragraph: Paragraph): boolean {
+  return (
+    !!paragraph.translations &&
+    paragraph.translations.length > 0 &&
+    paragraph.translations.some((t) => !!t.translation && t.translation.trim().length > 0)
+  );
+}
+
+/**
+ * 从索引文档还原 ParagraphSearchResult。先按 index 快速定位，ID 不一致时按 ID 再查找；
+ * 按需加载章节内容；最终返回 null 表示应跳过。
+ */
+async function locateParagraphFromDoc(
+  novel: Novel,
+  doc: IndexDocument,
+): Promise<ParagraphSearchResult | null> {
+  let volume = novel.volumes![doc.volumeIndex];
+  let chapter: Chapter | undefined = volume?.chapters?.[doc.chapterIndex];
+  if (!chapter || chapter.id !== doc.chapterId) {
+    const chapterLocation = findChapterById(novel, doc.chapterId);
+    if (!chapterLocation) return null;
+    volume = chapterLocation.volume;
+    chapter = chapterLocation.chapter;
+  }
+  if (!volume || !chapter) return null;
+
+  if (chapter.content === undefined) {
+    const content = await loadChapterContent(chapter.id);
+    chapter.content = content || [];
+    chapter.contentLoaded = true;
+  }
+  if (!chapter.content) return null;
+
+  let paragraphIndex = doc.paragraphIndex;
+  let paragraph = chapter.content[paragraphIndex];
+  if (!paragraph || paragraph.id !== doc.paragraphId) {
+    const idx = chapter.content.findIndex((p) => p?.id === doc.paragraphId);
+    if (idx < 0) return null;
+    paragraphIndex = idx;
+    paragraph = chapter.content[paragraphIndex];
+    if (!paragraph) return null;
+  }
+  return {
+    paragraph,
+    paragraphIndex,
+    chapter,
+    chapterIndex: volume.chapters ? volume.chapters.indexOf(chapter) : doc.chapterIndex,
+    volume,
+    volumeIndex: novel.volumes!.indexOf(volume),
+  };
 }
 
 /**
@@ -325,9 +419,7 @@ export class FullTextIndexService {
       novel: novelOverride,
     } = options;
 
-    if (keywords.length === 0) {
-      return [];
-    }
+    if (keywords.length === 0) return [];
 
     // 加载索引（若不存在，传入 novelOverride 以供就地构建）
     const fuse = await this.loadIndex(bookId, novelOverride);
@@ -336,139 +428,25 @@ export class FullTextIndexService {
       return [];
     }
 
-    // 对每个关键词分别搜索（OR 逻辑），然后合并结果
-    const allSearchResults: Array<{ item: IndexDocument; score?: number }> = [];
-    const seenParagraphIds = new Set<string>();
-
-    for (const keyword of keywords) {
-      const keywordResults = fuse.search(keyword, {
-        limit: maxResults * 2, // 获取更多结果以便过滤
-      });
-
-      for (const result of keywordResults) {
-        // 去重：使用段落 ID
-        if (!seenParagraphIds.has(result.item.paragraphId)) {
-          seenParagraphIds.add(result.item.paragraphId);
-          allSearchResults.push(result);
-        }
-      }
-    }
-
-    // 按分数排序（如果有）
-    const searchResults = allSearchResults.sort((a, b) => {
-      const scoreA = a.score ?? 1;
-      const scoreB = b.score ?? 1;
-      return scoreA - scoreB; // 分数越低越好
-    });
-
-    // 转换为 ParagraphSearchResult
-    const results: ParagraphSearchResult[] = [];
+    const searchResults = runFuseKeywordSearch(fuse, keywords, maxResults);
     // novelOverride 应由调用方传入；若缺失则无法把索引匹配映射回具体段落/章节引用
-    if (!novelOverride || !novelOverride.volumes) {
-      return [];
-    }
-    // 重新绑定以保留 volumes 的非 undefined 窄化
-    const novel: Novel & { volumes: NonNullable<Novel['volumes']> } = novelOverride as Novel & {
-      volumes: NonNullable<Novel['volumes']>;
-    };
+    // (移除对 BookService.getBookById 的反向 lookup 是为了打破 ftis → book-service 的循环依赖)
+    if (!novelOverride || !novelOverride.volumes) return [];
+    const novel = novelOverride;
 
+    const results: ParagraphSearchResult[] = [];
     for (const result of searchResults) {
       const doc = result.item;
+      if (chapterId && doc.chapterId !== chapterId) continue;
+      if (!keywordMatchesDocScope(doc, keywords, searchInOriginal, searchInTranslations)) continue;
 
-      // 如果指定了章节 ID，只返回该章节的段落
-      if (chapterId && doc.chapterId !== chapterId) {
-        continue;
-      }
+      const located = await locateParagraphFromDoc(novel, doc);
+      if (!located) continue;
+      if (onlyWithTranslation && !paragraphHasTranslation(located.paragraph)) continue;
 
-      // 检查是否在原文或翻译中搜索
-      // Fuse.js 已经做了匹配，但我们需要根据 searchInOriginal 和 searchInTranslations 选项进一步过滤
-      // 注意：Fuse.js 也会搜索章节标题，所以我们需要验证匹配是否在段落内容中
-      let shouldInclude = false;
-
-      if (searchInOriginal && searchInTranslations) {
-        // 搜索两者，需要验证匹配是否在原文或翻译中（排除仅匹配章节标题的情况）
-        shouldInclude =
-          keywords.some((kw) => doc.originalText.toLowerCase().includes(kw.toLowerCase())) ||
-          doc.translations.some((t) =>
-            keywords.some((kw) => t.toLowerCase().includes(kw.toLowerCase())),
-          );
-      } else if (searchInOriginal) {
-        // 只在原文中搜索，检查原文是否匹配任一关键词
-        shouldInclude = keywords.some((kw) =>
-          doc.originalText.toLowerCase().includes(kw.toLowerCase()),
-        );
-      } else if (searchInTranslations) {
-        // 只在翻译中搜索，检查翻译是否匹配任一关键词
-        shouldInclude = doc.translations.some((t) =>
-          keywords.some((kw) => t.toLowerCase().includes(kw.toLowerCase())),
-        );
-      }
-
-      if (!shouldInclude) {
-        continue;
-      }
-
-      // 获取章节和段落对象
-      //
-      // 注意：索引里同时保存了 index（volumeIndex/chapterIndex/paragraphIndex）与 ID（chapterId/paragraphId）。
-      // 数据结构可能发生过移动（例如移动章节/段落、重建内容等），因此这里做校验与回退：
-      // - 先按 index 快速定位
-      // - 如果 ID 不匹配，则按 ID 查找正确位置
-      let volume = novel.volumes[doc.volumeIndex];
-      let chapter: Chapter | undefined = volume?.chapters?.[doc.chapterIndex];
-
-      if (!chapter || chapter.id !== doc.chapterId) {
-        const chapterLocation = findChapterById(novel, doc.chapterId);
-        if (!chapterLocation) {
-          continue;
-        }
-        volume = chapterLocation.volume;
-        chapter = chapterLocation.chapter;
-      }
-
-      if (!volume || !chapter) continue;
-
-      // 如果章节内容未加载，加载它（会写回到传入的 novel 引用中）
-      if (chapter.content === undefined) {
-        const content = await loadChapterContent(chapter.id);
-        chapter.content = content || [];
-        chapter.contentLoaded = true;
-      }
-
-      if (!chapter.content) continue;
-
-      // 段落定位：先用 index，再校验 ID，不匹配则回退按 ID 查找
-      let resolvedParagraphIndex = doc.paragraphIndex;
-      let paragraph = chapter.content[resolvedParagraphIndex];
-      if (!paragraph || paragraph.id !== doc.paragraphId) {
-        const idx = chapter.content.findIndex((p) => p?.id === doc.paragraphId);
-        if (idx < 0) {
-          continue;
-        }
-        resolvedParagraphIndex = idx;
-        paragraph = chapter.content[resolvedParagraphIndex];
-        if (!paragraph) continue;
-      }
-
-      // 如果要求只返回有翻译的段落，检查段落是否有翻译
-      if (onlyWithTranslation && !hasNonEmptyTranslation(paragraph)) {
-        continue;
-      }
-
-      results.push({
-        paragraph,
-        paragraphIndex: resolvedParagraphIndex,
-        chapter,
-        chapterIndex: volume.chapters ? volume.chapters.indexOf(chapter) : doc.chapterIndex,
-        volume,
-        volumeIndex: novel.volumes.indexOf(volume),
-      });
-
-      if (results.length >= maxResults) {
-        break;
-      }
+      results.push(located);
+      if (results.length >= maxResults) break;
     }
-
     return results;
   }
 

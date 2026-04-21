@@ -42,6 +42,105 @@ async function cleanupRemovedChapterData(
   await ChapterContentService.bulkDeleteChapterContent(removedChapterIds, { bookId });
 }
 
+/** 更新后的章节是否已携带完整内容（数组，含空数组），含则无需保留旧内容 */
+function chapterHasFreshContent(chapter: Chapter): boolean {
+  return (
+    chapter.content !== undefined &&
+    chapter.content !== null &&
+    Array.isArray(chapter.content)
+  );
+}
+
+/** 为现有卷构建 id→Volume 及 id→(id→Chapter) 的查找表，便于 O(1) 定位 */
+function buildExistingVolumeLookups(existingVolumes: Volume[]): {
+  volumes: Map<string, Volume>;
+  chaptersByVolume: Map<string, Map<string, Chapter>>;
+} {
+  const volumes = new Map<string, Volume>(existingVolumes.map((v) => [v.id, v]));
+  const chaptersByVolume = new Map<string, Map<string, Chapter>>();
+  for (const volume of existingVolumes) {
+    if (volume.chapters) {
+      chaptersByVolume.set(volume.id, new Map(volume.chapters.map((ch) => [ch.id, ch])));
+    }
+  }
+  return { volumes, chaptersByVolume };
+}
+
+/** 收集需要从 IndexedDB 批量加载内容的章节 ID（existing 未加载且 updated 没带新内容） */
+function collectChapterIdsNeedingContent(
+  updatedVolumes: Volume[],
+  chaptersByVolume: Map<string, Map<string, Chapter>>,
+): string[] {
+  const ids: string[] = [];
+  for (const updatedVolume of updatedVolumes) {
+    const volumeChaptersMap = chaptersByVolume.get(updatedVolume.id);
+    if (!volumeChaptersMap || !updatedVolume.chapters) continue;
+    for (const updatedChapter of updatedVolume.chapters) {
+      if (!updatedChapter) continue;
+      const existingChapter = volumeChaptersMap.get(updatedChapter.id);
+      if (!existingChapter) continue;
+      // 新章节 / 已带新内容 → 无需保留
+      if (chapterHasFreshContent(updatedChapter)) continue;
+      if (existingChapter.content === undefined) {
+        ids.push(updatedChapter.id);
+      }
+    }
+  }
+  return ids;
+}
+
+/** 按新卷结构重组，保留现有章节内容（若 updated 没带新内容） */
+function mergePreservedChapterContents(
+  updatedVolumes: Volume[],
+  chaptersByVolume: Map<string, Map<string, Chapter>>,
+  contentMap: Map<string, Paragraph[] | undefined>,
+): Volume[] {
+  return updatedVolumes.map((updatedVolume) => {
+    const volumeChaptersMap = chaptersByVolume.get(updatedVolume.id);
+    if (!volumeChaptersMap || !updatedVolume.chapters) return updatedVolume;
+    return {
+      ...updatedVolume,
+      chapters: updatedVolume.chapters.map((updatedChapter) => {
+        const existingChapter = volumeChaptersMap.get(updatedChapter.id);
+        if (!existingChapter) return updatedChapter;
+        if (chapterHasFreshContent(updatedChapter)) return updatedChapter;
+
+        // 优先现有章节的已加载内容，否则从批量结果拿
+        const contentToPreserve =
+          existingChapter.content !== undefined
+            ? existingChapter.content
+            : contentMap.get(updatedChapter.id);
+        if (contentToPreserve !== undefined) {
+          return { ...updatedChapter, content: contentToPreserve };
+        }
+        return updatedChapter;
+      }),
+    };
+  });
+}
+
+/**
+ * 在 updateBook 替换 volumes 时保留所有章节内容（独立 IndexedDB 存储不能在元数据更新时丢失）。
+ * 流程：建查找表 → 收集未加载章节 → 批量加载 → 按新结构重组写回内容。
+ */
+async function preserveChapterContentsOnVolumesUpdate(
+  existingVolumes: Volume[],
+  updatedVolumes: Volume[],
+): Promise<Volume[]> {
+  const { chaptersByVolume } = buildExistingVolumeLookups(existingVolumes);
+  const chapterIdsToLoad = collectChapterIdsNeedingContent(updatedVolumes, chaptersByVolume);
+
+  const contentMap = new Map<string, Paragraph[] | undefined>();
+  if (chapterIdsToLoad.length > 0) {
+    const loaded = await ChapterContentService.loadChapterContentsBatch(chapterIdsToLoad);
+    for (const [chapterId, content] of loaded) {
+      contentMap.set(chapterId, content);
+    }
+  }
+
+  return mergePreservedChapterContents(updatedVolumes, chaptersByVolume, contentMap);
+}
+
 export const useBooksStore = defineStore('books', {
   state: () => ({
     books: [] as Novel[],
@@ -141,170 +240,39 @@ export const useBooksStore = defineStore('books', {
       options?: { persist?: boolean; saveChapterContent?: boolean },
     ): Promise<void> {
       const index = this.books.findIndex((book) => book.id === id);
-      if (index > -1) {
-        const existingBook = this.books[index];
-        const persist = options?.persist !== false;
-        const removedChapterIds = collectRemovedChapterIds(existingBook?.volumes, updates.volumes);
+      if (index < 0) return;
+      const existingBook = this.books[index];
+      const persist = options?.persist !== false;
+      const removedChapterIds = collectRemovedChapterIds(existingBook?.volumes, updates.volumes);
 
-        // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
-        const updatesWithLastEdited: Partial<Novel> = {
-          ...updates,
-          lastEdited: updates.lastEdited ?? new Date(),
-        };
-        const updatedBook = { ...existingBook, ...updatesWithLastEdited } as Novel;
+      // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
+      const updatesWithLastEdited: Partial<Novel> = {
+        ...updates,
+        lastEdited: updates.lastEdited ?? new Date(),
+      };
+      const updatedBook = { ...existingBook, ...updatesWithLastEdited } as Novel;
+      // 如果 cover 是 null，删除该属性
+      if ('cover' in updates && updates.cover === null) {
+        delete updatedBook.cover;
+      }
 
-        // 如果 cover 是 null，删除该属性
-        if ('cover' in updates && updates.cover === null) {
-          delete updatedBook.cover;
-        }
+      // 如果更新了 volumes，需要保留现有章节的 content（独立 IndexedDB 存储不应丢失）
+      if (updates.volumes && existingBook && existingBook.volumes) {
+        updatedBook.volumes = await preserveChapterContentsOnVolumesUpdate(
+          existingBook.volumes,
+          updates.volumes,
+        );
+      }
 
-        // 重要：如果更新了 volumes，需要保留现有章节的 content
-        // 因为 content 存储在独立的 IndexedDB 表中，不应该在更新时丢失
-        if (updates.volumes && existingBook && existingBook.volumes) {
-          // 优化：为现有卷和章节创建 Map 以快速查找，避免 O(n) 查找
-          const existingVolumesMap = new Map<string, Volume>(
-            existingBook.volumes.map((v) => [v.id, v]),
-          );
-          const existingChaptersMap = new Map<string, Map<string, Chapter>>();
+      this.books[index] = updatedBook;
 
-          // 为每个卷创建章节 Map
-          for (const volume of existingBook.volumes) {
-            if (volume.chapters) {
-              existingChaptersMap.set(volume.id, new Map(volume.chapters.map((ch) => [ch.id, ch])));
-            }
-          }
-
-          // 优化：先收集需要加载内容的章节，批量处理
-          const chaptersNeedingContent: Array<{
-            volumeIndex: number;
-            chapterIndex: number;
-            chapterId: string;
-            existingChapter: Chapter;
-          }> = [];
-
-          // 第一遍：识别需要保留内容的章节
-          for (let vIndex = 0; vIndex < updates.volumes.length; vIndex++) {
-            const updatedVolume = updates.volumes[vIndex];
-            if (!updatedVolume) continue;
-
-            const existingVolume = existingVolumesMap.get(updatedVolume.id);
-            const volumeChaptersMap = existingChaptersMap.get(updatedVolume.id);
-
-            if (existingVolume && volumeChaptersMap && updatedVolume.chapters) {
-              for (let cIndex = 0; cIndex < updatedVolume.chapters.length; cIndex++) {
-                const updatedChapter = updatedVolume.chapters[cIndex];
-                if (!updatedChapter) continue;
-
-                const existingChapter = volumeChaptersMap.get(updatedChapter.id);
-
-                // 如果是新章节，跳过（新章节不需要保留内容）
-                if (!existingChapter) {
-                  continue;
-                }
-
-                // 优化：如果更新的章节已经有完整的内容（是数组），跳过
-                // 这意味着内容已经被更新，不需要从 IndexedDB 加载
-                if (
-                  updatedChapter.content !== undefined &&
-                  updatedChapter.content !== null &&
-                  Array.isArray(updatedChapter.content)
-                ) {
-                  // 即使数组为空，也认为内容已更新，不需要保留
-                  continue;
-                }
-
-                // 如果现有章节也没有内容（未加载），需要从 IndexedDB 加载
-                if (existingChapter.content === undefined) {
-                  chaptersNeedingContent.push({
-                    volumeIndex: vIndex,
-                    chapterIndex: cIndex,
-                    chapterId: updatedChapter.id,
-                    existingChapter,
-                  });
-                }
-              }
-            }
-          }
-
-          // 批量加载需要的内容（如果有）
-          const contentMap = new Map<string, Paragraph[] | undefined>();
-          if (chaptersNeedingContent.length > 0) {
-            const chapterIds = chaptersNeedingContent.map((c) => c.chapterId);
-            const loadedContents = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-            for (const [chapterId, content] of loadedContents) {
-              contentMap.set(chapterId, content);
-            }
-          }
-
-          // 第二遍：应用保留的内容
-          updatedBook.volumes = updates.volumes.map((updatedVolume, vIndex) => {
-            const existingVolume = existingVolumesMap.get(updatedVolume.id);
-            const volumeChaptersMap = existingChaptersMap.get(updatedVolume.id);
-
-            if (existingVolume && volumeChaptersMap && updatedVolume.chapters) {
-              return {
-                ...updatedVolume,
-                chapters: updatedVolume.chapters.map((updatedChapter, cIndex) => {
-                  const existingChapter = volumeChaptersMap.get(updatedChapter.id);
-
-                  // 如果是新章节，直接返回
-                  if (!existingChapter) {
-                    return updatedChapter;
-                  }
-
-                  // 优化：如果更新的章节已经有完整的内容（是数组），直接返回
-                  // 这意味着内容已经被更新，不需要保留
-                  if (
-                    updatedChapter.content !== undefined &&
-                    updatedChapter.content !== null &&
-                    Array.isArray(updatedChapter.content)
-                  ) {
-                    // 即使数组为空，也认为内容已更新，不需要保留
-                    return updatedChapter;
-                  }
-
-                  // 尝试获取要保留的内容
-                  let contentToPreserve: Paragraph[] | undefined = undefined;
-
-                  // 首先尝试从现有章节获取（如果已加载）
-                  if (existingChapter.content !== undefined) {
-                    contentToPreserve = existingChapter.content;
-                  } else {
-                    // 从批量加载的结果中获取
-                    contentToPreserve = contentMap.get(updatedChapter.id);
-                  }
-
-                  // 如果找到了内容，保留它
-                  if (contentToPreserve !== undefined) {
-                    return {
-                      ...updatedChapter,
-                      content: contentToPreserve,
-                    };
-                  }
-
-                  return updatedChapter;
-                }),
-              };
-            }
-
-            return updatedVolume;
-          });
-        }
-
-        this.books[index] = updatedBook;
-
-        if (persist) {
-          // 优化：如果只更新元数据（如 terminologies、characterSettings 等），不更新 volumes，
-          // 则跳过保存章节内容，提高性能
-          const isOnlyMetadataUpdate = !updates.volumes;
-          const saveChapterContent =
-            options?.saveChapterContent ?? (isOnlyMetadataUpdate ? false : true);
-          await BookService.saveBook(updatedBook, {
-            saveChapterContent,
-          });
-
-          await cleanupRemovedChapterData(id, removedChapterIds);
-        }
+      if (persist) {
+        // 优化：只更新元数据（如 terminologies、characterSettings）时跳过保存章节内容
+        const isOnlyMetadataUpdate = !updates.volumes;
+        const saveChapterContent =
+          options?.saveChapterContent ?? (isOnlyMetadataUpdate ? false : true);
+        await BookService.saveBook(updatedBook, { saveChapterContent });
+        await cleanupRemovedChapterData(id, removedChapterIds);
       }
     },
 
