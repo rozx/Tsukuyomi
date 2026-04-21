@@ -54,54 +54,6 @@ const MAX_OUTPUT_LENGTH_RATIO = 2;
  */
 const HIGH_REPETITION_RATIO = 0.8;
 
-function countConsecutiveRepeats(text: string, pattern: string, startAfter: number): number {
-  let repeatCount = 1;
-  let cursor = startAfter;
-  while (cursor + pattern.length <= text.length) {
-    if (text.slice(cursor, cursor + pattern.length) !== pattern) break;
-    repeatCount++;
-    cursor += pattern.length;
-  }
-  return repeatCount;
-}
-
-function countConsecutiveRepeatsBackward(
-  text: string,
-  pattern: string,
-  startBefore: number,
-): number {
-  let repeatCount = 1;
-  let cursor = startBefore;
-  while (cursor >= 0) {
-    if (text.slice(cursor, cursor + pattern.length) !== pattern) break;
-    repeatCount++;
-    cursor -= pattern.length;
-  }
-  return repeatCount;
-}
-
-function maxTailRepeatForPatternLength(text: string, patternLen: number): number {
-  let maxRepeat = 0;
-  for (let offset = 0; offset < patternLen; offset++) {
-    const endPos = text.length - offset;
-    if (endPos < patternLen * 2) continue;
-    const pattern = text.slice(endPos - patternLen, endPos);
-    const repeatCount = countConsecutiveRepeatsBackward(text, pattern, endPos - patternLen * 2);
-    if (repeatCount > 1) maxRepeat = Math.max(maxRepeat, repeatCount);
-  }
-  return maxRepeat;
-}
-
-function maxAnyPositionRepeatForPatternLength(text: string, patternLen: number): number {
-  let maxRepeat = 0;
-  for (let start = 0; start <= text.length - patternLen * 2; start++) {
-    const pattern = text.slice(start, start + patternLen);
-    const repeatCount = countConsecutiveRepeats(text, pattern, start + patternLen);
-    if (repeatCount > 1) maxRepeat = Math.max(maxRepeat, repeatCount);
-  }
-  return maxRepeat;
-}
-
 /**
  * 检测文本中是否有过多的重复字符（AI降级检测）
  * @param text 要检测的文本（AI生成的结果）
@@ -126,96 +78,256 @@ export function detectRepeatingCharacters(
   const recentText = text.slice(-effectiveWindow);
 
   // 0. 长度比例检测：即使原文也有重复，输出长度远超原文时仍判定为降级
-  if (originalText && originalText.length > 0) {
-    const lengthRatio = text.length / originalText.length;
-    if (lengthRatio > MAX_OUTPUT_LENGTH_RATIO) {
-      const translationBlockLen = getMaxPatternBlockLength(text, effectiveWindow);
-      if (translationBlockLen >= effectiveWindow * HIGH_REPETITION_RATIO) {
-        console.warn(
-          `[${logLabel}] ⚠️ AI降级检测：输出长度是原文的 ${lengthRatio.toFixed(1)} 倍，且高度重复（重复块 ${translationBlockLen}/${effectiveWindow} 字符）`,
-        );
-        return true;
-      }
-    }
+  if (detectLengthRatioDegradation(text, originalText, effectiveWindow, logLabel)) {
+    return true;
   }
 
-  // 获取原文中任意模式的最大重复次数（用于模式重复检测的比较）
-  // 因为原文和译文的模式长度可能不同，所以检查所有可能的模式长度
-  const getOriginalMaxPatternRepeatCount = () => {
-    if (!originalText) return 0;
-    const trimmedOriginal = originalText.trimEnd();
-    const originalWindow = Math.min(effectiveWindow, trimmedOriginal.length);
-    const originalRecent = trimmedOriginal.slice(-originalWindow);
-    let maxRepeatCount = 0;
-
-    for (let patternLen = MIN_PATTERN_LENGTH; patternLen <= MAX_PATTERN_LENGTH; patternLen++) {
-      if (originalRecent.length < patternLen * 2) continue;
-      maxRepeatCount = Math.max(
-        maxRepeatCount,
-        maxTailRepeatForPatternLength(originalRecent, patternLen),
-        maxAnyPositionRepeatForPatternLength(originalRecent, patternLen),
-      );
-    }
-
-    return maxRepeatCount;
-  };
-
   // 1. 单个字符重复检测
-  // 检查是否有单个字符重复超过阈值
+  if (detectSingleCharRepeat(recentText, originalText, config, logLabel)) {
+    return true;
+  }
+
+  // 2. 模式重复检测
+  if (detectPatternRepeat(recentText, text, originalText, effectiveWindow, config, logLabel)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 长度比例检测：输出长度远超原文且高度重复时判定为降级
+ */
+function detectLengthRatioDegradation(
+  text: string,
+  originalText: string | undefined,
+  effectiveWindow: number,
+  logLabel: string,
+): boolean {
+  if (!originalText || originalText.length === 0) {
+    return false;
+  }
+  const lengthRatio = text.length / originalText.length;
+  if (lengthRatio <= MAX_OUTPUT_LENGTH_RATIO) {
+    return false;
+  }
+  const translationBlockLen = getMaxPatternBlockLength(text, effectiveWindow);
+  if (translationBlockLen < effectiveWindow * HIGH_REPETITION_RATIO) {
+    return false;
+  }
+  console.warn(
+    `[${logLabel}] ⚠️ AI降级检测：输出长度是原文的 ${lengthRatio.toFixed(1)} 倍，且高度重复（重复块 ${translationBlockLen}/${effectiveWindow} 字符）`,
+  );
+  return true;
+}
+
+/**
+ * 计算从给定位置开始的连续重复字符数
+ */
+function countConsecutiveChar(text: string, startIndex: number, char: string): number {
+  let repeatCount = 1;
+  for (let j = startIndex + 1; j < text.length; j++) {
+    if (text[j] === char) {
+      repeatCount++;
+    } else {
+      break;
+    }
+  }
+  return repeatCount;
+}
+
+/**
+ * 扫描原文，寻找指定字符的最大连续重复次数
+ */
+function maxConsecutiveCharInOriginal(originalText: string, char: string): number {
+  let maxOriginalRepeat = 0;
+  let currentOriginalRepeat = 0;
+  for (let k = 0; k < originalText.length; k++) {
+    if (originalText[k] === char) {
+      currentOriginalRepeat++;
+    } else {
+      maxOriginalRepeat = Math.max(maxOriginalRepeat, currentOriginalRepeat);
+      currentOriginalRepeat = 0;
+    }
+  }
+  return Math.max(maxOriginalRepeat, currentOriginalRepeat);
+}
+
+/**
+ * 单个字符重复检测
+ */
+function detectSingleCharRepeat(
+  recentText: string,
+  originalText: string | undefined,
+  config: Required<Omit<DegradationDetectionOptions, 'logLabel'>>,
+  logLabel: string,
+): boolean {
   for (let i = 0; i < recentText.length; i++) {
     const char = recentText[i];
     if (!char) continue;
 
-    // 计算从当前位置开始的连续重复次数
+    const repeatCount = countConsecutiveChar(recentText, i, char);
+    if (repeatCount < config.repeatThreshold) {
+      continue;
+    }
+
+    // 如果原文也有类似的重复（至少是阈值的一半），不认为是降级
+    if (originalText) {
+      const maxOriginalRepeat = maxConsecutiveCharInOriginal(originalText, char);
+      if (maxOriginalRepeat >= config.repeatThreshold * 0.5) {
+        continue;
+      }
+    }
+
+    console.warn(
+      `[${logLabel}] ⚠️ AI降级检测：字符 "${char}" 在最近 ${config.repeatCheckWindow} 个字符中连续重复 ${repeatCount} 次（阈值: ${config.repeatThreshold}）`,
+    );
+    return true;
+  }
+  return false;
+}
+
+/**
+ * 获取原文窗口内任意模式的最大重复次数
+ * 因为原文和译文的模式长度可能不同，所以检查所有可能的模式长度
+ */
+function getOriginalMaxPatternRepeatCount(
+  originalText: string | undefined,
+  effectiveWindow: number,
+): number {
+  if (!originalText) {
+    return 0;
+  }
+  // 去除尾部空白和换行符，因为 chunkText 格式可能包含 \n\n 等格式化字符
+  const trimmedOriginal = originalText.trimEnd();
+  const originalWindow = Math.min(effectiveWindow, trimmedOriginal.length);
+  const originalRecent = trimmedOriginal.slice(-originalWindow);
+  let maxRepeatCount = 0;
+
+  for (let patternLen = MIN_PATTERN_LENGTH; patternLen <= MAX_PATTERN_LENGTH; patternLen++) {
+    if (originalRecent.length < patternLen * 2) {
+      continue;
+    }
+    maxRepeatCount = Math.max(
+      maxRepeatCount,
+      maxTailAlignedRepeatAtLen(originalRecent, patternLen),
+      maxAnyStartRepeatAtLen(originalRecent, patternLen),
+    );
+  }
+
+  return maxRepeatCount;
+}
+
+/**
+ * 从窗口末尾开始寻找给定长度的最大连续重复次数（优先检查此场景）
+ */
+function maxTailAlignedRepeatAtLen(text: string, patternLen: number): number {
+  let maxRepeat = 0;
+  for (let offset = 0; offset < patternLen; offset++) {
+    const endPos = text.length - offset;
+    if (endPos < patternLen * 2) {
+      continue;
+    }
+
+    const pattern = text.slice(endPos - patternLen, endPos);
     let repeatCount = 1;
-    for (let j = i + 1; j < recentText.length; j++) {
-      if (recentText[j] === char) {
+    let cursor = endPos - patternLen * 2;
+
+    while (cursor >= 0) {
+      if (text.slice(cursor, cursor + patternLen) === pattern) {
         repeatCount++;
+        cursor -= patternLen;
       } else {
         break;
       }
     }
 
-    // 如果连续重复超过阈值，检查原文是否也有类似重复
-    if (repeatCount >= config.repeatThreshold) {
-      // 如果提供了原文，检查原文中是否也有类似的重复
-      if (originalText) {
-        // 扫描整个原文，寻找该字符的最大连续重复次数
-        let maxOriginalRepeat = 0;
-        let currentOriginalRepeat = 0;
+    if (repeatCount > 1) {
+      maxRepeat = Math.max(maxRepeat, repeatCount);
+    }
+  }
+  return maxRepeat;
+}
 
-        for (let k = 0; k < originalText.length; k++) {
-          if (originalText[k] === char) {
-            currentOriginalRepeat++;
-          } else {
-            maxOriginalRepeat = Math.max(maxOriginalRepeat, currentOriginalRepeat);
-            currentOriginalRepeat = 0;
-          }
-        }
-        maxOriginalRepeat = Math.max(maxOriginalRepeat, currentOriginalRepeat);
+/**
+ * 检查任意起始位置的给定长度模式最大连续重复次数
+ */
+function maxAnyStartRepeatAtLen(text: string, patternLen: number): number {
+  let maxRepeat = 0;
+  for (let start = 0; start <= text.length - patternLen * 2; start++) {
+    const pattern = text.slice(start, start + patternLen);
+    let repeatCount = 1;
+    let cursor = start + patternLen;
 
-        // 如果原文也有类似的重复（至少是阈值的一半），不认为是降级
-        if (maxOriginalRepeat >= config.repeatThreshold * 0.5) {
-          continue;
-        }
+    while (cursor + patternLen <= text.length) {
+      if (text.slice(cursor, cursor + patternLen) === pattern) {
+        repeatCount++;
+        cursor += patternLen;
+      } else {
+        break;
       }
-      console.warn(
-        `[${logLabel}] ⚠️ AI降级检测：字符 "${char}" 在最近 ${config.repeatCheckWindow} 个字符中连续重复 ${repeatCount} 次（阈值: ${config.repeatThreshold}）`,
-      );
+    }
+
+    if (repeatCount > 1) {
+      maxRepeat = Math.max(maxRepeat, repeatCount);
+    }
+  }
+  return maxRepeat;
+}
+
+/**
+ * 判断某个模式长度下，译文尾部的模式是否属于可接受的重复（不算降级）
+ */
+function isPatternRepeatExplainedByOriginal(
+  patternRepeatCount: number,
+  text: string,
+  originalText: string,
+  effectiveWindow: number,
+): boolean {
+  // 比较重复次数，检查原文中任意模式的最大重复次数
+  // 因为原文和译文的模式长度可能不同（如"成功した"4字符 vs "成功了"3字符）
+  const maxOriginalRepeatCount = getOriginalMaxPatternRepeatCount(originalText, effectiveWindow);
+  const requiredCount = patternRepeatCount * ORIGINAL_PATTERN_SIMILARITY_RATIO;
+
+  const trimmedOriginal = originalText.trimEnd();
+  const lengthRatio =
+    trimmedOriginal.length > 0 ? text.length / trimmedOriginal.length : Infinity;
+
+  // 如果原文也有类似的重复次数（至少是译文重复次数的75%），不认为是降级
+  // 允许1次的容差，因为窗口截断可能导致计数略有偏差
+  // 但如果译文长度显著超过原文（>1.5倍），仍应判定为降级
+  if (maxOriginalRepeatCount >= requiredCount - 1 && lengthRatio <= 1.5) {
+    return true;
+  }
+
+  // 额外检查：如果原文整体也有高重复度，即使窗口内重复次数不够，也不应判定为降级
+  if (trimmedOriginal.length > 0) {
+    const fullOriginalMaxRepeat = getMaxPatternRepeatCountInFullText(trimmedOriginal);
+    if (fullOriginalMaxRepeat >= patternRepeatCount * 0.6 && lengthRatio <= 1.5) {
       return true;
     }
   }
 
-  // 2. 模式重复检测
-  // 检查是否有短模式重复（如 "ababab..." 或 "abcabc..."）
-  // 检查2-5字符的模式
+  return false;
+}
+
+/**
+ * 模式重复检测：检查 2-5 字符短模式在窗口尾部的重复
+ */
+function detectPatternRepeat(
+  recentText: string,
+  text: string,
+  originalText: string | undefined,
+  effectiveWindow: number,
+  config: Required<Omit<DegradationDetectionOptions, 'logLabel'>>,
+  logLabel: string,
+): boolean {
   for (let patternLen = MIN_PATTERN_LENGTH; patternLen <= MAX_PATTERN_LENGTH; patternLen++) {
     if (recentText.length < patternLen * 10) continue;
 
     const pattern = recentText.slice(-patternLen);
     let patternRepeatCount = 1;
 
-    // 检查模式是否重复
     for (let i = recentText.length - patternLen * 2; i >= 0; i -= patternLen) {
       const candidate = recentText.slice(i, i + patternLen);
       if (candidate === pattern) {
@@ -225,42 +337,21 @@ export function detectRepeatingCharacters(
       }
     }
 
-    // 如果模式重复超过阈值，检查原文是否也有类似重复
-    if (patternRepeatCount >= config.patternRepeatThreshold) {
-      if (originalText) {
-        // 比较重复次数，检查原文中任意模式的最大重复次数
-        // 因为原文和译文的模式长度可能不同（如"成功した"4字符 vs "成功了"3字符）
-        const maxOriginalRepeatCount = getOriginalMaxPatternRepeatCount();
-        const requiredCount = patternRepeatCount * ORIGINAL_PATTERN_SIMILARITY_RATIO;
-
-        // 计算长度比例，用于判断是否应该跳过检测
-        const trimmedOriginal = originalText.trimEnd();
-        const lengthRatio =
-          trimmedOriginal.length > 0 ? text.length / trimmedOriginal.length : Infinity;
-
-        // 如果原文也有类似的重复次数（至少是译文重复次数的75%），不认为是降级
-        // 注意：这里比较的是实际重复次数，而不是阈值
-        // 允许1次的容差，因为窗口截断可能导致计数略有偏差
-        // 但如果译文长度显著超过原文（>1.5倍），仍应判定为降级
-        if (maxOriginalRepeatCount >= requiredCount - 1 && lengthRatio <= 1.5) {
-          continue;
-        }
-
-        // 额外检查：如果原文整体也有高重复度，即使窗口内重复次数不够，也不应判定为降级
-        // 但是需要同时检查长度比例，防止译文过长的情况被跳过
-        if (trimmedOriginal.length > 0) {
-          const fullOriginalMaxRepeat = getMaxPatternRepeatCountInFullText(trimmedOriginal);
-          // 如果原文整体也有高重复（至少是译文重复次数的60%），检查长度比例
-          if (fullOriginalMaxRepeat >= patternRepeatCount * 0.6 && lengthRatio <= 1.5) {
-            continue;
-          }
-        }
-      }
-      console.warn(
-        `[${logLabel}] ⚠️ AI降级检测：模式 "${pattern}" (长度 ${patternLen}) 在最近 ${config.repeatCheckWindow} 个字符中重复 ${patternRepeatCount} 次（阈值: ${config.patternRepeatThreshold}）`,
-      );
-      return true;
+    if (patternRepeatCount < config.patternRepeatThreshold) {
+      continue;
     }
+
+    if (
+      originalText &&
+      isPatternRepeatExplainedByOriginal(patternRepeatCount, text, originalText, effectiveWindow)
+    ) {
+      continue;
+    }
+
+    console.warn(
+      `[${logLabel}] ⚠️ AI降级检测：模式 "${pattern}" (长度 ${patternLen}) 在最近 ${config.repeatCheckWindow} 个字符中重复 ${patternRepeatCount} 次（阈值: ${config.patternRepeatThreshold}）`,
+    );
+    return true;
   }
 
   return false;
