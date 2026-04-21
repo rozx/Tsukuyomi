@@ -18,7 +18,7 @@ bun run build:electron         # 构建 Electron 桌面应用
 
 bun run lint                   # ESLint 检查
 bun run type-check             # TypeScript 类型检查
-bun run quality-check          # Fallow 代码质量检查 (bunx fallow)
+bun run quality-check          # Fallow 代码质量检查（要先跑 test:coverage 才有 CRAP 评分数据）
 bun run format                 # Prettier 格式化
 
 bun run test                   # 运行所有测试（vitest）

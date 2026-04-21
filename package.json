@@ -14,7 +14,7 @@
   "scripts": {
     "lint": "bunx eslint --quiet .",
     "type-check": "bunx vue-tsc --noEmit",
-    "quality-check": "bunx fallow",
+    "quality-check": "cross-env FALLOW_COVERAGE=coverage/coverage-final.json bunx fallow --baseline .fallow-baseline.json --changed-since origin/main",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
     "test": "cross-env NODE_OPTIONS=--max-old-space-size=2048 vitest run",
     "test:watch": "cross-env NODE_OPTIONS=--max-old-space-size=2048 vitest",
