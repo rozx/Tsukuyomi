@@ -4,9 +4,17 @@ import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
-import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
-import type { Chapter, Novel, Volume } from 'src/models/novel';
+import { parseToolArgs, type ToolDefinition, type ToolContext, type ToolHandler } from './types';
+import type { Chapter, Novel } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
+import {
+  buildChapterTitleSummary,
+  buildVolumeTitleSummary,
+  getChapterTitleOriginal,
+  getChapterTitleTranslation,
+  getVolumeTitleOriginal,
+  getVolumeTitleTranslation,
+} from './title-helpers';
 
 type AdjacentChapterDirection = 'previous' | 'next';
 
@@ -33,22 +41,21 @@ async function resolveBookForTool(
   return { ok: true, book };
 }
 
-function getTitleOriginal(chapter: Chapter): string {
-  return typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
-}
-
-function getTitleTranslation(chapter: Chapter): string {
-  return typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '';
-}
-
-function getVolumeTitleOriginal(volume: Volume | null | undefined): string {
-  if (!volume) return '';
-  return typeof volume.title === 'string' ? volume.title : volume.title.original || '';
-}
-
-function getVolumeTitleTranslation(volume: Volume | null | undefined): string {
-  if (!volume) return '';
-  return typeof volume.title === 'string' ? '' : volume.title.translation?.translation || '';
+/**
+ * 工具 handler 的高阶包装：
+ * 自动处理 parseToolArgs + resolveBookForTool + 早退出，并把解析后的书籍注入到 handler 上下文。
+ * 业务代码只需关心参数和书籍本身，不再重复写 seam 样板。
+ */
+function withBookContext<T>(
+  fn: (args: T, context: ToolContext & { book: Novel }) => Promise<string> | string,
+): ToolHandler {
+  return async (rawArgs, context) => {
+    const resolved = await resolveBookForTool(context.bookId);
+    if (!resolved.ok) {
+      return resolved.response;
+    }
+    return fn(parseToolArgs<T>(rawArgs), { ...context, book: resolved.book });
+  };
 }
 
 function buildUpdatedChapterTitle(
@@ -139,8 +146,8 @@ function collectAllChapterSummaries(book: Novel): Array<{
       if (!chapter) continue;
       out.push({
         id: chapter.id,
-        title_original: getTitleOriginal(chapter),
-        title_translation: getTitleTranslation(chapter),
+        title_original: getChapterTitleOriginal(chapter),
+        title_translation: getChapterTitleTranslation(chapter),
       });
     }
   }
@@ -172,7 +179,7 @@ async function loadRelatedMemoriesForChapter(
   includeMemory: boolean,
 ): Promise<Array<{ id: string; summary: string }>> {
   if (!includeMemory || !bookId) return [];
-  const titleOriginal = getTitleOriginal(chapter);
+  const titleOriginal = getChapterTitleOriginal(chapter);
   return searchRelatedMemoriesHybrid(
     bookId,
     [{ type: 'chapter', id: chapter.id }],
@@ -194,8 +201,8 @@ function buildAdjacentChapterResponse(
     chapter: {
       id: chapter.id,
       title: chapterTitle,
-      title_original: getTitleOriginal(chapter),
-      title_translation: getTitleTranslation(chapter),
+      title_original: getChapterTitleOriginal(chapter),
+      title_translation: getChapterTitleTranslation(chapter),
       content: chapterContent,
       paragraphCount: chapter.content?.length || 0,
       translatedCount: countTranslatedParagraphs(chapter),
@@ -207,9 +214,7 @@ function buildAdjacentChapterResponse(
           }
         : null,
     },
-    ...(includeMemory && relatedMemories.length > 0
-      ? { related_memories: relatedMemories }
-      : {}),
+    ...(includeMemory && relatedMemories.length > 0 ? { related_memories: relatedMemories } : {}),
   });
 }
 
@@ -338,18 +343,9 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
-      const parsedArgs = parseToolArgs<{ include_memory?: boolean }>(args);
-
-      const resolved = await resolveBookForTool(bookId);
-      if (!resolved.ok) {
-        return resolved.response;
-      }
-
+    handler: withBookContext<{ include_memory?: boolean }>(async (parsedArgs, context) => {
+      const { bookId, onAction, book } = context;
       try {
-        const { book } = resolved;
-
         // 报告读取操作
         if (onAction) {
           onAction({
@@ -425,7 +421,7 @@ export const bookTools: ToolDefinition[] = [
           error: error instanceof Error ? error.message : '获取书籍信息失败',
         });
       }
-    },
+    }),
   },
   {
     definition: {
@@ -450,40 +446,34 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{ limit?: number; offset?: number }>(args);
-      const resolved = await resolveBookForTool(bookId);
-      if (!resolved.ok) {
-        return resolved.response;
-      }
-      const { limit, offset = 0 } = parsedArgs;
+    handler: withBookContext<{ limit?: number; offset?: number }>(
+      (parsedArgs, { bookId, onAction, book }) => {
+        const { limit, offset = 0 } = parsedArgs;
+        try {
+          onAction?.({
+            type: 'read',
+            entity: 'chapter',
+            data: { book_id: bookId, tool_name: 'list_chapters' },
+          });
 
-      try {
-        const { book } = resolved;
+          const allChapters = collectAllChapterSummaries(book);
+          const startIndex = offset && offset > 0 ? offset : 0;
+          const endIndex = limit && limit > 0 ? startIndex + limit : undefined;
+          const chapters = allChapters.slice(startIndex, endIndex);
 
-        onAction?.({
-          type: 'read',
-          entity: 'chapter',
-          data: { book_id: bookId, tool_name: 'list_chapters' },
-        });
-
-        const allChapters = collectAllChapterSummaries(book);
-        const startIndex = offset && offset > 0 ? offset : 0;
-        const endIndex = limit && limit > 0 ? startIndex + limit : undefined;
-        const chapters = allChapters.slice(startIndex, endIndex);
-
-        return JSON.stringify({
-          success: true,
-          chapters,
-          totalCount: allChapters.length,
-        });
-      } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '获取章节列表失败',
-        });
-      }
-    },
+          return JSON.stringify({
+            success: true,
+            chapters,
+            totalCount: allChapters.length,
+          });
+        } catch (error) {
+          return JSON.stringify({
+            success: false,
+            error: error instanceof Error ? error.message : '获取章节列表失败',
+          });
+        }
+      },
+    ),
   },
   {
     definition: {
@@ -507,12 +497,7 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{ volume_ids: string[] }>(args);
-      const resolved = await resolveBookForTool(bookId);
-      if (!resolved.ok) {
-        return resolved.response;
-      }
+    handler: withBookContext<{ volume_ids: string[] }>((parsedArgs, { bookId, onAction, book }) => {
       const { volume_ids } = parsedArgs;
 
       if (!volume_ids || !Array.isArray(volume_ids) || volume_ids.length === 0) {
@@ -520,8 +505,6 @@ export const bookTools: ToolDefinition[] = [
       }
 
       try {
-        const { book } = resolved;
-
         // 报告读取操作
         if (onAction) {
           onAction({
@@ -591,7 +574,7 @@ export const bookTools: ToolDefinition[] = [
           error: error instanceof Error ? error.message : '获取分卷章节列表失败',
         });
       }
-    },
+    }),
   },
   {
     definition: {
@@ -610,7 +593,8 @@ export const bookTools: ToolDefinition[] = [
             },
             limit: {
               type: 'number',
-              description: '默认 5。Top1 未必最佳 — 把它当候选定位器,默认看 Top3-5;抽象 / 不确定时调到 8-10,再用 get_chapter_info 二次确认',
+              description:
+                '默认 5。Top1 未必最佳 — 把它当候选定位器,默认看 Top3-5;抽象 / 不确定时调到 8-10,再用 get_chapter_info 二次确认',
             },
           },
           required: ['query'],
@@ -629,9 +613,7 @@ export const bookTools: ToolDefinition[] = [
 
       try {
         const { useSettingsStore } = await import('src/stores/settings');
-        const { isLocalEmbeddingEffectivelyEnabled } = await import(
-          'src/utils/local-embedding'
-        );
+        const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
         const { isMobileDevice } = await import('src/utils/platform');
         const stored = useSettingsStore().settings.enableLocalEmbedding;
         if (!isLocalEmbeddingEffectivelyEnabled(stored)) {
@@ -666,9 +648,7 @@ export const bookTools: ToolDefinition[] = [
           });
         }
 
-        const { ChapterEmbeddingService } = await import(
-          'src/services/chapter-embedding-service'
-        );
+        const { ChapterEmbeddingService } = await import('src/services/chapter-embedding-service');
         const matches = await ChapterEmbeddingService.queryChapters(bookId, query, limit);
 
         return JSON.stringify({
@@ -699,7 +679,8 @@ export const bookTools: ToolDefinition[] = [
             },
             limit: {
               type: 'number',
-              description: '返回的段落数量上限（默认 30，最大 200）。章节可能有上百段，默认只取前 30 段避免 context 爆炸。',
+              description:
+                '返回的段落数量上限（默认 30，最大 200）。章节可能有上百段，默认只取前 30 段避免 context 爆炸。',
             },
             offset: {
               type: 'number',
@@ -714,17 +695,12 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{
-        chapter_id: string;
-        limit?: number;
-        offset?: number;
-        include_memory?: boolean;
-      }>(args);
-      const resolved = await resolveBookForTool(bookId);
-      if (!resolved.ok) {
-        return resolved.response;
-      }
+    handler: withBookContext<{
+      chapter_id: string;
+      limit?: number;
+      offset?: number;
+      include_memory?: boolean;
+    }>(async (parsedArgs, { bookId, onAction, book }) => {
       const { chapter_id, include_memory = true } = parsedArgs;
       const rawLimit = typeof parsedArgs.limit === 'number' ? parsedArgs.limit : 30;
       const limit = Math.max(1, Math.min(200, Math.floor(rawLimit)));
@@ -735,8 +711,6 @@ export const bookTools: ToolDefinition[] = [
       }
 
       try {
-        const { book } = resolved;
-
         // 查找章节
         let chapter: Chapter | null = null;
         let volume = null;
@@ -836,12 +810,7 @@ export const bookTools: ToolDefinition[] = [
         return JSON.stringify({
           success: true,
           chapter: {
-            id: chapter.id,
-            title: chapterTitle,
-            title_original:
-              typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
-            title_translation:
-              typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
+            ...buildChapterTitleSummary(chapter),
             content: chapterContent,
             paragraphCount,
             translatedCount,
@@ -853,17 +822,7 @@ export const bookTools: ToolDefinition[] = [
               hasMore,
               nextOffset: hasMore ? effectiveEnd : null,
             },
-            volume: volume
-              ? {
-                  id: volume.id,
-                  title:
-                    typeof volume.title === 'string' ? volume.title : volume.title.original || '',
-                  title_translation:
-                    typeof volume.title === 'string'
-                      ? ''
-                      : volume.title.translation?.translation || '',
-                }
-              : null,
+            volume: buildVolumeTitleSummary(volume),
           },
           ...(include_memory && relatedMemories.length > 0
             ? { related_memories: relatedMemories }
@@ -875,7 +834,7 @@ export const bookTools: ToolDefinition[] = [
           error: error instanceof Error ? error.message : '获取章节信息失败',
         });
       }
-    },
+    }),
   },
   createAdjacentChapterTool(
     'get_previous_chapter',
@@ -947,8 +906,8 @@ export const bookTools: ToolDefinition[] = [
 
         const { chapter: existingChapter } = chapterInfo;
         const oldTitle = getChapterDisplayTitle(existingChapter);
-        const oldOriginal = getTitleOriginal(existingChapter);
-        const oldTranslation = getTitleTranslation(existingChapter);
+        const oldOriginal = getChapterTitleOriginal(existingChapter);
+        const oldTranslation = getChapterTitleTranslation(existingChapter);
 
         const updatedTitle = buildUpdatedChapterTitle(
           existingChapter.title,
@@ -1043,20 +1002,12 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
-      const parsedArgs = parseToolArgs<{
-        description?: string;
-        tags?: string[];
-        author?: string;
-        alternate_titles?: string[];
-      }>(args);
-
-      const resolved = await resolveBookForTool(bookId);
-      if (!resolved.ok) {
-        return resolved.response;
-      }
-
+    handler: withBookContext<{
+      description?: string;
+      tags?: string[];
+      author?: string;
+      alternate_titles?: string[];
+    }>(async (parsedArgs, { bookId, onAction, book }) => {
       const { description, tags, author, alternate_titles } = parsedArgs;
 
       // 检查是否至少提供了一个要更新的字段
@@ -1073,8 +1024,6 @@ export const bookTools: ToolDefinition[] = [
       }
 
       try {
-        const { book } = resolved;
-
         // 保存原始数据用于撤销
         const previousData: {
           description?: string;
@@ -1193,6 +1142,6 @@ export const bookTools: ToolDefinition[] = [
           error: error instanceof Error ? error.message : '更新书籍信息失败',
         });
       }
-    },
+    }),
   },
 ];
