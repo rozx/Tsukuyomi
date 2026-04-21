@@ -1994,6 +1994,51 @@ async function searchByOriginalKeywords(params: {
 }
 
 /**
+ * 判断段落翻译是否命中给定关键词（小写）。
+ * 任一翻译包含任一关键词即视为命中；段落无翻译直接返回 false。
+ */
+function matchesTranslationKeyword(
+  paragraph: { translations?: Array<{ translation?: string | null }> | undefined | null },
+  translationKeywordLower: string[],
+): boolean {
+  if (!paragraph.translations || paragraph.translations.length === 0) return false;
+  return paragraph.translations.some((t) =>
+    translationKeywordLower.some((kw) => t.translation?.toLowerCase().includes(kw)),
+  );
+}
+
+/**
+ * 在 replace_range 指定的卷范围内迭代，统一处理卷级前置校验（有效卷、chapter_id 过滤、
+ * 提前退出条件）。调用方通过 `onVolume` 接收已就绪的 { volume, vIndex, startC, endC }。
+ */
+async function iterateReplaceRangeVolumes(params: {
+  book: Novel;
+  chapter_id: string | undefined;
+  targetVolumeIndex: number | null;
+  targetChapterIndex: number | null;
+  shouldStop: () => boolean;
+  onVolume: (ctx: {
+    volume: Volume;
+    vIndex: number;
+    startC: number;
+    endC: number;
+  }) => Promise<void>;
+}): Promise<void> {
+  const { book, chapter_id, targetVolumeIndex, targetChapterIndex, shouldStop, onVolume } = params;
+  if (!book.volumes) return;
+  const range = resolveReplaceRange(book, chapter_id, targetVolumeIndex, targetChapterIndex);
+  for (let vIndex = range.startVolumeIndex; vIndex <= range.endVolumeIndex; vIndex++) {
+    if (shouldStop()) break;
+    const volume = book.volumes[vIndex];
+    if (!volume || !volume.chapters) continue;
+    if (chapter_id && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) continue;
+    const startC = range.startChapterIndex ?? 0;
+    const endC = range.endChapterIndex ?? volume.chapters.length - 1;
+    await onVolume({ volume, vIndex, startC, endC });
+  }
+}
+
+/**
  * 若 allResults 中的章节尚未加载内容，批量加载所需章节
  */
 async function ensureChaptersLoaded(
@@ -2033,12 +2078,7 @@ async function filterResultsByTranslationKeywords(
   const translationKeywordLower = validTranslationKeywords.map((k) => k.toLowerCase());
   const filtered: Map<string, ParagraphSearchResult> = new Map();
   for (const [paragraphId, result] of allResults) {
-    const paragraph = result.paragraph;
-    if (!paragraph.translations || paragraph.translations.length === 0) continue;
-    const hasTranslationKeyword = paragraph.translations.some((t) =>
-      translationKeywordLower.some((kw) => t.translation?.toLowerCase().includes(kw)),
-    );
-    if (hasTranslationKeyword) {
+    if (matchesTranslationKeyword(result.paragraph, translationKeywordLower)) {
       filtered.set(paragraphId, result);
     }
   }
@@ -2136,24 +2176,24 @@ async function scanVolumesForTranslationKeyword(params: {
     max_paragraphs,
     allResults,
   } = params;
-  if (!book.volumes) return;
-  const range = resolveReplaceRange(book, chapter_id, targetVolumeIndex, targetChapterIndex);
-
-  for (let vIndex = range.startVolumeIndex; vIndex <= range.endVolumeIndex; vIndex++) {
-    if (allResults.size >= max_paragraphs) break;
-    const volume = book.volumes[vIndex];
-    if (!volume || !volume.chapters) continue;
-    if (chapter_id && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) continue;
-    await scanVolumeForTranslationKeyword({
-      volume,
-      vIndex,
-      startC: range.startChapterIndex ?? 0,
-      endC: range.endChapterIndex ?? volume.chapters.length - 1,
-      translationKeywordLower,
-      max_paragraphs,
-      allResults,
-    });
-  }
+  await iterateReplaceRangeVolumes({
+    book,
+    chapter_id,
+    targetVolumeIndex,
+    targetChapterIndex,
+    shouldStop: () => allResults.size >= max_paragraphs,
+    onVolume: async ({ volume, vIndex, startC, endC }) => {
+      await scanVolumeForTranslationKeyword({
+        volume,
+        vIndex,
+        startC,
+        endC,
+        translationKeywordLower,
+        max_paragraphs,
+        allResults,
+      });
+    },
+  });
 }
 
 /**
@@ -2215,11 +2255,8 @@ function collectTranslationMatchesInChapter(params: {
     if (allResults.size >= max_paragraphs) return;
     const paragraph = content[pIndex];
     if (!paragraph) continue;
-    if (!paragraph.translations || paragraph.translations.length === 0) continue;
-    const hasTranslationKeyword = paragraph.translations.some((t) =>
-      translationKeywordLower.some((kw) => t.translation?.toLowerCase().includes(kw)),
-    );
-    if (hasTranslationKeyword && !allResults.has(paragraph.id)) {
+    if (!matchesTranslationKeyword(paragraph, translationKeywordLower)) continue;
+    if (!allResults.has(paragraph.id)) {
       allResults.set(paragraph.id, {
         paragraph,
         paragraphIndex: pIndex,
@@ -2483,35 +2520,34 @@ async function collectLinearReplaceMatches(params: {
     maxReplacements,
     allResults,
   } = params;
-  if (!book.volumes) return;
-  const range = resolveReplaceRange(book, chapter_id, targetVolumeIndex, targetChapterIndex);
-
-  for (let vIndex = range.startVolumeIndex; vIndex <= range.endVolumeIndex; vIndex++) {
-    if (allResults.size >= maxReplacements) break;
-    const volume = book.volumes[vIndex];
-    if (!volume || !volume.chapters) continue;
-    if (chapter_id && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) continue;
-
-    const startC = range.startChapterIndex ?? 0;
-    const endC = range.endChapterIndex ?? volume.chapters.length - 1;
-    for (let cIndex = startC; cIndex <= endC; cIndex++) {
-      if (allResults.size >= maxReplacements) break;
-      const chapter = volume.chapters[cIndex];
-      if (!chapter) continue;
-      await ensureSingleChapterContentLoaded(chapter);
-      if (!chapter.content) continue;
-      scanChapterForReplaceMatches({
-        chapter,
-        cIndex,
-        volume,
-        vIndex,
-        validKeywords,
-        validOriginalKeywords,
-        maxReplacements,
-        allResults,
-      });
-    }
-  }
+  await iterateReplaceRangeVolumes({
+    book,
+    chapter_id,
+    targetVolumeIndex,
+    targetChapterIndex,
+    shouldStop: () => allResults.size >= maxReplacements,
+    onVolume: async ({ volume, vIndex, startC, endC }) => {
+      const chapters = volume.chapters;
+      if (!chapters) return;
+      for (let cIndex = startC; cIndex <= endC; cIndex++) {
+        if (allResults.size >= maxReplacements) break;
+        const chapter = chapters[cIndex];
+        if (!chapter) continue;
+        await ensureSingleChapterContentLoaded(chapter);
+        if (!chapter.content) continue;
+        scanChapterForReplaceMatches({
+          chapter,
+          cIndex,
+          volume,
+          vIndex,
+          validKeywords,
+          validOriginalKeywords,
+          maxReplacements,
+          allResults,
+        });
+      }
+    },
+  });
 }
 
 /**
