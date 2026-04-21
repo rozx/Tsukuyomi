@@ -531,36 +531,7 @@ export async function buildIndependentChunkPrompt(
       }
 
       if (characters.length > 0) {
-        const characterDetails = characters.map((c) => {
-          const parts: string[] = [];
-          parts.push(`${c.name} → ${c.translation.translation}`);
-
-          if (c.sex) {
-            const sexLabels: Record<string, string> = {
-              male: '男',
-              female: '女',
-              other: '其他',
-            };
-            parts.push(`性别：${sexLabels[c.sex] || c.sex}`);
-          }
-
-          if (c.description) {
-            parts.push(`描述：${c.description}`);
-          }
-
-          if (c.speakingStyle) {
-            parts.push(`说话风格：${c.speakingStyle}`);
-          }
-
-          if (c.aliases && c.aliases.length > 0) {
-            const aliasList = c.aliases
-              .map((a) => `${a.name} → ${a.translation.translation}`)
-              .join('、');
-            parts.push(`别名：${aliasList}`);
-          }
-
-          return parts.join(' | ');
-        });
+        const characterDetails = characters.map(formatCharacterDetail);
 
         contextParts.push(`**角色**：\n${characterDetails.map((d) => `  - ${d}`).join('\n')}`);
       }
@@ -737,38 +708,49 @@ function buildSurroundingParagraphsContext(
 }
 
 /**
- * 构建章节角色上下文（用于单段落润色/校对）
- * @param characters 本章出场的角色列表
+ * 将单个角色格式化为单行详情字符串：`name → translation | 性别：... | 描述：... | 说话风格：... | 别名：...`
+ * 仅在文件内部使用，供多个上下文构建器复用，保证角色信息格式一致
  */
-function buildChapterCharactersContext(characters: CharacterSetting[]): string {
-  if (!characters || characters.length === 0) return '';
-
+function formatCharacterDetail(c: CharacterSetting): string {
   const sexLabels: Record<string, string> = {
     male: '男',
     female: '女',
     other: '其他',
   };
 
-  const characterDetails = characters.map((c) => {
-    const parts: string[] = [];
-    parts.push(`${c.name} → ${c.translation.translation}`);
-    if (c.sex) {
-      parts.push(`性别：${sexLabels[c.sex] || c.sex}`);
-    }
-    if (c.description) {
-      parts.push(`描述：${c.description}`);
-    }
-    if (c.speakingStyle) {
-      parts.push(`说话风格：${c.speakingStyle}`);
-    }
-    if (c.aliases && c.aliases.length > 0) {
-      const aliasList = c.aliases
-        .map((a) => `${a.name} → ${a.translation.translation}`)
-        .join('、');
-      parts.push(`别名：${aliasList}`);
-    }
-    return `  - ${parts.join(' | ')}`;
-  });
+  const parts: string[] = [];
+  parts.push(`${c.name} → ${c.translation.translation}`);
+
+  if (c.sex) {
+    parts.push(`性别：${sexLabels[c.sex] || c.sex}`);
+  }
+
+  if (c.description) {
+    parts.push(`描述：${c.description}`);
+  }
+
+  if (c.speakingStyle) {
+    parts.push(`说话风格：${c.speakingStyle}`);
+  }
+
+  if (c.aliases && c.aliases.length > 0) {
+    const aliasList = c.aliases
+      .map((a) => `${a.name} → ${a.translation.translation}`)
+      .join('、');
+    parts.push(`别名：${aliasList}`);
+  }
+
+  return parts.join(' | ');
+}
+
+/**
+ * 构建章节角色上下文（用于单段落润色/校对）
+ * @param characters 本章出场的角色列表
+ */
+function buildChapterCharactersContext(characters: CharacterSetting[]): string {
+  if (!characters || characters.length === 0) return '';
+
+  const characterDetails = characters.map((c) => `  - ${formatCharacterDetail(c)}`);
 
   return `\n\n【本章出场角色】\n${characterDetails.join('\n')}\n`;
 }
