@@ -14,8 +14,9 @@ import {
   buildBookContextSection,
   getSpecialInstructions,
   buildSpecialInstructionsSection,
+  createTaskChunkForwarder,
+  createUnifiedAbortController,
 } from './utils';
-import { createUnifiedAbortController } from './utils';
 import {
   buildTermTranslationSystemPromptBase,
   buildTermTranslationSystemPrompt,
@@ -284,34 +285,14 @@ export class TermTranslationService {
           messages: history,
         };
 
-        let firstChunkReceived = false;
-        const wrappedOnChunk: TextGenerationStreamCallback = async (chunk) => {
-          if (finalSignal?.aborted) {
-            throw new Error('翻译已取消');
-          }
-
-          if (aiProcessingStore && taskId) {
-            if (!firstChunkReceived) {
-              void aiProcessingStore.updateTask(taskId, {
-                status: 'processing',
-                message: '正在生成翻译...',
-              });
-              firstChunkReceived = true;
-            }
-
-            if (chunk.reasoningContent) {
-              void aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
-            }
-
-            if (chunk.text) {
-              void aiProcessingStore.appendOutputContent(taskId, chunk.text);
-            }
-          }
-
-          if (onChunk) {
-            await onChunk(chunk);
-          }
-        };
+        const wrappedOnChunk = createTaskChunkForwarder({
+          aiProcessingStore,
+          taskId,
+          finalSignal,
+          processingMessage: '正在生成翻译...',
+          abortMessage: '翻译已取消',
+          ...(onChunk ? { onChunk } : {}),
+        });
 
         const result = await service.generateText(config, request, wrappedOnChunk);
 

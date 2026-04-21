@@ -20,7 +20,11 @@ import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { AIServiceFactory } from '../../ai-service-factory';
 import { AIEmptyResponseError } from '../../core';
 import { ToolRegistry } from '../../tools/tool-registry';
-import { createUnifiedAbortController, handleTaskError } from './stream-handler';
+import {
+  createTaskChunkForwarder,
+  createUnifiedAbortController,
+  handleTaskError,
+} from './stream-handler';
 import { getSelectedTranslation } from 'src/utils/text-utils';
 import {
   buildBookContextSection,
@@ -106,37 +110,6 @@ async function registerSingleParagraphTask(
   return { taskId, abortController: task?.abortController };
 }
 
-function createChunkForwarder(
-  aiProcessingStore: SingleParagraphOptions['aiProcessingStore'],
-  taskId: string | undefined,
-  taskLabel: string,
-  finalSignal: AbortSignal,
-  onChunk: SingleParagraphOptions['onChunk'],
-): TextGenerationStreamCallback {
-  let firstChunkReceived = false;
-  return async (chunk) => {
-    if (finalSignal?.aborted) throw new Error('请求已取消');
-
-    if (aiProcessingStore && taskId) {
-      if (!firstChunkReceived) {
-        void aiProcessingStore.updateTask(taskId, {
-          status: 'processing',
-          message: `正在${taskLabel}中...`,
-        });
-        firstChunkReceived = true;
-      }
-      if (chunk.reasoningContent) {
-        void aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
-      }
-      if (chunk.text) {
-        void aiProcessingStore.appendOutputContent(taskId, chunk.text);
-      }
-    }
-
-    if (onChunk) await onChunk(chunk);
-  };
-}
-
 async function forwardAddTranslationBatchResult(
   toolResultContent: string,
   logLabel: string,
@@ -200,13 +173,13 @@ async function runSingleParagraphRound(
     result = await ctx.service.generateText(
       ctx.aiConfig,
       request,
-      createChunkForwarder(
-        ctx.aiProcessingStore,
-        ctx.taskId,
-        ctx.taskLabel,
-        ctx.finalSignal,
-        ctx.onChunk,
-      ),
+      createTaskChunkForwarder({
+        aiProcessingStore: ctx.aiProcessingStore,
+        taskId: ctx.taskId,
+        finalSignal: ctx.finalSignal,
+        processingMessage: `正在${ctx.taskLabel}中...`,
+        ...(ctx.onChunk ? { onChunk: ctx.onChunk } : {}),
+      }),
     );
   } catch (error) {
     if (error instanceof AIEmptyResponseError) {

@@ -159,6 +159,78 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
 }
 
 /**
+ * 创建简易的任务流式转发回调
+ *
+ * 把底层 AI 流式 chunk 镜像到 aiProcessingStore 的 task 上：
+ * - 首个 chunk 到达时把 task 从 thinking 切到 processing 并更新 message
+ * - reasoningContent 追加到思考消息
+ * - text 追加到输出内容
+ * - 最后委派给调用方传入的 onChunk
+ *
+ * 适用于“无降级检测 / 无占位符过滤”的简单场景（如术语翻译、单段润色/校对）。
+ * 需要降级检测请改用 `createStreamCallback`。
+ */
+export interface TaskChunkForwarderOptions {
+  aiProcessingStore: AIProcessingStore | undefined;
+  taskId: string | undefined;
+  finalSignal: AbortSignal;
+  /**
+   * 首个 chunk 到达时写入 task 的提示文案
+   */
+  processingMessage: string;
+  /**
+   * signal 已 aborted 时抛出的错误消息（默认 '请求已取消'）
+   */
+  abortMessage?: string;
+  /**
+   * 调用方的原始流式回调
+   */
+  onChunk?: TextGenerationStreamCallback;
+}
+
+export function createTaskChunkForwarder(
+  options: TaskChunkForwarderOptions,
+): TextGenerationStreamCallback {
+  const {
+    aiProcessingStore,
+    taskId,
+    finalSignal,
+    processingMessage,
+    abortMessage = '请求已取消',
+    onChunk,
+  } = options;
+
+  let firstChunkReceived = false;
+  return async (chunk) => {
+    if (finalSignal?.aborted) {
+      throw new Error(abortMessage);
+    }
+
+    if (aiProcessingStore && taskId) {
+      if (!firstChunkReceived) {
+        void aiProcessingStore.updateTask(taskId, {
+          status: 'processing',
+          message: processingMessage,
+        });
+        firstChunkReceived = true;
+      }
+
+      if (chunk.reasoningContent) {
+        void aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
+      }
+
+      if (chunk.text) {
+        void aiProcessingStore.appendOutputContent(taskId, chunk.text);
+      }
+    }
+
+    if (onChunk) {
+      await onChunk(chunk);
+    }
+  };
+}
+
+/**
  * 创建统一的 AbortController，同时监听多个 signal
  * @param signal 外部传入的取消信号
  * @param taskAbortController 任务的取消控制器
