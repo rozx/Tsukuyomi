@@ -797,7 +797,7 @@ function prepareChunkRetry(params: {
  * 将 chunk 的解析结果写回 paragraphResults，并返回追加到 resultText 的文本片段
  */
 async function writeChunkResult(params: {
-  loopResult: { paragraphs: Map<string, string>; responseText?: string };
+  loopResult: { paragraphs: Map<string, string>; responseText?: string | null | undefined };
   actualChunk: TextChunk;
   onlyChangedParagraphs: boolean;
   originalTranslations: Map<string, string>;

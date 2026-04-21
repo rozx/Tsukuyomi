@@ -27,6 +27,7 @@ import {
 import { BookService } from 'src/services/book-service';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueCharactersInText, findUniqueTermsInText } from 'src/utils/text-matcher';
+import type { CharacterSetting } from 'src/models/novel';
 
 /**
  * 术语翻译服务选项
@@ -141,15 +142,7 @@ async function buildSystemPrompt(
 /**
  * 将匹配到的角色信息格式化成一行描述
  */
-function formatCharacterDetail(c: {
-  id: string;
-  name: string;
-  translation: { translation: string };
-  sex?: string;
-  description?: string;
-  speakingStyle?: string;
-  aliases?: { name: string; translation: { translation: string } }[];
-}): string {
+function formatCharacterDetail(c: CharacterSetting): string {
   const parts: string[] = [];
   const sexLabels: Record<string, string> = {
     male: '男',
