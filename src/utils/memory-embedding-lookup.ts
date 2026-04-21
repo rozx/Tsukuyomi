@@ -27,7 +27,11 @@ interface MemoryStorage {
   embeddingModel?: string;
 }
 
-function storageToMemory(storage: MemoryStorage): Memory {
+/**
+ * 把 IndexedDB 里的 MemoryStorage 转成对外 Memory，保留可选的 embedding 字段。
+ * 叶子 DB 工具与 MemoryService 的读路径共用（MemoryService 直接 re-export 这个函数）。
+ */
+export function storageToMemory(storage: MemoryStorage): Memory {
   const result: Memory = {
     id: storage.id,
     bookId: storage.bookId,

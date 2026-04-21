@@ -20,6 +20,7 @@ import { EmbeddingQueue } from 'src/services/embedding-queue';
 // 叶子重新导出，保持既有消费者（MemoryCard / MemoryPanel / Dialog 等）的
 // import 路径稳定。
 export { isMemoryEmbeddingStale } from 'src/utils/memory-embedding-lookup';
+import { storageToMemory as storageToMemoryWithEmbedding } from 'src/utils/memory-embedding-lookup';
 
 const MAX_MEMORIES_PER_BOOK = 500;
 
@@ -590,7 +591,7 @@ export class MemoryService {
       };
       await db.put('memories', updatedMemory);
 
-      const result = this.storageToMemoryWithEmbedding(updatedMemory);
+      const result = storageToMemoryWithEmbedding(updatedMemory);
 
       // 更新缓存
       this.memoryCache.set(cacheKey, result);
@@ -808,29 +809,12 @@ export class MemoryService {
   }
 
   /**
-   * 从 MemoryStorage 构造 Memory,保留 embedding 字段(供打分模块使用)。
-   */
-  private static storageToMemoryWithEmbedding(storage: MemoryStorage): Memory {
-    const result: Memory = {
-      id: storage.id,
-      bookId: storage.bookId,
-      content: storage.content,
-      summary: storage.summary,
-      createdAt: storage.createdAt,
-      lastAccessedAt: storage.lastAccessedAt,
-    };
-    if (storage.embedding !== undefined) result.embedding = storage.embedding;
-    if (storage.embeddingModel !== undefined) result.embeddingModel = storage.embeddingModel;
-    return result;
-  }
-
-  /**
    * 读取路径共用：把一组 MemoryStorage 转成对外 Memory，同时顺便把每条写入单条缓存，
    * 最后触发一次 LRU 淘汰。由 getAll / getRecent 两个热读入口共用。
    */
   private static mapMemoriesWithCache(memories: MemoryStorage[], bookId: string): Memory[] {
     const results = memories.map((memory) => {
-      const result = this.storageToMemoryWithEmbedding(memory);
+      const result = storageToMemoryWithEmbedding(memory);
       const cacheKey = this.getCacheKey(bookId, memory.id);
       this.memoryCache.set(cacheKey, result);
       return result;
@@ -865,7 +849,7 @@ export class MemoryService {
       const db = await getDB();
       const index = db.transaction('memories', 'readonly').store.index('by-bookId');
       const rows = (await index.getAll(bookId)) as MemoryStorage[];
-      const memories = rows.map((row) => this.storageToMemoryWithEmbedding(row));
+      const memories = rows.map((row) => storageToMemoryWithEmbedding(row));
 
       this.bookMemoryCache.set(bookId, {
         data: memories,
@@ -1068,7 +1052,7 @@ export class MemoryService {
 
         // 返回更新后的记忆
         const results = recentMemories.map((memory) => {
-          const result = this.storageToMemoryWithEmbedding(memory as MemoryStorage);
+          const result = storageToMemoryWithEmbedding(memory as MemoryStorage);
           result.lastAccessedAt = now;
 
           const cacheKey = this.getCacheKey(bookId, memory.id);
