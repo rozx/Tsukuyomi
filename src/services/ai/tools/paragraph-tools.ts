@@ -72,6 +72,18 @@ function toDisplayParagraphIndex(paragraphIndex: number): number {
 }
 
 /**
+ * 选取段落的展示翻译文本：优先当前选中版本，其次第一条翻译，最后回退空字符串。
+ * 被 `toSearchResponseItem` / `previous_paragraphs` / `next_paragraphs` 等多处共享。
+ */
+function pickDisplayTranslation(paragraph: Paragraph): string {
+  return (
+    paragraph.translations.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
+    paragraph.translations[0]?.translation ||
+    ''
+  );
+}
+
+/**
  * 构造段落翻译条目的基础结构（id / translation / aiModelId / aiModelName / isSelected）。
  * 被 `get_paragraph_info` 与 `get_translation_history` 共享；后者在返回时额外追加
  * index / isLatest 字段，调用方按需展开。
@@ -131,12 +143,7 @@ function toSearchResponseItem(result: ParagraphSearchResult) {
   return {
     id: result.paragraph.id,
     text: result.paragraph.text,
-    translation:
-      result.paragraph.translations.find(
-        (t) => t.id === result.paragraph.selectedTranslationId,
-      )?.translation ||
-      result.paragraph.translations[0]?.translation ||
-      '',
+    translation: pickDisplayTranslation(result.paragraph),
     chapter: {
       id: result.chapter.id,
       title:
@@ -662,12 +669,7 @@ export const paragraphTools: ToolDefinition[] = [
         response.previous_paragraphs = validPreviousResults.map((result) => ({
           id: result.paragraph.id,
           text: result.paragraph.text,
-          translation:
-            result.paragraph.translations.find(
-              (t) => t.id === result.paragraph.selectedTranslationId,
-            )?.translation ||
-            result.paragraph.translations[0]?.translation ||
-            '',
+          translation: pickDisplayTranslation(result.paragraph),
           paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
         }));
       }
@@ -688,12 +690,7 @@ export const paragraphTools: ToolDefinition[] = [
         response.next_paragraphs = validNextResults.map((result) => ({
           id: result.paragraph.id,
           text: result.paragraph.text,
-          translation:
-            result.paragraph.translations.find(
-              (t) => t.id === result.paragraph.selectedTranslationId,
-            )?.translation ||
-            result.paragraph.translations[0]?.translation ||
-            '',
+          translation: pickDisplayTranslation(result.paragraph),
           paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
         }));
       }
