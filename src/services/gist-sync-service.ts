@@ -661,6 +661,126 @@ export class GistSyncService {
   }
 
   /**
+   * 从 Gist 文件名集合中收集所有书籍 ID（包括分块与未分块、排除 meta.json）。
+   */
+  private collectNovelIdsFromGistFiles(
+    gistFiles: Record<string, GistFileLike | null | undefined>,
+  ): Set<string> {
+    const novelIds = new Set<string>();
+    for (const fileName of Object.keys(gistFiles)) {
+      if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
+        const novelId = extractNovelIdFromChunkFileName(fileName);
+        if (novelId) {
+          novelIds.add(novelId);
+        }
+      } else if (
+        fileName.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) &&
+        !fileName.endsWith('.meta.json')
+      ) {
+        // 处理普通书籍文件（非分块、非 metadata）
+        // 提取书籍 ID（从 "novel-{id}.json" 格式）
+        const match = fileName.match(/^novel-(.+)\.json$/);
+        if (match && match[1]) {
+          novelIds.add(match[1]);
+        }
+      }
+    }
+    return novelIds;
+  }
+
+  /**
+   * 解析未分块的书籍文件（含截断 raw_url 回退 + gzip 解压 + 日期反序列化）。
+   *
+   * 返回值区分三种失败：
+   * - `{ status: 'ok', novel }`：解析成功。
+   * - `{ status: 'content-unavailable' }`：文件缺失、raw_url 获取失败或内容为空（静默跳过）。
+   * - `{ status: 'parse-failed' }`：拿到内容但 JSON/gzip 解析失败（调用方通常会记录"无法解析"）。
+   */
+  private async parseAndDeserializeNovelFile(
+    file: GistFileLike | null | undefined,
+  ): Promise<
+    { status: 'ok'; novel: Novel } | { status: 'content-unavailable' } | { status: 'parse-failed' }
+  > {
+    if (!file) return { status: 'content-unavailable' };
+
+    let fileContent = file.content;
+    const truncated = file.truncated === true;
+    const isTruncated = truncated || !fileContent;
+
+    if (isTruncated && file.raw_url) {
+      try {
+        const rawResponse = await fetch(file.raw_url);
+        if (rawResponse.ok) {
+          fileContent = await rawResponse.text();
+        } else {
+          return { status: 'content-unavailable' };
+        }
+      } catch {
+        return { status: 'content-unavailable' };
+      }
+    }
+
+    if (!fileContent) {
+      return { status: 'content-unavailable' };
+    }
+
+    try {
+      const parsedContent = await this.parseGistContent(fileContent);
+      return { status: 'ok', novel: this.deserializeDates(parsedContent) as Novel };
+    } catch {
+      return { status: 'parse-failed' };
+    }
+  }
+
+  /**
+   * 合并并解析书籍的分块文件。调用方应已确认分块未被截断。
+   *
+   * 参数说明：
+   * - `chunkFiles`：来自 `collectNovelChunkFiles` 的分块列表（按索引排序前）。
+   * - `novelId`：仅用于日志。
+   * - `expectedChunks` 与 `maxChunkSearchLimit`：同时提供且 `expectedChunks < maxChunkSearchLimit`
+   *   时，会在分块数量不匹配时打印警告；省略则不做数量校验（用于不关心该警告的历史版本流程）。
+   */
+  private async mergeAndParseNovelChunks(
+    chunkFiles: CollectedChapterChunks['chunkFiles'],
+    novelId: string,
+    expectedChunks?: number,
+    maxChunkSearchLimit?: number,
+  ): Promise<Novel | null> {
+    if (chunkFiles.length === 0) return null;
+
+    try {
+      // 按索引排序
+      chunkFiles.sort((a, b) => a.index - b.index);
+
+      // 如果有 metadata，验证找到的块数量与预期是否一致
+      if (
+        typeof expectedChunks === 'number' &&
+        typeof maxChunkSearchLimit === 'number' &&
+        expectedChunks < maxChunkSearchLimit &&
+        chunkFiles.length !== expectedChunks
+      ) {
+        console.warn(
+          `[GistSyncService] 书籍 ${novelId} 分块数量不匹配:` +
+            ` 期望 ${expectedChunks}，实际找到 ${chunkFiles.length}`,
+        );
+      }
+
+      // 组合所有块
+      const fullContent = chunkFiles.map((chunk) => chunk.content).join('');
+
+      try {
+        const parsedContent = await this.parseGistContent(fullContent);
+        return this.deserializeDates(parsedContent) as Novel;
+      } catch {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 将 Date 对象转换为可序列化的格式
    */
   private serializeDates<T>(obj: T): T {
@@ -1491,26 +1611,7 @@ export class GistSyncService {
 
       // 2. 读取所有书籍文件
       // 首先收集所有书籍 ID（包括分块的和未分块的）
-      const novelIds = new Set<string>();
-
-      for (const fileName of Object.keys(gistFiles)) {
-        if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
-          const novelId = extractNovelIdFromChunkFileName(fileName);
-          if (novelId) {
-            novelIds.add(novelId);
-          }
-        } else if (
-          fileName.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) &&
-          !fileName.endsWith('.meta.json')
-        ) {
-          // 处理普通书籍文件（非分块、非 metadata）
-          // 提取书籍 ID（从 "novel-{id}.json" 格式）
-          const match = fileName.match(/^novel-(.+)\.json$/);
-          if (match && match[1]) {
-            novelIds.add(match[1]);
-          }
-        }
-      }
+      const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
 
       // 更新进度：开始处理书籍
       const totalNovels = novelIds.size;
@@ -1551,44 +1652,28 @@ export class GistSyncService {
 
           // 如果找到分块文件，尝试重组
           if (chunkFiles.length > 0) {
-            try {
-              // 按索引排序
-              chunkFiles.sort((a, b) => a.index - b.index);
+            const mergedNovel = await this.mergeAndParseNovelChunks(
+              chunkFiles,
+              novelId ?? '',
+              expectedChunks,
+              MAX_CHUNK_SEARCH_LIMIT,
+            );
+            if (mergedNovel) {
+              result.novels.push(mergedNovel);
 
-              // 如果有 metadata，验证找到的块数量与预期是否一致
-              if (expectedChunks < MAX_CHUNK_SEARCH_LIMIT && chunkFiles.length !== expectedChunks) {
-                console.warn(
-                  `[GistSyncService] 书籍 ${novelId} 分块数量不匹配:` +
-                    ` 期望 ${expectedChunks}，实际找到 ${chunkFiles.length}`,
-                );
+              // 更新进度：处理完一本书
+              processedNovels++;
+              if (onProgress) {
+                onProgress({
+                  current: processedNovels,
+                  total: totalNovels,
+                  message: `正在下载书籍: ${mergedNovel.title || novelId} (${processedNovels}/${totalNovels})`,
+                });
               }
 
-              // 组合所有块
-              const fullContent = chunkFiles.map((chunk) => chunk.content).join('');
-
-              // 尝试解析完整的 JSON
-              try {
-                const parsedContent = await this.parseGistContent(fullContent);
-                const novel = this.deserializeDates(parsedContent) as Novel;
-                result.novels.push(novel);
-
-                // 更新进度：处理完一本书
-                processedNovels++;
-                if (onProgress) {
-                  onProgress({
-                    current: processedNovels,
-                    total: totalNovels,
-                    message: `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`,
-                  });
-                }
-
-                continue; // 成功重组，继续处理下一本书
-              } catch {
-                // 如果解析失败，尝试使用未分块文件（如果存在且未截断）
-              }
-            } catch {
-              // 继续尝试使用未分块文件（如果存在）
+              continue; // 成功重组，继续处理下一本书
             }
+            // 重组/解析失败，继续尝试使用未分块文件
           }
 
           // 尝试使用未分块的书籍文件
@@ -1600,34 +1685,9 @@ export class GistSyncService {
 
           const file = gistFiles[fileName];
           if (file) {
-            let fileContent = file.content;
-            const truncated = file.truncated === true;
-
-            // 检测文件是否被截断（GitHub API 对大文件返回 truncated=true）
-            const isTruncated = truncated || !fileContent;
-
-            if (isTruncated && file.raw_url) {
-              // 尝试从 raw_url 获取完整内容
-              try {
-                const rawResponse = await fetch(file.raw_url);
-                if (rawResponse.ok) {
-                  fileContent = await rawResponse.text();
-                } else {
-                  continue;
-                }
-              } catch {
-                continue;
-              }
-            }
-
-            if (!fileContent) {
-              continue;
-            }
-
-            try {
-              const parsedContent = await this.parseGistContent(fileContent);
-              const novel = this.deserializeDates(parsedContent) as Novel;
-              result.novels.push(novel);
+            const parseResult = await this.parseAndDeserializeNovelFile(file);
+            if (parseResult.status === 'ok') {
+              result.novels.push(parseResult.novel);
 
               // 更新进度：处理完一本书
               processedNovels++;
@@ -1635,10 +1695,10 @@ export class GistSyncService {
                 onProgress({
                   current: processedNovels,
                   total: totalNovels,
-                  message: `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`,
+                  message: `正在下载书籍: ${parseResult.novel.title || novelId} (${processedNovels}/${totalNovels})`,
                 });
               }
-            } catch {
+            } else if (parseResult.status === 'parse-failed') {
               // 继续处理其他书籍
               processedNovels++;
               if (onProgress) {
@@ -1648,6 +1708,9 @@ export class GistSyncService {
                   message: `跳过无法解析的书籍 (${processedNovels}/${totalNovels})`,
                 });
               }
+              continue;
+            } else {
+              // content-unavailable：静默跳过（与旧逻辑保持一致）
               continue;
             }
           } else {
@@ -2115,24 +2178,7 @@ export class GistSyncService {
       );
 
       // 收集书籍 ID
-      const novelIds = new Set<string>();
-
-      for (const fileName of Object.keys(gistFiles)) {
-        if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
-          const novelId = extractNovelIdFromChunkFileName(fileName);
-          if (novelId) {
-            novelIds.add(novelId);
-          }
-        } else if (
-          fileName.startsWith(GIST_FILE_NAMES.NOVEL_PREFIX) &&
-          !fileName.endsWith('.meta.json')
-        ) {
-          const match = fileName.match(/^novel-(.+)\.json$/);
-          if (match && match[1]) {
-            novelIds.add(match[1]);
-          }
-        }
-      }
+      const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
 
       // 处理每本书（使用与 downloadFromGist 相同的逻辑）
       for (const novelId of novelIds) {
@@ -2151,21 +2197,13 @@ export class GistSyncService {
           );
 
           if (chunkFiles.length > 0) {
-            try {
-              chunkFiles.sort((a, b) => a.index - b.index);
-              const fullContent = chunkFiles.map((chunk) => chunk.content).join('');
-
-              try {
-                const parsedContent = await this.parseGistContent(fullContent);
-                const novel = this.deserializeDates(parsedContent) as Novel;
-                result.novels.push(novel);
-                continue;
-              } catch {
-                // 解析失败，尝试单文件
-              }
-            } catch {
-              // 重组失败，尝试单文件
+            // 历史版本流程不做分块数量校验警告，因此不传 expectedChunks/maxChunkSearchLimit
+            const mergedNovel = await this.mergeAndParseNovelChunks(chunkFiles, novelId);
+            if (mergedNovel) {
+              result.novels.push(mergedNovel);
+              continue;
             }
+            // 重组/解析失败，尝试单文件
           }
 
           if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
@@ -2174,29 +2212,11 @@ export class GistSyncService {
 
           const file = gistFiles[fileName];
           if (file) {
-            let fileContent = file.content;
-            const truncated = file.truncated === true;
-
-            if (truncated && file.raw_url) {
-              try {
-                const rawResponse = await fetch(file.raw_url);
-                if (rawResponse.ok) {
-                  fileContent = await rawResponse.text();
-                }
-              } catch {
-                // 忽略获取失败
-              }
+            const parseResult = await this.parseAndDeserializeNovelFile(file);
+            if (parseResult.status === 'ok') {
+              result.novels.push(parseResult.novel);
             }
-
-            if (fileContent) {
-              try {
-                const parsedContent = await this.parseGistContent(fileContent);
-                const novel = this.deserializeDates(parsedContent) as Novel;
-                result.novels.push(novel);
-              } catch {
-                // 忽略解析错误
-              }
-            }
+            // 其他状态：忽略获取失败 / 忽略解析错误（历史版本流程静默跳过）
           }
         } catch {
           // 继续处理其他书籍
