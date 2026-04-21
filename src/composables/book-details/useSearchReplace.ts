@@ -5,6 +5,22 @@ import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
 import type { Chapter, Paragraph, Novel, Volume } from 'src/models/novel';
 
+/**
+ * 若段落正在编辑态，把 DOM 里的 textarea 值同步为新文本，并触发 input 事件让 v-model 感知。
+ * 替换单个段落 / 批量替换都要走这一步，避免用户看到的编辑内容与保存结果脱节。
+ */
+function syncParagraphEditTextarea(paragraphId: string, newText: string): void {
+  const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
+  if (!paragraphElement) return;
+  const textarea = paragraphElement.querySelector<HTMLTextAreaElement>(
+    '.paragraph-translation-edit textarea',
+  );
+  if (!textarea) return;
+  textarea.value = newText;
+  // 触发 input 事件以确保 Vue 的 v-model 更新
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 export function useSearchReplace(
   book: Ref<Novel | undefined>,
   selectedChapter: Ref<Chapter | null>,
@@ -232,17 +248,7 @@ export function useSearchReplace(
     if (newText !== rawText) {
       // 如果段落正在编辑，需要先更新 DOM 中的 textarea，然后再保存
       if (currentlyEditingParagraphId?.value === paragraph.id) {
-        const paragraphElement = document.getElementById(`paragraph-${paragraph.id}`);
-        if (paragraphElement) {
-          const textarea = paragraphElement.querySelector<HTMLTextAreaElement>(
-            '.paragraph-translation-edit textarea',
-          );
-          if (textarea) {
-            textarea.value = newText;
-            // 触发 input 事件以确保 Vue 的 v-model 更新
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-        }
+        syncParagraphEditTextarea(paragraph.id, newText);
       }
 
       try {
@@ -330,16 +336,7 @@ export function useSearchReplace(
 
     for (const [paragraphId, newText] of updates.entries()) {
       if (editedParagraphIds.includes(paragraphId)) {
-        const paragraphElement = document.getElementById(`paragraph-${paragraphId}`);
-        if (paragraphElement) {
-          const textarea = paragraphElement.querySelector<HTMLTextAreaElement>(
-            '.paragraph-translation-edit textarea',
-          );
-          if (textarea) {
-            textarea.value = newText;
-            textarea.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-        }
+        syncParagraphEditTextarea(paragraphId, newText);
       }
     }
 
