@@ -2,6 +2,7 @@ import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector'
 import type { TaskType, AIProcessingStore } from './task-types';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
+import { isCancelledError } from 'src/utils/is-cancelled-error';
 
 // 常量定义
 /**
@@ -338,20 +339,7 @@ export async function initializeTask(
   }
 }
 
-const isTaskCancelled = (error: unknown): boolean => {
-  if (error instanceof Error) {
-    return (
-      error.message === '请求已取消' ||
-      error.message.includes('aborted') ||
-      error.name === 'AbortError' ||
-      error.name === 'CanceledError'
-    );
-  }
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    return (error as { message: unknown }).message === 'canceled';
-  }
-  return false;
-};
+const isTaskCancelled = isCancelledError;
 
 /**
  * 处理任务错误

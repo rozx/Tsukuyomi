@@ -12,6 +12,7 @@ import {
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { AssistantService } from 'src/services/ai/tasks';
 import { buildAssistantMessageHistory } from 'src/utils/ai-context-utils';
+import { isCancelledError } from 'src/utils/is-cancelled-error';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 
 import { useChatActionHandler } from './useChatActionHandler';
@@ -56,20 +57,6 @@ export function useChatSending(
   const aiProcessingStore = useAIProcessingStore();
   const isSending = ref(false);
 
-  const isCancelledError = (error: unknown): boolean => {
-    if (error instanceof Error) {
-      return (
-        error.message === '请求已取消' ||
-        error.message.includes('aborted') ||
-        error.name === 'AbortError' ||
-        error.name === 'CanceledError'
-      );
-    }
-    if (typeof error === 'object' && error !== null && 'message' in error) {
-      return (error as { message: unknown }).message === 'canceled';
-    }
-    return false;
-  };
 
   const { handleAction } = useChatActionHandler(
     router,
