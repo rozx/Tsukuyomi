@@ -30,6 +30,7 @@ function dispatchTodoCreated(
   onAction({ type: 'create', entity: 'todo', data: todo });
 }
 
+
 function createBatchTodos(
   items: string[],
   taskId: string,
@@ -92,6 +93,35 @@ function dispatchTodoUpdated(
     entity: 'todo',
     data: updated,
     ...(previous ? { previousData: previous } : {}),
+  });
+}
+
+/**
+ * 单 todo 状态翻转工具（mark_todo_done / mark_todo_working / 等）共用的执行体：
+ * 校验 id → 取前置快照 → 调 mutate → 派发 update action → 返回统一 JSON 响应。
+ */
+function runTodoStatusTransition(
+  id: string | undefined,
+  mutate: (id: string) => TodoItem,
+  successMessage: string,
+  onAction: ((action: UpdateTodoAction) => void) | undefined,
+): string {
+  if (!id) {
+    throw new Error('待办事项 ID 不能为空');
+  }
+
+  const previousTodo = TodoListService.getTodoById(id);
+  const updatedTodo = mutate(id);
+  dispatchTodoUpdated(previousTodo, updatedTodo, onAction);
+
+  return JSON.stringify({
+    success: true,
+    message: successMessage,
+    todo: {
+      id: updatedTodo.id,
+      text: updatedTodo.text,
+      status: updatedTodo.status,
+    },
   });
 }
 
@@ -309,35 +339,13 @@ export const todoListTools: ToolDefinition[] = [
       },
     },
     handler: (args, { onAction }) => {
-      const { id } = args as {
-        id: string;
-      };
-      if (!id) {
-        throw new Error('待办事项 ID 不能为空');
-      }
-
-      const previousTodo = TodoListService.getTodoById(id);
-      const updatedTodo = TodoListService.markTodoAsDone(id);
-
-      // 通过 onAction 回调传递操作信息（不需要 toast）
-      if (onAction) {
-        onAction({
-          type: 'update',
-          entity: 'todo',
-          data: updatedTodo,
-          ...(previousTodo ? { previousData: previousTodo } : {}),
-        });
-      }
-
-      return JSON.stringify({
-        success: true,
-        message: '待办事项已标记为完成',
-        todo: {
-          id: updatedTodo.id,
-          text: updatedTodo.text,
-          status: updatedTodo.status,
-        },
-      });
+      const { id } = args as { id: string };
+      return runTodoStatusTransition(
+        id,
+        (todoId) => TodoListService.markTodoAsDone(todoId),
+        '待办事项已标记为完成',
+        onAction,
+      );
     },
   },
   {
@@ -350,34 +358,13 @@ export const todoListTools: ToolDefinition[] = [
       },
     },
     handler: (args, { onAction }) => {
-      const { id } = args as {
-        id: string;
-      };
-      if (!id) {
-        throw new Error('待办事项 ID 不能为空');
-      }
-
-      const previousTodo = TodoListService.getTodoById(id);
-      const updatedTodo = TodoListService.markTodoAsWorking(id);
-
-      if (onAction) {
-        onAction({
-          type: 'update',
-          entity: 'todo',
-          data: updatedTodo,
-          ...(previousTodo ? { previousData: previousTodo } : {}),
-        });
-      }
-
-      return JSON.stringify({
-        success: true,
-        message: '待办事项已标记为进行中',
-        todo: {
-          id: updatedTodo.id,
-          text: updatedTodo.text,
-          status: updatedTodo.status,
-        },
-      });
+      const { id } = args as { id: string };
+      return runTodoStatusTransition(
+        id,
+        (todoId) => TodoListService.markTodoAsWorking(todoId),
+        '待办事项已标记为进行中',
+        onAction,
+      );
     },
   },
   {
