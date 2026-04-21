@@ -59,39 +59,27 @@ for (const file of helpFiles) {
   console.log(`  ✓ Copied ${file}`);
 }
 
-// 3. 复制发布说明文档
-console.log('📋 Copying release notes...');
-const releaseNotesDir = join(REPO_ROOT, 'public/releaseNotes');
-let releaseFiles: string[] = [];
-if (existsSync(releaseNotesDir)) {
-  releaseFiles = readdirSync(releaseNotesDir).filter((file) => file.endsWith('.md'));
-
-  for (const file of releaseFiles) {
-    const sourcePath = join(releaseNotesDir, file);
+// 从源目录拷贝所有 .md 到 WIKI_DIR；目录不存在时安全跳过，返回实际拷贝的文件名。
+function copyMarkdownFilesFromDir(sourceDir: string): string[] {
+  if (!existsSync(sourceDir)) return [];
+  const files = readdirSync(sourceDir).filter((file) => file.endsWith('.md'));
+  for (const file of files) {
+    const sourcePath = join(sourceDir, file);
     const content = readFileSync(sourcePath, 'utf-8');
     const destPath = join(WIKI_DIR, file);
-
     writeFileSync(destPath, content, 'utf-8');
     console.log(`  ✓ Copied ${file}`);
   }
+  return files;
 }
+
+// 3. 复制发布说明文档
+console.log('📋 Copying release notes...');
+const releaseFiles = copyMarkdownFilesFromDir(join(REPO_ROOT, 'public/releaseNotes'));
 
 // 4. 复制开发文档
 console.log('🛠️  Copying developer documentation...');
-const docsDir = join(REPO_ROOT, 'docs');
-let docFiles: string[] = [];
-if (existsSync(docsDir)) {
-  docFiles = readdirSync(docsDir).filter((file) => file.endsWith('.md'));
-
-  for (const file of docFiles) {
-    const sourcePath = join(docsDir, file);
-    const content = readFileSync(sourcePath, 'utf-8');
-    const destPath = join(WIKI_DIR, file);
-
-    writeFileSync(destPath, content, 'utf-8');
-    console.log(`  ✓ Copied ${file}`);
-  }
-}
+const docFiles = copyMarkdownFilesFromDir(join(REPO_ROOT, 'docs'));
 
 // 5. 生成 Home.md（首页）
 console.log('🏠 Generating Home.md...');
