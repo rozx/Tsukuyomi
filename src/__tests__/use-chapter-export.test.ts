@@ -1,20 +1,23 @@
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
+import { vi } from 'vitest';
 import { ref } from 'vue';
 import { useChapterExport } from '../composables/book-details/useChapterExport';
 import type { Chapter, Paragraph } from '../models/novel';
 import { ChapterService } from '../services/chapter-service';
 
-// Mock dependencies
-const mockToastAdd = mock(() => {});
-const mockUseToastWithHistory = mock(() => ({
-  add: mockToastAdd,
+const { mockToastAdd, mockUseToastWithHistory } = vi.hoisted(() => {
+  const add = vi.fn();
+  return {
+    mockToastAdd: add,
+    mockUseToastWithHistory: vi.fn(() => ({ add })),
+  };
+});
+
+vi.mock('src/composables/useToastHistory', () => ({
+  useToastWithHistory: mockUseToastWithHistory,
 }));
 
 const mockExportChapter = mock(() => Promise.resolve());
-
-await mock.module('src/composables/useToastHistory', () => ({
-  useToastWithHistory: mockUseToastWithHistory,
-}));
 
 describe('useChapterExport', () => {
   beforeEach(() => {

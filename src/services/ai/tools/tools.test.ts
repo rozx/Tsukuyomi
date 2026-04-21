@@ -1,4 +1,5 @@
 import { describe, expect, it, jest, mock, beforeEach, spyOn } from 'bun:test';
+import { vi } from 'vitest';
 import { createTranslationTools } from './translation-tools';
 import { taskStatusTools } from './task-status-tools';
 import { bookTools } from './book-tools';
@@ -14,45 +15,45 @@ import { MemoryService } from 'src/services/memory-service';
 import { useBooksStore } from 'src/stores/books';
 
 // Mock dependencies
-mock.module('src/services/book-service', () => ({
+vi.mock('src/services/book-service', () => ({
   BookService: {
     getBookById: jest.fn(),
     saveBook: jest.fn(),
   },
 }));
 
-mock.module('src/services/chapter-content-service', () => ({
+vi.mock('src/services/chapter-content-service', () => ({
   ChapterContentService: {
     loadChapterContentsBatch: jest.fn(),
     loadChapterContent: jest.fn(),
   },
 }));
 
-mock.module('src/services/chapter-service', () => ({
+vi.mock('src/services/chapter-service', () => ({
   ChapterService: {
     updateChapter: jest.fn(),
     findChapterById: jest.fn(),
   },
 }));
 
-mock.module('src/stores/books', () => ({
+vi.mock('src/stores/books', () => ({
   useBooksStore: jest.fn(() => ({
     getBookById: jest.fn(),
     updateBook: jest.fn(),
   })),
 }));
 
-mock.module('src/utils/id-generator', () => ({
+vi.mock('src/utils/id-generator', () => ({
   generateShortId: jest.fn(() => 'mock-id'),
 }));
 
 // Mock utils
-mock.module('src/utils/novel-utils', () => ({
+vi.mock('src/utils/novel-utils', () => ({
   getChapterDisplayTitle: jest.fn((c) => c.title),
   getChapterContentText: jest.fn(() => ''),
 }));
 
-mock.module('./memory-helper', () => ({
+vi.mock('./memory-helper', () => ({
   searchRelatedMemoriesHybrid: jest.fn(() => []),
 }));
 
@@ -96,9 +97,9 @@ describe('AI Tools Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // 确保 findChapterById 默认返回 undefined（防止跨测试泄露）
-    (ChapterService.findChapterById as jest.Mock).mockReturnValue(undefined);
+    (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
     // 默认不返回章节内容，避免上一个测试的 mock 实现泄露到下一个测试
-    (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(null);
+    (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null);
     // Reset store mock
     mockContext.aiProcessingStore.activeTasks = [
       {
@@ -207,8 +208,8 @@ describe('AI Tools Tests', () => {
         id: mockBookId,
         volumes: [{ chapters: [mockChapter] }],
       };
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
         volume: mockBook.volumes[0],
       });
@@ -241,8 +242,8 @@ describe('AI Tools Tests', () => {
           },
         ],
       };
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
         volume: mockBook.volumes[0],
       });
@@ -275,8 +276,8 @@ describe('AI Tools Tests', () => {
           },
         ],
       };
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
         volume: mockBook.volumes[0],
       });
@@ -319,8 +320,8 @@ describe('AI Tools Tests', () => {
           },
         ],
       };
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
         volume: mockBook.volumes[0],
       });
@@ -365,8 +366,8 @@ describe('AI Tools Tests', () => {
           },
         ],
       };
-      (BookService.getBookById as jest.Mock).mockResolvedValueOnce(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
         volume: mockBook.volumes[0],
       });
@@ -483,11 +484,11 @@ describe('AI Tools Tests', () => {
         volumes: [{ chapters: [mockChapter] }],
       };
 
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(
+      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
         mockChapter.content,
       );
 
@@ -536,11 +537,11 @@ describe('AI Tools Tests', () => {
         volumes: [{ chapters: [mockChapter] }],
       };
 
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(
+      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
         mockChapter.content,
       );
 
@@ -593,11 +594,11 @@ describe('AI Tools Tests', () => {
         volumes: [{ chapters: [mockChapter] }],
       };
 
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(
+      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
         mockChapter.content,
       );
 
@@ -650,11 +651,11 @@ describe('AI Tools Tests', () => {
         volumes: [{ chapters: [mockChapter] }],
       };
 
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as jest.Mock).mockResolvedValue(
+      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
         mockChapter.content,
       );
 
@@ -701,8 +702,8 @@ describe('AI Tools Tests', () => {
         volumes: [{ chapters: [mockChapter] }],
       };
 
-      (BookService.getBookById as jest.Mock).mockResolvedValue(mockBook);
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(mockBook);
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
 
@@ -815,9 +816,9 @@ describe('AI Tools Tests', () => {
         getBookById: jest.fn().mockReturnValue(mockBook),
         updateBook: jest.fn().mockResolvedValue(undefined),
       };
-      (useBooksStore as unknown as jest.Mock).mockReturnValue(mockStore);
-      (ChapterService.updateChapter as jest.Mock).mockReturnValue([]); // mock return updated volumes
-      (ChapterService.findChapterById as jest.Mock).mockReturnValue({
+      (useBooksStore as unknown as unknown as ReturnType<typeof vi.fn>).mockReturnValue(mockStore);
+      (ChapterService.updateChapter as unknown as ReturnType<typeof vi.fn>).mockReturnValue([]); // mock return updated volumes
+      (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
         volume: mockBook.volumes[0],
       });

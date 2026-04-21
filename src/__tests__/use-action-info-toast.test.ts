@@ -1,4 +1,5 @@
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
+import { vi } from 'vitest';
 import { ref } from 'vue';
 import {
   countUniqueActions,
@@ -10,10 +11,16 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import * as BooksStore from 'src/stores/books';
 
-// Mock dependencies
-const mockToastAdd = mock(() => {});
-const mockUseToastWithHistory = mock(() => ({
-  add: mockToastAdd,
+const { mockToastAdd, mockUseToastWithHistory } = vi.hoisted(() => {
+  const add = vi.fn();
+  return {
+    mockToastAdd: add,
+    mockUseToastWithHistory: vi.fn(() => ({ add })),
+  };
+});
+
+vi.mock('src/composables/useToastHistory', () => ({
+  useToastWithHistory: mockUseToastWithHistory,
 }));
 
 const mockBooksStoreGetBookById = mock(() => null);
@@ -27,10 +34,6 @@ const mockDeleteTerminology = mock(() => Promise.resolve());
 const mockUpdateTerminology = mock(() => Promise.resolve({} as Terminology));
 const mockDeleteCharacterSetting = mock(() => Promise.resolve());
 const mockUpdateCharacterSetting = mock(() => Promise.resolve({} as CharacterSetting));
-
-await mock.module('src/composables/useToastHistory', () => ({
-  useToastWithHistory: mockUseToastWithHistory,
-}));
 
 describe('countUniqueActions', () => {
   it('应该正确统计唯一的术语操作', () => {

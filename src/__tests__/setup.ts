@@ -27,29 +27,32 @@ beforeEach(async () => {
   await resetDbForTests();
 });
 
-// Polyfill for localStorage
+// jsdom 环境自带 localStorage；在纯 Node 环境（例如 bun test 作为 fallback）用内存 Map 兜底
 if (typeof globalThis.localStorage === 'undefined') {
   const storage = new Map<string, string>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (globalThis as any).localStorage = {
-    getItem: (key: string) => storage.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      storage.set(key, value);
-    },
-    removeItem: (key: string) => {
-      storage.delete(key);
+  const shim: Storage = {
+    get length() {
+      return storage.size;
     },
     clear: () => {
       storage.clear();
     },
-    get length() {
-      return storage.size;
-    },
+    getItem: (key: string) => storage.get(key) ?? null,
     key: (index: number) => {
       const keys = Array.from(storage.keys());
       return keys[index] ?? null;
     },
+    removeItem: (key: string) => {
+      storage.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      storage.set(key, value);
+    },
   };
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: shim,
+  });
 }
 
 // Polyfill for FileReader

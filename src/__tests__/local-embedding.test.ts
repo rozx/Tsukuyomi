@@ -1,12 +1,15 @@
-import { describe, test, expect, afterEach, mock } from 'bun:test';
+import { describe, test, expect, afterEach } from 'bun:test';
+import { vi } from 'vitest';
 
 describe('isLocalEmbeddingEffectivelyEnabled', () => {
   afterEach(() => {
-    mock.restore();
+    vi.resetModules();
+    vi.doUnmock('quasar');
   });
 
   test('手机端:无论 storedValue 是什么,都返回 false', async () => {
-    mock.module('quasar', () => ({
+    vi.resetModules();
+    vi.doMock('quasar', () => ({
       Platform: { is: { mobile: true, desktop: false } },
     }));
     const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
@@ -19,7 +22,8 @@ describe('isLocalEmbeddingEffectivelyEnabled', () => {
   });
 
   test('桌面端:透传 storedValue(undefined / false / true 都如实返回)', async () => {
-    mock.module('quasar', () => ({
+    vi.resetModules();
+    vi.doMock('quasar', () => ({
       Platform: { is: { mobile: false, desktop: true } },
     }));
     const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
@@ -32,7 +36,8 @@ describe('isLocalEmbeddingEffectivelyEnabled', () => {
   });
 
   test('Platform 缺失或异常:回落为桌面行为(不阻断功能)', async () => {
-    mock.module('quasar', () => ({
+    vi.resetModules();
+    vi.doMock('quasar', () => ({
       Platform: undefined,
     }));
     const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');

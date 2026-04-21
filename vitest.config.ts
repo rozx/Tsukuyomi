@@ -7,37 +7,29 @@ export default defineConfig({
   resolve: {
     alias: {
       'bun:test': path.resolve(__dirname, 'src/__tests__/bun-test-shim.ts'),
+      '#q-app/wrappers': path.resolve(__dirname, 'src/__tests__/quasar-wrappers-stub.ts'),
     },
   },
   test: {
+    environment: 'jsdom',
+    environmentOptions: {
+      jsdom: {
+        url: 'http://localhost/',
+      },
+    },
+    setupFiles: ['src/__tests__/vitest-setup.ts'],
     include: ['src/**/*.test.ts'],
     exclude: [
       'node_modules/**',
-      'src/__tests__/chapter-service.test.ts',
-      'src/__tests__/cross-check-missing-with-db.test.ts',
-      'src/__tests__/gist-sync-service.test.ts',
+      // Scraper tests use Bun.file — bun-specific file API, keep on bun test.
       'src/__tests__/kakuyomu-scraper.test.ts',
-      'src/__tests__/local-embedding.test.ts',
       'src/__tests__/ncode-scraper.test.ts',
-      'src/__tests__/novel-utils.test.ts',
       'src/__tests__/novel18-scraper.test.ts',
-      'src/__tests__/overlay-close-stack.test.ts',
-      'src/__tests__/quick-start-guide.test.ts',
-      'src/__tests__/settings-store.persistence.test.ts',
       'src/__tests__/syosetu-scraper.test.ts',
-      'src/__tests__/todo-list-service.test.ts',
-      'src/__tests__/todo-list-tools.test.ts',
-      'src/__tests__/todo-workflow.test.ts',
+      // translation-normalizer.test.ts relies on bun auto-injected globals.
       'src/__tests__/translation-normalizer.test.ts',
+      // TODO: hangs under vitest forks pool, investigate separately.
       'src/__tests__/translation-service.workflow-status.test.ts',
-      'src/__tests__/ui-store.mobile-workspace.test.ts',
-      'src/__tests__/use-action-info-toast.test.ts',
-      'src/__tests__/use-chapter-drag-drop.test.ts',
-      'src/__tests__/use-chapter-export.test.ts',
-      'src/__tests__/use-chapter-translation.chapter-switch-writeback.test.ts',
-      'src/__tests__/use-chapter-translation.test.ts',
-      'src/__tests__/use-edit-mode.test.ts',
-      'src/services/ai/tools/tools.test.ts',
     ],
     globals: false,
     coverage: {

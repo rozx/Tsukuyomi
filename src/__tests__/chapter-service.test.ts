@@ -781,8 +781,11 @@ describe('ChapterService', () => {
         ]);
         mockLoadChapterContentForExport.mockResolvedValueOnce(chapter);
 
-        // 设置为 Windows 环境
-        (global.navigator as any).userAgent = 'Windows';
+        // 设置为 Windows 环境（jsdom 下 navigator.userAgent 只读，必须用 defineProperty）
+        Object.defineProperty(global.navigator, 'userAgent', {
+          configurable: true,
+          value: 'Windows',
+        });
 
         let blobText = '';
         const OriginalBlob = (global as any).Blob;

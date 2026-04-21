@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import {
   describe,
   it,
@@ -15,13 +16,13 @@ type MockFn = typeof vi.fn & {
   restore: typeof vi.restoreAllMocks;
 };
 
-const mock = ((impl?: (...args: unknown[]) => unknown) =>
-  impl ? vi.fn(impl) : vi.fn()) as unknown as MockFn;
-mock.module = ((...args: Parameters<typeof vi.mock>) =>
-  vi.mock(...args)) as typeof vi.mock;
-mock.restore = () => vi.restoreAllMocks();
+const mock = vi.fn as MockFn;
+mock.module = vi.mock;
+mock.restore = vi.restoreAllMocks;
 
-const spyOn: typeof vi.spyOn = (...args) => vi.spyOn(...args);
+const spyOn = vi.spyOn;
+
+const jest = vi;
 
 export {
   describe,
@@ -34,4 +35,5 @@ export {
   afterAll,
   mock,
   spyOn,
+  jest,
 };
