@@ -8,35 +8,16 @@
 
 import { beforeEach, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
+import { installLocalStoragePolyfill } from './local-storage-polyfill';
 
 // localStorage polyfill 必须在 setup（IndexedDB 初始化）之前装好，否则
 // stores / services 在模块加载阶段读 localStorage 就已经炸了
-const storage = new Map<string, string>();
-const localStorageShim: Storage = {
-  get length() {
-    return storage.size;
-  },
-  clear: () => {
-    storage.clear();
-  },
-  getItem: (key: string) => storage.get(key) ?? null,
-  key: (index: number) => Array.from(storage.keys())[index] ?? null,
-  removeItem: (key: string) => {
-    storage.delete(key);
-  },
-  setItem: (key: string, value: string) => {
-    storage.set(key, value);
-  },
-};
-Object.defineProperty(globalThis, 'localStorage', {
-  configurable: true,
-  value: localStorageShim,
-});
+installLocalStoragePolyfill();
 
 await import('./setup');
 
 beforeEach(() => {
-  storage.clear();
+  localStorage.clear();
   setActivePinia(createPinia());
 });
 

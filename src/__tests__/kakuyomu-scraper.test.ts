@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { KakuyomuScraper } from '../services/scraper/scrapers/kakuyomu-scraper';
 import { join } from 'path';
+import { readFileSync } from 'node:fs';
 
 const examplePagesDir = join(__dirname, 'examplePages');
 
@@ -8,13 +9,15 @@ class TestKakuyomuScraper extends KakuyomuScraper {
   private workPageHtml: string = '';
   private chapterPageHtml: string = '';
 
-  async initialize() {
-    this.workPageHtml = await Bun.file(
+  initialize() {
+    this.workPageHtml = readFileSync(
       join(examplePagesDir, 'kakuyumu-822139842947212336.html'),
-    ).text();
-    this.chapterPageHtml = await Bun.file(
+      'utf-8',
+    );
+    this.chapterPageHtml = readFileSync(
       join(examplePagesDir, 'kakuyumu-822139842947212336-chapter-1.html'),
-    ).text();
+      'utf-8',
+    );
   }
 
   // Override network to return fixture html
@@ -30,8 +33,8 @@ describe('KakuyomuScraper', () => {
   const scraper = new TestKakuyomuScraper();
   const url = 'https://kakuyomu.jp/works/822139842947212336';
 
-  beforeAll(async () => {
-    await scraper.initialize();
+  beforeAll(() => {
+    scraper.initialize();
   });
 
   it('validates URL patterns', () => {
@@ -75,7 +78,9 @@ describe('KakuyomuScraper', () => {
     expect(novel?.description).toBeTruthy();
 
     // 验证描述包含 catchphrase
-    expect(novel?.description).toContain('救った少女たちが病んでいく、曇らせ系激重感情ラブコメディ。');
+    expect(novel?.description).toContain(
+      '救った少女たちが病んでいく、曇らせ系激重感情ラブコメディ。',
+    );
 
     // 验证描述包含 introduction 的关键内容
     expect(novel?.description).toContain('前世で最愛の妹を守れなかった');

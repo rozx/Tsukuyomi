@@ -443,65 +443,90 @@ export function useChatActionHandler(
     toast.add(toastPayload);
   };
 
-  const revertBatchReplaceTranslations = async (previousData: {
-    replaced_paragraphs: Array<{
-      paragraph_id: string;
-      chapter_id: string;
-      old_selected_translation_id?: string;
-      old_translations: Array<{ id: string; translation: string; aiModelId: string }>;
-    }>;
-  }): Promise<void> => {
+  type ReplacedParagraph = {
+    paragraph_id: string;
+    chapter_id: string;
+    old_selected_translation_id?: string;
+    old_translations: Array<{ id: string; translation: string; aiModelId: string }>;
+  };
+
+  type BatchReplaceRevertData = {
+    replaced_paragraphs: ReplacedParagraph[];
+  };
+
+  const collectChaptersNeedingLoad = (
+    book: ReturnType<typeof booksStore.getBookById> & object,
+    replacedParagraphs: ReplacedParagraph[],
+  ): string[] => {
+    const chapterIds = Array.from(
+      new Set(replacedParagraphs.map((p) => p.chapter_id).filter((id): id is string => !!id)),
+    );
+    return chapterIds.filter((chapterId) => {
+      const found = ChapterService.findChapterById(book, chapterId);
+      return !!found && found.chapter.content === undefined;
+    });
+  };
+
+  const ensureChaptersLoadedForRevert = async (
+    book: ReturnType<typeof booksStore.getBookById> & object,
+    chaptersToLoad: string[],
+  ): Promise<void> => {
+    if (chaptersToLoad.length === 0) return;
+    const contentsMap = await ChapterContentService.loadChapterContentsBatch(chaptersToLoad);
+    for (const chapterId of chaptersToLoad) {
+      const found = ChapterService.findChapterById(book, chapterId);
+      if (!found) continue;
+      found.chapter.content = contentsMap.get(chapterId) || [];
+      found.chapter.contentLoaded = true;
+    }
+  };
+
+  const restoreTranslationsInPlace = (
+    paragraph: NonNullable<
+      NonNullable<ReturnType<typeof ChapterService.findChapterById>>['chapter']['content']
+    >[number],
+    oldTranslations: ReplacedParagraph['old_translations'],
+  ): void => {
+    if (!paragraph?.translations || paragraph.translations.length === 0) return;
+    for (const oldTranslation of oldTranslations) {
+      const idx = paragraph.translations.findIndex((t) => t.id === oldTranslation.id);
+      const target = paragraph.translations[idx];
+      if (idx !== -1 && target) {
+        target.translation = oldTranslation.translation;
+        target.aiModelId = oldTranslation.aiModelId;
+      }
+    }
+  };
+
+  const applyRevertToBook = (
+    book: ReturnType<typeof booksStore.getBookById> & object,
+    replacedParagraphs: ReplacedParagraph[],
+  ): void => {
+    for (const replaced of replacedParagraphs) {
+      const chapterInfo = ChapterService.findChapterById(book, replaced.chapter_id);
+      if (!chapterInfo?.chapter.content) continue;
+      const paragraph = chapterInfo.chapter.content.find((p) => p?.id === replaced.paragraph_id);
+      if (!paragraph?.translations || paragraph.translations.length === 0) continue;
+      if ('old_selected_translation_id' in replaced) {
+        paragraph.selectedTranslationId = replaced.old_selected_translation_id || '';
+      }
+      restoreTranslationsInPlace(paragraph, replaced.old_translations);
+    }
+  };
+
+  const revertBatchReplaceTranslations = async (
+    previousData: BatchReplaceRevertData,
+  ): Promise<void> => {
     const bookId = contextStore.getContext.currentBookId;
     if (!bookId) return;
     const book = booksStore.getBookById(bookId);
     if (!book) return;
 
-    // 先按需加载"被影响的章节"，避免 findParagraphLocation 只能查已加载章节导致撤销失效
-    const chapterIds = Array.from(
-      new Set(
-        previousData.replaced_paragraphs
-          .map((p) => p.chapter_id)
-          .filter((id): id is string => !!id),
-      ),
-    );
-    const chaptersToLoad: string[] = [];
-    for (const chapterId of chapterIds) {
-      const found = ChapterService.findChapterById(book, chapterId);
-      if (found && found.chapter.content === undefined) chaptersToLoad.push(chapterId);
-    }
-    if (chaptersToLoad.length > 0) {
-      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chaptersToLoad);
-      for (const chapterId of chaptersToLoad) {
-        const found = ChapterService.findChapterById(book, chapterId);
-        if (!found) continue;
-        found.chapter.content = contentsMap.get(chapterId) || [];
-        found.chapter.contentLoaded = true;
-      }
-    }
+    // 按需加载尚未加载的章节，避免 findParagraphLocation 查不到导致撤销失效
+    const chaptersToLoad = collectChaptersNeedingLoad(book, previousData.replaced_paragraphs);
+    await ensureChaptersLoadedForRevert(book, chaptersToLoad);
 
-    for (const replacedParagraph of previousData.replaced_paragraphs) {
-      const chapterInfo = ChapterService.findChapterById(book, replacedParagraph.chapter_id);
-      if (!chapterInfo?.chapter.content) continue;
-      const paragraph = chapterInfo.chapter.content.find(
-        (p) => p?.id === replacedParagraph.paragraph_id,
-      );
-      if (!paragraph?.translations || paragraph.translations.length === 0) continue;
-
-      if ('old_selected_translation_id' in replacedParagraph) {
-        paragraph.selectedTranslationId = replacedParagraph.old_selected_translation_id || '';
-      }
-
-      for (const oldTranslation of replacedParagraph.old_translations) {
-        const translationIndex = paragraph.translations.findIndex(
-          (t) => t.id === oldTranslation.id,
-        );
-        const target = paragraph.translations[translationIndex];
-        if (translationIndex !== -1 && target) {
-          target.translation = oldTranslation.translation;
-          target.aiModelId = oldTranslation.aiModelId;
-        }
-      }
-    }
+    applyRevertToBook(book, previousData.replaced_paragraphs);
 
     if (book.volumes) {
       await booksStore.updateBook(bookId, { volumes: book.volumes });
@@ -582,6 +607,73 @@ export function useChatActionHandler(
     }
   };
 
+  type ToastOutcome = {
+    detail: string;
+    shouldShowRevertToast: boolean;
+    earlyReturn: boolean;
+  };
+
+  const resolveEntityToast = (
+    action: ActionInfo,
+    entityType: 'character' | 'term',
+  ): Pick<ToastOutcome, 'shouldShowRevertToast'> => {
+    const revertRef = { value: false };
+    handleEntityOperationToast(action, entityType, revertRef);
+    return { shouldShowRevertToast: revertRef.value };
+  };
+
+  const resolveDefaultDetail = (action: ActionInfo): string =>
+    'name' in action.data
+      ? `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`
+      : '';
+
+  const handleCreateToast = (action: ActionInfo): ToastOutcome => {
+    if (!('name' in action.data)) return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+    if (action.entity === 'character' && 'id' in action.data) {
+      return { detail: '', ...resolveEntityToast(action, 'character'), earlyReturn: false };
+    }
+    if (action.entity === 'term' && 'id' in action.data) {
+      return { detail: '', ...resolveEntityToast(action, 'term'), earlyReturn: false };
+    }
+    return { detail: resolveDefaultDetail(action), shouldShowRevertToast: false, earlyReturn: false };
+  };
+
+  const handleUpdateToast = (action: ActionInfo): ToastOutcome => {
+    if (action.entity === 'translation') {
+      if ('tool_name' in action.data && action.data.tool_name === 'batch_replace_translations') {
+        handleBatchReplaceTranslationToast(action);
+        return { detail: '', shouldShowRevertToast: false, earlyReturn: true };
+      }
+      const shouldShowRevertToast = handleSingleTranslationUpdateToast(action);
+      return { detail: '', shouldShowRevertToast, earlyReturn: false };
+    }
+    if (action.entity === 'character' && 'name' in action.data) {
+      return { detail: '', ...resolveEntityToast(action, 'character'), earlyReturn: false };
+    }
+    if (action.entity === 'term' && 'name' in action.data) {
+      return { detail: '', ...resolveEntityToast(action, 'term'), earlyReturn: false };
+    }
+    return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+  };
+
+  const handleDeleteToast = (action: ActionInfo): ToastOutcome => {
+    if (!('name' in action.data)) return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+    if (action.entity === 'character' && action.previousData) {
+      return { detail: '', ...resolveEntityToast(action, 'character'), earlyReturn: false };
+    }
+    if (action.entity === 'term' && action.previousData) {
+      return { detail: '', ...resolveEntityToast(action, 'term'), earlyReturn: false };
+    }
+    return { detail: resolveDefaultDetail(action), shouldShowRevertToast: false, earlyReturn: false };
+  };
+
+  const resolveActionToast = (action: ActionInfo): ToastOutcome => {
+    if (action.type === 'create') return handleCreateToast(action);
+    if (action.type === 'update') return handleUpdateToast(action);
+    if (action.type === 'delete') return handleDeleteToast(action);
+    return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+  };
+
   const handleAction = (action: ActionInfo, assistantMessageIdRef: { value: string }) => {
     const messageAction = createMessageActionFromActionInfo(action);
 
@@ -592,53 +684,14 @@ export function useChatActionHandler(
 
     if (shouldSkipToast(action)) return;
 
-    let detail = '';
-    let shouldShowRevertToast = false;
-    const shouldShowRevertToastRef = { value: false };
+    const outcome = resolveActionToast(action);
+    if (outcome.earlyReturn) return;
 
-    if (action.type === 'create' && 'name' in action.data) {
-      if (action.entity === 'character' && 'id' in action.data) {
-        handleEntityOperationToast(action, 'character', shouldShowRevertToastRef);
-        shouldShowRevertToast = shouldShowRevertToastRef.value;
-      } else if (action.entity === 'term' && 'id' in action.data) {
-        handleEntityOperationToast(action, 'term', shouldShowRevertToastRef);
-        shouldShowRevertToast = shouldShowRevertToastRef.value;
-      } else {
-        detail = `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`;
-      }
-    } else if (action.type === 'update' && action.entity === 'character' && 'name' in action.data) {
-      handleEntityOperationToast(action, 'character', shouldShowRevertToastRef);
-      shouldShowRevertToast = shouldShowRevertToastRef.value;
-    } else if (action.type === 'update' && action.entity === 'term' && 'name' in action.data) {
-      handleEntityOperationToast(action, 'term', shouldShowRevertToastRef);
-      shouldShowRevertToast = shouldShowRevertToastRef.value;
-    } else if (action.type === 'update' && action.entity === 'translation') {
-      if ('tool_name' in action.data && action.data.tool_name === 'batch_replace_translations') {
-        handleBatchReplaceTranslationToast(action);
-        return;
-      }
-      if (handleSingleTranslationUpdateToast(action)) {
-        shouldShowRevertToast = true;
-      }
-    } else if (action.type === 'delete' && 'name' in action.data) {
-      // 删除操作：使用统一处理函数
-      if (action.entity === 'character' && action.previousData) {
-        handleEntityOperationToast(action, 'character', shouldShowRevertToastRef);
-        shouldShowRevertToast = shouldShowRevertToastRef.value;
-      } else if (action.entity === 'term' && action.previousData) {
-        handleEntityOperationToast(action, 'term', shouldShowRevertToastRef);
-        shouldShowRevertToast = shouldShowRevertToastRef.value;
-      } else {
-        // 默认删除消息
-        detail = `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`;
-      }
-    }
-
-    if (!shouldShowRevertToast && detail) {
+    if (!outcome.shouldShowRevertToast && outcome.detail) {
       toast.add({
         severity: 'success',
         summary: `${ACTION_LABELS[action.type as keyof typeof ACTION_LABELS]}${ENTITY_LABELS[action.entity as keyof typeof ENTITY_LABELS]}`,
-        detail,
+        detail: outcome.detail,
         life: 3000,
       });
     }

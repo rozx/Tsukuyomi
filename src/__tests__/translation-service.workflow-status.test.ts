@@ -1,47 +1,49 @@
-import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TranslationService } from 'src/services/ai/tasks/translation-service';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { Paragraph } from 'src/models/novel';
 import { AIServiceFactory } from 'src/services/ai';
 import { ToolRegistry } from 'src/services/ai/tools';
-import * as TasksUtils from 'src/services/ai/tasks/utils';
+import * as TaskRunner from 'src/services/ai/tasks/utils/task-runner';
+import * as ContextBuilder from 'src/services/ai/tasks/utils/context-builder';
+import * as StreamHandler from 'src/services/ai/tasks/utils/stream-handler';
 import * as Prompts from 'src/services/ai/tasks/prompts';
 import * as TodoHelper from 'src/services/ai/tasks/utils/todo-helper';
 import * as BooksStore from 'src/stores/books';
 
 describe('TranslationService - workflowStatus 重置', () => {
-  const mockGenerateText = mock(() => Promise.resolve({ text: '' }));
-  const mockGetTranslationTools = mock(() => [] as any);
-  const mockBuildTranslationSystemPrompt = mock(() => 'system');
-  const mockBuildBookContextSection = mock(() => Promise.resolve(''));
-  const mockBuildChapterContextSection = mock(() => '');
-  const mockBuildPreviousChapterSection = mock(() => '');
-  const mockBuildIndependentChunkPrompt = mock(() => Promise.resolve('chunk'));
-  const mockBuildMaintenanceReminder = mock(() => '');
-  const mockGetSpecialInstructions = mock(() => undefined as string | undefined);
-  const mockGetChapterFirstNonEmptyParagraphId = mock(() => Promise.resolve(undefined));
-  const mockGetHasPreviousParagraphs = mock(() => false);
-  const mockExecuteToolCallLoop = mock(() =>
+  const mockGenerateText = vi.fn(() => Promise.resolve({ text: '' }));
+  const mockGetTranslationTools = vi.fn(() => [] as any);
+  const mockBuildTranslationSystemPrompt = vi.fn(() => 'system');
+  const mockBuildBookContextSection = vi.fn(() => Promise.resolve(''));
+  const mockBuildChapterContextSection = vi.fn(() => '');
+  const mockBuildPreviousChapterSection = vi.fn(() => '');
+  const mockBuildIndependentChunkPrompt = vi.fn(() => Promise.resolve('chunk'));
+  const mockBuildMaintenanceReminder = vi.fn(() => '');
+  const mockGetSpecialInstructions = vi.fn(() => undefined as string | undefined);
+  const mockGetChapterFirstNonEmptyParagraphId = vi.fn(() => Promise.resolve(undefined));
+  const mockGetHasPreviousParagraphs = vi.fn(() => false);
+  const mockExecuteToolCallLoop = vi.fn(() =>
     Promise.resolve({
       responseText: '',
       status: 'end' as const,
       paragraphs: new Map(),
     }),
   );
-  const mockCompleteTask = mock(async () => {});
-  const mockHandleTaskError = mock(async () => {});
-  const mockCreateUnifiedAbortController = mock(() => ({
+  const mockCompleteTask = vi.fn(async () => {});
+  const mockHandleTaskError = vi.fn(async () => {});
+  const mockCreateUnifiedAbortController = vi.fn(() => ({
     controller: new AbortController(),
     cleanup: () => {},
   }));
 
   const aiProcessingStore = {
     activeTasks: [],
-    addTask: mock(() => Promise.resolve('task-1')),
-    updateTask: mock(async () => {}),
-    appendThinkingMessage: mock(async () => {}),
-    appendOutputContent: mock(async () => {}),
-    removeTask: mock(async () => {}),
+    addTask: vi.fn(() => Promise.resolve('task-1')),
+    updateTask: vi.fn(async () => {}),
+    appendThinkingMessage: vi.fn(async () => {}),
+    appendOutputContent: vi.fn(async () => {}),
+    removeTask: vi.fn(async () => {}),
   };
 
   const model: AIModel = {
@@ -99,45 +101,56 @@ describe('TranslationService - workflowStatus 重置', () => {
     aiProcessingStore.appendOutputContent.mockClear();
     aiProcessingStore.removeTask.mockClear();
 
-    spyOn(AIServiceFactory, 'getService').mockReturnValue({
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
       generateText: mockGenerateText,
     } as any);
 
-    spyOn(ToolRegistry, 'getTranslationTools').mockImplementation(mockGetTranslationTools);
-    spyOn(TodoHelper, 'getTodosSystemPrompt').mockReturnValue('');
-    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+    vi.spyOn(ToolRegistry, 'getTranslationTools').mockImplementation(mockGetTranslationTools);
+    vi.spyOn(TodoHelper, 'getTodosSystemPrompt').mockReturnValue('');
+    vi.spyOn(BooksStore, 'useBooksStore').mockReturnValue({
       getBookById: () => undefined,
     } as any);
 
-    spyOn(Prompts, 'buildTranslationSystemPrompt').mockImplementation(
+    vi.spyOn(Prompts, 'buildTranslationSystemPrompt').mockImplementation(
       mockBuildTranslationSystemPrompt,
     );
-    spyOn(TasksUtils, 'buildBookContextSection').mockImplementation(mockBuildBookContextSection);
-    spyOn(TasksUtils, 'buildChapterContextSection').mockImplementation(
+
+    vi.spyOn(TaskRunner, 'executeToolCallLoop').mockImplementation(mockExecuteToolCallLoop as any);
+
+    vi.spyOn(ContextBuilder, 'buildBookContextSection').mockImplementation(
+      mockBuildBookContextSection,
+    );
+    vi.spyOn(ContextBuilder, 'buildChapterContextSection').mockImplementation(
       mockBuildChapterContextSection,
     );
-    spyOn(TasksUtils, 'buildPreviousChapterSection').mockImplementation(
+    vi.spyOn(ContextBuilder, 'buildPreviousChapterSection').mockImplementation(
       mockBuildPreviousChapterSection,
     );
-    spyOn(TasksUtils, 'buildIndependentChunkPrompt').mockImplementation(
+    vi.spyOn(ContextBuilder, 'buildIndependentChunkPrompt').mockImplementation(
       mockBuildIndependentChunkPrompt,
     );
-    spyOn(TasksUtils, 'buildMaintenanceReminder').mockImplementation(mockBuildMaintenanceReminder);
-    spyOn(TasksUtils, 'getSpecialInstructions').mockImplementation(mockGetSpecialInstructions);
-    spyOn(TasksUtils, 'getChapterFirstNonEmptyParagraphId').mockImplementation(
+    vi.spyOn(ContextBuilder, 'buildMaintenanceReminder').mockImplementation(
+      mockBuildMaintenanceReminder,
+    );
+    vi.spyOn(ContextBuilder, 'getSpecialInstructions').mockImplementation(
+      mockGetSpecialInstructions,
+    );
+    vi.spyOn(ContextBuilder, 'getChapterFirstNonEmptyParagraphId').mockImplementation(
       mockGetChapterFirstNonEmptyParagraphId,
     );
-    spyOn(TasksUtils, 'getHasPreviousParagraphs').mockImplementation(mockGetHasPreviousParagraphs);
-    spyOn(TasksUtils, 'executeToolCallLoop').mockImplementation(mockExecuteToolCallLoop as any);
-    spyOn(TasksUtils, 'completeTask').mockImplementation(mockCompleteTask);
-    spyOn(TasksUtils, 'handleTaskError').mockImplementation(mockHandleTaskError);
-    spyOn(TasksUtils, 'createUnifiedAbortController').mockImplementation(
+    vi.spyOn(ContextBuilder, 'getHasPreviousParagraphs').mockImplementation(
+      mockGetHasPreviousParagraphs,
+    );
+
+    vi.spyOn(StreamHandler, 'completeTask').mockImplementation(mockCompleteTask);
+    vi.spyOn(StreamHandler, 'handleTaskError').mockImplementation(mockHandleTaskError);
+    vi.spyOn(StreamHandler, 'createUnifiedAbortController').mockImplementation(
       mockCreateUnifiedAbortController,
     );
   });
 
   afterEach(() => {
-    mock.restore();
+    vi.restoreAllMocks();
   });
 
   test('后续 chunk 开始时 workflowStatus 重置为 planning', async () => {
@@ -146,7 +159,7 @@ describe('TranslationService - workflowStatus 重置', () => {
       bookId: 'book-1',
       chapterId: 'chapter-1',
       chapterTitle: '标题',
-      chunkSize: 100, // 字符数限制，确保 10 个短段落分为 2 个 chunk
+      chunkSize: 100,
     });
 
     const planningCalls = (

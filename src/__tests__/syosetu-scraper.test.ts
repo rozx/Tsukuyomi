@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { SyosetuScraper } from '../services/scraper/scrapers/syosetu-scraper';
 import { join } from 'path';
+import { readFileSync } from 'node:fs';
 
 const examplePagesDir = join(__dirname, 'examplePages');
 
@@ -8,11 +9,12 @@ class TestSyosetuScraper extends SyosetuScraper {
   private indexPageHtml: string = '';
   private chapterPageHtml: string = '';
 
-  async initialize() {
-    this.indexPageHtml = await Bun.file(join(examplePagesDir, 'syosetu-org-375522.html')).text();
-    this.chapterPageHtml = await Bun.file(
+  initialize() {
+    this.indexPageHtml = readFileSync(join(examplePagesDir, 'syosetu-org-375522.html'), 'utf-8');
+    this.chapterPageHtml = readFileSync(
       join(examplePagesDir, 'syosetu-org-375522-chapter-1.html'),
-    ).text();
+      'utf-8',
+    );
   }
 
   protected override fetchPage(url: string): Promise<string> {
@@ -27,8 +29,8 @@ describe('SyosetuScraper', () => {
   const scraper = new TestSyosetuScraper();
   const idxUrl = 'https://syosetu.org/novel/375522/';
 
-  beforeAll(async () => {
-    await scraper.initialize();
+  beforeAll(() => {
+    scraper.initialize();
   });
 
   it('validates URL patterns', () => {

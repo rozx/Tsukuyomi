@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { NcodeSyosetuScraper } from '../services/scraper/scrapers/ncode-syosetu-scraper';
 import { join } from 'path';
+import { readFileSync } from 'node:fs';
 
 const examplePagesDir = join(__dirname, 'examplePages');
 const base = 'https://ncode.syosetu.com/n2032iz/';
@@ -8,23 +9,16 @@ const base = 'https://ncode.syosetu.com/n2032iz/';
 class TestNcodeScraper extends NcodeSyosetuScraper {
   private pages: Map<string, string> = new Map();
 
-  async initialize() {
-    // Load all pagination pages
-    const page1 = await Bun.file(join(examplePagesDir, 'ncode-n2032iz-p1.html')).text();
-    const page2 = await Bun.file(join(examplePagesDir, 'ncode-n2032iz-p2.html')).text();
-    const page3 = await Bun.file(join(examplePagesDir, 'ncode-n2032iz-p3.html')).text();
-    const page4 = await Bun.file(join(examplePagesDir, 'ncode-n2032iz-p4.html')).text();
-    const page5 = await Bun.file(join(examplePagesDir, 'ncode-n2032iz-p5.html')).text();
-    const chapterPage = await Bun.file(
-      join(examplePagesDir, 'ncode-n2032iz-chapter-1.html'),
-    ).text();
-
-    this.pages.set('p1', page1);
-    this.pages.set('p2', page2);
-    this.pages.set('p3', page3);
-    this.pages.set('p4', page4);
-    this.pages.set('p5', page5);
-    this.pages.set('chapter', chapterPage);
+  initialize() {
+    this.pages.set('p1', readFileSync(join(examplePagesDir, 'ncode-n2032iz-p1.html'), 'utf-8'));
+    this.pages.set('p2', readFileSync(join(examplePagesDir, 'ncode-n2032iz-p2.html'), 'utf-8'));
+    this.pages.set('p3', readFileSync(join(examplePagesDir, 'ncode-n2032iz-p3.html'), 'utf-8'));
+    this.pages.set('p4', readFileSync(join(examplePagesDir, 'ncode-n2032iz-p4.html'), 'utf-8'));
+    this.pages.set('p5', readFileSync(join(examplePagesDir, 'ncode-n2032iz-p5.html'), 'utf-8'));
+    this.pages.set(
+      'chapter',
+      readFileSync(join(examplePagesDir, 'ncode-n2032iz-chapter-1.html'), 'utf-8'),
+    );
   }
 
   // Some code paths call fetchPage directly for chapter content
@@ -55,8 +49,8 @@ class TestNcodeScraper extends NcodeSyosetuScraper {
 describe('NcodeSyosetuScraper', () => {
   const scraper = new TestNcodeScraper();
 
-  beforeAll(async () => {
-    await scraper.initialize();
+  beforeAll(() => {
+    scraper.initialize();
   });
 
   it('validates URL patterns', () => {

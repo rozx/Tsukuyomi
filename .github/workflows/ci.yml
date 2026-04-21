@@ -75,10 +75,7 @@ jobs:
         env:
           FALLOW_COVERAGE: coverage/coverage-final.json
         with:
-          # Don't gate on issues yet — 33 functions still exceed maxCrap=100
-          # with current ~38% coverage. Findings are tracked via SARIF in the
-          # Security tab; re-enable after the hotspots are refactored.
-          fail-on-issues: false
+          fail-on-issues: true
           format: sarif
           baseline: .fallow-baseline.json
 
