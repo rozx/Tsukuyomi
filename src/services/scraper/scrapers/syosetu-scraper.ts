@@ -157,24 +157,11 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
     honbunElement.find('p').each((_, el: any) => {
       const $p = $(el);
 
-      // 检查段落是否为空（没有任何文本内容）
-      // 对于空的 <p> 标签（如 <p id="2"></p>），直接添加换行符
-      // 空段落被视为换行符
-      const paragraphHtml = $p.html() || '';
-      const paragraphText = $p.text() || '';
-
-      // 如果段落只包含空白字符（空格、制表符、换行符等），视为空段落
-      const hasOnlyWhitespace = paragraphText.trim().length === 0;
-
-      // 如果 HTML 也为空或只包含空白字符，也视为空段落
-      const htmlIsEmpty = paragraphHtml.trim().length === 0;
-
-      if (hasOnlyWhitespace || htmlIsEmpty) {
-        // 空的 <p> 标签被视为换行
-        // 每个空的 <p> 标签产生一个换行符
-        // 连续的空段落（如 <p id="78"></p><p id="79"></p>）会产生两个换行符
+      // 空的 <p> 标签（如 <p id="2"></p>）视为换行
+      // 连续的空段落（如 <p id="78"></p><p id="79"></p>）会产生多个换行符
+      if (this.isEmptyParagraphElement($p)) {
         paragraphs.push('\n');
-        return; // 跳过后续处理
+        return;
       }
 
       // 移除段落内的链接（可能是导航链接）
@@ -512,17 +499,12 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
                 }
               }
 
-              const chapter: SyosetuChapter = {
+              this.appendParsedChapter<string, SyosetuChapter>(chapters, {
                 title: chapterTitle,
                 url: fullUrl,
-              };
-              if (date) {
-                chapter.date = date;
-              }
-              if (lastUpdated) {
-                chapter.lastUpdated = lastUpdated;
-              }
-              chapters.push(chapter);
+                date,
+                lastUpdated,
+              });
               chapterIndex++;
             }
           }

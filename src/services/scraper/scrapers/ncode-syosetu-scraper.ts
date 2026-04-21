@@ -118,16 +118,8 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
       contentElement.find('p').each((_, el) => {
         const $p = $(el);
 
-        // 检查段落是否为空（没有任何文本内容）
-        const paragraphHtml = $p.html() || '';
-        const paragraphText = $p.text() || '';
-
-        // 如果段落只包含空白字符，视为空段落（换行）
-        const hasOnlyWhitespace = paragraphText.trim().length === 0;
-        const htmlIsEmpty = paragraphHtml.trim().length === 0;
-
-        if (hasOnlyWhitespace || htmlIsEmpty) {
-          // 空的 <p> 标签被视为换行
+        // 空的 <p> 标签视为换行
+        if (this.isEmptyParagraphElement($p)) {
           paragraphs.push('\n');
           return;
         }
@@ -480,17 +472,12 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
                   }
                 }
 
-                const chapter: ParsedChapterInfo = {
+                this.appendParsedChapter<string | Date, ParsedChapterInfo>(chapters, {
                   title: chapterTitle,
                   url: fullUrl,
-                };
-                if (date) {
-                  chapter.date = date;
-                }
-                if (lastUpdated) {
-                  chapter.lastUpdated = lastUpdated;
-                }
-                chapters.push(chapter);
+                  date,
+                  lastUpdated,
+                });
                 chapterIndex++;
               }
             }

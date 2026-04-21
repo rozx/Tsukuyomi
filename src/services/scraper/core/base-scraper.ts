@@ -418,6 +418,44 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
   }
 
   /**
+   * 判断 `<p>` 段落是否视为空段落（换行）
+   * syosetu.org / ncode.syosetu.com 都将 HTML 或纯文本仅含空白的 `<p>` 视为换行符。
+   * @param $p 段落 Cheerio 元素
+   * @returns 段落是否为空（应当输出 '\n'）
+   */
+  protected isEmptyParagraphElement($p: CheerioNode): boolean {
+    const paragraphHtml = $p.html() || '';
+    const paragraphText = $p.text() || '';
+    const hasOnlyWhitespace = paragraphText.trim().length === 0;
+    const htmlIsEmpty = paragraphHtml.trim().length === 0;
+    return hasOnlyWhitespace || htmlIsEmpty;
+  }
+
+  /**
+   * 构建章节信息对象并推入数组（通用方法）
+   * 仅当 `date` / `lastUpdated` 有值时才写入对应字段，避免 `undefined` 占位。
+   * 日期字段类型由调用方通过泛型 `D` 指定（ncode 使用 `string | Date`，syosetu 使用 `string`）。
+   * @param chapters 目标章节数组（元素类型由调用方维护）
+   * @param info 章节基本信息：标题 / URL / 可选日期
+   */
+  protected appendParsedChapter<
+    D extends string | Date,
+    T extends { title: string; url: string; date?: D | undefined; lastUpdated?: D | undefined },
+  >(
+    chapters: T[],
+    info: { title: string; url: string; date?: D | undefined; lastUpdated?: D | undefined },
+  ): void {
+    const chapter: T = { title: info.title, url: info.url } as T;
+    if (info.date !== undefined) {
+      (chapter as { date?: D }).date = info.date;
+    }
+    if (info.lastUpdated !== undefined) {
+      (chapter as { lastUpdated?: D }).lastUpdated = info.lastUpdated;
+    }
+    chapters.push(chapter);
+  }
+
+  /**
    * 基于 ParsedNovelInfo 构建统一的 Novel 对象（通用方法）
    *
    * 所有子类 `convertToNovel` 的公共骨架：
