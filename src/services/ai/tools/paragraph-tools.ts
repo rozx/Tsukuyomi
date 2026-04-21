@@ -22,6 +22,7 @@ import {
   resolveBookAndParagraphLocation,
   resolveSearchRange,
 } from './paragraph-search-helpers';
+import { buildChapterTitleSummary, buildVolumeTitleSummary } from './title-helpers';
 
 /**
  * 从段落文本中提取关键词（用于记忆搜索）
@@ -770,25 +771,8 @@ export const paragraphTools: ToolDefinition[] = [
           text: paragraph.text,
           selectedTranslationId: paragraph.selectedTranslationId || '',
           translations,
-          chapter: {
-            id: chapter.id,
-            title: chapterTitle,
-            title_original:
-              typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
-            title_translation:
-              typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
-          },
-          volume: volume
-            ? {
-                id: volume.id,
-                title:
-                  typeof volume.title === 'string' ? volume.title : volume.title.original || '',
-                title_translation:
-                  typeof volume.title === 'string'
-                    ? ''
-                    : volume.title.translation?.translation || '',
-              }
-            : null,
+          chapter: buildChapterTitleSummary(chapter),
+          volume: buildVolumeTitleSummary(volume),
           paragraphIndex: toDisplayParagraphIndex(resolved.location.paragraphIndex),
           chapterIndex: resolved.location.chapterIndex,
           volumeIndex: resolved.location.volumeIndex,
