@@ -1,8 +1,9 @@
 /**
  * 共享 Memory 导入逻辑 —— 供 SPA 的 ImportExportTab 与 Electron 的 useElectronSettings 复用。
  *
- * 行为：保留原 memory.id / createdAt / lastAccessedAt。
- * - id 保留：backup restore 后重复导入是幂等的，不会制造重复数据
+ * 覆盖语义：先清空所有本地 memories，再按快照重建。
+ * - 清空：否则旧 memory 会残留进入检索，与 UI "覆盖" 文案不符
+ * - id 保留：快照里每条 memory 的 id 原样写回 —— backup restore 幂等，不会制造重复
  * - createdAt / lastAccessedAt 保留：不重写时间线，不破坏同步去重语义
  */
 
@@ -30,14 +31,25 @@ function pickMemoryTimestamps(
 }
 
 /**
- * 按 bookId 分组导入记忆，跨书失败彼此独立。
+ * 覆盖式导入：即便传入空数组也会清空本地 memories（与 UI "覆盖" 文案一致）。
+ * undefined 表示快照里根本没有 memories 字段 —— 这时跳过以避免无意义地抹掉本地数据。
  * @param logPrefix 出错时 console.warn 前缀，用于区分调用方
  */
 export async function importMemoriesPreservingIdentity(
   memories: Memory[] | undefined,
   logPrefix: string,
 ): Promise<void> {
-  if (!memories || memories.length === 0) return;
+  if (memories === undefined) return;
+
+  try {
+    await MemoryService.clearAllMemories();
+  } catch (error) {
+    console.warn(`${logPrefix} 清空本地 Memory 失败：`, error);
+    return;
+  }
+
+  if (memories.length === 0) return;
+
   const memoriesByBook = groupMemoriesByBook(memories);
   for (const [bookId, list] of memoriesByBook.entries()) {
     try {

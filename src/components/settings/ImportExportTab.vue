@@ -67,20 +67,22 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   const result = await SettingsService.importSettingsFromFile(file);
 
   if (result.success && result.data) {
+    // 覆盖语义：字段在快照里就替换（即便是空数组），与 UI "覆盖" 文案保持一致。
+    // 只有当字段 undefined（快照里根本没有该字段）时才跳过，避免无意义地抹掉本地数据。
+
     // 覆盖当前的 AI 模型数据
-    if (result.data.models.length > 0) {
+    if (result.data.models !== undefined) {
       await aiModelsStore.bulkImportModels(result.data.models);
     }
 
     // 覆盖当前的书籍数据
-    if (result.data.novels.length > 0) {
+    if (result.data.novels !== undefined) {
       await booksStore.clearBooks();
       await booksStore.bulkAddBooks(result.data.novels);
     }
 
     // 覆盖当前的封面历史数据
-    if (result.data.coverHistory.length > 0) {
-      // 先清空现有封面历史，然后添加导入的数据
+    if (result.data.coverHistory !== undefined) {
       await coverHistoryStore.clearHistory();
       for (const cover of result.data.coverHistory) {
         await coverHistoryStore.addCover(cover);
@@ -95,8 +97,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       await settingsStore.importSettings(result.data.appSettings);
     }
 
-    // 覆盖当前的同步设置
-    if (result.data.sync && result.data.sync.length > 0) {
+    // 覆盖当前的同步设置（空数组也覆盖，清除残留本地同步配置）
+    if (result.data.sync !== undefined) {
       await settingsStore.importSyncs(result.data.sync);
     }
 

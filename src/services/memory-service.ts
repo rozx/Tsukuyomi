@@ -806,6 +806,18 @@ export class MemoryService {
   }
 
   /**
+   * 清空所有 Memory —— 用于"导入备份"这类覆盖语义：先清所有本地 memories，
+   * 再按快照内容重建。清空 IDB + 进程内两级缓存。队列里残留的 memoryId 会在
+   * `processMemoryBatch` 里 lookup miss 自然跳过，不必在此显式 purge。
+   */
+  static async clearAllMemories(): Promise<void> {
+    const db = await getDB();
+    await db.clear('memories');
+    this.memoryCache.clear();
+    this.bookMemoryCache.clear();
+  }
+
+  /**
    * 获取指定书籍的所有 Memory(带 60s TTL 缓存,返回的 Memory 保留 embedding 字段)。
    * 供记忆注入打分模块使用:同一翻译任务中多次分块只会读一次 IDB。
    */

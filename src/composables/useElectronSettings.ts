@@ -66,25 +66,27 @@ export function useElectronSettings() {
     }
   };
 
+  // 覆盖语义：字段在快照里就替换（即便是空数组）。undefined 才跳过。
+
   const importAiModels = async (
-    models: Exclude<ReturnType<typeof SettingsService.validateAndParseSettings>['data'], undefined>['models'],
+    models: Exclude<ReturnType<typeof SettingsService.validateAndParseSettings>['data'], undefined>['models'] | undefined,
   ): Promise<void> => {
-    if (models && models.length > 0) {
-      await aiModelsStore.bulkImportModels(models);
-    }
+    if (models === undefined) return;
+    await aiModelsStore.bulkImportModels(models);
   };
 
-  const importNovels = async (novels: Array<Parameters<typeof booksStore.bulkAddBooks>[0][number]> | undefined): Promise<void> => {
-    if (novels && novels.length > 0) {
-      await booksStore.clearBooks();
-      await booksStore.bulkAddBooks(novels);
-    }
+  const importNovels = async (
+    novels: Array<Parameters<typeof booksStore.bulkAddBooks>[0][number]> | undefined,
+  ): Promise<void> => {
+    if (novels === undefined) return;
+    await booksStore.clearBooks();
+    await booksStore.bulkAddBooks(novels);
   };
 
   const importCoverHistory = async (
     covers: Array<Parameters<typeof coverHistoryStore.addCover>[0]> | undefined,
   ): Promise<void> => {
-    if (!covers || covers.length === 0) return;
+    if (covers === undefined) return;
     await coverHistoryStore.clearHistory();
     for (const cover of covers) {
       await coverHistoryStore.addCover(cover);
@@ -109,7 +111,7 @@ export function useElectronSettings() {
       await importCoverHistory(data.coverHistory);
       await importMemories(data.memories);
       if (data.appSettings) await settingsStore.importSettings(data.appSettings);
-      if (data.sync && data.sync.length > 0) await settingsStore.importSyncs(data.sync);
+      if (data.sync !== undefined) await settingsStore.importSyncs(data.sync);
     } catch (error) {
       console.error('Import settings error:', error);
     }
