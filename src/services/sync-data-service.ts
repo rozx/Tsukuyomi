@@ -628,6 +628,27 @@ interface DataBackup {
 export class SyncDataService {
 
   /**
+   * apply / overwrite 两条写路径 catch 分支共用的回滚 + 重新抛出逻辑。
+   * 回滚失败时抛出带两段信息的 Error（应用 & 回滚），回滚成功时抛出原始错误。
+   */
+  private static async rollbackThenRethrow(
+    backup: DataBackup,
+    originalError: unknown,
+    applyFailurePrefix: string,
+  ): Promise<never> {
+    try {
+      await SyncDataService.restoreFromBackup(backup);
+    } catch (rollbackError) {
+      console.error('[SyncDataService] 回滚失败:', rollbackError);
+      throw new Error(
+        `${applyFailurePrefix}: ${originalError instanceof Error ? originalError.message : String(originalError)}; ` +
+          `回滚也失败: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+      );
+    }
+    throw originalError;
+  }
+
+  /**
    * 验证远程数据的完整性
    * @param remoteData 远程数据
    * @returns 验证是否通过
@@ -1535,20 +1556,7 @@ export class SyncDataService {
     } catch (error) {
       // 发生错误，回滚到备份数据
       console.error('[SyncDataService] 应用下载数据时发生错误，正在回滚:', error);
-
-      try {
-        await SyncDataService.restoreFromBackup(backup);
-      } catch (rollbackError) {
-        console.error('[SyncDataService] 回滚失败:', rollbackError);
-        // 回滚也失败了，抛出原始错误和回滚错误
-        throw new Error(
-          `应用数据失败: ${error instanceof Error ? error.message : String(error)}; ` +
-            `回滚也失败: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
-        );
-      }
-
-      // 回滚成功，重新抛出原始错误
-      throw error;
+      return SyncDataService.rollbackThenRethrow(backup, error, '应用数据失败');
     }
   }
 
@@ -1673,16 +1681,7 @@ export class SyncDataService {
       }
     } catch (error) {
       console.error('[SyncDataService] 覆盖快照时发生错误，正在回滚:', error);
-      try {
-        await SyncDataService.restoreFromBackup(backup);
-      } catch (rollbackError) {
-        console.error('[SyncDataService] 回滚失败:', rollbackError);
-        throw new Error(
-          `应用快照失败: ${error instanceof Error ? error.message : String(error)}; ` +
-            `回滚也失败: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
-        );
-      }
-      throw error;
+      await SyncDataService.rollbackThenRethrow(backup, error, '应用快照失败');
     }
   }
 
