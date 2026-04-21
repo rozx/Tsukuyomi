@@ -407,31 +407,12 @@ function getMaxPatternRepeatCountInFullText(text: string): number {
   }
   let maxRepeatCount = 0;
 
-  // 检查所有可能的模式长度（2-5字符）
+  // 检查所有可能的模式长度（2-5字符）— 委托给 maxAnyStartRepeatAtLen 避免重复滑窗代码
   for (let patternLen = MIN_PATTERN_LENGTH; patternLen <= MAX_PATTERN_LENGTH; patternLen++) {
     if (text.length < patternLen * 2) {
       continue;
     }
-
-    // 检查所有可能的起始位置
-    for (let start = 0; start <= text.length - patternLen * 2; start++) {
-      const pattern = text.slice(start, start + patternLen);
-      let repeatCount = 1;
-      let cursor = start + patternLen;
-
-      while (cursor + patternLen <= text.length) {
-        if (text.slice(cursor, cursor + patternLen) === pattern) {
-          repeatCount++;
-          cursor += patternLen;
-        } else {
-          break;
-        }
-      }
-
-      if (repeatCount > 1) {
-        maxRepeatCount = Math.max(maxRepeatCount, repeatCount);
-      }
-    }
+    maxRepeatCount = Math.max(maxRepeatCount, maxAnyStartRepeatAtLen(text, patternLen));
   }
 
   return maxRepeatCount;

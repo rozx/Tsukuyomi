@@ -7,6 +7,7 @@ import { SyncType } from 'src/models/sync';
 import type { CoverHistoryItem } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import { compressString, decompressString } from 'src/utils/compression';
+import { serializeDates, deserializeDates } from 'src/utils/serialize-dates';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import { MANIFEST_FILE_NAME } from 'src/models/manifest';
@@ -395,74 +396,17 @@ export class GistSyncService {
   }
 
   /**
-   * 将 Date 对象转换为可序列化的格式
+   * 将 Date 对象转换为可序列化的格式（委托给 serialize-dates 工具）
    */
   private serializeDates<T>(obj: T): T {
-    if (obj === null || obj === undefined) {
-      return obj;
-    }
-
-    if (obj instanceof Date) {
-      return obj.toISOString() as unknown as T;
-    }
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => this.serializeDates(item)) as unknown as T;
-    }
-
-    if (typeof obj === 'object') {
-      const serialized = {} as T;
-      for (const [key, value] of Object.entries(obj)) {
-        (serialized as Record<string, unknown>)[key] = this.serializeDates(value);
-      }
-      return serialized;
-    }
-
-    return obj;
+    return serializeDates(obj);
   }
 
   /**
-   * 需要从 ISO 字符串反序列化为 Date 对象的字段名白名单。
-   * 只有这些字段中的 ISO 日期字符串会被转换，避免误将小说内容中的日期字符串转换为 Date 对象。
-   */
-  private static readonly DATE_FIELD_NAMES = new Set([
-    'lastEdited',
-    'createdAt',
-    'addedAt',
-    'lastUpdated',
-  ]);
-
-  /**
-   * 将序列化的日期字符串转换回 Date 对象（仅限白名单字段）
+   * 将序列化的日期字符串转换回 Date 对象（仅限白名单字段，委托给 serialize-dates 工具）
    */
   private deserializeDates<T>(obj: T, parentKey?: string): T {
-    if (obj === null || obj === undefined) {
-      return obj;
-    }
-
-    // 只在白名单字段中将 ISO 日期字符串转换为 Date 对象
-    if (
-      typeof obj === 'string' &&
-      parentKey &&
-      GistSyncService.DATE_FIELD_NAMES.has(parentKey) &&
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(obj)
-    ) {
-      return new Date(obj) as unknown as T;
-    }
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => this.deserializeDates(item, parentKey)) as unknown as T;
-    }
-
-    if (typeof obj === 'object') {
-      const deserialized = {} as T;
-      for (const [key, value] of Object.entries(obj)) {
-        (deserialized as Record<string, unknown>)[key] = this.deserializeDates(value, key);
-      }
-      return deserialized;
-    }
-
-    return obj;
+    return deserializeDates(obj, parentKey);
   }
 
   /**
@@ -1733,27 +1677,17 @@ export class GistSyncService {
     }
   > {
     try {
-      this.validateConfig(config);
-      this.initializeOctokit(config);
-
-      if (!this.octokit) {
-        throw new Error('Octokit 客户端未初始化');
-      }
-
-      const params = this.getGistParams(config);
-      if (!params.gistId) {
-        throw new Error('Gist ID 未配置');
-      }
+      const { octokit, gistId } = this.prepareGistClient(config);
 
       // 获取 Gist 修订历史
-      const response = await this.octokit.rest.gists.listCommits({
-        gist_id: params.gistId,
+      const response = await octokit.rest.gists.listCommits({
+        gist_id: gistId,
       });
 
       const revisions = await Promise.all(
         response.data.map(async (commit, commitIndex) => {
           const files = await this.buildRevisionFileChangeList(
-            params.gistId!,
+            gistId,
             commit,
             commitIndex,
             response.data,
@@ -1788,6 +1722,43 @@ export class GistSyncService {
   /**
    * 获取单个修订版本的详细信息（仅文件列表）
    */
+  /**
+   * 共用前置：validateConfig + initializeOctokit + 取出 gistId，返回已就绪的 octokit 与 gistId。
+   * 供多个依赖 Gist API 的方法复用，避免四处重复这段样板。
+   */
+  private prepareGistClient(config: SyncConfig): {
+    octokit: Octokit;
+    gistId: string;
+  } {
+    this.validateConfig(config);
+    this.initializeOctokit(config);
+
+    if (!this.octokit) {
+      throw new Error('Octokit 客户端未初始化');
+    }
+
+    const params = this.getGistParams(config);
+    if (!params.gistId) {
+      throw new Error('Gist ID 未配置');
+    }
+    return { octokit: this.octokit, gistId: params.gistId };
+  }
+
+  /**
+   * 共用前置：校验配置 / 初始化 Octokit / 取出 gistId，再按指定 sha 拉取 revision。
+   * 供 getGistRevision / downloadFromGistRevision 等复用。
+   */
+  private fetchGistRevisionRaw(
+    config: SyncConfig,
+    version: string,
+  ): ReturnType<Octokit['rest']['gists']['getRevision']> {
+    const { octokit, gistId } = this.prepareGistClient(config);
+    return octokit.rest.gists.getRevision({
+      gist_id: gistId,
+      sha: version,
+    });
+  }
+
   async getGistRevision(
     config: SyncConfig,
     version: string,
@@ -1802,19 +1773,7 @@ export class GistSyncService {
     }
   > {
     try {
-      this.validateConfig(config);
-      this.initializeOctokit(config);
-
-      const params = this.getGistParams(config);
-      if (!this.octokit || !params.gistId) {
-        throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
-      }
-
-      // 获取特定版本的 Gist
-      const response = await this.octokit.rest.gists.getRevision({
-        gist_id: params.gistId,
-        sha: version,
-      });
+      const response = await this.fetchGistRevisionRaw(config, version);
 
       // 过滤掉 null 值并转换类型
       const files: Record<
@@ -1862,19 +1821,8 @@ export class GistSyncService {
     version: string,
   ): Promise<SyncResult & { data?: GistSyncData }> {
     try {
-      this.validateConfig(config);
-      this.initializeOctokit(config);
-
+      const response = await this.fetchGistRevisionRaw(config, version);
       const params = this.getGistParams(config);
-      if (!this.octokit || !params.gistId) {
-        throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
-      }
-
-      // 获取特定版本的 Gist
-      const response = await this.octokit.rest.gists.getRevision({
-        gist_id: params.gistId,
-        sha: version,
-      });
 
       const gistFiles = response.data.files;
       if (!gistFiles) {
@@ -1980,21 +1928,11 @@ export class GistSyncService {
    */
   async deleteGist(config: SyncConfig): Promise<SyncResult> {
     try {
-      this.validateConfig(config);
-      this.initializeOctokit(config);
-
-      if (!this.octokit) {
-        throw new Error('Octokit 客户端未初始化');
-      }
-
-      const params = this.getGistParams(config);
-      if (!params.gistId) {
-        throw new Error('Gist ID 未配置');
-      }
+      const { octokit, gistId } = this.prepareGistClient(config);
 
       // 删除 Gist
-      await this.octokit.rest.gists.delete({
-        gist_id: params.gistId,
+      await octokit.rest.gists.delete({
+        gist_id: gistId,
       });
 
       return {

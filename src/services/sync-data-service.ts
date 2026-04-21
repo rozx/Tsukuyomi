@@ -12,6 +12,7 @@ import type { Memory } from 'src/models/memory';
 import type { DeletionRecord } from 'src/models/sync';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
+import { stripNovelLocalFields } from 'src/utils/sync-strip';
 
 function mergeUniqueById<T extends { id: string }>(
   primaryItems: T[] | undefined,
@@ -239,12 +240,9 @@ async function mergeNovelVolumes(
     return shouldKeepLocalOnlyItem(effectiveLocalTime, remoteNovelTime, lastSyncTime);
   };
 
-  if (!primaryVolumes || primaryVolumes.length === 0) {
-    if (!secondaryVolumes || secondaryVolumes.length === 0) {
-      return primaryVolumes;
-    }
-    const volumes = secondaryVolumes.filter(shouldKeepVolumeWithoutCounterpart);
-    return Promise.all(
+  // 单边有 volumes 时的共用分支：对 volumes 逐个并行合并 chapters（对端缺失传 undefined）
+  const mergeSingleSideVolumes = (volumes: Volume[]): Promise<Volume[]> =>
+    Promise.all(
       volumes.map(async (volume) => ({
         ...volume,
         chapters: await mergeNovelChapters(
@@ -257,23 +255,16 @@ async function mergeNovelVolumes(
         ),
       })),
     );
+
+  if (!primaryVolumes || primaryVolumes.length === 0) {
+    if (!secondaryVolumes || secondaryVolumes.length === 0) {
+      return primaryVolumes;
+    }
+    return mergeSingleSideVolumes(secondaryVolumes.filter(shouldKeepVolumeWithoutCounterpart));
   }
   if (!secondaryVolumes || secondaryVolumes.length === 0) {
-    const volumes = primaryIsRemote
-      ? primaryVolumes
-      : primaryVolumes.filter(shouldKeepVolumeWithoutCounterpart);
-    return Promise.all(
-      volumes.map(async (volume) => ({
-        ...volume,
-        chapters: await mergeNovelChapters(
-          volume.chapters,
-          undefined,
-          preferRemoteSelection,
-          primaryNovelLastEdited,
-          secondaryNovelLastEdited,
-          lastSyncTime,
-        ),
-      })),
+    return mergeSingleSideVolumes(
+      primaryIsRemote ? primaryVolumes : primaryVolumes.filter(shouldKeepVolumeWithoutCounterpart),
     );
   }
 
@@ -736,41 +727,6 @@ export class SyncDataService {
   }
 
   /**
-   * 剥离 Novel 树中所有 Translation 的 memoryScoreBreakdown 字段
-   * 该字段是 UI 调试用的本地数据，不参与跨设备同步
-   */
-  private static stripLocalFieldsFromNovel(novel: Novel): Novel {
-    if (!novel || !Array.isArray(novel.volumes)) {
-      return novel;
-    }
-
-    const stripTranslation = (t: unknown): unknown => {
-      if (!t || typeof t !== 'object') return t;
-
-      const { memoryScoreBreakdown: _b, ...rest } = t as Record<string, unknown>;
-      return rest;
-    };
-
-    const cleanedVolumes = novel.volumes.map((volume) => {
-      if (!volume || !Array.isArray(volume.chapters)) return volume;
-      const cleanedChapters = volume.chapters.map((chapter) => {
-        if (!chapter || !Array.isArray(chapter.content)) return chapter;
-        const cleanedContent = chapter.content.map((paragraph) => {
-          if (!paragraph) return paragraph;
-          const cleanedTranslations = Array.isArray(paragraph.translations)
-            ? (paragraph.translations.map(stripTranslation) as typeof paragraph.translations)
-            : paragraph.translations;
-          return { ...paragraph, translations: cleanedTranslations };
-        });
-        return { ...chapter, content: cleanedContent };
-      });
-      return { ...volume, chapters: cleanedChapters };
-    });
-
-    return { ...novel, volumes: cleanedVolumes } as Novel;
-  }
-
-  /**
    * 验证远程数据的完整性
    * @param remoteData 远程数据
    * @returns 验证是否通过
@@ -980,21 +936,63 @@ export class SyncDataService {
     } catch (error) {
       // 发生错误，回滚到备份数据
       console.error('[SyncDataService] 应用下载数据时发生错误，正在回滚:', error);
-
-      try {
-        await SyncDataService.restoreFromBackup(backup);
-      } catch (rollbackError) {
-        console.error('[SyncDataService] 回滚失败:', rollbackError);
-        // 回滚也失败了，抛出原始错误和回滚错误
-        throw new Error(
-          `应用数据失败: ${error instanceof Error ? error.message : String(error)}; ` +
-            `回滚也失败: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
-        );
-      }
-
-      // 回滚成功，重新抛出原始错误
-      throw error;
+      await SyncDataService.rollbackWithBackupOrThrow(backup, error, '应用数据失败');
+      throw error; // unreachable，但 TS 的控制流推断需要这行
     }
+  }
+
+  /**
+   * 统一的"回滚兜底"：尝试从备份恢复，如再次失败则构造带双重错误信息的新错误抛出。
+   * 供 applyDownloadedData / restoreSnapshotOverwrite 共用。
+   */
+  private static async rollbackWithBackupOrThrow(
+    backup: DataBackup,
+    error: unknown,
+    errorPrefix: string,
+  ): Promise<never> {
+    try {
+      await SyncDataService.restoreFromBackup(backup);
+    } catch (rollbackError) {
+      console.error('[SyncDataService] 回滚失败:', rollbackError);
+      throw new Error(
+        `${errorPrefix}: ${error instanceof Error ? error.message : String(error)}; ` +
+          `回滚也失败: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+      );
+    }
+    throw error;
+  }
+
+  /**
+   * 查询封面 id / url 两张墓碑表，返回二者里更晚的一个 deletedAt（都缺则 undefined）。
+   * 供 selectFinalCover / collectRemoteOnlyCovers 等共用，避免三元合并逻辑被抄两份。
+   */
+  private static lookupCoverDeletionRecord(
+    coverId: string,
+    coverUrl: string | undefined,
+    deletedCoverIdsMap: Map<string, number>,
+    deletedCoverUrlsMap: Map<string, number>,
+  ): number | undefined {
+    const byId = deletedCoverIdsMap.get(coverId);
+    const byUrl = coverUrl ? deletedCoverUrlsMap.get(coverUrl) : undefined;
+    if (byId !== undefined && byUrl !== undefined) return Math.max(byId, byUrl);
+    return byId ?? byUrl;
+  }
+
+  /**
+   * shouldUseRemoteByTime / shouldUseRemoteForUpload 的共用实现：
+   * 两端时间戳齐全时按远端>本地；否则交给 fallbackWhenMissing 决定。
+   */
+  private static compareEditTimeWithFallback(
+    localLastEdited: Date | number | string | undefined,
+    remoteLastEdited: Date | number | string | undefined,
+    fallbackWhenMissing: boolean,
+  ): boolean {
+    if (localLastEdited && remoteLastEdited) {
+      const localTime = new Date(localLastEdited).getTime();
+      const remoteTime = new Date(remoteLastEdited).getTime();
+      return remoteTime > localTime;
+    }
+    return fallbackWhenMissing;
   }
 
   /**
@@ -1005,12 +1003,7 @@ export class SyncDataService {
     localLastEdited?: Date | number | string,
     remoteLastEdited?: Date | number | string,
   ): boolean {
-    if (localLastEdited && remoteLastEdited) {
-      const localTime = new Date(localLastEdited).getTime();
-      const remoteTime = new Date(remoteLastEdited).getTime();
-      return remoteTime > localTime;
-    }
-    return true;
+    return SyncDataService.compareEditTimeWithFallback(localLastEdited, remoteLastEdited, true);
   }
 
   /**
@@ -1302,12 +1295,12 @@ export class SyncDataService {
         : localCover;
     }
 
-    const deletionRecordById = deletedCoverIdsMap.get(remoteCover.id);
-    const deletionRecordByUrl = remoteUrl ? deletedCoverUrlsMap.get(remoteUrl) : undefined;
-    const deletionRecord =
-      deletionRecordById !== undefined && deletionRecordByUrl !== undefined
-        ? Math.max(deletionRecordById, deletionRecordByUrl)
-        : (deletionRecordById ?? deletionRecordByUrl);
+    const deletionRecord = SyncDataService.lookupCoverDeletionRecord(
+      remoteCover.id,
+      remoteUrl,
+      deletedCoverIdsMap,
+      deletedCoverUrlsMap,
+    );
 
     if (deletionRecord !== undefined) {
       if (deletionRecord > syncTime) {
@@ -1726,16 +1719,7 @@ export class SyncDataService {
       await SyncDataService.restoreGistSyncConfigAfterSnapshot(remoteData.appSettings);
     } catch (error) {
       console.error('[SyncDataService] 覆盖快照时发生错误，正在回滚:', error);
-      try {
-        await SyncDataService.restoreFromBackup(backup);
-      } catch (rollbackError) {
-        console.error('[SyncDataService] 回滚失败:', rollbackError);
-        throw new Error(
-          `应用快照失败: ${error instanceof Error ? error.message : String(error)}; ` +
-            `回滚也失败: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
-        );
-      }
-      throw error;
+      await SyncDataService.rollbackWithBackupOrThrow(backup, error, '应用快照失败');
     }
   }
 
@@ -1924,7 +1908,7 @@ export class SyncDataService {
     const strippedMemories = finalMemories.map((m) =>
       SyncDataService.stripLocalFieldsFromMemory(m),
     );
-    const strippedBooks = finalBooks.map((b) => SyncDataService.stripLocalFieldsFromNovel(b));
+    const strippedBooks = finalBooks.map((b) => stripNovelLocalFields(b));
 
     return {
       novels: strippedBooks,
@@ -1942,12 +1926,7 @@ export class SyncDataService {
     localLastEdited?: Date | number | string,
     remoteLastEdited?: Date | number | string,
   ): boolean {
-    if (localLastEdited && remoteLastEdited) {
-      const localTime = new Date(localLastEdited).getTime();
-      const remoteTime = new Date(remoteLastEdited).getTime();
-      return remoteTime > localTime;
-    }
-    return false;
+    return SyncDataService.compareEditTimeWithFallback(localLastEdited, remoteLastEdited, false);
   }
 
   /**
@@ -2119,12 +2098,12 @@ export class SyncDataService {
         (remoteUrl ? !!localCovers.find((c) => normalizeCoverUrl(c?.url) === remoteUrl) : false);
       if (existsInLocal) continue;
 
-      const deletionRecordById = deletedCoverIdsMap.get(remoteCover.id);
-      const deletionRecordByUrl = remoteUrl ? deletedCoverUrlsMap.get(remoteUrl) : undefined;
-      const deletionRecord =
-        deletionRecordById !== undefined && deletionRecordByUrl !== undefined
-          ? Math.max(deletionRecordById, deletionRecordByUrl)
-          : (deletionRecordById ?? deletionRecordByUrl);
+      const deletionRecord = SyncDataService.lookupCoverDeletionRecord(
+        remoteCover.id,
+        remoteUrl,
+        deletedCoverIdsMap,
+        deletedCoverUrlsMap,
+      );
       if (deletionRecord !== undefined && deletionRecord > lastSyncTime) continue;
       if (checkIsNewlyAdded(remoteCover.addedAt, lastSyncTime)) {
         finalCovers.push(remoteCover);
@@ -2625,18 +2604,13 @@ export class SyncDataService {
     }
   }
 
-  /** memories 条目：合并远端/本地，按 id + content 双重去重后覆盖本地该书的 memory 集 */
-  private static async applyPartialMemoriesEntry(
-    bookId: string,
+  /** 合并远端 / 本地 memory：按 id 去重取 lastAccessedAt 较大者，再按 content 去重。 */
+  private static mergeMemoriesByIdAndContent(
     remoteMemories: Memory[],
-  ): Promise<void> {
-    const localMemories = await MemoryService.getAllMemories(bookId);
-    const gistSync = GlobalConfig.getGistSyncSnapshot();
-    const lastSyncTime = gistSync?.lastSyncTime ?? 0;
-    const deletedMap = new Map<string, number>(
-      (gistSync?.deletedMemoryIds || []).map((r) => [r.id, r.deletedAt]),
-    );
-
+    localMemories: Memory[],
+    lastSyncTime: number,
+    deletedMap: Map<string, number>,
+  ): Memory[] {
     const remoteIds = new Set(remoteMemories.map((m) => m.id));
     const finalMap = new Map<string, Memory>();
 
@@ -2673,8 +2647,15 @@ export class SyncDataService {
         byContent.set(m.content, m);
       }
     }
+    return Array.from(byContent.values());
+  }
 
-    const finalList = Array.from(byContent.values());
+  /** 将 memory 合并结果刷写到本地：删除落选 id、upsert 保留项。 */
+  private static async persistMergedMemories(
+    bookId: string,
+    finalList: Memory[],
+    localMemories: Memory[],
+  ): Promise<void> {
     const finalIds = new Set(finalList.map((m) => m.id));
 
     // 删除不在 finalList 的本地 memory
@@ -2691,6 +2672,28 @@ export class SyncDataService {
     for (const m of finalList) {
       await MemoryService.upsertMemoryForSync(m);
     }
+  }
+
+  /** memories 条目：合并远端/本地，按 id + content 双重去重后覆盖本地该书的 memory 集 */
+  private static async applyPartialMemoriesEntry(
+    bookId: string,
+    remoteMemories: Memory[],
+  ): Promise<void> {
+    const localMemories = await MemoryService.getAllMemories(bookId);
+    const gistSync = GlobalConfig.getGistSyncSnapshot();
+    const lastSyncTime = gistSync?.lastSyncTime ?? 0;
+    const deletedMap = new Map<string, number>(
+      (gistSync?.deletedMemoryIds || []).map((r) => [r.id, r.deletedAt]),
+    );
+
+    const finalList = SyncDataService.mergeMemoriesByIdAndContent(
+      remoteMemories,
+      localMemories,
+      lastSyncTime,
+      deletedMap,
+    );
+
+    await SyncDataService.persistMergedMemories(bookId, finalList, localMemories);
   }
 
   /**

@@ -1,3 +1,4 @@
+// fallow-ignore-next-line code-duplication
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
 import type { Paragraph } from 'src/models/novel';

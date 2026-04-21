@@ -785,6 +785,103 @@ export class AssistantService {
   }
 
   /**
+   * 执行一轮工具调用、把结果推入 messages，并做 trim / context 用量更新。
+   */
+  private static async executeToolCallsAndTrim(params: {
+    toolCalls: AIToolCall[];
+    tools: AITool[];
+    bookId: string | null;
+    messages: ChatMessage[];
+    allActions: ActionInfo[];
+    options: AssistantServiceOptions;
+    taskId?: string | undefined;
+    sessionId?: string | undefined;
+    model: AIModel;
+    toolSchemaTokens: number;
+  }): Promise<void> {
+    const {
+      toolCalls,
+      tools,
+      bookId,
+      messages,
+      allActions,
+      options,
+      taskId,
+      sessionId,
+      model,
+      toolSchemaTokens,
+    } = params;
+
+    const toolResults = await this.handleToolCalls(
+      toolCalls,
+      tools,
+      bookId,
+      (action) => {
+        allActions.push(action);
+        options.onAction?.(action);
+      },
+      options.onToast,
+      taskId,
+      sessionId,
+      model.id,
+    );
+
+    messages.push(...toolResults);
+
+    // 工具结果累积后检查 context 使用量，超出时主动压缩早期工具消息
+    this.trimToolMessagesIfNeeded(messages, model, toolSchemaTokens);
+
+    await this.updateTaskContextUsage({
+      messages,
+      model,
+      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+      aiProcessingStore: options.aiProcessingStore,
+      taskId,
+    });
+  }
+
+  /**
+   * 发送跟进请求并更新 context 用量。
+   */
+  private static async runFollowUpRequest(params: {
+    messages: ChatMessage[];
+    tools: AITool[];
+    model: AIModel;
+    aiService: ReturnType<typeof AIServiceFactory.getService>;
+    config: AIServiceConfig;
+    options: AssistantServiceOptions;
+    taskId?: string | undefined;
+    toolSchemaTokens: number;
+  }): Promise<{ text: string; toolCalls: AIToolCall[] }> {
+    const { messages, tools, model, aiService, config, options, taskId, toolSchemaTokens } = params;
+
+    const followUpRequest = this.buildTextRequest(messages, tools, {
+      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
+      maxOutputTokens: model.maxOutputTokens,
+    });
+
+    const followUpResult = await this.executeAIRequest({
+      aiService,
+      config,
+      request: followUpRequest,
+      messages,
+      options,
+      taskId,
+      isInitialRequest: false,
+    });
+
+    await this.updateTaskContextUsage({
+      messages,
+      model,
+      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+      aiProcessingStore: options.aiProcessingStore,
+      taskId,
+    });
+
+    return { text: followUpResult.text, toolCalls: followUpResult.toolCalls };
+  }
+
+  /**
    * 运行工具调用循环
    */
   private static async runToolCallLoop(params: {
@@ -828,31 +925,17 @@ export class AssistantService {
       }
 
       // 执行工具调用
-      const toolResults = await this.handleToolCalls(
+      await this.executeToolCallsAndTrim({
         toolCalls,
         tools,
         bookId,
-        (action) => {
-          allActions.push(action);
-          options.onAction?.(action);
-        },
-        options.onToast,
+        messages,
+        allActions,
+        options,
         taskId,
         sessionId,
-        model.id,
-      );
-
-      messages.push(...toolResults);
-
-      // 工具结果累积后检查 context 使用量，超出时主动压缩早期工具消息
-      this.trimToolMessagesIfNeeded(messages, model, toolSchemaTokens);
-
-      await this.updateTaskContextUsage({
-        messages,
         model,
-        ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-        aiProcessingStore: options.aiProcessingStore,
-        taskId,
+        toolSchemaTokens,
       });
 
       // trim 救不回来时，在循环内主动触发摘要，避免 followUp 请求超出 context
@@ -883,33 +966,21 @@ export class AssistantService {
       }
 
       // 跟进请求
-      const followUpRequest = this.buildTextRequest(messages, tools, {
-        temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-        maxOutputTokens: model.maxOutputTokens,
-      });
-
-      const followUpResult = await this.executeAIRequest({
+      const followUpResult = await this.runFollowUpRequest({
+        messages,
+        tools,
+        model,
         aiService,
         config,
-        request: followUpRequest,
-        messages,
         options,
         taskId,
-        isInitialRequest: false,
+        toolSchemaTokens,
       });
 
       if (followUpResult.text && followUpResult.text.trim()) {
         finalText = followUpResult.text;
       }
       toolCalls = followUpResult.toolCalls;
-
-      await this.updateTaskContextUsage({
-        messages,
-        model,
-        ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-        aiProcessingStore: options.aiProcessingStore,
-        taskId,
-      });
 
       if (toolCalls.length === 0) {
         break;
@@ -1796,13 +1867,11 @@ export class AssistantService {
         '[AssistantService] 摘要成功，使用新摘要继续聊天，摘要长度:',
         summaryResult.summary.length,
       );
-      options.onSummarizingEnd?.();
-
-      const retryResult = await this.executeSummaryRetry({
+      return this.finalizeSummarySuccess({
+        summary: summaryResult.summary,
         model,
         tools,
         systemPrompt,
-        summary: summaryResult.summary,
         userMessage,
         context,
         options,
@@ -1810,8 +1879,6 @@ export class AssistantService {
         sessionId,
         finalSignal,
       });
-
-      return { ...retryResult, needsReset: true, summary: summaryResult.summary };
     }
 
     console.warn('[AssistantService] 自动总结失败，使用降级策略：只保留最近 5 条消息');
@@ -1821,6 +1888,49 @@ export class AssistantService {
     messages.push(...fallbackMessages.filter((msg) => msg.role !== 'system'));
     messages.push({ role: 'user', content: userMessage });
     return undefined;
+  }
+
+  /**
+   * 摘要成功后的统一收尾：通知前端结束摘要中状态、调 executeSummaryRetry，再包装成 needsReset 响应。
+   */
+  private static async finalizeSummarySuccess(params: {
+    summary: string;
+    model: AIModel;
+    tools: AITool[];
+    systemPrompt: string;
+    userMessage: string;
+    context: ReturnType<typeof useContextStore>['getContext'];
+    options: AssistantServiceOptions;
+    taskId: string | undefined;
+    sessionId: string | undefined;
+    finalSignal: AbortSignal | undefined;
+  }): Promise<AssistantResult & { needsReset: true; summary: string }> {
+    const {
+      summary,
+      model,
+      tools,
+      systemPrompt,
+      userMessage,
+      context,
+      options,
+      taskId,
+      sessionId,
+      finalSignal,
+    } = params;
+    options.onSummarizingEnd?.();
+    const retryResult = await this.executeSummaryRetry({
+      model,
+      tools,
+      systemPrompt,
+      summary,
+      userMessage,
+      context,
+      options,
+      taskId,
+      sessionId,
+      finalSignal,
+    });
+    return { ...retryResult, needsReset: true, summary };
   }
 
   /**
@@ -1999,12 +2109,11 @@ export class AssistantService {
       });
 
       if (summaryResult && summaryResult.summary) {
-        options.onSummarizingEnd?.();
-        const retryResult = await this.executeSummaryRetry({
+        return this.finalizeSummarySuccess({
+          summary: summaryResult.summary,
           model,
           tools,
           systemPrompt,
-          summary: summaryResult.summary,
           userMessage,
           context,
           options,
@@ -2012,7 +2121,6 @@ export class AssistantService {
           sessionId,
           finalSignal,
         });
-        return { ...retryResult, needsReset: true, summary: summaryResult.summary };
       }
 
       console.warn('[AssistantService] 摘要失败，使用降级策略：只保留最近 5 条消息');

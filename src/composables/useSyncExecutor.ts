@@ -728,18 +728,7 @@ export function useSyncExecutor() {
       const forceFetchConfig: SyncConfig = configWithoutETag;
       const downloadResult = await gistSyncService.downloadFromGistWithManifest(
         forceFetchConfig,
-        (progress) => {
-          const mapped =
-            progress.total > 0
-              ? Math.round((progress.current / progress.total) * DOWNLOAD_PHASE_MAX)
-              : 0;
-          settingsStore.updateSyncProgress({
-            stage: 'downloading',
-            current: mapped,
-            total: OVERALL_TOTAL,
-            message: prefixMsg(progress.message),
-          });
-        },
+        makeDownloadProgressHandler(prefixMsg),
       );
       if (downloadResult.skipped) {
         // 绕过 ETag 后理论上不会走 304；保底兜底：没拿到 snapshot 直接上传所有本地条目
@@ -805,37 +794,11 @@ export function useSyncExecutor() {
         remoteFilesSnapshot as Parameters<
           typeof gistSyncService.uploadToGistIncremental
         >[2],
-        (progress) => {
-          const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
-          const mapped =
-            progress.total > 0
-              ? UPLOAD_PHASE_START +
-                Math.round((progress.current / progress.total) * uploadPhaseRange)
-              : UPLOAD_PHASE_START;
-          settingsStore.updateSyncProgress({
-            stage: 'uploading',
-            current: mapped,
-            total: OVERALL_TOTAL,
-            message: prefixMsg(progress.message),
-          });
-        },
+        makeUploadProgressHandler(prefixMsg),
       );
 
       // 持久化新的远端状态（失败不影响推送成功判定）
-      try {
-        await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
-        await settingsStore.updateKnownRemoteHashes(manifestToHashes(uploadResult.manifest));
-        await settingsStore.updateKnownRemoteEntries(manifestToEntries(uploadResult.manifest));
-        const uploadedTombstones: Record<string, string> = {};
-        for (const [k, v] of Object.entries(uploadResult.manifest.tombstones ?? {})) {
-          uploadedTombstones[k] = v.deletedAt;
-        }
-        await settingsStore.updateKnownRemoteTombstones(uploadedTombstones);
-        await settingsStore.updateLastSyncTime();
-        await settingsStore.cleanupOldDeletionRecords();
-      } catch (error) {
-        console.error('[useSyncExecutor] 更新同步状态失败:', error);
-      }
+      await persistUploadState(uploadResult);
 
       // 关闭强制模式 —— 即使上面的状态持久化失败，推送本身已经成功，不应把用户困在强制模式里
       try {

@@ -16,6 +16,25 @@ function jsonError(error: string): string {
 }
 
 /**
+ * 统一的 bookId 校验 + 加载：若缺失返回 error JSON，否则返回 book。
+ * 多个工具处理器共享此前置样板。
+ */
+async function resolveBookByIdOrError(
+  bookId: string | null | undefined,
+): Promise<
+  { kind: 'error'; json: string } | { kind: 'ok'; bookId: string; book: Novel }
+> {
+  if (!bookId) {
+    return { kind: 'error', json: jsonError('书籍 ID 不能为空') };
+  }
+  const book = await BookService.getBookById(bookId);
+  if (!book) {
+    return { kind: 'error', json: jsonError(`书籍不存在: ${bookId}`) };
+  }
+  return { kind: 'ok', bookId, book };
+}
+
+/**
  * 处理 chapter.content 的懒加载：从 IndexedDB 按需读取并回填
  */
 async function ensureChapterContentLoaded(chapter: Chapter): Promise<void> {
@@ -381,6 +400,53 @@ function paginateChapterParagraphs(
 }
 
 /**
+ * 构造相邻章节（前/后一章）工具：参数 schema 完全一致，只有名称与错误文案不同。
+ * 统一成一个工厂可消除两个 tool 定义里 schema 段的重复。
+ */
+function buildAdjacentChapterTool(spec: {
+  name: 'get_previous_chapter' | 'get_next_chapter';
+  description: string;
+  direction: 'previous' | 'next';
+  notFoundError: string;
+  errorMessage: string;
+}): ToolDefinition {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: spec.name,
+        description: spec.description,
+        parameters: {
+          type: 'object',
+          properties: {
+            chapter_id: {
+              type: 'string',
+              description: '当前章节 ID',
+            },
+            include_memory: {
+              type: 'boolean',
+              description: '是否在响应中包含相关的记忆信息（默认 true）',
+            },
+            summary_only: {
+              type: 'boolean',
+              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
+            },
+          },
+          required: ['chapter_id'],
+        },
+      },
+    },
+    handler: async (args, { bookId, onAction }) =>
+      handleAdjacentChapterTool(args, bookId, onAction, {
+        direction: spec.direction,
+        toolName: spec.name,
+        notFoundError: spec.notFoundError,
+        errorMessage: spec.errorMessage,
+      }),
+  };
+}
+
+/**
  * 相邻章节（前/后一章）工具的共享处理函数
  */
 async function handleAdjacentChapterTool(
@@ -517,22 +583,11 @@ export const bookTools: ToolDefinition[] = [
       const { bookId, onAction } = context;
       const parsedArgs = parseToolArgs<{ include_memory?: boolean }>(args);
 
-      if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '未提供书籍 ID',
-        });
-      }
+      const resolved = await resolveBookByIdOrError(bookId);
+      if (resolved.kind === 'error') return resolved.json;
+      const book = resolved.book;
 
       try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({
-            success: false,
-            error: `书籍不存在: ${bookId}`,
-          });
-        }
-
         // 报告读取操作
         if (onAction) {
           onAction({
@@ -635,17 +690,13 @@ export const bookTools: ToolDefinition[] = [
     },
     handler: async (args, { bookId, onAction }) => {
       const parsedArgs = parseToolArgs<{ limit?: number; offset?: number }>(args);
-      if (!bookId) {
-        return jsonError('书籍 ID 不能为空');
-      }
       const { limit, offset = 0 } = parsedArgs;
 
-      try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return jsonError(`书籍不存在: ${bookId}`);
-        }
+      const resolved = await resolveBookByIdOrError(bookId);
+      if (resolved.kind === 'error') return resolved.json;
+      const book = resolved.book;
 
+      try {
         // 报告读取操作
         if (onAction) {
           onAction({
@@ -698,21 +749,17 @@ export const bookTools: ToolDefinition[] = [
     },
     handler: async (args, { bookId, onAction }) => {
       const parsedArgs = parseToolArgs<{ volume_ids: string[] }>(args);
-      if (!bookId) {
-        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
-      }
       const { volume_ids } = parsedArgs;
 
       if (!volume_ids || !Array.isArray(volume_ids) || volume_ids.length === 0) {
-        return JSON.stringify({ success: false, error: '必须提供有效的 volume_ids 列表' });
+        return jsonError('必须提供有效的 volume_ids 列表');
       }
 
-      try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return JSON.stringify({ success: false, error: `书籍不存在: ${bookId}` });
-        }
+      const resolved = await resolveBookByIdOrError(bookId);
+      if (resolved.kind === 'error') return resolved.json;
+      const book = resolved.book;
 
+      try {
         // 报告读取操作
         if (onAction) {
           onAction({
@@ -912,9 +959,6 @@ export const bookTools: ToolDefinition[] = [
         offset?: number;
         include_memory?: boolean;
       }>(args);
-      if (!bookId) {
-        return jsonError('书籍 ID 不能为空');
-      }
       const { chapter_id, include_memory = true } = parsedArgs;
       const rawLimit = typeof parsedArgs.limit === 'number' ? parsedArgs.limit : 30;
       const limit = Math.max(1, Math.min(200, Math.floor(rawLimit)));
@@ -924,12 +968,11 @@ export const bookTools: ToolDefinition[] = [
         return jsonError('章节 ID 不能为空');
       }
 
-      try {
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return jsonError(`书籍不存在: ${bookId}`);
-        }
+      const resolved = await resolveBookByIdOrError(bookId);
+      if (resolved.kind === 'error') return resolved.json;
+      const { book, bookId: resolvedBookId } = resolved;
 
+      try {
         // 查找章节及其所属卷
         const located = locateChapterInBook(book, chapter_id);
         if (!located) {
@@ -960,7 +1003,11 @@ export const bookTools: ToolDefinition[] = [
         const page = paginateChapterParagraphs(chapter, offset, limit, paragraphCount);
 
         // 搜索相关记忆（使用章节标题作为关键词）
-        const relatedMemories = await fetchChapterRelatedMemories(bookId, chapter, include_memory);
+        const relatedMemories = await fetchChapterRelatedMemories(
+          resolvedBookId,
+          chapter,
+          include_memory,
+        );
 
         const titleFields = formatChapterTitleFields(chapter);
         return JSON.stringify({
@@ -991,76 +1038,22 @@ export const bookTools: ToolDefinition[] = [
       }
     },
   },
-  {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_previous_chapter',
-        description:
-          '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
-        parameters: {
-          type: 'object',
-          properties: {
-            chapter_id: {
-              type: 'string',
-              description: '当前章节 ID',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-            summary_only: {
-              type: 'boolean',
-              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
-            },
-          },
-          required: ['chapter_id'],
-        },
-      },
-    },
-    handler: async (args, { bookId, onAction }) =>
-      handleAdjacentChapterTool(args, bookId, onAction, {
-        direction: 'previous',
-        toolName: 'get_previous_chapter',
-        notFoundError: '没有前一个章节（当前章节是第一个章节）',
-        errorMessage: '获取前一个章节失败',
-      }),
-  },
-  {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_next_chapter',
-        description:
-          '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
-        parameters: {
-          type: 'object',
-          properties: {
-            chapter_id: {
-              type: 'string',
-              description: '当前章节 ID',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-            summary_only: {
-              type: 'boolean',
-              description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
-            },
-          },
-          required: ['chapter_id'],
-        },
-      },
-    },
-    handler: async (args, { bookId, onAction }) =>
-      handleAdjacentChapterTool(args, bookId, onAction, {
-        direction: 'next',
-        toolName: 'get_next_chapter',
-        notFoundError: '没有下一个章节（当前章节是最后一个章节）',
-        errorMessage: '获取下一个章节失败',
-      }),
-  },
+  buildAdjacentChapterTool({
+    name: 'get_previous_chapter',
+    description:
+      '获取指定章节的前一个章节信息。用于查看前一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
+    direction: 'previous',
+    notFoundError: '没有前一个章节（当前章节是第一个章节）',
+    errorMessage: '获取前一个章节失败',
+  }),
+  buildAdjacentChapterTool({
+    name: 'get_next_chapter',
+    description:
+      '获取指定章节的下一个章节信息。用于查看下一个章节的标题、内容等，帮助理解上下文和保持翻译一致性。',
+    direction: 'next',
+    notFoundError: '没有下一个章节（当前章节是最后一个章节）',
+    errorMessage: '获取下一个章节失败',
+  }),
   {
     definition: {
       type: 'function',
@@ -1227,10 +1220,6 @@ export const bookTools: ToolDefinition[] = [
         alternate_titles?: string[];
       }>(args);
 
-      if (!bookId) {
-        return jsonError('未提供书籍 ID');
-      }
-
       const { description, tags, author, alternate_titles } = parsedArgs;
 
       // 检查是否至少提供了一个要更新的字段
@@ -1245,22 +1234,20 @@ export const bookTools: ToolDefinition[] = [
         );
       }
 
-      try {
-        // 获取当前书籍信息
-        const book = await BookService.getBookById(bookId);
-        if (!book) {
-          return jsonError(`书籍不存在: ${bookId}`);
-        }
+      const resolved = await resolveBookByIdOrError(bookId);
+      if (resolved.kind === 'error') return resolved.json;
+      const { book, bookId: resolvedBookId } = resolved;
 
+      try {
         const previousData = snapshotBookInfoForUndo(book);
         const updates = buildBookInfoUpdates({ description, tags, author, alternate_titles });
 
         // 更新书籍
         const booksStore = useBooksStore();
-        await booksStore.updateBook(bookId, updates);
+        await booksStore.updateBook(resolvedBookId, updates);
 
         // 获取更新后的书籍信息
-        const updatedBook = await BookService.getBookById(bookId);
+        const updatedBook = await BookService.getBookById(resolvedBookId);
 
         // 报告操作
         if (onAction) {
