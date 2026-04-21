@@ -715,6 +715,18 @@ export class GistSyncService {
   }
 
   /**
+   * 过滤掉 null 条目，返回待创建的 `Object.entries` 数组。
+   * 批量创建 Gist 的两个分支（回退恢复 / 新建）都要做这一步预处理。
+   */
+  private static toNonNullCreateEntries(
+    files: Record<string, { content: string } | null>,
+  ): [string, { content: string }][] {
+    return Object.entries(files).filter(
+      (entry): entry is [string, { content: string }] => entry[1] !== null,
+    );
+  }
+
+  /**
    * 执行 Gist 批量创建的后续 update 批次，失败时统一打印 + 抛出一致性错误。
    * 封装两处重复的 try/catch 块（创建新 Gist 的续批 / 分批创建的续批）。
    */
@@ -1434,14 +1446,7 @@ export class GistSyncService {
         // 如果已经有了 gistUrl，说明 batch update 成功了（或者部分成功），不需要再创建
         if (!gistUrl) {
           // 尝试创建新 Gist（使用批量创建，避免单次请求过大）
-          const filesForCreate: Record<string, { content: string }> = {};
-          for (const [key, value] of Object.entries(files)) {
-            if (value !== null) {
-              filesForCreate[key] = value;
-            }
-          }
-
-          const createEntries = Object.entries(filesForCreate);
+          const createEntries = GistSyncService.toNonNullCreateEntries(files);
 
           // 第一批：创建 Gist
           const firstBatchFiles = Object.fromEntries(createEntries.slice(0, CREATE_BATCH_SIZE));
@@ -1464,14 +1469,7 @@ export class GistSyncService {
         }
       } else {
         // 创建新 Gist（使用批量创建，避免单次请求过大）
-        const filesForCreate: Record<string, { content: string }> = {};
-        for (const [key, value] of Object.entries(files)) {
-          if (value !== null) {
-            filesForCreate[key] = value;
-          }
-        }
-
-        const createEntries = Object.entries(filesForCreate);
+        const createEntries = GistSyncService.toNonNullCreateEntries(files);
 
         if (createEntries.length <= CREATE_BATCH_SIZE) {
           // 文件数量较少，单次创建
@@ -1486,7 +1484,7 @@ export class GistSyncService {
           const response = await this.octokit.rest.gists.create({
             description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
             public: false,
-            files: filesForCreate,
+            files: Object.fromEntries(createEntries),
           });
           gistId = response.data.id;
           gistUrl = response.data.html_url;
