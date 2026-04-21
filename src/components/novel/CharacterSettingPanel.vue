@@ -284,6 +284,30 @@ const handleExport = () => {
   }
 };
 
+/**
+ * 导入场景下把外部角色条目规整为 addCharacterSetting / updateCharacterSetting 所需的扁平载荷。
+ * add 分支会在外层加 `name` 字段，update 分支直接传该对象。
+ */
+type ImportedCharLike = {
+  sex?: 'male' | 'female' | 'other' | undefined;
+  translation: { translation: string };
+  description?: string | undefined;
+  speakingStyle?: string | undefined;
+  aliases: Array<{ name: string; translation: { translation: string } }>;
+};
+const buildImportedCharPayload = (importedChar: ImportedCharLike) => ({
+  ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
+  translation: importedChar.translation.translation,
+  ...(importedChar.description !== undefined ? { description: importedChar.description } : {}),
+  ...(importedChar.speakingStyle !== undefined
+    ? { speakingStyle: importedChar.speakingStyle }
+    : {}),
+  aliases: importedChar.aliases.map((a) => ({
+    name: a.name,
+    translation: a.translation.translation,
+  })),
+});
+
 // 处理文件选择
 const handleFileSelect = createFileSelectHandler(async (file) => {
   try {
@@ -345,37 +369,17 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
           })),
         });
         // 更新现有角色
-        await CharacterSettingService.updateCharacterSetting(props.book.id, existingChar.id, {
-          ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
-          translation: importedChar.translation.translation,
-          ...(importedChar.description !== undefined
-            ? { description: importedChar.description }
-            : {}),
-          ...(importedChar.speakingStyle !== undefined
-            ? { speakingStyle: importedChar.speakingStyle }
-            : {}),
-          aliases: importedChar.aliases.map((a) => ({
-            name: a.name,
-            translation: a.translation.translation,
-          })),
-        });
+        await CharacterSettingService.updateCharacterSetting(
+          props.book.id,
+          existingChar.id,
+          buildImportedCharPayload(importedChar),
+        );
         updatedCount++;
       } else {
         // 添加新角色
         const newChar = await CharacterSettingService.addCharacterSetting(props.book.id, {
           name: importedChar.name,
-          ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
-          translation: importedChar.translation.translation,
-          ...(importedChar.description !== undefined
-            ? { description: importedChar.description }
-            : {}),
-          ...(importedChar.speakingStyle !== undefined
-            ? { speakingStyle: importedChar.speakingStyle }
-            : {}),
-          aliases: importedChar.aliases.map((a) => ({
-            name: a.name,
-            translation: a.translation.translation,
-          })),
+          ...buildImportedCharPayload(importedChar),
         });
         addedCharIds.push(newChar.id);
         addedCount++;
