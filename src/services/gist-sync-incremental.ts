@@ -154,6 +154,23 @@ async function parseStoredContent(content: string): Promise<unknown> {
 }
 
 /**
+ * 把 `knownRemoteHashes`（仅含 hash）包装为一个"最小 manifest"供 diffManifests 使用。
+ * 下载 diff 与上传 diff 都要走一遍这个转换，因此抽成独立 helper。
+ */
+function buildKnownAsManifest(
+  knownHashes: Record<string, string> | undefined,
+): { schemaVersion: typeof MANIFEST_SCHEMA_VERSION; updatedAt: string; entries: Record<string, ManifestEntry> } {
+  const hashes = knownHashes ?? {};
+  return {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
+    updatedAt: '',
+    entries: Object.fromEntries(
+      Object.entries(hashes).map(([k, h]) => [k, { hash: h, lastEdited: '' } as ManifestEntry]),
+    ),
+  };
+}
+
+/**
  * 按字节安全分块（不在多字节字符中间切断）
  */
 function splitIntoChunks(content: string): string[] {
@@ -593,18 +610,7 @@ export async function downloadWithManifest(
   }
 
   // 计算 diff：remote vs knownRemote
-  const knownHashes = config.knownRemoteHashes ?? {};
-  const knownAsManifest = {
-    schemaVersion: MANIFEST_SCHEMA_VERSION,
-    updatedAt: '',
-    entries: Object.fromEntries(
-      Object.entries(knownHashes).map(([k, h]) => [
-        k,
-        { hash: h, lastEdited: '' } as ManifestEntry,
-      ]),
-    ),
-  };
-  const diff = diffManifests(remoteManifest, knownAsManifest);
+  const diff = diffManifests(remoteManifest, buildKnownAsManifest(config.knownRemoteHashes));
 
   // 仅需要反序列化 changed + added（即远端有而本地尚未见过的）
   const toRead = [...diff.changed, ...diff.added];
@@ -688,19 +694,8 @@ export async function uploadIncremental(
     ...(payload.tombstones ? { tombstones: payload.tombstones } : {}),
   });
 
-  const knownHashes = config.knownRemoteHashes ?? {};
   const knownEntries = config.knownRemoteEntries ?? {};
-  const knownAsManifest = {
-    schemaVersion: MANIFEST_SCHEMA_VERSION,
-    updatedAt: '',
-    entries: Object.fromEntries(
-      Object.entries(knownHashes).map(([k, h]) => [
-        k,
-        { hash: h, lastEdited: '' } as ManifestEntry,
-      ]),
-    ),
-  };
-  const diff = diffManifests(localManifest, knownAsManifest);
+  const diff = diffManifests(localManifest, buildKnownAsManifest(config.knownRemoteHashes));
   const toUpload = [...diff.changed, ...diff.added];
   const toDelete = diff.deleted;
 
