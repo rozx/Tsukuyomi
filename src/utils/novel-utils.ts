@@ -150,22 +150,26 @@ export function getChapterDisplayTitle(chapter: Chapter, book?: Novel): string {
 }
 
 /**
+ * 同步 / 异步 char-count 共用的内存优先路径：若已加载 content 或 originalContent，
+ * 就地返回长度；否则返回 null，由调用方决定是否继续走异步 IndexedDB 加载。
+ */
+function getChapterCharCountFromMemory(chapter: Chapter): number | null {
+  if (chapter.content && chapter.content.length > 0) {
+    return chapter.content.reduce((total, para) => total + para.text.length, 0);
+  }
+  if (chapter.originalContent) {
+    return chapter.originalContent.length;
+  }
+  return null;
+}
+
+/**
  * 计算章节的总字符数（同步版本，仅用于已加载的内容）
  * @param chapter 章节对象
  * @returns 总字符数
  */
 export function getChapterCharCount(chapter: Chapter): number {
-  // 优先使用已加载的 content（段落数组）
-  if (chapter.content && chapter.content.length > 0) {
-    return chapter.content.reduce((total, para) => total + para.text.length, 0);
-  }
-
-  // 如果 content 未加载，使用 originalContent（原始文本，懒加载时仍可用）
-  if (chapter.originalContent) {
-    return chapter.originalContent.length;
-  }
-
-  return 0;
+  return getChapterCharCountFromMemory(chapter) ?? 0;
 }
 
 /**
@@ -174,17 +178,10 @@ export function getChapterCharCount(chapter: Chapter): number {
  * @returns Promise<number> 总字符数
  */
 export async function getChapterCharCountAsync(chapter: Chapter): Promise<number> {
-  // 优先使用已加载的 content（段落数组）
-  if (chapter.content && chapter.content.length > 0) {
-    return chapter.content.reduce((total, para) => total + para.text.length, 0);
-  }
+  const fromMemory = getChapterCharCountFromMemory(chapter);
+  if (fromMemory !== null) return fromMemory;
 
-  // 如果 content 未加载，使用 originalContent（原始文本，懒加载时仍可用）
-  if (chapter.originalContent) {
-    return chapter.originalContent.length;
-  }
-
-  // 如果都没有，尝试从 IndexedDB 加载内容
+  // 内存中没有，按需从 IndexedDB 加载
   const content = await loadChapterContent(chapter.id);
   if (content && content.length > 0) {
     return content.reduce((total, para) => total + para.text.length, 0);
