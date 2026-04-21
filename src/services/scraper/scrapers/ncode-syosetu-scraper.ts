@@ -1,10 +1,6 @@
 import * as cheerio from 'cheerio';
 import type { Novel } from 'src/models/novel';
-import type {
-  ParsedChapterInfo,
-  ParsedNovelInfo,
-  ParsedVolumeInfo,
-} from 'src/services/scraper/types';
+import type { ParsedChapterInfo, ParsedNovelInfo } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
 import {
   extractParagraphText,
@@ -761,31 +757,6 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
    * @returns Novel 对象
    */
   protected override convertToNovel(info: ParsedNovelInfo): Novel {
-    // 将 ParsedChapterInfo 转换为章节
-    const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
-      const parsedChapter: ParsedChapterInfo = {
-        title: chapter.title,
-        url: chapter.url,
-      };
-      if (chapter.date) {
-        parsedChapter.date = chapter.date;
-      }
-      if (chapter.lastUpdated) {
-        parsedChapter.lastUpdated = chapter.lastUpdated;
-      }
-      return parsedChapter;
-    });
-
-    // 将 ParsedVolumeInfo 转换为卷信息
-    const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes?.map((volume) => ({
-      title: volume.title,
-      startIndex: volume.startIndex,
-    }));
-
-    // 使用基类的通用方法将章节分组到卷中
-    const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, '正文');
-
-    // Novel 的 ID 使用完整的 uuidv4（不在短 ID 范围内）
-    return this.buildNovel(info, volumes);
+    return this.buildNovelFromParsedInfo(info);
   }
 }

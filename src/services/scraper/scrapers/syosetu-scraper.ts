@@ -1,7 +1,6 @@
 import * as cheerio from 'cheerio';
 import type { Novel } from 'src/models/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/services/scraper/scrapers/syosetu-types';
-import type { ParsedChapterInfo, ParsedVolumeInfo } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
 import {
   extractDescriptionText,
@@ -612,32 +611,6 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
    * @returns Novel 对象
    */
   protected override convertToNovel(info: SyosetuNovelInfo): Novel {
-    // 将 SyosetuChapter 转换为 ParsedChapterInfo
-    const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
-      const parsedChapter: ParsedChapterInfo = {
-        title: chapter.title,
-        url: chapter.url,
-      };
-      if (chapter.date) {
-        parsedChapter.date = chapter.date;
-      }
-      if (chapter.lastUpdated) {
-        parsedChapter.lastUpdated = chapter.lastUpdated;
-      }
-      return parsedChapter;
-    });
-
-    // 将 SyosetuVolumeInfo 转换为 ParsedVolumeInfo
-    const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes?.map((volume) => ({
-      title: volume.title,
-      startIndex: volume.startIndex,
-    }));
-
-    // 使用基类的通用方法将章节分组到卷中
-    const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, '正文');
-
-    // Novel 的 ID 使用完整的 uuidv4（不在短 ID 范围内）
-    // 注意：根据要求，只有 chapter/volume/paragraph/translation/note/terminology/character settings 使用短 ID
-    return this.buildNovel(info, volumes);
+    return this.buildNovelFromParsedInfo(info);
   }
 }

@@ -432,6 +432,36 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
    * @param volumes 已经构建好的卷数组
    * @returns Novel 对象
    */
+  /**
+   * 将解析结果一步转换为 Novel：复制可选日期字段 → 按 ParsedVolumeInfo 分卷 → 调用 {@link buildNovel}。
+   * syosetu.org / ncode.syosetu.com 的 convertToNovel 共用此实现（它们的 chapter/volume 类型结构兼容 Parsed*Info）。
+   *
+   * @param info 解析后的小说信息（需包含 chapters 数组，可选 volumes）
+   * @param defaultVolumeTitle 当没有卷信息时的默认卷标题
+   */
+  protected buildNovelFromParsedInfo(
+    info: ParsedNovelInfo & {
+      chapters: readonly ParsedChapterInfo[];
+      volumes?: readonly ParsedVolumeInfo[] | undefined;
+    },
+    defaultVolumeTitle: string = '正文',
+  ): Novel {
+    const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
+      const parsed: ParsedChapterInfo = { title: chapter.title, url: chapter.url };
+      if (chapter.date) parsed.date = chapter.date;
+      if (chapter.lastUpdated) parsed.lastUpdated = chapter.lastUpdated;
+      return parsed;
+    });
+
+    const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes?.map((volume) => ({
+      title: volume.title,
+      startIndex: volume.startIndex,
+    }));
+
+    const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, defaultVolumeTitle);
+    return this.buildNovel(info, volumes);
+  }
+
   protected buildNovel(info: ParsedNovelInfo, volumes: Volume[]): Novel {
     const now = new Date();
     const novel: Novel = {
