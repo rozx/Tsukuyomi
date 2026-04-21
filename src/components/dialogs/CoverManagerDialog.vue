@@ -115,11 +115,12 @@ watch(
 );
 
 // 新封面统一入库 + 选中 + 成功 toast
-const registerAndSelectCover = (
+const registerAndSelectCover = async (
   newCover: CoverImage,
   toastContent: { summary: string; detail: string },
-) => {
-  void coverHistoryStore.addCover(newCover);
+): Promise<void> => {
+  // 必须 await，否则 allCovers 上的 find 可能看不到刚加的那一条（addCover 是异步 store mutation）
+  await coverHistoryStore.addCover(newCover);
   const addedCover = allCovers.value.find((c) => c.url === newCover.url);
   if (addedCover) {
     selectedCoverId.value = addedCover.id;
@@ -149,7 +150,7 @@ const handleFileSelect = async (event: Event) => {
       ...(result.deleteUrl && { deleteUrl: result.deleteUrl }),
     };
 
-    registerAndSelectCover(newCover, { summary: '上传成功', detail: '封面图片已上传' });
+    await registerAndSelectCover(newCover, { summary: '上传成功', detail: '封面图片已上传' });
 
     // 重置文件输入
     if (fileInputRef.value) {
@@ -169,7 +170,7 @@ const handleFileSelect = async (event: Event) => {
 };
 
 // 通过 URL 添加封面
-const handleAddByUrl = () => {
+const handleAddByUrl = async () => {
   const url = urlInput.value.trim();
   if (!url) {
     toast.add({
@@ -212,7 +213,7 @@ const handleAddByUrl = () => {
     url: url,
   };
 
-  registerAndSelectCover(newCover, { summary: '添加成功', detail: '封面已通过 URL 添加' });
+  await registerAndSelectCover(newCover, { summary: '添加成功', detail: '封面已通过 URL 添加' });
   urlInput.value = '';
   showUrlInput.value = false;
 };
