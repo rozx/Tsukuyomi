@@ -56,6 +56,45 @@ export function useChapterTranslation(
   };
 
   /**
+   * 批量任务共享的增量更新回调：
+   * 把 AI 返回的段落翻译立即写入 books store（调用 updateParagraphsIncrementally），
+   * 然后把属于目标集合的段落 ID 计入 completedParagraphIds，最后执行任务特定的收尾（afterUpdate）。
+   * translate 的收尾是刷新进度条；polish/proofread 的收尾是把段落从 inFlight 集合里移除。
+   */
+  const applyIncrementalAndTrackCompletion = (
+    translations: {
+      id: string;
+      translation: string;
+      referencedMemories?: string[];
+      memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+    }[],
+    ctx: {
+      aiModelId: string;
+      targetChapterId: string;
+      targetBookId: string;
+      lastAppliedTranslations: Map<string, string>;
+      targetParagraphIds: Set<string>;
+      completedParagraphIds: Set<string>;
+    },
+    afterUpdate?: (translations: { id: string; translation: string }[]) => void,
+  ): void => {
+    void updateParagraphsIncrementally(
+      translations,
+      ctx.aiModelId,
+      ctx.targetChapterId,
+      ctx.lastAppliedTranslations,
+      ctx.targetBookId,
+    ).then(() => {
+      for (const pt of translations) {
+        if (ctx.targetParagraphIds.has(pt.id)) {
+          ctx.completedParagraphIds.add(pt.id);
+        }
+      }
+      afterUpdate?.(translations);
+    });
+  };
+
+  /**
    * 创建新的段落翻译对象
    * 注意：翻译文本会原样保存，不进行任何处理（包括缩进处理）
    * 缩进过滤会在显示和导出时应用
@@ -1164,27 +1203,26 @@ export function useChapterTranslation(
           console.debug('翻译进度:', progress);
         },
         onParagraphTranslation: (translations) => {
-          void updateParagraphsIncrementally(
+          applyIncrementalAndTrackCompletion(
             translations,
-            selectedModel.id,
-            targetChapterId,
-            lastAppliedTranslations,
-            targetBookId,
-          ).then(() => {
-            for (const pt of translations) {
-              if (targetParagraphIds.has(pt.id)) {
-                completedParagraphIds.add(pt.id);
-              }
-            }
-
-            const updatedProgress = {
-              current: completedParagraphIds.size,
-              total: targetParagraphIds.size,
-              message: state.progress.message,
-            };
-            state.progress = updatedProgress;
-            syncProgressToStore('translation', targetChapterId, updatedProgress);
-          });
+            {
+              aiModelId: selectedModel.id,
+              targetChapterId,
+              targetBookId,
+              lastAppliedTranslations,
+              targetParagraphIds,
+              completedParagraphIds,
+            },
+            () => {
+              const updatedProgress = {
+                current: completedParagraphIds.size,
+                total: targetParagraphIds.size,
+                message: state.progress.message,
+              };
+              state.progress = updatedProgress;
+              syncProgressToStore('translation', targetChapterId, updatedProgress);
+            },
+          );
         },
         onTitleTranslation: (translation) => {
           // 立即更新标题翻译（不等待整个翻译完成）
@@ -1326,28 +1364,23 @@ export function useChapterTranslation(
           toast.add(message);
         },
         onParagraphPolish: (translations) => {
-          // 立即更新段落润色
-          void updateParagraphsIncrementally(
+          // 润色进度保持基于 chunk（由 onProgress 更新），不使用段落数量
+          applyIncrementalAndTrackCompletion(
             translations,
-            selectedModel.id,
-            targetChapterId,
-            lastAppliedTranslations,
-            targetBookId,
-          ).then(() => {
-            for (const pt of translations) {
-              if (targetParagraphIds.has(pt.id)) {
-                completedParagraphIds.add(pt.id);
-              }
-            }
-
-            // 润色进度保持基于 chunk（由 onProgress 更新），不使用段落数量
-            // 这样进度条显示的是"已处理的块数/总块数"而非"已处理的段落数/总段落数"
-
-            // 从正在润色的集合中移除已完成的段落 ID
-            translations.forEach((pt) => {
-              state.polishingParagraphIds.delete(pt.id);
-            });
-          });
+            {
+              aiModelId: selectedModel.id,
+              targetChapterId,
+              targetBookId,
+              lastAppliedTranslations,
+              targetParagraphIds,
+              completedParagraphIds,
+            },
+            (done) => {
+              done.forEach((pt) => {
+                state.polishingParagraphIds.delete(pt.id);
+              });
+            },
+          );
         },
       });
 
@@ -1547,28 +1580,23 @@ export function useChapterTranslation(
           toast.add(message);
         },
         onParagraphProofreading: (translations) => {
-          // 立即更新段落校对
-          void updateParagraphsIncrementally(
+          // 校对进度保持基于 chunk（由 onProgress 更新），不使用段落数量
+          applyIncrementalAndTrackCompletion(
             translations,
-            selectedModel.id,
-            targetChapterId,
-            lastAppliedTranslations,
-            targetBookId,
-          ).then(() => {
-            for (const pt of translations) {
-              if (targetParagraphIds.has(pt.id)) {
-                completedParagraphIds.add(pt.id);
-              }
-            }
-
-            // 校对进度保持基于 chunk（由 onProgress 更新），不使用段落数量
-            // 这样进度条显示的是"已处理的块数/总块数"而非"已处理的段落数/总段落数"
-
-            // 从正在校对的集合中移除已完成的段落 ID
-            translations.forEach((pt) => {
-              state.proofreadingParagraphIds.delete(pt.id);
-            });
-          });
+            {
+              aiModelId: selectedModel.id,
+              targetChapterId,
+              targetBookId,
+              lastAppliedTranslations,
+              targetParagraphIds,
+              completedParagraphIds,
+            },
+            (done) => {
+              done.forEach((pt) => {
+                state.proofreadingParagraphIds.delete(pt.id);
+              });
+            },
+          );
         },
       });
 
