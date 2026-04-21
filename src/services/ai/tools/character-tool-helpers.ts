@@ -1,5 +1,7 @@
+import { cloneDeep } from 'lodash';
+import { useBooksStore } from 'src/stores/books';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
-import type { CharacterSetting } from 'src/models/novel';
+import type { CharacterSetting, Novel } from 'src/models/novel';
 
 /** 角色别名入参（工具层使用的扁平结构，翻译已是字符串） */
 export interface CharacterAliasInput {
@@ -61,4 +63,30 @@ export function serializeCharacterForTool(char: CharacterSetting): {
       translation: alias.translation.translation,
     })),
   };
+}
+
+/**
+ * 查找角色并克隆原始数据，供 update / delete 工具在执行前抓取 previousData 做 revert。
+ *
+ * 两个 handler 之前各自重复了完全相同的四行：
+ *   1. `useBooksStore()` 取 store；
+ *   2. `getBookById(bookId)` 拿到书；
+ *   3. 在 `book?.characterSettings` 里按 id 找角色；
+ *   4. 用 `cloneDeep` 做一份原始数据快照。
+ *
+ * 这里统一抽出，返回 `{ book, character, previousData }` 三元组，调用方按需取用。
+ */
+export function resolveCharacterForTool(
+  bookId: string,
+  characterId: string,
+): {
+  book: Novel | undefined;
+  character: CharacterSetting | undefined;
+  previousData: CharacterSetting | undefined;
+} {
+  const booksStore = useBooksStore();
+  const book = booksStore.getBookById(bookId);
+  const character = book?.characterSettings?.find((c) => c.id === characterId);
+  const previousData = character ? cloneDeep(character) : undefined;
+  return { book, character, previousData };
 }

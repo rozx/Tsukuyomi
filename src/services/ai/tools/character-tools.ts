@@ -3,7 +3,6 @@ import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
 import type { CharacterSetting } from 'src/models/novel';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
-import { cloneDeep } from 'lodash';
 import { findUniqueCharactersInText } from 'src/utils/text-matcher';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
 import {
@@ -14,6 +13,7 @@ import {
 import {
   assertAliasesNotBlank,
   normalizeAliasList,
+  resolveCharacterForTool,
   serializeCharacterForTool,
 } from './character-tool-helpers';
 
@@ -354,10 +354,7 @@ export const characterTools: ToolDefinition[] = [
       }
 
       // 在更新前获取原始数据，用于 revert
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      const previousCharacter = book?.characterSettings?.find((c) => c.id === character_id);
-      const previousData = previousCharacter ? cloneDeep(previousCharacter) : undefined;
+      const { previousData } = resolveCharacterForTool(bookId, character_id);
 
       const updates: {
         name?: string;
@@ -439,10 +436,7 @@ export const characterTools: ToolDefinition[] = [
       }
 
       // 在删除前获取角色信息，以便在 toast 中显示详细信息和 revert
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      const character = book?.characterSettings?.find((c) => c.id === character_id);
-      const previousData = character ? cloneDeep(character) : undefined;
+      const { character, previousData } = resolveCharacterForTool(bookId, character_id);
 
       await CharacterSettingService.deleteCharacterSetting(bookId, character_id);
 
