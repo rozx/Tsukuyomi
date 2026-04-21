@@ -167,7 +167,11 @@ export class EmbeddingService {
    * - 'status-changed': 状态切换(idle/loading/ready/failed)
    * - 'ready': pipeline 首次就绪
    * - 'error': 初始化或推理失败
+   *
+   * 结构同 EmbeddingQueue.addEventListener/dispatch，但 type 字面量联合不同，
+   * 抽象成泛型工厂会丢失 type 窄化，保留两份并共用底层 subscribeCustomEvent 工具。
    */
+  // fallow-ignore-next-line code-duplication
   static addEventListener(
     type: 'progress' | 'status-changed' | 'ready' | 'error',
     listener: (event: CustomEvent) => void,

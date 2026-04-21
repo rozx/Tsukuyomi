@@ -582,6 +582,52 @@ export class ChapterService {
   static findChapterById = findChapterById;
 
   /**
+   * 按指定方向查找相邻章节（同卷内相邻优先，否则跨卷找对端非空卷的首/末章节）
+   * - direction = -1：向前（同卷 chapterIndex-1，跨卷回溯找上一非空卷的**最后**一章）
+   * - direction = +1：向后（同卷 chapterIndex+1，跨卷前进找下一非空卷的**第一**章）
+   */
+  private static findAdjacentChapter(
+    novel: Novel | null | undefined,
+    chapterId: string,
+    direction: -1 | 1,
+  ): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
+    const current = ChapterService.locateCurrentChapter(novel, chapterId);
+    if (!current) return null;
+    const { volumeIndex, chapterIndex } = current;
+    const volumes = novel?.volumes;
+    if (!volumes) return null;
+
+    // 同卷内相邻章节
+    const currentVolume = volumes[volumeIndex];
+    const nextInVolume = chapterIndex + direction;
+    const inBounds =
+      direction === -1
+        ? nextInVolume >= 0
+        : nextInVolume < (currentVolume?.chapters?.length ?? 0);
+    if (currentVolume && inBounds) {
+      const chapter = currentVolume.chapters?.[nextInVolume];
+      if (chapter) {
+        return { chapter, volume: currentVolume, volumeIndex, chapterIndex: nextInVolume };
+      }
+    }
+
+    // 跨卷查找：-1 找上一非空卷的末章，+1 找下一非空卷的首章
+    const end = direction === -1 ? -1 : volumes.length;
+    for (let vIdx = volumeIndex + direction; vIdx !== end; vIdx += direction) {
+      const volume = volumes[vIdx];
+      if (volume && volume.chapters && volume.chapters.length > 0) {
+        const cIdx = direction === -1 ? volume.chapters.length - 1 : 0;
+        const chapter = volume.chapters[cIdx];
+        if (chapter) {
+          return { chapter, volume, volumeIndex: vIdx, chapterIndex: cIdx };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * 获取指定章节的前一个章节
    * @param novel 小说对象
    * @param chapterId 章节 ID
@@ -591,37 +637,7 @@ export class ChapterService {
     novel: Novel | null | undefined,
     chapterId: string,
   ): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
-    const current = ChapterService.findChapterById(novel, chapterId);
-    if (!current) {
-      return null;
-    }
-
-    const { volumeIndex, chapterIndex } = current;
-
-    // 如果当前章节不是该卷的第一个章节，返回前一个章节
-    if (chapterIndex > 0) {
-      const volume = novel?.volumes?.[volumeIndex];
-      const chapter = volume?.chapters?.[chapterIndex - 1];
-      if (volume && chapter) {
-        return { chapter, volume, volumeIndex, chapterIndex: chapterIndex - 1 };
-      }
-    }
-
-    // 如果当前章节是该卷的第一个章节，查找上一卷的最后一个章节
-    if (volumeIndex > 0) {
-      for (let vIndex = volumeIndex - 1; vIndex >= 0; vIndex--) {
-        const volume = novel?.volumes?.[vIndex];
-        if (volume && volume.chapters && volume.chapters.length > 0) {
-          const lastChapterIndex = volume.chapters.length - 1;
-          const chapter = volume.chapters[lastChapterIndex];
-          if (chapter) {
-            return { chapter, volume, volumeIndex: vIndex, chapterIndex: lastChapterIndex };
-          }
-        }
-      }
-    }
-
-    return null;
+    return ChapterService.findAdjacentChapter(novel, chapterId, -1);
   }
 
   /**
@@ -634,36 +650,7 @@ export class ChapterService {
     novel: Novel | null | undefined,
     chapterId: string,
   ): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
-    const current = ChapterService.findChapterById(novel, chapterId);
-    if (!current) {
-      return null;
-    }
-
-    const { volumeIndex, chapterIndex } = current;
-    const volume = novel?.volumes?.[volumeIndex];
-
-    // 如果当前章节不是该卷的最后一个章节，返回下一个章节
-    if (volume && volume.chapters && chapterIndex < volume.chapters.length - 1) {
-      const chapter = volume.chapters[chapterIndex + 1];
-      if (chapter) {
-        return { chapter, volume, volumeIndex, chapterIndex: chapterIndex + 1 };
-      }
-    }
-
-    // 如果当前章节是该卷的最后一个章节，查找下一卷的第一个章节
-    if (novel?.volumes && volumeIndex < novel.volumes.length - 1) {
-      for (let vIndex = volumeIndex + 1; vIndex < novel.volumes.length; vIndex++) {
-        const nextVolume = novel.volumes[vIndex];
-        if (nextVolume && nextVolume.chapters && nextVolume.chapters.length > 0) {
-          const chapter = nextVolume.chapters[0];
-          if (chapter) {
-            return { chapter, volume: nextVolume, volumeIndex: vIndex, chapterIndex: 0 };
-          }
-        }
-      }
-    }
-
-    return null;
+    return ChapterService.findAdjacentChapter(novel, chapterId, 1);
   }
 
   /**
@@ -1160,18 +1147,18 @@ export class ChapterService {
     const targetVolumeIndex = existingVolumes.findIndex((v) => v.id === targetVolumeId);
     if (targetVolumeIndex === -1) return existingVolumes;
 
-    // 1. 从源卷移除
-    const sourceChapters = [...(sourceVolume.chapters || [])];
-    sourceChapters.splice(chapterIndex, 1);
-    existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: sourceChapters };
+    const moved = ChapterService.spliceSourceAndCloneTargetChapters(
+      existingVolumes,
+      sourceVolumeIndex,
+      sourceVolume,
+      chapterIndex,
+      targetVolumeIndex,
+    );
+    if (!moved) return existingVolumes;
 
-    // 2. 添加到目标卷
-    const targetVolume = existingVolumes[targetVolumeIndex];
-    if (!targetVolume) return existingVolumes;
-
-    const targetChapters = [...(targetVolume.chapters || [])];
-    targetChapters.push(updatedChapter);
-    existingVolumes[targetVolumeIndex] = { ...targetVolume, chapters: targetChapters };
+    // 添加到目标卷
+    moved.targetChapters.push(updatedChapter);
+    existingVolumes[targetVolumeIndex] = { ...moved.targetVolume, chapters: moved.targetChapters };
 
     return existingVolumes;
   }
@@ -1233,28 +1220,28 @@ export class ChapterService {
     const targetVolumeIndex = existingVolumes.findIndex((v) => v.id === targetVolumeId);
     if (targetVolumeIndex === -1) return existingVolumes;
 
-    // 2. 从源卷移除
+    // 2. 从源卷移除 + 克隆目标卷 chapters
+    // 注意：如果源卷和目标卷相同，helper 内部会读取 splice 后写回 existingVolumes 的新对象
     const sourceVolume = existingVolumes[sourceVolumeIndex];
     if (!sourceVolume) return existingVolumes;
 
-    const sourceChapters = [...(sourceVolume.chapters || [])];
-    sourceChapters.splice(chapterIndex, 1);
-    existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: sourceChapters };
+    const moved = ChapterService.spliceSourceAndCloneTargetChapters(
+      existingVolumes,
+      sourceVolumeIndex,
+      sourceVolume,
+      chapterIndex,
+      targetVolumeIndex,
+    );
+    if (!moved) return existingVolumes;
 
-    // 3. 添加到目标卷
-    // 注意：如果源卷和目标卷相同，我们需要使用更新后的 existingVolumes[sourceVolumeIndex] 作为目标卷
-    // 因为上面已经修改了 existingVolumes[sourceVolumeIndex]
-
-    const targetVolume = existingVolumes[targetVolumeIndex];
-    if (!targetVolume) return existingVolumes;
-
-    const targetChapters = [...(targetVolume.chapters || [])];
-
+    // 3. 按指定位置插入目标章节
     const insertIndex =
-      targetIndex !== undefined && targetIndex !== null ? targetIndex : targetChapters.length;
+      targetIndex !== undefined && targetIndex !== null
+        ? targetIndex
+        : moved.targetChapters.length;
 
-    targetChapters.splice(insertIndex, 0, chapterToMove);
-    existingVolumes[targetVolumeIndex] = { ...targetVolume, chapters: targetChapters };
+    moved.targetChapters.splice(insertIndex, 0, chapterToMove);
+    existingVolumes[targetVolumeIndex] = { ...moved.targetVolume, chapters: moved.targetChapters };
 
     return existingVolumes;
   }
@@ -1472,6 +1459,46 @@ export class ChapterService {
   }
 
   /**
+   * updateChapter / moveChapter 跨卷搬运的共用块：
+   *   1) 从源卷克隆一份 chapters 并 splice 掉第 chapterIndex 项，写回 existingVolumes；
+   *   2) 定位目标卷并克隆其 chapters 数组返回，供调用方 push 或 splice 插入。
+   * 若目标卷下标无效则返回 null，调用方应返回 existingVolumes。
+   */
+  private static spliceSourceAndCloneTargetChapters(
+    existingVolumes: Volume[],
+    sourceVolumeIndex: number,
+    sourceVolume: Volume,
+    chapterIndex: number,
+    targetVolumeIndex: number,
+  ): { targetVolume: Volume; targetChapters: Chapter[] } | null {
+    // 1. 从源卷移除
+    const sourceChapters = [...(sourceVolume.chapters || [])];
+    sourceChapters.splice(chapterIndex, 1);
+    existingVolumes[sourceVolumeIndex] = { ...sourceVolume, chapters: sourceChapters };
+
+    // 2. 定位目标卷（若源卷和目标卷相同，使用 splice 后的新对象）
+    const targetVolume = existingVolumes[targetVolumeIndex];
+    if (!targetVolume) return null;
+
+    const targetChapters = [...(targetVolume.chapters || [])];
+    return { targetVolume, targetChapters };
+  }
+
+  /**
+   * `getPreviousChapter` / `getNextChapter` 共用的定位前言：
+   * 通过 chapterId 找到当前章节位置，不存在则返回 null。
+   */
+  private static locateCurrentChapter(
+    novel: Novel | null | undefined,
+    chapterId: string,
+  ): { volumeIndex: number; chapterIndex: number } | null {
+    const current = ChapterService.findChapterById(novel, chapterId);
+    if (!current) return null;
+    const { volumeIndex, chapterIndex } = current;
+    return { volumeIndex, chapterIndex };
+  }
+
+  /**
    * 在 `existingVolumes` 里查找某章所在的卷下标 / 章下标 / 章对象。
    * updateChapter / moveChapter 等多个 mutation 入口共用。
    */
@@ -1579,6 +1606,51 @@ export class ChapterService {
   }
 
   /**
+   * 向后扫描循环中的共用模板：当 cIdx 已越过当前卷末尾时，调用
+   * jumpToNextVolumeFirstChapter 跳到下一卷首章，并把状态写回外层游标。
+   * 返回 'done'（外层应 break）或 'continue'（外层应 continue）。
+   *
+   * 共用于 getNextParagraphsAsync 两遍扫描中的 3 处跨卷前进分支。
+   */
+  private static advanceToNextVolumeOrDone(
+    cursor: { vIdx: number; cIdx: number; pIdx: number },
+    novel: Novel,
+  ): 'done' | 'continue' {
+    const state = { vIdx: cursor.vIdx, cIdx: cursor.cIdx, pIdx: cursor.pIdx };
+    const step = ChapterService.jumpToNextVolumeFirstChapter(state, novel);
+    cursor.vIdx = state.vIdx;
+    cursor.cIdx = state.cIdx;
+    cursor.pIdx = state.pIdx;
+    return step.done ? 'done' : 'continue';
+  }
+
+  /**
+   * getPreviousParagraphsAsync / getNextParagraphsAsync 共用的前言：
+   * 校验入参、异步定位段落位置，返回初始结果容器与起始游标。
+   * 返回 null 表示无需搜索（调用方应直接返回空数组）。
+   */
+  private static async resolveParagraphSearchStart(
+    novel: Novel | null | undefined,
+    paragraphId: string,
+    count: number,
+  ): Promise<{
+    results: ParagraphSearchResult[];
+    volumeIndex: number;
+    chapterIndex: number;
+    paragraphIndex: number;
+  } | null> {
+    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
+      return null;
+    }
+    const location = await ChapterService.findParagraphLocationAsync(novel, paragraphId);
+    if (!location) {
+      return null;
+    }
+    const { volumeIndex, chapterIndex, paragraphIndex } = location;
+    return { results: [], volumeIndex, chapterIndex, paragraphIndex };
+  }
+
+  /**
    * 向前跨卷 + 针对新章节执行一次 onChapter 动作（可同步可异步）。
    * 动作完成后会重算 state.pIdx（兼容 onChapter 把 undefined 的 content 填成 []）。
    *
@@ -1610,18 +1682,12 @@ export class ChapterService {
     paragraphId: string,
     count: number,
   ): Promise<ParagraphSearchResult[]> {
-    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
+    const start = await ChapterService.resolveParagraphSearchStart(novel, paragraphId, count);
+    if (!start || !novel || !novel.volumes) {
       return [];
     }
-
-    const location = await ChapterService.findParagraphLocationAsync(novel, paragraphId);
-    if (!location) {
-      return [];
-    }
-
-    const results: ParagraphSearchResult[] = [];
-    const { volumeIndex, chapterIndex } = location;
-    let { paragraphIndex } = location;
+    const { results, volumeIndex, chapterIndex } = start;
+    let paragraphIndex = start.paragraphIndex;
 
     // 从当前段落的前一个开始，向前遍历
     paragraphIndex--;
@@ -1714,6 +1780,14 @@ export class ChapterService {
     const loadOnce = (chapter: Chapter): Promise<void> =>
       ChapterService.ensureChapterLoaded(chapter);
 
+    // pass 2 共用动作：跨到上一卷，对新章节执行 loadOnce，回写 vIdx/cIdx/pIdx。
+    const crossToPrevAndLoad = async (): Promise<{ done: boolean }> => {
+      const state = { vIdx, cIdx, pIdx };
+      const result = await ChapterService.crossToPrevVolumeWithAction(state, novel, loadOnce);
+      ({ vIdx, cIdx, pIdx } = state);
+      return result;
+    };
+
     while (results.length < count && vIdx >= 0) {
       const volume = novel.volumes[vIdx];
       if (!volume || !volume.chapters) {
@@ -1722,9 +1796,7 @@ export class ChapterService {
       }
 
       if (cIdx < 0) {
-        const state = { vIdx, cIdx, pIdx };
-        const { done } = await ChapterService.crossToPrevVolumeWithAction(state, novel, loadOnce);
-        ({ vIdx, cIdx, pIdx } = state);
+        const { done } = await crossToPrevAndLoad();
         if (done) break;
         continue;
       }
@@ -1748,9 +1820,7 @@ export class ChapterService {
       if (pIdx < 0) {
         cIdx--;
         if (cIdx < 0) {
-          const state = { vIdx, cIdx, pIdx };
-          const { done } = await ChapterService.crossToPrevVolumeWithAction(state, novel, loadOnce);
-          ({ vIdx, cIdx, pIdx } = state);
+          const { done } = await crossToPrevAndLoad();
           if (done) break;
           continue;
         }
@@ -1791,18 +1861,12 @@ export class ChapterService {
     paragraphId: string,
     count: number,
   ): Promise<ParagraphSearchResult[]> {
-    if (!novel || !novel.volumes || !paragraphId || count <= 0) {
+    const start = await ChapterService.resolveParagraphSearchStart(novel, paragraphId, count);
+    if (!start || !novel || !novel.volumes) {
       return [];
     }
-
-    const location = await ChapterService.findParagraphLocationAsync(novel, paragraphId);
-    if (!location) {
-      return [];
-    }
-
-    const results: ParagraphSearchResult[] = [];
-    const { volumeIndex, chapterIndex } = location;
-    let { paragraphIndex } = location;
+    const { results, volumeIndex, chapterIndex } = start;
+    let paragraphIndex = start.paragraphIndex;
 
     // 从当前段落的后一个开始，向后遍历
     paragraphIndex++;
@@ -1817,30 +1881,52 @@ export class ChapterService {
     let cIdx = chapterIndex;
     let pIdx = paragraphIndex;
 
-    while (collected < count * 2 && vIdx < novel.volumes.length) {
-      // 限制收集的章节数量，避免加载过多
-      const volume = novel.volumes[vIdx];
+    // 两遍扫描共用：cIdx 越过当前卷末尾时跳到下一卷首章，并同步本地游标。
+    // 返回 'done'（外层应 break）或 'continue'（外层应 continue）。
+    const advanceToNextVolume = (): 'done' | 'continue' => {
+      const cursor = { vIdx, cIdx, pIdx };
+      const token = ChapterService.advanceToNextVolumeOrDone(cursor, novel);
+      vIdx = cursor.vIdx;
+      cIdx = cursor.cIdx;
+      pIdx = cursor.pIdx;
+      return token;
+    };
+
+    // 两遍扫描循环头的共用模板：
+    //   - 当前卷无效 → 跳到下一卷并 continue；
+    //   - cIdx 越界 → advanceToNextVolume；
+    //   - 当前章节为空 → 游标后移并 continue。
+    // 返回 'break' / 'continue' 或就绪的 { volume, chapter }（volume.chapters 已保证非空）。
+    const nextChapterOrControl = ():
+      | { kind: 'break' }
+      | { kind: 'continue' }
+      | { kind: 'ready'; volume: Volume & { chapters: Chapter[] }; chapter: Chapter } => {
+      const volume = novel.volumes![vIdx];
       if (!volume || !volume.chapters) {
         vIdx++;
         cIdx = 0;
         pIdx = 0;
-        continue;
+        return { kind: 'continue' };
       }
-
       if (cIdx >= volume.chapters.length) {
-        const state = { vIdx, cIdx, pIdx };
-        const step = ChapterService.jumpToNextVolumeFirstChapter(state, novel);
-        ({ vIdx, cIdx, pIdx } = state);
-        if (step.done) break;
-        continue;
+        if (advanceToNextVolume() === 'done') return { kind: 'break' };
+        return { kind: 'continue' };
       }
-
       const chapter = volume.chapters[cIdx];
       if (!chapter) {
         cIdx++;
         pIdx = 0;
-        continue;
+        return { kind: 'continue' };
       }
+      return { kind: 'ready', volume: volume as Volume & { chapters: Chapter[] }, chapter };
+    };
+
+    while (collected < count * 2 && vIdx < novel.volumes.length) {
+      // 限制收集的章节数量，避免加载过多
+      const step = nextChapterOrControl();
+      if (step.kind === 'break') break;
+      if (step.kind === 'continue') continue;
+      const { chapter } = step;
 
       if (ChapterService.collectChapterForLoad(chapter, vIdx, cIdx, chaptersToLoad, chapterMap)) {
         collected++;
@@ -1848,14 +1934,11 @@ export class ChapterService {
 
       if (pIdx >= (chapter.content?.length || 0)) {
         cIdx++;
-        if (cIdx >= volume.chapters.length) {
-          const state = { vIdx, cIdx, pIdx };
-          const step = ChapterService.jumpToNextVolumeFirstChapter(state, novel);
-          ({ vIdx, cIdx, pIdx } = state);
-          if (step.done) break;
+        if (cIdx >= step.volume.chapters.length) {
+          if (advanceToNextVolume() === 'done') break;
           continue;
         } else {
-          const nextChapter = volume.chapters[cIdx];
+          const nextChapter = step.volume.chapters[cIdx];
           if (
             ChapterService.collectChapterForLoad(nextChapter, vIdx, cIdx, chaptersToLoad, chapterMap)
           ) {
@@ -1878,28 +1961,10 @@ export class ChapterService {
     pIdx = paragraphIndex;
 
     while (results.length < count && vIdx < novel.volumes.length) {
-      const volume = novel.volumes[vIdx];
-      if (!volume || !volume.chapters) {
-        vIdx++;
-        cIdx = 0;
-        pIdx = 0;
-        continue;
-      }
-
-      if (cIdx >= volume.chapters.length) {
-        const state = { vIdx, cIdx, pIdx };
-        const step = ChapterService.jumpToNextVolumeFirstChapter(state, novel);
-        ({ vIdx, cIdx, pIdx } = state);
-        if (step.done) break;
-        continue;
-      }
-
-      const chapter = volume.chapters[cIdx];
-      if (!chapter) {
-        cIdx++;
-        pIdx = 0;
-        continue;
-      }
+      const step = nextChapterOrControl();
+      if (step.kind === 'break') break;
+      if (step.kind === 'continue') continue;
+      const { volume, chapter } = step;
 
       // 如果仍未加载，按需加载
       await ChapterService.ensureChapterLoaded(chapter);

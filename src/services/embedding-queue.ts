@@ -146,7 +146,10 @@ export class EmbeddingQueue {
 
   // ==========================================================================
   // 事件订阅
+  // 结构同 EmbeddingService.addEventListener/dispatch，但 type 字面量联合不同，
+  // 抽象成泛型工厂会丢失 type 窄化，保留两份并共用底层 subscribeCustomEvent 工具。
   // ==========================================================================
+  // fallow-ignore-next-line code-duplication
   static addEventListener(
     type: 'progress' | 'batch-complete' | 'error' | 'idle',
     listener: (event: CustomEvent) => void,
