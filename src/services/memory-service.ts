@@ -117,6 +117,30 @@ export class MemoryService {
   }
 
   /**
+   * createMemoryWithId / updateMemory 顶部共用的四项必填字段校验。
+   * 抽出后避免每个写操作重复 4 个 if-throw 分支。
+   */
+  private static assertMemoryFields(
+    bookId: string,
+    memoryId: string,
+    content: string,
+    summary: string,
+  ): void {
+    if (!bookId) {
+      throw new Error('书籍 ID 不能为空');
+    }
+    if (!memoryId) {
+      throw new Error('Memory ID 不能为空');
+    }
+    if (!content) {
+      throw new Error('内容不能为空');
+    }
+    if (!summary) {
+      throw new Error('摘要不能为空');
+    }
+  }
+
+  /**
    * 获取缓存键（bookId:memoryId）
    */
   /**
@@ -428,18 +452,7 @@ export class MemoryService {
     summary: string,
     timestamps?: { createdAt?: number; lastAccessedAt?: number },
   ): Promise<Memory> {
-    if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
-    }
-    if (!memoryId) {
-      throw new Error('Memory ID 不能为空');
-    }
-    if (!content) {
-      throw new Error('内容不能为空');
-    }
-    if (!summary) {
-      throw new Error('摘要不能为空');
-    }
+    this.assertMemoryFields(bookId, memoryId, content, summary);
 
     try {
       const db = await getDB();
@@ -684,18 +697,7 @@ export class MemoryService {
     /** 保留指定的 lastAccessedAt（用于同步场景，避免覆盖远程时间戳） */
     preserveLastAccessedAt?: number,
   ): Promise<Memory> {
-    if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
-    }
-    if (!memoryId) {
-      throw new Error('Memory ID 不能为空');
-    }
-    if (!content) {
-      throw new Error('内容不能为空');
-    }
-    if (!summary) {
-      throw new Error('摘要不能为空');
-    }
+    this.assertMemoryFields(bookId, memoryId, content, summary);
 
     try {
       const db = await getDB();
