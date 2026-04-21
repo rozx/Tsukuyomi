@@ -246,17 +246,38 @@ export function useChatSending(
     }
   };
 
+  const warnNoAssistantModel = (): void => {
+    toast.add({
+      severity: 'warn',
+      summary: '请选择 AI 模型',
+      detail: '请在设置中配置至少一个 AI 模型',
+      life: 3000,
+    });
+  };
+
+  const buildChatRequestOptions = (
+    currentSession: ReturnType<typeof chatSessionsStore.$state>['currentSession'] | null,
+    assistantMessageIdRef: { value: string },
+    uiPerformedSummarization: boolean,
+  ): Parameters<typeof AssistantService.chat>[2] => {
+    const sessionId = currentSession?.id ?? null;
+    const sessionSummary = currentSession?.summary;
+    const messageHistory = buildAssistantMessageHistory(currentSession);
+    return {
+      ...(sessionSummary ? { sessionSummary } : {}),
+      ...(messageHistory ? { messageHistory } : {}),
+      ...(sessionId ? { sessionId } : {}),
+      ...(uiPerformedSummarization ? { skipTokenLimitSummarization: true } : {}),
+      aiProcessingStore,
+      ...buildChatCallbacks(assistantMessageIdRef, currentSession?.id),
+    };
+  };
+
   const sendMessage = async () => {
     const message = inputMessage.value.trim();
     if (!message || isSending.value) return;
-
     if (!assistantModel.value) {
-      toast.add({
-        severity: 'warn',
-        summary: '请选择 AI 模型',
-        detail: '请在设置中配置至少一个 AI 模型',
-        life: 3000,
-      });
+      warnNoAssistantModel();
       return;
     }
 
@@ -265,20 +286,14 @@ export function useChatSending(
 
     const { assistantMessageIdRef } = pushUserAndAssistantPlaceholder(message);
     const currentSession = chatSessionsStore.currentSession;
-    const sessionId = currentSession?.id ?? null;
-    const sessionSummary = currentSession?.summary;
 
     try {
-      const messageHistory = buildAssistantMessageHistory(currentSession);
       resetInternalSummarization();
-      const chatResult = await AssistantService.chat(assistantModel.value, message, {
-        ...(sessionSummary ? { sessionSummary } : {}),
-        ...(messageHistory ? { messageHistory } : {}),
-        ...(sessionId ? { sessionId } : {}),
-        ...(uiPerformedSummarization ? { skipTokenLimitSummarization: true } : {}),
-        aiProcessingStore,
-        ...buildChatCallbacks(assistantMessageIdRef, currentSession?.id),
-      });
+      const chatResult = await AssistantService.chat(
+        assistantModel.value,
+        message,
+        buildChatRequestOptions(currentSession, assistantMessageIdRef, uiPerformedSummarization),
+      );
       persistChatResult(chatResult);
     } catch (error) {
       handleChatSendError(error, assistantMessageIdRef);

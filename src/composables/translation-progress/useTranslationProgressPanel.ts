@@ -138,27 +138,39 @@ export function useTranslationProgressPanel() {
   //    保留用户的观察视图；否则切换到最新任务（新批量翻译 / 润色 / 校对启动即聚焦）
   // 注：immediate 首次触发时 oldIds 为 undefined，不视为"新任务出现"，避免挂载时覆盖用户上次的选择。
 
+  type SelectDecision = { kind: 'select'; taskId: string } | { kind: 'noop' };
+
+  const hasNewTaskAppearance = (newIds: string[], oldIds: string[] | undefined): boolean => {
+    if (!oldIds) return false;
+    const oldSet = new Set(oldIds);
+    return newIds.some((id) => !oldSet.has(id));
+  };
+
+  const isSelectedTaskActivelyRunning = (selectedId: string): boolean => {
+    const task = recentAITasks.value.find((t) => t.id === selectedId);
+    return task?.status === 'thinking' || task?.status === 'processing';
+  };
+
+  const pickTaskToSelect = (
+    newIds: string[],
+    oldIds: string[] | undefined,
+    selectedId: string | null,
+  ): SelectDecision => {
+    if (newIds.length === 0) return { kind: 'noop' };
+    const latest = newIds[0]!;
+    if (!selectedId) return { kind: 'select', taskId: latest };
+    if (!newIds.includes(selectedId)) return { kind: 'select', taskId: latest };
+    if (!hasNewTaskAppearance(newIds, oldIds)) return { kind: 'noop' };
+    if (isSelectedTaskActivelyRunning(selectedId)) return { kind: 'noop' };
+    return { kind: 'select', taskId: latest };
+  };
+
   watch(
     () => recentAITasks.value.map((t) => t.id),
     (newIds, oldIds) => {
-      if (newIds.length === 0) return;
-      if (!selectedTaskId.value) {
-        bookDetailsStore.selectTask(newIds[0]!);
-        return;
-      }
-      if (!newIds.includes(selectedTaskId.value)) {
-        bookDetailsStore.selectTask(newIds[0]!);
-        return;
-      }
-      if (!oldIds) return;
-      const oldSet = new Set(oldIds);
-      const hasNewTask = newIds.some((id) => !oldSet.has(id));
-      if (!hasNewTask) return;
-      const selectedTask = recentAITasks.value.find((t) => t.id === selectedTaskId.value);
-      const selectedIsRunning =
-        selectedTask?.status === 'thinking' || selectedTask?.status === 'processing';
-      if (selectedIsRunning) return;
-      bookDetailsStore.selectTask(newIds[0]!);
+      const decision = pickTaskToSelect(newIds, oldIds, selectedTaskId.value);
+      if (decision.kind === 'noop') return;
+      bookDetailsStore.selectTask(decision.taskId);
     },
     { flush: 'post', immediate: true },
   );

@@ -43,6 +43,13 @@ function ensureV1Prefix(finalPath: string): string {
   return finalPath;
 }
 
+function writeProxyError(res: ServerResponse, status: number, message: string): void {
+  if (!res || !('statusCode' in res)) return;
+  if ('headersSent' in res && res.headersSent) return;
+  res.statusCode = status;
+  res.end(message);
+}
+
 async function handleAiProxyRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -55,26 +62,21 @@ async function handleAiProxyRequest(
 ): Promise<void> {
   const parsed = parseHostnameAndRest(req.url || '');
   if (!parsed || !parsed.hostname.includes('.')) {
-    if (res && 'statusCode' in res) {
-      res.statusCode = 404;
-      res.end('Invalid proxy path format. Expected: /api/ai/{hostname}/...');
-    }
+    writeProxyError(res, 404, 'Invalid proxy path format. Expected: /api/ai/{hostname}/...');
     return;
   }
 
-  const finalPath = ensureV1Prefix(parsed.restPath || '/');
-  req.url = finalPath;
+  req.url = ensureV1Prefix(parsed.restPath || '/');
   (req as ExtendedIncomingMessage)._dynamicProxyTarget = `https://${parsed.hostname}`;
 
   try {
     await proxy(req, res, next);
   } catch (error) {
-    if (res && 'headersSent' in res && !res.headersSent) {
-      res.statusCode = 500;
-      res.end(
-        `Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    writeProxyError(
+      res,
+      500,
+      `Proxy middleware error: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 

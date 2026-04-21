@@ -473,99 +473,99 @@ function createMenu() {
   Menu.setApplicationMenu(menu);
 }
 
-// IPC handler for electron-fetch using Puppeteer (Stealth)
-ipcMain.handle(
-  'electron-fetch',
-  async (
-    _event,
-    url: string,
-    options?: {
-      method?: string;
-      headers?: Record<string, string>;
-      body?: string;
-      timeout?: number;
+type ElectronFetchOptions = {
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  timeout?: number;
+};
+
+const ensureBrowserPromise = () => {
+  if (browserPromise) return browserPromise;
+  // Note: pie.connect returns a Browser instance that controls the Electron app
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  browserPromise = pie.connect(app, puppeteer as any);
+  browserPromise.catch((error) => {
+    console.error('[Electron Fetch] Browser connection failed:', error);
+    browserPromise = null;
+  });
+  return browserPromise;
+};
+
+const createScrapingWindow = (): BrowserWindow =>
+  new BrowserWindow({
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      // 禁用 webSecurity 以允许爬虫服务绕过 CORS 限制
+      webSecurity: false,
     },
-  ) => {
-    let window: BrowserWindow | null = null;
-    try {
-      console.log(`[Electron Fetch] Launching Puppeteer for ${url}`);
+  });
 
-      if (!browserPromise) {
-        // Connect to the Electron app
-        // Note: pie.connect returns a Browser instance that controls the Electron app
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        browserPromise = pie.connect(app, puppeteer as any);
+const isBrowserConnectionError = (err: unknown): boolean => {
+  const message = err instanceof Error ? err.message : String(err);
+  return (
+    message.includes('connect') ||
+    message.includes('browser') ||
+    message.includes('disconnected') ||
+    message.includes('target closed')
+  );
+};
 
-        // Handle connection failures: reset browserPromise if it rejects
-        browserPromise.catch((error) => {
-          console.error('[Electron Fetch] Browser connection failed:', error);
-          browserPromise = null; // Reset to allow retry on next call
-        });
-      }
-      const browser = await browserPromise;
+type ElectronFetchResponse = {
+  status: number;
+  statusText: string;
+  headers: Record<string, never>;
+  data: string;
+};
 
-      // Create a hidden window for scraping
-      window = new BrowserWindow({
-        show: false,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          // 禁用 webSecurity 以允许爬虫服务绕过 CORS 限制
-          webSecurity: false,
-        },
-      });
+async function fetchUrlViaPuppeteer(
+  url: string,
+  options: ElectronFetchOptions | undefined,
+  window: BrowserWindow,
+): Promise<ElectronFetchResponse> {
+  const browser = await ensureBrowserPromise();
+  const page = await pie.getPage(browser, window);
+  page.setDefaultNavigationTimeout(options?.timeout || 60000);
+  if (options?.headers) await page.setExtraHTTPHeaders(options.headers);
+  console.log(`[Electron Fetch] Navigating to ${url}`);
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  // Wait for content (Stealth handles most Cloudflare checks; small buffer for the rest)
+  await new Promise((r) => setTimeout(r, 2000));
+  const content = await page.content();
+  console.log(`[Electron Fetch] Page loaded: ${await page.title()}`);
+  return { status: 200, statusText: 'OK', headers: {}, data: content };
+}
 
-      const page = await pie.getPage(browser, window);
+function handleElectronFetchError(err: unknown, window: BrowserWindow | null): never {
+  console.error('[Electron Fetch] Puppeteer error:', err);
+  if (isBrowserConnectionError(err)) {
+    console.log('[Electron Fetch] Resetting browserPromise due to connection error');
+    browserPromise = null;
+  }
+  if (window && !window.isDestroyed()) window.close();
+  throw err instanceof Error ? err : new Error(String(err));
+}
 
-      // Set timeout
-      const timeoutMs = options?.timeout || 60000;
-      page.setDefaultNavigationTimeout(timeoutMs);
+async function performElectronFetch(
+  url: string,
+  options: ElectronFetchOptions | undefined,
+): Promise<ElectronFetchResponse> {
+  console.log(`[Electron Fetch] Launching Puppeteer for ${url}`);
+  const window = createScrapingWindow();
+  try {
+    const response = await fetchUrlViaPuppeteer(url, options, window);
+    window.close();
+    return response;
+  } catch (err) {
+    handleElectronFetchError(err, window);
+  }
+}
 
-      // Setup request headers if needed
-      if (options?.headers) {
-        await page.setExtraHTTPHeaders(options.headers);
-      }
-
-      console.log(`[Electron Fetch] Navigating to ${url}`);
-      await page.goto(url, { waitUntil: 'domcontentloaded' });
-
-      // Wait for content (Cloudflare check handled by Stealth Plugin mostly, but we can add a small wait)
-      await new Promise((r) => setTimeout(r, 2000));
-
-      const content = await page.content();
-      const title = await page.title();
-      console.log(`[Electron Fetch] Page loaded: ${title}`);
-
-      const response = {
-        status: 200,
-        statusText: 'OK',
-        headers: {},
-        data: content,
-      };
-
-      window.close();
-      return response;
-    } catch (err) {
-      console.error('[Electron Fetch] Puppeteer error:', err);
-
-      // If the error is related to browser connection, reset browserPromise to allow retry
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (
-        errorMessage.includes('connect') ||
-        errorMessage.includes('browser') ||
-        errorMessage.includes('disconnected') ||
-        errorMessage.includes('target closed')
-      ) {
-        console.log('[Electron Fetch] Resetting browserPromise due to connection error');
-        browserPromise = null;
-      }
-
-      if (window && !window.isDestroyed()) {
-        window.close();
-      }
-      throw err instanceof Error ? err : new Error(String(err));
-    }
-  },
+// IPC handler for electron-fetch using Puppeteer (Stealth)
+ipcMain.handle('electron-fetch', (_event, url: string, options?: ElectronFetchOptions) =>
+  performElectronFetch(url, options),
 );
 
 // IPC handler for saving exported settings

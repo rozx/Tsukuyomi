@@ -422,6 +422,24 @@ export function useRightPanel() {
   );
 
   // 监听思考过程更新，如果已展开则滚动到底部
+  const hasThinkingGrowth = (
+    oldLen: number | undefined,
+    newLen: number,
+  ): oldLen is number => oldLen !== undefined && newLen > oldLen && newLen > 0;
+
+  const handleThinkingUpdate = (
+    id: string,
+    thinking: string | undefined,
+  ): void => {
+    if (thinkingExpanded.value.get(id)) {
+      requestScrollThinkingToBottom(id);
+    }
+    if (thinking) {
+      setDisplayedThinkingImmediatelyIfEmpty(id, thinking);
+      updateDisplayedThinkingProcess(id, thinking);
+    }
+  };
+
   watch(
     () =>
       messages.value.map((m) => ({
@@ -430,29 +448,13 @@ export function useRightPanel() {
       })),
     (newValues, oldValues) => {
       if (!oldValues) return;
-
       const oldLenById = new Map(oldValues.map((v) => [v.id, v.thinkingLen]));
       const msgById = new Map(messages.value.map((m) => [m.id, m]));
 
       for (const newVal of newValues) {
         const oldLen = oldLenById.get(newVal.id);
-        if (
-          oldLen !== undefined &&
-          newVal.thinkingLen > oldLen &&
-          newVal.thinkingLen > 0 &&
-          thinkingExpanded.value.get(newVal.id)
-        ) {
-          requestScrollThinkingToBottom(newVal.id);
-        }
-
-        if (oldLen !== undefined && newVal.thinkingLen > oldLen && newVal.thinkingLen > 0) {
-          const msg = msgById.get(newVal.id);
-          const thinking = msg?.thinkingProcess;
-          if (thinking) {
-            setDisplayedThinkingImmediatelyIfEmpty(newVal.id, thinking);
-            updateDisplayedThinkingProcess(newVal.id, thinking);
-          }
-        }
+        if (!hasThinkingGrowth(oldLen, newVal.thinkingLen)) continue;
+        handleThinkingUpdate(newVal.id, msgById.get(newVal.id)?.thinkingProcess);
       }
     },
     { flush: 'post' },
