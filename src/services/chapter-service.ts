@@ -6,6 +6,7 @@ import {
   getChapterDisplayTitle,
   normalizeChapterTitle,
 } from 'src/utils/novel-utils';
+import { hasNonEmptyTranslation } from 'src/utils/text-utils';
 import { formatTranslationForDisplay } from 'src/utils/translation-utils';
 import { ChapterContentService } from './chapter-content-service';
 import type { ParagraphSearchResult } from 'src/models/paragraph-search';
@@ -356,14 +357,8 @@ function collectParagraphMatchesInChapter(
     if (!match(paragraph)) continue;
 
     // 如果要求只返回有翻译的段落，检查段落是否有翻译
-    if (onlyWithTranslation) {
-      const hasTranslation =
-        paragraph.translations &&
-        paragraph.translations.length > 0 &&
-        paragraph.translations.some((t) => t.translation && t.translation.trim().length > 0);
-      if (!hasTranslation) {
-        continue; // 跳过没有翻译的段落
-      }
+    if (onlyWithTranslation && !hasNonEmptyTranslation(paragraph)) {
+      continue;
     }
 
     results.push({

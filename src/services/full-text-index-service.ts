@@ -4,6 +4,7 @@ import { loadChapterContent } from 'src/utils/chapter-content-loader';
 import type { Novel, Chapter } from 'src/models/novel';
 import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 import { findChapterById } from 'src/utils/novel-utils';
+import { hasNonEmptyTranslation } from 'src/utils/text-utils';
 
 /**
  * 索引文档结构
@@ -450,14 +451,8 @@ export class FullTextIndexService {
       }
 
       // 如果要求只返回有翻译的段落，检查段落是否有翻译
-      if (onlyWithTranslation) {
-        const hasTranslation =
-          paragraph.translations &&
-          paragraph.translations.length > 0 &&
-          paragraph.translations.some((t) => t.translation && t.translation.trim().length > 0);
-        if (!hasTranslation) {
-          continue;
-        }
+      if (onlyWithTranslation && !hasNonEmptyTranslation(paragraph)) {
+        continue;
       }
 
       results.push({

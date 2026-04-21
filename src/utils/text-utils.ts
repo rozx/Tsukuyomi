@@ -19,6 +19,19 @@ export function isEmptyParagraph(text: string | null | undefined): boolean {
 }
 
 /**
+ * 判断段落是否至少有一条非空翻译。
+ * 过滤 `onlyWithTranslation` 查询、进度统计等场景共用，避免每处手写
+ * `translations?.some(t => t.translation?.trim().length > 0)` 的三层判空。
+ */
+export function hasNonEmptyTranslation(paragraph: Paragraph): boolean {
+  return (
+    !!paragraph.translations &&
+    paragraph.translations.length > 0 &&
+    paragraph.translations.some((t) => !!t.translation && t.translation.trim().length > 0)
+  );
+}
+
+/**
  * 检查文本是否仅包含符号（不包含字母、数字或CJK字符）
  * @param text 文本
  * @returns 如果仅包含符号，返回 true
