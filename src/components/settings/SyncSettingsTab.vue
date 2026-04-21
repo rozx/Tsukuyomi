@@ -629,6 +629,10 @@ const revertToRevision = (version: string, event?: Event) => {
 
 // 保存 Gist 配置
 const saveGistConfig = (shouldRestartAutoSync = false) => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   void co(function* () {
     try {
       yield settingsStore.setGistSyncCredentials(gistUsername.value, gistToken.value);
@@ -654,8 +658,21 @@ const saveGistConfig = (shouldRestartAutoSync = false) => {
   }
 };
 
+const handleGistEnabledChange = (value: boolean) => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
+  gistEnabled.value = value;
+  saveGistConfig();
+};
+
 // 处理自动同步启用/禁用
 const handleAutoSyncEnabledChange = (value: boolean) => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   autoSyncEnabled.value = value;
   stopAutoSync(); // 立即停止自动同步
   if (value) {
@@ -681,6 +698,10 @@ const handleAutoSyncEnabledChange = (value: boolean) => {
 
 // 处理同步间隔更改
 const handleSyncIntervalChange = (value: number | null) => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   const newValue = Number(value) || 5;
   if (newValue !== syncIntervalMinutes.value) {
     syncIntervalMinutes.value = newValue;
@@ -947,12 +968,8 @@ const deleteGist = () => {
           :binary="true"
           :model-value="gistEnabled"
           input-id="gist-enabled"
-          @update:model-value="
-            (value) => {
-              gistEnabled = value as boolean;
-              saveGistConfig();
-            }
-          "
+          :disabled="isRestoringRevision"
+          @update:model-value="(value) => handleGistEnabledChange(value as boolean)"
         />
         <label for="gist-enabled" class="text-xs text-moon/80 cursor-pointer">
           启用 Gist 同步
@@ -968,7 +985,7 @@ const deleteGist = () => {
         v-model="gistUsername"
         placeholder="输入您的 GitHub 用户名"
         class="w-full"
-        :disabled="!gistEnabled"
+        :disabled="!gistEnabled || isRestoringRevision"
         @blur="() => saveGistConfig()"
       />
     </div>
@@ -981,7 +998,7 @@ const deleteGist = () => {
         v-model="gistToken"
         placeholder="输入您的 GitHub token"
         class="w-full"
-        :disabled="!gistEnabled"
+        :disabled="!gistEnabled || isRestoringRevision"
         :feedback="false"
         toggle-mask
         @blur="() => saveGistConfig()"
@@ -999,7 +1016,7 @@ const deleteGist = () => {
         v-model="gistId"
         placeholder="留空将自动创建新的 Gist"
         class="w-full"
-        :disabled="!gistEnabled"
+        :disabled="!gistEnabled || isRestoringRevision"
         @blur="() => saveGistConfig()"
       />
       <p class="text-xs text-moon/60">如果已有 Gist，请输入 Gist ID。留空将自动创建新的 Gist</p>
@@ -1012,7 +1029,7 @@ const deleteGist = () => {
           :binary="true"
           :model-value="autoSyncEnabled"
           input-id="auto-sync-enabled"
-          :disabled="!gistEnabled"
+          :disabled="!gistEnabled || isRestoringRevision"
           @update:model-value="handleAutoSyncEnabledChange"
         />
         <label for="auto-sync-enabled" class="text-xs text-moon/80 cursor-pointer">
@@ -1028,7 +1045,7 @@ const deleteGist = () => {
           :max="1440"
           :show-buttons="true"
           class="w-full"
-          :disabled="!gistEnabled"
+          :disabled="!gistEnabled || isRestoringRevision"
           @focus="stopAutoSync"
           @update:model-value="handleSyncIntervalChange"
         />
