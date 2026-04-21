@@ -340,19 +340,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
      */
     updateCurrentSessionMessages(messages: ChatSessionMessage[]): void {
       if (!this.currentSessionId) return;
-
-      const session = this.sessions.find((s) => s.id === this.currentSessionId);
-      if (session) {
-        session.messages = messages;
-        session.updatedAt = Date.now();
-
-        // 如果消息列表不为空且标题还是"新会话"，生成新标题
-        if (messages.length > 0 && session.title === '新会话') {
-          session.title = generateSessionTitle(messages);
-        }
-
-        saveSessionsToStorage(this.sessions);
-      }
+      this.updateSessionMessages(this.currentSessionId, messages);
     },
 
     /**
