@@ -17,10 +17,11 @@ type MockFn = typeof vi.fn & {
 
 const mock = ((impl?: (...args: unknown[]) => unknown) =>
   impl ? vi.fn(impl) : vi.fn()) as unknown as MockFn;
-mock.module = vi.mock;
-mock.restore = vi.restoreAllMocks;
+mock.module = ((...args: Parameters<typeof vi.mock>) =>
+  vi.mock(...args)) as typeof vi.mock;
+mock.restore = () => vi.restoreAllMocks();
 
-const spyOn = vi.spyOn;
+const spyOn: typeof vi.spyOn = (...args) => vi.spyOn(...args);
 
 export {
   describe,
