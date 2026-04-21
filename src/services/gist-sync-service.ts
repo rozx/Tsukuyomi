@@ -814,6 +814,37 @@ export class GistSyncService {
   }
 
   /**
+   * 按 `novel-<id>.json` 约定从 gistFiles 中读取未分块书籍文件并解析。
+   *
+   * 返回值在 {@link parseAndDeserializeNovelFile} 的三态基础上新增：
+   * - `{ status: 'chunk-prefix-conflict' }`：fileName 与分块前缀冲突（防御性，几乎不会发生）。
+   * - `{ status: 'missing' }`：gistFiles 中不存在对应文件。
+   *
+   * 用于分块合并失败后的回退读取；调用方决定每种状态是否更新进度。
+   */
+  private async loadUnchunkedNovelFromGistFiles(
+    gistFiles: Record<string, GistFileLike | null | undefined>,
+    novelId: string,
+  ): Promise<
+    | { status: 'ok'; novel: Novel }
+    | { status: 'parse-failed' }
+    | { status: 'content-unavailable' }
+    | { status: 'chunk-prefix-conflict' }
+    | { status: 'missing' }
+  > {
+    const fileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.json`;
+    // 防御性检查：确保 fileName 不是分块文件名
+    if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
+      return { status: 'chunk-prefix-conflict' };
+    }
+    const file = gistFiles[fileName];
+    if (!file) {
+      return { status: 'missing' };
+    }
+    return this.parseAndDeserializeNovelFile(file);
+  }
+
+  /**
    * 将 Date 对象转换为可序列化的格式
    */
   private serializeDates<T>(obj: T): T {
@@ -1630,7 +1661,6 @@ export class GistSyncService {
         try {
           const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.meta.json`;
           const metadataFile = gistFiles[metadataFileName];
-          const fileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.json`;
 
           // 首先检查是否有分块文件（优先使用分块文件）
           // 从 metadata 文件中获取预期的分块数量，作为搜索上限
@@ -1676,43 +1706,38 @@ export class GistSyncService {
           }
 
           // 尝试使用未分块的书籍文件
-          // 确保 fileName 不是分块文件名
-          if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
+          const parseResult = await this.loadUnchunkedNovelFromGistFiles(
+            gistFiles,
+            novelId ?? '',
+          );
+          if (parseResult.status === 'chunk-prefix-conflict') {
             // 如果 fileName 是分块文件名，说明逻辑错误，跳过
             continue;
           }
+          if (parseResult.status === 'ok') {
+            result.novels.push(parseResult.novel);
 
-          const file = gistFiles[fileName];
-          if (file) {
-            const parseResult = await this.parseAndDeserializeNovelFile(file);
-            if (parseResult.status === 'ok') {
-              result.novels.push(parseResult.novel);
-
-              // 更新进度：处理完一本书
-              processedNovels++;
-              if (onProgress) {
-                onProgress({
-                  current: processedNovels,
-                  total: totalNovels,
-                  message: `正在下载书籍: ${parseResult.novel.title || novelId} (${processedNovels}/${totalNovels})`,
-                });
-              }
-            } else if (parseResult.status === 'parse-failed') {
-              // 继续处理其他书籍
-              processedNovels++;
-              if (onProgress) {
-                onProgress({
-                  current: processedNovels,
-                  total: totalNovels,
-                  message: `跳过无法解析的书籍 (${processedNovels}/${totalNovels})`,
-                });
-              }
-              continue;
-            } else {
-              // content-unavailable：静默跳过（与旧逻辑保持一致）
-              continue;
+            // 更新进度：处理完一本书
+            processedNovels++;
+            if (onProgress) {
+              onProgress({
+                current: processedNovels,
+                total: totalNovels,
+                message: `正在下载书籍: ${parseResult.novel.title || novelId} (${processedNovels}/${totalNovels})`,
+              });
             }
-          } else {
+          } else if (parseResult.status === 'parse-failed') {
+            // 继续处理其他书籍
+            processedNovels++;
+            if (onProgress) {
+              onProgress({
+                current: processedNovels,
+                total: totalNovels,
+                message: `跳过无法解析的书籍 (${processedNovels}/${totalNovels})`,
+              });
+            }
+            continue;
+          } else if (parseResult.status === 'missing') {
             // 文件不存在，跳过
             processedNovels++;
             if (onProgress) {
@@ -1722,6 +1747,9 @@ export class GistSyncService {
                 message: `跳过缺失的书籍 (${processedNovels}/${totalNovels})`,
               });
             }
+          } else {
+            // content-unavailable：静默跳过（与旧逻辑保持一致）
+            continue;
           }
         } catch {
           // 继续处理其他书籍
@@ -2181,7 +2209,6 @@ export class GistSyncService {
       // 处理每本书（使用与 downloadFromGist 相同的逻辑）
       for (const novelId of novelIds) {
         try {
-          const fileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.json`;
           const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${novelId}.meta.json`;
           const metadataFile = gistFiles[metadataFileName];
 
@@ -2204,17 +2231,10 @@ export class GistSyncService {
             // 重组/解析失败，尝试单文件
           }
 
-          if (fileName.startsWith(GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX)) {
-            continue;
-          }
-
-          const file = gistFiles[fileName];
-          if (file) {
-            const parseResult = await this.parseAndDeserializeNovelFile(file);
-            if (parseResult.status === 'ok') {
-              result.novels.push(parseResult.novel);
-            }
-            // 其他状态：忽略获取失败 / 忽略解析错误（历史版本流程静默跳过）
+          // 尝试使用未分块的书籍文件；历史版本流程对所有失败态静默跳过
+          const parseResult = await this.loadUnchunkedNovelFromGistFiles(gistFiles, novelId);
+          if (parseResult.status === 'ok') {
+            result.novels.push(parseResult.novel);
           }
         } catch {
           // 继续处理其他书籍
