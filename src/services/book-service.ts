@@ -1,4 +1,5 @@
 import { getDB } from 'src/utils/indexed-db';
+import { serializeDates } from 'src/utils/serialize-dates';
 import type { Novel, Chapter } from 'src/models/novel';
 import { ChapterContentService } from './chapter-content-service';
 
@@ -40,32 +41,6 @@ export class BookService {
         chapters: volume.chapters?.map((chapter) => BookService.stripChapterContent(chapter)),
       })),
     };
-  }
-  /**
-   * 将 Date 对象转换为可序列化的格式（用于 IndexedDB）
-   */
-  private static serializeDatesForDB<T>(obj: T): T {
-    if (obj === null || obj === undefined) {
-      return obj;
-    }
-
-    if (obj instanceof Date) {
-      return obj.toISOString() as unknown as T;
-    }
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => BookService.serializeDatesForDB(item)) as unknown as T;
-    }
-
-    if (typeof obj === 'object') {
-      const serialized = {} as T;
-      for (const [key, value] of Object.entries(obj)) {
-        (serialized as Record<string, unknown>)[key] = BookService.serializeDatesForDB(value);
-      }
-      return serialized;
-    }
-
-    return obj;
   }
 
   /**
@@ -186,7 +161,7 @@ export class BookService {
 
     // 2. 剥离章节内容后保存书籍元数据
     const bookWithoutContent = BookService.stripNovelChapterContent(book);
-    const serializedBook = BookService.serializeDatesForDB(bookWithoutContent);
+    const serializedBook = serializeDates(bookWithoutContent);
     await db.put('books', serializedBook);
   }
 
@@ -220,7 +195,7 @@ export class BookService {
 
     for (const book of books) {
       const bookWithoutContent = BookService.stripNovelChapterContent(book);
-      const serializedBook = BookService.serializeDatesForDB(bookWithoutContent);
+      const serializedBook = serializeDates(bookWithoutContent);
       await store.put(serializedBook);
     }
 
