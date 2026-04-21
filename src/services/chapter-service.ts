@@ -1653,16 +1653,19 @@ export class ChapterService {
       return result;
     };
 
+    // 两遍扫描共用：当前卷无效时退一步（把 cIdx 指到上一卷最后一章，或 -1），清空 pIdx。
+    const stepBackInvalidVolume = (): void => {
+      vIdx--;
+      const prevVolume = vIdx >= 0 ? novel.volumes?.[vIdx] : undefined;
+      cIdx = prevVolume?.chapters?.length ? prevVolume.chapters.length - 1 : -1;
+      pIdx = -1;
+    };
+
     while (collected < count * 2 && vIdx >= 0) {
       // 限制收集的章节数量，避免加载过多
       const volume = novel.volumes[vIdx];
       if (!volume || !volume.chapters) {
-        vIdx--;
-        cIdx =
-          vIdx >= 0 && novel.volumes[vIdx]?.chapters
-            ? novel.volumes[vIdx]!.chapters!.length - 1
-            : -1;
-        pIdx = -1;
+        stepBackInvalidVolume();
         continue;
       }
 
@@ -1714,12 +1717,7 @@ export class ChapterService {
     while (results.length < count && vIdx >= 0) {
       const volume = novel.volumes[vIdx];
       if (!volume || !volume.chapters) {
-        vIdx--;
-        cIdx =
-          vIdx >= 0 && novel.volumes[vIdx]?.chapters
-            ? novel.volumes[vIdx]!.chapters!.length - 1
-            : -1;
-        pIdx = -1;
+        stepBackInvalidVolume();
         continue;
       }
 
