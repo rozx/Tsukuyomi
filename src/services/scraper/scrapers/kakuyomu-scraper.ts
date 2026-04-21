@@ -1,5 +1,4 @@
 import * as cheerio from 'cheerio';
-import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/models/novel';
 import type {
   ParsedChapterInfo,
@@ -115,21 +114,15 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
     const $ = cheerio.load(html);
     const paragraphs: string[] = [];
 
-    // Kakuyomu 的章节内容在 .widget-episodeBody 中
-    let contentElement = $('.widget-episodeBody').first();
+    // Kakuyomu 的章节内容在 .widget-episodeBody 中，按优先级回退
+    const contentElement = this.selectContentElement($, [
+      '.widget-episodeBody',
+      '[class*="widget-episodeBody"]',
+      '.episodeBody',
+      '[class*="episodeBody"]',
+    ]);
 
-    // 如果找不到，尝试其他可能的选择器
-    if (contentElement.length === 0) {
-      contentElement = $('[class*="widget-episodeBody"]').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('.episodeBody').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('[class*="episodeBody"]').first();
-    }
-
-    if (contentElement.length === 0) {
+    if (!contentElement) {
       throw new Error('无法找到章节正文内容');
     }
 
@@ -562,40 +555,12 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
    * 转换为 Novel 格式
    */
   protected override convertToNovel(info: ParsedNovelInfo): Novel {
-    const now = new Date();
     const parsedChapters: ParsedChapterInfo[] = info.chapters;
     const parsedVolumes: ParsedVolumeInfo[] | undefined = info.volumes;
 
     // 使用基类的通用方法将章节分组到卷中
     const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, '正文');
 
-    const novel: Novel = {
-      id: uuidv4(),
-      title: info.title,
-      volumes,
-      webUrl: [info.webUrl],
-      lastEdited: now,
-      createdAt: now,
-    };
-
-    if (info.author) {
-      novel.author = info.author;
-    }
-
-    if (info.description) {
-      novel.description = info.description;
-    }
-
-    if (info.tags && info.tags.length > 0) {
-      novel.tags = info.tags;
-    }
-
-    if (info.cover) {
-      novel.cover = {
-        url: info.cover,
-      };
-    }
-
-    return novel;
+    return this.buildNovel(info, volumes);
   }
 }

@@ -1,4 +1,6 @@
 import axios from 'axios';
+import type * as cheerio from 'cheerio';
+import { v4 as uuidv4 } from 'uuid';
 import type {
   NovelScraper,
   FetchNovelResult,
@@ -10,6 +12,9 @@ import type { Novel, Chapter, Volume, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, generateShortId } from 'src/utils/id-generator';
 import { ProxyService } from 'src/services/proxy-service';
 import { useElectron } from 'src/composables/useElectron';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CheerioNode = cheerio.Cheerio<any>;
 
 /**
  * 爬虫服务基类
@@ -90,12 +95,19 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
   protected abstract convertToNovel(info: TNovelInfo): Novel;
 
   /**
-   * 获取章节内容
+   * 获取章节内容：默认实现 = 抓 HTML → extractParagraphsFromHtml → mergeParagraphs。
+   * kakuyomu / syosetu / ncode-syosetu 三站的流程完全一致，仅段落提取规则不同（由子类覆盖 extractParagraphsFromHtml）。
+   * 如有特殊需求可继续覆盖此方法。
    * @param chapterUrl 章节 URL
    * @returns Promise<string> 章节内容
    * @throws {Error} 如果获取失败
    */
-  abstract fetchChapterContent(chapterUrl: string): Promise<string>;
+  // fallow-ignore-next-line unused-class-member
+  async fetchChapterContent(chapterUrl: string): Promise<string> {
+    const html = await this.fetchPage(chapterUrl);
+    const paragraphs = this.extractParagraphsFromHtml(html);
+    return this.mergeParagraphs(paragraphs);
+  }
 
   /**
    * 从 HTML 中提取段落（抽象方法，由子类实现）
@@ -103,6 +115,12 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
    * @returns 段落数组，每个元素是一个段落文本
    */
   protected abstract extractParagraphsFromHtml(html: string): string[];
+
+  /**
+   * 将提取到的段落数组合并为最终章节内容文本（抽象方法，由子类实现）。
+   * 各站点对空段落、换行的处理方式不同，因此保留为抽象。
+   */
+  protected abstract mergeParagraphs(paragraphs: string[]): string;
 
   /**
    * 获取页面 HTML（通用方法）
@@ -377,6 +395,73 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
       },
       chapters,
     };
+  }
+
+  /**
+   * 在多个 CSS 选择器中按顺序查找第一个非空匹配元素
+   * 用于各站点 `extractParagraphsFromHtml` 中常见的选择器回退链。
+   * @param $ Cheerio API
+   * @param selectors 选择器列表（按优先级排序）
+   * @returns 第一个非空匹配的 Cheerio 元素；全部未命中时返回 null
+   */
+  protected selectContentElement(
+    $: cheerio.CheerioAPI,
+    selectors: string[],
+  ): CheerioNode | null {
+    for (const selector of selectors) {
+      const el = $(selector).first();
+      if (el.length > 0) {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 基于 ParsedNovelInfo 构建统一的 Novel 对象（通用方法）
+   *
+   * 所有子类 `convertToNovel` 的公共骨架：
+   * - 生成 uuidv4 作为 Novel ID（Novel 不使用短 ID）
+   * - 填充 title / volumes / webUrl / lastEdited / createdAt
+   * - 按需填充 author / description / tags / cover
+   *
+   * 各站点仅需负责把解析结果整理为 `ParsedNovelInfo` 并通过
+   * {@link groupChaptersIntoVolumes} 生成 volumes 后调用此方法。
+   *
+   * @param info 解析后的小说信息
+   * @param volumes 已经构建好的卷数组
+   * @returns Novel 对象
+   */
+  protected buildNovel(info: ParsedNovelInfo, volumes: Volume[]): Novel {
+    const now = new Date();
+    const novel: Novel = {
+      id: uuidv4(),
+      title: info.title,
+      volumes,
+      webUrl: [info.webUrl],
+      lastEdited: now,
+      createdAt: now,
+    };
+
+    if (info.author) {
+      novel.author = info.author;
+    }
+
+    if (info.description) {
+      novel.description = info.description;
+    }
+
+    if (info.tags && info.tags.length > 0) {
+      novel.tags = info.tags;
+    }
+
+    if (info.cover) {
+      novel.cover = {
+        url: info.cover,
+      };
+    }
+
+    return novel;
   }
 
   /**

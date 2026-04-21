@@ -1,5 +1,4 @@
 import * as cheerio from 'cheerio';
-import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/models/novel';
 import type {
   ParsedChapterInfo,
@@ -7,6 +6,10 @@ import type {
   ParsedVolumeInfo,
 } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
+import {
+  extractParagraphText,
+  extractTextWithFormatting,
+} from '../core/cheerio-text-extract';
 
 /**
  * ncode.syosetu.com 小说爬虫服务
@@ -67,18 +70,6 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
   }
 
   /**
-   * 获取章节内容
-   * @param chapterUrl 章节 URL
-   * @returns Promise<string> 章节内容
-   * @throws {Error} 如果获取失败
-   */
-  async fetchChapterContent(chapterUrl: string): Promise<string> {
-    const html = await this.fetchPage(chapterUrl);
-    const paragraphs = this.extractParagraphsFromHtml(html);
-    return this.mergeParagraphs(paragraphs);
-  }
-
-  /**
    * 从 HTML 中提取段落（实现抽象方法）
    * @param html 章节 HTML 内容
    * @returns 段落数组，每个元素是一个段落文本
@@ -101,25 +92,16 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
 
     if (contentElement.length === 0) {
       // 如果还是找不到，尝试更宽松的选择器
-      const alternativeSelectors = [
+      const fallback = this.selectContentElement($, [
         'div.p-novel__body > div:first-child',
         '.p-novel__body > div:first-child',
         'article div.p-novel__body > div:first-child',
-      ];
+      ]);
 
-      let found = false;
-      for (const selector of alternativeSelectors) {
-        const element = $(selector).first();
-        if (element.length > 0) {
-          contentElement = element as typeof contentElement;
-          found = true;
-          break;
-        }
-      }
-
-      if (!found) {
+      if (!fallback) {
         throw new Error('无法找到章节正文内容');
       }
+      contentElement = fallback as typeof contentElement;
     }
 
     // 移除不需要的元素
@@ -155,45 +137,7 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
         }
 
         // 提取段落文本，保留内部格式（如 <br> 换行）
-        const extractParagraphText = (element: cheerio.Cheerio<any>): string => {
-          let text = '';
-
-          element.contents().each((_, node: any) => {
-            const nodeType = String(node.type);
-            if (nodeType === 'text') {
-              // 文本节点，直接添加（保留原始文本，包括空格）
-              const nodeText = $(node).text();
-              text += nodeText;
-            } else if (nodeType === 'tag') {
-              const $node = $(node);
-              const tagName = node.tagName?.toLowerCase() || '';
-
-              if (tagName === 'br') {
-                // <br> 标签转换为换行
-                text += '\n';
-              } else if (tagName === 'p') {
-                // 嵌套的 <p> 标签，递归提取并添加换行
-                const innerText = extractParagraphText($node);
-                if (innerText.trim()) {
-                  text += innerText + '\n';
-                } else {
-                  // 嵌套的空 <p> 标签也添加换行
-                  text += '\n';
-                }
-              } else {
-                // 其他标签，递归提取内容（保留内部结构）
-                const innerText = extractParagraphText($node);
-                if (innerText) {
-                  text += innerText;
-                }
-              }
-            }
-          });
-
-          return text;
-        };
-
-        const extractedText = extractParagraphText($p);
+        const extractedText = extractParagraphText($, $p);
 
         // 保留原始段落格式，不清理空白字符
         if (extractedText.trim()) {
@@ -202,44 +146,7 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
       });
     } else {
       // 如果没有 <p> 标签，直接提取所有文本，保留换行符
-      const extractTextWithFormatting = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-
-            if (tagName === 'br') {
-              text += '\n';
-            } else if (tagName === 'p' || tagName === 'div') {
-              const innerText = extractTextWithFormatting($node);
-              if (innerText.trim()) {
-                text += innerText;
-                if (tagName === 'p') {
-                  text += '\n';
-                }
-              } else if (tagName === 'p') {
-                // 空的 <p> 标签也添加换行
-                text += '\n';
-              }
-            } else {
-              const innerText = extractTextWithFormatting($node);
-              if (innerText.trim()) {
-                text += innerText;
-              }
-            }
-          }
-        });
-
-        return text;
-      };
-
-      const fullText = extractTextWithFormatting(contentElement);
+      const fullText = extractTextWithFormatting($, contentElement);
       if (fullText.trim()) {
         // 按行分割，保留空行（用于保持格式）
         const lines = fullText.split(/\r?\n/);
@@ -259,18 +166,13 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
 
     // 如果找不到，尝试其他方式
     if (afterwordElement.length === 0) {
-      const alternativeSelectors = [
+      const fallback = this.selectContentElement($, [
         'div.p-novel__body > div.js-novel-text.p-novel__text.p-novel__text--afterword',
         'div.p-novel__text--afterword',
         '.p-novel__text--afterword',
-      ];
-
-      for (const selector of alternativeSelectors) {
-        const element = $(selector).first();
-        if (element.length > 0) {
-          afterwordElement = element as typeof afterwordElement;
-          break;
-        }
+      ]);
+      if (fallback) {
+        afterwordElement = fallback as typeof afterwordElement;
       }
     }
 
@@ -287,41 +189,8 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
         )
         .remove();
 
-      // 提取后记内容，保留格式
-      const extractAfterwordText = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-
-            if (tagName === 'br') {
-              text += '\n';
-            } else if (tagName === 'p') {
-              const innerText = extractAfterwordText($node);
-              if (innerText.trim()) {
-                text += innerText + '\n';
-              } else {
-                text += '\n';
-              }
-            } else {
-              const innerText = extractAfterwordText($node);
-              if (innerText.trim()) {
-                text += innerText;
-              }
-            }
-          }
-        });
-
-        return text;
-      };
-
-      const afterwordText = extractAfterwordText(afterwordElement).trim();
+      // 提取后记内容，保留格式（与正文相同的段落抽取规则）
+      const afterwordText = extractParagraphText($, afterwordElement).trim();
       if (afterwordText) {
         // 按行分割后记内容
         const afterwordLines = afterwordText.split(/\r?\n/);
@@ -892,8 +761,6 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
    * @returns Novel 对象
    */
   protected override convertToNovel(info: ParsedNovelInfo): Novel {
-    const now = new Date();
-
     // 将 ParsedChapterInfo 转换为章节
     const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
       const parsedChapter: ParsedChapterInfo = {
@@ -919,27 +786,6 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
     const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, '正文');
 
     // Novel 的 ID 使用完整的 uuidv4（不在短 ID 范围内）
-    const novel: Novel = {
-      id: uuidv4(),
-      title: info.title,
-      volumes,
-      webUrl: [info.webUrl],
-      lastEdited: now,
-      createdAt: now,
-    };
-
-    if (info.author) {
-      novel.author = info.author;
-    }
-
-    if (info.description) {
-      novel.description = info.description;
-    }
-
-    if (info.tags) {
-      novel.tags = info.tags;
-    }
-
-    return novel;
+    return this.buildNovel(info, volumes);
   }
 }

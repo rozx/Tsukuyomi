@@ -1,9 +1,13 @@
 import * as cheerio from 'cheerio';
-import { v4 as uuidv4 } from 'uuid';
 import type { Novel } from 'src/models/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/services/scraper/scrapers/syosetu-types';
 import type { ParsedChapterInfo, ParsedVolumeInfo } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
+import {
+  extractDescriptionText,
+  extractParagraphText,
+  extractTextWithFormatting,
+} from '../core/cheerio-text-extract';
 
 /**
  * syosetu.org 小说爬虫服务
@@ -62,18 +66,6 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
   }
 
   /**
-   * 获取章节内容
-   * @param chapterUrl 章节 URL
-   * @returns Promise<string> 章节内容
-   * @throws {Error} 如果获取失败
-   */
-  async fetchChapterContent(chapterUrl: string): Promise<string> {
-    const html = await this.fetchPage(chapterUrl, '/api/syosetu');
-    const paragraphs = this.extractParagraphsFromHtml(html);
-    return this.mergeParagraphs(paragraphs);
-  }
-
-  /**
    * 从 HTML 中提取段落（实现抽象方法）
    * @param html 章节 HTML 内容
    * @returns 段落数组，每个元素是一个段落文本
@@ -92,30 +84,18 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
     //   </div>
     // </div>
     // 优先查找 <div id="honbun">，这是正文容器
-    let contentElement = $('#honbun').first();
-    if (contentElement.length === 0) {
-      contentElement = $('div.ss').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('#novel_honbun').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('.novel_honbun').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('#novel_content').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('.novel_content').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('main').first();
-    }
-    if (contentElement.length === 0) {
-      contentElement = $('article').first();
-    }
+    const contentElement = this.selectContentElement($, [
+      '#honbun',
+      'div.ss',
+      '#novel_honbun',
+      '.novel_honbun',
+      '#novel_content',
+      '.novel_content',
+      'main',
+      'article',
+    ]);
 
-    if (contentElement.length === 0) {
+    if (!contentElement) {
       throw new Error('无法找到章节正文内容');
     }
 
@@ -208,46 +188,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
       });
 
       // 提取段落文本，保留内部格式（如 <br> 换行）
-      // 使用递归函数来正确处理所有节点，包括嵌套标签
-      const extractParagraphText = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            // 文本节点，直接添加（保留原始文本，包括空格）
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-
-            if (tagName === 'br') {
-              // <br> 标签转换为换行
-              text += '\n';
-            } else if (tagName === 'p') {
-              // 嵌套的 <p> 标签，递归提取并添加换行
-              const innerText = extractParagraphText($node);
-              if (innerText.trim()) {
-                text += innerText + '\n';
-              } else {
-                // 嵌套的空 <p> 标签也添加换行
-                text += '\n';
-              }
-            } else {
-              // 其他标签，递归提取内容（保留内部结构）
-              const innerText = extractParagraphText($node);
-              if (innerText) {
-                text += innerText;
-              }
-            }
-          }
-        });
-
-        return text;
-      };
-
-      const extractedText = extractParagraphText($p);
+      const extractedText = extractParagraphText($, $p);
 
       // 保持原始段落格式，只移除导航文本
       // 不清理空白字符，以保持原始格式（包括缩进等）
@@ -263,45 +204,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
     // 如果没有找到 <p> 标签，回退到原来的方法
     const hasTitle = paragraphs.length > 0 && paragraphs[0] !== '\n' && paragraphs[0] !== '';
     if (paragraphs.length === (hasTitle ? 2 : 0)) {
-      // 使用递归方法提取所有文本
-      const extractTextWithFormatting = (element: cheerio.Cheerio<any>): string => {
-        let text = '';
-
-        element.contents().each((_, node: any) => {
-          const nodeType = String(node.type);
-          if (nodeType === 'text') {
-            const nodeText = $(node).text();
-            text += nodeText;
-          } else if (nodeType === 'tag') {
-            const $node = $(node);
-            const tagName = node.tagName?.toLowerCase() || '';
-
-            if (tagName === 'br') {
-              text += '\n';
-            } else if (tagName === 'p' || tagName === 'div') {
-              const innerText = extractTextWithFormatting($node);
-              if (innerText.trim()) {
-                text += innerText;
-                if (tagName === 'p') {
-                  text += '\n';
-                }
-              } else if (tagName === 'p') {
-                // 空的 <p> 标签也添加换行
-                text += '\n';
-              }
-            } else {
-              const innerText = extractTextWithFormatting($node);
-              if (innerText.trim()) {
-                text += innerText;
-              }
-            }
-          }
-        });
-
-        return text;
-      };
-
-      const fallbackText = extractTextWithFormatting(contentElement);
+      const fallbackText = extractTextWithFormatting($, contentElement);
       const trimmedFallback = fallbackText.trim();
 
       if (trimmedFallback) {
@@ -327,7 +230,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
    * @param paragraphs 段落数组
    * @returns 合并后的内容字符串
    */
-  private mergeParagraphs(paragraphs: string[]): string {
+  protected mergeParagraphs(paragraphs: string[]): string {
     // 合并段落
     // 每个段落（无论是普通段落还是空段落）都应该产生换行符
     // 空的 <p> 标签只产生换行符，普通段落在内容后添加换行符
@@ -419,36 +322,8 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
         // 跳过第一个（标题/作者部分），提取第二个的内容
         const secondSsDiv = ssDivs.eq(1);
         if (secondSsDiv.length > 0) {
-          // 使用递归方法提取完整的文本内容，处理 <br> 标签为换行
-          const extractDescriptionText = (element: cheerio.Cheerio<any>): string => {
-            let text = '';
-            element.contents().each((_, node: any) => {
-              const nodeType = String(node.type);
-              if (nodeType === 'text') {
-                // 文本节点，直接添加
-                const nodeText = $(node).text();
-                text += nodeText;
-              } else if (nodeType === 'tag') {
-                const $node = $(node);
-                const tagName = node.tagName?.toLowerCase() || '';
-                if (tagName === 'br') {
-                  // <br> 标签转换为换行
-                  text += '\n';
-                } else if (tagName === 'a' && $node.attr('name') === 'img') {
-                  // 跳过图片链接标记（如【挿絵表示】）
-                  return;
-                } else {
-                  // 其他标签，递归提取内容
-                  const innerText = extractDescriptionText($node);
-                  if (innerText) {
-                    text += innerText;
-                  }
-                }
-              }
-            });
-            return text;
-          };
-          const descText = extractDescriptionText(secondSsDiv);
+          // 使用 cheerio 文本抽取 helper 提取完整描述文本
+          const descText = extractDescriptionText($, secondSsDiv);
           description = descText.trim();
           // 如果提取到的内容为空或太短，可能不是描述
           if (description && description.length < 10) {
@@ -461,32 +336,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
         const divText = ssDiv.text();
         // 如果包含常见的描述特征（对话、较长的文本），可能是描述
         if (divText.length > 50 && (divText.includes('「') || divText.includes('」'))) {
-          // 使用递归方法提取完整的文本内容
-          const extractDescriptionText = (element: cheerio.Cheerio<any>): string => {
-            let text = '';
-            element.contents().each((_, node: any) => {
-              const nodeType = String(node.type);
-              if (nodeType === 'text') {
-                const nodeText = $(node).text();
-                text += nodeText;
-              } else if (nodeType === 'tag') {
-                const $node = $(node);
-                const tagName = node.tagName?.toLowerCase() || '';
-                if (tagName === 'br') {
-                  text += '\n';
-                } else if (tagName === 'a' && $node.attr('name') === 'img') {
-                  return;
-                } else {
-                  const innerText = extractDescriptionText($node);
-                  if (innerText) {
-                    text += innerText;
-                  }
-                }
-              }
-            });
-            return text;
-          };
-          const descText = extractDescriptionText(ssDiv);
+          const descText = extractDescriptionText($, ssDiv);
           description = descText.trim();
         }
       }
@@ -762,8 +612,6 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
    * @returns Novel 对象
    */
   protected override convertToNovel(info: SyosetuNovelInfo): Novel {
-    const now = new Date();
-
     // 将 SyosetuChapter 转换为 ParsedChapterInfo
     const parsedChapters: ParsedChapterInfo[] = info.chapters.map((chapter) => {
       const parsedChapter: ParsedChapterInfo = {
@@ -790,27 +638,6 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
 
     // Novel 的 ID 使用完整的 uuidv4（不在短 ID 范围内）
     // 注意：根据要求，只有 chapter/volume/paragraph/translation/note/terminology/character settings 使用短 ID
-    const novel: Novel = {
-      id: uuidv4(),
-      title: info.title,
-      volumes,
-      webUrl: [info.webUrl],
-      lastEdited: now,
-      createdAt: now,
-    };
-
-    if (info.author) {
-      novel.author = info.author;
-    }
-
-    if (info.description) {
-      novel.description = info.description;
-    }
-
-    if (info.tags) {
-      novel.tags = info.tags;
-    }
-
-    return novel;
+    return this.buildNovel(info, volumes);
   }
 }
