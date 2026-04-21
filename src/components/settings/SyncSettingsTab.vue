@@ -20,6 +20,7 @@ import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
 import { useForceSync } from 'src/composables/useForceSync';
 import ForceSyncToggle from 'src/components/sync/ForceSyncToggle.vue';
 import RestoreDeletedItemsDialog from 'src/components/dialogs/RestoreDeletedItemsDialog.vue';
+import { isRevisionRestoreBlocked } from 'src/utils/sync-revision-guards';
 import co from 'co';
 
 // 格式化文件大小
@@ -287,9 +288,32 @@ const triggerForceSync = () => {
 const showRestoreDialog = ref(false);
 const restorableItems = ref<RestorableItem[]>([]);
 
+const resetDeletedItemsRestoreDialog = () => {
+  showRestoreDialog.value = false;
+  restorableItems.value = [];
+};
+
+watch(isRestoringRevision, (restoring) => {
+  if (restoring) {
+    resetDeletedItemsRestoreDialog();
+  }
+});
+
+const isRevisionActionLocked = computed(() => gistSyncing.value || isRestoringRevision.value);
+
+const isRevisionRestoreDisabled = (version: string): boolean =>
+  isRevisionRestoreBlocked({
+    gistId: gistId.value,
+    gistEnabled: gistEnabled.value,
+    isSyncing: gistSyncing.value,
+    isRestoringRevision: isRestoringRevision.value,
+    revertingVersion: revertingVersion.value,
+    version,
+  });
+
 // 加载修订历史
 const loadRevisions = async () => {
-  if (!gistId.value || !gistEnabled.value || isRestoringRevision.value) {
+  if (!gistId.value || !gistEnabled.value || gistSyncing.value || isRestoringRevision.value) {
     return;
   }
 
@@ -541,12 +565,7 @@ const revertToRevision = (version: string, event?: Event) => {
     event.preventDefault();
   }
 
-  if (!gistId.value || !gistEnabled.value) {
-    return;
-  }
-
-  // 如果正在恢复该版本，直接返回
-  if (revertingVersion.value === version) {
+  if (isRevisionRestoreDisabled(version)) {
     return;
   }
 
@@ -565,12 +584,12 @@ const revertToRevision = (version: string, event?: Event) => {
       severity: 'danger',
     },
     accept: () => {
-      // 防止重复调用：如果已经在恢复该版本，直接返回
-      if (revertingVersion.value === version) {
+      if (isRevisionRestoreDisabled(version)) {
         return;
       }
 
       void co(function* () {
+        resetDeletedItemsRestoreDialog();
         settingsStore.setRestoringSyncSnapshot(true);
         revertingVersion.value = version;
         try {
@@ -837,17 +856,34 @@ const syncToGist = async () => {
 
 // 处理恢复对话框
 const handleRestoreItems = async (items: RestorableItem[]) => {
+  if (isRestoringRevision.value) {
+    resetDeletedItemsRestoreDialog();
+    return;
+  }
+
   await restoreDeletedItemsComposable(items);
-  showRestoreDialog.value = false;
-  restorableItems.value = [];
+  resetDeletedItemsRestoreDialog();
   gistLastSyncTime.value = Date.now();
   // 重置自动同步定时器
   setupAutoSync();
 };
 
 const handleCancelRestore = () => {
-  showRestoreDialog.value = false;
-  restorableItems.value = [];
+  if (isRestoringRevision.value) {
+    resetDeletedItemsRestoreDialog();
+    return;
+  }
+
+  resetDeletedItemsRestoreDialog();
+};
+
+const handleDeletedItemsRestoreDialogVisibleChange = (visible: boolean) => {
+  if (isRestoringRevision.value) {
+    resetDeletedItemsRestoreDialog();
+    return;
+  }
+
+  showRestoreDialog.value = visible;
 };
 
 // 删除 Gist
@@ -1090,7 +1126,7 @@ const deleteGist = () => {
         <Button
           icon="pi pi-refresh"
           class="p-button-text p-button-sm"
-          :disabled="loadingRevisions || isRestoringRevision"
+          :disabled="loadingRevisions || isRevisionActionLocked"
           :loading="loadingRevisions"
           @click="loadRevisions"
         />
@@ -1136,7 +1172,7 @@ const deleteGist = () => {
                 label="恢复"
                 icon="pi pi-undo"
                 class="p-button-text p-button-sm"
-                :disabled="isRestoringRevision"
+                :disabled="isRevisionRestoreDisabled(revision.version)"
                 :loading="revertingVersion === revision.version"
                 @click.stop="(event) => revertToRevision(revision.version, event)"
               />
@@ -1213,7 +1249,7 @@ const deleteGist = () => {
     <RestoreDeletedItemsDialog
       :visible="showRestoreDialog"
       :items="restorableItems"
-      @update:visible="showRestoreDialog = $event"
+      @update:visible="handleDeletedItemsRestoreDialogVisibleChange"
       @restore="handleRestoreItems"
       @cancel="handleCancelRestore"
     />

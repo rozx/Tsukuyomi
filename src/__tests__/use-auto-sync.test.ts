@@ -10,6 +10,7 @@ const { useAutoSync } = await import('src/composables/useAutoSync');
 describe('useAutoSync', () => {
   let executeSyncMock: ReturnType<typeof mock>;
   let autoSync: ReturnType<typeof useAutoSync>;
+  let consoleWarnSpy: ReturnType<typeof spyOn>;
   let settingsStore: {
     gistSync: {
       enabled: boolean;
@@ -28,6 +29,7 @@ describe('useAutoSync', () => {
 
   beforeEach(() => {
     executeSyncMock = mock(() => Promise.resolve({ success: true, restorableItems: [] }));
+    consoleWarnSpy = spyOn(console, 'warn').mockImplementation(() => {});
     settingsStore = reactive({
       gistSync: {
         enabled: true,
@@ -67,5 +69,6 @@ describe('useAutoSync', () => {
 
     expect(executeSyncMock).not.toHaveBeenCalled();
     expect(settingsStore.setSyncing).not.toHaveBeenCalled();
+    expect(consoleWarnSpy).toHaveBeenCalledWith('[useAutoSync] 修订版本恢复进行中，跳过此次自动同步');
   });
 });
