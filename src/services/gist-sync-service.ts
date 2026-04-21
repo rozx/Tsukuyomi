@@ -573,6 +573,31 @@ export class GistSyncService {
   }
 
   /**
+   * 需要操作已存在 Gist 的方法共用的前置准备：
+   *   validateConfig → initializeOctokit → 确认 octokit 已就绪 → 读 gistId → 确认 gistId 存在。
+   * 返回带非空类型的 octokit 和 gistId，方便调用方直接用。
+   */
+  private prepareGistSession(config: SyncConfig): {
+    octokit: Octokit;
+    gistId: string;
+    params: ReturnType<GistSyncService['getGistParams']>;
+  } {
+    this.validateConfig(config);
+    this.initializeOctokit(config);
+
+    if (!this.octokit) {
+      throw new Error('Octokit 客户端未初始化');
+    }
+
+    const params = this.getGistParams(config);
+    if (!params.gistId) {
+      throw new Error('Gist ID 未配置');
+    }
+
+    return { octokit: this.octokit, gistId: params.gistId, params };
+  }
+
+  /**
    * 验证配置是否有效
    */
   private validateConfig(config: SyncConfig): void {
@@ -1846,21 +1871,11 @@ export class GistSyncService {
     }
   > {
     try {
-      this.validateConfig(config);
-      this.initializeOctokit(config);
-
-      if (!this.octokit) {
-        throw new Error('Octokit 客户端未初始化');
-      }
-
-      const params = this.getGistParams(config);
-      if (!params.gistId) {
-        throw new Error('Gist ID 未配置');
-      }
+      const { octokit, gistId } = this.prepareGistSession(config);
 
       // 获取 Gist 修订历史
-      const response = await this.octokit.rest.gists.listCommits({
-        gist_id: params.gistId,
+      const response = await octokit.rest.gists.listCommits({
+        gist_id: gistId,
       });
 
       const revisions = await Promise.all(
@@ -1876,7 +1891,7 @@ export class GistSyncService {
 
           try {
             const revisionResponse = await this.octokit!.rest.gists.getRevision({
-              gist_id: params.gistId!,
+              gist_id: gistId,
               sha: commit.version,
             });
 
@@ -1898,7 +1913,7 @@ export class GistSyncService {
               } else {
                 try {
                   const previousRevisionResponse = await this.octokit!.rest.gists.getRevision({
-                    gist_id: params.gistId!,
+                    gist_id: gistId,
                     sha: previousCommit.version,
                   });
 
@@ -2321,21 +2336,11 @@ export class GistSyncService {
    */
   async deleteGist(config: SyncConfig): Promise<SyncResult> {
     try {
-      this.validateConfig(config);
-      this.initializeOctokit(config);
-
-      if (!this.octokit) {
-        throw new Error('Octokit 客户端未初始化');
-      }
-
-      const params = this.getGistParams(config);
-      if (!params.gistId) {
-        throw new Error('Gist ID 未配置');
-      }
+      const { octokit, gistId } = this.prepareGistSession(config);
 
       // 删除 Gist
-      await this.octokit.rest.gists.delete({
-        gist_id: params.gistId,
+      await octokit.rest.gists.delete({
+        gist_id: gistId,
       });
 
       return {
