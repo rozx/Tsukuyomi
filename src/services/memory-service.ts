@@ -875,6 +875,10 @@ export class MemoryService {
    * - 不 dispatch 'memory-changed',避免 UI 将此视作"用户可见"的修改(badge 渲染由专门的
    *   'embedding-updated' 事件或组件轮询 bookMemoryCache 处理)
    * - 同步更新 memoryCache / bookMemoryCache 中的对应条目,使打分立即可见
+   *
+   * 错误处理：底层 IDB put 失败（配额 / 事务中止）会抛出到调用方；不在此处吞掉。
+   * 若写入失败，`memoryCache` / `bookMemoryCache` 与 'embedding-updated' 事件都不会更新。
+   * 记录不存在不视为错误（resolve + 无 side effect）。
    */
   static async updateMemoryEmbeddingOnly(
     memoryId: string,
@@ -891,46 +895,43 @@ export class MemoryService {
       throw new Error('embeddingModel 不能为空');
     }
 
-    try {
-      // 直接 IDB put 沿用 leaf util，避免重复的 get/mutate/put 样板
-      await updateMemoryEmbeddingInDB(memoryId, embedding, embeddingModel);
+    // 直接 IDB put 沿用 leaf util，避免重复的 get/mutate/put 样板
+    // 失败直接抛出，下面的缓存刷新 / 事件派发只有在写入成功后才会执行
+    await updateMemoryEmbeddingInDB(memoryId, embedding, embeddingModel);
 
-      const db = await getDB();
-      const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
-      if (!existing) return;
+    const db = await getDB();
+    const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
+    if (!existing) return;
 
-      // 同步内存缓存:单条 LRU
-      const cacheKey = this.getCacheKey(existing.bookId, memoryId);
-      const cachedSingle = this.memoryCache.get(cacheKey);
-      if (cachedSingle) {
-        this.memoryCache.set(cacheKey, {
-          ...cachedSingle,
-          embedding,
-          embeddingModel,
-        });
-      }
-
-      // 同步书级全量缓存(原地更新,避免整本缓存失效)
-      const cachedBook = this.bookMemoryCache.get(existing.bookId);
-      if (cachedBook) {
-        const next = cachedBook.data.map((m) =>
-          m.id === memoryId ? { ...m, embedding, embeddingModel } : m,
-        );
-        this.bookMemoryCache.set(existing.bookId, {
-          data: next,
-          expiresAt: cachedBook.expiresAt,
-        });
-      }
-
-      // 广播"embedding 已更新"事件供 UI 徽章订阅,复用 memory-changed 通道但 action 明确区分
-      this.dispatchMemoryChanged({
-        bookId: existing.bookId,
-        memoryId,
-        action: 'embedding-updated',
+    // 同步内存缓存:单条 LRU
+    const cacheKey = this.getCacheKey(existing.bookId, memoryId);
+    const cachedSingle = this.memoryCache.get(cacheKey);
+    if (cachedSingle) {
+      this.memoryCache.set(cacheKey, {
+        ...cachedSingle,
+        embedding,
+        embeddingModel,
       });
-    } catch (error) {
-      console.warn(`[MemoryService] 写入 embedding 失败 (${memoryId}):`, error);
     }
+
+    // 同步书级全量缓存(原地更新,避免整本缓存失效)
+    const cachedBook = this.bookMemoryCache.get(existing.bookId);
+    if (cachedBook) {
+      const next = cachedBook.data.map((m) =>
+        m.id === memoryId ? { ...m, embedding, embeddingModel } : m,
+      );
+      this.bookMemoryCache.set(existing.bookId, {
+        data: next,
+        expiresAt: cachedBook.expiresAt,
+      });
+    }
+
+    // 广播"embedding 已更新"事件供 UI 徽章订阅,复用 memory-changed 通道但 action 明确区分
+    this.dispatchMemoryChanged({
+      bookId: existing.bookId,
+      memoryId,
+      action: 'embedding-updated',
+    });
   }
 
   /**
