@@ -2069,6 +2069,28 @@ export class GistSyncService {
   }
 
   /**
+   * 共享的修订版本拉取：初始化 Octokit + 校验 Gist ID + 拉取 getRevision。
+   * 失败时抛异常（由各调用方的 try/catch 包装为 SyncResult）。
+   */
+  private async fetchGistRevisionResponse(
+    config: SyncConfig,
+    version: string,
+  ): Promise<Awaited<ReturnType<NonNullable<typeof this.octokit>['rest']['gists']['getRevision']>>> {
+    this.validateConfig(config);
+    this.initializeOctokit(config);
+
+    const params = this.getGistParams(config);
+    if (!this.octokit || !params.gistId) {
+      throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
+    }
+
+    return this.octokit.rest.gists.getRevision({
+      gist_id: params.gistId,
+      sha: version,
+    });
+  }
+
+  /**
    * 获取单个修订版本的详细信息（仅文件列表）
    */
   async getGistRevision(
@@ -2085,19 +2107,7 @@ export class GistSyncService {
     }
   > {
     try {
-      this.validateConfig(config);
-      this.initializeOctokit(config);
-
-      const params = this.getGistParams(config);
-      if (!this.octokit || !params.gistId) {
-        throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
-      }
-
-      // 获取特定版本的 Gist
-      const response = await this.octokit.rest.gists.getRevision({
-        gist_id: params.gistId,
-        sha: version,
-      });
+      const response = await this.fetchGistRevisionResponse(config, version);
 
       // 过滤掉 null 值并转换类型
       const files: Record<
@@ -2145,19 +2155,8 @@ export class GistSyncService {
     version: string,
   ): Promise<SyncResult & { data?: GistSyncData }> {
     try {
-      this.validateConfig(config);
-      this.initializeOctokit(config);
-
+      const response = await this.fetchGistRevisionResponse(config, version);
       const params = this.getGistParams(config);
-      if (!this.octokit || !params.gistId) {
-        throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
-      }
-
-      // 获取特定版本的 Gist
-      const response = await this.octokit.rest.gists.getRevision({
-        gist_id: params.gistId,
-        sha: version,
-      });
 
       const gistFiles = response.data.files;
       if (!gistFiles) {
