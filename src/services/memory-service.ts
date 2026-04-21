@@ -117,6 +117,27 @@ export class MemoryService {
   }
 
   /**
+   * updateMemory / deleteMemory 读路径共用的"按 ID 取并校验 ownership"流程。
+   */
+  private static async loadOwnedMemoryOrThrow(
+    bookId: string,
+    memoryId: string,
+  ): Promise<MemoryStorage> {
+    const db = await getDB();
+    const memory = await db.get('memories', memoryId);
+
+    if (!memory) {
+      throw new Error(`Memory 不存在: ${memoryId}`);
+    }
+
+    if (memory.bookId !== bookId) {
+      throw new Error(`Memory 不属于指定的书籍: ${bookId}`);
+    }
+
+    return memory as MemoryStorage;
+  }
+
+  /**
    * createMemoryWithId / updateMemory 顶部共用的四项必填字段校验。
    * 抽出后避免每个写操作重复 4 个 if-throw 分支。
    */
@@ -700,21 +721,12 @@ export class MemoryService {
     this.assertMemoryFields(bookId, memoryId, content, summary);
 
     try {
+      const memory = await this.loadOwnedMemoryOrThrow(bookId, memoryId);
       const db = await getDB();
-      const memory = await db.get('memories', memoryId);
-
-      if (!memory) {
-        throw new Error(`Memory 不存在: ${memoryId}`);
-      }
-
-      // 验证是否属于指定的书籍
-      if (memory.bookId !== bookId) {
-        throw new Error(`Memory 不属于指定的书籍: ${bookId}`);
-      }
 
       const now = Date.now();
       const updatedMemory: MemoryStorage = {
-        ...(memory as MemoryStorage),
+        ...memory,
         content,
         summary,
         lastAccessedAt: preserveLastAccessedAt ?? now,
@@ -725,9 +737,7 @@ export class MemoryService {
       const result = this.syncCachesAfterMutation(bookId, memoryId, updatedMemory, 'updated');
 
       // 仅在文本内容实际变化时重新入队嵌入(避免无意义重算)
-      const oldSummary = (memory as MemoryStorage).summary;
-      const oldContent = (memory as MemoryStorage).content;
-      if (oldSummary !== summary || oldContent !== content) {
+      if (memory.summary !== summary || memory.content !== content) {
         EmbeddingQueue.enqueue(memoryId, bookId);
       }
 
@@ -755,18 +765,8 @@ export class MemoryService {
     try {
       EmbeddingQueue.cancel(memoryId);
 
+      await this.loadOwnedMemoryOrThrow(bookId, memoryId);
       const db = await getDB();
-      const memory = await db.get('memories', memoryId);
-
-      if (!memory) {
-        throw new Error(`Memory 不存在: ${memoryId}`);
-      }
-
-      // 验证是否属于指定的书籍
-      if (memory.bookId !== bookId) {
-        throw new Error(`Memory 不属于指定的书籍: ${bookId}`);
-      }
-
       await db.delete('memories', memoryId);
 
       // 记录到删除列表（防止远程同步恢复已删除的 Memory）
