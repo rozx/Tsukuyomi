@@ -1,6 +1,18 @@
+import type { IDBPDatabase, IDBPIndex, IDBPObjectStore } from 'idb';
 import { getDB } from 'src/utils/indexed-db';
 import { generateShortId } from 'src/utils/id-generator';
 import type { Memory } from 'src/models/memory';
+
+// 从 getDB() 的返回类型反推数据库 schema（TsukuyomiDB 未从 indexed-db.ts 导出）
+type MemoryDB = Awaited<ReturnType<typeof getDB>> extends IDBPDatabase<infer S> ? S : never;
+type MemoryStore = IDBPObjectStore<MemoryDB, ['memories'], 'memories', 'readwrite'>;
+type MemoryBookIdIndex = IDBPIndex<
+  MemoryDB,
+  ['memories'],
+  'memories',
+  'by-bookId',
+  'readwrite'
+>;
 import { useSettingsStore } from 'src/stores/settings';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 // isMemoryEmbeddingStale 的真实定义已下沉到 `utils/memory-embedding-lookup`
@@ -140,6 +152,73 @@ export class MemoryService {
   }
 
   /**
+   * 容量保护：若该书籍记忆数已达 MAX_MEMORIES_PER_BOOK，删除 lastAccessedAt 最旧的一条。
+   * 在 createMemory / createMemoryWithId 的 insert 前调用，使用同一事务的 store/index 引用。
+   */
+  private static async evictOldestMemoryIfAtCapacity(
+    store: MemoryStore,
+    bookIdIndex: MemoryBookIdIndex,
+    bookId: string,
+  ): Promise<void> {
+    const count = await bookIdIndex.count(bookId);
+    if (count < MAX_MEMORIES_PER_BOOK) return;
+
+    // 使用 getAll() 获取所有该书籍的记忆（利用索引，非常快）
+    // 然后在内存中查找最旧的记录（内存操作比游标迭代快得多）
+    const allMemories = (await bookIdIndex.getAll(bookId)) as MemoryStorage[];
+
+    let oldestId: string | null = null;
+    let oldestTime = Number.MAX_SAFE_INTEGER;
+
+    for (const memory of allMemories) {
+      if (memory.lastAccessedAt < oldestTime) {
+        oldestTime = memory.lastAccessedAt;
+        oldestId = memory.id;
+      }
+    }
+
+    if (oldestId) {
+      await store.delete(oldestId);
+      const cacheKey = this.getCacheKey(bookId, oldestId);
+      this.memoryCache.delete(cacheKey);
+    }
+  }
+
+  /**
+   * 写路径（update / upsert 更新分支）共用的缓存同步步骤：
+   * 1. 把 storage 折叠成对外 Memory 对象（不含 embedding 字段）
+   * 2. 更新单条 LRU 缓存，必要时触发淘汰
+   * 3. 失效书籍级全量缓存
+   * 4. 派发 memory-changed 事件
+   *
+   * 注意：embedding 队列入队策略因调用方而异（依赖 content/summary 是否变化），
+   * 所以 enqueue 仍由各自调用方显式处理，不放进这个 helper。
+   */
+  private static syncCachesAfterMutation(
+    bookId: string,
+    memoryId: string,
+    storage: MemoryStorage,
+    action: 'imported' | 'updated',
+  ): Memory {
+    const result: Memory = {
+      id: storage.id,
+      bookId: storage.bookId,
+      content: storage.content,
+      summary: storage.summary,
+      createdAt: storage.createdAt,
+      lastAccessedAt: storage.lastAccessedAt,
+    };
+
+    const cacheKey = this.getCacheKey(bookId, memoryId);
+    this.memoryCache.set(cacheKey, result);
+    this.evictCacheIfNeeded();
+    this.invalidateBookMemoryCache(bookId);
+    this.dispatchMemoryChanged({ bookId, memoryId, action });
+
+    return result;
+  }
+
+  /**
    * 批量更新记忆的访问时间（异步，不阻塞）
    */
   private static async updateAccessTimesBatch(memoryIds: string[], bookId: string): Promise<void> {
@@ -201,36 +280,10 @@ export class MemoryService {
       const store = tx.objectStore('memories');
       const bookIdIndex = store.index('by-bookId');
 
-      // 1. 快速检查数量（使用 count，非常快）
-      const count = await bookIdIndex.count(bookId);
+      // 1. 容量保护：若已达上限则淘汰最旧一条
+      await this.evictOldestMemoryIfAtCapacity(store, bookIdIndex, bookId);
 
-      // 2. 如果达到限制，找到并删除最旧的记录
-      if (count >= MAX_MEMORIES_PER_BOOK) {
-        // 使用 getAll() 获取所有该书籍的记忆（利用索引，非常快）
-        // 然后在内存中查找最旧的记录（内存操作比游标迭代快得多）
-        const allMemories = await bookIdIndex.getAll(bookId);
-
-        // 在内存中查找 lastAccessedAt 最小的记录（O(n) 但非常快）
-        let oldestId: string | null = null;
-        let oldestTime = Number.MAX_SAFE_INTEGER;
-
-        for (const memory of allMemories) {
-          if (memory.lastAccessedAt < oldestTime) {
-            oldestTime = memory.lastAccessedAt;
-            oldestId = memory.id;
-          }
-        }
-
-        // 删除最旧的记录
-        if (oldestId) {
-          await store.delete(oldestId);
-          // 清除缓存
-          const cacheKey = this.getCacheKey(bookId, oldestId);
-          this.memoryCache.delete(cacheKey);
-        }
-      }
-
-      // 3. 生成唯一 ID（使用延迟检查策略，避免获取所有 ID）
+      // 2. 生成唯一 ID（使用延迟检查策略，避免获取所有 ID）
       // 由于 8 位十六进制字符串的碰撞概率极低（16^8 = 4.3 亿），
       // 我们可以先生成 ID，然后检查是否存在，只在碰撞时重试
       let id: string | null = null;
@@ -253,7 +306,7 @@ export class MemoryService {
         throw new Error('无法生成唯一 ID，请重试');
       }
 
-      // 4. 创建新 Memory
+      // 3. 创建新 Memory
       const now = Date.now();
       const memory: MemoryStorage = {
         id,
@@ -418,22 +471,7 @@ export class MemoryService {
         await store.put(updatedMemory);
         await tx.done;
 
-        const result: Memory = {
-          id: updatedMemory.id,
-          bookId: updatedMemory.bookId,
-          content: updatedMemory.content,
-          summary: updatedMemory.summary,
-          createdAt: updatedMemory.createdAt,
-          lastAccessedAt: updatedMemory.lastAccessedAt,
-        };
-
-        const cacheKey = this.getCacheKey(bookId, memoryId);
-        this.memoryCache.set(cacheKey, result);
-        this.evictCacheIfNeeded();
-
-        this.invalidateBookMemoryCache(bookId);
-
-        this.dispatchMemoryChanged({ bookId, memoryId, action: 'imported' });
+        const result = this.syncCachesAfterMutation(bookId, memoryId, updatedMemory, 'imported');
 
         if (existing.content !== content || existing.summary !== summary) {
           EmbeddingQueue.enqueue(memoryId, bookId);
@@ -443,26 +481,7 @@ export class MemoryService {
       }
 
       // 新建：如果达到限制，删除最旧的记录
-      const count = await bookIdIndex.count(bookId);
-      if (count >= MAX_MEMORIES_PER_BOOK) {
-        const allMemories = (await bookIdIndex.getAll(bookId)) as MemoryStorage[];
-
-        let oldestId: string | null = null;
-        let oldestTime = Number.MAX_SAFE_INTEGER;
-
-        for (const memory of allMemories) {
-          if (memory.lastAccessedAt < oldestTime) {
-            oldestTime = memory.lastAccessedAt;
-            oldestId = memory.id;
-          }
-        }
-
-        if (oldestId) {
-          await store.delete(oldestId);
-          const cacheKey = this.getCacheKey(bookId, oldestId);
-          this.memoryCache.delete(cacheKey);
-        }
-      }
+      await this.evictOldestMemoryIfAtCapacity(store, bookIdIndex, bookId);
 
       const now = Date.now();
       const createdAt = typeof timestamps?.createdAt === 'number' ? timestamps.createdAt : now;
@@ -701,25 +720,7 @@ export class MemoryService {
 
       await db.put('memories', updatedMemory);
 
-      const result: Memory = {
-        id: updatedMemory.id,
-        bookId: updatedMemory.bookId,
-        content: updatedMemory.content,
-        summary: updatedMemory.summary,
-        createdAt: updatedMemory.createdAt,
-        lastAccessedAt: updatedMemory.lastAccessedAt,
-      };
-
-      // 更新缓存
-      const cacheKey = this.getCacheKey(bookId, memoryId);
-      this.memoryCache.set(cacheKey, result);
-      this.evictCacheIfNeeded();
-
-      // 清除该书籍的搜索结果缓存（因为记忆内容/摘要已更新）
-
-      this.invalidateBookMemoryCache(bookId);
-
-      this.dispatchMemoryChanged({ bookId, memoryId, action: 'updated' });
+      const result = this.syncCachesAfterMutation(bookId, memoryId, updatedMemory, 'updated');
 
       // 仅在文本内容实际变化时重新入队嵌入(避免无意义重算)
       const oldSummary = (memory as MemoryStorage).summary;
