@@ -38,23 +38,29 @@ async function loadHistoryFromDB(): Promise<ToastHistoryItem[]> {
 }
 
 /**
+ * 构造只含 `ToastHistoryItem` 接口字段的干净副本，过滤掉 PrimeVue Toast 附加的其它属性，
+ * 保证 IndexedDB 序列化时不会因 Proxy / 函数等非可克隆对象而失败。
+ */
+function toStorageToastItem(item: ToastHistoryItem): ToastHistoryItem {
+  return {
+    id: item.id,
+    severity: item.severity,
+    summary: item.summary,
+    detail: item.detail,
+    timestamp: item.timestamp,
+    ...(item.life !== undefined ? { life: item.life } : {}),
+    ...(item.read !== undefined ? { read: item.read } : {}),
+    ...(item.reverted !== undefined ? { reverted: item.reverted } : {}),
+  };
+}
+
+/**
  * 保存单个 Toast 历史记录到 IndexedDB
  */
 async function saveHistoryItemToDB(item: ToastHistoryItem): Promise<void> {
   try {
     const db = await getDB();
-    // 创建一个干净的、可序列化的副本，只包含 ToastHistoryItem 接口定义的属性
-    const cleanItem: ToastHistoryItem = {
-      id: item.id,
-      severity: item.severity,
-      summary: item.summary,
-      detail: item.detail,
-      timestamp: item.timestamp,
-      ...(item.life !== undefined ? { life: item.life } : {}),
-      ...(item.read !== undefined ? { read: item.read } : {}),
-      ...(item.reverted !== undefined ? { reverted: item.reverted } : {}),
-    };
-    await db.put('toast-history', cleanItem);
+    await db.put('toast-history', toStorageToastItem(item));
   } catch (error) {
     console.error('Failed to save toast history item to DB:', error);
   }
@@ -82,18 +88,7 @@ async function bulkSaveHistoryToDB(items: ToastHistoryItem[]): Promise<void> {
     const store = tx.objectStore('toast-history');
 
     for (const item of items) {
-      // 创建一个干净的、可序列化的副本，只包含 ToastHistoryItem 接口定义的属性
-      const cleanItem: ToastHistoryItem = {
-        id: item.id,
-        severity: item.severity,
-        summary: item.summary,
-        detail: item.detail,
-        timestamp: item.timestamp,
-        ...(item.life !== undefined ? { life: item.life } : {}),
-        ...(item.read !== undefined ? { read: item.read } : {}),
-        ...(item.reverted !== undefined ? { reverted: item.reverted } : {}),
-      };
-      await store.put(cleanItem);
+      await store.put(toStorageToastItem(item));
     }
 
     await tx.done;
