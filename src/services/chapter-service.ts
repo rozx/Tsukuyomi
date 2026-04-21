@@ -1479,6 +1479,28 @@ export class ChapterService {
   }
 
   /**
+   * 批量加载 chaptersToLoad 中记录的章节内容，并写回 chapterMap 里引用的 chapter 对象。
+   * 被 getPreviousParagraphsAsync / getNextParagraphsAsync 的第二遍扫描前共用。
+   */
+  private static async batchLoadCollectedChapters(
+    chaptersToLoad: Set<string>,
+    chapterMap: Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>,
+  ): Promise<void> {
+    if (chaptersToLoad.size === 0) return;
+
+    const chapterIds = Array.from(chaptersToLoad);
+    const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
+
+    for (const [chapterId, content] of contentsMap) {
+      const chapterInfo = chapterMap.get(chapterId);
+      if (chapterInfo) {
+        chapterInfo.chapter.content = content || [];
+        chapterInfo.chapter.contentLoaded = true;
+      }
+    }
+  }
+
+  /**
    * 获取指定段落之前的 x 个段落（异步版本，按需加载章节内容，使用批量加载优化）
    * @param novel 小说对象
    * @param paragraphId 段落 ID
@@ -1597,19 +1619,7 @@ export class ChapterService {
     }
 
     // 批量加载需要的章节
-    if (chaptersToLoad.size > 0) {
-      const chapterIds = Array.from(chaptersToLoad);
-      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-
-      // 更新章节内容
-      for (const [chapterId, content] of contentsMap) {
-        const chapterInfo = chapterMap.get(chapterId);
-        if (chapterInfo) {
-          chapterInfo.chapter.content = content || [];
-          chapterInfo.chapter.contentLoaded = true;
-        }
-      }
-    }
+    await ChapterService.batchLoadCollectedChapters(chaptersToLoad, chapterMap);
 
     // 第二遍：重新遍历，这次所有需要的章节都已加载
     vIdx = volumeIndex;
@@ -1812,19 +1822,7 @@ export class ChapterService {
     }
 
     // 批量加载需要的章节
-    if (chaptersToLoad.size > 0) {
-      const chapterIds = Array.from(chaptersToLoad);
-      const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-
-      // 更新章节内容
-      for (const [chapterId, content] of contentsMap) {
-        const chapterInfo = chapterMap.get(chapterId);
-        if (chapterInfo) {
-          chapterInfo.chapter.content = content || [];
-          chapterInfo.chapter.contentLoaded = true;
-        }
-      }
-    }
+    await ChapterService.batchLoadCollectedChapters(chaptersToLoad, chapterMap);
 
     // 第二遍：重新遍历，这次所有需要的章节都已加载
     vIdx = volumeIndex;
