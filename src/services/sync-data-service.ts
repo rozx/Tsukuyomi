@@ -11,6 +11,7 @@ import type { Memory } from 'src/models/memory';
 import type { DeletionRecord } from 'src/models/sync';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
+import { stripMemoryLocalFields, stripNovelLocalFields } from 'src/utils/sync-strip';
 
 function mergeUniqueById<T extends { id: string }>(
   primaryItems: T[] | undefined,
@@ -588,59 +589,6 @@ interface DataBackup {
  * 处理上传/下载配置的通用逻辑
  */
 export class SyncDataService {
-  /**
-   * 剥离 Memory 的本地字段（embedding / embeddingModel / 已弃用的 attachedTo）
-   * 用于 Gist 上传时 strip，以及下载时防御性 strip 旧版本 payload
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private static stripLocalFieldsFromMemory(memory: any): Memory {
-    if (!memory || typeof memory !== 'object') {
-      return memory as Memory;
-    }
-
-    const {
-      attachedTo: _a,
-      embedding: _e,
-      embeddingModel: _m,
-      ...clean
-    } = memory as Record<string, unknown>;
-    return clean as unknown as Memory;
-  }
-
-  /**
-   * 剥离 Novel 树中所有 Translation 的 memoryScoreBreakdown 字段
-   * 该字段是 UI 调试用的本地数据，不参与跨设备同步
-   */
-  private static stripLocalFieldsFromNovel(novel: Novel): Novel {
-    if (!novel || !Array.isArray(novel.volumes)) {
-      return novel;
-    }
-
-    const stripTranslation = (t: unknown): unknown => {
-      if (!t || typeof t !== 'object') return t;
-
-      const { memoryScoreBreakdown: _b, ...rest } = t as Record<string, unknown>;
-      return rest;
-    };
-
-    const cleanedVolumes = novel.volumes.map((volume) => {
-      if (!volume || !Array.isArray(volume.chapters)) return volume;
-      const cleanedChapters = volume.chapters.map((chapter) => {
-        if (!chapter || !Array.isArray(chapter.content)) return chapter;
-        const cleanedContent = chapter.content.map((paragraph) => {
-          if (!paragraph) return paragraph;
-          const cleanedTranslations = Array.isArray(paragraph.translations)
-            ? (paragraph.translations.map(stripTranslation) as typeof paragraph.translations)
-            : paragraph.translations;
-          return { ...paragraph, translations: cleanedTranslations };
-        });
-        return { ...chapter, content: cleanedContent };
-      });
-      return { ...volume, chapters: cleanedChapters };
-    });
-
-    return { ...novel, volumes: cleanedVolumes } as Novel;
-  }
 
   /**
    * 验证远程数据的完整性
@@ -2115,10 +2063,8 @@ export class SyncDataService {
 
     // 上传路径 strip：去除本地才关心的字段（embedding / embeddingModel / memoryScoreBreakdown），
     // 以及防御性去除可能残留在旧数据中的 attachedTo 字段。
-    const strippedMemories = finalMemories.map((m) =>
-      SyncDataService.stripLocalFieldsFromMemory(m),
-    );
-    const strippedBooks = finalBooks.map((b) => SyncDataService.stripLocalFieldsFromNovel(b));
+    const strippedMemories = finalMemories.map((m) => stripMemoryLocalFields(m));
+    const strippedBooks = finalBooks.map((b) => stripNovelLocalFields(b));
 
     return {
       novels: strippedBooks,
