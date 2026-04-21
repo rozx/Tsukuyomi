@@ -687,18 +687,23 @@ const handleContextMenuPopoverHide = () => {
   // 保留目标元素以便下次使用，只在组件卸载时清理
 };
 
+/**
+ * 通过点击 PrimeVue Inplace 的 display 区域来触发进入编辑态。
+ * handleEditTranslationClick（按钮点击）与 defineExpose.startEditing（父组件命令式）共用。
+ */
+const enterTranslationEditingByClick = () => {
+  if (!translationInplaceRef.value || !hasTranslation.value) return;
+  const inplaceElement = getComponentElement(translationInplaceRef.value);
+  if (!inplaceElement) return;
+  const displayElement = inplaceElement.querySelector('.p-inplace-display') as HTMLElement;
+  if (displayElement) {
+    displayElement.click();
+  }
+};
+
 // 处理编辑翻译按钮点击
 const handleEditTranslationClick = () => {
-  if (translationInplaceRef.value && hasTranslation.value) {
-    // 通过点击 display 区域来触发编辑
-    const inplaceElement = getComponentElement(translationInplaceRef.value);
-    if (inplaceElement) {
-      const displayElement = inplaceElement.querySelector('.p-inplace-display') as HTMLElement;
-      if (displayElement) {
-        displayElement.click();
-      }
-    }
-  }
+  enterTranslationEditingByClick();
 };
 
 // 处理最近翻译按钮悬停
@@ -851,16 +856,7 @@ onUnmounted(() => {
 // 暴露方法供父组件调用
 defineExpose({
   startEditing: () => {
-    if (translationInplaceRef.value && hasTranslation.value) {
-      // 通过点击 display 区域来触发编辑
-      const inplaceElement = getComponentElement(translationInplaceRef.value);
-      if (inplaceElement) {
-        const displayElement = inplaceElement.querySelector('.p-inplace-display') as HTMLElement;
-        if (displayElement) {
-          displayElement.click();
-        }
-      }
-    }
+    enterTranslationEditingByClick();
   },
   stopEditing: () => {
     if (translationInplaceRef.value) {
