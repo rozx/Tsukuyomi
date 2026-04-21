@@ -33,6 +33,25 @@ export function useParagraphNavigation(
   // 清除选中效果的 timeout ID
   const clearSelectionTimeoutId = ref<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * 清除三个与段落导航相关的 timeout（程序化滚动 / 重置导航防抖 / 清除选中效果）。
+   * 由 resetParagraphNavigation 与 cleanup 共用。
+   */
+  const clearAllNavigationTimeouts = () => {
+    if (programmaticScrollTimeoutId.value !== null) {
+      clearTimeout(programmaticScrollTimeoutId.value);
+      programmaticScrollTimeoutId.value = null;
+    }
+    if (resetNavigationTimeoutId.value !== null) {
+      clearTimeout(resetNavigationTimeoutId.value);
+      resetNavigationTimeoutId.value = null;
+    }
+    if (clearSelectionTimeoutId.value !== null) {
+      clearTimeout(clearSelectionTimeoutId.value);
+      clearSelectionTimeoutId.value = null;
+    }
+  };
+
   // 重置段落导航
   const resetParagraphNavigation = () => {
     selectedParagraphIndex.value = null;
@@ -40,21 +59,7 @@ export function useParagraphNavigation(
     isClickSelected.value = false;
     isKeyboardNavigating.value = false;
     lastKeyboardNavigationTime.value = null;
-    // 清除程序化滚动的 timeout
-    if (programmaticScrollTimeoutId.value !== null) {
-      clearTimeout(programmaticScrollTimeoutId.value);
-      programmaticScrollTimeoutId.value = null;
-    }
-    // 清除重置导航的防抖 timeout
-    if (resetNavigationTimeoutId.value !== null) {
-      clearTimeout(resetNavigationTimeoutId.value);
-      resetNavigationTimeoutId.value = null;
-    }
-    // 清除选中效果的 timeout
-    if (clearSelectionTimeoutId.value !== null) {
-      clearTimeout(clearSelectionTimeoutId.value);
-      clearSelectionTimeoutId.value = null;
-    }
+    clearAllNavigationTimeouts();
     isProgrammaticScrolling.value = false;
   };
 
@@ -509,18 +514,7 @@ export function useParagraphNavigation(
 
   // 清理所有 timeout（用于组件卸载时）
   const cleanup = () => {
-    if (programmaticScrollTimeoutId.value !== null) {
-      clearTimeout(programmaticScrollTimeoutId.value);
-      programmaticScrollTimeoutId.value = null;
-    }
-    if (resetNavigationTimeoutId.value !== null) {
-      clearTimeout(resetNavigationTimeoutId.value);
-      resetNavigationTimeoutId.value = null;
-    }
-    if (clearSelectionTimeoutId.value !== null) {
-      clearTimeout(clearSelectionTimeoutId.value);
-      clearSelectionTimeoutId.value = null;
-    }
+    clearAllNavigationTimeouts();
   };
 
   return {
