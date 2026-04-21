@@ -103,7 +103,10 @@ export function createAIProcessingStoreAdapter(store: {
     appendThinkingMessage: store.appendThinkingMessage.bind(store),
     appendOutputContent: store.appendOutputContent.bind(store),
     removeTask: store.removeTask.bind(store),
-    activeTasks: store.activeTasks,
+    // 用 getter 而非捕获引用：若 Pinia store 整体替换 activeTasks，消费方仍读到最新值
+    get activeTasks() {
+      return store.activeTasks;
+    },
   };
 }
 

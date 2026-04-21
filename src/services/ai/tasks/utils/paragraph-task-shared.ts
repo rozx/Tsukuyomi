@@ -43,14 +43,13 @@ export function buildChangedParagraphsExtractCallback(
 
   return async (params: ParagraphExtractCallbackParams) => {
     const { paragraphs, originalTranslations } = params;
-    // 过滤出有变化的段落
+    // 过滤出有变化的段落（空串也视为合法的新值：用户清空翻译的场景也要通知回调）
     const changedParagraphs: { id: string; translation: string }[] = [];
     for (const para of paragraphs) {
-      if (para.id && para.translation) {
-        const original = originalTranslations.get(para.id);
-        if (original !== para.translation) {
-          changedParagraphs.push(para);
-        }
+      if (!para.id || para.translation == null) continue;
+      const original = originalTranslations.get(para.id);
+      if (original !== para.translation) {
+        changedParagraphs.push(para);
       }
     }
     if (changedParagraphs.length > 0) {

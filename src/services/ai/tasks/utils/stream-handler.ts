@@ -204,7 +204,10 @@ export function createTaskChunkForwarder(
   let firstChunkReceived = false;
   return async (chunk) => {
     if (finalSignal?.aborted) {
-      throw new Error(abortMessage);
+      // 标记 name='AbortError'，让下游 isCancelledError 在 message 被调用方自定义时也能可靠识别
+      const err = new Error(abortMessage);
+      err.name = 'AbortError';
+      throw err;
     }
 
     if (aiProcessingStore && taskId) {

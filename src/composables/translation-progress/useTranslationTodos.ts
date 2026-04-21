@@ -1,4 +1,5 @@
 import { ref, computed, watch, onMounted, onUnmounted, type ComputedRef } from 'vue';
+
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 
@@ -32,7 +33,9 @@ export function useTranslationTodos(params: {
     if (e.key === 'tsukuyomi-todo-list') loadTodos();
   };
 
-  watch(() => recentAITasks.value.map((t) => t.id), loadTodos);
+  // 使用稳定的拼接键避免每次 recentAITasks 变动时都 diff 数组（减少 loadTodos 无谓调用）
+  const recentTaskIdsKey = computed(() => recentAITasks.value.map((t) => t.id).join('|'));
+  watch(recentTaskIdsKey, loadTodos);
 
   onMounted(() => {
     loadTodos();
