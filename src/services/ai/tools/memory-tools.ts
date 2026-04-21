@@ -19,6 +19,25 @@ async function requireMemoryById(bookId: string, memoryId: string | undefined): 
   return memory;
 }
 
+/**
+ * 从 args 中提取并校验 content / summary 字段
+ *
+ * 由 create_memory / update_memory 共用的前置校验，非空时返回 trim 后的值，
+ * 否则返回统一的错误 JSON 字符串（由调用方直接返回给工具链）。
+ */
+function parseContentSummary(
+  args: Record<string, unknown>,
+): { content: string; summary: string } | { error: string } {
+  const { content, summary } = args as { content?: string; summary?: string };
+  if (!content?.trim()) {
+    return { error: JSON.stringify({ success: false, error: '内容不能为空' }) };
+  }
+  if (!summary?.trim()) {
+    return { error: JSON.stringify({ success: false, error: '摘要不能为空' }) };
+  }
+  return { content: content.trim(), summary: summary.trim() };
+}
+
 function createListMemoriesHandler(toolName: 'list_memories') {
   return async (args: Record<string, unknown>, context: ToolContext) => {
     const { bookId, onAction } = context;
@@ -302,25 +321,14 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { content, summary } = args as {
-        content: string;
-        summary: string;
-      };
-      if (!content?.trim()) {
-        return JSON.stringify({
-          success: false,
-          error: '内容不能为空',
-        });
+      const parsed = parseContentSummary(args);
+      if ('error' in parsed) {
+        return parsed.error;
       }
-      if (!summary?.trim()) {
-        return JSON.stringify({
-          success: false,
-          error: '摘要不能为空',
-        });
-      }
+      const { content, summary } = parsed;
 
       try {
-        const memory = await MemoryService.createMemory(bookId, content.trim(), summary.trim());
+        const memory = await MemoryService.createMemory(bookId, content, summary);
 
         // 报告创建操作
         if (onAction) {
@@ -385,34 +393,18 @@ export const memoryTools: ToolDefinition[] = [
           error: '书籍 ID 不能为空',
         });
       }
-      const { memory_id, content, summary } = args as {
-        memory_id: string;
-        content: string;
-        summary: string;
-      };
-      if (!content?.trim()) {
-        return JSON.stringify({
-          success: false,
-          error: '内容不能为空',
-        });
+      const { memory_id } = args as { memory_id: string };
+      const parsed = parseContentSummary(args);
+      if ('error' in parsed) {
+        return parsed.error;
       }
-      if (!summary?.trim()) {
-        return JSON.stringify({
-          success: false,
-          error: '摘要不能为空',
-        });
-      }
+      const { content, summary } = parsed;
 
       try {
         // 在更新前获取 Memory 信息，以便在 action 中显示
         const oldMemory = await requireMemoryById(bookId, memory_id);
 
-        const memory = await MemoryService.updateMemory(
-          bookId,
-          memory_id,
-          content.trim(),
-          summary.trim(),
-        );
+        const memory = await MemoryService.updateMemory(bookId, memory_id, content, summary);
 
         // 报告更新操作
         if (onAction) {
