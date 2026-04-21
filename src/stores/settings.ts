@@ -206,6 +206,26 @@ async function saveSettingsToDB(settings: AppSettings): Promise<void> {
   }
 }
 
+async function applyMemoryInjectionSemanticSideEffect(
+  previousEnabled: boolean | undefined,
+  nextEnabled: boolean | undefined,
+): Promise<void> {
+  if (previousEnabled === undefined || nextEnabled === undefined || previousEnabled === nextEnabled) {
+    return;
+  }
+
+  try {
+    const { EmbeddingQueue } = await import('src/services/embedding-queue');
+    if (nextEnabled) {
+      EmbeddingQueue.resume();
+    } else {
+      EmbeddingQueue.pause();
+    }
+  } catch {
+    // 非致命：队列模块加载失败不影响设置持久化
+  }
+}
+
 /**
  * 从 LocalStorage 加载同步配置（向后兼容）
  */
@@ -313,6 +333,7 @@ export const useSettingsStore = defineStore('settings', {
     settings: { ...DEFAULT_SETTINGS } as AppSettings,
     syncs: [] as SyncConfig[],
     isSyncing: false, // 全局同步状态
+    isRestoringSyncSnapshot: false, // 恢复历史快照中的共享状态
     isLoaded: false,
     // 同步进度状态
     syncProgress: {
@@ -539,6 +560,8 @@ export const useSettingsStore = defineStore('settings', {
      * 注意：syncs 配置不在此处处理，由同步逻辑单独处理
      */
     async importSettings(settings: Partial<AppSettings> & { syncs?: SyncConfig[] }): Promise<void> {
+      const previousEnableSemantic = this.settings.memoryInjection?.enableSemantic;
+
       // 处理 lastEdited：如果导入的设置包含 lastEdited，转换为 Date 对象并保留它
       let preservedLastEdited: Date | undefined;
       if (settings.lastEdited) {
@@ -597,6 +620,45 @@ export const useSettingsStore = defineStore('settings', {
 
       this.settings = finalSettings;
       await saveSettingsToDB(this.settings);
+      await applyMemoryInjectionSemanticSideEffect(
+        previousEnableSemantic,
+        this.settings.memoryInjection?.enableSemantic,
+      );
+      await Promise.resolve();
+    },
+
+    /**
+     * 使用同步快照完整替换应用设置。
+     * 与 importSettings 不同：该方法会以默认值为基线重建 settings，
+     * 避免旧的本地字段在“恢复到某个修订版本”时继续残留。
+     *
+     * 仍需保留设备本地状态：
+     * - memoryInjection.embeddingModelCached
+     */
+    async replaceSettingsFromSyncSnapshot(settings: Partial<AppSettings>): Promise<void> {
+      const previousEnableSemantic = this.settings.memoryInjection?.enableSemantic;
+      const localEmbeddingModelCached =
+        this.settings.memoryInjection?.embeddingModelCached ??
+        DEFAULT_MEMORY_INJECTION.embeddingModelCached;
+
+      const { syncs: _syncs, ...snapshotSettings } = settings as Partial<AppSettings> & {
+        syncs?: SyncConfig[];
+      };
+      const normalized = normalizeLoadedSettings(snapshotSettings);
+
+      // normalizeLoadedSettings 会始终补齐 memoryInjection 默认值，这里直接覆盖设备本地缓存状态。
+      normalized.memoryInjection = {
+        ...DEFAULT_MEMORY_INJECTION,
+        ...normalized.memoryInjection,
+        embeddingModelCached: localEmbeddingModelCached,
+      };
+
+      this.settings = normalized;
+      await saveSettingsToDB(this.settings);
+      await applyMemoryInjectionSemanticSideEffect(
+        previousEnableSemantic,
+        this.settings.memoryInjection?.enableSemantic,
+      );
       await Promise.resolve();
     },
 
@@ -637,21 +699,7 @@ export const useSettingsStore = defineStore('settings', {
       merged.minScoreThreshold = Math.min(1.0, Math.max(0, merged.minScoreThreshold));
 
       // 副作用:enableSemantic 变更时联动 EmbeddingQueue
-      if (
-        updates.enableSemantic !== undefined &&
-        updates.enableSemantic !== current.enableSemantic
-      ) {
-        try {
-          const { EmbeddingQueue } = await import('src/services/embedding-queue');
-          if (updates.enableSemantic) {
-            EmbeddingQueue.resume();
-          } else {
-            EmbeddingQueue.pause();
-          }
-        } catch {
-          // 非致命:队列模块加载失败不影响设置持久化
-        }
-      }
+      await applyMemoryInjectionSemanticSideEffect(current.enableSemantic, updates.enableSemantic);
 
       await this.updateSettings({ memoryInjection: merged });
     },
@@ -1126,6 +1174,14 @@ export const useSettingsStore = defineStore('settings', {
       if (!syncing) {
         this.resetSyncProgress();
       }
+    },
+
+    /**
+     * 设置“恢复修订版本快照中”的共享状态
+     * 供设置页与同步状态面板统一禁用相关操作按钮
+     */
+    setRestoringSyncSnapshot(restoring: boolean): void {
+      this.isRestoringSyncSnapshot = restoring;
     },
 
     /**

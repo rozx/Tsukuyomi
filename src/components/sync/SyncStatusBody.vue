@@ -5,7 +5,7 @@
  * 所有状态（syncStatus、remoteStats、进度、恢复对话框等）都留在这里，
  * 由父面板通过 slot 引用，这样就不需要把 props / emits 链到顶层。
  */
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue';
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
@@ -51,6 +51,7 @@ const isSyncing = computed({
   get: () => settingsStore.isSyncing,
   set: (value: boolean) => settingsStore.setSyncing(value),
 });
+const isRestoringRevision = computed(() => settingsStore.isRestoringSyncSnapshot);
 
 const { pendingCount, hasPendingChanges, pendingItems } = useSyncPendingChanges();
 
@@ -137,6 +138,10 @@ const forceMode = computed(() => settingsStore.forceSyncMode.active);
 const closePanel = inject(SyncPanelCloseKey, undefined);
 
 const triggerForceSync = () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   const onBeforeConfirm = closePanel ? () => closePanel() : undefined;
   void confirmAndForceSync(onBeforeConfirm ? { onBeforeConfirm } : {});
 };
@@ -145,8 +150,25 @@ const showRestoreDialog = ref(false);
 const restorableItems = ref<RestorableItem[]>([]);
 const selectedRestoreItems = ref<string[]>([]);
 
+const resetRestoreDialogState = () => {
+  showRestoreDialog.value = false;
+  restorableItems.value = [];
+  selectedRestoreItems.value = [];
+};
+
+watch(isRestoringRevision, (restoring) => {
+  if (restoring) {
+    resetRestoreDialogState();
+  }
+});
+
 // 关闭（含遮罩 / X 按钮）时也走 skip 流程，避免下次再打开时残留上次的 items
 const handleRestoreDialogVisibleChange = (next: boolean) => {
+  if (isRestoringRevision.value) {
+    resetRestoreDialogState();
+    return;
+  }
+
   if (!next && showRestoreDialog.value) {
     skipRestore();
   } else {
@@ -155,6 +177,10 @@ const handleRestoreDialogVisibleChange = (next: boolean) => {
 };
 
 const syncData = async () => {
+  if (isRestoringRevision.value) {
+    return;
+  }
+
   const config = gistSync.value;
   if (!config.enabled || !config.syncParams.username || !config.secret) {
     toast.add({
@@ -181,6 +207,11 @@ const syncData = async () => {
 };
 
 const confirmRestore = async () => {
+  if (isRestoringRevision.value) {
+    resetRestoreDialogState();
+    return;
+  }
+
   const itemsToRestore = restorableItems.value.filter((item) =>
     selectedRestoreItems.value.includes(item.id),
   );
@@ -193,15 +224,16 @@ const confirmRestore = async () => {
     };
   }
 
-  showRestoreDialog.value = false;
-  restorableItems.value = [];
-  selectedRestoreItems.value = [];
+  resetRestoreDialogState();
 };
 
 const skipRestore = () => {
-  showRestoreDialog.value = false;
-  restorableItems.value = [];
-  selectedRestoreItems.value = [];
+  if (isRestoringRevision.value) {
+    resetRestoreDialogState();
+    return;
+  }
+
+  resetRestoreDialogState();
 
   toast.add({
     severity: 'info',
@@ -353,13 +385,13 @@ const syncStageLabel = computed(() => {
     </div>
 
     <div class="flex flex-col gap-3 pt-2 border-t border-white/10">
-      <ForceSyncToggle :disabled="!gistSync.enabled || isSyncing" />
+      <ForceSyncToggle :disabled="!gistSync.enabled || isSyncing || isRestoringRevision" />
       <Button
         :label="forceMode ? '强制推送到远程' : '同步'"
         icon="pi pi-sync"
         :severity="forceMode ? 'danger' : 'primary'"
         class="w-full"
-        :disabled="!gistSync.enabled || isSyncing"
+        :disabled="!gistSync.enabled || isSyncing || isRestoringRevision"
         :loading="isSyncing"
         @click="forceMode ? triggerForceSync() : syncData()"
       />
@@ -383,7 +415,12 @@ const syncStageLabel = computed(() => {
           :key="item.id"
           class="flex items-center gap-3 p-3 bg-white/5 rounded-lg"
         >
-          <Checkbox v-model="selectedRestoreItems" :input-id="item.id" :value="item.id" />
+          <Checkbox
+            v-model="selectedRestoreItems"
+            :input-id="item.id"
+            :value="item.id"
+            :disabled="isRestoringRevision"
+          />
           <label :for="item.id" class="flex-1 cursor-pointer">
             <div class="flex items-center gap-2">
               <i
@@ -408,11 +445,11 @@ const syncStageLabel = computed(() => {
     </div>
 
     <template #footer>
-      <Button label="跳过" class="p-button-text" @click="skipRestore" />
+      <Button label="跳过" class="p-button-text" :disabled="isRestoringRevision" @click="skipRestore" />
       <Button
         label="恢复选中项目"
         class="p-button-primary"
-        :disabled="selectedRestoreItems.length === 0"
+        :disabled="isRestoringRevision || selectedRestoreItems.length === 0"
         @click="confirmRestore"
       />
     </template>

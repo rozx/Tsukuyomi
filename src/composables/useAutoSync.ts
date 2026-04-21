@@ -33,6 +33,11 @@ export function useAutoSync() {
       return;
     }
 
+    if (settingsStore.isRestoringSyncSnapshot) {
+      console.warn('[useAutoSync] 修订版本恢复进行中，跳过此次自动同步');
+      return;
+    }
+
     // 使用同步锁防止并发同步（双重检查）
     if (syncLock || settingsStore.isSyncing) {
       console.warn('[useAutoSync] 同步已在进行中，跳过此次自动同步');
