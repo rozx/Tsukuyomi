@@ -66,21 +66,6 @@ export function extractParagraphText($: cheerio.CheerioAPI, element: CheerioNode
 }
 
 /**
- * 简介/描述文本提取：处理 `<br>` 为换行，跳过 `<a name="img">` 图片链接，
- * 其它标签递归提取原文。用于 syosetu.org 的 `.ss` 描述区块。
- */
-export function extractDescriptionText($: cheerio.CheerioAPI, element: CheerioNode): string {
-  return visitCheerioContents($, element, ({ $node, tagName, recurse }) => {
-    if (tagName === 'br') return '\n';
-    if (tagName === 'a' && $node.attr('name') === 'img') {
-      // 跳过图片链接标记（如【挿絵表示】）
-      return '';
-    }
-    return recurse();
-  });
-}
-
-/**
  * 无 `<p>` 标签时的正文兜底提取：把 `<p>` / `<div>` 视为行容器，
  * 纯文本节点原样追加，`<br>` 换行。
  *

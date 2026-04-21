@@ -1,9 +1,10 @@
 import Fuse from 'fuse.js';
 import { getDB } from 'src/utils/indexed-db';
 import { loadChapterContent } from 'src/utils/chapter-content-loader';
-import type { Novel, Chapter, Paragraph } from 'src/models/novel';
+import type { Novel, Chapter } from 'src/models/novel';
 import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 import { findChapterById } from 'src/utils/novel-utils';
+import { hasNonEmptyTranslation } from 'src/utils/text-utils';
 
 /**
  * 索引文档结构
@@ -88,15 +89,6 @@ function keywordMatchesDocScope(
   if (searchInOriginal) return inOriginal();
   if (searchInTranslations) return inTranslations();
   return false;
-}
-
-/** 段落是否至少有一个非空翻译 */
-function paragraphHasTranslation(paragraph: Paragraph): boolean {
-  return (
-    !!paragraph.translations &&
-    paragraph.translations.length > 0 &&
-    paragraph.translations.some((t) => !!t.translation && t.translation.trim().length > 0)
-  );
 }
 
 /**
@@ -442,7 +434,7 @@ export class FullTextIndexService {
 
       const located = await locateParagraphFromDoc(novel, doc);
       if (!located) continue;
-      if (onlyWithTranslation && !paragraphHasTranslation(located.paragraph)) continue;
+      if (onlyWithTranslation && !hasNonEmptyTranslation(located.paragraph)) continue;
 
       results.push(located);
       if (results.length >= maxResults) break;

@@ -3,7 +3,6 @@ import type { Novel } from 'src/models/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/services/scraper/scrapers/syosetu-types';
 import { BaseScraper } from '../core';
 import {
-  extractDescriptionText,
   extractParagraphText,
   extractTextWithFormatting,
 } from '../core/cheerio-text-extract';
@@ -179,7 +178,7 @@ function parseSyosetuChapterRow(
  * 用于从 syosetu.org 获取和解析小说信息
  */
 export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
-  private static readonly BASE_URL = 'https://syosetu.org';
+  static readonly BASE_URL = 'https://syosetu.org';
   // 匹配所有以 syosetu.org/novel/:bookid 开头的 URL
   private static readonly NOVEL_URL_PATTERN = /^https?:\/\/syosetu\.org\/novel\/(\d+)(?:\/.*)?$/;
 
