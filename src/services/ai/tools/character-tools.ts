@@ -11,6 +11,11 @@ import {
   requireValidKeywords,
   resolveBookSync,
 } from './chapter-scope-helpers';
+import {
+  assertAliasesNotBlank,
+  normalizeAliasList,
+  serializeCharacterForTool,
+} from './character-tool-helpers';
 
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
@@ -90,14 +95,7 @@ export const characterTools: ToolDefinition[] = [
       if (!name?.trim() || !translation?.trim()) {
         throw new Error('角色名称和翻译不能为空');
       }
-      if (aliases && Array.isArray(aliases)) {
-        const hasBlankAlias = aliases.some(
-          (alias) => !alias?.name?.trim() || !alias?.translation?.trim(),
-        );
-        if (hasBlankAlias) {
-          throw new Error('别名的名称和翻译不能为空');
-        }
-      }
+      assertAliasesNotBlank(aliases);
 
       const characterData: {
         name: string;
@@ -113,10 +111,7 @@ export const characterTools: ToolDefinition[] = [
 
       // 规范化别名翻译
       if (aliases && Array.isArray(aliases)) {
-        characterData.aliases = aliases.map((alias) => ({
-          name: alias.name.trim(),
-          translation: normalizeTranslationQuotes(alias.translation.trim()),
-        }));
+        characterData.aliases = normalizeAliasList(aliases);
       }
 
       if (sex) characterData.sex = sex as 'male' | 'female' | 'other';
@@ -136,18 +131,7 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: '角色创建成功',
-        character: {
-          id: character.id,
-          name: character.name,
-          translation: character.translation.translation,
-          sex: character.sex,
-          description: character.description,
-          speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias: any) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        },
+        character: serializeCharacterForTool(character),
       });
     },
   },
@@ -235,18 +219,7 @@ export const characterTools: ToolDefinition[] = [
             message: `精确匹配未找到 "${name}"。已返回相关的模糊匹配结果${
               truncated ? `（前 ${MAX_FALLBACK_RESULTS} 条，共 ${fallbackMatches.length} 条）` : ''
             }。`,
-            characters: limitedMatches.map((char) => ({
-              id: char.id,
-              name: char.name,
-              translation: char.translation.translation,
-              sex: char.sex,
-              description: char.description,
-              speaking_style: char.speakingStyle,
-              aliases: char.aliases?.map((alias) => ({
-                name: alias.name,
-                translation: alias.translation.translation,
-              })),
-            })),
+            characters: limitedMatches.map((char) => serializeCharacterForTool(char)),
             total_matches: fallbackMatches.length,
             truncated,
           });
@@ -284,18 +257,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        character: {
-          id: character.id,
-          name: character.name,
-          translation: character.translation.translation,
-          sex: character.sex,
-          description: character.description,
-          speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        },
+        character: serializeCharacterForTool(character),
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
           : {}),
@@ -387,13 +349,8 @@ export const characterTools: ToolDefinition[] = [
       if (translation !== undefined && !translation.trim()) {
         throw new Error('角色翻译不能为空');
       }
-      if (aliases !== undefined && Array.isArray(aliases)) {
-        const hasBlankAlias = aliases.some(
-          (alias) => !alias?.name?.trim() || !alias?.translation?.trim(),
-        );
-        if (hasBlankAlias) {
-          throw new Error('别名的名称和翻译不能为空');
-        }
+      if (aliases !== undefined) {
+        assertAliasesNotBlank(aliases);
       }
 
       // 在更新前获取原始数据，用于 revert
@@ -427,12 +384,7 @@ export const characterTools: ToolDefinition[] = [
         updates.speakingStyle = speaking_style;
       }
       if (aliases !== undefined) {
-        updates.aliases = (aliases as Array<{ name: string; translation: string }>).map(
-          (alias: { name: string; translation: string }) => ({
-            name: alias.name.trim(),
-            translation: normalizeTranslationQuotes(alias.translation.trim()),
-          }),
-        );
+        updates.aliases = normalizeAliasList(aliases);
       }
 
       const character = await CharacterSettingService.updateCharacterSetting(
@@ -453,18 +405,7 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: '角色更新成功',
-        character: {
-          id: character.id,
-          name: character.name,
-          translation: character.translation.translation,
-          sex: character.sex,
-          description: character.description,
-          speaking_style: character.speakingStyle,
-          aliases: character.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        },
+        character: serializeCharacterForTool(character),
       });
     },
   },
@@ -619,18 +560,9 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        characters: filteredCharacters.map((char: CharacterSetting) => ({
-          id: char.id,
-          name: char.name,
-          translation: char.translation.translation,
-          sex: char.sex,
-          description: char.description,
-          speaking_style: char.speakingStyle,
-          aliases: char.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        })),
+        characters: filteredCharacters.map((char: CharacterSetting) =>
+          serializeCharacterForTool(char),
+        ),
         count: filteredCharacters.length,
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
@@ -710,18 +642,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        characters: characters.map((char) => ({
-          id: char.id,
-          name: char.name,
-          translation: char.translation.translation,
-          sex: char.sex,
-          description: char.description,
-          speaking_style: char.speakingStyle,
-          aliases: char.aliases?.map((alias) => ({
-            name: alias.name,
-            translation: alias.translation.translation,
-          })),
-        })),
+        characters: characters.map((char) => serializeCharacterForTool(char)),
         total: characters.length,
         all_characters_count: book.characterSettings?.length || 0,
         ...(chapter_id ? { chapter_id } : {}),
