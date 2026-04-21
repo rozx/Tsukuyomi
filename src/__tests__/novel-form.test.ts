@@ -148,26 +148,37 @@ describe('buildNovelUpdatesFromFormData', () => {
     expect(updates.proofreadingInstructions).toBe('PRI');
   });
 
-  it('空字符串 author / description 视为未填，不写入', () => {
+  it('显式清空的 author / description 写回空字符串（让用户能清掉已有值）', () => {
     const updates = buildNovelUpdatesFromFormData({
       title: 'T',
       author: '   ',
       description: '',
     });
-    expect(updates.author).toBeUndefined();
-    expect(updates.description).toBeUndefined();
+    expect('author' in updates).toBe(true);
+    expect(updates.author).toBe('');
+    expect('description' in updates).toBe(true);
+    expect(updates.description).toBe('');
   });
 
-  it('空数组 alternateTitles / tags / webUrl 不写入', () => {
+  it('显式清空的 alternateTitles / tags / webUrl 写回空数组（让用户能清掉已有值）', () => {
     const updates = buildNovelUpdatesFromFormData({
       title: 'T',
       alternateTitles: [],
       tags: [],
       webUrl: [],
     });
-    expect(updates.alternateTitles).toBeUndefined();
-    expect(updates.tags).toBeUndefined();
-    expect(updates.webUrl).toBeUndefined();
+    expect(updates.alternateTitles).toEqual([]);
+    expect(updates.tags).toEqual([]);
+    expect(updates.webUrl).toEqual([]);
+  });
+
+  it('未在表单提供的字段保持 undefined（不写回）', () => {
+    const updates = buildNovelUpdatesFromFormData({ title: 'T' });
+    expect('author' in updates).toBe(false);
+    expect('description' in updates).toBe(false);
+    expect('tags' in updates).toBe(false);
+    expect('webUrl' in updates).toBe(false);
+    expect('alternateTitles' in updates).toBe(false);
   });
 
   it('cover === undefined 不写入；cover 为 null 也视为已定义写入（undefined 检查而非 falsy）', () => {

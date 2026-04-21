@@ -97,10 +97,23 @@ export function useElectronSettings() {
       if (!memoriesByBook.has(memory.bookId)) memoriesByBook.set(memory.bookId, []);
       memoriesByBook.get(memory.bookId)!.push(memory);
     }
+    // 保留原 memory.id / createdAt / lastAccessedAt —— 否则重复导入会生成重复数据，
+    // 同步去重语义也会被破坏。
     for (const [bookId, list] of memoriesByBook.entries()) {
       try {
         for (const memory of list) {
-          await MemoryService.createMemory(bookId, memory.content, memory.summary);
+          await MemoryService.createMemoryWithId(
+            bookId,
+            memory.id,
+            memory.content,
+            memory.summary,
+            {
+              ...(typeof memory.createdAt === 'number' ? { createdAt: memory.createdAt } : {}),
+              ...(typeof memory.lastAccessedAt === 'number'
+                ? { lastAccessedAt: memory.lastAccessedAt }
+                : {}),
+            },
+          );
         }
       } catch (error) {
         console.warn(`[useElectronSettings] 导入书籍 ${bookId} 的 Memory 失败:`, error);

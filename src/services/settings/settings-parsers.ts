@@ -203,6 +203,7 @@ function pickScraperConcurrency(value: unknown): number {
 
 /**
  * 把已知的 AppSettings 可选字段从 source 透传到 target（仅当已定义）。
+ * 任何新增的顶层 AppSettings 字段都需要在这里追加，否则导出/导入会静默丢失该字段。
  */
 function copyOptionalAppSettingsFields(target: AppSettings, source: AppSettings): void {
   if (source.lastOpenedSettingsTab !== undefined) {
@@ -218,6 +219,12 @@ function copyOptionalAppSettingsFields(target: AppSettings, source: AppSettings)
   if (source.proxyList !== undefined) target.proxyList = source.proxyList;
   if (typeof source.quickStartDismissed === 'boolean') {
     target.quickStartDismissed = source.quickStartDismissed;
+  }
+  if (source.tavilyApiKey !== undefined) target.tavilyApiKey = source.tavilyApiKey;
+  if (source.booksSortOption !== undefined) target.booksSortOption = source.booksSortOption;
+  if (source.memoryInjection !== undefined) target.memoryInjection = source.memoryInjection;
+  if (typeof source.enableLocalEmbedding === 'boolean') {
+    target.enableLocalEmbedding = source.enableLocalEmbedding;
   }
 }
 

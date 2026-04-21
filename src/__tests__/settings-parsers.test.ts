@@ -376,4 +376,30 @@ describe('parseAppSettings', () => {
     const result = parseAppSettings({ quickStartDismissed: 'yes' });
     expect(result?.quickStartDismissed).toBeUndefined();
   });
+
+  it('透传 tavilyApiKey / booksSortOption / memoryInjection / enableLocalEmbedding', () => {
+    const memoryInjection = {
+      enableSemantic: true,
+      weights: { semantic: 0.6, keyword: 0.3, recency: 0.1 },
+      charBudget: 8000,
+      minScoreThreshold: 0.4,
+      hasSeenIntro: true,
+      embeddingModelCached: false,
+    };
+    const result = parseAppSettings({
+      tavilyApiKey: 'tvly-key',
+      booksSortOption: 'lastEditedDesc',
+      memoryInjection,
+      enableLocalEmbedding: true,
+    });
+    expect(result?.tavilyApiKey).toBe('tvly-key');
+    expect(result?.booksSortOption).toBe('lastEditedDesc');
+    expect(result?.memoryInjection).toEqual(memoryInjection);
+    expect(result?.enableLocalEmbedding).toBe(true);
+  });
+
+  it('enableLocalEmbedding 非 boolean 时不写入', () => {
+    const result = parseAppSettings({ enableLocalEmbedding: 'yes' });
+    expect(result?.enableLocalEmbedding).toBeUndefined();
+  });
 });

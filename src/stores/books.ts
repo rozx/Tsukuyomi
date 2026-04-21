@@ -51,33 +51,33 @@ function chapterHasFreshContent(chapter: Chapter): boolean {
   );
 }
 
-/** 为现有卷构建 id→Volume 及 id→(id→Chapter) 的查找表，便于 O(1) 定位 */
-function buildExistingVolumeLookups(existingVolumes: Volume[]): {
-  volumes: Map<string, Volume>;
-  chaptersByVolume: Map<string, Map<string, Chapter>>;
-} {
-  const volumes = new Map<string, Volume>(existingVolumes.map((v) => [v.id, v]));
-  const chaptersByVolume = new Map<string, Map<string, Chapter>>();
+/**
+ * 为现有卷构建一个 chapterId→Chapter 的全书级查找表。
+ * 用书级（非卷级）索引定位可以覆盖"章节跨卷移动"的场景 —— 章节被移到新卷后，
+ * 按新 volumeId 查旧卷里的 chapter 会 miss，content 就被丢掉了。
+ */
+function buildExistingChapterLookup(existingVolumes: Volume[]): Map<string, Chapter> {
+  const byId = new Map<string, Chapter>();
   for (const volume of existingVolumes) {
-    if (volume.chapters) {
-      chaptersByVolume.set(volume.id, new Map(volume.chapters.map((ch) => [ch.id, ch])));
+    if (!volume.chapters) continue;
+    for (const ch of volume.chapters) {
+      byId.set(ch.id, ch);
     }
   }
-  return { volumes, chaptersByVolume };
+  return byId;
 }
 
 /** 收集需要从 IndexedDB 批量加载内容的章节 ID（existing 未加载且 updated 没带新内容） */
 function collectChapterIdsNeedingContent(
   updatedVolumes: Volume[],
-  chaptersByVolume: Map<string, Map<string, Chapter>>,
+  chaptersById: Map<string, Chapter>,
 ): string[] {
   const ids: string[] = [];
   for (const updatedVolume of updatedVolumes) {
-    const volumeChaptersMap = chaptersByVolume.get(updatedVolume.id);
-    if (!volumeChaptersMap || !updatedVolume.chapters) continue;
+    if (!updatedVolume.chapters) continue;
     for (const updatedChapter of updatedVolume.chapters) {
       if (!updatedChapter) continue;
-      const existingChapter = volumeChaptersMap.get(updatedChapter.id);
+      const existingChapter = chaptersById.get(updatedChapter.id);
       if (!existingChapter) continue;
       // 新章节 / 已带新内容 → 无需保留
       if (chapterHasFreshContent(updatedChapter)) continue;
@@ -92,16 +92,15 @@ function collectChapterIdsNeedingContent(
 /** 按新卷结构重组，保留现有章节内容（若 updated 没带新内容） */
 function mergePreservedChapterContents(
   updatedVolumes: Volume[],
-  chaptersByVolume: Map<string, Map<string, Chapter>>,
+  chaptersById: Map<string, Chapter>,
   contentMap: Map<string, Paragraph[] | undefined>,
 ): Volume[] {
   return updatedVolumes.map((updatedVolume) => {
-    const volumeChaptersMap = chaptersByVolume.get(updatedVolume.id);
-    if (!volumeChaptersMap || !updatedVolume.chapters) return updatedVolume;
+    if (!updatedVolume.chapters) return updatedVolume;
     return {
       ...updatedVolume,
       chapters: updatedVolume.chapters.map((updatedChapter) => {
-        const existingChapter = volumeChaptersMap.get(updatedChapter.id);
+        const existingChapter = chaptersById.get(updatedChapter.id);
         if (!existingChapter) return updatedChapter;
         if (chapterHasFreshContent(updatedChapter)) return updatedChapter;
 
@@ -121,14 +120,14 @@ function mergePreservedChapterContents(
 
 /**
  * 在 updateBook 替换 volumes 时保留所有章节内容（独立 IndexedDB 存储不能在元数据更新时丢失）。
- * 流程：建查找表 → 收集未加载章节 → 批量加载 → 按新结构重组写回内容。
+ * 使用书级 chapterId 查找，覆盖章节跨卷移动、重排的场景。
  */
 async function preserveChapterContentsOnVolumesUpdate(
   existingVolumes: Volume[],
   updatedVolumes: Volume[],
 ): Promise<Volume[]> {
-  const { chaptersByVolume } = buildExistingVolumeLookups(existingVolumes);
-  const chapterIdsToLoad = collectChapterIdsNeedingContent(updatedVolumes, chaptersByVolume);
+  const chaptersById = buildExistingChapterLookup(existingVolumes);
+  const chapterIdsToLoad = collectChapterIdsNeedingContent(updatedVolumes, chaptersById);
 
   const contentMap = new Map<string, Paragraph[] | undefined>();
   if (chapterIdsToLoad.length > 0) {
@@ -138,7 +137,7 @@ async function preserveChapterContentsOnVolumesUpdate(
     }
   }
 
-  return mergePreservedChapterContents(updatedVolumes, chaptersByVolume, contentMap);
+  return mergePreservedChapterContents(updatedVolumes, chaptersById, contentMap);
 }
 
 export const useBooksStore = defineStore('books', {

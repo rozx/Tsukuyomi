@@ -99,14 +99,22 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
         memoriesByBook.get(memory.bookId)!.push(memory);
       }
 
-      // 为每本书导入 Memory
+      // 为每本书导入 Memory —— 保留原 ID / createdAt / lastAccessedAt，
+      // 否则同一条记忆在不同设备上导入后会重复，且时间线会被改写。
       for (const [bookId, memories] of memoriesByBook.entries()) {
         try {
           for (const memory of memories) {
-            await MemoryService.createMemory(
+            await MemoryService.createMemoryWithId(
               bookId,
+              memory.id,
               memory.content,
               memory.summary,
+              {
+                ...(typeof memory.createdAt === 'number' ? { createdAt: memory.createdAt } : {}),
+                ...(typeof memory.lastAccessedAt === 'number'
+                  ? { lastAccessedAt: memory.lastAccessedAt }
+                  : {}),
+              },
             );
           }
         } catch (error) {
