@@ -1501,6 +1501,37 @@ export class ChapterService {
   }
 
   /**
+   * 第一遍扫描的共用动作：若 chapter 内容未加载，则记入待加载集合，返回是否新增计数。
+   * 由 getPreviousParagraphsAsync / getNextParagraphsAsync 的 pass 1 使用。
+   */
+  private static collectChapterForLoad(
+    chapter: Chapter | null | undefined,
+    vIndex: number,
+    cIndex: number,
+    chaptersToLoad: Set<string>,
+    chapterMap: Map<string, { chapter: Chapter; vIndex: number; cIndex: number }>,
+  ): boolean {
+    if (chapter && chapter.content === undefined) {
+      chaptersToLoad.add(chapter.id);
+      chapterMap.set(chapter.id, { chapter, vIndex, cIndex });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 第二遍扫描的共用动作：若 chapter 内容仍未加载，则按需懒加载。
+   * 由 getPreviousParagraphsAsync / getNextParagraphsAsync 的 pass 2 使用。
+   */
+  private static async ensureChapterLoaded(chapter: Chapter | null | undefined): Promise<void> {
+    if (chapter && chapter.content === undefined) {
+      const content = await ChapterContentService.loadChapterContent(chapter.id);
+      chapter.content = content || [];
+      chapter.contentLoaded = true;
+    }
+  }
+
+  /**
    * 获取指定段落之前的 x 个段落（异步版本，按需加载章节内容，使用批量加载优化）
    * @param novel 小说对象
    * @param paragraphId 段落 ID
@@ -1562,9 +1593,9 @@ export class ChapterService {
         }
         cIdx = prevVolume.chapters.length - 1;
         const prevChapter = prevVolume.chapters[cIdx];
-        if (prevChapter && prevChapter.content === undefined) {
-          chaptersToLoad.add(prevChapter.id);
-          chapterMap.set(prevChapter.id, { chapter: prevChapter, vIndex: vIdx, cIndex: cIdx });
+        if (
+          ChapterService.collectChapterForLoad(prevChapter, vIdx, cIdx, chaptersToLoad, chapterMap)
+        ) {
           collected++;
         }
         pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
@@ -1578,9 +1609,7 @@ export class ChapterService {
         continue;
       }
 
-      if (chapter.content === undefined) {
-        chaptersToLoad.add(chapter.id);
-        chapterMap.set(chapter.id, { chapter, vIndex: vIdx, cIndex: cIdx });
+      if (ChapterService.collectChapterForLoad(chapter, vIdx, cIdx, chaptersToLoad, chapterMap)) {
         collected++;
       }
 
@@ -1597,18 +1626,18 @@ export class ChapterService {
           }
           cIdx = prevVolume.chapters.length - 1;
           const prevChapter = prevVolume.chapters[cIdx];
-          if (prevChapter && prevChapter.content === undefined) {
-            chaptersToLoad.add(prevChapter.id);
-            chapterMap.set(prevChapter.id, { chapter: prevChapter, vIndex: vIdx, cIndex: cIdx });
+          if (
+            ChapterService.collectChapterForLoad(prevChapter, vIdx, cIdx, chaptersToLoad, chapterMap)
+          ) {
             collected++;
           }
           pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
           continue;
         }
         const prevChapter = volume.chapters[cIdx];
-        if (prevChapter && prevChapter.content === undefined) {
-          chaptersToLoad.add(prevChapter.id);
-          chapterMap.set(prevChapter.id, { chapter: prevChapter, vIndex: vIdx, cIndex: cIdx });
+        if (
+          ChapterService.collectChapterForLoad(prevChapter, vIdx, cIdx, chaptersToLoad, chapterMap)
+        ) {
           collected++;
         }
         pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
@@ -1650,11 +1679,7 @@ export class ChapterService {
         cIdx = prevVolume.chapters.length - 1;
         const prevChapter = prevVolume.chapters[cIdx];
         // 如果仍未加载，按需加载
-        if (prevChapter && prevChapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(prevChapter.id);
-          prevChapter.content = content || [];
-          prevChapter.contentLoaded = true;
-        }
+        await ChapterService.ensureChapterLoaded(prevChapter);
         pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
         continue;
       }
@@ -1667,11 +1692,7 @@ export class ChapterService {
       }
 
       // 如果仍未加载，按需加载
-      if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
-        chapter.content = content || [];
-        chapter.contentLoaded = true;
-      }
+      await ChapterService.ensureChapterLoaded(chapter);
 
       if (!chapter.content) {
         cIdx--;
@@ -1692,20 +1713,12 @@ export class ChapterService {
           }
           cIdx = prevVolume.chapters.length - 1;
           const prevChapter = prevVolume.chapters[cIdx];
-          if (prevChapter && prevChapter.content === undefined) {
-            const content = await ChapterContentService.loadChapterContent(prevChapter.id);
-            prevChapter.content = content || [];
-            prevChapter.contentLoaded = true;
-          }
+          await ChapterService.ensureChapterLoaded(prevChapter);
           pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
           continue;
         }
         const prevChapter = volume.chapters[cIdx];
-        if (prevChapter && prevChapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(prevChapter.id);
-          prevChapter.content = content || [];
-          prevChapter.contentLoaded = true;
-        }
+        await ChapterService.ensureChapterLoaded(prevChapter);
         pIdx = prevChapter && prevChapter.content ? prevChapter.content.length - 1 : -1;
         continue;
       }
@@ -1792,9 +1805,7 @@ export class ChapterService {
         continue;
       }
 
-      if (chapter.content === undefined) {
-        chaptersToLoad.add(chapter.id);
-        chapterMap.set(chapter.id, { chapter, vIndex: vIdx, cIndex: cIdx });
+      if (ChapterService.collectChapterForLoad(chapter, vIdx, cIdx, chaptersToLoad, chapterMap)) {
         collected++;
       }
 
@@ -1808,9 +1819,9 @@ export class ChapterService {
           continue;
         } else {
           const nextChapter = volume.chapters[cIdx];
-          if (nextChapter && nextChapter.content === undefined) {
-            chaptersToLoad.add(nextChapter.id);
-            chapterMap.set(nextChapter.id, { chapter: nextChapter, vIndex: vIdx, cIndex: cIdx });
+          if (
+            ChapterService.collectChapterForLoad(nextChapter, vIdx, cIdx, chaptersToLoad, chapterMap)
+          ) {
             collected++;
           }
           pIdx = 0;
@@ -1854,11 +1865,7 @@ export class ChapterService {
       }
 
       // 如果仍未加载，按需加载
-      if (chapter.content === undefined) {
-        const content = await ChapterContentService.loadChapterContent(chapter.id);
-        chapter.content = content || [];
-        chapter.contentLoaded = true;
-      }
+      await ChapterService.ensureChapterLoaded(chapter);
 
       if (!chapter.content) {
         cIdx++;
@@ -1874,11 +1881,7 @@ export class ChapterService {
           cIdx = 0;
         }
         const nextChapter = volume.chapters[cIdx];
-        if (nextChapter && nextChapter.content === undefined) {
-          const content = await ChapterContentService.loadChapterContent(nextChapter.id);
-          nextChapter.content = content || [];
-          nextChapter.contentLoaded = true;
-        }
+        await ChapterService.ensureChapterLoaded(nextChapter);
         pIdx = 0;
         continue;
       }
