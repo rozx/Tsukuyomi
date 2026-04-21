@@ -16,6 +16,116 @@ import { useElectron } from 'src/composables/useElectron';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CheerioNode = cheerio.Cheerio<any>;
 
+const USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const ACCEPT_HTML = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8';
+const ACCEPT_LANGUAGE = 'ja,en-US;q=0.9,en;q=0.8';
+const FETCH_TIMEOUT_MS = 60000;
+
+/** 通过 Electron 的 net 模块获取页面 */
+async function fetchViaElectron(proxiedUrl: string, originalUrl: string): Promise<string> {
+  if (!window.electronAPI?.fetch) {
+    throw new Error('Electron API 未正确加载，请检查 preload 脚本');
+  }
+  const headers: Record<string, string> = {
+    'User-Agent': USER_AGENT,
+    Accept: ACCEPT_HTML,
+    'Accept-Language': ACCEPT_LANGUAGE,
+    'Accept-Encoding': 'gzip, deflate, br',
+    Referer: new URL(originalUrl).origin,
+  };
+  const response = await window.electronAPI.fetch(proxiedUrl, {
+    method: 'GET',
+    headers,
+    timeout: FETCH_TIMEOUT_MS,
+  });
+  if (response.status >= 400) {
+    throw new Error(`目标网站返回错误: ${response.status}`);
+  }
+  if (response.data) return response.data;
+  throw new Error('返回的内容为空');
+}
+
+/** 通过 axios 获取页面；仅非浏览器环境补充 User-Agent / Referer / Accept-Encoding */
+async function fetchViaAxios(
+  proxiedUrl: string,
+  originalUrl: string,
+  isBrowser: boolean,
+): Promise<string> {
+  const headers: Record<string, string> = {
+    Accept: ACCEPT_HTML,
+    'Accept-Language': ACCEPT_LANGUAGE,
+  };
+  if (!isBrowser) {
+    headers['User-Agent'] = USER_AGENT;
+    headers['Accept-Encoding'] = 'gzip, deflate, br';
+    headers['Referer'] = originalUrl.startsWith('https://')
+      ? new URL(originalUrl).origin
+      : 'https://kakuyomu.jp/';
+  }
+  const response = await axios.get(proxiedUrl, {
+    timeout: FETCH_TIMEOUT_MS, // 与代理服务器超时一致
+    headers,
+    validateStatus: (status) => status >= 200 && status < 400,
+  });
+  if (response.status >= 400) {
+    throw new Error(`目标网站返回错误: ${response.status}`);
+  }
+  if (!response.data) throw new Error('返回的内容为空');
+
+  // 某些代理服务返回 JSON 包装，需要拆出实际 HTML
+  const contentType = response.headers['content-type'] || '';
+  const dataStr = typeof response.data === 'string' ? response.data : String(response.data);
+  if (contentType.includes('application/json') || dataStr.trim().startsWith('{')) {
+    const html = extractHtmlFromJsonProxyResponse(response.data, dataStr);
+    if (html !== null) return html;
+  }
+  return response.data;
+}
+
+/**
+ * 从 JSON 包装的代理响应中解析出 HTML。支持 contents/data 字段；若实际是 HTML
+ * 被误识别为 JSON，也回退返回。无法识别时返回 null 以继续原样返回 data。
+ */
+function extractHtmlFromJsonProxyResponse(
+  rawData: unknown,
+  dataStr: string,
+): string | null {
+  try {
+    const jsonData = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+    if (jsonData && typeof jsonData === 'object') {
+      const obj = jsonData as { contents?: unknown; data?: unknown };
+      // AllOrigins：内容在 contents
+      if (typeof obj.contents === 'string') return obj.contents;
+      // 其他代理：内容在 data
+      if (typeof obj.data === 'string') return obj.data;
+      // cors.lol 可能直接返回 HTML，却把 Content-Type 标为 JSON
+      if (dataStr.includes('<html') || dataStr.includes('<!DOCTYPE')) return dataStr;
+      console.error('[BaseScraper] JSON 响应中未找到 HTML 内容', {
+        keys: Object.keys(obj),
+        jsonPreview: JSON.stringify(obj).substring(0, 500),
+      });
+    }
+  } catch {
+    // 不是有效的 JSON，可能是 HTML 被误判为 JSON → 回到调用方返回原始 data
+  }
+  return null;
+}
+
+/** 将 axios 错误归一化为用户友好的 Error */
+function normalizeFetchError(error: unknown): Error {
+  if (axios.isAxiosError(error)) {
+    if (error.response) {
+      return new Error(
+        `获取页面失败: ${error.response.status} ${error.response.statusText || error.message}`,
+      );
+    }
+    if (error.request) return new Error('网络连接失败，请检查网络设置');
+    return new Error(`请求配置错误: ${error.message}`);
+  }
+  return error instanceof Error ? error : new Error('获取页面时发生未知错误');
+}
+
 /**
  * 爬虫服务基类
  * 提供通用的错误处理和工具方法
@@ -135,138 +245,20 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
    */
   protected async fetchPage(url: string, _proxyPath?: string): Promise<string> {
     try {
-      // 检测环境
       const { isElectron, isBrowser } = useElectron();
-
-      // 使用代理服务的自动切换功能执行请求
       return await ProxyService.executeWithAutoSwitch(
         url,
-        async (proxiedUrl: string) => {
-          // 在 Electron 环境中，使用 Electron 的 net 模块
-          if (isElectron.value) {
-            if (!window.electronAPI?.fetch) {
-              throw new Error('Electron API 未正确加载，请检查 preload 脚本');
-            }
-
-            const headers: Record<string, string> = {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-              'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-              'Accept-Encoding': 'gzip, deflate, br',
-            };
-
-            // 设置 Referer
-            const urlObj = new URL(url);
-            headers['Referer'] = urlObj.origin;
-
-            const response = await window.electronAPI.fetch(proxiedUrl, {
-              method: 'GET',
-              headers,
-              timeout: 60000,
-            });
-
-            if (response.status >= 400) {
-              throw new Error(`目标网站返回错误: ${response.status}`);
-            }
-
-            if (response.data) {
-              return response.data;
-            }
-
-            throw new Error('返回的内容为空');
-          }
-
-          // 在浏览器环境（非 Electron）或 Node.js/Bun 环境中，使用 axios
-          const headers: Record<string, string> = {
-            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-          };
-
-          // 只在非浏览器环境（如 Node.js/Bun）中设置这些请求头
-          if (!isBrowser.value) {
-            headers['User-Agent'] =
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-            headers['Accept-Encoding'] = 'gzip, deflate, br';
-            headers['Referer'] = url.startsWith('https://')
-              ? new URL(url).origin
-              : 'https://kakuyomu.jp/';
-          }
-
-          const response = await axios.get(proxiedUrl, {
-            timeout: 60000, // 60 秒超时（与代理服务器超时时间一致）
-            headers,
-            validateStatus: (status) => status >= 200 && status < 400,
-          });
-
-          if (response.status >= 400) {
-            throw new Error(`目标网站返回错误: ${response.status}`);
-          }
-
-          if (response.data) {
-            // 检查返回的内容类型
-            const contentType = response.headers['content-type'] || '';
-            const dataStr =
-              typeof response.data === 'string' ? response.data : String(response.data);
-
-            // 检查是否是 JSON 响应（可能是代理服务返回的 JSON 格式）
-            if (contentType.includes('application/json') || dataStr.trim().startsWith('{')) {
-              // 尝试解析 JSON 以获取实际内容
-              try {
-                const jsonData =
-                  typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-
-                // 某些代理服务（如 AllOrigins）返回 JSON，内容在 contents 字段
-                if (jsonData.contents && typeof jsonData.contents === 'string') {
-                  return jsonData.contents;
-                }
-
-                // 某些代理服务返回 JSON，内容在 data 字段
-                if (jsonData.data && typeof jsonData.data === 'string') {
-                  return jsonData.data;
-                }
-
-                // cors.lol 可能直接返回 HTML（即使 Content-Type 是 JSON）
-                // 检查是否包含 HTML 标签
-                if (dataStr.includes('<html') || dataStr.includes('<!DOCTYPE')) {
-                  return dataStr;
-                }
-
-                console.error('[BaseScraper] JSON 响应中未找到 HTML 内容', {
-                  keys: Object.keys(jsonData),
-                  jsonPreview: JSON.stringify(jsonData).substring(0, 500),
-                });
-              } catch {
-                // 不是有效的 JSON，可能是 HTML 但被误判为 JSON
-              }
-            }
-
-            return response.data;
-          }
-
-          throw new Error('返回的内容为空');
-        },
+        (proxiedUrl: string) =>
+          isElectron.value
+            ? fetchViaElectron(proxiedUrl, url)
+            : fetchViaAxios(proxiedUrl, url, isBrowser.value),
         {
           skipInternalProxy: isElectron.value, // Electron 环境不使用内部代理路径
           maxRetries: 3,
         },
       );
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        if (error.response) {
-          // 服务器返回了错误状态码
-          throw new Error(
-            `获取页面失败: ${error.response.status} ${error.response.statusText || error.message}`,
-          );
-        } else if (error.request) {
-          // 请求已发出但没有收到响应
-          throw new Error('网络连接失败，请检查网络设置');
-        } else {
-          // 请求配置出错
-          throw new Error(`请求配置错误: ${error.message}`);
-        }
-      }
-      throw error instanceof Error ? error : new Error('获取页面时发生未知错误');
+      throw normalizeFetchError(error);
     }
   }
 

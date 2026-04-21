@@ -430,66 +430,71 @@ export function parseTextForHighlighting(
     return [{ type: 'text', content: text }];
   }
 
-  // 计算角色在文本中的本地出现次数（用于排序）
+  // 统计本地角色命中次数，用于同位置多角色的排序
+  const localScores = computeLocalCharacterScores(allMatches);
+
+  // 先按 index 升序、同 index 下长度降序（优先保留较长匹配）
+  allMatches.sort((a, b) => (a.index !== b.index ? a.index - b.index : b.length - a.length));
+
+  // 合并相同位置（相同 index + length）的多角色匹配
+  const positionMap = groupMatchesByPosition(allMatches);
+
+  // 对每个位置的角色列表按「上下文 + 本地」得分降序排序
+  sortCharactersWithinPosition(positionMap, contextScores, localScores);
+
+  // 过滤不同位置之间的重叠
+  const filteredMatches = filterOverlappingMatches(positionMap);
+
+  return buildHighlightNodes(text, filteredMatches);
+}
+
+/** 统计 character 类型匹配的出现次数 */
+function computeLocalCharacterScores(
+  allMatches: MatchResult<Terminology | CharacterSetting>[],
+): Map<string, number> {
   const localScores = new Map<string, number>();
   for (const match of allMatches) {
-    if (match.type === 'character') {
-      const char = match.item as CharacterSetting;
-      const currentScore = localScores.get(char.id) || 0;
-      localScores.set(char.id, currentScore + 1);
-    }
+    if (match.type !== 'character') continue;
+    const char = match.item as CharacterSetting;
+    localScores.set(char.id, (localScores.get(char.id) || 0) + 1);
   }
+  return localScores;
+}
 
-  // 解决重叠问题并合并相同位置的多角色匹配
-  // 1. 按索引排序
-  // 2. 索引相同时按长度降序排序（优先保留较长的匹配）
-  allMatches.sort((a, b) => {
-    if (a.index !== b.index) {
-      return a.index - b.index;
-    }
-    return b.length - a.length;
-  });
+interface PositionEntry {
+  match: MatchResult<Terminology | CharacterSetting>;
+  characters: CharacterSetting[];
+}
 
-  // 合并相同位置的多个角色匹配
-  // Map<positionKey, { match: MatchResult, characters: CharacterSetting[] }>
-  const positionMap = new Map<
-    string,
-    {
-      match: MatchResult<Terminology | CharacterSetting>;
-      characters: CharacterSetting[];
-    }
-  >();
-
+/** 按 index-length 合并相同位置的多角色匹配；术语位置不合并 */
+function groupMatchesByPosition(
+  allMatches: MatchResult<Terminology | CharacterSetting>[],
+): Map<string, PositionEntry> {
+  const positionMap = new Map<string, PositionEntry>();
   for (const match of allMatches) {
     const positionKey = `${match.index}-${match.length}`;
-
     if (match.type === 'character') {
       const char = match.item as CharacterSetting;
       const existing = positionMap.get(positionKey);
-
       if (existing) {
-        // 如果已存在，添加角色到列表（避免重复）
         const charIdSet = new Set(existing.characters.map((c) => c.id));
-        if (!charIdSet.has(char.id)) {
-          existing.characters.push(char);
-        }
+        if (!charIdSet.has(char.id)) existing.characters.push(char);
       } else {
-        // 创建新条目
-        positionMap.set(positionKey, {
-          match,
-          characters: [char],
-        });
+        positionMap.set(positionKey, { match, characters: [char] });
       }
     } else {
-      // 术语：直接添加，不合并
-      positionMap.set(positionKey, {
-        match,
-        characters: [],
-      });
+      positionMap.set(positionKey, { match, characters: [] });
     }
   }
+  return positionMap;
+}
 
-  // 对每个位置的角色列表按出现次数排序（上下文得分 + 本地得分）
+/** 对每个位置内 ≥2 个角色按（上下文 + 本地）得分降序排序 */
+function sortCharactersWithinPosition(
+  positionMap: Map<string, PositionEntry>,
+  contextScores: Map<string, number> | undefined,
+  localScores: Map<string, number>,
+): void {
   for (const entry of positionMap.values()) {
     if (entry.characters.length > 1) {
       // 按得分降序排序（出现次数多的在前）
@@ -498,102 +503,98 @@ export function parseTextForHighlighting(
       );
     }
   }
+}
 
-  // 过滤重叠匹配（不同位置之间的重叠）
-  const filteredMatches: Array<{
-    match: MatchResult<Terminology | CharacterSetting>;
-    characters: CharacterSetting[];
-  }> = [];
+/** 判断两段 [start, end) 区间是否重叠（允许相邻） */
+function rangesOverlap(
+  startA: number,
+  endA: number,
+  startB: number,
+  endB: number,
+): boolean {
+  return (
+    (startA >= startB && startA < endB) ||
+    (endA > startB && endA <= endB) ||
+    (startA <= startB && endA >= endB)
+  );
+}
 
+/** 过滤不同位置之间的重叠（保留先出现的匹配） */
+function filterOverlappingMatches(positionMap: Map<string, PositionEntry>): PositionEntry[] {
+  const filteredMatches: PositionEntry[] = [];
   for (const entry of positionMap.values()) {
-    let hasOverlap = false;
-
-    for (const existing of filteredMatches) {
-      const currentEnd = entry.match.index + entry.match.length;
+    const currentEnd = entry.match.index + entry.match.length;
+    const hasOverlap = filteredMatches.some((existing) => {
       const existingEnd = existing.match.index + existing.match.length;
-
-      // 检查是否有重叠（但允许相同位置的多个角色）
-      if (
-        entry.match.index !== existing.match.index ||
-        entry.match.length !== existing.match.length
-      ) {
-        if (
-          (entry.match.index >= existing.match.index && entry.match.index < existingEnd) ||
-          (currentEnd > existing.match.index && currentEnd <= existingEnd) ||
-          (entry.match.index <= existing.match.index && currentEnd >= existingEnd)
-        ) {
-          hasOverlap = true;
-          break;
-        }
+      // 允许相同位置的多角色
+      if (entry.match.index === existing.match.index && entry.match.length === existing.match.length) {
+        return false;
       }
-    }
-
-    if (!hasOverlap) {
-      filteredMatches.push(entry);
-    }
+      return rangesOverlap(entry.match.index, currentEnd, existing.match.index, existingEnd);
+    });
+    if (!hasOverlap) filteredMatches.push(entry);
   }
-
-  // 再次按索引排序（确保顺序正确）
   filteredMatches.sort((a, b) => a.match.index - b.match.index);
+  return filteredMatches;
+}
 
-  // 构建节点数组
+/** 将匹配区间与其间的普通文本组装成 HighlightNode 数组 */
+function buildHighlightNodes(text: string, filteredMatches: PositionEntry[]): HighlightNode[] {
   const nodes: HighlightNode[] = [];
   let lastIndex = 0;
-
   for (const entry of filteredMatches) {
     const match = entry.match;
-
-    // 添加匹配项前面的普通文本
     if (match.index > lastIndex) {
-      nodes.push({
-        type: 'text',
-        content: text.substring(lastIndex, match.index),
-      });
+      nodes.push({ type: 'text', content: text.substring(lastIndex, match.index) });
     }
-
-    // 添加匹配项
     if (match.type === 'term') {
-      nodes.push({
-        type: 'term',
-        content:
-          (match as MatchResult<Terminology>).matchedText ||
-          Array.from(text)
-            .slice(match.index, match.index + match.length)
-            .join(''), // 使用原始文本中的内容
-        term: match.item as Terminology,
-        // 如果有重叠的角色，也包含在节点中
-        ...(entry.characters.length > 0 ? { characters: entry.characters } : {}),
-      });
-    } else {
-      // 角色匹配：包含所有匹配的角色
-      const characters = entry.characters;
-      if (characters.length > 0) {
-        const firstCharacter = characters[0];
-        nodes.push({
-          type: 'character',
-          content:
-            (match as MatchResult<CharacterSetting>).matchedText ||
-            Array.from(text)
-              .slice(match.index, match.index + match.length)
-              .join(''), // 使用原始文本中的内容
-          ...(firstCharacter ? { character: firstCharacter } : {}), // 第一个角色用于向后兼容
-          characters: characters, // 所有匹配的角色
-        });
-      }
+      nodes.push(buildTermNode(text, match as MatchResult<Terminology>, entry.characters));
+    } else if (entry.characters.length > 0) {
+      nodes.push(
+        buildCharacterNode(text, match as MatchResult<CharacterSetting>, entry.characters),
+      );
     }
-
     lastIndex = match.index + match.length;
   }
-
-  // 添加剩余的普通文本
   if (lastIndex < text.length) {
-    nodes.push({
-      type: 'text',
-      content: text.substring(lastIndex),
-    });
+    nodes.push({ type: 'text', content: text.substring(lastIndex) });
   }
-
   return nodes;
+}
+
+/** 构造 term 节点，使用 matchedText（若存在）否则回退到原文切片 */
+function buildTermNode(
+  text: string,
+  match: MatchResult<Terminology>,
+  characters: CharacterSetting[],
+): HighlightNode {
+  const content =
+    match.matchedText ||
+    Array.from(text).slice(match.index, match.index + match.length).join('');
+  return {
+    type: 'term',
+    content,
+    term: match.item,
+    ...(characters.length > 0 ? { characters } : {}),
+  };
+}
+
+/** 构造 character 节点；首个角色进 character 字段以向后兼容 */
+function buildCharacterNode(
+  text: string,
+  match: MatchResult<CharacterSetting>,
+  characters: CharacterSetting[],
+): HighlightNode {
+  const content =
+    match.matchedText ||
+    Array.from(text).slice(match.index, match.index + match.length).join('');
+  const firstCharacter = characters[0];
+  return {
+    type: 'character',
+    content,
+    ...(firstCharacter ? { character: firstCharacter } : {}),
+    characters,
+  };
 }
 
 /**
