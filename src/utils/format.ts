@@ -76,6 +76,20 @@ export function formatRelativeBookDate(date: Date | string): string {
 }
 
 /**
+ * 格式化文件大小为易读字符串（B / KB / MB / GB）。
+ * @param bytes 字节数
+ * @param fractionDigits 小数位数，默认 2
+ * @returns 格式化后的字符串（如：1.50 KB, 2.34 MB）
+ */
+export function formatFileSize(bytes: number, fractionDigits = 2): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(fractionDigits)} ${sizes[i]}`;
+}
+
+/**
  * 将日期格式化为 YYYY-MM-DD 字符串。无效日期或空值返回空字符串。
  */
 export function formatDate(date: Date | string | undefined | null): string {

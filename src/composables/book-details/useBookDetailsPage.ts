@@ -1319,7 +1319,10 @@ function createBookDetailsPageContext() {
     }
   });
 
+  // 调用侧与 useKeyboardShortcuts 内部 opts 解构字段一一对应（API 契约），
+  // 看起来重复但无法合并：前者是跨 composable 依赖注入，后者是实现内局部变量。
   const { handleKeydown, handleClick, handleMouseMove, handleScroll } = useKeyboardShortcuts({
+    // fallow-ignore-next-line code-duplication
     isSearchVisible,
     toggleSearch,
     showReplace,

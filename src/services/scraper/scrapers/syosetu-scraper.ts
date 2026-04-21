@@ -9,6 +9,20 @@ import {
 } from '../core/cheerio-text-extract';
 
 /**
+ * 从一批 Cheerio 链接/节点中提取 trim 后的文本，
+ * 去重后追加到 `tags` 数组（仅在文本非空、且不重复时 push）。
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function collectUniqueTagTexts($: cheerio.CheerioAPI, nodes: cheerio.Cheerio<any>, tags: string[]): void {
+  nodes.each((_, el) => {
+    const tagText = $(el).text().trim();
+    if (tagText && !tags.includes(tagText)) {
+      tags.push(tagText);
+    }
+  });
+}
+
+/**
  * syosetu.org 小说爬虫服务
  * 用于从 syosetu.org 获取和解析小说信息
  */
@@ -164,13 +178,12 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
       }
 
       // 移除段落内的链接（可能是导航链接）
-      $p.find('a').each((_, linkEl) => {
-        const $link = $(linkEl);
-        const linkText = $link.text().trim();
-        if (/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(linkText)) {
-          $link.remove();
-        }
-      });
+      this.removeNavigationLinks(
+        $,
+        $p,
+        'a',
+        /目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</,
+      );
 
       // 提取段落文本，保留内部格式（如 <br> 换行）
       const extractedText = extractParagraphText($, $p);
@@ -376,23 +389,13 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
 
       // 如果找到了标签，也尝试从该 div 中查找所有 alert_color 链接（以防万一）
       if (tags.length === 0) {
-        firstSsDiv.find('a.alert_color').each((_, el) => {
-          const tagText = $(el).text().trim();
-          if (tagText && !tags.includes(tagText)) {
-            tags.push(tagText);
-          }
-        });
+        collectUniqueTagTexts($, firstSsDiv.find('a.alert_color'), tags);
       }
     }
 
     // 回退到原有的选择器
     if (tags.length === 0) {
-      $('.tag, .novel_tag, [class*="tag"]').each((_, el) => {
-        const tagText = $(el).text().trim();
-        if (tagText && !tags.includes(tagText)) {
-          tags.push(tagText);
-        }
-      });
+      collectUniqueTagTexts($, $('.tag, .novel_tag, [class*="tag"]'), tags);
     }
 
     // 提取章节列表和卷信息

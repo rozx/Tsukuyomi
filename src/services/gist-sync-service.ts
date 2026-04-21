@@ -7,7 +7,7 @@ import { SyncType } from 'src/models/sync';
 import type { CoverHistoryItem } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import { compressString, decompressString } from 'src/utils/compression';
-import { serializeDates } from 'src/utils/serialize-dates';
+import { serializeDates, deserializeDates as deserializeDatesUtil } from 'src/utils/serialize-dates';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import { MANIFEST_FILE_NAME } from 'src/models/manifest';
@@ -727,6 +727,46 @@ export class GistSyncService {
   }
 
   /**
+   * 分批创建 Gist 的完整流程：第一批用 create，后续批次用 update。
+   * 两处调用点（回退路径 / 新建路径的多批分支）共用，避免重复 "create + 分批循环" 骨架。
+   *
+   * @param createEntries 过滤 null 后的待创建文件 entries
+   * @param totalCreateBatches 总批次数（由调用方预先计算，用于错误信息与进度回调）
+   * @param onBatchProgress 可选：每批开始前上报进度（第一批 batchIndex=0，后续 i/BATCH_SIZE）
+   * @returns 首次 create 返回的 gistId / gistUrl
+   */
+  private async runBatchedGistCreate(
+    createEntries: [string, { content: string }][],
+    totalCreateBatches: number,
+    onBatchProgress?: (batchIndex: number) => void,
+  ): Promise<{ gistId: string | undefined; gistUrl: string | undefined }> {
+    if (!this.octokit) {
+      throw new Error('Octokit 客户端未初始化');
+    }
+
+    // 第一批：创建 Gist
+    if (onBatchProgress) onBatchProgress(0);
+    const firstBatchFiles = Object.fromEntries(createEntries.slice(0, CREATE_BATCH_SIZE));
+    const response = await this.octokit.rest.gists.create({
+      description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
+      public: false,
+      files: firstBatchFiles,
+    });
+    const gistId = response.data.id;
+    const gistUrl = response.data.html_url;
+
+    // 后续批次：更新 Gist
+    for (let i = CREATE_BATCH_SIZE; i < createEntries.length; i += CREATE_BATCH_SIZE) {
+      const batchIndex = Math.floor(i / CREATE_BATCH_SIZE);
+      const batchFiles = Object.fromEntries(createEntries.slice(i, i + CREATE_BATCH_SIZE));
+      if (onBatchProgress) onBatchProgress(batchIndex);
+      await this.runCreateBatchUpdate(gistId!, batchFiles, batchIndex, totalCreateBatches);
+    }
+
+    return { gistId, gistUrl };
+  }
+
+  /**
    * 执行 Gist 批量创建的后续 update 批次，失败时统一打印 + 抛出一致性错误。
    * 封装两处重复的 try/catch 块（创建新 Gist 的续批 / 分批创建的续批）。
    */
@@ -883,47 +923,11 @@ export class GistSyncService {
   }
 
   /**
-   * 需要从 ISO 字符串反序列化为 Date 对象的字段名白名单。
-   * 只有这些字段中的 ISO 日期字符串会被转换，避免误将小说内容中的日期字符串转换为 Date 对象。
-   */
-  private static readonly DATE_FIELD_NAMES = new Set([
-    'lastEdited',
-    'createdAt',
-    'addedAt',
-    'lastUpdated',
-  ]);
-
-  /**
-   * 将序列化的日期字符串转换回 Date 对象（仅限白名单字段）
+   * 将序列化的日期字符串转换回 Date 对象（仅限白名单字段）。
+   * 委托给 `utils/serialize-dates` 的共享实现，避免重复维护白名单。
    */
   private deserializeDates<T>(obj: T, parentKey?: string): T {
-    if (obj === null || obj === undefined) {
-      return obj;
-    }
-
-    // 只在白名单字段中将 ISO 日期字符串转换为 Date 对象
-    if (
-      typeof obj === 'string' &&
-      parentKey &&
-      GistSyncService.DATE_FIELD_NAMES.has(parentKey) &&
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(obj)
-    ) {
-      return new Date(obj) as unknown as T;
-    }
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => this.deserializeDates(item, parentKey)) as unknown as T;
-    }
-
-    if (typeof obj === 'object') {
-      const deserialized = {} as T;
-      for (const [key, value] of Object.entries(obj)) {
-        (deserialized as Record<string, unknown>)[key] = this.deserializeDates(value, key);
-      }
-      return deserialized;
-    }
-
-    return obj;
+    return deserializeDatesUtil(obj, parentKey);
   }
 
   /**
@@ -1447,25 +1451,11 @@ export class GistSyncService {
         if (!gistUrl) {
           // 尝试创建新 Gist（使用批量创建，避免单次请求过大）
           const createEntries = GistSyncService.toNonNullCreateEntries(files);
-
-          // 第一批：创建 Gist
-          const firstBatchFiles = Object.fromEntries(createEntries.slice(0, CREATE_BATCH_SIZE));
-          const response = await this.octokit.rest.gists.create({
-            description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
-            public: false,
-            files: firstBatchFiles,
-          });
-          gistId = response.data.id;
-          gistUrl = response.data.html_url;
-          isRecreated = true;
-
-          // 后续批次：更新 Gist
           const totalCreateBatches = Math.ceil(createEntries.length / CREATE_BATCH_SIZE);
-          for (let i = CREATE_BATCH_SIZE; i < createEntries.length; i += CREATE_BATCH_SIZE) {
-            const batchIndex = Math.floor(i / CREATE_BATCH_SIZE);
-            const batchFiles = Object.fromEntries(createEntries.slice(i, i + CREATE_BATCH_SIZE));
-            await this.runCreateBatchUpdate(gistId!, batchFiles, batchIndex, totalCreateBatches);
-          }
+          const created = await this.runBatchedGistCreate(createEntries, totalCreateBatches);
+          gistId = created.gistId;
+          gistUrl = created.gistUrl;
+          isRecreated = true;
         }
       } else {
         // 创建新 Gist（使用批量创建，避免单次请求过大）
@@ -1491,40 +1481,25 @@ export class GistSyncService {
         } else {
           // 文件数量较多，分批创建：第一批用 create，后续用 update
           const totalCreateBatches = Math.ceil(createEntries.length / CREATE_BATCH_SIZE);
-
-          if (onProgress) {
-            onProgress({
-              current: totalItems - totalCreateBatches,
-              total: totalItems,
-              message: `正在创建 Gist（批次 1/${totalCreateBatches}）...`,
-            });
-          }
-
-          // 第一批：创建 Gist
-          const firstBatchFiles = Object.fromEntries(createEntries.slice(0, CREATE_BATCH_SIZE));
-          const response = await this.octokit.rest.gists.create({
-            description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
-            public: false,
-            files: firstBatchFiles,
-          });
-          gistId = response.data.id;
-          gistUrl = response.data.html_url;
-
-          // 后续批次：更新 Gist
-          for (let i = CREATE_BATCH_SIZE; i < createEntries.length; i += CREATE_BATCH_SIZE) {
-            const batchIndex = Math.floor(i / CREATE_BATCH_SIZE);
-            const batchFiles = Object.fromEntries(createEntries.slice(i, i + CREATE_BATCH_SIZE));
-
-            if (onProgress) {
+          const created = await this.runBatchedGistCreate(
+            createEntries,
+            totalCreateBatches,
+            (batchIndex) => {
+              if (!onProgress) return;
+              // 第一批（batchIndex=0）与后续批次的 current 偏移公式不同，保留原有行为
+              const current =
+                batchIndex === 0
+                  ? totalItems - totalCreateBatches
+                  : totalItems - totalCreateBatches + batchIndex + 1;
               onProgress({
-                current: totalItems - totalCreateBatches + batchIndex + 1,
+                current,
                 total: totalItems,
                 message: `正在创建 Gist（批次 ${batchIndex + 1}/${totalCreateBatches}）...`,
               });
-            }
-
-            await this.runCreateBatchUpdate(gistId!, batchFiles, batchIndex, totalCreateBatches);
-          }
+            },
+          );
+          gistId = created.gistId;
+          gistUrl = created.gistUrl;
         }
 
         // 更新进度：创建完成

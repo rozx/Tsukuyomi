@@ -13,6 +13,7 @@ import {
 import {
   assertAliasesNotBlank,
   normalizeAliasList,
+  requireCharacterContext,
   resolveCharacterForTool,
   serializeCharacterForTool,
 } from './character-tool-helpers';
@@ -325,7 +326,6 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
       const parsedArgs = parseToolArgs<{
         character_id: string;
         name?: string;
@@ -335,14 +335,8 @@ export const characterTools: ToolDefinition[] = [
         speaking_style?: string;
         aliases?: Array<{ name: string; translation: string }>;
       }>(args);
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
-      const { character_id, name, translation, sex, description, speaking_style, aliases } =
-        parsedArgs;
-      if (!character_id) {
-        throw new Error('角色 ID 不能为空');
-      }
+      const { bookId, onAction, character_id } = requireCharacterContext(context, parsedArgs);
+      const { name, translation, sex, description, speaking_style, aliases } = parsedArgs;
       if (name !== undefined && !name.trim()) {
         throw new Error('角色名称不能为空');
       }
@@ -425,15 +419,8 @@ export const characterTools: ToolDefinition[] = [
       },
     },
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
       const parsedArgs = parseToolArgs<{ character_id: string }>(args);
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
-      const { character_id } = parsedArgs;
-      if (!character_id) {
-        throw new Error('角色 ID 不能为空');
-      }
+      const { bookId, onAction, character_id } = requireCharacterContext(context, parsedArgs);
 
       // 在删除前获取角色信息，以便在 toast 中显示详细信息和 revert
       const { character, previousData } = resolveCharacterForTool(bookId, character_id);

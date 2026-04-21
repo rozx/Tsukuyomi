@@ -6,6 +6,7 @@ import type {
   ParsedVolumeInfo,
 } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
+import { visitCheerioContents } from '../core/cheerio-text-extract';
 
 /**
  * Kakuyomu Apollo State 数据结构
@@ -125,15 +126,13 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
       throw new Error('无法找到章节正文内容');
     }
 
-    // 移除导航链接等不需要的元素
-    contentElement.find('a[href*="episodes"]').each((_, linkEl) => {
-      const $link = $(linkEl);
-      const linkText = $link.text().trim();
-      // 移除导航链接（如"前の話"、"次の話"等）
-      if (/前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(linkText)) {
-        $link.remove();
-      }
-    });
+    // 移除导航链接（如"前の話"、"次の話"等）
+    this.removeNavigationLinks(
+      $,
+      contentElement,
+      'a[href*="episodes"]',
+      /前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</,
+    );
 
     const extractText = (el: cheerio.Cheerio<any>) => this.extractTextFromElement($, el);
 
@@ -399,47 +398,28 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
    * 从 DOM 元素中递归提取纯文本，保留 <br> 换行，将 <ruby> 注音转为 漢字(かんじ) 格式
    */
   private extractTextFromElement($: cheerio.CheerioAPI, element: cheerio.Cheerio<any>): string {
-    let text = '';
-
-    element.contents().each((_, node: any) => {
-      const nodeType = String(node.type);
-      if (nodeType === 'text') {
-        text += $(node).text();
-      } else if (nodeType === 'tag') {
-        const tagName = (node.tagName?.toLowerCase() || '') as string;
-
-        // 跳过 <rp> 括号标签（由下方 ruby 处理统一添加）
-        if (tagName === 'rp') return;
-
-        if (tagName === 'br') {
-          text += '\n';
-        } else if (tagName === 'ruby') {
-          // <ruby>漢字<rt>かんじ</rt></ruby> → 漢字(かんじ)
-          const $ruby = $(node);
-          const rt = $ruby.find('rt').first().text().trim();
-          // 提取 ruby 内非 rt/rp 的文本作为原文
-          const base = $ruby
-            .contents()
-            .filter((_, child: any) => {
-              const tag = child.tagName?.toLowerCase();
-              return tag !== 'rt' && tag !== 'rp';
-            })
-            .text()
-            .trim();
-          text += rt ? `${base}(${rt})` : base;
-        } else if (tagName === 'rt') {
-          // rt 在非 ruby 上下文中被单独遍历时跳过（正常情况由 ruby 分支处理）
-          return;
-        } else {
-          const innerText = this.extractTextFromElement($, $(node));
-          if (innerText) {
-            text += innerText;
-          }
-        }
+    return visitCheerioContents($, element, ({ $node, tagName, recurse }) => {
+      // 跳过 <rp> 括号标签（由下方 ruby 处理统一添加）；
+      // rt 在非 ruby 上下文中被单独遍历时也跳过（正常情况由 ruby 分支处理）
+      if (tagName === 'rp' || tagName === 'rt') return '';
+      if (tagName === 'br') return '\n';
+      if (tagName === 'ruby') {
+        // <ruby>漢字<rt>かんじ</rt></ruby> → 漢字(かんじ)
+        const rt = $node.find('rt').first().text().trim();
+        // 提取 ruby 内非 rt/rp 的文本作为原文
+        const base = $node
+          .contents()
+          .filter((_, child: any) => {
+            const tag = child.tagName?.toLowerCase();
+            return tag !== 'rt' && tag !== 'rp';
+          })
+          .text()
+          .trim();
+        return rt ? `${base}(${rt})` : base;
       }
+      const innerText = recurse();
+      return innerText ? innerText : '';
     });
-
-    return text;
   }
 
   /**

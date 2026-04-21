@@ -18,7 +18,7 @@
  * - chapter 因为一章本身就是多 chunk 的一次完整嵌入,每次只处理一个 chapter,不与 memory 同批
  */
 
-import { dispatchCustomEvent } from 'src/utils/dispatch-custom-event';
+import { dispatchCustomEvent, subscribeCustomEvent } from 'src/utils/dispatch-custom-event';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import {
   getMemoryByIdFromDB,
@@ -151,9 +151,7 @@ export class EmbeddingQueue {
     type: 'progress' | 'batch-complete' | 'error' | 'idle',
     listener: (event: CustomEvent) => void,
   ): () => void {
-    const handler = (e: Event) => listener(e as CustomEvent);
-    this.events.addEventListener(type, handler);
-    return () => this.events.removeEventListener(type, handler);
+    return subscribeCustomEvent(this.events, type, listener);
   }
 
   private static dispatch(type: string, detail?: unknown): void {

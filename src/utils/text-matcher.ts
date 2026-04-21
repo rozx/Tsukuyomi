@@ -92,6 +92,39 @@ function removeFuriganaWithMap(text: string): FuriganaMapResult {
   };
 }
 
+/**
+ * 根据位置/长度映射，将去注音文本中的正则匹配位置还原到原始文本。
+ * @param text 原始文本
+ * @param matchedText 去注音文本里匹配到的子串
+ * @param matchIndex 去注音文本里的匹配起点
+ * @param positionMap 去注音 → 原始位置映射
+ * @param lengthMap 去注音 → 原始长度映射（含注音）
+ */
+function mapMatchToOriginal(
+  text: string,
+  matchedText: string,
+  matchIndex: number,
+  positionMap: number[],
+  lengthMap: number[],
+): { originalIndex: number; originalLength: number; matchedOriginalText: string } {
+  const originalIndex = positionMap[matchIndex] ?? matchIndex;
+  let originalLength = 0;
+  for (let i = 0; i < matchedText.length; i++) {
+    originalLength += lengthMap[matchIndex + i] ?? 1;
+  }
+  const matchedOriginalText = text.substring(originalIndex, originalIndex + originalLength);
+  return { originalIndex, originalLength, matchedOriginalText };
+}
+
+/**
+ * 将一组名称构建成按长度降序的交替正则，优先匹配较长名称。
+ */
+function buildNameAlternationRegex(validNames: Set<string>): RegExp {
+  const sortedNames = Array.from(validNames).sort((a, b) => b.length - a.length);
+  const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
+  return new RegExp(`(${namePatterns})`, 'g');
+}
+
 export interface MatchResult<T> {
   item: T;
   matchedName: string;
@@ -149,9 +182,7 @@ export function matchTermsInText(
   if (validNames.size === 0) return [];
 
   // 按长度降序排序，优先匹配较长的名称
-  const sortedNames = Array.from(validNames).sort((a, b) => b.length - a.length);
-  const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
-  const regex = new RegExp(`(${namePatterns})`, 'g');
+  const regex = buildNameAlternationRegex(validNames);
 
   // 在去除注音的文本中匹配，并使用位置映射
   const { textWithoutFurigana, positionMap, lengthMap } = parsedText || removeFuriganaWithMap(text);
@@ -161,15 +192,14 @@ export function matchTermsInText(
     const matchedText = match[0];
     const term = termMap.get(matchedText);
     if (term) {
-      // 使用位置映射将匹配位置转换回原始文本中的位置
-      const originalIndex = positionMap[match.index] ?? match.index;
-      // 计算原始文本中的匹配长度（考虑注音）
-      let originalLength = 0;
-      for (let i = 0; i < matchedText.length; i++) {
-        originalLength += lengthMap[match.index + i] ?? 1;
-      }
-      // 获取原始文本中的匹配内容（包含注音）
-      const matchedOriginalText = text.substring(originalIndex, originalIndex + originalLength);
+      // 使用位置映射将匹配位置转换回原始文本中的位置（含注音长度）
+      const { originalIndex, originalLength, matchedOriginalText } = mapMatchToOriginal(
+        text,
+        matchedText,
+        match.index,
+        positionMap,
+        lengthMap,
+      );
       matches.push({
         item: term,
         matchedName: matchedText,
@@ -243,9 +273,7 @@ function scanCharacterMatches(
   }
 
   // 2. 准备正则匹配
-  const sortedNames = Array.from(validNames).sort((a, b) => b.length - a.length);
-  const namePatterns = sortedNames.map((name) => escapeRegex(name)).join('|');
-  const regex = new RegExp(`(${namePatterns})`, 'g');
+  const regex = buildNameAlternationRegex(validNames);
 
   // 在去除注音的文本中匹配，并使用位置映射
   const { textWithoutFurigana, positionMap, lengthMap } = parsedText || removeFuriganaWithMap(text);
@@ -257,14 +285,13 @@ function scanCharacterMatches(
   let match: RegExpExecArray | null;
   while ((match = regex.exec(textWithoutFurigana)) !== null) {
     const matchedText = match[0];
-    const originalIndex = positionMap[match.index] ?? match.index;
-
-    let originalLength = 0;
-    for (let i = 0; i < matchedText.length; i++) {
-      originalLength += lengthMap[match.index + i] ?? 1;
-    }
-
-    const matchedOriginalText = text.substring(originalIndex, originalIndex + originalLength);
+    const { originalIndex, originalLength, matchedOriginalText } = mapMatchToOriginal(
+      text,
+      matchedText,
+      match.index,
+      positionMap,
+      lengthMap,
+    );
     rawMatches.push({
       name: matchedText,
       index: originalIndex,

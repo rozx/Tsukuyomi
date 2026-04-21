@@ -50,6 +50,21 @@ function mergeUniqueById<T extends { id: string }>(
   return merged;
 }
 
+// 根据封面 id 与规范化后的 url 查找对应的本地删除时间戳
+// 两处查找都命中时返回较晚的时间戳；任一命中返回该侧；均未命中返回 undefined
+function resolveCoverDeletionRecord(
+  coverId: string,
+  remoteUrl: string,
+  deletedCoverIdsMap: Map<string, number>,
+  deletedCoverUrlsMap: Map<string, number>,
+): number | undefined {
+  const deletionRecordById = deletedCoverIdsMap.get(coverId);
+  const deletionRecordByUrl = remoteUrl ? deletedCoverUrlsMap.get(remoteUrl) : undefined;
+  return deletionRecordById !== undefined && deletionRecordByUrl !== undefined
+    ? Math.max(deletionRecordById, deletionRecordByUrl)
+    : (deletionRecordById ?? deletionRecordByUrl);
+}
+
 // 通用删除记录合并：按 key 去重，保留 deletedAt 更晚的一侧
 // key 返回 null 表示跳过该条目（例如 URL 规范化失败）
 function mergeDeletionsByKey<T extends { deletedAt: number }>(
@@ -1193,12 +1208,12 @@ export class SyncDataService {
             }
           } else {
             // 本地不存在，检查是否在删除记录中
-            const deletionRecordById = deletedCoverIdsMap.get(remoteCover.id);
-            const deletionRecordByUrl = remoteUrl ? deletedCoverUrlsMap.get(remoteUrl) : undefined;
-            const deletionRecord =
-              deletionRecordById !== undefined && deletionRecordByUrl !== undefined
-                ? Math.max(deletionRecordById, deletionRecordByUrl)
-                : (deletionRecordById ?? deletionRecordByUrl);
+            const deletionRecord = resolveCoverDeletionRecord(
+              remoteCover.id,
+              remoteUrl,
+              deletedCoverIdsMap,
+              deletedCoverUrlsMap,
+            );
             if (deletionRecord !== undefined) {
               // 在删除记录中，检查删除时间
               // deletionRecord 是 number 类型（deletedAt 时间戳）
@@ -1897,12 +1912,12 @@ export class SyncDataService {
             : false);
         if (!existsInLocal) {
           // 检查是否在本地删除记录中
-          const deletionRecordById = deletedCoverIdsMap.get(remoteCover.id);
-          const deletionRecordByUrl = remoteUrl ? deletedCoverUrlsMap.get(remoteUrl) : undefined;
-          const deletionRecord =
-            deletionRecordById !== undefined && deletionRecordByUrl !== undefined
-              ? Math.max(deletionRecordById, deletionRecordByUrl)
-              : (deletionRecordById ?? deletionRecordByUrl);
+          const deletionRecord = resolveCoverDeletionRecord(
+            remoteCover.id,
+            remoteUrl,
+            deletedCoverIdsMap,
+            deletedCoverUrlsMap,
+          );
           if (deletionRecord !== undefined && deletionRecord > lastSyncTime) {
             // 本地删除时间晚于上次同步，说明是用户本地删除的，不添加
             continue;

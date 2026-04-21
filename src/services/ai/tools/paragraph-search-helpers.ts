@@ -1,7 +1,7 @@
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService, type ParagraphSearchResult } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
-import type { Novel, Chapter, Volume } from 'src/models/novel';
+import type { Novel, Chapter, Paragraph, Volume } from 'src/models/novel';
 
 export interface ChapterLocation {
   chapter: Chapter;
@@ -198,4 +198,50 @@ export function collectChapterLocationsInRange(
   }
 
   return locations;
+}
+
+/**
+ * 线性扫描 locations 范围内的所有段落，按需懒加载章节内容，
+ * 将满足 `isMatch` 的段落累积进 `collected`（以 paragraph.id 去重），
+ * 直到 collected 的大小达到 `limit` 为止。
+ *
+ * 供 `batch_replace_translations` 等需要顺序收集匹配段落的搜索工具复用，
+ * 避免重复实现「外层 location 循环 → 懒加载 → 内层段落循环 → 预算检查」骨架。
+ */
+export async function collectMatchingParagraphsFromLocations(
+  locations: ChapterLocation[],
+  options: {
+    limit: number;
+    isMatch: (paragraph: Paragraph) => boolean;
+    collected: Map<string, ParagraphSearchResult>;
+  },
+): Promise<void> {
+  const { limit, isMatch, collected } = options;
+  for (const location of locations) {
+    if (collected.size >= limit) break;
+    const { chapter, chapterIndex: cIndex, volume, volumeIndex: vIndex } = location;
+    if (chapter.content === undefined) {
+      const content = await ChapterContentService.loadChapterContent(chapter.id);
+      chapter.content = content || [];
+      chapter.contentLoaded = true;
+    }
+    if (!chapter.content) continue;
+
+    for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+      if (collected.size >= limit) break;
+      const paragraph = chapter.content[pIndex];
+      if (!paragraph) continue;
+      if (collected.has(paragraph.id)) continue;
+      if (!isMatch(paragraph)) continue;
+
+      collected.set(paragraph.id, {
+        paragraph,
+        paragraphIndex: pIndex,
+        chapter,
+        chapterIndex: cIndex,
+        volume,
+        volumeIndex: vIndex,
+      });
+    }
+  }
 }

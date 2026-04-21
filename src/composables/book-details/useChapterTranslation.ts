@@ -719,7 +719,7 @@ export function useChapterTranslation(
     customInstructions: string | undefined;
     chunkSize: number | undefined;
     signal: AbortSignal;
-    onProgress: NonNullable<TranslationServiceOptionsArg['onProgress']>;
+    state: ChapterTranslationState;
     onParagraphTranslation: NonNullable<TranslationServiceOptionsArg['onParagraphTranslation']>;
     onTitleTranslation: NonNullable<TranslationServiceOptionsArg['onTitleTranslation']>;
     onAction: NonNullable<TranslationServiceOptionsArg['onAction']>;
@@ -735,7 +735,19 @@ export function useChapterTranslation(
     allChapterParagraphs: selectedChapterParagraphs.value,
     signal: params.signal,
     aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
-    onProgress: params.onProgress,
+    onProgress: createBulkProgressHandler({
+      taskType: 'translation',
+      taskLabel: '翻译',
+      state: params.state,
+      targetChapterId: params.chapterId,
+      setInFlight: (ids) => {
+        params.state.translatingParagraphIds = ids;
+      },
+      resolveProgress: (_, s) => ({
+        current: s.progress.current,
+        total: s.progress.total,
+      }),
+    }),
     onParagraphTranslation: params.onParagraphTranslation,
     onTitleTranslation: params.onTitleTranslation,
     onAction: params.onAction,
@@ -1030,20 +1042,7 @@ export function useChapterTranslation(
           customInstructions: customInstructions?.translationInstructions,
           chunkSize,
           signal: abortController.signal,
-          onProgress: (progress) => {
-            const newProgress = {
-              current: state.progress.current,
-              total: state.progress.total,
-              message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
-            };
-            state.progress = newProgress;
-            syncProgressToStore('translation', targetChapterId, newProgress);
-            // 更新正在翻译的段落 ID
-            if (progress.currentParagraphs) {
-              state.translatingParagraphIds = new Set(progress.currentParagraphs);
-            }
-            console.debug('翻译进度:', progress);
-          },
+          state,
           onAction: (action) => {
             handleActionInfoToast(action, { severity: 'success', life: 4000, withRevert: true });
           },
@@ -1232,20 +1231,7 @@ export function useChapterTranslation(
           customInstructions: customInstructions?.translationInstructions,
           chunkSize,
           signal: abortController.signal,
-          onProgress: (progress) => {
-            const newProgress = {
-              current: state.progress.current,
-              total: state.progress.total,
-              message: `正在翻译第 ${progress.current}/${progress.total} 部分...`,
-            };
-            state.progress = newProgress;
-            syncProgressToStore('translation', targetChapterId, newProgress);
-            // 更新正在翻译的段落 ID
-            if (progress.currentParagraphs) {
-              state.translatingParagraphIds = new Set(progress.currentParagraphs);
-            }
-            console.debug('翻译进度:', progress);
-          },
+          state,
           onParagraphTranslation: (translations) => {
             applyIncrementalAndTrackCompletion(
               translations,
@@ -1317,74 +1303,142 @@ export function useChapterTranslation(
     await translateAllParagraphs();
   };
 
+  /**
+   * polishAllParagraphs / proofreadAllParagraphs 共享的入口校验 + 运行上下文：
+   * 校验书籍 / 章节 / 模型可用性 + 过滤出有翻译的段落，所有错误路径已通过 toast 反馈。
+   * 返回 null 表示校验失败，调用方应直接 return。
+   */
+  const prepareBulkChapterTask = (
+    taskLabel: '润色' | '校对',
+  ): {
+    targetBook: Novel;
+    targetChapter: Chapter;
+    selectedModel: AIModel;
+    paragraphsWithTranslation: Paragraph[];
+    targetChapterId: string;
+    targetBookId: string;
+    targetParagraphIds: Set<string>;
+    abortController: AbortController;
+    lastAppliedTranslations: Map<string, string>;
+    completedParagraphIds: Set<string>;
+  } | null => {
+    if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
+      return null;
+    }
+    const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
+    if (!selectedModel) {
+      toast.add({
+        severity: 'error',
+        summary: `${taskLabel}失败`,
+        detail: `未找到可用的${taskLabel}模型，请在设置中配置`,
+        life: 3000,
+      });
+      return null;
+    }
+    const paragraphsWithTranslation = selectedChapterParagraphs.value.filter(
+      (para) => !isEmptyParagraph(para.text) && hasParagraphTranslation(para),
+    );
+    if (paragraphsWithTranslation.length === 0) {
+      toast.add({
+        severity: 'error',
+        summary: `${taskLabel}失败`,
+        detail: `没有可${taskLabel}的段落，请先翻译章节`,
+        life: 3000,
+      });
+      return null;
+    }
+    return {
+      targetBook: book.value,
+      targetChapter: selectedChapter.value,
+      selectedModel,
+      paragraphsWithTranslation,
+      targetChapterId: selectedChapter.value.id,
+      targetBookId: book.value.id,
+      targetParagraphIds: new Set(paragraphsWithTranslation.map((para) => para.id)),
+      abortController: new AbortController(),
+      lastAppliedTranslations: new Map<string, string>(),
+      completedParagraphIds: new Set<string>(),
+    };
+  };
+
+  /**
+   * 批量章节任务（translation / polish / proofreading）的 onProgress 回调工厂：
+   * 统一 newProgress 构造、进度同步、inFlight 段落集合更新与 debug 日志输出。
+   * `resolveProgress` 允许 translate 保留已有 state.progress.current/total（由 onParagraphTranslation 推进）
+   * 而非覆盖为 chunk 级进度；polish / proofreading 使用默认 chunk 级进度。
+   */
+  const createBulkProgressHandler = <
+    S extends { progress: { current: number; total: number; message: string } },
+  >(opts: {
+    taskType: 'translation' | 'polish' | 'proofreading';
+    taskLabel: string;
+    state: S;
+    targetChapterId: string;
+    setInFlight: (ids: Set<string>) => void;
+    resolveProgress?: (
+      progress: { current: number; total: number },
+      state: S,
+    ) => { current: number; total: number };
+  }) => {
+    return (progress: {
+      current: number;
+      total: number;
+      currentParagraphs?: string[];
+    }): void => {
+      const resolved = opts.resolveProgress
+        ? opts.resolveProgress(progress, opts.state)
+        : { current: progress.current, total: progress.total };
+      const newProgress = {
+        current: resolved.current,
+        total: resolved.total,
+        message: `正在${opts.taskLabel}第 ${progress.current}/${progress.total} 部分...`,
+      };
+      opts.state.progress = newProgress;
+      syncProgressToStore(opts.taskType, opts.targetChapterId, newProgress);
+      if (progress.currentParagraphs) {
+        opts.setInFlight(new Set(progress.currentParagraphs));
+      }
+      console.debug(`${opts.taskLabel}进度:`, progress);
+    };
+  };
+
   // 润色章节所有段落
   const polishAllParagraphs = async (customInstructions?: {
     translationInstructions?: string;
     polishInstructions?: string;
     proofreadingInstructions?: string;
   }) => {
-    if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
-      return;
-    }
+    const prepared = prepareBulkChapterTask('润色');
+    if (!prepared) return;
+    const {
+      targetBook,
+      selectedModel,
+      paragraphsWithTranslation,
+      targetChapterId,
+      targetBookId,
+      targetParagraphIds,
+      abortController,
+      lastAppliedTranslations,
+      completedParagraphIds,
+    } = prepared;
 
-    // 检查是否有可用的润色模型（使用校对模型配置）
-    const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
-    if (!selectedModel) {
-      toast.add({
-        severity: 'error',
-        summary: '润色失败',
-        detail: '未找到可用的润色模型，请在设置中配置',
-        life: 3000,
-      });
-      return;
-    }
-
-    // 检查段落是否有翻译
-    const paragraphsWithTranslation = selectedChapterParagraphs.value.filter(
-      (para) => !isEmptyParagraph(para.text) && hasParagraphTranslation(para),
-    );
-
-    if (paragraphsWithTranslation.length === 0) {
-      toast.add({
-        severity: 'error',
-        summary: '润色失败',
-        detail: '没有可润色的段落，请先翻译章节',
-        life: 3000,
-      });
-      return;
-    }
-
-    const targetChapterId = selectedChapter.value.id;
-    const targetBookId = book.value.id;
     const state = getOrCreatePolishState(targetChapterId);
-
     state.isPolishing = true;
     state.polishingParagraphIds.clear();
     uiStore.setActiveRightTab('progress');
 
-    const targetParagraphIds = new Set(paragraphsWithTranslation.map((para) => para.id));
-
-    // 初始化进度
     state.progress = {
       current: 0,
       total: targetParagraphIds.size,
       message: '正在初始化润色...',
     };
-
-    // 创建 AbortController 用于取消润色
-    const abortController = new AbortController();
     state.abortController = abortController;
 
-    // 用于跟踪已更新的段落，避免重复更新
-    const lastAppliedTranslations = new Map<string, string>();
-    const completedParagraphIds = new Set<string>();
-
     try {
-      // 获取书籍的 chunk size 设置
-      const chunkSize = book.value?.translationChunkSize;
+      const chunkSize = targetBook.translationChunkSize;
       // 调用润色服务
       const result = await PolishService.polish(paragraphsWithTranslation, selectedModel, {
-        bookId: book.value.id,
+        bookId: targetBookId,
         chapterId: targetChapterId,
         ...(customInstructions?.polishInstructions !== undefined
           ? { customInstructions: customInstructions.polishInstructions }
@@ -1393,20 +1447,15 @@ export function useChapterTranslation(
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
-        onProgress: (progress) => {
-          const newProgress = {
-            current: progress.current,
-            total: progress.total,
-            message: `正在润色第 ${progress.current}/${progress.total} 部分...`,
-          };
-          state.progress = newProgress;
-          syncProgressToStore('polish', targetChapterId, newProgress);
-          // 更新正在润色的段落 ID
-          if (progress.currentParagraphs) {
-            state.polishingParagraphIds = new Set(progress.currentParagraphs);
-          }
-          console.debug('润色进度:', progress);
-        },
+        onProgress: createBulkProgressHandler({
+          taskType: 'polish',
+          taskLabel: '润色',
+          state,
+          targetChapterId,
+          setInFlight: (ids) => {
+            state.polishingParagraphIds = ids;
+          },
+        }),
         onAction: (action) => {
           handleActionInfoToast(action, { severity: 'info' });
         },
@@ -1539,68 +1588,37 @@ export function useChapterTranslation(
     polishInstructions?: string;
     proofreadingInstructions?: string;
   }) => {
-    if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
-      return;
-    }
+    const prepared = prepareBulkChapterTask('校对');
+    if (!prepared) return;
+    const {
+      targetBook,
+      selectedModel,
+      paragraphsWithTranslation,
+      targetChapterId,
+      targetBookId,
+      targetParagraphIds,
+      abortController,
+      lastAppliedTranslations,
+      completedParagraphIds,
+    } = prepared;
 
-    // 检查是否有可用的校对模型
-    const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
-    if (!selectedModel) {
-      toast.add({
-        severity: 'error',
-        summary: '校对失败',
-        detail: '未找到可用的校对模型，请在设置中配置',
-        life: 3000,
-      });
-      return;
-    }
-
-    // 检查段落是否有翻译
-    const paragraphsWithTranslation = selectedChapterParagraphs.value.filter(
-      (para) => !isEmptyParagraph(para.text) && hasParagraphTranslation(para),
-    );
-
-    if (paragraphsWithTranslation.length === 0) {
-      toast.add({
-        severity: 'error',
-        summary: '校对失败',
-        detail: '没有可校对的段落，请先翻译章节',
-        life: 3000,
-      });
-      return;
-    }
-
-    const targetChapterId = selectedChapter.value.id;
-    const targetBookId = book.value.id;
     const state = getOrCreateProofreadingState(targetChapterId);
-
     state.isProofreading = true;
     state.proofreadingParagraphIds.clear();
     uiStore.setActiveRightTab('progress');
 
-    const targetParagraphIds = new Set(paragraphsWithTranslation.map((para) => para.id));
-
-    // 初始化进度
     state.progress = {
       current: 0,
       total: targetParagraphIds.size,
       message: '正在初始化校对...',
     };
-
-    // 创建 AbortController 用于取消校对
-    const abortController = new AbortController();
     state.abortController = abortController;
 
-    // 用于跟踪已更新的段落，避免重复更新
-    const lastAppliedTranslations = new Map<string, string>();
-    const completedParagraphIds = new Set<string>();
-
     try {
-      // 获取书籍的 chunk size 设置
-      const chunkSize = book.value?.translationChunkSize;
+      const chunkSize = targetBook.translationChunkSize;
       // 调用校对服务
       const result = await ProofreadingService.proofread(paragraphsWithTranslation, selectedModel, {
-        bookId: book.value.id,
+        bookId: targetBookId,
         chapterId: targetChapterId,
         ...(customInstructions?.proofreadingInstructions !== undefined
           ? { customInstructions: customInstructions.proofreadingInstructions }
@@ -1609,20 +1627,15 @@ export function useChapterTranslation(
         allChapterParagraphs: selectedChapterParagraphs.value,
         signal: abortController.signal,
         aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
-        onProgress: (progress) => {
-          const newProgress = {
-            current: progress.current,
-            total: progress.total,
-            message: `正在校对第 ${progress.current}/${progress.total} 部分...`,
-          };
-          state.progress = newProgress;
-          syncProgressToStore('proofreading', targetChapterId, newProgress);
-          // 更新正在校对的段落 ID
-          if (progress.currentParagraphs) {
-            state.proofreadingParagraphIds = new Set(progress.currentParagraphs);
-          }
-          console.debug('校对进度:', progress);
-        },
+        onProgress: createBulkProgressHandler({
+          taskType: 'proofreading',
+          taskLabel: '校对',
+          state,
+          targetChapterId,
+          setInFlight: (ids) => {
+            state.proofreadingParagraphIds = ids;
+          },
+        }),
         onAction: (action) => {
           handleActionInfoToast(action, { severity: 'info' });
         },

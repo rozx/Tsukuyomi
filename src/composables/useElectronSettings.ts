@@ -8,6 +8,24 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import { isElectron } from 'src/utils/platform';
 import type { Memory } from 'src/models/memory';
+import type { Novel } from 'src/models/novel';
+
+/**
+ * 汇总导出所需的所有书籍数据：带章节内容的 novels + 扁平 memories。
+ * 被 SPA 端（ImportExportTab.vue）与 Electron 端（useElectronSettings）共用，避免重复样板。
+ */
+export async function loadBooksWithContentAndMemories(
+  books: Novel[],
+): Promise<{ novelsWithContent: Novel[]; memories: Memory[] }> {
+  // 加载所有书籍的章节内容
+  const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(books);
+
+  // 使用批量加载方法加载所有 Memory 数据
+  const bookIds = books.map((book) => book.id);
+  const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+
+  return { novelsWithContent, memories };
+}
 
 /**
  * Electron 环境下的设置导入/导出处理
@@ -21,14 +39,9 @@ export function useElectronSettings() {
   // 处理导出设置请求
   const handleExportRequest = async (filePath: string) => {
     try {
-      // 加载所有书籍的章节内容
-      const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
+      const { novelsWithContent, memories } = await loadBooksWithContentAndMemories(
         booksStore.books,
       );
-
-      // 使用批量加载方法加载所有 Memory 数据
-      const bookIds = booksStore.books.map((book) => book.id);
-      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
 
       // 获取当前设置
       const settings = {

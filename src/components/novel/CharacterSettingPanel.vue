@@ -386,9 +386,12 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       }
     }
 
+    // 与 TerminologyPanel 的导入成功 toast 结构高度相似（onRevert 前序步骤一致），
+    // 但后续恢复更新逻辑各自维护不同字段集合，强行抽公共回调反而更复杂，保留两处实现。
     toast.add({
       severity: 'success',
       summary: '导入成功',
+      // fallow-ignore-next-line code-duplication
       detail: `已导入 ${importedCharacters.length} 个角色设定（新增 ${addedCount} 个，更新 ${updatedCount} 个）`,
       life: 3000,
       onRevert: async () => {

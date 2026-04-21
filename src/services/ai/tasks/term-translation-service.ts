@@ -16,6 +16,7 @@ import {
   buildSpecialInstructionsSection,
   createTaskChunkForwarder,
   createUnifiedAbortController,
+  formatCharacterAliases,
 } from './utils';
 import {
   buildTermTranslationSystemPromptBase,
@@ -220,14 +221,8 @@ export class TermTranslationService {
                   parts.push(`描述：${c.description || '无'}`);
                   parts.push(`说话风格：${c.speakingStyle || '无'}`);
 
-                  if (c.aliases && c.aliases.length > 0) {
-                    const aliasList = c.aliases
-                      .map((a) => `${a.name} → ${a.translation.translation}`)
-                      .join('、');
-                    parts.push(`别名：${aliasList}`);
-                  } else {
-                    parts.push('别名：无');
-                  }
+                  // 别名格式与 context-builder 共享；为空时输出占位符"别名：无"
+                  parts.push(formatCharacterAliases(c.aliases) ?? '别名：无');
                   return parts.join(' | ');
                 })
                 .join('\n');

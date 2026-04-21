@@ -16,6 +16,7 @@ import type { ToolDefinition, ActionInfo, ToolContext } from './types';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
 import {
   collectChapterLocationsInRange,
+  collectMatchingParagraphsFromLocations,
   ensureChaptersLoaded,
   filterValidKeywords,
   resolveBook,
@@ -237,6 +238,29 @@ async function resolveTranslationTarget(
 }
 
 /**
+ * `select_translation` / `remove_translation` 共享的 handler 包装器：
+ * 先调用 resolveTranslationTarget 解析上下文；ok=false 时直接返回软失败 JSON，
+ * ok=true 时把解析结果与原始 context 一并转交给业务回调。
+ *
+ * 封装目的：消除两个 handler 开头一模一样的 resolveTranslationTarget 预处理样板
+ * （含 if (!resolved.ok) return 与同名解构），让各自的 handler 只保留差异部分。
+ */
+function withResolvedTranslationTarget(
+  run: (
+    resolved: Extract<Awaited<ReturnType<typeof resolveTranslationTarget>>, { ok: true }>,
+    context: ToolContext,
+  ) => Promise<string>,
+): (args: Record<string, unknown>, context: ToolContext) => Promise<string> {
+  return async (args, context) => {
+    const resolved = await resolveTranslationTarget(context.bookId, args);
+    if (!resolved.ok) {
+      return resolved.response;
+    }
+    return run(resolved, context);
+  };
+}
+
+/**
  * `update_translation` / `remove_translation` 共享的翻译查找+校验流程：
  * 校验段落是否存在翻译历史 → 按 id 定位目标翻译。
  * 返回 discriminated union：ok=true 提供索引与条目，
@@ -285,6 +309,30 @@ function locateTranslationById(
   }
 
   return { ok: true, index, translation };
+}
+
+/**
+ * `select_translation` / `remove_translation` 共享的参数 schema 构造器。
+ * 两者的 paragraph_id / translation_id 参数结构完全一致，仅 translation_id 的
+ * 描述因动作不同（选择 / 删除）而有差异；通过传入 description 文本复用整个 schema。
+ */
+function buildTranslationIdParametersSchema(
+  translationIdDescription: string,
+): ToolDefinition['definition']['function']['parameters'] {
+  return {
+    type: 'object',
+    properties: {
+      paragraph_id: {
+        type: 'string',
+        description: '段落 ID',
+      },
+      translation_id: {
+        type: 'string',
+        description: translationIdDescription,
+      },
+    },
+    required: ['paragraph_id', 'translation_id'],
+  };
 }
 
 /**
@@ -1044,34 +1092,14 @@ export const paragraphTools: ToolDefinition[] = [
               translationKeywordLower.some((kw) => t.translation?.toLowerCase().includes(kw)),
             );
 
-          outer: for (const location of locations) {
-            const { chapter, chapterIndex: cIndex, volume, volumeIndex: vIndex } = location;
-            if (chapter.content === undefined) {
-              const content = await ChapterContentService.loadChapterContent(chapter.id);
-              chapter.content = content || [];
-              chapter.contentLoaded = true;
-            }
-            if (!chapter.content) continue;
-
-            for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-              if (allResults.size >= max_paragraphs) break outer;
-
-              const paragraph = chapter.content[pIndex];
-              if (!paragraph) continue;
-              if (!paragraph.translations || paragraph.translations.length === 0) continue;
-              if (allResults.has(paragraph.id)) continue;
-              if (!paragraphHasTranslationKeyword(paragraph)) continue;
-
-              allResults.set(paragraph.id, {
-                paragraph,
-                paragraphIndex: pIndex,
-                chapter,
-                chapterIndex: cIndex,
-                volume,
-                volumeIndex: vIndex,
-              });
-            }
-          }
+          await collectMatchingParagraphsFromLocations(locations, {
+            limit: max_paragraphs,
+            collected: allResults,
+            isMatch: (paragraph) =>
+              !!paragraph.translations &&
+              paragraph.translations.length > 0 &&
+              paragraphHasTranslationKeyword(paragraph),
+          });
         }
       }
 
@@ -1387,28 +1415,13 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'select_translation',
         description:
           '选择段落中的某个翻译版本作为当前选中的翻译。用于在翻译历史中切换不同的翻译版本，将指定的翻译版本设置为段落当前使用的翻译。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-            translation_id: {
-              type: 'string',
-              description: '要选择的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
-            },
-          },
-          required: ['paragraph_id', 'translation_id'],
-        },
+        parameters: buildTranslationIdParametersSchema(
+          '要选择的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
+        ),
       },
     },
-    handler: async (args, context) => {
+    handler: withResolvedTranslationTarget(async (resolved, context) => {
       const { onAction } = context;
-      const resolved = await resolveTranslationTarget(context.bookId, args);
-      if (!resolved.ok) {
-        return resolved.response;
-      }
       const { bookId, book, paragraph, paragraph_id, translation_id, booksStore } = resolved;
 
       // 报告读取操作（选择翻译也是一种读取操作）
@@ -1458,7 +1471,7 @@ export const paragraphTools: ToolDefinition[] = [
         previous_selected_id: originalSelectedId || null,
         selected_translation: translation.translation,
       });
-    },
+    }),
   },
   {
     definition: {
@@ -1618,28 +1631,13 @@ export const paragraphTools: ToolDefinition[] = [
         name: 'remove_translation',
         description:
           '从段落中删除指定的翻译版本。用于清理不需要的翻译历史记录。如果删除的是当前选中的翻译，会自动选择其他翻译（优先选择最新的翻译）。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-            translation_id: {
-              type: 'string',
-              description: '要删除的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
-            },
-          },
-          required: ['paragraph_id', 'translation_id'],
-        },
+        parameters: buildTranslationIdParametersSchema(
+          '要删除的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
+        ),
       },
     },
-    handler: async (args, context) => {
+    handler: withResolvedTranslationTarget(async (resolved, context) => {
       const { onAction } = context;
-      const resolved = await resolveTranslationTarget(context.bookId, args);
-      if (!resolved.ok) {
-        return resolved.response;
-      }
       const { bookId, book, paragraph, paragraph_id, translation_id, booksStore } = resolved;
 
       // 验证翻译是否存在
@@ -1694,7 +1692,7 @@ export const paragraphTools: ToolDefinition[] = [
         new_selected_id: paragraph.selectedTranslationId || null,
         remaining_translations: paragraph.translations.length,
       });
-    },
+    }),
   },
   {
     definition: {
@@ -1834,36 +1832,11 @@ export const paragraphTools: ToolDefinition[] = [
       };
 
       const runLinearSearch = async (): Promise<void> => {
-        for (const location of chapterLocations) {
-          if (allResults.size >= max_replacements) break;
-
-          const { chapter, chapterIndex: cIndex, volume, volumeIndex: vIndex } = location;
-          if (chapter.content === undefined) {
-            const content = await ChapterContentService.loadChapterContent(chapter.id);
-            chapter.content = content || [];
-            chapter.contentLoaded = true;
-          }
-
-          if (!chapter.content) continue;
-
-          for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-            if (allResults.size >= max_replacements) break;
-
-            const paragraph = chapter.content[pIndex];
-            if (!paragraph) continue;
-            if (allResults.has(paragraph.id)) continue;
-            if (!paragraphMatchesReplacementCriteria(paragraph)) continue;
-
-            allResults.set(paragraph.id, {
-              paragraph,
-              paragraphIndex: pIndex,
-              chapter,
-              chapterIndex: cIndex,
-              volume,
-              volumeIndex: vIndex,
-            });
-          }
-        }
+        await collectMatchingParagraphsFromLocations(chapterLocations, {
+          limit: max_replacements,
+          collected: allResults,
+          isMatch: paragraphMatchesReplacementCriteria,
+        });
       };
 
       // 第二遍：在加载的章节中搜索翻译文本

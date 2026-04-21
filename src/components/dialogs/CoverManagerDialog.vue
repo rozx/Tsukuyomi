@@ -7,6 +7,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ImageUploadService } from 'src/services/image-upload-service';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { copyTextWithToast } from 'src/utils/clipboard';
+import { formatFileSize } from 'src/utils/format';
 import type { CoverImage } from 'src/models/novel';
 
 const props = defineProps<{
@@ -265,14 +266,7 @@ const handleDelete = async () => {
   });
 };
 
-// 格式化文件大小
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
-};
+// 格式化文件大小（复用 utils/format 的共享实现）
 
 // 复制封面 URL
 const handleCopyUrl = async () => {

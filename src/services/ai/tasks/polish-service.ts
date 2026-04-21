@@ -6,8 +6,8 @@ import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import type { AIProcessingStore } from './utils/task-types';
 import { pickTextTaskOptions, processTextTask } from './utils/text-task-processor';
 import { buildChangedParagraphsExtractCallback } from './utils/paragraph-task-shared';
-import { buildPolishSystemPrompt } from './prompts';
 import {
+  buildPolishSystemPrompt,
   buildSingleParagraphPolishSystemPrompt,
   buildSingleParagraphPolishUserPrompt,
 } from './prompts';

@@ -2,6 +2,7 @@ import { cloneDeep } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import type { CharacterSetting, Novel } from 'src/models/novel';
+import type { ToolContext } from './types';
 
 /** 角色别名入参（工具层使用的扁平结构，翻译已是字符串） */
 export interface CharacterAliasInput {
@@ -76,6 +77,25 @@ export function serializeCharacterForTool(char: CharacterSetting): {
  *
  * 这里统一抽出，返回 `{ book, character, previousData }` 三元组，调用方按需取用。
  */
+/**
+ * update_character / delete_character handler 的共用校验前置代码：
+ * 从 context 读取 bookId / onAction，从 parsedArgs 读取 character_id，缺失则抛错。
+ */
+export function requireCharacterContext<T extends { character_id: string }>(
+  context: ToolContext,
+  parsedArgs: T,
+): { bookId: string; onAction: ToolContext['onAction']; character_id: string } {
+  const { bookId, onAction } = context;
+  if (!bookId) {
+    throw new Error('书籍 ID 不能为空');
+  }
+  const character_id = parsedArgs.character_id;
+  if (!character_id) {
+    throw new Error('角色 ID 不能为空');
+  }
+  return { bookId, onAction, character_id };
+}
+
 export function resolveCharacterForTool(
   bookId: string,
   characterId: string,

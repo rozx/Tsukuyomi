@@ -5,7 +5,7 @@ import type { Chapter, Novel } from 'src/models/novel';
 /**
  * 在书籍中查找指定 ID 的章节，未找到返回 null
  */
-export function findChapterInBook(book: Novel, chapterId: string): Chapter | null {
+function findChapterInBook(book: Novel, chapterId: string): Chapter | null {
   for (const volume of book.volumes || []) {
     for (const chapter of volume.chapters || []) {
       if (chapter.id === chapterId) {

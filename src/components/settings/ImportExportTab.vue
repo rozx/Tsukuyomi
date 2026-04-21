@@ -2,12 +2,12 @@
 import Button from 'primevue/button';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
+import { loadBooksWithContentAndMemories } from 'src/composables/useElectronSettings';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
 
@@ -27,14 +27,9 @@ const {
  * 导出设置到 JSON 文件
  */
 const exportSettings = async () => {
-  // 加载所有书籍的章节内容
-  const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
+  const { novelsWithContent, memories } = await loadBooksWithContentAndMemories(
     booksStore.books,
   );
-
-  // 使用批量加载方法加载所有 Memory 数据
-  const bookIds = booksStore.books.map((book) => book.id);
-  const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
 
   // 同步最新的 AI 模型、书籍数据、封面历史、Memory、同步设置和应用设置
   const settings = {

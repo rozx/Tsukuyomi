@@ -50,6 +50,7 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
    * @param url 小说 URL
    * @returns Promise<FetchNovelResult> 获取结果
    */
+  // fallow-ignore-next-line unused-class-member
   async fetchNovel(url: string): Promise<FetchNovelResult> {
     try {
       if (!this.isValidUrl(url)) {
@@ -316,13 +317,25 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
     // 移除 "(改)" 标记后解析
     const cleaned = dateString.replace(/\(改\)/g, '').trim();
     const match = cleaned.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
-    if (match && match[1] && match[2] && match[3]) {
-      const year = parseInt(match[1], 10);
-      const month = parseInt(match[2], 10) - 1; // JavaScript 月份从 0 开始
-      const day = parseInt(match[3], 10);
-      return new Date(year, month, day);
-    }
-    return undefined;
+    const ymd = this.parseYearMonthDay(match);
+    if (!ymd) return undefined;
+    return new Date(ymd.year, ymd.month, ymd.day);
+  }
+
+  /**
+   * 从正则 match 结果的 1/2/3 捕获组提取 year/month/day
+   * 月份自动转为 JavaScript 的 0-based 月份。解析失败返回 undefined。
+   * 用于子类覆盖 {@link parseDateString} 时共享的年月日解析逻辑。
+   * @param match 正则 match 结果（要求 1/2/3 号捕获组分别是 年/月/日）
+   */
+  protected parseYearMonthDay(
+    match: RegExpMatchArray | null,
+  ): { year: number; month: number; day: number } | undefined {
+    if (!match || !match[1] || !match[2] || !match[3]) return undefined;
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10) - 1; // JavaScript 月份从 0 开始
+    const day = parseInt(match[3], 10);
+    return { year, month, day };
   }
 
   /**
@@ -415,6 +428,30 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
       }
     }
     return null;
+  }
+
+  /**
+   * 从指定根元素下查找匹配 `linkSelector` 的 `<a>` 标签，
+   * 若其文本匹配 `navRegex`（视为"上一话/下一话/目次"等导航链接），则从 DOM 中移除。
+   * 各站点仅导航正则不同，共享遍历与 trim 逻辑。
+   * @param $ Cheerio API
+   * @param root 在该元素下查找链接
+   * @param linkSelector 链接选择器（如 `'a[href*="episodes"]'`、`'a'`）
+   * @param navRegex 匹配导航文本的正则（命中即删除）
+   */
+  protected removeNavigationLinks(
+    $: cheerio.CheerioAPI,
+    root: CheerioNode,
+    linkSelector: string,
+    navRegex: RegExp,
+  ): void {
+    root.find(linkSelector).each((_, linkEl) => {
+      const $link = $(linkEl);
+      const linkText = $link.text().trim();
+      if (navRegex.test(linkText)) {
+        $link.remove();
+      }
+    });
   }
 
   /**

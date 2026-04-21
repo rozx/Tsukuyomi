@@ -708,6 +708,20 @@ function buildSurroundingParagraphsContext(
 }
 
 /**
+ * 将角色别名数组格式化为 `别名：alias1 → 翻译1、alias2 → 翻译2` 形式的单行片段。
+ * 空/未定义别名时返回 null，由调用方决定是否输出占位符（例如"别名：无"）。
+ *
+ * 供 context-builder 与 term-translation-service 等多处复用，保证别名格式一致。
+ */
+export function formatCharacterAliases(
+  aliases: CharacterSetting['aliases'] | undefined,
+): string | null {
+  if (!aliases || aliases.length === 0) return null;
+  const aliasList = aliases.map((a) => `${a.name} → ${a.translation.translation}`).join('、');
+  return `别名：${aliasList}`;
+}
+
+/**
  * 将单个角色格式化为单行详情字符串：`name → translation | 性别：... | 描述：... | 说话风格：... | 别名：...`
  * 仅在文件内部使用，供多个上下文构建器复用，保证角色信息格式一致
  */
@@ -733,11 +747,9 @@ function formatCharacterDetail(c: CharacterSetting): string {
     parts.push(`说话风格：${c.speakingStyle}`);
   }
 
-  if (c.aliases && c.aliases.length > 0) {
-    const aliasList = c.aliases
-      .map((a) => `${a.name} → ${a.translation.translation}`)
-      .join('、');
-    parts.push(`别名：${aliasList}`);
+  const aliasPart = formatCharacterAliases(c.aliases);
+  if (aliasPart) {
+    parts.push(aliasPart);
   }
 
   return parts.join(' | ');

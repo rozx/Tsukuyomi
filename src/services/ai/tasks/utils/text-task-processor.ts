@@ -459,14 +459,24 @@ export async function processTextTask(
     // 当 continueTranslation 只传入未翻译段落时，validParagraphIds 仅包含这些段落的 ID
     // 这样 buildChunks 在遍历 allChapterParagraphs 时，只会包含目标段落，而非所有段落
     const validParagraphIds = new Set(validParagraphs.map((p) => p.id));
-    const chunks = requiresTranslation
-      ? buildFormattedChunks(validParagraphs, CHUNK_SIZE, originalIndices)
-      : buildChunks(
-          translationSourceParagraphs,
-          CHUNK_SIZE,
-          (p, idx) => `[${idx + 1}] [ID: ${p.id}] ${p.text}\n\n`,
-          (p) => !!p.text?.trim() && validParagraphIds.has(p.id),
-        );
+
+    // 统一的分块构造：翻译走 buildFormattedChunks（带 originalIndices），
+    // 其余任务走 buildChunks + ID 谓词。初次分块与后续重建都复用此闭包
+    const buildChunksForIds = (targetIds: Set<string> | string[]): TextChunk[] => {
+      const idSet = targetIds instanceof Set ? targetIds : new Set(targetIds);
+      if (requiresTranslation) {
+        const filteredParagraphs = validParagraphs.filter((p) => idSet.has(p.id));
+        return buildFormattedChunks(filteredParagraphs, CHUNK_SIZE, originalIndices);
+      }
+      return buildChunks(
+        translationSourceParagraphs,
+        CHUNK_SIZE,
+        (p, idx) => `[${idx + 1}] [ID: ${p.id}] ${p.text}\n\n`,
+        (p) => !!p.text?.trim() && idSet.has(p.id),
+      );
+    };
+
+    const chunks: TextChunk[] = buildChunksForIds(validParagraphIds);
 
     let resultText = '';
     const paragraphResults: { id: string; translation: string }[] = [];
@@ -517,18 +527,7 @@ export async function processTextTask(
       let actualChunk: TextChunk = chunk;
       if (unprocessedParagraphIds.length < (chunk.paragraphIds?.length || 0)) {
         // 重建时使用全量段落数组，保持章节原始索引一致性
-        const rebuiltChunks = requiresTranslation
-          ? buildFormattedChunks(
-              validParagraphs.filter((p) => unprocessedParagraphIds.includes(p.id)),
-              CHUNK_SIZE,
-              originalIndices,
-            )
-          : buildChunks(
-              translationSourceParagraphs,
-              CHUNK_SIZE,
-              (p, idx) => `[${idx + 1}] [ID: ${p.id}] ${p.text}\n\n`,
-              (p) => !!p.text?.trim() && unprocessedParagraphIds.includes(p.id),
-            );
+        const rebuiltChunks = buildChunksForIds(unprocessedParagraphIds);
 
         if (rebuiltChunks.length > 0) {
           // 如果重建产生了多个块，将它们插入到当前位置，替换原有的块

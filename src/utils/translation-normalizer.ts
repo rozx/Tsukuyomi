@@ -4,6 +4,21 @@
  */
 
 /**
+ * 顺序应用一组 [正则, 替换串] 对，返回替换后的字符串
+ * 用于把大量重复的 `str = str.replace(a, b)` 收拢为声明式数组
+ */
+function applyReplacements(
+  text: string,
+  replacements: ReadonlyArray<readonly [RegExp, string]>,
+): string {
+  let result = text;
+  for (const [pattern, replacement] of replacements) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
+/**
  * 规范化翻译文本中的引号
  * 将所有半角引号转换为全角日语引号：
  * - 半角双引号 "" → 日语引号 「」
@@ -187,64 +202,38 @@ export function normalizeTranslationQuotes(text: string): string {
   // 这是有意的设计，因为未配对的引号通常表示特殊情况（如缩写、所有格等），不应该被自动转换
 
   // 将所有半角标点符号转换为全角
-  // 逗号：, → ，
-  normalized = normalized.replace(/,/g, '，');
-  // 句号：. → 。
-  normalized = normalized.replace(/\./g, '。');
-  // 问号：? → ？
-  normalized = normalized.replace(/\?/g, '？');
-  // 感叹号：! → ！
-  normalized = normalized.replace(/!/g, '！');
-  // 冒号：: → ：
-  normalized = normalized.replace(/:/g, '：');
-  // 分号：; → ；
-  normalized = normalized.replace(/;/g, '；');
-  // 左括号：( → （
-  normalized = normalized.replace(/\(/g, '（');
-  // 右括号：) → ）
-  normalized = normalized.replace(/\)/g, '）');
-  // 左方括号：[ → 【
-  normalized = normalized.replace(/\[/g, '【');
-  // 右方括号：] → 】
-  normalized = normalized.replace(/\]/g, '】');
-  // 左花括号：{ → ｛
-  normalized = normalized.replace(/\{/g, '｛');
-  // 右花括号：} → ｝
-  normalized = normalized.replace(/\}/g, '｝');
-  // 破折号：- → －
-  normalized = normalized.replace(/-/g, '－');
-  // 下划线：_ → ＿
-  normalized = normalized.replace(/_/g, '＿');
-  // 波浪号：~ → ～
-  normalized = normalized.replace(/~/g, '～');
-  // 省略号：... → …
-  normalized = normalized.replace(/\.\.\./g, '…');
-  // 百分号：% → ％
-  normalized = normalized.replace(/%/g, '％');
-  // 和号：& → ＆
-  normalized = normalized.replace(/&/g, '＆');
-  // 星号：* → ＊
-  normalized = normalized.replace(/\*/g, '＊');
-  // 井号：# → ＃
-  normalized = normalized.replace(/#/g, '＃');
-  // 加号：+ → ＋
-  normalized = normalized.replace(/\+/g, '＋');
-  // 等号：= → ＝
-  normalized = normalized.replace(/=/g, '＝');
-  // 小于号：< → ＜
-  normalized = normalized.replace(/</g, '＜');
-  // 大于号：> → ＞
-  normalized = normalized.replace(/>/g, '＞');
-  // 竖线：| → ｜
-  normalized = normalized.replace(/\|/g, '｜');
-  // 反斜杠：\ → ＼
-  normalized = normalized.replace(/\\/g, '＼');
-  // 斜杠：/ → ／
-  normalized = normalized.replace(/\//g, '／');
-  // @ 符号：@ → ＠
-  normalized = normalized.replace(/@/g, '＠');
-  // $ 符号：$ → ＄
-  normalized = normalized.replace(/\$/g, '＄');
+  // 注释格式：半角 → 全角
+  normalized = applyReplacements(normalized, [
+    [/,/g, '，'], // 逗号
+    [/\./g, '。'], // 句号
+    [/\?/g, '？'], // 问号
+    [/!/g, '！'], // 感叹号
+    [/:/g, '：'], // 冒号
+    [/;/g, '；'], // 分号
+    [/\(/g, '（'], // 左括号
+    [/\)/g, '）'], // 右括号
+    [/\[/g, '【'], // 左方括号
+    [/\]/g, '】'], // 右方括号
+    [/\{/g, '｛'], // 左花括号
+    [/\}/g, '｝'], // 右花括号
+    [/-/g, '－'], // 破折号
+    [/_/g, '＿'], // 下划线
+    [/~/g, '～'], // 波浪号
+    [/\.\.\./g, '…'], // 省略号 ...
+    [/%/g, '％'], // 百分号
+    [/&/g, '＆'], // 和号
+    [/\*/g, '＊'], // 星号
+    [/#/g, '＃'], // 井号
+    [/\+/g, '＋'], // 加号
+    [/=/g, '＝'], // 等号
+    [/</g, '＜'], // 小于号
+    [/>/g, '＞'], // 大于号
+    [/\|/g, '｜'], // 竖线
+    [/\\/g, '＼'], // 反斜杠
+    [/\//g, '／'], // 斜杠
+    [/@/g, '＠'], // @ 符号
+    [/\$/g, '＄'], // $ 符号
+  ]);
 
   return normalized;
 }
@@ -488,10 +477,12 @@ export function normalizeTranslationSymbols(
     normalized = normalized.replace(/(\d)\.(?![0-9])([\s\n\u3000]|$)/g, '$1。$2'); // 数字后的句号转为全角
 
     // 13. 规范化括号内的多余空格：移除括号紧邻的多余空格
-    normalized = normalized.replace(/（\s+/g, '（');
-    normalized = normalized.replace(/\s+）/g, '）');
-    normalized = normalized.replace(/【\s+/g, '【');
-    normalized = normalized.replace(/\s+】/g, '】');
+    normalized = applyReplacements(normalized, [
+      [/（\s+/g, '（'],
+      [/\s+）/g, '）'],
+      [/【\s+/g, '【'],
+      [/\s+】/g, '】'],
+    ]);
 
     // 13.5 恢复【】内的纯空格内容
     bracketPlaceholders.forEach((content, index) => {

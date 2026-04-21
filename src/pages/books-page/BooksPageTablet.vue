@@ -32,6 +32,10 @@ import {
   chapterStatusLabel,
   type ChapterProgressMap,
 } from 'src/utils/chapter-status';
+import {
+  buildVolumeActionMenuItems,
+  buildChapterActionMenuItems,
+} from 'src/components/novel/volumes-list-utils';
 
 const ctx = injectBooksPage();
 const router = useRouter();
@@ -218,49 +222,21 @@ const actionMenuItems = computed(() => {
   const target = actionTarget.value;
   if (!target) return [];
   if (target.kind === 'volume') {
-    return [
-      {
-        label: '编辑卷',
-        icon: 'pi pi-pencil',
-        command: () => chapterMgmt.openEditVolumeDialog(target.volume),
-      },
-      {
-        label: '删除卷',
-        icon: 'pi pi-trash',
-        class: 'p-menuitem-danger',
-        command: () => chapterMgmt.openDeleteVolumeConfirm(target.volume),
-      },
-    ];
+    return buildVolumeActionMenuItems({
+      onEdit: () => chapterMgmt.openEditVolumeDialog(target.volume),
+      onDelete: () => chapterMgmt.openDeleteVolumeConfirm(target.volume),
+    });
   }
   const vol = selectedBook.value?.volumes?.find((v) => v.id === target.volumeId);
-  const canMoveUp = target.index > 0;
   const canMoveDown = !!vol?.chapters && target.index < vol.chapters.length - 1;
-  return [
-    {
-      label: '编辑章节',
-      icon: 'pi pi-pencil',
-      command: () => chapterMgmt.openEditChapterDialog(target.chapter),
-    },
-    {
-      label: '上移',
-      icon: 'pi pi-arrow-up',
-      disabled: !canMoveUp,
-      command: () => void moveChapter(target, 'up'),
-    },
-    {
-      label: '下移',
-      icon: 'pi pi-arrow-down',
-      disabled: !canMoveDown,
-      command: () => void moveChapter(target, 'down'),
-    },
-    { separator: true },
-    {
-      label: '删除章节',
-      icon: 'pi pi-trash',
-      class: 'p-menuitem-danger',
-      command: () => chapterMgmt.openDeleteChapterConfirm(target.chapter),
-    },
-  ];
+  return buildChapterActionMenuItems({
+    canMoveUp: target.index > 0,
+    canMoveDown,
+    onEdit: () => chapterMgmt.openEditChapterDialog(target.chapter),
+    onMoveUp: () => void moveChapter(target, 'up'),
+    onMoveDown: () => void moveChapter(target, 'down'),
+    onDelete: () => chapterMgmt.openDeleteChapterConfirm(target.chapter),
+  });
 });
 
 function openVolumeMenu(event: Event, volume: Volume): void {

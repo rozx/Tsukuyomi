@@ -725,15 +725,11 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
   protected override parseDateString(dateString: string): Date | undefined {
     // 格式：YYYY/MM/DD HH:mm
     const match = dateString.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{1,2}))?/);
-    if (match && match[1] && match[2] && match[3]) {
-      const year = parseInt(match[1], 10);
-      const month = parseInt(match[2], 10) - 1; // JavaScript 月份从 0 开始
-      const day = parseInt(match[3], 10);
-      const hour = match[4] ? parseInt(match[4], 10) : 0;
-      const minute = match[5] ? parseInt(match[5], 10) : 0;
-      return new Date(year, month, day, hour, minute);
-    }
-    return undefined;
+    const ymd = this.parseYearMonthDay(match);
+    if (!ymd) return undefined;
+    const hour = match && match[4] ? parseInt(match[4], 10) : 0;
+    const minute = match && match[5] ? parseInt(match[5], 10) : 0;
+    return new Date(ymd.year, ymd.month, ymd.day, hour, minute);
   }
 
   /**

@@ -11,7 +11,7 @@ import {
 } from 'src/stores/chat-sessions';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { AssistantService } from 'src/services/ai/tasks';
-import { buildAssistantMessageHistory } from 'src/utils/ai-context-utils';
+import { buildAssistantMessageHistory, pickApiMessageExtras } from 'src/utils/ai-context-utils';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 
@@ -195,10 +195,7 @@ export function useChatSending(
         .map((msg) => ({
           role: msg.role as 'user' | 'assistant' | 'tool',
           content: msg.content ?? null,
-          ...(msg.name ? { name: msg.name } : {}),
-          ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
-          ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
-          ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}),
+          ...pickApiMessageExtras(msg),
         }));
       const serialized = JSON.stringify(apiMessages);
       if (serialized.length <= 512_000) {

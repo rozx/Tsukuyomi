@@ -143,26 +143,36 @@ export class BookService {
 
     // 1. 先保存所有章节内容到独立存储（仅在需要时）
     // 优化：只保存修改过的章节内容
-    if (saveChapterContent && book.volumes) {
-      for (const volume of book.volumes) {
-        if (volume.chapters) {
-          for (const chapter of volume.chapters) {
-            if (chapter.content && chapter.content.length > 0) {
-              // 只保存修改过的章节内容
-              await ChapterContentService.saveChapterContent(chapter.id, chapter.content, {
-                bookId: book.id,
-                skipIfUnchanged: true,
-              });
-            }
-          }
-        }
-      }
+    if (saveChapterContent) {
+      await BookService.saveChaptersContent(book, { skipIfUnchanged: true });
     }
 
     // 2. 剥离章节内容后保存书籍元数据
     const bookWithoutContent = BookService.stripNovelChapterContent(book);
     const serializedBook = serializeDates(bookWithoutContent);
     await db.put('books', serializedBook);
+  }
+
+  /**
+   * 遍历 book.volumes[].chapters[]，把含有内容的章节写入独立存储。
+   * 供 saveBook / bulkSaveBooks 复用，避免重复三层嵌套循环。
+   */
+  private static async saveChaptersContent(
+    book: Novel,
+    options: { skipIfUnchanged?: boolean } = {},
+  ): Promise<void> {
+    if (!book.volumes) return;
+    for (const volume of book.volumes) {
+      if (!volume.chapters) continue;
+      for (const chapter of volume.chapters) {
+        if (chapter.content && chapter.content.length > 0) {
+          await ChapterContentService.saveChapterContent(chapter.id, chapter.content, {
+            bookId: book.id,
+            ...(options.skipIfUnchanged ? { skipIfUnchanged: true } : {}),
+          });
+        }
+      }
+    }
   }
 
   /**
@@ -174,19 +184,7 @@ export class BookService {
 
     // 1. 先保存所有章节内容到独立存储
     for (const book of books) {
-      if (book.volumes) {
-        for (const volume of book.volumes) {
-          if (volume.chapters) {
-            for (const chapter of volume.chapters) {
-              if (chapter.content && chapter.content.length > 0) {
-                await ChapterContentService.saveChapterContent(chapter.id, chapter.content, {
-                  bookId: book.id,
-                });
-              }
-            }
-          }
-        }
-      }
+      await BookService.saveChaptersContent(book);
     }
 
     // 2. 剥离章节内容后批量保存书籍元数据

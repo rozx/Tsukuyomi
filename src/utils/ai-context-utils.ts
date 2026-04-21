@@ -2,8 +2,26 @@ import { getAssistantSystemPrompt } from 'src/services/ai/tasks/prompts/assistan
 import { getTodosSystemPrompt } from 'src/services/ai/tasks/utils/todo-helper';
 import { ToolRegistry } from 'src/services/ai/tools';
 import type { AITool, ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-service';
-import type { ChatSessionMessage, ChatSession } from 'src/stores/chat-sessions';
+import type {
+  ApiMessage,
+  ChatSessionMessage,
+  ChatSession,
+} from 'src/stores/chat-sessions';
 import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
+
+/**
+ * 从 ApiMessage 中挑出可选字段（name / tool_call_id / tool_calls / reasoning_content），
+ * 返回可展开的 Partial 对象。用于在 ApiMessage 与 AIChatMessage 之间复用展开逻辑，
+ * 避免在多处重复 `...(msg.x ? { x: msg.x } : {})` 样板。
+ */
+export const pickApiMessageExtras = (
+  msg: Pick<ApiMessage, 'name' | 'tool_call_id' | 'tool_calls' | 'reasoning_content'>,
+): Partial<Pick<ApiMessage, 'name' | 'tool_call_id' | 'tool_calls' | 'reasoning_content'>> => ({
+  ...(msg.name ? { name: msg.name } : {}),
+  ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
+  ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
+  ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}),
+});
 
 export type SessionWithSummaryIndex = ChatSession & { lastSummarizedMessageIndex?: number };
 
@@ -32,10 +50,7 @@ export const buildAssistantMessageHistory = (
     return session.apiMessageHistory.map((msg) => ({
       role: msg.role,
       content: msg.content ?? '',
-      ...(msg.name ? { name: msg.name } : {}),
-      ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
-      ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
-      ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}),
+      ...pickApiMessageExtras(msg),
     }));
   }
 

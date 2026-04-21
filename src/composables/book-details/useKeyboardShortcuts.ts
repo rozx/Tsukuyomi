@@ -41,7 +41,10 @@ export interface ShortcutRegistrationOptions {
 }
 
 export function useKeyboardShortcuts(opts: ShortcutRegistrationOptions) {
+  // 此处解构与 useBookDetailsPage 调用侧一一对应（API 契约），
+  // 看起来重复但无法合并：前者是实现内局部变量，后者是跨 composable 依赖注入。
   const {
+    // fallow-ignore-next-line code-duplication
     isSearchVisible,
     toggleSearch,
     showReplace,

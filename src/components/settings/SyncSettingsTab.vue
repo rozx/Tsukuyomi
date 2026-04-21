@@ -14,7 +14,7 @@ import { GistSyncService } from 'src/services/gist-sync-service';
 import { SyncDataService, type RestorableItem } from 'src/services/sync-data-service';
 import { groupChunkFiles } from 'src/services/gist-sync-service';
 import type { SyncConfig } from 'src/models/sync';
-import { formatRelativeTime } from 'src/utils/format';
+import { formatRelativeTime, formatFileSize as formatFileSizeBase } from 'src/utils/format';
 import { useAutoSync } from 'src/composables/useAutoSync';
 import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
 import { useForceSync } from 'src/composables/useForceSync';
@@ -22,14 +22,8 @@ import ForceSyncToggle from 'src/components/sync/ForceSyncToggle.vue';
 import RestoreDeletedItemsDialog from 'src/components/dialogs/RestoreDeletedItemsDialog.vue';
 import co from 'co';
 
-// 格式化文件大小
-const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-};
+// 格式化文件大小（复用 utils/format 的共享实现，此处保留 1 位小数）
+const formatFileSize = (bytes: number): string => formatFileSizeBase(bytes, 1);
 
 // 判断是否为元数据文件（分块 novel/memories 的 meta.json 描述文件）
 const isMetaFile = (filename: string): boolean => {

@@ -19,6 +19,27 @@ import {
 type AdjacentChapterDirection = 'previous' | 'next';
 
 /**
+ * 工具共用：不加载书籍，仅解析参数并校验 bookId 非空。
+ * 失败时返回可直接 return 给工具的 JSON 错误字符串；成功时返回解析后的参数与已收窄的 bookId。
+ *
+ * 适用于不需要预加载 Novel 的 handler（例如仅依赖 embedding 服务或通过
+ * booksStore 自行读取的场景），避免重复写 parseToolArgs + bookId 早退出样板。
+ */
+function parseArgsRequireBookId<T>(
+  args: Record<string, unknown>,
+  bookId: string | undefined,
+): { ok: true; args: T; bookId: string } | { ok: false; response: string } {
+  const parsedArgs = parseToolArgs<T>(args);
+  if (!bookId) {
+    return {
+      ok: false,
+      response: JSON.stringify({ success: false, error: '书籍 ID 不能为空' }),
+    };
+  }
+  return { ok: true, args: parsedArgs, bookId };
+}
+
+/**
  * 工具共用：校验 bookId 并按 ID 查找书籍。
  * 失败时返回可直接 return 给工具的 JSON 错误字符串；成功时返回 Novel 实例。
  */
@@ -601,12 +622,10 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{ query: string; limit?: number }>(args);
-      if (!bookId) {
-        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
-      }
-      const { query, limit = 5 } = parsedArgs;
+    handler: async (args, { bookId: rawBookId, onAction }) => {
+      const parsed = parseArgsRequireBookId<{ query: string; limit?: number }>(args, rawBookId);
+      if (!parsed.ok) return parsed.response;
+      const { bookId, args: { query, limit = 5 } } = parsed;
       if (!query || typeof query !== 'string' || !query.trim()) {
         return JSON.stringify({ success: false, error: 'query 不能为空' });
       }
@@ -873,16 +892,14 @@ export const bookTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      const parsedArgs = parseToolArgs<{
+    handler: async (args, { bookId: rawBookId, onAction }) => {
+      const parsed = parseArgsRequireBookId<{
         chapter_id: string;
         title_original?: string;
         title_translation?: string;
-      }>(args);
-      if (!bookId) {
-        return JSON.stringify({ success: false, error: '书籍 ID 不能为空' });
-      }
-      const { chapter_id, title_original, title_translation } = parsedArgs;
+      }>(args, rawBookId);
+      if (!parsed.ok) return parsed.response;
+      const { bookId, args: { chapter_id, title_original, title_translation } } = parsed;
       if (!chapter_id) {
         return JSON.stringify({ success: false, error: '章节 ID 不能为空' });
       }

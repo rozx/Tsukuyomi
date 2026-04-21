@@ -38,6 +38,28 @@ function parseContentSummary(
   return { content: content.trim(), summary: summary.trim() };
 }
 
+/**
+ * 工具共用：校验 bookId 并从 args 中提取 memory_id
+ *
+ * update_memory / delete_memory 等按 memory_id 操作的 handler 共用前置样板：
+ * 若 bookId 为空则返回统一的错误 JSON 字符串，否则返回 bookId / memoryId。
+ */
+function requireBookIdWithMemoryId(
+  bookId: string | undefined,
+  args: Record<string, unknown>,
+): { error: string } | { bookId: string; memoryId: string } {
+  if (!bookId) {
+    return {
+      error: JSON.stringify({
+        success: false,
+        error: '书籍 ID 不能为空',
+      }),
+    };
+  }
+  const { memory_id } = args as { memory_id: string };
+  return { bookId, memoryId: memory_id };
+}
+
 function createListMemoriesHandler(toolName: 'list_memories') {
   return async (args: Record<string, unknown>, context: ToolContext) => {
     const { bookId, onAction } = context;
@@ -386,18 +408,12 @@ export const memoryTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '书籍 ID 不能为空',
-        });
-      }
-      const { memory_id } = args as { memory_id: string };
+    handler: async (args, { bookId: rawBookId, onAction }) => {
+      const bookCheck = requireBookIdWithMemoryId(rawBookId, args);
+      if ('error' in bookCheck) return bookCheck.error;
       const parsed = parseContentSummary(args);
-      if ('error' in parsed) {
-        return parsed.error;
-      }
+      if ('error' in parsed) return parsed.error;
+      const { bookId, memoryId: memory_id } = bookCheck;
       const { content, summary } = parsed;
 
       try {
@@ -455,16 +471,10 @@ export const memoryTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '书籍 ID 不能为空',
-        });
-      }
-      const { memory_id } = args as {
-        memory_id: string;
-      };
+    handler: async (args, { bookId: rawBookId, onAction }) => {
+      const bookCheck = requireBookIdWithMemoryId(rawBookId, args);
+      if ('error' in bookCheck) return bookCheck.error;
+      const { bookId, memoryId: memory_id } = bookCheck;
 
       try {
         // 在删除前获取 Memory 信息，以便在 action 中显示

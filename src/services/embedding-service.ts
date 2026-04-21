@@ -12,7 +12,7 @@
  */
 
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
-import { dispatchCustomEvent } from 'src/utils/dispatch-custom-event';
+import { dispatchCustomEvent, subscribeCustomEvent } from 'src/utils/dispatch-custom-event';
 
 // fallow-ignore-next-line unused-export
 export const MODEL_ID = 'onnx-community/gte-multilingual-base';
@@ -172,9 +172,7 @@ export class EmbeddingService {
     type: 'progress' | 'status-changed' | 'ready' | 'error',
     listener: (event: CustomEvent) => void,
   ): () => void {
-    const handler = (e: Event) => listener(e as CustomEvent);
-    this.events.addEventListener(type, handler);
-    return () => this.events.removeEventListener(type, handler);
+    return subscribeCustomEvent(this.events, type, listener);
   }
 
   private static dispatch(type: string, detail?: unknown): void {

@@ -15,3 +15,17 @@ export function dispatchCustomEvent(
     : Object.assign(new Event(type), { detail });
   target.dispatchEvent(event as Event);
 }
+
+/**
+ * 在事件源上注册 `CustomEvent` 监听器并返回取消订阅函数。
+ * EmbeddingService / EmbeddingQueue 等多处共用，避免重复手写解绑闭包。
+ */
+export function subscribeCustomEvent(
+  target: EventTarget,
+  type: string,
+  listener: (event: CustomEvent) => void,
+): () => void {
+  const handler = (e: Event) => listener(e as CustomEvent);
+  target.addEventListener(type, handler);
+  return () => target.removeEventListener(type, handler);
+}

@@ -16,7 +16,7 @@ type TagHandler = (params: { $node: CheerioNode; tagName: string; recurse: () =>
  * - 标签节点：交给 handleTag 决定（可通过 recurse 递归进入子元素）
  * 其它类型节点忽略。
  */
-function visitCheerioContents(
+export function visitCheerioContents(
   $: cheerio.CheerioAPI,
   element: CheerioNode,
   handleTag: TagHandler,

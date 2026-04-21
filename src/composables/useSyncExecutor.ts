@@ -97,6 +97,27 @@ export function useSyncExecutor() {
     };
 
   /**
+   * 上传阶段进度回调工厂：把 0..progress.total 线性映射到 [UPLOAD_PHASE_START, OVERALL_TOTAL]。
+   * uploadIncrementalAndPersist 和首次 legacy 上传共用同一个映射策略。
+   */
+  const makeUploadProgressHandler =
+    (prefixMsg: (msg: string) => string) =>
+    (progress: { current: number; total: number; message: string }): void => {
+      const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
+      const mapped =
+        progress.total > 0
+          ? UPLOAD_PHASE_START +
+            Math.round((progress.current / progress.total) * uploadPhaseRange)
+          : UPLOAD_PHASE_START;
+      settingsStore.updateSyncProgress({
+        stage: 'uploading',
+        current: mapped,
+        total: OVERALL_TOTAL,
+        message: prefixMsg(progress.message),
+      });
+    };
+
+  /**
    * 收集所有书籍的 memories，按 bookId 分组
    */
   const collectMemoriesByBook = async (): Promise<Record<string, Memory[]>> => {
@@ -204,20 +225,7 @@ export function useSyncExecutor() {
       remoteFilesSnapshot as Parameters<
         typeof gistSyncService.uploadToGistIncremental
       >[2],
-      (progress) => {
-        const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
-        const mapped =
-          progress.total > 0
-            ? UPLOAD_PHASE_START +
-              Math.round((progress.current / progress.total) * uploadPhaseRange)
-            : UPLOAD_PHASE_START;
-        settingsStore.updateSyncProgress({
-          stage: 'uploading',
-          current: mapped,
-          total: OVERALL_TOTAL,
-          message: prefixMsg(progress.message),
-        });
-      },
+      makeUploadProgressHandler(prefixMsg),
     );
 
     // 持久化新的远端状态（失败不影响上传成功判定，仅打印日志）
@@ -512,20 +520,7 @@ export function useSyncExecutor() {
               novels: booksStore.books,
               coverHistory: coverHistoryStore.covers,
             },
-            (progress) => {
-              const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
-              const mapped =
-                progress.total > 0
-                  ? UPLOAD_PHASE_START +
-                    Math.round((progress.current / progress.total) * uploadPhaseRange)
-                  : UPLOAD_PHASE_START;
-              settingsStore.updateSyncProgress({
-                stage: 'uploading',
-                current: mapped,
-                total: OVERALL_TOTAL,
-                message: prefixMsg(progress.message),
-              });
-            },
+            makeUploadProgressHandler(prefixMsg),
           );
           if (!uploadResult.success) {
             onError('上传失败', uploadResult.error || '创建 Gist 失败');

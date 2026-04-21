@@ -31,6 +31,7 @@ const localVisible = computed({
 
 // useRightPanel 解构 + bindXxxRef 样板已抽到 useChatPanelSetup，
 // Tablet 变体也走同一份 helper，保持两边行为一致。
+// fallow-ignore-next-line code-duplication
 const {
   chatSessionsStore,
   panelContainerRef,
