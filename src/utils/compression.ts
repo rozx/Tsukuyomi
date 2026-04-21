@@ -26,13 +26,13 @@ export async function compressString(input: string): Promise<string> {
     const buffer = await blob.arrayBuffer();
     return uint8ArrayToBase64(new Uint8Array(buffer));
   } else {
-    // Node/Bun implementation
+    // Node/Bun implementation — 不依赖 Buffer 全局，浏览器里也能裸跑
     try {
       const { gzip } = await import('node:zlib');
       const { promisify } = await import('node:util');
       const gzipAsync = promisify(gzip);
-      const buffer = await gzipAsync(input);
-      return buffer.toString('base64');
+      const compressed = (await gzipAsync(input)) as Uint8Array;
+      return uint8ArrayToBase64(new Uint8Array(compressed));
     } catch (e) {
       console.error('Compression fallback failed:', e);
       throw new Error('Compression not supported in this environment');
@@ -62,14 +62,14 @@ export async function decompressString(input: string): Promise<string> {
     const blob = await response.blob();
     return await blob.text();
   } else {
-    // Node/Bun implementation
+    // Node/Bun implementation — 不依赖 Buffer 全局，浏览器里也能裸跑
     try {
       const { gunzip } = await import('node:zlib');
       const { promisify } = await import('node:util');
       const gunzipAsync = promisify(gunzip);
-      const buffer = Buffer.from(input, 'base64');
-      const decompressed = await gunzipAsync(buffer);
-      return decompressed.toString();
+      const compressed = base64ToUint8Array(input);
+      const decompressed = await gunzipAsync(compressed);
+      return new TextDecoder().decode(decompressed);
     } catch (e) {
       console.error('Decompression fallback failed:', e);
       throw new Error('Decompression not supported in this environment');
