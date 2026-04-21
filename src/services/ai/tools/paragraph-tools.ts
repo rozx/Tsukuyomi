@@ -71,6 +71,52 @@ function toDisplayParagraphIndex(paragraphIndex: number): number {
 }
 
 /**
+ * 构造段落翻译条目的基础结构（id / translation / aiModelId / aiModelName / isSelected）。
+ * 被 `get_paragraph_info` 与 `get_translation_history` 共享；后者在返回时额外追加
+ * index / isLatest 字段，调用方按需展开。
+ */
+function buildTranslationBaseEntry(
+  translation: Translation,
+  paragraph: Paragraph,
+  aiModelsStore: ReturnType<typeof useAIModelsStore>,
+): {
+  id: string;
+  translation: string;
+  aiModelId: string;
+  aiModelName: string;
+  isSelected: boolean;
+} {
+  return {
+    id: translation.id,
+    translation: translation.translation,
+    aiModelId: translation.aiModelId,
+    aiModelName: aiModelsStore.getModelById(translation.aiModelId)?.name || '未知模型',
+    isSelected: translation.id === paragraph.selectedTranslationId,
+  };
+}
+
+/**
+ * 基于段落文本提取关键词并查询相关记忆。
+ * 多个工具（get_paragraph_info / get_translation_history / get_previous_paragraphs /
+ * get_next_paragraphs）共享同一套「从段落文本提取关键词 → 混合记忆搜索」流程。
+ * include_memory=false、bookId 缺失、text 为空、关键词为空等场景统一返回空数组。
+ */
+async function fetchRelatedMemoriesFromParagraphText(
+  bookId: string | undefined,
+  text: string | undefined,
+  includeMemory: boolean,
+): Promise<Array<{ id: string; summary: string }>> {
+  if (!includeMemory || !bookId || !text) {
+    return [];
+  }
+  const keywords = extractKeywordsFromParagraph(text, 20);
+  if (keywords.length === 0) {
+    return [];
+  }
+  return searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
+}
+
+/**
  * 将段落搜索结果序列化为工具返回的 JSON 字符串。
  * 被邻近段落查询 / 关键词搜索等多个工具共享的响应结构。
  * @param validResults 已经过空段落过滤的搜索结果
@@ -319,18 +365,12 @@ async function handleNeighborParagraphs(
   //   return getOutOfBoundsError(chunkBoundaries);
   // }
 
-  // 搜索相关记忆（从段落文本中提取关键词）
-  let relatedMemories: Array<{ id: string; summary: string }> = [];
-  if (include_memory && bookId && validResults.length > 0) {
-    // 从第一个段落中提取关键词
-    const firstResult = validResults[0];
-    if (firstResult?.paragraph?.text) {
-      const keywords = extractKeywordsFromParagraph(firstResult.paragraph.text, 20);
-      if (keywords.length > 0) {
-        relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
-      }
-    }
-  }
+  // 搜索相关记忆（从第一个段落的文本中提取关键词）
+  const relatedMemories = await fetchRelatedMemoriesFromParagraphText(
+    bookId,
+    validResults[0]?.paragraph?.text,
+    include_memory,
+  );
 
   return buildParagraphSearchResponse(validResults, include_memory, relatedMemories);
 }
@@ -713,22 +753,15 @@ export const paragraphTools: ToolDefinition[] = [
       // 构建翻译信息（包含 aiModelId）
       const aiModelsStore = useAIModelsStore();
       const translations =
-        paragraph.translations?.map((t) => ({
-          id: t.id,
-          translation: t.translation,
-          aiModelId: t.aiModelId,
-          aiModelName: aiModelsStore.getModelById(t.aiModelId)?.name || '未知模型',
-          isSelected: t.id === paragraph.selectedTranslationId,
-        })) || [];
+        paragraph.translations?.map((t) => buildTranslationBaseEntry(t, paragraph, aiModelsStore)) ||
+        [];
 
       // 搜索相关记忆（从段落文本中提取关键词）
-      let relatedMemories: Array<{ id: string; summary: string }> = [];
-      if (include_memory && bookId && paragraph.text) {
-        const keywords = extractKeywordsFromParagraph(paragraph.text, 20);
-        if (keywords.length > 0) {
-          relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
-        }
-      }
+      const relatedMemories = await fetchRelatedMemoriesFromParagraphText(
+        bookId,
+        paragraph.text,
+        include_memory,
+      );
 
       return JSON.stringify({
         success: true,
@@ -1242,25 +1275,20 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 构建完整的翻译历史信息
+      const totalTranslations = paragraph.translations?.length || 0;
       const translationHistory =
         paragraph.translations?.map((t, index) => ({
-          id: t.id,
-          translation: t.translation,
-          aiModelId: t.aiModelId,
-          aiModelName: aiModelsStore.getModelById(t.aiModelId)?.name || '未知模型',
-          isSelected: t.id === paragraph.selectedTranslationId,
+          ...buildTranslationBaseEntry(t, paragraph, aiModelsStore),
           index: index + 1, // 从1开始的索引
-          isLatest: index === (paragraph.translations?.length || 0) - 1, // 是否是最新的翻译
+          isLatest: index === totalTranslations - 1, // 是否是最新的翻译
         })) || [];
 
       // 搜索相关记忆（从段落文本中提取关键词）
-      let relatedMemories: Array<{ id: string; summary: string }> = [];
-      if (include_memory && bookId && paragraph.text) {
-        const keywords = extractKeywordsFromParagraph(paragraph.text, 20);
-        if (keywords.length > 0) {
-          relatedMemories = await searchRelatedMemoriesHybrid(bookId, [], keywords, 5);
-        }
-      }
+      const relatedMemories = await fetchRelatedMemoriesFromParagraphText(
+        bookId,
+        paragraph.text,
+        include_memory,
+      );
 
       return JSON.stringify({
         success: true,
