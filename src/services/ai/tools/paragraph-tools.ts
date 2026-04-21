@@ -198,6 +198,7 @@ function replaceKeepingBoundaries(
  * @param replacement 替换文本
  * @returns 替换后的文本
  */
+// fallow-ignore-next-line unused-export
 export function replaceWholeKeyword(text: string, keyword: string, replacement: string): string {
   if (!text || !keyword) {
     return text;

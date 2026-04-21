@@ -996,5 +996,3 @@ export function remoteManifestToHashes(manifest: GistManifest): Record<string, s
   return out;
 }
 
-// 重新导出便于测试
-export { ENTRY_KEYS, FILE_NAMES };

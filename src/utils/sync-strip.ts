@@ -13,7 +13,7 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
  * 1. 计算 manifest hash（确保相同内容产生相同 hash，不受 embedding 填充进度影响）
  * 2. 上传到 Gist（远端不需要本地 embedding）
  */
-export function stripMemoryLocalFields(memory: Memory): Memory {
+function stripMemoryLocalFields(memory: Memory): Memory {
   if (!memory || typeof memory !== 'object') return memory;
 
   const { embedding: _e, embeddingModel: _em, ...rest } = memory as Memory & {
