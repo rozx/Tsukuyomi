@@ -20,7 +20,10 @@ import { EmbeddingQueue } from 'src/services/embedding-queue';
 // 叶子重新导出，保持既有消费者（MemoryCard / MemoryPanel / Dialog 等）的
 // import 路径稳定。
 export { isMemoryEmbeddingStale } from 'src/utils/memory-embedding-lookup';
-import { storageToMemory as storageToMemoryWithEmbedding } from 'src/utils/memory-embedding-lookup';
+import {
+  storageToMemory as storageToMemoryWithEmbedding,
+  updateMemoryEmbeddingInDB,
+} from 'src/utils/memory-embedding-lookup';
 
 const MAX_MEMORIES_PER_BOOK = 500;
 
@@ -889,16 +892,12 @@ export class MemoryService {
     }
 
     try {
+      // 直接 IDB put 沿用 leaf util，避免重复的 get/mutate/put 样板
+      await updateMemoryEmbeddingInDB(memoryId, embedding, embeddingModel);
+
       const db = await getDB();
       const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
       if (!existing) return;
-
-      const updated: MemoryStorage = {
-        ...existing,
-        embedding,
-        embeddingModel,
-      };
-      await db.put('memories', updated);
 
       // 同步内存缓存:单条 LRU
       const cacheKey = this.getCacheKey(existing.bookId, memoryId);
