@@ -7,6 +7,7 @@ import { SyncType } from 'src/models/sync';
 import type { CoverHistoryItem } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import { compressString, decompressString } from 'src/utils/compression';
+import { serializeDates } from 'src/utils/serialize-dates';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import { MANIFEST_FILE_NAME } from 'src/models/manifest';
@@ -870,33 +871,6 @@ export class GistSyncService {
   }
 
   /**
-   * 将 Date 对象转换为可序列化的格式
-   */
-  private serializeDates<T>(obj: T): T {
-    if (obj === null || obj === undefined) {
-      return obj;
-    }
-
-    if (obj instanceof Date) {
-      return obj.toISOString() as unknown as T;
-    }
-
-    if (Array.isArray(obj)) {
-      return obj.map((item) => this.serializeDates(item)) as unknown as T;
-    }
-
-    if (typeof obj === 'object') {
-      const serialized = {} as T;
-      for (const [key, value] of Object.entries(obj)) {
-        (serialized as Record<string, unknown>)[key] = this.serializeDates(value);
-      }
-      return serialized;
-    }
-
-    return obj;
-  }
-
-  /**
    * 需要从 ISO 字符串反序列化为 Date 对象的字段名白名单。
    * 只有这些字段中的 ISO 日期字符串会被转换，避免误将小说内容中的日期字符串转换为 Date 对象。
    */
@@ -1049,10 +1023,10 @@ export class GistSyncService {
 
       // 1. 设置文件（包含 aiModels、appSettings、coverHistory 和 memories）
       const settingsData = {
-        aiModels: this.serializeDates(data.aiModels),
-        appSettings: this.serializeDates(data.appSettings),
-        coverHistory: data.coverHistory ? this.serializeDates(data.coverHistory) : undefined,
-        memories: memoriesToUpload.length > 0 ? this.serializeDates(memoriesToUpload) : undefined,
+        aiModels: serializeDates(data.aiModels),
+        appSettings: serializeDates(data.appSettings),
+        coverHistory: data.coverHistory ? serializeDates(data.coverHistory) : undefined,
+        memories: memoriesToUpload.length > 0 ? serializeDates(memoriesToUpload) : undefined,
       };
 
       const settingsJson = JSON.stringify(settingsData);
@@ -1131,7 +1105,7 @@ export class GistSyncService {
           }
           continue;
         }
-        const serializedNovel = this.serializeDates(novel);
+        const serializedNovel = serializeDates(novel);
         // 使用压缩格式（去除空格和换行）以减少文件大小
         const jsonContent = JSON.stringify(serializedNovel);
 
