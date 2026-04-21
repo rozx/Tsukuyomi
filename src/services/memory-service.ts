@@ -857,11 +857,8 @@ export class MemoryService {
     embedding: number[],
     embeddingModel: string,
   ): Promise<void> {
-    if (!memoryId) throw new Error('Memory ID 不能为空');
-    if (!embedding || embedding.length === 0) throw new Error('embedding 不能为空');
-    if (!embeddingModel) throw new Error('embeddingModel 不能为空');
-
-    // 写 IDB：叶子函数。失败直接抛，下面的缓存刷新 / 事件派发只在写入成功后执行。
+    // 三项参数校验 + IDB put 统一走 leaf `updateMemoryEmbeddingInDB`，
+    // 失败直接抛出；缓存刷新与事件派发只在写入成功后执行。
     await updateMemoryEmbeddingInDB(memoryId, embedding, embeddingModel);
 
     // 记录被删除的合法边界：没有 bookId 就跳过缓存 / 事件。
