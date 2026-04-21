@@ -982,14 +982,4 @@ function getPayloadForEntry(entryKey: string, payload: UploadPayload): unknown {
   return null;
 }
 
-/**
- * 将 remote manifest 的 entries 表达为平面 hash 字典，供 SyncConfig 持久化
- */
-export function remoteManifestToHashes(manifest: GistManifest): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(manifest.entries)) {
-    out[k] = v.hash;
-  }
-  return out;
-}
 
