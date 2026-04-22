@@ -349,7 +349,7 @@ async function readBookEntryContent(
  * @param gistFiles Gist `gists.get` 响应中的 files 对象
  * @param fetchRaw 当 inline content 被截断时用于从 raw_url 获取完整内容的函数
  */
-async function deserializeEntry(
+export async function deserializeEntry(
   entryKey: string,
   manifestEntry: ManifestEntry,
   gistFiles: Record<string, GistFileLike>,
@@ -412,7 +412,7 @@ export interface GistFileLike {
   size?: number | null;
 }
 
-async function readFile(
+export async function readFile(
   filename: string,
   gistFiles: Record<string, GistFileLike>,
   fetchRaw: (url: string) => Promise<string>,
@@ -477,10 +477,7 @@ export function filenamesForEntry(entryKey: string, chunks?: number): string[] {
  * 兜底：扫描 remote snapshot 中与 entry 匹配的文件名。
  * 用在迁移场景或 `knownRemoteEntries` 不可用时，发现被持久化状态遗漏的遗留文件。
  */
-export function matchFilenamesInSnapshot(
-  entryKey: string,
-  remoteFilenames: string[],
-): string[] {
+export function matchFilenamesInSnapshot(entryKey: string, remoteFilenames: string[]): string[] {
   if (entryKey === ENTRY_KEYS.SETTINGS) {
     return remoteFilenames.filter((f) => f === FILE_NAMES.SETTINGS);
   }
@@ -499,9 +496,7 @@ export function matchFilenamesInSnapshot(
     ? [FILE_NAMES.NOVEL_PREFIX, FILE_NAMES.NOVEL_CHUNK_PREFIX]
     : [FILE_NAMES.MEMORIES_PREFIX, FILE_NAMES.MEMORIES_CHUNK_PREFIX];
 
-  return remoteFilenames.filter((f) =>
-    prefixes.some((p) => f.startsWith(`${p}${bookId}`)),
-  );
+  return remoteFilenames.filter((f) => prefixes.some((p) => f.startsWith(`${p}${bookId}`)));
 }
 
 /**
@@ -549,9 +544,7 @@ export async function conditionalGetGist(
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(
-      `GitHub Gist API 错误 ${response.status}: ${text.slice(0, 200)}`,
-    );
+    throw new Error(`GitHub Gist API 错误 ${response.status}: ${text.slice(0, 200)}`);
   }
 
   const data = (await response.json()) as {
@@ -564,7 +557,7 @@ export async function conditionalGetGist(
     notModified: false,
     etag,
     updatedAt: data.updated_at ?? '',
-    files: (data.files ?? {}),
+    files: data.files ?? {},
     ...(data.html_url ? { htmlUrl: data.html_url } : {}),
   };
 }
@@ -792,7 +785,11 @@ export async function uploadIncremental(
   const additionBatches = buildAdditionBatches(allFiles);
   appendDeletionsAndManifestToFinalBatch(additionBatches, allFiles, localManifest);
 
-  const { etag: newETag, htmlUrl, updatedAt: newUpdatedAt } = await executePatchBatches(
+  const {
+    etag: newETag,
+    htmlUrl,
+    updatedAt: newUpdatedAt,
+  } = await executePatchBatches(
     octokit,
     gistId,
     additionBatches,
@@ -925,9 +922,7 @@ function appendDeletionsAndManifestToFinalBatch(
   allFiles: Record<string, { content: string } | null>,
   localManifest: GistManifest,
 ): void {
-  const deletions = Object.entries(allFiles).filter(
-    (kv): kv is [string, null] => kv[1] === null,
-  );
+  const deletions = Object.entries(allFiles).filter((kv): kv is [string, null] => kv[1] === null);
   const finalBatch = additionBatches[additionBatches.length - 1]!;
   const lastBatchHasContent = Object.values(finalBatch).some((v) => v !== null);
   if (lastBatchHasContent) {
@@ -1016,5 +1011,3 @@ function getPayloadForEntry(entryKey: string, payload: UploadPayload): unknown {
 
   return null;
 }
-
-

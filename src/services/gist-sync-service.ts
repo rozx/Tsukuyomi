@@ -15,10 +15,13 @@ import {
   downloadWithManifest,
   uploadIncremental,
   conditionalGetGist,
+  deserializeEntry,
+  readFile,
   type IncrementalDownloadResult,
   type IncrementalUploadResult,
   type UploadPayload,
 } from 'src/services/gist-sync-incremental';
+import type { EntryValue, GistFileLike } from 'src/services/gist-sync-incremental';
 
 /**
  * Gist 文件名称常量
@@ -638,7 +641,9 @@ export class GistSyncService {
       coverHistory?: CoverHistoryItem[];
       memories?: Memory[];
     },
-    onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
   ): Promise<{
     files: Record<string, { content: string } | null>;
     uploadStats: Array<{
@@ -921,7 +926,9 @@ export class GistSyncService {
     preparePhaseItems: number,
     estimatedUploadItems: number,
     totalItemsIn: number,
-    onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
   ): Promise<{ totalItems: number; gistId: string | undefined; gistUrl: string | undefined }> {
     if (!this.octokit) throw new Error('Octokit 客户端未初始化');
     let gistId: string | undefined = existingGistId;
@@ -959,7 +966,11 @@ export class GistSyncService {
         });
 
         try {
-          const response = await this.patchGistBatchWithRetry(existingGistId, batchFiles, batchIndex);
+          const response = await this.patchGistBatchWithRetry(
+            existingGistId,
+            batchFiles,
+            batchIndex,
+          );
           if (batchIndex === 0) {
             gistId = response.data.id;
             gistUrl = response.data.html_url;
@@ -1002,7 +1013,9 @@ export class GistSyncService {
   private async createNewGistFromFiles(
     files: Record<string, { content: string } | null>,
     totalItems: number,
-    onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
   ): Promise<{ gistId: string; gistUrl: string | undefined }> {
     if (!this.octokit) throw new Error('Octokit 客户端未初始化');
 
@@ -1284,6 +1297,84 @@ export class GistSyncService {
   }
 
   /**
+   * 解析 manifest 驱动的新布局修订快照。
+   * 历史恢复需要支持独立的 settings / ai-models / cover-history / memories 条目，
+   * 不能再假设它们都内嵌在单个 settings 文件里。
+   */
+  private async downloadRevisionFromManifestFiles(
+    gistFiles: Record<string, GistFileLike>,
+  ): Promise<GistSyncData | null> {
+    const manifestFile = gistFiles[GIST_FILE_NAMES.MANIFEST];
+    if (!manifestFile) {
+      return null;
+    }
+
+    const fetchRaw = async (url: string): Promise<string> => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response.text();
+    };
+
+    const manifestContent = await readFile(GIST_FILE_NAMES.MANIFEST, gistFiles, fetchRaw);
+    if (!manifestContent) {
+      throw new Error('manifest.json 内容为空');
+    }
+
+    let manifest: {
+      entries?: Record<string, { hash: string; lastEdited: string; chunks?: number }>;
+    };
+    try {
+      manifest = JSON.parse(manifestContent) as typeof manifest;
+    } catch (error) {
+      throw new Error(
+        `manifest.json 解析失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    if (!manifest.entries || typeof manifest.entries !== 'object') {
+      throw new Error('manifest.json 缺少有效的 entries 字段');
+    }
+
+    const result: GistSyncData = {
+      aiModels: [],
+      novels: [],
+    };
+
+    const entries = Object.entries(manifest.entries).sort(([a], [b]) => a.localeCompare(b));
+    for (const [entryKey, manifestEntry] of entries) {
+      const entry = await deserializeEntry(entryKey, manifestEntry, gistFiles, fetchRaw);
+      if (!entry) continue;
+      this.assignRevisionEntry(result, entry);
+    }
+
+    return result;
+  }
+
+  private assignRevisionEntry(result: GistSyncData, entry: EntryValue): void {
+    switch (entry.kind) {
+      case 'settings':
+        result.appSettings = entry.value;
+        break;
+      case 'ai-models':
+        result.aiModels = entry.value;
+        break;
+      case 'cover-history':
+        result.coverHistory = entry.value;
+        break;
+      case 'novel':
+        result.novels.push(entry.value);
+        break;
+      case 'memories':
+        result.memories = [...(result.memories ?? []), ...entry.value];
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
    * 扫描 gist 文件列表，收集所有书籍 ID（分块 / 单文件两种格式）
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1324,7 +1415,11 @@ export class GistSyncService {
    * 依次尝试新 / 旧两种分块命名格式（`_` / `#` / `-`），返回首个命中的 gist file
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private lookupChunkFile(gistFiles: Record<string, any>, novelId: string, i: number): {
+  private lookupChunkFile(
+    gistFiles: Record<string, any>,
+    novelId: string,
+    i: number,
+  ): {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     file: any;
     fileName: string;
@@ -1505,14 +1600,8 @@ export class GistSyncService {
   ): string[] {
     const hasChanges =
       commit.change_status &&
-      ((commit.change_status.additions ?? 0) > 0 ||
-        (commit.change_status.deletions ?? 0) > 0);
-    if (
-      !hasChanges ||
-      addedCount > 0 ||
-      removedCount > 0 ||
-      currentModifiedFiles.length > 0
-    ) {
+      ((commit.change_status.additions ?? 0) > 0 || (commit.change_status.deletions ?? 0) > 0);
+    if (!hasChanges || addedCount > 0 || removedCount > 0 || currentModifiedFiles.length > 0) {
       return [];
     }
 
@@ -1846,17 +1935,29 @@ export class GistSyncService {
         novels: [],
       };
 
-      // 读取设置文件（复用 downloadFromGist 的 helper）
-      await this.downloadAndPopulateSettingsFile(gistFiles, result);
+      const hasManifest = !!gistFiles[GIST_FILE_NAMES.MANIFEST];
+      const manifestResult = hasManifest
+        ? await this.downloadRevisionFromManifestFiles(gistFiles as Record<string, GistFileLike>)
+        : null;
 
-      // 收集书籍 ID 后逐本重组（复用 downloadFromGist 的 helper）
-      const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
-      for (const novelId of novelIds) {
-        try {
-          const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
-          if (novel) result.novels.push(novel);
-        } catch {
-          // 继续处理其他书籍
+      if (hasManifest && manifestResult) {
+        result.aiModels = manifestResult.aiModels;
+        result.novels = manifestResult.novels;
+        if (manifestResult.appSettings) result.appSettings = manifestResult.appSettings;
+        if (manifestResult.coverHistory) result.coverHistory = manifestResult.coverHistory;
+        if (manifestResult.memories) result.memories = manifestResult.memories;
+      } else {
+        // 旧布局回退：读取 settings 聚合文件 + 逐本小说文件
+        await this.downloadAndPopulateSettingsFile(gistFiles, result);
+
+        const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
+        for (const novelId of novelIds) {
+          try {
+            const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
+            if (novel) result.novels.push(novel);
+          } catch {
+            // 继续处理其他书籍
+          }
         }
       }
 
@@ -1901,7 +2002,15 @@ export class GistSyncService {
   async uploadToGistIncremental(
     config: SyncConfig,
     payload: UploadPayload,
-    remoteFilesSnapshot: Record<string, { content?: string | null; truncated?: boolean | null; raw_url?: string | null; size?: number | null }>,
+    remoteFilesSnapshot: Record<
+      string,
+      {
+        content?: string | null;
+        truncated?: boolean | null;
+        raw_url?: string | null;
+        size?: number | null;
+      }
+    >,
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
   ): Promise<IncrementalUploadResult> {
     this.validateConfig(config);
