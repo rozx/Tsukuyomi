@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import Button from 'primevue/button';
 import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
+import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import { injectSettingsPage } from 'src/composables/settings-page/useSettingsPage';
 import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
@@ -21,6 +21,12 @@ const currentTabLabel = computed(
 const pageSummary = computed(
   () => `当前位于“${currentTabLabel.value}”分区，可在桌面工具页中连续浏览与调整设置。`,
 );
+
+const settingsMetrics = computed(() => [
+  { label: '设置分区', value: ctx.tabs.value.length },
+  { label: '当前分区', value: currentTabLabel.value, wide: true },
+  { label: '运行环境', value: ctx.isElectron.value ? 'Electron' : 'Web', wide: true },
+]);
 
 function panelFor(value: string) {
   if (ctx.isElectron.value) {
@@ -46,36 +52,15 @@ function panelFor(value: string) {
 <template>
   <div class="desktop-settings-page">
     <DesktopWorkbenchHeader eyebrow="Settings" title="设置工作台" :description="pageSummary">
-      <template #actions>
-        <div class="settings-header-actions">
-          <Button
-            label="返回"
-            icon="pi pi-arrow-left"
-            class="p-button-outlined"
-            @click="ctx.goBack"
-          />
-        </div>
+      <template #prefix>
+        <button type="button" class="settings-back-link" @click="ctx.goBack">
+          <i class="pi pi-arrow-left" aria-hidden="true" />
+          <span>返回</span>
+        </button>
       </template>
 
       <template #metrics>
-        <div class="settings-metrics-grid">
-          <div class="settings-metric-card">
-            <div class="settings-metric-label">设置分区</div>
-            <div class="settings-metric-value">{{ ctx.tabs.value.length }}</div>
-          </div>
-          <div class="settings-metric-card">
-            <div class="settings-metric-label">当前分区</div>
-            <div class="settings-metric-value settings-metric-value--wide">
-              {{ currentTabLabel }}
-            </div>
-          </div>
-          <div class="settings-metric-card">
-            <div class="settings-metric-label">运行环境</div>
-            <div class="settings-metric-value settings-metric-value--wide">
-              {{ ctx.isElectron.value ? 'Electron' : 'Web' }}
-            </div>
-          </div>
-        </div>
+        <DesktopWorkbenchMetrics :items="settingsMetrics" />
       </template>
     </DesktopWorkbenchHeader>
 
@@ -110,43 +95,31 @@ function panelFor(value: string) {
   padding: 1rem 1.1rem 1.25rem;
 }
 
-.settings-header-actions {
-  width: 100%;
-  display: flex;
-  justify-content: flex-end;
+.settings-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: rgba(247, 244, 236, 0.58);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-family: inherit;
+  line-height: 1;
+  transition: color 0.15s ease;
 }
 
-.settings-metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.8rem;
+.settings-back-link:hover {
+  color: rgba(247, 244, 236, 0.9);
 }
 
-.settings-metric-card {
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 0.95rem 1rem;
+.settings-back-link:active {
+  color: rgba(247, 244, 236, 0.72);
 }
 
-.settings-metric-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: rgba(247, 244, 236, 0.48);
-}
-
-.settings-metric-value {
-  margin-top: 0.45rem;
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: clamp(1.3rem, 0.55vw + 1.1rem, 1.7rem);
-  font-weight: 600;
-  color: rgba(247, 244, 236, 0.96);
-}
-
-.settings-metric-value--wide {
-  font-size: clamp(1.05rem, 0.28vw + 0.95rem, 1.35rem);
+.settings-back-link .pi {
+  font-size: 0.78rem;
 }
 
 .settings-workbench {
@@ -154,12 +127,16 @@ function panelFor(value: string) {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr);
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .settings-nav {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  min-height: 0;
+  overflow-y: auto;
   padding: 1rem;
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.02);
@@ -217,8 +194,10 @@ function panelFor(value: string) {
 
 .settings-panel-area {
   min-height: 0;
+  height: 100%;
   overflow-y: auto;
   padding: 1.2rem;
+  overscroll-behavior: contain;
 }
 
 .settings-panel-area > :deep(*) {
@@ -226,10 +205,6 @@ function panelFor(value: string) {
 }
 
 @media (max-width: 1200px) {
-  .settings-metrics-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .settings-workbench {
     grid-template-columns: 1fr;
   }
@@ -247,15 +222,6 @@ function panelFor(value: string) {
     padding-inline: 0.85rem;
   }
 
-  .settings-header-actions {
-    justify-content: stretch;
-  }
-
-  .settings-header-actions > * {
-    width: 100%;
-  }
-
-  .settings-metrics-grid,
   .settings-nav {
     grid-template-columns: 1fr;
   }

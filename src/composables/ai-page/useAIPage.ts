@@ -2,17 +2,19 @@ import { ref, computed, watch, onMounted, inject, provide, type InjectionKey } f
 import { v4 as uuidv4 } from 'uuid';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import type {
-  AIModel,
-  AIModelDefaultTasks,
-  AIProvider,
-} from 'src/services/ai/types/ai-model';
+import type { AIModel, AIModelDefaultTasks, AIProvider } from 'src/services/ai/types/ai-model';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useSettingsStore } from 'src/stores/settings';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { cloneDeep } from 'lodash';
 
 type TaskKey = keyof AIModelDefaultTasks;
+type TaskRoutingOption = {
+  label: string;
+  value: string;
+};
+
+const AUTO_TASK_ROUTING_VALUE = '__auto__';
 
 type ProviderGroup = {
   provider: AIProvider;
@@ -69,8 +71,6 @@ function createAIPageContext() {
   const showAddDialog = ref(false);
   const showEditDialog = ref(false);
   const searchQuery = ref('');
-
-  // 任务路由 picker 状态：当前正在编辑哪个任务
   const routingPickerTask = ref<TaskKey | null>(null);
 
   const providerPalette: Record<AIProvider, { label: string; letter: string; color: string }> = {
@@ -90,9 +90,9 @@ function createAIPageContext() {
   ];
 
   const getDefaultTasks = (model: AIModel) => {
-    const tasks = DEFAULT_TASK_LABELS.filter(
-      ({ key }) => model.isDefault[key]?.enabled,
-    ).map(({ label }) => label);
+    const tasks = DEFAULT_TASK_LABELS.filter(({ key }) => model.isDefault[key]?.enabled).map(
+      ({ label }) => label,
+    );
     return tasks.join('、') || '无';
   };
 
@@ -146,25 +146,48 @@ function createAIPageContext() {
     }),
   );
 
-  // Picker 候选：与 AIModelSettingsTab 的规则一致 —— 只列出 enabled=true
-  // 且 isDefault[task].enabled=true 的模型。
+  const getTaskRoutingOptions = (task: TaskKey): TaskRoutingOption[] => {
+    const availableModels = aiModelsStore.enabledModels.filter(
+      (model) => model.isDefault[task]?.enabled === true,
+    );
+    return [
+      { label: '自动选择', value: AUTO_TASK_ROUTING_VALUE },
+      ...availableModels.map((model) => ({
+        label: `${getProviderLabel(model.provider)} · ${model.name}`,
+        value: model.id,
+      })),
+    ];
+  };
+
+  const getTaskRoutingSelectValue = (task: TaskKey): string => {
+    const explicitModelId = settingsStore.getTaskDefaultModelId(task);
+    if (explicitModelId) {
+      const model = aiModelsStore.getModelById(explicitModelId);
+      if (model && model.enabled && model.isDefault[task]?.enabled) {
+        return explicitModelId;
+      }
+      void settingsStore.setTaskDefaultModelId(task, null);
+    }
+    return AUTO_TASK_ROUTING_VALUE;
+  };
+
   const routingPickerOptions = computed(() => {
     const task = routingPickerTask.value;
     if (!task) return [];
-    return aiModelsStore.enabledModels.filter((m) => m.isDefault[task]?.enabled === true);
+    return aiModelsStore.enabledModels.filter((model) => model.isDefault[task]?.enabled === true);
   });
 
   const routingPickerCurrentModelId = computed(() => {
     const task = routingPickerTask.value;
     if (!task) return null;
-    const m = aiModelsStore.getDefaultModelForTask(task);
-    return m?.id ?? null;
+    const model = aiModelsStore.getDefaultModelForTask(task);
+    return model?.id ?? null;
   });
 
   const routingPickerTaskLabel = computed(() => {
     const task = routingPickerTask.value;
     if (!task) return '';
-    return TASK_ROWS.find((r) => r.task === task)?.label ?? '';
+    return TASK_ROWS.find((row) => row.task === task)?.label ?? '';
   });
 
   const openTaskRoutingPicker = (task: TaskKey) => {
@@ -173,6 +196,23 @@ function createAIPageContext() {
 
   const closeTaskRoutingPicker = () => {
     routingPickerTask.value = null;
+  };
+
+  const setTaskRoutingModelId = async (task: TaskKey, selectedValue: string) => {
+    try {
+      await settingsStore.setTaskDefaultModelId(
+        task,
+        selectedValue === AUTO_TASK_ROUTING_VALUE ? null : selectedValue,
+      );
+    } catch (error) {
+      console.error('Failed to set task default model:', error);
+      toast.add({
+        severity: 'error',
+        summary: '设置失败',
+        detail: '无法保存任务路由设置，请重试。',
+        life: 3000,
+      });
+    }
   };
 
   const pickModelForTask = async (modelId: string | null) => {
@@ -363,7 +403,6 @@ function createAIPageContext() {
     showAddDialog,
     showEditDialog,
     searchQuery,
-    // 任务路由 picker
     routingPickerTask,
     routingPickerOptions,
     routingPickerCurrentModelId,
@@ -371,6 +410,9 @@ function createAIPageContext() {
     openTaskRoutingPicker,
     closeTaskRoutingPicker,
     pickModelForTask,
+    getTaskRoutingOptions,
+    getTaskRoutingSelectValue,
+    setTaskRoutingModelId,
     // 其他
     getProviderLabel,
     getDefaultTasks,

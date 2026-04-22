@@ -10,6 +10,7 @@ import TieredMenu from 'primevue/tieredmenu';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
 import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
+import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
 
@@ -18,6 +19,11 @@ const ctx = injectBooksPage();
 const totalBooks = computed(() => ctx.booksStore.books.length);
 const starredBooks = computed(() => ctx.booksStore.books.filter((book) => book.starred).length);
 const visibleBooks = computed(() => ctx.filteredBooks.value.length);
+const libraryMetrics = computed(() => [
+  { label: '全部', value: totalBooks.value },
+  { label: '筛选', value: visibleBooks.value },
+  { label: '收藏', value: starredBooks.value },
+]);
 const librarySummary = computed(() => {
   if (ctx.searchQuery.value) {
     return `当前筛出 ${visibleBooks.value} 本书，可直接继续管理、编辑或进入阅读工作区。`;
@@ -49,45 +55,34 @@ const librarySummary = computed(() => {
               />
             </InputGroupAddon>
           </InputGroup>
-          <Button
-            :label="
-              ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label || '排序'
-            "
-            icon="pi pi-sort-alt"
-            icon-pos="right"
-            class="p-button-outlined icon-button-hover flex-shrink-0"
-            @click="
-              (e: Event) => {
-                const menu = ctx.sortMenuRef.value;
-                if (menu) menu.toggle(e);
-              }
-            "
-          />
-          <SplitButton
-            label="添加书籍"
-            icon="pi pi-plus"
-            :model="ctx.addBookMenuItems.value"
-            class="books-add-split-button p-button-primary icon-button-hover flex-shrink-0"
-            @click="ctx.addBook"
-          />
+          <div class="books-toolbar-actions">
+            <Button
+              :label="
+                ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label || '排序'
+              "
+              icon="pi pi-sort-alt"
+              icon-pos="right"
+              class="books-sort-button p-button-outlined icon-button-hover"
+              @click="
+                (e: Event) => {
+                  const menu = ctx.sortMenuRef.value;
+                  if (menu) menu.toggle(e);
+                }
+              "
+            />
+            <SplitButton
+              label="添加书籍"
+              icon="pi pi-plus"
+              :model="ctx.addBookMenuItems.value"
+              class="books-add-split-button p-button-primary icon-button-hover"
+              @click="ctx.addBook"
+            />
+          </div>
         </div>
       </template>
 
       <template #metrics>
-        <div class="library-metrics-grid">
-          <div class="library-metric-card">
-            <div class="library-metric-label">全部书籍</div>
-            <div class="library-metric-value">{{ totalBooks }}</div>
-          </div>
-          <div class="library-metric-card">
-            <div class="library-metric-label">当前筛选</div>
-            <div class="library-metric-value">{{ visibleBooks }}</div>
-          </div>
-          <div class="library-metric-card">
-            <div class="library-metric-label">收藏作品</div>
-            <div class="library-metric-value">{{ starredBooks }}</div>
-          </div>
-        </div>
+        <DesktopWorkbenchMetrics :items="libraryMetrics" />
       </template>
     </DesktopWorkbenchHeader>
 
@@ -258,40 +253,16 @@ const librarySummary = computed(() => {
 
 .books-toolbar {
   width: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
   gap: 0.7rem;
 }
 
-.library-metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.8rem;
-}
-
-.library-metric-card {
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 0.95rem 1rem;
-}
-
-.library-metric-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: rgba(247, 244, 236, 0.48);
-}
-
-.library-metric-value {
-  margin-top: 0.45rem;
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: clamp(1.35rem, 0.6vw + 1.15rem, 1.8rem);
-  font-weight: 600;
-  color: rgba(247, 244, 236, 0.98);
+.books-toolbar-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 0.7rem;
 }
 
 .library-canvas {
@@ -512,18 +483,31 @@ const librarySummary = computed(() => {
 }
 
 .search-input-group {
-  min-width: min(24rem, 100%);
-  flex: 1 1 22rem;
-  max-width: 28rem;
+  min-width: 0;
+  max-width: none;
 }
 
 .search-input-group :deep(.p-inputtext) {
   min-width: 0;
 }
 
+.books-sort-button {
+  min-width: 5.75rem;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.books-toolbar :deep(.p-splitbutton) {
+  flex-shrink: 0;
+}
+
 @media (max-width: 1200px) {
-  .library-metrics-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .books-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .books-toolbar-actions {
+    justify-content: flex-start;
   }
 }
 
@@ -532,25 +516,17 @@ const librarySummary = computed(() => {
     padding-inline: 0.85rem;
   }
 
-  .search-input-group {
-    max-width: none;
+  .books-toolbar-actions {
+    width: 100%;
+  }
+
+  .books-toolbar-actions > * {
+    flex: 1 1 0;
     min-width: 0;
   }
 
-  .books-toolbar {
-    justify-content: stretch;
-  }
-
-  .books-toolbar > * {
-    width: 100%;
-  }
-
-  .library-metrics-grid {
-    grid-template-columns: 1fr;
-  }
-
   .books-toolbar :deep(.p-splitbutton) {
-    width: 100%;
+    width: auto;
   }
 
   .books-toolbar :deep(.p-splitbutton .p-button) {
@@ -558,7 +534,7 @@ const librarySummary = computed(() => {
   }
 
   .books-toolbar :deep(.p-splitbutton .p-splitbutton-button) {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     justify-content: center;
   }
 

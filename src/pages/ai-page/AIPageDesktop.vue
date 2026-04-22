@@ -2,27 +2,26 @@
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
-import Dialog from 'primevue/dialog';
+import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import ProgressSpinner from 'primevue/progressspinner';
 import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
+import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
 
 const ctx = injectAIPage();
 
-const routingPickerVisible = computed({
-  get: () => !!ctx.routingPickerTask.value,
-  set: (open: boolean) => {
-    if (!open) ctx.closeTaskRoutingPicker();
-  },
-});
-
 const enabledCount = computed(() => ctx.aiModels.value.filter((model) => model.enabled).length);
 const configuredRoutes = computed(() => ctx.taskRouting.value.filter((row) => row.modelId).length);
+const aiMetrics = computed(() => [
+  { label: '模型总数', value: ctx.aiModels.value.length },
+  { label: '已启用', value: enabledCount.value },
+  { label: '任务路由', value: `${configuredRoutes.value}/${ctx.taskRouting.value.length}` },
+]);
 const filteredProviderGroups = computed(() =>
   ctx.providerGroups.value
     .map((group) => ({
@@ -66,29 +65,14 @@ const pageSummary = computed(() => {
           <Button
             label="添加 AI 模型"
             icon="pi pi-plus"
-            class="p-button-primary flex-shrink-0"
+            class="p-button-primary ai-add-model-button"
             @click="ctx.addModel"
           />
         </div>
       </template>
 
       <template #metrics>
-        <div class="ai-metrics-grid">
-          <div class="ai-metric-card">
-            <div class="ai-metric-label">模型总数</div>
-            <div class="ai-metric-value">{{ ctx.aiModels.value.length }}</div>
-          </div>
-          <div class="ai-metric-card">
-            <div class="ai-metric-label">已启用</div>
-            <div class="ai-metric-value">{{ enabledCount }}</div>
-          </div>
-          <div class="ai-metric-card">
-            <div class="ai-metric-label">任务路由</div>
-            <div class="ai-metric-value">
-              {{ configuredRoutes }}/{{ ctx.taskRouting.value.length }}
-            </div>
-          </div>
-        </div>
+        <DesktopWorkbenchMetrics :items="aiMetrics" />
       </template>
     </DesktopWorkbenchHeader>
 
@@ -243,72 +227,28 @@ const pageSummary = computed(() => {
         </header>
 
         <div class="ai-routing-list">
-          <button
+          <div
             v-for="row in ctx.taskRouting.value"
             :key="row.task"
             class="ai-routing-row"
             :class="{ 'ai-routing-row--empty': !row.modelId }"
-            @click="ctx.openTaskRoutingPicker(row.task)"
           >
             <div class="ai-routing-row-copy">
               <span class="ai-routing-row-label">{{ row.label }}</span>
               <span class="ai-routing-row-value">{{ row.value }}</span>
             </div>
-            <i class="pi pi-chevron-right" aria-hidden="true" />
-          </button>
+            <Select
+              :model-value="ctx.getTaskRoutingSelectValue(row.task)"
+              :options="ctx.getTaskRoutingOptions(row.task)"
+              option-label="label"
+              option-value="value"
+              class="ai-routing-select"
+              @update:model-value="(value) => ctx.setTaskRoutingModelId(row.task, value)"
+            />
+          </div>
         </div>
       </DesktopWorkbenchSurface>
     </div>
-
-    <Dialog
-      v-model:visible="routingPickerVisible"
-      :header="ctx.routingPickerTaskLabel.value || '任务路由'"
-      modal
-      :style="{ width: '480px', maxWidth: '92vw' }"
-      :dismissable-mask="true"
-    >
-      <div class="ai-picker-list">
-        <button
-          type="button"
-          class="ai-picker-option"
-          :class="{ 'ai-picker-option--active': !ctx.routingPickerCurrentModelId.value }"
-          @click="ctx.pickModelForTask(null)"
-        >
-          <div class="ai-picker-copy">
-            <div class="ai-picker-name">未设置</div>
-            <div class="ai-picker-sub">该任务将无默认模型</div>
-          </div>
-          <i
-            v-if="!ctx.routingPickerCurrentModelId.value"
-            class="pi pi-check ai-picker-check"
-            aria-hidden="true"
-          />
-        </button>
-
-        <button
-          v-for="model in ctx.routingPickerOptions.value"
-          :key="model.id"
-          type="button"
-          class="ai-picker-option"
-          :class="{
-            'ai-picker-option--active': model.id === ctx.routingPickerCurrentModelId.value,
-          }"
-          @click="ctx.pickModelForTask(model.id)"
-        >
-          <div class="ai-picker-copy">
-            <div class="ai-picker-name">{{ model.name }}</div>
-            <div class="ai-picker-sub">
-              {{ ctx.getProviderLabel(model.provider) }} · {{ model.model }}
-            </div>
-          </div>
-          <i
-            v-if="model.id === ctx.routingPickerCurrentModelId.value"
-            class="pi pi-check ai-picker-check"
-            aria-hidden="true"
-          />
-        </button>
-      </div>
-    </Dialog>
   </div>
 </template>
 
@@ -322,47 +262,27 @@ const pageSummary = computed(() => {
 }
 
 .ai-header-actions {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.7rem;
-  flex-wrap: wrap;
+  width: min(100%, 44rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  justify-content: end;
+  gap: 0.75rem;
 }
 
 .ai-search-group {
-  min-width: min(24rem, 100%);
-  flex: 1 1 22rem;
-  max-width: 28rem;
+  min-width: 0;
+  max-width: none;
 }
 
-.ai-metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.8rem;
+.ai-search-group :deep(.p-inputtext) {
+  min-width: 0;
 }
 
-.ai-metric-card {
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 0.95rem 1rem;
-}
-
-.ai-metric-label {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: rgba(247, 244, 236, 0.48);
-}
-
-.ai-metric-value {
-  margin-top: 0.45rem;
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: clamp(1.3rem, 0.55vw + 1.1rem, 1.7rem);
-  font-weight: 600;
-  color: rgba(247, 244, 236, 0.96);
+.ai-add-model-button {
+  min-width: 11.5rem;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .ai-loading-shell {
@@ -572,35 +492,41 @@ const pageSummary = computed(() => {
 }
 
 .ai-routing-list {
-  display: flex;
   flex: 1;
   min-height: 0;
+  display: flex;
   flex-direction: column;
   gap: 0.7rem;
   margin-top: 1rem;
+  overflow-y: auto;
+  padding-right: 0.3rem;
+  padding-bottom: 0.1rem;
+  scrollbar-gutter: stable;
 }
 
 .ai-routing-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.85rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
   width: 100%;
   padding: 0.9rem 0.95rem;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.03);
   color: rgba(247, 244, 236, 0.88);
-  cursor: pointer;
   transition:
     border-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 160ms cubic-bezier(0.4, 0, 0.2, 1),
     background 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ai-routing-row:hover {
-  transform: translateY(-1px);
   border-color: rgba(186, 201, 219, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ai-routing-row:focus-within {
+  border-color: rgba(186, 201, 219, 0.28);
   background: rgba(255, 255, 255, 0.05);
 }
 
@@ -626,48 +552,16 @@ const pageSummary = computed(() => {
   color: rgba(247, 244, 236, 0.55);
 }
 
-.ai-picker-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-}
-
-.ai-picker-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+.ai-routing-select {
   width: 100%;
-  border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
-  padding: 0.85rem 0.9rem;
-  color: rgba(247, 244, 236, 0.88);
-  cursor: pointer;
 }
 
-.ai-picker-option--active {
-  border-color: rgba(186, 201, 219, 0.28);
-  background: rgba(186, 201, 219, 0.08);
+.ai-routing-select :deep(.p-select-label) {
+  font-size: 0.86rem;
 }
 
-.ai-picker-copy {
-  min-width: 0;
-  text-align: left;
-}
-
-.ai-picker-name {
-  font-weight: 600;
-}
-
-.ai-picker-sub {
-  margin-top: 0.2rem;
-  font-size: 0.8rem;
-  color: rgba(247, 244, 236, 0.56);
-}
-
-.ai-picker-check {
-  color: #bac9db;
+.ai-routing-select :deep(.p-select-dropdown) {
+  color: rgba(247, 244, 236, 0.68);
 }
 
 :deep(.p-dataview) {
@@ -695,12 +589,19 @@ const pageSummary = computed(() => {
 }
 
 @media (max-width: 1200px) {
-  .ai-metrics-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .ai-workbench-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1100px) {
+  .ai-header-actions {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  .ai-add-model-button {
+    width: 100%;
   }
 }
 
@@ -709,20 +610,6 @@ const pageSummary = computed(() => {
     padding-inline: 0.85rem;
   }
 
-  .ai-header-actions {
-    justify-content: stretch;
-  }
-
-  .ai-header-actions > * {
-    width: 100%;
-  }
-
-  .ai-search-group {
-    min-width: 0;
-    max-width: none;
-  }
-
-  .ai-metrics-grid,
   .ai-model-meta-grid {
     grid-template-columns: 1fr;
   }

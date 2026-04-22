@@ -13,57 +13,70 @@ withDefaults(
 </script>
 
 <template>
-  <header class="dwh-shell">
-    <div class="dwh-hero">
+  <header class="dwh">
+    <div class="dwh-main">
       <div class="dwh-copy">
-        <div v-if="eyebrow" class="dwh-eyebrow">{{ eyebrow }}</div>
+        <div v-if="$slots.prefix" class="dwh-prefix">
+          <slot name="prefix" />
+        </div>
+        <span v-if="eyebrow" class="dwh-eyebrow">{{ eyebrow }}</span>
         <h1 class="dwh-title">{{ title }}</h1>
-        <p v-if="description" class="dwh-description">{{ description }}</p>
+        <p v-if="description" class="dwh-desc">{{ description }}</p>
       </div>
       <div v-if="$slots.actions" class="dwh-actions">
         <slot name="actions" />
       </div>
     </div>
-
     <div v-if="$slots.metrics" class="dwh-metrics">
-      <slot name="metrics" />
+      <div class="dwh-metrics-content">
+        <slot name="metrics" />
+      </div>
     </div>
   </header>
 </template>
 
 <style scoped>
-.dwh-shell {
+.dwh {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.55rem;
+  flex-shrink: 0;
 }
 
-.dwh-hero,
-.dwh-metrics {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
-  background:
-    radial-gradient(circle at top left, rgba(186, 201, 219, 0.12), transparent 45%),
-    linear-gradient(135deg, rgba(12, 16, 24, 0.92), rgba(12, 16, 24, 0.76));
-  box-shadow: 0 24px 64px rgba(3, 7, 18, 0.24);
-  backdrop-filter: blur(18px);
-}
-
-.dwh-hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.25rem 1.75rem;
-  padding: clamp(1.2rem, 1vw + 0.95rem, 1.8rem);
+.dwh-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.85rem 1rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--white-opacity-6);
 }
 
 .dwh-copy {
   min-width: 0;
+  max-width: 46rem;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.18rem;
+}
+
+.dwh-prefix {
+  display: flex;
+  align-items: center;
+  min-height: 1rem;
+}
+
+.dwh-title {
+  margin: 0;
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: clamp(1.05rem, 0.4vw + 1rem, 1.3rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--moon-opacity-100);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
 }
 
 .dwh-eyebrow {
@@ -72,52 +85,66 @@ withDefaults(
     'PingFang SC',
     -apple-system,
     sans-serif;
-  font-size: 0.68rem;
+  font-size: 0.6rem;
   font-weight: 600;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(186, 201, 219, 0.82);
+  color: var(--accent-silver);
 }
 
-.dwh-title {
+.dwh-desc {
   margin: 0;
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: clamp(2rem, 1.2vw + 1.65rem, 2.7rem);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-  line-height: 1.05;
-  color: rgba(247, 244, 236, 0.98);
-}
-
-.dwh-description {
-  max-width: 52rem;
-  margin: 0;
-  font-size: 0.98rem;
-  line-height: 1.65;
-  color: rgba(247, 244, 236, 0.68);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--moon-opacity-50);
+  max-width: 42rem;
 }
 
 .dwh-actions {
-  width: min(33rem, 100%);
-  min-width: min(24rem, 100%);
+  min-width: 0;
+  width: min(100%, 44rem);
+  justify-self: end;
+  flex-shrink: 0;
   display: flex;
+  align-items: stretch;
   justify-content: flex-end;
-  align-items: flex-start;
+  gap: 0.5rem;
 }
 
 .dwh-metrics {
-  padding: 0.95rem 1.15rem;
+  width: 100%;
 }
 
-@media (max-width: 1024px) {
-  .dwh-hero {
-    flex-direction: column;
+.dwh-metrics-content {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 1280px) {
+  .dwh-main {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .dwh-actions {
     width: 100%;
-    min-width: 0;
-    justify-content: stretch;
+    justify-self: stretch;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 820px) {
+  .dwh {
+    gap: 0.45rem;
+  }
+
+  .dwh-main {
+    gap: 0.7rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .dwh-title {
+    font-size: 1.02rem;
   }
 }
 </style>
