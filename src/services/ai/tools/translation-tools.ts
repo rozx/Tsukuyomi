@@ -1748,7 +1748,7 @@ async function handleAddTranslationBatch(
   emitBatchActionReport(
     onAction,
     result.processedCount,
-    normalizedIds[0] || '',
+    acceptedParagraphs[0]?.paragraph_id || '',
     acceptedParagraphs,
   );
 
