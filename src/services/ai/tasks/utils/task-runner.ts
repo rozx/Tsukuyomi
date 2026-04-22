@@ -151,6 +151,36 @@ export async function executeToolCallLoop(config: ToolCallLoopConfig): Promise<T
 }
 
 /**
+ * 过滤一批段落条目,只保留 paragraph_id 与 translated_text 都是非空字符串的有效项。
+ */
+function collectValidParagraphItems(
+  items: Array<{ paragraph_id?: string; translated_text?: string }>,
+): Array<{ id: string; translation: string }> {
+  const out: Array<{ id: string; translation: string }> = [];
+  for (const item of items) {
+    if (!item || typeof item.translated_text !== 'string') continue;
+    if (item.paragraph_id && typeof item.paragraph_id === 'string') {
+      out.push({ id: item.paragraph_id, translation: item.translated_text });
+    }
+  }
+  return out;
+}
+
+/**
+ * 回退分支:从工具调用的原始 arguments 中解析 paragraphs 字段。
+ * 仅当工具结果没有返回 accepted_paragraphs 字段时使用。
+ */
+function extractParagraphsFromToolArgs(
+  rawArgs: string | undefined,
+): Array<{ id: string; translation: string }> {
+  const args = JSON.parse(rawArgs || '{}') as {
+    paragraphs?: Array<{ paragraph_id?: string; translated_text?: string }>;
+  };
+  if (!args.paragraphs || args.paragraphs.length === 0) return [];
+  return collectValidParagraphItems(args.paragraphs);
+}
+
+/**
  * Class encapsulating the state and logic for a single task loop execution.
  */
 class TaskLoopSession {
@@ -573,40 +603,19 @@ class TaskLoopSession {
         return [];
       }
 
-      const hasCanonicalAcceptedParagraphs =
-        result && Object.prototype.hasOwnProperty.call(result, 'accepted_paragraphs');
-
+      const hasCanonicalAcceptedParagraphs = Object.prototype.hasOwnProperty.call(
+        result,
+        'accepted_paragraphs',
+      );
       if (Array.isArray(result.accepted_paragraphs)) {
-        const canonicalExtracted: Array<{ id: string; translation: string }> = [];
-        for (const item of result.accepted_paragraphs) {
-          if (!item || typeof item.translated_text !== 'string') continue;
-          if (item.paragraph_id && typeof item.paragraph_id === 'string') {
-            canonicalExtracted.push({ id: item.paragraph_id, translation: item.translated_text });
-          }
-        }
-        return canonicalExtracted;
+        return collectValidParagraphItems(result.accepted_paragraphs);
       }
-
       if (hasCanonicalAcceptedParagraphs) {
         // accepted_paragraphs 字段已返回但格式异常，不再回退到原参数，避免错配扩散
         return [];
       }
 
-      const args = JSON.parse(toolCall.function.arguments || '{}') as {
-        paragraphs?: Array<{ paragraph_id?: string; translated_text?: string }>;
-      };
-      if (!args.paragraphs || args.paragraphs.length === 0) return [];
-
-      const extracted: Array<{ id: string; translation: string }> = [];
-
-      for (const item of args.paragraphs) {
-        if (!item || typeof item.translated_text !== 'string') continue;
-        if (item.paragraph_id && typeof item.paragraph_id === 'string') {
-          extracted.push({ id: item.paragraph_id, translation: item.translated_text });
-        }
-      }
-
-      return extracted;
+      return extractParagraphsFromToolArgs(toolCall.function.arguments);
     } catch {
       return [];
     }

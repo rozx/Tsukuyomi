@@ -111,6 +111,57 @@ export function countUniqueActions(actions: ActionInfo[]): { terms: number; char
   };
 }
 
+type ToastableAction = ActionInfo & {
+  entity: 'term' | 'character';
+  type: 'create' | 'update' | 'delete';
+};
+
+const TOAST_SKIPPED_TYPES = new Set(['read', 'navigate', 'web_search', 'web_fetch']);
+
+function shouldSkipActionToast(action: ActionInfo): boolean {
+  if (TOAST_SKIPPED_TYPES.has(action.type)) return true;
+  if (action.entity !== 'term' && action.entity !== 'character') return true;
+  if (action.type !== 'create' && action.type !== 'update' && action.type !== 'delete') return true;
+  return false;
+}
+
+function buildDeleteToastMessages(
+  action: ToastableAction,
+  entityLabel: string,
+): { summary: string; detail: string } {
+  const deleteData = action.data as { id: string; name?: string };
+  const name = deleteData.name || '未知';
+  return {
+    summary: `已删除${entityLabel}`,
+    detail: `${entityLabel} "${name}" 已被删除`,
+  };
+}
+
+function buildUpsertToastMessages(
+  action: ToastableAction,
+  entityLabel: string,
+  typeLabel: string,
+): { summary: string; detail: string } {
+  const data = action.data as Terminology | CharacterSetting;
+  const name = data.name || '未知';
+  const parts: string[] = [`${entityLabel} "${name}"`];
+  const translation = data.translation?.translation;
+  if (translation) {
+    parts.push(`翻译: "${translation}"`);
+  }
+  return {
+    summary: `已${typeLabel}${entityLabel}`,
+    detail: parts.join('，'),
+  };
+}
+
+function buildActionToastMessages(action: ToastableAction): { summary: string; detail: string } {
+  const entityLabel = action.entity === 'term' ? '术语' : '角色';
+  if (action.type === 'delete') return buildDeleteToastMessages(action, entityLabel);
+  const typeLabel = action.type === 'create' ? '创建' : '更新';
+  return buildUpsertToastMessages(action, entityLabel, typeLabel);
+}
+
 /**
  * 处理 AI 工具调用产生的 ActionInfo，并显示相应的 toast 通知
  * @param book 书籍对象
@@ -124,6 +175,18 @@ export function useActionInfoToast(book: Ref<Novel | undefined>) {
   const toast = useToastWithHistory();
   const booksStore = useBooksStore();
 
+  const buildRevertHandler = (action: ToastableAction) => async () => {
+    if (!book.value) return;
+    const bookId = book.value.id;
+    if (action.type === 'create') {
+      await revertCreate(bookId, action);
+    } else if (action.type === 'update' && action.previousData) {
+      await revertUpdate(bookId, action);
+    } else if (action.type === 'delete' && action.previousData) {
+      await revertDelete(bookId, action, booksStore);
+    }
+  };
+
   const handleActionInfoToast = (
     action: ActionInfo,
     options: {
@@ -132,75 +195,12 @@ export function useActionInfoToast(book: Ref<Novel | undefined>) {
       withRevert?: boolean;
     } = {},
   ): void => {
+    if (shouldSkipActionToast(action)) return;
+    const toastable = action as ToastableAction;
+
     const { severity = 'info', life = 3000, withRevert = false } = options;
-
-    // 跳过不需要显示 toast 的操作
-    if (
-      action.type === 'read' ||
-      action.type === 'navigate' ||
-      action.type === 'web_search' ||
-      action.type === 'web_fetch'
-    ) {
-      return;
-    }
-
-    // 只处理 term 和 character 实体的创建/更新/删除操作
-    if (action.entity !== 'term' && action.entity !== 'character') {
-      return;
-    }
-
-    if (action.type !== 'create' && action.type !== 'update' && action.type !== 'delete') {
-      return;
-    }
-
-    // 显示 CRUD 操作的 toast 通知
-    const entityLabel = action.entity === 'term' ? '术语' : '角色';
-    const typeLabel = action.type === 'create' ? '创建' : action.type === 'update' ? '更新' : '删除';
-
-    let summary = '';
-    let detail = '';
-
-    if (action.type === 'delete') {
-      const deleteData = action.data as { id: string; name?: string };
-      const name = deleteData.name || '未知';
-      summary = `已删除${entityLabel}`;
-      detail = `${entityLabel} "${name}" 已被删除`;
-    } else {
-      const data = action.data as Terminology | CharacterSetting;
-      const name = data.name || '未知';
-
-      if (action.entity === 'term') {
-        const term = data as Terminology;
-        summary = `已${typeLabel}${entityLabel}`;
-        const parts: string[] = [`${entityLabel} "${name}"`];
-        if (term.translation?.translation) {
-          parts.push(`翻译: "${term.translation.translation}"`);
-        }
-        detail = parts.join('，');
-      } else {
-        const character = data as CharacterSetting;
-        summary = `已${typeLabel}${entityLabel}`;
-        const parts: string[] = [`${entityLabel} "${name}"`];
-        if (character.translation?.translation) {
-          parts.push(`翻译: "${character.translation.translation}"`);
-        }
-        detail = parts.join('，');
-      }
-    }
-
-    const onRevert = withRevert
-      ? async () => {
-          if (!book.value) return;
-          const bookId = book.value.id;
-          if (action.type === 'create') {
-            await revertCreate(bookId, action);
-          } else if (action.type === 'update' && action.previousData) {
-            await revertUpdate(bookId, action);
-          } else if (action.type === 'delete' && action.previousData) {
-            await revertDelete(bookId, action, booksStore);
-          }
-        }
-      : undefined;
+    const { summary, detail } = buildActionToastMessages(toastable);
+    const onRevert = withRevert ? buildRevertHandler(toastable) : undefined;
 
     toast.add({
       severity,

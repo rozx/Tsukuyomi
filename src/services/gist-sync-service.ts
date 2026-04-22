@@ -15,10 +15,13 @@ import {
   downloadWithManifest,
   uploadIncremental,
   conditionalGetGist,
+  deserializeEntry,
+  readFile,
   type IncrementalDownloadResult,
   type IncrementalUploadResult,
   type UploadPayload,
 } from 'src/services/gist-sync-incremental';
+import type { EntryValue, GistFileLike } from 'src/services/gist-sync-incremental';
 
 /**
  * Gist 文件名称常量
@@ -35,6 +38,32 @@ const GIST_FILE_NAMES = {
 } as const;
 
 /**
+ * 在 prefix 与 dot 之间以指定分隔符切出 novelId，并校验索引段全部为数字
+ */
+function parseChunkIdWithSeparator(
+  beforeDot: string,
+  prefixLength: number,
+  separator: string,
+): string | null {
+  const sepIndex = beforeDot.lastIndexOf(separator);
+  if (sepIndex === -1 || sepIndex <= prefixLength || sepIndex >= beforeDot.length - 1) {
+    return null;
+  }
+  const indexPart = beforeDot.substring(sepIndex + 1);
+  if (!/^\d+$/.test(indexPart)) return null;
+  const novelId = beforeDot.substring(prefixLength, sepIndex);
+  if (!novelId) return null;
+  return novelId;
+}
+
+/**
+ * 新/旧 `_` 与 `#` 分隔符会把含 `#` 或以 `-` 结尾的伪 ID 视为不合法
+ */
+function isValidStrictChunkId(novelId: string): boolean {
+  return !novelId.includes('#') && !novelId.endsWith('-');
+}
+
+/**
  * 从分块文件名中提取书籍 ID
  * 支持两种格式：
  * - 新格式：novel-chunk-{id}#{index}.json（使用 # 作为分隔符）
@@ -47,61 +76,20 @@ function extractNovelIdFromChunkFileName(fileName: string): string | null {
     return null;
   }
 
-  const prefix = GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX;
-  const prefixLength = prefix.length;
+  const prefixLength = GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX.length;
   const dotIndex = fileName.lastIndexOf('.');
-
-  if (dotIndex <= prefixLength) {
-    return null;
-  }
+  if (dotIndex <= prefixLength) return null;
 
   const beforeDot = fileName.substring(0, dotIndex);
 
-  // 优先尝试最新格式（使用 _ 作为分隔符，为了兼容 Gist 文件名限制）
-  const underscoreIndex = beforeDot.lastIndexOf('_');
-  if (
-    underscoreIndex !== -1 &&
-    underscoreIndex > prefixLength &&
-    underscoreIndex < beforeDot.length - 1
-  ) {
-    const indexPart = beforeDot.substring(underscoreIndex + 1);
-    if (/^\d+$/.test(indexPart)) {
-      const novelId = beforeDot.substring(prefixLength, underscoreIndex);
-      if (novelId && novelId.length > 0 && !novelId.includes('#') && !novelId.endsWith('-')) {
-        return novelId;
-      }
-    }
+  // 最新格式 `_` 与旧格式 `#` 都要求 novelId 合法（不含 `#` 且不以 `-` 结尾）
+  for (const sep of ['_', '#']) {
+    const id = parseChunkIdWithSeparator(beforeDot, prefixLength, sep);
+    if (id && isValidStrictChunkId(id)) return id;
   }
 
-  // 尝试旧格式（使用 # 分隔符）
-  const hashIndex = beforeDot.lastIndexOf('#');
-  if (hashIndex !== -1 && hashIndex > prefixLength && hashIndex < beforeDot.length - 1) {
-    const indexPart = beforeDot.substring(hashIndex + 1);
-    if (/^\d+$/.test(indexPart)) {
-      const novelId = beforeDot.substring(prefixLength, hashIndex);
-      if (novelId && novelId.length > 0 && !novelId.includes('#') && !novelId.endsWith('-')) {
-        return novelId;
-      }
-    }
-  }
-
-  // 向后兼容：尝试旧格式（使用 - 分隔符）
-  const lastDashIndex = beforeDot.lastIndexOf('-');
-  if (
-    lastDashIndex !== -1 &&
-    lastDashIndex > prefixLength &&
-    lastDashIndex < beforeDot.length - 1
-  ) {
-    const indexPart = beforeDot.substring(lastDashIndex + 1);
-    if (/^\d+$/.test(indexPart)) {
-      const novelId = beforeDot.substring(prefixLength, lastDashIndex);
-      if (novelId && novelId.length > 0) {
-        return novelId;
-      }
-    }
-  }
-
-  return null;
+  // 向后兼容：`-` 分隔符不做严格校验
+  return parseChunkIdWithSeparator(beforeDot, prefixLength, '-');
 }
 
 /**
@@ -653,7 +641,9 @@ export class GistSyncService {
       coverHistory?: CoverHistoryItem[];
       memories?: Memory[];
     },
-    onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
   ): Promise<{
     files: Record<string, { content: string } | null>;
     uploadStats: Array<{
@@ -936,7 +926,9 @@ export class GistSyncService {
     preparePhaseItems: number,
     estimatedUploadItems: number,
     totalItemsIn: number,
-    onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
   ): Promise<{ totalItems: number; gistId: string | undefined; gistUrl: string | undefined }> {
     if (!this.octokit) throw new Error('Octokit 客户端未初始化');
     let gistId: string | undefined = existingGistId;
@@ -974,7 +966,11 @@ export class GistSyncService {
         });
 
         try {
-          const response = await this.patchGistBatchWithRetry(existingGistId, batchFiles, batchIndex);
+          const response = await this.patchGistBatchWithRetry(
+            existingGistId,
+            batchFiles,
+            batchIndex,
+          );
           if (batchIndex === 0) {
             gistId = response.data.id;
             gistUrl = response.data.html_url;
@@ -1017,7 +1013,9 @@ export class GistSyncService {
   private async createNewGistFromFiles(
     files: Record<string, { content: string } | null>,
     totalItems: number,
-    onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
   ): Promise<{ gistId: string; gistUrl: string | undefined }> {
     if (!this.octokit) throw new Error('Octokit 客户端未初始化');
 
@@ -1112,7 +1110,6 @@ export class GistSyncService {
         throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
       }
 
-      // 获取 Gist（带重试机制）
       const octokit = this.octokit;
       const gistId = params.gistId;
       const response = await withRetry(
@@ -1120,68 +1117,27 @@ export class GistSyncService {
         '下载 Gist',
       );
 
-      // 远程变更检测：比对 Gist 的 updated_at 与本地存储的时间戳
       const remoteUpdatedAt = response.data.updated_at ?? undefined;
-      if (lastRemoteUpdatedAt && remoteUpdatedAt && lastRemoteUpdatedAt === remoteUpdatedAt) {
-        return {
-          success: true,
-          skipped: true,
-          remoteUpdatedAt,
-          message: '远程数据未发生变更，跳过下载',
-        };
-      }
+      const skipResult = this.maybeSkipDownload(lastRemoteUpdatedAt, remoteUpdatedAt);
+      if (skipResult) return skipResult;
 
       const gistFiles = response.data.files;
       if (!gistFiles) {
         throw new Error('Gist 中没有文件');
       }
 
-      const result: GistSyncData = {
-        aiModels: [],
-        novels: [],
-      };
-
+      const result: GistSyncData = { aiModels: [], novels: [] };
       onProgress?.({ current: 0, total: 1, message: '正在下载数据...' });
 
-      // 1. 读取设置文件（解析失败不影响后续书籍处理）
       await this.downloadAndPopulateSettingsFile(gistFiles, result);
 
-      // 2. 收集所有书籍 ID（包括分块的和未分块的）
       const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
-      const totalNovels = novelIds.size;
-      if (onProgress && totalNovels > 0) {
-        onProgress({
-          current: 0,
-          total: totalNovels,
-          message: `正在下载 ${totalNovels} 本书籍...`,
-        });
-      }
-
-      // 3. 每本书独立处理（失败不影响其他书籍）
-      let processedNovels = 0;
-      const novelIdsArray = Array.from(novelIds);
-      for (const novelId of novelIdsArray) {
-        if (!novelId) continue;
-        try {
-          const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
-          if (novel) result.novels.push(novel);
-          processedNovels++;
-          onProgress?.({
-            current: processedNovels,
-            total: totalNovels,
-            message: novel
-              ? `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`
-              : `跳过书籍 ${novelId} (${processedNovels}/${totalNovels})`,
-          });
-        } catch {
-          processedNovels++;
-          onProgress?.({
-            current: processedNovels,
-            total: totalNovels,
-            message: `处理书籍时出错 (${processedNovels}/${totalNovels})`,
-          });
-        }
-      }
+      const totalNovels = await this.downloadAllNovelsFromGistFiles(
+        novelIds,
+        gistFiles,
+        result,
+        onProgress,
+      );
 
       onProgress?.({
         current: totalNovels || 1,
@@ -1189,12 +1145,7 @@ export class GistSyncService {
         message: '下载完成',
       });
 
-      const loadedNovels = result.novels.length;
-      let message = '从 Gist 下载数据成功';
-      if (totalNovels > loadedNovels) {
-        const failedCount = totalNovels - loadedNovels;
-        message = `从 Gist 下载数据成功，但有 ${failedCount} 个书籍文件解析失败。如果文件过大，请重新上传以使用分块存储。`;
-      }
+      const message = this.buildDownloadMessage(totalNovels, result.novels.length);
 
       return {
         success: true,
@@ -1210,6 +1161,80 @@ export class GistSyncService {
         error: error instanceof Error ? error.message : '从 Gist 下载数据时发生未知错误',
       };
     }
+  }
+
+  /**
+   * 远程 updated_at 与本地记录一致时返回 skipped 结果，否则返回 null
+   */
+  private maybeSkipDownload(
+    lastRemoteUpdatedAt: string | undefined,
+    remoteUpdatedAt: string | undefined,
+  ): (SyncResult & { data?: GistSyncData }) | null {
+    if (lastRemoteUpdatedAt && remoteUpdatedAt && lastRemoteUpdatedAt === remoteUpdatedAt) {
+      return {
+        success: true,
+        skipped: true,
+        remoteUpdatedAt,
+        message: '远程数据未发生变更，跳过下载',
+      };
+    }
+    return null;
+  }
+
+  /**
+   * 顺序下载所有书籍，单本失败不影响其他书籍；返回总书籍数
+   */
+  private async downloadAllNovelsFromGistFiles(
+    novelIds: Set<string>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    gistFiles: Record<string, any>,
+    result: GistSyncData,
+    onProgress?: (progress: { current: number; total: number; message: string }) => void,
+  ): Promise<number> {
+    const totalNovels = novelIds.size;
+    if (onProgress && totalNovels > 0) {
+      onProgress({
+        current: 0,
+        total: totalNovels,
+        message: `正在下载 ${totalNovels} 本书籍...`,
+      });
+    }
+
+    let processedNovels = 0;
+    for (const novelId of novelIds) {
+      if (!novelId) continue;
+      try {
+        const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
+        if (novel) result.novels.push(novel);
+        processedNovels++;
+        onProgress?.({
+          current: processedNovels,
+          total: totalNovels,
+          message: novel
+            ? `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`
+            : `跳过书籍 ${novelId} (${processedNovels}/${totalNovels})`,
+        });
+      } catch {
+        processedNovels++;
+        onProgress?.({
+          current: processedNovels,
+          total: totalNovels,
+          message: `处理书籍时出错 (${processedNovels}/${totalNovels})`,
+        });
+      }
+    }
+    return totalNovels;
+  }
+
+  /**
+   * 根据成功 / 失败书籍数构造下载完成提示
+   */
+  private buildDownloadMessage(totalNovels: number, loadedNovels: number): string {
+    if (totalNovels > loadedNovels) {
+      const failedCount = totalNovels - loadedNovels;
+      return `从 Gist 下载数据成功，但有 ${failedCount} 个书籍文件解析失败。如果文件过大，请重新上传以使用分块存储。`;
+    }
+    return '从 Gist 下载数据成功';
   }
 
   /**
@@ -1272,6 +1297,84 @@ export class GistSyncService {
   }
 
   /**
+   * 解析 manifest 驱动的新布局修订快照。
+   * 历史恢复需要支持独立的 settings / ai-models / cover-history / memories 条目，
+   * 不能再假设它们都内嵌在单个 settings 文件里。
+   */
+  private async downloadRevisionFromManifestFiles(
+    gistFiles: Record<string, GistFileLike>,
+  ): Promise<GistSyncData | null> {
+    const manifestFile = gistFiles[GIST_FILE_NAMES.MANIFEST];
+    if (!manifestFile) {
+      return null;
+    }
+
+    const fetchRaw = async (url: string): Promise<string> => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response.text();
+    };
+
+    const manifestContent = await readFile(GIST_FILE_NAMES.MANIFEST, gistFiles, fetchRaw);
+    if (!manifestContent) {
+      throw new Error('manifest.json 内容为空');
+    }
+
+    let manifest: {
+      entries?: Record<string, { hash: string; lastEdited: string; chunks?: number }>;
+    };
+    try {
+      manifest = JSON.parse(manifestContent) as typeof manifest;
+    } catch (error) {
+      throw new Error(
+        `manifest.json 解析失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    if (!manifest.entries || typeof manifest.entries !== 'object') {
+      throw new Error('manifest.json 缺少有效的 entries 字段');
+    }
+
+    const result: GistSyncData = {
+      aiModels: [],
+      novels: [],
+    };
+
+    const entries = Object.entries(manifest.entries).sort(([a], [b]) => a.localeCompare(b));
+    for (const [entryKey, manifestEntry] of entries) {
+      const entry = await deserializeEntry(entryKey, manifestEntry, gistFiles, fetchRaw);
+      if (!entry) continue;
+      this.assignRevisionEntry(result, entry);
+    }
+
+    return result;
+  }
+
+  private assignRevisionEntry(result: GistSyncData, entry: EntryValue): void {
+    switch (entry.kind) {
+      case 'settings':
+        result.appSettings = entry.value;
+        break;
+      case 'ai-models':
+        result.aiModels = entry.value;
+        break;
+      case 'cover-history':
+        result.coverHistory = entry.value;
+        break;
+      case 'novel':
+        result.novels.push(entry.value);
+        break;
+      case 'memories':
+        result.memories = [...(result.memories ?? []), ...entry.value];
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
    * 扫描 gist 文件列表，收集所有书籍 ID（分块 / 单文件两种格式）
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1312,7 +1415,11 @@ export class GistSyncService {
    * 依次尝试新 / 旧两种分块命名格式（`_` / `#` / `-`），返回首个命中的 gist file
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private lookupChunkFile(gistFiles: Record<string, any>, novelId: string, i: number): {
+  private lookupChunkFile(
+    gistFiles: Record<string, any>,
+    novelId: string,
+    i: number,
+  ): {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     file: any;
     fileName: string;
@@ -1493,14 +1600,8 @@ export class GistSyncService {
   ): string[] {
     const hasChanges =
       commit.change_status &&
-      ((commit.change_status.additions ?? 0) > 0 ||
-        (commit.change_status.deletions ?? 0) > 0);
-    if (
-      !hasChanges ||
-      addedCount > 0 ||
-      removedCount > 0 ||
-      currentModifiedFiles.length > 0
-    ) {
+      ((commit.change_status.additions ?? 0) > 0 || (commit.change_status.deletions ?? 0) > 0);
+    if (!hasChanges || addedCount > 0 || removedCount > 0 || currentModifiedFiles.length > 0) {
       return [];
     }
 
@@ -1834,17 +1935,29 @@ export class GistSyncService {
         novels: [],
       };
 
-      // 读取设置文件（复用 downloadFromGist 的 helper）
-      await this.downloadAndPopulateSettingsFile(gistFiles, result);
+      const hasManifest = !!gistFiles[GIST_FILE_NAMES.MANIFEST];
+      const manifestResult = hasManifest
+        ? await this.downloadRevisionFromManifestFiles(gistFiles as Record<string, GistFileLike>)
+        : null;
 
-      // 收集书籍 ID 后逐本重组（复用 downloadFromGist 的 helper）
-      const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
-      for (const novelId of novelIds) {
-        try {
-          const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
-          if (novel) result.novels.push(novel);
-        } catch {
-          // 继续处理其他书籍
+      if (hasManifest && manifestResult) {
+        result.aiModels = manifestResult.aiModels;
+        result.novels = manifestResult.novels;
+        if (manifestResult.appSettings) result.appSettings = manifestResult.appSettings;
+        if (manifestResult.coverHistory) result.coverHistory = manifestResult.coverHistory;
+        if (manifestResult.memories) result.memories = manifestResult.memories;
+      } else {
+        // 旧布局回退：读取 settings 聚合文件 + 逐本小说文件
+        await this.downloadAndPopulateSettingsFile(gistFiles, result);
+
+        const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
+        for (const novelId of novelIds) {
+          try {
+            const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
+            if (novel) result.novels.push(novel);
+          } catch {
+            // 继续处理其他书籍
+          }
         }
       }
 
@@ -1889,7 +2002,15 @@ export class GistSyncService {
   async uploadToGistIncremental(
     config: SyncConfig,
     payload: UploadPayload,
-    remoteFilesSnapshot: Record<string, { content?: string | null; truncated?: boolean | null; raw_url?: string | null; size?: number | null }>,
+    remoteFilesSnapshot: Record<
+      string,
+      {
+        content?: string | null;
+        truncated?: boolean | null;
+        raw_url?: string | null;
+        size?: number | null;
+      }
+    >,
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
   ): Promise<IncrementalUploadResult> {
     this.validateConfig(config);
