@@ -288,6 +288,61 @@ async function serializeEntry(
 }
 
 /**
+ * 读取单个扁平文件并解压反序列化；content 缺失时返回 null
+ */
+async function readAndParseSingleFile(
+  filename: string,
+  gistFiles: Record<string, GistFileLike>,
+  fetchRaw: (url: string) => Promise<string>,
+): Promise<unknown> {
+  const content = await readFile(filename, gistFiles, fetchRaw);
+  if (content === null) return null;
+  return parseStoredContent(content);
+}
+
+/**
+ * 依次读取所有 chunk 文件并拼接；任意一块缺失返回 null
+ */
+async function readChunkedContent(
+  chunkPrefix: string,
+  bookId: string,
+  chunks: number,
+  gistFiles: Record<string, GistFileLike>,
+  fetchRaw: (url: string) => Promise<string>,
+): Promise<string | null> {
+  const pieces: string[] = [];
+  for (let i = 0; i < chunks; i++) {
+    const name = `${chunkPrefix}${bookId}_${i}.json`;
+    const content = await readFile(name, gistFiles, fetchRaw);
+    if (content === null) {
+      console.warn(`[gist-sync-incremental] 分块缺失或读取失败: ${name}`);
+      return null;
+    }
+    pieces.push(content);
+  }
+  return pieces.join('');
+}
+
+/**
+ * 读取并解析 novel / memories 型条目（按 chunk 数决定单文件 / 分块路径）
+ */
+async function readBookEntryContent(
+  bookId: string,
+  prefix: string,
+  chunkPrefix: string,
+  chunks: number,
+  gistFiles: Record<string, GistFileLike>,
+  fetchRaw: (url: string) => Promise<string>,
+): Promise<unknown> {
+  const combined =
+    chunks === 0
+      ? await readFile(`${prefix}${bookId}.json`, gistFiles, fetchRaw)
+      : await readChunkedContent(chunkPrefix, bookId, chunks, gistFiles, fetchRaw);
+  if (combined === null) return null;
+  return parseStoredContent(combined);
+}
+
+/**
  * 从 Gist 文件集中读取并反序列化一个条目的内容
  * @param entryKey 条目键
  * @param manifestEntry manifest 中该条目的元数据（用于获取 chunk 数）
@@ -301,69 +356,49 @@ async function deserializeEntry(
   fetchRaw: (url: string) => Promise<string>,
 ): Promise<EntryValue | null> {
   if (entryKey === ENTRY_KEYS.SETTINGS) {
-    const content = await readFile(FILE_NAMES.SETTINGS, gistFiles, fetchRaw);
-    if (content === null) return null;
-    const raw = await parseStoredContent(content);
+    const raw = await readAndParseSingleFile(FILE_NAMES.SETTINGS, gistFiles, fetchRaw);
+    if (raw === null) return null;
     return { kind: 'settings', value: deserializeDates(raw) as AppSettings };
   }
   if (entryKey === ENTRY_KEYS.AI_MODELS) {
-    const content = await readFile(FILE_NAMES.AI_MODELS, gistFiles, fetchRaw);
-    if (content === null) return null;
-    const raw = await parseStoredContent(content);
+    const raw = await readAndParseSingleFile(FILE_NAMES.AI_MODELS, gistFiles, fetchRaw);
+    if (raw === null) return null;
     return { kind: 'ai-models', value: deserializeDates(raw) as AIModel[] };
   }
   if (entryKey === ENTRY_KEYS.COVER_HISTORY) {
-    const content = await readFile(FILE_NAMES.COVER_HISTORY, gistFiles, fetchRaw);
-    if (content === null) return null;
-    const raw = await parseStoredContent(content);
+    const raw = await readAndParseSingleFile(FILE_NAMES.COVER_HISTORY, gistFiles, fetchRaw);
+    if (raw === null) return null;
     return { kind: 'cover-history', value: deserializeDates(raw) as CoverHistoryItem[] };
   }
 
   const novelBookId = parseNovelEntryKey(entryKey);
-  const memoryBookId = parseMemoriesEntryKey(entryKey);
-  const bookId = novelBookId ?? memoryBookId;
-  const prefix = novelBookId
-    ? FILE_NAMES.NOVEL_PREFIX
-    : memoryBookId
-      ? FILE_NAMES.MEMORIES_PREFIX
-      : null;
-  const chunkPrefix = novelBookId
-    ? FILE_NAMES.NOVEL_CHUNK_PREFIX
-    : memoryBookId
-      ? FILE_NAMES.MEMORIES_CHUNK_PREFIX
-      : null;
-
-  if (!bookId || !prefix || !chunkPrefix) {
-    return null;
-  }
-
-  const chunks = manifestEntry.chunks ?? 0;
-  let combined: string | null = null;
-  if (chunks === 0) {
-    combined = await readFile(`${prefix}${bookId}.json`, gistFiles, fetchRaw);
-  } else {
-    const pieces: string[] = [];
-    for (let i = 0; i < chunks; i++) {
-      const name = `${chunkPrefix}${bookId}_${i}.json`;
-      const content = await readFile(name, gistFiles, fetchRaw);
-      if (content === null) {
-        console.warn(`[gist-sync-incremental] 分块缺失或读取失败: ${name}`);
-        return null;
-      }
-      pieces.push(content);
-    }
-    combined = pieces.join('');
-  }
-
-  if (combined === null) return null;
-
-  const raw = await parseStoredContent(combined);
   if (novelBookId) {
+    const raw = await readBookEntryContent(
+      novelBookId,
+      FILE_NAMES.NOVEL_PREFIX,
+      FILE_NAMES.NOVEL_CHUNK_PREFIX,
+      manifestEntry.chunks ?? 0,
+      gistFiles,
+      fetchRaw,
+    );
+    if (raw === null) return null;
     return { kind: 'novel', bookId: novelBookId, value: deserializeDates(raw) as Novel };
   }
+
+  const memoryBookId = parseMemoriesEntryKey(entryKey);
   if (memoryBookId) {
+    const raw = await readBookEntryContent(
+      memoryBookId,
+      FILE_NAMES.MEMORIES_PREFIX,
+      FILE_NAMES.MEMORIES_CHUNK_PREFIX,
+      manifestEntry.chunks ?? 0,
+      gistFiles,
+      fetchRaw,
+    );
+    if (raw === null) return null;
     return { kind: 'memories', bookId: memoryBookId, value: deserializeDates(raw) as Memory[] };
   }
+
   return null;
 }
 

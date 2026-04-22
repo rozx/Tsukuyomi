@@ -1335,6 +1335,106 @@ export class SyncDataService {
   }
 
   /**
+   * 从 gistSync 快照构造删除墓碑的 id/url 双索引
+   */
+  private static buildCoverDeletionMaps(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    gistSyncSnapshot: any,
+  ): {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    deletedCoverIds: any[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    deletedCoverUrls: any[];
+    deletedCoverIdsMap: Map<string, number>;
+    deletedCoverUrlsMap: Map<string, number>;
+  } {
+    const deletedCoverIds = gistSyncSnapshot?.deletedCoverIds || [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const deletedCoverIdsMap = new Map<string, number>(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      deletedCoverIds.map((record: any) => [record.id, record.deletedAt] as const),
+    );
+    const deletedCoverUrls = gistSyncSnapshot?.deletedCoverUrls || [];
+    const deletedCoverUrlsMap = new Map<string, number>(
+      deletedCoverUrls.map(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (record: any) => [normalizeCoverUrl(record.url), record.deletedAt] as const,
+      ),
+    );
+    return { deletedCoverIds, deletedCoverUrls, deletedCoverIdsMap, deletedCoverUrlsMap };
+  }
+
+  /**
+   * 按 id 或 URL 查找远程封面在本地的对应记录
+   */
+  private static findLocalCoverMatch(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    localCovers: any[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    remoteCover: any,
+    remoteUrl: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): any {
+    const byId = localCovers.find((c) => c.id === remoteCover.id);
+    if (byId) return byId;
+    if (!remoteUrl) return undefined;
+    return localCovers.find((c) => normalizeCoverUrl(c.url) === remoteUrl);
+  }
+
+  /**
+   * 命中撤销集合时，同步更新 gistSync.deletedCoverIds / deletedCoverUrls 持久化字段
+   */
+  private static async persistCoverUndeletes(
+    coverIdsToUndelete: Set<string>,
+    coverUrlsToUndelete: Set<string>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    deletedCoverIds: any[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    deletedCoverUrls: any[],
+  ): Promise<void> {
+    if (coverIdsToUndelete.size === 0 && coverUrlsToUndelete.size === 0) return;
+    const settingsStore = useSettingsStore();
+    const updatedDeletedCoverIds = deletedCoverIds.filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (record: any) => !coverIdsToUndelete.has(record.id),
+    );
+    const updatedDeletedCoverUrls = deletedCoverUrls.filter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (record: any) => !coverUrlsToUndelete.has(normalizeCoverUrl(record.url)),
+    );
+    await settingsStore.updateGistSync({
+      deletedCoverIds: updatedDeletedCoverIds,
+      deletedCoverUrls: updatedDeletedCoverUrls,
+    });
+  }
+
+  /**
+   * 挑选本地新增但远端缺失的封面（首次同步或新增判定通过时保留）
+   */
+  private static collectLocalOnlyCovers(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    localCovers: any[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    remoteCovers: any[],
+    syncTime: number,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ): any[] {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: any[] = [];
+    for (const localCover of localCovers) {
+      const localUrl = normalizeCoverUrl(localCover?.url);
+      const existsInRemote =
+        !!remoteCovers.find((c) => c.id === localCover.id) ||
+        (localUrl ? !!remoteCovers.find((c) => normalizeCoverUrl(c?.url) === localUrl) : false);
+      if (existsInRemote) continue;
+      if (remoteCovers.length === 0 || checkIsNewlyAdded(localCover.addedAt, syncTime)) {
+        result.push(localCover);
+      }
+    }
+    return result;
+  }
+
+  /**
    * 应用远端封面历史到本地：合并远端/本地、URL 去重，最后 clear+add 重建。
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1346,28 +1446,20 @@ export class SyncDataService {
     restorableItems: RestorableItem[],
   ): Promise<void> {
     const coverHistoryStore = useCoverHistoryStore();
-    const settingsStore = useSettingsStore();
-
-    const finalCovers: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const deletedCoverIds = gistSyncSnapshot?.deletedCoverIds || [];
-    const deletedCoverIdsMap = new Map<string, number>(
-      deletedCoverIds.map((record: any) => [record.id, record.deletedAt] as const), // eslint-disable-line @typescript-eslint/no-explicit-any
-    );
-    const deletedCoverUrls = gistSyncSnapshot?.deletedCoverUrls || [];
-    const deletedCoverUrlsMap = new Map<string, number>(
-      deletedCoverUrls.map((record: any) => [normalizeCoverUrl(record.url), record.deletedAt] as const), // eslint-disable-line @typescript-eslint/no-explicit-any
-    );
+    const { deletedCoverIds, deletedCoverUrls, deletedCoverIdsMap, deletedCoverUrlsMap } =
+      SyncDataService.buildCoverDeletionMaps(gistSyncSnapshot);
 
     const coverIdsToUndelete = new Set<string>();
     const coverUrlsToUndelete = new Set<string>();
+    const finalCovers: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
 
     for (const remoteCover of remoteCovers) {
       const remoteUrl = normalizeCoverUrl(remoteCover?.url);
-      const localCover =
-        coverHistoryStore.covers.find((c) => c.id === remoteCover.id) ||
-        (remoteUrl
-          ? coverHistoryStore.covers.find((c) => normalizeCoverUrl(c.url) === remoteUrl)
-          : undefined);
+      const localCover = SyncDataService.findLocalCoverMatch(
+        coverHistoryStore.covers,
+        remoteCover,
+        remoteUrl,
+      );
       const winner = SyncDataService.selectFinalCover(
         remoteCover,
         localCover,
@@ -1383,30 +1475,20 @@ export class SyncDataService {
       if (winner) finalCovers.push(winner);
     }
 
-    if (coverIdsToUndelete.size > 0 || coverUrlsToUndelete.size > 0) {
-      const updatedDeletedCoverIds = deletedCoverIds.filter(
-        (record: any) => !coverIdsToUndelete.has(record.id), // eslint-disable-line @typescript-eslint/no-explicit-any
-      );
-      const updatedDeletedCoverUrls = deletedCoverUrls.filter(
-        (record: any) => !coverUrlsToUndelete.has(normalizeCoverUrl(record.url)), // eslint-disable-line @typescript-eslint/no-explicit-any
-      );
-      await settingsStore.updateGistSync({
-        deletedCoverIds: updatedDeletedCoverIds,
-        deletedCoverUrls: updatedDeletedCoverUrls,
-      });
-    }
+    await SyncDataService.persistCoverUndeletes(
+      coverIdsToUndelete,
+      coverUrlsToUndelete,
+      deletedCoverIds,
+      deletedCoverUrls,
+    );
 
-    for (const localCover of coverHistoryStore.covers) {
-      const localUrl = normalizeCoverUrl(localCover?.url);
-      const existsInRemote =
-        !!remoteCovers.find((c) => c.id === localCover.id) ||
-        (localUrl ? !!remoteCovers.find((c) => normalizeCoverUrl(c?.url) === localUrl) : false);
-      if (!existsInRemote) {
-        if (remoteCovers.length === 0 || checkIsNewlyAdded(localCover.addedAt, syncTime)) {
-          finalCovers.push(localCover);
-        }
-      }
-    }
+    finalCovers.push(
+      ...SyncDataService.collectLocalOnlyCovers(
+        coverHistoryStore.covers,
+        remoteCovers,
+        syncTime,
+      ),
+    );
 
     const deduped = dedupeCoverHistoryByUrl(finalCovers);
 

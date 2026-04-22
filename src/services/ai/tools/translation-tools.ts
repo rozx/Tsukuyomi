@@ -261,48 +261,53 @@ function mapParagraphIdErrorToCode(error: string): BatchErrorCode {
   return 'MISSING_PARAGRAPH_ID';
 }
 
-function buildErrorResponse(
-  error: string,
-  options?: {
-    errorCode?: string | undefined;
-    invalidItems?: InvalidBatchItem[] | undefined;
-    invalidParagraphIds?: string[] | undefined;
-    warning?: string | undefined;
-    note?: string | undefined;
-    errors?: string[] | undefined;
-    warnings?: string[] | undefined;
-    failedParagraphs?: FailedParagraphItem[] | undefined;
-  },
-): string {
-  const payload: Record<string, unknown> = {
-    success: false,
-    error,
-  };
+interface BuildErrorResponseOptions {
+  errorCode?: string | undefined;
+  invalidItems?: InvalidBatchItem[] | undefined;
+  invalidParagraphIds?: string[] | undefined;
+  warning?: string | undefined;
+  note?: string | undefined;
+  errors?: string[] | undefined;
+  warnings?: string[] | undefined;
+  failedParagraphs?: FailedParagraphItem[] | undefined;
+}
 
-  if (options?.errorCode) {
-    payload.error_code = options.errorCode;
+/** 将非空数组字段写入 payload（空数组/undefined 则跳过） */
+function assignNonEmptyArray<T>(
+  payload: Record<string, unknown>,
+  key: string,
+  value: T[] | undefined,
+): void {
+  if (value && value.length > 0) {
+    payload[key] = value;
   }
-  if (options?.invalidItems && options.invalidItems.length > 0) {
-    payload.invalid_items = options.invalidItems;
+}
+
+/** 将非空字符串字段写入 payload（空字符串/undefined 则跳过） */
+function assignTruthyString(
+  payload: Record<string, unknown>,
+  key: string,
+  value: string | undefined,
+): void {
+  if (value) {
+    payload[key] = value;
   }
-  if (options?.invalidParagraphIds && options.invalidParagraphIds.length > 0) {
-    payload.invalid_paragraph_ids = options.invalidParagraphIds;
+}
+
+function buildErrorResponse(error: string, options?: BuildErrorResponseOptions): string {
+  const payload: Record<string, unknown> = { success: false, error };
+  if (!options) {
+    return JSON.stringify(payload);
   }
-  if (options?.warning) {
-    payload.warning = options.warning;
-  }
-  if (options?.note) {
-    payload.note = options.note;
-  }
-  if (options?.errors && options.errors.length > 0) {
-    payload.errors = options.errors;
-  }
-  if (options?.warnings && options.warnings.length > 0) {
-    payload.warnings = options.warnings;
-  }
-  if (options?.failedParagraphs && options.failedParagraphs.length > 0) {
-    payload.failed_paragraphs = options.failedParagraphs;
-  }
+
+  assignTruthyString(payload, 'error_code', options.errorCode);
+  assignNonEmptyArray(payload, 'invalid_items', options.invalidItems);
+  assignNonEmptyArray(payload, 'invalid_paragraph_ids', options.invalidParagraphIds);
+  assignTruthyString(payload, 'warning', options.warning);
+  assignTruthyString(payload, 'note', options.note);
+  assignNonEmptyArray(payload, 'errors', options.errors);
+  assignNonEmptyArray(payload, 'warnings', options.warnings);
+  assignNonEmptyArray(payload, 'failed_paragraphs', options.failedParagraphs);
 
   return JSON.stringify(payload);
 }
@@ -1150,6 +1155,157 @@ function validateSingleItem(
   return { kind: 'accepted', warnings, duplicate: false };
 }
 
+interface ProcessTranslationBatchResult {
+  success: boolean;
+  error?: string;
+  errors?: string[];
+  warnings?: string[];
+  processedCount: number;
+  /** 实际通过验证的段落列表（包含历史重复段落，它们也被视为已处理以推进进度） */
+  acceptedItems?: Array<{ paragraphId: string; translatedText: string }>;
+  failedItems?: FailedParagraphItem[];
+}
+
+/** 解析并校验书籍对象，返回错误结果或有效书籍 */
+function resolveBook(
+  bookId: string,
+  preloadedBook: Novel | undefined,
+): { book: Novel } | { error: ProcessTranslationBatchResult } {
+  const resolved = preloadedBook;
+  if (!resolved) {
+    return { error: { success: false, error: ERROR_MESSAGES.BOOK_NOT_FOUND(bookId), processedCount: 0 } };
+  }
+  if (!resolved.volumes) {
+    return { error: { success: false, error: ERROR_MESSAGES.BOOK_NO_VOLUMES, processedCount: 0 } };
+  }
+  return { book: resolved };
+}
+
+/** 根据是否提供 chapterId 选择收集目标段落的路径 */
+async function collectTargetParagraphs(
+  book: Novel,
+  items: BatchItem[],
+  bookId: string,
+  taskType: 'translation' | 'polish' | 'proofreading',
+  chapterId: string | undefined,
+): Promise<{ paragraphs: Paragraph[] } | { error: ProcessTranslationBatchResult }> {
+  if (chapterId) {
+    const chapterResult = await collectTargetParagraphsFromChapter(book, chapterId, items);
+    if (chapterResult.error) {
+      return { error: { success: false, error: chapterResult.error.error, processedCount: 0 } };
+    }
+    return { paragraphs: chapterResult.paragraphs };
+  }
+  const paragraphs = await collectTargetParagraphsLazy(book, items, bookId, taskType);
+  return { paragraphs };
+}
+
+/** 构造缺失段落相关的错误响应（区分「空段落」与「完全找不到」） */
+function buildMissingParagraphsError(
+  items: BatchItem[],
+  targetParagraphs: Paragraph[],
+  targetParagraphsMap: Map<string, Paragraph>,
+): ProcessTranslationBatchResult | null {
+  const missingParagraphIds = items
+    .filter((item) => !targetParagraphsMap.has(item.paragraphId))
+    .map((item) => item.paragraphId);
+  if (missingParagraphIds.length === 0) {
+    return null;
+  }
+  const missingIdSet = new Set(missingParagraphIds);
+  const blankParagraphIds = targetParagraphs
+    .filter((p) => missingIdSet.has(p.id) && isEmptyParagraph(p.text))
+    .map((p) => p.id);
+  if (blankParagraphIds.length > 0) {
+    return {
+      success: false,
+      error: ERROR_MESSAGES.EMPTY_PARAGRAPH_CANNOT_TRANSLATE(blankParagraphIds),
+      processedCount: 0,
+    };
+  }
+  return {
+    success: false,
+    error: ERROR_MESSAGES.PARAGRAPH_NOT_FOUND(missingParagraphIds),
+    processedCount: 0,
+  };
+}
+
+interface ValidationSummary {
+  warnings: string[];
+  acceptedItems: Array<{ paragraphId: string; translatedText: string }>;
+  failedItems: FailedParagraphItem[];
+}
+
+/** 遍历所有批次项执行逐条校验，聚合接受/失败/警告结果 */
+function validateAllItems(
+  items: BatchItem[],
+  targetParagraphsMap: Map<string, Paragraph>,
+  enableOriginalTextValidation: boolean | undefined,
+): ValidationSummary {
+  const warnings: string[] = [];
+  let duplicateCount = 0;
+  const acceptedItems: Array<{ paragraphId: string; translatedText: string }> = [];
+  const failedItems: FailedParagraphItem[] = [];
+
+  for (const item of items) {
+    const paragraph = targetParagraphsMap.get(item.paragraphId);
+    if (!paragraph) continue;
+    const outcome = validateSingleItem(item, paragraph, enableOriginalTextValidation);
+    warnings.push(...outcome.warnings);
+    if (outcome.kind === 'failed') {
+      failedItems.push({
+        paragraph_id: item.paragraphId,
+        error_code: outcome.errorCode,
+        error: outcome.error,
+      });
+      continue;
+    }
+    if (outcome.duplicate) duplicateCount++;
+    // 历史重复段落仍视为已处理以推进进度，但不会创建新翻译版本
+    acceptedItems.push({ paragraphId: item.paragraphId, translatedText: item.translatedText });
+  }
+
+  if (duplicateCount > 0) {
+    warnings.push(ERROR_MESSAGES.TRANSLATION_DUPLICATE(duplicateCount));
+  }
+
+  return { warnings, acceptedItems, failedItems };
+}
+
+/** 根据校验结果装配最终返回值（成功 / 部分成功 / 全部失败） */
+function buildBatchValidationResult(summary: ValidationSummary): ProcessTranslationBatchResult {
+  const { warnings, acceptedItems, failedItems } = summary;
+  const warningsField = warnings.length > 0 ? { warnings } : {};
+
+  if (failedItems.length > 0 && acceptedItems.length === 0) {
+    return {
+      success: false,
+      error: ERROR_MESSAGES.ALL_PARAGRAPHS_FAILED,
+      errors: failedItems.map((it) => it.error),
+      failedItems,
+      ...warningsField,
+      processedCount: 0,
+    };
+  }
+
+  if (failedItems.length > 0) {
+    return {
+      success: true,
+      processedCount: acceptedItems.length,
+      acceptedItems,
+      failedItems,
+      ...warningsField,
+    };
+  }
+
+  return {
+    success: true,
+    processedCount: acceptedItems.length,
+    acceptedItems,
+    ...warningsField,
+  };
+}
+
 /**
  * 处理批次（保存翻译）
  *
@@ -1165,63 +1321,28 @@ async function processTranslationBatch(
   chapterId?: string,
   preloadedBook?: Novel,
   enableOriginalTextValidation?: boolean,
-): Promise<{
-  success: boolean;
-  error?: string;
-  errors?: string[];
-  warnings?: string[];
-  processedCount: number;
-  /** 实际通过验证的段落列表（包含历史重复段落，它们也被视为已处理以推进进度） */
-  acceptedItems?: Array<{ paragraphId: string; translatedText: string }>;
-  failedItems?: FailedParagraphItem[];
-}> {
+): Promise<ProcessTranslationBatchResult> {
   // aiModelId 保留在签名中以维持调用方兼容；实际翻译写入由 onParagraphsExtracted 回调完成
   void aiModelId;
   try {
-    const book = preloadedBook ?? (await BookService.getBookById(bookId));
-    if (!book) {
-      return { success: false, error: ERROR_MESSAGES.BOOK_NOT_FOUND(bookId), processedCount: 0 };
-    }
-    if (!book.volumes) {
-      return { success: false, error: ERROR_MESSAGES.BOOK_NO_VOLUMES, processedCount: 0 };
-    }
+    const bookResolved = resolveBook(
+      bookId,
+      preloadedBook ?? (await BookService.getBookById(bookId)) ?? undefined,
+    );
+    if ('error' in bookResolved) return bookResolved.error;
+    const book = bookResolved.book;
 
     // 收集目标段落：优先使用 chapterId 限定范围（避免加载所有章节）
-    let targetParagraphs: Paragraph[];
-    if (chapterId) {
-      const chapterResult = await collectTargetParagraphsFromChapter(book, chapterId, items);
-      if (chapterResult.error) {
-        return { success: false, error: chapterResult.error.error, processedCount: 0 };
-      }
-      targetParagraphs = chapterResult.paragraphs;
-    } else {
-      targetParagraphs = await collectTargetParagraphsLazy(book, items, bookId, taskType);
-    }
+    const collectResult = await collectTargetParagraphs(book, items, bookId, taskType, chapterId);
+    if ('error' in collectResult) return collectResult.error;
+    const targetParagraphs = collectResult.paragraphs;
 
     // 过滤掉空白段落
     const validTargetParagraphs = targetParagraphs.filter((p) => !isEmptyParagraph(p.text));
     const targetParagraphsMap = new Map(validTargetParagraphs.map((p) => [p.id, p]));
-    const missingParagraphIds = items
-      .filter((item) => !targetParagraphsMap.has(item.paragraphId))
-      .map((item) => item.paragraphId);
-    if (missingParagraphIds.length > 0) {
-      const missingIdSet = new Set(missingParagraphIds);
-      const blankParagraphIds = targetParagraphs
-        .filter((p) => missingIdSet.has(p.id) && isEmptyParagraph(p.text))
-        .map((p) => p.id);
-      if (blankParagraphIds.length > 0) {
-        return {
-          success: false,
-          error: ERROR_MESSAGES.EMPTY_PARAGRAPH_CANNOT_TRANSLATE(blankParagraphIds),
-          processedCount: 0,
-        };
-      }
-      return {
-        success: false,
-        error: ERROR_MESSAGES.PARAGRAPH_NOT_FOUND(missingParagraphIds),
-        processedCount: 0,
-      };
-    }
+
+    const missingError = buildMissingParagraphsError(items, targetParagraphs, targetParagraphsMap);
+    if (missingError) return missingError;
 
     // 处理每个段落
     // 无论任务类型如何，都创建新的翻译版本以保留历史记录
@@ -1232,61 +1353,8 @@ async function processTranslationBatch(
     // 收集所有验证错误和警告，一次性返回，方便 AI 批量修复
     // 注意：实际的翻译写入由调用方的 onParagraphsExtracted 回调统一完成，
     // 工具层只负责验证，不直接修改段落数据，避免双重写入
-    const validationWarnings: string[] = [];
-    let duplicateCount = 0;
-    const acceptedItems: Array<{ paragraphId: string; translatedText: string }> = [];
-    const failedItems: FailedParagraphItem[] = [];
-
-    for (const item of items) {
-      const paragraph = targetParagraphsMap.get(item.paragraphId);
-      if (!paragraph) continue;
-      const outcome = validateSingleItem(item, paragraph, enableOriginalTextValidation);
-      validationWarnings.push(...outcome.warnings);
-      if (outcome.kind === 'failed') {
-        failedItems.push({
-          paragraph_id: item.paragraphId,
-          error_code: outcome.errorCode,
-          error: outcome.error,
-        });
-        continue;
-      }
-      if (outcome.duplicate) duplicateCount++;
-      // 历史重复段落仍视为已处理以推进进度，但不会创建新翻译版本
-      acceptedItems.push({ paragraphId: item.paragraphId, translatedText: item.translatedText });
-    }
-
-    if (duplicateCount > 0) {
-      validationWarnings.push(ERROR_MESSAGES.TRANSLATION_DUPLICATE(duplicateCount));
-    }
-
-    if (failedItems.length > 0 && acceptedItems.length === 0) {
-      const failureErrors = failedItems.map((it) => it.error);
-      return {
-        success: false,
-        error: ERROR_MESSAGES.ALL_PARAGRAPHS_FAILED,
-        errors: failureErrors,
-        failedItems,
-        ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
-        processedCount: 0,
-      };
-    }
-
-    if (failedItems.length > 0) {
-      return {
-        success: true,
-        processedCount: acceptedItems.length,
-        acceptedItems,
-        failedItems,
-        ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
-      };
-    }
-
-    return {
-      success: true,
-      processedCount: acceptedItems.length,
-      acceptedItems,
-      ...(validationWarnings.length > 0 ? { warnings: validationWarnings } : {}),
-    };
+    const summary = validateAllItems(items, targetParagraphsMap, enableOriginalTextValidation);
+    return buildBatchValidationResult(summary);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '未知错误';
     return {
@@ -1336,6 +1404,82 @@ type PrepareBatchParamsResult =
       preloadedBook: Novel | undefined;
     };
 
+/** 构造 validateBatchArgs 失败时的响应字符串 */
+function buildParamValidationFailure(
+  paramValidation: ReturnType<typeof validateBatchArgs>,
+): string {
+  return buildErrorResponse(paramValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
+    errorCode: paramValidation.errorCode || 'PARAM_VALIDATION_FAILED',
+    ...(paramValidation.invalidItems ? { invalidItems: paramValidation.invalidItems } : {}),
+    note: '请确保每个段落都包含有效的 paragraph_id（从 chunk 中 [ID: xxx] 获取）。',
+  });
+}
+
+/** 当 chunkBoundaries 需要纠错时按需预加载书籍对象 */
+async function preloadBookIfNeeded(
+  bookId: string,
+  chunkBoundaries: ToolContext['chunkBoundaries'],
+): Promise<{ book: Novel | undefined } | { failure: string }> {
+  if (!chunkBoundaries?.allowedParagraphIds || chunkBoundaries.allowedParagraphIds.size === 0) {
+    return { book: undefined };
+  }
+  const preloaded = (await BookService.getBookById(bookId)) ?? undefined;
+  if (!preloaded) {
+    return { failure: buildErrorResponse(ERROR_MESSAGES.BOOK_NOT_FOUND(bookId)) };
+  }
+  return { book: preloaded };
+}
+
+/** 构造重复段落 ID 的错误响应 */
+function buildDuplicateIdsFailure(
+  duplicates: string[],
+  warning: string | undefined,
+  correctionWarnings: string[],
+): string {
+  return buildErrorResponse(ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicates), {
+    errorCode: 'DUPLICATE_PARAGRAPHS',
+    invalidParagraphIds: duplicates,
+    warning,
+    ...(correctionWarnings.length > 0 ? { warnings: correctionWarnings } : {}),
+  });
+}
+
+/** 基于歧义匹配信息与无效 ID 生成提示 note 文本（空数组时返回 undefined） */
+function buildAmbiguousNote(
+  ambiguousMatches: ParagraphIdAmbiguousMatch[],
+  invalidIds: string[] | undefined,
+): string | undefined {
+  if (!invalidIds || invalidIds.length === 0) return undefined;
+  const messages = ambiguousMatches
+    .filter((item) => invalidIds.includes(item.originalId))
+    .map((item) =>
+      ERROR_MESSAGES.PARAGRAPH_ID_AMBIGUOUS_CANDIDATES(
+        item.originalId,
+        item.distance,
+        item.candidateIds,
+      ),
+    );
+  if (messages.length === 0) return undefined;
+  return `${messages.slice(0, 3).join('；')}${messages.length > 3 ? '；…' : ''}`;
+}
+
+/** 构造范围校验失败的响应 */
+function buildRangeValidationFailure(
+  rangeValidation: ReturnType<typeof validateParagraphsInRange>,
+  ambiguousMatches: ParagraphIdAmbiguousMatch[],
+  warning: string | undefined,
+  correctionWarnings: string[],
+): string {
+  const note = buildAmbiguousNote(ambiguousMatches, rangeValidation.invalidIds);
+  return buildErrorResponse(rangeValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
+    errorCode: rangeValidation.errorCode || 'OUT_OF_RANGE_PARAGRAPHS',
+    ...(rangeValidation.invalidIds ? { invalidParagraphIds: rangeValidation.invalidIds } : {}),
+    warning,
+    ...(correctionWarnings.length > 0 ? { warnings: correctionWarnings } : {}),
+    ...(note ? { note } : {}),
+  });
+}
+
 /**
  * 执行参数级校验、段落 ID 规范化及范围校验，返回错误响应（若失败）或规范化后的结构
  */
@@ -1344,8 +1488,9 @@ async function prepareBatchParams(
   context: ToolContext,
 ): Promise<PrepareBatchParamsResult> {
   const { bookId, chunkBoundaries, submittedParagraphIds } = context;
-  if (!bookId)
+  if (!bookId) {
     return { kind: 'failure', failure: buildErrorResponse(ERROR_MESSAGES.BOOK_ID_MISSING) };
+  }
 
   const { paragraphs } = args;
   const paramValidation = validateBatchArgs(
@@ -1354,30 +1499,18 @@ async function prepareBatchParams(
     submittedParagraphIds,
   );
   if (!paramValidation.valid || !paramValidation.resolvedIds) {
-    return {
-      kind: 'failure',
-      failure: buildErrorResponse(paramValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
-        errorCode: paramValidation.errorCode || 'PARAM_VALIDATION_FAILED',
-        ...(paramValidation.invalidItems ? { invalidItems: paramValidation.invalidItems } : {}),
-        note: '请确保每个段落都包含有效的 paragraph_id（从 chunk 中 [ID: xxx] 获取）。',
-      }),
-    };
+    return { kind: 'failure', failure: buildParamValidationFailure(paramValidation) };
   }
 
   const resolvedIds = paramValidation.resolvedIds;
   const warning = paramValidation.warning;
 
   // 预加载书籍对象（仅在纠错逻辑需要时提前加载）
-  let preloadedBook: Novel | undefined;
-  if (chunkBoundaries?.allowedParagraphIds && chunkBoundaries.allowedParagraphIds.size > 0) {
-    preloadedBook = (await BookService.getBookById(bookId)) ?? undefined;
-    if (!preloadedBook) {
-      return {
-        kind: 'failure',
-        failure: buildErrorResponse(ERROR_MESSAGES.BOOK_NOT_FOUND(bookId)),
-      };
-    }
+  const preloadResult = await preloadBookIfNeeded(bookId, chunkBoundaries);
+  if ('failure' in preloadResult) {
+    return { kind: 'failure', failure: preloadResult.failure };
   }
+  const preloadedBook = preloadResult.book;
 
   const chapterId = context.aiProcessingStore!.activeTasks.find((t) => t.id === context.taskId)
     ?.chapterId;
@@ -1388,19 +1521,13 @@ async function prepareBatchParams(
     preloadedBook,
     chapterId,
   );
-  const normalizedIds = normalizedIdsResult.normalizedIds;
-  const correctionWarnings = normalizedIdsResult.correctionWarnings;
+  const { normalizedIds, correctionWarnings } = normalizedIdsResult;
 
   const duplicateCheck = detectDuplicateParagraphIds(normalizedIds);
   if (duplicateCheck.hasDuplicates) {
     return {
       kind: 'failure',
-      failure: buildErrorResponse(ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicateCheck.duplicates), {
-        errorCode: 'DUPLICATE_PARAGRAPHS',
-        invalidParagraphIds: duplicateCheck.duplicates,
-        warning,
-        ...(correctionWarnings.length > 0 ? { warnings: correctionWarnings } : {}),
-      }),
+      failure: buildDuplicateIdsFailure(duplicateCheck.duplicates, warning, correctionWarnings),
     };
   }
 
@@ -1409,30 +1536,14 @@ async function prepareBatchParams(
     chunkBoundaries?.allowedParagraphIds,
   );
   if (!rangeValidation.valid) {
-    const ambiguousMessages = normalizedIdsResult.ambiguousMatches
-      .filter((item) => rangeValidation.invalidIds?.includes(item.originalId))
-      .map((item) =>
-        ERROR_MESSAGES.PARAGRAPH_ID_AMBIGUOUS_CANDIDATES(
-          item.originalId,
-          item.distance,
-          item.candidateIds,
-        ),
-      );
     return {
       kind: 'failure',
-      failure: buildErrorResponse(rangeValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
-        errorCode: rangeValidation.errorCode || 'OUT_OF_RANGE_PARAGRAPHS',
-        ...(rangeValidation.invalidIds
-          ? { invalidParagraphIds: rangeValidation.invalidIds }
-          : {}),
+      failure: buildRangeValidationFailure(
+        rangeValidation,
+        normalizedIdsResult.ambiguousMatches,
         warning,
-        ...(correctionWarnings.length > 0 ? { warnings: correctionWarnings } : {}),
-        ...(ambiguousMessages.length > 0
-          ? {
-              note: `${ambiguousMessages.slice(0, 3).join('；')}${ambiguousMessages.length > 3 ? '；…' : ''}`,
-            }
-          : {}),
-      }),
+        correctionWarnings,
+      ),
     };
   }
 
@@ -1457,17 +1568,127 @@ function collectIncompleteTodos(
 /**
  * add_translation_batch 工具的主处理入口
  */
+interface AcceptedParagraph {
+  paragraph_id: string;
+  translated_text: string;
+}
+
+/** 将 AddTranslationBatchArgs.paragraphs 与归一化 ID 配对为内部 BatchItem 数组 */
+function buildProcessItems(
+  paragraphs: TranslationBatchItem[],
+  normalizedIds: string[],
+): BatchItem[] {
+  return paragraphs.map((p, i) => ({
+    paragraphId: normalizedIds[i]!,
+    originalTextPrefix: typeof p.original_text_prefix === 'string' ? p.original_text_prefix : '',
+    translatedText: p.translated_text,
+  }));
+}
+
+/** processTranslationBatch 失败时的响应字符串 */
+function buildProcessFailureResponse(
+  result: ProcessTranslationBatchResult,
+  combinedWarnings: string[],
+  warning: string | undefined,
+): string {
+  return buildErrorResponse(result.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
+    errorCode: result.failedItems?.length ? 'ALL_PARAGRAPHS_FAILED' : undefined,
+    errors: result.errors,
+    warnings: combinedWarnings.length > 0 ? combinedWarnings : undefined,
+    failedParagraphs: result.failedItems,
+    warning,
+  });
+}
+
+/** 将已接受段落 ID 合入 submittedParagraphIds 集合（防止下次批次重复提交） */
+function trackSubmittedParagraphIds(
+  submittedParagraphIds: Set<string> | undefined,
+  acceptedParagraphs: AcceptedParagraph[],
+): void {
+  if (!submittedParagraphIds) return;
+  for (const item of acceptedParagraphs) {
+    submittedParagraphIds.add(item.paragraph_id);
+  }
+}
+
+/** 通过 onAction 回调向调用方报告本次批量操作（若回调存在） */
+function emitBatchActionReport(
+  onAction: ToolContext['onAction'],
+  processedCount: number,
+  firstParagraphId: string,
+  acceptedParagraphs: AcceptedParagraph[],
+): void {
+  if (!onAction) return;
+  const preview = acceptedParagraphs
+    .map((item) => item.paragraph_id)
+    .slice(0, 3)
+    .join(', ');
+  const suffix = acceptedParagraphs.length > 3 ? '...' : '';
+  onAction({
+    type: 'update',
+    entity: 'translation',
+    data: {
+      paragraph_id: firstParagraphId,
+      translation_id: `batch_${processedCount}_${Date.now()}`,
+      old_translation: '',
+      new_translation: `批量处理 ${processedCount} 个段落 (${preview}${suffix})`,
+    },
+  });
+}
+
+interface BuildSuccessResponseParams {
+  processedCount: number;
+  acceptedParagraphs: AcceptedParagraph[];
+  failedParagraphs: FailedParagraphItem[];
+  taskType: string;
+  combinedWarnings: string[];
+  warning: string | undefined;
+  taskId: string | undefined;
+}
+
+/** 组装 add_translation_batch 工具成功时返回的 JSON 结构 */
+function buildSuccessResponse(params: BuildSuccessResponseParams): string {
+  const {
+    processedCount,
+    acceptedParagraphs,
+    failedParagraphs,
+    taskType,
+    combinedWarnings,
+    warning,
+    taskId,
+  } = params;
+  const todoReminder = collectIncompleteTodos(taskId);
+  const responseResult: Record<string, unknown> = {
+    success: true,
+    message:
+      failedParagraphs.length > 0
+        ? ERROR_MESSAGES.PARTIAL_SUCCESS_SUMMARY(processedCount, failedParagraphs.length)
+        : `成功处理 ${processedCount} 个段落`,
+    processed_count: processedCount,
+    accepted_paragraphs: acceptedParagraphs,
+    ...(failedParagraphs.length > 0
+      ? {
+          failed_paragraphs: failedParagraphs,
+          result_code: 'PARTIAL_SUCCESS' as BatchResultCode,
+        }
+      : {}),
+    task_type: taskType,
+    ...(combinedWarnings.length > 0 ? { quality_warnings: combinedWarnings } : {}),
+    ...(warning ? { warning } : {}),
+    ...(todoReminder ? { todo_reminder: todoReminder } : {}),
+  };
+
+  return JSON.stringify(responseResult);
+}
+
+/**
+ * add_translation_batch 工具的主处理入口
+ */
 async function handleAddTranslationBatch(
   args: Record<string, unknown>,
   context: ToolContext,
 ): Promise<string> {
-  const {
-    bookId,
-    onAction,
-    taskId,
-    aiProcessingStore,
-    submittedParagraphIds,
-  } = context;
+  const { bookId, onAction, taskId, aiProcessingStore, submittedParagraphIds } = context;
   const { paragraphs } = args as unknown as AddTranslationBatchArgs;
 
   // 验证任务状态 - 只能在 working 状态下调用
@@ -1495,12 +1716,7 @@ async function handleAddTranslationBatch(
   if (prepared.kind === 'failure') return prepared.failure;
   const { normalizedIds, correctionWarnings, warning, preloadedBook } = prepared;
 
-  // 构建处理项（将 resolvedIds 与 translated_text 配对）
-  const processItems = paragraphs.map((p, i) => ({
-    paragraphId: normalizedIds[i]!,
-    originalTextPrefix: typeof p.original_text_prefix === 'string' ? p.original_text_prefix : '',
-    translatedText: p.translated_text,
-  }));
+  const processItems = buildProcessItems(paragraphs, normalizedIds);
 
   // 处理批次
   const result = await processTranslationBatch(
@@ -1516,68 +1732,35 @@ async function handleAddTranslationBatch(
   const combinedWarnings = [...(result.warnings ?? []), ...correctionWarnings];
 
   if (!result.success) {
-    return buildErrorResponse(result.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
-      errorCode: result.failedItems?.length ? 'ALL_PARAGRAPHS_FAILED' : undefined,
-      errors: result.errors,
-      warnings: combinedWarnings.length > 0 ? combinedWarnings : undefined,
-      failedParagraphs: result.failedItems,
-      warning,
-    });
+    return buildProcessFailureResponse(result, combinedWarnings, warning);
   }
 
   // 从规范化的 acceptedItems 构建 accepted_paragraphs（仅包含实际通过验证的段落）
-  const acceptedParagraphs = (result.acceptedItems ?? processItems).map((item) => ({
-    paragraph_id: item.paragraphId,
-    translated_text: item.translatedText,
-  }));
+  const acceptedParagraphs: AcceptedParagraph[] = (result.acceptedItems ?? processItems).map(
+    (item) => ({
+      paragraph_id: item.paragraphId,
+      translated_text: item.translatedText,
+    }),
+  );
   const failedParagraphs = result.failedItems ?? [];
 
-  // 将已处理的段落 ID 添加到 submittedParagraphIds 集合中（用于下次批次计算剩余大小）
-  if (submittedParagraphIds) {
-    for (const item of acceptedParagraphs) {
-      submittedParagraphIds.add(item.paragraph_id);
-    }
-  }
+  trackSubmittedParagraphIds(submittedParagraphIds, acceptedParagraphs);
+  emitBatchActionReport(
+    onAction,
+    result.processedCount,
+    normalizedIds[0] || '',
+    acceptedParagraphs,
+  );
 
-  // 报告操作
-  if (onAction) {
-    onAction({
-      type: 'update',
-      entity: 'translation',
-      data: {
-        paragraph_id: normalizedIds[0] || '',
-        translation_id: `batch_${result.processedCount}_${Date.now()}`,
-        old_translation: '',
-        new_translation: `批量处理 ${result.processedCount} 个段落 (${acceptedParagraphs
-          .map((item) => item.paragraph_id)
-          .slice(0, 3)
-          .join(', ')}${acceptedParagraphs.length > 3 ? '...' : ''})`,
-      },
-    });
-  }
-
-  const todoReminder = collectIncompleteTodos(taskId);
-  const responseResult: Record<string, unknown> = {
-    success: true,
-    message:
-      failedParagraphs.length > 0
-        ? ERROR_MESSAGES.PARTIAL_SUCCESS_SUMMARY(result.processedCount, failedParagraphs.length)
-        : `成功处理 ${result.processedCount} 个段落`,
-    processed_count: result.processedCount,
-    accepted_paragraphs: acceptedParagraphs,
-    ...(failedParagraphs.length > 0
-      ? {
-          failed_paragraphs: failedParagraphs,
-          result_code: 'PARTIAL_SUCCESS' as BatchResultCode,
-        }
-      : {}),
-    task_type: taskType,
-    ...(combinedWarnings.length > 0 ? { quality_warnings: combinedWarnings } : {}),
-    ...(warning ? { warning } : {}),
-    ...(todoReminder ? { todo_reminder: todoReminder } : {}),
-  };
-
-  return JSON.stringify(responseResult);
+  return buildSuccessResponse({
+    processedCount: result.processedCount,
+    acceptedParagraphs,
+    failedParagraphs,
+    taskType,
+    combinedWarnings,
+    warning,
+    taskId,
+  });
 }
 
 export interface CreateTranslationToolsOptions {

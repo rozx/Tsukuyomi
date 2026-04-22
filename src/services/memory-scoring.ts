@@ -213,6 +213,59 @@ export interface KeywordScoringOptions {
 }
 
 /**
+ * 同一 unit 对 summary / content 的基础命中分(取 max)。
+ * summary 命中完整权重,content-only 折半。
+ */
+function computeBaseUnitScore(unit: string, summary: string, content: string): number {
+  const sRatio = summary ? partialMatchLength(unit, summary) / unit.length : 0;
+  const cRatio = content ? partialMatchLength(unit, content) / unit.length : 0;
+  return Math.max(sRatio * SUMMARY_HIT_WEIGHT, cRatio * CONTENT_HIT_WEIGHT);
+}
+
+/**
+ * identifier 加权档:unit 是章节/卷号类结构字符时的强信号,最优先匹配。
+ */
+function identifierMultiplier(unit: string, options: KeywordScoringOptions | undefined): number {
+  const identifierBoost = options?.identifierBoost ?? 1;
+  if (identifierBoost <= 1) return 1;
+  return isIdentifierUnit(unit) ? identifierBoost : 1;
+}
+
+/**
+ * idf 数据驱动档:稀有 unit 拿 2.0×,最常见 unit 压到 0.3×。
+ * round 5 收紧:常见词从 0.5× 压到 0.3×,稀有上限不变。
+ */
+function idfMultiplier(unit: string, options: KeywordScoringOptions | undefined): number {
+  const idfWeights = options?.idfWeights;
+  if (!idfWeights) return 1;
+  const w = idfWeights.get(unit);
+  if (w === undefined) return 1;
+  return 0.3 + 1.7 * w;
+}
+
+/**
+ * properNoun fallback 档:固定 boost,仅当 unit 在配置的 properNouns 集合里。
+ */
+function properNounMultiplier(unit: string, options: KeywordScoringOptions | undefined): number {
+  const boost = options?.boost ?? 1;
+  if (boost <= 1) return 1;
+  return options?.properNouns?.has(unit) ? boost : 1;
+}
+
+/**
+ * 加权优先级:identifier(结构性)→ idf(数据驱动)→ properNoun(配置 fallback)
+ * 三者**互斥**(不复合):一旦匹配上一档就不再看下一档,避免角色名同时拿 boost+idf
+ * 这种"先验+后验"复合放大。
+ */
+function selectUnitMultiplier(unit: string, options: KeywordScoringOptions | undefined): number {
+  const m1 = identifierMultiplier(unit, options);
+  if (m1 !== 1) return m1;
+  const m2 = idfMultiplier(unit, options);
+  if (m2 !== 1) return m2;
+  return properNounMultiplier(unit, options);
+}
+
+/**
  * 单条(不含子拆分)query 对 memory 的关键词部分匹配分。
  * summary / content 分别打分,取 max,再按单元平均。
  */
@@ -227,33 +280,13 @@ function scoreSingleQueryAgainstMemory(
   const content = (memory.content ?? '').toLowerCase();
   if (!summary && !content) return 0;
 
-  const properNouns = options?.properNouns;
-  const boost = options?.boost ?? 1;
-  const identifierBoost = options?.identifierBoost ?? 1;
-  const idfWeights = options?.idfWeights;
-
   let totalScore = 0;
   for (const unit of units) {
-    const sRatio = summary ? partialMatchLength(unit, summary) / unit.length : 0;
-    const cRatio = content ? partialMatchLength(unit, content) / unit.length : 0;
-    // summary 命中完整权重,content-only 折半 —— 对同一字段的最高匹配胜出
-    let unitScore = Math.max(sRatio * SUMMARY_HIT_WEIGHT, cRatio * CONTENT_HIT_WEIGHT);
+    let unitScore = computeBaseUnitScore(unit, summary, content);
     if (unitScore > 0) {
-      // 加权优先级:identifier(结构性)→ idf(数据驱动)→ properNoun(配置 fallback)
-      // 三者**互斥**(不复合):一旦匹配上一档就不再看下一档,避免角色名同时拿 boost+idf
-      // 这种"先验+后验"复合放大。multiplier > 1 时 clamp [0, 1];multiplier < 1 时不 clamp
-      // (允许 0.5x 抑制泛词)。
-      let multiplier = 1;
-      if (identifierBoost > 1 && isIdentifierUnit(unit)) {
-        multiplier = identifierBoost;
-      } else if (idfWeights && idfWeights.has(unit)) {
-        // idf ∈ [0, 1]: 越稀有越大 → multiplier ∈ [0.3, 2.0]
-        // round 5 收紧:常见词从 0.5× 压到 0.3×,稀有上限不变
-        multiplier = 0.3 + 1.7 * idfWeights.get(unit)!;
-      } else if (boost > 1 && properNouns && properNouns.has(unit)) {
-        multiplier = boost;
-      }
+      const multiplier = selectUnitMultiplier(unit, options);
       if (multiplier !== 1) {
+        // multiplier > 1 时 clamp [0, 1];multiplier < 1 时不 clamp(允许 0.5x 抑制泛词)。
         unitScore = Math.min(1, unitScore * multiplier);
       }
     }

@@ -35,6 +35,32 @@ const GIST_FILE_NAMES = {
 } as const;
 
 /**
+ * 在 prefix 与 dot 之间以指定分隔符切出 novelId，并校验索引段全部为数字
+ */
+function parseChunkIdWithSeparator(
+  beforeDot: string,
+  prefixLength: number,
+  separator: string,
+): string | null {
+  const sepIndex = beforeDot.lastIndexOf(separator);
+  if (sepIndex === -1 || sepIndex <= prefixLength || sepIndex >= beforeDot.length - 1) {
+    return null;
+  }
+  const indexPart = beforeDot.substring(sepIndex + 1);
+  if (!/^\d+$/.test(indexPart)) return null;
+  const novelId = beforeDot.substring(prefixLength, sepIndex);
+  if (!novelId) return null;
+  return novelId;
+}
+
+/**
+ * 新/旧 `_` 与 `#` 分隔符会把含 `#` 或以 `-` 结尾的伪 ID 视为不合法
+ */
+function isValidStrictChunkId(novelId: string): boolean {
+  return !novelId.includes('#') && !novelId.endsWith('-');
+}
+
+/**
  * 从分块文件名中提取书籍 ID
  * 支持两种格式：
  * - 新格式：novel-chunk-{id}#{index}.json（使用 # 作为分隔符）
@@ -47,61 +73,20 @@ function extractNovelIdFromChunkFileName(fileName: string): string | null {
     return null;
   }
 
-  const prefix = GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX;
-  const prefixLength = prefix.length;
+  const prefixLength = GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX.length;
   const dotIndex = fileName.lastIndexOf('.');
-
-  if (dotIndex <= prefixLength) {
-    return null;
-  }
+  if (dotIndex <= prefixLength) return null;
 
   const beforeDot = fileName.substring(0, dotIndex);
 
-  // 优先尝试最新格式（使用 _ 作为分隔符，为了兼容 Gist 文件名限制）
-  const underscoreIndex = beforeDot.lastIndexOf('_');
-  if (
-    underscoreIndex !== -1 &&
-    underscoreIndex > prefixLength &&
-    underscoreIndex < beforeDot.length - 1
-  ) {
-    const indexPart = beforeDot.substring(underscoreIndex + 1);
-    if (/^\d+$/.test(indexPart)) {
-      const novelId = beforeDot.substring(prefixLength, underscoreIndex);
-      if (novelId && novelId.length > 0 && !novelId.includes('#') && !novelId.endsWith('-')) {
-        return novelId;
-      }
-    }
+  // 最新格式 `_` 与旧格式 `#` 都要求 novelId 合法（不含 `#` 且不以 `-` 结尾）
+  for (const sep of ['_', '#']) {
+    const id = parseChunkIdWithSeparator(beforeDot, prefixLength, sep);
+    if (id && isValidStrictChunkId(id)) return id;
   }
 
-  // 尝试旧格式（使用 # 分隔符）
-  const hashIndex = beforeDot.lastIndexOf('#');
-  if (hashIndex !== -1 && hashIndex > prefixLength && hashIndex < beforeDot.length - 1) {
-    const indexPart = beforeDot.substring(hashIndex + 1);
-    if (/^\d+$/.test(indexPart)) {
-      const novelId = beforeDot.substring(prefixLength, hashIndex);
-      if (novelId && novelId.length > 0 && !novelId.includes('#') && !novelId.endsWith('-')) {
-        return novelId;
-      }
-    }
-  }
-
-  // 向后兼容：尝试旧格式（使用 - 分隔符）
-  const lastDashIndex = beforeDot.lastIndexOf('-');
-  if (
-    lastDashIndex !== -1 &&
-    lastDashIndex > prefixLength &&
-    lastDashIndex < beforeDot.length - 1
-  ) {
-    const indexPart = beforeDot.substring(lastDashIndex + 1);
-    if (/^\d+$/.test(indexPart)) {
-      const novelId = beforeDot.substring(prefixLength, lastDashIndex);
-      if (novelId && novelId.length > 0) {
-        return novelId;
-      }
-    }
-  }
-
-  return null;
+  // 向后兼容：`-` 分隔符不做严格校验
+  return parseChunkIdWithSeparator(beforeDot, prefixLength, '-');
 }
 
 /**
@@ -1112,7 +1097,6 @@ export class GistSyncService {
         throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
       }
 
-      // 获取 Gist（带重试机制）
       const octokit = this.octokit;
       const gistId = params.gistId;
       const response = await withRetry(
@@ -1120,68 +1104,27 @@ export class GistSyncService {
         '下载 Gist',
       );
 
-      // 远程变更检测：比对 Gist 的 updated_at 与本地存储的时间戳
       const remoteUpdatedAt = response.data.updated_at ?? undefined;
-      if (lastRemoteUpdatedAt && remoteUpdatedAt && lastRemoteUpdatedAt === remoteUpdatedAt) {
-        return {
-          success: true,
-          skipped: true,
-          remoteUpdatedAt,
-          message: '远程数据未发生变更，跳过下载',
-        };
-      }
+      const skipResult = this.maybeSkipDownload(lastRemoteUpdatedAt, remoteUpdatedAt);
+      if (skipResult) return skipResult;
 
       const gistFiles = response.data.files;
       if (!gistFiles) {
         throw new Error('Gist 中没有文件');
       }
 
-      const result: GistSyncData = {
-        aiModels: [],
-        novels: [],
-      };
-
+      const result: GistSyncData = { aiModels: [], novels: [] };
       onProgress?.({ current: 0, total: 1, message: '正在下载数据...' });
 
-      // 1. 读取设置文件（解析失败不影响后续书籍处理）
       await this.downloadAndPopulateSettingsFile(gistFiles, result);
 
-      // 2. 收集所有书籍 ID（包括分块的和未分块的）
       const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
-      const totalNovels = novelIds.size;
-      if (onProgress && totalNovels > 0) {
-        onProgress({
-          current: 0,
-          total: totalNovels,
-          message: `正在下载 ${totalNovels} 本书籍...`,
-        });
-      }
-
-      // 3. 每本书独立处理（失败不影响其他书籍）
-      let processedNovels = 0;
-      const novelIdsArray = Array.from(novelIds);
-      for (const novelId of novelIdsArray) {
-        if (!novelId) continue;
-        try {
-          const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
-          if (novel) result.novels.push(novel);
-          processedNovels++;
-          onProgress?.({
-            current: processedNovels,
-            total: totalNovels,
-            message: novel
-              ? `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`
-              : `跳过书籍 ${novelId} (${processedNovels}/${totalNovels})`,
-          });
-        } catch {
-          processedNovels++;
-          onProgress?.({
-            current: processedNovels,
-            total: totalNovels,
-            message: `处理书籍时出错 (${processedNovels}/${totalNovels})`,
-          });
-        }
-      }
+      const totalNovels = await this.downloadAllNovelsFromGistFiles(
+        novelIds,
+        gistFiles,
+        result,
+        onProgress,
+      );
 
       onProgress?.({
         current: totalNovels || 1,
@@ -1189,12 +1132,7 @@ export class GistSyncService {
         message: '下载完成',
       });
 
-      const loadedNovels = result.novels.length;
-      let message = '从 Gist 下载数据成功';
-      if (totalNovels > loadedNovels) {
-        const failedCount = totalNovels - loadedNovels;
-        message = `从 Gist 下载数据成功，但有 ${failedCount} 个书籍文件解析失败。如果文件过大，请重新上传以使用分块存储。`;
-      }
+      const message = this.buildDownloadMessage(totalNovels, result.novels.length);
 
       return {
         success: true,
@@ -1210,6 +1148,80 @@ export class GistSyncService {
         error: error instanceof Error ? error.message : '从 Gist 下载数据时发生未知错误',
       };
     }
+  }
+
+  /**
+   * 远程 updated_at 与本地记录一致时返回 skipped 结果，否则返回 null
+   */
+  private maybeSkipDownload(
+    lastRemoteUpdatedAt: string | undefined,
+    remoteUpdatedAt: string | undefined,
+  ): (SyncResult & { data?: GistSyncData }) | null {
+    if (lastRemoteUpdatedAt && remoteUpdatedAt && lastRemoteUpdatedAt === remoteUpdatedAt) {
+      return {
+        success: true,
+        skipped: true,
+        remoteUpdatedAt,
+        message: '远程数据未发生变更，跳过下载',
+      };
+    }
+    return null;
+  }
+
+  /**
+   * 顺序下载所有书籍，单本失败不影响其他书籍；返回总书籍数
+   */
+  private async downloadAllNovelsFromGistFiles(
+    novelIds: Set<string>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    gistFiles: Record<string, any>,
+    result: GistSyncData,
+    onProgress?: (progress: { current: number; total: number; message: string }) => void,
+  ): Promise<number> {
+    const totalNovels = novelIds.size;
+    if (onProgress && totalNovels > 0) {
+      onProgress({
+        current: 0,
+        total: totalNovels,
+        message: `正在下载 ${totalNovels} 本书籍...`,
+      });
+    }
+
+    let processedNovels = 0;
+    for (const novelId of novelIds) {
+      if (!novelId) continue;
+      try {
+        const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
+        if (novel) result.novels.push(novel);
+        processedNovels++;
+        onProgress?.({
+          current: processedNovels,
+          total: totalNovels,
+          message: novel
+            ? `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`
+            : `跳过书籍 ${novelId} (${processedNovels}/${totalNovels})`,
+        });
+      } catch {
+        processedNovels++;
+        onProgress?.({
+          current: processedNovels,
+          total: totalNovels,
+          message: `处理书籍时出错 (${processedNovels}/${totalNovels})`,
+        });
+      }
+    }
+    return totalNovels;
+  }
+
+  /**
+   * 根据成功 / 失败书籍数构造下载完成提示
+   */
+  private buildDownloadMessage(totalNovels: number, loadedNovels: number): string {
+    if (totalNovels > loadedNovels) {
+      const failedCount = totalNovels - loadedNovels;
+      return `从 Gist 下载数据成功，但有 ${failedCount} 个书籍文件解析失败。如果文件过大，请重新上传以使用分块存储。`;
+    }
+    return '从 Gist 下载数据成功';
   }
 
   /**

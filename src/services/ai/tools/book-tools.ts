@@ -5,7 +5,7 @@ import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
-import type { Chapter, Novel } from 'src/models/novel';
+import type { Chapter, Novel, Volume } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
 
 /**
@@ -214,6 +214,104 @@ function buildUpdatedChapterTitle(
     return upgradeLegacyChapterTitle(existingTitle, titleOriginal, titleTranslation);
   }
   return mergeModernChapterTitle(existingTitle, titleOriginal, titleTranslation);
+}
+
+function summarizeChapterForBookInfo(
+  c: Chapter,
+): { title: string; translation: string | undefined } {
+  if (typeof c.title === 'string') {
+    return { title: c.title, translation: '' };
+  }
+  return { title: c.title.original, translation: c.title.translation?.translation };
+}
+
+function summarizeVolumeForBookInfo(v: Volume): {
+  title: string;
+  translation: string | undefined;
+  chapter_count: number;
+  chapters: Array<{ title: string; translation: string | undefined }> | undefined;
+} {
+  const title = typeof v.title === 'string' ? v.title : v.title.original;
+  const translation = typeof v.title === 'string' ? '' : v.title.translation?.translation;
+  return {
+    title,
+    translation,
+    chapter_count: v.chapters?.length || 0,
+    chapters: v.chapters?.map((c) => summarizeChapterForBookInfo(c)),
+  };
+}
+
+function buildBookInfoStats(book: Novel): {
+  total_volumes: number;
+  total_chapters: number;
+  total_terms: number;
+  total_characters: number;
+} {
+  return {
+    total_volumes: book.volumes?.length || 0,
+    total_chapters: book.volumes?.reduce((acc, v) => acc + (v.chapters?.length || 0), 0) || 0,
+    total_terms: book.terminologies?.length || 0,
+    total_characters: book.characterSettings?.length || 0,
+  };
+}
+
+/**
+ * 构造 get_book_info 工具返回的结构（书籍元信息 + 卷章结构 + 统计）
+ */
+function buildGetBookInfoPayload(book: Novel): {
+  id: string;
+  title: string;
+  author: string;
+  description: string;
+  tags: string[];
+  notes: Array<{ id: string; text: string; createdAt: Date }>;
+  structure: Array<{
+    title: string;
+    translation: string | undefined;
+    chapter_count: number;
+    chapters: Array<{ title: string; translation: string | undefined }> | undefined;
+  }>;
+  stats: {
+    total_volumes: number;
+    total_chapters: number;
+    total_terms: number;
+    total_characters: number;
+  };
+} {
+  const notes =
+    book.notes?.map((n) => ({
+      id: n.id,
+      text: n.text,
+      createdAt: n.createdAt,
+    })) || [];
+
+  const structure = book.volumes?.map((v) => summarizeVolumeForBookInfo(v)) || [];
+
+  return {
+    id: book.id,
+    title: book.title,
+    author: book.author || '未知',
+    description: book.description || '无',
+    tags: book.tags || [],
+    notes,
+    structure,
+    stats: buildBookInfoStats(book),
+  };
+}
+
+/**
+ * 若开启 include_memory 则按书名/作者拉一次混合记忆搜索,否则返回空数组
+ */
+async function maybeFetchBookRelatedMemories(
+  book: Novel,
+  bookId: string | null | undefined,
+  includeMemory: boolean,
+): Promise<Array<{ id: string; summary: string }>> {
+  if (!includeMemory || !bookId) return [];
+  const keywords: string[] = [];
+  if (book.title) keywords.push(book.title);
+  if (book.author) keywords.push(book.author);
+  return searchRelatedMemoriesHybrid(bookId, [{ type: 'book', id: bookId }], keywords, 5);
 }
 
 interface BookInfoSnapshot {
@@ -588,67 +686,17 @@ export const bookTools: ToolDefinition[] = [
       const book = resolved.book;
 
       try {
-        // 报告读取操作
         if (onAction) {
           onAction({
             type: 'read',
             entity: 'book',
-            data: {
-              book_id: bookId,
-              tool_name: 'get_book_info',
-            },
+            data: { book_id: bookId, tool_name: 'get_book_info' },
           });
         }
 
-        // 构建返回给 AI 的信息
-        const info = {
-          id: book.id,
-          title: book.title,
-          author: book.author || '未知',
-          description: book.description || '无',
-          tags: book.tags || [],
-          // 备注信息
-          notes:
-            book.notes?.map((n) => ({
-              id: n.id,
-              text: n.text,
-              createdAt: n.createdAt,
-            })) || [],
-          // 结构摘要
-          structure:
-            book.volumes?.map((v) => ({
-              title: typeof v.title === 'string' ? v.title : v.title.original,
-              translation: typeof v.title === 'string' ? '' : v.title.translation?.translation,
-              chapter_count: v.chapters?.length || 0,
-              chapters: v.chapters?.map((c) => ({
-                title: typeof c.title === 'string' ? c.title : c.title.original,
-                translation: typeof c.title === 'string' ? '' : c.title.translation?.translation,
-              })),
-            })) || [],
-          // 统计信息
-          stats: {
-            total_volumes: book.volumes?.length || 0,
-            total_chapters:
-              book.volumes?.reduce((acc, v) => acc + (v.chapters?.length || 0), 0) || 0,
-            total_terms: book.terminologies?.length || 0,
-            total_characters: book.characterSettings?.length || 0,
-          },
-        };
-
-        // 搜索相关记忆（使用书籍标题和作者作为关键词）
+        const info = buildGetBookInfoPayload(book);
         const { include_memory = true } = parsedArgs;
-        let relatedMemories: Array<{ id: string; summary: string }> = [];
-        if (include_memory && bookId) {
-          const keywords: string[] = [];
-          if (book.title) keywords.push(book.title);
-          if (book.author) keywords.push(book.author);
-          relatedMemories = await searchRelatedMemoriesHybrid(
-            bookId,
-            [{ type: 'book', id: bookId }],
-            keywords,
-            5,
-          );
-        }
+        const relatedMemories = await maybeFetchBookRelatedMemories(book, bookId, include_memory);
 
         return JSON.stringify({
           success: true,

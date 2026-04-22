@@ -997,6 +997,154 @@ export class AssistantService {
    *
    * 返回 null 表示无需（或无法）摘要，调用方继续正常的 followUp 请求。
    */
+  /**
+   * 判断当前 messages 是否已越过循环内摘要阈值;同时拿到 system / user 锚点。
+   * 若不满足(模型无 tokens 上限 / 未越过阈值 / 缺 system 或 user 消息),返回 null。
+   */
+  private static evaluateInLoopSummarizeTrigger(params: {
+    messages: ChatMessage[];
+    model: AIModel;
+    toolSchemaTokens: number;
+  }): {
+    systemPrompt: string;
+    userMessage: string;
+    systemMsg: ChatMessage;
+    userMsg: ChatMessage;
+    currentTokens: number;
+    threshold: number;
+  } | null {
+    const { messages, model, toolSchemaTokens } = params;
+
+    if (
+      !model.maxInputTokens ||
+      model.maxInputTokens <= 0 ||
+      model.maxInputTokens === UNLIMITED_TOKENS
+    ) {
+      return null;
+    }
+
+    const currentTokens =
+      estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
+    const threshold = Math.floor(model.maxInputTokens * IN_LOOP_SUMMARIZE_THRESHOLD);
+    if (currentTokens < threshold) {
+      return null;
+    }
+
+    const systemMsg = messages.find((m) => m.role === 'system');
+    const userMsg = messages.find((m) => m.role === 'user');
+    if (!systemMsg?.content || !userMsg?.content) {
+      return null;
+    }
+
+    return {
+      systemPrompt: systemMsg.content,
+      userMessage: userMsg.content,
+      systemMsg,
+      userMsg,
+      currentTokens,
+      threshold,
+    };
+  }
+
+  /**
+   * 从一批 messages 里抽出需要进入摘要的条目(剔除 system / 保留的原始 user / 空内容)。
+   */
+  private static collectMessagesToSummarize(
+    messages: ChatMessage[],
+    systemMsg: ChatMessage,
+    userMsg: ChatMessage,
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    return messages
+      .filter((m) => m !== systemMsg && m !== userMsg && (m.content ?? '').length > 0)
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content || '',
+      }));
+  }
+
+  /**
+   * 摘要成功后重启初始请求,拿到新一轮 toolCalls 供循环继续。
+   */
+  private static async restartInitialRequestAfterSummary(params: {
+    messages: ChatMessage[];
+    model: AIModel;
+    tools: AITool[];
+    aiService: ReturnType<typeof AIServiceFactory.getService>;
+    config: AIServiceConfig;
+    options: AssistantServiceOptions;
+    toolSchemaTokens: number;
+    taskId?: string;
+  }): Promise<{ finalText: string; toolCalls: AIToolCall[] }> {
+    const { messages, model, tools, aiService, config, options, toolSchemaTokens, taskId } = params;
+
+    // 摘要后 messages 只剩 [system+summary, user]，没有 pending tool_results，
+    // 必须以 isInitialRequest=true 重新拉一轮 AI 回复。
+    const restartRequest = this.buildTextRequest(messages, tools, {
+      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
+      maxOutputTokens: model.maxOutputTokens,
+    });
+
+    const restartResult = await this.executeAIRequest({
+      aiService,
+      config,
+      request: restartRequest,
+      messages,
+      options,
+      ...(taskId ? { taskId } : {}),
+      isInitialRequest: true,
+    });
+
+    await this.updateTaskContextUsage({
+      messages,
+      model,
+      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
+      aiProcessingStore: options.aiProcessingStore,
+      taskId,
+    });
+
+    return { finalText: restartResult.text, toolCalls: restartResult.toolCalls };
+  }
+
+  /**
+   * 将可选参数(signal / aiProcessingStore / taskId / onSummarizingStart)组装进
+   * requestSummaryReset 的 payload。单独封装避免 maybeSummarizeInLoop 里的 ternary-spread
+   * 被复杂度扫描器误判成多分支。
+   */
+  private static async requestInLoopSummary(params: {
+    model: AIModel;
+    systemPrompt: string;
+    userMessage: string;
+    messagesToSummarize: Array<{ role: 'user' | 'assistant'; content: string }>;
+    bookId: string | null;
+    options: AssistantServiceOptions;
+    taskId?: string;
+    signal?: AbortSignal;
+  }): Promise<{ summary?: string } | null> {
+    const { model, systemPrompt, userMessage, messagesToSummarize, bookId, options, taskId, signal } =
+      params;
+    const extra: Record<string, unknown> = {};
+    if (signal) extra.finalSignal = signal;
+    if (options.aiProcessingStore) extra.aiProcessingStore = options.aiProcessingStore;
+    if (taskId) extra.taskId = taskId;
+    if (options.onSummarizingStart) extra.onSummarizingStart = options.onSummarizingStart;
+
+    return this.requestSummaryReset({
+      model,
+      systemPrompt,
+      userMessage,
+      messagesToSummarize,
+      context: { currentBookId: bookId },
+      ...extra,
+    });
+  }
+
+  /**
+   * 工具循环中的摘要兜底：当累积的 messages 超过 IN_LOOP_SUMMARIZE_THRESHOLD 时，
+   * 用 requestSummaryReset 生成整段会话摘要，替换掉中间所有工具调用/结果，
+   * 然后以 [system+summary, user] 重发起初始请求，拿到新一轮 toolCalls 供循环继续。
+   *
+   * 返回 null 表示无需（或无法）摘要，调用方继续正常的 followUp 请求。
+   */
   private static async maybeSummarizeInLoop(params: {
     messages: ChatMessage[];
     model: AIModel;
@@ -1022,59 +1170,28 @@ export class AssistantService {
       signal,
     } = params;
 
-    // 只对有明确输入上限的模型做这个检查
-    if (
-      !model.maxInputTokens ||
-      model.maxInputTokens <= 0 ||
-      model.maxInputTokens === UNLIMITED_TOKENS
-    ) {
-      return null;
-    }
+    const trigger = this.evaluateInLoopSummarizeTrigger({ messages, model, toolSchemaTokens });
+    if (!trigger) return null;
+    const { systemPrompt, userMessage, systemMsg, userMsg, currentTokens, threshold } = trigger;
 
-    const currentTokens =
-      estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
-    const threshold = Math.floor(model.maxInputTokens * IN_LOOP_SUMMARIZE_THRESHOLD);
-    if (currentTokens < threshold) {
-      return null;
-    }
-
-    const systemMsg = messages.find((m) => m.role === 'system');
-    const userMsg = messages.find((m) => m.role === 'user');
-    if (!systemMsg?.content || !userMsg?.content) {
-      return null;
-    }
-
-    const systemPrompt = systemMsg.content;
-    const userMessage = userMsg.content;
-
-    // 保留原始用户消息，其余（assistant/tool/后续 user）全部进入摘要
-    const messagesToSummarize = messages
-      .filter((m) => m !== systemMsg && m !== userMsg && (m.content ?? '').length > 0)
-      .map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content || '',
-      }));
-
-    if (messagesToSummarize.length === 0) {
-      return null;
-    }
+    const messagesToSummarize = this.collectMessagesToSummarize(messages, systemMsg, userMsg);
+    if (messagesToSummarize.length === 0) return null;
 
     console.warn(
       `[AssistantService] 工具循环 context 过载 (${currentTokens} >= ${threshold}，${Math.round(
-        (currentTokens / model.maxInputTokens) * 100,
+        (currentTokens / model.maxInputTokens!) * 100,
       )}%)，触发循环内摘要`,
     );
 
-    const summaryResult = await this.requestSummaryReset({
+    const summaryResult = await this.requestInLoopSummary({
       model,
       systemPrompt,
       userMessage,
       messagesToSummarize,
-      context: { currentBookId: bookId },
-      ...(signal ? { finalSignal: signal } : {}),
-      ...(options.aiProcessingStore ? { aiProcessingStore: options.aiProcessingStore } : {}),
+      bookId,
+      options,
       ...(taskId ? { taskId } : {}),
-      ...(options.onSummarizingStart ? { onSummarizingStart: options.onSummarizingStart } : {}),
+      ...(signal ? { signal } : {}),
     });
 
     if (!summaryResult?.summary) {
@@ -1082,9 +1199,56 @@ export class AssistantService {
       return null;
     }
 
+    await this.applyInLoopSummary({
+      messages,
+      model,
+      options,
+      toolSchemaTokens,
+      systemPrompt,
+      userMessage,
+      summary: summaryResult.summary,
+      ...(taskId ? { taskId } : {}),
+    });
+
+    return this.restartInitialRequestAfterSummary({
+      messages,
+      model,
+      tools,
+      aiService,
+      config,
+      options,
+      toolSchemaTokens,
+      ...(taskId ? { taskId } : {}),
+    });
+  }
+
+  /**
+   * 将生成的摘要套进 messages:通知 onSummarizingEnd、重建 messages、更新 context 占用。
+   */
+  private static async applyInLoopSummary(params: {
+    messages: ChatMessage[];
+    model: AIModel;
+    options: AssistantServiceOptions;
+    toolSchemaTokens: number;
+    systemPrompt: string;
+    userMessage: string;
+    summary: string;
+    taskId?: string;
+  }): Promise<void> {
+    const {
+      messages,
+      model,
+      options,
+      toolSchemaTokens,
+      systemPrompt,
+      userMessage,
+      summary,
+      taskId,
+    } = params;
+
     options.onSummarizingEnd?.();
 
-    const rebuilt = this.rebuildMessagesWithSummary(systemPrompt, summaryResult.summary, userMessage);
+    const rebuilt = this.rebuildMessagesWithSummary(systemPrompt, summary, userMessage);
     messages.length = 0;
     messages.push(...rebuilt);
 
@@ -1095,36 +1259,6 @@ export class AssistantService {
       aiProcessingStore: options.aiProcessingStore,
       taskId,
     });
-
-    // 重启初始请求：摘要后 messages 只剩 [system+summary, user]，没有 pending tool_results，
-    // 必须以 isInitialRequest=true 重新拉一轮 AI 回复，拿到新的 toolCalls 供循环继续。
-    const restartRequest = this.buildTextRequest(messages, tools, {
-      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-      maxOutputTokens: model.maxOutputTokens,
-    });
-
-    const restartResult = await this.executeAIRequest({
-      aiService,
-      config,
-      request: restartRequest,
-      messages,
-      options,
-      ...(taskId ? { taskId } : {}),
-      isInitialRequest: true,
-    });
-
-    await this.updateTaskContextUsage({
-      messages,
-      model,
-      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-      aiProcessingStore: options.aiProcessingStore,
-      taskId,
-    });
-
-    return {
-      finalText: restartResult.text,
-      toolCalls: restartResult.toolCalls,
-    };
   }
 
   /**
