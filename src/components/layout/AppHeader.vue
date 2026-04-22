@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import type { MenuItem } from 'primevue/menuitem';
-import { ref, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
-import Badge from 'primevue/badge';
 import { useUiStore } from 'src/stores/ui';
 import { useToastHistory } from 'src/composables/useToastHistory';
 import { useSyncStatusDisplay } from 'src/composables/useSyncPendingChanges';
@@ -53,22 +51,8 @@ const aiTaskStatus = computed(() => {
   return null;
 });
 
-const menuItems = ref<MenuItem[]>([
-  // {
-  //   label: '首页',
-  //   icon: 'pi pi-home',
-  //   command: () => {
-  //     void router.push('/');
-  //   },
-  // },
-]);
-
-const bellButtonRef = ref<HTMLElement | null>(null);
-const thinkingButtonRef = ref<HTMLElement | null>(null);
 const syncButtonRef = ref<HTMLElement | null>(null);
-const toastHistoryRef = ref<ComponentPublicInstance<{ toggle: (event: Event) => void }> | null>(
-  null,
-);
+const toastHistoryRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const thinkingPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const syncPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const batchEmbeddingsPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
@@ -273,156 +257,292 @@ onUnmounted(() => {
     blur 半径的开销约为 O(radius²)：40px → 12px 约便宜 11 倍。
     同时把底色从 /50 提升到 /85，即便没有模糊也能有清晰的层次分离。
   -->
-  <header
-    class="sticky top-0 z-20 shrink-0 border-b border-white/5 bg-night-950/85 backdrop-blur-md shadow-[0_10px_40px_rgba(5,6,15,0.45)]"
-  >
-    <Menubar
-      :model="menuItems"
-      class="!rounded-none !border-0 bg-transparent px-2 sm:px-4 py-2 sm:py-3 text-moon-80 whitespace-nowrap"
-    >
-      <template #start>
-        <div class="flex items-center gap-2 sm:gap-3 pr-2 sm:pr-4 whitespace-nowrap flex-shrink-0">
-          <Button
-            aria-label="切换侧边栏"
-            class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
-            icon="pi pi-bars"
-            @click="handleToggleSideMenu"
-          />
-          <img
-            :src="logoPath"
-            :alt="APP_NAME.full"
-            class="w-9 h-9 flex-shrink-0 rounded-[10px] shadow-md"
-          />
-          <div v-if="!isPhone" class="flex flex-col leading-none">
-            <span
-              class="font-ui font-light text-[10px] uppercase tracking-brand text-accent-300"
-              >{{ APP_NAME.en }} {{ APP_NAME.zh }}</span
-            >
-            <span
-              class="font-display font-semibold text-moon-100 mt-[3px] text-[15px] tracking-tight"
-              >{{ APP_NAME.description.en }}</span
-            >
-          </div>
-        </div>
-      </template>
+  <header class="dsk-sysbar">
+    <div class="dsk-brand">
+      <Button
+        aria-label="切换侧边栏"
+        class="p-button-text p-button-rounded dsk-brand-toggle"
+        icon="pi pi-bars"
+        @click="handleToggleSideMenu"
+      />
+      <img :src="logoPath" :alt="APP_NAME.full" class="dsk-brand-logo" />
+      <div v-if="!isPhone" class="dsk-brand-text">
+        <span class="dsk-brand-name">{{ APP_NAME.en }} {{ APP_NAME.zh }}</span>
+        <span class="dsk-brand-desc">{{ APP_NAME.description.en }}</span>
+      </div>
+    </div>
 
-      <template #end>
-        <div class="flex items-center gap-1 sm:gap-3 whitespace-nowrap flex-shrink-0">
-          <!-- AI 思考过程按钮 -->
-          <Button
-            ref="thinkingButtonRef"
-            aria-label="AI 思考过程"
-            class="p-button-text p-button-rounded relative flex max-w-[24rem] items-center gap-2 text-moon-70 transition-all hover:text-moon-100 whitespace-nowrap h-auto min-h-[2.25rem]"
-            :class="{ 'thinking-active': aiProcessing.hasActiveTasks }"
-            @click="toggleThinkingPanel"
-          >
-            <i
-              class="pi pi-sparkles text-accent-300 flex-shrink-0"
-              :class="{ 'animate-spin': aiProcessing.hasActiveTasks }"
-            />
-            <span v-if="!isPhone" class="text-sm text-moon-70">AI 思考过程</span>
-            <span v-if="aiTaskStatus && !isPhone" class="text-xs text-moon-50 ml-1"
-              >({{ aiTaskStatus }})</span
-            >
-          </Button>
+    <div class="dsk-actions">
+      <button
+        v-if="aiProcessing.hasActiveTasks"
+        type="button"
+        class="dsk-chip pill thinking"
+        aria-label="AI 思考过程"
+        @click="toggleThinkingPanel"
+      >
+        <span class="dsk-dot" />
+        <span>AI {{ aiTaskStatus ?? '思考中' }}</span>
+      </button>
+      <button
+        v-else
+        type="button"
+        class="dsk-chip"
+        aria-label="AI 思考过程"
+        @click="toggleThinkingPanel"
+      >
+        <i class="pi pi-sparkles" aria-hidden="true" />
+        <span class="dsk-chip-label">AI 思考过程</span>
+      </button>
 
-          <!-- 同步状态按钮 -->
-          <Button
-            ref="syncButtonRef"
-            aria-label="同步状态"
-            class="p-button-text p-button-rounded relative flex items-center gap-2 text-moon-70 transition-colors hover:text-moon-100"
-            :class="{ 'sync-active': gistSync.enabled }"
-            @click="toggleSyncPanel"
-          >
-            <i :class="[syncStatus.icon, syncStatus.color]" class="text-lg" />
-            <span
-              v-if="gistSync.enabled && !isPhone"
-              class="text-sm uppercase tracking-wide text-moon-60"
-              >{{ formatNextSyncTime }}</span
-            >
-          </Button>
+      <button
+        ref="syncButtonRef"
+        type="button"
+        class="dsk-chip"
+        :class="{ pill: gistSync.enabled && (isSyncing || hasPendingChanges) }"
+        aria-label="同步状态"
+        @click="toggleSyncPanel"
+      >
+        <i :class="[syncStatus.icon, syncStatus.color]" aria-hidden="true" />
+        <span v-if="gistSync.enabled && !isPhone" class="dsk-chip-label">
+          {{ formatNextSyncTime }}
+        </span>
+      </button>
 
-          <!-- 本地向量索引按钮 -->
-          <Button
-            v-if="$route.params.id"
-            aria-label="向量索引"
-            class="p-button-text p-button-rounded relative flex items-center gap-2 text-moon-70 transition-colors hover:text-moon-100"
-            @click="toggleBatchEmbeddingsPanel"
-          >
-            <i class="pi pi-bolt text-lg" />
-            <span class="text-sm text-moon-70 hidden sm:inline">向量索引</span>
-          </Button>
+      <button
+        v-if="$route.params.id"
+        type="button"
+        class="dsk-chip"
+        aria-label="向量索引"
+        @click="toggleBatchEmbeddingsPanel"
+      >
+        <i class="pi pi-bolt" aria-hidden="true" />
+      </button>
 
-          <!-- 消息历史按钮 -->
-          <div class="relative inline-flex items-center justify-center">
-            <Button
-              ref="bellButtonRef"
-              aria-label="消息历史"
-              class="p-button-text p-button-rounded text-moon-70 transition-colors hover:text-moon-100"
-              @click="toggleHistoryDialog"
-            >
-              <i class="pi pi-bell text-lg" />
-            </Button>
-            <Badge
-              v-if="unreadCount > 0"
-              :value="unreadCount > 99 ? '99+' : unreadCount"
-              severity="danger"
-            />
-          </div>
+      <div class="dsk-sep" />
 
-          <!-- 右侧面板切换按钮 -->
-          <div class="relative inline-flex items-center justify-center">
-            <Button
-              aria-label="切换右侧面板"
-              class="p-button-text p-button-rounded text-moon-70 hover:text-moon-100 transition-colors"
-              :icon="ui.rightPanelOpen ? 'pi pi-times' : 'pi pi-objects-column'"
-              @click="handleToggleRightPanel"
-            />
-            <Badge
-              v-if="activeTranslationTaskCount > 0"
-              :value="activeTranslationTaskCount > 99 ? '99+' : activeTranslationTaskCount"
-              severity="info"
-            />
-          </div>
-        </div>
-      </template>
-    </Menubar>
+      <button
+        ref="bellButtonRef"
+        type="button"
+        class="dsk-chip"
+        aria-label="消息历史"
+        @click="toggleHistoryDialog"
+      >
+        <i class="pi pi-bell" aria-hidden="true" />
+        <span v-if="unreadCount > 0" class="dsk-badge">
+          {{ unreadCount > 99 ? '99+' : unreadCount }}
+        </span>
+      </button>
 
-    <!-- Toast 历史 Popover -->
+      <button
+        type="button"
+        class="dsk-chip"
+        :class="{ active: ui.rightPanelOpen }"
+        aria-label="切换右侧面板"
+        @click="handleToggleRightPanel"
+      >
+        <i
+          class="pi"
+          :class="ui.rightPanelOpen ? 'pi-times' : 'pi-objects-column'"
+          aria-hidden="true"
+        />
+        <span v-if="activeTranslationTaskCount > 0" class="dsk-badge">
+          {{ activeTranslationTaskCount > 99 ? '99+' : activeTranslationTaskCount }}
+        </span>
+      </button>
+    </div>
+
     <ToastHistoryDialog ref="toastHistoryRef" />
-
-    <!-- 同步状态 Popover -->
     <SyncStatusPanel ref="syncPanelRef" />
-
-    <!-- AI 思考过程 Popover -->
     <ThinkingProcessPanel ref="thinkingPanelRef" />
-
-    <!-- 本地向量索引 Popover -->
     <BatchEmbeddingsPanel ref="batchEmbeddingsPanelRef" />
+    <Button v-show="false" />
   </header>
 </template>
 
 <style scoped>
-/* 确保 Menubar 始终显示为单行 */
-:deep(.p-menubar) {
-  white-space: nowrap;
+.dsk-sysbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 20px;
+  background: rgba(8, 10, 13, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--white-opacity-4);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  min-height: 40px;
+}
+
+.dsk-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
 }
 
-:deep(.p-menubar .p-menubar-root-list) {
-  white-space: nowrap;
-  flex-wrap: nowrap;
+.dsk-brand-toggle {
+  color: var(--accent-silver) !important;
 }
 
-:deep(.p-menubar .p-menubar-start),
-:deep(.p-menubar .p-menubar-end) {
-  white-space: nowrap;
+.dsk-brand-logo {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  opacity: 0.9;
   flex-shrink: 0;
 }
 
-:deep(.p-menubar .p-menubar-start > *),
-:deep(.p-menubar .p-menubar-end > *) {
+.dsk-brand-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.1;
+  gap: 1px;
+}
+
+.dsk-brand-name {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: var(--accent-silver);
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dsk-brand-desc {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  font-weight: 400;
+  color: rgba(174, 183, 198, 0.32);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dsk-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dsk-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--accent-silver);
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
   flex-shrink: 0;
+}
+
+.dsk-chip i {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.dsk-chip-label {
+  font-size: 11px;
+}
+
+.dsk-chip:hover {
+  background: var(--white-opacity-4);
+  color: var(--moon-opacity-100);
+}
+
+.dsk-chip.active {
+  background: rgba(109, 136, 168, 0.14);
+  color: #bac9db;
+  border-color: rgba(109, 136, 168, 0.28);
+}
+
+.dsk-chip.pill {
+  padding: 0 10px 0 9px;
+  background: rgba(109, 136, 168, 0.1);
+  border-color: rgba(109, 136, 168, 0.22);
+  color: #bac9db;
+}
+
+.dsk-chip.pill.thinking {
+  background: rgba(140, 165, 195, 0.12);
+  border-color: rgba(140, 165, 195, 0.28);
+  color: #c9d8ea;
+}
+
+.dsk-chip.pill.thinking i {
+  color: #a3b7cf;
+}
+
+.dsk-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a3b7cf;
+  box-shadow: 0 0 8px #a3b7cf;
+  animation: dsk-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dsk-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.dsk-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #d97757;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 1;
+  border: 1.5px solid #080a0d;
+}
+
+.dsk-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--white-opacity-8);
+  margin: 0 4px;
 }
 </style>

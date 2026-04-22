@@ -1,21 +1,21 @@
 ## 1. Shared desktop workbench primitives
 
-- [ ] 1.1 Audit desktop-only visual duplication across `MainLayoutDesktop.vue`, `BooksPageDesktop.vue`, `BookDetailsDesktop.vue`, `SettingsPageDesktop.vue`, `AIPageDesktop.vue`, and `HelpPageDesktop.vue`, then define the minimal shared desktop workbench primitives needed
-- [ ] 1.2 Implement the shared desktop presentation primitives without introducing new store state, service logic, or route changes
-- [ ] 1.3 Verify the shared primitives affect only desktop variants and do not alter mobile/tablet render paths
+- [x] 1.1 Audit desktop-only visual duplication across `MainLayoutDesktop.vue`, `BooksPageDesktop.vue`, `BookDetailsDesktop.vue`, `SettingsPageDesktop.vue`, `AIPageDesktop.vue`, and `HelpPageDesktop.vue`, then define the minimal shared desktop workbench primitives needed
+- [x] 1.2 Implement the shared desktop presentation primitives without introducing new store state, service logic, or route changes
+- [x] 1.3 Verify the shared primitives affect only desktop variants and do not alter mobile/tablet render paths
 
 ## 2. Desktop shell chrome
 
-- [ ] 2.1 Refresh `src/layouts/main-layout/MainLayoutDesktop.vue` canvas spacing and shell layering while preserving the existing `AppHeader`, `AppSideMenu`, `AppRightPanel`, `ui.sideMenuOpen`, `ui.rightPanelOpen`, and `ui.rightPanelWidth` behavior
-- [ ] 2.2 Update `src/components/layout/AppHeader.vue` to match the new desktop workbench hierarchy while keeping existing sync, notification, AI-thinking, embeddings, side-menu toggle, and right-panel toggle flows intact
-- [ ] 2.3 Update `src/components/layout/AppSideMenu.vue` navigation sections, active states, and favorites area to match the new desktop shell language without changing routes or starred-book behavior
-- [ ] 2.4 Refresh `src/components/layout/AppRightPanelDesktop.vue` surface and header/tabs hierarchy so the chat/progress panel feels integrated with the desktop shell without changing panel functionality or resize behavior
+- [x] 2.1 Refresh `src/layouts/main-layout/MainLayoutDesktop.vue` canvas spacing and shell layering while preserving the existing `AppHeader`, `AppSideMenu`, `AppRightPanel`, `ui.sideMenuOpen`, `ui.rightPanelOpen`, and `ui.rightPanelWidth` behavior
+- [x] 2.2 Update `src/components/layout/AppHeader.vue` to match the new desktop workbench hierarchy while keeping existing sync, notification, AI-thinking, embeddings, side-menu toggle, and right-panel toggle flows intact
+- [x] 2.3 Update `src/components/layout/AppSideMenu.vue` navigation sections, active states, and favorites area to match the new desktop shell language without changing routes or starred-book behavior
+- [x] 2.4 Refresh `src/components/layout/AppRightPanelDesktop.vue` surface and header/tabs hierarchy so the chat/progress panel feels integrated with the desktop shell without changing panel functionality or resize behavior
 
 ## 3. Desktop library workbench
 
-- [ ] 3.1 Rewrite `src/pages/books-page/BooksPageDesktop.vue` header into a desktop workbench title area with eyebrow, summary, metrics, and the existing search/sort/add controls
-- [ ] 3.2 Redesign the desktop book card hierarchy to be cover-first, quieter in metadata, and still support direct favorite/edit/delete actions using the existing `injectBooksPage()` methods
-- [ ] 3.3 Preserve DataView pagination, multi-column density, loading state, and empty state behaviors while aligning their surfaces with the new desktop workbench language
+- [x] 3.1 Rewrite `src/pages/books-page/BooksPageDesktop.vue` header into a desktop workbench title area with eyebrow, summary, metrics, and the existing search/sort/add controls
+- [x] 3.2 Redesign the desktop book card hierarchy to be cover-first, quieter in metadata, and still support direct favorite/edit/delete actions using the existing `injectBooksPage()` methods
+- [x] 3.3 Preserve DataView pagination, multi-column density, loading state, and empty state behaviors while aligning their surfaces with the new desktop workbench language
 
 ## 4. Desktop book details workspace
 
@@ -26,9 +26,9 @@
 
 ## 5. Desktop tool pages
 
-- [ ] 5.1 Replace the current `src/pages/settings-page/SettingsPageDesktop.vue` tablet pass-through with a dedicated desktop settings page that reuses `injectSettingsPage()` state and the existing tab content components
-- [ ] 5.2 Redesign `src/pages/ai-page/AIPageDesktop.vue` to share the desktop tool-page grammar while preserving current search, add, duplicate, edit, delete, grouping, and task-routing behaviors
-- [ ] 5.3 Verify `SettingsPageDesktop` and `AIPageDesktop` share the same desktop title/section grammar without introducing desktop-only state management
+- [x] 5.1 Replace the current `src/pages/settings-page/SettingsPageDesktop.vue` tablet pass-through with a dedicated desktop settings page that reuses `injectSettingsPage()` state and the existing tab content components
+- [x] 5.2 Redesign `src/pages/ai-page/AIPageDesktop.vue` to share the desktop tool-page grammar while preserving current search, add, duplicate, edit, delete, grouping, and task-routing behaviors
+- [x] 5.3 Verify `SettingsPageDesktop` and `AIPageDesktop` share the same desktop title/section grammar without introducing desktop-only state management
 
 ## 6. Desktop help center
 

@@ -106,164 +106,324 @@ const bottomItems: MenuItem[] = [
 </script>
 
 <template>
-  <aside
-    ref="menuContainerRef"
-    class="w-full md:w-64 shrink-0 h-full border-r border-white/10 bg-night-950/95 backdrop-blur-sm flex flex-col relative"
-  >
-    <!-- Subtle gradient overlay -->
-    <div
-      class="absolute inset-0 bg-gradient-to-b from-tsukuyomi-500/5 via-transparent to-transparent pointer-events-none"
-    />
+  <aside ref="menuContainerRef" class="side-nav">
+    <div class="side-nav-gradient" />
 
-    <!-- Top section with logo/branding area -->
-    <div class="shrink-0 px-4 pt-6 pb-4 relative z-10">
-    </div>
+    <div class="side-nav-brand" />
 
-    <!-- Main navigation -->
-    <div class="flex-1 overflow-auto px-3 pt-2 pb-2 min-h-0 min-w-0 max-w-full relative z-10">
-      <!-- 导航菜单 -->
-      <div class="mb-6">
+    <div class="side-nav-body">
+      <div class="side-nav-section">
+        <div class="side-nav-section-label">导航</div>
         <Menu :model="topItems" />
       </div>
-      
-      <!-- 分隔线 -->
-      <div class="h-px w-full bg-gradient-to-r from-transparent via-white/20 to-transparent mb-4" />
-      
-      <!-- 收藏小说独立区域 -->
-      <div class="mt-4 min-w-0 max-w-full overflow-hidden">
-        <!-- 标题区域 -->
-        <div class="px-3 py-2 mb-3 bg-surface-subtle rounded-lg border border-surface-subtle min-w-0 max-w-full overflow-hidden">
-          <div class="flex items-center gap-2 min-w-0">
-            <i class="pi pi-bookmark text-accent-400 text-sm flex-shrink-0" />
-            <span class="font-ui text-[11px] font-medium text-moon/60 uppercase tracking-[0.2em] flex-shrink-0">收藏小说</span>
-            <span v-if="starredNovels.length > 0" class="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-accent-400/20 text-accent-400 flex-shrink-0">
-              {{ starredNovels.length }}
-            </span>
-          </div>
+
+      <div class="side-nav-divider" />
+
+      <div class="side-nav-favorites">
+        <div class="side-nav-favorites-head">
+          <i class="pi pi-bookmark" />
+          <span>收藏小说</span>
+          <span v-if="starredNovels.length > 0" class="side-nav-favorites-count">
+            {{ starredNovels.length }}
+          </span>
         </div>
-        
-        <!-- 收藏小说列表 -->
-        <div v-if="starredNovels.length > 0" class="space-y-1 min-w-0 max-w-full overflow-hidden">
+
+        <div v-if="starredNovels.length > 0" class="side-nav-favorites-list">
           <button
             v-for="book in starredNovels"
             :key="book.id"
-            class="w-full text-left px-3 py-2 rounded-lg text-sm text-moon/80 hover:bg-primary/15 hover:text-moon/95 hover:border-primary/30 border border-transparent transition-all duration-200 flex items-center gap-2 group min-w-0 overflow-hidden"
-            style="max-width: 100%; box-sizing: border-box;"
+            class="side-nav-favorites-item"
             @click="() => void router.push(`/books/${book.id}`)"
           >
-            <i class="pi pi-star-fill text-yellow-400 text-xs flex-shrink-0" />
-            <span class="truncate flex-1 min-w-0 text-ellipsis whitespace-nowrap overflow-hidden">{{ book.title }}</span>
+            <i class="pi pi-star-fill" />
+            <span>{{ book.title }}</span>
           </button>
         </div>
-        
-        <!-- 空状态 -->
-        <div v-else class="px-3 py-2 text-xs text-moon/40 italic text-center">
-          暂无收藏的小说
-        </div>
+
+        <div v-else class="side-nav-favorites-empty">暂无收藏的小说</div>
       </div>
     </div>
 
-    <!-- Bottom section -->
-    <div class="shrink-0 px-3 pb-4 relative z-10">
-      <div
-        class="h-px w-full bg-gradient-to-r from-transparent via-white/20 to-transparent mb-3"
-        role="separator"
-      />
+    <div class="side-nav-foot">
+      <div class="side-nav-divider" />
       <Menu :model="bottomItems" />
     </div>
   </aside>
 </template>
 
 <style scoped>
-/* Make PrimeVue Menu background transparent within this component */
+.side-nav {
+  width: 100%;
+  max-width: 16.5rem;
+  height: 100%;
+  flex-shrink: 0;
+  border-right: 1px solid var(--white-opacity-4);
+  background: var(--black-opacity-20);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.side-nav-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(186, 201, 219, 0.03), transparent 30%);
+  pointer-events: none;
+}
+
+.side-nav-brand {
+  flex-shrink: 0;
+  padding: 1.25rem 0.75rem 0.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.side-nav-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0.5rem 0.5rem 0.75rem;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+.side-nav-section {
+  margin-bottom: 1rem;
+}
+
+.side-nav-section-label {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent-silver);
+  opacity: 0.55;
+  padding: 0 0.6rem;
+  margin-bottom: 0.4rem;
+}
+
+.side-nav-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--white-opacity-8), transparent);
+  margin-bottom: 0.75rem;
+}
+
+.side-nav-favorites {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.side-nav-favorites-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.6rem;
+  margin-bottom: 0.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--white-opacity-4);
+  background: var(--white-opacity-3);
+  min-width: 0;
+}
+
+.side-nav-favorites-head i {
+  color: rgba(234, 192, 123, 0.8);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.side-nav-favorites-head span:nth-child(2) {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-silver);
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.side-nav-favorites-count {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+  background: rgba(234, 192, 123, 0.12);
+  color: rgba(234, 192, 123, 0.85);
+  flex-shrink: 0;
+}
+
+.side-nav-favorites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.side-nav-favorites-item {
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--moon-opacity-70);
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 100%;
+  cursor: pointer;
+  transition:
+    background 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.side-nav-favorites-item:hover {
+  background: var(--white-opacity-4);
+  color: var(--moon-opacity-95);
+}
+
+.side-nav-favorites-item i {
+  color: rgba(255, 230, 138, 0.75);
+  font-size: 0.65rem;
+  flex-shrink: 0;
+}
+
+.side-nav-favorites-item span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-nav-favorites-empty {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.72rem;
+  color: var(--moon-opacity-30);
+  text-align: center;
+  font-style: italic;
+}
+
+.side-nav-foot {
+  flex-shrink: 0;
+  padding: 0 0.5rem 0.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.side-nav-foot .side-nav-divider {
+  margin-bottom: 0.5rem;
+}
+
 :deep(.p-menu) {
   background-color: transparent;
   border: none;
   padding: 0;
 }
 
-/* Submenu header styling */
 :deep(.p-menu .p-submenu-header) {
-  background-color: var(--white-opacity-5);
-  color: var(--moon-opacity-80);
-  font-size: 0.75rem;
-  font-weight: 600;
+  background-color: var(--white-opacity-3);
+  color: var(--moon-opacity-75);
+  font-size: 9px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.75rem 0.75rem 0.5rem;
-  margin-top: 0.75rem;
-  margin-bottom: 0.5rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--white-opacity-10);
+  letter-spacing: 0.12em;
+  padding: 0.55rem 0.6rem 0.35rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.3rem;
+  border-radius: 8px;
+  border: 1px solid var(--white-opacity-4);
 }
 
 :deep(.p-menu .p-submenu-header:first-child) {
   margin-top: 0;
 }
 
-/* Menu item styling */
 :deep(.p-menu .p-menuitem-link) {
-  border-radius: 0.5rem;
-  padding: 0.625rem 0.75rem;
-  margin-bottom: 0.25rem;
-  transition: all 0.2s ease;
-  color: var(--moon-opacity-85);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+  margin-bottom: 0.15rem;
+  transition:
+    background 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 160ms cubic-bezier(0.4, 0, 0.2, 1),
+    transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--moon-opacity-70);
   background-color: transparent;
   border: 1px solid transparent;
 }
 
-/* Hover state */
 :deep(.p-menu .p-menuitem-link:hover) {
-  background-color: var(--primary-opacity-15);
+  background: var(--white-opacity-4);
   color: var(--moon-opacity-95);
-  border-color: var(--primary-opacity-30);
+  border-color: var(--white-opacity-6);
   transform: translateX(2px);
 }
 
-/* Active state — 设计系统：active 态使用薄藍高亮衬底 (bg-highlight-tint) + 薄藍边框 */
 :deep(.p-menu .p-menuitem-link.router-link-active),
 :deep(.p-menu .p-menuitem-link[aria-expanded='true']) {
-  background-color: rgba(109, 136, 168, 0.12);
+  background: rgba(109, 136, 168, 0.18);
   color: var(--moon-opacity-100);
-  border-color: rgba(109, 136, 168, 0.35);
-  box-shadow: 0 2px 8px rgba(109, 136, 168, 0.18);
+  border-color: rgba(109, 136, 168, 0.3);
+  box-shadow: 0 2px 8px rgba(109, 136, 168, 0.12);
   font-weight: 500;
 }
 
 :deep(.p-menu .p-menuitem-link.router-link-active .p-menuitem-icon),
 :deep(.p-menu .p-menuitem-link[aria-expanded='true'] .p-menuitem-icon) {
-  color: #BAC9DB; /* tsukuyomi-200 */
+  color: #a3b7cf;
+  text-shadow: 0 0 12px rgba(109, 136, 168, 0.5);
 }
 
-/* Icon styling */
 :deep(.p-menu .p-menuitem-icon) {
-  color: var(--primary-opacity-70);
-  margin-right: 0.75rem;
-  transition: all 0.2s ease;
-  font-size: 1rem;
+  color: var(--accent-silver);
+  opacity: 0.75;
+  margin-right: 0.6rem;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.88rem;
 }
 
 :deep(.p-menu .p-menuitem-link:hover .p-menuitem-icon) {
-  color: var(--primary-opacity-90);
-  transform: scale(1.1);
+  color: var(--accent-silver);
+  opacity: 0.95;
+  transform: scale(1.05);
 }
 
-/* Label styling */
 :deep(.p-menu .p-menuitem-text) {
   font-family:
-    'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', -apple-system, sans-serif;
-  font-size: 0.875rem;
+    'Noto Sans SC',
+    'PingFang SC',
+    'Hiragino Sans GB',
+    -apple-system,
+    sans-serif;
+  font-size: 0.82rem;
   font-weight: 400;
 }
 
-/* Focus state */
 :deep(.p-menu .p-menuitem-link:focus) {
   outline: none;
-  box-shadow: 0 0 0 2px var(--primary-opacity-30);
+  box-shadow: 0 0 0 2px rgba(109, 136, 168, 0.2);
 }
 
-/* Smooth transitions for all interactive elements */
 :deep(.p-menu .p-menuitem) {
-  transition: all 0.2s ease;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 </style>
