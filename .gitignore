@@ -44,6 +44,9 @@ yarn-error.log*
 # Fallow local cache
 .fallow/
 
+# Superpowers local cache
+.superpowers/
+
 # TypeScript incremental build info
 tsconfig.tsbuildinfo
 coverage/
