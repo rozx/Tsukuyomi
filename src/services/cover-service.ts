@@ -1,5 +1,5 @@
 import type { Novel } from 'src/models/novel';
-import { Theme } from 'src/constants/theme';
+import { PRIMARY, SURFACE_DARK, TRANSLATION_TEXT_COLOR } from 'src/theme/tsukuyomi-preset';
 import { ProxyService } from 'src/services/proxy-service';
 
 /**
@@ -11,21 +11,19 @@ export class CoverService {
    * 获取封面颜色配置（基于主题）
    */
   private static getCoverColors() {
-    // 从主题获取渐变颜色 - Secondary（影墨）渐变
+    // Secondary（影墨）渐变：SURFACE_DARK[0] → [100] → [300]
     const gradient = {
-      start: Theme.colors.night[950], // #0F1114
-      middle: Theme.colors.night.DEFAULT, // #1C1F26 (Secondary 影墨)
-      end: '#2C2F3A', // 渐变结束色（对应 tailwind night.50，用于平滑过渡，Theme 中未定义）
+      start: SURFACE_DARK[0]!, // #0F1114
+      middle: SURFACE_DARK[100]!, // #1C1F26
+      end: SURFACE_DARK[300]!, // #2C2F3A
     };
 
-    // Highlight（薄藍）装饰线颜色，30% 透明度
-    // 从 translationText 提取 RGB 值，使用不同透明度
-    const highlightRgb = this.extractRgbFromRgba(Theme.translationText.DEFAULT);
+    // Highlight（薄藍）装饰线：从翻译文本色提取 RGB，降到 30% 透明度
+    const highlightRgb = this.extractRgbFromRgba(TRANSLATION_TEXT_COLOR);
     const decoration = `rgba(${highlightRgb}, 0.3)`;
 
     // Primary（月白）文字颜色
-    const primaryColor = Theme.colors.primary.DEFAULT; // #E9EDF5
-    const primaryRgb = this.hexToRgb(primaryColor);
+    const primaryRgb = this.hexToRgb(PRIMARY[200]!); // #E9EDF5
     const text = {
       primary: `rgba(${primaryRgb}, 0.9)`,
       secondary: `rgba(${primaryRgb}, 0.6)`,

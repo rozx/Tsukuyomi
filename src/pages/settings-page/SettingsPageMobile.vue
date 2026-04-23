@@ -90,7 +90,7 @@ const ctx = injectSettingsPage();
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
   font-weight: 500;
   font-size: 10px;
-  color: rgba(163, 183, 207, 0.85);
+  color: var(--tsukuyomi-300-opacity-85); /* token: tsukuyomi-300 @ 85% */
   text-transform: uppercase;
   letter-spacing: 0.22em;
   margin-bottom: 4px;
@@ -101,7 +101,7 @@ const ctx = injectSettingsPage();
   font-weight: 600;
   font-size: 28px;
   line-height: 1.15;
-  color: #e9edf5;
+  color: var(--primary-200); /* token: primary */
   letter-spacing: -0.02em;
   margin: 0;
 }
@@ -114,7 +114,7 @@ const ctx = injectSettingsPage();
   overflow-x: auto;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   flex-shrink: 0;
   scrollbar-width: none;
 }
@@ -132,7 +132,7 @@ const ctx = injectSettingsPage();
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(138, 147, 160, 0.9);
+  color: rgba(138, 147, 160, 0.9); /* neutral grey, untokenized */
   cursor: pointer;
   position: relative;
   scroll-snap-align: start;
@@ -145,11 +145,11 @@ const ctx = injectSettingsPage();
 }
 
 .tsm-settings-tabs .stab:hover {
-  color: rgba(220, 226, 236, 0.95);
+  color: rgba(220, 226, 236, 0.95); /* near tsukuyomi-100, untokenized */
 }
 
 .tsm-settings-tabs .stab.active {
-  color: #e9edf5;
+  color: var(--primary-200); /* token: primary */
   font-weight: 600;
 }
 
@@ -160,7 +160,7 @@ const ctx = injectSettingsPage();
   right: 0;
   bottom: -1px;
   height: 2px;
-  background: #a3b7cf;
+  background: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   border-radius: 2px 2px 0 0;
 }
 

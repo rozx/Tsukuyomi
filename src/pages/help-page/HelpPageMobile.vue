@@ -367,11 +367,15 @@ const ctx = injectHelpPage();
 .mhl-hero {
   margin: 12px 16px 20px;
   padding: 22px 18px 20px;
-  background: linear-gradient(135deg, rgba(109, 136, 168, 0.18), rgba(109, 136, 168, 0.04));
-  border: 1px solid rgba(109, 136, 168, 0.3);
+  background: linear-gradient(
+    135deg,
+    var(--tsukuyomi-opacity-18),
+    var(--tsukuyomi-opacity-4) /* token: tsukuyomi-500 @ 4% */
+  );
+  border: 1px solid var(--tsukuyomi-opacity-30);
   border-radius: 16px;
   text-align: center;
-  box-shadow: 0 2px 12px rgba(109, 136, 168, 0.2);
+  box-shadow: 0 2px 12px var(--tsukuyomi-opacity-20);
 }
 
 .mhl-hero-logo {
@@ -386,7 +390,7 @@ const ctx = injectHelpPage();
   font-weight: 300;
   font-size: 10px;
   letter-spacing: 0.3em;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   text-transform: uppercase;
 }
 
@@ -394,18 +398,18 @@ const ctx = injectHelpPage();
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 18px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   line-height: 1.35;
   margin-top: 6px;
 }
 
 .mhl-hero-tagline--accent {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .mhl-hero-desc {
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.7);
+  color: var(--moon-50-opacity-70);
   line-height: 1.65;
   margin: 10px auto 0;
   max-width: 300px;
@@ -422,7 +426,7 @@ const ctx = injectHelpPage();
 
 .mhl-section-title {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   text-transform: uppercase;
   letter-spacing: 0.16em;
   font-weight: 500;
@@ -438,7 +442,7 @@ const ctx = injectHelpPage();
   display: flex;
   gap: 12px;
   padding: 10px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
 }
 
 .mhl-step:last-child {
@@ -449,14 +453,14 @@ const ctx = injectHelpPage();
   width: 28px;
   height: 28px;
   border-radius: 9999px;
-  background: rgba(109, 136, 168, 0.12);
-  border: 1px solid rgba(109, 136, 168, 0.3);
+  background: var(--tsukuyomi-opacity-12);
+  border: 1px solid var(--tsukuyomi-opacity-30);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -469,12 +473,12 @@ const ctx = injectHelpPage();
 .mhl-step-title {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
 }
 
 .mhl-step-desc {
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   margin-top: 2px;
   line-height: 1.55;
 }
@@ -490,10 +494,10 @@ const ctx = injectHelpPage();
   align-items: center;
   gap: 10px;
   padding: 14px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-8);
   border-radius: 12px;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -512,12 +516,12 @@ const ctx = injectHelpPage();
 }
 
 .mhl-topic:not(:disabled):hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(109, 136, 168, 0.3);
+  background: var(--white-opacity-6);
+  border-color: var(--tsukuyomi-opacity-30);
 }
 
 .mhl-topic i {
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   font-size: 16px;
 }
 
@@ -528,10 +532,10 @@ const ctx = injectHelpPage();
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-8);
   border-radius: 12px;
-  color: rgba(247, 244, 236, 0.9);
+  color: var(--moon-50-opacity-90);
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -539,13 +543,13 @@ const ctx = injectHelpPage();
 }
 
 .mhl-all-docs i {
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   font-size: 13px;
 }
 
 .mhl-all-docs-arrow {
   margin-left: auto;
   font-size: 11px;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 </style>

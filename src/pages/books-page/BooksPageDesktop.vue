@@ -158,9 +158,6 @@ const librarySummary = computed(() => {
                 >
                   {{ book.title }}
                 </h3>
-                <div class="library-book-summary">
-                  <span>将这本书直接带回章节工作区，继续翻译或维护元数据。</span>
-                </div>
 
                 <div class="library-book-stats">
                   <div class="library-book-stat-row">
@@ -191,7 +188,7 @@ const librarySummary = computed(() => {
                     :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
                     :class="[
                       'p-button-text p-button-sm flex-1 !text-xs !py-2 !px-2',
-                      book.starred ? '!text-yellow-400' : '',
+                      book.starred ? '!text-warning' : '',
                     ]"
                     :title="book.starred ? '取消收藏' : '收藏'"
                     @click.stop="ctx.toggleStar(book)"
@@ -298,10 +295,10 @@ const librarySummary = computed(() => {
   min-height: 100%;
   overflow: hidden;
   border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--white-opacity-8);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015)),
-    rgba(10, 14, 20, 0.82);
+    linear-gradient(180deg, var(--white-opacity-4), rgba(255, 255, 255, 0.015)),
+    rgba(10, 14, 20, 0.82); /* token: near night-500 @ 82% */
   box-shadow: 0 18px 38px rgba(2, 6, 16, 0.16);
   transition:
     transform 180ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -311,9 +308,10 @@ const librarySummary = computed(() => {
 
 .library-book-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(186, 201, 219, 0.24);
+  border-color: var(--tsukuyomi-200-opacity-24); /* token: tsukuyomi-200 @ 24% */
   box-shadow: 0 26px 46px rgba(2, 6, 16, 0.24);
 }
+
 
 .library-book-cover-shell {
   position: relative;
@@ -337,7 +335,7 @@ const librarySummary = computed(() => {
   position: absolute;
   inset: auto 0 0 0;
   height: 40%;
-  background: linear-gradient(180deg, transparent, rgba(7, 10, 16, 0.92));
+  background: linear-gradient(180deg, transparent, rgba(7, 10, 16, 0.92)); /* token: near night-500 @ 92% */
   pointer-events: none;
 }
 
@@ -350,9 +348,9 @@ const librarySummary = computed(() => {
   gap: 0.35rem;
   padding: 0.3rem 0.55rem;
   border-radius: 999px;
-  background: rgba(14, 18, 24, 0.74);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(255, 230, 138, 0.98);
+  background: rgba(14, 18, 24, 0.74); /* token: near night-300 @ 74% */
+  border: 1px solid var(--white-opacity-8);
+  color: rgba(255, 230, 138, 0.98); /* non-palette warm gold */
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -379,7 +377,8 @@ const librarySummary = computed(() => {
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(247, 244, 236, 0.48);
+  /* token: moon-50 @ 48% */
+  color: var(--moon-50-opacity-48);
 }
 
 .library-book-updated {
@@ -393,30 +392,34 @@ const librarySummary = computed(() => {
   font-size: 1.03rem;
   font-weight: 600;
   line-height: 1.35;
-  color: rgba(247, 244, 236, 0.96);
+  /* token: moon-50 @ 96% */
+  color: var(--moon-50-opacity-96);
   transition: color 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .library-book-title:hover {
-  color: #bac9db;
+  /* token: tsukuyomi-200 */
+  color: var(--tsukuyomi-200);
 }
 
 .library-book-summary {
   min-height: 2.7rem;
   font-size: 0.9rem;
   line-height: 1.55;
-  color: rgba(247, 244, 236, 0.62);
+  /* token: moon-50 @ 62% */
+  color: var(--moon-50-opacity-62);
 }
 
 .library-book-stats {
   display: grid;
   gap: 0.35rem;
   padding: 0.85rem 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--white-opacity-8);
+  border-bottom: 1px solid var(--white-opacity-8);
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.7rem;
-  color: rgba(247, 244, 236, 0.48);
+  /* token: moon-50 @ 48% */
+  color: var(--moon-50-opacity-48);
 }
 
 .library-book-stat-row {
@@ -429,7 +432,8 @@ const librarySummary = computed(() => {
 .library-book-stat-row strong {
   font-size: 0.74rem;
   font-weight: 600;
-  color: rgba(247, 244, 236, 0.82);
+  /* token: moon-50 @ 82% */
+  color: var(--moon-50-opacity-82);
 }
 
 .library-book-actions {
@@ -478,8 +482,9 @@ const librarySummary = computed(() => {
 :deep(.p-paginator) {
   flex-shrink: 0;
   margin-top: auto;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02) !important;
+  border-top: 1px solid var(--white-opacity-8);
+  /* token: white @ 2% */
+  background: var(--white-opacity-2) !important;
 }
 
 .search-input-group {

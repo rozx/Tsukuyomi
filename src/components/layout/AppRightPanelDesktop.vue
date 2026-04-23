@@ -299,7 +299,7 @@ defineExpose({ props });
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: rgba(14, 16, 20, 0.96);
+  background: var(--shell-opacity-96); /* token: night-300 @ 96% */
   border-left: 1px solid var(--white-opacity-8);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
@@ -315,16 +315,16 @@ defineExpose({ props });
   width: 6px;
   cursor: col-resize;
   z-index: 30;
-  background: rgba(109, 136, 168, 0.1);
+  background: var(--tsukuyomi-opacity-10);
   transition: background 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .rp-resize:hover {
-  background: rgba(109, 136, 168, 0.2);
+  background: var(--tsukuyomi-opacity-20);
 }
 
 .rp-resize--active {
-  background: rgba(109, 136, 168, 0.35);
+  background: var(--tsukuyomi-opacity-35); /* token: tsukuyomi-500 @ 35% */
 }
 
 .rp-tabbar {
@@ -364,7 +364,7 @@ defineExpose({ props });
 
 .rp-tabbar-btn.active {
   color: var(--moon-opacity-100);
-  border-bottom: 2px solid rgba(109, 136, 168, 0.5);
+  border-bottom: 2px solid var(--tsukuyomi-opacity-50); /* token: tsukuyomi-500 @ 50% */
   background: var(--white-opacity-4);
 }
 
@@ -376,7 +376,7 @@ defineExpose({ props });
   height: 1rem;
   padding: 0 0.2rem;
   border-radius: 999px;
-  background: rgba(109, 136, 168, 0.2);
+  background: var(--tsukuyomi-opacity-20);
   color: var(--moon-opacity-95);
   font-size: 9px;
   font-weight: 700;
@@ -404,7 +404,7 @@ defineExpose({ props });
   border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
-  background: #1c1f26;
+  background: var(--night-200); /* token: night-200 */
 }
 
 .rp-appbar-logo img {
@@ -442,7 +442,7 @@ defineExpose({ props });
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #a7d1b0;
+  background: var(--color-success-300); /* token: success-300 */
   margin-right: 6px;
   flex-shrink: 0;
 }
@@ -533,8 +533,8 @@ defineExpose({ props });
   font-size: 9px;
   font-weight: 600;
   border-radius: 6px;
-  background: rgba(109, 136, 168, 0.15);
-  color: rgba(109, 136, 168, 0.9);
+  background: var(--tsukuyomi-opacity-15);
+  color: var(--tsukuyomi-opacity-90); /* token: tsukuyomi-500 @ 90% */
 }
 
 .rp-todo-chevron {
@@ -582,7 +582,7 @@ defineExpose({ props });
 }
 
 .rp-todo-item--working {
-  border-left: 2px solid rgba(109, 136, 168, 0.5);
+  border-left: 2px solid var(--tsukuyomi-opacity-50); /* token: tsukuyomi-500 @ 50% */
   padding-left: 6px;
 }
 
@@ -593,11 +593,11 @@ defineExpose({ props });
 }
 
 .rp-todo-item--done .rp-todo-icon {
-  color: rgba(134, 239, 172, 0.8);
+  color: rgba(134, 239, 172, 0.8); /* not tokenized */
 }
 
 .rp-todo-item--working .rp-todo-icon {
-  color: rgba(109, 136, 168, 0.9);
+  color: var(--tsukuyomi-opacity-90); /* token: tsukuyomi-500 @ 90% */
 }
 
 .rp-todo-item:not(.rp-todo-item--done):not(.rp-todo-item--working) .rp-todo-icon {
@@ -617,7 +617,7 @@ defineExpose({ props });
 }
 
 .rp-todo-text--working {
-  color: rgba(109, 136, 168, 0.95);
+  color: var(--tsukuyomi-opacity-95); /* token: tsukuyomi-500 @ 95% */
   font-weight: 500;
 }
 
@@ -629,7 +629,7 @@ defineExpose({ props });
   overflow-x: hidden;
   padding: 14px 16px 8px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: var(--white-opacity-20) transparent;
   display: flex;
   flex-direction: column;
 }
@@ -644,14 +644,14 @@ defineExpose({ props });
 }
 
 .rp-messages::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--white-opacity-20);
   border-radius: 3px;
 }
 
 .rp-composer-wrap {
   padding: 10px 12px 14px;
   border-top: 1px solid var(--white-opacity-6);
-  background: rgba(10, 12, 15, 0.72);
+  background: var(--night-500-opacity-72); /* token: night-500 @ 72% */
   flex-shrink: 0;
 }
 
@@ -686,7 +686,7 @@ defineExpose({ props });
 }
 
 .rp-composer:focus-within {
-  border-color: rgba(233, 237, 245, 0.35);
+  border-color: var(--primary-opacity-35); /* token: primary-200 @ 35% */
 }
 
 .rp-input {
@@ -722,7 +722,7 @@ defineExpose({ props });
   align-items: center;
   justify-content: center;
   background: var(--accent-blue-color);
-  color: #fff;
+  color: white; /* token: white */
   border: none;
   cursor: pointer;
   flex-shrink: 0;
@@ -730,7 +730,7 @@ defineExpose({ props });
 }
 
 .rp-send:hover:not(:disabled) {
-  background: rgba(109, 136, 168, 0.85);
+  background: var(--tsukuyomi-opacity-85); /* token: tsukuyomi-500 @ 85% */
 }
 
 .rp-send:disabled {
@@ -739,11 +739,11 @@ defineExpose({ props });
 }
 
 .rp-send--idle {
-  background: rgba(109, 136, 168, 0.35);
+  background: var(--tsukuyomi-opacity-35); /* token: tsukuyomi-500 @ 35% */
 }
 
 .rp-send--stop {
-  background: #ef5f5f;
+  background: var(--color-danger); /* token: danger-500 */
 }
 
 .rp-send i {

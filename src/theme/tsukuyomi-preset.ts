@@ -3,7 +3,7 @@ import Aura from '@primevue/themes/aura';
 
 // Tsukuyomi（月詠）主题色
 // Primary（月白）: #E9EDF5
-const PRIMARY: ColorScale = {
+export const PRIMARY: ColorScale = {
   50: '#F7F4EC', // Paper（和纸）
   100: '#F5F1F0',
   200: '#E9EDF5', // Primary（月白）
@@ -18,7 +18,7 @@ const PRIMARY: ColorScale = {
 };
 
 // Accent（銀月）: #AEB7C6
-const ACCENT: ColorScale = {
+export const ACCENT: ColorScale = {
   50: '#F0F2F5',
   100: '#E4E7EC',
   200: '#D8DCE3',
@@ -32,7 +32,7 @@ const ACCENT: ColorScale = {
 };
 
 // Highlight（薄藍）: #6D88A8
-const ACCENT_TEAL: ColorScale = {
+export const ACCENT_TEAL: ColorScale = {
   50: '#E8EDF3',
   100: '#D1DBE7',
   200: '#BAC9DB',
@@ -46,12 +46,37 @@ const ACCENT_TEAL: ColorScale = {
 };
 
 // Text colors: charcoal or deep navy for contrast
-const TEXT_CHARCOAL = '#36454f'; // Charcoal
-const TEXT_DEEP_NAVY = '#1a237e'; // Deep navy
-const TEXT_DARK = '#212121'; // Dark for light backgrounds
+export const TEXT_CHARCOAL = '#36454f'; // Charcoal
+export const TEXT_DEEP_NAVY = '#1a237e'; // Deep navy
+export const TEXT_DARK = '#212121'; // Dark for light backgrounds
+
+// 翻译文本颜色（tsukuyomi-200 提亮版）
+// 在极暗底上保持约 10:1 对比度，同时保留冷月蓝身份色
+export const TRANSLATION_TEXT_COLOR = 'rgba(186, 201, 219, 0.95)';
+
+// 状态色 —— 与 tailwind.config.cjs 的 success / danger / warning 调色板保持一致
+export const SUCCESS = {
+  DEFAULT: '#7fb389',
+  200: '#b9d9c1',
+  300: '#a7d1b0',
+  500: '#7fb389',
+} as const;
+
+export const DANGER = {
+  DEFAULT: '#ef5f5f',
+  200: '#fecaca',
+  300: '#fca5a5',
+  400: '#f87171',
+  500: '#ef5f5f',
+} as const;
+
+export const WARNING = {
+  DEFAULT: '#f2c037',
+  200: '#e8c78a',
+} as const;
 
 // Secondary（影墨）: #1C1F26
-const SURFACE_DARK: ColorScale = {
+export const SURFACE_DARK: ColorScale = {
   0: '#0F1114',
   50: '#14161A',
   100: '#1C1F26', // Secondary（影墨）
@@ -66,7 +91,7 @@ const SURFACE_DARK: ColorScale = {
 };
 
 // Paper（和纸）: #F7F4EC
-const SURFACE_LIGHT: ColorScale = {
+export const SURFACE_LIGHT: ColorScale = {
   0: '#FDFCF9',
   50: '#F7F4EC', // Paper（和纸）
   100: '#F0EDE4',
@@ -189,6 +214,11 @@ const CUSTOM_CSS = `
   --white-opacity-20: rgba(255, 255, 255, 0.2);
   --white-opacity-25: rgba(255, 255, 255, 0.25);
   --white-opacity-30: rgba(255, 255, 255, 0.3);
+  --white-opacity-2: rgba(255, 255, 255, 0.02);
+  --white-opacity-2-5: rgba(255, 255, 255, 0.025);
+  --white-opacity-14: rgba(255, 255, 255, 0.14);
+  --white-opacity-80: rgba(255, 255, 255, 0.8);
+  --white-opacity-90: rgba(255, 255, 255, 0.9);
 
   /* Secondary（影墨）*/
   --black-opacity-10: rgba(28, 31, 38, 0.1);
@@ -206,6 +236,196 @@ const CUSTOM_CSS = `
   
   /* Translation text color - 提亮 tsukuyomi-200（#BAC9DB）以保障长段阅读可读性 */
   --translation-text-color: rgba(186, 201, 219, 0.95);
+
+  /* 状态色 —— 与 tailwind.config.cjs 的 success / danger / warning 调色板保持一致 */
+  --color-success: ${SUCCESS.DEFAULT};
+  --color-success-200: ${SUCCESS[200]};
+  --color-success-300: ${SUCCESS[300]};
+  --color-success-500: ${SUCCESS[500]};
+  --color-danger: ${DANGER.DEFAULT};
+  --color-danger-200: ${DANGER[200]};
+  --color-danger-300: ${DANGER[300]};
+  --color-danger-400: ${DANGER[400]};
+  --color-danger-500: ${DANGER[500]};
+  --color-warning: ${WARNING.DEFAULT};
+  --color-warning-200: ${WARNING[200]};
+
+  /* Tsukuyomi（薄藍 / Highlight）完整 scale —— 与 Tailwind tsukuyomi-* palette 一一对应 */
+  --tsukuyomi-50: ${ACCENT_TEAL[50]};
+  --tsukuyomi-100: ${ACCENT_TEAL[100]};
+  --tsukuyomi-200: ${ACCENT_TEAL[200]};
+  --tsukuyomi-300: ${ACCENT_TEAL[300]};
+  --tsukuyomi-400: ${ACCENT_TEAL[400]};
+  --tsukuyomi-500: ${ACCENT_TEAL[500]};
+  --tsukuyomi-600: ${ACCENT_TEAL[600]};
+  --tsukuyomi-700: ${ACCENT_TEAL[700]};
+  --tsukuyomi-800: ${ACCENT_TEAL[800]};
+  --tsukuyomi-900: ${ACCENT_TEAL[900]};
+
+  /* Accent（銀月 #AEB7C6）完整 scale —— 与 Tailwind accent-* 对应 */
+  --accent-50: ${ACCENT[50]};
+  --accent-100: ${ACCENT[100]};
+  --accent-200: ${ACCENT[200]};
+  --accent-300: ${ACCENT[300]};
+  --accent-400: ${ACCENT[400]};
+  --accent-500: ${ACCENT[500]};
+  --accent-600: ${ACCENT[600]};
+  --accent-700: ${ACCENT[700]};
+  --accent-800: ${ACCENT[800]};
+  --accent-900: ${ACCENT[900]};
+  --accent-opacity-15: rgba(174, 183, 198, 0.15);
+  --accent-opacity-20: rgba(174, 183, 198, 0.2);
+  --accent-opacity-28: rgba(174, 183, 198, 0.28);
+  --accent-opacity-38: rgba(174, 183, 198, 0.38);
+  --accent-opacity-30: rgba(174, 183, 198, 0.3);
+  --accent-opacity-42: rgba(174, 183, 198, 0.42);
+  --accent-opacity-45: rgba(174, 183, 198, 0.45);
+  --accent-opacity-50: rgba(174, 183, 198, 0.5);
+  --accent-opacity-55: rgba(174, 183, 198, 0.55);
+  --accent-opacity-70: rgba(174, 183, 198, 0.7);
+  --accent-opacity-75: rgba(174, 183, 198, 0.75);
+  --accent-opacity-85: rgba(174, 183, 198, 0.85);
+
+  /* Night（影墨）scale —— 与 Tailwind night-* palette 对应 */
+  --night-50: #2C2F3A;
+  --night-100: #242730;
+  --night-200: #1C1F26;
+  --night-300: #14161A;
+  --night-400: #0F1114;
+  --night-500: #0A0C0F;
+  --night-600: #050608;
+  --night-700: #030405;
+  --night-800: #020303;
+  --night-900: #010202;
+  --night-950: #000101;
+  --night-500-opacity-55: rgba(10, 12, 15, 0.55);
+  --night-500-opacity-72: rgba(10, 12, 15, 0.72);
+
+  /* Moon（Paper 系列）solid —— 与 Tailwind moon-* palette 对应 */
+  --moon-50: #F7F4EC;
+  --moon-100: #F0EDE4;
+  --moon-200: #E9EDF5;
+
+  /* tsukuyomi-500（薄藍 #6D88A8）完整透明度序列（4..95%）*/
+  --tsukuyomi-opacity-4: rgba(109, 136, 168, 0.04);
+  --tsukuyomi-opacity-6: rgba(109, 136, 168, 0.06);
+  --tsukuyomi-opacity-8: rgba(109, 136, 168, 0.08);
+  --tsukuyomi-opacity-10: rgba(109, 136, 168, 0.1);
+  --tsukuyomi-opacity-12: rgba(109, 136, 168, 0.12);
+  --tsukuyomi-opacity-14: rgba(109, 136, 168, 0.14);
+  --tsukuyomi-opacity-15: rgba(109, 136, 168, 0.15);
+  --tsukuyomi-opacity-18: rgba(109, 136, 168, 0.18);
+  --tsukuyomi-opacity-20: rgba(109, 136, 168, 0.2);
+  --tsukuyomi-opacity-22: rgba(109, 136, 168, 0.22);
+  --tsukuyomi-opacity-24: rgba(109, 136, 168, 0.24);
+  --tsukuyomi-opacity-25: rgba(109, 136, 168, 0.25);
+  --tsukuyomi-opacity-28: rgba(109, 136, 168, 0.28);
+  --tsukuyomi-opacity-30: rgba(109, 136, 168, 0.3);
+  --tsukuyomi-opacity-32: rgba(109, 136, 168, 0.32);
+  --tsukuyomi-opacity-35: rgba(109, 136, 168, 0.35);
+  --tsukuyomi-opacity-40: rgba(109, 136, 168, 0.4);
+  --tsukuyomi-opacity-38: rgba(109, 136, 168, 0.38);
+  --tsukuyomi-opacity-45: rgba(109, 136, 168, 0.45);
+  --tsukuyomi-opacity-50: rgba(109, 136, 168, 0.5);
+  --tsukuyomi-opacity-85: rgba(109, 136, 168, 0.85);
+  --tsukuyomi-opacity-90: rgba(109, 136, 168, 0.9);
+  --tsukuyomi-opacity-95: rgba(109, 136, 168, 0.95);
+
+  /* tsukuyomi-300（#A3B7CF）透明度序列 */
+  --tsukuyomi-300-opacity-20: rgba(163, 183, 207, 0.2);
+  --tsukuyomi-300-opacity-22: rgba(163, 183, 207, 0.22);
+  --tsukuyomi-300-opacity-32: rgba(163, 183, 207, 0.32);
+  --tsukuyomi-300-opacity-40: rgba(163, 183, 207, 0.4);
+  --tsukuyomi-300-opacity-50: rgba(163, 183, 207, 0.5);
+  --tsukuyomi-300-opacity-55: rgba(163, 183, 207, 0.55);
+  --tsukuyomi-300-opacity-70: rgba(163, 183, 207, 0.7);
+  --tsukuyomi-300-opacity-75: rgba(163, 183, 207, 0.75);
+  --tsukuyomi-300-opacity-85: rgba(163, 183, 207, 0.85);
+  --tsukuyomi-300-opacity-90: rgba(163, 183, 207, 0.9);
+
+  /* tsukuyomi-200（#BAC9DB）透明度序列 */
+  --tsukuyomi-200-opacity-5: rgba(186, 201, 219, 0.05);
+  --tsukuyomi-200-opacity-6: rgba(186, 201, 219, 0.06);
+  --tsukuyomi-200-opacity-8: rgba(186, 201, 219, 0.08);
+  --tsukuyomi-200-opacity-20: rgba(186, 201, 219, 0.2);
+  --tsukuyomi-200-opacity-22: rgba(186, 201, 219, 0.22);
+  --tsukuyomi-200-opacity-28: rgba(186, 201, 219, 0.28);
+  --tsukuyomi-200-opacity-30: rgba(186, 201, 219, 0.3);
+  --tsukuyomi-200-opacity-75: rgba(186, 201, 219, 0.75);
+  --tsukuyomi-200-opacity-82: rgba(186, 201, 219, 0.82);
+  --tsukuyomi-200-opacity-85: rgba(186, 201, 219, 0.85);
+
+  /* moon-50（Paper 和纸 #F7F4EC）完整透明度序列 —— 5% 步长 + 高频边缘值 */
+  --moon-50-opacity-20: rgba(247, 244, 236, 0.2);
+  --moon-50-opacity-25: rgba(247, 244, 236, 0.25);
+  --moon-50-opacity-30: rgba(247, 244, 236, 0.3);
+  --moon-50-opacity-35: rgba(247, 244, 236, 0.35);
+  --moon-50-opacity-45: rgba(247, 244, 236, 0.45);
+  --moon-50-opacity-48: rgba(247, 244, 236, 0.48);
+  --moon-50-opacity-50: rgba(247, 244, 236, 0.5);
+  --moon-50-opacity-52: rgba(247, 244, 236, 0.52);
+  --moon-50-opacity-55: rgba(247, 244, 236, 0.55);
+  --moon-50-opacity-56: rgba(247, 244, 236, 0.56);
+  --moon-50-opacity-58: rgba(247, 244, 236, 0.58);
+  --moon-50-opacity-60: rgba(247, 244, 236, 0.6);
+  --moon-50-opacity-62: rgba(247, 244, 236, 0.62);
+  --moon-50-opacity-65: rgba(247, 244, 236, 0.65);
+  --moon-50-opacity-68: rgba(247, 244, 236, 0.68);
+  --moon-50-opacity-70: rgba(247, 244, 236, 0.7);
+  --moon-50-opacity-72: rgba(247, 244, 236, 0.72);
+  --moon-50-opacity-75: rgba(247, 244, 236, 0.75);
+  --moon-50-opacity-78: rgba(247, 244, 236, 0.78);
+  --moon-50-opacity-80: rgba(247, 244, 236, 0.8);
+  --moon-50-opacity-82: rgba(247, 244, 236, 0.82);
+  --moon-50-opacity-85: rgba(247, 244, 236, 0.85);
+  --moon-50-opacity-88: rgba(247, 244, 236, 0.88);
+  --moon-50-opacity-90: rgba(247, 244, 236, 0.9);
+  --moon-50-opacity-92: rgba(247, 244, 236, 0.92);
+  --moon-50-opacity-95: rgba(247, 244, 236, 0.95);
+  --moon-50-opacity-96: rgba(247, 244, 236, 0.96);
+  --moon-50-opacity-100: rgba(247, 244, 236, 1);
+
+  /* night-300（#14161A）透明度 */
+  --night-300-opacity-72: rgba(20, 22, 26, 0.72);
+  --night-300-opacity-96: rgba(20, 22, 26, 0.96);
+
+  /* 近 night-500（#080A0D / #0E1014）的深色壳透明度 */
+  --shell-opacity-45: rgba(10, 12, 15, 0.45);
+  --shell-opacity-50: rgba(8, 10, 13, 0.5);
+  --shell-opacity-55: rgba(10, 14, 26, 0.55);
+  --shell-opacity-60: rgba(5, 7, 10, 0.6);
+  --shell-opacity-72: rgba(8, 10, 13, 0.72);
+  --shell-opacity-96: rgba(14, 16, 20, 0.96);
+
+  /* danger / red 透明度（与 --color-danger 系列对应）*/
+  --color-danger-opacity-8: rgba(239, 95, 95, 0.08);
+  --color-danger-opacity-15: rgba(239, 95, 95, 0.15);
+  --color-danger-opacity-30: rgba(239, 95, 95, 0.3);
+  --color-danger-opacity-40: rgba(239, 95, 95, 0.4);
+  --color-danger-400-opacity-15: rgba(248, 113, 113, 0.15);
+  --color-danger-400-opacity-30: rgba(248, 113, 113, 0.3);
+  --red-500-opacity-8: rgba(239, 68, 68, 0.08);
+  --red-500-opacity-18: rgba(239, 68, 68, 0.18);
+  --red-500-opacity-28: rgba(239, 68, 68, 0.28);
+  --red-500-opacity-30: rgba(239, 68, 68, 0.3);
+
+  /* success / green 透明度 */
+  --color-success-opacity-10: rgba(127, 179, 137, 0.1);
+  --color-success-opacity-12: rgba(127, 179, 137, 0.12);
+  --color-success-opacity-28: rgba(127, 179, 137, 0.28);
+  --color-success-opacity-30: rgba(127, 179, 137, 0.3);
+  --color-success-300-opacity-10: rgba(167, 209, 176, 0.1);
+  --color-success-300-opacity-28: rgba(167, 209, 176, 0.28);
+
+  /* warning / amber 透明度 */
+  --color-warning-opacity-12: rgba(242, 192, 55, 0.12);
+  --color-warning-opacity-30: rgba(242, 192, 55, 0.3);
+
+  /* primary（月白 #E9EDF5）额外透明度 */
+  --primary-opacity-35: rgba(233, 237, 245, 0.35);
+
+  /* tsukuyomi-200（#BAC9DB）额外透明度 */
+  --tsukuyomi-200-opacity-24: rgba(186, 201, 219, 0.24);
 }
 
 /* Badge 样式优化 - Moonlight Glow 主题 */

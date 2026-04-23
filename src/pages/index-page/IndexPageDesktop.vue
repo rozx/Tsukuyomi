@@ -327,7 +327,7 @@ const quickActions = [
   aspect-ratio: 2 / 3;
   border-radius: 10px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--white-opacity-3);
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.35),
     0 2px 6px rgba(0, 0, 0, 0.25);
@@ -374,8 +374,8 @@ const quickActions = [
   gap: 0.35rem;
   padding: 0.2rem 0.55rem;
   border-radius: 999px;
-  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--white-opacity-8, var(--white-opacity-8));
+  background: var(--white-opacity-4);
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.64rem;
   color: var(--moon-opacity-60);
@@ -383,13 +383,13 @@ const quickActions = [
 }
 
 .continue-hero-status--active {
-  border-color: rgba(163, 183, 207, 0.32);
-  background: rgba(109, 136, 168, 0.12);
-  color: #c9d8ea;
+  border-color: var(--tsukuyomi-300-opacity-32); /* token: tsukuyomi-300 @ 32% */
+  background: var(--tsukuyomi-opacity-12);
+  color: var(--tsukuyomi-100); /* token: tsukuyomi-100 */
 }
 
 .continue-hero-status--active .pi {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-size: 0.7rem;
 }
 
@@ -450,7 +450,7 @@ const quickActions = [
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  color: #e8c78a;
+  color: var(--color-warning-200); /* token: warning-200 */
 }
 
 .continue-hero-stat--star .pi {
@@ -470,9 +470,9 @@ const quickActions = [
   gap: 0.45rem;
   padding: 0.5rem 0.95rem;
   border-radius: 8px;
-  border: 1px solid rgba(163, 183, 207, 0.4);
-  background: rgba(109, 136, 168, 0.18);
-  color: #d7e2f0;
+  border: 1px solid var(--tsukuyomi-300-opacity-40); /* token: tsukuyomi-300 @ 40% */
+  background: var(--tsukuyomi-opacity-18);
+  color: var(--tsukuyomi-100); /* token: tsukuyomi-100 */
   font-family: inherit;
   font-size: 0.84rem;
   font-weight: 600;
@@ -481,9 +481,9 @@ const quickActions = [
 }
 
 .continue-hero-cta:hover {
-  background: rgba(109, 136, 168, 0.28);
-  border-color: rgba(163, 183, 207, 0.55);
-  color: #eef3fb;
+  background: var(--tsukuyomi-opacity-28); /* token: tsukuyomi-500 @ 28% */
+  border-color: var(--tsukuyomi-300-opacity-55);
+  color: var(--tsukuyomi-50); /* token: tsukuyomi-50 */
 }
 
 .continue-hero-cta .pi {
@@ -492,13 +492,13 @@ const quickActions = [
 
 .continue-hero-cta--ghost {
   background: transparent;
-  border-color: var(--white-opacity-12, rgba(255, 255, 255, 0.12));
+  border-color: var(--white-opacity-12, var(--white-opacity-12));
   color: var(--moon-opacity-75);
 }
 
 .continue-hero-cta--ghost:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--white-opacity-4);
+  border-color: var(--white-opacity-20);
   color: var(--moon-opacity-100);
 }
 
@@ -560,8 +560,8 @@ const quickActions = [
 }
 
 .section-head-action:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: var(--white-opacity-8, rgba(255, 255, 255, 0.08));
+  background: var(--white-opacity-4);
+  border-color: var(--white-opacity-8, var(--white-opacity-8));
   color: var(--moon-opacity-100);
 }
 
@@ -580,8 +580,8 @@ const quickActions = [
   row-gap: 0.15rem;
   padding: 0.95rem 1.05rem;
   border-radius: 10px;
-  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
-  background: rgba(8, 10, 13, 0.5);
+  border: 1px solid var(--white-opacity-8, var(--white-opacity-8));
+  background: var(--shell-opacity-50); /* near-black overlay, kept as-is */
   color: inherit;
   cursor: pointer;
   font-family: inherit;
@@ -590,19 +590,19 @@ const quickActions = [
 }
 
 .quick-action:hover {
-  border-color: rgba(186, 201, 219, 0.3);
-  background: rgba(186, 201, 219, 0.06);
+  border-color: var(--tsukuyomi-200-opacity-30); /* token: tsukuyomi-200 @ 30% */
+  background: var(--tsukuyomi-200-opacity-6); /* token: tsukuyomi-200 @ 6% */
   transform: translateY(-1px);
 }
 
 .quick-action--primary {
-  border-color: rgba(163, 183, 207, 0.32);
-  background: rgba(109, 136, 168, 0.12);
+  border-color: var(--tsukuyomi-300-opacity-32); /* token: tsukuyomi-300 @ 32% */
+  background: var(--tsukuyomi-opacity-12);
 }
 
 .quick-action--primary:hover {
-  border-color: rgba(163, 183, 207, 0.5);
-  background: rgba(109, 136, 168, 0.2);
+  border-color: var(--tsukuyomi-300-opacity-50); /* token: tsukuyomi-300 @ 50% */
+  background: var(--tsukuyomi-opacity-20);
 }
 
 .quick-action-icon {
@@ -610,8 +610,8 @@ const quickActions = [
   width: 2.2rem;
   height: 2.2rem;
   border-radius: 7px;
-  background: rgba(109, 136, 168, 0.12);
-  color: #a3b7cf;
+  background: var(--tsukuyomi-opacity-12);
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -622,8 +622,8 @@ const quickActions = [
 }
 
 .quick-action--primary .quick-action-icon {
-  background: rgba(163, 183, 207, 0.22);
-  color: #d7e2f0;
+  background: var(--tsukuyomi-300-opacity-22);
+  color: var(--tsukuyomi-100); /* token: tsukuyomi-100 */
 }
 
 .quick-action-label {
@@ -637,7 +637,7 @@ const quickActions = [
   grid-column: 2;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.68rem;
-  color: rgba(174, 183, 198, 0.5);
+  color: var(--accent-opacity-50); /* token: accent-silver @ 50% — not tokenized */
   letter-spacing: 0.02em;
 }
 
@@ -654,8 +654,8 @@ const quickActions = [
   gap: 0.55rem;
   padding: 0.65rem;
   border-radius: 10px;
-  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
-  background: rgba(8, 10, 13, 0.5);
+  border: 1px solid var(--white-opacity-8, var(--white-opacity-8));
+  background: var(--shell-opacity-50); /* near-black overlay, kept as-is */
   color: inherit;
   cursor: pointer;
   font-family: inherit;
@@ -664,8 +664,8 @@ const quickActions = [
 }
 
 .recent-card:hover {
-  border-color: rgba(186, 201, 219, 0.3);
-  background: rgba(186, 201, 219, 0.06);
+  border-color: var(--tsukuyomi-200-opacity-30); /* token: tsukuyomi-200 @ 30% */
+  background: var(--tsukuyomi-200-opacity-6); /* token: tsukuyomi-200 @ 6% */
   transform: translateY(-2px);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
 }
@@ -676,7 +676,7 @@ const quickActions = [
   aspect-ratio: 2 / 3;
   border-radius: 6px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--white-opacity-3);
 }
 
 .recent-card-cover-img {
@@ -698,8 +698,8 @@ const quickActions = [
   width: 1.25rem;
   height: 1.25rem;
   border-radius: 50%;
-  background: rgba(8, 10, 13, 0.72);
-  color: #e8c78a;
+  background: var(--shell-opacity-72); /* near-black overlay, kept as-is */
+  color: var(--color-warning-200); /* token: warning-200 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -766,7 +766,7 @@ const quickActions = [
 
 .recent-card-meta-item--time {
   margin-left: auto;
-  color: rgba(174, 183, 198, 0.38);
+  color: var(--accent-opacity-38); /* token: accent-silver @ 38% — not tokenized */
 }
 
 /* ──────── 状态 surface（loading / empty） ──────── */
@@ -778,8 +778,8 @@ const quickActions = [
   gap: 1rem;
   padding: 3rem 1.5rem;
   border-radius: 16px;
-  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
-  background: rgba(8, 10, 13, 0.45);
+  border: 1px solid var(--white-opacity-8, var(--white-opacity-8));
+  background: rgba(8, 10, 13, 0.45); /* near-black overlay, kept as-is */
   text-align: center;
 }
 
@@ -793,7 +793,7 @@ const quickActions = [
   width: 4rem;
   height: 4rem;
   border-radius: 12px;
-  background: rgba(186, 201, 219, 0.08);
+  background: var(--tsukuyomi-200-opacity-8); /* token: tsukuyomi-200 @ 8% */
   display: inline-flex;
   align-items: center;
   justify-content: center;

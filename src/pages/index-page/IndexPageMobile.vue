@@ -207,14 +207,14 @@ const ctx = injectIndexPage();
   font-size: 10px;
   letter-spacing: 0.28em;
   text-transform: uppercase;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 
 .mh-wordmark {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 15px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   margin-top: 2px;
   letter-spacing: -0.01em;
 }
@@ -227,19 +227,19 @@ const ctx = injectIndexPage();
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 24px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.01em;
   line-height: 1.3;
   margin: 0;
 }
 
 .mh-greeting-name {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .mh-greeting-sub {
   font-size: 13px;
-  color: rgba(247, 244, 236, 0.7);
+  color: var(--moon-50-opacity-70);
   margin-top: 8px;
   line-height: 1.6;
 }
@@ -261,7 +261,7 @@ const ctx = injectIndexPage();
 .mh-section-title {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
 }
 
 .mh-section-link {
@@ -272,7 +272,7 @@ const ctx = injectIndexPage();
   padding: 4px 2px;
   font-size: 12px;
   font-weight: 500;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   background: transparent;
   border: none;
   cursor: pointer;
@@ -287,10 +287,11 @@ const ctx = injectIndexPage();
   gap: 12px;
   align-items: center;
   padding: 14px;
-  background: linear-gradient(135deg, rgba(109, 136, 168, 0.18), rgba(109, 136, 168, 0.04));
-  border: 1px solid rgba(109, 136, 168, 0.35);
+  background: linear-gradient(135deg, var(--tsukuyomi-opacity-18), var(--tsukuyomi-opacity-4));
+  /* gradient stop 2: tsukuyomi-500 @ 4% — not tokenized */
+  border: 1px solid var(--tsukuyomi-opacity-35); /* token: tsukuyomi-500 @ 35% — not tokenized */
   border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(109, 136, 168, 0.3);
+  box-shadow: 0 2px 8px var(--tsukuyomi-opacity-30);
   cursor: pointer;
   transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -306,7 +307,7 @@ const ctx = injectIndexPage();
   flex-shrink: 0;
   border-radius: 6px;
   overflow: hidden;
-  background: #14161a;
+  background: var(--night-300); /* token: night-300 */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
@@ -333,14 +334,14 @@ const ctx = injectIndexPage();
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #bac9db;
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
 }
 
 .mh-cta-title {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 15px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   margin-top: 3px;
   line-height: 1.3;
   overflow: hidden;
@@ -350,7 +351,7 @@ const ctx = injectIndexPage();
 
 .mh-cta-author {
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -364,7 +365,7 @@ const ctx = injectIndexPage();
   margin-top: 6px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 
 .mh-dot {
@@ -372,7 +373,7 @@ const ctx = injectIndexPage();
 }
 
 .mh-cta-arrow {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-size: 14px;
   flex-shrink: 0;
 }
@@ -384,8 +385,8 @@ const ctx = injectIndexPage();
 }
 
 .mh-stat-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-4);
+  border: 1px solid var(--white-opacity-8);
   border-radius: 12px;
   padding: 12px 14px;
 }
@@ -402,7 +403,7 @@ const ctx = injectIndexPage();
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
 }
 
 .mh-stat-icon {
@@ -411,26 +412,26 @@ const ctx = injectIndexPage();
 }
 
 .mh-stat-icon--tsukuyomi {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .mh-stat-icon--green {
-  color: #a7d1b0;
+  color: var(--color-success-300);
 }
 
 .mh-stat-icon--moon {
-  color: #e9edf5;
+  color: var(--primary-200);
 }
 
 .mh-stat-icon--warning {
-  color: #f2c037;
+  color: var(--color-warning);
 }
 
 .mh-stat-value {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 22px;
   font-weight: 700;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.02em;
   line-height: 1;
 }
@@ -451,7 +452,7 @@ const ctx = injectIndexPage();
   aspect-ratio: 2 / 3;
   border-radius: 8px;
   overflow: hidden;
-  background: #14161a;
+  background: var(--night-300); /* token: night-300 */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
@@ -466,7 +467,7 @@ const ctx = injectIndexPage();
   position: absolute;
   top: 6px;
   right: 6px;
-  color: #f2c037;
+  color: var(--color-warning);
   font-size: 11px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
@@ -474,7 +475,7 @@ const ctx = injectIndexPage();
 .mh-recent-title {
   font-size: 11px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 0.9);
+  color: var(--moon-50-opacity-90);
   margin-top: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -484,7 +485,7 @@ const ctx = injectIndexPage();
 .mh-recent-meta {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 2px;
 }
 
@@ -503,7 +504,7 @@ const ctx = injectIndexPage();
 .mh-loading {
   padding: 32px 20px;
   text-align: center;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   font-size: 13px;
   display: flex;
   flex-direction: column;
@@ -513,17 +514,17 @@ const ctx = injectIndexPage();
 
 .mh-empty-icon {
   font-size: 42px;
-  color: rgba(247, 244, 236, 0.25);
+  color: var(--moon-50-opacity-25); /* token: moon-50 @ 25% — not tokenized */
 }
 
 .mh-empty-title {
   font-size: 16px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 0.85);
+  color: var(--moon-50-opacity-85);
 }
 
 .mh-empty-sub {
   font-size: 13px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 </style>

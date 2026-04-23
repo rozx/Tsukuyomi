@@ -53,8 +53,8 @@ const ui = useUiStore();
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: #0a0e1a;
-  color: rgba(247, 244, 236, 0.95);
+  background: var(--night-500); /* token: night-500 */
+  color: var(--moon-50-opacity-95); /* token: moon-50 @ 95% */
 }
 
 .desktop-shell-body {
@@ -112,6 +112,6 @@ const ui = useUiStore();
   overflow-x: hidden;
   min-height: 0;
   height: 100%;
-  background: rgba(10, 14, 26, 0.55);
+  background: var(--shell-opacity-55); /* token: night-500 @ 55% */
 }
 </style>

@@ -458,12 +458,14 @@ const settingContextMeta = computed(() => {
   width: 19rem;
   height: 100%;
   flex-shrink: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid var(--white-opacity-8);
+  /* token: near night-500 @ 55% */
   background: rgba(6, 8, 11, 0.55);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
+  /* token: white @ 2% */
+  box-shadow: inset -1px 0 0 var(--white-opacity-2);
 }
 
 .sidebar-content {
@@ -490,7 +492,8 @@ const settingContextMeta = computed(() => {
   font-weight: 600;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgba(174, 183, 198, 0.42);
+  /* token: accent-silver @ 42% */
+  color: var(--accent-opacity-42);
   padding: 0.7rem 0.9rem 0.2rem;
 }
 
@@ -512,7 +515,7 @@ const settingContextMeta = computed(() => {
 }
 
 .book-header-content:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--white-opacity-4);
 }
 
 .book-edit-icon {
@@ -520,7 +523,8 @@ const settingContextMeta = computed(() => {
   top: 0.5rem;
   right: 0.5rem;
   font-size: 0.85rem;
-  color: rgba(247, 244, 236, 0.35);
+  /* token: moon-50 @ 35% */
+  color: var(--moon-50-opacity-35);
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -535,7 +539,8 @@ const settingContextMeta = computed(() => {
   border-radius: 6px;
   overflow: hidden;
   flex-shrink: 0;
-  background: #1c1f26;
+  /* token: night-200 */
+  background: var(--night-200);
 }
 
 .book-cover {
@@ -573,7 +578,7 @@ const settingContextMeta = computed(() => {
   align-items: center;
   gap: 0.4rem;
   font-size: 0.72rem;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
 }
 
 .stat-item {
@@ -591,7 +596,8 @@ const settingContextMeta = computed(() => {
   /* 设计系统：数值用等宽字体 + 薄藍色 */
   font-family:
     'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
-  color: var(--tsukuyomi-300, #a3b7cf);
+  /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -606,7 +612,7 @@ const settingContextMeta = computed(() => {
 
 .book-separator {
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-opacity-6);
   margin: 0 1rem;
 }
 
@@ -627,7 +633,8 @@ const settingContextMeta = computed(() => {
   margin: 0;
   font-size: 0.88rem;
   font-weight: 600;
-  color: rgba(247, 244, 236, 0.9);
+  /* token: moon-50 @ 90% */
+  color: var(--moon-50-opacity-90);
 }
 
 .sidebar-actions {
@@ -648,7 +655,7 @@ const settingContextMeta = computed(() => {
 
 .settings-menu-separator {
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-opacity-6);
   margin: 0.5rem 0.5rem 0;
 }
 
@@ -661,7 +668,8 @@ const settingContextMeta = computed(() => {
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  color: rgba(247, 244, 236, 0.72);
+  /* token: moon-50 @ 72% */
+  color: var(--moon-50-opacity-72);
   font-size: 0.82rem;
   font-family: inherit;
   text-align: left;
@@ -672,28 +680,29 @@ const settingContextMeta = computed(() => {
 }
 
 .settings-menu-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(247, 244, 236, 1);
+  background: var(--white-opacity-5);
+  color: var(--moon-50-opacity-100);
 }
 
 .settings-menu-item-selected {
-  background: rgba(109, 136, 168, 0.2);
-  color: rgba(247, 244, 236, 1);
+  background: var(--tsukuyomi-opacity-20);
+  color: var(--moon-50-opacity-100);
 }
 
 .settings-menu-item-selected .settings-menu-icon {
-  color: #a3b7cf;
+  /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300);
 }
 
 .settings-menu-icon {
   font-size: 0.85rem;
   width: 1rem;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   transition: color 0.15s ease;
 }
 
 .settings-menu-item:hover .settings-menu-icon {
-  color: rgba(247, 244, 236, 0.9);
+  color: var(--moon-50-opacity-90);
 }
 
 .settings-menu-label {
@@ -713,12 +722,13 @@ const settingContextMeta = computed(() => {
   background:
     radial-gradient(
       ellipse at top,
-      rgba(18, 22, 32, 0.35) 0%,
-      rgba(10, 12, 16, 0.15) 70%
+      /* token: near night-200 @ 35% */ rgba(18, 22, 32, 0.35) 0%,
+      /* token: near night-500 @ 15% */ rgba(10, 12, 16, 0.15) 70%
     );
 }
 
 .book-main-content--settings {
+  /* token: near night-300 @ 25% */
   background: rgba(12, 14, 20, 0.25);
 }
 
@@ -728,7 +738,8 @@ const settingContextMeta = computed(() => {
   align-items: center;
   gap: 0.55rem;
   padding: 0.55rem 1.1rem;
-  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  border-bottom: 1px solid var(--white-opacity-6);
+  /* token: near night-500 @ 55% */
   background: rgba(8, 10, 13, 0.55);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -736,7 +747,8 @@ const settingContextMeta = computed(() => {
 
 .workspace-context-icon {
   font-size: 0.76rem;
-  color: rgba(163, 183, 207, 0.85);
+  /* token: tsukuyomi-300 @ 85% */
+  color: var(--tsukuyomi-300-opacity-85);
 }
 
 .workspace-context-eyebrow {
@@ -755,7 +767,7 @@ const settingContextMeta = computed(() => {
 .workspace-context-sep {
   width: 1px;
   height: 0.7rem;
-  background: var(--white-opacity-12, rgba(255, 255, 255, 0.12));
+  background: var(--white-opacity-12);
 }
 
 .workspace-context-label {
@@ -766,7 +778,8 @@ const settingContextMeta = computed(() => {
   font-size: 0.88rem;
   font-weight: 600;
   letter-spacing: -0.005em;
-  color: var(--moon-opacity-95, rgba(247, 244, 236, 0.95));
+  /* token: moon-50 @ 95% */
+  color: var(--moon-50-opacity-95);
 }
 
 .workspace-context-book {
@@ -777,7 +790,8 @@ const settingContextMeta = computed(() => {
     sans-serif;
   font-size: 0.72rem;
   font-weight: 500;
-  color: rgba(174, 183, 198, 0.5);
+  /* token: accent-silver @ 50% */
+  color: var(--accent-opacity-50);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -805,19 +819,20 @@ const settingContextMeta = computed(() => {
   align-items: center;
   justify-content: center;
   padding: 3rem 1.5rem;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 
 .no-selection-icon {
   font-size: 3rem;
-  color: rgba(174, 183, 198, 0.45);
+  /* token: accent-silver @ 45% */
+  color: var(--accent-opacity-45);
   margin-bottom: 1rem;
 }
 
 .no-selection-text {
   font-size: 0.95rem;
   margin: 0 0 0.25rem;
-  color: rgba(247, 244, 236, 0.75);
+  color: var(--moon-50-opacity-75);
 }
 
 .no-selection-hint {

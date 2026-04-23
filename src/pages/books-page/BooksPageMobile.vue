@@ -176,7 +176,7 @@ const pickImportFromJson = () => {
 .ml-eyebrow {
   font-weight: 500;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   text-transform: uppercase;
   letter-spacing: 0.22em;
   margin-bottom: 4px;
@@ -187,14 +187,14 @@ const pickImportFromJson = () => {
   font-weight: 600;
   font-size: 28px;
   line-height: 1.15;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.02em;
   margin: 0;
 }
 
 .ml-meta {
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 6px;
 }
 
@@ -216,18 +216,18 @@ const pickImportFromJson = () => {
 .ml-input-wrap > i {
   position: absolute;
   left: 12px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   font-size: 13px;
   pointer-events: none;
 }
 
 .ml-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-4);
+  border: 1px solid var(--white-opacity-10);
   border-radius: 8px;
   padding: 10px 34px 10px 34px;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   font-family: inherit;
   font-size: 14px;
   outline: none;
@@ -235,12 +235,13 @@ const pickImportFromJson = () => {
 }
 
 .ml-input::placeholder {
-  color: rgba(247, 244, 236, 0.45);
+  color: var(--moon-50-opacity-45);
 }
 
 .ml-input:focus {
-  border-color: #e9edf5;
-  box-shadow: 0 0 0 2px rgba(233, 237, 245, 0.2);
+  /* token: primary (moon white) */
+  border-color: var(--primary-200);
+  box-shadow: 0 0 0 2px var(--primary-opacity-20);
 }
 
 .ml-input-clear {
@@ -253,14 +254,14 @@ const pickImportFromJson = () => {
   justify-content: center;
   border: none;
   background: transparent;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   cursor: pointer;
   border-radius: 6px;
 }
 
 .ml-input-clear:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(247, 244, 236, 0.85);
+  background: var(--white-opacity-6);
+  color: var(--moon-50-opacity-85);
 }
 
 .ml-input-clear i {
@@ -271,9 +272,9 @@ const pickImportFromJson = () => {
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(247, 244, 236, 0.75);
+  background: var(--white-opacity-4);
+  border: 1px solid var(--white-opacity-10);
+  color: var(--moon-50-opacity-75);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -283,8 +284,8 @@ const pickImportFromJson = () => {
 }
 
 .ml-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(247, 244, 236, 1);
+  background: var(--white-opacity-8);
+  color: var(--moon-50-opacity-100);
 }
 
 .ml-icon-btn i {
@@ -319,7 +320,8 @@ const pickImportFromJson = () => {
   aspect-ratio: 2 / 3;
   border-radius: 8px;
   overflow: hidden;
-  background: #14161a;
+  /* token: night-300 */
+  background: var(--night-300);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
@@ -334,7 +336,8 @@ const pickImportFromJson = () => {
   position: absolute;
   top: 8px;
   right: 8px;
-  color: #f2c037;
+  /* token: warning */
+  color: var(--color-warning);
   font-size: 12px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
@@ -342,7 +345,7 @@ const pickImportFromJson = () => {
 .ml-card-title {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   margin-top: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -351,7 +354,7 @@ const pickImportFromJson = () => {
 
 .ml-card-author {
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -365,7 +368,7 @@ const pickImportFromJson = () => {
   margin-top: 6px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 
 .ml-dot {
@@ -381,18 +384,19 @@ const pickImportFromJson = () => {
   gap: 12px;
   padding: 32px 20px;
   text-align: center;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   font-size: 13px;
 }
 
 .ml-state-icon {
   font-size: 42px;
-  color: rgba(247, 244, 236, 0.25);
+  /* token: moon-50 @ 25% */
+  color: var(--moon-50-opacity-25);
 }
 
 .ml-state-title {
   font-size: 14px;
-  color: rgba(247, 244, 236, 0.7);
+  color: var(--moon-50-opacity-70);
 }
 
 /* ───── 添加书籍 picker 选项（sheet 外壳由 MobileBottomSheet 提供） ───── */
@@ -413,13 +417,14 @@ const pickImportFromJson = () => {
 }
 
 .ml-add-picker-option:active {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(109, 136, 168, 0.25);
+  background: var(--white-opacity-4);
+  border-color: var(--tsukuyomi-opacity-25);
 }
 
 .ml-add-picker-option-icon {
   font-size: 18px;
-  color: #a3b7cf;
+  /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300);
   flex-shrink: 0;
   width: 20px;
   text-align: center;
@@ -433,7 +438,8 @@ const pickImportFromJson = () => {
 .ml-add-picker-option-name {
   font-size: 14px;
   font-weight: 500;
-  color: #e9edf5;
+  /* token: primary (moon white) */
+  color: var(--primary-200);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -441,7 +447,7 @@ const pickImportFromJson = () => {
 
 .ml-add-picker-option-meta {
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 3px;
   line-height: 1.4;
   overflow: hidden;
@@ -450,7 +456,8 @@ const pickImportFromJson = () => {
 }
 
 .ml-add-picker-chev {
-  color: rgba(247, 244, 236, 0.35);
+  /* token: moon-50 @ 35% */
+  color: var(--moon-50-opacity-35);
   font-size: 11px;
   flex-shrink: 0;
 }

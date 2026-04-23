@@ -484,7 +484,7 @@ async function moveChapter(
                 :icon="selectedBook.starred ? 'pi pi-star-fill' : 'pi pi-star'"
                 :class="[
                   'p-button-outlined',
-                  selectedBook.starred ? '!text-yellow-400' : '',
+                  selectedBook.starred ? '!text-warning' : '',
                 ]"
                 :title="selectedBook.starred ? '取消收藏' : '收藏'"
                 @click="ctx.toggleStar(selectedBook)"
@@ -754,7 +754,7 @@ async function moveChapter(
 .tl-list {
   width: 320px;
   flex-shrink: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--white-opacity-6);
   background: rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
@@ -803,7 +803,8 @@ async function moveChapter(
     width: 320px;
     max-width: 86%;
     z-index: 20;
-    background: rgba(14, 16, 20, 0.96);
+    /* token: near night-300 @ 96% */
+    background: var(--shell-opacity-96);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
@@ -811,7 +812,7 @@ async function moveChapter(
 
   .tablet-library:not(.tablet-library--list-open) .tl-list {
     width: 320px;
-    border-right-color: rgba(255, 255, 255, 0.06);
+    border-right-color: var(--white-opacity-6);
     transform: translateX(-100%);
   }
 
@@ -823,7 +824,7 @@ async function moveChapter(
 
 .tl-list-head {
   padding: 20px 20px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   flex-shrink: 0;
 }
 
@@ -831,7 +832,8 @@ async function moveChapter(
   font-weight: 500;
   font-size: 10px;
   letter-spacing: 0.22em;
-  color: rgba(174, 183, 198, 0.75);
+  /* token: accent-silver @ 75% */
+  color: var(--accent-opacity-75);
   text-transform: uppercase;
   margin-bottom: 4px;
 }
@@ -840,7 +842,7 @@ async function moveChapter(
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 24px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.015em;
   margin: 0;
   line-height: 1.15;
@@ -848,7 +850,7 @@ async function moveChapter(
 
 .tl-meta {
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 6px;
 }
 
@@ -869,26 +871,28 @@ async function moveChapter(
 .tl-input-wrap > i {
   position: absolute;
   left: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   font-size: 12px;
   pointer-events: none;
 }
 
 .tl-input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-4);
+  border: 1px solid var(--white-opacity-10);
   border-radius: 8px;
   padding: 7px 30px 7px 30px;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   font-family: inherit;
   font-size: 12px;
   outline: none;
 }
 
 .tl-input:focus {
-  border-color: #a3b7cf;
-  box-shadow: 0 0 0 2px rgba(163, 183, 207, 0.2);
+  /* token: tsukuyomi-300 */
+  border-color: var(--tsukuyomi-300);
+  /* token: tsukuyomi-300 @ 20% */
+  box-shadow: 0 0 0 2px var(--tsukuyomi-300-opacity-20);
 }
 
 .tl-input-clear {
@@ -898,7 +902,7 @@ async function moveChapter(
   height: 22px;
   border: none;
   background: transparent;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   cursor: pointer;
   border-radius: 6px;
   display: flex;
@@ -914,9 +918,9 @@ async function moveChapter(
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(247, 244, 236, 0.75);
+  background: var(--white-opacity-4);
+  border: 1px solid var(--white-opacity-10);
+  color: var(--moon-50-opacity-75);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -925,8 +929,8 @@ async function moveChapter(
 }
 
 .tl-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(247, 244, 236, 1);
+  background: var(--white-opacity-8);
+  color: var(--moon-50-opacity-100);
 }
 
 .tl-icon-btn i {
@@ -948,7 +952,8 @@ async function moveChapter(
   align-items: center;
   border: none;
   background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  /* token: white @ 4% */
+  border-bottom: 1px solid var(--white-opacity-4);
   cursor: pointer;
   text-align: left;
   color: inherit;
@@ -957,12 +962,14 @@ async function moveChapter(
 }
 
 .tl-list-row:hover {
-  background: rgba(255, 255, 255, 0.03);
+  /* token: white @ 3% */
+  background: var(--white-opacity-3);
 }
 
 .tl-list-row--active {
-  background: rgba(109, 136, 168, 0.1);
-  border-left-color: #a3b7cf;
+  background: var(--tsukuyomi-opacity-10);
+  /* token: tsukuyomi-300 */
+  border-left-color: var(--tsukuyomi-300);
 }
 
 .tl-list-cover {
@@ -971,7 +978,8 @@ async function moveChapter(
   flex-shrink: 0;
   border-radius: 4px;
   overflow: hidden;
-  background: #14161a;
+  /* token: night-300 */
+  background: var(--night-300);
 }
 
 .tl-list-cover img {
@@ -989,7 +997,7 @@ async function moveChapter(
 .tl-list-title {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -997,7 +1005,7 @@ async function moveChapter(
 
 .tl-list-author {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1010,12 +1018,13 @@ async function moveChapter(
   gap: 5px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   margin-top: 4px;
 }
 
 .tl-list-star {
-  color: #f2c037;
+  /* token: warning */
+  color: var(--color-warning);
   font-size: 10px;
   flex-shrink: 0;
 }
@@ -1033,13 +1042,14 @@ async function moveChapter(
   gap: 10px;
   padding: 24px 16px;
   text-align: center;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   font-size: 12px;
 }
 
 .tl-state-icon {
   font-size: 32px;
-  color: rgba(247, 244, 236, 0.2);
+  /* token: moon-50 @ 20% */
+  color: var(--moon-50-opacity-20);
 }
 
 /* 右侧详情 */
@@ -1067,23 +1077,24 @@ async function moveChapter(
   align-items: center;
   justify-content: center;
   gap: 10px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
 }
 
 .tl-detail-empty i {
   font-size: 42px;
-  color: rgba(247, 244, 236, 0.2);
+  /* token: moon-50 @ 20% */
+  color: var(--moon-50-opacity-20);
 }
 
 .tl-detail-empty-title {
   font-size: 15px;
-  color: rgba(247, 244, 236, 0.75);
+  color: var(--moon-50-opacity-75);
   font-weight: 500;
 }
 
 .tl-detail-empty-sub {
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.45);
+  color: var(--moon-50-opacity-45);
 }
 
 /* Hero */
@@ -1100,7 +1111,8 @@ async function moveChapter(
   flex-shrink: 0;
   border-radius: 8px;
   overflow: hidden;
-  background: linear-gradient(135deg, rgba(109, 136, 168, 0.5), #1c1f26);
+  /* token: tsukuyomi-500 @ 50% → night-200 */
+  background: linear-gradient(135deg, var(--tsukuyomi-opacity-50), var(--night-200));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
@@ -1115,7 +1127,8 @@ async function moveChapter(
   position: absolute;
   top: 8px;
   right: 8px;
-  color: #f2c037;
+  /* token: warning */
+  color: var(--color-warning);
   font-size: 12px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
@@ -1127,7 +1140,8 @@ async function moveChapter(
 
 .tl-hero-eyebrow {
   font-size: 10px;
-  color: rgba(174, 183, 198, 0.75);
+  /* token: accent-silver @ 75% */
+  color: var(--accent-opacity-75);
   letter-spacing: 0.2em;
   text-transform: uppercase;
   font-weight: 500;
@@ -1137,7 +1151,7 @@ async function moveChapter(
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 26px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.015em;
   margin: 6px 0 0;
   line-height: 1.2;
@@ -1146,7 +1160,8 @@ async function moveChapter(
 .tl-hero-alt {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 13px;
-  color: rgba(247, 244, 236, 0.65);
+  /* token: moon-50 @ 65% */
+  color: var(--moon-50-opacity-65);
   margin-top: 4px;
 }
 
@@ -1165,9 +1180,9 @@ async function moveChapter(
   border-radius: 6px;
   font-size: 10px;
   font-weight: 500;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(247, 244, 236, 0.75);
+  background: var(--white-opacity-5);
+  border: 1px solid var(--white-opacity-8);
+  color: var(--moon-50-opacity-75);
 }
 
 .tl-badge i {
@@ -1175,15 +1190,19 @@ async function moveChapter(
 }
 
 .tl-badge--blue {
-  background: rgba(109, 136, 168, 0.15);
-  border-color: rgba(109, 136, 168, 0.3);
-  color: #bac9db;
+  background: var(--tsukuyomi-opacity-15);
+  border-color: var(--tsukuyomi-opacity-30);
+  /* token: tsukuyomi-200 */
+  color: var(--tsukuyomi-200);
 }
 
 .tl-badge--star {
-  background: rgba(242, 192, 55, 0.12);
-  border-color: rgba(242, 192, 55, 0.3);
-  color: #f2c037;
+  /* token: warning @ 12% */
+  background: var(--color-warning-opacity-12);
+  /* token: warning @ 30% */
+  border-color: var(--color-warning-opacity-30);
+  /* token: warning */
+  color: var(--color-warning);
 }
 
 .tl-hero-actions {
@@ -1196,8 +1215,9 @@ async function moveChapter(
 /* 统计条 */
 .tl-stats {
   padding: 16px 24px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  /* token: white @ 2.5% */
+  background: var(--white-opacity-2-5);
+  border: 1px solid var(--white-opacity-8);
   border-radius: 12px;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -1206,7 +1226,7 @@ async function moveChapter(
 
 .tl-stat {
   text-align: center;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--white-opacity-6);
   padding: 0 8px;
 }
 
@@ -1218,7 +1238,7 @@ async function moveChapter(
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 18px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   min-height: 22px;
   display: flex;
   align-items: center;
@@ -1227,7 +1247,7 @@ async function moveChapter(
 
 .tl-stat-label {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 4px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -1243,7 +1263,7 @@ async function moveChapter(
   align-items: center;
   gap: 10px;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   text-transform: uppercase;
   letter-spacing: 0.16em;
   font-weight: 500;
@@ -1256,7 +1276,8 @@ async function moveChapter(
   gap: 4px;
   font-size: 10px;
   letter-spacing: 0.1em;
-  color: rgba(174, 183, 198, 0.7);
+  /* token: accent-silver @ 70% */
+  color: var(--accent-opacity-70);
   text-transform: none;
 }
 
@@ -1285,22 +1306,25 @@ async function moveChapter(
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   cursor: pointer;
   transition: background 120ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .tl-tree-vol:hover {
-  background: rgba(255, 255, 255, 0.03);
+  /* token: white @ 3% */
+  background: var(--white-opacity-3);
 }
 
 .tl-tree-vol-icon-open {
-  color: #a3b7cf;
+  /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300);
   font-size: 11px;
 }
 
 .tl-tree-vol-icon-closed {
-  color: rgba(174, 183, 198, 0.55);
+  /* token: accent-silver @ 55% */
+  color: var(--accent-opacity-55);
   font-size: 11px;
 }
 
@@ -1318,14 +1342,16 @@ async function moveChapter(
   gap: 8px;
   padding: 6px 0 6px 20px;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.8);
+  /* token: moon-50 @ 80% */
+  color: var(--moon-50-opacity-80);
   cursor: pointer;
   border-radius: 4px;
   transition: background 120ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .tl-tree-chap:hover {
-  background: rgba(255, 255, 255, 0.03);
+  /* token: white @ 3% */
+  background: var(--white-opacity-3);
 }
 
 .tl-tree-chap--readonly {
@@ -1352,21 +1378,23 @@ async function moveChapter(
 .tl-tree-count {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   flex-shrink: 0;
 }
 
 .tl-tree-more {
   padding: 6px 0 6px 20px;
   font-size: 10px;
-  color: rgba(163, 183, 207, 0.75);
+  /* token: tsukuyomi-300 @ 75% */
+  color: var(--tsukuyomi-300-opacity-75);
   cursor: pointer;
   font-style: italic;
   transition: color 120ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .tl-tree-more:hover {
-  color: #a3b7cf;
+  /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300);
 }
 
 .tl-tree-more-btn {
@@ -1378,7 +1406,7 @@ async function moveChapter(
   padding: 0;
   border: none;
   background: transparent;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
@@ -1391,8 +1419,8 @@ async function moveChapter(
 }
 
 .tl-tree-more-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(247, 244, 236, 1);
+  background: var(--white-opacity-8);
+  color: var(--moon-50-opacity-100);
 }
 
 .tl-chapters-edit-btn {
@@ -1403,7 +1431,8 @@ async function moveChapter(
   padding: 4px 8px;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(163, 183, 207, 0.85);
+  /* token: tsukuyomi-300 @ 85% */
+  color: var(--tsukuyomi-300-opacity-85);
   border-radius: 6px;
   font-family: inherit;
   font-size: 10px;
@@ -1415,18 +1444,21 @@ async function moveChapter(
 }
 
 .tl-chapters-edit-btn:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: #a3b7cf;
+  background: var(--white-opacity-4);
+  /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300);
 }
 
 .tl-chapters-edit-btn--on {
-  background: rgba(109, 136, 168, 0.18);
-  border-color: rgba(109, 136, 168, 0.3);
-  color: #a3b7cf;
+  background: var(--tsukuyomi-opacity-18);
+  border-color: var(--tsukuyomi-opacity-30);
+  /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300);
 }
 
 .tl-chapters-edit-btn--on:hover {
-  background: rgba(109, 136, 168, 0.24);
+  /* token: tsukuyomi-500 @ 24% */
+  background: var(--tsukuyomi-opacity-24);
 }
 
 .tl-chapters-edit-btn i {
@@ -1435,7 +1467,7 @@ async function moveChapter(
 
 .tl-chapters-empty {
   padding: 20px;
-  color: rgba(247, 244, 236, 0.45);
+  color: var(--moon-50-opacity-45);
   font-size: 12px;
   text-align: center;
 }
@@ -1447,7 +1479,7 @@ async function moveChapter(
 .tl-desc {
   margin: 14px 0 0;
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.7);
+  color: var(--moon-50-opacity-70);
   line-height: 1.65;
   white-space: pre-line;
   display: -webkit-box;

@@ -256,7 +256,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 .th-eyebrow {
   font-size: 11px;
   letter-spacing: 0.22em;
-  color: rgba(174, 183, 198, 0.85);
+  color: var(--accent-opacity-85); /* token: accent-silver @ 85% — not tokenized */
   text-transform: uppercase;
   font-weight: 500;
 }
@@ -265,19 +265,19 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 30px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.015em;
   line-height: 1.15;
   margin: 8px 0 0;
 }
 
 .th-accent {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .th-greeting-sub {
   font-size: 13px;
-  color: rgba(247, 244, 236, 0.7);
+  color: var(--moon-50-opacity-70);
   margin: 6px 0 0;
   line-height: 1.5;
 }
@@ -295,8 +295,8 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 
 .th-hero-card {
   padding: 18px 20px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-2-5); /* token: white @ 2.5% — not tokenized */
+  border: 1px solid var(--white-opacity-8);
   border-radius: 14px;
   display: flex;
   flex-direction: column;
@@ -305,8 +305,9 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 }
 
 .th-hero-card--active {
-  background: linear-gradient(135deg, rgba(109, 136, 168, 0.18), rgba(109, 136, 168, 0.04));
-  border-color: rgba(109, 136, 168, 0.3);
+  background: linear-gradient(135deg, var(--tsukuyomi-opacity-18), var(--tsukuyomi-opacity-4));
+  /* gradient stop 2: tsukuyomi-500 @ 4% — not tokenized */
+  border-color: var(--tsukuyomi-opacity-30);
 }
 
 .th-hero-card-head {
@@ -316,14 +317,14 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 }
 
 .th-hero-card-status-icon {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-size: 13px;
 }
 
 .th-hero-card-status {
   font-size: 11px;
   font-weight: 500;
-  color: #bac9db;
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -331,7 +332,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 .th-hero-card-kicker {
   font-size: 11px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -340,7 +341,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 17px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -352,7 +353,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 
 .th-hero-card-meta {
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
 }
 
 .th-hero-card-subline {
@@ -361,7 +362,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   gap: 6px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 
 .th-hero-card-actions {
@@ -373,8 +374,8 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 /* Stats strip */
 .th-stats {
   padding: 18px 24px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-2-5); /* token: white @ 2.5% — not tokenized */
+  border: 1px solid var(--white-opacity-8);
   border-radius: 14px;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -382,7 +383,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 
 .th-stat-cell {
   text-align: center;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--white-opacity-6);
   padding: 0 12px;
 }
 
@@ -397,36 +398,36 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 }
 
 .th-stat-icon--tsukuyomi {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .th-stat-icon--green {
-  color: #a7d1b0;
+  color: var(--color-success-300);
 }
 
 .th-stat-icon--moon {
-  color: #e9edf5;
+  color: var(--primary-200);
 }
 
 .th-stat-icon--warning {
-  color: #f2c037;
+  color: var(--color-warning);
 }
 
 .th-stat-icon--sage {
-  color: #7fb389;
+  color: var(--color-success);
 }
 
 .th-stat-value {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 22px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.01em;
 }
 
 .th-stat-label {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   margin-top: 4px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -447,7 +448,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 .th-section-title {
   font-size: 11px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   text-transform: uppercase;
   letter-spacing: 0.16em;
   display: inline-flex;
@@ -456,7 +457,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 }
 
 .th-section-title i {
-  color: #f2c037;
+  color: var(--color-warning);
 }
 
 .th-section-link {
@@ -467,7 +468,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   padding: 4px 2px;
   font-size: 12px;
   font-weight: 500;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   background: transparent;
   border: none;
   cursor: pointer;
@@ -486,8 +487,8 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 
 .th-quick-btn {
   padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-2-5); /* token: white @ 2.5% — not tokenized */
+  border: 1px solid var(--white-opacity-8);
   border-radius: 12px;
   text-align: left;
   cursor: pointer;
@@ -495,39 +496,39 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   display: flex;
   flex-direction: column;
   gap: 4px;
-  color: rgba(247, 244, 236, 0.9);
+  color: var(--moon-50-opacity-90);
 }
 
 .th-quick-btn:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--white-opacity-4);
+  border-color: var(--white-opacity-12);
 }
 
 .th-quick-btn > i {
   font-size: 14px;
-  color: rgba(247, 244, 236, 0.65);
+  color: var(--moon-50-opacity-65); /* token: moon-50 @ 65% — not tokenized */
 }
 
 .th-quick-btn--primary {
-  background: rgba(109, 136, 168, 0.15);
-  border-color: rgba(109, 136, 168, 0.3);
+  background: var(--tsukuyomi-opacity-15);
+  border-color: var(--tsukuyomi-opacity-30);
 }
 
 .th-quick-btn--primary > i {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .th-quick-title {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 13px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   margin-top: 2px;
 }
 
 .th-quick-sub {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 
 /* Recent books grid */
@@ -539,8 +540,8 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 
 .th-recent-card {
   padding: 12px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-2-5); /* token: white @ 2.5% — not tokenized */
+  border: 1px solid var(--white-opacity-8);
   border-radius: 12px;
   display: flex;
   gap: 12px;
@@ -549,8 +550,8 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 }
 
 .th-recent-card:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--white-opacity-4);
+  border-color: var(--white-opacity-12);
   transform: translateY(-1px);
 }
 
@@ -561,7 +562,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   flex-shrink: 0;
   border-radius: 6px;
   overflow: hidden;
-  background: #14161a;
+  background: var(--night-300); /* token: night-300 */
 }
 
 .th-recent-cover img {
@@ -575,7 +576,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   position: absolute;
   top: 4px;
   right: 4px;
-  color: #f2c037;
+  color: var(--color-warning);
   font-size: 9px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
@@ -591,7 +592,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 .th-recent-title {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -599,7 +600,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 
 .th-recent-author {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -612,7 +613,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   gap: 6px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   margin-top: 4px;
 }
 
@@ -625,7 +626,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 .th-loading {
   padding: 48px 20px;
   text-align: center;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   font-size: 13px;
   display: flex;
   flex-direction: column;
@@ -635,17 +636,17 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 
 .th-empty-icon {
   font-size: 42px;
-  color: rgba(247, 244, 236, 0.25);
+  color: var(--moon-50-opacity-25); /* token: moon-50 @ 25% — not tokenized */
 }
 
 .th-empty-title {
   font-size: 16px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 0.85);
+  color: var(--moon-50-opacity-85);
 }
 
 .th-empty-sub {
   font-size: 13px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 </style>

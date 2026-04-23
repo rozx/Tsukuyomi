@@ -114,7 +114,7 @@ function panelFor(value: string) {
   padding: 0 0.55rem 0 0.45rem;
   border-radius: 6px;
   background: transparent;
-  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--white-opacity-8, var(--white-opacity-8));
   color: var(--accent-silver);
   cursor: pointer;
   font-family:
@@ -131,13 +131,13 @@ function panelFor(value: string) {
 }
 
 .settings-back-chip:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(186, 201, 219, 0.22);
+  background: var(--white-opacity-4);
+  border-color: var(--tsukuyomi-200-opacity-22); /* token: tsukuyomi-200 @ 22% */
   color: var(--moon-opacity-100);
 }
 
 .settings-back-chip:active {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-opacity-6);
 }
 
 .settings-back-chip .pi {
@@ -161,8 +161,8 @@ function panelFor(value: string) {
   min-height: 0;
   overflow-y: auto;
   padding: 1rem;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  border-right: 1px solid var(--white-opacity-8);
+  background: var(--white-opacity-2); /* token: white @ 2% */
 }
 
 .settings-nav-item {
@@ -172,9 +172,9 @@ function panelFor(value: string) {
   width: 100%;
   padding: 0.95rem 1rem;
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(9, 13, 19, 0.72);
-  color: rgba(247, 244, 236, 0.7);
+  border: 1px solid var(--white-opacity-8);
+  background: rgba(9, 13, 19, 0.72); /* token: near night-500 @ 72% */
+  color: var(--moon-50-opacity-70);
   text-align: left;
   cursor: pointer;
   transition:
@@ -186,14 +186,14 @@ function panelFor(value: string) {
 
 .settings-nav-item:hover {
   transform: translateY(-1px);
-  border-color: rgba(186, 201, 219, 0.2);
-  color: rgba(247, 244, 236, 0.92);
+  border-color: var(--tsukuyomi-200-opacity-20); /* token: tsukuyomi-200 @ 20% */
+  color: var(--moon-50-opacity-92); /* token: moon-50 @ 92% */
 }
 
 .settings-nav-item--active {
-  border-color: rgba(186, 201, 219, 0.3);
-  background: rgba(186, 201, 219, 0.08);
-  color: rgba(247, 244, 236, 0.96);
+  border-color: var(--tsukuyomi-200-opacity-30); /* token: tsukuyomi-200 @ 30% */
+  background: var(--tsukuyomi-200-opacity-8); /* token: tsukuyomi-200 @ 8% */
+  color: var(--moon-50-opacity-96); /* token: moon-50 @ 96% */
 }
 
 .settings-nav-item-eyebrow {
@@ -203,10 +203,10 @@ function panelFor(value: string) {
   width: 1.8rem;
   height: 1.8rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-opacity-6);
   font-size: 0.76rem;
   font-weight: 700;
-  color: #bac9db;
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
   flex-shrink: 0;
 }
 
@@ -236,7 +236,7 @@ function panelFor(value: string) {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid var(--white-opacity-8);
   }
 }
 

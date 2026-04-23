@@ -205,8 +205,8 @@ const ctx = injectHelpPage();
   width: 17rem;
   height: 100%;
   flex-shrink: 0;
-  border-right: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
-  background: rgba(10, 12, 15, 0.45);
+  border-right: 1px solid var(--white-opacity-6);
+  background: var(--shell-opacity-45); /* token: night-500 @ 45% */
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -217,7 +217,7 @@ const ctx = injectHelpPage();
   align-items: center;
   gap: 0.75rem;
   padding: 0.95rem 1rem 0.85rem;
-  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  border-bottom: 1px solid var(--white-opacity-6);
   flex-shrink: 0;
 }
 
@@ -225,9 +225,9 @@ const ctx = injectHelpPage();
   width: 2.2rem;
   height: 2.2rem;
   border-radius: 7px;
-  background: rgba(109, 136, 168, 0.14);
-  border: 1px solid rgba(109, 136, 168, 0.22);
-  color: #a3b7cf;
+  background: var(--tsukuyomi-opacity-14); /* token: tsukuyomi-500 @ 14% */
+  border: 1px solid var(--tsukuyomi-opacity-22);
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -329,7 +329,7 @@ const ctx = injectHelpPage();
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(247, 244, 236, 0.72);
+  color: var(--moon-50-opacity-72); /* token: moon-50 @ 72% */
   font-family: inherit;
   font-size: 0.82rem;
   cursor: pointer;
@@ -338,13 +338,13 @@ const ctx = injectHelpPage();
 }
 
 .help-nav-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--white-opacity-4);
   color: var(--moon-opacity-100);
 }
 
 .help-nav-item--active {
-  background: rgba(186, 201, 219, 0.08);
-  border-color: rgba(186, 201, 219, 0.22);
+  background: var(--tsukuyomi-200-opacity-8); /* token: tsukuyomi-200 @ 8% */
+  border-color: var(--tsukuyomi-300-opacity-22);
   color: var(--moon-opacity-100);
 }
 
@@ -356,7 +356,7 @@ const ctx = injectHelpPage();
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: rgba(10, 12, 16, 0.35);
+  background: rgba(10, 12, 16, 0.35); /* token: night-500 @ 35% */
 }
 
 .help-state {
@@ -371,7 +371,7 @@ const ctx = injectHelpPage();
 
 .help-state-icon {
   font-size: 2rem;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .help-state-text {
@@ -380,8 +380,8 @@ const ctx = injectHelpPage();
 
 .help-state-card {
   padding: 1.5rem 2rem;
-  border: 1px solid rgba(239, 68, 68, 0.28);
-  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid var(--red-500-opacity-28); /* token: red-500 @ 28% */
+  background: var(--red-500-opacity-8); /* token: red-500 @ 8% */
   border-radius: 10px;
   display: flex;
   flex-direction: column;
@@ -392,11 +392,11 @@ const ctx = injectHelpPage();
 
 .help-state-card-icon {
   font-size: 1.85rem;
-  color: #fca5a5;
+  color: var(--color-danger-300); /* token: danger-300 */
 }
 
 .help-state-card-msg {
-  color: #fecaca;
+  color: var(--color-danger-200); /* token: danger-200 */
   font-size: 0.85rem;
   text-align: center;
 }
@@ -404,9 +404,9 @@ const ctx = injectHelpPage();
 .help-state-card-retry {
   padding: 0.4rem 1rem;
   border-radius: 6px;
-  background: rgba(239, 68, 68, 0.18);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #fecaca;
+  background: var(--red-500-opacity-18); /* token: red-500 @ 18% */
+  border: 1px solid var(--red-500-opacity-30); /* token: red-500 @ 30% */
+  color: var(--color-danger-200); /* token: danger-200 */
   cursor: pointer;
   font-family: inherit;
   font-size: 0.82rem;
@@ -414,7 +414,7 @@ const ctx = injectHelpPage();
 }
 
 .help-state-card-retry:hover {
-  background: rgba(239, 68, 68, 0.28);
+  background: var(--red-500-opacity-28); /* token: red-500 @ 28% */
 }
 
 /* ──────── 落地态 ──────── */
@@ -445,7 +445,7 @@ const ctx = injectHelpPage();
   gap: 1.25rem;
   align-items: center;
   padding: 2.25rem 0 1.5rem;
-  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  border-bottom: 1px solid var(--white-opacity-6);
 }
 
 .hld-hero-logo {
@@ -490,7 +490,7 @@ const ctx = injectHelpPage();
 }
 
 .hld-hero-title span {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .hld-hero-desc {
@@ -550,21 +550,21 @@ const ctx = injectHelpPage();
   display: flex;
   gap: 0.85rem;
   padding: 1rem 1.1rem;
-  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--white-opacity-8);
   border-radius: 10px;
-  background: rgba(8, 10, 13, 0.5);
+  background: var(--shell-opacity-50); /* token: night-500 @ 50% */
   transition: border-color 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .hld-step:hover {
-  border-color: rgba(186, 201, 219, 0.22);
+  border-color: var(--tsukuyomi-300-opacity-22);
 }
 
 .hld-step-num {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.88rem;
   font-weight: 700;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   letter-spacing: 0.04em;
   flex-shrink: 0;
   width: 1.5rem;
@@ -603,9 +603,9 @@ const ctx = injectHelpPage();
   column-gap: 0.85rem;
   row-gap: 0.15rem;
   padding: 0.9rem 1rem;
-  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--white-opacity-8);
   border-radius: 10px;
-  background: rgba(8, 10, 13, 0.5);
+  background: var(--shell-opacity-50); /* token: night-500 @ 50% */
   color: inherit;
   cursor: pointer;
   font-family: inherit;
@@ -614,8 +614,8 @@ const ctx = injectHelpPage();
 }
 
 .hld-topic:hover:not(:disabled) {
-  border-color: rgba(186, 201, 219, 0.3);
-  background: rgba(186, 201, 219, 0.05);
+  border-color: var(--tsukuyomi-200-opacity-30); /* token: tsukuyomi-200 @ 30% */
+  background: var(--tsukuyomi-200-opacity-5); /* token: tsukuyomi-200 @ 5% */
   transform: translateY(-1px);
 }
 
@@ -629,8 +629,8 @@ const ctx = injectHelpPage();
   width: 2.1rem;
   height: 2.1rem;
   border-radius: 7px;
-  background: rgba(109, 136, 168, 0.1);
-  color: #a3b7cf;
+  background: var(--tsukuyomi-opacity-10);
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -657,7 +657,7 @@ const ctx = injectHelpPage();
 }
 
 .hld-topic-hint--muted {
-  color: rgba(174, 183, 198, 0.3);
+  color: var(--accent-opacity-30); /* token: accent-silver(var(--accent-500)) @ 30% */
   font-style: italic;
 }
 
@@ -672,8 +672,8 @@ const ctx = injectHelpPage();
 .help-toc {
   width: 15rem;
   flex-shrink: 0;
-  border-right: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
-  background: rgba(8, 10, 13, 0.35);
+  border-right: 1px solid var(--white-opacity-6);
+  background: rgba(8, 10, 13, 0.35); /* token: night-500 @ 35% */
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -681,7 +681,7 @@ const ctx = injectHelpPage();
 
 .help-toc-head {
   padding: 0.95rem 1rem 0.75rem;
-  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  border-bottom: 1px solid var(--white-opacity-6);
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
@@ -732,14 +732,14 @@ const ctx = injectHelpPage();
 }
 
 .help-toc-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--white-opacity-4);
   color: var(--moon-opacity-95);
 }
 
 .help-toc-item--active {
-  background: rgba(186, 201, 219, 0.08);
+  background: var(--tsukuyomi-200-opacity-8); /* token: tsukuyomi-200 @ 8% */
   color: var(--moon-opacity-100);
-  border-left-color: #a3b7cf;
+  border-left-color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .help-toc-item-dot {
@@ -753,7 +753,7 @@ const ctx = injectHelpPage();
 
 .help-toc-item--active .help-toc-item-dot {
   opacity: 1;
-  background: #a3b7cf;
+  background: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .help-toc-item--l1 {
@@ -799,7 +799,7 @@ const ctx = injectHelpPage();
 .help-article-head {
   margin-bottom: 2.25rem;
   padding-bottom: 1.25rem;
-  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  border-bottom: 1px solid var(--white-opacity-6);
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
@@ -827,7 +827,7 @@ const ctx = injectHelpPage();
 .help-article-crumb-sep {
   width: 1px;
   height: 0.7rem;
-  background: var(--white-opacity-12, rgba(255, 255, 255, 0.12));
+  background: var(--white-opacity-12);
 }
 
 .help-article-crumb-category {

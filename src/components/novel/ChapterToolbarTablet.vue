@@ -221,8 +221,8 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 <style scoped>
 .chapter-toolbar-tablet {
   padding: 14px 22px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(20, 22, 26, 0.72);
+  border-bottom: 1px solid var(--white-opacity-6);
+  background: var(--night-300-opacity-72); /* token: night-300 @ 72% */
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   flex-shrink: 0;
@@ -250,7 +250,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
   font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.01em;
-  color: #e9edf5;
+  color: var(--primary-200); /* token: primary-200 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -262,7 +262,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
   gap: 6px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   letter-spacing: 0.02em;
   flex-wrap: wrap;
 }
@@ -283,12 +283,12 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  background: rgba(109, 136, 168, 0.14);
-  border: 1px solid rgba(109, 136, 168, 0.28);
+  background: var(--tsukuyomi-opacity-14); /* token: tsukuyomi-500 @ 14% */
+  border: 1px solid var(--tsukuyomi-opacity-28); /* token: tsukuyomi-500 @ 28% */
   border-radius: 999px;
   font-size: 11px;
   font-weight: 500;
-  color: #bac9db;
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
   white-space: nowrap;
 }
 
@@ -302,15 +302,15 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 .ctt-primary {
   display: inline-flex;
   align-items: stretch;
-  background: rgba(109, 136, 168, 0.25);
-  border: 1px solid rgba(109, 136, 168, 0.4);
+  background: var(--tsukuyomi-opacity-25);
+  border: 1px solid var(--tsukuyomi-opacity-40);
   border-radius: 8px;
   overflow: hidden;
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ctt-primary:hover {
-  background: rgba(109, 136, 168, 0.38);
+  background: var(--tsukuyomi-opacity-38); /* token: tsukuyomi-500 @ 38% */
 }
 
 .ctt-primary-main,
@@ -321,7 +321,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
   padding: 6px 12px;
   background: transparent;
   border: none;
-  color: #d8dde8;
+  color: var(--primary-300); /* token: primary-300 */
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -338,17 +338,17 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 
 .ctt-primary-main i {
   font-size: 11px;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .ctt-primary-caret {
   padding: 6px 8px;
-  border-left: 1px solid rgba(109, 136, 168, 0.32);
-  color: rgba(216, 221, 232, 0.75);
+  border-left: 1px solid var(--tsukuyomi-opacity-32); /* token: tsukuyomi-500 @ 32% */
+  color: rgba(216, 221, 232, 0.75); /* token: primary-300 @ 75% */
 }
 
 .ctt-primary-caret:hover:not(:disabled) {
-  color: #e9edf5;
+  color: var(--primary-200); /* token: primary-200 */
 }
 
 .ctt-primary-caret i {
@@ -362,9 +362,9 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--white-opacity-8);
   border-radius: 8px;
-  color: rgba(247, 244, 236, 0.72);
+  color: var(--moon-50-opacity-72); /* token: moon-50 @ 72% */
   cursor: pointer;
   transition:
     background 150ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -373,9 +373,9 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 }
 
 .ctt-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e9edf5;
-  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--white-opacity-6);
+  color: var(--primary-200); /* token: primary-200 */
+  border-color: var(--white-opacity-14); /* token: white @ 14% */
 }
 
 .ctt-icon-btn i {

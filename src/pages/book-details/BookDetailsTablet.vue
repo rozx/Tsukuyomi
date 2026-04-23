@@ -136,7 +136,8 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
     width: 17rem;
     max-width: 86%;
     z-index: 20;
-    background: rgba(14, 16, 20, 0.96);
+    /* token: near night-300 @ 96% */
+    background: var(--shell-opacity-96);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
@@ -144,7 +145,7 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 
   .book-details-tablet :deep(.book-sidebar.book-sidebar-tablet-collapsed) {
     width: 17rem;
-    border-right-color: rgba(255, 255, 255, 0.06);
+    border-right-color: var(--white-opacity-6);
     transform: translateX(-100%);
   }
 
@@ -242,7 +243,7 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 
 .book-details-tablet :deep(.paragraph-text) {
   padding-right: 12px;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--white-opacity-6);
 }
 
 .book-details-tablet :deep(.paragraph-translation-wrapper) {
@@ -258,15 +259,17 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
   position: sticky;
   top: 0;
   z-index: 4;
+  /* token: near night-500 @ 92% */
   background: rgba(10, 12, 15, 0.92);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  /* token: near accent-silver @ 75% */
   color: rgba(155, 164, 179, 0.75);
   padding: 8px 22px;
 }
