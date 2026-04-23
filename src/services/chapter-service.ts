@@ -614,6 +614,114 @@ async function searchParagraphsAsyncShared(
 }
 
 /**
+ * 合并 Novel 的标量字段(title/author/description),title 只在现有为空时覆盖。
+ */
+function mergeNovelScalarFields(
+  merged: Partial<Novel>,
+  newNovel: Novel,
+  flags: { updateTitle: boolean; updateAuthor: boolean; updateDescription: boolean },
+): void {
+  if (flags.updateTitle && newNovel.title && !merged.title?.trim()) {
+    merged.title = newNovel.title;
+  }
+  if (flags.updateAuthor && newNovel.author) {
+    merged.author = newNovel.author;
+  }
+  if (flags.updateDescription && newNovel.description) {
+    merged.description = newNovel.description;
+  }
+}
+
+/**
+ * 合并 Novel 的列表字段(tags / webUrl),按现有值去重追加。
+ */
+function mergeNovelListFields(
+  merged: Partial<Novel>,
+  newNovel: Novel,
+  flags: { updateTags: boolean; updateWebUrl: boolean },
+): void {
+  if (flags.updateTags && newNovel.tags && newNovel.tags.length > 0) {
+    const existingTags = merged.tags || [];
+    merged.tags = [
+      ...existingTags,
+      ...newNovel.tags.filter((tag) => !existingTags.includes(tag)),
+    ];
+  }
+  if (flags.updateWebUrl && newNovel.webUrl && newNovel.webUrl.length > 0) {
+    const existingUrls = merged.webUrl || [];
+    merged.webUrl = [
+      ...existingUrls,
+      ...newNovel.webUrl.filter((url) => !existingUrls.includes(url)),
+    ];
+  }
+}
+
+/**
+ * 按原文标题匹配已存在的卷索引;找不到返回 -1。
+ * 兼容旧数据格式:title 是字符串直接比较,否则比较 original 字段。
+ */
+function findVolumeIndexByOriginalTitle(volumes: Volume[], originalTitle: string): number {
+  return volumes.findIndex((v) => {
+    if (typeof v.title === 'string') return v.title === originalTitle;
+    return v.title.original === originalTitle;
+  });
+}
+
+/**
+ * 将一个新的卷合并进 merged 列表:同标题卷合并章节,否则追加。
+ */
+function mergeSingleVolumeInto(
+  mergedVolumes: Volume[],
+  newVolume: Volume,
+  chapterUpdateStrategy: 'replace' | 'merge',
+): void {
+  const newVolumeOriginalTitle =
+    typeof newVolume.title === 'string' ? newVolume.title : newVolume.title.original;
+  const existingVolumeIndex = findVolumeIndexByOriginalTitle(
+    mergedVolumes,
+    newVolumeOriginalTitle,
+  );
+
+  if (existingVolumeIndex < 0) {
+    mergedVolumes.push(newVolume);
+    return;
+  }
+
+  const existingVolume = mergedVolumes[existingVolumeIndex];
+  if (!existingVolume) return;
+  const existingChapters = existingVolume.chapters || [];
+  const newChapters = newVolume.chapters || [];
+
+  if (existingChapters.length === 0) {
+    existingVolume.chapters = newChapters;
+  } else {
+    existingVolume.chapters = ChapterService.mergeChapters(
+      existingChapters,
+      newChapters,
+      chapterUpdateStrategy,
+    );
+  }
+}
+
+/**
+ * 将新卷列表合并进现有卷列表,保留现有卷并按原文标题匹配章节合并。
+ */
+function mergeVolumesIntoExisting(
+  existingVolumes: Volume[],
+  newVolumes: Volume[],
+  chapterUpdateStrategy: 'replace' | 'merge',
+): Volume[] {
+  if (existingVolumes.length === 0) {
+    return newVolumes;
+  }
+  const mergedVolumes: Volume[] = [...existingVolumes];
+  newVolumes.forEach((newVolume) => {
+    mergeSingleVolumeInto(mergedVolumes, newVolume, chapterUpdateStrategy);
+  });
+  return mergedVolumes;
+}
+
+/**
  * 章节服务
  * 提供章节获取、更新、合并等通用功能
  */
@@ -857,93 +965,19 @@ export class ChapterService {
 
     const merged: Partial<Novel> = { ...existingNovel };
 
-    // 更新标题（只有当现有标题为空时才覆盖）
-    if (updateTitle && newNovel.title) {
-      if (!merged.title?.trim()) {
-        merged.title = newNovel.title;
-      }
-    }
+    mergeNovelScalarFields(merged, newNovel, {
+      updateTitle,
+      updateAuthor,
+      updateDescription,
+    });
+    mergeNovelListFields(merged, newNovel, { updateTags, updateWebUrl });
 
-    // 更新作者
-    if (updateAuthor && newNovel.author) {
-      merged.author = newNovel.author;
-    }
-
-    // 更新描述
-    if (updateDescription && newNovel.description) {
-      merged.description = newNovel.description;
-    }
-
-    // 合并标签
-    if (updateTags && newNovel.tags && newNovel.tags.length > 0) {
-      const existingTags = merged.tags || [];
-      merged.tags = [
-        ...existingTags,
-        ...newNovel.tags.filter((tag) => !existingTags.includes(tag)),
-      ];
-    }
-
-    // 合并 URL
-    if (updateWebUrl && newNovel.webUrl && newNovel.webUrl.length > 0) {
-      const existingUrls = merged.webUrl || [];
-      merged.webUrl = [
-        ...existingUrls,
-        ...newNovel.webUrl.filter((url) => !existingUrls.includes(url)),
-      ];
-    }
-
-    // 合并 volumes 和 chapters
     if (newNovel.volumes && newNovel.volumes.length > 0) {
-      const existingVolumes = merged.volumes || [];
-
-      if (existingVolumes.length === 0) {
-        // 如果没有现有卷，直接使用新的
-        merged.volumes = newNovel.volumes;
-      } else {
-        // 合并卷和章节
-        const mergedVolumes: Volume[] = [...existingVolumes];
-
-        newNovel.volumes.forEach((newVolume) => {
-          // 查找同标题的现有卷（比较原文标题）
-          // 兼容旧数据格式：如果 title 是字符串，直接比较字符串；否则比较 original
-          const newVolumeOriginalTitle =
-            typeof newVolume.title === 'string' ? newVolume.title : newVolume.title.original;
-          const existingVolumeIndex = mergedVolumes.findIndex((v) => {
-            if (typeof v.title === 'string') {
-              return v.title === newVolumeOriginalTitle;
-            }
-            return v.title.original === newVolumeOriginalTitle;
-          });
-
-          if (existingVolumeIndex >= 0) {
-            // 卷已存在，合并章节
-            const existingVolume = mergedVolumes[existingVolumeIndex];
-            const existingChapters = existingVolume?.chapters || [];
-            const newChapters = newVolume.chapters || [];
-
-            if (existingChapters.length === 0) {
-              // 如果现有卷没有章节，直接使用新章节
-              if (existingVolume) {
-                existingVolume.chapters = newChapters;
-              }
-            } else {
-              // 合并章节
-              if (existingVolume) {
-                existingVolume.chapters = ChapterService.mergeChapters(
-                  existingChapters,
-                  newChapters,
-                  chapterUpdateStrategy,
-                );
-              }
-            }
-          } else {
-            // 卷不存在，添加新卷
-            mergedVolumes.push(newVolume);
-          }
-        });
-
-        merged.volumes = mergedVolumes;
-      }
+      merged.volumes = mergeVolumesIntoExisting(
+        merged.volumes || [],
+        newNovel.volumes,
+        chapterUpdateStrategy,
+      );
     }
 
     return merged;

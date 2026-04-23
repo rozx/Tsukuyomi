@@ -195,73 +195,80 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
   }
 
   /**
-   * 解析小说页面 HTML
-   * Kakuyomu 使用 Next.js，数据嵌入在 <script id="__NEXT_DATA__"> 中
+   * 从 HTML 中查找 __NEXT_DATA__ 脚本内容,三级回退:
+   * 1. script#__NEXT_DATA__
+   * 2. 扫描所有 script 标签,匹配 __NEXT_DATA__ = {...} 或整段 JSON
+   * 3. 对 body HTML 做正则匹配
    */
-  private parseNovelPage(html: string, baseUrl: string): ParsedNovelInfo {
-    const $ = cheerio.load(html);
+  private findNextDataScript($: cheerio.CheerioAPI): string | null {
+    const direct = $('script#__NEXT_DATA__').html();
+    if (direct) return direct;
 
-    // 提取 Next.js 数据 - 尝试多种方式查找
-    let nextDataScript = $('script#__NEXT_DATA__').html();
-
-    // 如果找不到，尝试其他可能的选择器
-    if (!nextDataScript) {
-      // 尝试查找所有包含 __NEXT_DATA__ 的 script 标签
-      $('script').each((_, el) => {
-        const scriptContent = $(el).html() || '';
-        if (scriptContent.includes('__NEXT_DATA__') || scriptContent.includes('__APOLLO_STATE__')) {
-          // 尝试提取 JSON 部分
-          const jsonMatch = scriptContent.match(/__NEXT_DATA__\s*=\s*({[\s\S]*?})(?:\s*;|$)/);
-          if (jsonMatch && jsonMatch[1]) {
-            nextDataScript = jsonMatch[1];
-          } else if (scriptContent.trim().startsWith('{')) {
-            // 如果整个脚本就是 JSON
-            nextDataScript = scriptContent;
-          }
-        }
-      });
-    }
-
-    // 如果还是找不到，尝试从页面中提取 JSON
-    if (!nextDataScript) {
-      const bodyText = $('body').html() || '';
-      const jsonMatch = bodyText.match(
-        /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i,
-      );
-      if (jsonMatch && jsonMatch[1]) {
-        nextDataScript = jsonMatch[1];
+    let found: string | null = null;
+    $('script').each((_, el) => {
+      if (found) return;
+      const scriptContent = $(el).html() || '';
+      if (
+        !scriptContent.includes('__NEXT_DATA__') &&
+        !scriptContent.includes('__APOLLO_STATE__')
+      ) {
+        return;
       }
-    }
+      const jsonMatch = scriptContent.match(/__NEXT_DATA__\s*=\s*({[\s\S]*?})(?:\s*;|$)/);
+      if (jsonMatch && jsonMatch[1]) {
+        found = jsonMatch[1];
+      } else if (scriptContent.trim().startsWith('{')) {
+        found = scriptContent;
+      }
+    });
+    if (found) return found;
 
-    if (!nextDataScript) {
-      // 提供更详细的错误信息用于调试
-      const htmlLength = html.length;
-      const hasScriptTags = $('script').length;
-      const title = $('title').text().trim();
-      const bodyText = $('body').text().substring(0, 200);
+    const bodyText = $('body').html() || '';
+    const bodyMatch = bodyText.match(
+      /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i,
+    );
+    return bodyMatch && bodyMatch[1] ? bodyMatch[1] : null;
+  }
 
-      console.error('[KakuyomuScraper] 无法找到 __NEXT_DATA__', {
-        baseUrl,
-        htmlLength,
-        hasScriptTags,
-        title,
-        bodyPreview: bodyText,
-        scriptTags: $('script')
-          .map((_, el) => ({
-            id: $(el).attr('id'),
-            src: $(el).attr('src'),
-            type: $(el).attr('type'),
-            contentLength: ($(el).html() || '').length,
-          }))
-          .get()
-          .slice(0, 5),
-      });
+  /**
+   * __NEXT_DATA__ 缺失时抛带调试信息的错误
+   */
+  private throwMissingNextData($: cheerio.CheerioAPI, html: string, baseUrl: string): never {
+    const htmlLength = html.length;
+    const hasScriptTags = $('script').length;
+    const title = $('title').text().trim();
+    const bodyText = $('body').text().substring(0, 200);
 
-      throw new Error(
-        `无法找到 Kakuyomu 数据（__NEXT_DATA__ 不存在）。页面可能未完全加载或结构已改变。HTML 长度: ${htmlLength}，脚本标签数: ${hasScriptTags}`,
-      );
-    }
+    console.error('[KakuyomuScraper] 无法找到 __NEXT_DATA__', {
+      baseUrl,
+      htmlLength,
+      hasScriptTags,
+      title,
+      bodyPreview: bodyText,
+      scriptTags: $('script')
+        .map((_, el) => ({
+          id: $(el).attr('id'),
+          src: $(el).attr('src'),
+          type: $(el).attr('type'),
+          contentLength: ($(el).html() || '').length,
+        }))
+        .get()
+        .slice(0, 5),
+    });
 
+    throw new Error(
+      `无法找到 Kakuyomu 数据（__NEXT_DATA__ 不存在）。页面可能未完全加载或结构已改变。HTML 长度: ${htmlLength}，脚本标签数: ${hasScriptTags}`,
+    );
+  }
+
+  /**
+   * 解析 __NEXT_DATA__ JSON,抽取 apolloState / novelId / workData 并校验必要字段。
+   */
+  private resolveKakuyomuWork(nextDataScript: string): {
+    apolloState: ApolloState;
+    novelId: string;
+    workData: KakuyomuWorkData;
+  } {
     let pageData;
     try {
       pageData = JSON.parse(nextDataScript);
@@ -269,53 +276,62 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
       throw new Error('解析 Kakuyomu 数据失败');
     }
 
-    // 提取 Apollo State（包含所有数据）
-
     const apolloState: ApolloState = pageData.props?.pageProps?.__APOLLO_STATE__;
     if (!apolloState) {
       throw new Error('无法找到 Apollo State 数据');
     }
 
-    // 提取小说 ID
     const novelId = pageData.query?.workId;
     if (!novelId) {
       throw new Error('无法找到小说 ID');
     }
 
-    // 获取作品数据
     const workData: KakuyomuWorkData = apolloState[`Work:${novelId}`];
     if (!workData) {
       throw new Error('无法找到作品数据');
     }
 
+    return { apolloState, novelId, workData };
+  }
+
+  /**
+   * 合成描述文本:优先用 workData.introduction(完整,不会被"続きを読む"截断),
+   * 缺失时回退到 HTML 提取。
+   */
+  private buildNovelDescription(
+    workData: KakuyomuWorkData,
+    $: cheerio.CheerioAPI,
+  ): string | undefined {
+    const introduction = workData.introduction;
+    if (introduction && introduction.trim().length > 0) {
+      const catchphrase = workData.catchphrase || this.extractCatchphrase($);
+      return catchphrase ? `${catchphrase}\n\n${introduction}` : introduction;
+    }
+    return this.extractDescription($);
+  }
+
+  /**
+   * 解析小说页面 HTML
+   * Kakuyomu 使用 Next.js，数据嵌入在 <script id="__NEXT_DATA__"> 中
+   */
+  private parseNovelPage(html: string, baseUrl: string): ParsedNovelInfo {
+    const $ = cheerio.load(html);
+
+    const nextDataScript = this.findNextDataScript($);
+    if (!nextDataScript) {
+      this.throwMissingNextData($, html, baseUrl);
+    }
+
+    const { apolloState, novelId, workData } = this.resolveKakuyomuWork(nextDataScript);
+
     // 解析卷和章节结构（v2 优先，兼容旧版 tableOfContents）
     const toc = workData.tableOfContentsV2 ?? workData.tableOfContents ?? [];
     const { volumes, chapters } = this.parseTableOfContents(toc, apolloState, novelId);
 
-    // 优先从 workData 获取完整描述（避免被截断）
-    // workData.introduction 应该包含完整的描述，不会被"続きを読む"截断
-    let description: string | undefined;
-
-    // 优先使用 workData 中的 catchphrase 和 introduction
-    const catchphrase = workData.catchphrase || this.extractCatchphrase($);
-    const introduction = workData.introduction;
-
-    if (introduction && introduction.trim().length > 0) {
-      // 如果 introduction 存在，合并 catchphrase 和 introduction
-      if (catchphrase) {
-        description = `${catchphrase}\n\n${introduction}`;
-      } else {
-        description = introduction;
-      }
-    } else {
-      // 如果 workData.introduction 不存在，回退到从 HTML 中提取
-      description = this.extractDescription($);
-    }
-
     return {
       title: workData.title || '未知标题',
       author: this.extractAuthorFromApollo(workData, apolloState) || this.extractAuthor($),
-      description,
+      description: this.buildNovelDescription(workData, $),
       tags: [...(workData.tagLabels || []), workData.genre].filter((t): t is string => !!t),
       cover: workData.ogImageUrl?.replace(/\?.+$/, ''),
       chapters,

@@ -28,13 +28,33 @@ export function assertAliasesNotBlank(aliases: CharacterAliasInput[] | undefined
  * 规范化别名数组：去除首尾空白并对翻译文本做引号规范化。
  * 调用前应先用 `assertAliasesNotBlank` 校验。
  */
-export function normalizeAliasList(
-  aliases: CharacterAliasInput[],
-): CharacterAliasInput[] {
+export function normalizeAliasList(aliases: CharacterAliasInput[]): CharacterAliasInput[] {
   return aliases.map((alias) => ({
     name: alias.name.trim(),
     translation: normalizeTranslationQuotes(alias.translation.trim()),
   }));
+}
+
+function serializeTranslationText(translation: { translation?: string } | undefined): string {
+  return typeof translation?.translation === 'string' ? translation.translation : '';
+}
+
+function serializeCharacterAliasesForTool(
+  aliases: CharacterSetting['aliases'] | undefined,
+): Array<{ name: string; translation: string }> {
+  if (!Array.isArray(aliases) || aliases.length === 0) {
+    return [];
+  }
+
+  return aliases
+    .filter(
+      (alias): alias is NonNullable<CharacterSetting['aliases'][number]> =>
+        !!alias && typeof alias.name === 'string' && alias.name.length > 0,
+    )
+    .map((alias) => ({
+      name: alias.name,
+      translation: serializeTranslationText(alias.translation),
+    }));
 }
 
 /**
@@ -48,21 +68,16 @@ export function serializeCharacterForTool(char: CharacterSetting): {
   sex: CharacterSetting['sex'];
   description: CharacterSetting['description'];
   speaking_style: CharacterSetting['speakingStyle'];
-  aliases:
-    | Array<{ name: string; translation: string }>
-    | undefined;
+  aliases: Array<{ name: string; translation: string }>;
 } {
   return {
     id: char.id,
-    name: char.name,
-    translation: char.translation.translation,
+    name: typeof char.name === 'string' ? char.name : '',
+    translation: serializeTranslationText(char.translation),
     sex: char.sex,
     description: char.description,
     speaking_style: char.speakingStyle,
-    aliases: char.aliases?.map((alias) => ({
-      name: alias.name,
-      translation: alias.translation.translation,
-    })),
+    aliases: serializeCharacterAliasesForTool(char.aliases),
   };
 }
 

@@ -6,6 +6,43 @@ export function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+const FURIGANA_CONTENT_RE = /^[ぁ-ゖゟァ-ヺー・･゛゜ゝゞヽヾ]+$/u;
+
+function isKanjiChar(char: string | undefined): boolean {
+  if (!char) return false;
+  const code = char.charCodeAt(0);
+  return (
+    (code >= 0x4e00 && code <= 0x9fff) ||
+    (code >= 0x3400 && code <= 0x4dbf) ||
+    (code >= 0xf900 && code <= 0xfaff)
+  );
+}
+
+function resolveFuriganaSpan(text: string, startIndex: number): number | null {
+  const openChar = text[startIndex];
+  if (openChar !== '（' && openChar !== '(') {
+    return null;
+  }
+
+  const closeChar = openChar === '（' ? '）' : ')';
+  const endIndex = text.indexOf(closeChar, startIndex + 1);
+  if (endIndex === -1) {
+    return null;
+  }
+
+  const innerText = text.slice(startIndex + 1, endIndex).trim();
+  if (!innerText || !FURIGANA_CONTENT_RE.test(innerText)) {
+    return null;
+  }
+
+  const previousChar = text[startIndex - 1];
+  if (!isKanjiChar(previousChar)) {
+    return null;
+  }
+
+  return endIndex;
+}
+
 /**
  * 去除文本中的注音（括号内的假名）
  * 例如：鵜（う）飼（かい）→ 鵜飼
@@ -13,7 +50,23 @@ export function escapeRegex(str: string): string {
  * @returns 去除注音后的文本
  */
 export function removeFurigana(text: string): string {
-  return text.replace(/[（(][^）)]*[）)]/g, '');
+  if (!text) return text;
+
+  const result: string[] = [];
+  for (let index = 0; index < text.length; index++) {
+    const furiganaEndIndex = resolveFuriganaSpan(text, index);
+    if (furiganaEndIndex !== null) {
+      index = furiganaEndIndex;
+      continue;
+    }
+
+    const char = text[index];
+    if (char !== undefined) {
+      result.push(char);
+    }
+  }
+
+  return result.join('');
 }
 
 /**
@@ -44,16 +97,10 @@ function removeFuriganaWithMap(text: string): FuriganaMapResult {
     const char = text[originalIndex];
     if (!char) break;
 
-    // 检查是否是注音的开始
-    if (char === '（' || char === '(') {
-      // 找到注音的结束
-      const endIndex = text.indexOf(char === '（' ? '）' : ')', originalIndex);
-      if (endIndex !== -1) {
-        // 跳过整个注音（不添加到 textWithoutFurigana）
-        // 但需要记录下一个字符的位置映射
-        originalIndex = endIndex + 1;
-        continue;
-      }
+    const furiganaEndIndex = resolveFuriganaSpan(text, originalIndex);
+    if (furiganaEndIndex !== null) {
+      originalIndex = furiganaEndIndex + 1;
+      continue;
     }
 
     // 不是注音，添加到结果中
@@ -64,21 +111,13 @@ function removeFuriganaWithMap(text: string): FuriganaMapResult {
     let charLength = 1;
     let nextIndex = originalIndex + 1;
     while (nextIndex < text.length) {
-      const nextChar = text[nextIndex];
-      if (nextChar === '（' || nextChar === '(') {
-        // 找到注音的结束
-        const furiganaEndIndex = text.indexOf(nextChar === '（' ? '）' : ')', nextIndex);
-        if (furiganaEndIndex !== -1) {
-          // 包含注音的长度
-          charLength += furiganaEndIndex - nextIndex + 1;
-          nextIndex = furiganaEndIndex + 1;
-        } else {
-          break;
-        }
-      } else {
-        // 下一个非注音字符，停止
+      const nextFuriganaEndIndex = resolveFuriganaSpan(text, nextIndex);
+      if (nextFuriganaEndIndex === null) {
         break;
       }
+
+      charLength += nextFuriganaEndIndex - nextIndex + 1;
+      nextIndex = nextFuriganaEndIndex + 1;
     }
     lengthMap.push(charLength);
 
@@ -241,14 +280,34 @@ function scanCharacterMatches(
   const nameToCharsMap = new Map<string, CharacterSetting[]>();
   const validNames = new Set<string>();
 
+  const getAliasNameVariants = (aliasName: string | undefined): string[] => {
+    const trimmed = aliasName?.trim();
+    if (!trimmed) return [];
+
+    const variants = new Set<string>([trimmed]);
+    const noSeparator = trimmed.replace(/[\s\u3000・.,]+/g, '');
+    if (noSeparator) {
+      variants.add(noSeparator);
+    }
+
+    const noFurigana = removeFurigana(trimmed);
+    if (noFurigana) {
+      variants.add(noFurigana);
+    }
+
+    const noFuriganaNoSeparator = noFurigana.replace(/[\s\u3000・.,]+/g, '');
+    if (noFuriganaNoSeparator) {
+      variants.add(noFuriganaNoSeparator);
+    }
+
+    return Array.from(variants);
+  };
+
   for (const char of characters) {
-    // 主名称使用完整变体生成（含姓名拆分）；别名只做精确匹配和去注音，不做拆分
-    const aliasNames: string[] = (char.aliases || []).flatMap((a) => {
-      const trimmed = a.name?.trim();
-      if (!trimmed) return [];
-      const noFurigana = removeFurigana(trimmed);
-      return noFurigana !== trimmed ? [trimmed, noFurigana] : [trimmed];
-    });
+    // 主名称使用完整变体生成（含姓名拆分）；别名只做轻量归一化，不做姓/名拆分
+    const aliasNames: string[] = (char.aliases || []).flatMap((alias) =>
+      getAliasNameVariants(alias.name),
+    );
     const allNames = new Set([...getCharacterNameVariants(char.name), ...aliasNames]);
 
     for (const name of allNames) {
@@ -498,20 +557,13 @@ function sortCharactersWithinPosition(
   for (const entry of positionMap.values()) {
     if (entry.characters.length > 1) {
       // 按得分降序排序（出现次数多的在前）
-      entry.characters.sort((a, b) =>
-        compareByCombinedScore(a, b, contextScores, localScores),
-      );
+      entry.characters.sort((a, b) => compareByCombinedScore(a, b, contextScores, localScores));
     }
   }
 }
 
 /** 判断两段 [start, end) 区间是否重叠（允许相邻） */
-function rangesOverlap(
-  startA: number,
-  endA: number,
-  startB: number,
-  endB: number,
-): boolean {
+function rangesOverlap(startA: number, endA: number, startB: number, endB: number): boolean {
   return (
     (startA >= startB && startA < endB) ||
     (endA > startB && endA <= endB) ||
@@ -527,7 +579,10 @@ function filterOverlappingMatches(positionMap: Map<string, PositionEntry>): Posi
     const hasOverlap = filteredMatches.some((existing) => {
       const existingEnd = existing.match.index + existing.match.length;
       // 允许相同位置的多角色
-      if (entry.match.index === existing.match.index && entry.match.length === existing.match.length) {
+      if (
+        entry.match.index === existing.match.index &&
+        entry.match.length === existing.match.length
+      ) {
         return false;
       }
       return rangesOverlap(entry.match.index, currentEnd, existing.match.index, existingEnd);
@@ -570,7 +625,9 @@ function buildTermNode(
 ): HighlightNode {
   const content =
     match.matchedText ||
-    Array.from(text).slice(match.index, match.index + match.length).join('');
+    Array.from(text)
+      .slice(match.index, match.index + match.length)
+      .join('');
   return {
     type: 'term',
     content,
@@ -587,7 +644,9 @@ function buildCharacterNode(
 ): HighlightNode {
   const content =
     match.matchedText ||
-    Array.from(text).slice(match.index, match.index + match.length).join('');
+    Array.from(text)
+      .slice(match.index, match.index + match.length)
+      .join('');
   const firstCharacter = characters[0];
   return {
     type: 'character',
@@ -710,4 +769,3 @@ export function findUniqueCharactersInText(
 
   return uniqueCharacters;
 }
-

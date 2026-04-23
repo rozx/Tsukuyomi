@@ -156,6 +156,118 @@ export function useChapterTranslation(
   };
 
   /**
+   * 解析出"已加载内容的章节"引用：
+   * - 当前 UI 章节优先用 selectedChapterWithContent（内容最新）
+   * - 否则 book 中已有 content 就直接用
+   * - 否则从独立存储中懒加载
+   */
+  const resolveLoadedChapter = async (
+    foundChapter: Chapter,
+    targetChapterId: string,
+  ): Promise<Chapter | null | undefined> => {
+    if (
+      selectedChapterWithContent.value?.id === targetChapterId &&
+      selectedChapterWithContent.value
+    ) {
+      return selectedChapterWithContent.value;
+    }
+    if (foundChapter.content !== undefined) return foundChapter;
+    try {
+      return await ChapterService.loadChapterContent(foundChapter);
+    } catch (error) {
+      console.error('[useChapterTranslation] ❌ 加载章节内容失败:', error);
+      return undefined;
+    }
+  };
+
+  const applyParagraphUpdatesToContent = (
+    content: Paragraph[],
+    paragraphUpdates: Map<
+      string,
+      {
+        translation: string;
+        referencedMemories?: string[];
+        memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+      }
+    >,
+    aiModelId: string,
+  ): Paragraph[] => {
+    return content.map((para) => {
+      const update = paragraphUpdates.get(para.id);
+      if (!update) return para;
+
+      const newTranslation = createParagraphTranslation(
+        update.translation,
+        aiModelId,
+        update.referencedMemories,
+        update.memoryScoreBreakdown,
+      );
+      const updatedTranslations = ChapterService.addParagraphTranslation(
+        para.translations || [],
+        newTranslation,
+      );
+
+      return {
+        id: para.id,
+        text: para.text,
+        translations: updatedTranslations,
+        selectedTranslationId: newTranslation.id,
+      };
+    });
+  };
+
+  // 把更新后的 volumes 写回到 book.value 或 currentBook，避免 skipSave 模式下
+  // 后续批量保存基于"已卸载 content 的旧 volumes"丢失写回。
+  const writeUpdatedVolumesBack = (
+    currentBook: Novel,
+    updatedVolumes: Novel['volumes'],
+  ): void => {
+    if (book.value && book.value.id === currentBook.id) {
+      book.value.volumes = updatedVolumes;
+    } else {
+      currentBook.volumes = updatedVolumes;
+    }
+  };
+
+  // 仅当目标章节仍然是当前 UI 章节时才刷新 selectedChapterWithContent
+  const maybeRefreshSelectedChapter = (
+    updatedChapter: Chapter,
+    targetChapterId: string,
+    updateSelected: boolean,
+  ): void => {
+    if (!updateSelected) return;
+    if (selectedChapterWithContent.value?.id !== targetChapterId) return;
+    if (!updatedChapter.content) return;
+    selectedChapterWithContent.value = {
+      ...selectedChapterWithContent.value,
+      content: [...updatedChapter.content],
+      lastEdited: updatedChapter.lastEdited,
+    };
+  };
+
+  const persistChapterAndBook = async (
+    currentBook: Novel,
+    updatedChapter: Chapter,
+    updatedVolumes: Novel['volumes'],
+  ): Promise<void> => {
+    if (updatedChapter.content) {
+      try {
+        await ChapterService.saveChapterContent(updatedChapter, currentBook.id);
+      } catch (error) {
+        console.error('[useChapterTranslation] 保存章节内容失败:', error);
+      }
+    }
+    try {
+      await booksStore.updateBook(currentBook.id, {
+        volumes: updatedVolumes,
+        lastEdited: new Date(),
+      });
+    } catch (error) {
+      console.error('[useChapterTranslation] 更新书籍失败:', error);
+    }
+  };
+
+  /**
    * 更新章节中的段落翻译并保存
    * @param paragraphUpdates 段落更新映射，key 为段落 ID，value 为翻译文本
    * @param aiModelId AI 模型 ID
@@ -190,66 +302,18 @@ export function useChapterTranslation(
       return undefined;
     }
 
-    // 准备"已加载内容的章节"引用：
-    // - 如果目标章节正好是当前 UI 章节，优先用 selectedChapterWithContent（它一定是最新内容）
-    // - 否则若 book 中已加载 content，直接用
-    // - 否则从独立存储中懒加载（用户切走章节时很可能 content 被卸载）
-    let loadedChapter: Chapter | null | undefined = undefined;
-    if (
-      selectedChapterWithContent.value?.id === targetChapterId &&
-      selectedChapterWithContent.value
-    ) {
-      loadedChapter = selectedChapterWithContent.value;
-    } else if (found.chapter.content !== undefined) {
-      loadedChapter = found.chapter;
-    } else {
-      try {
-        loadedChapter = await ChapterService.loadChapterContent(found.chapter);
-      } catch (error) {
-        console.error('[useChapterTranslation] ❌ 加载章节内容失败:', error);
-        return undefined;
-      }
-    }
+    const loadedChapter = await resolveLoadedChapter(found.chapter, targetChapterId);
+    if (loadedChapter === undefined) return undefined;
 
     const updatedVolumes = ChapterService.updateChapterContentInVolumes(
       currentBook.volumes,
       targetChapterId,
       loadedChapter,
-      (content) =>
-        content.map((para) => {
-          const update = paragraphUpdates.get(para.id);
-          if (!update) return para;
-
-          const newTranslation = createParagraphTranslation(
-            update.translation,
-            aiModelId,
-            update.referencedMemories,
-            update.memoryScoreBreakdown,
-          );
-          const updatedTranslations = ChapterService.addParagraphTranslation(
-            para.translations || [],
-            newTranslation,
-          );
-
-          return {
-            id: para.id,
-            text: para.text,
-            translations: updatedTranslations,
-            selectedTranslationId: newTranslation.id,
-          };
-        }),
+      (content) => applyParagraphUpdatesToContent(content, paragraphUpdates, aiModelId),
     );
 
-    // 重要：即使在 skipSave 模式下，我们也必须把更新后的 volumes 写回到 book.value，
-    // 否则后续的 batchSaveChapter / updateBook 可能会基于“已卸载 content 的旧 volumes”保存，导致写回丢失。
-    // 这里仅更新内存中的 book 引用；真正的持久化仍由 ChapterService.saveChapterContent / booksStore.updateBook 完成。
-    if (book.value && book.value.id === currentBook.id) {
-      book.value.volumes = updatedVolumes;
-    } else {
-      currentBook.volumes = updatedVolumes;
-    }
+    writeUpdatedVolumesBack(currentBook, updatedVolumes);
 
-    // 找到更新后的章节（用于保存 content / 更新 UI）
     const updatedChapter = updatedVolumes
       .flatMap((v) => v.chapters || [])
       .find((c) => c.id === targetChapterId);
@@ -259,43 +323,11 @@ export function useChapterTranslation(
       return undefined;
     }
 
-    // 仅当"目标章节仍然是当前 UI 章节"时才更新 UI，避免把用户已切换到的章节覆盖掉
-    if (
-      updateSelected &&
-      selectedChapterWithContent.value?.id === targetChapterId &&
-      updatedChapter?.content
-    ) {
-      selectedChapterWithContent.value = {
-        ...selectedChapterWithContent.value,
-        content: [...updatedChapter.content],
-        lastEdited: updatedChapter.lastEdited,
-      };
-    }
+    maybeRefreshSelectedChapter(updatedChapter, targetChapterId, updateSelected);
 
-    // 如果跳过保存，只更新内存中的数据并返回章节对象供后续批量保存
-    if (skipSave) {
-      return updatedChapter;
-    }
+    if (skipSave) return updatedChapter;
 
-    // 保存章节内容到 IndexedDB（必须等待完成，否则切换章节时翻译可能丢失）
-    if (updatedChapter?.content) {
-      try {
-        await ChapterService.saveChapterContent(updatedChapter, currentBook.id);
-      } catch (error) {
-        console.error('[useChapterTranslation] 保存章节内容失败:', error);
-      }
-    }
-
-    // 保存书籍元数据（卷/章节结构、lastEdited 等）
-    try {
-      await booksStore.updateBook(currentBook.id, {
-        volumes: updatedVolumes,
-        lastEdited: new Date(),
-      });
-    } catch (error) {
-      console.error('[useChapterTranslation] 更新书籍失败:', error);
-    }
-
+    await persistChapterAndBook(currentBook, updatedChapter, updatedVolumes);
     return undefined;
   };
 

@@ -90,55 +90,67 @@ export function useKeyboardShortcuts(opts: ShortcutRegistrationOptions) {
     '[role="combobox"]',
   ].join(',');
 
+  // Ctrl+F / Cmd+F：切换搜索栏。搜索栏已开且焦点在输入框时，交给原生行为
+  const handleFindKey = (event: KeyboardEvent, isInputElement: boolean): boolean => {
+    if (isSearchVisible.value && isInputElement) return true;
+    event.preventDefault();
+    toggleSearch();
+    return true;
+  };
+
+  // Ctrl+H / Cmd+H：打开搜索栏并切换替换模式
+  const handleReplaceKey = (event: KeyboardEvent, isInputElement: boolean): boolean => {
+    if (isInputElement) return true;
+    event.preventDefault();
+    if (isSearchVisible.value) {
+      showReplace.value = !showReplace.value;
+    } else {
+      toggleSearch();
+      nextTick(() => {
+        showReplace.value = true;
+      });
+    }
+    return true;
+  };
+
+  // F3 / Shift+F3：仅在搜索栏打开且不在输入框时跳转匹配项
+  const handleF3Key = (event: KeyboardEvent, isInputElement: boolean): boolean => {
+    if (isSearchVisible.value && !isInputElement) {
+      event.preventDefault();
+      if (event.shiftKey) prevMatch();
+      else nextMatch();
+    }
+    return true;
+  };
+
+  // Escape：若搜索栏打开则关闭
+  const handleEscapeKey = (event: KeyboardEvent): boolean => {
+    if (!isSearchVisible.value) return false;
+    event.preventDefault();
+    toggleSearch();
+    return true;
+  };
+
   /**
    * 查找替换相关快捷键：Ctrl+F / Ctrl+H / F3 / Shift+F3 / Escape。
    * 返回 true 表示已处理。
    */
   const tryHandleSearchShortcut = (event: KeyboardEvent, isInputElement: boolean): boolean => {
     const hasMod = event.ctrlKey || event.metaKey;
+    const noMod = !event.ctrlKey && !event.metaKey;
 
-    // Ctrl+F / Cmd+F
-    if (hasMod && event.key === 'f' && !event.shiftKey) {
-      if (isSearchVisible.value && isInputElement) return true;
-      event.preventDefault();
-      toggleSearch();
-      return true;
+    if (hasMod && !event.shiftKey && event.key === 'f') {
+      return handleFindKey(event, isInputElement);
     }
-
-    // Ctrl+H / Cmd+H
-    if (hasMod && event.key === 'h' && !event.shiftKey) {
-      if (isInputElement) return true;
-      event.preventDefault();
-      if (isSearchVisible.value) {
-        showReplace.value = !showReplace.value;
-      } else {
-        toggleSearch();
-        nextTick(() => {
-          showReplace.value = true;
-        });
-      }
-      return true;
+    if (hasMod && !event.shiftKey && event.key === 'h') {
+      return handleReplaceKey(event, isInputElement);
     }
-
-    // F3 / Shift+F3（仅在搜索工具栏打开且不在输入框时响应）
-    if (event.key === 'F3' && !event.ctrlKey && !event.metaKey) {
-      if (isSearchVisible.value && !isInputElement) {
-        event.preventDefault();
-        if (event.shiftKey) prevMatch();
-        else nextMatch();
-      }
-      return true;
+    if (noMod && event.key === 'F3') {
+      return handleF3Key(event, isInputElement);
     }
-
-    // Escape：关闭搜索
-    if (event.key === 'Escape' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-      if (isSearchVisible.value) {
-        event.preventDefault();
-        toggleSearch();
-        return true;
-      }
+    if (noMod && !event.shiftKey && event.key === 'Escape') {
+      return handleEscapeKey(event);
     }
-
     return false;
   };
 

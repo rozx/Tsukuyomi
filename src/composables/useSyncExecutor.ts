@@ -6,6 +6,7 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { MemoryService } from 'src/services/memory-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { GlobalConfig } from 'src/services/global-config-cache';
 import {
   buildLocalManifest,
   manifestToEntries,
@@ -22,15 +23,11 @@ import type { SyncConfig } from 'src/models/sync';
 import type { Memory } from 'src/models/memory';
 
 /** downloadFromGistWithManifest 的非跳过分支（含 changedEntries/manifest 等字段） */
-type DownloadResult = Awaited<
-  ReturnType<GistSyncService['downloadFromGistWithManifest']>
->;
+type DownloadResult = Awaited<ReturnType<GistSyncService['downloadFromGistWithManifest']>>;
 type DownloadResultActive = Extract<DownloadResult, { skipped: false }>;
 
 /** 类型守卫：把 DownloadResult 窄化为 active 分支 */
-function isActiveDownload(
-  r: DownloadResult | undefined,
-): r is DownloadResultActive {
+function isActiveDownload(r: DownloadResult | undefined): r is DownloadResultActive {
   return !!r && !r.skipped;
 }
 
@@ -89,6 +86,18 @@ export function useSyncExecutor() {
   const booksStore = useBooksStore();
   const coverHistoryStore = useCoverHistoryStore();
   const gistSyncService = new GistSyncService();
+
+  const ensureSyncStoresInitialized = async (): Promise<void> => {
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
+
+    if (!aiModelsStore.isLoaded && typeof aiModelsStore.loadModels === 'function') {
+      await aiModelsStore.loadModels();
+    }
+
+    if (!coverHistoryStore.isLoaded && typeof coverHistoryStore.loadCoverHistory === 'function') {
+      await coverHistoryStore.loadCoverHistory();
+    }
+  };
 
   /**
    * 收集所有书籍的 memories，按 bookId 分组
@@ -186,8 +195,7 @@ export function useSyncExecutor() {
       const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
       const mapped =
         progress.total > 0
-          ? UPLOAD_PHASE_START +
-            Math.round((progress.current / progress.total) * uploadPhaseRange)
+          ? UPLOAD_PHASE_START + Math.round((progress.current / progress.total) * uploadPhaseRange)
           : UPLOAD_PHASE_START;
       settingsStore.updateSyncProgress({
         stage: 'uploading',
@@ -207,7 +215,12 @@ export function useSyncExecutor() {
     prefixMsg: (m: string) => string,
     onError: SyncExecutorOptions['onError'],
   ): Promise<
-    | { ok: true; result: Awaited<ReturnType<typeof gistSyncService.downloadFromGistWithManifest>> | undefined }
+    | {
+        ok: true;
+        result:
+          | Awaited<ReturnType<typeof gistSyncService.downloadFromGistWithManifest>>
+          | undefined;
+      }
     | { ok: false }
   > => {
     settingsStore.updateSyncProgress({
@@ -512,9 +525,7 @@ export function useSyncExecutor() {
           memoriesByBook: bundle.memoriesByBook,
           tombstones: bundle.tombstones,
         },
-        remoteFilesSnapshot as Parameters<
-          typeof gistSyncService.uploadToGistIncremental
-        >[2],
+        remoteFilesSnapshot as Parameters<typeof gistSyncService.uploadToGistIncremental>[2],
         makeUploadProgressHandler(prefixMsg),
       );
 
@@ -572,6 +583,7 @@ export function useSyncExecutor() {
     retriesRemaining: number,
   ): Promise<SyncExecutorResult | { retry: true }> => {
     const { onError, onSuccess, configOverride } = options;
+    await ensureSyncStoresInitialized();
     const config = configOverride ?? settingsStore.gistSync;
 
     // ── 阶段 1：条件下载 + 解析 manifest ──
@@ -679,11 +691,10 @@ export function useSyncExecutor() {
    * 首次同步（无 gistId）会被判定为"无可覆盖远端"，退化为 executeSync 首次上传路径，
    * 并强制重置 forceSyncMode。
    */
-  const executeForceSync = async (
-    options: SyncExecutorOptions,
-  ): Promise<SyncExecutorResult> => {
+  const executeForceSync = async (options: SyncExecutorOptions): Promise<SyncExecutorResult> => {
     const { messagePrefix, onError, onSuccess, configOverride } = options;
     const prefixMsg = (msg: string) => (messagePrefix ? `${messagePrefix}${msg}` : msg);
+    await ensureSyncStoresInitialized();
     const config = configOverride ?? settingsStore.gistSync;
 
     const markFailure = async () => {
@@ -703,10 +714,7 @@ export function useSyncExecutor() {
         console.error('[useSyncExecutor] 重置 forceSyncMode 失败:', e);
       }
       if (fallback.success && onSuccess) {
-        onSuccess(
-          '同步完成',
-          '未检测到远程 Gist，已按普通同步处理',
-        );
+        onSuccess('同步完成', '未检测到远程 Gist，已按普通同步处理');
       }
       return fallback;
     }
@@ -791,9 +799,7 @@ export function useSyncExecutor() {
           memoriesByBook,
           tombstones,
         },
-        remoteFilesSnapshot as Parameters<
-          typeof gistSyncService.uploadToGistIncremental
-        >[2],
+        remoteFilesSnapshot as Parameters<typeof gistSyncService.uploadToGistIncremental>[2],
         makeUploadProgressHandler(prefixMsg),
       );
 

@@ -1,4 +1,5 @@
-import { computed } from 'vue';
+import { computed, onScopeDispose, ref, watch } from 'vue';
+import { MemoryService } from 'src/services/memory-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
@@ -24,8 +25,7 @@ export interface PendingChangeItem {
  * 用作 UI 提示，不替代 `useSyncExecutor` 内部基于 manifest 哈希的权威判定。
  *
  * 统计范围：books / ai-models / covers / settings 的 lastEdited(addedAt)，
- * 以及 SyncConfig 中的删除记录（deletedAt > lastSyncTime）。Memory 本体按需加载
- * 此处不枚举；其删除记录仍会出现。
+ * 以及 Memory CRUD 与 SyncConfig 中的删除记录（deletedAt > lastSyncTime）。
  */
 export function useSyncPendingChanges() {
   const settingsStore = useSettingsStore();
@@ -41,6 +41,16 @@ export function useSyncPendingChanges() {
     if (typeof value === 'number') return value;
     const parsed = new Date(value).getTime();
     return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const memoryPendingItems = ref<PendingChangeItem[]>([]);
+  let memoryRefreshToken = 0;
+
+  const formatMemoryLabel = (summary: string | undefined, content: string | undefined): string => {
+    const normalizedSummary = summary?.trim();
+    if (normalizedSummary) return normalizedSummary;
+    const normalizedContent = content?.trim() ?? '';
+    return normalizedContent ? normalizedContent.slice(0, 24) : '记忆';
   };
 
   const collectEditedBooks = (baseline: number): PendingChangeItem[] => {
@@ -95,6 +105,57 @@ export function useSyncPendingChanges() {
     return [{ kind: 'settings', action: 'edited', label: '应用设置', changedAt: ms }];
   };
 
+  const refreshMemoryPendingItems = async (): Promise<void> => {
+    const baseline = lastSyncTime.value;
+    const currentToken = ++memoryRefreshToken;
+
+    if (!baseline) {
+      memoryPendingItems.value = [];
+      return;
+    }
+
+    const bookIds = booksStore.books.map((book) => book.id).filter((id) => !!id);
+    if (bookIds.length === 0) {
+      memoryPendingItems.value = [];
+      return;
+    }
+
+    try {
+      const memories = await MemoryService.getAllMemoriesForBooksFlat(bookIds);
+      if (currentToken !== memoryRefreshToken) return;
+
+      memoryPendingItems.value = memories
+        .filter((memory) => memory.lastAccessedAt > baseline)
+        .map((memory) => ({
+          kind: 'memory' as const,
+          action: memory.createdAt > baseline ? ('added' as const) : ('edited' as const),
+          label: formatMemoryLabel(memory.summary, memory.content),
+          changedAt: memory.lastAccessedAt,
+        }));
+    } catch (error) {
+      if (currentToken !== memoryRefreshToken) return;
+      console.warn('[useSyncPendingChanges] 读取记忆变更失败:', error);
+      memoryPendingItems.value = [];
+    }
+  };
+
+  watch(
+    () => ({
+      baseline: lastSyncTime.value,
+      bookIds: booksStore.books.map((book) => book.id).join('|'),
+    }),
+    () => {
+      void refreshMemoryPendingItems();
+    },
+    { immediate: true },
+  );
+
+  const unsubscribeMemoryChange = MemoryService.addMemoryChangeListener((event) => {
+    if (event.detail?.action === 'embedding-updated') return;
+    void refreshMemoryPendingItems();
+  });
+  onScopeDispose(unsubscribeMemoryChange);
+
   const collectDeletions = (baseline: number): PendingChangeItem[] => {
     const gistSync = settingsStore.gistSync;
     const items: PendingChangeItem[] = [];
@@ -126,6 +187,7 @@ export function useSyncPendingChanges() {
       ...collectEditedAiModels(baseline),
       ...collectAddedCovers(baseline),
       ...collectSettingsChange(baseline),
+      ...memoryPendingItems.value,
       ...collectDeletions(baseline),
     ].sort((a, b) => b.changedAt - a.changedAt);
   });
