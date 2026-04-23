@@ -19,10 +19,10 @@
 
 ## 4. Desktop book details workspace
 
-- [ ] 4.1 Rework the left sidebar structure in `src/pages/book-details/BookDetailsDesktop.vue` into clearer sections for book overview, setting shortcuts, catalog tools, chapter tree, and return action while preserving existing methods and drag/drop behavior
-- [ ] 4.2 Reorganize the desktop chapter toolbar and surrounding content container so chapter identity, primary translation actions, and secondary tools are visually layered without replacing current toolbar logic
-- [ ] 4.3 Refresh the desktop settings-context containers for terminology, character, and memory management so they feel like alternate workbench contexts of the same page instead of detached utility screens
-- [ ] 4.4 Validate that switching between reading and settings contexts keeps the current book route and sidebar context intact on desktop
+- [x] 4.1 Rework the left sidebar structure in `src/pages/book-details/BookDetailsDesktop.vue` into clearer sections for book overview, setting shortcuts, catalog tools, chapter tree, and return action while preserving existing methods and drag/drop behavior
+- [x] 4.2 Reorganize the desktop chapter toolbar and surrounding content container so chapter identity, primary translation actions, and secondary tools are visually layered without replacing current toolbar logic
+- [x] 4.3 Refresh the desktop settings-context containers for terminology, character, and memory management so they feel like alternate workbench contexts of the same page instead of detached utility screens
+- [x] 4.4 Validate that switching between reading and settings contexts keeps the current book route and sidebar context intact on desktop
 
 ## 5. Desktop tool pages
 

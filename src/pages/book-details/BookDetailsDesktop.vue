@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import VolumesList from 'src/components/novel/VolumesList.vue';
@@ -14,6 +15,19 @@ import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetai
 import type { EditMode } from 'src/composables/book-details/useEditMode';
 
 const ctx = injectBookDetailsPage();
+
+const settingContextMeta = computed(() => {
+  switch (ctx.selectedSettingMenu.value) {
+    case 'terms':
+      return { eyebrow: 'Terms', label: '术语设置', icon: 'pi pi-bookmark' };
+    case 'characters':
+      return { eyebrow: 'Characters', label: '角色设置', icon: 'pi pi-users' };
+    case 'memory':
+      return { eyebrow: 'Memory', label: '记忆管理', icon: 'pi pi-database' };
+    default:
+      return null;
+  }
+});
 </script>
 
 <template>
@@ -29,8 +43,9 @@ const ctx = injectBookDetailsPage();
     }"
   >
     <div class="sidebar-content">
-      <!-- 书籍封面和标题 -->
-      <div v-if="ctx.book.value" class="book-header">
+      <!-- 书籍概览 -->
+      <section v-if="ctx.book.value" class="sidebar-section sidebar-section--book book-header">
+        <span v-if="!ctx.isPhone.value" class="sidebar-eyebrow">BOOK</span>
         <div class="book-header-content" @click="ctx.openBookDialog">
           <i class="pi pi-info-circle book-edit-icon" />
           <div class="book-cover-wrapper">
@@ -74,10 +89,11 @@ const ctx = injectBookDetailsPage();
           </div>
         </div>
         <div v-if="!ctx.isPhone.value" class="book-separator" />
-      </div>
+      </section>
 
-      <!-- 设置菜单 - 手机端隐藏（设置页已有二级导航） -->
-      <div v-if="!ctx.isPhone.value" class="settings-menu-wrapper">
+      <!-- 设置快捷入口（手机端在设置页已有二级导航） -->
+      <section v-if="!ctx.isPhone.value" class="sidebar-section settings-menu-wrapper">
+        <span class="sidebar-eyebrow">SETTINGS</span>
         <div class="settings-menu-items">
           <button
             class="settings-menu-item"
@@ -115,10 +131,11 @@ const ctx = injectBookDetailsPage();
           </button>
         </div>
         <div class="settings-menu-separator" />
-      </div>
+      </section>
 
-      <!-- 目录标题和操作按钮 -->
-      <div class="sidebar-title-wrapper">
+      <!-- 目录工具 -->
+      <div class="sidebar-section-header sidebar-title-wrapper">
+        <span v-if="!ctx.isPhone.value" class="sidebar-eyebrow">CATALOG</span>
         <h2 v-if="!ctx.isPhone.value" class="sidebar-title">目录</h2>
         <div class="sidebar-actions">
           <Button
@@ -188,10 +205,10 @@ const ctx = injectBookDetailsPage();
         @move-chapter="ctx.onMoveChapter"
       />
 
-      <!-- 返回链接 -->
+      <!-- 返回书籍列表 -->
       <div class="back-link-wrapper">
         <button class="back-link" @click="() => void ctx.router.push('/books')">
-          <i class="pi pi-arrow-left" />
+          <i class="pi pi-chevron-left" />
           <span>返回书籍列表</span>
         </button>
       </div>
@@ -203,10 +220,27 @@ const ctx = injectBookDetailsPage();
     class="book-main-content"
     :class="{
       'overflow-hidden': !!ctx.selectedSettingMenu.value,
+      'book-main-content--settings': !!ctx.selectedSettingMenu.value,
+      'book-main-content--reading':
+        !ctx.selectedSettingMenu.value && !!ctx.selectedChapter.value,
       'book-main-content-mobile-hidden':
         ctx.isPhone.value && ctx.workspaceMode.value === 'catalog',
     }"
   >
+    <!-- 设置上下文头（桌面）：在工作台主面板里清晰标示当前设置区 -->
+    <header
+      v-if="settingContextMeta && !ctx.isPhone.value"
+      class="workspace-context-bar"
+    >
+      <i :class="settingContextMeta.icon" class="workspace-context-icon" aria-hidden="true" />
+      <span class="workspace-context-eyebrow">{{ settingContextMeta.eyebrow }}</span>
+      <span class="workspace-context-sep" aria-hidden="true" />
+      <span class="workspace-context-label">{{ settingContextMeta.label }}</span>
+      <span v-if="ctx.book.value" class="workspace-context-book"
+        >· {{ ctx.book.value.title }}</span
+      >
+    </header>
+
     <!-- 章节阅读工具栏：平板单独用 ChapterToolbarTablet（更干净的 header），其余设备仍用 ChapterToolbar -->
     <ChapterToolbarTablet
       v-if="
@@ -444,6 +478,26 @@ const ctx = injectBookDetailsPage();
   overflow: hidden;
 }
 
+.sidebar-section {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-eyebrow {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(174, 183, 198, 0.42);
+  padding: 0.85rem 1rem 0.25rem;
+}
+
 .book-header {
   flex-shrink: 0;
 }
@@ -452,7 +506,7 @@ const ctx = injectBookDetailsPage();
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 1rem;
+  padding: 0.55rem 1rem 0.9rem;
   cursor: pointer;
   position: relative;
   border-radius: 8px;
@@ -562,13 +616,24 @@ const ctx = injectBookDetailsPage();
 
 .sidebar-title-wrapper {
   flex-shrink: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'eyebrow actions'
+    'title   actions';
   align-items: center;
-  justify-content: space-between;
-  padding: 0.5rem 1rem;
+  column-gap: 0.5rem;
+  row-gap: 0.05rem;
+  padding: 0.6rem 1rem 0.4rem;
+}
+
+.sidebar-title-wrapper .sidebar-eyebrow {
+  grid-area: eyebrow;
+  padding: 0;
 }
 
 .sidebar-title {
+  grid-area: title;
   margin: 0;
   font-size: 0.88rem;
   font-weight: 600;
@@ -576,13 +641,14 @@ const ctx = injectBookDetailsPage();
 }
 
 .sidebar-actions {
+  grid-area: actions;
   display: inline-flex;
   gap: 0.15rem;
 }
 
 .settings-menu-wrapper {
   flex-shrink: 0;
-  padding: 0.25rem 0.5rem;
+  padding: 0 0.5rem 0.25rem;
 }
 
 .settings-menu-items {
@@ -653,35 +719,42 @@ const ctx = injectBookDetailsPage();
 }
 
 .back-link {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.35rem;
+  height: 24px;
+  padding: 0 0.55rem 0 0.45rem;
   background: transparent;
-  border: none;
+  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
   border-radius: 6px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--accent-silver);
   cursor: pointer;
-  font-size: 0.78rem;
-  font-family: inherit;
-  width: 100%;
-  text-align: left;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .back-link:hover {
   background: rgba(255, 255, 255, 0.04);
-  color: rgba(247, 244, 236, 0.9);
+  border-color: rgba(186, 201, 219, 0.22);
+  color: var(--moon-opacity-100);
 }
 
 .back-link:active {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .back-link .pi {
-  font-size: 0.78rem;
+  font-size: 0.68rem;
+  line-height: 1;
 }
 
 .book-main-content {
@@ -690,6 +763,81 @@ const ctx = injectBookDetailsPage();
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.book-main-content--reading {
+  background:
+    linear-gradient(
+      180deg,
+      rgba(10, 12, 16, 0.35) 0%,
+      rgba(10, 12, 16, 0.6) 100%
+    );
+}
+
+.book-main-content--settings {
+  background: rgba(10, 12, 16, 0.35);
+}
+
+.workspace-context-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 1.1rem;
+  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  background: rgba(8, 10, 13, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.workspace-context-icon {
+  font-size: 0.76rem;
+  color: rgba(163, 183, 207, 0.85);
+}
+
+.workspace-context-eyebrow {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent-silver);
+}
+
+.workspace-context-sep {
+  width: 1px;
+  height: 0.7rem;
+  background: var(--white-opacity-12, rgba(255, 255, 255, 0.12));
+}
+
+.workspace-context-label {
+  font-family:
+    'Noto Serif JP',
+    'Songti SC',
+    serif;
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--moon-opacity-95, rgba(247, 244, 236, 0.95));
+}
+
+.workspace-context-book {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: rgba(174, 183, 198, 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .scrollable-content {
