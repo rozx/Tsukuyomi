@@ -258,6 +258,12 @@ describe('furigana matching', () => {
       expect(removeFurigana('漢字(かんじ)')).toBe('漢字');
     });
 
+    test('should keep non-furigana parenthetical sentences intact', () => {
+      expect(
+        removeFurigana('（若本さんだけじゃなく、鏡花さんやせれんにも電話した方がいいか）'),
+      ).toBe('（若本さんだけじゃなく、鏡花さんやせれんにも電話した方がいいか）');
+    });
+
     test('should handle mixed furigana', () => {
       expect(removeFurigana('鵜（う）飼（かい）さん')).toBe('鵜飼さん');
       expect(removeFurigana('東京（とうきょう）タワー')).toBe('東京タワー');
@@ -344,6 +350,20 @@ describe('furigana matching', () => {
       const unique = findUniqueCharactersInText(text, [char]);
       expect(unique.length).toBe(1);
       expect(unique[0]?.id).toBe('1');
+    });
+
+    test('should find names and aliases inside non-furigana parentheses', () => {
+      const chars = [
+        createChar('1', '若本'),
+        createChar('2', '本名A', ['鏡花']),
+        createChar('3', '本名B', ['せれん']),
+      ];
+      const text = '（若本さんだけじゃなく、鏡花さんやせれんにも電話した方がいいか）';
+
+      const unique = findUniqueCharactersInText(text, chars);
+
+      expect(unique).toHaveLength(3);
+      expect(unique.map((char) => char.id)).toEqual(expect.arrayContaining(['1', '2', '3']));
     });
   });
 
