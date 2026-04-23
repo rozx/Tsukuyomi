@@ -160,12 +160,6 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
   display: none;
 }
 
-/* 侧边栏底部的"返回书籍列表"条——平板用左侧主导航栏（书库按钮）回退，
-   与 mobile appbar 的 back 行为一致；这条独立 bar 不在设计里 */
-.book-details-tablet :deep(.back-link-wrapper) {
-  display: none;
-}
-
 /* ───── 侧边栏密度压缩（竖屏 17rem 宽度下桌面默认尺寸显得太挤） ─────
    参考 mobile `.mbd-hero` 的紧凑度：小封面 + 单行压缩字号 + 精简 stats */
 .book-details-tablet :deep(.book-header-content) {

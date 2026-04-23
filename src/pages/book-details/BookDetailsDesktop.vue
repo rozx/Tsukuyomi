@@ -135,8 +135,10 @@ const settingContextMeta = computed(() => {
 
       <!-- 目录工具 -->
       <div class="sidebar-section-header sidebar-title-wrapper">
-        <span v-if="!ctx.isPhone.value" class="sidebar-eyebrow">CATALOG</span>
-        <h2 v-if="!ctx.isPhone.value" class="sidebar-title">目录</h2>
+        <span v-if="!ctx.isPhone.value" class="sidebar-eyebrow sidebar-eyebrow--inline">
+          CATALOG
+        </span>
+        <h2 v-if="ctx.isPhone.value" class="sidebar-title">目录</h2>
         <div class="sidebar-actions">
           <Button
             icon="pi pi-plus"
@@ -205,13 +207,6 @@ const settingContextMeta = computed(() => {
         @move-chapter="ctx.onMoveChapter"
       />
 
-      <!-- 返回书籍列表 -->
-      <div class="back-link-wrapper">
-        <button class="back-link" @click="() => void ctx.router.push('/books')">
-          <i class="pi pi-chevron-left" />
-          <span>返回书籍列表</span>
-        </button>
-      </div>
     </div>
   </aside>
 
@@ -460,14 +455,15 @@ const settingContextMeta = computed(() => {
 
 <style scoped>
 .book-sidebar {
-  width: 22rem;
+  width: 19rem;
   height: 100%;
   flex-shrink: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(10, 12, 15, 0.35);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(6, 8, 11, 0.55);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.02);
 }
 
 .sidebar-content {
@@ -490,12 +486,12 @@ const settingContextMeta = computed(() => {
     'PingFang SC',
     -apple-system,
     sans-serif;
-  font-size: 0.58rem;
+  font-size: 0.56rem;
   font-weight: 600;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: rgba(174, 183, 198, 0.42);
-  padding: 0.85rem 1rem 0.25rem;
+  padding: 0.7rem 0.9rem 0.2rem;
 }
 
 .book-header {
@@ -616,24 +612,18 @@ const settingContextMeta = computed(() => {
 
 .sidebar-title-wrapper {
   flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas:
-    'eyebrow actions'
-    'title   actions';
+  display: flex;
   align-items: center;
-  column-gap: 0.5rem;
-  row-gap: 0.05rem;
-  padding: 0.6rem 1rem 0.4rem;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem 0.4rem;
 }
 
-.sidebar-title-wrapper .sidebar-eyebrow {
-  grid-area: eyebrow;
+.sidebar-title-wrapper .sidebar-eyebrow--inline {
   padding: 0;
 }
 
 .sidebar-title {
-  grid-area: title;
   margin: 0;
   font-size: 0.88rem;
   font-weight: 600;
@@ -641,7 +631,6 @@ const settingContextMeta = computed(() => {
 }
 
 .sidebar-actions {
-  grid-area: actions;
   display: inline-flex;
   gap: 0.15rem;
 }
@@ -711,51 +700,6 @@ const settingContextMeta = computed(() => {
   flex: 1;
 }
 
-.back-link-wrapper {
-  flex-shrink: 0;
-  padding: 0.5rem 1rem 0.75rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  margin-top: auto;
-}
-
-.back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  height: 24px;
-  padding: 0 0.55rem 0 0.45rem;
-  background: transparent;
-  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
-  border-radius: 6px;
-  color: var(--accent-silver);
-  cursor: pointer;
-  font-family:
-    'Noto Sans SC',
-    'PingFang SC',
-    -apple-system,
-    sans-serif;
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  line-height: 1;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.back-link:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(186, 201, 219, 0.22);
-  color: var(--moon-opacity-100);
-}
-
-.back-link:active {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.back-link .pi {
-  font-size: 0.68rem;
-  line-height: 1;
-}
 
 .book-main-content {
   flex: 1;
@@ -767,15 +711,15 @@ const settingContextMeta = computed(() => {
 
 .book-main-content--reading {
   background:
-    linear-gradient(
-      180deg,
-      rgba(10, 12, 16, 0.35) 0%,
-      rgba(10, 12, 16, 0.6) 100%
+    radial-gradient(
+      ellipse at top,
+      rgba(18, 22, 32, 0.35) 0%,
+      rgba(10, 12, 16, 0.15) 70%
     );
 }
 
 .book-main-content--settings {
-  background: rgba(10, 12, 16, 0.35);
+  background: rgba(12, 14, 20, 0.25);
 }
 
 .workspace-context-bar {
