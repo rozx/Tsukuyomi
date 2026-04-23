@@ -92,7 +92,7 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
   padding: 0 0.55rem 0 0.45rem;
   border-radius: 6px;
   background: transparent;
-  border: 1px solid var(--white-opacity-8, var(--white-opacity-8));
+  border: 1px solid var(--white-opacity-8);
   color: var(--accent-silver);
   cursor: pointer;
   font-family:

@@ -1,20 +1,10 @@
 import { computed, ref, type ComponentPublicInstance } from 'vue';
 import { useToastHistory } from 'src/composables/useToastHistory';
-import { useSyncStatusDisplay } from 'src/composables/useSyncPendingChanges';
+import { useSyncComputations } from 'src/composables/useSyncPendingChanges';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useSettingsStore } from 'src/stores/settings';
 
 type TogglePanel = { toggle: (event: Event) => void };
-
-// 状态栏调色风格由各设备变体自行覆盖；此处仅用于复用 useSyncStatusDisplay 的判定逻辑，
-// 颜色读值不在 system-bar 模板里使用。
-const SYNC_DISPLAY_COLORS = {
-  disabled: '',
-  syncing: '',
-  pending: '',
-  synced: '',
-  unsynced: '',
-};
 
 /**
  * MobileSysBar / TabletSysBar 共享的脚本逻辑：
@@ -30,10 +20,8 @@ export function useSystemBar() {
 
   const gistSync = computed(() => settingsStore.gistSync);
   const isSyncing = computed(() => settingsStore.isSyncing);
-  // 复用 useSyncStatusDisplay，避免 nextSyncTime / pendingCount 规则在两处漂移
-  const { pendingCount, hasPendingChanges, nextSyncTime } = useSyncStatusDisplay(
-    SYNC_DISPLAY_COLORS,
-  );
+  // 非视觉的同步计算（pendingCount / nextSyncTime）从共享 helper 读取，规则只维护一处
+  const { pendingCount, hasPendingChanges, nextSyncTime } = useSyncComputations();
 
   const syncState = computed<'idle' | 'syncing' | 'changes' | 'ok' | 'pending'>(() => {
     if (!gistSync.value.enabled) return 'idle';

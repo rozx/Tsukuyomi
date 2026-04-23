@@ -409,12 +409,15 @@ function createAIPageContext() {
     void pruneInvalidTaskRoutings();
   });
 
-  // 模型列表变化（新增/删除/启用状态切换）时复查一次绑定
+  // 模型列表的任意深层变化（新增/删除/启用状态/isDefault 任务勾选/等）都要复查绑定，
+  // 否则用户取消某模型对某任务的默认勾选后，已存的 taskDefaultModelId 会残留并误触路由。
+  // pruneInvalidTaskRoutings 本身是 O(任务数)=O(4) 的廉价操作，deep watch 的触发频率没问题。
   watch(
-    () => aiModels.value.map((m) => `${m.id}:${m.enabled}`).join('|'),
+    () => aiModels.value,
     () => {
       void pruneInvalidTaskRoutings();
     },
+    { deep: true },
   );
 
   return {
