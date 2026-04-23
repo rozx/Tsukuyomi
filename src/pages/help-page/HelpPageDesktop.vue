@@ -1,61 +1,57 @@
 <script setup lang="ts">
 import { injectHelpPage } from 'src/composables/help-page/useHelpPage';
+import { APP_NAME } from 'src/constants/app';
 
 const ctx = injectHelpPage();
 </script>
 
 <template>
-  <div class="w-full h-full flex overflow-hidden relative">
-    <!-- Left Sidebar - Navigation -->
-    <aside
-      class="w-64 h-full flex-shrink-0 border-r border-white/10 flex flex-col bg-night-900/40"
-    >
-      <div class="p-4 border-b border-white/10 flex-shrink-0">
-        <div class="flex items-center gap-3">
-          <div
-            class="w-9 h-9 rounded-lg bg-primary/20 text-primary flex items-center justify-center"
-          >
-            <i class="pi pi-book text-lg" />
-          </div>
-          <div>
-            <h2 class="font-display text-base font-semibold text-moon-100">帮助中心</h2>
-            <p class="text-xs text-moon/60">Documentation</p>
-          </div>
+  <div class="help-desktop">
+    <!-- 左侧：文档导航 -->
+    <aside class="help-nav">
+      <header class="help-nav-brand">
+        <div class="help-nav-brand-icon">
+          <i class="pi pi-book" aria-hidden="true" />
         </div>
-      </div>
+        <div class="help-nav-brand-text">
+          <span class="help-nav-brand-eyebrow">HELP CENTER</span>
+          <span class="help-nav-brand-title">帮助中心</span>
+        </div>
+      </header>
 
-      <nav class="flex-1 overflow-y-auto p-3 space-y-1">
-        <div v-for="(docs, category) in ctx.groupedDocuments.value" :key="category" class="mb-3">
+      <nav class="help-nav-tree">
+        <div
+          v-for="(docs, category) in ctx.groupedDocuments.value"
+          :key="category"
+          class="help-nav-group"
+        >
           <button
-            class="w-full flex items-center justify-between px-2 py-1.5 transition-colors group"
+            type="button"
+            class="help-nav-group-head"
             @click="ctx.toggleCategory(category as string)"
           >
-            <h3
-              class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60 group-hover:text-moon-100 transition-colors"
-            >
-              {{ category }}
-            </h3>
+            <span class="help-nav-group-label">{{ category }}</span>
             <i
-              class="pi text-moon/30 text-[10px] transition-transform duration-200"
+              class="pi help-nav-group-chev"
               :class="
                 ctx.expandedCategories.value.has(category as string)
                   ? 'pi-chevron-down'
                   : 'pi-chevron-right'
               "
+              aria-hidden="true"
             />
           </button>
           <ul
             v-show="ctx.expandedCategories.value.has(category as string)"
-            class="space-y-0.5 mt-1.5"
+            class="help-nav-group-list"
           >
             <li v-for="doc in docs" :key="doc.id">
               <button
-                class="w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 border-l-2"
-                :class="
-                  ctx.currentDoc.value?.id === doc.id
-                    ? 'bg-primary/20 text-primary font-medium border-primary shadow-sm'
-                    : 'text-moon/80 hover:bg-white/5 hover:text-moon-100 border-transparent hover:border-moon/20'
-                "
+                type="button"
+                class="help-nav-item"
+                :class="{
+                  'help-nav-item--active': ctx.currentDoc.value?.id === doc.id,
+                }"
                 @click="ctx.navigateToDocument(doc)"
               >
                 {{ doc.title }}
@@ -66,101 +62,129 @@ const ctx = injectHelpPage();
       </nav>
     </aside>
 
-    <!-- Main Content -->
-    <main class="flex-1 h-full flex flex-col min-w-0">
-      <!-- Loading State -->
-      <div v-if="ctx.loading.value" class="flex-1 flex items-center justify-center">
-        <div class="text-center">
-          <i class="pi pi-spin pi-spinner text-3xl text-primary mb-4" />
-          <p class="text-moon/60">加载文档中...</p>
-        </div>
+    <!-- 右侧主内容 -->
+    <main class="help-main">
+      <!-- Loading -->
+      <div v-if="ctx.loading.value" class="help-state">
+        <i class="pi pi-spin pi-spinner help-state-icon" aria-hidden="true" />
+        <p class="help-state-text">加载文档中...</p>
       </div>
 
-      <!-- Error State -->
-      <div v-else-if="ctx.error.value" class="flex-1 flex items-center justify-center">
-        <div class="text-center p-8 bg-red-500/10 rounded-xl border border-red-500/20 max-w-md">
-          <i class="pi pi-exclamation-triangle text-3xl text-red-400 mb-4" />
-          <p class="text-red-300 mb-4">{{ ctx.error.value }}</p>
-          <button
-            class="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-colors"
-            @click="ctx.loadDocumentIndex"
-          >
+      <!-- Error -->
+      <div v-else-if="ctx.error.value" class="help-state">
+        <div class="help-state-card">
+          <i class="pi pi-exclamation-triangle help-state-card-icon" aria-hidden="true" />
+          <p class="help-state-card-msg">{{ ctx.error.value }}</p>
+          <button type="button" class="help-state-card-retry" @click="ctx.loadDocumentIndex">
             重试
           </button>
         </div>
       </div>
 
-      <!-- Document Content -->
-      <div v-else class="flex-1 h-full flex overflow-hidden">
-        <!-- Left TOC Sidebar -->
-        <aside
-          v-if="ctx.toc.value.length > 0"
-          class="w-60 h-full flex-shrink-0 border-r border-white/10 bg-night-900/20 flex flex-col"
-        >
-          <div class="p-5 border-b border-white/10 flex-shrink-0">
-            <div class="flex items-center gap-2">
-              <i class="pi pi-list text-primary text-sm" />
-              <h3
-                class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60"
-              >
-                目录
-              </h3>
+      <!-- 桌面落地态：未选中文档时的品牌化入口 -->
+      <div v-else-if="!ctx.currentDoc.value" class="help-landing">
+        <div class="help-landing-scroll">
+          <section class="hld-hero">
+            <img :src="ctx.logoPath" :alt="APP_NAME.full" class="hld-hero-logo" />
+            <div class="hld-hero-copy">
+              <span class="hld-hero-eyebrow">{{ APP_NAME.en }} · {{ APP_NAME.zh }}</span>
+              <h1 class="hld-hero-title">让每一次翻页，<span>都如月光般流畅。</span></h1>
+              <p class="hld-hero-desc">
+                专业的日本轻小说翻译工作台，面向 AI 协作翻译、校对润色、术语 /
+                角色 / 记忆管理等连续工作场景设计。
+              </p>
             </div>
-          </div>
-          <nav class="flex-1 overflow-y-auto p-5 space-y-0.5">
+          </section>
+
+          <section class="hld-section">
+            <div class="hld-section-head">
+              <span class="hld-section-eyebrow">QUICK START</span>
+              <h2 class="hld-section-title">快速开始</h2>
+            </div>
+            <ol class="hld-steps">
+              <li v-for="step in ctx.quickStartSteps" :key="step.n" class="hld-step">
+                <span class="hld-step-num">{{ step.n }}</span>
+                <div class="hld-step-body">
+                  <span class="hld-step-title">{{ step.t }}</span>
+                  <span class="hld-step-desc">{{ step.d }}</span>
+                </div>
+              </li>
+            </ol>
+          </section>
+
+          <section class="hld-section">
+            <div class="hld-section-head">
+              <span class="hld-section-eyebrow">TOPICS</span>
+              <h2 class="hld-section-title">主题入口</h2>
+            </div>
+            <div class="hld-topics">
+              <button
+                v-for="topic in ctx.topicTiles.value"
+                :key="topic.label"
+                type="button"
+                class="hld-topic"
+                :disabled="!topic.doc"
+                @click="topic.doc && ctx.navigateToDocument(topic.doc)"
+              >
+                <span class="hld-topic-icon">
+                  <i :class="['pi', topic.icon]" aria-hidden="true" />
+                </span>
+                <span class="hld-topic-label">{{ topic.label }}</span>
+                <span v-if="topic.doc" class="hld-topic-hint">
+                  {{ topic.doc.title }}
+                </span>
+                <span v-else class="hld-topic-hint hld-topic-hint--muted">暂未收录</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- 文档阅读态：TOC + 正文 -->
+      <div v-else class="help-reader">
+        <aside v-if="ctx.toc.value.length > 0" class="help-toc">
+          <header class="help-toc-head">
+            <span class="help-toc-eyebrow">TABLE OF CONTENTS</span>
+            <h3 class="help-toc-title">目录</h3>
+          </header>
+          <nav class="help-toc-body">
             <a
               v-for="item in ctx.toc.value"
               :key="item.id"
               :href="`#${item.id}`"
-              class="block py-2 px-3 rounded-lg transition-all duration-200 border-l-2 -ml-px"
+              class="help-toc-item"
               :class="[
-                ctx.activeHeading.value === item.id
-                  ? 'text-primary border-primary bg-primary/10 font-medium'
-                  : 'text-moon/60 border-transparent hover:text-moon-100 hover:bg-white/5 hover:border-moon/20',
-                item.level === 1 ? 'text-base font-semibold' : '',
-                item.level === 2 ? 'text-sm font-medium ml-2' : '',
-                item.level === 3 ? 'text-xs ml-6 opacity-90' : '',
-                item.level === 4 ? 'text-xs ml-8 opacity-75' : '',
+                `help-toc-item--l${item.level}`,
+                {
+                  'help-toc-item--active': ctx.activeHeading.value === item.id,
+                },
               ]"
               @click.prevent="ctx.scrollToHeading(item.id)"
             >
-              <span
-                v-if="item.level === 1"
-                class="inline-block w-1 h-1 rounded-full bg-primary mr-2"
-              />
-              {{ item.text }}
+              <span class="help-toc-item-dot" aria-hidden="true" />
+              <span class="help-toc-item-label">{{ item.text }}</span>
             </a>
           </nav>
         </aside>
 
-        <!-- Content Area -->
-        <div class="flex-1 h-full overflow-y-auto help-content-scroll">
-          <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
-            <header class="mb-10">
-              <div class="flex items-center gap-2 text-sm text-primary mb-3">
-                <span>{{ ctx.currentDoc.value?.category }}</span>
-                <i class="pi pi-angle-right text-xs opacity-50" />
-                <span>{{ ctx.currentDoc.value?.title }}</span>
+        <div class="help-article-scroll help-content-scroll">
+          <article class="help-article">
+            <header class="help-article-head">
+              <div class="help-article-crumbs">
+                <span class="help-article-crumb-eyebrow">HELP</span>
+                <span class="help-article-crumb-sep" aria-hidden="true" />
+                <span class="help-article-crumb-category">
+                  {{ ctx.currentDoc.value?.category }}
+                </span>
               </div>
-              <h1
-                class="font-display text-[30px] sm:text-[40px] font-semibold tracking-tight text-moon-100 leading-tight mb-4"
-              >
-                {{ ctx.currentDoc.value?.title }}
-              </h1>
-              <p
-                v-if="ctx.currentDoc.value?.description"
-                class="text-lg text-moon/70 leading-relaxed"
-              >
+              <h1 class="help-article-title">{{ ctx.currentDoc.value?.title }}</h1>
+              <p v-if="ctx.currentDoc.value?.description" class="help-article-desc">
                 {{ ctx.currentDoc.value?.description }}
               </p>
             </header>
 
-            <article
-              class="doc-content"
-              v-html="ctx.content.value"
-              @click="ctx.handleContentClick"
-            />
-          </div>
+            <div class="doc-content" v-html="ctx.content.value" @click="ctx.handleContentClick" />
+          </article>
         </div>
       </div>
     </main>
@@ -168,6 +192,673 @@ const ctx = injectHelpPage();
 </template>
 
 <style scoped>
+.help-desktop {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ──────── 左侧导航 ──────── */
+.help-nav {
+  width: 17rem;
+  height: 100%;
+  flex-shrink: 0;
+  border-right: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  background: rgba(10, 12, 15, 0.45);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.help-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem 0.85rem;
+  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  flex-shrink: 0;
+}
+
+.help-nav-brand-icon {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 7px;
+  background: rgba(109, 136, 168, 0.14);
+  border: 1px solid rgba(109, 136, 168, 0.22);
+  color: #a3b7cf;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.help-nav-brand-icon .pi {
+  font-size: 1rem;
+}
+
+.help-nav-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.help-nav-brand-eyebrow {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent-silver);
+}
+
+.help-nav-brand-title {
+  font-family:
+    'Noto Serif JP',
+    'Songti SC',
+    serif;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--moon-opacity-95);
+}
+
+.help-nav-tree {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem 0.6rem 1rem;
+}
+
+.help-nav-group {
+  margin-bottom: 0.5rem;
+}
+
+.help-nav-group-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.55rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--accent-silver);
+  transition: color 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.help-nav-group-head:hover {
+  color: var(--moon-opacity-100);
+}
+
+.help-nav-group-label {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.help-nav-group-chev {
+  font-size: 0.55rem;
+  opacity: 0.55;
+}
+
+.help-nav-group-list {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.help-nav-item {
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(247, 244, 236, 0.72);
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  line-height: 1.35;
+}
+
+.help-nav-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--moon-opacity-100);
+}
+
+.help-nav-item--active {
+  background: rgba(186, 201, 219, 0.08);
+  border-color: rgba(186, 201, 219, 0.22);
+  color: var(--moon-opacity-100);
+}
+
+/* ──────── 主内容 ──────── */
+.help-main {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgba(10, 12, 16, 0.35);
+}
+
+.help-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  color: var(--moon-opacity-60);
+}
+
+.help-state-icon {
+  font-size: 2rem;
+  color: #a3b7cf;
+}
+
+.help-state-text {
+  font-size: 0.85rem;
+}
+
+.help-state-card {
+  padding: 1.5rem 2rem;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  max-width: 22rem;
+}
+
+.help-state-card-icon {
+  font-size: 1.85rem;
+  color: #fca5a5;
+}
+
+.help-state-card-msg {
+  color: #fecaca;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.help-state-card-retry {
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.18);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fecaca;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.82rem;
+  transition: background 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.help-state-card-retry:hover {
+  background: rgba(239, 68, 68, 0.28);
+}
+
+/* ──────── 落地态 ──────── */
+.help-landing {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.help-landing-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2rem 2.25rem 3rem;
+  max-width: 68rem;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2.25rem;
+}
+
+.hld-hero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 2.25rem 0 1.5rem;
+  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+}
+
+.hld-hero-logo {
+  width: 4.25rem;
+  height: 4.25rem;
+  border-radius: 12px;
+  opacity: 0.95;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.hld-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.hld-hero-eyebrow {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--accent-silver);
+}
+
+.hld-hero-title {
+  margin: 0;
+  font-family:
+    'Noto Serif JP',
+    'Songti SC',
+    serif;
+  font-size: clamp(1.55rem, 1vw + 1.3rem, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--moon-opacity-100);
+}
+
+.hld-hero-title span {
+  color: #a3b7cf;
+}
+
+.hld-hero-desc {
+  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--moon-opacity-70);
+  max-width: 42rem;
+}
+
+.hld-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hld-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.hld-section-eyebrow {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent-silver);
+}
+
+.hld-section-title {
+  margin: 0;
+  font-family:
+    'Noto Serif JP',
+    'Songti SC',
+    serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--moon-opacity-95);
+}
+
+.hld-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.85rem;
+}
+
+.hld-step {
+  display: flex;
+  gap: 0.85rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  background: rgba(8, 10, 13, 0.5);
+  transition: border-color 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hld-step:hover {
+  border-color: rgba(186, 201, 219, 0.22);
+}
+
+.hld-step-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #a3b7cf;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  width: 1.5rem;
+}
+
+.hld-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.hld-step-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--moon-opacity-95);
+}
+
+.hld-step-desc {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--moon-opacity-60);
+}
+
+.hld-topics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.75rem;
+}
+
+.hld-topic {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 0.85rem;
+  row-gap: 0.15rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  background: rgba(8, 10, 13, 0.5);
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hld-topic:hover:not(:disabled) {
+  border-color: rgba(186, 201, 219, 0.3);
+  background: rgba(186, 201, 219, 0.05);
+  transform: translateY(-1px);
+}
+
+.hld-topic:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hld-topic-icon {
+  grid-row: 1 / span 2;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 7px;
+  background: rgba(109, 136, 168, 0.1);
+  color: #a3b7cf;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hld-topic-icon .pi {
+  font-size: 0.95rem;
+}
+
+.hld-topic-label {
+  grid-column: 2;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--moon-opacity-95);
+}
+
+.hld-topic-hint {
+  grid-column: 2;
+  font-size: 0.72rem;
+  color: var(--moon-opacity-55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hld-topic-hint--muted {
+  color: rgba(174, 183, 198, 0.3);
+  font-style: italic;
+}
+
+/* ──────── 阅读态 ──────── */
+.help-reader {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.help-toc {
+  width: 15rem;
+  flex-shrink: 0;
+  border-right: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  background: rgba(8, 10, 13, 0.35);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.help-toc-head {
+  padding: 0.95rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.help-toc-eyebrow {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent-silver);
+}
+
+.help-toc-title {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--moon-opacity-90);
+}
+
+.help-toc-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.6rem 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.help-toc-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--moon-opacity-55);
+  text-decoration: none;
+  line-height: 1.4;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  border-left: 2px solid transparent;
+}
+
+.help-toc-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--moon-opacity-95);
+}
+
+.help-toc-item--active {
+  background: rgba(186, 201, 219, 0.08);
+  color: var(--moon-opacity-100);
+  border-left-color: #a3b7cf;
+}
+
+.help-toc-item-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.help-toc-item--active .help-toc-item-dot {
+  opacity: 1;
+  background: #a3b7cf;
+}
+
+.help-toc-item--l1 {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--moon-opacity-75);
+}
+
+.help-toc-item--l2 {
+  padding-left: 1rem;
+}
+
+.help-toc-item--l3 {
+  padding-left: 1.5rem;
+  font-size: 0.75rem;
+}
+
+.help-toc-item--l4 {
+  padding-left: 2rem;
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.help-toc-item--l2 .help-toc-item-dot,
+.help-toc-item--l3 .help-toc-item-dot,
+.help-toc-item--l4 .help-toc-item-dot {
+  display: none;
+}
+
+.help-article-scroll {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.help-article {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 2rem 2.25rem 3rem;
+}
+
+.help-article-head {
+  margin-bottom: 2.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--white-opacity-6, rgba(255, 255, 255, 0.06));
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.help-article-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.help-article-crumb-eyebrow {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent-silver);
+}
+
+.help-article-crumb-sep {
+  width: 1px;
+  height: 0.7rem;
+  background: var(--white-opacity-12, rgba(255, 255, 255, 0.12));
+}
+
+.help-article-crumb-category {
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--moon-opacity-60);
+  letter-spacing: 0.02em;
+}
+
+.help-article-title {
+  margin: 0;
+  font-family:
+    'Noto Serif JP',
+    'Songti SC',
+    serif;
+  font-size: clamp(1.6rem, 1vw + 1.35rem, 2.15rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--moon-opacity-100);
+}
+
+.help-article-desc {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--moon-opacity-70);
+  max-width: 44rem;
+}
+
+/* ──────── 文档正文样式（保持与之前一致） ──────── */
 .doc-content {
   color: rgb(var(--moon-rgb) / 0.85);
   line-height: 1.75;
@@ -307,5 +998,17 @@ const ctx = injectHelpPage();
   max-width: 100%;
   border-radius: 0.5rem;
   border: 1px solid rgb(255 255 255 / 0.1);
+}
+
+@media (max-width: 1180px) {
+  .help-toc {
+    width: 13rem;
+  }
+}
+
+@media (max-width: 1040px) {
+  .help-toc {
+    display: none;
+  }
 }
 </style>

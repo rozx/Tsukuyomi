@@ -44,7 +44,7 @@ export function injectHelpPage(): HelpPageContext {
 function createHelpPageContext() {
   const route = useRoute();
   const router = useRouter();
-  const { isPhone } = useResponsiveLayout();
+  const { isPhone, isTablet } = useResponsiveLayout();
 
   const documents = ref<HelpDocument[]>([]);
   const currentDoc = ref<HelpDocument | null>(null);
@@ -156,12 +156,15 @@ function createHelpPageContext() {
         }
       }
 
-      if (!isPhone.value && documents.value.length > 0 && !currentDoc.value) {
+      // 桌面：不自动打开第一篇文档，保留品牌化的帮助中心入口态；
+      // 平板：沿用之前的自动跳转行为（平板没有落地态模板，避免主内容空白）。
+      if (isTablet.value && documents.value.length > 0 && !currentDoc.value) {
         const firstDoc = documents.value[0];
         if (firstDoc) {
           await router.replace(`/help/${firstDoc.id}`);
         }
       }
+
     } catch {
       error.value = '无法加载帮助文档索引';
     }

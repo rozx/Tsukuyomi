@@ -32,13 +32,13 @@
 
 ## 6. Desktop help center
 
-- [ ] 6.1 Extend `src/pages/help-page/HelpPageDesktop.vue` with a branded desktop landing state for `currentDoc === null`, reusing the quick-start and topic-entry ideas at desktop density
-- [ ] 6.2 Refresh the desktop help navigation, TOC, and article header hierarchy so selected-document reading remains a multi-column workspace with clearer product-level visual structure
-- [ ] 6.3 Verify desktop help keeps topic navigation and TOC directly reachable alongside article content and does not regress mobile/tablet help behavior
+- [x] 6.1 Extend `src/pages/help-page/HelpPageDesktop.vue` with a branded desktop landing state for `currentDoc === null`, reusing the quick-start and topic-entry ideas at desktop density
+- [x] 6.2 Refresh the desktop help navigation, TOC, and article header hierarchy so selected-document reading remains a multi-column workspace with clearer product-level visual structure
+- [x] 6.3 Verify desktop help keeps topic navigation and TOC directly reachable alongside article content and does not regress mobile/tablet help behavior
 
 ## 7. Verification
 
-- [ ] 7.1 Run `bun run lint`
-- [ ] 7.2 Run `bun run type-check`
-- [ ] 7.3 Run `bun run quality-check`
+- [x] 7.1 Run `bun run lint`
+- [x] 7.2 Run `bun run type-check`
+- [x] 7.3 Run `bun run quality-check`
 - [ ] 7.4 Manually verify desktop variants for `MainLayout`, `BooksPage`, `BookDetailsPage`, `SettingsPage`, `AIPage`, and `HelpPage`, and confirm mobile/tablet variants remain visually and functionally unchanged
