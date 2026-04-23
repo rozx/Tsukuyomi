@@ -56,7 +56,7 @@ const goLibrary = () => void router.push('/books');
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 14vh;
   font-weight: 600;
-  color: rgba(247, 244, 236, 0.85);
+  color: var(--moon-50-opacity-85);
   letter-spacing: -0.03em;
   line-height: 1;
 }
@@ -65,13 +65,13 @@ const goLibrary = () => void router.push('/books');
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 22px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.01em;
 }
 
 .nf-sub {
   font-size: 13px;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   line-height: 1.6;
 }
 

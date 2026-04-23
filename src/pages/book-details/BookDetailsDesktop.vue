@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import VolumesList from 'src/components/novel/VolumesList.vue';
@@ -14,6 +15,19 @@ import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetai
 import type { EditMode } from 'src/composables/book-details/useEditMode';
 
 const ctx = injectBookDetailsPage();
+
+const settingContextMeta = computed(() => {
+  switch (ctx.selectedSettingMenu.value) {
+    case 'terms':
+      return { eyebrow: 'Terms', label: '术语设置', icon: 'pi pi-bookmark' };
+    case 'characters':
+      return { eyebrow: 'Characters', label: '角色设置', icon: 'pi pi-users' };
+    case 'memory':
+      return { eyebrow: 'Memory', label: '记忆管理', icon: 'pi pi-database' };
+    default:
+      return null;
+  }
+});
 </script>
 
 <template>
@@ -29,8 +43,9 @@ const ctx = injectBookDetailsPage();
     }"
   >
     <div class="sidebar-content">
-      <!-- 书籍封面和标题 -->
-      <div v-if="ctx.book.value" class="book-header">
+      <!-- 书籍概览 -->
+      <section v-if="ctx.book.value" class="sidebar-section sidebar-section--book book-header">
+        <span v-if="!ctx.isPhone.value" class="sidebar-eyebrow">BOOK</span>
         <div class="book-header-content" @click="ctx.openBookDialog">
           <i class="pi pi-info-circle book-edit-icon" />
           <div class="book-cover-wrapper">
@@ -74,10 +89,11 @@ const ctx = injectBookDetailsPage();
           </div>
         </div>
         <div v-if="!ctx.isPhone.value" class="book-separator" />
-      </div>
+      </section>
 
-      <!-- 设置菜单 - 手机端隐藏（设置页已有二级导航） -->
-      <div v-if="!ctx.isPhone.value" class="settings-menu-wrapper">
+      <!-- 设置快捷入口（手机端在设置页已有二级导航） -->
+      <section v-if="!ctx.isPhone.value" class="sidebar-section settings-menu-wrapper">
+        <span class="sidebar-eyebrow">SETTINGS</span>
         <div class="settings-menu-items">
           <button
             class="settings-menu-item"
@@ -115,11 +131,14 @@ const ctx = injectBookDetailsPage();
           </button>
         </div>
         <div class="settings-menu-separator" />
-      </div>
+      </section>
 
-      <!-- 目录标题和操作按钮 -->
-      <div class="sidebar-title-wrapper">
-        <h2 v-if="!ctx.isPhone.value" class="sidebar-title">目录</h2>
+      <!-- 目录工具 -->
+      <div class="sidebar-section-header sidebar-title-wrapper">
+        <span v-if="!ctx.isPhone.value" class="sidebar-eyebrow sidebar-eyebrow--inline">
+          CATALOG
+        </span>
+        <h2 v-if="ctx.isPhone.value" class="sidebar-title">目录</h2>
         <div class="sidebar-actions">
           <Button
             icon="pi pi-plus"
@@ -188,13 +207,6 @@ const ctx = injectBookDetailsPage();
         @move-chapter="ctx.onMoveChapter"
       />
 
-      <!-- 返回链接 -->
-      <div class="back-link-wrapper">
-        <button class="back-link" @click="() => void ctx.router.push('/books')">
-          <i class="pi pi-arrow-left" />
-          <span>返回书籍列表</span>
-        </button>
-      </div>
     </div>
   </aside>
 
@@ -203,10 +215,27 @@ const ctx = injectBookDetailsPage();
     class="book-main-content"
     :class="{
       'overflow-hidden': !!ctx.selectedSettingMenu.value,
+      'book-main-content--settings': !!ctx.selectedSettingMenu.value,
+      'book-main-content--reading':
+        !ctx.selectedSettingMenu.value && !!ctx.selectedChapter.value,
       'book-main-content-mobile-hidden':
         ctx.isPhone.value && ctx.workspaceMode.value === 'catalog',
     }"
   >
+    <!-- 设置上下文头（桌面）：在工作台主面板里清晰标示当前设置区 -->
+    <header
+      v-if="settingContextMeta && !ctx.isPhone.value"
+      class="workspace-context-bar"
+    >
+      <i :class="settingContextMeta.icon" class="workspace-context-icon" aria-hidden="true" />
+      <span class="workspace-context-eyebrow">{{ settingContextMeta.eyebrow }}</span>
+      <span class="workspace-context-sep" aria-hidden="true" />
+      <span class="workspace-context-label">{{ settingContextMeta.label }}</span>
+      <span v-if="ctx.book.value" class="workspace-context-book"
+        >· {{ ctx.book.value.title }}</span
+      >
+    </header>
+
     <!-- 章节阅读工具栏：平板单独用 ChapterToolbarTablet（更干净的 header），其余设备仍用 ChapterToolbar -->
     <ChapterToolbarTablet
       v-if="
@@ -426,14 +455,19 @@ const ctx = injectBookDetailsPage();
 
 <style scoped>
 .book-sidebar {
-  width: 22rem;
+  width: 19rem;
   height: 100%;
   flex-shrink: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(10, 12, 15, 0.35);
+  border-right: 1px solid var(--white-opacity-8);
+  /* tokens: tsukuyomi-500 @ 8→2% over shell @ 55% (matches workbench surface) */
+  background:
+    linear-gradient(180deg, var(--tsukuyomi-opacity-8), var(--tsukuyomi-opacity-2)),
+    var(--shell-opacity-55);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  /* token: white @ 2% */
+  box-shadow: inset -1px 0 0 var(--white-opacity-2);
 }
 
 .sidebar-content {
@@ -444,6 +478,27 @@ const ctx = injectBookDetailsPage();
   overflow: hidden;
 }
 
+.sidebar-section {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-eyebrow {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  /* token: accent-silver @ 42% */
+  color: var(--accent-opacity-42);
+  padding: 0.7rem 0.9rem 0.2rem;
+}
+
 .book-header {
   flex-shrink: 0;
 }
@@ -452,7 +507,7 @@ const ctx = injectBookDetailsPage();
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 1rem;
+  padding: 0.55rem 1rem 0.9rem;
   cursor: pointer;
   position: relative;
   border-radius: 8px;
@@ -462,7 +517,7 @@ const ctx = injectBookDetailsPage();
 }
 
 .book-header-content:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--white-opacity-4);
 }
 
 .book-edit-icon {
@@ -470,7 +525,8 @@ const ctx = injectBookDetailsPage();
   top: 0.5rem;
   right: 0.5rem;
   font-size: 0.85rem;
-  color: rgba(247, 244, 236, 0.35);
+  /* token: moon-50 @ 35% */
+  color: var(--moon-50-opacity-35);
   opacity: 0;
   transition: opacity 0.15s ease;
 }
@@ -485,7 +541,8 @@ const ctx = injectBookDetailsPage();
   border-radius: 6px;
   overflow: hidden;
   flex-shrink: 0;
-  background: #1c1f26;
+  /* token: night-200 */
+  background: var(--night-200);
 }
 
 .book-cover {
@@ -523,7 +580,7 @@ const ctx = injectBookDetailsPage();
   align-items: center;
   gap: 0.4rem;
   font-size: 0.72rem;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
 }
 
 .stat-item {
@@ -541,7 +598,8 @@ const ctx = injectBookDetailsPage();
   /* 设计系统：数值用等宽字体 + 薄藍色 */
   font-family:
     'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
-  color: var(--tsukuyomi-300, #a3b7cf);
+  /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -556,7 +614,7 @@ const ctx = injectBookDetailsPage();
 
 .book-separator {
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-opacity-6);
   margin: 0 1rem;
 }
 
@@ -565,14 +623,20 @@ const ctx = injectBookDetailsPage();
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 1rem;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem 0.4rem;
+}
+
+.sidebar-title-wrapper .sidebar-eyebrow--inline {
+  padding: 0;
 }
 
 .sidebar-title {
   margin: 0;
   font-size: 0.88rem;
   font-weight: 600;
-  color: rgba(247, 244, 236, 0.9);
+  /* token: moon-50 @ 90% */
+  color: var(--moon-50-opacity-90);
 }
 
 .sidebar-actions {
@@ -582,7 +646,7 @@ const ctx = injectBookDetailsPage();
 
 .settings-menu-wrapper {
   flex-shrink: 0;
-  padding: 0.25rem 0.5rem;
+  padding: 0 0.5rem 0.25rem;
 }
 
 .settings-menu-items {
@@ -593,7 +657,7 @@ const ctx = injectBookDetailsPage();
 
 .settings-menu-separator {
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-opacity-6);
   margin: 0.5rem 0.5rem 0;
 }
 
@@ -606,7 +670,8 @@ const ctx = injectBookDetailsPage();
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  color: rgba(247, 244, 236, 0.72);
+  /* token: moon-50 @ 72% */
+  color: var(--moon-50-opacity-72);
   font-size: 0.82rem;
   font-family: inherit;
   text-align: left;
@@ -617,72 +682,35 @@ const ctx = injectBookDetailsPage();
 }
 
 .settings-menu-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(247, 244, 236, 1);
+  background: var(--white-opacity-5);
+  color: var(--moon-50-opacity-100);
 }
 
 .settings-menu-item-selected {
-  background: rgba(109, 136, 168, 0.2);
-  color: rgba(247, 244, 236, 1);
+  background: var(--tsukuyomi-opacity-20);
+  color: var(--moon-50-opacity-100);
 }
 
 .settings-menu-item-selected .settings-menu-icon {
-  color: #a3b7cf;
+  /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300);
 }
 
 .settings-menu-icon {
   font-size: 0.85rem;
   width: 1rem;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   transition: color 0.15s ease;
 }
 
 .settings-menu-item:hover .settings-menu-icon {
-  color: rgba(247, 244, 236, 0.9);
+  color: var(--moon-50-opacity-90);
 }
 
 .settings-menu-label {
   flex: 1;
 }
 
-.back-link-wrapper {
-  flex-shrink: 0;
-  padding: 0.5rem 1rem 0.75rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-  margin-top: auto;
-}
-
-.back-link {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.5rem 0.75rem;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: rgba(247, 244, 236, 0.55);
-  cursor: pointer;
-  font-size: 0.78rem;
-  font-family: inherit;
-  width: 100%;
-  text-align: left;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.back-link:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(247, 244, 236, 0.9);
-}
-
-.back-link:active {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.back-link .pi {
-  font-size: 0.78rem;
-}
 
 .book-main-content {
   flex: 1;
@@ -690,6 +718,86 @@ const ctx = injectBookDetailsPage();
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.book-main-content--reading {
+  /* tokens: tsukuyomi-500 @ 10% → 3% (moonlight vignette at top) */
+  background:
+    radial-gradient(
+      ellipse at top,
+      var(--tsukuyomi-opacity-10) 0%,
+      var(--tsukuyomi-opacity-3) 70%
+    );
+}
+
+.book-main-content--settings {
+  background: transparent;
+}
+
+.workspace-context-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 1.1rem;
+  border-bottom: 1px solid var(--white-opacity-6);
+  /* token: shell @ 55% */
+  background: var(--shell-opacity-55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.workspace-context-icon {
+  font-size: 0.76rem;
+  /* token: tsukuyomi-300 @ 85% */
+  color: var(--tsukuyomi-300-opacity-85);
+}
+
+.workspace-context-eyebrow {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent-silver);
+}
+
+.workspace-context-sep {
+  width: 1px;
+  height: 0.7rem;
+  background: var(--white-opacity-12);
+}
+
+.workspace-context-label {
+  font-family:
+    'Noto Serif JP',
+    'Songti SC',
+    serif;
+  font-size: 0.88rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  /* token: moon-50 @ 95% */
+  color: var(--moon-50-opacity-95);
+}
+
+.workspace-context-book {
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.72rem;
+  font-weight: 500;
+  /* token: accent-silver @ 50% */
+  color: var(--accent-opacity-50);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .scrollable-content {
@@ -713,19 +821,20 @@ const ctx = injectBookDetailsPage();
   align-items: center;
   justify-content: center;
   padding: 3rem 1.5rem;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 
 .no-selection-icon {
   font-size: 3rem;
-  color: rgba(174, 183, 198, 0.45);
+  /* token: accent-silver @ 45% */
+  color: var(--accent-opacity-45);
   margin-bottom: 1rem;
 }
 
 .no-selection-text {
   font-size: 0.95rem;
   margin: 0 0 0.25rem;
-  color: rgba(247, 244, 236, 0.75);
+  color: var(--moon-50-opacity-75);
 }
 
 .no-selection-hint {

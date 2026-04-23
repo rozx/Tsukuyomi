@@ -136,7 +136,8 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
     width: 17rem;
     max-width: 86%;
     z-index: 20;
-    background: rgba(14, 16, 20, 0.96);
+    /* token: near night-300 @ 96% */
+    background: var(--shell-opacity-96);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
@@ -144,7 +145,7 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 
   .book-details-tablet :deep(.book-sidebar.book-sidebar-tablet-collapsed) {
     width: 17rem;
-    border-right-color: rgba(255, 255, 255, 0.06);
+    border-right-color: var(--white-opacity-6);
     transform: translateX(-100%);
   }
 
@@ -157,12 +158,6 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 /* ChapterContentPanel 自带的章节头（标题 / 段落数 / 字数 / 时间戳 / 查看原文 / 章节摘要）
    在平板上与 ChapterToolbarTablet 的标题 + 状态行重复，直接隐藏整块 */
 .book-details-tablet :deep(.chapter-header) {
-  display: none;
-}
-
-/* 侧边栏底部的"返回书籍列表"条——平板用左侧主导航栏（书库按钮）回退，
-   与 mobile appbar 的 back 行为一致；这条独立 bar 不在设计里 */
-.book-details-tablet :deep(.back-link-wrapper) {
   display: none;
 }
 
@@ -248,7 +243,7 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 
 .book-details-tablet :deep(.paragraph-text) {
   padding-right: 12px;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--white-opacity-6);
 }
 
 .book-details-tablet :deep(.paragraph-translation-wrapper) {
@@ -264,15 +259,17 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
   position: sticky;
   top: 0;
   z-index: 4;
+  /* token: near night-500 @ 92% */
   background: rgba(10, 12, 15, 0.92);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  /* token: near accent-silver @ 75% */
   color: rgba(155, 164, 179, 0.75);
   padding: 8px 22px;
 }

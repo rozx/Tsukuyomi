@@ -1,38 +1,12 @@
 <script setup lang="ts">
-import { injectSettingsPage } from 'src/composables/settings-page/useSettingsPage';
-import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
-import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
-import ApiKeysSettingsTab from 'src/components/settings/ApiKeysSettingsTab.vue';
-import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
-import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
-import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
-import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
+import {
+  getSettingsPanelComponent,
+  injectSettingsPage,
+} from 'src/composables/settings-page/useSettingsPage';
 
 const ctx = injectSettingsPage();
 
-// 将 tab value 映射到对应的面板组件。Electron 与非 Electron 顺序略有差异，
-// 已由 composable 的 `tabs` 列表处理，本文件只需按 value 字符串分派。
-// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入导出
-// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入导出
-function panelFor(value: string) {
-  if (ctx.isElectron.value) {
-    if (value === '0') return AIModelSettingsTab;
-    if (value === '1') return ApiKeysSettingsTab;
-    if (value === '2') return SyncSettingsTab;
-    if (value === '3') return EmbeddingSettingsTab;
-    if (value === '4') return ScraperSettingsTab;
-    if (value === '5') return ImportExportTab;
-  } else {
-    if (value === '0') return AIModelSettingsTab;
-    if (value === '1') return ProxySettingsTab;
-    if (value === '2') return ApiKeysSettingsTab;
-    if (value === '3') return SyncSettingsTab;
-    if (value === '4') return EmbeddingSettingsTab;
-    if (value === '5') return ScraperSettingsTab;
-    if (value === '6') return ImportExportTab;
-  }
-  return AIModelSettingsTab;
-}
+const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.value, value);
 </script>
 
 <template>
@@ -91,7 +65,7 @@ function panelFor(value: string) {
 .st-scrim {
   position: absolute;
   inset: 0;
-  background: rgba(5, 7, 10, 0.6);
+  background: var(--shell-opacity-60); /* token: near night-500 @ 60% */
   pointer-events: none;
 }
 
@@ -100,8 +74,8 @@ function panelFor(value: string) {
   width: 100%;
   max-width: 1080px;
   height: 100%;
-  background: #14161a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--night-300); /* token: night-300 */
+  border: 1px solid var(--white-opacity-8);
   border-radius: 18px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
   display: flex;
@@ -129,7 +103,7 @@ function panelFor(value: string) {
   background: transparent;
   border: none;
   border-radius: 8px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   cursor: pointer;
   transition:
     background 150ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -137,8 +111,8 @@ function panelFor(value: string) {
 }
 
 .st-close:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #e9edf5;
+  background: var(--white-opacity-6);
+  color: var(--primary-200); /* token: primary */
 }
 
 .st-close .pi {
@@ -150,7 +124,7 @@ function panelFor(value: string) {
   font-weight: 500;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgba(163, 183, 207, 0.75);
+  color: var(--tsukuyomi-300-opacity-75); /* token: tsukuyomi-300 @ 75% */
   margin-bottom: 4px;
 }
 
@@ -158,7 +132,7 @@ function panelFor(value: string) {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 22px;
   font-weight: 600;
-  color: #e9edf5;
+  color: var(--primary-200); /* token: primary */
   letter-spacing: -0.01em;
   margin: 0;
 }
@@ -167,7 +141,7 @@ function panelFor(value: string) {
   display: flex;
   gap: 24px;
   padding: 14px 32px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   flex-shrink: 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -183,7 +157,7 @@ function panelFor(value: string) {
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
@@ -195,13 +169,13 @@ function panelFor(value: string) {
 }
 
 .st-tab:hover {
-  color: rgba(247, 244, 236, 0.85);
+  color: var(--moon-50-opacity-85);
 }
 
 .st-tab-active {
-  color: #e9edf5;
+  color: var(--primary-200); /* token: primary */
   font-weight: 600;
-  border-bottom-color: #a3b7cf;
+  border-bottom-color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .st-body {

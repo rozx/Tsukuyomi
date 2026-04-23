@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import SplitButton from 'primevue/splitbutton';
 import DataView from 'primevue/dataview';
@@ -8,78 +9,85 @@ import InputGroupAddon from 'primevue/inputgroupaddon';
 import TieredMenu from 'primevue/tieredmenu';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
+import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
+import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
+import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
 
 const ctx = injectBooksPage();
+
+const totalBooks = computed(() => ctx.booksStore.books.length);
+const starredBooks = computed(() => ctx.booksStore.books.filter((book) => book.starred).length);
+const visibleBooks = computed(() => ctx.filteredBooks.value.length);
+const libraryMetrics = computed(() => [
+  { label: '全部', value: totalBooks.value },
+  { label: '筛选', value: visibleBooks.value },
+  { label: '收藏', value: starredBooks.value },
+]);
+const librarySummary = computed(() => {
+  if (ctx.searchQuery.value) {
+    return `当前筛出 ${visibleBooks.value} 本书，可直接继续管理、编辑或进入阅读工作区。`;
+  }
+  return '在桌面工作台里集中浏览、整理并进入你的翻译书库。';
+});
 </script>
 
 <template>
-  <div class="w-full h-full flex flex-col p-3 sm:p-4 lg:p-6">
-    <!-- 头部 -->
-    <div
-      class="flex flex-col md:flex-row md:items-center md:justify-between mb-4 sm:mb-6 flex-shrink-0 gap-3"
-    >
-      <div class="flex-shrink-0 min-w-0 flex flex-col gap-1">
-        <span class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60"
-          >Library</span
-        >
-        <h1
-          class="font-display text-[30px] font-semibold tracking-tight text-moon-100 leading-tight"
-        >
-          书籍列表
-        </h1>
-        <p class="text-moon/70 text-sm mt-1">管理您的翻译书籍</p>
-      </div>
-      <div
-        class="books-toolbar flex w-full md:w-auto items-center gap-2 sm:gap-3 flex-wrap md:flex-nowrap"
-      >
-        <InputGroup class="search-input-group min-w-0 flex-shrink w-full md:w-auto">
-          <InputGroupAddon>
-            <i class="pi pi-search text-base" />
-          </InputGroupAddon>
-          <InputText
-            v-model="ctx.searchQuery.value"
-            placeholder="搜索书籍标题、别名、作者、描述或标签..."
-            class="search-input"
-          />
-          <InputGroupAddon v-if="ctx.searchQuery.value" class="input-action-addon">
-            <Button
-              icon="pi pi-times"
-              class="p-button-text p-button-sm input-action-button"
-              title="清除搜索"
-              @click="ctx.searchQuery.value = ''"
+  <div class="desktop-library-page">
+    <DesktopWorkbenchHeader eyebrow="Library" title="书库工作台" :description="librarySummary">
+      <template #actions>
+        <div class="books-toolbar">
+          <InputGroup class="search-input-group">
+            <InputGroupAddon>
+              <i class="pi pi-search text-base" />
+            </InputGroupAddon>
+            <InputText
+              v-model="ctx.searchQuery.value"
+              placeholder="搜索书籍标题、别名、作者、描述或标签..."
+              class="search-input"
             />
-          </InputGroupAddon>
-        </InputGroup>
-        <Button
-          :label="
-            ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label || '排序'
-          "
-          icon="pi pi-sort-alt"
-          icon-pos="right"
-          class="p-button-outlined icon-button-hover flex-shrink-0 w-full sm:w-auto"
-          @click="
-            (e: Event) => {
-              const menu = ctx.sortMenuRef.value;
-              if (menu) menu.toggle(e);
-            }
-          "
-        />
-        <SplitButton
-          label="添加书籍"
-          icon="pi pi-plus"
-          :model="ctx.addBookMenuItems.value"
-          class="books-add-split-button p-button-primary icon-button-hover flex-shrink-0 w-full sm:w-auto"
-          @click="ctx.addBook"
-        />
-      </div>
-    </div>
+            <InputGroupAddon v-if="ctx.searchQuery.value" class="input-action-addon">
+              <Button
+                icon="pi pi-times"
+                class="p-button-text p-button-sm input-action-button"
+                title="清除搜索"
+                @click="ctx.searchQuery.value = ''"
+              />
+            </InputGroupAddon>
+          </InputGroup>
+          <div class="books-toolbar-actions">
+            <Button
+              :label="
+                ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label || '排序'
+              "
+              icon="pi pi-sort-alt"
+              icon-pos="right"
+              class="books-sort-button p-button-outlined icon-button-hover"
+              @click="
+                (e: Event) => {
+                  const menu = ctx.sortMenuRef.value;
+                  if (menu) menu.toggle(e);
+                }
+              "
+            />
+            <SplitButton
+              label="添加书籍"
+              icon="pi pi-plus"
+              :model="ctx.addBookMenuItems.value"
+              class="books-add-split-button p-button-primary icon-button-hover"
+              @click="ctx.addBook"
+            />
+          </div>
+        </div>
+      </template>
 
-    <div class="flex-1 flex flex-col min-h-0">
-      <div
-        v-if="ctx.booksStore.isLoading || !ctx.booksStore.isLoaded"
-        class="flex-1 flex items-center justify-center"
-      >
+      <template #metrics>
+        <DesktopWorkbenchMetrics :items="libraryMetrics" />
+      </template>
+    </DesktopWorkbenchHeader>
+
+    <DesktopWorkbenchSurface class="library-canvas" tone="muted" :padded="false">
+      <div v-if="ctx.booksStore.isLoading || !ctx.booksStore.isLoaded" class="library-state">
         <div class="text-center">
           <ProgressSpinner
             style="width: 50px; height: 50px"
@@ -100,10 +108,10 @@ const ctx = injectBooksPage();
         paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
         current-page-report-template="{currentPage} / {totalPages}"
         layout="grid"
-        class="flex-1 flex flex-col min-h-0"
+        class="library-data-view"
       >
         <template #empty>
-          <div class="text-center py-12">
+          <div class="library-state library-state--empty">
             <i class="pi pi-book text-4xl text-moon/50 mb-4 icon-hover" />
             <p class="text-moon/70">
               {{ ctx.searchQuery.value ? '未找到匹配的书籍' : '暂无书籍' }}
@@ -119,22 +127,13 @@ const ctx = injectBooksPage();
         </template>
 
         <template #grid="slotProps">
-          <div
-            class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 items-stretch"
-          >
-            <div
-              v-for="book in slotProps.items"
-              :key="book.id"
-              class="book-card group flex flex-col h-full"
-            >
-              <div
-                class="book-cover relative w-full aspect-[2/3] overflow-hidden rounded-t-lg bg-white/5 mb-2 cursor-pointer"
-                @click="ctx.navigateToBookDetails(book)"
-              >
+          <div class="library-grid">
+            <div v-for="book in slotProps.items" :key="book.id" class="library-book-card group">
+              <div class="library-book-cover-shell" @click="ctx.navigateToBookDetails(book)">
                 <img
                   :src="ctx.getCoverUrl(book)"
                   :alt="book.title"
-                  class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  class="library-book-cover"
                   @error="
                     (e) => {
                       const target = e.target as HTMLImageElement;
@@ -142,70 +141,67 @@ const ctx = injectBooksPage();
                     }
                   "
                 />
+                <div class="library-book-overlay"></div>
+                <div v-if="book.starred" class="library-book-flag">
+                  <i class="pi pi-star-fill" /> 收藏
+                </div>
               </div>
-              <div class="book-card-content px-1 pb-2 space-y-1.5 flex flex-col flex-1">
+              <div class="library-book-content">
+                <div class="library-book-heading-row">
+                  <span class="library-book-kicker">{{ book.author || '未署名作品' }}</span>
+                  <span class="library-book-updated">{{ ctx.formatDate(book.lastEdited) }}</span>
+                </div>
                 <h3
-                  class="book-card-title font-display text-[13px] font-semibold leading-snug line-clamp-2 min-h-[2.5rem] text-moon/90 group-hover:text-primary transition-colors cursor-pointer"
+                  class="library-book-title line-clamp-2"
                   :title="book.title"
                   @click="ctx.navigateToBookDetails(book)"
                 >
                   {{ book.title }}
                 </h3>
-                <p v-if="book.author" class="text-xs text-moon/60 line-clamp-1">
-                  {{ book.author }}
-                </p>
 
-                <div
-                  class="book-card-stats font-mono text-[10px] text-moon/50 space-y-0.5 pt-1 border-t border-white/5 mt-auto"
-                >
-                  <div class="flex items-center justify-between">
+                <div class="library-book-stats">
+                  <div class="library-book-stat-row">
                     <span>章节:</span>
-                    <span class="font-medium text-moon/70">{{ ctx.getTotalChapters(book) }}</span>
+                    <strong>{{ ctx.getTotalChapters(book) }}</strong>
                   </div>
-                  <div class="flex items-center justify-between">
+                  <div class="library-book-stat-row">
                     <span>字数:</span>
                     <span v-if="ctx.isLoadingCharCount(book)" class="font-medium">
                       <Skeleton width="40px" height="12px" />
                     </span>
-                    <span v-else class="font-medium text-moon/70">
+                    <strong v-else>
                       {{ ctx.formatWordCount(ctx.getTotalWords(book)) }}
-                    </span>
+                    </strong>
                   </div>
-                  <div class="flex items-center justify-between">
+                  <div class="library-book-stat-row">
                     <span>创建:</span>
-                    <span class="font-medium text-moon/70">{{
-                      ctx.formatDate(book.createdAt)
-                    }}</span>
+                    <strong>{{ ctx.formatDate(book.createdAt) }}</strong>
                   </div>
-                  <div class="flex items-center justify-between">
+                  <div class="library-book-stat-row">
                     <span>更新:</span>
-                    <span class="font-medium text-moon/70">{{
-                      ctx.formatDate(book.lastEdited)
-                    }}</span>
+                    <strong>{{ ctx.formatDate(book.lastEdited) }}</strong>
                   </div>
                 </div>
 
-                <div
-                  class="book-card-actions flex items-center gap-1 pt-1.5 border-t border-white/5"
-                >
+                <div class="library-book-actions">
                   <Button
                     :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
                     :class="[
-                      'p-button-text p-button-sm flex-1 !text-xs !py-1 !px-2',
-                      book.starred ? '!text-yellow-400' : '',
+                      'p-button-text p-button-sm flex-1 !text-xs !py-2 !px-2',
+                      book.starred ? '!text-warning' : '',
                     ]"
                     :title="book.starred ? '取消收藏' : '收藏'"
                     @click.stop="ctx.toggleStar(book)"
                   />
                   <Button
                     icon="pi pi-pencil"
-                    class="p-button-text p-button-sm flex-1 !text-xs !py-1 !px-2"
+                    class="p-button-text p-button-sm flex-1 !text-xs !py-2 !px-2"
                     title="编辑"
                     @click.stop="ctx.editBook(book)"
                   />
                   <Button
                     icon="pi pi-trash"
-                    class="p-button-text p-button-sm p-button-danger flex-1 !text-xs !py-1 !px-2"
+                    class="p-button-text p-button-sm p-button-danger flex-1 !text-xs !py-2 !px-2"
                     title="删除"
                     @click.stop="ctx.deleteBook(book)"
                   />
@@ -215,18 +211,26 @@ const ctx = injectBooksPage();
           </div>
         </template>
       </DataView>
-    </div>
+    </DesktopWorkbenchSurface>
 
     <!-- 排序菜单（由 composable 的 sortMenuRef 持有） -->
     <TieredMenu
-      :ref="(el) => { ctx.sortMenuRef.value = el as unknown as typeof ctx.sortMenuRef.value; }"
+      :ref="
+        (el) => {
+          ctx.sortMenuRef.value = el as unknown as typeof ctx.sortMenuRef.value;
+        }
+      "
       :model="ctx.sortMenuItems.value"
       popup
     />
 
     <!-- 隐藏的文件输入（用于导入 JSON） -->
     <input
-      :ref="(el) => { ctx.fileInputRef.value = el as HTMLInputElement | null; }"
+      :ref="
+        (el) => {
+          ctx.fileInputRef.value = el as HTMLInputElement | null;
+        }
+      "
       type="file"
       accept=".json,.txt"
       class="hidden"
@@ -236,19 +240,210 @@ const ctx = injectBooksPage();
 </template>
 
 <style scoped>
-.book-card {
-  background: var(--white-opacity-3);
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 8px;
-  padding: 8px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+.desktop-library-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.1rem 1.25rem;
 }
 
-.book-card:hover {
-  background: var(--white-opacity-4);
-  border-color: var(--white-opacity-15);
+.books-toolbar {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 0.7rem;
+}
+
+.books-toolbar-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 0.7rem;
+}
+
+.library-canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.library-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 2rem;
+}
+
+.library-state--empty {
+  flex-direction: column;
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.library-book-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid var(--white-opacity-8);
+  background:
+    linear-gradient(180deg, var(--white-opacity-4), rgba(255, 255, 255, 0.015)),
+    rgba(10, 14, 20, 0.82); /* token: near night-500 @ 82% */
+  box-shadow: 0 18px 38px rgba(2, 6, 16, 0.16);
+  transition:
+    transform 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.library-book-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px var(--black-opacity-15);
+  border-color: var(--tsukuyomi-200-opacity-24); /* token: tsukuyomi-200 @ 24% */
+  box-shadow: 0 26px 46px rgba(2, 6, 16, 0.24);
+}
+
+
+.library-book-cover-shell {
+  position: relative;
+  aspect-ratio: 5 / 7;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.library-book-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.library-book-card:hover .library-book-cover {
+  transform: scale(1.04);
+}
+
+.library-book-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 40%;
+  background: linear-gradient(180deg, transparent, rgba(7, 10, 16, 0.92)); /* token: near night-500 @ 92% */
+  pointer-events: none;
+}
+
+.library-book-flag {
+  position: absolute;
+  top: 0.9rem;
+  left: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(14, 18, 24, 0.74); /* token: near night-300 @ 74% */
+  border: 1px solid var(--white-opacity-8);
+  color: rgba(255, 230, 138, 0.98); /* non-palette warm gold */
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.library-book-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem 1rem 1.05rem;
+}
+
+.library-book-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.library-book-kicker,
+.library-book-updated {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  /* token: moon-50 @ 48% */
+  color: var(--moon-50-opacity-48);
+}
+
+.library-book-updated {
+  flex-shrink: 0;
+}
+
+.library-book-title {
+  margin: 0;
+  cursor: pointer;
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 1.03rem;
+  font-weight: 600;
+  line-height: 1.35;
+  /* token: moon-50 @ 96% */
+  color: var(--moon-50-opacity-96);
+  transition: color 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.library-book-title:hover {
+  /* token: tsukuyomi-200 */
+  color: var(--tsukuyomi-200);
+}
+
+.library-book-summary {
+  min-height: 2.7rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  /* token: moon-50 @ 62% */
+  color: var(--moon-50-opacity-62);
+}
+
+.library-book-stats {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--white-opacity-8);
+  border-bottom: 1px solid var(--white-opacity-8);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  /* token: moon-50 @ 48% */
+  color: var(--moon-50-opacity-48);
+}
+
+.library-book-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.library-book-stat-row strong {
+  font-size: 0.74rem;
+  font-weight: 600;
+  /* token: moon-50 @ 82% */
+  color: var(--moon-50-opacity-82);
+}
+
+.library-book-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.library-data-view {
+  flex: 1;
+  min-height: 0;
 }
 
 .line-clamp-1 {
@@ -272,6 +467,7 @@ const ctx = injectBooksPage();
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  padding: 1rem;
   background: transparent !important;
 }
 
@@ -279,31 +475,63 @@ const ctx = injectBooksPage();
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  padding: 0 0 1rem;
   background: transparent !important;
 }
 
 :deep(.p-paginator) {
   flex-shrink: 0;
   margin-top: auto;
+  border-top: 1px solid var(--white-opacity-8);
+  /* token: white @ 2% */
+  background: var(--white-opacity-2) !important;
 }
 
 .search-input-group {
   min-width: 0;
-  flex: 1 1 auto;
-  max-width: 400px;
+  max-width: none;
 }
 
 .search-input-group :deep(.p-inputtext) {
   min-width: 0;
 }
 
-@media (max-width: 640px) {
-  .search-input-group {
-    max-width: none;
+.books-sort-button {
+  min-width: 5.75rem;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.books-toolbar :deep(.p-splitbutton) {
+  flex-shrink: 0;
+}
+
+@media (max-width: 1200px) {
+  .books-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .books-toolbar-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 820px) {
+  .desktop-library-page {
+    padding-inline: 0.85rem;
+  }
+
+  .books-toolbar-actions {
+    width: 100%;
+  }
+
+  .books-toolbar-actions > * {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .books-toolbar :deep(.p-splitbutton) {
-    width: 100%;
+    width: auto;
   }
 
   .books-toolbar :deep(.p-splitbutton .p-button) {
@@ -311,52 +539,12 @@ const ctx = injectBooksPage();
   }
 
   .books-toolbar :deep(.p-splitbutton .p-splitbutton-button) {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     justify-content: center;
   }
 
-  .book-card {
-    display: flex;
-    flex-direction: row;
-    gap: 0.625rem;
-    padding: 0.625rem;
-    border-radius: 10px;
-  }
-
-  .book-card:hover {
-    transform: none;
-  }
-
-  .book-cover {
-    flex: 0 0 5.4rem;
-    width: 5.4rem;
-    min-width: 5.4rem;
-    margin-bottom: 0;
-    border-radius: 8px;
-  }
-
-  .book-card-content {
-    padding: 0 0 0.125rem;
-    min-width: 0;
-  }
-
-  .book-card-title {
+  .library-book-summary {
     min-height: auto;
-    font-size: 0.92rem;
-    line-height: 1.35;
-    margin-bottom: 0.1rem;
-  }
-
-  .book-card-stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.2rem 0.6rem;
-    padding-top: 0.45rem;
-  }
-
-  .book-card-actions {
-    padding-top: 0.5rem;
-    margin-top: 0.15rem;
   }
 }
 </style>

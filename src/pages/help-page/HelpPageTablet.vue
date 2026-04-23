@@ -228,8 +228,8 @@ watch(
   width: 260px;
   flex-shrink: 0;
   height: 100%;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(12, 14, 18, 0.65);
+  border-right: 1px solid var(--white-opacity-8);
+  background: rgba(12, 14, 18, 0.65); /* token: night-500 @ 65% */
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -247,7 +247,7 @@ watch(
   align-items: center;
   gap: 12px;
   padding: 18px 18px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   flex-shrink: 0;
 }
 
@@ -255,8 +255,8 @@ watch(
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(109, 136, 168, 0.2);
-  color: #a3b7cf;
+  background: var(--tsukuyomi-opacity-20);
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -268,13 +268,13 @@ watch(
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 16px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   margin: 0;
 }
 
 .ht-nav-sub {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin: 2px 0 0;
   letter-spacing: 0.08em;
 }
@@ -298,7 +298,7 @@ watch(
   padding: 6px 8px;
   background: transparent;
   border: none;
-  color: rgba(247, 244, 236, 0.45);
+  color: var(--moon-50-opacity-45);
   font-family: inherit;
   font-size: 10px;
   font-weight: 700;
@@ -309,12 +309,12 @@ watch(
 }
 
 .ht-nav-category:hover {
-  color: rgba(247, 244, 236, 0.75);
+  color: var(--moon-50-opacity-75);
 }
 
 .ht-nav-category i {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.3);
+  color: var(--moon-50-opacity-30); /* token: moon-50 @ 30% */
 }
 
 .ht-nav-items {
@@ -331,7 +331,7 @@ watch(
   border: none;
   border-left: 2px solid transparent;
   background: transparent;
-  color: rgba(247, 244, 236, 0.8);
+  color: var(--moon-50-opacity-80); /* token: moon-50 @ 80% */
   font-family: inherit;
   font-size: 13px;
   border-radius: 8px;
@@ -342,14 +342,14 @@ watch(
 }
 
 .ht-nav-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(247, 244, 236, 1);
+  background: var(--white-opacity-4);
+  color: var(--moon-50-opacity-100);
 }
 
 .ht-nav-item--active {
-  background: rgba(109, 136, 168, 0.2);
-  border-left-color: #a3b7cf;
-  color: #a3b7cf;
+  background: var(--tsukuyomi-opacity-20);
+  border-left-color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-weight: 500;
 }
 
@@ -369,9 +369,9 @@ watch(
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   flex-shrink: 0;
-  background: rgba(10, 12, 15, 0.4);
+  background: rgba(10, 12, 15, 0.4); /* token: night-500 @ 40% */
 }
 
 .ht-toolbar-btn {
@@ -379,10 +379,10 @@ watch(
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-4);
+  border: 1px solid var(--white-opacity-8);
   border-radius: 8px;
-  color: rgba(247, 244, 236, 0.85);
+  color: var(--moon-50-opacity-85);
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -392,14 +392,14 @@ watch(
 }
 
 .ht-toolbar-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(247, 244, 236, 1);
+  background: var(--white-opacity-8);
+  color: var(--moon-50-opacity-100);
 }
 
 .ht-toolbar-btn--active {
-  background: rgba(109, 136, 168, 0.18);
-  border-color: rgba(109, 136, 168, 0.32);
-  color: #a3b7cf;
+  background: var(--tsukuyomi-opacity-18);
+  border-color: var(--tsukuyomi-opacity-32); /* token: tsukuyomi-500 @ 32% */
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .ht-toolbar-btn i {
@@ -413,7 +413,7 @@ watch(
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   overflow: hidden;
 }
 
@@ -423,7 +423,7 @@ watch(
 }
 
 .ht-breadcrumb-title {
-  color: rgba(247, 244, 236, 0.9);
+  color: var(--moon-50-opacity-90);
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -437,12 +437,12 @@ watch(
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
 }
 
 .ht-state i {
   font-size: 28px;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .ht-state--error {
@@ -450,15 +450,15 @@ watch(
 }
 
 .ht-state--error i {
-  color: #f87171;
+  color: var(--color-danger-400); /* token: danger-400 */
 }
 
 .ht-state-retry {
   padding: 8px 16px;
-  background: rgba(248, 113, 113, 0.15);
-  border: 1px solid rgba(248, 113, 113, 0.3);
+  background: var(--color-danger-400-opacity-15); /* token: danger-400 @ 15% */
+  border: 1px solid var(--color-danger-400-opacity-30); /* token: danger-400 @ 30% */
   border-radius: 8px;
-  color: #fca5a5;
+  color: var(--color-danger-300); /* token: danger-300 */
   font-family: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -485,7 +485,7 @@ watch(
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: rgba(163, 183, 207, 0.9);
+  color: var(--tsukuyomi-300-opacity-90); /* token: tsukuyomi-300 @ 90% */
   margin-bottom: 10px;
 }
 
@@ -498,7 +498,7 @@ watch(
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 28px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.01em;
   margin: 0 0 10px;
   line-height: 1.2;
@@ -506,7 +506,7 @@ watch(
 
 .ht-doc-desc {
   font-size: 14px;
-  color: rgba(247, 244, 236, 0.7);
+  color: var(--moon-50-opacity-70);
   line-height: 1.65;
   margin: 0;
 }
@@ -516,8 +516,8 @@ watch(
   width: 240px;
   flex-shrink: 0;
   height: 100%;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(10, 12, 15, 0.45);
+  border-left: 1px solid var(--white-opacity-8);
+  background: var(--shell-opacity-45); /* token: night-500 @ 45% */
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -534,17 +534,17 @@ watch(
   align-items: center;
   gap: 8px;
   padding: 18px 18px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   flex-shrink: 0;
 }
 
 .ht-toc-head i {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-size: 12px;
 }
 
@@ -561,7 +561,7 @@ watch(
   margin-bottom: 2px;
   border-radius: 8px;
   border-left: 2px solid transparent;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   font-size: 12px;
   line-height: 1.4;
   text-decoration: none;
@@ -572,15 +572,15 @@ watch(
 }
 
 .ht-toc-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(247, 244, 236, 1);
-  border-left-color: rgba(247, 244, 236, 0.2);
+  background: var(--white-opacity-4);
+  color: var(--moon-50-opacity-100);
+  border-left-color: var(--moon-50-opacity-20); /* token: moon-50 @ 20% */
 }
 
 .ht-toc-item--active {
-  color: #a3b7cf;
-  background: rgba(109, 136, 168, 0.15);
-  border-left-color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
+  background: var(--tsukuyomi-opacity-15);
+  border-left-color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-weight: 500;
 }
 
@@ -627,7 +627,7 @@ watch(
     width: 300px;
     max-width: 84%;
     z-index: 20;
-    background: rgba(14, 16, 20, 0.96);
+    background: var(--shell-opacity-96); /* token: night-500 @ 96% */
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
@@ -635,7 +635,7 @@ watch(
 
   .help-tablet:not(.help-tablet--nav-open) .ht-nav {
     width: 300px;
-    border-right-color: rgba(255, 255, 255, 0.08);
+    border-right-color: var(--white-opacity-8);
     transform: translateX(-100%);
   }
 
@@ -653,7 +653,7 @@ watch(
     width: 280px;
     max-width: 80%;
     z-index: 20;
-    background: rgba(14, 16, 20, 0.96);
+    background: var(--shell-opacity-96); /* token: night-500 @ 96% */
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     box-shadow: -12px 0 36px rgba(0, 0, 0, 0.55);
@@ -661,7 +661,7 @@ watch(
 
   .help-tablet:not(.help-tablet--toc-open) .ht-toc {
     width: 280px;
-    border-left-color: rgba(255, 255, 255, 0.08);
+    border-left-color: var(--white-opacity-8);
     transform: translateX(100%);
   }
 

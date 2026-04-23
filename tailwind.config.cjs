@@ -99,6 +99,20 @@ module.exports = {
         },
         warning: {
           DEFAULT: '#f2c037',
+          200: '#e8c78a', // warm amber tint（用于 in-progress / active 状态文字）
+        },
+        success: {
+          DEFAULT: '#7fb389', // Success 主色（深一档，适合边框/图标）
+          200: '#b9d9c1', // 柔和底色
+          300: '#a7d1b0', // 亮色文字（主要使用位）
+          500: '#7fb389',
+        },
+        danger: {
+          DEFAULT: '#ef5f5f', // Danger 主色
+          200: '#fecaca', // 最柔（背景/弱提示）
+          300: '#fca5a5', // 柔（图标 / 次级文字）
+          400: '#f87171', // 中（主文字）
+          500: '#ef5f5f', // 深（主色/边框/图标主色）
         },
       },
       backgroundImage: {

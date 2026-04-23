@@ -10,7 +10,7 @@
 
 **Tsukuyomi (月詠)** 是一个利用最先进 AI 模型（如 **GPT-5.2**, **Claude 4.6**, **Gemini 3 Pro** 等）进行外语文本（专为日本轻小说设计）阅读和翻译的综合平台。无论您是想快速阅读"生肉"的读者，还是追求"信达雅"专业水平的译者，Tsukuyomi 都能为您提供全方位的支持。
 
-![Tsukuyomi Dashboard](public/screenshots/index-desktop.png)
+![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
 ## ✨ 核心功能详情
 
@@ -96,47 +96,47 @@ Tsukuyomi 采用 "Bring Your Own Key" 模式，支持接入全球顶尖 AI 模�
 
 ### 🏠 首页 · Dashboard
 
-![桌面首页](public/screenshots/index-desktop.png)
+![桌面首页](public/screenshots/desktop-index.png)
 
 |                                 平板 · Tablet                                 |                                 手机 · Mobile                                 |
 | :---------------------------------------------------------------------------: | :---------------------------------------------------------------------------: |
-| <img src="public/screenshots/index-tablet.png" alt="平板首页" width="100%" /> | <img src="public/screenshots/index-mobile.png" alt="手机首页" width="100%" /> |
+| <img src="public/screenshots/tablet-index.png" alt="平板首页" width="100%" /> | <img src="public/screenshots/mobile-index.png" alt="手机首页" width="100%" /> |
 
 ### 📚 书库 · Library
 
-![桌面书库](public/screenshots/library-desktop.png)
+![桌面书库](public/screenshots/desktop-library.png)
 
 |                                  平板 · Tablet                                  |                                  手机 · Mobile                                  |
 | :-----------------------------------------------------------------------------: | :-----------------------------------------------------------------------------: |
-| <img src="public/screenshots/library-tablet.png" alt="平板书库" width="100%" /> | <img src="public/screenshots/library-mobile.png" alt="手机书库" width="100%" /> |
+| <img src="public/screenshots/tablet-library.png" alt="平板书库" width="100%" /> | <img src="public/screenshots/mobile-library.png" alt="手机书库" width="100%" /> |
 
 ### 📖 书籍详情 / 阅读器 · Book Details & Reader
 
 > 桌面与平板采用双面板布局，将章节树、元数据、段落阅读合并为同一视图；手机端则拆分为独立页面以适配竖屏空间。
 
-![桌面书籍详情](public/screenshots/book-details-desktop.png)
+![桌面书籍详情](public/screenshots/desktop-book-details.png)
 
 |                                      平板 · Tablet                                       |                                     手机 (书籍详情)                                      |                                  手机 (阅读器)                                   |
 | :--------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------: |
-| <img src="public/screenshots/book-details-tablet.png" alt="平板书籍详情" width="100%" /> | <img src="public/screenshots/book-details-mobile.png" alt="手机书籍详情" width="100%" /> | <img src="public/screenshots/reader-mobile.png" alt="手机阅读器" width="100%" /> |
+| <img src="public/screenshots/tablet-book-details.png" alt="平板书籍详情" width="100%" /> | <img src="public/screenshots/mobile-book-details.png" alt="手机书籍详情" width="100%" /> | <img src="public/screenshots/mobile-reader.png" alt="手机阅读器" width="100%" /> |
 
 ### 💬 AI 助手协作 · Reader + Chat Workspace
 
 右侧面板可停靠，随时召唤 AI 助手；启用本地嵌入后可使用 `query_chapter` / `search_memories` 工具跨章节、跨记忆检索上下文。
 
-![桌面阅读器 + AI 助手](public/screenshots/reader-desktop-with-chat.png)
+![桌面阅读器 + AI 助手](public/screenshots/desktop-reader-with-chat.png)
 
 |                                            平板 · Tablet                                             |                                        手机 · Mobile                                         |
 | :--------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------------: |
-| <img src="public/screenshots/reader-tablet-with-chat.png" alt="平板阅读器 + AI 助手" width="100%" /> | <img src="public/screenshots/reader-mobile-with-chat.png" alt="手机 AI 助手" width="100%" /> |
+| <img src="public/screenshots/tablet-reader-with-chat.png" alt="平板阅读器 + AI 助手" width="100%" /> | <img src="public/screenshots/mobile-reader-with-chat.png" alt="手机 AI 助手" width="100%" /> |
 
 ### 🤖 AI 模型管理 · Model Management
 
-![桌面 AI 模型](public/screenshots/ai-models-desktop.png)
+![桌面 AI 模型](public/screenshots/desktop-ai-models.png)
 
 |                                     平板 · Tablet                                     |                                     手机 · Mobile                                     |
 | :-----------------------------------------------------------------------------------: | :-----------------------------------------------------------------------------------: |
-| <img src="public/screenshots/ai-models-tablet.png" alt="平板 AI 模型" width="100%" /> | <img src="public/screenshots/ai-models-mobile.png" alt="手机 AI 模型" width="100%" /> |
+| <img src="public/screenshots/tablet-ai-models.png" alt="平板 AI 模型" width="100%" /> | <img src="public/screenshots/mobile-ai-models.png" alt="手机 AI 模型" width="100%" /> |
 
 ## 🔒 隐私与数据主权
 

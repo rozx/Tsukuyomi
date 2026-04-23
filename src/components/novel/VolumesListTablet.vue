@@ -205,13 +205,13 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
   flex-direction: column;
   gap: 1px;
   margin: 6px 12px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--white-opacity-6);
   border-radius: 10px;
   overflow-y: auto;
   overflow-x: hidden;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--white-opacity-2); /* token: white @ 2% */
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: var(--white-opacity-20) transparent;
 }
 
 .vt-tree::-webkit-scrollbar {
@@ -219,7 +219,7 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
 }
 
 .vt-tree::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--white-opacity-20);
   border-radius: 3px;
 }
 
@@ -231,7 +231,7 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
   padding: 10px 12px;
   background: transparent;
   border: none;
-  color: rgba(247, 244, 236, 0.9);
+  color: var(--moon-50-opacity-90);
   font-family: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -240,27 +240,27 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
 }
 
 .vt-row:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--white-opacity-3);
 }
 
 .vt-row--vol {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--white-opacity-4);
   font-weight: 500;
 }
 
 .vt-row--vol-open {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--white-opacity-2); /* token: white @ 2% */
 }
 
 .vt-row--chapter {
   padding-left: 28px;
   font-size: 12.5px;
-  color: rgba(247, 244, 236, 0.8);
+  color: var(--moon-50-opacity-80); /* token: moon-50 @ 80% */
 }
 
 .vt-row--active {
-  background: rgba(109, 136, 168, 0.12);
-  color: #d8dde8;
+  background: var(--tsukuyomi-opacity-12);
+  color: var(--primary-300); /* token: primary-300 */
 }
 
 .vt-row-title {
@@ -274,7 +274,7 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
 .vt-row-count {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   flex-shrink: 0;
 }
 
@@ -289,7 +289,7 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: rgba(247, 244, 236, 0.45);
+  color: var(--moon-50-opacity-45);
   cursor: pointer;
   flex-shrink: 0;
   transition:
@@ -298,8 +298,8 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
 }
 
 .vt-row-more:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(247, 244, 236, 0.85);
+  background: var(--white-opacity-6);
+  color: var(--moon-50-opacity-85);
 }
 
 .vt-row-more i {
@@ -307,7 +307,7 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
 }
 
 .vt-vol-icon {
-  color: rgba(174, 183, 198, 0.85);
+  color: var(--accent-opacity-85); /* token: accent-silver @ 85% */
   font-size: 14px;
   width: 14px;
   flex-shrink: 0;
@@ -325,7 +325,7 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
   align-items: center;
   gap: 8px;
   padding: 24px 16px;
-  color: rgba(247, 244, 236, 0.45);
+  color: var(--moon-50-opacity-45);
   font-size: 12px;
 }
 

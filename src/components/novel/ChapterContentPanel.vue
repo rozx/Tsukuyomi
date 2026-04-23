@@ -372,6 +372,12 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
   min-width: 0;
   max-width: 56rem;
   margin: 0 auto;
+  /*
+   * 横向留 0.5rem 给段落选中高亮 ::before 的 inset:-0.5rem 溢出绘制。
+   * 没有这层内边距时，当面板宽度接近 max-width 容器（如窄桌面/Electron 窗口），
+   * 选中圆角高亮会被外层 .chapter-content-panel 的 overflow-x:hidden 裁掉左右两侧。
+   */
+  padding: 0 0.5rem;
   box-sizing: border-box;
 }
 
@@ -382,6 +388,7 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
   height: 100%;
   min-height: 0;
   margin: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
 }
@@ -620,6 +627,8 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
   min-width: 0;
   max-width: 56rem;
   margin: 0 auto;
+  /* 与 .chapter-content-container 对齐，切换编辑/预览模式不产生 8px 宽度跳动。 */
+  padding: 0 0.5rem;
   box-sizing: border-box;
 }
 

@@ -268,7 +268,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   align-items: center;
   gap: 10px;
   padding: 10px 16px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   flex-shrink: 0;
 }
 
@@ -276,8 +276,8 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   width: 32px;
   height: 32px;
   border-radius: 10px;
-  background: rgba(109, 136, 168, 0.18);
-  border: 1px solid rgba(109, 136, 168, 0.3);
+  background: var(--tsukuyomi-opacity-18);
+  border: 1px solid var(--tsukuyomi-opacity-30);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -285,7 +285,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 }
 
 .mtp-head-icon i {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-size: 14px;
 }
 
@@ -297,13 +297,13 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 .mtp-head-title {
   font-size: 14px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
 }
 
 .mtp-head-sub {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 1px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -317,7 +317,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(247, 244, 236, 0.75);
+  color: var(--moon-50-opacity-75);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -326,8 +326,8 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 }
 
 .mtp-head-close:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(247, 244, 236, 1);
+  background: var(--white-opacity-5);
+  color: var(--moon-50-opacity-100);
 }
 
 .mtp-head-close i {
@@ -338,7 +338,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 .mtp-hero {
   padding: 16px 20px 12px;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
 }
 
 .mtp-hero-row {
@@ -352,19 +352,19 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 30px;
   font-weight: 700;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.02em;
   line-height: 1;
 }
 
 .mtp-hero-den {
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   font-weight: 400;
 }
 
 .mtp-hero-label {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 4px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -377,13 +377,13 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 .mtp-hero-eta {
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-weight: 500;
 }
 
 .mtp-bar {
   height: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-opacity-6);
   border-radius: 3px;
   overflow: hidden;
   position: relative;
@@ -391,9 +391,9 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 
 .mtp-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #6d88a8, #d8dde8);
+  background: linear-gradient(90deg, var(--tsukuyomi-500), var(--primary-300)); /* tokens: tsukuyomi-500 → primary-300 */
   border-radius: 3px;
-  box-shadow: 0 0 12px rgba(109, 136, 168, 0.5);
+  box-shadow: 0 0 12px var(--tsukuyomi-opacity-50); /* token: tsukuyomi-500 @ 50% */
   transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -402,8 +402,8 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   top: 0;
   width: 2px;
   height: 100%;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+  background: var(--white-opacity-90); /* token: white @ 90% */
+  box-shadow: 0 0 8px var(--white-opacity-80); /* token: white @ 80% */
   transition: left 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -414,7 +414,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   margin-top: 10px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   flex-wrap: wrap;
 }
 
@@ -431,8 +431,8 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 .mtp-seg {
   display: flex;
   padding: 3px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-5);
+  border: 1px solid var(--white-opacity-10);
   border-radius: 9px;
   gap: 2px;
 }
@@ -444,7 +444,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 0.7);
+  color: var(--moon-50-opacity-70); /* token: moon-50 @ 70% */
   border-radius: 7px;
   cursor: pointer;
   border: none;
@@ -453,8 +453,8 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 }
 
 .mtp-seg-btn-active {
-  background: rgba(109, 136, 168, 0.2);
-  color: #e9edf5;
+  background: var(--tsukuyomi-opacity-20);
+  color: var(--primary-200); /* token: primary-200 */
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
@@ -481,7 +481,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 .mtp-section-label {
   padding: 8px 20px 6px;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   text-transform: uppercase;
   letter-spacing: 0.14em;
   font-weight: 500;
@@ -490,7 +490,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 .mtp-empty {
   padding: 28px 20px;
   text-align: center;
-  color: rgba(247, 244, 236, 0.45);
+  color: var(--moon-50-opacity-45);
   font-size: 12px;
 }
 
@@ -498,10 +498,10 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 .mtp-live-card {
   margin: 0 16px 12px;
   padding: 12px 14px;
-  background: rgba(109, 136, 168, 0.1);
-  border: 1px solid rgba(109, 136, 168, 0.3);
+  background: var(--tsukuyomi-opacity-10);
+  border: 1px solid var(--tsukuyomi-opacity-30);
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(109, 136, 168, 0.25);
+  box-shadow: 0 2px 8px var(--tsukuyomi-opacity-25);
 }
 
 .mtp-live-head {
@@ -512,14 +512,14 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 }
 
 .mtp-live-spinner {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-size: 12px;
 }
 
 .mtp-live-eyebrow {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   letter-spacing: 0.1em;
   text-transform: uppercase;
   font-weight: 500;
@@ -534,9 +534,9 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   border-radius: 9999px;
   font-size: 10px;
   font-weight: 500;
-  background: rgba(109, 136, 168, 0.15);
-  color: #bac9db;
-  border: 1px solid rgba(109, 136, 168, 0.3);
+  background: var(--tsukuyomi-opacity-15);
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
+  border: 1px solid var(--tsukuyomi-opacity-30);
 }
 
 .mtp-live-model i {
@@ -546,7 +546,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 .mtp-live-text {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.85);
+  color: var(--moon-50-opacity-85);
   line-height: 1.65;
   margin-bottom: 10px;
   white-space: pre-wrap;
@@ -557,14 +557,14 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 
 .mtp-live-bar {
   height: 3px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-opacity-6);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .mtp-live-bar-fill {
   height: 100%;
-  background: #a3b7cf;
+  background: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -573,7 +573,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   justify-content: space-between;
   font-family: 'JetBrains Mono', monospace;
   font-size: 9px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 6px;
 }
 
@@ -581,8 +581,8 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 .mtp-model-card {
   margin: 0 16px 12px;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-10);
   border-radius: 10px;
 }
 
@@ -597,26 +597,26 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #a3b7cf;
+  background: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   flex-shrink: 0;
 }
 
 .mtp-model-name {
   font-size: 13px;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   font-weight: 500;
 }
 
 .mtp-model-count {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-left: auto;
 }
 
 .mtp-model-bar {
   height: 4px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--white-opacity-5);
   border-radius: 2px;
   overflow: hidden;
   margin-bottom: 8px;
@@ -624,7 +624,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 
 .mtp-model-bar-fill {
   height: 100%;
-  background: rgba(163, 183, 207, 0.7);
+  background: var(--tsukuyomi-300-opacity-70); /* token: tsukuyomi-300 @ 70% */
   transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -633,7 +633,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   gap: 14px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
 }
 
 .mtp-totals {
@@ -645,8 +645,8 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 
 .mtp-total {
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-10);
   border-radius: 10px;
 }
 
@@ -659,13 +659,13 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 
 .mtp-total-label {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
 
 .mtp-total-icon {
-  color: rgba(174, 183, 198, 0.85);
+  color: var(--accent-opacity-85); /* token: accent-silver @ 85% */
   font-size: 11px;
   opacity: 0.7;
 }
@@ -674,14 +674,14 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 17px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.02em;
 }
 
 /* Reuse desktop TaskTodos / TaskStream inside the mobile layout */
 .mtp-todos-wrap {
   margin: 0 16px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--white-opacity-10);
   border-radius: 10px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.25);
@@ -720,7 +720,7 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 
 .mtp-stream-wrap {
   margin: 0 16px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--white-opacity-10);
   border-radius: 10px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.25);
@@ -772,8 +772,8 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 /* Bottom actions */
 .mtp-actions {
   padding: 10px 12px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(10, 12, 15, 0.72);
+  border-top: 1px solid var(--white-opacity-6);
+  background: var(--night-500-opacity-72); /* token: night-500 @ 72% */
   display: flex;
   gap: 8px;
   flex-shrink: 0;
@@ -809,17 +809,17 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 }
 
 .mtp-btn-outline {
-  background: rgba(255, 255, 255, 0.03);
-  color: rgba(247, 244, 236, 0.85);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-3);
+  color: var(--moon-50-opacity-85);
+  border-color: var(--white-opacity-10);
 }
 
 .mtp-btn-outline:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--white-opacity-6);
 }
 
 .mtp-btn-danger {
-  color: #ef5f5f;
-  border-color: rgba(239, 95, 95, 0.3);
+  color: var(--color-danger); /* token: danger-500 */
+  border-color: var(--color-danger-opacity-30); /* token: danger @ 30% */
 }
 </style>

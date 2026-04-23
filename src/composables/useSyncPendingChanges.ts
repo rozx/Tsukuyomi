@@ -213,16 +213,39 @@ export interface SyncStatusColors {
 }
 
 /**
+ * 同步状态的非视觉计算（gistSync / isSyncing / 待同步项 / nextSyncTime）。
+ *
+ * 不需要 UI 调色时直接使用本函数；视觉层（icon/color/label）由 useSyncStatusDisplay 叠加。
+ */
+export function useSyncComputations() {
+  const settingsStore = useSettingsStore();
+  const gistSync = computed(() => settingsStore.gistSync);
+  const isSyncing = computed(() => settingsStore.isSyncing);
+  const { pendingCount, hasPendingChanges, pendingItems } = useSyncPendingChanges();
+
+  const nextSyncTime = computed(() => {
+    if (
+      !gistSync.value.enabled ||
+      !gistSync.value.lastSyncTime ||
+      gistSync.value.syncInterval <= 0
+    ) {
+      return null;
+    }
+    return gistSync.value.lastSyncTime + gistSync.value.syncInterval;
+  });
+
+  return { gistSync, isSyncing, pendingCount, hasPendingChanges, pendingItems, nextSyncTime };
+}
+
+/**
  * 状态栏共享的「同步状态指示器 + 下次同步时间戳」计算。
  *
  * AppHeader 和 SyncStatusBody 在视觉风格上颜色不同，因此把 color 作为入参注入；
  * 图标、文案、状态判定逻辑完全一致，集中在这里维护。
  */
 export function useSyncStatusDisplay(colors: SyncStatusColors) {
-  const settingsStore = useSettingsStore();
-  const gistSync = computed(() => settingsStore.gistSync);
-  const isSyncing = computed(() => settingsStore.isSyncing);
-  const { pendingCount, hasPendingChanges, pendingItems } = useSyncPendingChanges();
+  const core = useSyncComputations();
+  const { gistSync, isSyncing, pendingCount, hasPendingChanges } = core;
 
   const syncStatus = computed<SyncStatusDescriptor>(() => {
     if (!gistSync.value.enabled) {
@@ -244,24 +267,5 @@ export function useSyncStatusDisplay(colors: SyncStatusColors) {
     return { icon: 'pi pi-cloud', color: colors.unsynced, label: '未同步' };
   });
 
-  const nextSyncTime = computed(() => {
-    if (
-      !gistSync.value.enabled ||
-      !gistSync.value.lastSyncTime ||
-      gistSync.value.syncInterval <= 0
-    ) {
-      return null;
-    }
-    return gistSync.value.lastSyncTime + gistSync.value.syncInterval;
-  });
-
-  return {
-    gistSync,
-    isSyncing,
-    pendingCount,
-    hasPendingChanges,
-    pendingItems,
-    syncStatus,
-    nextSyncTime,
-  };
+  return { ...core, syncStatus };
 }

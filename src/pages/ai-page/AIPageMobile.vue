@@ -201,7 +201,7 @@ const routingPickerVisible = computed({
 .ma-eyebrow {
   font-weight: 500;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   text-transform: uppercase;
   letter-spacing: 0.22em;
   margin-bottom: 4px;
@@ -212,7 +212,7 @@ const routingPickerVisible = computed({
   font-weight: 600;
   font-size: 28px;
   line-height: 1.15;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.02em;
   margin: 0;
 }
@@ -220,11 +220,11 @@ const routingPickerVisible = computed({
 .ma-byok {
   margin: 10px 20px 0;
   padding: 10px 12px;
-  background: rgba(109, 136, 168, 0.08);
-  border: 1px solid rgba(109, 136, 168, 0.25);
+  background: var(--tsukuyomi-opacity-8); /* token: tsukuyomi-500 @ 8% */
+  border: 1px solid var(--tsukuyomi-opacity-25);
   border-radius: 10px;
   font-size: 12px;
-  color: #bac9db;
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
   display: flex;
   align-items: center;
   gap: 8px;
@@ -263,7 +263,7 @@ const routingPickerVisible = computed({
 .ma-section-title {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
 }
 
 .ma-add-btn {
@@ -274,9 +274,9 @@ const routingPickerVisible = computed({
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 500;
-  color: #a3b7cf;
-  background: rgba(109, 136, 168, 0.12);
-  border: 1px solid rgba(109, 136, 168, 0.3);
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
+  background: var(--tsukuyomi-opacity-12);
+  border: 1px solid var(--tsukuyomi-opacity-30);
   border-radius: 7px;
   cursor: pointer;
 }
@@ -291,8 +291,8 @@ const routingPickerVisible = computed({
 }
 
 .ma-provider-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-8);
   border-radius: 12px;
   overflow: hidden;
 }
@@ -302,7 +302,7 @@ const routingPickerVisible = computed({
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
 }
 
 .ma-provider-avatar {
@@ -327,13 +327,13 @@ const routingPickerVisible = computed({
 .ma-provider-name {
   font-size: 14px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
 }
 
 .ma-provider-sub {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 2px;
 }
 
@@ -347,7 +347,7 @@ const routingPickerVisible = computed({
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--white-opacity-4);
   cursor: pointer;
   transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -357,7 +357,7 @@ const routingPickerVisible = computed({
 }
 
 .ma-model-row:active {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--white-opacity-3);
 }
 
 .ma-model-main {
@@ -368,7 +368,7 @@ const routingPickerVisible = computed({
 .ma-model-name {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 0.9);
+  color: var(--moon-50-opacity-90);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -377,7 +377,7 @@ const routingPickerVisible = computed({
 .ma-model-meta {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -396,25 +396,25 @@ const routingPickerVisible = computed({
 }
 
 .ma-badge--on {
-  background: rgba(127, 179, 137, 0.12);
-  color: #a7d1b0;
-  border-color: rgba(127, 179, 137, 0.3);
+  background: var(--color-success-opacity-12); /* token: success-500 @ 12% */
+  color: var(--color-success-300); /* token: success-300 */
+  border-color: var(--color-success-opacity-30); /* token: success-500 @ 30% */
 }
 
 .ma-badge--off {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(247, 244, 236, 0.55);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-4);
+  color: var(--moon-50-opacity-55);
+  border-color: var(--white-opacity-10);
 }
 
 .ma-chev {
-  color: rgba(247, 244, 236, 0.35);
+  color: var(--moon-50-opacity-35); /* token: moon-50 @ 35% */
   font-size: 11px;
 }
 
 .ma-routing-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-8);
   border-radius: 12px;
   padding: 4px 14px;
 }
@@ -427,7 +427,7 @@ const routingPickerVisible = computed({
   padding: 10px 0;
   background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   text-align: left;
   cursor: pointer;
   color: inherit;
@@ -436,7 +436,7 @@ const routingPickerVisible = computed({
 }
 
 .ma-routing-row:active {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--white-opacity-3);
 }
 
 .ma-routing-row--last {
@@ -445,7 +445,7 @@ const routingPickerVisible = computed({
 
 .ma-routing-label {
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.85);
+  color: var(--moon-50-opacity-85);
   flex: 1;
 }
 
@@ -457,9 +457,9 @@ const routingPickerVisible = computed({
   border-radius: 9999px;
   font-size: 10px;
   font-weight: 500;
-  background: rgba(109, 136, 168, 0.15);
-  color: #bac9db;
-  border: 1px solid rgba(109, 136, 168, 0.3);
+  background: var(--tsukuyomi-opacity-15);
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
+  border: 1px solid var(--tsukuyomi-opacity-30);
   max-width: 55%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -467,9 +467,9 @@ const routingPickerVisible = computed({
 }
 
 .ma-routing-value--unset {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(247, 244, 236, 0.55);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--white-opacity-4);
+  color: var(--moon-50-opacity-55);
+  border-color: var(--white-opacity-10);
 }
 
 .ma-routing-value i {
@@ -479,7 +479,7 @@ const routingPickerVisible = computed({
 }
 
 .ma-routing-chev {
-  color: rgba(247, 244, 236, 0.35);
+  color: var(--moon-50-opacity-35); /* token: moon-50 @ 35% */
   font-size: 10px;
   flex-shrink: 0;
 }
@@ -502,12 +502,12 @@ const routingPickerVisible = computed({
 }
 
 .ma-picker-option:active {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--white-opacity-4);
 }
 
 .ma-picker-option--active {
-  background: rgba(109, 136, 168, 0.12);
-  border-color: rgba(109, 136, 168, 0.3);
+  background: var(--tsukuyomi-opacity-12);
+  border-color: var(--tsukuyomi-opacity-30);
 }
 
 .ma-picker-option-main {
@@ -518,7 +518,7 @@ const routingPickerVisible = computed({
 .ma-picker-option-name {
   font-size: 14px;
   font-weight: 500;
-  color: #e9edf5;
+  color: var(--primary-200); /* token: primary */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -527,7 +527,7 @@ const routingPickerVisible = computed({
 .ma-picker-option-meta {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -535,7 +535,7 @@ const routingPickerVisible = computed({
 }
 
 .ma-picker-option-check {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-size: 13px;
   flex-shrink: 0;
 }
@@ -546,17 +546,17 @@ const routingPickerVisible = computed({
   gap: 10px;
   padding: 14px 12px;
   margin: 8px 0 4px;
-  background: rgba(109, 136, 168, 0.06);
-  border: 1px solid rgba(109, 136, 168, 0.18);
+  background: var(--tsukuyomi-opacity-6); /* token: tsukuyomi-500 @ 6% */
+  border: 1px solid var(--tsukuyomi-opacity-18);
   border-radius: 10px;
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.75);
+  color: var(--moon-50-opacity-75);
   line-height: 1.5;
 }
 
 .ma-picker-empty i {
   font-size: 14px;
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   margin-top: 1px;
   flex-shrink: 0;
 }
@@ -570,17 +570,17 @@ const routingPickerVisible = computed({
   gap: 12px;
   padding: 32px 20px;
   text-align: center;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   font-size: 13px;
 }
 
 .ma-state-icon {
   font-size: 42px;
-  color: rgba(247, 244, 236, 0.25);
+  color: var(--moon-50-opacity-25); /* token: moon-50 @ 25% */
 }
 
 .ma-state-title {
   font-size: 14px;
-  color: rgba(247, 244, 236, 0.7);
+  color: var(--moon-50-opacity-70);
 }
 </style>

@@ -314,7 +314,7 @@ function toggleRouting(): void {
   flex-direction: column;
   min-height: 0;
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
-  color: rgba(247, 244, 236, 0.92);
+  color: var(--moon-50-opacity-92); /* token: moon-50 @ 92% */
   overflow: hidden;
 }
 
@@ -330,7 +330,7 @@ function toggleRouting(): void {
 
 .ait-head {
   padding: 22px 32px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
   display: flex;
   align-items: flex-end;
   gap: 20px;
@@ -345,7 +345,7 @@ function toggleRouting(): void {
 .ait-eyebrow {
   font-size: 10px;
   letter-spacing: 0.22em;
-  color: rgba(163, 183, 207, 0.75);
+  color: var(--tsukuyomi-300-opacity-75); /* token: tsukuyomi-300 @ 75% */
   text-transform: uppercase;
   font-weight: 500;
   margin-bottom: 4px;
@@ -355,7 +355,7 @@ function toggleRouting(): void {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 26px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   letter-spacing: -0.015em;
   line-height: 1.1;
   margin: 0;
@@ -363,7 +363,7 @@ function toggleRouting(): void {
 
 .ait-subtitle {
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin: 6px 0 0;
 }
 
@@ -407,17 +407,17 @@ function toggleRouting(): void {
   justify-content: center;
   gap: 12px;
   padding: 48px 20px;
-  color: rgba(247, 244, 236, 0.6);
+  color: var(--moon-50-opacity-60);
   font-size: 13px;
 }
 
 .ait-byok {
   padding: 11px 14px;
-  background: rgba(109, 136, 168, 0.08);
-  border: 1px solid rgba(109, 136, 168, 0.25);
+  background: var(--tsukuyomi-opacity-8); /* token: tsukuyomi-500 @ 8% */
+  border: 1px solid var(--tsukuyomi-opacity-25);
   border-radius: 10px;
   font-size: 12px;
-  color: #bac9db;
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
   display: flex;
   align-items: center;
   gap: 10px;
@@ -432,13 +432,13 @@ function toggleRouting(): void {
   margin-left: auto;
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
 }
 
 .ait-empty {
   padding: 48px 20px;
   text-align: center;
-  color: rgba(247, 244, 236, 0.7);
+  color: var(--moon-50-opacity-70);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -447,7 +447,7 @@ function toggleRouting(): void {
 
 .ait-empty-icon {
   font-size: 42px;
-  color: rgba(247, 244, 236, 0.35);
+  color: var(--moon-50-opacity-35); /* token: moon-50 @ 35% */
 }
 
 .ait-group {
@@ -478,19 +478,19 @@ function toggleRouting(): void {
 .ait-group-name {
   font-size: 12px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
 }
 
 .ait-group-count {
   font-family: 'JetBrains Mono', monospace;
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
 }
 
 .ait-model {
   padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-2-5); /* token: white @ 2.5% */
+  border: 1px solid var(--white-opacity-8);
   border-radius: 12px;
   margin-bottom: 8px;
 }
@@ -503,11 +503,11 @@ function toggleRouting(): void {
 
 .ait-model-icon {
   font-size: 16px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
 }
 
 .ait-model-icon-on {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .ait-model-title {
@@ -519,7 +519,7 @@ function toggleRouting(): void {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 14px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -528,7 +528,7 @@ function toggleRouting(): void {
 .ait-model-sub {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -542,15 +542,15 @@ function toggleRouting(): void {
   border-radius: 999px;
   font-size: 11px;
   font-weight: 500;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(247, 244, 236, 0.5);
+  background: var(--white-opacity-5);
+  border: 1px solid var(--white-opacity-8);
+  color: var(--moon-50-opacity-50);
 }
 
 .ait-badge-green {
-  background: rgba(167, 209, 176, 0.1);
-  border-color: rgba(167, 209, 176, 0.28);
-  color: #b9d9c1;
+  background: var(--color-success-300-opacity-10); /* token: success-300 @ 10% */
+  border-color: var(--color-success-300-opacity-28); /* token: success-300 @ 28% */
+  color: var(--color-success-200); /* token: success-200 */
 }
 
 .ait-icon-btn :deep(.p-button-icon) {
@@ -560,7 +560,7 @@ function toggleRouting(): void {
 .ait-params {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--white-opacity-5);
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
@@ -572,7 +572,7 @@ function toggleRouting(): void {
 
 .ait-param-label {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -580,7 +580,7 @@ function toggleRouting(): void {
 .ait-param-value {
   font-family: 'JetBrains Mono', monospace;
   font-size: 12px;
-  color: rgba(247, 244, 236, 0.78);
+  color: var(--moon-50-opacity-78); /* token: moon-50 @ 78% */
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -588,7 +588,7 @@ function toggleRouting(): void {
 }
 
 .ait-param-value.ait-param-accent {
-  color: #bac9db;
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
 }
 
@@ -600,7 +600,7 @@ function toggleRouting(): void {
 .ait-routing {
   width: 320px;
   flex-shrink: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  border-left: 1px solid var(--white-opacity-6);
   background: rgba(0, 0, 0, 0.18);
   display: flex;
   flex-direction: column;
@@ -611,12 +611,12 @@ function toggleRouting(): void {
 
 .ait-routing-head {
   padding: 18px 20px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
 }
 
 .ait-routing-eyebrow {
   font-size: 10px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   text-transform: uppercase;
   letter-spacing: 0.18em;
   font-weight: 500;
@@ -626,13 +626,13 @@ function toggleRouting(): void {
   font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 15px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   margin-top: 4px;
 }
 
 .ait-routing-sub {
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   margin: 6px 0 0;
   line-height: 1.5;
 }
@@ -645,7 +645,7 @@ function toggleRouting(): void {
 
 .ait-routing-row {
   padding: 12px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--white-opacity-5);
 }
 
 .ait-routing-row:last-child {
@@ -655,15 +655,15 @@ function toggleRouting(): void {
 .ait-routing-task {
   font-size: 12px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 0.78);
+  color: var(--moon-50-opacity-78); /* token: moon-50 @ 78% */
 }
 
 .ait-routing-picker {
   margin-top: 6px;
   width: 100%;
   padding: 8px 10px;
-  background: rgba(109, 136, 168, 0.08);
-  border: 1px solid rgba(109, 136, 168, 0.25);
+  background: var(--tsukuyomi-opacity-8); /* token: tsukuyomi-500 @ 8% */
+  border: 1px solid var(--tsukuyomi-opacity-25);
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -674,16 +674,16 @@ function toggleRouting(): void {
 }
 
 .ait-routing-picker:hover {
-  background: rgba(109, 136, 168, 0.14);
+  background: var(--tsukuyomi-opacity-14); /* token: tsukuyomi-500 @ 14% */
 }
 
 .ait-routing-picker--empty {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-3);
+  border-color: var(--white-opacity-8);
 }
 
 .ait-routing-picker-icon {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-size: 11px;
 }
 
@@ -696,19 +696,19 @@ function toggleRouting(): void {
 .ait-routing-picker-model {
   font-size: 12px;
   font-weight: 500;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .ait-routing-picker--empty .ait-routing-picker-model {
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   font-weight: 400;
 }
 
 .ait-routing-picker-chev {
-  color: rgba(247, 244, 236, 0.5);
+  color: var(--moon-50-opacity-50);
   font-size: 10px;
 }
 
@@ -727,8 +727,8 @@ function toggleRouting(): void {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--white-opacity-2); /* token: white @ 2% */
+  border: 1px solid var(--white-opacity-8);
   border-radius: 10px;
   cursor: pointer;
   text-align: left;
@@ -737,13 +737,13 @@ function toggleRouting(): void {
 }
 
 .ait-picker-option:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--white-opacity-5);
+  border-color: var(--white-opacity-12);
 }
 
 .ait-picker-option-active {
-  background: rgba(109, 136, 168, 0.12);
-  border-color: rgba(109, 136, 168, 0.3);
+  background: var(--tsukuyomi-opacity-12);
+  border-color: var(--tsukuyomi-opacity-30);
 }
 
 .ait-picker-option-body {
@@ -754,18 +754,18 @@ function toggleRouting(): void {
 .ait-picker-option-name {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(247, 244, 236, 1);
+  color: var(--moon-50-opacity-100);
 }
 
 .ait-picker-option-sub {
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
-  color: rgba(247, 244, 236, 0.55);
+  color: var(--moon-50-opacity-55);
   margin-top: 2px;
 }
 
 .ait-picker-check {
-  color: #a3b7cf;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
   font-size: 14px;
 }
 
@@ -835,7 +835,7 @@ function toggleRouting(): void {
     width: 320px;
     max-width: 86%;
     z-index: 20;
-    background: rgba(14, 16, 20, 0.96);
+    background: var(--shell-opacity-96); /* token: night-300 @ 96% */
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     box-shadow: -12px 0 36px rgba(0, 0, 0, 0.55);

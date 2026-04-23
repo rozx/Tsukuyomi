@@ -1,6 +1,6 @@
 import { computed, ref, type ComponentPublicInstance } from 'vue';
 import { useToastHistory } from 'src/composables/useToastHistory';
-import { useSyncPendingChanges } from 'src/composables/useSyncPendingChanges';
+import { useSyncComputations } from 'src/composables/useSyncPendingChanges';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useSettingsStore } from 'src/stores/settings';
 
@@ -20,7 +20,8 @@ export function useSystemBar() {
 
   const gistSync = computed(() => settingsStore.gistSync);
   const isSyncing = computed(() => settingsStore.isSyncing);
-  const { pendingCount, hasPendingChanges } = useSyncPendingChanges();
+  // 非视觉的同步计算（pendingCount / nextSyncTime）从共享 helper 读取，规则只维护一处
+  const { pendingCount, hasPendingChanges, nextSyncTime } = useSyncComputations();
 
   const syncState = computed<'idle' | 'syncing' | 'changes' | 'ok' | 'pending'>(() => {
     if (!gistSync.value.enabled) return 'idle';
@@ -31,6 +32,19 @@ export function useSystemBar() {
   });
 
   const thinking = computed(() => aiProcessing.hasActiveTasks);
+
+  const latestThinkingStatus = computed<'thinking' | 'processing' | null>(() => {
+    let latestStatus: 'thinking' | 'processing' | null = null;
+    let latestStart = -Infinity;
+    for (const task of aiProcessing.activeTasks) {
+      if (task.status !== 'thinking' && task.status !== 'processing') continue;
+      if (task.startTime > latestStart) {
+        latestStart = task.startTime;
+        latestStatus = task.status;
+      }
+    }
+    return latestStatus;
+  });
 
   const toastHistoryRef = ref<ComponentPublicInstance<TogglePanel> | null>(null);
   const thinkingPanelRef = ref<TogglePanel | null>(null);
@@ -44,7 +58,9 @@ export function useSystemBar() {
     unreadCount,
     pendingCount,
     syncState,
+    nextSyncTime,
     thinking,
+    latestThinkingStatus,
     toastHistoryRef,
     thinkingPanelRef,
     syncPanelRef,
