@@ -14,7 +14,7 @@ import DeleteChapterConfirmDialog from 'src/components/dialogs/DeleteChapterConf
 import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
 import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils/novel-utils';
-import type { Chapter, Novel, Volume } from 'src/models/novel';
+import type { Chapter, Novel, Paragraph, Volume } from 'src/models/novel';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useBooksStore } from 'src/stores/books';
 import { useRouter } from 'vue-router';
@@ -117,6 +117,29 @@ const progressByChapter = ref<ChapterProgressMap | null>(null);
 const isLoadingProgress = ref(false);
 let progressLoadToken = 0;
 
+function collectChapterIds(book: Novel): string[] {
+  const ids: string[] = [];
+  for (const vol of book.volumes ?? []) {
+    for (const ch of vol.chapters ?? []) ids.push(ch.id);
+  }
+  return ids;
+}
+
+function buildChapterProgressMap(
+  chapterIds: string[],
+  contents: Map<string, Paragraph[] | undefined>,
+): ChapterProgressMap {
+  const map: ChapterProgressMap = new Map();
+  for (const id of chapterIds) {
+    const paras = contents.get(id) ?? [];
+    const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
+    const total = nonEmpty.length;
+    const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
+    map.set(id, { total, translated });
+  }
+  return map;
+}
+
 async function loadProgressFor(book: Novel | null) {
   const token = ++progressLoadToken;
   if (!book) {
@@ -124,10 +147,7 @@ async function loadProgressFor(book: Novel | null) {
     isLoadingProgress.value = false;
     return;
   }
-  const chapterIds: string[] = [];
-  for (const vol of book.volumes ?? []) {
-    for (const ch of vol.chapters ?? []) chapterIds.push(ch.id);
-  }
+  const chapterIds = collectChapterIds(book);
   if (chapterIds.length === 0) {
     if (token === progressLoadToken) {
       progressByChapter.value = new Map();
@@ -139,15 +159,7 @@ async function loadProgressFor(book: Novel | null) {
   try {
     const contents = await ChapterContentService.loadChapterContentsBatch(chapterIds);
     if (token !== progressLoadToken) return; // 切书后丢弃旧结果
-    const map: ChapterProgressMap = new Map();
-    for (const id of chapterIds) {
-      const paras = contents.get(id) ?? [];
-      const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
-      const total = nonEmpty.length;
-      const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
-      map.set(id, { total, translated });
-    }
-    progressByChapter.value = map;
+    progressByChapter.value = buildChapterProgressMap(chapterIds, contents);
   } finally {
     if (token === progressLoadToken) isLoadingProgress.value = false;
   }
@@ -257,16 +269,27 @@ function openChapterMenu(
 }
 
 const isMovingChapter = ref(false);
+
+function resolveMoveTargetIndex(
+  book: Novel,
+  target: { volumeId: string; index: number },
+  direction: 'up' | 'down',
+): number | null {
+  const newIndex = direction === 'up' ? target.index - 1 : target.index + 1;
+  if (newIndex < 0) return null;
+  const vol = book.volumes?.find((v) => v.id === target.volumeId);
+  if (!vol?.chapters || newIndex >= vol.chapters.length) return null;
+  return newIndex;
+}
+
 async function moveChapter(
   target: { chapter: Chapter; volumeId: string; index: number },
   direction: 'up' | 'down',
 ): Promise<void> {
   const book = selectedBook.value;
   if (!book || isMovingChapter.value) return;
-  const targetIndex = direction === 'up' ? target.index - 1 : target.index + 1;
-  if (targetIndex < 0) return;
-  const vol = book.volumes?.find((v) => v.id === target.volumeId);
-  if (!vol?.chapters || targetIndex >= vol.chapters.length) return;
+  const targetIndex = resolveMoveTargetIndex(book, target, direction);
+  if (targetIndex === null) return;
 
   isMovingChapter.value = true;
   try {

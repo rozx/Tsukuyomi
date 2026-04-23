@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Button from 'primevue/button';
+import Textarea from 'primevue/textarea';
 import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPopover.vue';
 import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
@@ -254,13 +255,18 @@ defineExpose({ props });
           </div>
         </div>
         <div class="rp-composer">
-          <input
-            :value="inputMessage"
+          <Textarea
+            ref="inputRef"
+            v-model="inputMessage"
             :disabled="isSending || !assistantModel"
-            :placeholder="assistantModel ? '向 AI 助手提问…' : '未配置助手模型'"
+            :placeholder="
+              assistantModel ? '向 AI 助手提问… (Shift+Enter 换行)' : '未配置助手模型'
+            "
             class="rp-input"
-            @input="inputMessage = ($event.target as HTMLInputElement).value"
-            @keydown.enter.exact.prevent="sendMessage"
+            :auto-resize="true"
+            rows="1"
+            :unstyled="true"
+            @keydown="handleKeydown"
           />
           <button
             class="rp-send"
@@ -702,7 +708,11 @@ defineExpose({ props });
     -apple-system,
     sans-serif;
   font-size: 14px;
+  line-height: 1.45;
   padding: 6px 0;
+  resize: none;
+  max-height: 160px;
+  overflow-y: auto;
 }
 
 .rp-input::placeholder {

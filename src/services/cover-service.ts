@@ -1,5 +1,6 @@
 import type { Novel } from 'src/models/novel';
-import { PRIMARY, SURFACE_DARK, TRANSLATION_TEXT_COLOR } from 'src/theme/tsukuyomi-preset';
+// 从独立色值模块导入，避免把 PrimeVue 主题（definePreset + Aura）拉进广泛使用的服务 bundle
+import { PRIMARY, SURFACE_DARK, TRANSLATION_TEXT_COLOR } from 'src/theme/color-tokens';
 import { ProxyService } from 'src/services/proxy-service';
 
 /**

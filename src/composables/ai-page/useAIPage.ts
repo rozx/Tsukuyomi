@@ -159,16 +159,31 @@ function createAIPageContext() {
     ];
   };
 
+  // 纯函数：仅读取当前绑定的任务路由，不做清理副作用（否则会在 render 期间触发 store 写入）。
+  // 失效的绑定由下方的 pruneInvalidTaskRoutings()（onMounted + watch aiModels）异步清理。
   const getTaskRoutingSelectValue = (task: TaskKey): string => {
     const explicitModelId = settingsStore.getTaskDefaultModelId(task);
-    if (explicitModelId) {
-      const model = aiModelsStore.getModelById(explicitModelId);
-      if (model && model.enabled && model.isDefault[task]?.enabled) {
-        return explicitModelId;
-      }
-      void settingsStore.setTaskDefaultModelId(task, null);
+    if (!explicitModelId) return AUTO_TASK_ROUTING_VALUE;
+    const model = aiModelsStore.getModelById(explicitModelId);
+    if (model && model.enabled && model.isDefault[task]?.enabled) {
+      return explicitModelId;
     }
     return AUTO_TASK_ROUTING_VALUE;
+  };
+
+  const pruneInvalidTaskRoutings = async (): Promise<void> => {
+    const tasks: TaskKey[] = ['translation', 'proofreading', 'termsTranslation', 'assistant'];
+    for (const task of tasks) {
+      const explicitModelId = settingsStore.getTaskDefaultModelId(task);
+      if (!explicitModelId) continue;
+      const model = aiModelsStore.getModelById(explicitModelId);
+      if (model?.enabled && model.isDefault[task]?.enabled) continue;
+      try {
+        await settingsStore.setTaskDefaultModelId(task, null);
+      } catch (error) {
+        console.error('Failed to prune invalid task routing:', error);
+      }
+    }
   };
 
   const routingPickerOptions = computed(() => {
@@ -391,7 +406,16 @@ function createAIPageContext() {
       await aiModelsStore.loadModels();
     }
     isPageLoading.value = false;
+    void pruneInvalidTaskRoutings();
   });
+
+  // 模型列表变化（新增/删除/启用状态切换）时复查一次绑定
+  watch(
+    () => aiModels.value.map((m) => `${m.id}:${m.enabled}`).join('|'),
+    () => {
+      void pruneInvalidTaskRoutings();
+    },
+  );
 
   return {
     isPageLoading,
