@@ -1,38 +1,12 @@
 <script setup lang="ts">
-import { injectSettingsPage } from 'src/composables/settings-page/useSettingsPage';
-import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
-import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
-import ApiKeysSettingsTab from 'src/components/settings/ApiKeysSettingsTab.vue';
-import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
-import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
-import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
-import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
+import {
+  getSettingsPanelComponent,
+  injectSettingsPage,
+} from 'src/composables/settings-page/useSettingsPage';
 
 const ctx = injectSettingsPage();
 
-// 将 tab value 映射到对应的面板组件。Electron 与非 Electron 顺序略有差异，
-// 已由 composable 的 `tabs` 列表处理，本文件只需按 value 字符串分派。
-// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入导出
-// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入导出
-function panelFor(value: string) {
-  if (ctx.isElectron.value) {
-    if (value === '0') return AIModelSettingsTab;
-    if (value === '1') return ApiKeysSettingsTab;
-    if (value === '2') return SyncSettingsTab;
-    if (value === '3') return EmbeddingSettingsTab;
-    if (value === '4') return ScraperSettingsTab;
-    if (value === '5') return ImportExportTab;
-  } else {
-    if (value === '0') return AIModelSettingsTab;
-    if (value === '1') return ProxySettingsTab;
-    if (value === '2') return ApiKeysSettingsTab;
-    if (value === '3') return SyncSettingsTab;
-    if (value === '4') return EmbeddingSettingsTab;
-    if (value === '5') return ScraperSettingsTab;
-    if (value === '6') return ImportExportTab;
-  }
-  return AIModelSettingsTab;
-}
+const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.value, value);
 </script>
 
 <template>

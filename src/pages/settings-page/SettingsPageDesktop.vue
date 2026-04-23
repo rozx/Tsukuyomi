@@ -3,14 +3,10 @@ import { computed } from 'vue';
 import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
 import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
-import { injectSettingsPage } from 'src/composables/settings-page/useSettingsPage';
-import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
-import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
-import ApiKeysSettingsTab from 'src/components/settings/ApiKeysSettingsTab.vue';
-import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
-import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
-import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
-import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
+import {
+  getSettingsPanelComponent,
+  injectSettingsPage,
+} from 'src/composables/settings-page/useSettingsPage';
 
 const ctx = injectSettingsPage();
 
@@ -28,25 +24,7 @@ const settingsMetrics = computed(() => [
   { label: '运行环境', value: ctx.isElectron.value ? 'Electron' : 'Web', wide: true },
 ]);
 
-function panelFor(value: string) {
-  if (ctx.isElectron.value) {
-    if (value === '0') return AIModelSettingsTab;
-    if (value === '1') return ApiKeysSettingsTab;
-    if (value === '2') return SyncSettingsTab;
-    if (value === '3') return EmbeddingSettingsTab;
-    if (value === '4') return ScraperSettingsTab;
-    if (value === '5') return ImportExportTab;
-  } else {
-    if (value === '0') return AIModelSettingsTab;
-    if (value === '1') return ProxySettingsTab;
-    if (value === '2') return ApiKeysSettingsTab;
-    if (value === '3') return SyncSettingsTab;
-    if (value === '4') return EmbeddingSettingsTab;
-    if (value === '5') return ScraperSettingsTab;
-    if (value === '6') return ImportExportTab;
-  }
-  return AIModelSettingsTab;
-}
+const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.value, value);
 </script>
 
 <template>

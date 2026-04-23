@@ -1,7 +1,23 @@
-import { computed, inject, onMounted, provide, ref, type InjectionKey, type Ref } from 'vue';
+import {
+  computed,
+  inject,
+  onMounted,
+  provide,
+  ref,
+  type Component,
+  type InjectionKey,
+  type Ref,
+} from 'vue';
 import { useRouter } from 'vue-router';
 import { useSettingsStore } from 'src/stores/settings';
 import { useElectron } from 'src/composables/useElectron';
+import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
+import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
+import ApiKeysSettingsTab from 'src/components/settings/ApiKeysSettingsTab.vue';
+import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
+import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
+import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
+import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
 
 /**
  * Shared state + logic for the `/settings` page. Used by the dispatcher
@@ -43,6 +59,34 @@ export function injectSettingsPage(): SettingsPageContext {
     );
   }
   return ctx;
+}
+
+// 将 tab value 映射到对应的面板组件。Electron 与非 Electron 顺序略有差异，
+// 已由 `tabs` 列表处理，本函数只负责按 value 字符串分派。
+// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入导出
+// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入导出
+const SETTINGS_PANEL_MAP_ELECTRON: Record<string, Component> = {
+  '0': AIModelSettingsTab,
+  '1': ApiKeysSettingsTab,
+  '2': SyncSettingsTab,
+  '3': EmbeddingSettingsTab,
+  '4': ScraperSettingsTab,
+  '5': ImportExportTab,
+};
+
+const SETTINGS_PANEL_MAP_WEB: Record<string, Component> = {
+  '0': AIModelSettingsTab,
+  '1': ProxySettingsTab,
+  '2': ApiKeysSettingsTab,
+  '3': SyncSettingsTab,
+  '4': EmbeddingSettingsTab,
+  '5': ScraperSettingsTab,
+  '6': ImportExportTab,
+};
+
+export function getSettingsPanelComponent(isElectron: boolean, value: string): Component {
+  const map = isElectron ? SETTINGS_PANEL_MAP_ELECTRON : SETTINGS_PANEL_MAP_WEB;
+  return map[value] ?? AIModelSettingsTab;
 }
 
 function createSettingsPageContext(): SettingsPageContext {

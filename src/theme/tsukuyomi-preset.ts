@@ -18,7 +18,7 @@ export const PRIMARY: ColorScale = {
 };
 
 // Accent（銀月）: #AEB7C6
-export const ACCENT: ColorScale = {
+const ACCENT: ColorScale = {
   50: '#F0F2F5',
   100: '#E4E7EC',
   200: '#D8DCE3',
@@ -32,7 +32,7 @@ export const ACCENT: ColorScale = {
 };
 
 // Highlight（薄藍）: #6D88A8
-export const ACCENT_TEAL: ColorScale = {
+const ACCENT_TEAL: ColorScale = {
   50: '#E8EDF3',
   100: '#D1DBE7',
   200: '#BAC9DB',
@@ -46,23 +46,23 @@ export const ACCENT_TEAL: ColorScale = {
 };
 
 // Text colors: charcoal or deep navy for contrast
-export const TEXT_CHARCOAL = '#36454f'; // Charcoal
-export const TEXT_DEEP_NAVY = '#1a237e'; // Deep navy
-export const TEXT_DARK = '#212121'; // Dark for light backgrounds
+const TEXT_CHARCOAL = '#36454f'; // Charcoal
+const TEXT_DEEP_NAVY = '#1a237e'; // Deep navy
+const TEXT_DARK = '#212121'; // Dark for light backgrounds
 
 // 翻译文本颜色（tsukuyomi-200 提亮版）
 // 在极暗底上保持约 10:1 对比度，同时保留冷月蓝身份色
 export const TRANSLATION_TEXT_COLOR = 'rgba(186, 201, 219, 0.95)';
 
 // 状态色 —— 与 tailwind.config.cjs 的 success / danger / warning 调色板保持一致
-export const SUCCESS = {
+const SUCCESS = {
   DEFAULT: '#7fb389',
   200: '#b9d9c1',
   300: '#a7d1b0',
   500: '#7fb389',
 } as const;
 
-export const DANGER = {
+const DANGER = {
   DEFAULT: '#ef5f5f',
   200: '#fecaca',
   300: '#fca5a5',
@@ -70,7 +70,7 @@ export const DANGER = {
   500: '#ef5f5f',
 } as const;
 
-export const WARNING = {
+const WARNING = {
   DEFAULT: '#f2c037',
   200: '#e8c78a',
 } as const;
@@ -91,7 +91,7 @@ export const SURFACE_DARK: ColorScale = {
 };
 
 // Paper（和纸）: #F7F4EC
-export const SURFACE_LIGHT: ColorScale = {
+const SURFACE_LIGHT: ColorScale = {
   0: '#FDFCF9',
   50: '#F7F4EC', // Paper（和纸）
   100: '#F0EDE4',
