@@ -30,7 +30,23 @@ export function useSystemBar() {
     return 'pending';
   });
 
+  const nextSyncTime = computed<number | null>(() => {
+    const cfg = gistSync.value;
+    if (!cfg.enabled || !cfg.lastSyncTime || cfg.syncInterval <= 0) return null;
+    return cfg.lastSyncTime + cfg.syncInterval;
+  });
+
   const thinking = computed(() => aiProcessing.hasActiveTasks);
+
+  const latestThinkingStatus = computed<'thinking' | 'processing' | null>(() => {
+    const active = aiProcessing.activeTasks.filter(
+      (t) => t.status === 'thinking' || t.status === 'processing',
+    );
+    if (active.length === 0) return null;
+    const latest = active.sort((a, b) => b.startTime - a.startTime)[0];
+    const status = latest?.status;
+    return status === 'thinking' || status === 'processing' ? status : null;
+  });
 
   const toastHistoryRef = ref<ComponentPublicInstance<TogglePanel> | null>(null);
   const thinkingPanelRef = ref<TogglePanel | null>(null);
@@ -44,7 +60,9 @@ export function useSystemBar() {
     unreadCount,
     pendingCount,
     syncState,
+    nextSyncTime,
     thinking,
+    latestThinkingStatus,
     toastHistoryRef,
     thinkingPanelRef,
     syncPanelRef,

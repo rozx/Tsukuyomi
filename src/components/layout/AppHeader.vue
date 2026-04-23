@@ -1,76 +1,47 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import { useUiStore } from 'src/stores/ui';
-import { useToastHistory } from 'src/composables/useToastHistory';
-import { useSyncStatusDisplay } from 'src/composables/useSyncPendingChanges';
+import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
-import { useSettingsStore } from 'src/stores/settings';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
 import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
-import { debounce } from 'lodash';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 
 const ui = useUiStore();
-const { unreadCount } = useToastHistory();
 const aiProcessing = useAIProcessingStore();
-const settingsStore = useSettingsStore();
 const isPhone = computed(() => ui.deviceType === 'phone');
+
+const {
+  unreadCount,
+  pendingCount,
+  syncState,
+  nextSyncTime,
+  latestThinkingStatus,
+  thinking,
+  toastHistoryRef,
+  thinkingPanelRef,
+  syncPanelRef,
+  toggleHistory,
+  toggleThinking,
+  toggleSync,
+} = useSystemBar();
 
 const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslationTaskCount);
 
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
-// 获取 AI 任务状态（只显示状态，不显示思考消息内容）
-const aiTaskStatus = computed(() => {
-  // 直接访问 store 的 state 以确保响应式
-  const activeTasks = aiProcessing.activeTasks;
-  const thinkingTasks = activeTasks.filter(
-    (task) => task.status === 'thinking' || task.status === 'processing',
-  );
+const aiTaskLabel = computed(() =>
+  latestThinkingStatus.value === 'processing' ? '处理中' : '思考中',
+);
 
-  if (thinkingTasks.length === 0) {
-    return null; // 没有进行中的任务，不显示状态
-  }
-
-  const latest = thinkingTasks.sort((a, b) => b.startTime - a.startTime)[0];
-  if (!latest) {
-    return null;
-  }
-
-  // 根据任务状态返回对应的状态文本
-  if (latest.status === 'thinking') {
-    return '思考中';
-  } else if (latest.status === 'processing') {
-    return '处理中';
-  }
-
-  return null;
-});
-
-const syncButtonRef = ref<HTMLElement | null>(null);
-const toastHistoryRef = ref<{ toggle: (event: Event) => void } | null>(null);
-const thinkingPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
-const syncPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const batchEmbeddingsPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
-
-const toggleHistoryDialog = (event: Event) => {
-  toastHistoryRef.value?.toggle(event);
-};
-
-const toggleThinkingPanel = (event: Event) => {
-  thinkingPanelRef.value?.toggle(event);
-};
 
 const toggleBatchEmbeddingsPanel = (event: Event) => {
   batchEmbeddingsPanelRef.value?.toggle(event);
-};
-
-const toggleSyncPanel = (event: Event) => {
-  syncPanelRef.value?.toggle(event);
 };
 
 const handleToggleSideMenu = () => {
@@ -87,181 +58,44 @@ const handleToggleRightPanel = () => {
   ui.toggleRightPanel();
 };
 
-// 同步相关（仅用于按钮状态显示）
-const { gistSync, isSyncing, pendingCount, hasPendingChanges, syncStatus, nextSyncTime } =
-  useSyncStatusDisplay({
-    disabled: 'text-moon-400/70',
-    syncing: 'text-primary-400',
-    pending: 'text-amber-300',
-    synced: 'text-accent-300',
-    unsynced: 'text-moon-200',
-  });
-
-// 倒计时状态（秒数）
-const countdownSeconds = ref<number | null>(null);
-
-// 更新倒计时
-const updateCountdown = () => {
-  const next = nextSyncTime.value;
-  if (!next) {
-    countdownSeconds.value = null;
-    return;
-  }
-  const now = Date.now();
-  const diff = next - now;
-  if (diff <= 0) {
-    countdownSeconds.value = 0;
-    return;
-  }
-  const seconds = Math.floor(diff / 1000);
-  // 如果少于1分钟（60秒），显示倒计时
-  if (seconds < 60) {
-    countdownSeconds.value = seconds;
-  } else {
-    countdownSeconds.value = null;
-  }
-};
-
-// 定时器
-let countdownInterval: ReturnType<typeof setInterval> | null = null;
-
-// 启动倒计时定时器
-const startCountdown = () => {
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-  }
-  updateCountdown();
-  countdownInterval = setInterval(() => {
-    updateCountdown();
-    // 如果倒计时结束，清除定时器
-    if (countdownSeconds.value !== null && countdownSeconds.value <= 0) {
-      if (countdownInterval) {
-        clearInterval(countdownInterval);
-        countdownInterval = null;
-      }
-    }
-  }, 1000);
-};
-
-// 停止倒计时定时器
-const stopCountdown = () => {
-  if (countdownInterval) {
-    clearInterval(countdownInterval);
-    countdownInterval = null;
-  }
-  countdownSeconds.value = null;
-};
-
-// 监听同步配置变化，重新启动倒计时
-const watchSyncConfig = () => {
-  stopCountdown();
-  if (gistSync.value.enabled && nextSyncTime.value) {
-    const now = Date.now();
-    const diff = nextSyncTime.value - now;
-    if (diff > 0 && diff < 60000) {
-      // 如果距离下次同步少于1分钟，启动倒计时
-      startCountdown();
-    }
-  }
-};
-
-// 格式化下次同步时间（仅用于按钮标签）
-const formatNextSyncTime = computed(() => {
-  // 如果正在同步，显示同步状态
-  if (isSyncing.value) {
-    return '同步中...';
-  }
-
-  // 如果未启用同步，显示状态
-  if (!gistSync.value.enabled) {
-    return syncStatus.value.label;
-  }
-
-  // 有未同步的本地变更——优先展示数量
-  if (hasPendingChanges.value) {
-    return `${pendingCount.value} 项变更`;
-  }
-
-  const next = nextSyncTime.value;
-  if (!next) {
-    // 如果没有下次同步时间，检查是否有最后同步时间
-    if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) {
-      return '已同步';
-    }
-    return '未同步';
-  }
-
-  // 如果正在倒计时，显示倒计时
-  if (countdownSeconds.value !== null && countdownSeconds.value >= 0) {
-    return `${countdownSeconds.value}秒`;
-  }
-
-  const now = Date.now();
-  const diff = next - now;
-  if (diff <= 0) {
-    return '即将同步';
-  }
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(minutes / 60);
-  if (hours > 0) {
-    return `${hours} 小时后`;
-  }
-  if (minutes > 0) {
-    return `${minutes} 分钟后`;
-  }
-  return '即将同步';
-});
-
-// 定期检查定时器
-let checkInterval: ReturnType<typeof setInterval> | null = null;
-
-const debouncedWatchSyncConfig = debounce(() => {
-  watchSyncConfig();
-}, 500);
-
-// 监听同步配置和下次同步时间的变化
-watch(
-  [
-    () => gistSync.value.enabled,
-    () => gistSync.value.lastSyncTime,
-    () => gistSync.value.syncInterval,
-    nextSyncTime,
-  ],
-  () => {
-    debouncedWatchSyncConfig();
-  },
-  { immediate: true },
-);
+// 桌面端独有：下次同步的紧凑次级信息（仅在已同步态下展示）
+const nowTick = ref(Date.now());
+let tickInterval: ReturnType<typeof setInterval> | null = null;
 
 onMounted(() => {
-  watchSyncConfig();
-  // 定期检查是否需要启动倒计时
-  checkInterval = setInterval(() => {
-    watchSyncConfig();
-  }, 5000); // 每5秒检查一次
+  tickInterval = setInterval(() => {
+    nowTick.value = Date.now();
+  }, 1000);
 });
 
 onUnmounted(() => {
-  stopCountdown();
-  if (checkInterval) {
-    clearInterval(checkInterval);
-    checkInterval = null;
+  if (tickInterval) {
+    clearInterval(tickInterval);
+    tickInterval = null;
   }
+});
+
+const syncSecondaryLabel = computed<string | null>(() => {
+  if (syncState.value !== 'ok') return null;
+  const next = nextSyncTime.value;
+  if (!next) return null;
+  const diff = next - nowTick.value;
+  if (diff <= 0) return '即将';
+  const totalSeconds = Math.floor(diff / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  return `${Math.floor(totalMinutes / 60)}h`;
 });
 </script>
 
 <template>
-  <!--
-    性能：之前这里是 backdrop-blur-2xl（40px 高斯模糊）+ bg-night-950/50 半透明。
-    header 虽然 sticky（不随滚动移动），但滚动时其下方内容在变化，浏览器仍会在每帧重做模糊合成。
-    blur 半径的开销约为 O(radius²)：40px → 12px 约便宜 11 倍。
-    同时把底色从 /50 提升到 /85，即便没有模糊也能有清晰的层次分离。
-  -->
   <header class="dsk-sysbar">
     <div class="dsk-brand">
       <Button
         aria-label="切换侧边栏"
         class="p-button-text p-button-rounded dsk-brand-toggle"
+        :class="{ active: ui.sideMenuOpen }"
         icon="pi pi-bars"
         @click="handleToggleSideMenu"
       />
@@ -273,41 +107,84 @@ onUnmounted(() => {
     </div>
 
     <div class="dsk-actions">
+      <!-- AI 思考过程 -->
       <button
-        v-if="aiProcessing.hasActiveTasks"
+        v-if="thinking"
         type="button"
         class="dsk-chip pill thinking"
         aria-label="AI 思考过程"
-        @click="toggleThinkingPanel"
+        @click="toggleThinking"
       >
         <span class="dsk-dot" />
-        <span>AI {{ aiTaskStatus ?? '思考中' }}</span>
+        <span>AI {{ aiTaskLabel }}</span>
       </button>
       <button
         v-else
         type="button"
         class="dsk-chip"
         aria-label="AI 思考过程"
-        @click="toggleThinkingPanel"
+        @click="toggleThinking"
       >
         <i class="pi pi-sparkles" aria-hidden="true" />
-        <span class="dsk-chip-label">AI 思考过程</span>
+        <span v-if="!isPhone" class="dsk-chip-label">AI 思考</span>
       </button>
 
+      <!-- 同步状态 -->
       <button
-        ref="syncButtonRef"
+        v-if="syncState === 'syncing'"
         type="button"
-        class="dsk-chip"
-        :class="{ pill: gistSync.enabled && (isSyncing || hasPendingChanges) }"
-        aria-label="同步状态"
-        @click="toggleSyncPanel"
+        class="dsk-chip pill sync-pending"
+        aria-label="同步中"
+        @click="toggleSync"
       >
-        <i :class="[syncStatus.icon, syncStatus.color]" aria-hidden="true" />
-        <span v-if="gistSync.enabled && !isPhone" class="dsk-chip-label">
-          {{ formatNextSyncTime }}
+        <i class="pi pi-spin pi-spinner" aria-hidden="true" />
+        <span>同步中</span>
+      </button>
+      <button
+        v-else-if="syncState === 'changes'"
+        type="button"
+        class="dsk-chip pill sync-changes"
+        :aria-label="`${pendingCount} 项变更`"
+        @click="toggleSync"
+      >
+        <i class="pi pi-cloud-upload" aria-hidden="true" />
+        <span>{{ pendingCount }} 项变更</span>
+      </button>
+      <button
+        v-else-if="syncState === 'ok'"
+        type="button"
+        class="dsk-chip pill sync-ok"
+        aria-label="已同步"
+        @click="toggleSync"
+      >
+        <i class="pi pi-cloud-check" aria-hidden="true" />
+        <span>已同步</span>
+        <span v-if="syncSecondaryLabel && !isPhone" class="dsk-chip-meta">
+          {{ syncSecondaryLabel }}
         </span>
       </button>
+      <button
+        v-else-if="syncState === 'pending'"
+        type="button"
+        class="dsk-chip"
+        aria-label="未同步"
+        @click="toggleSync"
+      >
+        <i class="pi pi-cloud" aria-hidden="true" />
+        <span v-if="!isPhone" class="dsk-chip-label">未同步</span>
+      </button>
+      <button
+        v-else
+        type="button"
+        class="dsk-chip"
+        aria-label="同步状态"
+        @click="toggleSync"
+      >
+        <i class="pi pi-cloud" aria-hidden="true" />
+        <span v-if="!isPhone" class="dsk-chip-label">同步</span>
+      </button>
 
+      <!-- 向量索引（仅在书籍详情页显示） -->
       <button
         v-if="$route.params.id"
         type="button"
@@ -320,12 +197,12 @@ onUnmounted(() => {
 
       <div class="dsk-sep" />
 
+      <!-- 消息历史 -->
       <button
-        ref="bellButtonRef"
         type="button"
         class="dsk-chip"
         aria-label="消息历史"
-        @click="toggleHistoryDialog"
+        @click="toggleHistory"
       >
         <i class="pi pi-bell" aria-hidden="true" />
         <span v-if="unreadCount > 0" class="dsk-badge">
@@ -333,6 +210,7 @@ onUnmounted(() => {
         </span>
       </button>
 
+      <!-- 右侧面板切换 -->
       <button
         type="button"
         class="dsk-chip"
@@ -372,7 +250,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   position: relative;
   z-index: 20;
-  min-height: 40px;
+  min-height: 44px;
 }
 
 .dsk-brand {
@@ -391,6 +269,12 @@ onUnmounted(() => {
 
 .dsk-brand-toggle {
   color: var(--accent-silver) !important;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dsk-brand-toggle.active {
+  background: rgba(109, 136, 168, 0.14) !important;
+  color: #bac9db !important;
 }
 
 .dsk-brand-logo {
@@ -447,7 +331,7 @@ onUnmounted(() => {
   border-radius: 8px;
   background: transparent;
   border: 1px solid transparent;
-  color: var(--accent-silver);
+  color: rgba(192, 198, 209, 0.85);
   font-family:
     'Noto Sans SC',
     'PingFang SC',
@@ -470,9 +354,19 @@ onUnmounted(() => {
   font-size: 11px;
 }
 
+.dsk-chip-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.7;
+  padding-left: 4px;
+  border-left: 1px solid currentColor;
+  margin-left: 2px;
+}
+
 .dsk-chip:hover {
-  background: var(--white-opacity-4);
-  color: var(--moon-opacity-100);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(247, 244, 236, 1);
 }
 
 .dsk-chip.active {
@@ -481,6 +375,7 @@ onUnmounted(() => {
   border-color: rgba(109, 136, 168, 0.28);
 }
 
+/* Pill 变体 */
 .dsk-chip.pill {
   padding: 0 10px 0 9px;
   background: rgba(109, 136, 168, 0.1);
@@ -496,6 +391,41 @@ onUnmounted(() => {
 
 .dsk-chip.pill.thinking i {
   color: #a3b7cf;
+}
+
+.dsk-chip.pill.sync-ok {
+  background: rgba(167, 209, 176, 0.1);
+  border-color: rgba(167, 209, 176, 0.25);
+  color: #b9d9c1;
+}
+
+.dsk-chip.pill.sync-ok i {
+  color: #a7d1b0;
+}
+
+.dsk-chip.pill.sync-ok .dsk-chip-meta {
+  color: rgba(185, 217, 193, 0.75);
+  border-left-color: rgba(167, 209, 176, 0.3);
+}
+
+.dsk-chip.pill.sync-pending {
+  background: rgba(234, 192, 123, 0.1);
+  border-color: rgba(234, 192, 123, 0.25);
+  color: #e8c78a;
+}
+
+.dsk-chip.pill.sync-pending i {
+  color: #e8c78a;
+}
+
+.dsk-chip.pill.sync-changes {
+  background: rgba(234, 192, 123, 0.12);
+  border-color: rgba(234, 192, 123, 0.3);
+  color: #e8c78a;
+}
+
+.dsk-chip.pill.sync-changes i {
+  color: #e8c78a;
 }
 
 .dsk-dot {
