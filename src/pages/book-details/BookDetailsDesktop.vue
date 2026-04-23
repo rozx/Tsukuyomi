@@ -459,8 +459,10 @@ const settingContextMeta = computed(() => {
   height: 100%;
   flex-shrink: 0;
   border-right: 1px solid var(--white-opacity-8);
-  /* token: near night-500 @ 55% */
-  background: rgba(6, 8, 11, 0.55);
+  /* tokens: tsukuyomi-500 @ 8→2% over shell @ 55% (matches workbench surface) */
+  background:
+    linear-gradient(180deg, var(--tsukuyomi-opacity-8), var(--tsukuyomi-opacity-2)),
+    var(--shell-opacity-55);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -719,17 +721,17 @@ const settingContextMeta = computed(() => {
 }
 
 .book-main-content--reading {
+  /* tokens: tsukuyomi-500 @ 10% → 3% (moonlight vignette at top) */
   background:
     radial-gradient(
       ellipse at top,
-      /* token: near night-200 @ 35% */ rgba(18, 22, 32, 0.35) 0%,
-      /* token: near night-500 @ 15% */ rgba(10, 12, 16, 0.15) 70%
+      var(--tsukuyomi-opacity-10) 0%,
+      var(--tsukuyomi-opacity-3) 70%
     );
 }
 
 .book-main-content--settings {
-  /* token: near night-300 @ 25% */
-  background: rgba(12, 14, 20, 0.25);
+  background: transparent;
 }
 
 .workspace-context-bar {
@@ -739,8 +741,8 @@ const settingContextMeta = computed(() => {
   gap: 0.55rem;
   padding: 0.55rem 1.1rem;
   border-bottom: 1px solid var(--white-opacity-6);
-  /* token: near night-500 @ 55% */
-  background: rgba(8, 10, 13, 0.55);
+  /* token: shell @ 55% */
+  background: var(--shell-opacity-55);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
