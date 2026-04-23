@@ -171,17 +171,6 @@
 			],
 			"isBackground": false,
 			"group": "test"
-		},
-		{
-			"label": "Quality Check Books Pass",
-			"type": "shell",
-			"command": "bun",
-			"args": [
-				"run",
-				"quality-check"
-			],
-			"isBackground": false,
-			"group": "test"
 		}
 	]
 }
