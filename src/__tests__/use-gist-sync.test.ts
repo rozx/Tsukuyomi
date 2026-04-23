@@ -100,8 +100,8 @@ describe('useGistSync (manifest-driven flow)', () => {
 
     // Default memory + chapter content mocks
     spyOn(MemoryService, 'getAllMemories').mockResolvedValue([]);
-    spyOn(ChapterContentService, 'loadAllChapterContentsForNovels').mockImplementation(
-      (books) => Promise.resolve(books),
+    spyOn(ChapterContentService, 'loadAllChapterContentsForNovels').mockImplementation((books) =>
+      Promise.resolve(books),
     );
   });
 
@@ -117,9 +117,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         remoteETag: 'etag-v1',
       });
       const applySpy = spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
-      const hasChangesSpy = spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(
-        false,
-      );
+      const hasChangesSpy = spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
       const uploadSpy = spyOn(
         GistSyncService.prototype,
         'uploadToGistIncremental',
@@ -178,9 +176,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         remoteUpdatedAt: '2026-04-16T00:00:00Z',
         manifest: remoteManifest,
         changedEntries: {},
-        deletedEntries: [
-          { key: novelEntryKey('book-2'), deletedAt: '2026-04-15T12:00:00Z' },
-        ],
+        deletedEntries: [{ key: novelEntryKey('book-2'), deletedAt: '2026-04-15T12:00:00Z' }],
         remoteTombstones: { [novelEntryKey('book-2')]: '2026-04-15T12:00:00Z' },
         remoteEntryKeys: Object.keys(remoteManifest.entries),
       } as any);
@@ -319,6 +315,124 @@ describe('useGistSync (manifest-driven flow)', () => {
       expect(mockSettingsStore.updateKnownRemoteHashes).toHaveBeenCalled();
     });
 
+    it('cold start sync loads stores before uploading ai models and memories', async () => {
+      const coldSettingsStore = createMockSettingsStore({
+        isLoaded: false,
+        loadSettings: mock(function (this: { isLoaded: boolean }) {
+          this.isLoaded = true;
+          return Promise.resolve();
+        }),
+      });
+      const coldBooksStore = {
+        books: [] as Array<{ id: string; title?: string }>,
+        isLoaded: false,
+        loadBooks: mock(function (this: {
+          books: Array<{ id: string; title?: string }>;
+          isLoaded: boolean;
+        }) {
+          this.books = [{ id: 'book-1', title: 'Cold Book' }];
+          this.isLoaded = true;
+          return Promise.resolve();
+        }),
+        addBook: mock(() => Promise.resolve()),
+        bulkAddBooks: mock(() => Promise.resolve()),
+      };
+      const coldAIModelsStore = {
+        models: [] as Array<{ id: string; lastEdited?: Date }>,
+        isLoaded: false,
+        loadModels: mock(function (this: {
+          models: Array<{ id: string; lastEdited?: Date }>;
+          isLoaded: boolean;
+        }) {
+          this.models = [{ id: 'model-cold', lastEdited: new Date('2026-04-16T00:00:00Z') }];
+          this.isLoaded = true;
+          return Promise.resolve();
+        }),
+        addModel: mock(() => Promise.resolve()),
+      };
+      const coldCoverHistoryStore = {
+        covers: [] as Array<{ id: string; url: string; addedAt: Date }>,
+        isLoaded: false,
+        loadCoverHistory: mock(function (this: {
+          covers: Array<{ id: string; url: string; addedAt: Date }>;
+          isLoaded: boolean;
+        }) {
+          this.covers = [
+            {
+              id: 'cover-cold',
+              url: 'https://example.com/cover.png',
+              addedAt: new Date('2026-04-16T00:00:00Z'),
+            },
+          ];
+          this.isLoaded = true;
+          return Promise.resolve();
+        }),
+        addCover: mock(() => Promise.resolve()),
+      };
+
+      spyOn(SettingsStore, 'useSettingsStore').mockReturnValue(coldSettingsStore as any);
+      spyOn(BooksStore, 'useBooksStore').mockReturnValue(coldBooksStore as any);
+      spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue(coldAIModelsStore as any);
+      spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue(
+        coldCoverHistoryStore as any,
+      );
+
+      spyOn(MemoryService, 'getAllMemories').mockImplementation((bookId: string) => {
+        if (bookId !== 'book-1') return Promise.resolve([]);
+        return Promise.resolve([
+          {
+            id: 'memory-cold',
+            bookId,
+            content: '冷启动 memory',
+            summary: '冷启动',
+            createdAt: Date.parse('2026-04-16T00:00:00Z'),
+            lastAccessedAt: Date.parse('2026-04-16T00:00:00Z'),
+          },
+        ] as any);
+      });
+
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: true,
+        remoteETag: 'etag-v1',
+      });
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
+      spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockResolvedValue({
+        status: 'unchanged',
+        etag: 'etag-v1',
+      });
+      const uploadSpy = spyOn(
+        GistSyncService.prototype,
+        'uploadToGistIncremental',
+      ).mockResolvedValue({
+        success: true,
+        gistId: 'test-gist-id',
+        remoteETag: 'etag-v2',
+        remoteUpdatedAt: '2026-04-16T00:00:00Z',
+        manifest: makeManifest('new-hash'),
+        uploadedEntries: [novelEntryKey('book-1')],
+        deletedEntries: [],
+      });
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(coldBooksStore.loadBooks).toHaveBeenCalled();
+      expect(coldAIModelsStore.loadModels).toHaveBeenCalled();
+      expect(coldCoverHistoryStore.loadCoverHistory).toHaveBeenCalled();
+      expect(uploadSpy).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({
+          aiModels: expect.arrayContaining([expect.objectContaining({ id: 'model-cold' })]),
+          memoriesByBook: expect.objectContaining({
+            'book-1': expect.arrayContaining([expect.objectContaining({ id: 'memory-cold' })]),
+          }),
+        }),
+        expect.any(Object),
+        expect.any(Function),
+      );
+    });
+
     it('pseudo-CAS detects concurrent write: retries by re-downloading', async () => {
       const downloadSpy = spyOn(
         GistSyncService.prototype,
@@ -364,10 +478,7 @@ describe('useGistSync (manifest-driven flow)', () => {
     it('first sync (no gistId): uses legacy uploadToGist to create the Gist', async () => {
       mockSettingsStore.gistSync = createSyncConfigWithoutGistId();
       spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
-      const legacyUploadSpy = spyOn(
-        GistSyncService.prototype,
-        'uploadToGist',
-      ).mockResolvedValue({
+      const legacyUploadSpy = spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue({
         success: true,
         gistId: 'new-gist-id',
       } as any);
