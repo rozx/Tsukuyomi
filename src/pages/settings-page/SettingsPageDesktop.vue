@@ -51,14 +51,19 @@ function panelFor(value: string) {
 
 <template>
   <div class="desktop-settings-page">
-    <DesktopWorkbenchHeader eyebrow="Settings" title="设置工作台" :description="pageSummary">
-      <template #prefix>
-        <button type="button" class="settings-back-link" @click="ctx.goBack">
-          <i class="pi pi-arrow-left" aria-hidden="true" />
-          <span>返回</span>
-        </button>
-      </template>
+    <nav class="desktop-settings-crumbs" aria-label="返回">
+      <button
+        type="button"
+        class="settings-back-chip"
+        aria-label="返回"
+        @click="ctx.goBack"
+      >
+        <i class="pi pi-chevron-left" aria-hidden="true" />
+        <span>返回</span>
+      </button>
+    </nav>
 
+    <DesktopWorkbenchHeader eyebrow="Settings" title="设置工作台" :description="pageSummary">
       <template #metrics>
         <DesktopWorkbenchMetrics :items="settingsMetrics" />
       </template>
@@ -91,35 +96,53 @@ function panelFor(value: string) {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem 1.1rem 1.25rem;
+  gap: 0.8rem;
+  padding: 0.85rem 1.1rem 1.25rem;
 }
 
-.settings-back-link {
+.desktop-settings-crumbs {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.settings-back-chip {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  padding: 0;
+  gap: 0.35rem;
+  height: 22px;
+  padding: 0 0.55rem 0 0.45rem;
+  border-radius: 6px;
   background: transparent;
-  border: none;
-  color: rgba(247, 244, 236, 0.58);
+  border: 1px solid var(--white-opacity-8, rgba(255, 255, 255, 0.08));
+  color: var(--accent-silver);
   cursor: pointer;
-  font-size: 0.76rem;
-  font-family: inherit;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   line-height: 1;
-  transition: color 0.15s ease;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.settings-back-link:hover {
-  color: rgba(247, 244, 236, 0.9);
+.settings-back-chip:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(186, 201, 219, 0.22);
+  color: var(--moon-opacity-100);
 }
 
-.settings-back-link:active {
-  color: rgba(247, 244, 236, 0.72);
+.settings-back-chip:active {
+  background: rgba(255, 255, 255, 0.06);
 }
 
-.settings-back-link .pi {
-  font-size: 0.78rem;
+.settings-back-chip .pi {
+  font-size: 0.68rem;
+  line-height: 1;
 }
 
 .settings-workbench {

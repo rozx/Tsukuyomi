@@ -16,9 +16,6 @@ withDefaults(
   <header class="dwh">
     <div class="dwh-main">
       <div class="dwh-copy">
-        <div v-if="$slots.prefix" class="dwh-prefix">
-          <slot name="prefix" />
-        </div>
         <span v-if="eyebrow" class="dwh-eyebrow">{{ eyebrow }}</span>
         <h1 class="dwh-title">{{ title }}</h1>
         <p v-if="description" class="dwh-desc">{{ description }}</p>
@@ -60,11 +57,6 @@ withDefaults(
   gap: 0.18rem;
 }
 
-.dwh-prefix {
-  display: flex;
-  align-items: center;
-  min-height: 1rem;
-}
 
 .dwh-title {
   margin: 0;
