@@ -1,9 +1,10 @@
 import { definePreset } from '@primevue/themes';
 import Aura from '@primevue/themes/aura';
-import { PRIMARY, SURFACE_DARK, TRANSLATION_TEXT_COLOR, type ColorScale } from './color-tokens';
+import { PRIMARY, SURFACE_DARK, type ColorScale } from './color-tokens';
 
-// 原始色值放在 `./color-tokens`（不依赖 PrimeVue），这里直接 re-export 保持既有消费者不变
-export { PRIMARY, SURFACE_DARK, TRANSLATION_TEXT_COLOR };
+// 原始色值定义在 `./color-tokens`（不依赖 PrimeVue），此文件只消费这些 token
+// 拼装 PrimeVue 主题预设；如需在 UI 以外复用色值（如 CoverService），请直接从
+// `./color-tokens` 导入，避免把整个主题 bundle 拉进依赖图。
 
 // Accent（銀月）: #AEB7C6
 const ACCENT: ColorScale = {
