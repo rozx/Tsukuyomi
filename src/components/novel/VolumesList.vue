@@ -268,6 +268,7 @@ const isSelectedChapterLoading = (chapterId: string) => {
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  padding: 0 0.5rem;
 }
 
 /* 加载状态 */
@@ -397,9 +398,11 @@ const isSelectedChapterLoading = (chapterId: string) => {
 .chapters-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.375rem;
   margin-left: 0.25rem;
   padding-left: 0.375rem;
+  /* 给右侧留 4px 缓冲，避免 .chapter-item:hover 的 translateX(2px) 被 .volume-item 的 overflow:hidden 截掉。 */
+  padding-right: 0.25rem;
   border-left: 1px solid var(--white-opacity-10);
   min-width: 0;
 }
@@ -409,7 +412,7 @@ const isSelectedChapterLoading = (chapterId: string) => {
   align-items: center;
   justify-content: space-between;
   gap: 0.375rem;
-  padding: 0.5rem;
+  padding: 0.625rem 0.5rem;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
