@@ -10,7 +10,7 @@ const ui = useUiStore();
 </script>
 
 <template>
-  <div class="desktop-shell">
+  <div class="desktop-shell bg-tsukuyomi-sky">
     <AppHeader />
 
     <div class="desktop-shell-body">
@@ -53,7 +53,6 @@ const ui = useUiStore();
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: var(--night-500); /* token: night-500 */
   color: var(--moon-50-opacity-95); /* token: moon-50 @ 95% */
 }
 

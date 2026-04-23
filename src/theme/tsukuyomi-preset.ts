@@ -306,7 +306,9 @@ const CUSTOM_CSS = `
   --moon-100: #F0EDE4;
   --moon-200: #E9EDF5;
 
-  /* tsukuyomi-500（薄藍 #6D88A8）完整透明度序列（4..95%）*/
+  /* tsukuyomi-500（薄藍 #6D88A8）完整透明度序列（2..95%）*/
+  --tsukuyomi-opacity-2: rgba(109, 136, 168, 0.02);
+  --tsukuyomi-opacity-3: rgba(109, 136, 168, 0.03);
   --tsukuyomi-opacity-4: rgba(109, 136, 168, 0.04);
   --tsukuyomi-opacity-6: rgba(109, 136, 168, 0.06);
   --tsukuyomi-opacity-8: rgba(109, 136, 168, 0.08);
@@ -395,6 +397,7 @@ const CUSTOM_CSS = `
   --shell-opacity-55: rgba(10, 14, 26, 0.55);
   --shell-opacity-60: rgba(5, 7, 10, 0.6);
   --shell-opacity-72: rgba(8, 10, 13, 0.72);
+  --shell-opacity-82: rgba(10, 14, 20, 0.82);
   --shell-opacity-96: rgba(14, 16, 20, 0.96);
 
   /* danger / red 透明度（与 --color-danger 系列对应）*/

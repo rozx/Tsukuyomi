@@ -27,7 +27,7 @@ withDefaults(
 .dws-shell {
   position: relative;
   border-radius: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--white-opacity-8); /* token: white @ 8% */
   box-shadow: 0 20px 56px rgba(3, 7, 18, 0.18);
   overflow: hidden;
 }
@@ -38,13 +38,13 @@ withDefaults(
 
 .dws-shell--default {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
-    rgba(10, 14, 20, 0.82);
+    linear-gradient(180deg, var(--tsukuyomi-opacity-8), var(--tsukuyomi-opacity-2)),
+    var(--shell-opacity-82); /* tokens: tsukuyomi-500 @ 8→2% over shell @ 82% */
 }
 
 .dws-shell--muted {
   background:
-    linear-gradient(180deg, rgba(186, 201, 219, 0.05), rgba(186, 201, 219, 0.01)),
-    rgba(9, 12, 18, 0.72);
+    linear-gradient(180deg, var(--tsukuyomi-opacity-10), var(--tsukuyomi-opacity-3)),
+    var(--shell-opacity-72); /* tokens: tsukuyomi-500 @ 10→3% over shell @ 72% */
 }
 </style>
