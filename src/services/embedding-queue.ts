@@ -107,6 +107,11 @@ export class EmbeddingQueue {
   private static paused = false;
   private static runScheduled = false;
   private static currentTask: EmbeddingQueueCurrentTask | null = null;
+  /**
+   * 同步/恢复期间由外部 gate 临时暂停时置位；用于在同步结束后只恢复"由 gate 挂起"的场景,
+   * 避免把用户主动点击的 pause 一起解除。
+   */
+  private static syncGatePaused = false;
 
   // 分 kind 的会话统计
   private static totalEnqueued = { memory: 0, chapter: 0 };
@@ -332,6 +337,29 @@ export class EmbeddingQueue {
 
   static isRunning(): boolean {
     return this.processing;
+  }
+
+  /**
+   * 同步/恢复期间的外部 gate：
+   * - shouldPause=true 时,若队列当前未暂停则挂起,并记下"挂起是 gate 触发的"
+   * - shouldPause=false 时,只解除由 gate 造成的挂起;若用户通过 UI 主动 pause 过就保留
+   *
+   * 这是为了避免 sync 结束后把用户手动点击的暂停一起抹掉(BatchEmbeddingsPanel / MemoryPanel
+   * 暴露了手动 pause/resume 按钮)。
+   */
+  static applySyncGate(shouldPause: boolean): void {
+    if (shouldPause) {
+      if (this.paused) return;
+      this.paused = true;
+      this.syncGatePaused = true;
+      this.emitProgress();
+      return;
+    }
+    if (!this.syncGatePaused) return;
+    this.syncGatePaused = false;
+    this.paused = false;
+    this.emitProgress();
+    this.scheduleRun();
   }
 
   /**
@@ -609,6 +637,7 @@ export class EmbeddingQueue {
     this.pending = [];
     this.processing = false;
     this.paused = false;
+    this.syncGatePaused = false;
     this.runScheduled = false;
     this.currentTask = null;
     this.totalEnqueued = { memory: 0, chapter: 0 };

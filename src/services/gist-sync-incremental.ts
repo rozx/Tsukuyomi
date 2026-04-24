@@ -301,6 +301,23 @@ async function readAndParseSingleFile(
 }
 
 /**
+ * 兼容多代分块分隔符：最新为 `_`,老版本曾用 `#`/`-`。
+ * 从 gistFiles 里找到第 i 块 chunk 的实际文件名;任何分隔符命中即返回。
+ */
+function locateChunkFilename(
+  chunkPrefix: string,
+  bookId: string,
+  index: number,
+  gistFiles: Record<string, GistFileLike>,
+): string | null {
+  for (const sep of ['_', '#', '-']) {
+    const name = `${chunkPrefix}${bookId}${sep}${index}.json`;
+    if (gistFiles[name]) return name;
+  }
+  return null;
+}
+
+/**
  * 依次读取所有 chunk 文件并拼接；任意一块缺失返回 null
  */
 async function readChunkedContent(
@@ -312,7 +329,8 @@ async function readChunkedContent(
 ): Promise<string | null> {
   const pieces: string[] = [];
   for (let i = 0; i < chunks; i++) {
-    const name = `${chunkPrefix}${bookId}_${i}.json`;
+    const resolvedName = locateChunkFilename(chunkPrefix, bookId, i, gistFiles);
+    const name = resolvedName ?? `${chunkPrefix}${bookId}_${i}.json`;
     const content = await readFile(name, gistFiles, fetchRaw);
     if (content === null) {
       console.warn(`[gist-sync-incremental] 分块缺失或读取失败: ${name}`);
@@ -325,6 +343,9 @@ async function readChunkedContent(
 
 /**
  * 读取并解析 novel / memories 型条目（按 chunk 数决定单文件 / 分块路径）
+ *
+ * 容错路径：若 manifest 标记为分块但实际只上传了单文件（或相反），会尝试另一种布局作为兜底。
+ * 这对恢复老 revision 特别关键——老版本的 chunk 计数可能与当前 manifest 不一致。
  */
 async function readBookEntryContent(
   bookId: string,
@@ -334,10 +355,30 @@ async function readBookEntryContent(
   gistFiles: Record<string, GistFileLike>,
   fetchRaw: (url: string) => Promise<string>,
 ): Promise<unknown> {
-  const combined =
-    chunks === 0
-      ? await readFile(`${prefix}${bookId}.json`, gistFiles, fetchRaw)
-      : await readChunkedContent(chunkPrefix, bookId, chunks, gistFiles, fetchRaw);
+  const singleName = `${prefix}${bookId}.json`;
+  let combined: string | null;
+
+  if (chunks === 0) {
+    combined = await readFile(singleName, gistFiles, fetchRaw);
+  } else {
+    combined = await readChunkedContent(chunkPrefix, bookId, chunks, gistFiles, fetchRaw);
+    // 兜底：manifest 声明分块但实际是单文件布局
+    if (combined === null && gistFiles[singleName]) {
+      combined = await readFile(singleName, gistFiles, fetchRaw);
+    }
+  }
+
+  // 兜底：manifest chunks=0 但实际是分块布局（扫描 chunkPrefix 下存在的块数）
+  if (combined === null && chunks === 0) {
+    let guessed = 0;
+    while (locateChunkFilename(chunkPrefix, bookId, guessed, gistFiles)) {
+      guessed += 1;
+    }
+    if (guessed > 0) {
+      combined = await readChunkedContent(chunkPrefix, bookId, guessed, gistFiles, fetchRaw);
+    }
+  }
+
   if (combined === null) return null;
   return parseStoredContent(combined);
 }
@@ -400,6 +441,150 @@ export async function deserializeEntry(
   }
 
   return null;
+}
+
+/** 单文件型条目(settings/ai-models/cover-history 或 chunks=0 的 novel/memories)的失败原因 */
+function describeSingleFileFailure(
+  name: string,
+  gistFiles: Record<string, GistFileLike>,
+): string {
+  const file = gistFiles[name];
+  if (!file) return `文件 ${name} 缺失`;
+  if (file.truncated && !file.raw_url) return `文件 ${name} 被截断且无 raw_url`;
+  if (file.truncated) return `文件 ${name} 被截断,从 raw_url 获取失败`;
+  if (file.content == null) return `文件 ${name} 内容为空`;
+  return `文件 ${name} 内容解析失败`;
+}
+
+/** 扫 gistFiles 里属于给定 bookId 的所有分块文件(宽松匹配,用于布局一致性检查) */
+function collectBookChunkFilenames(
+  chunkPrefix: string,
+  bookId: string,
+  gistFiles: Record<string, GistFileLike>,
+): string[] {
+  const names: string[] = [];
+  for (const key of Object.keys(gistFiles)) {
+    if (!key.startsWith(chunkPrefix)) continue;
+    if (!key.endsWith('.json')) continue;
+    if (!key.includes(bookId)) continue;
+    names.push(key);
+  }
+  return names;
+}
+
+/** chunks=0 声明下的 book 条目失败原因:优先单文件,否则汇报布局不一致 */
+function describeBookSingleFileFailure(
+  bookId: string,
+  prefix: string,
+  chunkPrefix: string,
+  gistFiles: Record<string, GistFileLike>,
+): string {
+  const singleName = `${prefix}${bookId}.json`;
+  if (gistFiles[singleName]) return describeSingleFileFailure(singleName, gistFiles);
+
+  const actualChunks = collectBookChunkFilenames(chunkPrefix, bookId, gistFiles);
+  if (actualChunks.length > 0) {
+    return `manifest 声明为单文件,但实际存在 ${actualChunks.length} 个分块文件,布局不一致`;
+  }
+  return `${singleName} 缺失,也没有找到对应分块`;
+}
+
+/** 按 chunk 索引扫描分块分布(三种分隔符都查),返回每块的存在/截断状态 */
+function scanChunkIndices(
+  bookId: string,
+  chunkPrefix: string,
+  chunks: number,
+  gistFiles: Record<string, GistFileLike>,
+): { missing: number[]; truncated: number[] } {
+  const missing: number[] = [];
+  const truncated: number[] = [];
+  for (let i = 0; i < chunks; i++) {
+    const file = findChunkFileInGist(chunkPrefix, bookId, i, gistFiles);
+    if (!file) {
+      missing.push(i);
+      continue;
+    }
+    if (file.truncated && !file.raw_url) truncated.push(i);
+  }
+  return { missing, truncated };
+}
+
+function findChunkFileInGist(
+  chunkPrefix: string,
+  bookId: string,
+  index: number,
+  gistFiles: Record<string, GistFileLike>,
+): GistFileLike | null {
+  for (const sep of ['_', '#', '-']) {
+    const name = `${chunkPrefix}${bookId}${sep}${index}.json`;
+    const file = gistFiles[name];
+    if (file) return file;
+  }
+  return null;
+}
+
+/** chunks>0 声明下的 book 条目失败原因:按 missing / truncated 优先级报一条最相关的 */
+function describeBookChunkedFailure(
+  bookId: string,
+  prefix: string,
+  chunkPrefix: string,
+  chunks: number,
+  gistFiles: Record<string, GistFileLike>,
+): string {
+  const singleName = `${prefix}${bookId}.json`;
+  const { missing, truncated } = scanChunkIndices(bookId, chunkPrefix, chunks, gistFiles);
+
+  if (missing.length === chunks) {
+    if (gistFiles[singleName]) {
+      return `manifest 声明 ${chunks} 块但实际为单文件布局,且单文件也读取失败`;
+    }
+    return `manifest 声明 ${chunks} 块分块文件全部缺失`;
+  }
+  if (missing.length > 0) {
+    const sample = missing.slice(0, 3).join(', ');
+    const suffix = missing.length > 3 ? ` 等 ${missing.length} 块` : '';
+    return `缺失分块索引 ${sample}${suffix}（共 ${chunks} 块）`;
+  }
+  if (truncated.length > 0) {
+    const sample = truncated.slice(0, 3).join(', ');
+    return `分块 ${sample} 被截断且无 raw_url（共 ${chunks} 块）`;
+  }
+  return `分块完整但 raw_url 获取或解析失败（共 ${chunks} 块）`;
+}
+
+/**
+ * 在反序列化失败后,人工推断具体原因用于错误提示。
+ * 只读 gistFiles 的元信息,不做任何网络请求——被调用时 deserializeEntry 已经尝试过完整解析。
+ */
+export function diagnoseRevisionEntryFailure(
+  entryKey: string,
+  manifestEntry: ManifestEntry,
+  gistFiles: Record<string, GistFileLike>,
+): string {
+  if (entryKey === ENTRY_KEYS.SETTINGS) {
+    return describeSingleFileFailure(FILE_NAMES.SETTINGS, gistFiles);
+  }
+  if (entryKey === ENTRY_KEYS.AI_MODELS) {
+    return describeSingleFileFailure(FILE_NAMES.AI_MODELS, gistFiles);
+  }
+  if (entryKey === ENTRY_KEYS.COVER_HISTORY) {
+    return describeSingleFileFailure(FILE_NAMES.COVER_HISTORY, gistFiles);
+  }
+
+  const novelBookId = parseNovelEntryKey(entryKey);
+  const memoryBookId = parseMemoriesEntryKey(entryKey);
+  const bookId = novelBookId ?? memoryBookId;
+  if (!bookId) return '未知条目类型';
+
+  const prefix = novelBookId ? FILE_NAMES.NOVEL_PREFIX : FILE_NAMES.MEMORIES_PREFIX;
+  const chunkPrefix = novelBookId
+    ? FILE_NAMES.NOVEL_CHUNK_PREFIX
+    : FILE_NAMES.MEMORIES_CHUNK_PREFIX;
+  const chunks = manifestEntry.chunks ?? 0;
+
+  return chunks === 0
+    ? describeBookSingleFileFailure(bookId, prefix, chunkPrefix, gistFiles)
+    : describeBookChunkedFailure(bookId, prefix, chunkPrefix, chunks, gistFiles);
 }
 
 /**

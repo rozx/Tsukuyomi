@@ -599,3 +599,67 @@ describe('EmbeddingQueue - chapter kind', () => {
     expect(EmbeddingQueue.getProgress().pending).toBe(0);
   });
 });
+
+describe('EmbeddingQueue - applySyncGate', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    useSettingsStore().settings.enableLocalEmbedding = true;
+    spyOn(settingsLookup, 'readEnableLocalEmbeddingFromDB').mockImplementation(async () =>
+      useSettingsStore().settings.enableLocalEmbedding,
+    );
+    EmbeddingQueue.__resetForTesting();
+    spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
+    spyOn(EmbeddingService, 'init').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    EmbeddingQueue.__resetForTesting();
+    mock.restore();
+  });
+
+  test('gate 挂起时阻止新批次启动，gate 释放后自动恢复', async () => {
+    spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockImplementation(async (id: string) =>
+      makeMemory(id),
+    );
+    spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(undefined);
+    const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockImplementation(
+      async (texts: string[]) => texts.map(() => new Float32Array([0.1])),
+    );
+
+    EmbeddingQueue.applySyncGate(true);
+    for (let i = 0; i < 4; i++) EmbeddingQueue.enqueue(`m${i}`);
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(embedBatchSpy).toHaveBeenCalledTimes(0);
+    expect(EmbeddingQueue.isPaused()).toBe(true);
+
+    EmbeddingQueue.applySyncGate(false);
+    await waitForIdle();
+    expect(embedBatchSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(EmbeddingQueue.isPaused()).toBe(false);
+  });
+
+  test('gate 释放不会解除用户主动点击的 pause', async () => {
+    EmbeddingQueue.pause();
+    expect(EmbeddingQueue.isPaused()).toBe(true);
+
+    // 用户已经手动 pause，gate 再次请求 pause 是 no-op
+    EmbeddingQueue.applySyncGate(true);
+    expect(EmbeddingQueue.isPaused()).toBe(true);
+
+    // gate 释放时不能把用户的 pause 一起清掉
+    EmbeddingQueue.applySyncGate(false);
+    expect(EmbeddingQueue.isPaused()).toBe(true);
+  });
+
+  test('gate 重复释放幂等', () => {
+    EmbeddingQueue.applySyncGate(true);
+    expect(EmbeddingQueue.isPaused()).toBe(true);
+
+    EmbeddingQueue.applySyncGate(false);
+    expect(EmbeddingQueue.isPaused()).toBe(false);
+
+    EmbeddingQueue.applySyncGate(false);
+    expect(EmbeddingQueue.isPaused()).toBe(false);
+  });
+});

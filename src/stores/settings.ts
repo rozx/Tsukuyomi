@@ -227,6 +227,21 @@ async function applyMemoryInjectionSemanticSideEffect(
 }
 
 /**
+ * 根据 isSyncing / isRestoringSyncSnapshot 控制 EmbeddingQueue 的运行状态。
+ * 同步/恢复进行中时挂起队列(嵌入会写 memory / chapter 的 embedding 字段,与同步的增量 apply
+ * 和 IDB 写入竞争),结束后再恢复。走 applySyncGate 而不是 pause/resume 是为了不抹掉用户手动
+ * 点击的 pause 状态。
+ */
+async function applySyncEmbeddingGate(shouldPause: boolean): Promise<void> {
+  try {
+    const { EmbeddingQueue } = await import('src/services/embedding-queue');
+    EmbeddingQueue.applySyncGate(shouldPause);
+  } catch {
+    // 非致命：队列模块加载失败不影响同步状态流转
+  }
+}
+
+/**
  * 从 LocalStorage 加载同步配置（向后兼容）
  */
 function loadSyncFromLocalStorage(): SyncConfig[] {
@@ -1117,6 +1132,7 @@ export const useSettingsStore = defineStore('settings', {
       if (!syncing) {
         this.resetSyncProgress();
       }
+      void applySyncEmbeddingGate(syncing || this.isRestoringSyncSnapshot);
     },
 
     /**
@@ -1125,6 +1141,7 @@ export const useSettingsStore = defineStore('settings', {
      */
     setRestoringSyncSnapshot(restoring: boolean): void {
       this.isRestoringSyncSnapshot = restoring;
+      void applySyncEmbeddingGate(this.isSyncing || restoring);
     },
 
     /**

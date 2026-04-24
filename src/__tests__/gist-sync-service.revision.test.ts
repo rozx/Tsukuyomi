@@ -352,7 +352,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     expect(result.error).toContain('entries');
   });
 
-  it('manifest 声明的条目文件缺失时应跳过缺失条目并继续恢复其他数据', async () => {
+  it('manifest 声明的条目文件缺失时应中止恢复，防止本地被不完整快照覆盖', async () => {
     const service = new GistSyncService();
     const config = makeConfig();
 
@@ -393,6 +393,65 @@ describe('GistSyncService.downloadFromGistRevision', () => {
             content: await gzipJson(appSettings),
             truncated: false,
           },
+          // ai-models.json 与 novel-book-1.json 都缺失，应整体中止恢复
+        },
+      },
+    } as any);
+
+    const result = await service.downloadFromGistRevision(config, 'revision-sha');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('ai-models');
+    expect(result.error).toContain('novel:book-1');
+    expect(result.error).toContain('已中止恢复');
+  });
+
+  it('manifest 声明为单文件但实际是分块布局时应通过扫描兜底恢复', async () => {
+    const service = new GistSyncService();
+    const config = makeConfig();
+
+    const novel = {
+      id: 'book-1',
+      title: 'Chunked Book',
+      author: 'Author',
+      volumes: [],
+      lastEdited: new Date('2026-04-22T10:03:00.000Z'),
+    };
+    const novelContent = await gzipJson(novel);
+    const half = Math.ceil(novelContent.length / 2);
+    const chunk0 = novelContent.slice(0, half);
+    const chunk1 = novelContent.slice(half);
+
+    const manifest = {
+      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      updatedAt: '2026-04-22T10:05:00.000Z',
+      // manifest 声明 chunks 未知(旧 revision),实际有 2 个 chunk 文件
+      entries: {
+        'novel:book-1': {
+          hash: 'hash-book-1',
+          lastEdited: '2026-04-22T10:03:00.000Z',
+        },
+      },
+    };
+
+    spyOn(service as any, 'fetchGistRevisionRaw').mockResolvedValue({
+      data: {
+        files: {
+          'manifest.json': {
+            filename: 'manifest.json',
+            content: JSON.stringify(manifest),
+            truncated: false,
+          },
+          'novel-chunk-book-1_0.json': {
+            filename: 'novel-chunk-book-1_0.json',
+            content: chunk0,
+            truncated: false,
+          },
+          'novel-chunk-book-1_1.json': {
+            filename: 'novel-chunk-book-1_1.json',
+            content: chunk1,
+            truncated: false,
+          },
         },
       },
     } as any);
@@ -400,12 +459,108 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     const result = await service.downloadFromGistRevision(config, 'revision-sha');
 
     expect(result.success).toBe(true);
-    expect(result.data?.appSettings).toMatchObject({
-      scraperConcurrencyLimit: 5,
-      taskDefaultModels: { translation: 'model-1' },
-    });
-    expect(result.data?.aiModels).toEqual([]);
-    expect(result.data?.novels).toEqual([]);
+    expect(result.data?.novels).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'book-1', title: 'Chunked Book' })]),
+    );
+  });
+
+  it('旧版 `#` 分隔符的分块文件也能在恢复时拼回来', async () => {
+    const service = new GistSyncService();
+    const config = makeConfig();
+
+    const novel = {
+      id: 'book-1',
+      title: 'Legacy Chunked',
+      author: 'Author',
+      volumes: [],
+      lastEdited: new Date('2026-04-22T10:03:00.000Z'),
+    };
+    const novelContent = await gzipJson(novel);
+    const half = Math.ceil(novelContent.length / 2);
+
+    const manifest = {
+      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      updatedAt: '2026-04-22T10:05:00.000Z',
+      entries: {
+        'novel:book-1': {
+          hash: 'hash-book-1',
+          lastEdited: '2026-04-22T10:03:00.000Z',
+          chunks: 2,
+        },
+      },
+    };
+
+    spyOn(service as any, 'fetchGistRevisionRaw').mockResolvedValue({
+      data: {
+        files: {
+          'manifest.json': {
+            filename: 'manifest.json',
+            content: JSON.stringify(manifest),
+            truncated: false,
+          },
+          // 老版本用 `#` 分隔 chunk 索引
+          'novel-chunk-book-1#0.json': {
+            filename: 'novel-chunk-book-1#0.json',
+            content: novelContent.slice(0, half),
+            truncated: false,
+          },
+          'novel-chunk-book-1#1.json': {
+            filename: 'novel-chunk-book-1#1.json',
+            content: novelContent.slice(half),
+            truncated: false,
+          },
+        },
+      },
+    } as any);
+
+    const result = await service.downloadFromGistRevision(config, 'revision-sha');
+
+    expect(result.success).toBe(true);
+    expect(result.data?.novels).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'book-1', title: 'Legacy Chunked' })]),
+    );
+  });
+
+  it('小说分块缺失时错误信息应指出缺失的块索引', async () => {
+    const service = new GistSyncService();
+    const config = makeConfig();
+
+    const manifest = {
+      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      updatedAt: '2026-04-22T10:05:00.000Z',
+      entries: {
+        'novel:book-1': {
+          hash: 'hash-book-1',
+          lastEdited: '2026-04-22T10:03:00.000Z',
+          chunks: 3,
+        },
+      },
+    };
+
+    spyOn(service as any, 'fetchGistRevisionRaw').mockResolvedValue({
+      data: {
+        files: {
+          'manifest.json': {
+            filename: 'manifest.json',
+            content: JSON.stringify(manifest),
+            truncated: false,
+          },
+          'novel-chunk-book-1_0.json': {
+            filename: 'novel-chunk-book-1_0.json',
+            content: 'partial',
+            truncated: false,
+          },
+          // chunk 1, 2 缺失
+        },
+      },
+    } as any);
+
+    const result = await service.downloadFromGistRevision(config, 'revision-sha');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('novel:book-1');
+    expect(result.error).toContain('缺失分块索引');
+    expect(result.error).toMatch(/1.*2|2.*1/);
   });
 
   it('manifest 条目文件损坏时应返回错误', async () => {

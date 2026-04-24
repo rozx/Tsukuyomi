@@ -16,6 +16,7 @@ import {
   uploadIncremental,
   conditionalGetGist,
   deserializeEntry,
+  diagnoseRevisionEntryFailure,
   readFile,
   type IncrementalDownloadResult,
   type IncrementalUploadResult,
@@ -1343,10 +1344,34 @@ export class GistSyncService {
     };
 
     const entries = Object.entries(manifest.entries).sort(([a], [b]) => a.localeCompare(b));
+    const failures: Array<{ entryKey: string; reason: string }> = [];
     for (const [entryKey, manifestEntry] of entries) {
       const entry = await deserializeEntry(entryKey, manifestEntry, gistFiles, fetchRaw);
-      if (!entry) continue;
+      if (!entry) {
+        failures.push({
+          entryKey,
+          reason: diagnoseRevisionEntryFailure(entryKey, manifestEntry, gistFiles),
+        });
+        continue;
+      }
       this.assignRevisionEntry(result, entry);
+    }
+
+    // 任何 entry 反序列化失败(chunk 截断且 raw_url 拿不到、内容缺失等)都必须抛错：
+    // 上游 overwriteFromSnapshot 会先清空本地再写入快照，若静默跳过会导致本地数据被
+    // 不完整快照覆盖——恰好就是用户看到的"本地书被删但 Gist 该版本仍然存在"。
+    if (failures.length > 0) {
+      console.error(
+        '[GistSyncService] 恢复修订版本失败，条目明细：',
+        failures.map((f) => `${f.entryKey}: ${f.reason}`).join('\n'),
+      );
+      const shown = failures.slice(0, 3);
+      const detail = shown.map((f) => `${f.entryKey}（${f.reason}）`).join('；');
+      const suffix = failures.length > 3 ? ` 等 ${failures.length} 项` : '';
+      throw new Error(
+        `该修订版本中 ${failures.length} 个条目无法读取：${detail}${suffix}；` +
+          `已中止恢复以保护本地数据。详情见控制台。`,
+      );
     }
 
     return result;
