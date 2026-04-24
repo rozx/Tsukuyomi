@@ -10,7 +10,7 @@
  * 外壳仅负责：固定宽度、拖拽 resize 手柄，以及激活面板的切换。业务 /
  * 视图状态完全下沉到两个独立面板文件。
  */
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
@@ -33,6 +33,20 @@ const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslation
 const showBatchEmbeddings = computed(() => Boolean(route.params.id));
 
 const { panelContainerRef, resizeHandleRef, isResizing, handleResizeStart } = usePanelResize();
+
+// ParagraphCard 的 "复制到助手 / 解释选中" 通过 ui.assistantInputMessage 下发。
+// AppChatPanelDesktop 仅在 activeRightTab === 'chat' 且面板展开时挂载，它内部的
+// useRightPanel watcher 拿不到刚才的消息。这里在一直挂载的 dispatcher 上拦一层：
+// 只负责切换到 chat tab + 打开面板，消息的填充与清理留给 useRightPanel 自己完成
+// （watcher 已配置 immediate，面板挂起后会立即接管当前值）。
+watch(
+  () => ui.assistantInputMessage,
+  (message) => {
+    if (message == null) return;
+    if (ui.activeRightTab !== 'chat') ui.setActiveRightTab('chat');
+    if (!ui.rightPanelOpen) ui.openRightPanel();
+  },
+);
 
 const expandToTab = (tab: 'chat' | 'progress') => {
   ui.setActiveRightTab(tab);

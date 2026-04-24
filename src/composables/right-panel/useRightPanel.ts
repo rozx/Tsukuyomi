@@ -460,7 +460,10 @@ export function useRightPanel() {
     { flush: 'post' },
   );
 
-  // 监听助手输入消息状态，自动填充输入框
+  // 监听助手输入消息状态，自动填充输入框。
+  // immediate: 桌面端 AppChatPanelDesktop 只在 activeRightTab === 'chat' 且面板展开时挂载，
+  // 用户在其它 tab 触发 "复制到助手" 时由 dispatcher 先切 tab，本组件随后挂载并立即消费当时已存在的
+  // assistantInputMessage；否则首次挂载时 watcher 非 immediate，会漏掉那条消息。
   watch(
     () => ui.assistantInputMessage,
     (message) => {
@@ -484,6 +487,7 @@ export function useRightPanel() {
         ui.setAssistantInputMessage(null);
       }
     },
+    { immediate: true },
   );
 
   // 操作详情上下文
