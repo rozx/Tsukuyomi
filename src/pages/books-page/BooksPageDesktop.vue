@@ -187,7 +187,7 @@ const librarySummary = computed(() => {
                   <Button
                     :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
                     :class="[
-                      'p-button-text p-button-sm flex-1 !text-xs !py-2 !px-2',
+                      'p-button-text p-button-sm flex-1 !text-xs !py-1 !px-1',
                       book.starred ? '!text-warning' : '',
                     ]"
                     :title="book.starred ? '取消收藏' : '收藏'"
@@ -195,13 +195,13 @@ const librarySummary = computed(() => {
                   />
                   <Button
                     icon="pi pi-pencil"
-                    class="p-button-text p-button-sm flex-1 !text-xs !py-2 !px-2"
+                    class="p-button-text p-button-sm flex-1 !text-xs !py-1 !px-1"
                     title="编辑"
                     @click.stop="ctx.editBook(book)"
                   />
                   <Button
                     icon="pi pi-trash"
-                    class="p-button-text p-button-sm p-button-danger flex-1 !text-xs !py-2 !px-2"
+                    class="p-button-text p-button-sm p-button-danger flex-1 !text-xs !py-1 !px-1"
                     title="删除"
                     @click.stop="ctx.deleteBook(book)"
                   />
@@ -284,8 +284,8 @@ const librarySummary = computed(() => {
 
 .library-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.75rem;
   align-items: stretch;
 }
 
@@ -294,12 +294,12 @@ const librarySummary = computed(() => {
   flex-direction: column;
   min-height: 100%;
   overflow: hidden;
-  border-radius: 22px;
+  border-radius: 16px;
   border: 1px solid var(--white-opacity-8);
   background:
     linear-gradient(180deg, var(--white-opacity-4), rgba(255, 255, 255, 0.015)),
     rgba(10, 14, 20, 0.82); /* token: near night-500 @ 82% */
-  box-shadow: 0 18px 38px rgba(2, 6, 16, 0.16);
+  box-shadow: 0 12px 28px rgba(2, 6, 16, 0.16);
   transition:
     transform 180ms cubic-bezier(0.4, 0, 0.2, 1),
     border-color 180ms cubic-bezier(0.4, 0, 0.2, 1),
@@ -309,7 +309,7 @@ const librarySummary = computed(() => {
 .library-book-card:hover {
   transform: translateY(-2px);
   border-color: var(--tsukuyomi-200-opacity-24); /* token: tsukuyomi-200 @ 24% */
-  box-shadow: 0 26px 46px rgba(2, 6, 16, 0.24);
+  box-shadow: 0 18px 36px rgba(2, 6, 16, 0.24);
 }
 
 
@@ -341,19 +341,19 @@ const librarySummary = computed(() => {
 
 .library-book-flag {
   position: absolute;
-  top: 0.9rem;
-  left: 0.9rem;
+  top: 0.6rem;
+  left: 0.6rem;
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.55rem;
+  gap: 0.3rem;
+  padding: 0.22rem 0.45rem;
   border-radius: 999px;
   background: rgba(14, 18, 24, 0.74); /* token: near night-300 @ 74% */
   border: 1px solid var(--white-opacity-8);
   color: rgba(255, 230, 138, 0.98); /* non-palette warm gold */
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -361,21 +361,21 @@ const librarySummary = computed(() => {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 0.8rem;
-  padding: 1rem 1rem 1.05rem;
+  gap: 0.55rem;
+  padding: 0.7rem 0.75rem 0.75rem;
 }
 
 .library-book-heading-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem;
 }
 
 .library-book-kicker,
 .library-book-updated {
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   /* token: moon-50 @ 48% */
   color: var(--moon-50-opacity-48);
@@ -389,9 +389,9 @@ const librarySummary = computed(() => {
   margin: 0;
   cursor: pointer;
   font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 1.03rem;
+  font-size: 0.9rem;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.3;
   /* token: moon-50 @ 96% */
   color: var(--moon-50-opacity-96);
   transition: color 180ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -412,12 +412,13 @@ const librarySummary = computed(() => {
 
 .library-book-stats {
   display: grid;
-  gap: 0.35rem;
-  padding: 0.85rem 0;
+  gap: 0.22rem;
+  margin-top: auto;
+  padding: 0.55rem 0;
   border-top: 1px solid var(--white-opacity-8);
   border-bottom: 1px solid var(--white-opacity-8);
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   /* token: moon-50 @ 48% */
   color: var(--moon-50-opacity-48);
 }
@@ -426,11 +427,11 @@ const librarySummary = computed(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.65rem;
+  gap: 0.5rem;
 }
 
 .library-book-stat-row strong {
-  font-size: 0.74rem;
+  font-size: 0.66rem;
   font-weight: 600;
   /* token: moon-50 @ 82% */
   color: var(--moon-50-opacity-82);
@@ -438,7 +439,7 @@ const librarySummary = computed(() => {
 
 .library-book-actions {
   display: flex;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 
 .library-data-view {

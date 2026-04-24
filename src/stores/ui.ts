@@ -27,6 +27,7 @@ function loadUiStateFromStorage(): {
   rightPanelOpen: boolean;
   rightPanelWidth: number;
   bookWorkspaceMode: BookWorkspaceMode;
+  bookSettingsMenuExpanded: boolean;
 } {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -37,6 +38,7 @@ function loadUiStateFromStorage(): {
         rightPanelOpen: state.rightPanelOpen ?? false,
         rightPanelWidth: state.rightPanelWidth ?? 384, // 默认 384px (w-96)
         bookWorkspaceMode: state.bookWorkspaceMode ?? DEFAULT_BOOK_WORKSPACE_MODE,
+        bookSettingsMenuExpanded: state.bookSettingsMenuExpanded ?? true,
       };
     }
   } catch (error) {
@@ -47,6 +49,7 @@ function loadUiStateFromStorage(): {
     rightPanelOpen: false,
     rightPanelWidth: 384, // 默认 384px (w-96)
     bookWorkspaceMode: DEFAULT_BOOK_WORKSPACE_MODE,
+    bookSettingsMenuExpanded: true,
   };
 }
 
@@ -58,6 +61,7 @@ function saveUiStateToStorage(state: {
   rightPanelOpen: boolean;
   rightPanelWidth: number;
   bookWorkspaceMode: BookWorkspaceMode;
+  bookSettingsMenuExpanded: boolean;
 }): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -73,6 +77,7 @@ export const useUiStore = defineStore('ui', {
     rightPanelWidth: number;
     deviceType: DeviceType;
     bookWorkspaceMode: BookWorkspaceMode;
+    bookSettingsMenuExpanded: boolean;
     isLoaded: boolean;
     isInitialDataLoading: boolean;
     assistantInputMessage: string | null; // 要复制到助手输入框的消息
@@ -83,6 +88,7 @@ export const useUiStore = defineStore('ui', {
     rightPanelWidth: 384, // 默认 384px (w-96)
     deviceType: detectInitialDeviceType(),
     bookWorkspaceMode: DEFAULT_BOOK_WORKSPACE_MODE,
+    bookSettingsMenuExpanded: true,
     isLoaded: false,
     isInitialDataLoading: false,
     assistantInputMessage: null,
@@ -108,6 +114,7 @@ export const useUiStore = defineStore('ui', {
       this.rightPanelOpen = phoneOverride ? false : state.rightPanelOpen;
       this.rightPanelWidth = state.rightPanelWidth;
       this.bookWorkspaceMode = state.bookWorkspaceMode;
+      this.bookSettingsMenuExpanded = state.bookSettingsMenuExpanded;
       this.isLoaded = true;
     },
 
@@ -147,12 +154,17 @@ export const useUiStore = defineStore('ui', {
       this.bookWorkspaceMode = mode;
       this.saveState();
     },
+    toggleBookSettingsMenu() {
+      this.bookSettingsMenuExpanded = !this.bookSettingsMenuExpanded;
+      this.saveState();
+    },
     saveState() {
       saveUiStateToStorage({
         sideMenuOpen: this.sideMenuOpen,
         rightPanelOpen: this.rightPanelOpen,
         rightPanelWidth: this.rightPanelWidth,
         bookWorkspaceMode: this.bookWorkspaceMode,
+        bookSettingsMenuExpanded: this.bookSettingsMenuExpanded,
       });
     },
     setInitialDataLoading(loading: boolean) {

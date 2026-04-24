@@ -3,16 +3,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import { useUiStore } from 'src/stores/ui';
 import { useSystemBar } from 'src/composables/layout/useSystemBar';
-import { useAIProcessingStore } from 'src/stores/ai-processing';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
-import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 
 const ui = useUiStore();
-const aiProcessing = useAIProcessingStore();
 const isPhone = computed(() => ui.deviceType === 'phone');
 
 const {
@@ -30,32 +27,17 @@ const {
   toggleSync,
 } = useSystemBar();
 
-const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslationTaskCount);
-
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
 const aiTaskLabel = computed(() =>
   latestThinkingStatus.value === 'processing' ? '处理中' : '思考中',
 );
 
-const batchEmbeddingsPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
-
-const toggleBatchEmbeddingsPanel = (event: Event) => {
-  batchEmbeddingsPanelRef.value?.toggle(event);
-};
-
 const handleToggleSideMenu = () => {
   if (isPhone.value && ui.rightPanelOpen) {
     ui.closeRightPanel();
   }
   ui.toggleSideMenu();
-};
-
-const handleToggleRightPanel = () => {
-  if (isPhone.value && ui.sideMenuOpen) {
-    ui.closeSideMenu();
-  }
-  ui.toggleRightPanel();
 };
 
 // 桌面端独有：下次同步的紧凑次级信息（仅在已同步态下展示）
@@ -184,17 +166,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
         <span v-if="!isPhone" class="dsk-chip-label">同步</span>
       </button>
 
-      <!-- 向量索引（仅在书籍详情页显示） -->
-      <button
-        v-if="$route.params.id"
-        type="button"
-        class="dsk-chip"
-        aria-label="向量索引"
-        @click="toggleBatchEmbeddingsPanel"
-      >
-        <i class="pi pi-bolt" aria-hidden="true" />
-      </button>
-
       <div class="dsk-sep" />
 
       <!-- 消息历史 -->
@@ -210,29 +181,11 @@ const syncSecondaryLabel = computed<string | null>(() => {
         </span>
       </button>
 
-      <!-- 右侧面板切换 -->
-      <button
-        type="button"
-        class="dsk-chip"
-        :class="{ active: ui.rightPanelOpen }"
-        aria-label="切换右侧面板"
-        @click="handleToggleRightPanel"
-      >
-        <i
-          class="pi"
-          :class="ui.rightPanelOpen ? 'pi-times' : 'pi-objects-column'"
-          aria-hidden="true"
-        />
-        <span v-if="activeTranslationTaskCount > 0" class="dsk-badge">
-          {{ activeTranslationTaskCount > 99 ? '99+' : activeTranslationTaskCount }}
-        </span>
-      </button>
     </div>
 
     <ToastHistoryDialog ref="toastHistoryRef" />
     <SyncStatusPanel ref="syncPanelRef" />
     <ThinkingProcessPanel ref="thinkingPanelRef" />
-    <BatchEmbeddingsPanel ref="batchEmbeddingsPanelRef" />
     <Button v-show="false" />
   </header>
 </template>

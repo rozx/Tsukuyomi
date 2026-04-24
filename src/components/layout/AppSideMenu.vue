@@ -4,10 +4,25 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel } from 'src/models/novel';
+import { useMainNavActive, type MainNavTab } from 'src/composables/useMainNavActive';
+
+interface Props {
+  collapsed?: boolean;
+}
+
+withDefaults(defineProps<Props>(), { collapsed: false });
 
 const router = useRouter();
 const booksStore = useBooksStore();
 const menuContainerRef = ref<HTMLElement | null>(null);
+const activeTab = useMainNavActive();
+
+type NavEntry = {
+  label: string;
+  icon: string; // 完整类名，如 'pi pi-home'
+  path: string;
+  tab: MainNavTab;
+};
 
 // 获取收藏的小说
 const starredNovels = computed(() => {
@@ -73,40 +88,73 @@ onUnmounted(() => {
   }
 });
 
-const topItems: MenuItem[] = [
-  {
-    label: '首页',
-    icon: 'pi pi-home',
-    command: () => void router.push('/'),
-  },
-  {
-    label: '书籍列表',
-    icon: 'pi pi-book',
-    command: () => void router.push('/books'),
-  },
-  {
-    label: 'AI列表',
-    icon: 'pi pi-sparkles',
-    command: () => void router.push('/ai'),
-  },
+const topNav: NavEntry[] = [
+  { label: '首页', icon: 'pi pi-home', path: '/', tab: 'home' },
+  { label: '书籍列表', icon: 'pi pi-book', path: '/books', tab: 'library' },
+  { label: 'AI列表', icon: 'pi pi-sparkles', path: '/ai', tab: 'ai' },
 ];
 
-const bottomItems: MenuItem[] = [
-  {
-    label: '设置',
-    icon: 'pi pi-cog',
-    command: () => void router.push('/settings'),
-  },
-  {
-    label: '帮助',
-    icon: 'pi pi-question-circle',
-    command: () => void router.push('/help'),
-  },
+const bottomNav: NavEntry[] = [
+  { label: '设置', icon: 'pi pi-cog', path: '/settings', tab: 'settings' },
+  { label: '帮助', icon: 'pi pi-question-circle', path: '/help', tab: 'help' },
 ];
+
+const navigate = (path: string) => {
+  void router.push(path);
+};
+
+const toMenuItems = (entries: NavEntry[]): MenuItem[] =>
+  entries.map((entry) => ({
+    label: entry.label,
+    icon: entry.icon,
+    command: () => navigate(entry.path),
+  }));
+
+const topItems = computed<MenuItem[]>(() => toMenuItems(topNav));
+const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav));
 </script>
 
 <template>
-  <aside ref="menuContainerRef" class="side-nav">
+  <aside
+    v-if="collapsed"
+    ref="menuContainerRef"
+    class="side-rail"
+    aria-label="主导航"
+  >
+    <div class="side-rail-items">
+      <button
+        v-for="item in topNav"
+        :key="item.tab"
+        type="button"
+        class="side-rail-item"
+        :class="{ active: activeTab === item.tab }"
+        :aria-label="item.label"
+        :title="item.label"
+        @click="navigate(item.path)"
+      >
+        <i :class="item.icon" aria-hidden="true" />
+      </button>
+    </div>
+
+    <div class="side-rail-spacer" />
+
+    <div class="side-rail-items">
+      <button
+        v-for="item in bottomNav"
+        :key="item.tab"
+        type="button"
+        class="side-rail-item"
+        :class="{ active: activeTab === item.tab }"
+        :aria-label="item.label"
+        :title="item.label"
+        @click="navigate(item.path)"
+      >
+        <i :class="item.icon" aria-hidden="true" />
+      </button>
+    </div>
+  </aside>
+
+  <aside v-else ref="menuContainerRef" class="side-nav">
     <div class="side-nav-gradient" />
 
     <div class="side-nav-brand" />
@@ -154,7 +202,7 @@ const bottomItems: MenuItem[] = [
 <style scoped>
 .side-nav {
   width: 100%;
-  max-width: 16.5rem;
+  max-width: 14rem;
   height: 100%;
   flex-shrink: 0;
   border-right: 1px solid var(--white-opacity-4);
@@ -425,5 +473,69 @@ const bottomItems: MenuItem[] = [
 
 :deep(.p-menu .p-menuitem) {
   transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 折叠态：对齐 TabletNavRail 的纯图标竖排 */
+.side-rail {
+  width: 100%;
+  height: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18px 0 16px;
+  gap: 6px;
+  background: var(--black-opacity-20);
+  border-right: 1px solid var(--white-opacity-4);
+  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+}
+
+.side-rail-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.side-rail-item {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(174, 183, 198, 0.75);
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
+}
+
+.side-rail-item i {
+  font-size: 16px;
+  line-height: 1;
+  transition:
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    text-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.side-rail-item:hover {
+  background: var(--white-opacity-4);
+  color: rgba(247, 244, 236, 1);
+}
+
+.side-rail-item.active {
+  background: rgba(109, 136, 168, 0.18);
+  border-color: rgba(109, 136, 168, 0.3);
+  color: #a3b7cf;
+}
+
+.side-rail-item.active i {
+  text-shadow: 0 0 12px rgba(109, 136, 168, 0.55);
+}
+
+.side-rail-spacer {
+  flex: 1;
 }
 </style>

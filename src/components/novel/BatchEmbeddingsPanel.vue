@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import Popover from 'primevue/popover';
+import Drawer from 'primevue/drawer';
 import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
 import { useRouter } from 'vue-router';
@@ -39,7 +39,7 @@ const isEmbeddingEnabled = computed(() =>
 );
 const isMobile = computed(() => isMobileDevice());
 
-const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
+const drawerVisible = ref(false);
 
 // 进度状态
 const progress = ref<EmbeddingQueueProgress>(EmbeddingQueue.getProgress());
@@ -59,64 +59,80 @@ const currentBook = computed(() =>
   bookId.value ? booksStore.getBookById(bookId.value) : undefined,
 );
 
-async function refreshStats(): Promise<void> {
-  const id = bookId.value;
-  if (!id) {
-    chapterStats.value = { embedded: 0, total: 0 };
-    memoryStats.value = { embedded: 0, total: 0 };
-    staleCounts.value = { chapter: 0, memory: 0 };
-    return;
-  }
-
-  // 章节：从 books store 拿总数，从 DB chunk 判定当前版本匹配 / stale / 未嵌入
+function countBookChapters(id: string): number {
   const book = booksStore.getBookById(id);
-  let chapTotal = 0;
+  let total = 0;
   for (const v of book?.volumes ?? []) {
-    chapTotal += v.chapters?.length ?? 0;
+    total += v.chapters?.length ?? 0;
   }
-  let chapterStale = 0;
+  return total;
+}
+
+type StatBreakdown = { embedded: number; total: number; stale: number };
+
+async function loadChapterBreakdown(id: string, total: number): Promise<StatBreakdown> {
   try {
     const chunks = await ChapterEmbeddingService.getChunksForBook(id);
     // 按 chapterId 聚合:当前版本 chunk 才算 embedded;完全由 stale chunk 组成的章节计入 stale
     const statusByChapter = new Map<string, 'current' | 'stale'>();
     for (const c of chunks) {
       // 走单一事实源 isChapterChunkStale(避免散落的版本号比对漂移)
-      if (!isChapterChunkStale(c)) {
-        statusByChapter.set(c.chapterId, 'current');
-      } else if (!statusByChapter.has(c.chapterId)) {
-        statusByChapter.set(c.chapterId, 'stale');
-      }
+      const current = !isChapterChunkStale(c);
+      if (current) statusByChapter.set(c.chapterId, 'current');
+      else if (!statusByChapter.has(c.chapterId)) statusByChapter.set(c.chapterId, 'stale');
     }
     let embedded = 0;
+    let stale = 0;
     for (const status of statusByChapter.values()) {
       if (status === 'current') embedded += 1;
-      else chapterStale += 1;
+      else stale += 1;
     }
-    chapterStats.value = { embedded, total: chapTotal };
+    return { embedded, total, stale };
   } catch (error) {
     console.warn('[BatchEmbeddingsPanel] refresh chapter stats 失败:', error);
-    chapterStats.value = { embedded: 0, total: chapTotal };
+    return { embedded: 0, total, stale: 0 };
   }
+}
 
-  // 记忆：查询该书所有 memory，按 embedding + 模型版本判定
-  let memoryStale = 0;
+async function loadMemoryBreakdown(id: string): Promise<StatBreakdown> {
   try {
     const memories = await MemoryService.getAllBookMemories(id);
     let embedded = 0;
+    let stale = 0;
     for (const m of memories) {
       const hasVec = !!(m.embedding && m.embedding.length > 0);
       if (!hasVec) continue;
       // 有向量但 stale → 计 stale;有向量且非 stale → 计 embedded
-      if (isMemoryEmbeddingStale(m)) memoryStale += 1;
+      if (isMemoryEmbeddingStale(m)) stale += 1;
       else embedded += 1;
     }
-    memoryStats.value = { embedded, total: memories.length };
+    return { embedded, total: memories.length, stale };
   } catch (error) {
     console.warn('[BatchEmbeddingsPanel] refresh memory stats 失败:', error);
-    memoryStats.value = { embedded: 0, total: 0 };
+    return { embedded: 0, total: 0, stale: 0 };
   }
+}
 
-  staleCounts.value = { chapter: chapterStale, memory: memoryStale };
+function resetStats(): void {
+  chapterStats.value = { embedded: 0, total: 0 };
+  memoryStats.value = { embedded: 0, total: 0 };
+  staleCounts.value = { chapter: 0, memory: 0 };
+}
+
+async function refreshStats(): Promise<void> {
+  const id = bookId.value;
+  if (!id) {
+    resetStats();
+    return;
+  }
+  const chapTotal = countBookChapters(id);
+  const [chapter, memory] = await Promise.all([
+    loadChapterBreakdown(id, chapTotal),
+    loadMemoryBreakdown(id),
+  ]);
+  chapterStats.value = { embedded: chapter.embedded, total: chapter.total };
+  memoryStats.value = { embedded: memory.embedded, total: memory.total };
+  staleCounts.value = { chapter: chapter.stale, memory: memory.stale };
 }
 
 // 订阅 EmbeddingQueue 进度事件
@@ -243,10 +259,16 @@ const statusLabel = computed(() => {
   }
 });
 
-// 操作
-const toggle = (event: Event) => {
-  void refreshStats();
-  popoverRef.value?.toggle(event);
+// 操作 —— 保留 (event, target) 签名供调用方沿用原先的 popover 触发模式；
+// 抽屉本身不需要锚点，参数忽略即可。
+// refreshStats 会击 IndexedDB + 迭代 chapters/memories，关闭抽屉时不需要做这份工作。
+const toggle = (_event?: Event, _target?: Element) => {
+  if (!drawerVisible.value) void refreshStats();
+  drawerVisible.value = !drawerVisible.value;
+};
+
+const close = () => {
+  drawerVisible.value = false;
 };
 
 const backfillChapters = () => {
@@ -300,12 +322,12 @@ const rebuildStale = () => {
 // 测试查询对话框
 const testDialogVisible = ref(false);
 const openTestDialog = () => {
-  popoverRef.value?.hide();
+  close();
   testDialogVisible.value = true;
 };
 
 const openSettings = () => {
-  popoverRef.value?.hide();
+  close();
   void router.push('/settings');
 };
 
@@ -313,17 +335,30 @@ defineExpose({ toggle });
 </script>
 
 <template>
-  <Popover ref="popoverRef" class="batch-embeddings-popover">
-    <div class="flex flex-col gap-4 w-80 p-1">
-      <div class="flex items-center justify-between border-b border-white/10 pb-2">
-        <h3 class="font-semibold text-moon-100">本地向量索引</h3>
-        <Button
-          icon="pi pi-times"
-          class="p-button-text p-button-sm p-button-rounded text-moon-50"
-          @click="() => popoverRef?.hide()"
-        />
+  <Drawer
+    v-model:visible="drawerVisible"
+    position="right"
+    class="batch-embeddings-drawer"
+    :show-close-icon="false"
+  >
+    <template #header>
+      <div class="bed-appbar">
+        <div class="bed-appbar-icon"><i class="pi pi-bolt" aria-hidden="true" /></div>
+        <div class="bed-appbar-text">
+          <div class="bed-appbar-title">本地向量索引</div>
+          <div class="bed-appbar-sub">BYOK · IndexedDB 本地保存</div>
+        </div>
+        <button
+          type="button"
+          class="bed-appbar-close"
+          aria-label="关闭"
+          @click="close"
+        >
+          <i class="pi pi-times" aria-hidden="true" />
+        </button>
       </div>
-
+    </template>
+    <div class="flex flex-col gap-4 p-1">
       <div v-if="!currentBook" class="text-sm text-center text-moon-50 py-4">
         请在小说详情页使用此功能
       </div>
@@ -542,7 +577,7 @@ defineExpose({ toggle });
         </div>
       </template>
     </div>
-  </Popover>
+  </Drawer>
 
   <BatchEmbeddingsTestQueryDialog v-model:visible="testDialogVisible" :book-id="bookId" />
 </template>
@@ -553,5 +588,91 @@ defineExpose({ toggle });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 抽屉宽度限制：PrimeVue 默认 100%，桌面给 400px，手机 min(90vw, 400px) */
+:deep(.batch-embeddings-drawer.p-drawer) {
+  width: min(400px, 92vw);
+}
+
+/* 紧凑 appbar —— 与 AppChatPanelDesktop / AppProgressPanelDesktop 的 appbar 同构 */
+:deep(.batch-embeddings-drawer .p-drawer-header) {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--white-opacity-6);
+}
+
+.bed-appbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.bed-appbar-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(109, 136, 168, 0.15);
+  border: 1px solid rgba(109, 136, 168, 0.3);
+  color: #a3b7cf;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bed-appbar-icon i {
+  font-size: 13px;
+}
+
+.bed-appbar-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.bed-appbar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--moon-opacity-100);
+  line-height: 1.2;
+}
+
+.bed-appbar-sub {
+  font-size: 10px;
+  color: var(--moon-opacity-50);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bed-appbar-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--white-opacity-10);
+  background: var(--white-opacity-4);
+  color: rgba(192, 198, 209, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.bed-appbar-close i {
+  font-size: 11px;
+}
+
+.bed-appbar-close:hover,
+.bed-appbar-close:active {
+  background: var(--white-opacity-8);
+  color: #e9edf5;
+}
+
+/* 抽屉 body padding 收紧，和 chat/progress panel 对齐 */
+:deep(.batch-embeddings-drawer .p-drawer-content) {
+  padding: 14px 16px;
 }
 </style>
