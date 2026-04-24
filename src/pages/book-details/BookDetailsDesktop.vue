@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import VolumesList from 'src/components/novel/VolumesList.vue';
@@ -13,8 +13,34 @@ import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
+import { useUiStore } from 'src/stores/ui';
 
 const ctx = injectBookDetailsPage();
+const ui = useUiStore();
+
+const settingsShellRef = ref<HTMLElement | null>(null);
+
+function onSettingsBeforeLeave() {
+  const shell = settingsShellRef.value;
+  if (!shell) return;
+  shell.style.height = `${shell.offsetHeight}px`;
+}
+
+function onSettingsEnter(el: Element) {
+  const shell = settingsShellRef.value;
+  if (!shell) return;
+  const target = (el as HTMLElement).scrollHeight;
+  requestAnimationFrame(() => {
+    if (!settingsShellRef.value) return;
+    settingsShellRef.value.style.height = `${target}px`;
+  });
+}
+
+function onSettingsAfterEnter() {
+  const shell = settingsShellRef.value;
+  if (!shell) return;
+  shell.style.height = '';
+}
 
 const settingContextMeta = computed(() => {
   switch (ctx.selectedSettingMenu.value) {
@@ -93,42 +119,108 @@ const settingContextMeta = computed(() => {
 
       <!-- 设置快捷入口（手机端在设置页已有二级导航） -->
       <section v-if="!ctx.isPhone.value" class="sidebar-section settings-menu-wrapper">
-        <span class="sidebar-eyebrow">SETTINGS</span>
-        <div class="settings-menu-items">
-          <button
-            class="settings-menu-item"
-            :class="{
-              'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'terms',
-            }"
-            @click="ctx.navigateToTermsSetting"
-          >
-            <i class="pi pi-bookmark settings-menu-icon" />
-            <span class="settings-menu-label">术语设置</span>
-          </button>
-          <button
-            class="settings-menu-item"
-            :class="{
-              'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'characters',
-            }"
-            @click="ctx.navigateToCharactersSetting"
-          >
-            <i class="pi pi-users settings-menu-icon" />
-            <span class="settings-menu-label">角色设置</span>
-          </button>
-          <button
-            class="settings-menu-item"
-            :class="{
-              'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'memory',
-            }"
-            @click="ctx.navigateToMemorySetting"
-          >
-            <i class="pi pi-database settings-menu-icon" />
-            <span class="settings-menu-label">记忆管理</span>
-          </button>
-          <button class="settings-menu-item" @click="ctx.openScraperDialog">
-            <i class="pi pi-download settings-menu-icon" />
-            <span class="settings-menu-label">检查更新</span>
-          </button>
+        <div ref="settingsShellRef" class="settings-menu-shell">
+        <Transition
+          name="settings-menu"
+          @before-leave="onSettingsBeforeLeave"
+          @enter="onSettingsEnter"
+          @after-enter="onSettingsAfterEnter"
+        >
+          <div v-if="ui.bookSettingsMenuExpanded" key="expanded" class="settings-menu-expanded">
+            <div class="settings-menu-header">
+              <span class="sidebar-eyebrow settings-menu-eyebrow">SETTINGS</span>
+              <button
+                type="button"
+                class="settings-menu-toggle"
+                title="收起设置菜单"
+                aria-label="收起设置菜单"
+                @click="ui.toggleBookSettingsMenu"
+              >
+                <i class="pi pi-chevron-up" />
+              </button>
+            </div>
+            <div class="settings-menu-items">
+              <button
+                class="settings-menu-item"
+                :class="{
+                  'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'terms',
+                }"
+                @click="ctx.navigateToTermsSetting"
+              >
+                <i class="pi pi-bookmark settings-menu-icon" />
+                <span class="settings-menu-label">术语设置</span>
+              </button>
+              <button
+                class="settings-menu-item"
+                :class="{
+                  'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'characters',
+                }"
+                @click="ctx.navigateToCharactersSetting"
+              >
+                <i class="pi pi-users settings-menu-icon" />
+                <span class="settings-menu-label">角色设置</span>
+              </button>
+              <button
+                class="settings-menu-item"
+                :class="{
+                  'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'memory',
+                }"
+                @click="ctx.navigateToMemorySetting"
+              >
+                <i class="pi pi-database settings-menu-icon" />
+                <span class="settings-menu-label">记忆管理</span>
+              </button>
+              <button class="settings-menu-item" @click="ctx.openScraperDialog">
+                <i class="pi pi-download settings-menu-icon" />
+                <span class="settings-menu-label">检查更新</span>
+              </button>
+            </div>
+          </div>
+          <div v-else key="collapsed" class="settings-menu-items settings-menu-items--collapsed">
+            <button
+              class="settings-menu-item"
+              :class="{
+                'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'terms',
+              }"
+              title="术语设置"
+              @click="ctx.navigateToTermsSetting"
+            >
+              <i class="pi pi-bookmark settings-menu-icon" />
+            </button>
+            <button
+              class="settings-menu-item"
+              :class="{
+                'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'characters',
+              }"
+              title="角色设置"
+              @click="ctx.navigateToCharactersSetting"
+            >
+              <i class="pi pi-users settings-menu-icon" />
+            </button>
+            <button
+              class="settings-menu-item"
+              :class="{
+                'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'memory',
+              }"
+              title="记忆管理"
+              @click="ctx.navigateToMemorySetting"
+            >
+              <i class="pi pi-database settings-menu-icon" />
+            </button>
+            <button class="settings-menu-item" title="检查更新" @click="ctx.openScraperDialog">
+              <i class="pi pi-download settings-menu-icon" />
+            </button>
+            <button
+              type="button"
+              class="settings-menu-item settings-menu-expand"
+              title="展开设置菜单"
+              aria-label="展开设置菜单"
+              @click="ui.toggleBookSettingsMenu"
+            >
+              <i class="pi pi-chevron-down settings-menu-icon" />
+            </button>
+          </div>
+        </Transition>
         </div>
         <div class="settings-menu-separator" />
       </section>
@@ -649,10 +741,100 @@ const settingContextMeta = computed(() => {
   padding: 0 0.5rem 0.25rem;
 }
 
+.settings-menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+
+.settings-menu-eyebrow {
+  flex: 1;
+}
+
+.settings-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-right: 0.25rem;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--moon-50-opacity-55);
+  font-size: 0.7rem;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.settings-menu-toggle:hover {
+  background: var(--white-opacity-5);
+  color: var(--moon-50-opacity-90);
+}
+
 .settings-menu-items {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
+}
+
+.settings-menu-items--collapsed {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.1rem 0.1rem;
+}
+
+.settings-menu-items--collapsed .settings-menu-item {
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  justify-content: center;
+}
+
+.settings-menu-items--collapsed .settings-menu-icon {
+  width: auto;
+}
+
+.settings-menu-items--collapsed .settings-menu-expand {
+  position: absolute;
+  right: 0.1rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Shell wrapper holds the animated height so the section never collapses to 0 during the swap */
+.settings-menu-shell {
+  position: relative;
+  overflow: hidden;
+  transition: height 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: height;
+}
+
+/* Vue <Transition name="settings-menu"> — crossfade while shell animates height */
+.settings-menu-enter-active,
+.settings-menu-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.settings-menu-enter-from,
+.settings-menu-leave-to {
+  opacity: 0;
+}
+
+/* Pull the leaving element out of flow so only the incoming one occupies space */
+.settings-menu-leave-active {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
 }
 
 .settings-menu-separator {
