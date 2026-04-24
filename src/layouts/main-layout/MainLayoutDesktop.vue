@@ -24,7 +24,7 @@ const ui = useUiStore();
         </div>
       </div>
 
-      <main class="desktop-shell-canvas">
+      <main class="desktop-shell-canvas bg-night-900/60">
         <RouterView />
       </main>
 
@@ -111,6 +111,5 @@ const ui = useUiStore();
   overflow-x: hidden;
   min-height: 0;
   height: 100%;
-  background: var(--shell-opacity-55); /* token: night-500 @ 55% */
 }
 </style>
