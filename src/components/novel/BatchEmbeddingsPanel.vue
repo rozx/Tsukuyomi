@@ -532,9 +532,9 @@ defineExpose({ toggle });
 
         <!-- 全局状态 -->
         <div class="flex flex-col gap-1 text-xs text-moon-50 px-1">
-          <div class="flex items-center justify-between">
-            <span>模型:</span>
-            <span class="font-mono">{{ MODEL_VERSION }}<span class="text-moon-300">(章节: @{{ CHAPTER_MODEL_VERSION.split('@').pop() }})</span></span>
+          <div class="flex items-start justify-between gap-2">
+            <span class="shrink-0">模型:</span>
+            <span class="font-mono text-right min-w-0 break-all">{{ MODEL_VERSION }}<span class="text-moon-300">(章节: @{{ CHAPTER_MODEL_VERSION.split('@').pop() }})</span></span>
           </div>
           <div class="flex items-center justify-between">
             <span>后端:</span>
@@ -588,17 +588,6 @@ defineExpose({ toggle });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* 抽屉宽度限制：PrimeVue 默认 100%，桌面给 400px，手机 min(90vw, 400px) */
-:deep(.batch-embeddings-drawer.p-drawer) {
-  width: min(400px, 92vw);
-}
-
-/* 紧凑 appbar —— 与 AppChatPanelDesktop / AppProgressPanelDesktop 的 appbar 同构 */
-:deep(.batch-embeddings-drawer .p-drawer-header) {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--white-opacity-6);
 }
 
 .bed-appbar {
@@ -670,9 +659,29 @@ defineExpose({ toggle });
   background: var(--white-opacity-8);
   color: #e9edf5;
 }
+</style>
 
-/* 抽屉 body padding 收紧，和 chat/progress panel 对齐 */
-:deep(.batch-embeddings-drawer .p-drawer-content) {
+<!-- 非 scoped:PrimeVue Drawer 会 teleport 到 document.body,scoped 的 :deep 选择器
+     找不到宿主组件的 data-v-hash 祖先,所有针对 .p-drawer / .p-drawer-header /
+     .p-drawer-content 的规则都会静默失效。用 .batch-embeddings-drawer 前缀限定作用域。 -->
+<style>
+/* 抽屉宽度限制:PrimeVue 默认 100%,桌面给 400px,手机 min(92vw, 400px)。
+   PrimeVue 4 的 Drawer 会把根 class(batch-embeddings-drawer)放到外层 mask 上,
+   实际面板是其后代 .p-drawer,所以这里用后代选择器。 */
+.batch-embeddings-drawer .p-drawer {
+  width: min(400px, 92vw);
+}
+
+/* 紧凑 appbar —— 与 AppChatPanelDesktop / AppProgressPanelDesktop 的 appbar 同构 */
+.batch-embeddings-drawer .p-drawer-header {
   padding: 14px 16px;
+  border-bottom: 1px solid var(--white-opacity-6);
+}
+
+/* 抽屉 body padding 收紧,和 chat/progress panel 对齐;
+   overflow-x 兜底防止任何长字串(如 font-mono 版本号)撑出横向滚动条 */
+.batch-embeddings-drawer .p-drawer-content {
+  padding: 14px 16px;
+  overflow-x: hidden;
 }
 </style>
