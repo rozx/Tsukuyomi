@@ -125,6 +125,7 @@ const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav));
       <button
         v-for="item in topNav"
         :key="item.tab"
+        type="button"
         class="side-rail-item"
         :class="{ active: activeTab === item.tab }"
         :aria-label="item.label"
@@ -141,6 +142,7 @@ const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav));
       <button
         v-for="item in bottomNav"
         :key="item.tab"
+        type="button"
         class="side-rail-item"
         :class="{ active: activeTab === item.tab }"
         :aria-label="item.label"

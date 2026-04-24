@@ -178,36 +178,48 @@ const settingContextMeta = computed(() => {
           </div>
           <div v-else key="collapsed" class="settings-menu-items settings-menu-items--collapsed">
             <button
+              type="button"
               class="settings-menu-item"
               :class="{
                 'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'terms',
               }"
               title="术语设置"
+              aria-label="术语设置"
               @click="ctx.navigateToTermsSetting"
             >
               <i class="pi pi-bookmark settings-menu-icon" />
             </button>
             <button
+              type="button"
               class="settings-menu-item"
               :class="{
                 'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'characters',
               }"
               title="角色设置"
+              aria-label="角色设置"
               @click="ctx.navigateToCharactersSetting"
             >
               <i class="pi pi-users settings-menu-icon" />
             </button>
             <button
+              type="button"
               class="settings-menu-item"
               :class="{
                 'settings-menu-item-selected': ctx.selectedSettingMenu.value === 'memory',
               }"
               title="记忆管理"
+              aria-label="记忆管理"
               @click="ctx.navigateToMemorySetting"
             >
               <i class="pi pi-database settings-menu-icon" />
             </button>
-            <button class="settings-menu-item" title="检查更新" @click="ctx.openScraperDialog">
+            <button
+              type="button"
+              class="settings-menu-item"
+              title="检查更新"
+              aria-label="检查更新"
+              @click="ctx.openScraperDialog"
+            >
               <i class="pi pi-download settings-menu-icon" />
             </button>
             <button

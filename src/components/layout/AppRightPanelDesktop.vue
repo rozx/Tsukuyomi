@@ -50,6 +50,7 @@ defineExpose({ props });
 <template>
   <aside v-if="collapsed" class="rp-rail" aria-label="右侧面板">
     <button
+      type="button"
       class="rp-rail-item"
       :class="{ active: activeRightTab === 'chat' && ui.rightPanelOpen }"
       aria-label="AI 助手"
@@ -59,6 +60,7 @@ defineExpose({ props });
       <i class="pi pi-comments" aria-hidden="true" />
     </button>
     <button
+      type="button"
       class="rp-rail-item"
       :class="{ active: activeRightTab === 'progress' && ui.rightPanelOpen }"
       aria-label="翻译进度"
@@ -74,6 +76,7 @@ defineExpose({ props });
     <template v-if="showBatchEmbeddings">
       <div class="rp-rail-sep" />
       <button
+        type="button"
         class="rp-rail-item"
         aria-label="向量索引"
         title="向量索引"
@@ -85,7 +88,8 @@ defineExpose({ props });
 
     <div class="rp-rail-spacer" />
 
-    <BatchEmbeddingsPanel ref="batchEmbeddingsPanelRef" />
+    <!-- 仅在书籍详情路由下挂载：避免在无关页面上订阅 EmbeddingQueue/Service/Memory 事件并触发 DB 查询 -->
+    <BatchEmbeddingsPanel v-if="showBatchEmbeddings" ref="batchEmbeddingsPanelRef" />
   </aside>
 
   <aside

@@ -59,64 +59,80 @@ const currentBook = computed(() =>
   bookId.value ? booksStore.getBookById(bookId.value) : undefined,
 );
 
-async function refreshStats(): Promise<void> {
-  const id = bookId.value;
-  if (!id) {
-    chapterStats.value = { embedded: 0, total: 0 };
-    memoryStats.value = { embedded: 0, total: 0 };
-    staleCounts.value = { chapter: 0, memory: 0 };
-    return;
-  }
-
-  // 章节：从 books store 拿总数，从 DB chunk 判定当前版本匹配 / stale / 未嵌入
+function countBookChapters(id: string): number {
   const book = booksStore.getBookById(id);
-  let chapTotal = 0;
+  let total = 0;
   for (const v of book?.volumes ?? []) {
-    chapTotal += v.chapters?.length ?? 0;
+    total += v.chapters?.length ?? 0;
   }
-  let chapterStale = 0;
+  return total;
+}
+
+type StatBreakdown = { embedded: number; total: number; stale: number };
+
+async function loadChapterBreakdown(id: string, total: number): Promise<StatBreakdown> {
   try {
     const chunks = await ChapterEmbeddingService.getChunksForBook(id);
     // 按 chapterId 聚合:当前版本 chunk 才算 embedded;完全由 stale chunk 组成的章节计入 stale
     const statusByChapter = new Map<string, 'current' | 'stale'>();
     for (const c of chunks) {
       // 走单一事实源 isChapterChunkStale(避免散落的版本号比对漂移)
-      if (!isChapterChunkStale(c)) {
-        statusByChapter.set(c.chapterId, 'current');
-      } else if (!statusByChapter.has(c.chapterId)) {
-        statusByChapter.set(c.chapterId, 'stale');
-      }
+      const current = !isChapterChunkStale(c);
+      if (current) statusByChapter.set(c.chapterId, 'current');
+      else if (!statusByChapter.has(c.chapterId)) statusByChapter.set(c.chapterId, 'stale');
     }
     let embedded = 0;
+    let stale = 0;
     for (const status of statusByChapter.values()) {
       if (status === 'current') embedded += 1;
-      else chapterStale += 1;
+      else stale += 1;
     }
-    chapterStats.value = { embedded, total: chapTotal };
+    return { embedded, total, stale };
   } catch (error) {
     console.warn('[BatchEmbeddingsPanel] refresh chapter stats 失败:', error);
-    chapterStats.value = { embedded: 0, total: chapTotal };
+    return { embedded: 0, total, stale: 0 };
   }
+}
 
-  // 记忆：查询该书所有 memory，按 embedding + 模型版本判定
-  let memoryStale = 0;
+async function loadMemoryBreakdown(id: string): Promise<StatBreakdown> {
   try {
     const memories = await MemoryService.getAllBookMemories(id);
     let embedded = 0;
+    let stale = 0;
     for (const m of memories) {
       const hasVec = !!(m.embedding && m.embedding.length > 0);
       if (!hasVec) continue;
       // 有向量但 stale → 计 stale;有向量且非 stale → 计 embedded
-      if (isMemoryEmbeddingStale(m)) memoryStale += 1;
+      if (isMemoryEmbeddingStale(m)) stale += 1;
       else embedded += 1;
     }
-    memoryStats.value = { embedded, total: memories.length };
+    return { embedded, total: memories.length, stale };
   } catch (error) {
     console.warn('[BatchEmbeddingsPanel] refresh memory stats 失败:', error);
-    memoryStats.value = { embedded: 0, total: 0 };
+    return { embedded: 0, total: 0, stale: 0 };
   }
+}
 
-  staleCounts.value = { chapter: chapterStale, memory: memoryStale };
+function resetStats(): void {
+  chapterStats.value = { embedded: 0, total: 0 };
+  memoryStats.value = { embedded: 0, total: 0 };
+  staleCounts.value = { chapter: 0, memory: 0 };
+}
+
+async function refreshStats(): Promise<void> {
+  const id = bookId.value;
+  if (!id) {
+    resetStats();
+    return;
+  }
+  const chapTotal = countBookChapters(id);
+  const [chapter, memory] = await Promise.all([
+    loadChapterBreakdown(id, chapTotal),
+    loadMemoryBreakdown(id),
+  ]);
+  chapterStats.value = { embedded: chapter.embedded, total: chapter.total };
+  memoryStats.value = { embedded: memory.embedded, total: memory.total };
+  staleCounts.value = { chapter: chapter.stale, memory: memory.stale };
 }
 
 // 订阅 EmbeddingQueue 进度事件
@@ -245,8 +261,9 @@ const statusLabel = computed(() => {
 
 // 操作 —— 保留 (event, target) 签名供调用方沿用原先的 popover 触发模式；
 // 抽屉本身不需要锚点，参数忽略即可。
+// refreshStats 会击 IndexedDB + 迭代 chapters/memories，关闭抽屉时不需要做这份工作。
 const toggle = (_event?: Event, _target?: Element) => {
-  void refreshStats();
+  if (!drawerVisible.value) void refreshStats();
   drawerVisible.value = !drawerVisible.value;
 };
 
