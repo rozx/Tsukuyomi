@@ -368,8 +368,8 @@ onUnmounted(() => {
   color: rgba(253, 253, 255, 0.45);
   line-height: 1.6;
   margin: 4px 0;
-  overflow-wrap: break-word;
-  word-break: break-word;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-style: italic;
 }
 
@@ -449,7 +449,7 @@ onUnmounted(() => {
   color: rgba(253, 253, 255, 0.8);
   margin: 0;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   font-family: inherit;
 }
 

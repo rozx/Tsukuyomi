@@ -153,7 +153,7 @@ const togglePopover = (event: Event) => {
 .tool-detail-pre {
   margin: 0;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   color: var(--moon-opacity-80);
   font-family: var(--font-mono, monospace);
   font-size: 0.75rem;
