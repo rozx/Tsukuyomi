@@ -10,10 +10,12 @@
  * 外壳仅负责：固定宽度、拖拽 resize 手柄，以及激活面板的切换。业务 /
  * 视图状态完全下沉到两个独立面板文件。
  */
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { usePanelResize } from 'src/composables/chat/usePanelResize';
+import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
 import AppChatPanelDesktop from './AppChatPanelDesktop.vue';
 import AppProgressPanelDesktop from './AppProgressPanelDesktop.vue';
 
@@ -24,15 +26,22 @@ const props = withDefaults(
 
 const ui = useUiStore();
 const aiProcessing = useAIProcessingStore();
+const route = useRoute();
 
 const activeRightTab = computed(() => ui.activeRightTab);
 const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslationTaskCount);
+const showBatchEmbeddings = computed(() => Boolean(route.params.id));
 
 const { panelContainerRef, resizeHandleRef, isResizing, handleResizeStart } = usePanelResize();
 
 const expandToTab = (tab: 'chat' | 'progress') => {
   ui.setActiveRightTab(tab);
   if (!ui.rightPanelOpen) ui.openRightPanel();
+};
+
+const batchEmbeddingsPanelRef = ref<{ toggle: () => void } | null>(null);
+const toggleBatchEmbeddingsPanel = () => {
+  batchEmbeddingsPanelRef.value?.toggle();
 };
 
 defineExpose({ props });
@@ -61,7 +70,22 @@ defineExpose({ props });
         {{ activeTranslationTaskCount > 99 ? '99+' : activeTranslationTaskCount }}
       </span>
     </button>
+
+    <template v-if="showBatchEmbeddings">
+      <div class="rp-rail-sep" />
+      <button
+        class="rp-rail-item"
+        aria-label="向量索引"
+        title="向量索引"
+        @click="toggleBatchEmbeddingsPanel"
+      >
+        <i class="pi pi-bolt" aria-hidden="true" />
+      </button>
+    </template>
+
     <div class="rp-rail-spacer" />
+
+    <BatchEmbeddingsPanel ref="batchEmbeddingsPanelRef" />
   </aside>
 
   <aside
@@ -117,7 +141,7 @@ defineExpose({ props });
   background: var(--tsukuyomi-opacity-35); /* token: tsukuyomi-500 @ 35% */
 }
 
-/* 折叠态：纯图标竖排 —— 对齐左侧 side-rail / TabletNavRail */
+/* 折叠态：纯图标竖排 —— 对齐 TabletSideRail 的 48px 右侧图标栏 */
 .rp-rail {
   width: 100%;
   height: 100%;
@@ -125,50 +149,53 @@ defineExpose({ props });
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 18px 0 16px;
-  gap: 6px;
-  background: var(--black-opacity-20);
-  border-left: 1px solid var(--white-opacity-4);
+  gap: 8px;
+  padding: 14px 6px;
+  background: rgba(10, 12, 15, 0.55);
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
 }
 
 .rp-rail-item {
   position: relative;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
+  width: 36px;
+  min-height: 36px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: 1px solid transparent;
-  color: rgba(174, 183, 198, 0.75);
+  border-radius: 10px;
+  color: rgba(247, 244, 236, 0.72);
   cursor: pointer;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
   padding: 0;
+  transition:
+    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .rp-rail-item i {
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
-  transition:
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    text-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .rp-rail-item:hover {
-  background: var(--white-opacity-4);
-  color: rgba(247, 244, 236, 1);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e9edf5;
 }
 
 .rp-rail-item.active {
   background: rgba(109, 136, 168, 0.18);
-  border-color: rgba(109, 136, 168, 0.3);
+  border-color: rgba(109, 136, 168, 0.32);
   color: #a3b7cf;
 }
 
-.rp-rail-item.active i {
-  text-shadow: 0 0 12px rgba(109, 136, 168, 0.55);
+.rp-rail-sep {
+  width: 24px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 4px 0;
 }
 
 .rp-rail-badge {

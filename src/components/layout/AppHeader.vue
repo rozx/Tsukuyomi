@@ -6,7 +6,6 @@ import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
-import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 
@@ -33,12 +32,6 @@ const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 const aiTaskLabel = computed(() =>
   latestThinkingStatus.value === 'processing' ? '处理中' : '思考中',
 );
-
-const batchEmbeddingsPanelRef = ref<{ toggle: (event: Event) => void } | null>(null);
-
-const toggleBatchEmbeddingsPanel = (event: Event) => {
-  batchEmbeddingsPanelRef.value?.toggle(event);
-};
 
 const handleToggleSideMenu = () => {
   if (isPhone.value && ui.rightPanelOpen) {
@@ -173,17 +166,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
         <span v-if="!isPhone" class="dsk-chip-label">同步</span>
       </button>
 
-      <!-- 向量索引（仅在书籍详情页显示） -->
-      <button
-        v-if="$route.params.id"
-        type="button"
-        class="dsk-chip"
-        aria-label="向量索引"
-        @click="toggleBatchEmbeddingsPanel"
-      >
-        <i class="pi pi-bolt" aria-hidden="true" />
-      </button>
-
       <div class="dsk-sep" />
 
       <!-- 消息历史 -->
@@ -204,7 +186,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
     <ToastHistoryDialog ref="toastHistoryRef" />
     <SyncStatusPanel ref="syncPanelRef" />
     <ThinkingProcessPanel ref="thinkingPanelRef" />
-    <BatchEmbeddingsPanel ref="batchEmbeddingsPanelRef" />
     <Button v-show="false" />
   </header>
 </template>

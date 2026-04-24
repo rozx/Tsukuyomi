@@ -29,11 +29,11 @@ const ui = useUiStore();
 
       <div
         class="desktop-shell-aside"
-        :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '4rem' }"
+        :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '3rem' }"
       >
         <div
           class="desktop-shell-aside-inner"
-          :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '4rem' }"
+          :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '3rem' }"
         >
           <AppRightPanel :collapsed="!ui.rightPanelOpen" />
         </div>
