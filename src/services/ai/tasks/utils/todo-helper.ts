@@ -25,7 +25,8 @@ export function getTodosSystemPrompt(taskId?: string, sessionId?: string): strin
 
   let prompt = '\n**待办系统**：\n';
   prompt += '- 系统自动生成预定义待办，【待办清单】始终显示在上下文中，无需调用 list_todos\n';
-  prompt += '- 开始处理前：`mark_todo_working`；完成后：`mark_todo_done`\n';
+  prompt +=
+    '- **必须按顺序操作**：开始处理前先调用 `mark_todo_working`，完成后才能调用 `mark_todo_done`（跳过 working 直接 done 会被拒绝）\n';
   prompt += '- 所有预定义待办标记 done 后才能切换到下一阶段\n';
 
   return prompt;
@@ -122,7 +123,8 @@ export function getPostToolCallReminder(
     reminder += '  完成后请调用 mark_todo_done 标记\n';
   } else if (pendingTodos.length > 0) {
     reminder += `还有 ${pendingTodos.length} 个待办事项待处理\n`;
-    reminder += '开始处理前请调用 mark_todo_working 标记\n';
+    reminder +=
+      '开始处理前必须调用 mark_todo_working 标记（不可跳过直接 mark_todo_done）\n';
   }
 
   return reminder;

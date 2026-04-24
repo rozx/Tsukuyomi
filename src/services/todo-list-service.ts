@@ -201,6 +201,10 @@ export class TodoListService {
    * 标记待办事项为完成
    */
   static markTodoAsDone(id: string): TodoItem {
+    const todo = this.getTodoById(id);
+    if (todo && todo.status !== 'working') {
+      throw new Error('该待办事项未标记为进行中，请先调用 mark_todo_working');
+    }
     return this.updateTodo(id, { status: 'done' });
   }
 

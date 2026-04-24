@@ -146,8 +146,8 @@ function buildWorkingTodoTexts(config: WorkingTodoConfig): string[] {
 
     const batchLabel =
       totalBatches > 1
-        ? `翻译段落批次 ${batchIdx + 1}/${totalBatches}（${batchIds.length} 段）：\n${batchLines}`
-        : `翻译全部段落（${batchIds.length} 段）：\n${batchLines}`;
+        ? `处理段落批次 ${batchIdx + 1}/${totalBatches}（${batchIds.length} 段）：\n${batchLines}`
+        : `处理全部段落（${batchIds.length} 段）：\n${batchLines}`;
 
     todos.push(batchLabel);
   }
@@ -278,7 +278,7 @@ export class TodoWorkflow {
     const workingTodo = predefinedTodos.find((t) => t.status === 'working');
     if (workingTodo) {
       const firstLine = workingTodo.text.split('\n')[0]!;
-      block += `\n⚠️ 当前任务：${firstLine} — 完成后请调用 mark_todo_done 标记\n`;
+      block += `\n⚠️ 当前任务：${firstLine} — 完成后请调用 mark_todo_done 标记（不可跳过 working 直接 done）\n`;
     }
 
     if (allDone) {
@@ -289,5 +289,4 @@ export class TodoWorkflow {
 
     return block;
   }
-
 }

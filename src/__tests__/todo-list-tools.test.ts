@@ -204,6 +204,7 @@ describe('TodoListTools', () => {
     test('应该能够过滤出未完成的待办事项', async () => {
       const todo1 = TodoListService.createTodo('Todo 1', taskId);
       TodoListService.createTodo('Todo 2', taskId);
+      TodoListService.markTodoAsWorking(todo1.id);
       TodoListService.markTodoAsDone(todo1.id);
 
       const tool = todoListTools.find((t) => t.definition.function.name === 'list_todos');
@@ -218,6 +219,7 @@ describe('TodoListTools', () => {
     test('应该能够过滤出已完成的待办事项', async () => {
       const todo1 = TodoListService.createTodo('Todo 1', taskId);
       TodoListService.createTodo('Todo 2', taskId);
+      TodoListService.markTodoAsWorking(todo1.id);
       TodoListService.markTodoAsDone(todo1.id);
 
       const tool = todoListTools.find((t) => t.definition.function.name === 'list_todos');
@@ -397,6 +399,7 @@ describe('TodoListTools', () => {
   describe('mark_todo_done', () => {
     test('应该能够将待办事项标记为完成', async () => {
       const todo = TodoListService.createTodo('Test todo', taskId);
+      TodoListService.markTodoAsWorking(todo.id);
 
       const tool = todoListTools.find((t) => t.definition.function.name === 'mark_todo_done');
       const result = await tool!.handler({ id: todo.id }, context);
@@ -407,6 +410,24 @@ describe('TodoListTools', () => {
 
       const updated = TodoListService.getTodoById(todo.id);
       expect(updated?.status).toBe('done');
+    });
+
+    test('pending 状态直接标记为 done 应该抛出错误', async () => {
+      const todo = TodoListService.createTodo('Test todo', taskId);
+
+      const tool = todoListTools.find((t) => t.definition.function.name === 'mark_todo_done');
+
+      try {
+        await tool!.handler({ id: todo.id }, context);
+        expect(true).toBe(false);
+      } catch (error) {
+        expect(error instanceof Error && error.message).toContain(
+          '该待办事项未标记为进行中，请先调用 mark_todo_working',
+        );
+      }
+
+      const unchanged = TodoListService.getTodoById(todo.id);
+      expect(unchanged?.status).toBe('pending');
     });
   });
 

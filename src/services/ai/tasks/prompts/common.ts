@@ -250,7 +250,7 @@ export function getMemoryWorkflowRules(): string {
  * 获取待办事项工具描述（精简版）
  */
 function getTodoToolsDescription(_taskType: TaskType): string {
-  return `**待办管理**: 系统自动生成待办清单，用 \`mark_todo_working\` 开始、\`mark_todo_done\` 完成。所有待办完成后方可切换阶段。`;
+  return `**待办管理**: 系统自动生成待办清单，必须先用 \`mark_todo_working\` 标记进行中，再用 \`mark_todo_done\` 标记完成（跳过 working 直接 done 会被拒绝）。所有待办完成后方可切换阶段。`;
 }
 
 /**

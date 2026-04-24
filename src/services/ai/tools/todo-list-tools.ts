@@ -334,7 +334,7 @@ export const todoListTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'mark_todo_done',
-        description: '将待办事项标记为完成。',
+        description: '将待办事项标记为完成。必须先用 mark_todo_working 标记为进行中，才能标记为完成。',
         parameters: TODO_BY_ID_PARAMETERS,
       },
     },
