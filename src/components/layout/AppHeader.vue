@@ -3,7 +3,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import { useUiStore } from 'src/stores/ui';
 import { useSystemBar } from 'src/composables/layout/useSystemBar';
-import { useAIProcessingStore } from 'src/stores/ai-processing';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
@@ -12,7 +11,6 @@ import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 
 const ui = useUiStore();
-const aiProcessing = useAIProcessingStore();
 const isPhone = computed(() => ui.deviceType === 'phone');
 
 const {
@@ -29,8 +27,6 @@ const {
   toggleThinking,
   toggleSync,
 } = useSystemBar();
-
-const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslationTaskCount);
 
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
@@ -49,13 +45,6 @@ const handleToggleSideMenu = () => {
     ui.closeRightPanel();
   }
   ui.toggleSideMenu();
-};
-
-const handleToggleRightPanel = () => {
-  if (isPhone.value && ui.sideMenuOpen) {
-    ui.closeSideMenu();
-  }
-  ui.toggleRightPanel();
 };
 
 // 桌面端独有：下次同步的紧凑次级信息（仅在已同步态下展示）
@@ -210,23 +199,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
         </span>
       </button>
 
-      <!-- 右侧面板切换 -->
-      <button
-        type="button"
-        class="dsk-chip"
-        :class="{ active: ui.rightPanelOpen }"
-        aria-label="切换右侧面板"
-        @click="handleToggleRightPanel"
-      >
-        <i
-          class="pi"
-          :class="ui.rightPanelOpen ? 'pi-times' : 'pi-objects-column'"
-          aria-hidden="true"
-        />
-        <span v-if="activeTranslationTaskCount > 0" class="dsk-badge">
-          {{ activeTranslationTaskCount > 99 ? '99+' : activeTranslationTaskCount }}
-        </span>
-      </button>
     </div>
 
     <ToastHistoryDialog ref="toastHistoryRef" />

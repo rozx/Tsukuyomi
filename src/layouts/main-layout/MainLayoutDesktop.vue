@@ -16,11 +16,10 @@ const ui = useUiStore();
     <div class="desktop-shell-body">
       <div
         class="desktop-shell-rail"
-        :style="{ width: ui.sideMenuOpen ? '16.5rem' : '0' }"
-        :inert="!ui.sideMenuOpen"
+        :style="{ width: ui.sideMenuOpen ? '14rem' : '4rem' }"
       >
-        <div class="desktop-shell-rail-inner" :class="ui.sideMenuOpen ? 'is-open' : 'is-closed'">
-          <AppSideMenu />
+        <div class="desktop-shell-rail-inner">
+          <AppSideMenu :collapsed="!ui.sideMenuOpen" />
         </div>
       </div>
 
@@ -30,15 +29,13 @@ const ui = useUiStore();
 
       <div
         class="desktop-shell-aside"
-        :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '0' }"
-        :inert="!ui.rightPanelOpen"
+        :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '4rem' }"
       >
         <div
           class="desktop-shell-aside-inner"
-          :style="{ width: `${ui.rightPanelWidth}px` }"
-          :class="ui.rightPanelOpen ? 'is-open' : 'is-closed'"
+          :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '4rem' }"
         >
-          <AppRightPanel />
+          <AppRightPanel :collapsed="!ui.rightPanelOpen" />
         </div>
       </div>
     </div>
@@ -80,29 +77,6 @@ const ui = useUiStore();
   height: 100%;
   display: flex;
   flex-direction: column;
-  transition:
-    opacity 200ms cubic-bezier(0.4, 0, 0.2, 1),
-    transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.desktop-shell-rail-inner.is-open {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.desktop-shell-rail-inner.is-closed {
-  opacity: 0;
-  transform: translateX(-0.5rem);
-}
-
-.desktop-shell-aside-inner.is-open {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.desktop-shell-aside-inner.is-closed {
-  opacity: 0;
-  transform: translateX(0.5rem);
 }
 
 .desktop-shell-canvas {

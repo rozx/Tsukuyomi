@@ -9,8 +9,10 @@
  * desktop template protects any stray call site on mobile/tablet.
  */
 import AppRightPanelDesktop from './AppRightPanelDesktop.vue';
+
+withDefaults(defineProps<{ collapsed?: boolean }>(), { collapsed: false });
 </script>
 
 <template>
-  <AppRightPanelDesktop />
+  <AppRightPanelDesktop :collapsed="collapsed" />
 </template>
