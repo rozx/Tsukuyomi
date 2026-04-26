@@ -13,7 +13,7 @@
     "file": "library-guide.md",
     "path": "help",
     "category": "使用指南",
-    "description": "主页功能介绍、书籍管理和快速操作指南"
+    "description": "主页桌面 / 平板 / 移动三变体说明：继续阅读 hero、Workbench Metrics、快捷操作、最近编辑"
   },
   {
     "id": "books-page-guide",
@@ -41,11 +41,11 @@
   },
   {
     "id": "toolbar-guide",
-    "title": "顶部工具栏",
+    "title": "系统栏与导航",
     "file": "toolbar-guide.md",
     "path": "help",
     "category": "使用指南",
-    "description": "顶部工具栏功能详解、按钮说明和使用技巧"
+    "description": "桌面 sysbar + 图标轨道、平板 / 移动端紧凑 sysbar、AI 思考 / 同步 / 消息历史 / 右栏面板入口完整说明"
   },
   {
     "id": "settings-guide",
@@ -56,12 +56,20 @@
     "description": "设置弹窗功能详解、配置选项和最佳实践"
   },
   {
+    "id": "local-embedding",
+    "title": "本地嵌入",
+    "file": "local-embedding.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "本地嵌入引擎完整说明：gte-multilingual-base 模型、WebGPU/WASM 后端、批量嵌入面板、模型版本与 stale 重算、同步 sync gate、故障排查"
+  },
+  {
     "id": "book-details-overview",
     "title": "书籍详情页概览",
     "file": "book-details-overview.md",
     "path": "help",
     "category": "书籍详情页",
-    "description": "书籍详情页整体布局、主要功能模块和使用指南"
+    "description": "书籍详情页桌面 / 平板 / 移动布局，BOOK 卡 + 可折叠 SETTINGS + 目录、三种编辑模式、搜索快捷键、AI 上下文检索"
   },
   {
     "id": "book-details-chapters",
@@ -110,6 +118,14 @@
     "path": "help",
     "category": "书籍详情页",
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
+  },
+  {
+    "id": "v0.12.1",
+    "title": "v0.12.1",
+    "file": "RELEASE_NOTES_v0.12.1.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "桌面端工作台重设计、sysbar / 图标轨道 / 聊天进度面板拆分、tsukuyomi-sky 主题统一、ETag 漂移与修订恢复加固、Todo 工作流状态校验、平板 100dvh 适配"
   },
   {
     "id": "v0.11.1",
