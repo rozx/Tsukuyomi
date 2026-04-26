@@ -21,6 +21,8 @@ import {
 } from 'src/utils/sync-strip';
 import type { SyncConfig } from 'src/models/sync';
 import type { Memory } from 'src/models/memory';
+import { MANIFEST_FILE_NAME, type GistManifest } from 'src/models/manifest';
+import { readFile, type GistFileLike } from 'src/services/gist-sync-incremental';
 
 /** downloadFromGistWithManifest 的非跳过分支（含 changedEntries/manifest 等字段） */
 type DownloadResult = Awaited<ReturnType<GistSyncService['downloadFromGistWithManifest']>>;
@@ -395,8 +397,47 @@ export function useSyncExecutor() {
   };
 
   /**
+   * 从 verify 返回的 gist files 中提取 manifest.json 并计算其 hashes。
+   * 用于伪 CAS 内容相等性兜底：ETag 抖动（GitHub 后端漂移、description 写入、
+   * 用户在 web UI 编辑非 manifest 文件等）会让 verify 误报 'changed'，但若远端
+   * manifest 跟踪的内容未变，应当视为 unchanged。
+   *
+   * 失败（缺文件 / 截断且无 raw_url / 解析异常）一律返回 null —— 落回常规重试路径。
+   */
+  const tryReadRemoteManifestHashes = async (
+    files: Record<string, unknown> | undefined,
+  ): Promise<Record<string, string> | null> => {
+    if (!files) return null;
+    try {
+      const content = await readFile(
+        MANIFEST_FILE_NAME,
+        files as Record<string, GistFileLike>,
+        async (url) => {
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          return resp.text();
+        },
+      );
+      if (!content) return null;
+      return manifestToHashes(JSON.parse(content) as GistManifest);
+    } catch {
+      return null;
+    }
+  };
+
+  /** 浅比较两组 entryKey -> hash 是否完全一致。 */
+  const hashesEqual = (a: Record<string, string>, b: Record<string, string>): boolean => {
+    const ak = Object.keys(a);
+    if (ak.length !== Object.keys(b).length) return false;
+    return ak.every((k) => a[k] === b[k]);
+  };
+
+  /**
    * 伪 CAS 预检：若远端自上次已知 ETag 之后发生变化，返回 'conflict'（重试）或 'abort'（退出）；
    * 未变化返回 'unchanged'；失败返回 'error'。
+   *
+   * 当 verify 报 'changed' 时，先用远端 manifest 的 hashes 与 `knownRemoteHashes` 做内容相等性兜底：
+   * 一致则视为 'unchanged'，避免单设备场景下的 ETag 抖动误报"其他设备正在频繁写入"。
    */
   const runPseudoCasCheck = async (
     latestConfig: SyncConfig,
@@ -423,7 +464,17 @@ export function useSyncExecutor() {
       const verify = await gistSyncService.verifyRemoteUnchanged(latestConfig);
       if (verify.status === 'unchanged') return { status: 'unchanged' };
 
-      // changed
+      // ETag 报"changed"，先尝试基于 manifest 内容判定是否真的有冲突
+      const remoteHashes = await tryReadRemoteManifestHashes(verify.files);
+      const knownHashes = latestConfig.knownRemoteHashes ?? {};
+      if (remoteHashes && hashesEqual(remoteHashes, knownHashes)) {
+        console.info(
+          '[useSyncExecutor] 伪 CAS：ETag 漂移但远端 manifest 内容未变，视为 unchanged',
+        );
+        return { status: 'unchanged' };
+      }
+
+      // 真冲突
       if (retriesRemaining > 0) {
         console.info(
           `[useSyncExecutor] 伪 CAS 检测到并发写入，重试中（剩余 ${retriesRemaining} 次）`,

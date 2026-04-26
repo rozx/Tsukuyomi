@@ -475,6 +475,103 @@ describe('useGistSync (manifest-driven flow)', () => {
       expect(uploadSpy).toHaveBeenCalledTimes(1);
     });
 
+    it('CAS 报 "changed" 但 manifest 内容与 knownRemoteHashes 一致：单设备 ETag 漂移误报，应判为 unchanged 直接上传', async () => {
+      // 单设备复现：GitHub Gist 返回新的 ETag（例如 description 写入、用户在 web 端
+      // 编辑了非 manifest 文件、或后端 ETag 抖动），但 manifest 跟踪的内容未变。
+      // 现状：3 轮 verify 都返回 'changed' → 弹"其他设备正在频繁写入"。
+      // 期望：runPseudoCasCheck 应比对远端 manifest 的 hashes 与本地 knownRemoteHashes，
+      // 一致时视为 unchanged，跳过重试直接上传。
+      const stableManifest = makeManifest('remote-hash-stable');
+      mockSettingsStore.gistSync = createSyncConfig({
+        knownRemoteHashes: {
+          [novelEntryKey('book-1')]: 'remote-hash-stable',
+          settings: 'settings-hash',
+          'ai-models': 'ai-hash',
+          'cover-history': 'cover-hash',
+        },
+      });
+
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: true,
+        remoteETag: 'etag-v1',
+      });
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
+
+      const verifySpy = spyOn(
+        GistSyncService.prototype,
+        'verifyRemoteUnchanged',
+      ).mockResolvedValue({
+        status: 'changed',
+        etag: 'etag-v2',
+        files: {
+          'manifest.json': { content: JSON.stringify(stableManifest) },
+        },
+      });
+
+      const uploadSpy = spyOn(
+        GistSyncService.prototype,
+        'uploadToGistIncremental',
+      ).mockResolvedValue({
+        success: true,
+        gistId: 'test-gist-id',
+        remoteETag: 'etag-v3',
+        remoteUpdatedAt: '2026-04-16T00:00:00Z',
+        manifest: stableManifest,
+        uploadedEntries: [],
+        deletedEntries: [],
+      });
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+      expect(uploadSpy).toHaveBeenCalledTimes(1);
+      expect(mockToastAdd).not.toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', summary: '同步冲突' }),
+      );
+    });
+
+    it('CAS 报 "changed" 且 manifest hashes 与 knownRemoteHashes 不一致：真冲突，走重试，重试预算耗尽时弹同步冲突', async () => {
+      // 反向用例：远端真的有别人写入（manifest hashes 漂移）。
+      // 应当继续走重试路径，3 轮都失败时报"其他设备正在频繁写入"。
+      const driftedManifest = makeManifest('remote-hash-NEW-from-other-device');
+      mockSettingsStore.gistSync = createSyncConfig({
+        knownRemoteHashes: {
+          [novelEntryKey('book-1')]: 'remote-hash-stable',
+          settings: 'settings-hash',
+          'ai-models': 'ai-hash',
+          'cover-history': 'cover-hash',
+        },
+      });
+
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: true,
+        remoteETag: 'etag-v1',
+      });
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
+      spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockResolvedValue({
+        status: 'changed',
+        etag: 'etag-v2',
+        files: {
+          'manifest.json': { content: JSON.stringify(driftedManifest) },
+        },
+      });
+      const uploadSpy = spyOn(
+        GistSyncService.prototype,
+        'uploadToGistIncremental',
+      ).mockResolvedValue({} as any);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(uploadSpy).not.toHaveBeenCalled();
+      expect(mockToastAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', summary: '同步冲突' }),
+      );
+    });
+
     it('first sync (no gistId): uses legacy uploadToGist to create the Gist', async () => {
       mockSettingsStore.gistSync = createSyncConfigWithoutGistId();
       spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
