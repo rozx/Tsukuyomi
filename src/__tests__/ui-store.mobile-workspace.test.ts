@@ -38,4 +38,31 @@ describe('ui store mobile workspace mode', () => {
 
     expect(store.bookWorkspaceMode).toBe('progress');
   });
+
+  it('应持久化并恢复右侧面板激活的 Tab', () => {
+    const store = useUiStore();
+    store.loadState();
+
+    expect(store.activeRightTab).toBe('chat');
+
+    store.setActiveRightTab('progress');
+
+    setActivePinia(createPinia());
+    const restored = useUiStore();
+    restored.loadState();
+
+    expect(restored.activeRightTab).toBe('progress');
+  });
+
+  it('localStorage 中没有 activeRightTab 时应回退到默认 chat', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ sideMenuOpen: true, rightPanelOpen: false }),
+    );
+
+    const store = useUiStore();
+    store.loadState();
+
+    expect(store.activeRightTab).toBe('chat');
+  });
 });

@@ -19,6 +19,12 @@ function detectInitialDeviceType(): DeviceType {
   return getDeviceTypeByWidth(window.innerWidth);
 }
 
+type ActiveRightTab = 'chat' | 'progress';
+
+function isActiveRightTab(value: unknown): value is ActiveRightTab {
+  return value === 'chat' || value === 'progress';
+}
+
 /**
  * 从 localStorage 加载 UI 状态
  */
@@ -28,6 +34,7 @@ function loadUiStateFromStorage(): {
   rightPanelWidth: number;
   bookWorkspaceMode: BookWorkspaceMode;
   bookSettingsMenuExpanded: boolean;
+  activeRightTab: ActiveRightTab;
 } {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -39,6 +46,7 @@ function loadUiStateFromStorage(): {
         rightPanelWidth: state.rightPanelWidth ?? 384, // 默认 384px (w-96)
         bookWorkspaceMode: state.bookWorkspaceMode ?? DEFAULT_BOOK_WORKSPACE_MODE,
         bookSettingsMenuExpanded: state.bookSettingsMenuExpanded ?? true,
+        activeRightTab: isActiveRightTab(state.activeRightTab) ? state.activeRightTab : 'chat',
       };
     }
   } catch (error) {
@@ -50,6 +58,7 @@ function loadUiStateFromStorage(): {
     rightPanelWidth: 384, // 默认 384px (w-96)
     bookWorkspaceMode: DEFAULT_BOOK_WORKSPACE_MODE,
     bookSettingsMenuExpanded: true,
+    activeRightTab: 'chat',
   };
 }
 
@@ -62,6 +71,7 @@ function saveUiStateToStorage(state: {
   rightPanelWidth: number;
   bookWorkspaceMode: BookWorkspaceMode;
   bookSettingsMenuExpanded: boolean;
+  activeRightTab: ActiveRightTab;
 }): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -81,7 +91,7 @@ export const useUiStore = defineStore('ui', {
     isLoaded: boolean;
     isInitialDataLoading: boolean;
     assistantInputMessage: string | null; // 要复制到助手输入框的消息
-    activeRightTab: 'chat' | 'progress'; // 右侧面板当前激活的 Tab
+    activeRightTab: ActiveRightTab; // 右侧面板当前激活的 Tab
   } => ({
     sideMenuOpen: true,
     rightPanelOpen: false,
@@ -115,6 +125,7 @@ export const useUiStore = defineStore('ui', {
       this.rightPanelWidth = state.rightPanelWidth;
       this.bookWorkspaceMode = state.bookWorkspaceMode;
       this.bookSettingsMenuExpanded = state.bookSettingsMenuExpanded;
+      this.activeRightTab = state.activeRightTab;
       this.isLoaded = true;
     },
 
@@ -165,6 +176,7 @@ export const useUiStore = defineStore('ui', {
         rightPanelWidth: this.rightPanelWidth,
         bookWorkspaceMode: this.bookWorkspaceMode,
         bookSettingsMenuExpanded: this.bookSettingsMenuExpanded,
+        activeRightTab: this.activeRightTab,
       });
     },
     setInitialDataLoading(loading: boolean) {
@@ -177,8 +189,9 @@ export const useUiStore = defineStore('ui', {
     setAssistantInputMessage(message: string | null) {
       this.assistantInputMessage = message;
     },
-    setActiveRightTab(tab: 'chat' | 'progress') {
+    setActiveRightTab(tab: ActiveRightTab) {
       this.activeRightTab = tab;
+      this.saveState();
     },
   },
 });
