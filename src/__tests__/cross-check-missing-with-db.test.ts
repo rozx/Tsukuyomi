@@ -157,6 +157,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
       const todo = origCreateTodo(...args);
       if (todo.predefined) {
+        TodoListService.markTodoAsWorking(todo.id);
         TodoListService.markTodoAsDone(todo.id);
       }
       return todo;
@@ -320,6 +321,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
       const todo = origCreateTodo(...args);
       if (todo.predefined) {
+        TodoListService.markTodoAsWorking(todo.id);
         TodoListService.markTodoAsDone(todo.id);
       }
       return todo;
@@ -499,6 +501,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
       const todo = origCreateTodo2(...args);
       if (todo.predefined) {
+        TodoListService.markTodoAsWorking(todo.id);
         TodoListService.markTodoAsDone(todo.id);
       }
       return todo;
@@ -650,6 +653,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
       const todo = origCreateTodo3(...args);
       if (todo.predefined) {
+        TodoListService.markTodoAsWorking(todo.id);
         TodoListService.markTodoAsDone(todo.id);
       }
       return todo;

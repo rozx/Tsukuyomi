@@ -151,7 +151,10 @@ describe('TodoWorkflow', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('planning');
 
-      todos.forEach((t) => TodoListService.markTodoAsDone(t.id));
+      todos.forEach((t) => {
+        TodoListService.markTodoAsWorking(t.id);
+        TodoListService.markTodoAsDone(t.id);
+      });
       const gate = workflow.checkGate('planning');
 
       expect(gate.allowed).toBe(true);
@@ -162,7 +165,9 @@ describe('TodoWorkflow', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('planning');
 
+      TodoListService.markTodoAsWorking(todos[0]!.id);
       TodoListService.markTodoAsDone(todos[0]!.id);
+      TodoListService.markTodoAsWorking(todos[1]!.id);
       TodoListService.markTodoAsDone(todos[1]!.id);
       const gate = workflow.checkGate('planning');
 
@@ -174,7 +179,10 @@ describe('TodoWorkflow', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('planning');
 
-      todos.forEach((t) => TodoListService.markTodoAsDone(t.id));
+      todos.forEach((t) => {
+        TodoListService.markTodoAsWorking(t.id);
+        TodoListService.markTodoAsDone(t.id);
+      });
 
       // 创建一个 ad-hoc 待办（没有 predefined 标记）
       TodoListService.createTodo('自定义待办', taskId);
@@ -196,6 +204,7 @@ describe('TodoWorkflow', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('planning');
 
+      TodoListService.markTodoAsWorking(todos[0]!.id);
       TodoListService.markTodoAsDone(todos[0]!.id);
       TodoListService.markTodoAsWorking(todos[1]!.id);
 
@@ -213,7 +222,10 @@ describe('TodoWorkflow', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('planning');
 
-      todos.forEach((t) => TodoListService.markTodoAsDone(t.id));
+      todos.forEach((t) => {
+        TodoListService.markTodoAsWorking(t.id);
+        TodoListService.markTodoAsDone(t.id);
+      });
 
       const block = workflow.buildTodoContextBlock('planning');
 
@@ -247,7 +259,10 @@ describe('TodoWorkflow', () => {
         chunkIndex: 0,
       });
       const r0 = workflow0.generateForState('review');
-      [...p0, ...pr0, ...w0, ...r0].forEach((t) => TodoListService.markTodoAsDone(t.id));
+      [...p0, ...pr0, ...w0, ...r0].forEach((t) => {
+        TodoListService.markTodoAsWorking(t.id);
+        TodoListService.markTodoAsDone(t.id);
+      });
 
       // chunk-1 启动
       const workflow1 = new TodoWorkflow('translation', taskId, 1);
@@ -280,7 +295,10 @@ describe('TodoWorkflow', () => {
         chunkText: '[1] [ID: p1] 原文: 测试\n翻译: \n\n',
         chunkIndex: 0,
       });
-      w0.forEach((t) => TodoListService.markTodoAsDone(t.id));
+      w0.forEach((t) => {
+        TodoListService.markTodoAsWorking(t.id);
+        TodoListService.markTodoAsDone(t.id);
+      });
 
       // chunk-1 创建自己的 working 待办，尚未完成
       const workflow1 = new TodoWorkflow('translation', taskId, 1);
@@ -304,7 +322,10 @@ describe('TodoWorkflow', () => {
         chunkText: '[1] [ID: p1] 原文: 测试\n翻译: \n\n',
         chunkIndex: 0,
       });
-      w0.forEach((t) => TodoListService.markTodoAsDone(t.id));
+      w0.forEach((t) => {
+        TodoListService.markTodoAsWorking(t.id);
+        TodoListService.markTodoAsDone(t.id);
+      });
       const chunk0TodoId = w0[0]!.id;
 
       // chunk-1 创建自己的 working 待办
@@ -328,7 +349,10 @@ describe('TodoWorkflow', () => {
       // chunk-0 完成 planning 待办
       const workflow0 = new TodoWorkflow('translation', taskId, 0);
       const p0 = workflow0.generateForState('planning');
-      p0.forEach((t) => TodoListService.markTodoAsDone(t.id));
+      p0.forEach((t) => {
+        TodoListService.markTodoAsWorking(t.id);
+        TodoListService.markTodoAsDone(t.id);
+      });
 
       // chunk-1 调用 planning（应跳过生成，但标记 initialized）
       const workflow1 = new TodoWorkflow('translation', taskId, 1);

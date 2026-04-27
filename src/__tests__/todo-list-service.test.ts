@@ -1,5 +1,5 @@
 import './setup';
-import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
+import { TodoListService } from 'src/services/todo-list-service';
 import { describe, test, expect, beforeEach } from 'bun:test';
 
 describe('TodoListService', () => {
@@ -104,6 +104,7 @@ describe('TodoListService', () => {
       const taskId = 'task-1';
       const todo1 = TodoListService.createTodo('Todo 1', taskId);
       TodoListService.createTodo('Todo 2', taskId);
+      TodoListService.markTodoAsWorking(todo1.id);
       TodoListService.markTodoAsDone(todo1.id);
 
       const deletedCount = TodoListService.deleteTodosByTaskId(taskId);
@@ -128,6 +129,7 @@ describe('TodoListService', () => {
       const taskId = 'task-1';
       const todo1 = TodoListService.createTodo('Todo 1', taskId);
       const todo2 = TodoListService.createTodo('Todo 2', taskId);
+      TodoListService.markTodoAsWorking(todo1.id);
       TodoListService.markTodoAsDone(todo1.id);
 
       const activeTodos = TodoListService.getActiveTodos();
@@ -141,6 +143,7 @@ describe('TodoListService', () => {
       const taskId = 'task-1';
       const todo1 = TodoListService.createTodo('Todo 1', taskId);
       TodoListService.createTodo('Todo 2', taskId);
+      TodoListService.markTodoAsWorking(todo1.id);
       TodoListService.markTodoAsDone(todo1.id);
 
       const completedTodos = TodoListService.getCompletedTodos();
@@ -184,6 +187,7 @@ describe('TodoListService', () => {
     test('应该能够将待办事项标记为完成', () => {
       const taskId = 'task-1';
       const todo = TodoListService.createTodo('Test todo', taskId);
+      TodoListService.markTodoAsWorking(todo.id);
       const done = TodoListService.markTodoAsDone(todo.id);
 
       expect(done.status).toBe('done');
@@ -202,6 +206,7 @@ describe('TodoListService', () => {
     test('已完成的待办事项不能标记为进行中', () => {
       const taskId = 'task-1';
       const todo = TodoListService.createTodo('Test todo', taskId);
+      TodoListService.markTodoAsWorking(todo.id);
       TodoListService.markTodoAsDone(todo.id);
 
       expect(() => {
