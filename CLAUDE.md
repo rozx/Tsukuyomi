@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 bun install                    # 安装依赖
+bun run setup:git-hooks        # 首次 clone 后必跑：注册 .githooks/pre-commit（自动 bump build 号）
+
 bun run dev                    # Web 开发模式 (前端:9000, 后端:8080)
 bun run dev:electron           # Electron 开发模式
 
@@ -29,6 +31,8 @@ bunx vitest run -t "测试描述"  # 按测试名过滤
 ```
 
 **修改代码后必须运行**: `bun run lint && bun run type-check && bun run quality-check`
+
+**首次 clone 必跑**: `bun run setup:git-hooks` — 把 `core.hooksPath` 指向仓库内的 [`.githooks/`](.githooks/)，启用 pre-commit 自动 bump build 号。脚本不存在或目录被删时 hook 会**静默跳过**（git 不报错），别忘了跑。
 
 ## 架构分层
 
