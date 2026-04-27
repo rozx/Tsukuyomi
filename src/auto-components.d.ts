@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AboutSection: typeof import('./components/settings/AboutSection.vue')['default']
     AdaptiveDialog: typeof import('./components/layout/AdaptiveDialog.vue')['default']
     AddChapterDialog: typeof import('./components/dialogs/AddChapterDialog.vue')['default']
     AddVolumeDialog: typeof import('./components/dialogs/AddVolumeDialog.vue')['default']
@@ -26,6 +27,7 @@ declare module 'vue' {
     AppRightPanelDesktop: typeof import('./components/layout/AppRightPanelDesktop.vue')['default']
     AppSideMenu: typeof import('./components/layout/AppSideMenu.vue')['default']
     AskUserDialog: typeof import('./components/dialogs/AskUserDialog.vue')['default']
+    AssistantAvatar: typeof import('./components/layout/AssistantAvatar.vue')['default']
     BatchEmbeddingsPanel: typeof import('./components/novel/BatchEmbeddingsPanel.vue')['default']
     BatchEmbeddingsTestQueryDialog: typeof import('./components/dialogs/BatchEmbeddingsTestQueryDialog.vue')['default']
     BookDialog: typeof import('./components/dialogs/BookDialog.vue')['default']

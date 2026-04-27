@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { computed, watch } from 'vue';
 import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
 import ChatActionBadge from 'src/components/layout/ChatActionBadge.vue';
+import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
+import { useThinkingPhrase } from 'src/composables/chat/useThinkingPhrase';
 
 interface MessageDisplayItem {
   type: 'content' | 'action' | 'grouped_action';
@@ -41,16 +44,43 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+
+// 思考态文案：每条助手消息一旦进入活跃思考态，就锁定一句池中文案不再随机切换。
+const thinkingPhrasesById = new Map<string, string>();
+const { pickPhrase, currentPhrase: fallbackPhrase } = useThinkingPhrase();
+
+const getThinkingPhrase = (messageId: string): string => {
+  const cached = thinkingPhrasesById.get(messageId);
+  if (cached) return cached;
+  // 兜底：未抽过时返回当前 fallback；首条消息进入活跃态时由 watcher 抽取并锁定。
+  return fallbackPhrase.value;
+};
+
+const activeThinkingIds = computed(() => {
+  const ids: string[] = [];
+  props.thinkingActive.forEach((isActive, id) => {
+    if (isActive) ids.push(id);
+  });
+  return ids;
+});
+
+watch(activeThinkingIds, (ids) => {
+  for (const id of ids) {
+    if (!thinkingPhrasesById.has(id)) {
+      thinkingPhrasesById.set(id, pickPhrase());
+    }
+  }
+});
 </script>
 
 <template>
   <div
     v-if="props.messages.length === 0"
-    class="flex flex-col items-center justify-center h-full text-center"
+    class="flex flex-col items-center justify-center h-full text-center px-6"
   >
-    <i class="pi pi-comments text-4xl text-moon-40 mb-4" />
-    <p class="text-sm text-moon-60 mb-2">开始与 AI 助手对话</p>
-    <p class="text-xs text-moon-40">助手可以帮你管理术语、角色设定，并提供翻译建议</p>
+    <AssistantAvatar :size="128" glowing class="mb-5" />
+    <p class="empty-hero-title text-moon-90 mb-2">妾身月詠，于此恭候</p>
+    <p class="text-xs text-moon-50">可问翻译、术语、章节诸事</p>
   </div>
   <div v-else class="flex flex-col gap-4 w-full">
     <template v-for="message in props.messages" :key="message.id">
@@ -63,10 +93,18 @@ const props = defineProps<Props>();
             (props.messageDisplayItemsById[message.id]?.length ?? 0) > 0)
         "
       >
-        <div
-          class="flex flex-col gap-2 w-full"
-          :class="message.role === 'user' ? 'items-end' : 'items-start'"
-        >
+        <div class="flex w-full gap-2 items-start">
+          <AssistantAvatar
+            v-if="message.role === 'assistant'"
+            :size="32"
+            :pulse="props.thinkingActive.get(message.id) === true"
+            :glowing="props.thinkingActive.get(message.id) === true"
+            class="mt-1"
+          />
+          <div
+            class="flex flex-col gap-2 min-w-0 flex-1"
+            :class="message.role === 'user' ? 'items-end' : 'items-start'"
+          >
           <div
             v-if="
               message.role === 'assistant' &&
@@ -87,7 +125,9 @@ const props = defineProps<Props>();
                     : 'pi pi-chevron-right'
                 "
               />
-              <span class="font-medium">思考过程</span>
+              <span class="font-medium">{{
+                props.thinkingActive.get(message.id) ? getThinkingPhrase(message.id) : '思考过程'
+              }}</span>
               <i
                 v-if="props.thinkingActive.get(message.id)"
                 class="pi pi-spin pi-spinner text-xs ml-auto"
@@ -184,6 +224,7 @@ const props = defineProps<Props>();
               {{ props.formatMessageTime(message.timestamp) }}
             </span>
           </template>
+          </div>
         </div>
       </template>
     </template>
@@ -191,6 +232,14 @@ const props = defineProps<Props>();
 </template>
 
 <style scoped>
+/* 空状态 hero 标题：serif 字体 + 字距，烘托月詠的学者气质 */
+.empty-hero-title {
+  font-family: 'Noto Serif JP', 'Songti SC', 'Noto Serif SC', serif;
+  font-size: 1.05rem;
+  letter-spacing: 0.16em;
+  font-weight: 500;
+}
+
 /* 设计系统：聊天气泡——AI 左上拐角 4px，User 右上拐角 4px，保留气泡"尾巴"感 */
 .chat-bubble {
   border-radius: 14px;

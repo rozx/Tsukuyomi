@@ -17,6 +17,7 @@ import { getAssetUrl } from 'src/utils';
 import { ChapterService } from 'src/services/chapter-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { estimateAssistantContextTokens } from 'src/utils/ai-context-utils';
+import { TOOL_CALL_PLACEHOLDER_VARIANTS } from 'src/services/ai/tasks/utils/stream-handler';
 import { throttle } from 'src/utils/throttle';
 import { usePanelResize } from 'src/composables/chat/usePanelResize';
 import { useThinkingDisplay } from 'src/composables/chat/useThinkingDisplay';
@@ -316,7 +317,14 @@ export function useRightPanel() {
 
   const isAssistantMessageCountable = (msg: (typeof messages.value)[number]): boolean => {
     if (msg.actions && msg.actions.length > 0) return false;
-    if (!msg.content || msg.content === '（调用工具）') return false;
+    if (
+      !msg.content ||
+      TOOL_CALL_PLACEHOLDER_VARIANTS.includes(
+        msg.content as (typeof TOOL_CALL_PLACEHOLDER_VARIANTS)[number],
+      )
+    ) {
+      return false;
+    }
     return true;
   };
 

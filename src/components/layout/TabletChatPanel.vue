@@ -12,6 +12,7 @@ import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPop
 import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
+import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import { useUiStore } from 'src/stores/ui';
 import { useChatPanelSetup } from 'src/composables/right-panel/useChatPanelSetup';
 
@@ -23,7 +24,6 @@ const {
   chatSessionsStore,
   panelContainerRef,
   messagesContainerRef,
-  logoPath,
   messages,
   inputMessage,
   messageDisplayItemsById,
@@ -63,13 +63,11 @@ const close = () => ui.closeRightPanel();
 </script>
 
 <template>
-  <aside ref="panelContainerRef" class="tcp-shell" aria-label="AI 助手">
+  <aside ref="panelContainerRef" class="tcp-shell" aria-label="月詠 AI 助手">
     <header class="tcp-appbar">
-      <div class="tcp-appbar-logo">
-        <img :src="logoPath" alt="" />
-      </div>
+      <AssistantAvatar :size="28" class="tcp-appbar-avatar" />
       <div class="tcp-appbar-text">
-        <div class="tcp-appbar-title">AI 助手</div>
+        <div class="tcp-appbar-title">月詠</div>
         <div class="tcp-appbar-sub">
           <span
             class="tcp-status-dot"
@@ -144,7 +142,7 @@ const close = () => ui.closeRightPanel();
         <input
           v-model="inputMessage"
           :disabled="isSending || !assistantModel"
-          :placeholder="assistantModel ? '向 AI 助手提问…' : '未配置助手模型'"
+          :placeholder="assistantModel ? '请月詠相助…' : '未配置助手模型'"
           class="tcp-input"
           @keydown.enter.exact.prevent="sendMessage"
         />
@@ -200,20 +198,8 @@ const close = () => ui.closeRightPanel();
   flex-shrink: 0;
 }
 
-.tcp-appbar-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  overflow: hidden;
+.tcp-appbar-avatar {
   flex-shrink: 0;
-  background: #1c1f26;
-}
-
-.tcp-appbar-logo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
 }
 
 .tcp-appbar-text {

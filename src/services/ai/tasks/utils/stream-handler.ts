@@ -24,11 +24,23 @@ const MIN_SCAN_LENGTH = 200;
 const MAX_ACCUMULATED_TEXT = 50000;
 
 /**
- * 需要从流式输出中过滤掉的占位符（当模型没有正文只调用工具时，
- * provider 层会把这些文字写入请求/历史以兼容某些 OpenAI 兼容服务，
- * 少数模型会把它们当成文本回显，污染用户可见的输出框）
+ * 当模型没有正文只调用工具时使用的占位符——会作为 message.content 持久化，
+ * 以兼容某些 OpenAI 兼容服务对 content 非空的要求。新写入一律用月詠人格化文本；
+ * 老对话历史里仍可能存在 `（调用工具）` / `(调用工具)`，过滤器需向后兼容。
  */
-const OUTPUT_PLACEHOLDERS = ['（调用工具）', '(调用工具)'] as const;
+export const TOOL_CALL_PLACEHOLDER = '（月詠施术中）';
+
+/**
+ * 需要从流式输出中过滤掉的占位符变体集合（包括历史遗留版本，向后兼容）。
+ * 少数模型会把这些文字当成文本回显，污染用户可见的输出框。
+ */
+export const TOOL_CALL_PLACEHOLDER_VARIANTS = [
+  TOOL_CALL_PLACEHOLDER,
+  '（调用工具）',
+  '(调用工具)',
+] as const;
+
+const OUTPUT_PLACEHOLDERS = TOOL_CALL_PLACEHOLDER_VARIANTS;
 
 /**
  * 创建带缓冲的占位符过滤器：保证跨 chunk 的占位符也能被整体移除，

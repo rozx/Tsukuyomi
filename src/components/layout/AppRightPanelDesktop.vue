@@ -67,8 +67,8 @@ defineExpose({ props });
       type="button"
       class="rp-rail-item"
       :class="{ active: activeRightTab === 'chat' && ui.rightPanelOpen }"
-      aria-label="AI 助手"
-      title="AI 助手"
+      aria-label="月詠 AI 助手"
+      title="月詠"
       @click="expandToTab('chat')"
     >
       <i class="pi pi-comments" aria-hidden="true" />

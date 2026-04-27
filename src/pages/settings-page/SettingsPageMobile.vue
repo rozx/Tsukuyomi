@@ -16,6 +16,7 @@ import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
 import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
 import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
 import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
+import AboutSection from 'src/components/settings/AboutSection.vue';
 
 const ctx = injectSettingsPage();
 </script>
@@ -66,6 +67,9 @@ const ctx = injectSettingsPage();
       />
       <ImportExportTab
         v-else-if="ctx.activeTab.value === (ctx.isElectron.value ? '5' : '6')"
+      />
+      <AboutSection
+        v-else-if="ctx.activeTab.value === (ctx.isElectron.value ? '6' : '7')"
       />
     </div>
   </section>

@@ -11,7 +11,7 @@ type Tab = { id: MainNavTab; icon: string; label: string };
 const tabs: Tab[] = [
   { id: 'home', icon: 'pi-home', label: '首页' },
   { id: 'library', icon: 'pi-book', label: '书库' },
-  { id: 'chat', icon: 'pi-sparkles', label: 'AI 助手' },
+  { id: 'chat', icon: 'pi-sparkles', label: '月詠' },
   { id: 'ai', icon: 'pi-microchip-ai', label: 'AI 模型' },
   { id: 'settings', icon: 'pi-cog', label: '设置' },
 ];

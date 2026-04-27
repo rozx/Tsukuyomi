@@ -18,6 +18,7 @@ import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
 import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
 import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
 import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
+import AboutSection from 'src/components/settings/AboutSection.vue';
 
 /**
  * Shared state + logic for the `/settings` page. Used by the dispatcher
@@ -63,8 +64,8 @@ export function injectSettingsPage(): SettingsPageContext {
 
 // 将 tab value 映射到对应的面板组件。Electron 与非 Electron 顺序略有差异，
 // 已由 `tabs` 列表处理，本函数只负责按 value 字符串分派。
-// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入导出
-// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入导出
+// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入导出 · 7=关于
+// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入导出 · 6=关于
 const SETTINGS_PANEL_MAP_ELECTRON: Record<string, Component> = {
   '0': AIModelSettingsTab,
   '1': ApiKeysSettingsTab,
@@ -72,6 +73,7 @@ const SETTINGS_PANEL_MAP_ELECTRON: Record<string, Component> = {
   '3': EmbeddingSettingsTab,
   '4': ScraperSettingsTab,
   '5': ImportExportTab,
+  '6': AboutSection,
 };
 
 const SETTINGS_PANEL_MAP_WEB: Record<string, Component> = {
@@ -82,6 +84,7 @@ const SETTINGS_PANEL_MAP_WEB: Record<string, Component> = {
   '4': EmbeddingSettingsTab,
   '5': ScraperSettingsTab,
   '6': ImportExportTab,
+  '7': AboutSection,
 };
 
 export function getSettingsPanelComponent(isElectron: boolean, value: string): Component {
@@ -108,6 +111,7 @@ function createSettingsPageContext(): SettingsPageContext {
     list.push({ value: isElectron.value ? '3' : '4', label: '本地嵌入' });
     list.push({ value: isElectron.value ? '4' : '5', label: '爬虫设置' });
     list.push({ value: isElectron.value ? '5' : '6', label: '导入/导出' });
+    list.push({ value: isElectron.value ? '6' : '7', label: '关于' });
     return list;
   });
 
@@ -132,6 +136,7 @@ function createSettingsPageContext(): SettingsPageContext {
     4: '5', // 导入/导出
     6: '1', // API Keys
     7: '3', // 本地嵌入
+    8: '6', // 关于（新增）
   };
 
   const SAVED_INDEX_TO_TAB_VALUE_WEB: Record<number, string> = {
@@ -142,6 +147,7 @@ function createSettingsPageContext(): SettingsPageContext {
     4: '6', // 导入/导出
     6: '2', // API Keys
     7: '4', // 本地嵌入
+    8: '7', // 关于（新增）
   };
 
   const TAB_VALUE_TO_SAVED_INDEX_ELECTRON: Record<string, number> = {
@@ -151,6 +157,7 @@ function createSettingsPageContext(): SettingsPageContext {
     '3': 7,
     '4': 3,
     '5': 4,
+    '6': 8, // 关于（新增；savedIndex 8 为新分配，不与历史值冲突）
   };
 
   const TAB_VALUE_TO_SAVED_INDEX_WEB: Record<string, number> = {
@@ -161,6 +168,7 @@ function createSettingsPageContext(): SettingsPageContext {
     '4': 7,
     '5': 3,
     '6': 4,
+    '7': 8, // 关于（新增）
   };
 
   const convertSavedTabIndex = (savedIndex: number): string => {
@@ -189,7 +197,7 @@ function createSettingsPageContext(): SettingsPageContext {
     await ensureStoreLoaded();
     const lastTab = settingsStore.lastOpenedSettingsTab;
     const tabValue = convertSavedTabIndex(lastTab);
-    const maxTabIndex = isElectron.value ? 5 : 6;
+    const maxTabIndex = isElectron.value ? 6 : 7;
     const tabIndex = Number(tabValue);
     activeTab.value = tabIndex >= 0 && tabIndex <= maxTabIndex ? tabValue : '0';
   };
@@ -199,7 +207,7 @@ function createSettingsPageContext(): SettingsPageContext {
     const stringValue = String(value);
     activeTab.value = stringValue;
     const tabIndex = Number(stringValue);
-    const maxTabIndex = isElectron.value ? 5 : 6;
+    const maxTabIndex = isElectron.value ? 6 : 7;
     if (tabIndex >= 0 && tabIndex <= maxTabIndex) {
       const savedIndex = convertTabValueToIndex(stringValue);
       void settingsStore.setLastOpenedSettingsTab(savedIndex);

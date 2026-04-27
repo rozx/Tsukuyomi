@@ -9,6 +9,7 @@ import {
   type AIProcessingStore,
 } from './task-types';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { TOOL_CALL_PLACEHOLDER } from './stream-handler';
 import type {
   TextGenerationRequest,
   TextGenerationStreamCallback,
@@ -418,7 +419,7 @@ class TaskLoopSession {
     const { history } = this.config;
     history.push({
       role: 'assistant',
-      content: assistantText && assistantText.trim() ? assistantText : '（调用工具）',
+      content: assistantText && assistantText.trim() ? assistantText : TOOL_CALL_PLACEHOLDER,
       ...(result.toolCalls ? { tool_calls: result.toolCalls } : {}),
       reasoning_content: result.reasoningContent || null,
     });

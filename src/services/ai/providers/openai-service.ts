@@ -12,6 +12,7 @@ import { BaseAIService, AIEmptyResponseError } from '../core';
 import { DEFAULT_TEMPERATURE, OPENAI_MAX_TOKENS_LIMIT } from 'src/constants/ai';
 import { ProxyService } from 'src/services/proxy-service';
 import { isElectron } from 'src/utils/platform';
+import { TOOL_CALL_PLACEHOLDER } from 'src/services/ai/tasks/utils/stream-handler';
 
 /**
  * OpenAI AI 服务实现
@@ -279,7 +280,7 @@ function toOpenAIAssistantWithToolCalls(msg: {
 }): OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam {
   // [兼容] Moonshot/Kimi 等 OpenAI 兼容服务可能不允许 assistant content 为空（即使有 tool_calls）
   const safeAssistantContent =
-    typeof msg.content === 'string' && msg.content.trim() ? msg.content : '（调用工具）';
+    typeof msg.content === 'string' && msg.content.trim() ? msg.content : TOOL_CALL_PLACEHOLDER;
   const assistantMsg: OpenAI.Chat.Completions.ChatCompletionAssistantMessageParam = {
     role: 'assistant',
     content: safeAssistantContent,

@@ -16,6 +16,10 @@ import type { AIProcessingStore } from './utils/task-types';
 import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';
 import { getTodosSystemPrompt } from './utils/todo-helper';
+import {
+  TOOL_CALL_PLACEHOLDER,
+  TOOL_CALL_PLACEHOLDER_VARIANTS,
+} from './utils/stream-handler';
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
 import {
   DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
@@ -225,7 +229,9 @@ export class AssistantService {
           (msg.role === 'user' || msg.role === 'assistant') &&
           msg.content &&
           msg.content.trim() &&
-          msg.content !== '（调用工具）',
+          !TOOL_CALL_PLACEHOLDER_VARIANTS.includes(
+            msg.content as (typeof TOOL_CALL_PLACEHOLDER_VARIANTS)[number],
+          ),
       )
       .map((msg) => ({
         role: msg.role,
@@ -714,7 +720,7 @@ export class AssistantService {
 
   /**
    * 将助手消息推送到消息历史
-   * 统一采用 '（调用工具）' 占位符（兼容 Moonshot/Kimi 等服务）
+   * 统一采用 TOOL_CALL_PLACEHOLDER 占位符（兼容 Moonshot/Kimi 等服务对 content 非空的要求）
    */
   private static pushAssistantMessage(
     messages: ChatMessage[],
@@ -725,7 +731,7 @@ export class AssistantService {
     if (toolCalls.length > 0) {
       messages.push({
         role: 'assistant',
-        content: text && text.trim() ? text : '（调用工具）',
+        content: text && text.trim() ? text : TOOL_CALL_PLACEHOLDER,
         tool_calls: toolCalls,
         reasoning_content: reasoningContent || null,
       });

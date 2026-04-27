@@ -33,11 +33,11 @@
   },
   {
     "id": "chat-assistant-guide",
-    "title": "聊天助手",
+    "title": "月詠 · 聊天助手",
     "file": "chat-assistant-guide.md",
     "path": "help",
     "category": "使用指南",
-    "description": "聊天助手功能详解、使用技巧和最佳实践"
+    "description": "月詠人格、聊天助手功能详解、使用技巧、译文纯净度保证"
   },
   {
     "id": "toolbar-guide",

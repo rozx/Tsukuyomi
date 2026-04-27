@@ -679,7 +679,7 @@ async function moveChapter(
         type="button"
         class="tsr-btn"
         :class="{ 'tsr-btn--active': isChatActive }"
-        title="AI 助手"
+        title="月詠"
         @click="() => toggleRail('chat')"
       >
         <i class="pi pi-sparkles" aria-hidden="true" />

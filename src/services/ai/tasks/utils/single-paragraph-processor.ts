@@ -17,6 +17,7 @@ import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
 import type { AIProcessingStore, TaskType } from './task-types';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { TOOL_CALL_PLACEHOLDER } from './stream-handler';
 import { AIServiceFactory } from '../../ai-service-factory';
 import { AIEmptyResponseError } from '../../core';
 import { ToolRegistry } from '../../tools/tool-registry';
@@ -233,7 +234,7 @@ async function runToolCallsForSingleParagraph(
 
   history.push({
     role: 'assistant',
-    content: result.text || '（调用工具）',
+    content: result.text || TOOL_CALL_PLACEHOLDER,
     tool_calls: result.toolCalls,
     reasoning_content: result.reasoningContent || null,
   });

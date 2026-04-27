@@ -22,6 +22,7 @@ const __dirname = dirname(__filename);
 
 // 保持对窗口对象的全局引用，否则窗口会被自动关闭
 let mainWindow: BrowserWindow | null = null;
+let splashWindow: BrowserWindow | null = null;
 let browserPromise: Promise<Browser> | null = null;
 
 // 检测是否为开发环境
@@ -61,6 +62,80 @@ function handleLoadError(window: BrowserWindow | null, err: unknown, path: strin
       console.error('[Electron] Failed to load via URL:', urlErr);
     });
   }
+}
+
+function resolveSplashLogoBase64(): string {
+  const candidates = [
+    join(__dirname, '..', 'icons', 'android-chrome-512x512.png'),
+    join(__dirname, '..', '..', 'public', 'icons', 'android-chrome-512x512.png'),
+    join(process.resourcesPath || __dirname, 'icons', 'android-chrome-512x512.png'),
+    join(process.resourcesPath || __dirname, 'public', 'icons', 'android-chrome-512x512.png'),
+    join(__dirname, 'icons', 'icon.png'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (existsSync(p)) return readFileSync(p).toString('base64');
+    } catch {
+      // 继续尝试下一个候选路径
+    }
+  }
+  return '';
+}
+
+function createSplashWindow(): BrowserWindow {
+  const splash = new BrowserWindow({
+    width: 360,
+    height: 380,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    show: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  const logoBase64 = resolveSplashLogoBase64();
+  const logoSrc = logoBase64 ? `data:image/png;base64,${logoBase64}` : '';
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; -webkit-app-region: drag; }
+  .wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; font-family: 'Noto Serif JP', 'Songti SC', 'Noto Serif SC', serif; color: #e6def5; }
+  .logo { width: 168px; height: 168px; border-radius: 50%; background-color: #1a1538; background-size: cover; background-position: center; box-shadow: 0 0 36px rgba(180, 140, 255, 0.45); animation: pulse 2.4s ease-in-out infinite; }
+  .title { font-size: 22px; letter-spacing: 8px; font-weight: 600; color: #e6def5; }
+  .sub { font-size: 10px; letter-spacing: 4px; opacity: 0.55; font-family: 'JetBrains Mono', Consolas, monospace; color: #c9b4ff; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 24px rgba(180, 140, 255, 0.30); }
+    50% { box-shadow: 0 0 48px rgba(180, 140, 255, 0.60); }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo" style="background-image: url('${logoSrc}')"></div>
+    <div class="title">月 詠</div>
+    <div class="sub">TSUKUYOMI</div>
+  </div>
+</body>
+</html>`;
+
+  void splash.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+  return splash;
+}
+
+function closeSplashWindow(): void {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+  }
+  splashWindow = null;
 }
 
 function resolvePreloadPath(): string | null {
@@ -226,6 +301,7 @@ function createWindow() {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show();
     }
+    closeSplashWindow();
   });
 
   // 添加一个安全超时，如果 ready-to-show 没有触发，强制显示窗口
@@ -234,6 +310,7 @@ function createWindow() {
       console.warn('[Electron] Window did not show within 10s, forcing show');
       mainWindow.show();
     }
+    closeSplashWindow();
   }, 10000);
 
   // 在窗口关闭时清理安全超时，避免在已销毁窗口上调用 show
@@ -603,6 +680,7 @@ void app.whenReady().then(() => {
   });
 
   createMenu();
+  splashWindow = createSplashWindow();
   createWindow();
 
   app.on('activate', () => {

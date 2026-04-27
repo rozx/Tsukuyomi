@@ -13,6 +13,7 @@ import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPop
 import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
+import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { useChatPanelSetup } from 'src/composables/right-panel/useChatPanelSetup';
 
@@ -36,7 +37,6 @@ const {
   chatSessionsStore,
   panelContainerRef,
   messagesContainerRef,
-  logoPath,
   messages,
   inputMessage,
   messageDisplayItemsById,
@@ -74,15 +74,13 @@ const {
 </script>
 
 <template>
-  <MobileBottomSheet v-model:visible="localVisible" title="AI 助手" full-bleed>
+  <MobileBottomSheet v-model:visible="localVisible" title="月詠" full-bleed>
     <!-- 按设计稿：logo + 标题 + 副标题 + 动作按钮 + 关闭X 单行紧凑布局 -->
     <template #header="{ close }">
       <header class="mc-appbar">
-        <div class="mc-appbar-logo">
-          <img :src="logoPath" alt="" />
-        </div>
+        <AssistantAvatar :size="28" class="mc-appbar-avatar" />
         <div class="mc-appbar-text">
-          <div class="mc-appbar-title">AI 助手</div>
+          <div class="mc-appbar-title">月詠</div>
           <div class="mc-appbar-sub">
             <span
               class="mc-status-dot"
@@ -160,7 +158,7 @@ const {
           <input
             v-model="inputMessage"
             :disabled="isSending || !assistantModel"
-            :placeholder="assistantModel ? '向 AI 助手提问…' : '未配置助手模型'"
+            :placeholder="assistantModel ? '请月詠相助…' : '未配置助手模型'"
             class="mc-input"
             @keydown.enter.exact.prevent="sendMessage"
           />
@@ -242,20 +240,8 @@ const {
   width: 100%;
 }
 
-.mc-appbar-logo {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  overflow: hidden;
+.mc-appbar-avatar {
   flex-shrink: 0;
-  background: #1c1f26;
-}
-
-.mc-appbar-logo img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
 }
 
 .mc-appbar-text {

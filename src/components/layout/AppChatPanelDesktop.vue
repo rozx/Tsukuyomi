@@ -10,6 +10,7 @@ import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPop
 import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
+import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import { useRightPanel } from 'src/composables/right-panel/useRightPanel';
 
 const {
@@ -73,11 +74,11 @@ const close = () => ui.closeRightPanel();
 </script>
 
 <template>
-  <section class="cp-shell" aria-label="AI 助手">
+  <section class="cp-shell" aria-label="月詠 AI 助手">
     <header class="cp-appbar">
-      <div class="cp-appbar-icon"><i class="pi pi-comments" aria-hidden="true" /></div>
+      <AssistantAvatar :size="28" class="cp-appbar-avatar" />
       <div class="cp-appbar-text">
-        <div class="cp-appbar-title">AI 助手</div>
+        <div class="cp-appbar-title">月詠</div>
         <div class="cp-appbar-sub">
           <span class="cp-status-dot" :class="{ 'cp-status-dot--off': !assistantModel }" />
           <template v-if="assistantModel">
@@ -214,7 +215,7 @@ const close = () => ui.closeRightPanel();
           v-model="inputMessage"
           :disabled="isSending || !assistantModel"
           :placeholder="
-            assistantModel ? '向 AI 助手提问… (Shift+Enter 换行)' : '未配置助手模型'
+            assistantModel ? '请月詠相助… (Shift+Enter 换行)' : '未配置助手模型'
           "
           class="cp-input"
           :auto-resize="true"
@@ -270,21 +271,8 @@ const close = () => ui.closeRightPanel();
   flex-shrink: 0;
 }
 
-.cp-appbar-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: rgba(109, 136, 168, 0.15);
-  border: 1px solid rgba(109, 136, 168, 0.3);
-  color: #a3b7cf;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.cp-appbar-avatar {
   flex-shrink: 0;
-}
-
-.cp-appbar-icon i {
-  font-size: 13px;
 }
 
 .cp-appbar-text {
