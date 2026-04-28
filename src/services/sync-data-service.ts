@@ -1880,7 +1880,23 @@ export class SyncDataService {
     }
   }
 
-  /** 恢复本地 Gist 凭据 + lastSyncTime，清空墓碑（覆盖快照后无需保留删除记录） */
+  /**
+   * 覆盖快照后恢复本地 Gist 凭据 / lastSyncTime，清掉所有"会主动传播删除"的状态。
+   *
+   * 必须清空：
+   * - `deletedNovelIds`     → 直接生成 `manifest.tombstones["novel:<id>"]`
+   * - `deletedModelIds`     → 上传合并时过滤远端模型
+   * - `deletedMemoryIds`    → v3+ 写入 memories envelope 的 tombstones（同样会主动跨设备删除）
+   * - `knownRemoteTombstones` → 与 `deletedNovelIds` 合并进 manifest tombstones；
+   *                           留着会让恢复的旧条目继续被墓碑标记成"已删"，
+   *                           尤其在新版"严格 lastEdited >= deletedAt 才丢墓碑"的复活规则下，
+   *                           恢复进来的旧 lastEdited 不会触发复活，必须主动清空。
+   *
+   * 保留：
+   * - `deletedCoverIds` / `deletedCoverUrls` —— 仅在上传合并时过滤远端项，不主动写 manifest 墓碑
+   * - `knownRemoteHashes` / `knownRemoteEntries` / `lastRemoteETag` —— 反映远端当前状态，
+   *   下一次同步会基于"本地 vs 远端"的差异自动重新上传被恢复的内容。
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private static async restoreGistSyncConfigAfterSnapshot(remoteAppSettings: any): Promise<void> {
     const settingsStore = useSettingsStore();
@@ -1890,17 +1906,20 @@ export class SyncDataService {
       await settingsStore.replaceSettingsFromSyncSnapshot(remoteAppSettings);
     }
 
+    const cleared = {
+      deletedNovelIds: [] as Array<{ id: string; deletedAt: number; bookId?: string }>,
+      deletedModelIds: [] as Array<{ id: string; deletedAt: number }>,
+      deletedMemoryIds: [] as Array<{ id: string; deletedAt: number; bookId?: string }>,
+      knownRemoteTombstones: {} as Record<string, string>,
+    };
+
     if (currentGistSync) {
       await settingsStore.updateGistSync({
         ...currentGistSync,
-        deletedNovelIds: [],
-        deletedModelIds: [],
+        ...cleared,
       });
     } else {
-      await settingsStore.updateGistSync({
-        deletedNovelIds: [],
-        deletedModelIds: [],
-      });
+      await settingsStore.updateGistSync(cleared);
     }
   }
 

@@ -41,7 +41,8 @@ const mockSettingsStore = {
     deletedModelIds: [] as Array<{ id: string; deletedAt: number }>,
     deletedCoverIds: [] as Array<{ id: string; deletedAt: number }>,
     deletedCoverUrls: [] as Array<{ url: string; deletedAt: number }>,
-    deletedMemoryIds: [] as Array<{ id: string; deletedAt: number }>,
+    deletedMemoryIds: [] as Array<{ id: string; deletedAt: number; bookId?: string }>,
+    knownRemoteTombstones: {} as Record<string, string>,
   },
   importSettings: mock((_settings: unknown) => Promise.resolve()),
   replaceSettingsFromSyncSnapshot: mock((_settings: unknown) => Promise.resolve()),
@@ -224,6 +225,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       deletedCoverIds: [],
       deletedCoverUrls: [],
       deletedMemoryIds: [],
+      knownRemoteTombstones: {},
     };
     mockSettingsStore.importSettings.mockImplementation((settings: unknown) => {
       setMockSettings(
@@ -2901,6 +2903,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         deletedCoverIds: [{ id: 'old-c', deletedAt: 100 }],
         deletedCoverUrls: [],
         deletedMemoryIds: [{ id: 'old-mem', deletedAt: 100 }],
+        knownRemoteTombstones: {},
       };
 
       await SyncDataService.overwriteFromSnapshot({
@@ -2916,14 +2919,18 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(lastCall.deletedModelIds).toEqual([]);
     });
 
-    it('覆盖后应保留 deletedCoverIds deletedCoverUrls 和 deletedMemoryIds', async () => {
+    it('覆盖后清空主动传播删除的字段（novel/model/memory + knownRemoteTombstones），保留 cover 删除记录', async () => {
       mockSettingsStore.gistSync = {
         lastSyncTime: 123,
         deletedNovelIds: [{ id: 'old-n', deletedAt: 100 }],
         deletedModelIds: [{ id: 'old-m', deletedAt: 100 }],
         deletedCoverIds: [{ id: 'old-c', deletedAt: 110 }],
         deletedCoverUrls: [{ url: 'cover.jpg', deletedAt: 120 }],
-        deletedMemoryIds: [{ id: 'old-mem', deletedAt: 130 }],
+        deletedMemoryIds: [{ id: 'old-mem', bookId: 'book-x', deletedAt: 130 }],
+        knownRemoteTombstones: {
+          'novel:restored-book': '2026-04-01T00:00:00.000Z',
+          'memories:restored-book': '2026-04-02T00:00:00.000Z',
+        },
       };
 
       await SyncDataService.overwriteFromSnapshot({
@@ -2939,13 +2946,17 @@ describe('数据同步服务 (SyncDataService)', () => {
         deletedCoverIds: Array<{ id: string; deletedAt: number }>;
         deletedCoverUrls: Array<{ url: string; deletedAt: number }>;
         deletedMemoryIds: Array<{ id: string; deletedAt: number }>;
+        knownRemoteTombstones: Record<string, string>;
       };
 
+      // 主动传播通道全部清空（避免恢复的条目被旧墓碑再次"删除"）
       expect(lastCall.deletedNovelIds).toEqual([]);
       expect(lastCall.deletedModelIds).toEqual([]);
+      expect(lastCall.deletedMemoryIds).toEqual([]);
+      expect(lastCall.knownRemoteTombstones).toEqual({});
+      // 仅参与上传合并过滤的字段保留
       expect(lastCall.deletedCoverIds).toEqual([{ id: 'old-c', deletedAt: 110 }]);
       expect(lastCall.deletedCoverUrls).toEqual([{ url: 'cover.jpg', deletedAt: 120 }]);
-      expect(lastCall.deletedMemoryIds).toEqual([{ id: 'old-mem', deletedAt: 130 }]);
     });
 
     it('覆盖 appSettings 后保留本地 Gist 凭据与 lastSyncTime', async () => {
@@ -3089,6 +3100,58 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(mockAIModelsStore.clearModels).not.toHaveBeenCalled();
       expect(mockCoverHistoryStore.clearHistory).not.toHaveBeenCalled();
       expect(mockBooksStore.bulkAddBooks).not.toHaveBeenCalled();
+    });
+
+    it('回归：恢复后 buildLocalManifest 不会为恢复条目重新生成墓碑（root-cause 验证）', async () => {
+      // 场景：用户先删了书 X 与其单条 memory M，之后撤销恢复到删除前的快照。
+      // 旧实现 / 此修复前的代码会让 knownRemoteTombstones + deletedMemoryIds 残留，
+      // 在严格 lastEdited >= deletedAt 复活规则下重新写入墓碑，
+      // 下一次同步把恢复回来的 X / M 又传播为已删除。
+      mockSettingsStore.gistSync = {
+        lastSyncTime: 200,
+        deletedNovelIds: [],
+        deletedModelIds: [],
+        deletedCoverIds: [],
+        deletedCoverUrls: [],
+        deletedMemoryIds: [
+          { id: 'mem-1', bookId: 'book-x', deletedAt: 150 } as unknown as {
+            id: string;
+            deletedAt: number;
+          },
+        ],
+        knownRemoteTombstones: {
+          'novel:book-x': '2026-04-01T00:00:00.000Z',
+          'memories:book-x': '2026-04-02T00:00:00.000Z',
+        },
+      };
+
+      await SyncDataService.overwriteFromSnapshot({
+        novels: [{ id: 'book-x', title: 'restored', lastEdited: new Date(50).toISOString() }],
+        aiModels: [],
+        coverHistory: [],
+        memories: [
+          {
+            id: 'mem-1',
+            bookId: 'book-x',
+            content: 'restored',
+            summary: '',
+            createdAt: 50,
+            lastAccessedAt: 50,
+          },
+        ],
+      });
+
+      // restoreGistSyncConfigAfterSnapshot 必须把所有"主动传播删除"的字段清掉
+      const lastCall = mockSettingsStore.updateGistSync.mock.calls.at(-1)?.[0] as {
+        deletedNovelIds: unknown[];
+        deletedModelIds: unknown[];
+        deletedMemoryIds: unknown[];
+        knownRemoteTombstones: Record<string, string>;
+      };
+      expect(lastCall.deletedNovelIds).toEqual([]);
+      expect(lastCall.deletedModelIds).toEqual([]);
+      expect(lastCall.deletedMemoryIds).toEqual([]);
+      expect(lastCall.knownRemoteTombstones).toEqual({});
     });
 
     it('写入过程抛异常时回滚到覆盖前状态', async () => {
