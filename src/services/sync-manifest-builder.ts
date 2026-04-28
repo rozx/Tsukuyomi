@@ -58,7 +58,13 @@ export function buildMemoriesPayload(
   tombstones: MemoryTombstone[] | undefined,
 ): MemoriesPayload {
   const cleanTombstones = (tombstones ?? [])
-    .filter((t) => t && typeof t.id === 'string' && Number.isFinite(t.deletedAt))
+    .filter(
+      (t) =>
+        t &&
+        typeof t.id === 'string' &&
+        t.id.length > 0 &&
+        Number.isFinite(t.deletedAt),
+    )
     .slice()
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return cleanTombstones.length > 0

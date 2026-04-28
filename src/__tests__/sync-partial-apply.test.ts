@@ -1352,6 +1352,165 @@ describe('applyPartialRemoteData: memories envelope tombstones', () => {
     // 应作为正常合并处理，不抛错
     expect(deleteSpy).not.toHaveBeenCalled();
   });
+
+  it('完全空 envelope（memories 与 tombstones 都为空）保留所有本地（远端"无数据"语义）', async () => {
+    localMemories.push({
+      id: 'mem-local',
+      bookId: BOOK_ID,
+      content: 'local',
+      summary: '',
+      createdAt: LAST_SYNC + 100,
+      lastAccessedAt: LAST_SYNC + 100,
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      [`memories:${BOOK_ID}`]: {
+        kind: 'memories',
+        bookId: BOOK_ID,
+        value: { memories: [], tombstones: [] },
+      },
+    });
+
+    // 远端空且无墓碑 → 不删除本地
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('远端墓碑指向本地不存在的 id：no-op，不报错', async () => {
+    // 本地没有 mem-ghost
+    localMemories.push({
+      id: 'mem-real',
+      bookId: BOOK_ID,
+      content: 'real',
+      summary: '',
+      createdAt: LAST_SYNC + 100,
+      lastAccessedAt: LAST_SYNC + 100,
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      [`memories:${BOOK_ID}`]: {
+        kind: 'memories',
+        bookId: BOOK_ID,
+        value: {
+          memories: [],
+          tombstones: [{ id: 'mem-ghost', deletedAt: LAST_SYNC + 500 }],
+        },
+      },
+    });
+
+    expect(deleteSpy).not.toHaveBeenCalledWith(BOOK_ID, 'mem-ghost');
+    expect(deleteSpy).not.toHaveBeenCalledWith(BOOK_ID, 'mem-real');
+  });
+
+  it('远端 envelope 同时含 memory 与同 id 墓碑（重新创建场景）：墓碑早于 memory.lastAccessedAt → 保留 memory', async () => {
+    // 场景：A 设备删了 M 然后又重新创建（id 复用 / 撤销），envelope 同时携带两条
+    // 期望：apply 端把 memory 当成"墓碑后又创建"，保留 memory，不删本地
+    localMemories.push({
+      id: 'mem-recreated',
+      bookId: BOOK_ID,
+      content: 'old-local',
+      summary: '',
+      createdAt: LAST_SYNC - 1000,
+      lastAccessedAt: LAST_SYNC + 1000, // 本地比墓碑新
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      [`memories:${BOOK_ID}`]: {
+        kind: 'memories',
+        bookId: BOOK_ID,
+        value: {
+          memories: [
+            {
+              id: 'mem-recreated',
+              bookId: BOOK_ID,
+              content: 'remote-recreated',
+              summary: '',
+              createdAt: LAST_SYNC + 2000,
+              lastAccessedAt: LAST_SYNC + 2000,
+            },
+          ],
+          tombstones: [{ id: 'mem-recreated', deletedAt: LAST_SYNC + 500 }],
+        },
+      },
+    });
+
+    // 删除条件：local.lastAccessedAt < tombstone.deletedAt → 本地未触发删除（>=）
+    expect(deleteSpy).not.toHaveBeenCalled();
+    // 远端版本（lastAccessedAt 更新）应被 upsert
+    const upsertedIds = createSpy.mock.calls.map((c: unknown[]) => (c[0] as { id: string }).id);
+    expect(upsertedIds).toContain('mem-recreated');
+  });
+
+  it('本地已删（不在 DB）+ deletedMemoryIds 含该 id：远端再次发回也不会复活', async () => {
+    // 本地真实删除场景：localMemories（DB 模拟）不再包含 mem-deleted，
+    // 但 deletedMemoryIds 记录了删除。远端尚未感知，本次又把它发了回来。
+    spyOn(GlobalConfig, 'getGistSyncSnapshot').mockImplementation(() =>
+      makeConfig({
+        deletedMemoryIds: [
+          { id: 'mem-deleted', bookId: BOOK_ID, deletedAt: LAST_SYNC + 1000 },
+        ],
+      }),
+    );
+
+    // localMemories 故意不含 mem-deleted（已从本地 DB 删除）
+    await SyncDataService.applyPartialRemoteData({
+      [`memories:${BOOK_ID}`]: {
+        kind: 'memories',
+        bookId: BOOK_ID,
+        value: {
+          memories: [
+            {
+              id: 'mem-deleted',
+              bookId: BOOK_ID,
+              content: 'remote-resurrection-attempt',
+              summary: '',
+              createdAt: LAST_SYNC - 500,
+              lastAccessedAt: LAST_SYNC - 500,
+            },
+          ],
+        },
+      },
+    });
+
+    // 远端的 mem-deleted 应被 deletedMap 跳过（不重新 upsert，不复活）
+    const upsertedIds = createSpy.mock.calls.map((c: unknown[]) => (c[0] as { id: string }).id);
+    expect(upsertedIds).not.toContain('mem-deleted');
+  });
+
+  it('远端 envelope 同 id 同时在 memories 和 tombstones（损坏场景）：tombstone deletedAt > 本地 lastAccessedAt 仍删本地', async () => {
+    // 同一份 envelope 里 m1 既是活动又是墓碑（极端 race / 错误数据），
+    // apply 端按"墓碑标准"判断本地是否要删，并不依赖远端 memories 列表
+    localMemories.push({
+      id: 'mem-corrupt',
+      bookId: BOOK_ID,
+      content: 'old',
+      summary: '',
+      createdAt: LAST_SYNC - 1000,
+      lastAccessedAt: LAST_SYNC - 100, // 早于墓碑
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      [`memories:${BOOK_ID}`]: {
+        kind: 'memories',
+        bookId: BOOK_ID,
+        value: {
+          memories: [
+            {
+              id: 'mem-corrupt',
+              bookId: BOOK_ID,
+              content: 'live-again',
+              summary: '',
+              createdAt: LAST_SYNC - 500,
+              lastAccessedAt: LAST_SYNC - 500,
+            },
+          ],
+          tombstones: [{ id: 'mem-corrupt', deletedAt: LAST_SYNC + 500 }],
+        },
+      },
+    });
+
+    // 因为 local.lastAccessedAt < tombstone.deletedAt，本地被删除（墓碑赢）
+    expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'mem-corrupt');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1495,6 +1654,92 @@ describe('applyRemoteDeletions: memories collection-level tombstone', () => {
       { key: `memories:${BOOK_ID}`, deletedAt: 'not-a-date' },
     ]);
 
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('边界：createdAt 与 deletedAt 完全相等时被删除（>= 闭区间，与 builder TTL 一致）', async () => {
+    const tombMs = LAST_SYNC + 100;
+    localMemories.push({
+      id: 'on-boundary',
+      bookId: BOOK_ID,
+      content: 'edge',
+      summary: '',
+      createdAt: tombMs, // 完全等于墓碑时间
+      lastAccessedAt: tombMs,
+    });
+
+    await SyncDataService.applyRemoteDeletions([
+      { key: `memories:${BOOK_ID}`, deletedAt: new Date(tombMs).toISOString() },
+    ]);
+
+    // createdAt > threshold 才保留；createdAt == threshold → 不大于 → 删除
+    expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'on-boundary');
+  });
+
+  it('混合 createdAt：早于墓碑的删除，晚于墓碑的保留', async () => {
+    const tombMs = LAST_SYNC + 1000;
+    localMemories.push(
+      {
+        id: 'before',
+        bookId: BOOK_ID,
+        content: 'pre',
+        summary: '',
+        createdAt: tombMs - 500,
+        lastAccessedAt: tombMs - 500,
+      },
+      {
+        id: 'after',
+        bookId: BOOK_ID,
+        content: 'post',
+        summary: '',
+        createdAt: tombMs + 500,
+        lastAccessedAt: tombMs + 500,
+      },
+    );
+
+    await SyncDataService.applyRemoteDeletions([
+      { key: `memories:${BOOK_ID}`, deletedAt: new Date(tombMs).toISOString() },
+    ]);
+
+    expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'before');
+    expect(deleteSpy).not.toHaveBeenCalledWith(BOOK_ID, 'after');
+  });
+
+  it('未来 deletedAt（时钟漂移 / 设备时间错误）按字面意义应用', async () => {
+    // 防御：墓碑 deletedAt 比 now 还晚（设备时钟跳到未来）。
+    // 所有 createdAt < deletedAt 的本地都会被删 → 行为不依赖客户端时钟，仅依赖 deletedAt 与 createdAt 的相对关系。
+    localMemories.push({
+      id: 'normal',
+      bookId: BOOK_ID,
+      content: 'now',
+      summary: '',
+      createdAt: Date.now(),
+      lastAccessedAt: Date.now(),
+    });
+
+    const farFuture = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+    await SyncDataService.applyRemoteDeletions([
+      { key: `memories:${BOOK_ID}`, deletedAt: farFuture },
+    ]);
+
+    expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'normal');
+  });
+
+  it('空字符串 deletedAt 被识别为缺失（隐式删除路径，保守跳过）', async () => {
+    localMemories.push({
+      id: 'safe',
+      bookId: BOOK_ID,
+      content: 'kept',
+      summary: '',
+      createdAt: LAST_SYNC,
+      lastAccessedAt: LAST_SYNC,
+    });
+
+    await SyncDataService.applyRemoteDeletions([
+      { key: `memories:${BOOK_ID}`, deletedAt: '' },
+    ]);
+
+    // '' falsy → 走 implicit deletion 分支（保守跳过）
     expect(deleteSpy).not.toHaveBeenCalled();
   });
 });

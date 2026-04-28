@@ -481,6 +481,7 @@ export function parseMemoriesEnvelope(raw: unknown): MemoriesPayload | null {
             (t) =>
               t &&
               typeof t.id === 'string' &&
+              t.id.length > 0 &&
               typeof t.deletedAt === 'number' &&
               Number.isFinite(t.deletedAt),
           )

@@ -322,4 +322,121 @@ describe('clearSyncDeletionPropagationState', () => {
     await settingsStore.clearSyncDeletionPropagationState();
     expect(settingsStore.syncs).toEqual([]);
   });
+
+  it('幂等：连续调用两次状态相同（第二次为 no-op）', async () => {
+    const settingsStore = useSettingsStore();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [{ id: 'n1', deletedAt: 100 }],
+      knownRemoteTombstones: { 'novel:n1': '2026-04-01T00:00:00.000Z' },
+    });
+
+    await settingsStore.clearSyncDeletionPropagationState();
+    const after1 = JSON.stringify(settingsStore.gistSync);
+
+    await settingsStore.clearSyncDeletionPropagationState();
+    const after2 = JSON.stringify(settingsStore.gistSync);
+
+    expect(after1).toBe(after2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// cleanupOldDeletionRecords — 极端值与不变量
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('cleanupOldDeletionRecords (extreme values)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setActivePinia(createPinia());
+    EmbeddingQueue.__resetForTesting();
+  });
+
+  afterEach(() => {
+    EmbeddingQueue.__resetForTesting();
+    mock.restore();
+  });
+
+  it('daysToKeep=0 把所有记录都视为过期', async () => {
+    const settingsStore = useSettingsStore();
+    const now = Date.now();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [
+        { id: 'just-now', deletedAt: now - 1 },
+        { id: 'older', deletedAt: now - 1_000_000 },
+      ],
+    });
+
+    await settingsStore.cleanupOldDeletionRecords(0);
+
+    expect(settingsStore.gistSync.deletedNovelIds).toEqual([]);
+  });
+
+  it('daysToKeep 极大（远超记录寿命）：所有记录都保留', async () => {
+    const settingsStore = useSettingsStore();
+    const now = Date.now();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [
+        { id: 'old', deletedAt: now - 10_000 * 24 * 60 * 60 * 1000 }, // 10000 天前
+      ],
+    });
+
+    await settingsStore.cleanupOldDeletionRecords(36500); // 100 年
+
+    expect(settingsStore.gistSync.deletedNovelIds).toEqual([
+      { id: 'old', deletedAt: expect.any(Number) },
+    ]);
+  });
+
+  it('混合多类型的列表 + 多个时间点：只过滤过期项', async () => {
+    const settingsStore = useSettingsStore();
+    const DAY = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [
+        { id: 'fresh-novel', deletedAt: now - 5 * DAY },
+        { id: 'expired-novel', deletedAt: now - 200 * DAY },
+      ],
+      deletedMemoryIds: [
+        { id: 'fresh-mem', bookId: 'b1', deletedAt: now - 30 * DAY },
+        { id: 'expired-mem', bookId: 'b1', deletedAt: now - 200 * DAY },
+      ],
+      deletedCoverIds: [
+        { id: 'old-cover', deletedAt: now - 200 * DAY }, // > 90d, 应被删
+      ],
+    });
+
+    await settingsStore.cleanupOldDeletionRecords();
+
+    expect(settingsStore.gistSync.deletedNovelIds!.map((r) => r.id)).toEqual(['fresh-novel']);
+    expect(settingsStore.gistSync.deletedMemoryIds!.map((r) => r.id)).toEqual(['fresh-mem']);
+    expect(settingsStore.gistSync.deletedCoverIds).toEqual([]);
+  });
+
+  it('幂等：连续调用两次结果相同', async () => {
+    const settingsStore = useSettingsStore();
+    const now = Date.now();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [
+        { id: 'n1', deletedAt: now - 5 * 24 * 60 * 60 * 1000 },
+        { id: 'n2', deletedAt: now - 200 * 24 * 60 * 60 * 1000 },
+      ],
+    });
+
+    await settingsStore.cleanupOldDeletionRecords();
+    const after1 = JSON.stringify(settingsStore.gistSync.deletedNovelIds);
+
+    await settingsStore.cleanupOldDeletionRecords();
+    const after2 = JSON.stringify(settingsStore.gistSync.deletedNovelIds);
+
+    expect(after1).toBe(after2);
+    expect(JSON.parse(after1!)).toHaveLength(1);
+  });
+
+  it('Gist 配置不存在时安全跳过', async () => {
+    const settingsStore = useSettingsStore();
+    settingsStore.syncs = [];
+
+    await settingsStore.cleanupOldDeletionRecords();
+    expect(settingsStore.syncs).toEqual([]);
+  });
 });

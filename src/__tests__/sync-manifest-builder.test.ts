@@ -456,3 +456,113 @@ describe('buildLocalManifest: memories envelope', () => {
     expect(env.tombstones).toEqual([{ id: 'good', deletedAt: 1_000_000 }]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 更深层的边界 / 损坏数据场景（root-cause fix 之后的回归保护带）
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildLocalManifest: tombstones — additional edge cases', () => {
+  it('复活规则：entry.lastEdited 与墓碑 deletedAt 完全相等时丢弃墓碑（>= 闭区间）', async () => {
+    const t = '2026-04-01T00:00:00.000Z';
+    const m = await buildLocalManifest(
+      emptyInput({
+        novels: [makeNovel('abc', t)],
+        tombstones: { [novelEntryKey('abc')]: t },
+      }),
+    );
+    // lastEdited === deletedAt → 用户在墓碑同一时刻编辑过 → 视为复活
+    expect(m.tombstones?.[novelEntryKey('abc')]).toBeUndefined();
+  });
+
+  it('复活规则：entry.lastEdited 比墓碑早 1ms 时仍保留墓碑（防 id 复用静默掩盖删除）', async () => {
+    const t = '2026-04-01T00:00:00.000Z';
+    const oneMsEarlier = new Date(new Date(t).getTime() - 1).toISOString();
+    const m = await buildLocalManifest(
+      emptyInput({
+        novels: [makeNovel('abc', oneMsEarlier)],
+        tombstones: { [novelEntryKey('abc')]: t },
+      }),
+    );
+    expect(m.tombstones?.[novelEntryKey('abc')]).toEqual({ deletedAt: t });
+  });
+
+  it('混合 novel:/memories: 两种墓碑都被正确保留', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        tombstones: {
+          [novelEntryKey('book-1')]: '2026-04-01T00:00:00.000Z',
+          [memoriesEntryKey('book-2')]: '2026-04-02T00:00:00.000Z',
+        },
+      }),
+    );
+    expect(m.tombstones?.[novelEntryKey('book-1')]).toBeDefined();
+    expect(m.tombstones?.[memoriesEntryKey('book-2')]).toBeDefined();
+  });
+
+  it('memories:<id> 墓碑也参与复活规则（同一书的 memories entry 复活时丢墓碑）', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        // 用 memoryTombstonesByBook 触发 entry 创建（envelope 里有内容）
+        memoryTombstonesByBook: {
+          'book-x': [{ id: 'mem-1', deletedAt: 2_000_000 }],
+        },
+        // collection 级墓碑标记 book-x 在更早被整体删除
+        tombstones: { [memoriesEntryKey('book-x')]: new Date(1_000_000).toISOString() },
+      }),
+    );
+    // entry.lastEdited（来自 tombstone deletedAt 2_000_000）>= collection 墓碑 1_000_000
+    // → 复活，drop collection 级墓碑；保留 entry 自身（含单条 memory 墓碑）
+    expect(m.tombstones?.[memoriesEntryKey('book-x')]).toBeUndefined();
+    expect(m.entries[memoriesEntryKey('book-x')]).toBeDefined();
+  });
+});
+
+describe('buildMemoriesPayload — additional edge cases', () => {
+  it('过滤 id 为空字符串的墓碑（防御性）', () => {
+    const env = buildMemoriesPayload([], [
+      { id: '', deletedAt: 1 },
+      { id: 'real', deletedAt: 2 },
+    ]);
+    expect(env.tombstones?.map((t) => t.id)).toEqual(['real']);
+  });
+
+  it('过滤 id 为非字符串的墓碑（运行时健壮性）', () => {
+    const env = buildMemoriesPayload([], [
+      { id: 'real', deletedAt: 1 },
+      { id: 123 as unknown as string, deletedAt: 2 },
+      { id: null as unknown as string, deletedAt: 3 },
+    ]);
+    expect(env.tombstones).toEqual([{ id: 'real', deletedAt: 1 }]);
+  });
+
+  it('memories 数组与 tombstones 同 id（重新创建后又删，corrupt 状态）—— 不去重，调用方决定语义', () => {
+    // 恢复或合并冲突期间可能短暂出现：让数据如实保留，由 apply 端按 deletedAt 比较。
+    const env = buildMemoriesPayload(
+      [
+        {
+          id: 'm1',
+          bookId: 'b1',
+          content: 'live',
+          summary: '',
+          createdAt: 100,
+          lastAccessedAt: 100,
+        },
+      ],
+      [{ id: 'm1', deletedAt: 50 }],
+    );
+    expect(env.memories).toHaveLength(1);
+    expect(env.tombstones).toEqual([{ id: 'm1', deletedAt: 50 }]);
+  });
+
+  it('null / undefined 墓碑条目被过滤', () => {
+    const env = buildMemoriesPayload(
+      [],
+      [
+        null as unknown as { id: string; deletedAt: number },
+        undefined as unknown as { id: string; deletedAt: number },
+        { id: 'good', deletedAt: 1 },
+      ],
+    );
+    expect(env.tombstones).toEqual([{ id: 'good', deletedAt: 1 }]);
+  });
+});

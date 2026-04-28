@@ -2725,10 +2725,16 @@ export class SyncDataService {
     const finalMap = new Map<string, Memory>();
     const remoteTombs = remoteTombstones ?? new Map<string, number>();
 
-    // 1. 远端 memory：按 id 去重（保留 lastAccessedAt 更大的），跳过被本地删除的
+    // 1. 远端 memory：按 id 去重（保留 lastAccessedAt 更大的）
+    //    跳过情形：
+    //      - 本地 deletedMemoryIds 比 lastSyncTime 新（本地最近删过，不复活）
+    //      - 远端同时挂着 tombstone 且 deletedAt > rm.lastAccessedAt（损坏 envelope
+    //        或 race，墓碑更新 → 墓碑赢，不上 finalMap）
     for (const rm of remoteMemories) {
       const deletion = deletedMap.get(rm.id);
       if (deletion !== undefined && deletion > lastSyncTime) continue;
+      const remoteTombAt = remoteTombs.get(rm.id);
+      if (remoteTombAt !== undefined && remoteTombAt > rm.lastAccessedAt) continue;
       const existing = finalMap.get(rm.id);
       if (!existing || rm.lastAccessedAt > existing.lastAccessedAt) {
         finalMap.set(rm.id, rm);
