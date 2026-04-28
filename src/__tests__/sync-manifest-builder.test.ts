@@ -566,3 +566,201 @@ describe('buildMemoriesPayload — additional edge cases', () => {
     expect(env.tombstones).toEqual([{ id: 'good', deletedAt: 1 }]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// diffManifests — 含墓碑 / 极端 / 混合场景
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('diffManifests: tombstones do not pollute diff buckets', () => {
+  it('墓碑只出现在 tombstones 字段，不会被算到 added/changed/deleted 任意桶里', async () => {
+    const local = await buildLocalManifest(
+      emptyInput({
+        novels: [makeNovel('a', '2026-01-01')],
+        tombstones: { [novelEntryKey('deleted-x')]: '2026-04-01T00:00:00.000Z' },
+      }),
+    );
+    const remote = await buildLocalManifest(
+      emptyInput({
+        novels: [makeNovel('a', '2026-01-01')],
+      }),
+    );
+    const diff = diffManifests(local, remote);
+    // 完全相同的 entries → 三桶皆空；墓碑独立通道
+    expect(diff.added).toEqual([]);
+    expect(diff.changed).toEqual([]);
+    expect(diff.deleted).toEqual([]);
+    expect(local.tombstones?.[novelEntryKey('deleted-x')]).toBeDefined();
+  });
+
+  it('两 manifest 都为空时 diff 三桶全空', async () => {
+    const m1 = await buildLocalManifest(emptyInput());
+    const m2 = await buildLocalManifest(emptyInput());
+    const diff = diffManifests(m1, m2);
+    expect(diff.added).toEqual([]);
+    expect(diff.changed).toEqual([]);
+    expect(diff.deleted).toEqual([]);
+  });
+
+  it('local 满 / remote 空 → 所有非 baseline entry 算 added', async () => {
+    const local = await buildLocalManifest(
+      emptyInput({ novels: [makeNovel('a', '2026-01-01'), makeNovel('b', '2026-02-01')] }),
+    );
+    // 远端只有 baseline (settings/ai-models/cover-history) 但内容相同
+    const remote = await buildLocalManifest(emptyInput());
+    const diff = diffManifests(local, remote);
+    expect(diff.added.sort()).toEqual([novelEntryKey('a'), novelEntryKey('b')]);
+    expect(diff.deleted).toEqual([]);
+    // baseline hash 一致 → 不应该出现在 changed
+    expect(diff.changed).toEqual([]);
+  });
+
+  it('local 空 / remote 满 → 所有非 baseline entry 算 deleted', async () => {
+    const local = await buildLocalManifest(emptyInput());
+    const remote = await buildLocalManifest(
+      emptyInput({ novels: [makeNovel('a', '2026-01-01'), makeNovel('b', '2026-02-01')] }),
+    );
+    const diff = diffManifests(local, remote);
+    expect(diff.added).toEqual([]);
+    expect(diff.deleted.sort()).toEqual([novelEntryKey('a'), novelEntryKey('b')]);
+  });
+
+  it('memories entry diff：live 与 tombstone-only 都参与 diff', async () => {
+    const local = await buildLocalManifest(
+      emptyInput({
+        memoriesByBook: {
+          alive: [makeMemory('m1', 'alive')],
+        },
+        memoryTombstonesByBook: {
+          'tombstone-only': [{ id: 'mem-deleted', deletedAt: 1_000_000 }],
+        },
+      }),
+    );
+    const remote = await buildLocalManifest(emptyInput());
+    const diff = diffManifests(local, remote);
+    // 两本书都应该作为新增条目
+    expect(diff.added.sort()).toEqual([
+      memoriesEntryKey('alive'),
+      memoriesEntryKey('tombstone-only'),
+    ]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildLocalManifest — baseline / 多书路由 / 一致性
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildLocalManifest: baseline & routing', () => {
+  it('完全空输入：仍生成 3 个聚合 baseline entry，且 schema 与时间戳齐全', async () => {
+    const m = await buildLocalManifest(emptyInput());
+    expect(m.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
+    expect(typeof m.updatedAt).toBe('string');
+    expect(Object.keys(m.entries).sort()).toEqual([
+      ENTRY_KEYS.AI_MODELS,
+      ENTRY_KEYS.COVER_HISTORY,
+      ENTRY_KEYS.SETTINGS,
+    ]);
+    // 空集合的聚合仍然有合法的（确定性）hash
+    expect(m.entries[ENTRY_KEYS.AI_MODELS]!.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(m.entries[ENTRY_KEYS.COVER_HISTORY]!.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(m.entries[ENTRY_KEYS.SETTINGS]!.hash).toMatch(/^[0-9a-f]{64}$/);
+    // 没有 tombstones / 没有书条目
+    expect(m.tombstones).toBeUndefined();
+    expect(m.entries[novelEntryKey('any')]).toBeUndefined();
+  });
+
+  it('多书路由：每本书的 memories envelope 按 bookId 独立，不串扰', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        memoriesByBook: {
+          'book-A': [makeMemory('a1', 'book-A')],
+          'book-B': [makeMemory('b1', 'book-B'), makeMemory('b2', 'book-B')],
+        },
+        memoryTombstonesByBook: {
+          'book-A': [{ id: 'a-deleted', deletedAt: 100 }],
+          'book-C': [{ id: 'c-deleted', deletedAt: 200 }], // C 没有 live memory，仅墓碑
+        },
+      }),
+    );
+    expect(m.entries[memoriesEntryKey('book-A')]).toBeDefined();
+    expect(m.entries[memoriesEntryKey('book-B')]).toBeDefined();
+    expect(m.entries[memoriesEntryKey('book-C')]).toBeDefined();
+    // 三本书 hash 互不相同
+    const hashA = m.entries[memoriesEntryKey('book-A')]!.hash;
+    const hashB = m.entries[memoriesEntryKey('book-B')]!.hash;
+    const hashC = m.entries[memoriesEntryKey('book-C')]!.hash;
+    expect(new Set([hashA, hashB, hashC]).size).toBe(3);
+  });
+
+  it('memoriesByBook 与 memoryTombstonesByBook 的 bookId 取并集（避免漏 entry）', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        memoriesByBook: { 'book-A': [makeMemory('a1', 'book-A')] },
+        memoryTombstonesByBook: { 'book-B': [{ id: 'mem-x', deletedAt: 100 }] },
+      }),
+    );
+    // A 在 memoriesByBook，B 在 memoryTombstonesByBook，两者都应写 entry
+    expect(m.entries[memoriesEntryKey('book-A')]).toBeDefined();
+    expect(m.entries[memoriesEntryKey('book-B')]).toBeDefined();
+  });
+
+  it('memoryTombstonesByBook 为 undefined 时退化为传统行为（无墓碑、无 entry 当 memories 空）', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        memoriesByBook: { 'book-A': [] },
+        // memoryTombstonesByBook 未传
+      }),
+    );
+    expect(m.entries[memoriesEntryKey('book-A')]).toBeUndefined();
+  });
+
+  it('lastEdited 取 memories 与 tombstones deletedAt 的最大值', async () => {
+    const memTime = 1_000_000_000;
+    const tombTime = 2_000_000_000;
+    const m = await buildLocalManifest(
+      emptyInput({
+        memoriesByBook: {
+          'book-A': [
+            {
+              id: 'm1',
+              bookId: 'book-A',
+              content: 'c',
+              summary: '',
+              createdAt: memTime,
+              lastAccessedAt: memTime,
+            },
+          ],
+        },
+        memoryTombstonesByBook: {
+          'book-A': [{ id: 'm-old', deletedAt: tombTime }], // tombstone 比 memory 新
+        },
+      }),
+    );
+    expect(m.entries[memoriesEntryKey('book-A')]!.lastEdited).toBe(
+      new Date(tombTime).toISOString(),
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// hashesToManifest / manifestToHashes 边界
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('hashesToManifest / manifestToHashes — additional edges', () => {
+  it('hashesToManifest 空 map → 空 entries', () => {
+    const m = hashesToManifest({});
+    expect(m.entries).toEqual({});
+    expect(m.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
+  });
+
+  it('manifestToHashes 跳过 tombstones 字段，仅返回 entries 哈希', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        novels: [makeNovel('a', '2026-01-01')],
+        tombstones: { [novelEntryKey('deleted')]: '2026-04-01T00:00:00.000Z' },
+      }),
+    );
+    const hashes = manifestToHashes(m);
+    expect(hashes[novelEntryKey('deleted')]).toBeUndefined();
+    expect(hashes[novelEntryKey('a')]).toBeDefined();
+  });
+});

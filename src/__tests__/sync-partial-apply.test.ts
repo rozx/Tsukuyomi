@@ -47,6 +47,75 @@ describe('gist-sync-incremental: parseMemoriesEnvelope', () => {
     expect(parseMemoriesEnvelope({ memories: 'not-array' })).toBeNull();
   });
 
+  it('schema 兼容：v3 envelope 缺失 tombstones 字段（合法的"无墓碑"形态）', () => {
+    const env = parseMemoriesEnvelope({
+      memories: [
+        {
+          id: 'm1',
+          bookId: 'b1',
+          content: 'c',
+          summary: '',
+          createdAt: 1,
+          lastAccessedAt: 1,
+        },
+      ],
+    });
+    expect(env!.memories).toHaveLength(1);
+    expect('tombstones' in env!).toBe(false);
+  });
+
+  it('schema 兼容：v3 envelope 中 tombstones 为 null（被忽略而非报错）', () => {
+    const env = parseMemoriesEnvelope({
+      memories: [],
+      tombstones: null,
+    });
+    expect(env).not.toBeNull();
+    expect(env!.memories).toEqual([]);
+    expect('tombstones' in env!).toBe(false);
+  });
+
+  it('schema 兼容：v2 扁平数组 + Date 字符串字段（旧客户端写入的旧布局）', () => {
+    const env = parseMemoriesEnvelope([
+      {
+        id: 'm1',
+        bookId: 'b1',
+        content: 'c',
+        summary: '',
+        createdAt: 1000,
+        lastAccessedAt: 2000,
+      },
+      {
+        id: 'm2',
+        bookId: 'b1',
+        content: 'd',
+        summary: '',
+        createdAt: 1500,
+        lastAccessedAt: 2500,
+      },
+    ]);
+    expect(env!.memories).toHaveLength(2);
+    expect('tombstones' in env!).toBe(false);
+  });
+
+  it('返回 null 当 raw 是数字 / boolean / Date 等非 object 类型', () => {
+    expect(parseMemoriesEnvelope(123)).toBeNull();
+    expect(parseMemoriesEnvelope(true)).toBeNull();
+    expect(parseMemoriesEnvelope(Symbol('s'))).toBeNull();
+  });
+
+  it('envelope 含其它无关字段（忽略，仅取 memories + tombstones）', () => {
+    const env = parseMemoriesEnvelope({
+      memories: [],
+      tombstones: [{ id: 'a', deletedAt: 1 }],
+      // 未来字段，向前兼容应忽略
+      futureField: { whatever: true },
+      schemaVersion: 99,
+    });
+    expect(env!.tombstones).toEqual([{ id: 'a', deletedAt: 1 }]);
+    expect((env as unknown as Record<string, unknown>).futureField).toBeUndefined();
+    expect((env as unknown as Record<string, unknown>).schemaVersion).toBeUndefined();
+  });
+
   it('扁平 Memory[] 数组（v2 旧格式）转为 envelope，无 tombstones 字段', () => {
     const arr = [
       {
