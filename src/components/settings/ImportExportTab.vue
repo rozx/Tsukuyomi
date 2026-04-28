@@ -100,6 +100,11 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     // 覆盖当前的同步设置（空数组也覆盖，清除残留本地同步配置）
     if (result.data.sync !== undefined) {
       await settingsStore.importSyncs(result.data.sync);
+    } else {
+      // 文件未携带 sync 字段时，本地同步状态会保留，可能含有指向被恢复条目的旧墓碑：
+      // 清掉所有"主动传播删除"的字段（deletedNovelIds / deletedModelIds /
+      // deletedMemoryIds / knownRemoteTombstones），避免下次同步把刚导入的内容又删了。
+      await settingsStore.clearSyncDeletionPropagationState();
     }
 
     toast.add({

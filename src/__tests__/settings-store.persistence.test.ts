@@ -233,3 +233,93 @@ describe('cleanupOldDeletionRecords (TTL helper)', () => {
     expect(settingsStore.gistSync.deletedNovelIds).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// clearSyncDeletionPropagationState — 文件导入 + 修订恢复共用的清理 helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('clearSyncDeletionPropagationState', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setActivePinia(createPinia());
+    EmbeddingQueue.__resetForTesting();
+  });
+
+  afterEach(() => {
+    EmbeddingQueue.__resetForTesting();
+    mock.restore();
+  });
+
+  it('清空主动传播删除的 4 个字段（novel/model/memory + knownRemoteTombstones）', async () => {
+    const settingsStore = useSettingsStore();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [{ id: 'n1', deletedAt: 100 }],
+      deletedModelIds: [{ id: 'm1', deletedAt: 100 }],
+      deletedMemoryIds: [{ id: 'mem1', bookId: 'book-x', deletedAt: 100 }],
+      knownRemoteTombstones: { 'novel:n1': '2026-04-01T00:00:00.000Z' },
+    });
+
+    await settingsStore.clearSyncDeletionPropagationState();
+
+    expect(settingsStore.gistSync.deletedNovelIds).toEqual([]);
+    expect(settingsStore.gistSync.deletedModelIds).toEqual([]);
+    expect(settingsStore.gistSync.deletedMemoryIds).toEqual([]);
+    expect(settingsStore.gistSync.knownRemoteTombstones).toEqual({});
+  });
+
+  it('保留 deletedCoverIds / deletedCoverUrls（不主动跨设备传播）', async () => {
+    const settingsStore = useSettingsStore();
+    await settingsStore.updateGistSync({
+      deletedCoverIds: [{ id: 'c1', deletedAt: 100 }],
+      deletedCoverUrls: [{ url: 'https://x/y.jpg', deletedAt: 100 }],
+    });
+
+    await settingsStore.clearSyncDeletionPropagationState();
+
+    expect(settingsStore.gistSync.deletedCoverIds).toEqual([{ id: 'c1', deletedAt: 100 }]);
+    expect(settingsStore.gistSync.deletedCoverUrls).toEqual([
+      { url: 'https://x/y.jpg', deletedAt: 100 },
+    ]);
+  });
+
+  it('保留 secret / syncParams（不破坏 Gist 凭据）', async () => {
+    const settingsStore = useSettingsStore();
+    await settingsStore.updateGistSync({
+      secret: 'token-abc',
+      syncParams: { gistId: 'gist-123', username: 'rozx' },
+      knownRemoteTombstones: { 'novel:foo': '2026-04-01T00:00:00.000Z' },
+    });
+
+    await settingsStore.clearSyncDeletionPropagationState();
+
+    expect(settingsStore.gistSync.secret).toBe('token-abc');
+    expect(settingsStore.gistSync.syncParams).toMatchObject({
+      gistId: 'gist-123',
+      username: 'rozx',
+    });
+    expect(settingsStore.gistSync.knownRemoteTombstones).toEqual({});
+  });
+
+  it('保留 knownRemoteHashes / knownRemoteEntries / lastRemoteETag（下次 diff 仍可用）', async () => {
+    const settingsStore = useSettingsStore();
+    await settingsStore.updateGistSync({
+      knownRemoteHashes: { settings: 'h1' },
+      knownRemoteEntries: { settings: { hash: 'h1' } },
+      lastRemoteETag: 'etag-xyz',
+    });
+
+    await settingsStore.clearSyncDeletionPropagationState();
+
+    expect(settingsStore.gistSync.knownRemoteHashes).toEqual({ settings: 'h1' });
+    expect(settingsStore.gistSync.knownRemoteEntries).toEqual({ settings: { hash: 'h1' } });
+    expect(settingsStore.gistSync.lastRemoteETag).toBe('etag-xyz');
+  });
+
+  it('Gist 配置不存在时是 no-op，不抛错', async () => {
+    const settingsStore = useSettingsStore();
+    settingsStore.syncs = []; // 清空所有 sync 配置
+
+    await settingsStore.clearSyncDeletionPropagationState();
+    expect(settingsStore.syncs).toEqual([]);
+  });
+});

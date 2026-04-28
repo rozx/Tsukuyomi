@@ -53,6 +53,26 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 /**
+ * 返回一个"清空所有主动传播删除字段"的 partial SyncConfig。
+ *
+ * 公开导出以便 SyncDataService 在恢复快照、文件导入等场景下能直接 spread 进
+ * `updateGistSync({...currentSync, ...patch})` 单次调用，避免连续两次写入。
+ *
+ * 字段语义见 `clearSyncDeletionPropagationState`。
+ */
+export function getSyncDeletionPropagationStateClearedPatch(): Pick<
+  SyncConfig,
+  'deletedNovelIds' | 'deletedModelIds' | 'deletedMemoryIds' | 'knownRemoteTombstones'
+> {
+  return {
+    deletedNovelIds: [],
+    deletedModelIds: [],
+    deletedMemoryIds: [],
+    knownRemoteTombstones: {},
+  };
+}
+
+/**
  * 默认 Gist 同步配置
  */
 function createDefaultGistSyncConfig(): SyncConfig {
@@ -987,6 +1007,27 @@ export const useSettingsStore = defineStore('settings', {
      */
     async setGistSyncEnabled(enabled: boolean): Promise<void> {
       await this.updateGistSync({ enabled });
+    },
+
+    /**
+     * 清空所有"主动传播删除"的同步状态（一次 updateGistSync 调用）。
+     *
+     * 在以下场景调用以避免恢复回来的条目被旧墓碑再次删除：
+     *   - 修订快照恢复（overwriteFromSnapshot）
+     *   - 文件导入覆盖（ImportExportTab，且导入文件没有 sync 字段时）
+     *
+     * 清空字段：
+     *   - `deletedNovelIds`        → 写入 manifest.tombstones["novel:<id>"]
+     *   - `deletedModelIds`        → 上传合并时过滤远端模型
+     *   - `deletedMemoryIds`       → 写入 memories envelope.tombstones（v3+ 主动传播）
+     *   - `knownRemoteTombstones`  → 与上面合并进 manifest.tombstones（旧远端状态残留）
+     *
+     * 保留字段（仅本地过滤、不主动跨设备传播）：deletedCoverIds / deletedCoverUrls
+     */
+    async clearSyncDeletionPropagationState(): Promise<void> {
+      const config = this.syncs.find((sync) => sync.syncType === SyncType.Gist);
+      if (!config) return;
+      await this.updateGistSync(getSyncDeletionPropagationStateClearedPatch());
     },
 
     /**
