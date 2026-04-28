@@ -11,6 +11,8 @@ import {
   type GistManifest,
   type ManifestDiff,
   type ManifestEntry,
+  type MemoriesPayload,
+  type MemoryTombstone,
   type Tombstone,
 } from 'src/models/manifest';
 import { hashJson, hashString } from 'src/utils/content-hash';
@@ -27,12 +29,41 @@ export interface LocalManifestInput {
   novels: Novel[];
   memoriesByBook: Record<string, Memory[]>;
   /**
-   * 墓碑：entryKey -> deletedAt ISO。
+   * 单条 memory 的墓碑（按 bookId 分组）。
+   * 与 `memoriesByBook` 共同决定 `memories:<bookId>` 条目是否上传：
+   *   - memories 非空 或 tombstones 非空 → 写入 envelope
+   *   - 两者都空 → 跳过 entry（让远端按"消失"应用 collection 级删除）
+   */
+  memoryTombstonesByBook?: Record<string, MemoryTombstone[]>;
+  /**
+   * Manifest 级墓碑：entryKey -> deletedAt ISO。
    * 由调用方合并"本地删除记录 + 上次已知的远端墓碑"后传入。
-   * 超过 TTL 的墓碑会在此函数中被修剪。
-   * 当前仅支持 `novel:<bookId>` 形式的墓碑。
+   * 支持 `novel:<bookId>` 与 `memories:<bookId>` 两种形式（v3+）。
+   * 超过 TTL 或被复活（同 key 出现且 lastEdited 晚于 deletedAt）的墓碑会被修剪。
    */
   tombstones?: Record<string, string>;
+}
+
+/**
+ * 把 memories + 单条 memory 墓碑打包成上传/哈希用的 envelope（schemaVersion >= 3）。
+ *
+ * 规范化保证哈希稳定：
+ * - 不出现 `tombstones: undefined` 字段（仅当非空才写入）
+ * - tombstones 按 id 升序排列，避免插入顺序波动改变哈希
+ *
+ * 由 builder 与 upload 路径共用。
+ */
+export function buildMemoriesPayload(
+  memories: Memory[],
+  tombstones: MemoryTombstone[] | undefined,
+): MemoriesPayload {
+  const cleanTombstones = (tombstones ?? [])
+    .filter((t) => t && typeof t.id === 'string' && Number.isFinite(t.deletedAt))
+    .slice()
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return cleanTombstones.length > 0
+    ? { memories, tombstones: cleanTombstones }
+    : { memories };
 }
 
 /**
@@ -85,28 +116,63 @@ export async function buildLocalManifest(input: LocalManifestInput): Promise<Gis
     };
   }
 
-  // 每本书的 memories
-  for (const [bookId, memories] of Object.entries(input.memoriesByBook)) {
-    if (!memories || memories.length === 0) {
-      // 空集合不写入 manifest——下载端不会尝试读取不存在的 memories 文件
-      continue;
-    }
+  // 每本书的 memories：始终序列化为 envelope 形式，hash 基于 envelope。
+  // memories 与 tombstones 均空时跳过 entry，让远端按"消失"应用 collection 级删除。
+  const memoryTombstones = input.memoryTombstonesByBook ?? {};
+  const memoryBookIds = new Set<string>([
+    ...Object.keys(input.memoriesByBook),
+    ...Object.keys(memoryTombstones),
+  ]);
+  for (const bookId of memoryBookIds) {
+    const memories = input.memoriesByBook[bookId] ?? [];
+    const tombs = memoryTombstones[bookId] ?? [];
+    if (memories.length === 0 && tombs.length === 0) continue;
+    const envelope = buildMemoriesPayload(memories, tombs);
     entries[memoriesEntryKey(bookId)] = {
-      hash: await hashJson(memories),
-      lastEdited: maxDate(memories.map((m) => m.lastAccessedAt)),
+      hash: await hashJson(envelope),
+      lastEdited: maxDate([
+        ...memories.map((m) => m.lastAccessedAt),
+        ...tombs.map((t) => t.deletedAt),
+      ]),
     };
   }
 
-  // 构造墓碑：过滤掉已在 entries 中复活的键，以及超过 TTL 的旧墓碑
-  const liveKeys = new Set(Object.keys(entries));
+  // 构造 manifest 级墓碑：
+  //  - 复活规则：仅当 entry.lastEdited >= tombstone.deletedAt 时丢弃墓碑
+  //    （短 id + id 复用场景下，新建实体 lastEdited 比旧墓碑早 → 仍保留墓碑）
+  //  - TTL：now - deletedAt >= TTL 时修剪（与 cleanupOldDeletionRecords 同口径，闭区间）
   const now = Date.now();
   const tombstones: Record<string, Tombstone> = {};
+  let prunedExpired = 0;
+  let prunedRevived = 0;
+  let prunedInvalid = 0;
   for (const [key, deletedAtIso] of Object.entries(input.tombstones ?? {})) {
-    if (liveKeys.has(key)) continue; // 条目已复活，墓碑失效
     const t = new Date(deletedAtIso).getTime();
-    if (!Number.isFinite(t)) continue;
-    if (now - t > TOMBSTONE_TTL_MS) continue; // 超过 TTL，修剪
+    if (!Number.isFinite(t)) {
+      prunedInvalid += 1;
+      continue;
+    }
+    if (now - t >= TOMBSTONE_TTL_MS) {
+      prunedExpired += 1;
+      continue;
+    }
+    const liveEntry = entries[key];
+    if (liveEntry) {
+      const liveMs = new Date(liveEntry.lastEdited).getTime();
+      if (Number.isFinite(liveMs) && liveMs >= t) {
+        // 实体真的复活（编辑时间 >= 墓碑时间）→ 丢弃墓碑
+        prunedRevived += 1;
+        continue;
+      }
+      // 否则 entry 是过时残留（同 id 复用 / 时钟漂移），保留墓碑
+    }
     tombstones[key] = { deletedAt: deletedAtIso };
+  }
+
+  if (prunedExpired || prunedRevived || prunedInvalid) {
+    console.debug(
+      `[sync-manifest-builder] tombstones 修剪: expired=${prunedExpired} revived=${prunedRevived} invalid=${prunedInvalid} kept=${Object.keys(tombstones).length}`,
+    );
   }
 
   const manifest: GistManifest = {

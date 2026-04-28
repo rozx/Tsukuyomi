@@ -118,3 +118,118 @@ describe('settings store persistence (taskDefaultModels)', () => {
     expect(pauseSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// cleanupOldDeletionRecords — TTL 边界、helper 行为、bookId 保留
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('cleanupOldDeletionRecords (TTL helper)', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  beforeEach(() => {
+    localStorage.clear();
+    setActivePinia(createPinia());
+    EmbeddingQueue.__resetForTesting();
+  });
+
+  afterEach(() => {
+    EmbeddingQueue.__resetForTesting();
+    mock.restore();
+  });
+
+  it('默认 daysToKeep 派生自 TOMBSTONE_TTL_DAYS = 90 天', async () => {
+    const settingsStore = useSettingsStore();
+    const now = Date.now();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [
+        { id: 'recent', deletedAt: now - 10 * DAY_MS }, // 10 天前
+        { id: 'just-old', deletedAt: now - 89 * DAY_MS }, // 89 天前
+        { id: 'expired', deletedAt: now - 91 * DAY_MS }, // 91 天前
+      ],
+    });
+
+    await settingsStore.cleanupOldDeletionRecords();
+
+    const ids = settingsStore.gistSync.deletedNovelIds!.map((r) => r.id).sort();
+    expect(ids).toEqual(['just-old', 'recent']);
+  });
+
+  it('显式 daysToKeep=30 仍可调用（兼容旧调用点）', async () => {
+    const settingsStore = useSettingsStore();
+    const now = Date.now();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [
+        { id: 'recent', deletedAt: now - 10 * DAY_MS },
+        { id: 'over-30', deletedAt: now - 31 * DAY_MS },
+      ],
+    });
+
+    await settingsStore.cleanupOldDeletionRecords(30);
+
+    const ids = settingsStore.gistSync.deletedNovelIds!.map((r) => r.id);
+    expect(ids).toEqual(['recent']);
+  });
+
+  it('5 个删除列表统一处理（novel/model/cover/coverUrl/memory）', async () => {
+    const settingsStore = useSettingsStore();
+    const now = Date.now();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [{ id: 'n-old', deletedAt: now - 100 * DAY_MS }],
+      deletedModelIds: [{ id: 'm-old', deletedAt: now - 100 * DAY_MS }],
+      deletedCoverIds: [{ id: 'c-old', deletedAt: now - 100 * DAY_MS }],
+      deletedCoverUrls: [{ url: 'https://x/y.jpg', deletedAt: now - 100 * DAY_MS }],
+      deletedMemoryIds: [{ id: 'mem-old', deletedAt: now - 100 * DAY_MS }],
+    });
+
+    await settingsStore.cleanupOldDeletionRecords();
+
+    expect(settingsStore.gistSync.deletedNovelIds).toEqual([]);
+    expect(settingsStore.gistSync.deletedModelIds).toEqual([]);
+    expect(settingsStore.gistSync.deletedCoverIds).toEqual([]);
+    expect(settingsStore.gistSync.deletedCoverUrls).toEqual([]);
+    expect(settingsStore.gistSync.deletedMemoryIds).toEqual([]);
+  });
+
+  it('memory 删除记录的 bookId 字段在保留时不丢失', async () => {
+    const settingsStore = useSettingsStore();
+    const now = Date.now();
+    await settingsStore.updateGistSync({
+      deletedMemoryIds: [
+        { id: 'mem-fresh', bookId: 'book-1', deletedAt: now - 5 * DAY_MS },
+        { id: 'mem-expired', bookId: 'book-2', deletedAt: now - 100 * DAY_MS },
+      ],
+    });
+
+    await settingsStore.cleanupOldDeletionRecords();
+
+    expect(settingsStore.gistSync.deletedMemoryIds).toEqual([
+      { id: 'mem-fresh', bookId: 'book-1', deletedAt: expect.any(Number) },
+    ]);
+  });
+
+  it('当无任何记录变化时不写入 store（避免无意义持久化）', async () => {
+    const settingsStore = useSettingsStore();
+    const now = Date.now();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [{ id: 'recent', deletedAt: now - 5 * DAY_MS }],
+    });
+
+    const updateSpy = spyOn(settingsStore, 'updateGistSync');
+    await settingsStore.cleanupOldDeletionRecords();
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('边界对齐：deletedAt 恰好等于 cutoff 时丢弃（与 buildLocalManifest 同口径）', async () => {
+    const settingsStore = useSettingsStore();
+    const now = Date.now();
+    // 注入正好 90 天前的记录；cleanup 用 cutoff = now - 90d，predicate 是 deletedAt > cutoff
+    // 因此 deletedAt == cutoff 时不通过保留条件 → 被丢弃。
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [{ id: 'edge', deletedAt: now - 90 * DAY_MS }],
+    });
+
+    await settingsStore.cleanupOldDeletionRecords(90);
+
+    expect(settingsStore.gistSync.deletedNovelIds).toEqual([]);
+  });
+});

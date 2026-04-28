@@ -8,6 +8,7 @@ import type {
 } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
+import { TOMBSTONE_TTL_DAYS } from 'src/models/manifest';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
 import { DEFAULT_PROXY_LIST, DEFAULT_PROXY_SITE_MAPPING } from 'src/constants/proxy';
 import { getDB } from 'src/utils/indexed-db';
@@ -936,72 +937,49 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
-     * 清理旧的删除记录（超过指定天数的记录）
-     * @param daysToKeep 保留天数，默认 30 天
+     * 清理旧的删除记录（超过指定天数的记录）。
+     *
+     * @param daysToKeep 保留天数；默认派生自 `TOMBSTONE_TTL_DAYS`，
+     *   保证本地删除记录窗口与 manifest 墓碑窗口对齐。
+     *
+     * 修剪边界：当 `now - deletedAt >= ttl` 时丢弃，对齐 `buildLocalManifest`
+     * 的墓碑修剪规则，避免临界点出现"本地清空但 manifest 仍带墓碑"的漂移。
      */
-    async cleanupOldDeletionRecords(daysToKeep = 30): Promise<void> {
-      const index = this.syncs.findIndex((sync) => sync.syncType === SyncType.Gist);
-      if (index < 0) {
-        return;
-      }
+    async cleanupOldDeletionRecords(daysToKeep = TOMBSTONE_TTL_DAYS): Promise<void> {
+      const config = this.syncs.find((sync) => sync.syncType === SyncType.Gist);
+      if (!config) return;
 
-      const config = this.syncs[index];
-      if (!config) {
-        return;
-      }
+      const ttlMs = daysToKeep * 24 * 60 * 60 * 1000;
+      const cutoffTime = Date.now() - ttlMs;
+      let prunedCount = 0;
 
-      const cutoffTime = Date.now() - daysToKeep * 24 * 60 * 60 * 1000;
-      let hasChanges = false;
+      // 返回 null 表示"无变化"（input 缺失或没有过期记录），否则返回新数组
+      const trim = <T extends { deletedAt: number }>(arr: T[] | undefined): T[] | null => {
+        if (!arr || arr.length === 0) return null;
+        const filtered = arr.filter((record) => record.deletedAt > cutoffTime);
+        if (filtered.length === arr.length) return null;
+        prunedCount += arr.length - filtered.length;
+        return filtered;
+      };
 
-      // 清理书籍删除记录
-      if (config.deletedNovelIds && config.deletedNovelIds.length > 0) {
-        const filtered = config.deletedNovelIds.filter((record) => record.deletedAt > cutoffTime);
-        if (filtered.length !== config.deletedNovelIds.length) {
-          config.deletedNovelIds = filtered;
-          hasChanges = true;
-        }
-      }
+      const updates: Partial<SyncConfig> = {};
+      const novel = trim(config.deletedNovelIds);
+      if (novel) updates.deletedNovelIds = novel;
+      const model = trim(config.deletedModelIds);
+      if (model) updates.deletedModelIds = model;
+      const cover = trim(config.deletedCoverIds);
+      if (cover) updates.deletedCoverIds = cover;
+      const coverUrl = trim(config.deletedCoverUrls);
+      if (coverUrl) updates.deletedCoverUrls = coverUrl;
+      const memory = trim(config.deletedMemoryIds);
+      if (memory) updates.deletedMemoryIds = memory;
 
-      // 清理模型删除记录
-      if (config.deletedModelIds && config.deletedModelIds.length > 0) {
-        const filtered = config.deletedModelIds.filter((record) => record.deletedAt > cutoffTime);
-        if (filtered.length !== config.deletedModelIds.length) {
-          config.deletedModelIds = filtered;
-          hasChanges = true;
-        }
-      }
+      if (Object.keys(updates).length === 0) return;
 
-      // 清理封面删除记录
-      if (config.deletedCoverIds && config.deletedCoverIds.length > 0) {
-        const filtered = config.deletedCoverIds.filter((record) => record.deletedAt > cutoffTime);
-        if (filtered.length !== config.deletedCoverIds.length) {
-          config.deletedCoverIds = filtered;
-          hasChanges = true;
-        }
-      }
-
-      // 清理封面删除记录（按 URL）
-      if (config.deletedCoverUrls && config.deletedCoverUrls.length > 0) {
-        const filtered = config.deletedCoverUrls.filter((record) => record.deletedAt > cutoffTime);
-        if (filtered.length !== config.deletedCoverUrls.length) {
-          config.deletedCoverUrls = filtered;
-          hasChanges = true;
-        }
-      }
-
-      // 清理 Memory 删除记录
-      if (config.deletedMemoryIds && config.deletedMemoryIds.length > 0) {
-        const filtered = config.deletedMemoryIds.filter((record) => record.deletedAt > cutoffTime);
-        if (filtered.length !== config.deletedMemoryIds.length) {
-          config.deletedMemoryIds = filtered;
-          hasChanges = true;
-        }
-      }
-
-      if (hasChanges) {
-        await saveSyncToDB(this.syncs);
-        await Promise.resolve();
-      }
+      console.debug(
+        `[settings] cleanupOldDeletionRecords 修剪 ${prunedCount} 条记录 (cutoff=${new Date(cutoffTime).toISOString()})`,
+      );
+      await this.updateGistSync(updates);
     },
 
     /**

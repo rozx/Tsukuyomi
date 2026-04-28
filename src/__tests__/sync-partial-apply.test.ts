@@ -9,7 +9,11 @@ import * as SettingsStore from '../stores/settings';
 import * as BooksStore from '../stores/books';
 import * as AIModelsStore from '../stores/ai-models';
 import * as CoverHistoryStore from '../stores/cover-history';
-import { filenamesForEntry, matchFilenamesInSnapshot } from '../services/gist-sync-incremental';
+import {
+  filenamesForEntry,
+  matchFilenamesInSnapshot,
+  parseMemoriesEnvelope,
+} from '../services/gist-sync-incremental';
 import { manifestToEntries } from '../services/sync-manifest-builder';
 import { MANIFEST_SCHEMA_VERSION, novelEntryKey } from '../models/manifest';
 import type { SyncConfig } from '../models/sync';
@@ -33,6 +37,69 @@ function makeConfig(overrides: Partial<SyncConfig> = {}): SyncConfig {
     ...overrides,
   };
 }
+
+describe('gist-sync-incremental: parseMemoriesEnvelope', () => {
+  it('返回 null 当 raw 不是 array 或合规对象（损坏数据保护）', () => {
+    expect(parseMemoriesEnvelope(null)).toBeNull();
+    expect(parseMemoriesEnvelope(undefined)).toBeNull();
+    expect(parseMemoriesEnvelope('not-json')).toBeNull();
+    expect(parseMemoriesEnvelope({ wrong: 'shape' })).toBeNull();
+    expect(parseMemoriesEnvelope({ memories: 'not-array' })).toBeNull();
+  });
+
+  it('扁平 Memory[] 数组（v2 旧格式）转为 envelope，无 tombstones 字段', () => {
+    const arr = [
+      {
+        id: 'm1',
+        bookId: 'b1',
+        content: 'C',
+        summary: '',
+        createdAt: 1,
+        lastAccessedAt: 1,
+      },
+    ];
+    const env = parseMemoriesEnvelope(arr);
+    expect(env).not.toBeNull();
+    expect(env!.memories).toHaveLength(1);
+    expect('tombstones' in env!).toBe(false);
+  });
+
+  it('v3 envelope 格式：memories + tombstones 都被保留', () => {
+    const env = parseMemoriesEnvelope({
+      memories: [
+        {
+          id: 'm1',
+          bookId: 'b1',
+          content: 'C',
+          summary: '',
+          createdAt: 1,
+          lastAccessedAt: 1,
+        },
+      ],
+      tombstones: [{ id: 'm-deleted', deletedAt: 12345 }],
+    });
+    expect(env!.memories).toHaveLength(1);
+    expect(env!.tombstones).toEqual([{ id: 'm-deleted', deletedAt: 12345 }]);
+  });
+
+  it('envelope.tombstones 为空数组时省略字段（hash 与无墓碑形态保持一致）', () => {
+    const env = parseMemoriesEnvelope({ memories: [], tombstones: [] });
+    expect('tombstones' in env!).toBe(false);
+  });
+
+  it('过滤无效 tombstone（id 非字符串 / deletedAt 非有限数）', () => {
+    const env = parseMemoriesEnvelope({
+      memories: [],
+      tombstones: [
+        { id: 'good', deletedAt: 1 },
+        { id: 123, deletedAt: 2 } as unknown as { id: string; deletedAt: number }, // bad id
+        { id: 'bad', deletedAt: NaN },
+        null,
+      ],
+    });
+    expect(env!.tombstones).toEqual([{ id: 'good', deletedAt: 1 }]);
+  });
+});
 
 describe('gist-sync-incremental: filenamesForEntry (C1 fix)', () => {
   it('aggregated entries map to a single fixed filename', () => {
@@ -1123,5 +1190,311 @@ describe('applyRemoteDeletions: tombstone threshold', () => {
   it('returns early on empty deletions list without touching stores', async () => {
     await SyncDataService.applyRemoteDeletions([]);
     expect(deleteBookSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// applyPartialRemoteData — memories envelope tombstones (v3 root-cause fix)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('applyPartialRemoteData: memories envelope tombstones', () => {
+  const BOOK_ID = 'book-1';
+  let createSpy: ReturnType<typeof spyOn>;
+  let deleteSpy: ReturnType<typeof spyOn>;
+  let localMemories: Array<{
+    id: string;
+    bookId: string;
+    content: string;
+    summary: string;
+    createdAt: number;
+    lastAccessedAt: number;
+  }>;
+
+  beforeEach(() => {
+    localMemories = [];
+    spyOn(GlobalConfig, 'ensureInitialized').mockResolvedValue(undefined);
+    spyOn(GlobalConfig, 'getGistSyncSnapshot').mockImplementation(() => makeConfig());
+    spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue({ models: [] } as any);
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({ books: [] } as any);
+    spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
+      covers: [],
+      addCover: mock(() => Promise.resolve()),
+      removeCover: mock(() => Promise.resolve()),
+    } as any);
+    spyOn(SettingsStore, 'useSettingsStore').mockReturnValue({
+      getAllSettings: () => ({ lastEdited: new Date(0) }),
+      importSettings: mock(() => Promise.resolve()),
+    } as any);
+    spyOn(MemoryService, 'getAllMemories').mockImplementation(() =>
+      Promise.resolve(localMemories.map((m) => ({ ...m })) as any),
+    );
+    createSpy = spyOn(MemoryService, 'upsertMemoryForSync').mockResolvedValue(undefined as any);
+    deleteSpy = spyOn(MemoryService, 'deleteMemory').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  it('远端 envelope 墓碑删除本地 memory（lastAccessedAt < deletedAt）', async () => {
+    localMemories.push({
+      id: 'mem-victim',
+      bookId: BOOK_ID,
+      content: 'will-be-deleted',
+      summary: '',
+      createdAt: LAST_SYNC - 1000,
+      lastAccessedAt: LAST_SYNC - 100, // 早于墓碑
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      [`memories:${BOOK_ID}`]: {
+        kind: 'memories',
+        bookId: BOOK_ID,
+        value: {
+          memories: [],
+          tombstones: [{ id: 'mem-victim', deletedAt: LAST_SYNC + 500 }],
+        },
+      },
+    });
+
+    expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'mem-victim');
+  });
+
+  it('远端 envelope 墓碑保留本地 memory（lastAccessedAt > deletedAt = 本地后续编辑赢）', async () => {
+    localMemories.push({
+      id: 'mem-survivor',
+      bookId: BOOK_ID,
+      content: 'edited-after-delete',
+      summary: '',
+      createdAt: LAST_SYNC - 1000,
+      lastAccessedAt: LAST_SYNC + 10_000, // 晚于墓碑
+    });
+
+    await SyncDataService.applyPartialRemoteData({
+      [`memories:${BOOK_ID}`]: {
+        kind: 'memories',
+        bookId: BOOK_ID,
+        value: {
+          memories: [],
+          tombstones: [{ id: 'mem-survivor', deletedAt: LAST_SYNC + 500 }],
+        },
+      },
+    });
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+    const ids = createSpy.mock.calls.map((c: unknown[]) => (c[0] as { id: string }).id);
+    expect(ids).toContain('mem-survivor');
+  });
+
+  it('envelope 仅含 tombstones 时（无 live memories）也能正确应用删除', async () => {
+    localMemories.push(
+      {
+        id: 'mem-A',
+        bookId: BOOK_ID,
+        content: 'A',
+        summary: '',
+        createdAt: LAST_SYNC - 1000,
+        lastAccessedAt: LAST_SYNC - 100,
+      },
+      {
+        id: 'mem-B',
+        bookId: BOOK_ID,
+        content: 'B',
+        summary: '',
+        createdAt: LAST_SYNC - 1000,
+        lastAccessedAt: LAST_SYNC - 100,
+      },
+    );
+
+    await SyncDataService.applyPartialRemoteData({
+      [`memories:${BOOK_ID}`]: {
+        kind: 'memories',
+        bookId: BOOK_ID,
+        value: {
+          memories: [],
+          tombstones: [{ id: 'mem-A', deletedAt: LAST_SYNC + 500 }],
+        },
+      },
+    });
+
+    expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'mem-A');
+    expect(deleteSpy).not.toHaveBeenCalledWith(BOOK_ID, 'mem-B');
+  });
+
+  it('envelope 兼容性：扁平 Memory[] 数组形态仍然能被解析（v2 数据）', async () => {
+    localMemories.push({
+      id: 'mem-stale',
+      bookId: BOOK_ID,
+      content: 'old',
+      summary: '',
+      createdAt: LAST_SYNC - 1000,
+      lastAccessedAt: LAST_SYNC - 500,
+    });
+
+    // 旧的扁平数组形态（v2）：value 是 Memory[]
+    await SyncDataService.applyPartialRemoteData({
+      [`memories:${BOOK_ID}`]: {
+        kind: 'memories',
+        bookId: BOOK_ID,
+        value: [
+          {
+            id: 'mem-stale',
+            bookId: BOOK_ID,
+            content: 'old',
+            summary: '',
+            createdAt: LAST_SYNC - 1000,
+            lastAccessedAt: LAST_SYNC - 500,
+          },
+        ],
+      },
+    });
+
+    // 应作为正常合并处理，不抛错
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// applyRemoteDeletions — memories collection-level tombstone (createdAt rule)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('applyRemoteDeletions: memories collection-level tombstone', () => {
+  const BOOK_ID = 'book-cleared';
+  let getAllSpy: ReturnType<typeof spyOn>;
+  let deleteSpy: ReturnType<typeof spyOn>;
+  let localMemories: Array<{
+    id: string;
+    bookId: string;
+    content: string;
+    summary: string;
+    createdAt: number;
+    lastAccessedAt: number;
+  }>;
+
+  beforeEach(() => {
+    localMemories = [];
+
+    spyOn(GlobalConfig, 'ensureInitialized').mockResolvedValue(undefined);
+    spyOn(GlobalConfig, 'getGistSyncSnapshot').mockImplementation(() => makeConfig());
+    spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue({ models: [] } as any);
+    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+      books: [],
+      deleteBook: mock(() => Promise.resolve()),
+    } as any);
+    spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({ covers: [] } as any);
+    spyOn(SettingsStore, 'useSettingsStore').mockReturnValue({} as any);
+    getAllSpy = spyOn(MemoryService, 'getAllMemories').mockImplementation(() =>
+      Promise.resolve(localMemories.map((m) => ({ ...m })) as any),
+    );
+    deleteSpy = spyOn(MemoryService, 'deleteMemory').mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    mock.restore();
+  });
+
+  it('显式墓碑：createdAt <= deletedAt 的 memory 被删除', async () => {
+    localMemories.push({
+      id: 'old-mem',
+      bookId: BOOK_ID,
+      content: 'pre-tombstone',
+      summary: '',
+      createdAt: LAST_SYNC - 5000,
+      lastAccessedAt: LAST_SYNC + 999_999, // 即使本地反复读取，仍删除
+    });
+
+    await SyncDataService.applyRemoteDeletions([
+      {
+        key: `memories:${BOOK_ID}`,
+        deletedAt: new Date(LAST_SYNC + 100).toISOString(),
+      },
+    ]);
+
+    expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'old-mem');
+  });
+
+  it('显式墓碑：createdAt > deletedAt 的本地新增 memory 被保留', async () => {
+    localMemories.push(
+      {
+        id: 'old-mem',
+        bookId: BOOK_ID,
+        content: 'pre-tombstone',
+        summary: '',
+        createdAt: LAST_SYNC - 5000,
+        lastAccessedAt: LAST_SYNC,
+      },
+      {
+        id: 'fresh-mem',
+        bookId: BOOK_ID,
+        content: 'created-after-tombstone',
+        summary: '',
+        createdAt: LAST_SYNC + 1000, // 墓碑发布后才创建
+        lastAccessedAt: LAST_SYNC + 1000,
+      },
+    );
+
+    await SyncDataService.applyRemoteDeletions([
+      {
+        key: `memories:${BOOK_ID}`,
+        deletedAt: new Date(LAST_SYNC + 500).toISOString(),
+      },
+    ]);
+
+    expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'old-mem');
+    expect(deleteSpy).not.toHaveBeenCalledWith(BOOK_ID, 'fresh-mem');
+  });
+
+  it('lastAccessedAt 不再用于判断本地持有（修复假阳性）', async () => {
+    // 旧启发式会因"本地有较新 lastAccessedAt"而保留全部，导致永远删不掉
+    localMemories.push({
+      id: 'often-read',
+      bookId: BOOK_ID,
+      content: 'should-be-deleted',
+      summary: '',
+      createdAt: LAST_SYNC - 5000,
+      lastAccessedAt: LAST_SYNC + 999_999, // 本地反复读取
+    });
+
+    await SyncDataService.applyRemoteDeletions([
+      {
+        key: `memories:${BOOK_ID}`,
+        deletedAt: new Date(LAST_SYNC + 100).toISOString(),
+      },
+    ]);
+
+    expect(deleteSpy).toHaveBeenCalledWith(BOOK_ID, 'often-read');
+  });
+
+  it('隐式删除（无墓碑）保守跳过，不再触发批量删除', async () => {
+    localMemories.push({
+      id: 'safe-mem',
+      bookId: BOOK_ID,
+      content: 'no-tombstone',
+      summary: '',
+      createdAt: LAST_SYNC - 5000,
+      lastAccessedAt: LAST_SYNC - 100,
+    });
+
+    await SyncDataService.applyRemoteDeletions([{ key: `memories:${BOOK_ID}` }]);
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(getAllSpy).toHaveBeenCalled();
+  });
+
+  it('墓碑 deletedAt 字符串无效时跳过（不误删）', async () => {
+    localMemories.push({
+      id: 'safe-mem',
+      bookId: BOOK_ID,
+      content: 'protected',
+      summary: '',
+      createdAt: LAST_SYNC - 5000,
+      lastAccessedAt: LAST_SYNC,
+    });
+
+    await SyncDataService.applyRemoteDeletions([
+      { key: `memories:${BOOK_ID}`, deletedAt: 'not-a-date' },
+    ]);
+
+    expect(deleteSpy).not.toHaveBeenCalled();
   });
 });

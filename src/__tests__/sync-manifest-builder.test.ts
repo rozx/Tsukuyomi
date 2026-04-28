@@ -8,6 +8,8 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
 import {
   ENTRY_KEYS,
   MANIFEST_SCHEMA_VERSION,
+  TOMBSTONE_TTL_DAYS,
+  TOMBSTONE_TTL_MS,
   memoriesEntryKey,
   novelEntryKey,
   parseMemoriesEntryKey,
@@ -15,6 +17,7 @@ import {
 } from 'src/models/manifest';
 import {
   buildLocalManifest,
+  buildMemoriesPayload,
   diffManifests,
   hashesToManifest,
   manifestToHashes,
@@ -276,5 +279,180 @@ describe('rebuildManifestFromFiles', () => {
     });
     expect(m.entries[ENTRY_KEYS.SETTINGS]).toBeUndefined();
     expect(Object.keys(m.entries)).toEqual([novelEntryKey('abc')]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tombstone TTL constants & schema version (Phase A — TTL bump to 90 days)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('manifest TTL constants', () => {
+  it('TOMBSTONE_TTL_MS equals 90 days (cross-device offline coverage)', () => {
+    expect(TOMBSTONE_TTL_MS).toBe(90 * 24 * 60 * 60 * 1000);
+  });
+
+  it('TOMBSTONE_TTL_DAYS derives from TOMBSTONE_TTL_MS (single source of truth)', () => {
+    expect(TOMBSTONE_TTL_DAYS).toBe(90);
+  });
+
+  it('MANIFEST_SCHEMA_VERSION is 3 (memories envelope + memories tombstones)', () => {
+    expect(MANIFEST_SCHEMA_VERSION).toBe(3);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildLocalManifest tombstone behavior (revival rule + TTL boundary)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildLocalManifest: tombstones', () => {
+  it('preserves a tombstone whose entry is absent from local data', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        novels: [],
+        tombstones: { [novelEntryKey('gone')]: '2026-04-01T00:00:00.000Z' },
+      }),
+    );
+    expect(m.tombstones?.[novelEntryKey('gone')]).toEqual({
+      deletedAt: '2026-04-01T00:00:00.000Z',
+    });
+  });
+
+  it('drops tombstone when the entry is genuinely revived (entry.lastEdited >= deletedAt)', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        // Entry edited AFTER the tombstone → real revival, drop tombstone
+        novels: [makeNovel('abc', '2026-05-01T00:00:00Z')],
+        tombstones: { [novelEntryKey('abc')]: '2026-04-01T00:00:00.000Z' },
+      }),
+    );
+    expect(m.tombstones?.[novelEntryKey('abc')]).toBeUndefined();
+  });
+
+  it('keeps tombstone when an entry exists but lastEdited is older than deletedAt (id reuse / clock drift)', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        // Entry edited BEFORE the tombstone → stale residue, keep tombstone
+        novels: [makeNovel('abc', '2026-03-01T00:00:00Z')],
+        tombstones: { [novelEntryKey('abc')]: '2026-04-01T00:00:00.000Z' },
+      }),
+    );
+    expect(m.tombstones?.[novelEntryKey('abc')]).toEqual({
+      deletedAt: '2026-04-01T00:00:00.000Z',
+    });
+  });
+
+  it('drops tombstone exactly at the TTL boundary (>= TTL) [edge alignment]', async () => {
+    const now = Date.now();
+    const exactlyAtTTL = new Date(now - TOMBSTONE_TTL_MS).toISOString();
+    const oneMsBefore = new Date(now - TOMBSTONE_TTL_MS + 60_000).toISOString();
+    const m = await buildLocalManifest(
+      emptyInput({
+        tombstones: {
+          [novelEntryKey('expired')]: exactlyAtTTL, // == TTL → dropped
+          [novelEntryKey('alive')]: oneMsBefore, // < TTL → kept
+        },
+      }),
+    );
+    expect(m.tombstones?.[novelEntryKey('expired')]).toBeUndefined();
+    expect(m.tombstones?.[novelEntryKey('alive')]).toBeDefined();
+  });
+
+  it('accepts memories:<bookId> tombstones (v3+: collection-level memory tombstones)', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        tombstones: { [memoriesEntryKey('book-x')]: '2026-04-01T00:00:00.000Z' },
+      }),
+    );
+    expect(m.tombstones?.[memoriesEntryKey('book-x')]).toEqual({
+      deletedAt: '2026-04-01T00:00:00.000Z',
+    });
+  });
+
+  it('drops invalid deletedAt strings (NaN guard)', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        tombstones: { [novelEntryKey('weird')]: 'not-a-date' },
+      }),
+    );
+    expect(m.tombstones?.[novelEntryKey('weird')]).toBeUndefined();
+  });
+
+  it('omits tombstones field entirely when none survive', async () => {
+    const m = await buildLocalManifest(emptyInput());
+    expect(m.tombstones).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildLocalManifest: memories envelope (v3 — payload includes per-memory tombstones)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildLocalManifest: memories envelope', () => {
+  it('emits a memories entry when only tombstones are present (no live memories)', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        memoriesByBook: {},
+        memoryTombstonesByBook: {
+          'book-1': [{ id: 'mem-deleted', deletedAt: 1_000_000 }],
+        },
+      }),
+    );
+    expect(m.entries[memoriesEntryKey('book-1')]).toBeDefined();
+  });
+
+  it('skips memories entry when both memories and tombstones are empty', async () => {
+    const m = await buildLocalManifest(
+      emptyInput({
+        memoriesByBook: { 'book-1': [] },
+        memoryTombstonesByBook: { 'book-1': [] },
+      }),
+    );
+    expect(m.entries[memoriesEntryKey('book-1')]).toBeUndefined();
+  });
+
+  it('hash differs when tombstones differ (envelope is hashed, not just live memories)', async () => {
+    const memories = [makeMemory('m1', 'book-1')];
+    const m1 = await buildLocalManifest(
+      emptyInput({
+        memoriesByBook: { 'book-1': memories },
+        memoryTombstonesByBook: { 'book-1': [] },
+      }),
+    );
+    const m2 = await buildLocalManifest(
+      emptyInput({
+        memoriesByBook: { 'book-1': memories },
+        memoryTombstonesByBook: {
+          'book-1': [{ id: 'old-mem', deletedAt: 1_000_000 }],
+        },
+      }),
+    );
+    expect(m1.entries[memoriesEntryKey('book-1')]!.hash).not.toBe(
+      m2.entries[memoriesEntryKey('book-1')]!.hash,
+    );
+  });
+
+  it('tombstone insertion order does not affect hash (sorted by id)', () => {
+    const a = buildMemoriesPayload([], [
+      { id: 'b', deletedAt: 2 },
+      { id: 'a', deletedAt: 1 },
+    ]);
+    const b = buildMemoriesPayload([], [
+      { id: 'a', deletedAt: 1 },
+      { id: 'b', deletedAt: 2 },
+    ]);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it('omits empty tombstones field for hash stability with pre-tombstone state', () => {
+    const env = buildMemoriesPayload([], []);
+    expect('tombstones' in env).toBe(false);
+  });
+
+  it('memoryTombstonesByBook tombstone with non-finite deletedAt is filtered', () => {
+    const env = buildMemoriesPayload([], [
+      { id: 'good', deletedAt: 1_000_000 },
+      { id: 'bad', deletedAt: NaN as unknown as number },
+    ]);
+    expect(env.tombstones).toEqual([{ id: 'good', deletedAt: 1_000_000 }]);
   });
 });

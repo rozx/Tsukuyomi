@@ -2498,12 +2498,22 @@ export class SyncDataService {
           case 'novel':
             await SyncDataService.applyPartialNovelEntry((entry as { value: Novel }).value);
             break;
-          case 'memories':
+          case 'memories': {
+            // 兼容两种 entry.value 形态：v3+ envelope 或旧 Memory[]（legacy 路径 / 测试 fixture）
+            const rawValue = (entry as { value: unknown }).value;
+            const envelope = Array.isArray(rawValue)
+              ? { memories: rawValue as Memory[] }
+              : (rawValue as {
+                  memories: Memory[];
+                  tombstones?: Array<{ id: string; deletedAt: number }>;
+                });
             await SyncDataService.applyPartialMemoriesEntry(
               (entry as { bookId: string }).bookId,
-              (entry as { value: Memory[] }).value,
+              envelope.memories,
+              envelope.tombstones,
             );
             break;
+          }
           default:
             break;
         }
@@ -2686,15 +2696,26 @@ export class SyncDataService {
     }
   }
 
-  /** 合并远端 / 本地 memory：按 id 去重取 lastAccessedAt 较大者，再按 content 去重。 */
+  /**
+   * 合并远端 / 本地 memory：按 id 去重取 lastAccessedAt 较大者，再按 content 去重。
+   *
+   * @param deletedMap 本地 deletedMemoryIds 记录（id -> deletedAt 毫秒）
+   * @param remoteTombstones 远端 envelope 携带的单条 memory 墓碑（v3+），按 id 索引
+   *
+   * 删除冲突：
+   *  - 远端 tombstone：若 `local.lastAccessedAt < deletedAt` → 删除本地；否则保留（本地编辑赢）。
+   *  - 本地 tombstone：跳过远端中同 id 的活动条目（不复活）。
+   */
   private static mergeMemoriesByIdAndContent(
     remoteMemories: Memory[],
     localMemories: Memory[],
     lastSyncTime: number,
     deletedMap: Map<string, number>,
+    remoteTombstones?: Map<string, number>,
   ): Memory[] {
     const remoteIds = new Set(remoteMemories.map((m) => m.id));
     const finalMap = new Map<string, Memory>();
+    const remoteTombs = remoteTombstones ?? new Map<string, number>();
 
     // 1. 远端 memory：按 id 去重（保留 lastAccessedAt 更大的），跳过被本地删除的
     for (const rm of remoteMemories) {
@@ -2706,8 +2727,13 @@ export class SyncDataService {
       }
     }
 
-    // 2. 本地 memory：若 id 出现在远端则合并取 max，否则按时间/空远端规则保留或删除
+    // 2. 本地 memory：判断是否被远端墓碑显式删除，否则按 id/时间合并
     for (const local of localMemories) {
+      const remoteTombAt = remoteTombs.get(local.id);
+      if (remoteTombAt !== undefined && local.lastAccessedAt < remoteTombAt) {
+        // 远端显式删除且本地未在墓碑后再访问 → 不保留
+        continue;
+      }
       if (remoteIds.has(local.id)) {
         const existing = finalMap.get(local.id);
         if (!existing || local.lastAccessedAt > existing.lastAccessedAt) {
@@ -2715,6 +2741,9 @@ export class SyncDataService {
         }
         continue;
       }
+      // 本地独有：远端 envelope 是该书的权威列表，缺席即代表"远端不持有该 id"。
+      // 远端墓碑会精准告知具体 id 被删；其它 id 无墓碑就遵循"本地 lastAccessedAt
+      // 晚于 lastSyncTime → 保留"的常规启发式（首次同步 / 本地新增）。
       const isFreshLocal = lastSyncTime === 0 || local.lastAccessedAt > lastSyncTime;
       if (isFreshLocal || remoteMemories.length === 0) {
         finalMap.set(local.id, local);
@@ -2756,10 +2785,16 @@ export class SyncDataService {
     }
   }
 
-  /** memories 条目：合并远端/本地，按 id + content 双重去重后覆盖本地该书的 memory 集 */
+  /**
+   * memories 条目：合并远端/本地，按 id + content 双重去重后覆盖本地该书的 memory 集。
+   *
+   * @param remoteMemories envelope 中的活动 memory 列表
+   * @param remoteTombstones envelope 中的单条 memory 墓碑（v3+ 才有）
+   */
   private static async applyPartialMemoriesEntry(
     bookId: string,
     remoteMemories: Memory[],
+    remoteTombstones?: Array<{ id: string; deletedAt: number }>,
   ): Promise<void> {
     const localMemories = await MemoryService.getAllMemories(bookId);
     const gistSync = GlobalConfig.getGistSyncSnapshot();
@@ -2767,12 +2802,16 @@ export class SyncDataService {
     const deletedMap = new Map<string, number>(
       (gistSync?.deletedMemoryIds || []).map((r) => [r.id, r.deletedAt]),
     );
+    const remoteTombMap = new Map<string, number>(
+      (remoteTombstones ?? []).map((t) => [t.id, t.deletedAt]),
+    );
 
     const finalList = SyncDataService.mergeMemoriesByIdAndContent(
       remoteMemories,
       localMemories,
       lastSyncTime,
       deletedMap,
+      remoteTombMap,
     );
 
     await SyncDataService.persistMergedMemories(bookId, finalList, localMemories);
@@ -2850,29 +2889,59 @@ export class SyncDataService {
     }
   }
 
-  /** 处理 memories:<bookId> 远端删除：本地有较新访问则保留，否则清空所有 memory */
+  /**
+   * 处理 memories:<bookId> 远端 collection 级删除（整本 memories 被清空）。
+   *
+   * 旧策略用 `lastAccessedAt > threshold` 启发式，会被本地"打开书 → 自动 access"
+   * 误触发为假阳性。现在改为：
+   *
+   *  - 显式墓碑（deletedAt）：用 `createdAt` 比较——只有"墓碑后才创建"的 memory
+   *    会保留（视为本地真新增，不应被旧的整集合删除回收）。`lastAccessedAt`
+   *    会被读取自动刷新，不能作为"本地主动持有"的依据。
+   *  - 隐式删除（无墓碑、entry 直接消失，可能是迁移 / 损坏）：保守跳过，仅记录警告。
+   *    单条 memory 的删除已经走 envelope tombstones 通道，这里不再做模糊回收。
+   */
   private static async applyRemoteMemoriesDeletion(
     key: string,
     deletedAt: string | undefined,
-    lastSyncTime: number,
+    _lastSyncTime: number,
   ): Promise<void> {
     const bookId = key.slice('memories:'.length);
     const localMemories = await MemoryService.getAllMemories(bookId);
     if (localMemories.length === 0) return;
 
-    const threshold = SyncDataService.deletionThreshold(deletedAt, lastSyncTime);
-    const hasRecent = localMemories.some((m) => m.lastAccessedAt > threshold);
-    if (hasRecent) {
-      console.info(`[SyncDataService] 跳过远端删除 ${key}：本地有较新的 memory 活动`);
+    if (!deletedAt) {
+      console.warn(
+        `[SyncDataService] 跳过隐式 memories 删除 ${key}：无墓碑，已转为保守保留（避免假阳性回收）`,
+      );
       return;
     }
 
+    const threshold = new Date(deletedAt).getTime();
+    if (!Number.isFinite(threshold)) {
+      console.warn(`[SyncDataService] memories 墓碑 ${key} deletedAt 无效，跳过删除`);
+      return;
+    }
+
+    let deleted = 0;
+    let kept = 0;
     for (const m of localMemories) {
+      // createdAt 晚于墓碑 → 墓碑发布后用户在本地真创建的新 memory，保留
+      if (m.createdAt > threshold) {
+        kept += 1;
+        continue;
+      }
       try {
         await MemoryService.deleteMemory(bookId, m.id);
+        deleted += 1;
       } catch (e) {
         console.warn(`[SyncDataService] 删除 Memory ${m.id} 失败:`, e);
       }
+    }
+    if (deleted || kept) {
+      console.debug(
+        `[SyncDataService] 应用 memories collection 墓碑 ${key}: 删除 ${deleted}，保留 ${kept}（createdAt > deletedAt）`,
+      );
     }
   }
 

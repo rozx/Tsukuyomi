@@ -122,9 +122,21 @@ export function useSyncExecutor() {
 
   /**
    * 从本地 stores 构建同步上传所需的完整 bundle（manifest + 规范化的各 payload + 合并墓碑）
-   * 供 executeSync（阶段 3）和 executeForceSync 复用
+   * 供 executeSync（阶段 3）和 executeForceSync 复用。
+   *
+   * 调用前会先 `cleanupOldDeletionRecords`：
+   * 让本地 deleted*Ids 与下面构造的 `tombstones` 在同一时间锚点上完成 TTL 过滤，
+   * 避免 builder 端的"再过滤"和上传后清理这两层窗口出现 1ms 级漂移。
    */
   const buildLocalSyncBundle = async (config: SyncConfig) => {
+    // 先修剪本地 deleted*Ids；buildLocalManifest 会再做一次墓碑级过滤兜底。
+    try {
+      await settingsStore.cleanupOldDeletionRecords();
+    } catch (error) {
+      console.warn('[useSyncExecutor] 修剪过期删除记录失败，继续上传:', error);
+    }
+    // 修剪后重新读取最新 config（上面 await 期间 store 已更新）
+    const freshConfig: SyncConfig = settingsStore.gistSync ?? config;
     const novelsLoaded = await ChapterContentService.loadAllChapterContentsForNovels(
       booksStore.books,
     );
@@ -136,13 +148,15 @@ export function useSyncExecutor() {
     const coverHistoryForSync = sortCoversById(coverHistoryStore.covers);
     const appSettingsForSync = stripAppSettingsLocalFields(settingsStore.getAllSettings());
 
-    // 合并墓碑：本地删除记录 (deletedNovelIds) + 上次从远端拉取的墓碑快照
-    // 过期墓碑（> 30 天）会在 buildLocalManifest 中被过滤
+    // 合并 manifest 级墓碑（仅 collection 级：novel:<id> / memories:<id>）：
+    // - 上次从远端拉取的墓碑快照（knownRemoteTombstones）
+    // - 本地的 collection 级删除记录（deletedNovelIds + 整本书 memories 被清空的 deletedMemoryCollections）
+    // 过期墓碑（>= TTL）由 buildLocalManifest 兜底再过滤一次
     const tombstones: Record<string, string> = {};
-    for (const [k, ds] of Object.entries(config.knownRemoteTombstones ?? {})) {
+    for (const [k, ds] of Object.entries(freshConfig.knownRemoteTombstones ?? {})) {
       tombstones[k] = ds;
     }
-    for (const record of config.deletedNovelIds ?? []) {
+    for (const record of freshConfig.deletedNovelIds ?? []) {
       const key = `novel:${record.id}`;
       const existing = tombstones[key];
       const existingMs = existing ? new Date(existing).getTime() : 0;
@@ -151,12 +165,24 @@ export function useSyncExecutor() {
       }
     }
 
+    // 单条 memory 的删除：按 bookId 归集为 envelope 的 tombstones 字段
+    // （collection 级的整本删除走上面的 manifest tombstones 通道）
+    // 旧记录可能没有 bookId（升级前写入），跳过 envelope 注入但仍参与 TTL 修剪。
+    const memoryTombstonesByBook: Record<string, Array<{ id: string; deletedAt: number }>> = {};
+    for (const record of freshConfig.deletedMemoryIds ?? []) {
+      if (!record.bookId) continue;
+      const list =
+        memoryTombstonesByBook[record.bookId] ?? (memoryTombstonesByBook[record.bookId] = []);
+      list.push({ id: record.id, deletedAt: record.deletedAt });
+    }
+
     const localManifest = await buildLocalManifest({
       appSettings: appSettingsForSync,
       aiModels: aiModelsForSync,
       coverHistory: coverHistoryForSync,
       novels: novelsWithContent,
       memoriesByBook,
+      memoryTombstonesByBook,
       tombstones,
     });
 
@@ -167,6 +193,7 @@ export function useSyncExecutor() {
       coverHistoryForSync,
       novelsWithContent,
       memoriesByBook,
+      memoryTombstonesByBook,
       tombstones,
     };
   };
@@ -574,6 +601,7 @@ export function useSyncExecutor() {
           coverHistory: bundle.coverHistoryForSync,
           novels: bundle.novelsWithContent,
           memoriesByBook: bundle.memoriesByBook,
+          memoryTombstonesByBook: bundle.memoryTombstonesByBook,
           tombstones: bundle.tombstones,
         },
         remoteFilesSnapshot as Parameters<typeof gistSyncService.uploadToGistIncremental>[2],
@@ -820,6 +848,7 @@ export function useSyncExecutor() {
       coverHistoryForSync,
       novelsWithContent,
       memoriesByBook,
+      memoryTombstonesByBook,
       tombstones,
     } = bundle;
 
@@ -848,6 +877,7 @@ export function useSyncExecutor() {
           coverHistory: coverHistoryForSync,
           novels: novelsWithContent,
           memoriesByBook,
+          memoryTombstonesByBook,
           tombstones,
         },
         remoteFilesSnapshot as Parameters<typeof gistSyncService.uploadToGistIncremental>[2],

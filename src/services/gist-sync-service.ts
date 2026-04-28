@@ -1392,7 +1392,9 @@ export class GistSyncService {
         result.novels.push(entry.value);
         break;
       case 'memories':
-        result.memories = [...(result.memories ?? []), ...entry.value];
+        // 修订恢复路径不还原单条 memory 墓碑（恢复 = 强制覆盖到该时间点的状态），
+        // 仅取 envelope 内的 live memories
+        result.memories = [...(result.memories ?? []), ...entry.value.memories];
         break;
       default:
         break;

@@ -754,6 +754,7 @@ export class MemoryService {
         if (!deletedMemoryIds.find((record) => record.id === memoryId)) {
           deletedMemoryIds.push({
             id: memoryId,
+            bookId,
             deletedAt: Date.now(),
           });
           await settingsStore.updateGistSync({

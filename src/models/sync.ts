@@ -1,6 +1,13 @@
 export interface DeletionRecord {
   id: string;
   deletedAt: number; // 删除时间戳（毫秒）
+  /**
+   * 仅 memory 删除记录使用：归属书籍 id。
+   *
+   * 上传时根据它把墓碑写入对应的 `memories:<bookId>` envelope；
+   * 缺失（旧版本写入的记录）会跳过 envelope 注入，仅参与 TTL 修剪。
+   */
+  bookId?: string;
 }
 
 /**

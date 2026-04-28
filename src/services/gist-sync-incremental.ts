@@ -12,8 +12,10 @@ import {
   parseNovelEntryKey,
   type GistManifest,
   type ManifestEntry,
+  type MemoriesPayload,
+  type MemoryTombstone,
 } from 'src/models/manifest';
-import { buildLocalManifest, diffManifests } from 'src/services/sync-manifest-builder';
+import { buildLocalManifest, buildMemoriesPayload, diffManifests } from 'src/services/sync-manifest-builder';
 import { compressString, decompressString } from 'src/utils/compression';
 import { deserializeDates } from 'src/utils/serialize-dates';
 import { canonicalStringify } from 'src/utils/canonical-json';
@@ -54,7 +56,15 @@ export interface UploadPayload {
   coverHistory: CoverHistoryItem[];
   novels: Novel[]; // 已加载完整章节内容
   memoriesByBook: Record<string, Memory[]>;
-  /** 墓碑：entryKey -> deletedAt ISO（仅 `novel:<id>` 形式） */
+  /**
+   * 单条 memory 的墓碑（按 bookId 分组），与 `memoriesByBook` 一同写入
+   * `memories:<bookId>` 的 envelope payload。空集合可省略。
+   */
+  memoryTombstonesByBook?: Record<string, MemoryTombstone[]>;
+  /**
+   * Manifest 级 collection 墓碑：entryKey -> deletedAt ISO。
+   * 支持 `novel:<id>` 与 `memories:<id>` 两种形式（v3+）。
+   */
   tombstones?: Record<string, string>;
 }
 
@@ -114,13 +124,16 @@ export type IncrementalDownloadResult =
 
 /**
  * 条目值的判别式联合
+ *
+ * memories 条目从 v3 起以 envelope 形式上传/下载（`MemoriesPayload`），
+ * 其中包含活动 memories 列表与单条删除墓碑。
  */
 export type EntryValue =
   | { kind: 'settings'; value: AppSettings }
   | { kind: 'ai-models'; value: AIModel[] }
   | { kind: 'cover-history'; value: CoverHistoryItem[] }
   | { kind: 'novel'; bookId: string; value: Novel }
-  | { kind: 'memories'; bookId: string; value: Memory[] };
+  | { kind: 'memories'; bookId: string; value: MemoriesPayload };
 
 /**
  * 将 JSON 字符串压缩并封装为 Gist 写入内容
@@ -437,9 +450,44 @@ export async function deserializeEntry(
       fetchRaw,
     );
     if (raw === null) return null;
-    return { kind: 'memories', bookId: memoryBookId, value: deserializeDates(raw) as Memory[] };
+    const envelope = parseMemoriesEnvelope(raw);
+    if (!envelope) return null;
+    return { kind: 'memories', bookId: memoryBookId, value: envelope };
   }
 
+  return null;
+}
+
+/**
+ * 解析 memories 条目的 raw payload。
+ *
+ * 兼容两种形态：
+ *  - v3+ envelope：`{ memories: Memory[]; tombstones?: MemoryTombstone[] }`
+ *  - v2 旧扁平数组：`Memory[]`（schemaVersionTooNew 前的客户端写入）
+ *
+ * 返回 null 表示无法识别（损坏 / 类型不符）；调用方应跳过该 entry。
+ * Date 反序列化只对 memories 字段生效——tombstone 的 deletedAt 是 number。
+ */
+export function parseMemoriesEnvelope(raw: unknown): MemoriesPayload | null {
+  if (Array.isArray(raw)) {
+    return { memories: deserializeDates(raw) as Memory[] };
+  }
+  if (raw && typeof raw === 'object') {
+    const obj = raw as { memories?: unknown; tombstones?: unknown };
+    if (Array.isArray(obj.memories)) {
+      const memories = deserializeDates(obj.memories) as Memory[];
+      const tombstones = Array.isArray(obj.tombstones)
+        ? (obj.tombstones as MemoryTombstone[]).filter(
+            (t) =>
+              t &&
+              typeof t.id === 'string' &&
+              typeof t.deletedAt === 'number' &&
+              Number.isFinite(t.deletedAt),
+          )
+        : undefined;
+      return tombstones && tombstones.length > 0 ? { memories, tombstones } : { memories };
+    }
+  }
   return null;
 }
 
@@ -906,6 +954,9 @@ export async function uploadIncremental(
     coverHistory: payload.coverHistory,
     novels: payload.novels,
     memoriesByBook: payload.memoriesByBook,
+    ...(payload.memoryTombstonesByBook
+      ? { memoryTombstonesByBook: payload.memoryTombstonesByBook }
+      : {}),
     ...(payload.tombstones ? { tombstones: payload.tombstones } : {}),
   });
 
@@ -1177,7 +1228,10 @@ async function executePatchBatches(
 }
 
 /**
- * 从 UploadPayload 中取出指定 entry key 对应的原始数据
+ * 从 UploadPayload 中取出指定 entry key 对应的原始数据。
+ *
+ * memories 条目以 envelope 形式上传（`MemoriesPayload`），由 `buildMemoriesPayload`
+ * 规范化（tombstones 排序、空数组省略），保证与 manifest 中的 hash 一致。
  */
 function getPayloadForEntry(entryKey: string, payload: UploadPayload): unknown {
   if (entryKey === ENTRY_KEYS.SETTINGS) return payload.appSettings;
@@ -1191,7 +1245,10 @@ function getPayloadForEntry(entryKey: string, payload: UploadPayload): unknown {
 
   const memBookId = parseMemoriesEntryKey(entryKey);
   if (memBookId) {
-    return payload.memoriesByBook[memBookId] ?? [];
+    return buildMemoriesPayload(
+      payload.memoriesByBook[memBookId] ?? [],
+      payload.memoryTombstonesByBook?.[memBookId],
+    );
   }
 
   return null;
