@@ -209,7 +209,29 @@ const variantComponent = computed(() => {
 
 ## 测试策略
 
-使用 Bun 内置测试框架，测试文件位于 `src/__tests__/`：
+### TDD 是默认工作流（强制）
+
+实现新功能、修 bug、改既有逻辑**必须先写会失败的测试**，再写实现让它转绿。
+
+- **Bug fix**：先写复现 bug 的回归测试（应失败）→ 修实现 → 测试转绿 → 提交。
+- **新功能**：每条期望行为先写测试 → 跑一次确认 fail（避免假阳性）→ 实现 → 转绿。
+- **改公共 API / sync / merge / persistence**：必须覆盖边界场景（空输入、单条、多条、相等时刻、损坏数据、向前兼容）。
+
+**实证价值**：tombstone 生命周期重写（commit `8d89f1f`）靠 TDD 抓到 2 个肉眼漏掉的实现 bug（envelope 空字符串 id 未过滤、merge 在损坏 envelope 下同 id 处理错误）。
+
+**TDD 节奏命令**：
+
+```bash
+bunx vitest <file-pattern>           # watch 模式：写一行测试立即跑
+bunx vitest run <file-pattern>       # 单次（提交前 / CI）
+bunx vitest run -t "测试描述"        # 按测试名过滤
+```
+
+**例外**：纯模板 / 样式 / 文档 / 配置改动可不写。改 `services/` / `composables/` / `stores/` / `models/` 的运行时逻辑**没有例外**。
+
+### 测试基础设施
+
+测试用 **Vitest (jsdom)**，文件位于 `src/__tests__/`，沿用 `bun:test` 风格 import（通过 `bun-test-shim.ts` 别名映射）：
 
 ```typescript
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
@@ -235,6 +257,7 @@ describe('MyService', () => {
 
 - 必须导入 `./setup` (提供 fake-indexeddb、localStorage、FileReader polyfill，每个 test 前自动 `resetDbForTests()`)
 - 使用 `spyOn` 局部 mock，避免全局 `mock.module` 影响其他测试
+- 模块级 mock 用 `vi.mock(path, factory)` + `vi.hoisted(...)`，**不要** `await mock.module(...)`（vite 不提升）
 - 测试导入 service 使用相对路径 `../services/xxx`
 
 ---
@@ -280,9 +303,10 @@ AI: OpenAI SDK + Google Generative AI | 存储: IndexedDB (idb) + GitHub Gist (@
 
 ## 重要提醒
 
-1. **中文优先**: 代码注释、UI 文本、回答均用简体中文
-2. **修改后检查**: 必须运行 `bun run lint && bun run type-check && bun run quality-check`
-3. **遵循现有风格**: 创建新文件前参考现有实现
-4. **DRY 原则**: 不重复代码，提取可复用函数
-5. **路径别名**: 使用 `src/` 前缀导入模块 (tsconfig paths 配置)
-6. **设备变体**: 新建页面 / 布局必须遵循 dispatcher + Desktop/Tablet/Mobile 三变体结构（见上节）；严禁在页面或布局内写 `v-if="isPhone"` / `v-if="isElectron"`
+1. **TDD 默认**: 改 `services/` / `composables/` / `stores/` / `models/` 必须先写会失败的测试再写实现（详见「测试策略」章节）
+2. **中文优先**: 代码注释、UI 文本、回答均用简体中文
+3. **修改后检查**: 必须运行 `bun run lint && bun run type-check && bun run quality-check`
+4. **遵循现有风格**: 创建新文件前参考现有实现
+5. **DRY 原则**: 不重复代码，提取可复用函数
+6. **路径别名**: 使用 `src/` 前缀导入模块 (tsconfig paths 配置)
+7. **设备变体**: 新建页面 / 布局必须遵循 dispatcher + Desktop/Tablet/Mobile 三变体结构（见上节）；严禁在页面或布局内写 `v-if="isPhone"` / `v-if="isElectron"`

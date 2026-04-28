@@ -131,6 +131,28 @@ abstract fetchNovel(url: string): Promise<Novel>;
 
 ## 测试
 
+### TDD 是默认工作流（强制）
+
+**实现新功能、修 bug、改既有逻辑前，必须先写一个会失败的测试**，然后再写实现让它过。这不是建议，是工作流：
+
+1. **bug fix**：先写一个能复现 bug 的回归测试（应当失败）→ 再改实现 → 测试转绿 → 提交。
+2. **新功能 / 新行为**：每一条期望行为先写一个测试 → 跑一次确认 fail（避免假阳性）→ 实现 → 转绿。
+3. **修改公共 API / 同步逻辑 / 数据合并**：必须有边界场景覆盖（空输入、单条、多条、相等时刻、损坏数据、向前兼容）。先列测试名再写测试体，能让你提前发现遗漏的 case。
+
+**这条规则的实证价值**：tombstone 生命周期重写（commit `8d89f1f`）通过 TDD 抓到了两个本来不会被发现的实现 bug：`buildMemoriesPayload` 没过滤空字符串 id、`mergeMemoriesByIdAndContent` 在损坏 envelope 下的同 id 处理错误。这两个 bug 写实现时完全没意识到，是测试先 fail 才暴露的。
+
+**TDD 节奏命令**：
+
+```bash
+bunx vitest <file-pattern>                # watch 模式，写一行测试就立即跑
+bunx vitest run <file-pattern>             # 单次运行（CI / 提交前）
+bunx vitest run -t "测试描述"              # 按测试名过滤
+```
+
+**例外**（不强制写测试，但仍鼓励）：纯模板 / 样式调整、文档变更、配置文件修改、明显的一次性脚本。如果改的是 `services/` / `composables/` / `stores/` / `models/` 里的运行时逻辑，没有例外。
+
+### 测试基础设施
+
 使用 **Vitest (jsdom)** 运行测试。测试文件放在 `src/__tests__/`，沿用 `bun:test` 风格的 import（通过 `src/__tests__/bun-test-shim.ts` 别名映射到 vitest），新测试也可直接 `from 'vitest'`。全局 Pinia 与 PrimeVue `useToast` 在 `src/__tests__/vitest-setup.ts` 里预先 mock 好，无需每个文件重复。
 
 ```typescript
