@@ -1,4 +1,10 @@
-import type { Occurrence, Terminology, Translation, Novel } from 'src/models/novel';
+import type {
+  CharacterSetting,
+  Occurrence,
+  Terminology,
+  Translation,
+  Novel,
+} from 'src/models/novel';
 import { flatMap, isEmpty, isArray } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
 import { SettingsService } from 'src/services/settings-service';
@@ -26,6 +32,7 @@ export class TerminologyService {
   private static loadBookTerminologies(bookId: string): {
     booksStore: ReturnType<typeof useBooksStore>;
     currentTerminologies: Terminology[];
+    characterSettings: CharacterSetting[];
   } {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
@@ -37,7 +44,26 @@ export class TerminologyService {
     return {
       booksStore,
       currentTerminologies: book.terminologies || [],
+      characterSettings: book.characterSettings || [],
     };
+  }
+
+  /**
+   * 校验术语名是否与任何角色的主名或别名重复。
+   * 术语和角色都是给同一个名字打标签 —— 同名会让翻译上下文产生歧义，所以禁止重复。
+   */
+  private static assertTermNameNotCharacter(
+    characterSettings: CharacterSetting[],
+    termName: string,
+  ): void {
+    for (const ch of characterSettings) {
+      if (ch.name === termName) {
+        throw new Error(`术语 "${termName}" 与角色名重复`);
+      }
+      if (ch.aliases?.some((a) => a.name === termName)) {
+        throw new Error(`术语 "${termName}" 与角色别名重复`);
+      }
+    }
   }
 
   /**
@@ -116,13 +142,17 @@ export class TerminologyService {
       description?: string;
     },
   ): Promise<Terminology> {
-    const { booksStore, currentTerminologies } = this.loadBookTerminologies(bookId);
+    const { booksStore, currentTerminologies, characterSettings } =
+      this.loadBookTerminologies(bookId);
 
     // 检查是否已存在同名术语
     const existingTerm = currentTerminologies.find((t) => t.name === termData.name);
     if (existingTerm) {
       throw new Error(`术语 "${termData.name}" 已存在`);
     }
+
+    // 检查是否与角色（主名或别名）冲突
+    this.assertTermNameNotCharacter(characterSettings, termData.name);
 
     // 生成唯一 ID
     const existingTermIds = extractIds(currentTerminologies);
@@ -174,22 +204,24 @@ export class TerminologyService {
       description?: string;
     },
   ): Promise<Terminology> {
-    const { booksStore, currentTerminologies } = this.loadBookTerminologies(bookId);
+    const { booksStore, currentTerminologies, characterSettings } =
+      this.loadBookTerminologies(bookId);
     const existingTerm = currentTerminologies.find((t) => t.id === termId);
 
     if (!existingTerm) {
       throw new Error(`术语不存在: ${termId}`);
     }
 
-    // 如果更新名称，检查是否与其他术语冲突
+    // 如果更新名称，检查是否与其他术语 / 角色冲突
     const nameChanged = updates.name && updates.name !== existingTerm.name;
-    if (nameChanged) {
+    if (nameChanged && updates.name) {
       const nameConflict = currentTerminologies.find(
         (t) => t.id !== termId && t.name === updates.name,
       );
       if (nameConflict) {
         throw new Error(`术语 "${updates.name}" 已存在`);
       }
+      this.assertTermNameNotCharacter(characterSettings, updates.name);
     }
 
     // 更新术语

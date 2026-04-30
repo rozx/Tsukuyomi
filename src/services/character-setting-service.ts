@@ -1,4 +1,4 @@
-import type { CharacterSetting, Alias, Translation } from 'src/models/novel';
+import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 import { SettingsService } from 'src/services/settings-service';
 import {
@@ -23,6 +23,21 @@ function assertCharacterNameAvailable(
   if (nameConflict) throw new Error(`角色 "${newName}" 已存在`);
 }
 
+/**
+ * 校验角色主名 / 别名不与已有术语同名。术语和角色都是给同一个名字打标签 ——
+ * 同名会让翻译上下文产生歧义，所以双向都禁。
+ */
+function assertNameNotTerm(
+  terminologies: Terminology[],
+  name: string,
+  kind: 'name' | 'alias',
+): void {
+  if (terminologies.some((t) => t.name === name)) {
+    const label = kind === 'name' ? '角色' : '角色别名';
+    throw new Error(`${label} "${name}" 与已有术语重复`);
+  }
+}
+
 function buildUpdatedCharacterTranslation(
   existing: CharacterSetting,
   translationUpdate: string | undefined,
@@ -35,33 +50,13 @@ function buildUpdatedCharacterTranslation(
   };
 }
 
-function aliasBelongsToAnotherCharacter(
-  aliasName: string,
-  currentSettings: CharacterSetting[],
-  currentCharId: string,
-): boolean {
-  return currentSettings.some((c) => {
-    if (c.id === currentCharId) return false;
-    if (c.name === aliasName) return true;
-    return c.aliases?.some((a) => a.name === aliasName) ?? false;
-  });
-}
-
 function buildUpdatedCharacterAliases(
   aliasUpdates: Array<{ name: string; translation: string }>,
-  currentSettings: CharacterSetting[],
-  currentCharId: string,
   existingChar: CharacterSetting,
 ): Alias[] {
   const out: Alias[] = [];
   for (const aliasData of aliasUpdates) {
     if (!aliasData.name.trim()) continue;
-    if (aliasBelongsToAnotherCharacter(aliasData.name, currentSettings, currentCharId)) {
-      console.warn(
-        `[CharacterSettingService] 跳过别名 "${aliasData.name}"，因为它已属于其他角色`,
-      );
-      continue;
-    }
     const existingAlias = (existingChar.aliases || []).find((a) => a.name === aliasData.name);
     out.push({
       name: aliasData.name,
@@ -144,11 +139,22 @@ export class CharacterSettingService {
     }
 
     const currentSettings = book.characterSettings || [];
+    const currentTerminologies = book.terminologies || [];
 
     // 检查是否已存在同名角色
     const existingChar = currentSettings.find((c) => c.name === charData.name);
     if (existingChar) {
       throw new Error(`角色 "${charData.name}" 已存在`);
+    }
+
+    // 检查角色主名 / 别名不与已有术语重复
+    assertNameNotTerm(currentTerminologies, charData.name, 'name');
+    if (charData.aliases) {
+      for (const aliasData of charData.aliases) {
+        const aliasName = aliasData.name.trim();
+        if (!aliasName) continue;
+        assertNameNotTerm(currentTerminologies, aliasName, 'alias');
+      }
     }
 
     // 生成唯一 ID
@@ -218,16 +224,29 @@ export class CharacterSettingService {
     if (!book) throw new Error(`书籍不存在: ${bookId}`);
 
     const currentSettings = book.characterSettings || [];
+    const currentTerminologies = book.terminologies || [];
     const existingChar = currentSettings.find((c) => c.id === charId);
     if (!existingChar) throw new Error(`角色不存在: ${charId}`);
 
     assertCharacterNameAvailable(currentSettings, charId, updates.name, existingChar.name);
 
+    // 改名 / 别名变更时，校验不与已有术语重复
+    if (updates.name && updates.name !== existingChar.name) {
+      assertNameNotTerm(currentTerminologies, updates.name, 'name');
+    }
+    if (updates.aliases) {
+      for (const aliasData of updates.aliases) {
+        const aliasName = aliasData.name.trim();
+        if (!aliasName) continue;
+        assertNameNotTerm(currentTerminologies, aliasName, 'alias');
+      }
+    }
+
     const updatedTranslation = buildUpdatedCharacterTranslation(existingChar, updates.translation);
     const updatedAliases =
       updates.aliases === undefined
         ? existingChar.aliases || []
-        : buildUpdatedCharacterAliases(updates.aliases, currentSettings, charId, existingChar);
+        : buildUpdatedCharacterAliases(updates.aliases, existingChar);
 
     const updatedChar = composeUpdatedCharacter(existingChar, updates, updatedTranslation, updatedAliases);
 
