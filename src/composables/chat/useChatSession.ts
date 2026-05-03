@@ -126,30 +126,36 @@ export function useChatSession(messages: Ref<ChatSessionMessage[]>, onSessionSwi
       const newBookId = newContext.currentBookId;
       const oldBookId = oldContext?.currentBookId;
 
-      // 如果书籍变化了，需要切换或创建会话
       if (newBookId !== oldBookId) {
+        // 书籍变了：切换或创建会话。
+        // 注意：createNewSession 是 async（要先 await stopAllAssistantTasks），
+        // 此时 currentSessionId 仍指向旧会话——不能在此分支再调用
+        // updateCurrentSessionContext，否则会把旧会话的 context.bookId 改写成新值，
+        // 导致用户回到原书籍页时再也按 bookId 匹配不到原会话（表现为“会话丢失”）。
         if (newBookId) {
-          // 尝试找到该书籍的现有会话（查找最近更新的、与此书籍关联的会话）
-          const sessions = chatSessionsStore.allSessions.filter(
+          const existingSession = chatSessionsStore.allSessions.find(
             (s) => s.context.bookId === newBookId,
           );
-
-          const existingSession = sessions.length > 0 ? sessions[0] : undefined;
-
           if (existingSession) {
-            // 切换到现有会话
             chatSessionsStore.switchToSession(existingSession.id);
+            // switchToSession 是同步的，currentSessionId 已经切到新会话，
+            // 此时再用最新 context 刷新它（章节/段落可能与上次保存的不同）是安全的。
+            chatSessionsStore.updateCurrentSessionContext({
+              bookId: newContext.currentBookId,
+              chapterId: newContext.currentChapterId,
+              paragraphId: newContext.selectedParagraphId,
+            });
           } else {
-            // 创建新会话
+            // createNewSession 内部读取最新的 contextStore.getContext 作为种子，无需额外更新
             void createNewSession();
           }
         } else {
-          // 如果没有书籍上下文，创建一个新会话（无书籍关联）
           void createNewSession();
         }
+        return;
       }
 
-      // 更新当前会话的上下文
+      // 书籍未变：只是章节/段落变了，刷新当前会话的 context
       chatSessionsStore.updateCurrentSessionContext({
         bookId: newContext.currentBookId,
         chapterId: newContext.currentChapterId,
