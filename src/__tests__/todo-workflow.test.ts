@@ -369,4 +369,89 @@ describe('TodoWorkflow', () => {
       expect(block).toBe('');
     });
   });
+
+  describe('chunk 切换时清空上一个 chunk 的待办', () => {
+    test('构造 chunk-1 workflow 时应从 storage 删除 chunk-0 的预定义待办', () => {
+      // chunk-0 创建 planning + working + review 预定义待办并标记完成
+      const workflow0 = new TodoWorkflow('translation', taskId, 0);
+      workflow0.generateForState('planning');
+      workflow0.generateForState('working', {
+        paragraphIds: ['p1'],
+        chunkText: '[1] [ID: p1] 原文: 测试\n翻译: \n\n',
+        chunkIndex: 0,
+      });
+      workflow0.generateForState('review');
+
+      const beforeSwitch = TodoListService.getTodosByTaskId(taskId);
+      expect(beforeSwitch.length).toBeGreaterThan(0);
+
+      // 构造 chunk-1 workflow — 应清掉 chunk-0 的全部待办
+      new TodoWorkflow('translation', taskId, 1);
+
+      const afterSwitch = TodoListService.getTodosByTaskId(taskId);
+      expect(afterSwitch).toHaveLength(0);
+    });
+
+    test('构造 chunk-1 workflow 时应清掉 ad-hoc 待办（无 chunkIndex 标记）', () => {
+      // chunk-0 期间 agent 调 create_todo 创建的 ad-hoc 待办（不带 chunkIndex）
+      TodoListService.createTodo('agent 自创的待办', taskId);
+      TodoListService.createTodo('另一条 ad-hoc', taskId);
+
+      expect(TodoListService.getTodosByTaskId(taskId)).toHaveLength(2);
+
+      // 切换到 chunk-1
+      new TodoWorkflow('translation', taskId, 1);
+
+      expect(TodoListService.getTodosByTaskId(taskId)).toHaveLength(0);
+    });
+
+    test('chunk-1 workflow 构造后仍能正常生成自己的待办', () => {
+      // chunk-0 留下一些待办
+      const workflow0 = new TodoWorkflow('translation', taskId, 0);
+      workflow0.generateForState('planning');
+
+      // 切换到 chunk-1
+      const workflow1 = new TodoWorkflow('translation', taskId, 1);
+      const w1 = workflow1.generateForState('working', {
+        paragraphIds: ['p2'],
+        chunkText: '[2] [ID: p2] 原文: 第二段\n翻译: \n\n',
+        chunkIndex: 1,
+      });
+
+      expect(w1).toHaveLength(1);
+      expect(w1[0]!.chunkIndex).toBe(1);
+      // storage 里只剩 chunk-1 自己的
+      const all = TodoListService.getTodosByTaskId(taskId);
+      expect(all).toHaveLength(1);
+      expect(all[0]!.id).toBe(w1[0]!.id);
+    });
+
+    test('chunk-0 自身构造（chunkIndex=0）不应清掉其它 task 的待办', () => {
+      const otherTaskId = 'other-task';
+      TodoListService.createTodo('其它 task 的待办', otherTaskId);
+
+      new TodoWorkflow('translation', taskId, 0);
+
+      expect(TodoListService.getTodosByTaskId(otherTaskId)).toHaveLength(1);
+    });
+
+    test('chunk-2 构造应同时清掉 chunk-0 和 chunk-1 的残留待办', () => {
+      // chunk-0 残留
+      const workflow0 = new TodoWorkflow('translation', taskId, 0);
+      workflow0.generateForState('planning');
+
+      // chunk-1 残留（构造后 chunk-0 被清，但 chunk-1 自己生成的留下）
+      const workflow1 = new TodoWorkflow('translation', taskId, 1);
+      workflow1.generateForState('working', {
+        paragraphIds: ['p1'],
+        chunkText: '[1] [ID: p1] 原文: 一\n翻译: \n\n',
+        chunkIndex: 1,
+      });
+      expect(TodoListService.getTodosByTaskId(taskId).length).toBeGreaterThan(0);
+
+      // chunk-2 构造 — 清掉 chunk-1 的残留
+      new TodoWorkflow('translation', taskId, 2);
+      expect(TodoListService.getTodosByTaskId(taskId)).toHaveLength(0);
+    });
+  });
 });

@@ -168,6 +168,19 @@ export class TodoWorkflow {
     this.taskType = taskType;
     this.taskId = taskId;
     this.chunkIndex = chunkIndex;
+
+    // 切换到新 chunk 时，清掉上一个 chunk 残留的待办（包括 agent 自创的 ad-hoc，
+    // 后者无 chunkIndex 标记，按 0 处理）。否则 list_todos 工具和 UI 都会把历史
+    // chunk 的完成记录暴露给 agent / 用户，造成上下文混淆。
+    if (chunkIndex > 0) {
+      const todos = TodoListService.getTodosByTaskId(taskId);
+      for (const todo of todos) {
+        const todoChunk = todo.chunkIndex ?? 0;
+        if (todoChunk < chunkIndex) {
+          TodoListService.deleteTodo(todo.id);
+        }
+      }
+    }
   }
 
   /**
