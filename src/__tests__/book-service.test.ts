@@ -281,6 +281,43 @@ describe('BookService', () => {
       });
     });
 
+    it('should bulk save chapter content with skipIfUnchanged to avoid spurious re-embedding', async () => {
+      // 回归测试：bulkSaveBooks 是同步路径（applyPartialNovelEntry → bulkAddBooks）
+      // 的最终落盘点。saveChapterContent 必须传 skipIfUnchanged: true，否则每次
+      // 同步都会无条件重写章节内容并触发 markChapterDirty → 60 秒后整本书重嵌。
+      // 该 bug 的表现：同一份内容在多设备来回同步后仍然反复重算章节 embedding。
+      const chapter1 = createTestChapter('chapter-1', [createTestParagraph()]);
+      const chapter2 = createTestChapter('chapter-2', [createTestParagraph()]);
+      const volume1 = createTestVolume('volume-1', [chapter1]);
+      const volume2 = createTestVolume('volume-2', [chapter2]);
+      const book1: Novel = {
+        id: 'book-1',
+        title: 'Test Book 1',
+        volumes: [volume1],
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      };
+      const book2: Novel = {
+        id: 'book-2',
+        title: 'Test Book 2',
+        volumes: [volume2],
+        lastEdited: new Date(),
+        createdAt: new Date(),
+      };
+
+      await BookService.bulkSaveBooks([book1, book2]);
+
+      expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
+        bookId: 'book-1',
+        skipIfUnchanged: true,
+      });
+      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
+        bookId: 'book-2',
+        skipIfUnchanged: true,
+      });
+    });
+
     it('should strip legacy summary residue when saving', async () => {
       // 老数据里可能残留 summary 字段,新版不再使用,保存时应被 strip
       const chapterWithLegacySummary: Chapter = {

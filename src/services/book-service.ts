@@ -183,8 +183,11 @@ export class BookService {
     const db = await getDB();
 
     // 1. 先保存所有章节内容到独立存储
+    //    skipIfUnchanged: true 至关重要 —— 同步路径(applyPartialNovelEntry → bulkAddBooks)
+    //    每次都会重新落盘整本书,若不跳过未变内容,saveChapterContent 会无条件触发
+    //    markChapterDirty,导致同样内容在多设备来回同步后反复重算章节 embedding。
     for (const book of books) {
-      await BookService.saveChaptersContent(book);
+      await BookService.saveChaptersContent(book, { skipIfUnchanged: true });
     }
 
     // 2. 剥离章节内容后批量保存书籍元数据
