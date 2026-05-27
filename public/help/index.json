@@ -120,6 +120,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.13.0",
+    "title": "v0.13.0",
+    "file": "RELEASE_NOTES_v0.13.0.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "月詠（Tsukuyomi）AI 助手人格化、同步墓碑生命周期 v3 根因重写、章节嵌入抖动修复、角色 / 术语命名规则改进、Todo 跨 chunk 清理与会话 bookId 修复、TDD 强制工作流"
+  },
+  {
     "id": "v0.12.1",
     "title": "v0.12.1",
     "file": "RELEASE_NOTES_v0.12.1.md",
