@@ -417,6 +417,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
 
     <!-- 段落列表 -->
     <div
+      :ref="ctx.setChapterContentPanelRef"
       class="mbr-scroll"
       :class="{ 'mbr-scroll--with-actionbar': !!ctx.mobileSelectedParagraphId.value }"
     >

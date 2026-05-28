@@ -9,6 +9,7 @@ import {
   onMounted,
   inject,
   provide,
+  type ComponentPublicInstance,
   type ComputedRef,
   type Ref,
   type InjectionKey,
@@ -236,6 +237,18 @@ function createBookDetailsPageContext() {
   // 滚动容器引用
   const scrollableContentRef = ref<HTMLElement | null>(null);
   const chapterContentPanelRef = ref<HTMLElement | null>(null);
+
+  // 这两个 ref 由 composable 持有、经 provide/inject 跨变体共享，并非变体组件的顶层绑定。
+  // Vue 3 的字符串模板 ref（ref="chapterContentPanelRef"）只会写进组件自身的 $refs，
+  // 不会回填到 ctx 上的同名 ref —— 那样会让 scrollCurrentContentToTop() 永远拿到 null、形同空操作
+  //（导致切换章节后不回到顶部）。必须用函数式 ref（:ref="setChapterContentPanelRef"）显式赋值。
+  type TemplateRefEl = Element | ComponentPublicInstance | null;
+  const setScrollableContentRef = (el: TemplateRefEl) => {
+    scrollableContentRef.value = el instanceof HTMLElement ? el : null;
+  };
+  const setChapterContentPanelRef = (el: TemplateRefEl) => {
+    chapterContentPanelRef.value = el instanceof HTMLElement ? el : null;
+  };
 
   // 将当前内容滚动到顶部（优先使用章节内容面板，其次使用外层容器兜底）
   const scrollCurrentContentToTop = async () => {
@@ -2138,6 +2151,8 @@ function createBookDetailsPageContext() {
     // refs
     scrollableContentRef,
     chapterContentPanelRef,
+    setScrollableContentRef,
+    setChapterContentPanelRef,
     // volume / chapter operations
     isVolumeExpanded,
     toggleVolumeById,

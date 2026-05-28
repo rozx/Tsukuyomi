@@ -445,7 +445,7 @@ const settingContextMeta = computed(() => {
     />
 
     <div
-      ref="scrollableContentRef"
+      :ref="ctx.setScrollableContentRef"
       class="scrollable-content"
       :class="{
         '!overflow-hidden': !!ctx.selectedSettingMenu.value,
@@ -491,7 +491,7 @@ const settingContextMeta = computed(() => {
 
         <div
           v-else-if="ctx.selectedChapter.value"
-          ref="chapterContentPanelRef"
+          :ref="ctx.setChapterContentPanelRef"
           class="chapter-content-panel h-full overflow-y-auto overflow-x-hidden"
           tabindex="-1"
         >
