@@ -25,7 +25,7 @@ export interface PendingChangeItem {
  * 用作 UI 提示，不替代 `useSyncExecutor` 内部基于 manifest 哈希的权威判定。
  *
  * 统计范围：books / ai-models / covers / settings 的 lastEdited(addedAt)，
- * 以及 Memory CRUD 与 SyncConfig 中的删除记录（deletedAt > lastSyncTime）。
+ * 以及 Memory CRUD / 访问时间与 SyncConfig 中的删除记录（deletedAt > lastSyncTime）。
  */
 export function useSyncPendingChanges() {
   const settingsStore = useSettingsStore();

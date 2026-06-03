@@ -8,11 +8,24 @@ import * as SettingsStore from 'src/stores/settings';
 import { dispatchMemoryChanged } from 'src/services/memory-cache';
 import { MemoryService } from 'src/services/memory-service';
 import { useSyncPendingChanges } from 'src/composables/useSyncPendingChanges';
+import { getDB } from 'src/utils/indexed-db';
 
 const flushPendingChanges = async () => {
   await Promise.resolve();
   await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await nextTick();
   await Promise.resolve();
+};
+
+const waitForPendingItem = async (
+  state: ReturnType<typeof useSyncPendingChanges> | undefined,
+  predicate: (item: { kind: string; action: string; label: string }) => boolean,
+) => {
+  for (let i = 0; i < 20; i += 1) {
+    await flushPendingChanges();
+    if (state?.pendingItems.value.some(predicate)) return;
+  }
 };
 
 describe('useSyncPendingChanges', () => {
@@ -151,6 +164,42 @@ describe('useSyncPendingChanges', () => {
     await flushPendingChanges();
 
     expect(getMemoriesSpy).toHaveBeenCalledTimes(2);
+
+    scope.stop();
+  });
+
+  it('AI 读取记忆刷新 lastAccessedAt 后应显示待同步变更', async () => {
+    const db = await getDB();
+    await db.put('memories', {
+      id: 'mem-accessed',
+      bookId: 'book-1',
+      content: '被 AI 读取的记忆',
+      summary: '访问后的记忆',
+      createdAt: 500,
+      lastAccessedAt: 500,
+    });
+
+    const scope = effectScope();
+    const state = scope.run(() => useSyncPendingChanges());
+
+    await flushPendingChanges();
+    expect(state?.pendingItems.value).toEqual([]);
+
+    await MemoryService.getMemory('book-1', 'mem-accessed');
+    await waitForPendingItem(
+      state,
+      (item) => item.kind === 'memory' && item.action === 'edited' && item.label === '访问后的记忆',
+    );
+
+    expect(state?.pendingItems.value).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'memory',
+          action: 'edited',
+          label: '访问后的记忆',
+        }),
+      ]),
+    );
 
     scope.stop();
   });

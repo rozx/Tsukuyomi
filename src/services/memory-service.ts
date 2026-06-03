@@ -6,13 +6,7 @@ import type { Memory } from 'src/models/memory';
 // 从 getDB() 的返回类型反推数据库 schema（TsukuyomiDB 未从 indexed-db.ts 导出）
 type MemoryDB = Awaited<ReturnType<typeof getDB>> extends IDBPDatabase<infer S> ? S : never;
 type MemoryStore = IDBPObjectStore<MemoryDB, ['memories'], 'memories', 'readwrite'>;
-type MemoryBookIdIndex = IDBPIndex<
-  MemoryDB,
-  ['memories'],
-  'memories',
-  'by-bookId',
-  'readwrite'
->;
+type MemoryBookIdIndex = IDBPIndex<MemoryDB, ['memories'], 'memories', 'by-bookId', 'readwrite'>;
 import { useSettingsStore } from 'src/stores/settings';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 // isMemoryEmbeddingStale 的真实定义已下沉到 `utils/memory-embedding-lookup`
@@ -240,6 +234,47 @@ export class MemoryService {
   }
 
   /**
+   * 读取路径更新 lastAccessedAt 后的统一收尾：
+   * - 同步进程内缓存，避免 recency 缓存短时间内仍是旧值
+   * - 派发 accessed 事件，让同步状态栏刷新待上传的 memory hash 变化
+   */
+  private static syncAccessTimesAfterRead(
+    bookId: string,
+    memoryIds: string[],
+    accessedAt: number,
+  ): void {
+    if (memoryIds.length === 0) return;
+    const idSet = new Set(memoryIds);
+
+    for (const memoryId of idSet) {
+      const cacheKey = this.getCacheKey(bookId, memoryId);
+      const cached = this.memoryCache.get(cacheKey);
+      if (cached) {
+        this.memoryCache.set(cacheKey, {
+          ...cached,
+          lastAccessedAt: accessedAt,
+        });
+      }
+    }
+
+    const cachedBook = this.bookMemoryCache.get(bookId);
+    if (cachedBook) {
+      this.bookMemoryCache.set(bookId, {
+        data: cachedBook.data.map((memory) =>
+          idSet.has(memory.id) ? { ...memory, lastAccessedAt: accessedAt } : memory,
+        ),
+        expiresAt: cachedBook.expiresAt,
+      });
+    }
+
+    this.dispatchMemoryChanged({
+      bookId,
+      ...(idSet.size === 1 ? { memoryId: memoryIds[0] } : {}),
+      action: 'accessed',
+    });
+  }
+
+  /**
    * 批量更新记忆的访问时间（异步，不阻塞）
    */
   private static async updateAccessTimesBatch(memoryIds: string[], bookId: string): Promise<void> {
@@ -250,6 +285,7 @@ export class MemoryService {
       const tx = db.transaction('memories', 'readwrite');
       const store = tx.objectStore('memories');
       const now = Date.now();
+      const updatedIds: string[] = [];
 
       // 批量更新：使用 Promise.all 并行更新
       await Promise.all(
@@ -262,6 +298,7 @@ export class MemoryService {
                 lastAccessedAt: now,
               };
               await store.put(updatedMemory);
+              updatedIds.push(memoryId);
             }
           } catch (error) {
             // 单个更新失败不影响其他更新
@@ -271,6 +308,7 @@ export class MemoryService {
       );
 
       await tx.done;
+      this.syncAccessTimesAfterRead(bookId, updatedIds, now);
     } catch (error) {
       // 静默失败，不影响主流程
       console.warn('Failed to batch update access times:', error);
@@ -571,6 +609,7 @@ export class MemoryService {
       // 更新缓存
       this.memoryCache.set(cacheKey, result);
       this.evictCacheIfNeeded();
+      this.syncAccessTimesAfterRead(bookId, [memoryId], now);
 
       return result;
     } catch (error) {
@@ -596,6 +635,7 @@ export class MemoryService {
         lastAccessedAt: Date.now(),
       };
       await db.put('memories', updatedMemory);
+      this.syncAccessTimesAfterRead(bookId, [memoryId], updatedMemory.lastAccessedAt);
     } catch (error) {
       // 静默失败，不影响主流程
       console.warn('Failed to update access time in DB:', error);
@@ -1010,6 +1050,11 @@ export class MemoryService {
         });
 
         this.evictCacheIfNeeded();
+        this.syncAccessTimesAfterRead(
+          bookId,
+          results.map((memory) => memory.id),
+          now,
+        );
         return results;
       }
 
