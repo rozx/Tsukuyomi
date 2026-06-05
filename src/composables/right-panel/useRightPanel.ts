@@ -17,7 +17,7 @@ import { getAssetUrl } from 'src/utils';
 import { ChapterService } from 'src/services/chapter-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { estimateAssistantContextTokens } from 'src/utils/ai-context-utils';
-import { TOOL_CALL_PLACEHOLDER_VARIANTS } from 'src/services/ai/tasks/utils/stream-handler';
+import { countContextMessagesSinceSummary } from 'src/utils/chat-session-context';
 import { throttle } from 'src/utils/throttle';
 import { usePanelResize } from 'src/composables/chat/usePanelResize';
 import { useThinkingDisplay } from 'src/composables/chat/useThinkingDisplay';
@@ -315,36 +315,12 @@ export function useRightPanel() {
     return info.length > 0 ? info.join(' | ') : '无上下文';
   });
 
-  const isAssistantMessageCountable = (msg: (typeof messages.value)[number]): boolean => {
-    if (msg.actions && msg.actions.length > 0) return false;
-    if (
-      !msg.content ||
-      TOOL_CALL_PLACEHOLDER_VARIANTS.includes(
-        msg.content as (typeof TOOL_CALL_PLACEHOLDER_VARIANTS)[number],
-      )
-    ) {
-      return false;
-    }
-    return true;
-  };
-
-  const isMessageCountable = (msg: (typeof messages.value)[number]): boolean => {
-    if (msg.isSummarization || msg.isSummaryResponse || msg.isContextMessage) return false;
-    if (msg.role === 'user') return true;
-    if (msg.role === 'assistant') return isAssistantMessageCountable(msg);
-    return false;
-  };
-
   // 会话统计信息
   const sessionStats = computed(() => {
     if (messages.value.length === 0) return null;
 
     const currentSession = chatSessionsStore.currentSession;
-    const cutoff = currentSession?.lastSummarizedMessageIndex ?? 0;
-
-    const messagesToCount = messages.value.slice(cutoff).filter(isMessageCountable);
-
-    const currentCount = messagesToCount.length;
+    const currentCount = countContextMessagesSinceSummary(currentSession, messages.value);
 
     const tokens = estimateAssistantContextTokens({
       context: contextStore.getContext,

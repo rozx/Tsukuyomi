@@ -10,13 +10,20 @@ import {
   MAX_MESSAGES_PER_SESSION,
 } from 'src/stores/chat-sessions';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useContextStore } from 'src/stores/context';
 import { AssistantService } from 'src/services/ai/tasks';
-import { buildAssistantMessageHistory, pickApiMessageExtras } from 'src/utils/ai-context-utils';
+import {
+  buildAssistantMessageHistory,
+  estimateAssistantContextTokens,
+  pickApiMessageExtras,
+} from 'src/utils/ai-context-utils';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
+import { UNLIMITED_TOKENS } from 'src/constants/ai';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 
 import { useChatActionHandler } from './useChatActionHandler';
 import { useInternalSummarization } from './useInternalSummarization';
+import type { UISummarizationOptions } from './useChatSummarizer';
 
 export function useChatSending(
   messages: Ref<ChatSessionMessage[]>,
@@ -28,6 +35,7 @@ export function useChatSending(
     performUISummarization: (
       force: boolean,
       stateSetter?: (val: boolean) => void,
+      options?: UISummarizationOptions,
     ) => Promise<{ success: boolean }>;
     getMessagesSinceSummaryCount: (session: ChatSession | null) => number;
   },
@@ -55,8 +63,8 @@ export function useChatSending(
 ) {
   const chatSessionsStore = useChatSessionsStore();
   const aiProcessingStore = useAIProcessingStore();
+  const contextStore = useContextStore();
   const isSending = ref(false);
-
 
   const { handleAction } = useChatActionHandler(
     router,
@@ -76,7 +84,38 @@ export function useChatSending(
     reset: resetInternalSummarization,
   } = useInternalSummarization(messages, scrollToBottom, chatSessionsStore);
 
-  const enforceMessageLimitBeforeSend = async (): Promise<{
+  const buildMessagesWithPendingUser = (message: string): ChatSessionMessage[] => [
+    ...messages.value,
+    {
+      id: 'pending-user-context-check',
+      role: 'user',
+      content: message,
+      timestamp: Date.now(),
+    },
+  ];
+
+  const hasReachedContextTokenLimit = (
+    session: ChatSession | null,
+    currentMessages: ChatSessionMessage[] = messages.value,
+  ): boolean => {
+    const maxInputTokens = assistantModel.value?.maxInputTokens ?? 0;
+    if (!session || maxInputTokens <= 0 || maxInputTokens === UNLIMITED_TOKENS) {
+      return false;
+    }
+
+    const contextTokens = estimateAssistantContextTokens({
+      context: contextStore.getContext,
+      session,
+      currentMessages,
+      includeToolSchemas: true,
+    });
+
+    return contextTokens >= maxInputTokens;
+  };
+
+  const enforceMessageLimitBeforeSend = async (
+    message: string,
+  ): Promise<{
     aborted: boolean;
     uiPerformedSummarization: boolean;
   }> => {
@@ -84,12 +123,20 @@ export function useChatSending(
     let messageCountSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionForLimit);
     const willExceedLimit = messageCountSinceSummary + 1 >= MESSAGE_LIMIT_THRESHOLD;
     const willReachLimit = messageCountSinceSummary + 1 >= MAX_MESSAGES_PER_SESSION;
-    if (!(willExceedLimit || willReachLimit) || messages.value.length === 0) {
+    const reachedContextTokenLimit = hasReachedContextTokenLimit(
+      sessionForLimit,
+      buildMessagesWithPendingUser(message),
+    );
+    if (
+      !(willExceedLimit || willReachLimit || reachedContextTokenLimit) ||
+      messages.value.length === 0
+    ) {
       return { aborted: false, uiPerformedSummarization: false };
     }
     const summarizationResult = await chatSummarizer.performUISummarization(
       willReachLimit,
       (val) => (isSending.value = val),
+      { allowFewMessages: reachedContextTokenLimit },
     );
     if (!summarizationResult.success) {
       return { aborted: willReachLimit, uiPerformedSummarization: false };
@@ -131,7 +178,10 @@ export function useChatSending(
     return { assistantMessageIdRef };
   };
 
-  const buildChatCallbacks = (assistantMessageIdRef: { value: string }, sessionIdForSummary: string | undefined) => ({
+  const buildChatCallbacks = (
+    assistantMessageIdRef: { value: string },
+    sessionIdForSummary: string | undefined,
+  ) => ({
     onTaskCreated: (id: string) => {
       currentTaskId.value = id;
     },
@@ -180,7 +230,7 @@ export function useChatSending(
   const persistChatResult = (chatResult: Awaited<ReturnType<typeof AssistantService.chat>>) => {
     const finalSession = chatSessionsStore.currentSession;
     if (!finalSession) return;
-    if (chatResult.needsReset && chatResult.summary) {
+    if (chatResult.summary) {
       chatSessionsStore.summarizeAndReset(chatResult.summary);
     }
     if (chatResult.toolCallTokenOverhead !== undefined) {
@@ -199,7 +249,11 @@ export function useChatSending(
         }));
       const serialized = JSON.stringify(apiMessages);
       if (serialized.length <= 512_000) {
-        chatSessionsStore.updateApiMessageHistory(finalSession.id, apiMessages);
+        chatSessionsStore.updateApiMessageHistory(
+          finalSession.id,
+          apiMessages,
+          messages.value.length,
+        );
       } else {
         console.warn(
           `[ChatSending] API 消息历史过大 (${Math.round(serialized.length / 1024)}KB)，跳过保存`,
@@ -241,8 +295,11 @@ export function useChatSending(
     if (!sessionAfter) return;
     chatSessionsStore.updateSessionMessages(sessionAfter.id, messages.value);
     const msgsSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionAfter);
-    if (msgsSinceSummary >= MESSAGE_LIMIT_THRESHOLD) {
-      void chatSummarizer.performUISummarization(false);
+    const reachedContextTokenLimit = hasReachedContextTokenLimit(sessionAfter);
+    if (msgsSinceSummary >= MESSAGE_LIMIT_THRESHOLD || reachedContextTokenLimit) {
+      void chatSummarizer.performUISummarization(false, undefined, {
+        allowFewMessages: reachedContextTokenLimit,
+      });
     }
   };
 
@@ -281,7 +338,7 @@ export function useChatSending(
       return;
     }
 
-    const { aborted, uiPerformedSummarization } = await enforceMessageLimitBeforeSend();
+    const { aborted, uiPerformedSummarization } = await enforceMessageLimitBeforeSend(message);
     if (aborted) return;
 
     const { assistantMessageIdRef } = pushUserAndAssistantPlaceholder(message);

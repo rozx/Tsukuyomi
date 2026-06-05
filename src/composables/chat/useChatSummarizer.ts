@@ -1,10 +1,22 @@
 import { ref, type Ref } from 'vue';
-import { useChatSessionsStore, type ChatSessionMessage, type ChatSession } from 'src/stores/chat-sessions';
+import {
+  useChatSessionsStore,
+  type ChatSessionMessage,
+  type ChatSession,
+} from 'src/stores/chat-sessions';
 import { AssistantService } from 'src/services/ai/tasks';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import {
+  buildContextMessagesToSummarize,
+  countContextMessagesSinceSummary,
+} from 'src/utils/chat-session-context';
 import { SUMMARIZING_MESSAGE_CONTENT, SUMMARIZED_MESSAGE_CONTENT } from './constants';
 
 import type { AIModel } from 'src/services/ai/types/ai-model';
+
+export interface UISummarizationOptions {
+  allowFewMessages?: boolean;
+}
 
 export function useChatSummarizer(
   messages: Ref<ChatSessionMessage[]>,
@@ -20,10 +32,7 @@ export function useChatSummarizer(
    * 计算距离上次总结的消息数量
    */
   const getMessagesSinceSummaryCount = (session: ChatSession | null): number => {
-    if (!session) return messages.value.length;
-    // session.lastSummarizedMessageIndex should be present in ChatSession interface
-    const cutoff = session.lastSummarizedMessageIndex ?? 0;
-    return Math.max(0, session.messages.length - cutoff);
+    return countContextMessagesSinceSummary(session, messages.value);
   };
 
   /**
@@ -33,14 +42,7 @@ export function useChatSummarizer(
     session: ChatSession,
     allMessages: ChatSessionMessage[],
   ): Array<{ role: 'user' | 'assistant'; content: string }> => {
-    const cutoff = session.lastSummarizedMessageIndex ?? 0;
-    return allMessages
-      .slice(Math.max(0, cutoff))
-      .filter((msg) => !msg.isSummarization && !msg.isSummaryResponse && !msg.isContextMessage)
-      .map((msg) => ({
-        role: msg.role,
-        content: msg.content,
-      }));
+    return buildContextMessagesToSummarize(session, allMessages);
   };
 
   /**
@@ -48,10 +50,11 @@ export function useChatSummarizer(
    * @param willReachLimit - 是否达到该会话的最大消息限制
    * @param updateIsSending - 可选回调，用于更新发送状态（失败时可能需要）
    */
-  const hasEnoughMessagesToSummarize = (): boolean => {
+  const hasEnoughMessagesToSummarize = (options: UISummarizationOptions = {}): boolean => {
     const session = chatSessionsStore.currentSession;
     if (!session) return true; // 无会话时不拦截（留给后续逻辑抛错）
-    return buildMessagesToSummarize(session, messages.value).length > 2;
+    const minimumMessages = options.allowFewMessages ? 1 : 3;
+    return buildMessagesToSummarize(session, messages.value).length >= minimumMessages;
   };
 
   const appendSummarizationBubble = (): string => {
@@ -109,8 +112,9 @@ export function useChatSummarizer(
   async function performUISummarization(
     willReachLimit: boolean,
     updateIsSending?: (val: boolean) => void,
+    options: UISummarizationOptions = {},
   ): Promise<{ success: boolean }> {
-    if (!hasEnoughMessagesToSummarize()) {
+    if (!hasEnoughMessagesToSummarize(options)) {
       if (updateIsSending) updateIsSending(false);
       return { success: false };
     }

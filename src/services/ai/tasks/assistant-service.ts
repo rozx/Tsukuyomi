@@ -170,6 +170,16 @@ export interface AssistantResult {
  * 提供智能助手功能，可以使用所有可用的 AI 工具，并基于用户当前上下文提供帮助
  */
 export class AssistantService {
+  private static mergeSummaries(
+    existingSummary: string | undefined,
+    nextSummary: string | undefined,
+  ): string | undefined {
+    const next = nextSummary?.trim();
+    if (!next) return existingSummary;
+    const existing = existingSummary?.trim();
+    return existing ? `${existing}\n\n${next}` : next;
+  }
+
   /**
    * 构建系统提示词
    * 包含用户当前上下文信息
@@ -903,7 +913,7 @@ export class AssistantService {
     sessionId?: string | undefined;
     toolSchemaTokens: number;
     signal?: AbortSignal | undefined;
-  }): Promise<{ finalText: string; actions: ActionInfo[] }> {
+  }): Promise<{ finalText: string; actions: ActionInfo[]; summary?: string }> {
     const {
       messages,
       tools,
@@ -922,6 +932,7 @@ export class AssistantService {
     let finalText = '';
     const allActions: ActionInfo[] = [];
     let summarizationCount = 0;
+    let inLoopSummary: string | undefined;
 
     while (toolCalls.length > 0 && currentTurnCount < MAX_TOOL_CALL_TURNS) {
       currentTurnCount++;
@@ -960,6 +971,7 @@ export class AssistantService {
         });
         if (summarizeResult) {
           summarizationCount++;
+          inLoopSummary = this.mergeSummaries(inLoopSummary, summarizeResult.summary);
           if (summarizeResult.finalText && summarizeResult.finalText.trim()) {
             finalText = summarizeResult.finalText;
           }
@@ -993,7 +1005,11 @@ export class AssistantService {
       }
     }
 
-    return { finalText, actions: allActions };
+    return {
+      finalText,
+      actions: allActions,
+      ...(inLoopSummary ? { summary: inLoopSummary } : {}),
+    };
   }
 
   /**
@@ -1037,7 +1053,7 @@ export class AssistantService {
     }
 
     const systemMsg = messages.find((m) => m.role === 'system');
-    const userMsg = messages.find((m) => m.role === 'user');
+    const userMsg = messages.findLast((m) => m.role === 'user');
     if (!systemMsg?.content || !userMsg?.content) {
       return null;
     }
@@ -1162,7 +1178,7 @@ export class AssistantService {
     toolSchemaTokens: number;
     taskId?: string;
     signal?: AbortSignal;
-  }): Promise<{ finalText: string; toolCalls: AIToolCall[] } | null> {
+  }): Promise<{ finalText: string; toolCalls: AIToolCall[]; summary: string } | null> {
     const {
       messages,
       model,
@@ -1216,7 +1232,7 @@ export class AssistantService {
       ...(taskId ? { taskId } : {}),
     });
 
-    return this.restartInitialRequestAfterSummary({
+    const restartResult = await this.restartInitialRequestAfterSummary({
       messages,
       model,
       tools,
@@ -1226,6 +1242,7 @@ export class AssistantService {
       toolSchemaTokens,
       ...(taskId ? { taskId } : {}),
     });
+    return { ...restartResult, summary: summaryResult.summary };
   }
 
   /**
@@ -1313,7 +1330,11 @@ export class AssistantService {
     });
 
     // 工具调用循环
-    const { finalText: loopFinalText, actions } = await this.runToolCallLoop({
+    const {
+      finalText: loopFinalText,
+      actions,
+      summary: inLoopSummary,
+    } = await this.runToolCallLoop({
       initialToolCalls: initialResult.toolCalls,
       messages,
       tools,
@@ -1339,6 +1360,9 @@ export class AssistantService {
     }
 
     const finalText = finalResponseText.trim() || '抱歉，我没有收到有效的回复。请重试。';
+    const mergedInLoopSummary = inLoopSummary
+      ? this.mergeSummaries(options.sessionSummary, inLoopSummary)
+      : undefined;
 
     if (!finalResponseText.trim()) {
       console.error('[AssistantService] ❌ 错误：最终回复文本为空');
@@ -1349,6 +1373,7 @@ export class AssistantService {
       ...(taskId ? { taskId } : {}),
       actions,
       messageHistory: messages,
+      ...(mergedInLoopSummary ? { summary: mergedInLoopSummary } : {}),
       toolCallTokenOverhead: this.calculateToolCallTokenOverhead(messages),
     };
   }
@@ -1638,7 +1663,6 @@ export class AssistantService {
    * @param userMessage 用户消息
    * @param options 选项
    */
-  // fallow-ignore-next-line unused-class-member
   static async chat(
     model: AIModel,
     userMessage: string,

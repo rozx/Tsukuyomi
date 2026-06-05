@@ -1,5 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { v4 as uuidv4 } from 'uuid';
+import { countContextMessagesSinceSummary } from 'src/utils/chat-session-context';
 
 const STORAGE_KEY = 'tsukuyomi-chat-sessions';
 const CURRENT_SESSION_ID_KEY = 'tsukuyomi-chat-current-session-id';
@@ -154,6 +155,11 @@ export interface ChatSession {
    * 在 summarizeAndReset 时会被清空。
    */
   apiMessageHistory?: ApiMessage[];
+  /**
+   * apiMessageHistory 写入时对应的可见消息数量。
+   * 用于发送中/失败发送后把尚未进入 API history 的可见消息作为增量计数。
+   */
+  apiMessageHistoryVisibleMessageCount?: number;
 }
 
 /**
@@ -419,6 +425,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         session.title = '新会话';
         delete session.summary;
         delete session.apiMessageHistory;
+        delete session.apiMessageHistoryVisibleMessageCount;
         session.lastSummarizedMessageIndex = 0;
         session.updatedAt = Date.now();
         saveSessionsToStorage(this.sessions);
@@ -431,7 +438,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     isNearLimit(): boolean {
       const session = this.currentSession;
       if (!session) return false;
-      const countSinceSummary = session.messages.length - (session.lastSummarizedMessageIndex ?? 0);
+      const countSinceSummary = countContextMessagesSinceSummary(session, session.messages);
       return countSinceSummary >= MESSAGE_LIMIT_THRESHOLD;
     },
 
@@ -441,7 +448,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     isAtLimit(): boolean {
       const session = this.currentSession;
       if (!session) return false;
-      const countSinceSummary = session.messages.length - (session.lastSummarizedMessageIndex ?? 0);
+      const countSinceSummary = countContextMessagesSinceSummary(session, session.messages);
       return countSinceSummary >= MAX_MESSAGES_PER_SESSION;
     },
 
@@ -461,6 +468,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         session.lastSummarizedMessageIndex = session.messages.length;
         session.toolCallTokenOverhead = 0; // 摘要后重置工具调用 token 开销
         delete session.apiMessageHistory; // 摘要后清空 API 消息历史，下次对话将基于摘要重建
+        delete session.apiMessageHistoryVisibleMessageCount;
         // 不修改消息列表，保留所有消息
         // 摘要将在 AssistantService 中用于后续对话的上下文
         session.updatedAt = Date.now();
@@ -482,10 +490,19 @@ export const useChatSessionsStore = defineStore('chatSessions', {
     /**
      * 更新会话的 API 消息历史（包含工具调用的完整上下文）
      */
-    updateApiMessageHistory(sessionId: string, apiMessages: ApiMessage[]): void {
+    updateApiMessageHistory(
+      sessionId: string,
+      apiMessages: ApiMessage[],
+      visibleMessageCount?: number,
+    ): void {
       const session = this.sessions.find((s) => s.id === sessionId);
       if (session) {
         session.apiMessageHistory = apiMessages;
+        if (typeof visibleMessageCount === 'number') {
+          session.apiMessageHistoryVisibleMessageCount = visibleMessageCount;
+        } else {
+          delete session.apiMessageHistoryVisibleMessageCount;
+        }
         saveSessionsToStorage(this.sessions);
       }
     },

@@ -1,8 +1,14 @@
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import type { TaskType, AIProcessingStore } from './task-types';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import {
+  TOOL_CALL_PLACEHOLDER,
+  TOOL_CALL_PLACEHOLDER_VARIANTS,
+} from 'src/constants/chat';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
+
+export { TOOL_CALL_PLACEHOLDER, TOOL_CALL_PLACEHOLDER_VARIANTS } from 'src/constants/chat';
 
 // 常量定义
 /**
@@ -22,23 +28,6 @@ const MIN_SCAN_LENGTH = 200;
  * 权衡：太小可能影响检测准确性，太大会增加内存占用
  */
 const MAX_ACCUMULATED_TEXT = 50000;
-
-/**
- * 当模型没有正文只调用工具时使用的占位符——会作为 message.content 持久化，
- * 以兼容某些 OpenAI 兼容服务对 content 非空的要求。新写入一律用月詠人格化文本；
- * 老对话历史里仍可能存在 `（调用工具）` / `(调用工具)`，过滤器需向后兼容。
- */
-export const TOOL_CALL_PLACEHOLDER = '（月詠施术中）';
-
-/**
- * 需要从流式输出中过滤掉的占位符变体集合（包括历史遗留版本，向后兼容）。
- * 少数模型会把这些文字当成文本回显，污染用户可见的输出框。
- */
-export const TOOL_CALL_PLACEHOLDER_VARIANTS = [
-  TOOL_CALL_PLACEHOLDER,
-  '（调用工具）',
-  '(调用工具)',
-] as const;
 
 const OUTPUT_PLACEHOLDERS = TOOL_CALL_PLACEHOLDER_VARIANTS;
 
