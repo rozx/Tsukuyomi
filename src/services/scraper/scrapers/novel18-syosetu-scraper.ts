@@ -9,7 +9,7 @@ import { NcodeSyosetuScraper } from './ncode-syosetu-scraper';
  * 都会自动应用到 Novel18SyosetuScraper
  */
 export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
-  protected override useProxy: boolean = false; // novel18.syosetu.com 不使用代理
+  protected override useProxy: boolean = false; // 跳过外部 CORS 代理，Electron 直连
 
   protected static override readonly BASE_URL = 'https://novel18.syosetu.com';
   // 匹配 novel18.syosetu.com 的小说 URL
@@ -52,5 +52,25 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
 
   protected override getInvalidUrlError(): string {
     return '无效的 novel18.syosetu.com 小说 URL';
+  }
+
+  /**
+   * novel18.syosetu.com 需要 Cookie over18=yes 才能跳过 R18 年龄确认页
+   */
+  protected override getFetchExtraHeaders(url: string): Record<string, string> {
+    try {
+      const { hostname } = new URL(url);
+      if (hostname === 'novel18.syosetu.com' || hostname.endsWith('.novel18.syosetu.com')) {
+        return { Cookie: 'over18=yes' };
+      }
+    } catch {
+      // 无效 URL 时不附加额外头
+    }
+    return {};
+  }
+
+  /** 外部 CORS 代理会剥离 Cookie，Electron 必须直连 */
+  protected override shouldSkipExternalProxy(): boolean {
+    return true;
   }
 }

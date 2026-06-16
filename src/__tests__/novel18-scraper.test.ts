@@ -7,6 +7,14 @@ const examplePagesDir = join(__dirname, 'examplePages');
 const base = 'https://novel18.syosetu.com/n7686kd/';
 
 class TestNovel18Scraper extends Novel18SyosetuScraper {
+  exposeFetchExtraHeaders(url: string): Record<string, string> {
+    return this.getFetchExtraHeaders(url);
+  }
+
+  exposeShouldSkipExternalProxy(): boolean {
+    return this.shouldSkipExternalProxy();
+  }
+
   private pages: Map<string, string> = new Map();
 
   initialize() {
@@ -49,6 +57,19 @@ describe('Novel18SyosetuScraper', () => {
   it('validates URL patterns', () => {
     expect(scraper.isValidUrl(base)).toBe(true);
     expect(scraper.isValidUrl('https://novel18.syosetu.com/invalid/')).toBe(false);
+  });
+
+  it('includes over18 cookie for age verification on novel18.syosetu.com', () => {
+    expect(scraper.exposeFetchExtraHeaders(base)).toEqual({ Cookie: 'over18=yes' });
+    expect(scraper.exposeFetchExtraHeaders('https://novel18.syosetu.com/n7686kd/1/')).toEqual({
+      Cookie: 'over18=yes',
+    });
+    expect(scraper.exposeFetchExtraHeaders('https://ncode.syosetu.com/n7686kd/')).toEqual({});
+    expect(scraper.exposeFetchExtraHeaders('not-a-url')).toEqual({});
+  });
+
+  it('skips external CORS proxy for novel18', () => {
+    expect(scraper.exposeShouldSkipExternalProxy()).toBe(true);
   });
 
   it('fetches chapters across pages from real HTML', async () => {

@@ -23,7 +23,11 @@ const ACCEPT_LANGUAGE = 'ja,en-US;q=0.9,en;q=0.8';
 const FETCH_TIMEOUT_MS = 60000;
 
 /** 通过 Electron 的 net 模块获取页面 */
-async function fetchViaElectron(proxiedUrl: string, originalUrl: string): Promise<string> {
+async function fetchViaElectron(
+  proxiedUrl: string,
+  originalUrl: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<string> {
   if (!window.electronAPI?.fetch) {
     throw new Error('Electron API 未正确加载，请检查 preload 脚本');
   }
@@ -33,6 +37,7 @@ async function fetchViaElectron(proxiedUrl: string, originalUrl: string): Promis
     'Accept-Language': ACCEPT_LANGUAGE,
     'Accept-Encoding': 'gzip, deflate, br',
     Referer: new URL(originalUrl).origin,
+    ...extraHeaders,
   };
   const response = await window.electronAPI.fetch(proxiedUrl, {
     method: 'GET',
@@ -259,6 +264,22 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
   protected abstract mergeParagraphs(paragraphs: string[]): string;
 
   /**
+   * 站点特定的额外 HTTP 请求头（如 novel18.syosetu.com 的年龄验证 Cookie）
+   * @param url 原始页面 URL
+   */
+  protected getFetchExtraHeaders(url: string): Record<string, string> {
+    void url;
+    return {};
+  }
+
+  /**
+   * 是否跳过外部 CORS 代理（例如 novel18 需保留 Cookie 头）
+   */
+  protected shouldSkipExternalProxy(): boolean {
+    return false;
+  }
+
+  /**
    * 获取页面 HTML（通用方法）
    * 在浏览器环境中，使用服务器提供的 /api/... 代理路径或用户配置的代理
    * 在 Electron 环境中，使用 Electron 的 net 模块直接请求或用户配置的代理
@@ -271,13 +292,16 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
   protected async fetchPage(url: string, _proxyPath?: string): Promise<string> {
     try {
       const { isElectron, isBrowser } = useElectron();
+      const extraHeaders = this.getFetchExtraHeaders(url);
+      const skipExternalProxy = this.shouldSkipExternalProxy();
       return await ProxyService.executeWithAutoSwitch(
         url,
         (proxiedUrl: string) =>
           isElectron.value
-            ? fetchViaElectron(proxiedUrl, url)
+            ? fetchViaElectron(proxiedUrl, url, extraHeaders)
             : fetchViaAxios(proxiedUrl, url, isBrowser.value),
         {
+          skipExternalProxy,
           skipInternalProxy: isElectron.value, // Electron 环境不使用内部代理路径
           maxRetries: 3,
         },
