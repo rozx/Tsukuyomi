@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
@@ -18,6 +18,8 @@ import {
   formatWordCount,
 } from 'src/utils';
 import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
+import { removeExtraBlankLines } from 'src/utils/text-utils';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
 
 const props = defineProps<{
@@ -86,6 +88,60 @@ const handleOriginalTextInput = (event: Event) => {
   emit('update:originalTextEditValue', target.value);
 };
 
+const toast = useToastWithHistory();
+const originalTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
+
+// PrimeVue Textarea 内部是 textarea 元素；不同版本暴露方式不同，防御式解析。
+const resolveOriginalTextarea = (): HTMLTextAreaElement | null => {
+  const inst = originalTextareaRef.value as unknown as
+    | { $el?: HTMLElement; input?: HTMLTextAreaElement }
+    | null;
+  if (!inst) return null;
+  const root = inst.$el;
+  if (root instanceof HTMLTextAreaElement) return root;
+  const found = root?.querySelector('textarea');
+  if (found) return found;
+  return inst.input ?? null;
+};
+
+// 格式化原始文本：去除多余空行。
+// 通过原生编辑管线（execCommand insertText）写入，使 Ctrl+Z / Ctrl+Y 能撤销/重做格式化；
+// 仅更新编辑框，不直接落盘。
+const formatOriginalText = () => {
+  const current = props.originalTextEditValue;
+  const formatted = removeExtraBlankLines(current);
+
+  if (formatted === current) {
+    toast.add({
+      severity: 'info',
+      summary: '无需格式化',
+      detail: '没有需要清理的空行',
+      life: 2000,
+    });
+    return;
+  }
+
+  const el = resolveOriginalTextarea();
+  // 用原生编辑替换全文，保留浏览器撤销/重做历史；input 事件会同步 originalTextEditValue
+  let appliedViaNativeEdit = false;
+  if (el) {
+    el.focus();
+    el.select();
+    appliedViaNativeEdit = document.execCommand('insertText', false, formatted);
+  }
+  // 回退：环境不支持 execCommand 时直接更新（此时该次格式化无法用原生撤销）
+  if (!appliedViaNativeEdit) {
+    emit('update:originalTextEditValue', formatted);
+  }
+
+  toast.add({
+    severity: 'success',
+    summary: '已格式化',
+    detail: '已去除多余空行（可按 Ctrl+Z 撤销）',
+    life: 2000,
+  });
+};
+
 const getPrevChapterButtonLabel = (chapter: Chapter | null): string => {
   if (!chapter) return props.isSmallScreen ? '上一章' : '没有上一章';
   return props.isSmallScreen ? '上一章' : getChapterDisplayTitle(chapter, props.book || undefined);
@@ -113,15 +169,25 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
     <div v-else-if="editMode === 'original'" class="original-text-edit-container">
       <label class="block text-sm font-medium text-moon/90">原始文本</label>
       <Textarea
+        ref="originalTextareaRef"
         :value="originalTextEditValue"
         @input="handleOriginalTextInput"
         :auto-resize="false"
         class="w-full original-text-textarea"
         placeholder="输入原始文本..."
       />
-      <div class="flex gap-2 justify-end">
-        <Button label="取消" class="p-button-text" @click="emit('cancel-original-text-edit')" />
-        <Button label="保存" @click="emit('save-original-text-edit')" />
+      <div class="flex gap-2 justify-between items-center">
+        <Button
+          label="格式化"
+          icon="pi pi-eraser"
+          class="p-button-outlined p-button-sm"
+          title="去除多余空行（可 Ctrl+Z 撤销）"
+          @click="formatOriginalText"
+        />
+        <div class="flex gap-2">
+          <Button label="取消" class="p-button-text" @click="emit('cancel-original-text-edit')" />
+          <Button label="保存" @click="emit('save-original-text-edit')" />
+        </div>
       </div>
     </div>
 

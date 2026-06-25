@@ -19,6 +19,77 @@ export function isEmptyParagraph(text: string | null | undefined): boolean {
 }
 
 /**
+ * 去除原文中多余的空行——**幂等**：对结果再次格式化不会再变化。
+ *
+ * 规则：
+ * - 首尾的空行整段去掉。
+ * - 以“是否像原始稿”区分单空行的含义：若正文之间存在 ≥2 连续空行（典型的双空行
+ *   场景分隔，说明这是“每段都空一行”的原始稿），则按原始稿压缩——段内单空行 → 0、
+ *   多空行（≥2）→ 1；否则（已是单空行间隔/紧凑的文本）保持单空行不动。
+ * - 正文行原样保留（不改动行首全角缩进 / 行尾空格）；保留下来的空行规范化为真正的空字符串。
+ *
+ * 这样：含双空行的原始稿 → 一次压缩到“段内紧凑、场景单空行”的规范形态；该形态再次
+ * 格式化时（不含双空行、无首尾空行）保持不变，避免连按两次把场景空行也吃掉。
+ *
+ * “空行”指 `line.trim()` 为空的行——`trim()` 会吃掉全角空格（U+3000），
+ * 因此仅含全角空格的行也算空行。
+ *
+ * @param text 原始文本（以 `\n` 分行）
+ * @returns 去除多余空行后的文本
+ */
+export function removeExtraBlankLines(text: string): string {
+  const lines = text.split('\n');
+  const isBlank = (line: string): boolean => line.trim().length === 0;
+
+  // 去掉首尾空行，得到首尾均为正文行的“核心”区间 [start, end)
+  let start = 0;
+  while (start < lines.length && isBlank(lines[start]!)) {
+    start++;
+  }
+  let end = lines.length;
+  while (end > start && isBlank(lines[end - 1]!)) {
+    end--;
+  }
+  if (start >= end) {
+    return '';
+  }
+
+  // 判断是否为“原始稿”：核心区间内是否存在 ≥2 连续空行
+  let isRaw = false;
+  for (let i = start; i < end - 1; i++) {
+    if (isBlank(lines[i]!) && isBlank(lines[i + 1]!)) {
+      isRaw = true;
+      break;
+    }
+  }
+
+  const result: string[] = [];
+  let i = start;
+  while (i < end) {
+    if (!isBlank(lines[i]!)) {
+      result.push(lines[i]!);
+      i++;
+      continue;
+    }
+
+    // 统计这一段连续空行的长度（均为正文之间的内部空行）
+    let runEnd = i;
+    while (runEnd < end && isBlank(lines[runEnd]!)) {
+      runEnd++;
+    }
+    const runLength = runEnd - i;
+    // 原始稿：段内单空行删除、多空行折叠为单空行；非原始稿：单空行原样保留
+    const blanksToEmit = isRaw ? (runLength >= 2 ? 1 : 0) : 1;
+    for (let k = 0; k < blanksToEmit; k++) {
+      result.push('');
+    }
+    i = runEnd;
+  }
+
+  return result.join('\n');
+}
+
+/**
  * 判断段落是否至少有一条非空翻译。
  * 过滤 `onlyWithTranslation` 查询、进度统计等场景共用，避免每处手写
  * `translations?.some(t => t.translation?.trim().length > 0)` 的三层判空。
