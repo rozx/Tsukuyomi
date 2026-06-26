@@ -154,48 +154,79 @@ describe('text-utils', () => {
       L.l10,
     ].join('\n');
 
-    test('用户示例：原始稿压缩（段内单空行→0、场景双空行→1）', () => {
+    // 第二个用户示例：保留原始间距（含一处 6 连空行），整体每段空行只减一行
+    const M = {
+      m1: '　団長でさえ、脅威ではなくなった。',
+      m2: '「何があろうとも、任を遂行させる気か……」',
+      m3: '　冷や汗を垂らしながら竜狩りも笑っていた。だが、その笑みは悲願を果たせる喜びではなく、焦りや自身への嘲笑だった。',
+      m4: '　必死に竜狩りが呪術とも魔法とも付かないそれを抑え込もうとしているのがわかる。しかし、着実にそれは進行して肉体の主導権を奪い取っている。',
+      m5: '　あぁ、予感がする。',
+      m6: '　ここから始まる最悪の記憶。',
+      m7: '　昨日見た夢のフラッシュバックが収まらない。',
+      m8: '　最初、自分の恐怖心から手が震えているのかと思った。',
+      m9: '　だが、震えていたのは握られた隣の少女の、小さく頼りないしなやかな手だった。',
+    };
+
+    const example2Before = [
+      M.m1, '', '',
+      M.m2, '', '',
+      M.m3, '',
+      M.m4, '', '', '', '', '', '',
+      M.m5, '',
+      M.m6, '',
+      M.m7, '', '',
+      M.m8, '',
+      M.m9,
+    ].join('\n');
+
+    const example2After = [
+      M.m1, '',
+      M.m2, '',
+      M.m3,
+      M.m4, '', '', '', '', '',
+      M.m5,
+      M.m6,
+      M.m7, '',
+      M.m8,
+      M.m9,
+    ].join('\n');
+
+    test('用户示例一：每段连续空行减一行（1→0、2→1）', () => {
       expect(removeExtraBlankLines(exampleBefore)).toBe(exampleAfter);
     });
 
-    test('幂等：再次格式化用户示例结果不再变化', () => {
-      expect(removeExtraBlankLines(exampleAfter)).toBe(exampleAfter);
-      expect(removeExtraBlankLines(removeExtraBlankLines(exampleBefore))).toBe(exampleAfter);
+    test('用户示例二：保留原始间距，6 连空行减为 5（每段减一行）', () => {
+      expect(removeExtraBlankLines(example2Before)).toBe(example2After);
     });
 
-    test('幂等：已是单空行间隔的文本（场景分隔）保持不变，不被压缩为 0', () => {
-      // 这是 bug 的核心回归：第二次按格式化不能把场景间的单空行也吃掉
-      expect(removeExtraBlankLines('a\nb\n\nc')).toBe('a\nb\n\nc');
+    test('单个空行被删除（1→0）', () => {
+      expect(removeExtraBlankLines('a\n\nb')).toBe('a\nb');
     });
 
-    test('原始稿里段内单空行被删除（1→0），场景双空行保留为单空行（2→1）', () => {
-      expect(removeExtraBlankLines('a\n\nb\n\n\nc')).toBe('a\nb\n\nc');
-    });
-
-    test('纯单空行间隔（无双空行）视为已格式化，保持不变', () => {
-      expect(removeExtraBlankLines('a\n\nb')).toBe('a\n\nb');
-    });
-
-    test('两个连续空行折叠为一个（2→1）', () => {
+    test('两个连续空行减为一个（2→1）', () => {
       expect(removeExtraBlankLines('a\n\n\nb')).toBe('a\n\nb');
     });
 
-    test('3+ 连续空行折叠为一个（3→1）', () => {
-      expect(removeExtraBlankLines('a\n\n\n\nb')).toBe('a\n\nb');
+    test('三个连续空行减为两个（3→2）', () => {
+      expect(removeExtraBlankLines('a\n\n\n\nb')).toBe('a\n\n\nb');
+    });
+
+    test('大段连续空行只减一行（6→5），保留原始间距不被压扁', () => {
+      const before = ['a', '', '', '', '', '', '', 'b'].join('\n');
+      const after = ['a', '', '', '', '', '', 'b'].join('\n');
+      expect(removeExtraBlankLines(before)).toBe(after);
     });
 
     test('去除文本开头的空行', () => {
       expect(removeExtraBlankLines('\n\na')).toBe('a');
     });
 
-    test('去除文本结尾的空行（不触发整体重压缩）', () => {
+    test('去除文本结尾的空行', () => {
       expect(removeExtraBlankLines('a\n\n')).toBe('a');
-      // 仅尾部多空行：场景单空行应保留
-      expect(removeExtraBlankLines('a\nb\n\nc\n\n')).toBe('a\nb\n\nc');
     });
 
     test('仅含全角空格的行视为空行', () => {
-      expect(removeExtraBlankLines('a\n　\nb')).toBe('a\n\nb');
+      expect(removeExtraBlankLines('a\n　\nb')).toBe('a\nb');
     });
 
     test('保留下来的空行规范化为真正的空字符串', () => {
@@ -203,7 +234,7 @@ describe('text-utils', () => {
     });
 
     test('保留正文行的全角缩进与行尾空格', () => {
-      expect(removeExtraBlankLines('　a　\n\n　b\n\n\n　c')).toBe('　a　\n　b\n\n　c');
+      expect(removeExtraBlankLines('　a　\n\n　b')).toBe('　a　\n　b');
     });
 
     test('空输入返回空字符串', () => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
@@ -104,13 +104,34 @@ const resolveOriginalTextarea = (): HTMLTextAreaElement | null => {
   return inst.input ?? null;
 };
 
-// 格式化原始文本：去除多余空行。
+// 记住上次格式化的产出，连按两次（中间未编辑）时不再减一行，避免把场景空行吃掉。
+// 切换章节时重置，避免跨章节误判。
+const lastFormattedValue = ref<string | null>(null);
+watch(
+  () => props.selectedChapterId,
+  () => {
+    lastFormattedValue.value = null;
+  },
+);
+
+// 格式化原始文本：每段连续空行减一行（保留相对间距）。
 // 通过原生编辑管线（execCommand insertText）写入，使 Ctrl+Z / Ctrl+Y 能撤销/重做格式化；
 // 仅更新编辑框，不直接落盘。
 const formatOriginalText = () => {
   const current = props.originalTextEditValue;
-  const formatted = removeExtraBlankLines(current);
 
+  // 已是上次格式化结果（未再编辑）→ 不再减一行
+  if (current === lastFormattedValue.value) {
+    toast.add({
+      severity: 'info',
+      summary: '无需格式化',
+      detail: '已是格式化后的结果',
+      life: 2000,
+    });
+    return;
+  }
+
+  const formatted = removeExtraBlankLines(current);
   if (formatted === current) {
     toast.add({
       severity: 'info',
@@ -118,6 +139,7 @@ const formatOriginalText = () => {
       detail: '没有需要清理的空行',
       life: 2000,
     });
+    lastFormattedValue.value = current;
     return;
   }
 
@@ -133,6 +155,7 @@ const formatOriginalText = () => {
   if (!appliedViaNativeEdit) {
     emit('update:originalTextEditValue', formatted);
   }
+  lastFormattedValue.value = formatted;
 
   toast.add({
     severity: 'success',
