@@ -36,6 +36,7 @@
     "@octokit/rest": "^22.0.1",
     "@primevue/themes": "^4.5.4",
     "@quasar/extras": "^1.18.0",
+    "@tanstack/vue-virtual": "^3.13.30",
     "axios": "^1.18.1",
     "cheerio": "^1.2.0",
     "co": "^4.6.0",

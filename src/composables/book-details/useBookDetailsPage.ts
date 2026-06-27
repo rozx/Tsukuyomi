@@ -64,6 +64,7 @@ import { useChapterDragDrop } from 'src/composables/book-details/useChapterDragD
 import { useParagraphTranslation } from 'src/composables/book-details/useParagraphTranslation';
 import { useEditMode } from 'src/composables/book-details/useEditMode';
 import { useParagraphNavigation } from 'src/composables/book-details/useParagraphNavigation';
+import type { ChapterScrollToIndex } from 'src/composables/book-details/useChapterVirtualizer';
 import { useKeyboardShortcuts } from 'src/composables/book-details/useKeyboardShortcuts';
 import { useChapterTranslation } from 'src/composables/book-details/useChapterTranslation';
 import { useUndoRedo } from 'src/composables/useUndoRedo';
@@ -237,6 +238,13 @@ function createBookDetailsPageContext() {
   // 滚动容器引用
   const scrollableContentRef = ref<HTMLElement | null>(null);
   const chapterContentPanelRef = ref<HTMLElement | null>(null);
+
+  // 章节虚拟滚动：ChapterContentPanel（桌面/平板）挂载后把其 scrollToParagraphIndex 注册进来，
+  // 供键盘导航 / 搜索按索引滚动（虚拟化下视口外段落不在 DOM，不能用 element-based 滚动）。
+  const chapterScrollToIndex = shallowRef<ChapterScrollToIndex | null>(null);
+  const registerChapterScroller = (fn: ChapterScrollToIndex | null) => {
+    chapterScrollToIndex.value = fn;
+  };
 
   // 这两个 ref 由 composable 持有、经 provide/inject 跨变体共享，并非变体组件的顶层绑定。
   // Vue 3 的字符串模板 ref（ref="chapterContentPanelRef"）只会写进组件自身的 $refs，
@@ -1073,7 +1081,6 @@ function createBookDetailsPageContext() {
     resetParagraphNavigation,
     getNonEmptyParagraphIndices,
     findNextNonEmptyParagraph,
-    scrollToElementFast: _scrollToElementFast,
     navigateToParagraph,
     handleParagraphClick,
     cancelCurrentEditing: _cancelCurrentEditing,
@@ -1085,6 +1092,7 @@ function createBookDetailsPageContext() {
     selectedChapterParagraphs,
     scrollableContentRef,
     currentlyEditingParagraphId,
+    chapterScrollToIndex,
   );
 
   const resetToChapterListView = () => {
@@ -1366,6 +1374,7 @@ function createBookDetailsPageContext() {
     currentlyEditingParagraphId,
     saveState,
     updateSelectedChapterWithContent,
+    chapterScrollToIndex,
   );
 
   const debouncedSearchQuery = ref('');
@@ -2153,6 +2162,9 @@ function createBookDetailsPageContext() {
     chapterContentPanelRef,
     setScrollableContentRef,
     setChapterContentPanelRef,
+    // 章节虚拟滚动：当前编辑段落 id（钉住）+ 注册按索引滚动的回调
+    currentlyEditingParagraphId,
+    registerChapterScroller,
     // volume / chapter operations
     isVolumeExpanded,
     toggleVolumeById,

@@ -4,6 +4,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
 import type { Chapter, Paragraph, Novel, Volume } from 'src/models/novel';
+import type { ChapterScrollToIndex } from 'src/composables/book-details/useChapterVirtualizer';
 
 /**
  * 若段落正在编辑态，把 DOM 里的 textarea 值同步为新文本，并触发 input 事件让 v-model 感知。
@@ -29,6 +30,8 @@ export function useSearchReplace(
   currentlyEditingParagraphId?: Ref<string | null>,
   saveState?: (description?: string) => void,
   updateSelectedChapterWithContent?: (updatedVolumes: Volume[]) => void,
+  // 虚拟滚动下按索引滚动到匹配段落（视口外段落不在 DOM，不能用 getElementById）
+  chapterScrollToIndex?: Ref<ChapterScrollToIndex | null>,
 ) {
   const toast = useToastWithHistory();
 
@@ -193,6 +196,13 @@ export function useSearchReplace(
 
   // Actions
   const scrollToMatch = (id: string) => {
+    // 虚拟化下优先按索引滚动入视（视口外段落不在 DOM）
+    const index = selectedChapterParagraphs.value.findIndex((p) => p.id === id);
+    const fn = chapterScrollToIndex?.value;
+    if (fn && index >= 0) {
+      fn(index, { align: 'center' });
+      return;
+    }
     const el = document.getElementById(`paragraph-${id}`);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });

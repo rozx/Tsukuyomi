@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import VolumesList from 'src/components/novel/VolumesList.vue';
@@ -17,6 +17,12 @@ import { useUiStore } from 'src/stores/ui';
 
 const ctx = injectBookDetailsPage();
 const ui = useUiStore();
+
+// 章节内容面板组件 ref：挂载后把其 scrollToParagraphIndex 注册到页面上下文，供键盘导航/搜索按索引滚动
+const chapterPanelRef = ref<InstanceType<typeof ChapterContentPanel> | null>(null);
+watch(chapterPanelRef, (comp) => {
+  ctx.registerChapterScroller(comp ? (index, options) => comp.scrollToParagraphIndex(index, options) : null);
+});
 
 const settingsShellRef = ref<HTMLElement | null>(null);
 
@@ -496,6 +502,9 @@ const settingContextMeta = computed(() => {
           tabindex="-1"
         >
           <ChapterContentPanel
+            ref="chapterPanelRef"
+            :scroll-element="ctx.chapterContentPanelRef.value"
+            :currently-editing-paragraph-id="ctx.currentlyEditingParagraphId.value"
             :selected-chapter="ctx.selectedChapter.value"
             :selected-chapter-with-content="ctx.selectedChapterWithContent.value"
             :selected-chapter-paragraphs="ctx.selectedChapterParagraphs.value"
@@ -1000,12 +1009,26 @@ const settingContextMeta = computed(() => {
   min-height: 0;
 }
 
-.chapter-content-panel:focus {
+.chapter-content-panel:focus,
+.chapter-content-panel:focus-visible {
   outline: none;
+}
+
+/* 隐藏原生滚动条：章节内容改用自定义索引驱动滚动条（Teleport 到 .page-container）。
+   滚动仍由滚轮/键盘/触控驱动，仅隐藏原生滑块，避免其在虚拟化下与光标失同步。 */
+.chapter-content-panel {
+  scrollbar-width: none; /* Firefox */
+}
+
+.chapter-content-panel::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .page-container {
   padding: 1rem 1.25rem;
+  /* 作为自定义滚动条 Teleport 的定位锚点 */
+  position: relative;
 }
 
 .no-chapter-selected {

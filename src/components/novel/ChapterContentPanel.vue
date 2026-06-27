@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, toRef, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
 import ProgressSpinner from 'primevue/progressspinner';
-import ParagraphCard from 'src/components/novel/ParagraphCard.vue';
+import type ParagraphCard from 'src/components/novel/ParagraphCard.vue';
+import ChapterParagraphRow from 'src/components/novel/ChapterParagraphRow.vue';
+import ChapterScrollbar from 'src/components/novel/ChapterScrollbar.vue';
 import type {
   Chapter,
   Novel,
@@ -21,6 +23,11 @@ import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils
 import { removeExtraBlankLines } from 'src/utils/text-utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
+import {
+  useChapterVirtualizer,
+  type ChapterListMode,
+} from 'src/composables/book-details/useChapterVirtualizer';
+import type { ScrollToOptions as VirtualScrollToOptions } from '@tanstack/vue-virtual';
 
 const props = defineProps<{
   selectedChapter: Chapter | null;
@@ -47,6 +54,9 @@ const props = defineProps<{
   isSmallScreen: boolean;
   prevChapter: Chapter | null;
   nextChapter: Chapter | null;
+  // 虚拟滚动：真实滚动容器（父级 .chapter-content-panel wrapper）与当前编辑段落 id（用于钉住）
+  scrollElement: HTMLElement | null;
+  currentlyEditingParagraphId: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -174,6 +184,107 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
   if (!chapter) return props.isSmallScreen ? '下一章' : '没有下一章';
   return props.isSmallScreen ? '下一章' : getChapterDisplayTitle(chapter, props.book || undefined);
 };
+
+// ---- 虚拟滚动（block translation）----
+// 编辑/列表模式与预览模式共用同一个 virtualizer（任一时刻只渲染其中一个分支）。
+const paragraphsRef = computed(() => props.selectedChapterParagraphs);
+const scrollElementRef = toRef(props, 'scrollElement');
+const chapterListMode = computed<ChapterListMode>(() =>
+  props.editMode === 'preview' ? 'preview' : 'edit',
+);
+
+// 当前编辑段落索引（用于钉住，避免滚出可视区时卸载丢失编辑内容）
+const pinnedIndex = computed<number | null>(() => {
+  const id = props.currentlyEditingParagraphId;
+  if (!id) return null;
+  const i = props.selectedChapterParagraphs.findIndex((p) => p.id === id);
+  return i >= 0 ? i : null;
+});
+
+// 列表起点相对滚动容器顶部的偏移（头部高度）。用 sentinel 实测，随头部高度变化更新。
+const scrollMargin = ref(0);
+const listStartRef = ref<HTMLElement | null>(null);
+const contentHeaderRef = ref<HTMLElement | null>(null);
+
+const recomputeScrollMargin = () => {
+  const sc = scrollElementRef.value;
+  const sentinel = listStartRef.value;
+  if (!sc || !sentinel) return;
+  const scRect = sc.getBoundingClientRect();
+  const sRect = sentinel.getBoundingClientRect();
+  const next = Math.max(0, Math.round(sRect.top - scRect.top + sc.scrollTop));
+  if (next !== scrollMargin.value) scrollMargin.value = next;
+};
+
+const {
+  virtualRows,
+  spacerSize,
+  blockStart,
+  pinnedExtra,
+  measureElement,
+  scrollToIndex,
+  scrollToFraction,
+  scrollbarModel,
+  remeasure,
+} = useChapterVirtualizer({
+  scrollElement: scrollElementRef,
+  paragraphs: paragraphsRef,
+  mode: chapterListMode,
+  scrollMargin,
+  pinnedIndex,
+  overscan: 5,
+  getTranslationText: (p) => getParagraphTranslationText(p),
+});
+
+// 头部高度变化（标题换行 / 统计 / 原文链接出现消失）时重算 scrollMargin
+let headerResizeObserver: ResizeObserver | null = null;
+const observeHeader = () => {
+  if (typeof ResizeObserver === 'undefined') return;
+  headerResizeObserver?.disconnect();
+  headerResizeObserver = new ResizeObserver(() => recomputeScrollMargin());
+  if (contentHeaderRef.value) headerResizeObserver.observe(contentHeaderRef.value);
+};
+
+watch(contentHeaderRef, () => {
+  observeHeader();
+  void nextTick(recomputeScrollMargin);
+});
+
+// 切换编辑/预览模式：行高模型改变，重测并重算偏移
+watch(
+  () => props.editMode,
+  () => {
+    void nextTick(() => {
+      recomputeScrollMargin();
+      remeasure();
+    });
+  },
+);
+
+// 切换章节：滚回顶部由父级处理，这里重算偏移
+watch(
+  () => props.selectedChapterId,
+  () => {
+    void nextTick(recomputeScrollMargin);
+  },
+);
+
+onMounted(() => {
+  observeHeader();
+  void nextTick(recomputeScrollMargin);
+});
+
+onBeforeUnmount(() => {
+  headerResizeObserver?.disconnect();
+  headerResizeObserver = null;
+});
+
+// 暴露给父级（BookDetailsDesktop）注册到页面上下文，供键盘导航 / 搜索按索引滚动
+const scrollToParagraphIndex = (index: number, options?: VirtualScrollToOptions): void => {
+  scrollToIndex(index, options);
+};
+
+defineExpose({ scrollToParagraphIndex });
 </script>
 
 <template>
@@ -182,6 +293,14 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
     class="chapter-content-container"
     :class="{ 'chapter-content-container--full': editMode === 'original' }"
   >
+    <!-- 自定义索引驱动滚动条（Teleport 到非滚动祖先 .page-container，避免随内容滚走） -->
+    <ChapterScrollbar
+      v-if="editMode !== 'original'"
+      :model="scrollbarModel"
+      teleport-to=".page-container"
+      :scroll-to-fraction="scrollToFraction"
+    />
+
     <!-- 加载中状态 -->
     <div v-if="isLoadingChapterContent" class="loading-container">
       <ProgressSpinner style="width: 3rem; height: 3rem" stroke-width="4" animation-duration="1s" />
@@ -217,7 +336,11 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
     <!-- 翻译预览模式 -->
     <div v-else-if="editMode === 'preview'" class="translation-preview-container">
       <!-- 章节标题 -->
-      <div v-if="selectedChapterWithContent || selectedChapter" class="preview-chapter-header">
+      <div
+        v-if="selectedChapterWithContent || selectedChapter"
+        ref="contentHeaderRef"
+        class="preview-chapter-header"
+      >
         <h1 class="preview-chapter-title">
           {{
             getChapterDisplayTitle(selectedChapterWithContent || selectedChapter, book || undefined)
@@ -233,28 +356,35 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
         </div>
       </div>
       <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
-        <div
-          v-for="paragraph in selectedChapterParagraphs"
-          :key="paragraph.id"
-          class="translation-preview-paragraph"
-          :class="{
-            'untranslated-paragraph':
-              !getParagraphTranslationText(paragraph) && paragraph.text.trim(),
-          }"
-        >
-          <template v-if="getParagraphTranslationText(paragraph)">
-            <p class="translation-text">
-              {{ getParagraphTranslationText(paragraph) }}
-            </p>
-          </template>
-          <template v-else-if="paragraph.text.trim()">
-            <div class="untranslated-content">
-              <Badge value="未翻译" severity="warning" class="untranslated-badge" />
-              <p class="original-text">
-                {{ paragraph.text }}
-              </p>
+        <div ref="listStartRef" class="vlist-spacer" :style="{ height: `${spacerSize}px` }">
+          <div class="vlist-window" :style="{ transform: `translateY(${blockStart}px)` }">
+            <div
+              v-for="row in virtualRows"
+              :key="selectedChapterParagraphs[row.index]!.id"
+              :ref="measureElement"
+              :data-index="row.index"
+              class="translation-preview-paragraph"
+              :class="{
+                'untranslated-paragraph':
+                  !getParagraphTranslationText(selectedChapterParagraphs[row.index]!) &&
+                  selectedChapterParagraphs[row.index]!.text.trim(),
+              }"
+            >
+              <template v-if="getParagraphTranslationText(selectedChapterParagraphs[row.index]!)">
+                <p class="translation-text">
+                  {{ getParagraphTranslationText(selectedChapterParagraphs[row.index]!) }}
+                </p>
+              </template>
+              <template v-else-if="selectedChapterParagraphs[row.index]!.text.trim()">
+                <div class="untranslated-content">
+                  <Badge value="未翻译" severity="warning" class="untranslated-badge" />
+                  <p class="original-text">
+                    {{ selectedChapterParagraphs[row.index]!.text }}
+                  </p>
+                </div>
+              </template>
             </div>
-          </template>
+          </div>
         </div>
       </div>
       <div v-else class="empty-chapter-content">
@@ -301,7 +431,7 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
 
     <template v-else>
       <!-- 章节标题 -->
-      <div class="chapter-header">
+      <div ref="contentHeaderRef" class="chapter-header">
         <div class="flex items-center gap-2">
           <h1 class="chapter-title flex-1">
             {{
@@ -358,54 +488,90 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
 
       </div>
 
-      <!-- 章节段落列表 -->
+      <!-- 章节段落列表（虚拟滚动 · block translation） -->
       <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
-        <div
-          v-for="(paragraph, index) in selectedChapterParagraphs"
-          :key="paragraph.id"
-          class="paragraph-with-line-number"
-        >
-          <span v-if="!isSmallScreen" class="line-number">{{ index + 1 }}</span>
-          <ParagraphCard
-            :ref="
-              (el) => {
-                if (el) {
-                  paragraphCardRefs.set(paragraph.id, el as InstanceType<typeof ParagraphCard>);
-                } else {
-                  paragraphCardRefs.delete(paragraph.id);
-                }
-              }
-            "
-            :paragraph="paragraph"
-            :terminologies="terminologies"
-            :character-settings="characterSettings"
-            v-bind="{
-              ...(selectedChapterId ? { chapterId: selectedChapterId } : {}),
-              ...(bookId ? { bookId: bookId } : {}),
-            }"
-            :is-translating="translatingParagraphIds.has(paragraph.id)"
-            :is-polishing="polishingParagraphIds.has(paragraph.id)"
-            :is-proofreading="proofreadingParagraphIds.has(paragraph.id)"
-            :search-query="searchQuery"
-            :id="`paragraph-${paragraph.id}`"
-            :selected="selectedParagraphIndex === index && (isKeyboardSelected || isClickSelected)"
-            @update-translation="
-              (paragraphId: string, newTranslation: string) =>
-                emit('update-translation', paragraphId, newTranslation)
-            "
-            @retranslate="(paragraphId: string) => emit('retranslate-paragraph', paragraphId)"
-            @polish="(paragraphId: string) => emit('polish-paragraph', paragraphId)"
-            @proofread="(paragraphId: string) => emit('proofread-paragraph', paragraphId)"
-            @select-translation="
-              (paragraphId: string, translationId: string) =>
-                emit('select-translation', paragraphId, translationId)
-            "
-            @paragraph-click="(paragraphId: string) => emit('paragraph-click', paragraphId)"
-            @paragraph-edit-start="
-              (paragraphId: string) => emit('paragraph-edit-start', paragraphId)
-            "
-            @paragraph-edit-stop="(paragraphId: string) => emit('paragraph-edit-stop', paragraphId)"
-          />
+        <div ref="listStartRef" class="vlist-spacer" :style="{ height: `${spacerSize}px` }">
+          <div class="vlist-window" :style="{ transform: `translateY(${blockStart}px)` }">
+            <ChapterParagraphRow
+              v-for="row in virtualRows"
+              :key="selectedChapterParagraphs[row.index]!.id"
+              :ref="measureElement"
+              :data-index="row.index"
+              :paragraph="selectedChapterParagraphs[row.index]!"
+              :index="row.index"
+              :is-small-screen="isSmallScreen"
+              :terminologies="terminologies"
+              :character-settings="characterSettings"
+              :book-id="bookId"
+              :chapter-id="selectedChapterId"
+              :is-translating="translatingParagraphIds.has(selectedChapterParagraphs[row.index]!.id)"
+              :is-polishing="polishingParagraphIds.has(selectedChapterParagraphs[row.index]!.id)"
+              :is-proofreading="
+                proofreadingParagraphIds.has(selectedChapterParagraphs[row.index]!.id)
+              "
+              :search-query="searchQuery"
+              :selected="
+                selectedParagraphIndex === row.index && (isKeyboardSelected || isClickSelected)
+              "
+              :paragraph-card-refs="paragraphCardRefs"
+              @update-translation="
+                (paragraphId: string, newTranslation: string) =>
+                  emit('update-translation', paragraphId, newTranslation)
+              "
+              @retranslate-paragraph="(id: string) => emit('retranslate-paragraph', id)"
+              @polish-paragraph="(id: string) => emit('polish-paragraph', id)"
+              @proofread-paragraph="(id: string) => emit('proofread-paragraph', id)"
+              @select-translation="
+                (paragraphId: string, translationId: string) =>
+                  emit('select-translation', paragraphId, translationId)
+              "
+              @paragraph-click="(id: string) => emit('paragraph-click', id)"
+              @paragraph-edit-start="(id: string) => emit('paragraph-edit-start', id)"
+              @paragraph-edit-stop="(id: string) => emit('paragraph-edit-stop', id)"
+            />
+          </div>
+          <!-- 钉住：正在编辑且滚出窗口的段落，单独绝对定位渲染，避免卸载丢失未保存编辑 -->
+          <div
+            v-if="pinnedExtra"
+            class="vlist-pinned"
+            :style="{ transform: `translateY(${pinnedExtra.start}px)` }"
+          >
+            <ChapterParagraphRow
+              :key="selectedChapterParagraphs[pinnedExtra.index]!.id"
+              :ref="measureElement"
+              :data-index="pinnedExtra.index"
+              :paragraph="selectedChapterParagraphs[pinnedExtra.index]!"
+              :index="pinnedExtra.index"
+              :is-small-screen="isSmallScreen"
+              :terminologies="terminologies"
+              :character-settings="characterSettings"
+              :book-id="bookId"
+              :chapter-id="selectedChapterId"
+              :is-translating="translatingParagraphIds.has(selectedChapterParagraphs[pinnedExtra.index]!.id)"
+              :is-polishing="polishingParagraphIds.has(selectedChapterParagraphs[pinnedExtra.index]!.id)"
+              :is-proofreading="proofreadingParagraphIds.has(selectedChapterParagraphs[pinnedExtra.index]!.id)"
+              :search-query="searchQuery"
+              :selected="
+                selectedParagraphIndex === pinnedExtra.index &&
+                (isKeyboardSelected || isClickSelected)
+              "
+              :paragraph-card-refs="paragraphCardRefs"
+              @update-translation="
+                (paragraphId: string, newTranslation: string) =>
+                  emit('update-translation', paragraphId, newTranslation)
+              "
+              @retranslate-paragraph="(id: string) => emit('retranslate-paragraph', id)"
+              @polish-paragraph="(id: string) => emit('polish-paragraph', id)"
+              @proofread-paragraph="(id: string) => emit('proofread-paragraph', id)"
+              @select-translation="
+                (paragraphId: string, translationId: string) =>
+                  emit('select-translation', paragraphId, translationId)
+              "
+              @paragraph-click="(id: string) => emit('paragraph-click', id)"
+              @paragraph-edit-start="(id: string) => emit('paragraph-edit-start', id)"
+              @paragraph-edit-stop="(id: string) => emit('paragraph-edit-stop', id)"
+            />
+          </div>
         </div>
       </div>
 
@@ -597,86 +763,36 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
   gap: 1rem;
 }
 
-/* 带行号的段落 */
-.paragraph-with-line-number {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
+/* 虚拟滚动：spacer 撑出全列表高度，window 用 block translation 单一平移 */
+.vlist-spacer {
   position: relative;
-  /* 只允许颜色/阴影类过渡，避免 margin/padding 等布局属性过渡导致”滚动抖动” */
-  transition:
-    color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-    background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  /*
-   * 注意：content-visibility 放在内部 .paragraph-card 上（见下方），
-   * 不能放在 wrapper 上——否则 paint 包含会裁掉 ::before 选中高亮（inset: -0.5rem 绘制在 wrapper 外）。
-   */
+  width: 100%;
 }
 
-/* 选中高亮：使用伪元素绘制边框/阴影，避免改变布局尺寸导致滚动“上下跳动” */
-.paragraph-with-line-number::before {
-  content: '';
+.vlist-window {
   position: absolute;
-  inset: -0.5rem;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  box-shadow: 0 0 0 1px transparent;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 0.15s cubic-bezier(0.4, 0, 0.2, 1),
-    box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  top: 0;
+  left: 0;
+  width: 100%;
 }
 
-.paragraph-with-line-number:has(.paragraph-selected)::before {
-  opacity: 1;
-  border-color: var(--primary-opacity-20);
-  box-shadow: 0 0 0 1px var(--primary-opacity-15);
+/* 行间距：编辑/列表行的 margin-bottom 定义在 ChapterParagraphRow.vue（其根元素作用域）；
+   useChapterVirtualizer 的 measureElement 会把 margin-bottom 并入测量高度，
+   故 totalSize / 偏移与文档流堆叠精确一致，最后一行不会溢出 spacer 压到导航按钮。
+   预览段落（.translation-preview-paragraph）已有自身 padding 间距，无需额外 margin。 */
+
+/* 钉住（编辑中且滚出窗口）的段落：单独绝对定位在其测得偏移处 */
+.vlist-pinned {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
 }
 
-.line-number {
-  display: inline-block;
-  flex-shrink: 0;
-  width: 3rem;
-  text-align: right;
-  font-size: 0.8125rem;
-  color: var(--moon-opacity-40);
-  font-family: ui-monospace, 'Courier New', monospace;
-  padding-top: 1rem;
-  padding-right: 0.75rem;
-  user-select: none;
-  align-self: flex-start;
-  line-height: 1.8;
-  font-weight: 500;
-  /* 确保在选中伪元素之上 */
-  position: relative;
-  z-index: 1;
-}
+/* 自定义滚动条样式见 ChapterScrollbar.vue */
 
-.paragraph-with-line-number .paragraph-card {
-  flex: 1;
-  min-width: 0;
-  padding-left: 0;
-  position: relative;
-  z-index: 1; /* 确保在选中伪元素之上 */
-  /*
-   * 性能优化：CSS 级虚拟化
-   * content-visibility: auto 会让浏览器跳过视口外段落的渲染/布局/绘制，
-   * 但保持组件挂载，因此键盘导航、paragraphCardRefs、滚动到指定段落等命令式 API
-   * 都可正常工作。
-   *
-   * 放在 .paragraph-card（而非外层 .paragraph-with-line-number）上，
-   * 避免 paint 包含裁掉 wrapper 上绘制的选中高亮伪元素。
-   */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 160px;
-}
-
-/* 隐藏 ParagraphCard 中的原始段落符号 */
-.paragraph-with-line-number .paragraph-card :deep(.paragraph-icon) {
-  display: none !important;
-}
+/* 注：带行号段落（.paragraph-with-line-number / .line-number / 选中高亮）的样式
+   已随模板迁移到 ChapterParagraphRow.vue。 */
 
 /* 原始文本编辑容器 */
 .original-text-edit-container {
@@ -771,9 +887,7 @@ const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
   padding: 1rem 1.25rem;
   width: 100%;
   position: relative;
-  /* 预览模式段落同样启用 CSS 级虚拟化 */
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
+  /* 虚拟滚动已接管视口外段落的渲染，无需再用 content-visibility 占位 */
 }
 
 .translation-text {
