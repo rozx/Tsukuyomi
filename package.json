@@ -84,7 +84,7 @@
     "eslint": "^9.39.4",
     "eslint-plugin-vue": "^10.9.2",
     "fake-indexeddb": "^6.2.5",
-    "fallow": "2.44.1",
+    "fallow": "2.102.0",
     "globals": "^17.7.0",
     "jsdom": "^29.1.1",
     "prettier": "^3.8.5",
