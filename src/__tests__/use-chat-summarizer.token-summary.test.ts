@@ -1,24 +1,21 @@
 import './setup';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { ref } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { useChatSessionsStore, type ChatSessionMessage } from 'src/stores/chat-sessions';
 import { useChatSummarizer } from 'src/composables/chat/useChatSummarizer';
+import { AssistantService } from 'src/services/ai/tasks';
+import * as useToastHistory from 'src/composables/useToastHistory';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 
-const summarizeSessionMock = vi.hoisted(() => vi.fn());
+const summarizeSessionMock = mock(() => Promise.resolve('少量大消息摘要'));
 
-vi.mock('src/services/ai/tasks', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('src/services/ai/tasks');
-  const AssistantService = actual.AssistantService as Record<string, unknown>;
-  return {
-    ...actual,
-    AssistantService: {
-      ...AssistantService,
-      summarizeSession: summarizeSessionMock,
-    },
-  };
-});
+const mockUseToastWithHistory = mock(() => ({
+  add: mock(() => {}),
+  remove: mock(() => {}),
+  removeGroup: mock(() => {}),
+  removeAllGroups: mock(() => {}),
+}));
 
 const makeAssistantModel = (): AIModel => ({
   id: 'assistant-model',
@@ -57,6 +54,12 @@ describe('useChatSummarizer - token 触发摘要', () => {
     setActivePinia(createPinia());
     summarizeSessionMock.mockReset();
     summarizeSessionMock.mockResolvedValue('少量大消息摘要');
+    spyOn(AssistantService, 'summarizeSession').mockImplementation(summarizeSessionMock as never);
+    spyOn(useToastHistory, 'useToastWithHistory').mockImplementation(mockUseToastWithHistory);
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('token 触发时应允许少于 3 条消息进入 UI summary', async () => {
@@ -76,8 +79,8 @@ describe('useChatSummarizer - token 触发摘要', () => {
     const summarizer = useChatSummarizer(
       messages,
       ref<AIModel | undefined>(makeAssistantModel()),
-      vi.fn(),
-      vi.fn(),
+      mock(() => Promise.resolve()),
+      mock(() => {}),
     );
     const performForTokenLimit = summarizer.performUISummarization as (
       willReachLimit: boolean,

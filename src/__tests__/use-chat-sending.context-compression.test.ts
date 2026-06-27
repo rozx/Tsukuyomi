@@ -1,34 +1,26 @@
 import './setup';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { ref } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { useChatSessionsStore, type ChatSessionMessage } from 'src/stores/chat-sessions';
 import { useChatSending } from 'src/composables/chat/useChatSending';
+import { AssistantService, type AssistantResult } from 'src/services/ai/tasks';
+import * as AiContextUtils from 'src/utils/ai-context-utils';
 import type { AIModel } from 'src/services/ai/types/ai-model';
-import type { AssistantResult } from 'src/services/ai/tasks';
 
-const estimateAssistantContextTokensMock = vi.hoisted(() => vi.fn());
-const assistantChatMock = vi.hoisted(() => vi.fn());
+const estimateAssistantContextTokensMock = mock(AiContextUtils.estimateAssistantContextTokens);
+const assistantChatMock = mock(() =>
+  Promise.resolve({ text: 'ok', messageHistory: [] } as AssistantResult),
+);
 
-vi.mock('src/utils/ai-context-utils', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('src/utils/ai-context-utils');
-  return {
-    ...actual,
-    estimateAssistantContextTokens: estimateAssistantContextTokensMock,
-  };
-});
-
-vi.mock('src/services/ai/tasks', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('src/services/ai/tasks');
-  const AssistantService = actual.AssistantService as Record<string, unknown>;
-  return {
-    ...actual,
-    AssistantService: {
-      ...AssistantService,
-      chat: assistantChatMock,
-    },
-  };
-});
+const makePerformUISummarization = () =>
+  mock(
+    (
+      _force: boolean,
+      _stateSetter?: (val: boolean) => void,
+      _options?: { allowFewMessages?: boolean },
+    ) => Promise.resolve({ success: true }),
+  );
 
 const makeAssistantModel = (): AIModel => ({
   id: 'assistant-model',
@@ -62,12 +54,12 @@ const makeMessage = (
 });
 
 const makeThinkingDisplay = () => ({
-  setThinkingActive: vi.fn(),
-  setDisplayedThinkingImmediatelyIfEmpty: vi.fn(),
-  updateDisplayedThinkingProcess: vi.fn(),
-  markThinkingActive: vi.fn(),
+  setThinkingActive: mock(() => {}),
+  setDisplayedThinkingImmediatelyIfEmpty: mock(() => {}),
+  updateDisplayedThinkingProcess: mock(() => {}),
+  markThinkingActive: mock(() => {}),
   thinkingExpanded: ref(new Map<string, boolean>()),
-  requestScrollThinkingToBottom: vi.fn(),
+  requestScrollThinkingToBottom: mock(() => {}),
 });
 
 describe('useChatSending - assistant 上下文压缩触发', () => {
@@ -80,6 +72,14 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
       text: 'ok',
       messageHistory: [],
     } satisfies AssistantResult);
+    spyOn(AiContextUtils, 'estimateAssistantContextTokens').mockImplementation(
+      estimateAssistantContextTokensMock,
+    );
+    spyOn(AssistantService, 'chat').mockImplementation(assistantChatMock as never);
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('token 用量超过模型输入窗口时，即使消息数未达阈值也会先触发 UI 总结', async () => {
@@ -100,24 +100,24 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
     const messages = ref<ChatSessionMessage[]>([...initialMessages]);
     const inputMessage = ref('继续讨论');
     const assistantModel = ref<AIModel | undefined>(makeAssistantModel());
-    const performUISummarization = vi.fn().mockResolvedValue({ success: true });
+    const performUISummarization = makePerformUISummarization();
 
     const { sendMessage } = useChatSending(
       messages,
       inputMessage,
       assistantModel,
-      vi.fn(),
-      vi.fn(),
+      mock(() => {}),
+      mock(() => {}),
       {
         performUISummarization,
         getMessagesSinceSummaryCount: (session) =>
           session ? session.messages.length - session.lastSummarizedMessageIndex : 0,
       },
       makeThinkingDisplay(),
-      { push: vi.fn() } as never,
-      { add: vi.fn() },
+      { push: mock(() => {}) } as never,
+      { add: mock(() => {}) },
       ref([]),
-      vi.fn(),
+      mock(() => {}),
       ref(null),
     );
 
@@ -150,24 +150,24 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
     const messages = ref<ChatSessionMessage[]>([...initialMessages]);
     const inputMessage = ref('这条输入会把上下文推过窗口');
     const assistantModel = ref<AIModel | undefined>(makeAssistantModel());
-    const performUISummarization = vi.fn().mockResolvedValue({ success: true });
+    const performUISummarization = makePerformUISummarization();
 
     const { sendMessage } = useChatSending(
       messages,
       inputMessage,
       assistantModel,
-      vi.fn(),
-      vi.fn(),
+      mock(() => {}),
+      mock(() => {}),
       {
         performUISummarization,
         getMessagesSinceSummaryCount: (session) =>
           session ? session.messages.length - session.lastSummarizedMessageIndex : 0,
       },
       makeThinkingDisplay(),
-      { push: vi.fn() } as never,
-      { add: vi.fn() },
+      { push: mock(() => {}) } as never,
+      { add: mock(() => {}) },
       ref([]),
-      vi.fn(),
+      mock(() => {}),
       ref(null),
     );
 
@@ -201,7 +201,7 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
     const messages = ref<ChatSessionMessage[]>([]);
     const inputMessage = ref('请读取大量资料');
     const assistantModel = ref<AIModel | undefined>(makeAssistantModel());
-    const performUISummarization = vi.fn().mockResolvedValue({ success: true });
+    const performUISummarization = makePerformUISummarization();
 
     assistantChatMock.mockResolvedValueOnce({
       text: '已完成',
@@ -218,17 +218,17 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
       messages,
       inputMessage,
       assistantModel,
-      vi.fn(),
-      vi.fn(),
+      mock(() => {}),
+      mock(() => {}),
       {
         performUISummarization,
         getMessagesSinceSummaryCount: () => 0,
       },
       makeThinkingDisplay(),
-      { push: vi.fn() } as never,
-      { add: vi.fn() },
+      { push: mock(() => {}) } as never,
+      { add: mock(() => {}) },
       ref([]),
-      vi.fn(),
+      mock(() => {}),
       ref(null),
     );
 
