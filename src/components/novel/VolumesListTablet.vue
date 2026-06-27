@@ -12,18 +12,18 @@ import { computed, ref } from 'vue';
 import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
 import type { Volume, Chapter, Novel } from 'src/models/novel';
-import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
+import { getVolumeDisplayTitle } from 'src/utils';
 import {
   canNavigateToChapter,
   buildVolumeActionMenuItems,
   buildChapterActionMenuItems,
 } from 'src/components/novel/volumes-list-utils';
+import TabletChapterRow from 'src/components/novel/TabletChapterRow.vue';
 
 const props = defineProps<{
   volumes: Volume[];
   book: Novel | null;
   selectedChapterId: string | null;
-  isPageLoading: boolean;
   isLoadingChapterContent?: boolean;
   isVolumeExpanded: (volumeId: string) => boolean;
   chapterStatusIcon: (chapterId: string) => string;
@@ -116,10 +116,8 @@ const handleNavigateToChapter = (chapter: Chapter) => {
   emit('navigate-to-chapter', chapter);
 };
 
-const statusIconFor = (chapterId: string) => props.chapterStatusIcon(chapterId);
-const statusColorFor = (chapterId: string) => props.chapterStatusColor(chapterId);
-const statusTextColorFor = (chapterId: string) => props.chapterStatusTextColor(chapterId);
-const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId);
+const volumeFolderIcon = (volumeId: string) =>
+  props.isVolumeExpanded(volumeId) ? 'pi-folder-open' : 'pi-folder';
 </script>
 
 <template>
@@ -131,11 +129,7 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
         :class="{ 'vt-row--vol-open': isVolumeExpanded(vol.id) }"
         @click="emit('toggle-volume', vol.id)"
       >
-        <i
-          class="pi vt-vol-icon"
-          :class="isVolumeExpanded(vol.id) ? 'pi-folder-open' : 'pi-folder'"
-          aria-hidden="true"
-        />
+        <i class="pi vt-vol-icon" :class="volumeFolderIcon(vol.id)" aria-hidden="true" />
         <span class="vt-row-title">{{ getVolumeDisplayTitle(vol) }}</span>
         <span class="vt-row-count">{{ vol.chapters?.length ?? 0 }} 章</span>
         <button
@@ -149,40 +143,22 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
       </button>
 
       <template v-if="isVolumeExpanded(vol.id)">
-        <div
+        <TabletChapterRow
           v-for="(ch, chIdx) in vol.chapters || []"
           :key="ch.id"
-          class="vt-row vt-row--chapter"
-          :class="{ 'vt-row--active': selectedChapterId === ch.id }"
-          role="button"
-          tabindex="0"
-          @click="handleNavigateToChapter(ch)"
-          @keydown.enter.space.prevent="handleNavigateToChapter(ch)"
-        >
-          <i
-            class="pi vt-chap-icon"
-            :class="statusIconFor(ch.id)"
-            :style="{ color: statusColorFor(ch.id) }"
-            aria-hidden="true"
-          />
-          <span class="vt-row-title">
-            {{ getChapterDisplayTitle(ch, book || undefined) }}
-          </span>
-          <span class="vt-row-count" :style="{ color: statusTextColorFor(ch.id) }">
-            {{ statusLabelFor(ch.id) }}
-          </span>
-          <button
-            type="button"
-            class="vt-row-more"
-            aria-label="章节操作"
-            @click.stop="
-              (event: Event) =>
-                openChapterActions(event, ch, vol.id, chIdx, (vol.chapters || []).length)
-            "
-          >
-            <i class="pi pi-ellipsis-v" aria-hidden="true" />
-          </button>
-        </div>
+          :chapter="ch"
+          :is-selected="selectedChapterId === ch.id"
+          :book="book"
+          :status-icon="chapterStatusIcon"
+          :status-color="chapterStatusColor"
+          :status-text-color="chapterStatusTextColor"
+          :status-label="chapterStatusLabel"
+          @navigate="handleNavigateToChapter"
+          @more="
+            (event: Event) =>
+              openChapterActions(event, ch, vol.id, chIdx, (vol.chapters || []).length)
+          "
+        />
       </template>
     </template>
 
@@ -253,14 +229,11 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
 }
 
 .vt-row--chapter {
-  padding-left: 28px;
-  font-size: 12.5px;
-  color: var(--moon-50-opacity-80); /* token: moon-50 @ 80% */
+  /* 章节行样式随模板迁移到 TabletChapterRow.vue */
 }
 
 .vt-row--active {
-  background: var(--tsukuyomi-opacity-12);
-  color: var(--primary-300); /* token: primary-300 */
+  /* 同上 */
 }
 
 .vt-row-title {
@@ -314,9 +287,7 @@ const statusLabelFor = (chapterId: string) => props.chapterStatusLabel(chapterId
 }
 
 .vt-chap-icon {
-  font-size: 13px;
-  width: 13px;
-  flex-shrink: 0;
+  /* 章节图标样式迁移到 TabletChapterRow.vue */
 }
 
 .vt-empty {

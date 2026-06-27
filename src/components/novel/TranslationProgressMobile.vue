@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useTranslationProgressPanel } from 'src/composables/translation-progress/useTranslationProgressPanel';
-import TaskTodos from './translation-progress/TaskTodos.vue';
-import TaskStream from './translation-progress/TaskStream.vue';
 import TaskEmptyState from './translation-progress/TaskEmptyState.vue';
+import MobileProgressBody from './translation-progress/MobileProgressBody.vue';
 
 const {
   currentTask,
@@ -25,6 +24,13 @@ const {
 
 // 手机端分段 tab（实时/待办/统计/日志）— 纯视图局部状态
 const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
+// 分段按钮配置：把四个近乎相同的按钮收敛为 v-for，降低模板圈复杂度
+const mobileTabs = computed(() => [
+  { key: 'live' as const, label: '实时' },
+  { key: 'todo' as const, label: '待办' },
+  { key: 'stats' as const, label: '统计' },
+  { key: 'log' as const, label: '日志' },
+]);
 </script>
 
 <template>
@@ -68,148 +74,37 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
       <div class="mtp-seg-wrap">
         <div class="mtp-seg">
           <button
+            v-for="tab in mobileTabs"
+            :key="tab.key"
             class="mtp-seg-btn"
-            :class="{ 'mtp-seg-btn-active': mobileTab === 'live' }"
-            @click="mobileTab = 'live'"
+            :class="{ 'mtp-seg-btn-active': mobileTab === tab.key }"
+            @click="mobileTab = tab.key"
           >
-            实时
-          </button>
-          <button
-            class="mtp-seg-btn"
-            :class="{ 'mtp-seg-btn-active': mobileTab === 'todo' }"
-            @click="mobileTab = 'todo'"
-          >
-            待办<span v-if="currentTaskTodos.length > 0" class="mtp-seg-count">
-              {{ currentTaskTodos.length }}</span
+            {{ tab.label
+            }}<span
+              v-if="tab.key === 'todo' && currentTaskTodos.length > 0"
+              class="mtp-seg-count"
+              >{{ currentTaskTodos.length }}</span
             >
-          </button>
-          <button
-            class="mtp-seg-btn"
-            :class="{ 'mtp-seg-btn-active': mobileTab === 'stats' }"
-            @click="mobileTab = 'stats'"
-          >
-            统计
-          </button>
-          <button
-            class="mtp-seg-btn"
-            :class="{ 'mtp-seg-btn-active': mobileTab === 'log' }"
-            @click="mobileTab = 'log'"
-          >
-            日志
           </button>
         </div>
       </div>
 
       <!-- Body -->
-      <div class="mtp-body">
-        <!-- 实时 -->
-        <template v-if="mobileTab === 'live'">
-          <div class="mtp-live-card">
-            <div class="mtp-live-head">
-              <i
-                class="pi mtp-live-spinner"
-                :class="mobileIsRunning ? 'pi-spin pi-spinner' : 'pi-check-circle'"
-                aria-hidden="true"
-              />
-              <span class="mtp-live-eyebrow">
-                {{ mobileIsRunning ? '正在翻译' : '已停止' }} · §
-                {{ String(mobileProgress.current).padStart(3, '0') }}
-              </span>
-              <span class="mtp-live-model">
-                <i class="pi pi-sparkles" aria-hidden="true" />
-                {{ currentTask.modelName }}
-              </span>
-            </div>
-            <div v-if="currentTask.progress?.message" class="mtp-live-text">
-              {{ currentTask.progress.message }}
-            </div>
-            <div v-else-if="currentTask.thinkingMessage" class="mtp-live-text">
-              {{ currentTask.thinkingMessage.split('\n').slice(-1)[0] }}
-            </div>
-            <div class="mtp-live-bar">
-              <div class="mtp-live-bar-fill" :style="{ width: `${mobileProgress.percent}%` }" />
-            </div>
-            <div class="mtp-live-meta">
-              <span>
-                上下文
-                <template v-if="currentTask.contextPercentage !== undefined">
-                  {{ currentTask.contextPercentage }}%
-                </template>
-                <template v-else>—</template>
-              </span>
-              <span>{{ formatDuration(currentTask.startTime, currentTask.endTime) }}</span>
-            </div>
-          </div>
-
-          <div class="mtp-section-label">活动记录</div>
-          <div class="mtp-stream-wrap mtp-stream-wrap--compact">
-            <TaskStream
-              :task="currentTask"
-              :parts="currentParts"
-              :auto-scroll="currentAutoScroll"
-              @toggle-auto-scroll="toggleAutoScroll"
-            />
-          </div>
-        </template>
-
-        <!-- 统计 -->
-        <template v-else-if="mobileTab === 'stats'">
-          <div class="mtp-section-label">模型使用</div>
-          <div class="mtp-model-card">
-            <div class="mtp-model-head">
-              <span class="mtp-model-dot" />
-              <span class="mtp-model-name">{{ currentTask.modelName }}</span>
-              <span class="mtp-model-count">{{ mobileProgress.current }} 次调用</span>
-            </div>
-            <div class="mtp-model-bar">
-              <div class="mtp-model-bar-fill" :style="{ width: `${mobileProgress.percent}%` }" />
-            </div>
-            <div class="mtp-model-meta">
-              <span>进度 {{ mobileProgress.percent }}%</span>
-              <span>{{ mobileWorkflowLabel }}</span>
-            </div>
-          </div>
-
-          <div class="mtp-section-label">本次批量</div>
-          <div class="mtp-totals">
-            <div v-for="t in mobileStatTotals" :key="t.label" class="mtp-total">
-              <div class="mtp-total-head">
-                <span class="mtp-total-label">{{ t.label }}</span>
-                <i :class="['pi', t.icon, 'mtp-total-icon']" aria-hidden="true" />
-              </div>
-              <div class="mtp-total-value">{{ t.value }}</div>
-            </div>
-          </div>
-        </template>
-
-        <!-- 待办 -->
-        <template v-else-if="mobileTab === 'todo'">
-          <div class="mtp-todo-panel">
-            <div v-if="currentTaskTodos.length > 0" class="mtp-todos-wrap mtp-todos-wrap--full">
-              <TaskTodos
-                :todos="currentTaskTodos"
-                :collapsed="false"
-                @toggle-collapsed="toggleTodoCollapsed"
-              />
-            </div>
-            <div v-else class="mtp-empty">暂无待办事项</div>
-          </div>
-        </template>
-
-        <!-- 日志（占满剩余空间，内部滚动） -->
-        <template v-else-if="mobileTab === 'log'">
-          <div class="mtp-log-stack">
-            <div class="mtp-stream-wrap mtp-stream-wrap--fill">
-              <TaskStream
-                :task="currentTask"
-                :parts="currentParts"
-                :auto-scroll="currentAutoScroll"
-                @toggle-auto-scroll="toggleAutoScroll"
-              />
-            </div>
-          </div>
-        </template>
-      </div>
+      <MobileProgressBody
+        :mobile-tab="mobileTab"
+        :current-task="currentTask"
+        :current-parts="currentParts"
+        :current-auto-scroll="currentAutoScroll"
+        :mobile-progress="mobileProgress"
+        :mobile-is-running="mobileIsRunning"
+        :mobile-workflow-label="mobileWorkflowLabel"
+        :mobile-stat-totals="mobileStatTotals"
+        :current-task-todos="currentTaskTodos"
+        :format-duration="formatDuration"
+        @toggle-auto-scroll="toggleAutoScroll"
+        @toggle-todo-collapsed="toggleTodoCollapsed"
+      />
 
       <!-- Bottom actions -->
       <div class="mtp-actions">

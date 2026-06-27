@@ -9,6 +9,9 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
 import { importMemoriesPreservingIdentity } from 'src/services/settings/memory-import';
+import type { ImportResult } from 'src/models/settings';
+
+type ImportedSettings = NonNullable<ImportResult['data']>;
 
 const toast = useToastWithHistory();
 const aiModelsStore = useAIModelsStore();
@@ -59,6 +62,49 @@ const exportSettings = async () => {
   }
 };
 
+// 覆盖语义下重写封面历史：先清空再逐条写入
+const applyCoverHistory = async (covers: ImportedSettings['coverHistory']) => {
+  await coverHistoryStore.clearHistory();
+  for (const cover of covers) {
+    await coverHistoryStore.addCover(cover);
+  }
+};
+
+// 覆盖语义下把导入快照逐字段写回各 store。
+// 字段在快照里就替换（即便是空数组），与 UI "覆盖" 文案保持一致；
+// 只有 undefined（快照里根本没有该字段）时才跳过，避免无意义地抹掉本地数据。
+const applyImportedData = async (data: ImportedSettings) => {
+  if (data.models !== undefined) {
+    await aiModelsStore.bulkImportModels(data.models);
+  }
+
+  if (data.novels !== undefined) {
+    await booksStore.clearBooks();
+    await booksStore.bulkAddBooks(data.novels);
+  }
+
+  if (data.coverHistory !== undefined) {
+    await applyCoverHistory(data.coverHistory);
+  }
+
+  // 覆盖当前的 Memory 数据 —— 共享 leaf 保证 Electron/SPA 行为一致
+  await importMemoriesPreservingIdentity(data.memories, '[ImportExportTab]');
+
+  if (data.appSettings) {
+    await settingsStore.importSettings(data.appSettings);
+  }
+
+  // 覆盖当前的同步设置（空数组也覆盖，清除残留本地同步配置）
+  if (data.sync !== undefined) {
+    await settingsStore.importSyncs(data.sync);
+  } else {
+    // 文件未携带 sync 字段时，本地同步状态会保留，可能含有指向被恢复条目的旧墓碑：
+    // 清掉所有"主动传播删除"的字段（deletedNovelIds / deletedModelIds /
+    // deletedMemoryIds / knownRemoteTombstones），避免下次同步把刚导入的内容又删了。
+    await settingsStore.clearSyncDeletionPropagationState();
+  }
+};
+
 /**
  * 处理文件选择
  */
@@ -67,46 +113,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   const result = await SettingsService.importSettingsFromFile(file);
 
   if (result.success && result.data) {
-    // 覆盖语义：字段在快照里就替换（即便是空数组），与 UI "覆盖" 文案保持一致。
-    // 只有当字段 undefined（快照里根本没有该字段）时才跳过，避免无意义地抹掉本地数据。
-
-    // 覆盖当前的 AI 模型数据
-    if (result.data.models !== undefined) {
-      await aiModelsStore.bulkImportModels(result.data.models);
-    }
-
-    // 覆盖当前的书籍数据
-    if (result.data.novels !== undefined) {
-      await booksStore.clearBooks();
-      await booksStore.bulkAddBooks(result.data.novels);
-    }
-
-    // 覆盖当前的封面历史数据
-    if (result.data.coverHistory !== undefined) {
-      await coverHistoryStore.clearHistory();
-      for (const cover of result.data.coverHistory) {
-        await coverHistoryStore.addCover(cover);
-      }
-    }
-
-    // 覆盖当前的 Memory 数据 —— 共享 leaf 保证 Electron/SPA 行为一致
-    await importMemoriesPreservingIdentity(result.data.memories, '[ImportExportTab]');
-
-    // 覆盖当前的应用设置
-    if (result.data.appSettings) {
-      await settingsStore.importSettings(result.data.appSettings);
-    }
-
-    // 覆盖当前的同步设置（空数组也覆盖，清除残留本地同步配置）
-    if (result.data.sync !== undefined) {
-      await settingsStore.importSyncs(result.data.sync);
-    } else {
-      // 文件未携带 sync 字段时，本地同步状态会保留，可能含有指向被恢复条目的旧墓碑：
-      // 清掉所有"主动传播删除"的字段（deletedNovelIds / deletedModelIds /
-      // deletedMemoryIds / knownRemoteTombstones），避免下次同步把刚导入的内容又删了。
-      await settingsStore.clearSyncDeletionPropagationState();
-    }
-
+    await applyImportedData(result.data);
     toast.add({
       severity: 'success',
       summary: '导入成功',

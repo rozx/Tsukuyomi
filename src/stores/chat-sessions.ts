@@ -1,6 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { v4 as uuidv4 } from 'uuid';
-import { countContextMessagesSinceSummary } from 'src/utils/chat-session-context';
 
 const STORAGE_KEY = 'tsukuyomi-chat-sessions';
 const CURRENT_SESSION_ID_KEY = 'tsukuyomi-chat-current-session-id';
@@ -430,26 +429,6 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         session.updatedAt = Date.now();
         saveSessionsToStorage(this.sessions);
       }
-    },
-
-    /**
-     * 检查当前会话是否接近限制
-     */
-    isNearLimit(): boolean {
-      const session = this.currentSession;
-      if (!session) return false;
-      const countSinceSummary = countContextMessagesSinceSummary(session, session.messages);
-      return countSinceSummary >= MESSAGE_LIMIT_THRESHOLD;
-    },
-
-    /**
-     * 检查当前会话是否达到限制
-     */
-    isAtLimit(): boolean {
-      const session = this.currentSession;
-      if (!session) return false;
-      const countSinceSummary = countContextMessagesSinceSummary(session, session.messages);
-      return countSinceSummary >= MAX_MESSAGES_PER_SESSION;
     },
 
     /**

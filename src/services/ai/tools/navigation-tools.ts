@@ -2,6 +2,25 @@ import { ChapterService } from 'src/services/chapter-service';
 import { BookService } from 'src/services/book-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { ToolDefinition, ToolContext } from './types';
+import type { Chapter, Novel } from 'src/models/novel';
+
+/**
+ * 在书籍卷章结构中查找指定章节，返回章节对象与展示标题
+ */
+function findChapterInBook(
+  book: Novel,
+  chapterId: string,
+): { chapter: Chapter; title: string } | null {
+  if (!book.volumes) return null;
+  for (const volume of book.volumes) {
+    if (!volume.chapters) continue;
+    const found = volume.chapters.find((ch) => ch.id === chapterId);
+    if (found) {
+      return { chapter: found, title: getChapterDisplayTitle(found) };
+    }
+  }
+  return null;
+}
 
 export const navigationTools: ToolDefinition[] = [
   {
@@ -53,27 +72,14 @@ export const navigationTools: ToolDefinition[] = [
         }
 
         // 查找章节
-        let chapter = null;
-        let chapterTitle = '';
-        if (book.volumes) {
-          for (const volume of book.volumes) {
-            if (volume.chapters) {
-              const found = volume.chapters.find((ch) => ch.id === chapter_id);
-              if (found) {
-                chapter = found;
-                chapterTitle = getChapterDisplayTitle(found);
-                break;
-              }
-            }
-          }
-        }
-
-        if (!chapter) {
+        const foundChapter = findChapterInBook(book, chapter_id);
+        if (!foundChapter) {
           return JSON.stringify({
             success: false,
             error: `章节不存在: ${chapter_id}`,
           });
         }
+        const chapterTitle = foundChapter.title;
 
         // 触发导航操作
         if (onAction) {

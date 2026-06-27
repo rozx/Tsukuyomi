@@ -8,6 +8,7 @@
  * 内部状态完全来自 useRightPanel，与 AppRightPanelDesktop 共享 composable；
  * 这里只换一层 chrome、不 duplicate 任何消息/输入逻辑。
  */
+import { computed } from 'vue';
 import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPopover.vue';
 import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
@@ -60,6 +61,30 @@ const {
 } = useChatPanelSetup();
 
 const close = () => ui.closeRightPanel();
+
+// 输入栏 / 发送按钮状态收敛进 computed，降低模板圈复杂度（与 MobileChatSheet 同构）。
+const assistantStatusText = computed(() =>
+  assistantModel.value
+    ? `${assistantModel.value.name || assistantModel.value.id} · 在线`
+    : '未配置助手模型',
+);
+const inputPlaceholder = computed(() =>
+  assistantModel.value ? '请月詠相助…' : '未配置助手模型',
+);
+const inputDisabled = computed(() => isSending.value || !assistantModel.value);
+const sendClass = computed(() => ({
+  'tcp-send--stop': isSending.value,
+  'tcp-send--idle': !isSending.value && !inputMessage.value.trim(),
+}));
+const sendDisabled = computed(
+  () => !isSending.value && (!inputMessage.value.trim() || !assistantModel.value),
+);
+const sendAriaLabel = computed(() => (isSending.value ? '停止' : '发送'));
+const sendIcon = computed(() => (isSending.value ? 'pi-stop-circle' : 'pi-send'));
+const onSendClick = () => {
+  if (isSending.value) stopGeneration();
+  else sendMessage();
+};
 </script>
 
 <template>
@@ -73,10 +98,7 @@ const close = () => ui.closeRightPanel();
             class="tcp-status-dot"
             :class="{ 'tcp-status-dot--off': !assistantModel }"
           />
-          <template v-if="assistantModel">
-            {{ assistantModel.name || assistantModel.id }} · 在线
-          </template>
-          <template v-else>未配置助手模型</template>
+          {{ assistantStatusText }}
         </div>
       </div>
       <button
@@ -141,22 +163,19 @@ const close = () => ui.closeRightPanel();
         </button>
         <input
           v-model="inputMessage"
-          :disabled="isSending || !assistantModel"
-          :placeholder="assistantModel ? '请月詠相助…' : '未配置助手模型'"
+          :disabled="inputDisabled"
+          :placeholder="inputPlaceholder"
           class="tcp-input"
           @keydown.enter.exact.prevent="sendMessage"
         />
         <button
           class="tcp-send"
-          :class="{
-            'tcp-send--stop': isSending,
-            'tcp-send--idle': !isSending && !inputMessage.trim(),
-          }"
-          :disabled="!isSending && (!inputMessage.trim() || !assistantModel)"
-          :aria-label="isSending ? '停止' : '发送'"
-          @click="isSending ? stopGeneration() : sendMessage()"
+          :class="sendClass"
+          :disabled="sendDisabled"
+          :aria-label="sendAriaLabel"
+          @click="onSendClick"
         >
-          <i class="pi" :class="isSending ? 'pi-stop-circle' : 'pi-send'" aria-hidden="true" />
+          <i class="pi" :class="sendIcon" aria-hidden="true" />
         </button>
       </div>
     </div>

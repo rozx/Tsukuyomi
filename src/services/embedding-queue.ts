@@ -38,9 +38,23 @@ import {
 } from 'src/services/memory-cache';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import type { Memory } from 'src/models/memory';
+import type { Novel } from 'src/models/novel';
 
 const BATCH_SIZE = 8;
 const ETA_WINDOW_SIZE = 5;
+
+/**
+ * 把一本书全部卷里的章节 ID 按顺序收进一个数组（跳过缺失卷/章节）。
+ */
+function collectAllChapterIds(volumes: NonNullable<Novel['volumes']>): string[] {
+  const ids: string[] = [];
+  for (const volume of volumes) {
+    for (const chapter of volume.chapters ?? []) {
+      ids.push(chapter.id);
+    }
+  }
+  return ids;
+}
 
 export type QueueKind = 'memory' | 'chapter';
 
@@ -261,18 +275,27 @@ export class EmbeddingQueue {
   }
 
   /**
+   * 把一组章节 ID 中尚未入队的全部追加进 pending（去重），返回新增数量。
+   * enqueueChapterBacklog / enqueueAllChaptersForRecompute 共用。
+   */
+  private static enqueueUniqueChapterIds(chapterIds: string[], bookId: string): number {
+    let added = 0;
+    for (const chId of chapterIds) {
+      if (this.pending.some((item) => item.kind === 'chapter' && item.id === chId)) continue;
+      this.pending.push({ kind: 'chapter', id: chId, bookId });
+      added += 1;
+    }
+    return added;
+  }
+
+  /**
    * 扫描指定书籍的所有章节,把缺失或 model 版本过期的全部入队。
    */
   static async enqueueChapterBacklog(bookId: string): Promise<number> {
     if (!bookId) return 0;
     try {
       const chapterIds = await ChapterEmbeddingService.findChaptersNeedingEmbedding(bookId);
-      let added = 0;
-      for (const chId of chapterIds) {
-        if (this.pending.some((item) => item.kind === 'chapter' && item.id === chId)) continue;
-        this.pending.push({ kind: 'chapter', id: chId, bookId });
-        added += 1;
-      }
+      const added = this.enqueueUniqueChapterIds(chapterIds, bookId);
       if (added > 0) {
         this.totalEnqueued.chapter += added;
         this.emitProgress();
@@ -295,14 +318,7 @@ export class EmbeddingQueue {
       const { loadBookMetaFromDB } = await import('src/utils/chapter-book-lookup');
       const book = await loadBookMetaFromDB(bookId);
       if (!book?.volumes) return 0;
-      let added = 0;
-      for (const v of book.volumes) {
-        for (const ch of v.chapters || []) {
-          if (this.pending.some((item) => item.kind === 'chapter' && item.id === ch.id)) continue;
-          this.pending.push({ kind: 'chapter', id: ch.id, bookId });
-          added += 1;
-        }
-      }
+      const added = this.enqueueUniqueChapterIds(collectAllChapterIds(book.volumes), bookId);
       if (added > 0) {
         this.totalEnqueued.chapter += added;
         this.emitProgress();

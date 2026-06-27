@@ -34,6 +34,43 @@ import {
 
 const MAX_MEMORIES_PER_BOOK = 500;
 
+/** createMemoryWithId 的可选时间戳参数 */
+type MemoryTimestamps = { createdAt?: number; lastAccessedAt?: number } | undefined;
+
+/**
+ * createMemoryWithId 更新分支：把传入时间戳与既有记录合并。
+ * createdAt 取较早，lastAccessedAt 取较晚；未提供则保留既有值。
+ */
+function mergeTimestampsForUpdate(
+  existing: { createdAt: number; lastAccessedAt: number },
+  timestamps: MemoryTimestamps,
+): { createdAt: number; lastAccessedAt: number } {
+  return {
+    createdAt:
+      typeof timestamps?.createdAt === 'number'
+        ? Math.min(existing.createdAt, timestamps.createdAt)
+        : existing.createdAt,
+    lastAccessedAt:
+      typeof timestamps?.lastAccessedAt === 'number'
+        ? Math.max(existing.lastAccessedAt, timestamps.lastAccessedAt)
+        : existing.lastAccessedAt,
+  };
+}
+
+/**
+ * createMemoryWithId 新建分支：根据传入时间戳计算 createdAt / lastAccessedAt。
+ * 未提供 createdAt 时使用 now；lastAccessedAt 不得早于 createdAt。
+ */
+function buildNewMemoryTimestamps(
+  timestamps: MemoryTimestamps,
+  now: number,
+): { createdAt: number; lastAccessedAt: number } {
+  const createdAt = typeof timestamps?.createdAt === 'number' ? timestamps.createdAt : now;
+  const lastAccessedAt =
+    typeof timestamps?.lastAccessedAt === 'number' ? timestamps.lastAccessedAt : createdAt;
+  return { createdAt, lastAccessedAt: Math.max(lastAccessedAt, createdAt) };
+}
+
 /**
  * Memory 存储结构（用于 IndexedDB）
  */
@@ -506,14 +543,7 @@ export class MemoryService {
           ...existing,
           content,
           summary,
-          createdAt:
-            typeof timestamps?.createdAt === 'number'
-              ? Math.min(existing.createdAt, timestamps.createdAt)
-              : existing.createdAt,
-          lastAccessedAt:
-            typeof timestamps?.lastAccessedAt === 'number'
-              ? Math.max(existing.lastAccessedAt, timestamps.lastAccessedAt)
-              : existing.lastAccessedAt,
+          ...mergeTimestampsForUpdate(existing, timestamps),
         };
 
         await store.put(updatedMemory);
@@ -531,18 +561,12 @@ export class MemoryService {
       // 新建：如果达到限制，删除最旧的记录
       await this.evictOldestMemoryIfAtCapacity(store, bookIdIndex, bookId);
 
-      const now = Date.now();
-      const createdAt = typeof timestamps?.createdAt === 'number' ? timestamps.createdAt : now;
-      const lastAccessedAt =
-        typeof timestamps?.lastAccessedAt === 'number' ? timestamps.lastAccessedAt : createdAt;
-
       const memory: MemoryStorage = {
         id: memoryId,
         bookId,
         content,
         summary,
-        createdAt,
-        lastAccessedAt: Math.max(lastAccessedAt, createdAt),
+        ...buildNewMemoryTimestamps(timestamps, Date.now()),
       };
 
       await store.put(memory);

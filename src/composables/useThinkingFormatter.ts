@@ -49,15 +49,53 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * 从 JSON 解析出的对象推断 tone；命中返回对应 tone，否则返回 null（回退到关键词判断）。
+ */
+function toneFromParsedObject(parsed: Record<string, unknown>): ToolResultTone | null {
+  if (parsed.success === false) return 'error';
+  if (isNonEmptyString(parsed.error)) return 'error';
+  if (isNonEmptyString(parsed.warning)) return 'warning';
+  if (Array.isArray(parsed.warnings) && parsed.warnings.length > 0) return 'warning';
+  if (parsed.success === true) return 'success';
+  return null;
+}
+
 interface BracketMarkerMatch {
   index: number;
   fullText: string;
   content: string;
 }
 
+interface ScanStringState {
+  inString: boolean;
+  quoteChar: string;
+}
+
+/**
+ * 根据当前字符推进字符串状态机：进入/退出引号字符串。
+ * 在字符串内部时该字符不参与括号匹配。
+ */
+function advanceStringState(state: ScanStringState, char: string | undefined): void {
+  if (state.inString) {
+    if (char === state.quoteChar) {
+      state.inString = false;
+      state.quoteChar = '';
+    }
+    return;
+  }
+  if (char === '"' || char === "'") {
+    state.inString = true;
+    state.quoteChar = char;
+  }
+}
+
 function findMatchingCloseBracket(message: string, from: number): number {
-  let inString = false;
-  let quoteChar = '';
+  const state: ScanStringState = { inString: false, quoteChar: '' };
   let escaped = false;
   let bracketDepth = 0;
 
@@ -71,18 +109,11 @@ function findMatchingCloseBracket(message: string, from: number): number {
       escaped = true;
       continue;
     }
-    if (inString) {
-      if (char === quoteChar) {
-        inString = false;
-        quoteChar = '';
-      }
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      inString = true;
-      quoteChar = char;
-      continue;
-    }
+    const wasInString = state.inString;
+    advanceStringState(state, char);
+    // 该字符处于字符串上下文（进入、内部或闭合），跳过括号匹配
+    if (wasInString || state.inString) continue;
+
     if (char === '[') {
       bracketDepth++;
       continue;
@@ -131,11 +162,8 @@ function detectToolResultTone(toolResult: string): ToolResultTone {
   try {
     const parsed = JSON.parse(trimmed) as unknown;
     if (isObjectRecord(parsed)) {
-      if (parsed.success === false) return 'error';
-      if (typeof parsed.error === 'string' && parsed.error.trim()) return 'error';
-      if (typeof parsed.warning === 'string' && parsed.warning.trim()) return 'warning';
-      if (Array.isArray(parsed.warnings) && parsed.warnings.length > 0) return 'warning';
-      if (parsed.success === true) return 'success';
+      const tone = toneFromParsedObject(parsed);
+      if (tone) return tone;
     }
   } catch {
     // 非 JSON 回退到关键词判断
@@ -266,34 +294,64 @@ function applyThinkingMatchToParts(
   parts: FormattedMessagePart[],
   pendingToolCallPartIndexes: number[],
 ): void {
-  if (type === 'chunk-separator') {
-    parts.push({ type: 'chunk-separator', text: m[0], chunkInfo: `${m[1]}块 ${m[2]}` });
-    return;
+  switch (type) {
+    case 'chunk-separator':
+      applyChunkSeparatorMatch(m, parts);
+      return;
+    case 'state-transition':
+      applyStateTransitionMatch(m, parts);
+      return;
+    case 'tool-call':
+      applyToolCallMatch(m, parts, pendingToolCallPartIndexes);
+      return;
+    case 'tool-call-args':
+      applyToolCallArgsMatch(m, parts, pendingToolCallPartIndexes);
+      return;
+    case 'tool-result':
+      applyToolResultMatch(m, parts, pendingToolCallPartIndexes);
+      return;
   }
-  if (type === 'state-transition') {
-    if (m[1] && m[2]) {
-      parts.push({ type: 'state-transition', text: m[0], fromStatus: m[1], toStatus: m[2] });
-    }
-    return;
+}
+
+function applyChunkSeparatorMatch(m: RegExpMatchArray, parts: FormattedMessagePart[]): void {
+  parts.push({ type: 'chunk-separator', text: m[0], chunkInfo: `${m[1]}块 ${m[2]}` });
+}
+
+function applyStateTransitionMatch(m: RegExpMatchArray, parts: FormattedMessagePart[]): void {
+  if (m[1] && m[2]) {
+    parts.push({ type: 'state-transition', text: m[0], fromStatus: m[1], toStatus: m[2] });
   }
-  if (type === 'tool-call') {
-    if (m[1]) {
-      parts.push({ type: 'tool-call', text: m[0], toolName: m[1], toolCallTone: 'running' });
-      pendingToolCallPartIndexes.push(parts.length - 1);
-    }
-    return;
+}
+
+function applyToolCallMatch(
+  m: RegExpMatchArray,
+  parts: FormattedMessagePart[],
+  pendingToolCallPartIndexes: number[],
+): void {
+  if (!m[1]) return;
+  parts.push({ type: 'tool-call', text: m[0], toolName: m[1], toolCallTone: 'running' });
+  pendingToolCallPartIndexes.push(parts.length - 1);
+}
+
+function applyToolCallArgsMatch(
+  m: RegExpMatchArray,
+  parts: FormattedMessagePart[],
+  pendingToolCallPartIndexes: number[],
+): void {
+  if (m[1] === undefined) return;
+  const lastIdx = pendingToolCallPartIndexes[pendingToolCallPartIndexes.length - 1];
+  if (lastIdx === undefined) return;
+  const toolCallPart = parts[lastIdx];
+  if (toolCallPart?.type === 'tool-call') {
+    toolCallPart.toolCallArgs = formatToolResultTooltip(m[1]);
   }
-  if (type === 'tool-call-args') {
-    if (m[1] === undefined) return;
-    const lastIdx = pendingToolCallPartIndexes[pendingToolCallPartIndexes.length - 1];
-    if (lastIdx === undefined) return;
-    const toolCallPart = parts[lastIdx];
-    if (toolCallPart?.type === 'tool-call') {
-      toolCallPart.toolCallArgs = formatToolResultTooltip(m[1]);
-    }
-    return;
-  }
-  // type === 'tool-result'
+}
+
+function applyToolResultMatch(
+  m: RegExpMatchArray,
+  parts: FormattedMessagePart[],
+  pendingToolCallPartIndexes: number[],
+): void {
   if (!m[1]) return;
   const tone = detectToolResultTone(m[1]);
   const toolCallTone = mapToolResultToneToToolCallTone(tone);
@@ -440,42 +498,57 @@ export function useThinkingFormatter(
     return cache.value[taskId] || [];
   };
 
+  // 清理已从 tasks 中移除的任务：删除缓存、解析长度与节流器
+  const cleanupRemovedTaskCaches = (currentIds: Set<string>): void => {
+    for (const taskId of Object.keys(cache.value)) {
+      if (currentIds.has(taskId)) continue;
+      delete cache.value[taskId];
+      parsedLengths.delete(taskId);
+      const t = throttles.get(taskId);
+      if (t) {
+        t.cleanup();
+        throttles.delete(taskId);
+      }
+    }
+  };
+
+  // 处理单个任务的 watch 变更：状态切换或消息缩短 → 完整重解析；增长 → 节流增量
+  const processWatchedTask = (
+    task: { id: string; thinkLen: number; status: string },
+    oldMap: Map<string, { id: string; thinkLen: number; status: string }>,
+  ): void => {
+    const old = oldMap.get(task.id);
+    const oldThinkLen = old?.thinkLen ?? 0;
+    const statusChanged = !!old && old.status !== task.status;
+
+    // 状态切换或消息缩短 → 立即完整重解析（状态影响 tool-call 的 tone 回填）
+    if (statusChanged || task.thinkLen < oldThinkLen) {
+      const fullTask = tasks.value.find((t) => t.id === task.id);
+      fullReparse(task.id, fullTask);
+      return;
+    }
+    // 消息增长 → 节流路径（优先尝试增量快速路径）
+    if (task.thinkLen > oldThinkLen) {
+      scheduleUpdate(task.id);
+    }
+  };
+
   // 监听思考消息长度与任务状态变化
   watch(
-    () => tasks.value.map((t) => ({
-      id: t.id,
-      thinkLen: t.thinkingMessage?.length || 0,
-      status: t.status,
-    })),
+    () =>
+      tasks.value.map((t) => ({
+        id: t.id,
+        thinkLen: t.thinkingMessage?.length || 0,
+        status: t.status,
+      })),
     (newTasks, oldTasks) => {
       const oldMap = new Map((oldTasks || []).map((t) => [t.id, t]));
       const currentIds = new Set(newTasks.map((t) => t.id));
 
-      // 清理已移除任务
-      for (const taskId of Object.keys(cache.value)) {
-        if (!currentIds.has(taskId)) {
-          delete cache.value[taskId];
-          parsedLengths.delete(taskId);
-          const t = throttles.get(taskId);
-          if (t) { t.cleanup(); throttles.delete(taskId); }
-        }
-      }
+      cleanupRemovedTaskCaches(currentIds);
 
       for (const task of newTasks) {
-        const old = oldMap.get(task.id);
-        const oldThinkLen = old?.thinkLen ?? 0;
-        const statusChanged = !!old && old.status !== task.status;
-
-        // 状态切换或消息缩短 → 立即完整重解析（状态影响 tool-call 的 tone 回填）
-        if (statusChanged || task.thinkLen < oldThinkLen) {
-          const fullTask = tasks.value.find((t) => t.id === task.id);
-          fullReparse(task.id, fullTask);
-          continue;
-        }
-        // 消息增长 → 节流路径（优先尝试增量快速路径）
-        if (task.thinkLen > oldThinkLen) {
-          scheduleUpdate(task.id);
-        }
+        processWatchedTask(task, oldMap);
       }
     },
     { flush: 'post' },

@@ -152,7 +152,6 @@ export class GlobalConfig {
     return book?.skipAskUser ?? false;
   }
 
-  // fallow-ignore-next-line unused-class-member
   static async getBookContextSource(bookId: string): Promise<{
     title?: string;
     description?: string;

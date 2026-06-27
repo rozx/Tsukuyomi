@@ -109,43 +109,19 @@ export class TranslationService {
     const onParagraphsExtracted = options?.onParagraphTranslation
       ? async (params: ParagraphExtractCallbackParams) => {
           const { paragraphs, actions, actionStartIndex } = params;
-          // 提取本 chunk 引用的记忆 ID
-          const chunkActions = actions.slice(actionStartIndex);
-          const referencedMemoryIds = new Set<string>();
-          for (const action of chunkActions) {
-            if (action.entity === 'memory') {
-              const data = action.data as {
-                memory_id?: string;
-                id?: string;
-                found_memory_ids?: string[];
-              };
-              if (data.memory_id) referencedMemoryIds.add(data.memory_id);
-              if (data.id) referencedMemoryIds.add(data.id);
-              if (data.found_memory_ids && Array.isArray(data.found_memory_ids)) {
-                data.found_memory_ids.forEach((id) => referencedMemoryIds.add(id));
-              }
-            }
-          }
-          // 合并上下文注入的记忆 ID（来自三信号打分管线）
-          const breakdowns = options.bookId
-            ? getLastScoreBreakdowns(options.bookId)
-            : undefined;
-          if (breakdowns) {
-            for (const memId of Object.keys(breakdowns)) {
-              referencedMemoryIds.add(memId);
-            }
-          }
-
+          const referencedMemoryIds = collectChunkReferencedMemoryIds(
+            actions.slice(actionStartIndex),
+          );
+          const memoryScoreBreakdown = resolveChunkMemoryBreakdowns(
+            options.bookId,
+            referencedMemoryIds,
+          );
           const referencedMemories = Array.from(referencedMemoryIds);
-          const memoryScoreBreakdown =
-            breakdowns && Object.keys(breakdowns).length > 0 ? breakdowns : undefined;
-
-          // 构建带引用的段落对象
-          const enrichedParagraphs = paragraphs.map((p) => ({
-            ...p,
-            ...(referencedMemories.length > 0 ? { referencedMemories } : {}),
-            ...(memoryScoreBreakdown ? { memoryScoreBreakdown } : {}),
-          }));
+          const enrichedParagraphs = enrichParagraphsWithMemory(
+            paragraphs,
+            referencedMemories,
+            memoryScoreBreakdown,
+          );
 
           try {
             await Promise.resolve(options.onParagraphTranslation!(enrichedParagraphs));
@@ -208,4 +184,57 @@ export class TranslationService {
       },
     );
   }
+}
+
+/**
+ * 从本 chunk 的 actions 中收集引用到的记忆 ID（memory 实体）
+ */
+function collectChunkReferencedMemoryIds(chunkActions: ActionInfo[]): Set<string> {
+  const ids = new Set<string>();
+  for (const action of chunkActions) {
+    if (action.entity !== 'memory') continue;
+    const data = action.data as {
+      memory_id?: string;
+      id?: string;
+      found_memory_ids?: string[];
+    };
+    if (data.memory_id) ids.add(data.memory_id);
+    if (data.id) ids.add(data.id);
+    if (Array.isArray(data.found_memory_ids)) {
+      for (const id of data.found_memory_ids) ids.add(id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * 合并上下文注入的记忆 ID（来自三信号打分管线），并返回非空的 breakdowns
+ * 会将 breakdowns 的 key 并入 referencedMemoryIds
+ */
+function resolveChunkMemoryBreakdowns(
+  bookId: string | undefined,
+  referencedMemoryIds: Set<string>,
+): Record<string, ScoreBreakdown> | undefined {
+  if (!bookId) return undefined;
+  const breakdowns = getLastScoreBreakdowns(bookId);
+  if (!breakdowns) return undefined;
+  for (const memId of Object.keys(breakdowns)) {
+    referencedMemoryIds.add(memId);
+  }
+  return Object.keys(breakdowns).length > 0 ? breakdowns : undefined;
+}
+
+/**
+ * 为段落附加引用记忆 / 评分明细（仅在存在时附加，保持可选属性语义）
+ */
+function enrichParagraphsWithMemory(
+  paragraphs: { id: string; translation: string }[],
+  referencedMemories: string[],
+  memoryScoreBreakdown: Record<string, ScoreBreakdown> | undefined,
+): Array<{ id: string; translation: string; referencedMemories?: string[]; memoryScoreBreakdown?: Record<string, ScoreBreakdown> }> {
+  return paragraphs.map((p) => ({
+    ...p,
+    ...(referencedMemories.length > 0 ? { referencedMemories } : {}),
+    ...(memoryScoreBreakdown ? { memoryScoreBreakdown } : {}),
+  }));
 }

@@ -71,6 +71,31 @@ const {
   bindActionPopoverRef,
   bindGroupedActionPopoverRef,
 } = useChatPanelSetup();
+
+// 输入栏 / 发送按钮的状态全部收敛进 computed，避免模板里出现三元与 && / ||，
+// 把模板圈复杂度压到阈值之下。渲染结果与原先逐字一致。
+const assistantStatusText = computed(() =>
+  assistantModel.value
+    ? `${assistantModel.value.name || assistantModel.value.id} · 在线`
+    : '未配置助手模型',
+);
+const inputPlaceholder = computed(() =>
+  assistantModel.value ? '请月詠相助…' : '未配置助手模型',
+);
+const inputDisabled = computed(() => isSending.value || !assistantModel.value);
+const sendClass = computed(() => ({
+  'mc-send--stop': isSending.value,
+  'mc-send--idle': !isSending.value && !inputMessage.value.trim(),
+}));
+const sendDisabled = computed(
+  () => !isSending.value && (!inputMessage.value.trim() || !assistantModel.value),
+);
+const sendAriaLabel = computed(() => (isSending.value ? '停止' : '发送'));
+const sendIcon = computed(() => (isSending.value ? 'pi-stop-circle' : 'pi-send'));
+const onSendClick = () => {
+  if (isSending.value) stopGeneration();
+  else sendMessage();
+};
 </script>
 
 <template>
@@ -86,10 +111,7 @@ const {
               class="mc-status-dot"
               :class="{ 'mc-status-dot--off': !assistantModel }"
             />
-            <template v-if="assistantModel">
-              {{ assistantModel.name || assistantModel.id }} · 在线
-            </template>
-            <template v-else>未配置助手模型</template>
+            {{ assistantStatusText }}
           </div>
         </div>
         <button
@@ -157,22 +179,19 @@ const {
           </button>
           <input
             v-model="inputMessage"
-            :disabled="isSending || !assistantModel"
-            :placeholder="assistantModel ? '请月詠相助…' : '未配置助手模型'"
+            :disabled="inputDisabled"
+            :placeholder="inputPlaceholder"
             class="mc-input"
             @keydown.enter.exact.prevent="sendMessage"
           />
           <button
             class="mc-send"
-            :class="{
-              'mc-send--stop': isSending,
-              'mc-send--idle': !isSending && !inputMessage.trim(),
-            }"
-            :disabled="!isSending && (!inputMessage.trim() || !assistantModel)"
-            :aria-label="isSending ? '停止' : '发送'"
-            @click="isSending ? stopGeneration() : sendMessage()"
+            :class="sendClass"
+            :disabled="sendDisabled"
+            :aria-label="sendAriaLabel"
+            @click="onSendClick"
           >
-            <i class="pi" :class="isSending ? 'pi-stop-circle' : 'pi-send'" aria-hidden="true" />
+            <i class="pi" :class="sendIcon" aria-hidden="true" />
           </button>
         </div>
       </div>

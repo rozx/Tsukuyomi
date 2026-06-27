@@ -50,8 +50,28 @@ function saveContextToStorage(state: ContextState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
-    console.error('Failed to save context to storage:', error);
+    console.error('Failed to save context from storage:', error);
   }
+}
+
+/**
+ * 书籍 / 章节切换判定：传入新值为 null，或与原值不同时，需要清除下级上下文。
+ */
+function shouldResetForChange(previous: string | null, incoming: string | null): boolean {
+  return incoming === null || previous !== incoming;
+}
+
+/**
+ * 计算悬停段落的目标值：提供了 paragraphText 且文本为空/仅符号时清空，否则原样写入。
+ */
+function resolveHoveredTarget(
+  next: string | null,
+  paragraphText: string | null | undefined,
+): string | null {
+  if (next && paragraphText !== undefined) {
+    return isEmptyOrSymbolOnly(paragraphText) ? null : next;
+  }
+  return next;
 }
 
 export const useContextStore = defineStore('context', {
@@ -73,27 +93,6 @@ export const useContextStore = defineStore('context', {
       hoveredParagraphId: state.hoveredParagraphId,
       selectedParagraphId: state.selectedParagraphId,
     }),
-
-    /**
-     * 检查是否有当前书籍
-     */
-    hasCurrentBook: (state): boolean => {
-      return state.currentBookId !== null;
-    },
-
-    /**
-     * 检查是否有当前章节
-     */
-    hasCurrentChapter: (state): boolean => {
-      return state.currentChapterId !== null;
-    },
-
-    /**
-     * 检查是否有悬停的段落
-     */
-    hasHoveredParagraph: (state): boolean => {
-      return state.hoveredParagraphId !== null;
-    },
   },
 
   actions: {
@@ -120,7 +119,7 @@ export const useContextStore = defineStore('context', {
       const previousBookId = this.currentBookId;
       this.currentBookId = bookId;
       // 如果切换书籍，清除章节和段落上下文
-      if (bookId === null || previousBookId !== bookId) {
+      if (shouldResetForChange(previousBookId, bookId)) {
         this.currentChapterId = null;
         this.hoveredParagraphId = null;
         this.selectedParagraphId = null;
@@ -135,7 +134,7 @@ export const useContextStore = defineStore('context', {
       const previousChapterId = this.currentChapterId;
       this.currentChapterId = chapterId;
       // 如果切换章节，清除段落上下文
-      if (chapterId === null || previousChapterId !== chapterId) {
+      if (shouldResetForChange(previousChapterId, chapterId)) {
         this.hoveredParagraphId = null;
         this.selectedParagraphId = null;
       }
@@ -171,7 +170,7 @@ export const useContextStore = defineStore('context', {
         const previousBookId = this.currentBookId;
         this.currentBookId = context.currentBookId;
         // 如果切换书籍，清除章节和段落上下文
-        if (context.currentBookId === null || previousBookId !== context.currentBookId) {
+        if (shouldResetForChange(previousBookId, context.currentBookId)) {
           this.currentChapterId = null;
           this.hoveredParagraphId = null;
           this.selectedParagraphId = null;
@@ -181,23 +180,14 @@ export const useContextStore = defineStore('context', {
         const previousChapterId = this.currentChapterId;
         this.currentChapterId = context.currentChapterId;
         // 如果切换章节，清除段落上下文
-        if (context.currentChapterId === null || previousChapterId !== context.currentChapterId) {
+        if (shouldResetForChange(previousChapterId, context.currentChapterId)) {
           this.hoveredParagraphId = null;
           this.selectedParagraphId = null;
         }
       }
       if (context.hoveredParagraphId !== undefined) {
         // 如果提供了段落文本且为空或仅符号，则不设置段落 ID
-        if (context.hoveredParagraphId && paragraphText !== undefined) {
-          if (isEmptyOrSymbolOnly(paragraphText)) {
-            // 如果段落是空的或仅符号，清除悬停状态
-            this.hoveredParagraphId = null;
-          } else {
-            this.hoveredParagraphId = context.hoveredParagraphId;
-          }
-        } else {
-          this.hoveredParagraphId = context.hoveredParagraphId;
-        }
+        this.hoveredParagraphId = resolveHoveredTarget(context.hoveredParagraphId, paragraphText);
       }
       if (context.selectedParagraphId !== undefined) {
         this.selectedParagraphId = context.selectedParagraphId;
@@ -213,14 +203,6 @@ export const useContextStore = defineStore('context', {
       this.currentChapterId = null;
       this.hoveredParagraphId = null;
       this.selectedParagraphId = null;
-      this.saveState();
-    },
-
-    /**
-     * 清除段落悬停状态
-     */
-    clearHoveredParagraph(): void {
-      this.hoveredParagraphId = null;
       this.saveState();
     },
 

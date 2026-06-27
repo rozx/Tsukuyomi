@@ -228,6 +228,19 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 }
 
+function collectStringId(ids: Set<string>, value: unknown): void {
+  if (typeof value === 'string' && value.length > 0) {
+    ids.add(value);
+  }
+}
+
+function collectStringIdsFromArray(ids: Set<string>, arr: unknown): void {
+  if (!Array.isArray(arr)) return;
+  for (const v of arr) {
+    collectStringId(ids, v);
+  }
+}
+
 function getReferencedMemoryIdsFromAction(action: ActionInfo): string[] {
   if (action.entity !== 'memory') {
     return [];
@@ -239,25 +252,9 @@ function getReferencedMemoryIdsFromAction(action: ActionInfo): string[] {
   }
 
   const referencedIds = new Set<string>();
-
-  const memoryId = data['memory_id'];
-  if (typeof memoryId === 'string' && memoryId.length > 0) {
-    referencedIds.add(memoryId);
-  }
-
-  const id = data['id'];
-  if (typeof id === 'string' && id.length > 0) {
-    referencedIds.add(id);
-  }
-
-  const foundMemoryIds = data['found_memory_ids'];
-  if (Array.isArray(foundMemoryIds)) {
-    for (const foundId of foundMemoryIds) {
-      if (typeof foundId === 'string' && foundId.length > 0) {
-        referencedIds.add(foundId);
-      }
-    }
-  }
+  collectStringId(referencedIds, data['memory_id']);
+  collectStringId(referencedIds, data['id']);
+  collectStringIdsFromArray(referencedIds, data['found_memory_ids']);
 
   return Array.from(referencedIds);
 }

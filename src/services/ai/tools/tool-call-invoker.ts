@@ -80,23 +80,38 @@ function buildChunkBoundaries(
 }
 
 /**
+ * truthy 时直接从 options 拷贝到 ToolContext 的同名字段。
+ * 数据驱动，避免为每个字段写一条 if（降低圈复杂度）。
+ */
+const TRUTHY_CONTEXT_FIELDS = [
+  'bookId',
+  'taskId',
+  'sessionId',
+  'aiModelId',
+  'onAction',
+  'onToast',
+  'aiProcessingStore',
+  'submittedParagraphIds',
+  'accumulatedParagraphs',
+] as const;
+
+/**
  * 组装传给 tool.handler 的 context；只包含已提供的可选字段（避免传 undefined）。
  */
 function buildToolHandlerContext(options: HandleToolCallOptions): ToolContext {
-  const chunkBoundaries = buildChunkBoundaries(options.paragraphIds);
   const context: ToolContext = {};
+  const chunkBoundaries = buildChunkBoundaries(options.paragraphIds);
 
-  if (options.bookId) context.bookId = options.bookId;
-  if (options.taskId) context.taskId = options.taskId;
-  if (options.sessionId) context.sessionId = options.sessionId;
-  if (options.aiModelId) context.aiModelId = options.aiModelId;
-  if (options.onAction) context.onAction = options.onAction;
-  if (options.onToast) context.onToast = options.onToast;
+  // truthy 字段统一拷贝
+  for (const key of TRUTHY_CONTEXT_FIELDS) {
+    const value = options[key];
+    if (value) {
+      (context as Record<string, unknown>)[key] = value;
+    }
+  }
+
   if (chunkBoundaries) context.chunkBoundaries = chunkBoundaries;
-  if (options.aiProcessingStore) context.aiProcessingStore = options.aiProcessingStore;
   if (options.chunkIndex !== undefined) context.chunkIndex = options.chunkIndex;
-  if (options.submittedParagraphIds) context.submittedParagraphIds = options.submittedParagraphIds;
-  if (options.accumulatedParagraphs) context.accumulatedParagraphs = options.accumulatedParagraphs;
   if (options.enableOriginalTextValidation !== undefined) {
     context.enableOriginalTextValidation = options.enableOriginalTextValidation;
   }

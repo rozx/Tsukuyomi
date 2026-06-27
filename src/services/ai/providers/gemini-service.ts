@@ -113,12 +113,7 @@ export class GeminiService extends BaseAIService {
       const tools = buildGeminiTools(request);
 
       const model = client.getGenerativeModel(
-        {
-          model: modelName,
-          ...(systemInstruction && { systemInstruction }),
-          ...(tools && { tools }),
-          ...(Object.keys(generationConfig).length > 0 && { generationConfig }),
-        },
+        buildGenerativeModelParams(modelName, systemInstruction, tools, generationConfig),
         this.getRequestOptions(config),
       );
 
@@ -136,42 +131,18 @@ export class GeminiService extends BaseAIService {
         onChunk,
       );
 
+      // 转换工具调用格式（Gemini 不返回 ID，生成一个）
+      const finalToolCalls = buildGeminiFinalToolCalls(streamResult.toolCalls);
+
       const text = streamResult.fullText.trim();
       // 允许空文本，如果有工具调用
-      if (!text && streamResult.toolCalls.length === 0) {
+      if (!text && finalToolCalls.length === 0) {
         throw new AIEmptyResponseError();
       }
 
-      // 转换工具调用格式
-      const finalToolCalls = streamResult.toolCalls.map((tc: any) => ({
-        id: `call_${Math.random().toString(36).substr(2, 9)}`, // Gemini 不返回 ID，生成一个
-        type: 'function' as const,
-        function: {
-          name: tc.name,
-          arguments: JSON.stringify(tc.args),
-        },
-      }));
+      await emitGeminiFinalChunk(onChunk, config.model, streamResult, finalToolCalls);
 
-      if (onChunk) {
-        await onChunk({
-          text: '',
-          done: true,
-          model: config.model,
-          ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
-          ...(streamResult.fullReasoningContent
-            ? { reasoningContent: streamResult.fullReasoningContent }
-            : {}),
-        });
-      }
-
-      return {
-        text,
-        model: config.model,
-        ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
-        ...(streamResult.fullReasoningContent
-          ? { reasoningContent: streamResult.fullReasoningContent }
-          : {}),
-      };
+      return buildGeminiTextResult(text, streamResult, finalToolCalls, config.model);
     } catch (error) {
       if (error instanceof Error) {
         throw error;
@@ -188,15 +159,13 @@ export class GeminiService extends BaseAIService {
     config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
   ): Promise<ModelInfo[]> {
     try {
-      if (!config.apiKey || typeof config.apiKey !== 'string' || config.apiKey.trim() === '') {
+      if (!isGeminiApiKeyValid(config.apiKey)) {
         throw new Error('API Key 不能为空');
       }
 
       // 使用 Google Generative AI API 的 REST 端点
       // 文档：https://ai.google.dev/api/rest
-      const baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com';
-      const apiUrl = `${baseUrl}/v1beta/models?key=${encodeURIComponent(config.apiKey)}`;
-
+      const apiUrl = buildGeminiModelsApiUrl(config);
       // 在浏览器模式下，使用 CORS 代理
       const proxiedUrl = ProxyService.getProxiedUrlForAI(apiUrl, config.useCorsProxy);
 
@@ -216,36 +185,8 @@ export class GeminiService extends BaseAIService {
       }
 
       const data = await response.json();
-
-      // 解析响应数据
-      // 响应格式：{ models: [{ name: "models/gemini-pro", displayName: "Gemini Pro", ... }, ...] }
-      if (!data.models || !Array.isArray(data.models)) {
-        return [];
-      }
-
-      // 过滤出可用的生成模型（排除 embedding 等模型）
-      const generationModels = data.models.filter(
-        (model: { supportedGenerationMethods?: string[] }) => {
-          return (
-            model.supportedGenerationMethods &&
-            model.supportedGenerationMethods.includes('generateContent')
-          );
-        },
-      );
-
-      // 转换为 ModelInfo 格式
-      return generationModels.map(
-        (model: { name: string; displayName?: string; description?: string }) => {
-          // 移除 "models/" 前缀
-          const modelId = model.name.replace(/^models\//, '');
-          return {
-            id: modelId,
-            name: modelId,
-            displayName: model.displayName || modelId,
-            ownedBy: 'Google',
-          };
-        },
-      );
+      // 解析响应数据（响应格式：{ models: [{ name: "models/gemini-pro", ... }] }）
+      return parseGeminiModelsResponse(data);
     } catch (error) {
       // 如果 API 调用失败，返回空列表而不是抛出错误
       // 这样用户仍然可以手动输入模型名称
@@ -463,6 +404,130 @@ function buildGeminiTools(request: TextGenerationRequest): any[] | undefined {
 }
 
 /**
+ * 构造 getGenerativeModel 的首参（按需附加 systemInstruction / tools / generationConfig）
+ */
+function buildGenerativeModelParams(
+  modelName: string,
+  systemInstruction: string | undefined,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tools: any[] | undefined,
+  generationConfig: GeminiGenerationConfig,
+): {
+  model: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  systemInstruction?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tools?: any;
+  generationConfig?: GeminiGenerationConfig;
+} {
+  return {
+    model: modelName,
+    ...(systemInstruction ? { systemInstruction } : {}),
+    ...(tools ? { tools } : {}),
+    ...(Object.keys(generationConfig).length > 0 ? { generationConfig } : {}),
+  };
+}
+
+/**
+ * 校验 Gemini API Key 是否有效（非空字符串）
+ */
+function isGeminiApiKeyValid(apiKey: unknown): boolean {
+  return typeof apiKey === 'string' && apiKey.trim() !== '';
+}
+
+/**
+ * 构造获取模型列表的 REST URL
+ */
+function buildGeminiModelsApiUrl(
+  config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl'>,
+): string {
+  const baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com';
+  return `${baseUrl}/v1beta/models?key=${encodeURIComponent(config.apiKey)}`;
+}
+
+/**
+ * 过滤出支持 generateContent 的生成模型（排除 embedding 等模型）
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function filterGeminiGenerationModels(models: any[]): any[] {
+  return models.filter((model) => {
+    return (
+      model.supportedGenerationMethods &&
+      model.supportedGenerationMethods.includes('generateContent')
+    );
+  });
+}
+
+/**
+ * 将 Gemini 模型对象转换为 ModelInfo 格式（移除 "models/" 前缀）
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapGeminiModels(models: any[]): ModelInfo[] {
+  return models.map((model: { name: string; displayName?: string }) => {
+    const modelId = model.name.replace(/^models\//, '');
+    return {
+      id: modelId,
+      name: modelId,
+      displayName: model.displayName || modelId,
+      ownedBy: 'Google',
+    };
+  });
+}
+
+/**
+ * 解析模型列表响应：非法结构时返回空数组
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseGeminiModelsResponse(data: any): ModelInfo[] {
+  if (!data.models || !Array.isArray(data.models)) {
+    return [];
+  }
+  return mapGeminiModels(filterGeminiGenerationModels(data.models));
+}
+
+/**
+ * 从单个 chunk 中安全读取候选 parts 列表
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getGeminiChunkParts(chunk: any): any[] {
+  return chunk.candidates?.[0]?.content?.parts || chunk.parts || [];
+}
+
+/**
+ * 遍历 parts 累积正文 / 思考内容
+ */
+function collectGeminiPartsText(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  parts: any[],
+  isThinkingEnabled: boolean,
+): { chunkText: string; chunkReasoningContent: string } {
+  let chunkText = '';
+  let chunkReasoningContent = '';
+  for (const part of parts) {
+    if (!part.text) continue;
+    // 仅当明确启用思考模式时，才把带 thought 标记的片段视为思考内容
+    if (isThinkingEnabled && part.thought === true) {
+      chunkReasoningContent += part.text;
+    } else {
+      chunkText += part.text;
+    }
+  }
+  return { chunkText, chunkReasoningContent };
+}
+
+/**
+ * 安全读取 chunk.text()，出错时返回空字符串
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function readGeminiFallbackText(chunk: any): string {
+  try {
+    return chunk.text?.() || '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * 从单个 chunk 中提取文本 / 思考内容。优先解析 candidates[0].content.parts
  */
 function extractGeminiChunkContent(
@@ -473,42 +538,18 @@ function extractGeminiChunkContent(
   let chunkText = '';
   let chunkReasoningContent = '';
   try {
-    // Gemini SDK 的 chunk 对象可能包含 parts 属性，但类型定义可能不完整
-    const parts = chunk.candidates?.[0]?.content?.parts || chunk.parts || [];
-
+    const parts = getGeminiChunkParts(chunk);
     if (parts && parts.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const part of parts as any[]) {
-        if (!part.text) continue;
-        // 检查是否有 thought 属性（Gemini 2/3 Flash Thinking 的思考内容）
-        // 只有当明确启用了思考模式时，才检查 thought 属性
-        if (isThinkingEnabled && part.thought === true) {
-          chunkReasoningContent += part.text;
-        } else {
-          // 如果未启用思考模式，或者 part.thought 不为 true，则视为普通文本
-          chunkText += part.text;
-        }
-      }
+      ({ chunkText, chunkReasoningContent } = collectGeminiPartsText(parts, isThinkingEnabled));
     } else if (!isThinkingEnabled) {
-      // 只有在未启用思考模式时，才回退到使用 chunk.text()
-      // 因为如果启用了思考模式，chunk.text() 会包含混杂的思考内容，导致泄露
-      const fallbackText = chunk.text?.();
-      if (fallbackText) {
-        chunkText = fallbackText;
-      }
+      // 只有未启用思考模式时，才回退到 chunk.text()
+      chunkText = readGeminiFallbackText(chunk);
     }
   } catch (error) {
     console.debug('chunk 解析出错:', error);
     // 出错时，仅在未启用思考模式时回退
     if (!isThinkingEnabled) {
-      try {
-        const fallbackText = chunk.text?.();
-        if (fallbackText) {
-          chunkText = fallbackText;
-        }
-      } catch {
-        // ignore
-      }
+      chunkText = readGeminiFallbackText(chunk);
     } else {
       console.warn('[GeminiService] 启用思考模式时解析出错，跳过 fallback 以防泄露', error);
     }
@@ -523,6 +564,55 @@ interface GeminiStreamResult {
   toolCalls: any[];
 }
 
+interface GeminiStreamAccumulators {
+  fullText: string;
+  fullReasoningContent: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  toolCalls: any[];
+}
+
+/**
+ * 处理单个 Gemini stream chunk：累积文本 / 思考 / 工具调用并转发 onChunk
+ */
+async function processGeminiStreamChunk(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  chunk: any,
+  acc: GeminiStreamAccumulators,
+  config: AIServiceConfig,
+  isThinkingEnabled: boolean,
+  onChunk: TextGenerationStreamCallback | undefined,
+): Promise<void> {
+  const chunkFunctionCalls = chunk.functionCalls?.();
+  const { chunkText, chunkReasoningContent } = extractGeminiChunkContent(
+    chunk,
+    isThinkingEnabled,
+  );
+
+  if (chunkFunctionCalls) {
+    acc.toolCalls.push(...chunkFunctionCalls);
+  }
+
+  if (chunkText) {
+    acc.fullText += chunkText;
+    if (onChunk) {
+      await onChunk({ text: chunkText, done: false, model: config.model });
+    }
+  }
+
+  // 思考内容应该单独传递，不包含在实际响应中
+  if (chunkReasoningContent) {
+    acc.fullReasoningContent += chunkReasoningContent;
+    if (onChunk) {
+      await onChunk({
+        text: '', // 思考内容不显示在聊天中
+        done: false,
+        model: config.model,
+        reasoningContent: chunkReasoningContent,
+      });
+    }
+  }
+}
+
 /**
  * 消费 Gemini 流式响应，处理文本 / 思考内容 / 工具调用并转发到 onChunk 回调
  */
@@ -533,44 +623,82 @@ async function consumeGeminiStream(
   isThinkingEnabled: boolean,
   onChunk: TextGenerationStreamCallback | undefined,
 ): Promise<GeminiStreamResult> {
-  let fullText = '';
-  let fullReasoningContent = '';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toolCalls: any[] = [];
+  const acc: GeminiStreamAccumulators = {
+    fullText: '',
+    fullReasoningContent: '',
+    toolCalls: [],
+  };
 
   for await (const chunk of stream) {
     if (config.signal?.aborted) throw new Error('请求已取消');
-
-    const chunkFunctionCalls = chunk.functionCalls?.();
-    const { chunkText, chunkReasoningContent } = extractGeminiChunkContent(
-      chunk,
-      isThinkingEnabled,
-    );
-
-    if (chunkFunctionCalls) {
-      toolCalls.push(...chunkFunctionCalls);
-    }
-
-    if (chunkText) {
-      fullText += chunkText;
-      if (onChunk) {
-        await onChunk({ text: chunkText, done: false, model: config.model });
-      }
-    }
-
-    // 思考内容应该单独传递，不包含在实际响应中
-    if (chunkReasoningContent) {
-      fullReasoningContent += chunkReasoningContent;
-      if (onChunk) {
-        await onChunk({
-          text: '', // 思考内容不显示在聊天中
-          done: false,
-          model: config.model,
-          reasoningContent: chunkReasoningContent,
-        });
-      }
-    }
+    await processGeminiStreamChunk(chunk, acc, config, isThinkingEnabled, onChunk);
   }
 
-  return { fullText, fullReasoningContent, toolCalls };
+  return {
+    fullText: acc.fullText,
+    fullReasoningContent: acc.fullReasoningContent,
+    toolCalls: acc.toolCalls,
+  };
+}
+
+/**
+ * 将 Gemini 的 functionCall 列表转换为统一的 toolCalls 结构（Gemini 不返回 ID，生成一个）
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildGeminiFinalToolCalls(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  toolCalls: any[],
+): Array<{
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}> {
+  return toolCalls.map((tc: any) => ({
+    id: `call_${Math.random().toString(36).substr(2, 9)}`,
+    type: 'function' as const,
+    function: {
+      name: tc.name,
+      arguments: JSON.stringify(tc.args),
+    },
+  }));
+}
+
+/**
+ * 流结束时发送 done chunk（包含最终工具调用 / 思考内容）
+ */
+async function emitGeminiFinalChunk(
+  onChunk: TextGenerationStreamCallback | undefined,
+  model: string,
+  streamResult: GeminiStreamResult,
+  finalToolCalls: ReturnType<typeof buildGeminiFinalToolCalls>,
+): Promise<void> {
+  if (!onChunk) return;
+  await onChunk({
+    text: '',
+    done: true,
+    model,
+    ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
+    ...(streamResult.fullReasoningContent
+      ? { reasoningContent: streamResult.fullReasoningContent }
+      : {}),
+  });
+}
+
+/**
+ * 构造最终的文本生成结果（含可选工具调用 / 思考内容）
+ */
+function buildGeminiTextResult(
+  text: string,
+  streamResult: GeminiStreamResult,
+  finalToolCalls: ReturnType<typeof buildGeminiFinalToolCalls>,
+  model: string,
+): TextGenerationResult {
+  return {
+    text,
+    model,
+    ...(finalToolCalls.length > 0 ? { toolCalls: finalToolCalls } : {}),
+    ...(streamResult.fullReasoningContent
+      ? { reasoningContent: streamResult.fullReasoningContent }
+      : {}),
+  };
 }

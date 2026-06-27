@@ -98,7 +98,6 @@ export class PolishService {
    * @param options 润色选项（可选）
    * @returns 润色后的文本和任务 ID（如果使用了任务管理）
    */
-  // fallow-ignore-next-line unused-class-member
   static async polish(
     content: Paragraph[],
     model: AIModel,
@@ -142,7 +141,6 @@ export class PolishService {
    * @param model AI 模型配置
    * @param options 润色选项
    */
-  // fallow-ignore-next-line unused-class-member
   static async polishSingle(
     paragraph: Paragraph,
     model: AIModel,

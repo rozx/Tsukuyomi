@@ -113,6 +113,61 @@ function extractNovelIdFromRegularFileName(fileName: string): string | null {
   return null;
 }
 
+/** 分块文件分组累加器 */
+interface ChunkGroup<T> {
+  filename: string;
+  size: number;
+  sizeDiff: number;
+  originalFile: T;
+}
+
+/** 取可选数值，缺省视为 0 */
+function optionalSize(value: number | undefined): number {
+  return value || 0;
+}
+
+/** 取出或新建某书籍的分块累加器 */
+function getOrCreateChunkGroup<T>(
+  chunkGroups: Map<string, ChunkGroup<T>>,
+  novelId: string,
+  originalFile: T,
+): ChunkGroup<T> {
+  const groupKey = `novel-${novelId}`;
+  const existing = chunkGroups.get(groupKey);
+  if (existing) return existing;
+  const group: ChunkGroup<T> = {
+    filename: `novel-${novelId}.json`,
+    size: 0,
+    sizeDiff: 0,
+    originalFile,
+  };
+  chunkGroups.set(groupKey, group);
+  return group;
+}
+
+/** 将文件的 size / sizeDiff 累加到分组累加器上 */
+function accumulateSizes<T extends { size?: number; sizeDiff?: number }>(
+  group: { size: number; sizeDiff: number },
+  file: T,
+): void {
+  group.size += optionalSize(file.size);
+  group.sizeDiff += optionalSize(file.sizeDiff);
+}
+
+/** 把分块组与普通文件合并成最终输出列表 */
+function buildGroupedFileList<T extends { filename: string; size?: number; sizeDiff?: number }>(
+  chunkGroups: Map<string, ChunkGroup<T>>,
+  regularFiles: T[],
+): Array<T & { filename: string; size?: number; sizeDiff?: number }> {
+  const grouped = Array.from(chunkGroups.values()).map((group) => ({
+    ...group.originalFile,
+    filename: group.filename,
+    size: group.size,
+    sizeDiff: group.sizeDiff !== 0 ? group.sizeDiff : undefined,
+  }));
+  return [...grouped, ...regularFiles];
+}
+
 /**
  * 分组文件，将分块文件合并显示
  * @param files 文件列表，每个文件包含 filename 和 size
@@ -121,10 +176,7 @@ function extractNovelIdFromRegularFileName(fileName: string): string | null {
 export function groupChunkFiles<T extends { filename: string; size?: number; sizeDiff?: number }>(
   files: T[],
 ): Array<T & { filename: string; size?: number; sizeDiff?: number }> {
-  const chunkGroups = new Map<
-    string,
-    { filename: string; size: number; sizeDiff: number; originalFile: T }
-  >();
+  const chunkGroups = new Map<string, ChunkGroup<T>>();
   const regularFiles: T[] = [];
   const regularFilesToMerge = new Map<string, T>();
 
@@ -133,18 +185,8 @@ export function groupChunkFiles<T extends { filename: string; size?: number; siz
     const novelIdFromChunk = extractNovelIdFromChunkFileName(file.filename);
     if (novelIdFromChunk) {
       // 这是分块文件
-      const groupKey = `novel-${novelIdFromChunk}`;
-      if (!chunkGroups.has(groupKey)) {
-        chunkGroups.set(groupKey, {
-          filename: `novel-${novelIdFromChunk}.json`,
-          size: 0,
-          sizeDiff: 0,
-          originalFile: file,
-        });
-      }
-      const group = chunkGroups.get(groupKey)!;
-      group.size += file.size || 0;
-      group.sizeDiff += file.sizeDiff || 0;
+      const group = getOrCreateChunkGroup(chunkGroups, novelIdFromChunk, file);
+      accumulateSizes(group, file);
     } else {
       // 普通文件 - 检查是否是 novel-{id}.json 格式
       const novelIdFromRegular = extractNovelIdFromRegularFileName(file.filename);
@@ -161,31 +203,18 @@ export function groupChunkFiles<T extends { filename: string; size?: number; siz
   // 第二遍：将匹配的普通文件合并到分块组中
   for (const [filename, file] of regularFilesToMerge.entries()) {
     const novelIdFromRegular = extractNovelIdFromRegularFileName(filename);
-    if (novelIdFromRegular && chunkGroups.has(`novel-${novelIdFromRegular}`)) {
-      // 存在对应的分块组，合并到分块组中
-      const groupKey = `novel-${novelIdFromRegular}`;
-      const group = chunkGroups.get(groupKey)!;
-      group.size += file.size || 0;
-      group.sizeDiff += file.sizeDiff || 0;
-      // 不添加到 regularFiles，因为已经合并
+    const groupKey = novelIdFromRegular ? `novel-${novelIdFromRegular}` : '';
+    const group = groupKey ? chunkGroups.get(groupKey) : undefined;
+    if (group) {
+      // 存在对应的分块组，合并到分块组中（不添加到 regularFiles）
+      accumulateSizes(group, file);
     } else {
       // 没有对应的分块组，作为普通文件处理
       regularFiles.push(file);
     }
   }
 
-  // 合并分块组和普通文件
-  const groupedFiles: Array<T & { filename: string; size?: number; sizeDiff?: number }> = [
-    ...Array.from(chunkGroups.values()).map((group) => ({
-      ...group.originalFile,
-      filename: group.filename,
-      size: group.size,
-      sizeDiff: group.sizeDiff !== 0 ? group.sizeDiff : undefined,
-    })),
-    ...regularFiles,
-  ];
-
-  return groupedFiles;
+  return buildGroupedFileList(chunkGroups, regularFiles);
 }
 
 /**
@@ -213,6 +242,22 @@ const RETRY_CONFIG = {
   maxDelayMs: 10000,
 };
 
+/** 可重试的离散状态码（429 速率限制 / 408 请求超时） */
+const RETRYABLE_STATUS_CODES = new Set([408, 429]);
+
+/** 从错误对象中提取 HTTP 状态码（兼容 axios 风格的 error.response.status） */
+function extractErrorStatus(error: unknown): number | undefined {
+  if (!error) return undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const errorObj = error as any;
+  return errorObj?.status || errorObj?.response?.status;
+}
+
+/** 是否为 5xx 服务器错误 */
+function is5xxServerError(status: number): boolean {
+  return status >= 500 && status < 600;
+}
+
 /**
  * 检查错误是否可重试
  * @param error 错误对象
@@ -221,23 +266,40 @@ const RETRY_CONFIG = {
 function isRetryableError(error: unknown): boolean {
   if (!error) return false;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const errorObj = error as any;
-  const status = errorObj?.status || errorObj?.response?.status;
-
+  const status = extractErrorStatus(error);
   // 网络错误（无状态码）
   if (!status) return true;
 
   // 5xx 服务器错误
-  if (status >= 500 && status < 600) return true;
+  if (is5xxServerError(status)) return true;
 
-  // 429 Too Many Requests（速率限制）
-  if (status === 429) return true;
+  // 429 Too Many Requests / 408 Request Timeout
+  return RETRYABLE_STATUS_CODES.has(status);
+}
 
-  // 408 Request Timeout
-  if (status === 408) return true;
+/** 把任意错误规范化为 Error 实例 */
+function toErrorObject(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
 
-  return false;
+/** 批次 PATCH 的可重试状态判定：无状态码（网络错误）、5xx、429 */
+function isRetryableBatchStatus(statusCode: number | undefined): boolean {
+  if (!statusCode) return true;
+  if (is5xxServerError(statusCode)) return true;
+  return statusCode === 429;
+}
+
+/** 指数退避的批次重试延迟（ms） */
+function computeBatchRetryDelay(baseDelayMs: number, attempt: number): number {
+  return baseDelayMs * Math.pow(2, attempt);
+}
+
+/** 判断错误是否为明确的 Gist 更新失败 / 冲突（应向上抛出而非吞掉） */
+function isExplicitUpdateFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes('Gist 更新失败') || error.message.includes('Gist 更新冲突')
+  );
 }
 
 /**
@@ -480,36 +542,77 @@ export class GistSyncService {
     errors: string[],
   ): void {
     for (const stat of uploadStats) {
-      if (!stat.chunked || !stat.chunkCount) continue;
+      this.collectSingleNovelChunkIntegrity(stat, uploadedFiles, errors);
+    }
+  }
 
-      for (let i = 0; i < stat.chunkCount; i++) {
-        const chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${stat.novelId}_${i}.json`;
-        if (!uploadedFiles[chunkFileName]) {
-          errors.push(`书籍 "${stat.title}" 的分块 ${i} 缺失: ${chunkFileName}`);
-        }
-      }
+  /** 单本分块书的完整性校验：非分块书直接跳过 */
+  private collectSingleNovelChunkIntegrity(
+    stat: {
+      novelId: string;
+      title: string;
+      size: number;
+      chunked: boolean;
+      chunkCount?: number;
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    uploadedFiles: Record<string, any>,
+    errors: string[],
+  ): void {
+    if (!stat.chunked || !stat.chunkCount) return;
 
-      const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${stat.novelId}.meta.json`;
-      const metadataFile = uploadedFiles[metadataFileName];
-      if (!metadataFile) {
-        errors.push(`书籍 "${stat.title}" 的元数据文件缺失: ${metadataFileName}`);
-        continue;
-      }
-      if (!metadataFile.content) continue;
+    // 此处 chunkCount 已收窄为 number；构造窄化对象传递给校验方法
+    const checkTarget = {
+      novelId: stat.novelId,
+      title: stat.title,
+      chunkCount: stat.chunkCount,
+    };
+    this.checkChunkFilesPresent(checkTarget, uploadedFiles, errors);
+    this.checkChunkMetadata(checkTarget, uploadedFiles, errors);
+  }
 
-      try {
-        const metadata = JSON.parse(metadataFile.content) as {
-          chunks: number;
-          totalSize: number;
-        };
-        if (metadata.chunks !== stat.chunkCount) {
-          errors.push(
-            `书籍 "${stat.title}" 的元数据块数量不匹配: 期望 ${stat.chunkCount}, 实际 ${metadata.chunks}`,
-          );
-        }
-      } catch {
-        errors.push(`书籍 "${stat.title}" 的元数据解析失败`);
+  /** 校验所有 chunk 文件均存在 */
+  private checkChunkFilesPresent(
+    stat: { novelId: string; title: string; chunkCount: number },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    uploadedFiles: Record<string, any>,
+    errors: string[],
+  ): void {
+    for (let i = 0; i < stat.chunkCount; i++) {
+      const chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${stat.novelId}_${i}.json`;
+      if (!uploadedFiles[chunkFileName]) {
+        errors.push(`书籍 "${stat.title}" 的分块 ${i} 缺失: ${chunkFileName}`);
       }
+    }
+  }
+
+  /** 校验 metadata 文件存在且声明的块数与实际一致 */
+  private checkChunkMetadata(
+    stat: { novelId: string; title: string; chunkCount: number },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    uploadedFiles: Record<string, any>,
+    errors: string[],
+  ): void {
+    const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${stat.novelId}.meta.json`;
+    const metadataFile = uploadedFiles[metadataFileName];
+    if (!metadataFile) {
+      errors.push(`书籍 "${stat.title}" 的元数据文件缺失: ${metadataFileName}`);
+      return;
+    }
+    if (!metadataFile.content) return;
+
+    try {
+      const metadata = JSON.parse(metadataFile.content) as {
+        chunks: number;
+        totalSize: number;
+      };
+      if (metadata.chunks !== stat.chunkCount) {
+        errors.push(
+          `书籍 "${stat.title}" 的元数据块数量不匹配: 期望 ${stat.chunkCount}, 实际 ${metadata.chunks}`,
+        );
+      }
+    } catch {
+      errors.push(`书籍 "${stat.title}" 的元数据解析失败`);
     }
   }
 
@@ -690,55 +793,56 @@ export class GistSyncService {
     const totalItems = preparePhaseItems + estimatedUploadItems;
     let processedItems = 0;
 
-    onProgress?.({
-      current: processedItems,
-      total: totalItems,
-      message: '正在准备设置文件...',
-    });
+    this.reportProgress(onProgress, processedItems, totalItems, '正在准备设置文件...');
 
     processedItems = 1;
-    onProgress?.({
-      current: processedItems,
-      total: totalItems,
-      message: '设置文件准备完成',
-    });
+    this.reportProgress(onProgress, processedItems, totalItems, '设置文件准备完成');
 
     // 2. 每本书的文件
     for (let novelIndex = 0; novelIndex < novelsWithContent.length; novelIndex++) {
       const novel = novelsWithContent[novelIndex];
+      processedItems = novelIndex + 2;
       if (!novel) {
-        processedItems = novelIndex + 2;
-        if (onProgress) {
-          const percentage = Math.round((processedItems / totalItems) * 100);
-          onProgress({
-            current: processedItems,
-            total: totalItems,
-            message: `跳过无效书籍 (${processedItems}/${totalItems}, ${percentage}%)`,
-          });
-        }
+        this.reportProgress(
+          onProgress,
+          processedItems,
+          totalItems,
+          this.formatPrepareProgressMessage('跳过无效书籍', processedItems, totalItems),
+        );
         continue;
       }
 
       await this.buildNovelFilesForUpload(novel, files, uploadStats);
 
-      processedItems = novelIndex + 2;
-      if (onProgress) {
-        const percentage = Math.round((processedItems / totalItems) * 100);
-        onProgress({
-          current: processedItems,
-          total: totalItems,
-          message: `正在准备书籍: ${novel.title} (${processedItems}/${totalItems}, ${percentage}%)`,
-        });
-      }
+      this.reportProgress(
+        onProgress,
+        processedItems,
+        totalItems,
+        this.formatPrepareProgressMessage(`正在准备书籍: ${novel.title}`, processedItems, totalItems),
+      );
     }
 
-    onProgress?.({
-      current: processedItems,
-      total: totalItems,
-      message: '准备完成，正在开始上传...',
-    });
+    this.reportProgress(onProgress, processedItems, totalItems, '准备完成，正在开始上传...');
 
     return { files, uploadStats, novelsWithContent, preparePhaseItems, totalItems, processedItems };
+  }
+
+  /** 安全地触发进度回调（onProgress 可为 undefined） */
+  private reportProgress(
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
+    current: number,
+    total: number,
+    message: string,
+  ): void {
+    onProgress?.({ current, total, message });
+  }
+
+  /** 构造带百分比的准备阶段进度消息 */
+  private formatPrepareProgressMessage(prefix: string, current: number, total: number): string {
+    const percentage = Math.round((current / total) * 100);
+    return `${prefix} (${current}/${total}, ${percentage}%)`;
   }
 
   /**
@@ -773,65 +877,116 @@ export class GistSyncService {
       const estimatedUploadItems = totalItems - preparePhaseItems;
 
       const params = this.getGistParams(config);
-      let gistId = params.gistId;
-      let gistUrl: string | undefined;
-      let isRecreated = false;
-      let totalItemsRef = totalItems;
-
-      if (gistId) {
-        const updateOutcome = await this.updateExistingGistWithFiles(
-          gistId,
-          files,
-          preparePhaseItems,
-          estimatedUploadItems,
-          totalItemsRef,
-          onProgress,
-        );
-        totalItemsRef = updateOutcome.totalItems;
-        if (updateOutcome.gistId) gistId = updateOutcome.gistId;
-        if (updateOutcome.gistUrl) gistUrl = updateOutcome.gistUrl;
-
-        // 如果 update 路径没能成功（例如 Gist 不存在），退化到创建新 Gist
-        if (!gistUrl) {
-          const createOutcome = await this.createNewGistFromFiles(files, totalItemsRef, onProgress);
-          gistId = createOutcome.gistId;
-          gistUrl = createOutcome.gistUrl;
-          isRecreated = true;
-        }
-      } else {
-        const createOutcome = await this.createNewGistFromFiles(files, totalItemsRef, onProgress);
-        gistId = createOutcome.gistId;
-        gistUrl = createOutcome.gistUrl;
-      }
+      const outcome = await this.resolveGistAfterUpload(
+        params,
+        files,
+        preparePhaseItems,
+        estimatedUploadItems,
+        totalItems,
+        onProgress,
+      );
 
       // 验证上传的文件（必须在返回成功之前验证）
       let remoteUpdatedAt: string | undefined;
-      if (gistId) {
-        const filesToVerify: Record<string, { content: string }> = {};
-        for (const [filename, file] of Object.entries(files)) {
-          if (file !== null) {
-            filesToVerify[filename] = file;
-          }
-        }
-        remoteUpdatedAt = await this.verifyUploadedFiles(gistId, filesToVerify, uploadStats);
+      if (outcome.gistId) {
+        const filesToVerify = this.collectNonNullFiles(files);
+        remoteUpdatedAt = await this.verifyUploadedFiles(
+          outcome.gistId,
+          filesToVerify,
+          uploadStats,
+        );
       }
 
-      const message = gistId ? '数据已成功同步到 Gist' : 'Gist 已创建';
-
-      return {
-        success: true,
-        message,
-        ...(gistId ? { gistId } : {}),
-        ...(gistUrl ? { gistUrl } : {}),
-        ...(isRecreated ? { isRecreated: true } : {}),
-        ...(remoteUpdatedAt ? { remoteUpdatedAt } : {}),
-      };
+      return this.buildUploadSuccessResult({
+        gistId: outcome.gistId,
+        gistUrl: outcome.gistUrl,
+        isRecreated: outcome.isRecreated,
+        remoteUpdatedAt,
+      });
     } catch (error) {
       return {
         success: false,
         error: error instanceof Error ? error.message : '同步到 Gist 时发生未知错误',
       };
     }
+  }
+
+  /** 决定上传后 Gist 的最终身份：有 gistId 走更新，失败回退到创建；无 gistId 直接创建 */
+  private async resolveGistAfterUpload(
+    params: { username: string; token: string; gistId?: string },
+    files: Record<string, { content: string } | null>,
+    preparePhaseItems: number,
+    estimatedUploadItems: number,
+    totalItems: number,
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
+  ): Promise<{
+    gistId: string | undefined;
+    gistUrl: string | undefined;
+    isRecreated: boolean;
+  }> {
+    let gistId = params.gistId;
+    let gistUrl: string | undefined;
+    let isRecreated = false;
+    let totalItemsRef = totalItems;
+
+    if (gistId) {
+      const updateOutcome = await this.updateExistingGistWithFiles(
+        gistId,
+        files,
+        preparePhaseItems,
+        estimatedUploadItems,
+        totalItemsRef,
+        onProgress,
+      );
+      totalItemsRef = updateOutcome.totalItems;
+      if (updateOutcome.gistId) gistId = updateOutcome.gistId;
+      if (updateOutcome.gistUrl) gistUrl = updateOutcome.gistUrl;
+
+      // 如果 update 路径没能成功（例如 Gist 不存在），退化到创建新 Gist
+      if (!gistUrl) {
+        const createOutcome = await this.createNewGistFromFiles(files, totalItemsRef, onProgress);
+        gistId = createOutcome.gistId;
+        gistUrl = createOutcome.gistUrl;
+        isRecreated = true;
+      }
+    } else {
+      const createOutcome = await this.createNewGistFromFiles(files, totalItemsRef, onProgress);
+      gistId = createOutcome.gistId;
+      gistUrl = createOutcome.gistUrl;
+    }
+
+    return { gistId, gistUrl, isRecreated };
+  }
+
+  /** 从 files map 中筛出非 null 的文件，用于上传后校验 */
+  private collectNonNullFiles(
+    files: Record<string, { content: string } | null>,
+  ): Record<string, { content: string }> {
+    const result: Record<string, { content: string }> = {};
+    for (const [filename, file] of Object.entries(files)) {
+      if (file !== null) result[filename] = file;
+    }
+    return result;
+  }
+
+  /** 构造上传成功的 SyncResult（仅在字段有值时写入，避免出现 undefined 字段） */
+  private buildUploadSuccessResult(args: {
+    gistId: string | undefined;
+    gistUrl: string | undefined;
+    isRecreated: boolean;
+    remoteUpdatedAt: string | undefined;
+  }): SyncResult {
+    const message = args.gistId ? '数据已成功同步到 Gist' : 'Gist 已创建';
+    return {
+      success: true,
+      message,
+      ...(args.gistId ? { gistId: args.gistId } : {}),
+      ...(args.gistUrl ? { gistUrl: args.gistUrl } : {}),
+      ...(args.isRecreated ? { isRecreated: true } : {}),
+      ...(args.remoteUpdatedAt ? { remoteUpdatedAt: args.remoteUpdatedAt } : {}),
+    };
   }
 
   /**
@@ -881,22 +1036,17 @@ export class GistSyncService {
         });
         return response;
       } catch (batchError) {
-        lastError = batchError instanceof Error ? batchError : new Error(String(batchError));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const errorResponse = (batchError as any).response;
-        const errorData = errorResponse?.data;
-        const statusCode = errorResponse?.status;
+        lastError = toErrorObject(batchError);
+        const { statusCode, errorData } = this.extractBatchErrorResponse(batchError);
 
         // 409：Gist 在读取后被修改或并发更新冲突——不重试
         if (statusCode === 409) {
           throw new Error('Gist 更新冲突：Gist 自上次读取后已被修改，请尝试重新同步。');
         }
 
-        const isRetryable =
-          !statusCode || (statusCode >= 500 && statusCode < 600) || statusCode === 429;
-
-        if (isRetryable && attempt < MAX_RETRIES - 1) {
-          const delay = RETRY_DELAY_BASE * Math.pow(2, attempt);
+        const canRetry = isRetryableBatchStatus(statusCode) && attempt < MAX_RETRIES - 1;
+        if (canRetry) {
+          const delay = computeBatchRetryDelay(RETRY_DELAY_BASE, attempt);
           console.warn(
             `[GistSyncService] 批量更新失败（批次 ${batchIndex}，尝试 ${attempt + 1}/${MAX_RETRIES}），${delay}ms 后重试:`,
             lastError.message,
@@ -905,16 +1055,34 @@ export class GistSyncService {
           continue;
         }
 
-        console.error(`[GistSyncService] 批量更新失败（批次 ${batchIndex}）:`, lastError);
-        if (errorData) {
-          console.error('Validation errors:', JSON.stringify(errorData, null, 2));
-          throw new Error(`Gist 更新失败: ${JSON.stringify(errorData)}`);
-        }
-        throw lastError;
+        this.throwBatchFailure(batchIndex, lastError, errorData);
       }
     }
 
     throw lastError || new Error('批量更新失败：未知错误');
+  }
+
+  /** 从批次错误对象中提取 HTTP 状态码与响应体（兼容 axios 风格 error.response） */
+  private extractBatchErrorResponse(batchError: unknown): {
+    statusCode: number | undefined;
+    errorData: unknown;
+  } {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const errorResponse = (batchError as any).response;
+    return {
+      statusCode: errorResponse?.status,
+      errorData: errorResponse?.data,
+    };
+  }
+
+  /** 批次最终失败时记录日志并抛出对应错误（有响应体则附带 validation 详情） */
+  private throwBatchFailure(batchIndex: number, lastError: Error, errorData: unknown): never {
+    console.error(`[GistSyncService] 批量更新失败（批次 ${batchIndex}）:`, lastError);
+    if (errorData) {
+      console.error('Validation errors:', JSON.stringify(errorData, null, 2));
+      throw new Error(`Gist 更新失败: ${JSON.stringify(errorData)}`);
+    }
+    throw lastError;
   }
 
   /**
@@ -950,62 +1118,91 @@ export class GistSyncService {
         totalItems = preparePhaseItems + totalBatches;
       }
 
-      onProgress?.({
-        current: uploadPhaseStart,
-        total: totalItems,
-        message: '正在上传文件...',
-      });
+      this.reportProgress(onProgress, uploadPhaseStart, totalItems, '正在上传文件...');
 
-      for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
-        const batchIndex = Math.floor(i / BATCH_SIZE);
-        const batchFiles = Object.fromEntries(allFiles.slice(i, i + BATCH_SIZE));
+      const batchResult = await this.runUpdateBatches(
+        existingGistId,
+        allFiles,
+        BATCH_SIZE,
+        totalBatches,
+        uploadPhaseStart,
+        totalItems,
+        onProgress,
+      );
+      if (batchResult.firstGistId) gistId = batchResult.firstGistId;
+      if (batchResult.firstGistUrl) gistUrl = batchResult.firstGistUrl;
 
-        onProgress?.({
-          current: uploadPhaseStart + batchIndex + 1,
-          total: totalItems,
-          message: `正在上传文件批次 ${batchIndex + 1}/${totalBatches}...`,
-        });
-
-        try {
-          const response = await this.patchGistBatchWithRetry(
-            existingGistId,
-            batchFiles,
-            batchIndex,
-          );
-          if (batchIndex === 0) {
-            gistId = response.data.id;
-            gistUrl = response.data.html_url;
-          }
-        } catch (batchError) {
-          console.error(
-            `[GistSyncService] 批次 ${batchIndex + 1}/${totalBatches} 上传失败，` +
-              `已完成 ${batchIndex}/${totalBatches} 个批次。Gist 可能处于不一致状态。`,
-            batchError,
-          );
-          throw new Error(
-            `Gist 批量上传在第 ${batchIndex + 1}/${totalBatches} 批次失败，` +
-              `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。` +
-              (batchError instanceof Error ? ` 原因: ${batchError.message}` : ''),
-          );
-        }
-      }
-
-      onProgress?.({
-        current: totalItems,
-        total: totalItems,
-        message: '上传完成，正在验证...',
-      });
+      this.reportProgress(onProgress, totalItems, totalItems, '上传完成，正在验证...');
     } catch (error) {
       // 明确的更新失败或冲突：向外抛；其他错误（例如 Gist 不存在）吞掉，让调用方走"创建"路径
-      if (
-        error instanceof Error &&
-        (error.message.includes('Gist 更新失败') || error.message.includes('Gist 更新冲突'))
-      ) {
+      if (isExplicitUpdateFailure(error)) {
         throw error;
       }
     }
 
     return { totalItems, gistId, gistUrl };
+  }
+
+  /** 顺序 PATCH 所有批次；首批成功后记录新的 gistId/gistUrl */
+  private async runUpdateBatches(
+    existingGistId: string,
+    allFiles: Array<[string, { content: string } | null]>,
+    batchSize: number,
+    totalBatches: number,
+    uploadPhaseStart: number,
+    totalItems: number,
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
+  ): Promise<{ firstGistId: string | undefined; firstGistUrl: string | undefined }> {
+    let firstGistId: string | undefined;
+    let firstGistUrl: string | undefined;
+
+    for (let i = 0; i < allFiles.length; i += batchSize) {
+      const batchIndex = Math.floor(i / batchSize);
+      const batchFiles = Object.fromEntries(allFiles.slice(i, i + batchSize));
+
+      this.reportProgress(
+        onProgress,
+        uploadPhaseStart + batchIndex + 1,
+        totalItems,
+        `正在上传文件批次 ${batchIndex + 1}/${totalBatches}...`,
+      );
+
+      try {
+        const response = await this.patchGistBatchWithRetry(
+          existingGistId,
+          batchFiles,
+          batchIndex,
+        );
+        if (batchIndex === 0) {
+          firstGistId = response.data.id;
+          firstGistUrl = response.data.html_url;
+        }
+      } catch (batchError) {
+        throw this.buildBatchUpdateFailure(batchIndex, totalBatches, batchError);
+      }
+    }
+
+    return { firstGistId, firstGistUrl };
+  }
+
+  /** 构造批次上传失败的错误（消息中携带原因，便于上层按"更新失败/冲突"判定） */
+  private buildBatchUpdateFailure(
+    batchIndex: number,
+    totalBatches: number,
+    batchError: unknown,
+  ): Error {
+    console.error(
+      `[GistSyncService] 批次 ${batchIndex + 1}/${totalBatches} 上传失败，` +
+        `已完成 ${batchIndex}/${totalBatches} 个批次。Gist 可能处于不一致状态。`,
+      batchError,
+    );
+    const reason = batchError instanceof Error ? ` 原因: ${batchError.message}` : '';
+    return new Error(
+      `Gist 批量上传在第 ${batchIndex + 1}/${totalBatches} 批次失败，` +
+        `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。${reason}`,
+    );
   }
 
   /**
@@ -1020,18 +1217,11 @@ export class GistSyncService {
   ): Promise<{ gistId: string; gistUrl: string | undefined }> {
     if (!this.octokit) throw new Error('Octokit 客户端未初始化');
 
-    const filesForCreate: Record<string, { content: string }> = {};
-    for (const [key, value] of Object.entries(files)) {
-      if (value !== null) filesForCreate[key] = value;
-    }
+    const filesForCreate = this.collectNonNullFiles(files);
     const createEntries = Object.entries(filesForCreate);
 
     if (createEntries.length <= CREATE_BATCH_SIZE) {
-      onProgress?.({
-        current: totalItems,
-        total: totalItems,
-        message: '正在创建 Gist...',
-      });
+      this.reportProgress(onProgress, totalItems, totalItems, '正在创建 Gist...');
       const response = await this.octokit.rest.gists.create({
         description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
         public: false,
@@ -1041,11 +1231,12 @@ export class GistSyncService {
     }
 
     const totalCreateBatches = Math.ceil(createEntries.length / CREATE_BATCH_SIZE);
-    onProgress?.({
-      current: totalItems - totalCreateBatches,
-      total: totalItems,
-      message: `正在创建 Gist（批次 1/${totalCreateBatches}）...`,
-    });
+    this.reportProgress(
+      onProgress,
+      totalItems - totalCreateBatches,
+      totalItems,
+      `正在创建 Gist（批次 1/${totalCreateBatches}）...`,
+    );
 
     // 第一批：创建 Gist
     const firstBatchFiles = Object.fromEntries(createEntries.slice(0, CREATE_BATCH_SIZE));
@@ -1058,37 +1249,62 @@ export class GistSyncService {
     const newGistUrl: string | undefined = response.data.html_url ?? undefined;
 
     // 后续批次：update
+    await this.runCreateSubsequentBatches(
+      newGistId,
+      createEntries,
+      totalCreateBatches,
+      totalItems,
+      onProgress,
+    );
+
+    this.reportProgress(onProgress, totalItems, totalItems, '创建完成，正在验证...');
+
+    return { gistId: newGistId, gistUrl: newGistUrl };
+  }
+
+  /** 创建 Gist 后的后续批次：按 BATCH_SIZE 顺序 PATCH 到新 Gist */
+  private async runCreateSubsequentBatches(
+    newGistId: string,
+    createEntries: Array<[string, { content: string }]>,
+    totalCreateBatches: number,
+    totalItems: number,
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
+  ): Promise<void> {
     for (let i = CREATE_BATCH_SIZE; i < createEntries.length; i += CREATE_BATCH_SIZE) {
       const batchIndex = Math.floor(i / CREATE_BATCH_SIZE);
       const batchFiles = Object.fromEntries(createEntries.slice(i, i + CREATE_BATCH_SIZE));
-      onProgress?.({
-        current: totalItems - totalCreateBatches + batchIndex + 1,
-        total: totalItems,
-        message: `正在创建 Gist（批次 ${batchIndex + 1}/${totalCreateBatches}）...`,
-      });
+      this.reportProgress(
+        onProgress,
+        totalItems - totalCreateBatches + batchIndex + 1,
+        totalItems,
+        `正在创建 Gist（批次 ${batchIndex + 1}/${totalCreateBatches}）...`,
+      );
       try {
-        await this.octokit.rest.gists.update({ gist_id: newGistId, files: batchFiles });
+        await this.octokit!.rest.gists.update({ gist_id: newGistId, files: batchFiles });
       } catch (batchError) {
-        console.error(
-          `[GistSyncService] 创建批次 ${batchIndex + 1}/${totalCreateBatches} 失败，` +
-            `已完成 ${batchIndex}/${totalCreateBatches} 个批次。Gist 可能处于不一致状态。`,
-          batchError,
-        );
-        throw new Error(
-          `Gist 批量创建在第 ${batchIndex + 1}/${totalCreateBatches} 批次失败，` +
-            `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。` +
-            (batchError instanceof Error ? ` 原因: ${batchError.message}` : ''),
-        );
+        throw this.buildBatchCreateFailure(batchIndex, totalCreateBatches, batchError);
       }
     }
+  }
 
-    onProgress?.({
-      current: totalItems,
-      total: totalItems,
-      message: '创建完成，正在验证...',
-    });
-
-    return { gistId: newGistId, gistUrl: newGistUrl };
+  /** 构造创建批次失败的错误 */
+  private buildBatchCreateFailure(
+    batchIndex: number,
+    totalBatches: number,
+    batchError: unknown,
+  ): Error {
+    console.error(
+      `[GistSyncService] 创建批次 ${batchIndex + 1}/${totalBatches} 失败，` +
+        `已完成 ${batchIndex}/${totalBatches} 个批次。Gist 可能处于不一致状态。`,
+      batchError,
+    );
+    const reason = batchError instanceof Error ? ` 原因: ${batchError.message}` : '';
+    return new Error(
+      `Gist 批量创建在第 ${batchIndex + 1}/${totalBatches} 批次失败，` +
+        `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。${reason}`,
+    );
   }
 
   /**
@@ -1128,7 +1344,7 @@ export class GistSyncService {
       }
 
       const result: GistSyncData = { aiModels: [], novels: [] };
-      onProgress?.({ current: 0, total: 1, message: '正在下载数据...' });
+      this.reportProgress(onProgress, 0, 1, '正在下载数据...');
 
       await this.downloadAndPopulateSettingsFile(gistFiles, result);
 
@@ -1140,28 +1356,42 @@ export class GistSyncService {
         onProgress,
       );
 
-      onProgress?.({
-        current: totalNovels || 1,
-        total: totalNovels || 1,
-        message: '下载完成',
-      });
+      const progressTotal = totalNovels || 1;
+      this.reportProgress(onProgress, progressTotal, progressTotal, '下载完成');
 
       const message = this.buildDownloadMessage(totalNovels, result.novels.length);
 
-      return {
-        success: true,
+      return this.buildDownloadSuccessResult({
         message,
-        data: result,
-        ...(remoteUpdatedAt ? { remoteUpdatedAt } : {}),
-        ...(params.gistId ? { gistId: params.gistId } : {}),
-        ...(response.data.html_url ? { gistUrl: response.data.html_url } : {}),
-      };
+        result,
+        remoteUpdatedAt,
+        gistId: params.gistId,
+        gistUrl: response.data.html_url,
+      });
     } catch (error) {
       return {
         success: false,
         error: error instanceof Error ? error.message : '从 Gist 下载数据时发生未知错误',
       };
     }
+  }
+
+  /** 构造下载成功的 SyncResult（仅在字段有值时写入，避免出现 undefined 字段） */
+  private buildDownloadSuccessResult(args: {
+    message: string;
+    result: GistSyncData;
+    remoteUpdatedAt: string | undefined;
+    gistId: string | undefined;
+    gistUrl: string | undefined;
+  }): SyncResult & { data?: GistSyncData } {
+    return {
+      success: true,
+      message: args.message,
+      data: args.result,
+      ...(args.remoteUpdatedAt ? { remoteUpdatedAt: args.remoteUpdatedAt } : {}),
+      ...(args.gistId ? { gistId: args.gistId } : {}),
+      ...(args.gistUrl ? { gistUrl: args.gistUrl } : {}),
+    };
   }
 
   /**
@@ -1208,23 +1438,36 @@ export class GistSyncService {
         const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
         if (novel) result.novels.push(novel);
         processedNovels++;
-        onProgress?.({
-          current: processedNovels,
-          total: totalNovels,
-          message: novel
-            ? `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`
-            : `跳过书籍 ${novelId} (${processedNovels}/${totalNovels})`,
-        });
+        this.reportProgress(
+          onProgress,
+          processedNovels,
+          totalNovels,
+          this.formatNovelProgressMessage(novel, novelId, processedNovels, totalNovels),
+        );
       } catch {
         processedNovels++;
-        onProgress?.({
-          current: processedNovels,
-          total: totalNovels,
-          message: `处理书籍时出错 (${processedNovels}/${totalNovels})`,
-        });
+        this.reportProgress(
+          onProgress,
+          processedNovels,
+          totalNovels,
+          `处理书籍时出错 (${processedNovels}/${totalNovels})`,
+        );
       }
     }
     return totalNovels;
+  }
+
+  /** 构造单本书的下载进度消息（区分成功 / 跳过） */
+  private formatNovelProgressMessage(
+    novel: Novel | null | undefined,
+    novelId: string,
+    processedNovels: number,
+    totalNovels: number,
+  ): string {
+    if (novel) {
+      return `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`;
+    }
+    return `跳过书籍 ${novelId} (${processedNovels}/${totalNovels})`;
   }
 
   /**
@@ -1904,27 +2147,9 @@ export class GistSyncService {
       const response = await this.fetchGistRevisionRaw(config, version);
 
       // 过滤掉 null 值并转换类型
-      const files: Record<
-        string,
-        { filename?: string; size?: number; content?: string; truncated?: boolean }
-      > = {};
-      if (response.data.files) {
-        for (const [key, value] of Object.entries(response.data.files)) {
-          if (value) {
-            const fileInfo: {
-              filename?: string;
-              size?: number;
-              content?: string;
-              truncated?: boolean;
-            } = {};
-            if (value.filename !== undefined) fileInfo.filename = value.filename;
-            if (value.size !== undefined) fileInfo.size = value.size;
-            if (value.content !== undefined) fileInfo.content = value.content;
-            if (value.truncated !== undefined) fileInfo.truncated = value.truncated;
-            files[key] = fileInfo;
-          }
-        }
-      }
+      const files = response.data.files
+        ? this.mapRevisionFilesToDetails(response.data.files)
+        : {};
 
       return {
         success: true,
@@ -1939,6 +2164,46 @@ export class GistSyncService {
         error: error instanceof Error ? error.message : '获取修订版本详情失败',
       };
     }
+  }
+
+  /** 把 Octokit 返回的 revision files 映射为精简的字段集合（跳过 null 条目） */
+  private mapRevisionFilesToDetails(
+    rawFiles: Record<
+      string,
+      { filename?: string; size?: number; content?: string; truncated?: boolean } | null | undefined
+    >,
+  ): Record<
+    string,
+    { filename?: string; size?: number; content?: string; truncated?: boolean }
+  > {
+    const files: Record<
+      string,
+      { filename?: string; size?: number; content?: string; truncated?: boolean }
+    > = {};
+    for (const [key, value] of Object.entries(rawFiles)) {
+      if (value) files[key] = this.pickRevisionFileInfo(value);
+    }
+    return files;
+  }
+
+  /** 从单个 revision 文件对象中挑选需要返回的字段（仅保留已定义的） */
+  private pickRevisionFileInfo(value: {
+    filename?: string;
+    size?: number;
+    content?: string;
+    truncated?: boolean;
+  }): { filename?: string; size?: number; content?: string; truncated?: boolean } {
+    const fileInfo: {
+      filename?: string;
+      size?: number;
+      content?: string;
+      truncated?: boolean;
+    } = {};
+    if (value.filename !== undefined) fileInfo.filename = value.filename;
+    if (value.size !== undefined) fileInfo.size = value.size;
+    if (value.content !== undefined) fileInfo.content = value.content;
+    if (value.truncated !== undefined) fileInfo.truncated = value.truncated;
+    return fileInfo;
   }
 
   /**

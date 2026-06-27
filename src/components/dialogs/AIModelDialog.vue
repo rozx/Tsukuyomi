@@ -1,19 +1,20 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, provide } from 'vue';
 import { cloneDeep, isEqual } from 'lodash';
 import Button from 'primevue/button';
-import InputText from 'primevue/inputtext';
-import InputNumber from 'primevue/inputnumber';
-import Select from 'primevue/select';
-import Checkbox from 'primevue/checkbox';
-import ToggleSwitch from 'primevue/toggleswitch';
-import Slider from 'primevue/slider';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import AiModelBasicFields from './AiModelBasicFields.vue';
+import AiModelSelector from './AiModelSelector.vue';
+import AiTokenField from './AiTokenField.vue';
+import AiCustomHeaders from './AiCustomHeaders.vue';
+import AiTaskDefaultItem from './AiTaskDefaultItem.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useElectron } from 'src/composables/useElectron';
 import { useFormDialogCloseGuard } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
-import type { ModelInfo } from 'src/services/ai/types/ai-service';
+import type { AIConfigResult, ModelInfo } from 'src/services/ai/types/ai-service';
+import type { AIModelFormData, TaskDefaultsKey } from './ai-model-form-types';
+import { AI_MODEL_FORM_KEY } from './ai-model-form-types';
 import { AIServiceFactory } from 'src/services/ai';
 import { ConfigService } from 'src/services/ai/tasks/config-service';
 
@@ -60,8 +61,6 @@ const modelOptions = computed(() => {
   }));
 });
 
-type AIModelFormData = Partial<AIModel> & { isDefault: AIModel['isDefault'] };
-
 const createEmptyAIModelForm = (): AIModelFormData => ({
   name: '',
   provider: 'openai',
@@ -88,6 +87,9 @@ const formData = ref<AIModelFormData>(createEmptyAIModelForm());
 // 表单验证错误
 const formErrors = ref<Record<string, string>>({});
 
+// 向子组件提供共享表单上下文（formData / formErrors / idPrefix）
+provide(AI_MODEL_FORM_KEY, { formData, formErrors, idPrefix });
+
 const {
   initialFormSnapshot,
   hasUnsavedChanges,
@@ -105,10 +107,22 @@ const {
 
 const hasChildDialogOpen = computed(() => showUnsavedCloseConfirm.value);
 
-// 提供商选项
-const providerOptions = [
-  { label: 'OpenAI', value: 'openai' },
-  { label: 'Gemini', value: 'gemini' },
+// 获取配置按钮的禁用条件（测试中、缺少必要凭据时禁用）
+const canFetchConfigDisabled = computed(() => {
+  return (
+    isTesting.value ||
+    !formData.value.apiKey?.trim() ||
+    !formData.value.model?.trim() ||
+    (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim())
+  );
+});
+
+// 默认任务列表（标签 + isDefault 键），供 v-for 渲染
+const taskItems: ReadonlyArray<{ key: TaskDefaultsKey; label: string }> = [
+  { key: 'translation', label: '翻译' },
+  { key: 'proofreading', label: '校对/润色' },
+  { key: 'termsTranslation', label: '术语翻译' },
+  { key: 'assistant', label: '助手' },
 ];
 
 // 重置表单
@@ -118,46 +132,150 @@ const resetForm = () => {
   aiConfig.value = null;
 };
 
+// 表单字段验证规则（每条规则互不依赖，错误信息独立收集）
+const fieldValidations = (): ReadonlyArray<{
+  field: keyof AIModelFormData;
+  message: string;
+  ok: () => boolean;
+}> => [
+  { field: 'name', message: '模型名称不能为空', ok: () => !!formData.value.name?.trim() },
+  { field: 'model', message: '模型标识不能为空', ok: () => !!formData.value.model?.trim() },
+  { field: 'apiKey', message: 'API Key 不能为空', ok: () => !!formData.value.apiKey?.trim() },
+  {
+    field: 'baseUrl',
+    message: '基础地址不能为空',
+    // Gemini 不需要 baseUrl，其他提供商需要
+    ok: () => formData.value.provider === 'gemini' || !!formData.value.baseUrl?.trim(),
+  },
+  {
+    field: 'temperature',
+    message: '温度值必须在 0-2 之间',
+    ok: () => {
+      const t = formData.value.temperature;
+      return t !== undefined && t >= 0 && t <= 2;
+    },
+  },
+  {
+    // maxInputTokens 为 0 表示无限制，不需要验证非负
+    field: 'maxInputTokens',
+    message: '上下文窗口不能为负数',
+    ok: () => formData.value.maxInputTokens !== undefined && formData.value.maxInputTokens >= 0,
+  },
+  {
+    // maxOutputTokens 为 0 表示无限制，不需要验证非负
+    field: 'maxOutputTokens',
+    message: '最大输出 Token 数不能为负数',
+    ok: () => formData.value.maxOutputTokens !== undefined && formData.value.maxOutputTokens >= 0,
+  },
+];
+
 // 验证表单
 const validateForm = (): boolean => {
   formErrors.value = {};
-
-  if (!formData.value.name?.trim()) {
-    formErrors.value.name = '模型名称不能为空';
+  for (const rule of fieldValidations()) {
+    if (!rule.ok()) {
+      formErrors.value[rule.field] = rule.message;
+    }
   }
-
-  if (!formData.value.model?.trim()) {
-    formErrors.value.model = '模型标识不能为空';
-  }
-
-  if (!formData.value.apiKey?.trim()) {
-    formErrors.value.apiKey = 'API Key 不能为空';
-  }
-
-  // Gemini 不需要 baseUrl，其他提供商需要
-  if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) {
-    formErrors.value.baseUrl = '基础地址不能为空';
-  }
-
-  if (
-    formData.value.temperature === undefined ||
-    formData.value.temperature < 0 ||
-    formData.value.temperature > 2
-  ) {
-    formErrors.value.temperature = '温度值必须在 0-2 之间';
-  }
-
-  // maxInputTokens 为 0 表示无限制，不需要验证
-  if (formData.value.maxInputTokens === undefined || formData.value.maxInputTokens < 0) {
-    formErrors.value.maxInputTokens = '上下文窗口不能为负数';
-  }
-
-  // maxOutputTokens 为 0 表示无限制，不需要验证
-  if (formData.value.maxOutputTokens === undefined || formData.value.maxOutputTokens < 0) {
-    formErrors.value.maxOutputTokens = '最大输出 Token 数不能为负数';
-  }
-
   return Object.keys(formErrors.value).length === 0;
+};
+
+// 解析临时模型的身份字段（id/name/model/apiKey），均带空值回退
+const resolveTempIdentity = (): Pick<AIModel, 'id' | 'name' | 'model' | 'apiKey'> => ({
+  id: props.model?.id || 'temp',
+  name: formData.value.name || '临时模型',
+  model: formData.value.model || '',
+  apiKey: formData.value.apiKey || '',
+});
+
+// 解析临时模型的数值限制（temperature / maxInputTokens / maxOutputTokens）
+const resolveTempLimits = (): Pick<
+  AIModel,
+  'temperature' | 'maxInputTokens' | 'maxOutputTokens'
+> => ({
+  temperature: formData.value.temperature ?? 0.7,
+  maxInputTokens: formData.value.maxInputTokens ?? 0,
+  maxOutputTokens: formData.value.maxOutputTokens ?? 0,
+});
+
+// Gemini 不需要 baseUrl，其他提供商回退到空字符串
+const resolveTempBaseUrl = (): string =>
+  formData.value.provider === 'gemini' ? '' : formData.value.baseUrl || '';
+
+// 构建用于获取配置的临时模型对象
+const buildTempModel = (): AIModel => ({
+  ...resolveTempIdentity(),
+  provider: formData.value.provider as AIProvider,
+  ...resolveTempLimits(),
+  baseUrl: resolveTempBaseUrl(),
+  enabled: true,
+  isDefault: formData.value.isDefault || {
+    translation: { enabled: false, temperature: 0.7 },
+    proofreading: { enabled: false, temperature: 0.7 },
+    termsTranslation: { enabled: false, temperature: 0.7 },
+    assistant: { enabled: false, temperature: 0.7 },
+  },
+  customHeaders: cloneDeep(formData.value.customHeaders || {}),
+  useCorsProxy: formData.value.useCorsProxy,
+  lastEdited: new Date(),
+});
+
+// 将可能为字符串/数字的 token 值解析为非负整数；无法解析时返回 undefined
+const parseNonNegativeInt = (value: number | string | undefined | null): number | undefined => {
+  if (value === undefined || value === null) return undefined;
+  const num = typeof value === 'number' ? value : parseInt(String(value), 10);
+  if (isNaN(num) || num < 0) return undefined;
+  return num;
+};
+
+// 从配置结果中抽取有效的 maxInputTokens / maxOutputTokens
+const buildAiConfigFromResult = (
+  result: AIConfigResult,
+): { maxInputTokens?: number; maxOutputTokens?: number } => {
+  const config: { maxInputTokens?: number; maxOutputTokens?: number } = {};
+  const inputTokens = parseNonNegativeInt(result.maxInputTokens);
+  if (inputTokens !== undefined) config.maxInputTokens = inputTokens;
+  const outputTokens = parseNonNegativeInt(result.maxOutputTokens);
+  if (outputTokens !== undefined) config.maxOutputTokens = outputTokens;
+  return config;
+};
+
+// 构建测试成功的详情消息（使用原始值进行本地化格式化）
+const buildTestDetailMessage = (result: AIConfigResult): string => {
+  const details: string[] = [];
+  if (result.maxInputTokens && result.maxInputTokens > 0) {
+    details.push(`上下文窗口: ${result.maxInputTokens.toLocaleString()}`);
+  }
+  if (result.maxOutputTokens && result.maxOutputTokens > 0) {
+    details.push(`最大输出 Token: ${result.maxOutputTokens.toLocaleString()}`);
+  }
+  return details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
+};
+
+// 处理测试成功：更新配置信息与表单字段，并提示成功
+const handleTestSuccess = (result: AIConfigResult) => {
+  const config = buildAiConfigFromResult(result);
+  aiConfig.value = Object.keys(config).length > 0 ? config : null;
+
+  // 注意：maxInputTokens / maxOutputTokens 为 0 表示无限制，所以只更新大于 0 的值
+  if (config.maxInputTokens !== undefined && config.maxInputTokens > 0) {
+    formData.value.maxInputTokens = config.maxInputTokens;
+  }
+  if (config.maxOutputTokens !== undefined && config.maxOutputTokens > 0) {
+    formData.value.maxOutputTokens = config.maxOutputTokens;
+  }
+
+  // 如果模型信息有更新，更新模型字段
+  if (result.modelInfo && result.modelInfo.id !== formData.value.model) {
+    formData.value.model = result.modelInfo.id;
+  }
+
+  toast.add({
+    severity: 'success',
+    summary: '测试成功',
+    detail: buildTestDetailMessage(result),
+    life: 3000,
+  });
 };
 
 // 测试 AI 模型（获取配置）
@@ -165,94 +283,10 @@ const testModel = async () => {
   isTesting.value = true;
 
   try {
-    // 构建临时模型对象用于配置获取
-    const tempModel: AIModel = {
-      id: props.model?.id || 'temp',
-      name: formData.value.name || '临时模型',
-      provider: formData.value.provider as AIProvider,
-      model: formData.value.model || '',
-      temperature: formData.value.temperature ?? 0.7,
-      maxInputTokens: formData.value.maxInputTokens ?? 0,
-      maxOutputTokens: formData.value.maxOutputTokens ?? 0,
-      apiKey: formData.value.apiKey || '',
-      baseUrl: formData.value.provider === 'gemini' ? '' : formData.value.baseUrl || '',
-      enabled: true,
-      isDefault: formData.value.isDefault || {
-        translation: { enabled: false, temperature: 0.7 },
-        proofreading: { enabled: false, temperature: 0.7 },
-        termsTranslation: { enabled: false, temperature: 0.7 },
-        assistant: { enabled: false, temperature: 0.7 },
-      },
-      customHeaders: cloneDeep(formData.value.customHeaders || {}),
-      useCorsProxy: formData.value.useCorsProxy,
-      lastEdited: new Date(),
-    };
+    const result = await ConfigService.getConfig(buildTempModel());
 
-    const result = await ConfigService.getConfig(tempModel);
-
-    // 只有在成功时才处理配置信息
     if (result.success) {
-      // 保存从 AI 获取的配置信息
-      const config: typeof aiConfig.value = {};
-
-      // 确保 maxInputTokens 是数字类型
-      if (result.maxInputTokens !== undefined && result.maxInputTokens !== null) {
-        const maxInputTokensValue =
-          typeof result.maxInputTokens === 'number'
-            ? result.maxInputTokens
-            : parseInt(String(result.maxInputTokens), 10);
-        if (!isNaN(maxInputTokensValue) && maxInputTokensValue >= 0) {
-          config.maxInputTokens = maxInputTokensValue;
-        }
-      }
-
-      // 确保 maxOutputTokens 是数字类型
-      if (result.maxOutputTokens !== undefined && result.maxOutputTokens !== null) {
-        const maxOutputTokensValue =
-          typeof result.maxOutputTokens === 'number'
-            ? result.maxOutputTokens
-            : parseInt(String(result.maxOutputTokens), 10);
-        if (!isNaN(maxOutputTokensValue) && maxOutputTokensValue >= 0) {
-          config.maxOutputTokens = maxOutputTokensValue;
-        }
-      }
-
-      aiConfig.value = Object.keys(config).length > 0 ? config : null;
-
-      // 如果获取到 maxInputTokens，自动更新表单字段（确保是数字）
-      // 注意：maxInputTokens 为 0 表示无限制，所以只更新大于 0 的值
-      if (config.maxInputTokens !== undefined && config.maxInputTokens > 0) {
-        formData.value.maxInputTokens = config.maxInputTokens;
-      }
-
-      // 如果获取到 maxOutputTokens，自动更新表单字段（确保是数字）
-      if (config.maxOutputTokens !== undefined && config.maxOutputTokens > 0) {
-        formData.value.maxOutputTokens = config.maxOutputTokens;
-      }
-
-      // 如果模型信息有更新，更新模型字段
-      if (result.modelInfo && result.modelInfo.id !== formData.value.model) {
-        formData.value.model = result.modelInfo.id;
-      }
-
-      // 构建详细信息
-      const details: string[] = [];
-      if (result.maxInputTokens && result.maxInputTokens > 0) {
-        details.push(`上下文窗口: ${result.maxInputTokens.toLocaleString()}`);
-      }
-      if (result.maxOutputTokens && result.maxOutputTokens > 0) {
-        details.push(`最大输出 Token: ${result.maxOutputTokens.toLocaleString()}`);
-      }
-
-      const detailMessage =
-        details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
-
-      toast.add({
-        severity: 'success',
-        summary: '测试成功',
-        detail: detailMessage,
-        life: 3000,
-      });
+      handleTestSuccess(result);
     } else {
       // 配置获取失败，只显示错误消息
       toast.add({
@@ -286,43 +320,44 @@ const captureSnapshot = () => {
   initialFormSnapshot.value = cloneDeep(formData.value);
 };
 
+// 获取可用模型列表的前置条件：必须有 API Key，且非 Gemini 提供商必须有 baseUrl
+const canFetchModels = (): boolean => {
+  if (!formData.value.apiKey?.trim()) return false;
+  if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) return false;
+  return true;
+};
+
+// 构建 getAvailableModels 的请求配置
+const buildModelsRequestConfig = (): Parameters<
+  (typeof AIServiceFactory)['getAvailableModels']
+>[1] => {
+  const baseUrl = formData.value.provider === 'gemini' ? undefined : formData.value.baseUrl;
+  const config: Parameters<(typeof AIServiceFactory)['getAvailableModels']>[1] = {
+    // apiKey 由 canFetchModels() 保证非空
+    apiKey: formData.value.apiKey!,
+    baseUrl,
+    useCorsProxy: formData.value.useCorsProxy,
+  };
+  if (formData.value.customHeaders && Object.keys(formData.value.customHeaders).length > 0) {
+    config.customHeaders = formData.value.customHeaders;
+  }
+  return config;
+};
+
 // 获取可用模型列表
 const fetchAvailableModels = async () => {
-  // 需要 API Key 才能获取模型列表
-  if (!formData.value.apiKey?.trim()) {
-    availableModels.value = [];
-    return;
-  }
-
-  // Gemini 不需要 baseUrl，其他提供商需要
-  if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) {
+  if (!canFetchModels()) {
     availableModels.value = [];
     return;
   }
 
   isLoadingModels.value = true;
   try {
-    const baseUrl = formData.value.provider === 'gemini' ? undefined : formData.value.baseUrl;
-
-    const config: Parameters<typeof AIServiceFactory.getAvailableModels>[1] = {
-      apiKey: formData.value.apiKey,
-      baseUrl: baseUrl,
-      useCorsProxy: formData.value.useCorsProxy,
-    };
-    if (formData.value.customHeaders && Object.keys(formData.value.customHeaders).length > 0) {
-      config.customHeaders = formData.value.customHeaders;
-    }
-
     const result = await AIServiceFactory.getAvailableModels(
       formData.value.provider as AIProvider,
-      config,
+      buildModelsRequestConfig(),
     );
-
-    if (result.success && result.models) {
-      availableModels.value = result.models;
-    } else {
-      availableModels.value = [];
-    }
+    availableModels.value = result.success && result.models ? result.models : [];
   } catch (error) {
     console.error('获取可用模型列表失败:', error);
     availableModels.value = [];
@@ -358,59 +393,59 @@ watch([() => formData.value.apiKey, () => formData.value.baseUrl], () => {
   return () => clearTimeout(timeoutId);
 });
 
+// 合并单个任务的默认配置，确保 enabled / temperature 字段完整
+const mergeTaskDefault = (
+  task: { enabled?: boolean; temperature?: number } | undefined,
+): { enabled: boolean; temperature: number } => ({
+  enabled: task?.enabled ?? false,
+  temperature: task?.temperature ?? 0.7,
+});
+
+// 编辑模式：根据 props.model 构建 formData，补全缺失字段并合并任务默认值
+const buildEditFormData = (model: AIModel): AIModelFormData => {
+  const defaultTasks = {
+    translation: { enabled: false, temperature: 0.7 },
+    proofreading: { enabled: false, temperature: 0.7 },
+    termsTranslation: { enabled: false, temperature: 0.7 },
+    assistant: { enabled: false, temperature: 0.7 },
+  };
+  return {
+    ...model,
+    useCorsProxy: model.useCorsProxy ?? true,
+    isDefault: {
+      ...defaultTasks,
+      ...model.isDefault,
+      translation: mergeTaskDefault(model.isDefault.translation),
+      proofreading: mergeTaskDefault(model.isDefault.proofreading),
+      termsTranslation: mergeTaskDefault(model.isDefault.termsTranslation),
+      assistant: mergeTaskDefault(model.isDefault.assistant),
+    },
+    customHeaders: cloneDeep(model.customHeaders || {}),
+  } as AIModelFormData;
+};
+
+// 从已保存模型数据填充 aiConfig，用于展示从 AI 获取的配置信息
+const initAiConfigFromModel = (model: AIModel) => {
+  const config: typeof aiConfig.value = {};
+  if (model.maxInputTokens !== undefined && model.maxInputTokens !== null) {
+    config.maxInputTokens = model.maxInputTokens;
+  }
+  if (model.maxOutputTokens !== undefined && model.maxOutputTokens !== null) {
+    config.maxOutputTokens = model.maxOutputTokens;
+  }
+  // 即使只有部分字段，也要设置 aiConfig
+  aiConfig.value = config;
+};
+
 // 监听 visible 变化，初始化表单
 watch(
   () => props.visible,
   (newVisible) => {
     if (newVisible) {
       if (props.mode === 'edit' && props.model) {
-        // 编辑模式：填充现有数据
-        // 确保所有任务配置都存在
-        const defaultTasks: typeof formData.value.isDefault = {
-          translation: { enabled: false, temperature: 0.7 },
-          proofreading: { enabled: false, temperature: 0.7 },
-          termsTranslation: { enabled: false, temperature: 0.7 },
-          assistant: { enabled: false, temperature: 0.7 },
-        };
-
-        // 合并现有数据，确保新字段有默认值
-        formData.value = {
-          ...props.model,
-          useCorsProxy: props.model.useCorsProxy ?? true,
-          isDefault: {
-            ...defaultTasks,
-            ...props.model.isDefault,
-            // 确保每个任务配置都有完整的结构
-            translation: {
-              enabled: props.model.isDefault.translation?.enabled ?? false,
-              temperature: props.model.isDefault.translation?.temperature ?? 0.7,
-            },
-            proofreading: {
-              enabled: props.model.isDefault.proofreading?.enabled ?? false,
-              temperature: props.model.isDefault.proofreading?.temperature ?? 0.7,
-            },
-            termsTranslation: {
-              enabled: props.model.isDefault.termsTranslation?.enabled ?? false,
-              temperature: props.model.isDefault.termsTranslation?.temperature ?? 0.7,
-            },
-            assistant: {
-              enabled: props.model.isDefault.assistant?.enabled ?? false,
-              temperature: props.model.isDefault.assistant?.temperature ?? 0.7,
-            },
-          },
-          customHeaders: cloneDeep(props.model.customHeaders || {}),
-        } as typeof formData.value;
-
-        // 从已保存的模型数据中填充 aiConfig，以便显示
-        const config: typeof aiConfig.value = {};
-        if (props.model.maxInputTokens !== undefined && props.model.maxInputTokens !== null) {
-          config.maxInputTokens = props.model.maxInputTokens;
-        }
-        if (props.model.maxOutputTokens !== undefined && props.model.maxOutputTokens !== null) {
-          config.maxOutputTokens = props.model.maxOutputTokens;
-        }
-        // 即使只有部分字段，也要设置 aiConfig
-        aiConfig.value = config;
+        // 编辑模式：填充现有数据（补全所有任务配置）
+        formData.value = buildEditFormData(props.model);
+        initAiConfigFromModel(props.model);
       } else {
         // 添加模式：重置表单
         resetForm();
@@ -479,162 +514,16 @@ const updateCustomHeaders = () => {
     @update:visible="handleDialogVisibleChange"
   >
     <div class="space-y-5 py-2">
-      <!-- 启用状态 -->
-      <div
-        class="flex items-center justify-between py-3 px-3 bg-white/5 rounded-lg border border-white/10"
-      >
-        <label :for="`${idPrefix}-enabled`" class="block text-sm font-medium text-moon/90"
-          >启用模型</label
-        >
-        <ToggleSwitch :id="`${idPrefix}-enabled`" v-model="formData.enabled" />
-      </div>
+      <!-- 启用状态 / CORS / 模型名称 / 温度 / 提供商 / API Key / 基础地址 -->
+      <AiModelBasicFields :is-browser="isBrowser" />
 
-      <!-- CORS 代理（仅浏览器模式显示） -->
-      <div
-        v-if="isBrowser"
-        class="flex items-center justify-between py-3 px-3 bg-white/5 rounded-lg border border-white/10"
-      >
-        <div>
-          <label :for="`${idPrefix}-useCorsProxy`" class="block text-sm font-medium text-moon/90"
-            >使用 CORS 代理</label
-          >
-          <small class="text-xs text-moon/60">关闭后 API 请求将直连，不经过 CORS 代理服务器</small>
-        </div>
-        <ToggleSwitch :id="`${idPrefix}-useCorsProxy`" v-model="formData.useCorsProxy" />
-      </div>
-
-      <!-- 模型名称 -->
-      <div class="space-y-2">
-        <label :for="`${idPrefix}-name`" class="block text-sm font-medium text-moon/90"
-          >模型名称 *</label
-        >
-        <InputText
-          :id="`${idPrefix}-name`"
-          v-model="formData.name"
-          placeholder="例如: GPT-4 翻译模型"
-          class="w-full"
-          :class="{ 'p-invalid': formErrors.name }"
-        />
-        <small v-if="formErrors.name" class="p-error block mt-1">{{ formErrors.name }}</small>
-      </div>
-
-      <!-- 温度 -->
-      <div class="space-y-2">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <label :for="`${idPrefix}-temperature`" class="block text-sm font-medium text-moon/90"
-            >温度 (0-2) *</label
-          >
-          <span class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded">{{
-            formData.temperature
-          }}</span>
-        </div>
-        <Slider
-          :id="`${idPrefix}-temperature`"
-          v-model="formData.temperature"
-          :min="0"
-          :max="2"
-          :step="0.1"
-          class="w-full mt-2"
-        />
-        <small v-if="formErrors.temperature" class="p-error block mt-1">{{
-          formErrors.temperature
-        }}</small>
-      </div>
-
-      <!-- 提供商 -->
-      <div class="space-y-2">
-        <label :for="`${idPrefix}-provider`" class="block text-sm font-medium text-moon/90"
-          >提供商 *</label
-        >
-        <Select
-          :id="`${idPrefix}-provider`"
-          v-model="formData.provider"
-          :options="providerOptions"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="选择提供商"
-          class="w-full"
-        />
-      </div>
-
-      <!-- API Key -->
-      <div class="space-y-2">
-        <label :for="`${idPrefix}-apiKey`" class="block text-sm font-medium text-moon/90"
-          >API Key *</label
-        >
-        <InputText
-          :id="`${idPrefix}-apiKey`"
-          v-model="formData.apiKey"
-          type="password"
-          placeholder="输入 API Key"
-          class="w-full"
-          :class="{ 'p-invalid': formErrors.apiKey }"
-        />
-        <small v-if="formErrors.apiKey" class="p-error block mt-1">{{ formErrors.apiKey }}</small>
-      </div>
-
-      <!-- 基础地址（Gemini 不需要） -->
-      <div v-if="formData.provider !== 'gemini'" class="space-y-2">
-        <label :for="`${idPrefix}-baseUrl`" class="block text-sm font-medium text-moon/90"
-          >基础地址 *</label
-        >
-        <InputText
-          :id="`${idPrefix}-baseUrl`"
-          v-model="formData.baseUrl"
-          placeholder="例如: https://api.openai.com/v1"
-          class="w-full"
-          :class="{ 'p-invalid': formErrors.baseUrl }"
-        />
-        <small v-if="formErrors.baseUrl" class="p-error block mt-1">{{ formErrors.baseUrl }}</small>
-      </div>
-
-      <!-- 模型标识 -->
-      <div class="space-y-2">
-        <div class="flex items-center justify-between">
-          <label :for="`${idPrefix}-model`" class="block text-sm font-medium text-moon/90"
-            >模型标识 *</label
-          >
-          <Button
-            v-if="
-              formData.apiKey?.trim() &&
-              (formData.provider === 'gemini' || formData.baseUrl?.trim())
-            "
-            label="刷新列表"
-            icon="pi pi-refresh"
-            class="p-button-text p-button-sm icon-button-hover"
-            :loading="isLoadingModels"
-            @click="fetchAvailableModels"
-          />
-        </div>
-        <Select
-          :id="`${idPrefix}-model`"
-          v-model="formData.model"
-          :options="modelOptions"
-          optionLabel="label"
-          optionValue="value"
-          :editable="true"
-          :loading="isLoadingModels"
-          placeholder="例如: gpt-4, gemini-pro"
-          class="w-full"
-          :class="{ 'p-invalid': formErrors.model }"
-          filter
-        >
-          <template #option="slotProps">
-            <div class="flex flex-col">
-              <span class="font-medium">{{ slotProps.option.label }}</span>
-              <span
-                v-if="slotProps.option.value !== slotProps.option.label"
-                class="text-xs text-moon/60"
-                >{{ slotProps.option.value }}</span
-              >
-            </div>
-          </template>
-        </Select>
-        <small v-if="formErrors.model" class="p-error block mt-1">{{ formErrors.model }}</small>
-        <small v-if="availableModels.length > 0" class="text-moon/60 text-xs block mt-1">
-          找到 {{ availableModels.length }} 个可用模型
-        </small>
-      </div>
+      <!-- 模型标识（含刷新列表、可用模型提示） -->
+      <AiModelSelector
+        :model-options="modelOptions"
+        :available-models="availableModels"
+        :is-loading-models="isLoadingModels"
+        @refresh="fetchAvailableModels"
+      />
 
       <!-- AI 配置信息 -->
       <div class="space-y-3 pt-3 border-t border-white/10">
@@ -644,81 +533,30 @@ const updateCustomHeaders = () => {
             label="获取配置"
             icon="pi pi-download"
             class="p-button-text p-button-sm icon-button-hover"
-            :disabled="
-              isTesting ||
-              !formData.apiKey?.trim() ||
-              !formData.model?.trim() ||
-              (formData.provider !== 'gemini' && !formData.baseUrl?.trim())
-            "
+            :disabled="canFetchConfigDisabled"
             :loading="isTesting"
             @click="testModel"
           />
         </div>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div class="space-y-1">
-            <label class="text-xs text-moon/70">上下文窗口</label>
-            <InputNumber
-              v-model="formData.maxInputTokens"
-              :min="0"
-              :max="10000000"
-              :use-grouping="true"
-              :show-buttons="false"
-              placeholder="0 表示无限制"
-              class="w-full"
-              :class="{ 'p-invalid': formErrors.maxInputTokens }"
-            />
-            <small v-if="formErrors.maxInputTokens" class="p-error block mt-1">{{
-              formErrors.maxInputTokens
-            }}</small>
-            <small
-              v-else-if="
-                aiConfig?.maxInputTokens &&
-                aiConfig.maxInputTokens > 0 &&
-                formData.maxInputTokens !== aiConfig.maxInputTokens
-              "
-              class="text-xs text-moon/70 block mt-1"
-            >
-              从 AI 获取的上下文窗口: {{ aiConfig.maxInputTokens.toLocaleString() }}
-            </small>
-            <small
-              v-else-if="(formData.maxInputTokens ?? 0) === 0"
-              class="text-xs text-moon/70 block mt-1"
-            >
-              0 表示无限制
-            </small>
-          </div>
-          <div class="space-y-1">
-            <label class="text-xs text-moon/70">最大输出 Token</label>
-            <InputNumber
-              v-model="formData.maxOutputTokens"
-              :min="0"
-              :max="100000000"
-              :use-grouping="true"
-              :show-buttons="false"
-              placeholder="0 表示无限制"
-              class="w-full"
-              :class="{ 'p-invalid': formErrors.maxOutputTokens }"
-            />
-            <small v-if="formErrors.maxOutputTokens" class="p-error block mt-1">{{
-              formErrors.maxOutputTokens
-            }}</small>
-            <small
-              v-else-if="
-                aiConfig?.maxOutputTokens &&
-                aiConfig.maxOutputTokens > 0 &&
-                formData.maxOutputTokens !== aiConfig.maxOutputTokens
-              "
-              class="text-xs text-moon/70 block mt-1"
-            >
-              从 AI 获取: {{ aiConfig.maxOutputTokens.toLocaleString() }}
-            </small>
-            <small
-              v-else-if="(formData.maxOutputTokens ?? 0) === 0"
-              class="text-xs text-moon/70 block mt-1"
-            >
-              0 表示无限制
-            </small>
-          </div>
+          <AiTokenField
+            v-model="formData.maxInputTokens"
+            input-id="edit-maxInputTokens"
+            label="上下文窗口"
+            :max="10000000"
+            :error="formErrors.maxInputTokens"
+            :ai-config-value="aiConfig?.maxInputTokens"
+            ai-hint-label="从 AI 获取的上下文窗口"
+          />
+          <AiTokenField
+            v-model="formData.maxOutputTokens"
+            input-id="edit-maxOutputTokens"
+            label="最大输出 Token"
+            :max="100000000"
+            :error="formErrors.maxOutputTokens"
+            :ai-config-value="aiConfig?.maxOutputTokens"
+            ai-hint-label="从 AI 获取"
+          />
         </div>
       </div>
 
@@ -733,200 +571,26 @@ const updateCustomHeaders = () => {
             @click="addCustomHeader"
           />
         </div>
-        <div class="space-y-2">
-          <div
-            v-for="(header, index) in customHeadersList"
-            :key="index"
-            class="flex items-center gap-2"
-          >
-            <InputText
-              v-model="header.key"
-              placeholder="Header Key (例如: User-Agent)"
-              class="flex-1"
-              @input="updateCustomHeaders"
-            />
-            <InputText
-              v-model="header.value"
-              placeholder="Value"
-              class="flex-1"
-              @input="updateCustomHeaders"
-            />
-            <Button
-              icon="pi pi-trash"
-              class="p-button-danger p-button-text p-button-sm p-2"
-              @click="removeCustomHeader(index)"
-            />
-          </div>
-          <div
-            v-if="customHeadersList.length === 0"
-            class="text-xs text-moon/60 italic text-center py-2 bg-white/5 rounded"
-          >
-            未配置自定义请求头
-          </div>
-          <div class="text-xs text-amber-500/80 mt-1">
-            * 注意：某些 Header 可能会被浏览器安全策略阻止，或覆盖默认的 API Key 认证机制。
-          </div>
-        </div>
+        <AiCustomHeaders
+          :headers="customHeadersList"
+          @change="updateCustomHeaders"
+          @remove="removeCustomHeader"
+        />
       </div>
 
       <!-- 默认任务 -->
       <div class="space-y-4 pt-3 border-t border-white/10">
         <label class="block text-sm font-medium text-moon/90 mb-3">默认任务</label>
         <div class="space-y-4">
-          <!-- 翻译 -->
-          <div class="p-3 rounded-lg border border-white/10 bg-white/5">
-            <div class="flex items-center justify-between mb-3">
-              <div
-                class="flex items-center cursor-pointer"
-                @click="
-                  formData.isDefault.translation.enabled = !formData.isDefault.translation.enabled
-                "
-              >
-                <Checkbox
-                  :id="`${idPrefix}-default-translation`"
-                  v-model="formData.isDefault.translation.enabled"
-                  :binary="true"
-                  @click.stop
-                />
-                <label :for="`${idPrefix}-default-translation`" class="ml-2 text-sm cursor-pointer"
-                  >翻译</label
-                >
-              </div>
-              <span
-                v-if="formData.isDefault.translation.enabled"
-                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
-              >
-                {{ formData.isDefault.translation.temperature }}
-              </span>
-            </div>
-            <div v-if="formData.isDefault.translation.enabled" class="mt-2">
-              <Slider
-                :id="`${idPrefix}-temperature-translation`"
-                v-model="formData.isDefault.translation.temperature"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                class="w-full"
-              />
-            </div>
-          </div>
-
-          <!-- 校对 -->
-          <div class="p-3 rounded-lg border border-white/10 bg-white/5">
-            <div class="flex items-center justify-between mb-3">
-              <div
-                class="flex items-center cursor-pointer"
-                @click="
-                  formData.isDefault.proofreading.enabled = !formData.isDefault.proofreading.enabled
-                "
-              >
-                <Checkbox
-                  :id="`${idPrefix}-default-proofreading`"
-                  v-model="formData.isDefault.proofreading.enabled"
-                  :binary="true"
-                  @click.stop
-                />
-                <label :for="`${idPrefix}-default-proofreading`" class="ml-2 text-sm cursor-pointer"
-                  >校对/润色</label
-                >
-              </div>
-              <span
-                v-if="formData.isDefault.proofreading.enabled"
-                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
-              >
-                {{ formData.isDefault.proofreading.temperature }}
-              </span>
-            </div>
-            <div v-if="formData.isDefault.proofreading.enabled" class="mt-2">
-              <Slider
-                :id="`${idPrefix}-temperature-proofreading`"
-                v-model="formData.isDefault.proofreading.temperature"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                class="w-full"
-              />
-            </div>
-          </div>
-
-          <!-- 术语翻译 -->
-          <div class="p-3 rounded-lg border border-white/10 bg-white/5">
-            <div class="flex items-center justify-between mb-3">
-              <div
-                class="flex items-center cursor-pointer"
-                @click="
-                  formData.isDefault.termsTranslation.enabled =
-                    !formData.isDefault.termsTranslation.enabled
-                "
-              >
-                <Checkbox
-                  :id="`${idPrefix}-default-termsTranslation`"
-                  v-model="formData.isDefault.termsTranslation.enabled"
-                  :binary="true"
-                  @click.stop
-                />
-                <label
-                  :for="`${idPrefix}-default-termsTranslation`"
-                  class="ml-2 text-sm cursor-pointer"
-                  >术语翻译</label
-                >
-              </div>
-              <span
-                v-if="formData.isDefault.termsTranslation?.enabled"
-                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
-              >
-                {{ formData.isDefault.termsTranslation?.temperature }}
-              </span>
-            </div>
-            <div v-if="formData.isDefault.termsTranslation?.enabled" class="mt-2">
-              <Slider
-                :id="`${idPrefix}-temperature-termsTranslation`"
-                v-model="formData.isDefault.termsTranslation.temperature"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                class="w-full"
-              />
-            </div>
-          </div>
-
-          <!-- 助手 -->
-          <div class="p-3 rounded-lg border border-white/10 bg-white/5">
-            <div class="flex items-center justify-between mb-3">
-              <div
-                class="flex items-center cursor-pointer"
-                @click="
-                  formData.isDefault.assistant.enabled = !formData.isDefault.assistant.enabled
-                "
-              >
-                <Checkbox
-                  :id="`${idPrefix}-default-assistant`"
-                  v-model="formData.isDefault.assistant.enabled"
-                  :binary="true"
-                  @click.stop
-                />
-                <label :for="`${idPrefix}-default-assistant`" class="ml-2 text-sm cursor-pointer"
-                  >助手</label
-                >
-              </div>
-              <span
-                v-if="formData.isDefault.assistant.enabled"
-                class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
-              >
-                {{ formData.isDefault.assistant.temperature }}
-              </span>
-            </div>
-            <div v-if="formData.isDefault.assistant.enabled" class="mt-2">
-              <Slider
-                :id="`${idPrefix}-temperature-assistant`"
-                v-model="formData.isDefault.assistant.temperature"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                class="w-full"
-              />
-            </div>
-          </div>
+          <AiTaskDefaultItem
+            v-for="task in taskItems"
+            :key="task.key"
+            v-model:enabled="formData.isDefault[task.key].enabled"
+            v-model:temperature="formData.isDefault[task.key].temperature"
+            :label="task.label"
+            :id-prefix="idPrefix"
+            :id-suffix="task.key"
+          />
         </div>
       </div>
     </div>

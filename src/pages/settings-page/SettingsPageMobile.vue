@@ -8,6 +8,7 @@
  * The MobileSysBar and MobileTabBar are provided by MainLayoutMobile,
  * so this variant renders only the settings body.
  */
+import { computed, type Component } from 'vue';
 import { injectSettingsPage } from 'src/composables/settings-page/useSettingsPage';
 import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
 import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
@@ -19,6 +20,38 @@ import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.v
 import AboutSection from 'src/components/settings/AboutSection.vue';
 
 const ctx = injectSettingsPage();
+
+// 各 tab 值 → 组件的静态映射（electron / web 两套）。本地嵌入 tab（'3'/'4'）单独处理。
+const ELECTRON_TAB_MAP: Record<string, Component> = {
+  '0': AIModelSettingsTab,
+  '1': ApiKeysSettingsTab,
+  '2': SyncSettingsTab,
+  '4': ScraperSettingsTab,
+  '5': ImportExportTab,
+  '6': AboutSection,
+};
+const WEB_TAB_MAP: Record<string, Component> = {
+  '0': AIModelSettingsTab,
+  '1': ProxySettingsTab,
+  '2': ApiKeysSettingsTab,
+  '3': SyncSettingsTab,
+  '5': ScraperSettingsTab,
+  '6': ImportExportTab,
+  '7': AboutSection,
+};
+
+// 把原先 7 路 v-if/v-else-if 折叠成单次 map 查表，消除模板与脚本双重分支
+const settingsTabComponent = computed<Component | null>(() => {
+  const tab = ctx.activeTab.value;
+  if (tab === ctx.embeddingSettingsTabValue.value) return EmbeddingSettingsTab;
+  const map = ctx.isElectron.value ? ELECTRON_TAB_MAP : WEB_TAB_MAP;
+  return map[tab] ?? null;
+});
+
+// SyncSettingsTab 需要额外传 :visible="true"，其余 tab 不传任何额外属性
+const settingsTabBindings = computed(() =>
+  settingsTabComponent.value === SyncSettingsTab ? { visible: true } : {},
+);
 </script>
 
 <template>
@@ -48,29 +81,7 @@ const ctx = injectSettingsPage();
     <!-- 内容区（一次只渲染激活 tab）。顺序对应 public/help/settings-guide.md：
          AI 模型 → (代理) → API Keys → 同步 → 本地嵌入 → 爬虫 → 导入/导出 -->
     <div class="tsm-settings-scroll">
-      <AIModelSettingsTab v-if="ctx.activeTab.value === '0'" />
-      <ProxySettingsTab
-        v-else-if="!ctx.isElectron.value && ctx.activeTab.value === '1'"
-      />
-      <ApiKeysSettingsTab
-        v-else-if="ctx.activeTab.value === (ctx.isElectron.value ? '1' : '2')"
-      />
-      <SyncSettingsTab
-        v-else-if="ctx.activeTab.value === (ctx.isElectron.value ? '2' : '3')"
-        :visible="true"
-      />
-      <EmbeddingSettingsTab
-        v-else-if="ctx.activeTab.value === ctx.embeddingSettingsTabValue.value"
-      />
-      <ScraperSettingsTab
-        v-else-if="ctx.activeTab.value === (ctx.isElectron.value ? '4' : '5')"
-      />
-      <ImportExportTab
-        v-else-if="ctx.activeTab.value === (ctx.isElectron.value ? '5' : '6')"
-      />
-      <AboutSection
-        v-else-if="ctx.activeTab.value === (ctx.isElectron.value ? '6' : '7')"
-      />
+      <component :is="settingsTabComponent" v-bind="settingsTabBindings" />
     </div>
   </section>
 </template>

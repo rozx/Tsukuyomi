@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
@@ -7,6 +7,18 @@ import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
 
 const ctx = injectBooksPage();
+
+// 列表状态文案 / 显隐：吸收模板内的 filter / || / 三元
+const starredCount = computed(() => ctx.booksStore.books.filter((b) => b.starred).length);
+const hasStarred = computed(() => starredCount.value > 0);
+const isListLoading = computed(() => ctx.booksStore.isLoading || !ctx.booksStore.isLoaded);
+const isEmptyList = computed(() => ctx.filteredBooks.value.length === 0);
+const hasNoSearch = computed(() => !ctx.searchQuery.value);
+const emptyText = computed(() => (ctx.searchQuery.value ? '未找到匹配的书籍' : '暂无书籍'));
+const libraryMetaText = computed(() => {
+  const base = `共 ${ctx.booksStore.books.length} 本`;
+  return hasStarred.value ? `${base} · ${starredCount.value} 本收藏` : base;
+});
 
 // 添加书籍 picker（底部抽屉）：展开手动 / 从网站 / 从 JSON 三个入口
 const showAddPicker = ref(false);
@@ -37,10 +49,7 @@ const pickImportFromJson = () => {
       <div class="ml-eyebrow">LIBRARY</div>
       <h1 class="ml-title">书库</h1>
       <div class="ml-meta">
-        共 {{ ctx.booksStore.books.length }} 本
-        <template v-if="ctx.booksStore.books.filter((b) => b.starred).length > 0">
-          · {{ ctx.booksStore.books.filter((b) => b.starred).length }} 本收藏
-        </template>
+        {{ libraryMetaText }}
       </div>
     </header>
 
@@ -64,7 +73,7 @@ const pickImportFromJson = () => {
     </div>
 
     <!-- 加载 -->
-    <div v-if="ctx.booksStore.isLoading || !ctx.booksStore.isLoaded" class="ml-state">
+    <div v-if="isListLoading" class="ml-state">
       <ProgressSpinner
         style="width: 36px; height: 36px"
         stroke-width="4"
@@ -75,13 +84,13 @@ const pickImportFromJson = () => {
     </div>
 
     <!-- 空状态 -->
-    <div v-else-if="ctx.filteredBooks.value.length === 0" class="ml-state">
+    <div v-else-if="isEmptyList" class="ml-state">
       <i class="pi pi-book ml-state-icon" aria-hidden="true" />
       <span class="ml-state-title">
-        {{ ctx.searchQuery.value ? '未找到匹配的书籍' : '暂无书籍' }}
+        {{ emptyText }}
       </span>
       <Button
-        v-if="!ctx.searchQuery.value"
+        v-if="hasNoSearch"
         label="添加第一本书籍"
         icon="pi pi-plus"
         class="p-button-primary"

@@ -63,6 +63,22 @@ const variantComponent = computed(() => {
       return BookDetailsDesktop;
   }
 });
+
+// 以下 computed 把模板里大量 `ctx.x.value || null/''` 收进脚本侧，降低模板圈复杂度
+const bookOrNull = computed(() => ctx.book.value || null);
+const currentBookWebUrl = computed(() => ctx.book.value?.webUrl?.[0] || '');
+const selectedChapterOrNull = computed(() => ctx.selectedChapter.value || null);
+const deletingTermName = computed(() => ctx.deletingTerm.value?.name || null);
+const deletingCharacterName = computed(() => ctx.deletingCharacter.value?.name || null);
+const editChapterDialogProps = computed(() => ({
+  title: ctx.editingChapterTitle.value || '',
+  translation: ctx.editingChapterTranslation.value || '',
+  targetVolumeId: ctx.editingChapterTargetVolumeId.value || null,
+  webUrl: ctx.editingChapterWebUrl.value || '',
+  translationInstructions: ctx.editingChapterTranslationInstructions.value || '',
+  polishInstructions: ctx.editingChapterPolishInstructions.value || '',
+  proofreadingInstructions: ctx.editingChapterProofreadingInstructions.value || '',
+}));
 </script>
 
 <template>
@@ -109,18 +125,12 @@ const variantComponent = computed(() => {
       />
       <EditChapterDialog
         v-model:visible="ctx.showEditChapterDialog.value"
-        :title="ctx.editingChapterTitle.value || ''"
-        :translation="ctx.editingChapterTranslation.value || ''"
-        :target-volume-id="ctx.editingChapterTargetVolumeId.value || null"
+        v-bind="editChapterDialogProps"
         :volume-options="ctx.volumeOptions.value"
         :loading="ctx.isEditingChapter.value"
-        :web-url="ctx.editingChapterWebUrl.value || ''"
         :last-updated="ctx.editingChapterLastUpdated.value"
         :last-edited="ctx.editingChapterLastEdited.value"
         :created-at="ctx.editingChapterCreatedAt.value"
-        :translation-instructions="ctx.editingChapterTranslationInstructions.value || ''"
-        :polish-instructions="ctx.editingChapterPolishInstructions.value || ''"
-        :proofreading-instructions="ctx.editingChapterProofreadingInstructions.value || ''"
         @save="ctx.handleEditChapter"
       />
       <DeleteVolumeConfirmDialog
@@ -138,15 +148,15 @@ const variantComponent = computed(() => {
       <BookDialog
         v-model:visible="ctx.showBookDialog.value"
         mode="edit"
-        :book="ctx.book.value || null"
+        :book="bookOrNull"
         :loading="ctx.isSavingBook.value"
         @save="ctx.handleBookSave"
         @cancel="ctx.showBookDialog.value = false"
       />
       <NovelScraperDialog
         v-model:visible="ctx.showScraperDialog.value"
-        :current-book="ctx.book.value || null"
-        :initial-url="ctx.book.value?.webUrl?.[0] || ''"
+        :current-book="bookOrNull"
+        :initial-url="currentBookWebUrl"
         :show-novel-info="false"
         initial-filter="unimported"
         @apply="ctx.handleScraperUpdate"
@@ -194,8 +204,8 @@ const variantComponent = computed(() => {
 
       <ChapterSettingsPopover
         ref="chapterSettingsPopover"
-        :book="ctx.book.value || null"
-        :chapter="ctx.selectedChapter.value || null"
+        :book="bookOrNull"
+        :chapter="selectedChapterOrNull"
         @save="ctx.handleSaveChapterSettings"
       />
 
@@ -219,7 +229,7 @@ const variantComponent = computed(() => {
 
       <DeleteTermConfirmDialog
         v-model:visible="ctx.showDeleteTermConfirm.value"
-        :term-name="ctx.deletingTerm.value?.name || null"
+        :term-name="deletingTermName"
         :loading="ctx.isDeletingTerm.value"
         @confirm="ctx.confirmDeleteTerm"
       />
@@ -233,7 +243,7 @@ const variantComponent = computed(() => {
 
       <DeleteCharacterConfirmDialog
         v-model:visible="ctx.showDeleteCharacterConfirm.value"
-        :character-name="ctx.deletingCharacter.value?.name || null"
+        :character-name="deletingCharacterName"
         :loading="ctx.isDeletingCharacter.value"
         @confirm="ctx.confirmDeleteCharacter"
       />

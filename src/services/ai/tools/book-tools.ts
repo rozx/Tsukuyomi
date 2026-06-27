@@ -377,6 +377,26 @@ function collectUpdatedFieldLabels(params: {
 }
 
 /**
+ * 字符串字段的 old/new 对比（缺省回退到「无」）
+ */
+function describeStringFieldDiff(
+  previous: string | undefined,
+  current: string | undefined,
+): { old: string; new: string } {
+  return { old: previous || '无', new: current || '无' };
+}
+
+/**
+ * 数组字段的 old/new 对比（缺省回退到空数组）
+ */
+function describeArrayFieldDiff<T>(
+  previous: T[] | undefined,
+  current: T[] | undefined,
+): { old: T[]; new: T[] } {
+  return { old: previous || [], new: current || [] };
+}
+
+/**
  * 构建返回体中 updated_fields 的 old/new 对比结构
  */
 function buildBookInfoUpdatedFieldsDiff(params: {
@@ -390,27 +410,55 @@ function buildBookInfoUpdatedFieldsDiff(params: {
   const { description, tags, author, alternate_titles, previousData, updates } = params;
   return {
     ...(description !== undefined
-      ? {
-          description: {
-            old: previousData.description || '无',
-            new: updates.description || '无',
-          },
-        }
+      ? { description: describeStringFieldDiff(previousData.description, updates.description) }
       : {}),
     ...(tags !== undefined
-      ? { tags: { old: previousData.tags || [], new: updates.tags || [] } }
+      ? { tags: describeArrayFieldDiff(previousData.tags, updates.tags) }
       : {}),
     ...(author !== undefined
-      ? { author: { old: previousData.author || '无', new: updates.author || '无' } }
+      ? { author: describeStringFieldDiff(previousData.author, updates.author) }
       : {}),
     ...(alternate_titles !== undefined
       ? {
-          alternate_titles: {
-            old: previousData.alternateTitles || [],
-            new: updates.alternateTitles || [],
-          },
+          alternate_titles: describeArrayFieldDiff(
+            previousData.alternateTitles,
+            updates.alternateTitles,
+          ),
         }
       : {}),
+  };
+}
+
+/** 章节标题 / 卷标题的展示用类型（兼容旧字符串格式与新对象格式） */
+type DisplayableTitle = string | { original: string; translation?: { translation?: string } | null };
+
+/**
+ * 从标题中取原文（旧字符串格式直接返回，新格式取 original）
+ */
+function extractTitleOriginal(title: DisplayableTitle): string {
+  return typeof title === 'string' ? title : title.original || '';
+}
+
+/**
+ * 从标题中取译文（旧字符串格式无译文，新格式取 translation.translation）
+ */
+function extractTitleTranslation(title: DisplayableTitle): string {
+  return typeof title === 'string' ? '' : title.translation?.translation || '';
+}
+
+/**
+ * 将单个章节映射为 list_chapters / list_chapters_by_volume 使用的简化结构
+ */
+function buildChapterListItem(chapter: Chapter): {
+  id: string;
+  title_original: string;
+  title_translation: string;
+} | null {
+  if (!chapter) return null;
+  return {
+    id: chapter.id,
+    title_original: extractTitleOriginal(chapter.title),
+    title_translation: extractTitleTranslation(chapter.title),
   };
 }
 
@@ -425,12 +473,8 @@ function flattenBookChaptersForList(
   for (const volume of book.volumes) {
     if (!volume || !volume.chapters) continue;
     for (const chapter of volume.chapters) {
-      if (!chapter) continue;
-      const titleOriginal =
-        typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
-      const titleTranslation =
-        typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '';
-      result.push({ id: chapter.id, title_original: titleOriginal, title_translation: titleTranslation });
+      const item = buildChapterListItem(chapter);
+      if (item) result.push(item);
     }
   }
   return result;
@@ -545,6 +589,36 @@ function buildAdjacentChapterTool(spec: {
 }
 
 /**
+ * 按方向取相邻章节（前一章 / 后一章），统一 ChapterService 调用
+ */
+function getAdjacentChapter(book: Novel, chapterId: string, direction: 'previous' | 'next') {
+  return direction === 'previous'
+    ? ChapterService.getPreviousChapter(book, chapterId)
+    : ChapterService.getNextChapter(book, chapterId);
+}
+
+/**
+ * 发送相邻章节工具的读取操作回调（onAction 为空时跳过）
+ */
+function emitAdjacentReadAction(
+  onAction: ToolContext['onAction'],
+  chapterId: string,
+  chapterTitle: string,
+  toolName: 'get_previous_chapter' | 'get_next_chapter',
+): void {
+  if (!onAction) return;
+  onAction({
+    type: 'read',
+    entity: 'chapter',
+    data: {
+      chapter_id: chapterId,
+      chapter_title: chapterTitle,
+      tool_name: toolName,
+    },
+  });
+}
+
+/**
  * 相邻章节（前/后一章）工具的共享处理函数
  */
 async function handleAdjacentChapterTool(
@@ -577,10 +651,7 @@ async function handleAdjacentChapterTool(
       return jsonError(`书籍不存在: ${bookId}`);
     }
 
-    const adjacentInfo =
-      config.direction === 'previous'
-        ? ChapterService.getPreviousChapter(book, chapter_id)
-        : ChapterService.getNextChapter(book, chapter_id);
+    const adjacentInfo = getAdjacentChapter(book, chapter_id, config.direction);
     if (!adjacentInfo) {
       return jsonError(config.notFoundError);
     }
@@ -588,18 +659,7 @@ async function handleAdjacentChapterTool(
     const { chapter, volume } = adjacentInfo;
     const chapterTitle = getChapterDisplayTitle(chapter);
 
-    // 报告读取操作
-    if (onAction) {
-      onAction({
-        type: 'read',
-        entity: 'chapter',
-        data: {
-          chapter_id: chapter.id,
-          chapter_title: chapterTitle,
-          tool_name: config.toolName,
-        },
-      });
-    }
+    emitAdjacentReadAction(onAction, chapter.id, chapterTitle, config.toolName);
 
     // 如果章节内容未加载，从 IndexedDB 加载（summary_only 模式跳过 content 读取）
     let chapterContent = '';
@@ -654,6 +714,175 @@ function buildAdjacentChapterResponse(params: {
     ...(params.includeMemory && params.relatedMemories.length > 0
       ? { related_memories: params.relatedMemories }
       : {}),
+  };
+}
+
+/**
+ * 将单个卷映射为 list_chapters_by_volume 工具使用的结构（含章节列表与计数）
+ */
+function summarizeVolumeForChapterList(volume: Volume): {
+  id: string;
+  title_original: string;
+  title_translation: string;
+  chapters: Array<{ id: string; title_original: string; title_translation: string }>;
+  chapterCount: number;
+} {
+  const chapters = (volume.chapters || []).map((chapter) => ({
+    id: chapter.id,
+    title_original: extractTitleOriginal(chapter.title),
+    title_translation: extractTitleTranslation(chapter.title),
+  }));
+  return {
+    id: volume.id,
+    title_original: extractTitleOriginal(volume.title),
+    title_translation: extractTitleTranslation(volume.title),
+    chapters,
+    chapterCount: chapters.length,
+  };
+}
+
+/**
+ * 构造 list_chapters_by_volume 工具的响应体（按 volume_ids 过滤卷并汇总）
+ */
+function buildListChaptersByVolumeResponse(
+  book: Novel,
+  volume_ids: string[],
+): {
+  success: true;
+  volumes: Array<{
+    id: string;
+    title_original: string;
+    title_translation: string;
+    chapters: Array<{ id: string; title_original: string; title_translation: string }>;
+    chapterCount: number;
+  }>;
+  totalVolumes: number;
+  totalChapters: number;
+} {
+  const volumes: Array<{
+    id: string;
+    title_original: string;
+    title_translation: string;
+    chapters: Array<{ id: string; title_original: string; title_translation: string }>;
+    chapterCount: number;
+  }> = [];
+  if (book.volumes) {
+    for (const volume of book.volumes) {
+      if (volume_ids.includes(volume.id)) {
+        volumes.push(summarizeVolumeForChapterList(volume));
+      }
+    }
+  }
+  return {
+    success: true,
+    volumes,
+    totalVolumes: volumes.length,
+    totalChapters: volumes.reduce((acc, v) => acc + v.chapterCount, 0),
+  };
+}
+
+/**
+ * 解析 get_chapter_info 的分页参数：limit 默认 30（裁剪到 1-200），offset 默认 0
+ */
+function resolveChapterPaging(parsedArgs: {
+  limit?: number;
+  offset?: number;
+}): { limit: number; offset: number } {
+  const rawLimit = typeof parsedArgs.limit === 'number' ? parsedArgs.limit : 30;
+  const rawOffset = typeof parsedArgs.offset === 'number' ? parsedArgs.offset : 0;
+  return {
+    limit: Math.max(1, Math.min(200, Math.floor(rawLimit))),
+    offset: Math.max(0, Math.floor(rawOffset)),
+  };
+}
+
+/**
+ * 构造 get_chapter_info 工具的响应体（章节元信息 + 分页段落 + 可选记忆）
+ */
+function buildGetChapterInfoResponse(params: {
+  chapter: Chapter;
+  chapterTitle: string;
+  titleFields: ReturnType<typeof formatChapterTitleFields>;
+  page: ReturnType<typeof paginateChapterParagraphs>;
+  paragraphCount: number;
+  translatedCount: number;
+  limit: number;
+  volume: VolumeLike | null | undefined;
+  relatedMemories: Array<{ id: string; summary: string }>;
+  includeMemory: boolean;
+}): Record<string, unknown> {
+  const {
+    chapter,
+    chapterTitle,
+    titleFields,
+    page,
+    paragraphCount,
+    translatedCount,
+    limit,
+    volume,
+    relatedMemories,
+    includeMemory,
+  } = params;
+  return {
+    success: true,
+    chapter: {
+      id: chapter.id,
+      title: chapterTitle,
+      ...titleFields,
+      content: page.chapterContent,
+      paragraphCount,
+      translatedCount,
+      paragraphs: page.paragraphs,
+      pagination: {
+        offset: page.effectiveOffset,
+        limit,
+        returned: page.paragraphs.length,
+        hasMore: page.hasMore,
+        nextOffset: page.hasMore ? page.effectiveEnd : null,
+      },
+      volume: formatVolumeResponse(volume ?? null),
+    },
+    ...(includeMemory && relatedMemories.length > 0
+      ? { related_memories: relatedMemories }
+      : {}),
+  };
+}
+
+/**
+ * 判断 update_book_info 是否至少提供了一个要更新的字段
+ */
+function hasAnyBookInfoUpdate(params: {
+  description?: string | undefined;
+  tags?: string[] | undefined;
+  author?: string | undefined;
+  alternate_titles?: string[] | undefined;
+}): boolean {
+  return (
+    params.description !== undefined ||
+    params.tags !== undefined ||
+    params.author !== undefined ||
+    params.alternate_titles !== undefined
+  );
+}
+
+/**
+ * 构造 update_book_info 操作回调的 data（仅包含实际提供的字段）
+ */
+function buildUpdateBookInfoActionData(
+  description: string | undefined,
+  tags: string[] | undefined,
+  author: string | undefined,
+  alternate_titles: string[] | undefined,
+  updates: Partial<Novel>,
+  bookId: string | undefined,
+) {
+  return {
+    book_id: bookId,
+    tool_name: 'update_book_info',
+    ...(description !== undefined ? { description: updates.description } : {}),
+    ...(tags !== undefined ? { tags: updates.tags } : {}),
+    ...(author !== undefined ? { author: updates.author } : {}),
+    ...(alternate_titles !== undefined ? { alternate_titles: updates.alternateTitles } : {}),
   };
 }
 
@@ -821,56 +1050,7 @@ export const bookTools: ToolDefinition[] = [
           });
         }
 
-        const volumes: Array<{
-          id: string;
-          title_original: string;
-          title_translation: string;
-          chapters: Array<{
-            id: string;
-            title_original: string;
-            title_translation: string;
-          }>;
-          chapterCount: number;
-        }> = [];
-
-        if (book.volumes) {
-          for (const volume of book.volumes) {
-            if (volume_ids.includes(volume.id)) {
-              const volumeTitleOriginal =
-                typeof volume.title === 'string' ? volume.title : volume.title.original || '';
-              const volumeTitleTranslation =
-                typeof volume.title === 'string' ? '' : volume.title.translation?.translation || '';
-
-              const chapters =
-                volume.chapters?.map((chapter) => ({
-                  id: chapter.id,
-                  title_original:
-                    typeof chapter.title === 'string'
-                      ? chapter.title
-                      : chapter.title.original || '',
-                  title_translation:
-                    typeof chapter.title === 'string'
-                      ? ''
-                      : chapter.title.translation?.translation || '',
-                })) || [];
-
-              volumes.push({
-                id: volume.id,
-                title_original: volumeTitleOriginal,
-                title_translation: volumeTitleTranslation,
-                chapters,
-                chapterCount: chapters.length,
-              });
-            }
-          }
-        }
-
-        return JSON.stringify({
-          success: true,
-          volumes,
-          totalVolumes: volumes.length,
-          totalChapters: volumes.reduce((acc, v) => acc + v.chapterCount, 0),
-        });
+        return JSON.stringify(buildListChaptersByVolumeResponse(book, volume_ids));
       } catch (error) {
         return JSON.stringify({
           success: false,
@@ -1008,10 +1188,7 @@ export const bookTools: ToolDefinition[] = [
         include_memory?: boolean;
       }>(args);
       const { chapter_id, include_memory = true } = parsedArgs;
-      const rawLimit = typeof parsedArgs.limit === 'number' ? parsedArgs.limit : 30;
-      const limit = Math.max(1, Math.min(200, Math.floor(rawLimit)));
-      const rawOffset = typeof parsedArgs.offset === 'number' ? parsedArgs.offset : 0;
-      const offset = Math.max(0, Math.floor(rawOffset));
+      const { limit, offset } = resolveChapterPaging(parsedArgs);
       if (!chapter_id) {
         return jsonError('章节 ID 不能为空');
       }
@@ -1058,29 +1235,20 @@ export const bookTools: ToolDefinition[] = [
         );
 
         const titleFields = formatChapterTitleFields(chapter);
-        return JSON.stringify({
-          success: true,
-          chapter: {
-            id: chapter.id,
-            title: chapterTitle,
-            ...titleFields,
-            content: page.chapterContent,
+        return JSON.stringify(
+          buildGetChapterInfoResponse({
+            chapter,
+            chapterTitle,
+            titleFields,
+            page,
             paragraphCount,
             translatedCount,
-            paragraphs: page.paragraphs,
-            pagination: {
-              offset: page.effectiveOffset,
-              limit,
-              returned: page.paragraphs.length,
-              hasMore: page.hasMore,
-              nextOffset: page.hasMore ? page.effectiveEnd : null,
-            },
-            volume: formatVolumeResponse(volume ?? null),
-          },
-          ...(include_memory && relatedMemories.length > 0
-            ? { related_memories: relatedMemories }
-            : {}),
-        });
+            limit,
+            volume,
+            relatedMemories,
+            includeMemory: include_memory,
+          }),
+        );
       } catch (error) {
         return jsonError(error instanceof Error ? error.message : '获取章节信息失败');
       }
@@ -1271,12 +1439,7 @@ export const bookTools: ToolDefinition[] = [
       const { description, tags, author, alternate_titles } = parsedArgs;
 
       // 检查是否至少提供了一个要更新的字段
-      if (
-        description === undefined &&
-        tags === undefined &&
-        author === undefined &&
-        alternate_titles === undefined
-      ) {
+      if (!hasAnyBookInfoUpdate({ description, tags, author, alternate_titles })) {
         return jsonError(
           '必须至少提供一个要更新的字段（description、tags、author 或 alternate_titles）',
         );
@@ -1302,16 +1465,14 @@ export const bookTools: ToolDefinition[] = [
           onAction({
             type: 'update',
             entity: 'book',
-            data: {
-              book_id: bookId,
-              tool_name: 'update_book_info',
-              ...(description !== undefined ? { description: updates.description } : {}),
-              ...(tags !== undefined ? { tags: updates.tags } : {}),
-              ...(author !== undefined ? { author: updates.author } : {}),
-              ...(alternate_titles !== undefined
-                ? { alternate_titles: updates.alternateTitles }
-                : {}),
-            },
+            data: buildUpdateBookInfoActionData(
+              description,
+              tags,
+              author,
+              alternate_titles,
+              updates,
+              bookId,
+            ),
             previousData,
           });
         }

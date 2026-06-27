@@ -123,57 +123,6 @@ export const useAIModelsStore = defineStore('aiModels', {
     },
 
     /**
-     * 切换模型的启用状态
-     */
-    async toggleModelEnabled(id: string): Promise<void> {
-      const model = this.models.find((m) => m.id === id);
-      if (model) {
-        model.enabled = !model.enabled;
-        // 更新时自动设置 lastEdited 为当前时间
-        model.lastEdited = new Date();
-        await aiModelService.saveModel(model);
-      }
-    },
-
-    /**
-     * 设置模型为特定任务的默认模型
-     */
-    async setDefaultForTask(
-      id: string,
-      task: keyof AIModel['isDefault'],
-      isDefault: boolean,
-    ): Promise<void> {
-      const model = this.models.find((m) => m.id === id);
-      if (model) {
-        // 如果设置为默认，先取消其他模型的默认状态
-        if (isDefault) {
-          const modelsToUpdate: AIModel[] = [];
-          this.models.forEach((m) => {
-            if (m.id !== id && m.isDefault[task]) {
-              m.isDefault[task] = { ...m.isDefault[task], enabled: false };
-              // 更新时自动设置 lastEdited 为当前时间
-              m.lastEdited = new Date();
-              modelsToUpdate.push(m);
-            }
-          });
-          // 批量更新其他模型
-          if (modelsToUpdate.length > 0) {
-            await aiModelService.bulkSaveModels(modelsToUpdate);
-          }
-        }
-        // 保持现有的 temperature，只更新 enabled
-        const currentConfig = model.isDefault[task];
-        model.isDefault[task] = {
-          enabled: isDefault,
-          temperature: currentConfig?.temperature ?? 0.7,
-        };
-        // 更新时自动设置 lastEdited 为当前时间
-        model.lastEdited = new Date();
-        await aiModelService.saveModel(model);
-      }
-    },
-
-    /**
      * 清空所有模型（用于重置）
      */
     async clearModels(): Promise<void> {

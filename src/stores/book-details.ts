@@ -110,16 +110,6 @@ export const useBookDetailsStore = defineStore('book-details', {
 
   getters: {
     /**
-     * 获取指定书籍的展开卷 ID 集合
-     */
-    getExpandedVolumes: (state) => {
-      return (bookId: string): Set<string> => {
-        const volumeIds = state.expandedVolumes[bookId] || [];
-        return new Set(volumeIds);
-      };
-    },
-
-    /**
      * 检查指定卷是否展开
      */
     isVolumeExpanded: (state) => {
@@ -135,15 +125,6 @@ export const useBookDetailsStore = defineStore('book-details', {
     getSelectedChapter: (state) => {
       return (bookId: string): string | null => {
         return state.selectedChapter[bookId] || null;
-      };
-    },
-
-    /**
-     * 获取指定书籍的翻译进度面板显示状态
-     */
-    getShowTranslationProgress: (state) => {
-      return (bookId: string): boolean => {
-        return state.showTranslationProgress[bookId] || false;
       };
     },
   },
@@ -181,67 +162,10 @@ export const useBookDetailsStore = defineStore('book-details', {
     },
 
     /**
-     * 设置卷的展开状态
-     */
-    setVolumeExpanded(bookId: string, volumeId: string, expanded: boolean): void {
-      const volumeIds = this.expandedVolumes[bookId] || [];
-      const index = volumeIds.indexOf(volumeId);
-      if (expanded && index === -1) {
-        volumeIds.push(volumeId);
-      } else if (!expanded && index > -1) {
-        volumeIds.splice(index, 1);
-      }
-      this.expandedVolumes[bookId] = volumeIds;
-      this.saveAllState();
-    },
-
-    /**
-     * 展开所有卷
-     */
-    expandAllVolumes(bookId: string, volumeIds: string[]): void {
-      this.expandedVolumes[bookId] = [...volumeIds];
-      this.saveAllState();
-    },
-
-    /**
-     * 折叠所有卷
-     */
-    collapseAllVolumes(bookId: string): void {
-      this.expandedVolumes[bookId] = [];
-      this.saveAllState();
-    },
-
-    /**
      * 设置选中的章节
      */
     setSelectedChapter(bookId: string, chapterId: string | null): void {
       this.selectedChapter[bookId] = chapterId;
-      this.saveAllState();
-    },
-
-    /**
-     * 设置翻译进度面板显示状态
-     */
-    setShowTranslationProgress(bookId: string, show: boolean): void {
-      this.showTranslationProgress[bookId] = show;
-      this.saveAllState();
-    },
-
-    /**
-     * 切换翻译进度面板显示状态
-     */
-    toggleShowTranslationProgress(bookId: string): void {
-      const current = this.showTranslationProgress[bookId] || false;
-      this.setShowTranslationProgress(bookId, !current);
-    },
-
-    /**
-     * 清除指定书籍的状态（当书籍被删除时）
-     */
-    clearBookState(bookId: string): void {
-      delete this.expandedVolumes[bookId];
-      delete this.selectedChapter[bookId];
-      delete this.showTranslationProgress[bookId];
       this.saveAllState();
     },
 
@@ -317,14 +241,6 @@ export const useBookDetailsStore = defineStore('book-details', {
      */
     saveTranslationProgressState(): void {
       this.saveAllState();
-    },
-
-    /**
-     * 设置是否只显示当前选中章节的进度
-     */
-    setTranslationProgressShowOnlyCurrentChapter(show: boolean): void {
-      this.translationProgress.showOnlyCurrentChapter = show;
-      this.saveTranslationProgressState();
     },
 
     /**

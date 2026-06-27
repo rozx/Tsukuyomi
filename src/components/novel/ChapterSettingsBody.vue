@@ -64,34 +64,42 @@ const translationInstructions = ref('');
 const polishInstructions = ref('');
 const proofreadingInstructions = ref('');
 
+// 从书籍同步全局开关与分块设置；book 为 null 时回退到默认值
+const applyBookSettings = (book: Novel | null) => {
+  if (book) {
+    const preserveIndents = book.preserveIndents ?? true;
+    filterIndentsEnabled.value = !preserveIndents;
+    normalizeSymbolsOnDisplayEnabled.value = book.normalizeSymbolsOnDisplay ?? false;
+    normalizeTitleOnDisplayEnabled.value = book.normalizeTitleOnDisplay ?? false;
+    translationChunkSize.value = resolveTaskChunkSize(book.translationChunkSize);
+    skipAskUserEnabled.value = book.skipAskUser ?? false;
+    enableOriginalTextValidation.value = book.enableOriginalTextValidation ?? false;
+  } else {
+    filterIndentsEnabled.value = false;
+    normalizeSymbolsOnDisplayEnabled.value = false;
+    normalizeTitleOnDisplayEnabled.value = false;
+    translationChunkSize.value = DEFAULT_TASK_CHUNK_SIZE;
+    skipAskUserEnabled.value = false;
+    enableOriginalTextValidation.value = false;
+  }
+};
+
+// 从章节同步三类指令文本；chapter 为 null 时清空
+const applyChapterInstructions = (chapter: Chapter | null) => {
+  translationInstructions.value = chapter?.translationInstructions || '';
+  polishInstructions.value = chapter?.polishInstructions || '';
+  proofreadingInstructions.value = chapter?.proofreadingInstructions || '';
+};
+
 watch(
   () => [props.book, props.chapter],
   () => {
-    if (props.book) {
-      const preserveIndents = props.book.preserveIndents ?? true;
-      filterIndentsEnabled.value = !preserveIndents;
-      normalizeSymbolsOnDisplayEnabled.value = props.book.normalizeSymbolsOnDisplay ?? false;
-      normalizeTitleOnDisplayEnabled.value = props.book.normalizeTitleOnDisplay ?? false;
-      translationChunkSize.value = resolveTaskChunkSize(props.book.translationChunkSize);
-      skipAskUserEnabled.value = props.book.skipAskUser ?? false;
-      enableOriginalTextValidation.value = props.book.enableOriginalTextValidation ?? false;
-    } else {
-      filterIndentsEnabled.value = false;
-      normalizeSymbolsOnDisplayEnabled.value = false;
-      normalizeTitleOnDisplayEnabled.value = false;
-      translationChunkSize.value = DEFAULT_TASK_CHUNK_SIZE;
-      skipAskUserEnabled.value = false;
-      enableOriginalTextValidation.value = false;
-    }
+    applyBookSettings(props.book);
 
     if (props.chapter) {
-      translationInstructions.value = props.chapter.translationInstructions || '';
-      polishInstructions.value = props.chapter.polishInstructions || '';
-      proofreadingInstructions.value = props.chapter.proofreadingInstructions || '';
+      applyChapterInstructions(props.chapter);
     } else {
-      translationInstructions.value = '';
-      polishInstructions.value = '';
-      proofreadingInstructions.value = '';
+      applyChapterInstructions(null);
       if (mainTab.value === 'chapter') {
         mainTab.value = 'global';
       }

@@ -8,202 +8,23 @@ import InputNumber from 'primevue/inputnumber';
 import { useConfirm } from 'primevue/useconfirm';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { useBooksStore } from 'src/stores/books';
 import { useSettingsStore } from 'src/stores/settings';
 import { GistSyncService } from 'src/services/gist-sync-service';
 import { SyncDataService, type RestorableItem } from 'src/services/sync-data-service';
-import { groupChunkFiles } from 'src/services/gist-sync-service';
 import type { SyncConfig } from 'src/models/sync';
-import { formatRelativeTime, formatFileSize as formatFileSizeBase } from 'src/utils/format';
 import { useAutoSync } from 'src/composables/useAutoSync';
 import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
 import { useForceSync } from 'src/composables/useForceSync';
 import ForceSyncToggle from 'src/components/sync/ForceSyncToggle.vue';
 import RestoreDeletedItemsDialog from 'src/components/dialogs/RestoreDeletedItemsDialog.vue';
+import SyncRevisionCard from 'src/components/settings/SyncRevisionCard.vue';
 import { isRevisionRestoreBlocked } from 'src/utils/sync-revision-guards';
 import co from 'co';
-
-// 格式化文件大小（复用 utils/format 的共享实现，此处保留 1 位小数）
-const formatFileSize = (bytes: number): string => formatFileSizeBase(bytes, 1);
-
-// 判断是否为元数据文件（分块 novel/memories 的 meta.json 描述文件）
-const isMetaFile = (filename: string): boolean => {
-  if (!filename.endsWith('.meta.json')) return false;
-  return filename.startsWith('novel-') || filename.startsWith('memories-');
-};
-
-// 从文件名中提取小说 ID（支持单文件与分块格式）
-const extractNovelIdFromFilename = (filename: string): string | null => {
-  if (filename.startsWith('novel-chunk-') || filename.startsWith('memories-')) return null;
-  const match = filename.match(/^novel-(.+)\.json$/);
-  if (match && match[1]) return match[1];
-  if (filename.startsWith('novel-') && !filename.startsWith('novel-chunk-')) {
-    const id = filename.replace(/^novel-/, '').replace(/\.json$/, '');
-    return id || null;
-  }
-  return null;
-};
-
-// 从文件名中提取 memories 书籍 ID
-const extractMemoriesBookIdFromFilename = (filename: string): string | null => {
-  if (filename.startsWith('memories-chunk-')) return null;
-  const match = filename.match(/^memories-(.+)\.json$/);
-  if (match && match[1]) return match[1];
-  if (filename.startsWith('memories-')) {
-    const id = filename.replace(/^memories-/, '').replace(/\.json$/, '');
-    return id || null;
-  }
-  return null;
-};
-
-// 从 memories-chunk-<id>_N.json 中提取 bookId
-const extractMemoriesBookIdFromChunkFilename = (filename: string): string | null => {
-  if (!filename.startsWith('memories-chunk-')) return null;
-  const match = filename.match(/^memories-chunk-(.+?)[_#-]\d+\.json$/);
-  return match && match[1] ? match[1] : null;
-};
-
-// 获取文件的显示名称和图标
-const getFileDisplayInfo = (filename: string): { displayName: string; icon: string } => {
-  // 全局文件
-  if (filename === 'tsukuyomi-settings.json') {
-    return { displayName: '应用设置', icon: 'pi pi-cog' };
-  }
-  if (filename === 'manifest.json') {
-    return { displayName: '同步清单', icon: 'pi pi-list' };
-  }
-  if (filename === 'ai-models.json') {
-    return { displayName: 'AI 模型配置', icon: 'pi pi-microchip-ai' };
-  }
-  if (filename === 'cover-history.json') {
-    return { displayName: '封面历史', icon: 'pi pi-images' };
-  }
-
-  // 小说文件
-  const novelId = extractNovelIdFromFilename(filename);
-  if (novelId) {
-    const novel = booksStore.books.find((b) => b.id === novelId);
-    return novel
-      ? { displayName: novel.title || filename, icon: 'pi pi-book' }
-      : { displayName: `[已删除] ${filename}`, icon: 'pi pi-trash' };
-  }
-
-  // memories 文件
-  const memoriesBookId =
-    extractMemoriesBookIdFromFilename(filename) ||
-    extractMemoriesBookIdFromChunkFilename(filename);
-  if (memoriesBookId) {
-    const novel = booksStore.books.find((b) => b.id === memoriesBookId);
-    return novel
-      ? { displayName: `[记忆] ${novel.title || memoriesBookId}`, icon: 'pi pi-bookmark' }
-      : { displayName: `[记忆-已删除] ${filename}`, icon: 'pi pi-trash' };
-  }
-
-  return { displayName: filename, icon: 'pi pi-file' };
-};
-
-// 将 memories 分块文件合并为单个条目（类似 groupChunkFiles 对 novel 的处理）
-const groupMemoriesChunks = <
-  T extends {
-    filename: string;
-    size?: number;
-    sizeDiff?: number;
-  },
->(
-  files: T[],
-): T[] => {
-  const chunkGroups = new Map<
-    string,
-    { filename: string; size: number; sizeDiff: number; originalFile: T }
-  >();
-  const nonChunkFiles: T[] = [];
-
-  for (const file of files) {
-    const bookId = extractMemoriesBookIdFromChunkFilename(file.filename);
-    if (bookId) {
-      const key = `memories-${bookId}`;
-      if (!chunkGroups.has(key)) {
-        chunkGroups.set(key, {
-          filename: `memories-${bookId}.json`,
-          size: 0,
-          sizeDiff: 0,
-          originalFile: file,
-        });
-      }
-      const group = chunkGroups.get(key)!;
-      group.size += file.size || 0;
-      group.sizeDiff += file.sizeDiff || 0;
-    } else {
-      nonChunkFiles.push(file);
-    }
-  }
-
-  return [
-    ...Array.from(chunkGroups.values()).map((group) => ({
-      ...group.originalFile,
-      filename: group.filename,
-      size: group.size,
-      sizeDiff: group.sizeDiff,
-    })),
-    ...nonChunkFiles,
-  ];
-};
-
-// 文件显示顺序：manifest 最前，然后设置类全局文件，然后 novels，最后 memories
-const fileSortPriority = (filename: string): number => {
-  if (filename === 'manifest.json') return 0;
-  if (filename === 'tsukuyomi-settings.json') return 1;
-  if (filename === 'ai-models.json') return 2;
-  if (filename === 'cover-history.json') return 3;
-  if (filename.startsWith('memories-')) return 5; // memories 排在 novel 后
-  if (filename.startsWith('novel-')) return 4;
-  return 6;
-};
-
-// 分组文件，将分块文件合并显示，并过滤元数据文件
-const getGroupedFiles = (
-  files: Array<{
-    filename: string;
-    status: 'added' | 'removed' | 'modified' | 'renamed';
-    size?: number;
-    sizeDiff?: number;
-  }>,
-): Array<{
-  filename: string;
-  displayName: string;
-  icon: string;
-  status: 'added' | 'removed' | 'modified' | 'renamed';
-  size?: number;
-  sizeDiff?: number;
-}> => {
-  // 过滤元数据文件
-  const filteredFiles = files.filter((file) => !isMetaFile(file.filename));
-  // 先合并 novel 分块，再合并 memories 分块
-  const afterNovelGrouping = groupChunkFiles(filteredFiles);
-  const grouped = groupMemoriesChunks(afterNovelGrouping);
-
-  const filesWithDisplayInfo = grouped.map((file) => {
-    const displayInfo = getFileDisplayInfo(file.filename);
-    return {
-      ...file,
-      displayName: displayInfo.displayName,
-      icon: displayInfo.icon,
-    };
-  });
-
-  return filesWithDisplayInfo.sort((a, b) => {
-    const priA = fileSortPriority(a.filename);
-    const priB = fileSortPriority(b.filename);
-    if (priA !== priB) return priA - priB;
-    return a.displayName.localeCompare(b.displayName, 'zh-CN');
-  });
-};
 
 const props = defineProps<{
   visible: boolean;
 }>();
 
-const booksStore = useBooksStore();
 const settingsStore = useSettingsStore();
 const toast = useToastWithHistory();
 const confirm = useConfirm();
@@ -295,6 +116,32 @@ watch(isRestoringRevision, (restoring) => {
 
 const isRevisionActionLocked = computed(() => gistSyncing.value || isRestoringRevision.value);
 
+// 以下 computed 把模板里重复的 || / && / ?: 表达式收进脚本侧，降低模板圈复杂度
+const gistInputDisabled = computed(() => !gistEnabled.value || isRestoringRevision.value);
+const syncActionDisabled = computed(
+  () => !gistEnabled.value || gistSyncing.value || isRestoringRevision.value,
+);
+const validateTokenDisabled = computed(
+  () => !gistEnabled.value || gistValidating.value || isRestoringRevision.value,
+);
+const loadRevisionsBtnDisabled = computed(
+  () => loadingRevisions.value || isRevisionActionLocked.value,
+);
+const hasRevisionHistory = computed(() => gistEnabled.value && !!gistId.value);
+const hasNoRevisions = computed(() => revisions.value.length === 0 && !loadingRevisions.value);
+const deleteGistDisabled = computed(
+  () => !gistEnabled.value || gistSyncing.value || isRestoringRevision.value || !gistId.value,
+);
+const syncButtonLabel = computed(() => (forceMode.value ? '强制推送到远程' : '同步'));
+const syncButtonSeverity = computed(() => (forceMode.value ? 'danger' : 'primary'));
+const handleSyncClick = () => {
+  if (forceMode.value) {
+    triggerForceSync();
+  } else {
+    syncToGist();
+  }
+};
+
 const isRevisionRestoreDisabled = (version: string): boolean =>
   isRevisionRestoreBlocked({
     gistId: gistId.value,
@@ -305,61 +152,84 @@ const isRevisionRestoreDisabled = (version: string): boolean =>
     version,
   });
 
+// 同一批次（2 分钟内）的修订合并显示，每批只保留列表中第一条（即最新一条）
+const REVISION_BATCH_WINDOW_MS = 120000;
+
+const shouldStartNewBatch = <T extends { committedAt: string }>(
+  lastRev: T,
+  rev: T,
+): boolean => {
+  const timeDiff = new Date(lastRev.committedAt).getTime() - new Date(rev.committedAt).getTime();
+  return Math.abs(timeDiff) > REVISION_BATCH_WINDOW_MS;
+};
+
+const finalizeBatch = <T>(combined: T[], batch: T[]): void => {
+  const first = batch[0];
+  if (batch.length > 0 && first) {
+    combined.push(first);
+  }
+};
+
+const combineNearbyRevisions = <T extends { committedAt: string }>(revs: T[]): T[] => {
+  const combined: T[] = [];
+  let currentBatch: T[] = [];
+
+  for (let index = 0; index < revs.length; index++) {
+    const rev = revs[index]!;
+    const lastRev = currentBatch[currentBatch.length - 1];
+
+    if (currentBatch.length === 0 || (lastRev !== undefined && !shouldStartNewBatch(lastRev, rev))) {
+      currentBatch.push(rev);
+    } else if (lastRev !== undefined) {
+      // 当前批次结束，取最新一条（列表第一条）写入合并结果
+      finalizeBatch(combined, currentBatch);
+      currentBatch = [rev];
+    }
+
+    // 最后一条修订：把收尾批次写入合并结果
+    if (index === revs.length - 1) {
+      finalizeBatch(combined, currentBatch);
+    }
+  }
+
+  return combined;
+};
+
+// 修订文件状态枚举
+type RevisionFileStatus = 'added' | 'removed' | 'modified' | 'renamed';
+type RevisionFileEntry = { filename: string; status?: RevisionFileStatus };
+type BuiltRevisionFile = { filename: string; status: RevisionFileStatus; size: number; sizeDiff?: number };
+
+// 用当前表单值构造用于调用 Gist API 的同步配置（loadRevisions / loadRevisionDetails 共用）
+const buildGistFetchConfig = (): SyncConfig => {
+  const baseConfig = settingsStore.gistSync;
+  return {
+    ...baseConfig,
+    enabled: true,
+    syncParams: {
+      ...baseConfig.syncParams,
+      username: gistUsername.value,
+      gistId: gistId.value,
+    },
+    secret: gistToken.value,
+  };
+};
+
+// 加载修订历史的门禁条件
+const canLoadRevisions = (): boolean =>
+  !gistId.value || !gistEnabled.value || gistSyncing.value || isRestoringRevision.value;
+
 // 加载修订历史
 const loadRevisions = async () => {
-  if (!gistId.value || !gistEnabled.value || gistSyncing.value || isRestoringRevision.value) {
+  if (canLoadRevisions()) {
     return;
   }
 
   loadingRevisions.value = true;
   try {
-    const baseConfig = settingsStore.gistSync;
-    const config: SyncConfig = {
-      ...baseConfig,
-      enabled: true,
-      syncParams: {
-        ...baseConfig.syncParams,
-        username: gistUsername.value,
-        gistId: gistId.value,
-      },
-      secret: gistToken.value,
-    };
-
-    const result = await gistSyncService.getGistRevisions(config);
+    const result = await gistSyncService.getGistRevisions(buildGistFetchConfig());
     if (result.success && result.revisions) {
-      // Combine revisions that are within 2 minutes of each other
-      const combinedRevisions: typeof result.revisions = [];
-      let currentBatch: typeof result.revisions = [];
-
-      result.revisions.forEach((rev, index) => {
-        if (currentBatch.length === 0) {
-          currentBatch.push(rev);
-        } else {
-          const lastRev = currentBatch[currentBatch.length - 1];
-          if (lastRev) {
-            const timeDiff =
-              new Date(lastRev.committedAt).getTime() - new Date(rev.committedAt).getTime();
-
-            // If within 2 minutes (120000 ms), add to current batch
-            if (Math.abs(timeDiff) <= 120000) {
-              currentBatch.push(rev);
-            } else {
-              // Batch complete, add the latest revision from the batch (which is the first one in the list since it's sorted by date desc)
-              if (currentBatch[0]) {
-                combinedRevisions.push(currentBatch[0]);
-              }
-              currentBatch = [rev];
-            }
-          }
-        }
-
-        // If it's the last revision, finalize the batch
-        if (index === result.revisions!.length - 1 && currentBatch.length > 0 && currentBatch[0]) {
-          combinedRevisions.push(currentBatch[0]);
-        }
-      });
-
-      revisions.value = combinedRevisions;
+      revisions.value = combineNearbyRevisions(result.revisions);
     } else {
       toast.add({
         severity: 'warn',
@@ -394,6 +264,112 @@ const toggleRevision = async (version: string) => {
   }
 };
 
+// 拉取上一版文件 size 映射，用于计算 sizeDiff / added 状态；无上一版或拉取失败返回 null
+const buildPreviousFilesMap = async (
+  config: SyncConfig,
+  previousRevision: { version: string } | undefined,
+): Promise<Map<string, { size?: number }> | null> => {
+  if (!previousRevision) return null;
+  const previousRevisionResponse = await gistSyncService.getGistRevision(
+    config,
+    previousRevision.version,
+  );
+  if (!previousRevisionResponse.success || !previousRevisionResponse.data) return null;
+
+  const map = new Map<string, { size?: number }>();
+  for (const [filename, file] of Object.entries(previousRevisionResponse.data.files || {})) {
+    if (file?.size !== undefined) {
+      map.set(filename, { size: file.size });
+    } else {
+      map.set(filename, {});
+    }
+  }
+  return map;
+};
+
+// 判定单个文件相对上一版的变更状态（优先沿用 getGistRevisions 已提供的状态）
+const resolveRevisionFileStatus = (
+  existingFile: RevisionFileEntry | undefined,
+  previousFilesMap: Map<string, { size?: number }> | null,
+  previousFile: { size?: number } | undefined,
+): RevisionFileStatus => {
+  if (existingFile?.status) return existingFile.status;
+  if (!previousFilesMap) return 'added'; // 第一个版本，所有文件都是新增
+  if (!previousFile) return 'added'; // 上一版不存在 → 新文件
+  return 'modified';
+};
+
+// 计算单个文件相对上一版的大小差异
+const resolveRevisionSizeDiff = (
+  currentSize: number,
+  previousFilesMap: Map<string, { size?: number }> | null,
+  previousFile: { size?: number } | undefined,
+): number | undefined => {
+  if (!previousFilesMap) return undefined; // 第一个版本，无上一版
+  if (!previousFile) return currentSize; // 新文件
+  if (previousFile.size !== undefined) return currentSize - previousFile.size;
+  return undefined;
+};
+
+// 汇总单次修订的文件列表：合并当前快照、上一版 size 映射、已有状态
+const buildRevisionFiles = (
+  currentFilesMap: Record<string, { size?: number }>,
+  existingRevision: { files?: RevisionFileEntry[] } | undefined,
+  previousFilesMap: Map<string, { size?: number }> | null,
+): BuiltRevisionFile[] => {
+  const existingFiles = existingRevision?.files ?? [];
+  const existingFilesMap = new Map(existingFiles.map((f) => [f.filename, f] as const));
+  return Object.keys(currentFilesMap).map((filename) => {
+    const file = currentFilesMap[filename];
+    const currentSize = file?.size || 0;
+    const previousFile = previousFilesMap?.get(filename);
+
+    const status = resolveRevisionFileStatus(
+      existingFilesMap.get(filename),
+      previousFilesMap,
+      previousFile,
+    );
+    const sizeDiff = resolveRevisionSizeDiff(currentSize, previousFilesMap, previousFile);
+
+    return {
+      filename,
+      status,
+      size: currentSize,
+      ...(sizeDiff !== undefined ? { sizeDiff } : {}),
+    };
+  });
+};
+
+// 拉取并汇总单个修订版本的文件列表（不含 try/catch 与 loading 状态）
+const processRevisionDetails = async (version: string, config: SyncConfig): Promise<void> => {
+  const revisionIndex = revisions.value.findIndex((r) => r.version === version);
+  if (revisionIndex === -1) {
+    return;
+  }
+
+  const revisionResponse = await gistSyncService.getGistRevision(config, version);
+  if (!revisionResponse.success || !revisionResponse.data) {
+    return;
+  }
+
+  const currentFilesMap = revisionResponse.data.files || {};
+  const previousRevision = revisions.value[revisionIndex + 1];
+  const previousFilesMap = await buildPreviousFilesMap(config, previousRevision);
+
+  const existingRevision = revisions.value[revisionIndex];
+  const files = buildRevisionFiles(currentFilesMap, existingRevision, previousFilesMap);
+
+  // 保留所有原有属性，只更新 files
+  if (existingRevision) {
+    revisions.value[revisionIndex] = {
+      version: existingRevision.version,
+      committedAt: existingRevision.committedAt,
+      changeStatus: existingRevision.changeStatus,
+      files,
+    };
+  }
+};
+
 // 加载单个修订版本的详细信息
 const loadRevisionDetails = async (version: string) => {
   if (!gistId.value || !gistEnabled.value || loadingRevisionDetails.value.has(version)) {
@@ -402,119 +378,7 @@ const loadRevisionDetails = async (version: string) => {
 
   loadingRevisionDetails.value.add(version);
   try {
-    const baseConfig = settingsStore.gistSync;
-    const config: SyncConfig = {
-      ...baseConfig,
-      enabled: true,
-      syncParams: {
-        ...baseConfig.syncParams,
-        username: gistUsername.value,
-        gistId: gistId.value,
-      },
-      secret: gistToken.value,
-    };
-
-    // 找到当前修订版本的索引
-    const revisionIndex = revisions.value.findIndex((r) => r.version === version);
-    if (revisionIndex === -1) {
-      return;
-    }
-
-    // 获取该修订版本的详细信息
-    const revisionResponse = await gistSyncService.getGistRevision(config, version);
-
-    if (revisionResponse.success && revisionResponse.data) {
-      // 获取当前修订版本的所有文件（这就是该版本存在的所有文件）
-      const currentFilesMap = revisionResponse.data.files || {};
-
-      // 获取上一个版本的文件（用于计算 sizeDiff 和状态）
-      let previousFilesMap: Map<string, { size?: number }> | null = null;
-      if (revisionIndex < revisions.value.length - 1) {
-        const previousRevision = revisions.value[revisionIndex + 1];
-        if (previousRevision) {
-          const previousVersion = previousRevision.version;
-          const previousRevisionResponse = await gistSyncService.getGistRevision(
-            config,
-            previousVersion,
-          );
-          if (previousRevisionResponse.success && previousRevisionResponse.data) {
-            previousFilesMap = new Map();
-            for (const [filename, file] of Object.entries(
-              previousRevisionResponse.data.files || {},
-            )) {
-              if (file?.size !== undefined) {
-                previousFilesMap.set(filename, { size: file.size });
-              } else {
-                previousFilesMap.set(filename, {});
-              }
-            }
-          }
-        }
-      }
-
-      // 从 getGistRevisions 的结果中获取已有文件的变更状态（如果存在）
-      const existingRevision = revisions.value[revisionIndex];
-      const existingFilesMap = new Map((existingRevision?.files || []).map((f) => [f.filename, f]));
-
-      // 构建文件列表 - 显示该修订版本中存在的所有文件
-      const files = Object.keys(currentFilesMap).map((filename) => {
-        const file = currentFilesMap[filename];
-        const currentSize = file?.size || 0;
-        const previousFile = previousFilesMap?.get(filename);
-        const previousSize = previousFile?.size;
-
-        // 确定文件状态（优先使用已有状态）
-        let status: 'added' | 'removed' | 'modified' | 'renamed' = 'modified';
-        const existingFile = existingFilesMap.get(filename);
-        if (existingFile?.status) {
-          // 使用已有状态（来自 getGistRevisions）
-          status = existingFile.status;
-        } else if (!previousFilesMap) {
-          // 这是第一个版本，所有文件都是新增的
-          status = 'added';
-        } else if (!previousFile) {
-          // 在前一个版本不存在，是新文件
-          status = 'added';
-        } else {
-          // 在前一个版本存在，检查是否被修改
-          if (previousSize !== undefined && currentSize !== previousSize) {
-            status = 'modified';
-          } else {
-            status = 'modified'; // 默认
-          }
-        }
-
-        // 计算大小差异
-        let sizeDiff: number | undefined;
-        if (!previousFilesMap) {
-          // 这是第一个版本，没有上一个版本
-          sizeDiff = undefined;
-        } else if (!previousFile) {
-          // 文件不存在于上一个版本，是新文件
-          sizeDiff = currentSize;
-        } else if (previousSize !== undefined) {
-          // 计算大小差异
-          sizeDiff = currentSize - previousSize;
-        }
-
-        return {
-          filename,
-          status,
-          size: currentSize,
-          ...(sizeDiff !== undefined ? { sizeDiff } : {}),
-        };
-      });
-
-      // 保留所有原有属性，只更新 files
-      if (existingRevision) {
-        revisions.value[revisionIndex] = {
-          version: existingRevision.version,
-          committedAt: existingRevision.committedAt,
-          changeStatus: existingRevision.changeStatus,
-          files,
-        };
-      }
-    }
+    await processRevisionDetails(version, buildGistFetchConfig());
   } catch (error) {
     toast.add({
       severity: 'error',
@@ -527,25 +391,31 @@ const loadRevisionDetails = async (version: string) => {
   }
 };
 
+// 把 syncInterval（毫秒）换算为分钟数；未启用自动同步时回退到默认 5 分钟
+const resolveSyncIntervalMinutes = (interval: number): number =>
+  interval > 0 ? Math.floor(interval / 60000) : 5;
+
+// 把 store 中的 Gist 同步配置同步到表单 ref
+const applyGistConfigToForm = (config: SyncConfig) => {
+  gistUsername.value = config.syncParams.username ?? '';
+  gistToken.value = config.secret ?? '';
+  gistEnabled.value = config.enabled ?? false;
+  gistId.value = config.syncParams.gistId ?? '';
+  gistLastSyncTime.value = config.lastSyncTime || undefined;
+  // 自动同步：syncInterval > 0 视为已启用
+  autoSyncEnabled.value = config.syncInterval > 0;
+  syncIntervalMinutes.value = resolveSyncIntervalMinutes(config.syncInterval);
+};
+
 // 初始化 Gist 配置
 watch(
   () => props.visible,
   (isVisible) => {
-    if (isVisible) {
-      const config = settingsStore.gistSync;
-      gistUsername.value = config.syncParams.username ?? '';
-      gistToken.value = config.secret ?? '';
-      gistEnabled.value = config.enabled ?? false;
-      gistId.value = config.syncParams.gistId ?? '';
-      gistLastSyncTime.value = config.lastSyncTime || undefined;
-      // 自动同步：如果 syncInterval > 0 则认为启用了自动同步
-      autoSyncEnabled.value = config.syncInterval > 0;
-      syncIntervalMinutes.value =
-        config.syncInterval > 0 ? Math.floor(config.syncInterval / 60000) : 5;
-      // 加载修订历史
-      if (gistId.value && gistEnabled.value) {
-        void loadRevisions();
-      }
+    if (!isVisible) return;
+    applyGistConfigToForm(settingsStore.gistSync);
+    // 加载修订历史
+    if (gistId.value && gistEnabled.value) {
+      void loadRevisions();
     }
   },
   { immediate: true },
@@ -1015,7 +885,7 @@ const deleteGist = () => {
         v-model="gistUsername"
         placeholder="输入您的 GitHub 用户名"
         class="w-full"
-        :disabled="!gistEnabled || isRestoringRevision"
+        :disabled="gistInputDisabled"
         @blur="() => saveGistConfig()"
       />
     </div>
@@ -1028,7 +898,7 @@ const deleteGist = () => {
         v-model="gistToken"
         placeholder="输入您的 GitHub token"
         class="w-full"
-        :disabled="!gistEnabled || isRestoringRevision"
+        :disabled="gistInputDisabled"
         :feedback="false"
         toggle-mask
         @blur="() => saveGistConfig()"
@@ -1046,7 +916,7 @@ const deleteGist = () => {
         v-model="gistId"
         placeholder="留空将自动创建新的 Gist"
         class="w-full"
-        :disabled="!gistEnabled || isRestoringRevision"
+        :disabled="gistInputDisabled"
         @blur="() => saveGistConfig()"
       />
       <p class="text-xs text-moon/60">如果已有 Gist，请输入 Gist ID。留空将自动创建新的 Gist</p>
@@ -1059,7 +929,7 @@ const deleteGist = () => {
           :binary="true"
           :model-value="autoSyncEnabled"
           input-id="auto-sync-enabled"
-          :disabled="!gistEnabled || isRestoringRevision"
+          :disabled="gistInputDisabled"
           @update:model-value="handleAutoSyncEnabledChange"
         />
         <label for="auto-sync-enabled" class="text-xs text-moon/80 cursor-pointer">
@@ -1075,7 +945,7 @@ const deleteGist = () => {
           :max="1440"
           :show-buttons="true"
           class="w-full"
-          :disabled="!gistEnabled || isRestoringRevision"
+          :disabled="gistInputDisabled"
           @focus="stopAutoSync"
           @update:model-value="handleSyncIntervalChange"
         />
@@ -1093,132 +963,59 @@ const deleteGist = () => {
 
     <!-- 操作按钮 -->
     <div class="space-y-3 pt-2">
-      <ForceSyncToggle :disabled="!gistEnabled || gistSyncing || isRestoringRevision" />
+      <ForceSyncToggle :disabled="syncActionDisabled" />
       <Button
         label="验证 Token"
         icon="pi pi-check-circle"
         class="p-button-outlined w-full"
-        :disabled="!gistEnabled || gistValidating || isRestoringRevision"
+        :disabled="validateTokenDisabled"
         :loading="gistValidating"
         @click="validateGistToken"
       />
       <Button
-        :label="forceMode ? '强制推送到远程' : '同步'"
+        :label="syncButtonLabel"
         icon="pi pi-sync"
-        :severity="forceMode ? 'danger' : 'primary'"
+        :severity="syncButtonSeverity"
         class="w-full"
-        :disabled="!gistEnabled || gistSyncing || isRestoringRevision"
+        :disabled="syncActionDisabled"
         :loading="gistSyncing"
-        @click="forceMode ? triggerForceSync() : syncToGist()"
+        @click="handleSyncClick"
       />
     </div>
 
     <!-- 修订历史 -->
-    <div v-if="gistEnabled && gistId" class="border-t border-white/10 pt-6 mt-6">
+    <div v-if="hasRevisionHistory" class="border-t border-white/10 pt-6 mt-6">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-sm font-medium text-moon/90">修订历史</h3>
         <Button
           icon="pi pi-refresh"
           class="p-button-text p-button-sm"
-          :disabled="loadingRevisions || isRevisionActionLocked"
+          :disabled="loadRevisionsBtnDisabled"
           :loading="loadingRevisions"
           @click="loadRevisions"
         />
       </div>
 
       <div class="space-y-2">
-        <div
+        <SyncRevisionCard
           v-for="revision in revisions"
           :key="revision.version"
-          class="border border-white/10 rounded-lg overflow-hidden"
-        >
-          <div
-            class="revision-row flex items-center justify-between p-3 cursor-pointer hover:bg-white/5 transition-colors"
-            @click="toggleRevision(revision.version)"
-          >
-            <div class="revision-info flex items-center gap-3 flex-1 min-w-0">
-              <i
-                :class="[
-                  expandedRevisions.has(revision.version)
-                    ? 'pi pi-chevron-down'
-                    : 'pi pi-chevron-right',
-                  'text-moon/60 text-sm flex-shrink-0',
-                ]"
-              />
-              <code class="text-xs bg-white/5 px-2 py-1 rounded flex-shrink-0">{{
-                revision.version.substring(0, 7)
-              }}</code>
-              <div class="flex flex-col flex-1 min-w-0">
-                <span class="text-sm text-moon/90 truncate">{{
-                  formatRelativeTime(new Date(revision.committedAt).getTime())
-                }}</span>
-                <span class="text-xs text-moon/60 truncate">
-                  {{ new Date(revision.committedAt).toLocaleString('zh-CN') }}
-                </span>
-              </div>
-              <div class="revision-stats flex items-center gap-2 flex-shrink-0">
-                <span class="text-green-500 text-sm">+{{ revision.changeStatus.additions }}</span>
-                <span class="text-red-500 text-sm">-{{ revision.changeStatus.deletions }}</span>
-              </div>
-            </div>
-            <div class="revision-actions flex items-center gap-2 ml-4 flex-shrink-0">
-              <Button
-                label="恢复"
-                icon="pi pi-undo"
-                class="p-button-text p-button-sm"
-                :disabled="isRevisionRestoreDisabled(revision.version)"
-                :loading="revertingVersion === revision.version"
-                @click.stop="(event) => revertToRevision(revision.version, event)"
-              />
-            </div>
-          </div>
-
-          <!-- 展开的文件变更列表 -->
-          <div
-            v-if="expandedRevisions.has(revision.version)"
-            class="border-t border-white/10 bg-white/5 p-3"
-          >
-            <div v-if="loadingRevisionDetails.has(revision.version)" class="text-center py-4">
-              <i class="pi pi-spin pi-spinner text-moon/60" />
-              <span class="text-sm text-moon/60 ml-2">加载中...</span>
-            </div>
-            <div v-else-if="revision.files && revision.files.length > 0" class="space-y-2">
-              <div
-                v-for="file in getGroupedFiles(revision.files)"
-                :key="file.filename"
-                class="flex items-center justify-between py-1 px-2 rounded hover:bg-white/5"
-              >
-                <div class="flex items-center gap-2 flex-1 min-w-0">
-                  <i :class="[file.icon, 'text-moon/60 text-sm']" />
-                  <span class="text-sm text-moon/90 truncate">{{ file.displayName }}</span>
-                </div>
-                <div class="flex items-center gap-2 ml-2">
-                  <span class="text-xs text-moon/60">
-                    {{ file.size !== undefined ? formatFileSize(file.size) : '-' }}
-                  </span>
-                  <span
-                    v-if="file.sizeDiff !== undefined"
-                    :class="[
-                      'text-xs',
-                      file.sizeDiff > 0
-                        ? 'text-green-500'
-                        : file.sizeDiff < 0
-                          ? 'text-red-500'
-                          : 'text-moon/60',
-                    ]"
-                  >
-                    {{ file.sizeDiff > 0 ? '+' : '' }}{{ formatFileSize(Math.abs(file.sizeDiff)) }}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <p v-else class="text-sm text-moon/60 text-center py-2">无文件变更信息</p>
-          </div>
-        </div>
+          :version="revision.version"
+          :committed-at="revision.committedAt"
+          :additions="revision.changeStatus.additions"
+          :deletions="revision.changeStatus.deletions"
+          :files="revision.files"
+          :is-expanded="expandedRevisions.has(revision.version)"
+          :is-loading-details="loadingRevisionDetails.has(revision.version)"
+          :is-reverting="revertingVersion === revision.version"
+          :is-restore-disabled="isRevisionRestoreDisabled(revision.version)"
+          @toggle="toggleRevision(revision.version)"
+          @revert="(event) => revertToRevision(revision.version, event)"
+        />
       </div>
 
       <div
-        v-if="revisions.length === 0 && !loadingRevisions"
+        v-if="hasNoRevisions"
         class="text-sm text-moon/60 text-center py-4"
       >
         暂无修订历史
@@ -1232,7 +1029,7 @@ const deleteGist = () => {
         label="删除当前 Gist"
         icon="pi pi-trash"
         class="p-button-danger w-full"
-        :disabled="!gistEnabled || gistSyncing || isRestoringRevision || !gistId"
+        :disabled="deleteGistDisabled"
         :loading="gistSyncing"
         @click="deleteGist"
       />

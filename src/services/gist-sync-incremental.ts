@@ -11,6 +11,7 @@ import {
   parseMemoriesEntryKey,
   parseNovelEntryKey,
   type GistManifest,
+  type ManifestDiff,
   type ManifestEntry,
   type MemoriesPayload,
   type MemoryTombstone,
@@ -733,6 +734,45 @@ export function matchFilenamesInSnapshot(entryKey: string, remoteFilenames: stri
   return remoteFilenames.filter((f) => prefixes.some((p) => f.startsWith(`${p}${bookId}`)));
 }
 
+/** 构造 GitHub Gist API 请求头（lastETag 存在时附带条件请求头） */
+function buildGistRequestHeaders(token: string, lastETag?: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    Authorization: `token ${token}`,
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+  if (lastETag) headers['If-None-Match'] = lastETag;
+  return headers;
+}
+
+/** 304 未修改时的返回值：优先用响应 etag，其次上次已知的，最后空串 */
+function buildNotModifiedResult(
+  etag: string,
+  lastETag: string | undefined,
+): { notModified: true; etag: string } {
+  return { notModified: true, etag: etag || lastETag || '' };
+}
+
+/** 200 响应解析后的返回值：携带 updatedAt / files / 可选 htmlUrl */
+function buildGistDataResult(
+  data: { files?: Record<string, GistFileLike>; updated_at?: string; html_url?: string },
+  etag: string,
+): {
+  notModified: false;
+  etag: string;
+  updatedAt: string;
+  files: Record<string, GistFileLike>;
+  htmlUrl?: string;
+} {
+  return {
+    notModified: false,
+    etag,
+    updatedAt: data.updated_at ?? '',
+    files: data.files ?? {},
+    ...(data.html_url ? { htmlUrl: data.html_url } : {}),
+  };
+}
+
 /**
  * 条件 GET：使用 `If-None-Match` 头检查远端是否有变化
  *
@@ -758,12 +798,7 @@ export async function conditionalGetGist(
       htmlUrl?: string;
     }
 > {
-  const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-    Authorization: `token ${token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
-  };
-  if (lastETag) headers['If-None-Match'] = lastETag;
+  const headers = buildGistRequestHeaders(token, lastETag);
 
   const response = await fetch(`https://api.github.com/gists/${gistId}`, {
     method: 'GET',
@@ -773,7 +808,7 @@ export async function conditionalGetGist(
   const etag = response.headers.get('etag') ?? '';
 
   if (response.status === 304) {
-    return { notModified: true, etag: etag || lastETag || '' };
+    return buildNotModifiedResult(etag, lastETag);
   }
 
   if (!response.ok) {
@@ -787,13 +822,117 @@ export async function conditionalGetGist(
     html_url?: string;
   };
 
-  return {
-    notModified: false,
-    etag,
-    updatedAt: data.updated_at ?? '',
-    files: data.files ?? {},
-    ...(data.html_url ? { htmlUrl: data.html_url } : {}),
+  return buildGistDataResult(data, etag);
+}
+
+/** 从 SyncConfig 解析用于 Gist API 的 token（优先 secret，其次 syncParams.token） */
+function resolveGistToken(config: SyncConfig): string {
+  return config.secret || config.syncParams.token || '';
+}
+
+/** 构造 raw_url 拉取函数（非 2xx 抛错） */
+function createFetchRaw(): (url: string) => Promise<string> {
+  return async (url) => {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.text();
   };
+}
+
+/** 解析 manifest.json 内容，解析失败时抛出带原因的错误 */
+function parseRemoteManifest(manifestContent: string): GistManifest {
+  try {
+    return JSON.parse(manifestContent) as GistManifest;
+  } catch (e) {
+    throw new Error(`manifest.json 解析失败: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+/** 远端缺少 manifest 时的返回值：携带文件快照以便后续迁移清理遗留文件 */
+function buildDownloadMigrationResult(
+  etag: string,
+  updatedAt: string,
+  files: Record<string, GistFileLike>,
+): IncrementalDownloadResult {
+  return {
+    success: true,
+    skipped: false,
+    remoteETag: etag,
+    remoteUpdatedAt: updatedAt,
+    manifest: null,
+    needsMigration: true,
+    remoteFilesSnapshot: files,
+    changedEntries: {},
+    deletedEntries: [],
+    remoteTombstones: {},
+    remoteEntryKeys: [],
+  };
+}
+
+/** 客户端版本落后于远端 schemaVersion 时的返回值 */
+function buildSchemaTooNewResult(
+  remoteManifest: GistManifest,
+  etag: string,
+  updatedAt: string,
+): IncrementalDownloadResult {
+  return {
+    success: true,
+    skipped: false,
+    remoteETag: etag,
+    remoteUpdatedAt: updatedAt,
+    manifest: remoteManifest,
+    schemaVersionTooNew: true,
+    changedEntries: {},
+    deletedEntries: [],
+    remoteTombstones: extractRemoteTombstoneMap(remoteManifest),
+    remoteEntryKeys: Object.keys(remoteManifest.entries),
+  };
+}
+
+/** 把远端 manifest 的 tombstones（{ deletedAt }）压扁为 entryKey -> deletedAt 映射 */
+function extractRemoteTombstoneMap(remoteManifest: GistManifest): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(remoteManifest.tombstones ?? {}).map(([k, v]) => [k, v.deletedAt]),
+  );
+}
+
+/** 合并两种删除来源（隐式 diff.deleted + 显式 tombstones），返回带 deletedAt 的条目列表 */
+function buildDeletedEntries(
+  diff: ManifestDiff,
+  remoteTombstoneMap: Record<string, string>,
+): Array<{ key: string; deletedAt?: string }> {
+  const deletionKeys = new Set<string>(diff.deleted);
+  for (const tk of Object.keys(remoteTombstoneMap)) deletionKeys.add(tk);
+
+  const deletedEntries: Array<{ key: string; deletedAt?: string }> = [];
+  for (const key of deletionKeys) {
+    const ds = remoteTombstoneMap[key];
+    deletedEntries.push(ds !== undefined ? { key, deletedAt: ds } : { key });
+  }
+  return deletedEntries;
+}
+
+/** 仅反序列化 changed + added 条目（远端有而本地尚未见过的），返回 entryKey -> 值 映射 */
+async function readChangedEntries(
+  toRead: string[],
+  remoteManifest: GistManifest,
+  files: Record<string, GistFileLike>,
+  fetchRaw: (url: string) => Promise<string>,
+  onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+): Promise<Record<string, EntryValue>> {
+  const changedEntries: Record<string, EntryValue> = {};
+  const total = toRead.length;
+
+  for (let i = 0; i < toRead.length; i++) {
+    const key = toRead[i]!;
+    const entry = remoteManifest.entries[key];
+    if (!entry) continue;
+    onProgress?.({ current: i, total, message: `正在下载: ${key}` });
+    const value = await deserializeEntry(key, entry, files, fetchRaw);
+    if (value) changedEntries[key] = value;
+  }
+
+  return changedEntries;
 }
 
 /**
@@ -810,7 +949,7 @@ export async function downloadWithManifest(
 
   onProgress?.({ current: 0, total: 1, message: '正在检查远程变更...' });
 
-  const token = config.secret || config.syncParams.token || '';
+  const token = resolveGistToken(config);
   const result = await conditionalGetGist(token, gistId, config.lastRemoteETag);
   if (result.notModified) {
     return { success: true, skipped: true, remoteETag: result.etag };
@@ -822,55 +961,20 @@ export async function downloadWithManifest(
   const manifestFile = files[MANIFEST_FILE_NAME];
   if (!manifestFile) {
     // 远端缺少 manifest，触发迁移
-    // 携带远端文件快照，便于后续 uploadIncremental 清理遗留文件（如旧 chunk / 旧分块布局）
-    return {
-      success: true,
-      skipped: false,
-      remoteETag: etag,
-      remoteUpdatedAt: updatedAt,
-      manifest: null,
-      needsMigration: true,
-      remoteFilesSnapshot: files,
-      changedEntries: {},
-      deletedEntries: [],
-      remoteTombstones: {},
-      remoteEntryKeys: [],
-    };
+    return buildDownloadMigrationResult(etag, updatedAt, files);
   }
 
-  const fetchRaw = async (url: string): Promise<string> => {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return resp.text();
-  };
+  const fetchRaw = createFetchRaw();
 
   const manifestContent = await readFile(MANIFEST_FILE_NAME, files, fetchRaw);
   if (!manifestContent) {
     throw new Error('manifest.json 内容为空');
   }
 
-  let remoteManifest: GistManifest;
-  try {
-    remoteManifest = JSON.parse(manifestContent) as GistManifest;
-  } catch (e) {
-    throw new Error(`manifest.json 解析失败: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  const remoteManifest = parseRemoteManifest(manifestContent);
 
   if (remoteManifest.schemaVersion > MANIFEST_SCHEMA_VERSION) {
-    return {
-      success: true,
-      skipped: false,
-      remoteETag: etag,
-      remoteUpdatedAt: updatedAt,
-      manifest: remoteManifest,
-      schemaVersionTooNew: true,
-      changedEntries: {},
-      deletedEntries: [],
-      remoteTombstones: Object.fromEntries(
-        Object.entries(remoteManifest.tombstones ?? {}).map(([k, v]) => [k, v.deletedAt]),
-      ),
-      remoteEntryKeys: Object.keys(remoteManifest.entries),
-    };
+    return buildSchemaTooNewResult(remoteManifest, etag, updatedAt);
   }
 
   // 计算 diff：remote vs knownRemote
@@ -878,36 +982,15 @@ export async function downloadWithManifest(
 
   // 仅需要反序列化 changed + added（即远端有而本地尚未见过的）
   const toRead = [...diff.changed, ...diff.added];
-  const total = toRead.length;
-  const changedEntries: Record<string, EntryValue> = {};
+  const changedEntries = await readChangedEntries(toRead, remoteManifest, files, fetchRaw, onProgress);
 
-  for (let i = 0; i < toRead.length; i++) {
-    const key = toRead[i]!;
-    const entry = remoteManifest.entries[key];
-    if (!entry) continue;
-    onProgress?.({ current: i, total, message: `正在下载: ${key}` });
-    const value = await deserializeEntry(key, entry, files, fetchRaw);
-    if (value) changedEntries[key] = value;
-  }
-
-  onProgress?.({ current: total, total, message: '下载完成' });
+  onProgress?.({ current: toRead.length, total: toRead.length, message: '下载完成' });
 
   // 合并两种"删除"来源：
   // 1. 隐式：knownRemote 中有，但远端 manifest.entries 中没有（diff.deleted）
   // 2. 显式：远端 manifest.tombstones 中的记录
-  const remoteTombstoneMap: Record<string, string> = Object.fromEntries(
-    Object.entries(remoteManifest.tombstones ?? {}).map(([k, v]) => [k, v.deletedAt]),
-  );
-
-  const deletionKeys = new Set<string>(diff.deleted);
-  for (const tk of Object.keys(remoteTombstoneMap)) {
-    deletionKeys.add(tk);
-  }
-  const deletedEntries: Array<{ key: string; deletedAt?: string }> = [];
-  for (const key of deletionKeys) {
-    const ds = remoteTombstoneMap[key];
-    deletedEntries.push(ds !== undefined ? { key, deletedAt: ds } : { key });
-  }
+  const remoteTombstoneMap = extractRemoteTombstoneMap(remoteManifest);
+  const deletedEntries = buildDeletedEntries(diff, remoteTombstoneMap);
 
   return {
     success: true,

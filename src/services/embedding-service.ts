@@ -17,7 +17,6 @@ import {
   dispatchCustomEvent,
 } from 'src/utils/dispatch-custom-event';
 
-// fallow-ignore-next-line unused-export
 export const MODEL_ID = 'onnx-community/gte-multilingual-base';
 // 模型 id + 截取维度 + 前缀方案 + pooling 方案 共同构成 embedding 空间身份,任一变化必须 bump 版本号,
 // EmbeddingQueue backlog 扫描会把版本不匹配的记录当作 stale 自动重算。
@@ -133,21 +132,34 @@ export class EmbeddingService {
   }
 
   /**
-   * 根据一条原始 transformers progress event 更新内部聚合，并返回应广播的事件对象
+   * 根据一条原始 transformers progress event 更新文件维度的字节进度 Map。
+   * - 带 total 的进度事件：直接覆盖该文件的 {loaded,total}
+   * - 不带 total 的 'done' 事件：把该文件标记为已完成（loaded = total）
    */
-  private static enrichWithAggregate(event: EmbeddingProgressEvent): EmbeddingProgressEvent {
+  private static recordFileProgress(event: EmbeddingProgressEvent): void {
     const file = event.file;
-    if (file && typeof event.total === 'number' && event.total > 0) {
+    if (!file) return;
+    if (typeof event.total === 'number' && event.total > 0) {
       const loaded = typeof event.loaded === 'number' ? event.loaded : 0;
       this.progressByFile.set(file, { loaded, total: event.total });
-    } else if (file && event.status === 'done') {
-      // 完成事件不带 total——把该文件置为"已完成"
+      return;
+    }
+    if (event.status === 'done') {
       const existing = this.progressByFile.get(file);
       if (existing) {
         this.progressByFile.set(file, { loaded: existing.total, total: existing.total });
       }
     }
+  }
 
+  /**
+   * 汇总所有文件的字节进度，产出聚合 loaded / total / percent。
+   */
+  private static summarizeAggregate(): {
+    aggregateLoaded: number;
+    aggregateTotal: number;
+    aggregatePercent: number;
+  } {
     let aggLoaded = 0;
     let aggTotal = 0;
     for (const { loaded, total } of this.progressByFile.values()) {
@@ -155,13 +167,15 @@ export class EmbeddingService {
       aggTotal += total;
     }
     const aggPercent = aggTotal > 0 ? Math.min(100, Math.round((aggLoaded / aggTotal) * 100)) : 0;
+    return { aggregateLoaded: aggLoaded, aggregateTotal: aggTotal, aggregatePercent: aggPercent };
+  }
 
-    return {
-      ...event,
-      aggregateLoaded: aggLoaded,
-      aggregateTotal: aggTotal,
-      aggregatePercent: aggPercent,
-    };
+  /**
+   * 根据一条原始 transformers progress event 更新内部聚合，并返回应广播的事件对象
+   */
+  private static enrichWithAggregate(event: EmbeddingProgressEvent): EmbeddingProgressEvent {
+    this.recordFileProgress(event);
+    return { ...event, ...this.summarizeAggregate() };
   }
 
   /**
@@ -207,7 +221,6 @@ export class EmbeddingService {
    * Transformers.js 通过 Cache API 持久化模型权重,命中则说明之前在本设备加载过。
    * 用于启动时判断是否可以静默 warmup(无需等用户再次触发下载)。
    */
-  // fallow-ignore-next-line unused-class-member
   static async isModelCachedInBrowser(): Promise<boolean> {
     try {
       if (typeof caches === 'undefined') return false;

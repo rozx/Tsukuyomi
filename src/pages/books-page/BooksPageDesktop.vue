@@ -13,6 +13,7 @@ import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeade
 import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
+import type { Novel } from 'src/models/novel';
 
 const ctx = injectBooksPage();
 
@@ -30,6 +31,27 @@ const librarySummary = computed(() => {
   }
   return '在桌面工作台里集中浏览、整理并进入你的翻译书库。';
 });
+
+// 以下 computed / 方法把模板里的 || / ?: 收进脚本侧，降低模板圈复杂度
+const isLoadingState = computed(() => ctx.booksStore.isLoading || !ctx.booksStore.isLoaded);
+const sortButtonLabel = computed(
+  () => ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label || '排序',
+);
+const emptyText = computed(() => (ctx.searchQuery.value ? '未找到匹配的书籍' : '暂无书籍'));
+const bookAuthor = (book: Novel) => book.author || '未署名作品';
+const starIcon = (book: Novel) => (book.starred ? 'pi pi-star-fill' : 'pi pi-star');
+const starButtonClass = (book: Novel) => [
+  'p-button-text p-button-sm flex-1 !text-xs !py-1 !px-1',
+  book.starred ? '!text-warning' : '',
+];
+const starTitle = (book: Novel) => (book.starred ? '取消收藏' : '收藏');
+const toggleSortMenu = (e: Event) => {
+  const menu = ctx.sortMenuRef.value;
+  if (menu) menu.toggle(e);
+};
+const onCoverError = (e: Event, book: Novel) => {
+  (e.target as HTMLImageElement).src = ctx.getCoverUrl(book);
+};
 </script>
 
 <template>
@@ -57,18 +79,11 @@ const librarySummary = computed(() => {
           </InputGroup>
           <div class="books-toolbar-actions">
             <Button
-              :label="
-                ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label || '排序'
-              "
+              :label="sortButtonLabel"
               icon="pi pi-sort-alt"
               icon-pos="right"
               class="books-sort-button p-button-outlined icon-button-hover"
-              @click="
-                (e: Event) => {
-                  const menu = ctx.sortMenuRef.value;
-                  if (menu) menu.toggle(e);
-                }
-              "
+              @click="toggleSortMenu"
             />
             <SplitButton
               label="添加书籍"
@@ -87,7 +102,7 @@ const librarySummary = computed(() => {
     </DesktopWorkbenchHeader>
 
     <DesktopWorkbenchSurface class="library-canvas" tone="muted" :padded="false">
-      <div v-if="ctx.booksStore.isLoading || !ctx.booksStore.isLoaded" class="library-state">
+      <div v-if="isLoadingState" class="library-state">
         <div class="text-center">
           <ProgressSpinner
             style="width: 50px; height: 50px"
@@ -114,7 +129,7 @@ const librarySummary = computed(() => {
           <div class="library-state library-state--empty">
             <i class="pi pi-book text-4xl text-moon/50 mb-4 icon-hover" />
             <p class="text-moon/70">
-              {{ ctx.searchQuery.value ? '未找到匹配的书籍' : '暂无书籍' }}
+              {{ emptyText }}
             </p>
             <Button
               v-if="!ctx.searchQuery.value"
@@ -134,12 +149,7 @@ const librarySummary = computed(() => {
                   :src="ctx.getCoverUrl(book)"
                   :alt="book.title"
                   class="library-book-cover"
-                  @error="
-                    (e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.src = ctx.getCoverUrl(book);
-                    }
-                  "
+                  @error="(e) => onCoverError(e, book)"
                 />
                 <div class="library-book-overlay"></div>
                 <div v-if="book.starred" class="library-book-flag">
@@ -148,7 +158,7 @@ const librarySummary = computed(() => {
               </div>
               <div class="library-book-content">
                 <div class="library-book-heading-row">
-                  <span class="library-book-kicker">{{ book.author || '未署名作品' }}</span>
+                  <span class="library-book-kicker">{{ bookAuthor(book) }}</span>
                   <span class="library-book-updated">{{ ctx.formatDate(book.lastEdited) }}</span>
                 </div>
                 <h3
@@ -185,12 +195,9 @@ const librarySummary = computed(() => {
 
                 <div class="library-book-actions">
                   <Button
-                    :icon="book.starred ? 'pi pi-star-fill' : 'pi pi-star'"
-                    :class="[
-                      'p-button-text p-button-sm flex-1 !text-xs !py-1 !px-1',
-                      book.starred ? '!text-warning' : '',
-                    ]"
-                    :title="book.starred ? '取消收藏' : '收藏'"
+                    :icon="starIcon(book)"
+                    :class="starButtonClass(book)"
+                    :title="starTitle(book)"
                     @click.stop="ctx.toggleStar(book)"
                   />
                   <Button

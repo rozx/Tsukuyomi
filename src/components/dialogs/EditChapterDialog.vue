@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
@@ -11,6 +11,7 @@ import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import ChapterDateStats from './ChapterDateStats.vue';
 
 interface VolumeOption {
   label: string;
@@ -121,6 +122,11 @@ const handleTranslationApplied = (value: string) => {
   chapterTranslation.value = value;
 };
 
+// 保存按钮禁用条件（标题为空、未选卷或加载中时禁用）
+const isSaveDisabled = computed(
+  () => !chapterTitle.value.trim() || !selectedVolumeId.value || !!props.loading,
+);
+
 // 处理特殊指令标签页切换
 const handleSpecialInstructionsTabChange = (value: string | number) => {
   specialInstructionsActiveTab.value = String(value);
@@ -193,40 +199,11 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
       </div>
 
       <!-- 日期统计信息 -->
-      <div
-        v-if="lastEdited || createdAt || lastUpdated"
-        class="p-3 bg-white/5 rounded-lg border border-white/10 mt-2"
-      >
-        <div class="flex flex-wrap gap-x-6 gap-y-3">
-          <div v-if="lastUpdated" class="flex flex-col gap-1">
-            <span
-              class="text-[10px] text-moon/50 uppercase tracking-wider flex items-center gap-1 font-medium"
-              ><i class="pi pi-globe text-[10px]"></i> 远程更新</span
-            >
-            <span class="text-xs text-moon/90 font-mono">{{
-              new Date(lastUpdated).toLocaleString('zh-CN')
-            }}</span>
-          </div>
-          <div v-if="lastEdited" class="flex flex-col gap-1">
-            <span
-              class="text-[10px] text-moon/50 uppercase tracking-wider flex items-center gap-1 font-medium"
-              ><i class="pi pi-pencil text-[10px]"></i> 本地编辑</span
-            >
-            <span class="text-xs text-moon/90 font-mono">{{
-              new Date(lastEdited).toLocaleString('zh-CN')
-            }}</span>
-          </div>
-          <div v-if="createdAt" class="flex flex-col gap-1">
-            <span
-              class="text-[10px] text-moon/50 uppercase tracking-wider flex items-center gap-1 font-medium"
-              ><i class="pi pi-calendar-plus text-[10px]"></i> 创建时间</span
-            >
-            <span class="text-xs text-moon/90 font-mono">{{
-              new Date(createdAt).toLocaleString('zh-CN')
-            }}</span>
-          </div>
-        </div>
-      </div>
+      <ChapterDateStats
+        :last-updated="lastUpdated"
+        :last-edited="lastEdited"
+        :created-at="createdAt"
+      />
 
       <!-- 特殊指令 -->
       <div class="space-y-2 pt-2 border-t border-white/10">
@@ -298,12 +275,7 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
     </div>
     <template #footer>
       <Button label="取消" class="p-button-text" :disabled="loading" @click="handleCancel" />
-      <Button
-        label="保存"
-        :loading="loading"
-        :disabled="!chapterTitle.trim() || !selectedVolumeId || loading"
-        @click="handleSave"
-      />
+      <Button label="保存" :loading="loading" :disabled="isSaveDisabled" @click="handleSave" />
     </template>
   </AdaptiveDialog>
 </template>

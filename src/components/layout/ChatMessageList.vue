@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue';
 import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
-import ChatActionBadge from 'src/components/layout/ChatActionBadge.vue';
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
+import ChatMessageThinking from 'src/components/layout/ChatMessageThinking.vue';
+import ChatMessageItem from 'src/components/layout/ChatMessageItem.vue';
 import { useThinkingPhrase } from 'src/composables/chat/useThinkingPhrase';
 
 interface MessageDisplayItem {
@@ -71,6 +72,21 @@ watch(activeThinkingIds, (ids) => {
     }
   }
 });
+
+// 以下方法把原先模板里的 && / 三元 / .get() === true 判断搬到 script，压低模板圈复杂度
+const shouldRenderMessage = (message: ChatSessionMessage): boolean =>
+  !message.isSummaryResponse &&
+  !message.isContextMessage &&
+  (!!message.content ||
+    !!message.thinkingProcess ||
+    (props.messageDisplayItemsById[message.id]?.length ?? 0) > 0);
+
+const isMessageThinking = (id: string): boolean => props.thinkingActive.get(id) === true;
+
+const messageAlignClass = (role: 'user' | 'assistant'): string =>
+  role === 'user' ? 'items-end' : 'items-start';
+
+const itemCountFor = (id: string): number => props.messageDisplayItemsById[id]?.length ?? 0;
 </script>
 
 <template>
@@ -84,146 +100,44 @@ watch(activeThinkingIds, (ids) => {
   </div>
   <div v-else class="flex flex-col gap-4 w-full">
     <template v-for="message in props.messages" :key="message.id">
-      <template
-        v-if="
-          !message.isSummaryResponse &&
-          !message.isContextMessage &&
-          (message.content ||
-            message.thinkingProcess ||
-            (props.messageDisplayItemsById[message.id]?.length ?? 0) > 0)
-        "
-      >
+      <template v-if="shouldRenderMessage(message)">
         <div class="flex w-full gap-2 items-start">
           <AssistantAvatar
             v-if="message.role === 'assistant'"
             :size="32"
-            :pulse="props.thinkingActive.get(message.id) === true"
-            :glowing="props.thinkingActive.get(message.id) === true"
+            :pulse="isMessageThinking(message.id)"
+            :glowing="isMessageThinking(message.id)"
             class="mt-1"
           />
-          <div
-            class="flex flex-col gap-2 min-w-0 flex-1"
-            :class="message.role === 'user' ? 'items-end' : 'items-start'"
-          >
-          <div
-            v-if="
-              message.role === 'assistant' &&
-              props.displayedThinkingProcess[message.id] &&
-              props.displayedThinkingProcess[message.id]?.trim()
-            "
-            class="rounded-lg px-3 py-2 max-w-[85%] min-w-0 bg-white/3 border border-white/10"
-          >
-            <button
-              class="w-full text-left flex items-center gap-2 text-xs text-moon-70 hover:text-moon-90 transition-colors"
-              @click="props.toggleThinking(message.id)"
+          <div class="flex flex-col gap-2 min-w-0 flex-1" :class="messageAlignClass(message.role)">
+            <ChatMessageThinking
+              :message="message"
+              :displayed-thinking-process="props.displayedThinkingProcess"
+              :displayed-thinking-preview="props.displayedThinkingPreview"
+              :thinking-expanded="props.thinkingExpanded"
+              :thinking-active="props.thinkingActive"
+              :thinking-phrase="getThinkingPhrase(message.id)"
+              :toggle-thinking="props.toggleThinking"
+              :set-thinking-content-ref="props.setThinkingContentRef"
+            />
+            <template
+              v-for="(item, itemIdx) in props.messageDisplayItemsById[message.id] || []"
+              :key="`${message.id}-${itemIdx}-${item.timestamp}`"
             >
-              <i
-                class="text-xs transition-transform"
-                :class="
-                  props.thinkingExpanded.get(message.id)
-                    ? 'pi pi-chevron-down'
-                    : 'pi pi-chevron-right'
-                "
-              />
-              <span class="font-medium">{{
-                props.thinkingActive.get(message.id) ? getThinkingPhrase(message.id) : '思考过程'
-              }}</span>
-              <i
-                v-if="props.thinkingActive.get(message.id)"
-                class="pi pi-spin pi-spinner text-xs ml-auto"
-              />
-            </button>
-            <div
-              v-if="props.thinkingExpanded.get(message.id)"
-              :ref="(el) => props.setThinkingContentRef(message.id, el as HTMLElement)"
-              class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere max-h-96 overflow-y-auto thinking-content"
-              :data-message-id="message.id"
-              style="word-break: break-all; overflow-wrap: anywhere"
-            >
-              {{ props.displayedThinkingProcess[message.id] }}
-            </div>
-            <div
-              v-else
-              class="mt-2 text-xs text-moon-60 whitespace-pre-wrap break-words overflow-wrap-anywhere opacity-70"
-              style="
-                display: -webkit-box;
-                -webkit-line-clamp: 2;
-                line-clamp: 2;
-                -webkit-box-orient: vertical;
-                overflow: hidden;
-                word-break: break-all;
-                overflow-wrap: anywhere;
-              "
-            >
-              {{
-                props.displayedThinkingPreview[message.id] ||
-                props.displayedThinkingProcess[message.id]
-              }}
-            </div>
-          </div>
-          <template
-            v-for="(item, itemIdx) in props.messageDisplayItemsById[message.id] || []"
-            :key="`${message.id}-${itemIdx}-${item.timestamp}`"
-          >
-            <div
-              v-if="item.type === 'content' && item.content"
-              class="chat-bubble px-3.5 py-2.5 max-w-[85%] min-w-0 w-full leading-relaxed"
-              :class="
-                item.messageRole === 'user'
-                  ? 'chat-bubble--user bg-tsukuyomi-500/18 text-moon-50 border border-tsukuyomi-500/30'
-                  : 'chat-bubble--ai bg-white/[0.045] text-moon-90 border border-white/10'
-              "
-            >
-              <div
-                class="text-sm break-words overflow-wrap-anywhere markdown-content w-full min-w-0"
-                v-html="props.renderMarkdown(item.content)"
-              ></div>
-            </div>
-            <div
-              v-else-if="item.type === 'grouped_action' && item.groupedActions"
-              class="max-w-[85%] min-w-0"
-            >
-              <div class="flex flex-wrap gap-1.5">
-                <div
-                  :id="`grouped-action-${item.messageId}-${item.timestamp}`"
-                  class="inline-flex items-center gap-2 px-2 py-1 rounded text-xs font-medium transition-all duration-300 cursor-help bg-orange-500/25 text-orange-200 border border-orange-500/40 hover:bg-orange-500/35"
-                  @mouseenter="
-                    (e) =>
-                      props.onGroupedActionHover(e, item.groupedActions!, message, item.timestamp)
-                  "
-                  @mouseleave="props.onGroupedActionLeave"
-                >
-                  <i class="text-sm pi pi-list" />
-                  <span> 创建 {{ item.groupedActions.length }} 个待办事项 </span>
-                </div>
-              </div>
-            </div>
-            <div v-else-if="item.type === 'action' && item.action" class="max-w-[85%] min-w-0">
-              <ChatActionBadge
-                :action="item.action"
-                :message-id="item.messageId"
-                :timestamp="item.action.timestamp"
-                :popover-key="`${item.messageId}-${item.action.timestamp}-${itemIdx}`"
+              <ChatMessageItem
+                :item="item"
+                :message="message"
+                :item-idx="itemIdx"
+                :item-count="itemCountFor(message.id)"
+                :render-markdown="props.renderMarkdown"
+                :format-message-time="props.formatMessageTime"
                 :get-chapter-title-for-action="props.getChapterTitleForAction"
-                @hover="
-                  (e) =>
-                    props.onActionHover(
-                      e,
-                      item.action!,
-                      message,
-                      `${item.messageId}-${item.action!.timestamp}-${itemIdx}`,
-                    )
-                "
-                @leave="props.onActionLeave"
+                :on-action-hover="props.onActionHover"
+                :on-action-leave="props.onActionLeave"
+                :on-grouped-action-hover="props.onGroupedActionHover"
+                :on-grouped-action-leave="props.onGroupedActionLeave"
               />
-            </div>
-            <span
-              v-if="itemIdx === (props.messageDisplayItemsById[message.id]?.length ?? 0) - 1"
-              class="text-xs text-moon-40"
-            >
-              {{ props.formatMessageTime(message.timestamp) }}
-            </span>
-          </template>
+            </template>
           </div>
         </div>
       </template>

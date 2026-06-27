@@ -13,14 +13,7 @@ import { computed, ref } from 'vue';
 import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
-import type { EditMode } from 'src/composables/book-details/useEditMode';
 import { getChapterDisplayTitle, getChapterTranslationStats } from 'src/utils';
-
-interface EditModeOption {
-  value: EditMode;
-  icon: string;
-  title: string;
-}
 
 interface TranslationStatus {
   hasNone: boolean;
@@ -32,10 +25,6 @@ const props = defineProps<{
   book: Novel | null;
   canUndo: boolean;
   canRedo: boolean;
-  undoDescription: string | null;
-  redoDescription: string | null;
-  editMode: EditMode;
-  editModeOptions: EditModeOption[];
   selectedChapterParagraphs: Paragraph[];
   translatedCharCount: number;
   modelName: string;
@@ -53,7 +42,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'undo'): void;
   (e: 'redo'): void;
-  (e: 'update:editMode', value: EditMode): void;
   (e: 'toggleExport', event: Event): void;
   (e: 'toggleTermPopover', event: Event): void;
   (e: 'toggleCharacterPopover', event: Event): void;

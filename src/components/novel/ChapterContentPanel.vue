@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch, toRef, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import type { ComponentPublicInstance } from 'vue';
 import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
 import Badge from 'primevue/badge';
 import ProgressSpinner from 'primevue/progressspinner';
 import type ParagraphCard from 'src/components/novel/ParagraphCard.vue';
-import ChapterParagraphRow from 'src/components/novel/ChapterParagraphRow.vue';
+import ChapterVirtualParagraphRow from 'src/components/novel/ChapterVirtualParagraphRow.vue';
 import ChapterScrollbar from 'src/components/novel/ChapterScrollbar.vue';
+import ChapterNavigation from 'src/components/novel/ChapterNavigation.vue';
+import ChapterEmptyState from 'src/components/novel/ChapterEmptyState.vue';
+import ChapterHeader from 'src/components/novel/ChapterHeader.vue';
+import ChapterPreviewSection from 'src/components/novel/ChapterPreviewSection.vue';
 import type {
   Chapter,
   Novel,
@@ -17,7 +22,6 @@ import type {
 import {
   getChapterDisplayTitle,
   getChapterCharCount,
-  formatWordCount,
 } from 'src/utils';
 import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
 import { removeExtraBlankLines } from 'src/utils/text-utils';
@@ -88,6 +92,60 @@ const selectedChapterStats = computed(() => {
     charCount,
   };
 });
+
+// 行选中状态：把 === / && / || 包成函数，避免在模板 v-for 绑定里产生圈复杂度
+const isRowSelected = (index: number) =>
+  props.selectedParagraphIndex === index && (props.isKeyboardSelected || props.isClickSelected);
+
+// 模式与派生状态：把 === / !== / || / ?. / ?? 等表达式收敛为 computed，
+// 让模板里的 v-if / :class / :chapter 等绑定只剩简单标识符，降低模板圈复杂度。
+const isOriginalMode = computed(() => props.editMode === 'original');
+const isPreviewMode = computed(() => props.editMode === 'preview');
+const showScrollbar = computed(() => props.editMode !== 'original');
+const headerChapter = computed(() => props.selectedChapterWithContent ?? props.selectedChapter ?? null);
+const previewTitle = computed(() =>
+  headerChapter.value ? getChapterDisplayTitle(headerChapter.value, props.book || undefined) : '',
+);
+const hasParagraphs = computed(() => props.selectedChapterParagraphs.length > 0);
+const headerStats = computed(() => ({
+  paragraphCount: selectedChapterStats.value?.paragraphCount ?? 0,
+  charCount: selectedChapterStats.value?.charCount ?? 0,
+}));
+
+// 按索引取段落与翻译/润色/校对状态：避免在模板里写 .has(...!.id) 链
+const paragraphAt = (index: number) => props.selectedChapterParagraphs[index]!;
+const isTranslatingAt = (index: number) =>
+  props.translatingParagraphIds.has(paragraphAt(index).id);
+const isPolishingAt = (index: number) => props.polishingParagraphIds.has(paragraphAt(index).id);
+const isProofreadingAt = (index: number) =>
+  props.proofreadingParagraphIds.has(paragraphAt(index).id);
+
+// 主列表 v-for 与钉住行共享的 props / 事件监听器：用 v-bind / v-on 展开，
+// 消除两段近乎相同的冗长绑定，显著降低模板认知复杂度。
+const sharedRowProps = computed(() => ({
+  isSmallScreen: props.isSmallScreen,
+  terminologies: props.terminologies,
+  characterSettings: props.characterSettings,
+  bookId: props.bookId,
+  chapterId: props.selectedChapterId,
+  searchQuery: props.searchQuery,
+  paragraphCardRefs: props.paragraphCardRefs,
+  editDraftStore,
+  measureElement,
+}));
+
+const rowListeners = {
+  'update-translation': (paragraphId: string, newTranslation: string) =>
+    emit('update-translation', paragraphId, newTranslation),
+  'retranslate-paragraph': (id: string) => emit('retranslate-paragraph', id),
+  'polish-paragraph': (id: string) => emit('polish-paragraph', id),
+  'proofread-paragraph': (id: string) => emit('proofread-paragraph', id),
+  'select-translation': (paragraphId: string, translationId: string) =>
+    emit('select-translation', paragraphId, translationId),
+  'paragraph-click': (id: string) => emit('paragraph-click', id),
+  'paragraph-edit-start': (id: string) => emit('paragraph-edit-start', id),
+  'paragraph-edit-stop': (id: string) => emit('paragraph-edit-stop', id),
+};
 
 // 获取段落的选中翻译文本（应用显示层格式化）
 const getParagraphTranslationText = (paragraph: Paragraph): string =>
@@ -175,15 +233,8 @@ const formatOriginalText = () => {
   });
 };
 
-const getPrevChapterButtonLabel = (chapter: Chapter | null): string => {
-  if (!chapter) return props.isSmallScreen ? '上一章' : '没有上一章';
-  return props.isSmallScreen ? '上一章' : getChapterDisplayTitle(chapter, props.book || undefined);
-};
+// 章节导航按钮的 label/tooltip 逻辑已迁移到 ChapterNavigation.vue
 
-const getNextChapterButtonLabel = (chapter: Chapter | null): string => {
-  if (!chapter) return props.isSmallScreen ? '下一章' : '没有下一章';
-  return props.isSmallScreen ? '下一章' : getChapterDisplayTitle(chapter, props.book || undefined);
-};
 
 // ---- 虚拟滚动（block translation）----
 // 编辑/列表模式与预览模式共用同一个 virtualizer（任一时刻只渲染其中一个分支）。
@@ -225,6 +276,15 @@ const recomputeScrollMargin = () => {
   const sRect = sentinel.getBoundingClientRect();
   const next = Math.max(0, Math.round(sRect.top - scRect.top + sc.scrollTop));
   if (next !== scrollMargin.value) scrollMargin.value = next;
+};
+
+// 子视图（预览/默认）通过回调把各自的 list 起点 / 头部元素写回父级 ref，
+// 保持 scrollMargin 测量与 header ResizeObserver 行为不变。
+const registerListStart = (el: Element | ComponentPublicInstance | null) => {
+  listStartRef.value = (el as HTMLElement | null) ?? null;
+};
+const registerHeader = (el: Element | ComponentPublicInstance | null) => {
+  contentHeaderRef.value = (el as HTMLElement | null) ?? null;
 };
 
 const {
@@ -302,11 +362,11 @@ defineExpose({ scrollToParagraphIndex });
   <div
     v-if="selectedChapter"
     class="chapter-content-container"
-    :class="{ 'chapter-content-container--full': editMode === 'original' }"
+    :class="{ 'chapter-content-container--full': isOriginalMode }"
   >
     <!-- 自定义索引驱动滚动条（Teleport 到非滚动祖先 .page-container，避免随内容滚走） -->
     <ChapterScrollbar
-      v-if="editMode !== 'original'"
+      v-if="showScrollbar"
       :model="scrollbarModel"
       teleport-to=".page-container"
       :scroll-to-fraction="scrollToFraction"
@@ -319,7 +379,7 @@ defineExpose({ scrollToParagraphIndex });
     </div>
 
     <!-- 原始文本编辑模式 -->
-    <div v-else-if="editMode === 'original'" class="original-text-edit-container">
+    <div v-else-if="isOriginalMode" class="original-text-edit-container">
       <label class="block text-sm font-medium text-moon/90">原始文本</label>
       <Textarea
         ref="originalTextareaRef"
@@ -345,201 +405,55 @@ defineExpose({ scrollToParagraphIndex });
     </div>
 
     <!-- 翻译预览模式 -->
-    <div v-else-if="editMode === 'preview'" class="translation-preview-container">
-      <!-- 章节标题 -->
-      <div
-        v-if="selectedChapterWithContent || selectedChapter"
-        ref="contentHeaderRef"
-        class="preview-chapter-header"
-      >
-        <h1 class="preview-chapter-title">
-          {{
-            getChapterDisplayTitle(selectedChapterWithContent || selectedChapter, book || undefined)
-          }}
-        </h1>
-        <!-- 翻译统计 -->
-        <div v-if="selectedChapterParagraphs.length > 0" class="preview-chapter-stats">
-          <div class="preview-stat-item">
-            <i class="pi pi-align-left preview-stat-icon"></i>
-            <span class="preview-stat-value">{{ formatWordCount(translatedCharCount) }}</span>
-            <span class="preview-stat-label">已翻译</span>
-          </div>
-        </div>
-      </div>
-      <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
-        <div ref="listStartRef" class="vlist-spacer" :style="{ height: `${spacerSize}px` }">
-          <div class="vlist-window" :style="{ transform: `translateY(${blockStart}px)` }">
-            <div
-              v-for="row in virtualRows"
-              :key="selectedChapterParagraphs[row.index]!.id"
-              :ref="measureElement"
-              :data-index="row.index"
-              class="translation-preview-paragraph"
-              :class="{
-                'untranslated-paragraph':
-                  !getParagraphTranslationText(selectedChapterParagraphs[row.index]!) &&
-                  selectedChapterParagraphs[row.index]!.text.trim(),
-              }"
-            >
-              <template v-if="getParagraphTranslationText(selectedChapterParagraphs[row.index]!)">
-                <p class="translation-text">
-                  {{ getParagraphTranslationText(selectedChapterParagraphs[row.index]!) }}
-                </p>
-              </template>
-              <template v-else-if="selectedChapterParagraphs[row.index]!.text.trim()">
-                <div class="untranslated-content">
-                  <Badge value="未翻译" severity="warning" class="untranslated-badge" />
-                  <p class="original-text">
-                    {{ selectedChapterParagraphs[row.index]!.text }}
-                  </p>
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div v-else class="empty-chapter-content">
-        <i class="pi pi-file empty-icon"></i>
-        <p class="empty-text">该章节暂无内容</p>
-        <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
-      </div>
-
-      <!-- 章节导航按钮（预览模式） -->
-      <div class="chapter-navigation">
-        <Button
-          :disabled="!prevChapter"
-          icon="pi pi-chevron-left"
-          :label="getPrevChapterButtonLabel(prevChapter)"
-          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-prev"
-          :class="{ 'p-button-disabled': !prevChapter }"
-          @click="prevChapter && emit('navigate-to-chapter', prevChapter)"
-          v-tooltip.top="
-            prevChapter ? getChapterDisplayTitle(prevChapter, book || undefined) : '没有上一章'
-          "
-        />
-        <Button
-          v-if="isSmallScreen"
-          icon="pi pi-list"
-          label="章节列表"
-          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-list"
-          @click="emit('navigate-to-chapter-list')"
-          v-tooltip.top="'返回章节列表'"
-        />
-        <Button
-          :disabled="!nextChapter"
-          icon="pi pi-chevron-right"
-          iconPos="right"
-          :label="getNextChapterButtonLabel(nextChapter)"
-          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-next"
-          :class="{ 'p-button-disabled': !nextChapter }"
-          @click="nextChapter && emit('navigate-to-chapter', nextChapter)"
-          v-tooltip.top="
-            nextChapter ? getChapterDisplayTitle(nextChapter, book || undefined) : '没有下一章'
-          "
-        />
-      </div>
-    </div>
+    <ChapterPreviewSection
+      v-else-if="isPreviewMode"
+      :chapter="headerChapter"
+      :title="previewTitle"
+      :has-paragraphs="hasParagraphs"
+      :translated-char-count="translatedCharCount"
+      :paragraphs="selectedChapterParagraphs"
+      :virtual-rows="virtualRows"
+      :spacer-size="spacerSize"
+      :block-start="blockStart"
+      :get-translation-text="getParagraphTranslationText"
+      :measure-element="measureElement"
+      :register-list-start="registerListStart"
+      :register-header="registerHeader"
+      :prev-chapter="prevChapter"
+      :next-chapter="nextChapter"
+      :is-small-screen="isSmallScreen"
+      :book="book"
+      @navigate="(chapter: Chapter) => emit('navigate-to-chapter', chapter)"
+      @navigate-list="emit('navigate-to-chapter-list')"
+    />
 
     <template v-else>
       <!-- 章节标题 -->
-      <div ref="contentHeaderRef" class="chapter-header">
-        <div class="flex items-center gap-2">
-          <h1 class="chapter-title flex-1">
-            {{
-              getChapterDisplayTitle(
-                selectedChapterWithContent || selectedChapter,
-                book || undefined,
-              )
-            }}
-          </h1>
-          <Button
-            icon="pi pi-pencil"
-            class="p-button-text p-button-sm p-button-rounded"
-            size="small"
-            title="编辑章节标题"
-            @click="emit('open-edit-chapter-dialog', selectedChapter)"
-          />
-        </div>
-        <div v-if="selectedChapterStats" class="chapter-stats">
-          <div class="chapter-stat-item">
-            <i class="pi pi-list chapter-stat-icon"></i>
-            <span class="chapter-stat-value">{{ selectedChapterStats.paragraphCount }}</span>
-            <span class="chapter-stat-label">段落</span>
-          </div>
-          <span class="chapter-stat-separator">|</span>
-          <div class="chapter-stat-item">
-            <i class="pi pi-align-left chapter-stat-icon"></i>
-            <span class="chapter-stat-value">{{
-              formatWordCount(selectedChapterStats.charCount)
-            }}</span>
-          </div>
-        </div>
-        <div v-if="selectedChapter.lastUpdated" class="chapter-meta">
-          <i class="pi pi-clock chapter-meta-icon"></i>
-          <span class="chapter-meta-text"
-            >发布于: {{ new Date(selectedChapter.lastUpdated).toLocaleString('zh-CN') }}</span
-          >
-        </div>
-        <div v-if="selectedChapter.lastEdited" class="chapter-meta">
-          <i class="pi pi-clock chapter-meta-icon"></i>
-          <span class="chapter-meta-text"
-            >本地最后编辑: {{ new Date(selectedChapter.lastEdited).toLocaleString('zh-CN') }}</span
-          >
-        </div>
-        <a
-          v-if="selectedChapter.webUrl"
-          :href="selectedChapter.webUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="chapter-web-url"
-        >
-          <i class="pi pi-external-link"></i>
-          <span>查看原文</span>
-        </a>
-
+      <div ref="contentHeaderRef">
+        <ChapterHeader
+          :chapter="headerChapter!"
+          :book="book"
+          :paragraph-count="headerStats.paragraphCount"
+          :char-count="headerStats.charCount"
+          @open-edit-chapter-dialog="(chapter: Chapter) => emit('open-edit-chapter-dialog', chapter)"
+        />
       </div>
 
       <!-- 章节段落列表（虚拟滚动 · block translation） -->
-      <div v-if="selectedChapterParagraphs.length > 0" class="paragraphs-container">
+      <div v-if="hasParagraphs" class="paragraphs-container">
         <div ref="listStartRef" class="vlist-spacer" :style="{ height: `${spacerSize}px` }">
           <div class="vlist-window" :style="{ transform: `translateY(${blockStart}px)` }">
-            <ChapterParagraphRow
+            <ChapterVirtualParagraphRow
               v-for="row in virtualRows"
-              :key="selectedChapterParagraphs[row.index]!.id"
-              :ref="measureElement"
-              :data-index="row.index"
-              :paragraph="selectedChapterParagraphs[row.index]!"
+              :key="paragraphAt(row.index).id"
+              v-bind="sharedRowProps"
+              v-on="rowListeners"
+              :paragraph="paragraphAt(row.index)"
               :index="row.index"
-              :is-small-screen="isSmallScreen"
-              :terminologies="terminologies"
-              :character-settings="characterSettings"
-              :book-id="bookId"
-              :chapter-id="selectedChapterId"
-              :is-translating="translatingParagraphIds.has(selectedChapterParagraphs[row.index]!.id)"
-              :is-polishing="polishingParagraphIds.has(selectedChapterParagraphs[row.index]!.id)"
-              :is-proofreading="
-                proofreadingParagraphIds.has(selectedChapterParagraphs[row.index]!.id)
-              "
-              :search-query="searchQuery"
-              :selected="
-                selectedParagraphIndex === row.index && (isKeyboardSelected || isClickSelected)
-              "
-              :paragraph-card-refs="paragraphCardRefs"
-              :edit-draft-store="editDraftStore"
-              @update-translation="
-                (paragraphId: string, newTranslation: string) =>
-                  emit('update-translation', paragraphId, newTranslation)
-              "
-              @retranslate-paragraph="(id: string) => emit('retranslate-paragraph', id)"
-              @polish-paragraph="(id: string) => emit('polish-paragraph', id)"
-              @proofread-paragraph="(id: string) => emit('proofread-paragraph', id)"
-              @select-translation="
-                (paragraphId: string, translationId: string) =>
-                  emit('select-translation', paragraphId, translationId)
-              "
-              @paragraph-click="(id: string) => emit('paragraph-click', id)"
-              @paragraph-edit-start="(id: string) => emit('paragraph-edit-start', id)"
-              @paragraph-edit-stop="(id: string) => emit('paragraph-edit-stop', id)"
+              :is-translating="isTranslatingAt(row.index)"
+              :is-polishing="isPolishingAt(row.index)"
+              :is-proofreading="isProofreadingAt(row.index)"
+              :selected="isRowSelected(row.index)"
             />
           </div>
           <!-- 钉住：正在编辑且滚出窗口的段落，单独绝对定位渲染，避免卸载丢失未保存编辑 -->
@@ -548,87 +462,33 @@ defineExpose({ scrollToParagraphIndex });
             class="vlist-pinned"
             :style="{ transform: `translateY(${pinnedExtra.start}px)` }"
           >
-            <ChapterParagraphRow
-              :key="selectedChapterParagraphs[pinnedExtra.index]!.id"
-              :ref="measureElement"
-              :data-index="pinnedExtra.index"
-              :paragraph="selectedChapterParagraphs[pinnedExtra.index]!"
+            <ChapterVirtualParagraphRow
+              :key="paragraphAt(pinnedExtra.index).id"
+              v-bind="sharedRowProps"
+              v-on="rowListeners"
+              :paragraph="paragraphAt(pinnedExtra.index)"
               :index="pinnedExtra.index"
-              :is-small-screen="isSmallScreen"
-              :terminologies="terminologies"
-              :character-settings="characterSettings"
-              :book-id="bookId"
-              :chapter-id="selectedChapterId"
-              :is-translating="translatingParagraphIds.has(selectedChapterParagraphs[pinnedExtra.index]!.id)"
-              :is-polishing="polishingParagraphIds.has(selectedChapterParagraphs[pinnedExtra.index]!.id)"
-              :is-proofreading="proofreadingParagraphIds.has(selectedChapterParagraphs[pinnedExtra.index]!.id)"
-              :search-query="searchQuery"
-              :selected="
-                selectedParagraphIndex === pinnedExtra.index &&
-                (isKeyboardSelected || isClickSelected)
-              "
-              :paragraph-card-refs="paragraphCardRefs"
-              :edit-draft-store="editDraftStore"
-              @update-translation="
-                (paragraphId: string, newTranslation: string) =>
-                  emit('update-translation', paragraphId, newTranslation)
-              "
-              @retranslate-paragraph="(id: string) => emit('retranslate-paragraph', id)"
-              @polish-paragraph="(id: string) => emit('polish-paragraph', id)"
-              @proofread-paragraph="(id: string) => emit('proofread-paragraph', id)"
-              @select-translation="
-                (paragraphId: string, translationId: string) =>
-                  emit('select-translation', paragraphId, translationId)
-              "
-              @paragraph-click="(id: string) => emit('paragraph-click', id)"
-              @paragraph-edit-start="(id: string) => emit('paragraph-edit-start', id)"
-              @paragraph-edit-stop="(id: string) => emit('paragraph-edit-stop', id)"
+              :is-translating="isTranslatingAt(pinnedExtra.index)"
+              :is-polishing="isPolishingAt(pinnedExtra.index)"
+              :is-proofreading="isProofreadingAt(pinnedExtra.index)"
+              :selected="isRowSelected(pinnedExtra.index)"
             />
           </div>
         </div>
       </div>
 
       <!-- 空状态 -->
-      <div v-else class="empty-chapter-content">
-        <i class="pi pi-file empty-icon"></i>
-        <p class="empty-text">该章节暂无内容</p>
-        <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
-      </div>
+      <ChapterEmptyState v-else />
 
       <!-- 章节导航按钮 -->
-      <div class="chapter-navigation">
-        <Button
-          :disabled="!prevChapter"
-          icon="pi pi-chevron-left"
-          :label="getPrevChapterButtonLabel(prevChapter)"
-          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-prev"
-          :class="{ 'p-button-disabled': !prevChapter }"
-          @click="prevChapter && emit('navigate-to-chapter', prevChapter)"
-          v-tooltip.top="
-            prevChapter ? getChapterDisplayTitle(prevChapter, book || undefined) : '没有上一章'
-          "
-        />
-        <Button
-          v-if="isSmallScreen"
-          icon="pi pi-list"
-          label="章节列表"
-          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-list"
-          @click="emit('navigate-to-chapter-list')"
-          v-tooltip.top="'返回章节列表'"
-        />
-        <Button
-          :disabled="!nextChapter"
-          icon="pi pi-chevron-right"
-          iconPos="right"
-          :label="getNextChapterButtonLabel(nextChapter)"
-          class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-next"
-          :class="{ 'p-button-disabled': !nextChapter }"
-          @click="nextChapter && emit('navigate-to-chapter', nextChapter)"
-          v-tooltip.top="
-            nextChapter ? getChapterDisplayTitle(nextChapter, book || undefined) : '没有下一章'
-          "
-        />
-      </div>
+      <ChapterNavigation
+        :prev-chapter="prevChapter"
+        :next-chapter="nextChapter"
+        :is-small-screen="isSmallScreen"
+        :book="book"
+        @navigate="(chapter: Chapter) => emit('navigate-to-chapter', chapter)"
+        @navigate-list="emit('navigate-to-chapter-list')"
+      />
     </template>
   </div>
 </template>

@@ -23,7 +23,6 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
    * @param url 要验证的 URL
    * @returns 是否为有效的 URL
    */
-  // fallow-ignore-next-line unused-class-member
   override isValidUrl(url: string): boolean {
     return Novel18SyosetuScraper.NOVEL_URL_PATTERN.test(url);
   }

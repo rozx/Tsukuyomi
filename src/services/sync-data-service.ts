@@ -17,6 +17,21 @@ import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 import { stripNovelLocalFields } from 'src/utils/sync-strip';
 
+/** 取数组或缺省值，null/undefined 视为空数组 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function arrayOrEmpty<T = any>(value: T[] | null | undefined): T[] {
+  return value || [];
+}
+
+/** 三路合并单个同步字段：本地值优先，其次远端，最后回退值 */
+function mergeSyncField<T>(
+  localValue: T | undefined,
+  remoteValue: T | undefined,
+  fallback: T,
+): T {
+  return localValue ?? remoteValue ?? fallback;
+}
+
 function mergeUniqueById<T extends { id: string }>(
   primaryItems: T[] | undefined,
   secondaryItems: T[] | undefined,
@@ -2209,16 +2224,24 @@ export class SyncDataService {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private static mergeGistSyncEntryForUpload(localGistSync: any, remoteGistSync: any): any {
     if (!localGistSync) return remoteGistSync;
+    const remote = remoteGistSync ?? {};
     return {
       ...remoteGistSync,
       ...localGistSync,
-      lastSyncTime: localGistSync.lastSyncTime ?? remoteGistSync?.lastSyncTime ?? 0,
-      lastSyncedModelIds:
-        localGistSync.lastSyncedModelIds ?? remoteGistSync?.lastSyncedModelIds,
-      deletedNovelIds: localGistSync.deletedNovelIds ?? remoteGistSync?.deletedNovelIds ?? [],
-      deletedModelIds: localGistSync.deletedModelIds ?? remoteGistSync?.deletedModelIds ?? [],
-      deletedCoverIds: localGistSync.deletedCoverIds ?? remoteGistSync?.deletedCoverIds ?? [],
-      deletedMemoryIds: localGistSync.deletedMemoryIds ?? remoteGistSync?.deletedMemoryIds ?? [],
+      lastSyncTime: mergeSyncField(localGistSync.lastSyncTime, remote.lastSyncTime, 0),
+      lastSyncedModelIds: mergeSyncField(
+        localGistSync.lastSyncedModelIds,
+        remote.lastSyncedModelIds,
+        undefined,
+      ),
+      deletedNovelIds: mergeSyncField(localGistSync.deletedNovelIds, remote.deletedNovelIds, []),
+      deletedModelIds: mergeSyncField(localGistSync.deletedModelIds, remote.deletedModelIds, []),
+      deletedCoverIds: mergeSyncField(localGistSync.deletedCoverIds, remote.deletedCoverIds, []),
+      deletedMemoryIds: mergeSyncField(
+        localGistSync.deletedMemoryIds,
+        remote.deletedMemoryIds,
+        [],
+      ),
     };
   }
 
@@ -2343,15 +2366,23 @@ export class SyncDataService {
       memories?: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     },
   ): boolean {
-    if (SyncDataService.novelsDifferForUpload(local.novels, remote.novels || [])) return true;
-    if (SyncDataService.aiModelsDifferForUpload(local.aiModels, remote.aiModels || [])) return true;
+    if (SyncDataService.novelsDifferForUpload(local.novels, arrayOrEmpty(remote.novels))) {
+      return true;
+    }
+    if (SyncDataService.aiModelsDifferForUpload(local.aiModels, arrayOrEmpty(remote.aiModels))) {
+      return true;
+    }
     if (SyncDataService.appSettingsDifferForUpload(local.appSettings, remote.appSettings)) {
       return true;
     }
-    if (SyncDataService.coverHistoryDiffersForUpload(local.coverHistory, remote.coverHistory || [])) {
+    if (
+      SyncDataService.coverHistoryDiffersForUpload(local.coverHistory, arrayOrEmpty(remote.coverHistory))
+    ) {
       return true;
     }
-    if (SyncDataService.memoriesDifferForUpload(local.memories, remote.memories || [])) return true;
+    if (SyncDataService.memoriesDifferForUpload(local.memories, arrayOrEmpty(remote.memories))) {
+      return true;
+    }
     return false;
   }
 

@@ -2,6 +2,8 @@
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
+import SettingCardTranslations from './SettingCardTranslations.vue';
+import SettingCardAliases from './SettingCardAliases.vue';
 
 interface Props {
   title: string;
@@ -52,12 +54,27 @@ const avatarBgClass = computed(() => {
 const isCharacterCard = computed(() => {
   return props.sex !== undefined || props.aliases !== undefined;
 });
+
+// 性别相关展示文案/图标/标题：把模板内的多重三元收敛为 computed
+const sexLabel = computed(() =>
+  props.sex === 'male' ? '男性' : props.sex === 'female' ? '女性' : props.sex === 'other' ? '其他/未知' : '',
+);
+const sexIconClass = computed(() =>
+  props.sex === 'male'
+    ? 'pi pi-mars text-blue-400 text-sm'
+    : props.sex === 'female'
+      ? 'pi pi-venus text-pink-400 text-sm'
+      : props.sex === 'other'
+        ? 'pi pi-user text-purple-400 text-sm'
+        : '',
+);
+const isRingVisible = computed(() => props.showCheckbox && props.checked);
 </script>
 
 <template>
   <div
     class="group relative flex flex-col h-full rounded-lg border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors overflow-hidden w-full max-w-full"
-    :class="{ 'ring-2 ring-primary/50': showCheckbox && checked }"
+    :class="{ 'ring-2 ring-primary/50': isRingVisible }"
   >
     <!-- 头部：复选框、头像、名称与操作 -->
     <div class="flex justify-between items-start mb-3 gap-3">
@@ -77,7 +94,7 @@ const isCharacterCard = computed(() => {
             'flex-shrink-0 w-12 h-12 rounded-full border-2 flex items-center justify-center font-semibold text-lg',
             avatarBgClass,
           ]"
-          :title="sex === 'male' ? '男性' : sex === 'female' ? '女性' : sex === 'other' ? '其他/未知' : ''"
+          :title="sexLabel"
         >
           {{ avatarText }}
         </div>
@@ -88,10 +105,8 @@ const isCharacterCard = computed(() => {
                 {{ title }}
               </h3>
             </div>
-            <div v-if="sex" class="flex-shrink-0 flex items-center">
-              <i v-if="sex === 'male'" class="pi pi-mars text-blue-400 text-sm" title="男性"></i>
-              <i v-else-if="sex === 'female'" class="pi pi-venus text-pink-400 text-sm" title="女性"></i>
-              <i v-else-if="sex === 'other'" class="pi pi-user text-purple-400 text-sm" title="其他/未知"></i>
+            <div v-if="sexIconClass" class="flex-shrink-0 flex items-center">
+              <i :class="sexIconClass" :title="sexLabel" />
             </div>
           </div>
         </div>
@@ -138,46 +153,10 @@ const isCharacterCard = computed(() => {
     </div>
 
     <!-- 翻译 -->
-    <div class="mb-3">
-      <span class="text-xs text-moon-100/50 block mb-1.5">翻译</span>
-      <!-- 数组情况 (Character) -->
-      <div v-if="Array.isArray(translations)" class="flex flex-wrap gap-1.5">
-        <span
-          v-for="(t, index) in translations"
-          :key="index"
-          class="px-2 py-0.5 rounded bg-primary/20 text-primary-200 text-xs border border-primary/10"
-        >
-          {{ t }}
-        </span>
-        <span v-if="translations.length === 0" class="text-moon-100/30 text-xs italic">无</span>
-      </div>
-      <!-- 字符串情况 (Term) -->
-      <div v-else-if="translations" class="min-w-0 max-w-full overflow-hidden">
-        <p 
-          class="text-primary-200 text-sm break-words font-medium overflow-hidden leading-6 w-full max-w-full line-clamp-2"
-          :title="typeof translations === 'string' ? translations : ''"
-        >
-          {{ translations }}
-        </p>
-      </div>
-      <div v-else class="text-moon-100/30 text-xs italic">无</div>
-    </div>
+    <SettingCardTranslations :translations="translations" />
 
     <!-- 别名 (仅 Character) -->
-    <div v-if="aliases !== undefined" class="mb-auto">
-      <span class="text-xs text-moon-100/50 block mb-1.5">别名</span>
-      <div class="flex flex-wrap gap-1.5">
-        <span
-          v-for="(alias, index) in aliases"
-          :key="index"
-          class="px-2 py-0.5 rounded bg-accent/20 text-accent-200 text-xs border border-accent/10"
-        >
-          {{ alias }}
-        </span>
-        <span v-if="aliases.length === 0" class="text-moon-100/30 text-xs italic">无</span>
-      </div>
-    </div>
-    <div v-else class="mb-auto"></div>
+    <SettingCardAliases :aliases="aliases" />
 
   </div>
 </template>

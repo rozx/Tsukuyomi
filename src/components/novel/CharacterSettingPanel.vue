@@ -14,7 +14,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { useBooksStore } from 'src/stores/books';
-import type { Novel, Alias } from 'src/models/novel';
+import type { Novel, Alias, CharacterSetting } from 'src/models/novel';
 import { cloneDeep } from 'lodash';
 import co from 'co';
 
@@ -88,6 +88,19 @@ const characterSettings = computed(() => {
 const showDialog = ref(false);
 const selectedCharacter = ref<(typeof characterSettings.value)[0] | null>(null);
 const isSaving = ref(false);
+
+// 工具栏展开图标/标题、空状态文案、编辑对话框角色：把模板内联三元与 || 收敛为 computed
+const toolbarExpandIcon = computed(() =>
+  isToolbarExpanded.value ? 'pi pi-chevron-up' : 'pi pi-sliders-h',
+);
+const toolbarExpandTitle = computed(() => (isToolbarExpanded.value ? '收起' : '搜索与筛选'));
+const emptyStateText = computed(() =>
+  searchQuery.value ? '未找到匹配的角色设定' : '暂无角色设定',
+);
+const editDialogCharacter = computed(() => selectedCharacter.value?._original ?? null);
+const canExportCharacters = computed(
+  () => !!props.book?.characterSettings && props.book.characterSettings.length > 0,
+);
 
 // 文件输入引用（用于导入 JSON）
 const { fileInputRef, triggerFilePicker: handleImport, createFileSelectHandler } = useFilePicker();
@@ -308,6 +321,91 @@ const buildImportedCharPayload = (importedChar: ImportedCharLike) => ({
   })),
 });
 
+// 导入角色的撤销快照（仅记录被更新条目的可恢复字段）
+type UpdatedCharSnapshot = {
+  id: string;
+  name: string;
+  sex?: 'male' | 'female' | 'other';
+  translation: string;
+  description?: string;
+  speakingStyle?: string;
+  aliases: Array<{ name: string; translation: string }>;
+};
+
+interface CharsImportResult {
+  addedCount: number;
+  updatedCount: number;
+  addedCharIds: string[];
+  updatedCharsSnapshot: UpdatedCharSnapshot[];
+};
+
+const buildUpdatedCharSnapshot = (existingChar: CharacterSetting): UpdatedCharSnapshot => ({
+  id: existingChar.id,
+  name: existingChar.name,
+  ...(existingChar.sex !== undefined ? { sex: existingChar.sex } : {}),
+  translation: existingChar.translation.translation,
+  ...(existingChar.description !== undefined ? { description: existingChar.description } : {}),
+  ...(existingChar.speakingStyle !== undefined
+    ? { speakingStyle: existingChar.speakingStyle }
+    : {}),
+  aliases: existingChar.aliases.map((a: Alias) => ({
+    name: a.name,
+    translation: a.translation.translation,
+  })),
+});
+
+// 执行导入：名称相同的更新，否则新增。返回新增/更新计数与撤销所需的快照
+const executeCharsImport = async (
+  bookId: string,
+  importedCharacters: CharacterSetting[],
+  existingCharacters: CharacterSetting[] | undefined,
+): Promise<CharsImportResult> => {
+  let addedCount = 0;
+  let updatedCount = 0;
+  const addedCharIds: string[] = [];
+  const updatedCharsSnapshot: UpdatedCharSnapshot[] = [];
+
+  for (const importedChar of importedCharacters) {
+    const existingChar = existingCharacters?.find((c) => c.name === importedChar.name);
+    if (existingChar) {
+      updatedCharsSnapshot.push(buildUpdatedCharSnapshot(existingChar));
+      // 更新现有角色：buildImportedCharPayload 不含 name，保持与原始实现一致
+      await CharacterSettingService.updateCharacterSetting(
+        bookId,
+        existingChar.id,
+        buildImportedCharPayload(importedChar),
+      );
+      updatedCount++;
+    } else {
+      const newChar = await CharacterSettingService.addCharacterSetting(bookId, {
+        name: importedChar.name,
+        ...buildImportedCharPayload(importedChar),
+      });
+      addedCharIds.push(newChar.id);
+      addedCount++;
+    }
+  }
+
+  return { addedCount, updatedCount, addedCharIds, updatedCharsSnapshot };
+};
+
+// 撤销导入：删除新增条目，恢复被更新条目的快照字段
+const revertCharsImport = async (bookId: string, result: CharsImportResult): Promise<void> => {
+  for (const id of result.addedCharIds) {
+    await CharacterSettingService.deleteCharacterSetting(bookId, id);
+  }
+  for (const snapshot of result.updatedCharsSnapshot) {
+    await CharacterSettingService.updateCharacterSetting(bookId, snapshot.id, {
+      name: snapshot.name,
+      sex: snapshot.sex,
+      translation: snapshot.translation,
+      ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
+      ...(snapshot.speakingStyle !== undefined ? { speakingStyle: snapshot.speakingStyle } : {}),
+      aliases: snapshot.aliases,
+    });
+  }
+};
+
 // 处理文件选择
 const handleFileSelect = createFileSelectHandler(async (file) => {
   try {
@@ -333,58 +431,11 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       return;
     }
 
-    // 导入角色设定：合并现有角色，如果名称相同则更新，否则添加
-    let addedCount = 0;
-    let updatedCount = 0;
-    const addedCharIds: string[] = [];
-    const updatedCharsSnapshot: Array<{
-      id: string;
-      name: string;
-      sex?: 'male' | 'female' | 'other';
-      translation: string;
-      description?: string;
-      speakingStyle?: string;
-      aliases: Array<{ name: string; translation: string }>;
-    }> = [];
-
-    for (const importedChar of importedCharacters) {
-      const existingChar = props.book.characterSettings?.find((c) => c.name === importedChar.name);
-
-      if (existingChar) {
-        // 保存更新前的状态用于撤销
-        updatedCharsSnapshot.push({
-          id: existingChar.id,
-          name: existingChar.name,
-          ...(existingChar.sex !== undefined ? { sex: existingChar.sex } : {}),
-          translation: existingChar.translation.translation,
-          ...(existingChar.description !== undefined
-            ? { description: existingChar.description }
-            : {}),
-          ...(existingChar.speakingStyle !== undefined
-            ? { speakingStyle: existingChar.speakingStyle }
-            : {}),
-          aliases: existingChar.aliases.map((a: Alias) => ({
-            name: a.name,
-            translation: a.translation.translation,
-          })),
-        });
-        // 更新现有角色
-        await CharacterSettingService.updateCharacterSetting(
-          props.book.id,
-          existingChar.id,
-          buildImportedCharPayload(importedChar),
-        );
-        updatedCount++;
-      } else {
-        // 添加新角色
-        const newChar = await CharacterSettingService.addCharacterSetting(props.book.id, {
-          name: importedChar.name,
-          ...buildImportedCharPayload(importedChar),
-        });
-        addedCharIds.push(newChar.id);
-        addedCount++;
-      }
-    }
+    const result = await executeCharsImport(
+      props.book.id,
+      importedCharacters,
+      props.book.characterSettings,
+    );
 
     // 与 TerminologyPanel 的导入成功 toast 结构高度相似（onRevert 前序步骤一致），
     // 但后续恢复更新逻辑各自维护不同字段集合，强行抽公共回调反而更复杂，保留两处实现。
@@ -392,32 +443,14 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       severity: 'success',
       summary: '导入成功',
       // fallow-ignore-next-line code-duplication
-      detail: `已导入 ${importedCharacters.length} 个角色设定（新增 ${addedCount} 个，更新 ${updatedCount} 个）`,
+      detail: `已导入 ${importedCharacters.length} 个角色设定（新增 ${result.addedCount} 个，更新 ${result.updatedCount} 个）`,
       life: 3000,
       onRevert: async () => {
         if (!props.book) return;
         const booksStore = useBooksStore();
         const book = booksStore.getBookById(props.book.id);
         if (!book) return;
-
-        // 删除新添加的角色
-        for (const id of addedCharIds) {
-          await CharacterSettingService.deleteCharacterSetting(book.id, id);
-        }
-
-        // 恢复被更新的角色
-        for (const snapshot of updatedCharsSnapshot) {
-          await CharacterSettingService.updateCharacterSetting(book.id, snapshot.id, {
-            name: snapshot.name,
-            sex: snapshot.sex,
-            translation: snapshot.translation,
-            ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
-            ...(snapshot.speakingStyle !== undefined
-              ? { speakingStyle: snapshot.speakingStyle }
-              : {}),
-            aliases: snapshot.aliases,
-          });
-        }
+        await revertCharsImport(book.id, result);
       },
     });
   } catch (error) {
@@ -450,11 +483,11 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       <div class="toolbar-mobile-compact">
         <span class="text-sm text-moon/60">{{ characterSettings.length }} 位角色</span>
         <Button
-          :icon="isToolbarExpanded ? 'pi pi-chevron-up' : 'pi pi-sliders-h'"
+          :icon="toolbarExpandIcon"
           size="small"
           class="p-button-text"
           @click="isToolbarExpanded = !isToolbarExpanded"
-          :title="isToolbarExpanded ? '收起' : '搜索与筛选'"
+          :title="toolbarExpandTitle"
         />
       </div>
       <!-- 可折叠内容（搜索 + 操作） -->
@@ -488,7 +521,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
             icon="pi pi-upload"
             size="small"
             class="p-button-outlined"
-            :disabled="!props.book?.characterSettings || props.book.characterSettings.length === 0"
+            :disabled="!canExportCharacters"
             @click="handleExport"
           />
           <Button
@@ -540,7 +573,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
           v-if="characterSettings.length === 0"
           class="col-span-full py-12 text-center text-moon-100/50 border border-dashed border-white/10 rounded-lg"
         >
-          {{ searchQuery ? '未找到匹配的角色设定' : '暂无角色设定' }}
+          {{ emptyStateText }}
         </div>
       </div>
     </div>
@@ -548,7 +581,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     <!-- 角色编辑对话框 -->
     <CharacterEditDialog
       v-model:visible="showDialog"
-      :character="selectedCharacter?._original || null"
+      :character="editDialogCharacter"
       :loading="isSaving"
       @save="handleSave"
     />

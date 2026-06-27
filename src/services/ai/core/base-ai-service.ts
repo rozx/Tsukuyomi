@@ -32,7 +32,6 @@ export abstract class BaseAIService implements AIService {
    * 获取模型配置信息
    * 子类需要实现 makeConfigRequest 方法
    */
-  // fallow-ignore-next-line unused-class-member
   async getConfig(config: AIServiceConfig): Promise<AIConfigResult> {
     try {
       // 验证配置
@@ -106,7 +105,6 @@ export abstract class BaseAIService implements AIService {
    * @param onChunk 流式数据回调函数，每次收到数据块时调用
    * @returns 生成的完整文本结果
    */
-  // fallow-ignore-next-line unused-class-member
   async generateText(
     config: AIServiceConfig,
     request: TextGenerationRequest,
@@ -166,7 +164,6 @@ export abstract class BaseAIService implements AIService {
    * 获取可用的模型列表
    * 子类需要实现 makeAvailableModelsRequest 方法
    */
-  // fallow-ignore-next-line unused-class-member
   async getAvailableModels(
     config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
   ): Promise<AvailableModelsResult> {
@@ -282,22 +279,19 @@ export abstract class BaseAIService implements AIService {
     const maxOutputTokensMatch = text.match(/maxOutputTokens["\s:]+(\d+)/i);
     const maxTokensMatch = text.match(/maxTokens["\s:]+(\d+)/i);
 
+    const maxInputTokensRaw = firstRegexGroup(maxInputTokensMatch, contextWindowMatch);
+    const maxOutputTokensRaw = firstRegexGroup(maxOutputTokensMatch, maxTokensMatch);
+
     const result: ConfigParseResult = {};
 
-    const maxInputTokensRaw = maxInputTokensMatch?.[1] || contextWindowMatch?.[1];
-    if (maxInputTokensRaw) {
-      const value = parseInt(maxInputTokensRaw, 10);
-      if (!isNaN(value) && value > 0) {
-        result.maxInputTokens = value;
-      }
+    const maxInputTokens = parsePositiveInt(maxInputTokensRaw);
+    if (maxInputTokens !== undefined) {
+      result.maxInputTokens = maxInputTokens;
     }
 
-    const maxOutputTokensRaw = maxOutputTokensMatch?.[1] || maxTokensMatch?.[1];
-    if (maxOutputTokensRaw) {
-      const value = parseInt(maxOutputTokensRaw, 10);
-      if (!isNaN(value) && value > 0) {
-        result.maxOutputTokens = value;
-      }
+    const maxOutputTokens = parsePositiveInt(maxOutputTokensRaw);
+    if (maxOutputTokens !== undefined) {
+      result.maxOutputTokens = maxOutputTokens;
     }
 
     return result;
@@ -340,4 +334,26 @@ export abstract class BaseAIService implements AIService {
       message: errorMessage,
     };
   }
+}
+
+/**
+ * 返回首个匹配到捕获组的正则结果（按优先级）
+ */
+function firstRegexGroup(
+  ...matches: Array<RegExpMatchArray | null>
+): string | undefined {
+  for (const match of matches) {
+    if (match?.[1]) return match[1];
+  }
+  return undefined;
+}
+
+/**
+ * 将字符串解析为正整数，非法或非正时返回 undefined
+ */
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const value = parseInt(raw, 10);
+  if (!isNaN(value) && value > 0) return value;
+  return undefined;
 }

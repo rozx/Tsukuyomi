@@ -1,20 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
-import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
+import AIRoutingPickerSheet from './AIRoutingPickerSheet.vue';
 
 const ctx = injectAIPage();
 
-// v-model 绑到 routingPickerTask 是否有值（true = 打开）。关闭时清空任务 key
-// 以保持 useAIPage 的既有逻辑一致。
-const routingPickerVisible = computed({
-  get: () => !!ctx.routingPickerTask.value,
-  set: (open) => {
-    if (!open) ctx.closeTaskRoutingPicker();
-  },
-});
+// 模型徽章：吸收模板内的三元表达式
+const badgeClass = (model: { enabled: boolean }) =>
+  model.enabled ? 'ma-badge ma-badge--on' : 'ma-badge ma-badge--off';
+const badgeText = (model: { enabled: boolean }) => (model.enabled ? '已启用' : '已禁用');
 </script>
 
 <template>
@@ -94,9 +89,7 @@ const routingPickerVisible = computed({
                   <div class="ma-model-name">{{ model.name }}</div>
                   <div class="ma-model-meta">{{ model.model }}</div>
                 </div>
-                <span class="ma-badge" :class="model.enabled ? 'ma-badge--on' : 'ma-badge--off'">
-                  {{ model.enabled ? '已启用' : '已禁用' }}
-                </span>
+                <span :class="badgeClass(model)">{{ badgeText(model) }}</span>
                 <i class="pi pi-chevron-right ma-chev" aria-hidden="true" />
               </div>
             </div>
@@ -131,60 +124,8 @@ const routingPickerVisible = computed({
       </section>
     </div>
 
-    <!-- 任务路由 picker —— 统一使用 MobileBottomSheet -->
-    <MobileBottomSheet
-      v-model:visible="routingPickerVisible"
-      :title="ctx.routingPickerTaskLabel.value || '任务路由'"
-      eyebrow="任务路由"
-    >
-      <!-- 未设置 -->
-      <button
-        type="button"
-        class="ma-picker-option"
-        :class="{ 'ma-picker-option--active': !ctx.routingPickerCurrentModelId.value }"
-        @click="ctx.pickModelForTask(null)"
-      >
-        <div class="ma-picker-option-main">
-          <div class="ma-picker-option-name">未设置</div>
-          <div class="ma-picker-option-meta">该任务将无默认模型</div>
-        </div>
-        <i
-          v-if="!ctx.routingPickerCurrentModelId.value"
-          class="pi pi-check ma-picker-option-check"
-          aria-hidden="true"
-        />
-      </button>
-
-      <!-- 可选模型 -->
-      <button
-        v-for="model in ctx.routingPickerOptions.value"
-        :key="model.id"
-        type="button"
-        class="ma-picker-option"
-        :class="{
-          'ma-picker-option--active': model.id === ctx.routingPickerCurrentModelId.value,
-        }"
-        @click="ctx.pickModelForTask(model.id)"
-      >
-        <div class="ma-picker-option-main">
-          <div class="ma-picker-option-name">{{ model.name }}</div>
-          <div class="ma-picker-option-meta">
-            {{ ctx.getProviderLabel(model.provider) }} · {{ model.model }}
-          </div>
-        </div>
-        <i
-          v-if="model.id === ctx.routingPickerCurrentModelId.value"
-          class="pi pi-check ma-picker-option-check"
-          aria-hidden="true"
-        />
-      </button>
-
-      <!-- 空状态 -->
-      <div v-if="ctx.routingPickerOptions.value.length === 0" class="ma-picker-empty">
-        <i class="pi pi-info-circle" aria-hidden="true" />
-        <span>暂无支持此任务的模型，请在模型编辑页面中启用该任务。</span>
-      </div>
-    </MobileBottomSheet>
+    <!-- 任务路由 picker —— 抽出到 AIRoutingPickerSheet -->
+    <AIRoutingPickerSheet />
   </div>
 </template>
 
@@ -484,103 +425,4 @@ const routingPickerVisible = computed({
   flex-shrink: 0;
 }
 
-/* ───── 任务路由 Picker 选项样式（sheet 外壳由 MobileBottomSheet 提供） ───── */
-.ma-picker-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 12px 12px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  text-align: left;
-  cursor: pointer;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  -webkit-tap-highlight-color: transparent;
-  margin-bottom: 2px;
-}
-
-.ma-picker-option:active {
-  background: var(--white-opacity-4);
-}
-
-.ma-picker-option--active {
-  background: var(--tsukuyomi-opacity-12);
-  border-color: var(--tsukuyomi-opacity-30);
-}
-
-.ma-picker-option-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.ma-picker-option-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--primary-200); /* token: primary */
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ma-picker-option-meta {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--moon-50-opacity-55);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ma-picker-option-check {
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  font-size: 13px;
-  flex-shrink: 0;
-}
-
-.ma-picker-empty {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 14px 12px;
-  margin: 8px 0 4px;
-  background: var(--tsukuyomi-opacity-6); /* token: tsukuyomi-500 @ 6% */
-  border: 1px solid var(--tsukuyomi-opacity-18);
-  border-radius: 10px;
-  font-size: 12px;
-  color: var(--moon-50-opacity-75);
-  line-height: 1.5;
-}
-
-.ma-picker-empty i {
-  font-size: 14px;
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  margin-top: 1px;
-  flex-shrink: 0;
-}
-
-.ma-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 32px 20px;
-  text-align: center;
-  color: var(--moon-50-opacity-60);
-  font-size: 13px;
-}
-
-.ma-state-icon {
-  font-size: 42px;
-  color: var(--moon-50-opacity-25); /* token: moon-50 @ 25% */
-}
-
-.ma-state-title {
-  font-size: 14px;
-  color: var(--moon-50-opacity-70);
-}
 </style>

@@ -330,20 +330,29 @@ export class ToolRegistry {
       return buildUnknownToolResult(toolCall);
     }
 
-    const options: HandleToolCallOptions = {
-      bookId,
-      ...(onAction ? { onAction } : {}),
-      ...(onToast ? { onToast } : {}),
-      ...(taskId ? { taskId } : {}),
-      ...(sessionId ? { sessionId } : {}),
-      ...(paragraphIds ? { paragraphIds } : {}),
-      ...(aiProcessingStore ? { aiProcessingStore } : {}),
-      ...(aiModelId ? { aiModelId } : {}),
-      ...(chunkIndex !== undefined ? { chunkIndex } : {}),
-      ...(submittedParagraphIds ? { submittedParagraphIds } : {}),
-      ...(accumulatedParagraphs ? { accumulatedParagraphs } : {}),
-      ...(enableOriginalTextValidation !== undefined ? { enableOriginalTextValidation } : {}),
+    // truthy 的可选参数统一拷贝进 options（数据驱动，避免逐字段写三元）
+    const options: HandleToolCallOptions = { bookId };
+    const optionalTruthy: Record<string, unknown> = {
+      onAction,
+      onToast,
+      taskId,
+      sessionId,
+      paragraphIds,
+      aiProcessingStore,
+      aiModelId,
+      submittedParagraphIds,
+      accumulatedParagraphs,
     };
+    for (const key of Object.keys(optionalTruthy)) {
+      const value = optionalTruthy[key];
+      if (value) {
+        (options as unknown as Record<string, unknown>)[key] = value;
+      }
+    }
+    if (chunkIndex !== undefined) options.chunkIndex = chunkIndex;
+    if (enableOriginalTextValidation !== undefined) {
+      options.enableOriginalTextValidation = enableOriginalTextValidation;
+    }
 
     try {
       return await invokeToolHandler(tool, toolCall, options);

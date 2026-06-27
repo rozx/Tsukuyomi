@@ -3,6 +3,8 @@ import type {
   CharacterSetting,
   Terminology,
   ScoreBreakdown,
+  Novel,
+  Chapter,
 } from 'src/models/novel';
 import { getSelectedTranslation } from 'src/utils/text-utils';
 import { ChapterContentService } from 'src/services/chapter-content-service';
@@ -477,6 +479,136 @@ export async function getRelatedMemoriesForChunk(
 }
 
 /**
+ * 构建当前 chunk 中出现的术语片段
+ */
+function buildChunkTermsSection(terms: Terminology[]): string {
+  if (terms.length === 0) return '';
+  const termList = terms.map((t) => `${t.name} → ${t.translation.translation}`).join('、');
+  return `**术语**：${termList}`;
+}
+
+/**
+ * 构建当前 chunk 中出现的角色片段
+ */
+function buildChunkCharactersSection(characters: CharacterSetting[]): string {
+  if (characters.length === 0) return '';
+  const characterDetails = characters.map(formatCharacterDetail);
+  return `**角色**：\n${characterDetails.map((d) => `  - ${d}`).join('\n')}`;
+}
+
+/**
+ * 提取当前 chunk 中出现的术语 / 角色 / 相关记忆，拼接为上下文字符串
+ * 注意：每次调用都从 store 重新获取书籍数据，确保包含前一个 chunk 中创建/更新的术语和角色
+ */
+async function buildCurrentChunkContext(
+  bookId: string | undefined,
+  chunkText: string,
+  chapterId?: string,
+): Promise<string> {
+  if (!bookId || !chunkText) return '';
+
+  const booksStore = useBooksStore();
+  const book = booksStore.getBookById(bookId);
+  if (!book) return '';
+
+  const terms = findUniqueTermsInText(chunkText, book.terminologies || []);
+  const characters = findUniqueCharactersInText(chunkText, book.characterSettings || []);
+
+  const contextParts = [buildChunkTermsSection(terms), buildChunkCharactersSection(characters)].filter(
+    Boolean,
+  );
+
+  let currentChunkContext = '';
+  if (contextParts.length > 0) {
+    currentChunkContext = `\n\n【当前部分出现的术语和角色】\n${contextParts.join('\n')}\n`;
+    currentChunkContext += `提供的角色以及术语信息已为最新，不必使用工具再次获取检查。\n`;
+  }
+
+  // 获取相关记忆（传入已提取的 terms 和 characters，避免重复计算）
+  const memoryContext = await getRelatedMemoriesForChunk(
+    bookId,
+    chunkText,
+    10,
+    chapterId,
+    terms,
+    characters,
+  );
+  if (memoryContext) {
+    currentChunkContext += memoryContext;
+  }
+
+  return currentChunkContext;
+}
+
+/**
+ * 起始段落位置提示：当任务从章节中间开始时，提醒 AI 可用工具取前文
+ */
+function buildStartContextHint(
+  hasPreviousParagraphs: boolean | undefined,
+  firstParagraphId: string | undefined,
+  taskLabel: string,
+): string {
+  if (hasPreviousParagraphs !== true || !firstParagraphId) return '';
+  return `\n\n【起始段落位置】\n**起始段落ID**: \`${firstParagraphId}\`\n[提示] 在此之前还有段落。如需前文上下文，可调用 \`get_previous_paragraphs\`（参数 \`paragraph_id\` 传入起始段落ID）。仅用于上下文，不要把工具返回内容当作${taskLabel}结果输出。\n`;
+}
+
+interface FirstChunkPromptParams {
+  taskType: TaskType;
+  taskLabel: string;
+  chunkIndex: number;
+  totalChunks: number;
+  chapterTitle: string | undefined;
+  currentChunkContext: string;
+  startContextHint: string;
+  chunkText: string;
+  paragraphCountNote: string;
+  maintenanceReminder: string;
+  contextToolsReminder: string;
+}
+
+function buildFirstChunkPrompt(p: FirstChunkPromptParams): string {
+  const titleInstruction =
+    p.chapterTitle && p.taskType === 'translation'
+      ? `\n\n**章节标题翻译**：请翻译以下章节标题，并在输出 JSON 中包含 \`titleTranslation\` 字段：\n【章节标题】${p.chapterTitle}`
+      : '';
+
+  const planningStatus = getCurrentStatusInfo(p.taskType, 'planning', false);
+
+  return `开始${p.taskLabel}任务。当前处于 **planning 阶段**，请按待办清单逐项完成。
+
+${planningStatus}${titleInstruction}${p.currentChunkContext}${p.startContextHint}
+
+以下是第一部分内容（第 ${p.chunkIndex + 1}/${p.totalChunks} 部分）：${p.paragraphCountNote}\n\n${p.chunkText}${p.maintenanceReminder}${p.contextToolsReminder}`;
+}
+
+interface SubsequentChunkPromptParams {
+  taskType: TaskType;
+  taskLabel: string;
+  chunkIndex: number;
+  totalChunks: number;
+  currentChunkContext: string;
+  startContextHint: string;
+  chunkText: string;
+  paragraphCountNote: string;
+  maintenanceReminder: string;
+}
+
+function buildSubsequentChunkPrompt(p: SubsequentChunkPromptParams): string {
+  const briefPlanningNote = p.currentChunkContext
+    ? '以上是当前部分中出现的术语和角色，请确保翻译时使用这些术语和角色的正确翻译。'
+    : '';
+
+  const briefPlanningStatus = getCurrentStatusInfo(p.taskType, 'planning', true);
+
+  return `继续${p.taskLabel}任务（第 ${p.chunkIndex + 1}/${p.totalChunks} 部分）。当前处于 **planning 阶段**。${p.currentChunkContext}${p.startContextHint}
+
+${briefPlanningStatus}
+${briefPlanningNote}
+
+以下是待${p.taskLabel}内容：${p.paragraphCountNote}\n\n${p.chunkText}${p.maintenanceReminder}`;
+}
+
+/**
  * 构建独立的 chunk 提示（避免 max token 问题）
  * 每个 chunk 独立，提醒 AI 使用工具获取上下文
  * @param taskType 任务类型
@@ -510,91 +642,37 @@ export async function buildIndependentChunkPrompt(
   // 工具提示：避免与 system prompt 重复，只保留最小必要提醒
   const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息可调用工具获取；工具返回内容**不要**当作${taskLabel}结果直接输出。`;
 
-  // 提取当前 chunk 中出现的术语和角色
-  // 注意：每次调用时都从 store 重新获取书籍数据，确保包含在前一个 chunk 中创建/更新的术语和角色
-  let currentChunkContext = '';
-  if (bookId && chunkText) {
-    const booksStore = useBooksStore();
-    // 从 store 获取最新的书籍数据（包含所有已创建/更新的术语和角色）
-    const book = booksStore.getBookById(bookId);
-    if (book) {
-      // 从当前 chunk 文本中提取出现的术语和角色
-      // 这会自动包含在前一个 chunk 中创建的新术语和角色（因为它们已经在 store 中更新了）
-      const terms = findUniqueTermsInText(chunkText, book.terminologies || []);
-      const characters = findUniqueCharactersInText(chunkText, book.characterSettings || []);
+  const currentChunkContext = await buildCurrentChunkContext(bookId, chunkText, chapterId);
 
-      const contextParts: string[] = [];
+  const startContextHint = buildStartContextHint(hasPreviousParagraphs, firstParagraphId, taskLabel);
 
-      if (terms.length > 0) {
-        const termList = terms.map((t) => `${t.name} → ${t.translation.translation}`).join('、');
-        contextParts.push(`**术语**：${termList}`);
-      }
-
-      if (characters.length > 0) {
-        const characterDetails = characters.map(formatCharacterDetail);
-
-        contextParts.push(`**角色**：\n${characterDetails.map((d) => `  - ${d}`).join('\n')}`);
-      }
-
-      if (contextParts.length > 0) {
-        currentChunkContext = `\n\n【当前部分出现的术语和角色】\n${contextParts.join('\n')}\n`;
-        currentChunkContext += `提供的角色以及术语信息已为最新，不必使用工具再次获取检查。\n`;
-      }
-
-      // 获取相关记忆
-      // 传入已提取的 terms 和 characters，避免重复计算
-      const memoryContext = await getRelatedMemoriesForChunk(
-        bookId,
-        chunkText,
-        10,
-        chapterId,
-        terms,
-        characters,
-      );
-      if (memoryContext) {
-        currentChunkContext += memoryContext;
-      }
-    }
-  }
-
-  // 起始段落提示：当本次任务从章节中间开始（即起始段落不是章节第一个非空段落）时，提醒 AI 可用工具取前文
-  const startContextHint =
-    hasPreviousParagraphs === true && firstParagraphId
-      ? `\n\n【起始段落位置】\n**起始段落ID**: \`${firstParagraphId}\`\n[提示] 在此之前还有段落。如需前文上下文，可调用 \`get_previous_paragraphs\`（参数 \`paragraph_id\` 传入起始段落ID）。仅用于上下文，不要把工具返回内容当作${taskLabel}结果输出。\n`
-      : '';
-
-  // 第一个 chunk：完整规划阶段
-  // 注意：章节 ID 已在系统提示词中提供
   if (chunkIndex === 0) {
-    // 如果有章节标题，添加明确的翻译指令
-    const titleInstruction =
-      chapterTitle && taskType === 'translation'
-        ? `\n\n**章节标题翻译**：请翻译以下章节标题，并在输出 JSON 中包含 \`titleTranslation\` 字段：
-【章节标题】${chapterTitle}`
-        : '';
-
-    const planningStatus = getCurrentStatusInfo(taskType, 'planning', false);
-
-    return `开始${taskLabel}任务。当前处于 **planning 阶段**，请按待办清单逐项完成。
-
-${planningStatus}${titleInstruction}${currentChunkContext}${startContextHint}
-
-以下是第一部分内容（第 ${chunkIndex + 1}/${totalChunks} 部分）：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}${contextToolsReminder}`;
-  } else {
-    // 后续 chunk：简短规划阶段，包含当前 chunk 中出现的术语和角色
-    const briefPlanningNote = currentChunkContext
-      ? '以上是当前部分中出现的术语和角色，请确保翻译时使用这些术语和角色的正确翻译。'
-      : '';
-
-    const briefPlanningStatus = getCurrentStatusInfo(taskType, 'planning', true);
-
-    return `继续${taskLabel}任务（第 ${chunkIndex + 1}/${totalChunks} 部分）。当前处于 **planning 阶段**。${currentChunkContext}${startContextHint}
-
-${briefPlanningStatus}
-${briefPlanningNote}
-
-以下是待${taskLabel}内容：${paragraphCountNote}\n\n${chunkText}${maintenanceReminder}`;
+    return buildFirstChunkPrompt({
+      taskType,
+      taskLabel,
+      chunkIndex,
+      totalChunks,
+      chapterTitle,
+      currentChunkContext,
+      startContextHint,
+      chunkText,
+      paragraphCountNote,
+      maintenanceReminder,
+      contextToolsReminder,
+    });
   }
+
+  return buildSubsequentChunkPrompt({
+    taskType,
+    taskLabel,
+    chunkIndex,
+    totalChunks,
+    currentChunkContext,
+    startContextHint,
+    chunkText,
+    paragraphCountNote,
+    maintenanceReminder,
+  });
 }
 
 /**
@@ -606,6 +684,39 @@ export function buildSpecialInstructionsSection(specialInstructions?: string): s
   return specialInstructions
     ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
     : '';
+}
+
+/**
+ * 在书籍的 volumes 中按 chapterId 查找章节
+ */
+function findChapterInBook(book: Novel, chapterId: string): Chapter | undefined {
+  for (const volume of book.volumes || []) {
+    const foundChapter = volume.chapters?.find((c) => c.id === chapterId);
+    if (foundChapter) {
+      return foundChapter;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 根据任务类型解析特殊指令（章节级别覆盖书籍级别）
+ */
+function resolveSpecialInstructionsForTask(
+  book: Novel,
+  chapter: Chapter | undefined,
+  taskType: TaskType,
+): string | undefined {
+  switch (taskType) {
+    case 'translation':
+      return chapter?.translationInstructions || book.translationInstructions;
+    case 'polish':
+      return chapter?.polishInstructions || book.polishInstructions;
+    case 'proofreading':
+      return chapter?.proofreadingInstructions || book.proofreadingInstructions;
+    default:
+      return undefined;
+  }
 }
 
 /**
@@ -633,29 +744,8 @@ export function getSpecialInstructions(
       return undefined;
     }
 
-    // 如果提供了章节ID，获取章节数据以获取章节级别的特殊指令
-    let chapter;
-    if (chapterId) {
-      for (const volume of book.volumes || []) {
-        const foundChapter = volume.chapters?.find((c) => c.id === chapterId);
-        if (foundChapter) {
-          chapter = foundChapter;
-          break;
-        }
-      }
-    }
-
-    // 根据任务类型获取相应的特殊指令（章节级别覆盖书籍级别）
-    switch (taskType) {
-      case 'translation':
-        return chapter?.translationInstructions || book.translationInstructions;
-      case 'polish':
-        return chapter?.polishInstructions || book.polishInstructions;
-      case 'proofreading':
-        return chapter?.proofreadingInstructions || book.proofreadingInstructions;
-      default:
-        return undefined;
-    }
+    const chapter = chapterId ? findChapterInBook(book, chapterId) : undefined;
+    return resolveSpecialInstructionsForTask(book, chapter, taskType);
   } catch (e) {
     console.warn(
       `[getSpecialInstructions] ⚠️ 获取书籍数据失败（书籍ID: ${bookId}）`,
@@ -768,6 +858,44 @@ function buildChapterCharactersContext(characters: CharacterSetting[]): string {
 }
 
 /**
+ * 从全章段落文本匹配本章出场角色，构建角色上下文片段
+ */
+function buildCharactersContextPart(bookId: string | undefined, allChapterParagraphs: Paragraph[]): string {
+  if (!bookId) return '';
+  const booksStore = useBooksStore();
+  const book = booksStore.getBookById(bookId);
+  if (!book) return '';
+  // 用全章段落文本匹配角色
+  const allText = allChapterParagraphs.map((p) => p.text).join('\n');
+  const characters = findUniqueCharactersInText(allText, book.characterSettings || []);
+  return buildChapterCharactersContext(characters);
+}
+
+/**
+ * 基于当前段落文本匹配相关术语，构建术语上下文片段
+ */
+function buildTermsContextPart(
+  bookId: string | undefined,
+  allChapterParagraphs: Paragraph[],
+  currentParagraphId: string,
+): string {
+  if (!bookId) return '';
+  const booksStore = useBooksStore();
+  const book = booksStore.getBookById(bookId);
+  const currentParagraph = allChapterParagraphs.find((p) => p.id === currentParagraphId);
+  if (!book || !currentParagraph?.text) return '';
+  const terms = findUniqueTermsInText(currentParagraph.text, book.terminologies || []);
+  if (terms.length === 0) return '';
+  const termList = terms
+    .map(
+      (t) =>
+        `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`,
+    )
+    .join('\n');
+  return `\n\n【相关术语】\n${termList}\n`;
+}
+
+/**
  * 构建单段落润色/校对的完整默认上下文
  */
 export async function buildSingleParagraphDefaultContext(options: {
@@ -792,36 +920,12 @@ export async function buildSingleParagraphDefaultContext(options: {
   if (chapterContext) parts.push(chapterContext);
 
   // 3. 本章角色
-  if (bookId) {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-    if (book) {
-      // 用全章段落文本匹配角色
-      const allText = allChapterParagraphs.map((p) => p.text).join('\n');
-      const characters = findUniqueCharactersInText(allText, book.characterSettings || []);
-      const charactersContext = buildChapterCharactersContext(characters);
-      if (charactersContext) parts.push(charactersContext);
-    }
-  }
+  const charactersContext = buildCharactersContextPart(bookId, allChapterParagraphs);
+  if (charactersContext) parts.push(charactersContext);
 
   // 4. 相关术语（基于当前段落文本匹配）
-  if (bookId) {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-    const currentParagraph = allChapterParagraphs.find((p) => p.id === currentParagraphId);
-    if (book && currentParagraph?.text) {
-      const terms = findUniqueTermsInText(currentParagraph.text, book.terminologies || []);
-      if (terms.length > 0) {
-        const termList = terms
-          .map(
-            (t) =>
-              `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`,
-          )
-          .join('\n');
-        parts.push(`\n\n【相关术语】\n${termList}\n`);
-      }
-    }
-  }
+  const termsContext = buildTermsContextPart(bookId, allChapterParagraphs, currentParagraphId);
+  if (termsContext) parts.push(termsContext);
 
   // 5. 前后段落上下文
   const surroundingContext = buildSurroundingParagraphsContext(

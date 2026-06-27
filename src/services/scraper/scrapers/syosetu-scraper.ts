@@ -172,7 +172,6 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
    * @param url 要验证的 URL
    * @returns 是否为有效的 URL
    */
-  // fallow-ignore-next-line unused-class-member
   isValidUrl(url: string): boolean {
     return SyosetuScraper.NOVEL_URL_PATTERN.test(url);
   }

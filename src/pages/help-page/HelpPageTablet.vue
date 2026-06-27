@@ -6,15 +6,24 @@
  * 下它们变成绝对定位的抽屉，由顶部工具栏的「文档」/「目录」按钮切换。
  * 正文始终铺满剩余空间，避免在竖屏窄宽度下被三栏挤成一条。
  */
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { injectHelpPage } from 'src/composables/help-page/useHelpPage';
 import { isPortrait } from 'src/utils/device-orientation';
+import HelpTabletNavList from './HelpTabletNavList.vue';
+import HelpTabletTocList from './HelpTabletTocList.vue';
+import HelpTabletState from './HelpTabletState.vue';
 
 const ctx = injectHelpPage();
 
 // 横屏默认 nav 展开、toc 展开即可（参与 flex）；竖屏默认都收起，让正文铺满。
 const isNavOpen = ref(!isPortrait());
 const isTocOpen = ref(false);
+
+// 把模板内的比较收进脚本侧，降低段落认知与圈复杂度
+const hasToc = computed(() => ctx.toc.value.length > 0);
+const helpState = computed<'loading' | 'error' | null>(() =>
+  ctx.loading.value ? 'loading' : ctx.error.value ? 'error' : null,
+);
 
 function toggleNav(): void {
   isNavOpen.value = !isNavOpen.value;
@@ -73,41 +82,7 @@ watch(
         </div>
       </header>
       <nav class="ht-nav-list">
-        <div
-          v-for="(docs, category) in ctx.groupedDocuments.value"
-          :key="category"
-          class="ht-nav-group"
-        >
-          <button
-            class="ht-nav-category"
-            @click="ctx.toggleCategory(category as string)"
-          >
-            <span>{{ category }}</span>
-            <i
-              class="pi"
-              :class="
-                ctx.expandedCategories.value.has(category as string)
-                  ? 'pi-chevron-down'
-                  : 'pi-chevron-right'
-              "
-              aria-hidden="true"
-            />
-          </button>
-          <ul
-            v-show="ctx.expandedCategories.value.has(category as string)"
-            class="ht-nav-items"
-          >
-            <li v-for="doc in docs" :key="doc.id">
-              <button
-                class="ht-nav-item"
-                :class="{ 'ht-nav-item--active': ctx.currentDoc.value?.id === doc.id }"
-                @click="selectDocument(doc)"
-              >
-                {{ doc.title }}
-              </button>
-            </li>
-          </ul>
-        </div>
+        <HelpTabletNavList @select-doc="selectDocument" />
       </nav>
     </aside>
 
@@ -131,7 +106,7 @@ watch(
           <span class="ht-breadcrumb-title">{{ ctx.currentDoc.value.title }}</span>
         </div>
         <button
-          v-if="ctx.toc.value.length > 0"
+          v-if="hasToc"
           type="button"
           class="ht-toolbar-btn"
           :class="{ 'ht-toolbar-btn--active': isTocOpen }"
@@ -143,17 +118,13 @@ watch(
         </button>
       </div>
 
-      <!-- Loading / error / content -->
-      <div v-if="ctx.loading.value" class="ht-state">
-        <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-        <p>加载文档中...</p>
-      </div>
-
-      <div v-else-if="ctx.error.value" class="ht-state ht-state--error">
-        <i class="pi pi-exclamation-triangle" aria-hidden="true" />
-        <p>{{ ctx.error.value }}</p>
-        <button class="ht-state-retry" @click="ctx.loadDocumentIndex">重试</button>
-      </div>
+      <!-- Loading / error（抽出到 HelpTabletState，把两条分支折叠为单个 state 驱动） -->
+      <HelpTabletState
+        v-if="helpState"
+        :state="helpState"
+        :error="ctx.error.value"
+        @retry="ctx.loadDocumentIndex"
+      />
 
       <div v-else class="ht-content-scroll help-content-scroll">
         <div class="ht-content-inner">
@@ -178,28 +149,13 @@ watch(
     </main>
 
     <!-- 右：目录（TOC） -->
-    <aside v-if="ctx.toc.value.length > 0" class="ht-toc">
+    <aside v-if="hasToc" class="ht-toc">
       <header class="ht-toc-head">
         <i class="pi pi-list" aria-hidden="true" />
         <span>目录</span>
       </header>
       <nav class="ht-toc-list">
-        <a
-          v-for="item in ctx.toc.value"
-          :key="item.id"
-          :href="`#${item.id}`"
-          class="ht-toc-item"
-          :class="[
-            ctx.activeHeading.value === item.id ? 'ht-toc-item--active' : '',
-            item.level === 1 ? 'ht-toc-item--l1' : '',
-            item.level === 2 ? 'ht-toc-item--l2' : '',
-            item.level === 3 ? 'ht-toc-item--l3' : '',
-            item.level === 4 ? 'ht-toc-item--l4' : '',
-          ]"
-          @click.prevent="selectHeading(item.id)"
-        >
-          {{ item.text }}
-        </a>
+        <HelpTabletTocList @select="selectHeading" />
       </nav>
     </aside>
   </div>

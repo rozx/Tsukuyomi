@@ -25,6 +25,10 @@ import {
 } from 'src/services/chapter-embedding-service';
 import { MemoryService, isMemoryEmbeddingStale } from 'src/services/memory-service';
 import BatchEmbeddingsTestQueryDialog from 'src/components/dialogs/BatchEmbeddingsTestQueryDialog.vue';
+import BatchEmbeddingsDisabledNotice from 'src/components/novel/BatchEmbeddingsDisabledNotice.vue';
+import BatchEmbeddingsStaleBanner from 'src/components/novel/BatchEmbeddingsStaleBanner.vue';
+import BatchEmbeddingsActiveTask from 'src/components/novel/BatchEmbeddingsActiveTask.vue';
+import BatchEmbeddingsBackendStatus from 'src/components/novel/BatchEmbeddingsBackendStatus.vue';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
 import { isMobileDevice } from 'src/utils/platform';
 
@@ -300,6 +304,18 @@ const isBuilding = computed(() => progress.value.running);
 // 用户点击"立即重建"后立即隐藏升级横幅,避免在 refreshStats 追上之前横幅还显眼。
 // 队列从 running 回落到 idle 时再复位,让 hasStale 决定是否重新显示。
 const rebuildDismissed = ref(false);
+
+// 模板内联 && / || / !== 收敛为 computed，降低模板圈复杂度
+const showStaleBanner = computed(
+  () => isEmbeddingEnabled.value && hasStale.value && !rebuildDismissed.value,
+);
+const actionsDisabled = computed(() => embeddingStatus.value !== 'ready' || isBuilding.value);
+const testDisabled = computed(() => embeddingStatus.value !== 'ready');
+const showActiveTask = computed(
+  () => isEmbeddingEnabled.value && !!activeTask.value && !!activeTask.value.bookId,
+);
+const chapterEtaVisible = computed(() => chapterPendingInQueue.value > 0);
+const memoryEtaVisible = computed(() => memoryPendingInQueue.value > 0);
 watch(isBuilding, (running, wasRunning) => {
   if (wasRunning && !running) {
     rebuildDismissed.value = false;
@@ -375,68 +391,25 @@ defineExpose({ toggle });
         </div>
 
         <!-- 功能未启用时的提示 + 前往设置按钮(替代全部操作按钮) -->
-        <div
+        <BatchEmbeddingsDisabledNotice
           v-if="!isEmbeddingEnabled"
-          class="flex flex-col gap-2 p-3 bg-moon/5 border border-moon/10 rounded text-xs text-moon-50"
-        >
-          <div class="flex items-start gap-2">
-            <i class="pi pi-info-circle mt-0.5 text-amber-300 shrink-0"></i>
-            <div class="flex-1 min-w-0">
-              <template v-if="isMobile">
-                <div class="font-medium text-moon-100">移动设备不支持本地嵌入</div>
-                <p class="mt-1">模型过大、WebGPU 在移动浏览器上不稳定,本功能在移动端被强制禁用。
-                  请在桌面端开启并生成向量,手机端只读使用。</p>
-              </template>
-              <template v-else>
-                <div class="font-medium text-moon-100">本地嵌入未启用</div>
-                <p class="mt-1">启用后可在本地下载嵌入模型(约 340–465 MB),支持语义记忆检索与章节向量搜索。
-                  关闭状态下所有相关操作按钮均已隐藏。</p>
-              </template>
-            </div>
-          </div>
-          <Button
-            v-if="!isMobile"
-            label="前往设置开启"
-            size="small"
-            severity="primary"
-            icon="pi pi-cog"
-            class="w-full"
-            @click="openSettings"
-          />
-        </div>
+          :is-mobile="isMobile"
+          @open-settings="openSettings"
+        />
 
         <!-- Embedding 空间升级横幅:存在 stale(版本不匹配)向量时显示,
              解释"已嵌入"数字为什么会掉,并提供一键重建入口 -->
-        <div
-          v-if="isEmbeddingEnabled && hasStale && !rebuildDismissed"
-          class="flex flex-col gap-2 p-3 rounded text-xs bg-amber-500/10 border border-amber-500/30 text-amber-200"
-        >
-          <div class="flex items-start gap-2">
-            <i class="pi pi-exclamation-triangle mt-0.5 text-amber-300 shrink-0"></i>
-            <div class="flex-1 min-w-0">
-              <div class="font-medium text-amber-100">Embedding 空间已升级</div>
-              <p class="mt-1 leading-relaxed text-amber-200/90">
-                检测到
-                <span v-if="staleCounts.chapter > 0">{{ staleCounts.chapter }} 个章节</span>
-                <span v-if="staleCounts.chapter > 0 && staleCounts.memory > 0"> / </span>
-                <span v-if="staleCounts.memory > 0">{{ staleCounts.memory }} 条记忆</span>
-                使用旧版向量,检索时会自动降级(章节搜索暂不可用)。重建后即可恢复语义召回。
-              </p>
-            </div>
-          </div>
-          <Button
-            label="立即重建"
-            size="small"
-            severity="warn"
-            icon="pi pi-sync"
-            class="w-full"
-            :disabled="embeddingStatus !== 'ready' || isBuilding"
-            @click="rebuildStale"
-          />
-        </div>
+        <BatchEmbeddingsStaleBanner
+          v-if="showStaleBanner"
+          :chapter-stale="staleCounts.chapter"
+          :memory-stale="staleCounts.memory"
+          :disabled="actionsDisabled"
+          @rebuild="rebuildStale"
+        />
 
         <!-- 章节 Embedding -->
-        <div v-if="isEmbeddingEnabled" class="flex flex-col gap-2 p-2 bg-white/5 rounded">
+        <template v-if="isEmbeddingEnabled">
+        <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
           <div class="flex items-center justify-between">
             <div class="text-sm font-medium text-moon-100">章节 Embedding</div>
             <div class="text-xs text-moon-50">
@@ -446,7 +419,7 @@ defineExpose({ toggle });
           <ProgressBar :value="chapterPercent" :show-value="false" style="height: 6px" />
           <div class="flex items-center justify-between text-xs text-moon-50">
             <span>待处理: {{ chapterPendingInQueue }}</span>
-            <span v-if="chapterPendingInQueue > 0">ETA: {{ etaText }}</span>
+            <span v-if="chapterEtaVisible">ETA: {{ etaText }}</span>
           </div>
           <div class="flex gap-2 mt-1">
             <Button
@@ -455,7 +428,7 @@ defineExpose({ toggle });
               severity="secondary"
               icon="pi pi-refresh"
               @click="backfillChapters"
-              :disabled="embeddingStatus !== 'ready' || isBuilding"
+              :disabled="actionsDisabled"
               class="flex-1"
             />
             <Button
@@ -464,14 +437,14 @@ defineExpose({ toggle });
               severity="secondary"
               icon="pi pi-sync"
               @click="recomputeAllChapters"
-              :disabled="embeddingStatus !== 'ready' || isBuilding"
+              :disabled="actionsDisabled"
               class="flex-1"
             />
           </div>
         </div>
 
         <!-- 记忆 Embedding -->
-        <div v-if="isEmbeddingEnabled" class="flex flex-col gap-2 p-2 bg-white/5 rounded">
+        <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
           <div class="flex items-center justify-between">
             <div class="text-sm font-medium text-moon-100">记忆 Embedding</div>
             <div class="text-xs text-moon-50">
@@ -481,7 +454,7 @@ defineExpose({ toggle });
           <ProgressBar :value="memoryPercent" :show-value="false" style="height: 6px" />
           <div class="flex items-center justify-between text-xs text-moon-50">
             <span>待处理: {{ memoryPendingInQueue }}</span>
-            <span v-if="memoryPendingInQueue > 0">ETA: {{ etaText }}</span>
+            <span v-if="memoryEtaVisible">ETA: {{ etaText }}</span>
           </div>
           <div class="flex gap-2 mt-1">
             <Button
@@ -490,7 +463,7 @@ defineExpose({ toggle });
               severity="secondary"
               icon="pi pi-refresh"
               @click="backfillMemories"
-              :disabled="embeddingStatus !== 'ready' || isBuilding"
+              :disabled="actionsDisabled"
               class="flex-1"
             />
           </div>
@@ -498,83 +471,37 @@ defineExpose({ toggle });
 
         <!-- 测试查询入口 -->
         <Button
-          v-if="isEmbeddingEnabled"
           label="测试向量查询"
           size="small"
           severity="secondary"
           icon="pi pi-search"
           class="w-full"
-          :disabled="embeddingStatus !== 'ready'"
+          :disabled="testDisabled"
           @click="openTestDialog"
         />
+        </template>
 
         <!-- 队列当前任务提示(跨书时高亮) -->
-        <div
-          v-if="isEmbeddingEnabled && activeTask && activeTask.bookId"
-          :class="[
-            'flex items-start gap-2 p-2 rounded text-xs min-w-0',
-            isProcessingOtherBook
-              ? 'bg-amber-500/10 border border-amber-500/30 text-amber-300'
-              : 'bg-primary-500/10 border border-primary-500/20 text-primary-300',
-          ]"
-        >
-          <i class="pi pi-spin pi-spinner shrink-0 mt-0.5"></i>
-          <div class="flex-1 min-w-0">
-            <div v-if="isProcessingOtherBook">
-              <div class="truncate">其它书籍 · {{ activeKindLabel }} ×{{ activeTask.itemCount }}</div>
-              <div class="truncate font-medium mt-0.5">{{ activeBookTitle }}</div>
-            </div>
-            <div v-else class="truncate">
-              本书 {{ activeKindLabel }} ×{{ activeTask.itemCount }}
-            </div>
-          </div>
-        </div>
+        <BatchEmbeddingsActiveTask
+          v-if="showActiveTask && activeTask"
+          :active-task="activeTask"
+          :is-processing-other-book="isProcessingOtherBook"
+          :kind-label="activeKindLabel"
+          :book-title="activeBookTitle"
+        />
 
         <!-- 全局状态 -->
-        <div class="flex flex-col gap-1 text-xs text-moon-50 px-1">
-          <div class="flex items-start justify-between gap-2">
-            <span class="shrink-0">模型:</span>
-            <span class="font-mono text-right min-w-0 break-all">{{ MODEL_VERSION }}<span class="text-moon-300">(章节: @{{ CHAPTER_MODEL_VERSION.split('@').pop() }})</span></span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span>后端:</span>
-            <span
-              :class="
-                activeBackend === 'webgpu'
-                  ? 'text-green-400 font-medium'
-                  : activeBackend === 'wasm'
-                    ? 'text-amber-300'
-                    : 'text-moon-50'
-              "
-            >
-              <template v-if="activeBackend === 'webgpu'">WebGPU</template>
-              <template v-else-if="activeBackend === 'wasm'">WASM (慢)</template>
-              <template v-else>—</template>
-            </span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span>状态:</span>
-            <span :class="statusLabel.color">● {{ statusLabel.text }}</span>
-          </div>
-          <div v-if="progress.running || progress.paused" class="flex justify-end mt-2">
-            <Button
-              v-if="!progress.paused"
-              label="暂停"
-              size="small"
-              severity="warning"
-              icon="pi pi-pause"
-              @click="pauseQueue"
-            />
-            <Button
-              v-else
-              label="恢复"
-              size="small"
-              severity="success"
-              icon="pi pi-play"
-              @click="resumeQueue"
-            />
-          </div>
-        </div>
+        <BatchEmbeddingsBackendStatus
+          :model-version="MODEL_VERSION"
+          :chapter-model-version="CHAPTER_MODEL_VERSION"
+          :active-backend="activeBackend"
+          :status-color="statusLabel.color"
+          :status-text="statusLabel.text"
+          :running="progress.running"
+          :paused="progress.paused"
+          @pause="pauseQueue"
+          @resume="resumeQueue"
+        />
       </template>
     </div>
   </Drawer>
