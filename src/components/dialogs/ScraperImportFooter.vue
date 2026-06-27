@@ -58,3 +58,19 @@ const applyDisabled = computed(
   () => !scrapedNovel.value || selectedChapters.value.size === 0 || importing.value,
 );
 </script>
+
+<style scoped>
+/* 底部操作区的手机端样式。
+ * 注：从 NovelScraperDialog.vue 迁移而来 —— 父对话框把 footer 抽成本组件后，
+ * .scraper-footer-actions 渲染在本组件内部嵌套元素，父级 scoped 样式无法命中（子组件携带自身 scope id）。 */
+@media (max-width: 640px) {
+  .scraper-footer-actions {
+    width: 100%;
+  }
+
+  .scraper-footer-actions :deep(.p-button) {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+</style>

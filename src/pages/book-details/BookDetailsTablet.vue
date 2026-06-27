@@ -12,6 +12,7 @@
  */
 import BookDetailsDesktop from './BookDetailsDesktop.vue';
 import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
+import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import { useTabletRightRail } from 'src/composables/useTabletRightRail';
 
@@ -35,7 +36,7 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
     <TabletSideRail>
       <button
         type="button"
-        class="tsr-btn"
+        class="tsr-btn rail-base-btn"
         :class="{ 'tsr-btn--active': ctx.isTabletSidebarOpen.value }"
         :title="ctx.isTabletSidebarOpen.value ? '收起目录' : '展开目录'"
         :aria-label="ctx.isTabletSidebarOpen.value ? '收起目录' : '展开目录'"
@@ -53,7 +54,7 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 
       <button
         type="button"
-        class="tsr-btn"
+        class="tsr-btn rail-base-btn"
         :class="{ 'tsr-btn--active': isChatActive }"
         title="月詠"
         @click="() => toggleRail('chat')"
@@ -63,21 +64,24 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 
       <button
         type="button"
-        class="tsr-btn"
+        class="tsr-btn rail-base-btn"
         :class="{ 'tsr-btn--active': isProgressActive }"
         title="翻译进度"
         @click="() => toggleRail('progress')"
       >
         <i class="pi pi-objects-column" aria-hidden="true" />
-        <span v-if="ctx.activeTranslationTaskCount.value > 0" class="tsr-badge">
+        <NotificationBadge v-if="ctx.activeTranslationTaskCount.value > 0">
           {{ ctx.activeTranslationTaskCount.value }}
-        </span>
+        </NotificationBadge>
       </button>
     </TabletSideRail>
   </div>
 </template>
 
 <style scoped>
+/* 侧轨按钮基础样式与 RightPanelRail 共用，见 rail-base.css */
+@import 'src/components/layout/rail-base.css';
+
 .book-details-tablet {
   position: relative;
   width: 100%;

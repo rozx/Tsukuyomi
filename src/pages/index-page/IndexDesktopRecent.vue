@@ -63,24 +63,15 @@ const onRecentCoverError = (e: Event, book: Novel) => {
   gap: 0.9rem;
 }
 
+/* 表面底色/边框/过渡与基础 hover 见 tailwind.css 的 .recent-card, .quick-action 公共规则 */
 .recent-card {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
   padding: 0.65rem;
-  border-radius: 10px;
-  border: 1px solid var(--white-opacity-8, var(--white-opacity-8));
-  background: var(--shell-opacity-50); /* near-black overlay, kept as-is */
-  color: inherit;
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .recent-card:hover {
-  border-color: var(--tsukuyomi-200-opacity-30);
-  background: var(--tsukuyomi-200-opacity-6);
   transform: translateY(-2px);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.32);
 }

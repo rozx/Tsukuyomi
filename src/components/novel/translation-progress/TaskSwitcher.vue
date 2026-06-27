@@ -118,6 +118,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* 状态圆点 + pulse-dot 动画与 TaskSwitcherItem 共用，见 task-switcher-dot.css */
+@import './task-switcher-dot.css';
+
 .task-switcher {
   padding: 12px 16px;
   border-bottom: 1px solid var(--white-opacity-5);
@@ -145,29 +148,6 @@ onUnmounted(() => {
   border-color: rgba(255, 255, 255, 0.15);
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-.switcher-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--moon-opacity-40);
-}
-
-.switcher-dot.active {
-  background: #6c8cff;
-  box-shadow: 0 0 8px rgba(108, 140, 255, 0.6);
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
-.switcher-dot.completed {
-  background: var(--green-500);
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
 }
 
 .switcher-label {

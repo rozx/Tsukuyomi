@@ -58,3 +58,20 @@ const fetchDisabled = computed(() => !isValidUrl.value || loading.value);
 // 支持站点提示的显示条件
 const showSupportedSites = computed(() => !isPhone.value || !scrapedNovel.value);
 </script>
+
+<style scoped>
+/* URL 输入行的手机端样式。
+ * 注：从 NovelScraperDialog.vue 迁移而来 —— 父对话框把 URL 输入区抽成本组件后，
+ * .scraper-url-row 渲染在本组件内部嵌套元素，父级 scoped 样式无法命中（子组件携带自身 scope id）。 */
+@media (max-width: 640px) {
+  .scraper-url-row {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .scraper-url-row :deep(.p-button) {
+    width: 100%;
+    justify-content: center;
+  }
+}
+</style>

@@ -75,3 +75,14 @@ const previewContent = computed(
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 思考过程内容样式 - 确保 URL 正确截断。
+ * 注：从 ChatMessageList.vue 迁移而来 —— 列表把思考区块抽成本组件后，
+ * 父级 scoped 样式无法命中子组件内部的 .thinking-content（仅子组件根元素继承父级 scope）。 */
+.thinking-content {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+</style>

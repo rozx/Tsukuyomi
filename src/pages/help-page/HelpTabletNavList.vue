@@ -10,11 +10,6 @@ import type { HelpDocument } from 'src/composables/help-page/useHelpPage';
 defineEmits<{ selectDoc: [doc: HelpDocument] }>();
 
 const ctx = injectHelpPage();
-
-const categoryChevron = (category: string) =>
-  ctx.expandedCategories.value.has(category) ? 'pi-chevron-down' : 'pi-chevron-right';
-const isCategoryExpanded = (category: string) => ctx.expandedCategories.value.has(category);
-const isActiveDoc = (doc: HelpDocument) => ctx.currentDoc.value?.id === doc.id;
 </script>
 
 <template>
@@ -25,13 +20,13 @@ const isActiveDoc = (doc: HelpDocument) => ctx.currentDoc.value?.id === doc.id;
   >
     <button class="ht-nav-category" @click="ctx.toggleCategory(category as string)">
       <span>{{ category }}</span>
-      <i class="pi" :class="categoryChevron(category as string)" aria-hidden="true" />
+      <i class="pi" :class="ctx.categoryChevron(category as string)" aria-hidden="true" />
     </button>
-    <ul v-show="isCategoryExpanded(category as string)" class="ht-nav-items">
+    <ul v-show="ctx.isCategoryExpanded(category as string)" class="ht-nav-items">
       <li v-for="doc in docs" :key="doc.id">
         <button
           class="ht-nav-item"
-          :class="{ 'ht-nav-item--active': isActiveDoc(doc) }"
+          :class="{ 'ht-nav-item--active': ctx.isActiveDoc(doc) }"
           @click="$emit('selectDoc', doc)"
         >
           {{ doc.title }}

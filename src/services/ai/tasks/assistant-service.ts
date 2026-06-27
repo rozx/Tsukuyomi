@@ -166,6 +166,23 @@ export interface AssistantResult {
 }
 
 /**
+ * token 限制恢复流程的入参，attemptTokenLimitRecovery / tryRecoverFromTokenLimitError 共用
+ */
+interface TokenLimitRecoveryParams {
+  error: unknown;
+  model: AIModel;
+  tools: AITool[];
+  options: AssistantServiceOptions;
+  systemPrompt: string;
+  userMessage: string;
+  context: ReturnType<typeof useContextStore>['getContext'];
+  finalSignal: AbortSignal | undefined;
+  aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined;
+  taskId: string | undefined;
+  sessionId: string | undefined;
+}
+
+/**
  * Assistant 服务
  * 提供智能助手功能，可以使用所有可用的 AI 工具，并基于用户当前上下文提供帮助
  */
@@ -2323,19 +2340,9 @@ export class AssistantService {
   /**
    * 在确认需要恢复后执行摘要 / 重试流程；返回 undefined 表示无可用恢复路径
    */
-  private static async attemptTokenLimitRecovery(params: {
-    error: unknown;
-    model: AIModel;
-    tools: AITool[];
-    options: AssistantServiceOptions;
-    systemPrompt: string;
-    userMessage: string;
-    context: ReturnType<typeof useContextStore>['getContext'];
-    finalSignal: AbortSignal | undefined;
-    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined;
-    taskId: string | undefined;
-    sessionId: string | undefined;
-  }): Promise<AssistantResult | undefined> {
+  private static async attemptTokenLimitRecovery(
+    params: TokenLimitRecoveryParams,
+  ): Promise<AssistantResult | undefined> {
     const {
       model,
       tools,
@@ -2410,19 +2417,9 @@ export class AssistantService {
   /**
    * 若错误是 token 限制，尝试总结并重试；返回 undefined 表示继续向外抛错误
    */
-  private static async tryRecoverFromTokenLimitError(params: {
-    error: unknown;
-    model: AIModel;
-    tools: AITool[];
-    options: AssistantServiceOptions;
-    systemPrompt: string;
-    userMessage: string;
-    context: ReturnType<typeof useContextStore>['getContext'];
-    finalSignal: AbortSignal | undefined;
-    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined;
-    taskId: string | undefined;
-    sessionId: string | undefined;
-  }): Promise<AssistantResult | undefined> {
+  private static async tryRecoverFromTokenLimitError(
+    params: TokenLimitRecoveryParams,
+  ): Promise<AssistantResult | undefined> {
     const { error, model, options } = params;
 
     if (!this.shouldAttemptTokenRecovery(error, model, options)) {

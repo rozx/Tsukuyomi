@@ -5,8 +5,7 @@
  */
 import Button from 'primevue/button';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
-import { formatTaskDuration } from 'src/utils';
+import { useThinkingTaskCard } from 'src/composables/ai/useThinkingTaskCard';
 
 interface Props {
   task: AIProcessingTask;
@@ -23,12 +22,10 @@ const STATUS_ICON: Record<string, string> = {
   cancelled: 'pi-ban text-orange-500',
 };
 
-const statusIcon = (status: string): string => STATUS_ICON[status] ?? '';
-const typeLabel = (type: AIProcessingTask['type']): string => TASK_TYPE_LABELS[type] || type;
-const formatDuration = (startTime: number, endTime?: number): string =>
-  formatTaskDuration(startTime, endTime, props.nowMs);
-
-const hasThinking = (t: AIProcessingTask): boolean => !!t.thinkingMessage && t.thinkingMessage.trim() !== '';
+const { statusIcon, typeLabel, formatDuration, hasThinking } = useThinkingTaskCard(
+  () => props.nowMs,
+  STATUS_ICON,
+);
 </script>
 
 <template>
@@ -73,3 +70,30 @@ const hasThinking = (t: AIProcessingTask): boolean => !!t.thinkingMessage && t.t
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 注：移动端布局样式从 ThinkingProcessBody.vue 迁移而来 —— 该面板把卡片抽成本组件后，
+ * 其 scoped 样式无法穿透到子组件内部嵌套元素（仅子组件根元素继承父级 scope），
+ * 导致这些类丢失移动端布局。样式应与其消费的模板同处一个组件作用域。 */
+@media (max-width: 640px) {
+  .thinking-reviewed-card {
+    padding: 0.65rem;
+  }
+
+  .thinking-reviewed-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .thinking-reviewed-main {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .thinking-reviewed-duration {
+    align-self: flex-end;
+  }
+}
+</style>

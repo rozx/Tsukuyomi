@@ -7,14 +7,18 @@
 import { computed } from 'vue';
 import Textarea from 'primevue/textarea';
 import ProgressBar from 'primevue/progressbar';
-import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPopover.vue';
-import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
+import ChatActionPopovers from 'src/components/layout/ChatActionPopovers.vue';
+import ChatSendButton from 'src/components/layout/ChatSendButton.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
 import ChatTodoSection from 'src/components/layout/ChatTodoSection.vue';
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import { useRightPanel } from 'src/composables/right-panel/useRightPanel';
+import { useChatPanelBindings } from 'src/composables/right-panel/useChatPanelBindings';
 
+// Desktop 直接用 useRightPanel（需要 todo / sessionStats / inputRef 等桌面专属字段），
+// 整个 panel 对象 + 自带的三个 bind 回调传给 useChatPanelBindings，避免逐字段重复实参。
+const panel = useRightPanel();
 const {
   ui,
   chatSessionsStore,
@@ -25,10 +29,7 @@ const {
   groupedActionPopoverRef,
   messages,
   inputMessage,
-  messageDisplayItemsById,
   isSending,
-  sendMessage,
-  stopGeneration,
   handleKeydown,
   todos,
   showTodoList,
@@ -39,28 +40,10 @@ const {
   hideSessionListPopover,
   createNewSession,
   clearChat,
-  thinkingExpanded,
-  displayedThinkingProcess,
-  displayedThinkingPreview,
-  thinkingActive,
-  setThinkingContentRef,
-  toggleThinking,
   assistantModel,
   contextInfo,
   sessionStats,
-  getChapterTitleForAction,
-  renderMarkdown,
-  formatMessageTime,
-  hoveredAction,
-  hoveredGroupedAction,
-  actionDetailsContext,
-  toggleActionPopover,
-  handleActionMouseLeave,
-  handleActionPopoverHide,
-  toggleGroupedActionPopover,
-  handleGroupedActionMouseLeave,
-  handleGroupedActionPopoverHide,
-} = useRightPanel();
+} = panel;
 
 const bindSessionListRef = (el: unknown) => {
   sessionListPopoverRef.value = el as typeof sessionListPopoverRef.value;
@@ -74,30 +57,15 @@ const bindGroupedActionPopoverRef = (el: unknown) => {
 
 const close = () => ui.closeRightPanel();
 
-// 状态栏副标题 / 输入框 placeholder / 发送按钮状态全部收敛进 computed，
-// 把模板圈复杂度压到阈值之下（渲染结果与原先逐字一致）。
-const assistantStatusText = computed(() =>
-  assistantModel.value
-    ? `${assistantModel.value.name || assistantModel.value.id} · 在线`
-    : '未配置助手模型',
+// 发送状态 / 浮层绑定 / 消息列表绑定一次性产出（与 Tablet / Mobile 同构，桌面 placeholder 多带换行提示）。
+const { composer, actionPopoverBindings, messageListBindings } = useChatPanelBindings(
+  { ...panel, bindActionPopoverRef, bindGroupedActionPopoverRef },
+  {
+    sendClassPrefix: 'cp-send',
+    readyPlaceholder: '请月詠相助… (Shift+Enter 换行)',
+  },
 );
-const inputPlaceholder = computed(() =>
-  assistantModel.value ? '请月詠相助… (Shift+Enter 换行)' : '未配置助手模型',
-);
-const inputDisabled = computed(() => isSending.value || !assistantModel.value);
-const sendClass = computed(() => ({
-  'cp-send--stop': isSending.value,
-  'cp-send--idle': !isSending.value && !inputMessage.value.trim(),
-}));
-const sendDisabled = computed(
-  () => !isSending.value && (!inputMessage.value.trim() || !assistantModel.value),
-);
-const sendAriaLabel = computed(() => (isSending.value ? '停止' : '发送'));
-const sendIcon = computed(() => (isSending.value ? 'pi-stop-circle' : 'pi-send'));
-const onSendClick = () => {
-  if (isSending.value) stopGeneration();
-  else sendMessage();
-};
+const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSendClick } = composer;
 
 // 状态点 / 用量文本：把模板里的 :class 对象与 || 表达式搬到 computed，进一步压低模板圈复杂度
 const statusDotClass = computed(() => ({ 'cp-status-dot--off': !assistantModel.value }));
@@ -171,23 +139,7 @@ const usageText = computed(() => {
     />
 
     <div ref="messagesContainerRef" class="cp-messages">
-      <ChatMessageList
-        :messages="messages"
-        :message-display-items-by-id="messageDisplayItemsById"
-        :displayed-thinking-process="displayedThinkingProcess"
-        :displayed-thinking-preview="displayedThinkingPreview"
-        :thinking-expanded="thinkingExpanded"
-        :thinking-active="thinkingActive"
-        :set-thinking-content-ref="setThinkingContentRef"
-        :toggle-thinking="toggleThinking"
-        :render-markdown="renderMarkdown"
-        :format-message-time="formatMessageTime"
-        :get-chapter-title-for-action="getChapterTitleForAction"
-        :on-action-hover="toggleActionPopover"
-        :on-action-leave="handleActionMouseLeave"
-        :on-grouped-action-hover="toggleGroupedActionPopover"
-        :on-grouped-action-leave="handleGroupedActionMouseLeave"
-      />
+      <ChatMessageList v-bind="messageListBindings" />
     </div>
 
     <div class="cp-composer-wrap">
@@ -209,30 +161,11 @@ const usageText = computed(() => {
           :unstyled="true"
           @keydown="handleKeydown"
         />
-        <button
-          class="cp-send"
-          :class="sendClass"
-          :disabled="sendDisabled"
-          :aria-label="sendAriaLabel"
-          @click="onSendClick"
-        >
-          <i class="pi" :class="sendIcon" aria-hidden="true" />
-        </button>
+        <ChatSendButton v-bind="sendButton" @click="onSendClick" />
       </div>
     </div>
 
-    <ChatGroupedActionPopover
-      :ref="bindGroupedActionPopoverRef"
-      :actions="hoveredGroupedAction?.actions || null"
-      @hide="handleGroupedActionPopoverHide"
-    />
-
-    <ChatActionDetailsPopover
-      :ref="bindActionPopoverRef"
-      :action="hoveredAction?.action || null"
-      :context="actionDetailsContext"
-      @hide="handleActionPopoverHide"
-    />
+    <ChatActionPopovers :bindings="actionPopoverBindings" />
   </section>
 </template>
 
@@ -476,9 +409,5 @@ const usageText = computed(() => {
 
 .cp-send--stop {
   background: var(--color-danger);
-}
-
-.cp-send i {
-  font-size: 13px;
 }
 </style>

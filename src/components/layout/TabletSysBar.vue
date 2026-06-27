@@ -4,6 +4,7 @@ import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import { APP_NAME } from 'src/constants/app';
 import { APP_VERSION } from 'src/constants/version';
 
@@ -103,9 +104,9 @@ const {
         @click="toggleHistory"
       >
         <i class="pi pi-bell" aria-hidden="true" />
-        <span v-if="unreadCount > 0" class="tst-badge">
+        <NotificationBadge v-if="unreadCount > 0">
           {{ unreadCount > 99 ? '99+' : unreadCount }}
-        </span>
+        </NotificationBadge>
       </button>
     </div>
 
@@ -277,26 +278,6 @@ const {
     opacity: 1;
     transform: scale(1.1);
   }
-}
-
-.tst-badge {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: #d97757;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'JetBrains Mono', monospace;
-  line-height: 1;
-  border: 1.5px solid #080a0d;
 }
 
 .tst-sep {

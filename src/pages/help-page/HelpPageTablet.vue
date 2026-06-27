@@ -242,72 +242,7 @@ watch(
   padding: 10px 12px 18px;
 }
 
-.ht-nav-group {
-  margin-bottom: 10px;
-}
-
-.ht-nav-category {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
-  background: transparent;
-  border: none;
-  color: var(--moon-50-opacity-45);
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.ht-nav-category:hover {
-  color: var(--moon-50-opacity-75);
-}
-
-.ht-nav-category i {
-  font-size: 10px;
-  color: var(--moon-50-opacity-30); /* token: moon-50 @ 30% */
-}
-
-.ht-nav-items {
-  margin-top: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ht-nav-item {
-  width: 100%;
-  text-align: left;
-  padding: 8px 12px;
-  border: none;
-  border-left: 2px solid transparent;
-  background: transparent;
-  color: var(--moon-50-opacity-80); /* token: moon-50 @ 80% */
-  font-family: inherit;
-  font-size: 13px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.ht-nav-item:hover {
-  background: var(--white-opacity-4);
-  color: var(--moon-50-opacity-100);
-}
-
-.ht-nav-item--active {
-  background: var(--tsukuyomi-opacity-20);
-  border-left-color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  font-weight: 500;
-}
+/* 导航分组/条目（.ht-nav-group … .ht-nav-item--active）的样式由 HelpTabletNavList 自带 scoped 样式负责 */
 
 /* ───────────── 中间主区 ───────────── */
 .ht-main {
@@ -386,39 +321,7 @@ watch(
   white-space: nowrap;
 }
 
-.ht-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--moon-50-opacity-60);
-}
-
-.ht-state i {
-  font-size: 28px;
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-}
-
-.ht-state--error {
-  padding: 20px;
-}
-
-.ht-state--error i {
-  color: var(--color-danger-400); /* token: danger-400 */
-}
-
-.ht-state-retry {
-  padding: 8px 16px;
-  background: var(--color-danger-400-opacity-15); /* token: danger-400 @ 15% */
-  border: 1px solid var(--color-danger-400-opacity-30); /* token: danger-400 @ 30% */
-  border-radius: 8px;
-  color: var(--color-danger-300); /* token: danger-300 */
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
+/* loading/error 状态块（.ht-state … .ht-state-retry）的样式由 HelpTabletState 自带 scoped 样式负责 */
 
 .ht-content-scroll {
   flex: 1;
@@ -511,57 +414,7 @@ watch(
   padding: 12px;
 }
 
-.ht-toc-item {
-  display: block;
-  padding: 7px 10px;
-  margin-bottom: 2px;
-  border-radius: 8px;
-  border-left: 2px solid transparent;
-  color: var(--moon-50-opacity-60);
-  font-size: 12px;
-  line-height: 1.4;
-  text-decoration: none;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.ht-toc-item:hover {
-  background: var(--white-opacity-4);
-  color: var(--moon-50-opacity-100);
-  border-left-color: var(--moon-50-opacity-20); /* token: moon-50 @ 20% */
-}
-
-.ht-toc-item--active {
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  background: var(--tsukuyomi-opacity-15);
-  border-left-color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  font-weight: 500;
-}
-
-.ht-toc-item--l1 {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.ht-toc-item--l2 {
-  font-size: 12px;
-  font-weight: 500;
-  margin-left: 8px;
-}
-
-.ht-toc-item--l3 {
-  font-size: 11px;
-  margin-left: 20px;
-  opacity: 0.9;
-}
-
-.ht-toc-item--l4 {
-  font-size: 11px;
-  margin-left: 28px;
-  opacity: 0.75;
-}
+/* 目录条目（.ht-toc-item … .ht-toc-item--l4）的样式由 HelpTabletTocList 自带 scoped 样式负责 */
 
 /* ───────────── 竖屏：nav / toc 变成 overlay 抽屉 ───────────── */
 @media (orientation: portrait) {

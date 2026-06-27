@@ -20,3 +20,6 @@ defineProps<{
     </div>
   </template>
 </template>
+
+<!-- 预览段落内文本样式抽到共享文件，避免与 ChapterPreviewSection 重复声明 -->
+<style scoped src="./preview-paragraph.css"></style>

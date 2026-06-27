@@ -1187,21 +1187,42 @@ export class GistSyncService {
     return { firstGistId, firstGistUrl };
   }
 
+  /**
+   * 构造批次失败的错误（控制台日志 + 用户可见错误），消息中携带原因便于上层判定。
+   * logHeadline（日志中"已完成…"前的首句）与 errorLabel（用户可见错误前缀，如"Gist 批量上传"）
+   * 由调用方传入，用以区分"上传"/"创建"两种批次场景，保持原文案字节级一致。
+   */
+  private buildBatchFailure(
+    logHeadline: string,
+    errorLabel: string,
+    batchIndex: number,
+    totalBatches: number,
+    batchError: unknown,
+  ): Error {
+    console.error(
+      `[GistSyncService] ${logHeadline}` +
+        `已完成 ${batchIndex}/${totalBatches} 个批次。Gist 可能处于不一致状态。`,
+      batchError,
+    );
+    const reason = batchError instanceof Error ? ` 原因: ${batchError.message}` : '';
+    return new Error(
+      `${errorLabel}在第 ${batchIndex + 1}/${totalBatches} 批次失败，` +
+        `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。${reason}`,
+    );
+  }
+
   /** 构造批次上传失败的错误（消息中携带原因，便于上层按"更新失败/冲突"判定） */
   private buildBatchUpdateFailure(
     batchIndex: number,
     totalBatches: number,
     batchError: unknown,
   ): Error {
-    console.error(
-      `[GistSyncService] 批次 ${batchIndex + 1}/${totalBatches} 上传失败，` +
-        `已完成 ${batchIndex}/${totalBatches} 个批次。Gist 可能处于不一致状态。`,
+    return this.buildBatchFailure(
+      `批次 ${batchIndex + 1}/${totalBatches} 上传失败，`,
+      'Gist 批量上传',
+      batchIndex,
+      totalBatches,
       batchError,
-    );
-    const reason = batchError instanceof Error ? ` 原因: ${batchError.message}` : '';
-    return new Error(
-      `Gist 批量上传在第 ${batchIndex + 1}/${totalBatches} 批次失败，` +
-        `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。${reason}`,
     );
   }
 
@@ -1295,15 +1316,12 @@ export class GistSyncService {
     totalBatches: number,
     batchError: unknown,
   ): Error {
-    console.error(
-      `[GistSyncService] 创建批次 ${batchIndex + 1}/${totalBatches} 失败，` +
-        `已完成 ${batchIndex}/${totalBatches} 个批次。Gist 可能处于不一致状态。`,
+    return this.buildBatchFailure(
+      `创建批次 ${batchIndex + 1}/${totalBatches} 失败，`,
+      'Gist 批量创建',
+      batchIndex,
+      totalBatches,
       batchError,
-    );
-    const reason = batchError instanceof Error ? ` 原因: ${batchError.message}` : '';
-    return new Error(
-      `Gist 批量创建在第 ${batchIndex + 1}/${totalBatches} 批次失败，` +
-        `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。${reason}`,
     );
   }
 

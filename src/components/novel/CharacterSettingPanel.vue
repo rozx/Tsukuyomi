@@ -12,6 +12,7 @@ import CharacterEditDialog from 'src/components/dialogs/CharacterEditDialog.vue'
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
+import { useToolbarExpand } from 'src/composables/useToolbarExpand';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias, CharacterSetting } from 'src/models/novel';
@@ -90,10 +91,7 @@ const selectedCharacter = ref<(typeof characterSettings.value)[0] | null>(null);
 const isSaving = ref(false);
 
 // 工具栏展开图标/标题、空状态文案、编辑对话框角色：把模板内联三元与 || 收敛为 computed
-const toolbarExpandIcon = computed(() =>
-  isToolbarExpanded.value ? 'pi pi-chevron-up' : 'pi pi-sliders-h',
-);
-const toolbarExpandTitle = computed(() => (isToolbarExpanded.value ? '收起' : '搜索与筛选'));
+const { toolbarExpandIcon, toolbarExpandTitle } = useToolbarExpand(isToolbarExpanded);
 const emptyStateText = computed(() =>
   searchQuery.value ? '未找到匹配的角色设定' : '暂无角色设定',
 );

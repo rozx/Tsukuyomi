@@ -63,3 +63,107 @@ const nextTooltip = (chapter: Chapter | null): string =>
     />
   </div>
 </template>
+
+<style scoped>
+/* 章节导航按钮样式。
+ * 注：这些样式从 ChapterContentPanel.vue 迁移而来 —— 该面板把导航抽成本组件后，
+ * 其 scoped 样式无法穿透到子组件内部嵌套元素（仅子组件根元素继承父级 scope），
+ * 导致 .chapter-nav-btn 等丢失布局。样式应与其消费的模板同处一个组件作用域。 */
+.chapter-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--white-opacity-10);
+}
+
+.chapter-navigation :deep(.p-button) {
+  width: 100%;
+  min-width: 0;
+}
+
+.chapter-nav-btn {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  justify-content: center;
+}
+
+.chapter-nav-btn :deep(.p-button-label) {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-nav-btn :deep(.p-button-icon) {
+  flex: 0 0 auto;
+}
+
+.chapter-nav-prev {
+  overflow: hidden;
+}
+
+.chapter-nav-prev :deep(.p-button-label) {
+  text-align: center;
+}
+
+.chapter-nav-list {
+  flex: 0 0 auto;
+  max-width: none;
+  min-width: auto;
+}
+
+.chapter-nav-next {
+  overflow: hidden;
+}
+
+.chapter-nav-next :deep(.p-button-label) {
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  .chapter-navigation {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    align-items: stretch;
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+
+  .chapter-nav-btn {
+    width: 100%;
+    max-width: none;
+    position: relative;
+    padding-left: 1.75rem !important;
+    padding-right: 1.75rem !important;
+  }
+
+  .chapter-nav-btn :deep(.p-button-label) {
+    display: block;
+    width: 100%;
+    max-width: 100% !important;
+    text-align: center;
+  }
+
+  .chapter-nav-btn :deep(.p-button-icon) {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0 !important;
+  }
+
+  .chapter-nav-prev :deep(.p-button-icon-left),
+  .chapter-nav-list :deep(.p-button-icon-left) {
+    left: 0.625rem;
+  }
+
+  .chapter-nav-next :deep(.p-button-icon-right) {
+    right: 0.625rem;
+  }
+}
+</style>

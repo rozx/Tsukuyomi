@@ -243,50 +243,7 @@ const onOpenHistory = () => {
   margin-top: 0.375rem;
 }
 
-.popover-character-name-row {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.popover-character-name {
-  font-weight: 600;
-  color: var(--moon-opacity-95);
-  font-size: 0.9375rem;
-}
-
-.popover-character-sex {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-60);
-  padding: 0.0625rem 0.375rem;
-  border-radius: 0.25rem;
-  background: var(--white-opacity-5);
-}
-
-.popover-character-divider {
-  height: 1px;
-  background: var(--white-opacity-10);
-  margin: 0.5rem 0;
-}
-
-.popover-multiple-characters-hint .hint-text {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-60);
-}
-
-.popover-aliases {
-  margin-top: 0.375rem;
-  font-size: 0.75rem;
-  color: var(--moon-opacity-60);
-}
-
-.popover-aliases-label {
-  color: var(--moon-opacity-50);
-}
-
-.popover-aliases-list {
-  color: var(--moon-opacity-80);
-}
+/* 角色列表相关样式已下沉到 ParagraphCharacterPopoverList.vue（scoped），此处不再重复声明 */
 
 .popover-label {
   font-size: 0.75rem;
@@ -325,5 +282,65 @@ const onOpenHistory = () => {
   justify-content: flex-start;
   width: 100%;
   text-align: left;
+}
+
+/* 术语 / 角色 / 最近翻译提示框内容容器样式。
+ * 从 ParagraphCard.vue 迁移而来 —— 这些内容渲染于本组件的 Popover 内，父级 scoped 无法命中。
+ * Popover 默认 teleport 到 body，但元素仍携带本组件的 data-v scope，故 scoped（含 :deep）可生效，
+ * 与本组件既有 popover 内容样式写法一致。 */
+
+/* 术语 Popover 样式 */
+:deep(.term-popover .p-popover-content),
+:deep(.character-popover .p-popover-content) {
+  padding: 0.75rem 1rem;
+}
+
+.term-popover-content,
+.character-popover-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 23rem; /* 固定最大高度 */
+  overflow-y: auto; /* 启用垂直滚动 */
+  overflow-x: hidden; /* 隐藏水平滚动 */
+  min-height: 0; /* 允许内容收缩 */
+  /* Firefox 滚动条样式 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.4) rgba(255, 255, 255, 0.05);
+}
+
+/* WebKit 浏览器滚动条样式 */
+.term-popover-content::-webkit-scrollbar,
+.character-popover-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.term-popover-content::-webkit-scrollbar-track,
+.character-popover-content::-webkit-scrollbar-track {
+  background: var(--white-opacity-5);
+  border-radius: 4px;
+}
+
+.term-popover-content::-webkit-scrollbar-thumb,
+.character-popover-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  border: 1px solid var(--white-opacity-10);
+}
+
+.term-popover-content::-webkit-scrollbar-thumb:hover,
+.character-popover-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* 最近翻译 Popover 样式 */
+:deep(.recent-translation-popover .p-popover-content) {
+  padding: 0.75rem 1rem;
+}
+
+.recent-translation-popover-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 </style>

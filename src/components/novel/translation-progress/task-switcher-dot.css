@@ -1,0 +1,39 @@
+/*
+ * 任务切换器的状态圆点样式（TaskSwitcher 触发器 + TaskSwitcherItem 列表项共用）。
+ *
+ * 两处都渲染带 .switcher-dot 的圆点，且 active 态共用 pulse-dot 脉冲动画，
+ * 原先在两个组件里各写一份。这里收敛为一处：
+ *
+ *   .switcher-dot            — 7px 灰色圆点
+ *   .switcher-dot.active     — 蓝色 + 脉冲
+ *   .switcher-dot.completed  — 绿色（已完成）
+ *   @keyframes pulse-dot     — 透明度脉冲（active 圆点与 TaskSwitcherItem 的未读点共用）
+ */
+
+.switcher-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--moon-opacity-40);
+}
+
+.switcher-dot.active {
+  background: #6c8cff;
+  box-shadow: 0 0 8px rgba(108, 140, 255, 0.6);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.switcher-dot.completed {
+  background: var(--green-500);
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

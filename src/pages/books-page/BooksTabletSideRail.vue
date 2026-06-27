@@ -5,6 +5,7 @@
  */
 import { computed } from 'vue';
 import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
+import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import { injectBooksTabletPage } from 'src/composables/books-page/useBooksTabletPage';
 
 const t = injectBooksTabletPage();
@@ -20,7 +21,7 @@ const hasActiveTask = computed(() => t.activeTranslationTaskCount.value > 0);
   <TabletSideRail>
     <button
       type="button"
-      class="tsr-btn"
+      class="tsr-btn rail-base-btn"
       :class="{ 'tsr-btn--active': t.isListOpen.value }"
       :title="listButtonTitle"
       :aria-label="listButtonTitle"
@@ -34,7 +35,7 @@ const hasActiveTask = computed(() => t.activeTranslationTaskCount.value > 0);
 
     <button
       type="button"
-      class="tsr-btn"
+      class="tsr-btn rail-base-btn"
       :class="{ 'tsr-btn--active': t.isChatActive.value }"
       title="月詠"
       @click="() => t.toggleRail('chat')"
@@ -44,15 +45,20 @@ const hasActiveTask = computed(() => t.activeTranslationTaskCount.value > 0);
 
     <button
       type="button"
-      class="tsr-btn"
+      class="tsr-btn rail-base-btn"
       :class="{ 'tsr-btn--active': t.isProgressActive.value }"
       title="翻译进度"
       @click="() => t.toggleRail('progress')"
     >
       <i class="pi pi-objects-column" aria-hidden="true" />
-      <span v-if="hasActiveTask" class="tsr-badge">
+      <NotificationBadge v-if="hasActiveTask">
         {{ t.activeTranslationTaskCount.value }}
-      </span>
+      </NotificationBadge>
     </button>
   </TabletSideRail>
 </template>
+
+<style scoped>
+/* 侧轨按钮基础样式与 RightPanelRail 共用，见 rail-base.css */
+@import 'src/components/layout/rail-base.css';
+</style>

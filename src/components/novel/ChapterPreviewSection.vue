@@ -89,3 +89,91 @@ const paragraphAt = (paragraphs: Paragraph[], index: number) => paragraphs[index
     />
   </div>
 </template>
+
+<!-- 预览段落内文本样式抽到共享文件，避免与 PreviewParagraphItem 重复声明 -->
+<style scoped src="./preview-paragraph.css"></style>
+
+<style scoped>
+/* 翻译预览模式样式。
+ * 注：这些样式从 ChapterContentPanel.vue 迁移而来 —— 该面板把预览视图抽成本组件后，
+ * 其 scoped 样式无法穿透到子组件内部嵌套元素（仅子组件根元素继承父级 scope），
+ * 导致 .preview-chapter-header 等丢失样式。样式应与其消费的模板同处一个组件作用域。 */
+.translation-preview-container {
+  width: 100%;
+  min-width: 0;
+  max-width: 56rem;
+  margin: 0 auto;
+  /* 与 .chapter-content-container 对齐，切换编辑/预览模式不产生 8px 宽度跳动。 */
+  padding: 0 0.5rem;
+  box-sizing: border-box;
+}
+
+.preview-chapter-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--white-opacity-10);
+}
+
+.preview-chapter-title {
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 1.875rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--moon-opacity-95);
+  margin: 0 0 0.75rem 0;
+  line-height: 1.25;
+}
+
+.preview-chapter-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.preview-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--moon-opacity-80);
+  font-size: 0.8125rem;
+}
+
+.preview-stat-icon {
+  font-size: 0.75rem;
+  color: var(--primary-opacity-70);
+}
+
+.preview-stat-value {
+  font-weight: 600;
+  color: var(--moon-opacity-90);
+}
+
+.preview-stat-label {
+  color: var(--moon-opacity-70);
+}
+
+.translation-preview-paragraph {
+  padding: 1rem 1.25rem;
+  width: 100%;
+  position: relative;
+  /* 虚拟滚动已接管视口外段落的渲染，无需再用 content-visibility 占位 */
+}
+
+.untranslated-paragraph {
+  background-color: var(--moon-opacity-5);
+  border-left: 3px solid var(--orange-500);
+  padding-left: calc(1.25rem - 3px);
+}
+
+@media (max-width: 768px) {
+  .translation-preview-container {
+    /*
+     * 仅保留安全区补偿，避免右侧额外偏移导致导航与正文对齐线不一致。
+     */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+</style>

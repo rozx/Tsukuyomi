@@ -5,6 +5,7 @@
  */
 import { computed, ref } from 'vue';
 import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
+import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 
 interface Props {
   activeRightTab: 'chat' | 'progress';
@@ -31,10 +32,10 @@ const toggleBatchEmbeddingsPanel = () => {
 </script>
 
 <template>
-  <aside class="rp-rail" aria-label="右侧面板">
+  <aside class="rp-rail rail-base-shell" aria-label="右侧面板">
     <button
       type="button"
-      class="rp-rail-item"
+      class="rp-rail-item rail-base-btn"
       :class="{ active: chatActive }"
       aria-label="月詠 AI 助手"
       title="月詠"
@@ -44,23 +45,23 @@ const toggleBatchEmbeddingsPanel = () => {
     </button>
     <button
       type="button"
-      class="rp-rail-item"
+      class="rp-rail-item rail-base-btn"
       :class="{ active: progressActive }"
       aria-label="翻译进度"
       title="翻译进度"
       @click="emit('expand', 'progress')"
     >
       <i class="pi pi-list-check" aria-hidden="true" />
-      <span v-if="activeTranslationTaskCount > 0" class="rp-rail-badge">
+      <NotificationBadge v-if="activeTranslationTaskCount > 0">
         {{ progressBadge }}
-      </span>
+      </NotificationBadge>
     </button>
 
     <template v-if="showBatchEmbeddings">
       <div class="rp-rail-sep" />
       <button
         type="button"
-        class="rp-rail-item"
+        class="rp-rail-item rail-base-btn"
         aria-label="向量索引"
         title="向量索引"
         @click="toggleBatchEmbeddingsPanel"
@@ -77,37 +78,19 @@ const toggleBatchEmbeddingsPanel = () => {
 </template>
 
 <style scoped>
+/* 外壳 / 图标按钮的共享声明见 rail-base.css（与 TabletSideRail 共用） */
+@import './rail-base.css';
+
+/* 桌面右侧轨：占满父容器宽高，外壳基础样式来自 .rail-base-shell */
 .rp-rail {
   width: 100%;
   height: 100%;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 6px;
-  background: rgba(10, 12, 15, 0.55);
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
 }
 
+/* 按钮基础样式来自 .rail-base-btn，这里仅补 padding 归零 */
 .rp-rail-item {
-  position: relative;
-  width: 36px;
-  min-height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  color: rgba(247, 244, 236, 0.72);
-  cursor: pointer;
   padding: 0;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .rp-rail-item i {
@@ -131,26 +114,6 @@ const toggleBatchEmbeddingsPanel = () => {
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
   margin: 4px 0;
-}
-
-.rp-rail-badge {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: #d97757;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'JetBrains Mono', monospace;
-  line-height: 1;
-  border: 1.5px solid #080a0d;
 }
 
 .rp-rail-spacer {

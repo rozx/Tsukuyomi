@@ -171,9 +171,13 @@ const volumeFolderIcon = (volumeId: string) =>
   </div>
 </template>
 
+<!-- 共享行基础样式（.vt-row*）与 TabletChapterRow 复用同一文件 -->
+<style scoped src="./volume-tree-row.css"></style>
+
 <style scoped>
 /* 直接对齐 BookDetailsMobile 的 mbd-tree tokens——卡片包一层，
-   卷行高亮折线，章节行缩进 28px + 较小的字号。 */
+   卷行高亮折线，章节行缩进 28px + 较小的字号。
+   通用 .vt-row* 行基础样式见 volume-tree-row.css；此处只保留卷专属样式。 */
 .vt-tree {
   flex: 1;
   min-height: 0;
@@ -199,26 +203,6 @@ const volumeFolderIcon = (volumeId: string) =>
   border-radius: 3px;
 }
 
-.vt-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  background: transparent;
-  border: none;
-  color: var(--moon-50-opacity-90);
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.vt-row:hover {
-  background: var(--white-opacity-3);
-}
-
 .vt-row--vol {
   border-bottom: 1px solid var(--white-opacity-4);
   font-weight: 500;
@@ -228,66 +212,11 @@ const volumeFolderIcon = (volumeId: string) =>
   background: var(--white-opacity-2); /* token: white @ 2% */
 }
 
-.vt-row--chapter {
-  /* 章节行样式随模板迁移到 TabletChapterRow.vue */
-}
-
-.vt-row--active {
-  /* 同上 */
-}
-
-.vt-row-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.vt-row-count {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--moon-50-opacity-55);
-  flex-shrink: 0;
-}
-
-.vt-row-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: 2px;
-  margin-right: -4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--moon-50-opacity-45);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.vt-row-more:hover {
-  background: var(--white-opacity-6);
-  color: var(--moon-50-opacity-85);
-}
-
-.vt-row-more i {
-  font-size: 12px;
-}
-
 .vt-vol-icon {
   color: var(--accent-opacity-85); /* token: accent-silver @ 85% */
   font-size: 14px;
   width: 14px;
   flex-shrink: 0;
-}
-
-.vt-chap-icon {
-  /* 章节图标样式迁移到 TabletChapterRow.vue */
 }
 
 .vt-empty {

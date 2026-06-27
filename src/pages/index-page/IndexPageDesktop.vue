@@ -37,12 +37,6 @@ const workbenchMetrics = computed(() => [
   { label: '术语', value: ctx.totalTerms.value },
   { label: '收藏', value: ctx.starredBooks.value },
 ]);
-const hasRecent = computed(() => ctx.recentBooks.value.length > 0);
-const isLoadingState = computed(() => ctx.booksStore.isLoading || !ctx.booksStore.isLoaded);
-const isEmptyState = computed(
-  () => ctx.booksStore.isLoaded && ctx.booksStore.books.length === 0,
-);
-
 const quickActions = [
   {
     key: 'add',
@@ -116,7 +110,7 @@ const quickActions = [
     </section>
 
     <!-- 最近编辑 -->
-    <section v-if="hasRecent" class="recent-books">
+    <section v-if="ctx.hasRecent.value" class="recent-books">
       <header class="section-head section-head--with-action">
         <div class="section-head-copy">
           <span class="section-eyebrow">RECENT</span>
@@ -131,7 +125,7 @@ const quickActions = [
     </section>
 
     <!-- 加载 / 空状态 -->
-    <section v-else-if="isLoadingState" class="state-surface">
+    <section v-else-if="ctx.isLoadingState.value" class="state-surface">
       <ProgressSpinner
         style="width: 42px; height: 42px"
         stroke-width="3"
@@ -141,7 +135,7 @@ const quickActions = [
       <p class="state-surface-text">正在加载数据...</p>
     </section>
 
-    <section v-else-if="isEmptyState" class="state-surface">
+    <section v-else-if="ctx.isEmptyState.value" class="state-surface">
       <div class="state-empty-art">
         <img :src="ctx.logoPath" :alt="APP_NAME.full" class="state-empty-logo" />
       </div>
@@ -256,6 +250,7 @@ const quickActions = [
   gap: 0.7rem;
 }
 
+/* 表面底色/边框/过渡与基础 hover 见 tailwind.css 的 .recent-card, .quick-action 公共规则 */
 .quick-action {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -263,19 +258,9 @@ const quickActions = [
   column-gap: 0.85rem;
   row-gap: 0.15rem;
   padding: 0.95rem 1.05rem;
-  border-radius: 10px;
-  border: 1px solid var(--white-opacity-8, var(--white-opacity-8));
-  background: var(--shell-opacity-50); /* near-black overlay, kept as-is */
-  color: inherit;
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .quick-action:hover {
-  border-color: var(--tsukuyomi-200-opacity-30); /* token: tsukuyomi-200 @ 30% */
-  background: var(--tsukuyomi-200-opacity-6); /* token: tsukuyomi-200 @ 6% */
   transform: translateY(-1px);
 }
 

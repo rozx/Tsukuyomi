@@ -169,7 +169,19 @@ const translationNodes = computed(() => {
 
 // Popover refs —— 四个 Popover 已迁移到 ParagraphPopovers 子组件，父级通过 popoversRef
 // 调用其暴露的 toggle/hide 方法，避免在 2000 段章节里一次性创建 8000 个 Popover 实例。
-const popoversRef = ref<InstanceType<typeof ParagraphPopovers> | null>(null);
+// 显式声明 ParagraphPopovers 通过 defineExpose 暴露的方法签名；直接用
+// InstanceType<typeof ParagraphPopovers> 会被推断成 any，触发 no-redundant-type-constituents。
+interface ParagraphPopoversExposed {
+  toggleTerm: (event: Event, target: HTMLElement) => void;
+  hideTerm: () => void;
+  toggleCharacter: (event: Event, target: HTMLElement) => void;
+  hideCharacter: () => void;
+  toggleRecent: (event: Event, target: HTMLElement) => void;
+  hideRecent: () => void;
+  showContextMenu: (event: MouseEvent | Event, target: HTMLElement) => void;
+  hideContextMenu: () => void;
+}
+const popoversRef = ref<ParagraphPopoversExposed | null>(null);
 
 // 性能关键：Popover 延迟挂载
 // 之前每个 ParagraphCard 都立即挂载 4 个 PrimeVue Popover 组件。一个 2000 段的章节
@@ -1379,81 +1391,11 @@ defineExpose({
   }
 }
 
-/* 术语高亮 */
-.term-highlight {
-  background: linear-gradient(180deg, transparent 60%, var(--primary-opacity-30) 60%);
-  color: var(--moon-opacity-95);
-  cursor: help;
-  padding: 0 0.125rem;
-  border-radius: 2px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-}
+/* 行内高亮（.term-highlight / .character-highlight 及其 hover）已迁移到
+   ParagraphHighlightedText.vue（scoped）—— 这些 span 渲染于该子组件，父级 scoped 无法命中。 */
 
-.term-highlight:hover {
-  background: linear-gradient(180deg, transparent 60%, var(--primary-opacity-50) 60%);
-  color: var(--primary-opacity-100);
-}
-
-/* 角色高亮 */
-.character-highlight {
-  background: linear-gradient(180deg, transparent 60%, rgba(168, 85, 247, 0.3) 60%);
-  color: var(--moon-opacity-95);
-  cursor: help;
-  padding: 0 0.125rem;
-  border-radius: 2px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-}
-
-.character-highlight:hover {
-  background: linear-gradient(180deg, transparent 60%, rgba(168, 85, 247, 0.5) 60%);
-  color: rgba(196, 181, 253, 1);
-}
-
-/* 术语 Popover 样式 */
-:deep(.term-popover .p-popover-content),
-:deep(.character-popover .p-popover-content) {
-  padding: 0.75rem 1rem;
-}
-
-.term-popover-content,
-.character-popover-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  max-height: 23rem; /* 固定最大高度 */
-  overflow-y: auto; /* 启用垂直滚动 */
-  overflow-x: hidden; /* 隐藏水平滚动 */
-  min-height: 0; /* 允许内容收缩 */
-  /* Firefox 滚动条样式 */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.4) rgba(255, 255, 255, 0.05);
-}
-
-/* WebKit 浏览器滚动条样式 */
-.term-popover-content::-webkit-scrollbar,
-.character-popover-content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.term-popover-content::-webkit-scrollbar-track,
-.character-popover-content::-webkit-scrollbar-track {
-  background: var(--white-opacity-5);
-  border-radius: 4px;
-}
-
-.term-popover-content::-webkit-scrollbar-thumb,
-.character-popover-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
-  border: 1px solid var(--white-opacity-10);
-}
-
-.term-popover-content::-webkit-scrollbar-thumb:hover,
-.character-popover-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
+/* 术语 / 角色提示框内容容器（.term-popover-content / .character-popover-content 及滚动条样式、
+   :deep(.p-popover-content) 内边距）已迁移到 ParagraphPopovers.vue（scoped）—— 内容渲染于该子组件的 Popover 内。 */
 
 .popover-header {
   display: flex;
@@ -1538,12 +1480,8 @@ defineExpose({
   margin: 0.75rem 0;
 }
 
-/* 角色项容器 */
-.popover-character-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+/* 角色项容器（.popover-character-item）已迁移到 ParagraphCharacterPopoverList.vue（scoped）——
+   该元素渲染于该子组件，父级 scoped 无法命中。 */
 
 /* 搜索高亮 */
 .search-highlight {
@@ -1553,16 +1491,8 @@ defineExpose({
   padding: 0 1px;
 }
 
-/* 最近翻译 Popover 样式 */
-:deep(.recent-translation-popover .p-popover-content) {
-  padding: 0.75rem 1rem;
-}
-
-.recent-translation-popover-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+/* 最近翻译提示框内容容器（.recent-translation-popover-content 及 :deep(.p-popover-content) 内边距）
+   已迁移到 ParagraphPopovers.vue（scoped）—— 内容渲染于该子组件的 Popover 内。 */
 
 .recent-translation-text {
   font-size: 0.875rem;

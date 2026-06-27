@@ -38,6 +38,9 @@ defineEmits<{ select: [taskId: string] }>();
 </template>
 
 <style scoped>
+/* 状态圆点 + pulse-dot 动画与 TaskSwitcher 共用，见 task-switcher-dot.css */
+@import './task-switcher-dot.css';
+
 .dropdown-item {
   display: flex;
   align-items: center;
@@ -120,24 +123,6 @@ defineEmits<{ select: [taskId: string] }>();
   color: var(--red-500);
 }
 
-.switcher-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--moon-opacity-40);
-}
-
-.switcher-dot.active {
-  background: #6c8cff;
-  box-shadow: 0 0 8px rgba(108, 140, 255, 0.6);
-  animation: pulse-dot 2s ease-in-out infinite;
-}
-
-.switcher-dot.completed {
-  background: var(--green-500);
-}
-
 .notification-dot {
   width: 5px;
   height: 5px;
@@ -145,15 +130,5 @@ defineEmits<{ select: [taskId: string] }>();
   background: var(--orange-500);
   flex-shrink: 0;
   animation: pulse-dot 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse-dot {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
 }
 </style>

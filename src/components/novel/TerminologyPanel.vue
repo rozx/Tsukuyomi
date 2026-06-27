@@ -15,6 +15,7 @@ import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
+import { useToolbarExpand } from 'src/composables/useToolbarExpand';
 import { TerminologyService } from 'src/services/terminology-service';
 import { useBooksStore } from 'src/stores/books';
 import { cloneDeep } from 'lodash';
@@ -63,10 +64,7 @@ const showEditDialog = ref(false);
 const selectedTerminology = ref<Terminology | null>(null);
 
 // 工具栏展开图标/标题、空状态文案、导出可用性：把模板内联三元与 || 收敛为 computed
-const toolbarExpandIcon = computed(() =>
-  isToolbarExpanded.value ? 'pi pi-chevron-up' : 'pi pi-sliders-h',
-);
-const toolbarExpandTitle = computed(() => (isToolbarExpanded.value ? '收起' : '搜索与筛选'));
+const { toolbarExpandIcon, toolbarExpandTitle } = useToolbarExpand(isToolbarExpanded);
 const emptyStateText = computed(() => (searchQuery.value ? '未找到匹配的术语' : '暂无术语'));
 const canExportTerms = computed(
   () => !!props.book?.terminologies && props.book.terminologies.length > 0,

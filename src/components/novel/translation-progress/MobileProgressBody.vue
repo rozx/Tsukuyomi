@@ -129,3 +129,315 @@ const contextText = computed(() =>
     </template>
   </div>
 </template>
+
+<style scoped>
+/* 手机端翻译进度面板的 body 区样式。
+ * 注：这些规则从 TranslationProgressMobile.vue 迁移而来 —— 该父组件把 body 抽成本组件后，
+ * 其 scoped 样式无法穿透到子组件内部嵌套元素（仅子组件根元素继承父级 scope），
+ * 导致 .mtp-body / .mtp-live-* / .mtp-model-* 等丢失布局。样式应与其消费的模板同处一个组件作用域。 */
+
+/* Body */
+.mtp-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 0 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.mtp-body::-webkit-scrollbar {
+  width: 0;
+}
+
+.mtp-section-label {
+  padding: 8px 20px 6px;
+  font-size: 10px;
+  color: var(--moon-50-opacity-55);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 500;
+}
+
+.mtp-empty {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--moon-50-opacity-45);
+  font-size: 12px;
+}
+
+/* Live card */
+.mtp-live-card {
+  margin: 0 16px 12px;
+  padding: 12px 14px;
+  background: var(--tsukuyomi-opacity-10);
+  border: 1px solid var(--tsukuyomi-opacity-30);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px var(--tsukuyomi-opacity-25);
+}
+
+.mtp-live-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mtp-live-spinner {
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
+  font-size: 12px;
+}
+
+.mtp-live-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.mtp-live-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 500;
+  background: var(--tsukuyomi-opacity-15);
+  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
+  border: 1px solid var(--tsukuyomi-opacity-30);
+}
+
+.mtp-live-model i {
+  font-size: 9px;
+}
+
+.mtp-live-text {
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 12px;
+  color: var(--moon-50-opacity-85);
+  line-height: 1.65;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 72px;
+  overflow: hidden;
+}
+
+.mtp-live-bar {
+  height: 3px;
+  background: var(--white-opacity-6);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mtp-live-bar-fill {
+  height: 100%;
+  background: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
+  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mtp-live-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--moon-50-opacity-55);
+  margin-top: 6px;
+}
+
+/* Stats */
+.mtp-model-card {
+  margin: 0 16px 12px;
+  padding: 12px 14px;
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 10px;
+}
+
+.mtp-model-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mtp-model-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
+  flex-shrink: 0;
+}
+
+.mtp-model-name {
+  font-size: 13px;
+  color: var(--moon-50-opacity-100);
+  font-weight: 500;
+}
+
+.mtp-model-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--moon-50-opacity-55);
+  margin-left: auto;
+}
+
+.mtp-model-bar {
+  height: 4px;
+  background: var(--white-opacity-5);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.mtp-model-bar-fill {
+  height: 100%;
+  background: var(--tsukuyomi-300-opacity-70); /* token: tsukuyomi-300 @ 70% */
+  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mtp-model-meta {
+  display: flex;
+  gap: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--moon-50-opacity-55);
+}
+
+.mtp-totals {
+  margin: 0 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mtp-total {
+  padding: 12px 14px;
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 10px;
+}
+
+.mtp-total-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.mtp-total-label {
+  font-size: 10px;
+  color: var(--moon-50-opacity-55);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.mtp-total-icon {
+  color: var(--accent-opacity-85); /* token: accent-silver @ 85% */
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.mtp-total-value {
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--moon-50-opacity-100);
+  letter-spacing: -0.02em;
+}
+
+/* Reuse desktop TaskTodos / TaskStream inside the mobile layout */
+.mtp-todos-wrap {
+  margin: 0 16px 10px;
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* 待办 tab：占满可用空间 */
+.mtp-todo-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mtp-todos-wrap--full {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.mtp-todos-wrap--full :deep(.todos-section) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mtp-todos-wrap--full :deep(.todos-list),
+.mtp-todos-wrap--full :deep(.todo-list) {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.mtp-stream-wrap {
+  margin: 0 16px 14px;
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  min-height: 240px;
+}
+
+.mtp-stream-wrap--compact {
+  min-height: 160px;
+  max-height: 220px;
+}
+
+/* 日志 tab：占满可用空间，内部滚动 */
+.mtp-log-stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.mtp-stream-wrap--fill {
+  flex: 1;
+  min-height: 320px;
+  max-height: none;
+}
+
+/* TaskStream's .stream-section is flex column with flex:1 — fill the wrapper */
+.mtp-stream-wrap :deep(.stream-section) {
+  flex: 1;
+  min-height: 0;
+  background: transparent;
+}
+
+/* 实时 tab 活动记录：只保留输出内容，隐藏工具栏 + 思考过程 */
+.mtp-stream-wrap--compact :deep(.stream-header),
+.mtp-stream-wrap--compact :deep(.thinking-block),
+.mtp-stream-wrap--compact :deep(.completed-banner) {
+  display: none;
+}
+
+.mtp-stream-wrap--compact :deep(.output-block) {
+  margin: 0;
+  border: none;
+  background: transparent;
+}
+</style>

@@ -131,24 +131,8 @@ const isPickerActive = (model: { id: string }) =>
   flex-shrink: 0;
 }
 
-.ma-picker-empty {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 14px 12px;
-  margin: 8px 0 4px;
-  background: var(--tsukuyomi-opacity-6); /* token: tsukuyomi-500 @ 6% */
-  border: 1px solid var(--tsukuyomi-opacity-18);
-  border-radius: 10px;
-  font-size: 12px;
-  color: var(--moon-50-opacity-75);
-  line-height: 1.5;
-}
-
-.ma-picker-empty i {
-  font-size: 14px;
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  margin-top: 1px;
-  flex-shrink: 0;
-}
+/* .ma-picker-empty 空状态样式见共享文件 picker-empty-hint.css */
 </style>
+
+<!-- 选择器空状态共享样式（与 BookMobileBatchPicker 复用同一文件） -->
+<style scoped src="../../components/novel/picker-empty-hint.css"></style>

@@ -5,6 +5,7 @@
  */
 import { computed } from 'vue';
 import Button from 'primevue/button';
+import IndexHeroCardHeading from 'src/components/index/IndexHeroCardHeading.vue';
 import { injectIndexPage } from 'src/composables/index-page/useIndexPage';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 
@@ -25,12 +26,10 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
         <i class="pi pi-spin pi-spinner th-hero-card-status-icon" aria-hidden="true" />
         <span class="th-hero-card-status">正在翻译</span>
       </header>
-      <div class="th-hero-card-title">
-        {{ ctx.continueReadingBook.value.title }}
-      </div>
-      <div v-if="ctx.continueReadingBook.value.author" class="th-hero-card-meta">
-        {{ ctx.continueReadingBook.value.author }}
-      </div>
+      <IndexHeroCardHeading
+        :title="ctx.continueReadingBook.value.title"
+        :author="ctx.continueReadingBook.value.author"
+      />
       <div class="th-hero-card-actions">
         <Button
           label="查看进度"
@@ -46,10 +45,10 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
       <header class="th-hero-card-head">
         <span class="th-hero-card-kicker">继续阅读</span>
       </header>
-      <div class="th-hero-card-title">{{ ctx.continueReadingBook.value.title }}</div>
-      <div v-if="ctx.continueReadingBook.value.author" class="th-hero-card-meta">
-        {{ ctx.continueReadingBook.value.author }}
-      </div>
+      <IndexHeroCardHeading
+        :title="ctx.continueReadingBook.value.title"
+        :author="ctx.continueReadingBook.value.author"
+      />
       <div class="th-hero-card-subline">
         <span>{{ ctx.getTotalChapters(ctx.continueReadingBook.value) }} 章</span>
         <span class="th-dot">·</span>
@@ -121,24 +120,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   text-transform: uppercase;
 }
 
-.th-hero-card-title {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--moon-50-opacity-100);
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.th-hero-card-meta {
-  font-size: 12px;
-  color: var(--moon-50-opacity-60);
-}
+/* 标题/作者行（.th-hero-card-title / .th-hero-card-meta）的样式由 IndexHeroCardHeading 自带 scoped 样式负责 */
 
 .th-hero-card-subline {
   display: flex;

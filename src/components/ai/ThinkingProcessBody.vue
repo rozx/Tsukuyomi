@@ -359,55 +359,7 @@ onUnmounted(() => {
     justify-content: flex-end;
     gap: 0.25rem;
   }
-
-  .thinking-task-card {
-    padding: 0.75rem;
-  }
-
-  .thinking-task-head {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .thinking-task-main {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-  }
-
-  .thinking-model-name {
-    max-width: 100%;
-  }
-
-  .thinking-task-status {
-    width: 100%;
-    justify-content: flex-end;
-  }
-
-  .thinking-task-meta {
-    flex-wrap: wrap;
-    gap: 0.25rem;
-  }
-
-  .thinking-reviewed-card {
-    padding: 0.65rem;
-  }
-
-  .thinking-reviewed-head {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.4rem;
-  }
-
-  .thinking-reviewed-main {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-  }
-
-  .thinking-reviewed-duration {
-    align-self: flex-end;
-  }
 }
+/* 注：进行中卡片 / 已完成卡片的 @media 移动端规则已迁移到对应子组件
+ * (ThinkingTaskCard.vue / ThinkingReviewedCard.vue) —— scoped 样式无法穿透到子组件内部嵌套元素。 */
 </style>

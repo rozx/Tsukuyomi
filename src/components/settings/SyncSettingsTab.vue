@@ -1107,28 +1107,4 @@ const deleteGist = () => {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.2);
 }
-
-@media (max-width: 640px) {
-  .revision-row {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.75rem !important;
-  }
-
-  .revision-info {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-  }
-
-  .revision-stats {
-    margin-left: auto;
-  }
-
-  .revision-actions {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-    margin-left: 0 !important;
-  }
-}
 </style>

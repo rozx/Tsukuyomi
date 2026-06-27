@@ -8,83 +8,43 @@
  * 内部状态完全来自 useRightPanel，与 AppRightPanelDesktop 共享 composable；
  * 这里只换一层 chrome、不 duplicate 任何消息/输入逻辑。
  */
-import { computed } from 'vue';
-import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPopover.vue';
-import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
+import ChatActionPopovers from 'src/components/layout/ChatActionPopovers.vue';
+import ChatSendButton from 'src/components/layout/ChatSendButton.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import { useUiStore } from 'src/stores/ui';
 import { useChatPanelSetup } from 'src/composables/right-panel/useChatPanelSetup';
+import { useChatPanelBindings } from 'src/composables/right-panel/useChatPanelBindings';
 
 const ui = useUiStore();
 
-// useRightPanel 解构 + bindXxxRef 样板已抽到 useChatPanelSetup，
-// Mobile 变体也走同一份 helper，保持两边行为一致。
+// useRightPanel 解构 + bindXxxRef 样板已抽到 useChatPanelSetup，Mobile 变体也走同一份 helper。
+// 保留整个 panel 对象传给 useChatPanelBindings，避免逐字段重复实参；模板用到的字段才解构。
+const panel = useChatPanelSetup();
 const {
   chatSessionsStore,
   panelContainerRef,
   messagesContainerRef,
-  messages,
   inputMessage,
-  messageDisplayItemsById,
-  isSending,
+  assistantModel,
   sendMessage,
-  stopGeneration,
   recentSessions,
   switchToSession,
   toggleSessionListPopover,
   hideSessionListPopover,
   createNewSession,
-  thinkingExpanded,
-  displayedThinkingProcess,
-  displayedThinkingPreview,
-  thinkingActive,
-  setThinkingContentRef,
-  toggleThinking,
-  assistantModel,
-  getChapterTitleForAction,
-  renderMarkdown,
-  formatMessageTime,
-  hoveredAction,
-  hoveredGroupedAction,
-  actionDetailsContext,
-  toggleActionPopover,
-  handleActionMouseLeave,
-  handleActionPopoverHide,
-  toggleGroupedActionPopover,
-  handleGroupedActionMouseLeave,
-  handleGroupedActionPopoverHide,
   bindSessionListRef,
-  bindActionPopoverRef,
-  bindGroupedActionPopoverRef,
-} = useChatPanelSetup();
+} = panel;
 
 const close = () => ui.closeRightPanel();
 
-// 输入栏 / 发送按钮状态收敛进 computed，降低模板圈复杂度（与 MobileChatSheet 同构）。
-const assistantStatusText = computed(() =>
-  assistantModel.value
-    ? `${assistantModel.value.name || assistantModel.value.id} · 在线`
-    : '未配置助手模型',
-);
-const inputPlaceholder = computed(() =>
-  assistantModel.value ? '请月詠相助…' : '未配置助手模型',
-);
-const inputDisabled = computed(() => isSending.value || !assistantModel.value);
-const sendClass = computed(() => ({
-  'tcp-send--stop': isSending.value,
-  'tcp-send--idle': !isSending.value && !inputMessage.value.trim(),
-}));
-const sendDisabled = computed(
-  () => !isSending.value && (!inputMessage.value.trim() || !assistantModel.value),
-);
-const sendAriaLabel = computed(() => (isSending.value ? '停止' : '发送'));
-const sendIcon = computed(() => (isSending.value ? 'pi-stop-circle' : 'pi-send'));
-const onSendClick = () => {
-  if (isSending.value) stopGeneration();
-  else sendMessage();
-};
+// 发送状态 / 浮层绑定 / 消息列表绑定一次性产出（与 Desktop / Mobile 同构，差异仅前缀与 placeholder）。
+const { composer, actionPopoverBindings, messageListBindings } = useChatPanelBindings(panel, {
+  sendClassPrefix: 'tcp-send',
+  readyPlaceholder: '请月詠相助…',
+});
+const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSendClick } = composer;
 </script>
 
 <template>
@@ -137,23 +97,7 @@ const onSendClick = () => {
       ref="messagesContainerRef"
       class="tcp-messages"
     >
-      <ChatMessageList
-        :messages="messages"
-        :message-display-items-by-id="messageDisplayItemsById"
-        :displayed-thinking-process="displayedThinkingProcess"
-        :displayed-thinking-preview="displayedThinkingPreview"
-        :thinking-expanded="thinkingExpanded"
-        :thinking-active="thinkingActive"
-        :set-thinking-content-ref="setThinkingContentRef"
-        :toggle-thinking="toggleThinking"
-        :render-markdown="renderMarkdown"
-        :format-message-time="formatMessageTime"
-        :get-chapter-title-for-action="getChapterTitleForAction"
-        :on-action-hover="toggleActionPopover"
-        :on-action-leave="handleActionMouseLeave"
-        :on-grouped-action-hover="toggleGroupedActionPopover"
-        :on-grouped-action-leave="handleGroupedActionMouseLeave"
-      />
+      <ChatMessageList v-bind="messageListBindings" />
     </div>
 
     <div class="tcp-composer-wrap">
@@ -168,30 +112,11 @@ const onSendClick = () => {
           class="tcp-input"
           @keydown.enter.exact.prevent="sendMessage"
         />
-        <button
-          class="tcp-send"
-          :class="sendClass"
-          :disabled="sendDisabled"
-          :aria-label="sendAriaLabel"
-          @click="onSendClick"
-        >
-          <i class="pi" :class="sendIcon" aria-hidden="true" />
-        </button>
+        <ChatSendButton v-bind="sendButton" @click="onSendClick" />
       </div>
     </div>
 
-    <ChatGroupedActionPopover
-      :ref="bindGroupedActionPopoverRef"
-      :actions="hoveredGroupedAction?.actions || null"
-      @hide="handleGroupedActionPopoverHide"
-    />
-
-    <ChatActionDetailsPopover
-      :ref="bindActionPopoverRef"
-      :action="hoveredAction?.action || null"
-      :context="actionDetailsContext"
-      @hide="handleActionPopoverHide"
-    />
+    <ChatActionPopovers :bindings="actionPopoverBindings" />
   </aside>
 </template>
 
@@ -417,9 +342,5 @@ const onSendClick = () => {
 
 .tcp-send--stop {
   background: #ef5f5f;
-}
-
-.tcp-send i {
-  font-size: 13px;
 }
 </style>

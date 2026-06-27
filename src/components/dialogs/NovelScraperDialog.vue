@@ -1089,6 +1089,8 @@ provide(SCRAPER_DIALOG_KEY, {
 </style>
 
 <style scoped>
+/* 注：.scraper-url-row 已迁移至 ScraperUrlInput.vue，.scraper-footer-actions 已迁移至
+ * ScraperImportFooter.vue —— 这两个类渲染在各自子组件内部嵌套元素，父级 scoped 样式无法命中。 */
 .novel-scraper-body > * {
   min-width: 0;
 }
@@ -1097,25 +1099,6 @@ provide(SCRAPER_DIALOG_KEY, {
   .novel-scraper-body {
     gap: 0.75rem;
     padding-top: 0.25rem;
-  }
-
-  .scraper-url-row {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .scraper-url-row :deep(.p-button) {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .scraper-footer-actions {
-    width: 100%;
-  }
-
-  .scraper-footer-actions :deep(.p-button) {
-    flex: 1 1 0;
-    justify-content: center;
   }
 }
 </style>

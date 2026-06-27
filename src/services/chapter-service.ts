@@ -211,11 +211,13 @@ function buildParagraphSearchResult(
   return { paragraph, paragraphIndex, chapter, chapterIndex, volume, volumeIndex };
 }
 
-function findParagraphInLoadedChapters(
+/**
+ * 遍历小说所有卷下的章节，逐个产出带卷/章索引的章节条目。
+ * 收敛 findParagraphInLoadedChapters / findParagraphLocation 共用的卷-章嵌套遍历骨架。
+ */
+function* iterateChapters(
   novel: Novel,
-  paragraphId: string,
-  chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[],
-): ParagraphSearchResult | null {
+): Generator<{ chapter: Chapter; volume: Volume; cIndex: number; vIndex: number }> {
   const volumes = novel.volumes || [];
   for (let vIndex = 0; vIndex < volumes.length; vIndex++) {
     const volume = volumes[vIndex];
@@ -223,18 +225,23 @@ function findParagraphInLoadedChapters(
     for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
       const chapter = volume.chapters[cIndex];
       if (!chapter) continue;
-      if (chapter.content === undefined) {
-        chaptersToLoad.push({ chapter, vIndex, cIndex });
-        continue;
-      }
-      if (!chapter.content) continue;
-      for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-        const paragraph = chapter.content[pIndex];
-        if (paragraph && paragraph.id === paragraphId) {
-          return buildParagraphSearchResult(paragraph, pIndex, chapter, cIndex, volume, vIndex);
-        }
-      }
+      yield { chapter, volume, cIndex, vIndex };
     }
+  }
+}
+
+function findParagraphInLoadedChapters(
+  novel: Novel,
+  paragraphId: string,
+  chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[],
+): ParagraphSearchResult | null {
+  for (const { chapter, volume, cIndex, vIndex } of iterateChapters(novel)) {
+    if (chapter.content === undefined) {
+      chaptersToLoad.push({ chapter, vIndex, cIndex });
+      continue;
+    }
+    const hit = findParagraphInChapter(chapter, paragraphId, cIndex, volume, vIndex);
+    if (hit) return hit;
   }
   return null;
 }
@@ -1570,17 +1577,9 @@ export class ChapterService {
       return null;
     }
 
-    const volumes = novel.volumes;
-    for (let vIndex = 0; vIndex < volumes.length; vIndex++) {
-      const volume = volumes[vIndex];
-      if (!volume?.chapters) continue;
-
-      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter) continue;
-        const hit = findParagraphInChapter(chapter, paragraphId, cIndex, volume, vIndex);
-        if (hit) return hit;
-      }
+    for (const { chapter, volume, cIndex, vIndex } of iterateChapters(novel)) {
+      const hit = findParagraphInChapter(chapter, paragraphId, cIndex, volume, vIndex);
+      if (hit) return hit;
     }
 
     return null;

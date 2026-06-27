@@ -42,3 +42,41 @@ defineEmits<{
     </span>
   </template>
 </template>
+
+<style scoped>
+/* 行内高亮样式。
+ * 从 ParagraphCard.vue 迁移而来 —— 这些 span 渲染发生在本组件，
+ * 父级 scoped 样式无法命中子组件内部嵌套元素，样式应与消费它的模板同处一个作用域。 */
+
+/* 术语高亮 */
+.term-highlight {
+  background: linear-gradient(180deg, transparent 60%, var(--primary-opacity-30) 60%);
+  color: var(--moon-opacity-95);
+  cursor: help;
+  padding: 0 0.125rem;
+  border-radius: 2px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.term-highlight:hover {
+  background: linear-gradient(180deg, transparent 60%, var(--primary-opacity-50) 60%);
+  color: var(--primary-opacity-100);
+}
+
+/* 角色高亮 */
+.character-highlight {
+  background: linear-gradient(180deg, transparent 60%, rgba(168, 85, 247, 0.3) 60%);
+  color: var(--moon-opacity-95);
+  cursor: help;
+  padding: 0 0.125rem;
+  border-radius: 2px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.character-highlight:hover {
+  background: linear-gradient(180deg, transparent 60%, rgba(168, 85, 247, 0.5) 60%);
+  color: rgba(196, 181, 253, 1);
+}
+</style>

@@ -87,6 +87,13 @@ defineProps<{
   margin: 0.5rem 0;
 }
 
+/* 角色项容器。从 ParagraphCard.vue 迁移而来 —— 该元素渲染于本组件，父级 scoped 无法命中。 */
+.popover-character-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .popover-multiple-characters-hint .hint-text {
   font-size: 0.75rem;
   color: var(--moon-opacity-60);

@@ -11,12 +11,8 @@ import type { TocItem, HelpDocument } from 'src/composables/help-page/useHelpPag
 const ctx = injectHelpPage();
 
 const hasToc = computed(() => ctx.toc.value.length > 0);
-const categoryChevron = (category: string) =>
-  ctx.expandedCategories.value.has(category) ? 'pi-chevron-down' : 'pi-chevron-right';
-const isCategoryExpanded = (category: string) => ctx.expandedCategories.value.has(category);
-const isActiveDoc = (doc: HelpDocument) => ctx.currentDoc.value?.id === doc.id;
 const docButtonClass = (doc: HelpDocument) =>
-  isActiveDoc(doc)
+  ctx.isActiveDoc(doc)
     ? 'bg-primary/20 text-primary font-medium border-primary shadow-sm'
     : 'text-moon/80 hover:bg-white/5 hover:text-moon-100 border-transparent hover:border-moon/20';
 const tocItemClass = (item: TocItem) => [
@@ -51,11 +47,11 @@ const tocItemClass = (item: TocItem) => [
           </h3>
           <i
             class="pi text-moon/30 text-[10px] transition-transform duration-200"
-            :class="categoryChevron(category as string)"
+            :class="ctx.categoryChevron(category as string)"
           />
         </button>
         <ul
-          v-show="isCategoryExpanded(category as string)"
+          v-show="ctx.isCategoryExpanded(category as string)"
           class="space-y-0.5 mt-1.5"
         >
           <li v-for="doc in docs" :key="doc.id">

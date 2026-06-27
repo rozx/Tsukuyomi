@@ -521,113 +521,8 @@ defineExpose({ scrollToParagraphIndex });
   flex-direction: column;
 }
 
-/* 章节标题区域 */
-.chapter-header {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--white-opacity-10);
-}
-
-.chapter-content-container .chapter-title {
-  /* 设计系统：章节标题用显示字体（Noto Serif JP）营造阅读仪式感 */
-  font-family:
-    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
-  font-size: 1.875rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--moon-opacity-95);
-  margin: 0 0 0.75rem 0;
-  line-height: 1.25;
-}
-
-.chapter-stats {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
-}
-
-.chapter-stat-item {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--moon-opacity-80);
-  font-size: 0.8125rem;
-}
-
-.chapter-stat-separator {
-  color: var(--moon-opacity-40);
-  font-size: 0.75rem;
-  user-select: none;
-}
-
-.chapter-stat-icon {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-70);
-}
-
-.chapter-stat-value {
-  font-weight: 600;
-  color: var(--moon-opacity-90);
-}
-
-.chapter-stat-label {
-  color: var(--moon-opacity-70);
-}
-
-.chapter-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--moon-opacity-70);
-  font-size: 0.875rem;
-}
-
-.chapter-meta-icon {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-60);
-}
-
-.chapter-meta-text {
-  color: var(--moon-opacity-70);
-}
-
-.chapter-web-url {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  padding: 0.375rem 0.75rem;
-  font-size: 0.875rem;
-  width: fit-content;
-  color: var(--primary-opacity-90);
-  text-decoration: underline;
-  text-decoration-color: var(--primary-opacity-50);
-  text-underline-offset: 2px;
-  background: var(--primary-opacity-10);
-  border: 1px solid var(--primary-opacity-30);
-  border-radius: 6px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.chapter-web-url:hover {
-  color: var(--primary-opacity-100);
-  text-decoration-color: var(--primary-opacity-80);
-  background: var(--primary-opacity-15);
-  border-color: var(--primary-opacity-50);
-  transform: translateY(-1px);
-}
-
-.chapter-web-url .pi {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-85);
-  transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.chapter-web-url:hover .pi {
-  color: var(--primary-opacity-100);
-}
+/* 章节标题区域样式（.chapter-header / .chapter-stats / .chapter-meta / .chapter-web-url）
+   已随模板迁移到 ChapterHeader.vue 自身作用域，详见该组件。 */
 
 /* 段落容器 */
 .paragraphs-container {
@@ -699,131 +594,13 @@ defineExpose({ scrollToParagraphIndex });
   box-shadow: 0 0 0 2px rgba(233, 237, 245, 0.2);
 }
 
-/* 翻译预览容器 */
-.translation-preview-container {
-  width: 100%;
-  min-width: 0;
-  max-width: 56rem;
-  margin: 0 auto;
-  /* 与 .chapter-content-container 对齐，切换编辑/预览模式不产生 8px 宽度跳动。 */
-  padding: 0 0.5rem;
-  box-sizing: border-box;
-}
+/* 翻译预览相关样式（.translation-preview-container / .preview-chapter-* / .preview-stat-* /
+   .translation-preview-paragraph / .untranslated-paragraph）已随模板迁移到 ChapterPreviewSection.vue；
+   段内文本（.translation-text / .untranslated-content / .untranslated-badge / .original-text）抽到共享
+   preview-paragraph.css，由 ChapterPreviewSection.vue 与 PreviewParagraphItem.vue 各自引入。 */
 
-.preview-chapter-header {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--white-opacity-10);
-}
-
-.preview-chapter-title {
-  font-family:
-    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
-  font-size: 1.875rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--moon-opacity-95);
-  margin: 0 0 0.75rem 0;
-  line-height: 1.25;
-}
-
-.preview-chapter-stats {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.preview-stat-item {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: var(--moon-opacity-80);
-  font-size: 0.8125rem;
-}
-
-.preview-stat-icon {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-70);
-}
-
-.preview-stat-value {
-  font-weight: 600;
-  color: var(--moon-opacity-90);
-}
-
-.preview-stat-label {
-  color: var(--moon-opacity-70);
-}
-
-.translation-preview-paragraph {
-  padding: 1rem 1.25rem;
-  width: 100%;
-  position: relative;
-  /* 虚拟滚动已接管视口外段落的渲染，无需再用 content-visibility 占位 */
-}
-
-.translation-text {
-  margin: 0;
-  color: var(--moon-opacity-90);
-  font-size: 0.9375rem;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.untranslated-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.untranslated-badge {
-  align-self: flex-start;
-}
-
-.original-text {
-  margin: 0;
-  color: var(--moon-opacity-70);
-  font-size: 0.9375rem;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-style: italic;
-}
-
-.untranslated-paragraph {
-  background-color: var(--moon-opacity-5);
-  border-left: 3px solid var(--orange-500);
-  padding-left: calc(1.25rem - 3px);
-}
-
-/* 空章节内容状态 */
-.empty-chapter-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 3rem;
-  color: var(--moon-opacity-40);
-  margin-bottom: 1rem;
-}
-
-.empty-text {
-  font-size: 1.125rem;
-  font-weight: 500;
-  color: var(--moon-opacity-80);
-  margin: 0 0 0.5rem 0;
-}
-
-.empty-hint {
-  margin: 0;
-}
+/* 空章节内容状态（.empty-chapter-content / .empty-icon / .empty-text / .empty-hint）
+   已随模板迁移到 ChapterEmptyState.vue 自身作用域。 */
 
 /* 加载中状态 */
 .loading-container {
@@ -842,111 +619,17 @@ defineExpose({ scrollToParagraphIndex });
   margin: 0;
 }
 
-/* 章节导航按钮 */
-.chapter-navigation {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-top: 3rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--white-opacity-10);
-}
-
-.chapter-navigation :deep(.p-button) {
-  width: 100%;
-  min-width: 0;
-}
-
-.chapter-nav-btn {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  justify-content: center;
-}
-
-.chapter-nav-btn :deep(.p-button-label) {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden !important;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chapter-nav-btn :deep(.p-button-icon) {
-  flex: 0 0 auto;
-}
-
-.chapter-nav-prev {
-  overflow: hidden;
-}
-
-.chapter-nav-prev :deep(.p-button-label) {
-  text-align: center;
-}
-
-.chapter-nav-list {
-  flex: 0 0 auto;
-  max-width: none;
-  min-width: auto;
-}
-
-.chapter-nav-next {
-  overflow: hidden;
-}
-
-.chapter-nav-next :deep(.p-button-label) {
-  text-align: center;
-}
+/* 章节导航按钮相关样式（.chapter-navigation / .chapter-nav-btn / .chapter-nav-prev /
+   .chapter-nav-list / .chapter-nav-next，含其 :deep(...) 与 @media 响应式规则）
+   已随模板迁移到 ChapterNavigation.vue 自身作用域。 */
 
 @media (max-width: 768px) {
-  .chapter-content-container,
-  .translation-preview-container {
+  .chapter-content-container {
     /*
      * 仅保留安全区补偿，避免右侧额外偏移导致导航与正文对齐线不一致。
      */
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
-  }
-
-  .chapter-navigation {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.5rem;
-    align-items: stretch;
-    padding-bottom: calc(5rem + env(safe-area-inset-bottom));
-  }
-
-  .chapter-nav-btn {
-    width: 100%;
-    max-width: none;
-    position: relative;
-    padding-left: 1.75rem !important;
-    padding-right: 1.75rem !important;
-  }
-
-  .chapter-nav-btn :deep(.p-button-label) {
-    display: block;
-    width: 100%;
-    max-width: 100% !important;
-    text-align: center;
-  }
-
-  .chapter-nav-btn :deep(.p-button-icon) {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    margin: 0 !important;
-  }
-
-  .chapter-nav-prev :deep(.p-button-icon-left),
-  .chapter-nav-list :deep(.p-button-icon-left) {
-    left: 0.625rem;
-  }
-
-  .chapter-nav-next :deep(.p-button-icon-right) {
-    right: 0.625rem;
   }
 }
 </style>

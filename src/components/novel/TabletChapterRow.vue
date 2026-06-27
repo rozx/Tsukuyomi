@@ -45,27 +45,11 @@ defineEmits<{
   </div>
 </template>
 
+<!-- 共享行基础样式（.vt-row*）与 VolumesListTablet 复用同一文件 -->
+<style scoped src="./volume-tree-row.css"></style>
+
 <style scoped>
-.vt-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  background: transparent;
-  border: none;
-  color: var(--moon-50-opacity-90);
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.vt-row:hover {
-  background: var(--white-opacity-3);
-}
-
+/* 章节行专属样式；通用 .vt-row* 基础样式见 volume-tree-row.css */
 .vt-row--chapter {
   padding-left: 28px;
   font-size: 12.5px;
@@ -75,49 +59,6 @@ defineEmits<{
 .vt-row--active {
   background: var(--tsukuyomi-opacity-12);
   color: var(--primary-300);
-}
-
-.vt-row-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.vt-row-count {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--moon-50-opacity-55);
-  flex-shrink: 0;
-}
-
-.vt-row-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: 2px;
-  margin-right: -4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--moon-50-opacity-45);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.vt-row-more:hover {
-  background: var(--white-opacity-6);
-  color: var(--moon-50-opacity-85);
-}
-
-.vt-row-more i {
-  font-size: 12px;
 }
 
 .vt-chap-icon {

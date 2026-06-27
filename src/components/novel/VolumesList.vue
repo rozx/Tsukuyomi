@@ -366,48 +366,7 @@ const hasVolumes = computed(() => props.volumes.length > 0);
   min-width: 0;
 }
 
-.chapter-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.375rem;
-  padding: 0.625rem 0.5rem;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  color: var(--moon-opacity-80);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
-  min-width: 0;
-}
-
-.chapter-item:hover {
-  background: var(--primary-opacity-15);
-  color: var(--moon-opacity-95);
-  border-color: var(--primary-opacity-30);
-  transform: translateX(2px);
-}
-
-.chapter-item.dragging {
-  opacity: 0.5;
-}
-
-.chapter-item.drag-over {
-  background: var(--primary-opacity-20) !important;
-  border-color: var(--primary-opacity-50) !important;
-  border-style: dashed !important;
-}
-
-.chapter-item-selected {
-  background: var(--primary-opacity-15) !important;
-  border-color: var(--primary-opacity-40) !important;
-  color: var(--moon-opacity-95) !important;
-}
-
-.chapter-item-selected .chapter-icon {
-  color: var(--primary-opacity-90) !important;
-}
+/* 章节行（.chapter-item 系列）样式由子组件 ChapterListItem.vue 自带 scoped 样式负责，此处不再重复定义。 */
 
 .chapters-list.drag-over {
   background: var(--primary-opacity-10);
@@ -415,168 +374,20 @@ const hasVolumes = computed(() => props.volumes.length > 0);
   border: 2px dashed var(--primary-opacity-40);
 }
 
-.chapter-content {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
+/* 触屏按下卷头反馈：章节行的同名反馈由 ChapterListItem.vue 自带。 */
+.volume-header-content:active {
+  transform: scale(0.99);
 }
 
-.drag-handle {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-50);
-  cursor: grab;
-  flex-shrink: 0;
-  transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.chapter-item:hover .drag-handle {
-  color: var(--primary-opacity-70);
-}
-
-.chapter-item.dragging .drag-handle {
-  cursor: grabbing;
-}
-
-.chapter-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.125rem;
-  flex-shrink: 0;
-  opacity: 0;
-  max-width: 0;
-  overflow: hidden;
-  margin-left: 0;
-  transition:
-    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-    max-width 0.2s ease,
-    margin-left 0.2s ease;
-}
-
-.chapter-item:hover .chapter-actions {
-  opacity: 1;
-  max-width: 4rem;
-  margin-left: 0.25rem;
-}
-
-.chapter-actions-visible {
-  opacity: 1;
-  max-width: 8rem;
-  margin-left: 0.25rem;
-}
-
-.volume-actions-visible .action-button,
-.chapter-actions-visible .action-button {
+.volume-actions-visible .action-button {
   min-width: 1.875rem !important;
   width: 1.875rem !important;
   height: 1.875rem !important;
 }
 
-.chapter-item-touch {
-  padding: 0.625rem 0.5rem;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.25rem;
-}
-
-.chapter-item-touch:active,
-.volume-header-content:active {
-  transform: scale(0.99);
-}
-
-.chapter-item-touch .action-button:active,
 .volume-actions-visible .action-button:active {
   background: var(--white-opacity-15) !important;
   transform: scale(0.96);
-}
-
-.chapter-item-touch .chapter-content {
-  width: 100%;
-  gap: 0.25rem;
-  overflow: hidden;
-}
-
-.chapter-item-touch .chapter-icon,
-.chapter-item-touch .summary-icon {
-  display: none;
-}
-
-.chapter-item-touch .chapter-content .chapter-title {
-  display: block;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.25;
-}
-
-.chapter-item-touch .chapter-actions {
-  width: auto;
-  justify-content: flex-end;
-  align-self: flex-end;
-  margin-top: 0.125rem;
-  max-width: none;
-  margin-left: auto;
-}
-
-.chapter-item-touch .chapter-actions:not(.chapter-actions-visible) {
-  display: none;
-}
-
-.chapter-icon {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-60);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.chapter-item:hover .chapter-icon {
-  color: var(--primary-opacity-85);
-  transform: scale(1.1);
-}
-
-.chapter-content .chapter-title {
-  flex: 1;
-  min-width: 0;
-  font-size: inherit;
-  white-space: normal;
-  line-height: 1.35;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.summary-icon {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-50);
-  cursor: help;
-  flex-shrink: 0;
-  margin-left: 0.25rem;
-  opacity: 0;
-  transition:
-    color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.chapter-item:hover .summary-icon {
-  opacity: 1;
-}
-
-.summary-icon:hover {
-  opacity: 0.85;
-  cursor: progress;
-}
-
-/* 加载状态图标 */
-.loading-icon {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-80);
-  flex-shrink: 0;
-}
-
-.chapter-item-loading {
-  pointer-events: none;
-  opacity: 0.85;
 }
 
 /* 折叠/展开动画 */

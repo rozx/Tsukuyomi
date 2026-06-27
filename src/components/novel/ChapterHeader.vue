@@ -66,3 +66,116 @@ defineEmits<{
     </a>
   </div>
 </template>
+
+<style scoped>
+/* 章节标题区域。
+ * 注：这些样式从 ChapterContentPanel.vue 迁移而来 —— 该面板把头部抽成本组件后，
+ * 其 scoped 样式无法穿透到子组件内部嵌套元素（仅子组件根元素继承父级 scope），
+ * 导致 .chapter-stats 等丢失 flex 布局。样式应与其消费的模板同处一个组件作用域。 */
+.chapter-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--white-opacity-10);
+}
+
+.chapter-title {
+  /* 设计系统：章节标题用显示字体（Noto Serif JP）营造阅读仪式感 */
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 1.875rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--moon-opacity-95);
+  margin: 0 0 0.75rem 0;
+  line-height: 1.25;
+}
+
+.chapter-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.chapter-stat-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--moon-opacity-80);
+  font-size: 0.8125rem;
+}
+
+.chapter-stat-separator {
+  color: var(--moon-opacity-40);
+  font-size: 0.75rem;
+  user-select: none;
+}
+
+.chapter-stat-icon {
+  font-size: 0.75rem;
+  color: var(--primary-opacity-70);
+}
+
+.chapter-stat-value {
+  font-weight: 600;
+  color: var(--moon-opacity-90);
+}
+
+.chapter-stat-label {
+  color: var(--moon-opacity-70);
+}
+
+.chapter-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--moon-opacity-70);
+  font-size: 0.875rem;
+}
+
+.chapter-meta-icon {
+  font-size: 0.75rem;
+  color: var(--moon-opacity-60);
+}
+
+.chapter-meta-text {
+  color: var(--moon-opacity-70);
+}
+
+.chapter-web-url {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  width: fit-content;
+  color: var(--primary-opacity-90);
+  text-decoration: underline;
+  text-decoration-color: var(--primary-opacity-50);
+  text-underline-offset: 2px;
+  background: var(--primary-opacity-10);
+  border: 1px solid var(--primary-opacity-30);
+  border-radius: 6px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chapter-web-url:hover {
+  color: var(--primary-opacity-100);
+  text-decoration-color: var(--primary-opacity-80);
+  background: var(--primary-opacity-15);
+  border-color: var(--primary-opacity-50);
+  transform: translateY(-1px);
+}
+
+.chapter-web-url .pi {
+  font-size: 0.75rem;
+  color: var(--primary-opacity-85);
+  transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.chapter-web-url:hover .pi {
+  color: var(--primary-opacity-100);
+}
+</style>

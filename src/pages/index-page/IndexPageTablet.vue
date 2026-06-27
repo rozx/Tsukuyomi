@@ -15,11 +15,6 @@ const greetingSub = computed(() =>
     ? `上次停在《${ctx.continueReadingBook.value.title}》。`
     : '今晚是翻译的好夜色。',
 );
-const isLoadingState = computed(() => ctx.booksStore.isLoading || !ctx.booksStore.isLoaded);
-const isEmptyState = computed(
-  () => ctx.booksStore.isLoaded && ctx.booksStore.books.length === 0,
-);
-const hasRecent = computed(() => ctx.recentBooks.value.length > 0);
 </script>
 
 <template>
@@ -105,7 +100,7 @@ const hasRecent = computed(() => ctx.recentBooks.value.length > 0);
       </section>
 
       <!-- 最近阅读 —— 3 列 -->
-      <section v-if="hasRecent" class="th-section">
+      <section v-if="ctx.hasRecent.value" class="th-section">
         <header class="th-section-head">
           <span class="th-section-title">最近阅读</span>
           <button class="th-section-link" @click="ctx.navigateToBooks">
@@ -146,7 +141,7 @@ const hasRecent = computed(() => ctx.recentBooks.value.length > 0);
 
       <!-- 空 / 加载状态 -->
       <div
-        v-if="isEmptyState"
+        v-if="ctx.isEmptyState.value"
         class="th-empty"
       >
         <i class="pi pi-book th-empty-icon" aria-hidden="true" />
@@ -161,7 +156,7 @@ const hasRecent = computed(() => ctx.recentBooks.value.length > 0);
       </div>
 
       <div
-        v-else-if="isLoadingState"
+        v-else-if="ctx.isLoadingState.value"
         class="th-loading"
       >
         <ProgressSpinner

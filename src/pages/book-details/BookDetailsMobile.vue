@@ -21,6 +21,10 @@ const ctx = injectBookDetailsPage();
   <BookDetailsMobileReader v-else-if="ctx.selectedChapter.value" />
 </template>
 
+<!-- 卷 / 章节树行基础样式共享（.mbd-tree-row* 与平板 .vt-row* 同源）；
+     置于内联样式之前，保证 .mbd-tree-row--vol/--chapter/--active 等修饰类按源码顺序覆盖基础规则 -->
+<style src="../../components/novel/volume-tree-row.css"></style>
+
 <style>
 /* Mobile styles are dense — preserve the original mobile design tokens verbatim */
 
@@ -410,27 +414,8 @@ const ctx = injectBookDetailsPage();
   background: var(--white-opacity-2);
 }
 
-.mbd-tree-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  background: transparent;
-  border: none;
-  /* token: moon-50 @ 90% */
-  color: var(--moon-50-opacity-90);
-  font-family: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.mbd-tree-row:hover {
-  /* token: white @ 3% */
-  background: var(--white-opacity-3);
-}
+/* .mbd-tree-row / :hover / -title / -count / -more / -more i 等与平板同名的行基础样式
+   见共享文件 volume-tree-row.css（本组件全局 <style src> 引入）。此处只保留手机端专属规则。 */
 
 .mbd-tree-row--vol {
   /* token: white @ 4% */
@@ -457,48 +442,10 @@ const ctx = injectBookDetailsPage();
   color: var(--primary-300);
 }
 
-.mbd-tree-row-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mbd-tree-row-count {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--moon-50-opacity-55);
-  flex-shrink: 0;
-}
-
-/* 行尾"更多"按钮：替代桌面右键菜单，点击弹出 bottom sheet 选编辑 / 删除 / 上下移 */
-.mbd-tree-row-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-left: 2px;
-  margin-right: -4px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--moon-50-opacity-45);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
+/* 行尾"更多"按钮的手机端按下反馈（:active + 更深的 token，与平板 :hover 不同）。 */
 .mbd-tree-row-more:active {
   background: var(--white-opacity-8);
   color: var(--moon-50-opacity-85);
-}
-
-.mbd-tree-row-more i {
-  font-size: 12px;
 }
 
 .mbd-tree-vol-icon {
@@ -1033,26 +980,8 @@ const ctx = injectBookDetailsPage();
   margin: 6px 8px;
 }
 
-.mbr-batch-picker-empty {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 14px 12px;
-  margin: 8px 0 4px;
-  /* token: tsukuyomi-500 @ 6% */
-  background: var(--tsukuyomi-opacity-6);
-  border: 1px solid var(--tsukuyomi-opacity-18);
-  border-radius: 10px;
-  font-size: 12px;
-  color: var(--moon-50-opacity-75);
-  line-height: 1.5;
-}
-
-.mbr-batch-picker-empty i {
-  font-size: 14px;
-  /* token: tsukuyomi-300 */
-  color: var(--tsukuyomi-300);
-  margin-top: 1px;
-  flex-shrink: 0;
-}
+/* .mbr-batch-picker-empty 空状态样式见共享文件 picker-empty-hint.css */
 </style>
+
+<!-- 选择器空状态共享样式（与 AIRoutingPickerSheet 复用同一文件，全局非 scoped 沿用 mbd 体系） -->
+<style src="../../components/novel/picker-empty-hint.css"></style>
