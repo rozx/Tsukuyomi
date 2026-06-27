@@ -2159,7 +2159,7 @@ function resolveScopedRange(
 /**
  * 收集仅用翻译关键词搜索时需要加载的章节
  */
-function collectTranslationSearchChapters(
+export function collectTranslationSearchChapters(
   book: Novel,
   chapter_id: string | undefined,
   targetVolumeIndex: number | null,

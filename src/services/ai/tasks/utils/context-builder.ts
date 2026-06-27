@@ -702,7 +702,7 @@ function findChapterInBook(book: Novel, chapterId: string): Chapter | undefined 
 /**
  * 根据任务类型解析特殊指令（章节级别覆盖书籍级别）
  */
-function resolveSpecialInstructionsForTask(
+export function resolveSpecialInstructionsForTask(
   book: Novel,
   chapter: Chapter | undefined,
   taskType: TaskType,

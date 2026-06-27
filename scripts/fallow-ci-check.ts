@@ -16,7 +16,7 @@
  * 用法：`bun run quality-check:ci`（先跑过 `test:coverage` 才有 CRAP 数据，可选）。
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -79,19 +79,37 @@ interface CloneGroup {
   instances?: CloneInstance[];
   clones?: CloneInstance[];
 }
+interface HealthFinding {
+  path?: string;
+  name?: string;
+  line?: number;
+  exceeded?: string;
+  crap?: number;
+  coverage_pct?: number;
+}
 const data = JSON.parse(raw) as {
   check?: { total_issues?: number };
   dupes?: { clone_groups?: CloneGroup[] };
+  health?: { findings?: HealthFinding[] };
 };
 
 const checkIssues = data.check?.total_issues ?? 0;
 const cloneGroups = data.dupes?.clone_groups ?? [];
+// health.findings 即 CI 计入失败的复杂度/CRAP/覆盖问题；CRAP 依赖 istanbul 覆盖数据，
+// 覆盖文件缺失会让这些问题「假阴性」，故缺失时显式告警。
+const healthFindings = data.health?.findings ?? [];
 
 console.log(`Fallow CI 门禁（diff 基准 ${base.slice(0, 8)}）：`);
 console.log(`  dead-code 类 issue：${checkIssues}`);
 console.log(`  重复 clone group：${cloneGroups.length}`);
+console.log(`  健康度问题（复杂度 / CRAP / 覆盖）：${healthFindings.length}`);
+if (!existsSync('coverage/coverage-final.json')) {
+  console.warn(
+    '  ⚠ 未找到 coverage/coverage-final.json —— CRAP 评分无法计算，请先跑 `bun run test:coverage`，否则本门禁会漏判复杂度问题。',
+  );
+}
 
-if (checkIssues > 0 || cloneGroups.length > 0) {
+if (checkIssues > 0 || cloneGroups.length > 0 || healthFindings.length > 0) {
   for (const g of cloneGroups) {
     const inst = g.instances ?? g.clones ?? [];
     const locs = inst
@@ -100,7 +118,12 @@ if (checkIssues > 0 || cloneGroups.length > 0) {
           `${i.file ?? i.path ?? '?'}:${i.start_line ?? i.start ?? '?'}-${i.end_line ?? i.end ?? '?'}`,
       )
       .join('  ||  ');
-    console.log(`    - ${locs}`);
+    console.log(`    - 重复: ${locs}`);
+  }
+  for (const f of healthFindings) {
+    console.log(
+      `    - 健康: ${f.path ?? '?'}:${f.line ?? '?'} ${f.name ?? '?'}（${f.exceeded ?? '?'}=${f.crap ?? '?'}, 覆盖率 ${f.coverage_pct ?? '?'}%）`,
+    );
   }
   console.error('\n✗ 本次改动引入了 CI 会拦截的问题，请修复后再推送。');
   process.exit(1);
