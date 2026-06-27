@@ -13,13 +13,16 @@ import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
+import type { ChapterScrollToIndex } from 'src/composables/book-details/useChapterVirtualizer';
 import { useUiStore } from 'src/stores/ui';
 
 const ctx = injectBookDetailsPage();
 const ui = useUiStore();
 
-// 章节内容面板组件 ref：挂载后把其 scrollToParagraphIndex 注册到页面上下文，供键盘导航/搜索按索引滚动
-const chapterPanelRef = ref<InstanceType<typeof ChapterContentPanel> | null>(null);
+// 章节内容面板组件 ref：挂载后把其 scrollToParagraphIndex 注册到页面上下文，供键盘导航/搜索按索引滚动。
+// 用具体的 exposed 接口而非 InstanceType<typeof ChapterContentPanel>（后者在泛型 SFC 下会退化为 any，
+// 触发 eslint no-redundant-type-constituents）。
+const chapterPanelRef = ref<{ scrollToParagraphIndex: ChapterScrollToIndex } | null>(null);
 watch(chapterPanelRef, (comp) => {
   ctx.registerChapterScroller(comp ? (index, options) => comp.scrollToParagraphIndex(index, options) : null);
 });
