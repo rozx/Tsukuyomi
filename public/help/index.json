@@ -120,6 +120,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.14.0",
+    "title": "v0.14.0",
+    "file": "RELEASE_NOTES_v0.14.0.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "章节段落虚拟滚动 + 自定义滚动条、全仓代码质量重构与 quality-check:ci 门禁、原文格式化按钮、月詠上下文压缩触发修复、安全与正确性评审加固、依赖大升级"
+  },
+  {
     "id": "v0.13.0",
     "title": "v0.13.0",
     "file": "RELEASE_NOTES_v0.13.0.md",
