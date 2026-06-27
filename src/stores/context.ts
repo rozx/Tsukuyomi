@@ -50,7 +50,7 @@ function saveContextToStorage(state: ContextState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
-    console.error('Failed to save context from storage:', error);
+    console.error('Failed to save context to storage:', error);
   }
 }
 
