@@ -142,6 +142,38 @@ export function resolvePinnedExtraIndex(
   return windowIndices.includes(pinnedIndex) ? null : pinnedIndex;
 }
 
+/**
+ * 纯函数：把 @tanstack 的「滚动容器坐标」item.start / 偏移转换为「spacer 内部坐标」。
+ *
+ * 关键：@tanstack 的 item.start / item.end 都含 scrollMargin（= 列表前头部高度），
+ * 但 .vlist-spacer 已在文档流里位于头部之后（其顶部本就在 scrollMargin 处），
+ * 故落进 spacer 的 translateY 必须扣掉 scrollMargin，否则头部高度被重复计入 →
+ * 章节顶部多出一段等于头部高度的空白。空窗口（无 start）返回 0；测量抖动出现负值时钳到 0。
+ */
+export function toContentOffset(scrollCoord: number | undefined, scrollMargin: number): number {
+  if (scrollCoord == null) return 0;
+  return Math.max(0, scrollCoord - scrollMargin);
+}
+
+/**
+ * 纯函数：计算 spacer 高度（= 内容区高度）。
+ *
+ * totalSize 来自 getTotalSize()，已扣除 scrollMargin（内容相对）；而 lastRowEnd / pinnedEnd
+ * 取自 item.end / measurementsCache，含 scrollMargin，作兜底比较前需扣掉。取三者最大值：
+ * 滚到底时 totalSize 可能比末行/钉住项真实 end 略小（动态测量偏差），用 max 兜底，
+ * 避免末段溢出 spacer 压到上下章导航按钮。lastRowEnd / pinnedEnd 为 null 时不参与。
+ */
+export function computeSpacerSize(
+  totalSize: number,
+  lastRowEnd: number | null,
+  pinnedEnd: number | null,
+  scrollMargin: number,
+): number {
+  const last = lastRowEnd != null ? lastRowEnd - scrollMargin : 0;
+  const pin = pinnedEnd != null ? pinnedEnd - scrollMargin : 0;
+  return Math.max(totalSize, last, pin);
+}
+
 export interface UseChapterVirtualizerOptions {
   /** 真实滚动容器元素（桌面 = .chapter-content-panel wrapper；移动 = .mbr-scroll） */
   scrollElement: Ref<HTMLElement | null>;
@@ -232,15 +264,18 @@ export function useChapterVirtualizer(opts: UseChapterVirtualizerOptions) {
    * 若直接用 totalSize 当 spacer 高度，最后一段会溢出 spacer 压到上下章导航按钮。取 max 可兜底。
    */
   const spacerSize = computed(() => {
+    const sm = opts.scrollMargin?.value ?? 0;
     const rows = virtualRows.value;
-    const lastEnd = rows.length ? rows[rows.length - 1]!.end : 0;
+    const lastEnd = rows.length ? rows[rows.length - 1]!.end : null;
     const pinned = opts.pinnedIndex?.value ?? null;
     const pinnedEnd =
-      pinned !== null ? (virtualizer.value.measurementsCache[pinned]?.end ?? 0) : 0;
-    return Math.max(totalSize.value, lastEnd, pinnedEnd);
+      pinned !== null ? (virtualizer.value.measurementsCache[pinned]?.end ?? null) : null;
+    return computeSpacerSize(totalSize.value, lastEnd, pinnedEnd, sm);
   });
-  /** 窗口块的起始偏移（首个虚拟项的 start）；空窗口时为 0 */
-  const blockStart = computed(() => virtualRows.value[0]?.start ?? 0);
+  /** 窗口块的起始偏移（首个虚拟项的 start，扣除头部 scrollMargin 转为 spacer 内部坐标）；空窗口时为 0 */
+  const blockStart = computed(() =>
+    toContentOffset(virtualRows.value[0]?.start, opts.scrollMargin?.value ?? 0),
+  );
 
   /** 钉住（编辑中）且落在窗口外的行：需单独绝对定位渲染在其测得偏移处 */
   const pinnedExtra = computed<PinnedExtraRow | null>(() => {
@@ -255,7 +290,7 @@ export function useChapterVirtualizer(opts: UseChapterVirtualizerOptions) {
     // 它返回的是 [scrollOffset, itemOffset] 元组的 scrollOffset（建议滚动到的位置），并非 item 偏移，
     // 两者语义不同会让钉住项错位。合法索引下 measurementsCache 恒已填充，缺失时回退 0。
     const cached = virtualizer.value.measurementsCache[extraIndex];
-    const start = cached?.start ?? 0;
+    const start = toContentOffset(cached?.start, opts.scrollMargin?.value ?? 0);
     return { index: extraIndex, start };
   });
 

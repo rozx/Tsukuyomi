@@ -4,6 +4,8 @@ import {
   resolvePinnedExtraIndex,
   createSizeCalibrator,
   computeScrollbarMetrics,
+  toContentOffset,
+  computeSpacerSize,
 } from 'src/composables/book-details/useChapterVirtualizer';
 
 describe('estimateRowHeight', () => {
@@ -131,5 +133,52 @@ describe('computeScrollbarMetrics（基于原生滚动位置/范围）', () => {
     expect(over.topPct + over.heightPct).toBeCloseTo(100);
     const under = computeScrollbarMetrics(-50, 200, 1000);
     expect(under.topPct).toBeCloseTo(0);
+  });
+});
+
+describe('toContentOffset（滚动坐标 → spacer 内部坐标，扣除头部 scrollMargin）', () => {
+  // @tanstack 的 item.start/end 含 scrollMargin（头部高度），但 spacer 已在文档流里位于
+  // 头部之后，故落进 spacer 的偏移必须扣掉 scrollMargin，否则头部高度被重复计入 → 顶部空白。
+  test('顶部首行（start == scrollMargin）落在 spacer 顶部，偏移为 0', () => {
+    expect(toContentOffset(223, 223)).toBe(0);
+  });
+
+  test('滚动后保留内容相对偏移（start - scrollMargin）', () => {
+    expect(toContentOffset(1000, 223)).toBe(777);
+  });
+
+  test('scrollMargin 为 0（无头部）时原样返回', () => {
+    expect(toContentOffset(500, 0)).toBe(500);
+  });
+
+  test('空窗口（无 start）返回 0', () => {
+    expect(toContentOffset(undefined, 223)).toBe(0);
+  });
+
+  test('测量抖动导致结果为负时钳到 0', () => {
+    expect(toContentOffset(100, 223)).toBe(0);
+  });
+});
+
+describe('computeSpacerSize（内容区高度；totalSize 已是内容相对，末行/钉住兜底需扣 scrollMargin）', () => {
+  test('正常情况取 totalSize（getTotalSize 已扣除 scrollMargin）', () => {
+    // lastEnd=1100 含 scrollMargin(100) → 内容相对 1000，与 totalSize 一致
+    expect(computeSpacerSize(1000, 1100, null, 100)).toBe(1000);
+  });
+
+  test('末行欠测时用 lastEnd-scrollMargin 兜底，避免末段溢出 spacer 压到导航', () => {
+    expect(computeSpacerSize(900, 1100, null, 100)).toBe(1000);
+  });
+
+  test('钉住项更靠下时用 pinnedEnd-scrollMargin 兜底', () => {
+    expect(computeSpacerSize(900, 950, 1300, 100)).toBe(1200);
+  });
+
+  test('lastEnd / pinnedEnd 为 null 时不参与取最大值', () => {
+    expect(computeSpacerSize(1000, null, null, 100)).toBe(1000);
+  });
+
+  test('scrollMargin 为 0 时退化为原始 max（行为不变）', () => {
+    expect(computeSpacerSize(900, 1100, null, 0)).toBe(1100);
   });
 });
