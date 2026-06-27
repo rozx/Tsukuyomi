@@ -2,11 +2,14 @@ import { ref, nextTick, type Ref, type ComputedRef } from 'vue';
 import { isEmptyParagraph } from 'src/utils';
 import type { Paragraph } from 'src/models/novel';
 import type ParagraphCard from 'src/components/novel/ParagraphCard.vue';
+import type { ChapterScrollToIndex } from 'src/composables/book-details/useChapterVirtualizer';
 
 export function useParagraphNavigation(
-  selectedChapterParagraphs: ComputedRef<Paragraph[]>,
+  selectedChapterParagraphs: ComputedRef<Paragraph[]> | Ref<Paragraph[]>,
   scrollableContentRef: Ref<HTMLElement | null>,
   currentlyEditingParagraphId: Ref<string | null>,
+  // 虚拟滚动下按索引滚动入视（由 ChapterContentPanel 注册）。未注册时回退到原生 scrollIntoView。
+  chapterScrollToIndex?: Ref<ChapterScrollToIndex | null>,
 ) {
   // 段落导航状态
   const selectedParagraphIndex = ref<number | null>(null);
@@ -60,71 +63,109 @@ export function useParagraphNavigation(
     isKeyboardNavigating.value = false;
     lastKeyboardNavigationTime.value = null;
     clearAllNavigationTimeouts();
+    invalidatePendingReveal();
     isProgrammaticScrolling.value = false;
   };
 
-  // --- 滚动动画控制（解决“按住方向键时动画互相打架导致滚动冻结”）---
-  let activeScrollAnimationToken = 0;
-  let activeScrollRafId: number | null = null;
-  let lastScrollRequestAt = 0;
-  let activeScrollContainer: HTMLElement | null = null;
-  let activeScrollTargetTop: number | null = null;
-  let activeScrollStartTime: number | null = null;
+  // 取目标段落已挂载的 DOM 元素（可见 + 钉住的行才在 DOM 中）。
+  // 防御无 DOM 环境（如 bun 下的纯 composable 测试），缺少 document/HTMLElement 时返回 null。
+  const getParagraphEl = (paragraphId: string): HTMLElement | null => {
+    const isHTMLElement = (value: unknown): value is HTMLElement =>
+      typeof HTMLElement !== 'undefined' && value instanceof HTMLElement;
+    const cardRef = paragraphCardRefs.get(paragraphId) as { $el?: unknown } | undefined;
+    const fromCard = cardRef?.$el;
+    if (isHTMLElement(fromCard)) return fromCard;
+    if (typeof document === 'undefined') return null;
+    const byId = document.getElementById(`paragraph-${paragraphId}`);
+    return isHTMLElement(byId) ? byId : null;
+  };
 
-  const startScrollAnimationLoop = () => {
-    if (!activeScrollContainer || activeScrollTargetTop === null) return;
-    // 取消上一段循环（如果存在），只保留一个持续动画
-    activeScrollAnimationToken++;
-    const myToken = activeScrollAnimationToken;
-    if (activeScrollRafId !== null && typeof cancelAnimationFrame === 'function') {
-      try {
-        cancelAnimationFrame(activeScrollRafId);
-      } catch {
-        // ignore
-      }
-    }
-    activeScrollRafId = null;
-    activeScrollStartTime = null;
+  // 递增令牌：每次 revealParagraph 发起新请求时 +1；reset/cleanup 时也 +1。
+  // 挂载等待回调执行前比对令牌，丢弃已被新导航/重置取代的过期请求，避免旧段落被错误聚焦/编辑。
+  let revealToken = 0;
+  const invalidatePendingReveal = () => {
+    revealToken++;
+  };
 
-    const step = (t: number) => {
-      if (myToken !== activeScrollAnimationToken) return;
-      if (!activeScrollContainer || activeScrollTargetTop === null) {
-        activeScrollRafId = null;
+  // 在目标段落挂载后执行回调（虚拟滚动下滚动会触发挂载，需等待若干帧）。
+  // token 过期（用户已导航到别处或已 reset）则放弃。
+  const runWhenParagraphReady = (
+    paragraphId: string,
+    action: (el: HTMLElement) => void,
+    token: number,
+  ) => {
+    const tryRun = (attempt: number) => {
+      if (token !== revealToken) return; // 已被新请求/重置取代
+      const el = getParagraphEl(paragraphId);
+      if (el) {
+        action(el);
         return;
       }
-
-      if (activeScrollStartTime === null) {
-        activeScrollStartTime = t;
+      if (attempt < 6 && typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => tryRun(attempt + 1));
       }
-
-      const current = activeScrollContainer.scrollTop;
-      const target = activeScrollTargetTop;
-      const delta = target - current;
-      const absDelta = Math.abs(delta);
-
-      // 目标很近：直接到位结束
-      if (absDelta < 0.5) {
-        activeScrollContainer.scrollTop = target;
-        activeScrollRafId = null;
-        return;
-      }
-
-      // 120ms 兜底：避免在高负载/低帧率时永远追不上
-      if (t - activeScrollStartTime >= 120) {
-        activeScrollContainer.scrollTop = target;
-        activeScrollRafId = null;
-        return;
-      }
-
-      // 平滑追踪（类似阻尼）：每帧移动一部分距离，并限制最大步长避免大跳
-      const maxStep = 80; // px/frame
-      const stepSize = Math.min(maxStep, Math.max(6, absDelta * 0.35));
-      activeScrollContainer.scrollTop = current + Math.sign(delta) * stepSize;
-
-      activeScrollRafId = requestAnimationFrame(step);
     };
+    void nextTick(() => tryRun(0));
+  };
 
-    activeScrollRafId = requestAnimationFrame(step);
+  // 取元素所在的真实滚动容器（章节内容面板 wrapper；兜底用外层容器）
+  const getScrollContainer = (el: HTMLElement): HTMLElement | null => {
+    const panel = el.closest('.chapter-content-panel');
+    if (panel instanceof HTMLElement) return panel;
+    return scrollableContentRef.value;
+  };
+
+  // 「最小滚动 + 边缘留白」平滑滚动：仅当元素超出舒适区时滚动，按真实元素位置计算目标，
+  // 用 container.scrollTo({behavior:'smooth'}) 平滑过渡。比 scrollIntoView 更可控，
+  // 避免 block:'nearest' 在虚拟化测量调整下把目标留在视口外的问题，并保留边缘留白。
+  const smoothRevealElement = (el: HTMLElement) => {
+    const container = getScrollContainer(el);
+    if (!container) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+    const cr = el.getBoundingClientRect();
+    const wr = container.getBoundingClientRect();
+    const margin = Math.round(Math.min(96, Math.max(24, wr.height * 0.15)));
+    let target: number | null = null;
+    if (cr.top < wr.top + margin) {
+      target = container.scrollTop + (cr.top - wr.top) - margin;
+    } else if (cr.bottom > wr.bottom - margin) {
+      target = container.scrollTop + (cr.bottom - wr.bottom) + margin;
+    }
+    if (target === null) return; // 已在舒适区内，不滚动
+    container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+  };
+
+  // --- 把目标段落平滑滚入视口，并在其挂载后执行 action（聚焦 / 开始编辑）---
+  // 已挂载（可见或在 overscan 内）：直接对真实元素平滑滚动（按真实位置精确入视，
+  //   不受虚拟化高度估算偏差影响，解决“偶尔滚不到位/不可见”）。
+  // 未挂载（远处）：先用 chapterScrollToIndex 把它带到附近并挂载，挂载后再平滑微调。
+  const revealParagraph = (
+    index: number,
+    paragraphId: string,
+    action: (el: HTMLElement) => void,
+    scroll: boolean,
+  ) => {
+    const token = ++revealToken; // 标记本次为最新请求，使更早的挂载等待回调失效
+    const existing = getParagraphEl(paragraphId);
+    if (existing) {
+      if (scroll) smoothRevealElement(existing);
+      action(existing);
+      return;
+    }
+    if (scroll && index >= 0) {
+      const fn = chapterScrollToIndex?.value;
+      if (fn) fn(index, { align: 'auto' });
+    }
+    runWhenParagraphReady(
+      paragraphId,
+      (el) => {
+        if (scroll) smoothRevealElement(el);
+        action(el);
+      },
+      token,
+    );
   };
 
   // 获取非空段落的索引列表
@@ -171,128 +212,6 @@ export function useParagraphNavigation(
     }
   };
 
-  /**
-   * 计算“最小滚动”策略下的目标 scrollTop。
-   * - 当元素已在可视区域内（含上下缓冲区 marginPx）时返回 null（不滚动）
-   * - 当元素在上方：把元素顶边滚到可视区域上边缘 + margin
-   * - 当元素在下方：把元素底边滚到可视区域下边缘 - margin
-   */
-  const computeRevealScrollTop = (params: {
-    elementTop: number;
-    elementHeight: number;
-    containerHeight: number;
-    currentScrollTop: number;
-    marginPx: number;
-  }): number | null => {
-    const { elementTop, elementHeight, containerHeight, currentScrollTop, marginPx } = params;
-    const elementBottom = elementTop + elementHeight;
-
-    const visibleTop = currentScrollTop;
-    const visibleBottom = currentScrollTop + containerHeight;
-
-    const topThreshold = visibleTop + marginPx;
-    const bottomThreshold = visibleBottom - marginPx;
-
-    // 已经在“舒适区”内，不需要滚动
-    if (elementTop >= topThreshold && elementBottom <= bottomThreshold) {
-      return null;
-    }
-
-    // 元素在上方：尽量把元素顶边对齐到 topThreshold
-    if (elementTop < topThreshold) {
-      return Math.max(0, elementTop - marginPx);
-    }
-
-    // 元素在下方：尽量把元素底边对齐到 bottomThreshold
-    if (elementBottom > bottomThreshold) {
-      return Math.max(0, elementBottom - containerHeight + marginPx);
-    }
-
-    return null;
-  };
-
-  // 快速滚动到元素（使用自定义动画；仅在元素超出可视区域时滚动，避免每次都居中导致视线跳动）
-  const scrollToElementFast = (element: HTMLElement) => {
-    // 找到可滚动的容器
-    // 注意：BookDetailsPage 在“章节已选择”时，真实滚动容器通常是 `.chapter-content-panel`，
-    // 而不是外层的 `.scrollable-content`。因此这里优先从元素向上查找最近的滚动容器。
-    const findScrollContainer = (): HTMLElement | null => {
-      // 1) 优先使用章节内容面板（章节页段落列表的真实滚动容器）
-      try {
-        const closestFn = (element as unknown as { closest?: (selector: string) => Element | null })
-          .closest;
-        if (typeof closestFn === 'function') {
-          const chapterPanel = closestFn.call(element, '.chapter-content-panel') as HTMLElement | null;
-          if (chapterPanel) return chapterPanel;
-        }
-      } catch {
-        // 忽略 closest 不存在或调用失败（例如在单元测试 stub 中）
-      }
-
-      // 2) 退回到外层传入的容器（用于非 split 布局或未来调整）
-      const refContainer = scrollableContentRef.value;
-      if (refContainer) return refContainer;
-
-      // 3) 最后再兜底：从元素向上找第一个可滚动祖先
-      let cur: HTMLElement | null = element.parentElement;
-      while (cur && cur !== document.body) {
-        try {
-          const style = window.getComputedStyle(cur);
-          const overflowY = style.overflowY;
-          const isScrollable = (overflowY === 'auto' || overflowY === 'scroll') && cur.scrollHeight > cur.clientHeight;
-          if (isScrollable) return cur;
-        } catch {
-          // 忽略计算样式失败的情况
-        }
-        cur = cur.parentElement;
-      }
-      return null;
-    };
-
-    const scrollContainer = findScrollContainer();
-    if (!scrollContainer) {
-      // 如果没有找到容器，回退到 window 滚动
-      element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      return;
-    }
-
-    const elementRect = element.getBoundingClientRect();
-    const containerRect = scrollContainer.getBoundingClientRect();
-
-    // 计算元素相对于容器的位置
-    const elementTopRelativeToContainer =
-      elementRect.top - containerRect.top + scrollContainer.scrollTop;
-    const elementHeight = elementRect.height;
-    const containerHeight = containerRect.height;
-
-    // 计算“最小滚动”目标：只在元素超出可视区域时滚动，并预留一定缓冲区
-    const marginPx = Math.round(Math.min(120, Math.max(24, containerHeight * 0.15)));
-    const targetScrollY = computeRevealScrollTop({
-      elementTop: elementTopRelativeToContainer,
-      elementHeight,
-      containerHeight,
-      currentScrollTop: scrollContainer.scrollTop,
-      marginPx,
-    });
-
-    // 元素已经在可视范围内，不滚动
-    if (targetScrollY === null) {
-      return;
-    }
-
-    const now = Date.now();
-    const isRapidRepeat = now - lastScrollRequestAt < 60;
-    lastScrollRequestAt = now;
-
-    // 统一用“单一持续动画”追踪目标：按住键时只更新目标，不会冻结也不会跳
-    activeScrollContainer = scrollContainer;
-    activeScrollTargetTop = targetScrollY;
-
-    // 连发时不重新启动循环（避免频繁 cancel），只更新目标；首次/非连发则启动
-    if (!isRapidRepeat || activeScrollRafId === null) {
-      startScrollAnimationLoop();
-    }
-  };
 
   // 取消当前正在编辑的段落
   const cancelCurrentEditing = () => {
@@ -354,22 +273,8 @@ export function useParagraphNavigation(
   };
 
   const scrollAndFocusParagraph = (paragraphId: string, scroll: boolean) => {
-    const cardRef = paragraphCardRefs.get(paragraphId);
-    if (cardRef) {
-      const element =
-        (cardRef as { $el?: HTMLElement }).$el || (cardRef as unknown as HTMLElement);
-      if (element instanceof HTMLElement) {
-        if (scroll) scrollToElementFast(element);
-        focusParagraphElement(element);
-      }
-      return;
-    }
-    nextTick(() => {
-      const element = document.getElementById(`paragraph-${paragraphId}`);
-      if (!element) return;
-      if (scroll) scrollToElementFast(element);
-      focusParagraphElement(element);
-    });
+    const index = selectedChapterParagraphs.value.findIndex((p) => p.id === paragraphId);
+    revealParagraph(index, paragraphId, (el) => focusParagraphElement(el), scroll);
   };
 
   // 导航到指定段落（跳过空段落）
@@ -492,29 +397,40 @@ export function useParagraphNavigation(
   const startEditingSelectedParagraph = () => {
     if (selectedParagraphIndex.value === null || !selectedChapterParagraphs.value.length) return;
 
-    const paragraph = selectedChapterParagraphs.value[selectedParagraphIndex.value];
-    if (paragraph) {
-      // 如果已经有其他段落在编辑，先取消它
-      if (
-        currentlyEditingParagraphId.value !== null &&
-        currentlyEditingParagraphId.value !== paragraph.id
-      ) {
-        cancelCurrentEditing();
-      }
+    const index = selectedParagraphIndex.value;
+    const paragraph = selectedChapterParagraphs.value[index];
+    if (!paragraph) return;
 
-      const cardRef = paragraphCardRefs.get(paragraph.id);
-      if (cardRef) {
-        if (typeof (cardRef as { startEditing?: () => void }).startEditing === 'function') {
+    // 如果已经有其他段落在编辑，先取消它
+    if (
+      currentlyEditingParagraphId.value !== null &&
+      currentlyEditingParagraphId.value !== paragraph.id
+    ) {
+      cancelCurrentEditing();
+    }
+
+    // 虚拟化下目标段落可能不在 DOM：先滚动入视、挂载后再命令式开始编辑
+    revealParagraph(
+      index,
+      paragraph.id,
+      () => {
+        const cardRef = paragraphCardRefs.get(paragraph.id);
+        if (
+          cardRef &&
+          typeof (cardRef as { startEditing?: () => void }).startEditing === 'function'
+        ) {
           currentlyEditingParagraphId.value = paragraph.id;
           (cardRef as { startEditing: () => void }).startEditing();
         }
-      }
-    }
+      },
+      true,
+    );
   };
 
   // 清理所有 timeout（用于组件卸载时）
   const cleanup = () => {
     clearAllNavigationTimeouts();
+    invalidatePendingReveal();
   };
 
   return {
@@ -531,7 +447,6 @@ export function useParagraphNavigation(
     resetParagraphNavigation,
     getNonEmptyParagraphIndices,
     findNextNonEmptyParagraph,
-    scrollToElementFast,
     navigateToParagraph,
     handleParagraphClick,
     cancelCurrentEditing,

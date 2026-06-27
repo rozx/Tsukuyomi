@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import VolumesList from 'src/components/novel/VolumesList.vue';
@@ -13,10 +13,19 @@ import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
+import type { ChapterScrollToIndex } from 'src/composables/book-details/useChapterVirtualizer';
 import { useUiStore } from 'src/stores/ui';
 
 const ctx = injectBookDetailsPage();
 const ui = useUiStore();
+
+// 章节内容面板组件 ref：挂载后把其 scrollToParagraphIndex 注册到页面上下文，供键盘导航/搜索按索引滚动。
+// 用具体的 exposed 接口而非 InstanceType<typeof ChapterContentPanel>（后者在泛型 SFC 下会退化为 any，
+// 触发 eslint no-redundant-type-constituents）。
+const chapterPanelRef = ref<{ scrollToParagraphIndex: ChapterScrollToIndex } | null>(null);
+watch(chapterPanelRef, (comp) => {
+  ctx.registerChapterScroller(comp ? (index, options) => comp.scrollToParagraphIndex(index, options) : null);
+});
 
 const settingsShellRef = ref<HTMLElement | null>(null);
 
@@ -496,6 +505,9 @@ const settingContextMeta = computed(() => {
           tabindex="-1"
         >
           <ChapterContentPanel
+            ref="chapterPanelRef"
+            :scroll-element="ctx.chapterContentPanelRef.value"
+            :currently-editing-paragraph-id="ctx.currentlyEditingParagraphId.value"
             :selected-chapter="ctx.selectedChapter.value"
             :selected-chapter-with-content="ctx.selectedChapterWithContent.value"
             :selected-chapter-paragraphs="ctx.selectedChapterParagraphs.value"
@@ -1000,12 +1012,31 @@ const settingContextMeta = computed(() => {
   min-height: 0;
 }
 
-.chapter-content-panel:focus {
+/* 鼠标/触摸/程序化聚焦不显示蓝色焦点框；保留键盘 :focus-visible 的轻量焦点指示以维持可访问性 */
+.chapter-content-panel:focus:not(:focus-visible) {
   outline: none;
+}
+
+.chapter-content-panel:focus-visible {
+  outline: 2px solid var(--tsukuyomi-opacity-40);
+  outline-offset: -2px;
+}
+
+/* 隐藏原生滚动条：章节内容改用自定义索引驱动滚动条（Teleport 到 .page-container）。
+   滚动仍由滚轮/键盘/触控驱动，仅隐藏原生滑块，避免其在虚拟化下与光标失同步。 */
+.chapter-content-panel {
+  scrollbar-width: none; /* Firefox */
+}
+
+.chapter-content-panel::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .page-container {
   padding: 1rem 1.25rem;
+  /* 作为自定义滚动条 Teleport 的定位锚点 */
+  position: relative;
 }
 
 .no-chapter-selected {

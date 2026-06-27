@@ -32,6 +32,8 @@ declare module 'vue' {
     BatchEmbeddingsTestQueryDialog: typeof import('./components/dialogs/BatchEmbeddingsTestQueryDialog.vue')['default']
     BookDialog: typeof import('./components/dialogs/BookDialog.vue')['default']
     ChapterContentPanel: typeof import('./components/novel/ChapterContentPanel.vue')['default']
+    ChapterParagraphRow: typeof import('./components/novel/ChapterParagraphRow.vue')['default']
+    ChapterScrollbar: typeof import('./components/novel/ChapterScrollbar.vue')['default']
     ChapterSettingsBody: typeof import('./components/novel/ChapterSettingsBody.vue')['default']
     ChapterSettingsPopover: typeof import('./components/novel/ChapterSettingsPopover.vue')['default']
     ChapterToolbar: typeof import('./components/novel/ChapterToolbar.vue')['default']

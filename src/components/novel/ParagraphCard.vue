@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted, nextTick } from 'vue';
+import { computed, ref, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue';
 import Popover from 'primevue/popover';
 import Inplace from 'primevue/inplace';
 import Skeleton from 'primevue/skeleton';
@@ -28,6 +28,10 @@ const props = defineProps<{
   chapterId?: string;
   id?: string;
   selected?: boolean;
+  // 可选：「编辑草稿」表（段落 id → 未保存译文）。仅虚拟滚动的章节列表会传入。
+  // 编辑中段落被滚出虚拟窗口会卸载、滚回会重挂载（跨父级，实例不复用），
+  // 借此在卸载前暂存未保存文本、重挂载时恢复编辑态，避免编辑内容丢失。
+  editDraftStore?: Map<string, string>;
 }>();
 
 const emit = defineEmits<{
@@ -372,6 +376,8 @@ const handleParagraphMouseEnter = () => {
 // 翻译编辑状态
 const editingTranslationValue = ref('');
 const isEditingTranslation = ref(false);
+// 重挂载恢复编辑态时，待写回的草稿值（让 onTranslationOpen 用它而非已保存的 rawTranslationText 初始化）
+const pendingRestoreDraft = ref<string | null>(null);
 const translationTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
 const translationInplaceRef = ref<InstanceType<typeof Inplace> | null>(null);
 const translationDisplayRef = ref<HTMLElement | null>(null);
@@ -533,8 +539,9 @@ const handleTranslationDisplayClick = (event: MouseEvent) => {
 
 // 开始编辑翻译
 const onTranslationOpen = () => {
-  // 使用原始翻译文本初始化编辑器，避免格式化后的文本被保存到数据库
-  editingTranslationValue.value = rawTranslationText.value;
+  // 恢复重挂载草稿时用草稿值；否则用原始翻译文本初始化（避免格式化后的文本被保存到数据库）
+  editingTranslationValue.value = pendingRestoreDraft.value ?? rawTranslationText.value;
+  pendingRestoreDraft.value = null;
   isEditingTranslation.value = true;
   // 通知父组件开始编辑
   emit('paragraph-edit-start', props.paragraph.id);
@@ -586,6 +593,8 @@ const onTranslationClose = () => {
     emit('update-translation', props.paragraph.id, editingTranslationValue.value);
   }
   isEditingTranslation.value = false;
+  // 编辑结束，清除暂存草稿（apply / cancel / Esc / 失焦都经此关闭路径）
+  props.editDraftStore?.delete(props.paragraph.id);
   // 通知父组件停止编辑
   emit('paragraph-edit-stop', props.paragraph.id);
 };
@@ -840,6 +849,34 @@ const openTranslationHistory = () => {
 const handleDialogSelectTranslation = (translationId: string) => {
   emit('select-translation', props.paragraph.id, translationId);
 };
+
+// 编辑中实时把草稿同步到 editDraftStore：钉住实例（滚出窗口后仍持有焦点）继续输入时也持续更新，
+// 否则滚回窗口时新实例的 onMounted 会先读到旧草稿、旧钉住实例的 onBeforeUnmount 后写入，导致最新输入回退。
+watch(editingTranslationValue, (draft) => {
+  if (isEditingTranslation.value) {
+    props.editDraftStore?.set(props.paragraph.id, draft);
+  }
+});
+
+// 卸载前兜底暂存未保存编辑：编辑中段落被虚拟滚动卸载（滚出窗口）时，把当前草稿写入父级 editDraftStore，
+// 以便重挂载（滚回 / 切到钉住层）后恢复，避免本地编辑态随实例销毁而丢失（实时 watch 之外的兜底）。
+onBeforeUnmount(() => {
+  if (isEditingTranslation.value && props.editDraftStore) {
+    props.editDraftStore.set(props.paragraph.id, editingTranslationValue.value);
+  }
+});
+
+// 重挂载后恢复编辑态：若父级 editDraftStore 中存有本段落的草稿，则自动重新进入编辑并写回草稿。
+onMounted(() => {
+  if (!props.editDraftStore || !hasTranslation.value) return;
+  const draft = props.editDraftStore.get(props.paragraph.id);
+  if (draft === undefined) return;
+  pendingRestoreDraft.value = draft;
+  // 等 Inplace 的 display 区域挂好后再触发进入编辑（onTranslationOpen 会用 pendingRestoreDraft 初始化）
+  void nextTick(() => {
+    if (pendingRestoreDraft.value !== null) enterTranslationEditingByClick();
+  });
+});
 
 // 组件卸载时清理临时元素
 onUnmounted(() => {

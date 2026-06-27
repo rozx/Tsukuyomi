@@ -1,14 +1,65 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted, nextTick, watch } from 'vue';
 import ProgressSpinner from 'primevue/progressspinner';
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
+import ChapterScrollbar from 'src/components/novel/ChapterScrollbar.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
-import type { Chapter, Volume } from 'src/models/novel';
+import { useChapterVirtualizer } from 'src/composables/book-details/useChapterVirtualizer';
+import type { Chapter, Volume, Paragraph } from 'src/models/novel';
 
 const ctx = injectBookDetailsPage();
+
+// 移动端 .mbr-p 段落列表虚拟滚动（性能优化；无内联编辑/键盘导航/搜索，故无需钉住与索引导航）。
+// 滚动容器即 .mbr-scroll（已由 ctx.setChapterContentPanelRef 持有）。
+const mbrScrollMargin = ref(0);
+const mbrListStartRef = ref<HTMLElement | null>(null);
+const {
+  virtualRows: mbrVirtualRows,
+  spacerSize: mbrSpacerSize,
+  blockStart: mbrBlockStart,
+  measureElement: mbrMeasureElement,
+  scrollbarModel: mbrScrollbarModel,
+  scrollToFraction: mbrScrollToFraction,
+} = useChapterVirtualizer({
+  scrollElement: ctx.chapterContentPanelRef,
+  paragraphs: ctx.selectedChapterParagraphs,
+  mode: 'mobile',
+  scrollMargin: mbrScrollMargin,
+  overscan: 6,
+  getTranslationText: (p) => ctx.getParagraphTranslationText(p),
+});
+
+// 把虚拟行与其段落配对，模板仍可直接用 p / index（§ 序号用真实索引）
+const mbrRenderRows = computed(() => {
+  const paras = ctx.selectedChapterParagraphs.value;
+  const out: Array<{ index: number; key: string; p: Paragraph }> = [];
+  for (const row of mbrVirtualRows.value) {
+    const p = paras[row.index];
+    if (p) out.push({ index: row.index, key: p.id, p });
+  }
+  return out;
+});
+
+const recomputeMbrScrollMargin = () => {
+  const sc = ctx.chapterContentPanelRef.value;
+  const sentinel = mbrListStartRef.value;
+  if (!sc || !sentinel) return;
+  const next = Math.max(
+    0,
+    Math.round(
+      sentinel.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop,
+    ),
+  );
+  if (next !== mbrScrollMargin.value) mbrScrollMargin.value = next;
+};
+onMounted(() => void nextTick(recomputeMbrScrollMargin));
+watch(
+  () => ctx.selectedChapterId.value,
+  () => void nextTick(recomputeMbrScrollMargin),
+);
 
 // 阅读器内的"章节目录"按钮在手机端改为底部抽屉 picker：
 // 旧行为会调用 onNavigateToChapterList() 强制 setSelectedChapter(null) ，
@@ -130,7 +181,9 @@ const runChapterMove = (direction: 'up' | 'down') => {
           />
         </div>
         <div class="mbd-hero-body">
-          <div v-if="ctx.book.value.author" class="mbd-hero-author">{{ ctx.book.value.author }}</div>
+          <div v-if="ctx.book.value.author" class="mbd-hero-author">
+            {{ ctx.book.value.author }}
+          </div>
           <h1 class="mbd-hero-title">{{ ctx.book.value.title }}</h1>
           <div v-if="ctx.book.value.tags?.length" class="mbd-hero-badges">
             <span v-for="tag in ctx.book.value.tags.slice(0, 3)" :key="tag" class="mbd-badge">
@@ -335,11 +388,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
 
   <!-- 手机端 · 阅读页顶部 app bar -->
   <header v-if="ctx.selectedChapter.value" class="mbd-appbar mbd-appbar--reader">
-    <button
-      class="mbd-icon-btn"
-      aria-label="返回书籍详情"
-      @click="ctx.onNavigateToChapterList"
-    >
+    <button class="mbd-icon-btn" aria-label="返回书籍详情" @click="ctx.onNavigateToChapterList">
       <i class="pi pi-chevron-left" aria-hidden="true" />
     </button>
     <div class="mbd-appbar-text">
@@ -350,7 +399,8 @@ const runChapterMove = (direction: 'up' | 'down') => {
         }}
       </div>
       <div class="mbd-appbar-sub">
-        {{ ctx.book.value?.title }}<template v-if="ctx.mobileReaderStats.value.total > 0">
+        {{ ctx.book.value?.title
+        }}<template v-if="ctx.mobileReaderStats.value.total > 0">
           ·
           {{
             Math.round(
@@ -391,10 +441,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
           :class="ctx.mobileBatchBusy.value ? 'pi-spin pi-spinner' : 'pi-objects-column'"
           aria-hidden="true"
         />
-        <span
-          v-if="ctx.activeTranslationTaskCount.value > 0"
-          class="mbr-strip-icon-badge"
-        >
+        <span v-if="ctx.activeTranslationTaskCount.value > 0" class="mbr-strip-icon-badge">
           {{ ctx.activeTranslationTaskCount.value }}
         </span>
       </button>
@@ -415,84 +462,113 @@ const runChapterMove = (direction: 'up' | 'down') => {
       </button>
     </div>
 
-    <!-- 段落列表 -->
-    <div
-      :ref="ctx.setChapterContentPanelRef"
-      class="mbr-scroll"
-      :class="{ 'mbr-scroll--with-actionbar': !!ctx.mobileSelectedParagraphId.value }"
-    >
-      <div v-if="ctx.isLoadingChapterContent.value" class="mbr-state">
-        <ProgressSpinner
-          style="width: 28px; height: 28px"
-          stroke-width="4"
-          animation-duration=".8s"
-          aria-label="加载中"
-        />
-        <span>加载章节内容…</span>
+    <!-- 段落列表（外层 wrap 为非滚动定位锚点，使自定义滚动条只覆盖正文滚动区、不延伸到状态条） -->
+    <div class="mbr-scroll-wrap">
+      <div
+        :ref="ctx.setChapterContentPanelRef"
+        class="mbr-scroll"
+        :class="{ 'mbr-scroll--with-actionbar': !!ctx.mobileSelectedParagraphId.value }"
+      >
+        <div v-if="ctx.isLoadingChapterContent.value" class="mbr-state">
+          <ProgressSpinner
+            style="width: 28px; height: 28px"
+            stroke-width="4"
+            animation-duration=".8s"
+            aria-label="加载中"
+          />
+          <span>加载章节内容…</span>
+        </div>
+        <template v-else>
+          <!-- 空章节状态 -->
+          <div v-if="ctx.selectedChapterParagraphs.value.length === 0" class="mbr-state">
+            <i class="pi pi-inbox" aria-hidden="true" />
+            <span>本章暂无段落</span>
+          </div>
+
+          <!-- 段落列表虚拟滚动 · block translation -->
+          <div
+            v-else
+            ref="mbrListStartRef"
+            class="vlist-spacer"
+            :style="{ height: `${mbrSpacerSize}px` }"
+          >
+            <div class="vlist-window" :style="{ transform: `translateY(${mbrBlockStart}px)` }">
+              <div
+                v-for="{ index, key, p } in mbrRenderRows"
+                :key="key"
+                :ref="mbrMeasureElement"
+                :data-index="index"
+                class="mbr-p"
+                :class="{ selected: ctx.mobileSelectedParagraphId.value === p.id }"
+                @click="
+                  ctx.mobileSelectedParagraphId.value =
+                    ctx.mobileSelectedParagraphId.value === p.id ? null : p.id
+                "
+              >
+                <!-- Meta row -->
+                <div class="mbr-p-meta">
+                  <span class="mbr-p-num">§ {{ String(index + 1).padStart(3, '0') }}</span>
+                  <template v-if="ctx.translatingParagraphIds.value.has(p.id)">
+                    <span class="mbr-badge mbr-badge-blue">
+                      <i class="pi pi-spin pi-spinner" aria-hidden="true" />翻译中…
+                    </span>
+                  </template>
+                  <template v-else-if="ctx.polishingParagraphIds.value.has(p.id)">
+                    <span class="mbr-badge mbr-badge-blue">
+                      <i class="pi pi-spin pi-spinner" aria-hidden="true" />润色中…
+                    </span>
+                  </template>
+                  <template v-else-if="ctx.proofreadingParagraphIds.value.has(p.id)">
+                    <span class="mbr-badge mbr-badge-blue">
+                      <i class="pi pi-spin pi-spinner" aria-hidden="true" />校对中…
+                    </span>
+                  </template>
+                  <template v-else-if="(p.translations?.length ?? 0) > 0">
+                    <i class="pi pi-sparkles mbr-p-meta-ai" aria-hidden="true" />
+                    <span v-if="ctx.getParagraphModelName(p)">{{
+                      ctx.getParagraphModelName(p)
+                    }}</span>
+                  </template>
+                  <!-- 空段 / 待翻译 状态不再展示徽章，仅以 §编号 标注段落位置 -->
+                </div>
+
+                <!-- Original -->
+                <div v-if="(p.text ?? '').trim().length > 0" class="mbr-p-ja">{{ p.text }}</div>
+
+                <!-- Translation -->
+                <div v-if="ctx.getParagraphTranslationText(p)" class="mbr-p-zh">
+                  {{ ctx.getParagraphTranslationText(p) }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Prev / Next chapter -->
+          <div class="mbr-chapter-nav">
+            <button
+              class="mbr-nav-btn"
+              :disabled="!ctx.prevChapter.value"
+              @click="ctx.prevChapter.value && ctx.onNavigateToChapter(ctx.prevChapter.value)"
+            >
+              <i class="pi pi-chevron-left" aria-hidden="true" />上一章
+            </button>
+            <button
+              class="mbr-nav-btn"
+              :disabled="!ctx.nextChapter.value"
+              @click="ctx.nextChapter.value && ctx.onNavigateToChapter(ctx.nextChapter.value)"
+            >
+              下一章<i class="pi pi-chevron-right" aria-hidden="true" />
+            </button>
+          </div>
+        </template>
       </div>
-      <template v-else>
-        <div
-          v-for="(p, idx) in ctx.selectedChapterParagraphs.value"
-          :key="p.id"
-          class="mbr-p"
-          :class="{ selected: ctx.mobileSelectedParagraphId.value === p.id }"
-          @click="
-            ctx.mobileSelectedParagraphId.value =
-              ctx.mobileSelectedParagraphId.value === p.id ? null : p.id
-          "
-        >
-          <!-- Meta row -->
-          <div class="mbr-p-meta">
-            <span class="mbr-p-num">§ {{ String(idx + 1).padStart(3, '0') }}</span>
-            <template v-if="ctx.translatingParagraphIds.value.has(p.id)">
-              <span class="mbr-badge mbr-badge-blue">
-                <i class="pi pi-spin pi-spinner" aria-hidden="true" />翻译中…
-              </span>
-            </template>
-            <template v-else-if="ctx.polishingParagraphIds.value.has(p.id)">
-              <span class="mbr-badge mbr-badge-blue">
-                <i class="pi pi-spin pi-spinner" aria-hidden="true" />润色中…
-              </span>
-            </template>
-            <template v-else-if="ctx.proofreadingParagraphIds.value.has(p.id)">
-              <span class="mbr-badge mbr-badge-blue">
-                <i class="pi pi-spin pi-spinner" aria-hidden="true" />校对中…
-              </span>
-            </template>
-            <template v-else-if="(p.translations?.length ?? 0) > 0">
-              <i class="pi pi-sparkles mbr-p-meta-ai" aria-hidden="true" />
-              <span v-if="ctx.getParagraphModelName(p)">{{ ctx.getParagraphModelName(p) }}</span>
-            </template>
-            <!-- 空段 / 待翻译 状态不再展示徽章，仅以 §编号 标注段落位置 -->
-          </div>
 
-          <!-- Original -->
-          <div v-if="(p.text ?? '').trim().length > 0" class="mbr-p-ja">{{ p.text }}</div>
-
-          <!-- Translation -->
-          <div v-if="ctx.getParagraphTranslationText(p)" class="mbr-p-zh">
-            {{ ctx.getParagraphTranslationText(p) }}
-          </div>
-        </div>
-
-        <!-- Prev / Next chapter -->
-        <div class="mbr-chapter-nav">
-          <button
-            class="mbr-nav-btn"
-            :disabled="!ctx.prevChapter.value"
-            @click="ctx.prevChapter.value && ctx.onNavigateToChapter(ctx.prevChapter.value)"
-          >
-            <i class="pi pi-chevron-left" aria-hidden="true" />上一章
-          </button>
-          <button
-            class="mbr-nav-btn"
-            :disabled="!ctx.nextChapter.value"
-            @click="ctx.nextChapter.value && ctx.onNavigateToChapter(ctx.nextChapter.value)"
-          >
-            下一章<i class="pi pi-chevron-right" aria-hidden="true" />
-          </button>
-        </div>
-      </template>
+      <!-- 自定义索引驱动滚动条（Teleport 到 .mbr-scroll-wrap，仅覆盖正文滚动区，不延伸到状态条/操作栏） -->
+      <ChapterScrollbar
+        :model="mbrScrollbarModel"
+        teleport-to=".mbr-scroll-wrap"
+        :scroll-to-fraction="mbrScrollToFraction"
+      />
     </div>
 
     <!-- Floating action bar for selected paragraph -->
@@ -1349,13 +1425,34 @@ const runChapterMove = (direction: 'up' | 'down') => {
   border-radius: 999px;
 }
 
+/* 非滚动定位锚点：精确包住正文滚动区，作为自定义滚动条的 Teleport 目标 */
+.mbr-scroll-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .mbr-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px 14px 32px;
+  /* 右侧预留 22px 走廊给自定义滚动条，避免滑块压在正文上 */
+  padding: 14px 22px 32px 14px;
   scrollbar-width: none;
   transition: padding-bottom 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 隐藏 Chrome 键盘可聚焦滚动容器的蓝色焦点框（鼠标/触摸/程序化聚焦时），
+   但保留键盘 :focus-visible 的轻量焦点指示以维持可访问性（与桌面 .chapter-content-panel 一致） */
+.mbr-scroll:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.mbr-scroll:focus-visible {
+  outline: 2px solid var(--tsukuyomi-opacity-40);
+  outline-offset: -2px;
 }
 
 /* 选中段落时 actionbar 浮现，留出空间避免遮挡最后一段正文 */
@@ -1365,6 +1462,19 @@ const runChapterMove = (direction: 'up' | 'down') => {
 
 .mbr-scroll::-webkit-scrollbar {
   width: 0;
+}
+
+/* 虚拟滚动：spacer 撑出全列表高度，window 用 block translation 单一平移 */
+.vlist-spacer {
+  position: relative;
+  width: 100%;
+}
+
+.vlist-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
 }
 
 .mbr-state {
@@ -1453,7 +1563,11 @@ const runChapterMove = (direction: 'up' | 'down') => {
 }
 
 .mbr-p-zh {
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   font-size: 15px;
   line-height: 1.8;
   /* token: moon-50 @ 96% */
