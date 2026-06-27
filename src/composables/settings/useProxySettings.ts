@@ -17,7 +17,9 @@ export type ProxySettingsContext = ReturnType<typeof createProxySettingsContext>
 
 const PROXY_SETTINGS_KEY: InjectionKey<ProxySettingsContext> = Symbol('proxy-settings');
 
-function createProxySettingsContext() {
+// 导出以便单测直接构造（驱动 confirmEditSiteMapping 的回滚路径）；运行时仍通过
+// provideProxySettings / injectProxySettings 使用。
+export function createProxySettingsContext() {
   const settingsStore = useSettingsStore();
   const toast = useToastWithHistory();
 
@@ -205,7 +207,8 @@ function createProxySettingsContext() {
   const replaceSiteProxies = async (site: string, currentProxies: string[], nextProxies: string[]) => {
     const original = [...currentProxies];
     try {
-      for (const proxyUrl of currentProxies) {
+      // 用快照遍历，避免 store 原地更新代理数组导致漏删
+      for (const proxyUrl of original) {
         await settingsStore.removeProxyForSite(site, proxyUrl);
       }
       const proxiesToAdd = nextProxies.slice(0, 3);
@@ -221,12 +224,25 @@ function createProxySettingsContext() {
 
   // 把网站映射的代理列表恢复为 desiredProxies（用于回滚）。先移除当前残留再逐个加回。
   const restoreSiteProxies = async (site: string, desiredProxies: string[]) => {
-    const leftover = settingsStore.getProxiesForSite(site);
+    // 快照当前残留，避免遍历途中被 store 原地修改而漏删
+    const leftover = [...settingsStore.getProxiesForSite(site)];
     for (const proxyUrl of leftover) {
       await settingsStore.removeProxyForSite(site, proxyUrl);
     }
     for (const proxyUrl of desiredProxies.slice(0, 3)) {
       await settingsStore.addProxyForSite(site, proxyUrl);
+    }
+  };
+
+  // 提取可读错误消息：Error 取 message，字符串原样，其余尝试 JSON 序列化，
+  // 避免对象被 String() 压成 '[object Object]'（同时满足 no-base-to-string）。
+  const formatErrorMessage = (err: unknown): string => {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return '未知错误';
     }
   };
 
@@ -238,16 +254,25 @@ function createProxySettingsContext() {
     originalEnabled: boolean,
     err: unknown,
   ) => {
+    // 回滚启用状态的失败不再静默吞掉，并入同一个 Toast 通道一并提示
+    let rollbackError: unknown = null;
     if (enabledChanged) {
-      await settingsStore.setProxySiteMappingEnabled(site, originalEnabled).catch((rollbackErr) => {
+      try {
+        await settingsStore.setProxySiteMappingEnabled(site, originalEnabled);
+      } catch (rollbackErr) {
+        rollbackError = rollbackErr;
         console.error('[useProxySettings] 回滚启用状态失败:', rollbackErr);
-      });
+      }
     }
     console.error('[useProxySettings] 更新代理映射失败:', err);
+    const detail =
+      rollbackError !== null
+        ? `${formatErrorMessage(err)}；回滚启用状态也失败：${formatErrorMessage(rollbackError)}`
+        : formatErrorMessage(err);
     toast.add({
       severity: 'error',
       summary: '映射更新失败',
-      detail: err instanceof Error ? err.message : String(err),
+      detail,
       life: 5000,
     });
   };

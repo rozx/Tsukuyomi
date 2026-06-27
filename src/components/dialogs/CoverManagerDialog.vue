@@ -31,15 +31,29 @@ const showUrlInput = ref(false);
 const selectedCoverId = ref<string | null>(null);
 const coverImageInfo = ref<{ width: number; height: number; size?: number } | null>(null);
 
-// 所有封面历史记录
-const allCovers = computed(() => coverHistoryStore.allCovers);
+// 封面 URL 协议白名单：仅放行 http/https，拦截 javascript:/data:/file: 等危险协议。
+// 不只校验新输入，也用于过滤历史记录与 props.cover —— 旧数据里的危险协议同样不能进入
+// selectedCover 被子组件渲染到 <img :src> / <a :href>。
+const isSupportedCoverUrl = (value: string): boolean => {
+  try {
+    const parsedUrl = new URL(value);
+    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+// 所有封面历史记录（过滤掉协议不受支持的旧数据）
+const allCovers = computed(() =>
+  coverHistoryStore.allCovers.filter((cover) => isSupportedCoverUrl(cover.url)),
+);
 
 // 当前选中的封面
 const selectedCover = computed(() => {
   if (selectedCoverId.value) {
     return allCovers.value.find((c) => c.id === selectedCoverId.value) || null;
   }
-  return props.cover || null;
+  return props.cover && isSupportedCoverUrl(props.cover.url) ? props.cover : null;
 });
 
 // 上传按钮文案

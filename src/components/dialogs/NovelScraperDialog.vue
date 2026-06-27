@@ -568,10 +568,11 @@ const selectedChapterError = computed(() => {
 
 // 计算章节字符数
 const getChapterWordCount = (chapterId: string): number | null => {
-  const content = chapterContents.value.get(chapterId);
-  if (!content) {
+  // 用 has() 判断是否已加载：空字符串是合法的抓取结果（空章节字数为 0，而非「未加载」的 null）
+  if (!chapterContents.value.has(chapterId)) {
     return null;
   }
+  const content = chapterContents.value.get(chapterId) ?? '';
   // 直接使用字符串长度计算字符数（包括所有字符，包括空格和换行符）
   return content.length;
 };
@@ -772,11 +773,13 @@ const fetchSelectedChaptersContent = async (chapters: Chapter[]) => {
 
 // 将已加载内容的章节转换为带段落数组的章节；无内容时原样返回
 const mapChapterWithContent = (chapter: Chapter): Chapter => {
-  const content = chapterContents.value.get(chapter.id);
-  if (!content) return chapter;
+  // 用 has() 判断已加载：抓取成功但内容为空（空字符串）的章节也应视为已加载，
+  // 而非回退到原始 chapter（否则空章节会被当作未抓取）。
+  if (!chapterContents.value.has(chapter.id)) return chapter;
+  const content = chapterContents.value.get(chapter.id) ?? '';
   // 使用 ChapterService 将内容转换为段落数组
   const paragraphs = ChapterService.convertContentToParagraphs(content);
-  return { ...chapter, content: paragraphs.length > 0 ? paragraphs : undefined };
+  return { ...chapter, content: paragraphs };
 };
 
 // 过滤卷内被选中的章节，无选中章节的卷返回 null
@@ -843,7 +846,19 @@ const handleApply = async () => {
 
   // 如果有章节需要加载内容，先批量加载（即使已导入也要重新获取）
   if (chaptersNeedingContent.length > 0) {
-    await fetchSelectedChaptersContent(chaptersNeedingContent);
+    // 批量请求本身可能整体 reject（网络/解析异常），此处兜底，避免未处理异常且无提示
+    try {
+      await fetchSelectedChaptersContent(chaptersNeedingContent);
+    } catch (error) {
+      console.error('[NovelScraperDialog] 批量抓取章节失败:', error);
+      toast.add({
+        severity: 'error',
+        summary: '导入失败',
+        detail: error instanceof Error ? error.message : '批量抓取章节时发生未知错误',
+        life: 4000,
+      });
+      return;
+    }
 
     // 若有章节抓取失败（记录在 chapterErrors 中），则中止导入：
     // 否则失败章节会在 mapChapterWithContent 中回退原始 chapter，把部分失败伪装成成功
