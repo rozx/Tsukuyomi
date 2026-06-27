@@ -250,8 +250,12 @@ export function useChapterVirtualizer(opts: UseChapterVirtualizerOptions) {
       pinned,
     );
     if (extraIndex === null) return null;
+    // 钉住项的 translateY 偏移用 measurementsCache[extraIndex].start（item 的位置偏移），
+    // 与 blockStart / spacerSize 的 measurementsCache 写法一致。不要用 getOffsetForIndex(...)?.[0]——
+    // 它返回的是 [scrollOffset, itemOffset] 元组的 scrollOffset（建议滚动到的位置），并非 item 偏移，
+    // 两者语义不同会让钉住项错位。合法索引下 measurementsCache 恒已填充，缺失时回退 0。
     const cached = virtualizer.value.measurementsCache[extraIndex];
-    const start = cached?.start ?? virtualizer.value.getOffsetForIndex(extraIndex, 'start')?.[0] ?? 0;
+    const start = cached?.start ?? 0;
     return { index: extraIndex, start };
   });
 

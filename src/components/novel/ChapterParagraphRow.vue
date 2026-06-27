@@ -17,6 +17,8 @@ const props = defineProps<{
   selected: boolean;
   // 由父级持有、跨变体共享的 ParagraphCard 实例表（命令式编辑/聚焦用）
   paragraphCardRefs: Map<string, InstanceType<typeof ParagraphCard>>;
+  // 由父级持有的「编辑草稿」表（段落 id → 未保存译文），用于在虚拟滚动卸载/重挂载间保留编辑内容
+  editDraftStore?: Map<string, string>;
 }>();
 
 const emit = defineEmits<{
@@ -30,11 +32,19 @@ const emit = defineEmits<{
   (e: 'paragraph-edit-stop', paragraphId: string): void;
 }>();
 
+// 记住本实例注册到表里的 ParagraphCard，卸载时仅当表里仍是本实例才删除。
+// window↔pinned 切换时两处共用同一段落 id：滚回时 Vue 先 patch 窗口行（set 新实例）再卸载钉住行，
+// 无条件 delete 会把刚注册的窗口实例一并删掉，导致该段落从 paragraphCardRefs 丢失、命令式编辑失效。
+let registeredCard: InstanceType<typeof ParagraphCard> | null = null;
 const setCardRef = (el: unknown) => {
   if (el) {
-    props.paragraphCardRefs.set(props.paragraph.id, el as InstanceType<typeof ParagraphCard>);
+    registeredCard = el as InstanceType<typeof ParagraphCard>;
+    props.paragraphCardRefs.set(props.paragraph.id, registeredCard);
   } else {
-    props.paragraphCardRefs.delete(props.paragraph.id);
+    if (props.paragraphCardRefs.get(props.paragraph.id) === registeredCard) {
+      props.paragraphCardRefs.delete(props.paragraph.id);
+    }
+    registeredCard = null;
   }
 };
 </script>
@@ -50,6 +60,7 @@ const setCardRef = (el: unknown) => {
       v-bind="{
         ...(chapterId ? { chapterId } : {}),
         ...(bookId ? { bookId } : {}),
+        ...(editDraftStore ? { editDraftStore } : {}),
       }"
       :is-translating="isTranslating"
       :is-polishing="isPolishing"

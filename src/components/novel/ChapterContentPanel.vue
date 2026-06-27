@@ -201,6 +201,17 @@ const pinnedIndex = computed<number | null>(() => {
   return i >= 0 ? i : null;
 });
 
+// 「编辑草稿」表（段落 id → 未保存译文）：钉住行与窗口行是不同父级，编辑中段落跨窗口边界时会
+// 卸载旧实例 + 挂载新实例（Vue 不跨父级复用实例），本地编辑态随之销毁。借此在卸载前暂存草稿、
+// 重挂载时恢复，满足「编辑时滚离再滚回内容保留」。切换章节时清空，避免跨章残留草稿误触恢复。
+const editDraftStore = new Map<string, string>();
+watch(
+  () => props.selectedChapter?.id ?? null,
+  () => editDraftStore.clear(),
+  // post：等旧章节的卡片卸载（其 onBeforeUnmount 会写回草稿）之后再清，确保切章不残留草稿
+  { flush: 'post' },
+);
+
 // 列表起点相对滚动容器顶部的偏移（头部高度）。用 sentinel 实测，随头部高度变化更新。
 const scrollMargin = ref(0);
 const listStartRef = ref<HTMLElement | null>(null);
@@ -514,6 +525,7 @@ defineExpose({ scrollToParagraphIndex });
                 selectedParagraphIndex === row.index && (isKeyboardSelected || isClickSelected)
               "
               :paragraph-card-refs="paragraphCardRefs"
+              :edit-draft-store="editDraftStore"
               @update-translation="
                 (paragraphId: string, newTranslation: string) =>
                   emit('update-translation', paragraphId, newTranslation)
@@ -556,6 +568,7 @@ defineExpose({ scrollToParagraphIndex });
                 (isKeyboardSelected || isClickSelected)
               "
               :paragraph-card-refs="paragraphCardRefs"
+              :edit-draft-store="editDraftStore"
               @update-translation="
                 (paragraphId: string, newTranslation: string) =>
                   emit('update-translation', paragraphId, newTranslation)
