@@ -18,7 +18,7 @@ import type {
 
 export type { ChatMessageListBindings };
 
-interface ChatMessageListSource {
+export interface ChatMessageListSource {
   messages: Ref<ChatSessionMessage[]>;
   messageDisplayItemsById: Ref<Record<string, MessageDisplayItem[]>>;
   displayedThinkingProcess: Ref<Record<string, string>>;

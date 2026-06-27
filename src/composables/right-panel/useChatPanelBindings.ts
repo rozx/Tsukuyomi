@@ -11,42 +11,26 @@ import { useChatComposerState } from 'src/composables/right-panel/useChatCompose
 import { useChatActionPopovers } from 'src/composables/right-panel/useChatActionPopovers';
 import { useChatMessageListBindings } from 'src/composables/right-panel/useChatMessageListBindings';
 import type { ChatActionPopoverBindings } from 'src/composables/right-panel/useChatActionPopovers';
-import type { ChatMessageListBindings } from 'src/composables/right-panel/useChatMessageListBindings';
+import type {
+  ChatMessageListBindings,
+  ChatMessageListSource,
+} from 'src/composables/right-panel/useChatMessageListBindings';
 import type { Ref, ComputedRef } from 'vue';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
 import type { ActionDetailsContext } from 'src/utils/action-info-utils';
-import type {
-  MessageDisplayItem,
-  ActionHoverHandler,
-  GroupedActionHoverHandler,
-} from 'src/components/layout/chat-message-types';
 
 /**
  * 三个变体的 panel 来源（`useRightPanel` / `useChatPanelSetup`）共有的字段子集，
- * 加上 Desktop 自带的三个 bind 回调。仅声明聚合器会用到的字段。
+ * 加上 Desktop 自带的三个 bind 回调。消息列表相关字段直接复用
+ * `ChatMessageListSource`，避免与 `useChatMessageListBindings` 重复声明。
  */
-interface ChatPanelBindingsSource {
+interface ChatPanelBindingsSource extends ChatMessageListSource {
   assistantModel: Ref<AIModel | undefined>;
   isSending: Ref<boolean>;
   inputMessage: Ref<string>;
   sendMessage: () => void;
   stopGeneration: () => void;
-  messages: Ref<ChatSessionMessage[]>;
-  messageDisplayItemsById: Ref<Record<string, MessageDisplayItem[]>>;
-  displayedThinkingProcess: Ref<Record<string, string>>;
-  displayedThinkingPreview: Ref<Record<string, string>>;
-  thinkingExpanded: Ref<Map<string, boolean>>;
-  thinkingActive: Ref<Map<string, boolean>>;
-  setThinkingContentRef: (id: string, el: HTMLElement) => void;
-  toggleThinking: (id: string) => void;
-  renderMarkdown: (text: string) => string;
-  formatMessageTime: (timestamp: number) => string;
-  getChapterTitleForAction: (chapterId: string | undefined) => string | undefined;
-  toggleActionPopover: ActionHoverHandler;
-  handleActionMouseLeave: () => void;
-  toggleGroupedActionPopover: GroupedActionHoverHandler;
-  handleGroupedActionMouseLeave: () => void;
   hoveredAction: Ref<{ action: MessageAction; message: ChatSessionMessage } | null>;
   hoveredGroupedAction: Ref<{
     actions: MessageAction[];

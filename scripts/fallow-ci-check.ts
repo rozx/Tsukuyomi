@@ -38,22 +38,34 @@ function resolveBase(): string {
 
 const base = resolveBase();
 
-// 生成「base → 工作区」的统一 diff（含未提交改动），供 fallow 做行级 scoping。
-const diffPath = join(mkdtempSync(join(tmpdir(), 'fallow-ci-')), 'pr.diff');
-writeFileSync(diffPath, sh('git', ['diff', base]));
+// `git diff <base>` 与 `--changed-since` 默认都**看不到未跟踪新文件**，会漏检新文件里
+// 引入的重复/问题（CI 检出的是已提交 PR，能看到新文件）。先对未跟踪文件做 intent-to-add
+// （`git add -N`），让它们以「新增」形式进入 diff 与 changed-since 的文件发现；分析结束后
+// 再撤销标记，工作区内容与已暂存内容均不受影响。
+const untracked = sh('git', ['ls-files', '--others', '--exclude-standard'])
+  .split('\n')
+  .filter(Boolean);
 
-// 与 CI 一致：--changed-since 负责文件发现，--diff-file 负责行级（added/changed）过滤。
-const raw = sh('bunx', [
-  'fallow',
-  '--baseline',
-  '.fallow-baseline.json',
-  '--changed-since',
-  base,
-  '--diff-file',
-  diffPath,
-  '--format',
-  'json',
-]);
+const diffPath = join(mkdtempSync(join(tmpdir(), 'fallow-ci-')), 'pr.diff');
+let raw: string;
+if (untracked.length) sh('git', ['add', '-N', '--', ...untracked]);
+try {
+  writeFileSync(diffPath, sh('git', ['diff', base]));
+  // 与 CI 一致：--changed-since 负责文件发现，--diff-file 负责行级（added/changed）过滤。
+  raw = sh('bunx', [
+    'fallow',
+    '--baseline',
+    '.fallow-baseline.json',
+    '--changed-since',
+    base,
+    '--diff-file',
+    diffPath,
+    '--format',
+    'json',
+  ]);
+} finally {
+  if (untracked.length) sh('git', ['reset', '-q', '--', ...untracked]);
+}
 
 interface CloneInstance {
   file?: string;
