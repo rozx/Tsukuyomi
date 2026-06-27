@@ -850,8 +850,16 @@ const handleDialogSelectTranslation = (translationId: string) => {
   emit('select-translation', props.paragraph.id, translationId);
 };
 
-// 卸载前暂存未保存编辑：编辑中段落被虚拟滚动卸载（滚出窗口）时，把当前草稿写入父级 editDraftStore，
-// 以便重挂载（滚回 / 切到钉住层）后恢复，避免本地编辑态随实例销毁而丢失。
+// 编辑中实时把草稿同步到 editDraftStore：钉住实例（滚出窗口后仍持有焦点）继续输入时也持续更新，
+// 否则滚回窗口时新实例的 onMounted 会先读到旧草稿、旧钉住实例的 onBeforeUnmount 后写入，导致最新输入回退。
+watch(editingTranslationValue, (draft) => {
+  if (isEditingTranslation.value) {
+    props.editDraftStore?.set(props.paragraph.id, draft);
+  }
+});
+
+// 卸载前兜底暂存未保存编辑：编辑中段落被虚拟滚动卸载（滚出窗口）时，把当前草稿写入父级 editDraftStore，
+// 以便重挂载（滚回 / 切到钉住层）后恢复，避免本地编辑态随实例销毁而丢失（实时 watch 之外的兜底）。
 onBeforeUnmount(() => {
   if (isEditingTranslation.value && props.editDraftStore) {
     props.editDraftStore.set(props.paragraph.id, editingTranslationValue.value);
