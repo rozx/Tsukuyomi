@@ -144,5 +144,5 @@
 #### Scenario: 移动端也显示自定义滚动条
 
 - **WHEN** 在移动端打开长章节
-- **THEN** `.mbr-p` 列表右侧显示自定义滚动条（与桌面同一 `ChapterScrollbar` 组件，Teleport 到非滚动的 `.mobile-reader`）
+- **THEN** `.mbr-p` 列表右侧显示自定义滚动条（与桌面同一 `ChapterScrollbar` 组件，Teleport 到非滚动的 `.mbr-scroll-wrap`，仅覆盖正文滚动区、不延伸到状态条/操作栏）
 - **AND** 拖动滑块按比例滚动到对应段落；轨道穿透不拦截内容触摸滚动
