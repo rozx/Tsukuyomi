@@ -40,3 +40,11 @@
     color 150ms cubic-bezier(0.4, 0, 0.2, 1),
     border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* 平板侧轨按钮内的图标字号。原先写在 TabletSideRail 的 :slotted(.tsr-btn i)，但 :slotted()
+   命不中插槽根节点的后代，故下沉到此：调用方（BooksTabletSideRail / BookDetailsTablet）
+   以 scoped src 引入本文件，.tsr-btn i 即命中其自身按钮里的 <i>。RightPanelRail 不用 .tsr-btn，不受影响。 */
+.tsr-btn i {
+  font-size: 14px;
+  line-height: 1;
+}

@@ -8,7 +8,7 @@
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .untranslated-content {
@@ -27,6 +27,6 @@
   font-size: 0.9375rem;
   line-height: 1.8;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   font-style: italic;
 }

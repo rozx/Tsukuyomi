@@ -22,6 +22,7 @@ defineEmits<{
 
 <template>
   <button
+    type="button"
     :class="[baseClass, sendClass]"
     :disabled="disabled"
     :aria-label="ariaLabel"

@@ -52,10 +52,8 @@
   color: #a3b7cf;
 }
 
-:slotted(.tsr-btn i) {
-  font-size: 14px;
-  line-height: 1;
-}
+/* 图标字号下沉到调用方按钮的 <i>：:slotted() 只作用于插槽根节点，命不中按钮内部的后代 <i>，
+   故改放进 rail-base.css 的 .tsr-btn i（由调用方 scoped 引入后命中其自身图标）。 */
 
 :slotted(.tsr-sep) {
   width: 24px;

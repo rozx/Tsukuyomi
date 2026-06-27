@@ -1,5 +1,6 @@
+import './setup';
 import { describe, expect, it } from 'vitest';
-import { collectTranslationSearchChapters } from 'src/services/ai/tools/paragraph-tools';
+import { collectTranslationSearchChapters } from '../services/ai/tools/paragraph-tools';
 import type { Novel, Chapter, Volume } from 'src/models/novel';
 
 function makeBook(volumes?: Volume[]): Novel {

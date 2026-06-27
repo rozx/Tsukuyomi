@@ -38,6 +38,16 @@ function resolveBase(): string {
 
 const base = resolveBase();
 
+// 覆盖率数据必须在跑 fallow 之前确认：CRAP 依赖 istanbul 覆盖文件，缺失时 health/CRAP 会被
+// 静默漏判，造成「本地绿、CI 红」的假通过。直接失败，强制先跑 `bun run test:coverage`，
+// 确保本门禁与 CI 的口径一致（CI 会在跑 fallow 前生成覆盖率）。
+if (!existsSync('coverage/coverage-final.json')) {
+  console.error(
+    '✗ 未找到 coverage/coverage-final.json —— health/CRAP 无法可靠复刻 CI，请先跑 `bun run test:coverage` 再重试。',
+  );
+  process.exit(1);
+}
+
 // `git diff <base>` 与 `--changed-since` 默认都**看不到未跟踪新文件**，会漏检新文件里
 // 引入的重复/问题（CI 检出的是已提交 PR，能看到新文件）。先对未跟踪文件做 intent-to-add
 // （`git add -N`），让它们以「新增」形式进入 diff 与 changed-since 的文件发现；分析结束后
@@ -103,11 +113,6 @@ console.log(`Fallow CI 门禁（diff 基准 ${base.slice(0, 8)}）：`);
 console.log(`  dead-code 类 issue：${checkIssues}`);
 console.log(`  重复 clone group：${cloneGroups.length}`);
 console.log(`  健康度问题（复杂度 / CRAP / 覆盖）：${healthFindings.length}`);
-if (!existsSync('coverage/coverage-final.json')) {
-  console.warn(
-    '  ⚠ 未找到 coverage/coverage-final.json —— CRAP 评分无法计算，请先跑 `bun run test:coverage`，否则本门禁会漏判复杂度问题。',
-  );
-}
 
 if (checkIssues > 0 || cloneGroups.length > 0 || healthFindings.length > 0) {
   for (const g of cloneGroups) {

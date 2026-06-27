@@ -379,7 +379,7 @@ const hasVolumes = computed(() => props.volumes.length > 0);
   border: 2px dashed var(--primary-opacity-40);
 }
 
-/* 触屏按下卷头反馈：章节行的同名反馈由 ChapterListItem.vue 自带。 */
+/* 触屏按下卷头反馈；章节行的同名反馈见 ChapterListItem.vue 的 .chapter-item-touch:active。 */
 .volume-header-content:active {
   transform: scale(0.99);
 }

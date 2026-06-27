@@ -1,7 +1,8 @@
+import './setup';
 import { describe, expect, it } from 'vitest';
-import { resolveSpecialInstructionsForTask } from 'src/services/ai/tasks/utils/context-builder';
+import { resolveSpecialInstructionsForTask } from '../services/ai/tasks/utils/context-builder';
 import type { Novel, Chapter } from 'src/models/novel';
-import type { TaskType } from 'src/services/ai/tasks/utils/task-types';
+import type { TaskType } from '../services/ai/tasks/utils/task-types';
 
 function makeBook(overrides: Partial<Novel> = {}): Novel {
   return {

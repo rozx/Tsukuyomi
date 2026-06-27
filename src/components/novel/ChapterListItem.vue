@@ -228,6 +228,12 @@ defineEmits<{
   gap: 0.25rem;
 }
 
+/* 触屏按下章节行的缩放反馈。拆分前与卷头 .volume-header-content:active 同属一条组合选择器，
+   迁移到本组件作用域以随章节行模板一同保留（VolumesList 仅保留卷头那半）。 */
+.chapter-item-touch:active {
+  transform: scale(0.99);
+}
+
 .chapter-item-touch .action-button:active {
   background: var(--white-opacity-15) !important;
   transform: scale(0.96);
