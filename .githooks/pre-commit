@@ -2,6 +2,16 @@
 # Pre-commit hook: Automatically bump build version on every commit
 # This hook runs the bump-version.ts script with the 'build' option
 
+# GUI git clients (Sublime Merge / Tower / GitHub Desktop…) are launched from
+# Finder, so they inherit launchd's minimal PATH instead of the login-shell
+# PATH — tools like bun won't be found. Prepend the common install locations.
+export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+
+if ! command -v bun >/dev/null 2>&1; then
+    echo "❌ 'bun' not found on PATH. Install bun (https://bun.sh) or add it to PATH. Aborting commit."
+    exit 1
+fi
+
 echo "📦 Bumping build version..."
 bun scripts/bump-version.ts build
 
