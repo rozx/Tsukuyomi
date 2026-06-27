@@ -63,21 +63,39 @@ export function useParagraphNavigation(
     isKeyboardNavigating.value = false;
     lastKeyboardNavigationTime.value = null;
     clearAllNavigationTimeouts();
+    invalidatePendingReveal();
     isProgrammaticScrolling.value = false;
   };
 
-  // 取目标段落已挂载的 DOM 元素（可见 + 钉住的行才在 DOM 中）
+  // 取目标段落已挂载的 DOM 元素（可见 + 钉住的行才在 DOM 中）。
+  // 防御无 DOM 环境（如 bun 下的纯 composable 测试），缺少 document/HTMLElement 时返回 null。
   const getParagraphEl = (paragraphId: string): HTMLElement | null => {
+    const isHTMLElement = (value: unknown): value is HTMLElement =>
+      typeof HTMLElement !== 'undefined' && value instanceof HTMLElement;
     const cardRef = paragraphCardRefs.get(paragraphId) as { $el?: unknown } | undefined;
     const fromCard = cardRef?.$el;
-    if (fromCard instanceof HTMLElement) return fromCard;
+    if (isHTMLElement(fromCard)) return fromCard;
+    if (typeof document === 'undefined') return null;
     const byId = document.getElementById(`paragraph-${paragraphId}`);
-    return byId instanceof HTMLElement ? byId : null;
+    return isHTMLElement(byId) ? byId : null;
   };
 
-  // 在目标段落挂载后执行回调（虚拟滚动下滚动会触发挂载，需等待若干帧）
-  const runWhenParagraphReady = (paragraphId: string, action: (el: HTMLElement) => void) => {
+  // 递增令牌：每次 revealParagraph 发起新请求时 +1；reset/cleanup 时也 +1。
+  // 挂载等待回调执行前比对令牌，丢弃已被新导航/重置取代的过期请求，避免旧段落被错误聚焦/编辑。
+  let revealToken = 0;
+  const invalidatePendingReveal = () => {
+    revealToken++;
+  };
+
+  // 在目标段落挂载后执行回调（虚拟滚动下滚动会触发挂载，需等待若干帧）。
+  // token 过期（用户已导航到别处或已 reset）则放弃。
+  const runWhenParagraphReady = (
+    paragraphId: string,
+    action: (el: HTMLElement) => void,
+    token: number,
+  ) => {
     const tryRun = (attempt: number) => {
+      if (token !== revealToken) return; // 已被新请求/重置取代
       const el = getParagraphEl(paragraphId);
       if (el) {
         action(el);
@@ -129,6 +147,7 @@ export function useParagraphNavigation(
     action: (el: HTMLElement) => void,
     scroll: boolean,
   ) => {
+    const token = ++revealToken; // 标记本次为最新请求，使更早的挂载等待回调失效
     const existing = getParagraphEl(paragraphId);
     if (existing) {
       if (scroll) smoothRevealElement(existing);
@@ -139,10 +158,14 @@ export function useParagraphNavigation(
       const fn = chapterScrollToIndex?.value;
       if (fn) fn(index, { align: 'auto' });
     }
-    runWhenParagraphReady(paragraphId, (el) => {
-      if (scroll) smoothRevealElement(el);
-      action(el);
-    });
+    runWhenParagraphReady(
+      paragraphId,
+      (el) => {
+        if (scroll) smoothRevealElement(el);
+        action(el);
+      },
+      token,
+    );
   };
 
   // 获取非空段落的索引列表
@@ -407,6 +430,7 @@ export function useParagraphNavigation(
   // 清理所有 timeout（用于组件卸载时）
   const cleanup = () => {
     clearAllNavigationTimeouts();
+    invalidatePendingReveal();
   };
 
   return {

@@ -1012,9 +1012,14 @@ const settingContextMeta = computed(() => {
   min-height: 0;
 }
 
-.chapter-content-panel:focus,
-.chapter-content-panel:focus-visible {
+/* 鼠标/触摸/程序化聚焦不显示蓝色焦点框；保留键盘 :focus-visible 的轻量焦点指示以维持可访问性 */
+.chapter-content-panel:focus:not(:focus-visible) {
   outline: none;
+}
+
+.chapter-content-panel:focus-visible {
+  outline: 2px solid var(--tsukuyomi-opacity-40);
+  outline-offset: -2px;
 }
 
 /* 隐藏原生滚动条：章节内容改用自定义索引驱动滚动条（Teleport 到 .page-container）。

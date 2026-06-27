@@ -479,8 +479,19 @@ const runChapterMove = (direction: 'up' | 'down') => {
           <span>加载章节内容…</span>
         </div>
         <template v-else>
+          <!-- 空章节状态 -->
+          <div v-if="ctx.selectedChapterParagraphs.value.length === 0" class="mbr-state">
+            <i class="pi pi-inbox" aria-hidden="true" />
+            <span>本章暂无段落</span>
+          </div>
+
           <!-- 段落列表虚拟滚动 · block translation -->
-          <div ref="mbrListStartRef" class="vlist-spacer" :style="{ height: `${mbrSpacerSize}px` }">
+          <div
+            v-else
+            ref="mbrListStartRef"
+            class="vlist-spacer"
+            :style="{ height: `${mbrSpacerSize}px` }"
+          >
             <div class="vlist-window" :style="{ transform: `translateY(${mbrBlockStart}px)` }">
               <div
                 v-for="{ index, key, p } in mbrRenderRows"
@@ -1433,10 +1444,15 @@ const runChapterMove = (direction: 'up' | 'down') => {
   transition: padding-bottom 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 隐藏 Chrome 键盘可聚焦滚动容器的蓝色焦点框（与桌面 .chapter-content-panel 一致） */
-.mbr-scroll:focus,
-.mbr-scroll:focus-visible {
+/* 隐藏 Chrome 键盘可聚焦滚动容器的蓝色焦点框（鼠标/触摸/程序化聚焦时），
+   但保留键盘 :focus-visible 的轻量焦点指示以维持可访问性（与桌面 .chapter-content-panel 一致） */
+.mbr-scroll:focus:not(:focus-visible) {
   outline: none;
+}
+
+.mbr-scroll:focus-visible {
+  outline: 2px solid var(--tsukuyomi-opacity-40);
+  outline-offset: -2px;
 }
 
 /* 选中段落时 actionbar 浮现，留出空间避免遮挡最后一段正文 */

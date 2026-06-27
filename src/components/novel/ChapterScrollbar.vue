@@ -20,6 +20,11 @@ const props = defineProps<{
 const trackRef = ref<HTMLElement | null>(null);
 const ready = ref(false);
 
+// 滑块最小像素高度，必须与下方 CSS `.cc-scrollbar-thumb { min-height }` 保持一致：
+// 拖拽计算需用「实际渲染高度」（百分比与 min-height 取大），否则短轨道（< MIN_THUMB_PX/heightPct）
+// 下 range 偏小，拖到底时 thumb 越出轨道、视觉位置与滚动比例对不上。
+const MIN_THUMB_PX = 28;
+
 // 拖动态：滑块用 dragTopPct 贴合光标，覆盖静止的 model.topPct
 const dragging = ref(false);
 const dragTopPct = ref(0);
@@ -29,7 +34,7 @@ const onMove = (e: PointerEvent) => {
   const track = trackRef.value;
   if (!dragging.value || !track) return;
   const trackRect = track.getBoundingClientRect();
-  const thumbH = (props.model.heightPct / 100) * trackRect.height;
+  const thumbH = Math.max((props.model.heightPct / 100) * trackRect.height, MIN_THUMB_PX);
   const range = Math.max(1, trackRect.height - thumbH);
   const topPx = Math.min(range, Math.max(0, e.clientY - trackRect.top - grabOffset));
   // 滑块视觉位置直接跟随光标（与内容滚动解耦，避免抖动/滞后）
@@ -114,6 +119,7 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 0;
   width: 8px;
+  /* 必须与 JS 的 MIN_THUMB_PX 保持一致（拖拽计算依赖实际渲染高度） */
   min-height: 28px;
   border-radius: 4px;
   background: var(--moon-opacity-40);

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by syncing change virtualize-chapter-paragraphs. Update Purpose after archive.
+为章节段落长列表提供虚拟滚动渲染：仅渲染可视区行以保证大章节性能，并用自定义索引/位置驱动滚动条解决原生滚动条在动态行高下与光标失同步的问题，同时在虚拟化下保持键盘导航、应用内搜索、内联编辑（编辑态钉住）、行号/序号等既有行为。
 
 ## Requirements
 

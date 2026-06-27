@@ -84,6 +84,18 @@ describe('createSizeCalibrator', () => {
     c.record(1, -5);
     expect(c.estimate(9, () => 77)).toBe(77); // 无有效数据 → seed
   });
+
+  test('clear() 清空已测量数据，回退到 seed（章节/模式切换时复用）', () => {
+    const c = createSizeCalibrator();
+    c.record(0, 100);
+    c.record(1, 200);
+    c.clear();
+    expect(c.estimate(0, () => 42)).toBe(42); // 已测量项被清空
+    expect(c.estimate(5, () => 42)).toBe(42); // 运行平均被清空
+    c.record(0, 80); // clear 后可重新累积
+    expect(c.estimate(0, () => 0)).toBe(80);
+    expect(c.estimate(9, () => 0)).toBe(80);
+  });
 });
 
 describe('computeScrollbarMetrics（基于原生滚动位置/范围）', () => {

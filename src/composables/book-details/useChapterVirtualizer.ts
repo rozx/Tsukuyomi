@@ -1,6 +1,7 @@
 import {
   computed,
   toValue,
+  watch,
   type Ref,
   type ComputedRef,
   type MaybeRefOrGetter,
@@ -69,6 +70,8 @@ export function estimateRowHeight(input: EstimateRowInput): number {
  * 各行正负误差相互抵消，totalSize 在整段拖动中基本稳定。
  */
 export interface SizeCalibrator {
+  /** 清空所有已测量高度（章节切换或 preview↔edit 模式切换时调用，避免复用旧列表/旧模式的高度）。 */
+  clear(): void;
   record(index: number, size: number): void;
   estimate(index: number, seed: () => number): number;
 }
@@ -76,20 +79,20 @@ export interface SizeCalibrator {
 export function createSizeCalibrator(): SizeCalibrator {
   const sizes = new Map<number, number>();
   let avg = 0;
-  const recompute = () => {
-    if (sizes.size === 0) {
-      avg = 0;
-      return;
-    }
-    let sum = 0;
-    for (const v of sizes.values()) sum += v;
-    avg = sum / sizes.size;
-  };
+  let sum = 0; // 增量维护，避免每次 record 都遍历整张表（长章节满屏滚动时 O(n²)）
   return {
+    clear() {
+      sizes.clear();
+      sum = 0;
+      avg = 0;
+    },
     record(index, size) {
       if (!(size > 0)) return;
+      const prev = sizes.get(index);
+      if (prev != null) sum -= prev; // 覆盖旧值前先扣除
       sizes.set(index, size);
-      recompute();
+      sum += size;
+      avg = sum / sizes.size;
     },
     estimate(index, seed) {
       const cached = sizes.get(index);
@@ -208,6 +211,17 @@ export function useChapterVirtualizer(opts: UseChapterVirtualizerOptions) {
       scrollMargin: opts.scrollMargin?.value ?? 0,
       getItemKey: (index: number) => opts.paragraphs.value[index]?.id ?? index,
     })),
+  );
+
+  // 章节切换（paragraphs 引用变化）或 preview↔edit 模式切换时，清空按索引缓存的测量高度并重测：
+  // calibrator 按 index 长期缓存，跨章节/跨模式复用旧高度会让 estimateSize / totalSize / 滚动条
+  // 先用错值再跳变。清空后重新从种子估算累积，避免「先错后跳」。
+  watch(
+    () => [opts.paragraphs.value, toValue(opts.mode)] as const,
+    () => {
+      calibrator.clear();
+      virtualizer.value.measure();
+    },
   );
 
   const virtualRows = computed(() => virtualizer.value.getVirtualItems());
