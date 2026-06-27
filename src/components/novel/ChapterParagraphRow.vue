@@ -35,11 +35,13 @@ const emit = defineEmits<{
 // 记住本实例注册到表里的 ParagraphCard，卸载时仅当表里仍是本实例才删除。
 // window↔pinned 切换时两处共用同一段落 id：滚回时 Vue 先 patch 窗口行（set 新实例）再卸载钉住行，
 // 无条件 delete 会把刚注册的窗口实例一并删掉，导致该段落从 paragraphCardRefs 丢失、命令式编辑失效。
-let registeredCard: InstanceType<typeof ParagraphCard> | null = null;
+// 仅用于引用相等比较，故用 unknown（避免 `InstanceType<typeof ParagraphCard> | null` 在 CI 的类型解析下
+// 退化成 `any | null` 触发 @typescript-eslint/no-redundant-type-constituents）。
+let registeredCard: unknown = null;
 const setCardRef = (el: unknown) => {
   if (el) {
-    registeredCard = el as InstanceType<typeof ParagraphCard>;
-    props.paragraphCardRefs.set(props.paragraph.id, registeredCard);
+    registeredCard = el;
+    props.paragraphCardRefs.set(props.paragraph.id, el as InstanceType<typeof ParagraphCard>);
   } else {
     if (props.paragraphCardRefs.get(props.paragraph.id) === registeredCard) {
       props.paragraphCardRefs.delete(props.paragraph.id);
