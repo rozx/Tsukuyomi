@@ -371,7 +371,11 @@ defineExpose({ scrollToParagraphIndex });
   <div
     v-if="selectedChapter"
     class="chapter-content-container"
-    :class="{ 'chapter-content-container--full': isOriginalMode }"
+    :class="{
+      'chapter-content-container--full': isOriginalMode,
+      'chapter-content-container--reading':
+        !isLoadingChapterContent && !isOriginalMode && !isPreviewMode,
+    }"
   >
     <!-- 自定义索引驱动滚动条（Teleport 到非滚动祖先 .page-container，避免随内容滚走） -->
     <ChapterScrollbar
@@ -489,6 +493,11 @@ defineExpose({ scrollToParagraphIndex });
       <!-- 空状态 -->
       <ChapterEmptyState v-else />
 
+      <!-- 弹性留白：内容不足一屏时占满剩余空间，把上下章导航推到面板底部。
+           避免编辑段落（译文展开为 textarea + 操作行）撑高正文时导航被向下顶动；
+           内容超过一屏时高度收缩为 0，导航回到正文末尾（行为不变） -->
+      <div class="chapter-reading-spacer" aria-hidden="true" />
+
       <!-- 章节导航按钮 -->
       <ChapterNavigation
         :prev-chapter="prevChapter"
@@ -528,6 +537,20 @@ defineExpose({ scrollToParagraphIndex });
   padding: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* 翻译/阅读模式：撑满滚动面板高度，配合 .chapter-reading-spacer 把导航钉在底部 */
+.chapter-content-container--reading {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+/* 弹性留白：仅在正文不足一屏时占据剩余空间，把上下章导航推到面板底部；
+   正文超过一屏时收缩为 0，导航回到正文末尾并保留其自身 margin-top 间距 */
+.chapter-reading-spacer {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* 章节标题区域样式（.chapter-header / .chapter-stats / .chapter-meta / .chapter-web-url）
