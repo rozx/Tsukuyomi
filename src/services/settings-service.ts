@@ -90,6 +90,46 @@ function buildImportMessage(counts: ImportCounts): string {
   return parts.join('、');
 }
 
+/**
+ * validateAndParseSettings 各分区的解析结果集合。
+ */
+interface ParsedImportSections {
+  models: ReturnType<typeof parseAiModels>;
+  novels: ReturnType<typeof parseNovels>;
+  coverHistory: ReturnType<typeof parseCoverHistory>;
+  memories: ReturnType<typeof parseMemories>;
+  sync: ReturnType<typeof parseSyncConfigs>;
+  appSettings: ReturnType<typeof parseAppSettings>;
+}
+
+/**
+ * 解析设置数据的全部分区，集中调用 6 个 parser 子函数。
+ */
+function parseImportedSections(settings: Settings): ParsedImportSections {
+  return {
+    models: parseAiModels(settings.aiModels),
+    novels: parseNovels(settings.novels),
+    coverHistory: parseCoverHistory(settings.coverHistory),
+    memories: parseMemories(settings.memories),
+    sync: parseSyncConfigs(settings.sync),
+    appSettings: parseAppSettings(settings.appSettings),
+  };
+}
+
+/**
+ * 判断解析结果是否包含任何可导入的内容（任一分区非空即返回 true）。
+ */
+function hasImportedContent(sections: ParsedImportSections): boolean {
+  return (
+    sections.models.length > 0 ||
+    sections.novels.length > 0 ||
+    sections.coverHistory.length > 0 ||
+    sections.memories.length > 0 ||
+    sections.sync.length > 0 ||
+    Boolean(sections.appSettings)
+  );
+}
+
 export class SettingsService {
   static downloadJson(data: unknown, filename: string): void {
     const jsonString = JSON.stringify(data, null, 2);
@@ -158,22 +198,9 @@ export class SettingsService {
       return { success: false, error: shapeError };
     }
 
-    const models = parseAiModels(settings.aiModels);
-    const novels = parseNovels(settings.novels);
-    const coverHistory = parseCoverHistory(settings.coverHistory);
-    const memories = parseMemories(settings.memories);
-    const sync = parseSyncConfigs(settings.sync);
-    const appSettings = parseAppSettings(settings.appSettings);
+    const sections = parseImportedSections(settings);
 
-    const hasAnyContent =
-      models.length > 0 ||
-      novels.length > 0 ||
-      coverHistory.length > 0 ||
-      memories.length > 0 ||
-      sync.length > 0 ||
-      Boolean(appSettings);
-
-    if (!hasAnyContent) {
+    if (!hasImportedContent(sections)) {
       return {
         success: false,
         error: '设置数据中没有有效的 AI 模型、书籍、封面历史、Memory、同步设置或应用设置',
@@ -183,20 +210,20 @@ export class SettingsService {
     return {
       success: true,
       message: `成功导入 ${buildImportMessage({
-        models: models.length,
-        novels: novels.length,
-        coverHistory: coverHistory.length,
-        memories: memories.length,
-        sync: sync.length,
-        appSettings: Boolean(appSettings),
+        models: sections.models.length,
+        novels: sections.novels.length,
+        coverHistory: sections.coverHistory.length,
+        memories: sections.memories.length,
+        sync: sections.sync.length,
+        appSettings: Boolean(sections.appSettings),
       })}`,
       data: {
-        models,
-        novels,
-        coverHistory,
-        ...(memories.length > 0 ? { memories } : {}),
-        ...(sync.length > 0 ? { sync } : {}),
-        ...(appSettings ? { appSettings } : {}),
+        models: sections.models,
+        novels: sections.novels,
+        coverHistory: sections.coverHistory,
+        ...(sections.memories.length > 0 ? { memories: sections.memories } : {}),
+        ...(sections.sync.length > 0 ? { sync: sections.sync } : {}),
+        ...(sections.appSettings ? { appSettings: sections.appSettings } : {}),
       },
     };
   }

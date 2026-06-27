@@ -660,7 +660,6 @@ function replaceKeepingBoundaries(
  * @param replacement 替换文本
  * @returns 替换后的文本
  */
-// fallow-ignore-next-line unused-export
 export function replaceWholeKeyword(text: string, keyword: string, replacement: string): string {
   if (!text || !keyword) {
     return text;
@@ -743,6 +742,49 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
     return true;
   }
   return manualContainsCJK(text, keyword);
+}
+
+/**
+ * add_translation 的模型 ID 解析：优先用显式参数，其次沿用已有翻译模型，最后回退默认模型
+ */
+function resolveModelIdForAddTranslation(
+  paragraph: ParagraphLocation['paragraph'],
+  aiModelId: string | undefined,
+  aiModelsStore: ReturnType<typeof useAIModelsStore>,
+): { kind: 'ok'; modelId: string } | { kind: 'error'; json: string } {
+  if (aiModelId) return { kind: 'ok', modelId: aiModelId };
+  const existingModelId = paragraph.translations?.[0]?.aiModelId;
+  if (existingModelId) return { kind: 'ok', modelId: existingModelId };
+  const defaultModel = aiModelsStore.getDefaultModelForTask('translation');
+  if (!defaultModel) {
+    return {
+      kind: 'error',
+      json: JSON.stringify({
+        success: false,
+        error: '未找到可用的 AI 模型，请提供 ai_model_id 参数',
+      }),
+    };
+  }
+  return { kind: 'ok', modelId: defaultModel.id };
+}
+
+/**
+ * add_translation 添加后设置 selectedTranslationId：set_as_selected 时直接选中新翻译，
+ * 否则若原本无选中且存在翻译则自动选中第一条
+ */
+function applySelectionAfterAdd(
+  paragraph: ParagraphLocation['paragraph'],
+  newTranslationId: string,
+  setAsSelected: boolean,
+  updatedTranslations: Translation[],
+): void {
+  if (setAsSelected) {
+    paragraph.selectedTranslationId = newTranslationId;
+    return;
+  }
+  if (!paragraph.selectedTranslationId && updatedTranslations.length > 0) {
+    paragraph.selectedTranslationId = updatedTranslations[0]?.id || '';
+  }
 }
 
 export const paragraphTools: ToolDefinition[] = [
@@ -1557,23 +1599,9 @@ export const paragraphTools: ToolDefinition[] = [
       const aiModelsStore = useAIModelsStore();
 
       // 确定使用的 AI 模型 ID
-      let modelId = ai_model_id;
-      if (!modelId) {
-        // 如果没有提供，尝试使用段落中已有的翻译的模型 ID，或使用默认模型
-        const existingModelId = paragraph.translations?.[0]?.aiModelId;
-        if (existingModelId) {
-          modelId = existingModelId;
-        } else {
-          const defaultModel = aiModelsStore.getDefaultModelForTask('translation');
-          if (!defaultModel) {
-            return JSON.stringify({
-              success: false,
-              error: '未找到可用的 AI 模型，请提供 ai_model_id 参数',
-            });
-          }
-          modelId = defaultModel.id;
-        }
-      }
+      const modelRes = resolveModelIdForAddTranslation(paragraph, ai_model_id, aiModelsStore);
+      if (modelRes.kind === 'error') return modelRes.json;
+      const modelId = modelRes.modelId;
 
       // 验证模型是否存在
       const model = aiModelsStore.getModelById(modelId);
@@ -1586,7 +1614,8 @@ export const paragraphTools: ToolDefinition[] = [
 
       // 创建新的翻译对象（原样保存，不进行任何处理）
       // 缩进过滤会在显示和导出时应用
-      const existingTranslationIds = paragraph.translations?.map((t) => t.id) || [];
+      const existingTranslations = paragraph.translations || [];
+      const existingTranslationIds = existingTranslations.map((t) => t.id);
       const idGenerator = new UniqueIdGenerator(existingTranslationIds);
       const newTranslation: Translation = {
         id: idGenerator.generate(),
@@ -1595,7 +1624,6 @@ export const paragraphTools: ToolDefinition[] = [
       };
 
       // 添加翻译（使用 ChapterService 的辅助方法，自动限制最多5个）
-      const existingTranslations = paragraph.translations || [];
       const updatedTranslations = ChapterService.addParagraphTranslation(
         existingTranslations,
         newTranslation,
@@ -1604,16 +1632,11 @@ export const paragraphTools: ToolDefinition[] = [
       // 更新段落的翻译数组
       paragraph.translations = updatedTranslations;
 
-      // 如果设置为选中，更新选中的翻译 ID
-      if (set_as_selected) {
-        paragraph.selectedTranslationId = newTranslation.id;
-      } else if (!paragraph.selectedTranslationId && updatedTranslations.length > 0) {
-        // 如果没有选中的翻译，且新添加的翻译是第一个，则自动选中
-        paragraph.selectedTranslationId = updatedTranslations[0]?.id || '';
-      }
+      // 如果设置为选中，更新选中的翻译 ID；否则在无选中时自动选中第一条
+      applySelectionAfterAdd(paragraph, newTranslation.id, set_as_selected, updatedTranslations);
 
       // 更新书籍（保存更改）
-      // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
+      // 注意：章节内容保存会启用 skipIfUnchanged，并用"序列化快照"检测变化（含就地修改）。
       await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
 
       // 报告操作
@@ -2115,9 +2138,28 @@ function collectVolumeChaptersToLoad(
 }
 
 /**
+ * 是否限定到某个具体卷 / 章（chapter_id 与目标索引同时存在）
+ */
+function isScopedToIndex(chapter_id: string | undefined, targetIndex: number | null): boolean {
+  return !!(chapter_id && targetIndex !== null);
+}
+
+/**
+ * 解析搜索范围：限定时退化为单点 [target, target]，否则使用全书/全卷范围
+ */
+function resolveScopedRange(
+  scoped: boolean,
+  target: number,
+  fallbackStart: number,
+  fallbackEnd: number,
+): { start: number; end: number } {
+  return scoped ? { start: target, end: target } : { start: fallbackStart, end: fallbackEnd };
+}
+
+/**
  * 收集仅用翻译关键词搜索时需要加载的章节
  */
-function collectTranslationSearchChapters(
+export function collectTranslationSearchChapters(
   book: Novel,
   chapter_id: string | undefined,
   targetVolumeIndex: number | null,
@@ -2126,26 +2168,33 @@ function collectTranslationSearchChapters(
   const chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[] = [];
   if (!book.volumes) return chaptersToLoad;
 
-  const startVolumeIndex = chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : 0;
-  const endVolumeIndex =
-    chapter_id && targetVolumeIndex !== null ? targetVolumeIndex : book.volumes.length - 1;
+  const scopedToVolume = isScopedToIndex(chapter_id, targetVolumeIndex);
+  const volumeRange = resolveScopedRange(
+    scopedToVolume,
+    targetVolumeIndex ?? 0,
+    0,
+    book.volumes.length - 1,
+  );
 
-  for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
+  for (let vIndex = volumeRange.start; vIndex <= volumeRange.end; vIndex++) {
     const volume = book.volumes[vIndex];
     if (!volume || !volume.chapters) continue;
-    if (chapter_id && targetVolumeIndex !== null && vIndex !== targetVolumeIndex) continue;
+    if (scopedToVolume && vIndex !== targetVolumeIndex) continue;
 
-    const startChapterIndex =
-      chapter_id && targetChapterIndex !== null ? targetChapterIndex : 0;
-    const endChapterIndex =
-      chapter_id && targetChapterIndex !== null ? targetChapterIndex : volume.chapters.length - 1;
+    const scopedToChapter = isScopedToIndex(chapter_id, targetChapterIndex);
+    const chapterRange = resolveScopedRange(
+      scopedToChapter,
+      targetChapterIndex ?? 0,
+      0,
+      volume.chapters.length - 1,
+    );
 
     if (
       collectVolumeChaptersToLoad(
         volume,
         vIndex,
-        startChapterIndex,
-        endChapterIndex,
+        chapterRange.start,
+        chapterRange.end,
         chaptersToLoad,
       )
     ) {

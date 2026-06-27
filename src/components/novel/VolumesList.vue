@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import type { Volume, Chapter, Novel } from 'src/models/novel';
-import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
+import { getVolumeDisplayTitle } from 'src/utils';
 import {
   isSelectedChapterLoading as isSelectedChapterLoadingByState,
   canNavigateToChapter,
 } from 'src/components/novel/volumes-list-utils';
+import ChapterListItem from 'src/components/novel/ChapterListItem.vue';
 
 interface DraggedChapter {
   chapter: Chapter;
@@ -111,6 +113,24 @@ const handleMoveChapter = (
 const isSelectedChapterLoading = (chapterId: string) => {
   return isSelectedChapterLoadingByState(props, chapterId);
 };
+
+// 布尔状态访问器：把 === / && 表达式包成函数，避免在模板里产生圈复杂度
+const isChapterSelected = (chapterId: string) => props.selectedChapterId === chapterId;
+const isChapterDragOver = (volumeId: string, index: number) =>
+  props.dragOverVolumeId === volumeId && props.dragOverIndex === index;
+const isChapterDragging = (chapterId: string) => props.draggedChapter?.chapter.id === chapterId;
+const isListDragOver = (volumeId: string) =>
+  props.dragOverVolumeId === volumeId && props.dragOverIndex === null;
+const showVolumeActions = (volumeId: string) =>
+  !!props.touchMode && props.isVolumeExpanded(volumeId);
+const volumeToggleIcon = (volumeId: string) =>
+  props.isVolumeExpanded(volumeId) ? 'pi-chevron-down' : 'pi-chevron-right';
+const hasExpandedChapters = (volume: Volume) =>
+  !!volume.chapters && volume.chapters.length > 0 && props.isVolumeExpanded(volume.id);
+const hasChapters = (volume: Volume) => !!volume.chapters && volume.chapters.length > 0;
+const chapterCount = (volume: Volume) => volume.chapters?.length ?? 0;
+const chaptersOf = (volume: Volume) => volume.chapters ?? [];
+const hasVolumes = computed(() => props.volumes.length > 0);
 </script>
 
 <template>
@@ -123,25 +143,30 @@ const isSelectedChapterLoading = (chapterId: string) => {
       <Skeleton height="40px" />
     </div>
     <!-- 卷列表 -->
-    <div v-else-if="volumes.length > 0" class="volumes-list">
+    <div v-else-if="hasVolumes" class="volumes-list">
       <div v-for="volume in volumes" :key="volume.id" class="volume-item">
         <div class="volume-header">
-          <div class="volume-header-content" @click="handleToggleVolume(volume.id)">
+          <div
+            class="volume-header-content"
+            role="button"
+            tabindex="0"
+            :aria-expanded="isVolumeExpanded(volume.id)"
+            @click="handleToggleVolume(volume.id)"
+            @keydown.enter.prevent="handleToggleVolume(volume.id)"
+            @keydown.space.prevent="handleToggleVolume(volume.id)"
+          >
             <i
-              :class="[
-                'pi volume-toggle-icon',
-                isVolumeExpanded(volume.id) ? 'pi-chevron-down' : 'pi-chevron-right',
-              ]"
+              :class="['pi volume-toggle-icon', volumeToggleIcon(volume.id)]"
             ></i>
             <i class="pi pi-book volume-icon"></i>
             <span class="volume-title">{{ getVolumeDisplayTitle(volume) }}</span>
-            <span v-if="volume.chapters && volume.chapters.length > 0" class="volume-chapter-count">
-              ({{ volume.chapters.length }} 章)
+            <span v-if="hasChapters(volume)" class="volume-chapter-count">
+              ({{ chapterCount(volume) }} 章)
             </span>
           </div>
           <div
             class="volume-actions"
-            :class="{ 'volume-actions-visible': touchMode && isVolumeExpanded(volume.id) }"
+            :class="{ 'volume-actions-visible': showVolumeActions(volume.id) }"
             @click.stop
           >
             <Button
@@ -162,101 +187,40 @@ const isSelectedChapterLoading = (chapterId: string) => {
         </div>
         <Transition name="slide-down">
           <div
-            v-if="volume.chapters && volume.chapters.length > 0 && isVolumeExpanded(volume.id)"
+            v-if="hasExpandedChapters(volume)"
             class="chapters-list"
             @dragover.prevent="handleDragOver($event, volume.id)"
             @drop="handleDrop($event, volume.id)"
             @dragleave="handleDragLeave"
-            :class="{
-              'drag-over': dragOverVolumeId === volume.id && dragOverIndex === null,
-            }"
+            :class="{ 'drag-over': isListDragOver(volume.id) }"
           >
-            <div
-              v-for="(chapter, index) in volume.chapters"
+            <ChapterListItem
+              v-for="(chapter, index) in chaptersOf(volume)"
               :key="chapter.id"
-              :class="[
-                'chapter-item',
-                { 'chapter-item-selected': selectedChapterId === chapter.id },
-                {
-                  'chapter-item-loading': isSelectedChapterLoading(chapter.id),
-                },
-                { 'chapter-item-touch': touchMode },
-                {
-                  'drag-over': dragOverVolumeId === volume.id && dragOverIndex === index,
-                },
-                { dragging: draggedChapter?.chapter.id === chapter.id },
-              ]"
-              :draggable="!touchMode"
-              @click="handleNavigateToChapter(chapter)"
-              @dragstart="handleDragStart($event, chapter, volume.id, index)"
-              @dragend="handleDragEnd($event)"
-              @dragover.prevent.stop="handleDragOver($event, volume.id, index)"
-              @drop.stop="handleDrop($event, volume.id, index)"
-            >
-              <div class="chapter-content">
-                <i
-                  v-if="isSelectedChapterLoading(chapter.id)"
-                  class="pi pi-spinner pi-spin loading-icon"
-                  role="status"
-                  aria-label="章节加载中"
-                ></i>
-                <i
-                  v-else-if="!touchMode"
-                  class="pi pi-bars drag-handle"
-                  aria-hidden="true"
-                  @click.stop
-                ></i>
-                <i class="pi pi-file chapter-icon"></i>
-                <span class="chapter-title">{{
-                  getChapterDisplayTitle(chapter, book || undefined)
-                }}</span>
-              </div>
-              <div
-                class="chapter-actions"
-                :class="{
-                  'chapter-actions-visible': touchMode && selectedChapterId === chapter.id,
-                }"
-                @click.stop
-              >
-                <Button
-                  v-if="touchMode"
-                  icon="pi pi-arrow-up"
-                  class="p-button-text p-button-sm p-button-rounded action-button"
-                  size="small"
-                  title="上移"
-                  :disabled="isMovingChapter || index === 0"
-                  @click="handleMoveChapter(chapter, volume.id, index, 'up')"
-                />
-                <Button
-                  v-if="touchMode"
-                  icon="pi pi-arrow-down"
-                  class="p-button-text p-button-sm p-button-rounded action-button"
-                  size="small"
-                  title="下移"
-                  :disabled="isMovingChapter || index === (volume.chapters?.length || 1) - 1"
-                  @click="handleMoveChapter(chapter, volume.id, index, 'down')"
-                />
-                <Button
-                  icon="pi pi-pencil"
-                  class="p-button-text p-button-sm p-button-rounded action-button"
-                  size="small"
-                  title="编辑"
-                  @click="handleEditChapter(chapter)"
-                />
-                <Button
-                  icon="pi pi-trash"
-                  class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
-                  size="small"
-                  title="删除"
-                  @click="handleDeleteChapter(chapter)"
-                />
-              </div>
-            </div>
+              :chapter="chapter"
+              :index="index"
+              :volume-chapters-count="volume.chapters?.length || 0"
+              :book="book"
+              :touch-mode="touchMode"
+              :is-moving-chapter="isMovingChapter"
+              :is-selected="isChapterSelected(chapter.id)"
+              :is-loading="isSelectedChapterLoading(chapter.id)"
+              :is-drag-over="isChapterDragOver(volume.id, index)"
+              :is-dragging="isChapterDragging(chapter.id)"
+              @navigate="handleNavigateToChapter(chapter)"
+              @edit="handleEditChapter(chapter)"
+              @delete="handleDeleteChapter(chapter)"
+              @move="(direction) => handleMoveChapter(chapter, volume.id, index, direction)"
+              @dragstart="(event) => handleDragStart(event, chapter, volume.id, index)"
+              @dragend="handleDragEnd"
+              @dragover="(event) => handleDragOver(event, volume.id, index)"
+              @drop="(event) => handleDrop(event, volume.id, index)"
+            />
           </div>
         </Transition>
       </div>
     </div>
-    <div v-else-if="!isPageLoading" class="empty-state">
+    <div v-else class="empty-state">
       <p class="text-moon/60 text-sm">暂无卷和章节</p>
     </div>
   </div>
@@ -407,48 +371,7 @@ const isSelectedChapterLoading = (chapterId: string) => {
   min-width: 0;
 }
 
-.chapter-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.375rem;
-  padding: 0.625rem 0.5rem;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  color: var(--moon-opacity-80);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  cursor: pointer;
-  min-width: 0;
-}
-
-.chapter-item:hover {
-  background: var(--primary-opacity-15);
-  color: var(--moon-opacity-95);
-  border-color: var(--primary-opacity-30);
-  transform: translateX(2px);
-}
-
-.chapter-item.dragging {
-  opacity: 0.5;
-}
-
-.chapter-item.drag-over {
-  background: var(--primary-opacity-20) !important;
-  border-color: var(--primary-opacity-50) !important;
-  border-style: dashed !important;
-}
-
-.chapter-item-selected {
-  background: var(--primary-opacity-15) !important;
-  border-color: var(--primary-opacity-40) !important;
-  color: var(--moon-opacity-95) !important;
-}
-
-.chapter-item-selected .chapter-icon {
-  color: var(--primary-opacity-90) !important;
-}
+/* 章节行（.chapter-item 系列）样式由子组件 ChapterListItem.vue 自带 scoped 样式负责，此处不再重复定义。 */
 
 .chapters-list.drag-over {
   background: var(--primary-opacity-10);
@@ -456,168 +379,20 @@ const isSelectedChapterLoading = (chapterId: string) => {
   border: 2px dashed var(--primary-opacity-40);
 }
 
-.chapter-content {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
+/* 触屏按下卷头反馈；章节行的同名反馈见 ChapterListItem.vue 的 .chapter-item-touch:active。 */
+.volume-header-content:active {
+  transform: scale(0.99);
 }
 
-.drag-handle {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-50);
-  cursor: grab;
-  flex-shrink: 0;
-  transition: color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.chapter-item:hover .drag-handle {
-  color: var(--primary-opacity-70);
-}
-
-.chapter-item.dragging .drag-handle {
-  cursor: grabbing;
-}
-
-.chapter-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.125rem;
-  flex-shrink: 0;
-  opacity: 0;
-  max-width: 0;
-  overflow: hidden;
-  margin-left: 0;
-  transition:
-    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-    max-width 0.2s ease,
-    margin-left 0.2s ease;
-}
-
-.chapter-item:hover .chapter-actions {
-  opacity: 1;
-  max-width: 4rem;
-  margin-left: 0.25rem;
-}
-
-.chapter-actions-visible {
-  opacity: 1;
-  max-width: 8rem;
-  margin-left: 0.25rem;
-}
-
-.volume-actions-visible .action-button,
-.chapter-actions-visible .action-button {
+.volume-actions-visible .action-button {
   min-width: 1.875rem !important;
   width: 1.875rem !important;
   height: 1.875rem !important;
 }
 
-.chapter-item-touch {
-  padding: 0.625rem 0.5rem;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.25rem;
-}
-
-.chapter-item-touch:active,
-.volume-header-content:active {
-  transform: scale(0.99);
-}
-
-.chapter-item-touch .action-button:active,
 .volume-actions-visible .action-button:active {
   background: var(--white-opacity-15) !important;
   transform: scale(0.96);
-}
-
-.chapter-item-touch .chapter-content {
-  width: 100%;
-  gap: 0.25rem;
-  overflow: hidden;
-}
-
-.chapter-item-touch .chapter-icon,
-.chapter-item-touch .summary-icon {
-  display: none;
-}
-
-.chapter-item-touch .chapter-content .chapter-title {
-  display: block;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.25;
-}
-
-.chapter-item-touch .chapter-actions {
-  width: auto;
-  justify-content: flex-end;
-  align-self: flex-end;
-  margin-top: 0.125rem;
-  max-width: none;
-  margin-left: auto;
-}
-
-.chapter-item-touch .chapter-actions:not(.chapter-actions-visible) {
-  display: none;
-}
-
-.chapter-icon {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-60);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.chapter-item:hover .chapter-icon {
-  color: var(--primary-opacity-85);
-  transform: scale(1.1);
-}
-
-.chapter-content .chapter-title {
-  flex: 1;
-  min-width: 0;
-  font-size: inherit;
-  white-space: normal;
-  line-height: 1.35;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.summary-icon {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-50);
-  cursor: help;
-  flex-shrink: 0;
-  margin-left: 0.25rem;
-  opacity: 0;
-  transition:
-    color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.chapter-item:hover .summary-icon {
-  opacity: 1;
-}
-
-.summary-icon:hover {
-  opacity: 0.85;
-  cursor: progress;
-}
-
-/* 加载状态图标 */
-.loading-icon {
-  font-size: 0.75rem;
-  color: var(--primary-opacity-80);
-  flex-shrink: 0;
-}
-
-.chapter-item-loading {
-  pointer-events: none;
-  opacity: 0.85;
 }
 
 /* 折叠/展开动画 */

@@ -167,6 +167,48 @@ onMounted(async () => {
 onUnmounted(() => {
   unsubscribers.forEach((unsub) => unsub());
 });
+
+// 以下 computed 把模板里的 ?: / && 收进脚本侧，并把三态按钮折叠成单个绑定
+const toggleCardClass = computed(() =>
+  effectiveEnableLocalEmbedding.value
+    ? 'bg-primary-500/5 border-primary-500/30'
+    : 'bg-moon/5 border-moon/10',
+);
+const enableLabelClass = computed(() => (isMobile.value ? 'text-moon/50' : 'text-moon/90'));
+const enableDescClass = computed(() => (isMobile.value ? 'text-moon/50' : 'text-moon/70'));
+const showProgressBar = computed(
+  () => embeddingStatus.value === 'loading' && downloadProgress.value != null,
+);
+const progressValue = computed(() => downloadProgress.value ?? 0);
+const showError = computed(
+  () => !!lastError.value && embeddingStatus.value === 'failed',
+);
+const statusAction = computed<
+  | { label: string; icon: string; severity: 'secondary' | 'warn'; text: boolean; handler: () => void }
+  | null
+>(() => {
+  switch (embeddingStatus.value) {
+    case 'idle':
+      return { label: '下载模型', icon: 'pi pi-download', severity: 'secondary', text: false, handler: handleDownload };
+    case 'failed':
+      return { label: '重试', icon: 'pi pi-refresh', severity: 'warn', text: false, handler: handleRetry };
+    case 'ready':
+      return { label: '重新加载', icon: 'pi pi-refresh', severity: 'secondary', text: true, handler: handleRetry };
+    default:
+      return null;
+  }
+});
+const semanticLabelClass = computed(() =>
+  effectiveEnableLocalEmbedding.value ? 'text-moon/80' : 'text-moon/40',
+);
+const semanticDescClass = computed(() =>
+  effectiveEnableLocalEmbedding.value ? 'text-moon/60' : 'text-moon/40',
+);
+const semanticDescription = computed(() => {
+  if (effectiveEnableLocalEmbedding.value) return '关闭后记忆打分仅用关键词和时间衰减';
+  if (isMobile.value) return '移动设备上本地嵌入被强制禁用，仅用关键词和时间衰减';
+  return '需要先在上方开启“本地嵌入”总开关';
+});
 </script>
 
 <template>
@@ -174,21 +216,17 @@ onUnmounted(() => {
     <!-- 本地嵌入总开关 -->
     <div
       class="p-3 rounded-lg border space-y-2"
-      :class="
-        effectiveEnableLocalEmbedding
-          ? 'bg-primary-500/5 border-primary-500/30'
-          : 'bg-moon/5 border-moon/10'
-      "
+      :class="toggleCardClass"
     >
       <div class="flex items-start justify-between gap-3">
         <div class="flex-1 min-w-0">
           <label
             class="text-sm font-medium block"
-            :class="isMobile ? 'text-moon/50' : 'text-moon/90'"
+            :class="enableLabelClass"
           >
             启用本地嵌入
           </label>
-          <p class="text-xs mt-0.5" :class="isMobile ? 'text-moon/50' : 'text-moon/70'">
+          <p class="text-xs mt-0.5" :class="enableDescClass">
             <template v-if="isMobile">
               <span class="pi pi-mobile mr-1"></span>
               移动设备不支持本地嵌入(模型过大、WebGPU 不稳定)。手机端检索仅用关键词匹配 ——
@@ -224,38 +262,22 @@ onUnmounted(() => {
             <span class="text-xs text-moon/80">{{ statusLabel }}</span>
           </div>
           <Button
-            v-if="embeddingStatus === 'idle'"
-            label="下载模型"
-            icon="pi pi-download"
+            v-if="statusAction"
+            :label="statusAction.label"
+            :icon="statusAction.icon"
             size="small"
-            severity="secondary"
-            @click="handleDownload"
-          />
-          <Button
-            v-else-if="embeddingStatus === 'failed'"
-            label="重试"
-            icon="pi pi-refresh"
-            size="small"
-            severity="warn"
-            @click="handleRetry"
-          />
-          <Button
-            v-else-if="embeddingStatus === 'ready'"
-            label="重新加载"
-            icon="pi pi-refresh"
-            size="small"
-            severity="secondary"
-            text
-            @click="handleRetry"
+            :severity="statusAction.severity"
+            :text="statusAction.text"
+            @click="statusAction.handler"
           />
         </div>
 
-        <div v-if="embeddingStatus === 'loading' && downloadProgress != null">
-          <ProgressBar :value="downloadProgress" :show-value="true" class="h-2" />
+        <div v-if="showProgressBar">
+          <ProgressBar :value="progressValue" :show-value="true" class="h-2" />
           <p v-if="downloadFile" class="text-xs text-moon/50 mt-1 truncate">{{ downloadFile }}</p>
         </div>
 
-        <p v-if="lastError && embeddingStatus === 'failed'" class="text-xs text-red-400">
+        <p v-if="showError" class="text-xs text-red-400">
           {{ lastError }}
         </p>
 
@@ -322,23 +344,15 @@ onUnmounted(() => {
           <div class="pr-3">
             <label
               class="text-xs block"
-              :class="effectiveEnableLocalEmbedding ? 'text-moon/80' : 'text-moon/40'"
+              :class="semanticLabelClass"
             >
               启用语义信号
             </label>
             <p
               class="text-xs mt-0.5"
-              :class="effectiveEnableLocalEmbedding ? 'text-moon/60' : 'text-moon/40'"
+              :class="semanticDescClass"
             >
-              <template v-if="effectiveEnableLocalEmbedding">
-                关闭后记忆打分仅用关键词和时间衰减
-              </template>
-              <template v-else-if="isMobile">
-                移动设备上本地嵌入被强制禁用,仅用关键词和时间衰减
-              </template>
-              <template v-else>
-                需要先在上方开启"本地嵌入"总开关
-              </template>
+              {{ semanticDescription }}
             </p>
           </div>
           <ToggleSwitch

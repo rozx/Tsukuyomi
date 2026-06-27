@@ -11,9 +11,9 @@ import { useConfirm } from 'primevue/useconfirm';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { useUiStore } from 'src/stores/ui';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
-import { formatTaskDuration } from 'src/utils';
 import ThinkingDetailDialog from './ThinkingDetailDialog.vue';
+import ThinkingTaskCard from './ThinkingTaskCard.vue';
+import ThinkingReviewedCard from './ThinkingReviewedCard.vue';
 
 const props = defineProps<{
   /** 面板是否展开 —— 关闭时 watch 短路，避免无意义的 DOM 操作 */
@@ -31,6 +31,11 @@ const hasHeaderActions = computed(
   () =>
     aiProcessing.reviewedTasksList.length > 0 || aiProcessing.allTasksList.length > 0,
 );
+// 头部是否渲染、以及手机端「仅动作」变体的 class，收进 computed 压低模板圈复杂度
+const showHeader = computed(() => !isPhone.value || hasHeaderActions.value);
+const headerClass = computed(() => ({
+  'thinking-header--mobile-actions-only': isPhone.value,
+}));
 
 const now = ref(Date.now());
 let nowTimer: number | null = null;
@@ -41,17 +46,6 @@ onMounted(async () => {
     now.value = Date.now();
   }, 1000);
 });
-
-const statusLabels: Record<string, string> = {
-  thinking: '思考中',
-  processing: '处理中',
-  end: '已完成',
-  error: '错误',
-  cancelled: '已取消',
-};
-
-const formatDuration = (startTime: number, endTime?: number): string =>
-  formatTaskDuration(startTime, endTime, now.value);
 
 const stopTask = async (taskId: string) => {
   await aiProcessing.stopTask(taskId);
@@ -223,6 +217,21 @@ const listContainerStyle = () => ({
   maxHeight: props.listMaxHeight ?? '500px',
 });
 
+// v-memo 数组里原先带三元与 ||，搬到函数里求值，避免计入模板圈复杂度
+const activeTaskMemo = (task: AIProcessingTask): unknown[] => [
+  task.id,
+  task.status,
+  task.message,
+  task.thinkingMessage?.length,
+  task.status === 'thinking' || task.status === 'processing' ? Math.floor(now.value / 1000) : 0,
+];
+
+const reviewedTaskMemo = (task: AIProcessingTask): unknown[] => [
+  task.id,
+  task.status,
+  task.message,
+];
+
 onUnmounted(() => {
   if (nowTimer !== null) {
     clearInterval(nowTimer);
@@ -257,9 +266,9 @@ onUnmounted(() => {
 <template>
   <div class="flex flex-col thinking-body">
     <div
-      v-if="!isPhone || hasHeaderActions"
+      v-if="showHeader"
       class="thinking-header flex items-center justify-between mb-4 pb-3 border-b border-white/10"
-      :class="{ 'thinking-header--mobile-actions-only': isPhone }"
+      :class="headerClass"
     >
       <h3 v-if="!isPhone" class="text-lg font-semibold text-moon/90">AI 思考过程</h3>
       <div class="thinking-header-actions flex items-center gap-2">
@@ -286,147 +295,28 @@ onUnmounted(() => {
         <p class="text-moon/60">当前没有思考过程记录</p>
       </div>
 
-      <div
+      <ThinkingTaskCard
         v-for="task in aiProcessing.activeTasksList"
         :key="task.id"
-        v-memo="[
-          task.id,
-          task.status,
-          task.message,
-          task.thinkingMessage?.length,
-          task.status === 'thinking' || task.status === 'processing' ? Math.floor(now / 1000) : 0,
-        ]"
-        class="thinking-task-card p-4 rounded-lg border border-white/10 bg-white/5"
-      >
-        <div class="thinking-task-head flex items-start justify-between mb-2 gap-2">
-          <div class="thinking-task-main flex items-center gap-2 flex-1 min-w-0">
-            <i
-              class="pi flex-shrink-0"
-              :class="{
-                'pi-spin pi-spinner text-primary':
-                  task.status === 'thinking' || task.status === 'processing',
-                'pi-check-circle text-green-500': task.status === 'end',
-                'pi-times-circle text-red-500': task.status === 'error',
-                'pi-ban text-orange-500': task.status === 'cancelled',
-              }"
-            />
-            <span class="thinking-model-name font-medium text-moon/90 truncate">{{
-              task.modelName
-            }}</span>
-            <span class="text-xs px-2 py-0.5 rounded bg-primary/20 text-primary flex-shrink-0">{{
-              TASK_TYPE_LABELS[task.type] || task.type
-            }}</span>
-          </div>
-          <div class="thinking-task-status flex items-center gap-2 flex-shrink-0">
-            <span class="text-xs text-moon/60">{{
-              statusLabels[task.status] || task.status
-            }}</span>
-            <Button
-              v-if="task.thinkingMessage && task.thinkingMessage.trim()"
-              icon="pi pi-external-link"
-              class="p-button-text p-button-sm p-button-rounded"
-              :pt="{ root: { class: '!p-1 !min-w-0 !h-6 !w-6' } }"
-              title="查看完整思考过程"
-              aria-label="查看完整思考过程"
-              @click="openDetail(task)"
-            />
-            <Button
-              v-if="task.status === 'thinking' || task.status === 'processing'"
-              icon="pi pi-stop"
-              class="p-button-text p-button-sm p-button-rounded p-button-danger"
-              :pt="{ root: { class: '!p-1 !min-w-0 !h-6 !w-6' } }"
-              aria-label="停止任务"
-              @click="stopTask(task.id)"
-            />
-          </div>
-        </div>
-
-        <p v-if="task.message" class="text-sm text-moon/70 mt-2 break-words">
-          {{ task.message }}
-        </p>
-
-        <div
-          v-if="task.thinkingMessage && task.thinkingMessage.trim()"
-          class="mt-2 p-2 rounded bg-white/3 border border-white/5"
-        >
-          <p class="text-xs text-moon/50 mb-1">思考过程：</p>
-          <p
-            :ref="(el) => setThinkingMessageRef(task.id, el as HTMLElement)"
-            class="text-xs text-moon/70 whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
-            style="word-break: break-all; overflow-wrap: anywhere"
-          >
-            {{ task.thinkingMessage }}
-          </p>
-        </div>
-
-        <div
-          class="thinking-task-meta flex items-center gap-2 mt-3 text-xs text-moon/50 break-words"
-        >
-          <span>运行时间: {{ formatDuration(task.startTime, task.endTime) }}</span>
-          <span v-if="task.endTime" class="break-words">
-            · 完成于 {{ new Date(task.endTime).toLocaleTimeString('zh-CN') }}
-          </span>
-        </div>
-      </div>
+        v-memo="activeTaskMemo(task)"
+        :task="task"
+        :now-ms="now"
+        :on-open-detail="openDetail"
+        :on-stop-task="stopTask"
+        :set-thinking-message-ref="setThinkingMessageRef"
+      />
 
       <div v-if="aiProcessing.reviewedTasksList.length > 0" class="mt-6">
         <h4 class="text-sm font-medium text-moon/70 mb-3">已完成的任务</h4>
         <div class="space-y-2">
-          <div
+          <ThinkingReviewedCard
             v-for="task in aiProcessing.reviewedTasksList.slice(0, 10)"
             :key="task.id"
-            v-memo="[task.id, task.status, task.message]"
-            class="thinking-reviewed-card p-3 rounded-lg border border-white/5 bg-white/2"
-          >
-            <div class="thinking-reviewed-head flex items-start justify-between mb-2 gap-2">
-              <div class="thinking-reviewed-main flex items-center gap-2 flex-1 min-w-0">
-                <i
-                  class="pi text-sm flex-shrink-0"
-                  :class="{
-                    'pi-check-circle text-green-500': task.status === 'end',
-                    'pi-times-circle text-red-500': task.status === 'error',
-                    'pi-ban text-orange-500': task.status === 'cancelled',
-                  }"
-                />
-                <span class="text-sm text-moon/70 truncate">{{ task.modelName }}</span>
-                <span class="text-xs px-1.5 py-0.5 rounded bg-white/5 text-moon/50 flex-shrink-0">{{
-                  TASK_TYPE_LABELS[task.type] || task.type
-                }}</span>
-              </div>
-              <span class="thinking-reviewed-duration text-xs text-moon/50 flex-shrink-0">{{
-                formatDuration(task.startTime, task.endTime)
-              }}</span>
-              <Button
-                v-if="task.thinkingMessage && task.thinkingMessage.trim()"
-                icon="pi pi-external-link"
-                class="p-button-text p-button-sm p-button-rounded flex-shrink-0"
-                :pt="{ root: { class: '!p-1 !min-w-0 !h-6 !w-6' } }"
-                title="查看完整思考过程"
-                aria-label="查看完整思考过程"
-                @click="openDetail(task)"
-              />
-            </div>
-            <p v-if="task.message" class="text-xs text-moon/60 mb-2 break-words">
-              {{ task.message }}
-            </p>
-            <div
-              v-if="task.thinkingMessage && task.thinkingMessage.trim()"
-              class="mt-2 p-2 rounded bg-white/3 border border-white/5"
-            >
-              <p class="text-xs text-moon/50 mb-1">思考过程：</p>
-              <p
-                class="text-xs text-moon/70 whitespace-pre-wrap break-words max-h-24 overflow-y-auto"
-                style="word-break: break-all; overflow-wrap: anywhere"
-              >
-                {{ task.thinkingMessage }}
-              </p>
-            </div>
-            <div class="flex items-center gap-2 mt-2 text-xs text-moon/50 break-words">
-              <span v-if="task.endTime" class="break-words">
-                完成于 {{ new Date(task.endTime).toLocaleString('zh-CN') }}
-              </span>
-            </div>
-          </div>
+            v-memo="reviewedTaskMemo(task)"
+            :task="task"
+            :now-ms="now"
+            :on-open-detail="openDetail"
+          />
         </div>
       </div>
     </div>
@@ -469,55 +359,7 @@ onUnmounted(() => {
     justify-content: flex-end;
     gap: 0.25rem;
   }
-
-  .thinking-task-card {
-    padding: 0.75rem;
-  }
-
-  .thinking-task-head {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .thinking-task-main {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-  }
-
-  .thinking-model-name {
-    max-width: 100%;
-  }
-
-  .thinking-task-status {
-    width: 100%;
-    justify-content: flex-end;
-  }
-
-  .thinking-task-meta {
-    flex-wrap: wrap;
-    gap: 0.25rem;
-  }
-
-  .thinking-reviewed-card {
-    padding: 0.65rem;
-  }
-
-  .thinking-reviewed-head {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.4rem;
-  }
-
-  .thinking-reviewed-main {
-    width: 100%;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-  }
-
-  .thinking-reviewed-duration {
-    align-self: flex-end;
-  }
 }
+/* 注：进行中卡片 / 已完成卡片的 @media 移动端规则已迁移到对应子组件
+ * (ThinkingTaskCard.vue / ThinkingReviewedCard.vue) —— scoped 样式无法穿透到子组件内部嵌套元素。 */
 </style>

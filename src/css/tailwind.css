@@ -159,4 +159,24 @@
     letter-spacing: -0.005em;
     color: var(--fg-1, rgba(247, 244, 236, 1));
   }
+
+  /* 首页桌面卡片公共表面：最近编辑卡与快速操作卡共用同一套底色/边框/过渡，集中在此避免重复 */
+  /* 各组件 scoped 样式仍负责自身布局（flex / grid / padding）与差异化 hover（位移、阴影） */
+  .recent-card,
+  .quick-action {
+    border-radius: 10px;
+    border: 1px solid var(--white-opacity-8, var(--white-opacity-8));
+    background: var(--shell-opacity-50); /* near-black overlay, kept as-is */
+    color: inherit;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: left;
+    transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .recent-card:hover,
+  .quick-action:hover {
+    border-color: var(--tsukuyomi-200-opacity-30); /* token: tsukuyomi-200 @ 30% */
+    background: var(--tsukuyomi-200-opacity-6); /* token: tsukuyomi-200 @ 6% */
+  }
 }

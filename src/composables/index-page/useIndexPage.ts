@@ -74,6 +74,11 @@ function createIndexPageContext() {
       .slice(0, 6),
   );
 
+  // 页面态判定：被桌面/平板/手机变体共用，集中在此避免重复
+  const hasRecent = computed(() => recentBooks.value.length > 0);
+  const isLoadingState = computed(() => booksStore.isLoading || !booksStore.isLoaded);
+  const isEmptyState = computed(() => booksStore.isLoaded && booksStore.books.length === 0);
+
   const continueReadingBook = computed<Novel | null>(() => recentBooks.value[0] ?? null);
 
   const greeting = computed(() => {
@@ -167,6 +172,9 @@ function createIndexPageContext() {
     totalWords,
     totalTerms,
     recentBooks,
+    hasRecent,
+    isLoadingState,
+    isEmptyState,
     continueReadingBook,
     greeting,
     formatDate,

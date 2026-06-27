@@ -1,4 +1,4 @@
-import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
+import { parseToolArgs, type ActionInfo, type ToolDefinition, type ToolContext } from './types';
 import type {
   AskUserBatchPayload,
   AskUserBatchResult,
@@ -105,42 +105,74 @@ async function invokeAskUserBridge(
     onAction?.({
       type: 'ask',
       entity: 'user',
-      data: {
-        tool_name: 'ask_user',
-        question,
-        ...(Array.isArray(payload.suggested_answers)
-          ? { suggested_answers: payload.suggested_answers }
-          : {}),
-        ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
-        ...(typeof result.selected_index === 'number'
-          ? { selected_index: result.selected_index }
-          : {}),
-        ...(result.cancelled ? { cancelled: true } : {}),
-      },
+      data: buildAskUserActionData(question, payload, result),
     });
     if (result.cancelled) {
-      return JSON.stringify({
-        success: false,
-        cancelled: true,
-        question,
-        ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
-        ...(typeof result.selected_index === 'number'
-          ? { selected_index: result.selected_index }
-          : {}),
-      });
+      return JSON.stringify(buildAskUserCancelledJson(question, result));
     }
-    return JSON.stringify({
-      success: true,
-      question,
-      answer: result.answer,
-      ...(typeof result.selected_index === 'number'
-        ? { selected_index: result.selected_index }
-        : {}),
-    });
+    return JSON.stringify(buildAskUserSuccessJson(question, result));
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    return JSON.stringify({ success: false, error: msg, question });
+    return JSON.stringify(buildAskUserErrorJson(question, error));
   }
+}
+
+/**
+ * 构造 ask_user 的 read/ask 操作回调数据（仅含实际存在的字段）
+ */
+function buildAskUserActionData(
+  question: string,
+  payload: AskUserPayload,
+  result: AskUserResult,
+): Extract<ActionInfo['data'], { tool_name: 'ask_user' }> {
+  return {
+    tool_name: 'ask_user',
+    question,
+    ...(Array.isArray(payload.suggested_answers)
+      ? { suggested_answers: payload.suggested_answers }
+      : {}),
+    ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
+    ...(typeof result.selected_index === 'number'
+      ? { selected_index: result.selected_index }
+      : {}),
+    ...(result.cancelled ? { cancelled: true } : {}),
+  };
+}
+
+/**
+ * ask_user 用户取消时的 JSON 响应体
+ */
+function buildAskUserCancelledJson(question: string, result: AskUserResult) {
+  return {
+    success: false,
+    cancelled: true,
+    question,
+    ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
+    ...(typeof result.selected_index === 'number'
+      ? { selected_index: result.selected_index }
+      : {}),
+  };
+}
+
+/**
+ * ask_user 成功时的 JSON 响应体
+ */
+function buildAskUserSuccessJson(question: string, result: AskUserResult) {
+  return {
+    success: true,
+    question,
+    answer: result.answer,
+    ...(typeof result.selected_index === 'number'
+      ? { selected_index: result.selected_index }
+      : {}),
+  };
+}
+
+/**
+ * ask_user 异常时的 JSON 响应体
+ */
+function buildAskUserErrorJson(question: string, error: unknown) {
+  const msg = error instanceof Error ? error.message : String(error);
+  return { success: false, error: msg, question };
 }
 
 export const askUserTools: ToolDefinition[] = [

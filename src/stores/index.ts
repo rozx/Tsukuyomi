@@ -1,4 +1,3 @@
-// fallow-ignore-next-line unresolved-import
 import { defineStore } from '#q-app/wrappers';
 import { createPinia } from 'pinia';
 

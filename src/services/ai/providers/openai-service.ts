@@ -499,6 +499,42 @@ function accumulateLegacyFunctionCall(
 }
 
 /**
+ * 从 delta 提取正文增量与思考内容增量（含 <think> 标签过滤）
+ */
+function extractChunkTextAndReasoning(
+  delta: OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta,
+  acc: StreamAccumulators,
+): { chunkText: string; chunkReasoningContent: string } {
+  const chunkReasoningContent = extractDeltaReasoning(delta);
+  const rawContent = delta.content || '';
+  if (!rawContent) {
+    return { chunkText: '', chunkReasoningContent };
+  }
+  const { chunkText, reasoningDelta } = extractThinkTagContent(rawContent, acc.thinkTagState);
+  return { chunkText, chunkReasoningContent: chunkReasoningContent + reasoningDelta };
+}
+
+/**
+ * 在存在正文或思考内容增量时转发 onChunk 回调
+ */
+async function emitOpenAIChunk(
+  onChunk: TextGenerationStreamCallback | undefined,
+  chunkText: string,
+  chunkReasoningContent: string,
+  model: string | undefined,
+  fallbackModelId: string,
+): Promise<void> {
+  if (!onChunk || (!chunkText && !chunkReasoningContent)) return;
+  const chunkData: TextGenerationChunk = {
+    text: chunkText,
+    done: false,
+    model: model || fallbackModelId,
+    ...(chunkReasoningContent ? { reasoningContent: chunkReasoningContent } : {}),
+  };
+  await onChunk(chunkData);
+}
+
+/**
  * 处理单个流式 chunk：累积工具调用、文本、思考内容并触发 onChunk 回调
  */
 async function processOpenAIStreamChunk(
@@ -513,30 +549,12 @@ async function processOpenAIStreamChunk(
   // [兼容] 旧式 function_call（非 tool_calls）
   accumulateLegacyFunctionCall(delta, acc.legacyFunctionCall);
 
-  let chunkReasoningContent = extractDeltaReasoning(delta);
-  const rawContent = delta.content || '';
-  let chunkText = '';
-  if (rawContent) {
-    const { chunkText: processedText, reasoningDelta } = extractThinkTagContent(
-      rawContent,
-      acc.thinkTagState,
-    );
-    chunkText = processedText;
-    chunkReasoningContent += reasoningDelta;
-  }
+  const { chunkText, chunkReasoningContent } = extractChunkTextAndReasoning(delta, acc);
 
   if (chunkText) acc.fullText += chunkText;
   if (chunkReasoningContent) acc.reasoningContent += chunkReasoningContent;
 
-  if (onChunk && (chunkText || chunkReasoningContent)) {
-    const chunkData: TextGenerationChunk = {
-      text: chunkText,
-      done: false,
-      model: chunk.model || acc.modelId,
-      ...(chunkReasoningContent ? { reasoningContent: chunkReasoningContent } : {}),
-    };
-    await onChunk(chunkData);
-  }
+  await emitOpenAIChunk(onChunk, chunkText, chunkReasoningContent, chunk.model, acc.modelId);
 
   if (chunk.model) acc.modelId = chunk.model;
 }

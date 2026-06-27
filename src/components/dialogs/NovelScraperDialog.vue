@@ -1,29 +1,24 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick, provide } from 'vue';
 import type { CSSProperties } from 'vue';
-import Button from 'primevue/button';
-import InputText from 'primevue/inputtext';
-import Skeleton from 'primevue/skeleton';
 import Splitter from 'primevue/splitter';
 import SplitterPanel from 'primevue/splitterpanel';
-import Checkbox from 'primevue/checkbox';
-import ProgressBar from 'primevue/progressbar';
-import VirtualScroller from 'primevue/virtualscroller';
-// 不再需要 words-count 包，直接使用字符串长度计算字符数
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
-import type { Novel, Chapter } from 'src/models/novel';
+import ScraperUrlInput from './ScraperUrlInput.vue';
+import ScraperLoadingState from './ScraperLoadingState.vue';
+import ScraperNovelInfo from './ScraperNovelInfo.vue';
+import ScraperChapterList from './ScraperChapterList.vue';
+import ScraperChapterPreview from './ScraperChapterPreview.vue';
+import ScraperImportFooter from './ScraperImportFooter.vue';
+import { SCRAPER_DIALOG_KEY } from './scraper-dialog-context';
+import type { Novel, Chapter, Volume } from 'src/models/novel';
+import type { BatchFetchResult } from 'src/services/scraper';
 import { NovelScraperFactory, ScraperService } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useUiStore } from 'src/stores/ui';
-import {
-  formatWordCount,
-  formatDate,
-  UniqueIdGenerator,
-  getVolumeDisplayTitle,
-  getChapterDisplayTitle,
-} from 'src/utils';
+import { getVolumeDisplayTitle } from 'src/utils';
 
 const props = withDefaults(
   defineProps<{
@@ -407,20 +402,50 @@ const shouldAutoSelectChapter = (chapter: Chapter): boolean => {
   return ChapterService.shouldUpdateChapter(props.currentBook, chapter);
 };
 
+// 内容加载后，按导入状态与远程更新情况决定是否自动选中该章节
+const autoSelectChapterAfterLoad = (chapter: Chapter, content: string) => {
+  // 未导入的章节，自动选中
+  if (!isChapterImported(chapter)) {
+    selectedChapters.value.add(chapter.id);
+    return;
+  }
+  // 已导入但远程更新（日期对比），自动选中
+  if (shouldAutoSelectChapter(chapter)) {
+    selectedChapters.value.add(chapter.id);
+    return;
+  }
+  // 内容加载后：检测远程内容是否与本地不同
+  // chapter.webUrl 由 loadChapterContent 顶部的 guard 保证非空
+  const importedChapter = ChapterService.findChapterByUrl(props.currentBook, chapter.webUrl!);
+  if (importedChapter && ChapterService.hasContentChanged(importedChapter, content)) {
+    contentChangedChapters.value.add(chapter.id);
+    selectedChapters.value.add(chapter.id);
+  }
+};
+
+// 若此时仍无任何选中章节，自动选中所有未导入或远程更新的章节作为默认
+const ensureDefaultSelection = () => {
+  if (selectedChapters.value.size > 0 || !scrapedNovel.value) return;
+  scrapedNovel.value.volumes?.forEach((vol) => {
+    vol.chapters?.forEach((ch) => {
+      if (!isChapterImported(ch) || shouldAutoSelectChapter(ch)) {
+        selectedChapters.value.add(ch.id);
+      }
+    });
+  });
+};
+
 // 加载章节内容
 const loadChapterContent = async (chapter: Chapter, retry = false) => {
   if (!chapter.webUrl) {
     return;
   }
 
-  // 如果是重试，清除之前的错误
+  // 重试时清除之前的错误与内容；非重试且已有内容则直接返回
   if (retry) {
     chapterErrors.value.delete(chapter.id);
     chapterContents.value.delete(chapter.id);
-  }
-
-  // 如果已经有内容且不是重试，直接返回
-  if (chapterContents.value.has(chapter.id) && !retry) {
+  } else if (chapterContents.value.has(chapter.id)) {
     return;
   }
 
@@ -435,31 +460,8 @@ const loadChapterContent = async (chapter: Chapter, retry = false) => {
     chapterContents.value.set(chapter.id, content);
     chapterErrors.value.delete(chapter.id);
 
-    // 自动选中未导入的章节，或已导入但远程更新的章节
-    if (!isChapterImported(chapter)) {
-      selectedChapters.value.add(chapter.id);
-    } else if (shouldAutoSelectChapter(chapter)) {
-      // 已导入但远程更新（日期对比），自动选中
-      selectedChapters.value.add(chapter.id);
-    } else {
-      // 内容加载后：检测远程内容是否与本地不同
-      const importedChapter = ChapterService.findChapterByUrl(props.currentBook, chapter.webUrl);
-      if (importedChapter && ChapterService.hasContentChanged(importedChapter, content)) {
-        contentChangedChapters.value.add(chapter.id);
-        selectedChapters.value.add(chapter.id);
-      }
-    }
-
-    // 如果还没有选中任何章节，自动选中所有未导入的章节和已导入但远程更新的章节
-    if (selectedChapters.value.size === 0 && scrapedNovel.value) {
-      scrapedNovel.value.volumes?.forEach((vol) => {
-        vol.chapters?.forEach((ch) => {
-          if (!isChapterImported(ch) || shouldAutoSelectChapter(ch)) {
-            selectedChapters.value.add(ch.id);
-          }
-        });
-      });
-    }
+    autoSelectChapterAfterLoad(chapter, content);
+    ensureDefaultSelection();
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误';
     chapterErrors.value.set(chapter.id, errorMessage);
@@ -566,16 +568,14 @@ const selectedChapterError = computed(() => {
 
 // 计算章节字符数
 const getChapterWordCount = (chapterId: string): number | null => {
-  const content = chapterContents.value.get(chapterId);
-  if (!content) {
+  // 用 has() 判断是否已加载：空字符串是合法的抓取结果（空章节字数为 0，而非「未加载」的 null）
+  if (!chapterContents.value.has(chapterId)) {
     return null;
   }
+  const content = chapterContents.value.get(chapterId) ?? '';
   // 直接使用字符串长度计算字符数（包括所有字符，包括空格和换行符）
   return content.length;
 };
-
-// 格式化字数（使用工具函数）
-// formatWordCount 已从 utils 导入
 
 // 切换章节选择
 const toggleChapterSelection = (chapterId: string, event?: Event) => {
@@ -692,6 +692,135 @@ const loadImportedChapterContent = async (chapter: Chapter) => {
   }
 };
 
+// 批量抓取时的章节信息条目
+type ChapterFetchItem = { chapterId: string; webUrl: string; title: string };
+
+// 收集所有被选中的章节（用于导入）
+const collectChaptersToImport = (): Chapter[] => {
+  const chapters: Chapter[] = [];
+  scrapedNovel.value?.volumes?.forEach((volume) => {
+    volume.chapters?.forEach((chapter) => {
+      if (selectedChapters.value.has(chapter.id)) {
+        chapters.push(chapter);
+      }
+    });
+  });
+  return chapters;
+};
+
+// 将章节列表转换为批量抓取所需的 { chapterId, webUrl, title } 条目
+const buildFetchList = (chapters: Chapter[]): ChapterFetchItem[] =>
+  chapters
+    .filter((chapter) => chapter && chapter.webUrl)
+    .map((chapter) => ({
+      chapterId: chapter.id,
+      webUrl: chapter.webUrl!,
+      title: typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
+    }));
+
+// 构造批量抓取的进度回调：更新进度条与当前章节标题（显示最近完成的章节）
+const makeFetchProgressCallback =
+  (chaptersToFetch: ChapterFetchItem[]) => (completed: number, total: number) => {
+    importCurrent.value = completed;
+    importProgress.value = Math.round((completed / total) * 100);
+    if (completed > 0 && completed <= chaptersToFetch.length) {
+      const recentChapter = chaptersToFetch[completed - 1];
+      if (recentChapter) {
+        importCurrentChapter.value = recentChapter.title;
+      }
+    }
+  };
+
+// 根据批量抓取结果更新 chapterContents / chapterErrors
+const applyFetchResults = (results: BatchFetchResult[], chaptersToFetch: ChapterFetchItem[]) => {
+  results.forEach((result, index) => {
+    const chapterInfo = chaptersToFetch[index];
+    if (!chapterInfo) {
+      return;
+    }
+    if (result.success && result.result) {
+      // 成功：保存内容
+      chapterContents.value.set(result.result.chapterId, result.result.content);
+      chapterErrors.value.delete(result.result.chapterId);
+    } else {
+      // 失败：记录错误
+      const errorMessage = result.error?.message || '未知错误';
+      chapterErrors.value.set(chapterInfo.chapterId, errorMessage);
+      chapterContents.value.delete(chapterInfo.chapterId);
+    }
+  });
+};
+
+// 批量加载章节内容（即使已导入也重新获取最新内容）
+const fetchSelectedChaptersContent = async (chapters: Chapter[]) => {
+  importing.value = true;
+  importTotal.value = chapters.length;
+  importCurrent.value = 0;
+  importProgress.value = 0;
+  try {
+    const chaptersToFetch = buildFetchList(chapters);
+    const results = await ScraperService.fetchChaptersContent(
+      chaptersToFetch,
+      settingsStore.scraperConcurrencyLimit,
+      makeFetchProgressCallback(chaptersToFetch),
+    );
+    applyFetchResults(results, chaptersToFetch);
+  } finally {
+    importing.value = false;
+    importCurrentChapter.value = null;
+  }
+};
+
+// 将已加载内容的章节转换为带段落数组的章节；无内容时原样返回
+const mapChapterWithContent = (chapter: Chapter): Chapter => {
+  // 用 has() 判断已加载：抓取成功但内容为空（空字符串）的章节也应视为已加载，
+  // 而非回退到原始 chapter（否则空章节会被当作未抓取）。
+  if (!chapterContents.value.has(chapter.id)) return chapter;
+  const content = chapterContents.value.get(chapter.id) ?? '';
+  // 使用 ChapterService 将内容转换为段落数组
+  const paragraphs = ChapterService.convertContentToParagraphs(content);
+  return { ...chapter, content: paragraphs };
+};
+
+// 过滤卷内被选中的章节，无选中章节的卷返回 null
+const mapVolumeWithSelectedChapters = (volume: Volume): Volume | null => {
+  const filteredChapters = volume.chapters
+    ?.filter((chapter) => selectedChapters.value.has(chapter.id))
+    .map(mapChapterWithContent)
+    .filter((chapter): chapter is Chapter => chapter !== undefined);
+  if (filteredChapters && filteredChapters.length > 0) {
+    return { ...volume, chapters: filteredChapters };
+  }
+  return null;
+};
+
+// 创建只包含选中章节的小说数据，并将内容附加到章节中
+const buildFilteredNovel = (): Novel => {
+  const volumes = scrapedNovel
+    .value!.volumes?.map(mapVolumeWithSelectedChapters)
+    .filter((v): v is Volume => v !== null);
+  return {
+    ...scrapedNovel.value!,
+    ...(volumes && volumes.length > 0 ? { volumes } : {}),
+  };
+};
+
+// 如果用户输入的 URL 有效且不在小说数据的 webUrl 中，添加到列表中
+const mergeInputUrlIntoNovel = (novel: Novel) => {
+  if (
+    !urlInput.value ||
+    urlInput.value.trim() === '' ||
+    !NovelScraperFactory.isValidUrl(urlInput.value)
+  ) {
+    return;
+  }
+  const inputUrl = urlInput.value.trim();
+  const existingUrls = novel.webUrl || [];
+  if (!existingUrls.includes(inputUrl)) {
+    novel.webUrl = [...existingUrls, inputUrl];
+  }
+};
+
 // 应用更改
 const handleApply = async () => {
   if (!scrapedNovel.value) {
@@ -710,126 +839,46 @@ const handleApply = async () => {
   }
 
   // 收集所有需要导入的章节
-  const chaptersToImport: Chapter[] = [];
-  scrapedNovel.value.volumes?.forEach((volume) => {
-    volume.chapters?.forEach((chapter) => {
-      if (selectedChapters.value.has(chapter.id)) {
-        chaptersToImport.push(chapter);
-      }
-    });
-  });
+  const chaptersToImport = collectChaptersToImport();
 
   // 检查哪些章节需要加载内容（包括已导入的章节，确保重新获取最新内容）
   const chaptersNeedingContent = chaptersToImport.filter((chapter) => chapter.webUrl);
 
   // 如果有章节需要加载内容，先批量加载（即使已导入也要重新获取）
   if (chaptersNeedingContent.length > 0) {
-    importing.value = true;
-    importTotal.value = chaptersNeedingContent.length;
-    importCurrent.value = 0;
-    importProgress.value = 0;
-
+    // 批量请求本身可能整体 reject（网络/解析异常），此处兜底，避免未处理异常且无提示
     try {
-      // 准备章节数据
-      const chaptersToFetch = chaptersNeedingContent
-        .filter((chapter) => chapter && chapter.webUrl)
-        .map((chapter) => ({
-          chapterId: chapter.id,
-          webUrl: chapter.webUrl!,
-          title: typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
-        }));
-
-      // 使用 ScraperService 批量获取章节内容，使用设置中的并发数限制
-      const results = await ScraperService.fetchChaptersContent(
-        chaptersToFetch,
-        settingsStore.scraperConcurrencyLimit,
-        (completed, total) => {
-          // 更新进度
-          importCurrent.value = completed;
-          importProgress.value = Math.round((completed / total) * 100);
-
-          // 更新当前正在处理的章节标题（显示最近完成的章节）
-          if (completed > 0 && completed <= chaptersToFetch.length) {
-            const recentChapter = chaptersToFetch[completed - 1];
-            if (recentChapter) {
-              importCurrentChapter.value = recentChapter.title;
-            }
-          }
-        },
-      );
-
-      // 处理结果
-      results.forEach((result, index) => {
-        const chapterInfo = chaptersToFetch[index];
-        if (!chapterInfo) {
-          return;
-        }
-
-        if (result.success && result.result) {
-          // 成功：保存内容
-          chapterContents.value.set(result.result.chapterId, result.result.content);
-          chapterErrors.value.delete(result.result.chapterId);
-        } else {
-          // 失败：记录错误
-          const errorMessage = result.error?.message || '未知错误';
-          chapterErrors.value.set(chapterInfo.chapterId, errorMessage);
-          chapterContents.value.delete(chapterInfo.chapterId);
-        }
+      await fetchSelectedChaptersContent(chaptersNeedingContent);
+    } catch (error) {
+      console.error('[NovelScraperDialog] 批量抓取章节失败:', error);
+      toast.add({
+        severity: 'error',
+        summary: '导入失败',
+        detail: error instanceof Error ? error.message : '批量抓取章节时发生未知错误',
+        life: 4000,
       });
-    } finally {
-      importing.value = false;
-      importCurrentChapter.value = null;
+      return;
+    }
+
+    // 若有章节抓取失败（记录在 chapterErrors 中），则中止导入：
+    // 否则失败章节会在 mapChapterWithContent 中回退原始 chapter，把部分失败伪装成成功
+    const hasFailedChapters = chaptersNeedingContent.some((chapter) =>
+      chapterErrors.value.has(chapter.id),
+    );
+    if (hasFailedChapters) {
+      toast.add({
+        severity: 'error',
+        summary: '导入失败',
+        detail: '部分章节抓取失败，请处理后再继续导入',
+        life: 4000,
+      });
+      return;
     }
   }
 
-  // 创建只包含选中章节的小说数据，并将内容添加到章节中
-  const filteredVolumes = scrapedNovel.value.volumes
-    ?.map((volume) => {
-      const filteredChapters = volume.chapters
-        ?.filter((chapter) => selectedChapters.value.has(chapter.id))
-        .map((chapter) => {
-          // 如果章节有内容，创建段落数组
-          const content = chapterContents.value.get(chapter.id);
-          if (content) {
-            // 使用 ChapterService 将内容转换为段落数组
-            const paragraphs = ChapterService.convertContentToParagraphs(content);
-
-            return {
-              ...chapter,
-              content: paragraphs.length > 0 ? paragraphs : undefined,
-            };
-          }
-          return chapter;
-        })
-        .filter((chapter): chapter is Chapter => chapter !== undefined);
-
-      if (filteredChapters && filteredChapters.length > 0) {
-        return {
-          ...volume,
-          chapters: filteredChapters,
-        };
-      }
-      return null;
-    })
-    .filter((volume): volume is NonNullable<typeof volume> => volume !== null);
-
-  const filteredNovel: Novel = {
-    ...scrapedNovel.value,
-    ...(filteredVolumes && filteredVolumes.length > 0 ? { volumes: filteredVolumes } : {}),
-  };
-
-  // 如果用户输入的 URL 有效且不在小说数据的 webUrl 中，添加到列表中
-  if (
-    urlInput.value &&
-    urlInput.value.trim() !== '' &&
-    NovelScraperFactory.isValidUrl(urlInput.value)
-  ) {
-    const inputUrl = urlInput.value.trim();
-    const existingUrls = filteredNovel.webUrl || [];
-    if (!existingUrls.includes(inputUrl)) {
-      filteredNovel.webUrl = [...existingUrls, inputUrl];
-    }
-  }
+  // 创建只包含选中章节的小说数据
+  const filteredNovel = buildFilteredNovel();
+  mergeInputUrlIntoNovel(filteredNovel);
 
   // 发出过滤后的小说数据
   emit('apply', filteredNovel);
@@ -887,6 +936,85 @@ watch(
     }
   },
 );
+
+// 对外层模板使用的布局条件（收敛模板中的逻辑或与三元，降低圈复杂度）
+const bodyClass = computed(() => [
+  'novel-scraper-body flex flex-col space-y-4 py-2 min-w-0',
+  hasDetailContent.value ? 'h-full min-h-0' : '',
+]);
+const showSplitView = computed(() => !!scrapedNovel.value && !loading.value);
+const showChapterPanel = computed(() => !isPhone.value || !mobileShowPreview.value);
+const showPreviewPanel = computed(() => !isPhone.value || mobileShowPreview.value);
+
+// 将全部共享状态与方法通过 provide 暴露给子组件（避免大量 prop 透传）
+provide(SCRAPER_DIALOG_KEY, {
+  currentBook: computed(() => props.currentBook),
+  showNovelInfo: computed(() => props.showNovelInfo),
+  urlInput,
+  loading,
+  scrapedNovel,
+  selectedChapterId,
+  mobileShowPreview,
+  chapterContents,
+  loadingChapters,
+  chapterErrors,
+  selectedChapters,
+  chapterFilter,
+  collapsedVolumes,
+  importing,
+  importProgress,
+  importTotal,
+  importCurrent,
+  importCurrentChapter,
+  isPhone,
+  isValidUrl,
+  hasDetailContent,
+  supportedSites,
+  supportedSitesText,
+  stats,
+  virtualList,
+  displayVolumeChapters,
+  selectedChapter,
+  selectedChapterContent,
+  selectedChapterImportedContent,
+  isSelectedChapterImported,
+  selectedChapterImportStatus,
+  selectedChapterError,
+  isAllSelected,
+  scraperSheetMaxHeight,
+  scraperSheetMinHeight,
+  contentContainerComponent,
+  contentPanelComponent,
+  contentContainerProps,
+  chapterPanelProps,
+  previewPanelProps,
+  contentContainerClass,
+  chapterPanelWrapperClass,
+  previewPanelWrapperClass,
+  contentContainerStyle,
+  splitPanelContainerStyle,
+  chapterScrollerStyle,
+  contentScrollStyle,
+  novelInfoClass,
+  compareContainerClass,
+  compareImportedClass,
+  compareFetchedClass,
+  chapterItemSize,
+  handleFetch,
+  selectChapter,
+  showMobileChapterList,
+  toggleChapterSelection,
+  toggleSelectAll,
+  toggleVolumeCollapse,
+  isVolumeCollapsed,
+  toggleVolumeSelection,
+  isVolumeSelected,
+  getChapterImportStatus,
+  getChapterWordCount,
+  loadChapterContent,
+  handleApply,
+  handleCancel,
+});
 </script>
 
 <template>
@@ -901,164 +1029,18 @@ watch(
     dialog-class="novel-scraper-dialog"
     @update:visible="$emit('update:visible', $event)"
   >
-    <div
-      :class="[
-        'novel-scraper-body flex flex-col space-y-4 py-2 min-w-0',
-        hasDetailContent ? 'h-full min-h-0' : '',
-      ]"
-    >
+    <div :class="bodyClass">
       <!-- URL 输入 -->
-      <div v-if="!isPhone || !mobileShowPreview" class="space-y-2 flex-shrink-0 w-full min-w-0">
-        <label class="block text-sm font-medium text-moon/90">小说 URL</label>
-        <div class="scraper-url-row flex gap-2 min-w-0">
-          <InputText
-            v-model="urlInput"
-            :placeholder="`输入 ${supportedSitesText} 的小说 URL`"
-            class="flex-1"
-            :class="{ 'p-invalid': urlInput && !isValidUrl }"
-            @keyup.enter="handleFetch"
-          />
-          <Button
-            label="获取"
-            icon="pi pi-search"
-            :loading="loading"
-            :disabled="!isValidUrl || loading"
-            @click="handleFetch"
-          />
-        </div>
-        <small v-if="urlInput && !isValidUrl" class="p-error block">
-          请输入支持的小说网站 URL（当前支持：{{ supportedSitesText }}）
-        </small>
-        <div v-if="!isPhone || !scrapedNovel" class="flex items-center gap-2 flex-wrap">
-          <small class="text-moon/60">支持的网站：</small>
-          <div class="flex gap-2 flex-wrap">
-            <span v-for="site in supportedSites" :key="site" class="site-badge">
-              {{ site }}
-            </span>
-          </div>
-        </div>
-      </div>
+      <ScraperUrlInput />
 
       <!-- 加载中 - 使用骨架屏 -->
-      <div v-if="loading" class="flex-1 min-h-0 min-w-0 flex flex-col gap-4">
-        <div v-if="showNovelInfo && (!isPhone || !mobileShowPreview)" :class="novelInfoClass">
-          <Skeleton width="60%" height="1.75rem" class="mb-3" />
-          <Skeleton width="50%" height="1rem" class="mb-2" />
-          <Skeleton width="90%" height="0.875rem" class="mb-2" />
-          <Skeleton width="85%" height="0.875rem" />
-        </div>
-
-        <div class="flex-1 min-h-0 min-w-0">
-          <component
-            :is="contentContainerComponent"
-            v-bind="contentContainerProps"
-            :class="contentContainerClass"
-            :style="contentContainerStyle"
-          >
-            <component
-              :is="contentPanelComponent"
-              v-bind="chapterPanelProps"
-              :class="chapterPanelWrapperClass"
-              v-show="!isPhone || !mobileShowPreview"
-            >
-              <div
-                class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
-                :style="splitPanelContainerStyle"
-              >
-                <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <Skeleton width="5.5rem" height="1.25rem" />
-                    <Skeleton :width="isPhone ? '2.5rem' : '4.5rem'" height="1.75rem" />
-                  </div>
-                  <div class="flex gap-2">
-                    <Skeleton
-                      width="3.25rem"
-                      height="1.75rem"
-                      v-for="i in 4"
-                      :key="`filter-${i}`"
-                    />
-                  </div>
-                </div>
-                <div class="flex-1 min-h-0 px-3 py-2 overflow-hidden w-full min-w-0">
-                  <div class="h-full space-y-2">
-                    <Skeleton
-                      width="100%"
-                      :height="isPhone ? '3.75rem' : '4.25rem'"
-                      v-for="i in 6"
-                      :key="`chapter-skeleton-${i}`"
-                    />
-                  </div>
-                </div>
-              </div>
-            </component>
-
-            <component
-              :is="contentPanelComponent"
-              v-bind="previewPanelProps"
-              :class="previewPanelWrapperClass"
-              v-show="!isPhone || mobileShowPreview"
-            >
-              <div
-                class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
-                :style="splitPanelContainerStyle"
-              >
-                <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5">
-                  <Skeleton width="65%" height="1.5rem" class="mb-2" />
-                  <Skeleton width="40%" height="0.875rem" />
-                </div>
-                <div class="flex-1 overflow-y-auto px-6 py-4" :style="contentScrollStyle">
-                  <div class="space-y-2">
-                    <Skeleton width="100%" height="1rem" v-for="i in 14" :key="`preview-${i}`" />
-                  </div>
-                </div>
-              </div>
-            </component>
-          </component>
-        </div>
-      </div>
+      <ScraperLoadingState v-if="loading" />
 
       <!-- 统计信息 -->
-      <div
-        v-if="scrapedNovel && !loading && showNovelInfo && (!isPhone || !mobileShowPreview)"
-        :class="novelInfoClass"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <h3
-              class="text-lg font-semibold text-moon/90 mb-1"
-              :class="{ 'line-clamp-2': isPhone }"
-            >
-              {{ scrapedNovel.title }}
-            </h3>
-            <div
-              class="flex items-center gap-4 text-sm text-moon/70"
-              :class="{ 'text-xs': isPhone }"
-            >
-              <span v-if="scrapedNovel.author">作者: {{ scrapedNovel.author }}</span>
-              <span>卷数: {{ stats.volumes }}</span>
-              <span>章节数: {{ stats.chapters }}</span>
-            </div>
-          </div>
-        </div>
-        <div
-          v-if="scrapedNovel.description && !isPhone"
-          class="mt-3 text-sm text-moon/80 whitespace-pre-wrap"
-          :class="{ 'line-clamp-2 text-xs': isPhone }"
-        >
-          {{ scrapedNovel.description }}
-        </div>
-        <div
-          v-if="!isPhone && scrapedNovel.tags && scrapedNovel.tags.length > 0"
-          class="mt-3 flex flex-wrap gap-2"
-        >
-          <span v-for="tag in scrapedNovel.tags" :key="tag" class="novel-tag">
-            {{ tag }}
-          </span>
-        </div>
-      </div>
+      <ScraperNovelInfo />
 
       <!-- 左右分栏布局 -->
-      <div v-if="scrapedNovel && !loading" class="flex-1 min-h-0 min-w-0">
+      <div v-if="showSplitView" class="flex-1 min-h-0 min-w-0">
         <component
           :is="contentContainerComponent"
           v-bind="contentContainerProps"
@@ -1070,176 +1052,9 @@ watch(
             :is="contentPanelComponent"
             v-bind="chapterPanelProps"
             :class="chapterPanelWrapperClass"
-            v-show="!isPhone || !mobileShowPreview"
+            v-show="showChapterPanel"
           >
-            <div
-              class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
-              :style="splitPanelContainerStyle"
-            >
-              <div
-                class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2 w-full"
-              >
-                <div class="flex items-center justify-between min-w-0 gap-2">
-                  <h4 class="text-md font-semibold text-moon/90 flex-shrink-0">章节列表</h4>
-                  <div class="flex items-center gap-2 flex-1 justify-end min-w-0">
-                    <div
-                      class="flex gap-1 min-w-0"
-                      :class="{ 'overflow-x-auto whitespace-nowrap pr-1': isPhone }"
-                    >
-                      <Button
-                        label="全部"
-                        :class="chapterFilter === 'all' ? '' : 'p-button-outlined'"
-                        class="p-button-sm icon-button-hover"
-                        @click="chapterFilter = 'all'"
-                      />
-                      <Button
-                        label="已导入"
-                        :class="chapterFilter === 'imported' ? '' : 'p-button-outlined'"
-                        class="p-button-sm icon-button-hover"
-                        @click="chapterFilter = 'imported'"
-                      />
-                      <Button
-                        label="未导入"
-                        :class="chapterFilter === 'unimported' ? '' : 'p-button-outlined'"
-                        class="p-button-sm icon-button-hover"
-                        @click="chapterFilter = 'unimported'"
-                      />
-                      <Button
-                        label="有更新"
-                        :class="chapterFilter === 'updated' ? '' : 'p-button-outlined'"
-                        class="p-button-sm icon-button-hover"
-                        @click="chapterFilter = 'updated'"
-                      />
-                    </div>
-                    <Button
-                      :label="isPhone ? '' : isAllSelected ? '取消' : '全选'"
-                      :icon="isAllSelected ? 'pi pi-times' : 'pi pi-check-square'"
-                      class="p-button-text p-button-sm text-moon/70 hover:text-moon/90 flex-shrink-0"
-                      :aria-label="isAllSelected ? '取消全选' : '全选章节'"
-                      @click="toggleSelectAll"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div class="flex-1 min-h-0 px-3 py-2 overflow-hidden w-full min-w-0">
-                <VirtualScroller
-                  :items="virtualList"
-                  :itemSize="chapterItemSize"
-                  class="border-0 h-full"
-                  :style="chapterScrollerStyle"
-                >
-                  <template #item="{ item }">
-                    <!-- 卷头 -->
-                    <div v-if="item.type === 'header'" class="pb-2">
-                      <div
-                        class="text-sm font-semibold text-moon/80 px-3 py-2 bg-primary/10 border border-primary/20 rounded-lg cursor-pointer hover:bg-primary/15 transition-colors flex items-center justify-between gap-2"
-                        @click="toggleVolumeCollapse(item.data.volumeId)"
-                      >
-                        <div class="flex-shrink-0" @click.stop>
-                          <Checkbox
-                            :model-value="isVolumeSelected(item.data.volumeId)"
-                            :binary="true"
-                            @update:model-value="toggleVolumeSelection(item.data.volumeId)"
-                          />
-                        </div>
-                        <span class="flex-1">
-                          {{ item.data.volumeTitle }} ({{ item.chapterCount }} 章)
-                        </span>
-                        <i
-                          :class="
-                            isVolumeCollapsed(item.data.volumeId)
-                              ? 'pi pi-chevron-right'
-                              : 'pi pi-chevron-down'
-                          "
-                          class="text-xs text-moon/60"
-                        />
-                      </div>
-                    </div>
-
-                    <!-- 章节 -->
-                    <div v-else class="pb-2">
-                      <div
-                        class="list-item-base cursor-pointer min-w-0"
-                        :class="
-                          selectedChapterId === item.data.id
-                            ? 'list-item-selected'
-                            : 'hover:list-item-hover'
-                        "
-                        @click="selectChapter(item.data)"
-                      >
-                        <div class="flex items-start gap-3 min-w-0">
-                          <div class="flex-shrink-0 mt-0.5" @click.stop>
-                            <Checkbox
-                              :model-value="selectedChapters.has(item.data.id)"
-                              :binary="true"
-                              @update:model-value="toggleChapterSelection(item.data.id)"
-                            />
-                          </div>
-                          <div class="flex-1 min-w-0 w-0 overflow-hidden">
-                            <div class="flex items-start justify-between gap-2">
-                              <div class="font-medium text-sm text-moon/90 line-clamp-2 flex-1">
-                                {{ getChapterDisplayTitle(item.data, currentBook || undefined) }}
-                              </div>
-                              <template v-if="getChapterImportStatus(item.data)">
-                                <span :class="getChapterImportStatus(item.data)!.class">
-                                  {{ getChapterImportStatus(item.data)!.text }}
-                                </span>
-                              </template>
-                            </div>
-                            <div class="flex items-center gap-3 mt-2 text-xs">
-                              <span
-                                v-if="chapterContents.has(item.data.id)"
-                                class="text-moon/70 font-medium"
-                              >
-                                字数:
-                                <span class="novel-word-count">{{
-                                  formatWordCount(getChapterWordCount(item.data.id))
-                                }}</span>
-                              </span>
-                              <span
-                                v-else-if="loadingChapters.has(item.data.id)"
-                                class="text-moon/50 italic"
-                              >
-                                计算中...
-                              </span>
-                              <span v-else class="text-moon/40"> 未加载 </span>
-                              <span
-                                v-if="item.data.lastUpdated && !isPhone"
-                                class="text-moon/50 flex items-center gap-1"
-                              >
-                                <i class="pi pi-clock text-[10px]" />
-                                {{ formatDate(item.data.lastUpdated) }}
-                              </span>
-                            </div>
-                            <div
-                              v-if="item.data.webUrl && !isPhone"
-                              class="mt-2 w-full max-w-full overflow-hidden"
-                            >
-                              <a
-                                :href="item.data.webUrl"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="text-xs text-primary/80 hover:text-primary hover:underline block w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
-                                style="max-width: 100%"
-                                @click.stop
-                              >
-                                {{ item.data.webUrl }}
-                              </a>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </template>
-                </VirtualScroller>
-                <div
-                  v-if="displayVolumeChapters.length === 0"
-                  class="flex items-center justify-center py-8"
-                >
-                  <div class="text-center text-moon/60">没有找到章节</div>
-                </div>
-              </div>
-            </div>
+            <ScraperChapterList />
           </component>
 
           <!-- 右侧：章节内容 -->
@@ -1247,229 +1062,16 @@ watch(
             :is="contentPanelComponent"
             v-bind="previewPanelProps"
             :class="previewPanelWrapperClass"
-            v-show="!isPhone || mobileShowPreview"
+            v-show="showPreviewPanel"
           >
-            <div
-              class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
-              :style="splitPanelContainerStyle"
-            >
-              <div
-                v-if="selectedChapter"
-                class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5"
-              >
-                <div v-if="isPhone" class="mb-2">
-                  <Button
-                    label="返回章节列表"
-                    icon="pi pi-arrow-left"
-                    class="p-button-text p-button-sm"
-                    @click="showMobileChapterList"
-                  />
-                </div>
-                <div class="flex items-start justify-between gap-2 mb-2">
-                  <h4 class="text-lg font-semibold text-moon/90 flex-1">
-                    {{ getChapterDisplayTitle(selectedChapter, currentBook || undefined) }}
-                  </h4>
-                  <span
-                    v-if="selectedChapterImportStatus"
-                    :class="selectedChapterImportStatus.class"
-                  >
-                    {{ selectedChapterImportStatus.text }}
-                  </span>
-                </div>
-                <div
-                  v-if="selectedChapter.webUrl || selectedChapter.lastUpdated"
-                  class="flex items-center gap-2 flex-wrap"
-                >
-                  <a
-                    v-if="selectedChapter.webUrl && !isPhone"
-                    :href="selectedChapter.webUrl"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="text-xs text-primary/80 hover:text-primary hover:underline truncate"
-                  >
-                    {{ selectedChapter.webUrl }}
-                  </a>
-                  <span v-if="chapterContents.has(selectedChapter.id)" class="text-xs text-moon/60">
-                    · {{ formatWordCount(getChapterWordCount(selectedChapter.id)) }} 字
-                  </span>
-                  <span
-                    v-if="selectedChapter.lastUpdated"
-                    class="text-xs text-moon/50 flex items-center gap-1"
-                  >
-                    <i class="pi pi-clock text-[10px]" />
-                    {{ formatDate(selectedChapter.lastUpdated) }}
-                  </span>
-                </div>
-              </div>
-              <div v-else class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5">
-                <Button
-                  v-if="isPhone"
-                  label="返回章节列表"
-                  icon="pi pi-arrow-left"
-                  class="p-button-text p-button-sm mb-2"
-                  @click="showMobileChapterList"
-                />
-                <h4 class="text-lg font-semibold text-moon/60">请从左侧选择章节</h4>
-              </div>
-              <div class="flex-1 overflow-y-auto px-6 py-4" :style="contentScrollStyle">
-                <!-- 加载中 - 使用骨架屏 -->
-                <div v-if="loadingChapters.has(selectedChapterId || '')" class="py-4 space-y-2">
-                  <Skeleton width="100%" height="1rem" v-for="i in 15" :key="i" />
-                </div>
-                <!-- 错误状态 -->
-                <div
-                  v-else-if="selectedChapterError"
-                  class="flex flex-col items-center justify-center py-12 space-y-4"
-                >
-                  <i class="pi pi-exclamation-triangle text-4xl text-red-400/70" />
-                  <div class="text-center space-y-2">
-                    <p class="text-moon/90 font-medium">加载失败</p>
-                    <p class="text-sm text-moon/60">{{ selectedChapterError }}</p>
-                  </div>
-                  <Button
-                    label="重试"
-                    icon="pi pi-refresh"
-                    class="p-button-outlined p-button-sm"
-                    @click="selectedChapter && loadChapterContent(selectedChapter, true)"
-                  />
-                </div>
-                <!-- 已导入章节的差异对比 -->
-                <div
-                  v-else-if="
-                    isSelectedChapterImported &&
-                    selectedChapterImportedContent !== null &&
-                    selectedChapterContent
-                  "
-                  class="h-full"
-                >
-                  <div :class="compareContainerClass">
-                    <!-- 左侧：已导入内容 -->
-                    <div :class="compareImportedClass">
-                      <div class="mb-3 pb-2 border-b border-white/10 flex-shrink-0">
-                        <h5 class="text-sm font-semibold text-moon/90 mb-1">已导入内容</h5>
-                        <span class="text-xs text-moon/60">
-                          {{ formatWordCount(selectedChapterImportedContent.length) }} 字
-                        </span>
-                      </div>
-                      <div class="flex-1 overflow-y-auto">
-                        <div
-                          class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none"
-                        >
-                          {{ selectedChapterImportedContent }}
-                        </div>
-                      </div>
-                    </div>
-                    <!-- 右侧：新获取内容 -->
-                    <div :class="compareFetchedClass">
-                      <div class="mb-3 pb-2 border-b border-white/10 flex-shrink-0">
-                        <h5 class="text-sm font-semibold text-moon/90 mb-1">新获取内容</h5>
-                        <span class="text-xs text-moon/60">
-                          {{ formatWordCount(selectedChapterContent.length) }} 字
-                        </span>
-                      </div>
-                      <div class="flex-1 overflow-y-auto">
-                        <div
-                          class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none"
-                        >
-                          {{ selectedChapterContent }}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <!-- 已导入章节但新内容未加载 -->
-                <div
-                  v-else-if="
-                    isSelectedChapterImported &&
-                    selectedChapterImportedContent !== null &&
-                    !selectedChapterContent
-                  "
-                  class="h-full"
-                >
-                  <div :class="compareContainerClass">
-                    <!-- 左侧：已导入内容 -->
-                    <div :class="compareImportedClass">
-                      <div class="mb-3 pb-2 border-b border-white/10 flex-shrink-0">
-                        <h5 class="text-sm font-semibold text-moon/90 mb-1">已导入内容</h5>
-                        <span class="text-xs text-moon/60">
-                          {{ formatWordCount(selectedChapterImportedContent.length) }} 字
-                        </span>
-                      </div>
-                      <div class="flex-1 overflow-y-auto">
-                        <div
-                          class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none"
-                        >
-                          {{ selectedChapterImportedContent }}
-                        </div>
-                      </div>
-                    </div>
-                    <!-- 右侧：等待加载新内容 -->
-                    <div
-                      :class="[
-                        compareFetchedClass,
-                        'flex items-center justify-center text-moon/60',
-                        { 'pt-2': isPhone },
-                      ]"
-                    >
-                      <i class="pi pi-spin pi-spinner text-4xl text-moon/40 mb-4 block" />
-                      <p>正在加载新内容以进行对比...</p>
-                    </div>
-                  </div>
-                </div>
-                <!-- 内容显示（未导入章节） -->
-                <div
-                  v-else-if="selectedChapterContent"
-                  class="text-sm text-moon/80 whitespace-pre-line leading-relaxed prose prose-invert max-w-none"
-                >
-                  {{ selectedChapterContent }}
-                </div>
-                <!-- 未选择章节 -->
-                <div v-else-if="selectedChapter" class="text-moon/60 text-center py-12">
-                  <i class="pi pi-file text-4xl text-moon/40 mb-4 block" />
-                  <p>点击章节加载内容</p>
-                </div>
-                <div v-else class="text-moon/60 text-center py-12">
-                  <i class="pi pi-arrow-left text-4xl text-moon/40 mb-4 block" />
-                  <p>请从左侧选择章节查看内容</p>
-                </div>
-              </div>
-            </div>
+            <ScraperChapterPreview />
           </component>
         </component>
       </div>
     </div>
 
     <template #footer>
-      <div class="scraper-footer-wrapper w-full">
-        <!-- 导入进度条 -->
-        <div v-if="importing" class="mb-4 space-y-2">
-          <div class="flex items-center justify-between text-sm text-moon/80">
-            <span>正在导入章节内容...</span>
-            <span>{{ importCurrent }} / {{ importTotal }}</span>
-          </div>
-          <ProgressBar :value="importProgress" class="w-full" />
-          <div v-if="importCurrentChapter" class="text-xs text-moon/60 truncate">
-            当前: {{ importCurrentChapter }}
-          </div>
-        </div>
-        <div class="scraper-footer-actions flex gap-2 justify-end">
-          <Button
-            label="取消"
-            icon="pi pi-times"
-            class="p-button-text icon-button-hover"
-            :disabled="importing"
-            @click="handleCancel"
-          />
-          <Button
-            :label="`应用${selectedChapters.size > 0 ? ` (${selectedChapters.size})` : ''}`"
-            icon="pi pi-check"
-            class="p-button-primary icon-button-hover"
-            :disabled="!scrapedNovel || selectedChapters.size === 0 || importing"
-            :loading="importing"
-            @click="handleApply"
-          />
-        </div>
-      </div>
+      <ScraperImportFooter />
     </template>
   </AdaptiveDialog>
 </template>
@@ -1517,6 +1119,8 @@ watch(
 </style>
 
 <style scoped>
+/* 注：.scraper-url-row 已迁移至 ScraperUrlInput.vue，.scraper-footer-actions 已迁移至
+ * ScraperImportFooter.vue —— 这两个类渲染在各自子组件内部嵌套元素，父级 scoped 样式无法命中。 */
 .novel-scraper-body > * {
   min-width: 0;
 }
@@ -1525,25 +1129,6 @@ watch(
   .novel-scraper-body {
     gap: 0.75rem;
     padding-top: 0.25rem;
-  }
-
-  .scraper-url-row {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .scraper-url-row :deep(.p-button) {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .scraper-footer-actions {
-    width: 100%;
-  }
-
-  .scraper-footer-actions :deep(.p-button) {
-    flex: 1 1 0;
-    justify-content: center;
   }
 }
 </style>

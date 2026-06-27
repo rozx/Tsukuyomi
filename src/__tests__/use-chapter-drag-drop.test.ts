@@ -1,11 +1,11 @@
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
-import { vi } from 'vitest';
 import { ref } from 'vue';
 import { useChapterDragDrop } from '../composables/book-details/useChapterDragDrop';
 import type { Novel, Chapter, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
 import * as BooksStore from '../stores/books';
 import { ChapterService } from '../services/chapter-service';
+import * as useToastHistory from '../composables/useToastHistory';
 
 // Mock HTMLElement for Node.js/Bun environment
 class MockHTMLElement {
@@ -61,16 +61,15 @@ function createMockDragEvent(
   return event;
 }
 
-const { mockToastAdd, mockUseToastWithHistory } = vi.hoisted(() => {
-  const add = vi.fn();
-  return {
-    mockToastAdd: add,
-    mockUseToastWithHistory: vi.fn(() => ({ add })),
-  };
-});
-
-vi.mock('src/composables/useToastHistory', () => ({
-  useToastWithHistory: mockUseToastWithHistory,
+const mockToastAdd = mock(() => {});
+const mockToastRemove = mock(() => {});
+const mockToastRemoveGroup = mock(() => {});
+const mockToastRemoveAllGroups = mock(() => {});
+const mockUseToastWithHistory = mock(() => ({
+  add: mockToastAdd,
+  remove: mockToastRemove,
+  removeGroup: mockToastRemoveGroup,
+  removeAllGroups: mockToastRemoveAllGroups,
 }));
 
 const mockMoveChapter = mock((): Volume[] => []);
@@ -113,6 +112,7 @@ describe('useChapterDragDrop', () => {
       updateBook: mockBooksStoreUpdateBook,
     } as any);
     spyOn(ChapterService, 'moveChapter').mockImplementation(mockMoveChapter);
+    spyOn(useToastHistory, 'useToastWithHistory').mockImplementation(mockUseToastWithHistory);
   });
 
   afterEach(() => {

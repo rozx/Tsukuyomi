@@ -1,5 +1,4 @@
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
-import { vi } from 'vitest';
 import { ref } from 'vue';
 import {
   countUniqueActions,
@@ -10,17 +9,17 @@ import type { Novel, Terminology, CharacterSetting } from '../models/novel';
 import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import * as BooksStore from 'src/stores/books';
+import * as useToastHistory from '../composables/useToastHistory';
 
-const { mockToastAdd, mockUseToastWithHistory } = vi.hoisted(() => {
-  const add = vi.fn();
-  return {
-    mockToastAdd: add,
-    mockUseToastWithHistory: vi.fn(() => ({ add })),
-  };
-});
-
-vi.mock('src/composables/useToastHistory', () => ({
-  useToastWithHistory: mockUseToastWithHistory,
+const mockToastAdd = mock(() => {});
+const mockToastRemove = mock(() => {});
+const mockToastRemoveGroup = mock(() => {});
+const mockToastRemoveAllGroups = mock(() => {});
+const mockUseToastWithHistory = mock(() => ({
+  add: mockToastAdd,
+  remove: mockToastRemove,
+  removeGroup: mockToastRemoveGroup,
+  removeAllGroups: mockToastRemoveAllGroups,
 }));
 
 const mockBooksStoreGetBookById = mock(() => null);
@@ -170,6 +169,7 @@ describe('useActionInfoToast', () => {
       getBookById: mockBooksStoreGetBookById,
       updateBook: mockBooksStoreUpdateBook,
     } as any);
+    spyOn(useToastHistory, 'useToastWithHistory').mockImplementation(mockUseToastWithHistory);
 
     mockBook = {
       id: 'book-1',

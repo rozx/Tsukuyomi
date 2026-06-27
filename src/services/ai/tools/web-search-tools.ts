@@ -5,6 +5,40 @@ import { GlobalConfig } from 'src/services/global-config-cache';
 const TAVILY_API_URL = 'https://api.tavily.com';
 
 /**
+ * 判断错误是否为 Tavily API Key 鉴权失败（401 / unauthorized）
+ */
+function isUnauthorizedError(error: unknown, errorMessage: string): boolean {
+  return (
+    errorMessage.includes('401') ||
+    errorMessage.includes('unauthorized') ||
+    (axios.isAxiosError(error) && error.response?.status === 401)
+  );
+}
+
+/**
+ * 校验字符串是否为合法 URL
+ */
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 从 HTML 原文中提取 <title>，未命中时回退到 fallback
+ */
+function extractHtmlTitle(rawContent: string, fallback: string): string {
+  const titleMatch = rawContent.match(/<title[^>]*>([^<]*)<\/title>/i);
+  if (titleMatch && titleMatch[1]) {
+    return titleMatch[1].trim();
+  }
+  return fallback;
+}
+
+/**
  * 使用 Tavily Search API (REST)
  * 文档: https://docs.tavily.com/docs/tavily-api/rest_api
  */
@@ -83,8 +117,7 @@ async function searchWeb(query: string): Promise<{
     });
 
     // 检查是否是 API Key 相关错误
-    if (errorMessage.includes('401') || errorMessage.includes('unauthorized') ||
-        (axios.isAxiosError(error) && error.response?.status === 401)) {
+    if (isUnauthorizedError(error, errorMessage)) {
       return {
         success: false,
         error: 'Tavily API Key 无效',
@@ -114,9 +147,7 @@ async function fetchWebpage(url: string): Promise<{
 }> {
   try {
     // 验证 URL
-    try {
-      new URL(url);
-    } catch {
+    if (!isValidUrl(url)) {
       return {
         success: false,
         error: '无效的 URL 格式',
@@ -168,13 +199,7 @@ async function fetchWebpage(url: string): Promise<{
 
     // 从 rawContent 中提取标题
     const rawContent = firstResult.rawContent || '';
-    let title = url;
-
-    // 尝试从 HTML 中提取 title
-    const titleMatch = rawContent.match(/<title[^>]*>([^<]*)<\/title>/i);
-    if (titleMatch && titleMatch[1]) {
-      title = titleMatch[1].trim();
-    }
+    const title = extractHtmlTitle(rawContent, url);
 
     // 移除 HTML 标签获取纯文本
     const text = rawContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -193,8 +218,7 @@ async function fetchWebpage(url: string): Promise<{
     });
 
     // 检查是否是 API Key 相关错误
-    if (errorMessage.includes('401') || errorMessage.includes('unauthorized') ||
-        (axios.isAxiosError(error) && error.response?.status === 401)) {
+    if (isUnauthorizedError(error, errorMessage)) {
       return {
         success: false,
         error: 'Tavily API Key 无效',

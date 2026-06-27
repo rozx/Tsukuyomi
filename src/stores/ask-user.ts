@@ -266,12 +266,6 @@ export const useAskUserStore = defineStore('askUser', {
       this._shiftNext();
     },
 
-    rejectCurrent(error: Error): void {
-      if (!this.current) return;
-      this.current.reject(error);
-      this._shiftNext();
-    },
-
     _upsertBatchAnswer(questionIndex: number, answer: string, selectedIndex?: number): void {
       if (!this.current || this.current.mode !== 'batch') return;
       const existing = this.current.answers.find((a) => a.question_index === questionIndex);
@@ -309,27 +303,6 @@ export const useAskUserStore = defineStore('askUser', {
       } else {
         this.current = null;
       }
-    },
-
-    clearAll(): void {
-      // 取消当前
-      if (this.current) {
-        if (this.current.mode === 'single') {
-          this.current.resolve({ cancelled: true });
-        } else {
-          this.current.resolve({ cancelled: true, answers: [...this.current.answers] });
-        }
-      }
-      // 取消队列
-      for (const req of this.queue) {
-        if (req.mode === 'single') {
-          req.resolve({ cancelled: true });
-        } else {
-          req.resolve({ cancelled: true, answers: [] });
-        }
-      }
-      this.queue = [];
-      this.current = null;
     },
   },
 });

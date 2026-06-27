@@ -115,6 +115,36 @@ export function useChapterTranslation(
   };
 
   /**
+   * 把 paragraphResults 折叠成 段落ID → 翻译更新 的 Map（仅保留有效项）。
+   * updateParagraphsFromResults 共用。
+   */
+  type ParagraphResultEntry = {
+    id: string;
+    translation: string;
+    referencedMemories?: string[];
+    memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+  };
+  type ParagraphUpdateValue = {
+    translation: string;
+    referencedMemories?: string[];
+    memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+  };
+  const collectParagraphUpdates = (
+    paragraphResults: ParagraphResultEntry[],
+  ): Map<string, ParagraphUpdateValue> => {
+    const map = new Map<string, ParagraphUpdateValue>();
+    for (const pt of paragraphResults) {
+      if (!pt?.id || typeof pt.translation !== 'string') continue;
+      map.set(pt.id, {
+        translation: pt.translation,
+        ...(pt.referencedMemories ? { referencedMemories: pt.referencedMemories } : {}),
+        ...(pt.memoryScoreBreakdown ? { memoryScoreBreakdown: pt.memoryScoreBreakdown } : {}),
+      });
+    }
+    return map;
+  };
+
+  /**
    * 更新段落翻译的通用辅助函数（立即更新 UI，然后保存）
    */
   const updateParagraphsFromResults = async (
@@ -131,23 +161,7 @@ export function useChapterTranslation(
     const currentBookId = targetBookId || book.value?.id;
     if (!currentBookId || paragraphResults.length === 0) return;
 
-    const paragraphUpdates = new Map<
-      string,
-      {
-        translation: string;
-        referencedMemories?: string[];
-        memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
-      }
-    >();
-    for (const pt of paragraphResults) {
-      if (pt?.id && typeof pt.translation === 'string') {
-        paragraphUpdates.set(pt.id, {
-          translation: pt.translation,
-          ...(pt.referencedMemories ? { referencedMemories: pt.referencedMemories } : {}),
-          ...(pt.memoryScoreBreakdown ? { memoryScoreBreakdown: pt.memoryScoreBreakdown } : {}),
-        });
-      }
-    }
+    const paragraphUpdates = collectParagraphUpdates(paragraphResults);
 
     await updateParagraphsAndSave(paragraphUpdates, aiModelId, targetChapterId, {
       updateSelected: true,
@@ -366,6 +380,45 @@ export function useChapterTranslation(
     }
   };
 
+  /** 取章节标题原文（兼容旧数据格式：title 为字符串或 { original }） */
+  const resolveChapterTitleOriginal = (title: Chapter['title']): string => {
+    return typeof title === 'string' ? title : title.original;
+  };
+
+  /** 把新标题翻译应用到单个 chapter（仅目标章节被替换） */
+  const applyTitleTranslationToChapter = (
+    chapter: Chapter,
+    targetChapterId: string,
+    newTitleTranslation: { id: string; translation: string; aiModelId: string },
+  ): Chapter => {
+    if (chapter.id !== targetChapterId) return chapter;
+    return {
+      ...chapter,
+      title: {
+        original: resolveChapterTitleOriginal(chapter.title),
+        translation: newTitleTranslation,
+      },
+      lastEdited: new Date(),
+    };
+  };
+
+  /** 把新标题翻译映射到整本书的 volumes（仅目标章节被替换） */
+  const applyTitleTranslationToVolumes = (
+    volumes: NonNullable<Novel['volumes']>,
+    targetChapterId: string,
+    newTitleTranslation: { id: string; translation: string; aiModelId: string },
+  ): NonNullable<Novel['volumes']> => {
+    return volumes.map((volume) => {
+      if (!volume.chapters) return volume;
+      return {
+        ...volume,
+        chapters: volume.chapters.map((chapter) =>
+          applyTitleTranslationToChapter(chapter, targetChapterId, newTitleTranslation),
+        ),
+      };
+    });
+  };
+
   /**
    * 更新章节标题翻译并保存
    * @param translation 标题翻译文本
@@ -397,10 +450,7 @@ export function useChapterTranslation(
       selectedChapterWithContent.value = {
         ...selectedChapterWithContent.value,
         title: {
-          original:
-            typeof selectedChapterWithContent.value.title === 'string'
-              ? selectedChapterWithContent.value.title
-              : selectedChapterWithContent.value.title.original,
+          original: resolveChapterTitleOriginal(selectedChapterWithContent.value.title),
           translation: newTitleTranslation,
         },
         lastEdited: new Date(),
@@ -408,34 +458,20 @@ export function useChapterTranslation(
     }
 
     // 我们需要保留原有的 title.original，避免由 ChapterService.updateChapter 中传递对象导致原有数据被覆盖
-    const finalVolumes = latestBook.volumes.map((volume) => {
-      if (!volume.chapters) return volume;
-      const updatedChapters = volume.chapters.map((chapter) => {
-        if (chapter.id !== targetChapterId) return chapter;
-        return {
-          ...chapter,
-          title: {
-            original: typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
-            translation: newTitleTranslation,
-          },
-          lastEdited: new Date(),
-        };
-      });
-      return { ...volume, chapters: updatedChapters };
-    });
+    const finalVolumes = applyTitleTranslationToVolumes(
+      latestBook.volumes,
+      targetChapterId,
+      newTitleTranslation,
+    );
 
     // 保存书籍（必须等待完成，否则切换章节时翻译可能丢失）
-    if (!bookId) {
-      console.warn('[useChapterTranslation] ⚠️ 无法保存标题翻译：bookId 缺失');
-      return;
-    }
     try {
       await booksStore.updateBook(bookId, {
         volumes: finalVolumes,
         lastEdited: new Date(),
       });
       // 注意：不再调用 updateSelectedChapterWithContent
-      // 因为直接更新 selectedChapterWithContent.value（上面第 253-260 行）已经更新了 UI
+      // 因为直接更新 selectedChapterWithContent.value（上面）已经更新了 UI
       // 调用 updateSelectedChapterWithContent 可能会覆盖数据
       console.log('[useChapterTranslation] ✅ 标题翻译已保存');
     } catch (error) {
@@ -1197,6 +1233,23 @@ export function useChapterTranslation(
   };
 
   // 继续翻译（只翻译未翻译的段落）
+  const isUntranslatedParagraph = (para: Paragraph): boolean => {
+    return !isEmptyParagraph(para.text) && !hasParagraphTranslation(para);
+  };
+
+  /** 取当前选中章节的标题原文（兼容字符串 / 对象两种 title 形态） */
+  const resolveSelectedChapterTitle = (): string | undefined => {
+    const title = selectedChapter.value?.title;
+    return typeof title === 'string' ? title : title?.original;
+  };
+
+  /** 从自定义指令对象中安全取出 translationInstructions（可能整体为 undefined） */
+  const getTranslationInstructions = (
+    customInstructions?: { translationInstructions?: string },
+  ): string | undefined => {
+    return customInstructions?.translationInstructions;
+  };
+
   const continueTranslation = async (customInstructions?: {
     translationInstructions?: string;
     polishInstructions?: string;
@@ -1207,9 +1260,8 @@ export function useChapterTranslation(
     }
 
     // 过滤出未翻译的段落（排除空段落）
-    const untranslatedParagraphs = selectedChapterParagraphs.value.filter(
-      (para) => !isEmptyParagraph(para.text) && !hasParagraphTranslation(para),
-    );
+    const untranslatedParagraphs =
+      selectedChapterParagraphs.value.filter(isUntranslatedParagraph);
 
     if (untranslatedParagraphs.length === 0) {
       toast.add({
@@ -1244,13 +1296,10 @@ export function useChapterTranslation(
     state.abortController = abortController;
 
     try {
-      // 获取章节标题
-      const chapterTitle =
-        typeof selectedChapter.value?.title === 'string'
-          ? selectedChapter.value.title
-          : selectedChapter.value?.title?.original;
-      // 获取书籍的 chunk size 设置
-      const chunkSize = book.value?.translationChunkSize;
+      // 获取章节标题与 chunk size
+      const chapterTitle = resolveSelectedChapterTitle();
+      const chunkSize = book.value.translationChunkSize;
+      const translationInstructions = getTranslationInstructions(customInstructions);
 
       // 调用翻译服务，只翻译未翻译的段落
       await TranslationService.translate(
@@ -1260,7 +1309,7 @@ export function useChapterTranslation(
           bookId: book.value.id,
           chapterId: targetChapterId,
           chapterTitle,
-          customInstructions: customInstructions?.translationInstructions,
+          customInstructions: translationInstructions,
           chunkSize,
           signal: abortController.signal,
           state,
@@ -1768,56 +1817,92 @@ export function useChapterTranslation(
         .join(','),
     (newKey, oldKey) => {
       if (!oldKey) return;
-      const parse = (key: string) =>
-        key
-          ? key.split(',').map((s) => {
-              const [id, status, type, chapterId] = s.split(':');
-              return { id: id!, status: status!, type: type!, chapterId: chapterId || undefined };
-            })
-          : [];
-      const newTasks = parse(newKey);
-      const oldTasks = parse(oldKey);
+      const newTasks = parseTaskWatchKey(newKey);
+      const oldTasks = parseTaskWatchKey(oldKey);
       for (const newTask of newTasks) {
         const oldTask = oldTasks.find((t) => t.id === newTask.id);
-        if (
-          oldTask &&
-          oldTask.status !== 'cancelled' &&
-          newTask.status === 'cancelled' &&
-          newTask.chapterId
-        ) {
-          const chapterId = newTask.chapterId;
-          if (newTask.type === 'translation') {
-            const state = chapterTranslationStates.value.get(chapterId);
-            if (state?.isTranslating) {
-              state.abortController?.abort();
-              state.abortController = null;
-              state.isTranslating = false;
-              state.progress = { current: 0, total: 0, message: '' };
-              state.translatingParagraphIds = new Set();
-            }
-          } else if (newTask.type === 'polish') {
-            const state = chapterPolishStates.value.get(chapterId);
-            if (state?.isPolishing) {
-              state.abortController?.abort();
-              state.abortController = null;
-              state.isPolishing = false;
-              state.progress = { current: 0, total: 0, message: '' };
-              state.polishingParagraphIds = new Set();
-            }
-          } else if (newTask.type === 'proofreading') {
-            const state = chapterProofreadingStates.value.get(chapterId);
-            if (state?.isProofreading) {
-              state.abortController?.abort();
-              state.abortController = null;
-              state.isProofreading = false;
-              state.progress = { current: 0, total: 0, message: '' };
-              state.proofreadingParagraphIds = new Set();
-            }
-          }
+        if (isCancelledTaskTransition(oldTask, newTask)) {
+          resetChapterStateForCancelledTask(newTask);
         }
       }
     },
   );
+
+  /** 解析 watch 的字符串 key 为任务摘要列表 */
+  type TaskWatchEntry = {
+    id: string;
+    status: string;
+    type: string;
+    chapterId: string | undefined;
+  };
+  const parseTaskWatchKey = (key: string | null | undefined): TaskWatchEntry[] => {
+    if (!key) return [];
+    return key.split(',').map((s) => {
+      const [id, status, type, chapterId] = s.split(':');
+      return {
+        id: id!,
+        status: status!,
+        type: type!,
+        chapterId: chapterId || undefined,
+      };
+    });
+  };
+
+  /** 判定 newTask 是否为"从非 cancelled 变为 cancelled 且关联了章节"的取消转换 */
+  const isCancelledTaskTransition = (
+    oldTask: TaskWatchEntry | undefined,
+    newTask: TaskWatchEntry,
+  ): boolean => {
+    return (
+      !!oldTask &&
+      oldTask.status !== 'cancelled' &&
+      newTask.status === 'cancelled' &&
+      !!newTask.chapterId
+    );
+  };
+
+  /** 重置翻译任务的局部 UI 状态（中止 AbortController + 清零进度） */
+  const resetTranslationStateIfActive = (chapterId: string): void => {
+    const state = chapterTranslationStates.value.get(chapterId);
+    if (!state?.isTranslating) return;
+    state.abortController?.abort();
+    state.abortController = null;
+    state.isTranslating = false;
+    state.progress = { current: 0, total: 0, message: '' };
+    state.translatingParagraphIds = new Set();
+  };
+
+  const resetPolishStateIfActive = (chapterId: string): void => {
+    const state = chapterPolishStates.value.get(chapterId);
+    if (!state?.isPolishing) return;
+    state.abortController?.abort();
+    state.abortController = null;
+    state.isPolishing = false;
+    state.progress = { current: 0, total: 0, message: '' };
+    state.polishingParagraphIds = new Set();
+  };
+
+  const resetProofreadingStateIfActive = (chapterId: string): void => {
+    const state = chapterProofreadingStates.value.get(chapterId);
+    if (!state?.isProofreading) return;
+    state.abortController?.abort();
+    state.abortController = null;
+    state.isProofreading = false;
+    state.progress = { current: 0, total: 0, message: '' };
+    state.proofreadingParagraphIds = new Set();
+  };
+
+  /** 按任务类型分派，重置对应章节的局部状态 */
+  const resetChapterStateForCancelledTask = (newTask: TaskWatchEntry): void => {
+    const chapterId = newTask.chapterId!;
+    if (newTask.type === 'translation') {
+      resetTranslationStateIfActive(chapterId);
+    } else if (newTask.type === 'polish') {
+      resetPolishStateIfActive(chapterId);
+    } else if (newTask.type === 'proofreading') {
+      resetProofreadingStateIfActive(chapterId);
+    }
+  };
 
   // 组件卸载时取消所有任务
   onUnmounted(() => {

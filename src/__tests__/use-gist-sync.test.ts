@@ -50,7 +50,6 @@ function createMockSettingsStore(overrides: Record<string, unknown> = {}) {
     resetSyncProgress: mock(() => {}),
     setGistId: mock(() => Promise.resolve()),
     updateLastSyncTime: mock(() => Promise.resolve()),
-    updateLastSyncedModelIds: mock(() => Promise.resolve()),
     updateLastRemoteETag: mock(() => Promise.resolve()),
     updateKnownRemoteHashes: mock(() => Promise.resolve()),
     updateKnownRemoteEntries: mock(() => Promise.resolve()),

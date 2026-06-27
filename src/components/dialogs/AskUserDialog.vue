@@ -14,103 +14,66 @@
     <div class="content">
       <div v-if="isBatch" class="batch-header">
         <div class="batch-progress">
-          第 {{ (batchProgress?.index ?? 0) + 1 }} / {{ batchProgress?.total ?? 0 }} 题
+          {{ batchProgressText }}
         </div>
       </div>
 
       <div class="question">
         <div class="label">问题</div>
-        <div class="text">{{ payload?.question }}</div>
-        <div v-if="isBatch && currentBatchAnswer" class="answered-hint">
+        <div class="text">{{ question }}</div>
+        <div v-if="showAnsweredHint" class="answered-hint">
           <span class="hint-label">已答：</span>
-          <span class="hint-text">{{ currentBatchAnswer.answer }}</span>
+          <span class="hint-text">{{ answeredHintText }}</span>
         </div>
       </div>
 
-      <div v-if="suggestedAnswers.length > 0" class="suggested">
-        <div class="label">推荐答案</div>
-        <div class="buttons">
-          <Button
-            v-for="(ans, idx) in suggestedAnswers"
-            :key="`${idx}-${ans}`"
-            class="p-button-outlined choice-button"
-            :class="{ selected: selectedIndex === idx }"
-            @click="selectOption(idx, ans)"
-          >
-            {{ formatChoiceLabel(idx, ans) }}
-          </Button>
-          <Button
-            v-if="allowFreeText"
-            class="p-button-outlined choice-button"
-            severity="secondary"
-            @click="selectOther"
-          >
-            {{ otherLabel }}
-          </Button>
-        </div>
-      </div>
+      <AskUserChoices
+        :suggested-answers="suggestedAnswers"
+        :selected-index="selectedIndex"
+        :allow-free-text="allowFreeText"
+        :other-label="otherLabel"
+        @select="selectOption"
+        @other="selectOther"
+      />
 
       <div v-if="showFreeTextArea" class="free-text">
         <div class="label">自定义答案</div>
         <Textarea
           v-model="freeText"
-          :placeholder="payload?.placeholder || '请输入你的答案…'"
+          :placeholder="freeTextPlaceholder"
           auto-resize
           rows="4"
           class="w-full"
-          :maxlength="typeof payload?.max_length === 'number' ? payload.max_length : undefined"
+          :maxlength="freeTextMaxlength"
           @keydown.enter.exact.prevent="submit"
         />
       </div>
     </div>
 
     <template #footer>
-      <div class="dialog-footer">
-        <div class="footer-left">
-          <Button
-            v-if="isBatch"
-            label="上一题"
-            icon="pi pi-angle-left"
-            severity="secondary"
-            :disabled="!canPrev"
-            @click="prev"
-          />
-          <Button
-            v-if="isBatch"
-            label="下一题"
-            icon="pi pi-angle-right"
-            icon-pos="right"
-            severity="secondary"
-            :disabled="!canNext"
-            @click="next"
-          />
-        </div>
-
-        <div class="footer-right">
-          <Button
-            :label="payload?.cancel_label || '取消'"
-            icon="pi pi-times"
-            severity="secondary"
-            @click="cancel"
-          />
-          <Button
-            v-if="showSubmitButton"
-            :label="payload?.submit_label || (isBatch && isLastBatchQuestion ? '完成' : '提交')"
-            icon="pi pi-check"
-            :disabled="!canSubmit"
-            @click="submit"
-          />
-        </div>
-      </div>
+      <AskUserFooter
+        :is-batch="isBatch"
+        :can-prev="canPrev"
+        :can-next="canNext"
+        :show-submit-button="showSubmitButton"
+        :can-submit="canSubmit"
+        :cancel-label="cancelLabel"
+        :submit-label="submitLabel"
+        @prev="prev"
+        @next="next"
+        @cancel="cancel"
+        @submit="submit"
+      />
     </template>
   </AdaptiveDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import Button from 'primevue/button';
 import Textarea from 'primevue/textarea';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import AskUserChoices from './AskUserChoices.vue';
+import AskUserFooter from './AskUserFooter.vue';
 import { useAskUserStore } from 'src/stores/ask-user';
 
 const askUserStore = useAskUserStore();
@@ -140,13 +103,13 @@ const isOtherSelected = ref(false);
 const selectedIndex = ref<number | null>(null);
 const selectedAnswer = ref('');
 
-const otherLabel = 'Other：自定义输入';
+const otherLabel = '其他：自定义输入';
 
 const showFreeTextArea = computed(() => {
   if (!allowFreeText.value) return false;
   // 没有候选答案时，直接显示输入框
   if (suggestedAnswers.value.length === 0) return true;
-  // 有候选答案时，选择“Other”才展开输入框
+  // 有候选答案时，选择“其他”才展开输入框
   return isOtherSelected.value;
 });
 
@@ -160,15 +123,38 @@ const canSubmit = computed(() => {
   return selectedIndex.value !== null && !!selectedAnswer.value;
 });
 
-const choiceLetter = (index: number): string => {
-  if (!Number.isFinite(index) || index < 0) return '#';
-  const base = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  if (index < base.length) return base[index] ?? '#';
-  return `#${index + 1}`;
-};
+// 模板展示用的派生值（将 ?. / || / 三元收敛到 computed，降低模板圈复杂度）
+const question = computed(() => payload.value?.question);
+const showAnsweredHint = computed(() => isBatch.value && !!currentBatchAnswer.value);
+const answeredHintText = computed(() => currentBatchAnswer.value?.answer ?? '');
+const batchProgressText = computed(
+  () => `第 ${(batchProgress.value?.index ?? 0) + 1} / ${batchProgress.value?.total ?? 0} 题`,
+);
+const cancelLabel = computed(() => payload.value?.cancel_label || '取消');
+const submitLabel = computed(
+  () =>
+    payload.value?.submit_label || (isBatch.value && isLastBatchQuestion.value ? '完成' : '提交'),
+);
+const freeTextPlaceholder = computed(() => payload.value?.placeholder || '请输入你的答案…');
+const freeTextMaxlength = computed(() =>
+  typeof payload.value?.max_length === 'number' ? payload.value.max_length : undefined,
+);
 
-const formatChoiceLabel = (index: number, answer: string): string => {
-  return `${choiceLetter(index)}: ${answer}`;
+// batch 模式：回填已答内容。答案不在候选中且允许自由输入时视为“其他”
+const prefillBatchAnswer = (existing: string) => {
+  const idx = suggestedAnswers.value.findIndex((x) => x === existing);
+  if (idx < 0 && allowFreeText.value) {
+    // 历史答案不在候选中、但允许自由输入：回填到自定义输入框
+    isOtherSelected.value = true;
+    freeText.value = existing;
+    return;
+  }
+  // 历史答案不在候选中、且不允许自由输入（如候选集变化）：
+  // 用越界 index 占位保留一个“可提交”状态（不会高亮任何候选按钮），
+  // 否则 selectedIndex 为 null 会导致 canSubmit/showSubmitButton 皆假——已答却无法继续。
+  selectedIndex.value = idx >= 0 ? idx : suggestedAnswers.value.length;
+  selectedAnswer.value = existing;
+  freeText.value = '';
 };
 
 watch(
@@ -180,18 +166,9 @@ watch(
     selectedIndex.value = null;
     selectedAnswer.value = '';
 
-    // batch：若本题已答，尝试回填；如果答案不在候选中，则视为 Other
+    // batch：若本题已答，尝试回填
     if (isBatch.value && typeof existing === 'string') {
-      const inSuggested = suggestedAnswers.value.includes(existing);
-      if (!inSuggested && allowFreeText.value) {
-        isOtherSelected.value = true;
-        freeText.value = existing;
-      } else {
-        const idx = suggestedAnswers.value.findIndex((x) => x === existing);
-        selectedIndex.value = idx >= 0 ? idx : null;
-        selectedAnswer.value = existing;
-        freeText.value = '';
-      }
+      prefillBatchAnswer(existing);
       return;
     }
 
@@ -274,27 +251,6 @@ const cancel = () => {
   opacity: 0.8;
 }
 
-.dialog-footer {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.footer-left,
-.footer-right {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.footer-right {
-  margin-left: auto;
-  justify-content: flex-end;
-}
-
 .label {
   font-size: 12px;
   opacity: 0.7;
@@ -324,30 +280,6 @@ const cancel = () => {
 .hint-text {
   font-size: 13px;
   white-space: pre-wrap;
-}
-
-.buttons {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-}
-
-.choice-button {
-  width: 100%;
-  justify-content: flex-start;
-  text-align: left;
-}
-
-.choice-button :deep(.p-button-label) {
-  white-space: normal;
-  text-align: left;
-  line-height: 1.4;
-}
-
-.choice-button.selected {
-  border-color: rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .free-text {

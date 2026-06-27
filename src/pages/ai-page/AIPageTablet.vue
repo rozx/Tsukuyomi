@@ -5,24 +5,34 @@ import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import ProgressSpinner from 'primevue/progressspinner';
-import Dialog from 'primevue/dialog';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 import { isPortrait } from 'src/utils/device-orientation';
+import AIRoutingPickerDialog from './AIRoutingPickerDialog.vue';
 
 const ctx = injectAIPage();
-
-const routingPickerVisible = computed({
-  get: () => !!ctx.routingPickerTask.value,
-  set: (value: boolean) => {
-    if (!value) ctx.closeTaskRoutingPicker();
-  },
-});
 
 // 横屏：路由侧栏始终参与 flex 布局；竖屏：变成右侧滑入抽屉，默认收起
 const isRoutingOpen = ref(!isPortrait());
 function toggleRouting(): void {
   isRoutingOpen.value = !isRoutingOpen.value;
 }
+
+// 模板内三元 / 比较 / filter 收进脚本侧，降低段落复杂度
+const routingToggleClass = computed(() => [
+  'p-button-sm ait-routing-toggle',
+  isRoutingOpen.value ? 'p-button-primary' : 'p-button-outlined',
+]);
+const emptyModelsText = computed(() =>
+  ctx.searchQuery.value ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型',
+);
+const hasNoSearch = computed(() => !ctx.searchQuery.value);
+const modelBadgeText = (model: { enabled: boolean }) =>
+  model.enabled ? '已启用' : '已禁用';
+const hasDefaultTasks = (model: AIModel) => ctx.getDefaultTasks(model) !== '无';
+const isRoutingRowEmpty = (row: { modelId: string | null }) => !row.modelId;
+const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
+  group.models.filter((m) => ctx.filteredModels.value.includes(m));
 </script>
 
 <template>
@@ -77,10 +87,7 @@ function toggleRouting(): void {
         />
         <Button
           icon="pi pi-sliders-h"
-          :class="[
-            'p-button-sm ait-routing-toggle',
-            isRoutingOpen ? 'p-button-primary' : 'p-button-outlined',
-          ]"
+          :class="routingToggleClass"
           title="任务路由"
           aria-label="任务路由"
           @click="toggleRouting"
@@ -111,11 +118,9 @@ function toggleRouting(): void {
 
           <div v-if="ctx.filteredModels.value.length === 0" class="ait-empty">
             <i class="pi pi-sparkles ait-empty-icon" aria-hidden="true" />
-            <p>
-              {{ ctx.searchQuery.value ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型' }}
-            </p>
+            <p>{{ emptyModelsText }}</p>
             <Button
-              v-if="!ctx.searchQuery.value"
+              v-if="hasNoSearch"
               label="添加第一个 AI 模型"
               icon="pi pi-plus"
               class="p-button-primary"
@@ -145,9 +150,7 @@ function toggleRouting(): void {
               </div>
 
               <div
-                v-for="model in group.models.filter((m) =>
-                  ctx.filteredModels.value.includes(m),
-                )"
+                v-for="model in visibleGroupModels(group)"
                 :key="model.id"
                 class="ait-model"
               >
@@ -163,11 +166,8 @@ function toggleRouting(): void {
                       {{ ctx.getProviderLabel(model.provider) }} · {{ model.model }}
                     </div>
                   </div>
-                  <span
-                    class="ait-badge"
-                    :class="{ 'ait-badge-green': model.enabled }"
-                  >
-                    {{ model.enabled ? '已启用' : '已禁用' }}
+                  <span class="ait-badge" :class="{ 'ait-badge-green': model.enabled }">
+                    {{ modelBadgeText(model) }}
                   </span>
                   <Button
                     icon="pi pi-copy"
@@ -212,7 +212,7 @@ function toggleRouting(): void {
                     <div class="ait-param-label">默认任务</div>
                     <div
                       class="ait-param-value"
-                      :class="{ 'ait-param-accent': ctx.getDefaultTasks(model) !== '无' }"
+                      :class="{ 'ait-param-accent': hasDefaultTasks(model) }"
                     >
                       {{ ctx.getDefaultTasks(model) }}
                     </div>
@@ -241,7 +241,7 @@ function toggleRouting(): void {
             <div class="ait-routing-task">{{ row.label }}</div>
             <button
               class="ait-routing-picker"
-              :class="{ 'ait-routing-picker--empty': !row.modelId }"
+              :class="{ 'ait-routing-picker--empty': isRoutingRowEmpty(row) }"
               @click="ctx.openTaskRoutingPicker(row.task)"
             >
               <i class="pi pi-sparkles ait-routing-picker-icon" aria-hidden="true" />
@@ -255,54 +255,8 @@ function toggleRouting(): void {
       </aside>
     </div>
 
-    <Dialog
-      v-model:visible="routingPickerVisible"
-      :header="ctx.routingPickerTaskLabel.value || '任务路由'"
-      modal
-      :style="{ width: '480px', maxWidth: '92vw' }"
-      :dismissable-mask="true"
-    >
-      <div class="ait-picker">
-        <button
-          type="button"
-          class="ait-picker-option"
-          :class="{ 'ait-picker-option-active': !ctx.routingPickerCurrentModelId.value }"
-          @click="ctx.pickModelForTask(null)"
-        >
-          <div class="ait-picker-option-body">
-            <div class="ait-picker-option-name">未设置</div>
-            <div class="ait-picker-option-sub">该任务将无默认模型</div>
-          </div>
-          <i
-            v-if="!ctx.routingPickerCurrentModelId.value"
-            class="pi pi-check ait-picker-check"
-            aria-hidden="true"
-          />
-        </button>
-        <button
-          v-for="model in ctx.routingPickerOptions.value"
-          :key="model.id"
-          type="button"
-          class="ait-picker-option"
-          :class="{
-            'ait-picker-option-active': model.id === ctx.routingPickerCurrentModelId.value,
-          }"
-          @click="ctx.pickModelForTask(model.id)"
-        >
-          <div class="ait-picker-option-body">
-            <div class="ait-picker-option-name">{{ model.name }}</div>
-            <div class="ait-picker-option-sub">
-              {{ ctx.getProviderLabel(model.provider) }} · {{ model.model }}
-            </div>
-          </div>
-          <i
-            v-if="model.id === ctx.routingPickerCurrentModelId.value"
-            class="pi pi-check ait-picker-check"
-            aria-hidden="true"
-          />
-        </button>
-      </div>
-    </Dialog>
+    <!-- 任务路由 picker —— 抽出到 AIRoutingPickerDialog -->
+    <AIRoutingPickerDialog />
   </div>
 </template>
 
@@ -710,63 +664,6 @@ function toggleRouting(): void {
 .ait-routing-picker-chev {
   color: var(--moon-50-opacity-50);
   font-size: 10px;
-}
-
-/* Routing picker dialog */
-.ait-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px 0;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.ait-picker-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  background: var(--white-opacity-2); /* token: white @ 2% */
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 10px;
-  cursor: pointer;
-  text-align: left;
-  color: inherit;
-  transition: all 140ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.ait-picker-option:hover {
-  background: var(--white-opacity-5);
-  border-color: var(--white-opacity-12);
-}
-
-.ait-picker-option-active {
-  background: var(--tsukuyomi-opacity-12);
-  border-color: var(--tsukuyomi-opacity-30);
-}
-
-.ait-picker-option-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.ait-picker-option-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--moon-50-opacity-100);
-}
-
-.ait-picker-option-sub {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--moon-50-opacity-55);
-  margin-top: 2px;
-}
-
-.ait-picker-check {
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  font-size: 14px;
 }
 
 /* ───────────── 竖屏：头部栈叠 + 路由变成右侧 overlay 抽屉 ───────────── */

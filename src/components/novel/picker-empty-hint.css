@@ -1,0 +1,31 @@
+/**
+ * 「选择器空状态」共享提示样式（info 图标 + 说明文字的卡片）。
+ *
+ * 多个底部抽屉 / picker 的空状态视觉完全一致：AIRoutingPickerSheet 的
+ * `.ma-picker-empty`、BookMobileBatchPicker 的 `.mbr-batch-picker-empty`。
+ * 抽到独立 CSS 文件统一维护，消除重复——各消费方仍沿用各自的类名，
+ * 运行表现与内联时完全一致。新增 picker 复用时，把类名补进下面的选择器列表即可。
+ */
+
+.ma-picker-empty,
+.mbr-batch-picker-empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 12px;
+  margin: 8px 0 4px;
+  background: var(--tsukuyomi-opacity-6); /* token: tsukuyomi-500 @ 6% */
+  border: 1px solid var(--tsukuyomi-opacity-18);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--moon-50-opacity-75);
+  line-height: 1.5;
+}
+
+.ma-picker-empty i,
+.mbr-batch-picker-empty i {
+  font-size: 14px;
+  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
+  margin-top: 1px;
+  flex-shrink: 0;
+}

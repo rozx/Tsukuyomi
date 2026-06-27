@@ -38,7 +38,8 @@ const emit = defineEmits<{
   keyup: [event: KeyboardEvent];
 }>();
 
-// 计算 id，如果未提供则返回 undefined
+// 计算 id，如果未提供则返回 undefined（:id="undefined" 不渲染 id 属性，
+// 与原先 v-if="inputId" 二选一两份模板的渲染结果完全一致）
 const inputId = computed<string | undefined>(() => props.id);
 
 // 术语翻译共享逻辑（状态 / 可用模型 / 请求封装）
@@ -48,6 +49,9 @@ const { translating, thinkingMessage, availableTranslationModels, runTermTransla
 // 翻译结果对话框状态
 const showTranslationDialog = ref(false);
 const translationResult = ref('');
+
+// 输入框统一禁用条件（合并到 computed，避免模板里出现 || 逻辑运算符）
+const fieldDisabled = computed(() => props.disabled || translating.value);
 
 // 是否禁用翻译按钮（单行字符串语境下还要求 trim 非空）
 const isTranslateDisabled = computed(() => {
@@ -74,29 +78,33 @@ const handleTranslate = async () => {
   translationResult.value = translatedText;
   showTranslationDialog.value = true;
 };
+
+// 应用翻译结果：按 applyTranslationToInput 决定是否回填输入框，并关闭对话框 + 成功 toast
+const applyTranslationResult = () => {
+  emit('translation-applied', translationResult.value);
+  if (props.applyTranslationToInput) {
+    emit('update:modelValue', translationResult.value);
+  }
+  showTranslationDialog.value = false;
+  toast.add({
+    severity: 'success',
+    summary: '翻译已应用',
+    detail: props.applyTranslationToInput ? '翻译结果已应用到输入框' : '翻译完成',
+    life: 3000,
+  });
+};
 </script>
 
 <template>
   <!-- Input Text Mode -->
   <InputGroup v-if="type === 'input'">
     <InputText
-      v-if="inputId"
-      :id="inputId as string"
+      :id="inputId"
       :model-value="modelValue"
       :placeholder="placeholder"
       class="flex-1"
       :class="{ 'p-invalid': invalid }"
-      :disabled="disabled || translating"
-      @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
-      @keyup="$emit('keyup', $event)"
-    />
-    <InputText
-      v-else
-      :model-value="modelValue"
-      :placeholder="placeholder"
-      class="flex-1"
-      :class="{ 'p-invalid': invalid }"
-      :disabled="disabled || translating"
+      :disabled="fieldDisabled"
       @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
       @keyup="$emit('keyup', $event)"
     />
@@ -119,27 +127,14 @@ const handleTranslate = async () => {
   <!-- Textarea Mode -->
   <div v-else class="translatable-textarea-wrapper">
     <Textarea
-      v-if="inputId"
-      :id="inputId as string"
+      :id="inputId"
       :model-value="modelValue"
       :placeholder="placeholder"
       :rows="rows"
       :auto-resize="autoResize"
       class="translatable-textarea"
       :class="{ 'p-invalid': invalid }"
-      :disabled="disabled || translating"
-      @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
-      @keyup="$emit('keyup', $event)"
-    />
-    <Textarea
-      v-else
-      :model-value="modelValue"
-      :placeholder="placeholder"
-      :rows="rows"
-      :auto-resize="autoResize"
-      class="translatable-textarea"
-      :class="{ 'p-invalid': invalid }"
-      :disabled="disabled || translating"
+      :disabled="fieldDisabled"
       @update:model-value="(value: string | undefined) => emit('update:modelValue', value ?? '')"
       @keyup="$emit('keyup', $event)"
     />
@@ -175,19 +170,7 @@ const handleTranslate = async () => {
         label="应用"
         icon="pi pi-check"
         class="p-button-primary"
-        @click="
-          emit('translation-applied', translationResult);
-          if (applyTranslationToInput) {
-            emit('update:modelValue', translationResult);
-          }
-          showTranslationDialog = false;
-          toast.add({
-            severity: 'success',
-            summary: '翻译已应用',
-            detail: applyTranslationToInput ? '翻译结果已应用到输入框' : '翻译完成',
-            life: 3000,
-          });
-        "
+        @click="applyTranslationResult"
       />
     </template>
   </AdaptiveDialog>

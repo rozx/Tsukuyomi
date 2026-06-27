@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
@@ -6,6 +7,18 @@ import { injectIndexPage } from 'src/composables/index-page/useIndexPage';
 import { APP_NAME } from 'src/constants/app';
 
 const ctx = injectIndexPage();
+
+// 列表状态显隐：吸收模板内的 && / || / 比较
+const hasRecent = computed(() => ctx.recentBooks.value.length > 0);
+const isEmptyState = computed(
+  () => ctx.booksStore.isLoaded && ctx.booksStore.books.length === 0,
+);
+const isLoadingState = computed(() => ctx.booksStore.isLoading || !ctx.booksStore.isLoaded);
+const greetingSub = computed(() =>
+  ctx.continueReadingBook.value
+    ? `上次停在《${ctx.continueReadingBook.value.title}》。`
+    : '开启今晚的翻译旅程吧。',
+);
 </script>
 
 <template>
@@ -26,10 +39,7 @@ const ctx = injectIndexPage();
         <span class="mh-greeting-name">欢迎回来</span>。
       </h1>
       <p class="mh-greeting-sub">
-        <template v-if="ctx.continueReadingBook.value">
-          上次停在《{{ ctx.continueReadingBook.value.title }}》。
-        </template>
-        <template v-else> 开启今晚的翻译旅程吧。 </template>
+        {{ greetingSub }}
       </p>
     </section>
 
@@ -99,7 +109,7 @@ const ctx = injectIndexPage();
     </section>
 
     <!-- 最近编辑 -->
-    <section v-if="ctx.recentBooks.value.length > 0" class="mh-section">
+    <section v-if="hasRecent" class="mh-section">
       <header class="mh-section-head">
         <span class="mh-section-title">最近编辑</span>
         <button class="mh-section-link" @click="ctx.navigateToBooks">
@@ -152,7 +162,7 @@ const ctx = injectIndexPage();
 
     <!-- 空状态 -->
     <div
-      v-if="ctx.booksStore.isLoaded && ctx.booksStore.books.length === 0"
+      v-if="isEmptyState"
       class="mh-empty"
     >
       <i class="pi pi-book mh-empty-icon" aria-hidden="true" />
@@ -162,7 +172,7 @@ const ctx = injectIndexPage();
 
     <!-- 加载状态 -->
     <div
-      v-else-if="ctx.booksStore.isLoading || !ctx.booksStore.isLoaded"
+      v-else-if="isLoadingState"
       class="mh-loading"
     >
       <ProgressSpinner

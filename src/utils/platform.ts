@@ -21,12 +21,29 @@
 import { Platform } from 'quasar';
 
 /**
+ * 单测钩子:bun:test 不支持 vi.resetModules 动态重 mock quasar.Platform,
+ * 改用显式注入来模拟不同设备。
+ * - 传对象:用该对象作为 Platform
+ * - 传 undefined:模拟 Platform 缺失
+ * - 传 null:清除覆盖,回落到真实 Platform
+ * 生产代码请勿调用。
+ */
+type PlatformOverride = { is?: { mobile?: boolean; [key: string]: unknown } } | undefined;
+let platformOverride: PlatformOverride | null = null;
+
+/** @internal 单测专用:注入或清除 Platform 覆盖值 */
+export function setPlatformOverride(platform: PlatformOverride | null): void {
+  platformOverride = platform;
+}
+
+/**
  * 是否为"真移动设备"(Quasar 基于 UA 判定)。
  * 在单元测试等无 Quasar 环境中 Platform.is 可能是空对象,返回 false。
  */
 export function isMobileDevice(): boolean {
   try {
-    return Platform?.is?.mobile === true;
+    const p = platformOverride === null ? Platform : platformOverride;
+    return p?.is?.mobile === true;
   } catch {
     return false;
   }

@@ -48,6 +48,67 @@ function extractTranslation(translation: unknown): string {
 }
 
 /**
+ * 判断 action 是否为 create / update 且匹配指定 entity
+ */
+function isCreateOrUpdateEntity(action: ActionInfo, entity: ActionInfo['entity']): boolean {
+  return (action.type === 'create' || action.type === 'update') && action.entity === entity;
+}
+
+/**
+ * 收集 create / update 的命名实体（术语 / 角色）
+ */
+function collectNamedEntities(
+  actions: ActionInfo[],
+  entity: 'term' | 'character',
+): Array<{ name: string; translation: string }> {
+  const out: Array<{ name: string; translation: string }> = [];
+  for (const action of actions) {
+    if (isCreateOrUpdateEntity(action, entity) && 'name' in action.data) {
+      const data = action.data as { name: string; translation?: string };
+      out.push({ name: data.name, translation: extractTranslation(data.translation) });
+    }
+  }
+  return out;
+}
+
+/**
+ * 收集 create 的记忆
+ */
+function collectCreatedMemories(actions: ActionInfo[]): Array<{ id: string; summary: string }> {
+  const out: Array<{ id: string; summary: string }> = [];
+  for (const action of actions) {
+    if (
+      action.type === 'create' &&
+      action.entity === 'memory' &&
+      'summary' in action.data &&
+      'id' in action.data
+    ) {
+      const data = action.data as { id: string; summary?: string };
+      out.push({ id: data.id, summary: data.summary || '' });
+    }
+  }
+  return out;
+}
+
+/**
+ * 仅在存在更新时构造 PlanningContextUpdate（保持可选属性语义）
+ */
+function buildPlanningContextUpdate(
+  newTerms: Array<{ name: string; translation: string }>,
+  newCharacters: Array<{ name: string; translation: string }>,
+  updatedMemories: Array<{ id: string; summary: string }>,
+): PlanningContextUpdate | undefined {
+  if (newTerms.length === 0 && newCharacters.length === 0 && updatedMemories.length === 0) {
+    return undefined;
+  }
+  return {
+    ...(newTerms.length > 0 ? { newTerms } : {}),
+    ...(newCharacters.length > 0 ? { newCharacters } : {}),
+    ...(updatedMemories.length > 0 ? { updatedMemories } : {}),
+  };
+}
+
+/**
  * 检测规划上下文是否需要更新
  * @param actions 收集的 actions
  * @returns 规划上下文更新信息（如果需要更新）
@@ -55,62 +116,9 @@ function extractTranslation(translation: unknown): string {
 export function detectPlanningContextUpdate(
   actions: ActionInfo[],
 ): PlanningContextUpdate | undefined {
-  const newTerms: Array<{ name: string; translation: string }> = [];
-  const newCharacters: Array<{ name: string; translation: string }> = [];
-  const updatedMemories: Array<{ id: string; summary: string }> = [];
-
-  for (const action of actions) {
-    // 检测新创建的术语
-    if (
-      (action.type === 'create' || action.type === 'update') &&
-      action.entity === 'term' &&
-      'name' in action.data
-    ) {
-      const termData = action.data as { name: string; translation?: string };
-      const translation = extractTranslation(termData.translation);
-      newTerms.push({
-        name: termData.name,
-        translation,
-      });
-    }
-
-    // 检测新创建的角色
-    if (
-      (action.type === 'create' || action.type === 'update') &&
-      action.entity === 'character' &&
-      'name' in action.data
-    ) {
-      const charData = action.data as { name: string; translation?: string };
-      const translation = extractTranslation(charData.translation);
-      newCharacters.push({
-        name: charData.name,
-        translation,
-      });
-    }
-
-    // 检测新创建的记忆
-    if (
-      action.type === 'create' &&
-      action.entity === 'memory' &&
-      'summary' in action.data &&
-      'id' in action.data
-    ) {
-      const memoryData = action.data as { id: string; summary?: string };
-      updatedMemories.push({
-        id: memoryData.id,
-        summary: memoryData.summary || '',
-      });
-    }
-  }
-
-  // 如果有任何更新，返回更新信息
-  if (newTerms.length > 0 || newCharacters.length > 0 || updatedMemories.length > 0) {
-    return {
-      ...(newTerms.length > 0 ? { newTerms } : {}),
-      ...(newCharacters.length > 0 ? { newCharacters } : {}),
-      ...(updatedMemories.length > 0 ? { updatedMemories } : {}),
-    };
-  }
-
-  return undefined;
+  return buildPlanningContextUpdate(
+    collectNamedEntities(actions, 'term'),
+    collectNamedEntities(actions, 'character'),
+    collectCreatedMemories(actions),
+  );
 }

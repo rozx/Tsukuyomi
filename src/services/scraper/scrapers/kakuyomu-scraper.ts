@@ -60,7 +60,6 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
   /**
    * 验证 URL 是否为有效的 kakuyomu.jp 小说 URL
    */
-  // fallow-ignore-next-line unused-class-member
   isValidUrl(url: string): boolean {
     return KakuyomuScraper.NOVEL_URL_PATTERN.test(url);
   }

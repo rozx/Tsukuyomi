@@ -1,4 +1,3 @@
-// fallow-ignore-next-line unresolved-import
 import { defineRouter } from '#q-app/wrappers';
 import {
   createMemoryHistory,

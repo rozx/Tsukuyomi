@@ -5,19 +5,21 @@ import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import AutoComplete from 'primevue/autocomplete';
-import Skeleton from 'primevue/skeleton';
 import Tabs from 'primevue/tabs';
 import TabList from 'primevue/tablist';
 import Tab from 'primevue/tab';
 import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
-import type { Novel, Chapter } from 'src/models/novel';
+import type { Novel, Chapter, CoverImage } from 'src/models/novel';
+import type { Memory } from 'src/models/memory';
 import CoverManagerDialog from './CoverManagerDialog.vue';
 import NovelScraperDialog from './NovelScraperDialog.vue';
+import BookWebUrlList from './BookWebUrlList.vue';
+import BookVolumesTree from './BookVolumesTree.vue';
+import BookCoverPanel from './BookCoverPanel.vue';
 import TranslatableInput from '../translation/TranslatableInput.vue';
 import TranslatableChips from '../translation/TranslatableChips.vue';
-import { NovelScraperFactory } from 'src/services/scraper';
 import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
@@ -26,7 +28,6 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useChapterCharCount } from 'src/composables/useChapterCharCount';
 import { useFormDialogCloseGuard } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import { useUiStore } from 'src/stores/ui';
-import { formatCharCount, formatDate, getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 import { copyTextWithToast } from 'src/utils/clipboard';
 
 const props = withDefaults(
@@ -139,9 +140,6 @@ const toggleVolume = (volumeId: string) => {
   }
 };
 
-// 使用工具函数计算和格式化
-// formatCharCount 已从 utils 导入
-
 // 使用章节字符数加载 composable（自动处理展开卷和章节列表变化）
 const { getChapterCharCountDisplay, isLoadingChapterCharCount, loadAllVisibleChapterCharCounts } =
   useChapterCharCount(availableVolumes, expandedVolumes);
@@ -186,48 +184,104 @@ const captureSnapshot = () => {
   initialFormSnapshot.value = cloneDeep(formData.value);
 };
 
+// 添加模式导出时仅当字段为真才包含的可选字段（starred 单独处理，因为 false 也需保留）
+const OPTIONAL_EXPORT_FIELDS = [
+  'alternateTitles',
+  'author',
+  'description',
+  'tags',
+  'webUrl',
+  'cover',
+  'volumes',
+] as const;
+
+// 添加模式：基于表单数据构建导出对象（不包含章节内容）
+const buildAddModeExportData = (): Novel => {
+  const f = formData.value;
+  const data: Record<string, unknown> = {
+    id: '',
+    title: f.title || '',
+    createdAt: new Date(),
+    lastEdited: new Date(),
+  };
+  for (const field of OPTIONAL_EXPORT_FIELDS) {
+    if (f[field]) {
+      data[field] = f[field];
+    }
+  }
+  if (f.starred !== undefined) {
+    data.starred = f.starred;
+  }
+  return data as unknown as Novel;
+};
+
+// 编辑模式可被表单覆盖的可选字段（cover / volumes 单独处理）
+const EDIT_OVERRIDE_FIELDS = [
+  'title',
+  'alternateTitles',
+  'author',
+  'description',
+  'tags',
+  'webUrl',
+  'translationInstructions',
+  'polishInstructions',
+  'proofreadingInstructions',
+] as const;
+
+// 编辑模式：以 props.book 为基底，用当前表单值覆盖未保存的改动后再构建导出对象
+const buildEditModeBaseNovel = (): Novel => {
+  const f = formData.value;
+  const merged: Novel = { ...props.book! };
+  const mergedRecord = merged as unknown as Record<string, unknown>;
+  for (const field of EDIT_OVERRIDE_FIELDS) {
+    if (f[field] !== undefined) {
+      mergedRecord[field] = f[field];
+    }
+  }
+  // 封面：表单有值则覆盖，表单显式清除（无 cover 字段）则删除
+  if (f.cover) {
+    merged.cover = f.cover;
+  } else {
+    delete merged.cover;
+  }
+  // 卷章节：表单持有当前（可能已编辑）的结构，覆盖后由 loadAllChapterContentsForNovel 按章节 id 补全内容
+  if (f.volumes !== undefined) {
+    merged.volumes = f.volumes;
+  }
+  return merged;
+};
+
+// 解析导出数据来源：编辑模式加载完整书籍数据，添加模式使用表单数据
+const resolveExportData = async (): Promise<Novel> => {
+  if (props.mode === 'edit' && props.book) {
+    // 用当前表单值覆盖 props.book，避免丢失对话框里未保存的标题/描述/标签/封面/卷章节改动
+    const baseNovel = buildEditModeBaseNovel();
+    return ChapterContentService.loadAllChapterContentsForNovel(baseNovel);
+  }
+  return buildAddModeExportData();
+};
+
+// 规范化导出文件名并触发下载（含记忆数据时一并打包）
+const downloadNovelExport = (novel: Novel, memories: readonly Memory[]) => {
+  const exportPayload = {
+    novel,
+    ...(memories.length > 0 ? { memories } : {}),
+  };
+  const title = formData.value.title || props.book?.title || 'book';
+  const sanitizedTitle = title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
+  const timestamp = new Date().toISOString().split('T')[0];
+  SettingsService.downloadJson(exportPayload, `${sanitizedTitle}-${timestamp}.json`);
+};
+
 // 导出 JSON
 const handleExportJson = async () => {
   try {
-    let exportData: Novel;
-
-    // 如果有 book 数据，使用完整的书籍数据（包含所有字段）
-    if (props.mode === 'edit' && props.book) {
-      // 加载所有章节内容
-      exportData = await ChapterContentService.loadAllChapterContentsForNovel(props.book);
-    } else {
-      // 添加模式，使用表单数据（不包含章节内容）
-      exportData = {
-        id: '',
-        title: formData.value.title || '',
-        ...(formData.value.alternateTitles
-          ? { alternateTitles: formData.value.alternateTitles }
-          : {}),
-        ...(formData.value.author ? { author: formData.value.author } : {}),
-        ...(formData.value.description ? { description: formData.value.description } : {}),
-        ...(formData.value.tags ? { tags: formData.value.tags } : {}),
-        ...(formData.value.webUrl ? { webUrl: formData.value.webUrl } : {}),
-        ...(formData.value.cover ? { cover: formData.value.cover } : {}),
-        ...(formData.value.volumes ? { volumes: formData.value.volumes } : {}),
-        ...(formData.value.starred !== undefined ? { starred: formData.value.starred } : {}),
-        createdAt: new Date(),
-        lastEdited: new Date(),
-      } as Novel;
-    }
+    const exportData = await resolveExportData();
 
     // 加载书籍的记忆数据
-    const bookId = exportData.id;
-    const memories = bookId ? await MemoryService.getAllMemories(bookId) : [];
+    const memories = exportData.id ? await MemoryService.getAllMemories(exportData.id) : [];
 
-    const exportPayload = {
-      novel: exportData,
-      ...(memories.length > 0 ? { memories } : {}),
-    };
-
-    const title = formData.value.title || props.book?.title || 'book';
-    const sanitizedTitle = title.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_');
-    const timestamp = new Date().toISOString().split('T')[0];
-    SettingsService.downloadJson(exportPayload, `${sanitizedTitle}-${timestamp}.json`);
+    downloadNovelExport(exportData, memories);
 
     toast.add({
       severity: 'success',
@@ -250,10 +304,40 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
   specialInstructionsActiveTab.value = String(value);
 };
 
-// 检查 URL 是否可爬取
-const isUrlScrapable = (url: string): boolean => {
-  return NovelScraperFactory.isValidUrl(url);
+// 导出按钮文案（手机端简短显示）
+const exportLabel = computed(() => (isPhone.value ? '导出' : '导出 JSON'));
+
+// 对话框标题与可关闭状态（集中处理模板中的条件，降低圈复杂度）
+const dialogHeader = computed(() => (props.mode === 'add' ? '添加书籍' : '编辑书籍'));
+const dialogClosable = computed(() => !props.loading && !hasChildDialogOpen.value);
+
+// 表单字段的回退值（将模板里的 `|| []` / `|| ''` 收敛到 computed）
+const alternateTitles = computed(() => formData.value.alternateTitles || []);
+const descriptionValue = computed(() => formData.value.description || '');
+const tagsValue = computed(() => formData.value.tags || []);
+const webUrlValue = computed(() => formData.value.webUrl || []);
+const currentCover = computed(() => formData.value.cover || null);
+
+// 标签复制按钮禁用条件：无标签时禁用
+const tagsCopyDisabled = computed(() => !formData.value.tags || formData.value.tags.length === 0);
+
+// 清除确认对话框中展示的书名
+const clearConfirmBookTitle = computed(() => formData.value.title || props.book?.title);
+
+// 封面管理对话框回写：有封面则赋值，无则清除
+const handleCoverUpdate = (cover: CoverImage | null) => {
+  if (cover) {
+    formData.value.cover = cover;
+  } else {
+    delete formData.value.cover;
+  }
 };
+
+// 清除确认按钮的禁用条件（输入的书名需与当前书名匹配）
+const clearConfirmDisabled = computed(() => {
+  const expected = (formData.value.title || props.book?.title || '').trim();
+  return clearConfirmInput.value.trim() !== expected;
+});
 
 // 处理应用爬取的数据
 const handleApplyScrapedData = (novel: Novel) => {
@@ -406,6 +490,36 @@ const handleCopyTags = async () => {
   }
 };
 
+// 字符串字段回退为空字符串（保持原 `value || ''` 语义）
+const orBlank = (value: string | undefined): string => value || '';
+
+// 数组字段回退为空数组，并复制一份避免与源数据共享引用
+const cloneStringArray = (value: string[] | undefined): string[] => (value ? [...value] : []);
+
+// 编辑模式：根据 props.book 构建 formData，复制各字段避免污染源数据
+const buildEditFormData = (): Partial<Novel> => {
+  const book = props.book!;
+  const data: Partial<Novel> = {
+    title: book.title,
+    alternateTitles: cloneStringArray(book.alternateTitles),
+    author: orBlank(book.author),
+    description: orBlank(book.description),
+    tags: cloneStringArray(book.tags),
+    webUrl: cloneStringArray(book.webUrl),
+    translationInstructions: orBlank(book.translationInstructions),
+    polishInstructions: orBlank(book.polishInstructions),
+    proofreadingInstructions: orBlank(book.proofreadingInstructions),
+  };
+  if (book.cover) {
+    data.cover = { ...book.cover };
+  }
+  if (book.volumes) {
+    // 深拷贝 volumes 数据，确保可以正确编辑
+    data.volumes = cloneDeep(book.volumes);
+  }
+  return data;
+};
+
 // 监听 visible 变化，初始化表单
 watch(
   () => props.visible,
@@ -413,25 +527,7 @@ watch(
     if (newVisible) {
       if (props.mode === 'edit' && props.book) {
         // 编辑模式：填充现有数据
-        const data: Partial<Novel> = {
-          title: props.book.title,
-          alternateTitles: props.book.alternateTitles ? [...props.book.alternateTitles] : [],
-          author: props.book.author || '',
-          description: props.book.description || '',
-          tags: props.book.tags ? [...props.book.tags] : [],
-          webUrl: props.book.webUrl ? [...props.book.webUrl] : [],
-          translationInstructions: props.book.translationInstructions || '',
-          polishInstructions: props.book.polishInstructions || '',
-          proofreadingInstructions: props.book.proofreadingInstructions || '',
-        };
-        if (props.book.cover) {
-          data.cover = { ...props.book.cover };
-        }
-        if (props.book.volumes) {
-          // 深拷贝 volumes 数据，确保可以正确编辑
-          data.volumes = cloneDeep(props.book.volumes);
-        }
-        formData.value = data;
+        formData.value = buildEditFormData();
       } else {
         // 添加模式：重置表单
         resetForm();
@@ -460,11 +556,11 @@ watch(
 <template>
   <AdaptiveDialog
     :visible="visible"
-    :header="mode === 'add' ? '添加书籍' : '编辑书籍'"
+    :header="dialogHeader"
     desktop-width="900px"
     desktop-height="90vh"
     eyebrow="BOOK"
-    :closable="!props.loading && !hasChildDialogOpen"
+    :closable="dialogClosable"
     :dismissable-mask="!hasChildDialogOpen"
     :close-on-escape="!hasChildDialogOpen"
     :sheet-dismiss-on-mask-click="!hasChildDialogOpen"
@@ -495,7 +591,7 @@ watch(
           >
           <TranslatableChips
             :id="`${idPrefix}-alternateTitles`"
-            :model-value="formData.alternateTitles || []"
+            :model-value="alternateTitles"
             @update:model-value="
               (value) => {
                 formData.alternateTitles = value;
@@ -527,7 +623,7 @@ watch(
           >
           <TranslatableInput
             :id="`${idPrefix}-description`"
-            :model-value="formData.description || ''"
+            :model-value="descriptionValue"
             @update:model-value="
               (value) => {
                 formData.description = value;
@@ -551,13 +647,13 @@ watch(
               label="复制标签"
               class="p-button-text p-button-sm"
               size="small"
-              :disabled="!formData.tags || formData.tags.length === 0"
+              :disabled="tagsCopyDisabled"
               @click="handleCopyTags"
             />
           </div>
           <TranslatableChips
             :id="`${idPrefix}-tags`"
-            :model-value="formData.tags || []"
+            :model-value="tagsValue"
             @update:model-value="
               (value) => {
                 formData.tags = value;
@@ -588,7 +684,7 @@ watch(
           </div>
           <AutoComplete
             :id="`${idPrefix}-webUrl`"
-            :model-value="formData.webUrl || []"
+            :model-value="webUrlValue"
             @update:model-value="
               (value: string[]) => {
                 formData.webUrl = value;
@@ -601,30 +697,7 @@ watch(
             @complete="() => {}"
           />
           <!-- 显示可点击的 URL 列表 -->
-          <div v-if="formData.webUrl && formData.webUrl.length > 0" class="space-y-1 mt-2">
-            <div
-              v-for="(url, index) in formData.webUrl"
-              :key="index"
-              class="flex items-center gap-2 p-2 card-base"
-            >
-              <a
-                :href="url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-accent-400 hover:text-accent-300 hover:underline text-sm break-all flex-1 transition-colors"
-              >
-                {{ url }}
-              </a>
-              <Button
-                v-if="isUrlScrapable(url)"
-                icon="pi pi-download"
-                class="p-button-text p-button-sm"
-                size="small"
-                title="爬取此 URL 的内容"
-                @click="openScraper(url)"
-              />
-            </div>
-          </div>
+          <BookWebUrlList :urls="formData.webUrl" @scrape="openScraper" />
           <small class="text-moon/60 block mt-1"
             >输入网络地址后按回车键添加，或点击按钮从支持的网站获取</small
           >
@@ -699,159 +772,25 @@ watch(
         </div>
 
         <!-- 卷和章节（只读） -->
-        <div v-if="availableVolumes.length > 0" class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="block text-sm font-medium text-moon/90">卷和章节</label>
-            <Button
-              icon="pi pi-trash"
-              label="清除全部"
-              class="p-button-text p-button-danger p-button-sm"
-              size="small"
-              @click="handleClearVolumes"
-            />
-          </div>
-          <div class="space-y-2 max-h-[300px] overflow-y-auto card-base p-3">
-            <div
-              v-for="volume in availableVolumes"
-              :key="volume.id"
-              class="space-y-2 border-b border-white/10 last:border-b-0 pb-2 last:pb-0"
-            >
-              <!-- 卷标题 -->
-              <div
-                class="flex items-center justify-between cursor-pointer hover:bg-white/5 p-2 rounded-lg transition-colors"
-                @click="toggleVolume(volume.id)"
-              >
-                <div class="flex items-center gap-2 flex-1">
-                  <i
-                    :class="[
-                      'pi text-xs transition-transform',
-                      expandedVolumes.has(volume.id) ? 'pi-chevron-down' : 'pi-chevron-right',
-                    ]"
-                  />
-                  <span class="font-semibold text-sm text-moon/90">
-                    {{ getVolumeDisplayTitle(volume) || '未命名卷' }}
-                  </span>
-                  <span class="text-xs text-moon/60">
-                    ({{ volume.chapters?.length || 0 }} 章)
-                  </span>
-                </div>
-              </div>
-
-              <!-- 章节列表 -->
-              <div
-                v-if="
-                  expandedVolumes.has(volume.id) && volume.chapters && volume.chapters.length > 0
-                "
-                class="ml-6 space-y-1 mt-2"
-              >
-                <div
-                  v-for="chapter in volume.chapters"
-                  :key="chapter.id"
-                  class="flex items-start gap-2 p-2 rounded hover:bg-white/5 transition-colors"
-                >
-                  <i class="pi pi-file text-xs text-moon/60 mt-1 flex-shrink-0" />
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-start justify-between gap-2">
-                      <div class="text-sm text-moon/80 line-clamp-2 flex-1">
-                        {{ getChapterDisplayTitle(chapter, book || undefined) || '未命名章节' }}
-                      </div>
-                      <span class="text-xs text-moon/60 flex-shrink-0">
-                        <Skeleton
-                          v-if="isLoadingChapterCharCount(chapter)"
-                          width="40px"
-                          height="12px"
-                        />
-                        <span v-else>
-                          {{ formatCharCount(getChapterCharCountDisplay(chapter)) }} 字
-                        </span>
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-3 mt-1 text-xs text-moon/50">
-                      <span v-if="chapter.lastUpdated" class="flex items-center gap-1">
-                        <i class="pi pi-clock text-[10px]" />
-                        {{ formatDate(chapter.lastUpdated) }}
-                      </span>
-                      <span v-if="chapter.webUrl" class="flex items-center gap-1">
-                        <i class="pi pi-link text-[10px]" />
-                        <a
-                          :href="chapter.webUrl"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-accent-400 hover:text-accent-300 hover:underline break-all transition-colors"
-                          @click.stop
-                        >
-                          {{ chapter.webUrl }}
-                        </a>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div
-                v-else-if="
-                  expandedVolumes.has(volume.id) &&
-                  (!volume.chapters || volume.chapters.length === 0)
-                "
-                class="ml-6 text-xs text-moon/50 italic p-2"
-              >
-                暂无章节
-              </div>
-            </div>
-          </div>
-          <small class="text-moon/60 text-xs block">点击卷标题展开/折叠章节列表（只读）</small>
-        </div>
+        <BookVolumesTree
+          :volumes="availableVolumes"
+          :book="book"
+          :expanded-volume-ids="expandedVolumes"
+          :get-char-display="getChapterCharCountDisplay"
+          :is-loading="isLoadingChapterCharCount"
+          @toggle="toggleVolume"
+          @clear="handleClearVolumes"
+        />
       </div>
 
       <!-- 右侧封面管理区域 -->
       <div class="w-full flex-shrink-0 lg:w-64">
-        <div class="space-y-2 lg:sticky lg:top-0">
-          <label class="block text-sm font-medium text-moon/90">封面</label>
-          <div class="space-y-2">
-            <div
-              v-if="formData.cover?.url"
-              class="relative w-full aspect-[2/3] overflow-hidden rounded-lg bg-white/5 border border-white/10"
-            >
-              <img :src="formData.cover.url" alt="封面预览" class="w-full h-full object-cover" />
-            </div>
-            <div class="flex flex-nowrap gap-2 items-stretch">
-              <Button
-                :label="formData.cover?.url ? '管理封面' : '上传封面'"
-                :icon="formData.cover?.url ? 'pi pi-image' : 'pi pi-upload'"
-                class="p-button-outlined flex-1 min-w-0"
-                @click="showCoverManager = true"
-              />
-              <Button
-                v-if="formData.cover?.url"
-                icon="pi pi-times"
-                class="p-button-outlined p-button-danger flex-shrink-0"
-                title="清除封面"
-                @click="handleClearCover"
-              />
-            </div>
-            <!-- 封面 URL 显示和复制 -->
-            <div v-if="formData.cover?.url" class="space-y-1 p-2 card-base">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-moon/60 text-xs">URL:</span>
-                <Button
-                  icon="pi pi-copy"
-                  class="p-button-text p-button-sm"
-                  size="small"
-                  title="复制 URL"
-                  @click="handleCopyUrl"
-                />
-              </div>
-              <a
-                :href="formData.cover.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-accent-400 hover:text-accent-300 hover:underline break-all text-xs cursor-pointer transition-colors"
-              >
-                {{ formData.cover.url }}
-              </a>
-            </div>
-          </div>
-          <small class="text-moon/60 text-xs block">点击按钮管理书籍封面图片</small>
-        </div>
+        <BookCoverPanel
+          :cover="formData.cover"
+          @manage="showCoverManager = true"
+          @clear="handleClearCover"
+          @copy-url="handleCopyUrl"
+        />
       </div>
     </div>
     <template #footer>
@@ -860,7 +799,7 @@ watch(
       >
         <Button
           icon="pi pi-download"
-          :label="isPhone ? '导出' : '导出 JSON'"
+          :label="exportLabel"
           class="p-button-text icon-button-hover self-start sm:self-auto"
           @click="handleExportJson"
         />
@@ -887,22 +826,14 @@ watch(
     <!-- 封面管理对话框 -->
     <CoverManagerDialog
       v-model:visible="showCoverManager"
-      :cover="formData.cover || null"
-      @update:cover="
-        (cover) => {
-          if (cover) {
-            formData.cover = cover;
-          } else {
-            delete formData.cover;
-          }
-        }
-      "
+      :cover="currentCover"
+      @update:cover="handleCoverUpdate"
     />
 
     <!-- 小说爬虫对话框 -->
     <NovelScraperDialog
       v-model:visible="showScraper"
-      :current-book="book || null"
+      :current-book="book"
       :initial-url="scraperInitialUrl"
       @apply="handleApplyScrapedData"
     />
@@ -948,7 +879,7 @@ watch(
         <p class="text-moon/90">请输入书籍名称以确认：</p>
         <div class="card-base p-3 flex items-center justify-between gap-2">
           <p class="text-primary font-medium break-all flex-1">
-            {{ formData.title || props.book?.title }}
+            {{ clearConfirmBookTitle }}
           </p>
           <Button
             icon="pi pi-copy"
@@ -972,9 +903,7 @@ watch(
           label="确认清除"
           icon="pi pi-trash"
           class="p-button-danger"
-          :disabled="
-            clearConfirmInput.trim() !== (formData.title || props.book?.title || '').trim()
-          "
+          :disabled="clearConfirmDisabled"
           @click="confirmClearVolumes"
         />
       </template>

@@ -6,6 +6,7 @@ import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 
@@ -32,6 +33,74 @@ const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 const aiTaskLabel = computed(() =>
   latestThinkingStatus.value === 'processing' ? '处理中' : '思考中',
 );
+
+// 思考态徽章：thinking 时是 pill + 脉冲圆点，否则普通 chip + sparkles 图标。
+// 用一个描述对象驱动单个 <button>，避免模板里 v-if/v-else 分支。
+const thinkingChip = computed(() => ({
+  class: thinking.value ? 'dsk-chip pill thinking' : 'dsk-chip',
+  label: thinking.value ? `AI ${aiTaskLabel.value}` : 'AI 思考',
+  labelClass: thinking.value ? '' : 'dsk-chip-label',
+  showLabel: thinking.value || !isPhone.value,
+}));
+
+// 同步态徽章：syncing/changes/ok/pending/default 五种形态，全部收敛进一个描述对象。
+// 模板只做「图标 + 可选标签 + 可选倒计时」的纯渲染，状态判断留在 computed。
+const syncChip = computed(() => {
+  switch (syncState.value) {
+    case 'syncing':
+      return {
+        class: 'dsk-chip pill sync-pending',
+        icon: 'pi pi-spin pi-spinner',
+        label: '同步中',
+        aria: '同步中',
+        showLabel: true,
+        labelClass: '',
+        meta: null as string | null,
+      };
+    case 'changes':
+      return {
+        class: 'dsk-chip pill sync-changes',
+        icon: 'pi pi-cloud-upload',
+        label: `${pendingCount.value} 项变更`,
+        aria: `${pendingCount.value} 项变更`,
+        showLabel: true,
+        labelClass: '',
+        meta: null as string | null,
+      };
+    case 'ok':
+      return {
+        class: 'dsk-chip pill sync-ok',
+        icon: 'pi pi-cloud-check',
+        label: '已同步',
+        aria: '已同步',
+        showLabel: true,
+        labelClass: '',
+        meta: syncSecondaryLabel.value,
+      };
+    case 'pending':
+      return {
+        class: 'dsk-chip',
+        icon: 'pi pi-cloud',
+        label: '未同步',
+        aria: '未同步',
+        showLabel: !isPhone.value,
+        labelClass: 'dsk-chip-label',
+        meta: null as string | null,
+      };
+    default:
+      return {
+        class: 'dsk-chip',
+        icon: 'pi pi-cloud',
+        label: '同步',
+        aria: '同步状态',
+        showLabel: !isPhone.value,
+        labelClass: 'dsk-chip-label',
+        meta: null as string | null,
+      };
+  }
+});
+
+const unreadBadge = computed(() => (unreadCount.value > 99 ? '99+' : unreadCount.value));
 
 const handleToggleSideMenu = () => {
   if (isPhone.value && ui.rightPanelOpen) {
@@ -91,79 +160,32 @@ const syncSecondaryLabel = computed<string | null>(() => {
     <div class="dsk-actions">
       <!-- AI 思考过程 -->
       <button
-        v-if="thinking"
-        type="button"
-        class="dsk-chip pill thinking"
-        aria-label="AI 思考过程"
-        @click="toggleThinking"
-      >
-        <span class="dsk-dot" />
-        <span>AI {{ aiTaskLabel }}</span>
-      </button>
-      <button
-        v-else
         type="button"
         class="dsk-chip"
+        :class="thinkingChip.class"
         aria-label="AI 思考过程"
         @click="toggleThinking"
       >
-        <i class="pi pi-sparkles" aria-hidden="true" />
-        <span v-if="!isPhone" class="dsk-chip-label">AI 思考</span>
+        <span v-if="thinking" class="dsk-dot" />
+        <i v-else class="pi pi-sparkles" aria-hidden="true" />
+        <span v-if="thinkingChip.showLabel" :class="thinkingChip.labelClass">{{
+          thinkingChip.label
+        }}</span>
       </button>
 
       <!-- 同步状态 -->
       <button
-        v-if="syncState === 'syncing'"
         type="button"
-        class="dsk-chip pill sync-pending"
-        aria-label="同步中"
+        class="dsk-chip"
+        :class="syncChip.class"
+        :aria-label="syncChip.aria"
         @click="toggleSync"
       >
-        <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-        <span>同步中</span>
-      </button>
-      <button
-        v-else-if="syncState === 'changes'"
-        type="button"
-        class="dsk-chip pill sync-changes"
-        :aria-label="`${pendingCount} 项变更`"
-        @click="toggleSync"
-      >
-        <i class="pi pi-cloud-upload" aria-hidden="true" />
-        <span>{{ pendingCount }} 项变更</span>
-      </button>
-      <button
-        v-else-if="syncState === 'ok'"
-        type="button"
-        class="dsk-chip pill sync-ok"
-        aria-label="已同步"
-        @click="toggleSync"
-      >
-        <i class="pi pi-cloud-check" aria-hidden="true" />
-        <span>已同步</span>
-        <span v-if="syncSecondaryLabel && !isPhone" class="dsk-chip-meta">
-          {{ syncSecondaryLabel }}
+        <i :class="syncChip.icon" aria-hidden="true" />
+        <span v-if="syncChip.showLabel" :class="syncChip.labelClass">{{ syncChip.label }}</span>
+        <span v-if="syncChip.meta && !isPhone" class="dsk-chip-meta">
+          {{ syncChip.meta }}
         </span>
-      </button>
-      <button
-        v-else-if="syncState === 'pending'"
-        type="button"
-        class="dsk-chip"
-        aria-label="未同步"
-        @click="toggleSync"
-      >
-        <i class="pi pi-cloud" aria-hidden="true" />
-        <span v-if="!isPhone" class="dsk-chip-label">未同步</span>
-      </button>
-      <button
-        v-else
-        type="button"
-        class="dsk-chip"
-        aria-label="同步状态"
-        @click="toggleSync"
-      >
-        <i class="pi pi-cloud" aria-hidden="true" />
-        <span v-if="!isPhone" class="dsk-chip-label">同步</span>
       </button>
 
       <div class="dsk-sep" />
@@ -176,9 +198,9 @@ const syncSecondaryLabel = computed<string | null>(() => {
         @click="toggleHistory"
       >
         <i class="pi pi-bell" aria-hidden="true" />
-        <span v-if="unreadCount > 0" class="dsk-badge">
-          {{ unreadCount > 99 ? '99+' : unreadCount }}
-        </span>
+        <NotificationBadge v-if="unreadCount > 0">
+          {{ unreadBadge }}
+        </NotificationBadge>
       </button>
 
     </div>
@@ -400,26 +422,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
     opacity: 1;
     transform: scale(1.1);
   }
-}
-
-.dsk-badge {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: #d97757;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'JetBrains Mono', monospace;
-  line-height: 1;
-  border: 1.5px solid #080a0d;
 }
 
 .dsk-sep {

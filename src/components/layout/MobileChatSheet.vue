@@ -9,13 +9,14 @@
  * 状态来自 useRightPanel（chat 专属），与 MobileProgressSheet 完全独立。
  */
 import { computed } from 'vue';
-import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPopover.vue';
-import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
+import ChatActionPopovers from 'src/components/layout/ChatActionPopovers.vue';
+import ChatSendButton from 'src/components/layout/ChatSendButton.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { useChatPanelSetup } from 'src/composables/right-panel/useChatPanelSetup';
+import { useChatPanelBindings } from 'src/composables/right-panel/useChatPanelBindings';
 
 const props = defineProps<{
   visible: boolean;
@@ -30,47 +31,30 @@ const localVisible = computed({
   set: (v) => emit('update:visible', v),
 });
 
-// useRightPanel 解构 + bindXxxRef 样板已抽到 useChatPanelSetup，
-// Tablet 变体也走同一份 helper，保持两边行为一致。
-// fallow-ignore-next-line code-duplication
+// useRightPanel 解构 + bindXxxRef 样板已抽到 useChatPanelSetup，Tablet 变体也走同一份 helper。
+// 保留整个 panel 对象传给 useChatPanelBindings，避免逐字段重复实参；模板用到的字段才解构。
+const panel = useChatPanelSetup();
 const {
   chatSessionsStore,
   panelContainerRef,
   messagesContainerRef,
-  messages,
   inputMessage,
-  messageDisplayItemsById,
-  isSending,
+  assistantModel,
   sendMessage,
-  stopGeneration,
   recentSessions,
   switchToSession,
   toggleSessionListPopover,
   hideSessionListPopover,
   createNewSession,
-  thinkingExpanded,
-  displayedThinkingProcess,
-  displayedThinkingPreview,
-  thinkingActive,
-  setThinkingContentRef,
-  toggleThinking,
-  assistantModel,
-  getChapterTitleForAction,
-  renderMarkdown,
-  formatMessageTime,
-  hoveredAction,
-  hoveredGroupedAction,
-  actionDetailsContext,
-  toggleActionPopover,
-  handleActionMouseLeave,
-  handleActionPopoverHide,
-  toggleGroupedActionPopover,
-  handleGroupedActionMouseLeave,
-  handleGroupedActionPopoverHide,
   bindSessionListRef,
-  bindActionPopoverRef,
-  bindGroupedActionPopoverRef,
-} = useChatPanelSetup();
+} = panel;
+
+// 发送状态 / 浮层绑定 / 消息列表绑定一次性产出（与 Desktop / Tablet 同构，差异仅前缀与 placeholder）。
+const { composer, actionPopoverBindings, messageListBindings } = useChatPanelBindings(panel, {
+  sendClassPrefix: 'mc-send',
+  readyPlaceholder: '请月詠相助…',
+});
+const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSendClick } = composer;
 </script>
 
 <template>
@@ -86,10 +70,7 @@ const {
               class="mc-status-dot"
               :class="{ 'mc-status-dot--off': !assistantModel }"
             />
-            <template v-if="assistantModel">
-              {{ assistantModel.name || assistantModel.id }} · 在线
-            </template>
-            <template v-else>未配置助手模型</template>
+            {{ assistantStatusText }}
           </div>
         </div>
         <button
@@ -130,23 +111,7 @@ const {
         ref="messagesContainerRef"
         class="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-3 pb-2 min-h-0 min-w-0 relative z-10 mc-messages"
       >
-        <ChatMessageList
-          :messages="messages"
-          :message-display-items-by-id="messageDisplayItemsById"
-          :displayed-thinking-process="displayedThinkingProcess"
-          :displayed-thinking-preview="displayedThinkingPreview"
-          :thinking-expanded="thinkingExpanded"
-          :thinking-active="thinkingActive"
-          :set-thinking-content-ref="setThinkingContentRef"
-          :toggle-thinking="toggleThinking"
-          :render-markdown="renderMarkdown"
-          :format-message-time="formatMessageTime"
-          :get-chapter-title-for-action="getChapterTitleForAction"
-          :on-action-hover="toggleActionPopover"
-          :on-action-leave="handleActionMouseLeave"
-          :on-grouped-action-hover="toggleGroupedActionPopover"
-          :on-grouped-action-leave="handleGroupedActionMouseLeave"
-        />
+        <ChatMessageList v-bind="messageListBindings" />
       </div>
 
       <!-- 胶囊状输入栏 -->
@@ -157,38 +122,16 @@ const {
           </button>
           <input
             v-model="inputMessage"
-            :disabled="isSending || !assistantModel"
-            :placeholder="assistantModel ? '请月詠相助…' : '未配置助手模型'"
+            :disabled="inputDisabled"
+            :placeholder="inputPlaceholder"
             class="mc-input"
             @keydown.enter.exact.prevent="sendMessage"
           />
-          <button
-            class="mc-send"
-            :class="{
-              'mc-send--stop': isSending,
-              'mc-send--idle': !isSending && !inputMessage.trim(),
-            }"
-            :disabled="!isSending && (!inputMessage.trim() || !assistantModel)"
-            :aria-label="isSending ? '停止' : '发送'"
-            @click="isSending ? stopGeneration() : sendMessage()"
-          >
-            <i class="pi" :class="isSending ? 'pi-stop-circle' : 'pi-send'" aria-hidden="true" />
-          </button>
+          <ChatSendButton v-bind="sendButton" @click="onSendClick" />
         </div>
       </div>
 
-      <ChatGroupedActionPopover
-        :ref="bindGroupedActionPopoverRef"
-        :actions="hoveredGroupedAction?.actions || null"
-        @hide="handleGroupedActionPopoverHide"
-      />
-
-      <ChatActionDetailsPopover
-        :ref="bindActionPopoverRef"
-        :action="hoveredAction?.action || null"
-        :context="actionDetailsContext"
-        @hide="handleActionPopoverHide"
-      />
+      <ChatActionPopovers :bindings="actionPopoverBindings" />
     </aside>
   </MobileBottomSheet>
 </template>
@@ -414,9 +357,5 @@ const {
 
 .mc-send--stop {
   background: #ef5f5f;
-}
-
-.mc-send i {
-  font-size: 13px;
 }
 </style>

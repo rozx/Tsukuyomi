@@ -1,5 +1,4 @@
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
-import { vi } from 'vitest';
 import { ref, computed } from 'vue';
 import { useEditMode } from '../composables/book-details/useEditMode';
 import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
@@ -8,17 +7,17 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import * as BooksStore from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
+import * as useToastHistory from '../composables/useToastHistory';
 
-const { mockToastAdd, mockUseToastWithHistory } = vi.hoisted(() => {
-  const add = vi.fn();
-  return {
-    mockToastAdd: add,
-    mockUseToastWithHistory: vi.fn(() => ({ add })),
-  };
-});
-
-vi.mock('src/composables/useToastHistory', () => ({
-  useToastWithHistory: mockUseToastWithHistory,
+const mockToastAdd = mock(() => {});
+const mockToastRemove = mock(() => {});
+const mockToastRemoveGroup = mock(() => {});
+const mockToastRemoveAllGroups = mock(() => {});
+const mockUseToastWithHistory = mock(() => ({
+  add: mockToastAdd,
+  remove: mockToastRemove,
+  removeGroup: mockToastRemoveGroup,
+  removeAllGroups: mockToastRemoveAllGroups,
 }));
 
 const mockUpdateChapter = mock((): Volume[] => []);
@@ -79,6 +78,7 @@ describe('useEditMode', () => {
       updateBook: mockBooksStoreUpdateBook,
     } as any);
     spyOn(ChapterService, 'updateChapter').mockImplementation(mockUpdateChapter);
+    spyOn(useToastHistory, 'useToastWithHistory').mockImplementation(mockUseToastWithHistory);
   });
 
   afterEach(() => {

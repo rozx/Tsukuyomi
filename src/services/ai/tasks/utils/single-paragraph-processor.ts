@@ -152,17 +152,44 @@ interface SingleParagraphRoundContext {
   model: AIModel;
 }
 
+/**
+ * 更新单段落处理轮次状态（fire-and-forget）
+ */
+function updateSingleParagraphRoundStatus(
+  aiProcessingStore: SingleParagraphOptions['aiProcessingStore'],
+  taskId: string | undefined,
+  taskLabel: string,
+): void {
+  if (!aiProcessingStore || !taskId) return;
+  void aiProcessingStore.updateTask(taskId, {
+    status: 'processing',
+    message: `正在${taskLabel}中...`,
+  });
+}
+
+/**
+ * 追加思考内容到任务面板（fire-and-forget）
+ */
+function appendSingleParagraphReasoning(
+  ctx: SingleParagraphRoundContext,
+  reasoningContent: string | null | undefined,
+): void {
+  if (!reasoningContent || !ctx.aiProcessingStore || !ctx.taskId) return;
+  void ctx.aiProcessingStore.appendThinkingMessage(ctx.taskId, reasoningContent);
+}
+
+function hasNoToolCalls(result: {
+  toolCalls?: AIToolCall[];
+}): boolean {
+  return !result.toolCalls || result.toolCalls.length === 0;
+}
+
 async function runSingleParagraphRound(
   ctx: SingleParagraphRoundContext,
 ): Promise<{ text: string; done: boolean }> {
   if (ctx.finalSignal.aborted) throw new Error('请求已取消');
 
-  if (ctx.aiProcessingStore && ctx.taskId) {
-    void ctx.aiProcessingStore.updateTask(ctx.taskId, {
-      status: 'processing',
-      message: `正在${ctx.taskLabel}中...`,
-    });
-  }
+  updateSingleParagraphRoundStatus(ctx.aiProcessingStore, ctx.taskId, ctx.taskLabel);
 
   const request: TextGenerationRequest = {
     messages: ctx.history,
@@ -190,13 +217,11 @@ async function runSingleParagraphRound(
     throw error;
   }
 
-  if (result.reasoningContent && ctx.aiProcessingStore && ctx.taskId) {
-    void ctx.aiProcessingStore.appendThinkingMessage(ctx.taskId, result.reasoningContent);
-  }
+  appendSingleParagraphReasoning(ctx, result.reasoningContent);
 
   const text = result.text || '';
 
-  if (!result.toolCalls || result.toolCalls.length === 0) {
+  if (hasNoToolCalls(result)) {
     return { text, done: true };
   }
 
@@ -266,6 +291,113 @@ async function runToolCallsForSingleParagraph(
   }
 }
 
+/**
+ * 构造单段落处理的 AIServiceConfig
+ */
+function buildSingleParagraphAIConfig(
+  model: AIModel,
+  temperature: number,
+  finalSignal: AbortSignal,
+): AIServiceConfig {
+  return {
+    apiKey: model.apiKey,
+    baseUrl: model.baseUrl,
+    model: model.model,
+    temperature,
+    signal: finalSignal,
+    useCorsProxy: model.useCorsProxy,
+    ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
+  };
+}
+
+/**
+ * 构建单段落系统提示词 / 用户提示词（含书籍/章节/特殊指令/默认上下文）
+ */
+async function buildSingleParagraphPrompts(params: {
+  paragraph: Paragraph;
+  bookId: string | undefined;
+  chapterId: string | undefined;
+  chapterTitle: string | undefined;
+  allChapterParagraphs: Paragraph[];
+  taskType: TaskType;
+  tools: AITool[];
+  buildSystemPrompt: SingleParagraphProcessConfig['buildSystemPrompt'];
+  buildUserPrompt: SingleParagraphProcessConfig['buildUserPrompt'];
+}): Promise<{ systemPrompt: string; userPrompt: string }> {
+  const {
+    paragraph,
+    bookId,
+    chapterId,
+    chapterTitle,
+    allChapterParagraphs,
+    taskType,
+    tools,
+    buildSystemPrompt,
+    buildUserPrompt,
+  } = params;
+
+  const bookContextSection = bookId ? await buildBookContextSection(bookId) : '';
+  const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+  const specialInstructions = bookId
+    ? getSpecialInstructions(bookId, chapterId, taskType)
+    : undefined;
+  const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
+
+  const systemPrompt = buildSystemPrompt({
+    bookContextSection,
+    chapterContextSection,
+    specialInstructionsSection,
+    tools,
+  });
+
+  const defaultContext = await buildSingleParagraphDefaultContext({
+    currentParagraphId: paragraph.id,
+    allChapterParagraphs,
+    ...(bookId ? { bookId } : {}),
+    ...(chapterId ? { chapterId } : {}),
+    ...(chapterTitle ? { chapterTitle } : {}),
+  });
+
+  const currentTranslation = getSelectedTranslation(paragraph);
+  const userPrompt = buildUserPrompt({
+    paragraphId: paragraph.id,
+    originalText: paragraph.text,
+    currentTranslation,
+    defaultContext,
+  });
+
+  return { systemPrompt, userPrompt };
+}
+
+/**
+ * 执行单段落处理的多轮工具调用循环，返回最终文本
+ */
+async function runSingleParagraphRounds(ctx: SingleParagraphRoundContext): Promise<string> {
+  let finalText = '';
+  for (let roundCount = 0; roundCount < MAX_TOOL_CALL_ROUNDS; roundCount++) {
+    const round = await runSingleParagraphRound(ctx);
+    finalText = round.text || finalText;
+    if (round.done) break;
+  }
+  return finalText;
+}
+
+/**
+ * 任务完成时更新状态（fire-and-forget）
+ */
+function completeSingleParagraphTask(
+  aiProcessingStore: SingleParagraphOptions['aiProcessingStore'],
+  taskId: string | undefined,
+  taskLabel: string,
+): void {
+  if (!aiProcessingStore || !taskId) return;
+  void aiProcessingStore.updateTask(taskId, {
+    status: 'end',
+    workflowStatus: 'end',
+    message: `${taskLabel}完成`,
+  });
+}
+
 export async function processSingleParagraph(
   paragraph: Paragraph,
   model: AIModel,
@@ -310,36 +442,18 @@ export async function processSingleParagraph(
   try {
     const service = AIServiceFactory.getService(model.provider);
 
-    const bookContextSection = bookId ? await buildBookContextSection(bookId) : '';
-    const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
-    const specialInstructions = bookId
-      ? getSpecialInstructions(bookId, chapterId, taskType)
-      : undefined;
-    const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
-
     const tools = ToolRegistry.getSingleParagraphPolishTools(bookId);
 
-    const systemPrompt = buildSystemPrompt({
-      bookContextSection,
-      chapterContextSection,
-      specialInstructionsSection,
-      tools,
-    });
-
-    const defaultContext = await buildSingleParagraphDefaultContext({
-      currentParagraphId: paragraph.id,
+    const { systemPrompt, userPrompt } = await buildSingleParagraphPrompts({
+      paragraph,
+      bookId,
+      chapterId,
+      chapterTitle,
       allChapterParagraphs,
-      ...(bookId ? { bookId } : {}),
-      ...(chapterId ? { chapterId } : {}),
-      ...(chapterTitle ? { chapterTitle } : {}),
-    });
-
-    const currentTranslation = getSelectedTranslation(paragraph);
-    const userPrompt = buildUserPrompt({
-      paragraphId: paragraph.id,
-      originalText: paragraph.text,
-      currentTranslation,
-      defaultContext,
+      taskType,
+      tools,
+      buildSystemPrompt,
+      buildUserPrompt,
     });
 
     const history: ChatMessage[] = [
@@ -347,15 +461,7 @@ export async function processSingleParagraph(
       { role: 'user', content: userPrompt },
     ];
 
-    const aiConfig: AIServiceConfig = {
-      apiKey: model.apiKey,
-      baseUrl: model.baseUrl,
-      model: model.model,
-      temperature,
-      signal: finalSignal,
-      useCorsProxy: model.useCorsProxy,
-      ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
-    };
+    const aiConfig = buildSingleParagraphAIConfig(model, temperature, finalSignal);
 
     console.log(`[${logLabel}] 开始单段落${taskLabel}，段落ID: ${paragraph.id}`);
 
@@ -378,20 +484,9 @@ export async function processSingleParagraph(
       model,
     };
 
-    let finalText = '';
-    for (let roundCount = 0; roundCount < MAX_TOOL_CALL_ROUNDS; roundCount++) {
-      const round = await runSingleParagraphRound(roundCtx);
-      finalText = round.text || finalText;
-      if (round.done) break;
-    }
+    const finalText = await runSingleParagraphRounds(roundCtx);
 
-    if (aiProcessingStore && taskId) {
-      void aiProcessingStore.updateTask(taskId, {
-        status: 'end',
-        workflowStatus: 'end',
-        message: `${taskLabel}完成`,
-      });
-    }
+    completeSingleParagraphTask(aiProcessingStore, taskId, taskLabel);
 
     console.log(`[${logLabel}] 单段落${taskLabel}完成，段落ID: ${paragraph.id}`);
 

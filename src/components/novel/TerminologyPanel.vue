@@ -15,6 +15,7 @@ import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
+import { useToolbarExpand } from 'src/composables/useToolbarExpand';
 import { TerminologyService } from 'src/services/terminology-service';
 import { useBooksStore } from 'src/stores/books';
 import { cloneDeep } from 'lodash';
@@ -62,6 +63,13 @@ const showAddDialog = ref(false);
 const showEditDialog = ref(false);
 const selectedTerminology = ref<Terminology | null>(null);
 
+// 工具栏展开图标/标题、空状态文案、导出可用性：把模板内联三元与 || 收敛为 computed
+const { toolbarExpandIcon, toolbarExpandTitle } = useToolbarExpand(isToolbarExpanded);
+const emptyStateText = computed(() => (searchQuery.value ? '未找到匹配的术语' : '暂无术语'));
+const canExportTerms = computed(
+  () => !!props.book?.terminologies && props.book.terminologies.length > 0,
+);
+
 const toast = useToastWithHistory();
 const confirm = useConfirm();
 const isSaving = ref(false);
@@ -103,6 +111,96 @@ const openEditDialog = (terminology: (typeof terminologies.value)[number]) => {
   showEditDialog.value = true;
 };
 
+// 构造新增术语载荷（仅在字段非空时写入，避免覆盖 AI 自动填充）
+const buildAddTermData = (data: {
+  name: string;
+  translation: string;
+  description: string;
+}): { name: string; translation?: string; description?: string } => {
+  const termData: { name: string; translation?: string; description?: string } = {
+    name: data.name.trim(),
+  };
+  if (data.translation.trim()) {
+    termData.translation = data.translation.trim();
+  }
+  if (data.description.trim()) {
+    termData.description = data.description.trim();
+  }
+  return termData;
+};
+
+// 构造更新字段（仅当与现有值不同时才写入）
+const buildTermUpdates = (
+  data: { name: string; translation: string; description: string },
+  existing: Terminology,
+): { name?: string; translation?: string; description?: string } => {
+  const updates: { name?: string; translation?: string; description?: string } = {};
+  if (data.name.trim() !== existing.name) {
+    updates.name = data.name.trim();
+  }
+  if (data.translation.trim() !== existing.translation.translation) {
+    updates.translation = data.translation.trim();
+  }
+  if (data.description.trim() !== (existing.description || '')) {
+    updates.description = data.description.trim();
+  }
+  return updates;
+};
+
+// 新增术语分支
+const addTerm = async (data: {
+  name: string;
+  translation: string;
+  description: string;
+}): Promise<void> => {
+  const termData = buildAddTermData(data);
+  const newTerm = await TerminologyService.addTerminology(props.book!.id, termData);
+
+  toast.add({
+    severity: 'success',
+    summary: '保存成功',
+    detail: `已成功添加术语 "${data.name.trim()}"`,
+    life: 3000,
+    onRevert: () => TerminologyService.deleteTerminology(props.book!.id, newTerm.id),
+  });
+
+  showAddDialog.value = false;
+};
+
+// 更新现有术语分支
+const updateTerm = async (data: {
+  name: string;
+  translation: string;
+  description: string;
+}): Promise<void> => {
+  if (!selectedTerminology.value) return;
+  const oldTermSnapshot = cloneDeep(selectedTerminology.value);
+  const updates = buildTermUpdates(data, selectedTerminology.value);
+
+  await TerminologyService.updateTerminology(props.book!.id, selectedTerminology.value.id, updates);
+
+  toast.add({
+    severity: 'success',
+    summary: '保存成功',
+    detail: `已成功更新术语 "${data.name.trim()}"`,
+    life: 3000,
+    onRevert: async () => {
+      if (oldTermSnapshot && props.book) {
+        await TerminologyService.updateTerminology(props.book.id, oldTermSnapshot.id, {
+          name: oldTermSnapshot.name,
+          translation: oldTermSnapshot.translation.translation,
+          ...(oldTermSnapshot.description !== undefined && {
+            description: oldTermSnapshot.description,
+          }),
+        });
+      }
+    },
+  });
+
+  showEditDialog.value = false;
+  selectedTerminology.value = null;
+};
+
 // 实现保存逻辑
 const handleSave = async (data: { name: string; translation: string; description: string }) => {
   if (!props.book) {
@@ -130,75 +228,9 @@ const handleSave = async (data: { name: string; translation: string; description
 
   try {
     if (showAddDialog.value) {
-      // 添加新术语
-      const termData: {
-        name: string;
-        translation?: string;
-        description?: string;
-      } = {
-        name: data.name.trim(),
-      };
-      if (data.translation.trim()) {
-        termData.translation = data.translation.trim();
-      }
-      if (data.description.trim()) {
-        termData.description = data.description.trim();
-      }
-      const newTerm = await TerminologyService.addTerminology(props.book.id, termData);
-
-      toast.add({
-        severity: 'success',
-        summary: '保存成功',
-        detail: `已成功添加术语 "${data.name.trim()}"`,
-        life: 3000,
-        onRevert: () => TerminologyService.deleteTerminology(props.book!.id, newTerm.id),
-      });
-
-      showAddDialog.value = false;
+      await addTerm(data);
     } else if (showEditDialog.value && selectedTerminology.value) {
-      // 编辑现有术语
-      const oldTermSnapshot = cloneDeep(selectedTerminology.value);
-
-      const updates: {
-        name?: string;
-        translation?: string;
-        description?: string;
-      } = {};
-      if (data.name.trim() !== selectedTerminology.value.name) {
-        updates.name = data.name.trim();
-      }
-      if (data.translation.trim() !== selectedTerminology.value.translation.translation) {
-        updates.translation = data.translation.trim();
-      }
-      if (data.description.trim() !== (selectedTerminology.value.description || '')) {
-        updates.description = data.description.trim();
-      }
-      await TerminologyService.updateTerminology(
-        props.book.id,
-        selectedTerminology.value.id,
-        updates,
-      );
-
-      toast.add({
-        severity: 'success',
-        summary: '保存成功',
-        detail: `已成功更新术语 "${data.name.trim()}"`,
-        life: 3000,
-        onRevert: async () => {
-          if (oldTermSnapshot && props.book) {
-            await TerminologyService.updateTerminology(props.book.id, oldTermSnapshot.id, {
-              name: oldTermSnapshot.name,
-              translation: oldTermSnapshot.translation.translation,
-              ...(oldTermSnapshot.description !== undefined && {
-                description: oldTermSnapshot.description,
-              }),
-            });
-          }
-        },
-      });
-
-      showEditDialog.value = false;
-      selectedTerminology.value = null;
+      await updateTerm(data);
     }
   } catch (error) {
     console.error('保存术语失败:', error);
@@ -444,6 +476,80 @@ const handleExport = () => {
   }
 };
 
+// 导入术语的撤销快照（仅记录被更新条目的可恢复字段）
+type UpdatedTermSnapshot = {
+  id: string;
+  name: string;
+  translation: string;
+  description?: string;
+};
+
+interface TermsImportResult {
+  addedCount: number;
+  updatedCount: number;
+  addedTermIds: string[];
+  updatedTermsSnapshot: UpdatedTermSnapshot[];
+}
+
+const buildUpdatedTermSnapshot = (existingTerm: Terminology): UpdatedTermSnapshot => ({
+  id: existingTerm.id,
+  name: existingTerm.name,
+  translation: existingTerm.translation.translation,
+  ...(existingTerm.description !== undefined ? { description: existingTerm.description } : {}),
+});
+
+// 执行导入：名称相同的更新，否则新增。返回新增/更新计数与撤销所需的快照
+const executeTermsImport = async (
+  bookId: string,
+  importedTerminologies: Terminology[],
+  existingTerms: Terminology[] | undefined,
+): Promise<TermsImportResult> => {
+  let addedCount = 0;
+  let updatedCount = 0;
+  const addedTermIds: string[] = [];
+  const updatedTermsSnapshot: UpdatedTermSnapshot[] = [];
+
+  for (const importedTerm of importedTerminologies) {
+    const existingTerm = existingTerms?.find((t) => t.name === importedTerm.name);
+    if (existingTerm) {
+      updatedTermsSnapshot.push(buildUpdatedTermSnapshot(existingTerm));
+      await TerminologyService.updateTerminology(bookId, existingTerm.id, {
+        translation: importedTerm.translation.translation,
+        ...(importedTerm.description !== undefined
+          ? { description: importedTerm.description }
+          : {}),
+      });
+      updatedCount++;
+    } else {
+      const newTerm = await TerminologyService.addTerminology(bookId, {
+        name: importedTerm.name,
+        translation: importedTerm.translation.translation,
+        ...(importedTerm.description !== undefined
+          ? { description: importedTerm.description }
+          : {}),
+      });
+      addedTermIds.push(newTerm.id);
+      addedCount++;
+    }
+  }
+
+  return { addedCount, updatedCount, addedTermIds, updatedTermsSnapshot };
+};
+
+// 撤销导入：删除新增条目，恢复被更新条目的快照字段
+const revertTermsImport = async (bookId: string, result: TermsImportResult): Promise<void> => {
+  for (const id of result.addedTermIds) {
+    await TerminologyService.deleteTerminology(bookId, id);
+  }
+  for (const snapshot of result.updatedTermsSnapshot) {
+    await TerminologyService.updateTerminology(bookId, snapshot.id, {
+      name: snapshot.name,
+      translation: snapshot.translation,
+      ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
+    });
+  }
+};
+
 // 处理文件选择
 const handleFileSelect = createFileSelectHandler(async (file) => {
   try {
@@ -469,51 +575,11 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       return;
     }
 
-    // 导入术语：合并现有术语，如果名称相同则更新，否则添加
-    let addedCount = 0;
-    let updatedCount = 0;
-    const addedTermIds: string[] = [];
-    const updatedTermsSnapshot: Array<{
-      id: string;
-      name: string;
-      translation: string;
-      description?: string;
-    }> = [];
-
-    for (const importedTerm of importedTerminologies) {
-      const existingTerm = props.book.terminologies?.find((t) => t.name === importedTerm.name);
-
-      if (existingTerm) {
-        // 保存更新前的状态用于撤销
-        updatedTermsSnapshot.push({
-          id: existingTerm.id,
-          name: existingTerm.name,
-          translation: existingTerm.translation.translation,
-          ...(existingTerm.description !== undefined
-            ? { description: existingTerm.description }
-            : {}),
-        });
-        // 更新现有术语
-        await TerminologyService.updateTerminology(props.book.id, existingTerm.id, {
-          translation: importedTerm.translation.translation,
-          ...(importedTerm.description !== undefined
-            ? { description: importedTerm.description }
-            : {}),
-        });
-        updatedCount++;
-      } else {
-        // 添加新术语
-        const newTerm = await TerminologyService.addTerminology(props.book.id, {
-          name: importedTerm.name,
-          translation: importedTerm.translation.translation,
-          ...(importedTerm.description !== undefined
-            ? { description: importedTerm.description }
-            : {}),
-        });
-        addedTermIds.push(newTerm.id);
-        addedCount++;
-      }
-    }
+    const result = await executeTermsImport(
+      props.book.id,
+      importedTerminologies,
+      props.book.terminologies,
+    );
 
     // 与 CharacterSettingPanel 的导入成功 toast 结构高度相似（onRevert 前序步骤一致），
     // 但后续恢复更新逻辑各自维护不同字段集合，强行抽公共回调反而更复杂，保留两处实现。
@@ -521,27 +587,14 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       severity: 'success',
       summary: '导入成功',
       // fallow-ignore-next-line code-duplication
-      detail: `已导入 ${importedTerminologies.length} 个术语（新增 ${addedCount} 个，更新 ${updatedCount} 个）`,
+      detail: `已导入 ${importedTerminologies.length} 个术语（新增 ${result.addedCount} 个，更新 ${result.updatedCount} 个）`,
       life: 3000,
       onRevert: async () => {
         if (!props.book) return;
         const booksStore = useBooksStore();
         const book = booksStore.getBookById(props.book.id);
         if (!book) return;
-
-        // 删除新添加的术语
-        for (const id of addedTermIds) {
-          await TerminologyService.deleteTerminology(book.id, id);
-        }
-
-        // 恢复被更新的术语
-        for (const snapshot of updatedTermsSnapshot) {
-          await TerminologyService.updateTerminology(book.id, snapshot.id, {
-            name: snapshot.name,
-            translation: snapshot.translation,
-            ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
-          });
-        }
+        await revertTermsImport(book.id, result);
       },
     });
   } catch (error) {
@@ -574,11 +627,11 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       <div class="toolbar-mobile-compact">
         <span class="text-sm text-moon/60">{{ terminologies.length }} 条术语</span>
         <Button
-          :icon="isToolbarExpanded ? 'pi pi-chevron-up' : 'pi pi-sliders-h'"
+          :icon="toolbarExpandIcon"
           size="small"
           class="p-button-text"
           @click="isToolbarExpanded = !isToolbarExpanded"
-          :title="isToolbarExpanded ? '收起' : '搜索与筛选'"
+          :title="toolbarExpandTitle"
         />
       </div>
       <!-- 可折叠内容（搜索 + 操作） -->
@@ -646,7 +699,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
               icon="pi pi-upload"
               size="small"
               class="p-button-outlined flex-shrink-0"
-              :disabled="!props.book?.terminologies || props.book.terminologies.length === 0"
+              :disabled="!canExportTerms"
               @click="handleExport"
             />
             <Button
@@ -690,9 +743,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
         <template #empty>
           <div class="text-center py-12">
             <i class="pi pi-book text-4xl text-moon/50 mb-4" />
-            <p class="text-moon/70">
-              {{ searchQuery ? '未找到匹配的术语' : '暂无术语' }}
-            </p>
+            <p class="text-moon/70">{{ emptyStateText }}</p>
             <Button
               v-if="!searchQuery"
               label="添加第一个术语"
@@ -713,11 +764,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
               :key="terminology.id"
               :title="terminology.name"
               :description="terminology.description"
-              :translations="
-                terminology.translation && typeof terminology.translation === 'object'
-                  ? terminology.translation.translation
-                  : terminology.translation
-              "
+              :translations="terminology.translation"
               :show-checkbox="bulkActionMode"
               :checked="selectedTermIds.has(terminology.id)"
               :item-id="terminology.id"

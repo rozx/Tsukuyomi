@@ -1,8 +1,9 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, beforeEach, spyOn } from 'bun:test';
 import { ref } from 'vue';
 import type { Paragraph, Translation, Chapter, Novel } from 'src/models/novel';
 import { useParagraphNavigation } from 'src/composables/book-details/useParagraphNavigation';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
+import * as ToastHistory from 'src/composables/useToastHistory';
 
 function makePara(id: string, text = '一些原文内容', translation?: string): Paragraph {
   const translations: Translation[] = translation
@@ -63,6 +64,14 @@ describe('useParagraphNavigation · 索引驱动滚动', () => {
 });
 
 describe('useSearchReplace · 索引驱动滚动到匹配', () => {
+  // useSearchReplace 内部调用 useToastWithHistory → PrimeVue useToast,
+  // bun:test 不加载 vitest-setup.ts 的全局 useToast mock,这里显式打桩。
+  beforeEach(() => {
+    spyOn(ToastHistory, 'useToastWithHistory').mockReturnValue({
+      add: () => {},
+    } as never);
+  });
+
   test('nextMatch 按匹配段落索引调用 chapterScrollToIndex', () => {
     const paragraphs = ref<Paragraph[]>([
       makePara('a', '原文1', '无关译文'),

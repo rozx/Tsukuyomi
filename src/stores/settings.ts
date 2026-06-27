@@ -462,13 +462,6 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
-     * 获取首次启动快速开始弹窗是否已关闭
-     */
-    quickStartDismissed: (state): boolean => {
-      return state.settings.quickStartDismissed ?? false;
-    },
-
-    /**
      * 获取 Gist 同步配置（第一个 Gist 类型的同步配置）
      */
     gistSync: (state): SyncConfig => {
@@ -570,15 +563,6 @@ export const useSettingsStore = defineStore('settings', {
         [task]: modelId,
       };
       await this.updateSettings({ taskDefaultModels });
-    },
-
-    /**
-     * 重置为默认设置
-     */
-    async resetToDefaults(): Promise<void> {
-      this.settings = { ...DEFAULT_SETTINGS, lastEdited: new Date() };
-      await saveSettingsToDB(this.settings);
-      await Promise.resolve();
     },
 
     /**
@@ -807,15 +791,6 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
-     * 清除网站的所有代理映射
-     */
-    async clearProxyForSite(site: string): Promise<void> {
-      const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
-      delete mapping[site];
-      await this.updateSettings({ proxySiteMapping: mapping });
-    },
-
-    /**
      * 获取网站可用的代理服务列表
      */
     getProxiesForSite(site: string): string[] {
@@ -837,29 +812,6 @@ export const useSettingsStore = defineStore('settings', {
         mapping[site] = { ...mapping[site], enabled };
       }
       await this.updateSettings({ proxySiteMapping: mapping });
-    },
-
-    /**
-     * 更换网站映射中的代理 URL
-     * @param site 网站域名
-     * @param oldProxyUrl 旧的代理 URL
-     * @param newProxyUrl 新的代理 URL
-     */
-    async changeProxyForSite(
-      site: string,
-      oldProxyUrl: string,
-      newProxyUrl: string,
-    ): Promise<void> {
-      const mapping = { ...(this.settings.proxySiteMapping ?? {}) };
-      if (!mapping[site]) {
-        mapping[site] = { enabled: true, proxies: [] };
-      }
-      const siteEntry = mapping[site];
-      const index = siteEntry.proxies.indexOf(oldProxyUrl);
-      if (index >= 0) {
-        siteEntry.proxies[index] = newProxyUrl;
-        await this.updateSettings({ proxySiteMapping: mapping });
-      }
     },
 
     /**
@@ -1058,21 +1010,6 @@ export const useSettingsStore = defineStore('settings', {
      */
     async updateLastSyncTime(): Promise<void> {
       await this.updateGistSync({ lastSyncTime: Date.now() });
-    },
-
-    /**
-     * 更新上次同步时的模型 ID 列表
-     */
-    async updateLastSyncedModelIds(modelIds: string[]): Promise<void> {
-      await this.updateGistSync({ lastSyncedModelIds: modelIds });
-    },
-
-    /**
-     * 更新上次同步时远程 Gist 的 updated_at 时间戳
-     * @deprecated 由 updateLastRemoteETag 取代；保留仅用于迁移期代码路径
-     */
-    async updateLastRemoteUpdatedAt(timestamp: string): Promise<void> {
-      await this.updateGistSync({ lastRemoteUpdatedAt: timestamp });
     },
 
     /**

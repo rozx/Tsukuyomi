@@ -7,10 +7,11 @@
  */
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue';
 import Button from 'primevue/button';
-import Checkbox from 'primevue/checkbox';
 import ProgressBar from 'primevue/progressbar';
-import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import ForceSyncToggle from 'src/components/sync/ForceSyncToggle.vue';
+import SyncNextTime from 'src/components/sync/SyncNextTime.vue';
+import SyncPendingList from 'src/components/sync/SyncPendingList.vue';
+import SyncRestoreDialog from 'src/components/sync/SyncRestoreDialog.vue';
 import { SyncPanelCloseKey } from 'src/components/sync/sync-panel-injection';
 import { useSettingsStore } from 'src/stores/settings';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -68,40 +69,6 @@ const visiblePendingItems = computed(() => pendingItems.value.slice(0, MAX_DETAI
 const hiddenPendingCount = computed(() =>
   Math.max(0, pendingItems.value.length - MAX_DETAIL_ITEMS),
 );
-
-const kindLabel: Record<string, string> = {
-  book: '书籍',
-  'ai-model': 'AI 模型',
-  cover: '封面',
-  settings: '设置',
-  memory: '记忆',
-};
-
-const kindIcon: Record<string, string> = {
-  book: 'pi pi-book',
-  'ai-model': 'pi pi-cog',
-  cover: 'pi pi-image',
-  settings: 'pi pi-sliders-h',
-  memory: 'pi pi-database',
-};
-
-const actionLabel: Record<'edited' | 'added' | 'deleted', string> = {
-  edited: '已编辑',
-  added: '新增',
-  deleted: '删除',
-};
-
-const formatNextSyncTime = computed(() => {
-  const next = nextSyncTime.value;
-  if (!next) return '未设置';
-  const diff = next - nowMs.value;
-  if (diff <= 0) return '即将同步';
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(minutes / 60);
-  if (hours > 0) return `${hours} 小时后`;
-  if (minutes > 0) return `${minutes} 分钟后`;
-  return '即将同步';
-});
 
 const remoteStats = ref<{
   booksCount: number;
@@ -224,21 +191,6 @@ const skipRestore = () => {
   });
 };
 
-const getItemTypeLabel = (type: RestorableItem['type']) => {
-  switch (type) {
-    case 'novel':
-      return '书籍';
-    case 'model':
-      return 'AI 模型';
-    case 'cover':
-      return '封面';
-    default:
-      return '项目';
-  }
-};
-
-const formatDeletedTime = (timestamp: number) => formatRelativeTime(timestamp, nowMs.value);
-
 const syncProgress = computed(() => settingsStore.syncProgress);
 
 const syncStageLabel = computed(() => {
@@ -255,6 +207,23 @@ const syncStageLabel = computed(() => {
       return '';
   }
 });
+
+// 以下 computed 把模板里剩余的 && / 三元收敛进来，进一步压低模板圈复杂度
+const showProgress = computed(() => isSyncing.value && !!syncProgress.value.stage);
+const showRemote = computed(
+  () => gistSync.value.enabled && gistSync.value.lastSyncTime > 0 && remoteStats.value !== null,
+);
+const syncButtonDisabled = computed(
+  () => !gistSync.value.enabled || isSyncing.value || isRestoringRevision.value,
+);
+const syncButtonLabel = computed(() => (forceMode.value ? '强制推送到远程' : '同步'));
+const syncButtonSeverity = computed<'danger' | 'primary'>(() =>
+  forceMode.value ? 'danger' : 'primary',
+);
+const onSyncButtonClick = () => {
+  if (forceMode.value) triggerForceSync();
+  else syncData();
+};
 </script>
 
 <template>
@@ -286,24 +255,14 @@ const syncStageLabel = computed(() => {
         </p>
       </div>
 
-      <div>
-        <label class="text-xs text-moon/60">下次同步时间</label>
-        <p v-if="gistSync.enabled && nextSyncTime" class="text-sm text-moon/90 mt-1">
-          {{ formatNextSyncTime }}
-        </p>
-        <p v-else-if="gistSync.enabled" class="text-sm text-moon/70 mt-1">未设置自动同步</p>
-        <p v-else class="text-sm text-moon/70 mt-1">未启用</p>
-        <p v-if="gistSync.enabled && nextSyncTime" class="text-xs text-moon/50 mt-1">
-          {{ formatRelativeTime(nextSyncTime, nowMs) }}
-        </p>
-      </div>
+      <SyncNextTime :enabled="gistSync.enabled" :next-sync-time="nextSyncTime" :now-ms="nowMs" />
 
       <div v-if="!gistSync.enabled">
         <p class="text-sm text-moon/60">Gist 同步未启用</p>
         <p class="text-xs text-moon/50 mt-1">请在设置中启用 Gist 同步</p>
       </div>
 
-      <div v-if="isSyncing && syncProgress.stage" class="pt-2 border-t border-white/10">
+      <div v-if="showProgress" class="pt-2 border-t border-white/10">
         <div class="flex items-center justify-between mb-2">
           <span class="text-xs text-moon/70">{{ syncStageLabel }}</span>
           <span class="text-xs text-moon/50">{{ syncProgress.percentage }}%</span>
@@ -319,122 +278,52 @@ const syncStageLabel = computed(() => {
         </p>
       </div>
 
-      <div
-        v-if="gistSync.enabled && hasPendingChanges"
-        class="pt-2 border-t border-white/10 space-y-2"
-      >
-        <div class="flex items-center justify-between">
-          <label class="text-xs text-moon/60">待同步变更</label>
-          <span class="text-xs text-amber-300">{{ pendingCount }} 项</span>
-        </div>
-        <ul class="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-          <li
-            v-for="(item, idx) in visiblePendingItems"
-            :key="`${item.kind}-${item.label}-${idx}`"
-            class="flex items-center gap-2 text-xs text-moon/85 min-w-0"
-          >
-            <i :class="kindIcon[item.kind]" class="text-moon/60 shrink-0" />
-            <span class="text-moon/50 shrink-0">{{ kindLabel[item.kind] }}</span>
-            <span class="truncate flex-1 min-w-0" :title="item.label">{{ item.label }}</span>
-            <span
-              class="text-[10px] shrink-0"
-              :class="item.action === 'deleted' ? 'text-rose-300/80' : 'text-moon/50'"
-            >
-              {{ actionLabel[item.action] }}
-            </span>
-          </li>
-        </ul>
-        <p v-if="hiddenPendingCount > 0" class="text-xs text-moon/50">
-          还有 {{ hiddenPendingCount }} 项未列出
-        </p>
-      </div>
+      <SyncPendingList
+        :enabled="gistSync.enabled"
+        :has-pending-changes="hasPendingChanges"
+        :pending-count="pendingCount"
+        :visible-pending-items="visiblePendingItems"
+        :hidden-pending-count="hiddenPendingCount"
+      />
 
-      <div
-        v-if="gistSync.enabled && gistSync.lastSyncTime > 0 && remoteStats"
-        class="pt-2 border-t border-white/10 space-y-2"
-      >
+      <div v-if="showRemote" class="pt-2 border-t border-white/10 space-y-2">
         <label class="text-xs text-moon/60">远程数据</label>
         <div class="flex items-center gap-2">
           <i class="pi pi-book text-sm text-moon/70" />
-          <span class="text-sm text-moon/90">书籍: {{ remoteStats.booksCount }}</span>
+          <span class="text-sm text-moon/90">书籍: {{ remoteStats!.booksCount }}</span>
         </div>
         <div class="flex items-center gap-2">
           <i class="pi pi-cog text-sm text-moon/70" />
-          <span class="text-sm text-moon/90">AI 模型: {{ remoteStats.aiModelsCount }}</span>
+          <span class="text-sm text-moon/90">AI 模型: {{ remoteStats!.aiModelsCount }}</span>
         </div>
       </div>
     </div>
 
     <div class="flex flex-col gap-3 pt-2 border-t border-white/10">
-      <ForceSyncToggle :disabled="!gistSync.enabled || isSyncing || isRestoringRevision" />
+      <ForceSyncToggle :disabled="syncButtonDisabled" />
       <Button
-        :label="forceMode ? '强制推送到远程' : '同步'"
+        :label="syncButtonLabel"
         icon="pi pi-sync"
-        :severity="forceMode ? 'danger' : 'primary'"
+        :severity="syncButtonSeverity"
         class="w-full"
-        :disabled="!gistSync.enabled || isSyncing || isRestoringRevision"
+        :disabled="syncButtonDisabled"
         :loading="isSyncing"
-        @click="forceMode ? triggerForceSync() : syncData()"
+        @click="onSyncButtonClick"
       />
     </div>
   </div>
 
-  <!-- 恢复已删除项目对话框（桌面 Dialog / 手机 BottomSheet） -->
-  <AdaptiveDialog
+  <SyncRestoreDialog
     :visible="showRestoreDialog"
-    header="发现已删除的项目"
-    desktop-width="450px"
-    eyebrow="RESTORE"
+    :restorable-items="restorableItems"
+    :selected-restore-items="selectedRestoreItems"
+    :is-restoring-revision="isRestoringRevision"
+    :now-ms="nowMs"
     @update:visible="handleRestoreDialogVisibleChange"
-  >
-    <div class="space-y-4">
-      <p class="text-moon/80">远程存在以下您之前删除的项目，您可以选择恢复它们：</p>
-
-      <div class="max-h-60 overflow-y-auto space-y-2">
-        <div
-          v-for="item in restorableItems"
-          :key="item.id"
-          class="flex items-center gap-3 p-3 bg-white/5 rounded-lg"
-        >
-          <Checkbox
-            v-model="selectedRestoreItems"
-            :input-id="item.id"
-            :value="item.id"
-            :disabled="isRestoringRevision"
-          />
-          <label :for="item.id" class="flex-1 cursor-pointer">
-            <div class="flex items-center gap-2">
-              <i
-                :class="[
-                  item.type === 'novel'
-                    ? 'pi pi-book'
-                    : item.type === 'model'
-                      ? 'pi pi-cog'
-                      : 'pi pi-image',
-                  'text-moon/70',
-                ]"
-              />
-              <span class="text-moon/90">{{ item.title }}</span>
-              <span class="text-xs text-moon/50"> ({{ getItemTypeLabel(item.type) }}) </span>
-            </div>
-            <div class="text-xs text-moon/50 mt-1">
-              删除于: {{ formatDeletedTime(item.deletedAt) }}
-            </div>
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <template #footer>
-      <Button label="跳过" class="p-button-text" :disabled="isRestoringRevision" @click="skipRestore" />
-      <Button
-        label="恢复选中项目"
-        class="p-button-primary"
-        :disabled="isRestoringRevision || selectedRestoreItems.length === 0"
-        @click="confirmRestore"
-      />
-    </template>
-  </AdaptiveDialog>
+    @update:selected-restore-items="selectedRestoreItems = $event"
+    @skip="skipRestore"
+    @confirm="confirmRestore"
+  />
 </template>
 
 <style scoped>

@@ -3,12 +3,16 @@
  * 平板右侧竖向图标导航条——BookDetailsTablet / BooksPageTablet 共用。
  *
  * 只负责外壳（48px 宽 + 深色半透明背景 + 左边细线），按钮由调用方通过默认
- * slot 传入。按钮使用以下约定类名（由本组件的 `:slotted()` 样式接管）：
+ * slot 传入。按钮使用以下约定类名：
  *
- *   .tsr-btn        — 36x36 圆角方块按钮
+ *   .tsr-btn        — 36x36 圆角方块按钮；基础盒模型样式由调用方叠加的
+ *                     .rail-base-btn 提供（与 RightPanelRail 共用 rail-base.css），
+ *                     hover / active 态由本组件的 :slotted() 接管
  *   .tsr-btn--active — 高亮（当前选中 tab）
- *   .tsr-sep        — 水平细线分隔符
- *   .tsr-badge      — 按钮右上角的任务数徽标
+ *   .tsr-sep        — 水平细线分隔符（:slotted()）
+ *
+ * 按钮右上角的任务数徽标统一用 NotificationBadge 组件（绝对定位，依赖
+ * .tsr-btn 的 relative 上下文，该 relative 来自 .rail-base-btn）。
  *
  * 这样 BookDetailsTablet 的 "sidebar toggle + 分隔 + AI + 进度" 与 BooksPage
  * 的 "list toggle + 分隔 + AI + 进度" 不需要各维护一份样式。
@@ -16,82 +20,45 @@
 </script>
 
 <template>
-  <aside class="tsr-rail" aria-label="辅助工具">
+  <aside class="tsr-rail rail-base-shell" aria-label="辅助工具">
     <slot />
   </aside>
 </template>
 
 <style scoped>
+/* 外壳 / 图标按钮的共享声明见 rail-base.css（与 RightPanelRail 共用） */
+@import './rail-base.css';
+
+/* 平板侧轨：固定 48px 宽，外壳基础样式来自 .rail-base-shell */
 .tsr-rail {
-  flex-shrink: 0;
   width: 48px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 6px;
-  background: rgba(10, 12, 15, 0.55);
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-:slotted(.tsr-btn) {
-  position: relative;
-  width: 36px;
-  min-height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  color: rgba(247, 244, 236, 0.72);
-  cursor: pointer;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-:slotted(.tsr-btn:hover) {
+/*
+ * 按钮基础盒模型由调用方按钮叠加的 .rail-base-btn 提供（slot 内容，本组件
+ * 无法直接命中）。这里只保留 hover / active / 图标 / 分隔符的差异化样式。
+ *
+ * hover / active 选择器特意叠上 .rail-base-btn，把特异性抬到高于基础规则，
+ * 确保无论两份样式表注入顺序如何，高亮态都稳定覆盖基础态（行为不变）。
+ */
+:slotted(.rail-base-btn.tsr-btn:hover) {
   background: rgba(255, 255, 255, 0.05);
   color: #e9edf5;
 }
 
-:slotted(.tsr-btn--active) {
+:slotted(.rail-base-btn.tsr-btn--active) {
   background: rgba(109, 136, 168, 0.18);
   border-color: rgba(109, 136, 168, 0.32);
   color: #a3b7cf;
 }
 
-:slotted(.tsr-btn i) {
-  font-size: 14px;
-  line-height: 1;
-}
+/* 图标字号下沉到调用方按钮的 <i>：:slotted() 只作用于插槽根节点，命不中按钮内部的后代 <i>，
+   故改放进 rail-base.css 的 .tsr-btn i（由调用方 scoped 引入后命中其自身图标）。 */
 
 :slotted(.tsr-sep) {
   width: 24px;
   height: 1px;
   background: rgba(255, 255, 255, 0.08);
   margin: 4px 0;
-}
-
-:slotted(.tsr-badge) {
-  position: absolute;
-  top: 2px;
-  right: 2px;
-  min-width: 14px;
-  height: 14px;
-  padding: 0 3px;
-  border-radius: 7px;
-  background: #d97757;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'JetBrains Mono', monospace;
-  line-height: 1;
-  border: 1.5px solid #080a0d;
 }
 </style>

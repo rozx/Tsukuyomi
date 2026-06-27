@@ -181,6 +181,48 @@ const isTranslateDisabled = computed(() => {
   );
 });
 
+// 翻译结果分隔符优先级（中文顿号 > 中文逗号 > 英文逗号 > 空格）
+const TRANSLATION_SEPARATORS = ['、', '，', ',', ' '];
+
+const splitAndClean = (text: string, separator: string): string[] =>
+  text
+    .split(separator)
+    .map((tag) => tag.trim())
+    .filter((tag) => tag.length > 0);
+
+// 将翻译结果文本切分为标签数组：
+// 1. 按优先级尝试已知分隔符；
+// 2. 找不到分隔符时整体作为一个标签（原实现中 originalCount===1 与否结果一致）；
+// 3. 若结果远超原始数量（>2 倍），尝试用空格再切分一次兜底过度合并
+const splitTranslatedText = (translatedText: string, originalCount: number): string[] => {
+  let tags: string[] = [];
+  let foundSeparator = false;
+
+  for (const sep of TRANSLATION_SEPARATORS) {
+    if (translatedText.includes(sep)) {
+      tags = splitAndClean(translatedText, sep);
+      foundSeparator = true;
+      break;
+    }
+  }
+
+  if (!foundSeparator) {
+    tags = [translatedText.trim()].filter((tag) => tag.length > 0);
+  }
+
+  if (tags.length > originalCount * 2) {
+    const spaceSplit = translatedText
+      .split(/\s+/)
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+    if (spaceSplit.length <= originalCount * 2) {
+      tags = spaceSplit;
+    }
+  }
+
+  return tags;
+};
+
 // 翻译标签数组
 const handleTranslate = async () => {
   if (!props.modelValue || props.modelValue.length === 0) {
@@ -199,50 +241,7 @@ const handleTranslate = async () => {
   }
 
   try {
-    // 尝试将翻译结果分割回数组
-    // 翻译结果可能用中文顿号、中文逗号、英文逗号或其他分隔符分隔
-    let translatedTags: string[] = [];
-
-    // 尝试多种分隔符（按优先级排序）
-    const separators = ['、', '，', ',', ' '];
-    let foundSeparator = false;
-
-    for (const sep of separators) {
-      if (translatedText.includes(sep)) {
-        translatedTags = translatedText
-          .split(sep)
-          .map((tag) => tag.trim())
-          .filter((tag) => tag.length > 0);
-        foundSeparator = true;
-        break;
-      }
-    }
-
-    // 如果没有找到分隔符，尝试按原始标签数量分割
-    // 或者将整个文本作为一个标签
-    if (!foundSeparator) {
-      const originalCount = props.modelValue.length;
-      // 如果原始只有一个标签，直接使用翻译结果
-      if (originalCount === 1) {
-        translatedTags = [translatedText.trim()].filter((tag) => tag.length > 0);
-      } else {
-        // 如果有多个标签但翻译结果没有分隔符，尝试按字符数大致分割
-        // 但这不太准确，所以还是作为一个标签处理
-        translatedTags = [translatedText.trim()].filter((tag) => tag.length > 0);
-      }
-    }
-
-    // 确保翻译后的标签数量不超过原始标签数量（防止过度分割）
-    if (translatedTags.length > props.modelValue.length * 2) {
-      // 如果分割后标签过多，可能是分割方式不对，尝试用空格分割
-      const spaceSplit = translatedText
-        .split(/\s+/)
-        .map((tag) => tag.trim())
-        .filter((tag) => tag.length > 0);
-      if (spaceSplit.length <= props.modelValue.length * 2) {
-        translatedTags = spaceSplit;
-      }
-    }
+    const translatedTags = splitTranslatedText(translatedText, props.modelValue.length);
 
     // 保存原始标签和翻译结果，然后显示对话框
     originalTags.value = [...props.modelValue];

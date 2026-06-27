@@ -8,9 +8,10 @@ import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import InputText from 'primevue/inputtext';
 import Checkbox from 'primevue/checkbox';
-import ProgressSpinner from 'primevue/progressspinner';
 import MemoryCard from './MemoryCard.vue';
 import MemoryDetailDialog from './MemoryDetailDialog.vue';
+import MemoryQueueProgressBanner from './MemoryQueueProgressBanner.vue';
+import MemoryListEmptyState from './MemoryListEmptyState.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import type { Novel } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
@@ -116,6 +117,22 @@ function clearFilters() {
   searchQuery.value = '';
   filterUnembeddedOnly.value = false;
 }
+
+// 模板内联三元/|| 收敛为 computed，降低模板圈复杂度
+const toolbarExpandIcon = computed(() =>
+  isToolbarExpanded.value ? 'pi pi-chevron-up' : 'pi pi-sliders-h',
+);
+const toolbarExpandTitle = computed(() => (isToolbarExpanded.value ? '收起' : '搜索与筛选'));
+const reEmbedDisabled = computed(() => !props.book || memories.value.length === 0);
+const deletePreviewText = computed(() => {
+  const m = deletingMemory.value;
+  if (!m) return '';
+  return m.summary || m.content.slice(0, 50);
+});
+const hasFilteredMemories = computed(() => filteredMemories.value.length > 0);
+const exportDisabled = computed(() => memories.value.length === 0);
+const bookId = computed(() => props.book?.id ?? '');
+const addDisabled = computed(() => !props.book);
 
 // 重新向量化本书
 const handleReEmbed = async () => {
@@ -472,6 +489,38 @@ const handleExport = () => {
   }
 };
 
+// 执行 Memory 导入：content 相同的更新，否则新增。content 缺失的条目跳过
+const executeMemoriesImport = async (
+  bookId: string,
+  importedMemories: Partial<Memory>[],
+  existingMemories: Memory[],
+): Promise<{ addedCount: number; updatedCount: number }> => {
+  let addedCount = 0;
+  let updatedCount = 0;
+  for (const importedMemory of importedMemories) {
+    if (!importedMemory.content) continue;
+
+    const existingMemory = existingMemories.find((m) => m.content === importedMemory.content);
+    if (existingMemory) {
+      await MemoryService.updateMemory(
+        bookId,
+        existingMemory.id,
+        importedMemory.content,
+        importedMemory.summary || '',
+      );
+      updatedCount++;
+    } else {
+      await MemoryService.createMemory(
+        bookId,
+        importedMemory.content,
+        importedMemory.summary || '',
+      );
+      addedCount++;
+    }
+  }
+  return { addedCount, updatedCount };
+};
+
 // 处理文件选择
 const handleFileSelect = createFileSelectHandler(async (file) => {
   try {
@@ -498,33 +547,11 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       return;
     }
 
-    let addedCount = 0;
-    let updatedCount = 0;
-
-    for (const importedMemory of importedMemories) {
-      if (!importedMemory.content) continue;
-
-      const existingMemory = memories.value.find((m) => m.content === importedMemory.content);
-
-      if (existingMemory) {
-        // 更新现有 Memory
-        await MemoryService.updateMemory(
-          props.book.id,
-          existingMemory.id,
-          importedMemory.content,
-          importedMemory.summary || '',
-        );
-        updatedCount++;
-      } else {
-        // 添加新 Memory
-        await MemoryService.createMemory(
-          props.book.id,
-          importedMemory.content,
-          importedMemory.summary || '',
-        );
-        addedCount++;
-      }
-    }
+    const { addedCount, updatedCount } = await executeMemoriesImport(
+      props.book.id,
+      importedMemories,
+      memories.value,
+    );
 
     toast.add({
       severity: 'success',
@@ -565,11 +592,11 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       <div class="toolbar-mobile-compact">
         <span class="text-sm text-moon/60">{{ filteredMemories.length }} 条记忆</span>
         <Button
-          :icon="isToolbarExpanded ? 'pi pi-chevron-up' : 'pi pi-sliders-h'"
+          :icon="toolbarExpandIcon"
           size="small"
           class="p-button-text"
           @click="isToolbarExpanded = !isToolbarExpanded"
-          :title="isToolbarExpanded ? '收起' : '搜索与筛选'"
+          :title="toolbarExpandTitle"
         />
       </div>
       <!-- 可折叠内容（搜索 + 操作） -->
@@ -613,14 +640,14 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
           <Button
             icon="pi pi-sync"
             class="p-button-outlined p-button-sm"
-            :disabled="!book || memories.length === 0"
+            :disabled="reEmbedDisabled"
             @click="handleReEmbed"
             title="重新向量化本书"
           />
           <Button
             icon="pi pi-upload"
             class="p-button-outlined p-button-sm"
-            :disabled="memories.length === 0"
+            :disabled="exportDisabled"
             @click="handleExport"
             title="导出"
           />
@@ -634,7 +661,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
             label="添加"
             icon="pi pi-plus"
             class="p-button-primary p-button-sm"
-            :disabled="!book"
+            :disabled="addDisabled"
             @click="openAddDialog"
           />
         </div>
@@ -648,26 +675,13 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     </div>
 
     <!-- 嵌入队列进度横幅 -->
-    <div
+    <MemoryQueueProgressBanner
       v-if="showProgressBanner"
-      class="flex items-center gap-3 px-6 py-2 bg-blue-500/10 border-b border-blue-500/20 flex-none"
-    >
-      <span class="pi pi-spin pi-spinner text-blue-400" v-if="!queueProgress.paused"></span>
-      <span class="pi pi-pause text-amber-400" v-else></span>
-      <span class="text-sm text-moon/80 flex-1">
-        向量化进度：{{ queueProgress.completed }} / {{ queueProgress.total }} 条记忆
-        <span v-if="etaLabel" class="text-moon/50 ml-2">{{ etaLabel }}</span>
-      </span>
-      <span class="text-xs text-moon/50 tabular-nums">{{ progressPercent }}%</span>
-      <Button
-        :label="queueProgress.paused ? '继续' : '暂停'"
-        :icon="queueProgress.paused ? 'pi pi-play' : 'pi pi-pause'"
-        size="small"
-        severity="secondary"
-        text
-        @click="toggleQueuePause"
-      />
-    </div>
+      :queue-progress="queueProgress"
+      :eta-label="etaLabel"
+      :progress-percent="progressPercent"
+      @toggle-pause="toggleQueuePause"
+    />
 
     <!-- 内容区域 -->
     <div class="flex-1 p-6 min-h-0">
@@ -677,35 +691,20 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
         data-key="id"
         layout="grid"
         :rows="96"
-        :paginator="filteredMemories.length > 0"
+        :paginator="hasFilteredMemories"
         :rows-per-page-options="[96, 144, 192, 288]"
         paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown"
         class="flex-1 flex flex-col min-h-0"
       >
         <template #empty>
-          <div class="text-center py-12">
-            <ProgressSpinner v-if="isLoading" />
-            <template v-else>
-              <i class="pi pi-database text-4xl text-moon/50 mb-4" />
-              <p class="text-moon/70">
-                {{ hasActiveFilters ? '未找到匹配的记忆' : '暂无 记忆，AI 会在翻译过程中自动创建' }}
-              </p>
-              <Button
-                v-if="hasActiveFilters"
-                label="清除筛选"
-                icon="pi pi-filter-slash"
-                class="p-button-outlined mt-4"
-                @click="clearFilters"
-              />
-              <Button
-                v-else-if="!searchQuery && book"
-                label="手动添加 记忆"
-                icon="pi pi-plus"
-                class="p-button-outlined mt-4"
-                @click="openAddDialog"
-              />
-            </template>
-          </div>
+          <MemoryListEmptyState
+            :is-loading="isLoading"
+            :has-active-filters="hasActiveFilters"
+            :has-query="!!searchQuery"
+            :has-book="!!book"
+            @clear="clearFilters"
+            @add="openAddDialog"
+          />
         </template>
 
         <template #grid="slotProps">
@@ -781,7 +780,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       <div class="space-y-4">
         <p class="text-moon/90">确定要删除这条 记忆吗？</p>
         <p v-if="deletingMemory" class="text-sm text-moon/70 truncate">
-          {{ deletingMemory.summary || deletingMemory.content.slice(0, 50) }}
+          {{ deletePreviewText }}
         </p>
         <p class="text-sm text-moon/70">此操作无法撤销。</p>
       </div>
@@ -806,7 +805,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     <MemoryDetailDialog
       v-model:visible="showDetailDialog"
       :memory="selectedMemory"
-      :book-id="book?.id || ''"
+      :book-id="bookId"
       :initial-edit-mode="openDetailDialogInEditMode"
       @save="handleSaveMemory"
       @delete="openDeleteConfirm"

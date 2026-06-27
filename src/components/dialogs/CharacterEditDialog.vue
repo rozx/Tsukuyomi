@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
@@ -46,6 +46,9 @@ const sexOptions = [
   { label: '女性', value: 'female' },
   { label: '其他', value: 'other' },
 ];
+
+// 表单禁用状态（加载中时禁用所有输入控件）
+const isFormDisabled = computed(() => !!props.loading);
 
 // 监听 visible 和 character 变化以重置/初始化表单
 watch(
@@ -123,7 +126,7 @@ const removeAlias = (index: number) => {
           placeholder="输入角色名称"
           type="input"
           :apply-translation-to-input="false"
-          :disabled="loading || false"
+          :disabled="isFormDisabled"
           @translation-applied="
             (translation) => {
               formData.translation = translation;
@@ -141,7 +144,7 @@ const removeAlias = (index: number) => {
           optionLabel="label"
           optionValue="value"
           class="w-full"
-          :disabled="loading || false"
+          :disabled="isFormDisabled"
         />
       </div>
 
@@ -151,7 +154,7 @@ const removeAlias = (index: number) => {
           v-model="formData.translation"
           placeholder="输入翻译"
           class="w-full"
-          :disabled="loading || false"
+          :disabled="isFormDisabled"
         />
         <AppMessage
           severity="info"
@@ -169,7 +172,7 @@ const removeAlias = (index: number) => {
             class="p-button-text p-button-sm"
             size="small"
             @click="addAlias"
-            :disabled="loading || false"
+            :disabled="isFormDisabled"
           />
         </div>
         <div v-if="formData.aliases.length === 0" class="text-xs text-moon-100/50 italic py-2 mb-2">
@@ -189,7 +192,7 @@ const removeAlias = (index: number) => {
                   placeholder="输入别名名称"
                   type="input"
                   :apply-translation-to-input="false"
-                  :disabled="loading || false"
+                  :disabled="isFormDisabled"
                   @translation-applied="
                     (translation) => {
                       alias.translation = translation;
@@ -206,7 +209,7 @@ const removeAlias = (index: number) => {
                   v-model="alias.translation"
                   placeholder="输入别名翻译"
                   class="w-full"
-                  :disabled="loading || false"
+                  :disabled="isFormDisabled"
                 />
               </div>
             </div>
@@ -215,7 +218,7 @@ const removeAlias = (index: number) => {
               class="p-button-text p-button-danger p-button-sm"
               size="small"
               @click="removeAlias(index)"
-              :disabled="loading || false"
+              :disabled="isFormDisabled"
             />
           </div>
         </div>
@@ -233,7 +236,7 @@ const removeAlias = (index: number) => {
           placeholder="输入描述（可选）"
           :rows="3"
           class="w-full"
-          :disabled="loading || false"
+          :disabled="isFormDisabled"
         />
         <AppMessage
           severity="info"
@@ -249,7 +252,7 @@ const removeAlias = (index: number) => {
           placeholder="输入说话口吻（可选）。例如：傲娇、古风、口癖(desu/nya)等"
           :rows="2"
           class="w-full"
-          :disabled="loading || false"
+          :disabled="isFormDisabled"
         />
         <AppMessage
           severity="info"

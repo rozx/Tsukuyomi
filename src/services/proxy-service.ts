@@ -21,6 +21,102 @@ function buildInternalProxyPath(originalUrl: string): string | null {
   return `${prefix}${urlObj.pathname}${urlObj.search}${urlObj.hash}`;
 }
 
+/** axios 错误状态码是否被视为网络错误（4xx/5xx 均算） */
+function isNetworkErrorStatus(status: number | undefined): boolean {
+  return !!status && (status >= 400 || status === 408 || status === 429 || status >= 500);
+}
+
+/** axios 错误 code 是否被视为网络错误 */
+function isNetworkErrorCode(code: string | undefined): boolean {
+  return (
+    !!code && ['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ERR_FAILED'].includes(code)
+  );
+}
+
+/** Error.message 中触发"网络错误"判定的关键词列表 */
+const NETWORK_ERROR_KEYWORDS: readonly string[] = [
+  'cors',
+  '408', // Request Timeout
+  '429', // Too Many Requests
+  '500', // Internal Server Error
+  '502', // Bad Gateway
+  '503', // Service Unavailable
+  '504', // Gateway Timeout
+  'network',
+  'failed to fetch',
+  'err_failed',
+  'timeout',
+  'econnrefused',
+  'enotfound',
+  'request failed with status code', // axios 错误消息
+];
+
+/** 根据当前代理 URL 构建本次尝试实际请求的 URL */
+function buildAttemptProxiedUrl(originalUrl: string, currentProxyUrl: string | null): string {
+  if (!currentProxyUrl) return originalUrl;
+  return currentProxyUrl.replace('{url}', encodeURIComponent(originalUrl));
+}
+
+/** 第一次尝试（attemptIndex = 0）的代理选择策略 */
+function pickFirstAttemptProxy(
+  defaultProxyUrl: string,
+  siteProxies: string[],
+): string | null {
+  if (defaultProxyUrl && siteProxies.length > 0 && siteProxies.includes(defaultProxyUrl)) {
+    return defaultProxyUrl;
+  }
+  if (siteProxies.length > 0) return siteProxies[0] ?? null;
+  return defaultProxyUrl || null;
+}
+
+/** 后续尝试的代理候选顺序（网站特定代理轮转 + 全局代理补足） */
+function buildFallbackProxyOrder(
+  defaultProxyUrl: string,
+  siteProxies: string[],
+  proxyList: { url: string }[],
+): string[] {
+  const siteProxyUrls = new Set(siteProxies);
+  const ordered: string[] = [];
+
+  if (siteProxies.length > 0) {
+    const defaultIndex = defaultProxyUrl
+      ? siteProxies.findIndex((url) => url === defaultProxyUrl)
+      : -1;
+    if (defaultIndex >= 0) {
+      // 如果默认代理在网站特定列表中，从它之后开始轮转
+      ordered.push(...siteProxies.slice(defaultIndex + 1));
+      ordered.push(...siteProxies.slice(0, defaultIndex));
+    } else {
+      ordered.push(...siteProxies);
+    }
+  }
+
+  // 全局代理列表中不在网站特定代理列表中的代理
+  const globalProxies = proxyList
+    .map((p) => p.url)
+    .filter((url) => !siteProxyUrls.has(url) && url !== defaultProxyUrl);
+  ordered.push(...globalProxies);
+  return ordered;
+}
+
+/** executeWithAutoSwitch 的重试动作（继续等待或抛出） */
+type RetryAction = { kind: 'throw' } | { kind: 'delay'; ms: number };
+function computeRetryAction(
+  autoSwitch: boolean,
+  isNetworkErr: boolean,
+  attempt: number,
+  maxRetries: number,
+): RetryAction {
+  // 启用了自动切换且是网络错误 → 短暂等待后换下一个代理
+  if (autoSwitch && isNetworkErr && attempt < maxRetries - 1) {
+    return { kind: 'delay', ms: 500 };
+  }
+  // 已是最后一次尝试 → 抛出
+  if (attempt === maxRetries - 1) return { kind: 'throw' };
+  // 其它情况 → 指数退避后重试
+  return { kind: 'delay', ms: (attempt + 1) * 1000 };
+}
+
 /**
  * 代理服务
  * 统一管理所有网络请求的代理设置
@@ -122,21 +218,11 @@ export class ProxyService {
    * @returns 是否是网络错误
    */
   private static isNetworkError(error: unknown): boolean {
-    // 检查 axios 错误的状态码
+    // 检查 axios 错误的状态码 / code
     if (error && typeof error === 'object' && 'isAxiosError' in error) {
       const axiosError = error as { response?: { status?: number }; code?: string };
-      const status = axiosError.response?.status;
-      // 408 (Request Timeout), 429 (Too Many Requests), 500, 502, 503, 504 等服务器错误
-      if (status && (status >= 400 || status === 408 || status === 429 || status >= 500)) {
-        return true;
-      }
-      // 网络错误代码
-      if (
-        axiosError.code &&
-        ['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ERR_FAILED'].includes(axiosError.code)
-      ) {
-        return true;
-      }
+      if (isNetworkErrorStatus(axiosError.response?.status)) return true;
+      if (isNetworkErrorCode(axiosError.code)) return true;
     }
 
     if (!(error instanceof Error)) {
@@ -144,24 +230,7 @@ export class ProxyService {
     }
 
     const errorMessage = error.message.toLowerCase();
-    const networkErrorKeywords = [
-      'cors',
-      '408', // Request Timeout
-      '429', // Too Many Requests
-      '500', // Internal Server Error
-      '502', // Bad Gateway
-      '503', // Service Unavailable
-      '504', // Gateway Timeout
-      'network',
-      'failed to fetch',
-      'err_failed',
-      'timeout',
-      'econnrefused',
-      'enotfound',
-      'request failed with status code', // axios 错误消息
-    ];
-
-    return networkErrorKeywords.some((keyword) => errorMessage.includes(keyword));
+    return NETWORK_ERROR_KEYWORDS.some((keyword) => errorMessage.includes(keyword));
   }
 
   /**
@@ -183,56 +252,46 @@ export class ProxyService {
 
     // 第一次尝试：优先使用默认代理
     if (attemptIndex === 0) {
-      // 如果有网站特定代理且默认代理在其中，使用默认代理
-      if (defaultProxyUrl && siteProxies.length > 0 && siteProxies.includes(defaultProxyUrl)) {
-        return defaultProxyUrl;
-      }
-      // 如果有网站特定代理但默认代理不在其中，使用网站特定代理的第一个
-      if (siteProxies.length > 0) {
-        return siteProxies[0] ?? null;
-      }
-      // 否则使用默认代理
-      return defaultProxyUrl || null;
+      return pickFirstAttemptProxy(defaultProxyUrl, siteProxies);
     }
 
-    // 后续尝试（attemptIndex > 0）
-    // 构建所有可用的代理列表，按优先级排序：
-    // 1. 网站特定代理（排除默认代理，如果默认代理已经在第一次尝试中使用）
-    // 2. 全局代理列表中不在网站特定代理列表中的代理
-
-    const siteProxyUrls = new Set(siteProxies);
-    const allAvailableProxies: string[] = [];
-
-    // 添加网站特定代理（排除默认代理，因为已经在第一次尝试中使用）
-    if (siteProxies.length > 0) {
-      const defaultIndex = defaultProxyUrl
-        ? siteProxies.findIndex((url) => url === defaultProxyUrl)
-        : -1;
-      if (defaultIndex >= 0) {
-        // 如果默认代理在网站特定列表中，从它之后开始
-        allAvailableProxies.push(...siteProxies.slice(defaultIndex + 1));
-        allAvailableProxies.push(...siteProxies.slice(0, defaultIndex));
-      } else {
-        // 如果默认代理不在网站特定列表中，从第一个开始
-        allAvailableProxies.push(...siteProxies);
-      }
-    }
-
-    // 添加全局代理列表中不在网站特定代理列表中的代理
-    const globalProxies = proxyList
-      .map((p) => p.url)
-      .filter((url) => !siteProxyUrls.has(url) && url !== defaultProxyUrl);
-    allAvailableProxies.push(...globalProxies);
-
-    // 根据尝试索引选择代理
-    if (allAvailableProxies.length > 0) {
-      // attemptIndex = 1 表示第一次重试，应该使用 allAvailableProxies[0]
-      const targetIndex = (attemptIndex - 1) % allAvailableProxies.length;
-      return allAvailableProxies[targetIndex] ?? null;
+    // 后续尝试（attemptIndex > 0）：按优先级构建代理候选列表
+    const ordered = buildFallbackProxyOrder(defaultProxyUrl, siteProxies, proxyList);
+    if (ordered.length > 0) {
+      // attemptIndex = 1 表示第一次重试，应该使用 ordered[0]
+      const targetIndex = (attemptIndex - 1) % ordered.length;
+      return ordered[targetIndex] ?? null;
     }
 
     // 如果没有可用代理，回退到默认代理
     return defaultProxyUrl || null;
+  }
+
+  /**
+   * 请求成功后，若启用了自动添加映射且当前使用的不是默认代理，记录到网站-代理映射中。
+   */
+  private static async maybeRecordProxyMapping(
+    originalUrl: string,
+    currentProxyUrl: string | null,
+    defaultProxyUrl: string,
+    settingsStore: ReturnType<typeof useSettingsStore>,
+    autoSwitch: boolean,
+  ): Promise<void> {
+    const autoAddMapping = GlobalConfig.getProxyAutoAddMapping();
+    if (
+      !autoSwitch ||
+      !autoAddMapping ||
+      !currentProxyUrl ||
+      currentProxyUrl === defaultProxyUrl
+    ) {
+      return;
+    }
+    const domain = this.extractDomain(originalUrl);
+    if (!domain) return;
+    const rootDomain = extractRootDomain(domain);
+    if (!rootDomain) return;
+    // 静默添加映射，不显示 toast 通知
+    await settingsStore.addProxyForSite(rootDomain, currentProxyUrl);
   }
 
   /**
@@ -284,37 +343,19 @@ export class ProxyService {
       try {
         // 获取当前尝试应该使用的代理 URL（不改变全局设置）
         const currentProxyUrl = this.getProxyUrlForAttempt(originalUrl, attempt);
-
-        // 构建代理后的 URL
-        let proxiedUrl: string;
-        if (currentProxyUrl) {
-          proxiedUrl = currentProxyUrl.replace('{url}', encodeURIComponent(originalUrl));
-        } else {
-          // 如果没有代理，直接使用原始 URL
-          proxiedUrl = originalUrl;
-        }
+        const proxiedUrl = buildAttemptProxiedUrl(originalUrl, currentProxyUrl);
 
         // 执行请求
         const result = await requestFn(proxiedUrl);
 
         // 如果请求成功，且使用的不是默认代理，且启用了自动添加映射，记录到网站-代理映射中
-        const autoAddMapping = GlobalConfig.getProxyAutoAddMapping();
-        if (
-          autoSwitch &&
-          autoAddMapping &&
-          currentProxyUrl &&
-          currentProxyUrl !== defaultProxyUrl
-        ) {
-          const domain = this.extractDomain(originalUrl);
-          if (domain) {
-            // 提取根域名
-            const rootDomain = extractRootDomain(domain);
-            if (rootDomain) {
-              // 静默添加映射，不显示 toast 通知
-              await settingsStore.addProxyForSite(rootDomain, currentProxyUrl);
-            }
-          }
-        }
+        await this.maybeRecordProxyMapping(
+          originalUrl,
+          currentProxyUrl,
+          defaultProxyUrl,
+          settingsStore,
+          autoSwitch,
+        );
 
         // 成功返回（不改变全局代理设置）
         return result;
@@ -330,21 +371,10 @@ export class ProxyService {
           canRetry: attempt < maxRetries - 1,
         });
 
-        // 如果启用了自动切换且是网络错误，继续尝试下一个代理（在下次循环中）
-        if (autoSwitch && isNetworkErr && attempt < maxRetries - 1) {
-          // 等待一小段时间后继续重试
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          continue;
-        }
-
-        // 如果没有启用自动切换或已达到最大重试次数
-        if (attempt === maxRetries - 1) {
-          throw lastError;
-        }
-
-        // 等待后重试（指数退避）
-        const retryDelay = (attempt + 1) * 1000;
-        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+        const action = computeRetryAction(autoSwitch, isNetworkErr, attempt, maxRetries);
+        if (action.kind === 'throw') throw lastError;
+        // 等待后进入下一次循环（可能换下一个代理）
+        await new Promise((resolve) => setTimeout(resolve, action.ms));
       }
     }
 

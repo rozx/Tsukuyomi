@@ -4,13 +4,17 @@ import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
 import { injectIndexPage } from 'src/composables/index-page/useIndexPage';
-import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { APP_NAME } from 'src/constants/app';
+import IndexTabletHero from './IndexTabletHero.vue';
 
 const ctx = injectIndexPage();
-const aiProcessing = useAIProcessingStore();
 
-const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
+// 把模板内的三元 / 比较收进脚本侧，降低段落认知与圈复杂度
+const greetingSub = computed(() =>
+  ctx.continueReadingBook.value
+    ? `上次停在《${ctx.continueReadingBook.value.title}》。`
+    : '今晚是翻译的好夜色。',
+);
 </script>
 
 <template>
@@ -27,66 +31,13 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
             {{ ctx.greeting.value }}，<span class="th-accent">欢迎回来</span>。
           </h1>
           <p class="th-greeting-sub">
-            <template v-if="ctx.continueReadingBook.value">
-              上次停在《{{ ctx.continueReadingBook.value.title }}》。
-            </template>
-            <template v-else>今晚是翻译的好夜色。</template>
+            {{ greetingSub }}
           </p>
         </div>
       </section>
 
-      <!-- Hero 卡片：活跃任务 + 继续阅读 -->
-      <section
-        v-if="ctx.continueReadingBook.value"
-        class="th-hero-grid"
-        :class="{ 'th-hero-grid--single': !hasActiveJob }"
-      >
-        <!-- 活跃任务卡 —— 仅当有任务时渲染 -->
-        <article v-if="hasActiveJob" class="th-hero-card th-hero-card--active">
-          <header class="th-hero-card-head">
-            <i class="pi pi-spin pi-spinner th-hero-card-status-icon" aria-hidden="true" />
-            <span class="th-hero-card-status">正在翻译</span>
-          </header>
-          <div class="th-hero-card-title">
-            {{ ctx.continueReadingBook.value.title }}
-          </div>
-          <div v-if="ctx.continueReadingBook.value.author" class="th-hero-card-meta">
-            {{ ctx.continueReadingBook.value.author }}
-          </div>
-          <div class="th-hero-card-actions">
-            <Button
-              label="查看进度"
-              icon="pi pi-external-link"
-              class="p-button-primary p-button-sm"
-              @click="ctx.navigateToBookDetails(ctx.continueReadingBook.value!)"
-            />
-          </div>
-        </article>
-
-        <!-- 继续阅读卡 -->
-        <article class="th-hero-card">
-          <header class="th-hero-card-head">
-            <span class="th-hero-card-kicker">继续阅读</span>
-          </header>
-          <div class="th-hero-card-title">{{ ctx.continueReadingBook.value.title }}</div>
-          <div v-if="ctx.continueReadingBook.value.author" class="th-hero-card-meta">
-            {{ ctx.continueReadingBook.value.author }}
-          </div>
-          <div class="th-hero-card-subline">
-            <span>{{ ctx.getTotalChapters(ctx.continueReadingBook.value) }} 章</span>
-            <span class="th-dot">·</span>
-            <span>更新于 {{ ctx.formatDate(ctx.continueReadingBook.value.lastEdited) }}</span>
-          </div>
-          <div class="th-hero-card-actions">
-            <Button
-              label="继续翻译"
-              icon="pi pi-play"
-              class="p-button-primary p-button-sm"
-              @click="ctx.navigateToBookDetails(ctx.continueReadingBook.value!)"
-            />
-          </div>
-        </article>
-      </section>
+      <!-- Hero 卡片：活跃任务 + 继续阅读（抽出到 IndexTabletHero） -->
+      <IndexTabletHero />
 
       <!-- 统计条 —— 5 列（书籍 · 章节 · 字数 · 收藏 · AI 模型） -->
       <section class="th-stats">
@@ -149,7 +100,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
       </section>
 
       <!-- 最近阅读 —— 3 列 -->
-      <section v-if="ctx.recentBooks.value.length > 0" class="th-section">
+      <section v-if="ctx.hasRecent.value" class="th-section">
         <header class="th-section-head">
           <span class="th-section-title">最近阅读</span>
           <button class="th-section-link" @click="ctx.navigateToBooks">
@@ -190,7 +141,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 
       <!-- 空 / 加载状态 -->
       <div
-        v-if="ctx.booksStore.isLoaded && ctx.booksStore.books.length === 0"
+        v-if="ctx.isEmptyState.value"
         class="th-empty"
       >
         <i class="pi pi-book th-empty-icon" aria-hidden="true" />
@@ -205,7 +156,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
       </div>
 
       <div
-        v-else-if="ctx.booksStore.isLoading || !ctx.booksStore.isLoaded"
+        v-else-if="ctx.isLoadingState.value"
         class="th-loading"
       >
         <ProgressSpinner
@@ -282,94 +233,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
   line-height: 1.5;
 }
 
-/* Hero grid */
-.th-hero-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
-}
-
-.th-hero-grid--single {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.th-hero-card {
-  padding: 18px 20px;
-  background: var(--white-opacity-2-5); /* token: white @ 2.5% — not tokenized */
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 160px;
-}
-
-.th-hero-card--active {
-  background: linear-gradient(135deg, var(--tsukuyomi-opacity-18), var(--tsukuyomi-opacity-4));
-  /* gradient stop 2: tsukuyomi-500 @ 4% — not tokenized */
-  border-color: var(--tsukuyomi-opacity-30);
-}
-
-.th-hero-card-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.th-hero-card-status-icon {
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  font-size: 13px;
-}
-
-.th-hero-card-status {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.th-hero-card-kicker {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--moon-50-opacity-55);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.th-hero-card-title {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--moon-50-opacity-100);
-  letter-spacing: -0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.th-hero-card-meta {
-  font-size: 12px;
-  color: var(--moon-50-opacity-60);
-}
-
-.th-hero-card-subline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--moon-50-opacity-55);
-}
-
-.th-hero-card-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: auto;
-}
+/* Hero grid 样式随 IndexTabletHero 组件迁出 */
 
 /* Stats strip */
 .th-stats {

@@ -46,23 +46,48 @@ async function fetchViaElectron(proxiedUrl: string, originalUrl: string): Promis
   throw new Error('返回的内容为空');
 }
 
+/** axios 头部 content-type 的多种形态统一转为字符串 */
+function normalizeContentType(
+  raw: string | number | boolean | string[] | undefined | null,
+): string {
+  if (typeof raw === 'string') return raw;
+  if (Array.isArray(raw)) return raw.join(', ');
+  if (typeof raw === 'number' || raw === true) return String(raw);
+  return '';
+}
+
+/** 响应是否疑似 JSON 包装的代理响应 */
+function looksLikeJsonProxyResponse(contentType: string, dataStr: string): boolean {
+  return contentType.includes('application/json') || dataStr.trim().startsWith('{');
+}
+
+/** 构建 axios 请求头；仅非浏览器环境补充 User-Agent / Referer / Accept-Encoding */
+function buildAxiosHeaders(
+  originalUrl: string,
+  isBrowser: boolean,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: ACCEPT_HTML,
+    'Accept-Language': ACCEPT_LANGUAGE,
+  };
+  if (isBrowser) return headers;
+  return {
+    ...headers,
+    'User-Agent': USER_AGENT,
+    'Accept-Encoding': 'gzip, deflate, br',
+    Referer: originalUrl.startsWith('https://')
+      ? new URL(originalUrl).origin
+      : 'https://kakuyomu.jp/',
+  };
+}
+
 /** 通过 axios 获取页面；仅非浏览器环境补充 User-Agent / Referer / Accept-Encoding */
 async function fetchViaAxios(
   proxiedUrl: string,
   originalUrl: string,
   isBrowser: boolean,
 ): Promise<string> {
-  const headers: Record<string, string> = {
-    Accept: ACCEPT_HTML,
-    'Accept-Language': ACCEPT_LANGUAGE,
-  };
-  if (!isBrowser) {
-    headers['User-Agent'] = USER_AGENT;
-    headers['Accept-Encoding'] = 'gzip, deflate, br';
-    headers['Referer'] = originalUrl.startsWith('https://')
-      ? new URL(originalUrl).origin
-      : 'https://kakuyomu.jp/';
-  }
+  const headers = buildAxiosHeaders(originalUrl, isBrowser);
   const response = await axios.get(proxiedUrl, {
     timeout: FETCH_TIMEOUT_MS, // 与代理服务器超时一致
     headers,
@@ -74,18 +99,11 @@ async function fetchViaAxios(
   if (!response.data) throw new Error('返回的内容为空');
 
   // 某些代理服务返回 JSON 包装，需要拆出实际 HTML
-  // axios 头部值的类型是 `string | number | true | string[] | AxiosHeaders`，统一转成字符串
-  const contentTypeRaw = response.headers['content-type'];
-  const contentType =
-    typeof contentTypeRaw === 'string'
-      ? contentTypeRaw
-      : Array.isArray(contentTypeRaw)
-        ? contentTypeRaw.join(', ')
-        : typeof contentTypeRaw === 'number' || contentTypeRaw === true
-          ? String(contentTypeRaw)
-          : '';
+  const contentType = normalizeContentType(
+    response.headers['content-type'] as string | number | boolean | string[] | undefined | null,
+  );
   const dataStr = typeof response.data === 'string' ? response.data : String(response.data);
-  if (contentType.includes('application/json') || dataStr.trim().startsWith('{')) {
+  if (looksLikeJsonProxyResponse(contentType, dataStr)) {
     const html = extractHtmlFromJsonProxyResponse(response.data, dataStr);
     if (html !== null) return html;
   }
@@ -169,7 +187,6 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
    * @param url 小说 URL
    * @returns Promise<FetchNovelResult> 获取结果
    */
-  // fallow-ignore-next-line unused-class-member
   async fetchNovel(url: string): Promise<FetchNovelResult> {
     try {
       if (!this.isValidUrl(url)) {
@@ -222,7 +239,6 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
    * @returns Promise<string> 章节内容
    * @throws {Error} 如果获取失败
    */
-  // fallow-ignore-next-line unused-class-member
   async fetchChapterContent(chapterUrl: string): Promise<string> {
     const html = await this.fetchPage(chapterUrl);
     const paragraphs = this.extractParagraphsFromHtml(html);

@@ -1,7 +1,7 @@
 import { TerminologyService } from 'src/services/terminology-service';
 import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
 import { useBooksStore } from 'src/stores/books';
-import type { Terminology } from 'src/models/novel';
+import type { Terminology, Novel } from 'src/models/novel';
 import type { ToolDefinition } from './types';
 import { cloneDeep } from 'lodash';
 import { findUniqueTermsInText } from 'src/utils/text-matcher';
@@ -14,6 +14,30 @@ import {
 
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
+
+/**
+ * 构造 list_terms 工具的统一响应体（含分章/全量标记）
+ */
+function buildListTermsResponse(
+  terms: Terminology[],
+  book: Novel,
+  chapter_id: string | undefined,
+  all_chapters: boolean,
+) {
+  return {
+    success: true,
+    terms: terms.map((term) => ({
+      id: term.id,
+      name: term.name,
+      translation: term.translation.translation,
+      description: term.description,
+    })),
+    total: terms.length,
+    all_terms_count: book.terminologies?.length || 0,
+    ...(chapter_id ? { chapter_id } : {}),
+    ...(all_chapters ? { all_chapters: true } : {}),
+  };
+}
 
 export const terminologyTools: ToolDefinition[] = [
   {
@@ -429,19 +453,9 @@ export const terminologyTools: ToolDefinition[] = [
         terms = terms.slice(0, limit);
       }
 
-      return JSON.stringify({
-        success: true,
-        terms: terms.map((term) => ({
-          id: term.id,
-          name: term.name,
-          translation: term.translation.translation,
-          description: term.description,
-        })),
-        total: terms.length,
-        all_terms_count: book.terminologies?.length || 0,
-        ...(chapter_id ? { chapter_id } : {}),
-        ...(all_chapters ? { all_chapters: true } : {}),
-      });
+      return JSON.stringify(
+        buildListTermsResponse(terms, book, chapter_id, all_chapters),
+      );
     },
   },
   {

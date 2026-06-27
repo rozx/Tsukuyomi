@@ -1,772 +1,114 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
-import Button from 'primevue/button';
+/**
+ * 平板书库变体（主从布局：左侧列表 + 右侧详情 + 右侧 rail）。
+ *
+ * 本文件只做编排：业务状态由 useBooksTabletPage 统一持有并 provide 给各片段
+ * （Sidebar / Detail / SideRail），片段通过 injectBooksTabletPage() 取同一份状态。
+ * 注意：本文件保留全部平板样式（非 scoped），因为 tl- 前缀仅在本页使用，
+ * 抽出的片段作为后代元素可直接命中这些全局类，避免跨组件 scoped 样式失效。
+ */
 import Menu from 'primevue/menu';
-import TieredMenu from 'primevue/tieredmenu';
-import ProgressSpinner from 'primevue/progressspinner';
-import Skeleton from 'primevue/skeleton';
-import AddVolumeDialog from 'src/components/dialogs/AddVolumeDialog.vue';
-import AddChapterDialog from 'src/components/dialogs/AddChapterDialog.vue';
 import EditVolumeDialog from 'src/components/dialogs/EditVolumeDialog.vue';
 import EditChapterDialog from 'src/components/dialogs/EditChapterDialog.vue';
 import DeleteVolumeConfirmDialog from 'src/components/dialogs/DeleteVolumeConfirmDialog.vue';
 import DeleteChapterConfirmDialog from 'src/components/dialogs/DeleteChapterConfirmDialog.vue';
-import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
-import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
-import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils/novel-utils';
-import type { Chapter, Novel, Paragraph, Volume } from 'src/models/novel';
-import { useBookDetailsStore } from 'src/stores/book-details';
-import { useBooksStore } from 'src/stores/books';
-import { useRouter } from 'vue-router';
-import { ChapterContentService } from 'src/services/chapter-content-service';
-import { ChapterService } from 'src/services/chapter-service';
-import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { useTabletRightRail } from 'src/composables/useTabletRightRail';
-import { isPortrait } from 'src/utils/device-orientation';
-import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
-import {
-  getChapterStatus,
-  chapterStatusIcon,
-  chapterStatusColor,
-  chapterStatusTextColor,
-  chapterStatusLabel,
-  type ChapterProgressMap,
-} from 'src/utils/chapter-status';
-import {
-  buildVolumeActionMenuItems,
-  buildChapterActionMenuItems,
-} from 'src/components/novel/volumes-list-utils';
+import AddVolumeDialog from 'src/components/dialogs/AddVolumeDialog.vue';
+import AddChapterDialog from 'src/components/dialogs/AddChapterDialog.vue';
+import { provideBooksTabletPage } from 'src/composables/books-page/useBooksTabletPage';
+import BooksTabletSidebar from './BooksTabletSidebar.vue';
+import BooksTabletDetail from './BooksTabletDetail.vue';
+import BooksTabletSideRail from './BooksTabletSideRail.vue';
 
-const ctx = injectBooksPage();
-const router = useRouter();
-const bookDetailsStore = useBookDetailsStore();
-const booksStore = useBooksStore();
-const toast = useToastWithHistory();
-const { isChatActive, isProgressActive, activeTranslationTaskCount, toggleRail } =
-  useTabletRightRail();
-
-// 添加书籍菜单：与桌面 SplitButton、手机底部选择器语义一致
-const addMenuRef = ref<InstanceType<typeof Menu> | null>(null);
-const addMenuItems = computed(() => [
-  {
-    label: '新建书籍',
-    icon: 'pi pi-plus',
-    command: () => ctx.addBook(),
-  },
-  {
-    label: '从网站导入',
-    icon: 'pi pi-globe',
-    command: () => ctx.importBookFromWeb(),
-  },
-  {
-    label: '从 JSON 导入',
-    icon: 'pi pi-file-import',
-    command: () => ctx.importBookFromJson(),
-  },
-]);
-const toggleAddMenu = (event: Event) => addMenuRef.value?.toggle(event);
-
-const toggleSortMenu = (event: Event) => {
-  ctx.sortMenuRef.value?.toggle(event);
-};
-
-const currentSortLabel = computed(
-  () => ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label ?? '排序',
-);
-
-// 本地 UI 状态：当前选中的书（主从布局右侧详情）。不写入任何 store。
-const selectedBookId = ref<string | null>(null);
-
-// 列表可 dock——竖屏宽度下 list + detail 同时摆显得拥挤，改成列表叠加在详情
-// 之上（参考 BookDetailsTablet 的 sidebar dock 模式）。默认打开，用户挑完一本
-// 书后自动关闭（on portrait）。横屏由 CSS media query 让列表重新参与 flex。
-const isListOpen = ref(true);
-const toggleList = () => {
-  isListOpen.value = !isListOpen.value;
-};
-const selectBook = (book: Novel) => {
-  selectedBookId.value = book.id;
-  // 竖屏：挑中后自动收起 list，让详情铺满屏幕；横屏 list 常驻不动。
-  if (isPortrait()) isListOpen.value = false;
-};
-
-const selectedBook = computed<Novel | null>(() => {
-  const list = ctx.filteredBooks.value;
-  if (list.length === 0) return null;
-  const match = list.find((b) => b.id === selectedBookId.value);
-  return match ?? list[0] ?? null;
-});
-
-// 列表变化时，确保选中项仍然在列表中；否则落到第一本。
-watch(
-  () => ctx.filteredBooks.value,
-  (list) => {
-    if (list.length === 0) {
-      selectedBookId.value = null;
-      return;
-    }
-    if (!list.find((b) => b.id === selectedBookId.value)) {
-      selectedBookId.value = list[0]!.id;
-    }
-  },
-  { immediate: true },
-);
-
-// 当前选中书的章节翻译进度（懒加载，切书时重算）
-const progressByChapter = ref<ChapterProgressMap | null>(null);
-const isLoadingProgress = ref(false);
-let progressLoadToken = 0;
-
-function collectChapterIds(book: Novel): string[] {
-  const ids: string[] = [];
-  for (const vol of book.volumes ?? []) {
-    for (const ch of vol.chapters ?? []) ids.push(ch.id);
-  }
-  return ids;
-}
-
-function buildChapterProgressMap(
-  chapterIds: string[],
-  contents: Map<string, Paragraph[] | undefined>,
-): ChapterProgressMap {
-  const map: ChapterProgressMap = new Map();
-  for (const id of chapterIds) {
-    const paras = contents.get(id) ?? [];
-    const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
-    const total = nonEmpty.length;
-    const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
-    map.set(id, { total, translated });
-  }
-  return map;
-}
-
-async function loadProgressFor(book: Novel | null) {
-  const token = ++progressLoadToken;
-  if (!book) {
-    progressByChapter.value = null;
-    isLoadingProgress.value = false;
-    return;
-  }
-  const chapterIds = collectChapterIds(book);
-  if (chapterIds.length === 0) {
-    if (token === progressLoadToken) {
-      progressByChapter.value = new Map();
-      isLoadingProgress.value = false;
-    }
-    return;
-  }
-  isLoadingProgress.value = true;
-  try {
-    const contents = await ChapterContentService.loadChapterContentsBatch(chapterIds);
-    if (token !== progressLoadToken) return; // 切书后丢弃旧结果
-    progressByChapter.value = buildChapterProgressMap(chapterIds, contents);
-  } finally {
-    if (token === progressLoadToken) isLoadingProgress.value = false;
-  }
-}
-
-watch(
-  () => selectedBook.value?.id ?? null,
-  () => void loadProgressFor(selectedBook.value),
-  { immediate: true },
-);
-
-// 卷展开 / 折叠状态（默认折叠，只显示前 COLLAPSED_PREVIEW 章作为预览）
-const COLLAPSED_PREVIEW = 5;
-const expandedVolumes = reactive<Record<string, boolean>>({});
-function isVolumeExpanded(id: string): boolean {
-  return expandedVolumes[id] === true;
-}
-function toggleVolume(id: string): void {
-  expandedVolumes[id] = !isVolumeExpanded(id);
-}
-function visibleChapters(volumeId: string, chapters: Chapter[]): Chapter[] {
-  if (isVolumeExpanded(volumeId)) return chapters;
-  return chapters.slice(0, COLLAPSED_PREVIEW);
-}
-
-function chIcon(id: string): string {
-  return chapterStatusIcon(getChapterStatus(progressByChapter.value, id));
-}
-function chColor(id: string): string {
-  return chapterStatusColor(getChapterStatus(progressByChapter.value, id));
-}
-function chTextColor(id: string): string {
-  return chapterStatusTextColor(getChapterStatus(progressByChapter.value, id));
-}
-function chLabel(id: string): string {
-  return chapterStatusLabel(progressByChapter.value, id);
-}
-
-function openChapter(book: Novel, chapter: Chapter): void {
-  if (editMode.value) return; // 编辑模式下章节点击无效，避免误触离开列表
-  void bookDetailsStore.setSelectedChapter(book.id, chapter.id);
-  void router.push(`/books/${book.id}`);
-}
-
-// ───── 卷 / 章节编辑（复用 useChapterManagement 的 dialog 状态 + CRUD） ─────
-// 手机端 / 书籍详情页已经使用同一个 composable；本页只是把它绑到当前选中的书上。
-const selectedBookForEdit = computed<Novel | undefined>(() => selectedBook.value ?? undefined);
-
-const chapterMgmt = useChapterManagement(selectedBookForEdit);
-
-const volumeOptions = computed(() =>
-  (selectedBook.value?.volumes ?? []).map((v) => ({
-    label: getVolumeDisplayTitle(v),
-    value: v.id,
-  })),
-);
-
-// 编辑模式：默认关闭，开启后显示 ⋮ 操作按钮，关闭时树保持干净
-const editMode = ref(false);
-function toggleEditMode(): void {
-  editMode.value = !editMode.value;
-}
-
-// ⋮ 动作菜单：单个 Menu 实例，根据当前 target 动态生成菜单项
-const actionMenuRef = ref<InstanceType<typeof Menu> | null>(null);
-type ActionTarget =
-  | { kind: 'volume'; volume: Volume }
-  | { kind: 'chapter'; chapter: Chapter; volumeId: string; index: number };
-const actionTarget = ref<ActionTarget | null>(null);
-
-const actionMenuItems = computed(() => {
-  const target = actionTarget.value;
-  if (!target) return [];
-  if (target.kind === 'volume') {
-    return buildVolumeActionMenuItems({
-      onEdit: () => chapterMgmt.openEditVolumeDialog(target.volume),
-      onDelete: () => chapterMgmt.openDeleteVolumeConfirm(target.volume),
-    });
-  }
-  const vol = selectedBook.value?.volumes?.find((v) => v.id === target.volumeId);
-  const canMoveDown = !!vol?.chapters && target.index < vol.chapters.length - 1;
-  return buildChapterActionMenuItems({
-    canMoveUp: target.index > 0,
-    canMoveDown,
-    onEdit: () => chapterMgmt.openEditChapterDialog(target.chapter),
-    onMoveUp: () => void moveChapter(target, 'up'),
-    onMoveDown: () => void moveChapter(target, 'down'),
-    onDelete: () => chapterMgmt.openDeleteChapterConfirm(target.chapter),
-  });
-});
-
-function openVolumeMenu(event: Event, volume: Volume): void {
-  event.stopPropagation();
-  actionTarget.value = { kind: 'volume', volume };
-  actionMenuRef.value?.toggle(event);
-}
-
-function openChapterMenu(
-  event: Event,
-  chapter: Chapter,
-  volumeId: string,
-  index: number,
-): void {
-  event.stopPropagation();
-  actionTarget.value = { kind: 'chapter', chapter, volumeId, index };
-  actionMenuRef.value?.toggle(event);
-}
-
-const isMovingChapter = ref(false);
-
-function resolveMoveTargetIndex(
-  book: Novel,
-  target: { volumeId: string; index: number },
-  direction: 'up' | 'down',
-): number | null {
-  const newIndex = direction === 'up' ? target.index - 1 : target.index + 1;
-  if (newIndex < 0) return null;
-  const vol = book.volumes?.find((v) => v.id === target.volumeId);
-  if (!vol?.chapters || newIndex >= vol.chapters.length) return null;
-  return newIndex;
-}
-
-async function moveChapter(
-  target: { chapter: Chapter; volumeId: string; index: number },
-  direction: 'up' | 'down',
-): Promise<void> {
-  const book = selectedBook.value;
-  if (!book || isMovingChapter.value) return;
-  const targetIndex = resolveMoveTargetIndex(book, target, direction);
-  if (targetIndex === null) return;
-
-  isMovingChapter.value = true;
-  try {
-    const updatedVolumes = ChapterService.moveChapter(
-      book,
-      target.chapter.id,
-      target.volumeId,
-      targetIndex,
-    );
-    await booksStore.updateBook(book.id, { volumes: updatedVolumes, lastEdited: new Date() });
-  } catch (err) {
-    toast.add({
-      severity: 'error',
-      summary: '排序失败',
-      detail: err instanceof Error ? err.message : String(err),
-      life: 3000,
-    });
-  } finally {
-    isMovingChapter.value = false;
-  }
-}
+const t = provideBooksTabletPage();
+// 模板字符串 ref 绑定只查 <script setup> 顶层变量，故把 composable 的 ref 暴露到顶层。
+const actionMenuRef = t.actionMenuRef;
 </script>
 
 <template>
   <div
     class="tablet-library w-full h-full flex min-h-0"
-    :class="{ 'tablet-library--list-open': isListOpen }"
+    :class="{ 'tablet-library--list-open': t.isListOpen.value }"
   >
     <!-- 竖屏叠层：list dock 打开时点外侧关闭；横屏由 CSS display:none 隐藏 -->
     <div
-      v-if="isListOpen"
+      v-if="t.isListOpen.value"
       class="tl-list-scrim"
       aria-hidden="true"
-      @click="toggleList"
+      @click="t.toggleList"
     />
 
     <!-- 左侧书籍列表 -->
-    <aside class="tl-list">
-      <header class="tl-list-head">
-        <div class="tl-eyebrow">LIBRARY</div>
-        <h1 class="tl-title">书库</h1>
-        <div class="tl-meta">
-          {{ ctx.booksStore.books.length }} 本
-          <template v-if="ctx.booksStore.books.filter((b) => b.starred).length > 0">
-            · {{ ctx.booksStore.books.filter((b) => b.starred).length }} 本收藏
-          </template>
-        </div>
-        <div class="tl-toolbar">
-          <div class="tl-input-wrap">
-            <i class="pi pi-search" aria-hidden="true" />
-            <input
-              v-model="ctx.searchQuery.value"
-              class="tl-input"
-              placeholder="搜索书名、作者…"
-            />
-            <button
-              v-if="ctx.searchQuery.value"
-              class="tl-input-clear"
-              aria-label="清除搜索"
-              @click="ctx.searchQuery.value = ''"
-            >
-              <i class="pi pi-times" />
-            </button>
-          </div>
-          <button
-            class="tl-icon-btn"
-            :title="`排序：${currentSortLabel}`"
-            aria-haspopup="true"
-            @click="toggleSortMenu"
-          >
-            <i class="pi pi-sort-alt" aria-hidden="true" />
-          </button>
-          <button
-            class="tl-icon-btn"
-            title="添加书籍"
-            aria-haspopup="true"
-            @click="toggleAddMenu"
-          >
-            <i class="pi pi-plus" aria-hidden="true" />
-          </button>
-          <Menu
-            ref="addMenuRef"
-            :model="addMenuItems"
-            :popup="true"
-            append-to="body"
-          />
-          <TieredMenu
-            :ref="(el) => { ctx.sortMenuRef.value = el as unknown as typeof ctx.sortMenuRef.value; }"
-            :model="ctx.sortMenuItems.value"
-            popup
-            append-to="body"
-          />
-        </div>
-      </header>
-
-      <div
-        v-if="ctx.booksStore.isLoading || !ctx.booksStore.isLoaded"
-        class="tl-state"
-      >
-        <ProgressSpinner
-          style="width: 28px; height: 28px"
-          stroke-width="4"
-          animation-duration=".8s"
-          aria-label="加载中"
-        />
-        <span>正在加载…</span>
-      </div>
-
-      <div v-else-if="ctx.filteredBooks.value.length === 0" class="tl-state">
-        <i class="pi pi-book tl-state-icon" aria-hidden="true" />
-        <span>
-          {{ ctx.searchQuery.value ? '未找到匹配的书籍' : '暂无书籍' }}
-        </span>
-      </div>
-
-      <div v-else class="tl-list-scroll">
-        <button
-          v-for="book in ctx.filteredBooks.value"
-          :key="book.id"
-          type="button"
-          class="tl-list-row"
-          :class="{ 'tl-list-row--active': book.id === selectedBook?.id }"
-          @click="selectBook(book)"
-          @dblclick="ctx.navigateToBookDetails(book)"
-        >
-          <div class="tl-list-cover">
-            <img :src="ctx.getCoverUrl(book)" :alt="book.title" loading="lazy" />
-          </div>
-          <div class="tl-list-body">
-            <div class="tl-list-title">{{ book.title }}</div>
-            <div class="tl-list-author">{{ book.author || '未知作者' }}</div>
-            <div class="tl-list-meta">
-              <span v-if="ctx.isLoadingCharCount(book)">
-                <Skeleton width="42px" height="10px" />
-              </span>
-              <span v-else>{{ ctx.formatWordCount(ctx.getTotalWords(book)) }} 字</span>
-              <span class="tl-dot">·</span>
-              <span>{{ ctx.getTotalChapters(book) }} 章</span>
-            </div>
-          </div>
-          <i
-            v-if="book.starred"
-            class="pi pi-star-fill tl-list-star"
-            aria-hidden="true"
-          />
-        </button>
-      </div>
-    </aside>
+    <BooksTabletSidebar />
 
     <!-- 右侧详情 -->
-    <section class="tl-detail">
-      <div v-if="!selectedBook" class="tl-detail-empty">
-        <i class="pi pi-book" aria-hidden="true" />
-        <div class="tl-detail-empty-title">选择一本书查看详情</div>
-        <div class="tl-detail-empty-sub">或从左上角添加新书</div>
-      </div>
-      <div v-else class="tl-detail-scroll">
-        <!-- Hero -->
-        <header class="tl-hero">
-          <div class="tl-hero-cover">
-            <img :src="ctx.getCoverUrl(selectedBook)" :alt="selectedBook.title" loading="lazy" />
-            <i
-              v-if="selectedBook.starred"
-              class="pi pi-star-fill tl-hero-star"
-              aria-hidden="true"
-            />
-          </div>
-          <div class="tl-hero-body">
-            <div class="tl-hero-eyebrow">
-              {{ selectedBook.author || '未知作者' }}
-              · {{ ctx.getTotalChapters(selectedBook) }} 章
-            </div>
-            <h2 class="tl-hero-title">{{ selectedBook.title }}</h2>
-            <div
-              v-if="selectedBook.alternateTitles && selectedBook.alternateTitles.length > 0"
-              class="tl-hero-alt"
-            >
-              《{{ selectedBook.alternateTitles[0] }}》
-            </div>
+    <BooksTabletDetail />
 
-            <div class="tl-hero-badges">
-              <span class="tl-badge tl-badge--blue">
-                <i class="pi pi-sparkles" /> {{ selectedBook.tags?.[0] || '小说' }}
-              </span>
-              <span
-                v-for="tag in (selectedBook.tags ?? []).slice(1, 6)"
-                :key="tag"
-                class="tl-badge"
-              >
-                {{ tag }}
-              </span>
-              <span v-if="selectedBook.starred" class="tl-badge tl-badge--star">
-                <i class="pi pi-star-fill" /> 收藏
-              </span>
-            </div>
-
-            <p v-if="selectedBook.description" class="tl-desc">
-              {{ selectedBook.description }}
-            </p>
-
-            <div class="tl-hero-actions">
-              <Button
-                label="继续翻译"
-                icon="pi pi-play"
-                class="p-button-primary"
-                @click="ctx.navigateToBookDetails(selectedBook)"
-              />
-              <Button
-                label="编辑元数据"
-                icon="pi pi-pencil"
-                class="p-button-outlined"
-                @click="ctx.editBook(selectedBook)"
-              />
-              <Button
-                :icon="selectedBook.starred ? 'pi pi-star-fill' : 'pi pi-star'"
-                :class="[
-                  'p-button-outlined',
-                  selectedBook.starred ? '!text-warning' : '',
-                ]"
-                :title="selectedBook.starred ? '取消收藏' : '收藏'"
-                @click="ctx.toggleStar(selectedBook)"
-              />
-              <Button
-                icon="pi pi-trash"
-                class="p-button-outlined p-button-danger"
-                title="删除"
-                @click="ctx.deleteBook(selectedBook)"
-              />
-            </div>
-          </div>
-        </header>
-
-        <!-- 统计条 -->
-        <div class="tl-stats">
-          <div class="tl-stat">
-            <div class="tl-stat-value">{{ selectedBook.volumes?.length ?? 0 }}</div>
-            <div class="tl-stat-label">卷数</div>
-          </div>
-          <div class="tl-stat">
-            <div class="tl-stat-value">{{ ctx.getTotalChapters(selectedBook) }}</div>
-            <div class="tl-stat-label">章节</div>
-          </div>
-          <div class="tl-stat">
-            <div class="tl-stat-value">
-              <template v-if="ctx.isLoadingCharCount(selectedBook)">
-                <Skeleton width="48px" height="16px" />
-              </template>
-              <template v-else>
-                {{ ctx.formatWordCount(ctx.getTotalWords(selectedBook)) }}
-              </template>
-            </div>
-            <div class="tl-stat-label">字数</div>
-          </div>
-          <div class="tl-stat">
-            <div class="tl-stat-value">{{ ctx.formatDate(selectedBook.lastEdited) }}</div>
-            <div class="tl-stat-label">上次编辑</div>
-          </div>
-          <div class="tl-stat tl-stat--last">
-            <div class="tl-stat-value">{{ selectedBook.tags?.length ?? 0 }}</div>
-            <div class="tl-stat-label">标签</div>
-          </div>
-        </div>
-
-        <!-- 章节树：全部卷 / 章节，可折叠，点击跳转到阅读 -->
-        <section class="tl-chapters">
-          <header class="tl-chapters-head">
-            <span>章节 · {{ ctx.getTotalChapters(selectedBook) }}</span>
-            <span v-if="isLoadingProgress" class="tl-chapters-loading">
-              <i class="pi pi-spin pi-spinner" aria-hidden="true" /> 正在统计进度…
-            </span>
-            <button
-              type="button"
-              class="tl-chapters-edit-btn"
-              :class="{ 'tl-chapters-edit-btn--on': editMode }"
-              :aria-pressed="editMode"
-              :title="editMode ? '完成编辑' : '编辑章节'"
-              @click="toggleEditMode"
-            >
-              <i class="pi" :class="editMode ? 'pi-check' : 'pi-pencil'" aria-hidden="true" />
-              <span>{{ editMode ? '完成' : '编辑' }}</span>
-            </button>
-          </header>
-          <div
-            v-if="selectedBook.volumes && selectedBook.volumes.length > 0"
-            class="tl-tree"
-          >
-            <div
-              v-for="(volume, vi) in selectedBook.volumes"
-              :key="volume.id ?? vi"
-              class="tl-tree-group"
-            >
-              <div
-                class="tl-tree-vol"
-                role="button"
-                :aria-expanded="isVolumeExpanded(volume.id)"
-                @click="toggleVolume(volume.id)"
-              >
-                <i
-                  class="pi"
-                  :class="isVolumeExpanded(volume.id) ? 'pi-folder-open tl-tree-vol-icon-open' : 'pi-folder tl-tree-vol-icon-closed'"
-                  aria-hidden="true"
-                />
-                <span class="tl-tree-vol-title">{{ getVolumeDisplayTitle(volume) || `卷 ${vi + 1}` }}</span>
-                <span class="tl-tree-count">{{ volume.chapters?.length ?? 0 }} 章</span>
-                <button
-                  v-if="editMode"
-                  type="button"
-                  class="tl-tree-more-btn"
-                  aria-label="卷操作"
-                  @click.stop="openVolumeMenu($event, volume)"
-                >
-                  <i class="pi pi-ellipsis-v" aria-hidden="true" />
-                </button>
-              </div>
-              <div
-                v-for="(chapter, ci) in visibleChapters(volume.id, volume.chapters ?? [])"
-                :key="chapter.id ?? ci"
-                class="tl-tree-chap"
-                :class="{ 'tl-tree-chap--readonly': editMode }"
-                :role="editMode ? undefined : 'button'"
-                @click="openChapter(selectedBook, chapter)"
-              >
-                <i
-                  class="pi"
-                  :class="chIcon(chapter.id)"
-                  :style="{ color: chColor(chapter.id) }"
-                  aria-hidden="true"
-                />
-                <span class="tl-tree-chap-title">
-                  {{ getChapterDisplayTitle(chapter, selectedBook) || `第 ${ci + 1} 章` }}
-                </span>
-                <span
-                  class="tl-tree-count"
-                  :style="{ color: chTextColor(chapter.id) }"
-                >
-                  {{ chLabel(chapter.id) }}
-                </span>
-                <button
-                  v-if="editMode"
-                  type="button"
-                  class="tl-tree-more-btn"
-                  aria-label="章节操作"
-                  @click.stop="openChapterMenu($event, chapter, volume.id, ci)"
-                >
-                  <i class="pi pi-ellipsis-v" aria-hidden="true" />
-                </button>
-              </div>
-              <div
-                v-if="!isVolumeExpanded(volume.id) && (volume.chapters?.length ?? 0) > COLLAPSED_PREVIEW"
-                class="tl-tree-more"
-                role="button"
-                @click="toggleVolume(volume.id)"
-              >
-                展开余下 {{ (volume.chapters!.length) - COLLAPSED_PREVIEW }} 章
-              </div>
-            </div>
-          </div>
-          <div v-else class="tl-chapters-empty">
-            <i class="pi pi-book" aria-hidden="true" /> 暂无章节
-          </div>
-        </section>
-      </div>
-    </section>
-
-    <!-- 右侧 rail —— list 切换 + AI 助手 + 翻译进度。竖屏 list 是 overlay，
-         toggle 按钮留在 rail 上；横屏 list 参与 flex 布局，toggle 把它收掉腾空间。 -->
-    <TabletSideRail>
-      <button
-        type="button"
-        class="tsr-btn"
-        :class="{ 'tsr-btn--active': isListOpen }"
-        :title="isListOpen ? '收起书籍列表' : '展开书籍列表'"
-        :aria-label="isListOpen ? '收起书籍列表' : '展开书籍列表'"
-        :aria-pressed="isListOpen"
-        @click="toggleList"
-      >
-        <i
-          class="pi"
-          :class="isListOpen ? 'pi-angle-double-left' : 'pi-bars'"
-          aria-hidden="true"
-        />
-      </button>
-
-      <div class="tsr-sep" />
-
-      <button
-        type="button"
-        class="tsr-btn"
-        :class="{ 'tsr-btn--active': isChatActive }"
-        title="月詠"
-        @click="() => toggleRail('chat')"
-      >
-        <i class="pi pi-sparkles" aria-hidden="true" />
-      </button>
-
-      <button
-        type="button"
-        class="tsr-btn"
-        :class="{ 'tsr-btn--active': isProgressActive }"
-        title="翻译进度"
-        @click="() => toggleRail('progress')"
-      >
-        <i class="pi pi-objects-column" aria-hidden="true" />
-        <span v-if="activeTranslationTaskCount > 0" class="tsr-badge">
-          {{ activeTranslationTaskCount }}
-        </span>
-      </button>
-    </TabletSideRail>
+    <!-- 右侧 rail -->
+    <BooksTabletSideRail />
 
     <!-- 隐藏的文件输入（JSON 导入）—— 桌面与手机都在自己模板里挂一份 -->
     <input
-      :ref="(el) => { ctx.fileInputRef.value = el as HTMLInputElement | null; }"
+      :ref="(el) => { t.ctx.fileInputRef.value = el as HTMLInputElement | null; }"
       type="file"
       accept=".json,.txt"
       class="hidden"
-      @change="ctx.handleFileSelect"
+      @change="t.ctx.handleFileSelect"
     />
 
     <!-- ⋮ 动作菜单 —— 卷 / 章节共用一个 Menu 实例 -->
-    <Menu
-      ref="actionMenuRef"
-      :model="actionMenuItems"
-      :popup="true"
-      append-to="body"
-    />
+    <Menu ref="actionMenuRef" :model="t.actionMenuItems.value" :popup="true" append-to="body" />
 
     <!-- 卷 / 章节编辑对话框 —— 绑定 useChapterManagement 的状态与处理函数 -->
     <EditVolumeDialog
-      v-model:visible="chapterMgmt.showEditVolumeDialog.value"
-      :title="chapterMgmt.editingVolumeTitle.value"
-      :translation="chapterMgmt.editingVolumeTranslation.value"
-      :loading="chapterMgmt.isEditingVolume.value"
-      @save="chapterMgmt.handleEditVolume"
+      v-model:visible="t.chapterMgmt.showEditVolumeDialog.value"
+      :title="t.chapterMgmt.editingVolumeTitle.value"
+      :translation="t.chapterMgmt.editingVolumeTranslation.value"
+      :loading="t.chapterMgmt.isEditingVolume.value"
+      @save="t.chapterMgmt.handleEditVolume"
     />
     <EditChapterDialog
-      v-model:visible="chapterMgmt.showEditChapterDialog.value"
-      :title="chapterMgmt.editingChapterTitle.value || ''"
-      :translation="chapterMgmt.editingChapterTranslation.value || ''"
-      :target-volume-id="chapterMgmt.editingChapterTargetVolumeId.value || null"
-      :volume-options="volumeOptions"
-      :loading="chapterMgmt.isEditingChapter.value"
-      :web-url="chapterMgmt.editingChapterWebUrl.value || ''"
-      :last-updated="chapterMgmt.editingChapterLastUpdated.value"
-      :last-edited="chapterMgmt.editingChapterLastEdited.value"
-      :created-at="chapterMgmt.editingChapterCreatedAt.value"
-      :translation-instructions="chapterMgmt.editingChapterTranslationInstructions.value || ''"
-      :polish-instructions="chapterMgmt.editingChapterPolishInstructions.value || ''"
-      :proofreading-instructions="chapterMgmt.editingChapterProofreadingInstructions.value || ''"
-      @save="chapterMgmt.handleEditChapter"
+      v-model:visible="t.chapterMgmt.showEditChapterDialog.value"
+      :title="t.chapterMgmt.editingChapterTitle.value || ''"
+      :translation="t.chapterMgmt.editingChapterTranslation.value || ''"
+      :target-volume-id="t.chapterMgmt.editingChapterTargetVolumeId.value || null"
+      :volume-options="t.volumeOptions.value"
+      :loading="t.chapterMgmt.isEditingChapter.value"
+      :web-url="t.chapterMgmt.editingChapterWebUrl.value || ''"
+      :last-updated="t.chapterMgmt.editingChapterLastUpdated.value"
+      :last-edited="t.chapterMgmt.editingChapterLastEdited.value"
+      :created-at="t.chapterMgmt.editingChapterCreatedAt.value"
+      :translation-instructions="t.chapterMgmt.editingChapterTranslationInstructions.value || ''"
+      :polish-instructions="t.chapterMgmt.editingChapterPolishInstructions.value || ''"
+      :proofreading-instructions="t.chapterMgmt.editingChapterProofreadingInstructions.value || ''"
+      @save="t.chapterMgmt.handleEditChapter"
     />
     <DeleteVolumeConfirmDialog
-      v-model:visible="chapterMgmt.showDeleteVolumeConfirm.value"
-      :volume-title="chapterMgmt.deletingVolumeTitle.value"
-      :loading="chapterMgmt.isDeletingVolume.value"
-      @confirm="chapterMgmt.handleDeleteVolume"
+      v-model:visible="t.chapterMgmt.showDeleteVolumeConfirm.value"
+      :volume-title="t.chapterMgmt.deletingVolumeTitle.value"
+      :loading="t.chapterMgmt.isDeletingVolume.value"
+      @confirm="t.chapterMgmt.handleDeleteVolume"
     />
     <DeleteChapterConfirmDialog
-      v-model:visible="chapterMgmt.showDeleteChapterConfirm.value"
-      :chapter-title="chapterMgmt.deletingChapterTitle.value"
-      :loading="chapterMgmt.isDeletingChapter.value"
-      @confirm="chapterMgmt.handleDeleteChapter"
+      v-model:visible="t.chapterMgmt.showDeleteChapterConfirm.value"
+      :chapter-title="t.chapterMgmt.deletingChapterTitle.value"
+      :loading="t.chapterMgmt.isDeletingChapter.value"
+      @confirm="t.chapterMgmt.handleDeleteChapter"
     />
     <AddVolumeDialog
-      v-model:visible="chapterMgmt.showAddVolumeDialog.value"
-      :loading="chapterMgmt.isAddingVolume.value"
-      @save="chapterMgmt.handleAddVolume"
+      v-model:visible="t.chapterMgmt.showAddVolumeDialog.value"
+      :loading="t.chapterMgmt.isAddingVolume.value"
+      @save="t.chapterMgmt.handleAddVolume"
     />
     <AddChapterDialog
-      v-model:visible="chapterMgmt.showAddChapterDialog.value"
-      :volume-options="volumeOptions"
-      :loading="chapterMgmt.isAddingChapter.value"
-      @save="chapterMgmt.handleAddChapter"
+      v-model:visible="t.chapterMgmt.showAddChapterDialog.value"
+      :volume-options="t.volumeOptions.value"
+      :loading="t.chapterMgmt.isAddingChapter.value"
+      @save="t.chapterMgmt.handleAddChapter"
     />
   </div>
 </template>
 
-<style scoped>
+<style>
 .tablet-library {
   position: relative;
   font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;

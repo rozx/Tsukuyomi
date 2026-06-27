@@ -1,9 +1,11 @@
 import type { RestorableItem } from 'src/services/sync-data-service';
+import { MemoryService } from 'src/services/memory-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { Novel } from 'src/models/novel';
+import type { Memory } from 'src/models/memory';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSyncExecutor } from 'src/composables/useSyncExecutor';
 import type { SyncConfig } from 'src/models/sync';
@@ -88,68 +90,12 @@ export function useGistSync() {
   const restoreDeletedItems = async (items: RestorableItem[]): Promise<void> => {
     const gistSync = settingsStore.gistSync;
 
-    // 按类型分组
-    const novelsToRestore: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const modelsToRestore: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-    const coversToRestore: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-
-    for (const item of items) {
-      if (item.type === 'novel') {
-        novelsToRestore.push(item.data);
-      } else if (item.type === 'model') {
-        modelsToRestore.push(item.data);
-      } else if (item.type === 'cover') {
-        coversToRestore.push(item.data);
-      }
-    }
-
-    // 恢复书籍
-    if (novelsToRestore.length > 0) {
-      for (const novel of novelsToRestore) {
-        await booksStore.addBook(novel as Novel);
-      }
-    }
-
-    // 恢复模型
-    if (modelsToRestore.length > 0) {
-      for (const model of modelsToRestore) {
-        await aiModelsStore.addModel(model);
-      }
-    }
-
-    // 恢复封面
-    if (coversToRestore.length > 0) {
-      for (const cover of coversToRestore) {
-        await coverHistoryStore.addCover(cover);
-      }
-    }
+    // 按类型分组并恢复
+    const grouped = groupRestorableItems(items);
+    await restoreGroupedItems(grouped);
 
     // 从删除记录中移除已恢复的项目
-    const deletedNovelIds = (gistSync.deletedNovelIds || []).filter(
-      (record) => !items.some((item) => item.type === 'novel' && item.id === record.id),
-    );
-    const deletedModelIds = (gistSync.deletedModelIds || []).filter(
-      (record) => !items.some((item) => item.type === 'model' && item.id === record.id),
-    );
-    const deletedCoverIds = (gistSync.deletedCoverIds || []).filter(
-      (record) => !items.some((item) => item.type === 'cover' && item.id === record.id),
-    );
-    const restoredCoverUrls = new Set(
-      items
-        .filter((item) => item.type === 'cover')
-        .map((item) => (item.data?.url ? String(item.data.url).trim() : ''))
-        .filter((u) => u.length > 0),
-    );
-    const deletedCoverUrls = (gistSync.deletedCoverUrls || []).filter(
-      (record) => !restoredCoverUrls.has(String(record.url).trim()),
-    );
-
-    await settingsStore.updateGistSync({
-      deletedNovelIds,
-      deletedModelIds,
-      deletedCoverIds,
-      deletedCoverUrls,
-    });
+    await settingsStore.updateGistSync(recomputeDeletedRecords(gistSync, items));
 
     toast.add({
       severity: 'success',
@@ -158,6 +104,93 @@ export function useGistSync() {
       life: 3000,
     });
   };
+
+  /** 按 type 把待恢复项分成 novels / models / covers / memories 四组 */
+  function groupRestorableItems(
+    items: RestorableItem[],
+  ): { novels: unknown[]; models: unknown[]; covers: unknown[]; memories: unknown[] } {
+    const novels: unknown[] = [];
+    const models: unknown[] = [];
+    const covers: unknown[] = [];
+    const memories: unknown[] = [];
+    for (const item of items) {
+      if (item.type === 'novel') {
+        novels.push(item.data);
+      } else if (item.type === 'model') {
+        models.push(item.data);
+      } else if (item.type === 'cover') {
+        covers.push(item.data);
+      } else if (item.type === 'memory') {
+        memories.push(item.data);
+      }
+    }
+    return { novels, models, covers, memories };
+  }
+
+  /** 把分组后的数据依次写回对应 store */
+  async function restoreGroupedItems(grouped: {
+    novels: unknown[];
+    models: unknown[];
+    covers: unknown[];
+    memories: unknown[];
+  }): Promise<void> {
+    for (const novel of grouped.novels) {
+      await booksStore.addBook(novel as Novel);
+    }
+    for (const model of grouped.models) {
+      await aiModelsStore.addModel(model as Parameters<typeof aiModelsStore.addModel>[0]);
+    }
+    for (const cover of grouped.covers) {
+      await coverHistoryStore.addCover(cover as Parameters<typeof coverHistoryStore.addCover>[0]);
+    }
+    // Memory 恢复：data 是携带 bookId 的完整 Memory，走 upsertMemoryForSync 写回 IndexedDB
+    for (const memory of grouped.memories) {
+      await MemoryService.upsertMemoryForSync(memory as Memory);
+    }
+  }
+
+  /** 判定某条删除记录是否应被保留（对应 type 的恢复项里不包含它） */
+  function keepDeletedRecord(
+    record: { id: string },
+    items: RestorableItem[],
+    type: RestorableItem['type'],
+  ): boolean {
+    return !items.some((item) => item.type === type && item.id === record.id);
+  }
+
+  /** 根据已恢复的 items 重新计算 gistSync 的各项删除记录字段 */
+  function recomputeDeletedRecords(
+    gistSync: typeof settingsStore.gistSync,
+    items: RestorableItem[],
+  ) {
+    const deletedNovelIds = (gistSync.deletedNovelIds || []).filter((record) =>
+      keepDeletedRecord(record, items, 'novel'),
+    );
+    const deletedModelIds = (gistSync.deletedModelIds || []).filter((record) =>
+      keepDeletedRecord(record, items, 'model'),
+    );
+    const deletedCoverIds = (gistSync.deletedCoverIds || []).filter((record) =>
+      keepDeletedRecord(record, items, 'cover'),
+    );
+    const deletedMemoryIds = (gistSync.deletedMemoryIds || []).filter((record) =>
+      keepDeletedRecord(record, items, 'memory'),
+    );
+    const restoredCoverUrls = collectRestoredCoverUrls(items);
+    const deletedCoverUrls = (gistSync.deletedCoverUrls || []).filter(
+      (record) => !restoredCoverUrls.has(String(record.url).trim()),
+    );
+    return { deletedNovelIds, deletedModelIds, deletedCoverIds, deletedMemoryIds, deletedCoverUrls };
+  }
+
+  /** 收集本次恢复的封面 URL（已 trim、非空） */
+  function collectRestoredCoverUrls(items: RestorableItem[]): Set<string> {
+    return new Set(
+      items
+        .filter((item) => item.type === 'cover')
+        .map((item) => (item.data?.url ? String(item.data.url).trim() : ''))
+        .filter((u) => u.length > 0),
+    );
+  }
 
   /**
    * 强制推送：用本地数据完全覆盖远端

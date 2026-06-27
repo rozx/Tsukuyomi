@@ -1,20 +1,19 @@
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
-import { vi } from 'vitest';
 import { ref } from 'vue';
 import { useChapterExport } from '../composables/book-details/useChapterExport';
 import type { Chapter, Paragraph } from '../models/novel';
 import { ChapterService } from '../services/chapter-service';
+import * as useToastHistory from '../composables/useToastHistory';
 
-const { mockToastAdd, mockUseToastWithHistory } = vi.hoisted(() => {
-  const add = vi.fn();
-  return {
-    mockToastAdd: add,
-    mockUseToastWithHistory: vi.fn(() => ({ add })),
-  };
-});
-
-vi.mock('src/composables/useToastHistory', () => ({
-  useToastWithHistory: mockUseToastWithHistory,
+const mockToastAdd = mock(() => {});
+const mockToastRemove = mock(() => {});
+const mockToastRemoveGroup = mock(() => {});
+const mockToastRemoveAllGroups = mock(() => {});
+const mockUseToastWithHistory = mock(() => ({
+  add: mockToastAdd,
+  remove: mockToastRemove,
+  removeGroup: mockToastRemoveGroup,
+  removeAllGroups: mockToastRemoveAllGroups,
 }));
 
 const mockExportChapter = mock(() => Promise.resolve());
@@ -24,6 +23,7 @@ describe('useChapterExport', () => {
     mockToastAdd.mockClear();
     mockExportChapter.mockClear();
     spyOn(ChapterService, 'exportChapter').mockImplementation(mockExportChapter);
+    spyOn(useToastHistory, 'useToastWithHistory').mockImplementation(mockUseToastWithHistory);
   });
 
   afterEach(() => {

@@ -1,0 +1,32 @@
+/* 预览段落内文本样式（译文 / 未翻译徽章 / 原文）。
+ * 注：这些类同时被 ChapterPreviewSection.vue 与 PreviewParagraphItem.vue 消费，
+ * 抽到共享文件以避免 Fallow 把同一份规则当作重复声明；两个子组件各自用
+ * <style scoped src="./preview-paragraph.css"> 引入，scoped src 会被各自作用域化。 */
+.translation-text {
+  margin: 0;
+  color: var(--moon-opacity-90);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.untranslated-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.untranslated-badge {
+  align-self: flex-start;
+}
+
+.original-text {
+  margin: 0;
+  color: var(--moon-opacity-70);
+  font-size: 0.9375rem;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-style: italic;
+}

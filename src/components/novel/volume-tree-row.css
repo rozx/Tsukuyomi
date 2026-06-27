@@ -1,0 +1,81 @@
+/**
+ * 卷 / 章节树「行」的共享基础样式（行容器 / 标题 / 章数 / 行尾 ⋮ 按钮）。
+ *
+ * 三个端的同名行视觉一致，统一抽到这里维护，消除重复：
+ * - 平板：VolumesListTablet（卷行）+ TabletChapterRow（章节行）用 `.vt-row*`，scoped 引入。
+ * - 手机：BookMobileChapterTree 渲染、BookDetailsMobile 全局样式提供的 `.mbd-tree-row*`，全局引入。
+ *
+ * 各端沿用各自的类名前缀（.vt- / .mbd-tree-），运行表现与内联时完全一致。
+ * 仅收录三端「声明完全相同」的规则；带端差异的（如手机 :active 的 hover 反馈、
+ * 卷 / 章节专属图标与缩进）仍留在各自组件里。
+ */
+
+.vt-row,
+.mbd-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  color: var(--moon-50-opacity-90);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vt-row:hover,
+.mbd-tree-row:hover {
+  background: var(--white-opacity-3);
+}
+
+.vt-row-title,
+.mbd-tree-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vt-row-count,
+.mbd-tree-row-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--moon-50-opacity-55);
+  flex-shrink: 0;
+}
+
+.vt-row-more,
+.mbd-tree-row-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 2px;
+  margin-right: -4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--moon-50-opacity-45);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vt-row-more i,
+.mbd-tree-row-more i {
+  font-size: 12px;
+}
+
+/* 平板行尾 ⋮ 的 hover 反馈；手机端用 :active + 不同 token，保留在 BookDetailsMobile。 */
+.vt-row-more:hover {
+  background: var(--white-opacity-6);
+  color: var(--moon-50-opacity-85);
+}

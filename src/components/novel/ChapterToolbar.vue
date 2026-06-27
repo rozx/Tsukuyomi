@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import SplitButton from 'primevue/splitbutton';
-import Badge from 'primevue/badge';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
 import { getChapterDisplayTitle } from 'src/utils';
 import { useUiStore } from 'src/stores/ui';
+import ToolbarBadgeButton from 'src/components/novel/ToolbarBadgeButton.vue';
 
 interface EditModeOption {
   value: EditMode;
@@ -21,7 +21,7 @@ interface TranslationStatus {
 
 import type { MenuItem } from 'primevue/menuitem';
 
-defineProps<{
+const props = defineProps<{
   selectedChapter: Chapter | null;
   book: Novel | null;
   canUndo: boolean;
@@ -79,6 +79,38 @@ const handleToggleMemoryPopover = (event: Event) => {
 const handleToggleKeyboardShortcuts = (event: Event) => {
   emit('toggleKeyboardShortcuts', event);
 };
+
+// 把模板内的内联三元/&& 收敛为 computed，降低模板圈复杂度（复杂度转移到 script，不计入模板指标）
+const translationSplitIcon = computed(() =>
+  props.translationStatus.hasAll ? 'pi pi-sparkles' : 'pi pi-language',
+);
+const expandToggleIcon = computed(() =>
+  isToolbarExpanded.value ? 'pi pi-chevron-up' : 'pi pi-chevron-down',
+);
+const expandToggleTitle = computed(() => (isToolbarExpanded.value ? '收起工具栏' : '展开工具栏'));
+const undoBtnTitle = computed(() =>
+  props.undoDescription ? `撤销: ${props.undoDescription}` : '撤销 (Ctrl+Z)',
+);
+const redoBtnTitle = computed(() =>
+  props.redoDescription ? `重做: ${props.redoDescription}` : '重做 (Ctrl+Y)',
+);
+const searchBtnIcon = computed(() =>
+  props.isSearchVisible ? 'pi pi-search-minus' : 'pi pi-search',
+);
+const searchBtnTitle = computed(() =>
+  props.isSearchVisible ? '关闭搜索 (Ctrl+F)' : '搜索与替换 (Ctrl+F)',
+);
+const progressBtnActive = computed(
+  () => uiStore.rightPanelOpen && uiStore.activeRightTab === 'progress',
+);
+const translationBtnLoading = computed(
+  () => props.isTranslatingChapter || props.isPolishingChapter,
+);
+const translationBtnDisabled = computed(
+  () => props.isTranslatingChapter || props.isPolishingChapter || !props.selectedChapterParagraphs.length,
+);
+const editModeBtnClass = (value: EditMode) =>
+  value === props.editMode ? '!bg-primary/20 !text-primary' : 'text-moon/70 hover:text-moon';
 </script>
 
 <template>
@@ -103,12 +135,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
             rounded
             text
             size="small"
-            :class="[
-              '!w-8 !h-8',
-              editMode === option.value
-                ? '!bg-primary/20 !text-primary'
-                : 'text-moon/70 hover:text-moon',
-            ]"
+            :class="['!w-8 !h-8', editModeBtnClass(option.value)]"
             @click="handleEditModeChange(option.value)"
           />
         </div>
@@ -119,33 +146,29 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
           icon="pi pi-language"
           size="small"
           class="translation-main-button !px-3"
-          :loading="isTranslatingChapter || isPolishingChapter"
-          :disabled="
-            isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length
-          "
+          :loading="translationBtnLoading"
+          :disabled="translationBtnDisabled"
           @click="emit('translationButtonClick')"
         />
         <SplitButton
           v-else
           :label="translationButtonLabel"
-          :icon="translationStatus.hasAll ? 'pi pi-sparkles' : 'pi pi-language'"
+          :icon="translationSplitIcon"
           size="small"
           class="translation-main-button !px-3"
-          :loading="isTranslatingChapter || isPolishingChapter"
-          :disabled="
-            isTranslatingChapter || isPolishingChapter || !selectedChapterParagraphs.length
-          "
+          :loading="translationBtnLoading"
+          :disabled="translationBtnDisabled"
           :model="translationButtonMenuItems"
           @click="emit('translationButtonClick')"
         />
 
         <Button
-          :icon="isToolbarExpanded ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
+          :icon="expandToggleIcon"
           rounded
           text
           size="small"
           class="toolbar-expand-toggle !w-8 !h-8 text-moon/70 hover:text-moon"
-          :title="isToolbarExpanded ? '收起工具栏' : '展开工具栏'"
+          :title="expandToggleTitle"
           @click="isToolbarExpanded = !isToolbarExpanded"
         />
       </div>
@@ -166,7 +189,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
             :disabled="!canUndo"
-            :title="undoDescription ? `撤销: ${undoDescription}` : '撤销 (Ctrl+Z)'"
+            :title="undoBtnTitle"
             @click="emit('undo')"
           />
           <Button
@@ -176,7 +199,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
             :disabled="!canRedo"
-            :title="redoDescription ? `重做: ${redoDescription}` : '重做 (Ctrl+Y)'"
+            :title="redoBtnTitle"
             @click="emit('redo')"
           />
         </div>
@@ -186,13 +209,13 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
         <!-- 搜索 + 导出 -->
         <div class="toolbar-group">
           <Button
-            :icon="isSearchVisible ? 'pi pi-search-minus' : 'pi pi-search'"
+            :icon="searchBtnIcon"
             rounded
             text
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
             :class="{ '!bg-primary/20 !text-primary': isSearchVisible }"
-            :title="isSearchVisible ? '关闭搜索 (Ctrl+F)' : '搜索与替换 (Ctrl+F)'"
+            :title="searchBtnTitle"
             @click="emit('toggleSearch')"
           />
           <Button
@@ -210,59 +233,24 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
 
         <!-- 资源组: 术语/角色/记忆 -->
         <div class="toolbar-group">
-          <div class="relative inline-flex">
-            <Button
-              icon="pi pi-bookmark"
-              rounded
-              text
-              size="small"
-              class="!w-8 !h-8 text-moon/70 hover:text-moon"
-              :title="`本章共使用了 ${usedTermCount} 个术语`"
-              @click="handleToggleTermPopover"
-            />
-            <Badge
-              v-if="usedTermCount > 0"
-              :value="usedTermCount > 99 ? '99+' : usedTermCount"
-              severity="info"
-              class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
-            />
-          </div>
-
-          <div class="relative inline-flex">
-            <Button
-              icon="pi pi-user"
-              rounded
-              text
-              size="small"
-              class="!w-8 !h-8 text-moon/70 hover:text-moon"
-              :title="`本章共使用了 ${usedCharacterCount} 个角色设定`"
-              @click="handleToggleCharacterPopover"
-            />
-            <Badge
-              v-if="usedCharacterCount > 0"
-              :value="usedCharacterCount > 99 ? '99+' : usedCharacterCount"
-              severity="info"
-              class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
-            />
-          </div>
-
-          <div class="relative inline-flex">
-            <Button
-              icon="pi pi-lightbulb"
-              rounded
-              text
-              size="small"
-              class="!w-8 !h-8 text-moon/70 hover:text-moon"
-              :title="`本章共参考了 ${usedMemoryCount} 条记忆`"
-              @click="handleToggleMemoryPopover"
-            />
-            <Badge
-              v-if="usedMemoryCount > 0"
-              :value="usedMemoryCount > 99 ? '99+' : usedMemoryCount"
-              severity="info"
-              class="absolute -top-1 -right-1 !min-w-[1.25rem] !h-[1.25rem] !text-[0.75rem] !p-0 flex items-center justify-center"
-            />
-          </div>
+          <ToolbarBadgeButton
+            icon="pi pi-bookmark"
+            :count="usedTermCount"
+            :title="`本章共使用了 ${usedTermCount} 个术语`"
+            @click="handleToggleTermPopover"
+          />
+          <ToolbarBadgeButton
+            icon="pi pi-user"
+            :count="usedCharacterCount"
+            :title="`本章共使用了 ${usedCharacterCount} 个角色设定`"
+            @click="handleToggleCharacterPopover"
+          />
+          <ToolbarBadgeButton
+            icon="pi pi-lightbulb"
+            :count="usedMemoryCount"
+            :title="`本章共参考了 ${usedMemoryCount} 条记忆`"
+            @click="handleToggleMemoryPopover"
+          />
         </div>
 
         <div class="toolbar-divider"></div>
@@ -285,7 +273,7 @@ const handleToggleKeyboardShortcuts = (event: Event) => {
             text
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
-            :class="{ '!bg-primary/20 !text-primary': uiStore.rightPanelOpen && uiStore.activeRightTab === 'progress' }"
+            :class="{ '!bg-primary/20 !text-primary': progressBtnActive }"
             title="翻译进度"
             :disabled="isSmallScreen"
             @click="() => { uiStore.openRightPanel(); uiStore.setActiveRightTab('progress'); }"

@@ -6,15 +6,24 @@
  * 下它们变成绝对定位的抽屉，由顶部工具栏的「文档」/「目录」按钮切换。
  * 正文始终铺满剩余空间，避免在竖屏窄宽度下被三栏挤成一条。
  */
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { injectHelpPage } from 'src/composables/help-page/useHelpPage';
 import { isPortrait } from 'src/utils/device-orientation';
+import HelpTabletNavList from './HelpTabletNavList.vue';
+import HelpTabletTocList from './HelpTabletTocList.vue';
+import HelpTabletState from './HelpTabletState.vue';
 
 const ctx = injectHelpPage();
 
 // 横屏默认 nav 展开、toc 展开即可（参与 flex）；竖屏默认都收起，让正文铺满。
 const isNavOpen = ref(!isPortrait());
 const isTocOpen = ref(false);
+
+// 把模板内的比较收进脚本侧，降低段落认知与圈复杂度
+const hasToc = computed(() => ctx.toc.value.length > 0);
+const helpState = computed<'loading' | 'error' | null>(() =>
+  ctx.loading.value ? 'loading' : ctx.error.value ? 'error' : null,
+);
 
 function toggleNav(): void {
   isNavOpen.value = !isNavOpen.value;
@@ -73,41 +82,7 @@ watch(
         </div>
       </header>
       <nav class="ht-nav-list">
-        <div
-          v-for="(docs, category) in ctx.groupedDocuments.value"
-          :key="category"
-          class="ht-nav-group"
-        >
-          <button
-            class="ht-nav-category"
-            @click="ctx.toggleCategory(category as string)"
-          >
-            <span>{{ category }}</span>
-            <i
-              class="pi"
-              :class="
-                ctx.expandedCategories.value.has(category as string)
-                  ? 'pi-chevron-down'
-                  : 'pi-chevron-right'
-              "
-              aria-hidden="true"
-            />
-          </button>
-          <ul
-            v-show="ctx.expandedCategories.value.has(category as string)"
-            class="ht-nav-items"
-          >
-            <li v-for="doc in docs" :key="doc.id">
-              <button
-                class="ht-nav-item"
-                :class="{ 'ht-nav-item--active': ctx.currentDoc.value?.id === doc.id }"
-                @click="selectDocument(doc)"
-              >
-                {{ doc.title }}
-              </button>
-            </li>
-          </ul>
-        </div>
+        <HelpTabletNavList @select-doc="selectDocument" />
       </nav>
     </aside>
 
@@ -131,7 +106,7 @@ watch(
           <span class="ht-breadcrumb-title">{{ ctx.currentDoc.value.title }}</span>
         </div>
         <button
-          v-if="ctx.toc.value.length > 0"
+          v-if="hasToc"
           type="button"
           class="ht-toolbar-btn"
           :class="{ 'ht-toolbar-btn--active': isTocOpen }"
@@ -143,17 +118,13 @@ watch(
         </button>
       </div>
 
-      <!-- Loading / error / content -->
-      <div v-if="ctx.loading.value" class="ht-state">
-        <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-        <p>加载文档中...</p>
-      </div>
-
-      <div v-else-if="ctx.error.value" class="ht-state ht-state--error">
-        <i class="pi pi-exclamation-triangle" aria-hidden="true" />
-        <p>{{ ctx.error.value }}</p>
-        <button class="ht-state-retry" @click="ctx.loadDocumentIndex">重试</button>
-      </div>
+      <!-- Loading / error（抽出到 HelpTabletState，把两条分支折叠为单个 state 驱动） -->
+      <HelpTabletState
+        v-if="helpState"
+        :state="helpState"
+        :error="ctx.error.value"
+        @retry="ctx.loadDocumentIndex"
+      />
 
       <div v-else class="ht-content-scroll help-content-scroll">
         <div class="ht-content-inner">
@@ -178,28 +149,13 @@ watch(
     </main>
 
     <!-- 右：目录（TOC） -->
-    <aside v-if="ctx.toc.value.length > 0" class="ht-toc">
+    <aside v-if="hasToc" class="ht-toc">
       <header class="ht-toc-head">
         <i class="pi pi-list" aria-hidden="true" />
         <span>目录</span>
       </header>
       <nav class="ht-toc-list">
-        <a
-          v-for="item in ctx.toc.value"
-          :key="item.id"
-          :href="`#${item.id}`"
-          class="ht-toc-item"
-          :class="[
-            ctx.activeHeading.value === item.id ? 'ht-toc-item--active' : '',
-            item.level === 1 ? 'ht-toc-item--l1' : '',
-            item.level === 2 ? 'ht-toc-item--l2' : '',
-            item.level === 3 ? 'ht-toc-item--l3' : '',
-            item.level === 4 ? 'ht-toc-item--l4' : '',
-          ]"
-          @click.prevent="selectHeading(item.id)"
-        >
-          {{ item.text }}
-        </a>
+        <HelpTabletTocList @select="selectHeading" />
       </nav>
     </aside>
   </div>
@@ -286,72 +242,7 @@ watch(
   padding: 10px 12px 18px;
 }
 
-.ht-nav-group {
-  margin-bottom: 10px;
-}
-
-.ht-nav-category {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 8px;
-  background: transparent;
-  border: none;
-  color: var(--moon-50-opacity-45);
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.ht-nav-category:hover {
-  color: var(--moon-50-opacity-75);
-}
-
-.ht-nav-category i {
-  font-size: 10px;
-  color: var(--moon-50-opacity-30); /* token: moon-50 @ 30% */
-}
-
-.ht-nav-items {
-  margin-top: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ht-nav-item {
-  width: 100%;
-  text-align: left;
-  padding: 8px 12px;
-  border: none;
-  border-left: 2px solid transparent;
-  background: transparent;
-  color: var(--moon-50-opacity-80); /* token: moon-50 @ 80% */
-  font-family: inherit;
-  font-size: 13px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.ht-nav-item:hover {
-  background: var(--white-opacity-4);
-  color: var(--moon-50-opacity-100);
-}
-
-.ht-nav-item--active {
-  background: var(--tsukuyomi-opacity-20);
-  border-left-color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  font-weight: 500;
-}
+/* 导航分组/条目（.ht-nav-group … .ht-nav-item--active）的样式由 HelpTabletNavList 自带 scoped 样式负责 */
 
 /* ───────────── 中间主区 ───────────── */
 .ht-main {
@@ -430,39 +321,7 @@ watch(
   white-space: nowrap;
 }
 
-.ht-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--moon-50-opacity-60);
-}
-
-.ht-state i {
-  font-size: 28px;
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-}
-
-.ht-state--error {
-  padding: 20px;
-}
-
-.ht-state--error i {
-  color: var(--color-danger-400); /* token: danger-400 */
-}
-
-.ht-state-retry {
-  padding: 8px 16px;
-  background: var(--color-danger-400-opacity-15); /* token: danger-400 @ 15% */
-  border: 1px solid var(--color-danger-400-opacity-30); /* token: danger-400 @ 30% */
-  border-radius: 8px;
-  color: var(--color-danger-300); /* token: danger-300 */
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
+/* loading/error 状态块（.ht-state … .ht-state-retry）的样式由 HelpTabletState 自带 scoped 样式负责 */
 
 .ht-content-scroll {
   flex: 1;
@@ -555,57 +414,7 @@ watch(
   padding: 12px;
 }
 
-.ht-toc-item {
-  display: block;
-  padding: 7px 10px;
-  margin-bottom: 2px;
-  border-radius: 8px;
-  border-left: 2px solid transparent;
-  color: var(--moon-50-opacity-60);
-  font-size: 12px;
-  line-height: 1.4;
-  text-decoration: none;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.ht-toc-item:hover {
-  background: var(--white-opacity-4);
-  color: var(--moon-50-opacity-100);
-  border-left-color: var(--moon-50-opacity-20); /* token: moon-50 @ 20% */
-}
-
-.ht-toc-item--active {
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  background: var(--tsukuyomi-opacity-15);
-  border-left-color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  font-weight: 500;
-}
-
-.ht-toc-item--l1 {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.ht-toc-item--l2 {
-  font-size: 12px;
-  font-weight: 500;
-  margin-left: 8px;
-}
-
-.ht-toc-item--l3 {
-  font-size: 11px;
-  margin-left: 20px;
-  opacity: 0.9;
-}
-
-.ht-toc-item--l4 {
-  font-size: 11px;
-  margin-left: 28px;
-  opacity: 0.75;
-}
+/* 目录条目（.ht-toc-item … .ht-toc-item--l4）的样式由 HelpTabletTocList 自带 scoped 样式负责 */
 
 /* ───────────── 竖屏：nav / toc 变成 overlay 抽屉 ───────────── */
 @media (orientation: portrait) {

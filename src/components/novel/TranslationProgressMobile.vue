@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useTranslationProgressPanel } from 'src/composables/translation-progress/useTranslationProgressPanel';
-import TaskTodos from './translation-progress/TaskTodos.vue';
-import TaskStream from './translation-progress/TaskStream.vue';
 import TaskEmptyState from './translation-progress/TaskEmptyState.vue';
+import MobileProgressBody from './translation-progress/MobileProgressBody.vue';
 
 const {
   currentTask,
@@ -25,6 +24,13 @@ const {
 
 // 手机端分段 tab（实时/待办/统计/日志）— 纯视图局部状态
 const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
+// 分段按钮配置：把四个近乎相同的按钮收敛为 v-for，降低模板圈复杂度
+const mobileTabs = computed(() => [
+  { key: 'live' as const, label: '实时' },
+  { key: 'todo' as const, label: '待办' },
+  { key: 'stats' as const, label: '统计' },
+  { key: 'log' as const, label: '日志' },
+]);
 </script>
 
 <template>
@@ -68,148 +74,37 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
       <div class="mtp-seg-wrap">
         <div class="mtp-seg">
           <button
+            v-for="tab in mobileTabs"
+            :key="tab.key"
             class="mtp-seg-btn"
-            :class="{ 'mtp-seg-btn-active': mobileTab === 'live' }"
-            @click="mobileTab = 'live'"
+            :class="{ 'mtp-seg-btn-active': mobileTab === tab.key }"
+            @click="mobileTab = tab.key"
           >
-            实时
-          </button>
-          <button
-            class="mtp-seg-btn"
-            :class="{ 'mtp-seg-btn-active': mobileTab === 'todo' }"
-            @click="mobileTab = 'todo'"
-          >
-            待办<span v-if="currentTaskTodos.length > 0" class="mtp-seg-count">
-              {{ currentTaskTodos.length }}</span
+            {{ tab.label
+            }}<span
+              v-if="tab.key === 'todo' && currentTaskTodos.length > 0"
+              class="mtp-seg-count"
+              >{{ currentTaskTodos.length }}</span
             >
-          </button>
-          <button
-            class="mtp-seg-btn"
-            :class="{ 'mtp-seg-btn-active': mobileTab === 'stats' }"
-            @click="mobileTab = 'stats'"
-          >
-            统计
-          </button>
-          <button
-            class="mtp-seg-btn"
-            :class="{ 'mtp-seg-btn-active': mobileTab === 'log' }"
-            @click="mobileTab = 'log'"
-          >
-            日志
           </button>
         </div>
       </div>
 
       <!-- Body -->
-      <div class="mtp-body">
-        <!-- 实时 -->
-        <template v-if="mobileTab === 'live'">
-          <div class="mtp-live-card">
-            <div class="mtp-live-head">
-              <i
-                class="pi mtp-live-spinner"
-                :class="mobileIsRunning ? 'pi-spin pi-spinner' : 'pi-check-circle'"
-                aria-hidden="true"
-              />
-              <span class="mtp-live-eyebrow">
-                {{ mobileIsRunning ? '正在翻译' : '已停止' }} · §
-                {{ String(mobileProgress.current).padStart(3, '0') }}
-              </span>
-              <span class="mtp-live-model">
-                <i class="pi pi-sparkles" aria-hidden="true" />
-                {{ currentTask.modelName }}
-              </span>
-            </div>
-            <div v-if="currentTask.progress?.message" class="mtp-live-text">
-              {{ currentTask.progress.message }}
-            </div>
-            <div v-else-if="currentTask.thinkingMessage" class="mtp-live-text">
-              {{ currentTask.thinkingMessage.split('\n').slice(-1)[0] }}
-            </div>
-            <div class="mtp-live-bar">
-              <div class="mtp-live-bar-fill" :style="{ width: `${mobileProgress.percent}%` }" />
-            </div>
-            <div class="mtp-live-meta">
-              <span>
-                上下文
-                <template v-if="currentTask.contextPercentage !== undefined">
-                  {{ currentTask.contextPercentage }}%
-                </template>
-                <template v-else>—</template>
-              </span>
-              <span>{{ formatDuration(currentTask.startTime, currentTask.endTime) }}</span>
-            </div>
-          </div>
-
-          <div class="mtp-section-label">活动记录</div>
-          <div class="mtp-stream-wrap mtp-stream-wrap--compact">
-            <TaskStream
-              :task="currentTask"
-              :parts="currentParts"
-              :auto-scroll="currentAutoScroll"
-              @toggle-auto-scroll="toggleAutoScroll"
-            />
-          </div>
-        </template>
-
-        <!-- 统计 -->
-        <template v-else-if="mobileTab === 'stats'">
-          <div class="mtp-section-label">模型使用</div>
-          <div class="mtp-model-card">
-            <div class="mtp-model-head">
-              <span class="mtp-model-dot" />
-              <span class="mtp-model-name">{{ currentTask.modelName }}</span>
-              <span class="mtp-model-count">{{ mobileProgress.current }} 次调用</span>
-            </div>
-            <div class="mtp-model-bar">
-              <div class="mtp-model-bar-fill" :style="{ width: `${mobileProgress.percent}%` }" />
-            </div>
-            <div class="mtp-model-meta">
-              <span>进度 {{ mobileProgress.percent }}%</span>
-              <span>{{ mobileWorkflowLabel }}</span>
-            </div>
-          </div>
-
-          <div class="mtp-section-label">本次批量</div>
-          <div class="mtp-totals">
-            <div v-for="t in mobileStatTotals" :key="t.label" class="mtp-total">
-              <div class="mtp-total-head">
-                <span class="mtp-total-label">{{ t.label }}</span>
-                <i :class="['pi', t.icon, 'mtp-total-icon']" aria-hidden="true" />
-              </div>
-              <div class="mtp-total-value">{{ t.value }}</div>
-            </div>
-          </div>
-        </template>
-
-        <!-- 待办 -->
-        <template v-else-if="mobileTab === 'todo'">
-          <div class="mtp-todo-panel">
-            <div v-if="currentTaskTodos.length > 0" class="mtp-todos-wrap mtp-todos-wrap--full">
-              <TaskTodos
-                :todos="currentTaskTodos"
-                :collapsed="false"
-                @toggle-collapsed="toggleTodoCollapsed"
-              />
-            </div>
-            <div v-else class="mtp-empty">暂无待办事项</div>
-          </div>
-        </template>
-
-        <!-- 日志（占满剩余空间，内部滚动） -->
-        <template v-else-if="mobileTab === 'log'">
-          <div class="mtp-log-stack">
-            <div class="mtp-stream-wrap mtp-stream-wrap--fill">
-              <TaskStream
-                :task="currentTask"
-                :parts="currentParts"
-                :auto-scroll="currentAutoScroll"
-                @toggle-auto-scroll="toggleAutoScroll"
-              />
-            </div>
-          </div>
-        </template>
-      </div>
+      <MobileProgressBody
+        :mobile-tab="mobileTab"
+        :current-task="currentTask"
+        :current-parts="currentParts"
+        :current-auto-scroll="currentAutoScroll"
+        :mobile-progress="mobileProgress"
+        :mobile-is-running="mobileIsRunning"
+        :mobile-workflow-label="mobileWorkflowLabel"
+        :mobile-stat-totals="mobileStatTotals"
+        :current-task-todos="currentTaskTodos"
+        :format-duration="formatDuration"
+        @toggle-auto-scroll="toggleAutoScroll"
+        @toggle-todo-collapsed="toggleTodoCollapsed"
+      />
 
       <!-- Bottom actions -->
       <div class="mtp-actions">
@@ -464,310 +359,10 @@ const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
   opacity: 0.7;
 }
 
-/* Body */
-.mtp-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px 0 14px;
-  display: flex;
-  flex-direction: column;
-}
-
-.mtp-body::-webkit-scrollbar {
-  width: 0;
-}
-
-.mtp-section-label {
-  padding: 8px 20px 6px;
-  font-size: 10px;
-  color: var(--moon-50-opacity-55);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-weight: 500;
-}
-
-.mtp-empty {
-  padding: 28px 20px;
-  text-align: center;
-  color: var(--moon-50-opacity-45);
-  font-size: 12px;
-}
-
-/* Live card */
-.mtp-live-card {
-  margin: 0 16px 12px;
-  padding: 12px 14px;
-  background: var(--tsukuyomi-opacity-10);
-  border: 1px solid var(--tsukuyomi-opacity-30);
-  border-radius: 12px;
-  box-shadow: 0 2px 8px var(--tsukuyomi-opacity-25);
-}
-
-.mtp-live-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.mtp-live-spinner {
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  font-size: 12px;
-}
-
-.mtp-live-eyebrow {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  font-weight: 500;
-}
-
-.mtp-live-model {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  padding: 3px 8px;
-  border-radius: 9999px;
-  font-size: 10px;
-  font-weight: 500;
-  background: var(--tsukuyomi-opacity-15);
-  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
-  border: 1px solid var(--tsukuyomi-opacity-30);
-}
-
-.mtp-live-model i {
-  font-size: 9px;
-}
-
-.mtp-live-text {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 12px;
-  color: var(--moon-50-opacity-85);
-  line-height: 1.65;
-  margin-bottom: 10px;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  max-height: 72px;
-  overflow: hidden;
-}
-
-.mtp-live-bar {
-  height: 3px;
-  background: var(--white-opacity-6);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.mtp-live-bar-fill {
-  height: 100%;
-  background: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.mtp-live-meta {
-  display: flex;
-  justify-content: space-between;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 9px;
-  color: var(--moon-50-opacity-55);
-  margin-top: 6px;
-}
-
-/* Stats */
-.mtp-model-card {
-  margin: 0 16px 12px;
-  padding: 12px 14px;
-  background: var(--white-opacity-3);
-  border: 1px solid var(--white-opacity-10);
-  border-radius: 10px;
-}
-
-.mtp-model-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.mtp-model-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  flex-shrink: 0;
-}
-
-.mtp-model-name {
-  font-size: 13px;
-  color: var(--moon-50-opacity-100);
-  font-weight: 500;
-}
-
-.mtp-model-count {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  color: var(--moon-50-opacity-55);
-  margin-left: auto;
-}
-
-.mtp-model-bar {
-  height: 4px;
-  background: var(--white-opacity-5);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-bottom: 8px;
-}
-
-.mtp-model-bar-fill {
-  height: 100%;
-  background: var(--tsukuyomi-300-opacity-70); /* token: tsukuyomi-300 @ 70% */
-  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.mtp-model-meta {
-  display: flex;
-  gap: 14px;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--moon-50-opacity-55);
-}
-
-.mtp-totals {
-  margin: 0 16px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.mtp-total {
-  padding: 12px 14px;
-  background: var(--white-opacity-3);
-  border: 1px solid var(--white-opacity-10);
-  border-radius: 10px;
-}
-
-.mtp-total-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-
-.mtp-total-label {
-  font-size: 10px;
-  color: var(--moon-50-opacity-55);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-
-.mtp-total-icon {
-  color: var(--accent-opacity-85); /* token: accent-silver @ 85% */
-  font-size: 11px;
-  opacity: 0.7;
-}
-
-.mtp-total-value {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--moon-50-opacity-100);
-  letter-spacing: -0.02em;
-}
-
-/* Reuse desktop TaskTodos / TaskStream inside the mobile layout */
-.mtp-todos-wrap {
-  margin: 0 16px 10px;
-  border: 1px solid var(--white-opacity-10);
-  border-radius: 10px;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
-}
-
-/* 待办 tab：占满可用空间 */
-.mtp-todo-panel {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.mtp-todos-wrap--full {
-  flex: 1;
-  min-height: 0;
-  margin-bottom: 14px;
-  display: flex;
-  flex-direction: column;
-}
-
-.mtp-todos-wrap--full :deep(.todos-section) {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.mtp-todos-wrap--full :deep(.todos-list),
-.mtp-todos-wrap--full :deep(.todo-list) {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-  overflow-y: auto;
-}
-
-.mtp-stream-wrap {
-  margin: 0 16px 14px;
-  border: 1px solid var(--white-opacity-10);
-  border-radius: 10px;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.25);
-  display: flex;
-  flex-direction: column;
-  min-height: 240px;
-}
-
-.mtp-stream-wrap--compact {
-  min-height: 160px;
-  max-height: 220px;
-}
-
-/* 日志 tab：占满可用空间，内部滚动 */
-.mtp-log-stack {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.mtp-stream-wrap--fill {
-  flex: 1;
-  min-height: 320px;
-  max-height: none;
-}
-
-/* TaskStream's .stream-section is flex column with flex:1 — fill the wrapper */
-.mtp-stream-wrap :deep(.stream-section) {
-  flex: 1;
-  min-height: 0;
-  background: transparent;
-}
-
-/* 实时 tab 活动记录：只保留输出内容，隐藏工具栏 + 思考过程 */
-.mtp-stream-wrap--compact :deep(.stream-header),
-.mtp-stream-wrap--compact :deep(.thinking-block),
-.mtp-stream-wrap--compact :deep(.completed-banner) {
-  display: none;
-}
-
-.mtp-stream-wrap--compact :deep(.output-block) {
-  margin: 0;
-  border: none;
-  background: transparent;
-}
+/* body 区样式（.mtp-body / .mtp-section-label / .mtp-empty / .mtp-live-* / .mtp-model-* /
+ * .mtp-total* / .mtp-todo* / .mtp-stream-wrap* / .mtp-log-stack 及相关 :deep）已迁出至
+ * translation-progress/MobileProgressBody.vue —— 这些元素渲染于该子组件，scoped 样式留在父级
+ * 无法穿透到子组件内部嵌套元素，故移到消费它们的组件作用域。 */
 
 /* Bottom actions */
 .mtp-actions {

@@ -61,7 +61,6 @@ export class NovelScraperFactory {
    * @param url 要验证的 URL
    * @returns 是否支持
    */
-  // fallow-ignore-next-line unused-class-member
   static isValidUrl(url: string): boolean {
     return this.getScraper(url) !== null;
   }
@@ -78,7 +77,6 @@ export class NovelScraperFactory {
    * 获取支持的网站名称字符串（用于显示）
    * @returns 支持的网站名称字符串
    */
-  // fallow-ignore-next-line unused-class-member
   static getSupportedSitesText(): string {
     return this.getSupportedSites().join('、');
   }

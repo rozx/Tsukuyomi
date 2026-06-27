@@ -4,15 +4,21 @@
  * todo / session stats 等细节。由 AppRightPanelDesktop 在右栏展开时挂载，
  * 关闭按钮直接调用 `ui.closeRightPanel()` 折叠成图标栏。
  */
+import { computed } from 'vue';
 import Textarea from 'primevue/textarea';
 import ProgressBar from 'primevue/progressbar';
-import ChatActionDetailsPopover from 'src/components/layout/ChatActionDetailsPopover.vue';
-import ChatGroupedActionPopover from 'src/components/layout/ChatGroupedActionPopover.vue';
+import ChatActionPopovers from 'src/components/layout/ChatActionPopovers.vue';
+import ChatSendButton from 'src/components/layout/ChatSendButton.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
+import ChatTodoSection from 'src/components/layout/ChatTodoSection.vue';
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import { useRightPanel } from 'src/composables/right-panel/useRightPanel';
+import { useChatPanelBindings } from 'src/composables/right-panel/useChatPanelBindings';
 
+// Desktop 直接用 useRightPanel（需要 todo / sessionStats / inputRef 等桌面专属字段），
+// 整个 panel 对象 + 自带的三个 bind 回调传给 useChatPanelBindings，避免逐字段重复实参。
+const panel = useRightPanel();
 const {
   ui,
   chatSessionsStore,
@@ -23,10 +29,7 @@ const {
   groupedActionPopoverRef,
   messages,
   inputMessage,
-  messageDisplayItemsById,
   isSending,
-  sendMessage,
-  stopGeneration,
   handleKeydown,
   todos,
   showTodoList,
@@ -37,28 +40,10 @@ const {
   hideSessionListPopover,
   createNewSession,
   clearChat,
-  thinkingExpanded,
-  displayedThinkingProcess,
-  displayedThinkingPreview,
-  thinkingActive,
-  setThinkingContentRef,
-  toggleThinking,
   assistantModel,
   contextInfo,
   sessionStats,
-  getChapterTitleForAction,
-  renderMarkdown,
-  formatMessageTime,
-  hoveredAction,
-  hoveredGroupedAction,
-  actionDetailsContext,
-  toggleActionPopover,
-  handleActionMouseLeave,
-  handleActionPopoverHide,
-  toggleGroupedActionPopover,
-  handleGroupedActionMouseLeave,
-  handleGroupedActionPopoverHide,
-} = useRightPanel();
+} = panel;
 
 const bindSessionListRef = (el: unknown) => {
   sessionListPopoverRef.value = el as typeof sessionListPopoverRef.value;
@@ -71,6 +56,24 @@ const bindGroupedActionPopoverRef = (el: unknown) => {
 };
 
 const close = () => ui.closeRightPanel();
+
+// 发送状态 / 浮层绑定 / 消息列表绑定一次性产出（与 Tablet / Mobile 同构，桌面 placeholder 多带换行提示）。
+const { composer, actionPopoverBindings, messageListBindings } = useChatPanelBindings(
+  { ...panel, bindActionPopoverRef, bindGroupedActionPopoverRef },
+  {
+    sendClassPrefix: 'cp-send',
+    readyPlaceholder: '请月詠相助… (Shift+Enter 换行)',
+  },
+);
+const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSendClick } = composer;
+
+// 状态点 / 用量文本：把模板里的 :class 对象与 || 表达式搬到 computed，进一步压低模板圈复杂度
+const statusDotClass = computed(() => ({ 'cp-status-dot--off': !assistantModel.value }));
+const usageText = computed(() => {
+  const s = sessionStats.value;
+  if (!s) return '';
+  return `${s.maxPercentage}% · ${s.tokens}/${s.maxInputTokens || '∞'}`;
+});
 </script>
 
 <template>
@@ -80,11 +83,8 @@ const close = () => ui.closeRightPanel();
       <div class="cp-appbar-text">
         <div class="cp-appbar-title">月詠</div>
         <div class="cp-appbar-sub">
-          <span class="cp-status-dot" :class="{ 'cp-status-dot--off': !assistantModel }" />
-          <template v-if="assistantModel">
-            {{ assistantModel.name || assistantModel.id }} · 在线
-          </template>
-          <template v-else>未配置助手模型</template>
+          <span class="cp-status-dot" :class="statusDotClass" />
+          {{ assistantStatusText }}
         </div>
       </div>
       <button
@@ -132,124 +132,40 @@ const close = () => ui.closeRightPanel();
       <p>{{ contextInfo }}</p>
     </div>
 
-    <div class="cp-todo-section">
-      <button class="cp-todo-toggle" @click="showTodoList = !showTodoList">
-        <div class="cp-todo-toggle-copy">
-          <i class="pi pi-list"></i>
-          <span>待办事项</span>
-          <span v-if="incompleteTodoCount > 0" class="cp-todo-badge">
-            {{ incompleteTodoCount }}
-          </span>
-        </div>
-        <i
-          class="pi cp-todo-chevron"
-          :class="showTodoList ? 'pi-chevron-down' : 'pi-chevron-right'"
-        ></i>
-      </button>
-      <div v-if="showTodoList" class="cp-todo-list">
-        <div v-if="todos.length === 0" class="cp-todo-empty">暂无待办事项</div>
-        <div v-else class="cp-todo-items">
-          <div
-            v-for="todo in todos"
-            :key="todo.id"
-            class="cp-todo-item"
-            :class="{
-              'cp-todo-item--done': todo.status === 'done',
-              'cp-todo-item--working': todo.status === 'working',
-            }"
-          >
-            <i
-              class="pi cp-todo-icon"
-              :class="{
-                'pi-check-circle': todo.status === 'done',
-                'pi-arrow-right': todo.status === 'working',
-                'pi-circle': todo.status === 'pending',
-              }"
-            ></i>
-            <span
-              class="cp-todo-text"
-              :class="{
-                'cp-todo-text--done': todo.status === 'done',
-                'cp-todo-text--working': todo.status === 'working',
-              }"
-            >
-              {{ todo.text }}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <ChatTodoSection
+      v-model="showTodoList"
+      :todos="todos"
+      :incomplete-todo-count="incompleteTodoCount"
+    />
 
     <div ref="messagesContainerRef" class="cp-messages">
-      <ChatMessageList
-        :messages="messages"
-        :message-display-items-by-id="messageDisplayItemsById"
-        :displayed-thinking-process="displayedThinkingProcess"
-        :displayed-thinking-preview="displayedThinkingPreview"
-        :thinking-expanded="thinkingExpanded"
-        :thinking-active="thinkingActive"
-        :set-thinking-content-ref="setThinkingContentRef"
-        :toggle-thinking="toggleThinking"
-        :render-markdown="renderMarkdown"
-        :format-message-time="formatMessageTime"
-        :get-chapter-title-for-action="getChapterTitleForAction"
-        :on-action-hover="toggleActionPopover"
-        :on-action-leave="handleActionMouseLeave"
-        :on-grouped-action-hover="toggleGroupedActionPopover"
-        :on-grouped-action-leave="handleGroupedActionMouseLeave"
-      />
+      <ChatMessageList v-bind="messageListBindings" />
     </div>
 
     <div class="cp-composer-wrap">
       <div v-if="sessionStats" v-tooltip.top="sessionStats.summary" class="cp-usage-bar">
         <ProgressBar :value="sessionStats.maxPercentage" :show-value="false" />
         <div class="cp-usage-text">
-          {{ sessionStats.maxPercentage }}% · {{ sessionStats.tokens }}/{{
-            sessionStats.maxInputTokens || '∞'
-          }}
+          {{ usageText }}
         </div>
       </div>
       <div class="cp-composer">
         <Textarea
           ref="inputRef"
           v-model="inputMessage"
-          :disabled="isSending || !assistantModel"
-          :placeholder="
-            assistantModel ? '请月詠相助… (Shift+Enter 换行)' : '未配置助手模型'
-          "
+          :disabled="inputDisabled"
+          :placeholder="inputPlaceholder"
           class="cp-input"
           :auto-resize="true"
           rows="1"
           :unstyled="true"
           @keydown="handleKeydown"
         />
-        <button
-          class="cp-send"
-          :class="{
-            'cp-send--stop': isSending,
-            'cp-send--idle': !isSending && !inputMessage.trim(),
-          }"
-          :disabled="!isSending && (!inputMessage.trim() || !assistantModel)"
-          :aria-label="isSending ? '停止' : '发送'"
-          @click="isSending ? stopGeneration() : sendMessage()"
-        >
-          <i class="pi" :class="isSending ? 'pi-stop-circle' : 'pi-send'" aria-hidden="true" />
-        </button>
+        <ChatSendButton v-bind="sendButton" @click="onSendClick" />
       </div>
     </div>
 
-    <ChatGroupedActionPopover
-      :ref="bindGroupedActionPopoverRef"
-      :actions="hoveredGroupedAction?.actions || null"
-      @hide="handleGroupedActionPopoverHide"
-    />
-
-    <ChatActionDetailsPopover
-      :ref="bindActionPopoverRef"
-      :action="hoveredAction?.action || null"
-      :context="actionDetailsContext"
-      @hide="handleActionPopoverHide"
-    />
+    <ChatActionPopovers :bindings="actionPopoverBindings" />
   </section>
 </template>
 
@@ -364,139 +280,6 @@ const close = () => ui.closeRightPanel();
   font-size: 10px;
   color: var(--moon-opacity-50);
   margin: 0;
-}
-
-.cp-todo-section {
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--white-opacity-6);
-}
-
-.cp-todo-toggle {
-  width: 100%;
-  padding: 6px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  text-align: left;
-  background: transparent;
-  border: none;
-  color: var(--moon-opacity-70);
-  cursor: pointer;
-  transition: background 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.cp-todo-toggle:hover {
-  background: var(--white-opacity-4);
-}
-
-.cp-todo-toggle-copy {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.cp-todo-toggle-copy i {
-  font-size: 12px;
-  color: var(--moon-opacity-50);
-}
-
-.cp-todo-toggle-copy span:nth-child(2) {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--moon-opacity-85);
-}
-
-.cp-todo-badge {
-  padding: 1px 6px;
-  font-size: 9px;
-  font-weight: 600;
-  border-radius: 6px;
-  background: var(--tsukuyomi-opacity-15);
-  color: var(--tsukuyomi-opacity-90);
-}
-
-.cp-todo-chevron {
-  font-size: 11px;
-  color: var(--moon-opacity-50);
-  transition: transform 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.cp-todo-list {
-  max-height: 16rem;
-  overflow-y: auto;
-  border-top: 1px solid var(--white-opacity-6);
-  background: var(--white-opacity-3);
-}
-
-.cp-todo-empty {
-  padding: 10px 16px;
-  font-size: 11px;
-  color: var(--moon-opacity-40);
-  text-align: center;
-}
-
-.cp-todo-items {
-  padding: 6px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.cp-todo-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 8px;
-  transition: background 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.cp-todo-item:hover {
-  background: var(--white-opacity-4);
-}
-
-.cp-todo-item--done {
-  opacity: 0.55;
-}
-
-.cp-todo-item--working {
-  border-left: 2px solid var(--tsukuyomi-opacity-50);
-  padding-left: 6px;
-}
-
-.cp-todo-icon {
-  margin-top: 2px;
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.cp-todo-item--done .cp-todo-icon {
-  color: rgba(134, 239, 172, 0.8);
-}
-
-.cp-todo-item--working .cp-todo-icon {
-  color: var(--tsukuyomi-opacity-90);
-}
-
-.cp-todo-item:not(.cp-todo-item--done):not(.cp-todo-item--working) .cp-todo-icon {
-  color: var(--moon-opacity-40);
-}
-
-.cp-todo-text {
-  font-size: 11px;
-  flex: 1;
-  word-break: break-word;
-  color: var(--moon-opacity-70);
-}
-
-.cp-todo-text--done {
-  text-decoration: line-through;
-  color: var(--moon-opacity-40);
-}
-
-.cp-todo-text--working {
-  color: var(--tsukuyomi-opacity-95);
-  font-weight: 500;
 }
 
 .cp-messages {
@@ -626,9 +409,5 @@ const close = () => ui.closeRightPanel();
 
 .cp-send--stop {
   background: var(--color-danger);
-}
-
-.cp-send i {
-  font-size: 13px;
 }
 </style>

@@ -1,66 +1,21 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { injectHelpPage } from 'src/composables/help-page/useHelpPage';
-import { APP_NAME } from 'src/constants/app';
+import HelpDesktopNav from './HelpDesktopNav.vue';
+import HelpDesktopLanding from './HelpDesktopLanding.vue';
 
 const ctx = injectHelpPage();
+
+// 把 currentDoc 的可选链收进脚本侧，降低模板圈复杂度
+const currentDocCategory = computed(() => ctx.currentDoc.value?.category);
+const currentDocTitle = computed(() => ctx.currentDoc.value?.title);
+const currentDocDescription = computed(() => ctx.currentDoc.value?.description);
 </script>
 
 <template>
   <div class="help-desktop">
-    <!-- 左侧：文档导航 -->
-    <aside class="help-nav">
-      <header class="help-nav-brand">
-        <div class="help-nav-brand-icon">
-          <i class="pi pi-book" aria-hidden="true" />
-        </div>
-        <div class="help-nav-brand-text">
-          <span class="help-nav-brand-eyebrow">HELP CENTER</span>
-          <span class="help-nav-brand-title">帮助中心</span>
-        </div>
-      </header>
-
-      <nav class="help-nav-tree">
-        <div
-          v-for="(docs, category) in ctx.groupedDocuments.value"
-          :key="category"
-          class="help-nav-group"
-        >
-          <button
-            type="button"
-            class="help-nav-group-head"
-            @click="ctx.toggleCategory(category as string)"
-          >
-            <span class="help-nav-group-label">{{ category }}</span>
-            <i
-              class="pi help-nav-group-chev"
-              :class="
-                ctx.expandedCategories.value.has(category as string)
-                  ? 'pi-chevron-down'
-                  : 'pi-chevron-right'
-              "
-              aria-hidden="true"
-            />
-          </button>
-          <ul
-            v-show="ctx.expandedCategories.value.has(category as string)"
-            class="help-nav-group-list"
-          >
-            <li v-for="doc in docs" :key="doc.id">
-              <button
-                type="button"
-                class="help-nav-item"
-                :class="{
-                  'help-nav-item--active': ctx.currentDoc.value?.id === doc.id,
-                }"
-                @click="ctx.navigateToDocument(doc)"
-              >
-                {{ doc.title }}
-              </button>
-            </li>
-          </ul>
-        </div>
-      </nav>
-    </aside>
+    <!-- 左侧：文档导航（抽出到 HelpDesktopNav） -->
+    <HelpDesktopNav />
 
     <!-- 右侧主内容 -->
     <main class="help-main">
@@ -81,64 +36,8 @@ const ctx = injectHelpPage();
         </div>
       </div>
 
-      <!-- 桌面落地态：未选中文档时的品牌化入口 -->
-      <div v-else-if="!ctx.currentDoc.value" class="help-landing">
-        <div class="help-landing-scroll">
-          <section class="hld-hero">
-            <img :src="ctx.logoPath" :alt="APP_NAME.full" class="hld-hero-logo" />
-            <div class="hld-hero-copy">
-              <span class="hld-hero-eyebrow">{{ APP_NAME.en }} · {{ APP_NAME.zh }}</span>
-              <h1 class="hld-hero-title">让每一次翻页，<span>都如月光般流畅。</span></h1>
-              <p class="hld-hero-desc">
-                专业的日本轻小说翻译工作台，面向 AI 协作翻译、校对润色、术语 /
-                角色 / 记忆管理等连续工作场景设计。
-              </p>
-            </div>
-          </section>
-
-          <section class="hld-section">
-            <div class="hld-section-head">
-              <span class="hld-section-eyebrow">QUICK START</span>
-              <h2 class="hld-section-title">快速开始</h2>
-            </div>
-            <ol class="hld-steps">
-              <li v-for="step in ctx.quickStartSteps" :key="step.n" class="hld-step">
-                <span class="hld-step-num">{{ step.n }}</span>
-                <div class="hld-step-body">
-                  <span class="hld-step-title">{{ step.t }}</span>
-                  <span class="hld-step-desc">{{ step.d }}</span>
-                </div>
-              </li>
-            </ol>
-          </section>
-
-          <section class="hld-section">
-            <div class="hld-section-head">
-              <span class="hld-section-eyebrow">TOPICS</span>
-              <h2 class="hld-section-title">主题入口</h2>
-            </div>
-            <div class="hld-topics">
-              <button
-                v-for="topic in ctx.topicTiles.value"
-                :key="topic.label"
-                type="button"
-                class="hld-topic"
-                :disabled="!topic.doc"
-                @click="topic.doc && ctx.navigateToDocument(topic.doc)"
-              >
-                <span class="hld-topic-icon">
-                  <i :class="['pi', topic.icon]" aria-hidden="true" />
-                </span>
-                <span class="hld-topic-label">{{ topic.label }}</span>
-                <span v-if="topic.doc" class="hld-topic-hint">
-                  {{ topic.doc.title }}
-                </span>
-                <span v-else class="hld-topic-hint hld-topic-hint--muted">暂未收录</span>
-              </button>
-            </div>
-          </section>
-        </div>
-      </div>
+      <!-- 桌面落地态：未选中文档时的品牌化入口（抽出到 HelpDesktopLanding） -->
+      <HelpDesktopLanding v-else-if="!ctx.currentDoc.value" />
 
       <!-- 文档阅读态：TOC + 正文 -->
       <div v-else class="help-reader">
@@ -174,12 +73,12 @@ const ctx = injectHelpPage();
                 <span class="help-article-crumb-eyebrow">HELP</span>
                 <span class="help-article-crumb-sep" aria-hidden="true" />
                 <span class="help-article-crumb-category">
-                  {{ ctx.currentDoc.value?.category }}
+                  {{ currentDocCategory }}
                 </span>
               </div>
-              <h1 class="help-article-title">{{ ctx.currentDoc.value?.title }}</h1>
-              <p v-if="ctx.currentDoc.value?.description" class="help-article-desc">
-                {{ ctx.currentDoc.value?.description }}
+              <h1 class="help-article-title">{{ currentDocTitle }}</h1>
+              <p v-if="currentDocDescription" class="help-article-desc">
+                {{ currentDocDescription }}
               </p>
             </header>
 
@@ -198,154 +97,6 @@ const ctx = injectHelpPage();
   display: flex;
   overflow: hidden;
   position: relative;
-}
-
-/* ──────── 左侧导航 ──────── */
-.help-nav {
-  width: 17rem;
-  height: 100%;
-  flex-shrink: 0;
-  border-right: 1px solid var(--white-opacity-6);
-  background: var(--shell-opacity-45); /* token: night-500 @ 45% */
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.help-nav-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.95rem 1rem 0.85rem;
-  border-bottom: 1px solid var(--white-opacity-6);
-  flex-shrink: 0;
-}
-
-.help-nav-brand-icon {
-  width: 2.2rem;
-  height: 2.2rem;
-  border-radius: 7px;
-  background: var(--tsukuyomi-opacity-14); /* token: tsukuyomi-500 @ 14% */
-  border: 1px solid var(--tsukuyomi-opacity-22);
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.help-nav-brand-icon .pi {
-  font-size: 1rem;
-}
-
-.help-nav-brand-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.help-nav-brand-eyebrow {
-  font-family:
-    'Noto Sans SC',
-    'PingFang SC',
-    -apple-system,
-    sans-serif;
-  font-size: 0.56rem;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--accent-silver);
-}
-
-.help-nav-brand-title {
-  font-family:
-    'Noto Serif JP',
-    'Songti SC',
-    serif;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--moon-opacity-95);
-}
-
-.help-nav-tree {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0.75rem 0.6rem 1rem;
-}
-
-.help-nav-group {
-  margin-bottom: 0.5rem;
-}
-
-.help-nav-group-head {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.4rem 0.55rem;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: var(--accent-silver);
-  transition: color 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.help-nav-group-head:hover {
-  color: var(--moon-opacity-100);
-}
-
-.help-nav-group-label {
-  font-family:
-    'Noto Sans SC',
-    'PingFang SC',
-    -apple-system,
-    sans-serif;
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
-
-.help-nav-group-chev {
-  font-size: 0.55rem;
-  opacity: 0.55;
-}
-
-.help-nav-group-list {
-  list-style: none;
-  margin: 0.2rem 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.12rem;
-}
-
-.help-nav-item {
-  width: 100%;
-  text-align: left;
-  padding: 0.5rem 0.7rem;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--moon-50-opacity-72); /* token: moon-50 @ 72% */
-  font-family: inherit;
-  font-size: 0.82rem;
-  cursor: pointer;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
-  line-height: 1.35;
-}
-
-.help-nav-item:hover {
-  background: var(--white-opacity-4);
-  color: var(--moon-opacity-100);
-}
-
-.help-nav-item--active {
-  background: var(--tsukuyomi-200-opacity-8); /* token: tsukuyomi-200 @ 8% */
-  border-color: var(--tsukuyomi-300-opacity-22);
-  color: var(--moon-opacity-100);
 }
 
 /* ──────── 主内容 ──────── */
@@ -415,250 +166,6 @@ const ctx = injectHelpPage();
 
 .help-state-card-retry:hover {
   background: var(--red-500-opacity-28); /* token: red-500 @ 28% */
-}
-
-/* ──────── 落地态 ──────── */
-.help-landing {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.help-landing-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 2rem 2.25rem 3rem;
-  max-width: 68rem;
-  width: 100%;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2.25rem;
-}
-
-.hld-hero {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 1.25rem;
-  align-items: center;
-  padding: 2.25rem 0 1.5rem;
-  border-bottom: 1px solid var(--white-opacity-6);
-}
-
-.hld-hero-logo {
-  width: 4.25rem;
-  height: 4.25rem;
-  border-radius: 12px;
-  opacity: 0.95;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-
-.hld-hero-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  min-width: 0;
-}
-
-.hld-hero-eyebrow {
-  font-family:
-    'Noto Sans SC',
-    'PingFang SC',
-    -apple-system,
-    sans-serif;
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: var(--accent-silver);
-}
-
-.hld-hero-title {
-  margin: 0;
-  font-family:
-    'Noto Serif JP',
-    'Songti SC',
-    serif;
-  font-size: clamp(1.55rem, 1vw + 1.3rem, 2rem);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.2;
-  color: var(--moon-opacity-100);
-}
-
-.hld-hero-title span {
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-}
-
-.hld-hero-desc {
-  margin: 0.35rem 0 0;
-  font-size: 0.88rem;
-  line-height: 1.6;
-  color: var(--moon-opacity-70);
-  max-width: 42rem;
-}
-
-.hld-section {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.hld-section-head {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.hld-section-eyebrow {
-  font-family:
-    'Noto Sans SC',
-    'PingFang SC',
-    -apple-system,
-    sans-serif;
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--accent-silver);
-}
-
-.hld-section-title {
-  margin: 0;
-  font-family:
-    'Noto Serif JP',
-    'Songti SC',
-    serif;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--moon-opacity-95);
-}
-
-.hld-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: 0.85rem;
-}
-
-.hld-step {
-  display: flex;
-  gap: 0.85rem;
-  padding: 1rem 1.1rem;
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 10px;
-  background: var(--shell-opacity-50); /* token: night-500 @ 50% */
-  transition: border-color 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.hld-step:hover {
-  border-color: var(--tsukuyomi-300-opacity-22);
-}
-
-.hld-step-num {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.88rem;
-  font-weight: 700;
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-  width: 1.5rem;
-}
-
-.hld-step-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-.hld-step-title {
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--moon-opacity-95);
-}
-
-.hld-step-desc {
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: var(--moon-opacity-60);
-}
-
-.hld-topics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: 0.75rem;
-}
-
-.hld-topic {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
-  align-items: center;
-  column-gap: 0.85rem;
-  row-gap: 0.15rem;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 10px;
-  background: var(--shell-opacity-50); /* token: night-500 @ 50% */
-  color: inherit;
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.hld-topic:hover:not(:disabled) {
-  border-color: var(--tsukuyomi-200-opacity-30); /* token: tsukuyomi-200 @ 30% */
-  background: var(--tsukuyomi-200-opacity-5); /* token: tsukuyomi-200 @ 5% */
-  transform: translateY(-1px);
-}
-
-.hld-topic:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.hld-topic-icon {
-  grid-row: 1 / span 2;
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: 7px;
-  background: var(--tsukuyomi-opacity-10);
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hld-topic-icon .pi {
-  font-size: 0.95rem;
-}
-
-.hld-topic-label {
-  grid-column: 2;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--moon-opacity-95);
-}
-
-.hld-topic-hint {
-  grid-column: 2;
-  font-size: 0.72rem;
-  color: var(--moon-opacity-55);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hld-topic-hint--muted {
-  color: var(--accent-opacity-30); /* token: accent-silver(var(--accent-500)) @ 30% */
-  font-style: italic;
 }
 
 /* ──────── 阅读态 ──────── */

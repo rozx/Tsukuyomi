@@ -1,4 +1,3 @@
-// fallow-ignore-next-line unresolved-import
 import { defineBoot } from '#q-app/wrappers';
 
 /**

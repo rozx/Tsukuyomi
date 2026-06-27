@@ -166,6 +166,23 @@ export interface AssistantResult {
 }
 
 /**
+ * token 限制恢复流程的入参，attemptTokenLimitRecovery / tryRecoverFromTokenLimitError 共用
+ */
+interface TokenLimitRecoveryParams {
+  error: unknown;
+  model: AIModel;
+  tools: AITool[];
+  options: AssistantServiceOptions;
+  systemPrompt: string;
+  userMessage: string;
+  context: ReturnType<typeof useContextStore>['getContext'];
+  finalSignal: AbortSignal | undefined;
+  aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined;
+  taskId: string | undefined;
+  sessionId: string | undefined;
+}
+
+/**
  * Assistant 服务
  * 提供智能助手功能，可以使用所有可用的 AI 工具，并基于用户当前上下文提供帮助
  */
@@ -334,26 +351,7 @@ export class AssistantService {
    */
   private static isTokenLimitError(error: unknown): boolean {
     if (!error) return false;
-    let errorMessage = '';
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (typeof error === 'string') {
-      errorMessage = error;
-    } else if (error && typeof error === 'object' && 'message' in error) {
-      errorMessage = String(error.message);
-    } else {
-      errorMessage = JSON.stringify(error);
-    }
-    const lowerMessage = errorMessage.toLowerCase();
-    // 检查常见的 token 限制错误关键词
-    return (
-      lowerMessage.includes('token') &&
-      (lowerMessage.includes('limit') ||
-        lowerMessage.includes('exceed') ||
-        lowerMessage.includes('maximum') ||
-        lowerMessage.includes('too long') ||
-        lowerMessage.includes('context length'))
-    );
+    return messageIndicatesTokenLimit(extractErrorMessage(error).toLowerCase());
   }
 
   /**
@@ -667,31 +665,64 @@ export class AssistantService {
       }
 
       // 保存思考内容到任务面板
-      if (aiProcessingStore && taskId && chunk.reasoningContent) {
-        await aiProcessingStore.appendThinkingMessage(taskId, chunk.reasoningContent);
-      }
+      await this.forwardReasoningToTask(aiProcessingStore, taskId, chunk.reasoningContent);
 
       // 追加输出内容到任务面板（仅初始请求）
-      if (appendOutput && aiProcessingStore && taskId && chunk.text) {
-        await aiProcessingStore.appendOutputContent(taskId, chunk.text);
-      }
+      await this.forwardOutputToTask(aiProcessingStore, taskId, appendOutput, chunk.text);
 
       // 将思考内容传递到聊天界面
-      if (onThinkingChunk && chunk.reasoningContent) {
-        await onThinkingChunk(chunk.reasoningContent);
-      }
+      await this.forwardReasoningToUI(onThinkingChunk, chunk.reasoningContent);
 
       // 调用用户回调（过滤掉思考内容）
-      if (onChunk) {
-        const filteredChunk: TextGenerationChunk = {
-          text: chunk.text || '',
-          done: chunk.done,
-          ...(chunk.model ? { model: chunk.model } : {}),
-          ...(chunk.toolCalls ? { toolCalls: chunk.toolCalls } : {}),
-        };
-        await onChunk(filteredChunk);
-      }
+      await this.forwardUserChunk(onChunk, chunk);
     };
+  }
+
+  private static async forwardReasoningToTask(
+    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined,
+    taskId: string | undefined,
+    reasoningContent: string | undefined,
+  ): Promise<void> {
+    if (aiProcessingStore && taskId && reasoningContent) {
+      await aiProcessingStore.appendThinkingMessage(taskId, reasoningContent);
+    }
+  }
+
+  private static async forwardOutputToTask(
+    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined,
+    taskId: string | undefined,
+    appendOutput: boolean | undefined,
+    text: string | undefined,
+  ): Promise<void> {
+    if (appendOutput && aiProcessingStore && taskId && text) {
+      await aiProcessingStore.appendOutputContent(taskId, text);
+    }
+  }
+
+  private static async forwardReasoningToUI(
+    onThinkingChunk: ((text: string) => void | Promise<void>) | undefined,
+    reasoningContent: string | undefined,
+  ): Promise<void> {
+    if (onThinkingChunk && reasoningContent) {
+      await onThinkingChunk(reasoningContent);
+    }
+  }
+
+  private static buildFilteredUserChunk(chunk: TextGenerationChunk): TextGenerationChunk {
+    return {
+      text: chunk.text || '',
+      done: chunk.done,
+      ...(chunk.model ? { model: chunk.model } : {}),
+      ...(chunk.toolCalls ? { toolCalls: chunk.toolCalls } : {}),
+    };
+  }
+
+  private static async forwardUserChunk(
+    onChunk: TextGenerationStreamCallback | undefined,
+    chunk: TextGenerationChunk,
+  ): Promise<void> {
+    if (!onChunk) return;
+    await onChunk(this.buildFilteredUserChunk(chunk));
   }
 
   /**
@@ -1452,7 +1483,7 @@ export class AssistantService {
     const { messages, systemPrompt, userMessage, model, toolSchemaTokens, effectiveMaxTokens } =
       params;
 
-    let currentEstimatedTokens =
+    const currentEstimatedTokens =
       estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
     let finalMaxTokens = effectiveMaxTokens;
 
@@ -1471,8 +1502,59 @@ export class AssistantService {
     }
 
     // 消息已超出上下文窗口，需要逐步缩减
+    const { reducedMessages, finalEstimatedTokens } = this.shrinkMessagesToFit({
+      messages,
+      systemPrompt,
+      userMessage,
+      model,
+      toolSchemaTokens,
+      initialTokens: currentEstimatedTokens,
+    });
+
+    messages.length = 0;
+    messages.push(...reducedMessages);
+
+    const newAvailable = model.maxInputTokens - finalEstimatedTokens;
+    finalMaxTokens =
+      newAvailable > 0
+        ? Math.floor(newAvailable * 0.9)
+        : Math.floor(model.maxInputTokens * 0.1);
+
+    return { finalMaxTokens };
+  }
+
+  /**
+   * 单次缩减：保留首尾消息（system / user），中间历史保留 50%
+   */
+  private static reduceMessagesOnce(
+    reducedMessages: ChatMessage[],
+  ): ChatMessage[] | null {
+    const systemMsg = reducedMessages[0];
+    const userMsg = reducedMessages[reducedMessages.length - 1];
+    if (!systemMsg || !userMsg) return null;
+
+    const historyMessages = reducedMessages.slice(1, -1);
+    const keepCount = Math.max(0, Math.floor(historyMessages.length * 0.5));
+    const recentMessages = keepCount > 0 ? historyMessages.slice(-keepCount) : [];
+
+    return [systemMsg, ...recentMessages, userMsg];
+  }
+
+  /**
+   * 逐步缩减消息历史直到符合预算（或在极限情况下退化为 [system, user]）
+   */
+  private static shrinkMessagesToFit(params: {
+    messages: ChatMessage[];
+    systemPrompt: string;
+    userMessage: string;
+    model: AIModel;
+    toolSchemaTokens: number;
+    initialTokens: number;
+  }): { reducedMessages: ChatMessage[]; finalEstimatedTokens: number } {
+    const { messages, systemPrompt, userMessage, model, toolSchemaTokens, initialTokens } = params;
+
     console.warn(
-      `[AssistantService] 消息太大 (${currentEstimatedTokens} tokens, 含工具 schema ${toolSchemaTokens})，缩减消息历史`,
+      `[AssistantService] 消息太大 (${initialTokens} tokens, 含工具 schema ${toolSchemaTokens})，缩减消息历史`,
     );
 
     const requiredForCompletion = Math.min(
@@ -1482,6 +1564,7 @@ export class AssistantService {
     const maxAllowedForMessages = model.maxInputTokens - requiredForCompletion;
 
     let reducedMessages = [...messages];
+    let currentEstimatedTokens = initialTokens;
     let attemptCount = 0;
 
     while (
@@ -1489,15 +1572,10 @@ export class AssistantService {
       attemptCount < 20 &&
       reducedMessages.length > 2
     ) {
-      const systemMsg = reducedMessages[0];
-      const userMsg = reducedMessages[reducedMessages.length - 1];
-      if (!systemMsg || !userMsg) break;
+      const next = this.reduceMessagesOnce(reducedMessages);
+      if (!next) break;
 
-      const historyMessages = reducedMessages.slice(1, -1);
-      const keepCount = Math.max(0, Math.floor(historyMessages.length * 0.5));
-      const recentMessages = keepCount > 0 ? historyMessages.slice(-keepCount) : [];
-
-      reducedMessages = [systemMsg, ...recentMessages, userMsg];
+      reducedMessages = next;
       currentEstimatedTokens =
         estimateMessagesTokenCount(reducedMessages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
         toolSchemaTokens;
@@ -1522,16 +1600,7 @@ export class AssistantService {
       );
     }
 
-    messages.length = 0;
-    messages.push(...reducedMessages);
-
-    const newAvailable = model.maxInputTokens - currentEstimatedTokens;
-    finalMaxTokens =
-      newAvailable > 0
-        ? Math.floor(newAvailable * 0.9)
-        : Math.floor(model.maxInputTokens * 0.1);
-
-    return { finalMaxTokens };
+    return { reducedMessages, finalEstimatedTokens: currentEstimatedTokens };
   }
 
   /**
@@ -2197,23 +2266,84 @@ export class AssistantService {
   }
 
   /**
-   * 若错误是 token 限制，尝试总结并重试；返回 undefined 表示继续向外抛错误
+   * 判断是否应尝试 token 限制恢复（错误类型 + 历史长度 + 模型存在上限）
    */
-  private static async tryRecoverFromTokenLimitError(params: {
-    error: unknown;
-    model: AIModel;
-    tools: AITool[];
+  private static shouldAttemptTokenRecovery(
+    error: unknown,
+    model: AIModel,
+    options: AssistantServiceOptions,
+  ): boolean {
+    if (!this.isTokenLimitError(error)) return false;
+    if (!options.messageHistory || options.messageHistory.length <= 2) return false;
+    // 注意：maxTokens=0 表示无限制，不应仅因 maxTokens=0 就触发摘要逻辑
+    const hasPositiveMaxTokensLimit =
+      model.maxOutputTokens > 0 && model.maxOutputTokens !== UNLIMITED_TOKENS;
+    const hasContextWindowLimit =
+      typeof model.maxInputTokens === 'number' && model.maxInputTokens > 0;
+    return hasPositiveMaxTokensLimit || hasContextWindowLimit;
+  }
+
+  /**
+   * 标记任务为「正在总结会话历史」
+   */
+  private static async markTaskSummarizing(
+    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined,
+    taskId: string | undefined,
+  ): Promise<void> {
+    if (!aiProcessingStore || !taskId) return;
+    await aiProcessingStore.updateTask(taskId, {
+      status: 'processing',
+      message: '检测到 token 限制错误，正在总结会话历史...',
+    });
+  }
+
+  /**
+   * 摘要失败时的降级策略：仅保留最近 5 条消息后重新发起完整请求
+   */
+  private static async fallbackToRecentMessages(params: {
     options: AssistantServiceOptions;
+    messageHistory: ChatMessage[];
     systemPrompt: string;
     userMessage: string;
+    model: AIModel;
+    tools: AITool[];
     context: ReturnType<typeof useContextStore>['getContext'];
-    finalSignal: AbortSignal | undefined;
-    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined;
-    taskId: string | undefined;
     sessionId: string | undefined;
-  }): Promise<AssistantResult | undefined> {
+    taskId: string | undefined;
+    finalSignal: AbortSignal | undefined;
+  }): Promise<AssistantResult> {
+    const { options, messageHistory, systemPrompt, userMessage, model, tools, context, sessionId, taskId, finalSignal } =
+      params;
+
+    console.warn('[AssistantService] 摘要失败，使用降级策略：只保留最近 5 条消息');
+    options.onSummarizingEnd?.();
+
+    const fallbackMessages = this.getFallbackMessages(messageHistory, 5);
+    const retryMessages: ChatMessage[] = [
+      { role: 'system', content: systemPrompt },
+      ...fallbackMessages.filter((msg) => msg.role !== 'system'),
+      { role: 'user', content: userMessage },
+    ];
+
+    return this.executeFullRequest({
+      model,
+      messages: retryMessages,
+      tools,
+      bookId: context.currentBookId,
+      options,
+      taskId,
+      sessionId,
+      signal: finalSignal,
+    });
+  }
+
+  /**
+   * 在确认需要恢复后执行摘要 / 重试流程；返回 undefined 表示无可用恢复路径
+   */
+  private static async attemptTokenLimitRecovery(
+    params: TokenLimitRecoveryParams,
+  ): Promise<AssistantResult | undefined> {
     const {
-      error,
       model,
       tools,
       options,
@@ -2226,87 +2356,78 @@ export class AssistantService {
       sessionId,
     } = params;
 
-    // 注意：maxTokens=0 表示无限制，不应仅因 maxTokens=0 就触发摘要逻辑
-    const hasPositiveMaxTokensLimit =
-      model.maxOutputTokens > 0 && model.maxOutputTokens !== UNLIMITED_TOKENS;
-    const hasContextWindowLimit =
-      typeof model.maxInputTokens === 'number' && model.maxInputTokens > 0;
+    if (finalSignal?.aborted) {
+      throw new Error('请求已取消');
+    }
 
-    if (
-      !(
-        this.isTokenLimitError(error) &&
-        options.messageHistory &&
-        options.messageHistory.length > 2 &&
-        (hasPositiveMaxTokensLimit || hasContextWindowLimit)
-      )
-    ) {
+    // shouldAttemptTokenRecovery 已保证 messageHistory 存在且长度 > 2，这里重新取值以收窄类型
+    const messageHistory = options.messageHistory;
+    if (!messageHistory) {
+      return undefined;
+    }
+
+    await this.markTaskSummarizing(aiProcessingStore, taskId);
+
+    const messagesToSummarize = this.buildMessagesToSummarize(messageHistory, false);
+    if (messagesToSummarize.length === 0) {
+      return undefined;
+    }
+
+    const summaryResult = await this.dispatchSummaryReset({
+      model,
+      systemPrompt,
+      userMessage,
+      messagesToSummarize,
+      context,
+      finalSignal,
+      aiProcessingStore,
+      taskId,
+      options,
+    });
+
+    if (summaryResult && summaryResult.summary) {
+      return this.finalizeSummarySuccess({
+        summary: summaryResult.summary,
+        model,
+        tools,
+        systemPrompt,
+        userMessage,
+        context,
+        options,
+        taskId,
+        sessionId,
+        finalSignal,
+      });
+    }
+
+    return this.fallbackToRecentMessages({
+      options,
+      messageHistory,
+      systemPrompt,
+      userMessage,
+      model,
+      tools,
+      context,
+      sessionId,
+      taskId,
+      finalSignal,
+    });
+  }
+
+  /**
+   * 若错误是 token 限制，尝试总结并重试；返回 undefined 表示继续向外抛错误
+   */
+  private static async tryRecoverFromTokenLimitError(
+    params: TokenLimitRecoveryParams,
+  ): Promise<AssistantResult | undefined> {
+    const { error, model, options } = params;
+
+    if (!this.shouldAttemptTokenRecovery(error, model, options)) {
       return undefined;
     }
 
     try {
-      if (finalSignal?.aborted) {
-        throw new Error('请求已取消');
-      }
-
-      if (aiProcessingStore && taskId) {
-        await aiProcessingStore.updateTask(taskId, {
-          status: 'processing',
-          message: '检测到 token 限制错误，正在总结会话历史...',
-        });
-      }
-
-      const messagesToSummarize = this.buildMessagesToSummarize(options.messageHistory, false);
-      if (messagesToSummarize.length === 0) {
-        return undefined;
-      }
-
-      const summaryResult = await this.dispatchSummaryReset({
-        model,
-        systemPrompt,
-        userMessage,
-        messagesToSummarize,
-        context,
-        finalSignal,
-        aiProcessingStore,
-        taskId,
-        options,
-      });
-
-      if (summaryResult && summaryResult.summary) {
-        return this.finalizeSummarySuccess({
-          summary: summaryResult.summary,
-          model,
-          tools,
-          systemPrompt,
-          userMessage,
-          context,
-          options,
-          taskId,
-          sessionId,
-          finalSignal,
-        });
-      }
-
-      console.warn('[AssistantService] 摘要失败，使用降级策略：只保留最近 5 条消息');
-      options.onSummarizingEnd?.();
-
-      const fallbackMessages = this.getFallbackMessages(options.messageHistory, 5);
-      const retryMessages: ChatMessage[] = [
-        { role: 'system', content: systemPrompt },
-        ...fallbackMessages.filter((msg) => msg.role !== 'system'),
-        { role: 'user', content: userMessage },
-      ];
-
-      return await this.executeFullRequest({
-        model,
-        messages: retryMessages,
-        tools,
-        bookId: context.currentBookId,
-        options,
-        taskId,
-        sessionId,
-        signal: finalSignal,
-      });
+      return await this.attemptTokenLimitRecovery(params);
     } catch (summaryError) {
       console.error('[AssistantService] ❌ 总结会话失败', summaryError);
       return undefined;
@@ -2341,4 +2462,30 @@ export class AssistantService {
       });
     }
   }
+}
+
+/**
+ * 从任意错误中提取可打印的消息字符串
+ */
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String(error.message);
+  }
+  return JSON.stringify(error);
+}
+
+/**
+ * 检查（小写的）错误消息是否包含常见的 token 限制关键词
+ */
+function messageIndicatesTokenLimit(lowerMessage: string): boolean {
+  return (
+    lowerMessage.includes('token') &&
+    (lowerMessage.includes('limit') ||
+      lowerMessage.includes('exceed') ||
+      lowerMessage.includes('maximum') ||
+      lowerMessage.includes('too long') ||
+      lowerMessage.includes('context length'))
+  );
 }

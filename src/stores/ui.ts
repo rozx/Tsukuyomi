@@ -89,7 +89,6 @@ export const useUiStore = defineStore('ui', {
     bookWorkspaceMode: BookWorkspaceMode;
     bookSettingsMenuExpanded: boolean;
     isLoaded: boolean;
-    isInitialDataLoading: boolean;
     assistantInputMessage: string | null; // 要复制到助手输入框的消息
     activeRightTab: ActiveRightTab; // 右侧面板当前激活的 Tab
   } => ({
@@ -100,7 +99,6 @@ export const useUiStore = defineStore('ui', {
     bookWorkspaceMode: DEFAULT_BOOK_WORKSPACE_MODE,
     bookSettingsMenuExpanded: true,
     isLoaded: false,
-    isInitialDataLoading: false,
     assistantInputMessage: null,
     activeRightTab: 'chat',
   }),
@@ -133,16 +131,8 @@ export const useUiStore = defineStore('ui', {
       this.sideMenuOpen = !this.sideMenuOpen;
       this.saveState();
     },
-    openSideMenu() {
-      this.sideMenuOpen = true;
-      this.saveState();
-    },
     closeSideMenu() {
       this.sideMenuOpen = false;
-      this.saveState();
-    },
-    toggleRightPanel() {
-      this.rightPanelOpen = !this.rightPanelOpen;
       this.saveState();
     },
     openRightPanel() {
@@ -178,9 +168,6 @@ export const useUiStore = defineStore('ui', {
         bookSettingsMenuExpanded: this.bookSettingsMenuExpanded,
         activeRightTab: this.activeRightTab,
       });
-    },
-    setInitialDataLoading(loading: boolean) {
-      this.isInitialDataLoading = loading;
     },
     /**
      * 设置要复制到助手输入框的消息

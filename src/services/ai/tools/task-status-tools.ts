@@ -189,6 +189,25 @@ interface ReviewCheckFailure {
 }
 
 /**
+ * 在本块段落中找出"非空且尚未提交翻译"的段落 ID（用于 review 完整性校验）
+ */
+function findMissingNonEmptyParagraphIds(
+  paragraphIdsToCheck: string[],
+  paragraphTextMap: Map<string, string>,
+  accumulatedParagraphs: Map<string, string>,
+): string[] {
+  const missingIds: string[] = [];
+  for (const pId of paragraphIdsToCheck) {
+    const text = paragraphTextMap.get(pId);
+    const isNonEmpty = text && text.trim().length > 0;
+    if (isNonEmpty && !accumulatedParagraphs.has(pId)) {
+      missingIds.push(pId);
+    }
+  }
+  return missingIds;
+}
+
+/**
  * 使用 accumulatedParagraphs 进行 review 校验（最准确，避免 skipSave 竞态）
  * 返回 null 表示通过或无法完整判断需要回退到数据库检查；返回 {error} 表示检查失败
  */
@@ -212,14 +231,11 @@ async function checkReviewWithAccumulated(params: {
 
   if (fullContent) {
     const paragraphTextMap = new Map(fullContent.map((p) => [p.id, p.text]));
-    const missingIds: string[] = [];
-    for (const pId of paragraphIdsToCheck) {
-      const text = paragraphTextMap.get(pId);
-      const isNonEmpty = text && text.trim().length > 0;
-      if (isNonEmpty && !accumulatedParagraphs.has(pId)) {
-        missingIds.push(pId);
-      }
-    }
+    const missingIds = findMissingNonEmptyParagraphIds(
+      paragraphIdsToCheck,
+      paragraphTextMap,
+      accumulatedParagraphs,
+    );
     if (missingIds.length > 0) {
       return {
         error: `无法提交复核：当前分块内仍有 ${missingIds.length} 个非空段落未翻译 (ID: ${formatMissingIds(missingIds)})`,

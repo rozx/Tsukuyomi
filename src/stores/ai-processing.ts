@@ -1,7 +1,7 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { toRaw } from 'vue';
 import { getDB } from 'src/utils/indexed-db';
-import { TASK_TYPE_LABELS, type AIWorkflowStatus } from 'src/constants/ai';
+import { type AIWorkflowStatus } from 'src/constants/ai';
 import { TodoListService } from 'src/services/todo-list-service';
 import co from 'co';
 
@@ -132,6 +132,48 @@ async function loadThinkingProcessesFromDB(): Promise<SerializableTask[]> {
 }
 
 /**
+ * 把 AIProcessingTask 折叠成可序列化的任务（排除 abortController）。
+ * 必填字段直接写入；可选字段仅在 raw 上有值时复制；progress 单独重建。
+ */
+function buildSerializableTask(raw: AIProcessingTask): SerializableTask {
+  const task: SerializableTask = {
+    id: raw.id,
+    type: raw.type,
+    modelName: raw.modelName,
+    status: raw.status,
+    startTime: raw.startTime,
+  };
+  const optionalFields: ReadonlyArray<keyof SerializableTask> = [
+    'workflowStatus',
+    'message',
+    'thinkingMessage',
+    'outputContent',
+    'contextTokens',
+    'contextWindow',
+    'contextPercentage',
+    'bookId',
+    'chapterId',
+    'chapterTitle',
+    'isSingleParagraph',
+    'endTime',
+  ];
+  const optional: Record<string, unknown> = {};
+  for (const key of optionalFields) {
+    const value = raw[key];
+    if (value !== undefined) optional[key] = value;
+  }
+  Object.assign(task, optional);
+  if (raw.progress !== undefined) {
+    task.progress = {
+      current: raw.progress.current,
+      total: raw.progress.total,
+      message: raw.progress.message,
+    };
+  }
+  return task;
+}
+
+/**
  * 保存思考过程到 IndexedDB
  */
 async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
@@ -139,30 +181,7 @@ async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
     const db = await getDB();
     // 使用 toRaw() 解除 Pinia reactive proxy，避免 IndexedDB structured clone 失败
     const raw = toRaw(task);
-    // 创建可序列化的副本，排除 abortController
-    const serializableTask: SerializableTask = {
-      id: raw.id,
-      type: raw.type,
-      modelName: raw.modelName,
-      status: raw.status,
-      ...(raw.workflowStatus !== undefined && { workflowStatus: raw.workflowStatus }),
-      ...(raw.message !== undefined && { message: raw.message }),
-      ...(raw.thinkingMessage !== undefined && { thinkingMessage: raw.thinkingMessage }),
-      ...(raw.outputContent !== undefined && { outputContent: raw.outputContent }),
-      ...(raw.contextTokens !== undefined && { contextTokens: raw.contextTokens }),
-      ...(raw.contextWindow !== undefined && { contextWindow: raw.contextWindow }),
-      ...(raw.contextPercentage !== undefined && { contextPercentage: raw.contextPercentage }),
-      ...(raw.bookId !== undefined && { bookId: raw.bookId }),
-      ...(raw.chapterId !== undefined && { chapterId: raw.chapterId }),
-      ...(raw.chapterTitle !== undefined && { chapterTitle: raw.chapterTitle }),
-      ...(raw.progress !== undefined && {
-        progress: { current: raw.progress.current, total: raw.progress.total, message: raw.progress.message },
-      }),
-      ...(raw.isSingleParagraph !== undefined && { isSingleParagraph: raw.isSingleParagraph }),
-      startTime: raw.startTime,
-      ...(raw.endTime !== undefined && { endTime: raw.endTime }),
-    };
-    await db.put('thinking-processes', serializableTask);
+    await db.put('thinking-processes', buildSerializableTask(raw));
   } catch (error) {
     // 记录错误但不抛出，避免阻塞任务流程
     console.error('Failed to save thinking process to DB:', error);
@@ -171,6 +190,40 @@ async function saveThinkingProcessToDB(task: AIProcessingTask): Promise<void> {
       console.warn('thinking-processes store may not exist. Database may need to be upgraded.');
     }
   }
+}
+
+/** 判断状态是否为终态（end / error / cancelled） */
+function isTerminalTaskStatus(status: AIProcessingTaskStatus | undefined): boolean {
+  return status === 'end' || status === 'error' || status === 'cancelled';
+}
+
+/** updateTask 终态收尾：写入 endTime、flush 节流缓冲、删除关联待办事项 */
+function finalizeTerminalTaskOnUpdate(id: string, task: AIProcessingTask): void {
+  task.endTime = Date.now();
+  // 清理节流信息（flush 尾部 pendingText 避免丢失最后的工具结果标记）
+  clearTaskThrottle(id, task);
+  // 删除关联的待办事项
+  try {
+    const deletedCount = TodoListService.deleteTodosByTaskId(id);
+    if (deletedCount > 0) {
+      console.log(
+        `[AIProcessingStore] 任务 ${id} 完成/取消，已删除 ${deletedCount} 个关联待办事项`,
+      );
+    }
+  } catch (error) {
+    console.error('[AIProcessingStore] 删除任务关联待办事项失败:', error);
+  }
+}
+
+/** 异步持久化任务到 IndexedDB（不阻塞调用方，失败仅记日志） */
+function persistTaskToDB(task: AIProcessingTask): void {
+  void co(function* () {
+    try {
+      yield saveThinkingProcessToDB(task);
+    } catch (error) {
+      console.error('Failed to update task in IndexedDB:', error);
+    }
+  });
 }
 
 /**
@@ -451,27 +504,6 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     allTasksList(state): AIProcessingTask[] {
       return [...state.activeTasks].sort((a, b) => b.startTime - a.startTime);
     },
-
-    /**
-     * 获取最新的思考过程消息
-     */
-    latestThinkingMessage(state): string | null {
-      const thinkingTasks = state.activeTasks.filter(
-        (task) => task.status === 'thinking' || task.status === 'processing',
-      );
-      if (thinkingTasks.length === 0) return null;
-      const latest = thinkingTasks.sort((a, b) => b.startTime - a.startTime)[0];
-      if (!latest) return null;
-
-      // 优先使用实际的思考消息
-      if (latest.thinkingMessage) {
-        // 获取最后一行
-        const lines = latest.thinkingMessage.split('\n').filter((line) => line.trim());
-        return lines.length > 0 ? lines[lines.length - 1] || null : latest.thinkingMessage;
-      }
-
-      return latest.message || `${latest.modelName} 正在思考...`;
-    },
   },
 
   actions: {
@@ -556,17 +588,10 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     },
 
     /**
-     * 获取任务类型的中文标签
-     */
-    getTaskTypeLabel(type: AIProcessingTask['type']): string {
-      return TASK_TYPE_LABELS[type] || type;
-    },
-
-    /**
      * 添加新的处理任务
      */
-    // eslint-disable-next-line @typescript-eslint/require-await
-    async addTask(task: Omit<AIProcessingTask, 'id' | 'startTime'>): Promise<string> {
+    // fallow-ignore-next-line unused-store-members
+    addTask(task: Omit<AIProcessingTask, 'id' | 'startTime'>): Promise<string> {
       const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const newTask: AIProcessingTask = {
         id,
@@ -596,7 +621,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           console.error('Failed to save task to IndexedDB:', error);
         }
       });
-      return id;
+      return Promise.resolve(id);
     },
 
     /**
@@ -605,44 +630,24 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     // eslint-disable-next-line @typescript-eslint/require-await
     async updateTask(id: string, updates: Partial<AIProcessingTask>): Promise<void> {
       const task = this.activeTasks.find((t) => t.id === id);
-      if (task) {
-        Object.assign(task, updates);
-        // 当任务状态从终态恢复为运行态时，清理 endTime，避免计时器被"卡住"显示旧的结束时间
-        if (updates.status && RUNNING_TASK_STATUSES.has(updates.status) && task.endTime !== undefined) {
-          delete task.endTime;
-        }
-        if (
-          updates.status === 'end' ||
-          updates.status === 'error' ||
-          updates.status === 'cancelled'
-        ) {
-          task.endTime = Date.now();
-          // 清理节流信息（flush 尾部 pendingText 避免丢失最后的工具结果标记）
-          clearTaskThrottle(id, task);
-          // 删除关联的待办事项
-          try {
-            const deletedCount = TodoListService.deleteTodosByTaskId(id);
-            if (deletedCount > 0) {
-              console.log(
-                `[AIProcessingStore] 任务 ${id} 完成/取消，已删除 ${deletedCount} 个关联待办事项`,
-              );
-            }
-          } catch (error) {
-            console.error('[AIProcessingStore] 删除任务关联待办事项失败:', error);
-          }
-        }
-        // 确保响应式更新
-        this.activeTasks = [...this.activeTasks];
-        // 保存到 IndexedDB（异步，不阻塞任务更新）
-        // 如果保存失败，任务仍然可以继续执行
-        void co(function* () {
-          try {
-            yield saveThinkingProcessToDB(task);
-          } catch (error) {
-            console.error('Failed to update task in IndexedDB:', error);
-          }
-        });
+      if (!task) return;
+
+      Object.assign(task, updates);
+      // 当任务状态从终态恢复为运行态时，清理 endTime，避免计时器被"卡住"显示旧的结束时间
+      if (
+        updates.status &&
+        RUNNING_TASK_STATUSES.has(updates.status) &&
+        task.endTime !== undefined
+      ) {
+        delete task.endTime;
       }
+      if (isTerminalTaskStatus(updates.status)) {
+        finalizeTerminalTaskOnUpdate(id, task);
+      }
+      // 确保响应式更新
+      this.activeTasks = [...this.activeTasks];
+      // 保存到 IndexedDB（异步，不阻塞任务更新）
+      persistTaskToDB(task);
     },
 
     /**
@@ -694,8 +699,8 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
      * 追加思考消息（用于流式响应）
      * 优化：内存更新走 300ms 节流，持久化走 1s 节流，两者彼此独立。
      */
-    // eslint-disable-next-line @typescript-eslint/require-await
-    async appendThinkingMessage(id: string, text: string): Promise<void> {
+    // fallow-ignore-next-line unused-store-members
+    appendThinkingMessage(id: string, text: string): Promise<void> {
       const task = this.activeTasks.find((t) => t.id === id);
       if (task) {
         // 使用节流更新，减少响应式更新频率
@@ -722,14 +727,15 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           this.activeTasks.find((t: AIProcessingTask) => t.id === id),
         );
       }
+      return Promise.resolve();
     },
 
     /**
      * 追加输出内容（用于流式输出）
      * 优化：直接修改属性让 Pinia 响应式自然工作，持久化走 1s 节流避免 IDB 写风暴。
      */
-    // eslint-disable-next-line @typescript-eslint/require-await
-    async appendOutputContent(id: string, text: string): Promise<void> {
+    // fallow-ignore-next-line unused-store-members
+    appendOutputContent(id: string, text: string): Promise<void> {
       const task = this.activeTasks.find((t) => t.id === id);
       if (task) {
         if (!task.outputContent) {
@@ -741,6 +747,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           this.activeTasks.find((t: AIProcessingTask) => t.id === id),
         );
       }
+      return Promise.resolve();
     },
 
     /**
@@ -794,15 +801,6 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
 
       this.activeTasks = [];
       await clearAllThinkingProcessesFromDB();
-    },
-
-    /**
-     * 停止所有正在进行的任务
-     */
-    async stopAllActiveTasks(): Promise<void> {
-      const activeTasks = this.activeTasksList;
-      // 并行停止所有活动任务
-      await Promise.all(activeTasks.map((task) => this.stopTask(task.id)));
     },
 
     /**

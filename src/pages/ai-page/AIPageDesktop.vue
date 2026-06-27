@@ -38,6 +38,14 @@ const pageSummary = computed(() => {
   }
   return '在桌面工具页里统一维护模型清单、默认任务和任务路由。';
 });
+// 模型徽章文案 / 严重度（吸收模板三元）
+const badgeValue = (model: { enabled: boolean }) => (model.enabled ? '已启用' : '已禁用');
+const badgeSeverity = (model: { enabled: boolean }) => (model.enabled ? 'success' : 'secondary');
+const emptyModelsText = computed(() =>
+  ctx.searchQuery.value ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型',
+);
+const hasNoSearch = computed(() => !ctx.searchQuery.value);
+const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0);
 </script>
 
 <template>
@@ -101,7 +109,7 @@ const pageSummary = computed(() => {
           :value="filteredProviderGroups"
           data-key="provider"
           :rows="10"
-          :paginator="filteredProviderGroups.length > 0"
+          :paginator="hasFilteredGroups"
           :rows-per-page-options="[5, 10, 20]"
           paginator-template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
           class="ai-data-view"
@@ -109,11 +117,9 @@ const pageSummary = computed(() => {
           <template #empty>
             <div class="ai-empty-state">
               <i class="pi pi-sparkles text-4xl text-moon/50 mb-4" />
-              <p class="text-moon/70">
-                {{ ctx.searchQuery.value ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型' }}
-              </p>
+              <p class="text-moon/70">{{ emptyModelsText }}</p>
               <Button
-                v-if="!ctx.searchQuery.value"
+                v-if="hasNoSearch"
                 label="添加第一个 AI 模型"
                 icon="pi pi-plus"
                 class="p-button-primary mt-4"
@@ -154,10 +160,7 @@ const pageSummary = computed(() => {
                       <div class="ai-model-copy">
                         <div class="ai-model-name-row">
                           <h3 class="ai-model-name">{{ model.name }}</h3>
-                          <Tag
-                            :value="model.enabled ? '已启用' : '已禁用'"
-                            :severity="model.enabled ? 'success' : 'secondary'"
-                          />
+                          <Tag :value="badgeValue(model)" :severity="badgeSeverity(model)" />
                         </div>
                         <p class="ai-model-subtitle">
                           {{ ctx.getProviderLabel(model.provider) }} · {{ model.model }}

@@ -107,6 +107,12 @@ function createHelpPageContext() {
     return groups;
   });
 
+  // 分类展开/选中态判定：被手机抽屉与平板导航列表共用，集中在此避免重复
+  const categoryChevron = (category: string) =>
+    expandedCategories.value.has(category) ? 'pi-chevron-down' : 'pi-chevron-right';
+  const isCategoryExpanded = (category: string) => expandedCategories.value.has(category);
+  const isActiveDoc = (doc: HelpDocument) => currentDoc.value?.id === doc.id;
+
   const renderer = new marked.Renderer();
   renderer.heading = (token: Token) => {
     if (token.type !== 'heading') return '';
@@ -337,6 +343,9 @@ function createHelpPageContext() {
     quickStartSteps,
     topicTiles,
     groupedDocuments,
+    categoryChevron,
+    isCategoryExpanded,
+    isActiveDoc,
     // actions
     loadDocumentIndex,
     navigateToDocument,

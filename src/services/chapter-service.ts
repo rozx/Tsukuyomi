@@ -211,11 +211,13 @@ function buildParagraphSearchResult(
   return { paragraph, paragraphIndex, chapter, chapterIndex, volume, volumeIndex };
 }
 
-function findParagraphInLoadedChapters(
+/**
+ * 遍历小说所有卷下的章节，逐个产出带卷/章索引的章节条目。
+ * 收敛 findParagraphInLoadedChapters / findParagraphLocation 共用的卷-章嵌套遍历骨架。
+ */
+function* iterateChapters(
   novel: Novel,
-  paragraphId: string,
-  chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[],
-): ParagraphSearchResult | null {
+): Generator<{ chapter: Chapter; volume: Volume; cIndex: number; vIndex: number }> {
   const volumes = novel.volumes || [];
   for (let vIndex = 0; vIndex < volumes.length; vIndex++) {
     const volume = volumes[vIndex];
@@ -223,18 +225,23 @@ function findParagraphInLoadedChapters(
     for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
       const chapter = volume.chapters[cIndex];
       if (!chapter) continue;
-      if (chapter.content === undefined) {
-        chaptersToLoad.push({ chapter, vIndex, cIndex });
-        continue;
-      }
-      if (!chapter.content) continue;
-      for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-        const paragraph = chapter.content[pIndex];
-        if (paragraph && paragraph.id === paragraphId) {
-          return buildParagraphSearchResult(paragraph, pIndex, chapter, cIndex, volume, vIndex);
-        }
-      }
+      yield { chapter, volume, cIndex, vIndex };
     }
+  }
+}
+
+function findParagraphInLoadedChapters(
+  novel: Novel,
+  paragraphId: string,
+  chaptersToLoad: { chapter: Chapter; vIndex: number; cIndex: number }[],
+): ParagraphSearchResult | null {
+  for (const { chapter, volume, cIndex, vIndex } of iterateChapters(novel)) {
+    if (chapter.content === undefined) {
+      chaptersToLoad.push({ chapter, vIndex, cIndex });
+      continue;
+    }
+    const hit = findParagraphInChapter(chapter, paragraphId, cIndex, volume, vIndex);
+    if (hit) return hit;
   }
   return null;
 }
@@ -266,6 +273,75 @@ function shouldPreserveExistingContent(existing: Chapter, incoming: Chapter): bo
   if (existing.content === undefined || existing.content === null) return false;
   if (incoming.content === undefined || incoming.content === null) return true;
   return Array.isArray(incoming.content) && incoming.content.length === 0;
+}
+
+/**
+ * findParagraphLocation 的内层扫描：在单个已加载章节的内容里查找段落，
+ * 命中则返回带完整位置信息的 ParagraphSearchResult，否则返回 null。
+ */
+function findParagraphInChapter(
+  chapter: Chapter,
+  paragraphId: string,
+  cIndex: number,
+  volume: Volume,
+  vIndex: number,
+): ParagraphSearchResult | null {
+  if (!chapter.content) return null;
+  for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
+    const paragraph = chapter.content[pIndex];
+    if (paragraph && paragraph.id === paragraphId) {
+      return buildParagraphSearchResult(paragraph, pIndex, chapter, cIndex, volume, vIndex);
+    }
+  }
+  return null;
+}
+
+/**
+ * findAdjacentChapter 的同卷分支：返回同卷内相邻章节，越界或不存在时返回 null。
+ */
+function findAdjacentInSameVolume(
+  volumes: NonNullable<Novel['volumes']>,
+  volumeIndex: number,
+  chapterIndex: number,
+  direction: -1 | 1,
+):
+  | { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number }
+  | null {
+  const currentVolume = volumes[volumeIndex];
+  if (!currentVolume) return null;
+  const nextInVolume = chapterIndex + direction;
+  const chapterCount = currentVolume.chapters?.length ?? 0;
+  const inBounds = direction === -1 ? nextInVolume >= 0 : nextInVolume < chapterCount;
+  if (!inBounds) return null;
+  const chapter = currentVolume.chapters?.[nextInVolume];
+  if (!chapter) return null;
+  return { chapter, volume: currentVolume, volumeIndex, chapterIndex: nextInVolume };
+}
+
+/** 判断卷是否包含至少一个可用章节 */
+function volumeHasChapters(volume: Volume | undefined): volume is Volume {
+  return !!volume?.chapters && volume.chapters.length > 0;
+}
+
+/**
+ * findAdjacentChapter 的跨卷分支：-1 向前找上一非空卷的末章，+1 向后找下一非空卷的首章。
+ */
+function findAdjacentAcrossVolumes(
+  volumes: NonNullable<Novel['volumes']>,
+  volumeIndex: number,
+  direction: -1 | 1,
+):
+  | { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number }
+  | null {
+  const end = direction === -1 ? -1 : volumes.length;
+  for (let vIdx = volumeIndex + direction; vIdx !== end; vIdx += direction) {
+    const volume = volumes[vIdx];
+    if (!volumeHasChapters(volume)) continue;
+    const cIdx = direction === -1 ? volume.chapters!.length - 1 : 0;
+    const chapter = volume.chapters![cIdx];
+    if (chapter) return { chapter, volume, volumeIndex: vIdx, chapterIndex: cIdx };
+  }
+  return null;
 }
 
 function applyChapterReplace(existing: Chapter, incoming: Chapter): Chapter {
@@ -783,38 +859,14 @@ export class ChapterService {
   ): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
     const current = ChapterService.locateCurrentChapter(novel, chapterId);
     if (!current) return null;
-    const { volumeIndex, chapterIndex } = current;
     const volumes = novel?.volumes;
     if (!volumes) return null;
 
-    // 同卷内相邻章节
-    const currentVolume = volumes[volumeIndex];
-    const nextInVolume = chapterIndex + direction;
-    const inBounds =
-      direction === -1
-        ? nextInVolume >= 0
-        : nextInVolume < (currentVolume?.chapters?.length ?? 0);
-    if (currentVolume && inBounds) {
-      const chapter = currentVolume.chapters?.[nextInVolume];
-      if (chapter) {
-        return { chapter, volume: currentVolume, volumeIndex, chapterIndex: nextInVolume };
-      }
-    }
-
-    // 跨卷查找：-1 找上一非空卷的末章，+1 找下一非空卷的首章
-    const end = direction === -1 ? -1 : volumes.length;
-    for (let vIdx = volumeIndex + direction; vIdx !== end; vIdx += direction) {
-      const volume = volumes[vIdx];
-      if (volume && volume.chapters && volume.chapters.length > 0) {
-        const cIdx = direction === -1 ? volume.chapters.length - 1 : 0;
-        const chapter = volume.chapters[cIdx];
-        if (chapter) {
-          return { chapter, volume, volumeIndex: vIdx, chapterIndex: cIdx };
-        }
-      }
-    }
-
-    return null;
+    // 同卷内相邻优先；否则跨卷查找
+    return (
+      findAdjacentInSameVolume(volumes, current.volumeIndex, current.chapterIndex, direction) ??
+      findAdjacentAcrossVolumes(volumes, current.volumeIndex, direction)
+    );
   }
 
   /**
@@ -1521,32 +1573,13 @@ export class ChapterService {
     novel: Novel | null | undefined,
     paragraphId: string,
   ): ParagraphSearchResult | null {
-    if (!novel || !novel.volumes || !paragraphId) {
+    if (!novel?.volumes || !paragraphId) {
       return null;
     }
 
-    for (let vIndex = 0; vIndex < novel.volumes.length; vIndex++) {
-      const volume = novel.volumes[vIndex];
-      if (!volume || !volume.chapters) continue;
-
-      for (let cIndex = 0; cIndex < volume.chapters.length; cIndex++) {
-        const chapter = volume.chapters[cIndex];
-        if (!chapter || !chapter.content) continue;
-
-        for (let pIndex = 0; pIndex < chapter.content.length; pIndex++) {
-          const paragraph = chapter.content[pIndex];
-          if (paragraph && paragraph.id === paragraphId) {
-            return {
-              paragraph,
-              paragraphIndex: pIndex,
-              chapter,
-              chapterIndex: cIndex,
-              volume,
-              volumeIndex: vIndex,
-            };
-          }
-        }
-      }
+    for (const { chapter, volume, cIndex, vIndex } of iterateChapters(novel)) {
+      const hit = findParagraphInChapter(chapter, paragraphId, cIndex, volume, vIndex);
+      if (hit) return hit;
     }
 
     return null;

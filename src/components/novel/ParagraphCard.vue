@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue';
-import Popover from 'primevue/popover';
 import Inplace from 'primevue/inplace';
 import Skeleton from 'primevue/skeleton';
 import Textarea from 'primevue/textarea';
 import Button from 'primevue/button';
 import type { Paragraph, Terminology, CharacterSetting } from 'src/models/novel';
 import TranslationHistoryDialog from 'src/components/dialogs/TranslationHistoryDialog.vue';
+import ParagraphPopovers from 'src/components/novel/ParagraphPopovers.vue';
+import ParagraphHighlightedText from 'src/components/novel/ParagraphHighlightedText.vue';
 import { useContextStore } from 'src/stores/context';
 import { useBooksStore } from 'src/stores/books';
 import { useUiStore } from 'src/stores/ui';
@@ -14,7 +15,6 @@ import { ChapterService } from 'src/services/chapter-service';
 import { parseTextForHighlightingMemoized, escapeRegex } from 'src/utils/text-matcher';
 import { formatTranslationForDisplay } from 'src/utils';
 import { ExplainService } from 'src/services/ai/tasks/explain-service';
-import { useContextMenuManager } from 'src/composables/useContextMenuManager';
 
 const props = defineProps<{
   paragraph: Paragraph;
@@ -49,9 +49,6 @@ const contextStore = useContextStore();
 const booksStore = useBooksStore();
 const uiStore = useUiStore();
 const isTouchLayout = computed(() => uiStore.deviceType !== 'desktop');
-
-// 上下文菜单管理器
-const { showContextMenu } = useContextMenuManager();
 
 const hasContent = computed(() => {
   return props.paragraph.text?.trim().length > 0;
@@ -170,11 +167,21 @@ const translationNodes = computed(() => {
     .filter((node) => node.content);
 });
 
-// Popover refs
-const termPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
-const characterPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
-const contextMenuPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
-const recentTranslationPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
+// Popover refs —— 四个 Popover 已迁移到 ParagraphPopovers 子组件，父级通过 popoversRef
+// 调用其暴露的 toggle/hide 方法，避免在 2000 段章节里一次性创建 8000 个 Popover 实例。
+// 显式声明 ParagraphPopovers 通过 defineExpose 暴露的方法签名；直接用
+// InstanceType<typeof ParagraphPopovers> 会被推断成 any，触发 no-redundant-type-constituents。
+interface ParagraphPopoversExposed {
+  toggleTerm: (event: Event, target: HTMLElement) => void;
+  hideTerm: () => void;
+  toggleCharacter: (event: Event, target: HTMLElement) => void;
+  hideCharacter: () => void;
+  toggleRecent: (event: Event, target: HTMLElement) => void;
+  hideRecent: () => void;
+  showContextMenu: (event: MouseEvent | Event, target: HTMLElement) => void;
+  hideContextMenu: () => void;
+}
+const popoversRef = ref<ParagraphPopoversExposed | null>(null);
 
 // 性能关键：Popover 延迟挂载
 // 之前每个 ParagraphCard 都立即挂载 4 个 PrimeVue Popover 组件。一个 2000 段的章节
@@ -195,8 +202,6 @@ const paragraphTextRef = ref<HTMLElement | null>(null);
 const hoveredTerm = ref<Terminology | null>(null);
 const hoveredCharacter = ref<CharacterSetting | null>(null);
 const hoveredCharacters = ref<CharacterSetting[]>([]); // 多个匹配的角色
-const termRefsMap = new Map<string, HTMLElement>();
-const characterRefsMap = new Map<string, HTMLElement>();
 // 用于延迟关闭 Popover 的定时器
 let termPopoverCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let characterPopoverCloseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -245,21 +250,16 @@ const handleTermMouseEnter = async (event: Event, term: Terminology) => {
   hoveredTerm.value = term;
   const target = event.currentTarget as HTMLElement;
   if (!target) return;
-  termRefsMap.set(term.id, target);
   // 首次交互时按需挂载 Popover
   await ensurePopoversMounted();
-  if (termPopoverRef.value) {
-    termPopoverRef.value.toggle(event, target);
-  }
+  popoversRef.value?.toggleTerm(event, target);
 };
 
 // 处理术语鼠标离开（添加延迟，允许移动到 Popover）
 const handleTermMouseLeave = () => {
   // 设置延迟关闭，给用户时间移动到 Popover
   termPopoverCloseTimer = setTimeout(() => {
-    if (termPopoverRef.value) {
-      termPopoverRef.value.hide();
-    }
+    popoversRef.value?.hideTerm();
     termPopoverCloseTimer = null;
   }, 100); // 100ms 延迟
 };
@@ -298,22 +298,17 @@ const handleCharacterMouseEnter = async (
   hoveredCharacters.value = allCharacters && allCharacters.length > 0 ? allCharacters : [character];
   const target = event.currentTarget as HTMLElement;
   if (!target) return;
-  // 为所有角色设置 ref（使用第一个角色的 ID 作为 key）
-  characterRefsMap.set(character.id, target);
+  // 首次交互时按需挂载 Popover
   // 首次交互时按需挂载 Popover
   await ensurePopoversMounted();
-  if (characterPopoverRef.value) {
-    characterPopoverRef.value.toggle(event, target);
-  }
+  popoversRef.value?.toggleCharacter(event, target);
 };
 
 // 处理角色鼠标离开（添加延迟，允许移动到 Popover）
 const handleCharacterMouseLeave = () => {
   // 设置延迟关闭，给用户时间移动到 Popover
   characterPopoverCloseTimer = setTimeout(() => {
-    if (characterPopoverRef.value) {
-      characterPopoverRef.value.hide();
-    }
+    popoversRef.value?.hideCharacter();
     characterPopoverCloseTimer = null;
   }, 100); // 100ms 延迟
 };
@@ -405,127 +400,153 @@ const getComponentElement = (componentInstance: unknown): HTMLElement | undefine
  * 计算点击位置对应的字符索引
  * 使用 Range API 来精确定位光标位置
  */
-const getCharIndexFromClick = (event: MouseEvent, textElement: HTMLElement): number => {
-  const text = translationText.value;
-  if (!text || !textElement) return 0;
+// Firefox caretPositionFromPoint 的类型签名
+type CaretPositionFromPoint = (
+  x: number,
+  y: number,
+) => { offsetNode: Node; offset: number } | null;
 
-  // 尝试使用 Range API 获取点击位置
-  let range: Range | null = null;
+const hasCaretPositionFromPoint = (): boolean =>
+  typeof (document as unknown as { caretPositionFromPoint?: CaretPositionFromPoint })
+    .caretPositionFromPoint === 'function';
 
+// Firefox: 通过 caretPositionFromPoint 构造等价的 Range
+const buildRangeFromCaretPosition = (x: number, y: number): Range | null => {
+  const caretPos = (
+    document as unknown as { caretPositionFromPoint: CaretPositionFromPoint }
+  ).caretPositionFromPoint(x, y);
+  if (!caretPos) return null;
+  const range = document.createRange();
+  if (caretPos.offsetNode.nodeType === Node.TEXT_NODE) {
+    const offset = Math.min(caretPos.offset, caretPos.offsetNode.textContent?.length || 0);
+    range.setStart(caretPos.offsetNode, offset);
+    range.setEnd(caretPos.offsetNode, offset);
+  }
+  return range;
+};
+
+// 步骤 1：通过浏览器 caret API 解析点击位置对应的 Range
+const resolveCaretRange = (event: MouseEvent): Range | null => {
   if (document.caretRangeFromPoint) {
     // Chrome, Safari, Edge
-    range = document.caretRangeFromPoint(event.clientX, event.clientY);
-  } else if (
-    (
-      document as {
-        caretPositionFromPoint?: (
-          x: number,
-          y: number,
-        ) => { offsetNode: Node; offset: number } | null;
+    return document.caretRangeFromPoint(event.clientX, event.clientY);
+  }
+  if (hasCaretPositionFromPoint()) {
+    return buildRangeFromCaretPosition(event.clientX, event.clientY);
+  }
+  return null;
+};
+
+// 步骤 2：测量元素起点到 Range 起点之间的字符数（自动跨 HTML 标签）
+const measureCharsBeforeRange = (textElement: HTMLElement, range: Range): number => {
+  const textRange = document.createRange();
+  textRange.selectNodeContents(textElement);
+  textRange.setEnd(range.startContainer, range.startOffset);
+  return textRange.toString().length;
+};
+
+// 解析行高：lineHeight 失效时退化为 fontSize * 1.8
+const resolveLineHeight = (style: CSSStyleDeclaration): number => {
+  const fromLineHeight = parseFloat(style.lineHeight);
+  if (!Number.isNaN(fromLineHeight) && fromLineHeight > 0) return fromLineHeight;
+  const fontSize = parseFloat(style.fontSize);
+  return (Number.isNaN(fontSize) ? 0 : fontSize) * 1.8;
+};
+
+// 步骤 3a：累加 lineIndex 之前所有行的字符数（含换行符）
+const accumulatePreviousLinesOffset = (lines: string[], lineIndex: number): number => {
+  let charIndex = 0;
+  const upperBound = Math.min(lineIndex, lines.length);
+  for (let i = 0; i < upperBound; i++) {
+    const line = lines[i];
+    if (line !== undefined) {
+      charIndex += line.length + 1; // +1 为换行符
+    }
+  }
+  return charIndex;
+};
+
+// 步骤 3b：用 canvas 测量字符宽度，在当前行内定位点击 X 坐标对应的字符索引
+const findCharIndexInLine = (
+  context: CanvasRenderingContext2D,
+  currentLine: string,
+  relativeX: number,
+  lineStartIndex: number,
+): number => {
+  let currentX = 0;
+  for (let i = 0; i <= currentLine.length; i++) {
+    if (i < currentLine.length) {
+      const char = currentLine[i];
+      if (char === undefined) continue;
+      const charWidth = context.measureText(char).width;
+      const nextX = currentX + charWidth;
+
+      // 判断点击位置更接近哪个字符
+      if (relativeX >= currentX && relativeX < nextX) {
+        const midPoint = currentX + charWidth / 2;
+        return lineStartIndex + (relativeX < midPoint ? i : Math.min(i + 1, currentLine.length));
       }
-    ).caretPositionFromPoint
-  ) {
-    // Firefox
-    const caretPos = (
-      document as unknown as {
-        caretPositionFromPoint: (
-          x: number,
-          y: number,
-        ) => { offsetNode: Node; offset: number } | null;
-      }
-    ).caretPositionFromPoint(event.clientX, event.clientY);
-    if (caretPos) {
-      range = document.createRange();
-      if (caretPos.offsetNode.nodeType === Node.TEXT_NODE) {
-        const offset = Math.min(caretPos.offset, caretPos.offsetNode.textContent?.length || 0);
-        range.setStart(caretPos.offsetNode, offset);
-        range.setEnd(caretPos.offsetNode, offset);
+      currentX = nextX;
+    } else {
+      // 行尾
+      if (relativeX >= currentX) {
+        return lineStartIndex + currentLine.length;
       }
     }
   }
+  // 测量未命中（例如点击在行首左侧），返回行尾
+  return lineStartIndex + currentLine.length;
+};
 
-  // 如果成功获取到 Range，计算字符位置
-  if (range && textElement.contains(range.commonAncestorContainer)) {
-    // 创建一个从元素开始到点击位置的 Range
-    const textRange = document.createRange();
-    textRange.selectNodeContents(textElement);
-    textRange.setEnd(range.startContainer, range.startOffset);
-
-    // 获取范围内的文本内容（这会自动处理 HTML 标签）
-    const textBefore = textRange.toString();
-    return textBefore.length;
-  }
-
-  // 如果 Range API 不可用，使用备用方法：基于坐标计算
+// 步骤 3：Range API 不可用时的坐标兜底：按行 + canvas 测量估算字符索引
+const getCharIndexByCoordinates = (
+  event: MouseEvent,
+  textElement: HTMLElement,
+  text: string,
+): number => {
   const style = window.getComputedStyle(textElement);
   const rect = textElement.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
 
   // 计算行号
-  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.8;
+  const lineHeight = resolveLineHeight(style);
   const paddingTop = parseFloat(style.paddingTop) || 0;
   const lineIndex = Math.max(0, Math.floor((y - paddingTop) / lineHeight));
 
   // 将文本按行分割
   const lines = text.split('\n');
-  let charIndex = 0;
 
-  // 累加前面所有行的字符数（包括换行符）
-  for (let i = 0; i < lineIndex && i < lines.length; i++) {
-    const line = lines[i];
-    if (line !== undefined) {
-      charIndex += line.length + 1; // +1 为换行符
-    }
+  // 点击在所有行之后，返回文本末尾
+  if (lineIndex >= lines.length) return text.length;
+
+  const currentLine = lines[lineIndex];
+  if (currentLine === undefined) return text.length;
+
+  const charIndex = accumulatePreviousLinesOffset(lines, lineIndex);
+  const paddingLeft = parseFloat(style.paddingLeft) || 0;
+  const relativeX = x - paddingLeft;
+
+  // 使用 canvas 测量字符宽度
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) return charIndex + currentLine.length;
+  context.font = `${style.fontSize} ${style.fontFamily}`;
+  return findCharIndexInLine(context, currentLine, relativeX, charIndex);
+};
+
+const getCharIndexFromClick = (event: MouseEvent, textElement: HTMLElement): number => {
+  const text = translationText.value;
+  if (!text || !textElement) return 0;
+
+  // 优先使用 Range API 精确定位
+  const range = resolveCaretRange(event);
+  if (range && textElement.contains(range.commonAncestorContainer)) {
+    return measureCharsBeforeRange(textElement, range);
   }
 
-  // 在当前行中查找字符位置
-  if (lineIndex < lines.length) {
-    const currentLine = lines[lineIndex];
-    if (currentLine === undefined) {
-      return text.length;
-    }
-
-    const paddingLeft = parseFloat(style.paddingLeft) || 0;
-    const relativeX = x - paddingLeft;
-
-    // 使用 canvas 测量字符宽度
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (context) {
-      context.font = `${style.fontSize} ${style.fontFamily}`;
-
-      let currentX = 0;
-      for (let i = 0; i <= currentLine.length; i++) {
-        if (i < currentLine.length) {
-          const char = currentLine[i];
-          if (char !== undefined) {
-            const charWidth = context.measureText(char).width;
-            const nextX = currentX + charWidth;
-
-            // 判断点击位置更接近哪个字符
-            if (relativeX >= currentX && relativeX < nextX) {
-              const midPoint = currentX + charWidth / 2;
-              return charIndex + (relativeX < midPoint ? i : Math.min(i + 1, currentLine.length));
-            }
-
-            currentX = nextX;
-          }
-        } else {
-          // 行尾
-          if (relativeX >= currentX) {
-            return charIndex + currentLine.length;
-          }
-        }
-      }
-    }
-
-    // 如果测量失败，返回行尾
-    return charIndex + currentLine.length;
-  }
-
-  // 如果点击在所有行之后，返回文本末尾
-  return text.length;
+  // Range API 不可用或未命中时，使用坐标兜底
+  return getCharIndexByCoordinates(event, textElement, text);
 };
 
 /**
@@ -644,9 +665,7 @@ const handleContextMenuClick = async (event: MouseEvent) => {
   if (!buttonEl) return;
   // 首次交互时按需挂载 Popover
   await ensurePopoversMounted();
-  if (contextMenuPopoverRef.value) {
-    showContextMenu(contextMenuPopoverRef, event, buttonEl);
-  }
+  popoversRef.value?.showContextMenu(event, buttonEl);
 };
 
 // 处理右键点击段落卡片
@@ -681,19 +700,9 @@ const handleParagraphContextMenu = async (event: MouseEvent) => {
 
   // 使用 composable 显示上下文菜单
   // 这会自动隐藏之前活动的菜单
-  if (contextMenuPopoverRef.value && target && document.body.contains(target)) {
-    showContextMenu(contextMenuPopoverRef, event, target);
+  if (target && document.body.contains(target)) {
+    popoversRef.value?.showContextMenu(event, target);
   }
-};
-
-// 当上下文菜单 Popover 显示时记录状态
-const handleContextMenuPopoverShow = () => {
-  // 菜单显示时的处理（如果需要的话）
-};
-
-// 当上下文菜单 Popover 关闭时清理状态
-const handleContextMenuPopoverHide = () => {
-  // 保留目标元素以便下次使用，只在组件卸载时清理
 };
 
 /**
@@ -721,22 +730,14 @@ const handleRecentTranslationMouseEnter = async (event: Event) => {
   const target = recentTranslationButtonRef.value;
   // 首次交互时按需挂载 Popover
   await ensurePopoversMounted();
-  if (recentTranslationPopoverRef.value) {
-    recentTranslationPopoverRef.value.toggle(event, target);
-  }
+  popoversRef.value?.toggleRecent(event, target);
 };
 
 // 处理最近翻译按钮鼠标离开
 const handleRecentTranslationMouseLeave = () => {
-  if (recentTranslationPopoverRef.value) {
-    recentTranslationPopoverRef.value.hide();
-  }
+  popoversRef.value?.hideRecent();
 };
 
-// 当最近翻译 Popover 关闭时清理状态
-const handleRecentTranslationPopoverHide = () => {
-  // 不需要特殊处理
-};
 
 // 处理校对段落
 const handleProofread = () => {
@@ -747,9 +748,7 @@ const handleProofread = () => {
 
 // 关闭上下文菜单的辅助函数
 const closeContextMenu = () => {
-  if (contextMenuPopoverRef.value) {
-    contextMenuPopoverRef.value.hide();
-  }
+  popoversRef.value?.hideContextMenu();
 };
 
 const handlePolish = () => {
@@ -840,9 +839,7 @@ const translationHistoryCount = computed(() => {
 const openTranslationHistory = () => {
   showTranslationHistoryDialog.value = true;
   closeContextMenu();
-  if (recentTranslationPopoverRef.value) {
-    recentTranslationPopoverRef.value.hide();
-  }
+  popoversRef.value?.hideRecent();
 };
 
 // 处理对话框中选择翻译
@@ -979,39 +976,13 @@ defineExpose({
     </button>
     <div class="paragraph-content">
       <p ref="paragraphTextRef" class="paragraph-text">
-        <template v-for="(node, nodeIndex) in highlightedText" :key="nodeIndex">
-          <span v-if="node.type === 'text'">{{ node.content }}</span>
-          <span
-            v-else-if="node.type === 'term' && node.term"
-            :ref="
-              (el) => {
-                if (el && node.term) {
-                  termRefsMap.set(node.term.id, el as HTMLElement);
-                }
-              }
-            "
-            class="term-highlight"
-            @mouseenter="handleTermMouseEnter($event, node.term!)"
-            @mouseleave="handleTermMouseLeave"
-          >
-            {{ node.content }}
-          </span>
-          <span
-            v-else-if="node.type === 'character' && node.character"
-            :ref="
-              (el) => {
-                if (el && node.character) {
-                  characterRefsMap.set(node.character.id, el as HTMLElement);
-                }
-              }
-            "
-            class="character-highlight"
-            @mouseenter="handleCharacterMouseEnter($event, node.character!, node.characters)"
-            @mouseleave="handleCharacterMouseLeave"
-          >
-            {{ node.content }}
-          </span>
-        </template>
+        <ParagraphHighlightedText
+          :nodes="highlightedText"
+          @term-enter="handleTermMouseEnter"
+          @term-leave="handleTermMouseLeave"
+          @character-enter="handleCharacterMouseEnter"
+          @character-leave="handleCharacterMouseLeave"
+        />
       </p>
       <div
         v-if="hasTranslation || props.isTranslating || props.isPolishing || props.isProofreading"
@@ -1084,166 +1055,26 @@ defineExpose({
 
     <!-- 性能关键：所有 Popover 延迟挂载（首次交互后 nextTick 内完成），
          避免在 2000 段的章节里一次性创建 8000 个 Popover 实例。 -->
-    <template v-if="popoversMounted">
-    <!-- 术语提示框 - 使用 PrimeVue Popover -->
-    <Popover
-      ref="termPopoverRef"
-      :dismissable="true"
-      :show-close-icon="false"
-      style="width: 20rem; max-width: 90vw"
-      class="term-popover"
-      @hide="handleTermPopoverHide"
-    >
-      <div
-        v-if="hoveredTerm"
-        class="term-popover-content"
-        @mouseenter="handleTermPopoverMouseEnter"
-        @mouseleave="() => termPopoverRef?.hide()"
-      >
-        <div class="popover-header">
-          <span class="popover-term-name">{{ hoveredTerm.name }}</span>
-          <span class="popover-translation">{{ hoveredTerm.translation.translation }}</span>
-        </div>
-        <div v-if="hoveredTerm.description" class="popover-description">
-          {{ hoveredTerm.description }}
-        </div>
-      </div>
-    </Popover>
-
-    <!-- 角色提示框 - 使用 PrimeVue Popover -->
-    <Popover
-      ref="characterPopoverRef"
-      :dismissable="true"
-      :show-close-icon="false"
-      :style="{ width: hoveredCharacters.length > 1 ? '24rem' : '20rem', maxWidth: '90vw' }"
-      class="character-popover"
-      @hide="handleCharacterPopoverHide"
-    >
-      <div
-        v-if="hoveredCharacter && hoveredCharacters.length > 0"
-        class="character-popover-content"
-        @mouseenter="handleCharacterPopoverMouseEnter"
-        @mouseleave="() => characterPopoverRef?.hide()"
-      >
-        <!-- 如果有多个匹配的角色，显示提示 -->
-        <!-- 角色列表已按出现次数排序（出现次数多的在前） -->
-        <div v-if="hoveredCharacters.length > 1" class="popover-multiple-characters-hint">
-          <span class="hint-text"
-            >该文本可能匹配 {{ hoveredCharacters.length }} 个角色（按出现次数排序）：</span
-          >
-        </div>
-
-        <!-- 显示所有匹配的角色（已按出现次数排序） -->
-        <template v-for="(char, index) in hoveredCharacters" :key="char.id">
-          <div v-if="index > 0" class="popover-character-divider" />
-          <div class="popover-character-item">
-            <div class="popover-header">
-              <div class="popover-character-name-row">
-                <span class="popover-character-name">{{ char.name }}</span>
-                <span v-if="char.sex" class="popover-character-sex">
-                  {{ char.sex === 'male' ? '男' : char.sex === 'female' ? '女' : '其他' }}
-                </span>
-              </div>
-              <span class="popover-translation">{{ char.translation.translation }}</span>
-            </div>
-            <div v-if="char.description" class="popover-description">
-              {{ char.description }}
-            </div>
-            <div v-if="char.aliases && char.aliases.length > 0" class="popover-aliases">
-              <span class="popover-aliases-label">别名：</span>
-              <span class="popover-aliases-list">
-                {{ char.aliases.map((a) => a.name).join('、') }}
-              </span>
-            </div>
-          </div>
-        </template>
-      </div>
-    </Popover>
-
-    <!-- 最近翻译提示框 - 使用 PrimeVue Popover -->
-    <Popover
-      ref="recentTranslationPopoverRef"
-      :dismissable="true"
-      :show-close-icon="false"
-      style="width: 24rem; max-width: 90vw"
-      class="recent-translation-popover"
-      @hide="handleRecentTranslationPopoverHide"
-    >
-      <div v-if="mostRecentTranslation" class="recent-translation-popover-content">
-        <div class="popover-header">
-          <span class="popover-label">最近的翻译</span>
-        </div>
-        <div class="recent-translation-text">
-          {{ mostRecentTranslation.translation }}
-        </div>
-        <div class="recent-translation-hint">点击按钮查看完整翻译历史</div>
-      </div>
-    </Popover>
-
-    <!-- 上下文菜单 - 使用 PrimeVue Popover -->
-    <Popover
-      ref="contextMenuPopoverRef"
-      :dismissable="true"
-      :show-close-icon="false"
-      style="width: 16rem"
-      class="context-menu-popover"
-      @show="handleContextMenuPopoverShow"
-      @hide="handleContextMenuPopoverHide"
-    >
-      <div class="context-menu-content">
-        <Button
-          v-if="hasTextSelection"
-          label="解释选中文本"
-          icon="pi pi-question-circle"
-          class="context-menu-button"
-          text
-          @click="handleExplainSelection"
-        />
-        <div v-if="hasTextSelection" class="context-menu-divider" />
-        <Button
-          label="校对段落"
-          icon="pi pi-check-circle"
-          class="context-menu-button"
-          text
-          @click="handleProofread"
-        />
-        <Button
-          label="润色段落"
-          icon="pi pi-sparkles"
-          class="context-menu-button"
-          text
-          @click="handlePolish"
-        />
-        <Button
-          label="重新翻译"
-          icon="pi pi-refresh"
-          class="context-menu-button"
-          text
-          @click="handleRetranslate"
-        />
-        <Button
-          label="复制原文到助手"
-          icon="pi pi-copy"
-          class="context-menu-button"
-          text
-          @click="handleCopyToAssistant"
-        />
-
-        <!-- 翻译历史分隔线 -->
-        <div v-if="translationHistoryCount > 0" class="context-menu-divider" />
-
-        <!-- 翻译历史按钮 -->
-        <Button
-          v-if="translationHistoryCount > 0"
-          :label="`翻译历史 (${translationHistoryCount})`"
-          icon="pi pi-history"
-          class="context-menu-button"
-          text
-          @click="openTranslationHistory"
-        />
-      </div>
-    </Popover>
-    </template>
+    <ParagraphPopovers
+      v-if="popoversMounted"
+      ref="popoversRef"
+      :term="hoveredTerm"
+      :character="hoveredCharacter"
+      :characters="hoveredCharacters"
+      :recent-translation="mostRecentTranslation"
+      :has-text-selection="hasTextSelection"
+      :translation-history-count="translationHistoryCount"
+      @term-enter="handleTermPopoverMouseEnter"
+      @term-hide="handleTermPopoverHide"
+      @character-enter="handleCharacterPopoverMouseEnter"
+      @character-hide="handleCharacterPopoverHide"
+      @explain-selection="handleExplainSelection"
+      @proofread="handleProofread"
+      @polish="handlePolish"
+      @retranslate="handleRetranslate"
+      @copy-to-assistant="handleCopyToAssistant"
+      @open-history="openTranslationHistory"
+    />
 
     <!-- 翻译历史对话框 -->
     <TranslationHistoryDialog
@@ -1560,81 +1391,11 @@ defineExpose({
   }
 }
 
-/* 术语高亮 */
-.term-highlight {
-  background: linear-gradient(180deg, transparent 60%, var(--primary-opacity-30) 60%);
-  color: var(--moon-opacity-95);
-  cursor: help;
-  padding: 0 0.125rem;
-  border-radius: 2px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-}
+/* 行内高亮（.term-highlight / .character-highlight 及其 hover）已迁移到
+   ParagraphHighlightedText.vue（scoped）—— 这些 span 渲染于该子组件，父级 scoped 无法命中。 */
 
-.term-highlight:hover {
-  background: linear-gradient(180deg, transparent 60%, var(--primary-opacity-50) 60%);
-  color: var(--primary-opacity-100);
-}
-
-/* 角色高亮 */
-.character-highlight {
-  background: linear-gradient(180deg, transparent 60%, rgba(168, 85, 247, 0.3) 60%);
-  color: var(--moon-opacity-95);
-  cursor: help;
-  padding: 0 0.125rem;
-  border-radius: 2px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-}
-
-.character-highlight:hover {
-  background: linear-gradient(180deg, transparent 60%, rgba(168, 85, 247, 0.5) 60%);
-  color: rgba(196, 181, 253, 1);
-}
-
-/* 术语 Popover 样式 */
-:deep(.term-popover .p-popover-content),
-:deep(.character-popover .p-popover-content) {
-  padding: 0.75rem 1rem;
-}
-
-.term-popover-content,
-.character-popover-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  max-height: 23rem; /* 固定最大高度 */
-  overflow-y: auto; /* 启用垂直滚动 */
-  overflow-x: hidden; /* 隐藏水平滚动 */
-  min-height: 0; /* 允许内容收缩 */
-  /* Firefox 滚动条样式 */
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.4) rgba(255, 255, 255, 0.05);
-}
-
-/* WebKit 浏览器滚动条样式 */
-.term-popover-content::-webkit-scrollbar,
-.character-popover-content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.term-popover-content::-webkit-scrollbar-track,
-.character-popover-content::-webkit-scrollbar-track {
-  background: var(--white-opacity-5);
-  border-radius: 4px;
-}
-
-.term-popover-content::-webkit-scrollbar-thumb,
-.character-popover-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
-  border: 1px solid var(--white-opacity-10);
-}
-
-.term-popover-content::-webkit-scrollbar-thumb:hover,
-.character-popover-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
-}
+/* 术语 / 角色提示框内容容器（.term-popover-content / .character-popover-content 及滚动条样式、
+   :deep(.p-popover-content) 内边距）已迁移到 ParagraphPopovers.vue（scoped）—— 内容渲染于该子组件的 Popover 内。 */
 
 .popover-header {
   display: flex;
@@ -1719,12 +1480,8 @@ defineExpose({
   margin: 0.75rem 0;
 }
 
-/* 角色项容器 */
-.popover-character-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+/* 角色项容器（.popover-character-item）已迁移到 ParagraphCharacterPopoverList.vue（scoped）——
+   该元素渲染于该子组件，父级 scoped 无法命中。 */
 
 /* 搜索高亮 */
 .search-highlight {
@@ -1734,16 +1491,8 @@ defineExpose({
   padding: 0 1px;
 }
 
-/* 最近翻译 Popover 样式 */
-:deep(.recent-translation-popover .p-popover-content) {
-  padding: 0.75rem 1rem;
-}
-
-.recent-translation-popover-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
+/* 最近翻译提示框内容容器（.recent-translation-popover-content 及 :deep(.p-popover-content) 内边距）
+   已迁移到 ParagraphPopovers.vue（scoped）—— 内容渲染于该子组件的 Popover 内。 */
 
 .recent-translation-text {
   font-size: 0.875rem;

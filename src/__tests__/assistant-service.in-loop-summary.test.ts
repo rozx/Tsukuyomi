@@ -1,17 +1,25 @@
 import './setup';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { createPinia, setActivePinia } from 'pinia';
 import { AssistantService } from 'src/services/ai/tasks/assistant-service';
+import { AIServiceFactory } from 'src/services/ai/ai-service-factory';
+import { ToolRegistry } from 'src/services/ai/tools/tool-registry';
+import { MemoryService } from 'src/services/memory-service';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
+  AIService,
   AITool,
   AIServiceConfig,
   TextGenerationRequest,
 } from 'src/services/ai/types/ai-service';
 
-const generateTextMock = vi.hoisted(() => vi.fn());
-const handleToolCallMock = vi.hoisted(() => vi.fn());
-const createMemoryMock = vi.hoisted(() => vi.fn());
+const generateTextMock = mock((_config: AIServiceConfig, _request: TextGenerationRequest) => ({
+  text: '',
+}));
+const handleToolCallMock = mock(() =>
+  Promise.resolve({ tool_call_id: '', role: 'tool', name: '', content: '' }),
+);
+const createMemoryMock = mock(() => undefined);
 
 const bigTool: AITool = {
   type: 'function',
@@ -21,27 +29,6 @@ const bigTool: AITool = {
     parameters: { type: 'object', properties: {}, required: [] },
   },
 };
-
-vi.mock('src/services/ai/ai-service-factory', () => ({
-  AIServiceFactory: {
-    getService: () => ({
-      generateText: generateTextMock,
-    }),
-  },
-}));
-
-vi.mock('src/services/ai/tools/tool-registry', () => ({
-  ToolRegistry: {
-    getAssistantToolsExcludingTranslationManagement: () => [bigTool],
-    handleToolCall: handleToolCallMock,
-  },
-}));
-
-vi.mock('src/services/memory-service', () => ({
-  MemoryService: {
-    createMemory: createMemoryMock,
-  },
-}));
 
 const makeAssistantModel = (): AIModel => ({
   id: 'assistant-model',
@@ -70,13 +57,25 @@ describe('AssistantService - 工具循环内 summary', () => {
     generateTextMock.mockReset();
     handleToolCallMock.mockReset();
     createMemoryMock.mockReset();
+    spyOn(AIServiceFactory, 'getService').mockImplementation(
+      () => ({ generateText: generateTextMock }) as unknown as AIService,
+    );
+    spyOn(ToolRegistry, 'getAssistantToolsExcludingTranslationManagement').mockImplementation(
+      () => [bigTool],
+    );
+    spyOn(ToolRegistry, 'handleToolCall').mockImplementation(handleToolCallMock as never);
+    spyOn(MemoryService, 'createMemory').mockImplementation(createMemoryMock as never);
+  });
+
+  afterEach(() => {
+    mock.restore();
   });
 
   it('工具结果把 context 推过阈值时，应在同一轮工具调用中触发 summary 并继续请求', async () => {
     const inLoopSummary = '这是一次足够长的工具循环摘要，用于在上下文过载后继续完成当前助手请求。';
     const oversizedToolResult = '大量工具结果内容 '.repeat(30_000);
-    const onSummarizingStart = vi.fn();
-    const onSummarizingEnd = vi.fn();
+    const onSummarizingStart = mock(() => {});
+    const onSummarizingEnd = mock(() => {});
 
     handleToolCallMock.mockResolvedValue({
       tool_call_id: 'call-big-context',

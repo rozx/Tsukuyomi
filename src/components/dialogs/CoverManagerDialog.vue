@@ -3,6 +3,8 @@ import { ref, computed, watch, nextTick } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import CoverPreviewInfo from './CoverPreviewInfo.vue';
+import CoverHistoryGrid from './CoverHistoryGrid.vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ImageUploadService } from 'src/services/image-upload-service';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
@@ -29,16 +31,35 @@ const showUrlInput = ref(false);
 const selectedCoverId = ref<string | null>(null);
 const coverImageInfo = ref<{ width: number; height: number; size?: number } | null>(null);
 
-// 所有封面历史记录
-const allCovers = computed(() => coverHistoryStore.allCovers);
+// 封面 URL 协议白名单：仅放行 http/https，拦截 javascript:/data:/file: 等危险协议。
+// 不只校验新输入，也用于过滤历史记录与 props.cover —— 旧数据里的危险协议同样不能进入
+// selectedCover 被子组件渲染到 <img :src> / <a :href>。
+const isSupportedCoverUrl = (value: string): boolean => {
+  try {
+    const parsedUrl = new URL(value);
+    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+// 所有封面历史记录（过滤掉协议不受支持的旧数据）
+const allCovers = computed(() =>
+  coverHistoryStore.allCovers.filter((cover) => isSupportedCoverUrl(cover.url)),
+);
 
 // 当前选中的封面
 const selectedCover = computed(() => {
   if (selectedCoverId.value) {
     return allCovers.value.find((c) => c.id === selectedCoverId.value) || null;
   }
-  return props.cover || null;
+  return props.cover && isSupportedCoverUrl(props.cover.url) ? props.cover : null;
 });
+
+// 上传按钮文案
+const uploadLabel = computed(() => (uploading.value ? '上传中...' : '上传图片'));
+// URL 添加按钮文案
+const urlToggleButtonLabel = computed(() => (showUrlInput.value ? '取消' : '通过 URL 添加'));
 
 // 加载图片信息（尺寸和大小）
 const loadImageInfo = async (url: string) => {
@@ -85,7 +106,7 @@ watch(
       coverImageInfo.value = null;
     }
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 // 监听对话框打开，初始化选中状态
@@ -111,7 +132,7 @@ watch(
     } else {
       coverImageInfo.value = null;
     }
-  }
+  },
 );
 
 // 新封面统一入库 + 选中 + 成功 toast
@@ -183,8 +204,9 @@ const handleAddByUrl = async () => {
   }
 
   // 验证 URL 格式
+  let parsedUrl: URL;
   try {
-    new URL(url);
+    parsedUrl = new URL(url);
   } catch {
     toast.add({
       severity: 'error',
@@ -195,10 +217,23 @@ const handleAddByUrl = async () => {
     return;
   }
 
+  // 协议白名单：仅放行 http/https，拦截 javascript:/data:/file: 等危险协议
+  // （封面 URL 会绑定到 <a :href> / <img :src>，避免 XSS 与本地文件读取）
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    toast.add({
+      severity: 'error',
+      summary: 'URL 协议不支持',
+      detail: '仅支持 http/https 图片地址',
+      life: 3000,
+    });
+    return;
+  }
+
   // 验证是否为图片 URL
   const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-  const isImageUrl = imageExtensions.some((ext) => url.toLowerCase().includes(ext)) ||
-                     url.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
+  const isImageUrl =
+    imageExtensions.some((ext) => url.toLowerCase().includes(ext)) ||
+    url.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i);
 
   if (!isImageUrl) {
     toast.add({
@@ -294,104 +329,19 @@ const handleClose = () => {
   >
     <div class="space-y-4 py-2">
       <!-- 当前选中的封面预览 -->
-      <div v-if="selectedCover" class="space-y-3">
-        <div class="text-sm font-medium text-moon/90">当前选中封面</div>
-        <div class="relative w-full aspect-[2/3] max-w-xs mx-auto overflow-hidden rounded-lg bg-white/5 border border-white/10">
-          <img
-            :src="selectedCover.url"
-            alt="封面预览"
-            class="w-full h-full object-cover"
-            @error="(e) => {
-              const target = e.target as HTMLImageElement;
-              target.style.display = 'none';
-            }"
-          />
-        </div>
-        <!-- 封面详细信息 -->
-        <div class="space-y-2 p-3 bg-white/5 rounded-lg border border-white/10">
-          <div class="space-y-1.5 text-xs">
-            <div class="space-y-1">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-moon/60">URL:</span>
-                <Button
-                  icon="pi pi-copy"
-                  class="p-button-text p-button-sm"
-                  size="small"
-                  title="复制 URL"
-                  @click="handleCopyUrl"
-                />
-              </div>
-              <a
-                :href="selectedCover.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-accent-400 hover:text-accent-300 hover:underline break-all text-xs cursor-pointer transition-colors"
-              >
-                {{ selectedCover.url }}
-              </a>
-            </div>
-            <div v-if="coverImageInfo" class="flex items-center justify-between gap-2">
-              <span class="text-moon/60">尺寸:</span>
-              <span class="text-moon/90">{{ coverImageInfo.width }} × {{ coverImageInfo.height }} px</span>
-            </div>
-            <div v-if="coverImageInfo?.size" class="flex items-center justify-between gap-2">
-              <span class="text-moon/60">大小:</span>
-              <span class="text-moon/90">{{ formatFileSize(coverImageInfo.size) }}</span>
-            </div>
-            <div v-if="coverImageInfo && !coverImageInfo.size" class="flex items-center justify-between gap-2">
-              <span class="text-moon/60">大小:</span>
-              <span class="text-moon/60 italic">无法获取</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CoverPreviewInfo
+        v-if="selectedCover"
+        :cover="selectedCover"
+        :info="coverImageInfo"
+        @copy-url="handleCopyUrl"
+      />
 
       <!-- 封面历史记录 -->
-      <div class="space-y-3">
-        <div class="flex items-center justify-between">
-          <div class="text-sm font-medium text-moon/90">封面历史</div>
-          <div class="text-xs text-moon/60">{{ allCovers.length }} 个封面</div>
-        </div>
-        <div v-if="allCovers.length > 0" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3 max-h-96 overflow-y-auto p-2 border border-white/10 rounded-lg">
-          <div
-            v-for="cover in allCovers"
-            :key="cover.id"
-            :class="[
-              'relative aspect-[2/3] overflow-hidden rounded-lg border-2 cursor-pointer transition-all group',
-              selectedCoverId === cover.id
-                ? 'border-primary ring-2 ring-primary/50'
-                : 'border-white/10 hover:border-white/30 hover:ring-1 hover:ring-white/20'
-            ]"
-            @click="handleSelectCover(cover)"
-          >
-            <img
-              :src="cover.url"
-              alt="封面"
-              class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
-              @error="(e) => {
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-              }"
-            />
-            <div
-              v-if="selectedCoverId === cover.id"
-              class="absolute inset-0 flex items-center justify-center bg-primary/20 backdrop-blur-sm"
-            >
-              <i class="pi pi-check-circle text-primary text-2xl drop-shadow-lg" />
-            </div>
-            <!-- 悬停时的选中提示 -->
-            <div
-              v-if="selectedCoverId !== cover.id"
-              class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <i class="pi pi-check text-white text-lg" />
-            </div>
-          </div>
-        </div>
-        <div v-else class="text-center py-8 text-moon/60 text-sm">
-          暂无封面历史记录
-        </div>
-      </div>
+      <CoverHistoryGrid
+        :covers="allCovers"
+        :selected-cover-id="selectedCoverId"
+        @select="handleSelectCover"
+      />
 
       <!-- 添加封面 -->
       <div class="space-y-3 border-t border-white/10 pt-3">
@@ -409,7 +359,7 @@ const handleClose = () => {
               @change="handleFileSelect"
             />
             <Button
-              :label="uploading ? '上传中...' : '上传图片'"
+              :label="uploadLabel"
               icon="pi pi-upload"
               class="w-full"
               :loading="uploading"
@@ -417,15 +367,13 @@ const handleClose = () => {
               @click="fileInputRef?.click()"
             />
           </div>
-          <small class="text-moon/60 block">
-            支持 JPG、PNG、GIF 等图片格式，最大 5MB
-          </small>
+          <small class="text-moon/60 block"> 支持 JPG、PNG、GIF 等图片格式，最大 5MB </small>
         </div>
 
         <!-- 通过 URL 添加 -->
         <div class="space-y-2">
           <Button
-            :label="showUrlInput ? '取消' : '通过 URL 添加'"
+            :label="urlToggleButtonLabel"
             icon="pi pi-link"
             class="w-full p-button-outlined"
             @click="showUrlInput = !showUrlInput"
@@ -438,17 +386,15 @@ const handleClose = () => {
               @keyup.enter="handleAddByUrl"
             />
             <div class="flex gap-2">
-              <Button
-                label="添加"
-                icon="pi pi-check"
-                class="flex-1"
-                @click="handleAddByUrl"
-              />
+              <Button label="添加" icon="pi pi-check" class="flex-1" @click="handleAddByUrl" />
               <Button
                 label="取消"
                 icon="pi pi-times"
                 class="flex-1 p-button-text"
-                @click="showUrlInput = false; urlInput = ''"
+                @click="
+                  showUrlInput = false;
+                  urlInput = '';
+                "
               />
             </div>
           </div>
@@ -488,4 +434,3 @@ const handleClose = () => {
   padding: 1.5rem;
 }
 </style>
-
