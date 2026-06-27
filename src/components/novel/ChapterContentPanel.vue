@@ -278,13 +278,22 @@ const recomputeScrollMargin = () => {
   if (next !== scrollMargin.value) scrollMargin.value = next;
 };
 
+// 把模板 ref 回传值解包为 HTMLElement：
+// 子组件用作 ref 时回传的是组件实例（ComponentPublicInstance），其 $el 才是真实 DOM；
+// 直接 as HTMLElement 会让后续 getBoundingClientRect() / ResizeObserver.observe() 运行时崩。
+const resolveHTMLElement = (el: Element | ComponentPublicInstance | null): HTMLElement | null => {
+  if (el instanceof HTMLElement) return el;
+  const root = (el as ComponentPublicInstance | null)?.$el;
+  return root instanceof HTMLElement ? root : null;
+};
+
 // 子视图（预览/默认）通过回调把各自的 list 起点 / 头部元素写回父级 ref，
 // 保持 scrollMargin 测量与 header ResizeObserver 行为不变。
 const registerListStart = (el: Element | ComponentPublicInstance | null) => {
-  listStartRef.value = (el as HTMLElement | null) ?? null;
+  listStartRef.value = resolveHTMLElement(el);
 };
 const registerHeader = (el: Element | ComponentPublicInstance | null) => {
-  contentHeaderRef.value = (el as HTMLElement | null) ?? null;
+  contentHeaderRef.value = resolveHTMLElement(el);
 };
 
 const {

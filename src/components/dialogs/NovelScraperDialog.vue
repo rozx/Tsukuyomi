@@ -844,6 +844,21 @@ const handleApply = async () => {
   // 如果有章节需要加载内容，先批量加载（即使已导入也要重新获取）
   if (chaptersNeedingContent.length > 0) {
     await fetchSelectedChaptersContent(chaptersNeedingContent);
+
+    // 若有章节抓取失败（记录在 chapterErrors 中），则中止导入：
+    // 否则失败章节会在 mapChapterWithContent 中回退原始 chapter，把部分失败伪装成成功
+    const hasFailedChapters = chaptersNeedingContent.some((chapter) =>
+      chapterErrors.value.has(chapter.id),
+    );
+    if (hasFailedChapters) {
+      toast.add({
+        severity: 'error',
+        summary: '导入失败',
+        detail: '部分章节抓取失败，请处理后再继续导入',
+        life: 4000,
+      });
+      return;
+    }
   }
 
   // 创建只包含选中章节的小说数据

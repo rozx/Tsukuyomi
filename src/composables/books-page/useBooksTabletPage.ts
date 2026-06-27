@@ -140,6 +140,17 @@ function createBooksTabletPageContext() {
       const contents = await ChapterContentService.loadChapterContentsBatch(chapterIds);
       if (token !== progressLoadToken) return; // 切书后丢弃旧结果
       progressByChapter.value = buildChapterProgressMap(chapterIds, contents);
+    } catch (err) {
+      // 章节内容批量加载失败：记录并提示，同时清空进度避免显示陈旧状态。
+      // 否则异常会穿透到 watch 的 void loadProgressFor(...) 形成未处理 Promise，用户也看不到错误。
+      if (token === progressLoadToken) progressByChapter.value = null;
+      console.error('[useBooksTabletPage] 加载章节翻译进度失败:', err);
+      toast.add({
+        severity: 'error',
+        summary: '进度加载失败',
+        detail: err instanceof Error ? err.message : String(err),
+        life: 3000,
+      });
     } finally {
       if (token === progressLoadToken) isLoadingProgress.value = false;
     }

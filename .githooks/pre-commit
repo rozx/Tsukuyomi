@@ -8,8 +8,8 @@
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 
 if ! command -v bun >/dev/null 2>&1; then
-    echo "❌ 'bun' not found on PATH. Install bun (https://bun.sh) or add it to PATH. Aborting commit."
-    exit 1
+    echo "⚠️ 未找到 bun，跳过构建版本号自增。"
+    exit 0
 fi
 
 echo "📦 Bumping build version..."

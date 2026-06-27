@@ -197,7 +197,7 @@ const combineNearbyRevisions = <T extends { committedAt: string }>(revs: T[]): T
 
 // 修订文件状态枚举
 type RevisionFileStatus = 'added' | 'removed' | 'modified' | 'renamed';
-type RevisionFileEntry = { filename: string; status?: RevisionFileStatus };
+type RevisionFileEntry = { filename: string; status?: RevisionFileStatus; size?: number };
 type BuiltRevisionFile = { filename: string; status: RevisionFileStatus; size: number; sizeDiff?: number };
 
 // 用当前表单值构造用于调用 Gist API 的同步配置（loadRevisions / loadRevisionDetails 共用）
@@ -311,7 +311,45 @@ const resolveRevisionSizeDiff = (
   return undefined;
 };
 
-// 汇总单次修订的文件列表：合并当前快照、上一版 size 映射、已有状态
+// 收集本次修订中被删除的文件名：getGistRevisions 已标记 removed 的条目，
+// 以及只存在于上一版快照、当前快照已不存在的文件（展开详情后 currentFilesMap 拿不到它们）
+const collectRemovedFilenames = (
+  currentFilesMap: Record<string, { size?: number }>,
+  existingFilesMap: Map<string, RevisionFileEntry>,
+  previousFilesMap: Map<string, { size?: number }> | null,
+): Set<string> => {
+  const removed = new Set<string>();
+  for (const [filename, entry] of existingFilesMap) {
+    if (entry.status === 'removed') {
+      removed.add(filename);
+    }
+  }
+  if (previousFilesMap) {
+    for (const filename of previousFilesMap.keys()) {
+      if (!(filename in currentFilesMap)) {
+        removed.add(filename);
+      }
+    }
+  }
+  return removed;
+};
+
+// 构造单个被删除文件的明细条目：size 取上一版快照或已有 removed 条目记录的值
+const buildRemovedFileEntry = (
+  filename: string,
+  existingFilesMap: Map<string, RevisionFileEntry>,
+  previousFilesMap: Map<string, { size?: number }> | null,
+): BuiltRevisionFile => {
+  const previousSize = previousFilesMap?.get(filename)?.size;
+  const existingSize = existingFilesMap.get(filename)?.size;
+  return {
+    filename,
+    status: 'removed',
+    size: previousSize ?? existingSize ?? 0,
+  };
+};
+
+// 汇总单次修订的文件列表：当前快照文件 + 已删除文件（已有 removed 条目或上一版独有文件）的并集
 const buildRevisionFiles = (
   currentFilesMap: Record<string, { size?: number }>,
   existingRevision: { files?: RevisionFileEntry[] } | undefined,
@@ -319,7 +357,8 @@ const buildRevisionFiles = (
 ): BuiltRevisionFile[] => {
   const existingFiles = existingRevision?.files ?? [];
   const existingFilesMap = new Map(existingFiles.map((f) => [f.filename, f] as const));
-  return Object.keys(currentFilesMap).map((filename) => {
+
+  const currentFiles = Object.keys(currentFilesMap).map((filename) => {
     const file = currentFilesMap[filename];
     const currentSize = file?.size || 0;
     const previousFile = previousFilesMap?.get(filename);
@@ -338,6 +377,18 @@ const buildRevisionFiles = (
       ...(sizeDiff !== undefined ? { sizeDiff } : {}),
     };
   });
+
+  // 补回被删除的文件，避免展开详情时丢失它们
+  const removedFilenames = collectRemovedFilenames(
+    currentFilesMap,
+    existingFilesMap,
+    previousFilesMap,
+  );
+  const removedFiles = Array.from(removedFilenames).map((filename) =>
+    buildRemovedFileEntry(filename, existingFilesMap, previousFilesMap),
+  );
+
+  return [...currentFiles, ...removedFiles];
 };
 
 // 拉取并汇总单个修订版本的文件列表（不含 try/catch 与 loading 状态）

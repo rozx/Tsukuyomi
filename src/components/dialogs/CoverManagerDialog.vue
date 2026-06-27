@@ -190,13 +190,26 @@ const handleAddByUrl = async () => {
   }
 
   // 验证 URL 格式
+  let parsedUrl: URL;
   try {
-    new URL(url);
+    parsedUrl = new URL(url);
   } catch {
     toast.add({
       severity: 'error',
       summary: 'URL 格式错误',
       detail: '请输入有效的图片 URL 地址',
+      life: 3000,
+    });
+    return;
+  }
+
+  // 协议白名单：仅放行 http/https，拦截 javascript:/data:/file: 等危险协议
+  // （封面 URL 会绑定到 <a :href> / <img :src>，避免 XSS 与本地文件读取）
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    toast.add({
+      severity: 'error',
+      summary: 'URL 协议不支持',
+      detail: '仅支持 http/https 图片地址',
       life: 3000,
     });
     return;

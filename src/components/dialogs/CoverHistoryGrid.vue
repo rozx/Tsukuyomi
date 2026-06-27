@@ -17,7 +17,12 @@
             ? 'border-primary ring-2 ring-primary/50'
             : 'border-white/10 hover:border-white/30 hover:ring-1 hover:ring-white/20',
         ]"
+        role="button"
+        tabindex="0"
+        :aria-pressed="selectedCoverId === cover.id"
         @click="emit('select', cover)"
+        @keydown.enter.prevent="emit('select', cover)"
+        @keydown.space.prevent="emit('select', cover)"
       >
         <img
           :src="cover.url"

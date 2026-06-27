@@ -71,8 +71,16 @@ const thinkingScrollHandler = throttle(() => {
   }
 }, 100);
 
+// 父组件常在同一数组上原地 push 流式片段，props.parts 引用不变。
+// 依赖 mergedParts.length + 最后一项文本变化，确保原地追加也能触发自动滚动。
 watch(
-  () => [props.parts, props.task.thinkingMessage?.length ?? 0] as const,
+  () =>
+    [
+      mergedParts.value.length,
+      mergedParts.value[mergedParts.value.length - 1]?.part.text ?? '',
+      mergedParts.value[mergedParts.value.length - 1]?.resultText ?? '',
+      props.task.thinkingMessage?.length ?? 0,
+    ] as const,
   () => {
     nextTick(() => thinkingScrollHandler.fn());
   },

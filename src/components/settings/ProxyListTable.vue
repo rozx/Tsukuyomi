@@ -47,6 +47,7 @@ const s = injectProxySettings();
               severity="info"
               text
               rounded
+              aria-label="测试代理"
               :title="s.testProxyTitle(data.id)"
               :loading="s.isTestingProxy(data.id)"
               :disabled="s.isTestingProxy(data.id)"
@@ -58,6 +59,7 @@ const s = injectProxySettings();
               severity="secondary"
               text
               rounded
+              aria-label="编辑代理"
               title="编辑"
               @click="s.openEditProxyDialog(data)"
             />
@@ -67,6 +69,7 @@ const s = injectProxySettings();
               severity="danger"
               text
               rounded
+              aria-label="删除代理"
               title="删除"
               @click="s.deleteProxy(data.id)"
             />

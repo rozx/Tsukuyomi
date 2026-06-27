@@ -395,7 +395,7 @@ const revertCharsImport = async (bookId: string, result: CharsImportResult): Pro
   for (const snapshot of result.updatedCharsSnapshot) {
     await CharacterSettingService.updateCharacterSetting(bookId, snapshot.id, {
       name: snapshot.name,
-      sex: snapshot.sex,
+      ...(snapshot.sex !== undefined ? { sex: snapshot.sex } : {}),
       translation: snapshot.translation,
       ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
       ...(snapshot.speakingStyle !== undefined ? { speakingStyle: snapshot.speakingStyle } : {}),

@@ -257,11 +257,11 @@ const handleTestSuccess = (result: AIConfigResult) => {
   const config = buildAiConfigFromResult(result);
   aiConfig.value = Object.keys(config).length > 0 ? config : null;
 
-  // 注意：maxInputTokens / maxOutputTokens 为 0 表示无限制，所以只更新大于 0 的值
-  if (config.maxInputTokens !== undefined && config.maxInputTokens > 0) {
+  // 注意：maxInputTokens / maxOutputTokens 为 0 表示无限制，0 也需回写覆盖表单旧值
+  if (config.maxInputTokens !== undefined) {
     formData.value.maxInputTokens = config.maxInputTokens;
   }
-  if (config.maxOutputTokens !== undefined && config.maxOutputTokens > 0) {
+  if (config.maxOutputTokens !== undefined) {
     formData.value.maxOutputTokens = config.maxOutputTokens;
   }
 
@@ -409,16 +409,18 @@ const buildEditFormData = (model: AIModel): AIModelFormData => {
     termsTranslation: { enabled: false, temperature: 0.7 },
     assistant: { enabled: false, temperature: 0.7 },
   };
+  // 历史数据可能整块缺失 isDefault，先兜底为空对象再展开/合并，避免初始化即报错
+  const savedTaskDefaults = model.isDefault ?? {};
   return {
     ...model,
     useCorsProxy: model.useCorsProxy ?? true,
     isDefault: {
       ...defaultTasks,
-      ...model.isDefault,
-      translation: mergeTaskDefault(model.isDefault.translation),
-      proofreading: mergeTaskDefault(model.isDefault.proofreading),
-      termsTranslation: mergeTaskDefault(model.isDefault.termsTranslation),
-      assistant: mergeTaskDefault(model.isDefault.assistant),
+      ...savedTaskDefaults,
+      translation: mergeTaskDefault(savedTaskDefaults.translation),
+      proofreading: mergeTaskDefault(savedTaskDefaults.proofreading),
+      termsTranslation: mergeTaskDefault(savedTaskDefaults.termsTranslation),
+      assistant: mergeTaskDefault(savedTaskDefaults.assistant),
     },
     customHeaders: cloneDeep(model.customHeaders || {}),
   } as AIModelFormData;

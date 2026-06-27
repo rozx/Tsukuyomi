@@ -223,7 +223,7 @@ const s = provideProxySettings();
     align-items: flex-start;
   }
 
-  .proxy-toggle-row :deep(.p-toggleswitch) {
+  .proxy-toggle-row .p-toggleswitch {
     margin-left: auto;
   }
 }

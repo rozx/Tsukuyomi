@@ -1,9 +1,11 @@
 import type { RestorableItem } from 'src/services/sync-data-service';
+import { MemoryService } from 'src/services/memory-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { Novel } from 'src/models/novel';
+import type { Memory } from 'src/models/memory';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSyncExecutor } from 'src/composables/useSyncExecutor';
 import type { SyncConfig } from 'src/models/sync';
@@ -103,13 +105,14 @@ export function useGistSync() {
     });
   };
 
-  /** 按 type 把待恢复项分成 novels / models / covers 三组 */
+  /** 按 type 把待恢复项分成 novels / models / covers / memories 四组 */
   function groupRestorableItems(
     items: RestorableItem[],
-  ): { novels: unknown[]; models: unknown[]; covers: unknown[] } {
+  ): { novels: unknown[]; models: unknown[]; covers: unknown[]; memories: unknown[] } {
     const novels: unknown[] = [];
     const models: unknown[] = [];
     const covers: unknown[] = [];
+    const memories: unknown[] = [];
     for (const item of items) {
       if (item.type === 'novel') {
         novels.push(item.data);
@@ -117,9 +120,11 @@ export function useGistSync() {
         models.push(item.data);
       } else if (item.type === 'cover') {
         covers.push(item.data);
+      } else if (item.type === 'memory') {
+        memories.push(item.data);
       }
     }
-    return { novels, models, covers };
+    return { novels, models, covers, memories };
   }
 
   /** 把分组后的数据依次写回对应 store */
@@ -127,6 +132,7 @@ export function useGistSync() {
     novels: unknown[];
     models: unknown[];
     covers: unknown[];
+    memories: unknown[];
   }): Promise<void> {
     for (const novel of grouped.novels) {
       await booksStore.addBook(novel as Novel);
@@ -136,6 +142,10 @@ export function useGistSync() {
     }
     for (const cover of grouped.covers) {
       await coverHistoryStore.addCover(cover as Parameters<typeof coverHistoryStore.addCover>[0]);
+    }
+    // Memory 恢复：data 是携带 bookId 的完整 Memory，走 upsertMemoryForSync 写回 IndexedDB
+    for (const memory of grouped.memories) {
+      await MemoryService.upsertMemoryForSync(memory as Memory);
     }
   }
 
@@ -162,11 +172,14 @@ export function useGistSync() {
     const deletedCoverIds = (gistSync.deletedCoverIds || []).filter((record) =>
       keepDeletedRecord(record, items, 'cover'),
     );
+    const deletedMemoryIds = (gistSync.deletedMemoryIds || []).filter((record) =>
+      keepDeletedRecord(record, items, 'memory'),
+    );
     const restoredCoverUrls = collectRestoredCoverUrls(items);
     const deletedCoverUrls = (gistSync.deletedCoverUrls || []).filter(
       (record) => !restoredCoverUrls.has(String(record.url).trim()),
     );
-    return { deletedNovelIds, deletedModelIds, deletedCoverIds, deletedCoverUrls };
+    return { deletedNovelIds, deletedModelIds, deletedCoverIds, deletedMemoryIds, deletedCoverUrls };
   }
 
   /** 收集本次恢复的封面 URL（已 trim、非空） */

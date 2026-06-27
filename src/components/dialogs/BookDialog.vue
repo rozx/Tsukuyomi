@@ -215,10 +215,48 @@ const buildAddModeExportData = (): Novel => {
   return data as unknown as Novel;
 };
 
+// 编辑模式可被表单覆盖的可选字段（cover / volumes 单独处理）
+const EDIT_OVERRIDE_FIELDS = [
+  'title',
+  'alternateTitles',
+  'author',
+  'description',
+  'tags',
+  'webUrl',
+  'translationInstructions',
+  'polishInstructions',
+  'proofreadingInstructions',
+] as const;
+
+// 编辑模式：以 props.book 为基底，用当前表单值覆盖未保存的改动后再构建导出对象
+const buildEditModeBaseNovel = (): Novel => {
+  const f = formData.value;
+  const merged: Novel = { ...props.book! };
+  const mergedRecord = merged as unknown as Record<string, unknown>;
+  for (const field of EDIT_OVERRIDE_FIELDS) {
+    if (f[field] !== undefined) {
+      mergedRecord[field] = f[field];
+    }
+  }
+  // 封面：表单有值则覆盖，表单显式清除（无 cover 字段）则删除
+  if (f.cover) {
+    merged.cover = f.cover;
+  } else {
+    delete merged.cover;
+  }
+  // 卷章节：表单持有当前（可能已编辑）的结构，覆盖后由 loadAllChapterContentsForNovel 按章节 id 补全内容
+  if (f.volumes !== undefined) {
+    merged.volumes = f.volumes;
+  }
+  return merged;
+};
+
 // 解析导出数据来源：编辑模式加载完整书籍数据，添加模式使用表单数据
 const resolveExportData = async (): Promise<Novel> => {
   if (props.mode === 'edit' && props.book) {
-    return ChapterContentService.loadAllChapterContentsForNovel(props.book);
+    // 用当前表单值覆盖 props.book，避免丢失对话框里未保存的标题/描述/标签/封面/卷章节改动
+    const baseNovel = buildEditModeBaseNovel();
+    return ChapterContentService.loadAllChapterContentsForNovel(baseNovel);
   }
   return buildAddModeExportData();
 };

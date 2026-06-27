@@ -148,7 +148,12 @@ const hasVolumes = computed(() => props.volumes.length > 0);
         <div class="volume-header">
           <div
             class="volume-header-content"
+            role="button"
+            tabindex="0"
+            :aria-expanded="isVolumeExpanded(volume.id)"
             @click="handleToggleVolume(volume.id)"
+            @keydown.enter.prevent="handleToggleVolume(volume.id)"
+            @keydown.space.prevent="handleToggleVolume(volume.id)"
           >
             <i
               :class="['pi volume-toggle-icon', volumeToggleIcon(volume.id)]"

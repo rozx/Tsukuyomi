@@ -103,13 +103,13 @@ const isOtherSelected = ref(false);
 const selectedIndex = ref<number | null>(null);
 const selectedAnswer = ref('');
 
-const otherLabel = 'Other：自定义输入';
+const otherLabel = '其他：自定义输入';
 
 const showFreeTextArea = computed(() => {
   if (!allowFreeText.value) return false;
   // 没有候选答案时，直接显示输入框
   if (suggestedAnswers.value.length === 0) return true;
-  // 有候选答案时，选择“Other”才展开输入框
+  // 有候选答案时，选择“其他”才展开输入框
   return isOtherSelected.value;
 });
 
@@ -140,16 +140,19 @@ const freeTextMaxlength = computed(() =>
   typeof payload.value?.max_length === 'number' ? payload.value.max_length : undefined,
 );
 
-// batch 模式：回填已答内容。答案不在候选中且允许自由输入时视为 Other
+// batch 模式：回填已答内容。答案不在候选中且允许自由输入时视为“其他”
 const prefillBatchAnswer = (existing: string) => {
-  const inSuggested = suggestedAnswers.value.includes(existing);
-  if (!inSuggested && allowFreeText.value) {
+  const idx = suggestedAnswers.value.findIndex((x) => x === existing);
+  if (idx < 0 && allowFreeText.value) {
+    // 历史答案不在候选中、但允许自由输入：回填到自定义输入框
     isOtherSelected.value = true;
     freeText.value = existing;
     return;
   }
-  const idx = suggestedAnswers.value.findIndex((x) => x === existing);
-  selectedIndex.value = idx >= 0 ? idx : null;
+  // 历史答案不在候选中、且不允许自由输入（如候选集变化）：
+  // 用越界 index 占位保留一个“可提交”状态（不会高亮任何候选按钮），
+  // 否则 selectedIndex 为 null 会导致 canSubmit/showSubmitButton 皆假——已答却无法继续。
+  selectedIndex.value = idx >= 0 ? idx : suggestedAnswers.value.length;
   selectedAnswer.value = existing;
   freeText.value = '';
 };

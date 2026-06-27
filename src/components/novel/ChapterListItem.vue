@@ -41,7 +41,11 @@ defineEmits<{
       dragging: isDragging,
     }"
     :draggable="!touchMode"
+    role="button"
+    tabindex="0"
     @click="$emit('navigate')"
+    @keydown.enter.prevent="$emit('navigate')"
+    @keydown.space.prevent="$emit('navigate')"
     @dragstart="$emit('dragstart', $event)"
     @dragend="$emit('dragend', $event)"
     @dragover.prevent.stop="$emit('dragover', $event)"

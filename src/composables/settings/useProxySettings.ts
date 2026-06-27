@@ -199,14 +199,57 @@ function createProxySettingsContext() {
     }
   };
 
+  // 把网站映射的代理列表整体替换为 nextProxies（最多 3 个）。
+  // store 未提供原子替换，只能「先删后加」；任一步失败时整体回滚到 currentProxies，
+  // 避免留下半更新（旧映射已删、新映射只加了一部分）的损坏配置。失败时回滚后重新抛出。
   const replaceSiteProxies = async (site: string, currentProxies: string[], nextProxies: string[]) => {
-    for (const proxyUrl of currentProxies) {
+    const original = [...currentProxies];
+    try {
+      for (const proxyUrl of currentProxies) {
+        await settingsStore.removeProxyForSite(site, proxyUrl);
+      }
+      const proxiesToAdd = nextProxies.slice(0, 3);
+      for (const proxyUrl of proxiesToAdd) {
+        await settingsStore.addProxyForSite(site, proxyUrl);
+      }
+    } catch (err) {
+      // 回滚：先清掉本次已写入的任何代理，再恢复原始列表
+      await restoreSiteProxies(site, original);
+      throw err;
+    }
+  };
+
+  // 把网站映射的代理列表恢复为 desiredProxies（用于回滚）。先移除当前残留再逐个加回。
+  const restoreSiteProxies = async (site: string, desiredProxies: string[]) => {
+    const leftover = settingsStore.getProxiesForSite(site);
+    for (const proxyUrl of leftover) {
       await settingsStore.removeProxyForSite(site, proxyUrl);
     }
-    const proxiesToAdd = nextProxies.slice(0, 3);
-    for (const proxyUrl of proxiesToAdd) {
+    for (const proxyUrl of desiredProxies.slice(0, 3)) {
       await settingsStore.addProxyForSite(site, proxyUrl);
     }
+  };
+
+  // 编辑映射失败时的统一处理：回滚启用状态（代理列表已由 replaceSiteProxies 自行回滚），
+  // 记录日志并提示错误。抽出以降低 confirmEditSiteMapping 的复杂度。
+  const handleEditMappingFailure = async (
+    site: string,
+    enabledChanged: boolean,
+    originalEnabled: boolean,
+    err: unknown,
+  ) => {
+    if (enabledChanged) {
+      await settingsStore.setProxySiteMappingEnabled(site, originalEnabled).catch((rollbackErr) => {
+        console.error('[useProxySettings] 回滚启用状态失败:', rollbackErr);
+      });
+    }
+    console.error('[useProxySettings] 更新代理映射失败:', err);
+    toast.add({
+      severity: 'error',
+      summary: '映射更新失败',
+      detail: err instanceof Error ? err.message : String(err),
+      life: 5000,
+    });
   };
 
   const confirmEditSiteMapping = async () => {
@@ -220,10 +263,17 @@ function createProxySettingsContext() {
     const site = editingSiteMapping.value.site;
     const currentEntry = siteMapping.value[site];
     const currentProxies = currentEntry?.proxies ?? [];
-    if (enabledForEdit.value !== (currentEntry?.enabled ?? true)) {
-      await settingsStore.setProxySiteMappingEnabled(site, enabledForEdit.value);
+    const originalEnabled = currentEntry?.enabled ?? true;
+    const enabledChanged = enabledForEdit.value !== originalEnabled;
+    try {
+      if (enabledChanged) {
+        await settingsStore.setProxySiteMappingEnabled(site, enabledForEdit.value);
+      }
+      await replaceSiteProxies(site, currentProxies, selectedProxiesForEdit.value);
+    } catch (err) {
+      await handleEditMappingFailure(site, enabledChanged, originalEnabled, err);
+      return;
     }
-    await replaceSiteProxies(site, currentProxies, selectedProxiesForEdit.value);
     toast.add({ severity: 'success', summary: '映射已更新', detail: `${site} 的代理映射已更新`, life: 2000 });
     cancelEditSiteMapping();
   };

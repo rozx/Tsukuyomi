@@ -39,7 +39,14 @@ defineEmits<{
     <span class="vt-row-count" :style="{ color: statusTextColor(chapter.id) }">
       {{ statusLabel(chapter.id) }}
     </span>
-    <button type="button" class="vt-row-more" aria-label="章节操作" @click.stop="$emit('more', $event)">
+    <button
+      type="button"
+      class="vt-row-more"
+      aria-label="章节操作"
+      @click.stop="$emit('more', $event)"
+      @keydown.enter.stop
+      @keydown.space.stop
+    >
       <i class="pi pi-ellipsis-v" aria-hidden="true" />
     </button>
   </div>

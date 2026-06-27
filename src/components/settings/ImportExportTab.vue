@@ -87,8 +87,11 @@ const applyImportedData = async (data: ImportedSettings) => {
     await applyCoverHistory(data.coverHistory);
   }
 
-  // 覆盖当前的 Memory 数据 —— 共享 leaf 保证 Electron/SPA 行为一致
-  await importMemoriesPreservingIdentity(data.memories, '[ImportExportTab]');
+  // 覆盖当前的 Memory 数据 —— 共享 leaf 保证 Electron/SPA 行为一致。
+  // 与其它字段一致：快照里没有 memories 字段（undefined）时跳过，避免旧快照抹掉本地 Memory。
+  if (data.memories !== undefined) {
+    await importMemoriesPreservingIdentity(data.memories, '[ImportExportTab]');
+  }
 
   if (data.appSettings) {
     await settingsStore.importSettings(data.appSettings);

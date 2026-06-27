@@ -19,7 +19,11 @@
         <!-- 卷标题 -->
         <div
           class="flex items-center justify-between cursor-pointer hover:bg-white/5 p-2 rounded-lg transition-colors"
+          role="button"
+          tabindex="0"
           @click="emit('toggle', volume.id)"
+          @keydown.enter.prevent="emit('toggle', volume.id)"
+          @keydown.space.prevent="emit('toggle', volume.id)"
         >
           <div class="flex items-center gap-2 flex-1">
             <i :class="volumeIconClass(volume.id)" />

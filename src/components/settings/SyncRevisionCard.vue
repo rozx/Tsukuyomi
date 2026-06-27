@@ -46,7 +46,12 @@ const onRevertClick = (event: Event) => {
   <div class="border border-white/10 rounded-lg overflow-hidden">
     <div
       class="revision-row flex items-center justify-between p-3 cursor-pointer hover:bg-white/5 transition-colors"
+      role="button"
+      tabindex="0"
+      :aria-expanded="isExpanded"
       @click="emit('toggle')"
+      @keydown.enter.prevent="emit('toggle')"
+      @keydown.space.prevent="emit('toggle')"
     >
       <div class="revision-info flex items-center gap-3 flex-1 min-w-0">
         <i :class="[chevronIcon, 'text-moon/60 text-sm flex-shrink-0']" />

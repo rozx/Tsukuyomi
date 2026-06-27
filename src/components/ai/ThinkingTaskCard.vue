@@ -4,6 +4,7 @@
  * 把状态图标 :class 对象、各类 v-if 收进子组件，降低父模板圈复杂度。
  */
 import Button from 'primevue/button';
+import type { VNodeRef } from 'vue';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { useThinkingTaskCard } from 'src/composables/ai/useThinkingTaskCard';
 
@@ -41,6 +42,19 @@ const { statusIcon, typeLabel, formatDuration, hasThinking } = useThinkingTaskCa
 
 const statusLabel = (status: string): string => statusLabels[status] ?? status;
 const isRunning = (t: AIProcessingTask): boolean => t.status === 'thinking' || t.status === 'processing';
+
+// 按 task.id 缓存稳定的 ref 回调，避免每次渲染（如 nowMs 刷新）都重建内联函数，
+// 否则会导致父级重挂监听、思考区滚动被拉回底部
+const thinkingRefCallbacks = new Map<string, VNodeRef>();
+const thinkingMessageRef = (taskId: string): VNodeRef => {
+  const cached = thinkingRefCallbacks.get(taskId);
+  if (cached) return cached;
+  const callback: VNodeRef = (el) => {
+    props.setThinkingMessageRef(taskId, (el as HTMLElement | null) ?? null);
+  };
+  thinkingRefCallbacks.set(taskId, callback);
+  return callback;
+};
 </script>
 
 <template>
@@ -84,7 +98,7 @@ const isRunning = (t: AIProcessingTask): boolean => t.status === 'thinking' || t
     <div v-if="hasThinking(task)" class="mt-2 p-2 rounded bg-white/3 border border-white/5">
       <p class="text-xs text-moon/50 mb-1">思考过程：</p>
       <p
-        :ref="(el) => setThinkingMessageRef(task.id, el as HTMLElement)"
+        :ref="thinkingMessageRef(task.id)"
         class="text-xs text-moon/70 whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
         style="word-break: break-all; overflow-wrap: anywhere"
       >
