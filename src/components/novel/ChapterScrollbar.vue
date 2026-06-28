@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import type { ScrollbarMetrics } from 'src/composables/book-details/useChapterVirtualizer';
+import { useScrollbarDrag } from 'src/composables/book-details/useScrollbarDrag';
 
 /**
  * 自定义滚动条（桌面/平板/移动通用）。
@@ -8,6 +9,7 @@ import type { ScrollbarMetrics } from 'src/composables/book-details/useChapterVi
  * **拖动时滑块直接贴合光标**（不读 model），故即使 scrollHeight 因动态测量抖动，滑块也始终跟随鼠标、不漂移；
  * 同时把光标位置映射为 0..1 比例驱动 scrollToFraction（线性映射原生滚动范围，拖到底即可露出段落后的上下章按钮）。
  * 通过 Teleport 挂到非滚动的定位祖先（避免随内容滚走）。轨道 pointer-events:none，仅滑块可交互。
+ * 拖动生命周期（含 pointercancel/lostpointercapture 清理）见 useScrollbarDrag。
  */
 const props = defineProps<{
   model: ScrollbarMetrics;
@@ -26,40 +28,13 @@ const ready = ref(false);
 const MIN_THUMB_PX = 28;
 
 // 拖动态：滑块用 dragTopPct 贴合光标，覆盖静止的 model.topPct
-const dragging = ref(false);
-const dragTopPct = ref(0);
-let grabOffset = 0;
-
-const onMove = (e: PointerEvent) => {
-  const track = trackRef.value;
-  if (!dragging.value || !track) return;
-  const trackRect = track.getBoundingClientRect();
-  const thumbH = Math.max((props.model.heightPct / 100) * trackRect.height, MIN_THUMB_PX);
-  const range = Math.max(1, trackRect.height - thumbH);
-  const topPx = Math.min(range, Math.max(0, e.clientY - trackRect.top - grabOffset));
-  // 滑块视觉位置直接跟随光标（与内容滚动解耦，避免抖动/滞后）
-  dragTopPct.value = (topPx / trackRect.height) * 100;
-  // 内容按比例滚动（线性映射原生范围）
-  props.scrollToFraction(topPx / range);
-};
-
-const onUp = () => {
-  dragging.value = false;
-  window.removeEventListener('pointermove', onMove);
-  window.removeEventListener('pointerup', onUp);
-};
-
-const onThumbPointerDown = (e: PointerEvent) => {
-  const thumb = e.currentTarget as HTMLElement;
-  grabOffset = e.clientY - thumb.getBoundingClientRect().top;
-  dragTopPct.value = props.model.topPct;
-  dragging.value = true;
-  thumb.setPointerCapture?.(e.pointerId);
-  window.addEventListener('pointermove', onMove);
-  window.addEventListener('pointerup', onUp);
-  e.preventDefault();
-  e.stopPropagation();
-};
+const { dragging, dragTopPct, onThumbPointerDown, stop } = useScrollbarDrag({
+  getTrack: () => trackRef.value,
+  getHeightPct: () => props.model.heightPct,
+  getTopPct: () => props.model.topPct,
+  scrollToFraction: (fraction) => props.scrollToFraction(fraction),
+  minThumbPx: MIN_THUMB_PX,
+});
 
 // Teleport 目标可能晚一两帧才挂载：重试若干帧，避免单次检查落空导致滚动条永不渲染。
 let readyRaf = 0;
@@ -79,8 +54,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (readyRaf) cancelAnimationFrame(readyRaf);
-  window.removeEventListener('pointermove', onMove);
-  window.removeEventListener('pointerup', onUp);
+  stop();
 });
 </script>
 
