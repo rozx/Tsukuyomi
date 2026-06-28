@@ -120,6 +120,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.14.1",
+    "title": "v0.14.1",
+    "file": "RELEASE_NOTES_v0.14.1.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "修复虚拟滚动章节顶部多出空白（头部偏移重复计入）、底部导航可达；短章节编辑段落时用弹性留白把上下章导航钉在面板底部，不再被顶动"
+  },
+  {
     "id": "v0.14.0",
     "title": "v0.14.0",
     "file": "RELEASE_NOTES_v0.14.0.md",
