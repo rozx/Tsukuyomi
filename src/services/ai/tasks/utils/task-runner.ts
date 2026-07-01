@@ -44,6 +44,11 @@ import { buildStateTransitionMarker } from 'src/composables/useThinkingFormatter
 // 最大连续相同状态次数（用于检测循环）
 const MAX_CONSECUTIVE_STATUS = 2;
 
+// 绝对硬性轮次上限：即使调用方未传 maxTurns（默认 Infinity），循环也必须在此轮次内终止。
+// 防御场景：模型在 working 等状态持续返回纯文本（无工具调用）时，状态永远不会推进到
+// end，各 consecutive 计数器只会触发提示注入而不会强制终止，循环会无限烧 token。
+const ABSOLUTE_MAX_TURNS = 200;
+
 /**
  * 处理工具调用循环
  */
@@ -266,6 +271,8 @@ class TaskLoopSession {
 
   public async run(): Promise<ToolCallLoopResult> {
     const { maxTurns = Infinity } = this.config;
+    // 有效上限 = min(调用方配置, 绝对硬性上限)，保证任何情况下循环都有界
+    const effectiveMaxTurns = Math.min(maxTurns, ABSOLUTE_MAX_TURNS);
 
     // 在初始历史的最后一条 user 消息中注入 planning 待办清单
     if (this.todoWorkflow) {
@@ -279,7 +286,7 @@ class TaskLoopSession {
       }
     }
 
-    while (maxTurns === Infinity || this.currentTurnCount < maxTurns) {
+    while (this.currentTurnCount < effectiveMaxTurns) {
       if (this.currentStatus === 'end') break;
 
       this.currentTurnCount++;
@@ -293,7 +300,7 @@ class TaskLoopSession {
       }
     }
 
-    this.checkMaxTurns();
+    this.checkMaxTurns(effectiveMaxTurns);
     this.finalizeMetrics();
 
     return this.buildResult();
@@ -1041,15 +1048,10 @@ class TaskLoopSession {
     if (except !== 'review') this.consecutiveReviewCount = 0;
   }
 
-  private checkMaxTurns() {
-    if (
-      this.currentStatus !== 'end' &&
-      this.config.maxTurns !== Infinity &&
-      this.config.maxTurns &&
-      this.currentTurnCount >= this.config.maxTurns
-    ) {
+  private checkMaxTurns(effectiveMaxTurns: number) {
+    if (this.currentStatus !== 'end' && this.currentTurnCount >= effectiveMaxTurns) {
       throw new Error(
-        `AI在${this.config.maxTurns}回合内未完成${this.taskLabel}任务（当前状态: ${this.currentStatus}）。请重试。`,
+        `AI在${effectiveMaxTurns}回合内未完成${this.taskLabel}任务（当前状态: ${this.currentStatus}）。请重试。`,
       );
     }
   }

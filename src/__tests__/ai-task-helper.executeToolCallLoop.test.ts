@@ -1017,6 +1017,103 @@ describe('executeToolCallLoop', () => {
     }
   });
 
+  test('模型在 working 状态持续返回纯文本时，循环必须在绝对轮次上限（200 轮）内终止并抛错', async () => {
+    const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
+      (toolCall) => {
+        if (toolCall.function.name === 'update_task_status') {
+          const args = JSON.parse(toolCall.function.arguments || '{}') as { status?: string };
+          return Promise.resolve({
+            content: JSON.stringify({ success: true, new_status: args.status }),
+          } as any);
+        }
+        return Promise.resolve({ content: JSON.stringify({ success: true }) } as any);
+      },
+    );
+
+    try {
+      // 前两轮通过工具调用进入 working 状态，之后永远返回纯文本（无工具调用）
+      const toolCallResponses: AIToolCall[][] = [
+        [
+          {
+            id: 'call-1',
+            type: 'function',
+            function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+          },
+        ],
+        [
+          {
+            id: 'call-2',
+            type: 'function',
+            function: { name: 'update_task_status', arguments: '{"status":"working"}' },
+          },
+        ],
+      ];
+
+      let callCount = 0;
+      // 测试保护：如果实现没有硬性上限，mock 主动抛错避免测试真的无限循环
+      const HARD_GUARD = 1000;
+      const generateText = (): Promise<{
+        text: string;
+        toolCalls?: AIToolCall[];
+        reasoningContent?: string;
+      }> => {
+        callCount++;
+        if (callCount > HARD_GUARD) {
+          return Promise.reject(
+            new Error(`测试保护：generateText 已被调用超过 ${HARD_GUARD} 次，循环未终止`),
+          );
+        }
+        const toolCalls = toolCallResponses[callCount - 1];
+        if (toolCalls) {
+          return Promise.resolve({ text: '', toolCalls });
+        }
+        return Promise.resolve({ text: `继续分析第 ${callCount} 步的翻译思路` });
+      };
+
+      // 不传 maxTurns（与生产调用方 runToolLoopForChunk 一致，默认 Infinity）
+      let thrown: unknown;
+      try {
+        await executeToolCallLoop({
+          history: [
+            { role: 'system', content: 'system' },
+            { role: 'user', content: 'start' },
+          ],
+          tools: [
+            {
+              type: 'function',
+              function: {
+                name: 'update_task_status',
+                description: 'update status',
+                parameters: { type: 'object', properties: {}, required: [] },
+              },
+            },
+          ],
+          generateText,
+          aiServiceConfig: { apiKey: '', baseUrl: '', model: 'test' },
+          taskType: 'polish',
+          chunkText: 'chunk',
+          paragraphIds: ['p1'],
+          bookId: 'book1',
+          handleAction: () => {},
+          onToast: undefined,
+          taskId: undefined,
+          aiProcessingStore: undefined,
+          logLabel: 'Test',
+        });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).toBeInstanceOf(Error);
+      expect((thrown as Error).message).toMatch(/回合内未完成/);
+
+      // 绝对上限为 200 轮：generateText 最多被调用 200 次
+      expect(callCount).toBeLessThanOrEqual(200);
+    } finally {
+      handleToolCallSpy.mockRestore();
+    }
+  });
+
   test('多工具调用应保持 assistant -> tool... -> user 的顺序（Golden Transcript）', async () => {
     const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
       (toolCall) => {
