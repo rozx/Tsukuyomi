@@ -174,6 +174,23 @@ export function computeSpacerSize(
   return Math.max(totalSize, last, pin);
 }
 
+/**
+ * 纯函数：列表「测量重置键」。仅当渲染面（mode）或段落 id 序列变化时结果才变化。
+ *
+ * 用途：判断是否需要清空测量缓存（calibrator + virtualizer）。整章翻译的每次 chunk
+ * 落盘 / 停止翻译后的批量保存都会整体替换段落数组（新引用、新对象，但 id 序列不变），
+ * 这类「内容更新」不能清空测量 —— 已挂载行不会被重新测量（ResizeObserver 只在尺寸
+ * 变化时触发、组件不重挂载），清空后 spacer 退化为纯估算高度，与真实 DOM 堆叠脱节，
+ * 表现为最后一段下方大片空白（scrollHeight 明显大于实际内容高度）。
+ * 键格式：mode + ':' + JSON.stringify(id 数组)，天然无拼接歧义（['a','bc'] vs ['ab','c']）。
+ */
+export function computeListResetKey(
+  mode: ChapterListMode,
+  paragraphs: readonly { id: string }[],
+): string {
+  return `${mode}:${JSON.stringify(paragraphs.map((p) => p.id))}`;
+}
+
 export interface UseChapterVirtualizerOptions {
   /** 真实滚动容器元素（桌面 = .chapter-content-panel wrapper；移动 = .mbr-scroll） */
   scrollElement: Ref<HTMLElement | null>;
@@ -245,11 +262,16 @@ export function useChapterVirtualizer(opts: UseChapterVirtualizerOptions) {
     })),
   );
 
-  // 章节切换（paragraphs 引用变化）或 preview↔edit 模式切换时，清空按索引缓存的测量高度并重测：
+  // 章节切换（段落 id 序列变化）或 preview↔edit 模式切换时，清空按索引缓存的测量高度并重测：
   // calibrator 按 index 长期缓存，跨章节/跨模式复用旧高度会让 estimateSize / totalSize / 滚动条
   // 先用错值再跳变。清空后重新从种子估算累积，避免「先错后跳」。
+  //
+  // 注意 watch 的是「重置键」而非数组引用：翻译写入/落盘（updateParagraphsAndSave）会整体
+  // 替换段落数组但 id 序列不变，此时**不能**清空 —— 已挂载行不会被重新测量（ResizeObserver
+  // 只在尺寸变化时触发、组件不重挂载），清空会让 spacer 退化为纯估算高度、与真实 DOM 脱节，
+  // 表现为最后一段下方大片空白。译文变化引起的行高变化由 ResizeObserver 自行增量重测。
   watch(
-    () => [opts.paragraphs.value, toValue(opts.mode)] as const,
+    () => computeListResetKey(toValue(opts.mode), opts.paragraphs.value),
     () => {
       calibrator.clear();
       virtualizer.value.measure();

@@ -1,4 +1,6 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, test, expect, spyOn } from 'bun:test';
+import { effectScope, nextTick, ref } from 'vue';
+import type { Paragraph } from 'src/models/novel';
 import {
   estimateRowHeight,
   resolvePinnedExtraIndex,
@@ -6,6 +8,9 @@ import {
   computeScrollbarMetrics,
   toContentOffset,
   computeSpacerSize,
+  computeListResetKey,
+  useChapterVirtualizer,
+  type ChapterListMode,
 } from 'src/composables/book-details/useChapterVirtualizer';
 
 describe('estimateRowHeight', () => {
@@ -180,5 +185,106 @@ describe('computeSpacerSize（内容区高度；totalSize 已是内容相对，�
 
   test('scrollMargin 为 0 时退化为原始 max（行为不变）', () => {
     expect(computeSpacerSize(900, 1100, null, 0)).toBe(1100);
+  });
+});
+
+describe('computeListResetKey（测量重置键：仅 id 序列或模式变化时才变）', () => {
+  test('同 id 序列、不同数组/对象引用（翻译写入替换数组）→ 键相同', () => {
+    const a = [{ id: 'p1' }, { id: 'p2' }];
+    const b = [{ id: 'p1' }, { id: 'p2' }];
+    expect(computeListResetKey('edit', a)).toBe(computeListResetKey('edit', b));
+  });
+
+  test('id 序列变化（增删段落 / 切章）→ 键不同', () => {
+    expect(computeListResetKey('edit', [{ id: 'p1' }])).not.toBe(
+      computeListResetKey('edit', [{ id: 'p1' }, { id: 'p2' }]),
+    );
+    expect(computeListResetKey('edit', [{ id: 'p1' }])).not.toBe(
+      computeListResetKey('edit', [{ id: 'q1' }]),
+    );
+  });
+
+  test('id 顺序变化 → 键不同', () => {
+    expect(computeListResetKey('edit', [{ id: 'p1' }, { id: 'p2' }])).not.toBe(
+      computeListResetKey('edit', [{ id: 'p2' }, { id: 'p1' }]),
+    );
+  });
+
+  test('模式变化 → 键不同', () => {
+    const paras = [{ id: 'p1' }];
+    expect(computeListResetKey('edit', paras)).not.toBe(computeListResetKey('preview', paras));
+  });
+
+  test('id 拼接无歧义（[a,bc] vs [ab,c]）', () => {
+    expect(computeListResetKey('edit', [{ id: 'a' }, { id: 'bc' }])).not.toBe(
+      computeListResetKey('edit', [{ id: 'ab' }, { id: 'c' }]),
+    );
+  });
+
+  test('空列表返回稳定键', () => {
+    expect(computeListResetKey('mobile', [])).toBe(computeListResetKey('mobile', []));
+  });
+});
+
+describe('useChapterVirtualizer：测量清空时机（重置键 = 段落 id 序列 + 模式）', () => {
+  // 回归背景：整章翻译的每次 chunk 落盘 / 停止翻译后的批量保存都会整体替换
+  // selectedChapterWithContent → 段落数组换新引用但 id 序列不变。旧实现按数组引用
+  // watch，一律 calibrator.clear() + virtualizer.measure()，把已挂载行的真实测量
+  // 全部作废；而已挂载行不会重新测量（ResizeObserver 只在尺寸变化时触发、组件不重挂载），
+  // spacer 退化为纯估算高度 → 最后一段下方出现大片空白（scrollHeight >> 实际内容）。
+  const makeParagraphs = (ids: string[]): Paragraph[] =>
+    ids.map(
+      (id) =>
+        ({
+          id,
+          text: `原文-${id}`,
+          translations: [],
+          selectedTranslationId: '',
+        }) as unknown as Paragraph,
+    );
+
+  const mount = (ids: string[], mode: ChapterListMode = 'edit') => {
+    const scope = effectScope();
+    const paragraphs = ref<Paragraph[]>(makeParagraphs(ids));
+    const modeRef = ref<ChapterListMode>(mode);
+    const scrollElement = ref<HTMLElement | null>(null);
+    const api = scope.run(() =>
+      useChapterVirtualizer({ scrollElement, paragraphs, mode: modeRef }),
+    )!;
+    const measureSpy = spyOn(api.virtualizer.value, 'measure');
+    return { scope, paragraphs, modeRef, api, measureSpy };
+  };
+
+  test('数组引用替换但 id 序列不变（翻译写入/落盘）时不清空测量', async () => {
+    const { scope, paragraphs, measureSpy } = mount(['p1', 'p2', 'p3']);
+    // 模拟 updateParagraphsAndSave：新数组、新段落对象（译文更新），id 序列不变
+    paragraphs.value = makeParagraphs(['p1', 'p2', 'p3']);
+    await nextTick();
+    expect(measureSpy).not.toHaveBeenCalled();
+    scope.stop();
+  });
+
+  test('id 序列变化（切换章节 / 增删段落）时清空并重测', async () => {
+    const { scope, paragraphs, measureSpy } = mount(['p1', 'p2', 'p3']);
+    paragraphs.value = makeParagraphs(['q1', 'q2']);
+    await nextTick();
+    expect(measureSpy).toHaveBeenCalled();
+    scope.stop();
+  });
+
+  test('段落顺序变化时清空并重测（偏移全部失效）', async () => {
+    const { scope, paragraphs, measureSpy } = mount(['p1', 'p2', 'p3']);
+    paragraphs.value = makeParagraphs(['p2', 'p1', 'p3']);
+    await nextTick();
+    expect(measureSpy).toHaveBeenCalled();
+    scope.stop();
+  });
+
+  test('模式切换（edit↔preview）时清空并重测', async () => {
+    const { scope, modeRef, measureSpy } = mount(['p1', 'p2'], 'edit');
+    modeRef.value = 'preview';
+    await nextTick();
+    expect(measureSpy).toHaveBeenCalled();
+    scope.stop();
   });
 });
