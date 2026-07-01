@@ -46,6 +46,21 @@ function parseToolCallArguments(
   try {
     return JSON.parse(rawArgs);
   } catch (e) {
+    // 截断检测：完整的工具参数必然是以 '}' 结尾的 JSON 对象。
+    // 长输出（如整段译文）撞到模型输出 token 上限时，流式拼接的参数会在中途被切断；
+    // jsonrepair 会把这种残缺 JSON“补全”成语法合法但内容缺失的对象（例如半截译文），
+    // 若放行会以 success 静默入库损坏数据，必须直接拒绝、让模型缩小批次后重试。
+    if (!rawArgs.trimEnd().endsWith('}')) {
+      const truncatedMsg =
+        '工具参数疑似被截断（输出可能达到 token 上限）。请缩小单次提交的内容量（例如减少批次段落数）后重试。';
+      console.error(
+        `[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`,
+        truncatedMsg,
+        '\n参数结尾:',
+        rawArgs.slice(-120),
+      );
+      throw new Error(truncatedMsg);
+    }
     try {
       const repairedJson = jsonrepair(rawArgs);
       const parsed = JSON.parse(repairedJson);

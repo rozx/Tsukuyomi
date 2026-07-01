@@ -1119,8 +1119,8 @@ export function useChapterTranslation(
             toast.add(message);
           },
           onParagraphTranslation: async (translations) => {
-            // 性能优化：使用 skipSave 模式，只更新内存，不立即保存到 IndexedDB
-            // 这样可以避免每个 chunk 都触发一次完整的保存流程
+            // skipSave 只是跳过「整本书」级别的保存流程（避免每个 chunk 把整本 volumes
+            // 传入 updateBook）；本章内容仍会在下方立即落盘。
             const chapterToSave = await updateParagraphsAndSave(
               new Map(
                 translations.map((t) => [
@@ -1146,6 +1146,18 @@ export function useChapterTranslation(
             // 保存最新的章节对象，用于最后的批量保存
             if (chapterToSave) {
               latestChapterForBatchSave = chapterToSave;
+
+              // 关键：每个 chunk 立即把本章内容落盘（只写这一章的 content 行，代价很小）。
+              // 否则所有译文都悬在内存里，「中途停止 + 立刻刷新」会整章丢失且无任何报错。
+              // 收尾的 batchSaveChapter 仍保留，作为元数据时间戳更新与最终兜底。
+              try {
+                await ChapterService.saveChapterContent(chapterToSave, targetBookId);
+              } catch (saveError) {
+                console.error(
+                  '[useChapterTranslation] ❌ chunk 落盘失败（任务收尾时会重试）:',
+                  saveError,
+                );
+              }
             }
 
             // 记录已应用的翻译
