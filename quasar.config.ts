@@ -74,9 +74,9 @@ export default defineConfig((ctx: any) => {
 
         // 配置开发服务器端口（避免与 Node.js 应用服务器冲突）
         if (!viteConf.server) viteConf.server = {};
-        // 开发环境：使用端口 9000，Node.js 应用服务器在 8080
+        // 开发环境：默认端口 9000，可用 PORT 环境变量覆盖；Node.js 应用服务器在 8080
         if (!viteConf.server.port) {
-          viteConf.server.port = 9000;
+          viteConf.server.port = Number(process.env.PORT) || 9000;
         }
         if (!viteConf.server.host) {
           viteConf.server.host = 'localhost';
@@ -149,8 +149,8 @@ export default defineConfig((ctx: any) => {
       // https: true,
       // 禁用自动打开浏览器（因为使用 Node.js 应用服务器作为入口）
       open: false,
-      // 代理配置在 extendViteConf 中设置
-      port: 9000,
+      // 代理配置在 extendViteConf 中设置；默认 9000，可用 PORT 环境变量覆盖
+      port: Number(process.env.PORT) || 9000,
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework
