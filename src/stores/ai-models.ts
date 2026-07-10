@@ -1,5 +1,6 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import type { AIModel } from 'src/services/ai/types/ai-model';
+import type { Novel } from 'src/models/novel';
 import { useSettingsStore } from './settings';
 import { aiModelService } from 'src/services/ai-model-service';
 
@@ -43,6 +44,27 @@ export const useAIModelsStore = defineStore('aiModels', {
         }
         // 回退到模型的 isDefault 配置（向后兼容）
         return state.models.find((model) => model.enabled && model.isDefault[task]?.enabled);
+      };
+    },
+
+    /**
+     * 获取任务实际使用的模型：优先本书覆盖（须指向已启用模型），否则回退全局默认。
+     * 覆盖指向已删除/禁用的模型时静默回退，不报错、不清理覆盖字段。
+     */
+    getModelForTask() {
+      return (
+        task: keyof AIModel['isDefault'],
+        book?: Novel | null,
+      ): AIModel | undefined => {
+        const overrideId =
+          task === 'translation' || task === 'proofreading'
+            ? book?.taskModelOverrides?.[task]
+            : undefined;
+        if (overrideId) {
+          const model = this.models.find((m) => m.id === overrideId && m.enabled);
+          if (model) return model;
+        }
+        return this.getDefaultModelForTask(task);
       };
     },
   },

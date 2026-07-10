@@ -80,6 +80,20 @@ export interface Novel {
    * - 此设置应用于整个书籍的所有章节
    */
   enableOriginalTextValidation?: boolean | undefined;
+
+  /**
+   * 本书任务模型覆盖
+   * - 键为任务类型（translation / proofreading，校对与润色共用），值为 AI 模型 ID
+   * - null/undefined: 跟随全局默认模型
+   * - 覆盖指向已删除/禁用的模型时运行时静默回退全局默认，不自动清理
+   * - 此设置应用于整个书籍的所有章节
+   */
+  taskModelOverrides?:
+    | {
+        translation?: string | null;
+        proofreading?: string | null;
+      }
+    | undefined;
 }
 
 export interface CoverImage {

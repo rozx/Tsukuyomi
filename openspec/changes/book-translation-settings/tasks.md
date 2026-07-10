@@ -1,9 +1,9 @@
 ## 1. 数据模型与模型解析（TDD）
 
-- [ ] 1.1 先写失败测试：`getModelForTask` 解析规则（新测试文件 `src/__tests__/ai-models-task-override.test.ts`）——覆盖命中已启用模型 / 覆盖模型被禁用 / 覆盖模型不存在 / 覆盖为 null / 未传 book / 全局默认也缺失 → undefined
-- [ ] 1.2 `src/models/novel.ts`：`Novel` 新增可选字段 `taskModelOverrides?: { translation?: string | null; proofreading?: string | null }`（含中文 JSDoc）
-- [ ] 1.3 `src/stores/ai-models.ts`：实现 getter `getModelForTask(task, book?)`，按 设计 D2 解析（覆盖须已启用，失效静默回退 `getDefaultModelForTask`），跑 1.1 测试转绿
-- [ ] 1.4 提交（模型层）
+- [x] 1.1 先写失败测试：`getModelForTask` 解析规则（新测试文件 `src/__tests__/ai-models-task-override.test.ts`）——覆盖命中已启用模型 / 覆盖模型被禁用 / 覆盖模型不存在 / 覆盖为 null / 未传 book / 全局默认也缺失 → undefined
+- [x] 1.2 `src/models/novel.ts`：`Novel` 新增可选字段 `taskModelOverrides?: { translation?: string | null; proofreading?: string | null }`（含中文 JSDoc）
+- [x] 1.3 `src/stores/ai-models.ts`：实现 getter `getModelForTask(task, book?)`，按 设计 D2 解析（覆盖须已启用，失效静默回退 `getDefaultModelForTask`），跑 1.1 测试转绿
+- [x] 1.4 提交（模型层）
 
 ## 2. 模型消费点接入
 
