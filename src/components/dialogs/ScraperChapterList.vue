@@ -3,31 +3,37 @@
     class="h-full flex-1 min-h-0 flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
     :style="splitPanelContainerStyle"
   >
-    <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2 w-full">
-      <div class="flex items-center justify-between min-w-0 gap-2">
-        <h4 class="text-md font-semibold text-moon/90 flex-shrink-0">章节列表</h4>
-        <div class="flex items-center gap-2 flex-1 justify-end min-w-0">
-          <div
-            class="flex gap-1 min-w-0"
-            :class="{ 'overflow-x-auto whitespace-nowrap pr-1': isPhone }"
-          >
-            <Button
-              v-for="opt in filterOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :class="filterButtonClass(opt.value)"
-              class="p-button-sm icon-button-hover"
-              @click="chapterFilter = opt.value"
-            />
-          </div>
+    <!-- 手机端两行头部：标题+全选一行，过滤条整行横向滚动；桌面保持单行 -->
+    <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 w-full">
+      <div class="flex items-center gap-2 min-w-0" :class="{ 'flex-wrap': isPhone }">
+        <h4
+          class="text-md font-semibold text-moon/90 flex-shrink-0"
+          :class="{ 'flex-1': isPhone }"
+        >
+          章节列表
+        </h4>
+        <div
+          class="flex gap-1 min-w-0"
+          :class="
+            isPhone ? 'order-last w-full overflow-x-auto whitespace-nowrap' : 'flex-1 justify-end'
+          "
+        >
           <Button
-            :label="selectAllLabel"
-            :icon="selectAllIcon"
-            class="p-button-text p-button-sm text-moon/70 hover:text-moon/90 flex-shrink-0"
-            :aria-label="selectAllAria"
-            @click="toggleSelectAll"
+            v-for="opt in filterOptions"
+            :key="opt.value"
+            :label="opt.label"
+            :class="filterButtonClass(opt.value)"
+            class="p-button-sm icon-button-hover flex-shrink-0"
+            @click="chapterFilter = opt.value"
           />
         </div>
+        <Button
+          :label="selectAllLabel"
+          :icon="selectAllIcon"
+          class="p-button-text p-button-sm text-moon/70 hover:text-moon/90 flex-shrink-0"
+          :aria-label="selectAllAria"
+          @click="toggleSelectAll"
+        />
       </div>
     </div>
     <div class="relative flex-1 min-h-0 px-3 py-2 overflow-hidden w-full min-w-0">
