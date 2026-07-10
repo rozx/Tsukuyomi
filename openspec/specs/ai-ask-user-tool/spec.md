@@ -133,9 +133,9 @@ TBD - created by archiving change add-ai-ask-user-tool. Update Purpose after arc
 - **WHEN** 系统为该书籍执行 translation/polishing/proofreading 等翻译相关任务构建 tools 列表
 - **THEN** 系统 MUST 不向 AI 提供 `ask_user` 工具（tools 列表中不包含 `ask_user`）
 
-#### Scenario: UI 设置入口在翻译设置（书籍级）
-- **GIVEN** 用户正在查看某本书籍的章节详情页面
-- **WHEN** 用户打开“翻译设置”弹窗的「全局设置」页签
+#### Scenario: UI 设置入口在书籍翻译设置（书籍级）
+- **GIVEN** 用户正在查看某本书籍的详情页面
+- **WHEN** 用户打开书籍翻译设置（桌面/平板：侧栏「翻译设置」面板；手机：翻译设置底部抽屉的「全局设置」页签）
 - **THEN** 系统 MUST 提供“跳过 AI 追问（不弹出问答对话框）”开关
 - **AND** 该开关的变更 MUST 被保存为该书籍的设置
 

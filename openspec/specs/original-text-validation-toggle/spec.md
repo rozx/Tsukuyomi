@@ -9,14 +9,14 @@ TBD - created by archiving change add-original-text-validation-toggle. Update Pu
 
 #### Scenario: 用户在翻译设置中启用原文校验
 
-- **GIVEN** 用户打开翻译设置弹窗（ChapterSettingsPopover）的全局设置标签页
+- **GIVEN** 用户打开书籍翻译设置（桌面/平板：侧栏「翻译设置」面板；手机：翻译设置底部抽屉的「全局设置」页签）
 - **WHEN** 用户开启「原文校验」开关并保存
 - **THEN** `Novel.enableOriginalTextValidation` SHALL 被设置为 `true`
 - **AND THEN** 后续翻译任务中 `add_translation_batch` 工具 SHALL 启用 `original_text_prefix` 校验
 
 #### Scenario: 用户在翻译设置中禁用原文校验（默认状态）
 
-- **GIVEN** 用户打开翻译设置弹窗的全局设置标签页
+- **GIVEN** 用户打开书籍翻译设置（桌面/平板：侧栏「翻译设置」面板；手机：翻译设置底部抽屉的「全局设置」页签）
 - **WHEN** 「原文校验」开关处于关闭状态（默认）
 - **THEN** `Novel.enableOriginalTextValidation` SHALL 为 `false`
 - **AND THEN** 后续翻译任务中 `add_translation_batch` 工具 SHALL 跳过 `original_text_prefix` 校验
