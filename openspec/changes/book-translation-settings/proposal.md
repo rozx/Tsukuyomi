@@ -16,6 +16,7 @@
 
 - `book-translation-settings-panel`: 书籍级翻译设置的入口与呈现 —— 侧栏「翻译设置」菜单项、路由面板（桌面/平板）、齿轮弹窗瘦身为纯章节设置、手机端底部抽屉保留双 tab、共享表单组件与显式保存语义。
 - `book-task-model-override`: 本书任务模型覆盖 —— `Novel.taskModelOverrides` 数据结构、`getModelForTask(task, book)` 解析与回退规则、5 个模型消费点接入、覆盖下拉 UI（含「跟随全局默认」与失效态）。
+- `book-update-panel`: 检查更新路由面板（用户反馈追加）—— 侧栏「检查更新」由弹窗改为 `/books/:id/settings/update` 路由面板，`NovelScraperDialog` 增加 embedded 模式；手机端与其他调用方保持弹窗形态。
 
 ### Modified Capabilities
 

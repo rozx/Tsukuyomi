@@ -34,6 +34,14 @@ const emit = defineEmits<{
 const uiStore = useUiStore();
 const isPhone = computed(() => uiStore.deviceType === 'phone');
 
+// 手机抽屉里滚动由 MobileBottomSheet 的 mbs-body 承担，body 必须走自然流式布局；
+// h-full/overflow-hidden 在滚动容器内会把高度钉死在可视高度，导致内容被裁切。
+// 桌面 Popover（固定 600px 壳）则保持内部滚动 + 底部按钮常驻。
+const rootClass = computed(() =>
+  isPhone.value ? 'flex flex-col' : 'flex flex-col h-full overflow-hidden',
+);
+const contentClass = computed(() => (isPhone.value ? '' : 'flex-1 min-h-0 overflow-y-auto'));
+
 const mainTab = ref<string>(props.showGlobalTab ? 'global' : 'chapter');
 const instructionTab = ref<string>('translation');
 const currentMainTab = computed(() => mainTab.value || 'global');
@@ -93,7 +101,7 @@ const handleInstructionTabChange = (value: string | number) => {
 </script>
 
 <template>
-  <div class="chapter-settings-body flex flex-col h-full overflow-hidden">
+  <div class="chapter-settings-body" :class="rootClass">
     <div v-if="!isPhone" class="cs-header p-3 border-b border-white/10 flex-shrink-0">
       <h4 class="font-medium text-moon-100">{{ showGlobalTab ? '翻译设置' : '章节设置' }}</h4>
       <p class="text-xs text-moon/60 mt-1">
@@ -104,7 +112,7 @@ const handleInstructionTabChange = (value: string | number) => {
         }}
       </p>
     </div>
-    <div class="flex-1 min-h-0 overflow-y-auto">
+    <div :class="contentClass">
       <div class="p-4">
         <!-- showGlobalTab=false 时隐藏主 TabList、固定停在章节页签，复用同一份章节指令模板 -->
         <Tabs

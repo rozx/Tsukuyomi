@@ -92,7 +92,11 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
               <i class="pi pi-database settings-menu-icon" />
               <span class="settings-menu-label">记忆管理</span>
             </button>
-            <button class="settings-menu-item" @click="ctx.openScraperDialog">
+            <button
+              class="settings-menu-item"
+              :class="{ 'settings-menu-item-selected': isSelected('update') }"
+              @click="ctx.navigateToUpdateSetting"
+            >
               <i class="pi pi-download settings-menu-icon" />
               <span class="settings-menu-label">检查更新</span>
             </button>
@@ -142,9 +146,10 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
           <button
             type="button"
             class="settings-menu-item"
+            :class="{ 'settings-menu-item-selected': isSelected('update') }"
             title="检查更新"
             aria-label="检查更新"
-            @click="ctx.openScraperDialog"
+            @click="ctx.navigateToUpdateSetting"
           >
             <i class="pi pi-download settings-menu-icon" />
           </button>

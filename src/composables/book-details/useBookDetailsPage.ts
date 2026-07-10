@@ -103,7 +103,7 @@ import { isPortrait } from 'src/utils/device-orientation';
  * 本 composable 负责把它们编排起来，并补上路由/导航/对话框/手机派生数据等黏合层。
  */
 export type MobileActiveTab = 'chapters' | 'terms' | 'characters' | 'memory';
-export type SettingMenu = 'terms' | 'characters' | 'memory' | 'translation';
+export type SettingMenu = 'terms' | 'characters' | 'memory' | 'translation' | 'update';
 
 export type BookDetailsPageContext = ReturnType<typeof createBookDetailsPageContext>;
 
@@ -280,7 +280,8 @@ function createBookDetailsPageContext() {
       setting === 'terms' ||
       setting === 'characters' ||
       setting === 'memory' ||
-      setting === 'translation'
+      setting === 'translation' ||
+      setting === 'update'
     ) {
       return setting;
     }
@@ -747,6 +748,24 @@ function createBookDetailsPageContext() {
       void router.replace(`/books/${bookId.value}/settings/translation`);
     }
     selectedSettingMenu.value = 'translation';
+    if (isSmallScreen.value) {
+      workspaceMode.value = 'settings';
+    }
+    if (bookId.value) {
+      contextStore.setContext({
+        currentBookId: bookId.value,
+        currentChapterId: null,
+        hoveredParagraphId: null,
+        selectedParagraphId: null,
+      });
+    }
+  };
+
+  const navigateToUpdateSetting = () => {
+    if (bookId.value) {
+      void router.replace(`/books/${bookId.value}/settings/update`);
+    }
+    selectedSettingMenu.value = 'update';
     if (isSmallScreen.value) {
       workspaceMode.value = 'settings';
     }
@@ -2245,6 +2264,7 @@ function createBookDetailsPageContext() {
     navigateToCharactersSetting,
     navigateToMemorySetting,
     navigateToTranslationSetting,
+    navigateToUpdateSetting,
     // workspace switcher
     switchWorkspaceMode,
     activeTranslationTaskCount,

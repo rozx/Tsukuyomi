@@ -4,11 +4,7 @@ import type { CSSProperties } from 'vue';
 import Splitter from 'primevue/splitter';
 import SplitterPanel from 'primevue/splitterpanel';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
-import ScraperUrlInput from './ScraperUrlInput.vue';
-import ScraperLoadingState from './ScraperLoadingState.vue';
-import ScraperNovelInfo from './ScraperNovelInfo.vue';
-import ScraperChapterList from './ScraperChapterList.vue';
-import ScraperChapterPreview from './ScraperChapterPreview.vue';
+import ScraperDialogBody from './ScraperDialogBody.vue';
 import ScraperImportFooter from './ScraperImportFooter.vue';
 import { SCRAPER_DIALOG_KEY } from './scraper-dialog-context';
 import type { Novel, Chapter, Volume } from 'src/models/novel';
@@ -27,9 +23,12 @@ const props = withDefaults(
     initialUrl?: string;
     initialFilter?: 'all' | 'imported' | 'unimported' | 'updated';
     showNovelInfo?: boolean;
+    /** 嵌入模式：不渲染 AdaptiveDialog 壳，直接输出主体+底栏（供 BookUpdatePanel 等路由面板使用，visible 恒为 true） */
+    embedded?: boolean;
   }>(),
   {
     showNovelInfo: true,
+    embedded: false,
   },
 );
 
@@ -935,6 +934,9 @@ watch(
       }
     }
   },
+  // immediate：嵌入模式 visible 恒为 true 不会触发变化，靠首跑执行初始化；
+  // 弹窗模式首跑走 visible=false 的重置分支，对初始状态是无害空操作
+  { immediate: true },
 );
 
 // 对外层模板使用的布局条件（收敛模板中的逻辑或与三元，降低圈复杂度）
@@ -983,6 +985,10 @@ provide(SCRAPER_DIALOG_KEY, {
   isAllSelected,
   scraperSheetMaxHeight,
   scraperSheetMinHeight,
+  bodyClass,
+  showSplitView,
+  showChapterPanel,
+  showPreviewPanel,
   contentContainerComponent,
   contentPanelComponent,
   contentContainerProps,
@@ -1019,6 +1025,7 @@ provide(SCRAPER_DIALOG_KEY, {
 
 <template>
   <AdaptiveDialog
+    v-if="!embedded"
     :visible="visible"
     header="从网站获取小说"
     desktop-width="1200px"
@@ -1029,51 +1036,21 @@ provide(SCRAPER_DIALOG_KEY, {
     dialog-class="novel-scraper-dialog"
     @update:visible="$emit('update:visible', $event)"
   >
-    <div :class="bodyClass">
-      <!-- URL 输入 -->
-      <ScraperUrlInput />
-
-      <!-- 加载中 - 使用骨架屏 -->
-      <ScraperLoadingState v-if="loading" />
-
-      <!-- 统计信息 -->
-      <ScraperNovelInfo />
-
-      <!-- 左右分栏布局 -->
-      <div v-if="showSplitView" class="flex-1 min-h-0 min-w-0">
-        <component
-          :is="contentContainerComponent"
-          v-bind="contentContainerProps"
-          :class="contentContainerClass"
-          :style="contentContainerStyle"
-        >
-          <!-- 左侧：章节列表 -->
-          <component
-            :is="contentPanelComponent"
-            v-bind="chapterPanelProps"
-            :class="chapterPanelWrapperClass"
-            v-show="showChapterPanel"
-          >
-            <ScraperChapterList />
-          </component>
-
-          <!-- 右侧：章节内容 -->
-          <component
-            :is="contentPanelComponent"
-            v-bind="previewPanelProps"
-            :class="previewPanelWrapperClass"
-            v-show="showPreviewPanel"
-          >
-            <ScraperChapterPreview />
-          </component>
-        </component>
-      </div>
-    </div>
+    <ScraperDialogBody />
 
     <template #footer>
       <ScraperImportFooter />
     </template>
   </AdaptiveDialog>
+
+  <div v-else class="novel-scraper-embedded flex flex-col h-full min-h-0">
+    <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <ScraperDialogBody />
+    </div>
+    <div class="flex-shrink-0 border-t border-white/10 pt-3">
+      <ScraperImportFooter />
+    </div>
+  </div>
 </template>
 
 <!-- Non-scoped styles for teleported Dialog (PrimeVue teleports dialogs to body,
@@ -1084,11 +1061,13 @@ provide(SCRAPER_DIALOG_KEY, {
   flex: 1 1 auto !important;
 }
 
-.novel-scraper-dialog .p-virtualscroller {
+.novel-scraper-dialog .p-virtualscroller,
+.novel-scraper-embedded .p-virtualscroller {
   height: 100%;
 }
 
-.novel-scraper-dialog .p-virtualscroller-content {
+.novel-scraper-dialog .p-virtualscroller-content,
+.novel-scraper-embedded .p-virtualscroller-content {
   min-width: 100%;
 }
 
@@ -1118,17 +1097,5 @@ provide(SCRAPER_DIALOG_KEY, {
 }
 </style>
 
-<style scoped>
-/* 注：.scraper-url-row 已迁移至 ScraperUrlInput.vue，.scraper-footer-actions 已迁移至
- * ScraperImportFooter.vue —— 这两个类渲染在各自子组件内部嵌套元素，父级 scoped 样式无法命中。 */
-.novel-scraper-body > * {
-  min-width: 0;
-}
-
-@media (max-width: 640px) {
-  .novel-scraper-body {
-    gap: 0.75rem;
-    padding-top: 0.25rem;
-  }
-}
-</style>
+<!-- 注：.scraper-url-row / .scraper-footer-actions / .novel-scraper-body 的样式
+     已随各自模板迁移至 ScraperUrlInput.vue / ScraperImportFooter.vue / ScraperDialogBody.vue。 -->

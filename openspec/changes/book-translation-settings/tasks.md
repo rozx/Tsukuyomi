@@ -40,3 +40,10 @@
 - [x] 6.2 `bunx vitest run` 全量测试通过
 - [x] 6.3 浏览器端验证（preview）：桌面侧栏入口进面板改模型覆盖并保存；齿轮弹窗只剩章节设置；仅存章节指令不动书籍字段；手机断点抽屉双 tab 含模型覆盖；手机深链 `/settings/translation` 落 Overview
 - [x] 6.4 提交（收尾），openspec 验证 `openspec status --change book-translation-settings`
+
+## 7. 用户反馈修正
+
+- [x] 7.1 手机抽屉内容裁切修复：`ChapterSettingsBody` 在手机（抽屉）形态下走自然流式布局（去 h-full/内部滚动，滚动交给 mbs-body），桌面 Popover 保持固定高度内部滚动
+- [x] 7.2 翻译设置面板布局重排：撑满面板宽度，宽屏用两列网格（左列开关设置，右列模型覆盖+分块设置），观感对齐其他面板
+- [x] 7.3 检查更新改为路由面板：`NovelScraperDialog` 加 `embedded` 模式（抽出 `ScraperDialogBody`，visible watcher immediate 化）；`SettingMenu` 加 `'update'` + 路由 regex + `navigateToUpdateSetting`；侧栏「检查更新」改为面板导航；`BookUpdatePanel.vue` 按 panel-header 风格包壳
+- [x] 7.4 specs 补充 `book-update-panel` 能力；lint/type-check/vitest/浏览器验证；提交

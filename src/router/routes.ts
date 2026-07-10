@@ -8,7 +8,7 @@ const routes: RouteRecordRaw[] = [
       { path: '', component: () => import('src/pages/IndexPage.vue') },
       { path: 'books', component: () => import('src/pages/BooksPage.vue') },
       {
-        path: 'books/:id/settings/:setting(terms|characters|memory|translation)',
+        path: 'books/:id/settings/:setting(terms|characters|memory|translation|update)',
         component: () => import('src/pages/BookDetailsPage.vue'),
       },
       { path: 'books/:id', component: () => import('src/pages/BookDetailsPage.vue') },

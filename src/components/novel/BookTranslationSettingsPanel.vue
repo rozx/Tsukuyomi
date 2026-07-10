@@ -73,7 +73,7 @@ const handleCancel = () => {
 
 .panel-body {
   padding: 1rem 1.5rem 1.5rem;
-  max-width: 46rem;
+  max-width: 80rem;
 }
 
 .panel-footer {
