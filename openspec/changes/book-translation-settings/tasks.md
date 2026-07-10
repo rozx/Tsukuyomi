@@ -14,9 +14,9 @@
 
 ## 3. 保存链路防误清（TDD）
 
-- [ ] 3.1 先写失败回归测试：payload 仅含章节指令（无书籍级字段）时 `handleSaveChapterSettings` MUST NOT 改写 `preserveIndents` / `taskModelOverrides` 等书籍级字段；payload 含 `taskModelOverrides` 时正确落库
-- [ ] 3.2 改造 `useBookDetailsPage.ts` 保存链路：`buildNovelSettingsUpdate` 按字段存在性构造 partial update（设计 D5），payload 类型增加 `taskModelOverrides`，跑 3.1 转绿
-- [ ] 3.3 提交（保存链路）
+- [x] 3.1 先写失败回归测试：payload 仅含章节指令（无书籍级字段）时 `handleSaveChapterSettings` MUST NOT 改写 `preserveIndents` / `taskModelOverrides` 等书籍级字段；payload 含 `taskModelOverrides` 时正确落库
+- [x] 3.2 改造 `useBookDetailsPage.ts` 保存链路：`buildNovelSettingsUpdate` 按字段存在性构造 partial update（设计 D5），payload 类型增加 `taskModelOverrides`，跑 3.1 转绿
+- [x] 3.3 提交（保存链路）
 
 ## 4. 共享表单与面板 UI
 

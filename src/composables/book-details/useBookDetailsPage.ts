@@ -72,7 +72,11 @@ import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { MemoryService } from 'src/services/memory-service';
 import { selectRelevantMemoriesForChunk } from 'src/services/ai/tasks/utils/context-builder';
-import { resolveTaskChunkSize } from 'src/services/ai/tasks/utils/chunk-formatter';
+import {
+  buildNovelSettingsUpdate,
+  hasChapterInstructionPayload,
+} from './chapter-settings-update';
+import type { ChapterSettingsFormData } from './chapter-settings-update';
 import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
 import type { MenuItem } from 'primevue/menuitem';
@@ -1725,33 +1729,11 @@ function createBookDetailsPageContext() {
     chapterSettingsPopover.value?.toggle(event);
   };
 
-  type ChapterSettingsFormData = {
-    preserveIndents?: boolean;
-    normalizeSymbolsOnDisplay?: boolean;
-    normalizeTitleOnDisplay?: boolean;
-    translationChunkSize?: number;
-    skipAskUser?: boolean;
-    enableOriginalTextValidation?: boolean;
-    translationInstructions?: string;
-    polishInstructions?: string;
-    proofreadingInstructions?: string;
-  };
-
-  const buildNovelSettingsUpdate = (data: ChapterSettingsFormData): Partial<Novel> => ({
-    preserveIndents: data.preserveIndents ?? true,
-    normalizeSymbolsOnDisplay: data.normalizeSymbolsOnDisplay ?? false,
-    normalizeTitleOnDisplay: data.normalizeTitleOnDisplay ?? false,
-    translationChunkSize: resolveTaskChunkSize(data.translationChunkSize),
-    skipAskUser: data.skipAskUser ?? false,
-    enableOriginalTextValidation: data.enableOriginalTextValidation ?? false,
-    lastEdited: new Date(),
-  });
-
   const applyChapterInstructionOverrides = (
     bookValue: NonNullable<typeof book.value>,
     data: ChapterSettingsFormData,
   ): Partial<Novel> | null => {
-    if (!selectedChapter.value) return null;
+    if (!selectedChapter.value || !hasChapterInstructionPayload(data)) return null;
     const translationInstructions = data.translationInstructions ?? '';
     const polishInstructions = data.polishInstructions ?? '';
     const proofreadingInstructions = data.proofreadingInstructions ?? '';
@@ -1777,13 +1759,19 @@ function createBookDetailsPageContext() {
   const handleSaveChapterSettings = async (data: ChapterSettingsFormData) => {
     if (!book.value) return;
     try {
+      // 按字段存在性构造书籍级更新：桌面「章节设置」弹窗只提交章节指令，
+      // 此时书籍级字段必须保持原样（防误清，见 chapter-settings-update.ts）
+      const bookLevelUpdates = buildNovelSettingsUpdate(data);
+      const chapterUpdates = applyChapterInstructionOverrides(book.value, data);
       const updates: Partial<Novel> = {
-        ...buildNovelSettingsUpdate(data),
-        ...(applyChapterInstructionOverrides(book.value, data) ?? {}),
+        ...bookLevelUpdates,
+        ...(chapterUpdates ?? {}),
+        lastEdited: new Date(),
       };
       await booksStore.updateBook(book.value.id, updates);
-      const savedItems = ['全局设置'];
-      if (selectedChapter.value) savedItems.push('章节特殊指令');
+      const savedItems: string[] = [];
+      if (Object.keys(bookLevelUpdates).length > 0) savedItems.push('全局设置');
+      if (chapterUpdates) savedItems.push('章节特殊指令');
       toast.add({
         severity: 'success',
         summary: '保存成功',
