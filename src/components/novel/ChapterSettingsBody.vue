@@ -2,6 +2,10 @@
 /**
  * 章节/书籍设置面板的内容部分。桌面 Popover 和手机 MobileBottomSheet 共享同一份。
  * 父面板监听 `save` / `close` 事件来关闭 shell 并上抛保存数据。
+ *
+ * showGlobalTab=false（桌面/平板）：纯章节级指令设置，payload 不含书籍级字段；
+ * showGlobalTab=true（手机）：保留「全局设置+章节设置」双 tab，全局 tab 复用
+ * BookTranslationSettingsForm 共享表单（含模型覆盖）。
  */
 import { computed, ref, watch } from 'vue';
 import Textarea from 'primevue/textarea';
@@ -11,78 +15,35 @@ import TabList from 'primevue/tablist';
 import Tab from 'primevue/tab';
 import TabPanels from 'primevue/tabpanels';
 import TabPanel from 'primevue/tabpanel';
-import InputSwitch from 'primevue/inputswitch';
-import InputNumber from 'primevue/inputnumber';
 import { useUiStore } from 'src/stores/ui';
+import BookTranslationSettingsForm from './BookTranslationSettingsForm.vue';
 import type { Novel, Chapter } from 'src/models/novel';
-import {
-  DEFAULT_TASK_CHUNK_SIZE,
-  MIN_TASK_CHUNK_SIZE,
-  MAX_TASK_CHUNK_SIZE,
-  resolveTaskChunkSize,
-} from 'src/services/ai/tasks/utils/chunk-formatter';
+import type { ChapterSettingsFormData } from 'src/composables/book-details/chapter-settings-update';
 
 const props = defineProps<{
   book: Novel | null;
   chapter: Chapter | null;
+  showGlobalTab: boolean;
 }>();
 
 const emit = defineEmits<{
-  (
-    e: 'save',
-    data: {
-      preserveIndents?: boolean;
-      normalizeSymbolsOnDisplay?: boolean;
-      normalizeTitleOnDisplay?: boolean;
-      translationChunkSize?: number;
-      skipAskUser?: boolean;
-      enableOriginalTextValidation?: boolean;
-      translationInstructions?: string;
-      polishInstructions?: string;
-      proofreadingInstructions?: string;
-    },
-  ): void;
+  (e: 'save', data: ChapterSettingsFormData): void;
   (e: 'close'): void;
 }>();
 
 const uiStore = useUiStore();
 const isPhone = computed(() => uiStore.deviceType === 'phone');
 
-const mainTab = ref<string>('global');
+const mainTab = ref<string>(props.showGlobalTab ? 'global' : 'chapter');
 const instructionTab = ref<string>('translation');
 const currentMainTab = computed(() => mainTab.value || 'global');
 const currentInstructionTab = computed(() => instructionTab.value || 'translation');
 
-const filterIndentsEnabled = ref(false);
-const normalizeSymbolsOnDisplayEnabled = ref(false);
-const normalizeTitleOnDisplayEnabled = ref(false);
-const translationChunkSize = ref<number | null>(null);
-const skipAskUserEnabled = ref(false);
-const enableOriginalTextValidation = ref(false);
+const globalFormRef = ref<InstanceType<typeof BookTranslationSettingsForm> | null>(null);
 
 const translationInstructions = ref('');
 const polishInstructions = ref('');
 const proofreadingInstructions = ref('');
-
-// 从书籍同步全局开关与分块设置；book 为 null 时回退到默认值
-const applyBookSettings = (book: Novel | null) => {
-  if (book) {
-    const preserveIndents = book.preserveIndents ?? true;
-    filterIndentsEnabled.value = !preserveIndents;
-    normalizeSymbolsOnDisplayEnabled.value = book.normalizeSymbolsOnDisplay ?? false;
-    normalizeTitleOnDisplayEnabled.value = book.normalizeTitleOnDisplay ?? false;
-    translationChunkSize.value = resolveTaskChunkSize(book.translationChunkSize);
-    skipAskUserEnabled.value = book.skipAskUser ?? false;
-    enableOriginalTextValidation.value = book.enableOriginalTextValidation ?? false;
-  } else {
-    filterIndentsEnabled.value = false;
-    normalizeSymbolsOnDisplayEnabled.value = false;
-    normalizeTitleOnDisplayEnabled.value = false;
-    translationChunkSize.value = DEFAULT_TASK_CHUNK_SIZE;
-    skipAskUserEnabled.value = false;
-    enableOriginalTextValidation.value = false;
-  }
-};
 
 // 从章节同步三类指令文本；chapter 为 null 时清空
 const applyChapterInstructions = (chapter: Chapter | null) => {
@@ -94,31 +55,25 @@ const applyChapterInstructions = (chapter: Chapter | null) => {
 watch(
   () => [props.book, props.chapter],
   () => {
-    applyBookSettings(props.book);
-
     if (props.chapter) {
       applyChapterInstructions(props.chapter);
     } else {
       applyChapterInstructions(null);
-      if (mainTab.value === 'chapter') {
-        mainTab.value = 'global';
-      }
+      if (props.showGlobalTab) mainTab.value = 'global';
     }
-
-    if (!props.chapter) mainTab.value = 'global';
     instructionTab.value = 'translation';
   },
   { immediate: true },
 );
 
 const handleSave = () => {
+  // 书籍级字段只在有全局 tab 时携带；桌面弹窗 payload 仅含章节指令，
+  // 保存链路按字段存在性更新，不会触碰书籍级设置
+  const bookLevelPayload = props.showGlobalTab
+    ? (globalFormRef.value?.buildBookLevelPayload() ?? {})
+    : {};
   emit('save', {
-    preserveIndents: !filterIndentsEnabled.value,
-    normalizeSymbolsOnDisplay: normalizeSymbolsOnDisplayEnabled.value,
-    normalizeTitleOnDisplay: normalizeTitleOnDisplayEnabled.value,
-    translationChunkSize: resolveTaskChunkSize(translationChunkSize.value ?? undefined),
-    skipAskUser: skipAskUserEnabled.value,
-    enableOriginalTextValidation: enableOriginalTextValidation.value,
+    ...bookLevelPayload,
     translationInstructions: translationInstructions.value.trim(),
     polishInstructions: polishInstructions.value.trim(),
     proofreadingInstructions: proofreadingInstructions.value.trim(),
@@ -140,122 +95,31 @@ const handleInstructionTabChange = (value: string | number) => {
 <template>
   <div class="chapter-settings-body flex flex-col h-full overflow-hidden">
     <div v-if="!isPhone" class="cs-header p-3 border-b border-white/10 flex-shrink-0">
-      <h4 class="font-medium text-moon-100">翻译设置</h4>
-      <p class="text-xs text-moon/60 mt-1">全局设置应用于整个书籍，章节设置仅应用于当前章节</p>
+      <h4 class="font-medium text-moon-100">{{ showGlobalTab ? '翻译设置' : '章节设置' }}</h4>
+      <p class="text-xs text-moon/60 mt-1">
+        {{
+          showGlobalTab
+            ? '全局设置应用于整个书籍，章节设置仅应用于当前章节'
+            : '章节特殊指令仅应用于当前章节；书籍级设置请在侧栏「翻译设置」中配置'
+        }}
+      </p>
     </div>
     <div class="flex-1 min-h-0 overflow-y-auto">
       <div class="p-4">
+        <!-- showGlobalTab=false 时隐藏主 TabList、固定停在章节页签，复用同一份章节指令模板 -->
         <Tabs
           :value="currentMainTab"
           class="chapter-settings-main-tabs"
           @update:value="handleMainTabChange"
         >
-          <TabList>
+          <TabList v-if="showGlobalTab">
             <Tab value="global">全局设置</Tab>
             <Tab value="chapter" :disabled="!chapter">章节设置</Tab>
           </TabList>
           <TabPanels>
-            <TabPanel value="global">
-              <div class="space-y-4 pt-2">
-                <!-- 开关设置（统一分组） -->
-                <div class="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
-                  <div class="px-3 py-2 border-b border-white/10">
-                    <div class="text-sm font-medium text-moon-100">开关设置</div>
-                    <div class="text-xs text-moon/60 mt-1">以下开关均为书籍级别设置</div>
-                  </div>
-
-                  <div class="divide-y divide-white/10">
-                    <div class="flex items-start justify-between gap-3 p-3">
-                      <div class="flex-1">
-                        <label class="text-sm font-medium text-moon-100 block mb-1">
-                          过滤行首空格（缩进）
-                        </label>
-                        <small class="text-moon/60 text-xs block">
-                          启用时，在显示和导出翻译时会自动移除行首空格；禁用时保留所有空格。翻译时始终保留原始缩进，此设置仅影响显示和导出。此设置应用于整个书籍的所有章节。
-                        </small>
-                      </div>
-                      <InputSwitch v-model="filterIndentsEnabled" />
-                    </div>
-
-                    <div class="flex items-start justify-between gap-3 p-3">
-                      <div class="flex-1">
-                        <label class="text-sm font-medium text-moon-100 block mb-1">
-                          显示时规范化符号
-                        </label>
-                        <small class="text-moon/60 text-xs block">
-                          启用时，仅在显示和导出时规范化译文中的引号、标点、空格等；不会改写或保存译文内容。
-                        </small>
-                      </div>
-                      <InputSwitch v-model="normalizeSymbolsOnDisplayEnabled" />
-                    </div>
-
-                    <div class="flex items-start justify-between gap-3 p-3">
-                      <div class="flex-1">
-                        <label class="text-sm font-medium text-moon-100 block mb-1">
-                          显示时规范化标题
-                        </label>
-                        <small class="text-moon/60 text-xs block">
-                          启用时，仅在显示和导出时规范化章节标题（如：将全角数字和汉字之间的半角空格转换为全角空格）；不会改写或保存标题内容。
-                        </small>
-                      </div>
-                      <InputSwitch v-model="normalizeTitleOnDisplayEnabled" />
-                    </div>
-
-                    <div class="flex items-start justify-between gap-3 p-3">
-                      <div class="flex-1">
-                        <label class="text-sm font-medium text-moon-100 block mb-1">
-                          跳过 AI 追问（不弹出问答对话框）
-                        </label>
-                        <small class="text-moon/60 text-xs block">
-                          启用时，本书在翻译/润色/校对任务中不会提供 ask_user
-                          工具，也不会弹出全屏问答对话框；模型需要自行决策或继续执行。
-                        </small>
-                      </div>
-                      <InputSwitch v-model="skipAskUserEnabled" />
-                    </div>
-
-                    <div class="flex items-start justify-between gap-3 p-3">
-                      <div class="flex-1">
-                        <label class="text-sm font-medium text-moon-100 block mb-1">
-                          原文校验（防错位检测）
-                        </label>
-                        <small class="text-moon/60 text-xs block">
-                          启用时，AI
-                          提交翻译时必须提供原文前缀锚点（original_text_prefix），系统会校验其与原文是否匹配，防止翻译错位。禁用时可减少
-                          AI token 消耗。
-                        </small>
-                      </div>
-                      <InputSwitch v-model="enableOriginalTextValidation" />
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 分块设置 -->
-                <div class="rounded-lg border border-white/10 bg-white/5 overflow-hidden">
-                  <div class="px-3 py-2 border-b border-white/10">
-                    <div class="text-sm font-medium text-moon-100">分块设置</div>
-                    <div class="text-xs text-moon/60 mt-1">用于翻译相关任务的分块处理</div>
-                  </div>
-                  <div class="p-3">
-                    <label class="text-sm font-medium text-moon-100 block mb-1">
-                      翻译任务分块大小（字符数，近似 tokens）
-                    </label>
-                    <InputNumber
-                      v-model="translationChunkSize"
-                      :min="MIN_TASK_CHUNK_SIZE"
-                      :max="MAX_TASK_CHUNK_SIZE"
-                      :step="500"
-                      :show-buttons="true"
-                      class="w-full"
-                      input-class="w-full"
-                    />
-                    <small class="text-moon/60 text-xs block mt-1">
-                      用于翻译、润色、校对任务的分块处理（当前按字符长度切分）。较大的值可以减少分块数量，但可能增加单次处理时间。默认值：{{
-                        DEFAULT_TASK_CHUNK_SIZE
-                      }}。此设置应用于整个书籍的所有章节。
-                    </small>
-                  </div>
-                </div>
+            <TabPanel v-if="showGlobalTab" value="global">
+              <div class="pt-2">
+                <BookTranslationSettingsForm ref="globalFormRef" :book="book" />
               </div>
             </TabPanel>
 

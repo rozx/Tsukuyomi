@@ -20,11 +20,11 @@
 
 ## 4. 共享表单与面板 UI
 
-- [ ] 4.1 新建 `src/components/novel/BookTranslationSettingsForm.vue`：5 开关 + 分块大小 + 「模型覆盖」分组（两个下拉：跟随全局默认（当前：<模型名>）+ 已启用模型；失效覆盖显示失效占位不改数据）；props 接 `book`，emit `save` payload / `close`
-- [ ] 4.2 新建 `src/components/novel/BookTranslationSettingsPanel.vue`：路由面板壳（滚动容器 + 共享表单），保存走 `booksStore.updateBook` + 成功 toast
-- [ ] 4.3 `ChapterSettingsBody.vue`：加 `showGlobalTab` prop；`false` 时只渲染章节指令（无主 tab，标题「章节设置」）；`true` 时全局 tab 内容替换为共享表单
-- [ ] 4.4 `ChapterSettingsPopover.vue`：桌面 Popover 传 `showGlobalTab=false`，手机 MobileBottomSheet 传 `true`；桌面弹窗标题/eyebrow 改「章节设置」
-- [ ] 4.5 提交（表单与弹窗）
+- [x] 4.1 新建 `src/components/novel/BookTranslationSettingsForm.vue`：5 开关 + 分块大小 + 「模型覆盖」分组（两个下拉：跟随全局默认（当前：<模型名>）+ 已启用模型；失效覆盖显示失效占位不改数据）；props 接 `book`，emit `save` payload / `close`
+- [x] 4.2 新建 `src/components/novel/BookTranslationSettingsPanel.vue`：路由面板壳（滚动容器 + 共享表单），保存走 `booksStore.updateBook` + 成功 toast
+- [x] 4.3 `ChapterSettingsBody.vue`：加 `showGlobalTab` prop；`false` 时只渲染章节指令（无主 tab，标题「章节设置」）；`true` 时全局 tab 内容替换为共享表单
+- [x] 4.4 `ChapterSettingsPopover.vue`：桌面 Popover 传 `showGlobalTab=false`，手机 MobileBottomSheet 传 `true`；桌面弹窗标题/eyebrow 改「章节设置」
+- [x] 4.5 提交（表单与弹窗）
 
 ## 5. 路由与侧栏导航
 
