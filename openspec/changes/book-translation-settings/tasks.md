@@ -28,11 +28,11 @@
 
 ## 5. 路由与侧栏导航
 
-- [ ] 5.1 `src/router/routes.ts`：setting 参数 regex 改为 `(terms|characters|memory|translation)`
-- [ ] 5.2 `useBookDetailsPage.ts`：`SettingMenu` 加 `'translation'`；`settingMenuFromRoute` 识别 translation；新增 `navigateToTranslationSetting`（仿 navigateToTermsSetting）；手机 `mobileActiveTab` 对 translation 落回 `'chapters'` 默认
-- [ ] 5.3 `BookSidebarSettingsMenu.vue`：展开/折叠两态各加「翻译设置」项（icon `pi pi-sliders-h`，置于术语设置之上）
-- [ ] 5.4 `BookDetailsDesktop.vue`：`settingContextMeta` 加 `{ eyebrow: 'Translation', label: '翻译设置', icon: 'pi pi-sliders-h' }`；`settingsPanelComponent` 加 case 渲染 `BookTranslationSettingsPanel`
-- [ ] 5.5 提交（路由与导航）
+- [x] 5.1 `src/router/routes.ts`：setting 参数 regex 改为 `(terms|characters|memory|translation)`
+- [x] 5.2 `useBookDetailsPage.ts`：`SettingMenu` 加 `'translation'`；`settingMenuFromRoute` 识别 translation；新增 `navigateToTranslationSetting`（仿 navigateToTermsSetting）；手机 `mobileActiveTab` 对 translation 落回 `'chapters'` 默认
+- [x] 5.3 `BookSidebarSettingsMenu.vue`：展开/折叠两态各加「翻译设置」项（icon `pi pi-sliders-h`，置于术语设置之上）
+- [x] 5.4 `BookDetailsDesktop.vue`：`settingContextMeta` 加 `{ eyebrow: 'Translation', label: '翻译设置', icon: 'pi pi-sliders-h' }`；`settingsPanelComponent` 加 case 渲染 `BookTranslationSettingsPanel`
+- [x] 5.5 提交（路由与导航）
 
 ## 6. 验证与收尾
 

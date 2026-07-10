@@ -6,6 +6,7 @@ import SearchToolbar from 'src/components/novel/SearchToolbar.vue';
 import TerminologyPanel from 'src/components/novel/TerminologyPanel.vue';
 import CharacterSettingPanel from 'src/components/novel/CharacterSettingPanel.vue';
 import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
+import BookTranslationSettingsPanel from 'src/components/novel/BookTranslationSettingsPanel.vue';
 import ChapterContentPanel from 'src/components/novel/ChapterContentPanel.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { EditMode } from 'src/composables/book-details/useEditMode';
@@ -30,6 +31,8 @@ const settingContextMeta = computed(() => {
       return { eyebrow: 'Characters', label: '角色设置', icon: 'pi pi-users' };
     case 'memory':
       return { eyebrow: 'Memory', label: '记忆管理', icon: 'pi pi-database' };
+    case 'translation':
+      return { eyebrow: 'Translation', label: '翻译设置', icon: 'pi pi-sliders-h' };
     default:
       return null;
   }
@@ -85,6 +88,8 @@ const settingsPanelComponent = computed<Component | null>(() => {
       return CharacterSettingPanel;
     case 'memory':
       return MemoryPanel;
+    case 'translation':
+      return BookTranslationSettingsPanel;
     default:
       return null;
   }

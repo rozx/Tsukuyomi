@@ -62,6 +62,14 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
           <div class="settings-menu-items">
             <button
               class="settings-menu-item"
+              :class="{ 'settings-menu-item-selected': isSelected('translation') }"
+              @click="ctx.navigateToTranslationSetting"
+            >
+              <i class="pi pi-sliders-h settings-menu-icon" />
+              <span class="settings-menu-label">翻译设置</span>
+            </button>
+            <button
+              class="settings-menu-item"
               :class="{ 'settings-menu-item-selected': isSelected('terms') }"
               @click="ctx.navigateToTermsSetting"
             >
@@ -91,6 +99,16 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
           </div>
         </div>
         <div v-else key="collapsed" class="settings-menu-items settings-menu-items--collapsed">
+          <button
+            type="button"
+            class="settings-menu-item"
+            :class="{ 'settings-menu-item-selected': isSelected('translation') }"
+            title="翻译设置"
+            aria-label="翻译设置"
+            @click="ctx.navigateToTranslationSetting"
+          >
+            <i class="pi pi-sliders-h settings-menu-icon" />
+          </button>
           <button
             type="button"
             class="settings-menu-item"

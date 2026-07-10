@@ -1,5 +1,6 @@
 import { nextTick, type Ref, type ComputedRef } from 'vue';
 import type { Chapter, Paragraph } from 'src/models/novel';
+import type { SettingMenu } from './useBookDetailsPage';
 import { isEmptyParagraph } from 'src/utils';
 
 /**
@@ -19,7 +20,7 @@ export interface ShortcutRegistrationOptions {
   selectedChapterParagraphs: ComputedRef<Paragraph[]>;
   // 组件状态
   selectedChapter: Ref<Chapter | null>;
-  selectedSettingMenu: Ref<'terms' | 'characters' | 'memory' | null>;
+  selectedSettingMenu: Ref<SettingMenu | null>;
   editMode: Ref<'original' | 'translation' | 'preview'>;
   // 段落导航相关
   selectedParagraphIndex: Ref<number | null>;
