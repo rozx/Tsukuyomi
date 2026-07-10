@@ -1,0 +1,93 @@
+/*
+ * 书籍设置面板共享「工具栏外壳」样式（人物 / 记忆 / 术语三个兄弟面板通用）。
+ *
+ * 这些规则原本在 CharacterSettingPanel / MemoryPanel / TerminologyPanel 各自的
+ * <style scoped> 里逐字重复，被 Fallow 判为重复代码。抽到此文件后，各面板通过
+ * <style scoped src="./setting-panel.css"></style> 引入 —— scoped src 形式会把规则
+ * 重新作用到每个组件自己的 data-v-xxx 上，不产生全局样式泄漏。
+ *
+ * 标题区（.panel-header / .panel-title / .panel-desc）另见 panel-header.css，
+ * 由含简单面板在内的五个设置面板共用；此处只放三个复杂面板的工具栏规则。
+ * 各面板独有的规则（根类名、toolbar-search / toolbar-filters、按钮图标折叠等）
+ * 仍保留在各自组件的 <style scoped> 中。
+ */
+
+/* 操作栏 */
+.panel-toolbar {
+  padding: 1rem 1.5rem;
+}
+
+.panel-message {
+  margin-top: 0.75rem;
+}
+
+/* 工具栏布局 */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* 移动端紧凑操作栏（桌面端隐藏） */
+.toolbar-mobile-compact {
+  display: none;
+}
+
+/* 移动端响应式（标题区隐藏见 panel-header.css） */
+@media (max-width: 640px) {
+  .panel-toolbar {
+    padding: 0.5rem 1rem;
+  }
+
+  .toolbar-mobile-compact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-toolbar:not(.toolbar-expanded) .toolbar-expandable {
+    display: none;
+  }
+
+  .toolbar-expanded .toolbar-expandable {
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--white-opacity-10);
+    margin-top: 0.375rem;
+  }
+
+  .panel-message :deep(.p-4) {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .panel-message :deep(.text-sm) {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .panel-message :deep(.text-lg) {
+    font-size: 0.875rem;
+  }
+
+  .panel-message :deep(.gap-3) {
+    gap: 0.5rem;
+  }
+
+  .toolbar-row {
+    flex-wrap: wrap;
+  }
+
+  .toolbar-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    gap: 0.25rem;
+  }
+}

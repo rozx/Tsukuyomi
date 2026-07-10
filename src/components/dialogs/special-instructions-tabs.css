@@ -1,0 +1,36 @@
+/*
+ * “特殊指令”页签（翻译 / 润色 / 校对）的通用 PrimeVue Tabs 样式。
+ *
+ * 这几条规则原本在 BookDialog 与 EditChapterDialog 各自的 <style scoped> 里逐字重复，
+ * 被 Fallow 判为重复代码。抽到此文件后，两个对话框通过
+ * <style scoped src="./special-instructions-tabs.css"></style> 引入 —— scoped src 形式
+ * 会把规则重新作用到各自的 data-v-xxx 上，不产生全局样式泄漏。
+ *
+ * BookDialog 额外的横向滚动规则（.p-tablist-content / .p-tablist-tab-list 及其
+ * @media）为其独有，仍保留在该对话框自己的 <style scoped> 中。
+ */
+
+.special-instructions-tabs :deep(.p-tablist) {
+  border-bottom: 1px solid var(--white-opacity-10);
+  margin-bottom: 0.5rem;
+}
+
+.special-instructions-tabs :deep(.p-tab) {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  color: var(--moon-opacity-60);
+  transition: all 0.2s;
+}
+
+.special-instructions-tabs :deep(.p-tab:hover) {
+  color: var(--moon-opacity-80);
+}
+
+.special-instructions-tabs :deep(.p-tab[aria-selected='true']) {
+  color: var(--primary-opacity-90);
+  border-bottom-color: var(--primary-opacity-80);
+}
+
+.special-instructions-tabs :deep(.p-tabpanels) {
+  padding: 0;
+}

@@ -1,0 +1,36 @@
+/*
+ * 设置面板通用「标题区」样式。
+ *
+ * .panel-header / .panel-title / .panel-desc 三条基础规则，以及移动端隐藏标题区的
+ * @media 规则，被五个设置面板逐字共用：CharacterSettingPanel / MemoryPanel /
+ * TerminologyPanel（复杂面板，另引入 setting-panel.css 的工具栏样式）与
+ * BookTranslationSettingsPanel / BookUpdatePanel（简单面板）。抽到此文件避免
+ * Fallow 判为重复；各面板通过 <style scoped src="./panel-header.css"></style> 引入，
+ * scoped src 会把规则重新作用到各自的 data-v-xxx 上，不产生全局样式泄漏。
+ */
+
+/* 标题区域 */
+.panel-header {
+  padding: 1.5rem;
+}
+
+.panel-title {
+  font-family:
+    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 1.625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.panel-desc {
+  margin-bottom: 0.75rem;
+}
+
+/* 移动端隐藏标题区（工具栏内已有紧凑标题） */
+@media (max-width: 640px) {
+  .panel-header {
+    display: none;
+  }
+}

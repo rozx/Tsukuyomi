@@ -1,0 +1,147 @@
+/*
+ * 帮助页文档正文（Markdown 渲染结果）共享样式
+ * 由 HelpPageDesktop / HelpPageTablet / HelpPageMobile 三个变体通过
+ * `<style scoped src="./doc-content.css">` 引入。
+ * `scoped src` 会把这些规则重新作用到各自组件的 data-v-xxx 作用域，
+ * 不会造成全局样式泄漏，同时避免 Fallow 重复规则告警（三处曾字节级一致）。
+ */
+.doc-content {
+  color: rgb(var(--moon-rgb) / 0.85);
+  line-height: 1.75;
+}
+
+.doc-content :deep(p) {
+  margin-bottom: 1.25rem;
+}
+
+.doc-content :deep(.doc-heading) {
+  color: rgb(var(--moon-100-rgb));
+  font-weight: 700;
+  margin-top: 2.5rem;
+  margin-bottom: 1rem;
+  scroll-margin-top: 2rem;
+}
+
+.doc-content :deep(.doc-heading-1) {
+  font-size: 2rem;
+  line-height: 1.2;
+  margin-top: 0;
+}
+
+.doc-content :deep(.doc-heading-2) {
+  font-size: 1.5rem;
+  line-height: 1.3;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.1);
+}
+
+.doc-content :deep(.doc-heading-3) {
+  font-size: 1.25rem;
+  line-height: 1.4;
+}
+
+.doc-content :deep(.doc-link) {
+  color: rgb(var(--primary-rgb));
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+
+.doc-content :deep(.doc-link:hover) {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+.doc-content :deep(code) {
+  background: rgb(255 255 255 / 0.08);
+  color: rgb(var(--primary-rgb));
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.doc-content :deep(pre) {
+  background: rgb(0 0 0 / 0.3);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+.doc-content :deep(pre code) {
+  background: none;
+  padding: 0;
+  color: rgb(var(--moon-rgb) / 0.9);
+}
+
+.doc-content :deep(blockquote) {
+  border-left: 4px solid rgb(var(--primary-rgb));
+  background: rgb(var(--primary-rgb) / 0.08);
+  margin: 1.5rem 0;
+  padding: 1rem 1.5rem;
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+.doc-content :deep(blockquote p:last-child) {
+  margin-bottom: 0;
+}
+
+.doc-content :deep(ul),
+.doc-content :deep(ol) {
+  padding-left: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.doc-content :deep(li) {
+  margin-bottom: 0.5rem;
+}
+
+.doc-content :deep(ul li) {
+  list-style-type: disc;
+}
+
+.doc-content :deep(ul li::marker) {
+  color: rgb(var(--primary-rgb));
+}
+
+.doc-content :deep(ol li) {
+  list-style-type: decimal;
+}
+
+.doc-content :deep(strong) {
+  color: rgb(var(--moon-100-rgb));
+  font-weight: 600;
+}
+
+.doc-content :deep(hr) {
+  border: none;
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+  margin: 2rem 0;
+}
+
+.doc-content :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+}
+
+.doc-content :deep(th),
+.doc-content :deep(td) {
+  border: 1px solid rgb(255 255 255 / 0.1);
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+
+.doc-content :deep(th) {
+  background: rgb(255 255 255 / 0.05);
+  font-weight: 600;
+  color: rgb(var(--moon-100-rgb));
+}
+
+.doc-content :deep(img) {
+  max-width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+}

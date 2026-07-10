@@ -142,7 +142,7 @@ const applyTranslationResult = () => {
       icon="pi pi-language"
       :loading="translating"
       :disabled="isTranslateDisabled"
-      class="translatable-textarea-button"
+      class="translatable-icon-button translatable-textarea-button"
       @click="handleTranslate"
     />
   </div>
@@ -280,65 +280,17 @@ const applyTranslationResult = () => {
   width: 100%;
 }
 
+/* 仅保留定位相关属性，外观样式见 translatable.css 的 .translatable-icon-button */
 .translatable-textarea-button {
   position: absolute !important;
   top: 0.5rem !important;
   right: 0.5rem !important;
-  width: 2rem !important;
-  height: 2rem !important;
-  min-width: 2rem !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: 0.375rem !important;
-  background: var(--black-opacity-50) !important;
-  backdrop-filter: blur(4px) !important;
-  border: 1px solid var(--white-opacity-10) !important;
   z-index: 10 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-.translatable-textarea-button :deep(.p-button-icon) {
-  margin: 0 !important;
-  color: var(--moon-opacity-90) !important;
-  font-size: 0.875rem !important;
-}
-
-.translatable-textarea-button:not(:disabled):hover {
-  background: var(--primary-opacity-70) !important;
-  border-color: var(--primary-opacity-50) !important;
-  box-shadow: 0 2px 8px var(--primary-opacity-30) !important;
-}
-
-.translatable-textarea-button:not(:disabled):active,
-.translatable-textarea-button:not(:disabled):focus {
-  background: var(--primary-opacity-80) !important;
-  border-color: var(--primary-opacity-60) !important;
-  box-shadow: 0 2px 8px var(--primary-opacity-40) !important;
-}
-
-.translatable-textarea-button:not(:disabled):hover :deep(.p-button-icon),
-.translatable-textarea-button:not(:disabled):active :deep(.p-button-icon),
-.translatable-textarea-button:not(:disabled):focus :deep(.p-button-icon) {
-  color: var(--moon-opacity-100) !important;
-}
-
-.translatable-textarea-button:disabled {
-  opacity: 0.5 !important;
-  cursor: not-allowed !important;
 }
 </style>
 
 <style scoped>
-/* 翻译结果对话框样式 */
-.translation-result-container {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  width: 100%;
-}
-
+/* 翻译结果对话框样式（.translation-result-container / 滚动条 / 提问文案见 translatable.css） */
 .translation-result-label {
   font-size: 0.9375rem;
   font-weight: 600;
@@ -361,28 +313,6 @@ const applyTranslationResult = () => {
   line-height: 1.6;
   font-family: inherit;
 }
-
-.translation-result-content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.translation-result-content::-webkit-scrollbar-track {
-  background: var(--white-opacity-5);
-  border-radius: 4px;
-}
-
-.translation-result-content::-webkit-scrollbar-thumb {
-  background: var(--white-opacity-20);
-  border-radius: 4px;
-}
-
-.translation-result-content::-webkit-scrollbar-thumb:hover {
-  background: var(--white-opacity-30);
-}
-
-.translation-result-question {
-  font-size: 0.9375rem;
-  color: var(--moon-opacity-85);
-  margin-top: 0.5rem;
-}
 </style>
+
+<style scoped src="./translatable.css"></style>

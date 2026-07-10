@@ -822,6 +822,11 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   </div>
 </template>
 
+<!-- 标题区样式（五个设置面板共享），详见 panel-header.css -->
+<style scoped src="./panel-header.css"></style>
+<!-- 工具栏外壳通用样式（三个设置面板共享），详见 setting-panel.css -->
+<style scoped src="./setting-panel.css"></style>
+
 <style scoped>
 .memory-panel {
   display: flex;
@@ -829,43 +834,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   height: 100%;
 }
 
-/* 标题区域 */
-.panel-header {
-  padding: 1.5rem;
-}
-
-.panel-title {
-  font-family:
-    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
-  font-size: 1.625rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 2rem;
-  margin-bottom: 0.5rem;
-}
-
-.panel-desc {
-  margin-bottom: 0.75rem;
-}
-
-/* 操作栏 */
-.panel-toolbar {
-  padding: 1rem 1.5rem;
-}
-
-.panel-message {
-  margin-top: 0.75rem;
-}
-
-/* 工具栏布局 */
-.toolbar-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: nowrap;
-}
-
+/* 本面板独有：过滤器区容器 */
 .toolbar-filters {
   display: flex;
   align-items: center;
@@ -874,65 +843,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   min-width: 0;
 }
 
-.toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-/* 移动端紧凑操作栏（桌面端隐藏） */
-.toolbar-mobile-compact {
-  display: none;
-}
-
-/* 移动端响应式 */
+/* 移动端响应式（本面板独有部分） */
 @media (max-width: 640px) {
-  .panel-header {
-    display: none;
-  }
-
-  .panel-toolbar {
-    padding: 0.5rem 1rem;
-  }
-
-  .toolbar-mobile-compact {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .panel-toolbar:not(.toolbar-expanded) .toolbar-expandable {
-    display: none;
-  }
-
-  .toolbar-expanded .toolbar-expandable {
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--white-opacity-10);
-    margin-top: 0.375rem;
-  }
-
-  .panel-message :deep(.p-4) {
-    padding: 0.5rem 0.75rem;
-  }
-
-  .panel-message :deep(.text-sm) {
-    font-size: 0.75rem;
-    line-height: 1rem;
-  }
-
-  .panel-message :deep(.text-lg) {
-    font-size: 0.875rem;
-  }
-
-  .panel-message :deep(.gap-3) {
-    gap: 0.5rem;
-  }
-
-  .toolbar-row {
-    flex-wrap: wrap;
-  }
-
   .toolbar-filters {
     flex: 1 1 100%;
     flex-wrap: wrap;
@@ -942,12 +854,6 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     flex: 1 1 100%;
     width: auto !important;
     min-width: 0;
-  }
-
-  .toolbar-actions {
-    flex: 1 1 100%;
-    justify-content: flex-end;
-    gap: 0.25rem;
   }
 }
 

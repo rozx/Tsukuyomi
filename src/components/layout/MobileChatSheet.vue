@@ -136,6 +136,9 @@ const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSend
   </MobileBottomSheet>
 </template>
 
+<!-- 两端逐字相同的规则（appbar 内元素 / 图标按钮 / 胶囊输入栏内元素）见 chat-panel.css -->
+<style scoped src="./chat-panel.css"></style>
+
 <style scoped>
 .mc-shell {
   flex: 1;
@@ -183,179 +186,11 @@ const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSend
   width: 100%;
 }
 
-.mc-appbar-avatar {
-  flex-shrink: 0;
-}
-
-.mc-appbar-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.mc-appbar-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(247, 244, 236, 1);
-  line-height: 1.2;
-}
-
-.mc-appbar-sub {
-  font-size: 10px;
-  color: rgba(247, 244, 236, 0.55);
-  margin-top: 2px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mc-status-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #a7d1b0;
-  margin-right: 6px;
-  flex-shrink: 0;
-}
-
-.mc-status-dot--off {
-  background: rgba(247, 244, 236, 0.3);
-}
-
-.mc-icon-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(247, 244, 236, 0.75);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.mc-icon-btn:hover,
-.mc-icon-btn:active {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(247, 244, 236, 1);
-}
-
-.mc-icon-btn i {
-  font-size: 13px;
-}
-
-.mc-icon-btn--close {
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(192, 198, 209, 0.85);
-}
-
-.mc-icon-btn--close i {
-  font-size: 11px;
-}
-
-.mc-icon-btn--close:active {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e9edf5;
-}
-
-/* 胶囊输入栏 */
+/* 胶囊输入栏容器（含 iOS 安全区 padding，与平板不同） */
 .mc-composer-wrap {
   padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(10, 12, 15, 0.72);
   flex-shrink: 0;
-}
-
-.mc-composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.mc-composer:focus-within {
-  border-color: rgba(233, 237, 245, 0.35);
-}
-
-.mc-plus {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  color: rgba(247, 244, 236, 0.75);
-  border: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.mc-plus:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(247, 244, 236, 1);
-}
-
-.mc-plus i {
-  font-size: 14px;
-}
-
-.mc-input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: rgba(247, 244, 236, 1);
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
-  font-size: 14px;
-  padding: 6px 0;
-}
-
-.mc-input::placeholder {
-  color: rgba(247, 244, 236, 0.45);
-}
-
-.mc-send {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: #6d88a8;
-  color: #fff;
-  border: none;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.mc-send:hover:not(:disabled) {
-  background: #7f97b4;
-}
-
-.mc-send:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.mc-send--idle {
-  background: rgba(109, 136, 168, 0.35);
-}
-
-.mc-send--stop {
-  background: #ef5f5f;
 }
 </style>

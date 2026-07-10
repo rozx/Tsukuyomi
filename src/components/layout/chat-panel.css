@@ -1,0 +1,208 @@
+/**
+ * 月詠 AI 助手面板（手机 sheet / 平板侧滑）共享样式。
+ *
+ * MobileChatSheet.vue 与 TabletChatPanel.vue 通过 `<style scoped src="./chat-panel.css">`
+ * 各自引入；scoped 会给规则里每个选择器分别追加各组件的 data-v 属性重新作用域，
+ * 互不泄漏（同 preview-paragraph.css）。
+ *
+ * 两端模板保留各自前缀（mc- / tcp-），故这里用分组选择器同时命中两套类名——
+ * 这样模板无需统一类名即可共用样式，避免把两个变体的模板压成字面相同的重复块。
+ * 仅收纳两端逐字相同的规则（appbar 内元素、图标按钮、胶囊输入栏内元素）；
+ * 外壳 / 消息区 / appbar 容器 / 输入栏容器等有差异的规则保留在各自组件的 `<style scoped>` 里。
+ */
+
+/* appbar 内元素 */
+.mc-appbar-avatar,
+.tcp-appbar-avatar {
+  flex-shrink: 0;
+}
+
+.mc-appbar-text,
+.tcp-appbar-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.mc-appbar-title,
+.tcp-appbar-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(247, 244, 236, 1);
+  line-height: 1.2;
+}
+
+.mc-appbar-sub,
+.tcp-appbar-sub {
+  font-size: 10px;
+  color: rgba(247, 244, 236, 0.55);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mc-status-dot,
+.tcp-status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a7d1b0;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.mc-status-dot--off,
+.tcp-status-dot--off {
+  background: rgba(247, 244, 236, 0.3);
+}
+
+/* 图标按钮（会话历史 / 新聊天 / 关闭） */
+.mc-icon-btn,
+.tcp-icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(247, 244, 236, 0.75);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mc-icon-btn:hover,
+.mc-icon-btn:active,
+.tcp-icon-btn:hover,
+.tcp-icon-btn:active {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(247, 244, 236, 1);
+}
+
+.mc-icon-btn i,
+.tcp-icon-btn i {
+  font-size: 13px;
+}
+
+.mc-icon-btn--close,
+.tcp-icon-btn--close {
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(192, 198, 209, 0.85);
+}
+
+.mc-icon-btn--close i,
+.tcp-icon-btn--close i {
+  font-size: 11px;
+}
+
+.mc-icon-btn--close:active,
+.tcp-icon-btn--close:active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e9edf5;
+}
+
+/* 胶囊输入栏内元素 */
+.mc-composer,
+.tcp-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mc-composer:focus-within,
+.tcp-composer:focus-within {
+  border-color: rgba(233, 237, 245, 0.35);
+}
+
+.mc-plus,
+.tcp-plus {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: rgba(247, 244, 236, 0.75);
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mc-plus:hover,
+.tcp-plus:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(247, 244, 236, 1);
+}
+
+.mc-plus i,
+.tcp-plus i {
+  font-size: 14px;
+}
+
+.mc-input,
+.tcp-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(247, 244, 236, 1);
+  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-size: 14px;
+  padding: 6px 0;
+}
+
+.mc-input::placeholder,
+.tcp-input::placeholder {
+  color: rgba(247, 244, 236, 0.45);
+}
+
+.mc-send,
+.tcp-send {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #6d88a8;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mc-send:hover:not(:disabled),
+.tcp-send:hover:not(:disabled) {
+  background: #7f97b4;
+}
+
+.mc-send:disabled,
+.tcp-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.mc-send--idle,
+.tcp-send--idle {
+  background: rgba(109, 136, 168, 0.35);
+}
+
+.mc-send--stop,
+.tcp-send--stop {
+  background: #ef5f5f;
+}

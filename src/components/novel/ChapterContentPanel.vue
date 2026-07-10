@@ -102,6 +102,13 @@ const isRowSelected = (index: number) =>
 const isOriginalMode = computed(() => props.editMode === 'original');
 const isPreviewMode = computed(() => props.editMode === 'preview');
 const showScrollbar = computed(() => props.editMode !== 'original');
+// 容器 class 收敛为 computed：把 !a && !b && !c 的判定移出模板绑定，
+// 降低模板圈复杂度（与本文件既有「表达式收敛为 computed」的做法一致）。
+const containerClass = computed(() => ({
+  'chapter-content-container--full': isOriginalMode.value,
+  'chapter-content-container--reading':
+    !props.isLoadingChapterContent && !isOriginalMode.value && !isPreviewMode.value,
+}));
 const headerChapter = computed(() => props.selectedChapterWithContent ?? props.selectedChapter ?? null);
 const previewTitle = computed(() =>
   headerChapter.value ? getChapterDisplayTitle(headerChapter.value, props.book || undefined) : '',
@@ -371,11 +378,7 @@ defineExpose({ scrollToParagraphIndex });
   <div
     v-if="selectedChapter"
     class="chapter-content-container"
-    :class="{
-      'chapter-content-container--full': isOriginalMode,
-      'chapter-content-container--reading':
-        !isLoadingChapterContent && !isOriginalMode && !isPreviewMode,
-    }"
+    :class="containerClass"
   >
     <!-- 自定义索引驱动滚动条（Teleport 到非滚动祖先 .page-container，避免随内容滚走） -->
     <ChapterScrollbar

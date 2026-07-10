@@ -911,34 +911,13 @@ watch(
   </AdaptiveDialog>
 </template>
 
+<!-- “特殊指令”页签基础样式（与 EditChapterDialog 共享），详见 special-instructions-tabs.css。
+     本对话框独有的横向滚动规则仍保留在下方 scoped 样式块中，置于其后以保证 @media 覆盖生效。 -->
+<style scoped src="./special-instructions-tabs.css"></style>
+
 <style scoped>
 :deep(.book-dialog .p-dialog-content) {
   overflow-x: hidden;
-}
-
-.special-instructions-tabs :deep(.p-tablist) {
-  border-bottom: 1px solid var(--white-opacity-10);
-  margin-bottom: 0.5rem;
-}
-
-.special-instructions-tabs :deep(.p-tab) {
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-  color: var(--moon-opacity-60);
-  transition: all 0.2s;
-}
-
-.special-instructions-tabs :deep(.p-tab:hover) {
-  color: var(--moon-opacity-80);
-}
-
-.special-instructions-tabs :deep(.p-tab[aria-selected='true']) {
-  color: var(--primary-opacity-90);
-  border-bottom-color: var(--primary-opacity-80);
-}
-
-.special-instructions-tabs :deep(.p-tabpanels) {
-  padding: 0;
 }
 
 .special-instructions-tabs :deep(.p-tablist-content) {

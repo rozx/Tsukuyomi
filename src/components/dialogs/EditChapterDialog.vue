@@ -280,29 +280,5 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
   </AdaptiveDialog>
 </template>
 
-<style scoped>
-.special-instructions-tabs :deep(.p-tablist) {
-  border-bottom: 1px solid var(--white-opacity-10);
-  margin-bottom: 0.5rem;
-}
-
-.special-instructions-tabs :deep(.p-tab) {
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-  color: var(--moon-opacity-60);
-  transition: all 0.2s;
-}
-
-.special-instructions-tabs :deep(.p-tab:hover) {
-  color: var(--moon-opacity-80);
-}
-
-.special-instructions-tabs :deep(.p-tab[aria-selected='true']) {
-  color: var(--primary-opacity-90);
-  border-bottom-color: var(--primary-opacity-80);
-}
-
-.special-instructions-tabs :deep(.p-tabpanels) {
-  padding: 0;
-}
-</style>
+<!-- “特殊指令”页签样式（与 BookDialog 共享），详见 special-instructions-tabs.css -->
+<style scoped src="./special-instructions-tabs.css"></style>

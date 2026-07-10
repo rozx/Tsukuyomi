@@ -52,25 +52,10 @@ const handleCancel = () => {
   </div>
 </template>
 
+<!-- 标题区样式（五个设置面板共享），详见 panel-header.css -->
+<style scoped src="./panel-header.css"></style>
+
 <style scoped>
-.panel-header {
-  padding: 1.5rem;
-}
-
-.panel-title {
-  font-family:
-    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
-  font-size: 1.625rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 2rem;
-  margin-bottom: 0.5rem;
-}
-
-.panel-desc {
-  margin-bottom: 0.75rem;
-}
-
 .panel-body {
   padding: 1rem 1.5rem 1.5rem;
   max-width: 80rem;
@@ -81,10 +66,6 @@ const handleCancel = () => {
 }
 
 @media (max-width: 640px) {
-  .panel-header {
-    display: none;
-  }
-
   .panel-body {
     padding: 0.75rem 1rem 1rem;
   }
