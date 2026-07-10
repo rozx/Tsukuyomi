@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { getCurrentScope, onScopeDispose, ref } from 'vue';
 import { useUiStore } from 'src/stores/ui';
 
 /**
@@ -29,6 +29,12 @@ export function usePanelResize() {
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
   };
+
+  // 拖拽中途组件被卸载（作用域销毁）时兜底结束拖拽：
+  // 移除 document 上的 mousemove/mouseup 监听并还原 body 样式，防止泄漏
+  if (getCurrentScope()) {
+    onScopeDispose(handleResizeEnd);
+  }
 
   const handleResizeStart = (event: MouseEvent) => {
     isResizing.value = true;

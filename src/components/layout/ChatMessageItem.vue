@@ -7,6 +7,7 @@ import { computed } from 'vue';
 import type { ChatSessionMessage } from 'src/stores/chat-sessions';
 import type { MessageDisplayItem, MessageItemHandlers } from './chat-message-types';
 import ChatActionBadge from 'src/components/layout/ChatActionBadge.vue';
+import { useThrottledMarkdown } from 'src/composables/chat/useMarkdownRenderer';
 
 interface Props extends MessageItemHandlers {
   item: MessageDisplayItem;
@@ -18,6 +19,12 @@ interface Props extends MessageItemHandlers {
 const props = defineProps<Props>();
 
 const isContent = computed(() => props.item.type === 'content' && !!props.item.content);
+// 流式输出时节流渲染 Markdown（120ms），避免每个 token 都全量重解析整条消息；
+// trailing 渲染保证流结束后最终内容与完整文本一致
+const renderedContent = useThrottledMarkdown(
+  () => (props.item.type === 'content' ? (props.item.content ?? '') : ''),
+  (text) => props.renderMarkdown(text),
+);
 const isGroupedAction = computed(
   () => props.item.type === 'grouped_action' && !!props.item.groupedActions,
 );
@@ -42,7 +49,7 @@ const bubbleClass = computed(() =>
   >
     <div
       class="text-sm break-words overflow-wrap-anywhere markdown-content w-full min-w-0"
-      v-html="renderMarkdown(item.content!)"
+      v-html="renderedContent"
     ></div>
   </div>
   <div v-else-if="isGroupedAction" class="max-w-[85%] min-w-0">

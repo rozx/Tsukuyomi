@@ -129,8 +129,12 @@ const DETAIL_KIND_RULES: readonly DetailKindRule[] = [
   },
   {
     kind: 'translation_update',
+    // old/new_translation 用 != null 判断：旧译文为空字符串（首次填充翻译）时也要展示 old→new 徽章
     test: (a, e) =>
-      a.entity === 'translation' && !!a.paragraph_id && !!e.old_translation && !!e.new_translation,
+      a.entity === 'translation' &&
+      !!a.paragraph_id &&
+      e.old_translation != null &&
+      e.new_translation != null,
   },
   { kind: 'translation_paragraph', test: (a) => a.entity === 'translation' && !!a.paragraph_id },
   { kind: 'name', test: (a) => !!a.name },

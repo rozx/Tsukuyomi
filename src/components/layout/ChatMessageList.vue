@@ -40,6 +40,19 @@ watch(activeThinkingIds, (ids) => {
   }
 });
 
+// 消息列表变化（会话切换 / 清空）时，清理已不存在消息的思考文案，防止 Map 无界增长
+watch(
+  () => props.messages.map((m) => m.id),
+  (ids) => {
+    const idSet = new Set(ids);
+    for (const id of thinkingPhrasesById.keys()) {
+      if (!idSet.has(id)) {
+        thinkingPhrasesById.delete(id);
+      }
+    }
+  },
+);
+
 // 以下方法把原先模板里的 && / 三元 / .get() === true 判断搬到 script，压低模板圈复杂度
 const shouldRenderMessage = (message: ChatSessionMessage): boolean =>
   !message.isSummaryResponse &&

@@ -148,11 +148,36 @@ const getMessageDisplayItems = (message: ChatSessionMessage): MessageDisplayItem
   return items.sort(compareDisplayItems);
 };
 
+// 逐消息缓存条目：content 引用与 actions 数量都未变时直接复用上次的条目数组
+interface DisplayCacheEntry {
+  content: string;
+  actionsLength: number;
+  items: MessageDisplayItem[];
+}
+
 export const useChatMessageDisplay = (messages: Ref<ChatSessionMessage[]>) => {
+  // 逐消息缓存：流式输出时每个 token 只有一条消息在变化，
+  // 只重建变化的那条，其余消息的条目数组保持引用不变，避免整表重建。
+  const displayCache = new Map<string, DisplayCacheEntry>();
+
   const messageDisplayItemsById = computed<Record<string, MessageDisplayItem[]>>(() => {
     const result: Record<string, MessageDisplayItem[]> = {};
+    const seenIds = new Set<string>();
     for (const message of messages.value) {
-      result[message.id] = getMessageDisplayItems(message);
+      seenIds.add(message.id);
+      const actionsLength = message.actions?.length ?? 0;
+      const cached = displayCache.get(message.id);
+      if (cached && cached.content === message.content && cached.actionsLength === actionsLength) {
+        result[message.id] = cached.items;
+        continue;
+      }
+      const items = getMessageDisplayItems(message);
+      displayCache.set(message.id, { content: message.content, actionsLength, items });
+      result[message.id] = items;
+    }
+    // 清理已从列表移除的消息缓存，防止 Map 无界增长
+    for (const id of displayCache.keys()) {
+      if (!seenIds.has(id)) displayCache.delete(id);
     }
     return result;
   });
