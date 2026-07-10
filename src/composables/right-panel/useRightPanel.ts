@@ -208,6 +208,11 @@ export function useRightPanel() {
 
   // 切换到指定会话
   const switchToSession = (sessionId: string) => {
+    // 与 createNewSession 一致：切走前停止进行中的助手任务，
+    // 避免旧会话的流式响应继续写入已被替换的消息数组
+    void aiProcessingStore.stopAllAssistantTasks().catch((error) => {
+      console.error('Failed to stop assistant tasks:', error);
+    });
     chatSessionsStore.switchToSession(sessionId);
     hideSessionListPopover();
   };

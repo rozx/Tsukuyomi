@@ -203,15 +203,26 @@ function loadSessionsFromStorage(): ChatSession[] {
  * 保存会话列表到 localStorage
  */
 function saveSessionsToStorage(sessions: ChatSession[]): void {
-  try {
-    // 只保存最近的 MAX_SESSIONS 个会话
-    const sessionsToSave = sessions
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, MAX_SESSIONS);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionsToSave));
-  } catch (error) {
-    console.error('Failed to save chat sessions to storage:', error);
+  // 只保存最近的 MAX_SESSIONS 个会话；排序作用于副本，避免原地重排响应式数组
+  let toSave = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSIONS);
+
+  // 配额超限时逐步缩减保存量重试，避免一次失败后所有持久化静默停摆
+  for (let attempt = 0; attempt < 6 && toSave.length > 0; attempt++) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+      return;
+    } catch (error) {
+      console.warn(`[chat-sessions] 保存会话失败（第 ${attempt + 1} 次），缩减后重试:`, error);
+      if (toSave.length > 1) {
+        toSave = toSave.slice(0, Math.ceil(toSave.length / 2));
+      } else {
+        const only = toSave[0];
+        if (!only) return;
+        toSave = [{ ...only, messages: only.messages.slice(-50) }];
+      }
+    }
   }
+  console.error('[chat-sessions] 无法保存会话到 localStorage，本次持久化已放弃');
 }
 
 /**
@@ -338,14 +349,6 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         this.currentSessionId = sessionId;
         saveCurrentSessionIdToStorage(sessionId);
       }
-    },
-
-    /**
-     * 更新当前会话的消息
-     */
-    updateCurrentSessionMessages(messages: ChatSessionMessage[]): void {
-      if (!this.currentSessionId) return;
-      this.updateSessionMessages(this.currentSessionId, messages);
     },
 
     /**

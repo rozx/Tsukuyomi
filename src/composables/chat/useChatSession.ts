@@ -22,10 +22,16 @@ export function useChatSession(messages: Ref<ChatSessionMessage[]>, onSessionSwi
 
   let isUpdatingFromStore = false;
 
-  // 使用 throttle 工具函数
-  const syncMessagesToSessionThrottled = throttle((newMessages: ChatSessionMessage[]) => {
-    chatSessionsStore.updateCurrentSessionMessages(newMessages);
-  }, 200).fn;
+  // 使用 throttle 工具函数。目标会话在"排程时"捕获：
+  // trailing flush 可能在会话切换之后才触发，按实时 currentSessionId 落盘
+  // 会把旧会话的消息数组写进新会话
+  const syncMessagesToSessionThrottled = throttle(
+    (newMessages: ChatSessionMessage[], sessionId: string | null) => {
+      if (!sessionId) return;
+      chatSessionsStore.updateSessionMessages(sessionId, newMessages);
+    },
+    200,
+  ).fn;
 
   // 重新加载消息（从 Store）
   const reloadMessages = async () => {
@@ -114,7 +120,7 @@ export function useChatSession(messages: Ref<ChatSessionMessage[]>, onSessionSwi
       if (isUpdatingFromStore) {
         return;
       }
-      syncMessagesToSessionThrottled(newMessages);
+      syncMessagesToSessionThrottled(newMessages, chatSessionsStore.currentSessionId);
     },
     { deep: true },
   );

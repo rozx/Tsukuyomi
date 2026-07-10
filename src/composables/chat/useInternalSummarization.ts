@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue';
+import { v4 as uuidv4 } from 'uuid';
 import type { ChatSessionMessage } from 'src/stores/chat-sessions';
 import type { useChatSessionsStore } from 'src/stores/chat-sessions';
 import { SUMMARIZING_MESSAGE_CONTENT } from 'src/composables/chat/constants';
@@ -35,7 +36,7 @@ export function useInternalSummarization(
       }
     }
 
-    internalSummarizationMessageId.value = (Date.now() - 1).toString();
+    internalSummarizationMessageId.value = uuidv4();
     const summarizationMessage: ChatSessionMessage = {
       id: internalSummarizationMessageId.value,
       role: 'assistant',
@@ -52,6 +53,10 @@ export function useInternalSummarization(
   };
 
   const handleSummarizingEnd = (assistantMessageIdRef: { value: string }) => {
+    // 未经历 handleSummarizingStart（或已结束）时直接忽略，保证 Start/End 严格配对，
+    // 避免摘要失败路径重复调用 End 时凭空多出助手消息
+    if (!isSummarizingInternally.value) return;
+
     // 摘要完成，准备接收新的聊天内容
     // 更新摘要消息的显示
     if (internalSummarizationMessageId.value) {
@@ -70,7 +75,7 @@ export function useInternalSummarization(
     }
 
     // 创建新的助手消息用于接收继续的聊天内容
-    assistantMessageIdRef.value = (Date.now() + 2).toString();
+    assistantMessageIdRef.value = uuidv4();
     const newAssistantMessage: ChatSessionMessage = {
       id: assistantMessageIdRef.value,
       role: 'assistant',

@@ -21,6 +21,7 @@ import {
   TOOL_CALL_PLACEHOLDER_VARIANTS,
 } from './utils/stream-handler';
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
+import { isCancelledError } from 'src/utils/is-cancelled-error';
 import {
   DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
   estimateMessagesTokenCount,
@@ -340,10 +341,25 @@ export class AssistantService {
   private static getFallbackMessages(messages: ChatMessage[], count: number = 5): ChatMessage[] {
     // 保留系统消息
     const systemMessages = messages.filter((msg) => msg.role === 'system');
-    // 保留最后 N 条非系统消息
-    const recentMessages = messages.filter((msg) => msg.role !== 'system').slice(-count);
+    // 保留最后 N 条非系统消息；剔除开头的孤儿 tool 消息（其 tool_calls 已被切掉）
+    const recentMessages = this.dropLeadingOrphanToolMessages(
+      messages.filter((msg) => msg.role !== 'system').slice(-count),
+    );
 
     return [...systemMessages, ...recentMessages];
+  }
+
+  /**
+   * 剔除开头的孤儿 tool 消息。按条数截取历史时，切点可能落在
+   * assistant(tool_calls) 与其 tool 结果之间；没有前置 tool_calls 的
+   * tool 消息会被 OpenAI 兼容端以 400 拒绝。
+   */
+  private static dropLeadingOrphanToolMessages(messages: ChatMessage[]): ChatMessage[] {
+    let start = 0;
+    while (start < messages.length && messages[start]?.role === 'tool') {
+      start++;
+    }
+    return start === 0 ? messages : messages.slice(start);
   }
 
   /**
@@ -352,6 +368,50 @@ export class AssistantService {
   private static isTokenLimitError(error: unknown): boolean {
     if (!error) return false;
     return messageIndicatesTokenLimit(extractErrorMessage(error).toLowerCase());
+  }
+
+  /**
+   * 为摘要请求截断输入：单条消息限长（工具结果可能非常大），
+   * 再按 token 预算从最新往回保留，丢弃更早的消息。
+   */
+  private static truncateMessagesForSummary(
+    model: AIModel,
+    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  ): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const PER_MESSAGE_MAX_CHARS = 2000;
+    const DEFAULT_SUMMARY_INPUT_TOKEN_BUDGET = 24_000;
+
+    const capped = messages.map((msg) =>
+      msg.content.length > PER_MESSAGE_MAX_CHARS
+        ? { ...msg, content: msg.content.slice(0, PER_MESSAGE_MAX_CHARS - 3) + '...' }
+        : msg,
+    );
+
+    const hasFiniteLimit =
+      typeof model.maxInputTokens === 'number' &&
+      model.maxInputTokens > 0 &&
+      model.maxInputTokens !== UNLIMITED_TOKENS;
+    const budget = hasFiniteLimit
+      ? Math.floor(model.maxInputTokens * 0.6)
+      : DEFAULT_SUMMARY_INPUT_TOKEN_BUDGET;
+
+    // 从最新往回累加 token，超过预算即丢弃更早的消息（至少保留最新一条）
+    const kept: typeof capped = [];
+    let usedTokens = 0;
+    for (let i = capped.length - 1; i >= 0; i--) {
+      const msg = capped[i];
+      if (!msg) continue;
+      const tokens = estimateMessagesTokenCount([{ role: msg.role, content: msg.content }]);
+      if (kept.length > 0 && usedTokens + tokens > budget) break;
+      kept.unshift(msg);
+      usedTokens += tokens;
+    }
+    if (kept.length < capped.length) {
+      console.warn(
+        `[AssistantService] 摘要输入过长，已从 ${capped.length} 条截断为最近 ${kept.length} 条`,
+      );
+    }
+    return kept;
   }
 
   /**
@@ -371,16 +431,22 @@ export class AssistantService {
   ): Promise<string> {
     const { previousSummary, signal, onChunk } = options;
 
+    // 摘要请求本身也要受上下文窗口约束：先截断超长消息并按预算丢弃最早的消息，
+    // 否则恰好在 context 快满时触发的摘要请求几乎必然自身超限而失败
+    const boundedMessages = this.truncateMessagesForSummary(model, messages);
+
     // 将消息分为早期、中期和最近部分，重点关注最近的消息
-    const totalMessages = messages.length;
+    const totalMessages = boundedMessages.length;
     const recentThreshold = Math.max(1, Math.floor(totalMessages * 0.3)); // 最近30%的消息
     const middleThreshold = Math.max(1, Math.floor(totalMessages * 0.6)); // 中间30%的消息
 
-    const recentMessages = messages.slice(-recentThreshold);
+    const recentMessages = boundedMessages.slice(-recentThreshold);
     const middleMessages =
-      totalMessages > recentThreshold ? messages.slice(-middleThreshold, -recentThreshold) : [];
+      totalMessages > recentThreshold
+        ? boundedMessages.slice(-middleThreshold, -recentThreshold)
+        : [];
     const earlyMessages =
-      totalMessages > middleThreshold ? messages.slice(0, -middleThreshold) : [];
+      totalMessages > middleThreshold ? boundedMessages.slice(0, -middleThreshold) : [];
 
     // 构建消息历史，突出显示最近的消息
     const formatMessages = (msgs: typeof messages, startIdx: number, label: string) => {
@@ -462,8 +528,8 @@ export class AssistantService {
     const validatedSummary = this.validateSummary(summary);
     if (!validatedSummary) {
       console.warn('[AssistantService] 摘要验证失败，返回降级摘要');
-      // 返回一个基本的降级摘要，避免完全失败
-      return this.createFallbackSummary(messages);
+      // 返回一个基本的降级摘要，避免完全失败；必须保留已有摘要，否则会清空多轮积累的上下文
+      return this.createFallbackSummary(boundedMessages, normalizedPreviousSummary);
     }
 
     return validatedSummary;
@@ -507,6 +573,7 @@ export class AssistantService {
    */
   private static createFallbackSummary(
     messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    previousSummary?: string,
   ): string {
     // 提取最近几条消息的关键内容
     const recentMessages = messages.slice(-5);
@@ -515,11 +582,13 @@ export class AssistantService {
       .map((m) => m.content.slice(0, 50))
       .join('；');
 
-    if (userMessages) {
-      return `最近讨论：${userMessages}${userMessages.length > 100 ? '...' : ''}`;
-    }
+    const base = userMessages
+      ? `最近讨论：${userMessages}${userMessages.length > 100 ? '...' : ''}`
+      : '（会话摘要生成失败，已保留最近对话上下文）';
 
-    return '（会话摘要生成失败，已保留最近对话上下文）';
+    // 降级摘要会整体覆盖 session.summary，必须把已有摘要拼接进来，避免丢失早期上下文
+    const prev = previousSummary?.trim();
+    return prev ? `${prev}\n\n${base}` : base;
   }
 
   /**
@@ -534,6 +603,7 @@ export class AssistantService {
     taskId?: string,
     sessionId?: string,
     aiModelId?: string,
+    signal?: AbortSignal,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
     const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
@@ -542,6 +612,11 @@ export class AssistantService {
 
     const results = [];
     for (const toolCall of toolCalls) {
+      // 用户取消后立即停止执行剩余工具，避免已取消的 CRUD 写入继续落库
+      if (signal?.aborted) {
+        throw new Error('请求已取消');
+      }
+
       // [警告] 严格限制：只能调用本次会话提供的 tools
       if (!allowedToolNames.has(toolCall.function.name)) {
         results.push({
@@ -845,6 +920,7 @@ export class AssistantService {
     sessionId?: string | undefined;
     model: AIModel;
     toolSchemaTokens: number;
+    signal?: AbortSignal | undefined;
   }): Promise<void> {
     const {
       toolCalls,
@@ -857,6 +933,7 @@ export class AssistantService {
       sessionId,
       model,
       toolSchemaTokens,
+      signal,
     } = params;
 
     const toolResults = await this.handleToolCalls(
@@ -871,6 +948,7 @@ export class AssistantService {
       taskId,
       sessionId,
       model.id,
+      signal,
     );
 
     messages.push(...toolResults);
@@ -984,6 +1062,7 @@ export class AssistantService {
         sessionId,
         model,
         toolSchemaTokens,
+        signal,
       });
 
       // trim 救不回来时，在循环内主动触发摘要，避免 followUp 请求超出 context
@@ -1036,11 +1115,32 @@ export class AssistantService {
       }
     }
 
+    this.fillPendingToolCallResults(messages, toolCalls);
+
     return {
       finalText,
       actions: allActions,
       ...(inLoopSummary ? { summary: inLoopSummary } : {}),
     };
+  }
+
+  /**
+   * 达到轮次上限仍有未执行的工具调用时，补齐占位 tool 结果。
+   * 否则历史会残留没有响应的 tool_calls 消息，下一轮请求会被 API 直接拒绝。
+   */
+  private static fillPendingToolCallResults(
+    messages: ChatMessage[],
+    pendingToolCalls: AIToolCall[],
+  ): void {
+    if (pendingToolCalls.length === 0) return;
+    messages.push(
+      ...pendingToolCalls.map((call) => ({
+        role: 'tool' as const,
+        tool_call_id: call.id,
+        name: call.function.name,
+        content: JSON.stringify({ success: false, error: '已达到工具调用轮次上限，调用未执行' }),
+      })),
+    );
   }
 
   /**
@@ -1180,6 +1280,7 @@ export class AssistantService {
     if (options.aiProcessingStore) extra.aiProcessingStore = options.aiProcessingStore;
     if (taskId) extra.taskId = taskId;
     if (options.onSummarizingStart) extra.onSummarizingStart = options.onSummarizingStart;
+    if (options.onSummarizingEnd) extra.onSummarizingEnd = options.onSummarizingEnd;
 
     return this.requestSummaryReset({
       model,
@@ -1455,8 +1556,12 @@ export class AssistantService {
       const msg = messages[idx];
       if (!msg?.content) continue;
 
+      // 克隆后替换，避免原地修改与调用方 messageHistory 共享的消息对象
       const original = msg.content;
-      msg.content = original.slice(0, MAX_TRUNCATED_LENGTH) + `\n\n${TRUNCATED_MARKER}`;
+      messages[idx] = {
+        ...msg,
+        content: original.slice(0, MAX_TRUNCATED_LENGTH) + `\n\n${TRUNCATED_MARKER}`,
+      };
 
       const newTokens =
         estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
@@ -1535,7 +1640,9 @@ export class AssistantService {
 
     const historyMessages = reducedMessages.slice(1, -1);
     const keepCount = Math.max(0, Math.floor(historyMessages.length * 0.5));
-    const recentMessages = keepCount > 0 ? historyMessages.slice(-keepCount) : [];
+    const recentMessages = this.dropLeadingOrphanToolMessages(
+      keepCount > 0 ? historyMessages.slice(-keepCount) : [],
+    );
 
     return [systemMsg, ...recentMessages, userMsg];
   }
@@ -1653,6 +1760,7 @@ export class AssistantService {
     aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'];
     taskId?: string;
     onSummarizingStart?: () => void;
+    onSummarizingEnd?: () => void;
     originalMessageHistory?: ChatMessage[];
   }): Promise<AssistantResult | null> {
     const {
@@ -1666,6 +1774,7 @@ export class AssistantService {
       aiProcessingStore,
       taskId,
       onSummarizingStart,
+      onSummarizingEnd,
       originalMessageHistory,
     } = params;
 
@@ -1686,7 +1795,14 @@ export class AssistantService {
         ...(previousSummary ? { previousSummary } : {}),
       });
     } catch (error) {
+      // 用户取消必须向外传播，不能当成"摘要失败"继续发起新请求
+      if (finalSignal?.aborted || isCancelledError(error)) {
+        throw error;
+      }
       console.error('[AssistantService] 摘要生成失败', error);
+      // 已触发 onSummarizingStart，失败路径必须配对调用 End，
+      // 否则 UI 会永远停留在"总结中"状态并丢弃后续所有 chunk
+      onSummarizingEnd?.();
       return null;
     }
 
@@ -2203,6 +2319,7 @@ export class AssistantService {
       ...(aiProcessingStore ? { aiProcessingStore } : {}),
       ...(taskId ? { taskId } : {}),
       ...(options.onSummarizingStart ? { onSummarizingStart: options.onSummarizingStart } : {}),
+      ...(options.onSummarizingEnd ? { onSummarizingEnd: options.onSummarizingEnd } : {}),
       ...(options.messageHistory ? { originalMessageHistory: options.messageHistory } : {}),
     });
   }
@@ -2315,8 +2432,8 @@ export class AssistantService {
     const { options, messageHistory, systemPrompt, userMessage, model, tools, context, sessionId, taskId, finalSignal } =
       params;
 
+    // onSummarizingEnd 已在 requestSummaryReset 的失败路径中配对调用，这里不再重复
     console.warn('[AssistantService] 摘要失败，使用降级策略：只保留最近 5 条消息');
-    options.onSummarizingEnd?.();
 
     const fallbackMessages = this.getFallbackMessages(messageHistory, 5);
     const retryMessages: ChatMessage[] = [

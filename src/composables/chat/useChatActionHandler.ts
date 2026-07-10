@@ -304,20 +304,27 @@ export function useChatActionHandler(
     messageAction: MessageAction,
     assistantMessageId: string,
   ): void => {
-    currentMessageActions.value.push(messageAction);
+    const isDuplicateIn = (list: MessageAction[] | undefined): boolean =>
+      Boolean(
+        list?.some(
+          (a) =>
+            a.timestamp === messageAction.timestamp &&
+            a.type === messageAction.type &&
+            a.entity === messageAction.entity &&
+            a.name === messageAction.name,
+        ),
+      );
+
+    // 实时 badge 列表与持久化列表使用同一去重规则，避免 badge 行重复渲染
+    if (!isDuplicateIn(currentMessageActions.value)) {
+      currentMessageActions.value.push(messageAction);
+    }
 
     const assistantMsg = messages.value.find((m) => m.id === assistantMessageId);
     if (!assistantMsg) return;
     if (!assistantMsg.actions) assistantMsg.actions = [];
 
-    const duplicated = assistantMsg.actions.find(
-      (a) =>
-        a.timestamp === messageAction.timestamp &&
-        a.type === messageAction.type &&
-        a.entity === messageAction.entity &&
-        a.name === messageAction.name,
-    );
-    if (duplicated) return;
+    if (isDuplicateIn(assistantMsg.actions)) return;
 
     assistantMsg.actions.push(messageAction);
     void nextTick(() => {

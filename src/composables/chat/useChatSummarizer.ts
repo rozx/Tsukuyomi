@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue';
+import { v4 as uuidv4 } from 'uuid';
 import {
   useChatSessionsStore,
   type ChatSessionMessage,
@@ -58,7 +59,7 @@ export function useChatSummarizer(
   };
 
   const appendSummarizationBubble = (): string => {
-    const summarizationMessageId = (Date.now() - 1).toString();
+    const summarizationMessageId = uuidv4();
     messages.value.push({
       id: summarizationMessageId,
       role: 'assistant',
@@ -109,11 +110,26 @@ export function useChatSummarizer(
     }
   };
 
+  /** 失败/中断时移除"总结中"气泡，避免它永久停留 */
+  const removeSummarizationBubble = (summarizationMessageId: string | null): void => {
+    if (!summarizationMessageId) return;
+    const idx = messages.value.findIndex((m) => m.id === summarizationMessageId);
+    if (idx >= 0) messages.value.splice(idx, 1);
+    const session = chatSessionsStore.currentSession;
+    if (session) {
+      chatSessionsStore.updateSessionMessages(session.id, messages.value);
+    }
+  };
+
   async function performUISummarization(
     willReachLimit: boolean,
     updateIsSending?: (val: boolean) => void,
     options: UISummarizationOptions = {},
   ): Promise<{ success: boolean }> {
+    // 已有摘要在进行中（如发送后的自动摘要）时拒绝并发进入，避免互踩消息数组与会话状态
+    if (isSummarizing.value) {
+      return { success: false };
+    }
     if (!hasEnoughMessagesToSummarize(options)) {
       if (updateIsSending) updateIsSending(false);
       return { success: false };
@@ -122,8 +138,9 @@ export function useChatSummarizer(
     isSummarizing.value = true;
     if (updateIsSending) updateIsSending(true);
 
+    let summarizationMessageId: string | null = null;
     try {
-      const summarizationMessageId = appendSummarizationBubble();
+      summarizationMessageId = appendSummarizationBubble();
 
       const currentSession = chatSessionsStore.currentSession;
       if (!currentSession) throw new Error('当前会话不存在');
@@ -145,6 +162,7 @@ export function useChatSummarizer(
       await reloadMessages();
       return { success: true };
     } catch (error) {
+      removeSummarizationBubble(summarizationMessageId);
       reportSummarizationFailure(error, willReachLimit, updateIsSending);
       return { success: false };
     } finally {
