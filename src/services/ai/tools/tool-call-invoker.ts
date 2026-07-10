@@ -43,6 +43,11 @@ function parseToolCallArguments(
   rawArgs: string,
   functionName: string,
 ): Record<string, unknown> {
+  // 部分 provider 对无参工具（required: [] 的 list_characters 等）会流式返回 ""
+  // 作为 arguments。空/纯空白参数是合法的"无参调用"，必须先于截断检测放行。
+  if (rawArgs.trim() === '') {
+    return {};
+  }
   try {
     return JSON.parse(rawArgs);
   } catch (e) {

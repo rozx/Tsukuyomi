@@ -3,7 +3,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
-import { getChapterDisplayTitle, getChapterContentText } from 'src/utils/novel-utils';
+import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
 import type { Chapter, Novel, Volume } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
@@ -557,7 +557,7 @@ function buildAdjacentChapterTool(spec: {
       type: 'function',
       function: {
         name: spec.name,
-        description: spec.description,
+        description: `${spec.description}章节内容按 limit/offset 分页返回（默认 30 段，最大 200），避免超长章节一次性塞满上下文；需要更多内容时通过 offset 继续读取。`,
         parameters: {
           type: 'object',
           properties: {
@@ -572,6 +572,14 @@ function buildAdjacentChapterTool(spec: {
             summary_only: {
               type: 'boolean',
               description: '如果为 true，则不返回章节内容，只返回所有的摘要信息（默认为 false）',
+            },
+            limit: {
+              type: 'number',
+              description: '返回的段落数量上限（默认 30，最大 200）。',
+            },
+            offset: {
+              type: 'number',
+              description: '起始段落索引（0-based，默认 0）。配合 limit 翻页读取。',
             },
           },
           required: ['chapter_id'],
@@ -636,6 +644,8 @@ async function handleAdjacentChapterTool(
     chapter_id: string;
     include_memory?: boolean;
     summary_only?: boolean;
+    limit?: number;
+    offset?: number;
   }>(args);
   if (!bookId) {
     return jsonError('书籍 ID 不能为空');
@@ -644,6 +654,7 @@ async function handleAdjacentChapterTool(
   if (!chapter_id) {
     return jsonError('章节 ID 不能为空');
   }
+  const { limit, offset } = resolveChapterPaging(parsedArgs);
 
   try {
     const book = await BookService.getBookById(bookId);
@@ -662,10 +673,11 @@ async function handleAdjacentChapterTool(
     emitAdjacentReadAction(onAction, chapter.id, chapterTitle, config.toolName);
 
     // 如果章节内容未加载，从 IndexedDB 加载（summary_only 模式跳过 content 读取）
-    let chapterContent = '';
+    // 分页：与 get_chapter_info 一致，按 offset/limit 切片，防止超长章节塞爆工具结果
+    let page: ReturnType<typeof paginateChapterParagraphs> | undefined;
     if (!summary_only) {
       await ensureChapterContentLoaded(chapter);
-      chapterContent = getChapterContentText(chapter);
+      page = paginateChapterParagraphs(chapter, offset, limit, chapter.content?.length || 0);
     }
 
     const { paragraphCount, translatedCount } = countChapterTranslationStats(chapter);
@@ -675,7 +687,8 @@ async function handleAdjacentChapterTool(
       buildAdjacentChapterResponse({
         chapter,
         volume,
-        chapterContent,
+        page,
+        limit,
         paragraphCount,
         translatedCount,
         relatedMemories,
@@ -688,12 +701,14 @@ async function handleAdjacentChapterTool(
 }
 
 /**
- * 渲染相邻章节（前/后一章）工具的统一响应体
+ * 渲染相邻章节（前/后一章）工具的统一响应体。
+ * page 存在时（非 summary_only）返回分页后的内容切片与分页元信息。
  */
 function buildAdjacentChapterResponse(params: {
   chapter: Chapter;
   volume: VolumeLike | null | undefined;
-  chapterContent: string;
+  page: ReturnType<typeof paginateChapterParagraphs> | undefined;
+  limit: number;
   paragraphCount: number;
   translatedCount: number;
   relatedMemories: Array<{ id: string; summary: string }>;
@@ -706,9 +721,20 @@ function buildAdjacentChapterResponse(params: {
       id: params.chapter.id,
       title: getChapterDisplayTitle(params.chapter),
       ...titleFields,
-      content: params.chapterContent,
+      content: params.page?.chapterContent ?? '',
       paragraphCount: params.paragraphCount,
       translatedCount: params.translatedCount,
+      ...(params.page
+        ? {
+            pagination: {
+              offset: params.page.effectiveOffset,
+              limit: params.limit,
+              returned: params.page.paragraphs.length,
+              hasMore: params.page.hasMore,
+              nextOffset: params.page.hasMore ? params.page.effectiveEnd : null,
+            },
+          }
+        : {}),
       volume: formatVolumeResponse(params.volume ?? null),
     },
     ...(params.includeMemory && params.relatedMemories.length > 0

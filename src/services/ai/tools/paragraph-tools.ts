@@ -770,7 +770,8 @@ function resolveModelIdForAddTranslation(
 
 /**
  * add_translation 添加后设置 selectedTranslationId：set_as_selected 时直接选中新翻译，
- * 否则若原本无选中且存在翻译则自动选中第一条
+ * 否则若原本无选中且存在翻译则自动选中第一条；若原选中翻译已被 5 条上限逐出
+ * （selectedTranslationId 悬空），则改选新添加的翻译，避免选中 ID 指向不存在的翻译。
  */
 function applySelectionAfterAdd(
   paragraph: ParagraphLocation['paragraph'],
@@ -784,6 +785,14 @@ function applySelectionAfterAdd(
   }
   if (!paragraph.selectedTranslationId && updatedTranslations.length > 0) {
     paragraph.selectedTranslationId = updatedTranslations[0]?.id || '';
+    return;
+  }
+  // 5 条上限可能逐出最旧的翻译；若原选中翻译已不在数组中，改选新添加的翻译
+  const selectionStillExists = updatedTranslations.some(
+    (t) => t.id === paragraph.selectedTranslationId,
+  );
+  if (!selectionStillExists) {
+    paragraph.selectedTranslationId = newTranslationId;
   }
 }
 
@@ -946,7 +955,7 @@ export const paragraphTools: ToolDefinition[] = [
       function: {
         name: 'get_paragraph_info',
         description:
-          '获取段落的详细信息，包括原文、所有翻译版本、选中的翻译等。当需要了解当前段落的完整信息时使用此工具。',
+          '获取段落的详细信息，包括原文、所有翻译版本、选中的翻译等。当需要了解当前段落的完整信息时使用此工具。返回的 paragraphIndex 为展示序号（从 1 开始计数），chapterIndex / volumeIndex 为数组索引（从 0 开始计数）。',
         // fallow-ignore-next-line code-duplication
         parameters: buildParagraphIdSchema(undefined, true),
       },
@@ -1024,7 +1033,7 @@ export const paragraphTools: ToolDefinition[] = [
       function: {
         name: 'get_previous_paragraphs',
         description:
-          '获取指定段落之前的若干个段落。用于查看当前段落之前的上下文，帮助理解文本的连贯性。',
+          '获取指定段落之前的若干个段落。用于查看当前段落之前的上下文，帮助理解文本的连贯性。返回的 paragraph_index 为展示序号（从 1 开始计数），chapter_index / volume_index 为数组索引（从 0 开始计数）。',
         parameters: {
           type: 'object',
           properties: {
@@ -1057,7 +1066,7 @@ export const paragraphTools: ToolDefinition[] = [
       function: {
         name: 'get_next_paragraphs',
         description:
-          '获取指定段落之后的若干个段落。用于查看当前段落之后的上下文，帮助理解文本的连贯性。',
+          '获取指定段落之后的若干个段落。用于查看当前段落之后的上下文，帮助理解文本的连贯性。返回的 paragraph_index 为展示序号（从 1 开始计数），chapter_index / volume_index 为数组索引（从 0 开始计数）。',
         parameters: {
           type: 'object',
           properties: {
@@ -1090,7 +1099,7 @@ export const paragraphTools: ToolDefinition[] = [
       function: {
         name: 'find_paragraph_by_keywords',
         description:
-          '根据多个关键词查找包含任一关键词的段落。用于在翻译过程中查找特定内容或验证翻译的一致性。支持在原文或翻译文本中搜索，如果同时提供两者，则只返回同时满足两个条件的段落。支持多个关键词，返回包含任一关键词的段落（OR 逻辑）。[警告] **敬语翻译**：翻译敬语时，必须**首先**使用 search_memories 搜索记忆中关于该角色敬语翻译的相关信息，**然后**再使用此工具搜索该角色在之前段落中的翻译，以确保翻译一致性。如果提供 chapter_id 参数，则仅在指定章节内搜索；如果不提供，则搜索所有章节。',
+          '根据多个关键词查找包含任一关键词的段落。用于在翻译过程中查找特定内容或验证翻译的一致性。支持在原文或翻译文本中搜索，如果同时提供两者，则只返回同时满足两个条件的段落。支持多个关键词，返回包含任一关键词的段落（OR 逻辑）。[警告] **敬语翻译**：翻译敬语时，必须**首先**使用 search_memories 搜索记忆中关于该角色敬语翻译的相关信息，**然后**再使用此工具搜索该角色在之前段落中的翻译，以确保翻译一致性。如果提供 chapter_id 参数，则仅在指定章节内搜索；如果不提供，则搜索所有章节。返回的 paragraph_index 为展示序号（从 1 开始计数），chapter_index / volume_index 为数组索引（从 0 开始计数）。',
         parameters: {
           type: 'object',
           properties: {
@@ -1241,7 +1250,7 @@ export const paragraphTools: ToolDefinition[] = [
       function: {
         name: 'search_paragraphs_by_regex',
         description:
-          '使用正则表达式搜索段落。支持在原文或翻译文本中搜索，可以匹配复杂的文本模式。用于查找符合特定模式的段落，例如查找包含特定格式的文本、数字模式、特定字符组合等。',
+          '使用正则表达式搜索段落。支持在原文或翻译文本中搜索，可以匹配复杂的文本模式。用于查找符合特定模式的段落，例如查找包含特定格式的文本、数字模式、特定字符组合等。返回的 paragraph_index 为展示序号（从 1 开始计数），chapter_index / volume_index 为数组索引（从 0 开始计数）。',
         parameters: {
           type: 'object',
           properties: {
@@ -1504,20 +1513,7 @@ export const paragraphTools: ToolDefinition[] = [
       const { paragraph_id, translation_id, book, booksStore, paragraph, resolvedBookId } =
         resolvedArgs;
 
-      // 报告读取操作（选择翻译也是一种读取操作）
-      if (onAction) {
-        onAction({
-          type: 'read',
-          entity: 'translation',
-          data: {
-            paragraph_id,
-            translation_id,
-            tool_name: 'select_translation',
-          },
-        });
-      }
-
-      // 验证翻译ID是否存在
+      // 验证翻译ID是否存在（校验通过后才上报 action，无效 ID 不产生任何操作记录）
       const tRes = findTranslationIndexOrError(paragraph, translation_id);
       if (tRes.kind === 'error') return tRes.json;
       const translation = tRes.translation;
@@ -1531,6 +1527,20 @@ export const paragraphTools: ToolDefinition[] = [
       // 更新书籍（保存更改）
       // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
       await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
+
+      // 报告更新操作（选择翻译会写入 DB，属于更新而非读取），携带原选中 ID 便于回溯
+      if (onAction) {
+        onAction({
+          type: 'update',
+          entity: 'translation',
+          data: {
+            paragraph_id,
+            translation_id,
+            tool_name: 'select_translation',
+          },
+          previousData: { selectedTranslationId: originalSelectedId },
+        });
+      }
 
       return JSON.stringify({
         success: true,

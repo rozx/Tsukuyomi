@@ -125,7 +125,8 @@ export interface ActionInfo {
         tags?: string[];
         author?: string;
         alternateTitles?: string[];
-      }; // 书籍信息更新的原始数据（仅用于 update_book_info 操作）
+      } // 书籍信息更新的原始数据（仅用于 update_book_info 操作）
+    | { selectedTranslationId: string }; // 原选中的翻译 ID（仅用于 select_translation 操作）
 }
 
 /**

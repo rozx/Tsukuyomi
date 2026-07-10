@@ -50,14 +50,25 @@ describe('tool-call-invoker - 截断参数检测', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it('空参数字符串同样按截断处理', async () => {
+  it('空参数字符串应视为无参调用（{}），不得按截断拒绝', async () => {
+    // 部分 provider 对无参工具（如 list_characters）会流式返回 "" 作为 arguments
     const handler = mock(() => Promise.resolve('{"success":true}'));
     const tool = makeStubTool(handler);
 
-    await (expect(
-      invokeToolHandler(tool, makeToolCall(''), { bookId: 'book-1' }),
-    ).rejects.toThrow() as unknown as Promise<void>);
-    expect(handler).not.toHaveBeenCalled();
+    await invokeToolHandler(tool, makeToolCall(''), { bookId: 'book-1' });
+    expect(handler).toHaveBeenCalledTimes(1);
+    const receivedArgs = (handler.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(receivedArgs).toEqual({});
+  });
+
+  it('纯空白参数字符串同样视为无参调用（{}）', async () => {
+    const handler = mock(() => Promise.resolve('{"success":true}'));
+    const tool = makeStubTool(handler);
+
+    await invokeToolHandler(tool, makeToolCall('  \n '), { bookId: 'book-1' });
+    expect(handler).toHaveBeenCalledTimes(1);
+    const receivedArgs = (handler.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(receivedArgs).toEqual({});
   });
 
   it('完整但轻微格式错误的 JSON（以 } 结尾）仍允许 jsonrepair 修复', async () => {
