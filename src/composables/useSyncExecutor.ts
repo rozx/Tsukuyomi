@@ -89,6 +89,28 @@ export function useSyncExecutor() {
   const coverHistoryStore = useCoverHistoryStore();
   const gistSyncService = new GistSyncService();
 
+  /**
+   * 解析本轮迭代使用的同步配置。
+   *
+   * configOverride 只允许提供用户可编辑的静态字段（凭据 / 开关 / 端点）；
+   * 动态同步状态（ETag / 已知哈希 / 墓碑 / lastSyncTime / 删除记录）必须始终
+   * 读取 live store —— 阶段 2 应用远端数据后会持久化新状态，若阶段 3/4 仍读
+   * 点击时刻冻结的浅拷贝，伪 CAS 会拿陈旧 ETag/哈希误报"同步冲突"并阻塞上传。
+   */
+  const resolveConfig = (configOverride?: SyncConfig): SyncConfig => {
+    const live = settingsStore.gistSync;
+    if (!configOverride) return live;
+    return {
+      ...live,
+      enabled: configOverride.enabled,
+      syncInterval: configOverride.syncInterval,
+      syncType: configOverride.syncType,
+      syncParams: configOverride.syncParams,
+      secret: configOverride.secret,
+      apiEndpoint: configOverride.apiEndpoint,
+    };
+  };
+
   const ensureSyncStoresInitialized = async (): Promise<void> => {
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
 
@@ -360,8 +382,10 @@ export function useSyncExecutor() {
       total: OVERALL_TOTAL,
     });
 
+    let applyFailedKeys: string[] = [];
     try {
-      await SyncDataService.applyPartialRemoteData(downloadResult.changedEntries);
+      applyFailedKeys =
+        (await SyncDataService.applyPartialRemoteData(downloadResult.changedEntries)) ?? [];
       if (downloadResult.deletedEntries.length > 0) {
         await SyncDataService.applyRemoteDeletions(downloadResult.deletedEntries);
       }
@@ -375,8 +399,33 @@ export function useSyncExecutor() {
     // 更新本地持久化的已知远端状态——每步独立 try/catch，单步失败不回滚前序持久化
     if (downloadResult.manifest) {
       try {
-        await settingsStore.updateKnownRemoteHashes(manifestToHashes(downloadResult.manifest));
-        await settingsStore.updateKnownRemoteEntries(manifestToEntries(downloadResult.manifest));
+        const hashes = manifestToHashes(downloadResult.manifest);
+        const entries = manifestToEntries(downloadResult.manifest);
+        // 下载失败（failedEntryKeys）或应用失败（applyFailedKeys）的条目必须保留
+        // 旧的已知远端状态：若把新远端哈希记为已知，该条目永远不会被重新拉取，
+        // 且上传阶段会把陈旧的本地副本推上去覆盖远端较新的数据
+        const failedKeys = new Set<string>([
+          ...(downloadResult.failedEntryKeys ?? []),
+          ...applyFailedKeys,
+        ]);
+        if (failedKeys.size > 0) {
+          console.warn(
+            '[useSyncExecutor] 以下条目下载/应用失败，保留旧的已知远端状态，下轮同步将重新拉取:',
+            [...failedKeys],
+          );
+          const prevHashes = settingsStore.gistSync.knownRemoteHashes ?? {};
+          const prevEntries = settingsStore.gistSync.knownRemoteEntries ?? {};
+          for (const key of failedKeys) {
+            const prevHash = prevHashes[key];
+            if (prevHash !== undefined) hashes[key] = prevHash;
+            else delete hashes[key];
+            const prevEntry = prevEntries[key];
+            if (prevEntry !== undefined) entries[key] = prevEntry;
+            else delete entries[key];
+          }
+        }
+        await settingsStore.updateKnownRemoteHashes(hashes);
+        await settingsStore.updateKnownRemoteEntries(entries);
       } catch (error) {
         console.error('[useSyncExecutor] 保存 knownRemoteHashes 失败:', error);
       }
@@ -524,30 +573,39 @@ export function useSyncExecutor() {
    */
   const runFirstTimeUpload = async (
     latestConfig: SyncConfig,
+    bundle: Awaited<ReturnType<typeof buildLocalSyncBundle>>,
+    syncSnapshotTime: number,
     prefixMsg: (m: string) => string,
     options: SyncExecutorOptions,
     restorableItems: RestorableItem[],
   ): Promise<SyncExecutorResult> => {
     const { onError, onSuccess } = options;
     try {
+      // 使用与增量路径同一份 bundle：appSettings 已 strip syncs（GitHub token
+      // 属于设备本地字段，绝不能写进 Gist），novels 已带内容且去除本地字段
       const uploadResult = await gistSyncService.uploadToGist(
         latestConfig,
         {
-          aiModels: aiModelsStore.models,
-          appSettings: settingsStore.getAllSettings(),
-          novels: booksStore.books,
-          coverHistory: coverHistoryStore.covers,
+          aiModels: bundle.aiModelsForSync,
+          appSettings: bundle.appSettingsForSync,
+          novels: bundle.novelsWithContent,
+          coverHistory: bundle.coverHistoryForSync,
         },
         makeUploadProgressHandler(prefixMsg),
       );
       if (!uploadResult.success) {
+        // Gist 可能已创建、仅上传后验证失败——必须持久化 gistId，
+        // 否则重试会再创建一个 Gist，留下孤儿并造成多设备指向分裂
+        if (uploadResult.gistId) {
+          await settingsStore.setGistId(uploadResult.gistId);
+        }
         onError('上传失败', uploadResult.error || '创建 Gist 失败');
         return { success: false, restorableItems };
       }
       if (uploadResult.gistId) {
         await settingsStore.setGistId(uploadResult.gistId);
       }
-      await settingsStore.updateLastSyncTime();
+      await settingsStore.updateLastSyncTime(syncSnapshotTime);
       if (onSuccess) onSuccess('同步完成', '数据已同步到 Gist（首次）');
       return { success: true, restorableItems };
     } catch (error) {
@@ -563,6 +621,7 @@ export function useSyncExecutor() {
    */
   const persistUploadState = async (
     uploadResult: Awaited<ReturnType<typeof gistSyncService.uploadToGistIncremental>>,
+    syncSnapshotTime: number,
   ): Promise<void> => {
     try {
       await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
@@ -573,7 +632,10 @@ export function useSyncExecutor() {
         uploadedTombstones[k] = v.deletedAt;
       }
       await settingsStore.updateKnownRemoteTombstones(uploadedTombstones);
-      await settingsStore.updateLastSyncTime();
+      // lastSyncTime 必须锚定到本地快照构建时刻：上传期间的本地新增/编辑
+      // 不在本次 bundle 中，其 lastEdited 必须大于 lastSyncTime 才能在
+      // 下轮合并的"本地独有项"判定中存活
+      await settingsStore.updateLastSyncTime(syncSnapshotTime);
       await settingsStore.cleanupOldDeletionRecords();
     } catch (error) {
       console.error('[useSyncExecutor] 更新同步状态失败:', error);
@@ -586,6 +648,7 @@ export function useSyncExecutor() {
   const runIncrementalUpload = async (
     latestConfig: SyncConfig,
     bundle: Awaited<ReturnType<typeof buildLocalSyncBundle>>,
+    syncSnapshotTime: number,
     remoteFilesSnapshot: Record<string, unknown>,
     prefixMsg: (m: string) => string,
     options: SyncExecutorOptions,
@@ -608,7 +671,7 @@ export function useSyncExecutor() {
         makeUploadProgressHandler(prefixMsg),
       );
 
-      await persistUploadState(uploadResult);
+      await persistUploadState(uploadResult, syncSnapshotTime);
 
       settingsStore.updateSyncProgress({
         stage: 'uploading',
@@ -631,6 +694,7 @@ export function useSyncExecutor() {
    * 无需上传分支：仅更新 lastSyncTime、清理过期墓碑，并报告成功
    */
   const finalizeNoUploadNeeded = async (
+    syncSnapshotTime: number,
     prefixMsg: (m: string) => string,
     onSuccess: SyncExecutorOptions['onSuccess'],
     restorableItems: RestorableItem[],
@@ -642,7 +706,7 @@ export function useSyncExecutor() {
       total: OVERALL_TOTAL,
     });
     try {
-      await settingsStore.updateLastSyncTime();
+      await settingsStore.updateLastSyncTime(syncSnapshotTime);
       await settingsStore.cleanupOldDeletionRecords();
     } catch (error) {
       console.error('[useSyncExecutor] 更新同步状态失败:', error);
@@ -663,7 +727,7 @@ export function useSyncExecutor() {
   ): Promise<SyncExecutorResult | { retry: true }> => {
     const { onError, onSuccess, configOverride } = options;
     await ensureSyncStoresInitialized();
-    const config = configOverride ?? settingsStore.gistSync;
+    const config = resolveConfig(configOverride);
 
     // ── 阶段 1：条件下载 + 解析 manifest ──
     const downloadOutcome = await runDownloadPhase(config, prefixMsg, onError);
@@ -696,13 +760,18 @@ export function useSyncExecutor() {
     }
 
     // ── 阶段 3：计算本地 manifest，判断是否需要上传 ──
-    const latestConfig = configOverride ?? settingsStore.gistSync;
+    // 快照时刻取在 bundle 构建之前：此后发生的任何本地编辑都不在本次上传中，
+    // 它们的 lastEdited 必须 > lastSyncTime（见 persistUploadState）
+    const syncSnapshotTime = Date.now();
+    const latestConfig = resolveConfig(configOverride);
     const bundle = await buildLocalSyncBundle(latestConfig);
     const knownHashes = latestConfig.knownRemoteHashes ?? {};
     const localHashes = manifestToHashes(bundle.localManifest);
     const shouldUpload = SyncDataService.hasLocalChangesByHash(localHashes, knownHashes);
 
-    if (!shouldUpload) return finalizeNoUploadNeeded(prefixMsg, onSuccess, restorableItems);
+    if (!shouldUpload) {
+      return finalizeNoUploadNeeded(syncSnapshotTime, prefixMsg, onSuccess, restorableItems);
+    }
     logUploadDiffs(localHashes, knownHashes);
 
     // ── 阶段 4：伪 CAS 预检 + 增量上传 ──
@@ -725,12 +794,20 @@ export function useSyncExecutor() {
     });
 
     if (!latestConfig.syncParams.gistId) {
-      return runFirstTimeUpload(latestConfig, prefixMsg, options, restorableItems);
+      return runFirstTimeUpload(
+        latestConfig,
+        bundle,
+        syncSnapshotTime,
+        prefixMsg,
+        options,
+        restorableItems,
+      );
     }
 
     return runIncrementalUpload(
       latestConfig,
       bundle,
+      syncSnapshotTime,
       remoteFilesSnapshot,
       prefixMsg,
       options,
@@ -774,7 +851,7 @@ export function useSyncExecutor() {
     const { messagePrefix, onError, onSuccess, configOverride } = options;
     const prefixMsg = (msg: string) => (messagePrefix ? `${messagePrefix}${msg}` : msg);
     await ensureSyncStoresInitialized();
-    const config = configOverride ?? settingsStore.gistSync;
+    const config = resolveConfig(configOverride);
 
     const markFailure = async () => {
       try {
@@ -841,6 +918,8 @@ export function useSyncExecutor() {
       total: OVERALL_TOTAL,
     });
 
+    // 快照时刻取在 bundle 构建之前（与 executeSync 同语义，见 persistUploadState）
+    const syncSnapshotTime = Date.now();
     const bundle = await buildLocalSyncBundle(config);
     const {
       appSettingsForSync,
@@ -885,7 +964,7 @@ export function useSyncExecutor() {
       );
 
       // 持久化新的远端状态（失败不影响推送成功判定）
-      await persistUploadState(uploadResult);
+      await persistUploadState(uploadResult, syncSnapshotTime);
 
       // 关闭强制模式 —— 即使上面的状态持久化失败，推送本身已经成功，不应把用户困在强制模式里
       try {

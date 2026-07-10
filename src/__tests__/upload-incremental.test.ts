@@ -39,12 +39,12 @@ function makeOctokit(onUpdate: (params: any) => void) {
 }
 
 describe('uploadIncremental — batch payload structure', () => {
-  it('pure-deletion scenario: writes manifest alone, leaves deleted files as harmless orphans', async () => {
-    // Scenario: local + remote agree on settings/ai-models/cover-history (hashes match),
-    // but remote has novels/memories that local has deleted. GitHub rejects
-    // "N null + 1 manifest-content" batches with 422 missing_field:files, so we
-    // write just the manifest (which no longer lists those entries). The old
-    // files remain on Gist as orphans until the next sync with real content.
+  it('pure-deletion scenario: single PATCH carries manifest + null deletions', async () => {
+    // 场景：settings/ai-models/cover-history 与远端一致（hash 相同），但远端还有
+    // 本地已删除的 novels/memories。删除必须与 manifest 同批发出——否则被删
+    // 内容会永远留在 Gist 上（隐私问题）。manifest 是非 null 内容，PATCH 不会
+    // 触发 GitHub 对"纯 null 请求"的 422；无远端快照时信任 knownRemoteEntries
+    // 枚举的文件名（与有内容批次时的删除行为一致）。
     const payload: UploadPayload = {
       appSettings: { lastEdited: new Date(0) } as any,
       aiModels: [],
@@ -87,16 +87,14 @@ describe('uploadIncremental — batch payload structure', () => {
 
     await uploadIncremental(octokit, config, payload, {});
 
-    // Single PATCH with ONLY the manifest — no null deletions (GitHub would reject).
+    // 单次 PATCH：manifest 内容 + 按 knownRemoteEntries 枚举的 null 删除
     expect(patches.length).toBe(1);
     const only = patches[0]!;
     expect(only['manifest.json']).toBeTruthy();
-    // Deletion entries must NOT appear in the PATCH; they'd make it all-null-plus-manifest,
-    // the shape GitHub rejects with 422 missing_field:files
-    expect(only['novel-book-a.json']).toBeUndefined();
-    expect(only['novel-book-b.json']).toBeUndefined();
-    expect(only['memories-book-a.json']).toBeUndefined();
-    expect(only['memories-book-b.json']).toBeUndefined();
+    expect(only['novel-book-a.json']).toBeNull();
+    expect(only['novel-book-b.json']).toBeNull();
+    expect(only['memories-book-a.json']).toBeNull();
+    expect(only['memories-book-b.json']).toBeNull();
   });
 
   it('single PATCH when there are neither uploads nor deletions (manifest only)', async () => {

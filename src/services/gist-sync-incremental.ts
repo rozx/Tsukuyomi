@@ -111,6 +111,12 @@ export type IncrementalDownloadResult =
       /** 由 entry key 索引的反序列化后数据（仅包含 diff 中变化/新增的条目） */
       changedEntries: Record<string, EntryValue>;
       /**
+       * 下载/反序列化失败的条目 key（文件缺失、raw 拉取失败、解析异常）。
+       * 调用方不得把这些条目的新远端哈希记为已知，否则它们永远不会被重新拉取，
+       * 且下一轮上传会用陈旧的本地副本覆盖远端较新的数据。
+       */
+      failedEntryKeys?: string[];
+      /**
        * 远端已删除的条目（合并两种来源：
        * 1. 在 knownRemote 中但不在远端 manifest.entries 中
        * 2. 在远端 manifest.tombstones 中
@@ -820,7 +826,19 @@ export async function conditionalGetGist(
     files?: Record<string, GistFileLike>;
     updated_at?: string;
     html_url?: string;
+    truncated?: boolean;
   };
+
+  // Gist 级 truncated：文件数超过 GitHub API 单次返回上限（300 个）时，
+  // 响应只包含前 300 个文件。若继续同步，窗口外的条目会静默反序列化为 null
+  // → 下载缺数据；新设备的上传 diff 甚至会把"看不见"的远端文件当作已删除
+  // 批量清空。必须在这里响亮地中止。
+  if (data.truncated === true) {
+    throw new Error(
+      'Gist 文件数超过 GitHub API 单次返回上限（300 个），文件列表被截断，无法安全同步。' +
+        '请清理该 Gist 中的冗余文件，或改用新的 Gist 重新同步。',
+    );
+  }
 
   return buildGistDataResult(data, etag);
 }
@@ -912,15 +930,22 @@ function buildDeletedEntries(
   return deletedEntries;
 }
 
-/** 仅反序列化 changed + added 条目（远端有而本地尚未见过的），返回 entryKey -> 值 映射 */
+/**
+ * 仅反序列化 changed + added 条目（远端有而本地尚未见过的）。
+ *
+ * 失败的条目（文件缺失 / raw 拉取失败 / 解析异常）必须记入 `failedEntryKeys`
+ * 而不是静默跳过：调用方要据此避免把这些条目的新远端哈希记为"已知"，
+ * 否则该条目永远不会被重新拉取，且下一轮上传会用陈旧的本地副本覆盖远端。
+ */
 async function readChangedEntries(
   toRead: string[],
   remoteManifest: GistManifest,
   files: Record<string, GistFileLike>,
   fetchRaw: (url: string) => Promise<string>,
   onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
-): Promise<Record<string, EntryValue>> {
+): Promise<{ changedEntries: Record<string, EntryValue>; failedEntryKeys: string[] }> {
   const changedEntries: Record<string, EntryValue> = {};
+  const failedEntryKeys: string[] = [];
   const total = toRead.length;
 
   for (let i = 0; i < toRead.length; i++) {
@@ -928,11 +953,20 @@ async function readChangedEntries(
     const entry = remoteManifest.entries[key];
     if (!entry) continue;
     onProgress?.({ current: i, total, message: `正在下载: ${key}` });
-    const value = await deserializeEntry(key, entry, files, fetchRaw);
-    if (value) changedEntries[key] = value;
+    let value: EntryValue | null = null;
+    try {
+      value = await deserializeEntry(key, entry, files, fetchRaw);
+    } catch (error) {
+      console.error(`[gist-sync-incremental] 反序列化条目 ${key} 失败:`, error);
+    }
+    if (value) {
+      changedEntries[key] = value;
+    } else {
+      failedEntryKeys.push(key);
+    }
   }
 
-  return changedEntries;
+  return { changedEntries, failedEntryKeys };
 }
 
 /**
@@ -982,7 +1016,13 @@ export async function downloadWithManifest(
 
   // 仅需要反序列化 changed + added（即远端有而本地尚未见过的）
   const toRead = [...diff.changed, ...diff.added];
-  const changedEntries = await readChangedEntries(toRead, remoteManifest, files, fetchRaw, onProgress);
+  const { changedEntries, failedEntryKeys } = await readChangedEntries(
+    toRead,
+    remoteManifest,
+    files,
+    fetchRaw,
+    onProgress,
+  );
 
   onProgress?.({ current: toRead.length, total: toRead.length, message: '下载完成' });
 
@@ -1003,6 +1043,7 @@ export async function downloadWithManifest(
     // GitHub 以 422 missing_field:files 拒绝整个请求，连带丢掉其它合法的内容写入。
     remoteFilesSnapshot: files,
     changedEntries,
+    failedEntryKeys,
     deletedEntries,
     remoteTombstones: remoteTombstoneMap,
     remoteEntryKeys: Object.keys(remoteManifest.entries),
@@ -1048,6 +1089,18 @@ export async function uploadIncremental(
   const diff = diffManifests(localManifest, buildKnownAsManifest(config.knownRemoteHashes));
   const toUpload = [...diff.changed, ...diff.added];
   const toDelete = diff.deleted;
+
+  // buildLocalManifest 不输出 chunks，序列化阶段也只会给本轮上传的条目补 chunks。
+  // 未变化的条目必须从上次已知的远端布局（knownRemoteEntries）继承 chunks——
+  // 否则 settings-only 同步写出的 manifest 会抹掉未变化分块小说的 chunks 计数，
+  // 消费方把它持久化为 knownRemoteEntries 后，后续无快照路径会按单文件名枚举
+  // 删除目标，对不存在的文件发 null 导致整个 PATCH 被 GitHub 以 422 拒绝。
+  const toUploadSet = new Set(toUpload);
+  for (const [entryKey, entry] of Object.entries(localManifest.entries)) {
+    if (toUploadSet.has(entryKey)) continue;
+    const knownChunks = knownEntries[entryKey]?.chunks;
+    if (knownChunks && knownChunks > 0) entry.chunks = knownChunks;
+  }
 
   // 按 entry key 序列化文件
   const allFiles: Record<string, { content: string } | null> = {};
@@ -1223,8 +1276,8 @@ function buildAdditionBatches(
   }
   if (currentCount > 0) additionBatches.push(current);
 
-  // 纯删除场景保底：没有 additions 时留一个空批次，最后一步会写入 manifest
-  // （GitHub 对 "N null + 1 manifest" 请求会 422；见下方 append helper）
+  // 纯删除场景保底：没有 additions 时留一个空批次，最后一步会把
+  // deletions + manifest 一起写入（manifest 内容保证 PATCH 非纯 null）
   if (additionBatches.length === 0) additionBatches.push({});
 
   return additionBatches;
@@ -1233,9 +1286,11 @@ function buildAdditionBatches(
 /**
  * 向最后一批追加 deletions 与 manifest，保证"指针切换"是一次原子 PATCH。
  *
- * - 若最后一批本已有非 null 内容 → 追加 deletions + manifest
- * - 若最后一批为空（纯删除场景）→ 只写 manifest，跳过删除（被删条目因不在 manifest.entries
- *   里，下载时不会被读取；Gist 上留下的旧文件成为孤儿，无害）
+ * 纯删除场景（没有任何内容批次）同样携带 null 删除——否则被删小说/记忆的
+ * 正文会永远留在 Gist 上（隐私问题）。manifest 本身是非 null 内容，足以避开
+ * GitHub 对"纯 null PATCH"的 422 missing_field:files 拒绝；422 的真正风险在于
+ * null 一个远端不存在的文件，这由 resolveStaleFilenames 的存在性过滤保证
+ *（有远端快照时仅 null 快照中确实存在的文件）。
  */
 function appendDeletionsAndManifestToFinalBatch(
   additionBatches: Array<Record<string, { content: string } | null>>,
@@ -1244,10 +1299,7 @@ function appendDeletionsAndManifestToFinalBatch(
 ): void {
   const deletions = Object.entries(allFiles).filter((kv): kv is [string, null] => kv[1] === null);
   const finalBatch = additionBatches[additionBatches.length - 1]!;
-  const lastBatchHasContent = Object.values(finalBatch).some((v) => v !== null);
-  if (lastBatchHasContent) {
-    for (const [name, f] of deletions) finalBatch[name] = f;
-  }
+  for (const [name, f] of deletions) finalBatch[name] = f;
   finalBatch[MANIFEST_FILE_NAME] = { content: JSON.stringify(localManifest) };
 }
 

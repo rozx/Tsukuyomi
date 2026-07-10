@@ -115,7 +115,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         skipped: true,
         remoteETag: 'etag-v1',
       });
-      const applySpy = spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
+      const applySpy = spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([]);
       const hasChangesSpy = spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
       const uploadSpy = spyOn(
         GistSyncService.prototype,
@@ -153,7 +153,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         remoteTombstones: {},
         remoteEntryKeys: Object.keys(remoteManifest.entries),
       } as any);
-      const applySpy = spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
+      const applySpy = spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([]);
       spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
 
       const { sync } = useGistSync();
@@ -179,7 +179,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         remoteTombstones: { [novelEntryKey('book-2')]: '2026-04-15T12:00:00Z' },
         remoteEntryKeys: Object.keys(remoteManifest.entries),
       } as any);
-      spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
+      spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([]);
       const deleteSpy = spyOn(SyncDataService, 'applyRemoteDeletions').mockResolvedValue();
       spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
 
@@ -207,7 +207,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         remoteTombstones: {},
         remoteEntryKeys: Object.keys(remoteManifest.entries),
       } as any);
-      spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue();
+      spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([]);
       const deleteSpy = spyOn(SyncDataService, 'applyRemoteDeletions').mockResolvedValue();
       spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
 
@@ -673,6 +673,255 @@ describe('useGistSync (manifest-driven flow)', () => {
       expect(mockToastAdd).toHaveBeenCalledWith(
         expect.objectContaining({ severity: 'error', summary: '迁移失败' }),
       );
+    });
+  });
+
+  describe('审计修复回归 (executor)', () => {
+    it('lastSyncTime 应取自本地快照构建时刻，而非上传完成时刻', async () => {
+      // 场景：上传耗时较长，期间用户新增/编辑的条目 lastEdited 必须大于持久化的
+      // lastSyncTime，否则下轮合并会把它们误判为"远端已删除"而静默删掉。
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: true,
+        remoteETag: 'etag-v1',
+      });
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
+      spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockResolvedValue({
+        status: 'unchanged',
+        etag: 'etag-v1',
+      });
+      let uploadFinishedAt = 0;
+      spyOn(GistSyncService.prototype, 'uploadToGistIncremental').mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        uploadFinishedAt = Date.now();
+        return { remoteETag: 'etag-v2', manifest: makeManifest('local-hash') } as any;
+      });
+
+      const { sync } = useGistSync();
+      await sync();
+
+      const timestampArg = (
+        mockSettingsStore.updateLastSyncTime.mock.calls[0] as unknown as unknown[] | undefined
+      )?.[0] as number | undefined;
+      expect(timestampArg).toBeDefined();
+      expect(timestampArg!).toBeLessThan(uploadFinishedAt);
+    });
+
+    it('传入 configOverride 时，上传阶段必须读取 apply 阶段刚持久化的最新 ETag/哈希', async () => {
+      // 场景：设置页手动同步传入点击时刻的浅拷贝配置；阶段 2 应用远端数据后
+      // 持久化了新 ETag/哈希，阶段 4 的伪 CAS 若仍读冻结副本会误报"同步冲突"。
+      mockSettingsStore.updateLastRemoteETag = mock((etag: string) => {
+        mockSettingsStore.gistSync.lastRemoteETag = etag;
+        return Promise.resolve();
+      }) as unknown as typeof mockSettingsStore.updateLastRemoteETag;
+      mockSettingsStore.updateKnownRemoteHashes = mock((hashes: Record<string, string>) => {
+        mockSettingsStore.gistSync.knownRemoteHashes = hashes;
+        return Promise.resolve();
+      }) as unknown as typeof mockSettingsStore.updateKnownRemoteHashes;
+
+      const staleOverride = createSyncConfig(); // 冻结的 etag-v1 / old-hash 副本
+
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: false,
+        manifest: makeManifest('new-remote-hash'),
+        changedEntries: {},
+        deletedEntries: [],
+        remoteTombstones: {},
+        remoteETag: 'etag-v2',
+        remoteFilesSnapshot: {},
+      } as any);
+      spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([]);
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
+      const verifySpy = spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockResolvedValue(
+        {
+          status: 'unchanged',
+          etag: 'etag-v2',
+        },
+      );
+      spyOn(GistSyncService.prototype, 'uploadToGistIncremental').mockResolvedValue({
+        remoteETag: 'etag-v3',
+        manifest: makeManifest('local-hash'),
+      } as any);
+
+      const { sync } = useGistSync();
+      await sync(staleOverride);
+
+      const verifyConfigArg = verifySpy.mock.calls[0]?.[0] as SyncConfig;
+      expect(verifyConfigArg.lastRemoteETag).toBe('etag-v2');
+      expect(verifyConfigArg.knownRemoteHashes?.[novelEntryKey('book-1')]).toBe('new-remote-hash');
+    });
+
+    it('下载失败的条目不得把新远端哈希记为已知（否则永不重拉且会用陈旧本地覆盖远端）', async () => {
+      mockSettingsStore.gistSync = createSyncConfig({
+        knownRemoteHashes: { [novelEntryKey('book-1')]: 'old-hash', settings: 'settings-hash' },
+      });
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: false,
+        manifest: makeManifest('new-remote-hash'),
+        changedEntries: {}, // novel:book-1 拉取失败，没有进入 changedEntries
+        failedEntryKeys: [novelEntryKey('book-1')],
+        deletedEntries: [],
+        remoteTombstones: {},
+        remoteETag: 'etag-v2',
+        remoteFilesSnapshot: {},
+      } as any);
+      spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([] as never);
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      const persisted = (
+        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as
+          | unknown[]
+          | undefined
+      )?.[0] as Record<string, string>;
+      // 失败条目保留旧哈希 → 下轮 diff 会重新拉取；其余条目正常采用新 manifest 值
+      expect(persisted?.[novelEntryKey('book-1')]).toBe('old-hash');
+      expect(persisted?.['ai-models']).toBe('ai-hash');
+    });
+
+    it('应用失败的条目不得把新远端哈希记为已知', async () => {
+      mockSettingsStore.gistSync = createSyncConfig({
+        knownRemoteHashes: { [novelEntryKey('book-1')]: 'old-hash' },
+      });
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: false,
+        manifest: makeManifest('new-remote-hash'),
+        changedEntries: {
+          [novelEntryKey('book-1')]: { kind: 'novel', value: { id: 'book-1' } },
+        },
+        deletedEntries: [],
+        remoteTombstones: {},
+        remoteETag: 'etag-v2',
+        remoteFilesSnapshot: {},
+      } as any);
+      // apply 阶段报告该条目应用失败
+      spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([
+        novelEntryKey('book-1'),
+      ] as never);
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      const persisted = (
+        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as
+          | unknown[]
+          | undefined
+      )?.[0] as Record<string, string>;
+      expect(persisted?.[novelEntryKey('book-1')]).toBe('old-hash');
+    });
+
+    it('恢复已删除项目时应刷新时间戳并清除对应墓碑，防止下轮同步"僵尸删除"', async () => {
+      // 场景：恢复的 data 携带删除前的旧 lastEdited/lastAccessedAt；
+      // 各设备墓碑的 deletedAt 晚于它 → 复活规则保留墓碑 → 下轮同步再次删除。
+      // 恢复时必须把时间戳刷新为当前时刻，并清掉本地已知的远端墓碑。
+      const staleDate = new Date('2020-01-01T00:00:00.000Z');
+      const deletedAt = new Date('2023-01-01T00:00:00.000Z').getTime();
+      const addBookSpy = mock(() => Promise.resolve());
+      spyOn(BooksStore, 'useBooksStore').mockReturnValue({
+        books: [],
+        addBook: addBookSpy,
+        bulkAddBooks: mock(() => Promise.resolve()),
+      } as any);
+      mockSettingsStore.gistSync = createSyncConfig({
+        knownRemoteTombstones: {
+          'novel:novel-1': new Date(deletedAt).toISOString(),
+          'novel:other': new Date(deletedAt).toISOString(),
+        },
+      });
+      const upsertSpy = spyOn(MemoryService, 'upsertMemoryForSync').mockResolvedValue(
+        undefined as never,
+      );
+
+      const { restoreDeletedItems } = useGistSync();
+      const before = Date.now();
+      await restoreDeletedItems([
+        {
+          id: 'novel-1',
+          type: 'novel',
+          title: 'Book',
+          deletedAt,
+          data: { id: 'novel-1', title: 'Book', lastEdited: staleDate, createdAt: staleDate },
+        },
+        {
+          id: 'mem-1',
+          type: 'memory',
+          title: 'Memory',
+          deletedAt,
+          data: {
+            id: 'mem-1',
+            bookId: 'novel-1',
+            content: '内容',
+            summary: '摘要',
+            createdAt: staleDate.getTime(),
+            lastAccessedAt: staleDate.getTime(),
+          },
+        },
+      ]);
+
+      const restoredNovel = (addBookSpy.mock.calls[0] as unknown as unknown[] | undefined)?.[0] as {
+        lastEdited: Date | string;
+      };
+      expect(new Date(restoredNovel.lastEdited).getTime()).toBeGreaterThanOrEqual(before);
+
+      const restoredMemory = upsertSpy.mock.calls[0]?.[0] as { lastAccessedAt: number };
+      expect(restoredMemory.lastAccessedAt).toBeGreaterThanOrEqual(before);
+
+      // 恢复的 novel 对应的墓碑被清除，其他墓碑保留
+      const gistSyncPatch = (
+        mockSettingsStore.updateGistSync.mock.calls[0] as unknown as unknown[] | undefined
+      )?.[0] as {
+        knownRemoteTombstones?: Record<string, string>;
+      };
+      expect(gistSyncPatch?.knownRemoteTombstones?.['novel:novel-1']).toBeUndefined();
+      expect(gistSyncPatch?.knownRemoteTombstones?.['novel:other']).toBeDefined();
+    });
+
+    it('首次上传失败但 Gist 已创建时，应持久化 gistId 防止重试产生孤儿 Gist', async () => {
+      mockSettingsStore.gistSync = createSyncConfigWithoutGistId();
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
+      spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue({
+        success: false,
+        gistId: 'created-but-unverified',
+        error: '上传验证失败',
+      } as any);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(mockSettingsStore.setGistId).toHaveBeenCalledWith('created-but-unverified');
+      expect(mockToastAdd).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', summary: '上传失败' }),
+      );
+    });
+
+    it('首次上传（无 gistId）不得把 syncs（含 GitHub token）写入 Gist', async () => {
+      mockSettingsStore.gistSync = createSyncConfigWithoutGistId();
+      mockSettingsStore.getAllSettings = mock(
+        () =>
+          ({
+            lastEdited: new Date(0),
+            syncs: [{ secret: 'super-secret-token', syncParams: { token: 'super-secret-token' } }],
+          }) as any,
+      );
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
+      const legacyUploadSpy = spyOn(GistSyncService.prototype, 'uploadToGist').mockResolvedValue({
+        success: true,
+        gistId: 'new-gist-id',
+      } as any);
+
+      const { sync } = useGistSync();
+      await sync();
+
+      expect(legacyUploadSpy).toHaveBeenCalled();
+      const dataArg = legacyUploadSpy.mock.calls[0]?.[1] as { appSettings?: { syncs?: unknown } };
+      expect(dataArg?.appSettings).toBeDefined();
+      expect(dataArg?.appSettings?.syncs).toBeUndefined();
     });
   });
 

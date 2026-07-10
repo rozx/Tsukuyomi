@@ -842,7 +842,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     );
   });
 
-  it('旧布局下单本书解析失败时不应影响其他书籍恢复', async () => {
+  it('旧布局下任一本书解析失败时应中止恢复，防止本地被不完整快照覆盖', async () => {
     const service = new GistSyncService();
     const config = makeConfig();
 
@@ -873,11 +873,73 @@ describe('GistSyncService.downloadFromGistRevision', () => {
 
     const result = await service.downloadFromGistRevision(config, 'revision-sha');
 
-    expect(result.success).toBe(true);
-    expect(result.data?.novels).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: 'good-book', title: 'Good Book' })]),
+    // 上游 overwriteFromSnapshot 会先清空本地再写回快照，
+    // 静默丢弃解析失败的书会导致本地数据被不完整快照永久覆盖
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('novel:bad-book');
+    expect(result.error).toContain('已中止恢复');
+  });
+
+  it('旧布局下 settings 文件无法解析时应中止恢复', async () => {
+    const service = new GistSyncService();
+    const config = makeConfig();
+
+    const goodNovel = {
+      id: 'good-book',
+      title: 'Good Book',
+      author: 'Author',
+      volumes: [],
+      lastEdited: new Date('2026-04-22T10:03:00.000Z'),
+    };
+
+    spyOn(service as any, 'fetchGistRevisionRaw').mockResolvedValue({
+      data: {
+        files: {
+          'tsukuyomi-settings.json': {
+            filename: 'tsukuyomi-settings.json',
+            content: '{broken-settings-json',
+            truncated: false,
+          },
+          'novel-good-book.json': {
+            filename: 'novel-good-book.json',
+            content: await gzipJson(goodNovel),
+            truncated: false,
+          },
+        },
+      },
+    } as any);
+
+    const result = await service.downloadFromGistRevision(config, 'revision-sha');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('settings');
+    expect(result.error).toContain('已中止恢复');
+  });
+
+  it('旧布局下 settings 文件被截断且 raw_url 不可用时应中止恢复', async () => {
+    const service = new GistSyncService();
+    const config = makeConfig();
+
+    spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('Not Found', { status: 404, statusText: 'Not Found' }) as unknown as Response,
     );
-    expect(result.data?.novels).toHaveLength(1);
+    spyOn(service as any, 'fetchGistRevisionRaw').mockResolvedValue({
+      data: {
+        files: {
+          'tsukuyomi-settings.json': {
+            filename: 'tsukuyomi-settings.json',
+            truncated: true,
+            raw_url: 'https://example.com/tsukuyomi-settings.json',
+          },
+        },
+      },
+    } as any);
+
+    const result = await service.downloadFromGistRevision(config, 'revision-sha');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('settings');
+    expect(result.error).toContain('已中止恢复');
   });
 });
 
@@ -886,58 +948,93 @@ describe('GistSyncService.getGistRevisions', () => {
     mock.restore();
   });
 
-  it('应在修订历史中区分 added removed 和 modified 文件', async () => {
+  /** GitHub API 返回的 commit 列表是最新在前（newest-first） */
+  const makeTwoCommitsNewestFirst = (): MockRevisionCommit[] => [
+    {
+      version: 'sha-2',
+      committed_at: '2026-04-22T10:10:00.000Z',
+      change_status: { total: 3, additions: 2, deletions: 1 },
+    },
+    {
+      version: 'sha-1',
+      committed_at: '2026-04-22T10:00:00.000Z',
+      change_status: { total: 2, additions: 2, deletions: 0 },
+    },
+  ];
+
+  const twoCommitsGetRevision = (sha: string): Promise<MockRevisionResponse> => {
+    switch (sha) {
+      case 'sha-1':
+        return Promise.resolve(
+          makeRevisionResponse({
+            'removed.txt': { filename: 'removed.txt', size: 7, content: 'before' },
+            'changed.txt': { filename: 'changed.txt', size: 4, content: 'same' },
+          }),
+        );
+      case 'sha-2':
+        return Promise.resolve(
+          makeRevisionResponse({
+            'added.txt': { filename: 'added.txt', size: 5, content: 'after' },
+            'changed.txt': { filename: 'changed.txt', size: 4, content: 'diff' },
+          }),
+        );
+      default:
+        return Promise.reject(new Error(`Unexpected sha: ${sha}`));
+    }
+  };
+
+  it('应在修订历史中区分 added removed 和 modified 文件（API 返回最新在前）', async () => {
     const service = new GistSyncService();
     const config = makeConfig();
-    const commits: MockRevisionCommit[] = [
-      {
-        version: 'sha-1',
-        committed_at: '2026-04-22T10:00:00.000Z',
-        change_status: { total: 2, additions: 2, deletions: 0 },
-      },
-      {
-        version: 'sha-2',
-        committed_at: '2026-04-22T10:10:00.000Z',
-        change_status: { total: 3, additions: 2, deletions: 1 },
-      },
-    ];
 
-    mockRevisionApi(service, commits, (sha) => {
-      switch (sha) {
-        case 'sha-1':
-          return Promise.resolve(
-            makeRevisionResponse({
-              'removed.txt': { filename: 'removed.txt', size: 7, content: 'before' },
-              'changed.txt': { filename: 'changed.txt', size: 4, content: 'same' },
-            }),
-          );
-        case 'sha-2':
-          return Promise.resolve(
-            makeRevisionResponse({
-              'added.txt': { filename: 'added.txt', size: 5, content: 'after' },
-              'changed.txt': { filename: 'changed.txt', size: 4, content: 'diff' },
-            }),
-          );
-        default:
-          return Promise.reject(new Error(`Unexpected sha: ${sha}`));
-      }
-    });
+    mockRevisionApi(service, makeTwoCommitsNewestFirst(), twoCommitsGetRevision);
 
     const result = await service.getGistRevisions(config);
 
     expect(result.success).toBe(true);
     expect(result.revisions).toHaveLength(2);
+    // revisions[0] 是最新的 commit（sha-2），应与更旧的 sha-1 对比
+    expect(result.revisions?.[0]?.version).toBe('sha-2');
     expect(result.revisions?.[0]?.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ filename: 'added.txt', status: 'added' }),
+        expect.objectContaining({ filename: 'removed.txt', status: 'removed' }),
+        expect.objectContaining({ filename: 'changed.txt', status: 'modified' }),
+      ]),
+    );
+    // revisions[1] 是最早的 commit（sha-1），所有文件视为新增
+    expect(result.revisions?.[1]?.version).toBe('sha-1');
+    expect(result.revisions?.[1]?.files).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ filename: 'removed.txt', status: 'added' }),
         expect.objectContaining({ filename: 'changed.txt', status: 'added' }),
       ]),
     );
-    expect(result.revisions?.[1]?.files).toEqual(
+  });
+
+  it('即使 API 返回最旧在前，也应显式排序为最新在前并得到相同的 diff 结果', async () => {
+    const service = new GistSyncService();
+    const config = makeConfig();
+
+    // 防御性排序：把 commit 列表反过来喂进去（最旧在前），结果应与最新在前一致
+    mockRevisionApi(service, makeTwoCommitsNewestFirst().reverse(), twoCommitsGetRevision);
+
+    const result = await service.getGistRevisions(config);
+
+    expect(result.success).toBe(true);
+    expect(result.revisions?.map((rev) => rev.version)).toEqual(['sha-2', 'sha-1']);
+    expect(result.revisions?.[0]?.committedAt).toBe('2026-04-22T10:10:00.000Z');
+    expect(result.revisions?.[0]?.files).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ filename: 'added.txt', status: 'added' }),
         expect.objectContaining({ filename: 'removed.txt', status: 'removed' }),
         expect.objectContaining({ filename: 'changed.txt', status: 'modified' }),
+      ]),
+    );
+    expect(result.revisions?.[1]?.files).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ filename: 'removed.txt', status: 'added' }),
+        expect.objectContaining({ filename: 'changed.txt', status: 'added' }),
       ]),
     );
   });
@@ -945,15 +1042,16 @@ describe('GistSyncService.getGistRevisions', () => {
   it('截断文件在 change_status 显示有变化时应补判为 modified', async () => {
     const service = new GistSyncService();
     const config = makeConfig();
+    // 最新在前：sha-2 是最新 commit，与更旧的 sha-1 对比
     const commits: MockRevisionCommit[] = [
-      {
-        version: 'sha-1',
-        committed_at: '2026-04-22T10:00:00.000Z',
-        change_status: { total: 1, additions: 1, deletions: 0 },
-      },
       {
         version: 'sha-2',
         committed_at: '2026-04-22T10:10:00.000Z',
+        change_status: { total: 1, additions: 1, deletions: 0 },
+      },
+      {
+        version: 'sha-1',
+        committed_at: '2026-04-22T10:00:00.000Z',
         change_status: { total: 1, additions: 1, deletions: 0 },
       },
     ];
@@ -972,39 +1070,35 @@ describe('GistSyncService.getGistRevisions', () => {
     const result = await service.getGistRevisions(config);
 
     expect(result.success).toBe(true);
-    expect(result.revisions?.[1]?.files).toEqual([
+    expect(result.revisions?.[0]?.files).toEqual([
       expect.objectContaining({ filename: 'novel-book-1.json', status: 'modified' }),
+    ]);
+    // 最早的 commit 全部视为新增
+    expect(result.revisions?.[1]?.files).toEqual([
+      expect.objectContaining({ filename: 'novel-book-1.json', status: 'added' }),
     ]);
   });
 
   it('上一修订读取失败时应退化为将当前文件全部标记为 modified', async () => {
     const service = new GistSyncService();
     const config = makeConfig();
+    // 最新在前：sha-next 是最新 commit，其"上一版"是更旧的 sha-base
     const commits: MockRevisionCommit[] = [
-      {
-        version: 'sha-base',
-        committed_at: '2026-04-22T10:00:00.000Z',
-        change_status: { total: 1, additions: 1, deletions: 0 },
-      },
       {
         version: 'sha-next',
         committed_at: '2026-04-22T10:10:00.000Z',
         change_status: { total: 2, additions: 2, deletions: 0 },
       },
+      {
+        version: 'sha-base',
+        committed_at: '2026-04-22T10:00:00.000Z',
+        change_status: { total: 1, additions: 1, deletions: 0 },
+      },
     ];
-    let baseRevisionCalls = 0;
 
     mockRevisionApi(service, commits, (sha) => {
       switch (sha) {
         case 'sha-base':
-          baseRevisionCalls += 1;
-          if (baseRevisionCalls === 1) {
-            return Promise.resolve(
-              makeRevisionResponse({
-                'base.txt': { filename: 'base.txt', size: 4, content: 'base' },
-              }),
-            );
-          }
           return Promise.reject(new Error('Failed to fetch previous revision'));
         case 'sha-next':
           return Promise.resolve(
@@ -1021,13 +1115,15 @@ describe('GistSyncService.getGistRevisions', () => {
     const result = await service.getGistRevisions(config);
 
     expect(result.success).toBe(true);
-    expect(result.revisions?.[1]?.files).toEqual(
+    expect(result.revisions?.[0]?.files).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ filename: 'base.txt', status: 'modified' }),
         expect.objectContaining({ filename: 'new.txt', status: 'modified' }),
       ]),
     );
-    expect(result.revisions?.[1]?.files).toHaveLength(2);
+    expect(result.revisions?.[0]?.files).toHaveLength(2);
+    // sha-base 自身读取失败：文件列表为空但不影响整体加载
+    expect(result.revisions?.[1]?.files).toEqual([]);
   });
 
   it('当前修订读取失败时应返回空文件列表，而不是让整个历史加载失败', async () => {

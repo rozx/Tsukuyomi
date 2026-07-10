@@ -1007,9 +1007,12 @@ export const useSettingsStore = defineStore('settings', {
 
     /**
      * 更新最后同步时间
+     * @param timestamp 显式时间戳；同步执行器应传入本地快照构建时刻，
+     *   而不是上传完成时刻——否则上传期间的本地新增/编辑会因
+     *   lastEdited < lastSyncTime 在下轮合并中被误判为"远端已删除"
      */
-    async updateLastSyncTime(): Promise<void> {
-      await this.updateGistSync({ lastSyncTime: Date.now() });
+    async updateLastSyncTime(timestamp?: number): Promise<void> {
+      await this.updateGistSync({ lastSyncTime: timestamp ?? Date.now() });
     },
 
     /**
