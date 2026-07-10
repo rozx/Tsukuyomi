@@ -71,7 +71,10 @@ describe('useChapterTranslation - 切换章节时也能写回段落翻译', () =
       updateBook,
       getBookById: getBookByIdMock,
     } as any);
-    spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue({ getDefaultModelForTask } as any);
+    spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue({
+      getDefaultModelForTask,
+      getModelForTask: getDefaultModelForTask,
+    } as any);
     spyOn(AIProcessingStore, 'useAIProcessingStore').mockReturnValue(aiProcessing as any);
 
     spyOn(ChapterService, 'saveChapterContent').mockImplementation(saveChapterContent);

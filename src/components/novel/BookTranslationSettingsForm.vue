@@ -45,7 +45,11 @@ const buildBookLevelPayload = (): ChapterSettingsFormData => formStateToPayload(
 
 defineExpose({ buildBookLevelPayload, resetFromBook });
 
-type ModelOption = { label: string; value: string | null };
+type ModelOption = { label: string; value: string };
+
+// PrimeVue Select 把 null modelValue 当「未选择」处理，无法命中 value 为 null 的选项，
+// 因此「跟随全局默认」在下拉内用哨兵值表示，payload 边界再映射回 null
+const FOLLOW_GLOBAL = '__follow_global__';
 
 // 「跟随全局默认」+ 已启用模型；覆盖指向失效模型时追加失效占位项（不改数据）
 const buildModelOptions = (
@@ -54,7 +58,7 @@ const buildModelOptions = (
 ): ModelOption[] => {
   const globalDefault = aiModelsStore.getDefaultModelForTask(task);
   const options: ModelOption[] = [
-    { label: `跟随全局默认（当前：${globalDefault?.name ?? '未配置'}）`, value: null },
+    { label: `跟随全局默认（当前：${globalDefault?.name ?? '未配置'}）`, value: FOLLOW_GLOBAL },
     ...aiModelsStore.enabledModels.map((m) => ({ label: m.name, value: m.id })),
   ];
   if (currentOverride && !aiModelsStore.enabledModels.some((m) => m.id === currentOverride)) {
@@ -69,6 +73,19 @@ const translationModelOptions = computed(() =>
 const proofreadingModelOptions = computed(() =>
   buildModelOptions('proofreading', state.value.proofreadingModelOverride),
 );
+
+const translationModelSelection = computed({
+  get: () => state.value.translationModelOverride ?? FOLLOW_GLOBAL,
+  set: (value: string) => {
+    state.value.translationModelOverride = value === FOLLOW_GLOBAL ? null : value;
+  },
+});
+const proofreadingModelSelection = computed({
+  get: () => state.value.proofreadingModelOverride ?? FOLLOW_GLOBAL,
+  set: (value: string) => {
+    state.value.proofreadingModelOverride = value === FOLLOW_GLOBAL ? null : value;
+  },
+});
 </script>
 
 <template>
@@ -154,7 +171,7 @@ const proofreadingModelOptions = computed(() =>
         <div class="p-3">
           <label class="text-sm font-medium text-moon-100 block mb-1">翻译模型</label>
           <Select
-            v-model="state.translationModelOverride"
+            v-model="translationModelSelection"
             :options="translationModelOptions"
             option-label="label"
             option-value="value"
@@ -167,7 +184,7 @@ const proofreadingModelOptions = computed(() =>
         <div class="p-3">
           <label class="text-sm font-medium text-moon-100 block mb-1">校对 / 润色模型</label>
           <Select
-            v-model="state.proofreadingModelOverride"
+            v-model="proofreadingModelSelection"
             :options="proofreadingModelOptions"
             option-label="label"
             option-value="value"

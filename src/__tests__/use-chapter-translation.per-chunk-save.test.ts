@@ -87,13 +87,15 @@ describe('useChapterTranslation - 整章翻译按 chunk 落盘', () => {
       updateBook: mockUpdateBook,
       getBookById: mock(() => novel),
     } as never);
+    const mockModel = {
+      id: 'model-1',
+      name: 'Test Model',
+      provider: 'openai',
+      model: 'gpt-4',
+    };
     spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue({
-      getDefaultModelForTask: mock(() => ({
-        id: 'model-1',
-        name: 'Test Model',
-        provider: 'openai',
-        model: 'gpt-4',
-      })),
+      getDefaultModelForTask: mock(() => mockModel),
+      getModelForTask: mock(() => mockModel),
     } as never);
     spyOn(AIProcessingStore, 'useAIProcessingStore').mockReturnValue({
       activeTasks: [],

@@ -36,7 +36,7 @@
 
 ## 6. 验证与收尾
 
-- [ ] 6.1 `bun run lint && bun run type-check && bun run quality-check` 全绿
-- [ ] 6.2 `bunx vitest run` 全量测试通过
-- [ ] 6.3 浏览器端验证（preview）：桌面侧栏入口进面板改模型覆盖并保存；齿轮弹窗只剩章节设置；仅存章节指令不动书籍字段；手机断点抽屉双 tab 含模型覆盖；手机深链 `/settings/translation` 落 Overview
-- [ ] 6.4 提交（收尾），openspec 验证 `openspec status --change book-translation-settings`
+- [x] 6.1 `bun run lint && bun run type-check && bun run quality-check` 全绿
+- [x] 6.2 `bunx vitest run` 全量测试通过
+- [x] 6.3 浏览器端验证（preview）：桌面侧栏入口进面板改模型覆盖并保存；齿轮弹窗只剩章节设置；仅存章节指令不动书籍字段；手机断点抽屉双 tab 含模型覆盖；手机深链 `/settings/translation` 落 Overview
+- [x] 6.4 提交（收尾），openspec 验证 `openspec status --change book-translation-settings`

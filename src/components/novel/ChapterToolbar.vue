@@ -285,7 +285,7 @@ const editModeBtnClass = (value: EditMode) =>
             text
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
-            title="翻译设置"
+            title="章节设置"
             @click="(event: Event) => emit('toggleSpecialInstructions', event)"
           />
         </div>

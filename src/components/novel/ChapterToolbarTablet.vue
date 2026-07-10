@@ -186,7 +186,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
         <button
           type="button"
           class="ctt-icon-btn"
-          title="翻译设置"
+          title="章节设置"
           @click="(event: Event) => emit('toggleSpecialInstructions', event)"
         >
           <i class="pi pi-cog" aria-hidden="true" />
