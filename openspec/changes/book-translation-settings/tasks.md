@@ -7,10 +7,10 @@
 
 ## 2. 模型消费点接入
 
-- [ ] 2.1 `src/composables/book-details/useChapterTranslation.ts` 三处换用 `getModelForTask(task, book.value)`：段落润色/校对前置校验（~L724，`modelTaskKey`）、整章翻译 `prepareTranslationRun`（~L752）、整章校对 `prepareBulkChapterTask`（~L1421）
-- [ ] 2.2 `src/composables/book-details/useBookDetailsPage.ts` ~L1018：`mobileReaderModelName` 换用 `getModelForTask('translation', book.value)`
-- [ ] 2.3 `src/services/ai/tools/paragraph-tools.ts` ~L758：`resolveModelIdForAddTranslation` 兜底解析接入本书覆盖（book 从工具上下文取）
-- [ ] 2.4 确认 termsTranslation / assistant 调用点未受影响（不改动），提交（消费点）
+- [x] 2.1 `src/composables/book-details/useChapterTranslation.ts` 三处换用 `getModelForTask(task, book.value)`：段落润色/校对前置校验（~L724，`modelTaskKey`）、整章翻译 `prepareTranslationRun`（~L752）、整章校对 `prepareBulkChapterTask`（~L1421）
+- [x] 2.2 `src/composables/book-details/useBookDetailsPage.ts` ~L1018：`mobileReaderModelName` 换用 `getModelForTask('translation', book.value)`
+- [x] 2.3 `src/services/ai/tools/paragraph-tools.ts` ~L758：`resolveModelIdForAddTranslation` 兜底解析接入本书覆盖（book 从工具上下文取）
+- [x] 2.4 确认 termsTranslation / assistant 调用点未受影响（不改动），提交（消费点）
 
 ## 3. 保存链路防误清（TDD）
 

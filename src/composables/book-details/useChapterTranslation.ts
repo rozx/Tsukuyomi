@@ -721,7 +721,7 @@ export function useChapterTranslation(
       return null;
     }
 
-    const selectedModel = aiModelsStore.getDefaultModelForTask(modelTaskKey);
+    const selectedModel = aiModelsStore.getModelForTask(modelTaskKey, book.value);
     if (!selectedModel) {
       toast.add({
         severity: 'error',
@@ -749,7 +749,7 @@ export function useChapterTranslation(
     targetBookId: string;
     state: ChapterTranslationState;
   } | null => {
-    const selectedModel = aiModelsStore.getDefaultModelForTask('translation');
+    const selectedModel = aiModelsStore.getModelForTask('translation', currentBook);
     if (!selectedModel) {
       toast.add({
         severity: 'error',
@@ -1418,7 +1418,7 @@ export function useChapterTranslation(
     if (!book.value || !selectedChapter.value || !selectedChapterParagraphs.value.length) {
       return null;
     }
-    const selectedModel = aiModelsStore.getDefaultModelForTask('proofreading');
+    const selectedModel = aiModelsStore.getModelForTask('proofreading', book.value);
     if (!selectedModel) {
       toast.add({
         severity: 'error',

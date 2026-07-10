@@ -746,16 +746,18 @@ export function containsWholeKeyword(text: string, keyword: string): boolean {
 
 /**
  * add_translation 的模型 ID 解析：优先用显式参数，其次沿用已有翻译模型，最后回退默认模型
+ * （兜底默认模型尊重本书 taskModelOverrides 覆盖）
  */
 function resolveModelIdForAddTranslation(
   paragraph: ParagraphLocation['paragraph'],
   aiModelId: string | undefined,
   aiModelsStore: ReturnType<typeof useAIModelsStore>,
+  book: Novel,
 ): { kind: 'ok'; modelId: string } | { kind: 'error'; json: string } {
   if (aiModelId) return { kind: 'ok', modelId: aiModelId };
   const existingModelId = paragraph.translations?.[0]?.aiModelId;
   if (existingModelId) return { kind: 'ok', modelId: existingModelId };
-  const defaultModel = aiModelsStore.getDefaultModelForTask('translation');
+  const defaultModel = aiModelsStore.getModelForTask('translation', book);
   if (!defaultModel) {
     return {
       kind: 'error',
@@ -1609,7 +1611,7 @@ export const paragraphTools: ToolDefinition[] = [
       const aiModelsStore = useAIModelsStore();
 
       // 确定使用的 AI 模型 ID
-      const modelRes = resolveModelIdForAddTranslation(paragraph, ai_model_id, aiModelsStore);
+      const modelRes = resolveModelIdForAddTranslation(paragraph, ai_model_id, aiModelsStore, book);
       if (modelRes.kind === 'error') return modelRes.json;
       const modelId = modelRes.modelId;
 

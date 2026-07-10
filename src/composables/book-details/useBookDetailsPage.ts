@@ -1015,7 +1015,7 @@ function createBookDetailsPageContext() {
   };
 
   const mobileReaderModelName = computed<string>(() => {
-    const model = aiModelsStore.getDefaultModelForTask('translation');
+    const model = aiModelsStore.getModelForTask('translation', book.value);
     return model?.name ?? '未配置模型';
   });
 
