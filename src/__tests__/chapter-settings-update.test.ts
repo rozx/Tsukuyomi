@@ -6,10 +6,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  bookToFormState,
   buildNovelSettingsUpdate,
+  formStateToPayload,
   hasChapterInstructionPayload,
   type ChapterSettingsFormData,
 } from 'src/composables/book-details/chapter-settings-update';
+import type { Novel } from 'src/models/novel';
 import {
   DEFAULT_TASK_CHUNK_SIZE,
   MIN_TASK_CHUNK_SIZE,
@@ -69,6 +72,54 @@ describe('buildNovelSettingsUpdate（按字段存在性构造 partial update）'
   it('translationChunkSize 越界值按现有规则收敛', () => {
     const updates = buildNovelSettingsUpdate({ translationChunkSize: 1 });
     expect(updates.translationChunkSize).toBe(MIN_TASK_CHUNK_SIZE);
+  });
+});
+
+describe('bookToFormState / formStateToPayload（表单状态映射）', () => {
+  it('book 为 null 时回退默认状态', () => {
+    expect(bookToFormState(null)).toEqual({
+      filterIndents: false,
+      normalizeSymbolsOnDisplay: false,
+      normalizeTitleOnDisplay: false,
+      translationChunkSize: DEFAULT_TASK_CHUNK_SIZE,
+      skipAskUser: false,
+      enableOriginalTextValidation: false,
+      translationModelOverride: null,
+      proofreadingModelOverride: null,
+    });
+  });
+
+  it('旧数据缺省字段按默认语义映射（preserveIndents 缺省 = 保留缩进）', () => {
+    const state = bookToFormState({ id: 'b', title: 't' } as Novel);
+    expect(state.filterIndents).toBe(false);
+    expect(state.translationModelOverride).toBeNull();
+    expect(state.proofreadingModelOverride).toBeNull();
+  });
+
+  it('book 字段完整时逐项映射，且与 formStateToPayload 互为往返', () => {
+    const book = {
+      id: 'b',
+      title: 't',
+      preserveIndents: false,
+      normalizeSymbolsOnDisplay: true,
+      normalizeTitleOnDisplay: true,
+      translationChunkSize: DEFAULT_TASK_CHUNK_SIZE,
+      skipAskUser: true,
+      enableOriginalTextValidation: true,
+      taskModelOverrides: { translation: 'model-a', proofreading: null },
+    } as Novel;
+    const state = bookToFormState(book);
+    expect(state.filterIndents).toBe(true);
+    expect(state.translationModelOverride).toBe('model-a');
+    expect(formStateToPayload(state)).toEqual({
+      preserveIndents: false,
+      normalizeSymbolsOnDisplay: true,
+      normalizeTitleOnDisplay: true,
+      translationChunkSize: DEFAULT_TASK_CHUNK_SIZE,
+      skipAskUser: true,
+      enableOriginalTextValidation: true,
+      taskModelOverrides: { translation: 'model-a', proofreading: null },
+    });
   });
 });
 

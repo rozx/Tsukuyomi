@@ -14,12 +14,15 @@ import Select from 'primevue/select';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import type { Novel } from 'src/models/novel';
 import type { AIModel } from 'src/services/ai/types/ai-model';
+import {
+  bookToFormState,
+  formStateToPayload,
+} from 'src/composables/book-details/chapter-settings-update';
 import type { ChapterSettingsFormData } from 'src/composables/book-details/chapter-settings-update';
 import {
   DEFAULT_TASK_CHUNK_SIZE,
   MIN_TASK_CHUNK_SIZE,
   MAX_TASK_CHUNK_SIZE,
-  resolveTaskChunkSize,
 } from 'src/services/ai/tasks/utils/chunk-formatter';
 
 const props = defineProps<{
@@ -28,54 +31,17 @@ const props = defineProps<{
 
 const aiModelsStore = useAIModelsStore();
 
-const filterIndentsEnabled = ref(false);
-const normalizeSymbolsOnDisplayEnabled = ref(false);
-const normalizeTitleOnDisplayEnabled = ref(false);
-const translationChunkSize = ref<number | null>(null);
-const skipAskUserEnabled = ref(false);
-const enableOriginalTextValidation = ref(false);
-const translationModelOverride = ref<string | null>(null);
-const proofreadingModelOverride = ref<string | null>(null);
+// 表单状态从书籍同步（bookToFormState 承载字段映射与默认值语义）
+const state = ref(bookToFormState(props.book));
 
-// 从书籍同步表单状态；book 为 null 时回退默认值
 const resetFromBook = () => {
-  const book = props.book;
-  if (book) {
-    filterIndentsEnabled.value = !(book.preserveIndents ?? true);
-    normalizeSymbolsOnDisplayEnabled.value = book.normalizeSymbolsOnDisplay ?? false;
-    normalizeTitleOnDisplayEnabled.value = book.normalizeTitleOnDisplay ?? false;
-    translationChunkSize.value = resolveTaskChunkSize(book.translationChunkSize);
-    skipAskUserEnabled.value = book.skipAskUser ?? false;
-    enableOriginalTextValidation.value = book.enableOriginalTextValidation ?? false;
-    translationModelOverride.value = book.taskModelOverrides?.translation ?? null;
-    proofreadingModelOverride.value = book.taskModelOverrides?.proofreading ?? null;
-  } else {
-    filterIndentsEnabled.value = false;
-    normalizeSymbolsOnDisplayEnabled.value = false;
-    normalizeTitleOnDisplayEnabled.value = false;
-    translationChunkSize.value = DEFAULT_TASK_CHUNK_SIZE;
-    skipAskUserEnabled.value = false;
-    enableOriginalTextValidation.value = false;
-    translationModelOverride.value = null;
-    proofreadingModelOverride.value = null;
-  }
+  state.value = bookToFormState(props.book);
 };
 
-watch(() => props.book, resetFromBook, { immediate: true });
+watch(() => props.book, resetFromBook);
 
 /** 书籍级 payload（不含章节指令字段） */
-const buildBookLevelPayload = (): ChapterSettingsFormData => ({
-  preserveIndents: !filterIndentsEnabled.value,
-  normalizeSymbolsOnDisplay: normalizeSymbolsOnDisplayEnabled.value,
-  normalizeTitleOnDisplay: normalizeTitleOnDisplayEnabled.value,
-  translationChunkSize: resolveTaskChunkSize(translationChunkSize.value ?? undefined),
-  skipAskUser: skipAskUserEnabled.value,
-  enableOriginalTextValidation: enableOriginalTextValidation.value,
-  taskModelOverrides: {
-    translation: translationModelOverride.value,
-    proofreading: proofreadingModelOverride.value,
-  },
-});
+const buildBookLevelPayload = (): ChapterSettingsFormData => formStateToPayload(state.value);
 
 defineExpose({ buildBookLevelPayload, resetFromBook });
 
@@ -98,10 +64,10 @@ const buildModelOptions = (
 };
 
 const translationModelOptions = computed(() =>
-  buildModelOptions('translation', translationModelOverride.value),
+  buildModelOptions('translation', state.value.translationModelOverride),
 );
 const proofreadingModelOptions = computed(() =>
-  buildModelOptions('proofreading', proofreadingModelOverride.value),
+  buildModelOptions('proofreading', state.value.proofreadingModelOverride),
 );
 </script>
 
@@ -124,7 +90,7 @@ const proofreadingModelOptions = computed(() =>
               启用时，在显示和导出翻译时会自动移除行首空格；禁用时保留所有空格。翻译时始终保留原始缩进，此设置仅影响显示和导出。此设置应用于整个书籍的所有章节。
             </small>
           </div>
-          <InputSwitch v-model="filterIndentsEnabled" />
+          <InputSwitch v-model="state.filterIndents" />
         </div>
 
         <div class="flex items-start justify-between gap-3 p-3">
@@ -134,7 +100,7 @@ const proofreadingModelOptions = computed(() =>
               启用时，仅在显示和导出时规范化译文中的引号、标点、空格等；不会改写或保存译文内容。
             </small>
           </div>
-          <InputSwitch v-model="normalizeSymbolsOnDisplayEnabled" />
+          <InputSwitch v-model="state.normalizeSymbolsOnDisplay" />
         </div>
 
         <div class="flex items-start justify-between gap-3 p-3">
@@ -144,7 +110,7 @@ const proofreadingModelOptions = computed(() =>
               启用时，仅在显示和导出时规范化章节标题（如：将全角数字和汉字之间的半角空格转换为全角空格）；不会改写或保存标题内容。
             </small>
           </div>
-          <InputSwitch v-model="normalizeTitleOnDisplayEnabled" />
+          <InputSwitch v-model="state.normalizeTitleOnDisplay" />
         </div>
 
         <div class="flex items-start justify-between gap-3 p-3">
@@ -157,7 +123,7 @@ const proofreadingModelOptions = computed(() =>
               工具，也不会弹出全屏问答对话框；模型需要自行决策或继续执行。
             </small>
           </div>
-          <InputSwitch v-model="skipAskUserEnabled" />
+          <InputSwitch v-model="state.skipAskUser" />
         </div>
 
         <div class="flex items-start justify-between gap-3 p-3">
@@ -171,7 +137,7 @@ const proofreadingModelOptions = computed(() =>
               AI token 消耗。
             </small>
           </div>
-          <InputSwitch v-model="enableOriginalTextValidation" />
+          <InputSwitch v-model="state.enableOriginalTextValidation" />
         </div>
       </div>
     </div>
@@ -188,7 +154,7 @@ const proofreadingModelOptions = computed(() =>
         <div class="p-3">
           <label class="text-sm font-medium text-moon-100 block mb-1">翻译模型</label>
           <Select
-            v-model="translationModelOverride"
+            v-model="state.translationModelOverride"
             :options="translationModelOptions"
             option-label="label"
             option-value="value"
@@ -201,7 +167,7 @@ const proofreadingModelOptions = computed(() =>
         <div class="p-3">
           <label class="text-sm font-medium text-moon-100 block mb-1">校对 / 润色模型</label>
           <Select
-            v-model="proofreadingModelOverride"
+            v-model="state.proofreadingModelOverride"
             :options="proofreadingModelOptions"
             option-label="label"
             option-value="value"
@@ -225,7 +191,7 @@ const proofreadingModelOptions = computed(() =>
           翻译任务分块大小（字符数，近似 tokens）
         </label>
         <InputNumber
-          v-model="translationChunkSize"
+          v-model="state.translationChunkSize"
           :min="MIN_TASK_CHUNK_SIZE"
           :max="MAX_TASK_CHUNK_SIZE"
           :step="500"
