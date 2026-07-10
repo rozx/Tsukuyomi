@@ -137,16 +137,18 @@ const previewPanelProps = computed(() => {
       };
 });
 
+// flex-1 而非 h-full：父级（分栏区）是 flex 列容器，百分比高度在 flex 项上解析
+// 不出来（回退内容高度导致章节列表塌缩到 12rem 兜底），必须靠 flex 生长填满
 const contentContainerClass = computed(() => {
-  return isPhone.value ? 'h-full min-h-0 flex flex-col gap-3' : '';
+  return isPhone.value ? 'flex-1 min-h-0 flex flex-col gap-3' : 'flex-1 min-h-0';
 });
 
 const chapterPanelWrapperClass = computed(() => {
-  return isPhone.value ? 'min-h-0 flex-[6]' : '';
+  return isPhone.value ? 'min-h-0 flex-[6] flex flex-col' : '';
 });
 
 const previewPanelWrapperClass = computed(() => {
-  return isPhone.value ? 'min-h-0 flex-[4]' : '';
+  return isPhone.value ? 'min-h-0 flex-[4] flex flex-col' : '';
 });
 
 const contentContainerStyle = computed(() => {
@@ -171,11 +173,15 @@ const contentPanelMinSize = computed(() => {
 
 const chapterScrollerStyle = computed(() => {
   if (isPhone.value) {
+    // 绝对定位钉满包裹层（相对定位、flex-1 撑开）：VirtualScroller 挂载时会把
+    // 自身 offsetHeight 固化为行内像素高度，手机 sheet 里挂载时机早于布局稳定，
+    // 百分比/flex 方案都会被固化成塌缩值；absolute 让它始终跟随包裹层实际尺寸
     return {
-      width: '100%',
-      height: '100%',
-      minHeight: '12rem',
-      maxHeight: '100%',
+      position: 'absolute' as const,
+      top: '0.5rem',
+      bottom: '0.5rem',
+      left: '0.75rem',
+      right: '0.75rem',
     };
   }
   return {};
@@ -940,9 +946,12 @@ watch(
 );
 
 // 对外层模板使用的布局条件（收敛模板中的逻辑或与三元，降低圈复杂度）
+// flex-1 针对 flex 容器父级（手机 sheet 的 mbs-body、嵌入面板壳）：百分比高度在
+// flex 列容器里解析不出来（回退为内容高度导致章节列表塌缩），改由 flex 生长填满；
+// 块级父级（桌面 p-dialog-content）忽略 flex-1，仍靠 h-full 撑满
 const bodyClass = computed(() => [
   'novel-scraper-body flex flex-col space-y-4 py-2 min-w-0',
-  hasDetailContent.value ? 'h-full min-h-0' : '',
+  hasDetailContent.value ? 'h-full min-h-0 flex-1' : '',
 ]);
 const showSplitView = computed(() => !!scrapedNovel.value && !loading.value);
 const showChapterPanel = computed(() => !isPhone.value || !mobileShowPreview.value);

@@ -1,6 +1,6 @@
 <template>
   <div
-    class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
+    class="h-full flex-1 min-h-0 flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
     :style="splitPanelContainerStyle"
   >
     <ScraperPreviewHeader v-if="selectedChapter" />

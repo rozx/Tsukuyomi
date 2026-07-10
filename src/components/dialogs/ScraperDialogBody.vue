@@ -42,8 +42,8 @@ const {
     <!-- 统计信息 -->
     <ScraperNovelInfo />
 
-    <!-- 左右分栏布局 -->
-    <div v-if="showSplitView" class="flex-1 min-h-0 min-w-0">
+    <!-- 左右分栏布局：flex 列容器让子级靠 flex 生长填满（百分比高度穿过 flex 项会失效） -->
+    <div v-if="showSplitView" class="flex-1 min-h-0 min-w-0 flex flex-col">
       <component
         :is="contentContainerComponent"
         v-bind="contentContainerProps"

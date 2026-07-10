@@ -1,6 +1,6 @@
 <template>
   <div
-    class="h-full flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
+    class="h-full flex-1 min-h-0 flex flex-col bg-night-900/50 rounded-lg border border-white/10 overflow-hidden"
     :style="splitPanelContainerStyle"
   >
     <div class="px-4 py-3 border-b border-white/10 flex-shrink-0 bg-white/5 space-y-2 w-full">
@@ -30,7 +30,7 @@
         </div>
       </div>
     </div>
-    <div class="flex-1 min-h-0 px-3 py-2 overflow-hidden w-full min-w-0">
+    <div class="relative flex-1 min-h-0 px-3 py-2 overflow-hidden w-full min-w-0">
       <VirtualScroller
         :items="virtualList"
         :itemSize="chapterItemSize"
