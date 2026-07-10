@@ -126,21 +126,29 @@ export default defineConfig((ctx: any) => {
           },
         ],
 
-        [
-          'vite-plugin-checker',
-          {
-            vueTsc: {
-              tsconfigPath: 'tsconfig.json',
-            },
-            eslint: {
-              lintCommand: 'eslint -c ./eslint.config.js "./src*/**/*.{ts,js,mjs,cjs,vue}"',
-              useFlatConfig: true,
-            },
-            // Turn off in-browser overlay entirely (keep terminal output)
-            overlay: false,
-          },
-          { server: false },
-        ],
+        // vite-plugin-checker 仅在 dev 模式启用：为终端提供实时 vueTsc/eslint 反馈。
+        // 生产构建（build:spa / build:electron）不跑它——lint 与 type-check 已由 CI 独立门禁覆盖，
+        // 而在部署容器里对整棵 src 树（含 src/__tests__ 上百个测试文件）跑 vueTsc+eslint 既冗余又吃内存，
+        // 会导致构建被资源限制打断（exit 1）。
+        ...(ctx.dev
+          ? [
+              [
+                'vite-plugin-checker',
+                {
+                  vueTsc: {
+                    tsconfigPath: 'tsconfig.json',
+                  },
+                  eslint: {
+                    lintCommand: 'eslint -c ./eslint.config.js "./src*/**/*.{ts,js,mjs,cjs,vue}"',
+                    useFlatConfig: true,
+                  },
+                  // Turn off in-browser overlay entirely (keep terminal output)
+                  overlay: false,
+                },
+                { server: false },
+              ],
+            ]
+          : []),
       ],
     },
 
