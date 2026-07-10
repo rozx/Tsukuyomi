@@ -120,6 +120,36 @@ function shouldKeepLocalOnlyItem(
   return localItemTime > lastSyncTime;
 }
 
+/** 章节/卷标题的通用形态（原文字符串或带译文的对象） */
+type OriginalTitle = string | { original: string; translation: Translation };
+
+/**
+ * 合并配对章节/卷的标题：胜者标题还是纯原文、败者已带同原文的译文对象时，采用败者，
+ * 避免"重新抓取的一侧获胜"把另一侧已翻译的标题冲掉。其余情况保持胜者标题。
+ */
+function mergeTitlePreservingTranslation(
+  winnerTitle: OriginalTitle,
+  loserTitle: OriginalTitle,
+): OriginalTitle {
+  if (
+    typeof winnerTitle === 'string' &&
+    typeof loserTitle === 'object' &&
+    loserTitle !== null &&
+    loserTitle.original === winnerTitle
+  ) {
+    return loserTitle;
+  }
+  return winnerTitle;
+}
+
+/** 取卷原文标题（兼容 string / {original, translation} 两种格式），与本地导入的卷匹配语义一致 */
+function getVolumeOriginalTitle(volume: Volume): string {
+  if (typeof volume.title === 'string') {
+    return volume.title;
+  }
+  return volume.title?.original ?? '';
+}
+
 function mergeNotes(primaryNotes: Novel['notes'], secondaryNotes: Novel['notes']): Novel['notes'] {
   return mergeUniqueById(primaryNotes, secondaryNotes, (primaryNote, secondaryNote) => {
     const primaryTime = getMergeTimestamp(primaryNote.lastEdited);
@@ -170,35 +200,75 @@ async function mergeNovelChapters(
   const remoteNovelTime = primaryIsRemote
     ? getMergeTimestamp(primaryNovelLastEdited)
     : getMergeTimestamp(secondaryNovelLastEdited);
-  const shouldKeepChapterWithoutCounterpart = (chapter: Chapter): boolean => {
-    const chapterTime = getMergeTimestamp(chapter.lastEdited);
-    return shouldKeepLocalOnlyItem(chapterTime, remoteNovelTime, lastSyncTime);
-  };
+  const localNovelTime = primaryIsRemote
+    ? getMergeTimestamp(secondaryNovelLastEdited)
+    : getMergeTimestamp(primaryNovelLastEdited);
+  // 本地独有章节：远端书自上次同步未变 → 本地新增，保留；否则仅当章节新于上次同步才保留
+  const shouldKeepLocalOnlyChapter = (chapter: Chapter): boolean =>
+    shouldKeepLocalOnlyItem(getMergeTimestamp(chapter.lastEdited), remoteNovelTime, lastSyncTime);
+  // 远端独有章节（镜像规则）：本地书自上次同步未变 → 本地不可能删除过它，保留；
+  // 本地变过 → 仅当远端章节新于上次同步才保留，否则视为本地已删除的残留（防复活）
+  const shouldKeepRemoteOnlyChapter = (chapter: Chapter): boolean =>
+    shouldKeepLocalOnlyItem(getMergeTimestamp(chapter.lastEdited), localNovelTime, lastSyncTime);
+  const shouldKeepPrimaryOnlyChapter = primaryIsRemote
+    ? shouldKeepRemoteOnlyChapter
+    : shouldKeepLocalOnlyChapter;
+  const shouldKeepSecondaryOnlyChapter = primaryIsRemote
+    ? shouldKeepLocalOnlyChapter
+    : shouldKeepRemoteOnlyChapter;
 
   if (!primaryChapters || primaryChapters.length === 0) {
     if (!secondaryChapters || secondaryChapters.length === 0) {
       return primaryChapters;
     }
-    const chapters = secondaryChapters.filter(shouldKeepChapterWithoutCounterpart);
+    const chapters = secondaryChapters.filter(shouldKeepSecondaryOnlyChapter);
     return Promise.all(chapters.map(ensureChapterContentLoadedForNovelMerge));
   }
   if (!secondaryChapters || secondaryChapters.length === 0) {
-    const chapters = primaryIsRemote
-      ? primaryChapters
-      : primaryChapters.filter(shouldKeepChapterWithoutCounterpart);
+    const chapters = primaryChapters.filter(shouldKeepPrimaryOnlyChapter);
     return Promise.all(chapters.map(ensureChapterContentLoadedForNovelMerge));
   }
 
+  const primaryChapterIds = new Set(primaryChapters.map((chapter) => chapter.id));
   const secondaryChapterMap = new Map<string, Chapter>();
+  // webUrl 回退索引：两台设备各自抓取同一章节会生成不同的章节 id，
+  // webUrl 才是跨设备稳定标识（与本地导入 mergeChapterInto 的去重键一致）。
+  // 用 FIFO 队列 + 消费标记，与段落文本回退同构，防止同 URL 被双重消费。
+  // 已与某个 primary 同 id 的章节不进回退索引，避免被别的章节抢先消费。
+  const secondaryByWebUrl = new Map<string, Chapter[]>();
   for (const chapter of secondaryChapters) {
     secondaryChapterMap.set(chapter.id, chapter);
+    if (chapter.webUrl && !primaryChapterIds.has(chapter.id)) {
+      const queue = secondaryByWebUrl.get(chapter.webUrl);
+      if (queue) queue.push(chapter);
+      else secondaryByWebUrl.set(chapter.webUrl, [chapter]);
+    }
   }
 
+  // 同步预配对（先按 id，再按 webUrl 回退），避免在并发的 async 回调里竞争消费队列
+  const consumedSecondaryIds = new Set<string>();
+  const chapterPairs = primaryChapters.map((primaryChapter) => {
+    let secondaryChapter = secondaryChapterMap.get(primaryChapter.id);
+    if (!secondaryChapter && primaryChapter.webUrl) {
+      const queue = secondaryByWebUrl.get(primaryChapter.webUrl);
+      while (queue && queue.length > 0) {
+        const candidate = queue.shift();
+        if (candidate && !consumedSecondaryIds.has(candidate.id)) {
+          secondaryChapter = candidate;
+          break;
+        }
+      }
+    }
+    if (secondaryChapter) {
+      consumedSecondaryIds.add(secondaryChapter.id);
+    }
+    return { primaryChapter, secondaryChapter };
+  });
+
   const mergedChapters = await Promise.all(
-    primaryChapters.map(async (primaryChapter) => {
-      const secondaryChapter = secondaryChapterMap.get(primaryChapter.id);
+    chapterPairs.map(async ({ primaryChapter, secondaryChapter }) => {
       if (!secondaryChapter) {
-        if (!primaryIsRemote && !shouldKeepChapterWithoutCounterpart(primaryChapter)) {
+        if (!shouldKeepPrimaryOnlyChapter(primaryChapter)) {
           return null;
         }
         return ensureChapterContentLoadedForNovelMerge(primaryChapter);
@@ -211,28 +281,42 @@ async function mergeNovelChapters(
       const preferRemoteChapter =
         remoteTime === localTime ? preferRemoteSelection : remoteTime > localTime;
       const winningChapter = preferRemoteChapter ? remoteChapter : localChapter;
+      const losingChapter = preferRemoteChapter ? localChapter : remoteChapter;
+      const mergedTitle = mergeTitlePreservingTranslation(
+        winningChapter.title,
+        losingChapter.title,
+      );
 
       const localContent = await loadChapterContentForNovelMerge(localChapter);
       const remoteContent = await loadChapterContentForNovelMerge(remoteChapter);
 
       if (localContent.length === 0 && remoteContent.length === 0) {
-        return winningChapter;
+        return mergedTitle === winningChapter.title
+          ? winningChapter
+          : { ...winningChapter, title: mergedTitle };
       }
 
       return {
         ...winningChapter,
+        title: mergedTitle,
         content: mergeParagraphTranslations(localContent, remoteContent, preferRemoteChapter),
       };
     }),
   );
   const compactMergedChapters = mergedChapters.filter((chapter): chapter is Chapter => !!chapter);
 
-  const seenChapterIds = new Set(primaryChapters.map((chapter) => chapter.id));
-  for (const secondaryChapter of secondaryChapters) {
-    if (seenChapterIds.has(secondaryChapter.id)) continue;
-    if (!shouldKeepChapterWithoutCounterpart(secondaryChapter)) continue;
-    compactMergedChapters.push(await ensureChapterContentLoadedForNovelMerge(secondaryChapter));
-  }
+  // 追加副方独有章节（未被 id 或 webUrl 匹配消费过的），内容并行加载
+  const appendedSecondaryChapters = await Promise.all(
+    secondaryChapters
+      .filter(
+        (chapter) =>
+          !primaryChapterIds.has(chapter.id) &&
+          !consumedSecondaryIds.has(chapter.id) &&
+          shouldKeepSecondaryOnlyChapter(chapter),
+      )
+      .map(ensureChapterContentLoadedForNovelMerge),
+  );
+  compactMergedChapters.push(...appendedSecondaryChapters);
 
   return compactMergedChapters;
 }
@@ -252,11 +336,25 @@ async function mergeNovelVolumes(
   const localNovelTime = primaryIsRemote
     ? getMergeTimestamp(secondaryNovelLastEdited)
     : getMergeTimestamp(primaryNovelLastEdited);
-  const shouldKeepVolumeWithoutCounterpart = (volume: Volume): boolean => {
+  // 本地独有卷：与章节同规则（卷时间戳取卷内章节最新 lastEdited）
+  const shouldKeepLocalOnlyVolume = (volume: Volume): boolean => {
     const volumeTimestamp = getVolumeMergeTimestamp(volume);
-    const effectiveLocalTime = volumeTimestamp > 0 ? volumeTimestamp : localNovelTime;
-    return shouldKeepLocalOnlyItem(effectiveLocalTime, remoteNovelTime, lastSyncTime);
+    const effectiveTime = volumeTimestamp > 0 ? volumeTimestamp : localNovelTime;
+    return shouldKeepLocalOnlyItem(effectiveTime, remoteNovelTime, lastSyncTime);
   };
+  // 远端独有卷（镜像规则）：本地书自上次同步未变 → 保留；本地变过 → 仅当卷内容
+  // 新于上次同步才保留，否则视为本地已删除的残留（防复活）
+  const shouldKeepRemoteOnlyVolume = (volume: Volume): boolean => {
+    const volumeTimestamp = getVolumeMergeTimestamp(volume);
+    const effectiveTime = volumeTimestamp > 0 ? volumeTimestamp : remoteNovelTime;
+    return shouldKeepLocalOnlyItem(effectiveTime, localNovelTime, lastSyncTime);
+  };
+  const shouldKeepPrimaryOnlyVolume = primaryIsRemote
+    ? shouldKeepRemoteOnlyVolume
+    : shouldKeepLocalOnlyVolume;
+  const shouldKeepSecondaryOnlyVolume = primaryIsRemote
+    ? shouldKeepLocalOnlyVolume
+    : shouldKeepRemoteOnlyVolume;
 
   // 单边有 volumes 时的共用分支：对 volumes 逐个并行合并 chapters（对端缺失传 undefined）
   const mergeSingleSideVolumes = (volumes: Volume[]): Promise<Volume[]> =>
@@ -278,24 +376,51 @@ async function mergeNovelVolumes(
     if (!secondaryVolumes || secondaryVolumes.length === 0) {
       return primaryVolumes;
     }
-    return mergeSingleSideVolumes(secondaryVolumes.filter(shouldKeepVolumeWithoutCounterpart));
+    return mergeSingleSideVolumes(secondaryVolumes.filter(shouldKeepSecondaryOnlyVolume));
   }
   if (!secondaryVolumes || secondaryVolumes.length === 0) {
-    return mergeSingleSideVolumes(
-      primaryIsRemote ? primaryVolumes : primaryVolumes.filter(shouldKeepVolumeWithoutCounterpart),
-    );
+    return mergeSingleSideVolumes(primaryVolumes.filter(shouldKeepPrimaryOnlyVolume));
   }
 
+  const primaryVolumeIds = new Set(primaryVolumes.map((volume) => volume.id));
   const secondaryVolumeMap = new Map<string, Volume>();
+  // 原文标题回退索引：两台设备各自抓取同一卷会生成不同的卷 id，
+  // 原文标题才是跨设备稳定标识（与本地导入 findVolumeIndexByOriginalTitle 语义一致）。
+  const secondaryByTitle = new Map<string, Volume[]>();
   for (const volume of secondaryVolumes) {
     secondaryVolumeMap.set(volume.id, volume);
+    if (!primaryVolumeIds.has(volume.id)) {
+      const titleKey = getVolumeOriginalTitle(volume);
+      const queue = secondaryByTitle.get(titleKey);
+      if (queue) queue.push(volume);
+      else secondaryByTitle.set(titleKey, [volume]);
+    }
   }
 
+  // 同步预配对（先按 id，再按原文标题回退），与章节配对同构
+  const consumedSecondaryVolumeIds = new Set<string>();
+  const volumePairs = primaryVolumes.map((primaryVolume) => {
+    let secondaryVolume = secondaryVolumeMap.get(primaryVolume.id);
+    if (!secondaryVolume) {
+      const queue = secondaryByTitle.get(getVolumeOriginalTitle(primaryVolume));
+      while (queue && queue.length > 0) {
+        const candidate = queue.shift();
+        if (candidate && !consumedSecondaryVolumeIds.has(candidate.id)) {
+          secondaryVolume = candidate;
+          break;
+        }
+      }
+    }
+    if (secondaryVolume) {
+      consumedSecondaryVolumeIds.add(secondaryVolume.id);
+    }
+    return { primaryVolume, secondaryVolume };
+  });
+
   const mergedVolumes = await Promise.all(
-    primaryVolumes.map(async (primaryVolume) => {
-      const secondaryVolume = secondaryVolumeMap.get(primaryVolume.id);
+    volumePairs.map(async ({ primaryVolume, secondaryVolume }) => {
       if (!secondaryVolume) {
-        if (!primaryIsRemote && !shouldKeepVolumeWithoutCounterpart(primaryVolume)) {
+        if (!shouldKeepPrimaryOnlyVolume(primaryVolume)) {
           return null;
         }
         return {
@@ -313,6 +438,7 @@ async function mergeNovelVolumes(
 
       return {
         ...primaryVolume,
+        title: mergeTitlePreservingTranslation(primaryVolume.title, secondaryVolume.title),
         chapters: await mergeNovelChapters(
           primaryVolume.chapters,
           secondaryVolume.chapters,
@@ -326,13 +452,16 @@ async function mergeNovelVolumes(
   );
   const compactMergedVolumes = mergedVolumes.filter((volume) => volume !== null) as Volume[];
 
-  const seenVolumeIds = new Set(primaryVolumes.map((volume) => volume.id));
-  for (const secondaryVolume of secondaryVolumes) {
-    if (!seenVolumeIds.has(secondaryVolume.id)) {
-      if (!shouldKeepVolumeWithoutCounterpart(secondaryVolume)) {
-        continue;
-      }
-      compactMergedVolumes.push({
+  // 追加副方独有卷（未被 id 或标题匹配消费过的），章节合并并行执行
+  const appendedSecondaryVolumes = await Promise.all(
+    secondaryVolumes
+      .filter(
+        (volume) =>
+          !primaryVolumeIds.has(volume.id) &&
+          !consumedSecondaryVolumeIds.has(volume.id) &&
+          shouldKeepSecondaryOnlyVolume(volume),
+      )
+      .map(async (secondaryVolume) => ({
         ...secondaryVolume,
         chapters: await mergeNovelChapters(
           secondaryVolume.chapters,
@@ -342,9 +471,9 @@ async function mergeNovelVolumes(
           secondaryNovelLastEdited,
           lastSyncTime,
         ),
-      });
-    }
-  }
+      })),
+  );
+  compactMergedVolumes.push(...appendedSecondaryVolumes);
 
   return compactMergedVolumes;
 }
@@ -773,17 +902,26 @@ export class SyncDataService {
 
   /**
    * 创建数据备份（用于回滚）
+   *
+   * store 中的 books 只有元数据——章节内容存于独立的 chapter-contents store，
+   * 而覆盖/应用流程可能清空或改写它。备份必须把全部章节内容内联进 books，
+   * 否则回滚只能还原元数据，段落与译文会永久丢失。加载失败时直接抛错，
+   * 宁可中止本次操作也不能在没有完整备份的情况下执行破坏性写入。
    */
-  private static createBackup(): DataBackup {
+  private static async createBackup(): Promise<DataBackup> {
     const aiModelsStore = useAIModelsStore();
     const booksStore = useBooksStore();
     const coverHistoryStore = useCoverHistoryStore();
     const settings = GlobalConfig.getAllSettingsSnapshot();
     const gistSync = GlobalConfig.getGistSyncSnapshot();
 
+    const booksWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
+      booksStore.books,
+    );
+
     return {
       models: JSON.parse(JSON.stringify(aiModelsStore.models)),
-      books: JSON.parse(JSON.stringify(booksStore.books)),
+      books: JSON.parse(JSON.stringify(booksWithContent)),
       covers: JSON.parse(JSON.stringify(coverHistoryStore.covers)),
       settings: JSON.parse(JSON.stringify(settings ?? {})),
       gistSync: JSON.parse(JSON.stringify(gistSync ?? {})),
@@ -887,8 +1025,8 @@ export class SyncDataService {
       throw new Error('远程数据格式无效，无法应用');
     }
 
-    // 创建数据备份（用于回滚）
-    const backup = SyncDataService.createBackup();
+    // 创建数据备份（用于回滚，含内联章节内容）
+    const backup = await SyncDataService.createBackup();
 
     const restorableItems: RestorableItem[] = [];
 
@@ -1105,9 +1243,11 @@ export class SyncDataService {
       deletedModelIds.map((record: any) => [record.id, record.deletedAt] as const), // eslint-disable-line @typescript-eslint/no-explicit-any
     );
     const modelIdsToUndelete = new Set<string>();
+    const localModelsById = new Map(aiModelsStore.models.map((m) => [m.id, m]));
+    const remoteModelIds = new Set<string>(remoteModels.map((m) => m.id));
 
     for (const remoteModel of remoteModels) {
-      const localModel = aiModelsStore.models.find((m) => m.id === remoteModel.id);
+      const localModel = localModelsById.get(remoteModel.id);
       const winner = SyncDataService.selectFinalAiModel(
         remoteModel,
         localModel,
@@ -1130,7 +1270,7 @@ export class SyncDataService {
 
     // 添加本地独有的模型（远端列表为空或本地新增）
     for (const localModel of aiModelsStore.models) {
-      if (!remoteModels.find((m) => m.id === localModel.id)) {
+      if (!remoteModelIds.has(localModel.id)) {
         if (
           remoteModels.length === 0 ||
           (localModel.lastEdited && checkIsNewlyAdded(localModel.lastEdited, syncTime))
@@ -1240,9 +1380,11 @@ export class SyncDataService {
     );
     const novelIdsToUndelete = new Set<string>();
     const localBooksEmpty = booksStore.books.length === 0;
+    const localBooksById = new Map(booksStore.books.map((b) => [b.id, b]));
+    const remoteNovelIds = new Set<string>(remoteNovels.map((n) => n.id));
 
     for (const remoteNovel of remoteNovels) {
-      const localNovel = booksStore.books.find((b) => b.id === remoteNovel.id);
+      const localNovel = localBooksById.get(remoteNovel.id);
       const winner = await SyncDataService.selectFinalNovel(
         remoteNovel as Novel,
         localNovel,
@@ -1265,7 +1407,7 @@ export class SyncDataService {
 
     // 添加本地独有的书籍（远端列表为空或本地新增）
     for (const localBook of booksStore.books) {
-      if (!remoteNovels.find((n) => n.id === localBook.id)) {
+      if (!remoteNovelIds.has(localBook.id)) {
         if (remoteNovels.length === 0 || checkIsNewlyAdded(localBook.lastEdited, syncTime)) {
           const localBookWithContent = await SyncDataService.ensureNovelContentLoaded(localBook);
           finalBooks.push(localBookWithContent);
@@ -1811,7 +1953,7 @@ export class SyncDataService {
       throw new Error('远程数据格式无效，无法应用');
     }
 
-    const backup = SyncDataService.createBackup();
+    const backup = await SyncDataService.createBackup();
 
     try {
       await SyncDataService.clearLocalSyncedData(backup);
@@ -2508,11 +2650,15 @@ export class SyncDataService {
    * - `cover-history`：远端为准
    * - `novel:<id>`：使用 mergeNovelWithLocalContent 保留本地章节内容
    * - `memories:<id>`：按 lastAccessedAt 合并每本书的 memory 列表，内容去重
+   *
+   * @returns 应用失败的条目 key 列表。调用方不得把这些条目的新远端哈希记为已知，
+   *   否则远端更新会被静默丢弃且下轮上传会用陈旧本地副本覆盖远端。
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  static async applyPartialRemoteData(changedEntries: Record<string, any>): Promise<void> {
+  static async applyPartialRemoteData(changedEntries: Record<string, any>): Promise<string[]> {
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
 
+    const failedEntryKeys: string[] = [];
     for (const [entryKey, entry] of Object.entries(changedEntries)) {
       if (!entry || typeof entry !== 'object' || !('kind' in entry)) continue;
 
@@ -2558,9 +2704,12 @@ export class SyncDataService {
         }
       } catch (error) {
         console.error(`[SyncDataService] applyPartialRemoteData 处理条目 ${entryKey} 失败:`, error);
-        // 继续处理其他条目，不中止整个 apply
+        // 继续处理其他条目，不中止整个 apply；失败条目上报给调用方，
+        // 由其保留旧的已知远端状态，下轮同步会重新拉取
+        failedEntryKeys.push(entryKey);
       }
     }
+    return failedEntryKeys;
   }
 
   /** settings 条目：若远端 lastEdited 更新则整体导入 */
@@ -2576,7 +2725,15 @@ export class SyncDataService {
       ? new Date(remoteSettings.lastEdited as unknown as string).getTime()
       : 0;
     if (remoteTime > localTime) {
-      await settingsStore.importSettings(remoteSettings);
+      // quickStartDismissed 按单调语义合并（任一端为 true 即 true），
+      // 与 legacy 路径的 mergeQuickStartDismissedFlag 保持一致，
+      // 避免较新的远端 settings 把本地"已关闭快速开始"回退成未关闭
+      const quickStartDismissed = mergeQuickStartDismissedFlag(
+        localSettings,
+        remoteSettings,
+        'download',
+      );
+      await settingsStore.importSettings({ ...remoteSettings, quickStartDismissed });
     }
   }
 

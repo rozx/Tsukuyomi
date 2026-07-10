@@ -2003,6 +2003,392 @@ describe('数据同步服务 (SyncDataService)', () => {
     });
   });
 
+  // ── 跨设备重复章节/卷合并测试 ──
+
+  describe('跨设备章节合并 (webUrl 回退匹配)', () => {
+    // 场景：两台设备各自从网站抓取同一章节，生成了不同的章节 ID。
+    // 同步合并必须用 webUrl 回退匹配（与本地导入 mergeChapterInto 语义一致），
+    // 否则会产生同标题重复章节（一个已翻译、一个未翻译）。
+
+    const lastSyncTime = new Date('2024-01-01').getTime();
+    const webUrl = 'https://ncode.syosetu.com/n1234ab/5/';
+
+    const buildLocalBook = (localEdited: string) => ({
+      id: 'b1',
+      title: 'Book',
+      lastEdited: localEdited,
+      createdAt: '2023-12-01T00:00:00.000Z',
+      volumes: [
+        {
+          id: 'v1',
+          title: '第一卷',
+          chapters: [
+            {
+              id: 'c-local',
+              title: '第五章',
+              webUrl,
+              lastEdited: localEdited,
+              createdAt: localEdited,
+              content: [
+                {
+                  id: 'p-local',
+                  text: '原文一',
+                  selectedTranslationId: '',
+                  translations: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const buildRemoteBook = (remoteEdited: string) => ({
+      id: 'b1',
+      title: 'Book',
+      lastEdited: remoteEdited,
+      createdAt: '2023-12-01T00:00:00.000Z',
+      volumes: [
+        {
+          id: 'v1',
+          title: '第一卷',
+          chapters: [
+            {
+              id: 'c-remote',
+              title: {
+                original: '第五章',
+                translation: { id: 'tt-1', translation: '第五章·译', aiModelId: 'm1' },
+              },
+              webUrl,
+              lastEdited: remoteEdited,
+              createdAt: remoteEdited,
+              content: [
+                {
+                  id: 'p-remote',
+                  text: '原文一',
+                  selectedTranslationId: 't-1',
+                  translations: [{ id: 't-1', translation: '译文一', aiModelId: 'm1' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    it('本地较新时：本地重新抓取的章节应与远端已翻译章节按 webUrl 合并，不产生重复章节', async () => {
+      mockBooksStore.books = [buildLocalBook('2024-01-03T00:00:00.000Z')] as unknown[];
+
+      await SyncDataService.applyDownloadedData(
+        { novels: [buildRemoteBook('2024-01-02T00:00:00.000Z')] },
+        lastSyncTime,
+      );
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const chapters = addedBooks?.[0]?.volumes?.[0]?.chapters;
+
+      expect(chapters?.length).toBe(1);
+      expect(chapters?.[0]?.id).toBe('c-local');
+      expect(
+        chapters?.[0]?.content?.[0]?.translations?.map((t: { id: string }) => t.id),
+      ).toContain('t-1');
+      expect(chapters?.[0]?.content?.[0]?.selectedTranslationId).toBe('t-1');
+      expect(chapters?.[0]?.title).toEqual({
+        original: '第五章',
+        translation: { id: 'tt-1', translation: '第五章·译', aiModelId: 'm1' },
+      });
+    });
+
+    it('远程较新时：远端已翻译章节应与本地重新抓取的章节按 webUrl 合并，不产生重复章节', async () => {
+      mockBooksStore.books = [buildLocalBook('2024-01-03T00:00:00.000Z')] as unknown[];
+
+      await SyncDataService.applyDownloadedData(
+        { novels: [buildRemoteBook('2024-01-04T00:00:00.000Z')] },
+        lastSyncTime,
+      );
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const chapters = addedBooks?.[0]?.volumes?.[0]?.chapters;
+
+      expect(chapters?.length).toBe(1);
+      expect(chapters?.[0]?.id).toBe('c-remote');
+      expect(
+        chapters?.[0]?.content?.[0]?.translations?.map((t: { id: string }) => t.id),
+      ).toContain('t-1');
+    });
+
+    it('两侧都没有 webUrl 时：不同 ID 的章节不应被合并（保持既有行为）', async () => {
+      const localBook = buildLocalBook('2024-01-03T00:00:00.000Z');
+      delete (localBook.volumes[0]!.chapters[0] as any).webUrl;
+      const remoteBook = buildRemoteBook('2024-01-02T00:00:00.000Z');
+      delete (remoteBook.volumes[0]!.chapters[0] as any).webUrl;
+
+      mockBooksStore.books = [localBook] as unknown[];
+
+      await SyncDataService.applyDownloadedData({ novels: [remoteBook] }, lastSyncTime);
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const chapters = addedBooks?.[0]?.volumes?.[0]?.chapters;
+
+      expect(chapters?.length).toBe(2);
+    });
+
+    it('卷 ID 不同但原文标题相同时，应按标题回退匹配合并卷，不产生重复卷', async () => {
+      const localBook = buildLocalBook('2024-01-03T00:00:00.000Z');
+      localBook.volumes[0]!.id = 'v-local';
+      const remoteBook = buildRemoteBook('2024-01-02T00:00:00.000Z');
+      remoteBook.volumes[0]!.id = 'v-remote';
+
+      mockBooksStore.books = [localBook] as unknown[];
+
+      await SyncDataService.applyDownloadedData({ novels: [remoteBook] }, lastSyncTime);
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const volumes = addedBooks?.[0]?.volumes;
+
+      expect(volumes?.length).toBe(1);
+      const chapters = volumes?.[0]?.chapters;
+      expect(chapters?.length).toBe(1);
+      expect(
+        chapters?.[0]?.content?.[0]?.translations?.map((t: { id: string }) => t.id),
+      ).toContain('t-1');
+    });
+  });
+
+  // ── applyPartialRemoteData 失败上报 ──
+
+  describe('applyPartialRemoteData 失败条目上报', () => {
+    it('某个条目应用抛错时，应返回该条目 key（供调用方排除出已知远端状态）', async () => {
+      mockBooksStore.bulkAddBooks.mockImplementationOnce(() => {
+        throw new Error('IndexedDB 写入失败');
+      });
+
+      const failed = await SyncDataService.applyPartialRemoteData({
+        'novel:b1': {
+          kind: 'novel',
+          value: { id: 'b1', title: 'Book', lastEdited: new Date().toISOString() },
+        },
+      });
+
+      expect(failed).toContain('novel:b1');
+    });
+
+    it('应用较新远端 settings 时应保留本地 quickStartDismissed=true（单调规则，与 legacy 路径一致）', async () => {
+      setMockSettings({ quickStartDismissed: true, lastEdited: '2024-01-01T00:00:00.000Z' });
+
+      await SyncDataService.applyPartialRemoteData({
+        settings: {
+          kind: 'settings',
+          value: { lastEdited: '2024-06-01T00:00:00.000Z', quickStartDismissed: false },
+        },
+      });
+
+      const imported = mockSettingsStore.importSettings.mock.calls.at(-1)?.[0] as {
+        quickStartDismissed?: boolean;
+      };
+      expect(imported?.quickStartDismissed).toBe(true);
+    });
+
+    it('全部条目应用成功时返回空数组', async () => {
+      const failed = await SyncDataService.applyPartialRemoteData({
+        'novel:b1': {
+          kind: 'novel',
+          value: { id: 'b1', title: 'Book', lastEdited: new Date().toISOString() },
+        },
+      });
+
+      expect(failed).toEqual([]);
+    });
+  });
+
+  // ── 本地删除传播测试（远端较新方向） ──
+
+  describe('远端较新时本地删除的章节/卷不应复活', () => {
+    // 场景：本地删除了章节 X（书籍 lastEdited 随之更新），另一台设备之后对
+    // 同一本书做了无关编辑（远端 novel lastEdited 更新）。合并时远端为主导方，
+    // 远端独有的 X 若自上次同步以来未被编辑过，说明它是被本地删除的残留，
+    // 不应被无条件保留（否则删除永远无法传播，X 会在设备间反复复活）。
+
+    const lastSyncTime = new Date('2024-01-10').getTime();
+    const beforeSync = '2024-01-05T00:00:00.000Z';
+    const localDeleteDate = '2024-01-15T00:00:00.000Z';
+    const remoteNewerDate = '2024-01-16T00:00:00.000Z';
+
+    const chapter = (id: string, lastEdited: string, text: string) => ({
+      id,
+      title: `章节 ${id}`,
+      lastEdited,
+      createdAt: beforeSync,
+      content: [{ id: `p-${id}`, text, selectedTranslationId: '', translations: [] }],
+    });
+
+    it('远端较新：远端独有且自上次同步未编辑的章节应被视为本地已删除而丢弃', async () => {
+      mockBooksStore.books = [
+        {
+          id: 'b1',
+          title: 'Book',
+          lastEdited: localDeleteDate,
+          createdAt: beforeSync,
+          volumes: [{ id: 'v1', title: '', chapters: [chapter('c1', beforeSync, '正文一')] }],
+        },
+      ] as unknown[];
+
+      await SyncDataService.applyDownloadedData(
+        {
+          novels: [
+            {
+              id: 'b1',
+              title: 'Book',
+              lastEdited: remoteNewerDate,
+              createdAt: beforeSync,
+              volumes: [
+                {
+                  id: 'v1',
+                  title: '',
+                  chapters: [
+                    chapter('c1', remoteNewerDate, '正文一'),
+                    chapter('c-deleted', beforeSync, '被本地删除的章节正文'),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        lastSyncTime,
+      );
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const chapterIds = addedBooks?.[0]?.volumes?.[0]?.chapters?.map((c: { id: string }) => c.id);
+      expect(chapterIds).toContain('c1');
+      expect(chapterIds).not.toContain('c-deleted');
+    });
+
+    it('远端较新：远端独有但在上次同步后新增的章节应保留', async () => {
+      mockBooksStore.books = [
+        {
+          id: 'b1',
+          title: 'Book',
+          lastEdited: localDeleteDate,
+          createdAt: beforeSync,
+          volumes: [{ id: 'v1', title: '', chapters: [chapter('c1', beforeSync, '正文一')] }],
+        },
+      ] as unknown[];
+
+      await SyncDataService.applyDownloadedData(
+        {
+          novels: [
+            {
+              id: 'b1',
+              title: 'Book',
+              lastEdited: remoteNewerDate,
+              createdAt: beforeSync,
+              volumes: [
+                {
+                  id: 'v1',
+                  title: '',
+                  chapters: [
+                    chapter('c1', remoteNewerDate, '正文一'),
+                    chapter('c-new', remoteNewerDate, '远端新增章节正文'),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        lastSyncTime,
+      );
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const chapterIds = addedBooks?.[0]?.volumes?.[0]?.chapters?.map((c: { id: string }) => c.id);
+      expect(chapterIds).toContain('c-new');
+    });
+
+    it('远端较新且本地自上次同步未编辑：远端独有章节应保留（本地不可能删除过）', async () => {
+      mockBooksStore.books = [
+        {
+          id: 'b1',
+          title: 'Book',
+          lastEdited: beforeSync,
+          createdAt: beforeSync,
+          volumes: [{ id: 'v1', title: '', chapters: [chapter('c1', beforeSync, '正文一')] }],
+        },
+      ] as unknown[];
+
+      await SyncDataService.applyDownloadedData(
+        {
+          novels: [
+            {
+              id: 'b1',
+              title: 'Book',
+              lastEdited: remoteNewerDate,
+              createdAt: beforeSync,
+              volumes: [
+                {
+                  id: 'v1',
+                  title: '',
+                  chapters: [
+                    chapter('c1', beforeSync, '正文一'),
+                    chapter('c-old', beforeSync, '本地缺失但未删除过的章节'),
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        lastSyncTime,
+      );
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const chapterIds = addedBooks?.[0]?.volumes?.[0]?.chapters?.map((c: { id: string }) => c.id);
+      expect(chapterIds).toContain('c-old');
+    });
+
+    it('远端较新：远端独有且自上次同步未编辑的整卷应被视为本地已删除而丢弃', async () => {
+      mockBooksStore.books = [
+        {
+          id: 'b1',
+          title: 'Book',
+          lastEdited: localDeleteDate,
+          createdAt: beforeSync,
+          volumes: [
+            { id: 'v1', title: '第一卷', chapters: [chapter('c1', beforeSync, '正文一')] },
+          ],
+        },
+      ] as unknown[];
+
+      await SyncDataService.applyDownloadedData(
+        {
+          novels: [
+            {
+              id: 'b1',
+              title: 'Book',
+              lastEdited: remoteNewerDate,
+              createdAt: beforeSync,
+              volumes: [
+                {
+                  id: 'v1',
+                  title: '第一卷',
+                  chapters: [chapter('c1', remoteNewerDate, '正文一')],
+                },
+                {
+                  id: 'v-deleted',
+                  title: '被本地删除的卷',
+                  chapters: [chapter('c-x', beforeSync, '卷内章节正文')],
+                },
+              ],
+            },
+          ],
+        },
+        lastSyncTime,
+      );
+
+      const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+      const volumeIds = addedBooks?.[0]?.volumes?.map((v: { id: string }) => v.id);
+      expect(volumeIds).toContain('v1');
+      expect(volumeIds).not.toContain('v-deleted');
+    });
+  });
+
   // ── 翻译段落合并测试 ──
 
   describe('mergeParagraphTranslations (段落翻译合并)', () => {
@@ -3184,6 +3570,81 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(lastRestoreCall).toEqual(
         expect.arrayContaining([expect.objectContaining({ id: 'orig-book' })]),
       );
+    });
+
+    it('回滚时必须还原章节内容——备份需内联章节内容而非仅元数据', async () => {
+      // 场景：store 中的 books 只有元数据（章节内容在独立的 chapter-contents store，
+      // 覆盖流程会先清空它）。若备份不内联内容，写入失败后的回滚只能还原元数据，
+      // 全部段落与译文永久丢失。
+      mockBooksStore.books = [
+        {
+          id: 'orig-book',
+          title: 'Original',
+          lastEdited: new Date().toISOString(),
+          volumes: [
+            {
+              id: 'v1',
+              title: '',
+              chapters: [
+                {
+                  id: 'c1',
+                  title: '第一章',
+                  lastEdited: new Date().toISOString(),
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            },
+          ],
+        },
+      ];
+
+      // 模拟真实行为：从 chapter-contents store 把内容内联进书籍
+      spyOn(ChapterContentService, 'loadAllChapterContentsForNovels').mockImplementation(
+        (books: any[]) =>
+          Promise.resolve(
+            books.map((book: any) => ({
+              ...book,
+              volumes: book.volumes?.map((volume: any) => ({
+                ...volume,
+                chapters: volume.chapters?.map((chapter: any) => ({
+                  ...chapter,
+                  content: [
+                    {
+                      id: `p-${chapter.id}`,
+                      text: '原文段落',
+                      selectedTranslationId: 't1',
+                      translations: [{ id: 't1', translation: '译文', aiModelId: 'm1' }],
+                    },
+                  ],
+                })),
+              })),
+            })),
+          ) as any,
+      );
+
+      mockBooksStore.bulkAddBooks.mockImplementationOnce(() => {
+        throw new Error('write failed');
+      });
+
+      let thrown: unknown;
+      try {
+        await SyncDataService.overwriteFromSnapshot({
+          novels: [{ id: 'snap-book', title: 'Snap', lastEdited: new Date().toISOString() }],
+          aiModels: [],
+          coverHistory: [],
+          memories: [],
+        });
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeInstanceOf(Error);
+
+      // 回滚写回的 orig-book 必须带完整章节内容（回滚的 bulkAddBooks 会把内容重新落盘）
+      const lastRestoreCall = mockBooksStore.bulkAddBooks.mock.calls.at(-1)?.[0] as Array<any>;
+      const restoredBook = lastRestoreCall?.find((b: any) => b.id === 'orig-book');
+      const restoredContent = restoredBook?.volumes?.[0]?.chapters?.[0]?.content;
+      expect(restoredContent?.length).toBe(1);
+      expect(restoredContent?.[0]?.translations?.[0]?.translation).toBe('译文');
     });
   });
 });

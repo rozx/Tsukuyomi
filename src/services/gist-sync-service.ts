@@ -485,7 +485,13 @@ export class GistSyncService {
       throw new Error('Octokit 客户端未初始化，无法验证上传');
     }
 
-    const response = await this.octokit.rest.gists.get({ gist_id: gistId });
+    // 验证 GET 也要带重试：上传已经成功，仅因一次瞬时网络错误就报失败
+    // 会让首次同步丢掉刚创建的 gistId（留下孤儿 Gist，重试再建一个重复的）
+    const octokit = this.octokit;
+    const response = await withRetry(
+      () => octokit.rest.gists.get({ gist_id: gistId }),
+      '验证上传文件',
+    );
     const remoteUpdatedAt = response.data.updated_at ?? undefined;
     const uploadedFiles = response.data.files;
     if (!uploadedFiles) {
@@ -862,6 +868,9 @@ export class GistSyncService {
     },
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
   ): Promise<SyncResult> {
+    // 上传阶段已确定的 gistId：即使后续验证失败也要随失败结果带回，
+    // 否则首次同步创建的 Gist 会变成孤儿，重试时再创建一个重复的
+    let resolvedGistId: string | undefined;
     try {
       this.validateConfig(config);
       this.initializeOctokit(config);
@@ -885,6 +894,7 @@ export class GistSyncService {
         totalItems,
         onProgress,
       );
+      resolvedGistId = outcome.gistId;
 
       // 验证上传的文件（必须在返回成功之前验证）
       let remoteUpdatedAt: string | undefined;
@@ -907,6 +917,7 @@ export class GistSyncService {
       return {
         success: false,
         error: error instanceof Error ? error.message : '同步到 Gist 时发生未知错误',
+        ...(resolvedGistId ? { gistId: resolvedGistId } : {}),
       };
     }
   }
@@ -1335,7 +1346,7 @@ export class GistSyncService {
     config: SyncConfig,
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
     lastRemoteUpdatedAt?: string,
-  ): Promise<SyncResult & { data?: GistSyncData }> {
+  ): Promise<SyncResult & { data?: GistSyncData; failedEntries?: string[] }> {
     try {
       this.validateConfig(config);
       this.initializeOctokit(config);
@@ -1364,10 +1375,10 @@ export class GistSyncService {
       const result: GistSyncData = { aiModels: [], novels: [] };
       this.reportProgress(onProgress, 0, 1, '正在下载数据...');
 
-      await this.downloadAndPopulateSettingsFile(gistFiles, result);
+      const settingsFailure = await this.downloadAndPopulateSettingsFile(gistFiles, result);
 
       const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
-      const totalNovels = await this.downloadAllNovelsFromGistFiles(
+      const { totalNovels, failedNovelIds } = await this.downloadAllNovelsFromGistFiles(
         novelIds,
         gistFiles,
         result,
@@ -1377,10 +1388,19 @@ export class GistSyncService {
       const progressTotal = totalNovels || 1;
       this.reportProgress(onProgress, progressTotal, progressTotal, '下载完成');
 
-      const message = this.buildDownloadMessage(totalNovels, result.novels.length);
+      // 任何条目（settings / 书籍）读取失败都必须整体失败：
+      // 唯一消费方是旧布局迁移（runLegacyMigration），它只检查 success，
+      // 若返回部分快照，缺失的书籍会永远从迁移后的新布局中消失
+      const failedEntries = [
+        ...(settingsFailure ? ['settings'] : []),
+        ...failedNovelIds.map((novelId) => `novel:${novelId}`),
+      ];
+      if (failedEntries.length > 0) {
+        return this.buildIncompleteDownloadFailure(failedEntries, settingsFailure);
+      }
 
       return this.buildDownloadSuccessResult({
-        message,
+        message: '从 Gist 下载数据成功',
         result,
         remoteUpdatedAt,
         gistId: params.gistId,
@@ -1431,7 +1451,8 @@ export class GistSyncService {
   }
 
   /**
-   * 顺序下载所有书籍，单本失败不影响其他书籍；返回总书籍数
+   * 顺序下载所有书籍，单本失败不中断循环但会被记录；
+   * 返回总书籍数与下载/解析失败的书籍 ID 清单，由调用方决定是否整体失败
    */
   private async downloadAllNovelsFromGistFiles(
     novelIds: Set<string>,
@@ -1439,8 +1460,9 @@ export class GistSyncService {
     gistFiles: Record<string, any>,
     result: GistSyncData,
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
-  ): Promise<number> {
+  ): Promise<{ totalNovels: number; failedNovelIds: string[] }> {
     const totalNovels = novelIds.size;
+    const failedNovelIds: string[] = [];
     if (onProgress && totalNovels > 0) {
       onProgress({
         current: 0,
@@ -1454,7 +1476,11 @@ export class GistSyncService {
       if (!novelId) continue;
       try {
         const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
-        if (novel) result.novels.push(novel);
+        if (novel) {
+          result.novels.push(novel);
+        } else {
+          failedNovelIds.push(novelId);
+        }
         processedNovels++;
         this.reportProgress(
           onProgress,
@@ -1463,6 +1489,7 @@ export class GistSyncService {
           this.formatNovelProgressMessage(novel, novelId, processedNovels, totalNovels),
         );
       } catch {
+        failedNovelIds.push(novelId);
         processedNovels++;
         this.reportProgress(
           onProgress,
@@ -1472,7 +1499,7 @@ export class GistSyncService {
         );
       }
     }
-    return totalNovels;
+    return { totalNovels, failedNovelIds };
   }
 
   /** 构造单本书的下载进度消息（区分成功 / 跳过） */
@@ -1489,26 +1516,36 @@ export class GistSyncService {
   }
 
   /**
-   * 根据成功 / 失败书籍数构造下载完成提示
+   * 构造"下载不完整"的失败结果：列出失败条目，供迁移等需要完整性的调用方检查
    */
-  private buildDownloadMessage(totalNovels: number, loadedNovels: number): string {
-    if (totalNovels > loadedNovels) {
-      const failedCount = totalNovels - loadedNovels;
-      return `从 Gist 下载数据成功，但有 ${failedCount} 个书籍文件解析失败。如果文件过大，请重新上传以使用分块存储。`;
-    }
-    return '从 Gist 下载数据成功';
+  private buildIncompleteDownloadFailure(
+    failedEntries: string[],
+    settingsFailure: string | null,
+  ): SyncResult & { failedEntries: string[] } {
+    console.error('[GistSyncService] 下载不完整，失败条目：', failedEntries.join('、'));
+    const shown = failedEntries.slice(0, 3).join('、');
+    const suffix = failedEntries.length > 3 ? ` 等 ${failedEntries.length} 项` : '';
+    const settingsDetail = settingsFailure ? `（${settingsFailure}）` : '';
+    return {
+      success: false,
+      error:
+        `从 Gist 下载数据不完整：${failedEntries.length} 个条目读取失败：` +
+        `${shown}${suffix}${settingsDetail}。已中止，未应用任何数据。`,
+      failedEntries,
+    };
   }
 
   /**
    * 读取并解析设置文件（含截断回退到 raw_url），写入 result.aiModels/appSettings/coverHistory/memories
+   * @returns null 表示成功（或设置文件不存在）；否则返回失败原因，由调用方决定如何处理
    */
   private async downloadAndPopulateSettingsFile(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     gistFiles: Record<string, any>,
     result: GistSyncData,
-  ): Promise<void> {
+  ): Promise<string | null> {
     const settingsFile = gistFiles[GIST_FILE_NAMES.SETTINGS];
-    if (!settingsFile) return;
+    if (!settingsFile) return null;
 
     try {
       let settingsContent = settingsFile.content;
@@ -1529,7 +1566,10 @@ export class GistSyncService {
         }
       }
 
-      if (!settingsContent) return;
+      // 设置文件存在但内容无法获取（截断且 raw_url 拿不到 / 内容为空）：视为失败
+      if (!settingsContent) {
+        return '设置文件内容为空或无法获取';
+      }
 
       const settingsData = (await this.parseGistContent(settingsContent)) as {
         aiModels?: AIModel[];
@@ -1550,11 +1590,13 @@ export class GistSyncService {
       if (settingsData.memories) {
         result.memories = this.deserializeDates(settingsData.memories);
       }
+      return null;
     } catch (parseError) {
       console.error(
         '[GistSyncService] 设置文件解析失败，aiModels/appSettings/coverHistory 可能为空:',
         parseError,
       );
+      return `设置文件解析失败: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
     }
   }
 
@@ -1621,21 +1663,68 @@ export class GistSyncService {
     // 任何 entry 反序列化失败(chunk 截断且 raw_url 拿不到、内容缺失等)都必须抛错：
     // 上游 overwriteFromSnapshot 会先清空本地再写入快照，若静默跳过会导致本地数据被
     // 不完整快照覆盖——恰好就是用户看到的"本地书被删但 Gist 该版本仍然存在"。
-    if (failures.length > 0) {
-      console.error(
-        '[GistSyncService] 恢复修订版本失败，条目明细：',
-        failures.map((f) => `${f.entryKey}: ${f.reason}`).join('\n'),
-      );
-      const shown = failures.slice(0, 3);
-      const detail = shown.map((f) => `${f.entryKey}（${f.reason}）`).join('；');
-      const suffix = failures.length > 3 ? ` 等 ${failures.length} 项` : '';
-      throw new Error(
-        `该修订版本中 ${failures.length} 个条目无法读取：${detail}${suffix}；` +
-          `已中止恢复以保护本地数据。详情见控制台。`,
-      );
-    }
+    this.throwIfRevisionEntriesFailed(failures, '该修订版本');
 
     return result;
+  }
+
+  /**
+   * 修订恢复的失败兜底：任一条目不可读时打印明细并抛错中止，
+   * 防止 overwriteFromSnapshot 用不完整快照覆盖本地数据。
+   */
+  private throwIfRevisionEntriesFailed(
+    failures: Array<{ entryKey: string; reason: string }>,
+    scopeLabel: string,
+  ): void {
+    if (failures.length === 0) return;
+    console.error(
+      `[GistSyncService] 恢复修订版本失败（${scopeLabel}），条目明细：`,
+      failures.map((f) => `${f.entryKey}: ${f.reason}`).join('\n'),
+    );
+    const shown = failures.slice(0, 3);
+    const detail = shown.map((f) => `${f.entryKey}（${f.reason}）`).join('；');
+    const suffix = failures.length > 3 ? ` 等 ${failures.length} 项` : '';
+    throw new Error(
+      `${scopeLabel}中 ${failures.length} 个条目无法读取：${detail}${suffix}；` +
+        `已中止恢复以保护本地数据。详情见控制台。`,
+    );
+  }
+
+  /**
+   * 解析旧布局（无 manifest）修订快照：settings 聚合文件 + 逐本小说文件。
+   * 与 manifest 路径同等严格——任何条目（settings / 书籍）下载或解析失败都抛错中止：
+   * 上游 overwriteFromSnapshot 会先清空本地再写入快照，若静默跳过失败条目，
+   * 本地数据会被不完整快照永久覆盖。
+   */
+  private async downloadRevisionFromLegacyFiles(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    gistFiles: Record<string, any>,
+    result: GistSyncData,
+  ): Promise<void> {
+    const failures: Array<{ entryKey: string; reason: string }> = [];
+
+    const settingsFailure = await this.downloadAndPopulateSettingsFile(gistFiles, result);
+    if (settingsFailure) {
+      failures.push({ entryKey: 'settings', reason: settingsFailure });
+    }
+
+    const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
+    for (const novelId of novelIds) {
+      let novel: Novel | null = null;
+      try {
+        novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
+      } catch (error) {
+        console.error(`[GistSyncService] 恢复旧布局书籍 ${novelId} 失败:`, error);
+        novel = null;
+      }
+      if (novel) {
+        result.novels.push(novel);
+      } else {
+        failures.push({ entryKey: `novel:${novelId}`, reason: '下载或解析失败' });
+      }
+    }
+
+    this.throwIfRevisionEntriesFailed(failures, '该修订版本（旧布局）');
   }
 
   private assignRevisionEntry(result: GistSyncData, entry: EntryValue): void {
@@ -1974,10 +2063,10 @@ export class GistSyncService {
   }
 
   /**
-   * 为单次 commit 构造其文件变更列表：
-   * - 第一次 commit：所有文件视为 added
-   * - 有前一版本：diff 对比
-   * - 无法获取前一版本：退化为把当前文件标记为 modified
+   * 为单次 commit 构造其文件变更列表（allCommits 已按最新在前排序）：
+   * - 最后一个索引（最早的 commit）：所有文件视为 added
+   * - 有更旧的邻居版本（commitIndex + 1）：diff 对比
+   * - 无法获取更旧的邻居版本：退化为把当前文件标记为 modified
    * - 无法获取当前版本：返回空列表
    */
   private async buildRevisionFileChangeList(
@@ -2003,7 +2092,8 @@ export class GistSyncService {
       });
       const currentFilesMap = revisionResponse.data.files || {};
 
-      if (commitIndex === 0) {
+      // 列表最新在前：最后一个索引是最早的 commit，所有文件视为新增
+      if (commitIndex === allCommits.length - 1) {
         return Object.keys(currentFilesMap).map((filename) => ({
           filename,
           status: 'added' as const,
@@ -2011,7 +2101,8 @@ export class GistSyncService {
         }));
       }
 
-      const previousCommit = allCommits[commitIndex - 1];
+      // "上一版"是时间上更旧的邻居，即最新在前列表中的下一个元素
+      const previousCommit = allCommits[commitIndex + 1];
       if (!previousCommit) {
         return Object.keys(currentFilesMap).map((filename) => ({
           filename,
@@ -2073,13 +2164,19 @@ export class GistSyncService {
         gist_id: gistId,
       });
 
+      // GitHub API 返回最新在前，但此处显式按 committed_at 降序排序，
+      // 不依赖隐式顺序：diff 计算与 UI（revisions[i+1] 视为上一版）都假设最新在前
+      const sortedCommits = [...response.data].sort(
+        (a, b) => new Date(b.committed_at).getTime() - new Date(a.committed_at).getTime(),
+      );
+
       const revisions = await Promise.all(
-        response.data.map(async (commit, commitIndex) => {
+        sortedCommits.map(async (commit, commitIndex) => {
           const files = await this.buildRevisionFileChangeList(
             gistId,
             commit,
             commitIndex,
-            response.data,
+            sortedCommits,
           );
 
           return {
@@ -2257,18 +2354,9 @@ export class GistSyncService {
         if (manifestResult.coverHistory) result.coverHistory = manifestResult.coverHistory;
         if (manifestResult.memories) result.memories = manifestResult.memories;
       } else {
-        // 旧布局回退：读取 settings 聚合文件 + 逐本小说文件
-        await this.downloadAndPopulateSettingsFile(gistFiles, result);
-
-        const novelIds = this.collectNovelIdsFromGistFiles(gistFiles);
-        for (const novelId of novelIds) {
-          try {
-            const novel = await this.downloadSingleNovelFromGistFiles(novelId, gistFiles);
-            if (novel) result.novels.push(novel);
-          } catch {
-            // 继续处理其他书籍
-          }
-        }
+        // 旧布局回退：读取 settings 聚合文件 + 逐本小说文件。
+        // 与 manifest 路径同等严格：任何条目读取失败都抛错中止（见方法内注释）
+        await this.downloadRevisionFromLegacyFiles(gistFiles, result);
       }
 
       return {

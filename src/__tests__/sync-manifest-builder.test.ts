@@ -84,6 +84,17 @@ function makeMemory(id: string, bookId: string): Memory {
   };
 }
 
+// 墓碑时间必须相对当前时间构造：TTL（90 天）基于 Date.now() 判定，
+// 写死绝对日期会随真实时间流逝而过期，导致测试悄悄开始失败（或因过期修剪而假通过）
+const TOMBSTONE_TIME = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+const TOMBSTONE_ISO = TOMBSTONE_TIME.toISOString();
+const BEFORE_TOMBSTONE_ISO = new Date(
+  TOMBSTONE_TIME.getTime() - 24 * 60 * 60 * 1000,
+).toISOString();
+const AFTER_TOMBSTONE_ISO = new Date(
+  TOMBSTONE_TIME.getTime() + 24 * 60 * 60 * 1000,
+).toISOString();
+
 function emptyInput(overrides: Partial<LocalManifestInput> = {}): LocalManifestInput {
   return {
     appSettings: makeSettings(),
@@ -309,11 +320,11 @@ describe('buildLocalManifest: tombstones', () => {
     const m = await buildLocalManifest(
       emptyInput({
         novels: [],
-        tombstones: { [novelEntryKey('gone')]: '2026-04-01T00:00:00.000Z' },
+        tombstones: { [novelEntryKey('gone')]: TOMBSTONE_ISO },
       }),
     );
     expect(m.tombstones?.[novelEntryKey('gone')]).toEqual({
-      deletedAt: '2026-04-01T00:00:00.000Z',
+      deletedAt: TOMBSTONE_ISO,
     });
   });
 
@@ -321,8 +332,8 @@ describe('buildLocalManifest: tombstones', () => {
     const m = await buildLocalManifest(
       emptyInput({
         // Entry edited AFTER the tombstone → real revival, drop tombstone
-        novels: [makeNovel('abc', '2026-05-01T00:00:00Z')],
-        tombstones: { [novelEntryKey('abc')]: '2026-04-01T00:00:00.000Z' },
+        novels: [makeNovel('abc', AFTER_TOMBSTONE_ISO)],
+        tombstones: { [novelEntryKey('abc')]: TOMBSTONE_ISO },
       }),
     );
     expect(m.tombstones?.[novelEntryKey('abc')]).toBeUndefined();
@@ -332,12 +343,12 @@ describe('buildLocalManifest: tombstones', () => {
     const m = await buildLocalManifest(
       emptyInput({
         // Entry edited BEFORE the tombstone → stale residue, keep tombstone
-        novels: [makeNovel('abc', '2026-03-01T00:00:00Z')],
-        tombstones: { [novelEntryKey('abc')]: '2026-04-01T00:00:00.000Z' },
+        novels: [makeNovel('abc', BEFORE_TOMBSTONE_ISO)],
+        tombstones: { [novelEntryKey('abc')]: TOMBSTONE_ISO },
       }),
     );
     expect(m.tombstones?.[novelEntryKey('abc')]).toEqual({
-      deletedAt: '2026-04-01T00:00:00.000Z',
+      deletedAt: TOMBSTONE_ISO,
     });
   });
 
@@ -360,11 +371,11 @@ describe('buildLocalManifest: tombstones', () => {
   it('accepts memories:<bookId> tombstones (v3+: collection-level memory tombstones)', async () => {
     const m = await buildLocalManifest(
       emptyInput({
-        tombstones: { [memoriesEntryKey('book-x')]: '2026-04-01T00:00:00.000Z' },
+        tombstones: { [memoriesEntryKey('book-x')]: TOMBSTONE_ISO },
       }),
     );
     expect(m.tombstones?.[memoriesEntryKey('book-x')]).toEqual({
-      deletedAt: '2026-04-01T00:00:00.000Z',
+      deletedAt: TOMBSTONE_ISO,
     });
   });
 
@@ -463,7 +474,7 @@ describe('buildLocalManifest: memories envelope', () => {
 
 describe('buildLocalManifest: tombstones — additional edge cases', () => {
   it('复活规则：entry.lastEdited 与墓碑 deletedAt 完全相等时丢弃墓碑（>= 闭区间）', async () => {
-    const t = '2026-04-01T00:00:00.000Z';
+    const t = TOMBSTONE_ISO;
     const m = await buildLocalManifest(
       emptyInput({
         novels: [makeNovel('abc', t)],
@@ -475,7 +486,7 @@ describe('buildLocalManifest: tombstones — additional edge cases', () => {
   });
 
   it('复活规则：entry.lastEdited 比墓碑早 1ms 时仍保留墓碑（防 id 复用静默掩盖删除）', async () => {
-    const t = '2026-04-01T00:00:00.000Z';
+    const t = TOMBSTONE_ISO;
     const oneMsEarlier = new Date(new Date(t).getTime() - 1).toISOString();
     const m = await buildLocalManifest(
       emptyInput({
@@ -490,8 +501,8 @@ describe('buildLocalManifest: tombstones — additional edge cases', () => {
     const m = await buildLocalManifest(
       emptyInput({
         tombstones: {
-          [novelEntryKey('book-1')]: '2026-04-01T00:00:00.000Z',
-          [memoriesEntryKey('book-2')]: '2026-04-02T00:00:00.000Z',
+          [novelEntryKey('book-1')]: TOMBSTONE_ISO,
+          [memoriesEntryKey('book-2')]: AFTER_TOMBSTONE_ISO,
         },
       }),
     );
@@ -576,7 +587,7 @@ describe('diffManifests: tombstones do not pollute diff buckets', () => {
     const local = await buildLocalManifest(
       emptyInput({
         novels: [makeNovel('a', '2026-01-01')],
-        tombstones: { [novelEntryKey('deleted-x')]: '2026-04-01T00:00:00.000Z' },
+        tombstones: { [novelEntryKey('deleted-x')]: TOMBSTONE_ISO },
       }),
     );
     const remote = await buildLocalManifest(

@@ -127,25 +127,38 @@ export function useGistSync() {
     return { novels, models, covers, memories };
   }
 
-  /** 把分组后的数据依次写回对应 store */
+  /**
+   * 把分组后的数据依次写回对应 store。
+   *
+   * 恢复时必须把时间戳刷新为当前时刻：data 携带的是删除前的旧时间戳，
+   * 各设备墓碑的 deletedAt 都晚于它——若原样写回，manifest 复活规则会
+   * 保留墓碑（entry.lastEdited < deletedAt），下轮同步就会把刚恢复的
+   * 项目再次删除（"僵尸删除"）。刷新后墓碑在下次构建 manifest 时被
+   * 复活规则自动修剪。
+   */
   async function restoreGroupedItems(grouped: {
     novels: unknown[];
     models: unknown[];
     covers: unknown[];
     memories: unknown[];
   }): Promise<void> {
+    const now = Date.now();
     for (const novel of grouped.novels) {
-      await booksStore.addBook(novel as Novel);
+      await booksStore.addBook({ ...(novel as Novel), lastEdited: new Date(now) });
     }
     for (const model of grouped.models) {
-      await aiModelsStore.addModel(model as Parameters<typeof aiModelsStore.addModel>[0]);
+      await aiModelsStore.addModel({
+        ...(model as Parameters<typeof aiModelsStore.addModel>[0]),
+        lastEdited: new Date(now),
+      });
     }
+    // 封面无需手动刷新时间戳：addCover 内部总会写入当前时刻的 addedAt
     for (const cover of grouped.covers) {
       await coverHistoryStore.addCover(cover as Parameters<typeof coverHistoryStore.addCover>[0]);
     }
     // Memory 恢复：data 是携带 bookId 的完整 Memory，走 upsertMemoryForSync 写回 IndexedDB
     for (const memory of grouped.memories) {
-      await MemoryService.upsertMemoryForSync(memory as Memory);
+      await MemoryService.upsertMemoryForSync({ ...(memory as Memory), lastAccessedAt: now });
     }
   }
 
@@ -179,7 +192,39 @@ export function useGistSync() {
     const deletedCoverUrls = (gistSync.deletedCoverUrls || []).filter(
       (record) => !restoredCoverUrls.has(String(record.url).trim()),
     );
-    return { deletedNovelIds, deletedModelIds, deletedCoverIds, deletedMemoryIds, deletedCoverUrls };
+    return {
+      deletedNovelIds,
+      deletedModelIds,
+      deletedCoverIds,
+      deletedMemoryIds,
+      deletedCoverUrls,
+      knownRemoteTombstones: pruneRestoredTombstones(gistSync.knownRemoteTombstones, items),
+    };
+  }
+
+  /**
+   * 清除已恢复项对应的远端墓碑快照（novel:<id> / memories:<bookId>），
+   * 否则本地会在下轮上传时把旧墓碑重新写回 manifest
+   */
+  function pruneRestoredTombstones(
+    knownRemoteTombstones: Record<string, string> | undefined,
+    items: RestorableItem[],
+  ): Record<string, string> {
+    const restoredTombstoneKeys = new Set<string>();
+    for (const item of items) {
+      if (item.type === 'novel') {
+        restoredTombstoneKeys.add(`novel:${item.id}`);
+      } else if (item.type === 'memory' && item.data?.bookId) {
+        restoredTombstoneKeys.add(`memories:${String(item.data.bookId)}`);
+      }
+    }
+    const pruned: Record<string, string> = {};
+    for (const [key, deletedAt] of Object.entries(knownRemoteTombstones || {})) {
+      if (!restoredTombstoneKeys.has(key)) {
+        pruned[key] = deletedAt;
+      }
+    }
+    return pruned;
   }
 
   /** 收集本次恢复的封面 URL（已 trim、非空） */
