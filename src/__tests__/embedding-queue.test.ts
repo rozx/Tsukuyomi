@@ -201,11 +201,16 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     const block = new Promise<void>((r) => {
       release = r;
     });
+    let markEmbedStarted!: () => void;
+    const embedStarted = new Promise<void>((r) => {
+      markEmbedStarted = r;
+    });
     spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockImplementation(async (id: string) =>
       makeMemory(id),
     );
     spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(undefined);
     spyOn(EmbeddingService, 'embedBatch').mockImplementation(async (texts: string[]) => {
+      markEmbedStarted();
       await block;
       return texts.map(() => new Float32Array([0.1]));
     });
@@ -213,8 +218,8 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     // 入队 12 条(8 会被第一个批次抓走,剩 4 在 pending)
     for (let i = 0; i < 12; i++) EmbeddingQueue.enqueue(`m${i}`);
 
-    // 让 run() 开始但在 embedBatch 中阻塞
-    await new Promise((r) => setTimeout(r, 5));
+    // 等待首批确实从 pending 取走并进入 embedBatch
+    await embedStarted;
     expect(EmbeddingQueue.getProgress().pending).toBe(4);
 
     EmbeddingQueue.cancel('m10');
@@ -397,7 +402,12 @@ describe('EmbeddingQueue - chapter kind', () => {
     const block = new Promise<void>((r) => {
       release = r;
     });
+    let markEmbedStarted!: () => void;
+    const embedStarted = new Promise<void>((r) => {
+      markEmbedStarted = r;
+    });
     spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(async () => {
+      markEmbedStarted();
       await block;
     });
 
@@ -405,7 +415,7 @@ describe('EmbeddingQueue - chapter kind', () => {
     EmbeddingQueue.enqueueChapter('ch-1');
     EmbeddingQueue.enqueueChapter('ch-2');
 
-    await new Promise((r) => setTimeout(r, 5));
+    await embedStarted;
     // ch-0 被取走正在处理,ch-1 / ch-2 在 pending
     expect(EmbeddingQueue.getProgress().breakdown.chapter.pending).toBe(2);
 
