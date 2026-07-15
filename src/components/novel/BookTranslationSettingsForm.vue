@@ -18,7 +18,10 @@ import {
   bookToFormState,
   formStateToPayload,
 } from 'src/composables/book-details/chapter-settings-update';
-import type { ChapterSettingsFormData } from 'src/composables/book-details/chapter-settings-update';
+import type {
+  BookTranslationSettingsFormHandle,
+  ChapterSettingsFormData,
+} from 'src/composables/book-details/chapter-settings-update';
 import {
   DEFAULT_TASK_CHUNK_SIZE,
   MIN_TASK_CHUNK_SIZE,
@@ -43,7 +46,7 @@ watch(() => props.book, resetFromBook);
 /** 书籍级 payload（不含章节指令字段） */
 const buildBookLevelPayload = (): ChapterSettingsFormData => formStateToPayload(state.value);
 
-defineExpose({ buildBookLevelPayload, resetFromBook });
+defineExpose<BookTranslationSettingsFormHandle>({ buildBookLevelPayload, resetFromBook });
 
 type ModelOption = { label: string; value: string };
 

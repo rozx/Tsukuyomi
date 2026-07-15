@@ -18,7 +18,10 @@ import TabPanel from 'primevue/tabpanel';
 import { useUiStore } from 'src/stores/ui';
 import BookTranslationSettingsForm from './BookTranslationSettingsForm.vue';
 import type { Novel, Chapter } from 'src/models/novel';
-import type { ChapterSettingsFormData } from 'src/composables/book-details/chapter-settings-update';
+import type {
+  BookTranslationSettingsFormHandle,
+  ChapterSettingsFormData,
+} from 'src/composables/book-details/chapter-settings-update';
 
 const props = defineProps<{
   book: Novel | null;
@@ -47,7 +50,7 @@ const instructionTab = ref<string>('translation');
 const currentMainTab = computed(() => mainTab.value || 'global');
 const currentInstructionTab = computed(() => instructionTab.value || 'translation');
 
-const globalFormRef = ref<InstanceType<typeof BookTranslationSettingsForm> | null>(null);
+const globalFormRef = ref<BookTranslationSettingsFormHandle | null>(null);
 
 const translationInstructions = ref('');
 const polishInstructions = ref('');

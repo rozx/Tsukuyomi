@@ -36,6 +36,12 @@ export type BookSettingsFormState = {
   proofreadingModelOverride: string | null;
 };
 
+/** 共享表单通过 template ref 暴露给壳组件的方法。 */
+export type BookTranslationSettingsFormHandle = {
+  buildBookLevelPayload: () => ChapterSettingsFormData;
+  resetFromBook: () => void;
+};
+
 const DEFAULT_FORM_STATE: BookSettingsFormState = {
   filterIndents: false,
   normalizeSymbolsOnDisplay: false,

@@ -10,6 +10,7 @@ import Button from 'primevue/button';
 import BookTranslationSettingsForm from './BookTranslationSettingsForm.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { Novel } from 'src/models/novel';
+import type { BookTranslationSettingsFormHandle } from 'src/composables/book-details/chapter-settings-update';
 
 defineProps<{
   book: Novel | null;
@@ -17,7 +18,7 @@ defineProps<{
 
 const ctx = injectBookDetailsPage();
 
-const formRef = ref<InstanceType<typeof BookTranslationSettingsForm> | null>(null);
+const formRef = ref<BookTranslationSettingsFormHandle | null>(null);
 
 const handleSave = async () => {
   const payload = formRef.value?.buildBookLevelPayload();
