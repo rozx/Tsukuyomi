@@ -120,6 +120,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.14.2",
+    "title": "v0.14.2",
+    "file": "RELEASE_NOTES_v0.14.2.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "书籍级翻译设置与本书模型覆盖、检查更新工作区、跨设备同步和修订恢复加固、长对话与翻译持久化可靠性修复"
+  },
+  {
     "id": "v0.14.1",
     "title": "v0.14.1",
     "file": "RELEASE_NOTES_v0.14.1.md",

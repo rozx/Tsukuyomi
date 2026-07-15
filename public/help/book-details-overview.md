@@ -22,8 +22,9 @@
 |   + stats    |   - SearchToolbar               |
 |              |   - ChapterContentPanel         |
 |  SETTINGS    |     or TerminologyPanel /       |
-|   - Terms    |        CharacterSettingPanel /  |
-|   - Chars    |        MemoryPanel              |
+|   - Translation |     CharacterSettingPanel /  |
+|   - Terms    |        MemoryPanel /            |
+|   - Chars    |        BookUpdatePanel          |
 |   - Memory   |                                 |
 |   - Update   |                                 |
 |              |                                 |
@@ -46,12 +47,13 @@
 
 展开 / 折叠按钮控制是否显示文字标签：
 
-- **展开态**：显示 `SETTINGS` eyebrow + 收起按钮，4 个项以图标 + 文字呈现：
+- **展开态**：显示 `SETTINGS` eyebrow + 收起按钮，5 个项以图标 + 文字呈现：
+  - ⚙️ 翻译设置 → 进入书籍级翻译设置面板，管理显示规则、任务分块与本书模型覆盖
   - 🔖 术语设置 → 进入 `TerminologyPanel`
   - 👥 角色设置 → 进入 `CharacterSettingPanel`
   - 🗄 记忆管理 → 进入 `MemoryPanel`
-  - ⬇ 检查更新 → 打开 `NovelScraperDialog`，从在线源增量合并章节
-- **折叠态**（默认）：4 个图标按钮 + 1 个 chevron 展开按钮。
+  - ⬇ 检查更新 → 进入 `BookUpdatePanel`，从在线源抓取并增量合并章节
+- **折叠态**（默认）：5 个图标按钮 + 1 个 chevron 展开按钮。
 
 折叠状态由 `ui.bookSettingsMenuExpanded` 持久化，跨会话保留偏好。
 
@@ -72,11 +74,13 @@
 | 选中项 | 显示内容 |
 |:-------|:---------|
 | 一个章节 | `ChapterContentPanel`（按编辑模式渲染） |
+| 「翻译设置」 | `BookTranslationSettingsPanel`（书籍级设置、分块大小与模型覆盖） |
 | 「术语设置」 | `TerminologyPanel` |
 | 「角色设置」 | `CharacterSettingPanel` |
 | 「记忆管理」 | `MemoryPanel` |
+| 「检查更新」 | `BookUpdatePanel`（内嵌小说抓取器） |
 
-进入设置面板时，工作区顶部会显示「Terms / Characters / Memory」eyebrow + 名称 + 图标的上下文标签。
+进入设置面板时，工作区顶部会显示「Translation / Terms / Characters / Memory / Update」eyebrow + 名称 + 图标的上下文标签。
 
 ---
 
@@ -106,6 +110,8 @@
 - 阅读时点击工具栏左侧的「目录」按钮回到 `'catalog'`。
 
 > 移动端 SETTINGS 不在侧栏渲染（节省空间）— 术语 / 角色 / 记忆通过子路由 `/books/:id/settings/(terms|characters|memory)` 进入对应专用页面。
+
+> 移动端不新增「翻译设置」侧栏路由态：书籍级翻译设置位于阅读器齿轮底部抽屉的「全局设置」页签；「检查更新」仍从书籍概览以底部抽屉 / 对话框打开。桌面 / 平板则使用侧栏路由面板。
 
 > 移动端**不渲染**右栏轨道与「向量索引」面板。物理移动设备的本地嵌入会被强制禁用，AI 仍可使用关键词 + 时间衰减信号自动注入记忆，但 `query_chapter` 工具不暴露。
 
@@ -173,7 +179,7 @@
 ## 🚀 基本使用流程
 
 1. 在主页 / 书籍列表选中一本书进入。
-2. 在侧栏目录中选择章节，或点开 SETTINGS 维护术语 / 角色 / 记忆。
+2. 在侧栏目录中选择章节，或点开 SETTINGS 维护翻译设置 / 术语 / 角色 / 记忆及检查更新。
 3. 在工具栏选择编辑模式（一般是默认的「翻译模式」）。
 4. 进行段落翻译与修订；可用搜索替换批量改译文。
 5. 通过术语 / 角色 / 记忆按钮（带使用计数）随时复核一致性。
