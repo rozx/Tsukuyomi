@@ -9,7 +9,8 @@ import {
   selectRelevantMemoriesForChunk,
 } from 'src/services/ai/tasks/utils/context-builder';
 import { MemoryService } from 'src/services/memory-service';
-import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
+import { EmbeddingService } from 'src/services/embedding-service';
+import { MEMORY_EMBEDDING_VERSION } from 'src/utils/memory-embedding-lookup';
 import type { Memory } from 'src/models/memory';
 import type { Terminology, CharacterSetting } from 'src/models/novel';
 
@@ -56,10 +57,10 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
     clearLastScoreBreakdowns();
   });
 
-  test('有关键词命中的记忆得分更高,排在前面', async () => {
+  test('高关键词覆盖的记忆被选中，弱匹配不用于凑数', async () => {
     const memories = [
       makeMemory('low', {
-        summary: '小明和明くん的魔法日常',
+        summary: '小明的普通日常',
         lastAccessedAt: Date.now() - 3600_000,
       }),
       makeMemory('high', {
@@ -80,11 +81,7 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
     );
 
     expect(result).toContain('[high]');
-    expect(result).toContain('[low]');
-    // 更近期的记忆得分更高
-    const highPos = result.indexOf('[high]');
-    const lowPos = result.indexOf('[low]');
-    expect(highPos).toBeLessThan(lowPos);
+    expect(result).not.toContain('[low]');
   });
 
   test('所有记忆低于 minScore 时严格返回空(不做 LRU 兜底)', async () => {
@@ -111,9 +108,7 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
       [],
     );
 
-    // 两条 memory 都无 keyword 命中,FALLBACK_WEIGHTS 下 total = kw × 0.75 + rec × 0.25:
-    //   recent 条:0 + 1 × 0.25 = 0.25 < 0.38 → 过滤
-    //   old 条:0 + ≈0 × 0.25 ≈ 0 → 过滤
+    // 两条 memory 都无 keyword 命中，访问时间不参与相关性，因此 total 都是 0。
     expect(result).toBe('');
   });
 
@@ -159,15 +154,15 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
     const memories = [
       makeMemory('first', {
         embeddings: [[1, 0, 0]],
-        embeddingModel: MODEL_VERSION,
+        embeddingModel: MEMORY_EMBEDDING_VERSION,
       }),
       makeMemory('later', {
         embeddings: [[0, 1, 0]],
-        embeddingModel: MODEL_VERSION,
+        embeddingModel: MEMORY_EMBEDDING_VERSION,
       }),
       makeMemory('unrelated', {
         embeddings: [[0, 0, 1]],
-        embeddingModel: MODEL_VERSION,
+        embeddingModel: MEMORY_EMBEDDING_VERSION,
       }),
     ];
     spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue(memories);

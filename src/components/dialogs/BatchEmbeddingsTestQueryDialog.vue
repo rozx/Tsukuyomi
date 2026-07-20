@@ -12,9 +12,6 @@ import {
   type ChapterQueryMatch,
 } from 'src/services/chapter-embedding-service';
 import { MemoryService } from 'src/services/memory-service';
-import { EmbeddingService } from 'src/services/embedding-service';
-import { isMemoryEmbeddingStale } from 'src/services/memory-service';
-import { cosineSimilarity } from 'src/utils/cosine-similarity';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Memory } from 'src/models/memory';
@@ -94,34 +91,16 @@ async function queryChaptersForDisplay(id: string, q: string): Promise<TestResul
   }));
 }
 
-// 记忆向量查询：对本地嵌入做余弦相似度打分，按分数降序取前 QUERY_LIMIT 条
-function scoreMemories(memories: Memory[], queryVec: Float32Array): TestResultItem[] {
-  const scored: TestResultItem[] = [];
-  for (const m of memories) {
-    if (isMemoryEmbeddingStale(m)) continue;
-    scored.push({
-      kind: 'memory' as const,
-      targetId: m.id,
-      title: (m.summary ?? '').trim() || '(无摘要)',
-      score: (m.embeddings ?? []).reduce(
-        (best, embedding) => Math.max(best, cosineSimilarity(queryVec, embedding)),
-        0,
-      ),
-      preview: (m.content ?? '').trim().slice(0, 160),
-    });
-  }
-  scored.sort((a, b) => b.score - a.score);
-  return scored;
-}
-
+// 记忆查询：直接复用生产环境的 dense + keyword 排名融合，保证测试结果与工具一致。
 async function queryMemoriesForDisplay(id: string, q: string): Promise<TestResultItem[]> {
-  if (!EmbeddingService.isReady()) {
-    throw new Error('EmbeddingService 未就绪');
-  }
-  const queryVec = await EmbeddingService.embed(q, 'query');
-  if (!queryVec) throw new Error('query embedding 计算失败');
-  const memories = await MemoryService.getAllBookMemories(id);
-  return scoreMemories(memories, queryVec).slice(0, QUERY_LIMIT);
+  const matches = await MemoryService.searchMemoriesWithScores(id, q, QUERY_LIMIT);
+  return matches.map(({ memory, breakdown }) => ({
+    kind: 'memory' as const,
+    targetId: memory.id,
+    title: (memory.summary ?? '').trim() || '(无摘要)',
+    score: breakdown.total,
+    preview: (memory.content ?? '').trim().slice(0, 160),
+  }));
 }
 
 async function runQuery(target: TestTarget): Promise<void> {

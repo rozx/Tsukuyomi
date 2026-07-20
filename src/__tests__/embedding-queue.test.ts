@@ -4,7 +4,7 @@ import './setup';
 import { createPinia, setActivePinia } from 'pinia';
 
 import { EmbeddingQueue } from 'src/services/embedding-queue';
-import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
+import { EmbeddingService } from 'src/services/embedding-service';
 import * as memoryEmbeddingLookup from 'src/utils/memory-embedding-lookup';
 import * as settingsLookup from 'src/utils/settings-lookup';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
@@ -47,7 +47,10 @@ describe('Memory embedding 状态', () => {
   test('当前模型的多向量为 ready，模型过期则为 stale', () => {
     expect(
       memoryEmbeddingLookup.getMemoryEmbeddingStatus(
-        makeMemory('ready', { embeddings: [[1, 0]], embeddingModel: MODEL_VERSION }),
+        makeMemory('ready', {
+          embeddings: [[1, 0]],
+          embeddingModel: memoryEmbeddingLookup.MEMORY_EMBEDDING_VERSION,
+        }),
       ),
     ).toBe('ready');
     expect(
@@ -96,7 +99,26 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     expect(embeddings).toHaveLength(1);
     expect(embeddings[0]![0]).toBeCloseTo(0.1, 5);
     expect(embeddings[0]![1]).toBeCloseTo(0.2, 5);
-    expect(call[2]).toBe(MODEL_VERSION);
+    expect(call[2]).toBe(memoryEmbeddingLookup.MEMORY_EMBEDDING_VERSION);
+  });
+
+  test('记忆摘要与正文分别嵌入，摘要不会被正文稀释', async () => {
+    const memory = makeMemory('summary-anchor', {
+      summary: '角色关系摘要',
+      content: '这里是正文内容',
+    });
+    spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockResolvedValue(memory);
+    spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(undefined);
+    const embedSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([
+      new Float32Array([1, 0]),
+      new Float32Array([0, 1]),
+    ]);
+
+    EmbeddingQueue.enqueue(memory.id);
+    await waitForIdle();
+
+    expect(embedSpy).toHaveBeenCalledTimes(1);
+    expect(embedSpy.mock.calls[0]?.[0]).toEqual(['角色关系摘要', '这里是正文内容']);
   });
 
   test('长记忆按短段嵌入并把全部向量聚合写回', async () => {
@@ -147,7 +169,7 @@ describe('EmbeddingQueue - 入队与批处理', () => {
   });
 
   test('按 BATCH_SIZE 切片处理', async () => {
-    // 入队 10 条 → 应分 2 批(8 + 2)
+    // 每条记忆的摘要与正文各一个 segment：10 条 → 20 个 jobs → 3 批(8 + 8 + 4)
     const ids = Array.from({ length: 10 }, (_, i) => `m${i}`);
     spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockImplementation(async (id: string) =>
       makeMemory(id),
@@ -161,10 +183,10 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     for (const id of ids) EmbeddingQueue.enqueue(id);
     await waitForIdle();
 
-    expect(embedBatchSpy).toHaveBeenCalledTimes(2);
-    // 第一批 8 条,第二批 2 条
+    expect(embedBatchSpy).toHaveBeenCalledTimes(3);
     expect((embedBatchSpy.mock.calls[0]?.[0] as string[]).length).toBe(8);
-    expect((embedBatchSpy.mock.calls[1]?.[0] as string[]).length).toBe(2);
+    expect((embedBatchSpy.mock.calls[1]?.[0] as string[]).length).toBe(8);
+    expect((embedBatchSpy.mock.calls[2]?.[0] as string[]).length).toBe(4);
   });
 
   test('总开关在处理过程中被关闭时:当前批次完成后立即停,剩余 pending 保留', async () => {
@@ -228,7 +250,7 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     await waitForIdle();
 
     expect(embedBatchSpy).toHaveBeenCalledTimes(1);
-    expect((embedBatchSpy.mock.calls[0]?.[0] as string[]).length).toBe(2);
+    expect((embedBatchSpy.mock.calls[0]?.[0] as string[]).length).toBe(4);
     expect(EmbeddingQueue.getProgress().pending).toBe(0);
   });
 
@@ -372,7 +394,7 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     const memories = [
       makeMemory('ok', {
         embeddings: [[0.1, 0.2]],
-        embeddingModel: MODEL_VERSION,
+        embeddingModel: memoryEmbeddingLookup.MEMORY_EMBEDDING_VERSION,
       }),
       makeMemory('missing'),
       makeMemory('stale', {
@@ -393,16 +415,16 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     expect(added).toBe(2);
     await waitForIdle();
 
-    // 只有 missing 和 stale 被送进 embedBatch
+    // 只有 missing 和 stale 被送进 embedBatch；每条各含摘要与正文两个 segment。
     const callTexts = (embedBatchSpy.mock.calls[0]?.[0] as string[]) ?? [];
-    expect(callTexts).toHaveLength(2);
+    expect(callTexts).toHaveLength(4);
   });
 
   test('enqueueBacklog 会升级只有旧单向量的长记忆', async () => {
     const legacyLongMemory = {
       ...makeMemory('legacy-long', {
         content: '旧版长记忆。'.repeat(220),
-        embeddingModel: MODEL_VERSION,
+        embeddingModel: memoryEmbeddingLookup.MEMORY_EMBEDDING_VERSION,
       }),
       embedding: [0.1, 0.2],
     } as Memory & { embedding: number[] };
@@ -525,8 +547,8 @@ describe('EmbeddingQueue - chapter kind', () => {
     expect(embedChapterSpy).toHaveBeenCalledTimes(2);
     // memory 之间被合批,而 ch-B 隔开第一批和第三批:ch-A → [m1,m2] → ch-B → [m3]
     expect(embedBatchSpy).toHaveBeenCalledTimes(2);
-    expect((embedBatchSpy.mock.calls[0]?.[0] as string[]).length).toBe(2);
-    expect((embedBatchSpy.mock.calls[1]?.[0] as string[]).length).toBe(1);
+    expect((embedBatchSpy.mock.calls[0]?.[0] as string[]).length).toBe(4);
+    expect((embedBatchSpy.mock.calls[1]?.[0] as string[]).length).toBe(2);
   });
 
   test('breakdown 字段分别统计 memory / chapter', async () => {
@@ -617,12 +639,12 @@ describe('EmbeddingQueue - chapter kind', () => {
 
     await waitForIdle();
 
-    // 两批,每批各自包含同书的两条
+    // 两批,每批各自包含同书两条记忆的摘要与正文。
     expect(embedBatchSpy).toHaveBeenCalledTimes(2);
     const batch1 = embedBatchSpy.mock.calls[0]?.[0] as string[];
     const batch2 = embedBatchSpy.mock.calls[1]?.[0] as string[];
-    expect(batch1.length).toBe(2);
-    expect(batch2.length).toBe(2);
+    expect(batch1.length).toBe(4);
+    expect(batch2.length).toBe(4);
   });
 
   test('enqueue 传入 bookId 后 currentTask 暴露该 bookId', async () => {

@@ -229,8 +229,8 @@ export interface ScoreBreakdown {
   recency: number; // 原始时间衰减因子 ∈ [0, 1]
   semanticWeighted: number; // semantic × 权重
   keywordWeighted: number; // keyword × 权重
-  recencyWeighted: number; // recency × 权重
-  total: number; // 三者加权和
+  recencyWeighted: number; // 保留兼容字段，相关性排序固定为 0
+  total: number; // 语义与关键词的融合分
 }
 
 export interface Translation {

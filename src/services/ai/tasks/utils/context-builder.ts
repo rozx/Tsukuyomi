@@ -18,7 +18,7 @@ import {
   DEFAULT_MIN_SCORE,
   type ScoredMemory,
 } from 'src/services/memory-scoring';
-import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
+import { EmbeddingService } from 'src/services/embedding-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { type TaskType, MAX_DESC_LEN } from './task-types';
 import { TASK_TYPE_LABELS } from 'src/constants/ai';
@@ -27,6 +27,7 @@ import { getCurrentStatusInfo } from '../prompts/common';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
 import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
+import { MEMORY_EMBEDDING_VERSION } from 'src/utils/memory-embedding-lookup';
 
 /**
  * 获取章节第一个“非空”段落的 ID（用于判断任务是否从章节中间开始）
@@ -253,7 +254,7 @@ export async function getRelatedMemoriesForChunkLegacy(
 }
 
 // ============================================================================
-// 三信号打分路径 — 任务级 chunk embedding 缓存 + 选中记忆的 breakdown 旁路
+// 混合相关性打分路径 — 任务级 chunk embedding 缓存 + 选中记忆的 breakdown 旁路
 // ============================================================================
 
 /**
@@ -292,7 +293,7 @@ export function clearLastScoreBreakdowns(bookId?: string): void {
 
 /**
  * 尝试计算 chunk 的分段语义向量。
- * - 语义检索未启用 / service 未就绪 → 返回空数组(调用方走纯关键词+时间衰减降级)
+ * - 语义检索未启用 / service 未就绪 → 返回空数组(调用方走纯关键词降级)
  * - 命中缓存直接返回
  */
 async function computeChunkEmbeddings(chunkText: string): Promise<Float32Array[]> {
@@ -352,7 +353,7 @@ export interface SelectedMemories {
  * 2. 从 terms/characters 构造 chunkEntities(关键词信号)
  * 3. 可选计算 chunk 语义向量(语义信号)
  * 4. 逐条打分 → 阈值过滤 → 字符预算填充
- * 5. 空选择时兜底 getRecentMemories(5)
+ * 5. 严格返回通过相关性门槛的记忆；不按访问时间凑数
  *
  * 同时写入 `lastScoreBreakdownsByBook`,供 translation-service 读取。
  */
@@ -429,7 +430,7 @@ export async function selectRelevantMemoriesForChunk(
     chunkEntities,
     chunkEmbeddings: chunkEmbeddings.length > 0 ? chunkEmbeddings : undefined,
     now: Date.now(),
-    expectedModelVersion: chunkEmbeddings.length > 0 ? MODEL_VERSION : undefined,
+    expectedModelVersion: chunkEmbeddings.length > 0 ? MEMORY_EMBEDDING_VERSION : undefined,
   });
 
   const { charBudget, minScore } = readMemoryInjectionBudget();
@@ -483,7 +484,7 @@ export async function getRelatedMemoriesForChunk(
     const lines = memories.map((m) => `  - [${m.id}] ${m.summary}`);
     return `\n\n【相关记忆】\n${lines.join('\n')}`;
   } catch (error) {
-    console.warn('[context-builder] 三信号打分失败,退回 legacy LRU:', error);
+    console.warn('[context-builder] 混合相关性打分失败,退回 legacy LRU:', error);
     return getRelatedMemoriesForChunkLegacy(bookId, chunkText, 15);
   }
 }

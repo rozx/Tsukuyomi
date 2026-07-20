@@ -16,18 +16,19 @@
  * - EmbeddingQueue 负责调度顺序、持久化与进度反馈
  *
  * 批处理策略:
- * - memory 先切成最多 12 个短段，再按 BATCH_SIZE(8) 嵌入并聚合为多向量写入
+ * - memory 摘要独立嵌入，正文切成最多 12 个短段，再按 BATCH_SIZE(8) 嵌入并聚合写入
  * - chapter 因为一章本身就是多 chunk 的一次完整嵌入,每次只处理一个 chapter,不与 memory 同批
  */
 
 import { createCustomEventSubscriber, dispatchCustomEvent } from 'src/utils/dispatch-custom-event';
-import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
+import { EmbeddingService } from 'src/services/embedding-service';
 import {
   getMemoryByIdFromDB,
   getAllBookMemoriesFromDB,
   isMemoryEmbeddingStale,
   updateMemoryEmbeddingInDB,
   lookupMemoryBookId,
+  MEMORY_EMBEDDING_VERSION,
 } from 'src/utils/memory-embedding-lookup';
 import { dispatchMemoryChanged, syncMemoryEmbeddingCaches } from 'src/services/memory-cache';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
@@ -101,13 +102,12 @@ interface BatchTiming {
 // memoryNeedsEmbedding 已收敛到 memory-service.isMemoryEmbeddingStale(单一事实源)。
 // 其它处也通过该 helper 判定 stale,保证 UI / backlog / 测试三方语义一致。
 
-function buildMemoryInput(memory: Memory): string {
+function buildMemorySegments(memory: Memory): string[] {
   const summary = (memory.summary ?? '').trim();
   const content = (memory.content ?? '').trim();
-  if (!summary && !content) return '';
-  if (!summary) return content;
-  if (!content) return summary;
-  return `${summary}\n\n${content}`;
+  const contentSegments = content ? splitTextForEmbedding(content) : [];
+  if (!summary) return contentSegments;
+  return [summary, ...contentSegments.filter((segment) => segment !== summary)];
 }
 
 export class EmbeddingQueue {
@@ -582,9 +582,7 @@ export class EmbeddingQueue {
         try {
           const mem = await getMemoryByIdFromDB(id);
           if (!mem) return null;
-          const text = buildMemoryInput(mem);
-          if (!text) return null;
-          const segments = splitTextForEmbedding(text);
+          const segments = buildMemorySegments(mem);
           if (segments.length === 0) return null;
           return { id, segments };
         } catch {
@@ -628,10 +626,10 @@ export class EmbeddingQueue {
           // 写 IDB（leaf）+ 同步进程内缓存 + 派发 'embedding-updated' 事件。
           // 全部走叶子模块（memory-embedding-lookup / memory-cache），避免 EmbeddingQueue
           // 反向 import MemoryService 形成循环依赖。
-          await updateMemoryEmbeddingInDB(entry.id, embeddings, MODEL_VERSION);
+          await updateMemoryEmbeddingInDB(entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
           const bookId = await lookupMemoryBookId(entry.id);
           if (bookId) {
-            syncMemoryEmbeddingCaches(bookId, entry.id, embeddings, MODEL_VERSION);
+            syncMemoryEmbeddingCaches(bookId, entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
             dispatchMemoryChanged({ bookId, memoryId: entry.id, action: 'embedding-updated' });
           }
         } catch (error) {

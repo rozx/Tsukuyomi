@@ -1,7 +1,8 @@
 /**
- * 记忆打分(三信号:语义 + 关键词 + 时间衰减)
+ * 记忆打分（语义 + 关键词；时间仅保留为展示信息）
  *
- * 公式: score = 0.6·semantic + 0.3·keyword + 0.1·recency
+ * 单条公式: score = 0.7·semantic + 0.3·keyword
+ * 批量查询使用 dense / keyword 的归一化 RRF 排名融合。
  * 最大分 = 1.0,默认阈值 0.38。
  */
 import type { Memory } from 'src/models/memory';
@@ -10,9 +11,9 @@ import { cosineSimilarity as calculateSemanticSim } from 'src/utils/cosine-simil
 export { calculateSemanticSim };
 
 export const SCORING_WEIGHTS = {
-  semantic: 0.6,
+  semantic: 0.7,
   keyword: 0.3,
-  recency: 0.1,
+  recency: 0,
 } as const;
 
 export const MAX_TOTAL_SCORE = 1.0;
@@ -33,27 +34,16 @@ export const DEFAULT_MIN_SCORE = 0.3;
  * 值按经验选定 — 可通过调用 filterByRelativeRanking 覆写。
  */
 const DEFAULT_TOP_K = 8;
-const DEFAULT_RELATIVE_DELTA = 0.08;
+const DEFAULT_RELATIVE_DELTA = 0.1;
 
-/**
- * 语义 spread 的下限阈值。
- *
- * mean-pooled 多语言 BERT 向量在同书同领域下会抱团 — 本次 query 对所有 memory
- * 的原始余弦可能全部落在 0.9±0.02 之间,此时"语义分数"没有任何区分度。
- * 若 stddev 低于此阈值,`scoreMemoriesBatch` 判定本批语义信号退化为噪声,整批
- * 把 semantic 设为 0(权重仍是 SCORING_WEIGHTS,不重新分配),让关键词和新近性
- * 来区分 — 避免把噪声当信号注入。
- *
- * 经验值:对 256 维 Matryoshka L2-normalized 向量,0.02 对应 ~2% 相对差异,
- * 低于这个量级几乎全是噪声。
- */
+/** 章节检索旧有 z-score 管线共用的 spread 下限；记忆检索已改用 RRF。 */
 export const SPREAD_FLOOR = 0.02;
 
-/**
- * z-score 归一化后的截断边界。raw cosine 距群体均值 ±Z_CLAMP·stddev 以外
- * 的映射到 [0, 1] 两端。设成 2 覆盖约 95% 正态分布区间。
- */
+/** 章节检索旧有 z-score 管线共用的截断边界；记忆检索已改用 RRF。 */
 export const Z_CLAMP = 2;
+
+/** RRF 平滑常数。记忆候选通常不超过 500，取 10 能保留足够的头部区分度。 */
+export const RANK_FUSION_K = 10;
 
 const RECENCY_HALF_LIFE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -77,8 +67,8 @@ export interface ScoringContext {
   rawQuery?: string | undefined;
   chunkEmbedding?: Float32Array | number[] | undefined;
   /**
-   * 长文本拆分后的多个查询向量。存在时优先于 `chunkEmbedding`,每条记忆使用与这些
-   * 查询向量的最高余弦作为原始语义信号,再参与整批 z-score 归一化。
+   * 长文本拆分后的多个查询向量。存在时优先于 `chunkEmbedding`；先做多分段稳健聚合，
+   * 再把结果作为 dense 排名信号参与 RRF。
    */
   chunkEmbeddings?: ReadonlyArray<Float32Array | number[]> | undefined;
   now: number;
@@ -377,33 +367,43 @@ function resolveMemoryEmbeddings(memory: Memory): EmbeddingVector[] {
   return [];
 }
 
-function calculateMaxSemantic(
+/**
+ * 多分段语义聚合。
+ *
+ * 摘要向量作为独立标题信号，不被正文稀释；正文同时考虑最佳与次佳分段，避免一个
+ * 偶然高余弦分段独占整条记忆。查询侧兼顾最佳子查询和全部子查询覆盖率，避免复合
+ * 查询只命中一个子问题就排到最前。
+ */
+export function calculateSegmentedSemanticSimilarity(
   memoryEmbeddings: EmbeddingVector[],
   chunkEmbeddings: EmbeddingVector[],
+  hasSummaryEmbedding = false,
 ): number {
-  let maxSimilarity = 0;
-  for (const memoryEmbedding of memoryEmbeddings) {
-    for (const chunkEmbedding of chunkEmbeddings) {
-      maxSimilarity = Math.max(
-        maxSimilarity,
-        calculateSemanticSim(memoryEmbedding, chunkEmbedding),
-      );
-    }
-  }
-  return maxSimilarity;
+  if (memoryEmbeddings.length === 0 || chunkEmbeddings.length === 0) return 0;
+
+  const perQueryScores = chunkEmbeddings.map((chunkEmbedding) => {
+    const summarySimilarity = hasSummaryEmbedding
+      ? calculateSemanticSim(memoryEmbeddings[0], chunkEmbedding)
+      : 0;
+    const contentEmbeddings = hasSummaryEmbedding ? memoryEmbeddings.slice(1) : memoryEmbeddings;
+    const contentSimilarities = contentEmbeddings
+      .map((memoryEmbedding) => calculateSemanticSim(memoryEmbedding, chunkEmbedding))
+      .sort((a, b) => b - a);
+    const bestContent = contentSimilarities[0] ?? 0;
+    const supportingContent = contentSimilarities[1] ?? bestContent;
+    const contentScore = bestContent * 0.7 + supportingContent * 0.3;
+    return Math.max(summarySimilarity, contentScore);
+  });
+  const bestQueryScore = Math.max(...perQueryScores);
+  const queryCoverage =
+    perQueryScores.reduce((sum, score) => sum + score, 0) / perQueryScores.length;
+  return bestQueryScore * 0.6 + queryCoverage * 0.4;
 }
 
-/**
- * 无语义信号时的降级权重:把原本给语义的 0.6 按 3:1 重新分配到 keyword 和 recency,
- * 使 keyword=0.75、recency=0.25,最大分仍为 1.0。
- *
- * 目的是让"有嵌入"与"无嵌入"两种模式的分数处于同一量级 —— 否则无嵌入时 max=0.4
- * 远低于用户习惯的 0.38 阈值,相关记忆会被误杀。FALLBACK 维持了 kw:rec = 3:1
- * 的相对比例(和主模式的 0.3:0.1 一致),只是把 semantic 空出来的权重补回去。
- */
+/** 无语义信号时只使用关键词相关性；访问时间不参与相关性排序。 */
 export const FALLBACK_WEIGHTS = {
-  keyword: 0.75,
-  recency: 0.25,
+  keyword: 1,
+  recency: 0,
 } as const;
 
 /**
@@ -420,7 +420,7 @@ function resolveKeyword(memory: Memory, context: ScoringContext): number {
 
 /**
  * 对单条记忆打分,返回完整 breakdown 结构体。
- * 当 embedding 不可用时切换 FALLBACK_WEIGHTS,避免分数天花板跌到 0.4。
+ * embedding 不可用时按原始关键词置信度降级，访问时间仅保留在 breakdown 中展示。
  */
 export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreakdown {
   const chunkEmbeddings = resolveChunkEmbeddings(context);
@@ -428,7 +428,13 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
   const versionOk =
     !context.expectedModelVersion || memory.embeddingModel === context.expectedModelVersion;
   const canUseSemantic = versionOk && chunkEmbeddings.length > 0 && memoryEmbeddings.length > 0;
-  const semantic = canUseSemantic ? calculateMaxSemantic(memoryEmbeddings, chunkEmbeddings) : 0;
+  const semantic = canUseSemantic
+    ? calculateSegmentedSemanticSimilarity(
+        memoryEmbeddings,
+        chunkEmbeddings,
+        Boolean(memory.summary?.trim()),
+      )
+    : 0;
   const keyword = resolveKeyword(memory, context);
   const recency = calculateRecencyFactor(memory, context.now);
 
@@ -458,14 +464,12 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
 }
 
 /**
- * Population-aware 批量打分 — 解决"所有 memory 向量抱团,绝对/相对阈值都失效"的场景。
+ * 批量打分：用 dense / keyword 的归一化 RRF 融合相对名次。
  *
  * 和 `scoreMemory` 单条打分的关键区别:
- * 1. 先算所有 memory 的 raw cosine,再对**本批**做 z-score 归一化,映射回 [0, 1]
- *    作为语义信号。这样即使绝对值全部在 0.92 附近,分数也能按相对偏离度拉开。
- * 2. 若本批 raw cosine 的 stddev 低于 `SPREAD_FLOOR`(或有效样本 <2),整批
- *    视为语义不可用,走 FALLBACK_WEIGHTS(keyword 0.75 / recency 0.25)。
- * 3. 单条无 embedding 或版本不匹配的 memory 也按 per-item 走 FALLBACK_WEIGHTS。
+ * 1. dense 先做多分段稳健聚合，再转成归一化 RRF 名次分，窄余弦分布也不会整批失效。
+ * 2. keyword 同样转成 RRF 名次分，但仍乘原始命中置信度，避免弱部分匹配被抬成高分。
+ * 3. 缺失某一路信号时，剩余信号的权重自动归一到 1；访问时间不参与排序。
  *
  * 返回与输入下标一一对应的 ScoredMemory 数组(未排序,保持输入顺序)。
  *
@@ -476,60 +480,47 @@ export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext):
 
   const chunkEmbeddings = resolveChunkEmbeddings(context);
 
-  // Pass 1:算所有 memory 的 raw cosine(不可用的记为 null)
+  // Pass 1:计算 dense 与 keyword 原始信号，再分别转成 RRF 名次分。
   const rawSemantics: Array<number | null> = memories.map((memory) => {
     const versionOk =
       !context.expectedModelVersion || memory.embeddingModel === context.expectedModelVersion;
     if (!versionOk) return null;
     const memoryEmbeddings = resolveMemoryEmbeddings(memory);
     if (chunkEmbeddings.length === 0 || memoryEmbeddings.length === 0) return null;
-    return calculateMaxSemantic(memoryEmbeddings, chunkEmbeddings);
+    return calculateSegmentedSemanticSimilarity(
+      memoryEmbeddings,
+      chunkEmbeddings,
+      Boolean(memory.summary?.trim()),
+    );
   });
 
-  // Pass 2:统计本批 raw cosine 的 mean/stddev,判定语义信号是否有区分度
-  const valid = rawSemantics.filter((r): r is number => r !== null);
-  let mean = 0;
-  let stddev = 0;
-  if (valid.length >= 2) {
-    mean = valid.reduce((a, b) => a + b, 0) / valid.length;
-    const variance = valid.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / valid.length;
-    stddev = Math.sqrt(variance);
-  }
-  // 只有一条 memory 或 spread 太小 → 语义不可用,整批降级
-  const semanticUsable = valid.length >= 2 && stddev >= SPREAD_FLOOR;
+  const rawKeywords = memories.map((memory) => resolveKeyword(memory, context));
+  const semanticRanks = calculateNormalizedRrfScores(rawSemantics);
+  const keywordRanks = calculateNormalizedRrfScores(
+    rawKeywords.map((keyword) => (keyword > 0 ? keyword : null)),
+  );
+  const hasSemantic = rawSemantics.some((semantic) => semantic !== null);
+  const hasKeyword = rawKeywords.some((keyword) => keyword > 0);
+  const availableWeight =
+    (hasSemantic ? SCORING_WEIGHTS.semantic : 0) + (hasKeyword ? SCORING_WEIGHTS.keyword : 0);
+  const semanticWeight =
+    availableWeight > 0 && hasSemantic ? SCORING_WEIGHTS.semantic / availableWeight : 0;
+  const keywordWeight =
+    availableWeight > 0 && hasKeyword ? SCORING_WEIGHTS.keyword / availableWeight : 0;
 
-  // Pass 3:逐条构造 breakdown
+  // Pass 2:逐条构造 breakdown。
   return memories.map((memory, i) => {
-    const raw = rawSemantics[i] ?? null;
-    const itemCanUse = semanticUsable && raw !== null;
-
-    // z-normalize 到 [0, 1]:(z + Z_CLAMP) / (2·Z_CLAMP),clamp 两端
-    const normalized =
-      itemCanUse && raw !== null
-        ? Math.min(1, Math.max(0, ((raw - mean) / stddev + Z_CLAMP) / (2 * Z_CLAMP)))
-        : 0;
-
-    const keyword = resolveKeyword(memory, context);
+    const semantic = semanticRanks[i] ?? 0;
+    const keyword = rawKeywords[i] ?? 0;
     const recency = calculateRecencyFactor(memory, context.now);
-
-    let semanticWeighted: number;
-    let keywordWeighted: number;
-    let recencyWeighted: number;
-    if (itemCanUse) {
-      semanticWeighted = normalized * SCORING_WEIGHTS.semantic;
-      keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
-      recencyWeighted = recency * SCORING_WEIGHTS.recency;
-    } else {
-      // 语义不可用(整批 spread 太小 / 该条版本不符 / 无向量)→ FALLBACK
-      semanticWeighted = 0;
-      keywordWeighted = keyword * FALLBACK_WEIGHTS.keyword;
-      recencyWeighted = recency * FALLBACK_WEIGHTS.recency;
-    }
+    const semanticWeighted = semantic * semanticWeight;
+    const keywordWeighted = keyword * (keywordRanks[i] ?? 0) * keywordWeight;
+    const recencyWeighted = 0;
 
     return {
       memory,
       breakdown: {
-        semantic: normalized,
+        semantic,
         keyword,
         recency,
         semanticWeighted,
@@ -539,6 +530,27 @@ export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext):
       },
     };
   });
+}
+
+/**
+ * 把一个信号列表转成 [0, 1] 的 RRF 排名分。相同原始分使用相同名次；null 不参赛。
+ */
+function calculateNormalizedRrfScores(values: Array<number | null>): number[] {
+  const ranked = values
+    .map((value, index) => ({ value, index }))
+    .filter((item): item is { value: number; index: number } => item.value !== null)
+    .sort((a, b) => b.value - a.value || a.index - b.index);
+  const scores = values.map(() => 0);
+  let lastValue: number | undefined;
+  let lastRank = 0;
+  ranked.forEach((item, sortedIndex) => {
+    if (lastValue === undefined || Math.abs(item.value - lastValue) > 1e-9) {
+      lastRank = sortedIndex + 1;
+      lastValue = item.value;
+    }
+    scores[item.index] = (RANK_FUSION_K + 1) / (RANK_FUSION_K + lastRank);
+  });
+  return scores;
 }
 
 /**

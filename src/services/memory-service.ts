@@ -2,6 +2,8 @@ import type { IDBPDatabase, IDBPIndex, IDBPObjectStore } from 'idb';
 import { getDB } from 'src/utils/indexed-db';
 import { generateShortId } from 'src/utils/id-generator';
 import type { Memory } from 'src/models/memory';
+import type { ScoredMemory } from 'src/services/memory-scoring';
+import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
 
 // 从 getDB() 的返回类型反推数据库 schema（TsukuyomiDB 未从 indexed-db.ts 导出）
 type MemoryDB = Awaited<ReturnType<typeof getDB>> extends IDBPDatabase<infer S> ? S : never;
@@ -21,6 +23,7 @@ import {
   storageToMemory as storageToMemoryWithEmbedding,
   updateMemoryEmbeddingInDB,
   lookupMemoryBookId,
+  MEMORY_EMBEDDING_VERSION,
 } from 'src/utils/memory-embedding-lookup';
 import {
   MEMORY_CACHE_MAX_SIZE,
@@ -697,13 +700,12 @@ export class MemoryService {
     }
   }
 
-  /**
-   * 搜索 Memory（三信号打分：语义 + 关键词 + 时间衰减）。
-   * 内部复用 memory-scoring 的 scoreMemory 统一管线，EmbeddingService 不可用时自动降级为纯关键词+时间衰减。
-   * 过滤条件：keyword > 0 或 total > minScore（读取用户设置的 minScoreThreshold，默认 0.34），
-   * 即只要有关键词命中就一定返回，否则按总分过滤。
-   */
-  static async searchMemories(bookId: string, query: string): Promise<Memory[]> {
+  /** 搜索 Memory，并返回与生产注入一致的完整分数。 */
+  static async searchMemoriesWithScores(
+    bookId: string,
+    query: string,
+    limit = 8,
+  ): Promise<ScoredMemory[]> {
     if (!bookId) {
       throw new Error('书籍 ID 不能为空');
     }
@@ -716,20 +718,34 @@ export class MemoryService {
     try {
       const allMemories = await this.getAllBookMemories(bookId);
 
-      let chunkEmbedding: Float32Array | undefined;
+      let chunkEmbeddings: Float32Array[] = [];
       let expectedModelVersion: string | undefined;
       try {
-        const { EmbeddingService, MODEL_VERSION } = await import('src/services/embedding-service');
+        const { EmbeddingService } = await import('src/services/embedding-service');
         if (EmbeddingService.isReady()) {
-          const vec = await EmbeddingService.embed(queryText, 'query');
-          if (vec) {
-            chunkEmbedding = vec;
-            // 当前 query 向量已对齐到 MODEL_VERSION,传入让 scoreMemory 跳过版本不符的 stale 记录
-            expectedModelVersion = MODEL_VERSION;
-          }
+          const querySegments = splitTextForEmbedding(queryText, {
+            targetChars: 800,
+            maxSegments: 4,
+          });
+          const vectors = await EmbeddingService.embedBatch(querySegments, 'query');
+          chunkEmbeddings = vectors.filter((vector): vector is Float32Array => vector !== null);
+          if (chunkEmbeddings.length > 0) expectedModelVersion = MEMORY_EMBEDDING_VERSION;
         }
       } catch {
         // 语义搜索不可用时静默降级
+      }
+
+      let expandedQuery = queryText;
+      try {
+        const [{ loadBookMetaFromDB }, { buildBookAliasIndex, expandQueryWithAliases }] =
+          await Promise.all([
+            import('src/utils/chapter-book-lookup'),
+            import('src/services/chapter-embedding-service'),
+          ]);
+        const book = await loadBookMetaFromDB(bookId);
+        expandedQuery = expandQueryWithAliases(queryText, buildBookAliasIndex(book));
+      } catch {
+        // 元数据不可用时保留原始 query
       }
 
       const { scoreMemoriesBatch, filterByRelativeRanking, DEFAULT_MIN_SCORE } =
@@ -739,8 +755,8 @@ export class MemoryService {
       // 部分匹配打分 — 对无空格 CJK 自然语言查询友好很多。chunkEntities 传空即可。
       const scored = scoreMemoriesBatch(allMemories, {
         chunkEntities: [],
-        rawQuery: queryText,
-        chunkEmbedding,
+        rawQuery: expandedQuery,
+        chunkEmbeddings: chunkEmbeddings.length > 0 ? chunkEmbeddings : undefined,
         now,
         expectedModelVersion,
       });
@@ -762,7 +778,7 @@ export class MemoryService {
       const absoluteFiltered = scored.filter((s) => s.breakdown.total >= minScore);
       // 相对排名收缩:针对语义余弦噪声地板高的场景,把候选从"全员高分"压成
       // "top 附近的少数突出项",避免工具向 AI 返回一大堆中庸匹配。
-      const filtered = filterByRelativeRanking(absoluteFiltered);
+      const filtered = filterByRelativeRanking(absoluteFiltered, Math.max(1, limit));
 
       const resultIds = filtered.map((s) => s.memory.id);
       if (resultIds.length > 0) {
@@ -771,11 +787,17 @@ export class MemoryService {
         });
       }
 
-      return filtered.map((s) => s.memory);
+      return filtered;
     } catch (error) {
       console.error('Failed to search memories:', error);
       throw new Error('搜索 Memory 失败');
     }
+  }
+
+  /** 搜索 Memory 的简化入口，只返回记忆实体。 */
+  static async searchMemories(bookId: string, query: string): Promise<Memory[]> {
+    const scored = await this.searchMemoriesWithScores(bookId, query);
+    return scored.map((item) => item.memory);
   }
 
   /**

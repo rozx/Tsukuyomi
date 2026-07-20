@@ -4,6 +4,7 @@ import {
   calculateKeywordHitRatio,
   calculateRecencyFactor,
   calculateSemanticSim,
+  calculateSegmentedSemanticSimilarity,
   calculateQueryKeywordScore,
   scoreMemory,
   scoreMemoriesBatch,
@@ -150,8 +151,39 @@ describe('memory-scoring - calculateSemanticSim', () => {
   });
 });
 
+describe('memory-scoring - 多分段语义聚合', () => {
+  test('持续匹配的多个分段应胜过单个偶然高匹配分段', () => {
+    const query = [[1, 0]];
+    const isolatedHit = [
+      [1, 0],
+      [0, 1],
+    ];
+    const consistentHit = [
+      [0.9, Math.sqrt(1 - 0.9 ** 2)],
+      [0.9, Math.sqrt(1 - 0.9 ** 2)],
+    ];
+
+    expect(calculateSegmentedSemanticSimilarity(consistentHit, query)).toBeGreaterThan(
+      calculateSegmentedSemanticSimilarity(isolatedHit, query),
+    );
+  });
+
+  test('摘要向量精准命中时不被无关正文分段稀释', () => {
+    const memoryEmbeddings = [
+      [1, 0],
+      [0, 1],
+      [0, 1],
+    ];
+
+    expect(calculateSegmentedSemanticSimilarity(memoryEmbeddings, [[1, 0]], true)).toBeCloseTo(
+      1,
+      5,
+    );
+  });
+});
+
 describe('memory-scoring - scoreMemory', () => {
-  test('完整三信号加权返回正确总分', () => {
+  test('语义与关键词加权返回正确总分，并保留时间展示值', () => {
     const now = 1_000_000_000;
     const memory = makeMemory({
       summary: '小明是学生',
@@ -186,8 +218,7 @@ describe('memory-scoring - scoreMemory', () => {
       now,
     });
 
-    // memory 没有 embedding,使用 FALLBACK_WEIGHTS:keyword=0.75、recency=0.25。
-    // 目的是让有/无嵌入两种模式的分数量级一致,用户的 minScore 阈值在两种模式下都可用。
+    // memory 没有 embedding 时只使用关键词置信度，访问时间不参与总分。
     expect(breakdown.semantic).toBe(0);
     expect(breakdown.keyword).toBeCloseTo(1, 5);
     expect(breakdown.recency).toBeCloseTo(1, 5);
@@ -220,11 +251,11 @@ describe('memory-scoring - scoreMemory', () => {
       chunkEmbedding: undefined,
       now,
     });
-    // keyword(2.0) + recency(1.0) = 3.0 >> 0.3
+    // 完整关键词命中得 1.0，高于默认阈值。
     expect(breakdown.total).toBeGreaterThan(DEFAULT_MIN_SCORE);
   });
 
-  test('只有时间衰减且已很久的记忆应低于阈值', () => {
+  test('没有相关性信号的记忆应低于阈值', () => {
     const now = 1_000_000_000;
     const memory = makeMemory({
       summary: '无关内容',
@@ -236,6 +267,23 @@ describe('memory-scoring - scoreMemory', () => {
       now,
     });
     expect(breakdown.total).toBeLessThan(DEFAULT_MIN_SCORE);
+  });
+
+  test('访问时间只用于展示，不改变相关性总分', () => {
+    const now = 1_000_000_000;
+    const recent = scoreMemory(makeMemory({ summary: '小明', lastAccessedAt: now }), {
+      chunkEntities: [{ name: '小明' }],
+      now,
+    });
+    const old = scoreMemory(
+      makeMemory({ summary: '小明', lastAccessedAt: now - 365 * MS_PER_DAY }),
+      { chunkEntities: [{ name: '小明' }], now },
+    );
+
+    expect(recent.recency).toBeGreaterThan(old.recency);
+    expect(recent.recencyWeighted).toBe(0);
+    expect(old.recencyWeighted).toBe(0);
+    expect(recent.total).toBeCloseTo(old.total, 6);
   });
 });
 
@@ -387,9 +435,8 @@ describe('memory-scoring - filterByRelativeRanking', () => {
 });
 
 describe('memory-scoring - scoreMemoriesBatch', () => {
-  // 构造一个"抱团"场景:8 条记忆的 embedding 都和 query 余弦 ≈ 0.93(差异 <0.005)。
-  // 这是 mean-pooled 多语言 BERT 对同书同领域 memory 的典型表现 —
-  // 期望整批降级到 FALLBACK_WEIGHTS,由 keyword 和 recency 来区分。
+  // 构造一个"抱团"场景:8 条记忆的 embedding 都和 query 极为接近。
+  // 新实现使用 RRF 保留相对顺序，并由 keyword 信号辅助排序，不再整批关闭 semantic。
   function makeEmbedding(values: number[]): number[] {
     // L2 归一化
     let norm = 0;
@@ -398,7 +445,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     return values.map((v) => v / (norm || 1));
   }
 
-  test('stddev 低于 SPREAD_FLOOR 时整批降级到 FALLBACK_WEIGHTS', () => {
+  test('stddev 很低时仍保留 RRF 语义排名并融合关键词', () => {
     // query 向量固定
     const query = makeEmbedding([1, 0, 0, 0]);
     // 8 条 memory 向量都和 query 极其接近(cosine ≈ 1.0,互相差异 <0.001)
@@ -428,25 +475,22 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
       now: 1_000_000_000,
     });
 
-    // 整批语义信号被判为不可用,每条 semantic 都是 0
+    // 即使 raw cosine 抱团，也保留相对语义名次。
     result.forEach((s) => {
-      expect(s.breakdown.semantic).toBe(0);
-      expect(s.breakdown.semanticWeighted).toBe(0);
+      expect(s.breakdown.semantic).toBeGreaterThan(0);
+      expect(s.breakdown.recencyWeighted).toBe(0);
     });
 
-    // 整批降级 → keyword 用 FALLBACK_WEIGHTS.keyword(0.75)加权
+    // m3 是唯一关键词命中，得到 keyword 排名融合加成。
     const m3 = result.find((s) => s.memory.id === 'm3')!;
-    expect(m3.breakdown.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
+    expect(m3.breakdown.keywordWeighted).toBeCloseTo(SCORING_WEIGHTS.keyword, 5);
 
-    // m3 应该是排名最高的(有 keyword 命中 + recency 高)
+    // m3 应该是排名最高的（有关键词命中）。
     result.sort((a, b) => b.breakdown.total - a.breakdown.total);
     expect(result[0]!.memory.id).toBe('m3');
-
-    // 旧 memory(m7)因 recency 衰减,应该排在末尾
-    expect(result[result.length - 1]!.memory.id).toBe('m7');
   });
 
-  test('spread 足够时启用 z-score 归一化', () => {
+  test('spread 足够时按 RRF 名次归一化', () => {
     const query = makeEmbedding([1, 0, 0]);
     // 3 条 memory:一条高相关、一条中、一条低相关(余弦差距足够大)
     const high = makeEmbedding([1, 0.1, 0]);
@@ -471,7 +515,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     const resultById = new Map(result.map((s) => [s.memory.id, s]));
     const highSem = resultById.get('high')!.breakdown.semantic;
     const lowSem = resultById.get('low')!.breakdown.semantic;
-    expect(highSem).toBeGreaterThan(lowSem + 0.3); // 归一化后差距至少 0.3
+    expect(highSem).toBeGreaterThan(lowSem + 0.1);
 
     // 归一化值必须在 [0, 1]
     result.forEach((s) => {
@@ -479,16 +523,32 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
       expect(s.breakdown.semantic).toBeLessThanOrEqual(1);
     });
 
-    // 不变式:semantic * WEIGHT === semanticWeighted
+    // 当前批只有 dense 信号，权重会归一到 1，避免总分上限被压到 0.7。
     result.forEach((s) => {
-      expect(s.breakdown.semanticWeighted).toBeCloseTo(
-        s.breakdown.semantic * SCORING_WEIGHTS.semantic,
-        6,
-      );
+      expect(s.breakdown.semanticWeighted).toBeCloseTo(s.breakdown.semantic, 6);
     });
   });
 
-  test('多个查询分段对每条记忆取最高余弦后统一归一化', () => {
+  test('余弦分布很窄时仍保留 dense 排名信号', () => {
+    const query = makeEmbedding([1, 0, 0]);
+    const memories = [
+      makeMemory({ id: 'best', embeddings: [makeEmbedding([1, 0.02, 0])] }),
+      makeMemory({ id: 'middle', embeddings: [makeEmbedding([1, 0.12, 0])] }),
+      makeMemory({ id: 'last', embeddings: [makeEmbedding([1, 0.2, 0])] }),
+    ];
+
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [],
+      chunkEmbedding: query,
+      now: Date.now(),
+    });
+    const byId = new Map(result.map((item) => [item.memory.id, item.breakdown]));
+
+    expect(byId.get('best')!.semantic).toBeGreaterThan(byId.get('middle')!.semantic);
+    expect(byId.get('middle')!.semantic).toBeGreaterThan(byId.get('last')!.semantic);
+  });
+
+  test('多个查询分段按覆盖率聚合后统一做排名融合', () => {
     const memories: Memory[] = [
       makeMemory({ id: 'first' }),
       makeMemory({ id: 'later' }),
@@ -506,10 +566,10 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
 
     const byId = new Map(result.map((item) => [item.memory.id, item.breakdown]));
     expect(byId.get('first')!.semantic).toBeCloseTo(byId.get('later')!.semantic, 5);
-    expect(byId.get('first')!.semantic).toBeGreaterThan(byId.get('unrelated')!.semantic + 0.3);
+    expect(byId.get('first')!.semantic).toBeGreaterThan(byId.get('unrelated')!.semantic + 0.1);
   });
 
-  test('长记忆的后续分段命中查询时使用最高语义相似度', () => {
+  test('长记忆的后续分段命中查询时保留强语义信号', () => {
     const query = makeEmbedding([1, 0, 0]);
     const memories: Memory[] = [
       makeMemory({
@@ -555,6 +615,24 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     expect(a.breakdown.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
   });
 
+  test('关键词排名融合保留原始命中置信度，不把弱部分匹配抬到接近满分', () => {
+    const memories: Memory[] = [
+      makeMemory({ id: 'exact', summary: '芬恩敬语规则' }),
+      makeMemory({ id: 'partial', summary: '芬恩的其他设定' }),
+    ];
+
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [],
+      rawQuery: '芬恩敬语规则',
+      now: Date.now(),
+    });
+    const byId = new Map(result.map((item) => [item.memory.id, item.breakdown]));
+
+    expect(byId.get('exact')!.keywordWeighted).toBeCloseTo(1, 5);
+    expect(byId.get('partial')!.keyword).toBeLessThan(0.5);
+    expect(byId.get('partial')!.keywordWeighted).toBeLessThan(0.5);
+  });
+
   test('expectedModelVersion 不匹配的 memory 按 per-item 降级', () => {
     const query = makeEmbedding([1, 0, 0]);
     const vA = makeEmbedding([1, 0.1, 0]); // 和 query 相似
@@ -575,10 +653,10 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     });
 
     const byId = new Map(result.map((s) => [s.memory.id, s]));
-    // c 被当作无 semantic,走 FALLBACK_WEIGHTS(0.75)
+    // c 被当作无 semantic，但仍可通过 keyword 排名通道参与融合。
     expect(byId.get('c')!.breakdown.semantic).toBe(0);
-    expect(byId.get('c')!.breakdown.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
-    // a、b 语义值正常计算(spread 足够大)
+    expect(byId.get('c')!.breakdown.keywordWeighted).toBeCloseTo(SCORING_WEIGHTS.keyword, 5);
+    // a、b 语义值正常计算。
     expect(byId.get('a')!.breakdown.semantic).toBeGreaterThan(0);
   });
 
@@ -586,7 +664,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     expect(scoreMemoriesBatch([], { chunkEntities: [], now: 0 })).toEqual([]);
   });
 
-  test('单条 memory 时 semantic 无法计算,走 FALLBACK_WEIGHTS', () => {
+  test('单条 memory 时仍保留语义和关键词信号', () => {
     const memories: Memory[] = [makeMemory({ id: 'only', summary: '小明' })];
     memories[0]!.embeddings = [makeEmbedding([1, 0, 0])];
     const result = scoreMemoriesBatch(memories, {
@@ -594,9 +672,9 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
       chunkEmbedding: makeEmbedding([1, 0, 0]),
       now: Date.now(),
     });
-    // 单条无法判断 spread,保守走 FALLBACK 降级
-    expect(result[0]!.breakdown.semantic).toBe(0);
-    expect(result[0]!.breakdown.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
+    expect(result[0]!.breakdown.semantic).toBe(1);
+    expect(result[0]!.breakdown.semanticWeighted).toBeCloseTo(SCORING_WEIGHTS.semantic, 5);
+    expect(result[0]!.breakdown.keywordWeighted).toBeCloseTo(SCORING_WEIGHTS.keyword, 5);
   });
 
   test('保持输入顺序(未按分数排序)', () => {
@@ -675,7 +753,7 @@ describe('memory-scoring - calculateQueryKeywordScore (CJK 部分匹配)', () =>
       rawQuery: '闇のマリアンヌ 应该怎么翻译 有没有统一规则',
       now,
     });
-    // 无 embedding → FALLBACK_WEIGHTS;max(部分匹配) × 0.75 + recency × 0.25
+    // 无 embedding → FALLBACK_WEIGHTS；仅按部分关键词匹配评分。
     expect(breakdown.total).toBeGreaterThanOrEqual(DEFAULT_MIN_SCORE);
   });
 

@@ -13,6 +13,9 @@ import type { Memory } from 'src/models/memory';
 import { MODEL_VERSION } from 'src/services/embedding-service';
 import { LOCAL_EMBEDDING_SEGMENT_TARGET_CHARS } from 'src/utils/embedding-text-segments';
 
+/** Memory 专用分段布局版本。布局变化时触发重新生成，不影响章节向量。 */
+export const MEMORY_EMBEDDING_VERSION = `${MODEL_VERSION}@ms2`;
+
 /**
  * Memory 存储结构（IndexedDB）
  */
@@ -58,7 +61,7 @@ export function isMemoryEmbeddingStale(memory: {
   const segmentEmbeddingCount =
     memory.embeddings?.filter((embedding) => embedding.length > 0).length ?? 0;
   if (segmentEmbeddingCount === 0) return true;
-  if (memory.embeddingModel !== MODEL_VERSION) return true;
+  if (memory.embeddingModel !== MEMORY_EMBEDDING_VERSION) return true;
   const sourceLength = [memory.summary, memory.content]
     .map((text) => text?.trim() ?? '')
     .filter(Boolean)

@@ -264,8 +264,8 @@ export const TITLE_INPUT_MAX_CHARS = 300;
 export const TITLE_CHUNK_INDEX = 0;
 
 // ===== 混合打分参数 =====
-// 与 [memory-scoring.ts] 的 SCORING_WEIGHTS(0.6/0.3/0.1)同源 — 这里去掉 recency
-// 那 0.1 重分配到 semantic(章节级 query 没有"新近性"概念,recency 不适用)。
+// 章节检索保留独立调优后的 0.65 / 0.35 权重；记忆检索已使用 0.7 / 0.3 RRF，
+// 两条管线的候选粒度和查询用途不同，不再共享权重推导。
 /** 章节级 semantic 在最终 total 中的权重 */
 const CHAPTER_SEMANTIC_WEIGHT = 0.65;
 /** 章节级 keyword 在最终 total 中的权重 */
