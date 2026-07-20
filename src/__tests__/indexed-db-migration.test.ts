@@ -136,11 +136,11 @@ describe('IndexedDB v9 硬迁移', () => {
       summary: 'fresh summary',
       createdAt: Date.now(),
       lastAccessedAt: Date.now(),
-      embedding: [0.1, 0.2, 0.3],
+      embeddings: [[0.1, 0.2, 0.3]],
       embeddingModel: 'test@256',
     });
     const fetched = await db.get('memories', 'new_mem');
     expect(fetched?.content).toBe('fresh content');
-    expect(fetched?.embedding).toHaveLength(3);
+    expect(fetched?.embeddings).toEqual([[0.1, 0.2, 0.3]]);
   });
 });

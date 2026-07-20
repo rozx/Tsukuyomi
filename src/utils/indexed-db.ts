@@ -93,7 +93,7 @@ interface TsukuyomiDB extends DBSchema {
       summary: string;
       createdAt: number;
       lastAccessedAt: number;
-      embedding?: number[];
+      embeddings?: number[][];
       embeddingModel?: string;
     };
     indexes: {
@@ -305,24 +305,22 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
       },
       blocked() {
         dbBlocked = true;
-        console.warn(
-          '[indexed-db] 数据库升级被阻塞，请关闭其他使用本应用的标签页后刷新',
-        );
+        console.warn('[indexed-db] 数据库升级被阻塞，请关闭其他使用本应用的标签页后刷新');
       },
       blocking() {
-        console.warn(
-          '[indexed-db] 当前标签页正在阻止其他标签页的数据库升级，建议刷新此页面',
-        );
+        console.warn('[indexed-db] 当前标签页正在阻止其他标签页的数据库升级，建议刷新此页面');
       },
-    }).then((db) => {
-      console.info('[indexed-db] 数据库打开成功');
-      return db;
-    }).catch((error) => {
-      console.error('[indexed-db] 数据库打开失败:', error);
-      // 重置缓存，允许后续重试
-      dbPromise = null;
-      throw error;
-    });
+    })
+      .then((db) => {
+        console.info('[indexed-db] 数据库打开成功');
+        return db;
+      })
+      .catch((error) => {
+        console.error('[indexed-db] 数据库打开失败:', error);
+        // 重置缓存，允许后续重试
+        dbPromise = null;
+        throw error;
+      });
   }
 
   return dbPromise;

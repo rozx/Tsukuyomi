@@ -34,7 +34,7 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
     createdAt: overrides.createdAt ?? 0,
     lastAccessedAt: overrides.lastAccessedAt ?? 0,
   };
-  if (overrides.embedding !== undefined) mem.embedding = overrides.embedding;
+  if (overrides.embeddings !== undefined) mem.embeddings = overrides.embeddings;
   if (overrides.embeddingModel !== undefined) mem.embeddingModel = overrides.embeddingModel;
   return mem;
 }
@@ -156,7 +156,7 @@ describe('memory-scoring - scoreMemory', () => {
     const memory = makeMemory({
       summary: '小明是学生',
       content: '',
-      embedding: [1, 0],
+      embeddings: [[1, 0]],
       lastAccessedAt: now,
     });
     const breakdown = scoreMemory(memory, {
@@ -191,10 +191,22 @@ describe('memory-scoring - scoreMemory', () => {
     expect(breakdown.semantic).toBe(0);
     expect(breakdown.keyword).toBeCloseTo(1, 5);
     expect(breakdown.recency).toBeCloseTo(1, 5);
-    expect(breakdown.total).toBeCloseTo(
-      FALLBACK_WEIGHTS.keyword + FALLBACK_WEIGHTS.recency,
-      5,
-    );
+    expect(breakdown.total).toBeCloseTo(FALLBACK_WEIGHTS.keyword + FALLBACK_WEIGHTS.recency, 5);
+  });
+
+  test('旧单向量 embedding 字段不再参与语义评分', () => {
+    const legacyMemory = { ...makeMemory(), embedding: [1, 0] } as Memory & {
+      embedding: number[];
+    };
+
+    const breakdown = scoreMemory(legacyMemory, {
+      chunkEntities: [],
+      chunkEmbedding: new Float32Array([1, 0]),
+      now: Date.now(),
+    });
+
+    expect(breakdown.semantic).toBe(0);
+    expect(breakdown.semanticWeighted).toBe(0);
   });
 
   test('新记忆无向量仍可通过默认阈值', () => {
@@ -253,11 +265,7 @@ describe('memory-scoring - selectByBudget', () => {
   });
 
   test('按分数降序返回', () => {
-    const list = [
-      scored('low', 'aa', 1.0),
-      scored('high', 'bb', 5.0),
-      scored('mid', 'cc', 3.0),
-    ];
+    const list = [scored('low', 'aa', 1.0), scored('high', 'bb', 5.0), scored('mid', 'cc', 3.0)];
     const result = selectByBudget(list, 2000, 25, 0.3, LOOSE_TOPK, LOOSE_DELTA);
     expect(result.map((m) => m.id)).toEqual(['high', 'mid', 'low']);
   });
@@ -275,9 +283,7 @@ describe('memory-scoring - selectByBudget', () => {
   });
 
   test('超过 hardCap 停止填充', () => {
-    const list = Array.from({ length: 30 }, (_, i) =>
-      scored(`m${i}`, 's', 5.0 - i * 0.1),
-    );
+    const list = Array.from({ length: 30 }, (_, i) => scored(`m${i}`, 's', 5.0 - i * 0.1));
     const result = selectByBudget(list, 100_000, 5, 0.3, LOOSE_TOPK, LOOSE_DELTA);
     expect(result).toHaveLength(5);
     expect(result.map((m) => m.id)).toEqual(['m0', 'm1', 'm2', 'm3', 'm4']);
@@ -305,9 +311,9 @@ describe('memory-scoring - selectByBudget', () => {
     const list = [
       scored('a', 's', 0.85),
       scored('b', 's', 0.82),
-      scored('c', 's', 0.70), // 距 top 0.15 > 默认 delta 0.08
+      scored('c', 's', 0.7), // 距 top 0.15 > 默认 delta 0.08
       scored('d', 's', 0.66),
-      scored('e', 's', 0.60),
+      scored('e', 's', 0.6),
     ];
     const result = selectByBudget(list);
     // a、b 在 0.08 窗口内被保留;c、d、e 被挤出
@@ -346,25 +352,25 @@ describe('memory-scoring - filterByRelativeRanking', () => {
   test('relativeDelta 窗口剔除远低于 top 的条目', () => {
     const list = [
       scored('a', 0.85),
-      scored('b', 0.80), // 距 top 0.05,在 delta=0.08 内
-      scored('c', 0.70), // 距 top 0.15,被剔除
-      scored('d', 0.50),
+      scored('b', 0.8), // 距 top 0.05,在 delta=0.08 内
+      scored('c', 0.7), // 距 top 0.15,被剔除
+      scored('d', 0.5),
     ];
     const result = filterByRelativeRanking(list, 999, 0.08);
     expect(result.map((s) => s.memory.id)).toEqual(['a', 'b']);
   });
 
   test('所有分数都接近 top 时保留所有(质量均衡)', () => {
-    const list = [scored('a', 0.80), scored('b', 0.79), scored('c', 0.78)];
+    const list = [scored('a', 0.8), scored('b', 0.79), scored('c', 0.78)];
     const result = filterByRelativeRanking(list, 999, 0.08);
     expect(result).toHaveLength(3);
   });
 
   test('top-K 与 delta 同时生效:先截 top-K 再在窗口内收缩', () => {
     const list = [
-      scored('a', 0.90),
+      scored('a', 0.9),
       scored('b', 0.85),
-      scored('c', 0.80), // top-K=3 边界
+      scored('c', 0.8), // top-K=3 边界
       scored('d', 0.79), // 被 top-K 切掉
     ];
     // topK=3 先切到 [a,b,c],delta=0.08 窗口内 a(0.90)、b(0.85 在 0.82 以上)、c(0.80 低于 0.82 剔除)
@@ -414,7 +420,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
         lastAccessedAt: i === 7 ? 0 : 1_000_000_000,
       }),
     );
-    memories.forEach((m, i) => (m.embedding = tightCluster[i]!));
+    memories.forEach((m, i) => (m.embeddings = [tightCluster[i]!]));
 
     const result = scoreMemoriesBatch(memories, {
       chunkEntities: [{ name: '小明' }],
@@ -451,9 +457,9 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
       makeMemory({ id: 'mid' }),
       makeMemory({ id: 'low' }),
     ];
-    memories[0]!.embedding = high;
-    memories[1]!.embedding = mid;
-    memories[2]!.embedding = low;
+    memories[0]!.embeddings = [high];
+    memories[1]!.embeddings = [mid];
+    memories[2]!.embeddings = [low];
 
     const result = scoreMemoriesBatch(memories, {
       chunkEntities: [],
@@ -482,6 +488,55 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     });
   });
 
+  test('多个查询分段对每条记忆取最高余弦后统一归一化', () => {
+    const memories: Memory[] = [
+      makeMemory({ id: 'first' }),
+      makeMemory({ id: 'later' }),
+      makeMemory({ id: 'unrelated' }),
+    ];
+    memories[0]!.embeddings = [makeEmbedding([1, 0, 0])];
+    memories[1]!.embeddings = [makeEmbedding([0, 1, 0])];
+    memories[2]!.embeddings = [makeEmbedding([0, 0, 1])];
+
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [],
+      chunkEmbeddings: [makeEmbedding([1, 0, 0]), makeEmbedding([0, 1, 0])],
+      now: Date.now(),
+    });
+
+    const byId = new Map(result.map((item) => [item.memory.id, item.breakdown]));
+    expect(byId.get('first')!.semantic).toBeCloseTo(byId.get('later')!.semantic, 5);
+    expect(byId.get('first')!.semantic).toBeGreaterThan(byId.get('unrelated')!.semantic + 0.3);
+  });
+
+  test('长记忆的后续分段命中查询时使用最高语义相似度', () => {
+    const query = makeEmbedding([1, 0, 0]);
+    const memories: Memory[] = [
+      makeMemory({
+        id: 'multi-vector',
+        embeddings: [makeEmbedding([0, 1, 0]), makeEmbedding([1, 0, 0])],
+      }),
+      makeMemory({
+        id: 'partial-match',
+        embeddings: [makeEmbedding([0.6, 0.8, 0])],
+      }),
+      makeMemory({
+        id: 'unrelated',
+        embeddings: [makeEmbedding([0.1, 0.995, 0])],
+      }),
+    ];
+
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [],
+      chunkEmbedding: query,
+      now: Date.now(),
+    });
+
+    const byId = new Map(result.map((item) => [item.memory.id, item.breakdown]));
+    expect(byId.get('multi-vector')!.semantic).toBeGreaterThan(byId.get('partial-match')!.semantic);
+    expect(byId.get('partial-match')!.semantic).toBeGreaterThan(byId.get('unrelated')!.semantic);
+  });
+
   test('无 chunkEmbedding 时整批 semantic=0,keyword 走 FALLBACK_WEIGHTS', () => {
     const memories: Memory[] = [
       makeMemory({ id: 'a', summary: '小明' }),
@@ -506,10 +561,10 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     const vB = makeEmbedding([0, 1, 0]); // 不相似
     const vC = makeEmbedding([1, 0.1, 0.05]); // 相似
     const memories: Memory[] = [
-      makeMemory({ id: 'a', summary: '', embedding: vA, embeddingModel: 'v-new' }),
-      makeMemory({ id: 'b', summary: '', embedding: vB, embeddingModel: 'v-new' }),
+      makeMemory({ id: 'a', summary: '', embeddings: [vA], embeddingModel: 'v-new' }),
+      makeMemory({ id: 'b', summary: '', embeddings: [vB], embeddingModel: 'v-new' }),
       // c 版本不匹配 → semantic 退化,但别人可以用
-      makeMemory({ id: 'c', summary: '小明', embedding: vC, embeddingModel: 'v-old' }),
+      makeMemory({ id: 'c', summary: '小明', embeddings: [vC], embeddingModel: 'v-old' }),
     ];
 
     const result = scoreMemoriesBatch(memories, {
@@ -522,10 +577,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     const byId = new Map(result.map((s) => [s.memory.id, s]));
     // c 被当作无 semantic,走 FALLBACK_WEIGHTS(0.75)
     expect(byId.get('c')!.breakdown.semantic).toBe(0);
-    expect(byId.get('c')!.breakdown.keywordWeighted).toBeCloseTo(
-      FALLBACK_WEIGHTS.keyword,
-      5,
-    );
+    expect(byId.get('c')!.breakdown.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
     // a、b 语义值正常计算(spread 足够大)
     expect(byId.get('a')!.breakdown.semantic).toBeGreaterThan(0);
   });
@@ -536,7 +588,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
 
   test('单条 memory 时 semantic 无法计算,走 FALLBACK_WEIGHTS', () => {
     const memories: Memory[] = [makeMemory({ id: 'only', summary: '小明' })];
-    memories[0]!.embedding = makeEmbedding([1, 0, 0]);
+    memories[0]!.embeddings = [makeEmbedding([1, 0, 0])];
     const result = scoreMemoriesBatch(memories, {
       chunkEntities: [{ name: '小明' }],
       chunkEmbedding: makeEmbedding([1, 0, 0]),
@@ -544,10 +596,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     });
     // 单条无法判断 spread,保守走 FALLBACK 降级
     expect(result[0]!.breakdown.semantic).toBe(0);
-    expect(result[0]!.breakdown.keywordWeighted).toBeCloseTo(
-      FALLBACK_WEIGHTS.keyword,
-      5,
-    );
+    expect(result[0]!.breakdown.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
   });
 
   test('保持输入顺序(未按分数排序)', () => {
@@ -557,9 +606,9 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
       makeMemory({ id: 'b' }),
       makeMemory({ id: 'c' }),
     ];
-    memories[0]!.embedding = makeEmbedding([0.1, 1, 0]); // low
-    memories[1]!.embedding = makeEmbedding([1, 0, 0]); // high
-    memories[2]!.embedding = makeEmbedding([0.5, 0.5, 0]); // mid
+    memories[0]!.embeddings = [makeEmbedding([0.1, 1, 0])]; // low
+    memories[1]!.embeddings = [makeEmbedding([1, 0, 0])]; // high
+    memories[2]!.embeddings = [makeEmbedding([0.5, 0.5, 0])]; // mid
 
     const result = scoreMemoriesBatch(memories, {
       chunkEntities: [],
@@ -594,10 +643,7 @@ describe('memory-scoring - calculateQueryKeywordScore (CJK 部分匹配)', () =>
     // query 切成 3 个单元:"闇のマリアンヌ"(7)/"应该怎么翻译"(6)/"有没有统一规则"(7)
     // memory 里有 "闇の"(2/7)/"翻译"(2/6)/"规则"(2/7)
     const memory = makeMemory({ summary: '翻译规则:闇の[角色名]统一译为暗黑[角色名]' });
-    const score = calculateQueryKeywordScore(
-      '闇のマリアンヌ 应该怎么翻译，有没有统一规则',
-      memory,
-    );
+    const score = calculateQueryKeywordScore('闇のマリアンヌ 应该怎么翻译，有没有统一规则', memory);
     // 期望平均 ≈ (2/7 + 2/6 + 2/7) / 3 ≈ 0.302
     expect(score).toBeGreaterThan(0.25);
     expect(score).toBeLessThan(0.4);
@@ -691,7 +737,7 @@ describe('memory-scoring - calculateQueryKeywordScore (CJK 部分匹配)', () =>
     // 当 memory summary 完全匹配某个子问题时,分数应显著高于只沾一点边的 memory
     const preciseMatch = makeMemory({
       id: 'precise',
-      summary: '瓦西里的称号是什么',  // 和子问题字面一致
+      summary: '瓦西里的称号是什么', // 和子问题字面一致
     });
     const partialMatch = makeMemory({
       id: 'partial',

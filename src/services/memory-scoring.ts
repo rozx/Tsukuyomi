@@ -76,6 +76,11 @@ export interface ScoringContext {
    */
   rawQuery?: string | undefined;
   chunkEmbedding?: Float32Array | number[] | undefined;
+  /**
+   * 长文本拆分后的多个查询向量。存在时优先于 `chunkEmbedding`,每条记忆使用与这些
+   * 查询向量的最高余弦作为原始语义信号,再参与整批 z-score 归一化。
+   */
+  chunkEmbeddings?: ReadonlyArray<Float32Array | number[]> | undefined;
   now: number;
   /**
    * 期望的 embedding 模型版本。传入时,`memory.embeddingModel` 与之不匹配的记录
@@ -355,19 +360,37 @@ export function calculateRecencyFactor(memory: Memory, now: number): number {
   return Math.exp(-ageDays / RECENCY_HALF_LIFE_DAYS);
 }
 
-/**
- * 判断是否可以计算语义相似度(双方都有 embedding 时才行)
- */
-function hasEmbeddings(
-  memoryEmbedding: number[] | Float32Array | undefined | null,
-  chunkEmbedding: number[] | Float32Array | undefined | null,
-): boolean {
-  return !!(
-    memoryEmbedding &&
-    memoryEmbedding.length > 0 &&
-    chunkEmbedding &&
-    chunkEmbedding.length > 0
-  );
+type EmbeddingVector = number[] | Float32Array;
+
+function resolveChunkEmbeddings(context: ScoringContext): EmbeddingVector[] {
+  const chunkEmbeddings = context.chunkEmbeddings?.filter((embedding) => embedding.length > 0);
+  if (chunkEmbeddings && chunkEmbeddings.length > 0) return [...chunkEmbeddings];
+  if (context.chunkEmbedding && context.chunkEmbedding.length > 0) {
+    return [context.chunkEmbedding];
+  }
+  return [];
+}
+
+function resolveMemoryEmbeddings(memory: Memory): EmbeddingVector[] {
+  const embeddings = memory.embeddings?.filter((embedding) => embedding.length > 0);
+  if (embeddings && embeddings.length > 0) return [...embeddings];
+  return [];
+}
+
+function calculateMaxSemantic(
+  memoryEmbeddings: EmbeddingVector[],
+  chunkEmbeddings: EmbeddingVector[],
+): number {
+  let maxSimilarity = 0;
+  for (const memoryEmbedding of memoryEmbeddings) {
+    for (const chunkEmbedding of chunkEmbeddings) {
+      maxSimilarity = Math.max(
+        maxSimilarity,
+        calculateSemanticSim(memoryEmbedding, chunkEmbedding),
+      );
+    }
+  }
+  return maxSimilarity;
 }
 
 /**
@@ -400,12 +423,12 @@ function resolveKeyword(memory: Memory, context: ScoringContext): number {
  * 当 embedding 不可用时切换 FALLBACK_WEIGHTS,避免分数天花板跌到 0.4。
  */
 export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreakdown {
+  const chunkEmbeddings = resolveChunkEmbeddings(context);
+  const memoryEmbeddings = resolveMemoryEmbeddings(memory);
   const versionOk =
     !context.expectedModelVersion || memory.embeddingModel === context.expectedModelVersion;
-  const canUseSemantic = versionOk && hasEmbeddings(memory.embedding, context.chunkEmbedding);
-  const semantic = canUseSemantic
-    ? calculateSemanticSim(memory.embedding, context.chunkEmbedding)
-    : 0;
+  const canUseSemantic = versionOk && chunkEmbeddings.length > 0 && memoryEmbeddings.length > 0;
+  const semantic = canUseSemantic ? calculateMaxSemantic(memoryEmbeddings, chunkEmbeddings) : 0;
   const keyword = resolveKeyword(memory, context);
   const recency = calculateRecencyFactor(memory, context.now);
 
@@ -451,13 +474,16 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
 export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext): ScoredMemory[] {
   if (!memories || memories.length === 0) return [];
 
+  const chunkEmbeddings = resolveChunkEmbeddings(context);
+
   // Pass 1:算所有 memory 的 raw cosine(不可用的记为 null)
   const rawSemantics: Array<number | null> = memories.map((memory) => {
     const versionOk =
       !context.expectedModelVersion || memory.embeddingModel === context.expectedModelVersion;
     if (!versionOk) return null;
-    if (!hasEmbeddings(memory.embedding, context.chunkEmbedding)) return null;
-    return calculateSemanticSim(memory.embedding, context.chunkEmbedding);
+    const memoryEmbeddings = resolveMemoryEmbeddings(memory);
+    if (chunkEmbeddings.length === 0 || memoryEmbeddings.length === 0) return null;
+    return calculateMaxSemantic(memoryEmbeddings, chunkEmbeddings);
   });
 
   // Pass 2:统计本批 raw cosine 的 mean/stddev,判定语义信号是否有区分度

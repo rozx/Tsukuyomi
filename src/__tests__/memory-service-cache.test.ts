@@ -145,35 +145,39 @@ describe('MemoryService - updateMemoryEmbeddingOnly', () => {
     await clearMemories();
   });
 
-  test('写入 embedding 不修改 lastAccessedAt', async () => {
+  test('写入 embeddings 不修改 lastAccessedAt 并清除旧单向量字段', async () => {
     const db = await getDB();
     const originalTime = 1_000_000_000;
-    await db.put('memories', {
+    const legacyMemory = {
       id: 'emb-m1',
       bookId: 'emb-book',
       content: 'c',
       summary: 's',
       createdAt: originalTime,
       lastAccessedAt: originalTime,
-    });
+      embedding: [9, 9, 9],
+    };
+    await db.put('memories', legacyMemory);
 
-    await MemoryService.updateMemoryEmbeddingOnly(
-      'emb-m1',
+    const embeddings = [
       [0.1, 0.2, 0.3],
-      'test-model@256',
-    );
+      [0.4, 0.5, 0.6],
+    ];
+    await MemoryService.updateMemoryEmbeddingOnly('emb-m1', embeddings, 'test-model@256');
 
     const after = (await db.get('memories', 'emb-m1')) as {
       lastAccessedAt: number;
       embedding?: number[];
+      embeddings?: number[][];
       embeddingModel?: string;
     };
     expect(after.lastAccessedAt).toBe(originalTime);
-    expect(after.embedding).toEqual([0.1, 0.2, 0.3]);
+    expect(after.embedding).toBeUndefined();
+    expect(after.embeddings).toEqual(embeddings);
     expect(after.embeddingModel).toBe('test-model@256');
   });
 
-  test('写入后书级缓存被原地更新,下次调用读到新 embedding', async () => {
+  test('写入后书级缓存被原地更新,下次调用读到新 embeddings', async () => {
     const db = await getDB();
     await db.put('memories', {
       id: 'emb-m2',
@@ -185,18 +189,22 @@ describe('MemoryService - updateMemoryEmbeddingOnly', () => {
     });
 
     const first = await MemoryService.getAllBookMemories('emb-book-2');
-    expect(first[0]?.embedding).toBeUndefined();
+    expect(first[0]?.embeddings).toBeUndefined();
 
-    await MemoryService.updateMemoryEmbeddingOnly('emb-m2', [0.9, 0.1], 'v1');
+    const embeddings = [
+      [0.9, 0.1],
+      [0.1, 0.9],
+    ];
+    await MemoryService.updateMemoryEmbeddingOnly('emb-m2', embeddings, 'v1');
 
     const second = await MemoryService.getAllBookMemories('emb-book-2');
-    expect(second[0]?.embedding).toEqual([0.9, 0.1]);
+    expect(second[0]?.embeddings).toEqual(embeddings);
     expect(second[0]?.embeddingModel).toBe('v1');
   });
 
   test('不存在的 memoryId 静默跳过', async () => {
     // 不应抛异常
-    await MemoryService.updateMemoryEmbeddingOnly('nonexistent-id', [0.1], 'v1');
+    await MemoryService.updateMemoryEmbeddingOnly('nonexistent-id', [[0.1]], 'v1');
   });
 
   test('leaf 写入失败时：抛出、不刷新缓存、不派发 embedding-updated 事件', async () => {
@@ -213,7 +221,7 @@ describe('MemoryService - updateMemoryEmbeddingOnly', () => {
 
     // 先填好 book 级缓存，使得"缓存保持不变"能被真正观测到
     const baseline = await MemoryService.getAllBookMemories(bookId);
-    expect(baseline[0]?.embedding).toBeUndefined();
+    expect(baseline[0]?.embeddings).toBeUndefined();
 
     // 模拟 IDB 写失败（配额 / 事务中止）
     const quotaError = new Error('QuotaExceededError');
@@ -228,15 +236,15 @@ describe('MemoryService - updateMemoryEmbeddingOnly', () => {
     try {
       let caught: unknown;
       try {
-        await MemoryService.updateMemoryEmbeddingOnly('emb-fail', [0.9, 0.1], 'v1');
+        await MemoryService.updateMemoryEmbeddingOnly('emb-fail', [[0.9, 0.1]], 'v1');
       } catch (err) {
         caught = err;
       }
       expect(caught).toBe(quotaError);
 
-      // 缓存未被污染：再读一次应仍无 embedding
+      // 缓存未被污染：再读一次应仍无 embeddings
       const after = await MemoryService.getAllBookMemories(bookId);
-      expect(after[0]?.embedding).toBeUndefined();
+      expect(after[0]?.embeddings).toBeUndefined();
       expect(after[0]?.embeddingModel).toBeUndefined();
 
       // 未派发 embedding-updated 事件

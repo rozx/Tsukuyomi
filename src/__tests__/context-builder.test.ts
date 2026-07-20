@@ -1,4 +1,3 @@
- 
 import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
 import './setup';
 import {
@@ -7,9 +6,10 @@ import {
   clearChunkEmbeddingCache,
   clearLastScoreBreakdowns,
   getLastScoreBreakdowns,
+  selectRelevantMemoriesForChunk,
 } from 'src/services/ai/tasks/utils/context-builder';
 import { MemoryService } from 'src/services/memory-service';
-import { EmbeddingService } from 'src/services/embedding-service';
+import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import type { Memory } from 'src/models/memory';
 import type { Terminology, CharacterSetting } from 'src/models/novel';
 
@@ -22,7 +22,7 @@ function makeMemory(id: string, overrides: Partial<Memory> = {}): Memory {
     createdAt: overrides.createdAt ?? Date.now() - 10_000,
     lastAccessedAt: overrides.lastAccessedAt ?? Date.now(),
   };
-  if (overrides.embedding !== undefined) mem.embedding = overrides.embedding;
+  if (overrides.embeddings !== undefined) mem.embeddings = overrides.embeddings;
   if (overrides.embeddingModel !== undefined) mem.embeddingModel = overrides.embeddingModel;
   return mem;
 }
@@ -99,10 +99,7 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
       summary: '近期但也无关的记忆',
       lastAccessedAt: Date.now(),
     });
-    spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue([
-      veryOldMemory,
-      recentMemory,
-    ]);
+    spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue([veryOldMemory, recentMemory]);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(false);
 
     const result = await getRelatedMemoriesForChunk(
@@ -158,6 +155,48 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
     expect(typeof breakdowns!['m1']!.recency).toBe('number');
   });
 
+  test('长章节按较短段落分批嵌入,并保留后段的语义命中', async () => {
+    const memories = [
+      makeMemory('first', {
+        embeddings: [[1, 0, 0]],
+        embeddingModel: MODEL_VERSION,
+      }),
+      makeMemory('later', {
+        embeddings: [[0, 1, 0]],
+        embeddingModel: MODEL_VERSION,
+      }),
+      makeMemory('unrelated', {
+        embeddings: [[0, 0, 1]],
+        embeddingModel: MODEL_VERSION,
+      }),
+    ];
+    spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue(memories);
+    spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
+    const embedSpy = spyOn(EmbeddingService, 'embed').mockResolvedValue(
+      new Float32Array([1, 0, 0]),
+    );
+    const embeddedBatches: string[][] = [];
+    spyOn(EmbeddingService, 'embedBatch').mockImplementation((texts: string[]) => {
+      embeddedBatches.push(texts);
+      return Promise.resolve(
+        texts.map((text) =>
+          text.includes('后段关键情节') ? new Float32Array([0, 1, 0]) : new Float32Array([1, 0, 0]),
+        ),
+      );
+    });
+
+    const longChapter = `${'开场铺垫。'.repeat(2000)}\n${'后段关键情节。'.repeat(2000)}`;
+    const result = await selectRelevantMemoriesForChunk('book-1', longChapter, [], []);
+    const embeddedSegments = embeddedBatches.flat();
+
+    expect(embeddedSegments.length).toBeGreaterThan(1);
+    expect(embeddedSegments.length).toBeLessThanOrEqual(12);
+    expect(embeddedSegments.every((segment) => segment.length <= 1200)).toBe(true);
+    expect(embeddedBatches.every((batch) => batch.length <= 4)).toBe(true);
+    expect(embedSpy).not.toHaveBeenCalled();
+    expect(result.memories.map((memory) => memory.id)).toContain('later');
+  });
+
   test('字符预算控制:超出预算的记忆不被选中', async () => {
     const memories = Array.from({ length: 30 }, (_, i) =>
       makeMemory(`m${i}`, {
@@ -168,7 +207,14 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
     spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue(memories);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(false);
 
-    const result = await getRelatedMemoriesForChunk('book-1', '小明使用魔法', 50, undefined, terms, characters);
+    const result = await getRelatedMemoriesForChunk(
+      'book-1',
+      '小明使用魔法',
+      50,
+      undefined,
+      terms,
+      characters,
+    );
 
     const matchCount = (result.match(/\[m\d+\]/g) || []).length;
     expect(matchCount).toBeLessThan(30);
@@ -182,10 +228,7 @@ describe('context-builder - getRelatedMemoriesForChunkLegacy', () => {
   });
 
   test('返回格式化的记忆列表', async () => {
-    const memories = [
-      makeMemory('l1', { summary: 'sum1' }),
-      makeMemory('l2', { summary: 'sum2' }),
-    ];
+    const memories = [makeMemory('l1', { summary: 'sum1' }), makeMemory('l2', { summary: 'sum2' })];
     spyOn(MemoryService, 'getRecentMemories').mockResolvedValue(memories);
 
     const result = await getRelatedMemoriesForChunkLegacy('book-1', 'some text');

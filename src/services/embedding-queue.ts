@@ -16,14 +16,11 @@
  * - EmbeddingQueue 负责调度顺序、持久化与进度反馈
  *
  * 批处理策略:
- * - memory 按 BATCH_SIZE(8) 合批一次 embedBatch,单次写入
+ * - memory 先切成最多 12 个短段，再按 BATCH_SIZE(8) 嵌入并聚合为多向量写入
  * - chapter 因为一章本身就是多 chunk 的一次完整嵌入,每次只处理一个 chapter,不与 memory 同批
  */
 
-import {
-  createCustomEventSubscriber,
-  dispatchCustomEvent,
-} from 'src/utils/dispatch-custom-event';
+import { createCustomEventSubscriber, dispatchCustomEvent } from 'src/utils/dispatch-custom-event';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import {
   getMemoryByIdFromDB,
@@ -32,13 +29,11 @@ import {
   updateMemoryEmbeddingInDB,
   lookupMemoryBookId,
 } from 'src/utils/memory-embedding-lookup';
-import {
-  dispatchMemoryChanged,
-  syncMemoryEmbeddingCaches,
-} from 'src/services/memory-cache';
+import { dispatchMemoryChanged, syncMemoryEmbeddingCaches } from 'src/services/memory-cache';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import type { Memory } from 'src/models/memory';
 import type { Novel } from 'src/models/novel';
+import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
 
 const BATCH_SIZE = 8;
 const ETA_WINDOW_SIZE = 5;
@@ -227,9 +222,7 @@ export class EmbeddingQueue {
   }
 
   static cancelMemory(memoryId: string): void {
-    const idx = this.pending.findIndex(
-      (item) => item.kind === 'memory' && item.id === memoryId,
-    );
+    const idx = this.pending.findIndex((item) => item.kind === 'memory' && item.id === memoryId);
     if (idx >= 0) {
       this.pending.splice(idx, 1);
       this.totalEnqueued.memory -= 1;
@@ -238,9 +231,7 @@ export class EmbeddingQueue {
   }
 
   static cancelChapter(chapterId: string): void {
-    const idx = this.pending.findIndex(
-      (item) => item.kind === 'chapter' && item.id === chapterId,
-    );
+    const idx = this.pending.findIndex((item) => item.kind === 'chapter' && item.id === chapterId);
     if (idx >= 0) {
       this.pending.splice(idx, 1);
       this.totalEnqueued.chapter -= 1;
@@ -586,44 +577,61 @@ export class EmbeddingQueue {
    * 处理一批 memory id
    */
   private static async processMemoryBatch(ids: string[]): Promise<void> {
-    const memories: Array<{ id: string; text: string } | null> = await Promise.all(
+    const memories: Array<{ id: string; segments: string[] } | null> = await Promise.all(
       ids.map(async (id) => {
         try {
           const mem = await getMemoryByIdFromDB(id);
           if (!mem) return null;
           const text = buildMemoryInput(mem);
           if (!text) return null;
-          return { id, text };
+          const segments = splitTextForEmbedding(text);
+          if (segments.length === 0) return null;
+          return { id, segments };
         } catch {
           return null;
         }
       }),
     );
 
-    const valid = memories.filter((m): m is { id: string; text: string } => m !== null);
+    const valid = memories.filter(
+      (memory): memory is { id: string; segments: string[] } => memory !== null,
+    );
     if (valid.length === 0) {
       this.completed.memory += ids.length;
       return;
     }
 
-    const vectors = await EmbeddingService.embedBatch(
-      valid.map((m) => m.text),
-      'document',
+    const segmentJobs = valid.flatMap((memory) =>
+      memory.segments.map((text) => ({ memoryId: memory.id, text })),
     );
+    const vectorsByMemory = new Map<string, number[][]>();
+    for (let index = 0; index < segmentJobs.length; index += BATCH_SIZE) {
+      const batch = segmentJobs.slice(index, index + BATCH_SIZE);
+      const vectors = await EmbeddingService.embedBatch(
+        batch.map((job) => job.text),
+        'document',
+      );
+      batch.forEach((job, vectorIndex) => {
+        const vector = vectors[vectorIndex];
+        if (!vector) return;
+        const memoryVectors = vectorsByMemory.get(job.memoryId) ?? [];
+        memoryVectors.push(Array.from(vector));
+        vectorsByMemory.set(job.memoryId, memoryVectors);
+      });
+    }
 
     await Promise.all(
-      valid.map(async (entry, idx) => {
-        const vec = vectors[idx];
-        if (!vec) return;
+      valid.map(async (entry) => {
+        const embeddings = vectorsByMemory.get(entry.id);
+        if (!embeddings?.length) return;
         try {
           // 写 IDB（leaf）+ 同步进程内缓存 + 派发 'embedding-updated' 事件。
           // 全部走叶子模块（memory-embedding-lookup / memory-cache），避免 EmbeddingQueue
           // 反向 import MemoryService 形成循环依赖。
-          const embedding = Array.from(vec);
-          await updateMemoryEmbeddingInDB(entry.id, embedding, MODEL_VERSION);
+          await updateMemoryEmbeddingInDB(entry.id, embeddings, MODEL_VERSION);
           const bookId = await lookupMemoryBookId(entry.id);
           if (bookId) {
-            syncMemoryEmbeddingCaches(bookId, entry.id, embedding, MODEL_VERSION);
+            syncMemoryEmbeddingCaches(bookId, entry.id, embeddings, MODEL_VERSION);
             dispatchMemoryChanged({ bookId, memoryId: entry.id, action: 'embedding-updated' });
           }
         } catch (error) {

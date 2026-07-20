@@ -104,7 +104,7 @@ async function loadMemoryBreakdown(id: string): Promise<StatBreakdown> {
     let embedded = 0;
     let stale = 0;
     for (const m of memories) {
-      const hasVec = !!(m.embedding && m.embedding.length > 0);
+      const hasVec = !!m.embeddings?.some((embedding) => embedding.length > 0);
       if (!hasVec) continue;
       // 有向量但 stale → 计 stale;有向量且非 stale → 计 embedded
       if (isMemoryEmbeddingStale(m)) stale += 1;

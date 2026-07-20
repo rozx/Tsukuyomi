@@ -13,7 +13,10 @@ import { EmbeddingQueue } from 'src/services/embedding-queue';
 // 叶子模块（为了让 embedding-queue 不必 import MemoryService）。本文件从
 // 叶子重新导出，保持既有消费者（MemoryCard / MemoryPanel / Dialog 等）的
 // import 路径稳定。
-export { isMemoryEmbeddingStale } from 'src/utils/memory-embedding-lookup';
+export {
+  getMemoryEmbeddingStatus,
+  isMemoryEmbeddingStale,
+} from 'src/utils/memory-embedding-lookup';
 import {
   storageToMemory as storageToMemoryWithEmbedding,
   updateMemoryEmbeddingInDB,
@@ -81,8 +84,47 @@ interface MemoryStorage {
   summary: string;
   createdAt: number;
   lastAccessedAt: number;
-  embedding?: number[];
+  embeddings?: number[][];
   embeddingModel?: string;
+}
+
+interface SyncEmbeddingDecision {
+  embeddings?: number[][];
+  embeddingModel?: string;
+  shouldEnqueueRecompute: boolean;
+}
+
+function resolveSyncEmbeddings(
+  memory: Memory,
+  existing: MemoryStorage | undefined,
+): SyncEmbeddingDecision {
+  const incomingEmbeddings = memory.embeddings?.filter((embedding) => embedding.length > 0);
+  if (incomingEmbeddings?.length) {
+    const decision: SyncEmbeddingDecision = {
+      embeddings: incomingEmbeddings,
+      shouldEnqueueRecompute: false,
+    };
+    if (memory.embeddingModel !== undefined) decision.embeddingModel = memory.embeddingModel;
+    return decision;
+  }
+
+  const existingEmbeddings = existing?.embeddings?.filter((embedding) => embedding.length > 0);
+  if (!existing || !existingEmbeddings?.length) {
+    const hasLegacyEmbedding = Boolean(
+      (existing as (MemoryStorage & { embedding?: number[] }) | undefined)?.embedding?.length,
+    );
+    return { shouldEnqueueRecompute: hasLegacyEmbedding };
+  }
+
+  const contentChanged = existing.content !== memory.content || existing.summary !== memory.summary;
+  if (contentChanged) return { shouldEnqueueRecompute: true };
+
+  const decision: SyncEmbeddingDecision = {
+    embeddings: existingEmbeddings,
+    shouldEnqueueRecompute: false,
+  };
+  if (existing.embeddingModel !== undefined) decision.embeddingModel = existing.embeddingModel;
+  return decision;
 }
 
 /**
@@ -238,7 +280,7 @@ export class MemoryService {
 
   /**
    * 写路径（update / upsert 更新分支）共用的缓存同步步骤：
-   * 1. 把 storage 折叠成对外 Memory 对象（不含 embedding 字段）
+   * 1. 把 storage 折叠成对外 Memory 对象（不含 embeddings 字段）
    * 2. 更新单条 LRU 缓存，必要时触发淘汰
    * 3. 失效书籍级全量缓存
    * 4. 派发 memory-changed 事件
@@ -433,14 +475,14 @@ export class MemoryService {
    * - 不强制写 `summary` 非空（远端导入场景允许空摘要）
    *
    * Embedding 处理（关键）：
-   * `stripMemoryLocalFields` 在上传前就剥离了 `embedding` / `embeddingModel`，
-   * 所以增量下载拿到的 Memory 通常**不带** embedding 字段。若直接 `put(storage)`，
-   * 本地已经算好的 embedding 会被连带清掉，语义检索会退化。
+   * `stripMemoryLocalFields` 在上传前会剥离 `embeddings` / `embeddingModel`，所以增量下载
+   * 拿到的 Memory 通常不带本地向量。若文本未变化，应保留本地多向量；文本变化则重算。
    * 规则：
-   * - 若 incoming 带 embedding：按远端字段原样保留（覆盖本地）
-   * - 若 incoming 不带 embedding，但本地 IDB 已有：保留本地 embedding
-   * - 若 incoming 的 content/summary 相对本地发生变化：既有 embedding 已陈旧，
+   * - 若 incoming 带 embeddings：按传入字段保留
+   * - 若 incoming 不带 embeddings，但本地 IDB 已有且文本未变化：保留本地 embeddings
+   * - 若 incoming 的 content/summary 相对本地发生变化：既有 embeddings 已陈旧，
    *   丢弃并入队 EmbeddingQueue 异步重算
+   * - 旧版单向量 `embedding` 不再兼容：丢弃并入队重算
    */
   static async upsertMemoryForSync(memory: Memory): Promise<void> {
     if (!memory?.id) {
@@ -471,27 +513,16 @@ export class MemoryService {
       lastAccessedAt: memory.lastAccessedAt,
     };
 
-    let shouldEnqueueRecompute = false;
-    if (memory.embedding !== undefined) {
-      storage.embedding = memory.embedding;
-      if (memory.embeddingModel !== undefined) storage.embeddingModel = memory.embeddingModel;
-    } else if (existing?.embedding !== undefined) {
-      // incoming 不带 embedding：本地已算好的 embedding 是否仍然可信？
-      const contentChanged =
-        existing.content !== memory.content || existing.summary !== memory.summary;
-      if (contentChanged) {
-        // 文本变了 → embedding 陈旧，不保留，交给 EmbeddingQueue 重算
-        shouldEnqueueRecompute = true;
-      } else {
-        storage.embedding = existing.embedding;
-        if (existing.embeddingModel !== undefined) storage.embeddingModel = existing.embeddingModel;
-      }
+    const embeddingDecision = resolveSyncEmbeddings(memory, existing);
+    if (embeddingDecision.embeddings) storage.embeddings = embeddingDecision.embeddings;
+    if (embeddingDecision.embeddingModel) {
+      storage.embeddingModel = embeddingDecision.embeddingModel;
     }
 
     await store.put(storage);
     await tx.done;
 
-    if (shouldEnqueueRecompute) {
+    if (embeddingDecision.shouldEnqueueRecompute) {
       EmbeddingQueue.enqueue(memory.id, memory.bookId);
     }
 
@@ -503,7 +534,7 @@ export class MemoryService {
       createdAt: storage.createdAt,
       lastAccessedAt: storage.lastAccessedAt,
     };
-    if (storage.embedding !== undefined) cachedMemory.embedding = storage.embedding;
+    if (storage.embeddings !== undefined) cachedMemory.embeddings = storage.embeddings;
     if (storage.embeddingModel !== undefined) cachedMemory.embeddingModel = storage.embeddingModel;
 
     const cacheKey = this.getCacheKey(memory.bookId, memory.id);
@@ -883,7 +914,7 @@ export class MemoryService {
   }
 
   /**
-   * 获取指定书籍的所有 Memory(带 60s TTL 缓存,返回的 Memory 保留 embedding 字段)。
+   * 获取指定书籍的所有 Memory(带 60s TTL 缓存,返回的 Memory 保留 embeddings 字段)。
    * 供记忆注入打分模块使用:同一翻译任务中多次分块只会读一次 IDB。
    */
   static async getAllBookMemories(bookId: string): Promise<Memory[]> {
@@ -916,7 +947,7 @@ export class MemoryService {
   }
 
   /**
-   * 仅写入 embedding 字段(不更新 lastAccessedAt,不影响 Gist 同步 dirty flag)。
+   * 仅写入 embeddings 字段(不更新 lastAccessedAt,不影响 Gist 同步 dirty flag)。
    * 会 dispatch 'embedding-updated' 事件供 UI 徽章订阅,但不触发 CRUD 类的 memory-changed。
    *
    * 设计约束:
@@ -931,18 +962,18 @@ export class MemoryService {
    */
   static async updateMemoryEmbeddingOnly(
     memoryId: string,
-    embedding: number[],
+    embeddings: number[][],
     embeddingModel: string,
   ): Promise<void> {
     // 三项参数校验 + IDB put 统一走 leaf `updateMemoryEmbeddingInDB`，
     // 失败直接抛出；缓存刷新与事件派发只在写入成功后执行。
-    await updateMemoryEmbeddingInDB(memoryId, embedding, embeddingModel);
+    await updateMemoryEmbeddingInDB(memoryId, embeddings, embeddingModel);
 
     // 记录被删除的合法边界：没有 bookId 就跳过缓存 / 事件。
     const bookId = await lookupMemoryBookId(memoryId);
     if (!bookId) return;
 
-    syncMemoryEmbeddingCaches(bookId, memoryId, embedding, embeddingModel);
+    syncMemoryEmbeddingCaches(bookId, memoryId, embeddings, embeddingModel);
     // 'embedding-updated' 事件供 UI 徽章订阅；复用 memory-changed 通道但 action 明确区分。
     this.dispatchMemoryChanged({ bookId, memoryId, action: 'embedding-updated' });
   }

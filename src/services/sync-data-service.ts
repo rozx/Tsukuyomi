@@ -849,7 +849,7 @@ interface DataBackup {
  */
 export class SyncDataService {
   /**
-   * 剥离 Memory 的本地字段（embedding / embeddingModel / 已弃用的 attachedTo）
+   * 剥离 Memory 的本地字段（embeddings / embeddingModel / 已弃用的 embedding、attachedTo）
    * 用于 Gist 上传时 strip，以及下载时防御性 strip 旧版本 payload
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -861,6 +861,7 @@ export class SyncDataService {
     const {
       attachedTo: _a,
       embedding: _e,
+      embeddings: _es,
       embeddingModel: _m,
       ...clean
     } = memory as Record<string, unknown>;
@@ -2129,7 +2130,7 @@ export class SyncDataService {
       lastSyncTime,
     );
 
-    // 上传路径 strip：去除本地才关心的字段（embedding / embeddingModel / memoryScoreBreakdown），
+    // 上传路径 strip：去除本地才关心的字段（embeddings / embeddingModel / memoryScoreBreakdown），
     // 以及防御性去除可能残留在旧数据中的 attachedTo 字段。
     const strippedMemories = finalMemories.map((m) =>
       SyncDataService.stripLocalFieldsFromMemory(m),

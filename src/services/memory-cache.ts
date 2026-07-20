@@ -34,7 +34,8 @@ export interface MemoryChangedDetail {
 
 export function dispatchMemoryChanged(detail: MemoryChangedDetail): void {
   // Node/Bun 测试环境在某些 jsdom 配置下可能缺少 CustomEvent，安全降级到普通 Event
-  const hasCustomEvent = typeof (globalThis as unknown as { CustomEvent?: unknown }).CustomEvent !== 'undefined';
+  const hasCustomEvent =
+    typeof (globalThis as unknown as { CustomEvent?: unknown }).CustomEvent !== 'undefined';
   const event = hasCustomEvent
     ? new CustomEvent('memory-changed', { detail })
     : (() => {
@@ -56,29 +57,36 @@ export function addMemoryChangeListener(
 }
 
 /**
- * 把 embedding 写入后的结果同步到两级缓存（不触发事件）。
+ * 把 embeddings 写入后的结果同步到两级缓存（不触发事件）。
  * 调用方负责确保 IndexedDB 写入已成功。
  */
+function withMemoryEmbeddings(
+  memory: Memory,
+  embeddings: number[][],
+  embeddingModel: string,
+): Memory {
+  const { embedding: _legacyEmbedding, ...cleanMemory } = memory as Memory & {
+    embedding?: number[];
+  };
+  return { ...cleanMemory, embeddings, embeddingModel };
+}
+
 export function syncMemoryEmbeddingCaches(
   bookId: string,
   memoryId: string,
-  embedding: number[],
+  embeddings: number[][],
   embeddingModel: string,
 ): void {
   const cacheKey = buildMemoryCacheKey(bookId, memoryId);
   const cachedSingle = memoryCache.get(cacheKey);
   if (cachedSingle) {
-    memoryCache.set(cacheKey, {
-      ...cachedSingle,
-      embedding,
-      embeddingModel,
-    });
+    memoryCache.set(cacheKey, withMemoryEmbeddings(cachedSingle, embeddings, embeddingModel));
   }
 
   const cachedBook = bookMemoryCache.get(bookId);
   if (cachedBook) {
     const next = cachedBook.data.map((m) =>
-      m.id === memoryId ? { ...m, embedding, embeddingModel } : m,
+      m.id === memoryId ? withMemoryEmbeddings(m, embeddings, embeddingModel) : m,
     );
     bookMemoryCache.set(bookId, {
       data: next,

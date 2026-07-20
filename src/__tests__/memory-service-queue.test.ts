@@ -1,4 +1,3 @@
- 
 import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
 import './setup';
 import { MemoryService } from 'src/services/memory-service';
@@ -74,7 +73,7 @@ describe('MemoryService - EmbeddingQueue 联动', () => {
     });
     enqueueSpy.mockClear();
 
-    await MemoryService.updateMemoryEmbeddingOnly('emb-loop-test', [0.1], 'v1');
+    await MemoryService.updateMemoryEmbeddingOnly('emb-loop-test', [[0.1]], 'v1');
     expect(enqueueSpy).not.toHaveBeenCalled();
   });
 });

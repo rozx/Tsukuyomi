@@ -5,7 +5,7 @@ import { MemoryService } from '../services/memory-service';
 import { EmbeddingQueue } from '../services/embedding-queue';
 import { getDB } from '../utils/indexed-db';
 
-describe('upsertMemoryForSync: embedding preservation', () => {
+describe('upsertMemoryForSync: embeddings preservation', () => {
   const BOOK_ID = 'book-upsert-test';
   let enqueueSpy: ReturnType<typeof spyOn>;
 
@@ -25,8 +25,8 @@ describe('upsertMemoryForSync: embedding preservation', () => {
     mock.restore();
   });
 
-  it('同内容同摘要、incoming 无 embedding 时，保留本地 embedding 不入队重算', async () => {
-    // 预置一条带 embedding 的本地记录
+  it('同内容同摘要、incoming 无 embeddings 时，保留本地 embeddings 不入队重算', async () => {
+    // 预置一条带 embeddings 的本地记录
     const db = await getDB();
     const existingTx = db.transaction('memories', 'readwrite');
     await existingTx.objectStore('memories').put({
@@ -36,12 +36,15 @@ describe('upsertMemoryForSync: embedding preservation', () => {
       summary: '摘要',
       createdAt: 1000,
       lastAccessedAt: 1500,
-      embedding: [0.1, 0.2, 0.3],
+      embeddings: [
+        [0.1, 0.2, 0.3],
+        [0.4, 0.5, 0.6],
+      ],
       embeddingModel: 'embeddinggemma-300m@256',
     });
     await existingTx.done;
 
-    // 远端下载回来的 Memory 没有 embedding 字段（sync-strip 剥离过）
+    // 远端下载回来的 Memory 没有 embeddings 字段（sync-strip 剥离过）
     await MemoryService.upsertMemoryForSync({
       id: 'm-1',
       bookId: BOOK_ID,
@@ -52,13 +55,16 @@ describe('upsertMemoryForSync: embedding preservation', () => {
     });
 
     const after = await (await getDB()).get('memories', 'm-1');
-    expect(after?.embedding).toEqual([0.1, 0.2, 0.3]);
+    expect(after?.embeddings).toEqual([
+      [0.1, 0.2, 0.3],
+      [0.4, 0.5, 0.6],
+    ]);
     expect(after?.embeddingModel).toBe('embeddinggemma-300m@256');
     expect(after?.lastAccessedAt).toBe(2000);
     expect(enqueueSpy).not.toHaveBeenCalled();
   });
 
-  it('content 变化时，丢弃陈旧 embedding 并入队重算', async () => {
+  it('content 变化时，丢弃陈旧 embeddings 并入队重算', async () => {
     const db = await getDB();
     const existingTx = db.transaction('memories', 'readwrite');
     await existingTx.objectStore('memories').put({
@@ -68,7 +74,7 @@ describe('upsertMemoryForSync: embedding preservation', () => {
       summary: '摘要',
       createdAt: 1000,
       lastAccessedAt: 1500,
-      embedding: [0.1, 0.2, 0.3],
+      embeddings: [[0.1, 0.2, 0.3]],
       embeddingModel: 'embeddinggemma-300m@256',
     });
     await existingTx.done;
@@ -83,10 +89,42 @@ describe('upsertMemoryForSync: embedding preservation', () => {
     });
 
     const after = await (await getDB()).get('memories', 'm-2');
-    expect(after?.embedding).toBeUndefined();
+    expect(after?.embeddings).toBeUndefined();
     expect(after?.embeddingModel).toBeUndefined();
     expect(after?.content).toBe('新内容');
     expect(enqueueSpy).toHaveBeenCalledWith('m-2', BOOK_ID);
+  });
+
+  it('旧单向量字段会被丢弃并入队重新生成', async () => {
+    const db = await getDB();
+    const legacyMemory = {
+      id: 'm-legacy',
+      bookId: BOOK_ID,
+      content: '原内容',
+      summary: '摘要',
+      createdAt: 1000,
+      lastAccessedAt: 1500,
+      embedding: [0.1, 0.2, 0.3],
+      embeddingModel: 'embeddinggemma-300m@256',
+    };
+    await db.put('memories', legacyMemory);
+
+    await MemoryService.upsertMemoryForSync({
+      id: 'm-legacy',
+      bookId: BOOK_ID,
+      content: '原内容',
+      summary: '摘要',
+      createdAt: 1000,
+      lastAccessedAt: 2000,
+    });
+
+    const after = (await db.get('memories', 'm-legacy')) as
+      | { embedding?: number[]; embeddings?: number[][]; embeddingModel?: string }
+      | undefined;
+    expect(after?.embedding).toBeUndefined();
+    expect(after?.embeddings).toBeUndefined();
+    expect(after?.embeddingModel).toBeUndefined();
+    expect(enqueueSpy).toHaveBeenCalledWith('m-legacy', BOOK_ID);
   });
 
   it('同 id 但 bookId 不同时，必须抛错而不是静默改属主', async () => {
@@ -121,7 +159,7 @@ describe('upsertMemoryForSync: embedding preservation', () => {
     expect(untouched?.content).toBe('A 的内容');
   });
 
-  it('incoming 自带 embedding 时，按远端字段原样写入', async () => {
+  it('incoming 自带 embeddings 时，按传入字段原样写入', async () => {
     await MemoryService.upsertMemoryForSync({
       id: 'm-3',
       bookId: BOOK_ID,
@@ -129,12 +167,18 @@ describe('upsertMemoryForSync: embedding preservation', () => {
       summary: '摘要',
       createdAt: 1000,
       lastAccessedAt: 1500,
-      embedding: [0.5, 0.6],
+      embeddings: [
+        [0.5, 0.6],
+        [0.7, 0.8],
+      ],
       embeddingModel: 'other-model',
     });
 
     const after = await (await getDB()).get('memories', 'm-3');
-    expect(after?.embedding).toEqual([0.5, 0.6]);
+    expect(after?.embeddings).toEqual([
+      [0.5, 0.6],
+      [0.7, 0.8],
+    ]);
     expect(after?.embeddingModel).toBe('other-model');
     expect(enqueueSpy).not.toHaveBeenCalled();
   });

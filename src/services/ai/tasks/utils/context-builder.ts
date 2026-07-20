@@ -26,6 +26,7 @@ import { getPostToolCallReminder } from './todo-helper';
 import { getCurrentStatusInfo } from '../prompts/common';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
+import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
 
 /**
  * 获取章节第一个“非空”段落的 ID（用于判断任务是否从章节中间开始）
@@ -257,12 +258,13 @@ export async function getRelatedMemoriesForChunkLegacy(
 
 /**
  * 任务级 chunk embedding 缓存:同一任务中不同分块会重复读取同一 chunkText,
- * 避免反复调用 transformers.js。键 = 原始文本,值 = 归一化后的向量或 null。
+ * 避免反复调用 transformers.js。键 = 原始文本,值 = 各分段的归一化向量数组。
  *
  * 调用方应在任务结束时调用 `clearChunkEmbeddingCache()`。
  */
 const CHUNK_CACHE_MAX_SIZE = 50;
-const chunkEmbeddingCache = new Map<string, Float32Array | null>();
+const MEMORY_QUERY_EMBED_BATCH_SIZE = 4;
+const chunkEmbeddingCache = new Map<string, Float32Array[]>();
 
 export function clearChunkEmbeddingCache(): void {
   chunkEmbeddingCache.clear();
@@ -289,11 +291,11 @@ export function clearLastScoreBreakdowns(bookId?: string): void {
 }
 
 /**
- * 尝试计算 chunk 的语义向量。
- * - 语义检索未启用 / service 未就绪 → 返回 null(调用方走纯关键词+时间衰减降级)
+ * 尝试计算 chunk 的分段语义向量。
+ * - 语义检索未启用 / service 未就绪 → 返回空数组(调用方走纯关键词+时间衰减降级)
  * - 命中缓存直接返回
  */
-async function computeChunkEmbedding(chunkText: string): Promise<Float32Array | null> {
+async function computeChunkEmbeddings(chunkText: string): Promise<Float32Array[]> {
   // 读取用户设置
   let enableSemantic = true;
   try {
@@ -302,24 +304,32 @@ async function computeChunkEmbedding(chunkText: string): Promise<Float32Array | 
   } catch {
     // store 初始化失败时保持默认启用
   }
-  if (!enableSemantic) return null;
-  if (!EmbeddingService.isReady()) return null;
+  if (!enableSemantic) return [];
+  if (!EmbeddingService.isReady()) return [];
 
   const cached = chunkEmbeddingCache.get(chunkText);
   if (cached !== undefined) return cached;
 
   try {
-    const vec = await EmbeddingService.embed(chunkText, 'query');
+    const segments = splitTextForEmbedding(chunkText);
+    const vectors: Float32Array[] = [];
+    for (let index = 0; index < segments.length; index += MEMORY_QUERY_EMBED_BATCH_SIZE) {
+      const batch = segments.slice(index, index + MEMORY_QUERY_EMBED_BATCH_SIZE);
+      const batchVectors = await EmbeddingService.embedBatch(batch, 'query');
+      for (const vector of batchVectors) {
+        if (vector) vectors.push(vector);
+      }
+    }
     if (chunkEmbeddingCache.size >= CHUNK_CACHE_MAX_SIZE) {
       const oldest = chunkEmbeddingCache.keys().next().value;
       if (oldest !== undefined) chunkEmbeddingCache.delete(oldest);
     }
-    chunkEmbeddingCache.set(chunkText, vec);
-    return vec;
+    chunkEmbeddingCache.set(chunkText, vectors);
+    return vectors;
   } catch (error) {
-    console.warn('[context-builder] 计算 chunk embedding 失败:', error);
-    chunkEmbeddingCache.set(chunkText, null);
-    return null;
+    console.warn('[context-builder] 计算 chunk embeddings 失败:', error);
+    chunkEmbeddingCache.set(chunkText, []);
+    return [];
   }
 }
 
@@ -414,12 +424,12 @@ export async function selectRelevantMemoriesForChunk(
   if (allMemories.length === 0) return empty;
 
   const chunkEntities = buildChunkEntities(existingTerms, existingCharacters);
-  const chunkEmbedding = await computeChunkEmbedding(chunkText);
+  const chunkEmbeddings = await computeChunkEmbeddings(chunkText);
   const scored: ScoredMemory[] = scoreMemoriesBatch(allMemories, {
     chunkEntities,
-    chunkEmbedding: chunkEmbedding ?? undefined,
+    chunkEmbeddings: chunkEmbeddings.length > 0 ? chunkEmbeddings : undefined,
     now: Date.now(),
-    expectedModelVersion: chunkEmbedding ? MODEL_VERSION : undefined,
+    expectedModelVersion: chunkEmbeddings.length > 0 ? MODEL_VERSION : undefined,
   });
 
   const { charBudget, minScore } = readMemoryInjectionBudget();
@@ -514,9 +524,10 @@ async function buildCurrentChunkContext(
   const terms = findUniqueTermsInText(chunkText, book.terminologies || []);
   const characters = findUniqueCharactersInText(chunkText, book.characterSettings || []);
 
-  const contextParts = [buildChunkTermsSection(terms), buildChunkCharactersSection(characters)].filter(
-    Boolean,
-  );
+  const contextParts = [
+    buildChunkTermsSection(terms),
+    buildChunkCharactersSection(characters),
+  ].filter(Boolean);
 
   let currentChunkContext = '';
   if (contextParts.length > 0) {
@@ -644,7 +655,11 @@ export async function buildIndependentChunkPrompt(
 
   const currentChunkContext = await buildCurrentChunkContext(bookId, chunkText, chapterId);
 
-  const startContextHint = buildStartContextHint(hasPreviousParagraphs, firstParagraphId, taskLabel);
+  const startContextHint = buildStartContextHint(
+    hasPreviousParagraphs,
+    firstParagraphId,
+    taskLabel,
+  );
 
   if (chunkIndex === 0) {
     return buildFirstChunkPrompt({
@@ -860,7 +875,10 @@ function buildChapterCharactersContext(characters: CharacterSetting[]): string {
 /**
  * 从全章段落文本匹配本章出场角色，构建角色上下文片段
  */
-function buildCharactersContextPart(bookId: string | undefined, allChapterParagraphs: Paragraph[]): string {
+function buildCharactersContextPart(
+  bookId: string | undefined,
+  allChapterParagraphs: Paragraph[],
+): string {
   if (!bookId) return '';
   const booksStore = useBooksStore();
   const book = booksStore.getBookById(bookId);

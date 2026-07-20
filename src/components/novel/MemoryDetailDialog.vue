@@ -10,7 +10,7 @@ import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Memory } from 'src/models/memory';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
 import { MemoryService } from 'src/services/memory-service';
-import { isMemoryEmbeddingStale } from 'src/services/memory-service';
+import { getMemoryEmbeddingStatus } from 'src/services/memory-service';
 import { formatRelativeTimeWithFallback } from 'src/utils/format';
 
 interface Props {
@@ -31,7 +31,6 @@ const emit = defineEmits<{
   delete: [memory: Memory];
 }>();
 
-
 // 编辑状态
 const isEditing = ref(false);
 const editedSummary = ref('');
@@ -44,13 +43,7 @@ const dialogHeader = computed(() => {
 });
 
 // 嵌入状态
-const embeddingStatus = computed<'ready' | 'pending' | 'stale'>(() => {
-  if (!props.memory) return 'pending';
-  const { embedding } = props.memory;
-  if (!embedding || embedding.length === 0) return 'pending';
-  if (isMemoryEmbeddingStale(props.memory)) return 'stale';
-  return 'ready';
-});
+const embeddingStatus = computed(() => getMemoryEmbeddingStatus(props.memory));
 
 const embeddingStatusLabel = computed(() => {
   switch (embeddingStatus.value) {

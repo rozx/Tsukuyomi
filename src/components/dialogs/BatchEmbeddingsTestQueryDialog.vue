@@ -103,7 +103,10 @@ function scoreMemories(memories: Memory[], queryVec: Float32Array): TestResultIt
       kind: 'memory' as const,
       targetId: m.id,
       title: (m.summary ?? '').trim() || '(无摘要)',
-      score: cosineSimilarity(queryVec, m.embedding),
+      score: (m.embeddings ?? []).reduce(
+        (best, embedding) => Math.max(best, cosineSimilarity(queryVec, embedding)),
+        0,
+      ),
       preview: (m.content ?? '').trim().slice(0, 160),
     });
   }

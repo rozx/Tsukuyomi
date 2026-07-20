@@ -57,16 +57,8 @@ describe('hash stability across device-local ordering differences', () => {
     });
 
     it('hashes identically regardless of local array order', async () => {
-      const deviceAOrder = [
-        makeCover('x', 'u1'),
-        makeCover('y', 'u2'),
-        makeCover('z', 'u3'),
-      ];
-      const deviceBOrder = [
-        makeCover('z', 'u3'),
-        makeCover('y', 'u2'),
-        makeCover('x', 'u1'),
-      ];
+      const deviceAOrder = [makeCover('x', 'u1'), makeCover('y', 'u2'), makeCover('z', 'u3')];
+      const deviceBOrder = [makeCover('z', 'u3'), makeCover('y', 'u2'), makeCover('x', 'u1')];
 
       const hashA = await hashJson(sortCoversById(deviceAOrder));
       const hashB = await hashJson(sortCoversById(deviceBOrder));
@@ -88,7 +80,15 @@ describe('hash stability across device-local ordering differences', () => {
       // 设备 A: 已生成 embedding（应在同步前被剥离）
       const deviceA: Record<string, Memory[]> = {
         'book-1': [
-          { ...makeMemory('m1', 'A', 2000), embedding: [0.1, 0.2], embeddingModel: 'gemma' },
+          {
+            ...makeMemory('m1', 'A', 2000),
+            embedding: [0.1, 0.2],
+            embeddings: [
+              [0.1, 0.2],
+              [0.3, 0.4],
+            ],
+            embeddingModel: 'gemma',
+          } as Memory & { embedding: number[] },
           makeMemory('m2', 'B', 1500),
         ],
       };

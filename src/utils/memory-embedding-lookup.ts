@@ -11,6 +11,7 @@
 import { getDB } from 'src/utils/indexed-db';
 import type { Memory } from 'src/models/memory';
 import { MODEL_VERSION } from 'src/services/embedding-service';
+import { LOCAL_EMBEDDING_SEGMENT_TARGET_CHARS } from 'src/utils/embedding-text-segments';
 
 /**
  * Memory 存储结构（IndexedDB）
@@ -22,12 +23,12 @@ interface MemoryStorage {
   summary: string;
   createdAt: number;
   lastAccessedAt: number;
-  embedding?: number[];
+  embeddings?: number[][];
   embeddingModel?: string;
 }
 
 /**
- * 把 IndexedDB 里的 MemoryStorage 转成对外 Memory，保留可选的 embedding 字段。
+ * 把 IndexedDB 里的 MemoryStorage 转成对外 Memory，保留可选的 embeddings 字段。
  * 叶子 DB 工具与 MemoryService 的读路径共用（MemoryService 直接 re-export 这个函数）。
  */
 export function storageToMemory(storage: MemoryStorage): Memory {
@@ -39,7 +40,7 @@ export function storageToMemory(storage: MemoryStorage): Memory {
     createdAt: storage.createdAt,
     lastAccessedAt: storage.lastAccessedAt,
   };
-  if (storage.embedding !== undefined) result.embedding = storage.embedding;
+  if (storage.embeddings !== undefined) result.embeddings = storage.embeddings;
   if (storage.embeddingModel !== undefined) result.embeddingModel = storage.embeddingModel;
   return result;
 }
@@ -49,12 +50,43 @@ export function storageToMemory(storage: MemoryStorage): Memory {
  * 集中在叶子模块避免"比对逻辑在各处独立漂移"。
  */
 export function isMemoryEmbeddingStale(memory: {
-  embedding?: number[] | undefined;
+  embeddings?: number[][] | undefined;
   embeddingModel?: string | undefined;
+  summary?: string | undefined;
+  content?: string | undefined;
 }): boolean {
-  if (!memory.embedding || memory.embedding.length === 0) return true;
+  const segmentEmbeddingCount =
+    memory.embeddings?.filter((embedding) => embedding.length > 0).length ?? 0;
+  if (segmentEmbeddingCount === 0) return true;
   if (memory.embeddingModel !== MODEL_VERSION) return true;
+  const sourceLength = [memory.summary, memory.content]
+    .map((text) => text?.trim() ?? '')
+    .filter(Boolean)
+    .join('\n').length;
+  if (sourceLength > LOCAL_EMBEDDING_SEGMENT_TARGET_CHARS && segmentEmbeddingCount < 2) {
+    return true;
+  }
   return false;
+}
+
+export type MemoryEmbeddingStatus = 'ready' | 'pending' | 'stale';
+
+/**
+ * UI 与批处理共用的 Memory 向量状态。只认多向量字段；旧单向量会被视为缺失。
+ */
+export function getMemoryEmbeddingStatus(
+  memory:
+    | {
+        embeddings?: number[][] | undefined;
+        embeddingModel?: string | undefined;
+        summary?: string | undefined;
+        content?: string | undefined;
+      }
+    | null
+    | undefined,
+): MemoryEmbeddingStatus {
+  if (!memory?.embeddings?.some((embedding) => embedding.length > 0)) return 'pending';
+  return isMemoryEmbeddingStale(memory) ? 'stale' : 'ready';
 }
 
 /**
@@ -90,7 +122,7 @@ export async function getAllBookMemoriesFromDB(bookId: string): Promise<Memory[]
 }
 
 /**
- * 只写入 embedding 字段（不更新 lastAccessedAt，不影响同步 dirty flag）。
+ * 只写入 embeddings 字段（不更新 lastAccessedAt，不影响同步 dirty flag）。
  * 不同步 MemoryService 缓存、不派发事件 —— 见文件头注释。
  *
  * 错误处理：失败时抛出（配额、事务中止等），不吞掉。调用方（MemoryService.updateMemoryEmbeddingOnly
@@ -99,18 +131,23 @@ export async function getAllBookMemoriesFromDB(bookId: string): Promise<Memory[]
  */
 export async function updateMemoryEmbeddingInDB(
   memoryId: string,
-  embedding: number[],
+  embeddings: number[][],
   embeddingModel: string,
 ): Promise<void> {
   if (!memoryId) throw new Error('Memory ID 不能为空');
-  if (!embedding || embedding.length === 0) throw new Error('embedding 不能为空');
+  if (!embeddings.length || embeddings.some((item) => item.length === 0)) {
+    throw new Error('embeddings 不能为空');
+  }
   if (!embeddingModel) throw new Error('embeddingModel 不能为空');
 
   const db = await getDB();
   const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
   // 记录被删除是合法状态（不是错误），直接 return；缓存侧也没有东西要更新
   if (!existing) return;
-  const updated: MemoryStorage = { ...existing, embedding, embeddingModel };
+  const { embedding: _legacyEmbedding, ...cleanExisting } = existing as MemoryStorage & {
+    embedding?: number[];
+  };
+  const updated: MemoryStorage = { ...cleanExisting, embeddings, embeddingModel };
   await db.put('memories', updated);
 }
 

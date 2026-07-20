@@ -20,7 +20,7 @@ function makeMemory(id: string, overrides: Partial<Memory> = {}): Memory {
     createdAt: overrides.createdAt ?? 1,
     lastAccessedAt: overrides.lastAccessedAt ?? 1,
   };
-  if (overrides.embedding !== undefined) mem.embedding = overrides.embedding;
+  if (overrides.embeddings !== undefined) mem.embeddings = overrides.embeddings;
   if (overrides.embeddingModel !== undefined) mem.embeddingModel = overrides.embeddingModel;
   return mem;
 }
@@ -35,14 +35,37 @@ async function waitForIdle(timeoutMs = 2000): Promise<void> {
   await new Promise((r) => setTimeout(r, 5));
 }
 
+describe('Memory embedding 状态', () => {
+  test('无多向量时为 pending，旧单向量不会被识别为 ready', () => {
+    expect(memoryEmbeddingLookup.getMemoryEmbeddingStatus(makeMemory('missing'))).toBe('pending');
+    const legacy = { ...makeMemory('legacy'), embedding: [1, 0] } as Memory & {
+      embedding: number[];
+    };
+    expect(memoryEmbeddingLookup.getMemoryEmbeddingStatus(legacy)).toBe('pending');
+  });
+
+  test('当前模型的多向量为 ready，模型过期则为 stale', () => {
+    expect(
+      memoryEmbeddingLookup.getMemoryEmbeddingStatus(
+        makeMemory('ready', { embeddings: [[1, 0]], embeddingModel: MODEL_VERSION }),
+      ),
+    ).toBe('ready');
+    expect(
+      memoryEmbeddingLookup.getMemoryEmbeddingStatus(
+        makeMemory('stale', { embeddings: [[1, 0]], embeddingModel: 'old-model' }),
+      ),
+    ).toBe('stale');
+  });
+});
+
 describe('EmbeddingQueue - 入队与批处理', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     // 总开关默认为 false,测试默认打开以复用既有断言
     useSettingsStore().settings.enableLocalEmbedding = true;
     // eq 通过 settings-lookup 叶子读总开关,让它透传 store 当前值
-    spyOn(settingsLookup, 'readEnableLocalEmbeddingFromDB').mockImplementation(async () =>
-      useSettingsStore().settings.enableLocalEmbedding,
+    spyOn(settingsLookup, 'readEnableLocalEmbeddingFromDB').mockImplementation(
+      async () => useSettingsStore().settings.enableLocalEmbedding,
     );
     EmbeddingQueue.__resetForTesting();
     // 默认让 service "已就绪"
@@ -55,7 +78,7 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     mock.restore();
   });
 
-  test('enqueue 单条后自动处理并写回 embedding', async () => {
+  test('enqueue 单条后自动处理并写回 embeddings', async () => {
     const memoryA = makeMemory('a');
     spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockResolvedValue(memoryA);
     const updateSpy = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(
@@ -69,11 +92,43 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     expect(updateSpy).toHaveBeenCalledTimes(1);
     const call = updateSpy.mock.calls[0]!;
     expect(call[0]).toBe('a');
-    const vec = call[1];
-    expect(vec).toHaveLength(2);
-    expect(vec[0]).toBeCloseTo(0.1, 5);
-    expect(vec[1]).toBeCloseTo(0.2, 5);
+    const embeddings = call[1];
+    expect(embeddings).toHaveLength(1);
+    expect(embeddings[0]![0]).toBeCloseTo(0.1, 5);
+    expect(embeddings[0]![1]).toBeCloseTo(0.2, 5);
     expect(call[2]).toBe(MODEL_VERSION);
+  });
+
+  test('长记忆按短段嵌入并把全部向量聚合写回', async () => {
+    const content = Array.from(
+      { length: 18 },
+      (_, index) => `第 ${index + 1} 段：${'长文本内容。'.repeat(90)}`,
+    ).join('\n');
+    spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockResolvedValue(
+      makeMemory('long-memory', { summary: '长记忆摘要', content }),
+    );
+    const updateSpy = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(
+      undefined,
+    );
+    const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockImplementation(
+      async (texts: string[]) => texts.map((_, index) => new Float32Array([index + 1, index + 2])),
+    );
+
+    EmbeddingQueue.enqueue('long-memory');
+    await waitForIdle();
+
+    const embeddedTexts = embedBatchSpy.mock.calls.flatMap((call) => call[0] as string[]);
+    expect(embeddedTexts.length).toBeGreaterThan(1);
+    expect(embeddedTexts.length).toBeLessThanOrEqual(12);
+    expect(embeddedTexts.every((text) => text.length <= 1200)).toBe(true);
+    expect(embedBatchSpy.mock.calls.every((call) => (call[0] as string[]).length <= 8)).toBe(true);
+
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    const persistedEmbeddings = (
+      updateSpy.mock.calls[0] as unknown as [string, number[][], string]
+    )[1];
+    expect(persistedEmbeddings).toHaveLength(embeddedTexts.length);
+    expect(persistedEmbeddings[0]).toEqual([1, 2]);
   });
 
   test('重复 enqueue 同一 id 不会重复处理', async () => {
@@ -179,7 +234,9 @@ describe('EmbeddingQueue - 入队与批处理', () => {
 
   test('总开关关闭时:不处理 pending,也不调用 embedBatch', async () => {
     useSettingsStore().settings.enableLocalEmbedding = false;
-    const getMemSpy = spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockResolvedValue(makeMemory('a'));
+    const getMemSpy = spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockResolvedValue(
+      makeMemory('a'),
+    );
     const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([
       new Float32Array([0.1]),
     ]);
@@ -314,12 +371,12 @@ describe('EmbeddingQueue - 入队与批处理', () => {
   test('enqueueBacklog 只入队需要嵌入的记忆', async () => {
     const memories = [
       makeMemory('ok', {
-        embedding: [0.1, 0.2],
+        embeddings: [[0.1, 0.2]],
         embeddingModel: MODEL_VERSION,
       }),
       makeMemory('missing'),
       makeMemory('stale', {
-        embedding: [0.3],
+        embeddings: [[0.3]],
         embeddingModel: 'old-model@128',
       }),
     ];
@@ -339,6 +396,23 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     // 只有 missing 和 stale 被送进 embedBatch
     const callTexts = (embedBatchSpy.mock.calls[0]?.[0] as string[]) ?? [];
     expect(callTexts).toHaveLength(2);
+  });
+
+  test('enqueueBacklog 会升级只有旧单向量的长记忆', async () => {
+    const legacyLongMemory = {
+      ...makeMemory('legacy-long', {
+        content: '旧版长记忆。'.repeat(220),
+        embeddingModel: MODEL_VERSION,
+      }),
+      embedding: [0.1, 0.2],
+    } as Memory & { embedding: number[] };
+    spyOn(memoryEmbeddingLookup, 'getAllBookMemoriesFromDB').mockResolvedValue([legacyLongMemory]);
+    EmbeddingQueue.pause();
+
+    const added = await EmbeddingQueue.enqueueBacklog('book-1');
+
+    expect(added).toBe(1);
+    expect(EmbeddingQueue.getProgress().breakdown.memory.pending).toBe(1);
   });
 
   test('EmbeddingService 未就绪时清空处理但保留 pending', async () => {
@@ -614,8 +688,8 @@ describe('EmbeddingQueue - applySyncGate', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     useSettingsStore().settings.enableLocalEmbedding = true;
-    spyOn(settingsLookup, 'readEnableLocalEmbeddingFromDB').mockImplementation(async () =>
-      useSettingsStore().settings.enableLocalEmbedding,
+    spyOn(settingsLookup, 'readEnableLocalEmbeddingFromDB').mockImplementation(
+      async () => useSettingsStore().settings.enableLocalEmbedding,
     );
     EmbeddingQueue.__resetForTesting();
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);

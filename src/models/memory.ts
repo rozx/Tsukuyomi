@@ -9,6 +9,6 @@ export interface Memory {
   summary: string; // AI 生成的摘要
   createdAt: number; // 创建时间戳
   lastAccessedAt: number; // 最后访问时间戳（用于 LRU）
-  embedding?: number[]; // 语义向量（256 维 Matryoshka 截断，L2 归一化）
+  embeddings?: number[][]; // 分段语义向量；长记忆评分时取所有分段中的最佳匹配
   embeddingModel?: string; // 生成该向量的模型版本标识，例如 "gte-multilingual-base@256"
 }

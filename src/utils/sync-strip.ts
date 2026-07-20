@@ -5,7 +5,8 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
 
 /**
  * 剥离 Memory 的本地字段：
- * - `embedding`：256 维本地向量，按需生成（EmbeddingQueue 异步填充），不应参与同步
+ * - `embedding`：已废弃的旧版单向量字段，防御性清理
+ * - `embeddings`：按需生成的分段本地向量，不参与同步
  * - `embeddingModel`：embedding 版本标识，同样是本地状态
  * - `attachedTo`：已废弃字段，防御性清理
  *
@@ -16,7 +17,13 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
 function stripMemoryLocalFields(memory: Memory): Memory {
   if (!memory || typeof memory !== 'object') return memory;
 
-  const { embedding: _e, embeddingModel: _em, ...rest } = memory as Memory & {
+  const {
+    embedding: _e,
+    embeddings: _es,
+    embeddingModel: _em,
+    ...rest
+  } = memory as Memory & {
+    embedding?: unknown;
     attachedTo?: unknown;
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,7 +40,7 @@ export function stripNovelLocalFields(novel: Novel): Novel {
 
   const stripTranslation = (t: unknown): unknown => {
     if (!t || typeof t !== 'object') return t;
-     
+
     const { memoryScoreBreakdown: _b, ...rest } = t as Record<string, unknown>;
     return rest;
   };
@@ -107,12 +114,10 @@ export function normalizeMemoriesForSync(
 export function stripAppSettingsLocalFields(
   settings: AppSettings & { syncs?: unknown },
 ): AppSettings {
-   
   const { syncs: _syncs, memoryInjection: rawMemoryInjection, ...rest } = settings;
 
   const memoryInjection = rawMemoryInjection
     ? (() => {
-         
         const { embeddingModelCached: _c, ...miRest } = rawMemoryInjection as unknown as Record<
           string,
           unknown
