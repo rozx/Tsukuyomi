@@ -1,8 +1,8 @@
 /**
  * 章节混合检索打分测试 — 验证 queryChapters 的多路融合公式:
- *   semantic = max(title_norm, content_max, content_top3_mean)
- *   keyword  = max(title_kw × 1.0, content_kw × 0.6)
- *   total    = 0.65 × semantic + 0.35 × keyword
+ *   semantic = confidence(raw cosine) × normalized RRF rank
+ *   keyword  = raw keyword × normalized RRF rank
+ *   total    = 0.85 × semantic + 0.15 × keyword
  *
  * 用 fake vectors 控制 cosine 相似度,观察哪一路通道决定排序。
  */
@@ -162,6 +162,31 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     expect(results[0]?.preview).toContain('紧张到胃痛');
   });
 
+  it('长章节的单个强场景不会被同章其它 chunk 稀释', async () => {
+    const v = (c: number): number[] => [c, Math.sqrt(1 - c * c)];
+    const bookId = 'b';
+    await seedBook(bookId, '本卷', [
+      { id: 'scene', title: '长章节' },
+      { id: 'broad-noise', title: '泛相关章节' },
+    ]);
+    spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
+
+    await putContentChunks('scene', bookId, [
+      { vector: v(0.95), snippet: '目标场景片段' },
+      { vector: v(0.2), snippet: '同章其它内容甲' },
+      { vector: v(0.2), snippet: '同章其它内容乙' },
+    ]);
+    await putContentChunks('broad-noise', bookId, [
+      { vector: v(0.8), snippet: '泛相关内容甲' },
+      { vector: v(0.8), snippet: '泛相关内容乙' },
+      { vector: v(0.8), snippet: '泛相关内容丙' },
+    ]);
+
+    const results = await ChapterEmbeddingService.queryChapters(bookId, '未出现的查询词', 5);
+    expect(results[0]?.chapter_id).toBe('scene');
+    expect(results[0]?.preview).toBe('目标场景片段');
+  });
+
   it('整章主题型 query:content blend 通道让 broadly-relevant 章节胜出', async () => {
     // 用 pre-normalized 向量(norm = 1)让 cosine = 第一维分量,便于精确推算
     // sqrt(1 - c²) 为第二维。所有向量手动算好。
@@ -175,7 +200,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
     // ch-1: 三个 chunk 都 ~0.85-0.87 → content_max ≈ 0.87, top3_mean ≈ 0.86
-    //        blend = 0.6 × 0.87 + 0.4 × 0.86 ≈ 0.866
+    //        blend = 0.85 × 0.87 + 0.15 × 0.86 ≈ 0.869
     await putContentChunks('ch-1', bookId, [
       { vector: v(0.87), snippet: 'a1' },
       { vector: v(0.86), snippet: 'a2' },
@@ -184,7 +209,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     await putChunk('ch-1', bookId, 'title', TITLE_CHUNK_INDEX, v(0.5), '[章] 日常');
 
     // ch-2: 一个 outlier 稍高 0.90,其它两个仅 0.10 → content_max = 0.90, top3_mean ≈ 0.367
-    //        blend = 0.6 × 0.90 + 0.4 × 0.367 ≈ 0.687 → 显著低于 ch-1
+    //        blend = 0.85 × 0.90 + 0.15 × 0.367 ≈ 0.820 → 仍低于 ch-1
     await putContentChunks('ch-2', bookId, [
       { vector: v(0.90), snippet: 'b1-outlier' },
       { vector: v(0.10), snippet: 'b2' },
@@ -225,7 +250,85 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     expect(results[0]?.chapter_id).toBe('ch-2');
   });
 
-  it('全书 chunk 抱团触发 SPREAD_FLOOR:降级到纯 keyword,字面命中赢', async () => {
+  it('正文精确命中可纠正单个语义离群噪声', async () => {
+    const v = (c: number): number[] => [c, Math.sqrt(1 - c * c)];
+    const bookId = 'b';
+    await seedBook(bookId, '本卷', [
+      { id: 'correct', title: '老爷子的日常' },
+      { id: 'semantic-outlier', title: '无关章节' },
+      { id: 'other-a', title: '普通章节甲' },
+      { id: 'other-b', title: '普通章节乙' },
+    ]);
+    spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
+
+    // 离群 chunk 的 raw cosine 明显更高，但正确章节正文完整包含 query。
+    await putContentChunks('correct', bookId, [
+      { vector: v(0.7), snippet: '公司合同原文' },
+    ]);
+    await putContentChunks('semantic-outlier', bookId, [
+      { vector: v(0.98), snippet: '完全无关的暑假日常' },
+    ]);
+    await putContentChunks('other-a', bookId, [
+      { vector: v(0.35), snippet: '普通对话' },
+    ]);
+    await putContentChunks('other-b', bookId, [
+      { vector: v(0.34), snippet: '普通场景' },
+    ]);
+
+    const results = await ChapterEmbeddingService.queryChapters(bookId, '公司合同原文', 5);
+    expect(results[0]?.chapter_id).toBe('correct');
+  });
+
+  it('无关键词且语义分布无明显相关项时返回空结果', async () => {
+    const v = (c: number): number[] => [c, Math.sqrt(1 - c * c)];
+    const bookId = 'b';
+    await seedBook(bookId, '本卷', [
+      { id: 'ch-1', title: '日常甲' },
+      { id: 'ch-2', title: '日常乙' },
+      { id: 'ch-3', title: '日常丙' },
+      { id: 'ch-4', title: '日常丁' },
+    ]);
+    spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
+
+    await putContentChunks('ch-1', bookId, [{ vector: v(0.5), snippet: '放学后的对话' }]);
+    await putContentChunks('ch-2', bookId, [{ vector: v(0.49), snippet: '周末外出游玩' }]);
+    await putContentChunks('ch-3', bookId, [{ vector: v(0.48), snippet: '教室里的午餐' }]);
+    await putContentChunks('ch-4', bookId, [{ vector: v(0.47), snippet: '社团活动结束' }]);
+
+    const results = await ChapterEmbeddingService.queryChapters(
+      bookId,
+      '宇宙飞船发动机维修',
+      5,
+    );
+    expect(results).toEqual([]);
+  });
+
+  it('无关键词的孤立弱语义命中低于质量门槛时不返回', async () => {
+    const v = (c: number): number[] => [c, Math.sqrt(1 - c * c)];
+    const bookId = 'b';
+    await seedBook(bookId, '本卷', [
+      { id: 'ch-1', title: '日常甲' },
+      { id: 'ch-2', title: '日常乙' },
+      { id: 'ch-3', title: '日常丙' },
+      { id: 'ch-4', title: '日常丁' },
+    ]);
+    spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
+
+    // 第一名虽高于背景分布,但校准后的总分只有约 0.43；这种孤立弱命中不应硬返回。
+    await putContentChunks('ch-1', bookId, [{ vector: v(0.56), snippet: '放学后的闲聊' }]);
+    await putContentChunks('ch-2', bookId, [{ vector: v(0.51), snippet: '周末的午餐' }]);
+    await putContentChunks('ch-3', bookId, [{ vector: v(0.5), snippet: '社团活动' }]);
+    await putContentChunks('ch-4', bookId, [{ vector: v(0.49), snippet: '回家路上' }]);
+
+    const results = await ChapterEmbeddingService.queryChapters(
+      bookId,
+      '量子色动力学实验数据',
+      5,
+    );
+    expect(results).toEqual([]);
+  });
+
+  it('全书语义分完全并列时降级到 keyword,字面命中赢', async () => {
     const bookId = 'b';
     await seedBook(bookId, '本卷', [
       { id: 'ch-1', title: '芬恩的剑技' },
@@ -248,9 +351,9 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     await putChunk('ch-2', bookId, 'title', TITLE_CHUNK_INDEX, flatVec, '[章] 日常对话');
 
     const results = await ChapterEmbeddingService.queryChapters(bookId, '芬恩', 5);
-    // 抱团 → semantic 全为 0,只剩 keyword;ch-1 标题命中 "芬恩"
+    // 无对比度 → semantic 置信度为 0,只剩 keyword;ch-1 标题命中 "芬恩"
     expect(results[0]?.chapter_id).toBe('ch-1');
-    // 总分 = 0 + 0.35 × keyword,应该 > 0
+    // 总分只剩 keyword 通道,应该 > 0
     expect(results[0]?.score).toBeGreaterThan(0);
   });
 
@@ -289,7 +392,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     ]);
     await putChunk('ch-1', bookId, 'title', TITLE_CHUNK_INDEX, [0.5, 0.5], '[章] 短章');
 
-    // 不抛错,正常返回(N < 2 触发 SPREAD_FLOOR 走纯 keyword,但还是有结果)
+    // 不抛错,单章候选仍可用绝对语义置信度与关键词正常返回
     const results = await ChapterEmbeddingService.queryChapters(bookId, '只是测试', 5);
     expect(results).toHaveLength(1);
     expect(results[0]?.chapter_id).toBe('ch-1');
@@ -339,12 +442,12 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     );
 
     const results = await ChapterEmbeddingService.queryChapters(bookId, '只有', 5);
-    // 单条 chunk 的情况 SPREAD_FLOOR 触发降级,但 title kw 仍能命中,有结果返回
+    // 单条 chunk 时 title keyword 仍能命中,有结果返回
     expect(results).toHaveLength(1);
     expect(results[0]?.preview).toBe('[章] 只有标题章\n\n首段');
   });
 
-  it('总分公式:total = 0.65 × semantic + 0.35 × keyword', async () => {
+  it('总分公式以语义为主，并过滤低置信度候选', async () => {
     const bookId = 'b';
     await seedBook(bookId, '本卷', [
       { id: 'ch-1', title: '完美命中' },
@@ -353,7 +456,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
     // 让 ch-1 的语义和关键词都满分:
-    // - title 向量与 query 完全一致 → titleNorm 在 z-score 后接近 1
+    // - title 向量与 query 完全一致 → semantic rank 与 confidence 均接近 1
     // - 标题字面就是 query 本身 → titleKw = 1
     await putContentChunks('ch-1', bookId, [
       { vector: [0.99, 0.01], snippet: '强命中' },
@@ -370,8 +473,8 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
 
     const results = await ChapterEmbeddingService.queryChapters(bookId, '完美命中', 5);
     expect(results[0]?.chapter_id).toBe('ch-1');
-    // 上限按公式不超过 1.0
+    // 上限按公式不超过 1.0，弱候选被最小分过滤。
     expect(results[0]?.score).toBeLessThanOrEqual(1.0);
-    expect(results[0]?.score).toBeGreaterThan(results[1]!.score);
+    expect(results).toHaveLength(1);
   });
 });

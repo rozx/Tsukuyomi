@@ -37,12 +37,6 @@ export const DEFAULT_MIN_SCORE = 0.3;
 const DEFAULT_TOP_K = 8;
 const DEFAULT_RELATIVE_DELTA = 0.06;
 
-/** 章节检索旧有 z-score 管线共用的 spread 下限；记忆检索已改用 RRF。 */
-export const SPREAD_FLOOR = 0.02;
-
-/** 章节检索旧有 z-score 管线共用的截断边界；记忆检索已改用 RRF。 */
-export const Z_CLAMP = 2;
-
 /** RRF 平滑常数。记忆候选通常不超过 500，取 10 能保留足够的头部区分度。 */
 export const RANK_FUSION_K = 10;
 
@@ -591,7 +585,7 @@ function clamp01(value: number): number {
  * 中等相似度必须同时明显高于本批中位数，避免“整批都无关，但相对第一名仍被 RRF
  * 抬成满分”。候选过少时无法可靠估计背景分布，只应用绝对相似度校准。
  */
-function calculateSemanticConfidenceScores(values: Array<number | null>): number[] {
+export function calculateSemanticConfidenceScores(values: Array<number | null>): number[] {
   const valid = values.filter((value): value is number => value !== null).sort((a, b) => a - b);
   const middle = Math.floor(valid.length / 2);
   const median =
@@ -617,7 +611,7 @@ function calculateSemanticConfidenceScores(values: Array<number | null>): number
 /**
  * 把一个信号列表转成 [0, 1] 的 RRF 排名分。相同原始分使用相同名次；null 不参赛。
  */
-function calculateNormalizedRrfScores(values: Array<number | null>): number[] {
+export function calculateNormalizedRrfScores(values: Array<number | null>): number[] {
   const ranked = values
     .map((value, index) => ({ value, index }))
     .filter((item): item is { value: number; index: number } => item.value !== null)

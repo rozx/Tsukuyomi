@@ -412,7 +412,7 @@ describe('queryChapters — round 2 集成', () => {
 
     await putChunk('ch-1', bookId, 'title', TITLE_CHUNK_INDEX, [0.99, 0.01], '[章] 只有标题');
 
-    // 不抛错,正常返回(单条 chunk → SPREAD_FLOOR 触发降级,但 keyword 仍能命中)
+    // 不抛错,正常返回(单条 chunk 时 keyword 仍能命中)
     const results = await ChapterEmbeddingService.queryChapters(bookId, '只有', 5);
     expect(results).toHaveLength(1);
     expect(results[0]?.chapter_id).toBe('ch-1');

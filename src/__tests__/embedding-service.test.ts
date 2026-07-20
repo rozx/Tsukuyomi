@@ -142,7 +142,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     EmbeddingService.__resetForTesting();
   });
 
-  test('embed 返回 256 维 L2 归一化向量', async () => {
+  test('embed 返回原生 768 维 L2 归一化向量,保留跨语言细粒度语义', async () => {
     mockPipelineImpl = async () => fakePooledOutput(1, 0.5);
     await EmbeddingService.init();
 
@@ -313,8 +313,8 @@ describe('EmbeddingService - cosineSimilarity', () => {
 
 describe('EmbeddingService - 常量', () => {
   test('MODEL_VERSION 与 DIMENSIONS 与 spec 一致', () => {
-    expect(MODEL_VERSION).toBe('gte-multilingual-base@256@cls@raw');
-    expect(DIMENSIONS).toBe(256);
+    expect(MODEL_VERSION).toBe('gte-multilingual-base@768@cls@raw');
+    expect(DIMENSIONS).toBe(768);
   });
 });
 

@@ -8,8 +8,8 @@
  *   作为标题型 query 的语义锚点
  * - 调 EmbeddingService.embedBatch 生成向量(content + title 一并送入,共用模型 warmup)
  * - 原子替换 chapter-embeddings store 中该章节的所有 chunk(按 kind 分别清旧)
- * - 提供 queryChapters 做混合检索:语义(z-score 归一化)+ 关键词(字面),
- *   章节级 semantic 取 max(title, content_max, content_top3_mean)
+ * - 提供 queryChapters 做混合检索:语义置信度 + RRF 排名和关键词排名融合,
+ *   章节级 semantic 取 max(title, content_max/top3 blend)
  *
  * 存储布局:
  * - store: `chapter-embeddings`
@@ -32,11 +32,11 @@ import {
   loadBookMetaFromDB,
 } from 'src/utils/chapter-book-lookup';
 import {
+  calculateNormalizedRrfScores,
   calculateQueryKeywordScore,
+  calculateSemanticConfidenceScores,
   extractQueryUnits,
   isIdentifierUnit,
-  SPREAD_FLOOR,
-  Z_CLAMP,
 } from 'src/services/memory-scoring';
 import type { Memory } from 'src/models/memory';
 
@@ -222,12 +222,12 @@ export function expandQueryWithAliases(query: string, index: BookAliasIndex): st
 /**
  * 目标 chunk 字符数(不会破坏段落)。
  *
- * Round 5 从 1500 缩到 400 — 大约对应"段落级"粒度(轻小说一段平均 100-300 字,
- * 400 通常合并 1-3 段)。让单 chunk 语义焦点更精确,IDF / 余弦区分度都明显提升。
+ * Round 8 恢复 100 字 — 实书对比显示 200 字会把多个短对话场景合并后稀释，
+ * 导致跨语言查询漏掉正确章节；100 字能保留更精确的场景语义与预览定位。
  *
- * 单段超过 400 字仍独占 chunk(原逻辑保留),长描述段落不会被截断。
+ * 单段超过 100 字仍独占 chunk(原逻辑保留),长描述段落不会被截断。
  */
-export const CHUNK_TARGET_CHARS = 400;
+export const CHUNK_TARGET_CHARS = 100;
 /**
  * Chunk 布局版本 — 章节专用,与 EmbeddingService.MODEL_VERSION 拼接成
  * `CHAPTER_MODEL_VERSION`,作为 chapter-embeddings 的 staleness 标识。
@@ -238,7 +238,7 @@ export const CHUNK_TARGET_CHARS = 400;
  * 与 MODEL_VERSION 分离的目的:memory 也用 MODEL_VERSION,但 memory 没有 chunking
  * 概念。chapter chunking 改动不应触发 memory 重嵌。
  */
-const CHAPTER_CHUNK_LAYOUT_VERSION = 'cs400';
+const CHAPTER_CHUNK_LAYOUT_VERSION = 'cs100';
 /**
  * 章节嵌入实际使用的版本号 = MODEL_VERSION + chunking version。
  * `writeChunksForChapter` 写入此值;`queryChapters` / `findChaptersNeedingEmbedding`
@@ -264,14 +264,15 @@ export const TITLE_INPUT_MAX_CHARS = 300;
 export const TITLE_CHUNK_INDEX = 0;
 
 // ===== 混合打分参数 =====
-// 章节检索保留独立调优后的 0.65 / 0.35 权重；记忆检索已使用 0.7 / 0.3 RRF，
-// 两条管线的候选粒度和查询用途不同，不再共享权重推导。
+// embedding 可用时语义必须是主信号；关键词仅用于纠正近邻排序和精确字面命中。
 /** 章节级 semantic 在最终 total 中的权重 */
-const CHAPTER_SEMANTIC_WEIGHT = 0.65;
+const CHAPTER_SEMANTIC_WEIGHT = 0.85;
 /** 章节级 keyword 在最终 total 中的权重 */
-const CHAPTER_KEYWORD_WEIGHT = 0.35;
-/** Title 字面命中权重(强信号 — 章节真就叫这个名;加性公式里仍是 1.0 满权重) */
-const TITLE_KW_WEIGHT = 1.0;
+const CHAPTER_KEYWORD_WEIGHT = 0.15;
+/** 低于此总分的弱相对命中不返回，避免任何 query 都硬凑出 5 个章节。 */
+const CHAPTER_QUERY_MIN_SCORE = 0.45;
+/** 明确字面命中可越过总分阈值，确保语义无区分度时仍能用关键词兜底。 */
+const KEYWORD_FALLBACK_FLOOR = 0.5;
 /** content_top_k_mean 取前 K 个 content chunk 的均值,K = min(CONTENT_TOP_K, 实际数量) */
 const CONTENT_TOP_K = 3;
 /**
@@ -281,10 +282,10 @@ const CONTENT_TOP_K = 3;
  *   同一章内 top_k_mean ≤ max,max 通道里 top_k_mean 永远不可能胜出 → "整章相关"
  *   信号被埋没。改用线性融合让 top_k_mean 有实际权重。
  *
- * α = 0.6 偏向 max,保留"单段强命中"的检索效果(用户反馈已生效的场景);
- * 0.4 给 top_k_mean,提升"整章中等命中"的章节排名。
+ * α = 0.85 明确偏向 max,避免长章节里的单个强场景被其它 chunk 稀释；
+ * 仍保留 0.15 给 top_k_mean,用于同分附近提升"整章中等命中"的章节。
  */
-const CONTENT_MAX_BLEND_ALPHA = 0.6;
+const CONTENT_MAX_BLEND_ALPHA = 0.85;
 /**
  * 专名命中加权系数。query unit 出现在书的专名表(terminologies + characterSettings + aliases
  * 双语)里时,该 unit 的命中分乘以此系数(再 clamp 到 [0, 1])。让"夏洛特"、"莉莉花园"
@@ -309,8 +310,6 @@ const IDENTIFIER_BOOST = 3.0;
  * 又不会硬过滤掉所有非完美匹配。
  */
 const IDENTIFIER_MISMATCH_PENALTY = 0.3;
-/** Title + content keyword 加性融合的 content 加成系数(round 2 改为加性 cap 1.0) */
-const CONTENT_KW_ADDITIVE_WEIGHT = 0.4;
 /**
  * IDF 加权下界 — 即便单元出现在每一章(idf=0),也保留 IDF_FLOOR 的最低权重
  * 而不是把命中分压到 0;同时 1.0 + (1 - IDF_FLOOR) × idf 让最稀有单元 (idf=1) 拿
@@ -433,66 +432,49 @@ export function splitChapterIntoChunks(paragraphs: Paragraph[]): ChapterChunkDra
   return chunks;
 }
 
-/** queryChapters 内部聚合：按 chapterId 汇总 title / content 两路的归一化分与预览片段 */
+/** queryChapters 内部聚合：按 chapterId 汇总 title / content 两路的原始余弦与预览片段 */
 interface ChapterAgg {
   chapterId: string;
-  titleNorm: number;
-  contentNorms: number[];
+  titleSemantic: number;
+  contentSemantics: number[];
   contentSnippets: Array<{ score: number; snippet: string }>;
   titleSnippet: string;
 }
 
-/**
- * 按 memory-scoring 的 z-score 公式做全池归一化：stddev < SPREAD_FLOOR 时整批降级为 0。
- */
-function computeNormalizedCosines(
+/** 计算 query 与每个 chunk 的原始余弦；跨章节的校准在章节聚合完成后进行。 */
+function computeRawCosines(
   chunks: ChapterEmbedding[],
   queryVec: Float32Array | number[],
 ): number[] {
-  const rawCosines = chunks.map((c) => cosineSimilarity(queryVec, c.vector));
-  let mean = 0;
-  let stddev = 0;
-  if (rawCosines.length >= 2) {
-    mean = rawCosines.reduce((a, b) => a + b, 0) / rawCosines.length;
-    const variance =
-      rawCosines.reduce((acc, v) => acc + (v - mean) * (v - mean), 0) / rawCosines.length;
-    stddev = Math.sqrt(variance);
-  }
-  const semanticUsable = rawCosines.length >= 2 && stddev >= SPREAD_FLOOR;
-  return rawCosines.map((raw) => {
-    if (!semanticUsable) return 0;
-    const z = (raw - mean) / stddev;
-    const mapped = (z + Z_CLAMP) / (2 * Z_CLAMP);
-    return Math.min(1, Math.max(0, mapped));
-  });
+  return chunks.map((c) => cosineSimilarity(queryVec, c.vector));
 }
 
-/** 按 chapterId 聚合 chunks：title chunk 的归一化分走 titleNorm，其余进 content 两个数组 */
+/** 按 chapterId 聚合 chunks：title 与 content 保留原始语义分，避免全池 z-score 制造伪高分。 */
 function aggregateChunksByChapter(
   chunks: ChapterEmbedding[],
-  normalized: number[],
+  rawCosines: number[],
 ): Map<string, ChapterAgg> {
   const byChapter = new Map<string, ChapterAgg>();
   for (let i = 0; i < chunks.length; i++) {
     const c = chunks[i]!;
-    const norm = normalized[i]!;
+    const raw = rawCosines[i]!;
     let agg = byChapter.get(c.chapterId);
     if (!agg) {
       agg = {
         chapterId: c.chapterId,
-        titleNorm: 0,
-        contentNorms: [],
+        titleSemantic: 0,
+        contentSemantics: [],
         contentSnippets: [],
         titleSnippet: '',
       };
       byChapter.set(c.chapterId, agg);
     }
     if (c.kind === 'title') {
-      agg.titleNorm = Math.max(agg.titleNorm, norm);
+      agg.titleSemantic = Math.max(agg.titleSemantic, raw);
       if (!agg.titleSnippet) agg.titleSnippet = c.textSnippet;
     } else {
-      agg.contentNorms.push(norm);
-      agg.contentSnippets.push({ score: norm, snippet: c.textSnippet });
+      agg.contentSemantics.push(raw);
+      agg.contentSnippets.push({ score: raw, snippet: c.textSnippet });
     }
   }
   return byChapter;
@@ -517,21 +499,20 @@ function buildChapterTitleLookups(book: Novel | null | undefined): {
   return { chapterTitleLookup, volumeTitleLookup };
 }
 
-/** content 通道：融合 max 与 top-K mean；semantic = max(title_norm, content_semantic) */
+/** content 通道：融合 max 与 top-K mean；semantic = max(title, content_semantic) */
 function computeChapterSemanticScore(agg: ChapterAgg): number {
-  if (agg.contentNorms.length === 0) return agg.titleNorm;
-  const contentMax = Math.max(...agg.contentNorms);
-  const sortedDesc = [...agg.contentNorms].sort((a, b) => b - a);
+  if (agg.contentSemantics.length === 0) return agg.titleSemantic;
+  const contentMax = Math.max(...agg.contentSemantics);
+  const sortedDesc = [...agg.contentSemantics].sort((a, b) => b - a);
   const k = Math.min(CONTENT_TOP_K, sortedDesc.length);
   const contentTopKMean = sortedDesc.slice(0, k).reduce((a, b) => a + b, 0) / k;
   const contentSemantic =
     CONTENT_MAX_BLEND_ALPHA * contentMax + (1 - CONTENT_MAX_BLEND_ALPHA) * contentTopKMean;
-  return Math.max(agg.titleNorm, contentSemantic);
+  return Math.max(agg.titleSemantic, contentSemantic);
 }
 
 /**
- * keyword = min(1, title_kw + content_kw × 0.4)（加性 cap）。
- * 单独标题命中仍可达 1.0 上限，正文加成助推双命中章节。
+ * title / content 是两个互补的字面检索面，加总后截到 1；正文命中不再被固定折损。
  */
 function computeChapterKeywordScore(
   agg: ChapterAgg,
@@ -550,7 +531,7 @@ function computeChapterKeywordScore(
     const score = kwOnText(expandedQuery, '', cs.snippet, properNouns, idfWeights);
     if (score > contentKw) contentKw = score;
   }
-  return Math.min(1, titleKw * TITLE_KW_WEIGHT + contentKw * CONTENT_KW_ADDITIVE_WEIGHT);
+  return Math.min(1, titleKw + contentKw);
 }
 
 /**
@@ -774,11 +755,11 @@ export class ChapterEmbeddingService {
    *
    * 流程(对应 design.md D3-D6):
    * 1. query 做 embed,与全书 chunk(content + title)算 raw cosine
-   * 2. 全池 z-score 归一化到 [0, 1];整批 stddev < SPREAD_FLOOR 时降级(normalized=0)
-   * 3. 按 chapterId 聚合:semantic = max(title_norm, content_max, content_top3_mean)
+   * 2. 按 chapterId 聚合 raw cosine:semantic_raw = max(title, content_max/top3 blend)
+   * 3. 在章节粒度分别计算 semantic / keyword 的 RRF 名次，并校准语义绝对置信度
    * 4. 关键词通道:title_kw 扫 [章节标题 + 卷标题],content_kw 扫各 content chunk snippet
-   *    keyword = max(title_kw × 1.0, content_kw × 0.6)
-   * 5. total = 0.65 × semantic + 0.35 × keyword,排序取 top limit
+   *    keyword = min(1, title_kw + content_kw)
+   * 5. total = 0.85 × semantic + 0.15 × keyword；过滤弱匹配后取 top limit
    *
    * EmbeddingService 未就绪时抛错,由调用方(工具 handler)处理结构化错误。
    */
@@ -807,11 +788,11 @@ export class ChapterEmbeddingService {
       );
     }
 
-    // ===== Pass 1:全池 raw cosine + z-score 归一化 =====
-    const normalized = computeNormalizedCosines(chunks, queryVec);
+    // ===== Pass 1:全池 raw cosine =====
+    const rawCosines = computeRawCosines(chunks, queryVec);
 
-    // ===== Pass 2:按 chapterId 聚合 — 拆 title / content 两路 =====
-    const byChapter = aggregateChunksByChapter(chunks, normalized);
+    // ===== Pass 2:按 chapterId 聚合 — 先收缩到章节粒度，再做跨章节排名 =====
+    const byChapter = aggregateChunksByChapter(chunks, rawCosines);
 
     // ===== 标题 / 卷标题 + 别名 / Identifier / IDF =====
     // 直接从 IndexedDB 加载 book 元数据,避免 import stores/books 形成循环依赖
@@ -826,33 +807,64 @@ export class ChapterEmbeddingService {
     const idfWeights = computeQueryUnitIdf(expandedQuery, chunks);
     const idfWeightsToPass = idfWeights.size > 0 ? idfWeights : undefined;
 
-    // ===== Pass 3:每章打分 =====
-    const results: ChapterQueryMatch[] = [];
+    // ===== Pass 3:先计算每章原始信号 =====
+    const candidates: Array<{
+      agg: ChapterAgg;
+      title: string;
+      volumeTitle: string;
+      semanticRaw: number;
+      keywordRaw: number;
+    }> = [];
     for (const agg of byChapter.values()) {
       const chapterTitle = chapterTitleLookup.get(agg.chapterId) ?? '';
       const volumeTitle = volumeTitleLookup.get(agg.chapterId) ?? '';
-      const semantic = computeChapterSemanticScore(agg);
-      const keyword = computeChapterKeywordScore(
+      candidates.push({
         agg,
-        chapterTitle,
+        title: chapterTitle,
         volumeTitle,
-        expandedQuery,
-        properNouns,
-        idfWeightsToPass,
-      );
+        semanticRaw: computeChapterSemanticScore(agg),
+        keywordRaw: computeChapterKeywordScore(
+          agg,
+          chapterTitle,
+          volumeTitle,
+          expandedQuery,
+          properNouns,
+          idfWeightsToPass,
+        ),
+      });
+    }
+
+    // ===== Pass 4:章节级 RRF + 置信度融合 =====
+    const semanticRawValues = candidates.map((candidate) => candidate.semanticRaw);
+    const semanticRanks = calculateNormalizedRrfScores(semanticRawValues);
+    const semanticConfidences = calculateSemanticConfidenceScores(semanticRawValues);
+    const keywordRanks = calculateNormalizedRrfScores(
+      candidates.map((candidate) =>
+        candidate.keywordRaw > 0 ? candidate.keywordRaw : null,
+      ),
+    );
+
+    const results: ChapterQueryMatch[] = [];
+    candidates.forEach((candidate, index) => {
+      const semantic =
+        (semanticRanks[index] ?? 0) * (semanticConfidences[index] ?? 0);
+      const keyword = candidate.keywordRaw * (keywordRanks[index] ?? 0);
       const total = applyIdentifierPenalty(
         CHAPTER_SEMANTIC_WEIGHT * semantic + CHAPTER_KEYWORD_WEIGHT * keyword,
         queryIdentifiers,
-        chapterTitle,
-        volumeTitle,
+        candidate.title,
+        candidate.volumeTitle,
       );
+      if (total < CHAPTER_QUERY_MIN_SCORE && candidate.keywordRaw < KEYWORD_FALLBACK_FLOOR) {
+        return;
+      }
       results.push({
-        chapter_id: agg.chapterId,
-        title: chapterTitle,
+        chapter_id: candidate.agg.chapterId,
+        title: candidate.title,
         score: total,
-        preview: pickChapterPreview(agg),
+        preview: pickChapterPreview(candidate.agg),
       });
-    }
+    });
 
     results.sort((a, b) => b.score - a.score);
     return results.slice(0, Math.max(1, limit));

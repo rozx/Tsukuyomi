@@ -110,6 +110,20 @@ describe('ChapterEmbeddingService.splitChapterIntoChunks', () => {
     expect(occurrences).toBe(3);
   });
 
+  test('约 100 字即切块,避免多个短对话场景被合并后稀释', () => {
+    const paragraphs = [
+      makeParagraph('p1', '甲'.repeat(40)),
+      makeParagraph('p2', '乙'.repeat(40)),
+      makeParagraph('p3', '丙'.repeat(40)),
+    ];
+    const chunks = splitChapterIntoChunks(paragraphs);
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]!.text).toContain('甲'.repeat(40));
+    expect(chunks[0]!.text).toContain('乙'.repeat(40));
+    expect(chunks[1]!.text).toBe('丙'.repeat(40));
+  });
+
   test('单段超长(> CHUNK_TARGET_CHARS)独占一个 chunk', () => {
     const huge = 'か'.repeat(CHUNK_TARGET_CHARS + 100);
     const paragraphs = [
@@ -394,7 +408,7 @@ describe('ChapterEmbeddingService.queryChapters', () => {
     ) as unknown as Promise<void>);
   });
 
-  test('按 chapterId 取 chunk max 聚合,排序取 top N', async () => {
+  test('按 chapterId 聚合并过滤低置信度候选', async () => {
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
     const book: Novel = {
@@ -429,17 +443,15 @@ describe('ChapterEmbeddingService.queryChapters', () => {
 
     const result = await ChapterEmbeddingService.queryChapters('book-1', 'q', 2);
 
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
     expect(result[0]!.chapter_id).toBe('ch-A');
     expect(result[0]!.title).toBe('A');
     expect(result[0]!.preview).toBe('A-1 (high)');
-    expect(result[1]!.chapter_id).toBe('ch-B');
-    expect(result[0]!.score).toBeGreaterThan(result[1]!.score);
   });
 
   test('limit 默认为 5, 超出数量时截断', async () => {
-    spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1]));
-    const chapters = Array.from({ length: 8 }, (_, i) => ({
+    spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
+    const chapters = Array.from({ length: 12 }, (_, i) => ({
       id: `ch-${i}`,
       title: `C${i}`,
       lastEdited: new Date(),
@@ -453,13 +465,22 @@ describe('ChapterEmbeddingService.queryChapters', () => {
       volumes: [{ id: 'v1', title: 'V', chapters }],
     };
     await mockBooksStoreWith(book);
-    for (let i = 0; i < 8; i++) {
+    const semanticCosines = [
+      0.99, 0.95, 0.91, 0.87, 0.83, 0.79, 0.2, 0.19, 0.18, 0.17, 0.16, 0.15,
+    ];
+    for (let i = 0; i < semanticCosines.length; i++) {
+      const cosine = semanticCosines[i]!;
       await ChapterEmbeddingService.writeChunksForChapter(`ch-${i}`, 'book-1', [
-        { kind: 'content', chunkIndex: 0, vector: [1], textSnippet: `snippet-${i}` },
+        {
+          kind: 'content',
+          chunkIndex: 0,
+          vector: [cosine, Math.sqrt(1 - cosine * cosine)],
+          textSnippet: `snippet-${i}`,
+        },
       ]);
     }
 
-    const result = await ChapterEmbeddingService.queryChapters('book-1', 'q');
+    const result = await ChapterEmbeddingService.queryChapters('book-1', 'query');
     expect(result).toHaveLength(5);
   });
 });

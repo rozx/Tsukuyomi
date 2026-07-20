@@ -6,7 +6,7 @@
  *   体积:WebGPU q4f16 ~465MB / WASM int8 ~340MB。
  *   相比 Qwen3-Embedding-0.6B(decoder + last-token pooling)同硬件下快 3-5×,
  *   因为 encoder 的 forward pass 比同等参数的 decoder 轻很多。
- * - 采用 Matryoshka 表征:从原生 768 维中截取前 256 维,再 L2 归一化。
+ * - 使用原生 768 维 CLS 表征并 L2 归一化,保留跨语言检索的细粒度语义。
  * - 模型加载走动态 import,确保 Transformers.js 不进主 bundle。
  * - 失败时静默降级:调用方通过 getStatus() 感知,不会抛到 UI 顶层。
  */
@@ -20,8 +20,8 @@ import {
 export const MODEL_ID = 'onnx-community/gte-multilingual-base';
 // 模型 id + 截取维度 + 输入方案 + pooling 方案共同构成 embedding 空间身份,任一变化必须 bump 版本号,
 // EmbeddingQueue backlog 扫描会把版本不匹配的记录当作 stale 自动重算。
-export const MODEL_VERSION = 'gte-multilingual-base@256@cls@raw';
-export const DIMENSIONS = 256;
+export const MODEL_VERSION = 'gte-multilingual-base@768@cls@raw';
+export const DIMENSIONS = 768;
 const NATIVE_DIMENSIONS = 768;
 
 export type EmbeddingStatus = 'idle' | 'loading' | 'ready' | 'failed';
@@ -397,7 +397,7 @@ export class EmbeddingService {
 
   /**
    * 对单条文本计算 embedding。
-   * 返回 256 维 L2 归一化 Float32Array。
+   * 返回 768 维 L2 归一化 Float32Array。
    * 未就绪或失败时返回 null(调用方 fallback 到纯关键词 + 时间衰减)。
    *
    * `task` 必填:'query' 用于检索查询,'document' 用于被检索的文档/记忆/章节 chunk。
@@ -413,7 +413,7 @@ export class EmbeddingService {
 
       const output = await this.pipeline!(prepareTaskText(text, task), {
         pooling: POOLING,
-        normalize: false, // 我们手动处理截断 + 归一化(Matryoshka 截前 DIMENSIONS 维后再 L2)
+        normalize: false, // 我们手动取 DIMENSIONS 维并做 L2 归一化
       });
       return this.extractFirstVector(output);
     } catch (error) {
@@ -464,7 +464,7 @@ export class EmbeddingService {
 
   /**
    * 从 transformers.js 输出(Tensor 或 { data, dims })中取第一条向量,
-   * 截取前 256 维并 L2 归一化。
+   * 取前 DIMENSIONS 维并 L2 归一化。
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private static extractFirstVector(output: any): Float32Array | null {

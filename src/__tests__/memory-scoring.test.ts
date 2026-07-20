@@ -14,7 +14,6 @@ import {
   FALLBACK_WEIGHTS,
   MAX_TOTAL_SCORE,
   DEFAULT_MIN_SCORE,
-  SPREAD_FLOOR,
 } from 'src/services/memory-scoring';
 import type { ScoredMemory } from 'src/services/memory-scoring';
 
@@ -857,10 +856,6 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     expect(result.map((s) => s.memory.id)).toEqual(['a', 'b', 'c']);
   });
 
-  test('SPREAD_FLOOR 常量导出正确', () => {
-    expect(SPREAD_FLOOR).toBeGreaterThan(0);
-    expect(SPREAD_FLOOR).toBeLessThan(0.1);
-  });
 });
 
 describe('memory-scoring - calculateQueryKeywordScore (CJK 部分匹配)', () => {

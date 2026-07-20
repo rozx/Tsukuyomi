@@ -268,7 +268,7 @@ describe('queryChapters — identifier-mismatch 惩罚', () => {
     // query 无任何 identifier
     const results = await ChapterEmbeddingService.queryChapters(bookId, '强命中', 5);
     expect(results[0]?.chapter_id).toBe('ch-1');
-    // 没被惩罚:total = 0.65 × semantic + 0.35 × keyword,没被 × 0.3
+    // 没被惩罚:语义优先的融合总分没有再被 × 0.3
     expect(results[0]!.score).toBeGreaterThan(0.2);
   });
 
