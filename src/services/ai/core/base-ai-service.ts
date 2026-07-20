@@ -14,6 +14,7 @@ import type {
   ConfigParseResult,
 } from 'src/services/ai/types/interfaces';
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
+import { getErrorMessage } from 'src/utils/error-message';
 import { CONFIG_DISCOVERY_PROMPT } from './config-prompt';
 
 /**
@@ -199,13 +200,7 @@ export abstract class BaseAIService implements AIService {
    * 处理获取模型列表时的错误
    */
   protected handleAvailableModelsError(error: unknown): AvailableModelsResult {
-    let errorMessage = '获取模型列表失败：未知错误';
-
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (error && typeof error === 'object' && 'message' in error) {
-      errorMessage = String(error.message);
-    }
+    const errorMessage = getErrorMessage(error, '获取模型列表失败：未知错误');
 
     return {
       success: false,
@@ -321,13 +316,7 @@ export abstract class BaseAIService implements AIService {
    */
   protected handleError(error: unknown, _modelName: string): AIConfigResult {
     // 处理错误
-    let errorMessage = '获取配置失败：未知错误';
-
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (error && typeof error === 'object' && 'message' in error) {
-      errorMessage = String(error.message);
-    }
+    const errorMessage = getErrorMessage(error, '获取配置失败：未知错误');
 
     return {
       success: false,
@@ -339,9 +328,7 @@ export abstract class BaseAIService implements AIService {
 /**
  * 返回首个匹配到捕获组的正则结果（按优先级）
  */
-function firstRegexGroup(
-  ...matches: Array<RegExpMatchArray | null>
-): string | undefined {
+function firstRegexGroup(...matches: Array<RegExpMatchArray | null>): string | undefined {
   for (const match of matches) {
     if (match?.[1]) return match[1];
   }

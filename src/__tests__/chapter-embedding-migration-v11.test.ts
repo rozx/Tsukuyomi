@@ -9,6 +9,7 @@
  */
 import './setup';
 import { describe, expect, it, beforeEach } from 'bun:test';
+import { getErrorMessage } from '../utils/error-message';
 
 const DB_NAME = 'tsukuyomi';
 
@@ -24,10 +25,7 @@ interface LegacyRecord {
 
 function asError(err: unknown, fallback: string): Error {
   if (err instanceof Error) return err;
-  if (err && typeof err === 'object' && 'message' in err) {
-    return new Error(String((err as { message: unknown }).message));
-  }
-  return new Error(fallback);
+  return new Error(getErrorMessage(err, fallback));
 }
 
 /** 删除整个数据库,确保从 v0 开始测试 */
@@ -128,11 +126,7 @@ describe('chapter-embeddings v10 → v11 migration', () => {
       expect(value.kind).toBe('content');
     }
     const keys = all.map((r) => r.key).sort();
-    expect(keys).toEqual([
-      'ch-1:content:0',
-      'ch-1:content:1',
-      'ch-2:content:0',
-    ]);
+    expect(keys).toEqual(['ch-1:content:0', 'ch-1:content:1', 'ch-2:content:0']);
     // 字段完整性:除了新增 kind,其它字段保留原值
     const ch1c0 = all.find((r) => r.key === 'ch-1:content:0')!.value;
     expect(ch1c0).toMatchObject({

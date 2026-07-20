@@ -510,10 +510,10 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     /**
      * 从 IndexedDB 加载思考过程
      */
-    async loadThinkingProcesses(): Promise<void> {
+    loadThinkingProcesses(): Promise<void> {
       // 如果已经加载完成，直接返回
       if (this.isLoaded) {
-        return;
+        return Promise.resolve();
       }
 
       // 如果正在加载，等待现有的加载 Promise
@@ -723,9 +723,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         });
 
         // 持久化节流：每秒最多写一次，通过箭头函数捕获 this 以便定时器触发时读取最新状态
-        schedulePersistTask(id, () =>
-          this.activeTasks.find((t: AIProcessingTask) => t.id === id),
-        );
+        schedulePersistTask(id, () => this.activeTasks.find((t: AIProcessingTask) => t.id === id));
       }
       return Promise.resolve();
     },
@@ -743,9 +741,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         }
         task.outputContent += text;
         // 持久化节流：每秒最多写一次，读取最新状态
-        schedulePersistTask(id, () =>
-          this.activeTasks.find((t: AIProcessingTask) => t.id === id),
-        );
+        schedulePersistTask(id, () => this.activeTasks.find((t: AIProcessingTask) => t.id === id));
       }
       return Promise.resolve();
     },

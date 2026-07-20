@@ -65,7 +65,7 @@ export interface ScraperDialogContext {
 
   scraperSheetMaxHeight: ComputedRef<string>;
   scraperSheetMinHeight: ComputedRef<string>;
-  bodyClass: ComputedRef<(string | undefined)[] | string[]>;
+  bodyClass: ComputedRef<(string | undefined)[]>;
   showSplitView: ComputedRef<boolean>;
   showChapterPanel: ComputedRef<boolean>;
   showPreviewPanel: ComputedRef<boolean>;

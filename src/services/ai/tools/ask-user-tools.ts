@@ -6,6 +6,7 @@ import type {
   AskUserResult,
 } from 'src/stores/ask-user';
 import { GlobalConfig } from 'src/services/global-config-cache';
+import { getErrorMessage } from 'src/utils/error-message';
 
 type AskUserOnAction = ToolContext['onAction'];
 
@@ -75,9 +76,7 @@ function buildAskUserPayload(question: string, parsedArgs: AskUserPayload): AskU
     ...(typeof parsedArgs.allow_free_text === 'boolean'
       ? { allow_free_text: parsedArgs.allow_free_text }
       : {}),
-    ...(typeof parsedArgs.placeholder === 'string'
-      ? { placeholder: parsedArgs.placeholder }
-      : {}),
+    ...(typeof parsedArgs.placeholder === 'string' ? { placeholder: parsedArgs.placeholder } : {}),
     ...(typeof parsedArgs.submit_label === 'string'
       ? { submit_label: parsedArgs.submit_label }
       : {}),
@@ -131,9 +130,7 @@ function buildAskUserActionData(
       ? { suggested_answers: payload.suggested_answers }
       : {}),
     ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
-    ...(typeof result.selected_index === 'number'
-      ? { selected_index: result.selected_index }
-      : {}),
+    ...(typeof result.selected_index === 'number' ? { selected_index: result.selected_index } : {}),
     ...(result.cancelled ? { cancelled: true } : {}),
   };
 }
@@ -147,9 +144,7 @@ function buildAskUserCancelledJson(question: string, result: AskUserResult) {
     cancelled: true,
     question,
     ...(typeof result.answer === 'string' ? { answer: result.answer } : {}),
-    ...(typeof result.selected_index === 'number'
-      ? { selected_index: result.selected_index }
-      : {}),
+    ...(typeof result.selected_index === 'number' ? { selected_index: result.selected_index } : {}),
   };
 }
 
@@ -161,9 +156,7 @@ function buildAskUserSuccessJson(question: string, result: AskUserResult) {
     success: true,
     question,
     answer: result.answer,
-    ...(typeof result.selected_index === 'number'
-      ? { selected_index: result.selected_index }
-      : {}),
+    ...(typeof result.selected_index === 'number' ? { selected_index: result.selected_index } : {}),
   };
 }
 
@@ -171,7 +164,7 @@ function buildAskUserSuccessJson(question: string, result: AskUserResult) {
  * ask_user 异常时的 JSON 响应体
  */
 function buildAskUserErrorJson(question: string, error: unknown) {
-  const msg = error instanceof Error ? error.message : String(error);
+  const msg = getErrorMessage(error);
   return { success: false, error: msg, question };
 }
 
@@ -327,7 +320,7 @@ export const askUserTools: ToolDefinition[] = [
           answers: result.answers,
         });
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = getErrorMessage(error);
         return JSON.stringify({ success: false, error: msg });
       }
     },

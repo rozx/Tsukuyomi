@@ -27,6 +27,7 @@ import {
 import { BookService } from 'src/services/book-service';
 import { useBooksStore } from 'src/stores/books';
 import { findUniqueCharactersInText, findUniqueTermsInText } from 'src/utils/text-matcher';
+import { getErrorMessage } from 'src/utils/error-message';
 import type { CharacterSetting, Terminology } from 'src/models/novel';
 
 /**
@@ -176,7 +177,10 @@ function formatRelatedCharactersSection(foundCharacters: CharacterSetting[]): st
 function formatRelatedTermsSection(foundTerms: Terminology[]): string {
   if (foundTerms.length === 0) return '';
   const termList = foundTerms
-    .map((t) => `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`)
+    .map(
+      (t) =>
+        `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`,
+    )
     .join('\n');
   return `相关术语：\n${termList}\n`;
 }
@@ -194,8 +198,7 @@ async function buildRelatedContextInfo(
 
   const booksStore = useBooksStore();
   const novel =
-    booksStore.books.find((b) => b.id === bookId) ||
-    (await BookService.getBookById(bookId, false));
+    booksStore.books.find((b) => b.id === bookId) || (await BookService.getBookById(bookId, false));
   if (!novel) {
     return '';
   }
@@ -236,11 +239,7 @@ function parseTranslationResponse(responseText: string): string {
 /**
  * 错误分支下的任务状态更新（取消 / 错误）
  */
-function handleErrorTaskUpdate(
-  store: AIProcessingStore,
-  taskId: string,
-  error: unknown,
-): void {
+function handleErrorTaskUpdate(store: AIProcessingStore, taskId: string, error: unknown): void {
   const isCancelled = error instanceof Error && error.message === '翻译已取消';
   if (isCancelled) {
     const currentTask = store.activeTasks.find((t) => t.id === taskId);
@@ -458,7 +457,7 @@ function appendTranslationReasoning(
  * 构造达到最大重试次数时的错误消息
  */
 function buildTranslationRetryErrorMessage(parseError: unknown): string {
-  const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+  const errorMessage = getErrorMessage(parseError);
   return `AI 响应格式错误：${errorMessage}。已达到最大重试次数，无法获取有效翻译。`;
 }
 

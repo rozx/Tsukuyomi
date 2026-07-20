@@ -16,12 +16,10 @@ import type { AIProcessingStore } from './utils/task-types';
 import { useContextStore } from 'src/stores/context';
 import { MemoryService } from 'src/services/memory-service';
 import { getTodosSystemPrompt } from './utils/todo-helper';
-import {
-  TOOL_CALL_PLACEHOLDER,
-  TOOL_CALL_PLACEHOLDER_VARIANTS,
-} from './utils/stream-handler';
+import { TOOL_CALL_PLACEHOLDER, TOOL_CALL_PLACEHOLDER_VARIANTS } from './utils/stream-handler';
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
+import { getErrorMessage } from 'src/utils/error-message';
 import {
   DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
   estimateMessagesTokenCount,
@@ -901,7 +899,12 @@ export class AssistantService {
       onThinkingChunk: options.onThinkingChunk,
     });
 
-    this.pushAssistantMessage(messages, processed.text, processed.toolCalls, processed.reasoningContent);
+    this.pushAssistantMessage(
+      messages,
+      processed.text,
+      processed.toolCalls,
+      processed.reasoningContent,
+    );
 
     return processed;
   }
@@ -1273,8 +1276,16 @@ export class AssistantService {
     taskId?: string;
     signal?: AbortSignal;
   }): Promise<{ summary?: string } | null> {
-    const { model, systemPrompt, userMessage, messagesToSummarize, bookId, options, taskId, signal } =
-      params;
+    const {
+      model,
+      systemPrompt,
+      userMessage,
+      messagesToSummarize,
+      bookId,
+      options,
+      taskId,
+      signal,
+    } = params;
     const extra: Record<string, unknown> = {};
     if (signal) extra.finalSignal = signal;
     if (options.aiProcessingStore) extra.aiProcessingStore = options.aiProcessingStore;
@@ -1520,7 +1531,11 @@ export class AssistantService {
     model: AIModel,
     toolSchemaTokens: number,
   ): void {
-    if (!model.maxInputTokens || model.maxInputTokens <= 0 || model.maxInputTokens === UNLIMITED_TOKENS) {
+    if (
+      !model.maxInputTokens ||
+      model.maxInputTokens <= 0 ||
+      model.maxInputTokens === UNLIMITED_TOKENS
+    ) {
       return;
     }
 
@@ -1546,7 +1561,11 @@ export class AssistantService {
     const toolIndices: number[] = [];
     const protectedTail = Math.max(0, messages.length - 6);
     for (let i = 0; i < protectedTail; i++) {
-      if (messages[i]?.role === 'tool' && messages[i]?.content && messages[i]!.content!.length > MAX_TRUNCATED_LENGTH * 2) {
+      if (
+        messages[i]?.role === 'tool' &&
+        messages[i]?.content &&
+        messages[i]!.content!.length > MAX_TRUNCATED_LENGTH * 2
+      ) {
         toolIndices.push(i);
       }
     }
@@ -1564,9 +1583,12 @@ export class AssistantService {
       };
 
       const newTokens =
-        estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
+        estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
+        toolSchemaTokens;
       if (newTokens <= maxAllowed) {
-        console.log(`[AssistantService] 压缩了 ${toolIndices.indexOf(idx) + 1} 条工具结果，当前 ${newTokens} tokens`);
+        console.log(
+          `[AssistantService] 压缩了 ${toolIndices.indexOf(idx) + 1} 条工具结果，当前 ${newTokens} tokens`,
+        );
         return;
       }
     }
@@ -1621,9 +1643,7 @@ export class AssistantService {
 
     const newAvailable = model.maxInputTokens - finalEstimatedTokens;
     finalMaxTokens =
-      newAvailable > 0
-        ? Math.floor(newAvailable * 0.9)
-        : Math.floor(model.maxInputTokens * 0.1);
+      newAvailable > 0 ? Math.floor(newAvailable * 0.9) : Math.floor(model.maxInputTokens * 0.1);
 
     return { finalMaxTokens };
   }
@@ -1631,9 +1651,7 @@ export class AssistantService {
   /**
    * 单次缩减：保留首尾消息（system / user），中间历史保留 50%
    */
-  private static reduceMessagesOnce(
-    reducedMessages: ChatMessage[],
-  ): ChatMessage[] | null {
+  private static reduceMessagesOnce(reducedMessages: ChatMessage[]): ChatMessage[] | null {
     const systemMsg = reducedMessages[0];
     const userMsg = reducedMessages[reducedMessages.length - 1];
     if (!systemMsg || !userMsg) return null;
@@ -1698,9 +1716,7 @@ export class AssistantService {
       currentEstimatedTokens =
         estimateMessagesTokenCount(reducedMessages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
         toolSchemaTokens;
-      console.warn(
-        `[AssistantService] 消息历史已减少到最小 (${currentEstimatedTokens} tokens)`,
-      );
+      console.warn(`[AssistantService] 消息历史已减少到最小 (${currentEstimatedTokens} tokens)`);
     } else {
       console.warn(
         `[AssistantService] 消息历史已减少到 ${reducedMessages.length} 条 (${currentEstimatedTokens} tokens)`,
@@ -1881,23 +1897,14 @@ export class AssistantService {
 
     try {
       // 构建消息列表并保证 systemPrompt 在开头
-      const messages = this.buildInitialMessages(
-        options.messageHistory,
-        systemPrompt,
-        userMessage,
-      );
+      const messages = this.buildInitialMessages(options.messageHistory, systemPrompt, userMessage);
 
       // 边界检查：用户消息是否过长
       await this.ensureUserMessageWithinLimit(model, userMessage, aiProcessingStore, taskId);
 
       // 检查 token 限制（在发送请求前）
       const toolSchemaTokens = estimateToolSchemaTokens(tools);
-      const tokenCheck = this.evaluateTokenBudget(
-        messages,
-        model,
-        toolSchemaTokens,
-        options,
-      );
+      const tokenCheck = this.evaluateTokenBudget(messages, model, toolSchemaTokens, options);
       const { estimatedTokens, effectiveMaxTokens, shouldSummarizeBeforeRequest } = tokenCheck;
 
       if (aiProcessingStore && taskId) {
@@ -2136,9 +2143,7 @@ export class AssistantService {
         ? thresholdBase * TOKEN_THRESHOLD_RATIO
         : 0;
     const isTokenLimitReached =
-      thresholdBase > 0 &&
-      thresholdBase !== UNLIMITED_TOKENS &&
-      estimatedTokens >= tokenThreshold;
+      thresholdBase > 0 && thresholdBase !== UNLIMITED_TOKENS && estimatedTokens >= tokenThreshold;
     const isContextWindowFull = thresholdBase > 0 && effectiveMaxTokens === 0;
     const shouldSummarizeBeforeRequest =
       !options.skipTokenLimitSummarization && (isTokenLimitReached || isContextWindowFull);
@@ -2429,8 +2434,18 @@ export class AssistantService {
     taskId: string | undefined;
     finalSignal: AbortSignal | undefined;
   }): Promise<AssistantResult> {
-    const { options, messageHistory, systemPrompt, userMessage, model, tools, context, sessionId, taskId, finalSignal } =
-      params;
+    const {
+      options,
+      messageHistory,
+      systemPrompt,
+      userMessage,
+      model,
+      tools,
+      context,
+      sessionId,
+      taskId,
+      finalSignal,
+    } = params;
 
     // onSummarizingEnd 已在 requestSummaryReset 的失败路径中配对调用，这里不再重复
     console.warn('[AssistantService] 摘要失败，使用降级策略：只保留最近 5 条消息');
@@ -2585,12 +2600,7 @@ export class AssistantService {
  * 从任意错误中提取可打印的消息字符串
  */
 function extractErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  if (error && typeof error === 'object' && 'message' in error) {
-    return String(error.message);
-  }
-  return JSON.stringify(error);
+  return getErrorMessage(error);
 }
 
 /**

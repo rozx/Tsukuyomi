@@ -8,6 +8,7 @@ import type { CoverHistoryItem } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import { compressString, decompressString } from 'src/utils/compression';
 import { serializeDates, deserializeDates } from 'src/utils/serialize-dates';
+import { toError } from 'src/utils/error-message';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import { MANIFEST_FILE_NAME } from 'src/models/manifest';
@@ -279,7 +280,7 @@ function isRetryableError(error: unknown): boolean {
 
 /** 把任意错误规范化为 Error 实例 */
 function toErrorObject(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
+  return toError(error);
 }
 
 /** 批次 PATCH 的可重试状态判定：无状态码（网络错误）、5xx、429 */
@@ -297,9 +298,7 @@ function computeBatchRetryDelay(baseDelayMs: number, attempt: number): number {
 /** 判断错误是否为明确的 Gist 更新失败 / 冲突（应向上抛出而非吞掉） */
 function isExplicitUpdateFailure(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  return (
-    error.message.includes('Gist 更新失败') || error.message.includes('Gist 更新冲突')
-  );
+  return error.message.includes('Gist 更新失败') || error.message.includes('Gist 更新冲突');
 }
 
 /**
@@ -320,7 +319,7 @@ async function withRetry<T>(
     try {
       return await operation();
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      lastError = toErrorObject(error);
 
       if (!isRetryableError(error)) {
         // 不可重试的错误，立即抛出
@@ -824,7 +823,11 @@ export class GistSyncService {
         onProgress,
         processedItems,
         totalItems,
-        this.formatPrepareProgressMessage(`正在准备书籍: ${novel.title}`, processedItems, totalItems),
+        this.formatPrepareProgressMessage(
+          `正在准备书籍: ${novel.title}`,
+          processedItems,
+          totalItems,
+        ),
       );
     }
 
@@ -1181,11 +1184,7 @@ export class GistSyncService {
       );
 
       try {
-        const response = await this.patchGistBatchWithRetry(
-          existingGistId,
-          batchFiles,
-          batchIndex,
-        );
+        const response = await this.patchGistBatchWithRetry(existingGistId, batchFiles, batchIndex);
         if (batchIndex === 0) {
           firstGistId = response.data.id;
           firstGistUrl = response.data.html_url;
@@ -2262,9 +2261,7 @@ export class GistSyncService {
       const response = await this.fetchGistRevisionRaw(config, version);
 
       // 过滤掉 null 值并转换类型
-      const files = response.data.files
-        ? this.mapRevisionFilesToDetails(response.data.files)
-        : {};
+      const files = response.data.files ? this.mapRevisionFilesToDetails(response.data.files) : {};
 
       return {
         success: true,
@@ -2287,10 +2284,7 @@ export class GistSyncService {
       string,
       { filename?: string; size?: number; content?: string; truncated?: boolean } | null | undefined
     >,
-  ): Record<
-    string,
-    { filename?: string; size?: number; content?: string; truncated?: boolean }
-  > {
+  ): Record<string, { filename?: string; size?: number; content?: string; truncated?: boolean }> {
     const files: Record<
       string,
       { filename?: string; size?: number; content?: string; truncated?: boolean }

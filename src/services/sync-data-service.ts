@@ -1,10 +1,7 @@
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
-import {
-  useSettingsStore,
-  getSyncDeletionPropagationStateClearedPatch,
-} from 'src/stores/settings';
+import { useSettingsStore, getSyncDeletionPropagationStateClearedPatch } from 'src/stores/settings';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { aiModelService } from 'src/services/ai-model-service';
@@ -16,6 +13,7 @@ import type { DeletionRecord } from 'src/models/sync';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 import { stripNovelLocalFields } from 'src/utils/sync-strip';
+import { getErrorMessage } from 'src/utils/error-message';
 
 /** 取数组或缺省值，null/undefined 视为空数组 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,11 +22,7 @@ function arrayOrEmpty<T = any>(value: T[] | null | undefined): T[] {
 }
 
 /** 三路合并单个同步字段：本地值优先，其次远端，最后回退值 */
-function mergeSyncField<T>(
-  localValue: T | undefined,
-  remoteValue: T | undefined,
-  fallback: T,
-): T {
+function mergeSyncField<T>(localValue: T | undefined, remoteValue: T | undefined, fallback: T): T {
   return localValue ?? remoteValue ?? fallback;
 }
 
@@ -1111,8 +1105,8 @@ export class SyncDataService {
     } catch (rollbackError) {
       console.error('[SyncDataService] 回滚失败:', rollbackError);
       throw new Error(
-        `${errorPrefix}: ${error instanceof Error ? error.message : String(error)}; ` +
-          `回滚也失败: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+        `${errorPrefix}: ${getErrorMessage(error)}; ` +
+          `回滚也失败: ${getErrorMessage(rollbackError)}`,
       );
     }
     throw error;
@@ -1416,9 +1410,7 @@ export class SyncDataService {
     }
 
     const finalBookIds = new Set(finalBooks.map((b) => b.id));
-    const staleBookIds = booksStore.books
-      .filter((b) => !finalBookIds.has(b.id))
-      .map((b) => b.id);
+    const staleBookIds = booksStore.books.filter((b) => !finalBookIds.has(b.id)).map((b) => b.id);
 
     await booksStore.bulkAddBooks(finalBooks);
 
@@ -1484,11 +1476,7 @@ export class SyncDataService {
       return null;
     }
 
-    if (
-      syncTime === 0 ||
-      isManualRetrieval ||
-      checkIsNewlyAdded(remoteCover.addedAt, syncTime)
-    ) {
+    if (syncTime === 0 || isManualRetrieval || checkIsNewlyAdded(remoteCover.addedAt, syncTime)) {
       return remoteCover;
     }
     return null;
@@ -1643,11 +1631,7 @@ export class SyncDataService {
     );
 
     finalCovers.push(
-      ...SyncDataService.collectLocalOnlyCovers(
-        coverHistoryStore.covers,
-        remoteCovers,
-        syncTime,
-      ),
+      ...SyncDataService.collectLocalOnlyCovers(coverHistoryStore.covers, remoteCovers, syncTime),
     );
 
     const deduped = dedupeCoverHistoryByUrl(finalCovers);
@@ -1768,21 +1752,16 @@ export class SyncDataService {
     const finalMemoryIds = new Set(finalMemories.map((m) => m.id));
     for (const memory of finalMemories) {
       try {
-        await MemoryService.createMemoryWithId(
-          bookId,
-          memory.id,
-          memory.content,
-          memory.summary,
-          { createdAt: memory.createdAt, lastAccessedAt: memory.lastAccessedAt },
-        );
+        await MemoryService.createMemoryWithId(bookId, memory.id, memory.content, memory.summary, {
+          createdAt: memory.createdAt,
+          lastAccessedAt: memory.lastAccessedAt,
+        });
       } catch (error) {
         console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
       }
     }
 
-    const staleMemoryIds = localMemories
-      .filter((m) => !finalMemoryIds.has(m.id))
-      .map((m) => m.id);
+    const staleMemoryIds = localMemories.filter((m) => !finalMemoryIds.has(m.id)).map((m) => m.id);
     for (const staleId of staleMemoryIds) {
       try {
         await MemoryService.deleteMemory(bookId, staleId);
@@ -2187,8 +2166,9 @@ export class SyncDataService {
     deletedCoverUrlsMap: Map<string, number>;
     deletedMemoryIdsMap: Map<string, number>;
   } {
-    const mapify = (arr: Array<{ id: string; deletedAt: number }> | undefined): Map<string, number> =>
-      new Map((arr || []).map((r) => [r.id, r.deletedAt]));
+    const mapify = (
+      arr: Array<{ id: string; deletedAt: number }> | undefined,
+    ): Map<string, number> => new Map((arr || []).map((r) => [r.id, r.deletedAt]));
     const urlify = (
       arr: Array<{ url: string; deletedAt: number }> | undefined,
     ): Map<string, number> =>
@@ -2212,7 +2192,8 @@ export class SyncDataService {
     remoteModels: any[], // eslint-disable-line @typescript-eslint/no-explicit-any
     deletedModelIdsMap: Map<string, number>,
     lastSyncTime: number,
-  ): any[] { // eslint-disable-line @typescript-eslint/no-explicit-any
+  ): any[] {
+    // eslint-disable-line @typescript-eslint/no-explicit-any
     const finalModels: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
 
     // 特殊情况：远端空列表但本地有模型 → 全量回传，避免远端空载覆盖
@@ -2265,7 +2246,9 @@ export class SyncDataService {
     for (const localNovel of localNovels) {
       const remoteNovel = remoteNovelMap.get(localNovel.id);
       if (remoteNovel) {
-        if (SyncDataService.shouldUseRemoteForUpload(localNovel.lastEdited, remoteNovel.lastEdited)) {
+        if (
+          SyncDataService.shouldUseRemoteForUpload(localNovel.lastEdited, remoteNovel.lastEdited)
+        ) {
           const mergedNovel = await SyncDataService.mergeNovelWithLocalContent(
             remoteNovel as Novel,
             localNovel,
@@ -2310,7 +2293,8 @@ export class SyncDataService {
     deletedCoverIdsMap: Map<string, number>,
     deletedCoverUrlsMap: Map<string, number>,
     lastSyncTime: number,
-  ): any[] { // eslint-disable-line @typescript-eslint/no-explicit-any
+  ): any[] {
+    // eslint-disable-line @typescript-eslint/no-explicit-any
     const finalCovers: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
 
     // 特殊情况：远端空列表但本地有封面 → 全量回传
@@ -2379,11 +2363,7 @@ export class SyncDataService {
       deletedNovelIds: mergeSyncField(localGistSync.deletedNovelIds, remote.deletedNovelIds, []),
       deletedModelIds: mergeSyncField(localGistSync.deletedModelIds, remote.deletedModelIds, []),
       deletedCoverIds: mergeSyncField(localGistSync.deletedCoverIds, remote.deletedCoverIds, []),
-      deletedMemoryIds: mergeSyncField(
-        localGistSync.deletedMemoryIds,
-        remote.deletedMemoryIds,
-        [],
-      ),
+      deletedMemoryIds: mergeSyncField(localGistSync.deletedMemoryIds, remote.deletedMemoryIds, []),
     };
   }
 
@@ -2400,7 +2380,12 @@ export class SyncDataService {
       'upload',
     );
 
-    if (!SyncDataService.shouldUseRemoteForUpload(localAppSettings.lastEdited, remoteAppSettings.lastEdited)) {
+    if (
+      !SyncDataService.shouldUseRemoteForUpload(
+        localAppSettings.lastEdited,
+        remoteAppSettings.lastEdited,
+      )
+    ) {
       return {
         ...localAppSettings,
         quickStartDismissed: mergedQuickStartDismissed,
@@ -2417,7 +2402,10 @@ export class SyncDataService {
       ? remoteSyncs.find((s: any) => s.syncType === 'gist') // eslint-disable-line @typescript-eslint/no-explicit-any
       : undefined;
 
-    const mergedGistSync = SyncDataService.mergeGistSyncEntryForUpload(localGistSync, remoteGistSync);
+    const mergedGistSync = SyncDataService.mergeGistSyncEntryForUpload(
+      localGistSync,
+      remoteGistSync,
+    );
 
     const mergedSyncs = Array.isArray(remoteSyncs) ? [...remoteSyncs] : [];
     const gistIndex = mergedSyncs.findIndex((s: any) => s.syncType === 'gist'); // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -2518,7 +2506,10 @@ export class SyncDataService {
       return true;
     }
     if (
-      SyncDataService.coverHistoryDiffersForUpload(local.coverHistory, arrayOrEmpty(remote.coverHistory))
+      SyncDataService.coverHistoryDiffersForUpload(
+        local.coverHistory,
+        arrayOrEmpty(remote.coverHistory),
+      )
     ) {
       return true;
     }
@@ -2560,7 +2551,10 @@ export class SyncDataService {
    * 设置差异：对比 lastEdited，不同时再做深度比较（排除 syncs 中的同步状态字段和墓碑）
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private static appSettingsDifferForUpload(localAppSettings: any, remoteAppSettings: any): boolean {
+  private static appSettingsDifferForUpload(
+    localAppSettings: any,
+    remoteAppSettings: any,
+  ): boolean {
     if (
       remoteAppSettings &&
       !isTimeDifferent(localAppSettings.lastEdited, remoteAppSettings.lastEdited)
@@ -2885,10 +2879,7 @@ export class SyncDataService {
       );
       await booksStore.bulkAddBooks([mergedNovel]);
     } catch (e) {
-      console.warn(
-        `[SyncDataService] 合并远端翻译失败 (novel:${remoteNovel.id})，保留本地:`,
-        e,
-      );
+      console.warn(`[SyncDataService] 合并远端翻译失败 (novel:${remoteNovel.id})，保留本地:`, e);
     }
   }
 

@@ -6,6 +6,7 @@ import puppeteer from 'puppeteer-extra';
 import type { Browser } from 'puppeteer';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import pie from 'puppeteer-in-electron';
+import { getErrorMessage, toError } from '../src/utils/error-message';
 
 // Configure Puppeteer Stealth
 puppeteer.use(StealthPlugin());
@@ -51,7 +52,7 @@ console.log('[Electron] Environment info:', {
 function handleLoadError(window: BrowserWindow | null, err: unknown, path: string) {
   console.error('[Electron] Error details:', {
     code: (err as { code?: string }).code,
-    message: err instanceof Error ? err.message : String(err),
+    message: getErrorMessage(err),
     path,
   });
   // 尝试使用 loadURL 作为备选方案
@@ -581,7 +582,7 @@ const createScrapingWindow = (): BrowserWindow =>
   });
 
 const isBrowserConnectionError = (err: unknown): boolean => {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = getErrorMessage(err);
   return (
     message.includes('connect') ||
     message.includes('browser') ||
@@ -622,7 +623,7 @@ function handleElectronFetchError(err: unknown, window: BrowserWindow | null): n
     browserPromise = null;
   }
   if (window && !window.isDestroyed()) window.close();
-  throw err instanceof Error ? err : new Error(String(err));
+  throw toError(err);
 }
 
 async function performElectronFetch(
