@@ -346,6 +346,21 @@ export interface SelectedMemories {
 }
 
 /**
+ * 构建章节级查询上下文。原文和已有译文都会送入 embedding 模型，以增强跨语言标题语义；
+ * 同一文本也作为低权重关键词辅助信号，但在语义模式下不能单独触发召回。
+ */
+export function buildChapterSemanticQuery(chapter: Chapter | undefined): string | undefined {
+  if (!chapter?.title) return undefined;
+  if (typeof chapter.title === 'string') return chapter.title.trim() || undefined;
+
+  const titles = [chapter.title.original, chapter.title.translation?.translation]
+    .map((title) => title?.trim())
+    .filter((title): title is string => Boolean(title));
+  const uniqueTitles = [...new Set(titles)];
+  return uniqueTitles.length > 0 ? uniqueTitles.join('\n') : undefined;
+}
+
+/**
  * 核心打分 + 选择逻辑(不负责格式化)。
  *
  * 流程:
@@ -412,6 +427,7 @@ export async function selectRelevantMemoriesForChunk(
   chunkText: string,
   existingTerms?: Terminology[],
   existingCharacters?: CharacterSetting[],
+  semanticQueryContext?: string,
 ): Promise<SelectedMemories> {
   const empty: SelectedMemories = {
     memories: [],
@@ -425,9 +441,14 @@ export async function selectRelevantMemoriesForChunk(
   if (allMemories.length === 0) return empty;
 
   const chunkEntities = buildChunkEntities(existingTerms, existingCharacters);
-  const chunkEmbeddings = await computeChunkEmbeddings(chunkText);
+  const semanticContextEmbeddings = semanticQueryContext?.trim()
+    ? await computeChunkEmbeddings(semanticQueryContext)
+    : [];
+  const contentEmbeddings = await computeChunkEmbeddings(chunkText);
+  const chunkEmbeddings = [...semanticContextEmbeddings, ...contentEmbeddings];
   const scored: ScoredMemory[] = scoreMemoriesBatch(allMemories, {
     chunkEntities,
+    rawQuery: semanticQueryContext,
     chunkEmbeddings: chunkEmbeddings.length > 0 ? chunkEmbeddings : undefined,
     now: Date.now(),
     expectedModelVersion: chunkEmbeddings.length > 0 ? MEMORY_EMBEDDING_VERSION : undefined,
@@ -460,12 +481,19 @@ export async function getRelatedMemoriesForChunk(
   _chapterId?: string,
   existingTerms?: Terminology[],
   existingCharacters?: CharacterSetting[],
+  semanticQueryContext?: string,
 ): Promise<string> {
   if (!bookId || !chunkText) return '';
 
   try {
     const { memories, breakdowns, fromFallback, totalMemoryCount } =
-      await selectRelevantMemoriesForChunk(bookId, chunkText, existingTerms, existingCharacters);
+      await selectRelevantMemoriesForChunk(
+        bookId,
+        chunkText,
+        existingTerms,
+        existingCharacters,
+        semanticQueryContext,
+      );
 
     if (memories.length === 0) return '';
 
@@ -524,6 +552,12 @@ async function buildCurrentChunkContext(
 
   const terms = findUniqueTermsInText(chunkText, book.terminologies || []);
   const characters = findUniqueCharactersInText(chunkText, book.characterSettings || []);
+  const chapter = chapterId
+    ? book.volumes
+        ?.flatMap((volume) => volume.chapters ?? [])
+        .find((candidate) => candidate.id === chapterId)
+    : undefined;
+  const semanticQueryContext = buildChapterSemanticQuery(chapter);
 
   const contextParts = [
     buildChunkTermsSection(terms),
@@ -544,6 +578,7 @@ async function buildCurrentChunkContext(
     chapterId,
     terms,
     characters,
+    semanticQueryContext,
   );
   if (memoryContext) {
     currentChunkContext += memoryContext;

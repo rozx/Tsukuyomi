@@ -206,7 +206,7 @@ describe('memory-scoring - scoreMemory', () => {
     expect(breakdown.total).toBeCloseTo(MAX_TOTAL_SCORE, 5);
   });
 
-  test('缺失 embedding 时 semantic=0,使用 FALLBACK_WEIGHTS 让分数回到 1.0 量级', () => {
+  test('查询 embedding 可用但记忆缺向量时不提升辅助信号权重', () => {
     const now = 1_000_000_000;
     const memory = makeMemory({
       summary: '小明',
@@ -218,11 +218,13 @@ describe('memory-scoring - scoreMemory', () => {
       now,
     });
 
-    // memory 没有 embedding 时只使用关键词置信度，访问时间不参与总分。
+    // 查询已进入 embedding 模式；单条记忆缺向量时不能偷偷切回 fallback 抬高辅助信号。
     expect(breakdown.semantic).toBe(0);
     expect(breakdown.keyword).toBeCloseTo(1, 5);
     expect(breakdown.recency).toBeCloseTo(1, 5);
-    expect(breakdown.total).toBeCloseTo(FALLBACK_WEIGHTS.keyword + FALLBACK_WEIGHTS.recency, 5);
+    expect(breakdown.keywordWeighted).toBeCloseTo(SCORING_WEIGHTS.keyword, 5);
+    expect(breakdown.recencyWeighted).toBeCloseTo(SCORING_WEIGHTS.recency, 5);
+    expect(breakdown.total).toBeLessThan(DEFAULT_MIN_SCORE);
   });
 
   test('旧单向量 embedding 字段不再参与语义评分', () => {
@@ -269,7 +271,7 @@ describe('memory-scoring - scoreMemory', () => {
     expect(breakdown.total).toBeLessThan(DEFAULT_MIN_SCORE);
   });
 
-  test('访问时间只用于展示，不改变相关性总分', () => {
+  test('关闭 embedding 时访问时间按 fallback 权重参与三信号回退', () => {
     const now = 1_000_000_000;
     const recent = scoreMemory(makeMemory({ summary: '小明', lastAccessedAt: now }), {
       chunkEntities: [{ name: '小明' }],
@@ -281,9 +283,9 @@ describe('memory-scoring - scoreMemory', () => {
     );
 
     expect(recent.recency).toBeGreaterThan(old.recency);
-    expect(recent.recencyWeighted).toBe(0);
-    expect(old.recencyWeighted).toBe(0);
-    expect(recent.total).toBeCloseTo(old.total, 6);
+    expect(recent.recencyWeighted).toBeCloseTo(FALLBACK_WEIGHTS.recency, 5);
+    expect(old.recencyWeighted).toBeLessThan(0.001);
+    expect(recent.total).toBeGreaterThan(old.total);
   });
 });
 
@@ -354,18 +356,31 @@ describe('memory-scoring - selectByBudget', () => {
   });
 
   test('默认参数下 top-K + delta 收缩压制"全员高分"', () => {
-    // 模拟 mean-pooled 向量噪声地板高的场景:所有记忆分数都在 0.6+
+    // 模拟向量噪声地板高的场景:所有记忆分数都在 0.6+
     // 但 top 1 明显高于其它 — 期望只留下靠近 top 的少数几条
     const list = [
       scored('a', 's', 0.85),
       scored('b', 's', 0.82),
-      scored('c', 's', 0.7), // 距 top 0.15 > 默认 delta 0.08
+      scored('c', 's', 0.7), // 距 top 0.15 > 默认 delta 0.06
       scored('d', 's', 0.66),
       scored('e', 's', 0.6),
     ];
     const result = selectByBudget(list);
-    // a、b 在 0.08 窗口内被保留;c、d、e 被挤出
+    // a、b 在 0.06 窗口内被保留;c、d、e 被挤出
     expect(result.map((m) => m.id)).toEqual(['a', 'b']);
+  });
+
+  test('默认相对窗口保留同章强匹配并剔除仅语义近似的邻近项', () => {
+    const list = [
+      scored('chapter-primary', 's', 0.396),
+      scored('chapter-secondary', 's', 0.355),
+      scored('same-topic-other-chapter', 's', 0.329),
+    ];
+
+    expect(selectByBudget(list).map((memory) => memory.id)).toEqual([
+      'chapter-primary',
+      'chapter-secondary',
+    ]);
   });
 });
 
@@ -477,7 +492,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
 
     // raw cosine 抱团时，dense 名次没有足够置信度，不应凭相对第一名获得高分。
     result.forEach((s) => {
-      expect(s.breakdown.recencyWeighted).toBe(0);
+      expect(s.breakdown.recencyWeighted).toBeLessThanOrEqual(SCORING_WEIGHTS.recency);
     });
     expect(Math.max(...result.map((item) => item.breakdown.semantic))).toBeLessThan(0.05);
 
@@ -523,9 +538,12 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
       expect(s.breakdown.semantic).toBeLessThanOrEqual(1);
     });
 
-    // 当前批只有 dense 信号，权重会归一到 1，避免总分上限被压到 0.7。
+    // embedding 模式使用固定权重，不因其他信号缺失而动态放大。
     result.forEach((s) => {
-      expect(s.breakdown.semanticWeighted).toBeCloseTo(s.breakdown.semantic, 6);
+      expect(s.breakdown.semanticWeighted).toBeCloseTo(
+        s.breakdown.semantic * SCORING_WEIGHTS.semantic,
+        6,
+      );
     });
   });
 
@@ -566,6 +584,108 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
 
     expect(Math.max(...scored.map((item) => item.breakdown.total))).toBeLessThan(DEFAULT_MIN_SCORE);
     expect(selectByBudget(scored)).toEqual([]);
+  });
+
+  test('开启 embedding 时语义优先，纯辅助信号不能单独越过注入阈值', () => {
+    const query = makeEmbedding([1, 0]);
+    const memories = [
+      makeMemory({ id: 'semantic', summary: '真正相关', embeddings: [[1, 0]] }),
+      makeMemory({
+        id: 'keyword-only',
+        summary: '516话 对空迎击战 小明',
+        embeddings: [[0, 1]],
+      }),
+      makeMemory({ id: 'background-1', embeddings: [[0, 1]] }),
+      makeMemory({ id: 'background-2', embeddings: [[0, 1]] }),
+    ];
+
+    const scored = scoreMemoriesBatch(memories, {
+      chunkEntities: [{ name: '小明' }],
+      rawQuery: '516话 对空迎击战',
+      chunkEmbedding: query,
+      now: Date.now(),
+    });
+    const byId = new Map(scored.map((item) => [item.memory.id, item.breakdown]));
+
+    expect(byId.get('semantic')!.scoringMode).toBe('semantic');
+    expect(byId.get('keyword-only')!.scoringMode).toBe('semantic');
+    expect(byId.get('semantic')!.total).toBeGreaterThan(DEFAULT_MIN_SCORE);
+    expect(byId.get('keyword-only')!.keyword).toBeCloseTo(1, 5);
+    expect(byId.get('keyword-only')!.total).toBeLessThan(DEFAULT_MIN_SCORE);
+  });
+
+  test('语义候选抱团时，516 的低权重章节信号只校准本章，不扩散到 510', () => {
+    const query = makeEmbedding([1, 0]);
+    const makeVectorAtSimilarity = (similarity: number) =>
+      makeEmbedding([similarity, Math.sqrt(1 - similarity ** 2)]);
+    const memories = [
+      makeMemory({
+        id: 'chapter-516',
+        summary: '516话 对空迎击战',
+        embeddings: [makeVectorAtSimilarity(0.93)],
+      }),
+      ...[0.91, 0.905, 0.9, 0.895, 0.89].map((similarity, index) =>
+        makeMemory({
+          id: `nearby-topic-${index}`,
+          embeddings: [makeVectorAtSimilarity(similarity)],
+        }),
+      ),
+    ];
+    const scoreTarget = (rawQuery: string) =>
+      scoreMemoriesBatch(memories, {
+        chunkEntities: [],
+        rawQuery,
+        chunkEmbedding: query,
+        now: Date.now(),
+      }).find((item) => item.memory.id === 'chapter-516')!.breakdown;
+
+    const chapter516 = scoreTarget('516话 对空迎击战');
+    const chapter510 = scoreTarget('510话 什么都没有改变');
+
+    expect(chapter516.scoringMode).toBe('semantic');
+    expect(chapter516.semanticWeighted).toBeCloseTo(chapter510.semanticWeighted, 6);
+    expect(chapter516.total).toBeGreaterThan(DEFAULT_MIN_SCORE);
+    expect(chapter510.keyword).toBe(0);
+    expect(chapter510.total).toBeLessThan(DEFAULT_MIN_SCORE);
+  });
+
+  test('关闭 embedding 时恢复关键词与时间衰减回退权重', () => {
+    const now = Date.now();
+    const [scored] = scoreMemoriesBatch(
+      [makeMemory({ id: 'fallback', summary: '小明', lastAccessedAt: now })],
+      {
+        chunkEntities: [{ name: '小明' }],
+        now,
+      },
+    );
+
+    expect(FALLBACK_WEIGHTS.keyword).toBeCloseTo(0.75, 5);
+    expect(FALLBACK_WEIGHTS.recency).toBeCloseTo(0.25, 5);
+    expect(scored!.breakdown.scoringMode).toBe('fallback');
+    expect(scored!.breakdown.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
+    expect(scored!.breakdown.recencyWeighted).toBeCloseTo(FALLBACK_WEIGHTS.recency, 5);
+    expect(scored!.breakdown.total).toBeCloseTo(1, 5);
+  });
+
+  test('明显高于背景的跨语言中等语义命中可通过注入阈值', () => {
+    const query = makeEmbedding([1, 0]);
+    const memories = [
+      makeMemory({ id: 'cross-language-hit', embeddings: [[0.44, Math.sqrt(1 - 0.44 ** 2)]] }),
+      ...[0.3, 0.28, 0.26, 0.24, 0.22].map((similarity, index) =>
+        makeMemory({
+          id: `background-${index}`,
+          embeddings: [[similarity, Math.sqrt(1 - similarity ** 2)]],
+        }),
+      ),
+    ];
+
+    const scored = scoreMemoriesBatch(memories, {
+      chunkEntities: [],
+      chunkEmbedding: query,
+      now: Date.now(),
+    });
+
+    expect(selectByBudget(scored).map((memory) => memory.id)).toEqual(['cross-language-hit']);
   });
 
   test('明显高于背景的强语义命中仍可通过注入阈值', () => {
@@ -669,7 +789,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     });
     const byId = new Map(result.map((item) => [item.memory.id, item.breakdown]));
 
-    expect(byId.get('exact')!.keywordWeighted).toBeCloseTo(1, 5);
+    expect(byId.get('exact')!.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
     expect(byId.get('partial')!.keyword).toBeLessThan(0.5);
     expect(byId.get('partial')!.keywordWeighted).toBeLessThan(0.5);
   });
@@ -748,6 +868,18 @@ describe('memory-scoring - calculateQueryKeywordScore (CJK 部分匹配)', () =>
     const memory = makeMemory({ summary: '闇のマリアンヌ 的暗黑人格设定' });
     const score = calculateQueryKeywordScore('闇のマリアンヌ', memory);
     expect(score).toBeCloseTo(1, 5);
+  });
+
+  test('章节数字标识符只允许精确 token 命中', () => {
+    const memory = makeMemory({ summary: '516话 对空迎击战' });
+
+    expect(calculateQueryKeywordScore('516', memory)).toBeCloseTo(1, 5);
+    expect(calculateQueryKeywordScore('510', memory)).toBe(0);
+  });
+
+  test('全角章节编号与半角编号视为同一 token', () => {
+    const memory = makeMemory({ summary: '516话 对空迎击战' });
+    expect(calculateQueryKeywordScore('５１６', memory)).toBeCloseTo(1, 5);
   });
 
   test('部分匹配按最长公共子串 / 单元长度返回分数', () => {

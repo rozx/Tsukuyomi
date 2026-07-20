@@ -71,7 +71,10 @@ import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { MemoryService } from 'src/services/memory-service';
-import { selectRelevantMemoriesForChunk } from 'src/services/ai/tasks/utils/context-builder';
+import {
+  buildChapterSemanticQuery,
+  selectRelevantMemoriesForChunk,
+} from 'src/services/ai/tasks/utils/context-builder';
 import {
   buildNovelSettingsUpdate,
   hasChapterInstructionPayload,
@@ -1679,6 +1682,7 @@ function createBookDetailsPageContext() {
         chunkText,
         usedTerms.value,
         usedCharacters.value,
+        buildChapterSemanticQuery(selectedChapterWithContent.value ?? undefined),
       );
 
       mergedScoreBreakdowns.value = breakdowns;

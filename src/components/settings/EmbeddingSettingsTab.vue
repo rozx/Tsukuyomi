@@ -366,7 +366,8 @@ const semanticDescription = computed(() => {
       <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
         <p class="text-xs text-moon/70">
           <span class="pi pi-info-circle mr-1"></span>
-          评分基于三信号(语义相似度 + 关键词匹配 + 时间衰减)。即使关闭语义信号,关键词与时间衰减仍会工作。
+          Embedding 可用时以语义相似度为主（0.85），关键词与时间衰减仅作辅助（0.10 /
+          0.05）；关闭或不可用时自动切换到关键词与时间衰减（0.75 / 0.25）。
         </p>
       </div>
     </div>

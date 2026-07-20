@@ -30,7 +30,7 @@ function makeFloat32(values: number[]): Float32Array {
 }
 
 /**
- * 构造 mean-pooled 的模拟输出:形状 [batch, 768](gte-multilingual-base 原生维度)。
+ * 构造已池化的模拟输出:形状 [batch, 768](gte-multilingual-base 原生维度)。
  * 前几维为 fill,其余为 0。
  */
 function fakePooledOutput(batch: number, fill: number) {
@@ -243,7 +243,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     // 两处传入的 pooling 必须一致 — 这是 embedding 空间身份的组成部分
     expect(capturedOptions).toHaveLength(2);
     expect(capturedOptions[0]!.pooling).toBe(capturedOptions[1]!.pooling);
-    expect(capturedOptions[0]!.pooling).toBe('mean');
+    expect(capturedOptions[0]!.pooling).toBe('cls');
 
     // 同文本 + 同 task 下,两条路径必须产出完全相同的向量
     expect(batch[0]!.length).toBe(single!.length);
@@ -252,15 +252,15 @@ describe('EmbeddingService - embed / embedBatch', () => {
     }
   });
 
-  test('不同 task 对同一文本得到不同向量(验证前缀生效)', async () => {
-    // mock 会把输入文本回传,我们用它构造基于前缀长度差异的输出
+  test('query 与 document 都按官方契约直接编码原文', async () => {
+    const capturedInputs: string[] = [];
     mockPipelineImpl = async (input: unknown) => {
       const texts = Array.isArray(input) ? (input as string[]) : [input as string];
+      capturedInputs.push(...texts);
       const hidden = 768;
       const data = new Float32Array(texts.length * hidden);
       for (let b = 0; b < texts.length; b++) {
         const t = texts[b] ?? '';
-        // 前 10 维用文本长度做简单映射,确保不同前缀 → 不同向量
         for (let i = 0; i < 10; i++) {
           data[b * hidden + i] = (t.length + i) * 0.01;
         }
@@ -273,15 +273,10 @@ describe('EmbeddingService - embed / embedBatch', () => {
     const vDoc = await EmbeddingService.embed('hello', 'document');
     expect(vQuery).not.toBeNull();
     expect(vDoc).not.toBeNull();
-    // 前缀不同 → 至少一个维度必定不同
-    let anyDifferent = false;
+    expect(capturedInputs).toEqual(['hello', 'hello']);
     for (let i = 0; i < vQuery!.length; i++) {
-      if (vQuery![i] !== vDoc![i]) {
-        anyDifferent = true;
-        break;
-      }
+      expect(vQuery![i]).toBeCloseTo(vDoc![i]!, 6);
     }
-    expect(anyDifferent).toBe(true);
   });
 });
 
@@ -318,7 +313,7 @@ describe('EmbeddingService - cosineSimilarity', () => {
 
 describe('EmbeddingService - 常量', () => {
   test('MODEL_VERSION 与 DIMENSIONS 与 spec 一致', () => {
-    expect(MODEL_VERSION).toBe('gte-multilingual-base@256@mean');
+    expect(MODEL_VERSION).toBe('gte-multilingual-base@256@cls@raw');
     expect(DIMENSIONS).toBe(256);
   });
 });

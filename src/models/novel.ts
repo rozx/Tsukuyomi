@@ -224,13 +224,14 @@ export interface Paragraph {
  * 记录注入记忆时每个信号的原始值、加权值与总分，用于 UI 的评分详情 tooltip
  */
 export interface ScoreBreakdown {
+  scoringMode?: 'semantic' | 'fallback'; // 旧记录可能没有该字段
   semantic: number; // 单条评分为原始相似度；批量评分为置信度校准后的 dense 信号
   keyword: number; // 原始关键词命中比例 ∈ [0, 1]
   recency: number; // 原始时间衰减因子 ∈ [0, 1]
   semanticWeighted: number; // semantic × 权重
   keywordWeighted: number; // keyword × 权重
-  recencyWeighted: number; // 保留兼容字段，相关性排序固定为 0
-  total: number; // 语义与关键词的融合分
+  recencyWeighted: number; // recency × 当前模式权重
+  total: number; // 三信号融合分
 }
 
 export interface Translation {

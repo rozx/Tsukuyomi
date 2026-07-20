@@ -1,9 +1,10 @@
 /**
- * 记忆打分（语义 + 关键词；时间仅保留为展示信息）
+ * 记忆打分（语义 + 关键词 + 时间衰减）
  *
- * 单条公式: score = 0.7·semantic + 0.3·keyword
+ * embedding 可用:score = 0.85·semantic + 0.10·keyword + 0.05·recency
+ * embedding 不可用:score = 0.75·keyword + 0.25·recency
  * 批量查询使用 dense / keyword 的归一化 RRF 排名融合。
- * 最大分 = 1.0,默认阈值 0.38。
+ * 最大分 = 1.0,默认阈值 0.30。
  */
 import type { Memory } from 'src/models/memory';
 import type { ScoreBreakdown } from 'src/models/novel';
@@ -11,9 +12,9 @@ import { cosineSimilarity as calculateSemanticSim } from 'src/utils/cosine-simil
 export { calculateSemanticSim };
 
 export const SCORING_WEIGHTS = {
-  semantic: 0.7,
-  keyword: 0.3,
-  recency: 0,
+  semantic: 0.85,
+  keyword: 0.1,
+  recency: 0.05,
 } as const;
 
 export const MAX_TOTAL_SCORE = 1.0;
@@ -23,8 +24,8 @@ export const HARD_ITEM_CAP = 25;
 export const DEFAULT_MIN_SCORE = 0.3;
 
 /**
- * 相对排名参数 — 解决"mean-pooled 多语言向量绝对余弦噪声地板高"导致的
- * 分数膨胀问题(无关记忆也常 >0.5,所有记忆都越过绝对阈值)。
+ * 相对排名参数 — 解决部分多语言向量绝对余弦噪声地板偏高导致的
+ * 分数膨胀问题(无关记忆也可能越过绝对阈值)。
  *
  * 排序后:
  * - 只保留前 DEFAULT_TOP_K 条(硬上限,防止"全员注入"的极端)
@@ -34,7 +35,7 @@ export const DEFAULT_MIN_SCORE = 0.3;
  * 值按经验选定 — 可通过调用 filterByRelativeRanking 覆写。
  */
 const DEFAULT_TOP_K = 8;
-const DEFAULT_RELATIVE_DELTA = 0.1;
+const DEFAULT_RELATIVE_DELTA = 0.06;
 
 /** 章节检索旧有 z-score 管线共用的 spread 下限；记忆检索已改用 RRF。 */
 export const SPREAD_FLOOR = 0.02;
@@ -51,8 +52,8 @@ export const RANK_FUSION_K = 10;
  * RRF 只表达“本批第几名”，不能表达“第一名是否真的相关”。低于 floor 的原始余弦
  * 视为无语义证据；达到 full 时绝对置信度饱和，但候选池足够大时仍需批内对比度。
  */
-export const SEMANTIC_CONFIDENCE_FLOOR = 0.45;
-export const SEMANTIC_CONFIDENCE_FULL = 0.75;
+export const SEMANTIC_CONFIDENCE_FLOOR = 0.3;
+export const SEMANTIC_CONFIDENCE_FULL = 0.65;
 /** 中等绝对相似度需要至少比本批中位数高出该幅度，才获得完整对比度置信度。 */
 export const SEMANTIC_CONTRAST_FULL_DELTA = 0.08;
 const SEMANTIC_CONTRAST_MIN_BATCH = 4;
@@ -134,9 +135,16 @@ const ALPHA_RUN = /[a-z0-9]{2,}/g;
  */
 const IDENTIFIER_RUN = /[\u2460-\u24ff\u2160-\u217f]/g;
 
+/** 仅归一化全角 ASCII，保留圈号/罗马数字等独立 identifier 的字符身份。 */
+function normalizeFullWidthAscii(value: string): string {
+  return value.replace(/[\uff01-\uff5e]/g, (character) =>
+    String.fromCharCode(character.charCodeAt(0) - 0xfee0),
+  );
+}
+
 export function extractQueryUnits(query: string): string[] {
   const units: string[] = [];
-  const lower = query.toLowerCase();
+  const lower = normalizeFullWidthAscii(query).toLowerCase();
   for (const m of lower.matchAll(CJK_RUN)) {
     if (m[0].length >= 2) units.push(m[0]);
   }
@@ -224,9 +232,33 @@ export interface KeywordScoringOptions {
  * summary 命中完整权重,content-only 折半。
  */
 function computeBaseUnitScore(unit: string, summary: string, content: string): number {
+  if (isIdentifierUnit(unit)) {
+    const summaryHit = containsExactIdentifier(summary, unit) ? SUMMARY_HIT_WEIGHT : 0;
+    const contentHit = containsExactIdentifier(content, unit) ? CONTENT_HIT_WEIGHT : 0;
+    return Math.max(summaryHit, contentHit);
+  }
   const sRatio = summary ? partialMatchLength(unit, summary) / unit.length : 0;
   const cRatio = content ? partialMatchLength(unit, content) / unit.length : 0;
   return Math.max(sRatio * SUMMARY_HIT_WEIGHT, cRatio * CONTENT_HIT_WEIGHT);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** identifier 不做最长公共子串；数字序列还要求左右不与同类数字相连。 */
+function containsExactIdentifier(haystack: string, unit: string): boolean {
+  if (!haystack) return false;
+  const escaped = escapeRegExp(unit);
+  if (ARABIC_NUMBER.test(unit)) {
+    return new RegExp(`(^|[^0-9])${escaped}(?![0-9])`).test(haystack);
+  }
+  if (CHINESE_NUMBER.test(unit)) {
+    return new RegExp(
+      `(^|[^〇一二三四五六七八九十百千])${escaped}(?![〇一二三四五六七八九十百千])`,
+    ).test(haystack);
+  }
+  return haystack.includes(unit);
 }
 
 /**
@@ -283,8 +315,8 @@ function scoreSingleQueryAgainstMemory(
 ): number {
   const units = extractQueryUnits(query);
   if (units.length === 0) return 0;
-  const summary = (memory.summary ?? '').toLowerCase();
-  const content = (memory.content ?? '').toLowerCase();
+  const summary = normalizeFullWidthAscii(memory.summary ?? '').toLowerCase();
+  const content = normalizeFullWidthAscii(memory.content ?? '').toLowerCase();
   if (!summary && !content) return 0;
 
   let totalScore = 0;
@@ -412,22 +444,22 @@ export function calculateSegmentedSemanticSimilarity(
   return bestQueryScore * 0.6 + queryCoverage * 0.4;
 }
 
-/** 无语义信号时只使用关键词相关性；访问时间不参与相关性排序。 */
+/** embedding 不可用时，把权重按原三信号中 keyword:recency = 3:1 重新分配。 */
 export const FALLBACK_WEIGHTS = {
-  keyword: 1,
-  recency: 0,
+  keyword: 0.75,
+  recency: 0.25,
 } as const;
 
 /**
- * 根据 context 选择关键词信号:
- * - 有 rawQuery → 部分匹配打分(搜索路径,CJK 自然语言查询友好)
- * - 否则 → 实体字面匹配(翻译注入路径)
+ * 根据 context 合并低权重辅助信号：章节标题/自然语言 query 与正文实体各自打分，
+ * 取更强者。embedding 模式下该信号固定只占 0.10，不能单独决定召回。
  */
 function resolveKeyword(memory: Memory, context: ScoringContext): number {
-  if (context.rawQuery && context.rawQuery.trim().length > 0) {
-    return calculateQueryKeywordScore(context.rawQuery, memory);
-  }
-  return calculateKeywordHitRatio(memory, context.chunkEntities);
+  const queryScore = context.rawQuery?.trim()
+    ? calculateQueryKeywordScore(context.rawQuery, memory)
+    : 0;
+  const entityScore = calculateKeywordHitRatio(memory, context.chunkEntities);
+  return Math.max(queryScore, entityScore);
 }
 
 /**
@@ -436,6 +468,7 @@ function resolveKeyword(memory: Memory, context: ScoringContext): number {
  */
 export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreakdown {
   const chunkEmbeddings = resolveChunkEmbeddings(context);
+  const semanticMode = chunkEmbeddings.length > 0;
   const memoryEmbeddings = resolveMemoryEmbeddings(memory);
   const versionOk =
     !context.expectedModelVersion || memory.embeddingModel === context.expectedModelVersion;
@@ -453,7 +486,7 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
   let semanticWeighted: number;
   let keywordWeighted: number;
   let recencyWeighted: number;
-  if (canUseSemantic) {
+  if (semanticMode) {
     semanticWeighted = semantic * SCORING_WEIGHTS.semantic;
     keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
     recencyWeighted = recency * SCORING_WEIGHTS.recency;
@@ -465,6 +498,7 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
   const total = semanticWeighted + keywordWeighted + recencyWeighted;
 
   return {
+    scoringMode: semanticMode ? 'semantic' : 'fallback',
     semantic,
     keyword,
     recency,
@@ -481,7 +515,7 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
  * 和 `scoreMemory` 单条打分的关键区别:
  * 1. dense 先做多分段稳健聚合，再用绝对余弦与批内对比度校准置信度，最后乘 RRF 名次分。
  * 2. keyword 同样转成 RRF 名次分，但仍乘原始命中置信度，避免弱部分匹配被抬成高分。
- * 3. 缺失某一路信号时，剩余信号的权重自动归一到 1；访问时间不参与排序。
+ * 3. query embedding 可用时固定采用语义优先权重；不可用时才整体切换到 fallback 权重。
  *
  * 返回与输入下标一一对应的 ScoredMemory 数组(未排序,保持输入顺序)。
  *
@@ -491,6 +525,7 @@ export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext):
   if (!memories || memories.length === 0) return [];
 
   const chunkEmbeddings = resolveChunkEmbeddings(context);
+  const semanticMode = chunkEmbeddings.length > 0;
 
   // Pass 1:计算 dense 与 keyword 原始信号，再分别转成 RRF 名次分。
   const rawSemantics: Array<number | null> = memories.map((memory) => {
@@ -515,27 +550,23 @@ export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext):
   const keywordRanks = calculateNormalizedRrfScores(
     rawKeywords.map((keyword) => (keyword > 0 ? keyword : null)),
   );
-  const hasSemantic = semanticSignals.some((semantic) => semantic > 0);
-  const hasKeyword = rawKeywords.some((keyword) => keyword > 0);
-  const availableWeight =
-    (hasSemantic ? SCORING_WEIGHTS.semantic : 0) + (hasKeyword ? SCORING_WEIGHTS.keyword : 0);
-  const semanticWeight =
-    availableWeight > 0 && hasSemantic ? SCORING_WEIGHTS.semantic / availableWeight : 0;
-  const keywordWeight =
-    availableWeight > 0 && hasKeyword ? SCORING_WEIGHTS.keyword / availableWeight : 0;
-
   // Pass 2:逐条构造 breakdown。
-  return memories.map((memory, i) => {
+  const results: ScoredMemory[] = memories.map((memory, i) => {
     const semantic = semanticSignals[i] ?? 0;
     const keyword = rawKeywords[i] ?? 0;
     const recency = calculateRecencyFactor(memory, context.now);
-    const semanticWeighted = semantic * semanticWeight;
-    const keywordWeighted = keyword * (keywordRanks[i] ?? 0) * keywordWeight;
-    const recencyWeighted = 0;
+    const semanticWeighted = semantic * (semanticMode ? SCORING_WEIGHTS.semantic : 0);
+    const keywordWeighted =
+      keyword *
+      (keywordRanks[i] ?? 0) *
+      (semanticMode ? SCORING_WEIGHTS.keyword : FALLBACK_WEIGHTS.keyword);
+    const recencyWeighted =
+      recency * (semanticMode ? SCORING_WEIGHTS.recency : FALLBACK_WEIGHTS.recency);
 
     return {
       memory,
       breakdown: {
+        scoringMode: semanticMode ? 'semantic' : 'fallback',
         semantic,
         keyword,
         recency,
@@ -546,6 +577,8 @@ export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext):
       },
     };
   });
+
+  return results;
 }
 
 function clamp01(value: number): number {
@@ -608,8 +641,8 @@ function calculateNormalizedRrfScores(values: Array<number | null>): number[] {
  * 1. 只保留 top-K(硬上限,防止"全员注入")
  * 2. 在 top-K 内进一步剔除分数比 top 低超过 relativeDelta 的条目(质量地板)
  *
- * 这一步独立于 minScore 的绝对阈值 — 用于应对 mean-pooled 多语言向量
- * 绝对余弦分布偏高、绝对阈值无区分度的情况。调用方可在此之前先用绝对
+ * 这一步独立于 minScore 的绝对阈值 — 用于应对向量绝对余弦分布偏高、
+ * 绝对阈值无区分度的情况。调用方可在此之前先用绝对
  * 阈值滤掉噪声地板以下的条目,再交给这里做相对收缩。
  */
 export function filterByRelativeRanking(

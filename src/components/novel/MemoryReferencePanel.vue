@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import Panel from 'primevue/panel';
 import type { ScoreBreakdown } from 'src/models/novel';
+import { FALLBACK_WEIGHTS, SCORING_WEIGHTS } from 'src/services/memory-scoring';
 import type { MemoryReference } from './memory-reference-types';
 import { formatRelativeTimeWithFallback } from 'src/utils/format';
 
@@ -53,6 +54,22 @@ function viewMemory(memoryId: string) {
 // 获取记忆的打分详情
 function getBreakdown(memoryId: string): ScoreBreakdown | undefined {
   return props.scoreBreakdowns?.[memoryId];
+}
+
+function getSignalWeight(memoryId: string, signal: 'semantic' | 'keyword' | 'recency'): string {
+  const breakdown = getBreakdown(memoryId);
+  if (!breakdown) return '0.00';
+
+  // 旧翻译记录没有 scoringMode；只在展示旧数据时从语义加权值推断。
+  const semanticMode =
+    breakdown.scoringMode === 'semantic' ||
+    (breakdown.scoringMode === undefined && breakdown.semanticWeighted > 0);
+  const weight = semanticMode
+    ? SCORING_WEIGHTS[signal]
+    : signal === 'semantic'
+      ? 0
+      : FALLBACK_WEIGHTS[signal];
+  return weight.toFixed(2);
 }
 
 // 格式化相对时间（≥ 7 天回落到短日期格式）
@@ -152,7 +169,9 @@ function formatRelativeTime(timestamp: number): string {
                       <span class="tabular-nums w-9 text-right">
                         {{ getBreakdown(reference.memoryId)!.semantic.toFixed(2) }}
                       </span>
-                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.7</span>
+                      <span class="tabular-nums w-9 text-right text-moon-100/40">
+                        ×{{ getSignalWeight(reference.memoryId, 'semantic') }}
+                      </span>
                       <span class="tabular-nums w-10 text-right">
                         {{ getBreakdown(reference.memoryId)!.semanticWeighted.toFixed(2) }}
                       </span>
@@ -162,7 +181,9 @@ function formatRelativeTime(timestamp: number): string {
                       <span class="tabular-nums w-9 text-right">
                         {{ getBreakdown(reference.memoryId)!.keyword.toFixed(2) }}
                       </span>
-                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.3</span>
+                      <span class="tabular-nums w-9 text-right text-moon-100/40">
+                        ×{{ getSignalWeight(reference.memoryId, 'keyword') }}
+                      </span>
                       <span class="tabular-nums w-10 text-right">
                         {{ getBreakdown(reference.memoryId)!.keywordWeighted.toFixed(2) }}
                       </span>
@@ -172,7 +193,9 @@ function formatRelativeTime(timestamp: number): string {
                       <span class="tabular-nums w-9 text-right">
                         {{ getBreakdown(reference.memoryId)!.recency.toFixed(2) }}
                       </span>
-                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.0</span>
+                      <span class="tabular-nums w-9 text-right text-moon-100/40">
+                        ×{{ getSignalWeight(reference.memoryId, 'recency') }}
+                      </span>
                       <span class="tabular-nums w-10 text-right">
                         {{ getBreakdown(reference.memoryId)!.recencyWeighted.toFixed(2) }}
                       </span>

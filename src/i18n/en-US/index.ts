@@ -26,7 +26,7 @@ export default {
     minScoreThresholdDesc: 'Memories below this score will not be injected (max 1.0)',
     minScoreAll: '0 (inject all)',
     infoText:
-      'Memory injection uses a three-signal scoring system (semantic similarity + keyword matching + time decay) to automatically select the most relevant memories. Even without semantic search, keyword and time decay signals remain active.',
+      'When embeddings are available, semantic similarity leads (0.85) while keywords and recency are auxiliary (0.10 / 0.05). When disabled or unavailable, scoring falls back to keywords and recency (0.75 / 0.25).',
   },
   memoryPanel: {
     reEmbed: 'Re-embed this book',

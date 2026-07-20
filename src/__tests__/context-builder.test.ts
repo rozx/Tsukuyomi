@@ -7,6 +7,7 @@ import {
   clearLastScoreBreakdowns,
   getLastScoreBreakdowns,
   selectRelevantMemoriesForChunk,
+  buildChapterSemanticQuery,
 } from 'src/services/ai/tasks/utils/context-builder';
 import { MemoryService } from 'src/services/memory-service';
 import { EmbeddingService } from 'src/services/embedding-service';
@@ -190,6 +191,59 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
     expect(embeddedBatches.every((batch) => batch.length <= 4)).toBe(true);
     expect(embedSpy).not.toHaveBeenCalled();
     expect(result.memories.map((memory) => memory.id)).toContain('later');
+  });
+
+  test('章节标题作为额外 embedding 查询段参与语义召回', async () => {
+    const memories = [
+      makeMemory('title-semantic', {
+        embeddings: [[1, 0]],
+        embeddingModel: MEMORY_EMBEDDING_VERSION,
+      }),
+      makeMemory('body-semantic', {
+        embeddings: [[0, 1]],
+        embeddingModel: MEMORY_EMBEDDING_VERSION,
+      }),
+    ];
+    spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue(memories);
+    spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
+    const embeddedTexts: string[] = [];
+    spyOn(EmbeddingService, 'embedBatch').mockImplementation((texts: string[]) => {
+      embeddedTexts.push(...texts);
+      return Promise.resolve(
+        texts.map((text) =>
+          text.includes('対空迎撃戦') ? new Float32Array([1, 0]) : new Float32Array([0, 1]),
+        ),
+      );
+    });
+
+    const result = await selectRelevantMemoriesForChunk(
+      'book-1',
+      'ミサイルを迎撃する。',
+      [],
+      [],
+      '５１６話 対空迎撃戦',
+    );
+
+    expect(embeddedTexts).toContain('５１６話 対空迎撃戦');
+    expect(result.memories.map((memory) => memory.id)).toContain('title-semantic');
+  });
+
+  test('章节语义查询同时包含原文标题与已有译文标题', () => {
+    expect(
+      buildChapterSemanticQuery({
+        id: 'chapter-516',
+        title: {
+          original: '５１６話 対空迎撃戦',
+          translation: {
+            id: 'title-translation',
+            translation: '516话 对空迎击战',
+            aiModelId: 'test-model',
+          },
+        },
+        createdAt: new Date(),
+        lastEdited: new Date(),
+      }),
+    ).toBe('５１６話 対空迎撃戦\n516话 对空迎击战');
   });
 
   test('字符预算控制:超出预算的记忆不被选中', async () => {

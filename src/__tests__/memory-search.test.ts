@@ -44,7 +44,7 @@ describe('MemoryService - 生产记忆搜索', () => {
     const result = await MemoryService.searchMemoriesWithScores('book-search', '芬恩敬语规则', 5);
 
     expect(result[0]!.memory.id).toBe('exact-old');
-    expect(result[0]!.breakdown.recencyWeighted).toBe(0);
+    expect(result[0]!.breakdown.recencyWeighted).toBeLessThan(0.001);
     expect(result.some((item) => item.memory.id === 'unrelated-new')).toBe(false);
   });
 });

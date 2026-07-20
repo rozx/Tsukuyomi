@@ -18,9 +18,9 @@ import {
 } from 'src/utils/dispatch-custom-event';
 
 export const MODEL_ID = 'onnx-community/gte-multilingual-base';
-// 模型 id + 截取维度 + 前缀方案 + pooling 方案 共同构成 embedding 空间身份,任一变化必须 bump 版本号,
+// 模型 id + 截取维度 + 输入方案 + pooling 方案共同构成 embedding 空间身份,任一变化必须 bump 版本号,
 // EmbeddingQueue backlog 扫描会把版本不匹配的记录当作 stale 自动重算。
-export const MODEL_VERSION = 'gte-multilingual-base@256@mean';
+export const MODEL_VERSION = 'gte-multilingual-base@256@cls@raw';
 export const DIMENSIONS = 256;
 const NATIVE_DIMENSIONS = 768;
 
@@ -47,27 +47,21 @@ function hasWebGPU(): boolean {
 }
 
 /**
- * GTE-Multilingual 官方非对称检索方案(参见 Alibaba-NLP/gte-multilingual-base 模型卡):
- * - query 端:`Represent this sentence for searching relevant passages: {text}`
- * - document 端:原文不加任何前缀 — 直接 encode
- *
- * 两侧必须严格配对:若 query 漏加前缀或 document 误加前缀,余弦相似度会退化。
- * 前缀字面量用英文,文档/查询本体可任意语言(模型原生多语言)。
+ * GTE-Multilingual 官方检索方案直接编码原文,不使用 query/document 指令前缀。
+ * task 仍保留在 API 中标明调用意图,便于以后更换模型时维持显式契约。
  */
 export type EmbeddingTask = 'query' | 'document';
-const QUERY_PREFIX = 'Represent this sentence for searching relevant passages: ';
 
 /**
- * Pooling 方案 — gte-multilingual-base 是 encoder-only BERT,官方指定 mean pooling。
+ * Pooling 方案 — gte-multilingual-base 官方示例取 last_hidden_state 的首个 token(CLS)。
  * 单条 embed() 与批处理 embedBatch() 必须使用同一方案,否则 query 向量和 document 向量
  * 落到不同空间,余弦相似度退化成噪声。集中在此常量避免两处手写漂移。
  * 该值也是 MODEL_VERSION 的一部分——变更 pooling 必须同时 bump 版本号。
  */
-const POOLING = 'mean' as const;
+const POOLING = 'cls' as const;
 
-function applyTaskPrefix(text: string, task: EmbeddingTask): string {
-  if (task === 'query') return QUERY_PREFIX + text;
-  return text; // document 侧不加前缀
+function prepareTaskText(text: string, _task: EmbeddingTask): string {
+  return text;
 }
 
 export interface EmbeddingProgressEvent {
@@ -407,7 +401,7 @@ export class EmbeddingService {
    * 未就绪或失败时返回 null(调用方 fallback 到纯关键词 + 时间衰减)。
    *
    * `task` 必填:'query' 用于检索查询,'document' 用于被检索的文档/记忆/章节 chunk。
-   * 两者走不同 prompt 前缀,必须与写入端严格一致,否则相似度会退化成噪声。
+   * 当前模型按官方契约直接编码原文,两类任务处于同一向量空间。
    */
   static async embed(text: string, task: EmbeddingTask): Promise<Float32Array | null> {
     if (!text || !text.trim()) return null;
@@ -417,7 +411,7 @@ export class EmbeddingService {
     }
     try {
 
-      const output = await this.pipeline!(applyTaskPrefix(text, task), {
+      const output = await this.pipeline!(prepareTaskText(text, task), {
         pooling: POOLING,
         normalize: false, // 我们手动处理截断 + 归一化(Matryoshka 截前 DIMENSIONS 维后再 L2)
       });
@@ -432,7 +426,7 @@ export class EmbeddingService {
    * 批量 embed。相比逐条调用,transformers.js 会复用 tokenizer + 单次 forward。
    * 返回的数组下标与输入一一对应,失败或空文本对应位置为 null。
    *
-   * `task` 必填,会给所有非空输入统一加前缀(见 `embed` 说明)。
+   * `task` 必填,所有非空输入都会按与单条 `embed` 相同的模型契约处理。
    */
   static async embedBatch(
     texts: string[],
@@ -452,7 +446,7 @@ export class EmbeddingService {
     try {
 
       const output = await this.pipeline!(
-        indexed.map((e) => applyTaskPrefix(e.text, task)),
+        indexed.map((e) => prepareTaskText(e.text, task)),
         {
           pooling: POOLING,
           normalize: false,
@@ -476,7 +470,7 @@ export class EmbeddingService {
   private static extractFirstVector(output: any): Float32Array | null {
     const flat = this.outputToFloat32(output);
     if (!flat) return null;
-    // mean-pooled 输出形状 = [batch, hidden_size];单条输入 batch=1 → 取前 NATIVE_DIMENSIONS 维
+    // CLS-pooled 输出形状 = [batch, hidden_size];单条输入 batch=1 → 取前 NATIVE_DIMENSIONS 维
     const hidden = flat.length >= NATIVE_DIMENSIONS ? NATIVE_DIMENSIONS : flat.length;
     const take = Math.min(DIMENSIONS, hidden);
     return this.truncateAndNormalize(flat, 0, take);
