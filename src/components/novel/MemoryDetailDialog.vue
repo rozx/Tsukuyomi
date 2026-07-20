@@ -37,9 +37,8 @@ const editedSummary = ref('');
 const editedContent = ref('');
 
 const dialogHeader = computed(() => {
-  if (!props.memory) return '记忆详情';
   if (isEditing.value) return '编辑记忆';
-  return props.memory.summary;
+  return '记忆详情';
 });
 
 // 嵌入状态
@@ -235,23 +234,25 @@ onUnmounted(() => {
     dialog-class="memory-detail-dialog"
     @update:visible="handleClose"
   >
-    <div v-if="memory" class="space-y-6">
+    <div v-if="memory" class="memory-detail-content space-y-6">
       <!-- 摘要 -->
-      <div>
+      <div class="min-w-0">
         <h4 class="text-sm font-medium text-moon-100/70 mb-3 flex items-center gap-2">
           <i class="pi pi-tag"></i>
           摘要
         </h4>
         <!-- 只读模式 -->
         <div v-if="!isEditing" class="bg-white/5 rounded-lg p-3 border border-white/10">
-          <p class="text-moon-100/90 m-0">{{ memory.summary }}</p>
+          <p class="memory-detail-text text-moon-100/90 m-0 whitespace-pre-wrap">
+            {{ memory.summary }}
+          </p>
         </div>
         <!-- 编辑模式 -->
         <InputText v-else v-model="editedSummary" placeholder="输入摘要..." class="w-full" />
       </div>
 
       <!-- 内容 -->
-      <div>
+      <div class="min-w-0">
         <div class="flex items-center justify-between mb-3">
           <h4 class="text-sm font-medium text-moon-100/70 flex items-center gap-2 m-0">
             <i class="pi pi-file"></i>
@@ -268,7 +269,7 @@ onUnmounted(() => {
         <ScrollPanel v-if="!isEditing" class="w-full" style="max-height: 300px">
           <div class="bg-white/5 rounded-lg p-4 border border-white/10">
             <pre
-              class="text-moon-100/80 m-0 whitespace-pre-wrap font-sans text-sm leading-relaxed"
+              class="memory-detail-text text-moon-100/80 m-0 whitespace-pre-wrap font-sans text-sm leading-relaxed"
               >{{ memory.content }}</pre
             >
           </div>
@@ -284,31 +285,39 @@ onUnmounted(() => {
       </div>
 
       <!-- 元信息 -->
-      <div class="pt-4 border-t border-white/5">
+      <div class="min-w-0 pt-4 border-t border-white/5">
         <h4 class="text-sm font-medium text-moon-100/70 mb-3 flex items-center gap-2">
           <i class="pi pi-info-circle"></i>
           元信息
         </h4>
-        <div class="grid grid-cols-2 gap-4 text-sm">
-          <div class="flex items-center gap-2">
-            <span class="text-moon-100/50">创建时间：</span>
-            <span class="text-moon-100/70">{{ formatDateTime(memory.createdAt) }}</span>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="shrink-0 text-moon-100/50">创建时间：</span>
+            <span class="min-w-0 text-moon-100/70">
+              {{ formatDateTime(memory.createdAt) }}
+            </span>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="text-moon-100/50">最后访问：</span>
-            <span class="text-moon-100/70">{{ formatRelativeTime(memory.lastAccessedAt) }}</span>
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="shrink-0 text-moon-100/50">最后访问：</span>
+            <span class="min-w-0 text-moon-100/70">
+              {{ formatRelativeTime(memory.lastAccessedAt) }}
+            </span>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="text-moon-100/50">ID：</span>
-            <span class="text-moon-100/30 font-mono">{{ memory.id }}</span>
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="shrink-0 text-moon-100/50">ID：</span>
+            <span class="memory-detail-identifier min-w-0 text-moon-100/30 font-mono">
+              {{ memory.id }}
+            </span>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="text-moon-100/50">向量状态：</span>
-            <span class="text-moon-100/70">{{ embeddingStatusLabel }}</span>
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="shrink-0 text-moon-100/50">向量状态：</span>
+            <span class="min-w-0 text-moon-100/70">{{ embeddingStatusLabel }}</span>
           </div>
-          <div v-if="memory.embeddingModel" class="flex items-center gap-2 col-span-2">
-            <span class="text-moon-100/50">嵌入模型：</span>
-            <span class="text-moon-100/50 font-mono text-xs">{{ memory.embeddingModel }}</span>
+          <div v-if="memory.embeddingModel" class="flex min-w-0 items-start gap-2 md:col-span-2">
+            <span class="shrink-0 text-moon-100/50">嵌入模型：</span>
+            <span class="memory-detail-identifier min-w-0 text-moon-100/50 font-mono text-xs">
+              {{ memory.embeddingModel }}
+            </span>
           </div>
         </div>
         <div v-if="canManualEmbed" class="mt-3">
@@ -351,12 +360,31 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.memory-detail-content {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.memory-detail-text {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.memory-detail-identifier {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .memory-detail-dialog :deep(.p-dialog-header) {
   background: rgba(255, 255, 255, 0.02);
 }
 
 .memory-detail-dialog :deep(.p-dialog-content) {
   background: transparent;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .memory-detail-dialog :deep(.p-dialog-footer) {
