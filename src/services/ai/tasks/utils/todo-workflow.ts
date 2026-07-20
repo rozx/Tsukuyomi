@@ -203,16 +203,9 @@ export class TodoWorkflow {
 
     this.initializedStates.add(state);
 
-    const isChunkZero = this.chunkIndex === 0;
-
     // 静态模板
     const templates = getTemplates(this.taskType, state);
     if (templates) {
-      // 如果不是第一个 chunk，跳过 planning 和 preparing 的预定义规则（此时按系统设定通常是长驱直入）
-      if (!isChunkZero && (state === 'planning' || state === 'preparing')) {
-        return [];
-      }
-
       return templates.map((text) =>
         TodoListService.createTodo(text, this.taskId, undefined, {
           predefined: true,

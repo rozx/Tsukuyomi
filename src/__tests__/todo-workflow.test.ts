@@ -248,7 +248,7 @@ describe('TodoWorkflow', () => {
     const chunkText0 = '[1] [ID: p1] 原文: 第一段\n翻译: \n\n[2] [ID: p2] 原文: 第二段\n翻译: \n\n';
     const chunkText1 = '[3] [ID: p3] 原文: 第三段\n翻译: \n\n[4] [ID: p4] 原文: 第四段\n翻译: \n\n';
 
-    test('chunk-1 应为 working/review 生成自己的待办，而非继承 chunk-0', () => {
+    test('chunk-1 应为所有阶段生成自己的待办，而非继承 chunk-0', () => {
       // chunk-0 完成所有状态的待办
       const workflow0 = new TodoWorkflow('translation', taskId, 0);
       const p0 = workflow0.generateForState('planning');
@@ -275,10 +275,18 @@ describe('TodoWorkflow', () => {
       });
       const r1 = workflow1.generateForState('review');
 
-      // 非零 chunk 的 planning/preparing 按设计跳过预定义生成
-      expect(p1).toHaveLength(0);
-      expect(pr1).toHaveLength(0);
-      // working/review 必须正确创建（不被 chunk-0 的 hasGenerated 检查误判）
+      // 每个 chunk 都必须有自己完整且隔离的阶段待办
+      expect(p1).toHaveLength(7);
+      p1.forEach((t) => {
+        expect(t.taskState).toBe('planning');
+        expect(t.chunkIndex).toBe(1);
+      });
+      expect(pr1).toHaveLength(3);
+      pr1.forEach((t) => {
+        expect(t.taskState).toBe('preparing');
+        expect(t.chunkIndex).toBe(1);
+      });
+      // working/review 也必须正确创建（不被 chunk-0 的 hasGenerated 检查误判）
       expect(w1).toHaveLength(1);
       expect(w1[0]!.text).toContain('p3');
       expect(w1[0]!.text).toContain('p4');
@@ -345,7 +353,7 @@ describe('TodoWorkflow', () => {
       expect(block).not.toContain('所有待办已完成');
     });
 
-    test('chunk-1 的 planning 在非零 chunk 下 checkGate 默认放行', () => {
+    test('chunk-1 的 planning 应生成自己的待办并由 checkGate 阻止提前切换', () => {
       // chunk-0 完成 planning 待办
       const workflow0 = new TodoWorkflow('translation', taskId, 0);
       const p0 = workflow0.generateForState('planning');
@@ -354,19 +362,21 @@ describe('TodoWorkflow', () => {
         TodoListService.markTodoAsDone(t.id);
       });
 
-      // chunk-1 调用 planning（应跳过生成，但标记 initialized）
+      // chunk-1 调用 planning，应生成当前 chunk 自己的待办
       const workflow1 = new TodoWorkflow('translation', taskId, 1);
       const p1 = workflow1.generateForState('planning');
-      expect(p1).toHaveLength(0);
+      expect(p1).toHaveLength(7);
+      p1.forEach((todo) => expect(todo.chunkIndex).toBe(1));
 
-      // chunk-1 的 planning 没有自己的 predefined 待办，gate 应放行
+      // 当前 chunk 的 planning 待办未完成，gate 必须阻止提前切换
       const gate = workflow1.checkGate('planning');
-      expect(gate.allowed).toBe(true);
-      expect(gate.incompleteItems).toHaveLength(0);
+      expect(gate.allowed).toBe(false);
+      expect(gate.incompleteItems).toHaveLength(7);
 
-      // buildTodoContextBlock 不应泄露 chunk-0 的 planning 待办
+      // 上下文只包含 chunk-1 的 planning 待办，不泄露 chunk-0
       const block = workflow1.buildTodoContextBlock('planning');
-      expect(block).toBe('');
+      expect(block).toContain(p1[0]!.id);
+      expect(block).not.toContain(p0[0]!.id);
     });
   });
 
