@@ -55,7 +55,6 @@ function getBreakdown(memoryId: string): ScoreBreakdown | undefined {
   return props.scoreBreakdowns?.[memoryId];
 }
 
-
 // 格式化相对时间（≥ 7 天回落到短日期格式）
 function formatRelativeTime(timestamp: number): string {
   return formatRelativeTimeWithFallback(timestamp, (date) =>
@@ -140,18 +139,20 @@ function formatRelativeTime(timestamp: number): string {
                 >
                   <div class="space-y-1.5">
                     <!-- 表头 -->
-                    <div class="flex justify-between text-moon-100/40 pb-1 border-b border-white/10">
+                    <div
+                      class="flex justify-between text-moon-100/40 pb-1 border-b border-white/10"
+                    >
                       <span class="w-16">信号</span>
                       <span class="tabular-nums w-9 text-right">原值</span>
                       <span class="tabular-nums w-9 text-right">权重</span>
                       <span class="tabular-nums w-10 text-right">加权</span>
                     </div>
                     <div class="flex justify-between text-moon-100/70">
-                      <span class="w-16">语义相似</span>
+                      <span class="w-16">语义置信</span>
                       <span class="tabular-nums w-9 text-right">
                         {{ getBreakdown(reference.memoryId)!.semantic.toFixed(2) }}
                       </span>
-                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.6</span>
+                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.7</span>
                       <span class="tabular-nums w-10 text-right">
                         {{ getBreakdown(reference.memoryId)!.semanticWeighted.toFixed(2) }}
                       </span>
@@ -171,7 +172,7 @@ function formatRelativeTime(timestamp: number): string {
                       <span class="tabular-nums w-9 text-right">
                         {{ getBreakdown(reference.memoryId)!.recency.toFixed(2) }}
                       </span>
-                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.1</span>
+                      <span class="tabular-nums w-9 text-right text-moon-100/40">×0.0</span>
                       <span class="tabular-nums w-10 text-right">
                         {{ getBreakdown(reference.memoryId)!.recencyWeighted.toFixed(2) }}
                       </span>

@@ -45,6 +45,18 @@ export const Z_CLAMP = 2;
 /** RRF 平滑常数。记忆候选通常不超过 500，取 10 能保留足够的头部区分度。 */
 export const RANK_FUSION_K = 10;
 
+/**
+ * Dense 置信度校准区间。
+ *
+ * RRF 只表达“本批第几名”，不能表达“第一名是否真的相关”。低于 floor 的原始余弦
+ * 视为无语义证据；达到 full 时绝对置信度饱和，但候选池足够大时仍需批内对比度。
+ */
+export const SEMANTIC_CONFIDENCE_FLOOR = 0.45;
+export const SEMANTIC_CONFIDENCE_FULL = 0.75;
+/** 中等绝对相似度需要至少比本批中位数高出该幅度，才获得完整对比度置信度。 */
+export const SEMANTIC_CONTRAST_FULL_DELTA = 0.08;
+const SEMANTIC_CONTRAST_MIN_BATCH = 4;
+
 const RECENCY_HALF_LIFE_DAYS = 30;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -467,7 +479,7 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
  * 批量打分：用 dense / keyword 的归一化 RRF 融合相对名次。
  *
  * 和 `scoreMemory` 单条打分的关键区别:
- * 1. dense 先做多分段稳健聚合，再转成归一化 RRF 名次分，窄余弦分布也不会整批失效。
+ * 1. dense 先做多分段稳健聚合，再用绝对余弦与批内对比度校准置信度，最后乘 RRF 名次分。
  * 2. keyword 同样转成 RRF 名次分，但仍乘原始命中置信度，避免弱部分匹配被抬成高分。
  * 3. 缺失某一路信号时，剩余信号的权重自动归一到 1；访问时间不参与排序。
  *
@@ -496,10 +508,14 @@ export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext):
 
   const rawKeywords = memories.map((memory) => resolveKeyword(memory, context));
   const semanticRanks = calculateNormalizedRrfScores(rawSemantics);
+  const semanticConfidences = calculateSemanticConfidenceScores(rawSemantics);
+  const semanticSignals = semanticRanks.map(
+    (rank, index) => rank * (semanticConfidences[index] ?? 0),
+  );
   const keywordRanks = calculateNormalizedRrfScores(
     rawKeywords.map((keyword) => (keyword > 0 ? keyword : null)),
   );
-  const hasSemantic = rawSemantics.some((semantic) => semantic !== null);
+  const hasSemantic = semanticSignals.some((semantic) => semantic > 0);
   const hasKeyword = rawKeywords.some((keyword) => keyword > 0);
   const availableWeight =
     (hasSemantic ? SCORING_WEIGHTS.semantic : 0) + (hasKeyword ? SCORING_WEIGHTS.keyword : 0);
@@ -510,7 +526,7 @@ export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext):
 
   // Pass 2:逐条构造 breakdown。
   return memories.map((memory, i) => {
-    const semantic = semanticRanks[i] ?? 0;
+    const semantic = semanticSignals[i] ?? 0;
     const keyword = rawKeywords[i] ?? 0;
     const recency = calculateRecencyFactor(memory, context.now);
     const semanticWeighted = semantic * semanticWeight;
@@ -529,6 +545,39 @@ export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext):
         total: semanticWeighted + keywordWeighted + recencyWeighted,
       },
     };
+  });
+}
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+/**
+ * 把 raw cosine 校准成 [0, 1] 置信度。
+ *
+ * 中等相似度必须同时明显高于本批中位数，避免“整批都无关，但相对第一名仍被 RRF
+ * 抬成满分”。候选过少时无法可靠估计背景分布，只应用绝对相似度校准。
+ */
+function calculateSemanticConfidenceScores(values: Array<number | null>): number[] {
+  const valid = values.filter((value): value is number => value !== null).sort((a, b) => a - b);
+  const middle = Math.floor(valid.length / 2);
+  const median =
+    valid.length === 0
+      ? 0
+      : valid.length % 2 === 1
+        ? valid[middle]!
+        : (valid[middle - 1]! + valid[middle]!) / 2;
+
+  return values.map((value) => {
+    if (value === null) return 0;
+    const absoluteConfidence = clamp01(
+      (value - SEMANTIC_CONFIDENCE_FLOOR) / (SEMANTIC_CONFIDENCE_FULL - SEMANTIC_CONFIDENCE_FLOOR),
+    );
+    if (absoluteConfidence === 0 || valid.length < SEMANTIC_CONTRAST_MIN_BATCH) {
+      return absoluteConfidence;
+    }
+    const contrastConfidence = clamp01((value - median) / SEMANTIC_CONTRAST_FULL_DELTA);
+    return absoluteConfidence * contrastConfidence;
   });
 }
 

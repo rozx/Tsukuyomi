@@ -445,7 +445,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     return values.map((v) => v / (norm || 1));
   }
 
-  test('stddev 很低时仍保留 RRF 语义排名并融合关键词', () => {
+  test('余弦抱团时压低 dense 噪声并保留关键词信号', () => {
     // query 向量固定
     const query = makeEmbedding([1, 0, 0, 0]);
     // 8 条 memory 向量都和 query 极其接近(cosine ≈ 1.0,互相差异 <0.001)
@@ -475,11 +475,11 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
       now: 1_000_000_000,
     });
 
-    // 即使 raw cosine 抱团，也保留相对语义名次。
+    // raw cosine 抱团时，dense 名次没有足够置信度，不应凭相对第一名获得高分。
     result.forEach((s) => {
-      expect(s.breakdown.semantic).toBeGreaterThan(0);
       expect(s.breakdown.recencyWeighted).toBe(0);
     });
+    expect(Math.max(...result.map((item) => item.breakdown.semantic))).toBeLessThan(0.05);
 
     // m3 是唯一关键词命中，得到 keyword 排名融合加成。
     const m3 = result.find((s) => s.memory.id === 'm3')!;
@@ -529,7 +529,7 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     });
   });
 
-  test('余弦分布很窄时仍保留 dense 排名信号', () => {
+  test('候选很少时只做绝对置信度校准并保留 dense 排名', () => {
     const query = makeEmbedding([1, 0, 0]);
     const memories = [
       makeMemory({ id: 'best', embeddings: [makeEmbedding([1, 0.02, 0])] }),
@@ -546,6 +546,47 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
 
     expect(byId.get('best')!.semantic).toBeGreaterThan(byId.get('middle')!.semantic);
     expect(byId.get('middle')!.semantic).toBeGreaterThan(byId.get('last')!.semantic);
+  });
+
+  test('整批只有中等且接近的余弦时不把相对第一名强行抬过注入阈值', () => {
+    const query = makeEmbedding([1, 0]);
+    const similarities = [0.93, 0.928, 0.926, 0.924, 0.922, 0.92, 0.918, 0.916];
+    const memories = similarities.map((similarity, index) =>
+      makeMemory({
+        id: `noise-${index}`,
+        embeddings: [[similarity, Math.sqrt(1 - similarity ** 2)]],
+      }),
+    );
+
+    const scored = scoreMemoriesBatch(memories, {
+      chunkEntities: [],
+      chunkEmbedding: query,
+      now: Date.now(),
+    });
+
+    expect(Math.max(...scored.map((item) => item.breakdown.total))).toBeLessThan(DEFAULT_MIN_SCORE);
+    expect(selectByBudget(scored)).toEqual([]);
+  });
+
+  test('明显高于背景的强语义命中仍可通过注入阈值', () => {
+    const query = makeEmbedding([1, 0]);
+    const memories = [
+      makeMemory({ id: 'relevant', embeddings: [[0.72, Math.sqrt(1 - 0.72 ** 2)]] }),
+      ...[0.38, 0.36, 0.34, 0.32, 0.3].map((similarity, index) =>
+        makeMemory({
+          id: `background-${index}`,
+          embeddings: [[similarity, Math.sqrt(1 - similarity ** 2)]],
+        }),
+      ),
+    ];
+
+    const scored = scoreMemoriesBatch(memories, {
+      chunkEntities: [],
+      chunkEmbedding: query,
+      now: Date.now(),
+    });
+
+    expect(selectByBudget(scored).map((memory) => memory.id)).toEqual(['relevant']);
   });
 
   test('多个查询分段按覆盖率聚合后统一做排名融合', () => {

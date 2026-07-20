@@ -224,7 +224,7 @@ export interface Paragraph {
  * 记录注入记忆时每个信号的原始值、加权值与总分，用于 UI 的评分详情 tooltip
  */
 export interface ScoreBreakdown {
-  semantic: number; // 原始语义相似度 ∈ [0, 1]
+  semantic: number; // 单条评分为原始相似度；批量评分为置信度校准后的 dense 信号
   keyword: number; // 原始关键词命中比例 ∈ [0, 1]
   recency: number; // 原始时间衰减因子 ∈ [0, 1]
   semanticWeighted: number; // semantic × 权重
