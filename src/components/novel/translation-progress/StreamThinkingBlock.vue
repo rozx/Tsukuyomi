@@ -1,29 +1,20 @@
 <script setup lang="ts">
-import { ref, watch, computed, onUnmounted, nextTick } from 'vue';
+import { ref, computed } from 'vue';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { FormattedMessagePart } from 'src/composables/useThinkingFormatter';
+import { useStreamVisibility } from 'src/composables/translation-progress/useStreamVisibility';
 import StreamPart from './StreamPart.vue';
-import { throttle } from 'src/utils/throttle';
 
-// 思考过程块（可折叠）：含展开/折叠、流式片段渲染与自动滚动。
-// 从 TaskStream 拆出以降低父模板圈复杂度；滚动逻辑随块内联。
+// 思考过程区块（可折叠）：合并面板中的上半段，只负责渲染。
+// 滚动容器与自动滚动统一由父级 TaskStream 的 .stream-panel 承担。
 const props = defineProps<{
   task: AIProcessingTask;
   parts: FormattedMessagePart[];
-  autoScroll: boolean;
 }>();
 
-const thinkingRef = ref<HTMLElement | null>(null);
 const thinkingExpanded = ref(true);
 
-const isActive = computed(
-  () => props.task.status === 'thinking' || props.task.status === 'processing',
-);
-const hasThinking = computed(() => (props.task.thinkingMessage?.trim().length ?? 0) > 0);
-const isThinkingActive = computed(
-  () => isActive.value && (props.task.thinkingMessage?.length ?? 0) > 0,
-);
-const showThinkingBlock = computed(() => hasThinking.value || isActive.value);
+const { showThinking, isThinkingActive } = useStreamVisibility(() => props.task);
 
 const thinkingChevron = computed(() =>
   thinkingExpanded.value ? 'pi-chevron-down' : 'pi-chevron-right',
@@ -55,49 +46,28 @@ const mergedParts = computed(() => {
         });
         i++;
       } else {
-        result.push({ part: current, resultPart: undefined, resultText: undefined, resultTone: undefined });
+        result.push({
+          part: current,
+          resultPart: undefined,
+          resultText: undefined,
+          resultTone: undefined,
+        });
       }
     } else {
-      result.push({ part: current, resultPart: undefined, resultText: undefined, resultTone: undefined });
+      result.push({
+        part: current,
+        resultPart: undefined,
+        resultText: undefined,
+        resultTone: undefined,
+      });
     }
   }
   return result;
 });
-
-// 思考区域自动滚动
-const thinkingScrollHandler = throttle(() => {
-  if (props.autoScroll && thinkingExpanded.value && thinkingRef.value) {
-    thinkingRef.value.scrollTop = thinkingRef.value.scrollHeight;
-  }
-}, 100);
-
-// 父组件常在同一数组上原地 push 流式片段，props.parts 引用不变。
-// 依赖 mergedParts.length + 最后一项文本变化，确保原地追加也能触发自动滚动。
-watch(
-  () =>
-    [
-      mergedParts.value.length,
-      mergedParts.value[mergedParts.value.length - 1]?.part.text ?? '',
-      mergedParts.value[mergedParts.value.length - 1]?.resultText ?? '',
-      props.task.thinkingMessage?.length ?? 0,
-    ] as const,
-  () => {
-    nextTick(() => thinkingScrollHandler.fn());
-  },
-  { flush: 'post' },
-);
-
-onUnmounted(() => {
-  thinkingScrollHandler.cleanup();
-});
 </script>
 
 <template>
-  <div
-    v-if="showThinkingBlock"
-    class="thinking-block"
-    :class="{ 'is-expanded': thinkingExpanded }"
-  >
+  <div v-if="showThinking" class="thinking-block" :class="{ 'is-expanded': thinkingExpanded }">
     <button class="thinking-toggle" @click="thinkingExpanded = !thinkingExpanded">
       <i class="pi" :class="thinkingChevron" />
       <span class="thinking-toggle-label">思考过程</span>
@@ -107,23 +77,23 @@ onUnmounted(() => {
     <!-- 展开：完整内容 -->
     <!-- v-memo 必须和 v-for 在同一元素上，因此用一个 display:contents 包裹层做 memo 容器，
          避免历史片段在流式追加时反复 diff，仅最后一个 content 片段会因 text 变化而刷新 -->
-    <div v-if="thinkingExpanded" ref="thinkingRef" class="thinking-content">
+    <div v-if="thinkingExpanded" class="thinking-content">
       <div
         v-for="(item, idx) in mergedParts"
         :key="idx"
-          v-memo="[
-            item.part.type,
-            item.part.text,
-            item.part.chunkInfo,
-            item.part.fromStatus,
-            item.part.toStatus,
-            item.part.toolName,
-            item.part.toolCallTone,
-            item.part.toolCallArgs,
-            item.resultText,
-            item.resultTone,
-            task.status,
-          ]"
+        v-memo="[
+          item.part.type,
+          item.part.text,
+          item.part.chunkInfo,
+          item.part.fromStatus,
+          item.part.toStatus,
+          item.part.toolName,
+          item.part.toolCallTone,
+          item.part.toolCallArgs,
+          item.resultText,
+          item.resultTone,
+          task.status,
+        ]"
         class="stream-part-wrapper"
       >
         <StreamPart :part="item.part" :result-part="item.resultPart" :task="task" />
@@ -140,35 +110,28 @@ onUnmounted(() => {
 
 <style scoped>
 .thinking-block {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin-bottom: 10px;
-  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
-.thinking-block.is-expanded {
-  flex: 1 1 0;
-  min-height: 0;
-}
-
+/* 标签吸顶：面板滚动时仍能看出当前在读哪一段 */
 .thinking-toggle {
-  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
   border: none;
-  background: none;
+  background: var(--stream-label-bg, rgba(22, 22, 27, 0.92));
+  backdrop-filter: blur(6px);
   cursor: pointer;
   font-family: inherit;
   color: var(--moon-opacity-60);
   font-size: 0.6875rem;
-  padding: 2px 0;
+  padding: 8px 0 6px;
   transition: color 0.15s;
 }
 
@@ -192,23 +155,9 @@ onUnmounted(() => {
 }
 
 .thinking-content {
-  margin-top: 8px;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scroll-behavior: smooth;
-}
-
-.thinking-content::-webkit-scrollbar {
-  width: 3px;
-}
-.thinking-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-.thinking-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 2px;
+  margin-top: 2px;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* v-memo 包裹层仅用于片段级记忆化，不参与布局 */

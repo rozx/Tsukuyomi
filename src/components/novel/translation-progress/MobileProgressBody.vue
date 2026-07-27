@@ -437,7 +437,12 @@ const contextText = computed(() =>
 
 .mtp-stream-wrap--compact :deep(.output-block) {
   margin: 0;
+}
+
+/* 紧凑模式下合并面板不再需要外框 */
+.mtp-stream-wrap--compact :deep(.stream-panel) {
   border: none;
   background: transparent;
+  padding: 0;
 }
 </style>
