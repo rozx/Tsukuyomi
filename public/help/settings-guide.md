@@ -196,11 +196,11 @@
 
 ### 嵌入模型与运行后端
 
-- 默认模型：`onnx-community/gte-multilingual-base`（305M 参数的多语言 BERT encoder，原生 768 维，应用截前 256 维并 L2 归一化作 Matryoshka 表征）。模型权重首次下载后由浏览器 Cache Storage 持久化，离线也可启动。
+- 默认模型：`onnx-community/gte-multilingual-base`（305M 参数的多语言 BERT encoder，原生 768 维，应用截前 256 维并 L2 归一化作 Matryoshka 表征，CLS pooling 与官方示例一致）。模型权重首次下载后由浏览器 Cache Storage 持久化，离线也可启动。
 - 运行后端按下列优先级自动选择：
   - **WebGPU + q4f16**（~465MB，推理快 5-10×）— 桌面 Chrome / Edge 等支持 WebGPU 的浏览器优先。
   - **WASM + int8**（~340MB，兼容性最好）— WebGPU 不可用或初始化失败时自动回落，本会话内不再重试 WebGPU。
-- 模型版本号：`gte-multilingual-base@256@mean`。模型 / 维度 / pooling 任一变化都会 bump 版本号，旧向量被判定为 stale 自动重算（参见独立文档「模型版本与 stale 重算」一节）。
+- 模型版本号：`gte-multilingual-base@256@cls@raw`（v0.14.3 起，pooling 切回 CLS、取消非对称 query 前缀）。模型 / 维度 / pooling / 输入方案任一变化都会 bump 版本号，旧向量被判定为 stale 自动重算（参见独立文档「模型版本与 stale 重算」一节）。
 - 仅在启用后且曾经缓存过模型时才会自动预热，首次开启需下载模型，请耐心等待。
 
 ### 记忆注入
