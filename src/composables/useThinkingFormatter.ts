@@ -432,6 +432,13 @@ export function tryIncrementalFormat(
 
 // ─── Composable: 带缓存、节流与增量更新的格式化 ───
 
+/** watch 中用于比较的任务快照（只取影响解析结果的字段） */
+interface WatchedTaskSnapshot {
+  id: string;
+  thinkLen: number;
+  status: string;
+}
+
 export function useThinkingFormatter(
   tasks: Ref<AIProcessingTask[]>,
 ) {
@@ -512,19 +519,42 @@ export function useThinkingFormatter(
     }
   };
 
-  // 处理单个任务的 watch 变更：状态切换或消息缩短 → 完整重解析；增长 → 节流增量
+  const reparseById = (taskId: string): void => {
+    fullReparse(
+      taskId,
+      tasks.value.find((t) => t.id === taskId),
+    );
+  };
+
+  /**
+   * 首次出现在列表中且已带有思考消息（从 IndexedDB `thinking-processes` 恢复的历史任务）。
+   * 这类任务挂载后 thinkingMessage 不会再变化，不立即解析就永远拿不到 parts（思考过程区块空白）。
+   */
+  const needsInitialParse = (
+    task: WatchedTaskSnapshot,
+    old: WatchedTaskSnapshot | undefined,
+  ): boolean => {
+    if (old || task.thinkLen === 0) return false;
+    return cache.value[task.id] === undefined;
+  };
+
+  // 处理单个任务的 watch 变更：首次见到 / 状态切换 / 消息缩短 → 完整重解析；增长 → 节流增量
   const processWatchedTask = (
-    task: { id: string; thinkLen: number; status: string },
-    oldMap: Map<string, { id: string; thinkLen: number; status: string }>,
+    task: WatchedTaskSnapshot,
+    oldMap: Map<string, WatchedTaskSnapshot>,
   ): void => {
     const old = oldMap.get(task.id);
     const oldThinkLen = old?.thinkLen ?? 0;
-    const statusChanged = !!old && old.status !== task.status;
+
+    if (needsInitialParse(task, old)) {
+      reparseById(task.id);
+      return;
+    }
 
     // 状态切换或消息缩短 → 立即完整重解析（状态影响 tool-call 的 tone 回填）
+    const statusChanged = old ? old.status !== task.status : false;
     if (statusChanged || task.thinkLen < oldThinkLen) {
-      const fullTask = tasks.value.find((t) => t.id === task.id);
-      fullReparse(task.id, fullTask);
+      reparseById(task.id);
       return;
     }
     // 消息增长 → 节流路径（优先尝试增量快速路径）
@@ -551,7 +581,9 @@ export function useThinkingFormatter(
         processWatchedTask(task, oldMap);
       }
     },
-    { flush: 'post' },
+    // immediate：挂载时任务列表里可能已存在从 IndexedDB 恢复的历史任务，
+    // 它们之后不会再触发变更，必须在首次运行时就解析出 parts
+    { immediate: true, flush: 'post' },
   );
 
   onUnmounted(() => {
