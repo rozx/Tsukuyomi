@@ -210,7 +210,7 @@ export class AssistantService {
     taskId?: string,
     sessionId?: string,
   ): string {
-    const todosPrompt = getTodosSystemPrompt(taskId, sessionId);
+    const todosPrompt = getTodosSystemPrompt(!!taskId || !!sessionId);
 
     return getAssistantSystemPrompt(todosPrompt, tools, context);
   }

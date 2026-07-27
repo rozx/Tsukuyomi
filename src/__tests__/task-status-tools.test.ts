@@ -184,7 +184,7 @@ describe('update_task_status', () => {
       expect(resultObj.error).toContain('初始状态必须是 planning');
     });
 
-    test('planning -> preparing 应成功', async () => {
+    test('planning -> preparing 应失败（preparing 已并入 planning）', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore([
         { id: 'task-1', workflowStatus: 'planning', type: 'translation' },
@@ -199,11 +199,11 @@ describe('update_task_status', () => {
       );
 
       const resultObj = JSON.parse(result);
-      expect(resultObj.success).toBe(true);
-      expect(resultObj.message).toContain('planning → preparing');
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('已并入 planning');
     });
 
-    test('planning -> working 应失败（必须先进入 preparing）', async () => {
+    test('planning -> working 应成功', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore([
         { id: 'task-1', workflowStatus: 'planning', type: 'translation' },
@@ -218,10 +218,11 @@ describe('update_task_status', () => {
       );
 
       const resultObj = JSON.parse(result);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('必须先进入 preparing');
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.message).toContain('planning → working');
     });
 
+    // 兼容旧版本持久化下来、恢复时仍停在 preparing 的任务
     test('preparing -> working 应成功', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore([
@@ -416,7 +417,7 @@ describe('update_task_status', () => {
   });
 
   describe('润色任务状态转换', () => {
-    test('planning -> preparing 应成功', async () => {
+    test('planning -> preparing 应失败（preparing 已并入 planning）', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore([
         { id: 'task-1', workflowStatus: 'planning', type: 'polish' },
@@ -431,10 +432,11 @@ describe('update_task_status', () => {
       );
 
       const resultObj = JSON.parse(result);
-      expect(resultObj.success).toBe(true);
+      expect(resultObj.success).toBe(false);
+      expect(resultObj.error).toContain('已并入 planning');
     });
 
-    test('planning -> working 应失败（必须先进入 preparing）', async () => {
+    test('planning -> working 应成功', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore([
         { id: 'task-1', workflowStatus: 'planning', type: 'polish' },
@@ -449,8 +451,7 @@ describe('update_task_status', () => {
       );
 
       const resultObj = JSON.parse(result);
-      expect(resultObj.success).toBe(false);
-      expect(resultObj.error).toContain('必须先进入 preparing');
+      expect(resultObj.success).toBe(true);
     });
 
     test('preparing -> working 应成功', async () => {
@@ -573,14 +574,14 @@ describe('update_task_status', () => {
   });
 
   describe('校对任务状态转换', () => {
-    test('planning -> preparing 应成功', async () => {
+    test('planning -> working 应成功', async () => {
       const tool = getTool();
       const mockStore = createMockAIProcessingStore([
         { id: 'task-1', workflowStatus: 'planning', type: 'proofreading' },
       ]);
 
       const result = await tool.handler(
-        { status: 'preparing' },
+        { status: 'working' },
         {
           taskId: 'task-1',
           aiProcessingStore: mockStore,
@@ -657,7 +658,7 @@ describe('update_task_status', () => {
       mockStore.updateTask = mockUpdateTask;
 
       await tool.handler(
-        { status: 'preparing' },
+        { status: 'working' },
         {
           taskId: 'task-1',
           aiProcessingStore: mockStore,
@@ -668,7 +669,7 @@ describe('update_task_status', () => {
       const calls = (mockUpdateTask as any).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
       const updateArg = calls[0][1];
-      expect(updateArg.workflowStatus).toBe('preparing');
+      expect(updateArg.workflowStatus).toBe('working');
     });
 
     test('当状态更新为 end 时不应修改 store 级 status 字段', async () => {
@@ -708,7 +709,7 @@ describe('update_task_status', () => {
       mockStore.updateTask = mockUpdateTask;
 
       await tool.handler(
-        { status: 'preparing' },
+        { status: 'working' },
         {
           taskId: 'task-1',
           aiProcessingStore: mockStore,
@@ -719,7 +720,7 @@ describe('update_task_status', () => {
       const calls = (mockUpdateTask as any).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
       const updateArg = calls[0][1];
-      expect(updateArg.workflowStatus).toBe('preparing');
+      expect(updateArg.workflowStatus).toBe('working');
       expect(updateArg.status).toBeUndefined();
     });
 
@@ -873,17 +874,7 @@ describe('update_task_status', () => {
       // 更新 mock 状态
       mockStore.activeTasks[0]!.workflowStatus = 'planning';
 
-      // planning -> preparing
-      result = await tool.handler(
-        { status: 'preparing' },
-        { taskId: 'task-1', aiProcessingStore: mockStore },
-      );
-      expect(JSON.parse(result).success).toBe(true);
-
-      // 更新 mock 状态
-      mockStore.activeTasks[0]!.workflowStatus = 'preparing';
-
-      // preparing -> working
+      // planning -> working
       result = await tool.handler(
         { status: 'working' },
         { taskId: 'task-1', aiProcessingStore: mockStore },

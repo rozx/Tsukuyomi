@@ -207,7 +207,6 @@ class TaskLoopSession {
 
   // Counters
   private consecutivePlanningCount = 0;
-  private consecutivePreparingCount = 0;
   private consecutiveWorkingCount = 0;
   private consecutiveReviewCount = 0;
   private toolCallCounts = new Map<string, number>();
@@ -223,6 +222,8 @@ class TaskLoopSession {
   private stateMachine: StateMachineEngine;
   private toolDispatcher: ToolDispatcher;
   private todoWorkflow: TodoWorkflow | undefined;
+  /** 上一次注入的待办清单消息（按引用定位，用于注入新快照前移除旧的） */
+  private lastTodoMessage: ChatMessage | undefined;
 
   constructor(private config: ToolCallLoopConfig) {
     this.allowedToolNames = new Set(config.tools.map((t) => t.function.name));
@@ -263,7 +264,12 @@ class TaskLoopSession {
 
     // 初始化 TodoWorkflow（需要 taskId）
     if (config.taskId) {
-      this.todoWorkflow = new TodoWorkflow(config.taskType, config.taskId, config.chunkIndex ?? 0);
+      this.todoWorkflow = new TodoWorkflow(
+        config.taskType,
+        config.taskId,
+        config.chunkIndex ?? 0,
+        !!config.isBriefPlanning,
+      );
       // 生成 planning 阶段的初始待办
       this.todoWorkflow.generateForState('planning');
     }
@@ -274,17 +280,8 @@ class TaskLoopSession {
     // 有效上限 = min(调用方配置, 绝对硬性上限)，保证任何情况下循环都有界
     const effectiveMaxTurns = Math.min(maxTurns, ABSOLUTE_MAX_TURNS);
 
-    // 在初始历史的最后一条 user 消息中注入 planning 待办清单
-    if (this.todoWorkflow) {
-      const todoBlock = this.todoWorkflow.buildTodoContextBlock('planning');
-      if (todoBlock) {
-        const lastUserIdx = this.config.history.findLastIndex((m) => m.role === 'user');
-        if (lastUserIdx >= 0) {
-          const original = this.config.history[lastUserIdx]!;
-          this.config.history[lastUserIdx] = { ...original, content: todoBlock + '\n' + original.content };
-        }
-      }
-    }
+    // 注入 planning 阶段的初始待办清单（后续每轮由 injectTodoContext 替换为最新快照）
+    this.injectTodoContext();
 
     while (this.currentTurnCount < effectiveMaxTurns) {
       if (this.currentStatus === 'end') break;
@@ -334,12 +331,14 @@ class TaskLoopSession {
     // Handle tool calls
     if (result.toolCalls && result.toolCalls.length > 0) {
       await this.processToolCalls(result, result.text);
-      // 每次工具调用后注入最新待办清单（确保 agent 始终看到最新状态）
-      this.injectTodoContextIfNeeded();
+      // 每轮结束都把待办清单刷新到历史末尾（旧快照会被同时移除）
+      this.injectTodoContext();
       return { shouldContinue: true };
     }
 
-    return this.handleTextResponse(result.text || '', history, chunkText, logLabel);
+    const outcome = await this.handleTextResponse(result.text || '', history, chunkText, logLabel);
+    this.injectTodoContext();
+    return outcome;
   }
 
   private async handleTextResponse(
@@ -788,14 +787,6 @@ class TaskLoopSession {
       return { shouldContinue: true };
     }
 
-    // Preparing
-    if (this.currentStatus === 'preparing') {
-      this.consecutivePreparingCount++;
-      this.resetOtherCounters('preparing');
-
-      return this.handlePreparingState();
-    }
-
     // Working
     if (this.currentStatus === 'working') {
       this.consecutiveWorkingCount++;
@@ -858,17 +849,6 @@ class TaskLoopSession {
           `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingContinuePrompt(taskType),
       });
     }
-    return { shouldContinue: true };
-  }
-
-  private handlePreparingState(): { shouldContinue: boolean } {
-    const isLoopDetected = this.consecutivePreparingCount >= MAX_CONSECUTIVE_STATUS;
-    this.config.history.push({
-      role: 'user',
-      content:
-        `${this.getCurrentStatusInfoMsg()}\n\n` +
-        PromptPolicy.getPreparingLoopPrompt(this.config.taskType, isLoopDetected),
-    });
     return { shouldContinue: true };
   }
 
@@ -991,42 +971,46 @@ class TaskLoopSession {
   }
 
   /**
-   * 工具调用后注入最新待办清单到历史末尾。
-   * 仅当最后一条消息不是已包含待办清单的 user 消息时才注入，避免重复。
+   * 注入最新待办清单到历史末尾，并移除上一次注入的那条。
+   *
+   * 待办清单是"当前快照"而非对话内容：过去轮次的快照全部过时，留在 history 里既误导
+   * 模型（旧的未完成状态仍可见），又按轮次线性堆积 token —— working 阶段的清单含逐段
+   * 明细，长章节每轮要复制上百行。因此全局只保留最新一份。
+   *
+   * 用对象引用（而非扫描 content）定位旧消息，避免误删模型自己复述待办的正常消息。
    */
-  private injectTodoContextIfNeeded() {
+  private injectTodoContext() {
     if (!this.todoWorkflow) return;
+
+    if (this.lastTodoMessage) {
+      const idx = this.config.history.indexOf(this.lastTodoMessage);
+      if (idx >= 0) {
+        this.config.history.splice(idx, 1);
+      }
+      this.lastTodoMessage = undefined;
+    }
 
     const todoBlock = this.todoWorkflow.buildTodoContextBlock(this.currentStatus);
     if (!todoBlock) return;
 
-    // 检查历史末尾是否已有 pendingUserMessage（来自状态转换），避免重复注入
-    const lastMsg = this.config.history[this.config.history.length - 1];
-    if (lastMsg?.role === 'user' && lastMsg.content?.includes('【待办清单】')) {
-      return;
-    }
-
-    this.config.history.push({
-      role: 'user',
-      content: todoBlock,
-    });
+    const message: ChatMessage = { role: 'user', content: todoBlock };
+    this.config.history.push(message);
+    this.lastTodoMessage = message;
   }
 
+  /**
+   * 当前阶段的状态说明。
+   *
+   * 待办清单不在这里拼接 —— 它由 injectTodoContext 统一注入并保持单份，
+   * 否则每条状态消息都会夹带一份过时快照。
+   */
   private getCurrentStatusInfoMsg() {
-    const statusInfo = PromptPolicy.getCurrentStatusInfo(
+    return PromptPolicy.getCurrentStatusInfo(
       this.config.taskType,
       this.currentStatus,
       this.config.isBriefPlanning,
       this.config.hasNextChunk,
     );
-    // 在状态信息前注入待办清单上下文块
-    if (this.todoWorkflow) {
-      const todoBlock = this.todoWorkflow.buildTodoContextBlock(this.currentStatus);
-      if (todoBlock) {
-        return todoBlock + '\n' + statusInfo;
-      }
-    }
-    return statusInfo;
   }
 
   private setCurrentStatus(status: TaskStatus) {
@@ -1036,14 +1020,12 @@ class TaskLoopSession {
 
   private resetConsecutiveCounters() {
     this.consecutivePlanningCount = 0;
-    this.consecutivePreparingCount = 0;
     this.consecutiveWorkingCount = 0;
     this.consecutiveReviewCount = 0;
   }
 
   private resetOtherCounters(except: TaskStatus) {
     if (except !== 'planning') this.consecutivePlanningCount = 0;
-    if (except !== 'preparing') this.consecutivePreparingCount = 0;
     if (except !== 'working') this.consecutiveWorkingCount = 0;
     if (except !== 'review') this.consecutiveReviewCount = 0;
   }
@@ -1064,7 +1046,6 @@ class TaskLoopSession {
       console.log(`[${this.config.logLabel}] 📊 性能指标:`, {
         总耗时: `${this.metrics.totalTime}ms`,
         规划阶段: `${this.metrics.planningTime}ms`,
-        准备阶段: `${this.metrics.preparingTime}ms`,
         工作阶段: `${this.metrics.workingTime}ms`,
         复核阶段: `${this.metrics.reviewTime}ms`,
         工具调用: `${this.metrics.toolCallCount} 次，平均 ${this.metrics.averageToolCallTime.toFixed(2)}ms`,

@@ -10,7 +10,7 @@ export type { ToolExecutionResult, ToolHandler, ToolHandlerContext } from './typ
 
 /**
  * 写入类工具名称集合
- * 在翻译相关任务的特定状态下限制使用（仅 preparing 和 review 阶段允许）
+ * 在翻译相关任务的特定状态下限制使用（仅 planning 和 review 阶段允许）
  */
 const DATA_WRITE_TOOL_NAMES = new Set([
   'create_term',
@@ -150,8 +150,9 @@ export class ToolDispatcher {
 
   /**
    * 检查写入工具在当前状态下是否被允许。
-   * 翻译相关任务仅在 preparing（创建术语/角色/记忆）和 review（补充修正）阶段允许写入工具。
-   * planning 阶段不允许（应先完成规划再写入），working 阶段不允许（应专注翻译）。
+   * 翻译相关任务仅在 planning（规划兼数据维护）和 review（补充修正）阶段允许写入工具，
+   * working 阶段不允许（应专注翻译输出）。
+   * preparing 已并入 planning，仍放行以兼容旧持久化任务恢复到该状态的场景。
    */
   private isToolAllowedByStatus(toolCall: AIToolCall): boolean {
     const toolName = toolCall.function.name;
@@ -167,7 +168,11 @@ export class ToolDispatcher {
 
     const currentStatus = this.options.context.getCurrentStatus();
 
-    if (currentStatus === 'preparing' || currentStatus === 'review') {
+    if (
+      currentStatus === 'planning' ||
+      currentStatus === 'preparing' ||
+      currentStatus === 'review'
+    ) {
       return true;
     }
 

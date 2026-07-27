@@ -5,87 +5,22 @@
 
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 
-/** 任务类型标签（用于待办事项标记） */
-const TODO_TASK_LABELS: Record<string, string> = {
-  translation: '翻译',
-  polish: '润色',
-  proofreading: '校对',
-  assistant: '助手',
-};
-
 /**
  * 获取待办事项的系统提示词片段
- * @param taskId 任务 ID（必需）
- * @param sessionId 会话 ID（可选，用于助手聊天会话）
+ * @param hasContext 是否存在任务/会话上下文（无上下文时不注入待办说明）
  */
-export function getTodosSystemPrompt(taskId?: string, sessionId?: string): string {
-  if (!taskId && !sessionId) {
+export function getTodosSystemPrompt(hasContext: boolean): string {
+  if (!hasContext) {
     return '';
   }
 
-  let prompt = '\n**待办系统**：\n';
-  prompt += '- 系统自动生成预定义待办，【待办清单】始终显示在上下文中，无需调用 list_todos\n';
-  prompt +=
-    '- **必须按顺序操作**：开始处理前先调用 `mark_todo_working`，完成后才能调用 `mark_todo_done`（跳过 working 直接 done 会被拒绝）\n';
-  prompt += '- 所有预定义待办标记 done 后才能切换到下一阶段\n';
-
-  return prompt;
-}
-
-/**
- * 创建任务相关的待办事项
- * @param taskType 任务类型
- * @param taskDescription 任务描述
- * @param taskId 任务 ID（必需）
- */
-function createTaskTodo(
-  taskType: 'translation' | 'polish' | 'proofreading' | 'assistant',
-  taskDescription: string,
-  taskId: string,
-): TodoItem | null {
-  try {
-    if (!taskId) {
-      throw new Error('任务 ID 不能为空');
-    }
-    const todoText = `[${TODO_TASK_LABELS[taskType]}] ${taskDescription}`;
-    return TodoListService.createTodo(todoText, taskId);
-  } catch (error) {
-    console.error('[TodoHelper] 创建待办事项失败:', error);
-    return null;
-  }
-}
-
-/**
- * 查找并标记相关的待办事项为完成
- */
-function markRelatedTodosDone(
-  taskType: 'translation' | 'polish' | 'proofreading' | 'assistant',
-  taskDescription?: string,
-): void {
-  try {
-    const label = TODO_TASK_LABELS[taskType] ?? taskType;
-    const activeTodos = TodoListService.getActiveTodos();
-
-    // 查找包含任务类型的待办事项
-    const relatedTodos = activeTodos.filter((todo) => {
-      if (todo.text.includes(`[${label}]`)) {
-        // 如果提供了任务描述，尝试匹配更精确的待办
-        if (taskDescription) {
-          return todo.text.includes(taskDescription) || todo.text.includes(label);
-        }
-        return true;
-      }
-      return false;
-    });
-
-    // 标记找到的待办为完成
-    for (const todo of relatedTodos) {
-      TodoListService.markTodoAsDone(todo.id);
-      console.log(`[TodoHelper] 标记待办事项为完成: ${todo.text}`);
-    }
-  } catch (error) {
-    console.error('[TodoHelper] 标记待办事项失败:', error);
-  }
+  return (
+    '\n**待办系统**：\n' +
+    '- 系统自动生成预定义待办，【待办清单】始终显示在上下文中，无需调用 list_todos\n' +
+    '- 完成一项就调用 `mark_todo_done` 标记；一次完成多项时用 `ids` 批量标记\n' +
+    '- `mark_todo_working` 为可选，仅用于向用户展示当前进度\n' +
+    '- 所有预定义待办标记 done 后才能切换到下一阶段\n'
+  );
 }
 
 /**
@@ -123,29 +58,8 @@ export function getPostToolCallReminder(
     reminder += '  完成后请调用 mark_todo_done 标记\n';
   } else if (pendingTodos.length > 0) {
     reminder += `还有 ${pendingTodos.length} 个待办事项待处理\n`;
-    reminder +=
-      '开始处理前必须调用 mark_todo_working 标记（不可跳过直接 mark_todo_done）\n';
+    reminder += '完成后调用 mark_todo_done 标记（多项可用 ids 批量标记）\n';
   }
 
   return reminder;
-}
-
-/**
- * 获取待办事项的简要列表（用于添加到提示词）
- * @param taskId 任务 ID（必需）
- */
-function getTodosSummary(taskId: string): string {
-  if (!taskId) {
-    return '当前无待办事项。';
-  }
-  const activeTodos = TodoListService.getTodosByTaskId(taskId).filter((todo) => todo.status !== 'done');
-
-  if (activeTodos.length === 0) {
-    return '当前无待办事项。';
-  }
-
-  return `当前有 ${activeTodos.length} 个待办事项：${activeTodos
-    .slice(0, 3)
-    .map((t) => t.text)
-    .join('；')}${activeTodos.length > 3 ? '...' : ''}`;
 }

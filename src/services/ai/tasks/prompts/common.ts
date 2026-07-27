@@ -49,24 +49,16 @@ export function getSymbolFormatRules(): string {
 /**
  * 获取规划阶段描述
  */
-function getPlanningStateDescription(_taskLabel: string, isBriefPlanning?: boolean): string {
+function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolean): string {
   if (isBriefPlanning) {
     return `**当前状态：简短规划阶段 (planning)**
-已继承前一部分的规划上下文。如需补充信息可调用工具。
-按待办清单逐项确认，完成后 \`update_task_status({"status": "preparing"})\`。`;
+已继承前一部分的规划上下文。如需补充信息可调用工具，本阶段也可创建/更新术语、角色、记忆。
+按待办清单逐项确认，完成后 \`update_task_status({"status": "working"})\`。`;
   }
 
   return `**当前状态：规划阶段 (planning)**
 上下文中提供的术语/角色/记忆已为最新，无需重新获取。按待办清单逐项确认，缺失时再调用工具补充。
-⚠️ 所有待办标记 done 后才能切换：\`update_task_status({"status": "preparing"})\``;
-}
-
-/**
- * 获取准备阶段描述
- */
-function getPreparingStateDescription(taskLabel: string): string {
-  return `**当前状态：准备阶段 (preparing)**
-上下文中提供的术语/角色/记忆已为最新。按待办清单检查是否需要创建/更新，无需操作的项目直接标记 done。
+- 本阶段是唯一的输出前数据维护窗口：可创建/更新术语、角色、记忆
 - ⚠️ 当前阶段禁止提交${taskLabel}结果
 ⚠️ 所有待办标记 done 后才能切换：\`update_task_status({"status": "working"})\``;
 }
@@ -90,11 +82,7 @@ function getWorkingStateDescription(taskType: TaskType): string {
   const nextStatusNote =
     taskType === 'translation' ? '' : '（⚠️ 注意：此任务没有 review 阶段，直接进入 end）';
   const dataWriteRestrictionNote =
-    taskType === 'translation'
-      ? '（请切换到 preparing 或 review）'
-      : taskType === 'polish' || taskType === 'proofreading'
-        ? '（请切换到 preparing）'
-        : '';
+    taskType === 'translation' ? '（请在 planning 或 review 阶段处理）' : '（请在 planning 阶段处理）';
   const dataWriteRestrictionLine = dataWriteRestrictionNote
     ? `- ⛔ 禁止创建/更新术语、角色、记忆${dataWriteRestrictionNote}\n`
     : '';
@@ -145,10 +133,10 @@ export function getCurrentStatusInfo(
   const taskLabel = TASK_TYPE_LABELS[taskType];
 
   switch (status) {
+    // preparing 已并入 planning，旧持久化任务恢复到该状态时复用同一段描述
     case 'planning':
-      return getPlanningStateDescription(taskLabel, isBriefPlanning);
     case 'preparing':
-      return getPreparingStateDescription(taskLabel);
+      return getPlanningStateDescription(taskLabel, isBriefPlanning);
     case 'working':
       return getWorkingStateDescription(taskType);
     case 'review':
@@ -202,7 +190,7 @@ export function getHonorificRules(): string {
 export function getDataManagementRules(): string {
   return `【数据管理规则】
 **状态约束**:
-- preparing：可创建/更新术语、角色、记忆
+- planning：可创建/更新术语、角色、记忆（输出前唯一的数据维护窗口）
 - working：仅执行翻译/润色/校对输出，禁止数据写入
 - review：仅翻译任务可用，且可创建/更新术语、角色、记忆
 
@@ -239,7 +227,7 @@ export function getMemoryWorkflowRules(): string {
 - 需要详细内容时用 \`get_memory\` 获取完整记忆
 
 **写入规则**：
-- 写入时机：仅在可写阶段执行 \`create_memory\`/\`update_memory\`（preparing；翻译任务还可在 review）
+- 写入时机：仅在可写阶段执行 \`create_memory\`/\`update_memory\`（planning；翻译任务还可在 review）
 - 写入门槛：仅对未来有长期收益、可复用时才写入（⛔ 一次性信息不写入）
 - ⚠️ **默认不新建**：优先合并到已有记忆，重写为更短清晰的版本
 
@@ -250,7 +238,7 @@ export function getMemoryWorkflowRules(): string {
  * 获取待办事项工具描述（精简版）
  */
 function getTodoToolsDescription(_taskType: TaskType): string {
-  return `**待办管理**: 系统自动生成待办清单，必须先用 \`mark_todo_working\` 标记进行中，再用 \`mark_todo_done\` 标记完成（跳过 working 直接 done 会被拒绝）。所有待办完成后方可切换阶段。`;
+  return `**待办管理**: 系统自动生成待办清单，完成一项就用 \`mark_todo_done\` 标记（\`id\` 单条或 \`ids\` 批量，无需先标记进行中）。所有待办完成后方可切换阶段。`;
 }
 
 /**

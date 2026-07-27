@@ -397,7 +397,7 @@ describe('TodoListTools', () => {
   });
 
   describe('mark_todo_done', () => {
-    test('应该能够将待办事项标记为完成', async () => {
+    test('应该能够将 working 中的待办事项标记为完成', async () => {
       const todo = TodoListService.createTodo('Test todo', taskId);
       TodoListService.markTodoAsWorking(todo.id);
 
@@ -406,28 +406,63 @@ describe('TodoListTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
-      expect(parsed.todo.status).toBe('done');
+      expect(parsed.count).toBe(1);
+      expect(parsed.todos[0].status).toBe('done');
 
       const updated = TodoListService.getTodoById(todo.id);
       expect(updated?.status).toBe('done');
     });
 
-    test('pending 状态直接标记为 done 应该抛出错误', async () => {
+    test('pending 状态应可直接标记为 done（无需先 mark_todo_working）', async () => {
       const todo = TodoListService.createTodo('Test todo', taskId);
 
       const tool = todoListTools.find((t) => t.definition.function.name === 'mark_todo_done');
+      const result = await tool!.handler({ id: todo.id }, context);
+      const parsed = JSON.parse(result);
+
+      expect(parsed.success).toBe(true);
+      expect(TodoListService.getTodoById(todo.id)?.status).toBe('done');
+    });
+
+    test('应支持 ids 批量标记完成', async () => {
+      const a = TodoListService.createTodo('todo A', taskId);
+      const b = TodoListService.createTodo('todo B', taskId);
+      const c = TodoListService.createTodo('todo C', taskId);
+
+      const tool = todoListTools.find((t) => t.definition.function.name === 'mark_todo_done');
+      const result = await tool!.handler({ ids: [a.id, b.id, c.id] }, context);
+      const parsed = JSON.parse(result);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.count).toBe(3);
+      [a, b, c].forEach((t) => {
+        expect(TodoListService.getTodoById(t.id)?.status).toBe('done');
+      });
+    });
+
+    test('批量标记时部分 ID 无效应完成其余项并回报错误', async () => {
+      const valid = TodoListService.createTodo('valid todo', taskId);
+
+      const tool = todoListTools.find((t) => t.definition.function.name === 'mark_todo_done');
+      const result = await tool!.handler({ ids: [valid.id, 'non-existent-id'] }, context);
+      const parsed = JSON.parse(result);
+
+      expect(parsed.success).toBe(true);
+      expect(parsed.count).toBe(1);
+      expect(parsed.errors).toHaveLength(1);
+      expect(parsed.errors[0]).toContain('non-existent-id');
+      expect(TodoListService.getTodoById(valid.id)?.status).toBe('done');
+    });
+
+    test('既未提供 id 也未提供 ids 时应抛出错误', async () => {
+      const tool = todoListTools.find((t) => t.definition.function.name === 'mark_todo_done');
 
       try {
-        await tool!.handler({ id: todo.id }, context);
+        await tool!.handler({}, context);
         expect(true).toBe(false);
       } catch (error) {
-        expect(error instanceof Error && error.message).toContain(
-          '该待办事项未标记为进行中，请先调用 mark_todo_working',
-        );
+        expect(error instanceof Error && error.message).toContain('必须提供 id 或 ids 参数之一');
       }
-
-      const unchanged = TodoListService.getTodoById(todo.id);
-      expect(unchanged?.status).toBe('pending');
     });
   });
 

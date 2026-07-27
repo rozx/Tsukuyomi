@@ -3,7 +3,6 @@ import {
   getBriefPlanningToolWarningPrompt,
   getMissingParagraphsPrompt,
   getPlanningLoopPrompt,
-  getPreparingLoopPrompt,
   getReviewLoopPrompt,
   getStatusRestrictedToolPrompt,
   getToolLimitReachedPrompt,
@@ -30,7 +29,6 @@ export interface IPromptPolicy {
     isBriefPlanning: boolean,
     isLoopDetected: boolean,
   ): string;
-  getPreparingLoopPrompt(taskType: TaskType, isLoopDetected: boolean): string;
   getWorkingLoopPrompt(taskType: TaskType): string;
   getWorkingFinishedPrompt(taskType: TaskType): string;
   getWorkingContinuePrompt(taskType: TaskType): string;
@@ -65,10 +63,6 @@ export const PromptPolicy: IPromptPolicy = {
     isLoopDetected: boolean,
   ): string {
     return getPlanningLoopPrompt(taskType, isBriefPlanning, isLoopDetected);
-  },
-
-  getPreparingLoopPrompt(taskType: TaskType, isLoopDetected: boolean): string {
-    return getPreparingLoopPrompt(taskType, isLoopDetected);
   },
 
   getWorkingLoopPrompt(taskType: TaskType): string {

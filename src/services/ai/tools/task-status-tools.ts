@@ -12,22 +12,24 @@ interface StateTransitionRules {
   [key: string]: TaskStatus[];
 }
 
+// preparing 已并入 planning。规则里保留 preparing → working，
+// 仅用于兼容旧版本持久化下来的任务状态，避免恢复后无路可走。
 const TRANSITION_RULES: Record<TaskType, StateTransitionRules> = {
   translation: {
-    planning: ['preparing'],
+    planning: ['working'],
     preparing: ['working'],
     working: ['review'],
     review: ['working', 'end'],
     end: [],
   },
   polish: {
-    planning: ['preparing'],
+    planning: ['working'],
     preparing: ['working'],
     working: ['end'],
     end: [],
   },
   proofreading: {
-    planning: ['preparing'],
+    planning: ['working'],
     preparing: ['working'],
     working: ['end'],
     end: [],
@@ -42,16 +44,8 @@ function getTransitionErrorMessage(
   currentStatus: TaskStatus,
   newStatus: TaskStatus,
 ): string {
-  if (taskType === 'translation' && currentStatus === 'planning' && newStatus === 'working') {
-    return '翻译任务必须先进入 preparing 状态';
-  }
-
-  if (
-    (taskType === 'polish' || taskType === 'proofreading') &&
-    currentStatus === 'planning' &&
-    newStatus === 'working'
-  ) {
-    return '润色/校对任务必须先进入 preparing 状态';
+  if (newStatus === 'preparing') {
+    return 'preparing 阶段已并入 planning，请直接切换到 working';
   }
 
   if (taskType === 'translation' && currentStatus === 'working' && newStatus === 'end') {
@@ -404,15 +398,15 @@ export const taskStatusTools: ToolDefinition[] = [
       function: {
         name: 'update_task_status',
         description:
-          '更新当前 AI 任务的状态。翻译任务：planning(规划中) → preparing(准备中) → working(执行中) → review(复核中) → end(完成)；润色/校对任务：planning → preparing → working → end。注意：翻译任务支持 review → working 返回修改。',
+          '更新当前 AI 任务的状态。翻译任务：planning(规划中) → working(执行中) → review(复核中) → end(完成)；润色/校对任务：planning → working → end。注意：翻译任务支持 review → working 返回修改。',
         parameters: {
           type: 'object',
           properties: {
             status: {
               type: 'string',
-              enum: ['planning', 'preparing', 'working', 'review', 'end'],
+              enum: ['planning', 'working', 'review', 'end'],
               description:
-                '新的任务状态。planning: 正在规划；preparing: 正在准备数据（术语/角色/记忆）；working: 正在执行翻译/润色/校对；review: 正在复核（仅翻译任务可用）；end: 任务完成',
+                '新的任务状态。planning: 正在规划并维护术语/角色/记忆；working: 正在执行翻译/润色/校对；review: 正在复核（仅翻译任务可用）；end: 任务完成',
             },
             reason: {
               type: 'string',

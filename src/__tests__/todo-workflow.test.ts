@@ -11,52 +11,54 @@ describe('TodoWorkflow', () => {
   });
 
   describe('generateForState — template generation', () => {
-    test('translation planning 应生成 7 个预定义待办', () => {
+    test('translation planning 应生成 5 个预定义待办（含并入的数据维护项）', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('planning');
 
-      expect(todos).toHaveLength(7);
-      expect(todos[0]!.text).toContain('确认角色信息');
-      expect(todos[1]!.text).toContain('确认术语信息');
-      expect(todos[2]!.text).toContain('确认记忆信息');
-      expect(todos[3]!.text).toContain('获取前后文上下文');
-      expect(todos[4]!.text).toContain('确认翻译策略');
-      expect(todos[5]!.text).toContain('确认角色说话口吻的一致性');
-      expect(todos[6]!.text).toContain('确认敬语翻译策略');
+      expect(todos).toHaveLength(5);
+      expect(todos[0]!.text).toContain('确认角色、术语、记忆信息');
+      expect(todos[1]!.text).toContain('获取前后文上下文');
+      expect(todos[2]!.text).toContain('确认角色口吻与敬语策略');
+      expect(todos[3]!.text).toContain('确认翻译策略');
+      // 原 preparing 阶段的三条创建/更新项已并入 planning 末尾
+      expect(todos[4]!.text).toContain('创建/更新术语、角色、记忆');
+      expect(todos[4]!.text).toContain('推荐更新已有记忆而非新建');
       todos.forEach((t) => {
         expect(t.predefined).toBe(true);
         expect(t.status).toBe('pending');
       });
     });
 
-    test('translation preparing 应生成 3 个预定义待办（含补充说明）', () => {
-      const workflow = new TodoWorkflow('translation', taskId);
-      const todos = workflow.generateForState('preparing');
-
-      expect(todos).toHaveLength(3);
-      expect(todos[0]!.text).toContain('若术语描述缺失或者不准确');
-      expect(todos[1]!.text).toContain('若角色描述、口吻、别名、全名等缺失或者不准确');
-      expect(todos[2]!.text).toContain('推荐更新记忆取代添加新的记忆');
+    test('preparing 阶段已并入 planning，不再生成待办', () => {
+      for (const taskType of ['translation', 'polish'] as const) {
+        const workflow = new TodoWorkflow(taskType, taskId);
+        expect(workflow.generateForState('preparing')).toHaveLength(0);
+      }
     });
 
-    test('polish preparing 应生成 3 个预定义待办（含补充说明）', () => {
+    test('polish planning 应生成 5 个预定义待办', () => {
       const workflow = new TodoWorkflow('polish', taskId);
-      const todos = workflow.generateForState('preparing');
+      const todos = workflow.generateForState('planning');
 
-      expect(todos).toHaveLength(3);
-      expect(todos[0]!.text).toContain('若术语描述缺失或者不准确');
-      expect(todos[1]!.text).toContain('若角色描述、口吻、别名、全名等缺失或者不准确');
-      expect(todos[2]!.text).toContain('推荐更新记忆取代添加新的记忆');
+      expect(todos).toHaveLength(5);
+      expect(todos[4]!.text).toContain('创建/更新术语、角色、记忆');
     });
 
-    test('translation review 应生成 5 个预定义待办', () => {
+    test('translation review 应生成 3 个预定义待办', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('review');
 
-      expect(todos).toHaveLength(5);
-      expect(todos[0]!.text).toContain('翻译与原文一致性');
-      expect(todos[2]!.text).toContain('add_translation_batch');
-      expect(todos[4]!.text).toContain('角色说话口吻的一致性');
+      expect(todos).toHaveLength(3);
+      expect(todos[0]!.text).toContain('校对译文与原文一致性');
+      expect(todos[1]!.text).toContain('add_translation_batch');
+      expect(todos[2]!.text).toContain('更新术语、角色、记忆');
+    });
+
+    test('polish/proofreading 没有 review 阶段，不应生成 review 待办', () => {
+      for (const taskType of ['polish', 'proofreading'] as const) {
+        const workflow = new TodoWorkflow(taskType, taskId);
+        expect(workflow.generateForState('review')).toHaveLength(0);
+      }
     });
 
     test('end 状态不应生成任何待办', () => {
@@ -73,20 +75,20 @@ describe('TodoWorkflow', () => {
       const first = workflow.generateForState('planning');
       const second = workflow.generateForState('planning');
 
-      expect(first).toHaveLength(7);
+      expect(first).toHaveLength(5);
       expect(second).toHaveLength(0);
 
       const allTodos = TodoListService.getTodosByTaskId(taskId);
-      expect(allTodos).toHaveLength(7);
+      expect(allTodos).toHaveLength(5);
     });
 
     test('不同状态各自独立生成待办', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       workflow.generateForState('planning');
-      workflow.generateForState('preparing');
+      workflow.generateForState('review');
 
       const allTodos = TodoListService.getTodosByTaskId(taskId);
-      expect(allTodos).toHaveLength(10); // 7 + 3
+      expect(allTodos).toHaveLength(8); // planning 5 + review 3
     });
   });
 
@@ -172,7 +174,7 @@ describe('TodoWorkflow', () => {
       const gate = workflow.checkGate('planning');
 
       expect(gate.allowed).toBe(false);
-      expect(gate.incompleteItems).toHaveLength(5);
+      expect(gate.incompleteItems).toHaveLength(3);
     });
 
     test('agent 自创的 ad-hoc 待办不应阻塞转换', () => {
@@ -252,22 +254,19 @@ describe('TodoWorkflow', () => {
       // chunk-0 完成所有状态的待办
       const workflow0 = new TodoWorkflow('translation', taskId, 0);
       const p0 = workflow0.generateForState('planning');
-      const pr0 = workflow0.generateForState('preparing');
       const w0 = workflow0.generateForState('working', {
         paragraphIds: ['p1', 'p2'],
         chunkText: chunkText0,
         chunkIndex: 0,
       });
       const r0 = workflow0.generateForState('review');
-      [...p0, ...pr0, ...w0, ...r0].forEach((t) => {
-        TodoListService.markTodoAsWorking(t.id);
+      [...p0, ...w0, ...r0].forEach((t) => {
         TodoListService.markTodoAsDone(t.id);
       });
 
       // chunk-1 启动
       const workflow1 = new TodoWorkflow('translation', taskId, 1);
       const p1 = workflow1.generateForState('planning');
-      const pr1 = workflow1.generateForState('preparing');
       const w1 = workflow1.generateForState('working', {
         paragraphIds: ['p3', 'p4'],
         chunkText: chunkText1,
@@ -276,14 +275,9 @@ describe('TodoWorkflow', () => {
       const r1 = workflow1.generateForState('review');
 
       // 每个 chunk 都必须有自己完整且隔离的阶段待办
-      expect(p1).toHaveLength(7);
+      expect(p1).toHaveLength(5);
       p1.forEach((t) => {
         expect(t.taskState).toBe('planning');
-        expect(t.chunkIndex).toBe(1);
-      });
-      expect(pr1).toHaveLength(3);
-      pr1.forEach((t) => {
-        expect(t.taskState).toBe('preparing');
         expect(t.chunkIndex).toBe(1);
       });
       // working/review 也必须正确创建（不被 chunk-0 的 hasGenerated 检查误判）
@@ -291,7 +285,7 @@ describe('TodoWorkflow', () => {
       expect(w1[0]!.text).toContain('p3');
       expect(w1[0]!.text).toContain('p4');
       expect(w1[0]!.chunkIndex).toBe(1);
-      expect(r1).toHaveLength(5);
+      expect(r1).toHaveLength(3);
       r1.forEach((t) => expect(t.chunkIndex).toBe(1));
     });
 
@@ -365,13 +359,13 @@ describe('TodoWorkflow', () => {
       // chunk-1 调用 planning，应生成当前 chunk 自己的待办
       const workflow1 = new TodoWorkflow('translation', taskId, 1);
       const p1 = workflow1.generateForState('planning');
-      expect(p1).toHaveLength(7);
+      expect(p1).toHaveLength(5);
       p1.forEach((todo) => expect(todo.chunkIndex).toBe(1));
 
       // 当前 chunk 的 planning 待办未完成，gate 必须阻止提前切换
       const gate = workflow1.checkGate('planning');
       expect(gate.allowed).toBe(false);
-      expect(gate.incompleteItems).toHaveLength(7);
+      expect(gate.incompleteItems).toHaveLength(5);
 
       // 上下文只包含 chunk-1 的 planning 待办，不泄露 chunk-0
       const block = workflow1.buildTodoContextBlock('planning');

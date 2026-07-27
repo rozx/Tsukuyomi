@@ -418,7 +418,7 @@ export async function processTextTask(
     const specialInstructions = getSpecialInstructions(bookId, chapterId, taskType);
 
     // 构建系统提示词
-    const todosPrompt = taskId ? getTodosSystemPrompt(taskId) : '';
+    const todosPrompt = getTodosSystemPrompt(!!taskId);
     const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
     const bookContextSection = await buildBookContextSection(bookId);
     const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);

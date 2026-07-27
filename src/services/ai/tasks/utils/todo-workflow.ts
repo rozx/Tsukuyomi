@@ -25,69 +25,56 @@ export interface GateResult {
 }
 
 /**
- * 获取预定义模板
+ * planning 完整模板（preparing 阶段的数据维护项已并入最后一条）
+ *
+ * 相比旧版 planning(7) + preparing(3) = 10 条：
+ * - 角色/术语/记忆三条独立"确认"项合并为一条（信息本就在同一个上下文块里）
+ * - "确认角色口吻" 与 "确认敬语策略" 高度重叠，合并为一条
+ * - preparing 的三条创建/更新项合并为一条数据维护项
  */
-function getTemplates(taskType: TaskType, state: TaskStatus): TodoTemplate | null {
-  if (state === 'end') return null;
+const PLANNING_TEMPLATE: TodoTemplate = [
+  '确认角色、术语、记忆信息（上下文已提供，缺失或不准确时调用工具补充/搜索）',
+  '获取前后文上下文（如需要，可调用工具预览段落/章节，或用工具确认之前的剧情）',
+  '确认角色口吻与敬语策略（自称/他称/语气词；搜索记忆、既往译文与角色关系，确保跨章节一致）',
+  '确认翻译策略（如需调整，可调用工具修改）',
+  '创建/更新术语、角色、记忆（无需操作时直接标记完成；描述/口吻/别名/全名缺失或不准确时补充，推荐更新已有记忆而非新建）',
+];
 
-  switch (taskType) {
-    case 'translation':
-      switch (state) {
-        case 'planning':
-          return [
-            '确认角色信息（上下文已提供，缺失时调用工具补充）',
-            '确认术语信息（上下文已提供，缺失时调用工具补充）',
-            '确认记忆信息（上下文已提供，缺失时搜索补充）',
-            '获取前后文上下文（如需要，可调用工具预览段落/章节，或者使用工具来确认之前的剧情）',
-            '确认翻译策略（如需调整，可调用工具修改）',
-            '确认角色说话口吻的一致性（包括自称、他称、语气词等）',
-            '确认敬语翻译策略（搜索记忆/段落/角色关系，确定各角色间的敬语处理方式，检查当前或之前的翻译章节，确保敬语翻译的一致性）',
-          ];
-        case 'preparing':
-          return [
-            '创建/更新术语（确认完成或无需操作,若术语描述缺失或者不准确，可调用工具补充）',
-            '创建/更新角色（确认完成或无需操作,若角色描述、口吻、别名、全名等缺失或者不准确，可调用工具补充）',
-            '创建/更新记忆（确认完成或无需操作,若记忆缺失关键细节或者不准确，可调用工具补充,推荐更新记忆取代添加新的记忆）',
-          ];
-        case 'working':
-          return null; // dynamic
-        case 'review':
-          return [
-            '检查翻译与原文一致性，特别是敬语翻译',
-            '检查人称代词和语气词',
-            '修正问题段落（可直接使用 add_translation_batch）',
-            '更新术语/角色/记忆（如有新发现、缺失或者不准饿却）',
-            '修正角色说话口吻的一致性（包括自称、他称、语气词等）',
-          ];
-        default:
-          return null;
-      }
+/**
+ * 简短规划模板：后续 chunk 已继承前一个 chunk 的规划上下文，
+ * 只保留真正与本 chunk 相关的两项。
+ */
+const BRIEF_PLANNING_TEMPLATE: TodoTemplate = [
+  '确认本部分与上一部分的衔接（如需要，预览相邻段落确认剧情与称呼延续）',
+  '补充本部分新出现的术语/角色/记忆（无新增时直接标记完成）',
+];
 
-    case 'polish':
-    case 'proofreading':
-      switch (state) {
-        case 'planning':
-          return [
-            '确认角色信息（上下文已提供，缺失时调用工具补充）',
-            '确认术语信息（上下文已提供，缺失时调用工具补充）',
-            '确认记忆信息（上下文已提供，缺失时搜索补充）',
-            '获取前后文上下文（如需要，可调用工具预览段落/章节，或者使用工具来确认之前的剧情）',
-            '确认翻译策略（如需调整，可调用工具修改）',
-            '确认角色说话口吻的一致性（包括自称、他称、语气词等）',
-            '确认敬语翻译策略（搜索记忆/段落/角色关系，确定各角色间的敬语处理方式，检查当前或之前的翻译章节，确保敬语翻译的一致性）',
-          ];
-        case 'preparing':
-          return [
-            '创建/更新术语（确认完成或无需操作,若术语描述缺失或者不准确，可调用工具补充）',
-            '创建/更新角色（确认完成或无需操作,若角色描述、口吻、别名、全名等缺失或者不准确，可调用工具补充）',
-            '创建/更新记忆（确认完成或无需操作,若记忆缺失关键细节或者不准确，可调用工具补充,推荐更新记忆取代添加新的记忆）',
-          ];
-        case 'working':
-          return null; // dynamic
-        default:
-          return null;
-      }
+/**
+ * review 模板（原 5 条中的一致性检查三项合并为一条）
+ */
+const REVIEW_TEMPLATE: TodoTemplate = [
+  '校对译文与原文一致性（含敬语、人称代词、语气词、角色说话口吻的前后一致）',
+  '修正发现的问题段落（直接使用 add_translation_batch 提交修正）',
+  '更新术语、角色、记忆（如有新发现、缺失或不准确）',
+];
 
+/**
+ * 获取预定义模板
+ *
+ * preparing 已并入 planning，故 state='preparing' 不再产出模板。
+ */
+function getTemplates(
+  taskType: TaskType,
+  state: TaskStatus,
+  isBriefPlanning: boolean,
+): TodoTemplate | null {
+  switch (state) {
+    case 'planning':
+      return isBriefPlanning ? BRIEF_PLANNING_TEMPLATE : PLANNING_TEMPLATE;
+    case 'review':
+      // 润色/校对没有 review 阶段
+      return taskType === 'translation' ? REVIEW_TEMPLATE : null;
+    // working 为动态模板，preparing/end 不产出
     default:
       return null;
   }
@@ -162,12 +149,19 @@ export class TodoWorkflow {
   private taskType: TaskType;
   private taskId: string;
   private chunkIndex: number;
+  private isBriefPlanning: boolean;
   private initializedStates: Set<TaskStatus> = new Set();
 
-  constructor(taskType: TaskType, taskId: string, chunkIndex: number = 0) {
+  constructor(
+    taskType: TaskType,
+    taskId: string,
+    chunkIndex: number = 0,
+    isBriefPlanning: boolean = false,
+  ) {
     this.taskType = taskType;
     this.taskId = taskId;
     this.chunkIndex = chunkIndex;
+    this.isBriefPlanning = isBriefPlanning;
 
     // 切换到新 chunk 时，清掉上一个 chunk 残留的待办（包括 agent 自创的 ad-hoc，
     // 后者无 chunkIndex 标记，按 0 处理）。否则 list_todos 工具和 UI 都会把历史
@@ -204,7 +198,7 @@ export class TodoWorkflow {
     this.initializedStates.add(state);
 
     // 静态模板
-    const templates = getTemplates(this.taskType, state);
+    const templates = getTemplates(this.taskType, state, this.isBriefPlanning);
     if (templates) {
       return templates.map((text) =>
         TodoListService.createTodo(text, this.taskId, undefined, {
@@ -267,24 +261,32 @@ export class TodoWorkflow {
 
     const allDone = predefinedTodos.every((t) => t.status === 'done');
 
+    // 只展开"当前项"的完整文本，其余一律折叠为首行。
+    // working 阶段的待办正文含逐段清单（每段一行），全量展开会在每轮工具调用后
+    // 被复制进上下文，长章节可轻易堆出上千行冗余。
+    // 打卡协议放宽后模型可能不再标记 working，故回退到第一个未完成项，
+    // 保证"当前该做的那一项"始终可见。
+    const currentTodo =
+      predefinedTodos.find((t) => t.status === 'working') ??
+      predefinedTodos.find((t) => t.status !== 'done');
+
     let block = '\n【待办清单】\n';
 
     for (const todo of predefinedTodos) {
+      const firstLine = todo.text.split('\n')[0]!;
       if (todo.status === 'done') {
-        const firstLine = todo.text.split('\n')[0]!;
         block += `✅ [${todo.id}] ${firstLine}\n`;
-      } else if (todo.status === 'working') {
+      } else if (todo.id === currentTodo?.id) {
         block += `→ [${todo.id}] ${todo.text}\n`;
       } else {
-        block += `☐ [${todo.id}] ${todo.text}\n`;
+        block += `☐ [${todo.id}] ${firstLine}\n`;
       }
     }
 
     // 提醒行
-    const workingTodo = predefinedTodos.find((t) => t.status === 'working');
-    if (workingTodo) {
-      const firstLine = workingTodo.text.split('\n')[0]!;
-      block += `\n⚠️ 当前任务：${firstLine} — 完成后请调用 mark_todo_done 标记（不可跳过 working 直接 done）\n`;
+    if (currentTodo) {
+      const firstLine = currentTodo.text.split('\n')[0]!;
+      block += `\n⚠️ 当前任务：${firstLine} — 完成后调用 mark_todo_done 标记\n`;
     }
 
     if (allDone) {

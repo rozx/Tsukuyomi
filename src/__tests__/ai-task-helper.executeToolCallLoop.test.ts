@@ -232,7 +232,7 @@ describe('executeToolCallLoop', () => {
               type: 'function',
               function: {
                 name: 'update_task_status',
-                arguments: '{"status":"preparing"}',
+                arguments: '{"status":"working"}',
               },
             },
           ],
@@ -355,7 +355,7 @@ describe('executeToolCallLoop', () => {
     }
   });
 
-  test('preparing 阶段应允许术语写入', async () => {
+  test('planning 阶段应允许术语写入', async () => {
     const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
       (toolCall) => {
         if (toolCall.function.name === 'update_task_status') {
@@ -377,19 +377,7 @@ describe('executeToolCallLoop', () => {
 
     try {
       const responses: Array<{ toolCalls?: AIToolCall[]; text: string }> = [
-        {
-          text: '',
-          toolCalls: [
-            {
-              id: 'call-1',
-              type: 'function',
-              function: {
-                name: 'update_task_status',
-                arguments: '{"status":"preparing"}',
-              },
-            },
-          ],
-        },
+        // planning 阶段直接写入术语（preparing 已并入 planning）
         {
           text: '',
           toolCalls: [
@@ -528,7 +516,7 @@ describe('executeToolCallLoop', () => {
             {
               id: 'call-1',
               type: 'function',
-              function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+              function: { name: 'update_task_status', arguments: '{"status":"working"}' },
             },
           ],
         },
@@ -664,7 +652,7 @@ describe('executeToolCallLoop', () => {
             {
               id: 'call-1',
               type: 'function',
-              function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+              function: { name: 'update_task_status', arguments: '{"status":"working"}' },
             },
           ],
         },
@@ -790,7 +778,7 @@ describe('executeToolCallLoop', () => {
             {
               id: 'call-1',
               type: 'function',
-              function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+              function: { name: 'update_task_status', arguments: '{"status":"working"}' },
             },
           ],
         },
@@ -919,7 +907,7 @@ describe('executeToolCallLoop', () => {
             {
               id: 'call-1',
               type: 'function',
-              function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+              function: { name: 'update_task_status', arguments: '{"status":"working"}' },
             },
           ],
         },
@@ -1037,7 +1025,7 @@ describe('executeToolCallLoop', () => {
           {
             id: 'call-1',
             type: 'function',
-            function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+            function: { name: 'update_task_status', arguments: '{"status":"working"}' },
           },
         ],
         [
@@ -1142,7 +1130,7 @@ describe('executeToolCallLoop', () => {
             {
               id: 'call-1',
               type: 'function',
-              function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+              function: { name: 'update_task_status', arguments: '{"status":"working"}' },
             },
             {
               id: 'call-2',

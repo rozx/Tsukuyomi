@@ -30,21 +30,22 @@ export function getValidTransitionsForTaskType(
   taskType: TaskType,
 ): Record<TaskStatus, TaskStatus[]> {
   switch (taskType) {
-    // 翻译任务：planning → preparing → working → review → end（review 可回退 working）
+    // 翻译任务：planning → working → review → end（review 可回退 working）
+    // preparing 已并入 planning，仅为旧持久化任务保留一条出路，避免恢复后卡死。
     case 'translation':
       return {
-        planning: ['preparing'],
+        planning: ['working'],
         preparing: ['working'],
         working: ['review'],
         review: ['end', 'working'],
         end: [],
       };
 
-    // 润色/校对：planning → preparing → working → end（禁用 review）
+    // 润色/校对：planning → working → end（禁用 review）
     case 'polish':
     case 'proofreading':
       return {
-        planning: ['preparing'],
+        planning: ['working'],
         preparing: ['working'],
         working: ['end'],
         review: [],
@@ -61,10 +62,10 @@ export function getValidTransitionsForTaskType(
 export function getTaskStateWorkflowText(taskType: TaskType): string {
   switch (taskType) {
     case 'translation':
-      return 'planning → preparing → working → review → end';
+      return 'planning → working → review → end';
     case 'polish':
     case 'proofreading':
-      return 'planning → preparing → working → end（润色/校对任务禁止使用 review）';
+      return 'planning → working → end（润色/校对任务禁止使用 review）';
 
     default: {
       const _exhaustive: never = taskType;

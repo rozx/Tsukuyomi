@@ -199,12 +199,11 @@ export class TodoListService {
 
   /**
    * 标记待办事项为完成
+   *
+   * 允许从 pending 直接完成：强制 pending → working → done 会让每个待办产生两次
+   * 工具调用，一个阶段的模板就要多烧十几轮 LLM 请求。working 仍可选，用于 UI 展示进度。
    */
   static markTodoAsDone(id: string): TodoItem {
-    const todo = this.getTodoById(id);
-    if (todo && todo.status !== 'working') {
-      throw new Error('该待办事项未标记为进行中，请先调用 mark_todo_working');
-    }
     return this.updateTodo(id, { status: 'done' });
   }
 

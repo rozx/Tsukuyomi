@@ -192,7 +192,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     );
 
     // 流程：
-    // 1. tool: preparing
+    // 1. tool: working（preparing 已并入 planning）
     // 2. tool: working
     // 3. tool: add_translation_batch(p1, p2) — 故意不提交 p3
     // 4. tool: review — 设置 currentStatus = 'review'
@@ -206,7 +206,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
           {
             id: 'call-1',
             type: 'function',
-            function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+            function: { name: 'update_task_status', arguments: '{"status":"working"}' },
           },
         ],
       },
@@ -367,7 +367,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     );
 
     // 流程（review 状态可直接调用 add_translation_batch）：
-    // 1. tool: preparing
+    // 1. tool: working（preparing 已并入 planning）
     // 2. tool: working
     // 3. tool: add_translation_batch(p1, p2)
     // 4. tool: review
@@ -382,7 +382,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
           {
             id: 'call-1',
             type: 'function',
-            function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+            function: { name: 'update_task_status', arguments: '{"status":"working"}' },
           },
         ],
       },
@@ -529,7 +529,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     const mockGetBookById = spyOn(BookService, 'getBookById');
 
     // 流程（review 状态可直接调用 add_translation_batch）：
-    // 1. tool: preparing
+    // 1. tool: working（preparing 已并入 planning）
     // 2. tool: working
     // 3. tool: add_translation_batch(p1) — 只提交 p1
     // 4. tool: review
@@ -544,7 +544,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
           {
             id: 'call-1',
             type: 'function',
-            function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+            function: { name: 'update_task_status', arguments: '{"status":"working"}' },
           },
         ],
       },
@@ -682,7 +682,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
           {
             id: 'call-1',
             type: 'function',
-            function: { name: 'update_task_status', arguments: '{"status":"preparing"}' },
+            function: { name: 'update_task_status', arguments: '{"status":"working"}' },
           },
         ],
       },

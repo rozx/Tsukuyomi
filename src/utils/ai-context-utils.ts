@@ -112,7 +112,7 @@ const buildAssistantSystemPromptForStats = (
   const tools = ToolRegistry.getAssistantTools(context.currentBookId || undefined).filter(
     (tool) => tool.function.name !== 'add_translation_batch',
   );
-  const todosPrompt = getTodosSystemPrompt(undefined, session?.id);
+  const todosPrompt = getTodosSystemPrompt(!!session?.id);
   let systemPrompt = getAssistantSystemPrompt(todosPrompt, tools, context);
   if (session?.summary) {
     systemPrompt += `\n\n## 之前的对话总结\n\n${session.summary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;

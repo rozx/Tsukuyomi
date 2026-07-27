@@ -8,8 +8,7 @@ type CreateTodoAction = {
 };
 
 /**
- * 按 ID 操作单个待办事项工具（mark_todo_done / mark_todo_working / delete_todo）
- * 共用的 parameters schema：仅 id: string 必填。
+ * 按 ID 操作单个待办事项工具（delete_todo）共用的 parameters schema：仅 id: string 必填。
  */
 const TODO_BY_ID_PARAMETERS = {
   type: 'object' as const,
@@ -22,12 +21,45 @@ const TODO_BY_ID_PARAMETERS = {
   required: ['id'],
 };
 
+/**
+ * 状态翻转工具（mark_todo_done / mark_todo_working）的 parameters schema。
+ * 支持 id 单条或 ids 批量 —— 批量可以把一个阶段的打卡压缩成一次工具调用。
+ */
+const TODO_STATUS_PARAMETERS = {
+  type: 'object' as const,
+  properties: {
+    id: {
+      type: 'string',
+      description: '单个待办事项的 ID（与 ids 二选一）',
+    },
+    ids: {
+      type: 'array' as const,
+      items: { type: 'string' },
+      description: '多个待办事项的 ID 列表（与 id 二选一）。一次性标记多项时优先使用。',
+    },
+  },
+};
+
 function dispatchTodoCreated(
   todo: TodoItem,
   onAction: ((action: CreateTodoAction) => void) | undefined,
 ): void {
   if (!onAction) return;
   onAction({ type: 'create', entity: 'todo', data: todo });
+}
+
+/**
+ * 批量待办操作（创建 / 更新 / 状态翻转）共用的成功响应格式：
+ * 逐项处理、部分失败不中断，最后统一回报成功项与错误列表。
+ */
+function buildBatchTodoResponse(message: string, todos: TodoItem[], errors: string[]): string {
+  return JSON.stringify({
+    success: true,
+    message,
+    todos: todos.map((todo) => ({ id: todo.id, text: todo.text, status: todo.status })),
+    count: todos.length,
+    ...(errors.length > 0 ? { errors } : {}),
+  });
 }
 
 
@@ -60,17 +92,11 @@ function createBatchTodos(
     throw new Error(`批量创建待办事项失败：${errors.join('; ')}`);
   }
 
-  return JSON.stringify({
-    success: true,
-    message: `成功创建 ${createdTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
-    todos: createdTodos.map((todo) => ({
-      id: todo.id,
-      text: todo.text,
-      status: todo.status,
-    })),
-    count: createdTodos.length,
-    ...(errors.length > 0 ? { errors } : {}),
-  });
+  return buildBatchTodoResponse(
+    `成功创建 ${createdTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
+    createdTodos,
+    errors,
+  );
 }
 
 type UpdateTodoAction = {
@@ -101,28 +127,59 @@ function dispatchTodoUpdated(
  * 校验 id → 取前置快照 → 调 mutate → 派发 update action → 返回统一 JSON 响应。
  */
 function runTodoStatusTransition(
-  id: string | undefined,
+  args: { id?: string; ids?: string[] },
   mutate: (id: string) => TodoItem,
   successMessage: string,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
 ): string {
-  if (!id) {
-    throw new Error('待办事项 ID 不能为空');
+  const targetIds = args.ids?.length ? args.ids : args.id ? [args.id] : [];
+  if (targetIds.length === 0) {
+    throw new Error('必须提供 id 或 ids 参数之一');
   }
 
-  const previousTodo = TodoListService.getTodoById(id);
-  const updatedTodo = mutate(id);
-  dispatchTodoUpdated(previousTodo, updatedTodo, onAction);
+  const updatedTodos: TodoItem[] = [];
+  const errors: string[] = [];
 
-  return JSON.stringify({
-    success: true,
-    message: successMessage,
-    todo: {
-      id: updatedTodo.id,
-      text: updatedTodo.text,
-      status: updatedTodo.status,
-    },
-  });
+  for (const todoId of targetIds) {
+    if (!todoId) {
+      errors.push('待办事项 ID 不能为空');
+      continue;
+    }
+    try {
+      const previousTodo = TodoListService.getTodoById(todoId);
+      const updatedTodo = mutate(todoId);
+      dispatchTodoUpdated(previousTodo, updatedTodo, onAction);
+      updatedTodos.push(updatedTodo);
+    } catch (error) {
+      errors.push(`${todoId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (updatedTodos.length === 0) {
+    throw new Error(`${successMessage}失败：${errors.join('; ')}`);
+  }
+
+  return buildBatchTodoResponse(
+    `${successMessage}（${updatedTodos.length} 项）${errors.length > 0 ? `，${errors.length} 项失败` : ''}`,
+    updatedTodos,
+    errors,
+  );
+}
+
+/**
+ * 生成 mark_todo_done / mark_todo_working 的 handler：
+ * 两者只差一个 mutate 与提示文案，其余参数解析逻辑完全一致。
+ */
+function createTodoStatusHandler(mutate: (id: string) => TodoItem, successMessage: string) {
+  return (args: Record<string, unknown>, ctx: { onAction?: (action: UpdateTodoAction) => void }) => {
+    const { id, ids } = args as { id?: string; ids?: string[] };
+    return runTodoStatusTransition(
+      { ...(id ? { id } : {}), ...(ids ? { ids } : {}) },
+      mutate,
+      successMessage,
+      ctx.onAction,
+    );
+  };
 }
 
 function updateSingleTodoItem(
@@ -169,13 +226,11 @@ function updateBatchTodos(
   if (updatedTodos.length === 0) {
     throw new Error(`批量更新待办事项失败：${errors.join('; ')}`);
   }
-  return JSON.stringify({
-    success: true,
-    message: `成功更新 ${updatedTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
-    todos: updatedTodos.map((todo) => ({ id: todo.id, text: todo.text, status: todo.status })),
-    count: updatedTodos.length,
-    ...(errors.length > 0 ? { errors } : {}),
-  });
+  return buildBatchTodoResponse(
+    `成功更新 ${updatedTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
+    updatedTodos,
+    errors,
+  );
 }
 
 function updateOneTodo(
@@ -334,38 +389,30 @@ export const todoListTools: ToolDefinition[] = [
       type: 'function',
       function: {
         name: 'mark_todo_done',
-        description: '将待办事项标记为完成。必须先用 mark_todo_working 标记为进行中，才能标记为完成。',
-        parameters: TODO_BY_ID_PARAMETERS,
+        description:
+          '将待办事项标记为完成。无需先标记进行中。完成多项时用 ids 一次性批量标记，避免逐条调用。',
+        parameters: TODO_STATUS_PARAMETERS,
       },
     },
-    handler: (args, { onAction }) => {
-      const { id } = args as { id: string };
-      return runTodoStatusTransition(
-        id,
-        (todoId) => TodoListService.markTodoAsDone(todoId),
-        '待办事项已标记为完成',
-        onAction,
-      );
-    },
+    handler: createTodoStatusHandler(
+      (todoId) => TodoListService.markTodoAsDone(todoId),
+      '待办事项已标记为完成',
+    ),
   },
   {
     definition: {
       type: 'function',
       function: {
         name: 'mark_todo_working',
-        description: '将待办事项标记为进行中。在开始处理某个待办事项之前调用此工具。',
-        parameters: TODO_BY_ID_PARAMETERS,
+        description:
+          '将待办事项标记为进行中（可选，用于向用户展示当前进度）。开始处理耗时较长的待办前调用。',
+        parameters: TODO_STATUS_PARAMETERS,
       },
     },
-    handler: (args, { onAction }) => {
-      const { id } = args as { id: string };
-      return runTodoStatusTransition(
-        id,
-        (todoId) => TodoListService.markTodoAsWorking(todoId),
-        '待办事项已标记为进行中',
-        onAction,
-      );
-    },
+    handler: createTodoStatusHandler(
+      (todoId) => TodoListService.markTodoAsWorking(todoId),
+      '待办事项已标记为进行中',
+    ),
   },
   {
     definition: {

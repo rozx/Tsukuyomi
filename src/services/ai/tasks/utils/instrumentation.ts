@@ -8,7 +8,6 @@ export function createInitialMetrics(): PerformanceMetrics {
   return {
     totalTime: 0,
     planningTime: 0,
-    preparingTime: 0,
     workingTime: 0,
     reviewTime: 0,
     toolCallTime: 0,
@@ -46,9 +45,6 @@ export function trackStatusDuration(
   switch (prev) {
     case 'planning':
       metrics.planningTime += duration;
-      break;
-    case 'preparing':
-      metrics.preparingTime += duration;
       break;
     case 'working':
       metrics.workingTime += duration;
