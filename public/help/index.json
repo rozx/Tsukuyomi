@@ -61,7 +61,7 @@
     "file": "local-embedding.md",
     "path": "help",
     "category": "使用指南",
-    "description": "本地嵌入引擎完整说明：gte-multilingual-base 模型、WebGPU/WASM 后端、批量嵌入面板、模型版本与 stale 重算、同步 sync gate、故障排查"
+    "description": "本地嵌入引擎完整说明：gte-multilingual-base 模型（CLS pooling）、WebGPU/WASM 后端、批量嵌入面板、长文分段嵌入、模型版本与 stale 重算、同步 sync gate、故障排查"
   },
   {
     "id": "book-details-overview",
@@ -118,6 +118,14 @@
     "path": "help",
     "category": "书籍详情页",
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
+  },
+  {
+    "id": "v0.14.3",
+    "title": "v0.14.3",
+    "file": "RELEASE_NOTES_v0.14.3.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "思考与输出合并为单一时间线、嵌入模型对齐 GTE 官方 CLS 方案、记忆/章节语义检索重写（绝对置信度 + RRF + 长文分段）、翻译流程 Todo 与 preparing 阶段优化"
   },
   {
     "id": "v0.14.2",
