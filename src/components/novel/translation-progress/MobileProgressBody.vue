@@ -428,15 +428,12 @@ const contextText = computed(() =>
   background: transparent;
 }
 
-/* 实时 tab 活动记录：只保留输出内容，隐藏工具栏 + 思考过程 */
+/* 实时 tab 活动记录：只保留时间线里的输出片段，隐藏工具栏、折叠按钮与思考片段 */
 .mtp-stream-wrap--compact :deep(.stream-header),
-.mtp-stream-wrap--compact :deep(.thinking-block),
+.mtp-stream-wrap--compact :deep(.thinking-toggle),
+.mtp-stream-wrap--compact :deep(.stream-part-wrapper:not(.is-output)),
 .mtp-stream-wrap--compact :deep(.completed-banner) {
   display: none;
-}
-
-.mtp-stream-wrap--compact :deep(.output-block) {
-  margin: 0;
 }
 
 /* 紧凑模式下合并面板不再需要外框 */

@@ -30,6 +30,7 @@ defineProps<{
     :task="task"
     :result-part="resultPart"
   />
+  <p v-else-if="part.mode === 'output'" class="output-text">{{ part.text }}</p>
   <p v-else class="thinking-text">{{ part.text }}</p>
 </template>
 
@@ -42,5 +43,16 @@ defineProps<{
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-style: italic;
+}
+
+/* 输出内容与思考过程同处一条时间线，仅靠字体区分：正体、更大、更亮 */
+.output-text {
+  font-size: 0.85rem;
+  color: rgba(253, 253, 255, 0.92);
+  line-height: 1.75;
+  font-weight: 450;
+  margin: 8px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 </style>

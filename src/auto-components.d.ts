@@ -152,7 +152,6 @@ declare module 'vue' {
     SettingCardTranslations: typeof import('./components/novel/SettingCardTranslations.vue')['default']
     SiteMappingEditDialog: typeof import('./components/settings/SiteMappingEditDialog.vue')['default']
     StreamChunkSeparator: typeof import('./components/novel/translation-progress/StreamChunkSeparator.vue')['default']
-    StreamOutputBlock: typeof import('./components/novel/translation-progress/StreamOutputBlock.vue')['default']
     StreamPart: typeof import('./components/novel/translation-progress/StreamPart.vue')['default']
     StreamStateTransition: typeof import('./components/novel/translation-progress/StreamStateTransition.vue')['default']
     StreamThinkingBlock: typeof import('./components/novel/translation-progress/StreamThinkingBlock.vue')['default']

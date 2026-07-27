@@ -10,9 +10,14 @@ const FORMAT_CACHE_THROTTLE_MS = 200;
 export type ToolResultTone = 'success' | 'warning' | 'error';
 export type ToolCallTone = 'running' | 'success' | 'warning' | 'error' | 'cancelled';
 
+/** 时间线上的内容归属：思考推理 or 模型正式输出 */
+export type StreamMode = 'thinking' | 'output';
+
 export interface FormattedMessagePart {
   type: 'chunk-separator' | 'state-transition' | 'tool-call' | 'tool-result' | 'content';
   text: string;
+  /** 仅输出内容片段携带；思考片段省略该字段（默认即 thinking） */
+  mode?: 'output';
   toolName?: string;
   toolResult?: string;
   toolResultTone?: ToolResultTone;
@@ -36,6 +41,48 @@ const STATE_TRANSITION_PATTERN = /\[状态切换: (\w+) → (\w+)\]/g;
  */
 export function buildStateTransitionMarker(fromStatus: string, toStatus: string): string {
   return `\n\n[状态切换: ${fromStatus} → ${toStatus}]\n\n`;
+}
+
+/**
+ * 模式切换标记：输出内容与思考过程写在同一条流里，靠该标记标出归属边界
+ * 格式与 {@link buildStreamModeMarker} 一一对应，修改时必须同步调整
+ */
+const STREAM_MODE_PATTERN = /\[=== (输出|思考) ===\]/g;
+
+/** 构造模式切换标记（`思考` / `输出`），供 store 在追加流式文本时插入 */
+export function buildStreamModeMarker(mode: StreamMode): string {
+  return `\n\n[=== ${mode === 'output' ? '输出' : '思考'} ===]\n\n`;
+}
+
+/**
+ * 计算一次流式追加真正要写进 thinkingMessage 的文本：
+ * 模式与上一次不同（或首次写入输出）时，先插入模式切换标记。
+ */
+export function buildStreamAppendText(
+  prevMode: StreamMode | undefined,
+  mode: StreamMode,
+  text: string,
+): string {
+  if (prevMode === mode) return text;
+  // 首次写入且是思考：默认模式即思考，无需标记
+  if (prevMode === undefined && mode === 'thinking') return text;
+  return `${buildStreamModeMarker(mode)}${text}`;
+}
+
+/**
+ * 从已有的时间线文本推断当前模式（取最后一个模式标记）。
+ * 用于任务从 IndexedDB 恢复后内存里没有模式记录的场景。
+ */
+export function inferStreamMode(message: string | undefined): StreamMode {
+  if (!message) return 'thinking';
+  STREAM_MODE_PATTERN.lastIndex = 0;
+  let last: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = STREAM_MODE_PATTERN.exec(message)) !== null) {
+    last = match;
+  }
+  STREAM_MODE_PATTERN.lastIndex = 0;
+  return last?.[1] === '输出' ? 'output' : 'thinking';
 }
 
 const CHUNK_SEPARATOR_PATTERN = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
@@ -217,19 +264,24 @@ export function formatThinkingMessage(
   const allMatches = collectThinkingMarkerMatches(message);
   const pendingToolCallPartIndexes: number[] = [];
   let currentIndex = 0;
+  let mode: StreamMode = 'thinking';
 
   for (const { index, type, match: m } of allMatches) {
     if (index > currentIndex) {
       const text = message.slice(currentIndex, index).trim();
-      if (text) parts.push({ type: 'content', text });
+      if (text) parts.push(buildContentPart(text, mode));
     }
-    applyThinkingMatchToParts(type, m, parts, pendingToolCallPartIndexes);
+    if (type === 'mode-switch') {
+      mode = m[1] === '输出' ? 'output' : 'thinking';
+    } else {
+      applyThinkingMatchToParts(type, m, parts, pendingToolCallPartIndexes);
+    }
     currentIndex = index + m[0].length;
   }
 
   if (currentIndex < message.length) {
     const text = message.slice(currentIndex).trim();
-    if (text) parts.push({ type: 'content', text });
+    if (text) parts.push(buildContentPart(text, mode));
   }
 
   if (parts.length === 0 && message.trim()) {
@@ -240,12 +292,18 @@ export function formatThinkingMessage(
   return parts;
 }
 
+/** 构造 content 片段：思考模式省略 mode 字段，避免影响既有引用比较与断言 */
+function buildContentPart(text: string, mode: StreamMode): FormattedMessagePart {
+  return mode === 'output' ? { type: 'content', text, mode: 'output' } : { type: 'content', text };
+}
+
 type ThinkingMatchType =
   | 'chunk-separator'
   | 'state-transition'
   | 'tool-call'
   | 'tool-call-args'
-  | 'tool-result';
+  | 'tool-result'
+  | 'mode-switch';
 
 interface ThinkingMatch {
   index: number;
@@ -270,6 +328,7 @@ function collectGlobalRegexMatches(
 /** 汇总所有 thinking marker 的匹配并按 index 升序排序 */
 function collectThinkingMarkerMatches(message: string): ThinkingMatch[] {
   const allMatches: ThinkingMatch[] = [];
+  collectGlobalRegexMatches(message, STREAM_MODE_PATTERN, 'mode-switch', allMatches);
   collectGlobalRegexMatches(message, CHUNK_SEPARATOR_PATTERN, 'chunk-separator', allMatches);
   collectGlobalRegexMatches(message, STATE_TRANSITION_PATTERN, 'state-transition', allMatches);
   collectGlobalRegexMatches(message, TOOL_CALL_PATTERN, 'tool-call', allMatches);
@@ -309,6 +368,9 @@ function applyThinkingMatchToParts(
       return;
     case 'tool-result':
       applyToolResultMatch(m, parts, pendingToolCallPartIndexes);
+      return;
+    // mode-switch 在 formatThinkingMessage 里直接切换模式，不产生片段
+    case 'mode-switch':
       return;
   }
 }
@@ -425,9 +487,20 @@ export function tryIncrementalFormat(
   if (lastPart?.type === 'content') {
     newParts[newParts.length - 1] = { ...lastPart, text: lastPart.text + tail };
   } else {
-    newParts.push({ type: 'content', text: tail });
+    // 模式标记含 `[`，一定会走完整解析，因此增量追加不会跨模式边界：
+    // 沿用最近一个 content 片段的模式即可
+    newParts.push(buildContentPart(tail, findLastContentMode(prevParts)));
   }
   return newParts;
+}
+
+/** 从已有片段里回溯最近一次 content 的模式（找不到时按思考处理） */
+function findLastContentMode(parts: FormattedMessagePart[]): StreamMode {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i];
+    if (part?.type === 'content') return part.mode === 'output' ? 'output' : 'thinking';
+  }
+  return 'thinking';
 }
 
 // ─── Composable: 带缓存、节流与增量更新的格式化 ───

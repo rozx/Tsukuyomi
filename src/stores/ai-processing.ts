@@ -3,6 +3,11 @@ import { toRaw } from 'vue';
 import { getDB } from 'src/utils/indexed-db';
 import { type AIWorkflowStatus } from 'src/constants/ai';
 import { TodoListService } from 'src/services/todo-list-service';
+import {
+  buildStreamAppendText,
+  inferStreamMode,
+  type StreamMode,
+} from 'src/composables/useThinkingFormatter';
 import co from 'co';
 
 /**
@@ -277,6 +282,12 @@ const taskThrottleMap = new Map<
 >();
 
 /**
+ * 每个任务最近一次写入时间线的模式（思考 / 输出）
+ * 用于判断是否需要在追加文本前插入模式切换标记
+ */
+const taskStreamModeMap = new Map<string, StreamMode>();
+
+/**
  * 节流更新思考消息（每 300ms 最多更新一次）
  */
 function throttledUpdateThinkingMessage(
@@ -350,6 +361,7 @@ function clearTaskThrottle(taskId: string, task?: AIProcessingTask): void {
     }
     taskThrottleMap.delete(taskId);
   }
+  taskStreamModeMap.delete(taskId);
   // 同时清理持久化节流，避免任务已被删除后仍有定时器持有引用
   clearTaskPersistTimer(taskId);
 }
@@ -703,24 +715,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     appendThinkingMessage(id: string, text: string): Promise<void> {
       const task = this.activeTasks.find((t) => t.id === id);
       if (task) {
-        // 使用节流更新，减少响应式更新频率
-        throttledUpdateThinkingMessage(task, text, (t, accumulatedText) => {
-          // 再次检查任务是否仍然存在（可能在节流延迟期间被删除）
-          const currentTask = this.activeTasks.find((task) => task.id === t.id);
-          if (!currentTask) {
-            // 任务已被删除，清理节流信息
-            clearTaskThrottle(t.id);
-            return;
-          }
-
-          if (!currentTask.thinkingMessage) {
-            currentTask.thinkingMessage = '';
-          }
-          currentTask.thinkingMessage += accumulatedText;
-          // Pinia 的深层响应式系统会自动追踪 thinkingMessage 属性变化，
-          // 无需重新赋值 activeTasks 数组——那样会让所有依赖 activeTasks 引用的
-          // computed/watch 在每次节流更新时全部失效，造成严重卡顿。
-        });
+        this.appendToStreamTimeline(task, 'thinking', text);
 
         // 持久化节流：每秒最多写一次，通过箭头函数捕获 this 以便定时器触发时读取最新状态
         schedulePersistTask(id, () => this.activeTasks.find((t: AIProcessingTask) => t.id === id));
@@ -730,7 +725,12 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
 
     /**
      * 追加输出内容（用于流式输出）
-     * 优化：直接修改属性让 Pinia 响应式自然工作，持久化走 1s 节流避免 IDB 写风暴。
+     *
+     * 输出内容同时写两处：
+     *  - `outputContent`：完整译文，供未读检测等使用
+     *  - `thinkingMessage`：带模式标记写进同一条时间线，UI 才能按
+     *    thinking → output → tool call → output 的真实顺序渲染
+     * 两者都走同一个节流缓冲，保证与思考文本的先后关系不会被打乱。
      */
     // fallow-ignore-next-line unused-store-members
     appendOutputContent(id: string, text: string): Promise<void> {
@@ -740,10 +740,41 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           task.outputContent = '';
         }
         task.outputContent += text;
+        this.appendToStreamTimeline(task, 'output', text);
         // 持久化节流：每秒最多写一次，读取最新状态
         schedulePersistTask(id, () => this.activeTasks.find((t: AIProcessingTask) => t.id === id));
       }
       return Promise.resolve();
+    },
+
+    /**
+     * 把一段流式文本追加到任务的统一时间线（thinkingMessage）。
+     * 模式发生切换时先插入模式标记，解析端据此区分思考 / 输出。
+     */
+    appendToStreamTimeline(task: AIProcessingTask, mode: StreamMode, text: string): void {
+      // 内存里没有模式记录时（任务刚从 IndexedDB 恢复），从已有时间线回推
+      const prevMode = taskStreamModeMap.get(task.id) ?? inferStreamMode(task.thinkingMessage);
+      const merged = buildStreamAppendText(prevMode, mode, text);
+      taskStreamModeMap.set(task.id, mode);
+
+      // 使用节流更新，减少响应式更新频率
+      throttledUpdateThinkingMessage(task, merged, (t, accumulatedText) => {
+        // 再次检查任务是否仍然存在（可能在节流延迟期间被删除）
+        const currentTask = this.activeTasks.find((item) => item.id === t.id);
+        if (!currentTask) {
+          // 任务已被删除，清理节流信息
+          clearTaskThrottle(t.id);
+          return;
+        }
+
+        if (!currentTask.thinkingMessage) {
+          currentTask.thinkingMessage = '';
+        }
+        currentTask.thinkingMessage += accumulatedText;
+        // Pinia 的深层响应式系统会自动追踪 thinkingMessage 属性变化，
+        // 无需重新赋值 activeTasks 数组——那样会让所有依赖 activeTasks 引用的
+        // computed/watch 在每次节流更新时全部失效，造成严重卡顿。
+      });
     },
 
     /**

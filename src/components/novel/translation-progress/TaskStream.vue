@@ -4,7 +4,6 @@ import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { FormattedMessagePart } from 'src/composables/useThinkingFormatter';
 import { useStreamVisibility } from 'src/composables/translation-progress/useStreamVisibility';
 import StreamThinkingBlock from './StreamThinkingBlock.vue';
-import StreamOutputBlock from './StreamOutputBlock.vue';
 import { throttle } from 'src/utils/throttle';
 
 const props = defineProps<{
@@ -80,10 +79,9 @@ onUnmounted(() => {
       <template v-if="task.progress"> · 共处理 {{ task.progress.total }} 个翻译块 </template>
     </div>
 
-    <!-- 合并面板：思考过程 + 输出内容共用一个滚动容器 -->
+    <!-- 合并面板：思考 / 工具调用 / 输出内容同处一条时间线，共用一个滚动容器 -->
     <div v-if="showPanel" ref="scrollRef" class="stream-panel">
       <StreamThinkingBlock :task="task" :parts="parts" />
-      <StreamOutputBlock :task="task" />
     </div>
   </div>
 </template>
