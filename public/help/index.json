@@ -120,6 +120,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.14.4",
+    "title": "v0.14.4",
+    "file": "RELEASE_NOTES_v0.14.4.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "修复书籍标题含首尾空白 / 全角空格 / 零宽字符 / NFD 分解形式时删除确认框无法通过校验、书籍删不掉的问题"
+  },
+  {
     "id": "v0.14.3",
     "title": "v0.14.3",
     "file": "RELEASE_NOTES_v0.14.3.md",
