@@ -76,6 +76,49 @@ export function removeExtraBlankLines(text: string): string {
 }
 
 /**
+ * 归一化「输入名称以确认」类对话框的文本，用于比较用户输入与目标名称。
+ *
+ * 爬取来的书名 / 章节名常带用户无法凭肉眼察觉、也无法用键盘敲出来的字符，
+ * 直接做字符串相等比较会让确认框永远无法通过。归一化处理：
+ * - Unicode NFC：剪贴板与部分 IME（尤其 macOS 日文输入）会产出 NFD 分解形式，
+ *   例如「で」= て(U+3066) + 浊音符号(U+3099)，视觉相同但码位不同
+ * - 剥离零宽字符（BOM / ZWSP / ZWNJ / ZWJ）：网页抓取的标题里常见，键盘敲不出来
+ * - 全角空格 U+3000 → 半角空格：用户手打时几乎只会打出半角空格
+ * - 首尾 trim
+ *
+ * 注意：**必须对输入和目标名称同时调用**，只归一化一侧会让带空白的名称永远匹配不上。
+ *
+ * @param text 待归一化的文本
+ * @returns 归一化后的文本；null / undefined 归一化为空字符串
+ */
+export function normalizeConfirmationText(text: string | null | undefined): string {
+  if (!text) return '';
+  return text
+    .normalize('NFC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\u3000/g, ' ')
+    .trim();
+}
+
+/**
+ * 判断确认框输入是否与目标名称一致（经 {@link normalizeConfirmationText} 归一化后比较）。
+ *
+ * 目标名称为空时一律返回 false —— 避免名称缺失的条目被一个空输入直接删掉。
+ *
+ * @param input 用户在确认框中输入的文本
+ * @param expected 目标名称（书名 / 章节名等）
+ * @returns 一致返回 true
+ */
+export function isConfirmationTextMatch(
+  input: string | null | undefined,
+  expected: string | null | undefined,
+): boolean {
+  const normalizedExpected = normalizeConfirmationText(expected);
+  if (!normalizedExpected) return false;
+  return normalizeConfirmationText(input) === normalizedExpected;
+}
+
+/**
  * 判断段落是否至少有一条非空翻译。
  * 过滤 `onlyWithTranslation` 查询、进度统计等场景共用，避免每处手写
  * `translations?.some(t => t.translation?.trim().length > 0)` 的三层判空。

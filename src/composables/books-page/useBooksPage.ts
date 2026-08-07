@@ -22,6 +22,7 @@ import {
   getTotalChapters as utilGetTotalChapters,
 } from 'src/utils';
 import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
+import { isConfirmationTextMatch } from 'src/utils/text-utils';
 import { cloneDeep } from 'lodash';
 
 export type BooksPageContext = ReturnType<typeof createBooksPageContext>;
@@ -411,8 +412,7 @@ function createBooksPageContext() {
     if (!bookToDelete.value || isDeletingBook.value) return;
 
     const bookTitle = bookToDelete.value.title;
-    const inputTitle = deleteConfirmInput.value.trim();
-    if (inputTitle !== bookTitle) {
+    if (!isConfirmationTextMatch(deleteConfirmInput.value, bookTitle)) {
       toast.add({
         severity: 'error',
         summary: '标题不匹配',
@@ -476,7 +476,7 @@ function createBooksPageContext() {
 
   const isDeleteDisabled = computed(() => {
     if (!bookToDelete.value) return true;
-    return deleteConfirmInput.value.trim() !== bookToDelete.value.title;
+    return !isConfirmationTextMatch(deleteConfirmInput.value, bookToDelete.value.title);
   });
 
   const toggleStar = async (book: Novel) => {
