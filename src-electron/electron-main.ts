@@ -3,10 +3,11 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import puppeteer from 'puppeteer-extra';
-import type { Browser } from 'puppeteer';
+import type { Browser, Page } from 'puppeteer';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import pie from 'puppeteer-in-electron';
 import { getErrorMessage, toError } from '../src/utils/error-message';
+import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
 
 // Configure Puppeteer Stealth
 puppeteer.use(StealthPlugin());
@@ -598,6 +599,15 @@ type ElectronFetchResponse = {
   data: string;
 };
 
+async function applyRequestCookies(page: Page, headers: Record<string, string> | undefined, url: string) {
+  const cookieHeader = getCookieHeaderValue(headers);
+  if (!cookieHeader) return;
+  const cookies = parseCookieHeader(cookieHeader, url);
+  if (cookies.length > 0) {
+    await page.setCookie(...cookies);
+  }
+}
+
 async function fetchUrlViaPuppeteer(
   url: string,
   options: ElectronFetchOptions | undefined,
@@ -606,7 +616,11 @@ async function fetchUrlViaPuppeteer(
   const browser = await ensureBrowserPromise();
   const page = await pie.getPage(browser, window);
   page.setDefaultNavigationTimeout(options?.timeout || 60000);
-  if (options?.headers) await page.setExtraHTTPHeaders(options.headers);
+  await applyRequestCookies(page, options?.headers, url);
+  const headersWithoutCookie = omitCookieHeader(options?.headers);
+  if (Object.keys(headersWithoutCookie).length > 0) {
+    await page.setExtraHTTPHeaders(headersWithoutCookie);
+  }
   console.log(`[Electron Fetch] Navigating to ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   // Wait for content (Stealth handles most Cloudflare checks; small buffer for the rest)

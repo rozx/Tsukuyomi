@@ -134,14 +134,16 @@ export class ProxyService {
     options: {
       skipProxy?: boolean;
       skipInternalProxy?: boolean;
+      /** 跳过外部 CORS 代理，仍可使用 /api/ 内部代理 */
+      skipExternalProxy?: boolean;
     } = {},
   ): string {
-    const { skipProxy = false, skipInternalProxy = false } = options;
+    const { skipProxy = false, skipInternalProxy = false, skipExternalProxy = false } = options;
     if (skipProxy) return originalUrl;
     if (originalUrl.startsWith('/api/')) return originalUrl;
 
     const proxyEnabled = GlobalConfig.getProxyEnabled();
-    if (proxyEnabled) {
+    if (proxyEnabled && !skipExternalProxy) {
       const resolvedProxyUrl = this.resolveExternalProxyUrl(originalUrl);
       if (resolvedProxyUrl) {
         return resolvedProxyUrl.replace('{url}', encodeURIComponent(originalUrl));
@@ -318,29 +320,53 @@ export class ProxyService {
        */
       skipInternalProxy?: boolean;
       /**
+       * 跳过外部 CORS 代理（保留 Cookie 等请求头），仍可使用 /api/ 内部代理
+       * @default false
+       */
+      skipExternalProxy?: boolean;
+      /**
        * 最大重试次数（包括初始请求）
        * @default 3
        */
       maxRetries?: number;
     } = {},
   ): Promise<T> {
-    const { skipProxy = false, skipInternalProxy = false, maxRetries = 3 } = options;
+    const {
+      skipProxy = false,
+      skipInternalProxy = false,
+      skipExternalProxy = false,
+      maxRetries = 3,
+    } = options;
     const settingsStore = useSettingsStore();
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
     const autoSwitch = GlobalConfig.getProxyAutoSwitch();
     const defaultProxyUrl = GlobalConfig.getProxyUrl();
 
-    // 如果跳过代理或未启用代理，直接执行请求
+    // 跳过全部代理或未启用代理时，走 getProxiedUrl（可保留内部 /api/ 代理）
     if (skipProxy || !GlobalConfig.getProxyEnabled()) {
-      const proxiedUrl = this.getProxiedUrl(originalUrl, { skipProxy, skipInternalProxy });
+      const proxiedUrl = this.getProxiedUrl(originalUrl, {
+        skipProxy,
+        skipInternalProxy,
+        skipExternalProxy,
+      });
       return await requestFn(proxiedUrl);
     }
+
+    // skipExternalProxy：不参与外部代理轮换，但保留下方瞬时错误重试循环
+    const fixedProxiedUrl = skipExternalProxy
+      ? this.getProxiedUrl(originalUrl, { skipProxy, skipInternalProxy, skipExternalProxy })
+      : null;
 
     let lastError: Error | null = null;
 
     // 尝试请求，如果失败且启用了自动切换，尝试下一个代理服务
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
+        if (fixedProxiedUrl !== null) {
+          // 固定 URL：不轮换代理、不记录网站-代理映射
+          return await requestFn(fixedProxiedUrl);
+        }
+
         // 获取当前尝试应该使用的代理 URL（不改变全局设置）
         const currentProxyUrl = this.getProxyUrlForAttempt(originalUrl, attempt);
         const proxiedUrl = buildAttemptProxiedUrl(originalUrl, currentProxyUrl);
