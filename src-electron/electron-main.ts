@@ -7,7 +7,7 @@ import type { Browser, Page } from 'puppeteer';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import pie from 'puppeteer-in-electron';
 import { getErrorMessage, toError } from '../src/utils/error-message';
-import { omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
+import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
 
 // Configure Puppeteer Stealth
 puppeteer.use(StealthPlugin());
@@ -600,7 +600,7 @@ type ElectronFetchResponse = {
 };
 
 async function applyRequestCookies(page: Page, headers: Record<string, string> | undefined, url: string) {
-  const cookieHeader = headers?.Cookie ?? headers?.cookie;
+  const cookieHeader = getCookieHeaderValue(headers);
   if (!cookieHeader) return;
   const cookies = parseCookieHeader(cookieHeader, url);
   if (cookies.length > 0) {

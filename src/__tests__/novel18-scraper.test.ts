@@ -64,12 +64,22 @@ describe('Novel18SyosetuScraper', () => {
     expect(scraper.exposeFetchExtraHeaders('https://novel18.syosetu.com/n7686kd/1/')).toEqual({
       Cookie: 'over18=yes',
     });
+    expect(scraper.exposeFetchExtraHeaders('https://xmypage.novel18.syosetu.com/n7686kd/')).toEqual(
+      { Cookie: 'over18=yes' },
+    );
     expect(scraper.exposeFetchExtraHeaders('https://ncode.syosetu.com/n7686kd/')).toEqual({});
     expect(scraper.exposeFetchExtraHeaders('not-a-url')).toEqual({});
   });
 
-  it('skips external CORS proxy for novel18', () => {
-    expect(scraper.exposeShouldSkipExternalProxy()).toBe(true);
+  it('skips external CORS proxy only in Electron', () => {
+    const win = window as unknown as { electronAPI?: { isElectron?: boolean } };
+    expect(scraper.exposeShouldSkipExternalProxy()).toBe(false);
+    win.electronAPI = { isElectron: true };
+    try {
+      expect(scraper.exposeShouldSkipExternalProxy()).toBe(true);
+    } finally {
+      delete win.electronAPI;
+    }
   });
 
   it('fetches chapters across pages from real HTML', async () => {

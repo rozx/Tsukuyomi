@@ -89,7 +89,7 @@ describe('Live Scraper Tests (opt-in via RUN_LIVE_SCRAPER_TESTS=1)', () => {
       const totalChapters = novel.volumes.reduce((acc, v) => acc + (v.chapters?.length || 0), 0);
       expect(totalChapters).toBeGreaterThan(0);
 
-      const firstChapter = novel.volumes[0]?.chapters?.[0];
+      const firstChapter = novel.volumes.flatMap((v) => v.chapters ?? [])[0];
       expect(firstChapter?.webUrl).toBeTruthy();
       if (!firstChapter?.webUrl) return;
       const content = await scraper.fetchChapterContent(firstChapter.webUrl);

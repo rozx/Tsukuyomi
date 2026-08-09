@@ -1,3 +1,4 @@
+import { isElectron } from 'src/utils/platform';
 import { NcodeSyosetuScraper } from './ncode-syosetu-scraper';
 
 /**
@@ -69,8 +70,11 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
     return {};
   }
 
-  /** 外部 CORS 代理会剥离 Cookie，Electron 必须直连 */
+  /**
+   * 外部 CORS 代理会剥离 Cookie，Electron 必须直连。
+   * 仅限 Electron：Web 端保持原有代理路由（Web 版 novel18 尚不可用，见 PR #96 scope）
+   */
   protected override shouldSkipExternalProxy(): boolean {
-    return true;
+    return isElectron();
   }
 }

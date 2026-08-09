@@ -7,10 +7,16 @@ export type PuppeteerCookieParam = {
 /**
  * 将 HTTP Cookie 头解析为 Puppeteer page.setCookie() 参数。
  * Puppeteer 禁止通过 setExtraHTTPHeaders 发送 Cookie，必须单独设置。
+ * targetUrl 非法时返回空数组（与 getFetchExtraHeaders 等同类函数的防御风格一致）。
  */
 export function parseCookieHeader(cookieHeader: string, targetUrl: string): PuppeteerCookieParam[] {
-  const base = new URL(targetUrl);
-  const cookieUrl = `${base.protocol}//${base.host}/`;
+  let cookieUrl: string;
+  try {
+    const base = new URL(targetUrl);
+    cookieUrl = `${base.protocol}//${base.host}/`;
+  } catch {
+    return [];
+  }
 
   return cookieHeader
     .split(';')
@@ -26,11 +32,23 @@ export function parseCookieHeader(cookieHeader: string, targetUrl: string): Pupp
     .filter((cookie): cookie is PuppeteerCookieParam => cookie !== null);
 }
 
-/** 从请求头中移除 Cookie（改由 page.setCookie 处理） */
-export function omitCookieHeader(headers: Record<string, string> | undefined): Record<string, string> {
+/** 大小写无关地读取请求头中的 Cookie 值（HTTP 头名不区分大小写） */
+export function getCookieHeaderValue(
+  headers: Record<string, string> | undefined,
+): string | undefined {
+  if (!headers) return undefined;
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === 'cookie') return value;
+  }
+  return undefined;
+}
+
+/** 从请求头中大小写无关地移除 Cookie（改由 page.setCookie 处理） */
+export function omitCookieHeader(
+  headers: Record<string, string> | undefined,
+): Record<string, string> {
   if (!headers) return {};
-  const result = { ...headers };
-  delete result.Cookie;
-  delete result.cookie;
-  return result;
+  return Object.fromEntries(
+    Object.entries(headers).filter(([key]) => key.toLowerCase() !== 'cookie'),
+  );
 }

@@ -342,8 +342,8 @@ export class ProxyService {
     const autoSwitch = GlobalConfig.getProxyAutoSwitch();
     const defaultProxyUrl = GlobalConfig.getProxyUrl();
 
-    // 跳过外部代理或未启用代理时，走 getProxiedUrl（可保留内部 /api/ 代理）
-    if (skipProxy || skipExternalProxy || !GlobalConfig.getProxyEnabled()) {
+    // 跳过全部代理或未启用代理时，走 getProxiedUrl（可保留内部 /api/ 代理）
+    if (skipProxy || !GlobalConfig.getProxyEnabled()) {
       const proxiedUrl = this.getProxiedUrl(originalUrl, {
         skipProxy,
         skipInternalProxy,
@@ -352,11 +352,21 @@ export class ProxyService {
       return await requestFn(proxiedUrl);
     }
 
+    // skipExternalProxy：不参与外部代理轮换，但保留下方瞬时错误重试循环
+    const fixedProxiedUrl = skipExternalProxy
+      ? this.getProxiedUrl(originalUrl, { skipProxy, skipInternalProxy, skipExternalProxy })
+      : null;
+
     let lastError: Error | null = null;
 
     // 尝试请求，如果失败且启用了自动切换，尝试下一个代理服务
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
+        if (fixedProxiedUrl !== null) {
+          // 固定 URL：不轮换代理、不记录网站-代理映射
+          return await requestFn(fixedProxiedUrl);
+        }
+
         // 获取当前尝试应该使用的代理 URL（不改变全局设置）
         const currentProxyUrl = this.getProxyUrlForAttempt(originalUrl, attempt);
         const proxiedUrl = buildAttemptProxiedUrl(originalUrl, currentProxyUrl);

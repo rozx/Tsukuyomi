@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { omitCookieHeader, parseCookieHeader } from '../../src-electron/puppeteer-cookies';
+import {
+  getCookieHeaderValue,
+  omitCookieHeader,
+  parseCookieHeader,
+} from '../../src-electron/puppeteer-cookies';
 
 describe('puppeteer-cookies', () => {
   it('parses Cookie header into Puppeteer setCookie params', () => {
@@ -27,6 +31,28 @@ describe('puppeteer-cookies', () => {
     expect(
       omitCookieHeader({
         Cookie: 'over18=yes',
+        'User-Agent': 'test',
+      }),
+    ).toEqual({ 'User-Agent': 'test' });
+  });
+
+  it('returns empty array for invalid target URL', () => {
+    expect(parseCookieHeader('a=1', 'not-a-url')).toEqual([]);
+  });
+
+  it('reads Cookie header value case-insensitively', () => {
+    expect(getCookieHeaderValue({ Cookie: 'over18=yes' })).toBe('over18=yes');
+    expect(getCookieHeaderValue({ COOKIE: 'over18=yes' })).toBe('over18=yes');
+    expect(getCookieHeaderValue({ CoOkIe: 'over18=yes' })).toBe('over18=yes');
+    expect(getCookieHeaderValue({ 'User-Agent': 'test' })).toBeUndefined();
+    expect(getCookieHeaderValue(undefined)).toBeUndefined();
+  });
+
+  it('removes Cookie header case-insensitively', () => {
+    expect(
+      omitCookieHeader({
+        COOKIE: 'a=1',
+        CoOkIe: 'b=2',
         'User-Agent': 'test',
       }),
     ).toEqual({ 'User-Agent': 'test' });

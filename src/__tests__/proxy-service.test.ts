@@ -52,4 +52,32 @@ describe('ProxyService skipExternalProxy', () => {
     expect(result).toBe('ok');
     expect(callCount).toBe(1);
   });
+
+  it('executeWithAutoSwitch 在 skipExternalProxy 时仍保留瞬时网络错误重试', async () => {
+    spyOn(GlobalConfig, 'ensureInitialized').mockResolvedValue(undefined);
+    spyOn(GlobalConfig, 'getProxyEnabled').mockReturnValue(true);
+    spyOn(GlobalConfig, 'getProxyAutoSwitch').mockReturnValue(true);
+    spyOn(GlobalConfig, 'getProxyUrl').mockReturnValue(CORS_PROXY);
+    spyOn(GlobalConfig, 'getProxiesForSite').mockReturnValue([]);
+    spyOn(GlobalConfig, 'getProxyList').mockReturnValue([
+      { id: 'test-proxy', url: CORS_PROXY, name: 'test' },
+    ]);
+
+    let callCount = 0;
+    const requestFn = (proxiedUrl: string) => {
+      callCount += 1;
+      expect(proxiedUrl).toBe(NOVEL18_URL);
+      if (callCount === 1) return Promise.reject(new Error('timeout'));
+      return Promise.resolve('ok');
+    };
+
+    const result = await ProxyService.executeWithAutoSwitch(NOVEL18_URL, requestFn, {
+      skipExternalProxy: true,
+      skipInternalProxy: true,
+      maxRetries: 3,
+    });
+
+    expect(result).toBe('ok');
+    expect(callCount).toBe(2);
+  }, 10_000);
 });
