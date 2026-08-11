@@ -163,6 +163,17 @@ export function buildChunks<T extends { id: string; text?: string }>(
     });
   }
 
+  if (chunks.length > 1) {
+    const lastChunk = chunks[chunks.length - 1]!;
+    if (lastChunk.text.length * 3 < chunkSize) {
+      const previousChunk = chunks[chunks.length - 2]!;
+      // 小尾块并入前一块可省去一次 AI 请求；合并后允许超过常规 chunkSize。
+      previousChunk.text += lastChunk.text;
+      previousChunk.paragraphIds.push(...lastChunk.paragraphIds);
+      chunks.pop();
+    }
+  }
+
   return chunks;
 }
 

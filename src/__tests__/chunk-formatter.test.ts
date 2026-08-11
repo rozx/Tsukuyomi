@@ -86,6 +86,69 @@ describe('chunk-formatter', () => {
   });
 });
 
+describe('buildChunks - 小尾块合并', () => {
+  const createParagraph = (id: string, text: string): Paragraph => ({
+    id,
+    text,
+    translations: [],
+    selectedTranslationId: '',
+  });
+
+  test('末块严格小于 chunkSize 三分之一时应并入前一块并保持顺序', () => {
+    const paragraphs = [
+      createParagraph('p1', '甲'.repeat(20)),
+      createParagraph('p2', '乙'.repeat(25)),
+      createParagraph('p3', '丙'.repeat(9)),
+    ];
+
+    const chunks = buildChunks(paragraphs, 30, (paragraph) => paragraph.text);
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]).toEqual({ text: '甲'.repeat(20), paragraphIds: ['p1'] });
+    expect(chunks[1]).toEqual({
+      text: `${'乙'.repeat(25)}${'丙'.repeat(9)}`,
+      paragraphIds: ['p2', 'p3'],
+    });
+  });
+
+  test('末块恰好等于 chunkSize 三分之一时应保持独立', () => {
+    const paragraphs = [
+      createParagraph('p1', '甲'.repeat(20)),
+      createParagraph('p2', '乙'.repeat(25)),
+      createParagraph('p3', '丙'.repeat(10)),
+    ];
+
+    const chunks = buildChunks(paragraphs, 30, (paragraph) => paragraph.text);
+
+    expect(chunks).toHaveLength(3);
+    expect(chunks[2]).toEqual({ text: '丙'.repeat(10), paragraphIds: ['p3'] });
+  });
+
+  test('末块大于 chunkSize 三分之一时应保持独立', () => {
+    const paragraphs = [
+      createParagraph('p1', '甲'.repeat(20)),
+      createParagraph('p2', '乙'.repeat(25)),
+      createParagraph('p3', '丙'.repeat(11)),
+    ];
+
+    const chunks = buildChunks(paragraphs, 30, (paragraph) => paragraph.text);
+
+    expect(chunks).toHaveLength(3);
+    expect(chunks[2]).toEqual({ text: '丙'.repeat(11), paragraphIds: ['p3'] });
+  });
+
+  test('零块或单块时应保持原结果', () => {
+    expect(buildChunks([], 30, (paragraph: Paragraph) => paragraph.text)).toEqual([]);
+
+    const chunks = buildChunks(
+      [createParagraph('p1', '甲'.repeat(9))],
+      30,
+      (paragraph) => paragraph.text,
+    );
+    expect(chunks).toEqual([{ text: '甲'.repeat(9), paragraphIds: ['p1'] }]);
+  });
+});
+
 /**
  * Task 3.1: 测试 chunk 格式化在"含空段落章节"场景下的索引语义
  * 验证展示索引与原始章节位置一致（可跳号）
@@ -287,5 +350,20 @@ describe('buildFormattedChunks - 空段落索引语义', () => {
 
     expect(chunkText).toContain('翻译: ');
     expect(chunkText).not.toContain('翻译: 旧译文');
+  });
+
+  test('翻译格式化路径也应将小于三分之一的末块并入前一块', () => {
+    const paragraphs = [
+      createTestParagraph('p1', '甲'.repeat(60)),
+      createTestParagraph('p2', '乙'.repeat(60)),
+      createTestParagraph('p3', '尾'),
+    ];
+
+    const chunks = buildFormattedChunks(paragraphs, 100);
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[1]!.paragraphIds).toEqual(['p2', 'p3']);
+    expect(chunks[1]!.text).toContain('[2] [ID: p2]');
+    expect(chunks[1]!.text).toContain('[3] [ID: p3]');
   });
 });
