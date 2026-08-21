@@ -1,9 +1,12 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type Plugin } from 'vitest/config';
 import tsconfigPaths from 'vite-tsconfig-paths';
+import vue from '@vitejs/plugin-vue';
 import path from 'node:path';
 
 export default defineConfig({
-  plugins: [tsconfigPaths()],
+  // 项目主构建用的是 rolldown-vite，@vitejs/plugin-vue 的类型跟着 rolldown 走，
+  // 而 vitest 内置的是 rollup 版 vite —— 运行时兼容，仅类型不一致，故显式收敛
+  plugins: [tsconfigPaths(), vue() as unknown as Plugin],
   resolve: {
     alias: {
       'bun:test': path.resolve(__dirname, 'src/__tests__/bun-test-shim.ts'),

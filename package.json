@@ -75,6 +75,7 @@
     "@types/marked": "^6.0.0",
     "@types/node": "^24.13.2",
     "@types/uuid": "^11.0.0",
+    "@vitejs/plugin-vue": "^6.0.7",
     "@vitest/coverage-istanbul": "^4.1.9",
     "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/eslint-config-typescript": "^14.9.0",

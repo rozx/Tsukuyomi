@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import Button from 'primevue/button';
 import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
@@ -20,6 +21,46 @@ const {
   toggleThinking,
   toggleSync,
 } = useSystemBar();
+
+// 同步态徽章收敛为单个描述对象，渲染成同一个 <button>。
+// 弹层（PrimeVue Popover）以触发按钮为定位锚点，且内容尺寸变化时会重新对齐；
+// 若用 v-if 在多个按钮间切换，原锚点按钮被卸载后弹层会跳到屏幕左上角。
+const syncChip = computed(() => {
+  switch (syncState.value) {
+    case 'syncing':
+      return {
+        class: 'tst-chip pill sync-pending',
+        icon: 'pi pi-spin pi-spinner',
+        label: '同步中',
+        labelClass: '',
+        aria: '同步中',
+      };
+    case 'changes':
+      return {
+        class: 'tst-chip pill sync-changes',
+        icon: 'pi pi-cloud-upload',
+        label: `${pendingCount.value} 项变更`,
+        labelClass: '',
+        aria: `${pendingCount.value} 项变更`,
+      };
+    case 'ok':
+      return {
+        class: 'tst-chip pill sync-ok',
+        icon: 'pi pi-cloud-check',
+        label: '已同步',
+        labelClass: '',
+        aria: '已同步',
+      };
+    default:
+      return {
+        class: 'tst-chip',
+        icon: 'pi pi-cloud',
+        label: '同步',
+        labelClass: 'tst-chip-label',
+        aria: '同步状态',
+      };
+  }
+});
 </script>
 
 <template>
@@ -30,68 +71,35 @@ const {
     </div>
 
     <div class="tst-actions">
-      <!-- AI thinking -->
+      <!-- AI thinking：单个持久按钮（作为弹层锚点不可被 v-if 卸载），内部内容随状态切换 -->
       <button
-        v-if="thinking"
-        type="button"
-        class="tst-chip pill thinking"
-        aria-label="AI 思考过程"
-        @click="toggleThinking"
-      >
-        <span class="tst-dot" />
-        <span>AI 思考中</span>
-      </button>
-      <button
-        v-else
         type="button"
         class="tst-chip"
+        :class="{ 'pill thinking': thinking }"
+        data-testid="tst-thinking-chip"
         aria-label="AI 思考过程"
         @click="toggleThinking"
       >
-        <i class="pi pi-sparkles" aria-hidden="true" />
-        <span class="tst-chip-label">AI 思考过程</span>
+        <template v-if="thinking">
+          <span class="tst-dot" />
+          <span>AI 思考中</span>
+        </template>
+        <template v-else>
+          <i class="pi pi-sparkles" aria-hidden="true" />
+          <span class="tst-chip-label">AI 思考过程</span>
+        </template>
       </button>
 
-      <!-- Sync -->
+      <!-- Sync：同上，单个持久按钮，外观由 syncChip 描述对象驱动 -->
       <button
-        v-if="syncState === 'syncing'"
         type="button"
-        class="tst-chip pill sync-pending"
-        aria-label="同步中"
+        :class="syncChip.class"
+        data-testid="tst-sync-chip"
+        :aria-label="syncChip.aria"
         @click="toggleSync"
       >
-        <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-        <span>同步中</span>
-      </button>
-      <button
-        v-else-if="syncState === 'changes'"
-        type="button"
-        class="tst-chip pill sync-changes"
-        :aria-label="`${pendingCount} 项变更`"
-        @click="toggleSync"
-      >
-        <i class="pi pi-cloud-upload" aria-hidden="true" />
-        <span>{{ pendingCount }} 项变更</span>
-      </button>
-      <button
-        v-else-if="syncState === 'ok'"
-        type="button"
-        class="tst-chip pill sync-ok"
-        aria-label="已同步"
-        @click="toggleSync"
-      >
-        <i class="pi pi-cloud-check" aria-hidden="true" />
-        <span>已同步</span>
-      </button>
-      <button
-        v-else
-        type="button"
-        class="tst-chip"
-        aria-label="同步状态"
-        @click="toggleSync"
-      >
-        <i class="pi pi-cloud" aria-hidden="true" />
-        <span class="tst-chip-label">同步</span>
+        <i :class="syncChip.icon" aria-hidden="true" />
+        <span :class="syncChip.labelClass">{{ syncChip.label }}</span>
       </button>
 
       <div class="tst-sep" />
