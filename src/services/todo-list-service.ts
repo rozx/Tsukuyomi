@@ -219,6 +219,29 @@ export class TodoListService {
   }
 
   /**
+   * 自动推进：若范围内（会话优先，否则任务）没有进行中的待办，
+   * 把按插入顺序第一个 pending 的待办标记为 working 并返回；无需推进时返回 null。
+   */
+  static ensureWorkingTodo(taskId: string, sessionId?: string): TodoItem | null {
+    const scoped = sessionId
+      ? this.getTodosBySessionId(sessionId)
+      : taskId
+        ? this.getTodosByTaskId(taskId)
+        : [];
+
+    if (scoped.some((todo) => todo.status === 'working')) {
+      return null;
+    }
+
+    const next = scoped.find((todo) => todo.status === 'pending');
+    if (!next) {
+      return null;
+    }
+
+    return this.updateTodo(next.id, { status: 'working' });
+  }
+
+  /**
    * 删除待办事项
    */
   static deleteTodo(id: string): void {

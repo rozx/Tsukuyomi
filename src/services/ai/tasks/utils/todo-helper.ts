@@ -18,7 +18,8 @@ export function getTodosSystemPrompt(hasContext: boolean): string {
     '\n**待办系统**：\n' +
     '- 系统自动生成预定义待办，【待办清单】始终显示在上下文中，无需调用 list_todos\n' +
     '- 完成一项就调用 `mark_todo_done` 标记；一次完成多项时用 `ids` 批量标记\n' +
-    '- `mark_todo_working` 为可选，仅用于向用户展示当前进度\n' +
+    '- 标记完成后系统会自动把下一项待办标记为进行中，无需再调用 `mark_todo_working`\n' +
+    '- `mark_todo_working` 仅在需要手动切换当前进行项时使用\n' +
     '- 所有预定义待办标记 done 后才能切换到下一阶段\n'
   );
 }

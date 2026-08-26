@@ -192,6 +192,12 @@ export class TodoWorkflow {
 
     if (hasGenerated) {
       this.initializedStates.add(state);
+      // 恢复场景：待办已存在但可能没有进行中项，补一次自动推进
+      this.promoteFirstPending(
+        existingTodos.filter(
+          (t) => t.predefined && t.taskState === state && t.chunkIndex === this.chunkIndex,
+        ),
+      );
       return [];
     }
 
@@ -200,28 +206,50 @@ export class TodoWorkflow {
     // 静态模板
     const templates = getTemplates(this.taskType, state, this.isBriefPlanning);
     if (templates) {
-      return templates.map((text) =>
+      const created = templates.map((text) =>
         TodoListService.createTodo(text, this.taskId, undefined, {
           predefined: true,
           taskState: state,
           chunkIndex: this.chunkIndex,
         }),
       );
+      return this.promoteFirstPending(created);
     }
 
     // working 状态的动态模板
     if (state === 'working' && config) {
       const texts = buildWorkingTodoTexts(config);
-      return texts.map((text) =>
+      const created = texts.map((text) =>
         TodoListService.createTodo(text, this.taskId, undefined, {
           predefined: true,
           taskState: state,
           chunkIndex: this.chunkIndex,
         }),
       );
+      return this.promoteFirstPending(created);
     }
 
     return [];
+  }
+
+  /**
+   * 自动推进：任务范围内没有进行中的待办时，把给定列表里第一个 pending 提升为 working。
+   * 只在传入的（当前阶段）待办里挑选，避免早期阶段残留的 ad-hoc pending 抢占提升。
+   */
+  private promoteFirstPending(stateTodos: TodoItem[]): TodoItem[] {
+    if (stateTodos.length === 0) return stateTodos;
+
+    const taskTodos = TodoListService.getTodosByTaskId(this.taskId);
+    if (taskTodos.some((t) => t.status === 'working')) return stateTodos;
+
+    // 以存储中的最新状态为准（传入的可能是创建时的快照，状态或已被外部翻转）
+    const first = stateTodos.find(
+      (t) => TodoListService.getTodoById(t.id)?.status === 'pending',
+    );
+    if (!first) return stateTodos;
+
+    const updated = TodoListService.markTodoAsWorking(first.id);
+    return stateTodos.map((t) => (t.id === updated.id ? updated : t));
   }
 
   /**

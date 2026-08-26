@@ -25,6 +25,10 @@ describe('TodoWorkflow', () => {
       expect(todos[4]!.text).toContain('推荐更新已有记忆而非新建');
       todos.forEach((t) => {
         expect(t.predefined).toBe(true);
+      });
+      // 自动推进：第一条被标记为 working，其余保持 pending
+      expect(todos[0]!.status).toBe('working');
+      todos.slice(1).forEach((t) => {
         expect(t.status).toBe('pending');
       });
     });
@@ -145,6 +149,51 @@ describe('TodoWorkflow', () => {
 
       expect(todos).toHaveLength(1); // only batch todo, no title
       expect(todos[0]!.text).not.toContain('翻译章节标题');
+    });
+  });
+
+  describe('generateForState — 自动推进第一项', () => {
+    test('planning 生成后第一条待办应自动标记为 working，其余保持 pending', () => {
+      const workflow = new TodoWorkflow('translation', taskId);
+      const todos = workflow.generateForState('planning');
+
+      expect(todos[0]!.status).toBe('working');
+      todos.slice(1).forEach((t) => {
+        expect(t.status).toBe('pending');
+      });
+
+      const stored = TodoListService.getTodosByTaskId(taskId);
+      expect(stored.filter((t) => t.status === 'working')).toHaveLength(1);
+    });
+
+    test('任务已有 working 待办时生成新待办不应再提升', () => {
+      const adHoc = TodoListService.createTodo('进行中的自定义待办', taskId);
+      TodoListService.markTodoAsWorking(adHoc.id);
+
+      const workflow = new TodoWorkflow('translation', taskId);
+      const todos = workflow.generateForState('planning');
+
+      todos.forEach((t) => {
+        expect(t.status).toBe('pending');
+      });
+    });
+
+    test('working 状态的动态待办第一条也应自动标记为 working', () => {
+      const workflow = new TodoWorkflow('translation', taskId);
+      const planningTodos = workflow.generateForState('planning');
+      planningTodos.forEach((t) => TodoListService.markTodoAsDone(t.id));
+
+      const todos = workflow.generateForState('working', {
+        paragraphIds: ['abc12345'],
+        chunkText: '[1] [ID: abc12345] 原文: テスト\n翻译: \n\n',
+        chunkIndex: 0,
+        chapterTitle: '第一章',
+      });
+
+      expect(todos[0]!.status).toBe('working');
+      todos.slice(1).forEach((t) => {
+        expect(t.status).toBe('pending');
+      });
     });
   });
 

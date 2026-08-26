@@ -113,6 +113,75 @@ describe('TodoListService', () => {
     });
   });
 
+  describe('ensureWorkingTodo', () => {
+    test('无进行中项时应把第一个 pending 标记为 working 并返回', () => {
+      const taskId = 'task-1';
+      const todo1 = TodoListService.createTodo('Todo 1', taskId);
+      const todo2 = TodoListService.createTodo('Todo 2', taskId);
+
+      const promoted = TodoListService.ensureWorkingTodo(taskId);
+      expect(promoted?.id).toBe(todo1.id);
+      expect(promoted?.status).toBe('working');
+      expect(TodoListService.getTodoById(todo1.id)?.status).toBe('working');
+      expect(TodoListService.getTodoById(todo2.id)?.status).toBe('pending');
+    });
+
+    test('已有进行中项时应返回 null 且不做变更', () => {
+      const taskId = 'task-1';
+      const todo1 = TodoListService.createTodo('Todo 1', taskId);
+      const todo2 = TodoListService.createTodo('Todo 2', taskId);
+      TodoListService.markTodoAsWorking(todo2.id);
+
+      const promoted = TodoListService.ensureWorkingTodo(taskId);
+      expect(promoted).toBeNull();
+      expect(TodoListService.getTodoById(todo1.id)?.status).toBe('pending');
+      expect(TodoListService.getTodoById(todo2.id)?.status).toBe('working');
+    });
+
+    test('待办为空或全部完成时应返回 null', () => {
+      const taskId = 'task-1';
+      expect(TodoListService.ensureWorkingTodo(taskId)).toBeNull();
+
+      const todo = TodoListService.createTodo('Todo 1', taskId);
+      TodoListService.markTodoAsDone(todo.id);
+      expect(TodoListService.ensureWorkingTodo(taskId)).toBeNull();
+    });
+
+    test('应按插入顺序跳过已完成项，提升第一个 pending', () => {
+      const taskId = 'task-1';
+      const todo1 = TodoListService.createTodo('Todo 1', taskId);
+      const todo2 = TodoListService.createTodo('Todo 2', taskId);
+      const todo3 = TodoListService.createTodo('Todo 3', taskId);
+      TodoListService.markTodoAsDone(todo1.id);
+      TodoListService.markTodoAsDone(todo2.id);
+
+      const promoted = TodoListService.ensureWorkingTodo(taskId);
+      expect(promoted?.id).toBe(todo3.id);
+      expect(promoted?.status).toBe('working');
+    });
+
+    test('提供 sessionId 时应只在该会话范围内推进', () => {
+      const taskId = 'task-1';
+      const otherSessionTodo = TodoListService.createTodo('Other session', taskId, 'session-a');
+      const sessionTodo = TodoListService.createTodo('My session', taskId, 'session-b');
+
+      const promoted = TodoListService.ensureWorkingTodo(taskId, 'session-b');
+      expect(promoted?.id).toBe(sessionTodo.id);
+      expect(TodoListService.getTodoById(otherSessionTodo.id)?.status).toBe('pending');
+    });
+
+    test('不应推进其他任务的待办', () => {
+      const otherTodo = TodoListService.createTodo('Other task', 'task-other');
+      TodoListService.createTodo('Done one', 'task-1');
+      const mine = TodoListService.getTodosByTaskId('task-1')[0]!;
+      TodoListService.markTodoAsDone(mine.id);
+
+      const promoted = TodoListService.ensureWorkingTodo('task-1');
+      expect(promoted).toBeNull();
+      expect(TodoListService.getTodoById(otherTodo.id)?.status).toBe('pending');
+    });
+  });
+
   describe('getAllTodos', () => {
     test('应该能够返回所有任务的所有待办事项', () => {
       TodoListService.createTodo('Todo 1', 'task-1');

@@ -25,7 +25,8 @@ describe('TodoListTools', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.todo).toBeDefined();
       expect(parsed.todo.text).toBe('Test todo item');
-      expect(parsed.todo.status).toBe('pending');
+      // 创建后无进行中项，自动推进会把它标记为 working
+      expect(parsed.todo.status).toBe('working');
 
       const todos = TodoListService.getTodosByTaskId(taskId);
       expect(todos).toHaveLength(1);
@@ -60,24 +61,22 @@ describe('TodoListTools', () => {
     });
 
     test('当提供 onAction 回调时应该调用它', async () => {
-      let actionCalled = false;
-      let actionData: unknown = null;
+      const actions: unknown[] = [];
 
       const contextWithAction: ToolContext = {
         ...context,
         onAction: (action) => {
-          actionCalled = true;
-          actionData = action;
+          actions.push(action);
         },
       };
 
       const tool = todoListTools.find((t) => t.definition.function.name === 'create_todo');
       await tool!.handler({ text: 'Test todo' }, contextWithAction);
 
-      expect(actionCalled).toBe(true);
-      expect(actionData).toBeDefined();
-      expect((actionData as { type: string; entity: string }).type).toBe('create');
-      expect((actionData as { type: string; entity: string }).entity).toBe('todo');
+      // 第一条为 create；自动推进会追加一条 update
+      expect(actions.length).toBeGreaterThanOrEqual(1);
+      expect((actions[0] as { type: string; entity: string }).type).toBe('create');
+      expect((actions[0] as { type: string; entity: string }).entity).toBe('todo');
     });
 
     test('应该能够批量创建多个待办事项（使用 items 参数）', async () => {
@@ -104,8 +103,11 @@ describe('TodoListTools', () => {
       expect(todos.map((t) => t.text)).toEqual(expect.arrayContaining(items));
       todos.forEach((todo) => {
         expect(todo.taskId).toBe(taskId);
-        expect(todo.status).toBe('pending');
       });
+      // 自动推进：第一项被标记为 working，其余保持 pending
+      expect(todos[0]?.status).toBe('working');
+      expect(todos[1]?.status).toBe('pending');
+      expect(todos[2]?.status).toBe('pending');
     });
 
     test('批量创建时应该跳过空字符串并继续创建其他项', async () => {
@@ -173,11 +175,13 @@ describe('TodoListTools', () => {
       const items = ['待办事项1', '待办事项2', '待办事项3'];
       await tool!.handler({ items }, contextWithAction);
 
-      expect(actions).toHaveLength(3);
-      actions.forEach((action) => {
+      // 3 条 create + 1 条自动推进的 update
+      expect(actions).toHaveLength(4);
+      actions.slice(0, 3).forEach((action) => {
         expect((action as { type: string; entity: string }).type).toBe('create');
         expect((action as { type: string; entity: string }).entity).toBe('todo');
       });
+      expect((actions[3] as { type: string }).type).toBe('update');
     });
   });
 
@@ -299,7 +303,8 @@ describe('TodoListTools', () => {
 
       const updated1 = TodoListService.getTodoById(todo1.id);
       expect(updated1?.text).toBe('Updated Todo 1');
-      expect(updated1?.status).toBe('pending');
+      // todo2/todo3 已 done 且无进行中项，自动推进把 todo1 提升为 working
+      expect(updated1?.status).toBe('working');
 
       const updated2 = TodoListService.getTodoById(todo2.id);
       expect(updated2?.text).toBe('Todo 2');
@@ -334,7 +339,8 @@ describe('TodoListTools', () => {
         contextWithAction,
       );
 
-      expect(actions).toHaveLength(2);
+      // 2 条批量更新 + 1 条自动推进（todo1 被提升为 working）
+      expect(actions).toHaveLength(3);
       actions.forEach((action) => {
         expect((action as { type: string; entity: string }).type).toBe('update');
         expect((action as { type: string; entity: string }).entity).toBe('todo');
@@ -489,6 +495,106 @@ describe('TodoListTools', () => {
       } catch (error) {
         expect(error instanceof Error && error.message).toContain('待办事项不存在');
       }
+    });
+  });
+
+  describe('自动推进（完成/删除/创建后自动标记下一项为进行中）', () => {
+    const getTool = (name: string) =>
+      todoListTools.find((t) => t.definition.function.name === name)!;
+
+    test('mark_todo_done 完成当前项后应自动把下一个 pending 标记为 working', async () => {
+      const a = TodoListService.createTodo('Todo A', taskId);
+      const b = TodoListService.createTodo('Todo B', taskId);
+      TodoListService.markTodoAsWorking(a.id);
+
+      const result = await getTool('mark_todo_done').handler({ id: a.id }, context);
+      const parsed = JSON.parse(result);
+
+      expect(TodoListService.getTodoById(b.id)?.status).toBe('working');
+      expect(parsed.autoAdvanced).toBeDefined();
+      expect(parsed.autoAdvanced.id).toBe(b.id);
+      expect(parsed.autoAdvanced.status).toBe('working');
+    });
+
+    test('完成后若仍有其他 working 项则不推进', async () => {
+      const a = TodoListService.createTodo('Todo A', taskId);
+      const b = TodoListService.createTodo('Todo B', taskId);
+      const c = TodoListService.createTodo('Todo C', taskId);
+      TodoListService.markTodoAsWorking(b.id);
+
+      const result = await getTool('mark_todo_done').handler({ id: a.id }, context);
+      const parsed = JSON.parse(result);
+
+      expect(parsed.autoAdvanced).toBeUndefined();
+      expect(TodoListService.getTodoById(b.id)?.status).toBe('working');
+      expect(TodoListService.getTodoById(c.id)?.status).toBe('pending');
+    });
+
+    test('mark_todo_done 批量 ids 完成后应推进剩余第一个 pending', async () => {
+      const a = TodoListService.createTodo('Todo A', taskId);
+      const b = TodoListService.createTodo('Todo B', taskId);
+      const c = TodoListService.createTodo('Todo C', taskId);
+
+      await getTool('mark_todo_done').handler({ ids: [a.id, b.id] }, context);
+
+      expect(TodoListService.getTodoById(c.id)?.status).toBe('working');
+    });
+
+    test('delete_todo 删除 working 项后应自动推进下一项', async () => {
+      const a = TodoListService.createTodo('Todo A', taskId);
+      const b = TodoListService.createTodo('Todo B', taskId);
+      TodoListService.markTodoAsWorking(a.id);
+
+      const result = await getTool('delete_todo').handler({ id: a.id }, context);
+      const parsed = JSON.parse(result);
+
+      expect(TodoListService.getTodoById(b.id)?.status).toBe('working');
+      expect(parsed.autoAdvanced?.id).toBe(b.id);
+    });
+
+    test('update_todos 把唯一 working 项标记为 done 后应自动推进', async () => {
+      const a = TodoListService.createTodo('Todo A', taskId);
+      const b = TodoListService.createTodo('Todo B', taskId);
+      TodoListService.markTodoAsWorking(a.id);
+
+      await getTool('update_todos').handler({ id: a.id, status: 'done' }, context);
+
+      expect(TodoListService.getTodoById(b.id)?.status).toBe('working');
+    });
+
+    test('create_todo 批量创建后第一项应自动标记为 working', async () => {
+      const result = await getTool('create_todo').handler(
+        { items: ['Todo A', 'Todo B', 'Todo C'] },
+        context,
+      );
+      const parsed = JSON.parse(result);
+
+      const todos = TodoListService.getTodosByTaskId(taskId);
+      expect(todos[0]?.status).toBe('working');
+      expect(todos[1]?.status).toBe('pending');
+      expect(todos[2]?.status).toBe('pending');
+      expect(parsed.todos[0].status).toBe('working');
+    });
+
+    test('自动推进时应触发 onAction update 回调', async () => {
+      const a = TodoListService.createTodo('Todo A', taskId);
+      const b = TodoListService.createTodo('Todo B', taskId);
+      TodoListService.markTodoAsWorking(a.id);
+
+      const actions: Array<{ type: string; data: { id: string; status?: string } }> = [];
+      const contextWithAction: ToolContext = {
+        ...context,
+        onAction: (action) => {
+          actions.push(action as never);
+        },
+      };
+
+      await getTool('mark_todo_done').handler({ id: a.id }, contextWithAction);
+
+      const advanceAction = actions.find(
+        (act) => act.type === 'update' && act.data.id === b.id && act.data.status === 'working',
+      );
+      expect(advanceAction).toBeDefined();
     });
   });
 });

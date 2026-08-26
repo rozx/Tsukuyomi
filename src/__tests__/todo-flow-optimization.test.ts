@@ -85,6 +85,10 @@ describe('翻译流程 todo 优化', () => {
       todos.forEach((t) => {
         expect(t.predefined).toBe(true);
         expect(t.taskState).toBe('planning');
+      });
+      // 自动推进：第一条被标记为 working，其余保持 pending
+      expect(todos[0]!.status).toBe('working');
+      todos.slice(1).forEach((t) => {
         expect(t.status).toBe('pending');
       });
     });
@@ -149,6 +153,9 @@ describe('翻译流程 todo 优化', () => {
 
     test('working 中的项应展开完整多行文本', () => {
       const { workflow, todos } = makeWorkingTodos();
+      // 自动推进会把标题待办标记为 working，先完成它再把段落批次标记为进行中
+      const titleTodo = todos.find((t) => t.text.includes('翻译章节标题'))!;
+      TodoListService.markTodoAsDone(titleTodo.id);
       const batchTodo = todos.find((t) => t.text.includes('p001'))!;
       TodoListService.markTodoAsWorking(batchTodo.id);
 

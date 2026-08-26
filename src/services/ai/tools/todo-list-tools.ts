@@ -48,17 +48,53 @@ function dispatchTodoCreated(
   onAction({ type: 'create', entity: 'todo', data: todo });
 }
 
+type UpdateTodoAction = {
+  type: 'update';
+  entity: 'todo';
+  data: TodoItem;
+  previousData?: TodoItem;
+};
+
+type TodoAction = CreateTodoAction | UpdateTodoAction;
+
+/** 自动推进的作用域（任务/会话），未提供时不推进 */
+interface AdvanceScope {
+  taskId?: string | undefined;
+  sessionId?: string | undefined;
+}
+
+/**
+ * 生成响应体里的 autoAdvanced 字段（仅取首行文本，working 待办正文可能很长）。
+ */
+function autoAdvancedField(promoted: TodoItem | null): Record<string, unknown> {
+  if (!promoted) return {};
+  return {
+    autoAdvanced: {
+      id: promoted.id,
+      text: promoted.text.split('\n')[0],
+      status: promoted.status,
+    },
+  };
+}
+
 /**
  * 批量待办操作（创建 / 更新 / 状态翻转）共用的成功响应格式：
  * 逐项处理、部分失败不中断，最后统一回报成功项与错误列表。
+ * 发生自动推进时附带 autoAdvanced 字段并在消息中说明。
  */
-function buildBatchTodoResponse(message: string, todos: TodoItem[], errors: string[]): string {
+function buildBatchTodoResponse(
+  message: string,
+  todos: TodoItem[],
+  errors: string[],
+  autoAdvanced?: TodoItem | null,
+): string {
   return JSON.stringify({
     success: true,
-    message,
+    message: autoAdvanced ? `${message}；已自动将下一项待办标记为进行中` : message,
     todos: todos.map((todo) => ({ id: todo.id, text: todo.text, status: todo.status })),
     count: todos.length,
     ...(errors.length > 0 ? { errors } : {}),
+    ...autoAdvancedField(autoAdvanced ?? null),
   });
 }
 
@@ -67,7 +103,7 @@ function createBatchTodos(
   items: string[],
   taskId: string,
   sessionId: string | undefined,
-  onAction: ((action: CreateTodoAction) => void) | undefined,
+  onAction: ((action: TodoAction) => void) | undefined,
 ): string {
   const createdTodos: TodoItem[] = [];
   const errors: string[] = [];
@@ -92,19 +128,18 @@ function createBatchTodos(
     throw new Error(`批量创建待办事项失败：${errors.join('; ')}`);
   }
 
+  const promoted = autoAdvanceNextTodo({ taskId, sessionId }, onAction);
+  const reported = promoted
+    ? createdTodos.map((todo) => (todo.id === promoted.id ? promoted : todo))
+    : createdTodos;
+
   return buildBatchTodoResponse(
     `成功创建 ${createdTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
-    createdTodos,
+    reported,
     errors,
+    promoted,
   );
 }
-
-type UpdateTodoAction = {
-  type: 'update';
-  entity: 'todo';
-  data: TodoItem;
-  previousData?: TodoItem;
-};
 
 const VALID_TODO_STATUSES: readonly TodoStatus[] = ['pending', 'working', 'done'];
 
@@ -123,6 +158,22 @@ function dispatchTodoUpdated(
 }
 
 /**
+ * 自动推进：完成/删除/创建待办后，若作用域内没有进行中的待办，
+ * 把下一个 pending 提升为 working，并派发 update action 让 UI / 操作流同步。
+ */
+function autoAdvanceNextTodo(
+  scope: AdvanceScope | undefined,
+  onAction: ((action: UpdateTodoAction) => void) | undefined,
+): TodoItem | null {
+  if (!scope || (!scope.taskId && !scope.sessionId)) return null;
+  const promoted = TodoListService.ensureWorkingTodo(scope.taskId ?? '', scope.sessionId);
+  if (promoted) {
+    dispatchTodoUpdated({ ...promoted, status: 'pending' }, promoted, onAction);
+  }
+  return promoted;
+}
+
+/**
  * 单 todo 状态翻转工具（mark_todo_done / mark_todo_working / 等）共用的执行体：
  * 校验 id → 取前置快照 → 调 mutate → 派发 update action → 返回统一 JSON 响应。
  */
@@ -131,6 +182,7 @@ function runTodoStatusTransition(
   mutate: (id: string) => TodoItem,
   successMessage: string,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
+  advanceScope?: AdvanceScope,
 ): string {
   const targetIds = args.ids?.length ? args.ids : args.id ? [args.id] : [];
   if (targetIds.length === 0) {
@@ -159,25 +211,41 @@ function runTodoStatusTransition(
     throw new Error(`${successMessage}失败：${errors.join('; ')}`);
   }
 
+  const promoted = autoAdvanceNextTodo(advanceScope, onAction);
+
   return buildBatchTodoResponse(
     `${successMessage}（${updatedTodos.length} 项）${errors.length > 0 ? `，${errors.length} 项失败` : ''}`,
     updatedTodos,
     errors,
+    promoted,
   );
 }
 
 /**
  * 生成 mark_todo_done / mark_todo_working 的 handler：
  * 两者只差一个 mutate 与提示文案，其余参数解析逻辑完全一致。
+ * autoAdvance 仅对 mark_todo_done 开启：完成后自动把下一项 pending 标记为 working。
  */
-function createTodoStatusHandler(mutate: (id: string) => TodoItem, successMessage: string) {
-  return (args: Record<string, unknown>, ctx: { onAction?: (action: UpdateTodoAction) => void }) => {
+function createTodoStatusHandler(
+  mutate: (id: string) => TodoItem,
+  successMessage: string,
+  autoAdvance = false,
+) {
+  return (
+    args: Record<string, unknown>,
+    ctx: {
+      onAction?: (action: UpdateTodoAction) => void;
+      taskId?: string;
+      sessionId?: string;
+    },
+  ) => {
     const { id, ids } = args as { id?: string; ids?: string[] };
     return runTodoStatusTransition(
       { ...(id ? { id } : {}), ...(ids ? { ids } : {}) },
       mutate,
       successMessage,
       ctx.onAction,
+      autoAdvance ? { taskId: ctx.taskId, sessionId: ctx.sessionId } : undefined,
     );
   };
 }
@@ -216,6 +284,7 @@ function updateSingleTodoItem(
 function updateBatchTodos(
   items: Array<{ id: string; text?: string; status?: TodoStatus }>,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
+  advanceScope?: AdvanceScope,
 ): string {
   const updatedTodos: TodoItem[] = [];
   const errors: string[] = [];
@@ -226,10 +295,15 @@ function updateBatchTodos(
   if (updatedTodos.length === 0) {
     throw new Error(`批量更新待办事项失败：${errors.join('; ')}`);
   }
+  const promoted = autoAdvanceNextTodo(advanceScope, onAction);
+  const reported = promoted
+    ? updatedTodos.map((todo) => (todo.id === promoted.id ? promoted : todo))
+    : updatedTodos;
   return buildBatchTodoResponse(
     `成功更新 ${updatedTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
-    updatedTodos,
+    reported,
     errors,
+    promoted,
   );
 }
 
@@ -238,6 +312,7 @@ function updateOneTodo(
   text: string | undefined,
   status: TodoStatus | undefined,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
+  advanceScope?: AdvanceScope,
 ): string {
   const updates: { text?: string; status?: TodoStatus } = {};
   if (text !== undefined) updates.text = text;
@@ -245,10 +320,13 @@ function updateOneTodo(
   const previousTodo = TodoListService.getTodoById(id);
   const updatedTodo = TodoListService.updateTodo(id, updates);
   dispatchTodoUpdated(previousTodo, updatedTodo, onAction);
+  const promoted = autoAdvanceNextTodo(advanceScope, onAction);
+  const reported = promoted && promoted.id === updatedTodo.id ? promoted : updatedTodo;
   return JSON.stringify({
     success: true,
-    message: '待办事项更新成功',
-    todo: { id: updatedTodo.id, text: updatedTodo.text, status: updatedTodo.status },
+    message: promoted ? '待办事项更新成功；已自动将下一项待办标记为进行中' : '待办事项更新成功',
+    todo: { id: reported.id, text: reported.text, status: reported.status },
+    ...autoAdvancedField(promoted),
   });
 }
 
@@ -256,17 +334,20 @@ function createSingleTodo(
   text: string,
   taskId: string,
   sessionId: string | undefined,
-  onAction: ((action: CreateTodoAction) => void) | undefined,
+  onAction: ((action: TodoAction) => void) | undefined,
 ): string {
   if (!text || !text.trim()) {
     throw new Error('待办事项内容不能为空');
   }
   const todo = TodoListService.createTodo(text, taskId, sessionId);
   dispatchTodoCreated(todo, onAction);
+  const promoted = autoAdvanceNextTodo({ taskId, sessionId }, onAction);
+  const reported = promoted && promoted.id === todo.id ? promoted : todo;
   return JSON.stringify({
     success: true,
-    message: '待办事项创建成功',
-    todo: { id: todo.id, text: todo.text, status: todo.status },
+    message: promoted ? '待办事项创建成功；已自动将下一项待办标记为进行中' : '待办事项创建成功',
+    todo: { id: reported.id, text: reported.text, status: reported.status },
+    ...autoAdvancedField(promoted),
   });
 }
 
@@ -368,18 +449,19 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { onAction }) => {
+    handler: (args, { onAction, taskId, sessionId }) => {
       const { id, text, status, items } = args as {
         id?: string;
         text?: string;
         status?: TodoStatus;
         items?: Array<{ id: string; text?: string; status?: TodoStatus }>;
       };
+      const advanceScope: AdvanceScope = { taskId, sessionId };
       if (items && Array.isArray(items) && items.length > 0) {
-        return updateBatchTodos(items, onAction as never);
+        return updateBatchTodos(items, onAction as never, advanceScope);
       }
       if (id) {
-        return updateOneTodo(id, text, status, onAction as never);
+        return updateOneTodo(id, text, status, onAction as never, advanceScope);
       }
       throw new Error('必须提供 id 或 items 参数之一');
     },
@@ -390,13 +472,14 @@ export const todoListTools: ToolDefinition[] = [
       function: {
         name: 'mark_todo_done',
         description:
-          '将待办事项标记为完成。无需先标记进行中。完成多项时用 ids 一次性批量标记，避免逐条调用。',
+          '将待办事项标记为完成。无需先标记进行中。完成多项时用 ids 一次性批量标记，避免逐条调用。标记完成后，系统会自动把下一项待办标记为进行中。',
         parameters: TODO_STATUS_PARAMETERS,
       },
     },
     handler: createTodoStatusHandler(
       (todoId) => TodoListService.markTodoAsDone(todoId),
       '待办事项已标记为完成',
+      true,
     ),
   },
   {
@@ -405,7 +488,7 @@ export const todoListTools: ToolDefinition[] = [
       function: {
         name: 'mark_todo_working',
         description:
-          '将待办事项标记为进行中（可选，用于向用户展示当前进度）。开始处理耗时较长的待办前调用。',
+          '将待办事项标记为进行中。通常无需调用：完成/创建待办后系统会自动把下一项标记为进行中；仅在需要手动切换当前进行项时使用。',
         parameters: TODO_STATUS_PARAMETERS,
       },
     },
@@ -423,7 +506,7 @@ export const todoListTools: ToolDefinition[] = [
         parameters: TODO_BY_ID_PARAMETERS,
       },
     },
-    handler: (args, { onAction }) => {
+    handler: (args, { onAction, taskId, sessionId }) => {
       const { id } = args as {
         id: string;
       };
@@ -447,13 +530,16 @@ export const todoListTools: ToolDefinition[] = [
         });
       }
 
+      const promoted = autoAdvanceNextTodo({ taskId, sessionId }, onAction as never);
+
       return JSON.stringify({
         success: true,
-        message: '待办事项删除成功',
+        message: promoted ? '待办事项删除成功；已自动将下一项待办标记为进行中' : '待办事项删除成功',
         todo: {
           id: todo.id,
           text: todo.text,
         },
+        ...autoAdvancedField(promoted),
       });
     },
   },
