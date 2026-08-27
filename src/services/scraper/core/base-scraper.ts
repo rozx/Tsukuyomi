@@ -66,16 +66,24 @@ function looksLikeJsonProxyResponse(contentType: string, dataStr: string): boole
   return contentType.includes('application/json') || dataStr.trim().startsWith('{');
 }
 
-/** 构建 axios 请求头；仅非浏览器环境补充 User-Agent / Referer / Accept-Encoding */
+/** 构建 axios 请求头；浏览器经外部代理时用 x-cors-headers 转发站点头 */
 function buildAxiosHeaders(
+  proxiedUrl: string,
   originalUrl: string,
   isBrowser: boolean,
+  extraHeaders: Record<string, string>,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     Accept: ACCEPT_HTML,
     'Accept-Language': ACCEPT_LANGUAGE,
   };
-  if (isBrowser) return headers;
+  if (isBrowser) {
+    const usesExternalProxy = proxiedUrl !== originalUrl && !proxiedUrl.startsWith('/api/');
+    if (usesExternalProxy && Object.keys(extraHeaders).length > 0) {
+      headers['x-cors-headers'] = JSON.stringify(extraHeaders);
+    }
+    return headers;
+  }
   return {
     ...headers,
     'User-Agent': USER_AGENT,
@@ -83,16 +91,18 @@ function buildAxiosHeaders(
     Referer: originalUrl.startsWith('https://')
       ? new URL(originalUrl).origin
       : 'https://kakuyomu.jp/',
+    ...extraHeaders,
   };
 }
 
-/** 通过 axios 获取页面；仅非浏览器环境补充 User-Agent / Referer / Accept-Encoding */
+/** 通过 axios 获取页面；浏览器与 Node 环境分别构建可发送的请求头 */
 async function fetchViaAxios(
   proxiedUrl: string,
   originalUrl: string,
   isBrowser: boolean,
+  extraHeaders: Record<string, string> = {},
 ): Promise<string> {
-  const headers = buildAxiosHeaders(originalUrl, isBrowser);
+  const headers = buildAxiosHeaders(proxiedUrl, originalUrl, isBrowser, extraHeaders);
   const response = await axios.get(proxiedUrl, {
     timeout: FETCH_TIMEOUT_MS, // 与代理服务器超时一致
     headers,
@@ -299,7 +309,7 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
         (proxiedUrl: string) =>
           isElectron.value
             ? fetchViaElectron(proxiedUrl, url, extraHeaders)
-            : fetchViaAxios(proxiedUrl, url, isBrowser.value),
+            : fetchViaAxios(proxiedUrl, url, isBrowser.value, extraHeaders),
         {
           skipExternalProxy,
           skipInternalProxy: isElectron.value, // Electron 环境不使用内部代理路径

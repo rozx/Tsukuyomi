@@ -2,7 +2,7 @@
 
 ## Purpose
 
-为 Electron 桌面端抓取 `novel18.syosetu.com`（小説家になろう R18 分站）提供年龄验证 Cookie 处理、站点级抓取钩子与代理跳过机制，使用户可成功导入 R18 小说。Web SPA 路径不在本规范范围内。
+为 Electron 桌面端与 Web SPA 抓取 `novel18.syosetu.com`（小説家になろう R18 分站）提供年龄验证 Cookie 处理，使用户可成功导入 R18 小说，并拒绝把年龄确认页误判为小说。
 
 ## Requirements
 
@@ -33,7 +33,7 @@ When the target URL hostname is `novel18.syosetu.com` or a subdomain ending in `
 
 ### Requirement: Novel18 跳过外部 CORS 代理
 
-`Novel18SyosetuScraper` MUST return `true` from `shouldSkipExternalProxy()` so that novel18.syosetu.com fetches SHALL NOT use external CORS proxy URLs (e.g. `cors.rozx.moe/?{url}`).
+`Novel18SyosetuScraper` MUST return `true` from `shouldSkipExternalProxy()` in Electron so that Electron fetches SHALL NOT use external CORS proxy URLs (e.g. `cors.rozx.moe/?{url}`). In Web SPA it MUST return `false` so the browser can use the configured external proxy.
 
 #### Scenario: Electron 下全局外部代理已启用
 
@@ -65,7 +65,7 @@ Electron page fetches that include a `Cookie` request header MUST parse that hea
 
 ### Requirement: BaseScraper 提供站点级抓取钩子
 
-`BaseScraper` MUST provide protected hooks `getFetchExtraHeaders(url)` and `shouldSkipExternalProxy()` with default implementations returning `{}` and `false` respectively. Electron `fetchPage` MUST read these hooks when building requests and proxy options.
+`BaseScraper` MUST provide protected hooks `getFetchExtraHeaders(url)` and `shouldSkipExternalProxy()` with default implementations returning `{}` and `false` respectively. `fetchPage` MUST read these hooks when building Electron or Web requests and proxy options.
 
 #### Scenario: 子类未覆写钩子
 
@@ -77,6 +77,12 @@ Electron page fetches that include a `Cookie` request header MUST parse that hea
 - **当** 覆写了 `getFetchExtraHeaders` 的爬虫在 Electron 中执行 `fetchPage`
 - **则** 额外请求头必须传入 `fetchViaElectron`
 - **且** `shouldSkipExternalProxy` 必须传入 `ProxyService.executeWithAutoSwitch`
+
+#### Scenario: Web fetchPage 通过外部代理转发站点请求头
+
+- **当** 覆写了 `getFetchExtraHeaders` 的爬虫在浏览器中通过外部 CORS 代理执行 `fetchPage`
+- **则** 额外请求头必须序列化到 `x-cors-headers`
+- **且** 浏览器不得尝试直接发送受限的 `Cookie` 请求头
 
 ### Requirement: ProxyService 支持 skipExternalProxy 选项
 
@@ -104,12 +110,23 @@ In Electron, with age-verification cookie handling enabled, `Novel18SyosetuScrap
 - **则** `fetchNovel` 必须返回 `success: true`，且标题非空、至少一卷含章节
 - **且** 对第一章调用 `fetchChapterContent` 必须返回长度大于 100 字符的正文
 
-### Requirement: Web SPA 版 novel18 不在本次范围
+### Requirement: Web SPA 可端到端导入 novel18 小说
 
-This change MUST NOT alter Web SPA scraper behavior for novel18.syosetu.com. Web novel18 support MAY remain unavailable until upstream addresses it separately.
+In Web SPA, `Novel18SyosetuScraper` MUST forward `Cookie: over18=yes` through a configured CORS proxy that supports `x-cors-headers`, and MUST successfully fetch the novel index, pagination, and chapter bodies.
 
-#### Scenario: Web axios 路径不变
+#### Scenario: Web 通过外部 CORS 代理抓取目录与正文
 
-- **当** `Novel18SyosetuScraper.fetchPage` 在浏览器（非 Electron）环境运行
-- **则** 本次变更不得通过 axios 为 novel18 URL 附加 `over18=yes`
-- **且** Web 代理相关 UX（静默跳过 vs 用户提示）交由上游决定
+- **当** 用户在 Web SPA 中、代理设置为支持 `x-cors-headers` 的默认代理，导入 novel18 URL
+- **则** 索引、分页和章节正文请求的 `x-cors-headers` 必须包含 `{ "Cookie": "over18=yes" }`
+- **且** `fetchNovel` 必须返回真实小说标题与非空章节列表
+- **且** `fetchChapterContent` 必须返回非空正文
+
+### Requirement: 年龄确认页必须失败关闭
+
+When novel18 returns an age-verification page instead of novel content, `Novel18SyosetuScraper` MUST return an error and MUST NOT construct a successful novel result from that page.
+
+#### Scenario: 年龄确认页未被代理 Cookie 绕过
+
+- **当** 索引页 HTML 同时包含标题 `年齢確認` 与年龄确认入口 `#yes18`
+- **则** `fetchNovel` 必须返回 `success: false`
+- **且** 错误信息必须说明目标网站返回了年龄确认页

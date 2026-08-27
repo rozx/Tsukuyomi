@@ -55,6 +55,15 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
     return '无效的 novel18.syosetu.com 小说 URL';
   }
 
+  protected override parseNovelPage(html: string, baseUrl: string) {
+    const isAgeVerificationPage =
+      /<title>\s*年齢確認\s*<\/title>/i.test(html) && /\bid=["']yes18["']/i.test(html);
+    if (isAgeVerificationPage) {
+      throw new Error('目标网站返回了年龄确认页，未能获取小说内容');
+    }
+    return super.parseNovelPage(html, baseUrl);
+  }
+
   /**
    * novel18.syosetu.com 需要 Cookie over18=yes 才能跳过 R18 年龄确认页
    */
@@ -71,8 +80,8 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
   }
 
   /**
-   * 外部 CORS 代理会剥离 Cookie，Electron 必须直连。
-   * 仅限 Electron：Web 端保持原有代理路由（Web 版 novel18 尚不可用，见 PR #96 scope）
+   * Electron 通过 Puppeteer 注入 Cookie，必须跳过外部 CORS 代理并直连。
+   * Web 保留外部代理，由 BaseScraper 通过 x-cors-headers 转发 Cookie。
    */
   protected override shouldSkipExternalProxy(): boolean {
     return isElectron();
