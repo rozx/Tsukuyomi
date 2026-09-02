@@ -64,7 +64,7 @@
 支持站点：
 
 - `ncode.syosetu.com`
-- `novel18.syosetu.com`
+- `novel18.syosetu.com`（R18 站点，抓取时自动处理年龄确认；桌面端注入 Cookie 直连，Web 端经外部代理转发，需 v0.15.0+）
 - `kakuyomu.jp`
 - `syosetu.org`
 
