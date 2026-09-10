@@ -80,117 +80,56 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
   protected extractParagraphsFromHtml(html: string): string[] {
     const $ = cheerio.load(html);
 
-    // 使用指定的 CSS 选择器提取章节内容
-    // 章节内容：body > div.l-container > main > article > div.p-novel__body > div:nth-child(1)
-    // 由于 cheerio 可能不完全支持 :nth-child(1)，我们使用更精确的选择器
-    let contentElement = $('body > div.l-container > main > article > div.p-novel__body')
-      .children()
-      .first();
-
-    // 如果找不到，尝试其他方式
-    if (contentElement.length === 0) {
-      // 尝试直接查找 div.p-novel__body 的第一个子元素
-      contentElement = $('div.p-novel__body').children().first();
-    }
-
-    if (contentElement.length === 0) {
-      // 如果还是找不到，尝试更宽松的选择器
-      const fallback = this.selectContentElement($, [
-        'div.p-novel__body > div:first-child',
-        '.p-novel__body > div:first-child',
-        'article div.p-novel__body > div:first-child',
-      ]);
-
-      if (!fallback) {
-        throw new Error('无法找到章节正文内容');
-      }
-      contentElement = fallback as typeof contentElement;
-    }
-
-    // 移除不需要的元素
-    contentElement
-      .find(
-        'script, style, noscript, nav, .navigation, .nav, .menu, .ad, .advertisement, .ads, header, footer, .header, .footer',
-      )
-      .remove();
-
-    // 提取段落，保留原始格式（包括换行符）
+    // 前言、正文、后记都是同级文本区块，不能把第一个子元素当成正文。
+    // 按页面顺序处理所有文本区块，忽略夹在它们之间的广告等非正文元素。
+    const textElements = $('.p-novel__body').children('.p-novel__text');
     const paragraphs: string[] = [];
+    let hasBodyContent = false;
+    let previousWasNote = false;
 
-    // 查找所有段落标签，保留原始格式
-    const hasParagraphs = contentElement.find('p').length > 0;
-
-    if (hasParagraphs) {
-      // 如果有 <p> 标签，逐个提取并保留格式
-      contentElement.find('p').each((_, el) => {
-        const $p = $(el);
-
-        // 空的 <p> 标签视为换行
-        if (this.isEmptyParagraphElement($p)) {
-          paragraphs.push('\n');
-          return;
-        }
-
-        // 提取段落文本，保留内部格式（如 <br> 换行）
-        const extractedText = extractParagraphText($, $p);
-
-        // 保留原始段落格式，不清理空白字符
-        if (extractedText.trim()) {
-          paragraphs.push(extractedText);
-        }
-      });
-    } else {
-      // 如果没有 <p> 标签，直接提取所有文本，保留换行符
-      const fullText = extractTextWithFormatting($, contentElement);
-      if (fullText.trim()) {
-        // 按行分割，保留空行（用于保持格式）
-        const lines = fullText.split(/\r?\n/);
-        paragraphs.push(...lines);
-      }
-    }
-
-    if (paragraphs.length === 0) {
-      throw new Error('无法找到章节正文内容');
-    }
-
-    // 提取作者后记（作者留言）
-    // 选择器：body > div.l-container > main > article > div.p-novel__body > div.js-novel-text.p-novel__text.p-novel__text--afterword
-    let afterwordElement = $(
-      'body > div.l-container > main > article > div.p-novel__body > div.js-novel-text.p-novel__text.p-novel__text--afterword',
-    );
-
-    // 如果找不到，尝试其他方式
-    if (afterwordElement.length === 0) {
-      const fallback = this.selectContentElement($, [
-        'div.p-novel__body > div.js-novel-text.p-novel__text.p-novel__text--afterword',
-        'div.p-novel__text--afterword',
-        '.p-novel__text--afterword',
-      ]);
-      if (fallback) {
-        afterwordElement = fallback as typeof afterwordElement;
-      }
-    }
-
-    if (afterwordElement.length > 0) {
-      // 添加分隔符
-      paragraphs.push('');
-      paragraphs.push('---');
-      paragraphs.push('');
-
-      // 移除不需要的元素
-      afterwordElement
+    textElements.each((_, el) => {
+      const element = $(el);
+      const isNote = element.is('.p-novel__text--preface, .p-novel__text--afterword');
+      element
         .find(
           'script, style, noscript, nav, .navigation, .nav, .menu, .ad, .advertisement, .ads, header, footer, .header, .footer',
         )
         .remove();
 
-      // 提取后记内容，保留格式（与正文相同的段落抽取规则）
-      const afterwordText = extractParagraphText($, afterwordElement).trim();
-      if (afterwordText) {
-        // 按行分割后记内容
-        const afterwordLines = afterwordText.split(/\r?\n/);
-        paragraphs.push(...afterwordLines);
+      const sectionParagraphs: string[] = [];
+      if (isNote) {
+        // 作者留言沿用后记的处理方式，去除区块首尾的排版空白。
+        const noteText = extractParagraphText($, element).trim();
+        if (noteText) sectionParagraphs.push(...noteText.split(/\r?\n/));
+      } else if (element.find('p').length > 0) {
+        element.find('p').each((_, paragraph) => {
+          const $p = $(paragraph);
+          if (this.isEmptyParagraphElement($p)) {
+            sectionParagraphs.push('\n');
+            return;
+          }
+          const text = extractParagraphText($, $p);
+          if (text.trim()) sectionParagraphs.push(text);
+        });
+      } else {
+        // 无 <p> 的正文仍保留文本和 <br> 换行。
+        const text = extractTextWithFormatting($, element);
+        if (text.trim()) sectionParagraphs.push(...text.split(/\r?\n/));
       }
+
+      if (!sectionParagraphs.some((paragraph) => paragraph.trim())) return;
+      if (!isNote) hasBodyContent = true;
+
+      // 仅在作者留言与其他区块之间添加分隔符，正文区块直接衔接。
+      if (paragraphs.length > 0 && (isNote || previousWasNote)) {
+        paragraphs.push('', '---', '');
+      }
+      paragraphs.push(...sectionParagraphs);
+      previousWasNote = isNote;
+    });
+
+    if (!hasBodyContent) {
+      throw new Error('无法找到章节正文内容');
     }
 
     return paragraphs;

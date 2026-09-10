@@ -230,14 +230,14 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
     //     <p id="2"></p> (空段落 = 换行)
     //   </div>
     // </div>
-    // 优先查找 <div id="honbun">，这是正文容器
+    // 优先查找明确的正文容器；通用 .ss 也可能是前言或导航，必须最后回退。
     const contentElement = this.selectContentElement($, [
       '#honbun',
-      'div.ss',
       '#novel_honbun',
       '.novel_honbun',
       '#novel_content',
       '.novel_content',
+      'div.ss',
       'main',
       'article',
     ]);
