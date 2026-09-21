@@ -14,7 +14,7 @@ export default defineConfig((ctx: any) => {
     // app boot file (/src/boot)
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
-    boot: ['i18n', 'axios', 'primevue', 'toast-history'],
+    boot: ['i18n', 'axios', 'primevue', 'toast-history', 'book-commits'],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: ['tailwind.css'],

@@ -1,4 +1,8 @@
-import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
+import { describe, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
+import './setup';
+import { expect, vi } from 'vitest';
+import { BookExecutionGuard } from '../services/book-execution-guard';
+import { deferred, webLocksFixture } from './web-locks-fixture';
 import { ref, computed, type ComputedRef, type Ref } from 'vue';
 import { useChapterTranslation } from '../composables/book-details/useChapterTranslation';
 import type { Novel, Chapter, Paragraph } from '../models/novel';
@@ -18,7 +22,7 @@ import * as UiStore from 'src/stores/ui';
  * 会落在无保存窗口内，整章译文无声丢失。
  */
 
-const mockToastAdd = mock(() => {});
+const mockToastAdd = mock((_message: { detail?: string }) => {});
 const mockUpdateBook = mock(() => Promise.resolve());
 
 function createParagraph(id: string, text: string): Paragraph {
@@ -81,11 +85,13 @@ describe('useChapterTranslation - 整章翻译按 chunk 落盘', () => {
 
     mockToastAdd.mockClear();
     mockUpdateBook.mockClear();
+    mockUpdateBook.mockImplementation(() => Promise.resolve());
 
     spyOn(ToastHistory, 'useToastWithHistory').mockReturnValue({ add: mockToastAdd } as never);
     spyOn(BooksStore, 'useBooksStore').mockReturnValue({
       updateBook: mockUpdateBook,
       getBookById: mock(() => novel),
+      refreshBookFromStorage: mock(() => Promise.resolve(novel)),
     } as never);
     const mockModel = {
       id: 'model-1',
@@ -117,31 +123,98 @@ describe('useChapterTranslation - 整章翻译按 chunk 落盘', () => {
 
   afterEach(() => {
     mock.restore();
+    vi.unstubAllGlobals();
+  });
+
+  it('所有正文 AI 入口在读快照前取得共享占用，独占提交时不启动模型', async () => {
+    vi.stubGlobal('navigator', { locks: webLocksFixture() });
+    const started = deferred();
+    const ending = deferred();
+    const commit = BookExecutionGuard.commit(novel.id, async () => {
+      started.resolve();
+      await ending.promise;
+    });
+    await started.promise;
+    const service = setupComposable();
+    const model = spyOn(TranslationService, 'translate').mockResolvedValue({
+      success: true,
+      translatedParagraphs: [],
+      actions: [],
+    } as never);
+    await service.translateAllParagraphs();
+    await service.continueTranslation();
+    await service.retranslateParagraph('para-1');
+    await service.polishParagraph('para-1');
+    await service.proofreadParagraph('para-1');
+    await service.polishAllParagraphs();
+    await service.proofreadAllParagraphs();
+    expect(model).not.toHaveBeenCalled();
+    expect(
+      mockToastAdd.mock.calls.filter(([message]) =>
+        (message as { detail?: string })?.detail?.includes('TARGET_BUSY'),
+      ),
+    ).toHaveLength(7);
+    ending.resolve();
+    await commit;
+  });
+
+  it('取消和模型完成不会在最外层最终保存之前释放占用', async () => {
+    vi.stubGlobal('navigator', { locks: webLocksFixture() });
+    selectedChapter = computed(() => novel.volumes?.[0]?.chapters?.[0] ?? null);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const saving = deferred();
+    const finishSave = deferred();
+    mockUpdateBook.mockImplementation(() => {
+      saving.resolve();
+      return finishSave.promise;
+    });
+    spyOn(TranslationService, 'translate').mockImplementation(
+      async (_paragraphs, _model, options) => {
+        await options?.onParagraphTranslation?.([{ id: 'para-1', translation: '新译文' }]);
+        return { success: true, translatedParagraphs: [], actions: [] } as never;
+      },
+    );
+    const service = setupComposable();
+    const running = service.translateAllParagraphs();
+    await saving.promise;
+    expect(warn.mock.calls.flat().some((value) => String(value).includes('readonly'))).toBe(false);
+    service.cancelTranslation();
+    await expect(BookExecutionGuard.commit(novel.id, () => Promise.resolve())).rejects.toThrow(
+      'TARGET_BUSY',
+    );
+    finishSave.resolve();
+    await running;
+    await expect(
+      BookExecutionGuard.commit(novel.id, () => Promise.resolve()),
+    ).resolves.toBeUndefined();
+    mockUpdateBook.mockImplementation(() => Promise.resolve());
   });
 
   it('每个 chunk 的段落回调完成后必须已把章节内容落盘（而不是等任务收尾）', async () => {
     let savedCallsAfterChunk1 = -1;
     let savedContentAfterChunk1: Paragraph[] | undefined;
 
-    spyOn(TranslationService, 'translate').mockImplementation(
-      (async (_paragraphs: Paragraph[], _model: unknown, options: never) => {
-        const opts = options as {
-          onParagraphTranslation?: (t: { id: string; translation: string }[]) => Promise<void>;
-        };
-        // 模拟第一个 chunk 返回译文
-        await opts.onParagraphTranslation?.([{ id: 'para-1', translation: '第一段译文' }]);
-        // 关键断言点：chunk 1 回调 resolve 之后，落盘必须已经发生
-        savedCallsAfterChunk1 = saveChapterContentSpy.mock.calls.length;
-        const lastCall = saveChapterContentSpy.mock.calls.at(-1) as unknown as
-          | [Chapter, string]
-          | undefined;
-        savedContentAfterChunk1 = lastCall?.[0]?.content;
+    spyOn(TranslationService, 'translate').mockImplementation((async (
+      _paragraphs: Paragraph[],
+      _model: unknown,
+      options: never,
+    ) => {
+      const opts = options as {
+        onParagraphTranslation?: (t: { id: string; translation: string }[]) => Promise<void>;
+      };
+      // 模拟第一个 chunk 返回译文
+      await opts.onParagraphTranslation?.([{ id: 'para-1', translation: '第一段译文' }]);
+      // 关键断言点：chunk 1 回调 resolve 之后，落盘必须已经发生
+      savedCallsAfterChunk1 = saveChapterContentSpy.mock.calls.length;
+      const lastCall = saveChapterContentSpy.mock.calls.at(-1) as unknown as
+        | [Chapter, string]
+        | undefined;
+      savedContentAfterChunk1 = lastCall?.[0]?.content;
 
-        // 模拟第二个 chunk
-        await opts.onParagraphTranslation?.([{ id: 'para-2', translation: '第二段译文' }]);
-        return { text: '', actions: [] };
-      }) as never,
-    );
+      // 模拟第二个 chunk
+      await opts.onParagraphTranslation?.([{ id: 'para-2', translation: '第二段译文' }]);
+      return { text: '', actions: [] };
+    }) as never);
 
     const { translateAllParagraphs } = setupComposable();
     await translateAllParagraphs();
@@ -156,16 +229,18 @@ describe('useChapterTranslation - 整章翻译按 chunk 落盘', () => {
   it('翻译中途抛出（如用户停止）时，已完成 chunk 的译文必须已经落盘', async () => {
     let savedCallsBeforeAbort = -1;
 
-    spyOn(TranslationService, 'translate').mockImplementation(
-      (async (_paragraphs: Paragraph[], _model: unknown, options: never) => {
-        const opts = options as {
-          onParagraphTranslation?: (t: { id: string; translation: string }[]) => Promise<void>;
-        };
-        await opts.onParagraphTranslation?.([{ id: 'para-1', translation: '第一段译文' }]);
-        savedCallsBeforeAbort = saveChapterContentSpy.mock.calls.length;
-        throw new Error('请求已取消');
-      }) as never,
-    );
+    spyOn(TranslationService, 'translate').mockImplementation((async (
+      _paragraphs: Paragraph[],
+      _model: unknown,
+      options: never,
+    ) => {
+      const opts = options as {
+        onParagraphTranslation?: (t: { id: string; translation: string }[]) => Promise<void>;
+      };
+      await opts.onParagraphTranslation?.([{ id: 'para-1', translation: '第一段译文' }]);
+      savedCallsBeforeAbort = saveChapterContentSpy.mock.calls.length;
+      throw new Error('请求已取消');
+    }) as never);
 
     const { translateAllParagraphs } = setupComposable();
     await translateAllParagraphs();

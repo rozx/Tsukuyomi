@@ -42,6 +42,8 @@ interface Prepared {
 }
 interface InspectionOptions {
   refresh?: boolean;
+  snapshotId?: string;
+  encoding?: string;
   signal?: AbortSignal;
   offset?: number;
   limit?: number;
@@ -125,14 +127,34 @@ function enrichSiteInspection(
 export class ImportExtractionService {
   constructor(private readonly parser = new ImportParsingClient()) {}
 
-  private async readSnapshot(source: ImportSource, options: InspectionOptions): Promise<Snapshot> {
-    if (!options.refresh && source.currentSnapshotId) {
-      const stored = await ImportRepository.getResource(source.taskId, source.currentSnapshotId);
-      if (stored?.kind === 'snapshot' && stored.sourceId === source.id)
+  private async cachedSnapshot(
+    source: ImportSource,
+    options: InspectionOptions,
+  ): Promise<Snapshot | undefined> {
+    const snapshotId =
+      options.snapshotId ?? (!options.refresh ? source.currentSnapshotId : undefined);
+    if (snapshotId) {
+      const stored = await ImportRepository.getResource(source.taskId, snapshotId);
+      if (options.snapshotId && (stored?.kind !== 'snapshot' || stored.sourceId !== source.id))
+        throw new Error('SOURCE_SCOPE: 快照不属于当前来源');
+      const encoding = options.encoding ? new TextDecoder(options.encoding).encoding : undefined;
+      if (
+        stored?.kind === 'snapshot' &&
+        stored.sourceId === source.id &&
+        (!encoding || stored.encoding === encoding)
+      )
         return stored.inspection
           ? stored
           : { ...stored, id: crypto.randomUUID(), createdAt: Date.now() };
     }
+    return undefined;
+  }
+
+  private async readSnapshot(source: ImportSource, options: InspectionOptions): Promise<Snapshot> {
+    if (source.kind === 'url' && options.encoding)
+      throw new Error('INVALID_ENCODING: 网页已由现有请求层解码，字节编码仅适用于文件');
+    const cached = await this.cachedSnapshot(source, options);
+    if (cached) return cached;
     if (source.kind === 'url' && source.url) {
       const adapter = NovelScraperFactory.getScraper(source.url);
       const response = adapter
@@ -165,7 +187,12 @@ export class ImportExtractionService {
       return ImportContentService.prepareSnapshot(source, input.blob);
     if (new TextDecoder().decode(bytes.subarray(0, 5)) === '%PDF-')
       throw new Error('UNSUPPORTED_FORMAT: 当前没有 PDF 正文解析能力，请提供可读文本');
-    const decoded = (await this.parser.run({ kind: 'decode', bytes }, options)).value;
+    const decoded = (
+      await this.parser.run(
+        { kind: 'decode', bytes, ...(options.encoding ? { encoding: options.encoding } : {}) },
+        options,
+      )
+    ).value;
     return ImportContentService.prepareSnapshot(source, input.blob, {
       text: decoded.text,
       encoding: decoded.encoding,
@@ -337,18 +364,23 @@ export class ImportExtractionService {
       ensureActive(options.signal);
       return {
         resources,
-        sources: [
-          {
-            ...cleanSource(source),
-            currentSnapshotId: snapshot.id,
-            status: result.success
-              ? snapshot.id === source.currentSnapshotId && source.status === 'extracted'
-                ? 'extracted'
-                : 'inspected'
-              : 'failed',
-            ...(result.error ? { error: result.error } : {}),
-          },
-        ],
+        sources:
+          options.snapshotId &&
+          source.currentSnapshotId &&
+          options.snapshotId !== source.currentSnapshotId
+            ? []
+            : [
+                {
+                  ...cleanSource(source),
+                  currentSnapshotId: snapshot.id,
+                  status: result.success
+                    ? snapshot.id === source.currentSnapshotId && source.status === 'extracted'
+                      ? 'extracted'
+                      : 'inspected'
+                    : 'failed',
+                  ...(result.error ? { error: result.error } : {}),
+                },
+              ],
         result,
       };
     } catch (error) {
@@ -373,9 +405,12 @@ export class ImportExtractionService {
       if (source.purpose === 'metadata-only')
         throw new Error('METADATA_ONLY: 元信息来源不能提取为小说正文');
       let snapshot: ImportResource | undefined;
-      if (input.snapshotId) snapshot = await ImportRepository.getResource(taskId, input.snapshotId);
-      else {
-        const inspected = await this.prepareInspection(taskId, source.id, signal ? { signal } : {});
+      {
+        const inspected = await this.prepareInspection(taskId, source.id, {
+          ...(signal ? { signal } : {}),
+          ...(input.snapshotId ? { snapshotId: input.snapshotId } : {}),
+          ...(input.rules?.encoding ? { encoding: input.rules.encoding } : {}),
+        });
         if (!inspected.result.success) return inspected;
         resources = inspected.resources;
         snapshot =

@@ -20,6 +20,13 @@ import { TOOL_CALL_PLACEHOLDER, TOOL_CALL_PLACEHOLDER_VARIANTS } from './utils/s
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
 import { getErrorMessage } from 'src/utils/error-message';
+import { AssistantExecutionPaused } from './utils/assistant-execution';
+import { runAssistantBookExecution } from './utils/assistant-book-execution';
+import type {
+  AssistantExecution,
+  AssistantExecutionCheckpoint,
+  AssistantPauseReason,
+} from './utils/assistant-execution';
 import {
   DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
   estimateMessagesTokenCount,
@@ -83,6 +90,8 @@ const TOOLS_REQUIRING_BOOK_ID = [
  * Assistant 服务选项
  */
 export interface AssistantServiceOptions {
+  /** 宿主专属执行配置；省略时保持普通聊天的上下文和工具行为。 */
+  execution?: AssistantExecution;
   /**
    * 流式数据回调函数，用于接收对话过程中的数据块
    */
@@ -142,6 +151,8 @@ export interface AssistantServiceOptions {
  * Assistant 对话结果
  */
 export interface AssistantResult {
+  paused?: AssistantPauseReason;
+  checkpoint?: AssistantExecutionCheckpoint;
   text: string;
   taskId?: string;
   actions?: ActionInfo[];
@@ -611,9 +622,7 @@ export class AssistantService {
     const results = [];
     for (const toolCall of toolCalls) {
       // 用户取消后立即停止执行剩余工具，避免已取消的 CRUD 写入继续落库
-      if (signal?.aborted) {
-        throw new Error('请求已取消');
-      }
+      this.ensureRequestActive(signal);
 
       // [警告] 严格限制：只能调用本次会话提供的 tools
       if (!allowedToolNames.has(toolCall.function.name)) {
@@ -871,6 +880,8 @@ export class AssistantService {
   }): Promise<{ text: string; toolCalls: AIToolCall[]; reasoningContent: string | undefined }> {
     const { aiService, config, request, messages, options, taskId, isInitialRequest } = params;
 
+    await options.execution?.beforeRequest(messages, config.signal);
+
     let fullText = '';
     const toolCalls: AIToolCall[] = [];
 
@@ -898,6 +909,8 @@ export class AssistantService {
       taskId,
       onThinkingChunk: options.onThinkingChunk,
     });
+    if (options.execution)
+      processed.toolCalls = options.execution.normalizeCalls(processed.toolCalls);
 
     this.pushAssistantMessage(
       messages,
@@ -905,6 +918,7 @@ export class AssistantService {
       processed.toolCalls,
       processed.reasoningContent,
     );
+    await options.execution?.recordReply(messages, processed.toolCalls);
 
     return processed;
   }
@@ -939,20 +953,24 @@ export class AssistantService {
       signal,
     } = params;
 
-    const toolResults = await this.handleToolCalls(
-      toolCalls,
-      tools,
-      bookId,
-      (action) => {
-        allActions.push(action);
-        options.onAction?.(action);
-      },
-      options.onToast,
-      taskId,
-      sessionId,
-      model.id,
-      signal,
-    );
+    const toolResults = options.execution
+      ? []
+      : await this.handleToolCalls(
+          toolCalls,
+          tools,
+          bookId,
+          (action) => {
+            allActions.push(action);
+            options.onAction?.(action);
+          },
+          options.onToast,
+          taskId,
+          sessionId,
+          model.id,
+          signal,
+        );
+
+    await options.execution?.runTools(toolCalls, messages, signal);
 
     messages.push(...toolResults);
 
@@ -1045,13 +1063,12 @@ export class AssistantService {
     const allActions: ActionInfo[] = [];
     let summarizationCount = 0;
     let inLoopSummary: string | undefined;
+    const turnLimit = options.execution?.maxToolTurns ?? MAX_TOOL_CALL_TURNS;
 
-    while (toolCalls.length > 0 && currentTurnCount < MAX_TOOL_CALL_TURNS) {
+    while (toolCalls.length > 0 && currentTurnCount < turnLimit) {
       currentTurnCount++;
 
-      if (signal?.aborted) {
-        throw new Error('请求已取消');
-      }
+      this.ensureRequestActive(signal);
 
       // 执行工具调用
       await this.executeToolCallsAndTrim({
@@ -1118,7 +1135,7 @@ export class AssistantService {
       }
     }
 
-    this.fillPendingToolCallResults(messages, toolCalls);
+    await this.finishToolLoop(messages, toolCalls, options.execution);
 
     return {
       finalText,
@@ -1144,6 +1161,19 @@ export class AssistantService {
         content: JSON.stringify({ success: false, error: '已达到工具调用轮次上限，调用未执行' }),
       })),
     );
+  }
+
+  private static async finishToolLoop(
+    messages: ChatMessage[],
+    calls: AIToolCall[],
+    execution?: AssistantExecution,
+  ): Promise<void> {
+    if (execution && calls.length) throw await execution.stop('tool_limit');
+    this.fillPendingToolCallResults(messages, calls);
+  }
+
+  private static ensureRequestActive(signal?: AbortSignal): void {
+    if (signal?.aborted) throw new Error('请求已取消');
   }
 
   /**
@@ -1413,6 +1443,7 @@ export class AssistantService {
     } = params;
 
     options.onSummarizingEnd?.();
+    options.execution?.setSummary(summary);
 
     const rebuilt = this.rebuildMessagesWithSummary(systemPrompt, summary, userMessage);
     messages.length = 0;
@@ -1454,15 +1485,18 @@ export class AssistantService {
     });
 
     // 初始请求
-    const initialResult = await this.executeAIRequest({
-      aiService,
-      config,
-      request,
-      messages,
-      options,
-      taskId,
-      isInitialRequest: true,
-    });
+    const pendingCalls = options.execution?.pendingCalls;
+    const initialResult = pendingCalls?.length
+      ? { text: '', toolCalls: pendingCalls }
+      : await this.executeAIRequest({
+          aiService,
+          config,
+          request,
+          messages,
+          options,
+          taskId,
+          isInitialRequest: true,
+        });
 
     await this.updateTaskContextUsage({
       messages,
@@ -1493,6 +1527,7 @@ export class AssistantService {
     });
 
     const finalResponseText = loopFinalText || initialResult.text;
+    await options.execution?.complete(messages);
 
     // 更新任务状态
     if (options.aiProcessingStore && taskId) {
@@ -1869,38 +1904,55 @@ export class AssistantService {
     userMessage: string,
     options: AssistantServiceOptions = {},
   ): Promise<AssistantResult> {
-    const { signal, aiProcessingStore, sessionId } = options;
+    const context = options.execution?.context ?? useContextStore().getContext;
+    const tools =
+      options.execution?.tools ??
+      ToolRegistry.getAssistantToolsExcludingTranslationManagement(
+        context.currentBookId || undefined,
+      );
+    const history = options.messageHistory ?? options.execution?.history;
+    const configured = { ...options, ...(history?.length ? { messageHistory: history } : {}) };
+    const run = () => this.chatWithContext(model, userMessage, configured, context, tools);
+    return options.execution
+      ? run()
+      : runAssistantBookExecution(context, tools, run, options.sessionId);
+  }
 
-    // 获取 stores / 上下文
-    const contextStore = useContextStore();
-    const context = contextStore.getContext;
+  private static async chatWithContext(
+    model: AIModel,
+    userMessage: string,
+    options: AssistantServiceOptions,
+    context: ReturnType<typeof useContextStore>['getContext'],
+    tools: AITool[],
+  ): Promise<AssistantResult> {
+    const { signal, aiProcessingStore, sessionId } = options;
 
     // 创建任务（如果提供了 store）- 必须在构建系统提示词之前创建，以便传递 taskId
     const { taskId, taskAbortSignal } = await this.prepareTaskAndSignal(model, options);
 
-    // 获取可用的工具（助手聊天专用工具集）
-    const tools = ToolRegistry.getAssistantToolsExcludingTranslationManagement(
-      context.currentBookId || undefined,
-    );
-
     // 构建系统提示词（只传递 ID）- 必须在创建任务之后
-    const systemPrompt = this.composeSystemPrompt(
-      context,
-      tools,
-      taskId,
-      sessionId,
-      options.sessionSummary,
-    );
+    const systemPrompt = options.execution
+      ? await options.execution.prompt()
+      : this.composeSystemPrompt(context, tools, taskId, sessionId, options.sessionSummary);
 
     // 合并 signal：优先使用传入的 signal，如果没有则使用任务的 signal
     const finalSignal = signal || taskAbortSignal;
 
     try {
       // 构建消息列表并保证 systemPrompt 在开头
-      const messages = this.buildInitialMessages(options.messageHistory, systemPrompt, userMessage);
+      const messages = options.execution
+        ? options.execution.initializeMessages(
+            systemPrompt,
+            userMessage,
+            options.messageHistory,
+            model.maxInputTokens,
+          )
+        : this.buildInitialMessages(options.messageHistory, systemPrompt, userMessage);
+      await options.execution?.begin(messages);
 
       // 边界检查：用户消息是否过长
-      await this.ensureUserMessageWithinLimit(model, userMessage, aiProcessingStore, taskId);
+      if (!options.execution)
+        await this.ensureUserMessageWithinLimit(model, userMessage, aiProcessingStore, taskId);
 
       // 检查 token 限制（在发送请求前）
       const toolSchemaTokens = estimateToolSchemaTokens(tools);
@@ -1920,6 +1972,7 @@ export class AssistantService {
 
       if (
         shouldSummarizeBeforeRequest &&
+        !options.execution?.pendingCalls.length &&
         options.messageHistory &&
         options.messageHistory.length > 2
       ) {
@@ -1943,14 +1996,16 @@ export class AssistantService {
       }
 
       // 缩减消息历史以适应上下文窗口（如果需要）
-      const { finalMaxTokens } = this.reduceMessagesToFitContext({
-        messages,
-        systemPrompt,
-        userMessage,
-        model,
-        toolSchemaTokens,
-        effectiveMaxTokens,
-      });
+      const { finalMaxTokens } = options.execution?.pendingCalls.length
+        ? { finalMaxTokens: model.maxOutputTokens }
+        : this.reduceMessagesToFitContext({
+            messages,
+            systemPrompt,
+            userMessage,
+            model,
+            toolSchemaTokens,
+            effectiveMaxTokens,
+          });
 
       await this.updateTaskContextUsage({
         messages,
@@ -1973,6 +2028,19 @@ export class AssistantService {
         maxOutputTokens: finalMaxTokens,
       });
     } catch (error) {
+      const paused =
+        error instanceof AssistantExecutionPaused
+          ? error
+          : options.execution && finalSignal?.aborted
+            ? await options.execution.stop('user')
+            : undefined;
+      if (paused)
+        return {
+          text: '',
+          paused: paused.reason,
+          checkpoint: paused.checkpoint,
+          messageHistory: paused.checkpoint.messages,
+        };
       this.logChatError(error, model, taskId);
 
       // 检查是否是 token 限制错误，如果是，尝试总结并重试
@@ -2358,6 +2426,7 @@ export class AssistantService {
     } = params;
 
     const retryMessages = this.rebuildMessagesWithSummary(systemPrompt, summary, userMessage);
+    options.execution?.setSummary(summary);
     return this.executeFullRequest({
       model,
       messages: retryMessages,

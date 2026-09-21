@@ -1,5 +1,6 @@
 import type { ImportDiscovery, ImportResource, ImportSource } from 'src/models/import';
 import { ImportRepository, withImportWrite } from './import-repository';
+import type { ImportTaskMutationOptions, ImportTransaction } from './import-repository';
 
 type InputFile = Blob & { name: string };
 type ObservedResource = Pick<ImportDiscovery, 'name' | 'kind' | 'locator' | 'relation'> & {
@@ -50,26 +51,31 @@ async function registerUnique(source: ImportSource): Promise<ImportSource> {
   return withImportWrite(async (tx) => {
     const task = await tx.objectStore('import-tasks').get(source.taskId);
     if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
-    const store = tx.objectStore('import-sources');
-    const sources = await store.index('by-task').getAll(source.taskId);
-    const existing = sources.find((s) => {
-      if (
-        s.kind !== source.kind ||
-        (s.purpose === 'metadata-only') !== (source.purpose === 'metadata-only')
-      )
-        return false;
-      // 用户的明确授权不能被旧的 Agent 来源关系取代。
-      if (source.origin === 'user' && s.origin !== 'user') return false;
-      return source.kind === 'url'
-        ? s.url === source.url && s.anchor === source.anchor
-        : s.inputResourceId === source.inputResourceId && s.relativePath === source.relativePath;
-    });
-    if (existing) return existing;
-    await store.add(source);
+    const result = await insertUnique(tx, source);
     task.updatedAt = Date.now();
     await tx.objectStore('import-tasks').put(task);
-    return source;
+    return result;
   });
+}
+
+async function insertUnique(tx: ImportTransaction, source: ImportSource): Promise<ImportSource> {
+  const store = tx.objectStore('import-sources');
+  const sources = await store.index('by-task').getAll(source.taskId);
+  const existing = sources.find((s) => {
+    if (
+      s.kind !== source.kind ||
+      (s.purpose === 'metadata-only') !== (source.purpose === 'metadata-only')
+    )
+      return false;
+    // 用户的明确授权不能被旧的 Agent 来源关系取代。
+    if (source.origin === 'user' && s.origin !== 'user') return false;
+    return source.kind === 'url'
+      ? s.url === source.url && s.anchor === source.anchor
+      : s.inputResourceId === source.inputResourceId && s.relativePath === source.relativePath;
+  });
+  if (existing) return existing;
+  await store.add(source);
+  return source;
 }
 
 export class ImportSourceService {
@@ -186,16 +192,30 @@ export class ImportSourceService {
   }
 
   static async inspectDirectory(taskId: string, sourceId: string): Promise<ImportDiscovery[]> {
+    const prepared = await this.prepareDirectoryInspection(taskId, sourceId);
+    await ImportRepository.saveStep(taskId, { resources: prepared.resources });
+    return prepared.discoveries;
+  }
+
+  static async prepareDirectoryInspection(
+    taskId: string,
+    sourceId: string,
+    options: { offset?: number; limit?: number } = {},
+  ) {
     const source = await ImportRepository.getSource(taskId, sourceId);
     const resource =
       source.inputResourceId &&
       (await ImportRepository.getResource(taskId, source.inputResourceId));
     if (!resource || resource.kind !== 'directory')
       throw new Error('NOT_DIRECTORY: 来源不是已登记目录');
-    return this.recordDiscoveries(
+    const offset = options.offset ?? 0;
+    const limit = options.limit ?? Math.max(1, resource.entries.length);
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1)
+      throw new Error('INVALID_PAGE: 目录分页无效');
+    const prepared = await this.prepareDiscoveries(
       taskId,
       sourceId,
-      resource.entries.map((entry) => ({
+      resource.entries.slice(offset, offset + limit).map((entry) => ({
         name: entry.name,
         kind: 'file',
         locator: entry.path,
@@ -203,6 +223,11 @@ export class ImportSourceService {
         inputResourceId: entry.inputResourceId,
       })),
     );
+    return {
+      ...prepared,
+      total: resource.entries.length,
+      ...(offset + limit < resource.entries.length ? { nextOffset: offset + limit } : {}),
+    };
   }
 
   /** 由实际解析器提供观察结果，工具入参只接受这里返回的引用 ID。 */
@@ -265,10 +290,44 @@ export class ImportSourceService {
   }
 
   static async addDiscovered(taskId: string, discoveryId: string): Promise<ImportSource> {
-    const resource = await ImportRepository.getResource(taskId, discoveryId);
+    return (await this.addDiscoveredBatch(taskId, [discoveryId]))[0]!;
+  }
+
+  static async addDiscoveredBatch(
+    taskId: string,
+    discoveryIds: string[],
+    options: ImportTaskMutationOptions<ImportSource[]> = {},
+  ): Promise<ImportSource[]> {
+    if (
+      !Array.isArray(discoveryIds) ||
+      !discoveryIds.length ||
+      discoveryIds.length > 16 ||
+      discoveryIds.some((id) => typeof id !== 'string')
+    )
+      throw new Error('BATCH_LIMIT: 一次追加须包含 1–16 个发现引用');
+    return ImportRepository.mutateTask(
+      taskId,
+      async (_task, tx) => {
+        const sources: ImportSource[] = [];
+        for (const id of discoveryIds)
+          sources.push(await this.addDiscoveryInTransaction(taskId, id, tx));
+        return sources;
+      },
+      options,
+    );
+  }
+
+  private static async addDiscoveryInTransaction(
+    taskId: string,
+    discoveryId: string,
+    tx: ImportTransaction,
+  ): Promise<ImportSource> {
+    const resource = await tx.objectStore('import-resources').get(discoveryId);
+    if (resource?.taskId !== taskId) throw new Error('SOURCE_SCOPE: 发现引用不属于当前任务');
     if (resource?.kind !== 'discovery') throw new Error('SOURCE_SCOPE: 未找到已观察到的资源引用');
     const discovery = resource.discovery;
-    const parent = await ImportRepository.getSource(taskId, discovery.sourceId);
+    const parent = await tx.objectStore('import-sources').get(discovery.sourceId);
+    if (!parent || parent.taskId !== taskId) throw new Error('SOURCE_SCOPE: 父来源不属于当前任务');
     const source: ImportSource = {
       ...newSource(taskId, discovery.name, discovery.kind),
       origin: 'agent',
@@ -280,6 +339,6 @@ export class ImportSourceService {
         : { relativePath: discovery.locator }),
       ...(discovery.inputResourceId ? { inputResourceId: discovery.inputResourceId } : {}),
     };
-    return registerUnique(source);
+    return insertUnique(tx, source);
   }
 }

@@ -256,6 +256,7 @@ export interface ImportCheckpoint {
   remainingCalls: { id: string; name: string; arguments: string }[];
   completedCallIds: string[];
   summary?: string;
+  deferredUserMessage?: string;
 }
 
 export interface ImportTask {
@@ -274,6 +275,7 @@ export interface ImportTask {
   lastError?: { code: string; message: string };
   appliedMappings?: { bookId: string; chapters: ImportPlan['mappings'] }[];
   currentPlanId?: string;
+  streaming?: { text: string; reasoning?: string };
 }
 
 export interface ImportEvent {
@@ -352,9 +354,15 @@ export interface ImportOperation {
   state: 'planned' | 'applied' | 'reverted';
   before?: {
     book: Novel | null;
-    chapters: { chapterId: string; record: { content: string; lastModified: string } | null }[];
+    chapters: {
+      chapterId: string;
+      record: { content: string; lastModified: string; bookId?: string } | null;
+    }[];
+    target?: ImportDraft['target'];
+    mappings?: ImportTask['appliedMappings'];
   };
   postApplyBookRevision?: number;
+  postRevertBookRevision?: number;
   appliedAt?: number;
   revertedAt?: number;
   pendingMaintenance: string[];

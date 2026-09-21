@@ -8,6 +8,48 @@ import { ImportSourceService } from '../services/import/import-source-service';
 afterEach(() => mock.restore());
 
 describe('来源授权与登记', () => {
+  it('目录检查准备和追加来源可与工具回执一起提交，失败不留下半步登记', async () => {
+    const task = await ImportRepository.createTask();
+    const directory = await ImportSourceService.registerDirectory(task.id, [
+      { file: new File(['正文'], '1.txt'), path: '书/1.txt' },
+    ]);
+    const prepared = await ImportSourceService.prepareDirectoryInspection(task.id, directory.id);
+    expect(
+      await ImportRepository.getResource(task.id, prepared.discoveries[0]!.id),
+    ).toBeUndefined();
+    await ImportRepository.saveStep(task.id, { resources: prepared.resources });
+    const discoveryId = prepared.discoveries[0]!.id;
+    await expect(
+      ImportSourceService.addDiscoveredBatch(task.id, [discoveryId], {
+        finish: () => ({ events: [{ kind: 'progress', data: () => '不可保存' }] }),
+      }),
+    ).rejects.toThrow();
+    expect((await ImportRepository.listSources(task.id)).items).toHaveLength(1);
+    const result = await ImportSourceService.addDiscoveredBatch(
+      task.id,
+      [discoveryId, discoveryId],
+      {
+        finish: (sources) => ({
+          events: [
+            { kind: 'tool-call', callId: 'add', toolName: 'add_sources', data: '{}' },
+            {
+              kind: 'tool-result',
+              callId: 'add',
+              toolName: 'add_sources',
+              data: { ids: sources.map((source) => source.id) },
+            },
+          ],
+          checkpoint: { messages: [], remainingCalls: [], completedCallIds: ['add'] },
+        }),
+      },
+    );
+    expect(result[0]?.id).toBe(result[1]?.id);
+    expect((await ImportRepository.listSources(task.id)).items).toHaveLength(2);
+    expect((await ImportRepository.getTask(task.id))?.checkpoint?.completedCallIds).toEqual([
+      'add',
+    ]);
+  });
+
   it('添加 URL 和文件只登记，不请求、不解码、不生成章节', async () => {
     const task = await ImportRepository.createTask();
     const network = spyOn(globalThis, 'fetch').mockRejectedValue(new Error('不应请求'));

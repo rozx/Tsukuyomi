@@ -374,7 +374,8 @@ async function savePlan(
     };
     await tx.objectStore('import-operations').add(operation);
     task.currentPlanId = plan.id;
-    if (!task.pendingQuestion?.required) task.state = plan.conflicts.length ? 'draft' : 'ready';
+    if (!options.run && !task.pendingQuestion?.required)
+      task.state = plan.conflicts.length ? 'draft' : 'ready';
     await finishImportTask(task, options.finish?.(plan), {
       toolEvents: (id, callId) =>
         tx.objectStore('import-events').index('by-task-call').getAll([id, callId]),

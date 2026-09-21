@@ -1,4 +1,4 @@
-import type { Novel, Paragraph } from 'src/models/novel';
+import type { Novel, Paragraph, Chapter } from 'src/models/novel';
 import { getDB } from 'src/utils/indexed-db';
 import { deserializeDates, serializeDates } from 'src/utils/serialize-dates';
 
@@ -47,6 +47,19 @@ function failure(error: unknown): ReadFailure {
   return { kind: 'failed', message: error instanceof Error ? error.message : String(error) };
 }
 
+function embeddedChapter(record: ChapterRecord | undefined, chapter: Chapter): ChapterRead {
+  const loaded = ImportLibraryReader.decodeChapter(record);
+  if (loaded.kind !== 'absent' || chapter.content === undefined) return loaded;
+  const embedded = ImportLibraryReader.decodeChapter({
+    chapterId: chapter.id,
+    content: JSON.stringify(chapter.content),
+    lastModified: String(chapter.lastEdited ?? ''),
+  });
+  return embedded.kind === 'loaded'
+    ? { kind: 'loaded', content: embedded.content, storage: 'embedded' }
+    : embedded;
+}
+
 /** 严格读取不经过 loader，也不读写其正、负缓存。 */
 export class ImportLibraryReader {
   static decodeChapter(record: ChapterRecord | undefined): ChapterRead {
@@ -74,7 +87,7 @@ export class ImportLibraryReader {
     }
   }
 
-  static async readBook(bookId: string): Promise<BookRead> {
+  static async readBook(bookId: string, options?: { chapterIds: string[] }): Promise<BookRead> {
     try {
       const db = await getDB();
       const tx = db.transaction(['books', 'chapter-contents', 'book-revisions'], 'readonly');
@@ -97,27 +110,20 @@ export class ImportLibraryReader {
           string,
           ChapterRead
         >;
+        const seen = new Set<string>();
+        const requested = options ? new Set(options.chapterIds) : undefined;
         for (const volume of raw.volumes ?? []) {
           if (!volume || (volume.chapters !== undefined && !Array.isArray(volume.chapters)))
             throw new Error('INVALID_BOOK: 卷章数据损坏');
           for (const chapter of volume.chapters ?? []) {
-            if (!chapter || typeof chapter.id !== 'string' || !chapter.id || chapter.id in chapters)
+            if (!chapter || typeof chapter.id !== 'string' || !chapter.id || seen.has(chapter.id))
               throw new Error('INVALID_BOOK: 章节标识无效');
-            let loaded = this.decodeChapter(
+            seen.add(chapter.id);
+            if (requested && !requested.has(chapter.id)) continue;
+            chapters[chapter.id] = embeddedChapter(
               await tx.objectStore('chapter-contents').get(chapter.id),
+              chapter,
             );
-            if (loaded.kind === 'absent' && chapter.content !== undefined) {
-              const embedded = this.decodeChapter({
-                chapterId: chapter.id,
-                content: JSON.stringify(chapter.content),
-                lastModified: String(chapter.lastEdited ?? ''),
-              });
-              loaded =
-                embedded.kind === 'loaded'
-                  ? { kind: 'loaded', content: embedded.content, storage: 'embedded' }
-                  : embedded;
-            }
-            chapters[chapter.id] = loaded;
           }
         }
         await tx.done;

@@ -20,6 +20,26 @@ afterEach(() => {
 });
 
 describe('来源快照与显式提取步骤', () => {
+  it('显式编码用于文件解码，历史快照检查不会回退当前来源', async () => {
+    const task = await ImportRepository.createTask();
+    const [source] = await ImportSourceService.registerFiles(task.id, [
+      new File([new Uint8Array([0x82, 0xa0, 0x82, 0xa2])], 'novel.txt'),
+    ]);
+    const failed = await service.prepareInspection(task.id, source!.id, { encoding: 'utf-8' });
+    expect(failed.result.success).toBe(false);
+    const correct = await service.prepareInspection(task.id, source!.id, { encoding: 'shift_jis' });
+    expect(correct.result.preview).toBe('あい');
+    await ImportRepository.saveStep(task.id, correct);
+    const firstId = correct.result.snapshotId!;
+    const refreshed = await service.prepareInspection(task.id, source!.id, { refresh: true });
+    await ImportRepository.saveStep(task.id, refreshed);
+    const historical = await service.prepareInspection(task.id, source!.id, {
+      snapshotId: firstId,
+    });
+    expect(historical.result.snapshotId).toBe(firstId);
+    expect(historical.sources).toEqual([]);
+  });
+
   it('已支持网站的嵌入式目录通过单页规则返回，不把页面空壳当作缺章', async () => {
     const task = await ImportRepository.createTask();
     const url = 'https://kakuyomu.jp/works/12345';

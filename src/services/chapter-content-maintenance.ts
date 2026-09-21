@@ -7,6 +7,14 @@ export async function maintainChapterContent(bookId: string, chapterIds: string[
   const ids = [...new Set(chapterIds)];
   for (const id of ids) deleteCacheEntry(id);
   const db = await getDB();
+  const book = await db.get('books', bookId);
+  const embedded = new Map(
+    (book?.volumes ?? []).flatMap((volume) =>
+      (volume.chapters ?? [])
+        .filter((chapter) => chapter.content !== undefined)
+        .map((chapter) => [chapter.id, chapter.content] as const),
+    ),
+  );
   const [
     { markChapterDirty, cancelChapterDirty },
     { EmbeddingQueue },
@@ -21,10 +29,11 @@ export async function maintainChapterContent(bookId: string, chapterIds: string[
   try {
     for (const id of ids) {
       const current = await db.get('chapter-contents', id);
-      if (current) {
+      const serialized = current?.content ?? JSON.stringify(embedded.get(id));
+      if (serialized !== undefined) {
         setCacheEntry(id, {
-          parsed: JSON.parse(current.content) as Paragraph[],
-          serialized: current.content,
+          parsed: JSON.parse(serialized) as Paragraph[],
+          serialized,
         });
         markChapterDirty(id);
       } else {
