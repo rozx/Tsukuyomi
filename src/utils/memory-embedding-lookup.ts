@@ -1,3 +1,4 @@
+import { withMemoryWrite } from 'src/services/memory-persistence';
 /**
  * Memory embedding 查询/写入叶子工具 — 直接读写 IndexedDB 的 `memories` 表，
  * 供 embedding-queue 等不能 import `MemoryService`（会形成循环依赖）的模块使用。
@@ -143,15 +144,14 @@ export async function updateMemoryEmbeddingInDB(
   }
   if (!embeddingModel) throw new Error('embeddingModel 不能为空');
 
-  const db = await getDB();
-  const existing = (await db.get('memories', memoryId)) as MemoryStorage | undefined;
-  // 记录被删除是合法状态（不是错误），直接 return；缓存侧也没有东西要更新
-  if (!existing) return;
-  const { embedding: _legacyEmbedding, ...cleanExisting } = existing as MemoryStorage & {
-    embedding?: number[];
-  };
-  const updated: MemoryStorage = { ...cleanExisting, embeddings, embeddingModel };
-  await db.put('memories', updated);
+  await withMemoryWrite(async (store) => {
+    const existing = await store.get(memoryId);
+    if (!existing) return;
+    const { embedding: _legacyEmbedding, ...cleanExisting } = existing as MemoryStorage & {
+      embedding?: number[];
+    };
+    await store.put({ ...cleanExisting, embeddings, embeddingModel });
+  });
 }
 
 /**

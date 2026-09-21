@@ -102,7 +102,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
     });
 
     // 解析页面中的 Next.js 数据
-    return this.parseNovelPage(html, novelIndexUrl);
+    return this.parseNovelInfoFromSnapshot(html, novelIndexUrl);
   }
 
   /**
@@ -207,10 +207,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
     $('script').each((_, el) => {
       if (found) return;
       const scriptContent = $(el).html() || '';
-      if (
-        !scriptContent.includes('__NEXT_DATA__') &&
-        !scriptContent.includes('__APOLLO_STATE__')
-      ) {
+      if (!scriptContent.includes('__NEXT_DATA__') && !scriptContent.includes('__APOLLO_STATE__')) {
         return;
       }
       const jsonMatch = scriptContent.match(/__NEXT_DATA__\s*=\s*({[\s\S]*?})(?:\s*;|$)/);
@@ -313,7 +310,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
    * 解析小说页面 HTML
    * Kakuyomu 使用 Next.js，数据嵌入在 <script id="__NEXT_DATA__"> 中
    */
-  private parseNovelPage(html: string, baseUrl: string): ParsedNovelInfo {
+  protected override parseNovelInfoFromSnapshot(html: string, baseUrl: string): ParsedNovelInfo {
     const $ = cheerio.load(html);
 
     const nextDataScript = this.findNextDataScript($);

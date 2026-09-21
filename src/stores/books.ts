@@ -45,9 +45,7 @@ async function cleanupRemovedChapterData(
 /** 更新后的章节是否已携带完整内容（数组，含空数组），含则无需保留旧内容 */
 function chapterHasFreshContent(chapter: Chapter): boolean {
   return (
-    chapter.content !== undefined &&
-    chapter.content !== null &&
-    Array.isArray(chapter.content)
+    chapter.content !== undefined && chapter.content !== null && Array.isArray(chapter.content)
   );
 }
 
@@ -279,20 +277,11 @@ export const useBooksStore = defineStore('books', {
      * 删除书籍
      */
     async deleteBook(id: string): Promise<void> {
-      const index = this.books.findIndex((book) => book.id === id);
-      if (index > -1) {
-        this.books.splice(index, 1);
-        await BookService.deleteBook(id);
-
-        const settingsStore = useSettingsStore();
-        // 重新读取最新的 deletedNovelIds，避免并发删除时覆盖彼此的记录
-        const currentDeleted = settingsStore.gistSync?.deletedNovelIds || [];
-        if (!currentDeleted.find((record) => record.id === id)) {
-          await settingsStore.updateGistSync({
-            deletedNovelIds: [...currentDeleted, { id, deletedAt: Date.now() }],
-          });
-        }
-      }
+      if (!this.books.some((book) => book.id === id)) return;
+      await BookService.deleteBook(id, { recordDeletion: true });
+      this.books = this.books.filter((book) => book.id !== id);
+      const settingsStore = useSettingsStore();
+      await settingsStore.reloadSyncConfigs();
     },
 
     /**

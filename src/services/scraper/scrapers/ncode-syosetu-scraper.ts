@@ -1,3 +1,4 @@
+import type { ParsedNovelPage } from '../types';
 import * as cheerio from 'cheerio';
 import type { Novel } from 'src/models/novel';
 import type { ParsedChapterInfo, ParsedNovelInfo } from 'src/services/scraper/types';
@@ -72,11 +73,21 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
     return this.parseNovelPageWithPagination(novelIndexUrl);
   }
 
-  /**
-   * 从 HTML 中提取段落（实现抽象方法）
-   * @param html 章节 HTML 内容
-   * @returns 段落数组，每个元素是一个段落文本
-   */
+  /** 解析当前目录快照；后续目录页由调用者明确请求。 */
+  protected override parseNovelInfoFromSnapshot(html: string, url: string): ParsedNovelInfo {
+    return {
+      ...this.parseNovelPage(html, url),
+      ...this.parseNovelPageSingle(html, url),
+      webUrl: url,
+    };
+  }
+
+  override parseNovelSnapshot(html: string, url: string): ParsedNovelPage {
+    const next = this.getNextPageUrl(html, url);
+    return { ...super.parseNovelSnapshot(html, url), nextPageUrls: next ? [next] : [] };
+  }
+
+  /** 从章节 HTML 中提取段落，保留段落原文和空行。 */
   protected extractParagraphsFromHtml(html: string): string[] {
     const $ = cheerio.load(html);
 
@@ -421,9 +432,10 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
   /**
    * 从 `.p-eplist__update` 提取 date 与 lastUpdated（优先采用 span[title] 的改稿日期）。
    */
-  protected extractEplistDates(
-    $el: cheerio.Cheerio<any>,
-  ): { date?: string | Date; lastUpdated?: string | Date } {
+  protected extractEplistDates($el: cheerio.Cheerio<any>): {
+    date?: string | Date;
+    lastUpdated?: string | Date;
+  } {
     const dateElement = $el.find('.p-eplist__update');
     if (dateElement.length === 0) return {};
 

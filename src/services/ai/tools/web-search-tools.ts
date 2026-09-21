@@ -42,7 +42,10 @@ function extractHtmlTitle(rawContent: string, fallback: string): string {
  * 使用 Tavily Search API (REST)
  * 文档: https://docs.tavily.com/docs/tavily-api/rest_api
  */
-async function searchWeb(query: string): Promise<{
+export async function searchWeb(
+  query: string,
+  signal?: AbortSignal,
+): Promise<{
   success: boolean;
   results?: Array<{
     title: string;
@@ -82,6 +85,7 @@ async function searchWeb(query: string): Promise<{
       },
       {
         timeout: 30000,
+        ...(signal ? { signal } : {}),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -89,11 +93,12 @@ async function searchWeb(query: string): Promise<{
     );
 
     // 转换结果格式以保持与旧版本的兼容性
-    const results = response.data.results?.map((result: any) => ({
-      title: result.title,
-      snippet: result.content,
-      url: result.url,
-    })) || [];
+    const results =
+      response.data.results?.map((result: any) => ({
+        title: result.title,
+        snippet: result.content,
+        url: result.url,
+      })) || [];
 
     const returnType: {
       success: boolean;
@@ -121,7 +126,8 @@ async function searchWeb(query: string): Promise<{
       return {
         success: false,
         error: 'Tavily API Key 无效',
-        message: '请检查设置的 Tavily API Key 是否正确。您可以在 https://tavily.com/ 获取有效的 API Key。',
+        message:
+          '请检查设置的 Tavily API Key 是否正确。您可以在 https://tavily.com/ 获取有效的 API Key。',
       };
     }
 
@@ -202,7 +208,10 @@ async function fetchWebpage(url: string): Promise<{
     const title = extractHtmlTitle(rawContent, url);
 
     // 移除 HTML 标签获取纯文本
-    const text = rawContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    const text = rawContent
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
 
     return {
       success: true,

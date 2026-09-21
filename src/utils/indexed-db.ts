@@ -1,3 +1,4 @@
+import { LibraryPersistence } from 'src/services/library-persistence';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Novel } from 'src/models/novel';
 import type { AIModel } from 'src/services/ai/types/ai-model';
@@ -7,6 +8,14 @@ import type { SyncConfig } from 'src/models/sync';
 import type { ToastHistoryItem } from 'src/stores/toast-history';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
+import type {
+  BookRevision,
+  ImportEvent,
+  ImportOperation,
+  ImportResource,
+  ImportSource,
+  ImportTask,
+} from 'src/models/import';
 
 /**
  * 书籍详情页面 UI 状态
@@ -28,6 +37,7 @@ interface UiState {
  */
 interface ChapterContent {
   chapterId: string;
+  bookId?: string;
   content: string; // 序列化为 JSON 字符串的段落数组
   lastModified: string; // ISO 日期字符串
 }
@@ -35,7 +45,40 @@ interface ChapterContent {
 /**
  * IndexedDB 数据库架构定义
  */
-interface TsukuyomiDB extends DBSchema {
+export interface TsukuyomiDB extends DBSchema {
+  'import-tasks': {
+    key: string;
+    value: ImportTask;
+    indexes: { 'by-updatedAt': number };
+  };
+  'import-sources': {
+    key: string;
+    value: ImportSource;
+    indexes: { 'by-task': string; 'by-task-parent': [string, string] };
+  };
+  'import-resources': {
+    key: string;
+    value: ImportResource;
+    indexes: { 'by-task': string; 'by-task-source': [string, string] };
+  };
+  'import-events': {
+    key: string;
+    value: ImportEvent;
+    indexes: {
+      'by-task': string;
+      'by-task-sequence': [string, number];
+      'by-task-call': [string, string];
+    };
+  };
+  'import-operations': {
+    key: string;
+    value: ImportOperation;
+    indexes: { 'by-task': string };
+  };
+  'book-revisions': {
+    key: string;
+    value: BookRevision;
+  };
   books: {
     key: string;
     value: Novel;
@@ -120,10 +163,8 @@ interface TsukuyomiDB extends DBSchema {
 }
 
 const DB_NAME = 'tsukuyomi';
-// v11 在 chapter-embeddings 上新增 `kind: 'content' | 'title'` 字段并改为复合 key
-// `${chapterId}:${kind}:${chunkIndex}`,以支持章节标题专属语义 chunk;旧 v10 记录在 upgrade
-// 中回填 `kind: 'content'` 并按新 key 重写。
-const DB_VERSION = 11;
+// v12 增量创建导入任务和书籍修改序号，不重写现有书籍或正文。
+const DB_VERSION = 12;
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 let dbBlocked = false;
@@ -154,6 +195,7 @@ function nowMs(): number {
 }
 
 function ensureObjectStores(db: IDBPDatabase<TsukuyomiDB>): void {
+  ensureImportStores(db);
   if (!db.objectStoreNames.contains('books')) {
     const booksStore = db.createObjectStore('books', { keyPath: 'id' });
     booksStore.createIndex('by-lastEdited', 'lastEdited');
@@ -206,6 +248,36 @@ function ensureObjectStores(db: IDBPDatabase<TsukuyomiDB>): void {
     const chapterEmbeddingsStore = db.createObjectStore('chapter-embeddings');
     chapterEmbeddingsStore.createIndex('by-chapterId', 'chapterId', { unique: false });
     chapterEmbeddingsStore.createIndex('by-bookId', 'bookId', { unique: false });
+  }
+}
+
+function ensureImportStores(db: IDBPDatabase<TsukuyomiDB>): void {
+  if (!db.objectStoreNames.contains('import-tasks')) {
+    const store = db.createObjectStore('import-tasks', { keyPath: 'id' });
+    store.createIndex('by-updatedAt', 'updatedAt');
+  }
+  if (!db.objectStoreNames.contains('import-sources')) {
+    const store = db.createObjectStore('import-sources', { keyPath: 'id' });
+    store.createIndex('by-task', 'taskId');
+    store.createIndex('by-task-parent', ['taskId', 'parentSourceId']);
+  }
+  if (!db.objectStoreNames.contains('import-resources')) {
+    const store = db.createObjectStore('import-resources', { keyPath: 'id' });
+    store.createIndex('by-task', 'taskId');
+    store.createIndex('by-task-source', ['taskId', 'sourceId']);
+  }
+  if (!db.objectStoreNames.contains('import-events')) {
+    const store = db.createObjectStore('import-events', { keyPath: 'id' });
+    store.createIndex('by-task', 'taskId');
+    store.createIndex('by-task-sequence', ['taskId', 'sequence'], { unique: true });
+    store.createIndex('by-task-call', ['taskId', 'callId']);
+  }
+  if (!db.objectStoreNames.contains('import-operations')) {
+    const store = db.createObjectStore('import-operations', { keyPath: 'id' });
+    store.createIndex('by-task', 'taskId');
+  }
+  if (!db.objectStoreNames.contains('book-revisions')) {
+    db.createObjectStore('book-revisions', { keyPath: 'bookId' });
   }
 }
 
@@ -312,6 +384,7 @@ export async function getDB(): Promise<IDBPDatabase<TsukuyomiDB>> {
       },
     })
       .then((db) => {
+        dbBlocked = false;
         console.info('[indexed-db] 数据库打开成功');
         return db;
       })
@@ -334,16 +407,14 @@ async function migrateBooks(db: IDBPDatabase<TsukuyomiDB>): Promise<void> {
     localStorage.getItem('luna-ai-books') || localStorage.getItem('tsukuyomi-books');
   if (!booksData) return;
   const books = JSON.parse(booksData) as Novel[];
-  const tx = db.transaction('books', 'readwrite');
-  const store = tx.objectStore('books');
-  for (const book of books) {
-    await store.put({
+  await LibraryPersistence.saveBooks(
+    db,
+    books.map((book) => ({
       ...book,
       lastEdited: new Date(book.lastEdited),
       createdAt: new Date(book.createdAt),
-    });
-  }
-  await tx.done;
+    })),
+  );
   localStorage.removeItem('luna-ai-books');
   localStorage.removeItem('tsukuyomi-books');
 }
@@ -510,6 +581,12 @@ async function clearAllData(): Promise<void> {
     'memories',
     'full-text-indexes',
     'chapter-embeddings',
+    'import-tasks',
+    'import-sources',
+    'import-resources',
+    'import-events',
+    'import-operations',
+    'book-revisions',
   ] as const;
 
   for (const storeName of storeNames) {
