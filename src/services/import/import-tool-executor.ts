@@ -18,6 +18,9 @@ import { ImportDraftService } from './import-draft-service';
 import { ImportPlanService } from './import-plan-service';
 import { ImportMetadataService } from './import-metadata-service';
 import { assertImportKeys } from './import-draft-validation';
+import { validateImportToolArguments } from './import-tool-arguments';
+import { ImportQuestionService, awaitingImportAnswer } from './import-question-service';
+import { IMPORT_TODO_TOOLS, applyImportTodoTool } from './import-todos';
 import { importTools } from './import-tool-definitions';
 import { readImportTool, pageArguments, textArgument } from './import-tool-reads';
 export { importTools } from './import-tool-definitions';
@@ -44,17 +47,8 @@ function parseArguments(call: AIToolCall, exposed: Set<string>): Record<string, 
   if (call.function.arguments.length > 128000)
     throw new Error('ARGUMENT_LIMIT: 请缩小本次操作范围');
   const args: unknown = JSON.parse(call.function.arguments);
-  assertImportKeys(args, Object.keys(tool.function.parameters.properties));
-  for (const field of tool.function.parameters.required ?? [])
-    if (!(field in args)) throw new Error(`INVALID_ARGUMENTS: 缺少 ${field}`);
-  for (const [key, value] of Object.entries(args)) {
-    const rule = tool.function.parameters.properties[key] as { type?: string; enum?: unknown[] };
-    if (rule.enum && !rule.enum.includes(value))
-      throw new Error(`INVALID_ARGUMENTS: ${key} 不在允许值中`);
-    if (rule.type && ['string', 'boolean'].includes(rule.type) && typeof value !== rule.type)
-      throw new Error(`INVALID_ARGUMENTS: ${key} 类型无效`);
-  }
-  return args;
+  validateImportToolArguments({ ...tool.function.parameters, type: 'object' }, args);
+  return args as Record<string, unknown>;
 }
 function extractionInputs(args: Record<string, unknown>) {
   if (!Array.isArray(args.sources)) throw new Error('INVALID_ARGUMENTS: sources 必须是数组');
@@ -126,7 +120,11 @@ export class ImportToolExecutor {
     let data: unknown;
     try {
       const args = parseArguments(call, this.exposed);
-      data = await this.dispatch(call.function.name, args, options, save, finish);
+      if (call.function.name === 'ask_user' || call.function.name === 'ask_user_batch') {
+        data = await ImportQuestionService.ask(this.run, call.id, call.function.name, args, finish);
+        // 问题已保存但尚未回答：让出运行，调用保留在检查点中等待恢复
+        if (data === undefined) return { pause: 'waiting_user' };
+      } else data = await this.dispatch(call.function.name, args, options, save, finish);
     } catch (error) {
       if (
         options.signal?.aborted ||
@@ -144,7 +142,7 @@ export class ImportToolExecutor {
     return {
       result: reply(data),
       checkpointCommitted: true,
-      ...(after?.pendingQuestion?.required ? { pause: 'waiting_user' as const } : {}),
+      ...(after && awaitingImportAnswer(after) ? { pause: 'waiting_user' as const } : {}),
     };
   }
 
@@ -247,6 +245,12 @@ export class ImportToolExecutor {
         return save(prepared.result, { newSources: prepared.newSources });
       }
       default: {
+        if ((IMPORT_TODO_TOOLS as readonly string[]).includes(name))
+          return ImportRepository.mutateTask(
+            taskId,
+            (task) => Promise.resolve(applyImportTodoTool(task, name, args)),
+            { run: this.run, finish },
+          );
         const read = await readImportTool(this.run, name, args);
         return save({ success: true, ...(read as Record<string, unknown>) });
       }

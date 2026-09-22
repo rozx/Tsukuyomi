@@ -239,6 +239,20 @@ export interface ImportDraftEdit {
   operations: ImportDraftOperation[];
 }
 
+/** ask_user / ask_user_batch 的单个题目，字段沿用普通问答界面的约定。 */
+export interface ImportQuestionItem {
+  question: string;
+  suggestedAnswers: string[];
+  allowFreeText: boolean;
+  placeholder?: string;
+  maxLength?: number;
+}
+
+export interface ImportQuestionAnswer {
+  answers: { questionIndex: number; answer: string; selectedIndex?: number }[];
+  answeredAt: number;
+}
+
 export interface ImportPendingQuestion {
   id: string;
   toolCallId: string;
@@ -248,6 +262,19 @@ export interface ImportPendingQuestion {
   scopeRevision: number;
   draftRevision: number;
   required: boolean;
+  /** Agent 提问的工具名与题目；恢复执行时据此补入原格式的工具结果。 */
+  tool?: 'ask_user' | 'ask_user_batch';
+  items?: ImportQuestionItem[];
+  /** 用户实际回答；工具结果补入后问题整体移除。 */
+  answer?: ImportQuestionAnswer;
+}
+
+export interface ImportTodo {
+  id: string;
+  text: string;
+  status: 'pending' | 'working' | 'done';
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface ImportCheckpoint {
@@ -271,7 +298,7 @@ export interface ImportTask {
   eventSequence: number;
   checkpoint?: ImportCheckpoint;
   pendingQuestion?: ImportPendingQuestion;
-  todos: { id: string; text: string; completed: boolean }[];
+  todos: ImportTodo[];
   lastError?: { code: string; message: string };
   appliedMappings?: { bookId: string; chapters: ImportPlan['mappings'] }[];
   currentPlanId?: string;

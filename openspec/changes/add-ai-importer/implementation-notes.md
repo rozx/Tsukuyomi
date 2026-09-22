@@ -138,3 +138,16 @@ Electron 的补充隔离实验明确设置两个进程相同的 `userData` 和�
 产物实测：使用 `ELECTRON_BUILDER_CACHE=/private/tmp/ai-importer-electron-cache CSC_IDENTITY_AUTO_DISCOVERY=false bun run build:electron` 生成本地未签名产物，脚本 `/private/tmp/importer-single-instance-probe.mjs` 通过主进程 `--inspect` 读取 `BrowserWindow` 状态，隔离目录为 `/private/tmp/importer-single-instance-{a,b}`，未使用用户书库。结果 `/private/tmp/importer-single-instance-results.json`：同目录第二实例以 0 退出，最小化的主工作台被还原且窗口数仍为 1；关闭工作台后主进程存活，再次启动由主进程重建工作台；不同目录的实例正常运行。测试实例均已关闭。
 
 结合第三轮的 Worker／受限回退、第六轮的同进程窗口互斥、窗口重载后重新取锁和存储预检，任务 1.3 标记完成，进度 43/66。8.4 按修订后的验收继续实现。全量回归 180 个测试文件、2138 项通过、5 项既有跳过；lint、类型检查和 Fallow 通过。本轮未提交。
+
+## 第九轮：Agent 工具校验、问答让出与运行回收（2026-09-22）
+
+- 工具参数改为按完整定义校验（`import-tool-arguments.ts`）：整数、数值范围、数组长度、嵌套对象必填与枚举；声明了字段的对象拒绝未知字段，错误信息带字段路径（如 `operations[0].title`）。越界参数在执行前返回 `INVALID_ARGUMENTS`，草稿不变。
+- `ask_user`／`ask_user_batch` 以普通助手的参数定义接入导入工具集，但不走阻塞等待界面的原 handler：执行器把问题（工具名、题目、候选、自由输入限制、当前范围版本）保存为 `pendingQuestion` 并让出，调用留在检查点。`ImportQuestionService.answer` 只接受当前任务、当前问题 ID 与范围版本的完整回答；取消（不调用）、部分回答、其他任务或旧问题的回答都不解除等待，不在候选内的回答在禁止自由输入时被拒绝。恢复时补入与普通问答相同格式的工具结果并移除问题，之前已成功的工具不重放。导入问答从不读取书籍级「跳过提问」设置，普通问答不变。
+- 已回答但尚未补入结果的问题不再阻止继续执行（`awaitingImportAnswer`）；方案预览和应用仍对任何待处理的必要问题保持阻止。
+- 待办工具沿用普通助手的名称与参数，数据写入导入任务的 `todos`（含状态与时间），与工具回执同事务保存；完成或删除后自动推进下一项，与普通助手一致。不写全局待办。
+- `ImportAgentService.recover` 在取得任务锁后才把遗留的 running／pausing 转为可继续（作废旧运行代次、清理流式片段，意外中断记 `INTERRUPTED`）；锁被其他页面持有时只观察。`pause` 在本页没有执行者时轮询回收，等其他页面在下一步骤前停止；遗留运行可直接暂停。页面加载时由工作台对 running／pausing 的任务调用 `recover`（第 10 节接入）。
+- 提示词补充提问与待办的使用约束。
+
+TDD：参数校验、问答让出／回答／恢复、批量问答、跳过设置、待办、回收与其他页面暂停的用例先失败再转绿。其他页面置为暂停后运行页停止、暂停时迟到的工具结果不写入且恢复后只执行一次、上下文上限暂停、提示词与工具集合边界这几项在现有实现上直接通过，保留为回归用例。
+
+8.2–8.6 标记完成，进度 48/66。8.4 的 Electron 部分依赖第八轮的单实例锁；导入运行的第一步即写 IndexedDB，第二个进程在此失败，不会发起模型请求。全量回归 181 个测试文件、2150 项通过、5 项既有跳过；lint、类型检查和 Fallow 通过。

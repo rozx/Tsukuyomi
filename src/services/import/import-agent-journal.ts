@@ -6,6 +6,7 @@ import type { ImportRunContext, ImportTask } from 'src/models/import';
 import { ImportRepository } from './import-repository';
 import type { ImportTransaction, NewEvent } from './import-repository';
 import { importCheckpoint } from './import-tool-executor';
+import { awaitingImportAnswer } from './import-question-service';
 
 export function assertImportOwner(task: ImportTask, run: ImportRunContext): void {
   if (task.run?.runId !== run.runId || task.runEpoch !== run.runEpoch)
@@ -79,7 +80,7 @@ export async function saveImportAgentCheckpoint(
           plan?.state === 'planned' &&
           plan.plan.draftRevision === task.draft.revision &&
           !plan.plan.conflicts.length;
-        task.state = task.pendingQuestion?.required
+        task.state = awaitingImportAnswer(task)
           ? 'waiting_user'
           : state.phase === 'complete' && ready
             ? 'ready'

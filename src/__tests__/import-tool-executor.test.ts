@@ -5,6 +5,7 @@ import { ImportToolExecutor, importTools } from '../services/import/import-tool-
 import { ImportRepository } from '../services/import/import-repository';
 import { ImportSourceService } from '../services/import/import-source-service';
 import { getDB } from '../utils/indexed-db';
+import { TodoListService } from '../services/todo-list-service';
 import type { ImportRunContext } from '../models/import';
 import type { AIToolCall } from '../services/ai/types/ai-service';
 import type { AssistantExecutionCheckpoint } from '../services/ai/tasks/utils/assistant-execution';
@@ -118,6 +119,66 @@ describe('导入专属工具执行器', () => {
     expect(importTools.some((tool) => tool.function.name === 'add_translation')).toBe(false);
     expect((await ImportRepository.getTask(other.id))?.draft.revision).toBe(0);
     expect((await ImportRepository.getTask(task.id))?.state).toBe('running');
+  });
+
+  it('参数按完整 schema 校验：整数、数组、嵌套对象和枚举错误都在执行前拒绝', async () => {
+    const { task, invoke } = await fixture();
+    const invalid = [
+      await invoke('edit_import_draft', {
+        base_draft_revision: '0',
+        operations: [{ op: 'upsert_volume', title: '卷一' }],
+      }),
+      await invoke('edit_import_draft', {
+        base_draft_revision: 0,
+        operations: [{ op: 'upsert_volume', title: 42 }],
+      }),
+      await invoke('edit_import_draft', {
+        base_draft_revision: 0,
+        operations: [{ op: 'rewrite_library', title: '卷一' }],
+      }),
+      await invoke('edit_import_draft', {
+        base_draft_revision: 0,
+        operations: [{ op: 'upsert_volume', title: '卷一', confirmed: true }],
+      }),
+      await invoke('edit_import_draft', { base_draft_revision: 0, operations: [] }),
+      await invoke('add_sources', { discovery_ids: 'discovery' }),
+      await invoke('preview_import', { draft_revision: -1 }),
+      await invoke('preview_import', { draft_revision: 1.5 }),
+    ];
+    for (const { result } of invalid) {
+      expect(result.success).toBe(false);
+      expect((result.error as { code: string }).code).toBe('INVALID_ARGUMENTS');
+    }
+    expect((invalid[1]!.result.error as { message: string }).message).toContain(
+      'operations[0].title',
+    );
+    const saved = await ImportRepository.getTask(task.id);
+    expect(saved?.draft.revision).toBe(0);
+    expect(saved?.draft.volumes).toHaveLength(0);
+  });
+
+  it('待办沿用普通助手的工具约定但归属导入任务，不写入全局待办', async () => {
+    const globalCreate = vi.spyOn(TodoListService, 'createTodo');
+    const { task, invoke } = await fixture();
+    const other = await fixture();
+
+    const created = await invoke('create_todo', { items: ['检查目录', '提取正文'] });
+    const todos = created.result.todos as { id: string; status: string }[];
+    expect(todos.map((todo) => todo.status)).toEqual(['working', 'pending']);
+
+    const done = await invoke('mark_todo_done', { ids: [todos[0]!.id] });
+    expect(done.result.success).toBe(true);
+    const active = await invoke('list_todos', { filter: 'active' });
+    expect(active.result.todos).toMatchObject([{ id: todos[1]!.id, status: 'working' }]);
+
+    await invoke('update_todos', { id: todos[1]!.id, text: '提取第 1–10 章正文' });
+    await invoke('delete_todo', { id: todos[0]!.id });
+    expect((await ImportRepository.getTask(task.id))?.todos).toMatchObject([
+      { id: todos[1]!.id, text: '提取第 1–10 章正文', status: 'working' },
+    ]);
+    expect((await other.invoke('list_todos', {})).result.todos).toEqual([]);
+    expect((await other.invoke('mark_todo_done', { id: todos[1]!.id })).result.success).toBe(false);
+    expect(globalCreate).not.toHaveBeenCalled();
   });
 
   it('目录工具与批量追加的完成回执和来源同事务保存，追加不读取文件正文', async () => {

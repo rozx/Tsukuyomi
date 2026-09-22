@@ -8,10 +8,12 @@ import { ImportRepository } from './import-repository';
 import { ImportToolExecutor, importTools } from './import-tool-executor';
 import { importAgentPrompt } from './import-agent-prompt';
 import { assertImportOwner, saveImportAgentCheckpoint } from './import-agent-journal';
+import { awaitingImportAnswer } from './import-question-service';
 
 type UpdateListener = (taskId: string) => void;
 const listeners = new Set<UpdateListener>();
 const TASK_LOCK_PREFIX = 'tsukuyomi:import-task:';
+const RELEASE_TIMEOUT_MS = 30_000;
 function notify(taskId: string): void {
   for (const listener of listeners) {
     try {
@@ -68,7 +70,7 @@ export class ImportAgentService {
     return locks.request('tsukuyomi:import-agent', { ifAvailable: true }, async (lock) => {
       if (!lock) throw new Error('IMPORT_BUSY: 已有导入任务正在运行，请先暂停该任务');
       const task = await requireTask(taskId);
-      if (task.pendingQuestion?.required)
+      if (awaitingImportAnswer(task))
         throw new Error('PENDING_QUESTION: 请先完成当前任务的必要选择');
       const prompt = message.trim()
         ? message
@@ -110,8 +112,55 @@ export class ImportAgentService {
     if (active?.taskId === taskId) {
       active.controller.abort();
       await active.promise;
+      return requireTask(taskId);
     }
-    return requireTask(taskId);
+    return this.waitForRelease(taskId);
+  }
+
+  /**
+   * 刷新或关闭页面后，任务可能停留在 running／pausing。只有取得任务锁（确认没有页面仍在执行）
+   * 才把它转为可继续状态并作废旧运行代次；锁被占用时仅返回当前状态，不抢占。
+   */
+  static async recover(taskId: string): Promise<ImportTask> {
+    const locks = typeof navigator === 'undefined' ? undefined : navigator.locks;
+    if (!locks || this.active?.taskId === taskId) return requireTask(taskId);
+    const reclaimed = await locks.request(
+      `${TASK_LOCK_PREFIX}${taskId}`,
+      { ifAvailable: true },
+      async (lock) => (lock ? this.reclaim(taskId) : undefined),
+    );
+    return reclaimed ?? requireTask(taskId);
+  }
+
+  private static async reclaim(taskId: string): Promise<ImportTask> {
+    const task = await ImportRepository.mutateTask(taskId, (current) => {
+      if (current.state !== 'running' && current.state !== 'pausing')
+        return Promise.resolve(current);
+      if (current.state === 'running')
+        current.lastError = {
+          code: 'INTERRUPTED',
+          message: '上次执行在页面关闭或刷新时中断，已保存的进度可以继续。',
+        };
+      current.state = awaitingImportAnswer(current) ? 'waiting_user' : 'paused';
+      delete current.run;
+      delete current.streaming;
+      current.runEpoch++;
+      return Promise.resolve(current);
+    });
+    notify(taskId);
+    return task;
+  }
+
+  /** 执行在其他页面：等它在下一步骤前停止并释放任务锁；超时则保持「暂停中」交给界面显示。 */
+  private static async waitForRelease(taskId: string): Promise<ImportTask> {
+    const deadline = Date.now() + RELEASE_TIMEOUT_MS;
+    for (;;) {
+      const task = await this.recover(taskId);
+      const stopping = task.state === 'running' || task.state === 'pausing';
+      if (!stopping || typeof navigator === 'undefined' || !navigator.locks) return task;
+      if (Date.now() >= deadline) return task;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
   }
 
   private static async perform(
@@ -203,7 +252,7 @@ export class ImportAgentService {
       const message = model.apiKey ? raw.replaceAll(model.apiKey, '[已隐藏凭据]') : raw;
       await ImportRepository.mutateTask(taskId, (current) => {
         assertImportOwner(current, run);
-        current.state = current.pendingQuestion?.required
+        current.state = awaitingImportAnswer(current)
           ? 'waiting_user'
           : controller.signal.aborted
             ? 'paused'

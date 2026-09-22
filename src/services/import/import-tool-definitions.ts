@@ -1,4 +1,7 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
+import { askUserTools } from 'src/services/ai/tools/ask-user-tools';
+import { todoListTools } from 'src/services/ai/tools/todo-list-tools';
+import { IMPORT_TODO_TOOLS } from './import-todos';
 
 const string = { type: 'string' };
 const strings = { type: 'array', items: string };
@@ -251,4 +254,20 @@ export const importTools: AITool[] = [
     { draft_revision: number },
     ['draft_revision'],
   ),
+  // 问答与待办复用普通助手的参数约定；导入执行中提问会保存问题并暂停，由用户在工作台回答后恢复
+  ...askUserTools.map(({ definition }) => ({
+    ...definition,
+    function: {
+      ...definition.function,
+      description:
+        definition.function.name === 'ask_user'
+          ? '向用户提出一个必要问题。导入执行会保存问题并暂停，用户在导入工作台回答后恢复，并返回回答。只用于无法从来源判断的关键歧义。'
+          : '一次向用户提出多个必要问题。导入执行会保存问题并暂停，用户须回答全部问题后才会恢复。',
+    },
+  })),
+  ...todoListTools
+    .map(({ definition }) => definition)
+    .filter((definition) =>
+      (IMPORT_TODO_TOOLS as readonly string[]).includes(definition.function.name),
+    ),
 ];
