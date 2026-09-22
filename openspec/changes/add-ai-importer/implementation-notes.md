@@ -126,3 +126,15 @@ Electron 的补充隔离实验明确设置两个进程相同的 `userData` 和�
 按用户要求在此暂停并提交。进度为 42/66，仅新增勾选已验证的 7.5、8.1；Agent 生命周期的基本链路已有代码和测试，但问答／待办工具、跨页面暂停与重载的完整贯通、存储失败的界面反馈及工作台仍待完成。恢复时优先继续 8.2–8.6 和第 10 节；同时复核 EPUB 多 package 中非首 package 条目的正文用途标记，避免可识别正文被当作 metadata-only。
 
 提交前全量回归：179 个测试文件通过、2133 项通过、5 项既有跳过。lint、类型、Fallow 和 SPA 构建通过；日志函数拆分后再次运行 Agent／工具定向回归。日志前缀为 `/private/tmp/importer-pause-*`。本轮未向远端推送。
+
+## 第八轮：Electron 单实例（2026-09-22）
+
+用户选择「同一工作区只允许一个实例」，决策 7 已由「条件成立才启用的进程内例外」改为主进程单实例锁。
+
+- `src-electron/single-instance.ts` 的 `claimSingleInstance` 在 `pie.initialize` 之前调用 `app.requestSingleInstanceLock()`。未取得锁的进程请求退出，并跳过 puppeteer 初始化和 ready 后的启动流程；主实例在 `second-instance` 时还原、显示并聚焦工作台，窗口已关闭或销毁时重新创建。锁按 `userData` 目录区分，不同 `--user-data-dir` 的实例互不影响。开发模式以脚本路径启动 Electron，默认 `userData` 为 `Electron` 目录，与正式版的产品名目录不同，推断不会与已安装正式版互相拦截，未另行实测。
+- Electron 由此只剩一个进程，导入运行锁、书籍执行占用及应用／撤销独占直接使用同源 Web Locks，不再建无锁的进程内互斥；受保护执行前的 IndexedDB 预检保留为兜底。
+- TDD：`electron-single-instance` 的 5 项用例（未取得锁即退出、取得锁后监听、最小化时还原、未最小化只聚焦、窗口关闭／销毁后重建）先因模块缺失失败，再实现转绿。
+
+产物实测：使用 `ELECTRON_BUILDER_CACHE=/private/tmp/ai-importer-electron-cache CSC_IDENTITY_AUTO_DISCOVERY=false bun run build:electron` 生成本地未签名产物，脚本 `/private/tmp/importer-single-instance-probe.mjs` 通过主进程 `--inspect` 读取 `BrowserWindow` 状态，隔离目录为 `/private/tmp/importer-single-instance-{a,b}`，未使用用户书库。结果 `/private/tmp/importer-single-instance-results.json`：同目录第二实例以 0 退出，最小化的主工作台被还原且窗口数仍为 1；关闭工作台后主进程存活，再次启动由主进程重建工作台；不同目录的实例正常运行。测试实例均已关闭。
+
+结合第三轮的 Worker／受限回退、第六轮的同进程窗口互斥、窗口重载后重新取锁和存储预检，任务 1.3 标记完成，进度 43/66。8.4 按修订后的验收继续实现。全量回归 180 个测试文件、2138 项通过、5 项既有跳过；lint、类型检查和 Fallow 通过。本轮未提交。

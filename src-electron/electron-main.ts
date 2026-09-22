@@ -8,15 +8,10 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import pie from 'puppeteer-in-electron';
 import { getErrorMessage, toError } from '../src/utils/error-message';
 import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
+import { claimSingleInstance } from './single-instance';
 
 // Configure Puppeteer Stealth
 puppeteer.use(StealthPlugin());
-
-// Initialize puppeteer-in-electron
-console.log('[Electron] Initializing puppeteer-in-electron...');
-await pie.initialize(app);
-console.log('[Electron] puppeteer-in-electron initialized');
-app.commandLine.appendSwitch('remote-debugging-port', '8315');
 
 // ESM 模块中获取 __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -26,6 +21,20 @@ const __dirname = dirname(__filename);
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let browserPromise: Promise<Browser> | null = null;
+
+// 同一工作区只允许一个实例，第二次启动改为唤醒已有工作台
+const isPrimaryInstance = claimSingleInstance(app, {
+  getWindow: () => mainWindow,
+  createWindow: () => createWindow(),
+});
+
+if (isPrimaryInstance) {
+  // Initialize puppeteer-in-electron
+  console.log('[Electron] Initializing puppeteer-in-electron...');
+  await pie.initialize(app);
+  console.log('[Electron] puppeteer-in-electron initialized');
+  app.commandLine.appendSwitch('remote-debugging-port', '8315');
+}
 
 // 检测是否为开发环境
 // 优先检查 app.isPackaged（Electron 打包后的标志）
@@ -599,7 +608,11 @@ type ElectronFetchResponse = {
   data: string;
 };
 
-async function applyRequestCookies(page: Page, headers: Record<string, string> | undefined, url: string) {
+async function applyRequestCookies(
+  page: Page,
+  headers: Record<string, string> | undefined,
+  url: string,
+) {
   const cookieHeader = getCookieHeaderValue(headers);
   if (!cookieHeader) return;
   const cookies = parseCookieHeader(cookieHeader, url);
@@ -683,7 +696,7 @@ ${filePath}`,
   }
 });
 
-void app.whenReady().then(() => {
+function startPrimaryInstance(): void {
   // 设置 About 面板信息
   app.setAboutPanelOptions({
     applicationName: 'Tsukuyomi - Moonlit Translator',
@@ -703,7 +716,9 @@ void app.whenReady().then(() => {
       createWindow();
     }
   });
-});
+}
+
+if (isPrimaryInstance) void app.whenReady().then(startPrimaryInstance);
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
