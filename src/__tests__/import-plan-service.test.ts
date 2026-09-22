@@ -1,5 +1,5 @@
 import { describe, it } from 'bun:test';
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 import './setup';
 import { ImportPlanService } from '../services/import/import-plan-service';
 import { ImportRepository } from '../services/import/import-repository';
@@ -8,7 +8,8 @@ import { ImportContentService } from '../services/import/import-content-service'
 import { BookService } from '../services/book-service';
 import { getDB } from '../utils/indexed-db';
 import type { ImportContentRef } from '../models/import';
-import { book, draft } from './import-fixtures';
+import { book, draft, paragraph } from './import-fixtures';
+import { ImportParsingClient } from '../services/import/import-parsing-client';
 
 describe('基于真实数据的导入方案', () => {
   it('只检查后续目录页时不能把局部章节数宣称为整本总数', async () => {
@@ -417,5 +418,68 @@ describe('基于真实数据的导入方案', () => {
       { actor: 'user' },
     );
     await expect(ImportPlanService.preview(input.taskId, 2)).rejects.toThrow('DRAFT_CHANGED');
+  });
+
+  it('匹配计算期间取消预览：迟到结果不保存为方案，也不替换当前方案', async () => {
+    await BookService.saveBook(book());
+    const input = await draft('原文甲\n锚点\n原文乙');
+    const edited = await ImportDraftService.edit(
+      input.taskId,
+      {
+        baseDraftRevision: 1,
+        operations: [
+          { op: 'propose_target', bookId: 'book' },
+          { op: 'propose_match', chapterId: 'draft-c', targetChapterIds: ['old-c'] },
+        ],
+      },
+      { actor: 'user' },
+    );
+    const first = await ImportPlanService.preview(input.taskId, edited.revision);
+    const db = await getDB();
+    const before = await db.count('import-operations');
+    const controller = new AbortController();
+    const run: ImportParsingClient['run'] = Reflect.get(ImportParsingClient.prototype, 'run');
+    const spy = vi.spyOn(ImportParsingClient.prototype, 'run').mockImplementation(async function (
+      this: ImportParsingClient,
+      ...args
+    ) {
+      const result = await run.apply(this, args);
+      controller.abort();
+      return result;
+    });
+    await expect(
+      ImportPlanService.preview(input.taskId, edited.revision, { signal: controller.signal }),
+    ).rejects.toThrow();
+    spy.mockRestore();
+    expect(await db.count('import-operations')).toBe(before);
+    expect((await ImportRepository.getTask(input.taskId))?.currentPlanId).toBe(first.id);
+  });
+
+  it('主线程回退路径超过匹配规模上限时明确失败，不生成部分方案', async () => {
+    const original = book();
+    const size = 2600;
+    original.volumes![0]!.chapters![0]!.content = Array.from({ length: size }, (_, index) =>
+      paragraph(`big-${index}`, `旧段落${index}`),
+    );
+    await BookService.saveBook(original);
+    const input = await draft(
+      Array.from({ length: size }, (_, index) => `新段落${index}`).join('\n'),
+    );
+    const edited = await ImportDraftService.edit(
+      input.taskId,
+      {
+        baseDraftRevision: 1,
+        operations: [
+          { op: 'propose_target', bookId: 'book' },
+          { op: 'propose_match', chapterId: 'draft-c', targetChapterIds: ['old-c'] },
+        ],
+      },
+      { actor: 'user' },
+    );
+    expect(typeof Worker).toBe('undefined');
+    await expect(ImportPlanService.preview(input.taskId, edited.revision)).rejects.toThrow(
+      'MATCHING_LIMIT',
+    );
+    expect(await (await getDB()).count('import-operations')).toBe(0);
   });
 });

@@ -91,6 +91,7 @@ onUnmounted(() => {
 const topNav: NavEntry[] = [
   { label: '首页', icon: 'pi pi-home', path: '/', tab: 'home' },
   { label: '书籍列表', icon: 'pi pi-book', path: '/books', tab: 'library' },
+  { label: 'AI 导入', icon: 'pi pi-file-import', path: '/import', tab: 'import' },
   { label: 'AI列表', icon: 'pi pi-sparkles', path: '/ai', tab: 'ai' },
 ];
 

@@ -16,13 +16,15 @@ import { useUiStore } from 'src/stores/ui';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { usePanelResize } from 'src/composables/chat/usePanelResize';
 import AppChatPanelDesktop from './AppChatPanelDesktop.vue';
+import ImportChatPanel from 'src/components/import/ImportChatPanel.vue';
+import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 import AppProgressPanelDesktop from './AppProgressPanelDesktop.vue';
 import RightPanelRail from './RightPanelRail.vue';
 
-const props = withDefaults(
-  defineProps<{ showResizeHandle?: boolean; collapsed?: boolean }>(),
-  { showResizeHandle: true, collapsed: false },
-);
+const props = withDefaults(defineProps<{ showResizeHandle?: boolean; collapsed?: boolean }>(), {
+  showResizeHandle: true,
+  collapsed: false,
+});
 
 const ui = useUiStore();
 const aiProcessing = useAIProcessingStore();
@@ -33,6 +35,9 @@ const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslation
 const showBatchEmbeddings = computed(() => Boolean(route.params.id));
 
 const { panelContainerRef, resizeHandleRef, isResizing, handleResizeStart } = usePanelResize();
+
+// 导入路由的聊天绑定当前导入任务：挂导入外壳替代普通月詠，同一时间只有一个聊天控制器
+const isImportRoute = useImportRouteScope();
 
 // ParagraphCard 的 "复制到助手 / 解释选中" 通过 ui.assistantInputMessage 下发。
 // AppChatPanelDesktop 仅在 activeRightTab === 'chat' 且面板展开时挂载，它内部的
@@ -80,7 +85,8 @@ defineExpose({ props });
       @mousedown="handleResizeStart"
     />
 
-    <AppChatPanelDesktop v-if="activeRightTab === 'chat'" />
+    <ImportChatPanel v-if="activeRightTab === 'chat' && isImportRoute" />
+    <AppChatPanelDesktop v-else-if="activeRightTab === 'chat'" />
     <AppProgressPanelDesktop v-else />
   </aside>
 </template>

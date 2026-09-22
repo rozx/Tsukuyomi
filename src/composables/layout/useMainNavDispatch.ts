@@ -1,7 +1,7 @@
 import { useRouter, useRoute } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 
-export type MainNavTarget = 'home' | 'library' | 'chat' | 'ai' | 'help' | 'settings';
+export type MainNavTarget = 'home' | 'library' | 'import' | 'chat' | 'ai' | 'help' | 'settings';
 
 /**
  * MobileTabBar / TabletNavRail 共享的导航分派逻辑。
@@ -48,6 +48,7 @@ export function useMainNavDispatch() {
   > = {
     home: { path: '/', match: (p) => p === '/' },
     library: { path: '/books', match: (p) => p === '/books' },
+    import: { path: '/import', match: (p) => p === '/import' || p.startsWith('/import/') },
     ai: { path: '/ai', match: (p) => p === '/ai' },
     help: { path: '/help', match: (p) => p.startsWith('/help') },
     settings: { path: '/settings', match: (p) => p.startsWith('/settings') },

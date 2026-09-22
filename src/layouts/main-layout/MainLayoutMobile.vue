@@ -4,12 +4,16 @@ import MobileSysBar from 'src/components/layout/MobileSysBar.vue';
 import MobileTabBar from 'src/components/layout/MobileTabBar.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import MobileChatSheet from 'src/components/layout/MobileChatSheet.vue';
+import ImportChatSheet from 'src/components/import/ImportChatSheet.vue';
+import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 import MobileProgressSheet from 'src/components/layout/MobileProgressSheet.vue';
 import { RouterView } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 
 const ui = useUiStore();
+// 导入路由挂导入聊天抽屉，其他路由挂普通月詠，二者不同时存在
+const isImportRoute = useImportRouteScope();
 
 // 右侧面板在移动端拆成两张独立的 bottom sheet：
 //   MobileChatSheet    — AI 助手（activeRightTab === 'chat'）
@@ -54,11 +58,7 @@ useOverlayCloseStack({
 
     <div class="flex flex-1 overflow-hidden min-h-0 relative max-w-full">
       <!-- 侧边菜单遮罩 -->
-      <div
-        v-if="ui.sideMenuOpen"
-        class="layout-overlay-mask z-40"
-        @click="closeSideMenu"
-      />
+      <div v-if="ui.sideMenuOpen" class="layout-overlay-mask z-40" @click="closeSideMenu" />
 
       <div
         class="phone-sidebar-wrapper z-50"
@@ -78,7 +78,8 @@ useOverlayCloseStack({
     <!-- 两张底部抽屉：chat 和 progress 互斥挂载，但都常驻 DOM，
          这样各自的 useRightPanel / TranslationProgress 内部状态不会被 sheet
          关闭时清掉 —— 只有 MobileBottomSheet 的 transition 控制可见性。 -->
-    <MobileChatSheet v-model:visible="isChatOpen" />
+    <ImportChatSheet v-if="isImportRoute" v-model:visible="isChatOpen" />
+    <MobileChatSheet v-else v-model:visible="isChatOpen" />
     <MobileProgressSheet v-model:visible="isProgressOpen" />
   </div>
 </template>

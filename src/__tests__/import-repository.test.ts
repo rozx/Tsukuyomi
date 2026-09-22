@@ -5,6 +5,7 @@ import './setup';
 import { Blob } from 'node:buffer';
 import { getDB, __resetDbPromiseForTesting } from '../utils/indexed-db';
 import { ImportRepository } from '../services/import/import-repository';
+import { ImportStorageStatus } from '../services/import/import-storage-status';
 import type { ImportResource, ImportSource } from '../models/import';
 
 afterEach(() => mock.restore());
@@ -201,5 +202,71 @@ describe('导入任务仓库', () => {
     ).rejects.toThrow();
     expect((await ImportRepository.getTask(task.id))?.state).toBe('paused');
     expect((await ImportRepository.listEvents(task.id, {})).items).toHaveLength(0);
+  });
+
+  it('本地写入失败时标记任务未可靠保存，下一次成功写入后清除', async () => {
+    const task = await ImportRepository.createTask();
+    const changes: (string | undefined)[] = [];
+    const dispose = ImportStorageStatus.subscribe((taskId) => changes.push(taskId));
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- 故障注入通过 apply 保留原生 this。
+    const put = IDBObjectStore.prototype.put;
+    const failure = spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+      this: IDBObjectStore,
+      ...args: Parameters<typeof put>
+    ) {
+      if (this.name === 'import-tasks') throw new DOMException('配额不足', 'QuotaExceededError');
+      return put.apply(this, args);
+    });
+    await expect(
+      ImportRepository.mutateTask(task.id, (current) => {
+        current.name = '改名';
+        return Promise.resolve();
+      }),
+    ).rejects.toThrow('STORAGE_FAILED');
+    await expect(
+      ImportRepository.registerSources(task.id, [source(task.id, 'late')], []),
+    ).rejects.toThrow('STORAGE_FAILED');
+    expect(ImportStorageStatus.get(task.id)).toMatchObject({ code: 'STORAGE_FAILED', quota: true });
+    expect(changes).toContain(task.id);
+    failure.mockRestore();
+
+    expect((await ImportRepository.getTask(task.id))?.name).not.toBe('改名');
+    await ImportRepository.mutateTask(task.id, (current) => {
+      current.name = '改名';
+      return Promise.resolve();
+    });
+    expect(ImportStorageStatus.get(task.id)).toBeUndefined();
+    dispose();
+  });
+
+  it('业务错误不被标记为存储失败', async () => {
+    const task = await ImportRepository.createTask();
+    await expect(
+      ImportRepository.mutateTask(task.id, () =>
+        Promise.reject(new Error('DRAFT_CHANGED: 旧版本')),
+      ),
+    ).rejects.toThrow('DRAFT_CHANGED');
+    expect(ImportStorageStatus.get(task.id)).toBeUndefined();
+  });
+
+  it('删除任务同时清理撤销记录，但已导入操作仍待补维护时拒绝删除', async () => {
+    const task = await ImportRepository.createTask();
+    const db = await getDB();
+    const operation = {
+      id: 'op',
+      taskId: task.id,
+      state: 'applied' as const,
+      pendingMaintenance: ['library'],
+      plan: { targetBookId: 'imported' },
+    };
+    await db.put('import-operations', operation as never);
+    await db.put('book-revisions', { bookId: 'imported', revision: 3 });
+    await expect(ImportRepository.deleteTask(task.id)).rejects.toThrow('MAINTENANCE_PENDING');
+    expect(await ImportRepository.getTask(task.id)).toBeDefined();
+
+    await db.put('import-operations', { ...operation, pendingMaintenance: [] } as never);
+    await ImportRepository.deleteTask(task.id);
+    expect(await db.get('import-operations', 'op')).toBeUndefined();
+    expect(await db.get('book-revisions', 'imported')).toEqual({ bookId: 'imported', revision: 3 });
   });
 });

@@ -6,6 +6,7 @@ import { ImportDraftService } from '../services/import/import-draft-service';
 import { ImportRepository } from '../services/import/import-repository';
 import { ImportLibraryReader } from '../services/import/import-library-reader';
 import { BookService } from '../services/book-service';
+import { ChapterContentService } from '../services/chapter-content-service';
 import { BookExecutionGuard } from '../services/book-execution-guard';
 import { getDB } from '../utils/indexed-db';
 import { peekCacheEntry } from '../utils/chapter-content-loader';
@@ -172,6 +173,114 @@ describe('用户确认后的原子应用与撤销', () => {
     await expect(
       service.revert(await service.confirmRevert(input.taskId, firstPlan.id)),
     ).rejects.toThrow('BOOK_CHANGED');
+  });
+
+  it('97／100 章部分导入后补齐剩余 3 章：不重复章节、不清空期间新增的译文，重载可辨别已提交', async () => {
+    const lines = Array.from({ length: 100 }, (_, index) => `第${index + 1}章正文`);
+    const input = await draft(lines.join('\n'));
+    const resource = await ImportRepository.getResource(
+      input.taskId,
+      input.ref.kind === 'extraction' ? input.ref.resourceId : '',
+    );
+    if (resource?.kind !== 'extraction') throw new Error('missing');
+    const chapter = (index: number, ready: boolean) => ({
+      ...input.chapter,
+      id: `c${index}`,
+      title: `第${index + 1}章`,
+      content: ready
+        ? [
+            {
+              kind: 'extraction' as const,
+              resourceId: resource.id,
+              blockId: resource.blocks[index]!.id,
+            },
+          ]
+        : [],
+      status: ready ? ('ready' as const) : ('missing' as const),
+    });
+    const missing = [97, 98, 99];
+    await ImportDraftService.edit(input.taskId, {
+      baseDraftRevision: 1,
+      operations: [
+        { op: 'remove_chapter', chapterId: input.chapter.id },
+        ...lines.map((_, index) => ({
+          op: 'upsert_chapter' as const,
+          chapter: chapter(index, !missing.includes(index)),
+        })),
+        {
+          op: 'set_completeness',
+          completeness: {
+            confirmed: true,
+            knownTotal: 100,
+            missing: missing.map((index) => `第${index + 1}章`),
+          },
+        },
+      ],
+    });
+    const firstPlan = await ImportPlanService.preview(input.taskId, 2);
+    expect(firstPlan.chapters).toHaveLength(97);
+    expect(firstPlan.completeness.missing).toEqual(expect.arrayContaining(['第98章']));
+    const service = new ImportApplicationService();
+    const confirmation = await service.confirmApply(input.taskId, firstPlan.id);
+
+    const reloaded = new ImportApplicationService();
+    expect((await reloaded.recover(input.taskId, firstPlan.id)).state).toBe('planned');
+    await service.apply(confirmation);
+    expect((await reloaded.recover(input.taskId, firstPlan.id)).state).toBe('applied');
+    await expect(reloaded.apply(confirmation)).rejects.toThrow('CONFIRMATION_REQUIRED');
+
+    const bookId = firstPlan.targetBookId;
+    const translatedId = firstPlan.mappings[0]!.chapterId;
+    const translated = (await ChapterContentService.loadChapterContent(translatedId))!;
+    translated[0]!.translations = [{ id: 't-after', translation: '导入后新译', aiModelId: 'm' }];
+    translated[0]!.selectedTranslationId = 't-after';
+    await ChapterContentService.saveChapterContent(translatedId, translated, { bookId });
+
+    const applied = (await ImportRepository.getTask(input.taskId))!;
+    const filled = await ImportDraftService.edit(input.taskId, {
+      baseDraftRevision: applied.draft.revision,
+      operations: [
+        ...missing.map((index) => ({
+          op: 'upsert_chapter' as const,
+          chapter: chapter(index, true),
+        })),
+        { op: 'set_completeness', completeness: { confirmed: true, knownTotal: 100, missing: [] } },
+      ],
+    });
+    const nextPlan = await ImportPlanService.preview(input.taskId, filled.revision);
+    expect(nextPlan.conflicts).toEqual([]);
+    expect(nextPlan.summary?.clearedVersions).toBe(0);
+    await service.apply(await service.confirmApply(input.taskId, nextPlan.id));
+
+    const db = await getDB();
+    expect(await db.count('books')).toBe(1);
+    expect(await db.count('chapter-contents')).toBe(100);
+    const saved = await ImportLibraryReader.readBook(bookId);
+    if (saved.kind !== 'loaded') throw new Error('missing');
+    const chapterIds = saved.book.volumes!.flatMap((volume) => volume.chapters!.map((c) => c.id));
+    expect(chapterIds).toHaveLength(100);
+    expect(new Set(chapterIds).size).toBe(100);
+    const kept = saved.chapters[translatedId];
+    expect(kept?.kind === 'loaded' && kept.content[0]?.selectedTranslationId).toBe('t-after');
+  });
+
+  it('撤销可用性说明原因：应用后可撤销，书籍后续修改或已撤销时不可用', async () => {
+    const plan = await updatePlan();
+    const service = new ImportApplicationService();
+    expect(await ImportRepository.listOperations(plan.taskId)).toHaveLength(1);
+    expect(await service.revertStatus(plan.taskId, plan.id)).toMatchObject({
+      available: false,
+      reason: expect.stringContaining('尚未应用'),
+    });
+    await service.apply(await service.confirmApply(plan.taskId, plan.id));
+    expect(await service.revertStatus(plan.taskId, plan.id)).toEqual({ available: true });
+
+    const edited = (await BookService.getBookById('book'))!;
+    await BookService.saveBook({ ...edited, title: '导入后改名' });
+    expect(await service.revertStatus(plan.taskId, plan.id)).toMatchObject({
+      available: false,
+      reason: expect.stringContaining('后续修改'),
+    });
   });
 
   it('模型凭据不进入操作快照，应用与撤销均保留书籍原配置', async () => {

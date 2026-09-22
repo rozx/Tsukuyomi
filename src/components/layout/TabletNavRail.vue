@@ -6,10 +6,11 @@ import { APP_NAME } from 'src/constants/app';
 
 type Item = { id: MainNavTab; icon: string; label: string };
 
-// 主导航三项（首页 · 书库 · AI 模型）在顶部，帮助 / 设置固定在底部。
+// 主导航（首页 · 书库 · AI 导入 · AI 模型）在顶部，帮助 / 设置固定在底部。
 const primaryItems: Item[] = [
   { id: 'home', icon: 'pi-home', label: '首页' },
   { id: 'library', icon: 'pi-book', label: '书库' },
+  { id: 'import', icon: 'pi-file-import', label: 'AI 导入' },
   { id: 'ai', icon: 'pi-microchip-ai', label: 'AI 模型' },
 ];
 

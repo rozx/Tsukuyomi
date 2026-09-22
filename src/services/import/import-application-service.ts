@@ -67,6 +67,27 @@ export class ImportApplicationService {
     });
   }
 
+  /** 撤销是否可用及原因；只读检查，实际撤销仍在事务内复核。 */
+  async revertStatus(
+    taskId: string,
+    operationId: string,
+  ): Promise<{ available: true } | { available: false; reason: string }> {
+    const operation = await readImportOperation(taskId, operationId);
+    if (operation.state === 'planned')
+      return { available: false, reason: '该方案尚未应用，没有可撤销的内容。' };
+    if (operation.state === 'reverted') return { available: false, reason: '该次导入已撤销。' };
+    const db = await getDB();
+    const revision = (await db.get('book-revisions', operation.plan.targetBookId))?.revision ?? 0;
+    const exists = (await db.getKey('books', operation.plan.targetBookId)) !== undefined;
+    if (!exists) return { available: false, reason: '目标小说已被删除。' };
+    if (revision !== operation.postApplyBookRevision)
+      return {
+        available: false,
+        reason: '导入后这本小说已有后续修改（翻译、编辑、同步或其他导入），不能整次撤销。',
+      };
+    return { available: true };
+  }
+
   /** 重载只补派生维护，不重放书库应用或撤销。 */
   async recover(taskId: string, operationId: string): Promise<ImportOperation> {
     const operation = await readImportOperation(taskId, operationId);

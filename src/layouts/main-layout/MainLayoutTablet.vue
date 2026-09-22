@@ -14,12 +14,16 @@ import { computed } from 'vue';
 import TabletSysBar from 'src/components/layout/TabletSysBar.vue';
 import TabletNavRail from 'src/components/layout/TabletNavRail.vue';
 import TabletChatPanel from 'src/components/layout/TabletChatPanel.vue';
+import ImportChatPanel from 'src/components/import/ImportChatPanel.vue';
+import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 import TabletProgressPanel from 'src/components/layout/TabletProgressPanel.vue';
 import { RouterView } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 
 const ui = useUiStore();
+// 导入路由的聊天槽位挂导入外壳，其他路由挂普通月詠
+const isImportRoute = useImportRouteScope();
 
 const rightPanelOverlayStyle = computed(() => ({
   width: `min(92vw, ${ui.rightPanelWidth}px)`,
@@ -46,11 +50,7 @@ useOverlayCloseStack({
       <TabletNavRail />
 
       <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60 relative">
-        <div
-          v-if="ui.rightPanelOpen"
-          class="layout-overlay-mask z-40"
-          @click="closeRightPanel"
-        />
+        <div v-if="ui.rightPanelOpen" class="layout-overlay-mask z-40" @click="closeRightPanel" />
 
         <RouterView />
 
@@ -61,7 +61,8 @@ useOverlayCloseStack({
           :style="rightPanelOverlayStyle"
           :inert="!isChatOpen"
         >
-          <TabletChatPanel />
+          <ImportChatPanel v-if="isImportRoute" class="tablet-import-chat" />
+          <TabletChatPanel v-else />
         </div>
 
         <!-- 翻译进度 面板——独立挂载，仅当 activeRightTab === 'progress' 时 slide-in -->
@@ -79,6 +80,14 @@ useOverlayCloseStack({
 </template>
 
 <style scoped>
+/* 与 TabletChatPanel 相同的侧滑面板底色与左边框 */
+.tablet-import-chat {
+  background: rgba(14, 16, 20, 0.96);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
 .layout-overlay-mask {
   position: absolute;
   inset: 0;

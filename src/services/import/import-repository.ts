@@ -3,12 +3,14 @@ import type { IDBPDatabase, IDBPTransaction } from 'idb';
 import type {
   ImportCheckpoint,
   ImportEvent,
+  ImportOperation,
   ImportResource,
   ImportRunContext,
   ImportSource,
   ImportTask,
 } from 'src/models/import';
 import { getDB } from 'src/utils/indexed-db';
+import { ImportStorageStatus } from './import-storage-status';
 
 const WRITE_STORES = [
   'import-tasks',
@@ -218,6 +220,14 @@ export class ImportRepository {
     update: (task: ImportTask, tx: ImportTransaction) => Promise<T>,
     options: ImportTaskMutationOptions<T> = {},
   ): Promise<T> {
+    return ImportStorageStatus.track(taskId, () => this.mutateTaskOnce(taskId, update, options));
+  }
+
+  private static async mutateTaskOnce<T>(
+    taskId: string,
+    update: (task: ImportTask, tx: ImportTransaction) => Promise<T>,
+    options: ImportTaskMutationOptions<T>,
+  ): Promise<T> {
     return withImportWrite(async (tx) => {
       const task = await tx.objectStore('import-tasks').get(taskId);
       if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
@@ -350,14 +360,16 @@ export class ImportRepository {
     sources: ImportSource[],
     resources: ImportResource[],
   ): Promise<void> {
-    await withImportWrite(async (tx) => {
-      const task = await tx.objectStore('import-tasks').get(taskId);
-      if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
-      await addSources(tx, taskId, sources);
-      await writeResources(tx, taskId, resources);
-      task.updatedAt = Date.now();
-      await tx.objectStore('import-tasks').put(task);
-    });
+    await ImportStorageStatus.track(taskId, () =>
+      withImportWrite(async (tx) => {
+        const task = await tx.objectStore('import-tasks').get(taskId);
+        if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+        await addSources(tx, taskId, sources);
+        await writeResources(tx, taskId, resources);
+        task.updatedAt = Date.now();
+        await tx.objectStore('import-tasks').put(task);
+      }),
+    );
   }
 
   /** 宿主保存一个完整步骤；不得从工具参数直接透传此对象。 */
@@ -406,6 +418,14 @@ export class ImportRepository {
     return { items: items.slice(0, limit), hasMore: items.length > limit };
   }
 
+  /** 任务的导入方案与应用记录，按创建时间排序；不含其他任务的记录。 */
+  static async listOperations(taskId: string): Promise<ImportOperation[]> {
+    const operations = await (
+      await getDB()
+    ).getAllFromIndex('import-operations', 'by-task', taskId);
+    return operations.sort((a, b) => a.plan.createdAt - b.plan.createdAt);
+  }
+
   static async deleteTask(taskId: string): Promise<void> {
     await withImportWrite(async (tx) => {
       const task = await tx.objectStore('import-tasks').get(taskId);
@@ -413,6 +433,10 @@ export class ImportRepository {
       if (['running', 'pausing', 'applying', 'reverting'].includes(task.state)) {
         throw new Error('TASK_BUSY: 请先等待任务停止');
       }
+      // 已导入小说的缓存／索引补维护依赖操作记录，删除前必须先完成
+      const operations = await tx.objectStore('import-operations').index('by-task').getAll(taskId);
+      if (operations.some((operation) => operation.pendingMaintenance.length))
+        throw new Error('MAINTENANCE_PENDING: 已导入小说的缓存与索引维护尚未完成，请先重试维护');
       for (const name of [
         'import-sources',
         'import-resources',
