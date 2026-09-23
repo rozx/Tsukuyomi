@@ -36,7 +36,7 @@
 
 新增 `/import/:taskId?` 路由，指向 `ImportPage.vue` dispatcher，由 `useDeviceVariant` 选择三个设备变体。页面业务状态由导入 composable 和 store 提供，任务列表、来源管理与草稿编辑使用共享组件；变体切换不重新启动任务。
 
-桌面中间工作区承载来源和卷章，导入功能自己装配聊天外壳：复用 `AssistantAvatar`、`ChatMessageList`、输入组件、操作详情和 `useChatPanelBindings`，数据来自 `useImportChatPanel`。**不修改 `AppChatPanelDesktop` / `TabletChatPanel` / `MobileChatSheet`**，也不在它们内部切换会话数据源。现有布局始终挂载全局聊天，所以必须在其外层面板宿主增加路由范围选择：导入路由的聊天槽位挂导入外壳，其他路由挂原组件，每次只挂载一个聊天控制器；不能在 `RouterView` 内再放一套聊天而留下原全局聊天。桌面由右面板宿主承载，平板和手机在现有面板挂载位置选择对应导入变体或抽屉。翻译进度保留原入口与切换行为。路由范围选择与设备选择分开，设备变体仍只经 dispatcher；项目禁止的是手写设备分支，并非所有路由条件。
+桌面中间工作区承载来源和卷章，导入功能自己装配聊天外壳：复用 `AssistantAvatar`、`ChatMessageList`、输入组件、操作详情和 `useChatPanelBindings`，数据来自 `useImportChatPanel`。**不修改 `AppChatPanelDesktop` / `TabletChatPanel` / `MobileChatSheet`**，也不在它们内部切换会话数据源。现有布局始终挂载全局聊天，所以必须在其外层面板宿主增加路由范围选择：导入路由的聊天槽位挂导入外壳，其他路由挂原组件，每次只挂载一个聊天控制器；不能在 `RouterView` 内再放一套聊天而留下原全局聊天。导入以对话为核心，导入路由上的对话常驻、不可收起：桌面右面板宿主在导入路由强制展开，平板在布局中常驻停靠（侧滑浮层只保留给其他路由），手机不挂抽屉，而是作为工作台的「对话」分区，底部栏的「月詠」在导入路由切到该分区。翻译进度保留原入口与切换行为。路由范围选择与设备选择分开，设备变体仍只经 dispatcher；项目禁止的是手写设备分支，并非所有路由条件。
 
 导航同时接入 `useMainNavActive` 与 `useMainNavDispatch` 的目标类型、路径匹配和派发映射，不能只加菜单按钮。第一版手机通过已有侧边菜单提供 AI 导入入口，保持底部五项功能；在导入路由上即使聊天已展开，也应显示导入的导航上下文，不能误亮首页或将导入会话识别为普通全局聊天。
 

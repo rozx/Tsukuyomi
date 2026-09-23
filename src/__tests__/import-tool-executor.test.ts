@@ -91,6 +91,7 @@ describe('导入专属工具执行器', () => {
       ],
     });
     expect(edited.result.draftRevision).toBe(1);
+    expect((await invoke('rename_import_task', { name: '小说' })).result.success).toBe(true);
     const preview = await invoke('preview_import', { draft_revision: 1 });
     expect(preview.result.success).toBe(true);
     expect(preview.result).toHaveProperty('planId');

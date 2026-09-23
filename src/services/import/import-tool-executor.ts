@@ -22,6 +22,7 @@ import { validateImportToolArguments } from './import-tool-arguments';
 import { ImportQuestionService, awaitingImportAnswer } from './import-question-service';
 import { IMPORT_TODO_TOOLS, applyImportTodoTool } from './import-todos';
 import { importTools } from './import-tool-definitions';
+import { assertImportTaskNamed, renameImportTask } from './import-task-naming';
 import { readImportTool, pageArguments, textArgument } from './import-tool-reads';
 export { importTools } from './import-tool-definitions';
 
@@ -228,7 +229,15 @@ export class ImportToolExecutor {
           chapterCount: draft.chapters.length,
         };
       }
+      case 'rename_import_task':
+        return ImportRepository.mutateTask(
+          taskId,
+          (task) => Promise.resolve(renameImportTask(task, textArgument(args, 'name'), 'agent')),
+          { run: this.run, finish },
+        );
       case 'preview_import': {
+        const task = await ImportRepository.getTask(taskId);
+        if (task) assertImportTaskNamed(task);
         const plan = await ImportPlanService.preview(taskId, args.draft_revision as number, {
           run: this.run,
           ...(options.signal ? { signal: options.signal } : {}),

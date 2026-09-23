@@ -4,7 +4,6 @@ import MobileSysBar from 'src/components/layout/MobileSysBar.vue';
 import MobileTabBar from 'src/components/layout/MobileTabBar.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import MobileChatSheet from 'src/components/layout/MobileChatSheet.vue';
-import ImportChatSheet from 'src/components/import/ImportChatSheet.vue';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 import MobileProgressSheet from 'src/components/layout/MobileProgressSheet.vue';
 import { RouterView } from 'vue-router';
@@ -12,7 +11,7 @@ import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 
 const ui = useUiStore();
-// 导入路由挂导入聊天抽屉，其他路由挂普通月詠，二者不同时存在
+// 导入路由的对话是工作台的「对话」分区（常驻页面内），不挂普通月詠抽屉
 const isImportRoute = useImportRouteScope();
 
 // 右侧面板在移动端拆成两张独立的 bottom sheet：
@@ -78,8 +77,7 @@ useOverlayCloseStack({
     <!-- 两张底部抽屉：chat 和 progress 互斥挂载，但都常驻 DOM，
          这样各自的 useRightPanel / TranslationProgress 内部状态不会被 sheet
          关闭时清掉 —— 只有 MobileBottomSheet 的 transition 控制可见性。 -->
-    <ImportChatSheet v-if="isImportRoute" v-model:visible="isChatOpen" />
-    <MobileChatSheet v-else v-model:visible="isChatOpen" />
+    <MobileChatSheet v-if="!isImportRoute" v-model:visible="isChatOpen" />
     <MobileProgressSheet v-model:visible="isProgressOpen" />
   </div>
 </template>

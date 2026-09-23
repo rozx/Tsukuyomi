@@ -177,4 +177,35 @@ describe('导入事件到月詠消息', () => {
     expect(after[0]!.id).not.toBe(before[0]!.id);
     expect(importEventsToMessages([reply], { sourceNames: new Map() })[0]!.id).toBe(before[0]!.id);
   });
+  it('上下文压缩显示为总结气泡；压缩进行中在末尾显示临时气泡', () => {
+    const messages = importEventsToMessages(
+      [
+        event({ kind: 'message', message: { role: 'user', content: '开始' } }),
+        event({ kind: 'summary', data: { reason: 'auto', messages: 12 } }),
+      ],
+      { sourceNames: new Map(), compacting: true },
+    );
+    expect(messages[1]).toMatchObject({ role: 'assistant', isSummarization: true });
+    expect(messages[1]!.content).toContain('已压缩');
+    expect(messages.at(-1)).toMatchObject({ role: 'assistant', isSummarization: true });
+    expect(messages.at(-1)!.content).toContain('正在');
+  });
+
+  it('命名任务的操作记录写明新名称', () => {
+    const [message] = importEventsToMessages(
+      [
+        event({
+          kind: 'message',
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [call('c1', 'rename_import_task', { name: '测试小说' })],
+          },
+        }),
+      ],
+      { sourceNames: new Map() },
+    );
+    expect(message!.actions![0]!.name).toContain('命名任务');
+    expect(message!.actions![0]!.name).toContain('测试小说');
+  });
 });

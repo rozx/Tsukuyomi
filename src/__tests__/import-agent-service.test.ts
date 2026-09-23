@@ -132,6 +132,8 @@ describe('导入 Agent 执行生命周期', () => {
           );
         }
         if (requestCount === 4)
+          return Promise.resolve(tool('rename_import_task', { name: '小说' }));
+        if (requestCount === 5)
           return Promise.resolve(tool('preview_import', { draft_revision: 1 }));
         return Promise.resolve({ text: '请检查导入方案。' });
       },
@@ -141,8 +143,8 @@ describe('导入 Agent 执行生命周期', () => {
     expect(result.currentPlanId).toBeDefined();
     expect(result.run).toBeUndefined();
     const events = (await ImportRepository.listEvents(task.id, { limit: 100 })).items;
-    expect(events.filter((event) => event.kind === 'tool-call')).toHaveLength(4);
-    expect(events.filter((event) => event.kind === 'tool-result')).toHaveLength(4);
+    expect(events.filter((event) => event.kind === 'tool-call')).toHaveLength(5);
+    expect(events.filter((event) => event.kind === 'tool-result')).toHaveLength(5);
     expect(events.some((event) => event.message?.content === '请检查导入方案。')).toBe(true);
     expect(JSON.stringify(result)).not.toContain(model.apiKey);
     expect(JSON.stringify(events)).not.toContain(model.apiKey);

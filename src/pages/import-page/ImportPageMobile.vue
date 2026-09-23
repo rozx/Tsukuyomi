@@ -1,23 +1,27 @@
 <script setup lang="ts">
 /**
- * 手机导入工作台：分段切换任务／来源／草稿／方案，章节正文检查以整屏替代列表；
- * 月詠对话通过底部栏的「月詠」打开导入聊天抽屉（绑定当前任务）。
+ * 手机导入工作台：分段切换任务／对话／来源／草稿／方案，章节正文检查以整屏替代列表。
+ * 月詠对话是常驻分区（打开任务默认停在对话）；底部栏的「月詠」在导入路由下切到该分区。
  */
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import ImportTaskList from 'src/components/import/ImportTaskList.vue';
 import ImportRunBar from 'src/components/import/ImportRunBar.vue';
 import ImportSourcePanel from 'src/components/import/ImportSourcePanel.vue';
 import ImportDraftPanel from 'src/components/import/ImportDraftPanel.vue';
 import ImportChapterPreview from 'src/components/import/ImportChapterPreview.vue';
 import ImportPlanPanel from 'src/components/import/ImportPlanPanel.vue';
+import ImportChatPanel from 'src/components/import/ImportChatPanel.vue';
 import { injectImportPage, type ImportSection } from 'src/composables/import-page/useImportPage';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
+import { useUiStore } from 'src/stores/ui';
 
 const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
+const ui = useUiStore();
 
 const sections: { id: ImportSection; label: string }[] = [
   { id: 'tasks', label: '任务' },
+  { id: 'chat', label: '对话' },
   { id: 'sources', label: '来源' },
   { id: 'draft', label: '草稿' },
   { id: 'plan', label: '方案' },
@@ -28,10 +32,21 @@ const current = computed<ImportSection>(() => (store.task ? ctx.section.value : 
 const select = (id: ImportSection) => {
   ctx.section.value = id;
 };
+
+// 底部栏「月詠」在导入路由下不再打开抽屉，而是切到对话分区
+watch(
+  () => ui.rightPanelOpen && ui.activeRightTab === 'chat',
+  (open) => {
+    if (!open) return;
+    ui.closeRightPanel();
+    if (store.task) select('chat');
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
-  <div class="ipm">
+  <div class="ipm" :class="{ 'ipm--chat': current === 'chat' }">
     <nav class="ipm-seg" aria-label="导入工作台分区">
       <button
         v-for="item in sections"
@@ -47,7 +62,10 @@ const select = (id: ImportSection) => {
       </button>
     </nav>
 
-    <div class="ipm-body">
+    <div v-if="current === 'chat'" class="ipm-chat">
+      <ImportChatPanel />
+    </div>
+    <div v-else class="ipm-body">
       <ImportTaskList v-if="current === 'tasks'" />
       <template v-else>
         <ImportRunBar />
@@ -74,7 +92,7 @@ const select = (id: ImportSection) => {
   top: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 10px 16px;
   background: rgba(10, 12, 15, 0.86);
@@ -98,6 +116,18 @@ const select = (id: ImportSection) => {
 
 .ipm-seg-btn:disabled {
   opacity: 0.35;
+}
+
+.ipm--chat {
+  height: 100%;
+  min-height: 0;
+}
+
+.ipm-chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .ipm-body {

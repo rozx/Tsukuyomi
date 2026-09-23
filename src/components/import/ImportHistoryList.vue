@@ -66,12 +66,22 @@ const requestRevert = (entry: ImportOperation) => {
 </script>
 
 <template>
-  <div v-if="rows.length" class="ihl">
-    <div class="ihl-subtitle">导入记录</div>
+  <section v-if="rows.length" class="ipl-card">
+    <div class="ipl-card-head">
+      <h3 class="ipl-card-title">
+        <i class="pi pi-history" aria-hidden="true" />导入记录
+        <span class="ipl-count">{{ rows.length }}</span>
+      </h3>
+    </div>
     <ul class="ihl-list">
       <li v-for="row in rows" :key="row.entry.id" class="ihl-item">
+        <i
+          class="pi ihl-state"
+          :class="row.applied ? 'pi-check-circle ihl-state--applied' : 'pi-undo'"
+          aria-hidden="true"
+        />
         <div class="ihl-main">
-          <span>{{ row.title }}</span>
+          <span class="ihl-title">{{ row.title }}</span>
           <span class="ihl-meta">{{ row.time }}</span>
           <span v-if="row.reason" class="ihl-meta">{{ row.reason }}</span>
         </div>
@@ -81,54 +91,57 @@ const requestRevert = (entry: ImportOperation) => {
           label="撤销"
           size="small"
           severity="danger"
-          text
+          outlined
           :disabled="!row.canRevert"
           :loading="reverting"
           @click="requestRevert(row.entry)"
         />
       </li>
     </ul>
-  </div>
+  </section>
 </template>
 
+<style scoped src="./import-plan.css"></style>
 <style scoped>
-.ihl {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.ihl-subtitle {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: rgba(226, 232, 240, 0.8);
-}
-
 .ihl-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.4rem;
 }
 
 .ihl-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
+  gap: 0.65rem;
+  padding: 0.5rem 0.65rem;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.ihl-state {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.45);
+}
+
+.ihl-state--applied {
+  color: rgb(134, 239, 172);
 }
 
 .ihl-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
-  font-size: 0.8rem;
   min-width: 0;
+}
+
+.ihl-title {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
 }
 
 .ihl-meta {

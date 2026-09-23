@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 方案中需要用户处理的冲突：章节对应、合章设置来源、更新目标确认，以及多段替换的译文损失确认。
+ * 方案中的待处理项：章节对应、合章设置来源、更新目标确认，以及多段替换的译文损失确认。
  * 每次处理都会修改草稿并重新生成方案。
  */
 import { computed } from 'vue';
@@ -68,11 +68,17 @@ const chooseSettings = (chapterId: string, value: string) =>
 </script>
 
 <template>
-  <div v-if="conflicts.length" class="ipc-block">
-    <div class="ipc-subtitle">需要处理后才能导入（{{ conflicts.length }}）</div>
+  <section v-if="conflicts.length || replacements.length" class="ipl-card ipc">
+    <div class="ipl-card-head">
+      <h3 class="ipl-card-title">
+        <i class="pi pi-exclamation-triangle" aria-hidden="true" />待处理
+        <span class="ipl-count">{{ conflicts.length + replacements.length }}</span>
+      </h3>
+    </div>
+    <p class="ipl-muted">处理完这些项目后才能导入；每次处理都会更新草稿并重新生成方案。</p>
     <ul class="ipc-list">
       <li v-for="(conflict, index) in conflicts" :key="index" class="ipc-item">
-        <span>{{ conflict.message }}</span>
+        <span class="ipc-text">{{ conflict.message }}</span>
         <Select
           v-if="conflict.resolver === 'match'"
           :options="matchOptions"
@@ -100,42 +106,35 @@ const chooseSettings = (chapterId: string, value: string) =>
           v-else-if="conflict.resolver === 'target'"
           label="确认更新这本小说"
           size="small"
-          text
+          outlined
           :disabled="disabled"
           @click="store.confirmTarget"
         />
       </li>
-    </ul>
-  </div>
-
-  <div v-if="replacements.length" class="ipc-block">
-    <div class="ipc-subtitle">多段替换（需确认译文损失）</div>
-    <ul class="ipc-list">
       <li v-for="entry in replacements" :key="entry.signature" class="ipc-item">
-        <span>{{ entry.text }}</span>
+        <span class="ipc-text">{{ entry.text }}</span>
         <Button
           label="确认替换"
           size="small"
-          text
+          severity="warn"
+          outlined
           :disabled="disabled"
           @click="store.confirmReplacement(entry.signature)"
         />
       </li>
     </ul>
-  </div>
+  </section>
 </template>
 
+<style scoped src="./import-plan.css"></style>
 <style scoped>
-.ipc-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+.ipc {
+  background: rgba(234, 179, 8, 0.06);
+  border-color: rgba(234, 179, 8, 0.28);
 }
 
-.ipc-subtitle {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: rgba(226, 232, 240, 0.8);
+.ipc .ipl-card-title > i {
+  color: rgb(251, 191, 36);
 }
 
 .ipc-list {
@@ -144,22 +143,29 @@ const chooseSettings = (chapterId: string, value: string) =>
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.45rem;
 }
 
 .ipc-item {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem 0.75rem;
-  font-size: 0.78rem;
-  padding: 0.45rem 0.6rem;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  padding: 0.55rem 0.7rem;
   border-radius: 10px;
-  background: rgba(234, 179, 8, 0.08);
-  border: 1px solid rgba(234, 179, 8, 0.2);
+  font-size: 0.8rem;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.ipc-text {
+  flex: 1 1 14rem;
+  min-width: 0;
+  line-height: 1.5;
 }
 
 .ipc-select {
+  flex: 0 1 16rem;
   min-width: 12rem;
   max-width: 100%;
 }

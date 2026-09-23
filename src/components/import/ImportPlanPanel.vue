@@ -1,16 +1,18 @@
 <script setup lang="ts">
 /**
  * 导入方案：先根据当前草稿生成真实差异（元信息、卷章、段落与译文影响），用户检查后确认才写书库。
- * 草稿修改后旧方案失效，需要重新检查；应用后如书籍有后续修改，撤销会被禁用并说明原因。
+ * 版面自上而下为：状态与操作、待处理项、数量概览、元信息与完整性、章节变化、导入记录。
  */
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
-import Button from 'primevue/button';
-import Message from 'primevue/message';
 import { useConfirm } from 'primevue/useconfirm';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
-import ImportPlanSummary from './ImportPlanSummary.vue';
+import { importPlanStatus } from 'src/composables/import-page/import-plan-status';
+import ImportPlanHero from './ImportPlanHero.vue';
 import ImportPlanConflicts from './ImportPlanConflicts.vue';
+import ImportPlanStats from './ImportPlanStats.vue';
+import ImportPlanDetails from './ImportPlanDetails.vue';
+import ImportPlanChapters from './ImportPlanChapters.vue';
 import ImportHistoryList from './ImportHistoryList.vue';
 
 const store = useImportWorkspaceStore();
@@ -19,32 +21,22 @@ const router = useRouter();
 
 const task = computed(() => store.task);
 const plan = computed(() => store.plan);
-const awaitingAnswer = computed(() => {
+const blocked = computed(() => {
   const question = task.value?.pendingQuestion;
-  return Boolean(question?.required && !question.answer);
+  if (store.isRunning) return '月詠正在整理，暂停或等待本轮完成后才能生成或确认方案。';
+  if (question?.required && !question.answer)
+    return '月詠在等待你的回答，回答后才能生成或确认方案。';
+  return '';
 });
-const alreadyApplied = computed(
-  () => store.operations.find((entry) => entry.id === plan.value?.operationId)?.state === 'applied',
+const status = computed(() =>
+  importPlanStatus({
+    plan: plan.value,
+    draftRevision: task.value?.draft.revision ?? 0,
+    applied:
+      store.operations.find((entry) => entry.id === plan.value?.operationId)?.state === 'applied',
+    blocked: blocked.value,
+  }),
 );
-// 应用会把目标写回草稿并递增版本；已应用的方案不再提示「过时」
-const stale = computed(
-  () =>
-    Boolean(plan.value && task.value && plan.value.draftRevision !== task.value.draft.revision) &&
-    !alreadyApplied.value,
-);
-const blocked = computed(() => store.isRunning || awaitingAnswer.value);
-const canPreview = computed(() => Boolean(task.value) && !blocked.value);
-const canApply = computed(
-  () =>
-    Boolean(plan.value) &&
-    !stale.value &&
-    !plan.value!.conflicts.length &&
-    !blocked.value &&
-    !alreadyApplied.value &&
-    store.pendingAction !== 'apply',
-);
-const previewLabel = computed(() => (plan.value ? '重新生成方案' : '生成导入方案'));
-const applyLabel = computed(() => (alreadyApplied.value ? '已导入' : '确认导入'));
 
 const requestApply = () => {
   const current = plan.value;
@@ -72,44 +64,19 @@ const openBook = () => {
 
 <template>
   <section v-if="task" class="ipp" aria-label="导入方案">
-    <div class="ipp-actions">
-      <Button
-        icon="pi pi-list-check"
-        :label="previewLabel"
-        size="small"
-        :disabled="!canPreview"
-        :loading="store.pendingAction === 'preview'"
-        @click="store.previewPlan"
-      />
-      <Button
-        icon="pi pi-check"
-        :label="applyLabel"
-        size="small"
-        severity="success"
-        :disabled="!canApply"
-        :loading="store.pendingAction === 'apply'"
-        @click="requestApply"
-      />
-    </div>
-    <p class="ipp-hint">
-      方案只根据当前草稿计算实际变化，生成后也不会写入书库；只有点击「确认导入」并再次确认后才会应用。
-    </p>
-
-    <p v-if="!plan" class="ipp-hint">
-      还没有导入方案。整理好草稿后生成方案，检查变化再决定是否导入。
-    </p>
-    <template v-else>
-      <Message v-if="stale" severity="warn" :closable="false">
-        草稿在生成方案后已修改，这个方案已过时，请重新生成后再确认。
-      </Message>
-      <Message v-if="alreadyApplied" severity="success" :closable="false">
-        这个方案已导入书库。
-        <Button label="打开小说" size="small" text @click="openBook" />
-      </Message>
-      <ImportPlanSummary :plan="plan" />
-      <ImportPlanConflicts :plan="plan" :disabled="stale || store.isRunning" />
+    <ImportPlanHero
+      :plan="plan"
+      :status="status"
+      @preview="store.previewPlan"
+      @apply="requestApply"
+      @open-book="openBook"
+    />
+    <template v-if="plan">
+      <ImportPlanConflicts :plan="plan" :disabled="status.kind === 'stale' || store.isRunning" />
+      <ImportPlanStats :plan="plan" />
+      <ImportPlanDetails :plan="plan" />
+      <ImportPlanChapters :plan="plan" />
     </template>
-
     <ImportHistoryList />
   </section>
 </template>
@@ -119,18 +86,5 @@ const openBook = () => {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-}
-
-.ipp-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.ipp-hint {
-  font-size: 0.76rem;
-  line-height: 1.6;
-  color: rgba(226, 232, 240, 0.6);
-  margin: 0;
 }
 </style>

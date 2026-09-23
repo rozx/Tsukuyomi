@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * 桌面导入工作台：左侧任务列表，中间为来源／卷章草稿／导入方案，
- * 月詠对话由布局右栏的导入聊天外壳承载（绑定当前任务）。
+ * 月詠对话由布局右栏的导入聊天外壳常驻承载（绑定当前任务）。
+ * 平板右侧停靠对话后宽度有限，以 tasksInTabs 把任务列表并入标签页。
  */
 import { computed } from 'vue';
 import Button from 'primevue/button';
@@ -20,12 +21,17 @@ import ImportPlanPanel from 'src/components/import/ImportPlanPanel.vue';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 
+const props = withDefaults(defineProps<{ tasksInTabs?: boolean }>(), { tasksInTabs: false });
 const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
 
-// 桌面不单独显示「任务」分区：任务列表常驻左侧
+// 对话常驻右侧，不是标签页；桌面的任务列表常驻左侧，平板并入标签页
 const tab = computed({
-  get: () => (ctx.section.value === 'tasks' ? 'draft' : ctx.section.value),
+  get: () => {
+    const section = ctx.section.value;
+    if (section === 'chat' || (section === 'tasks' && !props.tasksInTabs)) return 'draft';
+    return section;
+  },
   set: (value: string) => {
     ctx.section.value = value as typeof ctx.section.value;
   },
@@ -35,15 +41,19 @@ const chapterCount = computed(() => store.task?.draft.chapters.length ?? 0);
 </script>
 
 <template>
-  <div class="ipd">
-    <aside class="ipd-tasks">
+  <div class="ipd" :class="{ 'ipd--compact': tasksInTabs }">
+    <aside v-if="!tasksInTabs" class="ipd-tasks">
       <DesktopWorkbenchSurface class="ipd-surface">
         <ImportTaskList />
       </DesktopWorkbenchSurface>
     </aside>
 
     <main class="ipd-work">
-      <DesktopWorkbenchSurface v-if="!store.task" class="ipd-surface ipd-empty">
+      <DesktopWorkbenchSurface v-if="!store.task && tasksInTabs" class="ipd-surface">
+        <ImportTaskList />
+      </DesktopWorkbenchSurface>
+
+      <DesktopWorkbenchSurface v-else-if="!store.task" class="ipd-surface ipd-empty">
         <i class="pi pi-file-import ipd-empty-icon" aria-hidden="true" />
         <h1 class="ipd-empty-title">AI 导入</h1>
         <p class="ipd-empty-text">
@@ -57,11 +67,15 @@ const chapterCount = computed(() => store.task?.draft.chapters.length ?? 0);
         <ImportRunBar />
         <Tabs v-model:value="tab" class="ipd-tabs">
           <TabList>
+            <Tab v-if="tasksInTabs" value="tasks">任务</Tab>
             <Tab value="sources">来源（{{ sourceCount }}）</Tab>
             <Tab value="draft">卷章草稿（{{ chapterCount }}）</Tab>
             <Tab value="plan">导入方案</Tab>
           </TabList>
           <TabPanels class="ipd-panels">
+            <TabPanel v-if="tasksInTabs" value="tasks">
+              <ImportTaskList />
+            </TabPanel>
             <TabPanel value="sources">
               <ImportSourcePanel />
             </TabPanel>
@@ -91,6 +105,11 @@ const chapterCount = computed(() => store.task?.draft.chapters.length ?? 0);
   gap: 1rem;
   padding: 1rem 1.1rem 1.25rem;
   min-height: 0;
+}
+
+.ipd--compact {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0.85rem;
 }
 
 .ipd-tasks,

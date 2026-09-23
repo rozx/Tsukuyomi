@@ -249,6 +249,12 @@ export const importTools: AITool[] = [
     ['query'],
   ),
   tool(
+    'rename_import_task',
+    '为当前导入任务命名，便于用户在任务列表中区分。识别出书名等书本信息后必须调用；通常用书名，可附作者或范围。用户手动命名后不能修改。',
+    { name: string },
+    ['name'],
+  ),
+  tool(
     'preview_import',
     '根据当前草稿版本生成真实差异与译文影响，保存待用户检查的方案；不会应用。',
     { draft_revision: number },

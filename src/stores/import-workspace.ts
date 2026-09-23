@@ -12,10 +12,15 @@ import type {
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import { ImportAgentService } from 'src/services/import/import-agent-service';
 import { ImportRepository } from 'src/services/import/import-repository';
+import { renameImportTask } from 'src/services/import/import-task-naming';
+import { canCompactImport } from 'src/services/import/import-agent-compaction';
 import { ImportSourceService } from 'src/services/import/import-source-service';
 import { ImportDraftService } from 'src/services/import/import-draft-service';
 import { ImportPlanService } from 'src/services/import/import-plan-service';
-import { ImportQuestionService } from 'src/services/import/import-question-service';
+import {
+  ImportQuestionService,
+  awaitingImportAnswer,
+} from 'src/services/import/import-question-service';
 import { ImportMetadataService } from 'src/services/import/import-metadata-service';
 import { ImportApplicationService } from 'src/services/import/import-application-service';
 import {
@@ -82,7 +87,14 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   const runningTaskId = ref<string | undefined>();
   const storageIssues = ref<Record<string, ImportStorageIssue>>({});
   const error = ref<string | null>(null);
+  /** 出错的动作（run、compact 等），界面据此决定在对话区还是状态栏显示。 */
+  const errorAction = ref<string | null>(null);
   const pendingAction = ref<string | null>(null);
+
+  function setError(text: string | null, action: string | null = null): void {
+    error.value = text;
+    errorAction.value = text ? action : null;
+  }
 
   const application = new ImportApplicationService();
   const disposers: (() => void)[] = [];
@@ -97,6 +109,20 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     () =>
       Boolean(task.value && ACTIVE_STATES.has(task.value.state)) ||
       (runningTaskId.value !== undefined && runningTaskId.value === selectedTaskId.value),
+  );
+  /** 可以让月詠继续：已配置模型、没有待回答的必要问题、不在压缩或运行，也没有其他任务在运行。 */
+  const canContinue = computed(
+    () =>
+      Boolean(task.value && !task.value.compacting && !awaitingImportAnswer(task.value)) &&
+      !isRunning.value &&
+      !(runningTaskId.value !== undefined && runningTaskId.value !== selectedTaskId.value) &&
+      Boolean(useAIModelsStore().getDefaultModelForTask('assistant')),
+  );
+  const canCompact = computed(
+    () =>
+      Boolean(task.value && !task.value.compacting && canCompactImport(task.value)) &&
+      !isRunning.value &&
+      pendingAction.value !== 'compact',
   );
   const sourceNames = computed(
     () => new Map(sources.value.map((source) => [source.id, source.name] as const)),
@@ -191,7 +217,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
 
   async function selectTask(taskId: string | null): Promise<void> {
     selectedTaskId.value = taskId;
-    error.value = null;
+    setError(null);
     if (!taskId) {
       loadToken++;
       task.value = null;
@@ -208,11 +234,11 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   /** 包装一次界面操作：记录进行中的动作、错误，并在结束后刷新相关任务。 */
   async function act<T>(label: string, taskId: string, work: () => Promise<T>) {
     pendingAction.value = label;
-    error.value = null;
+    setError(null);
     try {
       return await work();
     } catch (failure) {
-      if (selectedTaskId.value === taskId) error.value = message(failure);
+      if (selectedTaskId.value === taskId) setError(message(failure), label);
       return undefined;
     } finally {
       if (pendingAction.value === label) pendingAction.value = null;
@@ -236,10 +262,9 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     const trimmed = name.trim();
     if (!trimmed) return;
     await act('rename', taskId, () =>
-      ImportRepository.mutateTask(taskId, (current) => {
-        current.name = trimmed.slice(0, 200);
-        return Promise.resolve();
-      }),
+      ImportRepository.mutateTask(taskId, (current) =>
+        Promise.resolve(renameImportTask(current, trimmed.slice(0, 80), 'user')),
+      ),
     );
   }
 
@@ -247,7 +272,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     try {
       await ImportRepository.deleteTask(taskId);
     } catch (failure) {
-      error.value = message(failure);
+      setError(message(failure), 'delete');
       return false;
     }
     upsertTask(undefined, taskId);
@@ -263,7 +288,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   async function send(text: string, model: AIModel | undefined = defaultModel()): Promise<void> {
     const taskId = selectedOrThrow();
     if (!model) {
-      error.value = '未配置助手模型：请先在「AI 模型」中为助手指定默认模型。';
+      setError('未配置助手模型：请先在「AI 模型」中为助手指定默认模型。', 'run');
       return;
     }
     await act('run', taskId, async () => {
@@ -276,6 +301,16 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   async function pause(): Promise<void> {
     const taskId = selectedOrThrow();
     await act('pause', taskId, () => ImportAgentService.pause(taskId));
+  }
+
+  /** 手动压缩当前任务的对话上下文（总结历史，来源与草稿不变）。 */
+  async function compact(model: AIModel | undefined = defaultModel()): Promise<void> {
+    const taskId = selectedOrThrow();
+    if (!model) {
+      setError('未配置助手模型：请先在「AI 模型」中为助手指定默认模型。', 'compact');
+      return;
+    }
+    await act('compact', taskId, () => ImportAgentService.compact(taskId, model));
   }
 
   async function addUrl(url: string): Promise<void> {
@@ -431,7 +466,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   }
 
   function clearError(): void {
-    error.value = null;
+    setError(null);
   }
 
   return {
@@ -445,8 +480,11 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     runningTaskId,
     storageIssue,
     error,
+    errorAction,
     pendingAction,
     isRunning,
+    canCompact,
+    canContinue,
     sourceNames,
     initialize,
     // 测试之间解除更新订阅用；应用内 store 与页面同寿命，不需要调用
@@ -458,6 +496,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     deleteTask,
     send,
     pause,
+    compact,
     addUrl,
     addFiles,
     addDirectory,

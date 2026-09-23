@@ -8,12 +8,10 @@ import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import Message from 'primevue/message';
 import InputText from 'primevue/inputtext';
-import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { useAIModelsStore } from 'src/stores/ai-models';
-import { TASK_STATE, readableError } from './import-labels';
+import { CHAT_ERROR_ACTIONS, TASK_STATE, readableError } from './import-labels';
 
-const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
 const aiModels = useAIModelsStore();
 
@@ -69,6 +67,10 @@ const lastError = computed(() => {
   return error ? readableError(error.message) : '';
 });
 
+const workspaceError = computed(
+  () => Boolean(store.error) && !CHAT_ERROR_ACTIONS.has(store.errorAction ?? ''),
+);
+
 const continueRun = () => void store.send('');
 </script>
 
@@ -79,7 +81,7 @@ const continueRun = () => void store.send('');
         v-model="name"
         class="irb-name"
         aria-label="任务名称"
-        maxlength="200"
+        maxlength="80"
         @blur="saveName"
         @keydown.enter="saveName"
       />
@@ -99,10 +101,9 @@ const continueRun = () => void store.send('');
           icon="pi pi-play"
           :label="continueLabel"
           size="small"
-          :disabled="awaitingAnswer || runningOther || !hasModel"
+          :disabled="!store.canContinue"
           @click="continueRun"
         />
-        <Button icon="pi pi-comments" label="月詠" size="small" outlined @click="ctx.openChat" />
       </div>
     </div>
 
@@ -118,8 +119,7 @@ const continueRun = () => void store.send('');
       {{ store.storageIssue.message }} 在恢复前，最新进度不能保证在关闭页面后仍可找回。
     </Message>
     <Message v-if="awaitingAnswer" severity="warn" :closable="false" class="irb-msg">
-      月詠在等待你的回答，回答后才会继续。
-      <Button label="去回答" size="small" text @click="ctx.openChat" />
+      月詠在等待你的回答（见对话区），回答后才会继续。
     </Message>
     <Message v-if="runningOther" severity="info" :closable="false" class="irb-msg">
       另一个导入任务正在运行。同一时间只能运行一个任务，请先暂停它。
@@ -130,8 +130,8 @@ const continueRun = () => void store.send('');
     <Message v-if="lastError && !running" severity="secondary" :closable="false" class="irb-msg">
       {{ lastError }}
     </Message>
-    <Message v-if="store.error" severity="error" class="irb-msg" @close="store.clearError">
-      {{ readableError(store.error) }}
+    <Message v-if="workspaceError" severity="error" class="irb-msg" @close="store.clearError">
+      {{ readableError(store.error ?? '') }}
     </Message>
   </section>
 </template>

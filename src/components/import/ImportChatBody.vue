@@ -11,6 +11,7 @@ import ChatTodoSection from 'src/components/layout/ChatTodoSection.vue';
 import { useImportChatPanel } from 'src/composables/import-page/useImportChatPanel';
 import { useChatPanelBindings } from 'src/composables/right-panel/useChatPanelBindings';
 import ImportQuestionCard from './ImportQuestionCard.vue';
+import { CHAT_ERROR_ACTIONS, readableError } from './import-labels';
 
 withDefaults(defineProps<{ safeArea?: boolean }>(), { safeArea: false });
 
@@ -35,10 +36,14 @@ const { inputPlaceholder, sendButton, onSendClick } = composer;
 const blockedReason = computed(() => {
   if (!store.task) return '请先选择或新建导入任务';
   if (awaitingAnswer.value) return '请先回答上方的问题';
+  if (store.task.compacting || store.pendingAction === 'compact') return '正在压缩对话上下文…';
   if (store.runningTaskId && store.runningTaskId !== store.selectedTaskId)
     return '另一个导入任务正在运行';
   return '';
 });
+const chatError = computed(() =>
+  store.error && CHAT_ERROR_ACTIONS.has(store.errorAction ?? '') ? readableError(store.error) : '',
+);
 const inputDisabled = computed(() => composer.inputDisabled.value || Boolean(blockedReason.value));
 const placeholder = computed(() => blockedReason.value || inputPlaceholder.value);
 const sendBindings = computed(() => ({
@@ -62,6 +67,14 @@ const sendBindings = computed(() => ({
     </div>
 
     <ImportQuestionCard />
+
+    <div v-if="chatError" class="icb-error" role="alert">
+      <i class="pi pi-exclamation-circle" aria-hidden="true" />
+      <span class="icb-error-text">{{ chatError }}</span>
+      <button type="button" class="icb-error-close" aria-label="关闭错误" @click="store.clearError">
+        <i class="pi pi-times" aria-hidden="true" />
+      </button>
+    </div>
 
     <div class="icb-composer-wrap" :class="{ 'icb-composer-wrap--safe': safeArea }">
       <div class="tcp-composer">
@@ -117,6 +130,35 @@ const sendBindings = computed(() => ({
   font-size: 0.8rem;
   color: rgba(226, 232, 240, 0.55);
   padding: 2rem 1rem;
+}
+
+.icb-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: rgb(254, 202, 202);
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+}
+
+.icb-error > i {
+  margin-top: 3px;
+}
+
+.icb-error-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.icb-error-close {
+  color: inherit;
+  opacity: 0.7;
 }
 
 .icb-composer-wrap {

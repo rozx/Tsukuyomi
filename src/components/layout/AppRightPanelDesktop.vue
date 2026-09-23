@@ -85,7 +85,7 @@ defineExpose({ props });
       @mousedown="handleResizeStart"
     />
 
-    <ImportChatPanel v-if="activeRightTab === 'chat' && isImportRoute" />
+    <ImportChatPanel v-if="isImportRoute" />
     <AppChatPanelDesktop v-else-if="activeRightTab === 'chat'" />
     <AppProgressPanelDesktop v-else />
   </aside>

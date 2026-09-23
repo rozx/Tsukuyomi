@@ -24,6 +24,13 @@
 - **THEN** 系统 SHALL 按任务甲的状态处理该结果
 - **AND** 结果 MUST NOT 出现在任务乙的来源、草稿或对话中
 
+#### Scenario: Agent 识别书本后为任务命名
+
+- **GIVEN** 新建任务仍使用默认名称
+- **WHEN** Agent 从来源中识别出书名等书本信息
+- **THEN** Agent SHALL 通过命名工具为任务设置便于区分的名称，未命名前 MUST NOT 生成导入方案
+- **AND** 用户手动命名后，Agent MUST NOT 覆盖该名称
+
 ### Requirement: 同一时间仅一个导入 Agent 执行
 
 同一本地工作区在任意时刻 MUST 最多只有一个正在执行的导入 Agent，包括该工作区被多个网页标签同时打开的情况。查看或编辑其他任务 SHALL 不自动启动其 Agent；用户 SHALL 能先暂停当前任务，再选择运行另一任务。

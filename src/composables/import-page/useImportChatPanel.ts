@@ -33,6 +33,7 @@ export function useImportChatPanel() {
     importEventsToMessages(store.events, {
       sourceNames: store.sourceNames,
       ...(store.task?.streaming?.text ? { streaming: store.task.streaming.text } : {}),
+      ...(store.task?.compacting || store.pendingAction === 'compact' ? { compacting: true } : {}),
     }),
   );
 

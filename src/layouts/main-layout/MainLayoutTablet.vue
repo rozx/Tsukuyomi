@@ -22,21 +22,26 @@ import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 
 const ui = useUiStore();
-// 导入路由的聊天槽位挂导入外壳，其他路由挂普通月詠
+// 导入路由的对话常驻停靠在右侧（不是侧滑浮层），其他路由的聊天槽位挂普通月詠
 const isImportRoute = useImportRouteScope();
+const importDockStyle = computed(() => ({
+  width: `clamp(18rem, 38vw, ${ui.rightPanelWidth}px)`,
+}));
 
 const rightPanelOverlayStyle = computed(() => ({
   width: `min(92vw, ${ui.rightPanelWidth}px)`,
 }));
 
-const isChatOpen = computed(() => ui.rightPanelOpen && ui.activeRightTab === 'chat');
+const isChatOpen = computed(
+  () => ui.rightPanelOpen && ui.activeRightTab === 'chat' && !isImportRoute.value,
+);
 const isProgressOpen = computed(() => ui.rightPanelOpen && ui.activeRightTab === 'progress');
 
 const closeRightPanel = () => ui.closeRightPanel();
 
 // 只有右侧面板进入关闭栈；左侧图标导航栏是常驻的，不可折叠。
 useOverlayCloseStack({
-  isOpen: computed(() => ui.rightPanelOpen),
+  isOpen: computed(() => isChatOpen.value || isProgressOpen.value),
   enabled: computed(() => true),
   onClose: closeRightPanel,
 });
@@ -50,38 +55,52 @@ useOverlayCloseStack({
       <TabletNavRail />
 
       <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60 relative">
-        <div v-if="ui.rightPanelOpen" class="layout-overlay-mask z-40" @click="closeRightPanel" />
+        <div
+          v-if="isChatOpen || isProgressOpen"
+          class="layout-overlay-mask z-40"
+          @click="closeRightPanel"
+        />
 
         <RouterView />
 
-        <!-- AI 助手 面板——独立挂载，仅当 activeRightTab === 'chat' 时 slide-in -->
-        <div
-          class="overlay-right-panel z-50"
-          :class="{ 'overlay-right-panel-open': isChatOpen }"
-          :style="rightPanelOverlayStyle"
-          :inert="!isChatOpen"
-        >
-          <ImportChatPanel v-if="isImportRoute" class="tablet-import-chat" />
-          <TabletChatPanel v-else />
-        </div>
+        <!-- 侧滑面板放进裁剪层：收起时移到右侧外，不能撑大 main 的滚动宽度，
+             否则标签页等 scrollIntoView 会把 main 横向滚走 -->
+        <div class="overlay-clip">
+          <!-- AI 助手 面板——独立挂载，仅当 activeRightTab === 'chat' 时 slide-in -->
+          <div
+            v-if="!isImportRoute"
+            class="overlay-right-panel z-50"
+            :class="{ 'overlay-right-panel-open': isChatOpen }"
+            :style="rightPanelOverlayStyle"
+            :inert="!isChatOpen"
+          >
+            <TabletChatPanel />
+          </div>
 
-        <!-- 翻译进度 面板——独立挂载，仅当 activeRightTab === 'progress' 时 slide-in -->
-        <div
-          class="overlay-right-panel z-50"
-          :class="{ 'overlay-right-panel-open': isProgressOpen }"
-          :style="rightPanelOverlayStyle"
-          :inert="!isProgressOpen"
-        >
-          <TabletProgressPanel />
+          <!-- 翻译进度 面板——独立挂载，仅当 activeRightTab === 'progress' 时 slide-in -->
+          <div
+            class="overlay-right-panel z-50"
+            :class="{ 'overlay-right-panel-open': isProgressOpen }"
+            :style="rightPanelOverlayStyle"
+            :inert="!isProgressOpen"
+          >
+            <TabletProgressPanel />
+          </div>
         </div>
       </main>
+
+      <aside v-if="isImportRoute" class="tablet-import-chat" :style="importDockStyle">
+        <ImportChatPanel />
+      </aside>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 与 TabletChatPanel 相同的侧滑面板底色与左边框 */
+/* 与 TabletChatPanel 相同的面板底色与左边框，常驻停靠 */
 .tablet-import-chat {
+  flex-shrink: 0;
+  min-height: 0;
   background: rgba(14, 16, 20, 0.96);
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(18px);
@@ -96,6 +115,14 @@ useOverlayCloseStack({
   -webkit-backdrop-filter: blur(1px);
 }
 
+.overlay-clip {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .overlay-right-panel {
   position: absolute;
   top: 0;
@@ -103,6 +130,7 @@ useOverlayCloseStack({
   bottom: 0;
   transform: translateX(100%);
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: auto;
 }
 
 .overlay-right-panel-open {

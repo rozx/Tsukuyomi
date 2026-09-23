@@ -10,11 +10,17 @@ import { importAgentPrompt } from './import-agent-prompt';
 import { assertImportOwner, saveImportAgentCheckpoint } from './import-agent-journal';
 import { awaitingImportAnswer } from './import-question-service';
 import { conciseErrorText } from './import-error-text';
+import {
+  canCompactImport,
+  compactImportHistory,
+  importNeedsCompaction,
+} from './import-agent-compaction';
 
 type UpdateListener = (taskId: string) => void;
 const listeners = new Set<UpdateListener>();
 const TASK_LOCK_PREFIX = 'tsukuyomi:import-task:';
 const RELEASE_TIMEOUT_MS = 30_000;
+const CONTINUE_AFTER_COMPACT = '上下文已压缩为摘要，请根据摘要与当前任务数据继续之前的整理。';
 function notify(taskId: string): void {
   for (const listener of listeners) {
     try {
@@ -145,6 +151,7 @@ export class ImportAgentService {
       current.state = awaitingImportAnswer(current) ? 'waiting_user' : 'paused';
       delete current.run;
       delete current.streaming;
+      delete current.compacting;
       current.runEpoch++;
       return Promise.resolve(current);
     });
@@ -164,13 +171,58 @@ export class ImportAgentService {
     }
   }
 
+  /** 手动压缩对话上下文：与运行共用锁，运行中或另一任务占用时不压缩。 */
+  static async compact(taskId: string, model: AIModel): Promise<ImportTask> {
+    if (typeof navigator === 'undefined' || !navigator.locks)
+      throw new Error('LOCK_UNAVAILABLE: 当前环境不能协调导入运行');
+    const locks = navigator.locks;
+    return locks.request('tsukuyomi:import-agent', { ifAvailable: true }, async (lock) => {
+      if (!lock) throw new Error('IMPORT_BUSY: 已有导入任务正在运行，请先暂停该任务');
+      return locks.request(`${TASK_LOCK_PREFIX}${taskId}`, { ifAvailable: true }, async (owner) => {
+        if (!owner) throw new Error('IMPORT_BUSY: 当前任务仍有未结束的执行');
+        try {
+          await compactImportHistory(taskId, model, {
+            reason: 'manual',
+            notify: () => notify(taskId),
+          });
+        } finally {
+          notify(taskId);
+        }
+        return requireTask(taskId);
+      });
+    });
+  }
+
   private static async perform(
     taskId: string,
     model: AIModel,
     message: string,
     controller: AbortController,
   ): Promise<ImportTask> {
-    const run = await ImportRepository.mutateTask(
+    const run = await this.startRun(taskId, model, message);
+    const stream = this.streamWriter(taskId, run, controller);
+    const timer = setInterval(this.pauseChecker(taskId, run, controller), 750);
+    try {
+      await this.converse(taskId, model, message, { run, controller, stream });
+    } catch (error) {
+      await this.recordFailure(taskId, model, run, controller, error);
+    } finally {
+      clearInterval(timer);
+      await ImportRepository.mutateTask(taskId, (current) => {
+        assertImportOwner(current, run);
+        if (current.state === 'running' || current.state === 'pausing') current.state = 'paused';
+        delete current.run;
+        delete current.compacting;
+        current.runEpoch++;
+        return Promise.resolve();
+      });
+      notify(taskId);
+    }
+    return requireTask(taskId);
+  }
+
+  private static startRun(taskId: string, model: AIModel, message: string) {
+    return ImportRepository.mutateTask(
       taskId,
       (task) => {
         task.runEpoch++;
@@ -193,26 +245,94 @@ export class ImportAgentService {
         }),
       },
     );
-    const task = await requireTask(taskId);
-    const executor = new ImportToolExecutor(run);
-    let streaming = '';
-    let lastStreamSave = 0;
+  }
+
+  /** 用户在任一页面请求暂停（pausing）或运行被替代时中止本次执行。 */
+  private static pauseChecker(taskId: string, run: ImportRunContext, controller: AbortController) {
     let checking = false;
-    const checkPause = () => {
+    return () => {
       if (checking) return;
       checking = true;
       void requireTask(taskId)
         .then((current) => {
-          if (current.run?.runId !== run.runId || current.state !== 'running') controller.abort();
+          if (current.run?.runId !== run.runId || current.state === 'pausing') controller.abort();
         })
         .catch(() => controller.abort())
         .finally(() => {
           checking = false;
         });
     };
-    const timer = setInterval(checkPause, 750);
+  }
+
+  private static streamWriter(taskId: string, run: ImportRunContext, controller: AbortController) {
+    let text = '';
+    let lastSave = 0;
+    return {
+      reset: () => {
+        text = '';
+      },
+      onChunk: async (chunk: TextGenerationChunk) => {
+        if (!chunk.text || controller.signal.aborted) return;
+        text += chunk.text;
+        if (Date.now() - lastSave < 400 && !chunk.done) return;
+        lastSave = Date.now();
+        await ImportRepository.mutateTask(taskId, (current) => {
+          assertImportOwner(current, run);
+          if (current.state !== 'running') throw new Error('RUN_STALE: 执行已停止');
+          current.streaming = { text };
+          return Promise.resolve();
+        });
+        notify(taskId);
+      },
+    };
+  }
+
+  /**
+   * 与模型对话：历史接近上下文上限时先压缩；执行中因上下文上限暂停时压缩后自动继续一次。
+   */
+  private static async converse(
+    taskId: string,
+    model: AIModel,
+    message: string,
+    ctx: {
+      run: ImportRunContext;
+      controller: AbortController;
+      stream: ReturnType<typeof ImportAgentService.streamWriter>;
+    },
+  ): Promise<void> {
+    const { run, controller, stream } = ctx;
+    const compact = () =>
+      compactImportHistory(taskId, model, {
+        run,
+        reason: 'auto',
+        signal: controller.signal,
+        notify: () => notify(taskId),
+      });
+    if (importNeedsCompaction(await requireTask(taskId), model)) await compact();
+    let prompt = message;
+    for (let attempt = 0; ; attempt++) {
+      const execution = this.execution(taskId, run, stream, await requireTask(taskId));
+      const result = await AssistantService.chat(model, prompt, {
+        execution,
+        signal: controller.signal,
+        onChunk: stream.onChunk,
+      });
+      if (result.paused !== 'context_limit' || attempt > 0 || controller.signal.aborted) return;
+      if (!canCompactImport(await requireTask(taskId))) return;
+      await compact();
+      prompt = CONTINUE_AFTER_COMPACT;
+    }
+  }
+
+  private static execution(
+    taskId: string,
+    run: ImportRunContext,
+    stream: { reset: () => void },
+    task: ImportTask,
+  ): AssistantExecution {
+    const executor = new ImportToolExecutor(run);
     const resume = restoredCheckpoint(task);
-    const execution = new AssistantExecution({
+    return new AssistantExecution({
       context: {
         currentBookId: null,
         currentChapterId: null,
@@ -225,56 +345,33 @@ export class ImportAgentService {
       executeTool: (call, options) => executor.execute(call, options),
       saveCheckpoint: async (checkpoint, state) => {
         await saveImportAgentCheckpoint(run, checkpoint, state);
-        if (state.phase === 'response') streaming = '';
+        if (state.phase === 'response') stream.reset();
         notify(taskId);
       },
     });
-    const onChunk = async (chunk: TextGenerationChunk) => {
-      if (!chunk.text || controller.signal.aborted) return;
-      streaming += chunk.text;
-      if (Date.now() - lastStreamSave < 400 && !chunk.done) return;
-      lastStreamSave = Date.now();
-      await ImportRepository.mutateTask(taskId, (current) => {
-        assertImportOwner(current, run);
-        if (current.state !== 'running') throw new Error('RUN_STALE: 执行已停止');
-        current.streaming = { text: streaming };
-        return Promise.resolve();
-      });
-      notify(taskId);
-    };
-    try {
-      await AssistantService.chat(model, message, {
-        execution,
-        signal: controller.signal,
-        onChunk,
-      });
-    } catch (error) {
-      const raw = error instanceof Error ? error.message : String(error);
-      const message = conciseErrorText(
-        model.apiKey ? raw.replaceAll(model.apiKey, '[已隐藏凭据]') : raw,
-      );
-      await ImportRepository.mutateTask(taskId, (current) => {
-        assertImportOwner(current, run);
-        current.state = awaitingImportAnswer(current)
-          ? 'waiting_user'
-          : controller.signal.aborted
-            ? 'paused'
-            : 'failed';
-        current.lastError = { code: 'IMPORT_FAILED', message };
-        return Promise.resolve();
-      });
-      if (!controller.signal.aborted) throw new Error(message, { cause: error });
-    } finally {
-      clearInterval(timer);
-      await ImportRepository.mutateTask(taskId, (current) => {
-        assertImportOwner(current, run);
-        if (current.state === 'running' || current.state === 'pausing') current.state = 'paused';
-        delete current.run;
-        current.runEpoch++;
-        return Promise.resolve();
-      });
-      notify(taskId);
-    }
-    return requireTask(taskId);
+  }
+
+  private static async recordFailure(
+    taskId: string,
+    model: AIModel,
+    run: ImportRunContext,
+    controller: AbortController,
+    error: unknown,
+  ): Promise<void> {
+    const raw = error instanceof Error ? error.message : String(error);
+    const message = conciseErrorText(
+      model.apiKey ? raw.replaceAll(model.apiKey, '[已隐藏凭据]') : raw,
+    );
+    await ImportRepository.mutateTask(taskId, (current) => {
+      assertImportOwner(current, run);
+      current.state = awaitingImportAnswer(current)
+        ? 'waiting_user'
+        : controller.signal.aborted
+          ? 'paused'
+          : 'failed';
+      current.lastError = { code: 'IMPORT_FAILED', message };
+      return Promise.resolve();
+    });
+    if (!controller.signal.aborted) throw new Error(message, { cause: error });
   }
 }

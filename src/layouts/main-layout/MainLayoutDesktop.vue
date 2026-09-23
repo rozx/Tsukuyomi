@@ -3,10 +3,16 @@ import AppHeader from 'src/components/layout/AppHeader.vue';
 import AppFooter from 'src/components/layout/AppFooter.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import AppRightPanel from 'src/components/layout/AppRightPanel.vue';
+import { computed } from 'vue';
 import { RouterView } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
+import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 
 const ui = useUiStore();
+// 导入工作台以月詠对话为核心：导入路由下右栏始终展开，不能折叠
+const isImportRoute = useImportRouteScope();
+const asideOpen = computed(() => ui.rightPanelOpen || isImportRoute.value);
+const asideWidth = computed(() => (asideOpen.value ? `${ui.rightPanelWidth}px` : '3rem'));
 </script>
 
 <template>
@@ -14,10 +20,7 @@ const ui = useUiStore();
     <AppHeader />
 
     <div class="desktop-shell-body">
-      <div
-        class="desktop-shell-rail"
-        :style="{ width: ui.sideMenuOpen ? '14rem' : '4rem' }"
-      >
+      <div class="desktop-shell-rail" :style="{ width: ui.sideMenuOpen ? '14rem' : '4rem' }">
         <div class="desktop-shell-rail-inner">
           <AppSideMenu :collapsed="!ui.sideMenuOpen" />
         </div>
@@ -27,15 +30,9 @@ const ui = useUiStore();
         <RouterView />
       </main>
 
-      <div
-        class="desktop-shell-aside"
-        :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '3rem' }"
-      >
-        <div
-          class="desktop-shell-aside-inner"
-          :style="{ width: ui.rightPanelOpen ? `${ui.rightPanelWidth}px` : '3rem' }"
-        >
-          <AppRightPanel :collapsed="!ui.rightPanelOpen" />
+      <div class="desktop-shell-aside" :style="{ width: asideWidth }">
+        <div class="desktop-shell-aside-inner" :style="{ width: asideWidth }">
+          <AppRightPanel :collapsed="!asideOpen" />
         </div>
       </div>
     </div>

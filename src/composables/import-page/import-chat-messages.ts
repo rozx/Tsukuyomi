@@ -26,7 +26,12 @@ function fingerprint(actions: MessageAction[]): string {
 interface MessageOptions {
   sourceNames: Map<string, string>;
   streaming?: string;
+  /** 正在压缩上下文：末尾显示临时的总结气泡。 */
+  compacting?: boolean;
 }
+
+const COMPACTED_TEXT = '对话上下文已压缩为摘要，来源、草稿和操作记录保持不变。';
+const COMPACTING_TEXT = '正在压缩对话上下文…';
 
 type Args = Record<string, unknown>;
 type Result = Record<string, unknown> | undefined;
@@ -47,6 +52,7 @@ const ACTION_SHAPES: Record<string, ActionShape> = {
   get_chapter_info: { type: 'read', entity: 'chapter' },
   search_web: { type: 'web_search', entity: 'web' },
   preview_import: { type: 'read', entity: 'book' },
+  rename_import_task: { type: 'update', entity: 'book' },
   ask_user: { type: 'ask', entity: 'user' },
   ask_user_batch: { type: 'ask', entity: 'user' },
   create_todo: { type: 'create', entity: 'todo' },
@@ -109,6 +115,8 @@ function describe(name: string, args: Args, names: Map<string, string>): string 
       return '对照本地小说';
     case 'preview_import':
       return '生成导入方案';
+    case 'rename_import_task':
+      return `命名任务：${text(args.name)}`;
     default:
       return name;
   }
@@ -212,6 +220,16 @@ export function importEventsToMessages(
   }
   const messages: ChatSessionMessage[] = [];
   for (const event of events) {
+    if (event.kind === 'summary') {
+      messages.push({
+        id: event.id,
+        role: 'assistant',
+        content: COMPACTED_TEXT,
+        timestamp: event.createdAt,
+        isSummarization: true,
+      });
+      continue;
+    }
     const message = event.message;
     if (event.kind !== 'message' || !message) continue;
     if (message.role !== 'user' && message.role !== 'assistant') continue;
@@ -238,6 +256,14 @@ export function importEventsToMessages(
       role: 'assistant',
       content: options.streaming,
       timestamp: Date.now(),
+    });
+  if (options.compacting)
+    messages.push({
+      id: 'import-compacting',
+      role: 'assistant',
+      content: COMPACTING_TEXT,
+      timestamp: Date.now(),
+      isSummarization: true,
     });
   return messages;
 }

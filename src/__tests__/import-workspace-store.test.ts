@@ -86,6 +86,33 @@ describe('导入工作台状态', () => {
     expect(store.events.map((event) => event.message?.content)).toEqual(['乙的消息']);
   });
 
+  it('用户手动改名后记为用户命名，Agent 之后不能覆盖', async () => {
+    const task = await ImportRepository.createTask();
+    const store = useImportWorkspaceStore();
+    await store.initialize();
+    await store.renameTask(task.id, '  我的导入  ');
+    const saved = await ImportRepository.getTask(task.id);
+    expect(saved).toMatchObject({ name: '我的导入', nameSource: 'user' });
+  });
+
+  it('手动压缩调用导入 Agent 压缩当前任务，失败原因显示给用户', async () => {
+    const task = await ImportRepository.createTask();
+    const compact = vi
+      .spyOn(ImportAgentService, 'compact')
+      .mockRejectedValueOnce(new Error('COMPACT_UNAVAILABLE: 没有可以压缩的对话'))
+      .mockResolvedValueOnce(task);
+    const store = useImportWorkspaceStore();
+    await store.initialize();
+    await store.selectTask(task.id);
+    await store.compact(model);
+    expect(compact).toHaveBeenCalledWith(task.id, model);
+    expect(store.error).toContain('没有可以压缩的对话');
+    expect(store.errorAction).toBe('compact');
+    await store.compact(model);
+    expect(store.error).toBeNull();
+    expect(store.errorAction).toBeNull();
+  });
+
   it('快速切换时较慢的旧任务加载不会覆盖新选择', async () => {
     const a = await ImportRepository.createTask('甲');
     const b = await ImportRepository.createTask('乙');
@@ -132,6 +159,7 @@ describe('导入工作台状态', () => {
     await store.send('开始', undefined);
     expect(run).not.toHaveBeenCalled();
     expect(store.error).toContain('助手模型');
+    expect(store.errorAction).toBe('run');
   });
 
   it('手动修改章节标题写入同一草稿并可被 Agent 读取；过时版本不覆盖较新的修改', async () => {
@@ -238,5 +266,51 @@ describe('导入工作台状态', () => {
 
     await store.chooseNovel('n0');
     expect(run).toHaveBeenCalledWith(task.id, expect.objectContaining({ id: 'm' }), '');
+  });
+});
+
+describe('导入工作台的继续条件', () => {
+  it('有默认模型、无必要问题、不在运行且没有其他任务运行时才能继续', async () => {
+    const task = await ImportRepository.createTask();
+    const store = useImportWorkspaceStore();
+    await store.selectTask(task.id);
+    expect(store.canContinue).toBe(false);
+
+    await useAIModelsStore().addModel({
+      ...model,
+      provider: 'openai',
+      model: 'test',
+      apiKey: 'test-only',
+      baseUrl: 'https://example.test',
+      temperature: 0,
+      maxInputTokens: 1000,
+      maxOutputTokens: 100,
+      lastEdited: new Date(),
+      isDefault: {
+        translation: { enabled: false, temperature: 0 },
+        proofreading: { enabled: false, temperature: 0 },
+        termsTranslation: { enabled: false, temperature: 0 },
+        assistant: { enabled: true, temperature: 0 },
+      },
+    } as AIModel);
+    expect(store.canContinue).toBe(true);
+
+    await (
+      await getDB()
+    ).put('import-tasks', {
+      ...(await ImportRepository.getTask(task.id))!,
+      pendingQuestion: {
+        id: 'q',
+        toolCallId: 'c',
+        question: '选哪本？',
+        options: [],
+        kind: 'general',
+        scopeRevision: 0,
+        draftRevision: 0,
+        required: true,
+      },
+    });
+    await store.selectTask(task.id);
+    expect(store.canContinue).toBe(false);
   });
 });

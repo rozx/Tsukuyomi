@@ -6,17 +6,16 @@
 import { computed, inject, onMounted, provide, ref, watch, type InjectionKey } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
-import { useUiStore } from 'src/stores/ui';
 import {
   ImportPreviewService,
   type ImportChapterPreview,
 } from 'src/services/import/import-preview-service';
 
-export type ImportSection = 'tasks' | 'sources' | 'draft' | 'plan';
+/** 工作台分区。chat 只在手机作为独立分区；桌面与平板的对话常驻在右侧。 */
+export type ImportSection = 'tasks' | 'chat' | 'sources' | 'draft' | 'plan';
 
 function createImportPage() {
   const store = useImportWorkspaceStore();
-  const ui = useUiStore();
   const route = useRoute();
   const router = useRouter();
 
@@ -28,7 +27,7 @@ function createImportPage() {
   const selectedSourceId = ref<string | null>(null);
   const sourceText = ref<{ sourceId: string; text: string; nextOffset?: number } | null>(null);
   const sourceTextError = ref<string | null>(null);
-  const section = ref<ImportSection>('draft');
+  const section = ref<ImportSection>('chat');
   let previewToken = 0;
 
   const routeTaskId = computed(() => {
@@ -56,7 +55,7 @@ function createImportPage() {
   });
 
   function openTask(taskId: string): void {
-    section.value = 'draft';
+    section.value = 'chat';
     void router.push(`/import/${taskId}`);
   }
 
@@ -128,11 +127,6 @@ function createImportPage() {
     sourceTextError.value = null;
   }
 
-  function openChat(): void {
-    ui.setActiveRightTab('chat');
-    if (!ui.rightPanelOpen) ui.openRightPanel();
-  }
-
   // 任务切换时清空章节与来源的查看状态；草稿更新后刷新当前预览
   watch(
     () => store.selectedTaskId,
@@ -169,7 +163,6 @@ function createImportPage() {
     selectChapter,
     showSource,
     closeSource,
-    openChat,
   };
 }
 

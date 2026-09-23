@@ -64,3 +64,12 @@ export function formatTime(timestamp: number): string {
 export function readableError(message: string): string {
   return conciseErrorText(message.replace(/^[A-Z_]+:\s*/, ''));
 }
+
+/** 与对话相关的动作；它们的错误显示在对话区，其他错误显示在工作台状态栏。 */
+export const CHAT_ERROR_ACTIONS: ReadonlySet<string> = new Set([
+  'run',
+  'pause',
+  'compact',
+  'answer',
+  'choose-novel',
+]);

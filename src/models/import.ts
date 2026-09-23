@@ -289,6 +289,8 @@ export interface ImportCheckpoint {
 export interface ImportTask {
   id: string;
   name: string;
+  /** 谁命名了任务；缺省表示仍是默认名。用户命名后 Agent 不能覆盖。 */
+  nameSource?: 'agent' | 'user';
   state: ImportTaskState;
   draft: ImportDraft;
   createdAt: number;
@@ -303,6 +305,8 @@ export interface ImportTask {
   appliedMappings?: { bookId: string; chapters: ImportPlan['mappings'] }[];
   currentPlanId?: string;
   streaming?: { text: string; reasoning?: string };
+  /** 正在总结对话历史（压缩上下文）。 */
+  compacting?: boolean;
 }
 
 export interface ImportEvent {
@@ -310,7 +314,7 @@ export interface ImportEvent {
   taskId: string;
   sequence: number;
   createdAt: number;
-  kind: 'message' | 'tool-call' | 'tool-result' | 'progress' | 'question' | 'answer';
+  kind: 'message' | 'tool-call' | 'tool-result' | 'progress' | 'question' | 'answer' | 'summary';
   message?: ChatMessage;
   callId?: string;
   toolName?: string;
