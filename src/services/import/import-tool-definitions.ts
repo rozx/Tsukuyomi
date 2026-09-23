@@ -1,3 +1,4 @@
+import { importStructureTools } from './import-structure-tools';
 import { importPatternSchema, importSourceFilterSchema } from './import-pattern-schema';
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { askUserTools } from 'src/services/ai/tools/ask-user-tools';
@@ -162,6 +163,7 @@ function tool(
 }
 
 export const importTools: AITool[] = [
+  ...importStructureTools,
   tool(
     'preview_draft_batch',
     '预览批量正文清理或卷章标题替换，保存版本绑定的方案；不修改草稿。最多 500 项，返回命中数和最多五个示例。正文按每个内容引用处理，可跨其内部多行，不跨不同引用；仅删除匹配片段或整行。标题支持 $1、$<name> 等捕获组替换。空 scope 表示全部；各筛选条件取交集。',

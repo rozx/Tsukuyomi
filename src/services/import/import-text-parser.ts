@@ -122,7 +122,13 @@ export function parseImportMarkdown(text: string): ParsedBlock[] {
           : token.type === 'space'
             ? 'whitespace'
             : 'body';
-    blocks.push({ start, end, text: text.slice(start, end), kind });
+    blocks.push({
+      start,
+      end,
+      text: text.slice(start, end),
+      kind,
+      ...(token.type === 'heading' ? { headingLevel: token.depth, headingTitle: token.text } : {}),
+    });
   }
   if (position !== normalized.length)
     throw new Error('MARKDOWN_POSITION: Markdown 块没有覆盖完整原文');

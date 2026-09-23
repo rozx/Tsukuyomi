@@ -102,6 +102,7 @@ function rememberSources(context: ImportActionContext, values: unknown): void {
 function rememberResource(context: ImportActionContext, result: ImportActionData): void {
   const sourceId = actionText(result.sourceId);
   if (!sourceId) return;
+  if (typeof result.sourceName === 'string') context.sources.set(sourceId, result.sourceName);
   const source = context.sources.get(sourceId);
   for (const key of ['snapshotId', 'contentId', 'resourceId']) {
     const id = actionText(result[key]);
@@ -130,7 +131,7 @@ function rememberResult(
   if (
     typeof result.batchId === 'string' &&
     call &&
-    ['preview_draft_batch', 'prepare_chapter_batch'].includes(call.name)
+    ['preview_draft_batch', 'prepare_chapter_batch', 'preview_text_structure'].includes(call.name)
   )
     context.batches.set(result.batchId, {
       ...call,

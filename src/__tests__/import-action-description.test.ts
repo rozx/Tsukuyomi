@@ -306,4 +306,84 @@ describe('导入操作对象与完整详情', () => {
       '删除章节：第一话',
     );
   });
+  it('文本拆章气泡标明来源与阶段，详情保留完整规则、分页区间和示例', () => {
+    const rules = {
+      mode: 'regex',
+      chapter_pattern: {
+        mode: 'regex',
+        pattern: '^第(?<number>\\d+)章 (?<title>[^\\r\\n]+)',
+        flags: 'm',
+      },
+      selection: { start: { mode: 'literal', pattern: '正文开始' } },
+    };
+    const result = {
+      success: true,
+      batchId: 'structure1',
+      sourceId: 's',
+      sourceName: '整本小说.txt',
+      resourceId: 'r',
+      snapshotId: 'snap',
+      draftRevision: 7,
+      chapters: 113,
+      volumes: 9,
+      unassigned: 1,
+      empty: 0,
+      warningCount: 2,
+      selected: { start: 30, end: 50000 },
+      totalCharacters: 50100,
+      excludedCharacters: 100,
+      examples: [
+        {
+          title: '第一章',
+          volumeTitle: '卷一',
+          start: 50,
+          end: 500,
+          characters: 450,
+          head: '开头\n原文',
+          tail: '最后一段',
+          warnings: ['检查目录'],
+        },
+      ],
+    };
+    const events = [
+      ...exchange(
+        'p',
+        'preview_text_structure',
+        { resource_id: 'r', base_draft_revision: 7, rules, replace_chapter_ids: ['old'] },
+        result,
+      ),
+      ...exchange(
+        'g',
+        'get_text_structure',
+        { batch_id: 'structure1', view: 'excluded', offset: 0, limit: 100 },
+        {
+          ...result,
+          rules,
+          view: 'excluded',
+          offset: 0,
+          total: 1,
+          items: [{ start: 0, end: 30, reason: '正文选择范围之前' }],
+        },
+      ),
+      ...exchange(
+        'a',
+        'apply_text_structure',
+        { batch_id: 'structure1' },
+        { ...result, applied: true, draftRevision: 8 },
+      ),
+    ];
+    const actions = importEventsToMessages(events, options).flatMap((m) => m.actions ?? []);
+    expect(actions[0]?.name).toContain('预览文本拆章：「整本小说.txt」');
+    expect(actions[0]?.name).toContain('9 卷／113 章');
+    expect(actions[1]?.name).toContain('排除记录');
+    expect(actions[2]?.name).toContain('应用文本拆章：「整本小说.txt」');
+    const details = getActionDetails(actions[2]!, context);
+    expect(details).toContainEqual({ label: '章节标题规则', value: rules.chapter_pattern.pattern });
+    expect(details).toContainEqual({ label: '正文开始标记', value: '正文开始' });
+    expect(details).toContainEqual({ label: '正文选择区间', value: '[30, 50000) · UTF-16' });
+    expect(details.some((d) => d.value.includes('开头\n原文'))).toBe(true);
+    expect(
+      getActionDetails(actions[1]!, context).some((d) => d.value.includes('正文选择范围之前')),
+    ).toBe(true);
+  });
 });

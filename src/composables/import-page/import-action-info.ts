@@ -1,3 +1,4 @@
+import { describeTextStructure } from './import-structure-description';
 import { appendImportResultDetails } from './import-action-results';
 import type { ActionDetail } from 'src/utils/action-info-utils';
 import {
@@ -264,6 +265,8 @@ export function importActionInfo(
     };
   if (name === 'read_source')
     return { summary: sourceRead(args, result, context, details), details };
+  const structure = describeTextStructure(name, args, result, context, details);
+  if (structure) return { summary: structure, details };
   const batch = describeImportBatch(name, args, result, context, details);
   if (batch) return { summary: batch, details };
   if (name === 'get_import_draft')

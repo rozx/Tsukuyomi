@@ -4,7 +4,7 @@ import type {
   ImportDraftBatchInput,
   ImportDraftBatchSummary,
 } from 'src/models/import-draft-batch';
-import { ImportRepository, checkImportRun } from './import-repository';
+import { ImportRepository } from './import-repository';
 import type { ImportTaskMutationOptions } from './import-repository';
 import { ImportParsingClient } from './import-parsing-client';
 import { prepareDraftBatchChanges } from './import-draft-batch-selection';
@@ -23,11 +23,7 @@ export class ImportDraftBatchService {
     finish?: Finish,
     signal?: AbortSignal,
   ): Promise<ImportDraftBatchSummary> {
-    const task = await ImportRepository.getTask(run.taskId);
-    if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
-    checkImportRun(task, run);
-    if (task.draft.revision !== input.base_draft_revision)
-      throw new Error('DRAFT_CHANGED: 草稿已变化，请重新预览');
+    const task = await ImportRepository.getDraftTask(run, input.base_draft_revision);
     const changes = await prepareDraftBatchChanges(task.id, task.draft, input, this.parser, signal);
     const batchId = crypto.randomUUID();
     const summary: ImportDraftBatchSummary = {

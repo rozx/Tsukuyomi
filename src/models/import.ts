@@ -1,3 +1,4 @@
+import type { ImportTextStructureBatch } from './import-text-structure';
 import type { ImportDraftBatch } from './import-draft-batch';
 import type { ImportTextRange } from './import-pattern';
 import type { Novel, Paragraph } from './novel';
@@ -74,6 +75,8 @@ export interface ImportTextBlock {
   end: number;
   kind: 'body' | 'heading' | 'preface' | 'afterword' | 'note' | 'metadata' | 'whitespace';
   locator?: string;
+  headingLevel?: number;
+  headingTitle?: string;
 }
 
 export interface ImportExtractionRules {
@@ -108,6 +111,7 @@ export type ImportResource = ImportResourceBase &
     | { kind: 'input'; blob: Blob }
     | { kind: 'chapter-batch'; batch: ImportChapterBatch }
     | { kind: 'draft-edit-batch'; batch: ImportDraftBatch }
+    | { kind: 'text-structure-batch'; batch: ImportTextStructureBatch }
     | {
         kind: 'snapshot';
         blob: Blob;

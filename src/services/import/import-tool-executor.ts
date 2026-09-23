@@ -1,3 +1,5 @@
+import { ImportTextStructureService } from './import-text-structure';
+import type { ImportStructureInput } from 'src/models/import-text-structure';
 import { filterImportSourceIds } from './import-source-filter';
 import type { ImportSourceFilter } from 'src/models/import-pattern';
 import { ImportDraftBatchService } from './import-draft-batch';
@@ -166,6 +168,32 @@ export class ImportToolExecutor {
   ): Promise<unknown> {
     const taskId = this.run.taskId;
     switch (name) {
+      case 'preview_text_structure':
+        return new ImportTextStructureService().prepare(
+          this.run,
+          args as unknown as ImportStructureInput,
+          finish,
+          options.signal,
+        );
+      case 'apply_text_structure':
+        return new ImportTextStructureService().apply(
+          this.run,
+          textArgument(args, 'batch_id'),
+          finish,
+          options.signal,
+        );
+      case 'get_text_structure': {
+        const { offset, limit } = pageArguments(args);
+        return save(
+          await new ImportTextStructureService().read(
+            taskId,
+            textArgument(args, 'batch_id'),
+            args.view as 'chapters' | 'excluded' | undefined,
+            offset,
+            limit,
+          ),
+        );
+      }
       case 'preview_draft_batch':
         return new ImportDraftBatchService().prepare(
           this.run,

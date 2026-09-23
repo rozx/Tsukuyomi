@@ -274,6 +274,15 @@ export class ImportRepository {
     return (await getDB()).get('import-tasks', taskId);
   }
 
+  /** 在昂贵的批量计算前读取并核对草稿；提交时仍须在事务内复核。 */
+  static async getDraftTask(run: ImportRunContext, revision: number): Promise<ImportTask> {
+    const task = await this.getTask(run.taskId);
+    if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+    checkImportRun(task, run);
+    if (task.draft.revision !== revision) throw new Error('DRAFT_CHANGED: 草稿已变化，请重新预览');
+    return task;
+  }
+
   static async listTasks(
     options: { limit?: number; cursor?: string | undefined } = {},
   ): Promise<{ items: ImportTask[]; cursor?: string }> {

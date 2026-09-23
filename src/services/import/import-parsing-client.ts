@@ -2,6 +2,19 @@ import type { ImportParseRequest, ImportParseResponse } from 'src/models/import-
 import type { ImportParseLimits, ImportWorkOptions } from './import-work-limits';
 import { IMPORT_FALLBACK_LIMITS, IMPORT_PARSE_LIMITS } from './import-work-limits';
 
+function usesRegex(request: ImportParseRequest): boolean {
+  if (request.kind === 'pattern') return request.pattern.mode === 'regex';
+  if (request.kind !== 'structure') return false;
+  const r = request.rules;
+  return [
+    r.chapter_pattern,
+    r.volume_pattern,
+    r.selection?.start,
+    r.selection?.end,
+    r.selection?.body,
+  ].some((p) => p?.mode === 'regex');
+}
+
 type Result<T extends ImportParseRequest> = {
   value: ImportParseResponse<T>;
   execution: 'worker' | 'main';
@@ -33,7 +46,7 @@ export class ImportParsingClient {
     request: T,
     options: ImportWorkOptions,
   ): Promise<Result<T>> {
-    if (request.kind === 'pattern' && request.pattern.mode === 'regex')
+    if (usesRegex(request))
       throw new Error(
         'REGEX_WORKER_REQUIRED: 正则处理需要可用的 Worker，请改用字面量或检查运行环境',
       );
@@ -80,7 +93,9 @@ export class ImportParsingClient {
       const abort = () => fail(new DOMException('解析已取消', 'AbortError'));
       const timeout = setTimeout(
         () => fail(new Error('PROCESSING_LIMIT: Worker 解析超时')),
-        request.kind === 'pattern' ? Math.min(limits.timeoutMs, 3000) : limits.timeoutMs,
+        request.kind === 'pattern' || usesRegex(request)
+          ? Math.min(limits.timeoutMs, 3000)
+          : limits.timeoutMs,
       );
       options.signal?.addEventListener('abort', abort, { once: true });
       active.onmessage = (

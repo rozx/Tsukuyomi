@@ -43,6 +43,9 @@ type Result = Record<string, unknown> | undefined;
 type ActionShape = Pick<MessageAction, 'type' | 'entity'>;
 
 const ACTION_SHAPES: Record<string, ActionShape> = {
+  preview_text_structure: { type: 'read', entity: 'chapter' },
+  get_text_structure: { type: 'read', entity: 'chapter' },
+  apply_text_structure: { type: 'update', entity: 'chapter' },
   preview_draft_batch: { type: 'read', entity: 'chapter' },
   apply_draft_batch: { type: 'update', entity: 'chapter' },
   prepare_chapter_batch: { type: 'create', entity: 'chapter' },

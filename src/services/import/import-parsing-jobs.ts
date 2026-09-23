@@ -1,3 +1,4 @@
+import { parseImportStructure } from './import-structure-parser';
 import { mergeImportRanges } from './import-content-exclusions';
 import { processImportPattern } from './import-pattern-job';
 import type {
@@ -127,6 +128,13 @@ export async function processImportJob<T extends ImportParseRequest>(
 ): Promise<ImportParseResponse<T>> {
   const work = createImportWork(options);
   await work.checkpoint(true);
+  if (request.kind === 'structure') {
+    if (request.text.length > work.limits.textCharacters)
+      throw new Error('PROCESSING_LIMIT: 拆章文本超过上限');
+    const structure = parseImportStructure(request);
+    await work.checkpoint(true);
+    return structure as ImportParseResponse<T>;
+  }
   if (request.kind === 'pattern')
     return (await processImportPattern(request, options)) as ImportParseResponse<T>;
   if (request.kind === 'match')

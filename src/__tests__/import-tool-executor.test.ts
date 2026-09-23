@@ -110,6 +110,37 @@ describe('导入专属工具执行器', () => {
     expect(await (await getDB()).count('books')).toBe(0);
   });
 
+  it('文本结构的预览、分页、应用绑定检查点，参数不能伪造任务或绕过预览', async () => {
+    vi.stubGlobal('Worker', ImportWorkerFixture);
+    const value = await draft('第1章 开始\n正文甲\n第2章 结束\n正文乙');
+    const { task, invoke } = await fixture(value.taskId);
+    const preview = await invoke('preview_text_structure', {
+      resource_id: value.ref.resourceId,
+      base_draft_revision: 1,
+      replace_chapter_ids: [value.chapter.id],
+      rules: {
+        mode: 'regex',
+        chapter_pattern: { mode: 'regex', pattern: '^第\\d+章 [^\\r\\n]+', flags: 'm' },
+      },
+    });
+    expect(preview.result).toMatchObject({ success: true, chapters: 2 });
+    expect((await ImportRepository.getTask(task.id))?.checkpoint?.completedCallIds).toEqual([
+      preview.call.id,
+    ]);
+    const read = await invoke('get_text_structure', { batch_id: preview.result.batchId, limit: 1 });
+    expect(read.result).toMatchObject({ total: 2, nextOffset: 1 });
+    expect((await invoke('preview_text_structure', { task_id: 'fake' })).result.success).toBe(
+      false,
+    );
+    const applied = await invoke('apply_text_structure', { batch_id: preview.result.batchId });
+    expect(applied.result).toMatchObject({ success: true, applied: true, draftRevision: 2 });
+    expect((await ImportRepository.getTask(task.id))?.checkpoint?.completedCallIds).toEqual([
+      applied.call.id,
+    ]);
+    expect((await ImportRepository.getTask(task.id))?.draft.chapters).toHaveLength(2);
+    expect(await (await getDB()).count('books')).toBe(0);
+  });
+
   it('宿主任务身份不能由参数更改，普通写工具和任意脚本不可执行', async () => {
     const { task, invoke } = await fixture();
     const other = await ImportRepository.createTask();

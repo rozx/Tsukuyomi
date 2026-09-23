@@ -1,3 +1,4 @@
+import { importExpression } from './import-expression';
 import { excludeImportText } from './import-content-exclusions';
 import type {
   ImportPatternJob,
@@ -6,26 +7,6 @@ import type {
 } from 'src/models/import-pattern';
 import { createImportWork } from './import-work-limits';
 import type { ImportWorkOptions } from './import-work-limits';
-
-function expression(input: ImportPatternJob): RegExp {
-  const { mode, pattern, flags = '' } = input.pattern;
-  if (
-    !['literal', 'regex'].includes(mode) ||
-    typeof pattern !== 'string' ||
-    !pattern.length ||
-    pattern.length > 1000
-  )
-    throw new Error('INVALID_PATTERN: 匹配规则须为 1–1000 字符');
-  if (!/^[gimsu]*$/.test(flags) || new Set(flags).size !== flags.length)
-    throw new Error('INVALID_PATTERN: flags 仅支持 g、i、m、s、u，不能重复');
-  const source = mode === 'literal' ? pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : pattern;
-  try {
-    // 全部批量操作默认全局匹配，Unicode 模式避免拆开代理对。
-    return new RegExp(source, [...new Set(`${flags}gu`)].join(''));
-  } catch {
-    throw new Error('INVALID_PATTERN: 正则表达式无效');
-  }
-}
 
 function lineRange(text: string, start: number, end: number): ImportTextRange {
   if (text[start] === '\n' && text[start - 1] === '\r') start--;
@@ -42,7 +23,7 @@ export async function processImportPattern(
   options: ImportWorkOptions,
 ): Promise<ImportPatternResult[]> {
   const work = createImportWork(options);
-  const regex = expression(input);
+  const regex = importExpression(input.pattern);
   if (
     input.texts.length > 10000 ||
     input.texts.reduce((sum, text) => sum + text.length, 0) > work.limits.textCharacters
