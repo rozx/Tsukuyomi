@@ -37,7 +37,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mountDraft() {
+async function mountDraft(extraChapters = 0) {
   const input = await draft('草稿原文');
   await ImportDraftService.edit(
     input.taskId,
@@ -49,6 +49,10 @@ async function mountDraft() {
           op: 'upsert_chapter',
           chapter: { ...input.chapter, id: 'c2', title: '第二章', volumeId: 'v2' },
         },
+        ...Array.from({ length: extraChapters }, (_, index) => ({
+          op: 'upsert_chapter' as const,
+          chapter: { ...input.chapter, id: `x${index}`, title: `追加 ${index}` },
+        })),
       ],
     },
     { actor: 'user' },
@@ -142,5 +146,44 @@ describe('草稿删除入口与确认范围', () => {
     );
     expect(store.task?.id).toBe(other.taskId);
     expect(store.task?.draft.chapters).toHaveLength(1);
+  });
+});
+
+describe('大草稿分批显示', () => {
+  const click = (label: string) => {
+    const button = host!.querySelector<HTMLButtonElement>(`button[aria-label^="${label}"]`);
+    expect(button).not.toBeNull();
+    button!.click();
+  };
+
+  it('超过一页的卷只渲染第一页，可继续显示、折叠与展开', async () => {
+    await mountDraft(99);
+    const volumes = () => [...host!.querySelectorAll('.idv')];
+    const count = (index: number) => volumes()[index]!.querySelectorAll('.idcr').length;
+    expect(count(0)).toBe(50);
+    expect(count(1)).toBe(1);
+    click('显示更多章节');
+    await nextTick();
+    expect(count(0)).toBe(100);
+    expect(host!.querySelector('button[aria-label^="显示更多章节"]')).toBeNull();
+    click('折叠卷');
+    await nextTick();
+    expect(count(0)).toBe(0);
+    expect(volumes()[0]!.textContent).toContain('已折叠 100 章');
+    expect(volumes()[0]!.textContent).not.toContain('还没有章节');
+    click('展开卷');
+    await nextTick();
+    expect(count(0)).toBe(50);
+  });
+
+  it('切换任务后恢复默认显示', async () => {
+    const { store } = await mountDraft(99);
+    click('显示更多章节');
+    await nextTick();
+    expect(ctx.draftWindows.value).not.toEqual({});
+    const other = await draft('另一任务正文');
+    await store.selectTask(other.taskId);
+    await nextTick();
+    expect(ctx.draftWindows.value).toEqual({});
   });
 });

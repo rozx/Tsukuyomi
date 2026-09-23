@@ -1,3 +1,4 @@
+import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationChunk } from 'src/services/ai/types/ai-service';
 import { AssistantService } from 'src/services/ai/tasks/assistant-service';
@@ -70,6 +71,7 @@ export class ImportAgentService {
   }
 
   static async run(taskId: string, model: AIModel, message = ''): Promise<ImportTask> {
+    assertImportWorkspaceEnabled();
     if (typeof navigator === 'undefined' || !navigator.locks)
       throw new Error('LOCK_UNAVAILABLE: 当前环境不能协调导入运行');
     if (!model.id || !model.enabled) throw new Error('MODEL_UNAVAILABLE: 请先选择可用的助手模型');
@@ -173,6 +175,7 @@ export class ImportAgentService {
 
   /** 手动压缩对话上下文：与运行共用锁，运行中或另一任务占用时不压缩。 */
   static async compact(taskId: string, model: AIModel): Promise<ImportTask> {
+    assertImportWorkspaceEnabled();
     if (typeof navigator === 'undefined' || !navigator.locks)
       throw new Error('LOCK_UNAVAILABLE: 当前环境不能协调导入运行');
     const locks = navigator.locks;

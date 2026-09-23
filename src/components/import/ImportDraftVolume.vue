@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** 草稿中的一卷：卷标题、卷的上下移动，以及其中的章节。 */
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import InputText from 'primevue/inputtext';
 import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
@@ -9,6 +9,11 @@ import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import type { ImportDraft, ImportDraftChapter } from 'src/models/import';
 import ImportDraftChapterRow from './ImportDraftChapterRow.vue';
 import { plainChapter, useDraftLock } from './import-draft';
+import {
+  DRAFT_PAGE,
+  moreDraftChapters,
+  toggleDraftVolume,
+} from 'src/composables/import-page/import-draft-windows';
 
 const props = defineProps<{
   volume: ImportDraft['volumes'][number];
@@ -20,10 +25,13 @@ const props = defineProps<{
   lastChapterId: string | undefined;
   volumeOptions: { label: string; value: string }[];
   chapterNumbers: Record<string, number>;
+  /** 当前显示的章节数，0 为折叠；上千章的卷分批渲染。 */
+  shown: number;
 }>();
 const emit = defineEmits<{
   moveVolume: [volumeId: string, delta: number];
   moveChapter: [chapterId: string, delta: number];
+  show: [volumeId: string, count: number];
 }>();
 
 const store = useImportWorkspaceStore();
@@ -46,6 +54,13 @@ const commitTitle = () => {
   void store.editDraft([{ op: 'upsert_volume', id: props.volume.id, title: value }]);
 };
 const moveChapter = (chapterId: string, delta: number) => emit('moveChapter', chapterId, delta);
+const visible = computed(() => props.chapters.slice(0, props.shown));
+const remaining = computed(() => props.chapters.length - visible.value.length);
+const collapsed = computed(() => props.shown === 0 && props.chapters.length > 0);
+const toggle = () =>
+  emit('show', props.volume.id, toggleDraftVolume(props.shown, props.chapters.length));
+const showMore = () =>
+  emit('show', props.volume.id, moreDraftChapters(props.shown, props.chapters.length));
 
 // 章节「移到其他卷」共用一个弹出菜单，菜单项按当前章节生成
 const volumeMenu = ref<InstanceType<typeof Menu> | null>(null);
@@ -71,6 +86,16 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
 <template>
   <div class="idv">
     <div class="idv-head">
+      <button
+        v-if="chapters.length"
+        type="button"
+        class="idv-icon"
+        :aria-label="`${collapsed ? '展开卷' : '折叠卷'} ${volume.title}`"
+        :aria-expanded="!collapsed"
+        @click="toggle"
+      >
+        <i :class="['pi', collapsed ? 'pi-chevron-right' : 'pi-chevron-down']" aria-hidden="true" />
+      </button>
       <span class="idv-index" aria-hidden="true">卷 {{ index + 1 }}</span>
       <InputText
         v-model="title"
@@ -111,9 +136,10 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
         <i class="pi pi-trash" aria-hidden="true" />
       </button>
     </div>
-    <ol v-if="chapters.length" class="idv-chapters">
+    <p v-if="collapsed" class="idv-empty">已折叠 {{ chapters.length }} 章。</p>
+    <ol v-else-if="chapters.length" class="idv-chapters">
       <ImportDraftChapterRow
-        v-for="chapter in chapters"
+        v-for="chapter in visible"
         :key="chapter.id"
         :chapter="chapter"
         :number="chapterNumbers[chapter.id] ?? 0"
@@ -125,6 +151,16 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
       />
     </ol>
     <p v-else class="idv-empty">这一卷还没有章节。</p>
+    <button
+      v-if="!collapsed && remaining > 0"
+      type="button"
+      class="idv-more"
+      :aria-label="`显示更多章节（${volume.title}，剩余 ${remaining} 章）`"
+      @click="showMore"
+    >
+      <i class="pi pi-angle-double-down" aria-hidden="true" />
+      再显示 {{ Math.min(DRAFT_PAGE, remaining) }} 章 · 剩余 {{ remaining }} 章
+    </button>
     <Menu ref="volumeMenu" :model="volumeMenuItems" popup>
       <template #start><div class="idv-menu-title">移到</div></template>
     </Menu>
@@ -221,6 +257,21 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
 
 .idv-icon:disabled {
   opacity: 0.3;
+}
+
+.idv-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem;
+  font-size: 0.74rem;
+  color: rgb(165, 180, 252);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.idv-more:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .idv-icon--delete:hover:not(:disabled) {

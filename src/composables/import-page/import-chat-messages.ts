@@ -97,53 +97,45 @@ function count(value: unknown): number {
   return Array.isArray(value) ? value.length : 0;
 }
 
-/** 操作本身的描述：处理了哪些来源、范围或草稿。 */
+type Describe = (args: Args, names: Map<string, string>) => string;
+
+function extractionLabel(args: Args, names: Map<string, string>): string {
+  if (args.filter) return '筛选并提取正文';
+  const sources = (Array.isArray(args.sources) ? args.sources : []) as Args[];
+  const labels = sources.slice(0, 3).map((entry) => sourceLabel(entry.source_id, names));
+  const more = sources.length > 3 ? ` 等 ${sources.length} 个` : '';
+  return `提取正文：${labels.join('、')}${more}`;
+}
+
+const libraryLabel: Describe = () => '对照本地小说';
+
+/** 操作本身的描述：处理了哪些来源、范围或草稿（未由 importActionInfo 给出摘要时使用）。 */
+const DESCRIPTIONS: Record<string, Describe> = {
+  preview_draft_batch: (args) =>
+    args.target === 'body' ? '预览批量正文清理' : '预览卷章标题批量替换',
+  apply_draft_batch: () => '应用草稿批量修改',
+  prepare_chapter_batch: () => '准备章节批次',
+  run_chapter_batch: (args) => (args.retry_failed ? '重试失败章节' : '批量提取章节'),
+  get_chapter_batch: () => '查看批次进度',
+  list_sources: () => '列出来源',
+  inspect_source: (args, names) => `检查来源：${sourceLabel(args.source_id, names)}`,
+  read_source: () => '查看来源内容',
+  extract_novel_info: (args, names) => `读取小说信息：${sourceLabel(args.source_id, names)}`,
+  add_sources: (args) =>
+    args.filter ? '筛选并追加来源' : `追加 ${count(args.discovery_ids)} 个发现的来源`,
+  extract_content: extractionLabel,
+  get_import_draft: () => '读取草稿',
+  edit_import_draft: (args) => `编辑草稿：${count(args.operations)} 项操作`,
+  search_books: (args) => `查找本地小说：${text(args.query)}`,
+  get_book_info: libraryLabel,
+  list_chapters: libraryLabel,
+  get_chapter_info: libraryLabel,
+  preview_import: () => '生成导入方案',
+  rename_import_task: (args) => `命名任务：${text(args.name)}`,
+};
+
 function describe(name: string, args: Args, names: Map<string, string>): string {
-  switch (name) {
-    case 'preview_draft_batch':
-      return args.target === 'body' ? '预览批量正文清理' : '预览卷章标题批量替换';
-    case 'apply_draft_batch':
-      return '应用草稿批量修改';
-    case 'prepare_chapter_batch':
-      return '准备章节批次';
-    case 'run_chapter_batch':
-      return args.retry_failed ? '重试失败章节' : '批量提取章节';
-    case 'get_chapter_batch':
-      return '查看批次进度';
-    case 'list_sources':
-      return '列出来源';
-    case 'inspect_source':
-      return `检查来源：${sourceLabel(args.source_id, names)}`;
-    case 'read_source':
-      return '查看来源内容';
-    case 'extract_novel_info':
-      return `读取小说信息：${sourceLabel(args.source_id, names)}`;
-    case 'add_sources':
-      return args.filter ? '筛选并追加来源' : `追加 ${count(args.discovery_ids)} 个发现的来源`;
-    case 'extract_content': {
-      if (args.filter) return '筛选并提取正文';
-      const sources = (Array.isArray(args.sources) ? args.sources : []) as Args[];
-      const labels = sources.slice(0, 3).map((entry) => sourceLabel(entry.source_id, names));
-      const more = sources.length > 3 ? ` 等 ${sources.length} 个` : '';
-      return `提取正文：${labels.join('、')}${more}`;
-    }
-    case 'get_import_draft':
-      return '读取草稿';
-    case 'edit_import_draft':
-      return `编辑草稿：${count(args.operations)} 项操作`;
-    case 'search_books':
-      return `查找本地小说：${typeof args.query === 'string' ? args.query : ''}`;
-    case 'get_book_info':
-    case 'list_chapters':
-    case 'get_chapter_info':
-      return '对照本地小说';
-    case 'preview_import':
-      return '生成导入方案';
-    case 'rename_import_task':
-      return `命名任务：${text(args.name)}`;
-    default:
-      return name;
-  }
+  return DESCRIPTIONS[name]?.(args, names) ?? name;
 }
 
 function errorMessage(result: Args): string {

@@ -1,3 +1,4 @@
+import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import type { ImportOperation } from 'src/models/import';
 import { getDB } from 'src/utils/indexed-db';
 import { completeIdbTransaction } from 'src/utils/complete-idb-transaction';
@@ -39,7 +40,9 @@ export class ImportApplicationService {
     return token;
   }
 
-  apply(confirmation: ImportConfirmation): Promise<ImportOperation> {
+  async apply(confirmation: ImportConfirmation): Promise<ImportOperation> {
+    // 回退关闭导入时不再写书库；撤销仍可用，以便恢复已导入的小说
+    assertImportWorkspaceEnabled();
     return this.execute(confirmation, 'apply');
   }
   revert(confirmation: ImportConfirmation): Promise<ImportOperation> {

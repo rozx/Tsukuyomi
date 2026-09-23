@@ -40,6 +40,14 @@
     "description": "月詠人格、聊天助手功能详解、使用技巧、译文纯净度保证"
   },
   {
+    "id": "import-guide",
+    "title": "AI 导入工作台",
+    "file": "import-guide.md",
+    "path": "help",
+    "category": "使用指南",
+    "description": "网址与文件来源、格式支持、元信息搜索、网站限制、草稿与方案、部分导入、暂停恢复、撤销条件及与翻译的互斥"
+  },
+  {
     "id": "toolbar-guide",
     "title": "系统栏与导航",
     "file": "toolbar-guide.md",

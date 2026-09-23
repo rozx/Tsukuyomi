@@ -270,3 +270,41 @@ describe('导入事件到月詠消息', () => {
     ]);
   });
 });
+
+describe('导入操作记录的描述', () => {
+  const names = new Map([['s-named', '第一卷.txt']]);
+  const label = (tool: string, args: unknown) =>
+    importEventsToMessages(
+      [
+        event({
+          kind: 'message',
+          message: { role: 'assistant', content: '', tool_calls: [call('c', tool, args)] },
+        }),
+      ],
+      { sourceNames: names },
+    )[0]!.actions![0]!.name;
+
+  it.each([
+    ['preview_draft_batch', { target: 'body' }, '预览批量正文清理'],
+    ['preview_draft_batch', { target: 'chapter_title' }, '预览卷章标题批量替换'],
+    ['apply_draft_batch', {}, '应用草稿批量修改'],
+    ['prepare_chapter_batch', {}, '准备章节批次'],
+    ['run_chapter_batch', { retry_failed: true }, '重试失败章节'],
+    ['run_chapter_batch', {}, '批量提取章节'],
+    ['get_chapter_batch', {}, '查看批次进度'],
+    ['list_sources', {}, '列出来源'],
+    ['inspect_source', { source_id: 's-named' }, '检查来源：第一卷.txt'],
+    ['inspect_source', { source_id: 'abcdef0123456789' }, '检查来源：abcdef01'],
+    ['extract_novel_info', { source_id: 's-named' }, '读取小说信息：第一卷.txt'],
+    ['add_sources', { filter: { name: 'x' } }, '筛选并追加来源'],
+    ['extract_content', { filter: { name: 'x' }, sources: [] }, '筛选并提取正文'],
+    ['get_import_draft', {}, '读取草稿'],
+    ['search_books', { query: '月下' }, '查找本地小说：月下'],
+    ['search_books', {}, '查找本地小说：'],
+    ['preview_import', { draft_revision: 1 }, '生成导入方案'],
+    ['rename_import_task', {}, '命名任务：'],
+    ['unknown_tool', {}, 'unknown_tool'],
+  ])('%s %j → %s', (tool, args, expected) => {
+    expect(label(tool, args)).toContain(expected);
+  });
+});

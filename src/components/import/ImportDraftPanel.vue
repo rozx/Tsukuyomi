@@ -13,6 +13,7 @@ import ImportMetadataCandidates from './ImportMetadataCandidates.vue';
 import ImportDraftVolume from './ImportDraftVolume.vue';
 import { useDraftLock } from './import-draft';
 import { draftOverview } from 'src/composables/import-page/import-workspace-overview';
+import { draftChapterWindows } from 'src/composables/import-page/import-draft-windows';
 
 const store = useImportWorkspaceStore();
 const ctx = injectImportPage();
@@ -40,6 +41,16 @@ const groups = computed(() =>
     chapters: chapters.value.filter((chapter) => chapter.volumeId === volume.id),
   })),
 );
+// 大草稿分批渲染：各卷显示的章节数，用户选择记录在页面上下文中以跨断点保留
+const windows = computed(() =>
+  draftChapterWindows(
+    groups.value.map((group) => ({ id: group.volume.id, count: group.chapters.length })),
+    ctx.draftWindows.value,
+  ),
+);
+const show = (volumeId: string, count: number) => {
+  ctx.draftWindows.value = { ...ctx.draftWindows.value, [volumeId]: count };
+};
 // 章节按显示顺序（先卷后章）连续编号，便于与月詠对话时指代
 const chapterNumbers = computed(() =>
   Object.fromEntries(
@@ -155,8 +166,10 @@ const addVolume = () =>
         :last-chapter-id="lastChapterId"
         :volume-options="volumeOptions"
         :chapter-numbers="chapterNumbers"
+        :shown="windows[group.volume.id] ?? group.chapters.length"
         @move-volume="moveVolume"
         @move-chapter="moveChapter"
+        @show="show"
       />
 
       <div v-if="overview.orphans" class="ipl-banner ipl-banner--warn">

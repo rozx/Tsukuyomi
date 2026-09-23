@@ -30,6 +30,8 @@ function createImportPage() {
   const sourceText = ref<{ sourceId: string; text: string; nextOffset?: number } | null>(null);
   const sourceTextError = ref<string | null>(null);
   const section = ref<ImportSection>('chat');
+  // 各卷用户选择显示的章节数（0 为折叠），未选择的卷按默认分批规则显示
+  const draftWindows = ref<Record<string, number>>({});
   let previewToken = 0;
 
   const routeTaskId = computed(() => {
@@ -135,12 +137,13 @@ function createImportPage() {
     sourceTextError.value = null;
   }
 
-  // 任务切换时清空章节与来源的查看状态；草稿更新后刷新当前预览
+  // 任务切换时清空章节、来源的查看状态及卷的显示选择；草稿更新后刷新当前预览
   watch(
     () => store.selectedTaskId,
     () => {
       selectChapter(null);
       closeSource();
+      draftWindows.value = {};
     },
   );
   watch(
@@ -157,6 +160,7 @@ function createImportPage() {
     ready,
     routeTaskId,
     section,
+    draftWindows,
     selectedChapterId,
     preview,
     previewError,

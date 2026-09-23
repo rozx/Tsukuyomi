@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel } from 'src/models/novel';
 import { useMainNavActive, type MainNavTab } from 'src/composables/useMainNavActive';
+import { isNavTabEnabled } from 'src/constants/features';
 
 interface Props {
   collapsed?: boolean;
@@ -88,12 +89,14 @@ onUnmounted(() => {
   }
 });
 
-const topNav: NavEntry[] = [
-  { label: '首页', icon: 'pi pi-home', path: '/', tab: 'home' },
-  { label: '书籍列表', icon: 'pi pi-book', path: '/books', tab: 'library' },
-  { label: 'AI 导入', icon: 'pi pi-file-import', path: '/import', tab: 'import' },
-  { label: 'AI 列表', icon: 'pi pi-sparkles', path: '/ai', tab: 'ai' },
-];
+const topNav = (
+  [
+    { label: '首页', icon: 'pi pi-home', path: '/', tab: 'home' },
+    { label: '书籍列表', icon: 'pi pi-book', path: '/books', tab: 'library' },
+    { label: 'AI 导入', icon: 'pi pi-file-import', path: '/import', tab: 'import' },
+    { label: 'AI 列表', icon: 'pi pi-sparkles', path: '/ai', tab: 'ai' },
+  ] satisfies NavEntry[]
+).filter((entry) => isNavTabEnabled(entry.tab));
 
 const bottomNav: NavEntry[] = [
   { label: '设置', icon: 'pi pi-cog', path: '/settings', tab: 'settings' },
@@ -116,12 +119,7 @@ const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav));
 </script>
 
 <template>
-  <aside
-    v-if="collapsed"
-    ref="menuContainerRef"
-    class="side-rail"
-    aria-label="主导航"
-  >
+  <aside v-if="collapsed" ref="menuContainerRef" class="side-rail" aria-label="主导航">
     <div class="side-rail-items">
       <button
         v-for="item in topNav"
@@ -488,7 +486,11 @@ const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav));
   gap: 6px;
   background: var(--black-opacity-20);
   border-right: 1px solid var(--white-opacity-4);
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 .side-rail-items {
