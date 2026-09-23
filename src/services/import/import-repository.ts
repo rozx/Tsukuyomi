@@ -195,6 +195,7 @@ async function updateSources(
       'parentSourceId',
       'discoveryId',
       'inputResourceId',
+      'removedAt',
       'url',
       'kind',
     ] as const) {
@@ -326,6 +327,7 @@ export class ImportRepository {
     while (cursor) {
       const source = cursor.value;
       if (
+        source.removedAt === undefined &&
         (!options.cursor || source.id > options.cursor) &&
         (options.parentSourceId === undefined ||
           source.parentSourceId === options.parentSourceId) &&
@@ -342,6 +344,14 @@ export class ImportRepository {
   static async getSource(taskId: string, sourceId: string): Promise<ImportSource> {
     const source = await (await getDB()).get('import-sources', sourceId);
     if (!source || source.taskId !== taskId) throw new Error('SOURCE_SCOPE: 来源不属于当前任务');
+    return source;
+  }
+
+  /** 新的检查、提取和发现操作不能继续使用用户已移除的入口。 */
+  static async getActiveSource(taskId: string, sourceId: string): Promise<ImportSource> {
+    const source = await this.getSource(taskId, sourceId);
+    if (source.removedAt !== undefined)
+      throw new Error('SOURCE_REMOVED: 来源已被用户移除，请先重新添加；已生成的草稿仍然保留');
     return source;
   }
 

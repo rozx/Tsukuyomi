@@ -2,6 +2,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 import { computed, ref, shallowRef } from 'vue';
 import type {
   ImportDraftOperation,
+  ImportDraftRemoval,
   ImportEvent,
   ImportOperation,
   ImportPlan,
@@ -36,6 +37,7 @@ import {
   importPlanFeedback,
   importRunFeedback,
   importPauseFeedback,
+  importDraftRemovalFeedback,
 } from 'src/utils/import-feedback';
 import type { ImportAction, ImportFeedback } from 'src/utils/import-feedback';
 
@@ -374,6 +376,13 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     await act('add-source', taskId, () => ImportSourceService.registerUrl(taskId, url.trim()));
   }
 
+  async function removeSource(sourceId: string, taskId = selectedOrThrow()): Promise<boolean> {
+    const removed = await act('remove-source', taskId, () =>
+      ImportSourceService.remove(taskId, sourceId),
+    );
+    return removed !== undefined;
+  }
+
   async function addFiles(files: readonly File[]): Promise<void> {
     const taskId = selectedOrThrow();
     if (!files.length) return;
@@ -396,6 +405,29 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
         { baseDraftRevision: current.draft.revision, operations: operationsToApply },
         { actor: 'user' },
       ),
+    );
+    return result !== undefined;
+  }
+
+  /** 删除确认绑定打开弹窗时的任务、草稿版本和范围，不能改用当前选中的另一份草稿。 */
+  async function removeDraft(
+    taskId: string,
+    revision: number,
+    removal: ImportDraftRemoval,
+  ): Promise<boolean> {
+    const result = await act(
+      'delete-draft',
+      taskId,
+      () =>
+        ImportDraftService.edit(
+          taskId,
+          {
+            baseDraftRevision: revision,
+            operations: [removal],
+          },
+          { actor: 'user' },
+        ),
+      () => importDraftRemovalFeedback(removal),
     );
     return result !== undefined;
   }
@@ -576,9 +608,11 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     pause,
     compact,
     addUrl,
+    removeSource,
     addFiles,
     addDirectory,
     editDraft,
+    removeDraft,
     chooseNovel,
     answerQuestion,
     adoptMetadata,

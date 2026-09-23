@@ -347,7 +347,7 @@ export class ImportExtractionService {
     options: InspectionOptions = {},
   ): Promise<Prepared> {
     ensureActive(options.signal);
-    const source = await ImportRepository.getSource(taskId, sourceId);
+    const source = await ImportRepository.getActiveSource(taskId, sourceId);
     const resources: ImportResource[] = [];
     try {
       const snapshot = await this.readSnapshot(source, options);
@@ -399,7 +399,7 @@ export class ImportExtractionService {
     input: { sourceId: string; snapshotId?: string; rules?: ImportExtractionRules },
     signal?: AbortSignal,
   ): Promise<Prepared> {
-    const source = await ImportRepository.getSource(taskId, input.sourceId);
+    const source = await ImportRepository.getActiveSource(taskId, input.sourceId);
     let resources: ImportResource[] = [];
     try {
       if (source.purpose === 'metadata-only')

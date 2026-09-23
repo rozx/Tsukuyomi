@@ -45,6 +45,8 @@ export interface ImportSource {
   currentSnapshotId?: string;
   replacesSourceId?: string;
   status: 'registered' | 'inspected' | 'extracted' | 'failed' | 'excluded';
+  /** 仅移除来源入口；已保存资源仍供草稿、预览和撤销追溯使用。 */
+  removedAt?: number;
   error?: { code: string; message: string };
   createdAt: number;
 }
@@ -231,6 +233,8 @@ export type ImportDraftOperation =
   | { op: 'upsert_volume'; id?: string; title: string; inferred?: boolean }
   | { op: 'upsert_chapter'; chapter: Omit<ImportDraftChapter, 'match'> }
   | { op: 'remove_chapter'; chapterId: string }
+  | { op: 'remove_volume'; volumeId: string }
+  | { op: 'clear_structure' }
   | { op: 'reorder_chapters'; chapterIds: string[] }
   | { op: 'reorder_volumes'; volumeIds: string[] }
   | { op: 'propose_match'; chapterId: string; targetChapterIds: string[] }
@@ -240,6 +244,12 @@ export interface ImportDraftEdit {
   baseDraftRevision: number;
   operations: ImportDraftOperation[];
 }
+
+/** 草稿界面的三种删除范围；整卷删除和清空操作不在 Agent 工具中暴露。 */
+export type ImportDraftRemoval = Extract<
+  ImportDraftOperation,
+  { op: 'remove_chapter' | 'remove_volume' | 'clear_structure' }
+>;
 
 /** ask_user / ask_user_batch 的单个题目，字段沿用普通问答界面的约定。 */
 export interface ImportQuestionItem {

@@ -4,6 +4,7 @@
  * 并查看已保存的内容。宽屏时列表与内容并排。
  */
 import { computed, nextTick, ref, watch } from 'vue';
+import { useConfirm } from 'primevue/useconfirm';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import {
@@ -20,6 +21,35 @@ import { SOURCE_STATUS } from './import-labels';
 
 const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
+const confirm = useConfirm();
+const removeDisabled = computed(
+  () =>
+    store.isRunning ||
+    Boolean(store.task?.run) ||
+    ['apply', 'revert', 'remove-source'].includes(store.pendingAction ?? '') ||
+    ['applying', 'reverting'].includes(store.task?.state ?? ''),
+);
+
+const confirmRemove = (source: ImportSource) => {
+  confirm.require({
+    header: '删除来源',
+    message: `从来源列表移除「${source.relativePath || source.name}」及其派生来源？已生成的草稿章节和书库内容会保留。`,
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: '删除来源',
+    rejectLabel: '取消',
+    acceptClass: 'p-button-danger',
+    accept: () => {
+      void store.removeSource(source.id, source.taskId).then((removed) => {
+        if (
+          removed &&
+          store.selectedTaskId === source.taskId &&
+          !store.sources.some((entry) => entry.id === ctx.selectedSourceId.value)
+        )
+          ctx.closeSource();
+      });
+    },
+  });
+};
 
 const STATUS_ORDER: ImportSource['status'][] = [
   'registered',
@@ -55,8 +85,10 @@ const origins = computed(() => {
 const referenced = computed(
   () => new Set((ctx.preview.value?.sources ?? []).map((source) => source.id)),
 );
-const selectedSource = computed(() =>
-  store.sources.find((source) => source.id === ctx.selectedSourceId.value),
+const selectedSource = computed(
+  () =>
+    store.sources.find((source) => source.id === ctx.selectedSourceId.value) ??
+    ctx.preview.value?.sources.find((source) => source.id === ctx.selectedSourceId.value),
 );
 const viewer = ref<{ $el: HTMLElement } | null>(null);
 // 窄容器里内容区在列表下方：打开后滚到可见处（并排时已可见，不会移动）
@@ -100,7 +132,9 @@ const open = async (sourceId: string) => {
               :depth="depth"
               :selected="ctx.selectedSourceId.value === source.id"
               :referenced="referenced.has(source.id)"
+              :remove-disabled="removeDisabled"
               @open="(id: string) => void open(id)"
+              @remove="confirmRemove(source)"
             />
           </ul>
         </section>

@@ -5,6 +5,7 @@ import InputText from 'primevue/inputtext';
 import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
+import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import type { ImportDraft, ImportDraftChapter } from 'src/models/import';
 import ImportDraftChapterRow from './ImportDraftChapterRow.vue';
 import { plainChapter, useDraftLock } from './import-draft';
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 }>();
 
 const store = useImportWorkspaceStore();
+const ctx = injectImportPage();
 const locked = useDraftLock();
 
 const title = ref(props.volume.title);
@@ -97,6 +99,16 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
         @click="emit('moveVolume', volume.id, 1)"
       >
         <i class="pi pi-arrow-down" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        class="idv-icon idv-icon--delete"
+        :aria-label="`删除草稿卷 ${volume.title}`"
+        title="删除整卷及其章节"
+        :disabled="locked"
+        @click="ctx.requestDraftRemoval({ op: 'remove_volume', volumeId: volume.id })"
+      >
+        <i class="pi pi-trash" aria-hidden="true" />
       </button>
     </div>
     <ol v-if="chapters.length" class="idv-chapters">
@@ -209,6 +221,11 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
 
 .idv-icon:disabled {
   opacity: 0.3;
+}
+
+.idv-icon--delete:hover:not(:disabled) {
+  color: rgb(252, 165, 165);
+  background: rgba(239, 68, 68, 0.12);
 }
 
 /* 窄卷容器：省略章数，给卷标题留出空间 */

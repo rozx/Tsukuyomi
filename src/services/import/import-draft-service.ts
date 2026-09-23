@@ -36,6 +36,8 @@ const OPERATION_FIELDS: Record<ImportDraftOperation['op'], string[]> = {
   upsert_volume: ['op', 'id', 'title', 'inferred'],
   upsert_chapter: ['op', 'chapter'],
   remove_chapter: ['op', 'chapterId'],
+  remove_volume: ['op', 'volumeId'],
+  clear_structure: ['op'],
   reorder_chapters: ['op', 'chapterIds'],
   reorder_volumes: ['op', 'volumeIds'],
   propose_match: ['op', 'chapterId', 'targetChapterIds'],
@@ -241,6 +243,17 @@ async function applyOperation(
       draft.chapters = draft.chapters.filter((chapter) => chapter.id !== operation.chapterId);
       return;
     }
+    case 'remove_volume': {
+      if (!draft.volumes.some((volume) => volume.id === operation.volumeId))
+        throw new Error('INVALID_OPERATION: 卷不存在');
+      draft.chapters = draft.chapters.filter((chapter) => chapter.volumeId !== operation.volumeId);
+      draft.volumes = draft.volumes.filter((volume) => volume.id !== operation.volumeId);
+      return;
+    }
+    case 'clear_structure':
+      draft.chapters = [];
+      draft.volumes = [];
+      return;
     case 'reorder_chapters':
       draft.chapters = reorder(draft.chapters, operation.chapterIds);
       return;
@@ -285,6 +298,14 @@ export class ImportDraftService {
           throw new Error('DRAFT_CHANGED: 草稿已变化，请重新读取');
         if (['applying', 'reverting'].includes(task.state))
           throw new Error('TASK_BUSY: 正在提交导入变更');
+        if (
+          options.actor === 'user' &&
+          clean.operations.some((operation) =>
+            ['remove_chapter', 'remove_volume', 'clear_structure'].includes(operation.op),
+          ) &&
+          (task.run || ['running', 'pausing'].includes(task.state))
+        )
+          throw new Error('TASK_BUSY: 请先暂停月詠并等待当前操作结束，再删除草稿');
         const validator = transactionValidator(taskId, tx, books);
         invalidateImportPreview(task);
         for (const operation of clean.operations)

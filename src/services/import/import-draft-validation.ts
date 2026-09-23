@@ -148,6 +148,8 @@ export class ImportDraftValidator {
   /** 批次只接收整章来源；按正文片段划分的作品仍由范围编辑处理。 */
   async batchSource(draft: ImportDraft, sourceId: string): Promise<ImportSource> {
     const source = await this.source(sourceId);
+    if (source.removedAt !== undefined)
+      throw new Error('SOURCE_REMOVED: 批次来源已被用户移除，请先重新添加或单独整理保留的草稿');
     const candidate = this.selected(draft);
     if (source.purpose === 'metadata-only')
       throw new Error('METADATA_ONLY: 元信息来源不能作为正文');

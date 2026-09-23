@@ -118,6 +118,16 @@ const toggleSelected = (selected: boolean) => update({ selected });
       >
         <i class="pi pi-eye" aria-hidden="true" />
       </button>
+      <button
+        type="button"
+        class="idcr-icon idcr-icon--delete"
+        :aria-label="`删除草稿章节 ${chapter.title}`"
+        title="删除草稿章节"
+        :disabled="locked"
+        @click="ctx.requestDraftRemoval({ op: 'remove_chapter', chapterId: chapter.id })"
+      >
+        <i class="pi pi-trash" aria-hidden="true" />
+      </button>
     </span>
   </li>
 </template>
@@ -218,6 +228,11 @@ const toggleSelected = (selected: boolean) => update({ selected });
 
 .idcr-icon--preview {
   color: rgb(165, 180, 252);
+}
+
+.idcr-icon--delete:hover:not(:disabled) {
+  color: rgb(252, 165, 165);
+  background: rgba(239, 68, 68, 0.12);
 }
 
 /* 窄卷容器（手机、平板窄栏）：标题独占一行，状态与操作在下一行 */

@@ -61,7 +61,7 @@ async function registerUnique(source: ImportSource): Promise<ImportSource> {
 async function insertUnique(tx: ImportTransaction, source: ImportSource): Promise<ImportSource> {
   const store = tx.objectStore('import-sources');
   const sources = await store.index('by-task').getAll(source.taskId);
-  const existing = sources.find((s) => {
+  const matching = sources.filter((s) => {
     if (
       s.kind !== source.kind ||
       (s.purpose === 'metadata-only') !== (source.purpose === 'metadata-only')
@@ -73,12 +73,46 @@ async function insertUnique(tx: ImportTransaction, source: ImportSource): Promis
       ? s.url === source.url && s.anchor === source.anchor
       : s.inputResourceId === source.inputResourceId && s.relativePath === source.relativePath;
   });
+  const existing = matching.find((item) => item.removedAt === undefined);
   if (existing) return existing;
+  if (
+    source.origin === 'agent' &&
+    matching.some((item) => item.parentSourceId === source.parentSourceId)
+  )
+    throw new Error('SOURCE_REMOVED: 该来源已被用户移除，请让用户重新添加');
   await store.add(source);
   return source;
 }
 
 export class ImportSourceService {
+  /** 用户移除入口及其派生来源，保留草稿和资源引用；与运行状态检查同事务提交。 */
+  static async remove(taskId: string, sourceId: string): Promise<number> {
+    return ImportRepository.mutateTask(taskId, async (task, tx) => {
+      if (task.run || ['running', 'pausing', 'applying', 'reverting'].includes(task.state))
+        throw new Error('TASK_BUSY: 请先暂停当前任务并等待操作结束，再删除来源');
+      const store = tx.objectStore('import-sources');
+      const sources = await store.index('by-task').getAll(taskId);
+      if (!sources.some((source) => source.id === sourceId))
+        throw new Error('SOURCE_SCOPE: 来源不属于当前任务');
+      const removed = new Set([sourceId]);
+      let previousSize = 0;
+      while (previousSize !== removed.size) {
+        previousSize = removed.size;
+        for (const source of sources)
+          if (source.parentSourceId && removed.has(source.parentSourceId)) removed.add(source.id);
+      }
+      let count = 0;
+      const removedAt = Date.now();
+      for (const source of sources) {
+        if (removed.has(source.id) && source.removedAt === undefined) {
+          await store.put({ ...source, removedAt });
+          count++;
+        }
+      }
+      return count;
+    });
+  }
+
   static async prepareMetadataUrl(
     taskId: string,
     input: string,
@@ -89,6 +123,7 @@ export class ImportSourceService {
     const sources = await db.getAllFromIndex('import-sources', 'by-task', taskId);
     const existing = sources.find(
       (source) =>
+        source.removedAt === undefined &&
         source.kind === 'url' &&
         source.purpose === 'metadata-only' &&
         source.url === location.url &&
@@ -202,7 +237,7 @@ export class ImportSourceService {
     sourceId: string,
     options: { offset?: number; limit?: number } = {},
   ) {
-    const source = await ImportRepository.getSource(taskId, sourceId);
+    const source = await ImportRepository.getActiveSource(taskId, sourceId);
     const resource =
       source.inputResourceId &&
       (await ImportRepository.getResource(taskId, source.inputResourceId));
@@ -248,7 +283,7 @@ export class ImportSourceService {
     observed: ObservedResource[],
     prepared: { resources?: ImportResource[]; snapshotId?: string } = {},
   ): Promise<{ discoveries: ImportDiscovery[]; resources: ImportResource[] }> {
-    const source = await ImportRepository.getSource(taskId, sourceId);
+    const source = await ImportRepository.getActiveSource(taskId, sourceId);
     const discoveries: ImportDiscovery[] = [];
     for (const item of observed) {
       let locator = item.locator;
@@ -328,6 +363,8 @@ export class ImportSourceService {
     const discovery = resource.discovery;
     const parent = await tx.objectStore('import-sources').get(discovery.sourceId);
     if (!parent || parent.taskId !== taskId) throw new Error('SOURCE_SCOPE: 父来源不属于当前任务');
+    if (parent.removedAt !== undefined)
+      throw new Error('SOURCE_REMOVED: 父来源已被用户移除，不能继续追加其发现的来源');
     const source: ImportSource = {
       ...newSource(taskId, discovery.name, discovery.kind),
       origin: 'agent',

@@ -9,6 +9,17 @@ import { canonicalStringify } from 'src/utils/canonical-json';
 type BatchResource = Extract<ImportResource, { kind: 'chapter-batch' }>;
 type Prepared = Awaited<ReturnType<ImportExtractionService['prepareExtraction']>>;
 
+function batchValidator(taskId: string, tx: ImportTransaction): ImportDraftValidator {
+  return new ImportDraftValidator(
+    taskId,
+    {
+      resource: (key) => tx.objectStore('import-resources').get(key),
+      source: (key) => tx.objectStore('import-sources').get(key),
+    },
+    new Map(),
+  );
+}
+
 export function chapterBatchProgress(batch: ImportChapterBatch) {
   return {
     batchId: batch.id,
@@ -98,9 +109,11 @@ export async function startChapterBatch(
         batch.draftRevision = revision;
       }
       assertBatchDraft(task, batch);
+      const validator = batchValidator(task.id, tx);
       for (const item of batch.items) {
         if (item.status === 'ready' || (item.status === 'failed' && !retryFailed)) continue;
         assertReservedChapter(task, item);
+        await validator.batchSource(task.draft, item.sourceId);
         if (batch.runCallId !== callId && item.status === 'failed') item.status = 'pending';
       }
       batch.runCallId = callId;
@@ -129,14 +142,7 @@ export async function saveBatchChapter(
       const item = batch.items[index]!;
       const chapterIndex = assertReservedChapter(task, item);
       const result = prepared.results[0]!;
-      const validator = new ImportDraftValidator(
-        task.id,
-        {
-          resource: (key) => tx.objectStore('import-resources').get(key),
-          source: (key) => tx.objectStore('import-sources').get(key),
-        },
-        new Map(),
-      );
+      const validator = batchValidator(task.id, tx);
       await validator.batchSource(task.draft, item.sourceId);
       if (result.success && result.contentId) {
         item.chapter = await validator.chapter(

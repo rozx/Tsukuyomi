@@ -9,8 +9,9 @@ const props = defineProps<{
   depth: number;
   selected: boolean;
   referenced: boolean;
+  removeDisabled: boolean;
 }>();
-const emit = defineEmits<{ open: [sourceId: string] }>();
+const emit = defineEmits<{ open: [sourceId: string]; remove: [sourceId: string] }>();
 
 const rowClass = computed(() => ({
   'isr--selected': props.selected,
@@ -48,6 +49,20 @@ const status = computed(() => SOURCE_STATUS[props.source.status]);
       <span v-if="source.origin === 'agent'" class="isr-badge isr-badge--agent">月詠发现</span>
       <span v-if="source.purpose === 'metadata-only'" class="isr-badge">仅元信息</span>
       <span class="ipl-status" :class="`ipl-status--${status.severity}`">{{ status.label }}</span>
+      <button
+        type="button"
+        class="isr-delete"
+        :aria-label="`删除来源 ${label}`"
+        :title="
+          removeDisabled
+            ? '请先等待当前操作结束，运行中的任务需先暂停'
+            : '删除来源入口，保留草稿章节'
+        "
+        :disabled="removeDisabled"
+        @click="emit('remove', source.id)"
+      >
+        <i class="pi pi-trash" aria-hidden="true" />
+      </button>
     </span>
   </li>
 </template>
@@ -152,6 +167,26 @@ const status = computed(() => SOURCE_STATUS[props.source.status]);
 .isr-badge--agent {
   color: rgb(199, 210, 254);
   background: rgba(99, 102, 241, 0.16);
+}
+
+.isr-delete {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: rgba(226, 232, 240, 0.55);
+}
+
+.isr-delete:hover:not(:disabled) {
+  color: rgb(252, 165, 165);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.isr-delete:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 @media (max-width: 480px) {

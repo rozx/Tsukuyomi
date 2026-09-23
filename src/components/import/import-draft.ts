@@ -11,5 +11,11 @@ export function plainChapter(chapter: ImportDraftChapter): Omit<ImportDraftChapt
 /** 月詠运行中或尚未完成多小说选择时，草稿编辑暂时锁定。 */
 export function useDraftLock() {
   const store = useImportWorkspaceStore();
-  return computed(() => store.isRunning || Boolean(store.task?.draft.novelScope.needsChoice));
+  return computed(
+    () =>
+      store.isRunning ||
+      Boolean(store.task?.run || store.task?.draft.novelScope.needsChoice) ||
+      ['apply', 'revert', 'delete-draft'].includes(store.pendingAction ?? '') ||
+      ['applying', 'reverting'].includes(store.task?.state ?? ''),
+  );
 }

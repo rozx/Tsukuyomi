@@ -7,6 +7,7 @@
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
+import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import ImportDraftMetadata from './ImportDraftMetadata.vue';
 import ImportMetadataCandidates from './ImportMetadataCandidates.vue';
 import ImportDraftVolume from './ImportDraftVolume.vue';
@@ -14,6 +15,7 @@ import { useDraftLock } from './import-draft';
 import { draftOverview } from 'src/composables/import-page/import-workspace-overview';
 
 const store = useImportWorkspaceStore();
+const ctx = injectImportPage();
 const locked = useDraftLock();
 
 const draft = computed(() => store.task?.draft);
@@ -100,14 +102,26 @@ const addVolume = () =>
           <i class="pi pi-sitemap" aria-hidden="true" />卷章结构
           <span class="ipl-count">{{ overview.volumes }} 卷 · {{ overview.chapters }} 章</span>
         </h3>
-        <Button
-          icon="pi pi-plus"
-          label="新卷"
-          size="small"
-          outlined
-          :disabled="locked"
-          @click="addVolume"
-        />
+        <div class="idp-toolbar">
+          <Button
+            icon="pi pi-trash"
+            label="清空卷章"
+            aria-label="清空全部卷章草稿"
+            size="small"
+            text
+            severity="danger"
+            :disabled="locked || isEmpty"
+            @click="ctx.requestDraftRemoval({ op: 'clear_structure' })"
+          />
+          <Button
+            icon="pi pi-plus"
+            label="新卷"
+            size="small"
+            outlined
+            :disabled="locked"
+            @click="addVolume"
+          />
+        </div>
       </div>
 
       <div v-if="overview.chapters" class="idp-stats">
@@ -168,6 +182,13 @@ const addVolume = () =>
   gap: 0.35rem 0.9rem;
   font-size: 0.74rem;
   color: rgba(226, 232, 240, 0.7);
+}
+
+.idp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .idp-empty {

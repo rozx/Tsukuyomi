@@ -1,4 +1,9 @@
-import type { ImportOperation, ImportPlan, ImportTask } from 'src/models/import';
+import type {
+  ImportDraftRemoval,
+  ImportOperation,
+  ImportPlan,
+  ImportTask,
+} from 'src/models/import';
 import { conciseErrorText } from 'src/services/import/import-error-text';
 
 export interface ImportFeedback {
@@ -12,7 +17,9 @@ const ACTION_NAMES = {
   rename: '重命名任务',
   delete: '删除导入任务',
   'add-source': '添加来源',
+  'remove-source': '删除来源',
   'edit-draft': '保存草稿',
+  'delete-draft': '删除草稿',
   metadata: '更新书籍信息',
   'choose-novel': '选择小说',
   answer: '保存回答',
@@ -31,6 +38,7 @@ const SUCCESS_MESSAGES: Partial<Record<ImportAction, string>> = {
   rename: '任务名称已保存',
   delete: '导入任务已删除',
   'add-source': '来源已添加',
+  'remove-source': '来源已删除',
   'edit-draft': '草稿已保存',
   metadata: '书籍信息已更新',
   'choose-novel': '已选择本次小说',
@@ -55,6 +63,15 @@ export function importFailure(action: ImportAction, error: string): ImportFeedba
     summary: `${ACTION_NAMES[action]}失败`,
     detail: conciseErrorText(error.replace(/^[A-Z_]+:\s*/, '')),
   };
+}
+
+export function importDraftRemovalFeedback(removal: ImportDraftRemoval): ImportFeedback {
+  const summaries = {
+    remove_chapter: '草稿章节已删除',
+    remove_volume: '草稿卷及其章节已删除',
+    clear_structure: '卷章草稿已清空',
+  };
+  return { severity: 'success', summary: summaries[removal.op] };
 }
 
 export function importApplicationFeedback(operation: ImportOperation): ImportFeedback {

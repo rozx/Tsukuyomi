@@ -6,6 +6,7 @@
 import { computed, inject, onMounted, provide, ref, watch, type InjectionKey } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
+import { useImportDraftDeletion } from './useImportDraftDeletion';
 import {
   ImportPreviewService,
   type ImportChapterPreview,
@@ -18,6 +19,7 @@ function createImportPage() {
   const store = useImportWorkspaceStore();
   const route = useRoute();
   const router = useRouter();
+  const requestDraftRemoval = useImportDraftDeletion();
 
   const ready = ref(false);
   const selectedChapterId = ref<string | null>(null);
@@ -93,7 +95,12 @@ function createImportPage() {
   function selectChapter(chapterId: string | null): void {
     selectedChapterId.value = chapterId;
     if (chapterId) void loadPreview(chapterId);
-    else preview.value = null;
+    else {
+      previewToken++;
+      preview.value = null;
+      previewError.value = null;
+      previewLoading.value = false;
+    }
   }
 
   /** 查看来源的原始或已保存内容（分页读取，不触发新的抓取或解析）。 */
@@ -132,8 +139,7 @@ function createImportPage() {
   watch(
     () => store.selectedTaskId,
     () => {
-      selectedChapterId.value = null;
-      preview.value = null;
+      selectChapter(null);
       closeSource();
     },
   );
@@ -164,6 +170,7 @@ function createImportPage() {
     selectChapter,
     showSource,
     closeSource,
+    requestDraftRemoval,
   };
 }
 

@@ -46,6 +46,20 @@ async function plannedTask() {
 }
 
 describe('导入操作反馈', () => {
+  it('移除来源后刷新列表并提示结果，草稿保持不变', async () => {
+    const { input, store } = await plannedTask();
+    const before = structuredClone((await ImportRepository.getTask(input.taskId))!.draft);
+    const toast = notifications();
+    expect(await store.removeSource(input.source.id)).toBe(true);
+    expect(store.sources).toHaveLength(0);
+    expect(store.task?.draft).toEqual(before);
+    expect(toast).toHaveBeenLastCalledWith(expect.objectContaining({ summary: '来源已删除' }));
+    expect(await store.removeSource('不存在')).toBe(false);
+    expect(toast).toHaveBeenLastCalledWith(
+      expect.objectContaining({ severity: 'error', summary: '删除来源失败' }),
+    );
+  });
+
   it('成功反馈通过系统 toast 包装器写入通知历史', async () => {
     const { store } = await plannedTask();
     toastScope = effectScope();

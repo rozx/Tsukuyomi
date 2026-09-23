@@ -140,6 +140,30 @@ function controlledPages() {
 }
 
 describe('Agent 章节批次', () => {
+  it('来源被用户移除后保留草稿，但旧批次不能继续抓取', async () => {
+    const f = await webBatch(3);
+    await ImportRepository.mutateTask(f.taskId, (task) => {
+      task.state = 'paused';
+      delete task.run;
+      return Promise.resolve();
+    });
+    const root = (await ImportRepository.listSources(f.taskId)).items.find(
+      (source) => source.url === 'https://example.com/book',
+    )!;
+    await ImportSourceService.remove(f.taskId, root.id);
+    await ImportRepository.mutateTask(f.taskId, (task) => {
+      task.state = 'running';
+      task.run = f.run;
+      return Promise.resolve();
+    });
+    const fetch = vi.spyOn(transport, 'fetchScraperPage').mockRejectedValue(new Error('不应抓取'));
+    expect(
+      await f.invoke('run_chapter_batch', { batch_id: f.batchId, base_draft_revision: 3 }),
+    ).toMatchObject({ success: false, error: { code: 'SOURCE_REMOVED' } });
+    expect(fetch).not.toHaveBeenCalled();
+    expect((await ImportRepository.getTask(f.taskId))?.draft.chapters).toHaveLength(3);
+  });
+
   it('暂停后保留已完成章，原调用在新运行中继续，只请求剩余章节', async () => {
     const f = await webBatch(4);
     const network = controlledPages();
