@@ -349,4 +349,21 @@ describe('导入 Agent 执行生命周期', () => {
     expect(await results()).toHaveLength(1);
     expect(requests).toBe(2);
   });
+
+  it('模型服务返回整页 HTML 错误时只保存简短说明，不把网页写入任务或界面', async () => {
+    const task = await ImportRepository.createTask();
+    const page = `530 <!DOCTYPE html><html><head><title>Origin DNS error | example.invalid | Cloudflare</title></head><body>${'x'.repeat(6000)}</body></html>`;
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
+      generateText: () => Promise.reject(new Error(page)),
+    } as never);
+    const failure = await ImportAgentService.run(task.id, model, '开始').catch(
+      (error: unknown) => error as Error,
+    );
+    const saved = (await ImportRepository.getTask(task.id))!;
+    expect(saved.state).toBe('failed');
+    expect(saved.lastError?.message).toContain('Origin DNS error');
+    expect(saved.lastError?.message).not.toContain('<html');
+    expect(saved.lastError!.message.length).toBeLessThanOrEqual(320);
+    expect(String((failure as Error).message)).not.toContain('<html');
+  });
 });

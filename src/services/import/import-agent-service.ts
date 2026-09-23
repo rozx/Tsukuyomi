@@ -9,6 +9,7 @@ import { ImportToolExecutor, importTools } from './import-tool-executor';
 import { importAgentPrompt } from './import-agent-prompt';
 import { assertImportOwner, saveImportAgentCheckpoint } from './import-agent-journal';
 import { awaitingImportAnswer } from './import-question-service';
+import { conciseErrorText } from './import-error-text';
 
 type UpdateListener = (taskId: string) => void;
 const listeners = new Set<UpdateListener>();
@@ -249,7 +250,9 @@ export class ImportAgentService {
       });
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
-      const message = model.apiKey ? raw.replaceAll(model.apiKey, '[已隐藏凭据]') : raw;
+      const message = conciseErrorText(
+        model.apiKey ? raw.replaceAll(model.apiKey, '[已隐藏凭据]') : raw,
+      );
       await ImportRepository.mutateTask(taskId, (current) => {
         assertImportOwner(current, run);
         current.state = awaitingImportAnswer(current)

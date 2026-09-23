@@ -7,6 +7,21 @@
 import type { ImportEvent } from 'src/models/import';
 import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
 import type { AIToolCall } from 'src/services/ai/types/ai-service';
+import { TOOL_CALL_PLACEHOLDER_VARIANTS } from 'src/constants/chat';
+
+/** 操作记录当前显示内容的短指纹（djb2），只用于区分消息标识，不作安全用途。 */
+function fingerprint(actions: MessageAction[]): string {
+  const text = actions
+    .map(
+      (action) =>
+        `${action.name ?? ''}|${action.answer ?? ''}|${action.batch_answers?.length ?? 0}`,
+    )
+    .join('\n');
+  let hash = 5381;
+  for (let index = 0; index < text.length; index++)
+    hash = ((hash << 5) + hash + text.charCodeAt(index)) | 0;
+  return (hash >>> 0).toString(36);
+}
 
 interface MessageOptions {
   sourceNames: Map<string, string>;
@@ -201,19 +216,20 @@ export function importEventsToMessages(
     if (event.kind !== 'message' || !message) continue;
     if (message.role !== 'user' && message.role !== 'assistant') continue;
     const calls = message.role === 'assistant' ? (message.tool_calls ?? []) : [];
+    const actions = calls.map((call, index) =>
+      toAction(call, event.createdAt + index, results, answers, options.sourceNames),
+    );
+    const content = message.content ?? '';
     messages.push({
-      id: event.id,
+      // 聊天列表按消息标识缓存操作记录；结果或回答到达后标识随之变化以触发刷新
+      id: actions.length ? `${event.id}:${fingerprint(actions)}` : event.id,
       role: message.role,
-      content: message.content ?? '',
+      content: (TOOL_CALL_PLACEHOLDER_VARIANTS as readonly string[]).includes(content.trim())
+        ? ''
+        : content,
       timestamp: event.createdAt,
       ...(message.reasoning_content ? { thinkingProcess: message.reasoning_content } : {}),
-      ...(calls.length
-        ? {
-            actions: calls.map((call, index) =>
-              toAction(call, event.createdAt + index, results, answers, options.sourceNames),
-            ),
-          }
-        : {}),
+      ...(actions.length ? { actions } : {}),
     });
   }
   if (options.streaming)

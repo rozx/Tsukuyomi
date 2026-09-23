@@ -2,6 +2,7 @@ import type { ImportContentRef, ImportDraftChapter, ImportSource } from 'src/mod
 import { ImportRepository } from './import-repository';
 import { ImportLibraryReader } from './import-library-reader';
 import { resolveImportSegments } from './import-content-references';
+import { ImportContentService } from './import-content-service';
 
 export interface ImportPreviewParagraph {
   text: string;
@@ -37,8 +38,35 @@ async function existingText(ref: ExistingRef, books: Map<string, Promise<BookRea
   return paragraph.text;
 }
 
+export type ImportSourcePage =
+  | { kind: 'text'; text: string; nextOffset?: number }
+  | { kind: 'note'; note: string };
+
 /** 只读：把草稿章节的内容引用还原成可检查的正文，不修改任务或书库。 */
 export class ImportPreviewService {
+  /** 分页读取来源已保存的内容；尚未读取或失败时只说明原因，不触发新的抓取或解析。 */
+  static async source(
+    taskId: string,
+    sourceId: string,
+    options: { offset?: number; limit?: number } = {},
+  ): Promise<ImportSourcePage> {
+    const source = await ImportRepository.getSource(taskId, sourceId);
+    if (!source.currentSnapshotId) {
+      if (source.status === 'failed')
+        return { kind: 'note', note: source.error?.message ?? '读取失败' };
+      return { kind: 'note', note: '尚未读取：月詠检查或提取该来源后才会保存内容。' };
+    }
+    const page = await ImportContentService.read(taskId, source.currentSnapshotId, {
+      offset: options.offset ?? 0,
+      limit: options.limit ?? 8000,
+    });
+    return {
+      kind: 'text',
+      text: page.text,
+      ...(page.nextOffset !== undefined ? { nextOffset: page.nextOffset } : {}),
+    };
+  }
+
   static async chapter(taskId: string, chapterId: string): Promise<ImportChapterPreview> {
     const task = await ImportRepository.getTask(taskId);
     const chapter = task?.draft.chapters.find((entry) => entry.id === chapterId);

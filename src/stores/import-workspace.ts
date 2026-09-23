@@ -23,6 +23,7 @@ import {
   type ImportStorageIssue,
 } from 'src/services/import/import-storage-status';
 import { useAIModelsStore } from 'src/stores/ai-models';
+import { conciseErrorText } from 'src/services/import/import-error-text';
 
 const PAGE = 100;
 const MAX_EVENTS = 5000;
@@ -30,7 +31,7 @@ const CHANNEL = 'tsukuyomi:import-tasks';
 const ACTIVE_STATES = new Set<ImportTask['state']>(['running', 'pausing']);
 
 function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return conciseErrorText(error instanceof Error ? error.message : String(error));
 }
 
 async function allSources(taskId: string): Promise<ImportSource[]> {
@@ -312,9 +313,10 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     const current = task.value;
     const question = current?.pendingQuestion;
     if (!current || question?.kind !== 'novel') return;
-    await act('choose-novel', current.id, () =>
+    const result = await act('choose-novel', current.id, () =>
       ImportDraftService.chooseNovel(current.id, question.id, question.scopeRevision, candidateId),
     );
+    if (result !== undefined && candidateId !== null) await continueAfterAnswer(current.id);
   }
 
   async function answerQuestion(answers: ImportQuestionAnswer['answers']): Promise<boolean> {
@@ -324,7 +326,15 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     const result = await act('answer', current.id, () =>
       ImportQuestionService.answer(current.id, question.id, answers),
     );
-    return result !== undefined;
+    if (result === undefined) return false;
+    await continueAfterAnswer(current.id);
+    return true;
+  }
+
+  /** 用户完成必要回答即表示继续：已配置模型且仍在查看该任务时恢复运行。 */
+  async function continueAfterAnswer(taskId: string): Promise<void> {
+    if (selectedTaskId.value !== taskId || !defaultModel()) return;
+    await send('');
   }
 
   async function adoptMetadata(candidateId: string): Promise<void> {
@@ -439,8 +449,9 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     isRunning,
     sourceNames,
     initialize,
+    // 测试之间解除更新订阅用；应用内 store 与页面同寿命，不需要调用
+    // fallow-ignore-next-line unused-store-member
     dispose,
-    refreshTasks,
     selectTask,
     createTask,
     renameTask,

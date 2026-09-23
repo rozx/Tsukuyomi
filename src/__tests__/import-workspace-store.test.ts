@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { File } from 'node:buffer';
+import { useAIModelsStore } from 'src/stores/ai-models';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { ImportAgentService } from 'src/services/import/import-agent-service';
 import { ImportRepository } from 'src/services/import/import-repository';
@@ -32,7 +33,9 @@ describe('导入工作台状态', () => {
   it('初始化只执行一次：回收中断的任务并订阅更新，重复初始化不重复回收或订阅', async () => {
     const task = await ImportRepository.createTask('中断的任务');
     const dead: ImportRunContext = { taskId: task.id, runId: 'dead', runEpoch: 1, modelId: 'm' };
-    await (await getDB()).put('import-tasks', { ...task, state: 'running', run: dead, runEpoch: 1 });
+    await (
+      await getDB()
+    ).put('import-tasks', { ...task, state: 'running', run: dead, runEpoch: 1 });
     const recover = vi.spyOn(ImportAgentService, 'recover');
     const subscribe = vi.spyOn(ImportAgentService, 'subscribe');
     const store = useImportWorkspaceStore();
@@ -185,5 +188,55 @@ describe('导入工作台状态', () => {
     await store.chooseNovel('n1');
     expect(store.task?.pendingQuestion).toBeUndefined();
     expect(store.task?.draft.novelScope.selectedCandidateId).toBe('n1');
+  });
+
+  it('回答必要问题后若已配置模型则自动继续运行；取消选择不会继续', async () => {
+    const task = await ImportRepository.createTask();
+    const sources = await ImportSourceService.registerFiles(task.id, [
+      new File(['一'], 'one.txt'),
+      new File(['二'], 'two.txt'),
+    ]);
+    await ImportDraftService.edit(task.id, {
+      baseDraftRevision: 0,
+      operations: [
+        {
+          op: 'declare_candidates',
+          candidates: sources.map((source, index) => ({
+            id: `n${index}`,
+            title: `小说${index}`,
+            sourceIds: [source.id],
+          })),
+        },
+      ],
+    });
+    const run = vi
+      .spyOn(ImportAgentService, 'run')
+      .mockImplementation((taskId) => ImportRepository.getTask(taskId).then((value) => value!));
+    const assistant = {
+      ...model,
+      provider: 'openai',
+      model: 'test',
+      apiKey: 'test-only',
+      baseUrl: 'https://example.test',
+      temperature: 0,
+      maxInputTokens: 1000,
+      maxOutputTokens: 100,
+      lastEdited: new Date(),
+      isDefault: {
+        translation: { enabled: false, temperature: 0 },
+        proofreading: { enabled: false, temperature: 0 },
+        termsTranslation: { enabled: false, temperature: 0 },
+        assistant: { enabled: true, temperature: 0 },
+      },
+    } as AIModel;
+    await useAIModelsStore().addModel(assistant);
+    const store = useImportWorkspaceStore();
+    await store.selectTask(task.id);
+
+    await store.chooseNovel(null);
+    expect(run).not.toHaveBeenCalled();
+
+    await store.chooseNovel('n0');
+    expect(run).toHaveBeenCalledWith(task.id, expect.objectContaining({ id: 'm' }), '');
   });
 });

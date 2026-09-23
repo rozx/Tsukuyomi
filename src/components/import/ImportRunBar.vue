@@ -9,11 +9,12 @@ import Tag from 'primevue/tag';
 import Message from 'primevue/message';
 import InputText from 'primevue/inputtext';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
+import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { TASK_STATE, readableError } from './import-labels';
 
 const ctx = injectImportPage();
-const store = ctx.store;
+const store = useImportWorkspaceStore();
 const aiModels = useAIModelsStore();
 
 const task = computed(() => store.task);
@@ -101,14 +102,7 @@ const continueRun = () => void store.send('');
           :disabled="awaitingAnswer || runningOther || !hasModel"
           @click="continueRun"
         />
-        <Button
-          icon="pi pi-comments"
-          label="月詠"
-          size="small"
-          severity="secondary"
-          text
-          @click="ctx.openChat"
-        />
+        <Button icon="pi pi-comments" label="月詠" size="small" outlined @click="ctx.openChat" />
       </div>
     </div>
 

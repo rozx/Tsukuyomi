@@ -1,4 +1,5 @@
 import type { ImportDraftChapter, ImportSource, ImportTask } from 'src/models/import';
+import { conciseErrorText } from 'src/services/import/import-error-text';
 
 type Severity = 'secondary' | 'info' | 'success' | 'warn' | 'danger' | 'contrast';
 
@@ -59,7 +60,7 @@ export function formatTime(timestamp: number): string {
   });
 }
 
-/** 错误码前缀只用于程序判断，界面只显示说明文字。 */
+/** 错误码前缀只用于程序判断，界面只显示简短的说明文字（旧记录中的整页错误也会被截短）。 */
 export function readableError(message: string): string {
-  return message.replace(/^[A-Z_]+:\s*/, '');
+  return conciseErrorText(message.replace(/^[A-Z_]+:\s*/, ''));
 }

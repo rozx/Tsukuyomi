@@ -11,9 +11,10 @@ import ImportDraftPanel from 'src/components/import/ImportDraftPanel.vue';
 import ImportChapterPreview from 'src/components/import/ImportChapterPreview.vue';
 import ImportPlanPanel from 'src/components/import/ImportPlanPanel.vue';
 import { injectImportPage, type ImportSection } from 'src/composables/import-page/useImportPage';
+import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 
 const ctx = injectImportPage();
-const store = ctx.store;
+const store = useImportWorkspaceStore();
 
 const sections: { id: ImportSection; label: string }[] = [
   { id: 'tasks', label: '任务' },

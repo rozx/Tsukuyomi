@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { importEventsToMessages } from 'src/composables/import-page/import-chat-messages';
 import type { ImportEvent } from 'src/models/import';
+import { TOOL_CALL_PLACEHOLDER } from 'src/constants/chat';
 
 let sequence = 0;
 function event(partial: Partial<ImportEvent> & Pick<ImportEvent, 'kind'>): ImportEvent {
   sequence++;
-  return { id: `e${sequence}`, taskId: 't', sequence, createdAt: sequence * 1000, data: {}, ...partial };
+  return {
+    id: `e${sequence}`,
+    taskId: 't',
+    sequence,
+    createdAt: sequence * 1000,
+    data: {},
+    ...partial,
+  };
 }
 
 function call(id: string, name: string, args: unknown) {
@@ -29,7 +37,12 @@ describe('导入事件到月詠消息', () => {
           ],
         },
       }),
-      event({ kind: 'tool-result', callId: 'c1', toolName: 'inspect_source', data: { success: true } }),
+      event({
+        kind: 'tool-result',
+        callId: 'c1',
+        toolName: 'inspect_source',
+        data: { success: true },
+      }),
       event({
         kind: 'tool-result',
         callId: 'c2',
@@ -71,7 +84,10 @@ describe('导入事件到月詠消息', () => {
         kind: 'tool-result',
         callId: 'c1',
         toolName: 'inspect_source',
-        data: { success: false, error: { code: 'FETCH_FAILED', message: 'FETCH_FAILED: 需要登录' } },
+        data: {
+          success: false,
+          error: { code: 'FETCH_FAILED', message: 'FETCH_FAILED: 需要登录' },
+        },
       }),
     ];
     const [message] = importEventsToMessages(events, { sourceNames: new Map([['s1', '目录页']]) });
@@ -99,7 +115,12 @@ describe('导入事件到月詠消息', () => {
         callId: 'q1',
         data: { questionId: 'x', answers: [{ questionIndex: 0, answer: '乙', selectedIndex: 1 }] },
       }),
-      event({ kind: 'tool-result', callId: 't1', toolName: 'create_todo', data: { success: true } }),
+      event({
+        kind: 'tool-result',
+        callId: 't1',
+        toolName: 'create_todo',
+        data: { success: true },
+      }),
     ];
     const [message] = importEventsToMessages(events, { sourceNames: new Map() });
     expect(message!.actions![0]).toMatchObject({
@@ -121,5 +142,39 @@ describe('导入事件到月詠消息', () => {
       { sourceNames: new Map(), streaming: '正在整理' },
     );
     expect(messages.at(-1)).toMatchObject({ role: 'assistant', content: '正在整理' });
+  });
+
+  it('只调用工具的回复不显示「施术中」占位正文', () => {
+    const [message] = importEventsToMessages(
+      [
+        event({
+          kind: 'message',
+          message: {
+            role: 'assistant',
+            content: TOOL_CALL_PLACEHOLDER,
+            tool_calls: [call('c1', 'list_sources', {})],
+          },
+        }),
+      ],
+      { sourceNames: new Map() },
+    );
+    expect(message!.content).toBe('');
+    expect(message!.actions).toHaveLength(1);
+  });
+
+  it('工具结果到达后消息标识随之变化，使聊天列表刷新操作记录而不是沿用缓存', () => {
+    const reply = event({
+      kind: 'message',
+      message: { role: 'assistant', content: '', tool_calls: [call('c1', 'list_sources', {})] },
+    });
+    const before = importEventsToMessages([reply], { sourceNames: new Map() });
+    const after = importEventsToMessages(
+      [reply, event({ kind: 'tool-result', callId: 'c1', data: { success: true } })],
+      { sourceNames: new Map() },
+    );
+    expect(before[0]!.actions![0]!.name).toContain('进行中');
+    expect(after[0]!.actions![0]!.name).not.toContain('进行中');
+    expect(after[0]!.id).not.toBe(before[0]!.id);
+    expect(importEventsToMessages([reply], { sourceNames: new Map() })[0]!.id).toBe(before[0]!.id);
   });
 });

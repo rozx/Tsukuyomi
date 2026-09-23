@@ -11,7 +11,6 @@ import {
   ImportPreviewService,
   type ImportChapterPreview,
 } from 'src/services/import/import-preview-service';
-import { ImportContentService } from 'src/services/import/import-content-service';
 
 export type ImportSection = 'tasks' | 'sources' | 'draft' | 'plan';
 
@@ -102,27 +101,19 @@ function createImportPage() {
     selectedSourceId.value = sourceId;
     sourceTextError.value = null;
     const taskId = store.selectedTaskId;
-    const source = store.sources.find((entry) => entry.id === sourceId);
-    if (!taskId || !source) return;
-    if (!source.currentSnapshotId) {
-      sourceText.value = null;
-      sourceTextError.value =
-        source.status === 'failed'
-          ? (source.error?.message ?? '读取失败')
-          : '尚未读取：月詠检查或提取该来源后才会保存内容。';
-      return;
-    }
+    if (!taskId) return;
+    const previous = sourceText.value?.sourceId === sourceId ? sourceText.value.text : '';
     try {
-      const page = await ImportContentService.read(taskId, source.currentSnapshotId, {
-        offset,
-        limit: 8000,
-      });
+      const page = await ImportPreviewService.source(taskId, sourceId, { offset });
+      if (page.kind === 'note') {
+        sourceText.value = null;
+        sourceTextError.value = page.note;
+        return;
+      }
+      // 续读时接在已显示内容之后
       sourceText.value = {
         sourceId,
-        text:
-          offset && sourceText.value?.sourceId === sourceId
-            ? sourceText.value.text + page.text
-            : page.text,
+        text: offset ? previous + page.text : page.text,
         ...(page.nextOffset !== undefined ? { nextOffset: page.nextOffset } : {}),
       };
     } catch (error) {
@@ -162,7 +153,6 @@ function createImportPage() {
   );
 
   return {
-    store,
     ready,
     routeTaskId,
     section,

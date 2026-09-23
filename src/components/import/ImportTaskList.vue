@@ -7,11 +7,12 @@ import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import { useConfirm } from 'primevue/useconfirm';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
+import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import type { ImportTask } from 'src/models/import';
 import { TASK_STATE, formatTime } from './import-labels';
 
 const ctx = injectImportPage();
-const store = ctx.store;
+const store = useImportWorkspaceStore();
 const confirm = useConfirm();
 
 const isActive = (task: ImportTask) => task.id === store.selectedTaskId;

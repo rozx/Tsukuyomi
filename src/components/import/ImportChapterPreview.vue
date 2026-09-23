@@ -7,17 +7,35 @@ import { computed, ref } from 'vue';
 import Tag from 'primevue/tag';
 import ProgressSpinner from 'primevue/progressspinner';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
+import ImportExcludedList from './ImportExcludedList.vue';
 import { CHAPTER_STATUS, readableError } from './import-labels';
 
 const ctx = injectImportPage();
 const PAGE = 200;
 const shown = ref(PAGE);
+
 const preview = computed(() => ctx.preview.value);
+const title = computed(() => preview.value?.title ?? '章节正文');
+const status = computed(() => (preview.value ? CHAPTER_STATUS[preview.value.status] : undefined));
+const loading = computed(() => ctx.previewLoading.value && !preview.value);
+const error = computed(() => (ctx.previewError.value ? readableError(ctx.previewError.value) : ''));
+const sources = computed(() => preview.value?.sources ?? []);
+const failures = computed(() => (preview.value?.failures ?? []).map(readableError));
 const paragraphs = computed(() => preview.value?.paragraphs.slice(0, shown.value) ?? []);
-const showExcluded = ref(false);
+const remaining = computed(() =>
+  Math.max(0, (preview.value?.paragraphs.length ?? 0) - shown.value),
+);
+const excluded = computed(() => preview.value?.excluded ?? []);
+const emptyNote = computed(() => {
+  if (!preview.value || preview.value.paragraphs.length) return '';
+  return preview.value.status === 'ready'
+    ? '引用范围内没有正文。'
+    : '这一章尚未取得正文，导入时不会生成内容。';
+});
 
 /** 空段落保留高度，与导入后的空行一致 */
 const displayText = (text: string) => text || String.fromCharCode(0xa0);
+const paragraphClass = (kind: string) => ({ 'icp-paragraph--existing': kind === 'existing' });
 
 /** 从正文跳到对应来源：切到来源分区并展开其保存的内容。 */
 const locateSource = (sourceId: string) => {
@@ -29,12 +47,8 @@ const locateSource = (sourceId: string) => {
 <template>
   <section class="icp" aria-label="章节正文检查">
     <header class="icp-head">
-      <span class="icp-title">{{ preview?.title ?? '章节正文' }}</span>
-      <Tag
-        v-if="preview"
-        :value="CHAPTER_STATUS[preview.status].label"
-        :severity="CHAPTER_STATUS[preview.status].severity"
-      />
+      <span class="icp-title">{{ title }}</span>
+      <Tag v-if="status" :value="status.label" :severity="status.severity" />
       <button
         type="button"
         class="icp-close"
@@ -45,17 +59,15 @@ const locateSource = (sourceId: string) => {
       </button>
     </header>
 
-    <div v-if="ctx.previewLoading.value && !preview" class="icp-loading">
+    <div v-if="loading" class="icp-loading">
       <ProgressSpinner style="width: 28px; height: 28px" stroke-width="5" />
     </div>
-    <p v-else-if="ctx.previewError.value" class="icp-note icp-note--error">
-      {{ readableError(ctx.previewError.value) }}
-    </p>
+    <p v-else-if="error" class="icp-note icp-note--error">{{ error }}</p>
     <template v-else-if="preview">
-      <div v-if="preview.sources.length" class="icp-sources">
+      <div v-if="sources.length" class="icp-sources">
         <span class="icp-label">来源</span>
         <button
-          v-for="source in preview.sources"
+          v-for="source in sources"
           :key="source.id"
           type="button"
           class="icp-source"
@@ -65,51 +77,26 @@ const locateSource = (sourceId: string) => {
         </button>
       </div>
 
-      <p v-for="failure in preview.failures" :key="failure" class="icp-note icp-note--error">
-        读取失败：{{ readableError(failure) }}
+      <p v-for="failure in failures" :key="failure" class="icp-note icp-note--error">
+        读取失败：{{ failure }}
       </p>
+      <p v-if="emptyNote" class="icp-note">{{ emptyNote }}</p>
 
-      <p v-if="!preview.paragraphs.length" class="icp-note">
-        {{
-          preview.status === 'ready'
-            ? '引用范围内没有正文。'
-            : '这一章尚未取得正文，导入时不会生成内容。'
-        }}
-      </p>
-      <div v-else class="icp-body">
+      <div class="icp-body">
         <p
           v-for="(paragraph, index) in paragraphs"
           :key="index"
           class="icp-paragraph"
-          :class="{ 'icp-paragraph--existing': paragraph.kind === 'existing' }"
+          :class="paragraphClass(paragraph.kind)"
         >
           {{ displayText(paragraph.text) }}
         </p>
-        <button
-          v-if="preview.paragraphs.length > shown"
-          type="button"
-          class="icp-more"
-          @click="shown += PAGE"
-        >
-          显示更多（剩余 {{ preview.paragraphs.length - shown }} 段）
+        <button v-if="remaining" type="button" class="icp-more" @click="shown += PAGE">
+          显示更多（剩余 {{ remaining }} 段）
         </button>
       </div>
 
-      <div v-if="preview.excluded.length" class="icp-excluded">
-        <button type="button" class="icp-toggle" @click="showExcluded = !showExcluded">
-          <i
-            :class="['pi', showExcluded ? 'pi-chevron-down' : 'pi-chevron-right']"
-            aria-hidden="true"
-          />
-          提取时排除的内容（{{ preview.excluded.length }} 处）
-        </button>
-        <ul v-if="showExcluded" class="icp-excluded-list">
-          <li v-for="(entry, index) in preview.excluded" :key="index">
-            <span class="icp-reason">{{ entry.reason }}</span>
-            <span class="icp-excluded-text">{{ entry.text }}</span>
-          </li>
-        </ul>
-      </div>
+      <ImportExcludedList v-if="excluded.length" :entries="excluded" />
     </template>
   </section>
 </template>
@@ -205,42 +192,9 @@ const locateSource = (sourceId: string) => {
   padding-left: 0.5rem;
 }
 
-.icp-more,
-.icp-toggle {
+.icp-more {
   align-self: flex-start;
   font-size: 0.75rem;
   color: rgb(165, 180, 252);
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-
-.icp-excluded-list {
-  list-style: none;
-  margin: 0.35rem 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.icp-excluded-list li {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  font-size: 0.75rem;
-  padding: 0.35rem 0.5rem;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.icp-reason {
-  color: rgb(253, 224, 71);
-}
-
-.icp-excluded-text {
-  color: rgba(226, 232, 240, 0.65);
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 </style>

@@ -18,9 +18,10 @@ import ImportDraftPanel from 'src/components/import/ImportDraftPanel.vue';
 import ImportChapterPreview from 'src/components/import/ImportChapterPreview.vue';
 import ImportPlanPanel from 'src/components/import/ImportPlanPanel.vue';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
+import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 
 const ctx = injectImportPage();
-const store = ctx.store;
+const store = useImportWorkspaceStore();
 
 // 桌面不单独显示「任务」分区：任务列表常驻左侧
 const tab = computed({

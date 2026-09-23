@@ -6,6 +6,9 @@ import { ImportRepository } from '../services/import/import-repository';
 import { BookService } from '../services/book-service';
 import { ImportLibraryReader } from '../services/import/import-library-reader';
 import { book, draft } from './import-fixtures';
+import { ImportSourceService } from '../services/import/import-source-service';
+import { getDB } from '../utils/indexed-db';
+import { File } from 'node:buffer';
 
 describe('草稿章节预览', () => {
   it('按引用展示实际提取的正文，并关联原始来源与排除记录', async () => {
@@ -80,5 +83,41 @@ describe('草稿章节预览', () => {
     await expect(ImportPreviewService.chapter(input.taskId, 'nope')).rejects.toThrow(
       'CHAPTER_NOT_FOUND',
     );
+  });
+});
+
+describe('来源内容查看', () => {
+  it('分页读取已保存的快照，续读时返回后续片段', async () => {
+    const input = await draft('甲'.repeat(10));
+    const page = await ImportPreviewService.source(input.taskId, input.source.id, {
+      limit: 4,
+    });
+    expect(page).toMatchObject({ kind: 'text', text: '甲甲甲甲', nextOffset: 4 });
+    const next = await ImportPreviewService.source(input.taskId, input.source.id, {
+      offset: 8,
+      limit: 4,
+    });
+    expect(next).toEqual({ kind: 'text', text: '甲甲' });
+  });
+
+  it('尚未读取或读取失败的来源只说明原因，不触发抓取', async () => {
+    const task = await ImportRepository.createTask();
+    const [source] = await ImportSourceService.registerFiles(task.id, [
+      new File(['正文'], 'a.txt'),
+    ]);
+    expect(await ImportPreviewService.source(task.id, source!.id)).toMatchObject({
+      kind: 'note',
+      note: expect.stringContaining('尚未读取'),
+    });
+    const db = await getDB();
+    await db.put('import-sources', {
+      ...source!,
+      status: 'failed',
+      error: { code: 'FETCH_FAILED', message: 'FETCH_FAILED: 需要登录' },
+    });
+    expect(await ImportPreviewService.source(task.id, source!.id)).toEqual({
+      kind: 'note',
+      note: 'FETCH_FAILED: 需要登录',
+    });
   });
 });
