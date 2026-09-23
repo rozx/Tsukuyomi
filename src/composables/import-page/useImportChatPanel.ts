@@ -32,6 +32,8 @@ export function useImportChatPanel() {
   const messages = computed<ChatSessionMessage[]>(() =>
     importEventsToMessages(store.events, {
       sourceNames: store.sourceNames,
+      sources: store.sources,
+      ...(store.task ? { task: store.task } : {}),
       ...(store.task?.streaming?.text ? { streaming: store.task.streaming.text } : {}),
       ...(store.task?.compacting || store.pendingAction === 'compact' ? { compacting: true } : {}),
     }),

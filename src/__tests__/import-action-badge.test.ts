@@ -77,7 +77,9 @@ describe('导入操作气泡的完整说明', () => {
   });
 
   it('读取草稿进行中也直接显示说明，不重复拼接读取章节', () => {
-    expect(badgeText(importAction('get_import_draft'))).toBe('读取草稿（进行中）');
+    expect(badgeText(importAction('get_import_draft'))).toBe(
+      '读取草稿总览：「当前任务」（进行中）',
+    );
   });
 
   it('详情中的导入说明也不被解释成创建操作或章节名称', () => {

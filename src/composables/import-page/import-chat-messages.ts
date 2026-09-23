@@ -1,10 +1,13 @@
+import { importActionInfo } from './import-action-info';
+import { actionObject, createImportActionContext } from './import-action-context';
+import type { ImportActionContext, ImportActionTask } from './import-action-context';
 /**
  * 把导入任务的持久事件转换成月詠聊天组件使用的消息格式。
  *
  * 工具调用挂在发出它的助手消息上，作为操作记录显示；名称写明处理的来源与实际结果，
  * 便于用户定位来源或草稿。问答与待办沿用聊天已有的徽章字段。
  */
-import type { ImportEvent } from 'src/models/import';
+import type { ImportEvent, ImportSource } from 'src/models/import';
 import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
 import type { AIToolCall } from 'src/services/ai/types/ai-service';
 import { TOOL_CALL_PLACEHOLDER_VARIANTS } from 'src/constants/chat';
@@ -14,7 +17,7 @@ function fingerprint(actions: MessageAction[]): string {
   const text = actions
     .map(
       (action) =>
-        `${action.name ?? ''}|${action.answer ?? ''}|${action.batch_answers?.length ?? 0}`,
+        `${action.name ?? ''}|${JSON.stringify(action.descriptionDetails ?? [])}|${action.answer ?? ''}|${action.batch_answers?.length ?? 0}`,
     )
     .join('\n');
   let hash = 5381;
@@ -25,6 +28,8 @@ function fingerprint(actions: MessageAction[]): string {
 
 interface MessageOptions {
   sourceNames: Map<string, string>;
+  task?: ImportActionTask;
+  sources?: Pick<ImportSource, 'id' | 'name' | 'url' | 'relativePath'>[];
   streaming?: string;
   /** 正在压缩上下文：末尾显示临时的总结气泡。 */
   compacting?: boolean;
@@ -216,7 +221,7 @@ function toAction(
   timestamp: number,
   results: Map<string, Result>,
   answers: Map<string, AnswerData>,
-  names: Map<string, string>,
+  context: ImportActionContext,
 ): MessageAction {
   const tool = call.function.name;
   const args = parseArgs(call.function.arguments);
@@ -226,10 +231,12 @@ function toAction(
   if (shape.entity === 'todo') return { ...base, name: todoName(args) };
   if (shape.type === 'web_search')
     return { ...base, query: typeof args.query === 'string' ? args.query : '' };
+  const info = importActionInfo(tool, args, actionObject(results.get(call.id)), context);
   return {
     ...base,
     nameIsDescription: true,
-    name: `${describe(tool, args, names)}${outcome(tool, results.get(call.id))}`,
+    descriptionDetails: info.details,
+    name: `${info.summary ?? describe(tool, args, context.sources)}${outcome(tool, results.get(call.id))}`,
   };
 }
 
@@ -245,6 +252,7 @@ export function importEventsToMessages(
     if (event.kind === 'answer' && event.callId)
       answers.set(event.callId, event.data as AnswerData);
   }
+  const context = createImportActionContext(events, options);
   const messages: ChatSessionMessage[] = [];
   for (const event of events) {
     if (event.kind === 'summary') {
@@ -262,7 +270,7 @@ export function importEventsToMessages(
     if (message.role !== 'user' && message.role !== 'assistant') continue;
     const calls = message.role === 'assistant' ? (message.tool_calls ?? []) : [];
     const actions = calls.map((call, index) =>
-      toAction(call, event.createdAt + index, results, answers, options.sourceNames),
+      toAction(call, event.createdAt + index, results, answers, context),
     );
     const content = message.content ?? '';
     messages.push({

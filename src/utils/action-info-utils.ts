@@ -114,6 +114,7 @@ export function getActionDetails(
   if (action.nameIsDescription) {
     return [
       { label: '操作说明', value: action.name ?? '' },
+      ...(action.descriptionDetails ?? []),
       { label: '操作时间', value: formatTimestamp(action.timestamp) },
     ];
   }

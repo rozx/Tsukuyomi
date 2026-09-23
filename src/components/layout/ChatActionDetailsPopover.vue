@@ -3,7 +3,7 @@
  * 单个 Action 的详情面板 —— 桌面 Popover、手机 MobileBottomSheet。
  * 对外仍暴露 `toggle(event)` / `hide()`，兼容 useRightPanel 对 Ref 的既有调用。
  */
-import { computed } from 'vue';
+import { computed, onBeforeUnmount } from 'vue';
 import Popover from 'primevue/popover';
 import MobileBottomSheet from './MobileBottomSheet.vue';
 import { usePopoverBottomSheet } from 'src/composables/layout/usePopoverBottomSheet';
@@ -22,8 +22,31 @@ const emit = defineEmits<{
   hide: [];
 }>();
 
-const { isPhone, popoverRef, mobileVisible, onMobileVisibleChange, toggle, hide } =
-  usePopoverBottomSheet(() => emit('hide'));
+const {
+  isPhone,
+  popoverRef,
+  mobileVisible,
+  onMobileVisibleChange,
+  toggle: toggleSurface,
+  hide: hideSurface,
+} = usePopoverBottomSheet(() => emit('hide'));
+
+let hideTimer: ReturnType<typeof setTimeout> | undefined;
+function cancelHide() {
+  clearTimeout(hideTimer);
+  hideTimer = undefined;
+}
+function hide() {
+  cancelHide();
+  if (!isPhone.value && props.action?.descriptionDetails?.length)
+    hideTimer = setTimeout(hideSurface, 220);
+  else hideSurface();
+}
+function toggle(event: Event) {
+  cancelHide();
+  toggleSurface(event);
+}
+onBeforeUnmount(cancelHide);
 
 const getActionTitle = (action: MessageAction): string =>
   action.nameIsDescription
@@ -41,11 +64,19 @@ defineExpose({ toggle, hide });
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
-    style="width: 18rem; max-width: 90vw"
+    :style="{
+      width: props.action?.descriptionDetails?.length ? '28rem' : '18rem',
+      maxWidth: '90vw',
+    }"
     class="action-popover"
     @hide="emit('hide')"
   >
-    <div v-if="props.action" class="action-popover-content">
+    <div
+      v-if="props.action"
+      class="action-popover-content"
+      @mouseenter="cancelHide"
+      @mouseleave="hide"
+    >
       <div class="popover-header">
         <span class="popover-title">{{ getActionTitle(props.action) }}</span>
       </div>
@@ -112,6 +143,9 @@ defineExpose({ toggle, hide });
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  max-height: 60dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .popover-detail-item {
@@ -130,5 +164,6 @@ defineExpose({ toggle, hide });
   color: var(--moon-opacity-90);
   word-break: break-word;
   line-height: 1.5;
+  white-space: pre-wrap;
 }
 </style>
