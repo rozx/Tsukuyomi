@@ -26,7 +26,9 @@ const { isPhone, popoverRef, mobileVisible, onMobileVisibleChange, toggle, hide 
   usePopoverBottomSheet(() => emit('hide'));
 
 const getActionTitle = (action: MessageAction): string =>
-  `${ACTION_LABELS[action.type] ?? ''}${ENTITY_LABELS[action.entity] ?? ''}`;
+  action.nameIsDescription
+    ? '操作详情'
+    : `${ACTION_LABELS[action.type] ?? ''}${ENTITY_LABELS[action.entity] ?? ''}`;
 
 const title = computed(() => (props.action ? getActionTitle(props.action) : ''));
 

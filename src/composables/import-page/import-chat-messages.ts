@@ -217,6 +217,7 @@ function toAction(
     return { ...base, query: typeof args.query === 'string' ? args.query : '' };
   return {
     ...base,
+    nameIsDescription: true,
     name: `${describe(tool, args, names)}${outcome(tool, results.get(call.id))}`,
   };
 }
