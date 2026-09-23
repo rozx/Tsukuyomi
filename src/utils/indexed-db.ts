@@ -43,6 +43,16 @@ interface ChapterContent {
 }
 
 /**
+ * 同步章节结构基准：本设备上次确认的远端段落结构指纹，只存本地、不上传
+ */
+export interface SyncChapterBaseline {
+  chapterId: string;
+  bookId: string;
+  hash: string;
+  recordedAt: number;
+}
+
+/**
  * IndexedDB 数据库架构定义
  */
 export interface TsukuyomiDB extends DBSchema {
@@ -78,6 +88,11 @@ export interface TsukuyomiDB extends DBSchema {
   'book-revisions': {
     key: string;
     value: BookRevision;
+  };
+  'sync-chapter-baselines': {
+    key: string;
+    value: SyncChapterBaseline;
+    indexes: { 'by-bookId': string };
   };
   books: {
     key: string;
@@ -164,7 +179,8 @@ export interface TsukuyomiDB extends DBSchema {
 
 const DB_NAME = 'tsukuyomi';
 // v12 增量创建导入任务和书籍修改序号，不重写现有书籍或正文。
-const DB_VERSION = 12;
+// v13 增量创建同步章节结构基准，不改动现有存储。
+const DB_VERSION = 13;
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 let dbBlocked = false;
@@ -278,6 +294,10 @@ function ensureImportStores(db: IDBPDatabase<TsukuyomiDB>): void {
   }
   if (!db.objectStoreNames.contains('book-revisions')) {
     db.createObjectStore('book-revisions', { keyPath: 'bookId' });
+  }
+  if (!db.objectStoreNames.contains('sync-chapter-baselines')) {
+    const store = db.createObjectStore('sync-chapter-baselines', { keyPath: 'chapterId' });
+    store.createIndex('by-bookId', 'bookId');
   }
 }
 
@@ -587,6 +607,7 @@ async function clearAllData(): Promise<void> {
     'import-events',
     'import-operations',
     'book-revisions',
+    'sync-chapter-baselines',
   ] as const;
 
   for (const storeName of storeNames) {

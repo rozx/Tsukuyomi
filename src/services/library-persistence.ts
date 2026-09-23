@@ -7,7 +7,13 @@ import { canonicalStringify } from 'src/utils/canonical-json';
 import { bumpBookRevision } from './book-revision';
 import { mergeBookDeletionRecords } from './sync-config-persistence';
 
-const STORES = ['books', 'chapter-contents', 'book-revisions', 'sync-configs'] as const;
+const STORES = [
+  'books',
+  'chapter-contents',
+  'book-revisions',
+  'sync-configs',
+  'sync-chapter-baselines',
+] as const;
 type Transaction = IDBPTransaction<TsukuyomiDB, typeof STORES, 'readwrite'>;
 type ChapterRecord = TsukuyomiDB['chapter-contents']['value'];
 type Changes = Map<string, string[]>;
@@ -119,13 +125,21 @@ function chapterIds(book: Novel): string[] {
 async function removeChapters(tx: Transaction, ids: string[]): Promise<boolean> {
   let changed = false;
   const store = tx.objectStore('chapter-contents');
+  const baselines = tx.objectStore('sync-chapter-baselines');
   for (const id of new Set(ids)) {
+    // 章节不存在后，其同步结构基准也失去意义。
+    await baselines.delete(id);
     if ((await store.getKey(id)) !== undefined) {
       await store.delete(id);
       changed = true;
     }
   }
   return changed;
+}
+
+async function removeBookBaselines(tx: Transaction, bookId: string): Promise<void> {
+  const store = tx.objectStore('sync-chapter-baselines');
+  for (const key of await store.index('by-bookId').getAllKeys(bookId)) await store.delete(key);
 }
 
 /** 只处理持久化，不依赖 UI、缓存、网络或模型。 */
@@ -225,6 +239,7 @@ export class LibraryPersistence {
       if (!book) return [];
       const ids = chapterIds(book);
       await removeChapters(tx, ids);
+      await removeBookBaselines(tx, bookId);
       await tx.objectStore('books').delete(bookId);
       await bumpBookRevision(tx.objectStore('book-revisions'), bookId);
       if (recordDeletion)
@@ -251,6 +266,7 @@ export class LibraryPersistence {
       ]);
       for (const id of affected) await bumpBookRevision(tx.objectStore('book-revisions'), id);
       await tx.objectStore('chapter-contents').clear();
+      await tx.objectStore('sync-chapter-baselines').clear();
       if (includeBooks) await tx.objectStore('books').clear();
       return changes;
     });

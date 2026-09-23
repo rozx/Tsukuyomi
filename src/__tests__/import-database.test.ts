@@ -24,7 +24,7 @@ afterEach(async () => {
 describe('导入数据库 v12', () => {
   it('新建六个 store，按任务分页的索引存在', async () => {
     const db = await getDB();
-    expect(db.version).toBe(12);
+    expect(db.version).toBeGreaterThanOrEqual(12);
     for (const name of importStores) expect(db.objectStoreNames.contains(name)).toBe(true);
     expect(db.transaction('import-sources').store.indexNames.contains('by-task')).toBe(true);
     expect(db.transaction('import-resources').store.indexNames.contains('by-task')).toBe(true);

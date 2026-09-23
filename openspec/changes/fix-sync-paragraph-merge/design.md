@@ -62,7 +62,7 @@ elif remoteChg: 结构来源 = 远端，不追加另一方独有的段落
 else:           两方结构一致
 ```
 
-章节元信息（标题译文等）仍用现有的 `winningChapter` 逻辑。结构来源只决定段落序列和原文。
+章节元信息（标题译文等）仍用现有的 `winningChapter` 逻辑。结构来源只决定段落序列和原文；只有一方改过结构时，`originalContent`（原始抓取文本）与 `lastUpdated`（原文更新时间）也取自结构来源一方，避免它们与段落结构错配。
 
 `hash(local)` 用本地已加载的正文计算；`hash(remote)` **只用远端条目中内联的正文**计算，不经过 `loadChapterContentForNovelMerge`，否则远端正文缺失时会读到本地正文。任一侧正文缺失或为空时，这一章视为没有基准，走现有规则，也不写入基准。
 
@@ -74,10 +74,11 @@ else:           两方结构一致
 - **上传**：`uploadToGistIncremental` 成功后，对本次实际上传的 `novel:<id>` 条目，用**上传时序列化的那份数据**计算各章指纹并写入，避免上传期间本地又被修改而写错基准。上传结果需要带出这些条目的结构，或由执行器在序列化时记录。
 - **补写**：同步成功结束后，对本地 manifest 哈希等于 `knownRemoteHashes` 的 `novel:<id>` 条目（说明本地与远端逐字相同），用本地结构补写该书各章中还没有基准或基准不同的记录。否则升级后，没被下载或上传过的书一直没有基准，第一次跨设备修改结构时仍会出错。补写只在一次同步完全成功后执行，并且只处理哈希相等的条目。
 - 失败的条目：跟随 `failedEntryKeys` / `applyFailedKeys`，不写入。
+- 实现上，上传与补写合并为一条规则：同步成功结束后（增量上传、强制推送、无需上传），对 bundle 中本地 manifest 哈希等于最终已知远端哈希的书写入基准。上传成功时最终远端哈希就是本次上传的 manifest，无需上传时是 `knownRemoteHashes`。首次创建 Gist 时整个 bundle 都已上传，全部写入。写入只覆盖还没有基准或基准不同的章节。
 
 ### D5 冲突提示
 
-`SyncMergeReport` 在一次同步执行中累积。`applyPartialRemoteData` 现在只返回失败条目列表，需要改为同时返回报告（或接受外部传入的报告对象），`applyDownloadedData` 也做同样的调整。`useSyncExecutor` 在同步结束后如果有冲突，就弹出一条 toast，列出最多 5 个「书名 · 章节」，其余用「等 N 章」概括。提示放在执行器里，确保每次同步只出现一次。
+`SyncMergeReport` 在一次同步执行中累积。`applyPartialRemoteData` 现在只返回失败条目列表，需要改为同时返回报告（或接受外部传入的报告对象），`applyDownloadedData` 也做同样的调整。`useSyncExecutor` 在同步结束后如果有冲突，就弹出一条 toast，列出最多 5 个「书名 · 章节」，其余用「等 N 章」概括。提示放在执行器里，确保每次同步只出现一次；报告按书籍与章节去重（伪 CAS 重试会重新合并同一章节）。合并已写入本地，所以同步最终失败时也照样提示。
 
 ## Risks / Trade-offs
 
