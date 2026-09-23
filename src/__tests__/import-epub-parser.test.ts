@@ -104,6 +104,18 @@ describe('EPUB 包结构与有界解包', () => {
     await expect(parseImportEpub(bytes)).rejects.toThrow('CORRUPT_ARCHIVE');
   });
 
+  it('允许 ZIP 结束记录后的少量零填充，仍拒绝非零尾部数据', async () => {
+    const original = epub();
+    const padded = new Uint8Array(original.length + 30);
+    padded.set(original);
+
+    const result = await parseImportEpub(padded);
+    expect(result.entries.filter((entry) => entry.kind === 'content')).toHaveLength(2);
+
+    padded[padded.length - 1] = 1;
+    await expect(parseImportEpub(padded)).rejects.toThrow('CORRUPT_ARCHIVE: 没有 ZIP 中央目录');
+  });
+
   it('取消时不返回半个包，解析过程中可分段让出', async () => {
     const controller = new AbortController();
     let yields = 0;

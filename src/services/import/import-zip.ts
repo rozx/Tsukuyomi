@@ -52,16 +52,23 @@ function localDataOffset(
 /** 按 PKWARE APPNOTE 4.3 校验目录及本地头，解压前拒绝加密和超限声明。 */
 function directory(bytes: Uint8Array, limits: ImportParseLimits): ZipEntry[] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const maxZeroPadding = 4096;
+  const searchStart = Math.max(0, bytes.length - 65557 - maxZeroPadding);
   let end = bytes.length - 22;
-  while (end >= Math.max(0, bytes.length - 65557)) {
-    if (
-      view.getUint32(end, true) === 0x06054b50 &&
-      end + 22 + view.getUint16(end + 20, true) === bytes.length
-    )
-      break;
+  while (end >= searchStart) {
+    if (view.getUint32(end, true) === 0x06054b50) {
+      const recordEnd = end + 22 + view.getUint16(end + 20, true);
+      const padding = bytes.length - recordEnd;
+      if (
+        padding >= 0 &&
+        padding <= maxZeroPadding &&
+        bytes.subarray(recordEnd).every((byte) => byte === 0)
+      )
+        break;
+    }
     end--;
   }
-  if (end < 0 || end < bytes.length - 65557) throw new Error('CORRUPT_ARCHIVE: 没有 ZIP 中央目录');
+  if (end < searchStart) throw new Error('CORRUPT_ARCHIVE: 没有 ZIP 中央目录');
   const count = view.getUint16(end + 10, true);
   let cursor = view.getUint32(end + 16, true);
   if (count > limits.entries || count === 65535) throw new Error('ARCHIVE_LIMIT: 归档条目过多');
