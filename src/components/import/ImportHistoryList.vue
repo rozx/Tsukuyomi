@@ -101,7 +101,7 @@ const requestRevert = (entry: ImportOperation) => {
   </section>
 </template>
 
-<style scoped src="./import-plan.css"></style>
+<style scoped src="./import-card.css"></style>
 <style scoped>
 .ihl-list {
   list-style: none;

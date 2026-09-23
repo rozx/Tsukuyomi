@@ -126,7 +126,7 @@ const chooseSettings = (chapterId: string, value: string) =>
   </section>
 </template>
 
-<style scoped src="./import-plan.css"></style>
+<style scoped src="./import-card.css"></style>
 <style scoped>
 .ipc {
   background: rgba(234, 179, 8, 0.06);

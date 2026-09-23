@@ -68,7 +68,7 @@ const completeness = computed(() => {
   </div>
 </template>
 
-<style scoped src="./import-plan.css"></style>
+<style scoped src="./import-card.css"></style>
 <style scoped>
 .ipdt {
   display: grid;

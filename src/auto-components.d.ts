@@ -115,6 +115,7 @@ declare module 'vue' {
     ImportDraftVolume: typeof import('./components/import/ImportDraftVolume.vue')['default']
     ImportExcludedList: typeof import('./components/import/ImportExcludedList.vue')['default']
     ImportExportTab: typeof import('./components/settings/ImportExportTab.vue')['default']
+    ImportFilterChips: typeof import('./components/import/ImportFilterChips.vue')['default']
     ImportHistoryList: typeof import('./components/import/ImportHistoryList.vue')['default']
     ImportMetadataCandidates: typeof import('./components/import/ImportMetadataCandidates.vue')['default']
     ImportNovelChoice: typeof import('./components/import/ImportNovelChoice.vue')['default']

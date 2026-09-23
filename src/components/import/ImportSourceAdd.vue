@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 添加来源：网址、文件或文件夹。只登记访问范围，不读取、不解析；
+ * 添加来源：网址、文件（可拖入）或文件夹。只登记访问范围，不读取、不解析；
  * 月詠通过工具检查后才会读取内容。
  */
 import { computed, ref } from 'vue';
@@ -11,6 +11,7 @@ import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 const store = useImportWorkspaceStore();
 
 const url = ref('');
+const dragging = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 const folderInput = ref<HTMLInputElement | null>(null);
 const folderSupported =
@@ -35,10 +36,25 @@ const onFolder = (event: Event) =>
   void store.addDirectory(
     takeFiles(event).map((file) => ({ file, path: file.webkitRelativePath || file.name })),
   );
+const onDrop = (event: DragEvent) => {
+  dragging.value = false;
+  const files = [...(event.dataTransfer?.files ?? [])];
+  if (files.length) void store.addFiles(files);
+};
 </script>
 
 <template>
-  <div class="isa">
+  <section
+    class="ipl-card isa"
+    :class="{ 'isa--dragging': dragging }"
+    aria-label="添加来源"
+    @dragover.prevent="dragging = true"
+    @dragleave.self="dragging = false"
+    @drop.prevent="onDrop"
+  >
+    <div class="ipl-card-head">
+      <h3 class="ipl-card-title"><i class="pi pi-plus-circle" aria-hidden="true" />添加来源</h3>
+    </div>
     <form class="isa-url" @submit.prevent="addUrl">
       <InputText
         v-model="url"
@@ -48,28 +64,33 @@ const onFolder = (event: Event) =>
       />
       <Button
         type="submit"
+        icon="pi pi-link"
         label="添加网址"
         size="small"
         :disabled="!canAddUrl"
         :loading="adding"
       />
     </form>
-    <div class="isa-pick">
-      <Button
-        icon="pi pi-file"
-        label="选择文件"
-        size="small"
-        outlined
-        @click="fileInput?.click()"
-      />
-      <Button
-        v-if="folderSupported"
-        icon="pi pi-folder-open"
-        label="选择文件夹"
-        size="small"
-        outlined
-        @click="folderInput?.click()"
-      />
+    <div class="isa-drop">
+      <i class="pi pi-cloud-upload isa-drop-icon" aria-hidden="true" />
+      <span class="isa-drop-text">把 TXT、Markdown、HTML、EPUB 文件拖到这里，或</span>
+      <div class="isa-pick">
+        <Button
+          icon="pi pi-file"
+          label="选择文件"
+          size="small"
+          outlined
+          @click="fileInput?.click()"
+        />
+        <Button
+          v-if="folderSupported"
+          icon="pi pi-folder-open"
+          label="选择文件夹"
+          size="small"
+          outlined
+          @click="folderInput?.click()"
+        />
+      </div>
       <input
         ref="fileInput"
         type="file"
@@ -91,19 +112,24 @@ const onFolder = (event: Event) =>
         @change="onFolder"
       />
     </div>
-    <p class="isa-hint">
-      添加来源只登记访问范围，不会立即读取；月詠检查后才会读取内容。支持 TXT、Markdown、HTML、EPUB
-      等格式。需要登录或验证的网站请改为提供文件。
+    <p class="ipl-muted">
+      添加只登记访问范围，月詠检查后才会读取内容。需要登录或验证的网站请改为提供文件。
+      <template v-if="!folderSupported">当前环境不支持选择文件夹，可以一次选择多个文件。</template>
     </p>
-    <p v-if="!folderSupported" class="isa-hint">当前环境不支持选择文件夹，可以一次选择多个文件。</p>
-  </div>
+  </section>
 </template>
 
+<style scoped src="./import-card.css"></style>
 <style scoped>
 .isa {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+.isa--dragging {
+  border-color: rgba(129, 140, 248, 0.6);
+  background: rgba(99, 102, 241, 0.1);
 }
 
 .isa-url {
@@ -116,16 +142,32 @@ const onFolder = (event: Event) =>
   min-width: 0;
 }
 
+.isa-drop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.85rem;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  text-align: center;
+}
+
+.isa-drop-icon {
+  font-size: 1.1rem;
+  color: rgba(165, 180, 252, 0.85);
+}
+
+.isa-drop-text {
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.65);
+}
+
 .isa-pick {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
-}
-
-.isa-hint {
-  font-size: 0.75rem;
-  line-height: 1.6;
-  color: rgba(226, 232, 240, 0.55);
-  margin: 0;
+  justify-content: center;
 }
 </style>

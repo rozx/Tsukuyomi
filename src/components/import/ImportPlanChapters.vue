@@ -2,6 +2,7 @@
 /** 方案的章节变化：按新增／更新／重组筛选的列表。 */
 import { computed, ref, watch } from 'vue';
 import type { ImportPlan } from 'src/models/import';
+import ImportFilterChips from './ImportFilterChips.vue';
 
 type Kind = NonNullable<ImportPlan['chapterChanges']>[number]['kind'];
 
@@ -41,19 +42,12 @@ watch(filters, (entries) => {
         <i class="pi pi-book" aria-hidden="true" />章节变化
         <span class="ipl-count">{{ changes.length }}</span>
       </h3>
-      <div v-if="filters.length > 2" class="ipch-filters" role="group" aria-label="筛选章节变化">
-        <button
-          v-for="entry in filters"
-          :key="entry.id"
-          type="button"
-          class="ipch-filter"
-          :class="{ 'ipch-filter--active': filter === entry.id }"
-          :aria-pressed="filter === entry.id"
-          @click="filter = entry.id"
-        >
-          {{ entry.label }} {{ entry.count }}
-        </button>
-      </div>
+      <ImportFilterChips
+        v-if="filters.length > 2"
+        v-model="filter"
+        :filters="filters"
+        label="筛选章节变化"
+      />
     </div>
     <ol class="ipch-list">
       <li v-for="change in shown" :key="change.draftChapterId" class="ipch-row">
@@ -66,28 +60,8 @@ watch(filters, (entries) => {
   </section>
 </template>
 
-<style scoped src="./import-plan.css"></style>
+<style scoped src="./import-card.css"></style>
 <style scoped>
-.ipch-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-}
-
-.ipch-filter {
-  padding: 0.15rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  color: rgba(226, 232, 240, 0.65);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.ipch-filter--active {
-  color: rgb(224, 231, 255);
-  background: rgba(99, 102, 241, 0.22);
-  border-color: rgba(129, 140, 248, 0.45);
-}
-
 .ipch-list {
   list-style: none;
   margin: 0;

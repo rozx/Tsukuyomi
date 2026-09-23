@@ -164,10 +164,10 @@ const chapterCount = computed(() => store.task?.draft.chapters.length ?? 0);
   align-self: start;
   max-height: calc(100vh - 14rem);
   overflow-y: auto;
-  padding: 0.75rem;
+  padding: 0.9rem 1rem;
   border-radius: 14px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .ipd-empty {

@@ -4,7 +4,6 @@
  * 未取得正文的章节只显示缺失／失败状态，不显示伪造的正文。
  */
 import { computed, ref } from 'vue';
-import Tag from 'primevue/tag';
 import ProgressSpinner from 'primevue/progressspinner';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import ImportExcludedList from './ImportExcludedList.vue';
@@ -47,8 +46,11 @@ const locateSource = (sourceId: string) => {
 <template>
   <section class="icp" aria-label="章节正文检查">
     <header class="icp-head">
+      <i class="pi pi-eye icp-title-icon" aria-hidden="true" />
       <span class="icp-title">{{ title }}</span>
-      <Tag v-if="status" :value="status.label" :severity="status.severity" />
+      <span v-if="status" class="ipl-status" :class="`ipl-status--${status.severity}`">
+        {{ status.label }}
+      </span>
       <button
         type="button"
         class="icp-close"
@@ -101,6 +103,7 @@ const locateSource = (sourceId: string) => {
   </section>
 </template>
 
+<style scoped src="./import-card.css"></style>
 <style scoped>
 .icp {
   display: flex;
@@ -113,6 +116,11 @@ const locateSource = (sourceId: string) => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.icp-title-icon {
+  font-size: 0.8rem;
+  color: rgba(165, 180, 252, 0.9);
 }
 
 .icp-title {

@@ -1,0 +1,135 @@
+/* 导入工作台（来源、草稿、方案）共用的卡片与筛选样式（各组件以 scoped src 引入） */
+.ipl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.9rem 1rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  min-width: 0;
+}
+
+.ipl-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.ipl-card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.ipl-card-title > i {
+  font-size: 0.8rem;
+  color: rgba(165, 180, 252, 0.9);
+}
+
+.ipl-count {
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.72);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ipl-muted {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.6;
+  color: rgba(226, 232, 240, 0.55);
+}
+
+.ipl-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.ipl-filter {
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: rgba(226, 232, 240, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ipl-filter--active {
+  color: rgb(224, 231, 255);
+  background: rgba(99, 102, 241, 0.22);
+  border-color: rgba(129, 140, 248, 0.45);
+}
+
+.ipl-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.ipl-banner > i {
+  margin-top: 0.25rem;
+}
+
+.ipl-banner--warn {
+  color: rgb(253, 224, 71);
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+}
+
+.ipl-banner--info {
+  color: rgb(199, 210, 254);
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(129, 140, 248, 0.28);
+}
+
+/* 状态色点：与标签同色系，列表中比整块标签更安静 */
+.ipl-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  color: rgba(226, 232, 240, 0.6);
+}
+
+.ipl-status::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ipl-status--success {
+  color: rgb(134, 239, 172);
+}
+
+.ipl-status--info {
+  color: rgb(147, 197, 253);
+}
+
+.ipl-status--warn {
+  color: rgb(253, 186, 116);
+}
+
+.ipl-status--danger {
+  color: rgb(252, 165, 165);
+}
+
+.ipl-status--secondary {
+  color: rgba(226, 232, 240, 0.5);
+}

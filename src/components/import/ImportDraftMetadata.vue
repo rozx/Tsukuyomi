@@ -105,12 +105,13 @@ const suggestion = computed(() => {
         @update:model-value="setTarget"
       />
     </label>
-    <div v-if="suggestion" class="idm-note">
-      月詠建议：{{ suggestion.label }}
+    <div v-if="suggestion" class="ipl-banner ipl-banner--info idm-note">
+      <i class="pi pi-lightbulb" aria-hidden="true" />
+      <span class="idm-note-text">月詠建议：{{ suggestion.label }}</span>
       <Button
-        label="采用"
+        label="采用建议"
         size="small"
-        text
+        outlined
         :disabled="locked"
         @click="propose(suggestion.bookId)"
       />
@@ -118,6 +119,7 @@ const suggestion = computed(() => {
   </div>
 </template>
 
+<style scoped src="./import-card.css"></style>
 <style scoped>
 .idm {
   display: grid;
@@ -140,7 +142,11 @@ const suggestion = computed(() => {
 }
 
 .idm-note {
-  font-size: 0.78rem;
-  color: rgba(226, 232, 240, 0.6);
+  align-items: center;
+}
+
+.idm-note-text {
+  flex: 1;
+  min-width: 0;
 }
 </style>
