@@ -120,6 +120,7 @@ const open = async (sourceId: string) => {
 <style scoped>
 .isp {
   container-type: inline-size;
+  height: 100%;
   min-height: 0;
 }
 
@@ -161,17 +162,29 @@ const open = async (sourceId: string) => {
   gap: 2px;
 }
 
-/* 宽容器：列表与内容并排，内容区跟随滚动 */
+/* 宽容器：列表与内容并排并撑满可视高度，两栏各自滚动，外层不滚动 */
 @container (min-width: 52rem) {
   .isp-layout--split {
     display: grid;
+    height: 100%;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .isp-layout--split .isp-main {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .isp-layout--split .isp-viewer {
-    position: sticky;
-    top: 0;
+    min-height: 0;
+  }
+
+  .isp-layout--split :deep(.isv-text) {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
   }
 }
 </style>

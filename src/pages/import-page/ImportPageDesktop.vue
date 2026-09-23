@@ -148,6 +148,11 @@ const chapterCount = computed(() => store.task?.draft.chapters.length ?? 0);
   overflow-y: auto;
 }
 
+/* 标签内容撑满可视高度；并排检查时左右两栏各自滚动，外层不滚动 */
+.ipd-panels :deep(.p-tabpanel) {
+  height: 100%;
+}
+
 .ipd-draft {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -155,15 +160,18 @@ const chapterCount = computed(() => store.task?.draft.chapters.length ?? 0);
 }
 
 .ipd-draft--split {
+  height: 100%;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.ipd-draft--split > * {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .ipd-preview {
-  position: sticky;
-  top: 0;
-  align-self: start;
-  max-height: calc(100vh - 14rem);
-  overflow-y: auto;
   padding: 0.9rem 1rem;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.035);
@@ -198,12 +206,13 @@ const chapterCount = computed(() => store.task?.draft.chapters.length ?? 0);
 
 @media (max-width: 1100px) {
   .ipd-draft--split {
+    height: auto;
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
   }
 
-  .ipd-preview {
-    position: static;
-    max-height: none;
+  .ipd-draft--split > * {
+    overflow: visible;
   }
 }
 </style>

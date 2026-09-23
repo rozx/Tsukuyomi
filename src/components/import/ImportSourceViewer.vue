@@ -89,6 +89,7 @@ const loadMore = () => void ctx.showSource(props.source.id, nextOffset.value);
 .isv-text {
   max-height: 28rem;
   overflow: auto;
+  overscroll-behavior: contain;
   margin: 0;
   padding: 0.75rem 0.85rem;
   border-radius: 10px;
