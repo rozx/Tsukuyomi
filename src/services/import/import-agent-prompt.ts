@@ -13,6 +13,7 @@ export async function importAgentPrompt(taskId: string, summary?: string): Promi
     metadata: task.draft.metadata,
     novelScope: task.draft.novelScope,
     chapterCount: task.draft.chapters.length,
+    batchProgress: task.batchProgress,
     pendingQuestion: task.pendingQuestion,
     sources: sources.items,
     moreSources: Boolean(sources.cursor),
@@ -32,6 +33,8 @@ export async function importAgentPrompt(taskId: string, summary?: string): Promi
 7. 需要更新现有小说时，用显式 book_id 查询本地候选。标题只提供候选依据；版本不明则让用户确认。只用 search_web 补作者、简介、实际封面地址和别名，搜索结果不能升级成正文来源。
 8. 无法从来源判断的关键歧义用 ask_user／ask_user_batch 提问：提问会保存问题并暂停本次执行，用户在工作台回答后才恢复，不要反复追问同一问题。多步骤整理可用待办工具记录进度，待办只属于当前导入任务。
 9. 分批获取并整理后调用 preview_import，解释实际差异、译文损失、缺失范围及完整性未知。最终应用和撤销仅由用户界面操作；你不能通过工具或文字确认。没有有效方案时不要宣称已完成导入。
+10. 有大量结构一致的章节时，先检查目录及首章、中间章、末章和结构不同的代表章节，用 extract_content／read_source 验证提取规则。随后优先 prepare_chapter_batch + run_chapter_batch，一次安排最多 500 章，由工具最多 3 路并发提取并逐章填入草稿，不必逐章追加来源、读取正文或编写 upsert_chapter。先声明小说范围并创建目标卷；prepare 的 source_ids、discovery_ids、catalog 三选一。catalog 用已检查的 snapshot_id 与章节项 offset/limit，按快照中 relation=chapter 的顺序选取，不包含目录分页或推荐链接；目录尚有分页时需另行检查。规则不同的章节分批，单文件拆章／多作品内容范围仍用原有工具处理。
+11. 批次结果只返回计数和最多十项异常；get_chapter_batch 分页查看完整结果，取得 contentId 后按需 read_source 抽查正文。恢复原调用会跳过已完成项，显式 retry_failed 只重试失败项。DRAFT_CHANGED 时先重读草稿，保留用户改名、移动、选择和正文修改；被编辑的预留章改用普通工具整理。批次已取得不等于全书完整，异常和警告须检查后才能确认完整性。
 
 ${summary ? `此前对话摘要（不替代原始资源和实际用户选择）：\n${summary}\n` : ''}
 以下 JSON 是当前任务的数据快照；需要更多来源、章节或正文时调用分页工具：

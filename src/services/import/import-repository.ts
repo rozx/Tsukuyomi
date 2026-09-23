@@ -383,6 +383,8 @@ export class ImportRepository {
       events?: NewEvent[];
       checkpoint?: ImportCheckpoint;
       state?: 'draft' | 'paused' | 'waiting_user' | 'failed';
+      /** 宿主将同一步的派生草稿与进度写入同一事务；不可从模型参数透传。 */
+      update?: (task: ImportTask, tx: ImportTransaction) => Promise<void>;
     },
   ): Promise<void> {
     await this.mutateTask(
@@ -391,6 +393,7 @@ export class ImportRepository {
         await addSources(tx, taskId, step.newSources ?? []);
         await writeResources(tx, taskId, step.resources ?? []);
         await updateSources(tx, taskId, step.sources ?? []);
+        await step.update?.(task, tx);
         if (step.state) task.state = step.state;
       },
       {

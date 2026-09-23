@@ -113,6 +113,13 @@ const continueRun = () => void store.send('');
         <template v-if="sourceProgress.failed"> · {{ sourceProgress.failed }} 个失败</template>
       </span>
       <span>{{ chapterProgress }}</span>
+      <span v-if="task.batchProgress" aria-live="polite">
+        当前批次 {{ task.batchProgress.ready }}/{{ task.batchProgress.total }} 章已取得 · 待处理
+        {{ task.batchProgress.pending }}
+        <template v-if="task.batchProgress.failed">
+          · 失败 {{ task.batchProgress.failed }}</template
+        >
+      </span>
     </div>
 
     <Message v-if="store.storageIssue" severity="error" :closable="false" class="irb-msg">

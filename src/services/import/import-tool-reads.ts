@@ -62,6 +62,7 @@ async function readDraft(taskId: string, args: Record<string, unknown>) {
     novelScope: draft.novelScope,
     volumes: draft.volumes,
     chapterCount: draft.chapters.length,
+    batchProgress: task.batchProgress,
     completeness: draft.completeness,
     pendingQuestion: task.pendingQuestion,
     currentPlanId: task.currentPlanId,

@@ -317,7 +317,7 @@ export class ImportSourceService {
     );
   }
 
-  private static async addDiscoveryInTransaction(
+  static async addDiscoveryInTransaction(
     taskId: string,
     discoveryId: string,
     tx: ImportTransaction,

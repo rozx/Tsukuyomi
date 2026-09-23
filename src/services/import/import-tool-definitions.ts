@@ -151,6 +151,46 @@ function tool(
 }
 
 export const importTools: AITool[] = [
+  tool(
+    'run_chapter_batch',
+    '按准备好的计划提取全部待处理章节并逐章保存到草稿，最多 3 路并发；返回计数和少量异常，不返回正文。中断后续跑；retry_failed 只重试失败项。',
+    {
+      batch_id: string,
+      base_draft_revision: number,
+      retry_failed: boolean,
+    },
+    ['batch_id', 'base_draft_revision'],
+  ),
+  tool(
+    'get_chapter_batch',
+    '分页查看章节批次的状态、错误和正文引用；正文用 read_source 按需抽查。',
+    {
+      batch_id: string,
+      ...paging,
+    },
+    ['batch_id'],
+  ),
+  tool(
+    'prepare_chapter_batch',
+    '抽样确认后准备章节批次：固定来源、顺序和规则，创建待提取草稿；不抓正文。source_ids、discovery_ids、catalog 三选一，每批最多 500 章。',
+    {
+      base_draft_revision: number,
+      volume_id: string,
+      source_ids: { type: 'array', items: string, minItems: 1, maxItems: 500 },
+      discovery_ids: { type: 'array', items: string, minItems: 1, maxItems: 500 },
+      catalog: {
+        type: 'object',
+        properties: {
+          snapshot_id: string,
+          offset: number,
+          limit: { type: 'integer', minimum: 1, maximum: 500 },
+        },
+        required: ['snapshot_id', 'offset', 'limit'],
+      },
+      rules,
+    },
+    ['base_draft_revision', 'volume_id'],
+  ),
   tool('list_sources', '列出当前任务来源及状态；不读取正文。', {
     parent_source_id: string,
     status: {

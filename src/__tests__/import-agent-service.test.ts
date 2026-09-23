@@ -12,6 +12,7 @@ import { getDB } from '../utils/indexed-db';
 import { ImportToolExecutor } from '../services/import/import-tool-executor';
 import { ImportExtractionService } from '../services/import/import-extraction-service';
 import type { ImportRunContext } from '../models/import';
+import { ImportDraftService } from '../services/import/import-draft-service';
 
 const model: AIModel = {
   id: 'm',
@@ -51,6 +52,63 @@ afterEach(() => {
 });
 
 describe('导入 Agent 执行生命周期', () => {
+  it('一个批次调用处理多个章节，进行中的已保存进度通知工作台且不会逐章请求模型', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    const task = await ImportRepository.createTask();
+    const sources = await ImportSourceService.registerFiles(
+      task.id,
+      Array.from({ length: 6 }, (_, i) => new File([`正文${i}`], `第${i}章`)),
+    );
+    await ImportDraftService.edit(task.id, {
+      baseDraftRevision: 0,
+      operations: [
+        {
+          op: 'declare_candidates',
+          candidates: [{ id: 'n', title: '小说', sourceIds: sources.map((s) => s.id) }],
+        },
+        { op: 'upsert_volume', id: 'v', title: '卷' },
+      ],
+    });
+    const seen: number[] = [];
+    const dispose = ImportAgentService.subscribe(async (id) => {
+      seen.push((await ImportRepository.getTask(id))?.batchProgress?.ready ?? 0);
+    });
+    let requests = 0;
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
+      generateText: (_config: AIServiceConfig, request: TextGenerationRequest) => {
+        requests++;
+        if (requests === 1)
+          return Promise.resolve(
+            tool('prepare_chapter_batch', {
+              source_ids: sources.map((s) => s.id),
+              volume_id: 'v',
+              base_draft_revision: 1,
+            }),
+          );
+        if (requests === 2) {
+          const result = request.messages!.find(
+            (m) => m.role === 'tool' && m.name === 'prepare_chapter_batch',
+          )!;
+          const plan = JSON.parse(result.content!) as { batchId: string };
+          return Promise.resolve(
+            tool('run_chapter_batch', { batch_id: plan.batchId, base_draft_revision: 2 }),
+          );
+        }
+        return Promise.resolve({ text: '章节已提取，等待检查。' });
+      },
+    } as never);
+    try {
+      const result = await ImportAgentService.run(task.id, model, '批量处理');
+      expect(result.batchProgress).toMatchObject({ ready: 6, pending: 0 });
+      expect(requests).toBe(3);
+      expect(seen.some((ready) => ready > 0 && ready < 6)).toBe(true);
+      expect(seen.filter((ready) => ready > 0 && ready < 6)).toHaveLength(1);
+      expect(await (await getDB()).count('books')).toBe(0);
+    } finally {
+      dispose();
+    }
+  });
+
   it('界面订阅异常不会释放仍在执行的锁或中止持久化', async () => {
     const task = await ImportRepository.createTask();
     vi.spyOn(console, 'warn').mockImplementation(() => undefined);

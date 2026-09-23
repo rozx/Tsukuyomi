@@ -21,6 +21,33 @@ function call(id: string, name: string, args: unknown) {
 }
 
 describe('导入事件到月詠消息', () => {
+  it('批量提取操作显示成功与失败数量，不使用内部工具名称', () => {
+    const messages = importEventsToMessages(
+      [
+        event({
+          kind: 'message',
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              call('batch', 'run_chapter_batch', { batch_id: 'b', base_draft_revision: 1 }),
+            ],
+          },
+        }),
+        event({
+          kind: 'tool-result',
+          callId: 'batch',
+          toolName: 'run_chapter_batch',
+          data: { success: true, ready: 97, failed: 3, pending: 0, total: 100 },
+        }),
+      ],
+      { sourceNames: new Map() },
+    );
+    expect(messages[0]?.actions?.[0]?.name).toContain('成功 97');
+    expect(messages[0]?.actions?.[0]?.name).toContain('失败 3');
+    expect(messages[0]?.actions?.[0]?.name).not.toContain('run_chapter_batch');
+  });
+
   it('用户与助手消息按顺序展示，工具调用成为助手消息的操作记录，并写明来源与结果', () => {
     const events = [
       event({ kind: 'message', message: { role: 'user', content: '请整理' } }),

@@ -145,6 +145,23 @@ export class ImportDraftValidator {
     return granted;
   }
 
+  /** 批次只接收整章来源；按正文片段划分的作品仍由范围编辑处理。 */
+  async batchSource(draft: ImportDraft, sourceId: string): Promise<ImportSource> {
+    const source = await this.source(sourceId);
+    const candidate = this.selected(draft);
+    if (source.purpose === 'metadata-only')
+      throw new Error('METADATA_ONLY: 元信息来源不能作为正文');
+    if (source.status === 'excluded' || source.kind === 'directory')
+      throw new Error('SOURCE_SCOPE: 来源已排除或不是章节资源');
+    if (candidate.content || !(await this.sourceGrant(candidate, source.id)))
+      throw new Error('SOURCE_SCOPE: 批次来源未完整归属所选小说');
+    for (const other of draft.novelScope.candidates) {
+      if (other.id !== candidate.id && (await this.sourceGrant(other, source.id)))
+        throw new Error('SOURCE_SCOPE: 批次来源可能属于多个作品');
+    }
+    return source;
+  }
+
   private async extraction(
     ref: Extract<ImportContentRef, { kind: 'extraction' }>,
   ): Promise<{ resource: Extraction; source: ImportSource; segments: ImportContentSegment[] }> {

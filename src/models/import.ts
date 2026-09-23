@@ -1,6 +1,7 @@
 import type { Novel, Paragraph } from './novel';
 import type { ImportReplacementRange } from './import-matching';
 import type { ChatMessage } from 'src/services/ai/types/ai-service';
+import type { ImportBatchProgress, ImportChapterBatch } from './import-batch';
 
 /** 导入的宿主身份不属于模型工具参数，也不保存模型凭据。 */
 export interface ImportRunContext {
@@ -101,6 +102,7 @@ export interface ImportInspection {
 export type ImportResource = ImportResourceBase &
   (
     | { kind: 'input'; blob: Blob }
+    | { kind: 'chapter-batch'; batch: ImportChapterBatch }
     | {
         kind: 'snapshot';
         blob: Blob;
@@ -307,6 +309,7 @@ export interface ImportTask {
   streaming?: { text: string; reasoning?: string };
   /** 正在总结对话历史（压缩上下文）。 */
   compacting?: boolean;
+  batchProgress?: ImportBatchProgress;
 }
 
 export interface ImportEvent {

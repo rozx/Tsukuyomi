@@ -38,6 +38,9 @@ type Result = Record<string, unknown> | undefined;
 type ActionShape = Pick<MessageAction, 'type' | 'entity'>;
 
 const ACTION_SHAPES: Record<string, ActionShape> = {
+  prepare_chapter_batch: { type: 'create', entity: 'chapter' },
+  run_chapter_batch: { type: 'create', entity: 'chapter' },
+  get_chapter_batch: { type: 'read', entity: 'chapter' },
   list_sources: { type: 'read', entity: 'web' },
   inspect_source: { type: 'read', entity: 'web' },
   read_source: { type: 'read', entity: 'web' },
@@ -87,6 +90,12 @@ function count(value: unknown): number {
 /** 操作本身的描述：处理了哪些来源、范围或草稿。 */
 function describe(name: string, args: Args, names: Map<string, string>): string {
   switch (name) {
+    case 'prepare_chapter_batch':
+      return '准备章节批次';
+    case 'run_chapter_batch':
+      return args.retry_failed ? '重试失败章节' : '批量提取章节';
+    case 'get_chapter_batch':
+      return '查看批次进度';
     case 'list_sources':
       return '列出来源';
     case 'inspect_source':
@@ -137,6 +146,12 @@ function outcome(name: string, result: Result): string {
   if (!result) return '（进行中）';
   if (result.success === false && name !== 'extract_content')
     return `（失败：${errorMessage(result)}）`;
+  if (['prepare_chapter_batch', 'run_chapter_batch', 'get_chapter_batch'].includes(name)) {
+    const ready = typeof result.ready === 'number' ? result.ready : 0;
+    const failed = typeof result.failed === 'number' ? result.failed : 0;
+    const pending = typeof result.pending === 'number' ? result.pending : 0;
+    return `（成功 ${ready}／失败 ${failed}／待处理 ${pending}）`;
+  }
   if (name === 'extract_content' && Array.isArray(result.results)) {
     const results = result.results as Args[];
     const ok = results.filter((entry) => entry.success === true).length;

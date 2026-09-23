@@ -330,7 +330,13 @@ export class ImportAgentService {
     stream: { reset: () => void },
     task: ImportTask,
   ): AssistantExecution {
-    const executor = new ImportToolExecutor(run);
+    let lastProgressAt = -Infinity;
+    const executor = new ImportToolExecutor(run, undefined, undefined, () => {
+      // 来源列表刷新有实际开销；逐章持久化，界面最多每 250ms 刷新，最终结果由检查点立即通知。
+      if (Date.now() - lastProgressAt < 250) return;
+      lastProgressAt = Date.now();
+      notify(taskId);
+    });
     const resume = restoredCheckpoint(task);
     return new AssistantExecution({
       context: {

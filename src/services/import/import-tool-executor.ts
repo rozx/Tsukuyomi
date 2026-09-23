@@ -24,6 +24,10 @@ import { IMPORT_TODO_TOOLS, applyImportTodoTool } from './import-todos';
 import { importTools } from './import-tool-definitions';
 import { assertImportTaskNamed, renameImportTask } from './import-task-naming';
 import { readImportTool, pageArguments, textArgument } from './import-tool-reads';
+import { ImportChapterBatchService } from './import-chapter-batch';
+import type { ImportBatchInput } from 'src/models/import-batch';
+import { runChapterBatch } from './import-batch-runner';
+import { readChapterBatch, chapterBatchSummary } from './import-batch-state';
 export { importTools } from './import-tool-definitions';
 
 type ExecutionOptions = Parameters<AssistantExecutionProfile['executeTool']>[1];
@@ -92,6 +96,7 @@ export class ImportToolExecutor {
     private readonly run: ImportRunContext,
     private readonly extraction = new ImportExtractionService(),
     toolNames = importTools.map((tool) => tool.function.name),
+    private readonly onProgress?: () => void,
   ) {
     this.exposed = new Set(toolNames);
   }
@@ -125,7 +130,7 @@ export class ImportToolExecutor {
         data = await ImportQuestionService.ask(this.run, call.id, call.function.name, args, finish);
         // 问题已保存但尚未回答：让出运行，调用保留在检查点中等待恢复
         if (data === undefined) return { pause: 'waiting_user' };
-      } else data = await this.dispatch(call.function.name, args, options, save, finish);
+      } else data = await this.dispatch(call.function.name, args, options, save, finish, call.id);
     } catch (error) {
       if (
         options.signal?.aborted ||
@@ -153,9 +158,49 @@ export class ImportToolExecutor {
     options: ExecutionOptions,
     save: (data: unknown, step?: SavedStep) => Promise<unknown>,
     finish: (data: unknown) => { events: NewEvent[]; checkpoint: ImportCheckpoint },
+    callId: string,
   ): Promise<unknown> {
     const taskId = this.run.taskId;
     switch (name) {
+      case 'run_chapter_batch':
+        return save(
+          await runChapterBatch(
+            this.run,
+            {
+              batch_id: textArgument(args, 'batch_id'),
+              base_draft_revision: args.base_draft_revision as number,
+              retry_failed: args.retry_failed === true,
+            },
+            callId,
+            this.extraction,
+            options.signal,
+            this.onProgress,
+          ),
+        );
+      case 'get_chapter_batch': {
+        const batch = await readChapterBatch(taskId, textArgument(args, 'batch_id'));
+        const { offset = 0, limit = 50 } = pageArguments(args);
+        return save({
+          ...chapterBatchSummary(batch),
+          items: batch.items.slice(offset, offset + limit).map((item) => ({
+            chapterId: item.chapter.id,
+            title: item.chapter.title,
+            sourceId: item.sourceId,
+            status: item.status,
+            contentId: item.contentId,
+            characters: item.characters,
+            error: item.error,
+            warnings: item.warnings,
+          })),
+          ...(offset + limit < batch.items.length ? { nextOffset: offset + limit } : {}),
+        });
+      }
+      case 'prepare_chapter_batch':
+        return ImportChapterBatchService.prepare(
+          this.run,
+          args as unknown as ImportBatchInput,
+          finish,
+        );
       case 'inspect_source':
       case 'extract_novel_info': {
         const sourceId = textArgument(args, 'source_id');
