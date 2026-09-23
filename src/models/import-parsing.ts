@@ -1,3 +1,4 @@
+import type { ImportPatternJob, ImportPatternResult } from './import-pattern';
 import type { ImportDiscovery, ImportExtractionRules, ImportTextBlock } from './import';
 import type { ImportParagraphMatchInput, ImportParagraphMatchResult } from './import-matching';
 
@@ -40,6 +41,7 @@ export interface ImportDecodedText {
 }
 
 export type ImportParseRequest =
+  | ImportPatternJob
   | { kind: 'match'; input: ImportParagraphMatchInput }
   | { kind: 'decode'; bytes: Uint8Array; encoding?: string }
   | { kind: 'epub'; bytes: Uint8Array }
@@ -51,10 +53,12 @@ export type ImportParseRequest =
       baseUrl?: string;
     };
 
-export type ImportParseResponse<T extends ImportParseRequest> = T extends { kind: 'decode' }
-  ? ImportDecodedText
-  : T extends { kind: 'epub' }
-    ? ImportEpub
-    : T extends { kind: 'match' }
-      ? ImportParagraphMatchResult
-      : ImportParsedContent;
+export type ImportParseResponse<T extends ImportParseRequest> = T extends { kind: 'pattern' }
+  ? ImportPatternResult[]
+  : T extends { kind: 'decode' }
+    ? ImportDecodedText
+    : T extends { kind: 'epub' }
+      ? ImportEpub
+      : T extends { kind: 'match' }
+        ? ImportParagraphMatchResult
+        : ImportParsedContent;

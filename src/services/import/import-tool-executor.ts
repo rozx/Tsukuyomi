@@ -1,3 +1,7 @@
+import { filterImportSourceIds } from './import-source-filter';
+import type { ImportSourceFilter } from 'src/models/import-pattern';
+import { ImportDraftBatchService } from './import-draft-batch';
+import type { ImportDraftBatchInput } from 'src/models/import-draft-batch';
 import type { AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type {
   AssistantExecutionCheckpoint,
@@ -162,6 +166,20 @@ export class ImportToolExecutor {
   ): Promise<unknown> {
     const taskId = this.run.taskId;
     switch (name) {
+      case 'preview_draft_batch':
+        return new ImportDraftBatchService().prepare(
+          this.run,
+          args as unknown as ImportDraftBatchInput,
+          finish,
+          options.signal,
+        );
+      case 'apply_draft_batch':
+        return new ImportDraftBatchService().apply(
+          this.run,
+          textArgument(args, 'batch_id'),
+          finish,
+          options.signal,
+        );
       case 'run_chapter_batch':
         return save(
           await runChapterBatch(
@@ -200,6 +218,7 @@ export class ImportToolExecutor {
           this.run,
           args as unknown as ImportBatchInput,
           finish,
+          options.signal,
         );
       case 'inspect_source':
       case 'extract_novel_info': {
@@ -233,9 +252,20 @@ export class ImportToolExecutor {
         return save(prepared.result, prepared);
       }
       case 'extract_content': {
+        const inputs = extractionInputs(args);
+        const ids = new Set(
+          await filterImportSourceIds(
+            taskId,
+            inputs.map((item) => item.sourceId),
+            'source',
+            args.filter as ImportSourceFilter | undefined,
+            options.signal,
+          ),
+        );
+        if (!ids.size) return save({ success: true, results: [], matchedSources: 0 });
         const prepared = await this.extraction.prepareExtraction(
           taskId,
-          extractionInputs(args),
+          inputs.filter((item) => ids.has(item.sourceId)),
           options.signal,
         );
         return save(
@@ -244,11 +274,18 @@ export class ImportToolExecutor {
         );
       }
       case 'add_sources': {
-        const sources = await ImportSourceService.addDiscoveredBatch(
+        const ids = await filterImportSourceIds(
           taskId,
           args.discovery_ids as string[],
-          { run: this.run, finish: (values) => finish({ success: true, sources: values }) },
+          'discovery',
+          args.filter as ImportSourceFilter | undefined,
+          options.signal,
         );
+        if (!ids.length) return save({ success: true, sources: [] });
+        const sources = await ImportSourceService.addDiscoveredBatch(taskId, ids, {
+          run: this.run,
+          finish: (values) => finish({ success: true, sources: values }),
+        });
         return { success: true, sources };
       }
       case 'edit_import_draft': {

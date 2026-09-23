@@ -235,4 +235,38 @@ describe('导入事件到月詠消息', () => {
     expect(message!.actions![0]!.name).toContain('命名任务');
     expect(message!.actions![0]!.name).toContain('测试小说');
   });
+  it('批量清理操作明确区分预览与应用，并显示实际影响数', () => {
+    const messages = importEventsToMessages(
+      [
+        event({
+          kind: 'message',
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [
+              call('p', 'preview_draft_batch', { target: 'body' }),
+              call('a', 'apply_draft_batch', { batch_id: 'b' }),
+            ],
+          },
+        }),
+        event({
+          kind: 'tool-result',
+          callId: 'p',
+          toolName: 'preview_draft_batch',
+          data: { success: true, affected: 100, matches: 200 },
+        }),
+        event({
+          kind: 'tool-result',
+          callId: 'a',
+          toolName: 'apply_draft_batch',
+          data: { success: true, affected: 100, matches: 200 },
+        }),
+      ],
+      { sourceNames: new Map() },
+    );
+    expect(messages[0]?.actions?.map((a) => a.name)).toEqual([
+      '预览批量正文清理（影响 100 项／命中 200 处）',
+      '应用草稿批量修改（影响 100 项／命中 200 处）',
+    ]);
+  });
 });

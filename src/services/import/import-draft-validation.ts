@@ -1,3 +1,5 @@
+import type { ImportTransaction } from './import-repository';
+import { excludeImportText } from './import-content-exclusions';
 import type {
   ImportContentRef,
   ImportDraft,
@@ -7,7 +9,11 @@ import type {
   ImportSource,
 } from 'src/models/import';
 import type { ImportLibraryReader } from './import-library-reader';
-import { indexImportReferenceRanges, resolveImportSegments } from './import-content-references';
+import {
+  indexImportReferenceRanges,
+  resolveImportSegments,
+  resolveImportText,
+} from './import-content-references';
 import type { ImportContentSegment } from './import-content-references';
 import { validateImportMetadata } from './import-metadata-validation';
 
@@ -43,8 +49,8 @@ function checkRef(ref: ImportContentRef): void {
   assertImportKeys(
     ref,
     ref.kind === 'extraction'
-      ? ['kind', 'resourceId', 'blockId', 'endBlockId', 'start', 'end']
-      : ['kind', 'bookId', 'bookRevision', 'chapterId', 'paragraphId'],
+      ? ['kind', 'resourceId', 'blockId', 'endBlockId', 'start', 'end', 'excludeRanges']
+      : ['kind', 'bookId', 'bookRevision', 'chapterId', 'paragraphId', 'excludeRanges'],
   );
   if (ref.kind !== 'extraction' && ref.kind !== 'existing')
     throw new Error('INVALID_CONTENT_REF: 未知正文引用');
@@ -205,7 +211,7 @@ export class ImportDraftValidator {
           throw new Error('INVALID_OPERATION: 候选正文范围不能为空');
         for (const ref of candidate.content) {
           checkRef(ref);
-          if (ref.kind !== 'extraction')
+          if (ref.kind !== 'extraction' || ref.excludeRanges?.length)
             throw new Error('SOURCE_SCOPE: 小说候选只能声明输入来源范围');
           await this.extraction(ref);
         }
@@ -241,7 +247,7 @@ export class ImportDraftValidator {
         ? chapter.content.find((item) => item.id === ref.paragraphId)
         : undefined;
     if (!paragraph) throw new Error('INVALID_CONTENT_REF: 既有段落不存在');
-    return paragraph.text;
+    return excludeImportText(paragraph.text, ref.excludeRanges);
   }
 
   async chapter(
@@ -278,7 +284,8 @@ export class ImportDraftValidator {
     for (const ref of chapter.content) {
       checkRef(ref);
       if (ref.kind === 'existing') {
-        hasText ||= Boolean(this.existing(draft, ref).trim());
+        const existingText = this.existing(draft, ref);
+        hasText ||= Boolean(existingText.trim());
         continue;
       }
       const { resource, source, segments } = await this.extraction(ref);
@@ -289,8 +296,9 @@ export class ImportDraftValidator {
           if (other.id !== candidate.id && (await this.grants(other, resource, segment)))
             throw new Error('SOURCE_SCOPE: 正文同时归属多个小说，需要细化范围');
         }
-        hasText ||= Boolean(segment.text.trim());
       }
+      const filteredText = resolveImportText(resource, ref);
+      hasText ||= Boolean(filteredText.trim());
       ids.add(source.id);
       titleKnown ||=
         source.name === chapter.title ||
@@ -316,4 +324,19 @@ export class ImportDraftValidator {
       inferredStructure: Boolean(chapter.inferredStructure || !structureKnown),
     };
   }
+}
+
+export function importTransactionValidator(
+  taskId: string,
+  tx: ImportTransaction,
+  books: ImportBookSnapshots = new Map(),
+): ImportDraftValidator {
+  return new ImportDraftValidator(
+    taskId,
+    {
+      resource: (id) => tx.objectStore('import-resources').get(id),
+      source: (id) => tx.objectStore('import-sources').get(id),
+    },
+    books,
+  );
 }

@@ -1,3 +1,4 @@
+import { ImportPreviewService } from '../services/import/import-preview-service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { ImportApplicationService } from '../services/import/import-application-service';
@@ -453,5 +454,62 @@ describe('用户确认后的原子应用与撤销', () => {
       book().volumes![0]!.chapters![0]!.content,
     );
     expect(peekCacheEntry('old-c')?.parsed).toEqual(book().volumes![0]!.chapters![0]!.content);
+  });
+  it('既有段落排除正文后只清除受影响译文，应用和撤销后草稿仍保持清理结果', async () => {
+    await BookService.saveBook(book());
+    const version = (await (await getDB()).get('book-revisions', 'book'))!.revision;
+    const input = await draft('来源');
+    await ImportDraftService.edit(
+      input.taskId,
+      {
+        baseDraftRevision: 1,
+        operations: [
+          { op: 'propose_target', bookId: 'book' },
+          {
+            op: 'upsert_chapter',
+            chapter: {
+              ...input.chapter,
+              content: ['p1', 'p2', 'p3'].map((paragraphId) => ({
+                kind: 'existing' as const,
+                bookId: 'book',
+                bookRevision: version,
+                chapterId: 'old-c',
+                paragraphId,
+                ...(paragraphId === 'p1' ? { excludeRanges: [{ start: 0, end: 1 }] } : {}),
+              })),
+            },
+          },
+          { op: 'propose_match', chapterId: input.chapter.id, targetChapterIds: ['old-c'] },
+        ],
+      },
+      { actor: 'user' },
+    );
+    const plan = await ImportPlanService.preview(input.taskId, 2);
+    expect(plan.conflicts).toEqual([]);
+    expect(
+      plan.chapters
+        .find((c) => c.chapterId === 'old-c')
+        ?.content.map((p) => [p.text, p.translations.length]),
+    ).toEqual([
+      ['文甲', 0],
+      ['锚点', 1],
+      ['原文乙', 3],
+    ]);
+    const service = new ImportApplicationService();
+    const operation = await service.apply(await service.confirmApply(input.taskId, plan.id));
+    expect(
+      (await ImportPreviewService.chapter(input.taskId, input.chapter.id)).paragraphs.map(
+        (p) => p.text,
+      ),
+    ).toEqual(['文甲', '锚点', '原文乙']);
+    const after = (await ImportRepository.getTask(input.taskId))!;
+    const nextPlan = await ImportPlanService.preview(input.taskId, after.draft.revision);
+    expect(nextPlan.summary?.clearedVersions).toBe(0);
+    await service.revert(await service.confirmRevert(input.taskId, operation.id));
+    expect(
+      (await ImportPreviewService.chapter(input.taskId, input.chapter.id)).paragraphs.map(
+        (p) => p.text,
+      ),
+    ).toEqual(['文甲', '锚点', '原文乙']);
   });
 });

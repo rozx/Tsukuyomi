@@ -1,3 +1,4 @@
+import type { ImportSourceFilter } from './import-pattern';
 import type { ImportDraftChapter, ImportExtractionRules } from './import';
 
 export interface ImportChapterBatchItem {
@@ -32,6 +33,7 @@ export interface ImportBatchInput {
   base_draft_revision: number;
   volume_id: string;
   source_ids?: string[];
+  filter?: ImportSourceFilter;
   discovery_ids?: string[];
   catalog?: { snapshot_id: string; offset: number; limit: number };
   rules?: ImportExtractionRules;

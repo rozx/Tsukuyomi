@@ -1,8 +1,9 @@
+import { excludeImportText } from './import-content-exclusions';
 import type { ImportContentRef, ImportDraftChapter } from 'src/models/import';
 import type { ImportNewParagraph } from 'src/models/import-matching';
 import { hashJson } from 'src/utils/content-hash';
 import type { UniqueIdGenerator } from 'src/utils/id-generator';
-import { resolveImportSegments } from './import-content-references';
+import { resolveImportText } from './import-content-references';
 import type { ImportPlanContext } from './import-plan-context';
 
 /** 换行转为既有 Paragraph 数组边界；正文字符、缩进及空行均保留。 */
@@ -45,19 +46,21 @@ export async function assembleImportParagraphs(
         ref.bookRevision !== context.snapshot.revision
       )
         throw new Error('BOOK_CHANGED: 既有正文引用已过时');
+      const text = excludeImportText(paragraph.text, ref.excludeRanges);
+      if (!text && ref.excludeRanges?.length) continue;
       output.push({
         key: JSON.stringify([chapter.id, ref]),
         chapterId,
         newId: ids.generate(),
-        text: paragraph.text,
-        existing: { chapterId: ref.chapterId, paragraphId: ref.paragraphId },
+        text,
+        ...(!ref.excludeRanges?.length
+          ? { existing: { chapterId: ref.chapterId, paragraphId: ref.paragraphId } }
+          : {}),
       });
     } else {
       const resource = await context.resource(ref.resourceId);
       if (resource.kind !== 'extraction') throw new Error('INVALID_CONTENT_REF: 正文不是提取结果');
-      const text = resolveImportSegments(resource, ref)
-        .map((segment) => segment.text)
-        .join(resource.separator ?? '\n');
+      const text = resolveImportText(resource, ref);
       const previous = refs.at(-1);
       const adjacent =
         previous?.kind === 'extraction' &&

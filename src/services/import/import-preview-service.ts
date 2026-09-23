@@ -1,7 +1,8 @@
+import { excludeImportText } from './import-content-exclusions';
 import type { ImportContentRef, ImportDraftChapter, ImportSource } from 'src/models/import';
 import { ImportRepository } from './import-repository';
 import { ImportLibraryReader } from './import-library-reader';
-import { resolveImportSegments } from './import-content-references';
+import { resolveImportText } from './import-content-references';
 import { ImportContentService } from './import-content-service';
 
 export interface ImportPreviewParagraph {
@@ -31,11 +32,12 @@ async function existingText(ref: ExistingRef, books: Map<string, Promise<BookRea
   if (!books.has(ref.bookId)) books.set(ref.bookId, ImportLibraryReader.readBook(ref.bookId));
   const read = await books.get(ref.bookId)!;
   if (read.kind !== 'loaded') throw new Error('BOOK_READ_FAILED: 目标小说读取失败');
+  if (read.revision !== ref.bookRevision) throw new Error('BOOK_CHANGED: 既有正文引用已过时');
   const chapter = read.chapters[ref.chapterId];
   if (chapter?.kind !== 'loaded') throw new Error('CHAPTER_READ_FAILED: 原章节读取失败');
   const paragraph = chapter.content.find((entry) => entry.id === ref.paragraphId);
   if (!paragraph) throw new Error('PARAGRAPH_NOT_FOUND: 原段落不存在');
-  return paragraph.text;
+  return excludeImportText(paragraph.text, ref.excludeRanges);
 }
 
 export type ImportSourcePage =
@@ -86,18 +88,16 @@ export class ImportPreviewService {
     for (const ref of chapter.content) {
       try {
         if (ref.kind === 'existing') {
-          preview.paragraphs.push({ kind: 'existing', text: await existingText(ref, books) });
+          const text = await existingText(ref, books);
+          if (text || !ref.excludeRanges?.length)
+            preview.paragraphs.push({ kind: 'existing', text });
           continue;
         }
         const resource = await ImportRepository.getResource(taskId, ref.resourceId);
         if (resource?.kind !== 'extraction') throw new Error('INVALID_CONTENT_REF: 提取结果不存在');
         sourceIds.add(resource.sourceId);
         // 与方案生成一致：拼接引用范围后按行拆成段落
-        const lines = resolveImportSegments(resource, ref)
-          .map((segment) => segment.text)
-          .join(resource.separator ?? '\n')
-          .replace(/\r\n?/g, '\n')
-          .split('\n');
+        const lines = resolveImportText(resource, ref).replace(/\r\n?/g, '\n').split('\n');
         if (lines.at(-1) === '') lines.pop();
         for (const text of lines)
           preview.paragraphs.push({

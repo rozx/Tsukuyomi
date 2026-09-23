@@ -38,6 +38,8 @@ type Result = Record<string, unknown> | undefined;
 type ActionShape = Pick<MessageAction, 'type' | 'entity'>;
 
 const ACTION_SHAPES: Record<string, ActionShape> = {
+  preview_draft_batch: { type: 'read', entity: 'chapter' },
+  apply_draft_batch: { type: 'update', entity: 'chapter' },
   prepare_chapter_batch: { type: 'create', entity: 'chapter' },
   run_chapter_batch: { type: 'create', entity: 'chapter' },
   get_chapter_batch: { type: 'read', entity: 'chapter' },
@@ -90,6 +92,10 @@ function count(value: unknown): number {
 /** 操作本身的描述：处理了哪些来源、范围或草稿。 */
 function describe(name: string, args: Args, names: Map<string, string>): string {
   switch (name) {
+    case 'preview_draft_batch':
+      return args.target === 'body' ? '预览批量正文清理' : '预览卷章标题批量替换';
+    case 'apply_draft_batch':
+      return '应用草稿批量修改';
     case 'prepare_chapter_batch':
       return '准备章节批次';
     case 'run_chapter_batch':
@@ -105,8 +111,9 @@ function describe(name: string, args: Args, names: Map<string, string>): string 
     case 'extract_novel_info':
       return `读取小说信息：${sourceLabel(args.source_id, names)}`;
     case 'add_sources':
-      return `追加 ${count(args.discovery_ids)} 个发现的来源`;
+      return args.filter ? '筛选并追加来源' : `追加 ${count(args.discovery_ids)} 个发现的来源`;
     case 'extract_content': {
+      if (args.filter) return '筛选并提取正文';
       const sources = (Array.isArray(args.sources) ? args.sources : []) as Args[];
       const labels = sources.slice(0, 3).map((entry) => sourceLabel(entry.source_id, names));
       const more = sources.length > 3 ? ` 等 ${sources.length} 个` : '';
@@ -146,6 +153,10 @@ function outcome(name: string, result: Result): string {
   if (!result) return '（进行中）';
   if (result.success === false && name !== 'extract_content')
     return `（失败：${errorMessage(result)}）`;
+  if (['preview_draft_batch', 'apply_draft_batch'].includes(name))
+    return `（影响 ${typeof result.affected === 'number' ? result.affected : 0} 项／命中 ${typeof result.matches === 'number' ? result.matches : 0} 处）`;
+  if (name === 'add_sources' && Array.isArray(result.sources))
+    return `（已追加 ${result.sources.length} 个）`;
   if (['prepare_chapter_batch', 'run_chapter_batch', 'get_chapter_batch'].includes(name)) {
     const ready = typeof result.ready === 'number' ? result.ready : 0;
     const failed = typeof result.failed === 'number' ? result.failed : 0;

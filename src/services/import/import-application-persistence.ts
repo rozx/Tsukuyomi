@@ -102,7 +102,12 @@ async function captureBefore(
   return { book: safeBook, chapters };
 }
 
-function rebaseAppliedDraft(task: ImportTask, plan: ImportPlan, revision: number): void {
+function rebaseAppliedDraft(
+  task: ImportTask,
+  plan: ImportPlan,
+  revision: number,
+  before: NonNullable<ImportOperation['before']>,
+): void {
   const mappings = (task.appliedMappings ??= []);
   const prior = mappings.find((mapping) => mapping.bookId === plan.targetBookId);
   const chapters = new Map(prior?.chapters.map((chapter) => [chapter.draftChapterId, chapter]));
@@ -113,6 +118,29 @@ function rebaseAppliedDraft(task: ImportTask, plan: ImportPlan, revision: number
   for (const chapter of task.draft.chapters) {
     const mapped = chapters.get(chapter.id);
     if (mapped) chapter.match = { chapterIds: [mapped.chapterId], basis: 'receipt' };
+    // 被清理的既有正文已成为书库的新原文，后续预览不能再次扣除同一范围。
+    const applied = plan.mappings.find((entry) => entry.draftChapterId === chapter.id);
+    const content =
+      applied && plan.chapters.find((entry) => entry.chapterId === applied.chapterId)?.content;
+    if (
+      content &&
+      chapter.content.some((ref) => ref.kind === 'existing' && ref.excludeRanges?.length)
+    ) {
+      const previous = structuredClone(chapter.content);
+      chapter.content = content.map((paragraph) => ({
+        kind: 'existing',
+        bookId: plan.targetBookId,
+        bookRevision: revision,
+        chapterId: applied!.chapterId,
+        paragraphId: paragraph.id,
+      }));
+      (before.filteredDrafts ??= []).push({
+        chapterId: chapter.id,
+        before: previous,
+        after: structuredClone(chapter.content),
+      });
+      continue;
+    }
     for (const ref of chapter.content) {
       if (ref.kind !== 'existing' || ref.bookId !== plan.targetBookId) continue;
       const change = plan.paragraphChanges.find(
@@ -203,7 +231,7 @@ export async function applyImportOperation(operation: ImportOperation): Promise<
       plan.targetBookId,
       plan.operationId,
     );
-    rebaseAppliedDraft(task, plan, updated.postApplyBookRevision);
+    rebaseAppliedDraft(task, plan, updated.postApplyBookRevision, before);
     task.state = 'applied';
     task.updatedAt = now;
     await tx.objectStore('import-tasks').put(task);
@@ -220,6 +248,14 @@ function restoreTaskTarget(task: ImportTask, operation: ImportOperation): void {
   task.appliedMappings = before?.mappings ?? [];
   for (const chapter of task.draft.chapters) {
     if (chapter.match?.basis === 'receipt') delete chapter.match;
+    const saved = before?.filteredDrafts?.find((entry) => entry.chapterId === chapter.id);
+    if (saved && canonicalStringify(chapter.content) === canonicalStringify(saved.after)) {
+      chapter.content = structuredClone(saved.before);
+      for (const ref of chapter.content)
+        if (ref.kind === 'existing' && ref.bookId === plan.targetBookId)
+          ref.bookRevision = operation.postRevertBookRevision!;
+      continue;
+    }
     for (const ref of chapter.content) {
       if (ref.kind !== 'existing' || ref.bookId !== plan.targetBookId) continue;
       const change = plan.paragraphChanges.find(

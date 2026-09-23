@@ -137,7 +137,7 @@ describe('导入对话压缩', () => {
   it('开始运行前历史接近上下文上限时自动压缩', async () => {
     const long: ChatMessage[] = [
       { role: 'user', content: '请整理' },
-      { role: 'assistant', content: '内容'.repeat(3000) },
+      { role: 'assistant', content: '内容'.repeat(12000) },
     ];
     const task = await taskWith({ messages: long });
     const summarize = vi.spyOn(AssistantService, 'summarizeSession').mockResolvedValue('自动摘要');
@@ -148,7 +148,7 @@ describe('导入对话压缩', () => {
         return Promise.resolve({ text: '好的。' });
       },
     } as never);
-    await ImportAgentService.run(task.id, { ...model, maxInputTokens: 8000 }, '继续');
+    await ImportAgentService.run(task.id, { ...model, maxInputTokens: 16000 }, '继续');
     expect(summarize).toHaveBeenCalledTimes(1);
     expect(requests[0]!.messages![0]!.content).toContain('自动摘要');
     const events = (await ImportRepository.listEvents(task.id, { limit: 100 })).items;

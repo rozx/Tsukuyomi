@@ -2,9 +2,9 @@ import type { ImportBatchInput, ImportChapterBatch } from 'src/models/import-bat
 import type { ImportResource, ImportRunContext } from 'src/models/import';
 import { ImportRepository } from './import-repository';
 import type { ImportTaskMutationOptions } from './import-repository';
-import { ImportDraftValidator } from './import-draft-validation';
+import { importTransactionValidator } from './import-draft-validation';
 import { invalidateImportPreview } from './import-draft-service';
-import { batchSourceIds } from './import-batch-sources';
+import { batchSourceIds, filterChapterBatchInput } from './import-batch-sources';
 import { chapterBatchProgress } from './import-batch-state';
 
 export class ImportChapterBatchService {
@@ -12,10 +12,13 @@ export class ImportChapterBatchService {
     run: ImportRunContext,
     input: ImportBatchInput,
     finish: ImportTaskMutationOptions<Record<string, unknown>>['finish'],
+    signal?: AbortSignal,
   ): Promise<Record<string, unknown>> {
+    input = await filterChapterBatchInput(run.taskId, input, signal);
     return ImportRepository.mutateTask(
       run.taskId,
       async (task, tx) => {
+        if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
         if (task.draft.revision !== input.base_draft_revision)
           throw new Error('DRAFT_CHANGED: 草稿已变化，请重新读取');
         if (!task.draft.volumes.some((volume) => volume.id === input.volume_id))
@@ -23,14 +26,7 @@ export class ImportChapterBatchService {
         const ids = await batchSourceIds(run.taskId, input, tx);
         if (!ids.length || ids.length > 500 || new Set(ids).size !== ids.length)
           throw new Error('BATCH_LIMIT: 一次批处理须包含 1–500 个不同来源');
-        const validator = new ImportDraftValidator(
-          run.taskId,
-          {
-            resource: (id) => tx.objectStore('import-resources').get(id),
-            source: (id) => tx.objectStore('import-sources').get(id),
-          },
-          new Map(),
-        );
+        const validator = importTransactionValidator(run.taskId, tx);
         const batch: ImportChapterBatch = {
           id: crypto.randomUUID(),
           rules: input.rules ?? {},

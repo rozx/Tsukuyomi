@@ -1,3 +1,4 @@
+import { ImportWorkerFixture } from './import-worker-fixture';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { Blob, File } from 'node:buffer';
@@ -436,5 +437,29 @@ describe('Agent 章节批次', () => {
     );
     expect(fetch).not.toHaveBeenCalled();
     expect(task?.draft.revision).toBe(2);
+  });
+  it('章节批次可用标题正则筛选，排除项不会创建草稿，零命中不产生副作用', async () => {
+    vi.stubGlobal('Worker', ImportWorkerFixture);
+    const f = await fixture(3);
+    const input = {
+      source_ids: f.sources.map((s) => s.id),
+      volume_id: 'v',
+      base_draft_revision: 1,
+    };
+    const none = await f.invoke('prepare_chapter_batch', {
+      ...input,
+      filter: { name: { mode: 'regex', pattern: '^番外' } },
+    });
+    expect(none.success).toBe(false);
+    expect((await ImportRepository.getTask(f.taskId))?.draft.revision).toBe(1);
+    const prepared = await f.invoke('prepare_chapter_batch', {
+      ...input,
+      filter: { name: { mode: 'regex', pattern: '^第[13]章$' } },
+    });
+    expect(prepared.success).toBe(true);
+    expect((await ImportRepository.getTask(f.taskId))?.draft.chapters.map((c) => c.title)).toEqual([
+      '第1章',
+      '第3章',
+    ]);
   });
 });

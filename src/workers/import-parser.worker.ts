@@ -16,7 +16,7 @@ async function handle({ id, request, limits }: Request): Promise<void> {
   try {
     const value = await processImportJob(request, { limits });
     const transfer =
-      'entries' in value
+      !Array.isArray(value) && 'entries' in value
         ? value.entries
             .map((entry) => entry.bytes.buffer)
             .filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer)

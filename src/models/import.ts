@@ -1,3 +1,5 @@
+import type { ImportDraftBatch } from './import-draft-batch';
+import type { ImportTextRange } from './import-pattern';
 import type { Novel, Paragraph } from './novel';
 import type { ImportReplacementRange } from './import-matching';
 import type { ChatMessage } from 'src/services/ai/types/ai-service';
@@ -105,6 +107,7 @@ export type ImportResource = ImportResourceBase &
   (
     | { kind: 'input'; blob: Blob }
     | { kind: 'chapter-batch'; batch: ImportChapterBatch }
+    | { kind: 'draft-edit-batch'; batch: ImportDraftBatch }
     | {
         kind: 'snapshot';
         blob: Blob;
@@ -145,6 +148,7 @@ export type ImportResource = ImportResourceBase &
 export type ImportContentRef =
   | {
       kind: 'extraction';
+      excludeRanges?: ImportTextRange[];
       resourceId: string;
       blockId?: string;
       endBlockId?: string;
@@ -153,6 +157,7 @@ export type ImportContentRef =
     }
   | {
       kind: 'existing';
+      excludeRanges?: ImportTextRange[];
       bookId: string;
       bookRevision: number;
       chapterId: string;
@@ -404,6 +409,7 @@ export interface ImportOperation {
     }[];
     target?: ImportDraft['target'];
     mappings?: ImportTask['appliedMappings'];
+    filteredDrafts?: { chapterId: string; before: ImportContentRef[]; after: ImportContentRef[] }[];
   };
   postApplyBookRevision?: number;
   postRevertBookRevision?: number;

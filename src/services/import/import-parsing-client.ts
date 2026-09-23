@@ -33,6 +33,10 @@ export class ImportParsingClient {
     request: T,
     options: ImportWorkOptions,
   ): Promise<Result<T>> {
+    if (request.kind === 'pattern' && request.pattern.mode === 'regex')
+      throw new Error(
+        'REGEX_WORKER_REQUIRED: 正则处理需要可用的 Worker，请改用字面量或检查运行环境',
+      );
     const { processImportJob } = await import('./import-parsing-jobs');
     const value = await processImportJob(request, {
       ...options,
@@ -76,7 +80,7 @@ export class ImportParsingClient {
       const abort = () => fail(new DOMException('解析已取消', 'AbortError'));
       const timeout = setTimeout(
         () => fail(new Error('PROCESSING_LIMIT: Worker 解析超时')),
-        limits.timeoutMs,
+        request.kind === 'pattern' ? Math.min(limits.timeoutMs, 3000) : limits.timeoutMs,
       );
       options.signal?.addEventListener('abort', abort, { once: true });
       active.onmessage = (

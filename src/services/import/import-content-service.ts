@@ -5,7 +5,7 @@ import type {
   ImportTextBlock,
 } from 'src/models/import';
 import { ImportRepository } from './import-repository';
-import { resolveImportSegments } from './import-content-references';
+import { resolveImportText } from './import-content-references';
 
 type Snapshot = Extract<ImportResource, { kind: 'snapshot' }>;
 type Extraction = Extract<ImportResource, { kind: 'extraction' }>;
@@ -127,8 +127,6 @@ export class ImportContentService {
     const source = await ImportRepository.getSource(taskId, resource.sourceId);
     if (source.purpose === 'metadata-only')
       throw new Error('METADATA_ONLY: 元信息来源不能作为小说正文');
-    return resolveImportSegments(resource, ref)
-      .map((segment) => segment.text)
-      .join(resource.separator ?? '\n');
+    return resolveImportText(resource, ref);
   }
 }

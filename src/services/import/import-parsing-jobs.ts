@@ -1,3 +1,5 @@
+import { mergeImportRanges } from './import-content-exclusions';
+import { processImportPattern } from './import-pattern-job';
 import type {
   ImportParsedContent,
   ImportParseRequest,
@@ -56,16 +58,6 @@ function firstOverlap(ranges: Range[], start: number): number {
   return low;
 }
 
-function mergedRanges(ranges: Range[]): Range[] {
-  const merged: Range[] = [];
-  for (const range of [...ranges].sort((a, b) => a.start - b.start)) {
-    const last = merged.at(-1);
-    if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
-    else merged.push({ start: range.start, end: range.end });
-  }
-  return merged;
-}
-
 function retainedRanges(start: number, end: number, exclusions: Range[]): Range[] {
   const kept: Range[] = [];
   let cursor = start;
@@ -85,7 +77,7 @@ function retainedRanges(start: number, end: number, exclusions: Range[]): Range[
 function applyRanges(text: string, parsed: ImportParsedContent): ImportParsedContent {
   const ranges = selectedRanges(text, parsed.rules);
   const exclusions = parsed.rules.excludeRanges ?? [];
-  const excludedRanges = mergedRanges(exclusions);
+  const excludedRanges = mergeImportRanges(exclusions);
   const blocks: ImportParsedContent['blocks'] = [];
   for (const block of parsed.blocks) {
     for (
@@ -135,6 +127,8 @@ export async function processImportJob<T extends ImportParseRequest>(
 ): Promise<ImportParseResponse<T>> {
   const work = createImportWork(options);
   await work.checkpoint(true);
+  if (request.kind === 'pattern')
+    return (await processImportPattern(request, options)) as ImportParseResponse<T>;
   if (request.kind === 'match')
     return (await matchImportParagraphs(request.input, options)) as ImportParseResponse<T>;
   if ('bytes' in request && request.bytes.byteLength > work.limits.inputBytes)

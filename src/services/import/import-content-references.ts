@@ -1,3 +1,4 @@
+import { excludeImportText, mergeImportRanges } from './import-content-exclusions';
 import type { ImportContentRef, ImportResource, ImportTextBlock } from 'src/models/import';
 
 type Extraction = Extract<ImportResource, { kind: 'extraction' }>;
@@ -72,13 +73,14 @@ export function indexImportReferenceRanges(
     }
   }
   for (const [id, ranges] of indexed) {
-    const merged: { start: number; end: number }[] = [];
-    for (const range of ranges.sort((a, b) => a.start - b.start)) {
-      const last = merged.at(-1);
-      if (last && range.start <= last.end) last.end = Math.max(last.end, range.end);
-      else merged.push(range);
-    }
-    indexed.set(id, merged);
+    indexed.set(id, mergeImportRanges(ranges));
   }
   return indexed;
+}
+
+export function resolveImportText(resource: Extraction, ref: Reference): string {
+  const text = resolveImportSegments(resource, ref)
+    .map((segment) => segment.text)
+    .join(resource.separator ?? '\n');
+  return excludeImportText(text, ref.excludeRanges);
 }

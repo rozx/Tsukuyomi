@@ -1,3 +1,4 @@
+import { importPatternSchema, importSourceFilterSchema } from './import-pattern-schema';
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { askUserTools } from 'src/services/ai/tools/ask-user-tools';
 import { todoListTools } from 'src/services/ai/tools/todo-list-tools';
@@ -21,6 +22,16 @@ const reference = {
     bookRevision: number,
     chapterId: string,
     paragraphId: string,
+    excludeRanges: {
+      type: 'array',
+      maxItems: 10000,
+      items: {
+        type: 'object',
+        properties: { start: number, end: number },
+        required: ['start', 'end'],
+      },
+      description: '相对该引用原始解析文本的 UTF-16 排除范围，升序、非重叠。优先使用批量工具计算。',
+    },
   },
   required: ['kind'],
   description:
@@ -152,6 +163,33 @@ function tool(
 
 export const importTools: AITool[] = [
   tool(
+    'preview_draft_batch',
+    '预览批量正文清理或卷章标题替换，保存版本绑定的方案；不修改草稿。最多 500 项，返回命中数和最多五个示例。正文按每个内容引用处理，可跨其内部多行，不跨不同引用；仅删除匹配片段或整行。标题支持 $1、$<name> 等捕获组替换。空 scope 表示全部；各筛选条件取交集。',
+    {
+      base_draft_revision: number,
+      target: { type: 'string', enum: ['body', 'chapter_title', 'volume_title'] },
+      scope: {
+        type: 'object',
+        properties: {
+          chapter_ids: { ...strings, minItems: 1, maxItems: 500 },
+          volume_ids: { ...strings, minItems: 1, maxItems: 500 },
+          selected_only: boolean,
+          title: importPatternSchema,
+        },
+      },
+      pattern: importPatternSchema,
+      action: { type: 'string', enum: ['remove_matches', 'remove_lines', 'replace'] },
+      replacement: { type: 'string', description: '仅标题 replace 可用；正文禁止替换或新增文本。' },
+    },
+    ['base_draft_revision', 'target', 'scope', 'pattern', 'action'],
+  ),
+  tool(
+    'apply_draft_batch',
+    '应用已预览的草稿批量方案，整批原子提交；草稿变化后必须重新预览。重复执行同一批次不重做；不写书库。',
+    { batch_id: string },
+    ['batch_id'],
+  ),
+  tool(
     'run_chapter_batch',
     '按准备好的计划提取全部待处理章节并逐章保存到草稿，最多 3 路并发；返回计数和少量异常，不返回正文。中断后续跑；retry_failed 只重试失败项。',
     {
@@ -176,6 +214,7 @@ export const importTools: AITool[] = [
     {
       base_draft_revision: number,
       volume_id: string,
+      filter: importSourceFilterSchema,
       source_ids: { type: 'array', items: string, minItems: 1, maxItems: 500 },
       discovery_ids: { type: 'array', items: string, minItems: 1, maxItems: 500 },
       catalog: {
@@ -220,7 +259,10 @@ export const importTools: AITool[] = [
   tool(
     'add_sources',
     '只追加已观察到的发现引用；保留父来源及用途，不抓取内容。',
-    { discovery_ids: { type: 'array', items: string, minItems: 1, maxItems: 16 } },
+    {
+      discovery_ids: { type: 'array', items: string, minItems: 1, maxItems: 16 },
+      filter: importSourceFilterSchema,
+    },
     ['discovery_ids'],
   ),
   tool(
@@ -233,6 +275,7 @@ export const importTools: AITool[] = [
     'extract_content',
     '按明确来源及规则提取原文，保存完整结果并返回内容引用；每批最多八项，不改写正文。',
     {
+      filter: importSourceFilterSchema,
       sources: {
         type: 'array',
         minItems: 1,

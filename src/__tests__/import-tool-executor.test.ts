@@ -1,3 +1,5 @@
+import { draft } from './import-fixtures';
+import { ImportWorkerFixture } from './import-worker-fixture';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { File } from 'node:buffer';
@@ -10,10 +12,15 @@ import type { ImportRunContext } from '../models/import';
 import type { AIToolCall } from '../services/ai/types/ai-service';
 import type { AssistantExecutionCheckpoint } from '../services/ai/tasks/utils/assistant-execution';
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
-async function fixture() {
-  const task = await ImportRepository.createTask();
+async function fixture(taskId?: string) {
+  const task = taskId
+    ? (await ImportRepository.getTask(taskId))!
+    : await ImportRepository.createTask();
   const run: ImportRunContext = { taskId: task.id, runId: 'run', runEpoch: 1, modelId: 'm' };
   await (await getDB()).put('import-tasks', { ...task, state: 'running', run, runEpoch: 1 });
   const execute = new ImportToolExecutor(run);
@@ -198,5 +205,59 @@ describe('导入专属工具执行器', () => {
     expect(saved?.checkpoint?.completedCallIds).toEqual([added.call.id]);
     const listed = await invoke('list_sources', { parent_source_id: directory.id });
     expect(listed.result.items).toHaveLength(1);
+  });
+  it('正则批量编辑通过真实工具保存预览与完成回执，工具不能传入任意正文', async () => {
+    vi.stubGlobal('Worker', ImportWorkerFixture);
+    const { taskId } = await draft('正文广告123尾部');
+    const { invoke } = await fixture(taskId);
+    const prepared = await invoke('preview_draft_batch', {
+      base_draft_revision: 1,
+      target: 'body',
+      scope: {},
+      pattern: { mode: 'regex', pattern: '广告\\d+' },
+      action: 'remove_matches',
+    });
+    expect(prepared.result).toMatchObject({ success: true, affected: 1 });
+    expect((await ImportRepository.getTask(taskId))?.draft.revision).toBe(1);
+    const applied = await invoke('apply_draft_batch', { batch_id: prepared.result.batchId });
+    expect(applied.result).toMatchObject({ success: true, draftRevision: 2 });
+    expect((await ImportRepository.getTask(taskId))?.checkpoint?.completedCallIds).toEqual([
+      applied.call.id,
+    ]);
+    const forged = await invoke('preview_draft_batch', {
+      base_draft_revision: 2,
+      target: 'body',
+      scope: {},
+      pattern: { mode: 'literal', pattern: '正文' },
+      action: 'replace',
+      replacement: '伪造正文',
+    });
+    expect(forged.result.success).toBe(false);
+    expect((await ImportRepository.getTask(taskId))?.draft.revision).toBe(2);
+  });
+
+  it('批量添加和提取共用名称、路径正则，未命中来源不抓取', async () => {
+    vi.stubGlobal('Worker', ImportWorkerFixture);
+    const { task, invoke } = await fixture();
+    const directory = await ImportSourceService.registerDirectory(task.id, [
+      { file: new File(['正文甲'], '1.txt'), path: 'book/1.txt' },
+      { file: new File(['正文乙'], '2.txt'), path: 'book/2.txt' },
+      { file: new File(['广告'], 'ad.txt'), path: 'book/ad.txt' },
+    ]);
+    const inspected = await invoke('inspect_source', { source_id: directory.id });
+    const ids = (inspected.result.discoveries as { id: string }[]).map((d) => d.id);
+    const added = await invoke('add_sources', {
+      discovery_ids: ids,
+      filter: { locator: { mode: 'regex', pattern: '/[12]\\.txt$' } },
+    });
+    expect(added.result.success).toBe(true);
+    const sources = added.result.sources as { id: string; name: string }[];
+    expect(sources).toHaveLength(2);
+    const extracted = await invoke('extract_content', {
+      sources: sources.map((s) => ({ source_id: s.id })),
+      filter: { name: { mode: 'regex', pattern: '1\\.txt$' } },
+    });
+    expect(extracted.result.results).toHaveLength(1);
+    expect((await ImportRepository.getSource(task.id, sources[1]!.id)).status).toBe('registered');
   });
 });
