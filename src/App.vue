@@ -12,6 +12,7 @@ import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useContextStore } from 'src/stores/context';
 import { useElectronSettings } from 'src/composables/useElectronSettings';
 import { GlobalConfig } from 'src/services/global-config-cache';
+import { useImportNotifications } from 'src/composables/import-page/useImportNotifications';
 
 const booksStore = useBooksStore();
 const aiModelsStore = useAIModelsStore();
@@ -25,6 +26,7 @@ const contextStore = useContextStore();
 
 // 初始化 Electron 设置处理
 useElectronSettings();
+useImportNotifications();
 
 onMounted(async () => {
   // 首次运行时从 localStorage 迁移到 IndexedDB（只执行一次）

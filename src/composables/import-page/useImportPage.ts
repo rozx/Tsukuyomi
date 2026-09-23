@@ -61,6 +61,7 @@ function createImportPage() {
 
   async function createTask(): Promise<void> {
     const task = await store.createTask();
+    if (!task) return;
     section.value = 'sources';
     await router.push(`/import/${task.id}`);
   }

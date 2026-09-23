@@ -1,5 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import { computed, ref } from 'vue';
+import { computed, ref, shallowRef } from 'vue';
 import type {
   ImportDraftOperation,
   ImportEvent,
@@ -29,6 +29,15 @@ import {
 } from 'src/services/import/import-storage-status';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { conciseErrorText } from 'src/services/import/import-error-text';
+import {
+  importSuccess,
+  importFailure,
+  importApplicationFeedback,
+  importPlanFeedback,
+  importRunFeedback,
+  importPauseFeedback,
+} from 'src/utils/import-feedback';
+import type { ImportAction, ImportFeedback } from 'src/utils/import-feedback';
 
 const PAGE = 100;
 const MAX_EVENTS = 5000;
@@ -90,6 +99,31 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   /** 出错的动作（run、compact 等），界面据此决定在对话区还是状态栏显示。 */
   const errorAction = ref<string | null>(null);
   const pendingAction = ref<string | null>(null);
+  /** 仅代表刚结束的界面操作；不持久化或广播，避免刷新／跨标签重放通知。 */
+  const feedback = shallowRef<ImportFeedback | null>(null);
+
+  function taskName(taskId: string): string | undefined {
+    return (
+      tasks.value.find((entry) => entry.id === taskId)?.name ??
+      (task.value?.id === taskId ? task.value.name : undefined)
+    );
+  }
+
+  function publishFeedback(value: ImportFeedback | undefined, name?: string): void {
+    if (!value) return;
+    feedback.value = { ...value, detail: [name, value.detail].filter(Boolean).join('：') };
+  }
+
+  function reportFailure(
+    action: ImportAction,
+    failure: unknown,
+    taskId?: string,
+    name = taskId ? taskName(taskId) : undefined,
+  ): void {
+    const detail = message(failure);
+    if (!taskId || selectedTaskId.value === taskId) setError(detail, action);
+    publishFeedback(importFailure(action, detail), name);
+  }
 
   function setError(text: string | null, action: string | null = null): void {
     error.value = text;
@@ -232,13 +266,21 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   }
 
   /** 包装一次界面操作：记录进行中的动作、错误，并在结束后刷新相关任务。 */
-  async function act<T>(label: string, taskId: string, work: () => Promise<T>) {
+  async function act<T>(
+    label: ImportAction,
+    taskId: string,
+    work: () => Promise<T>,
+    success: (value: T) => ImportFeedback | undefined = () => importSuccess(label),
+  ) {
+    const name = taskName(taskId);
     pendingAction.value = label;
     setError(null);
     try {
-      return await work();
+      const result = await work();
+      publishFeedback(success(result), name);
+      return result;
     } catch (failure) {
-      if (selectedTaskId.value === taskId) setError(message(failure), label);
+      reportFailure(label, failure, taskId, name);
       return undefined;
     } finally {
       if (pendingAction.value === label) pendingAction.value = null;
@@ -251,11 +293,18 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     return selectedTaskId.value;
   }
 
-  async function createTask(name?: string): Promise<ImportTask> {
-    const created = await ImportRepository.createTask(name);
-    upsertTask(created, created.id);
-    channel?.postMessage({ taskId: created.id });
-    return created;
+  async function createTask(name?: string): Promise<ImportTask | undefined> {
+    try {
+      const created = await ImportRepository.createTask(name);
+      upsertTask(created, created.id);
+      channel?.postMessage({ taskId: created.id });
+      setError(null);
+      publishFeedback(importSuccess('create'), created.name);
+      return created;
+    } catch (failure) {
+      reportFailure('create', failure, undefined, name);
+      return undefined;
+    }
   }
 
   async function renameTask(taskId: string, name: string): Promise<void> {
@@ -269,15 +318,17 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   }
 
   async function deleteTask(taskId: string): Promise<boolean> {
+    const name = taskName(taskId);
     try {
       await ImportRepository.deleteTask(taskId);
     } catch (failure) {
-      setError(message(failure), 'delete');
+      reportFailure('delete', failure, taskId, name);
       return false;
     }
     upsertTask(undefined, taskId);
     channel?.postMessage({ taskId });
     if (selectedTaskId.value === taskId) await selectTask(null);
+    publishFeedback(importSuccess('delete'), name);
     return true;
   }
 
@@ -288,26 +339,31 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   async function send(text: string, model: AIModel | undefined = defaultModel()): Promise<void> {
     const taskId = selectedOrThrow();
     if (!model) {
-      setError('未配置助手模型：请先在「AI 模型」中为助手指定默认模型。', 'run');
+      reportFailure('run', '未配置助手模型：请先在「AI 模型」中为助手指定默认模型。', taskId);
       return;
     }
-    await act('run', taskId, async () => {
-      const running = ImportAgentService.run(taskId, model, text);
-      void refreshRunning();
-      return running;
-    });
+    await act(
+      'run',
+      taskId,
+      async () => {
+        const running = ImportAgentService.run(taskId, model, text);
+        void refreshRunning();
+        return running;
+      },
+      importRunFeedback,
+    );
   }
 
   async function pause(): Promise<void> {
     const taskId = selectedOrThrow();
-    await act('pause', taskId, () => ImportAgentService.pause(taskId));
+    await act('pause', taskId, () => ImportAgentService.pause(taskId), importPauseFeedback);
   }
 
   /** 手动压缩当前任务的对话上下文（总结历史，来源与草稿不变）。 */
   async function compact(model: AIModel | undefined = defaultModel()): Promise<void> {
     const taskId = selectedOrThrow();
     if (!model) {
-      setError('未配置助手模型：请先在「AI 模型」中为助手指定默认模型。', 'compact');
+      reportFailure('compact', '未配置助手模型：请先在「AI 模型」中为助手指定默认模型。', taskId);
       return;
     }
     await act('compact', taskId, () => ImportAgentService.compact(taskId, model));
@@ -348,8 +404,17 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     const current = task.value;
     const question = current?.pendingQuestion;
     if (!current || question?.kind !== 'novel') return;
-    const result = await act('choose-novel', current.id, () =>
-      ImportDraftService.chooseNovel(current.id, question.id, question.scopeRevision, candidateId),
+    const result = await act(
+      'choose-novel',
+      current.id,
+      () =>
+        ImportDraftService.chooseNovel(
+          current.id,
+          question.id,
+          question.scopeRevision,
+          candidateId,
+        ),
+      () => (candidateId === null ? undefined : importSuccess('choose-novel')),
     );
     if (result !== undefined && candidateId !== null) await continueAfterAnswer(current.id);
   }
@@ -394,13 +459,19 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   async function previewPlan(): Promise<void> {
     const current = task.value;
     if (!current) return;
-    await act('preview', current.id, () =>
-      ImportPlanService.preview(current.id, current.draft.revision),
+    await act(
+      'preview',
+      current.id,
+      () => ImportPlanService.preview(current.id, current.draft.revision),
+      importPlanFeedback,
     );
   }
 
   /** 解决方案冲突后草稿版本会变化，需要重新生成方案。 */
-  async function resolveAndPreview(label: string, work: (taskId: string) => Promise<unknown>) {
+  async function resolveAndPreview(
+    label: ImportAction,
+    work: (taskId: string) => Promise<unknown>,
+  ) {
     const current = task.value;
     if (!current) return;
     const done = await act(label, current.id, () => work(current.id));
@@ -449,15 +520,21 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     const current = task.value;
     const currentPlan = plan.value;
     if (!current || !currentPlan) return undefined;
-    return act('apply', current.id, async () =>
-      application.apply(await application.confirmApply(current.id, currentPlan.id)),
+    return act(
+      'apply',
+      current.id,
+      async () => application.apply(await application.confirmApply(current.id, currentPlan.id)),
+      importApplicationFeedback,
     );
   }
 
   async function revertOperation(operationId: string): Promise<ImportOperation | undefined> {
     const taskId = selectedOrThrow();
-    return act('revert', taskId, async () =>
-      application.revert(await application.confirmRevert(taskId, operationId)),
+    return act(
+      'revert',
+      taskId,
+      async () => application.revert(await application.confirmRevert(taskId, operationId)),
+      importApplicationFeedback,
     );
   }
 
@@ -482,6 +559,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     error,
     errorAction,
     pendingAction,
+    feedback,
     isRunning,
     canCompact,
     canContinue,
