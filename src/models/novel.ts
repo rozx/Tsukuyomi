@@ -1,7 +1,9 @@
 import type { AIModel } from '../services/ai/types/ai-model';
+import type { BookUpdateRecipe } from './book-sync';
 
 // 小说
 export interface Novel {
+  updateRecipe?: BookUpdateRecipe;
   id: string;
   title: string;
   alternateTitles?: string[] | undefined;

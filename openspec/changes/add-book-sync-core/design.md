@@ -34,20 +34,20 @@ interface BookUpdateRecipe {
     | {
         kind: 'builtin';
         site: 'syosetu-org' | 'kakuyomu' | 'ncode' | 'novel18';
-        content?: ImportExtractionRules;      // 有则按导入器方式提取正文；无则用抓取器自带解析
+        content?: ImportExtractionRules; // 有则按导入器方式提取正文；无则用抓取器自带解析
       }
     | {
         kind: 'html';
-        content: ImportExtractionRules;       // selector / excludeSelectors / preset
-        catalogSelector?: string;             // 目录链接所在范围（CSS）
-        chapterFilter?: ImportSourceFilter;   // name / locator 模式
+        content: ImportExtractionRules; // selector / excludeSelectors / preset
+        catalogSelector?: string; // 目录链接所在范围（CSS）
+        chapterFilter?: ImportSourceFilter; // name / locator 模式
         followNext?: boolean;
       };
   catalogUrls: string[];
   cleanup?: { pattern: ImportTextPattern; action: 'remove_matches' | 'remove_lines' }[];
   stripHeading?: boolean;
   skippedUrls?: { url: string; title: string }[];
-  pinnedUrls?: string[];                  // 导入时有意与来源不同的章节，检查时不比对
+  pinnedUrls?: string[]; // 导入时有意与来源不同的章节，检查时不比对
   verifiedChapterCount: number;
   recordedAt: number;
 }
@@ -73,18 +73,19 @@ interface SyncEngine {
 CatalogEntry = { url, title, group?: string, lastUpdated?: Date }
 ```
 
-- `builtin`：目录包装现有 `NovelScraper`，`fetchNovel` 的卷结构展平为带 `group` 和 `lastUpdated` 的条目；站点逻辑（Kakuyomu Apollo JSON、ncode 分页、novel18 Cookie）原样继承。正文页用 `adapter.fetchPageSnapshot` 请求（保留 Cookie 和代理），再按配方选择提取方式：
+- `builtin`：目录通过现有 `NovelScraper.fetchPageSnapshot` + `parseNovelSnapshot` 逐页回放，将解析结果展平为带 `group` 和 `lastUpdated` 的条目；保留站点解析（包括 Kakuyomu Apollo JSON）和 novel18 Cookie。起始页以 `catalogStartUrl` 为准，按 `nextPageUrls` 遍历，保留跨页分组延续，最多 500 页并检测循环。任一页请求失败、验证页或空目录均整体失败，不发布已取得的部分目录。到达上限但仍有未遍历页也整体失败。不使用 `fetchNovel`，因为现有 ncode/novel18 分页会吞掉后续页错误并返回部分成功。正文页用 `adapter.fetchPageSnapshot` 请求（保留 Cookie 和代理），再按配方选择提取方式：
   - **有 `content`**（导入器声明的配方）：走下面「导入器口径」的提取；
   - **没有 `content`**（虚拟配方，即旧抓取器导入的书）：用 `parseChapterSnapshot(html).text`，和旧流程写入时的口径一致。
 
   这样处理的原因是：导入器抓内置站点正文时，用的是 `parseImportHtml` 加 `BODY_PRESETS`（`import-extraction-service.ts:426`），不是抓取器自带的解析，两者输出不同。
+
 - `html`：`fetchScraperPage` + `parseImportHtml`。
   - **目录链接**：有 `catalogSelector` 时，先用 cheerio 截取该范围的 HTML，再交给 `parseImportHtml`，范围内除 `metadata` 以外的链接都作为候选；没有时，只取 `relation === 'chapter'` 的链接（这个关系只在 `nav / .toc / .p-eplist / .index_box` 容器内才会标上，见 `import-html-parser.ts:111`）。候选再按 `chapterFilter` 筛选（经正则 worker）。
   - **目录分页**：`followNext` 跟随 `relation === 'next'`，上限 50 页，用已访问集合检测循环。
   - **正文**：走「导入器口径」的提取。
 - **导入器口径的提取**：`parseImportHtml(html, content, baseUrl)` 得到的**全部块**按 `\n` 连接，和 `ImportContentService.prepareExtraction` 与 `import-extraction-service.ts:444` 的拼接完全一致。导入时用引用范围裁掉的部分，在配方里必须表达为 `excludeSelectors`、清理规则或 `stripHeading`（由导入器的自测保证）。`parseImportHtml` 目前不给链接标注分组；v1 的 `group` 为空，归卷退化为「相邻章节或最后一卷」，站点新分组不会单独建卷。给链接补分组列为后续改进。
 - 引擎内部把「取页面」和「解析」分开：`parseCatalog(html, url, recipe)` 与 `parseChapter(html, recipe)` 是纯函数（目录：builtin 用 `NovelScraper.parseNovelSnapshot`，html 用 `parseImportHtml`；正文：配方带 `content` 时走导入器口径的提取，否则用 `parseChapterSnapshot`），`fetchCatalog` / `fetchChapter` 只负责请求页面再调用它们。这样 `import-record-update-recipe` 可以在导入任务已保存的快照上离线回放，不发网络请求。
-- 统一后处理 `normalizeChapterText(raw, recipe)`：清理规则（worker，带超时）→ 标题剥离 → 按导入器规则切成段落。自测（导入器侧）与检查共用这一个函数，保证两边的比对口径一致。
+- 统一后处理 `normalizeChapterText(raw, recipe, { title, signal })`：清理规则（worker，带超时）→ 标题剥离 → 按导入器规则切成段落。标题由目录条目提供，仅当首个非空行与标题精确匹配时剥离，避免误删正文。自测（导入器侧）与检查共用这一个函数，保证两边的比对口径一致。
 
 ### D3 配方失效判定集中在回放层
 
@@ -110,11 +111,11 @@ session.apply(selection) / session.undo()
 
 ### D5 归卷算法
 
-按目录顺序扫描，维护 `anchorVolumeId`（最近一个已在书中的章节所在的卷）和 `groupSeen`（每个站点分组在书中是否有章节）：
+按目录顺序扫描，维护 `anchorVolumeId`（最近一个已在书中的章节所在的卷）和预先按整个目录计算的 `groupSeen`（每个站点分组在书中是否有章节，包含当前位置之后的已导入章节）：
 
 ```
 for entry in catalog:
-  if entry 在书中: anchorVolumeId = 它所在卷; mark group seen; continue
+  if entry 在书中: anchorVolumeId = 它所在卷; continue
   if entry 已跳过: continue
   if entry.group && !groupSeen[entry.group]: target = 新卷(entry.group)，同组复用
   else target = anchorVolumeId ?? 最后一卷 ?? 新卷('正文')
