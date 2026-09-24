@@ -6,8 +6,12 @@
  * (auto-sync, AI task watcher, embedding warmup, global `__luna*` bridges) run
  * exactly once here via `useMainLayoutShell()` so they do NOT re-register when
  * a runtime breakpoint swap causes a variant to remount.
+ *
+ * 页面（RouterView）也只在这里渲染一次，经 Teleport 放进当前变体的 `#route-outlet-<variant>`。
+ * 断点切换只移动页面 DOM，页面组件不会随外壳一起重新挂载，页面状态得以保留。
  */
 import { computed } from 'vue';
+import { RouterView } from 'vue-router';
 import { useDeviceVariant } from 'src/composables/useDeviceVariant';
 import { useMainLayoutShell } from 'src/composables/main-layout/useMainLayoutShell';
 import MainLayoutDesktop from './main-layout/MainLayoutDesktop.vue';
@@ -36,6 +40,9 @@ const variantComponent = computed(() => {
 
 <template>
   <component :is="variantComponent" />
+  <Teleport :to="`#route-outlet-${variant}`" defer>
+    <RouterView />
+  </Teleport>
 
   <!-- Global chrome — same across every variant, rendered once by the dispatcher -->
   <Toast position="top-right" @close="handleToastClose" />

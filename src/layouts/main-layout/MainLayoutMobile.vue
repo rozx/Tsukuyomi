@@ -6,7 +6,6 @@ import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import MobileChatSheet from 'src/components/layout/MobileChatSheet.vue';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 import MobileProgressSheet from 'src/components/layout/MobileProgressSheet.vue';
-import { RouterView } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 
@@ -68,7 +67,8 @@ useOverlayCloseStack({
       </div>
 
       <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60">
-        <RouterView />
+        <!-- 页面由 MainLayout 渲染并 Teleport 到这里，断点切换时不重新挂载 -->
+        <div id="route-outlet-mobile" class="route-outlet" />
       </main>
     </div>
 
@@ -83,6 +83,10 @@ useOverlayCloseStack({
 </template>
 
 <style scoped>
+.route-outlet {
+  display: contents;
+}
+
 .layout-overlay-mask {
   position: absolute;
   inset: 0;

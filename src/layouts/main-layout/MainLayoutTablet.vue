@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Tablet shell — slim left icon rail + top utility strip + main RouterView,
+ * Tablet shell — slim left icon rail + top utility strip + main route outlet,
  * with TWO independent right-edge slide-in panels for the AI 助手 / 翻译进度
  * surfaces. Each panel owns its own appbar + close button and stays mounted
  * in the DOM so its internal state (useRightPanel / TranslationProgress) isn't
@@ -17,7 +17,6 @@ import TabletChatPanel from 'src/components/layout/TabletChatPanel.vue';
 import ImportChatPanel from 'src/components/import/ImportChatPanel.vue';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 import TabletProgressPanel from 'src/components/layout/TabletProgressPanel.vue';
-import { RouterView } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 
@@ -61,7 +60,8 @@ useOverlayCloseStack({
           @click="closeRightPanel"
         />
 
-        <RouterView />
+        <!-- 页面由 MainLayout 渲染并 Teleport 到这里，断点切换时不重新挂载 -->
+        <div id="route-outlet-tablet" class="route-outlet" />
 
         <!-- 侧滑面板放进裁剪层：收起时移到右侧外，不能撑大 main 的滚动宽度，
              否则标签页等 scrollIntoView 会把 main 横向滚走 -->
@@ -97,6 +97,10 @@ useOverlayCloseStack({
 </template>
 
 <style scoped>
+.route-outlet {
+  display: contents;
+}
+
 /* 与 TabletChatPanel 相同的面板底色与左边框，常驻停靠 */
 .tablet-import-chat {
   flex-shrink: 0;

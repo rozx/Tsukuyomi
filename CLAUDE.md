@@ -73,6 +73,7 @@ src/composables/<name-kebab>/use<Name>.ts         # 业务逻辑，通过 provid
 2. **一次性副作用只跑一次** — auto-sync、AI 任务 watcher、embedding warmup、toast 初始化等放在 composable 的 `onMounted` 或 dispatcher 里，**不得**在每个变体里重复注册（否则断点切换会重复触发）
 3. **跨变体共享的弹窗 / Toast 挂在 dispatcher** — 避免三个变体各自渲染一份造成重复挂载和状态分叉
 4. **UI 状态走 Pinia 或 provide/inject** — 不要在变体内部用本地 `ref` 保存需要跨断点切换存活的状态；变体组件会被整体换掉
+   - 页面由 `MainLayout` dispatcher 只渲染一次（Teleport 到当前布局变体的 `#route-outlet-<variant>`），布局断点切换**不会**重新挂载页面，页面 dispatcher 里 provide 的状态会保留；页面自己的 Desktop/Tablet/Mobile 变体仍会被换掉。布局变体里放 `<div id="route-outlet-<variant>" class="route-outlet" />`，不要再放 `<RouterView />`
 5. **Tablet 常是 `<Desktop />` wrapper** — 除非确有三套模板，否则写 wrapper 保留文件结构统一（后续做独立平板设计时不改 dispatcher）
 6. **DRY**：变体之间重复的模板片段要抽成 `components/<surface>/XxxFragment.vue`（例子：`components/novel/translation-progress/TaskEmptyState.vue`）
 

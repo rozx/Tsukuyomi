@@ -4,7 +4,6 @@ import AppFooter from 'src/components/layout/AppFooter.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import AppRightPanel from 'src/components/layout/AppRightPanel.vue';
 import { computed } from 'vue';
-import { RouterView } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 
@@ -27,7 +26,8 @@ const asideWidth = computed(() => (asideOpen.value ? `${ui.rightPanelWidth}px` :
       </div>
 
       <main class="desktop-shell-canvas bg-night-900/60">
-        <RouterView />
+        <!-- 页面由 MainLayout 渲染并 Teleport 到这里，断点切换时不重新挂载 -->
+        <div id="route-outlet-desktop" class="route-outlet" />
       </main>
 
       <div class="desktop-shell-aside" :style="{ width: asideWidth }">
@@ -42,6 +42,10 @@ const asideWidth = computed(() => (asideOpen.value ? `${ui.rightPanelWidth}px` :
 </template>
 
 <style scoped>
+.route-outlet {
+  display: contents;
+}
+
 .desktop-shell {
   height: 100vh;
   overflow: hidden;

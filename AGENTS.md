@@ -186,6 +186,7 @@ const variantComponent = computed(() => {
 2. **一次性副作用只跑一次** — auto-sync、AI watcher、embedding warmup、初始 toast 等放在 composable 的 `onMounted` 或 dispatcher 里，不要在每个变体里重复注册（否则断点切换会重复触发）
 3. **共享弹窗 / Toast 挂 dispatcher** — 不在三个变体里各挂一份
 4. **跨断点存活的状态** 走 Pinia 或 provide/inject — 变体切换时组件会被整体替换，本地 `ref` 会丢
+   - 页面由 `MainLayout` 只渲染一次并 Teleport 到当前布局变体的 `#route-outlet-<variant>`：布局断点切换不重新挂载页面，页面 dispatcher 的 provide 状态保留。布局变体放 `<div id="route-outlet-<variant>" class="route-outlet" />`，不要放 `<RouterView />`
 5. **Tablet 默认 wrap Desktop** — 除非有三套独立设计；wrapper 保留结构一致性
 6. **DRY 重复模板片段** 抽到 `components/<surface>/XxxFragment.vue`
 
