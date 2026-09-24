@@ -120,7 +120,7 @@ export async function getAllBookMemoriesFromDB(bookId: string): Promise<Memory[]
     const rows = (await index.getAll(bookId)) as MemoryStorage[];
     return rows.map(storageToMemory);
   } catch (error) {
-    console.warn(`[memory-embedding-lookup] getAllBookMemoriesFromDB 失败 (${bookId}):`, error);
+    console.warn('[memory-embedding-lookup] getAllBookMemoriesFromDB 失败:', bookId, error);
     return [];
   }
 }
