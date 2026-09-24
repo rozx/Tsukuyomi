@@ -50,6 +50,7 @@
 - 修复：保存 AI 模型时自定义请求头没有被持久化的问题。
 - 修复：在模型选择框中直接输入模型标识时，输入焦点会被下拉筛选框抢走的问题（输入法组字时同样适用）。
 - 修复：Gemini 生成请求忽略自定义 Base URL、请求头与 CORS 代理设置的问题。
+- 修正：AI 模型页与 API Keys 设置页原先写着密钥「仅存储在本设备」「加密保存」，与实际不符。密钥在本地未加密保存，开启 Gist 同步时 AI 模型与 Tavily 的 API Key 会随配置上传到你的 Gist，说明文字已更正。
 
 ---
 
@@ -64,9 +65,10 @@
 
 ## 📚 相关文档
 
-- **AI 模型配置（模型资料、可用性测试、思考等级）**: [`help/ai-models-guide.md`](help/ai-models-guide.md)
-- **AI 助手（上下文与会话）**: [`help/chat-assistant-guide.md`](help/chat-assistant-guide.md)
-- **书籍导入（长对话压缩）**: [`help/import-guide.md`](help/import-guide.md)
+- **AI 模型配置（模型资料、可用性测试、思考等级）**: [`help/ai-models-guide.md`](../help/ai-models-guide.md)
+- **AI 助手（上下文与会话）**: [`help/chat-assistant-guide.md`](../help/chat-assistant-guide.md)
+- **设置说明（Gist 同步包含 API Key）**: [`help/settings-guide.md`](../help/settings-guide.md)
+- **书籍导入（长对话压缩）**: [`help/import-guide.md`](../help/import-guide.md)
 
 ---
 

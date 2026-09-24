@@ -102,7 +102,7 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
       <DesktopWorkbenchSurface class="ai-models-surface" :padded="false">
         <div class="ai-surface-banner">
           <i class="pi pi-shield" aria-hidden="true" />
-          <span>BYOK · 密钥仅存储在本设备 · IndexedDB 本地保存</span>
+          <span>BYOK · 密钥保存在本设备 IndexedDB · 开启 Gist 同步时会随模型上传</span>
         </div>
 
         <DataView

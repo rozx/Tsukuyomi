@@ -48,8 +48,8 @@
 
 ## 📚 相关文档
 
-- **设置说明（关于与桌面更新）**: [`help/settings-guide.md`](help/settings-guide.md)
-- **系统栏与导航（页脚更新徽标）**: [`help/toolbar-guide.md`](help/toolbar-guide.md)
+- **设置说明（关于与桌面更新）**: [`help/settings-guide.md`](../help/settings-guide.md)
+- **系统栏与导航（页脚更新徽标）**: [`help/toolbar-guide.md`](../help/toolbar-guide.md)
 
 ---
 
