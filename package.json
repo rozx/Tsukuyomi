@@ -12,6 +12,7 @@
     "url": "git+https://github.com/rozx/Tsukuyomi.git"
   },
   "scripts": {
+    "update:model-limits": "bun scripts/update-model-limits.ts",
     "lint": "bunx eslint --quiet .",
     "type-check": "bunx vue-tsc --noEmit",
     "quality-check": "cross-env FALLOW_COVERAGE=coverage/coverage-final.json bunx fallow --baseline .fallow-baseline.json && bun run quality-check:ci",
@@ -36,7 +37,6 @@
   "dependencies": {
     "@ai-sdk/google": "^4",
     "@ai-sdk/openai-compatible": "^3",
-    "@google/generative-ai": "^0.24.1",
     "@huggingface/transformers": "^4.3",
     "@octokit/rest": "^22.0.1",
     "@primevue/themes": "^4.5.4",
@@ -55,7 +55,6 @@
     "jsonrepair": "^3.15",
     "lodash": "^4.18.1",
     "marked": "^17.0.6",
-    "openai": "^6.45.0",
     "pinia": "^3.0.4",
     "primeicons": "^7.0.0",
     "primevue": "^4.5.5",

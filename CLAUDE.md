@@ -179,7 +179,7 @@ describe('MyService', () => {
 
 Vue 3.5 + Quasar 2.18 + TypeScript 5.9 + Pinia 3 + PrimeVue 4.5 + Tailwind CSS 3.4 + Vue-i18n (zh-CN/zh-TW/en-US) + Electron 39 + Bun
 
-AI: OpenAI SDK + Google Generative AI + 自定义 Claude 集成
+AI: Vercel AI SDK 7 + OpenAI Compatible / Google provider；保留现有单步服务接口与工具循环
 
 存储: IndexedDB (idb) + GitHub Gist (@octokit/rest)
 

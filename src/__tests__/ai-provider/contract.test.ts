@@ -1,8 +1,6 @@
 import '../setup';
 import { afterEach, beforeEach, describe } from 'bun:test';
 import { expect, it, vi } from 'vitest';
-import { OpenAIService } from '../../services/ai/providers/openai-service';
-import { GeminiService } from '../../services/ai/providers/gemini-service';
 import { AiSdkAIService } from '../../services/ai/providers/ai-sdk/service';
 import { AIEmptyResponseError } from '../../services/ai/core/errors';
 import { TOOL_CALL_PLACEHOLDER } from '../../services/ai/tasks/utils/stream-handler';
@@ -17,21 +15,17 @@ import {
 } from './fixtures';
 
 describe.each([
-  { backend: 'legacy', provider: 'openai', service: new OpenAIService(), stream: openAIStream },
-  { backend: 'legacy', provider: 'gemini', service: new GeminiService(), stream: geminiStream },
   {
-    backend: 'ai-sdk',
     provider: 'openai',
     service: new AiSdkAIService('openai'),
     stream: openAIStream,
   },
   {
-    backend: 'ai-sdk',
     provider: 'gemini',
     service: new AiSdkAIService('gemini'),
     stream: geminiStream,
   },
-])('$backend $provider 契约', ({ backend, provider, service, stream }) => {
+])('$provider 契约', ({ provider, service, stream }) => {
   let transport: ReturnType<typeof stubTransport>;
   beforeEach(() => {
     transport = stubTransport();
@@ -102,33 +96,29 @@ describe.each([
     }
   });
 
-  if (backend === 'ai-sdk') {
-    it('提取指令时保留全部 system 消息的顺序', async () => {
-      transport.responses.push(
-        stream(provider === 'openai' ? [{ content: '你好' }] : [{ text: '你好' }]),
-      );
-      await service.generateText(config, {
-        messages: [
-          { role: 'system', content: '第一条规则' },
-          { role: 'system', content: '第二条规则' },
-          { role: 'user', content: '问候' },
-        ],
-      });
-      const body = transport.requests[0]!.body;
-      if (provider === 'openai') {
-        expect(body.messages).toEqual([
-          { role: 'system', content: '第一条规则' },
-          { role: 'system', content: '第二条规则' },
-          { role: 'user', content: '问候' },
-        ]);
-      } else {
-        const instruction = body.systemInstruction as { parts: { text: string }[] };
-        expect(instruction.parts.map((part) => part.text).join('\n')).toBe(
-          '第一条规则\n第二条规则',
-        );
-      }
+  it('提取指令时保留全部 system 消息的顺序', async () => {
+    transport.responses.push(
+      stream(provider === 'openai' ? [{ content: '你好' }] : [{ text: '你好' }]),
+    );
+    await service.generateText(config, {
+      messages: [
+        { role: 'system', content: '第一条规则' },
+        { role: 'system', content: '第二条规则' },
+        { role: 'user', content: '问候' },
+      ],
     });
-  }
+    const body = transport.requests[0]!.body;
+    if (provider === 'openai') {
+      expect(body.messages).toEqual([
+        { role: 'system', content: '第一条规则' },
+        { role: 'system', content: '第二条规则' },
+        { role: 'user', content: '问候' },
+      ]);
+    } else {
+      const instruction = body.systemInstruction as { parts: { text: string }[] };
+      expect(instruction.parts.map((part) => part.text).join('\n')).toBe('第一条规则\n第二条规则');
+    }
+  });
 
   it('只有工具调用也成功，多个调用保持顺序并具有不同 ID', async () => {
     transport.responses.push(
@@ -318,18 +308,15 @@ describe.each([
       });
     });
 
-    (backend === 'legacy' ? it.fails : it)(
-      'think 标签本身跨 delta 时分离正文（legacy 已知失败）',
-      async () => {
-        transport.responses.push(
-          openAIStream([{ content: '<thi' }, { content: 'nk>思考</th' }, { content: 'ink>回答' }]),
-        );
-        expect(await service.generateText(config, { prompt: '问题' })).toMatchObject({
-          text: '回答',
-          reasoningContent: '思考',
-        });
-      },
-    );
+    it('think 标签本身跨 delta 时分离正文', async () => {
+      transport.responses.push(
+        openAIStream([{ content: '<thi' }, { content: 'nk>思考</th' }, { content: 'ink>回答' }]),
+      );
+      expect(await service.generateText(config, { prompt: '问题' })).toMatchObject({
+        text: '回答',
+        reasoningContent: '思考',
+      });
+    });
 
     it.each([null, '之前的思考'])(
       '工具历史补占位并回传 reasoning_content=%s',

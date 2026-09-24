@@ -6,11 +6,10 @@ import { AiSdkAIService } from '../../services/ai/providers/ai-sdk/service';
 import { config, geminiStream, openAIStream, stubTransport, tools } from './fixtures';
 import type { TextGenerationChunk } from '../../services/ai/types/ai-service';
 
-describe('AI SDK 新行为与迁移开关', () => {
+describe('AI SDK 唯一实现与厂商行为', () => {
   let transport: ReturnType<typeof stubTransport>;
   beforeEach(() => {
     transport = stubTransport();
-    localStorage.setItem('tsukuyomi.aiProviderBackend', 'ai-sdk');
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -19,14 +18,12 @@ describe('AI SDK 新行为与迁移开关', () => {
     localStorage.clear();
   });
 
-  it('显式开启才使用 SDK，默认及读取失败回退 legacy', () => {
+  it('默认使用 SDK，存储不可用也不影响提供商选择', () => {
     expect(AIServiceFactory.getService('openai')).toBeInstanceOf(AiSdkAIService);
-    localStorage.removeItem('tsukuyomi.aiProviderBackend');
-    expect(AIServiceFactory.getService('openai')).not.toBeInstanceOf(AiSdkAIService);
     vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
       throw new Error('存储不可用');
     });
-    expect(AIServiceFactory.getService('gemini')).not.toBeInstanceOf(AiSdkAIService);
+    expect(AIServiceFactory.getService('gemini')).toBeInstanceOf(AiSdkAIService);
   });
 
   it('请求并透传 OpenAI 实测用量，包括零值、思考和缓存', async () => {
