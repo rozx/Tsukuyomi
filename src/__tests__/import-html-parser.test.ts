@@ -62,7 +62,7 @@ describe('快照上的 HTML / XHTML 提取', () => {
 
   it('只返回链接与实际封面地址，保留相对路径语义及查询参数，不跟页', () => {
     const result = parseImportHtml(
-      '<html><head><meta property="og:image" content="../cover.jpg?v=2"></head><body><nav class="toc"><a href="ch1.html#p1">第一章</a><a rel="next" href="?page=2">下一页</a><a href="javascript:alert(1)">坏链接</a></nav></body></html>',
+      '<html><head><meta property="og:image" content="../cover.jpg?v=2"></head><body><nav class="toc"><a href="ch1.html#p1">第一章</a><a rel="next" href="?page=2">下一页</a><a href="javascript:alert(1)">坏链接</a><a href="data:text/html,x">数据链接</a><a href="vbscript:msgbox(1)">脚本链接</a></nav></body></html>',
       {},
       'https://example.com/book/index.html',
     );
@@ -74,7 +74,9 @@ describe('快照上的 HTML / XHTML 提取', () => {
         { name: '下一页', href: 'https://example.com/book/index.html?page=2', relation: 'next' },
       ]),
     );
-    expect(result.links.some((link) => link.href.startsWith('javascript:'))).toBe(false);
+    expect(
+      result.links.every((link) => ['http:', 'https:'].includes(new URL(link.href).protocol)),
+    ).toBe(true);
   });
 
   it('登录、验证、动态空壳和版权页均不能被当成成功正文', () => {
