@@ -104,6 +104,7 @@ declare module 'vue' {
     DeleteCharacterConfirmDialog: typeof import('./components/dialogs/DeleteCharacterConfirmDialog.vue')['default']
     DeleteTermConfirmDialog: typeof import('./components/dialogs/DeleteTermConfirmDialog.vue')['default']
     DeleteVolumeConfirmDialog: typeof import('./components/dialogs/DeleteVolumeConfirmDialog.vue')['default']
+    DesktopUpdateSection: typeof import('./components/settings/DesktopUpdateSection.vue')['default']
     DesktopWorkbenchHeader: typeof import('./components/desktop/DesktopWorkbenchHeader.vue')['default']
     DesktopWorkbenchMetrics: typeof import('./components/desktop/DesktopWorkbenchMetrics.vue')['default']
     DesktopWorkbenchSurface: typeof import('./components/desktop/DesktopWorkbenchSurface.vue')['default']

@@ -14,6 +14,7 @@ import { useElectronSettings } from 'src/composables/useElectronSettings';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { useImportNotifications } from 'src/composables/import-page/useImportNotifications';
 import { useDatabaseBlockedNotice } from 'src/composables/useDatabaseBlockedNotice';
+import { initializeDesktopUpdates } from 'src/composables/useDesktopUpdates';
 
 const booksStore = useBooksStore();
 const aiModelsStore = useAIModelsStore();
@@ -27,6 +28,7 @@ const contextStore = useContextStore();
 
 // 初始化 Electron 设置处理
 useElectronSettings();
+initializeDesktopUpdates();
 useImportNotifications();
 // 旧标签页阻塞数据库升级时提示用户关闭旧页面（覆盖首次迁移与数据加载）
 const stopBlockedNotice = useDatabaseBlockedNotice();

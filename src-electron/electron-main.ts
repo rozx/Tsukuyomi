@@ -9,6 +9,11 @@ import pie from 'puppeteer-in-electron';
 import { getErrorMessage, toError } from '../src/utils/error-message';
 import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
 import { claimSingleInstance } from './single-instance';
+import { VelopackApp } from 'velopack';
+import { registerDesktopUpdates } from './desktop-update-ipc';
+
+// 必须先处理 Velopack 启动钩子，再获取单实例锁或初始化 Puppeteer。
+if (app.isPackaged) VelopackApp.build().setAutoApplyOnStartup(false).run();
 
 // Configure Puppeteer Stealth
 puppeteer.use(StealthPlugin());
@@ -697,6 +702,7 @@ ${filePath}`,
 });
 
 function startPrimaryInstance(): void {
+  registerDesktopUpdates(() => mainWindow);
   // 设置 About 面板信息
   app.setAboutPanelOptions({
     applicationName: 'Tsukuyomi - Moonlit Translator',

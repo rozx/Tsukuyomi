@@ -3,7 +3,10 @@
  * 通过 preload 脚本暴露给渲染进程的 API
  */
 
+import type { DesktopUpdateAPI } from '../models/desktop-update';
+
 export interface ElectronAPI {
+  updates: DesktopUpdateAPI;
   /**
    * 通过 Electron 的 net 模块发起 HTTP 请求
    * 避免浏览器的 CORS 限制

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
+import DesktopUpdateSection from './DesktopUpdateSection.vue';
 import { APP_VERSION } from 'src/constants/version';
 
 const version = APP_VERSION;
@@ -14,6 +15,7 @@ const author = 'Rozx';
     <h2 class="about-title">月詠 · Tsukuyomi</h2>
     <p class="about-tagline">月之神官，伴君译笔</p>
     <p class="about-version">v{{ version }}</p>
+    <DesktopUpdateSection />
 
     <div class="about-meta">
       <div class="about-meta-row">

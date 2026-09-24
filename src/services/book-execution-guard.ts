@@ -1,4 +1,5 @@
 import { getDB } from 'src/utils/indexed-db';
+import { desktopRestartGuard } from './desktop-restart-guard';
 
 export interface BookExecutionOwner {
   label: string;
@@ -50,6 +51,7 @@ export class BookExecutionGuard {
     work: () => Promise<T>,
     prepare?: () => Promise<void>,
   ): Promise<T> {
+    desktopRestartGuard.assertAvailable();
     const locks = manager();
     if (!locks) return work();
     return this.withLock(bookId, 'shared', async () => {
@@ -62,6 +64,7 @@ export class BookExecutionGuard {
   }
 
   static commit<T>(bookId: string, work: () => Promise<T>): Promise<T> {
+    desktopRestartGuard.assertAvailable();
     return this.withLock(bookId, 'exclusive', work);
   }
 

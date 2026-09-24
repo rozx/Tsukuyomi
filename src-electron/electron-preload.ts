@@ -1,4 +1,42 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { DesktopUpdateAPI } from '../src/models/desktop-update';
+
+const updates: DesktopUpdateAPI = {
+  getState: () => ipcRenderer.invoke('desktop-update:getState'),
+  check: () => ipcRenderer.invoke('desktop-update:check'),
+  restart: () => ipcRenderer.invoke('desktop-update:restart'),
+  onState: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) =>
+      callback(state);
+    ipcRenderer.on('desktop-update:state', handler);
+    return () => {
+      ipcRenderer.removeListener('desktop-update:state', handler);
+    };
+  },
+  onPrepare: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, id: string) => {
+      void callback().then(
+        () => ipcRenderer.send('desktop-update:prepared', { id }),
+        (error: unknown) =>
+          ipcRenderer.send('desktop-update:prepared', {
+            id,
+            error: error instanceof Error ? error.message : '保存检查失败',
+          }),
+      );
+    };
+    ipcRenderer.on('desktop-update:prepare', handler);
+    return () => {
+      ipcRenderer.removeListener('desktop-update:prepare', handler);
+    };
+  },
+  onRelease: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('desktop-update:release', handler);
+    return () => {
+      ipcRenderer.removeListener('desktop-update:release', handler);
+    };
+  },
+};
 
 /**
  * Electron Preload Script
@@ -7,6 +45,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 // 暴露安全的 API 到渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  updates,
   /**
    * 通过 Electron 的 net 模块发起 HTTP 请求
    * 避免浏览器的 CORS 限制

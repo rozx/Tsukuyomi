@@ -262,81 +262,23 @@ export default defineConfig((ctx: any) => {
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-electron-apps/configuring-electron
     electron: {
-      // extendElectronMainConf (esbuildConf) {},
-      extendElectronPreloadConf(_esbuildConf: any) {
-        // 确保 preload 脚本被正确打包
-        console.log('Building Electron preload script...');
+      // 原生模块由 Node 在运行时加载，不进入 esbuild bundle。
+      extendElectronMainConf(conf: { external?: string[] }) {
+        conf.external = [...(conf.external ?? []), 'velopack'];
       },
-
-      // extendPackageJson (json) {},
-
-      // Electron preload scripts (if any) from /src-electron, WITHOUT file extension
       preloadScripts: ['electron-preload'],
-
-      // specify the debugging port to use for the Electron app when running in development mode
       inspectPort: 5858,
-
-      bundler: 'builder', // 'packager' or 'builder'
-
+      bundler: 'packager',
       packager: {
-        // https://github.com/electron-userland/electron-packager/blob/master/docs/api.md#options
-        // Note: This section is ignored when bundler is set to 'builder'
-        // Disable asar to ensure preload script is accessible
-        asar: false,
-        // Icon configuration for packager
-        // Icons should be placed in src-electron/icons/
-        // - macOS: icon.icns (512x512 or larger)
-        // - Windows: icon.ico (256x256 or larger)
-        // - Linux: icon.png (512x512 or larger)
-        // icon: 'src-electron/icons/icon', // Path without extension, packager will auto-detect format
-        // OS X / Mac App Store
-        // appBundleId: '',
-        // appCategoryType: '',
-        // osxSign: '',
-        // protocol: 'myapp://path',
-        // Windows only
-        // win32metadata: { ... }
-      },
-
-      builder: {
-        // https://www.electron.build/configuration/configuration
-        appId: 'tsukuyomi',
-        // Enable asar to avoid Windows path length issues (which cause empty builds)
-        asar: true,
-        // Unpack specific binaries or large files that might have issues with ASAR
-        asarUnpack: [
-          '**/*.node',
-          '**/node_modules/puppeteer/**',
-          '**/node_modules/@puppeteer/**',
-          '**/node_modules/sharp/**',
-        ],
-        // Icon configuration for builder
-        // Icons should be placed in src-electron/icons/
-        mac: {
-          icon: 'src-electron/icons/icon.icns',
-          // Generate DMG and Zip for better distribution
-          target: ['dmg', 'zip'],
-          // Required for Notarization
-          hardenedRuntime: true,
-          gatekeeperAssess: false,
-          entitlements: 'src-electron/entitlements.mac.plist',
-          entitlementsInherit: 'src-electron/entitlements.mac.plist',
-          // Ignore the fake chrome.app bundle in puppeteer-extra-plugin-stealth
-          signIgnore: ['chrome.app'],
-        },
-
-        win: {
-          icon: 'src-electron/icons/icon.ico',
-          // Generate Portable executable only
-          target: 'portable',
-          // 禁用代码签名以避免 Windows 符号链接权限问题
-          forceCodeSigning: false, // This disables the automatic signing attempt
-        },
-        linux: {
-          icon: 'src-electron/icons/icon.png',
-          // 只生成 AppImage 便携版，不生成 deb/snap 安装程序
-          target: ['AppImage'],
-        },
+        // 名称决定默认 userData 位置，必须与既有 builder 产物一致。
+        name: 'Tsukuyomi - Moonlit Translator',
+        executableName: 'Tsukuyomi - Moonlit Translator',
+        appBundleId: 'tsukuyomi',
+        icon: 'src-electron/icons/icon',
+        asar: { unpack: '**/*.node' },
+        // Quasar 已安装生产依赖；避免另一个包管理器改写 Bun 的依赖树。
+        prune: false,
+        overwrite: true,
       },
     },
 

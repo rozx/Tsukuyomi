@@ -27,9 +27,11 @@
     "dev:electron": "quasar dev -m electron",
     "build": "quasar build",
     "build:spa": "cross-env NODE_ENV=production quasar build -m spa",
-    "build:electron": "cross-env NODE_ENV=production quasar build -m electron",
+    "build:electron": "bun scripts/desktop-release.ts",
     "build:electron:debug": "ELECTRON_DEBUG=true quasar build -m electron",
-    "postinstall": "quasar prepare"
+    "postinstall": "quasar prepare",
+    "build:electron:app": "cross-env NODE_ENV=production quasar build -m electron",
+    "pack:electron": "bun scripts/desktop-release.ts pack"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -60,11 +62,13 @@
     "puppeteer-in-electron": "^3.0.5",
     "quasar": "^2.20.1",
     "uuid": "^14.0.1",
+    "velopack": "1.2.158",
     "vue": "^3.5.39",
     "vue-i18n": "^11.4.6",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "@eslint/js": "^9.39.4",
     "@intlify/unplugin-vue-i18n": "^4.0.0",
     "@quasar/app-vite": "^2.6.2",
@@ -83,7 +87,6 @@
     "autoprefixer": "^10.5.2",
     "cross-env": "^10.1.0",
     "electron": "^39.8.10",
-    "electron-builder": "^26.15.3",
     "eslint": "^9.39.4",
     "eslint-plugin-vue": "^10.9.2",
     "fake-indexeddb": "^6.2.5",
