@@ -27,10 +27,10 @@
 
 - **模型**：`onnx-community/gte-multilingual-base`（基于阿里达摩院 GTE-Multilingual-Base 的 ONNX 版本）。
 - **架构**：305M 参数 BERT encoder，多语言原生支持（覆盖中 / 日 / 英等 70+ 语言）。
-- **维度**：原生 768 维，本应用截取前 **256 维并 L2 归一化**（Matryoshka 表征 — 截短后仍保留绝大部分检索质量，但内存占用降低 3 倍）。
+- **维度**：使用完整的 **768 维**向量，并做 L2 归一化。
 - **Pooling**：CLS pooling — 取 encoder 末层首个 token（CLS）作为句向量，与官方示例一致。query 与 document 共用同一编码路径，不再使用非对称前缀。
 - **检索方案**：对称编码 — query 与 document 都直接编码原文，模型多语言能力在原始文本上即可发挥。本应用已在 service 层固定，用户无需关心。
-- **模型版本号**：`gte-multilingual-base@256@cls@raw`。**模型 ID + 维度 + pooling + 输入方案任一变化都会 bump 这个版本号**，旧版本的 chunk / memory 会被自动判定为 stale 并重算（见下文）。
+- **模型版本号**：`gte-multilingual-base@768@cls@raw`。**模型 ID + 维度 + pooling + 输入方案任一变化都会 bump 这个版本号**，旧版本的 chunk / memory 会被自动判定为 stale 并重算（见下文）。
 
 ### 运行后端
 

@@ -286,7 +286,7 @@ console.error('Failed to load book:', error);
 - **章节懒加载**: 内容存储在独立的 `chapter-contents` IndexedDB store，按需读取
 - **AI 工具循环**: AI 任务通过工具调用循环执行 (function calling)，30+ 工具处理翻译、记忆更新等
 - **记忆注入**: 三信号打分 (语义 0.6 + 关键词 0.3 + 时间衰减 0.1，满分 1.0) 自动选择最相关记忆注入翻译上下文，`memory-scoring.ts` 纯函数实现
-- **本地嵌入**: `embedding-service.ts` (Transformers.js + EmbeddingGemma 300M，256 维) + `embedding-queue.ts` (异步批量嵌入)，动态 import 不进主 bundle
+- **本地嵌入**: `embedding-service.ts` (Transformers.js + gte-multilingual-base，768 维) + `embedding-queue.ts` (异步批量嵌入)，动态 import 不进主 bundle
 - **记忆搜索**: `search_memories` 工具接收自然语言 query，混合关键词 + 语义检索，复用 `scoreMemory()` 统一评分
 - **ID 生成**: 书籍用 UUID，其他用 8 位 hex (`generateShortId`)
 - **数据同步**: 基于 manifest 的增量同步。`manifest.json` 为权威索引，记录各条目 SHA-256 哈希；上传/下载按 hash diff 选择性处理。`useSyncExecutor` 用条件 GET（`If-None-Match`）+ 伪 CAS（PATCH 前再验 ETag）检测并发写入。`SyncConfig.lastRemoteETag` / `knownRemoteHashes` 持久化同步状态。Memory / AI 模型 / 封面独立文件存储

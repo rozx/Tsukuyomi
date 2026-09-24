@@ -82,8 +82,8 @@ src/composables/<name-kebab>/use<Name>.ts         # 业务逻辑，通过 provid
 - **多版本翻译**: 每个 Paragraph 含 `translations: Translation[]` 数组，支持多个翻译版本并行
 - **章节懒加载**: 章节内容存储在独立的 `chapter-contents` IndexedDB store，按需读取
 - **AI 工具循环**: AI 任务通过工具调用循环执行（类似 function calling），30+ 个工具处理翻译、记忆更新等
-- **记忆注入**: 三信号自动打分（语义相似度 + 关键词匹配 + 时间衰减，权重 0.6/0.3/0.1，满分 1.0），基于字符预算贪心填充注入翻译上下文
-- **本地嵌入**: Transformers.js + EmbeddingGemma 300M ONNX（256 维 Matryoshka，动态 import 不进主 bundle），EmbeddingQueue 异步批量处理
+- **记忆注入**: 三信号自动打分（语义相似度 + 关键词匹配 + 时间衰减，权重 0.85/0.10/0.05；嵌入不可用时降级为关键词 0.75 + 时间衰减 0.25，满分 1.0），经最低分阈值 + 相对排名 + 字符预算贪心填充注入翻译上下文
+- **本地嵌入**: Transformers.js + `onnx-community/gte-multilingual-base` ONNX（768 维 CLS pooling + L2 归一化，动态 import 不进主 bundle，默认关闭，由 `enableLocalEmbedding` 开启），EmbeddingQueue 异步批量处理
 - **记忆搜索**: `search_memories` 工具接收自然语言 query，混合关键词 + 语义检索
 - **章节检索**: `query_chapter` 工具混合打分 — z-score 归一化的语义（`max(title_norm, α·content_max + (1-α)·content_top3_mean)`，α=0.6）+ 字面关键词（标题加权 1.0、正文 0.6），`total = 0.65 × semantic + 0.35 × keyword`。每章额外嵌入一条 `kind: 'title'` chunk（章节标题 + 首段），支持标题/系列/主题型 query
 - **ID 生成**: 书籍用 UUID，其他用 8 位 hex (`generateShortId`)
