@@ -6,26 +6,17 @@ import {
   type ChatSessionMessage,
   type ChatSession,
   type MessageAction,
-  type ApiMessage,
-  MESSAGE_LIMIT_THRESHOLD,
   MAX_MESSAGES_PER_SESSION,
 } from 'src/stores/chat-sessions';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
-import { useContextStore } from 'src/stores/context';
 import { AssistantService } from 'src/services/ai/tasks';
-import {
-  buildAssistantMessageHistory,
-  estimateAssistantContextTokens,
-  pickApiMessageExtras,
-} from 'src/utils/ai-context-utils';
+import { buildAssistantMessageHistory } from 'src/utils/ai-context-utils';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
-import { UNLIMITED_TOKENS } from 'src/constants/ai';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 
 import { useChatActionHandler } from './useChatActionHandler';
 import { useInternalSummarization } from './useInternalSummarization';
 import { SUMMARIZING_MESSAGE_CONTENT } from './constants';
-import type { UISummarizationOptions } from './useChatSummarizer';
 
 export function useChatSending(
   messages: Ref<ChatSessionMessage[]>,
@@ -34,11 +25,6 @@ export function useChatSending(
   scrollToBottom: () => void,
   scrollToBottomThrottled: () => void,
   chatSummarizer: {
-    performUISummarization: (
-      force: boolean,
-      stateSetter?: (val: boolean) => void,
-      options?: UISummarizationOptions,
-    ) => Promise<{ success: boolean }>;
     getMessagesSinceSummaryCount: (session: ChatSession | null) => number;
   },
   thinkingDisplay: {
@@ -65,7 +51,6 @@ export function useChatSending(
 ) {
   const chatSessionsStore = useChatSessionsStore();
   const aiProcessingStore = useAIProcessingStore();
-  const contextStore = useContextStore();
   const isSending = ref(false);
 
   const { handleAction } = useChatActionHandler(
@@ -86,41 +71,6 @@ export function useChatSending(
     reset: resetInternalSummarization,
   } = useInternalSummarization(messages, scrollToBottom, chatSessionsStore);
 
-  const buildMessagesWithPendingUser = (message: string): ChatSessionMessage[] => [
-    ...messages.value,
-    {
-      id: 'pending-user-context-check',
-      role: 'user',
-      content: message,
-      timestamp: Date.now(),
-    },
-  ];
-
-  const hasReachedContextTokenLimit = (
-    session: ChatSession | null,
-    currentMessages: ChatSessionMessage[] = messages.value,
-  ): boolean => {
-    const maxInputTokens = assistantModel.value?.maxInputTokens ?? 0;
-    if (!session || maxInputTokens <= 0 || maxInputTokens === UNLIMITED_TOKENS) {
-      return false;
-    }
-
-    const contextTokens = estimateAssistantContextTokens({
-      context: contextStore.getContext,
-      session,
-      currentMessages,
-      includeToolSchemas: true,
-    });
-
-    return contextTokens >= maxInputTokens;
-  };
-
-  /**
-   * 可见消息数（用户+助手，不含总结气泡等辅助消息）。
-   * getMessagesSinceSummaryCount 按 API 上下文计数（每个工具调用/结果各算一条），
-   * 用于触发压缩；但"会话消息数上限"的硬中止必须按可见消息计，否则
-   * 工具密集的会话十几轮就会被误判为达到 200 条上限。
-   */
   const countVisibleMessages = (msgs: ChatSessionMessage[]): number =>
     msgs.filter(
       (m) =>
@@ -130,44 +80,15 @@ export function useChatSending(
         Boolean(m.content && m.content.trim()),
     ).length;
 
-  const enforceMessageLimitBeforeSend = async (
-    message: string,
-  ): Promise<{
-    aborted: boolean;
-    uiPerformedSummarization: boolean;
-  }> => {
-    const sessionForLimit = chatSessionsStore.currentSession;
-    const messageCountSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionForLimit);
-    const willExceedLimit = messageCountSinceSummary + 1 >= MESSAGE_LIMIT_THRESHOLD;
-    const willReachLimit = countVisibleMessages(messages.value) + 1 >= MAX_MESSAGES_PER_SESSION;
-    const reachedContextTokenLimit = hasReachedContextTokenLimit(
-      sessionForLimit,
-      buildMessagesWithPendingUser(message),
-    );
-    if (
-      !(willExceedLimit || willReachLimit || reachedContextTokenLimit) ||
-      messages.value.length === 0
-    ) {
-      return { aborted: false, uiPerformedSummarization: false };
-    }
-    const summarizationResult = await chatSummarizer.performUISummarization(
-      willReachLimit,
-      (val) => (isSending.value = val),
-      { allowFewMessages: reachedContextTokenLimit },
-    );
-    if (!summarizationResult.success) {
-      return { aborted: willReachLimit, uiPerformedSummarization: false };
-    }
-    if (countVisibleMessages(messages.value) + 1 >= MAX_MESSAGES_PER_SESSION) {
-      toast.add({
-        severity: 'warn',
-        summary: '会话消息数仍达上限',
-        detail: '请创建新会话继续对话',
-        life: 3000,
-      });
-      return { aborted: true, uiPerformedSummarization: true };
-    }
-    return { aborted: false, uiPerformedSummarization: true };
+  const enforceMessageLimitBeforeSend = (): boolean => {
+    if (countVisibleMessages(messages.value) + 1 < MAX_MESSAGES_PER_SESSION) return false;
+    toast.add({
+      severity: 'warn',
+      summary: '会话消息数已达上限',
+      detail: '请创建新会话继续对话',
+      life: 3000,
+    });
+    return true;
   };
 
   const pushUserAndAssistantPlaceholder = (
@@ -253,39 +174,12 @@ export function useChatSending(
     const targetSession = chatSessionsStore.sessions.find((s) => s.id === targetSessionId);
     if (!targetSession) return;
 
-    if (chatResult.summary) {
-      chatSessionsStore.summarizeAndReset(chatResult.summary, targetSessionId);
-    }
-    if (chatResult.toolCallTokenOverhead !== undefined) {
-      chatSessionsStore.updateToolCallTokenOverhead(
-        targetSessionId,
-        chatResult.toolCallTokenOverhead,
-      );
-    }
-    // needsReset（服务端摘要重置）后同样要持久化重建的 API 历史，
-    // 否则摘要覆盖不到的最近一轮问答会从下一次请求的上下文中消失
-    if (chatResult.messageHistory) {
-      const apiMessages: ApiMessage[] = chatResult.messageHistory
-        .filter((msg) => msg.role !== 'system')
-        .map((msg) => ({
-          role: msg.role as 'user' | 'assistant' | 'tool',
-          content: msg.content ?? null,
-          ...pickApiMessageExtras(msg),
-        }));
-      const serialized = JSON.stringify(apiMessages);
-      if (serialized.length <= 512_000) {
-        const stillOnSameSession = chatSessionsStore.currentSession?.id === targetSessionId;
-        chatSessionsStore.updateApiMessageHistory(
-          targetSessionId,
-          apiMessages,
-          stillOnSameSession ? messages.value.length : targetSession.messages.length,
-        );
-      } else {
-        console.warn(
-          `[ChatSending] API 消息历史过大 (${Math.round(serialized.length / 1024)}KB)，跳过保存`,
-        );
-      }
-    }
+    const stillOnSameSession = chatSessionsStore.currentSession?.id === targetSessionId;
+    chatSessionsStore.saveChatResult(
+      targetSessionId,
+      chatResult,
+      stillOnSameSession ? messages.value.length : targetSession.messages.length,
+    );
   };
 
   /**
@@ -364,13 +258,6 @@ export function useChatSending(
     // 会话已切换：messages.value 已被替换成新会话内容，绝不能写回旧会话，也不再触发自动总结
     if (sessionIdAtSend && sessionAfter.id !== sessionIdAtSend) return;
     chatSessionsStore.updateSessionMessages(sessionAfter.id, messages.value);
-    const msgsSinceSummary = chatSummarizer.getMessagesSinceSummaryCount(sessionAfter);
-    const reachedContextTokenLimit = hasReachedContextTokenLimit(sessionAfter);
-    if (msgsSinceSummary >= MESSAGE_LIMIT_THRESHOLD || reachedContextTokenLimit) {
-      void chatSummarizer.performUISummarization(false, undefined, {
-        allowFewMessages: reachedContextTokenLimit,
-      });
-    }
   };
 
   const warnNoAssistantModel = (): void => {
@@ -385,7 +272,6 @@ export function useChatSending(
   const buildChatRequestOptions = (
     currentSession: ChatSession | null,
     assistantMessageIdRef: { value: string },
-    uiPerformedSummarization: boolean,
   ): Parameters<typeof AssistantService.chat>[2] => {
     const sessionId = currentSession?.id ?? null;
     const sessionSummary = currentSession?.summary;
@@ -394,7 +280,7 @@ export function useChatSending(
       ...(sessionSummary ? { sessionSummary } : {}),
       ...(messageHistory ? { messageHistory } : {}),
       ...(sessionId ? { sessionId } : {}),
-      ...(uiPerformedSummarization ? { skipTokenLimitSummarization: true } : {}),
+      ...(currentSession?.contextAnchor ? { contextAnchor: currentSession.contextAnchor } : {}),
       aiProcessingStore,
       ...buildChatCallbacks(assistantMessageIdRef, currentSession?.id),
     };
@@ -414,8 +300,7 @@ export function useChatSending(
 
     sendInFlight = true;
     try {
-      const { aborted, uiPerformedSummarization } = await enforceMessageLimitBeforeSend(message);
-      if (aborted) return;
+      if (enforceMessageLimitBeforeSend()) return;
 
       const { assistantMessageIdRef } = pushUserAndAssistantPlaceholder(message);
       const currentSession = chatSessionsStore.currentSession;
@@ -426,7 +311,7 @@ export function useChatSending(
         const chatResult = await AssistantService.chat(
           assistantModel.value,
           message,
-          buildChatRequestOptions(currentSession, assistantMessageIdRef, uiPerformedSummarization),
+          buildChatRequestOptions(currentSession, assistantMessageIdRef),
         );
         applyFinalTextFallback(chatResult, assistantMessageIdRef, sessionIdAtSend);
         persistChatResult(chatResult, sessionIdAtSend);

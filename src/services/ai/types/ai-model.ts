@@ -3,6 +3,16 @@
  */
 export type AIProvider = 'openai' | 'gemini';
 
+/** SDK 统一思考等级；未设置时沿用厂商默认值。 */
+export type AIThinkingLevel =
+  | 'provider-default'
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh';
+
 /**
  * 任务配置
  */
@@ -30,6 +40,7 @@ export interface AIModel {
   provider: AIProvider;
   model: string;
   temperature: number;
+  thinkingLevel?: AIThinkingLevel | undefined;
   /**
    * 最大输入 token 数（上下文窗口大小）
    * 0 表示无限制
@@ -40,6 +51,8 @@ export interface AIModel {
    * 0 表示无限制
    */
   maxOutputTokens: number;
+  /** 上限的来源；旧模型没有此字段时允许目录提供更可靠的运行时上限。 */
+  limitsSource?: 'catalog' | 'probe' | 'manual';
   rateLimit?: number; // 速率限制（每分钟请求数）
   apiKey: string;
   baseUrl: string;

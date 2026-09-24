@@ -5,10 +5,9 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useChatSessionsStore, type ChatSessionMessage } from 'src/stores/chat-sessions';
 import { useChatSending } from 'src/composables/chat/useChatSending';
 import { AssistantService, type AssistantResult } from 'src/services/ai/tasks';
-import * as AiContextUtils from 'src/utils/ai-context-utils';
+import { createContextAnchor } from '../services/ai/context/measure';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 
-const estimateAssistantContextTokensMock = mock(AiContextUtils.estimateAssistantContextTokens);
 const assistantChatMock = mock(() =>
   Promise.resolve({ text: 'ok', messageHistory: [] } as AssistantResult),
 );
@@ -62,6 +61,7 @@ const buildSending = (params: {
   const inputMessage = ref(params.input);
   const assistantModel = ref<AIModel | undefined>(makeAssistantModel());
   const summarizer = params.summarizer ?? makeSummarizer();
+  const toast = { add: mock(() => {}) };
   const sending = useChatSending(
     messages,
     inputMessage,
@@ -71,25 +71,23 @@ const buildSending = (params: {
     summarizer,
     makeThinkingDisplay(),
     { push: mock(() => {}) } as never,
-    { add: mock(() => {}) },
+    toast,
     ref([]),
     mock(() => {}),
     ref(null),
   );
-  return { ...sending, messages, inputMessage, summarizer };
+  return { ...sending, messages, inputMessage, summarizer, toast };
 };
 
 describe('useChatSending - 持久化与会话安全', () => {
   beforeEach(() => {
     localStorage.clear();
     setActivePinia(createPinia());
-    estimateAssistantContextTokensMock.mockReset();
-    estimateAssistantContextTokensMock.mockReturnValue(0);
     assistantChatMock.mockReset();
-    assistantChatMock.mockResolvedValue({ text: 'ok', messageHistory: [] } satisfies AssistantResult);
-    spyOn(AiContextUtils, 'estimateAssistantContextTokens').mockImplementation(
-      estimateAssistantContextTokensMock,
-    );
+    assistantChatMock.mockResolvedValue({
+      text: 'ok',
+      messageHistory: [],
+    } satisfies AssistantResult);
     spyOn(AssistantService, 'chat').mockImplementation(assistantChatMock as never);
   });
 
@@ -97,14 +95,13 @@ describe('useChatSending - 持久化与会话安全', () => {
     mock.restore();
   });
 
-  it('needsReset 摘要后仍应持久化重建的 API 消息历史，避免丢失最近一轮对话', async () => {
+  it('摘要后仍应持久化 kept API 消息历史，避免丢失最近一轮对话', async () => {
     const store = useChatSessionsStore();
     store.createSession({ bookId: 'book-1', chapterId: null, paragraphId: null });
 
     assistantChatMock.mockResolvedValueOnce({
       text: '重试后的回答',
       summary: '重置摘要',
-      needsReset: true,
       messageHistory: [
         { role: 'system', content: 'system\n\n## 之前的对话总结\n\n重置摘要' },
         { role: 'user', content: '当前问题' },
@@ -129,8 +126,16 @@ describe('useChatSending - 持久化与会话安全', () => {
 
   it('响应期间切换会话时，结果应写回发起时的会话而不是当前会话', async () => {
     const store = useChatSessionsStore();
-    const sessionAId = store.createSession({ bookId: 'book-a', chapterId: null, paragraphId: null });
-    const sessionBId = store.createSession({ bookId: 'book-b', chapterId: null, paragraphId: null });
+    const sessionAId = store.createSession({
+      bookId: 'book-a',
+      chapterId: null,
+      paragraphId: null,
+    });
+    const sessionBId = store.createSession({
+      bookId: 'book-b',
+      chapterId: null,
+      paragraphId: null,
+    });
     store.switchToSession(sessionAId);
 
     assistantChatMock.mockImplementationOnce(() => {
@@ -139,16 +144,22 @@ describe('useChatSending - 持久化与会话安全', () => {
       return Promise.resolve({
         text: 'A 的回答',
         summary: 'A 的摘要',
+        contextAnchor: createContextAnchor(
+          { systemPrompt: '系统', tools: [], history: [], modelKey: 'a' },
+          123,
+        ),
         messageHistory: [
           { role: 'user', content: 'A 的问题' },
           { role: 'assistant', content: 'A 的回答' },
         ],
-        toolCallTokenOverhead: 123,
       } satisfies AssistantResult);
     });
 
     const { sendMessage } = buildSending({
-      messages: [makeMessage('1', 'user', '之前的问题'), makeMessage('2', 'assistant', '之前的回答')],
+      messages: [
+        makeMessage('1', 'user', '之前的问题'),
+        makeMessage('2', 'assistant', '之前的回答'),
+      ],
       input: 'A 的问题',
     });
 
@@ -158,8 +169,9 @@ describe('useChatSending - 持久化与会话安全', () => {
     const sessionB = store.sessions.find((s) => s.id === sessionBId);
     expect(sessionB?.summary).toBeUndefined();
     expect(sessionB?.apiMessageHistory).toBeUndefined();
-    expect(sessionB?.toolCallTokenOverhead ?? 0).toBe(0);
+    expect(sessionB?.contextAnchor).toBeUndefined();
     expect(sessionA?.summary).toBe('A 的摘要');
+    expect(sessionA?.contextAnchor?.inputTokens).toBe(123);
     expect(sessionA?.apiMessageHistory).toEqual([
       { role: 'user', content: 'A 的问题' },
       { role: 'assistant', content: 'A 的回答' },
@@ -241,5 +253,33 @@ describe('useChatSending - 持久化与会话安全', () => {
 
     const ids = messages.value.map((m) => m.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+  it('大于 512000 字符的 API 历史仍保存，失败时通知并保留原上下文', async () => {
+    const store = useChatSessionsStore();
+    store.createSession({ bookId: null, chapterId: null, paragraphId: null });
+    assistantChatMock.mockResolvedValueOnce({
+      text: '完成',
+      summary: '新摘要',
+      messageHistory: [{ role: 'user', content: 'x'.repeat(520000) }],
+    });
+    const send = buildSending({ messages: [], input: '继续' });
+    await send.sendMessage();
+    expect(store.currentSession?.apiMessageHistory?.[0]?.content?.length).toBe(520000);
+    const previous = JSON.stringify(store.currentSession?.apiMessageHistory);
+    spyOn(store, 'saveChatResult').mockImplementation(() => {
+      throw new Error('保存会话上下文失败');
+    });
+    send.inputMessage.value = '再继续';
+    assistantChatMock.mockResolvedValueOnce({
+      text: '回复',
+      summary: '不可写入',
+      messageHistory: [{ role: 'user', content: '新历史' }],
+    });
+    await send.sendMessage();
+    expect(JSON.stringify(store.currentSession?.apiMessageHistory)).toBe(previous);
+    expect(store.currentSession?.summary).toBe('新摘要');
+    expect(send.toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', detail: '保存会话上下文失败' }),
+    );
   });
 });

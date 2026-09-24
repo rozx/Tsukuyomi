@@ -12,6 +12,7 @@ import { TASK_TYPE_LABELS } from 'src/constants/ai';
 import { TOOL_CALL_PLACEHOLDER } from './stream-handler';
 import type {
   TextGenerationRequest,
+  TextGenerationResult,
   TextGenerationStreamCallback,
   AITool,
   ChatMessage,
@@ -59,11 +60,7 @@ export interface ToolCallLoopConfig {
     config: AIServiceConfig,
     request: TextGenerationRequest,
     callback: TextGenerationStreamCallback,
-  ) => Promise<{
-    text: string;
-    toolCalls?: AIToolCall[];
-    reasoningContent?: string;
-  }>;
+  ) => Promise<TextGenerationResult>;
   aiServiceConfig: AIServiceConfig;
   taskType: TaskType;
   chunkText: string;
@@ -477,9 +474,7 @@ class TaskLoopSession {
     if (!this.todoWorkflow) return null;
     const gate = this.todoWorkflow.checkGate(previousStatus);
     if (gate.allowed) return null;
-    const todoList = gate.incompleteItems
-      .map((t) => `- ${t.text.split('\n')[0]}`)
-      .join('\n');
+    const todoList = gate.incompleteItems.map((t) => `- ${t.text.split('\n')[0]}`).join('\n');
     console.warn(
       `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
     );

@@ -1,3 +1,5 @@
+import type { ContextAnchor } from 'src/services/ai/context/measure';
+import type { ChatMessage, AIToolCall } from 'src/services/ai/types/ai-service';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -5,7 +7,6 @@ const STORAGE_KEY = 'tsukuyomi-chat-sessions';
 const CURRENT_SESSION_ID_KEY = 'tsukuyomi-chat-current-session-id';
 const MAX_SESSIONS = 50; // 最多保存 50 个会话
 export const MAX_MESSAGES_PER_SESSION = 200; // 每个会话最多 200 条消息（用户+助手）
-export const MESSAGE_LIMIT_THRESHOLD = 180; // 当达到 180 条消息时触发总结
 
 /**
  * 操作信息（用于在消息中标记 CRUD 操作）
@@ -124,11 +125,7 @@ export interface ApiMessage {
   content: string | null;
   name?: string;
   tool_call_id?: string;
-  tool_calls?: Array<{
-    id: string;
-    type: 'function';
-    function: { name: string; arguments: string };
-  }>;
+  tool_calls?: AIToolCall[];
   reasoning_content?: string | null;
 }
 
@@ -144,18 +141,12 @@ export interface ChatSession {
   updatedAt: number;
   summary?: string; // 会话总结（当消息过多时自动生成）
   lastSummarizedMessageIndex: number; // 上次总结时的消息数量，用于计算"重置"后的条数
-  /**
-   * 工具调用产生的额外 token 开销。
-   * UI 侧的 token 估算仅统计 user/assistant 消息内容，不包含 tool_calls 和 tool 结果消息。
-   * 此字段记录实际 API 上下文与 UI 估算之间的差值，用于修正进度条显示。
-   * 在 summarizeAndReset 时会被清零。
-   */
-  toolCallTokenOverhead?: number;
+  contextAnchor?: ContextAnchor;
   /**
    * 完整的 API 消息历史（包含工具调用和结果）。
    * 不含 system 消息（每次请求时动态生成）。
    * 用于在下一轮对话中传递给 AI 服务，确保上下文连续性。
-   * 在 summarizeAndReset 时会被清空。
+   * 压缩后只保存保留的近期历史。
    */
   apiMessageHistory?: ApiMessage[];
   /**
@@ -174,26 +165,31 @@ function loadSessionsFromStorage(): ChatSession[] {
     if (stored) {
       const sessions = JSON.parse(stored) as ChatSession[];
       // 确保时间戳是数字类型
-      return sessions.map((session) => ({
-        ...session,
-        createdAt:
-          typeof session.createdAt === 'string'
-            ? new Date(session.createdAt).getTime()
-            : session.createdAt,
-        updatedAt:
-          typeof session.updatedAt === 'string'
-            ? new Date(session.updatedAt).getTime()
-            : session.updatedAt,
-        messages: session.messages.map((msg) => ({
-          ...msg,
-          timestamp:
-            typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp,
-        })),
-        lastSummarizedMessageIndex:
-          typeof session.lastSummarizedMessageIndex === 'number'
-            ? session.lastSummarizedMessageIndex
-            : 0,
-      }));
+      return sessions.map((session) => {
+        const { toolCallTokenOverhead: _legacy, ...current } = session as ChatSession & {
+          toolCallTokenOverhead?: number;
+        };
+        return {
+          ...current,
+          createdAt:
+            typeof session.createdAt === 'string'
+              ? new Date(session.createdAt).getTime()
+              : session.createdAt,
+          updatedAt:
+            typeof session.updatedAt === 'string'
+              ? new Date(session.updatedAt).getTime()
+              : session.updatedAt,
+          messages: session.messages.map((msg) => ({
+            ...msg,
+            timestamp:
+              typeof msg.timestamp === 'string' ? new Date(msg.timestamp).getTime() : msg.timestamp,
+          })),
+          lastSummarizedMessageIndex:
+            typeof session.lastSummarizedMessageIndex === 'number'
+              ? session.lastSummarizedMessageIndex
+              : 0,
+        };
+      });
     }
   } catch (error) {
     console.error('Failed to load chat sessions from storage:', error);
@@ -207,26 +203,12 @@ function loadSessionsFromStorage(): ChatSession[] {
  * 保存会话列表到 localStorage
  */
 function saveSessionsToStorage(sessions: ChatSession[]): void {
-  // 只保存最近的 MAX_SESSIONS 个会话；排序作用于副本，避免原地重排响应式数组
-  let toSave = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSIONS);
-
-  // 配额超限时逐步缩减保存量重试，避免一次失败后所有持久化静默停摆
-  for (let attempt = 0; attempt < 6 && toSave.length > 0; attempt++) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
-      return;
-    } catch (error) {
-      console.warn(`[chat-sessions] 保存会话失败（第 ${attempt + 1} 次），缩减后重试:`, error);
-      if (toSave.length > 1) {
-        toSave = toSave.slice(0, Math.ceil(toSave.length / 2));
-      } else {
-        const only = toSave[0];
-        if (!only) return;
-        toSave = [{ ...only, messages: only.messages.slice(-50) }];
-      }
-    }
+  const toSave = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SESSIONS);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+  } catch (error) {
+    console.error('[chat-sessions] 保存失败，保留原有存储', error);
   }
-  console.error('[chat-sessions] 无法保存会话到 localStorage，本次持久化已放弃');
 }
 
 /**
@@ -430,6 +412,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         session.messages = [];
         session.title = '新会话';
         delete session.summary;
+        delete session.contextAnchor;
         delete session.apiMessageHistory;
         delete session.apiMessageHistoryVisibleMessageCount;
         session.lastSummarizedMessageIndex = 0;
@@ -438,58 +421,43 @@ export const useChatSessionsStore = defineStore('chatSessions', {
       }
     },
 
-    /**
-     * 设置会话总结（保留所有消息，不清除聊天历史）
-     * @param summary 会话总结
-     * @param sessionId 可选的会话 ID，如果不提供则使用当前会话
-     */
-    summarizeAndReset(summary: string, sessionId?: string): void {
-      const targetSessionId = sessionId ?? this.currentSessionId;
-      if (!targetSessionId) return;
-
-      const session = this.sessions.find((s) => s.id === targetSessionId);
-      if (session) {
-        // 保存总结，但不清除聊天历史
-        session.summary = summary;
-        session.lastSummarizedMessageIndex = session.messages.length;
-        session.toolCallTokenOverhead = 0; // 摘要后重置工具调用 token 开销
-        delete session.apiMessageHistory; // 摘要后清空 API 消息历史，下次对话将基于摘要重建
-        delete session.apiMessageHistoryVisibleMessageCount;
-        // 不修改消息列表，保留所有消息
-        // 摘要将在 AssistantService 中用于后续对话的上下文
-        session.updatedAt = Date.now();
-        saveSessionsToStorage(this.sessions);
-      }
-    },
-
-    /**
-     * 更新会话的工具调用 token 开销
-     */
-    updateToolCallTokenOverhead(sessionId: string, overhead: number): void {
-      const session = this.sessions.find((s) => s.id === sessionId);
-      if (session) {
-        session.toolCallTokenOverhead = overhead;
-        saveSessionsToStorage(this.sessions);
-      }
-    },
-
-    /**
-     * 更新会话的 API 消息历史（包含工具调用的完整上下文）
-     */
-    updateApiMessageHistory(
+    /** 候选上下文先完整持久化，再替换内存；配额失败时不能部分写入。 */
+    saveChatResult(
       sessionId: string,
-      apiMessages: ApiMessage[],
+      result: {
+        summary?: string | undefined;
+        messageHistory?: ChatMessage[];
+        contextAnchor?: ContextAnchor | undefined;
+      },
       visibleMessageCount?: number,
     ): void {
-      const session = this.sessions.find((s) => s.id === sessionId);
-      if (session) {
-        session.apiMessageHistory = apiMessages;
-        if (typeof visibleMessageCount === 'number') {
-          session.apiMessageHistoryVisibleMessageCount = visibleMessageCount;
-        } else {
-          delete session.apiMessageHistoryVisibleMessageCount;
-        }
-        saveSessionsToStorage(this.sessions);
+      const index = this.sessions.findIndex((session) => session.id === sessionId);
+      if (index < 0) return;
+      const current = this.sessions[index]!;
+      const candidate: ChatSession = { ...current, updatedAt: Date.now() };
+      const count = visibleMessageCount ?? current.messages.length;
+      if (result.summary !== undefined) {
+        candidate.summary = result.summary;
+        candidate.lastSummarizedMessageIndex = count;
+      }
+      if (result.messageHistory) {
+        candidate.apiMessageHistory = result.messageHistory.filter(
+          (message): message is ApiMessage => message.role !== 'system',
+        );
+        candidate.apiMessageHistoryVisibleMessageCount = count;
+      }
+      if (result.contextAnchor) candidate.contextAnchor = result.contextAnchor;
+      else delete candidate.contextAnchor;
+      const sessions = [...this.sessions];
+      sessions[index] = candidate;
+      try {
+        const serialized = JSON.stringify(sessions);
+        localStorage.setItem(STORAGE_KEY, serialized);
+        this.sessions = JSON.parse(serialized) as ChatSession[];
+      } catch (error) {
+        throw new Error('保存会话上下文失败，原有摘要与历史已保留。请检查浏览器存储空间。', {
+          cause: error,
+        });
       }
     },
   },

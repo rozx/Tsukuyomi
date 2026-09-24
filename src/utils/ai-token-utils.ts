@@ -2,17 +2,15 @@ import type { ChatMessage, AITool } from 'src/services/ai/types/ai-service';
 import { countTokens as gptCountTokens } from 'gpt-tokenizer';
 
 /**
- * 已弃用：旧的估算乘数，保留用于向后兼容
- * @deprecated 使用 countMessagesTokens 替代 estimateMessagesTokenCount
+ * 尚无厂商实测用量时的保守估算系数。
  */
 export const DEFAULT_TOKEN_ESTIMATION_MULTIPLIER = 1.6;
 
 /**
  * 将 ChatMessage 数组转换为纯文本用于 token 计算
  *
- * 注意：gpt-tokenizer 的 countTokens 在传入消息数组时需要 model 参数，
- * 但不同模型的 token 计算结果差异很小（使用相同的 tokenizer）。
- * 为了简化，我们将消息转换为纯文本进行计算。
+ * 用内容、角色和工具标识计算本地 tokenizer 基线。厂商的分词和封装方式不同，
+ * 该计数仍是估算，需要结合实测 usage 自校准。
  */
 const messagesToText = (messages: ChatMessage[]): string => {
   return messages
@@ -58,7 +56,7 @@ const messagesToText = (messages: ChatMessage[]): string => {
 };
 
 /**
- * 使用 gpt-tokenizer 精确计算消息的 token 数量
+ * 使用 gpt-tokenizer 计算消息的基础估算
  *
  * 适用于 OpenAI 模型（GPT-3.5、GPT-4、GPT-4o 等）
  * 使用 o200k_base 编码（GPT-4o 默认编码）
@@ -76,19 +74,15 @@ const countMessagesTokens = (messages: ChatMessage[]): number => {
 /**
  * 估算消息的 token 数量
  *
- * 注意：此函数现在使用 gpt-tokenizer 进行精确计算
- * multiplier 参数已被忽略，保留仅为向后兼容
- *
  * @param messages 消息数组
- * @param _multiplier 已弃用，保留用于向后兼容
+ * @param multiplier 模型校准系数；传 1 获取未经校准的基础估算
  * @returns token 数量
  */
 export const estimateMessagesTokenCount = (
   messages: ChatMessage[],
-   
-  _multiplier: number = DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
+  multiplier: number = DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
 ): number => {
-  return countMessagesTokens(messages);
+  return Math.ceil(countMessagesTokens(messages) * multiplier);
 };
 
 /**
@@ -101,11 +95,11 @@ export const estimateMessagesTokenCount = (
  * @param tools 传递给 API 的工具定义数组
  * @returns token 数量（tools 为空时返回 0）
  */
-export const estimateToolSchemaTokens = (tools: AITool[]): number => {
+export const estimateToolSchemaTokens = (tools: AITool[], multiplier = 1): number => {
   if (!tools || tools.length === 0) return 0;
   try {
     const toolSchemaText = JSON.stringify(tools);
-    return gptCountTokens(toolSchemaText);
+    return Math.ceil(gptCountTokens(toolSchemaText) * multiplier);
   } catch {
     return 0;
   }

@@ -1,3 +1,4 @@
+import type { ContextAnchor } from 'src/services/ai/context/measure';
 import type { ImportTextStructureBatch } from './import-text-structure';
 import type { ImportDraftBatch } from './import-draft-batch';
 import type { ImportTextRange } from './import-pattern';
@@ -335,6 +336,7 @@ export interface ImportTodo {
 }
 
 export interface ImportCheckpoint {
+  contextAnchor?: ContextAnchor;
   messages: ChatMessage[];
   /** 仅包含模型已完整返回的调用。流式 JSON 片段不能进入此数组。 */
   remainingCalls: { id: string; name: string; arguments: string }[];

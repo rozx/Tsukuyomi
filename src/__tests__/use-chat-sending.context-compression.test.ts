@@ -5,10 +5,8 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useChatSessionsStore, type ChatSessionMessage } from 'src/stores/chat-sessions';
 import { useChatSending } from 'src/composables/chat/useChatSending';
 import { AssistantService, type AssistantResult } from 'src/services/ai/tasks';
-import * as AiContextUtils from 'src/utils/ai-context-utils';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 
-const estimateAssistantContextTokensMock = mock(AiContextUtils.estimateAssistantContextTokens);
 const assistantChatMock = mock(() =>
   Promise.resolve({ text: 'ok', messageHistory: [] } as AssistantResult),
 );
@@ -66,15 +64,11 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
   beforeEach(() => {
     localStorage.clear();
     setActivePinia(createPinia());
-    estimateAssistantContextTokensMock.mockReset();
     assistantChatMock.mockReset();
     assistantChatMock.mockResolvedValue({
       text: 'ok',
       messageHistory: [],
     } satisfies AssistantResult);
-    spyOn(AiContextUtils, 'estimateAssistantContextTokens').mockImplementation(
-      estimateAssistantContextTokensMock,
-    );
     spyOn(AssistantService, 'chat').mockImplementation(assistantChatMock as never);
   });
 
@@ -82,7 +76,7 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
     mock.restore();
   });
 
-  it('token 用量超过模型输入窗口时，即使消息数未达阈值也会先触发 UI 总结', async () => {
+  it('token 用量很高时 UI 仍把完整历史交给助手服务统一处理', async () => {
     const chatSessionsStore = useChatSessionsStore();
     const sessionId = chatSessionsStore.createSession({
       bookId: 'book-1',
@@ -109,7 +103,6 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
       mock(() => {}),
       mock(() => {}),
       {
-        performUISummarization,
         getMessagesSinceSummaryCount: (session) =>
           session ? session.messages.length - session.lastSummarizedMessageIndex : 0,
       },
@@ -121,20 +114,19 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
       ref(null),
     );
 
-    estimateAssistantContextTokensMock.mockReturnValueOnce(1100).mockReturnValue(0);
-
     await sendMessage();
 
-    expect(performUISummarization).toHaveBeenCalled();
-    expect(performUISummarization.mock.calls[0]?.[2]).toEqual({ allowFewMessages: true });
+    expect(performUISummarization).not.toHaveBeenCalled();
     expect(assistantChatMock).toHaveBeenCalledWith(
       assistantModel.value,
       '继续讨论',
-      expect.objectContaining({ skipTokenLimitSummarization: true }),
+      expect.objectContaining({
+        messageHistory: initialMessages.map(({ role, content }) => ({ role, content })),
+      }),
     );
   });
 
-  it('发送前 token 检查应把当前输入作为 pending user 纳入估算', async () => {
+  it('当前输入原样传给服务，UI 不独立执行摘要或设置跳过标记', async () => {
     const chatSessionsStore = useChatSessionsStore();
     const sessionId = chatSessionsStore.createSession({
       bookId: 'book-1',
@@ -159,7 +151,6 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
       mock(() => {}),
       mock(() => {}),
       {
-        performUISummarization,
         getMessagesSinceSummaryCount: (session) =>
           session ? session.messages.length - session.lastSummarizedMessageIndex : 0,
       },
@@ -171,22 +162,15 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
       ref(null),
     );
 
-    estimateAssistantContextTokensMock.mockImplementation(({ currentMessages }) =>
-      currentMessages.some(
-        (msg: ChatSessionMessage) => msg.content === '这条输入会把上下文推过窗口',
-      )
-        ? 1100
-        : 0,
-    );
-
     await sendMessage();
 
-    expect(performUISummarization).toHaveBeenCalled();
-    expect(performUISummarization.mock.calls[0]?.[2]).toEqual({ allowFewMessages: true });
+    expect(performUISummarization).not.toHaveBeenCalled();
     expect(assistantChatMock).toHaveBeenCalledWith(
       assistantModel.value,
       '这条输入会把上下文推过窗口',
-      expect.objectContaining({ skipTokenLimitSummarization: true }),
+      expect.objectContaining({
+        messageHistory: initialMessages.map(({ role, content }) => ({ role, content })),
+      }),
     );
   });
 
@@ -212,7 +196,6 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
         { role: 'assistant', content: '已完成' },
       ],
     } satisfies AssistantResult);
-    estimateAssistantContextTokensMock.mockReturnValue(0);
 
     const { sendMessage } = useChatSending(
       messages,
@@ -221,7 +204,6 @@ describe('useChatSending - assistant 上下文压缩触发', () => {
       mock(() => {}),
       mock(() => {}),
       {
-        performUISummarization,
         getMessagesSinceSummaryCount: () => 0,
       },
       makeThinkingDisplay(),

@@ -8,7 +8,7 @@
       :max="max"
       :use-grouping="true"
       :show-buttons="false"
-      placeholder="0 表示无限制"
+      placeholder="0 表示未设置"
       class="w-full"
       :class="{ 'p-invalid': !!error }"
     />
@@ -16,7 +16,7 @@
     <small v-else-if="showAiHint" class="text-xs text-moon/70 block mt-1">
       {{ aiHintLabel }}: {{ aiConfigValue?.toLocaleString() }}
     </small>
-    <small v-else-if="isZero" class="text-xs text-moon/70 block mt-1"> 0 表示无限制 </small>
+    <small v-else-if="isZero" class="text-xs text-moon/70 block mt-1"> 0 表示未设置 </small>
   </div>
 </template>
 

@@ -195,12 +195,16 @@ describe('导入问答让出与恢复', () => {
 describe('导入执行限额', () => {
   it('上下文达到上限时保存并暂停，说明原因且不宣称可预览', async () => {
     const task = await ImportRepository.createTask();
-    const { generate } = mockModel([]);
+    const { generate } = mockModel([
+      () => {
+        throw new Error('context window exceeded');
+      },
+    ]);
     const result = await ImportAgentService.run(task.id, { ...model, maxInputTokens: 50 }, '整理');
     expect(result.state).toBe('paused');
     expect(result.lastError?.code).toBe('CONTEXT_LIMIT');
     expect(result.currentPlanId).toBeUndefined();
-    expect(generate).not.toHaveBeenCalled();
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 
   it('提示词把来源内容声明为数据，并只暴露导入工具集合', async () => {

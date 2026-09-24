@@ -1,3 +1,5 @@
+import type { AIThinkingLevel } from './ai-model';
+
 /**
  * AI 服务配置接口
  */
@@ -6,6 +8,7 @@ export interface AIServiceConfig {
   baseUrl?: string | undefined;
   model: string;
   temperature?: number | undefined;
+  thinkingLevel?: AIThinkingLevel | undefined;
   maxInputTokens?: number | undefined; // 最大输入 token 数（上下文窗口）
   maxOutputTokens?: number | undefined; // 最大输出 token 数
   signal?: AbortSignal | undefined; // 用于取消请求
@@ -26,20 +29,12 @@ export interface ModelInfo {
 }
 
 /**
- * 速率限制信息接口
- */
-export interface RateLimitInfo {
-  limit?: number; // 速率限制（每分钟请求数）
-}
-
-/**
  * AI 配置获取结果接口
  */
 export interface AIConfigResult {
   success: boolean;
   message: string;
-  modelInfo?: ModelInfo | undefined;
-  rateLimit?: RateLimitInfo | undefined;
+  limitsSource?: 'catalog';
   maxInputTokens?: number | undefined;
   maxOutputTokens?: number | undefined;
 }
@@ -66,6 +61,8 @@ export interface AITool {
 export interface AIToolCall {
   id: string;
   type: 'function';
+  /** 厂商要求在后续工具轮次回传的不透明元数据（如 Gemini thought signature）。 */
+  providerMetadata?: Record<string, Record<string, unknown>>;
   function: {
     name: string;
     arguments: string; // JSON 字符串
@@ -117,6 +114,13 @@ export interface TextGenerationResult {
   toolCalls?: AIToolCall[]; // 如果有工具调用
   finishReason?: string; // stop, length, tool_calls, content_filter, etc.
   reasoningContent?: string; // 思考内容（reasoning_content）- DeepSeek 等模型在使用工具时返回
+  /** 仅包含厂商实际报告的用量；缺失不代表零。 */
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    reasoningTokens?: number;
+    cachedInputTokens?: number;
+  };
 }
 
 /**
@@ -148,12 +152,6 @@ export interface AvailableModelsResult {
  * AI 服务抽象接口
  */
 export interface AIService {
-  /**
-   * 获取模型配置信息
-   * 通过调用 chat completion API 来验证连接并获取配置
-   */
-  getConfig(config: AIServiceConfig): Promise<AIConfigResult>;
-
   /**
    * 生成文本（流式模式）
    * @param config 服务配置

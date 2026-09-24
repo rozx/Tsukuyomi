@@ -67,6 +67,12 @@ export async function saveImportAgentCheckpoint(
     async (task, tx) => {
       assertImportOwner(task, run);
       const events = await missingToolEvents(tx, task.id, checkpoint);
+      if (checkpoint.summary && checkpoint.summary !== task.checkpoint?.summary) {
+        events.push({
+          kind: 'summary',
+          data: { reason: 'auto', messages: task.checkpoint?.messages.length ?? 0 },
+        });
+      }
       if (state.phase === 'response') {
         const message = checkpoint.messages.at(-1);
         if (message?.role === 'assistant') events.push({ kind: 'message', message, data: {} });

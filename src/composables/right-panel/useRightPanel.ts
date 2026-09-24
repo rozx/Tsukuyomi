@@ -9,20 +9,22 @@ import { useAIProcessingStore } from 'src/stores/ai-processing';
 import {
   useChatSessionsStore,
   type ChatSessionMessage,
+  type ChatSession,
   type MessageAction,
-  MESSAGE_LIMIT_THRESHOLD,
 } from 'src/stores/chat-sessions';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { getAssetUrl } from 'src/utils';
 import { ChapterService } from 'src/services/chapter-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
-import { estimateAssistantContextTokens } from 'src/utils/ai-context-utils';
+import { measureAssistantContext } from 'src/utils/ai-context-utils';
+import { resolveModelLimits } from 'src/services/ai/model-limits/resolve';
+import type { EffectiveModelLimits } from 'src/services/ai/model-limits/resolve';
+import { formatContextUsage } from 'src/utils/context-usage-display';
 import { countContextMessagesSinceSummary } from 'src/utils/chat-session-context';
 import { throttle } from 'src/utils/throttle';
 import { usePanelResize } from 'src/composables/chat/usePanelResize';
 import { useThinkingDisplay } from 'src/composables/chat/useThinkingDisplay';
 import { useChatSession } from 'src/composables/chat/useChatSession';
-import { useChatSummarizer } from 'src/composables/chat/useChatSummarizer';
 import { useChatSending } from 'src/composables/chat/useChatSending';
 import { useChatMessageDisplay } from 'src/composables/chat/useChatMessageDisplay';
 import { useMarkdownRenderer } from 'src/composables/chat/useMarkdownRenderer';
@@ -39,22 +41,14 @@ function findChapterInNovel(book: Novel, chapterId: string): Chapter | undefined
   return undefined;
 }
 
-function formatChapterInfo(
-  chapter: Chapter | undefined,
-  book: Novel | undefined,
-): string {
+function formatChapterInfo(chapter: Chapter | undefined, book: Novel | undefined): string {
   if (!chapter) return '当前章节';
   const title = getChapterDisplayTitle(chapter, book);
   return title ? `章节：${title}` : '当前章节';
 }
 
-function formatParagraphInfo(
-  chapter: Chapter | undefined,
-  paragraphId: string,
-): string {
-  const paraIndex = chapter?.content
-    ? chapter.content.findIndex((p) => p.id === paragraphId)
-    : -1;
+function formatParagraphInfo(chapter: Chapter | undefined, paragraphId: string): string {
+  const paraIndex = chapter?.content ? chapter.content.findIndex((p) => p.id === paragraphId) : -1;
   return paraIndex >= 0 ? `段落：#${paraIndex + 1}` : '当前段落';
 }
 
@@ -62,7 +56,7 @@ function formatParagraphInfo(
  * AppRightPanel 的业务逻辑 composable。
  *
  * 汇聚现有 chat composables（usePanelResize / useThinkingDisplay /
- * useChatSession / useChatSummarizer / useChatSending / useChatMessageDisplay /
+ * useChatSession / useChatSending / useChatMessageDisplay /
  * useMarkdownRenderer）以及面板层面的黏合状态（待办、popover、消息操作、
  * 会话统计、上下文信息等）。三变体（Desktop / Tablet / Mobile）通过调用同一
  * composable 获取完整上下文，仅在各自模板内声明纯视图局部状态。
@@ -163,9 +157,10 @@ export function useRightPanel() {
     return undefined;
   };
 
-  const chatSummarizer = useChatSummarizer(messages, assistantModel, reloadMessages, () =>
-    scrollToBottom(),
-  );
+  const chatSummarizer = {
+    getMessagesSinceSummaryCount: (session: ChatSession | null) =>
+      countContextMessagesSinceSummary(session, messages.value),
+  };
 
   // 待办事项与会话列表
   const todos = ref<TodoItem[]>([]);
@@ -320,44 +315,36 @@ export function useRightPanel() {
     return info.length > 0 ? info.join(' | ') : '无上下文';
   });
 
-  // 会话统计信息
+  const effectiveLimits = ref<EffectiveModelLimits>();
+  watch(
+    assistantModel,
+    async (model, _previous, onCleanup) => {
+      let current = true;
+      onCleanup(() => {
+        current = false;
+      });
+      effectiveLimits.value = undefined;
+      if (model) {
+        const limits = await resolveModelLimits(model);
+        if (current) effectiveLimits.value = limits;
+      }
+    },
+    { immediate: true, deep: true },
+  );
+
   const sessionStats = computed(() => {
-    if (messages.value.length === 0) return null;
-
-    const currentSession = chatSessionsStore.currentSession;
-    const currentCount = countContextMessagesSinceSummary(currentSession, messages.value);
-
-    const tokens = estimateAssistantContextTokens({
-      context: contextStore.getContext,
-      session: currentSession,
-      currentMessages: messages.value,
-      includeToolSchemas: true,
-    });
-
-    const maxInputTokens = assistantModel.value?.maxInputTokens || 0;
-    let tokenPercentage = 0;
-
-    if (maxInputTokens > 0) {
-      tokenPercentage = Math.round((tokens / maxInputTokens) * 100);
-    }
-
-    const msgPercentage = Math.min(
-      Math.round((currentCount / MESSAGE_LIMIT_THRESHOLD) * 100),
-      100,
+    const model = assistantModel.value;
+    if (!messages.value.length || !model) return null;
+    const measured = measureAssistantContext(
+      {
+        context: contextStore.getContext,
+        session: chatSessionsStore.currentSession,
+        currentMessages: messages.value,
+      },
+      model,
     );
-
-    const maxPercentage = Math.max(tokenPercentage, msgPercentage);
-
-    return {
-      currentCount,
-      limit: MESSAGE_LIMIT_THRESHOLD,
-      tokens,
-      maxInputTokens,
-      tokenPercentage,
-      msgPercentage,
-      maxPercentage,
-      summary: `上下文使用: ${maxPercentage}% (${currentCount}/${MESSAGE_LIMIT_THRESHOLD} 消息 | ${tokens} Tokens)`,
-    };
+    const display = formatContextUsage(measured, effectiveLimits.value?.contextWindow);
+    return { ...measured, ...display, summary: `上下文使用：${display.label}` };
   });
 
   // 消息操作
@@ -411,15 +398,10 @@ export function useRightPanel() {
   );
 
   // 监听思考过程更新，如果已展开则滚动到底部
-  const hasThinkingGrowth = (
-    oldLen: number | undefined,
-    newLen: number,
-  ): oldLen is number => oldLen !== undefined && newLen > oldLen && newLen > 0;
+  const hasThinkingGrowth = (oldLen: number | undefined, newLen: number): oldLen is number =>
+    oldLen !== undefined && newLen > oldLen && newLen > 0;
 
-  const handleThinkingUpdate = (
-    id: string,
-    thinking: string | undefined,
-  ): void => {
+  const handleThinkingUpdate = (id: string, thinking: string | undefined): void => {
     if (thinkingExpanded.value.get(id)) {
       requestScrollThinkingToBottom(id);
     }

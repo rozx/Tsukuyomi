@@ -72,7 +72,7 @@ const statusDotClass = computed(() => ({ 'cp-status-dot--off': !assistantModel.v
 const usageText = computed(() => {
   const s = sessionStats.value;
   if (!s) return '';
-  return `${s.maxPercentage}% · ${s.tokens}/${s.maxInputTokens || '∞'}`;
+  return s.label;
 });
 </script>
 
@@ -109,12 +109,7 @@ const usageText = computed(() => {
       >
         <i class="pi pi-trash" aria-hidden="true" />
       </button>
-      <button
-        type="button"
-        class="cp-icon-btn cp-icon-btn--close"
-        aria-label="关闭"
-        @click="close"
-      >
+      <button type="button" class="cp-icon-btn cp-icon-btn--close" aria-label="关闭" @click="close">
         <i class="pi pi-times" aria-hidden="true" />
       </button>
     </header>
@@ -144,7 +139,11 @@ const usageText = computed(() => {
 
     <div class="cp-composer-wrap">
       <div v-if="sessionStats" v-tooltip.top="sessionStats.summary" class="cp-usage-bar">
-        <ProgressBar :value="sessionStats.maxPercentage" :show-value="false" />
+        <ProgressBar
+          v-if="sessionStats.percentage !== undefined"
+          :value="sessionStats.percentage"
+          :show-value="false"
+        />
         <div class="cp-usage-text">
           {{ usageText }}
         </div>

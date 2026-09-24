@@ -2,26 +2,9 @@ import { getAssistantSystemPrompt } from 'src/services/ai/tasks/prompts/assistan
 import { getTodosSystemPrompt } from 'src/services/ai/tasks/utils/todo-helper';
 import { ToolRegistry } from 'src/services/ai/tools';
 import type { AITool, ChatMessage as AIChatMessage } from 'src/services/ai/types/ai-service';
-import type {
-  ApiMessage,
-  ChatSessionMessage,
-  ChatSession,
-} from 'src/stores/chat-sessions';
-import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
-
-/**
- * 从 ApiMessage 中挑出可选字段（name / tool_call_id / tool_calls / reasoning_content），
- * 返回可展开的 Partial 对象。用于在 ApiMessage 与 AIChatMessage 之间复用展开逻辑，
- * 避免在多处重复 `...(msg.x ? { x: msg.x } : {})` 样板。
- */
-export const pickApiMessageExtras = (
-  msg: Pick<ApiMessage, 'name' | 'tool_call_id' | 'tool_calls' | 'reasoning_content'>,
-): Partial<Pick<ApiMessage, 'name' | 'tool_call_id' | 'tool_calls' | 'reasoning_content'>> => ({
-  ...(msg.name ? { name: msg.name } : {}),
-  ...(msg.tool_call_id ? { tool_call_id: msg.tool_call_id } : {}),
-  ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
-  ...(msg.reasoning_content ? { reasoning_content: msg.reasoning_content } : {}),
-});
+import type { ChatSessionMessage, ChatSession } from 'src/stores/chat-sessions';
+import { measureContext, modelContextKey } from 'src/services/ai/context/measure';
+import type { AIModel } from 'src/services/ai/types/ai-model';
 
 export type SessionWithSummaryIndex = ChatSession & { lastSummarizedMessageIndex?: number };
 
@@ -47,11 +30,7 @@ export const buildAssistantMessageHistory = (
 
   // 优先使用完整的 API 消息历史（包含工具调用和结果），确保上下文连续性
   if (session.apiMessageHistory && session.apiMessageHistory.length > 0) {
-    return session.apiMessageHistory.map((msg) => ({
-      role: msg.role,
-      content: msg.content ?? '',
-      ...pickApiMessageExtras(msg),
-    }));
+    return session.apiMessageHistory.map((message) => ({ ...message }));
   }
 
   // 回退：从 UI 消息重建（不含工具上下文，兼容旧会话）
@@ -77,18 +56,17 @@ const ensurePendingUserMessage = (
   history: AIChatMessage[] | undefined,
   currentMessages: ChatSessionMessage[],
 ): AIChatMessage[] | undefined => {
-  if (!history || history.length === 0) return history;
   const lastMessage = currentMessages[currentMessages.length - 1];
   const hasPendingUserMessage = lastMessage?.role === 'user';
   if (!hasPendingUserMessage) return history;
 
-  const lastHistoryMessage = history[history.length - 1];
+  const lastHistoryMessage = history?.[history.length - 1];
   if (lastHistoryMessage?.role === 'user' && lastHistoryMessage.content === lastMessage.content) {
     return history;
   }
 
   return [
-    ...history,
+    ...(history ?? []),
     {
       role: 'user',
       content: lastMessage.content,
@@ -96,21 +74,12 @@ const ensurePendingUserMessage = (
   ];
 };
 
-const safeStringifyTools = (tools: AITool[]): string => {
-  try {
-    return JSON.stringify(tools);
-  } catch (error) {
-    console.warn('Tool schema serialization error:', error);
-    return '[tools_serialization_failed]';
-  }
-};
-
 const buildAssistantSystemPromptForStats = (
   context: AssistantContextInfo,
   session: SessionWithSummaryIndex | null,
 ): { prompt: string; tools: AITool[] } => {
-  const tools = ToolRegistry.getAssistantTools(context.currentBookId || undefined).filter(
-    (tool) => tool.function.name !== 'add_translation_batch',
+  const tools = ToolRegistry.getAssistantToolsExcludingTranslationManagement(
+    context.currentBookId || undefined,
   );
   const todosPrompt = getTodosSystemPrompt(!!session?.id);
   let systemPrompt = getAssistantSystemPrompt(todosPrompt, tools, context);
@@ -120,35 +89,16 @@ const buildAssistantSystemPromptForStats = (
   return { prompt: systemPrompt, tools };
 };
 
-const buildAssistantStatsMessages = (params: AssistantStatsParams): AIChatMessage[] => {
-  const { context, session, currentMessages, includeToolSchemas = true } = params;
+export const measureAssistantContext = (params: AssistantStatsParams, model: AIModel) => {
+  const { context, session, currentMessages } = params;
   const { prompt, tools } = buildAssistantSystemPromptForStats(context, session);
   const history =
     ensurePendingUserMessage(buildAssistantMessageHistory(session), currentMessages) || [];
-  const messages: AIChatMessage[] = [
-    {
-      role: 'system',
-      content: prompt,
-    },
-  ];
-
-  if (includeToolSchemas && tools.length > 0) {
-    messages.push({
-      role: 'system',
-      content: `【工具定义】\n${safeStringifyTools(tools)}`,
-    });
-  }
-
-  messages.push(...history);
-  return messages;
-};
-
-export const estimateAssistantContextTokens = (params: AssistantStatsParams): number => {
-  const messages = buildAssistantStatsMessages(params);
-  const baseTokens = estimateMessagesTokenCount(messages);
-  // 工具调用产生的额外 token 开销只在历史来自 UI 消息（不含工具上下文）时补偿；
-  // apiMessageHistory 本身已包含 tool_calls / tool 结果，再叠加会重复计算导致提前误判超限
-  const usesApiHistory = Boolean(params.session?.apiMessageHistory?.length);
-  const toolCallOverhead = usesApiHistory ? 0 : (params.session?.toolCallTokenOverhead ?? 0);
-  return baseTokens + toolCallOverhead;
+  return measureContext({
+    systemPrompt: prompt,
+    tools: params.includeToolSchemas === false ? [] : tools,
+    history,
+    anchor: session?.contextAnchor,
+    modelKey: modelContextKey(model),
+  });
 };

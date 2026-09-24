@@ -22,10 +22,7 @@ export type ToastCallback = (message: ToastMessageWithHistoryOptions) => void;
  * @param options Toast 选项
  * @param onToast 可选的 toast 回调函数
  */
-function showToolToast(
-  options: ToolToastOptions,
-  onToast?: ToastCallback,
-): void {
+export function showToolToast(options: ToolToastOptions, onToast?: ToastCallback): void {
   const message: ToastMessageWithHistoryOptions = {
     severity: options.severity || 'info',
     summary: options.summary,
@@ -52,4 +49,3 @@ function showToolToast(
   // 如果都无法使用，至少记录到控制台
   console.log('[ToolToast]', message);
 }
-

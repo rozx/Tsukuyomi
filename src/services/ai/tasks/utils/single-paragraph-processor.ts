@@ -1,3 +1,4 @@
+import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
 /**
  * 单段落润色/校对处理器
  * 跳过状态机，直接构建 prompt 并调用 AI 模型，支持工具调用循环
@@ -178,9 +179,7 @@ function appendSingleParagraphReasoning(
   void ctx.aiProcessingStore.appendThinkingMessage(ctx.taskId, reasoningContent);
 }
 
-function hasNoToolCalls(result: {
-  toolCalls?: AIToolCall[];
-}): boolean {
+function hasNoToolCalls(result: { toolCalls?: AIToolCall[] }): boolean {
   return !result.toolCalls || result.toolCalls.length === 0;
 }
 
@@ -289,25 +288,6 @@ async function runToolCallsForSingleParagraph(
       tool_call_id: toolResult.tool_call_id,
     });
   }
-}
-
-/**
- * 构造单段落处理的 AIServiceConfig
- */
-function buildSingleParagraphAIConfig(
-  model: AIModel,
-  temperature: number,
-  finalSignal: AbortSignal,
-): AIServiceConfig {
-  return {
-    apiKey: model.apiKey,
-    baseUrl: model.baseUrl,
-    model: model.model,
-    temperature,
-    signal: finalSignal,
-    useCorsProxy: model.useCorsProxy,
-    ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
-  };
 }
 
 /**
@@ -461,7 +441,7 @@ export async function processSingleParagraph(
       { role: 'user', content: userPrompt },
     ];
 
-    const aiConfig = buildSingleParagraphAIConfig(model, temperature, finalSignal);
+    const aiConfig = buildModelServiceConfig(model, { temperature, signal: finalSignal });
 
     console.log(`[${logLabel}] 开始单段落${taskLabel}，段落ID: ${paragraph.id}`);
 

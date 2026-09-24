@@ -314,15 +314,19 @@ describe('数据同步服务 (SyncDataService)', () => {
       const newDate = new Date('2024-01-02').toISOString();
 
       const remoteData = {
-        aiModels: [{ id: 'm1', name: 'Remote Model', lastEdited: newDate }],
+        aiModels: [{ id: 'm1', name: 'Remote Model', thinkingLevel: 'high', lastEdited: newDate }],
       };
       mockAIModelsStore.models = [{ id: 'm1', name: 'Local Model', lastEdited: oldDate }];
 
       await SyncDataService.applyDownloadedData(remoteData);
 
-      expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ name: 'Remote Model' }));
+      expect(mockSaveModel).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Remote Model', thinkingLevel: 'high' }),
+      );
       expect(mockAIModelsStore.models).toEqual(
-        expect.arrayContaining([expect.objectContaining({ name: 'Remote Model' })]),
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'Remote Model', thinkingLevel: 'high' }),
+        ]),
       );
     });
 
@@ -2089,9 +2093,9 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       expect(chapters?.length).toBe(1);
       expect(chapters?.[0]?.id).toBe('c-local');
-      expect(
-        chapters?.[0]?.content?.[0]?.translations?.map((t: { id: string }) => t.id),
-      ).toContain('t-1');
+      expect(chapters?.[0]?.content?.[0]?.translations?.map((t: { id: string }) => t.id)).toContain(
+        't-1',
+      );
       expect(chapters?.[0]?.content?.[0]?.selectedTranslationId).toBe('t-1');
       expect(chapters?.[0]?.title).toEqual({
         original: '第五章',
@@ -2112,9 +2116,9 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       expect(chapters?.length).toBe(1);
       expect(chapters?.[0]?.id).toBe('c-remote');
-      expect(
-        chapters?.[0]?.content?.[0]?.translations?.map((t: { id: string }) => t.id),
-      ).toContain('t-1');
+      expect(chapters?.[0]?.content?.[0]?.translations?.map((t: { id: string }) => t.id)).toContain(
+        't-1',
+      );
     });
 
     it('两侧都没有 webUrl 时：不同 ID 的章节不应被合并（保持既有行为）', async () => {
@@ -2149,9 +2153,9 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(volumes?.length).toBe(1);
       const chapters = volumes?.[0]?.chapters;
       expect(chapters?.length).toBe(1);
-      expect(
-        chapters?.[0]?.content?.[0]?.translations?.map((t: { id: string }) => t.id),
-      ).toContain('t-1');
+      expect(chapters?.[0]?.content?.[0]?.translations?.map((t: { id: string }) => t.id)).toContain(
+        't-1',
+      );
     });
   });
 
@@ -2350,9 +2354,7 @@ describe('数据同步服务 (SyncDataService)', () => {
           title: 'Book',
           lastEdited: localDeleteDate,
           createdAt: beforeSync,
-          volumes: [
-            { id: 'v1', title: '第一卷', chapters: [chapter('c1', beforeSync, '正文一')] },
-          ],
+          volumes: [{ id: 'v1', title: '第一卷', chapters: [chapter('c1', beforeSync, '正文一')] }],
         },
       ] as unknown[];
 
