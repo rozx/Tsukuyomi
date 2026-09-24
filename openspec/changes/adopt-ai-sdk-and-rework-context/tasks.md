@@ -4,9 +4,19 @@
 
 ## 1. 依赖升级（单独提交）
 
-- [ ] 1.1 升级 `gpt-tokenizer` 到 ^4，核对 v4 的 `countTokens` 签名与模型参数，按需调整 `src/utils/ai-token-utils.ts`；用固定中日文样本记录升级前后的计数差异（写进本任务备注），验证：`bunx vitest run ai-token token-summary` 通过
-- [ ] 1.2 升级 `@huggingface/transformers` 到 ^4.3、`jsonrepair` 到 ^3.15，验证：`bunx vitest run embedding tool-call-invoker` 通过
-- [ ] 1.3 记录基线：`bun run build:spa` 的主 chunk 体积写进本任务备注（给 5.3 对比用），验证：全量 `bun run test` 与质量检查通过后提交
+- [x] 1.1 升级 `gpt-tokenizer` 到 ^4，核对 v4 的 `countTokens` 签名与模型参数，按需调整 `src/utils/ai-token-utils.ts`；用固定中日文样本记录升级前后的计数差异（写进本任务备注），验证：`bunx vitest run ai-token token-summary` 通过
+- [x] 1.2 升级 `@huggingface/transformers` 到 ^4.3、`jsonrepair` 到 ^3.15，验证：`bunx vitest run embedding tool-call-invoker` 通过
+- [x] 1.3 记录基线：`bun run build:spa` 的主 chunk 体积写进本任务备注（给 5.3 对比用），验证：全量 `bun run test` 与质量检查通过后提交
+
+### 第 1 组执行记录（2026-09-24）
+
+- 实际安装：`gpt-tokenizer@4.0.0`、`@huggingface/transformers@4.3.0`、`jsonrepair@3.15.0`。
+- v3.4.0 与 v4.0.0 的 `countTokens(input: string | Iterable<ChatMessage>, encodeOptions?: EncodeOptions): number` 签名相同。现有入口先转纯文本再计数，无需传模型参数，也无需修改运行时代码。
+- 固定样本（v3.4.0 → v4.0.0）：`月光洒在书页上，翻译仍在继续。` 15 → 15；`月明かりが本のページを照らし、翻訳は続いている。` 20 → 20；`こんにちは、世界！你好，世界！` 8 → 8，差值均为 0。
+- 定向验证：`bunx vitest run ai-token token-summary embedding tool-call-invoker`，14 个文件、170 个测试全部通过。
+- `bun run lint && bun run type-check && bun run quality-check` 通过；Fallow 本次变更无新增 CI 问题。
+- 全量 `bun run test`：239 个文件通过、1 个跳过；2,603 个测试通过、5 个跳过，无失败。
+- 升级后、迁移 AI SDK 前的 SPA 构建成功；主 chunk `assets/index-B5tUfDu3.js` 为 230,658 字节（225.25 KiB），独立 gzip 测量为 78,983 字节。后续 5.3 以此作为同口径基线。
 
 ## 2. 契约测试基建（针对现有实现，先绿）
 
