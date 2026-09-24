@@ -78,7 +78,7 @@
 
 .doc-content :deep(blockquote) {
   border-left: 4px solid rgb(var(--primary-rgb));
-  background: rgb(var(--primary-rgb) / 0.08);
+  background: rgba(var(--primary-rgb), 0.08);
   margin: 1.5rem 0;
   padding: 1rem 1.5rem;
   border-radius: 0 0.5rem 0.5rem 0;

@@ -138,6 +138,8 @@ const CUSTOM_CSS = `
   --primary-800: ${PRIMARY[800]};
   --primary-900: ${PRIMARY[900]};
   --primary-950: ${PRIMARY[950]};
+  /* Primary（月白）的 RGB 分量，逗号分隔：用于 rgba(var(--primary-rgb), <alpha>) */
+  --primary-rgb: 233, 237, 245;
   --primary-opacity-10: rgba(233, 237, 245, 0.1);
   --primary-opacity-15: rgba(233, 237, 245, 0.15);
   --primary-opacity-20: rgba(233, 237, 245, 0.2);
