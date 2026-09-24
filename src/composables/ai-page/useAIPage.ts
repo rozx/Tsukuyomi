@@ -312,6 +312,7 @@ function createAIPageContext() {
       baseUrl: formData.baseUrl!,
       enabled: formData.enabled ?? true,
       useCorsProxy: formData.useCorsProxy,
+      customHeaders: cloneDeep(formData.customHeaders ?? {}),
       isDefault: buildAIModelDefaults(formData),
       lastEdited: new Date(),
     };
@@ -340,6 +341,7 @@ function createAIPageContext() {
       baseUrl: formData.baseUrl!,
       enabled: formData.enabled ?? true,
       useCorsProxy: formData.useCorsProxy,
+      customHeaders: cloneDeep(formData.customHeaders ?? {}),
       isDefault: buildAIModelDefaults(formData),
     };
     if (formData.rateLimit !== undefined && formData.rateLimit !== null) {
