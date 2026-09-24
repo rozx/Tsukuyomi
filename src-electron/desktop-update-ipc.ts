@@ -5,6 +5,11 @@ import { UpdateManager, GithubSource } from 'velopack';
 import type { UpdateInfo } from 'velopack';
 import { DesktopUpdater } from './desktop-updater';
 
+interface UpdateTarget {
+  version: string;
+  info: UpdateInfo;
+}
+
 /** 仅主窗口顶层页面可调用更新 API，抓取窗口和 iframe 没有安装权限。 */
 function trusted(event: IpcMainInvokeEvent | IpcMainEvent, window: BrowserWindow | null) {
   return (
@@ -19,7 +24,6 @@ function trusted(event: IpcMainInvokeEvent | IpcMainEvent, window: BrowserWindow
 
 export function registerDesktopUpdates(getWindow: () => BrowserWindow | null) {
   let manager: UpdateManager | undefined;
-  let target: UpdateInfo | null = null;
   let unavailable: string | undefined;
   try {
     if (!app.isPackaged) throw new Error('开发环境不检查更新');
@@ -38,16 +42,16 @@ export function registerDesktopUpdates(getWindow: () => BrowserWindow | null) {
     if (window && !window.isDestroyed()) window.webContents.send(channel, value);
   };
   let cancelPreparation: (() => void) | undefined;
-  const updater: DesktopUpdater = new DesktopUpdater({
+  const updater: DesktopUpdater<UpdateTarget> = new DesktopUpdater<UpdateTarget>({
     version: app.getVersion(),
     ...(unavailable ? { unavailable } : {}),
     check: async () => {
-      target = await manager!.checkForUpdatesAsync();
-      if (target?.IsDowngrade) throw new Error('拒绝降级更新');
-      return target ? { version: target.TargetFullRelease.Version } : null;
+      const info = await manager!.checkForUpdatesAsync();
+      if (info?.IsDowngrade) throw new Error('拒绝降级更新');
+      return info ? { version: info.TargetFullRelease.Version, info } : null;
     },
-    download: async (progress) => {
-      await manager!.downloadUpdateAsync(target!, progress);
+    download: async (target, progress) => {
+      await manager!.downloadUpdateAsync(target.info, progress);
     },
     publish: (state) => send('desktop-update:state', state),
     confirm: async () => {
@@ -90,8 +94,8 @@ export function registerDesktopUpdates(getWindow: () => BrowserWindow | null) {
         send('desktop-update:prepare', id);
       }),
     release: () => send('desktop-update:release'),
-    install: () => {
-      manager!.waitExitThenApplyUpdate(target!, false, true);
+    install: (target) => {
+      manager!.waitExitThenApplyUpdate(target.info, false, true);
       app.quit();
     },
   });

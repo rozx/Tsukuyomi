@@ -51,21 +51,21 @@ export class BookExecutionGuard {
     work: () => Promise<T>,
     prepare?: () => Promise<void>,
   ): Promise<T> {
-    desktopRestartGuard.assertAvailable();
-    const locks = manager();
-    if (!locks) return work();
-    return this.withLock(bookId, 'shared', async () => {
-      const name = `${OWNER_PREFIX}${encodeURIComponent(bookId)}:${encodeURIComponent(JSON.stringify({ ...owner, id: crypto.randomUUID() }))}`;
-      return locks.request(name, { ifAvailable: true }, async () => {
-        await prepare?.();
-        return work();
+    return desktopRestartGuard.track(() => {
+      const locks = manager();
+      if (!locks) return work();
+      return this.withLock(bookId, 'shared', async () => {
+        const name = `${OWNER_PREFIX}${encodeURIComponent(bookId)}:${encodeURIComponent(JSON.stringify({ ...owner, id: crypto.randomUUID() }))}`;
+        return locks.request(name, { ifAvailable: true }, async () => {
+          await prepare?.();
+          return work();
+        });
       });
     });
   }
 
   static commit<T>(bookId: string, work: () => Promise<T>): Promise<T> {
-    desktopRestartGuard.assertAvailable();
-    return this.withLock(bookId, 'exclusive', work);
+    return desktopRestartGuard.track(() => this.withLock(bookId, 'exclusive', work));
   }
 
   private static async withLock<T>(
