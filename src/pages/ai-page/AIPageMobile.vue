@@ -132,7 +132,7 @@
 
       <p class="ma-privacy">
         <i class="pi pi-lock" aria-hidden="true" />
-        <span>使用自己的 API Key，密钥保存在本设备</span>
+        <span>使用自己的 API Key，密钥保存在本设备；开启 Gist 同步时会随模型上传</span>
       </p>
     </div>
 

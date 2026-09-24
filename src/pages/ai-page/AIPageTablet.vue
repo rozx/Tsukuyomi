@@ -27,8 +27,7 @@ const emptyModelsText = computed(() =>
   ctx.searchQuery.value ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型',
 );
 const hasNoSearch = computed(() => !ctx.searchQuery.value);
-const modelBadgeText = (model: { enabled: boolean }) =>
-  model.enabled ? '已启用' : '已禁用';
+const modelBadgeText = (model: { enabled: boolean }) => (model.enabled ? '已启用' : '已禁用');
 const hasDefaultTasks = (model: AIModel) => ctx.getDefaultTasks(model) !== '无';
 const isRoutingRowEmpty = (row: { modelId: string | null }) => !row.modelId;
 const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
@@ -37,12 +36,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
 
 <template>
   <div class="ai-tablet" :class="{ 'ai-tablet--routing-open': isRoutingOpen }">
-    <div
-      v-if="isRoutingOpen"
-      class="ait-scrim"
-      aria-hidden="true"
-      @click="toggleRouting"
-    />
+    <div v-if="isRoutingOpen" class="ait-scrim" aria-hidden="true" @click="toggleRouting" />
 
     <header class="ait-head">
       <div class="ait-head-text">
@@ -60,10 +54,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
           <InputGroupAddon>
             <i class="pi pi-search" />
           </InputGroupAddon>
-          <InputText
-            v-model="ctx.searchQuery.value"
-            placeholder="搜索模型、提供商或任务…"
-          />
+          <InputText v-model="ctx.searchQuery.value" placeholder="搜索模型、提供商或任务…" />
           <InputGroupAddon v-if="ctx.searchQuery.value">
             <Button
               icon="pi pi-times"
@@ -112,8 +103,8 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
           <!-- BYOK banner -->
           <div class="ait-byok">
             <i class="pi pi-shield" aria-hidden="true" />
-            <span>BYOK · 密钥仅存储在本设备 · IndexedDB 加密保存</span>
-            <span class="ait-byok-sub">本地加密 · 从未上传</span>
+            <span>BYOK · 密钥保存在本设备 IndexedDB</span>
+            <span class="ait-byok-sub">开启 Gist 同步时会随模型上传</span>
           </div>
 
           <div v-if="ctx.filteredModels.value.length === 0" class="ait-empty">
@@ -129,11 +120,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
           </div>
 
           <template v-else>
-            <div
-              v-for="group in ctx.providerGroups.value"
-              :key="group.provider"
-              class="ait-group"
-            >
+            <div v-for="group in ctx.providerGroups.value" :key="group.provider" class="ait-group">
               <div class="ait-group-head">
                 <div
                   class="ait-group-letter"
@@ -149,11 +136,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
                 <span class="ait-group-count">· {{ group.models.length }} 个模型</span>
               </div>
 
-              <div
-                v-for="model in visibleGroupModels(group)"
-                :key="model.id"
-                class="ait-model"
-              >
+              <div v-for="model in visibleGroupModels(group)" :key="model.id" class="ait-model">
                 <div class="ait-model-head">
                   <i
                     class="pi pi-sparkles ait-model-icon"
@@ -233,11 +216,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
         </header>
 
         <div class="ait-routing-body">
-          <div
-            v-for="row in ctx.taskRouting.value"
-            :key="row.task"
-            class="ait-routing-row"
-          >
+          <div v-for="row in ctx.taskRouting.value" :key="row.task" class="ait-routing-row">
             <div class="ait-routing-task">{{ row.label }}</div>
             <button
               class="ait-routing-picker"
@@ -267,7 +246,11 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
   display: flex;
   flex-direction: column;
   min-height: 0;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   color: var(--moon-50-opacity-92); /* token: moon-50 @ 92% */
   overflow: hidden;
 }
@@ -543,7 +526,11 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
 
 .ait-param-value.ait-param-accent {
   color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 .ait-param-mono {

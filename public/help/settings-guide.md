@@ -116,6 +116,8 @@
 - GitHub Personal Access Token
 - Gist ID（可选，留空可在上传时创建）
 
+> ⚠️ **同步内容包含 API Key**：AI 模型的 API Key 和 Tavily API Key 会以明文随配置上传到 Gist。应用创建的 Gist 为 secret（不公开列出），但任何拿到链接的人都能查看，请勿分享 Gist 链接。GitHub Token 本身不会上传。如不希望密钥离开本设备，请不要开启 Gist 同步。
+
 ### 操作按钮
 
 - **验证 Token**

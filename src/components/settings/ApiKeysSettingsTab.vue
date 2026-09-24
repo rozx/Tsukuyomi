@@ -45,7 +45,12 @@ const tavilyUrl = 'https://tavily.com/';
         <h3 class="text-sm font-medium text-moon/90 mb-1">Tavily 搜索 API</h3>
         <p class="text-xs text-moon/70">
           用于 AI 助手的网络搜索功能。在
-          <a :href="tavilyUrl" target="_blank" rel="noopener" class="text-primary-400 hover:text-primary-300">
+          <a
+            :href="tavilyUrl"
+            target="_blank"
+            rel="noopener"
+            class="text-primary-400 hover:text-primary-300"
+          >
             tavily.com
           </a>
           注册并获取免费的 API Key。
@@ -85,7 +90,8 @@ const tavilyUrl = 'https://tavily.com/';
     <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
       <p class="text-xs text-moon/70">
         <span class="pi pi-info-circle mr-1"></span>
-        API Key 将安全地存储在本地浏览器中。Tavily 提供免费计划，每月有足够的搜索次数供个人使用。
+        API Key 保存在本地浏览器中；开启 Gist 同步时会随应用设置上传到你的 Gist。Tavily
+        提供免费计划，每月有足够的搜索次数供个人使用。
       </p>
     </div>
   </div>

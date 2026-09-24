@@ -128,6 +128,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.16.2",
+    "title": "v0.16.2",
+    "file": "RELEASE_NOTES_v0.16.2.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "AI 厂商层迁移至 Vercel AI SDK、厂商实测上下文用量与统一压缩、models.dev 模型资料、可用性测试、思考等级及手机端 AI 页重设计"
+  },
+  {
     "id": "v0.16.1",
     "title": "v0.16.1",
     "file": "RELEASE_NOTES_v0.16.1.md",

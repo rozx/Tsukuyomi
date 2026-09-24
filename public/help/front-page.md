@@ -13,7 +13,7 @@
    - 提供商目前支持 **OpenAI** 与 **Gemini**。
    - 填写 API Key。
    - OpenAI 需填写基础地址（Base URL）；Gemini 可不填。
-3. 可点击“获取配置”读取模型能力信息，再保存。
+3. 可点击“获取模型资料”从内置的 models.dev 目录读取上下文窗口与输出上限，用“测试可用性”确认连接正常，再保存。
 
 > 💡 详见 [AI 模型配置](/help/ai-models-guide)。
 
