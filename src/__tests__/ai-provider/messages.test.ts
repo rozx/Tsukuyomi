@@ -2,7 +2,6 @@ import '../setup';
 import { describe, expect, it } from 'bun:test';
 import { reactive } from 'vue';
 import { toModelMessages, normalizeBaseUrl } from '../../services/ai/providers/ai-sdk/messages';
-import { parseConfigJson } from '../../services/ai/providers/ai-sdk/config-parser';
 
 describe('AI SDK 边界转换', () => {
   it('工具结果按调用 ID 匹配名称，保留 signature，旧调用只在首个补占位', () => {
@@ -121,21 +120,5 @@ describe('AI SDK 边界转换', () => {
     ['/api/ai/fixture/', 'http://localhost/api/ai/fixture'],
   ])('规范化地址 %s', (input, expected) => {
     expect(normalizeBaseUrl(input)).toBe(expected);
-  });
-
-  it.each([
-    [
-      '{"maxInputTokens":128000,"maxOutputTokens":8192}',
-      { maxInputTokens: 128000, maxOutputTokens: 8192 },
-    ],
-    ['{"contextWindow":32000,"maxTokens":1024}', { maxInputTokens: 32000, maxOutputTokens: 1024 }],
-    [
-      'limits: maxInputTokens: 1000, maxOutputTokens: 200',
-      { maxInputTokens: 1000, maxOutputTokens: 200 },
-    ],
-    [null, {}],
-    ['未知', {}],
-  ])('共享配置解析 %s', (content, expected) => {
-    expect(parseConfigJson(content)).toEqual(expected);
   });
 });

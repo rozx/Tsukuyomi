@@ -1,3 +1,4 @@
+import { buildModelServiceConfig } from '../core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
   AIServiceConfig,
@@ -227,16 +228,11 @@ export class AssistantService {
       maxOutputTokens?: number | undefined;
     },
   ): AIServiceConfig {
-    return {
-      apiKey: model.apiKey,
-      baseUrl: model.baseUrl,
-      model: model.model,
+    return buildModelServiceConfig(model, {
       temperature: overrides?.temperature ?? model.temperature ?? DEFAULT_TEMPERATURE,
       maxOutputTokens: overrides?.maxOutputTokens,
       signal: overrides?.signal,
-      useCorsProxy: model.useCorsProxy,
-      ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
-    };
+    });
   }
 
   private static buildTextRequest(

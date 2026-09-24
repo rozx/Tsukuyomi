@@ -3,6 +3,16 @@
  */
 export type AIProvider = 'openai' | 'gemini';
 
+/** SDK 统一思考等级；未设置时沿用厂商默认值。 */
+export type AIThinkingLevel =
+  | 'provider-default'
+  | 'none'
+  | 'minimal'
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'xhigh';
+
 /**
  * 任务配置
  */
@@ -30,6 +40,7 @@ export interface AIModel {
   provider: AIProvider;
   model: string;
   temperature: number;
+  thinkingLevel?: AIThinkingLevel | undefined;
   /**
    * 最大输入 token 数（上下文窗口大小）
    * 0 表示无限制

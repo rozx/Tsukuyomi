@@ -25,6 +25,7 @@
       class="w-full"
       :class="{ 'p-invalid': formErrors.model }"
       filter
+      @keydown.capture="keepModelInputFocus"
     >
       <template #option="slotProps">
         <div class="flex flex-col">
@@ -63,6 +64,19 @@ const emit = defineEmits<{
 
 // 通过 provide/inject 取得共享表单状态（避免 prop 突变告警）
 const { formData, formErrors, idPrefix } = inject(AI_MODEL_FORM_KEY)!;
+
+// PrimeVue 的 editable + filter 会在文字键处理里强制聚焦筛选框。
+// 只拦截模型输入的文字/输入法按键传播，原生输入和下拉导航仍正常执行。
+const keepModelInputFocus = (event: KeyboardEvent): void => {
+  if (
+    !(event.target instanceof HTMLInputElement) ||
+    event.target.getAttribute('role') !== 'combobox'
+  )
+    return;
+  if (event.isComposing || (!event.ctrlKey && !event.metaKey && event.key.length === 1)) {
+    event.stopPropagation();
+  }
+};
 
 // 刷新可用模型列表的前置条件：有 API Key，且非 Gemini 提供商必须有 baseUrl
 const canRefreshModels = computed(() => {

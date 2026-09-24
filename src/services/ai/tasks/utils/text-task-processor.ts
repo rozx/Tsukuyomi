@@ -1,3 +1,4 @@
+import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
 /**
  * 通用文本任务处理器
  * 用于翻译、润色、校对服务的共同逻辑抽象
@@ -407,17 +408,12 @@ export async function processTextTask(
       model.isDefault[taskType === 'translation' ? 'translation' : 'proofreading']?.temperature ??
       0.7;
 
-    const config: AIServiceConfig = {
-      apiKey: model.apiKey,
-      baseUrl: model.baseUrl,
-      model: model.model,
+    const config = buildModelServiceConfig(model, {
       temperature: modelTemperature,
       maxInputTokens: limits.contextWindow,
       maxOutputTokens: limits.maxOutput,
       signal: finalSignal,
-      useCorsProxy: model.useCorsProxy,
-      ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
-    };
+    });
 
     // 获取特殊指令
     const specialInstructions = getSpecialInstructions(bookId, chapterId, taskType);

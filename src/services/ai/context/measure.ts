@@ -37,9 +37,12 @@ function fingerprint(value: unknown): string {
 }
 
 export function modelContextKey(
-  model: Pick<AIModel, 'id' | 'provider' | 'model' | 'baseUrl'>,
+  model: Pick<AIModel, 'id' | 'provider' | 'model' | 'baseUrl' | 'thinkingLevel'>,
 ): string {
-  return JSON.stringify([model.id, model.provider, model.model, model.baseUrl]);
+  const identity = [model.id, model.provider, model.model, model.baseUrl];
+  if (model.thinkingLevel && model.thinkingLevel !== 'provider-default')
+    identity.push(model.thinkingLevel);
+  return JSON.stringify(identity);
 }
 
 function promptMessages(systemPrompt: string): ChatMessage[] {

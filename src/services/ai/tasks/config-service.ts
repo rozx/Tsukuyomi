@@ -1,97 +1,77 @@
+import { buildModelServiceConfig } from '../core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
-import type { AIConfigResult, AIServiceConfig } from 'src/services/ai/types/ai-service';
+import type { AIConfigResult } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from '../ai-service-factory';
 import { lookupModelLimits } from '../model-limits/resolve';
+import { getErrorMessage } from 'src/utils/error-message';
+import { createUnifiedAbortController } from './utils/stream-handler';
 
-/**
- * 配置服务选项
- */
-export interface ConfigServiceOptions {
-  /**
-   * 取消信号（可选）
-   */
-  signal?: AbortSignal;
+export interface ModelAvailabilityResult {
+  success: boolean;
+  message: string;
+  durationMs: number;
 }
 
-/**
- * 配置服务
- * 管理 AI 模型配置相关的功能，包括配置获取提示词和配置获取
- */
+/** 目录资料与真实连通性测试分离，二者都不保存模型配置。 */
 export class ConfigService {
-  /**
-   * 获取模型配置信息
-   * @param model AI 模型配置
-   * @param options 配置选项（可选）
-   * @returns 配置获取结果
-   */
-  static async getConfig(model: AIModel, options?: ConfigServiceOptions): Promise<AIConfigResult> {
+  static async getConfig(model: AIModel): Promise<AIConfigResult> {
+    if (!model.model.trim()) return { success: false, message: '请先填写模型标识' };
     const catalog = await lookupModelLimits(model);
-    if (catalog) {
+    return catalog
+      ? {
+          success: true,
+          message: '已从 models.dev 模型目录获取上限',
+          limitsSource: 'catalog',
+          maxInputTokens: catalog.contextWindow,
+          maxOutputTokens: catalog.maxOutput ?? 0,
+        }
+      : {
+          success: false,
+          message: 'models.dev 暂未收录此模型，已保留现有数值，请手动填写模型上限。',
+        };
+  }
+
+  static async testAvailability(
+    model: AIModel,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<ModelAvailabilityResult> {
+    const start = Date.now();
+    const { controller, cleanup } = createUnifiedAbortController(options.signal);
+    const signal = controller.signal;
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    try {
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
+      if (!model.apiKey?.trim()) throw new Error('API Key 不能为空');
+      if (!model.model?.trim()) throw new Error('模型标识不能为空');
+      if (model.provider !== 'gemini' && !model.baseUrl?.trim())
+        throw new Error('基础地址不能为空');
+      const maxOutputTokens =
+        model.maxOutputTokens > 0 ? Math.min(model.maxOutputTokens, 2048) : 2048;
+      const config = buildModelServiceConfig(model, { maxOutputTokens, signal });
+      await AIServiceFactory.getService(model.provider).generateText(config, {
+        prompt: '请只回复 OK。',
+        maxOutputTokens,
+      });
+      if (signal.aborted) throw new DOMException('aborted', 'AbortError');
       return {
         success: true,
-        message: '已从模型目录获取上限',
-        limitsSource: 'catalog',
-        maxInputTokens: catalog.contextWindow,
-        maxOutputTokens: catalog.maxOutput ?? 0,
+        message: '模型已成功响应，当前配置可用。',
+        durationMs: Date.now() - start,
       };
-    }
-    const validationMessage = getConfigValidationMessage(model);
-    if (validationMessage) {
-      return {
-        success: false,
-        message: validationMessage,
-      };
-    }
-
-    try {
-      const config = buildConfigServiceRequest(model, options?.signal);
-      const result = await AIServiceFactory.getConfig(model.provider, config);
-      return result.success
-        ? { ...result, limitsSource: 'probe', message: `${result.message}（模型自述，可能不准确）` }
-        : result;
     } catch (error) {
+      const message = options.signal?.aborted
+        ? '测试已取消'
+        : controller.signal.aborted
+          ? '模型可用性测试超时（30 秒），请稍后重试。'
+          : getErrorMessage(error, '模型测试失败');
       return {
         success: false,
-        message: error instanceof Error ? error.message : '获取配置失败：未知错误',
+        message: model.apiKey ? message.replaceAll(model.apiKey, '[已隐藏凭据]') : message,
+        durationMs: Date.now() - start,
       };
+    } finally {
+      clearTimeout(timeout);
+      cleanup();
     }
   }
-}
-
-/**
- * 校验模型配置，返回首个不满足条件的错误消息；全部通过则返回 undefined
- */
-function getConfigValidationMessage(model: AIModel): string | undefined {
-  if (!model.enabled) return '所选模型未启用';
-  if (!hasNonEmptyTrim(model.apiKey)) return 'API Key 不能为空';
-  if (!hasNonEmptyTrim(model.model)) return '模型名称不能为空';
-  // Gemini 不需要 baseUrl，其他提供商需要
-  if (model.provider !== 'gemini' && !hasNonEmptyTrim(model.baseUrl)) {
-    return '基础地址不能为空';
-  }
-  return undefined;
-}
-
-function hasNonEmptyTrim(value: string | undefined): boolean {
-  return typeof value === 'string' && value.trim() !== '';
-}
-
-/**
- * 构造配置获取请求所需的 AIServiceConfig
- */
-function buildConfigServiceRequest(
-  model: AIModel,
-  signal: AbortSignal | undefined,
-): AIServiceConfig {
-  return {
-    apiKey: model.apiKey,
-    baseUrl: model.provider === 'gemini' ? undefined : model.baseUrl,
-    model: model.model,
-    temperature: model.temperature,
-    maxInputTokens: model.maxInputTokens,
-    maxOutputTokens: model.maxOutputTokens,
-    signal,
-    useCorsProxy: model.useCorsProxy,
-    ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
-  };
 }

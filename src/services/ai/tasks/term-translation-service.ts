@@ -1,3 +1,4 @@
+import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
   AIServiceConfig,
@@ -277,25 +278,6 @@ function resolveTermTranslationTemperature(model: AIModel, taskType: TaskType): 
 }
 
 /**
- * 构造术语翻译所需的 AIServiceConfig
- */
-function buildTermTranslationAIConfig(
-  model: AIModel,
-  temperature: number,
-  finalSignal: AbortSignal,
-): AIServiceConfig {
-  return {
-    apiKey: model.apiKey,
-    baseUrl: model.baseUrl,
-    model: model.model,
-    temperature,
-    signal: finalSignal,
-    useCorsProxy: model.useCorsProxy,
-    ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
-  };
-}
-
-/**
  * 任务完成时更新状态（fire-and-forget，保持原语义）
  */
 function completeTermTranslationTask(
@@ -385,7 +367,7 @@ export class TermTranslationService {
     try {
       const service = AIServiceFactory.getService(model.provider);
 
-      const config = buildTermTranslationAIConfig(model, temperature, finalSignal);
+      const config = buildModelServiceConfig(model, { temperature, signal: finalSignal });
 
       const systemPrompt = await buildSystemPrompt(bookId, chapterId, chapterTitle);
       const relatedContextInfo = await buildRelatedContextInfo(bookId, trimmedText);

@@ -1,4 +1,4 @@
-import { generateText, jsonSchema, streamText, tool } from 'ai';
+import { jsonSchema, streamText, tool } from 'ai';
 import type { AIProvider } from 'src/services/ai/types/ai-model';
 import type {
   AIService,
@@ -6,12 +6,9 @@ import type {
   TextGenerationRequest,
   TextGenerationStreamCallback,
 } from 'src/services/ai/types/ai-service';
-import { CONFIG_DISCOVERY_PROMPT } from 'src/services/ai/core/config-prompt';
-import { DEFAULT_TEMPERATURE } from 'src/constants/ai';
 import { getErrorMessage } from 'src/utils/error-message';
 import { createModel } from 'src/services/ai/providers/ai-sdk/model';
 import { toModelMessages } from 'src/services/ai/providers/ai-sdk/messages';
-import { parseConfigJson } from 'src/services/ai/providers/ai-sdk/config-parser';
 import { collectStream } from 'src/services/ai/providers/ai-sdk/stream';
 import { listModels } from 'src/services/ai/providers/ai-sdk/models';
 import { providerError } from 'src/services/ai/providers/ai-sdk/errors';
@@ -52,6 +49,9 @@ export class AiSdkAIService implements AIService {
       ),
       toolChoice: 'auto',
       maxRetries: 2,
+      ...(config.thinkingLevel && config.thinkingLevel !== 'provider-default'
+        ? { reasoning: config.thinkingLevel }
+        : {}),
       ...(typeof temperature === 'number' ? { temperature } : {}),
       ...(limit && limit > 0
         ? {
@@ -70,28 +70,6 @@ export class AiSdkAIService implements AIService {
       );
     } catch (error) {
       throw providerError(error);
-    }
-  }
-
-  async getConfig(config: AIServiceConfig) {
-    try {
-      validateConfig(config);
-      const result = await generateText({
-        ...createModel(this.provider, config, {}),
-        prompt: CONFIG_DISCOVERY_PROMPT,
-        temperature: config.temperature ?? DEFAULT_TEMPERATURE,
-        maxRetries: 2,
-      });
-      const limits = parseConfigJson(result.text);
-      const id = result.response.modelId || config.model;
-      return {
-        success: true,
-        message: `模型 "${config.model}" 配置已获取`,
-        modelInfo: { id, name: id, ...limits },
-        ...limits,
-      };
-    } catch (error) {
-      return { success: false, message: providerError(error).message };
     }
   }
 

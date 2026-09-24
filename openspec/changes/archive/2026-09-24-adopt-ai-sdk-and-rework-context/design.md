@@ -25,7 +25,7 @@
 
 **Goals:**
 
-- `AIService` 接口签名与上层调用方零改动；行为以 specs/ai-provider-adapter 为准。
+- 保留 `AIService` 生成与模型列表接口；模型资料与可用性按 D17 的用户补充拆分。
 - 新旧实现可在运行时切换，用真实服务做兼容矩阵验证后再删旧实现。
 - 兼容逻辑集中在可单测的纯函数 / fetch 包装里，不依赖 AI SDK 内部序列化细节。
 - 上下文度量与压缩只有一个实现：纯函数核心 + 薄的存储适配，助手会话与导入检查点共用；所有阈值集中在一处。
@@ -35,7 +35,7 @@
 
 - 不使用 `ToolLoopAgent` / 多步 `stopWhen`（工具循环仍由 `task-runner` / `assistant-service` 驱动，后续 change 再迁）。
 - 不引入 AI SDK UI（`useChat` 等）、不走 `@ai-sdk/gateway`（永远传 provider 实例，不传字符串模型 id）。
-- 不新增 `AIProvider` 枚举值；模型配置 UI 只改「自动获取」的数据来源与提示文案。
+- 不新增 `AIProvider` 枚举值；模型配置 UI 同时支持 D17 的独立可用性测试与思考等级。
 - 不做摘要质量的自动评估；不做「按 token 裁剪单条超大工具结果」这类有损压缩。
 
 ## Decisions
@@ -71,10 +71,10 @@ OpenAI 兼容模型用 `wrapLanguageModel({ model, middleware: extractReasoningM
 
 `AIToolCall` 新增可选字段 `providerMetadata?: Record<string, Record<string, unknown>>`，原样保存 AI SDK `tool-call` part 的 `providerMetadata`，回传时写到对应 tool-call part 的 `providerOptions`。上层不解读它，只负责随消息持久化（聊天记录里多一个可选字段，旧数据不受影响）。assistant 消息的首个工具调用缺 signature 时，沿用现有占位值 `skip_thought_signature_validator`（Google 官方 FAQ 做法），保证旧会话和跨 provider 的历史仍被 Gemini 接受。
 
-### D6. 模型列表与配置探测不走 SDK
+### D6. 模型列表与目录资料
 
 - 模型列表：AI SDK 不提供该能力。OpenAI 兼容走 `GET {base}/models`（Bearer + 自定义头，经代理 fetch），Gemini 保留现有 REST 调用与「失败返回空列表」语义。
-- 配置探测：`generateText`（非流式）+ 现有 `CONFIG_DISCOVERY_PROMPT`；`parseConfigJson` / `extractConfigFromText` 从 `base-ai-service.ts` 原样迁出为纯函数。Gemini 不再设置 `responseMimeType: 'application/json'`，靠提示词 + 文本兜底解析（spec 已覆盖非 JSON 回复）。
+- 模型资料按 D17 只查 models.dev 快照，不调用模型；原先的模型自述探测与解析器按用户补充移除。可用性通过独立的短生成请求验证。
 
 ### D7. 运行时双实现开关
 
@@ -116,7 +116,7 @@ OpenAI 兼容模型用 `wrapLanguageModel({ model, middleware: extractReasoningM
 
 ### D11. `limitsSource` 与运行时有效上限
 
-- `AIModel.limitsSource?: 'catalog' | 'probe' | 'manual'`。表单里用户改动两个数值字段 → `manual`；「自动获取」命中目录 → `catalog`，走探测 → `probe`。
+- `AIModel.limitsSource?: 'catalog' | 'probe' | 'manual'`。表单里用户改动两个数值字段 → `manual`；「获取模型资料」命中目录 → `catalog`，未命中保留原值；`probe` 仅兼容历史记录。
 - `resolveModelLimits(model)`（纯函数，异步加载目录）返回 `{ contextWindow?: number; maxOutput?: number; source }`，按 spec 的优先级：`manual` 用存储值；否则目录命中用目录；否则用存储值；`0` / `UNLIMITED_TOKENS` 视为未知。所有上下文预算只读这个函数，不再直接读 `model.maxInputTokens`。
 - 目录值只在运行时覆盖，不回写存储（避免在用户没点保存时改动同步数据）。
 
@@ -208,3 +208,13 @@ OpenAI 兼容模型用 `wrapLanguageModel({ model, middleware: extractReasoningM
 9. 用真实模型跑一段长会话（触发至少两次压缩 + 一次超限恢复）和一次长导入，人工核对摘要与续写效果。
 
 回滚：步骤 5 之前，把 localStorage 开关设回 `legacy` 即可；步骤 5 之后，revert 删除提交。阶段二、三各自独立提交，可单独 revert；会话数据的新字段都是可选的，回退后旧代码忽略 `contextAnchor`，但压缩后保留的 `apiMessageHistory` 仍可被旧代码正常使用。
+
+### D17. 模型资料、可用性与思考等级分离（用户补充）
+
+- 用户明确要求替换 D6/D11 中的模型自述探测：`ConfigService.getConfig` 仅查询现有 models.dev 离线快照，命中写入目录上限，未命中保留表单内容并提示手动填写；移除 SDK 的 getConfig、旧探测提示词与解析器。历史 limitsSource=probe 仍正常加载，不能据此再触发探测。
+- 新增独立“测试可用性”操作：以当前表单的模型 id、地址、密钥、自定义头、代理与思考等级发送一条简短生成请求；30 秒总超时，输出有界，无工具、不改写模型 id/上限/来源，不保存配置。显示成功/失败与耗时；表单身份或请求参数变化、关闭弹窗时取消并丢弃旧结果。
+- `AIModel` / `AIServiceConfig` 新增可选 `thinkingLevel`：provider-default、none、minimal、low、medium、high、xhigh。缺省不覆盖厂商默认行为；通过 AI SDK 7 的标准 reasoning 设置传递，兼容 provider 生成 reasoning_effort，Google provider 按型号转换为 thinkingLevel 或 thinkingBudget。UI 的 none 显示“关闭 / 最低”，说明可用等级取决于具体模型；服务商可能拒绝不支持的等级，独立测试用于验证当前配置。
+- 覆盖助手、整章翻译/润色/校对、单段处理、术语翻译、摘要与可用性测试；新增/编辑保存必须包含该字段，既有导入/导出/同步的对象序列化保持兼容。思考等级参与 modelContextKey，改变等级后不复用旧用量锚点。
+- 目录查询支持已知思考等级后缀，例如 gpt-6-sol(high) 匹配目录的 gpt-6-sol；只影响目录匹配，实际请求仍发送原始模型 id。
+
+补充审查：当前表单保存逐字段构造，六个 AI 配置构造点分别存在，单改 SDK 或表单会漏传；当前 getConfig 同时测试与填值，必须拆开；异步测试结果不能标记后来编辑的新配置为可用。采用 SDK 自带的跨厂商 reasoning 映射，不维护自定义 token 换算表。

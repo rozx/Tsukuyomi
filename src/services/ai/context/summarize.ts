@@ -1,3 +1,4 @@
+import { buildModelServiceConfig } from '../core/model-config';
 import type { AIModel } from '../types/ai-model';
 import type { ChatMessage } from '../types/ai-service';
 import { AIServiceFactory } from '../ai-service-factory';
@@ -61,17 +62,12 @@ export async function summarizeInto({
     const length = segmentLength(rest, summary, budget, multiplier);
     const requestMessages = summaryRequest(summary, rest.slice(0, length));
     const result = await service.generateText(
-      {
-        apiKey: model.apiKey,
-        baseUrl: model.baseUrl,
-        model: model.model,
+      buildModelServiceConfig(model, {
         temperature: 0.3,
         maxInputTokens: limits.contextWindow,
         maxOutputTokens,
         signal,
-        useCorsProxy: model.useCorsProxy,
-        ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
-      },
+      }),
       { messages: requestMessages, temperature: 0.3, maxOutputTokens },
     );
     signal?.throwIfAborted();

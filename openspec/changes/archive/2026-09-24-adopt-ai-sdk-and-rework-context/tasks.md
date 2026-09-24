@@ -76,7 +76,7 @@
 - [x] 6.1 编写 `scripts/update-model-limits.ts` 与 `package.json` 脚本 `update:model-limits`，生成 `src/services/ai/model-limits/catalog.json`（过滤 context 为 0 的条目、按 D10 结构输出），验证：运行后快照体积与条目数写进本任务备注，超过 ~300 KB 时按 D10 的合并方案缩减
 - [x] 6.2 实现目录查找（provider 映射、规范化 id、跨 provider 取最小值、`input` 优先于 `context`），验证：表单驱动单测覆盖 spec「Catalog lookup matching」与「Bundled model limits catalog」全部场景，且快照经动态 import 加载
 - [x] 6.3 `AIModel` 新增可选 `limitsSource`，实现 `resolveModelLimits`（manual > catalog > 存储值，0 / 无限视为未知），验证：单测覆盖 spec「Limit source precedence」全部场景；旧数据与同步反序列化测试通过
-- [x] 6.4 `AIModelDialog.vue`：手动修改数值字段记为 `manual`；「自动获取」先查目录再回退探测，并按来源显示不同提示；`useAIPage.ts` 的 `handleSaveAdd` / `handleSaveEdit` 是逐字段构造 `AIModel` 的，必须带上 `limitsSource`，验证：组件测试覆盖命中 / 未命中两条路径，另有测试断言经 useAIPage 新增与编辑后存储的模型保留 `limitsSource`；浏览器中实测一个目录内模型和一个自定义模型
+- [x] 6.4 （历史阶段；探测回退已由 11.1 取代）`AIModelDialog.vue`：手动修改数值字段记为 `manual`；「自动获取」先查目录再回退探测，并按来源显示不同提示；`useAIPage.ts` 的 `handleSaveAdd` / `handleSaveEdit` 是逐字段构造 `AIModel` 的，必须带上 `limitsSource`，验证：组件测试覆盖命中 / 未命中两条路径，另有测试断言经 useAIPage 新增与编辑后存储的模型保留 `limitsSource`；浏览器中实测一个目录内模型和一个自定义模型
 - [x] 6.5 把所有直接读取 `model.maxInputTokens` / `maxOutputTokens` 做预算的地方切到 `resolveModelLimits`（`assistant-service.ts`、`text-task-processor.ts`、`import-agent-compaction.ts`、`useChatSending.ts`、`useRightPanel.ts`、`ai-context-utils.ts`），验证：全仓 grep 无剩余预算用途的直接读取；相关测试通过；单独提交
 
 ## 7. 上下文度量（阶段三）
@@ -139,3 +139,28 @@
 - 用户要求的实施中 checkpoint（SDK 适配、手机模型页和真实兼容证据）：`29f72ab5`。
 - 唯一 SDK 后端收尾：`622f0641`，独立删除旧实现、开关与旧依赖，提交 hook 将 build 号更新为 0.16.1.7。
 - 模型目录与统一上下文的接线相互依赖，作为另一个独立提交保存（本提交）；包含对应回归、真实验证记录和规划勾选。未推送。
+
+## 11. 用户补充：目录资料、可用性与思考等级
+
+- [x] 11.1 目录查询不再回退模型探测；未命中保留原值；删除 SDK 旧探测入口/提示词/解析器并迁移测试
+- [x] 11.2 新增独立、30 秒有界的模型可用性测试；覆盖实际请求参数、错误、取消及不改写配置
+- [x] 11.3 添加 thinkingLevel 的保存与请求接线，使用 SDK reasoning 映射；覆盖各生成入口、默认行为、厂商线格式与锚点失效
+- [x] 11.4 表单分离资料获取/可用性测试与思考等级，丢弃关闭/编辑后的过期响应；覆盖组件、新增与编辑保存、目录后缀匹配
+- [x] 11.5 更新帮助与规范，运行 lint/type-check/quality-check/全量测试，并在桌面及手机浏览器验证目录、可用性和思考等级
+- [x] 11.6 修复模型标识连续输入时跳到筛选框：真实键盘回归先红后绿，保留手动筛选、方向键/回车与输入法行为，并在用户当前弹窗复验
+
+### 第 11 组验证记录
+
+- 移除模型自述探测入口、提示词和解析器。资料查询只读 models.dev 离线目录；未命中不生成请求，保留原值。可用性测试独立使用当前参数，30 秒超时、输出有界，取消和过期结果不会污染新配置。
+- 思考等级经统一 `buildModelServiceConfig` 接入全部生成入口，新增与编辑共用一份字段映射；远程较新模型同步保留 thinkingLevel。默认模型键兼容旧锚点，显式更改等级使旧锚点失效。
+- 先红后绿覆盖目录未命中、独立测试、错误与取消、缺少 AbortSignal.any 的浏览器、表单关闭/编辑竞态、初始可见的表单初始化、保存/恢复默认，以及 OpenAI/Gemini 的真实请求体。
+- 全量 `bun run test:coverage`：256 个文件通过、1 个跳过；2,820 项通过、5 项跳过。lint、type-check、quality-check、OpenSpec 严格校验、git diff --check 通过。Fallow 新增 dead-code/clone/健康度问题均为 0。
+- 桌面实际编辑 gpt-6-sol(high)：目录正确匹配 922,000 输入 / 128,000 输出；选择“高”后点击测试可用性，真实请求成功，耗时 2,478 ms，测试不改写模型资料。
+- 手机 390×844：无密钥的 gpt-4o 可查询目录（128,000 / 16,384），可用性按钮保持禁用；未知型号显示手动填写提示。新控件布局正常。测试编辑均已丢弃，恢复原始视口，没有保存对用户配置的临时更改。
+- 验证截图与实现说明见 [validation/model-options-report.md](validation/model-options-report.md)。本次补充改动尚未提交。
+
+### 模型标识焦点修复
+
+用户报告输入字符后焦点跳到筛选框。最小测试只触发 input 事件时不复现；补齐真实 keydown 后稳定失败，document.activeElement 从 combobox 变为 searchbox。PrimeVue Select 的文字按键分支在 filter 启用时无条件聚焦筛选框，即使 editable=true 且 autoFilterFocus=false。
+
+在 AiModelSelector 的捕获阶段仅拦截模型输入文字/输入法按键的传播，不 preventDefault，不拦截方向键、回车或手动筛选框。4 项焦点回归及 7 项模型弹窗测试通过；lint、type-check、quality-check 与 diff 检查通过。浏览器实际连续按 x、y 后仍聚焦模型输入，值变为 gpt-6-lunaxy；随后删除测试字符并恢复 gpt-6-luna，保留用户当前弹窗与其他未保存编辑。没有提交改动。

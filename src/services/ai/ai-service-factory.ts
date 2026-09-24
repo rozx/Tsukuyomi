@@ -2,7 +2,6 @@ import type { AIProvider } from 'src/services/ai/types/ai-model';
 import type {
   AIService,
   AIServiceConfig,
-  AIConfigResult,
   AvailableModelsResult,
 } from 'src/services/ai/types/ai-service';
 import { AiSdkAIService } from 'src/services/ai/providers/ai-sdk/service';
@@ -26,15 +25,6 @@ export class AIServiceFactory {
       throw new Error(`不支持的 AI 提供商: ${provider}`);
     }
     return service;
-  }
-
-  /**
-   * 获取模型配置（统一接口）
-   * 通过调用 chat completion API 来验证连接并获取配置
-   */
-  static async getConfig(provider: AIProvider, config: AIServiceConfig): Promise<AIConfigResult> {
-    const service = this.getService(provider);
-    return service.getConfig(config);
   }
 
   /**

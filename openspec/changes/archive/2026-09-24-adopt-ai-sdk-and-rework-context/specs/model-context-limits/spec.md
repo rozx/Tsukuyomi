@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义 AI 模型上下文窗口与输出上限的来源与优先级：优先使用随应用打包的模型目录，其次回退到向模型探测，用户手动填写的值始终最优先，使上下文预算不再依赖模型对自身上限的自述。
+定义 AI 模型上下文窗口与输出上限的来源与优先级：优先使用随应用打包的模型目录，目录未命中时保留手动配置，用户手动填写的值始终最优先，使上下文预算不再依赖模型对自身上限的自述。
 
 ## ADDED Requirements
 
@@ -72,7 +72,7 @@ Each AI model configuration SHALL record where its limits came from (`catalog`, 
 
 ### Requirement: Auto-detect limits in model settings
 
-The model settings "auto-detect" action SHALL consult the catalog before asking the model.
+The model settings limits action SHALL only consult the bundled models.dev catalog and SHALL NOT ask the configured model for its own limits.
 
 #### Scenario: Catalog hit
 
@@ -80,11 +80,11 @@ The model settings "auto-detect" action SHALL consult the catalog before asking 
 - **THEN** the form SHALL be filled with the catalog values, the source SHALL become `catalog`, and no model request SHALL be sent for limits
 - **AND** the result message SHALL state that the values come from the model catalog
 
-#### Scenario: Catalog miss falls back to probing
+#### Scenario: Catalog miss preserves the form
 
 - **WHEN** the user triggers auto-detect for a model absent from the catalog
-- **THEN** the existing probe request SHALL run, the form SHALL be filled with its values, and the source SHALL become `probe`
-- **AND** the result message SHALL state that the values were reported by the model and may be inaccurate
+- **THEN** no model request SHALL be sent and the existing form values and limit source SHALL remain unchanged
+- **AND** the result message SHALL state that models.dev has no matching entry and the user can enter limits manually
 
 ### Requirement: Limit source is synchronized and backward compatible
 
@@ -99,3 +99,50 @@ The limit source SHALL be stored with the model configuration and synchronized l
 
 - **WHEN** a model configuration without a limit source is loaded
 - **THEN** it SHALL be treated as having no recorded source
+
+### Requirement: Independent model availability test
+
+Model settings SHALL provide a separate availability action using the current unsaved endpoint, credentials, headers, proxy selection and thinking level. The test SHALL send a bounded short generation request, time out after 30 seconds, and report success or the provider error without modifying or saving model configuration.
+
+#### Scenario: Availability is independent of catalog coverage
+
+- **WHEN** a model absent from models.dev is tested
+- **THEN** a successful actual generation SHALL report availability without filling limits or marking the source as probe
+
+#### Scenario: Stale test results are discarded
+
+- **WHEN** the form changes or closes before a test completes
+- **THEN** the request SHALL be cancelled and its late response SHALL NOT be displayed as the result of the current configuration
+
+### Requirement: Model thinking level
+
+Model settings SHALL persist an optional thinking level and pass it to all model generation tasks, including summaries and availability tests, using the SDK's provider mapping. Missing values SHALL retain provider defaults. Changing the level SHALL invalidate the previous context usage anchor.
+
+#### Scenario: Thinking level survives save and reload
+
+- **WHEN** a model is added or edited with a selected thinking level
+- **THEN** the stored and synchronized configuration SHALL retain that selection and subsequent requests SHALL use it
+
+#### Scenario: Legacy model keeps provider default
+
+- **WHEN** a model without thinkingLevel is loaded
+- **THEN** generation SHALL omit a reasoning override
+
+#### Scenario: Catalog aliases preserve request identity
+
+- **WHEN** a configured id ends with a recognized thinking level in parentheses
+- **THEN** directory lookup MAY match the base id, while generation SHALL use the original id unchanged
+
+### Requirement: Model identifier editing preserves focus
+
+The editable model identifier control SHALL keep keyboard text input in the identifier field while suggestions open. It SHALL retain explicit filtering and keyboard selection without interrupting IME composition.
+
+#### Scenario: Continuous typing with suggestions
+
+- **WHEN** the user types consecutive characters in the identifier field
+- **THEN** every character SHALL continue editing that field, without automatically moving focus to the popup filter, even if no suggestions exist
+
+#### Scenario: Explicit filtering and keyboard navigation
+
+- **WHEN** the user focuses the filter or selects a suggestion with navigation keys and Enter
+- **THEN** filtering and selection SHALL remain available

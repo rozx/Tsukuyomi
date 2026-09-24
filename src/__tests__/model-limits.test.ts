@@ -118,3 +118,16 @@ describe('模型上限目录', () => {
     expect(result?.contextWindow).toBeGreaterThan(0);
   });
 });
+
+it('目录匹配识别思考等级后缀，但不改变实际模型标识', async () => {
+  const model = {
+    provider: 'openai' as const,
+    model: 'vendor/gpt-6-sol(high)',
+    baseUrl: 'https://custom.test',
+  };
+  expect(await lookupModelLimits(model, { openai: { 'gpt-6-sol': [128000, 8192] } })).toEqual({
+    contextWindow: 128000,
+    maxOutput: 8192,
+  });
+  expect(model.model).toBe('vendor/gpt-6-sol(high)');
+});

@@ -5,14 +5,7 @@ import { AiSdkAIService } from '../../services/ai/providers/ai-sdk/service';
 import { AIEmptyResponseError } from '../../services/ai/core/errors';
 import { TOOL_CALL_PLACEHOLDER } from '../../services/ai/tasks/utils/stream-handler';
 import type { TextGenerationChunk } from '../../services/ai/types/ai-service';
-import {
-  config,
-  configResponse,
-  geminiStream,
-  openAIStream,
-  stubTransport,
-  tools,
-} from './fixtures';
+import { config, geminiStream, openAIStream, stubTransport, tools } from './fixtures';
 
 describe.each([
   {
@@ -163,32 +156,6 @@ describe.each([
     await expect(service.generateText(config, { prompt: '问题' })).rejects.toBeInstanceOf(
       AIEmptyResponseError,
     );
-  });
-
-  it.each([
-    ['JSON', '{"maxInputTokens":128000,"maxOutputTokens":8192}'],
-    ['旧字段', '{"contextWindow":128000,"maxTokens":8192}'],
-    ['说明文本', '模型 maxInputTokens: 128000，maxOutputTokens: 8192。'],
-  ])('配置探测解析%s回复', async (_label, content) => {
-    transport.responses.push(configResponse(provider, content));
-    expect(
-      await service.getConfig({ ...config, customHeaders: { 'X-Fixture': 'config' } }),
-    ).toMatchObject({
-      success: true,
-      maxInputTokens: 128000,
-      maxOutputTokens: 8192,
-    });
-    expect(transport.requests[0]?.headers.get('x-fixture')).toBe('config');
-  });
-
-  it('配置探测保留厂商错误信息', async () => {
-    transport.responses.push(
-      Response.json({ error: { message: 'invalid fixture credentials' } }, { status: 401 }),
-    );
-    expect(await service.getConfig(config)).toMatchObject({
-      success: false,
-      message: expect.stringContaining('invalid fixture credentials'),
-    });
   });
 
   it('模型列表保留名称与 owner，排除 Gemini 非生成模型', async () => {

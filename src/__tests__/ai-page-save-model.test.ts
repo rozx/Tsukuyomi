@@ -98,6 +98,26 @@ describe('useAIPage 保存模型', () => {
       expect((await aiModelService.getModel(saved.id))?.limitsSource).toBe('manual'),
     );
   });
+
+  it('思考等级经新增、编辑和恢复默认后完整落盘', async () => {
+    const store = mountPage();
+    await store.loadModels();
+    ctx.addModel();
+    ctx.handleSave(makeFormData({ thinkingLevel: 'high' }));
+    const saved = store.models.find((m) => m.name === '测试模型')!;
+    expect((await persisted(saved.id))?.thinkingLevel).toBe('high');
+    ctx.editModel(store.getModelById(saved.id)!);
+    ctx.handleSave(makeFormData({ customHeaders: { 'X-Edit': '1' } }));
+    await vi.waitFor(async () =>
+      expect((await aiModelService.getModel(saved.id))?.customHeaders).toEqual({ 'X-Edit': '1' }),
+    );
+    expect((await aiModelService.getModel(saved.id))?.thinkingLevel).toBe('high');
+    ctx.editModel(store.getModelById(saved.id)!);
+    ctx.handleSave(makeFormData({ thinkingLevel: 'provider-default' }));
+    await vi.waitFor(async () =>
+      expect((await aiModelService.getModel(saved.id))?.thinkingLevel).toBe('provider-default'),
+    );
+  });
   it('新增模型时保存 customHeaders', async () => {
     const store = mountPage();
     ctx.addModel();

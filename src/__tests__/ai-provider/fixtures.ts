@@ -68,24 +68,6 @@ export function geminiStream(parts: Record<string, unknown>[], extra: unknown[] 
   ]);
 }
 
-export function configResponse(provider: string, content: string): Response {
-  return Response.json(
-    provider === 'openai'
-      ? {
-          id: 'config-fixture',
-          object: 'chat.completion',
-          created: 1,
-          model: 'served-model',
-          choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
-        }
-      : {
-          candidates: [
-            { content: { role: 'model', parts: [{ text: content }] }, finishReason: 'STOP' },
-          ],
-        },
-  );
-}
-
 export function stubTransport() {
   const requests: { url: string; headers: Headers; body: Record<string, unknown> }[] = [];
   const responses: Response[] = [];

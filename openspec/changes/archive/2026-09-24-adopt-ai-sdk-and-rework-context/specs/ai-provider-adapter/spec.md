@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义 AI 厂商适配层（OpenAI 兼容服务与 Gemini）对上层任务与助手的行为契约：流式输出、思考内容分离、工具调用、兼容性规则、错误与取消语义、请求路由，以及模型列表与配置探测，使上层逻辑与具体厂商和底层 SDK 解耦。
+定义 AI 厂商适配层（OpenAI 兼容服务与 Gemini）对上层任务与助手的行为契约：流式输出、思考内容分离、工具调用、兼容性规则、错误与取消语义、请求路由，以及模型列表、思考等级与独立可用性测试，使上层逻辑与具体厂商和底层 SDK 解耦。
 
 ## ADDED Requirements
 
@@ -212,7 +212,7 @@ The adapter SHALL retry only transient failures a bounded number of times, SHALL
 
 ### Requirement: Request routing
 
-The adapter SHALL build request URLs and headers from the model configuration consistently for generation, config discovery, and model listing.
+The adapter SHALL build request URLs and headers from the model configuration consistently for generation (including availability tests) and model listing.
 
 #### Scenario: OpenAI-compatible base URL normalization
 
@@ -233,7 +233,7 @@ The adapter SHALL build request URLs and headers from the model configuration co
 #### Scenario: Custom headers on every request
 
 - **WHEN** a model configuration has custom headers
-- **THEN** generation, config discovery, and model listing requests for either provider SHALL include them
+- **THEN** generation (including availability tests) and model listing requests for either provider SHALL include them
 
 #### Scenario: Gemini generation honors CORS toggle and base URL
 
@@ -265,26 +265,21 @@ The adapter SHALL list available models for a provider using the model's credent
 - **WHEN** the Gemini model list request fails
 - **THEN** the result SHALL be successful with an empty model list so the user can still type a model name
 
-### Requirement: Model config discovery
+### Requirement: Configurable reasoning effort
 
-The adapter SHALL probe a configured model by asking it to report its token limits as JSON, and SHALL tolerate non-JSON replies.
+The adapter SHALL pass the configured thinking level through the AI SDK's standard reasoning setting. When absent or provider-default, it SHALL omit the override. OpenAI-compatible requests SHALL preserve the original model id and carry the configured reasoning effort; Gemini SHALL use the SDK's level/budget mapping.
 
-#### Scenario: JSON reply
+#### Scenario: Explicit reasoning effort
 
-- **WHEN** the model replies with JSON containing `maxInputTokens` and `maxOutputTokens`
-- **THEN** the result SHALL be successful and report those values
+- **WHEN** a model has thinkingLevel set to high
+- **THEN** generation SHALL pass high to the SDK reasoning setting, including availability tests
 
-#### Scenario: Legacy field names
+#### Scenario: Default reasoning unchanged
 
-- **WHEN** the reply uses `contextWindow` or `maxTokens` instead
-- **THEN** they SHALL be read as the input and output limits respectively
+- **WHEN** thinkingLevel is absent or provider-default
+- **THEN** no reasoning override SHALL be sent
 
-#### Scenario: Non-JSON reply
+#### Scenario: Model information does not invoke inference
 
-- **WHEN** the reply is prose containing e.g. `maxInputTokens: 128000`
-- **THEN** positive integer limits SHALL be extracted from the text
-
-#### Scenario: Probe failure
-
-- **WHEN** the probe request fails
-- **THEN** the result SHALL have `success: false` and a message describing the error
+- **WHEN** model limits are requested
+- **THEN** they SHALL come from the models.dev directory path defined in model-context-limits, without a config-discovery prompt or parsing model self-reports

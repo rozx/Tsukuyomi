@@ -51,6 +51,7 @@ describe('TranslationService - workflowStatus 重置', () => {
     name: 'Test Model',
     provider: 'openai',
     model: 'gpt-4.1-mini',
+    thinkingLevel: 'high',
     enabled: true,
     apiKey: 'test-key',
     baseUrl: 'http://test',
@@ -174,5 +175,15 @@ describe('TranslationService - workflowStatus 重置', () => {
       expect(updates.workflowStatus).toBe('planning');
       expect(updates.message).toContain('正在翻译第');
     }
+  });
+  test('整章工具循环使用模型的思考等级', async () => {
+    await TranslationService.translate(paragraphs, model, {
+      aiProcessingStore: aiProcessingStore as never,
+    });
+    expect(mockExecuteToolCallLoop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aiServiceConfig: expect.objectContaining({ thinkingLevel: 'high' }),
+      }),
+    );
   });
 });

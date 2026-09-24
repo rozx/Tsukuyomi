@@ -2,21 +2,21 @@
 import { ref, computed, watch, provide } from 'vue';
 import { cloneDeep, isEqual } from 'lodash';
 import Button from 'primevue/button';
+import Select from 'primevue/select';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import AiModelBasicFields from './AiModelBasicFields.vue';
 import AiModelSelector from './AiModelSelector.vue';
 import AiTokenField from './AiTokenField.vue';
 import AiCustomHeaders from './AiCustomHeaders.vue';
 import AiTaskDefaultItem from './AiTaskDefaultItem.vue';
-import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useElectron } from 'src/composables/useElectron';
 import { useFormDialogCloseGuard } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
-import type { AIConfigResult, ModelInfo } from 'src/services/ai/types/ai-service';
+import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import type { AIModelFormData, TaskDefaultsKey } from './ai-model-form-types';
 import { AI_MODEL_FORM_KEY } from './ai-model-form-types';
 import { AIServiceFactory } from 'src/services/ai';
-import { ConfigService } from 'src/services/ai/tasks/config-service';
+import { useModelConfiguration } from 'src/composables/ai-page/useModelConfiguration';
 
 const props = withDefaults(
   defineProps<{
@@ -36,13 +36,9 @@ const emit = defineEmits<{
 }>();
 
 const idPrefix = computed(() => (props.mode === 'add' ? '' : 'edit'));
-const toast = useToastWithHistory();
 const { isBrowser } = useElectron();
 
-// 测试相关状态
-const isTesting = ref(false);
-
-// 从 AI 获取的配置信息（只读）
+// 目录或原有配置中的参考数值。
 const aiConfig = ref<{
   maxInputTokens?: number;
   maxOutputTokens?: number;
@@ -66,6 +62,7 @@ const createEmptyAIModelForm = (): AIModelFormData => ({
   provider: 'openai',
   model: '',
   temperature: 0.7,
+  thinkingLevel: 'provider-default',
   maxInputTokens: 0, // 0 表示无限制
   maxOutputTokens: 0, // 0 表示无限制
   apiKey: '',
@@ -107,14 +104,16 @@ const {
 
 const hasChildDialogOpen = computed(() => showUnsavedCloseConfirm.value);
 
-// 目录查询不需要凭据；未命中时由配置服务校验探测所需参数。
-const canFetchConfigDisabled = computed(() => isTesting.value || !formData.value.model?.trim());
+// models.dev 目录查询不需要凭据。
+const canFetchConfigDisabled = computed(
+  () => isTesting.value || isFetchingConfig.value || !formData.value.model?.trim(),
+);
 const limitsSourceLabel = computed(() => {
   switch (formData.value.limitsSource) {
     case 'catalog':
-      return '来源：模型目录';
+      return '来源：models.dev 模型目录';
     case 'probe':
-      return '来源：模型自述，可能不准确';
+      return '来源：历史模型自述';
     case 'manual':
       return '来源：手动设置';
     default:
@@ -203,15 +202,15 @@ const resolveTempLimits = (): Pick<
   maxOutputTokens: formData.value.maxOutputTokens ?? 0,
 });
 
-// Gemini 不需要 baseUrl，其他提供商回退到空字符串
-const resolveTempBaseUrl = (): string =>
-  formData.value.provider === 'gemini' ? '' : formData.value.baseUrl || '';
+// 保留当前表单地址；Gemini 地址为空时由 provider 使用默认端点。
+const resolveTempBaseUrl = (): string => formData.value.baseUrl || '';
 
 // 构建用于获取配置的临时模型对象
 const buildTempModel = (): AIModel => ({
   ...resolveTempIdentity(),
   provider: formData.value.provider as AIProvider,
   ...resolveTempLimits(),
+  thinkingLevel: formData.value.thinkingLevel,
   baseUrl: resolveTempBaseUrl(),
   enabled: true,
   isDefault: formData.value.isDefault || {
@@ -225,94 +224,37 @@ const buildTempModel = (): AIModel => ({
   lastEdited: new Date(),
 });
 
-// 将可能为字符串/数字的 token 值解析为非负整数；无法解析时返回 undefined
-const parseNonNegativeInt = (value: number | string | undefined | null): number | undefined => {
-  if (value === undefined || value === null) return undefined;
-  const num = typeof value === 'number' ? value : parseInt(String(value), 10);
-  if (isNaN(num) || num < 0) return undefined;
-  return num;
-};
-
-// 从配置结果中抽取有效的 maxInputTokens / maxOutputTokens
-const buildAiConfigFromResult = (
-  result: AIConfigResult,
-): { maxInputTokens?: number; maxOutputTokens?: number } => {
-  const config: { maxInputTokens?: number; maxOutputTokens?: number } = {};
-  const inputTokens = parseNonNegativeInt(result.maxInputTokens);
-  if (inputTokens !== undefined) config.maxInputTokens = inputTokens;
-  const outputTokens = parseNonNegativeInt(result.maxOutputTokens);
-  if (outputTokens !== undefined) config.maxOutputTokens = outputTokens;
-  return config;
-};
-
-// 构建测试成功的详情消息（使用原始值进行本地化格式化）
-const buildTestDetailMessage = (result: AIConfigResult): string => {
-  const details: string[] = [];
-  if (result.maxInputTokens && result.maxInputTokens > 0) {
-    details.push(`上下文窗口: ${result.maxInputTokens.toLocaleString()}`);
-  }
-  if (result.maxOutputTokens && result.maxOutputTokens > 0) {
-    details.push(`最大输出 Token: ${result.maxOutputTokens.toLocaleString()}`);
-  }
-  return details.length > 0 ? `${result.message}\n${details.join(', ')}` : result.message;
-};
-
-// 处理测试成功：更新配置信息与表单字段，并提示成功
-const handleTestSuccess = (result: AIConfigResult) => {
-  formData.value.limitsSource = result.limitsSource ?? 'probe';
-  const config = buildAiConfigFromResult(result);
-  aiConfig.value = Object.keys(config).length > 0 ? config : null;
-
-  // 注意：maxInputTokens / maxOutputTokens 为 0 表示无限制，0 也需回写覆盖表单旧值
-  if (config.maxInputTokens !== undefined) {
-    formData.value.maxInputTokens = config.maxInputTokens;
-  }
-  if (config.maxOutputTokens !== undefined) {
-    formData.value.maxOutputTokens = config.maxOutputTokens;
-  }
-
-  // 如果模型信息有更新，更新模型字段
-  if (result.modelInfo && result.modelInfo.id !== formData.value.model) {
-    formData.value.model = result.modelInfo.id;
-  }
-
-  toast.add({
-    severity: 'success',
-    summary: '已获取模型上限',
-    detail: buildTestDetailMessage(result),
-    life: 3000,
+const { isFetchingConfig, isTesting, availabilityResult, fetchModelInfo, testAvailability } =
+  useModelConfiguration({
+    source: () => [props.visible, formData.value],
+    visible: () => props.visible,
+    model: buildTempModel,
+    applyCatalog: (result) => {
+      aiConfig.value = {
+        maxInputTokens: result.maxInputTokens ?? 0,
+        maxOutputTokens: result.maxOutputTokens ?? 0,
+      };
+      Object.assign(formData.value, aiConfig.value, { limitsSource: 'catalog' });
+    },
   });
-};
-
-// 测试 AI 模型（获取配置）
-const testModel = async () => {
-  isTesting.value = true;
-
-  try {
-    const result = await ConfigService.getConfig(buildTempModel());
-
-    if (result.success) {
-      handleTestSuccess(result);
-    } else {
-      // 配置获取失败，只显示错误消息
-      toast.add({
-        severity: 'error',
-        summary: '测试失败',
-        detail: result.message,
-        life: 5000,
-      });
-    }
-  } catch (error) {
-    toast.add({
-      severity: 'error',
-      summary: '测试失败',
-      detail: error instanceof Error ? error.message : '获取配置失败：未知错误',
-      life: 5000,
-    });
-  } finally {
-    isTesting.value = false;
-  }
-};
+const canTestDisabled = computed(
+  () =>
+    isTesting.value ||
+    isFetchingConfig.value ||
+    !formData.value.model?.trim() ||
+    !formData.value.apiKey?.trim() ||
+    (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()),
+);
+const thinkingLevels = [
+  { label: '默认（跟随模型）', value: 'provider-default' },
+  { label: '关闭 / 最低', value: 'none' },
+  { label: '极低', value: 'minimal' },
+  { label: '低', value: 'low' },
+  { label: '中', value: 'medium' },
+  { label: '高', value: 'high' },
+  { label: '极高', value: 'xhigh' },
+];
+let initializingForm = false;
 
 // 处理保存
 const handleSave = () => {
@@ -337,7 +279,7 @@ const canFetchModels = (): boolean => {
 const buildModelsRequestConfig = (): Parameters<
   (typeof AIServiceFactory)['getAvailableModels']
 >[1] => {
-  const baseUrl = formData.value.provider === 'gemini' ? undefined : formData.value.baseUrl;
+  const baseUrl = formData.value.baseUrl;
   const config: Parameters<(typeof AIServiceFactory)['getAvailableModels']>[1] = {
     // apiKey 由 canFetchModels() 保证非空
     apiKey: formData.value.apiKey!,
@@ -376,6 +318,7 @@ const fetchAvailableModels = async () => {
 watch(
   () => formData.value.provider,
   (newProvider) => {
+    if (initializingForm) return;
     if (newProvider === 'gemini') {
       // 切换到 Gemini 时，清空 baseUrl（服务会使用默认值）
       formData.value.baseUrl = '';
@@ -388,16 +331,20 @@ watch(
     availableModels.value = [];
     void fetchAvailableModels();
   },
+  { flush: 'sync' },
 );
 
 // 监听 apiKey 和 baseUrl 变化，自动获取模型列表
-watch([() => formData.value.apiKey, () => formData.value.baseUrl], () => {
-  // 延迟获取，避免频繁请求
-  const timeoutId = setTimeout(() => {
-    void fetchAvailableModels();
-  }, 500);
-  return () => clearTimeout(timeoutId);
-});
+watch(
+  [() => formData.value.apiKey, () => formData.value.baseUrl],
+  (_value, _previous, onCleanup) => {
+    // 延迟获取，避免频繁请求
+    const timeoutId = setTimeout(() => {
+      void fetchAvailableModels();
+    }, 500);
+    onCleanup(() => clearTimeout(timeoutId));
+  },
+);
 
 // 合并单个任务的默认配置，确保 enabled / temperature 字段完整
 const mergeTaskDefault = (
@@ -419,6 +366,7 @@ const buildEditFormData = (model: AIModel): AIModelFormData => {
   const savedTaskDefaults = model.isDefault ?? {};
   return {
     ...model,
+    thinkingLevel: model.thinkingLevel ?? 'provider-default',
     useCorsProxy: model.useCorsProxy ?? true,
     isDefault: {
       ...defaultTasks,
@@ -432,7 +380,7 @@ const buildEditFormData = (model: AIModel): AIModelFormData => {
   } as AIModelFormData;
 };
 
-// 从已保存模型数据填充 aiConfig，用于展示从 AI 获取的配置信息
+// 记住已保存的数值，供手动编辑时参考。
 const initAiConfigFromModel = (model: AIModel) => {
   const config: typeof aiConfig.value = {};
   if (model.maxInputTokens !== undefined && model.maxInputTokens !== null) {
@@ -444,32 +392,6 @@ const initAiConfigFromModel = (model: AIModel) => {
   // 即使只有部分字段，也要设置 aiConfig
   aiConfig.value = config;
 };
-
-// 监听 visible 变化，初始化表单
-watch(
-  () => props.visible,
-  (newVisible) => {
-    if (newVisible) {
-      if (props.mode === 'edit' && props.model) {
-        // 编辑模式：填充现有数据（补全所有任务配置）
-        formData.value = buildEditFormData(props.model);
-        initAiConfigFromModel(props.model);
-      } else {
-        // 添加模式：重置表单
-        resetForm();
-      }
-      formErrors.value = {};
-      captureSnapshot();
-      syncHeadersToList();
-    } else {
-      // 关闭时重置
-      resetForm();
-      showUnsavedCloseConfirm.value = false;
-      initialFormSnapshot.value = null;
-    }
-  },
-  { immediate: true },
-);
 
 // 自定义 Header 逻辑
 const customHeadersList = ref<{ key: string; value: string }[]>([]);
@@ -505,6 +427,33 @@ const updateCustomHeaders = () => {
   }
   formData.value.customHeaders = headers;
 };
+// 监听 visible 变化，初始化表单
+watch(
+  () => props.visible,
+  (newVisible) => {
+    initializingForm = true;
+    if (newVisible) {
+      if (props.mode === 'edit' && props.model) {
+        // 编辑模式：填充现有数据（补全所有任务配置）
+        formData.value = buildEditFormData(props.model);
+        initAiConfigFromModel(props.model);
+      } else {
+        // 添加模式：重置表单
+        resetForm();
+      }
+      formErrors.value = {};
+      captureSnapshot();
+      syncHeadersToList();
+    } else {
+      // 关闭时重置
+      resetForm();
+      showUnsavedCloseConfirm.value = false;
+      initialFormSnapshot.value = null;
+    }
+    initializingForm = false;
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -533,19 +482,66 @@ const updateCustomHeaders = () => {
         @refresh="fetchAvailableModels"
       />
 
-      <!-- AI 配置信息 -->
+      <div class="space-y-2">
+        <label for="edit-thinkingLevel" class="block text-sm font-medium text-moon/90"
+          >思考等级</label
+        >
+        <Select
+          input-id="edit-thinkingLevel"
+          v-model="formData.thinkingLevel"
+          :options="thinkingLevels"
+          option-label="label"
+          option-value="value"
+          class="w-full"
+        />
+        <small class="block text-xs text-moon/60"
+          >默认由模型决定；较高等级通常增加耗时和 Token
+          消耗。可用等级取决于模型，可通过测试验证。</small
+        >
+      </div>
+      <div class="space-y-2">
+        <Button
+          label="测试可用性"
+          icon="pi pi-bolt"
+          outlined
+          :loading="isTesting"
+          :disabled="canTestDisabled"
+          @click="testAvailability"
+        />
+        <small class="block text-xs text-moon/60"
+          >使用当前配置发送一条简短请求，可能产生少量 API 用量。</small
+        >
+        <div
+          v-if="availabilityResult"
+          :role="availabilityResult.success ? 'status' : 'alert'"
+          class="rounded-lg border border-white/10 p-3 text-sm"
+          :class="availabilityResult.success ? 'text-green-400' : 'text-red-400'"
+        >
+          {{ availabilityResult.message }}
+          <span class="text-moon/60">（{{ availabilityResult.durationMs }} ms）</span>
+        </div>
+      </div>
+
+      <!-- models.dev 模型资料 -->
       <div class="space-y-3 pt-3 border-t border-white/10">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <label class="block text-sm font-medium text-moon/90">AI 配置信息</label>
+          <label class="block text-sm font-medium text-moon/90">模型资料</label>
           <Button
-            label="获取配置"
+            label="获取模型资料"
             icon="pi pi-download"
             class="p-button-text p-button-sm icon-button-hover"
             :disabled="canFetchConfigDisabled"
-            :loading="isTesting"
-            @click="testModel"
+            :loading="isFetchingConfig"
+            @click="fetchModelInfo"
           />
         </div>
+        <p class="text-xs text-moon/60">
+          资料来自
+          <a href="https://models.dev" target="_blank" rel="noopener noreferrer" class="underline"
+            >models.dev</a
+          >
+          目录；未收录的型号可手动填写。
+        </p>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <AiTokenField
             v-model="formData.maxInputTokens"
@@ -554,7 +550,7 @@ const updateCustomHeaders = () => {
             :max="10000000"
             :error="formErrors.maxInputTokens"
             :ai-config-value="aiConfig?.maxInputTokens"
-            ai-hint-label="从 AI 获取的上下文窗口"
+            ai-hint-label="参考窗口"
             @update:model-value="formData.limitsSource = 'manual'"
           />
           <AiTokenField
@@ -564,7 +560,7 @@ const updateCustomHeaders = () => {
             :max="100000000"
             :error="formErrors.maxOutputTokens"
             :ai-config-value="aiConfig?.maxOutputTokens"
-            ai-hint-label="从 AI 获取"
+            ai-hint-label="参考上限"
             @update:model-value="formData.limitsSource = 'manual'"
           />
         </div>

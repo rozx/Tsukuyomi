@@ -16,7 +16,8 @@ export function normalizeModelId(id: string): string {
     .trim()
     .toLowerCase()
     .replace(/^models\//, '')
-    .replace(/^[^/]+\//, '');
+    .replace(/^[^/]+\//, '')
+    .replace(/\((?:none|minimal|low|medium|high|xhigh)\)$/, '');
 }
 
 export function positiveLimit(value: unknown): number | undefined {

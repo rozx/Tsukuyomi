@@ -296,25 +296,30 @@ function createAIPageContext() {
 
   type SaveFormData = Partial<AIModel> & { isDefault: AIModel['isDefault'] };
 
+  const buildEditableModel = (formData: SaveFormData): Omit<AIModel, 'id' | 'lastEdited'> => ({
+    name: formData.name!,
+    provider: formData.provider as AIProvider,
+    model: formData.model!,
+    temperature: formData.temperature!,
+    maxInputTokens: formData.maxInputTokens!,
+    maxOutputTokens: formData.maxOutputTokens!,
+    ...(formData.thinkingLevel !== undefined ? { thinkingLevel: formData.thinkingLevel } : {}),
+    ...(formData.limitsSource ? { limitsSource: formData.limitsSource } : {}),
+    ...(formData.rateLimit !== undefined && formData.rateLimit !== null
+      ? { rateLimit: formData.rateLimit }
+      : {}),
+    apiKey: formData.apiKey!,
+    baseUrl: formData.baseUrl!,
+    enabled: formData.enabled ?? true,
+    useCorsProxy: formData.useCorsProxy,
+    customHeaders: cloneDeep(formData.customHeaders ?? {}),
+    isDefault: buildAIModelDefaults(formData),
+  });
+
   const handleSaveAdd = (formData: SaveFormData): void => {
     const newModel: AIModel = {
       id: generateId(),
-      name: formData.name!,
-      provider: formData.provider as AIProvider,
-      model: formData.model!,
-      temperature: formData.temperature!,
-      maxInputTokens: formData.maxInputTokens!,
-      maxOutputTokens: formData.maxOutputTokens!,
-      ...(formData.limitsSource ? { limitsSource: formData.limitsSource } : {}),
-      ...(formData.rateLimit !== undefined && formData.rateLimit !== null
-        ? { rateLimit: formData.rateLimit }
-        : {}),
-      apiKey: formData.apiKey!,
-      baseUrl: formData.baseUrl!,
-      enabled: formData.enabled ?? true,
-      useCorsProxy: formData.useCorsProxy,
-      customHeaders: cloneDeep(formData.customHeaders ?? {}),
-      isDefault: buildAIModelDefaults(formData),
+      ...buildEditableModel(formData),
       lastEdited: new Date(),
     };
     void aiModelsStore.addModel(newModel);
@@ -331,24 +336,7 @@ function createAIPageContext() {
   const handleSaveEdit = (formData: SaveFormData): void => {
     const current = selectedModel.value;
     if (!current) return;
-    const updates: Partial<AIModel> = {
-      name: formData.name!,
-      provider: formData.provider as AIProvider,
-      model: formData.model!,
-      temperature: formData.temperature!,
-      maxInputTokens: formData.maxInputTokens!,
-      maxOutputTokens: formData.maxOutputTokens!,
-      ...(formData.limitsSource ? { limitsSource: formData.limitsSource } : {}),
-      apiKey: formData.apiKey!,
-      baseUrl: formData.baseUrl!,
-      enabled: formData.enabled ?? true,
-      useCorsProxy: formData.useCorsProxy,
-      customHeaders: cloneDeep(formData.customHeaders ?? {}),
-      isDefault: buildAIModelDefaults(formData),
-    };
-    if (formData.rateLimit !== undefined && formData.rateLimit !== null) {
-      updates.rateLimit = formData.rateLimit;
-    }
+    const updates = buildEditableModel(formData);
     const oldModel = cloneDeep(current);
     void aiModelsStore.updateModel(current.id, updates);
     showEditDialog.value = false;
