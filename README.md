@@ -1,6 +1,6 @@
 # Tsukuyomi (月詠) - Moonlit Translator
 
-![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg) ![GitHub Release](https://img.shields.io/github/v/release/rozx/Tsukuyomi) ![Vue](https://img.shields.io/badge/Vue.js-3.5-4FC08D?logo=vue.js&logoColor=white) ![Quasar](https://img.shields.io/badge/Quasar-2.18-1976D2?logo=quasar&logoColor=white) ![Electron](https://img.shields.io/badge/Electron-39.2-47848F?logo=electron&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?logo=typescript&logoColor=white) ![Bun](https://img.shields.io/badge/Bun-1.0-000000?logo=bun&logoColor=white)
+![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg) ![GitHub Release](https://img.shields.io/github/v/release/rozx/Tsukuyomi) ![Vue](https://img.shields.io/badge/Vue.js-3.5-4FC08D?logo=vue.js&logoColor=white) ![Quasar](https://img.shields.io/badge/Quasar-2.20-1976D2?logo=quasar&logoColor=white) ![Electron](https://img.shields.io/badge/Electron-39-47848F?logo=electron&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white) ![Bun](https://img.shields.io/badge/Bun-1.0%2B-000000?logo=bun&logoColor=white)
 
 [![Github All Releases](https://img.shields.io/github/downloads/rozx/Tsukuyomi/total.svg)](https://github.com/rozx/Tsukuyomi/releases)
 
@@ -8,87 +8,100 @@
 
 <img width="192" height="192" alt="android-chrome-192x192" src="https://github.com/user-attachments/assets/80e77fc0-9aa6-4900-9b5f-7420672a12a4" />
 
-> 专为轻小说爱好者和译者打造的现代化 AI 辅助翻译工具。
+> 面向日本轻小说的 AI 导入、阅读与翻译工具。
 
-**Tsukuyomi (月詠)** 是一个利用最先进 AI 模型（如 **GPT-5.2**, **Claude 4.6**, **Gemini 3 Pro** 等）进行外语文本（专为日本轻小说设计）阅读和翻译的综合平台。无论您是想快速阅读"生肉"的读者，还是追求"信达雅"专业水平的译者，Tsukuyomi 都能为您提供全方位的支持。
+**Tsukuyomi (月詠)** 将小说导入、双语阅读、翻译、润色和校对放在同一个工作台中。使用自己的 API Key 接入 OpenAI、Gemini 或兼容 OpenAI 协议的服务，通过术语、角色设定和记忆库为翻译提供上下文。支持网页版与 Electron 桌面版。
 
-- 可以直接访问网页版：[https://tsukuyomi.rozx.moe](https://tsukuyomi.rozx.moe/)
-- 或者查看最新的Release: [点击这里](https://github.com/rozx/Tsukuyomi/releases/latest)
+- [打开网页版](https://tsukuyomi.rozx.moe/)
+- [下载桌面版](https://github.com/rozx/Tsukuyomi/releases/latest)
+
+## 📥 v0.16 新增：AI 导入工作台
+
+给月詠一个小说网址，或拖入 TXT、Markdown、HTML、EPUB 文件，再说明要导入哪些内容。她会检查来源、提取正文并整理卷章，你可以直接修改草稿，检查方案后再确认导入书库。
+
+例如，添加 EPUB 后可以这样说：
+
+> 请把这个 EPUB 导入为一本新小说，按目录分卷分章，保留序言和后记，并列出缺失章节。
+
+- **批量整理**：支持整本 TXT 按标题拆章、Markdown 按标题层级分卷，以及批量清理正文杂质、替换卷章标题。
+- **检查后导入**：预览正文、选择章节、编辑书籍资料与标签；可新建小说，也可给已有小说补章。方案会列出变化和将清空的译文数量。
+- **暂停与补齐**：任务保存在当前设备，可以暂停后继续、重试失败章节，或先导入已成功的部分。书籍没有后续修改时可整次撤销。
+- **连载后续更新**：符合条件的网站可保存「更新配方」，记录目录、正文提取和清理规则，以后直接在书籍详情中检查新章与原文修订。
+
+流程：**添加来源 → 与月詠对话 → 检查卷章草稿 → 确认导入**。开始前需配置「助手」默认模型；需要登录或人机验证的网站可能需要改为提供文件。
+
+[查看分步操作与示例指令](public/help/import-guide.md) · [阅读 v0.16.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)
 
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
 ## ✨ 核心功能详情
 
-### 🤖 多模型 AI 矩阵
+### 🤖 AI 模型配置
 
-Tsukuyomi 采用 "Bring Your Own Key" 模式，支持接入全球顶尖 AI 模型：
+Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
 
-- **OpenAI**: 支持 **GPT-5.2**, **GPT-o1** (超强推理), **GPT-4o** (均衡全能)。
-- **Anthropic**: 支持 **Claude 4.6 Opus** (极高文学素养), **Claude 3.5 Sonnet** (极速响应)。
-- **Google**: 支持 **Gemini 3 Pro** (百万级上下文), **Gemini 2.0 Flash** (极高性价比)。
-- **DeepSeek**: 支持 **DeepSeek-V3**, **DeepSeek-R1** (逻辑与编码最强开源模型)。
-- **Moonshot**: 支持 **Kimi k2.5** (针对中文语境深度优化)。
+- **OpenAI**：填写 API Key、基础地址与模型 ID，也可用于兼容 OpenAI 协议的服务或网关。
+- **Gemini**：使用 Google Generative AI SDK 接入，填写 API Key 与模型 ID。
 
-**最佳实践**:
+其他模型需要通过受支持的兼容接口接入，具体可用模型与工具调用能力取决于服务端。可在界面拉取模型列表、验证连接，并配置自定义请求头及浏览器 CORS 代理。
 
-- 使用 **GPT-5.2** 或 **DeepSeek-R1** 进行初翻，处理复杂句式与暗喻。
-- 使用 **Claude 4.6 Opus** 或 **Gemini 3 Pro** 进行润色，通过超长上下文保持全书风格一致。
+翻译、校对/润色、术语翻译和助手可分别设置默认模型；单本书还可覆盖翻译与校对/润色模型。详见 [AI 模型配置](public/help/ai-models-guide.md)。
 
 ### 📚 智能翻译与阅读
 
-深度定制的阅读环境，让翻译成为一种享受：
+在书籍详情页阅读、编辑和处理章节：
 
-- **沉浸式双语模式**: 左右分栏对照，支持段落级自动对齐与高亮，阅读体验极佳。
+- **双语对照**: 按段落查看原文与译文，支持翻译、原文编辑和译文预览三种模式。
 - **全流程 AI 操作**:
-  - **初翻 (Translate)**: 考虑全书背景的精准翻译。
+  - **初翻 (Translate)**: 结合术语、角色设定和检索到的上下文生成译文。
   - **润色 (Polish)**: 消除"翻译腔"，让译文更符合中文地道表达。
   - **校对 (Proofreading)**: 自动检查漏译、错别字及格式问题。
 - **多版本并存**: 对同一段落可尝试不同模型，一键切换各版本择优使用。
-- **实时进度监控**: 侧边栏显示详细的翻译进度、预计剩余时间及处理日志。
+- **任务进度**: 查看翻译进度、待办事项、思考与输出时间线，以及工具调用详情。
 
 ### 🧩 深度上下文管理系统 (Context Engine)
 
-从底层解决 AI 翻译"记不住人名、吐字风格不统一"的顽疾：
+通过术语、角色设定、记忆和章节检索，为 AI 提供当前段落之外的参考信息：
 
 #### 1. 📖 术语表 (Glossary)
 
-- **精准替换**: 强制统一 **地名**、**技能名**、**特定名词** 的译法。
+- **译法参考**: 为地名、技能名和特定名词记录统一译法，供翻译任务使用。
 - **语义引导**: 为术语添加描述，让 AI 理解其在故事中的具体作用。
 
 #### 2. 👥 角色设定 (Character Settings)
 
 - **多维属性**: 定义角色的 **性别**、**语气**、**口癖**、**性格特征**。
 - **别名识别**: 建立别名库，让 AI 明白"勇者"、"那个家伙"、"佐藤"指向的是同一个人。
-- **语气控制**: 自动调整对话风格（如傲娇、古风、极道等），让翻译更有灵魂。
+- **语气参考**: 将角色口吻和性格描述传给 AI，辅助保持对话风格一致。
 
 #### 3. 🧠 记忆库 (Memory Bank)
 
 - **世界观沉淀**: 记录复杂的势力关系、魔法系统规则、关键剧情伏笔。
 - **语义优先的记忆检索**: Embedding 可用时按语义相似度、关键词匹配和时间衰减自动评分（权重 0.85 / 0.10 / 0.05）；关闭或不可用时回退到关键词和时间衰减（0.75 / 0.25）。总分归一到 0–1.0，并按字符预算注入最相关记忆。
-- **本地语义嵌入（可选）**: 内置 `gte-multilingual-base` 多语言编码器（Transformers.js），通过 WebGPU + q4f16 运行，不支持时自动回退 WASM + q8。完全本地运行，不消耗 API 额度；默认关闭，需在"设置 → 本地嵌入"中手动启用，移动端受 WASM 内存限制强制禁用。
+- **本地语义嵌入（可选）**: 内置 `gte-multilingual-base` 多语言编码器（Transformers.js），通过 WebGPU + q4f16 运行，不支持时自动回退 WASM + int8。嵌入计算在本地完成，不消耗 AI API 额度；默认关闭，需在「设置 → 本地嵌入」中启用，物理移动设备上禁用。
 - **混合搜索**: `search_memories` 工具支持自然语言查询，同时利用关键词匹配和语义向量排序；关闭嵌入时自动退化为关键词 + 时间衰减。
 
 #### 4. 📑 章节语义索引 (Chapter Vector Index)
 
 - **多向量章节索引**: 启用本地嵌入后，为每个章节按约 100 字的段落边界建立原生 768 维多向量索引，并额外为"章节标题 + 首段"写入专属向量，支持标题 / 系列 / 主题型查询。
 - **`query_chapter` 混合检索**: AI 可用自然语言跨章节搜索原文；先在章节粒度校准语义置信度并融合语义 / 关键词 RRF 排名，再按 `0.85 × 语义 + 0.15 × 关键词` 排序并过滤弱匹配。翻译、润色、校对、聊天助手四类任务的提示词已学会调用该工具获取前文上下文。
-- **批量管理**: 本地向量索引弹窗展示每本书的记录数，支持单书重建、批量重算、测试查询对话框。
+- **批量管理**: 在书籍详情的「向量索引」面板查看索引记录、重建和批量重算，也可测试查询结果。详见 [本地嵌入](public/help/local-embedding.md)。
 
 ### 💬 AI 协作聊天助手
 
-您的侧边栏 24/7 翻译导师：
+月詠可结合当前书籍上下文回答问题，并通过工具协助操作：
 
 - **实时协助**: 随时询问 "这句话的梗在哪？" 或 "这里怎么翻译才能保留原作者的俏皮感？"。
 - **自动化操控**: 直接通过对话修改书籍信息或增删术语，例如："帮我把这本书改成完结状态"。
 - **内置知识库**: 遇到软件使用问题，AI 会检索官方帮助文档为您解答。
 
-### ☁️ 数据同步与安全
+### ☁️ 跨设备同步
 
-- **本地优先**: 数据存储在 IndexedDB 中，无需担心隐私泄露，离线亦可工作。
-- **Gist 云同步**: 配合 **GitHub Gist** 实现私有云备份，支持修订历史回溯，一键恢复至任意历史版本。
-- **Manifest 增量同步**: 基于 `manifest.json` + SHA-256 哈希，只上传变化的条目；下载使用 `If-None-Match` 条件 GET，远端无变化不消耗 API 配额。上传前伪 CAS 校验远端 ETag，多设备并发写入自动合并重试。
+- **Gist 云同步**: 可选择将数据同步到自己的 GitHub Gist，支持查看修订历史和恢复可用快照。
+- **Manifest 增量同步**: 基于 `manifest.json` 与 SHA-256 哈希选择变化条目，使用条件请求减少下载；上传前复核 ETag，检测并发变化后重新合并重试。
 - **跨端删除一致**: Manifest 使用墓碑（tombstones）传递删除语义，A 设备删除的条目不会被 B 设备重新推回。
-- **强制推送模式**: 设备迁移或远端损坏时可一键以本地数据覆盖远端，安全可控。
+- **段落合并**: 有同步结构基准时，保留单端的原文修订与删除；只有原文一致的段落才合并译文，两端都改过结构时提示检查冲突。
+- **强制推送模式**: 将远端数据替换为本地快照，覆盖前可核对来源设备与目标 Gist。
 
 ### 📱 全设备适配
 
@@ -97,7 +110,7 @@ Tsukuyomi 采用 "Bring Your Own Key" 模式，支持接入全球顶尖 AI 模�
 
 ## 📸 界面预览
 
-自 v0.10.1 起，所有页面在桌面 / 平板 / 手机上都有专属模板（而不是简单拉伸）。以下为各设备的实际运行截图。
+以下截图展示桌面、平板和手机上的首页、书库、阅读器与模型管理页面。
 
 ### 🏠 首页 · Dashboard
 
@@ -145,17 +158,31 @@ Tsukuyomi 采用 "Bring Your Own Key" 模式，支持接入全球顶尖 AI 模�
 
 ## 🔒 隐私与数据主权
 
-Tsukuyomi 从架构设计起便把"数据属于你"作为第一原则：
+本地存储、AI 请求和云同步分别处理数据：
 
-- **本地优先架构**: 所有书籍、翻译、术语、记忆与配置默认存储在浏览器 IndexedDB（或 Electron 桌面版的本地磁盘），**完全离线可用**。
-- **BYOK（Bring Your Own Key）**: API Key 只在本地保存，请求直连 AI 厂商（或你自选的 CORS 代理 / 网关），不经过任何第三方中继。
+- **本地存储**: 书籍、译文、术语、记忆、配置与导入任务默认保存在当前浏览器或 Electron 数据目录的 IndexedDB 中。已保存内容可本地阅读和编辑；调用远端 AI、网页抓取、联网搜索及 Gist 同步需要网络。
+- **AI 请求**: 翻译、聊天和 AI 导入会把所需文本与上下文发送给配置的模型服务。浏览器端默认启用 CORS 代理，可按模型关闭；Electron 的 AI 请求直连配置的服务地址。
+- **密钥与同步范围**: 模型 API Key 随模型配置本地保存，开启 Gist 同步后也会随 AI 模型配置同步。GitHub 同步 Token 保留在当前设备，不写入同步包。应用未额外加密这些本地凭据。
 - **本地语义嵌入**: 启用"本地嵌入"后，记忆库与章节语义索引使用 Transformers.js 在浏览器 / Electron 内部运行，**不上传任何文本到外部嵌入服务**；模型文件下载后自动缓存到浏览器 Cache Storage。
-- **可选 Gist 云同步**: 云备份仅写入你自己的私有 GitHub Gist，基于 Manifest + SHA-256 哈希的条件 GET 最小化流量，Token 本地加密保存；关闭同步即可完全脱网使用。
-- **无追踪 · 无埋点**: 不收集使用数据，不接入任何统计或广告 SDK。
+- **可选 Gist 云同步**: 同步书籍、记忆、模型、封面及应用设置；AI 导入任务与中间草稿仅保存在当前设备，确认导入后的书籍可正常同步。
 
 ## 🚀 快速开始
 
-### 1. 安装与运行
+### 1. 打开应用，配置模型
+
+使用 [网页版](https://tsukuyomi.rozx.moe/) 或 [下载桌面版](https://github.com/rozx/Tsukuyomi/releases/latest)，无需先克隆源码。打开「AI 列表」，添加模型并设置翻译、校对/润色和助手的默认模型。AI 导入工作台使用「助手」默认模型。
+
+### 2. 导入一本小说
+
+1. 打开「AI 导入」，点击「新任务」。
+2. 在「来源」中添加小说网址，或选择／拖入 TXT、Markdown、HTML、EPUB 文件。
+3. 在对话中说明导入范围、分卷分章要求，让月詠整理。
+4. 在「卷章草稿」检查书籍资料、章节顺序和正文。
+5. 生成「导入方案」，核对目标书籍、缺失章节和译文影响，再点击「确认导入」。完成后点「打开小说」。
+
+更多例子见 [AI 导入工作台指南](public/help/import-guide.md)。也可以在书库中选择「从网站导入」，使用内置规则处理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他站点可转交 AI 导入器。应用格式的 JSON 书籍文件可通过「从 JSON 导入」添加，完整资料备份在设置中恢复。
+
+### 3. 从源码运行
 
 本项目基于 [Bun](https://bun.sh) 构建：
 
@@ -167,14 +194,14 @@ cd Tsukuyomi
 # 安装依赖
 bun install
 
+# 首次 clone 后注册提交钩子（提交时自动递增构建号）
+bun run setup:git-hooks
+
 # 开启开发环境
 bun run dev
 ```
 
-### 2. 快捷导入指南
-
-- **自动抓取**: 支持从 `syosetu.com`, `kakuyomu.jp`, `syosetu.org` 等主流小说网一键导入。
-- **JSON 导入**: 支持导入其他译者分享的翻译包或备份文件。
+`bun run dev` 启动 Quasar/Vite 开发服务器，默认位于 `http://localhost:9000`，可用 `PORT` 环境变量修改端口。Electron 开发使用 `bun run dev:electron`。
 
 ## 📖 文档索引
 
@@ -184,36 +211,43 @@ bun run dev
 | **书籍管理** | [图书馆介绍](public/help/library-guide.md) \| [导入与抓取](public/help/books-page-guide.md) \| [章节管理](public/help/book-details-chapters.md)              |
 | **翻译实战** | [翻译功能面板](public/help/book-details-translation.md) \| [三种编辑模式](public/help/book-details-editing.md) \| [工具栏详解](public/help/toolbar-guide.md) |
 | **核心逻辑** | [术语管理](public/help/book-details-terminology.md) \| [角色设定](public/help/book-details-characters.md) \| [记忆系统](public/help/book-details-memory.md)  |
-| **进阶工具** | [聊天助手实战](public/help/chat-assistant-guide.md)                                                                                                          |
+| **AI 导入**  | [导入工作台：分步操作、拆章与补章](public/help/import-guide.md) \| [v0.16.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)                          |
+| **进阶工具** | [聊天助手实战](public/help/chat-assistant-guide.md) \| [本地嵌入与章节检索](public/help/local-embedding.md)                                                  |
 
-> 📖 **在线文档**: 完整的帮助文档已同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)，提供更好的浏览体验。
+> 应用内「帮助」可查阅使用指南；主分支文档通过工作流同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)。
 
 ## 🧱 技术栈
 
 | 层级              | 技术                                                                                                                  |
 | :---------------- | :-------------------------------------------------------------------------------------------------------------------- |
-| **前端框架**      | Vue 3.5 · Quasar 2.18 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
+| **前端框架**      | Vue 3.5 · Quasar 2.20 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
 | **桌面封装**      | Electron 39（Web SPA 与桌面端共用同一份代码，通过 `useDeviceVariant` 强制 Desktop 变体）                              |
 | **运行时 / 构建** | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                         |
-| **AI SDK**        | OpenAI SDK · Google Generative AI · 自定义 Claude 集成 · Moonshot Kimi 等兼容 OpenAI 协议的模型（BYOK）               |
-| **本地嵌入**      | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · WebGPU + q4f16（优先）/ WASM + q8（回退）              |
+| **AI SDK**        | OpenAI SDK · Google Generative AI；通过 OpenAI 配置接入兼容协议服务（BYOK）                                           |
+| **本地嵌入**      | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · 768 维 · WebGPU + q4f16（优先）/ WASM + int8（回退）   |
 | **存储 / 同步**   | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 哈希 manifest · 条件 GET + 伪 CAS 并发保护                |
 | **抓取**          | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ HTTP 代理轮询（Web 版）                              |
-| **测试**          | Bun test · fake-indexeddb                                                                                             |
+| **AI 导入**       | 工具调用整理草稿 · Web Worker 文件解析 · EPUB/ZIP（fflate）· Web Locks 跨标签页互斥                                   |
+| **测试 / 质量**   | Vitest（jsdom）· fake-indexeddb · Istanbul 覆盖率 · ESLint · vue-tsc · Fallow                                         |
 
 ## 🛠️ 开发与构建
 
-| 命令                     | 用途                                      |
-| :----------------------- | :---------------------------------------- |
-| `bun install`            | 安装依赖                                  |
-| `bun run dev`            | 启动 Web 开发模式（前端:9000, 后端:8080） |
-| `bun run dev:electron`   | 启动 Electron 开发模式                    |
-| `bun run build:spa`      | 构建生产环境 Web SPA                      |
-| `bun run build:electron` | 打包跨平台桌面客户端 (dmg/exe/deb)        |
-| `bun run lint`           | 代码规范性检测                            |
-| `bun run type-check`     | TypeScript 类型检查                       |
-| `bun test`               | 运行测试套件                              |
-| `bun run bump`           | 手动/自动更新版本号                       |
+| 命令                      | 用途                                                                               |
+| :------------------------ | :--------------------------------------------------------------------------------- |
+| `bun install`             | 安装依赖                                                                           |
+| `bun run setup:git-hooks` | 首次 clone 后注册 pre-commit 构建号钩子                                            |
+| `bun run dev`             | 启动 Web 开发服务器（默认 9000）                                                   |
+| `bun run dev:electron`    | 启动 Electron 开发模式                                                             |
+| `bun run build:spa`       | 构建生产环境 Web SPA                                                               |
+| `bun run build:electron`  | 按目标平台打包桌面客户端（macOS: dmg/zip；Windows: portable exe；Linux: AppImage） |
+| `bun run lint`            | 代码规范性检测                                                                     |
+| `bun run type-check`      | TypeScript 类型检查                                                                |
+| `bun run quality-check`   | Fallow 分析及差异范围 CI 门禁                                                      |
+| `bun run format`          | Prettier 格式化                                                                    |
+| `bun run test`            | 使用 Vitest 运行测试套件                                                           |
+| `bun run test:watch`      | Vitest 监听模式                                                                    |
+| `bun run test:coverage`   | 运行测试并生成 Istanbul 覆盖率                                                     |
+| `bun bump <version>`      | 更新发布版本，例如 `bun bump 0.16.0`                                               |
 
 **开发者文档**: [构建故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主题指南](docs/THEME_GUIDE.md) \| [翻译指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md) \| [贡献者指南](AGENTS.md) \| [项目约定 (Claude Code)](CLAUDE.md)
 
@@ -221,9 +255,9 @@ bun run dev
 
 欢迎 Issue、PR、以及翻译器使用反馈。提交代码前请：
 
-1. `bun run lint && bun run type-check` 通过本地检查；
-2. 新增功能请配套写测试（`src/__tests__/`）；
-3. UI 改动需在桌面 / 平板 / 手机三个断点手动验证，遵循 `CLAUDE.md` 的"设备变体规则"。
+1. 运行 `bun run lint && bun run type-check && bun run quality-check`；
+2. 新功能、修 bug 和运行时逻辑变更遵循 TDD：先写失败测试，再实现并确认通过。测试位于 `src/__tests__/`，使用 `bun run test`；纯文档、样式和配置改动可不新增测试；
+3. UI 改动需在桌面 / 平板 / 手机三个断点验证，遵循 [AGENTS.md](AGENTS.md) 的设备变体规则。
 
 ## 📄 许可证
 
