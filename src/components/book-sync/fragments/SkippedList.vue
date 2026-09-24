@@ -1,22 +1,26 @@
 <script setup lang="ts">
-/** 已跳过的未导入章节：之后的检查仍归入这里，可逐章取消跳过。 */
-import { computed } from 'vue';
+/** 已跳过的未导入章节：默认收起；之后的检查仍归入这里，可逐章取消跳过。 */
+import { computed, ref } from 'vue';
 import Button from 'primevue/button';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
 
 const { changeset, working, setSkipped } = injectBookSync();
 const entries = computed(() => changeset.value?.skipped ?? []);
+const expanded = ref(false);
 </script>
 
 <template>
-  <section v-if="entries.length" class="ipl-card">
-    <div class="ipl-card-head">
-      <h3 class="ipl-card-title">
-        <i class="pi pi-eye-slash" aria-hidden="true" />已跳过
-        <span class="ipl-count">{{ entries.length }}</span>
-      </h3>
-    </div>
-    <ul class="bsw-list bsw-scroll">
+  <section v-if="entries.length" class="sl">
+    <Button
+      class="sl-toggle"
+      :label="`已跳过 ${entries.length} 章`"
+      :icon="expanded ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+      size="small"
+      text
+      :aria-expanded="expanded"
+      @click="expanded = !expanded"
+    />
+    <ul v-if="expanded" class="bsw-list bsw-scroll">
       <li v-for="entry in entries" :key="entry.url" class="bsw-row">
         <span class="bsw-title" :title="entry.title">{{ entry.title }}</span>
         <Button
@@ -32,5 +36,15 @@ const entries = computed(() => changeset.value?.skipped ?? []);
   </section>
 </template>
 
-<style scoped src="../../import/import-card.css"></style>
 <style scoped src="../book-sync.css"></style>
+<style scoped>
+.sl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sl-toggle {
+  align-self: flex-start;
+}
+</style>

@@ -46,6 +46,7 @@ function changeset(partial: Partial<BookSyncChangeset> = {}): BookSyncChangeset 
     failed: [],
     unchecked: [],
     checked: ['x1'],
+    dateUnchanged: [],
     status: 'ready',
     ...partial,
   };

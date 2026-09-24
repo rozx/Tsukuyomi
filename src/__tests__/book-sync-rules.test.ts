@@ -6,9 +6,11 @@ import type {
   SyncVolumeTarget,
 } from 'src/models/book-sync';
 import {
+  applyDescription,
   buildConfirmSummary,
   driftWarning,
   reconcileSelection,
+  syncVerdict,
 } from 'src/composables/book-sync/book-sync-rules';
 
 function added(n: number, target: SyncVolumeTarget = { volumeId: 'v1' }, groupKey = 'g1') {
@@ -38,6 +40,7 @@ function changeset(partial: Partial<BookSyncChangeset> = {}): BookSyncChangeset 
     failed: [],
     unchecked: [],
     checked: [],
+    dateUnchanged: [],
     status: 'ready',
     ...partial,
   };
@@ -106,6 +109,12 @@ describe('大面积差异提示', () => {
   it('没有任何更新时不提示', () => {
     expect(driftWarning(changeset({ checked: checked(3) }))).toBe(false);
   });
+
+  it('比对的章节太少时不提示：快速检查只抓日期变新的章节，它们本来就多半有修订', () => {
+    expect(driftWarning(changeset({ checked: checked(1), updated: updates(1) }))).toBe(false);
+    expect(driftWarning(changeset({ checked: checked(4), updated: updates(4) }))).toBe(false);
+    expect(driftWarning(changeset({ checked: checked(5), updated: updates(3) }))).toBe(true);
+  });
 });
 
 describe('确认摘要', () => {
@@ -148,5 +157,69 @@ describe('确认摘要', () => {
       clearedVersions: 0,
       newVolumes: [],
     });
+  });
+});
+
+describe('检查结论', () => {
+  it('没有变化且都按日期判断过：已是最新', () => {
+    const verdict = syncVerdict(
+      changeset({ unchecked: ['a', 'b'], dateUnchanged: ['a', 'b'], checked: ['c'] }),
+      false,
+    );
+    expect(verdict).toMatchObject({ tone: 'latest', title: '已是最新' });
+    expect(verdict.details).toEqual(['已导入 3 章', '2 章按更新日期无变化', '1 章已比对无变化']);
+    expect(verdict.deepHint).toContain('更新日期不一定可靠');
+  });
+
+  it('有新章节或修订时标题直接给出数量，只列出非零项', () => {
+    const verdict = syncVerdict(
+      changeset({
+        new: [added(1), added(2)],
+        updated: [updated(1)],
+        checked: ['x1'],
+        unchecked: ['a'],
+        skipped: [{ url: 's', title: '人物' }],
+      }),
+      false,
+    );
+    expect(verdict).toMatchObject({ tone: 'changes', title: '2 章新章节 · 1 章原文有修订' });
+    expect(verdict.details).toEqual(['已导入 2 章', '1 章未比对正文', '跳过 1 章']);
+  });
+
+  it('站点没有更新日期、正文也没比对时不宣称已是最新', () => {
+    const verdict = syncVerdict(changeset({ unchecked: ['a', 'b'] }), false);
+    expect(verdict).toMatchObject({ tone: 'pending', title: '没有新章节' });
+    expect(verdict.deepHint).toContain('2 章');
+  });
+
+  it('全部比对过就不再提示逐章比对', () => {
+    expect(syncVerdict(changeset({ checked: ['a'] }), false).deepHint).toBeUndefined();
+  });
+
+  it('新建书籍：可导入的章数与目录总数', () => {
+    const verdict = syncVerdict(
+      changeset({ new: [added(1), added(2)], skipped: [{ url: 's', title: '人物' }] }),
+      true,
+    );
+    expect(verdict).toMatchObject({ tone: 'changes', title: '可导入 2 章' });
+    expect(verdict.details).toEqual(['目录共 3 章', '跳过 1 章']);
+    expect(verdict.deepHint).toBeUndefined();
+  });
+
+  it('只有失败时提示检查失败', () => {
+    const verdict = syncVerdict(
+      changeset({ failed: [{ url: 'f', code: 'X', message: 'm' }], checked: ['a'] }),
+      false,
+    );
+    expect(verdict).toMatchObject({ tone: 'failed', title: '部分章节检查失败' });
+  });
+});
+
+describe('应用说明', () => {
+  it('说明本次会写入什么', () => {
+    expect(applyDescription({ newCount: 3, updatedCount: 0 })).toBe('将写入 3 章新章节');
+    expect(applyDescription({ newCount: 2, updatedCount: 1 })).toBe('将写入 2 章新章节，更新 1 章');
+    expect(applyDescription({ newCount: 0, updatedCount: 2 })).toBe('将更新 2 章');
+    expect(applyDescription({ newCount: 0, updatedCount: 0 })).toBe('还没有勾选章节');
   });
 });

@@ -33,6 +33,7 @@ function emptyChanges(revision: number | null): BookSyncChangeset {
     failed: [],
     unchecked: [],
     checked: [],
+    dateUnchanged: [],
     status: 'unchecked',
   };
 }
@@ -113,7 +114,23 @@ class BookSyncSession {
           known.has(e.url) && !skipped.includes(e.url) && !this.recipe.pinnedUrls?.includes(e.url),
       )
       .map((e) => e.url);
+    this.state.dateUnchanged = entries
+      .filter((e) => e.lastUpdated && this.state.unchecked.includes(e.url) && !this.datedNewer(e))
+      .map((e) => e.url);
     this.state.status = 'ready';
+  }
+
+  /** 内置站点目录的更新日期比本地新；站点没有日期或通用网页配方时为 false。 */
+  private datedNewer(entry: CatalogEntry): boolean {
+    if (this.recipe.engine.kind !== 'builtin' || !entry.lastUpdated) return false;
+    const chapter = this.chapters().find((c) => c.webUrl === entry.url);
+    return (
+      !!chapter &&
+      ChapterService.shouldUpdateChapter(this.snapshot?.book, {
+        ...chapter,
+        lastUpdated: entry.lastUpdated,
+      })
+    );
   }
 
   private invalidate(code: string, message: string, url = ''): void {
@@ -194,6 +211,7 @@ class BookSyncSession {
     this.state.updated = this.state.updated.filter((e) => e.url !== entry.url);
     if (update) this.state.updated.push(update);
     this.state.unchecked = this.state.unchecked.filter((url) => url !== entry.url);
+    this.state.dateUnchanged = this.state.dateUnchanged.filter((url) => url !== entry.url);
     if (!this.state.checked.includes(entry.url)) this.state.checked.push(entry.url);
     this.state.failed = this.state.failed.filter((e) => e.url !== entry.url);
   }
@@ -456,15 +474,9 @@ class BookSyncSession {
     return this.exclusive(async () => {
       try {
         if (await this.prepare(signal)) {
-          const entries = this.catalog!.entries.filter((entry) => {
-            if (this.recipe.engine.kind !== 'builtin' || !this.state.unchecked.includes(entry.url))
-              return false;
-            const chapter = this.chapters().find((c) => c.webUrl === entry.url)!;
-            return ChapterService.shouldUpdateChapter(this.snapshot?.book, {
-              ...chapter,
-              lastUpdated: entry.lastUpdated,
-            });
-          });
+          const entries = this.catalog!.entries.filter(
+            (entry) => this.state.unchecked.includes(entry.url) && this.datedNewer(entry),
+          );
           await this.checkEntries(entries, signal);
         }
       } catch (error) {

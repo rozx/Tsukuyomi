@@ -1,18 +1,24 @@
 <script setup lang="ts">
-/** 应用栏：当前勾选的数量、会话内撤销与应用入口（应用前先弹出确认摘要）。 */
+/** 应用栏：一句话说明本次会写入什么、会话内撤销与应用入口（应用前先弹出确认摘要）。 */
 import { computed } from 'vue';
+import { applyDescription } from 'src/composables/book-sync/book-sync-rules';
 import Button from 'primevue/button';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
 
-const { summary, selected, working, canUndo, target, requestApply, undo } = injectBookSync();
+const { changeset, summary, selected, working, canUndo, target, requestApply, undo } =
+  injectBookSync();
 
 const creating = computed(() => !!target.value && 'newFrom' in target.value);
+// 没有可应用的章节、也没有可撤销的同步时不显示
+const visible = computed(
+  () => canUndo.value || !!changeset.value?.new.length || !!changeset.value?.updated.length,
+);
 </script>
 
 <template>
-  <div class="ab" data-testid="bsw-apply-bar">
+  <div v-if="visible" class="ab" data-testid="bsw-apply-bar">
     <span class="ab-text">
-      已选 {{ summary.newCount }} 章新章节 · {{ summary.updatedCount }} 章更新
+      {{ applyDescription(summary) }}
       <span v-if="summary.clearedVersions" class="ab-loss">
         · 将清空 {{ summary.clearedVersions }} 个译文版本
       </span>

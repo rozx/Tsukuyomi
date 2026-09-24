@@ -508,6 +508,7 @@ function emptyChangeset(): BookSyncChangeset {
     failed: [],
     unchecked: [],
     checked: [],
+    dateUnchanged: [],
     status: 'unchecked',
   };
 }

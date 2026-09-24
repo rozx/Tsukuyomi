@@ -56,6 +56,7 @@ function changeset(partial: Partial<BookSyncChangeset> = {}): BookSyncChangeset 
     failed: [{ url: `${NCODE}6/`, code: 'CONTENT_FETCH_FAILED', message: '请求超时' }],
     unchecked: [`${NCODE}2/`],
     checked: [`${NCODE}1/`],
+    dateUnchanged: [],
     status: 'ready',
     ...partial,
   };
@@ -166,23 +167,55 @@ describe('工作区 dispatcher 与设备变体', () => {
 });
 
 describe('工作区片段', () => {
-  it('来源摘要显示引擎、目录网址与清理规则数', async () => {
+  it('来源只显示站点与目录网址，配方细节收在详情里', async () => {
     vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(fakeSession() as never);
     await mount();
     expect(host.textContent).toContain(NCODE);
     expect(host.textContent).toContain('小説家になろう');
+    expect(host.textContent).not.toContain('清理规则');
+    button('配方详情').click();
+    await flush();
     expect(host.textContent).toContain('清理规则');
   });
 
-  it('汇总显示新章节、有更新、未检查、已跳过、失败的数量', async () => {
+  it('结论先回答有没有更新，只列出非零项', async () => {
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(fakeSession() as never);
+    await mount({ bookId: 'b1' });
+    const summary = host.querySelector('[data-testid="bsw-summary"]')!;
+    expect(summary.textContent).toContain('2 章新章节 · 1 章原文有修订');
+    expect(summary.textContent).toContain('1 章未比对正文');
+    expect(summary.textContent).toContain('跳过 1 章');
+    expect(summary.textContent).not.toContain('按更新日期无变化');
+  });
+
+  it('已是最新时不显示空列表和应用栏，提供逐章比对', async () => {
+    const latest = changeset({
+      new: [],
+      updated: [],
+      skipped: [],
+      failed: [],
+      unchecked: [`${NCODE}1/`, `${NCODE}2/`],
+      dateUnchanged: [`${NCODE}1/`, `${NCODE}2/`],
+      checked: [],
+    });
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(fakeSession(latest) as never);
+    await mount({ bookId: 'b1' });
+    const summary = host.querySelector('[data-testid="bsw-summary"]')!;
+    expect(summary.textContent).toContain('已是最新');
+    expect(summary.textContent).toContain('2 章按更新日期无变化');
+    expect(host.textContent).not.toContain('新章节');
+    expect(host.textContent).not.toContain('有更新');
+    expect(host.querySelector('[data-testid="bsw-apply-bar"]')).toBeNull();
+    expect(hasButton('逐章比对正文')).toBe(true);
+  });
+
+  it('已跳过默认折叠', async () => {
     vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(fakeSession() as never);
     await mount();
-    const summary = host.querySelector('[data-testid="bsw-summary"]')!;
-    expect(summary.textContent).toMatch(/新章节\s*2/);
-    expect(summary.textContent).toMatch(/有更新\s*1/);
-    expect(summary.textContent).toMatch(/未检查\s*1/);
-    expect(summary.textContent).toMatch(/已跳过\s*1/);
-    expect(summary.textContent).toMatch(/失败\s*1/);
+    expect(host.textContent).not.toContain('登場人物紹介');
+    button('已跳过 1 章').click();
+    await flush();
+    expect(host.textContent).toContain('登場人物紹介');
   });
 
   it('更改一组新章节的目标卷为新建卷，确认摘要使用新卷名', async () => {
@@ -211,7 +244,7 @@ describe('工作区片段', () => {
     box.click();
     await flush();
     expect(host.querySelector('[data-testid="bsw-apply-bar"]')!.textContent).toContain(
-      '1 章新章节',
+      '将写入 1 章新章节',
     );
   });
 
@@ -232,6 +265,8 @@ describe('工作区片段', () => {
     button('跳过第3话').click();
     await flush();
     expect(session.setSkipped).toHaveBeenCalledWith([{ url: `${NCODE}3/`, title: '第3话' }], true);
+    button('已跳过 1 章').click();
+    await flush();
     button('取消跳过登場人物紹介').click();
     await flush();
     expect(session.setSkipped).toHaveBeenLastCalledWith(
@@ -332,7 +367,7 @@ describe('深度检查与失效状态', () => {
     );
     vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(session as never);
     await mount({ bookId: 'b1' });
-    button('深度检查').click();
+    button('逐章比对正文').click();
     await flush();
     progress?.(1, 4);
     await flush();

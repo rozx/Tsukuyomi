@@ -26,6 +26,7 @@ function session() {
     failed: [],
     unchecked: [],
     checked: [],
+    dateUnchanged: [],
     status: 'ready' as const,
   };
   return {

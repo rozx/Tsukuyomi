@@ -301,3 +301,67 @@ describe('已比对章节记录', () => {
     expect(result.updated.map((e) => e.url)).toEqual(['https://example.com/1']);
   });
 });
+
+describe('按更新日期判断无变化', () => {
+  async function builtinSession(dates: (Date | undefined)[]) {
+    const book = syncBook(dates.length);
+    delete book.updateRecipe;
+    book.webUrl = ['https://ncode.syosetu.com/n1234ab/'];
+    book.volumes![0]!.chapters!.forEach((c, i) => {
+      c.webUrl = book.webUrl![0] + `${i + 1}/`;
+      c.lastUpdated = new Date('2026-09-20');
+    });
+    await saveSyncBook(book);
+    const scraper = NovelScraperFactory.getScraper(book.webUrl[0]!)!;
+    spyOn(scraper, 'parseNovelSnapshot').mockReturnValue({
+      catalogStartUrl: book.webUrl[0]!,
+      nextPageUrls: [],
+      info: {
+        title: '远端',
+        webUrl: book.webUrl[0]!,
+        chapters: dates.map((lastUpdated, i) => ({
+          title: `第${i + 1}话`,
+          url: book.webUrl![0] + `${i + 1}/`,
+          ...(lastUpdated ? { lastUpdated } : {}),
+        })),
+      },
+    });
+    spyOn(scraper, 'fetchPageSnapshot').mockImplementation((url) =>
+      Promise.resolve(syncSnapshot('<article>原文</article>', url)),
+    );
+    spyOn(scraper, 'parseChapterSnapshot').mockReturnValue({ text: '旧正文', paragraphs: [] });
+    return {
+      root: book.webUrl[0]!,
+      session: await BookSyncService.openSession({ target: { bookId: book.id } }),
+    };
+  }
+
+  it('快速检查把日期没有变新的章节记为按日期无变化，没有日期的仍只是未检查', async () => {
+    const { root, session } = await builtinSession([
+      new Date('2026-09-19'),
+      undefined,
+      new Date('2026-09-21'),
+    ]);
+    const result = await session.quickCheck();
+    expect(result.dateUnchanged).toEqual([root + '1/']);
+    expect(result.unchecked).toEqual([root + '1/', root + '2/']);
+    expect(result.checked).toEqual([root + '3/']);
+  });
+
+  it('深度检查比对后移出按日期无变化', async () => {
+    const { session } = await builtinSession([new Date('2026-09-19'), new Date('2026-09-18')]);
+    await session.quickCheck();
+    const result = await session.deepCheck();
+    expect(result.dateUnchanged).toEqual([]);
+    expect(result.unchecked).toEqual([]);
+  });
+
+  it('通用网页配方没有日期判断', async () => {
+    await saveSyncBook(syncBook());
+    spyOn(transport, 'fetchScraperPage').mockImplementation((url) =>
+      Promise.resolve(syncSnapshot(syncCatalogHtml(1), url)),
+    );
+    const session = await BookSyncService.openSession({ target: { bookId: 'book' } });
+    expect((await session.quickCheck()).dateUnchanged).toEqual([]);
+  });
+});

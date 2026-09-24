@@ -2,39 +2,21 @@
 /**
  * 检查更新面板（桌面/平板路由面板，/books/:id/settings/update）。
  * 壳组件：panel-header 标题区 + 同步工作区。会话由 BookDetailsPage dispatcher 按路由提供，
- * 应用与撤销都经过同步服务的写入保护。返回回到书籍工作台。
+ * 应用与撤销都经过同步服务的写入保护。与其他设置面板一样没有返回按钮，由侧栏切换。
  */
-import { useRouter } from 'vue-router';
-import Button from 'primevue/button';
 import BookSyncWorkspace from 'src/components/book-sync/BookSyncWorkspace.vue';
-import type { Novel } from 'src/models/novel';
 
-const props = defineProps<{
-  book: Novel | null;
-}>();
-
-const router = useRouter();
-
-const goBack = () => {
-  if (props.book) void router.replace(`/books/${props.book.id}`);
-};
+// 桌面页用同一个动态组件切换各设置面板并统一传入 book；本面板的会话由页面提供，不需要它
+defineOptions({ inheritAttrs: false });
 </script>
 
 <template>
   <div class="book-update-panel h-full flex flex-col">
-    <div class="panel-header border-b border-white/10 flex items-start gap-2">
-      <Button
-        icon="pi pi-arrow-left"
-        text
-        rounded
-        size="small"
-        aria-label="返回书籍"
-        @click="goBack"
-      />
+    <div class="panel-header border-b border-white/10">
       <div class="min-w-0">
         <h1 class="panel-title font-semibold text-moon-100">检查更新</h1>
         <p class="panel-desc text-sm text-moon/70">
-          按来源配方回放目录：新章节默认勾选，有更新的章节需要你查看差异后手动勾选
+          从来源网站检查新章节和原文修订，确认后才写入书籍
         </p>
       </div>
     </div>

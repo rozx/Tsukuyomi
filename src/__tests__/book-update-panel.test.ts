@@ -34,7 +34,7 @@ afterEach(() => {
 });
 
 describe('检查更新面板', () => {
-  it('承载同步工作区，返回回到书籍工作台', async () => {
+  it('承载同步工作区，不显示返回按钮', async () => {
     const changeset = {
       baseRevision: 1,
       new: [{ url: 'u1', title: '第9话', target: { volumeId: 'v' }, groupKey: 'g' }],
@@ -74,10 +74,7 @@ describe('检查更新面板', () => {
     expect(host.textContent).toContain('检查更新');
     expect(host.textContent).toContain('第9话');
 
-    host.querySelector<HTMLButtonElement>('button[aria-label="返回书籍"]')!.click();
-    await flush();
-    await router.isReady();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(router.currentRoute.value.path).toBe('/books/b1');
+    // 与其他设置面板一致，由侧栏切换，不显示返回按钮
+    expect(host.querySelector('button[aria-label="返回书籍"]')).toBeNull();
   });
 });

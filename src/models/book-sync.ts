@@ -72,6 +72,8 @@ export interface BookSyncChangeset {
   unchecked: string[];
   /** 已完成比对的已导入章节（含未变化的），与 unchecked 互补，用于判断大面积差异 */
   checked: string[];
+  /** unchecked 的子集：内置站点目录给出的更新日期没有变新，快速检查据此认为无变化 */
+  dateUnchanged: string[];
   status: 'unchecked' | 'ready' | 'cancelled' | 'invalid';
 }
 

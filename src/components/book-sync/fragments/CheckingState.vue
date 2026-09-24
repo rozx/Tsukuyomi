@@ -5,7 +5,7 @@
 <template>
   <div class="chk" role="status">
     <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-    <span>正在回放目录并检查更新…</span>
+    <span>正在读取目录并检查更新…</span>
   </div>
 </template>
 

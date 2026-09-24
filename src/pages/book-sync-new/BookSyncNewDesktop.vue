@@ -14,7 +14,7 @@ const { goBack } = injectBookSyncNew();
       <Button icon="pi pi-arrow-left" text rounded aria-label="返回" @click="goBack" />
       <div>
         <h1 class="bsn-title">从网站导入</h1>
-        <p class="bsn-desc">回放来源目录，选择要导入的章节后创建新书</p>
+        <p class="bsn-desc">读取来源网站的目录，选择要导入的章节后创建新书</p>
       </div>
     </header>
     <SourceUrlForm class="bsn-form" />
