@@ -128,6 +128,14 @@
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
   },
   {
+    "id": "v0.16.1",
+    "title": "v0.16.1",
+    "file": "RELEASE_NOTES_v0.16.1.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "桌面版应用内自动更新、页脚更新徽标、安全重启保护、便携 ZIP / AppImage 分发及主题颜色修复"
+  },
+  {
     "id": "v0.16.0",
     "title": "v0.16.0",
     "file": "RELEASE_NOTES_v0.16.0.md",
