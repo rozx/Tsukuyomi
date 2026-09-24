@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { cloneDeep, isEqual } from 'lodash';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -14,13 +15,11 @@ import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Novel, Chapter, CoverImage } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import CoverManagerDialog from './CoverManagerDialog.vue';
-import NovelScraperDialog from './NovelScraperDialog.vue';
 import BookWebUrlList from './BookWebUrlList.vue';
 import BookVolumesTree from './BookVolumesTree.vue';
 import BookCoverPanel from './BookCoverPanel.vue';
 import TranslatableInput from '../translation/TranslatableInput.vue';
 import TranslatableChips from '../translation/TranslatableChips.vue';
-import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import { SettingsService } from 'src/services/settings-service';
@@ -74,16 +73,6 @@ const formData = ref<Partial<Novel>>({
 // 封面管理对话框
 const showCoverManager = ref(false);
 
-// 爬虫对话框
-const showScraper = ref(false);
-const scraperInitialUrl = ref<string>('');
-
-// 打开爬虫对话框（可选预设 URL）
-const openScraper = (url?: string) => {
-  scraperInitialUrl.value = url || '';
-  showScraper.value = true;
-};
-
 // 表单验证错误
 const formErrors = ref<Record<string, string>>({});
 
@@ -118,12 +107,23 @@ const {
   emit,
 });
 
+const router = useRouter();
+
+// 从网站获取：不再在表单里抓取合并，统一交给同步工作区（由同步服务写入）。
+// 新建模式跳到新建工作区（可带网址），编辑模式跳到本书的检查更新。
+const openSyncWorkspace = (url?: string) => {
+  const target =
+    props.mode === 'edit' && props.book
+      ? `/books/${props.book.id}/settings/update`
+      : url
+        ? `/books/new/web?url=${encodeURIComponent(url)}`
+        : '/books/new/web';
+  closeDialogImmediately();
+  void router.push(target);
+};
+
 const hasChildDialogOpen = computed(
-  () =>
-    showCoverManager.value ||
-    showScraper.value ||
-    showClearConfirm.value ||
-    showUnsavedCloseConfirm.value,
+  () => showCoverManager.value || showClearConfirm.value || showUnsavedCloseConfirm.value,
 );
 
 // 计算可用的卷和章节（从 formData 或 props.book 获取）
@@ -338,49 +338,6 @@ const clearConfirmDisabled = computed(() => {
   const expected = (formData.value.title || props.book?.title || '').trim();
   return clearConfirmInput.value.trim() !== expected;
 });
-
-// 处理应用爬取的数据
-const handleApplyScrapedData = (novel: Novel) => {
-  // 使用 ChapterService 合并爬取的数据到表单
-  const currentBook = props.mode === 'edit' ? props.book : null;
-  const mergedData = ChapterService.mergeNovelData(formData.value, novel, {
-    updateTitle: true, // 只有当现有标题为空时才更新
-    updateAuthor: true,
-    updateDescription: true,
-    updateTags: true,
-    updateWebUrl: true,
-    chapterUpdateStrategy: 'merge', // 合并章节属性
-  });
-
-  // 更新表单数据
-  formData.value = mergedData;
-
-  showScraper.value = false;
-
-  // 自动保存（如果表单验证通过）
-  // 在编辑模式下，如果表单有标题（验证通过），自动保存
-  // 在添加模式下，如果表单有标题，也尝试保存（让父组件处理）
-  if (validateForm()) {
-    // 使用 nextTick 确保表单数据已更新
-    void nextTick(() => {
-      emit('save', formData.value);
-      toast.add({
-        severity: 'success',
-        summary: '导入并保存成功',
-        detail: '章节数据已导入并自动保存',
-        life: 3000,
-      });
-    });
-  } else {
-    // 如果验证失败，提示用户需要填写标题
-    toast.add({
-      severity: 'warn',
-      summary: '应用成功，但未保存',
-      detail: '小说信息已应用到表单，但需要填写标题后才能保存',
-      life: 3000,
-    });
-  }
-};
 
 // 复制封面 URL
 const handleCopyUrl = async () => {
@@ -679,7 +636,7 @@ watch(
               icon="pi pi-download"
               class="p-button-text p-button-sm"
               size="small"
-              @click="openScraper()"
+              @click="openSyncWorkspace()"
             />
           </div>
           <AutoComplete
@@ -697,7 +654,7 @@ watch(
             @complete="() => {}"
           />
           <!-- 显示可点击的 URL 列表 -->
-          <BookWebUrlList :urls="formData.webUrl" @scrape="openScraper" />
+          <BookWebUrlList :urls="formData.webUrl" @scrape="openSyncWorkspace" />
           <small class="text-moon/60 block mt-1"
             >输入网络地址后按回车键添加，或点击按钮从支持的网站获取</small
           >
@@ -828,14 +785,6 @@ watch(
       v-model:visible="showCoverManager"
       :cover="currentCover"
       @update:cover="handleCoverUpdate"
-    />
-
-    <!-- 小说爬虫对话框 -->
-    <NovelScraperDialog
-      v-model:visible="showScraper"
-      :current-book="book"
-      :initial-url="scraperInitialUrl"
-      @apply="handleApplyScrapedData"
     />
 
     <AdaptiveDialog

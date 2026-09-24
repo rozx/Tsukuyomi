@@ -1,10 +1,32 @@
 import type { Novel } from '../../models/novel';
 
+export interface ScraperPageSnapshot {
+  html: string;
+  requestUrl: string;
+  transportUrl: string;
+  responseUrl?: string;
+  status: number;
+  contentType: string;
+}
+
+export interface ParsedNovelPage {
+  info: ParsedNovelInfo;
+  /** 该作品目录的起始页；中途页不能独自证明目录完整。 */
+  catalogStartUrl: string;
+  nextPageUrls: string[];
+}
+
 /**
  * 爬虫服务接口
  * 所有小说网站爬虫服务必须实现此接口
  */
 export interface NovelScraper {
+  /** 仅获取指定页面；纯解析入口不会跟随目录或章节链接。 */
+  fetchPageSnapshot(url: string, signal?: AbortSignal): Promise<ScraperPageSnapshot>;
+  parseNovelSnapshot(html: string, url: string): ParsedNovelPage;
+  parseChapterSnapshot(html: string): { paragraphs: string[]; text: string };
+  /** 按站点日期格式解析目录中的章节日期；无法解析时返回 undefined，不返回无效日期 */
+  parseCatalogDate(value: string | Date | undefined): Date | undefined;
   /**
    * 验证 URL 是否为该服务支持的 URL
    * @param url 要验证的 URL
@@ -74,4 +96,3 @@ export interface ParsedNovelInfo {
   volumes?: ParsedVolumeInfo[] | undefined;
   webUrl: string;
 }
-

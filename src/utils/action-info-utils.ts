@@ -111,6 +111,13 @@ export function getActionDetails(
   action: MessageAction,
   context: ActionDetailsContext,
 ): ActionDetail[] {
+  if (action.nameIsDescription) {
+    return [
+      { label: '操作说明', value: action.name ?? '' },
+      ...(action.descriptionDetails ?? []),
+      { label: '操作时间', value: formatTimestamp(action.timestamp) },
+    ];
+  }
   const details: ActionDetail[] = [
     { label: '操作类型', value: ACTION_LABELS[action.type] },
     { label: '实体类型', value: ENTITY_LABELS[action.entity] },

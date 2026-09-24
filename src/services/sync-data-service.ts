@@ -14,6 +14,8 @@ import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 import { stripNovelLocalFields } from 'src/utils/sync-strip';
 import { getErrorMessage } from 'src/utils/error-message';
+import { chapterStructureHash } from 'src/utils/chapter-structure-hash';
+import { getChapterBaselines, recordStructureBaselines } from 'src/services/sync-chapter-baselines';
 
 /** 取数组或缺省值，null/undefined 视为空数组 */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -170,6 +172,96 @@ async function loadChapterContentForNovelMerge(chapter: Chapter | undefined): Pr
   return loadedContent ?? [];
 }
 
+/** 两方都相对基准改过段落结构的章节 */
+export interface SyncStructureConflict {
+  bookId: string;
+  bookTitle: string;
+  chapterId: string;
+  chapterTitle: string;
+}
+
+/** 一次同步执行中累积的合并报告 */
+export interface SyncMergeReport {
+  structureConflicts: SyncStructureConflict[];
+}
+
+/** 段落结构裁决所需的上下文：本设备的结构基准与报告 */
+interface StructureMergeContext {
+  baselines: (chapterId: string) => string | undefined;
+  report?: SyncMergeReport | undefined;
+  bookId: string;
+  bookTitle: string;
+}
+
+/**
+ * 段落结构来源：
+ * - `local` / `remote`：只有该方相对基准改过结构，以该方为准，不追加另一方独有段落
+ * - `unchanged`：两方结构都与基准相同
+ * - `conflict`：两方都改过结构，沿用旧规则并提示用户
+ * - `unknown`：没有基准（或任一侧缺正文、章节 ID 不同），沿用旧规则
+ */
+type StructureSource = 'local' | 'remote' | 'unchanged' | 'conflict' | 'unknown';
+
+function inlineContent(chapter: Chapter): Paragraph[] | undefined {
+  return Array.isArray(chapter.content) && chapter.content.length > 0 ? chapter.content : undefined;
+}
+
+function chapterOriginalTitle(chapter: Chapter): string {
+  return typeof chapter.title === 'string' ? chapter.title : (chapter.title?.original ?? '');
+}
+
+/**
+ * 按结构基准判断哪一方改过段落结构。
+ * 远端指纹只用远端条目内联的正文计算：远端缺正文时 loadChapterContentForNovelMerge
+ * 会回退读取同 ID 的本地正文，用它计算会把本地结构误当成远端结构。
+ */
+async function resolveStructureSource(
+  localChapter: Chapter,
+  remoteChapter: Chapter,
+  localContent: Paragraph[],
+  structure: StructureMergeContext | undefined,
+): Promise<StructureSource> {
+  if (!structure || localChapter.id !== remoteChapter.id) return 'unknown';
+  const base = structure.baselines(localChapter.id);
+  const remoteContent = inlineContent(remoteChapter);
+  if (!base || localContent.length === 0 || !remoteContent) return 'unknown';
+  const [localHash, remoteHash] = await Promise.all([
+    chapterStructureHash(localContent),
+    chapterStructureHash(remoteContent),
+  ]);
+  const localChanged = localHash !== base;
+  const remoteChanged = remoteHash !== base;
+  if (localChanged && remoteChanged) return 'conflict';
+  if (localChanged) return 'local';
+  if (remoteChanged) return 'remote';
+  return 'unchanged';
+}
+
+/** 预读本地书籍各章的结构基准；读取失败时按没有基准处理（沿用旧规则） */
+async function loadStructureMergeContext(
+  localNovel: Novel,
+  report: SyncMergeReport | undefined,
+): Promise<StructureMergeContext> {
+  const chapterIds = (localNovel.volumes ?? []).flatMap((volume) =>
+    (volume.chapters ?? []).map((chapter) => chapter.id),
+  );
+  let baselines = new Map<string, string>();
+  try {
+    baselines = await getChapterBaselines(chapterIds);
+  } catch (error) {
+    console.warn(
+      `[SyncDataService] 读取章节结构基准失败 (novel:${localNovel.id})，按没有基准合并:`,
+      error,
+    );
+  }
+  return {
+    baselines: (chapterId) => baselines.get(chapterId),
+    report,
+    bookId: localNovel.id,
+    bookTitle: localNovel.title,
+  };
+}
+
 async function ensureChapterContentLoadedForNovelMerge(chapter: Chapter): Promise<Chapter> {
   const content = await loadChapterContentForNovelMerge(chapter);
   if (content.length === 0) {
@@ -189,6 +281,7 @@ async function mergeNovelChapters(
   primaryNovelLastEdited?: Date | number | string,
   secondaryNovelLastEdited?: Date | number | string,
   lastSyncTime = 0,
+  structure?: StructureMergeContext,
 ): Promise<Chapter[] | undefined> {
   const primaryIsRemote = preferRemoteSelection;
   const remoteNovelTime = primaryIsRemote
@@ -290,10 +383,48 @@ async function mergeNovelChapters(
           : { ...winningChapter, title: mergedTitle };
       }
 
+      // 段落结构与原文按结构基准裁决，不看 lastEdited（翻译也会刷新 lastEdited）；
+      // 章节元信息仍由 winningChapter 决定。
+      const source = await resolveStructureSource(
+        localChapter,
+        remoteChapter,
+        localContent,
+        structure,
+      );
+      if (source === 'conflict' && structure?.report) {
+        structure.report.structureConflicts.push({
+          bookId: structure.bookId,
+          bookTitle: structure.bookTitle,
+          chapterId: localChapter.id,
+          chapterTitle: chapterOriginalTitle(winningChapter),
+        });
+      }
+      if (source === 'local' || source === 'remote') {
+        const structureChapter = source === 'remote' ? remoteChapter : localChapter;
+        return {
+          ...winningChapter,
+          title: mergedTitle,
+          // 原始抓取文本随段落原文一起走，避免与段落结构错配
+          originalContent: structureChapter.originalContent,
+          lastUpdated: structureChapter.lastUpdated,
+          content: mergeParagraphTranslations(
+            localContent,
+            remoteContent,
+            source === 'remote',
+            false,
+          ),
+        };
+      }
+
       return {
         ...winningChapter,
         title: mergedTitle,
-        content: mergeParagraphTranslations(localContent, remoteContent, preferRemoteChapter),
+        content: mergeParagraphTranslations(
+          localContent,
+          remoteContent,
+          preferRemoteChapter,
+          source !== 'unchanged',
+        ),
       };
     }),
   );
@@ -322,6 +453,7 @@ async function mergeNovelVolumes(
   primaryNovelLastEdited?: Date | number | string,
   secondaryNovelLastEdited?: Date | number | string,
   lastSyncTime = 0,
+  structure?: StructureMergeContext,
 ): Promise<Volume[] | undefined> {
   const primaryIsRemote = preferRemoteSelection;
   const remoteNovelTime = primaryIsRemote
@@ -440,6 +572,7 @@ async function mergeNovelVolumes(
           primaryNovelLastEdited,
           secondaryNovelLastEdited,
           lastSyncTime,
+          structure,
         ),
       };
     }),
@@ -477,6 +610,7 @@ async function mergeNovelKeepingPrimary(
   secondaryNovel: Novel | undefined,
   preferRemoteSelection: boolean,
   lastSyncTime = 0,
+  structure?: StructureMergeContext,
 ): Promise<Novel> {
   if (!secondaryNovel) {
     return primaryNovel;
@@ -503,6 +637,7 @@ async function mergeNovelKeepingPrimary(
       primaryNovel.lastEdited,
       secondaryNovel.lastEdited,
       lastSyncTime,
+      structure,
     ),
   };
 }
@@ -510,7 +645,12 @@ async function mergeNovelKeepingPrimary(
 /**
  * 合并段落翻译
  *
- * 语义：按 id（带文本回退）union 两侧段落集合；不丢弃任何一方独有的段落。
+ * 语义：按 id（带文本回退）配对两侧段落并合并译文；`appendSecondaryOnly=true` 时
+ * 追加副方独有的段落（没有结构基准或两方都改过结构时的旧规则），为 false 时以主导方
+ * 的段落结构为准（结构裁决已确定只有主导方改过结构）。
+ *
+ * 只有原文完全相同的段落才合并译文：id 相同但原文不同，说明一方修订过原文，
+ * 另一方的旧译文不再对应新原文，不带入结果。
  *
  * - `preferRemoteSelection=false`（默认）：本地为主导方，输出顺序跟随本地段落顺序，
  *   远端独有段落追加在末尾；段落字段以本地为基（`{...local, translations: union}`）
@@ -527,6 +667,7 @@ function mergeParagraphTranslations(
   localParagraphs: Paragraph[],
   remoteParagraphs: Paragraph[] | undefined,
   preferRemoteSelection = false,
+  appendSecondaryOnly = true,
 ): Paragraph[] {
   if (!remoteParagraphs || remoteParagraphs.length === 0) {
     return localParagraphs;
@@ -572,6 +713,9 @@ function mergeParagraphTranslations(
       return primaryPara;
     }
     consumedSecondaryIds.add(match.id);
+    if (match.text !== primaryPara.text) {
+      return primaryPara;
+    }
 
     const seen = new Set<string>();
     const merged: Translation[] = [];
@@ -610,6 +754,10 @@ function mergeParagraphTranslations(
 
   const result: Paragraph[] = primary.map(mergeOne);
 
+  if (!appendSecondaryOnly) {
+    return result;
+  }
+
   // 追加副方独有段落（未被 id 或文本匹配消费过的）
   for (const secondaryPara of secondary) {
     if (!consumedSecondaryIds.has(secondaryPara.id)) {
@@ -631,8 +779,9 @@ async function mergeRemoteTranslationsIntoLocalNovel(
   localNovel: Novel,
   remoteNovel: Novel | undefined,
   lastSyncTime = 0,
+  structure?: StructureMergeContext,
 ): Promise<Novel> {
-  return mergeNovelKeepingPrimary(localNovel, remoteNovel, false, lastSyncTime);
+  return mergeNovelKeepingPrimary(localNovel, remoteNovel, false, lastSyncTime, structure);
 }
 
 /**
@@ -1006,6 +1155,7 @@ export class SyncDataService {
     } | null,
     lastSyncTime?: number,
     isManualRetrieval = false,
+    report?: SyncMergeReport,
   ): Promise<RestorableItem[]> {
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
 
@@ -1047,6 +1197,7 @@ export class SyncDataService {
           syncTime,
           isManualRetrieval,
           restorableItems,
+          report,
         );
       }
 
@@ -1312,13 +1463,25 @@ export class SyncDataService {
     localBooksEmpty: boolean,
     novelIdsToUndelete: Set<string>,
     restorableItems: RestorableItem[],
+    report?: SyncMergeReport,
   ): Promise<Novel | null> {
     if (localNovel) {
+      const structure = await loadStructureMergeContext(localNovel, report);
       if (SyncDataService.shouldUseRemoteByTime(localNovel.lastEdited, remoteNovel.lastEdited)) {
-        return SyncDataService.mergeNovelWithLocalContent(remoteNovel, localNovel, syncTime);
+        return SyncDataService.mergeNovelWithLocalContent(
+          remoteNovel,
+          localNovel,
+          syncTime,
+          structure,
+        );
       }
       const localNovelWithContent = await SyncDataService.ensureNovelContentLoaded(localNovel);
-      return mergeRemoteTranslationsIntoLocalNovel(localNovelWithContent, remoteNovel, syncTime);
+      return mergeRemoteTranslationsIntoLocalNovel(
+        localNovelWithContent,
+        remoteNovel,
+        syncTime,
+        structure,
+      );
     }
 
     const deletionRecord = deletedNovelIdsMap.get(remoteNovel.id);
@@ -1364,11 +1527,13 @@ export class SyncDataService {
     syncTime: number,
     isManualRetrieval: boolean,
     restorableItems: RestorableItem[],
+    report?: SyncMergeReport,
   ): Promise<void> {
     const booksStore = useBooksStore();
     const settingsStore = useSettingsStore();
 
     const finalBooks: Novel[] = [];
+    const appliedRemoteNovels: Novel[] = [];
     const deletedNovelIds = gistSyncSnapshot?.deletedNovelIds || [];
     const deletedNovelIdsMap = new Map<string, number>(
       deletedNovelIds.map((record: any) => [record.id, record.deletedAt] as const), // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -1389,8 +1554,12 @@ export class SyncDataService {
         localBooksEmpty,
         novelIdsToUndelete,
         restorableItems,
+        report,
       );
-      if (winner) finalBooks.push(winner);
+      if (winner) {
+        finalBooks.push(winner);
+        appliedRemoteNovels.push(remoteNovel as Novel);
+      }
     }
 
     if (novelIdsToUndelete.size > 0) {
@@ -1414,6 +1583,8 @@ export class SyncDataService {
     const staleBookIds = booksStore.books.filter((b) => !finalBookIds.has(b.id)).map((b) => b.id);
 
     await booksStore.bulkAddBooks(finalBooks);
+    // 基准记录远端原样的结构（不是合并结果）：它表示「远端当前是什么样」
+    await recordStructureBaselines(appliedRemoteNovels);
 
     for (const staleId of staleBookIds) {
       try {
@@ -2649,8 +2820,10 @@ export class SyncDataService {
    * @returns 应用失败的条目 key 列表。调用方不得把这些条目的新远端哈希记为已知，
    *   否则远端更新会被静默丢弃且下轮上传会用陈旧本地副本覆盖远端。
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  static async applyPartialRemoteData(changedEntries: Record<string, any>): Promise<string[]> {
+  static async applyPartialRemoteData(
+    changedEntries: Record<string, any>, // eslint-disable-line @typescript-eslint/no-explicit-any
+    report?: SyncMergeReport,
+  ): Promise<string[]> {
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
 
     const failedEntryKeys: string[] = [];
@@ -2676,7 +2849,7 @@ export class SyncDataService {
             );
             break;
           case 'novel':
-            await SyncDataService.applyPartialNovelEntry((entry as { value: Novel }).value);
+            await SyncDataService.applyPartialNovelEntry((entry as { value: Novel }).value, report);
             break;
           case 'memories': {
             // 兼容两种 entry.value 形态：v3+ envelope 或旧 Memory[]（legacy 路径 / 测试 fixture）
@@ -2841,7 +3014,10 @@ export class SyncDataService {
   }
 
   /** novel 条目：合并保留本地章节内容，或回退到"本地较新 + 合入远端翻译" */
-  private static async applyPartialNovelEntry(remoteNovel: Novel): Promise<void> {
+  private static async applyPartialNovelEntry(
+    remoteNovel: Novel,
+    report?: SyncMergeReport,
+  ): Promise<void> {
     const booksStore = useBooksStore();
     const gistSync = GlobalConfig.getGistSyncSnapshot();
     const lastSyncTime = gistSync?.lastSyncTime ?? 0;
@@ -2855,8 +3031,11 @@ export class SyncDataService {
       const deletedAt = deletedNovelMap.get(remoteNovel.id);
       if (deletedAt !== undefined && deletedAt > lastSyncTime) return;
       await booksStore.bulkAddBooks([remoteNovel]);
+      await recordStructureBaselines([remoteNovel]);
       return;
     }
+
+    const structure = await loadStructureMergeContext(localNovel, report);
 
     const localTime = localNovel.lastEdited ? new Date(localNovel.lastEdited).getTime() : 0;
     const remoteTime = remoteNovel.lastEdited ? new Date(remoteNovel.lastEdited).getTime() : 0;
@@ -2865,8 +3044,10 @@ export class SyncDataService {
         remoteNovel,
         localNovel,
         lastSyncTime,
+        structure,
       );
       await booksStore.bulkAddBooks([merged]);
+      await recordStructureBaselines([remoteNovel]);
       return;
     }
 
@@ -2877,8 +3058,10 @@ export class SyncDataService {
         localNovelWithContent,
         remoteNovel,
         lastSyncTime,
+        structure,
       );
       await booksStore.bulkAddBooks([mergedNovel]);
+      await recordStructureBaselines([remoteNovel]);
     } catch (e) {
       console.warn(`[SyncDataService] 合并远端翻译失败 (novel:${remoteNovel.id})，保留本地:`, e);
     }
@@ -3150,8 +3333,15 @@ export class SyncDataService {
     remoteNovel: Novel,
     localNovel: Novel,
     lastSyncTime = 0,
+    structure?: StructureMergeContext,
   ): Promise<Novel> {
-    const mergedNovel = await mergeNovelKeepingPrimary(remoteNovel, localNovel, true, lastSyncTime);
+    const mergedNovel = await mergeNovelKeepingPrimary(
+      remoteNovel,
+      localNovel,
+      true,
+      lastSyncTime,
+      structure,
+    );
     return {
       ...mergedNovel,
       createdAt: remoteNovel.createdAt || localNovel.createdAt,

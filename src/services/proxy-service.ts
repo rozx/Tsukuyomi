@@ -1,3 +1,4 @@
+import { delayAbortable, runAbortable } from 'src/utils/abortable-operation';
 import { DEFAULT_CORS_PROXY_FOR_AI } from 'src/constants/proxy';
 import { extractRootDomain } from 'src/utils/domain-utils';
 import { isElectron } from 'src/utils/platform';
@@ -28,9 +29,7 @@ function isNetworkErrorStatus(status: number | undefined): boolean {
 
 /** axios 错误 code 是否被视为网络错误 */
 function isNetworkErrorCode(code: string | undefined): boolean {
-  return (
-    !!code && ['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ERR_FAILED'].includes(code)
-  );
+  return !!code && ['ETIMEDOUT', 'ECONNREFUSED', 'ENOTFOUND', 'ERR_FAILED'].includes(code);
 }
 
 /** Error.message 中触发"网络错误"判定的关键词列表 */
@@ -58,10 +57,7 @@ function buildAttemptProxiedUrl(originalUrl: string, currentProxyUrl: string | n
 }
 
 /** 第一次尝试（attemptIndex = 0）的代理选择策略 */
-function pickFirstAttemptProxy(
-  defaultProxyUrl: string,
-  siteProxies: string[],
-): string | null {
+function pickFirstAttemptProxy(defaultProxyUrl: string, siteProxies: string[]): string | null {
   if (defaultProxyUrl && siteProxies.length > 0 && siteProxies.includes(defaultProxyUrl)) {
     return defaultProxyUrl;
   }
@@ -280,12 +276,7 @@ export class ProxyService {
     autoSwitch: boolean,
   ): Promise<void> {
     const autoAddMapping = GlobalConfig.getProxyAutoAddMapping();
-    if (
-      !autoSwitch ||
-      !autoAddMapping ||
-      !currentProxyUrl ||
-      currentProxyUrl === defaultProxyUrl
-    ) {
+    if (!autoSwitch || !autoAddMapping || !currentProxyUrl || currentProxyUrl === defaultProxyUrl) {
       return;
     }
     const domain = this.extractDomain(originalUrl);
@@ -329,6 +320,7 @@ export class ProxyService {
        * @default 3
        */
       maxRetries?: number;
+      signal?: AbortSignal;
     } = {},
   ): Promise<T> {
     const {
@@ -336,6 +328,7 @@ export class ProxyService {
       skipInternalProxy = false,
       skipExternalProxy = false,
       maxRetries = 3,
+      signal,
     } = options;
     const settingsStore = useSettingsStore();
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
@@ -349,7 +342,7 @@ export class ProxyService {
         skipInternalProxy,
         skipExternalProxy,
       });
-      return await requestFn(proxiedUrl);
+      return await runAbortable(signal, () => requestFn(proxiedUrl));
     }
 
     // skipExternalProxy：不参与外部代理轮换，但保留下方瞬时错误重试循环
@@ -364,7 +357,7 @@ export class ProxyService {
       try {
         if (fixedProxiedUrl !== null) {
           // 固定 URL：不轮换代理、不记录网站-代理映射
-          return await requestFn(fixedProxiedUrl);
+          return await runAbortable(signal, () => requestFn(fixedProxiedUrl));
         }
 
         // 获取当前尝试应该使用的代理 URL（不改变全局设置）
@@ -372,7 +365,7 @@ export class ProxyService {
         const proxiedUrl = buildAttemptProxiedUrl(originalUrl, currentProxyUrl);
 
         // 执行请求
-        const result = await requestFn(proxiedUrl);
+        const result = await runAbortable(signal, () => requestFn(proxiedUrl));
 
         // 如果请求成功，且使用的不是默认代理，且启用了自动添加映射，记录到网站-代理映射中
         await this.maybeRecordProxyMapping(
@@ -386,6 +379,7 @@ export class ProxyService {
         // 成功返回（不改变全局代理设置）
         return result;
       } catch (error) {
+        if (signal?.aborted) throw signal.reason ?? new DOMException('操作已取消', 'AbortError');
         lastError = error instanceof Error ? error : new Error('Unknown error');
         const isNetworkErr = this.isNetworkError(error);
 
@@ -400,7 +394,7 @@ export class ProxyService {
         const action = computeRetryAction(autoSwitch, isNetworkErr, attempt, maxRetries);
         if (action.kind === 'throw') throw lastError;
         // 等待后进入下一次循环（可能换下一个代理）
-        await new Promise((resolve) => setTimeout(resolve, action.ms));
+        await delayAbortable(action.ms, signal);
       }
     }
 

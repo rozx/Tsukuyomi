@@ -1,3 +1,8 @@
+import {
+  createDefaultGistSyncConfig,
+  mergeGistSyncConfig,
+  patchGistSyncConfig,
+} from 'src/services/sync-config-persistence';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { toRaw } from 'vue';
 import { cloneDeep } from 'lodash';
@@ -69,27 +74,6 @@ export function getSyncDeletionPropagationStateClearedPatch(): Pick<
     deletedModelIds: [],
     deletedMemoryIds: [],
     knownRemoteTombstones: {},
-  };
-}
-
-/**
- * 默认 Gist 同步配置
- */
-function createDefaultGistSyncConfig(): SyncConfig {
-  return {
-    enabled: false,
-    lastSyncTime: 0,
-    syncInterval: 300000, // 5 分钟
-    syncType: SyncType.Gist,
-    syncParams: {},
-    secret: '',
-    apiEndpoint: '',
-    lastSyncedModelIds: [],
-    deletedNovelIds: [],
-    deletedModelIds: [],
-    deletedCoverIds: [],
-    deletedCoverUrls: [],
-    deletedMemoryIds: [],
   };
 }
 
@@ -231,7 +215,11 @@ async function applyMemoryInjectionSemanticSideEffect(
   previousEnabled: boolean | undefined,
   nextEnabled: boolean | undefined,
 ): Promise<void> {
-  if (previousEnabled === undefined || nextEnabled === undefined || previousEnabled === nextEnabled) {
+  if (
+    previousEnabled === undefined ||
+    nextEnabled === undefined ||
+    previousEnabled === nextEnabled
+  ) {
     return;
   }
 
@@ -354,6 +342,10 @@ async function saveSyncToDB(syncs: SyncConfig[]): Promise<void> {
     console.error('Failed to save sync configs to IndexedDB:', error);
   }
 
+  saveSyncToLocalStorage(syncs);
+}
+
+function saveSyncToLocalStorage(syncs: SyncConfig[]): void {
   // localStorage 兜底写入（向后兼容 & 避免某些环境 IndexedDB 写入失败导致刷新后 lastSyncTime 回退）
   try {
     if (typeof localStorage !== 'undefined') {
@@ -875,22 +867,18 @@ export const useSettingsStore = defineStore('settings', {
      */
     async updateGistSync(updates: Partial<SyncConfig>): Promise<void> {
       const index = this.syncs.findIndex((sync) => sync.syncType === SyncType.Gist);
-      const defaultConfig = createDefaultGistSyncConfig();
       const existingConfig = index >= 0 ? this.syncs[index] : undefined;
-
-      // 三层优先级合并（updates > existing > default）。
-      // Partial<T> 字段仅在调用方显式给 key 时才会写入，
-      // `updates.syncTime = 0` 这类数字 0/false 的合法值不会被 `??` 意外回退。
-      const updatedConfig: SyncConfig = {
-        ...defaultConfig,
-        ...(existingConfig ?? {}),
-        ...updates,
-        syncParams: {
-          ...defaultConfig.syncParams,
-          ...(existingConfig?.syncParams ?? {}),
-          ...(updates.syncParams ?? {}),
-        },
-      };
+      const cleanUpdates = cloneDeep(toRaw(updates));
+      let updatedConfig = mergeGistSyncConfig(existingConfig, cleanUpdates);
+      try {
+        updatedConfig = await patchGistSyncConfig(
+          await getDB(),
+          cleanUpdates,
+          cloneDeep(toRaw(existingConfig)),
+        );
+      } catch (error) {
+        console.error('Failed to patch sync config in IndexedDB:', error);
+      }
 
       if (index >= 0 && this.syncs[index]) {
         // 原地更新以保持响应式引用不变
@@ -904,8 +892,14 @@ export const useSettingsStore = defineStore('settings', {
         this.syncs.push(updatedConfig);
       }
 
-      await saveSyncToDB(this.syncs);
+      saveSyncToLocalStorage(this.syncs);
       await Promise.resolve();
+    },
+
+    /** 刷新其他事务已提交的同步配置，不能再次保存旧缓存。 */
+    async reloadSyncConfigs(): Promise<void> {
+      this.syncs = await loadSyncFromDB();
+      saveSyncToLocalStorage(this.syncs);
     },
 
     /**

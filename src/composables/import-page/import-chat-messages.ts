@@ -1,0 +1,302 @@
+import { importActionInfo } from './import-action-info';
+import { actionObject, createImportActionContext } from './import-action-context';
+import type { ImportActionContext, ImportActionTask } from './import-action-context';
+/**
+ * 把导入任务的持久事件转换成月詠聊天组件使用的消息格式。
+ *
+ * 工具调用挂在发出它的助手消息上，作为操作记录显示；名称写明处理的来源与实际结果，
+ * 便于用户定位来源或草稿。问答与待办沿用聊天已有的徽章字段。
+ */
+import type { ImportEvent, ImportSource } from 'src/models/import';
+import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
+import type { AIToolCall } from 'src/services/ai/types/ai-service';
+import { TOOL_CALL_PLACEHOLDER_VARIANTS } from 'src/constants/chat';
+
+/** 操作记录当前显示内容的短指纹（djb2），只用于区分消息标识，不作安全用途。 */
+function fingerprint(actions: MessageAction[]): string {
+  const text = actions
+    .map(
+      (action) =>
+        `${action.name ?? ''}|${JSON.stringify(action.descriptionDetails ?? [])}|${action.answer ?? ''}|${action.batch_answers?.length ?? 0}`,
+    )
+    .join('\n');
+  let hash = 5381;
+  for (let index = 0; index < text.length; index++)
+    hash = ((hash << 5) + hash + text.charCodeAt(index)) | 0;
+  return (hash >>> 0).toString(36);
+}
+
+interface MessageOptions {
+  sourceNames: Map<string, string>;
+  task?: ImportActionTask;
+  sources?: Pick<ImportSource, 'id' | 'name' | 'url' | 'relativePath'>[];
+  streaming?: string;
+  /** 正在压缩上下文：末尾显示临时的总结气泡。 */
+  compacting?: boolean;
+}
+
+const COMPACTED_TEXT = '对话上下文已压缩为摘要，来源、草稿和操作记录保持不变。';
+const COMPACTING_TEXT = '正在压缩对话上下文…';
+
+type Args = Record<string, unknown>;
+type Result = Record<string, unknown> | undefined;
+type ActionShape = Pick<MessageAction, 'type' | 'entity'>;
+
+const ACTION_SHAPES: Record<string, ActionShape> = {
+  preview_text_structure: { type: 'read', entity: 'chapter' },
+  get_text_structure: { type: 'read', entity: 'chapter' },
+  apply_text_structure: { type: 'update', entity: 'chapter' },
+  preview_draft_batch: { type: 'read', entity: 'chapter' },
+  apply_draft_batch: { type: 'update', entity: 'chapter' },
+  prepare_chapter_batch: { type: 'create', entity: 'chapter' },
+  run_chapter_batch: { type: 'create', entity: 'chapter' },
+  get_chapter_batch: { type: 'read', entity: 'chapter' },
+  list_sources: { type: 'read', entity: 'web' },
+  inspect_source: { type: 'read', entity: 'web' },
+  read_source: { type: 'read', entity: 'web' },
+  extract_novel_info: { type: 'read', entity: 'book' },
+  add_sources: { type: 'create', entity: 'web' },
+  extract_content: { type: 'create', entity: 'chapter' },
+  get_import_draft: { type: 'read', entity: 'chapter' },
+  edit_import_draft: { type: 'update', entity: 'chapter' },
+  search_books: { type: 'search', entity: 'book' },
+  get_book_info: { type: 'read', entity: 'book' },
+  list_chapters: { type: 'read', entity: 'book' },
+  get_chapter_info: { type: 'read', entity: 'chapter' },
+  search_web: { type: 'web_search', entity: 'web' },
+  preview_import: { type: 'read', entity: 'book' },
+  record_update_recipe: { type: 'update', entity: 'book' },
+  rename_import_task: { type: 'update', entity: 'book' },
+  ask_user: { type: 'ask', entity: 'user' },
+  ask_user_batch: { type: 'ask', entity: 'user' },
+  create_todo: { type: 'create', entity: 'todo' },
+  update_todos: { type: 'update', entity: 'todo' },
+  mark_todo_done: { type: 'update', entity: 'todo' },
+  mark_todo_working: { type: 'update', entity: 'todo' },
+  delete_todo: { type: 'delete', entity: 'todo' },
+  list_todos: { type: 'read', entity: 'todo' },
+};
+
+function parseArgs(raw: string): Args {
+  try {
+    const value: unknown = JSON.parse(raw);
+    return value && typeof value === 'object' ? (value as Args) : {};
+  } catch {
+    return {};
+  }
+}
+
+function sourceLabel(id: unknown, names: Map<string, string>): string {
+  return typeof id === 'string' ? (names.get(id) ?? id.slice(0, 8)) : '';
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function count(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+type Describe = (args: Args, names: Map<string, string>) => string;
+
+function extractionLabel(args: Args, names: Map<string, string>): string {
+  if (args.filter) return '筛选并提取正文';
+  const sources = (Array.isArray(args.sources) ? args.sources : []) as Args[];
+  const labels = sources.slice(0, 3).map((entry) => sourceLabel(entry.source_id, names));
+  const more = sources.length > 3 ? ` 等 ${sources.length} 个` : '';
+  return `提取正文：${labels.join('、')}${more}`;
+}
+
+const libraryLabel: Describe = () => '对照本地小说';
+
+/** 操作本身的描述：处理了哪些来源、范围或草稿（未由 importActionInfo 给出摘要时使用）。 */
+const DESCRIPTIONS: Record<string, Describe> = {
+  preview_draft_batch: (args) =>
+    args.target === 'body' ? '预览批量正文清理' : '预览卷章标题批量替换',
+  apply_draft_batch: () => '应用草稿批量修改',
+  prepare_chapter_batch: () => '准备章节批次',
+  run_chapter_batch: (args) => (args.retry_failed ? '重试失败章节' : '批量提取章节'),
+  get_chapter_batch: () => '查看批次进度',
+  list_sources: () => '列出来源',
+  inspect_source: (args, names) => `检查来源：${sourceLabel(args.source_id, names)}`,
+  read_source: () => '查看来源内容',
+  extract_novel_info: (args, names) => `读取小说信息：${sourceLabel(args.source_id, names)}`,
+  add_sources: (args) =>
+    args.filter ? '筛选并追加来源' : `追加 ${count(args.discovery_ids)} 个发现的来源`,
+  extract_content: extractionLabel,
+  get_import_draft: () => '读取草稿',
+  edit_import_draft: (args) => `编辑草稿：${count(args.operations)} 项操作`,
+  search_books: (args) => `查找本地小说：${text(args.query)}`,
+  get_book_info: libraryLabel,
+  list_chapters: libraryLabel,
+  get_chapter_info: libraryLabel,
+  preview_import: () => '生成导入方案',
+  rename_import_task: (args) => `命名任务：${text(args.name)}`,
+};
+
+function describe(name: string, args: Args, names: Map<string, string>): string {
+  return DESCRIPTIONS[name]?.(args, names) ?? name;
+}
+
+function errorMessage(result: Args): string {
+  const error = result.error;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    const message = (error as Args).message;
+    if (typeof message === 'string') return message.replace(/^[A-Z_]+:\s*/, '');
+  }
+  return '未知错误';
+}
+
+/** 实际结果：成功/失败数量或错误原因；尚无结果时显示进行中。 */
+function outcome(name: string, result: Result): string {
+  if (!result) return '（进行中）';
+  if (result.success === false && name !== 'extract_content')
+    return `（失败：${errorMessage(result)}）`;
+  if (['preview_draft_batch', 'apply_draft_batch'].includes(name))
+    return `（影响 ${typeof result.affected === 'number' ? result.affected : 0} 项／命中 ${typeof result.matches === 'number' ? result.matches : 0} 处）`;
+  if (name === 'add_sources' && Array.isArray(result.sources))
+    return `（已追加 ${result.sources.length} 个）`;
+  if (['prepare_chapter_batch', 'run_chapter_batch', 'get_chapter_batch'].includes(name)) {
+    const ready = typeof result.ready === 'number' ? result.ready : 0;
+    const failed = typeof result.failed === 'number' ? result.failed : 0;
+    const pending = typeof result.pending === 'number' ? result.pending : 0;
+    return `（成功 ${ready}／失败 ${failed}／待处理 ${pending}）`;
+  }
+  if (name === 'extract_content' && Array.isArray(result.results)) {
+    const results = result.results as Args[];
+    const ok = results.filter((entry) => entry.success === true).length;
+    return `（成功 ${ok}／失败 ${results.length - ok}）`;
+  }
+  if (name === 'edit_import_draft' && typeof result.draftRevision === 'number')
+    return `（草稿版本 ${result.draftRevision}）`;
+  if (name === 'record_update_recipe' && typeof result.verified === 'number')
+    return `（可复现 ${result.verified} 章${typeof result.pinned === 'number' && result.pinned ? `，固定 ${result.pinned} 章` : ''}）`;
+  if (name === 'preview_import' && Array.isArray(result.conflicts))
+    return result.conflicts.length ? `（${result.conflicts.length} 个待处理）` : '（可检查）';
+  return '';
+}
+
+function todoName(args: Args): string {
+  if (typeof args.text === 'string') return args.text;
+  if (Array.isArray(args.items)) return (args.items as unknown[]).map(String).join('、');
+  return typeof args.id === 'string' ? args.id : '待办';
+}
+
+type AnswerData = { answers?: { questionIndex: number; answer: string; selectedIndex?: number }[] };
+
+function askAction(call: AIToolCall, args: Args, answer: AnswerData | undefined) {
+  const answers = answer?.answers ?? [];
+  if (call.function.name === 'ask_user_batch') {
+    const questions = (Array.isArray(args.questions) ? args.questions : []) as Args[];
+    return {
+      batch_questions: questions.map((entry) => text(entry.question)),
+      ...(answers.length
+        ? {
+            batch_answers: answers.map((entry) => ({
+              question_index: entry.questionIndex,
+              answer: entry.answer,
+              ...(entry.selectedIndex !== undefined ? { selected_index: entry.selectedIndex } : {}),
+            })),
+          }
+        : {}),
+    };
+  }
+  const [first] = answers;
+  return {
+    question: text(args.question),
+    ...(Array.isArray(args.suggested_answers)
+      ? { suggested_answers: (args.suggested_answers as unknown[]).map(String) }
+      : {}),
+    ...(first ? { answer: first.answer } : {}),
+    ...(first?.selectedIndex !== undefined ? { selected_index: first.selectedIndex } : {}),
+  };
+}
+
+function toAction(
+  call: AIToolCall,
+  timestamp: number,
+  results: Map<string, Result>,
+  answers: Map<string, AnswerData>,
+  context: ImportActionContext,
+): MessageAction {
+  const tool = call.function.name;
+  const args = parseArgs(call.function.arguments);
+  const shape = ACTION_SHAPES[tool] ?? { type: 'read', entity: 'web' };
+  const base = { ...shape, timestamp, tool_name: tool };
+  if (shape.type === 'ask') return { ...base, ...askAction(call, args, answers.get(call.id)) };
+  if (shape.entity === 'todo') return { ...base, name: todoName(args) };
+  if (shape.type === 'web_search')
+    return { ...base, query: typeof args.query === 'string' ? args.query : '' };
+  const info = importActionInfo(tool, args, actionObject(results.get(call.id)), context);
+  return {
+    ...base,
+    nameIsDescription: true,
+    descriptionDetails: info.details,
+    name: `${info.summary ?? describe(tool, args, context.sources)}${outcome(tool, results.get(call.id))}`,
+  };
+}
+
+export function importEventsToMessages(
+  events: ImportEvent[],
+  options: MessageOptions,
+): ChatSessionMessage[] {
+  const results = new Map<string, Result>();
+  const answers = new Map<string, AnswerData>();
+  for (const event of events) {
+    if (event.kind === 'tool-result' && event.callId)
+      results.set(event.callId, event.data as Result);
+    if (event.kind === 'answer' && event.callId)
+      answers.set(event.callId, event.data as AnswerData);
+  }
+  const context = createImportActionContext(events, options);
+  const messages: ChatSessionMessage[] = [];
+  for (const event of events) {
+    if (event.kind === 'summary') {
+      messages.push({
+        id: event.id,
+        role: 'assistant',
+        content: COMPACTED_TEXT,
+        timestamp: event.createdAt,
+        isSummarization: true,
+      });
+      continue;
+    }
+    const message = event.message;
+    if (event.kind !== 'message' || !message) continue;
+    if (message.role !== 'user' && message.role !== 'assistant') continue;
+    const calls = message.role === 'assistant' ? (message.tool_calls ?? []) : [];
+    const actions = calls.map((call, index) =>
+      toAction(call, event.createdAt + index, results, answers, context),
+    );
+    const content = message.content ?? '';
+    messages.push({
+      // 聊天列表按消息标识缓存操作记录；结果或回答到达后标识随之变化以触发刷新
+      id: actions.length ? `${event.id}:${fingerprint(actions)}` : event.id,
+      role: message.role,
+      content: (TOOL_CALL_PLACEHOLDER_VARIANTS as readonly string[]).includes(content.trim())
+        ? ''
+        : content,
+      timestamp: event.createdAt,
+      ...(message.reasoning_content ? { thinkingProcess: message.reasoning_content } : {}),
+      ...(actions.length ? { actions } : {}),
+    });
+  }
+  if (options.streaming)
+    messages.push({
+      id: 'import-streaming',
+      role: 'assistant',
+      content: options.streaming,
+      timestamp: Date.now(),
+    });
+  if (options.compacting)
+    messages.push({
+      id: 'import-compacting',
+      role: 'assistant',
+      content: COMPACTING_TEXT,
+      timestamp: Date.now(),
+      isSummarization: true,
+    });
+  return messages;
+}

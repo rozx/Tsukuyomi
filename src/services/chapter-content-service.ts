@@ -11,14 +11,8 @@ import {
   touch,
 } from 'src/utils/chapter-content-loader';
 
-/**
- * 章节内容存储结构
- */
-interface ChapterContent {
-  chapterId: string;
-  content: string; // 序列化为 JSON 字符串的段落数组
-  lastModified: string; // ISO 日期字符串
-}
+import { LibraryPersistence } from './library-persistence';
+import { maintainLibraryChanges } from './chapter-content-maintenance';
 
 /**
  * 章节内容服务类
@@ -101,50 +95,16 @@ export class ChapterContentService {
     content: Paragraph[],
     options: { bookId: string; skipIfUnchanged?: boolean },
   ): Promise<boolean> {
-    const { bookId, skipIfUnchanged } = options;
-    const serialized = this.serializeContent(content);
-    // 如果启用了 skipIfUnchanged，先检查内容是否已修改
-    if (skipIfUnchanged) {
-      const hasChanged = await this.hasContentChanged(chapterId, content, serialized);
-      if (!hasChanged) {
-        // 内容未修改，跳过保存
-        return false;
-      }
-    }
-    try {
-      const db = await getDB();
-
-      const chapterContent: ChapterContent = {
-        chapterId,
-        content: serialized, // 序列化为 JSON 字符串
-        lastModified: new Date().toISOString(),
-      };
-
-      await db.put('chapter-contents', chapterContent);
-      // 更新 loader 缓存
-      setCacheEntry(chapterId, { parsed: content, serialized });
-
-      // 段落内容(原文或译文)变动 → 触发章节 embedding 防抖重算(异步,不阻塞保存)
-      try {
-        const { markChapterDirty } = await import('src/utils/chapter-embedding-debouncer');
-        markChapterDirty(chapterId);
-      } catch (error) {
-        console.warn('Failed to mark chapter dirty for embedding:', error);
-      }
-
-      // 使全文索引失效（异步，不阻塞保存操作）
-      try {
-        const { FullTextIndexService } = await import('src/services/full-text-index-service');
-        await FullTextIndexService.updateIndexForChapter(bookId, chapterId);
-      } catch (error) {
-        // 索引更新失败不影响内容保存
-        console.warn('Failed to update full-text index after saving chapter content:', error);
-      }
-      return true; // 保存成功
-    } catch (error) {
-      console.error(`Failed to save chapter content for ${chapterId}:`, error);
-      throw error;
-    }
+    const changed = await LibraryPersistence.saveChapter(
+      await getDB(),
+      options.bookId,
+      chapterId,
+      content,
+    );
+    // 只有持久化成功后才更新缓存。实际比较始终以数据库为准。
+    setCacheEntry(chapterId, { parsed: content, serialized: this.serializeContent(content) });
+    if (changed) await maintainLibraryChanges(new Map([[options.bookId, [chapterId]]]));
+    return changed || options.skipIfUnchanged !== true;
   }
 
   /**
@@ -184,44 +144,8 @@ export class ChapterContentService {
    * @param options.bookId 所属书籍 ID（必填，用于全文索引失效；由调用
    *   方显式传入以避免循环依赖）
    */
-  static async deleteChapterContent(
-    chapterId: string,
-    options: { bookId: string },
-  ): Promise<void> {
-    const { bookId } = options;
-    try {
-      const db = await getDB();
-      await db.delete('chapter-contents', chapterId);
-      // 清除缓存
-      deleteCacheEntry(chapterId);
-
-      // 清理章节 embedding(异步,不阻塞删除)
-      try {
-        const [{ cancelChapterDirty }, { EmbeddingQueue }, { ChapterEmbeddingService }] =
-          await Promise.all([
-            import('src/utils/chapter-embedding-debouncer'),
-            import('src/services/embedding-queue'),
-            import('src/services/chapter-embedding-service'),
-          ]);
-        cancelChapterDirty(chapterId);
-        EmbeddingQueue.cancelChapter(chapterId);
-        await ChapterEmbeddingService.deleteChunksForChapter(chapterId);
-      } catch (error) {
-        console.warn('Failed to cleanup chapter embeddings on delete:', error);
-      }
-
-      // 使全文索引失效（异步，不阻塞删除操作）
-      try {
-        const { FullTextIndexService } = await import('src/services/full-text-index-service');
-        await FullTextIndexService.updateIndexForChapter(bookId, chapterId);
-      } catch (error) {
-        // 索引更新失败不影响内容删除
-        console.warn('Failed to update full-text index after deleting chapter content:', error);
-      }
-    } catch (error) {
-      console.error(`Failed to delete chapter content for ${chapterId}:`, error);
-      throw error;
-    }
+  static async deleteChapterContent(chapterId: string, options: { bookId: string }): Promise<void> {
+    await this.bulkDeleteChapterContent([chapterId], options);
   }
 
   /**
@@ -233,63 +157,17 @@ export class ChapterContentService {
     chapterIds: string[],
     options: { bookId: string },
   ): Promise<void> {
-    const { bookId } = options;
-    try {
-      const db = await getDB();
-      const tx = db.transaction('chapter-contents', 'readwrite');
-      const store = tx.objectStore('chapter-contents');
-
-      for (const chapterId of chapterIds) {
-        await store.delete(chapterId);
-        // 清除缓存
-        deleteCacheEntry(chapterId);
-      }
-
-      await tx.done;
-
-      // 清理所有被删章节的 embedding(异步,不阻塞)
-      try {
-        const [{ cancelChapterDirty }, { EmbeddingQueue }, { ChapterEmbeddingService }] =
-          await Promise.all([
-            import('src/utils/chapter-embedding-debouncer'),
-            import('src/services/embedding-queue'),
-            import('src/services/chapter-embedding-service'),
-          ]);
-        for (const chapterId of chapterIds) {
-          cancelChapterDirty(chapterId);
-          EmbeddingQueue.cancelChapter(chapterId);
-          await ChapterEmbeddingService.deleteChunksForChapter(chapterId);
-        }
-      } catch (error) {
-        console.warn('Failed to cleanup chapter embeddings on bulk delete:', error);
-      }
-
-      // 批量删除章节后让书籍的全文索引整体失效一次
-      try {
-        const { FullTextIndexService } = await import('src/services/full-text-index-service');
-        await FullTextIndexService.invalidateIndex(bookId);
-      } catch (error) {
-        console.warn('Failed to invalidate full-text index after bulk delete:', error);
-      }
-    } catch (error) {
-      console.error('Failed to bulk delete chapter contents:', error);
-      throw error;
-    }
+    await LibraryPersistence.deleteChapters(await getDB(), options.bookId, chapterIds);
+    await maintainLibraryChanges(new Map([[options.bookId, chapterIds]]));
   }
 
   /**
    * 清空所有章节内容
    */
   static async clearAllChapterContent(): Promise<void> {
-    try {
-      const db = await getDB();
-      await db.clear('chapter-contents');
-      // 清除所有缓存
-      loaderClearCache();
-    } catch (error) {
-      console.error('Failed to clear all chapter contents:', error);
-      throw error;
-    }
+    const changes = await LibraryPersistence.clear(await getDB(), false);
+    loaderClearCache();
+    await maintainLibraryChanges(changes);
   }
 
   /**

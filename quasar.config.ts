@@ -6,6 +6,21 @@ import { fileURLToPath } from 'node:url';
 import { PrimeVueResolver } from 'unplugin-vue-components/resolvers';
 import { dynamicAIProxy } from './vite-plugins/dynamic-ai-proxy';
 
+/**
+ * 脚本自动导入的 PrimeVue 解析器：跳过运行环境已有的全局名（如 DataView、Image）。
+ * 否则 `new DataView(...)` 这类二进制解析代码会被改写成导入同名组件而在运行时失败；
+ * 同名组件在 .vue 中需显式 import。
+ */
+const primeVueScriptResolver = PrimeVueResolver();
+// 配置在 Node 中执行，globalThis 没有 DOM 全局名，需补充与 PrimeVue 组件同名的那些
+const DOM_GLOBALS = new Set(['Image']);
+const resolvePrimeVueScript = (name: string) => {
+  if (name in globalThis || DOM_GLOBALS.has(name)) return undefined;
+  return typeof primeVueScriptResolver === 'function'
+    ? primeVueScriptResolver(name)
+    : primeVueScriptResolver.resolve(name);
+};
+
 export default defineConfig((ctx: any) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
@@ -14,7 +29,7 @@ export default defineConfig((ctx: any) => {
     // app boot file (/src/boot)
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
-    boot: ['i18n', 'axios', 'primevue', 'toast-history'],
+    boot: ['i18n', 'axios', 'primevue', 'toast-history', 'book-commits'],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: ['tailwind.css'],
@@ -106,7 +121,7 @@ export default defineConfig((ctx: any) => {
           'unplugin-auto-import/vite',
           {
             dts: 'src/auto-imports.d.ts',
-            resolvers: [PrimeVueResolver()],
+            resolvers: [resolvePrimeVueScript],
           },
         ],
         [

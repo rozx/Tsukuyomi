@@ -1,0 +1,406 @@
+import { importStructureTools } from './import-structure-tools';
+import { importPatternSchema, importSourceFilterSchema } from './import-pattern-schema';
+import type { AITool } from 'src/services/ai/types/ai-service';
+import { askUserTools } from 'src/services/ai/tools/ask-user-tools';
+import { todoListTools } from 'src/services/ai/tools/todo-list-tools';
+import { IMPORT_TODO_TOOLS } from './import-todos';
+
+const string = { type: 'string' };
+const strings = { type: 'array', items: string };
+const number = { type: 'integer', minimum: 0 };
+const boolean = { type: 'boolean' };
+const paging = { offset: number, limit: { type: 'integer', minimum: 1, maximum: 100 } };
+const reference = {
+  type: 'object',
+  properties: {
+    kind: { type: 'string', enum: ['extraction', 'existing'] },
+    resourceId: string,
+    blockId: string,
+    endBlockId: string,
+    start: number,
+    end: number,
+    bookId: string,
+    bookRevision: number,
+    chapterId: string,
+    paragraphId: string,
+    excludeRanges: {
+      type: 'array',
+      maxItems: 10000,
+      items: {
+        type: 'object',
+        properties: { start: number, end: number },
+        required: ['start', 'end'],
+      },
+      description: '相对该引用原始解析文本的 UTF-16 排除范围，升序、非重叠。优先使用批量工具计算。',
+    },
+  },
+  required: ['kind'],
+  description:
+    'extraction 引用已保存提取结果（可选块范围、块内 start/end）；existing 必须给出当前目标的 bookId、bookRevision、chapterId、paragraphId。',
+};
+const references = { type: 'array', items: reference };
+const rules = {
+  type: 'object',
+  properties: {
+    preset: string,
+    selector: string,
+    excludeSelectors: strings,
+    encoding: string,
+    ranges: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { start: number, end: number },
+        required: ['start', 'end'],
+      },
+    },
+    excludeRanges: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { start: number, end: number, reason: string },
+        required: ['start', 'end', 'reason'],
+      },
+    },
+  },
+};
+const operations = {
+  type: 'array',
+  minItems: 1,
+  maxItems: 128,
+  items: {
+    type: 'object',
+    properties: {
+      op: {
+        type: 'string',
+        enum: [
+          'set_metadata',
+          'propose_target',
+          'declare_candidates',
+          'upsert_volume',
+          'upsert_chapter',
+          'remove_chapter',
+          'reorder_chapters',
+          'reorder_volumes',
+          'propose_match',
+          'set_completeness',
+        ],
+      },
+      field: {
+        type: 'string',
+        enum: ['title', 'author', 'description', 'cover', 'alternateTitles', 'tags'],
+      },
+      value: string,
+      sourceId: string,
+      resourceId: string,
+      bookId: { type: ['string', 'null'] },
+      id: string,
+      title: string,
+      inferred: boolean,
+      chapterId: string,
+      chapterIds: strings,
+      volumeIds: strings,
+      targetChapterIds: strings,
+      candidates: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            id: string,
+            title: string,
+            author: string,
+            sourceIds: strings,
+            content: references,
+          },
+          required: ['id', 'title', 'sourceIds'],
+        },
+      },
+      chapter: {
+        type: 'object',
+        properties: {
+          id: string,
+          volumeId: string,
+          title: string,
+          inferredTitle: boolean,
+          inferredStructure: boolean,
+          selected: boolean,
+          content: references,
+          sourceIds: strings,
+          status: { type: 'string', enum: ['pending', 'ready', 'failed', 'missing'] },
+        },
+        required: [
+          'id',
+          'volumeId',
+          'title',
+          'inferredTitle',
+          'inferredStructure',
+          'selected',
+          'content',
+          'sourceIds',
+          'status',
+        ],
+      },
+      completeness: {
+        type: 'object',
+        properties: { confirmed: boolean, knownTotal: number, missing: strings },
+        required: ['confirmed', 'missing'],
+      },
+    },
+    required: ['op'],
+  },
+};
+
+function tool(
+  name: string,
+  description: string,
+  properties: Record<string, unknown>,
+  required: string[] = [],
+): AITool {
+  return {
+    type: 'function',
+    function: { name, description, parameters: { type: 'object', properties, required } },
+  };
+}
+
+export const importTools: AITool[] = [
+  ...importStructureTools,
+  tool(
+    'preview_draft_batch',
+    '预览批量正文清理或卷章标题替换，保存版本绑定的方案；不修改草稿。最多 500 项，返回命中数和最多五个示例。正文按每个内容引用处理，可跨其内部多行，不跨不同引用；仅删除匹配片段或整行。标题支持 $1、$<name> 等捕获组替换。空 scope 表示全部；各筛选条件取交集。',
+    {
+      base_draft_revision: number,
+      target: { type: 'string', enum: ['body', 'chapter_title', 'volume_title'] },
+      scope: {
+        type: 'object',
+        properties: {
+          chapter_ids: { ...strings, minItems: 1, maxItems: 500 },
+          volume_ids: { ...strings, minItems: 1, maxItems: 500 },
+          selected_only: boolean,
+          title: importPatternSchema,
+        },
+      },
+      pattern: importPatternSchema,
+      action: { type: 'string', enum: ['remove_matches', 'remove_lines', 'replace'] },
+      replacement: { type: 'string', description: '仅标题 replace 可用；正文禁止替换或新增文本。' },
+    },
+    ['base_draft_revision', 'target', 'scope', 'pattern', 'action'],
+  ),
+  tool(
+    'apply_draft_batch',
+    '应用已预览的草稿批量方案，整批原子提交；草稿变化后必须重新预览。重复执行同一批次不重做；不写书库。',
+    { batch_id: string },
+    ['batch_id'],
+  ),
+  tool(
+    'run_chapter_batch',
+    '按准备好的计划提取全部待处理章节并逐章保存到草稿，最多 3 路并发；返回计数和少量异常，不返回正文。中断后续跑；retry_failed 只重试失败项。',
+    {
+      batch_id: string,
+      base_draft_revision: number,
+      retry_failed: boolean,
+    },
+    ['batch_id', 'base_draft_revision'],
+  ),
+  tool(
+    'get_chapter_batch',
+    '分页查看章节批次的状态、错误和正文引用；正文用 read_source 按需抽查。',
+    {
+      batch_id: string,
+      ...paging,
+    },
+    ['batch_id'],
+  ),
+  tool(
+    'prepare_chapter_batch',
+    '抽样确认后准备章节批次：固定来源、顺序和规则，创建待提取草稿；不抓正文。source_ids、discovery_ids、catalog 三选一，每批最多 500 章。',
+    {
+      base_draft_revision: number,
+      volume_id: string,
+      filter: importSourceFilterSchema,
+      source_ids: { type: 'array', items: string, minItems: 1, maxItems: 500 },
+      discovery_ids: { type: 'array', items: string, minItems: 1, maxItems: 500 },
+      catalog: {
+        type: 'object',
+        properties: {
+          snapshot_id: string,
+          offset: number,
+          limit: { type: 'integer', minimum: 1, maximum: 500 },
+        },
+        required: ['snapshot_id', 'offset', 'limit'],
+      },
+      rules,
+    },
+    ['base_draft_revision', 'volume_id'],
+  ),
+  tool('list_sources', '列出当前任务来源及状态；不读取正文。', {
+    parent_source_id: string,
+    status: {
+      type: 'string',
+      enum: ['registered', 'inspected', 'extracted', 'failed', 'excluded'],
+    },
+    cursor: string,
+    limit: paging.limit,
+  }),
+  tool(
+    'inspect_source',
+    '显式检查一个来源的结构、元信息和资源引用；不自动追加或跟随链接。',
+    { source_id: string, refresh: boolean, encoding: string, ...paging },
+    ['source_id'],
+  ),
+  tool(
+    'read_source',
+    '分页读取保存的快照或提取结果。blocks 返回稳定块 ID 与预览；text 可继续读取完整文本，excluded 检查排除记录，inspection 检查元信息。',
+    {
+      resource_id: string,
+      view: { type: 'string', enum: ['text', 'blocks', 'excluded', 'inspection'] },
+      offset: number,
+      limit: { type: 'integer', minimum: 1, maximum: 16000 },
+    },
+    ['resource_id'],
+  ),
+  tool(
+    'add_sources',
+    '只追加已观察到的发现引用；保留父来源及用途，不抓取内容。',
+    {
+      discovery_ids: { type: 'array', items: string, minItems: 1, maxItems: 16 },
+      filter: importSourceFilterSchema,
+    },
+    ['discovery_ids'],
+  ),
+  tool(
+    'extract_novel_info',
+    '检查小说元信息、目录资源和后续发现引用；不会获取目录外章节正文。',
+    { source_id: string, snapshot_id: string, ...paging },
+    ['source_id'],
+  ),
+  tool(
+    'extract_content',
+    '按明确来源及规则提取原文，保存完整结果并返回内容引用；每批最多八项，不改写正文。',
+    {
+      filter: importSourceFilterSchema,
+      sources: {
+        type: 'array',
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: 'object',
+          properties: { source_id: string, snapshot_id: string, rules },
+          required: ['source_id'],
+        },
+      },
+    },
+    ['sources'],
+  ),
+  tool(
+    'get_import_draft',
+    '读取当前草稿版本、目标与必要问题。chapters 分页列出章节概要；chapter 按 chapter_id 分页读取该章内容引用。',
+    {
+      view: { type: 'string', enum: ['overview', 'chapters', 'chapter'] },
+      chapter_id: string,
+      ...paging,
+    },
+  ),
+  tool(
+    'edit_import_draft',
+    '按版本原子编辑草稿。先声明小说候选及来源归属，再建卷章；sourceIds 可传空数组由宿主从引用计算。只能引用原文；不能伪造确认或写入书库。',
+    { base_draft_revision: number, operations },
+    ['base_draft_revision', 'operations'],
+  ),
+  tool('search_books', '按书名、作者或来源线索搜索本地小说，只返回候选及依据。', {
+    query: string,
+    author: string,
+    url: string,
+    ...paging,
+  }),
+  tool(
+    'get_book_info',
+    '读取明确小说 ID 的基本信息，不附带模型配置、凭据或记忆。',
+    { book_id: string },
+    ['book_id'],
+  ),
+  tool('list_chapters', '按明确小说 ID 分页读取卷章结构。', { book_id: string, ...paging }, [
+    'book_id',
+  ]),
+  tool(
+    'get_chapter_info',
+    '按明确小说和章节 ID 分页读取原文及对应引用所需修改序号。',
+    { book_id: string, chapter_id: string, ...paging },
+    ['book_id', 'chapter_id'],
+  ),
+  tool(
+    'search_web',
+    '仅搜索作者、简介、封面、别名等元信息；结果保持 metadata-only，不能作为替代正文。',
+    { query: string },
+    ['query'],
+  ),
+  tool(
+    'rename_import_task',
+    '为当前导入任务命名，便于用户在任务列表中区分。识别出书名等书本信息后必须调用；通常用书名，可附作者或范围。用户手动命名后不能修改。',
+    { name: string },
+    ['name'],
+  ),
+  tool(
+    'record_update_recipe',
+    '网页来源的章节与目录一一对应并整理完成后，声明这本书的更新配方。宿主只用已保存的快照离线回放：要求草稿中该站点的已选章节与目录链接一一对应，并逐段复现草稿正文（固定正文章节除外，最多 20%）。不通过则拒绝并返回差异示例；通过后作为一次草稿修改写入。内置站点自动采用内置引擎（忽略 catalog_selector 和 chapter_filter），正文规则缺省时沿用导入时实际使用的提取规则。',
+    {
+      base_draft_revision: number,
+      catalog_source_ids: { ...strings, minItems: 1, maxItems: 20 },
+      catalog_selector: {
+        type: 'string',
+        description:
+          '目录链接不在标准目录容器（nav、.toc 等）中时，指定链接所在范围的 CSS 选择器。',
+      },
+      chapter_filter: importSourceFilterSchema,
+      content_rules: {
+        type: 'object',
+        properties: { preset: string, selector: string, excludeSelectors: strings },
+        description: '正文提取规则；缺省时从草稿章节导入时使用的规则推导。',
+      },
+      cleanup: {
+        type: 'array',
+        maxItems: 20,
+        items: {
+          type: 'object',
+          properties: {
+            pattern: importPatternSchema,
+            action: { type: 'string', enum: ['remove_matches', 'remove_lines'] },
+          },
+          required: ['pattern', 'action'],
+        },
+        description: '回放时依次执行的清理规则；草稿中用过的批量清理要一并声明。',
+      },
+      strip_heading: {
+        type: 'boolean',
+        description: '正文首个非空行与目录标题完全相同时删除该行。',
+      },
+      pinned_chapter_ids: {
+        ...strings,
+        maxItems: 500,
+        description: '有意手工修改过、回放无法复现的草稿章节；最多占对应章节数的 20%。',
+      },
+    },
+    ['base_draft_revision', 'catalog_source_ids'],
+  ),
+  tool(
+    'preview_import',
+    '根据当前草稿版本生成真实差异与译文影响，保存待用户检查的方案；不会应用。',
+    { draft_revision: number },
+    ['draft_revision'],
+  ),
+  // 问答与待办复用普通助手的参数约定；导入执行中提问会保存问题并暂停，由用户在工作台回答后恢复
+  ...askUserTools.map(({ definition }) => ({
+    ...definition,
+    function: {
+      ...definition.function,
+      description:
+        definition.function.name === 'ask_user'
+          ? '向用户提出一个必要问题。导入执行会保存问题并暂停，用户在导入工作台回答后恢复，并返回回答。只用于无法从来源判断的关键歧义。'
+          : '一次向用户提出多个必要问题。导入执行会保存问题并暂停，用户须回答全部问题后才会恢复。',
+    },
+  })),
+  ...todoListTools
+    .map(({ definition }) => definition)
+    .filter((definition) =>
+      (IMPORT_TODO_TOOLS as readonly string[]).includes(definition.function.name),
+    ),
+];

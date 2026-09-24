@@ -13,7 +13,11 @@ import {
  * 去重后追加到 `tags` 数组（仅在文本非空、且不重复时 push）。
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function collectUniqueTagTexts($: cheerio.CheerioAPI, nodes: cheerio.Cheerio<any>, tags: string[]): void {
+function collectUniqueTagTexts(
+  $: cheerio.CheerioAPI,
+  nodes: cheerio.Cheerio<any>,
+  tags: string[],
+): void {
   nodes.each((_, el) => {
     const tagText = $(el).text().trim();
     if (tagText && !tags.includes(tagText)) {
@@ -93,12 +97,7 @@ function detectSyosetuVolumeTitle(
     const colspan = $cell.attr('colspan');
     const hasLink = $cell.find('a[href*=".html"]').length > 0;
     const hasStrong = $cell.find('strong').length > 0;
-    if (
-      colspan &&
-      (colspan === '2' || parseInt(colspan, 10) >= 2) &&
-      hasStrong &&
-      !hasLink
-    ) {
+    if (colspan && (colspan === '2' || parseInt(colspan, 10) >= 2) && hasStrong && !hasLink) {
       // 优先 <strong>，否则回退整格文本
       const strongText = $cell.find('strong').first().text().trim();
       const cellText = $cell.text().trim();
@@ -122,9 +121,10 @@ function resolveSyosetuHref(href: string, baseUrl: string): string {
 /**
  * 从章节行最后一列提取日期（支持 "(改)" 标记）。无 (改) 时 date 与 lastUpdated 一致。
  */
-function extractSyosetuChapterDates(
-  cells: cheerio.Cheerio<any>,
-): { date?: string; lastUpdated?: string } {
+function extractSyosetuChapterDates(cells: cheerio.Cheerio<any>): {
+  date?: string;
+  lastUpdated?: string;
+} {
   if (cells.length < 2) return {};
   const dateText = cells.last().text().trim();
   if (!dateText || !dateText.match(/\d{4}年\d{1,2}月\d{1,2}日/)) return {};
@@ -209,7 +209,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
   protected override async parseNovelInfoFromUrl(novelIndexUrl: string): Promise<SyosetuNovelInfo> {
     // syosetu.org 在浏览器环境下通过 /api/syosetu 服务器代理访问
     const html = await this.fetchPage(novelIndexUrl, '/api/syosetu');
-    return this.parseNovelPage(html, novelIndexUrl);
+    return this.parseNovelInfoFromSnapshot(html, novelIndexUrl);
   }
 
   /**
@@ -313,12 +313,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
       }
 
       // 移除段落内的链接（可能是导航链接）
-      this.removeNavigationLinks(
-        $,
-        $p,
-        'a',
-        /目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</,
-      );
+      this.removeNavigationLinks($, $p, 'a', /目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</);
 
       // 提取段落文本，保留内部格式（如 <br> 换行）
       const extractedText = extractParagraphText($, $p);
@@ -416,7 +411,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
    * @param baseUrl 基础 URL（用于构建完整链接）
    * @returns SyosetuNovelInfo 解析后的小说信息
    */
-  private parseNovelPage(html: string, baseUrl: string): SyosetuNovelInfo {
+  protected override parseNovelInfoFromSnapshot(html: string, baseUrl: string): SyosetuNovelInfo {
     const $ = cheerio.load(html);
 
     const title = extractSyosetuTitle($);

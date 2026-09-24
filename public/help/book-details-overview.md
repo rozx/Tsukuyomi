@@ -52,7 +52,7 @@
   - 🔖 术语设置 → 进入 `TerminologyPanel`
   - 👥 角色设置 → 进入 `CharacterSettingPanel`
   - 🗄 记忆管理 → 进入 `MemoryPanel`
-  - ⬇ 检查更新 → 进入 `BookUpdatePanel`，从在线源抓取并增量合并章节
+  - ⬇ 检查更新 → 进入 `BookUpdatePanel`，按来源配方回放目录，确认后再写入新章节与更新
 - **折叠态**（默认）：5 个图标按钮 + 1 个 chevron 展开按钮。
 
 折叠状态由 `ui.bookSettingsMenuExpanded` 持久化，跨会话保留偏好。
@@ -78,7 +78,7 @@
 | 「术语设置」 | `TerminologyPanel` |
 | 「角色设置」 | `CharacterSettingPanel` |
 | 「记忆管理」 | `MemoryPanel` |
-| 「检查更新」 | `BookUpdatePanel`（内嵌小说抓取器） |
+| 「检查更新」 | `BookUpdatePanel`（同步工作区） |
 
 进入设置面板时，工作区顶部会显示「Translation / Terms / Characters / Memory / Update」eyebrow + 名称 + 图标的上下文标签。
 
@@ -111,7 +111,7 @@
 
 > 移动端 SETTINGS 不在侧栏渲染（节省空间）— 术语 / 角色 / 记忆通过子路由 `/books/:id/settings/(terms|characters|memory)` 进入对应专用页面。
 
-> 移动端不新增「翻译设置」侧栏路由态：书籍级翻译设置位于阅读器齿轮底部抽屉的「全局设置」页签；「检查更新」仍从书籍概览以底部抽屉 / 对话框打开。桌面 / 平板则使用侧栏路由面板。
+> 移动端不新增「翻译设置」侧栏路由态：书籍级翻译设置位于阅读器齿轮底部抽屉的「全局设置」页签；「检查更新」从书籍概览进入 `/books/:id/settings/update`，以全屏页面显示同步工作区。桌面 / 平板则使用侧栏路由面板。
 
 > 移动端**不渲染**右栏轨道与「向量索引」面板。物理移动设备的本地嵌入会被强制禁用，AI 仍可使用关键词 + 时间衰减信号自动注入记忆，但 `query_chapter` 工具不暴露。
 

@@ -3,6 +3,8 @@ import type { Novel, Paragraph, Volume, Chapter } from 'src/models/novel';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useSettingsStore } from 'src/stores/settings';
+import { ImportLibraryReader } from 'src/services/import/import-library-reader';
+import { deleteCacheEntry } from 'src/utils/chapter-content-loader';
 
 function collectRemovedChapterIds(
   previousVolumes: Volume[] | undefined,
@@ -45,9 +47,7 @@ async function cleanupRemovedChapterData(
 /** 更新后的章节是否已携带完整内容（数组，含空数组），含则无需保留旧内容 */
 function chapterHasFreshContent(chapter: Chapter): boolean {
   return (
-    chapter.content !== undefined &&
-    chapter.content !== null &&
-    Array.isArray(chapter.content)
+    chapter.content !== undefined && chapter.content !== null && Array.isArray(chapter.content)
   );
 }
 
@@ -142,6 +142,7 @@ async function preserveChapterContentsOnVolumesUpdate(
 
 export const useBooksStore = defineStore('books', {
   state: () => ({
+    storageRevisions: {} as Record<string, number>,
     books: [] as Novel[],
     isLoaded: false,
     isLoading: false,
@@ -176,6 +177,35 @@ export const useBooksStore = defineStore('books', {
       } finally {
         this.isLoading = false;
       }
+    },
+
+    /** 读取已提交状态，不走 updateBook 的再次保存；执行前只加载需要的正文。 */
+    async refreshBookFromStorage(id: string, chapterId?: string): Promise<Novel | undefined> {
+      const loaded = await ImportLibraryReader.readBook(id, {
+        chapterIds: chapterId ? [chapterId] : [],
+      });
+      if (loaded.kind === 'failed') throw new Error(`BOOK_READ_FAILED: ${loaded.message}`);
+      if (loaded.kind === 'absent') {
+        this.books = this.books.filter((book) => book.id !== id);
+        delete this.storageRevisions[id];
+        return undefined;
+      }
+      const content = chapterId ? loaded.chapters[chapterId] : undefined;
+      if (content?.kind === 'failed') throw new Error(`BOOK_READ_FAILED: ${content.message}`);
+      const fresh = loaded.book;
+      for (const volume of fresh.volumes ?? [])
+        for (const chapter of volume.chapters ?? []) {
+          deleteCacheEntry(chapter.id);
+          if (chapter.id === chapterId && content?.kind === 'loaded')
+            chapter.content = content.content;
+          else delete chapter.content;
+          chapter.contentLoaded = chapter.content !== undefined;
+        }
+      const index = this.books.findIndex((book) => book.id === id);
+      if (index >= 0) this.books[index] = fresh;
+      else this.books.push(fresh);
+      this.storageRevisions[id] = loaded.revision;
+      return fresh;
     },
 
     /**
@@ -279,20 +309,11 @@ export const useBooksStore = defineStore('books', {
      * 删除书籍
      */
     async deleteBook(id: string): Promise<void> {
-      const index = this.books.findIndex((book) => book.id === id);
-      if (index > -1) {
-        this.books.splice(index, 1);
-        await BookService.deleteBook(id);
-
-        const settingsStore = useSettingsStore();
-        // 重新读取最新的 deletedNovelIds，避免并发删除时覆盖彼此的记录
-        const currentDeleted = settingsStore.gistSync?.deletedNovelIds || [];
-        if (!currentDeleted.find((record) => record.id === id)) {
-          await settingsStore.updateGistSync({
-            deletedNovelIds: [...currentDeleted, { id, deletedAt: Date.now() }],
-          });
-        }
-      }
+      if (!this.books.some((book) => book.id === id)) return;
+      await BookService.deleteBook(id, { recordDeletion: true });
+      this.books = this.books.filter((book) => book.id !== id);
+      const settingsStore = useSettingsStore();
+      await settingsStore.reloadSyncConfigs();
     },
 
     /**

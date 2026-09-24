@@ -1,8 +1,11 @@
 # chapter-update-detection Specification
 
 ## Purpose
-TBD - created by archiving change enhance-chapter-update-detection. Update Purpose after archive.
+
+规定如何判断已导入章节在来源站点上是否有更新：先按更新日期粗筛（本地缺少更新日期时回退到导入日期），再在取得远端正文后与本地原文比对，确认内容是否真的变化。
+
 ## Requirements
+
 ### Requirement: Date fallback comparison
 
 当本地章节的 `lastUpdated` 为空时，`shouldUpdateChapter` SHALL 回退对比远程 `lastUpdated` 与本地 `createdAt`（导入日期），以判断远程是否有更新。
@@ -40,18 +43,3 @@ TBD - created by archiving change enhance-chapter-update-detection. Update Purpo
 
 - **WHEN** 本地章节的 `originalContent` 为空（如手动创建的章节）
 - **THEN** 系统 SHALL 返回 true（保守认为有变化）
-
-### Requirement: Dynamic update status in scraper dialog
-
-NovelScraperDialog 在加载远程章节内容后，SHALL 利用 `hasContentChanged` 动态更新已导入章节的状态标记。
-
-#### Scenario: Content loaded and changed
-
-- **WHEN** 在爬虫对话框中，已导入章节的远程内容加载完成，且 `hasContentChanged` 返回 true
-- **THEN** 该章节的导入状态标记 SHALL 更新为"已导入（有更新）"，并自动勾选
-
-#### Scenario: Content loaded but unchanged
-
-- **WHEN** 在爬虫对话框中，已导入章节的远程内容加载完成，且 `hasContentChanged` 返回 false
-- **THEN** 该章节的导入状态标记 SHALL 保持为"已导入"，不自动勾选
-

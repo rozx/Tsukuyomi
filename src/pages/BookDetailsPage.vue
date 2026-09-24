@@ -14,7 +14,6 @@ import TieredMenu from 'primevue/tieredmenu';
 import Popover from 'primevue/popover';
 import ProgressSpinner from 'primevue/progressspinner';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
-import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import TermEditDialog from 'src/components/dialogs/TermEditDialog.vue';
 import CharacterEditDialog from 'src/components/dialogs/CharacterEditDialog.vue';
 import AddVolumeDialog from 'src/components/dialogs/AddVolumeDialog.vue';
@@ -31,14 +30,26 @@ import MemoryReferencePanel from 'src/components/novel/MemoryReferencePanel.vue'
 import MemoryDetailDialog from 'src/components/novel/MemoryDetailDialog.vue';
 import KeyboardShortcutsPopover from 'src/components/novel/KeyboardShortcutsPopover.vue';
 import ChapterSettingsPopover from 'src/components/novel/ChapterSettingsPopover.vue';
+import { useRoute } from 'vue-router';
 import { useDeviceVariant } from 'src/composables/useDeviceVariant';
 import { provideBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
+import { provideBookSync, type BookSyncTarget } from 'src/composables/book-sync/useBookSync';
 import BookDetailsDesktop from './book-details/BookDetailsDesktop.vue';
 import BookDetailsTablet from './book-details/BookDetailsTablet.vue';
 import BookDetailsMobile from './book-details/BookDetailsMobile.vue';
 
 const ctx = provideBookDetailsPage();
 const { variant } = useDeviceVariant();
+
+// 检查更新的同步会话放在页面 dispatcher：桌面/平板面板与手机全屏页共用，断点切换不重新检查；
+// 进入 settings/update 时建立会话，离开或换书时中止并重建。
+const route = useRoute();
+const bookSyncTarget = computed<BookSyncTarget | null>(() =>
+  route.params.setting === 'update' && typeof route.params.id === 'string'
+    ? { bookId: route.params.id }
+    : null,
+);
+provideBookSync(bookSyncTarget);
 
 // Popover / menu refs 必须 destructure 成顶层变量，模板里的 `ref="xxx"` 字符串
 // 自动绑定只查 `<script setup>` 的顶层 const/let，不会递归访问 `ctx.xxx`。
@@ -66,7 +77,6 @@ const variantComponent = computed(() => {
 
 // 以下 computed 把模板里大量 `ctx.x.value || null/''` 收进脚本侧，降低模板圈复杂度
 const bookOrNull = computed(() => ctx.book.value || null);
-const currentBookWebUrl = computed(() => ctx.book.value?.webUrl?.[0] || '');
 const selectedChapterOrNull = computed(() => ctx.selectedChapter.value || null);
 const deletingTermName = computed(() => ctx.deletingTerm.value?.name || null);
 const deletingCharacterName = computed(() => ctx.deletingCharacter.value?.name || null);
@@ -152,14 +162,6 @@ const editChapterDialogProps = computed(() => ({
         :loading="ctx.isSavingBook.value"
         @save="ctx.handleBookSave"
         @cancel="ctx.showBookDialog.value = false"
-      />
-      <NovelScraperDialog
-        v-model:visible="ctx.showScraperDialog.value"
-        :current-book="bookOrNull"
-        :initial-url="currentBookWebUrl"
-        :show-novel-info="false"
-        initial-filter="unimported"
-        @apply="ctx.handleScraperUpdate"
       />
 
       <!-- 导出菜单 + Popovers -->

@@ -34,6 +34,10 @@ export interface MessageAction {
     | 'user'
     | 'help_doc';
   name?: string;
+  /** name 已是完整操作说明时，直接展示，不再拼接操作／实体前缀。 */
+  nameIsDescription?: boolean;
+  /** 完整说明的结构化详情，气泡摘要之外的信息供浮层展示。 */
+  descriptionDetails?: { label: string; value: string }[];
   timestamp: number;
   // 网络搜索相关信息
   query?: string; // 搜索查询（用于 web_search）

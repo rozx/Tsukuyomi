@@ -4,26 +4,59 @@ import { BookService } from '../services/book-service';
 import type { Novel, Volume, Chapter, Paragraph } from '../models/novel';
 import { ChapterContentService } from '../services/chapter-content-service';
 import { generateShortId } from '../utils/id-generator';
+import { getDB } from '../utils/indexed-db';
+import * as debouncer from '../utils/chapter-embedding-debouncer';
+import { vi } from 'vitest';
 
-// Mock ChapterContentService
-const mockSaveChapterContent = mock(
-  (
-    _chapterId: string,
-    _content: Paragraph[],
-    _options: { bookId: string; skipIfUnchanged?: boolean },
-  ) => Promise.resolve(true),
-);
+async function readSavedContent(id: string): Promise<Paragraph[] | undefined> {
+  const record = await (await getDB()).get('chapter-contents', id);
+  return record ? (JSON.parse(record.content) as Paragraph[]) : undefined;
+}
+
+async function countSavedContent(): Promise<number> {
+  return (await getDB()).count('chapter-contents');
+}
 
 describe('BookService', () => {
   beforeEach(() => {
-    mockSaveChapterContent.mockClear();
-
-    // Mock ChapterContentService.saveChapterContent
-    spyOn(ChapterContentService, 'saveChapterContent').mockImplementation(mockSaveChapterContent);
+    ChapterContentService.clearAllCache();
+    spyOn(debouncer, 'markChapterDirty').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     mock.restore();
+  });
+
+  it('读取旧 Date 字段时保留日期，不能把形似日期的书名或内嵌正文转换成 Date', async () => {
+    const date = new Date('2026-01-01T00:00:00.000Z');
+    const text = '2026-01-01T00:00:00.000Z 之后的故事';
+    await (
+      await getDB()
+    ).put('books', {
+      id: 'legacy-date',
+      title: text,
+      createdAt: date,
+      lastEdited: date,
+      volumes: [
+        {
+          id: 'v',
+          title: text,
+          chapters: [
+            {
+              id: 'c',
+              title: text,
+              createdAt: date,
+              lastEdited: date,
+              content: [{ id: 'p', text, translations: [], selectedTranslationId: '' }],
+            },
+          ],
+        },
+      ],
+    });
+    const loaded = await BookService.getBookById('legacy-date');
+    expect(loaded?.createdAt).toEqual(date);
+    expect(loaded?.title).toBe(text);
+    expect(loaded?.volumes?.[0]?.chapters?.[0]?.content?.[0]?.text).toBe(text);
   });
 
   it('should get all books', async () => {
@@ -128,15 +161,9 @@ describe('BookService', () => {
       await BookService.saveBook(book);
 
       // 应该保存两个章节的内容
-      expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
-        bookId: 'book-1',
-        skipIfUnchanged: true,
-      });
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
-        bookId: 'book-1',
-        skipIfUnchanged: true,
-      });
+      expect(await countSavedContent()).toBe(2);
+      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
+      expect(await readSavedContent('chapter-2')).toEqual(chapter2.content);
       // 应该保存书籍元数据
       const saved = await BookService.getBookById('book-1');
       expect(saved).toBeTruthy();
@@ -157,15 +184,9 @@ describe('BookService', () => {
       await BookService.saveBook(book, { saveChapterContent: true });
 
       // 应该保存两个章节的内容
-      expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
-        bookId: 'book-1',
-        skipIfUnchanged: true,
-      });
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
-        bookId: 'book-1',
-        skipIfUnchanged: true,
-      });
+      expect(await countSavedContent()).toBe(2);
+      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
+      expect(await readSavedContent('chapter-2')).toEqual(chapter2.content);
       // 应该保存书籍元数据
       const saved = await BookService.getBookById('book-1');
       expect(saved).toBeTruthy();
@@ -186,7 +207,7 @@ describe('BookService', () => {
       await BookService.saveBook(book, { saveChapterContent: false });
 
       // 不应该保存章节内容
-      expect(mockSaveChapterContent).not.toHaveBeenCalled();
+      expect(await countSavedContent()).toBe(0);
       // 应该保存书籍元数据
       const saved = await BookService.getBookById('book-1');
       expect(saved).toBeTruthy();
@@ -208,16 +229,10 @@ describe('BookService', () => {
       await BookService.saveBook(book);
 
       // 应该只保存有内容的章节（chapter-1 和 chapter-3）
-      expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
-        bookId: 'book-1',
-        skipIfUnchanged: true,
-      });
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-3', chapter3.content, {
-        bookId: 'book-1',
-        skipIfUnchanged: true,
-      });
-      expect(mockSaveChapterContent).not.toHaveBeenCalledWith('chapter-2', expect.anything());
+      expect(await countSavedContent()).toBe(2);
+      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
+      expect(await readSavedContent('chapter-3')).toEqual(chapter3.content);
+      expect(await readSavedContent('chapter-2')).toBeUndefined();
     });
 
     it('should handle books without volumes', async () => {
@@ -231,7 +246,7 @@ describe('BookService', () => {
       await BookService.saveBook(book, { saveChapterContent: true });
 
       // 不应该保存章节内容（因为没有章节）
-      expect(mockSaveChapterContent).not.toHaveBeenCalled();
+      expect(await countSavedContent()).toBe(0);
       const saved = await BookService.getBookById('book-1');
       expect(saved).toBeTruthy();
     });
@@ -249,7 +264,7 @@ describe('BookService', () => {
       await BookService.saveBook(book, { saveChapterContent: true });
 
       // 不应该保存章节内容（因为没有章节）
-      expect(mockSaveChapterContent).not.toHaveBeenCalled();
+      expect(await countSavedContent()).toBe(0);
       const saved = await BookService.getBookById('book-1');
       expect(saved).toBeTruthy();
     });
@@ -270,21 +285,15 @@ describe('BookService', () => {
       await BookService.saveBook(book);
 
       // 应该保存所有章节的内容
-      expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
-        bookId: 'book-1',
-        skipIfUnchanged: true,
-      });
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
-        bookId: 'book-1',
-        skipIfUnchanged: true,
-      });
+      expect(await countSavedContent()).toBe(2);
+      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
+      expect(await readSavedContent('chapter-2')).toEqual(chapter2.content);
     });
 
     it('should bulk save chapter content with skipIfUnchanged to avoid spurious re-embedding', async () => {
       // 回归测试：bulkSaveBooks 是同步路径（applyPartialNovelEntry → bulkAddBooks）
-      // 的最终落盘点。saveChapterContent 必须传 skipIfUnchanged: true，否则每次
-      // 同步都会无条件重写章节内容并触发 markChapterDirty → 60 秒后整本书重嵌。
+      // 的最终落盘点。实际未变的内容必须跳过写入和 markChapterDirty，
+      // 避免同步使整本书重新计算嵌入。
       // 该 bug 的表现：同一份内容在多设备来回同步后仍然反复重算章节 embedding。
       const chapter1 = createTestChapter('chapter-1', [createTestParagraph()]);
       const chapter2 = createTestChapter('chapter-2', [createTestParagraph()]);
@@ -307,15 +316,14 @@ describe('BookService', () => {
 
       await BookService.bulkSaveBooks([book1, book2]);
 
-      expect(mockSaveChapterContent).toHaveBeenCalledTimes(2);
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-1', chapter1.content, {
-        bookId: 'book-1',
-        skipIfUnchanged: true,
-      });
-      expect(mockSaveChapterContent).toHaveBeenCalledWith('chapter-2', chapter2.content, {
-        bookId: 'book-2',
-        skipIfUnchanged: true,
-      });
+      expect(await countSavedContent()).toBe(2);
+      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
+      expect(await readSavedContent('chapter-2')).toEqual(chapter2.content);
+      const records = await (await getDB()).getAll('chapter-contents');
+      vi.clearAllMocks();
+      await BookService.bulkSaveBooks([book1, book2]);
+      expect(await (await getDB()).getAll('chapter-contents')).toEqual(records);
+      expect(debouncer.markChapterDirty).not.toHaveBeenCalled();
     });
 
     it('should strip legacy summary residue when saving', async () => {

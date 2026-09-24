@@ -1,4 +1,3 @@
-import axios from 'axios';
 import type * as cheerio from 'cheerio';
 import { v4 as uuidv4 } from 'uuid';
 import type {
@@ -10,163 +9,11 @@ import type {
 } from 'src/services/scraper/types';
 import type { Novel, Chapter, Volume, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, generateShortId } from 'src/utils/id-generator';
-import { ProxyService } from 'src/services/proxy-service';
-import { useElectron } from 'src/composables/useElectron';
+import { fetchScraperPage } from './page-transport';
+import type { ScraperPageSnapshot, ParsedNovelPage } from '../types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CheerioNode = cheerio.Cheerio<any>;
-
-const USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const ACCEPT_HTML = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8';
-const ACCEPT_LANGUAGE = 'ja,en-US;q=0.9,en;q=0.8';
-const FETCH_TIMEOUT_MS = 60000;
-
-/** 通过 Electron 的 net 模块获取页面 */
-async function fetchViaElectron(
-  proxiedUrl: string,
-  originalUrl: string,
-  extraHeaders: Record<string, string> = {},
-): Promise<string> {
-  if (!window.electronAPI?.fetch) {
-    throw new Error('Electron API 未正确加载，请检查 preload 脚本');
-  }
-  const headers: Record<string, string> = {
-    'User-Agent': USER_AGENT,
-    Accept: ACCEPT_HTML,
-    'Accept-Language': ACCEPT_LANGUAGE,
-    'Accept-Encoding': 'gzip, deflate, br',
-    Referer: new URL(originalUrl).origin,
-    ...extraHeaders,
-  };
-  const response = await window.electronAPI.fetch(proxiedUrl, {
-    method: 'GET',
-    headers,
-    timeout: FETCH_TIMEOUT_MS,
-  });
-  if (response.status >= 400) {
-    throw new Error(`目标网站返回错误: ${response.status}`);
-  }
-  if (response.data) return response.data;
-  throw new Error('返回的内容为空');
-}
-
-/** axios 头部 content-type 的多种形态统一转为字符串 */
-function normalizeContentType(
-  raw: string | number | boolean | string[] | undefined | null,
-): string {
-  if (typeof raw === 'string') return raw;
-  if (Array.isArray(raw)) return raw.join(', ');
-  if (typeof raw === 'number' || raw === true) return String(raw);
-  return '';
-}
-
-/** 响应是否疑似 JSON 包装的代理响应 */
-function looksLikeJsonProxyResponse(contentType: string, dataStr: string): boolean {
-  return contentType.includes('application/json') || dataStr.trim().startsWith('{');
-}
-
-/** 构建 axios 请求头；浏览器经外部代理时用 x-cors-headers 转发站点头 */
-function buildAxiosHeaders(
-  proxiedUrl: string,
-  originalUrl: string,
-  isBrowser: boolean,
-  extraHeaders: Record<string, string>,
-): Record<string, string> {
-  const headers: Record<string, string> = {
-    Accept: ACCEPT_HTML,
-    'Accept-Language': ACCEPT_LANGUAGE,
-  };
-  if (isBrowser) {
-    const usesExternalProxy = proxiedUrl !== originalUrl && !proxiedUrl.startsWith('/api/');
-    if (usesExternalProxy && Object.keys(extraHeaders).length > 0) {
-      headers['x-cors-headers'] = JSON.stringify(extraHeaders);
-    }
-    return headers;
-  }
-  return {
-    ...headers,
-    'User-Agent': USER_AGENT,
-    'Accept-Encoding': 'gzip, deflate, br',
-    Referer: originalUrl.startsWith('https://')
-      ? new URL(originalUrl).origin
-      : 'https://kakuyomu.jp/',
-    ...extraHeaders,
-  };
-}
-
-/** 通过 axios 获取页面；浏览器与 Node 环境分别构建可发送的请求头 */
-async function fetchViaAxios(
-  proxiedUrl: string,
-  originalUrl: string,
-  isBrowser: boolean,
-  extraHeaders: Record<string, string> = {},
-): Promise<string> {
-  const headers = buildAxiosHeaders(proxiedUrl, originalUrl, isBrowser, extraHeaders);
-  const response = await axios.get(proxiedUrl, {
-    timeout: FETCH_TIMEOUT_MS, // 与代理服务器超时一致
-    headers,
-    validateStatus: (status) => status >= 200 && status < 400,
-  });
-  if (response.status >= 400) {
-    throw new Error(`目标网站返回错误: ${response.status}`);
-  }
-  if (!response.data) throw new Error('返回的内容为空');
-
-  // 某些代理服务返回 JSON 包装，需要拆出实际 HTML
-  const contentType = normalizeContentType(
-    response.headers['content-type'] as string | number | boolean | string[] | undefined | null,
-  );
-  const dataStr = typeof response.data === 'string' ? response.data : String(response.data);
-  if (looksLikeJsonProxyResponse(contentType, dataStr)) {
-    const html = extractHtmlFromJsonProxyResponse(response.data, dataStr);
-    if (html !== null) return html;
-  }
-  return response.data;
-}
-
-/**
- * 从 JSON 包装的代理响应中解析出 HTML。支持 contents/data 字段；若实际是 HTML
- * 被误识别为 JSON，也回退返回。无法识别时返回 null 以继续原样返回 data。
- */
-function extractHtmlFromJsonProxyResponse(
-  rawData: unknown,
-  dataStr: string,
-): string | null {
-  try {
-    const jsonData = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
-    if (jsonData && typeof jsonData === 'object') {
-      const obj = jsonData as { contents?: unknown; data?: unknown };
-      // AllOrigins：内容在 contents
-      if (typeof obj.contents === 'string') return obj.contents;
-      // 其他代理：内容在 data
-      if (typeof obj.data === 'string') return obj.data;
-      // cors.lol 可能直接返回 HTML，却把 Content-Type 标为 JSON
-      if (dataStr.includes('<html') || dataStr.includes('<!DOCTYPE')) return dataStr;
-      console.error('[BaseScraper] JSON 响应中未找到 HTML 内容', {
-        keys: Object.keys(obj),
-        jsonPreview: JSON.stringify(obj).substring(0, 500),
-      });
-    }
-  } catch {
-    // 不是有效的 JSON，可能是 HTML 被误判为 JSON → 回到调用方返回原始 data
-  }
-  return null;
-}
-
-/** 将 axios 错误归一化为用户友好的 Error */
-function normalizeFetchError(error: unknown): Error {
-  if (axios.isAxiosError(error)) {
-    if (error.response) {
-      return new Error(
-        `获取页面失败: ${error.response.status} ${error.response.statusText || error.message}`,
-      );
-    }
-    if (error.request) return new Error('网络连接失败，请检查网络设置');
-    return new Error(`请求配置错误: ${error.message}`);
-  }
-  return error instanceof Error ? error : new Error('获取页面时发生未知错误');
-}
 
 /**
  * 爬虫服务基类
@@ -174,9 +21,9 @@ function normalizeFetchError(error: unknown): Error {
  *
  * @template TNovelInfo 解析得到的小说信息类型，子类可以通过泛型参数指定站点特定的扩展字段
  */
-export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNovelInfo>
-  implements NovelScraper
-{
+export abstract class BaseScraper<
+  TNovelInfo extends ParsedNovelInfo = ParsedNovelInfo,
+> implements NovelScraper {
   /**
    * 是否使用服务器代理路径（在浏览器环境中使用 /api/... 代理）
    * 注意：在 Node.js/Bun 环境下不再使用 AllOrigins，而是直接访问或使用服务器代理
@@ -300,25 +147,30 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
    * @throws {Error} 如果获取失败
    */
   protected async fetchPage(url: string, _proxyPath?: string): Promise<string> {
-    try {
-      const { isElectron, isBrowser } = useElectron();
-      const extraHeaders = this.getFetchExtraHeaders(url);
-      const skipExternalProxy = this.shouldSkipExternalProxy();
-      return await ProxyService.executeWithAutoSwitch(
-        url,
-        (proxiedUrl: string) =>
-          isElectron.value
-            ? fetchViaElectron(proxiedUrl, url, extraHeaders)
-            : fetchViaAxios(proxiedUrl, url, isBrowser.value, extraHeaders),
-        {
-          skipExternalProxy,
-          skipInternalProxy: isElectron.value, // Electron 环境不使用内部代理路径
-          maxRetries: 3,
-        },
-      );
-    } catch (error) {
-      throw normalizeFetchError(error);
-    }
+    return (await this.fetchPageSnapshot(url)).html;
+  }
+
+  async fetchPageSnapshot(url: string, signal?: AbortSignal): Promise<ScraperPageSnapshot> {
+    return fetchScraperPage(url, {
+      extraHeaders: this.getFetchExtraHeaders(url),
+      skipExternalProxy: this.shouldSkipExternalProxy(),
+      ...(signal ? { signal } : {}),
+    });
+  }
+
+  protected abstract parseNovelInfoFromSnapshot(html: string, url: string): TNovelInfo;
+
+  parseNovelSnapshot(html: string, url: string): ParsedNovelPage {
+    return {
+      info: this.parseNovelInfoFromSnapshot(html, url),
+      catalogStartUrl: this.getNovelIndexUrl(url),
+      nextPageUrls: [],
+    };
+  }
+
+  parseChapterSnapshot(html: string): { paragraphs: string[]; text: string } {
+    const paragraphs = this.extractParagraphsFromHtml(html);
+    return { paragraphs, text: this.mergeParagraphs(paragraphs) };
   }
 
   /**
@@ -343,6 +195,11 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
       success: true,
       novel,
     };
+  }
+
+  parseCatalogDate(value: string | Date | undefined): Date | undefined {
+    const date = this.parseChapterDate(value);
+    return date && !Number.isNaN(date.getTime()) ? date : undefined;
   }
 
   /**
@@ -468,10 +325,7 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
    * @param selectors 选择器列表（按优先级排序）
    * @returns 第一个非空匹配的 Cheerio 元素；全部未命中时返回 null
    */
-  protected selectContentElement(
-    $: cheerio.CheerioAPI,
-    selectors: string[],
-  ): CheerioNode | null {
+  protected selectContentElement($: cheerio.CheerioAPI, selectors: string[]): CheerioNode | null {
     for (const selector of selectors) {
       const el = $(selector).first();
       if (el.length > 0) {
@@ -584,7 +438,11 @@ export abstract class BaseScraper<TNovelInfo extends ParsedNovelInfo = ParsedNov
       startIndex: volume.startIndex,
     }));
 
-    const volumes = this.groupChaptersIntoVolumes(parsedChapters, parsedVolumes, defaultVolumeTitle);
+    const volumes = this.groupChaptersIntoVolumes(
+      parsedChapters,
+      parsedVolumes,
+      defaultVolumeTitle,
+    );
     return this.buildNovel(info, volumes);
   }
 

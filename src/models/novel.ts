@@ -1,7 +1,9 @@
 import type { AIModel } from '../services/ai/types/ai-model';
+import type { BookUpdateRecipe } from './book-sync';
 
 // 小说
 export interface Novel {
+  updateRecipe?: BookUpdateRecipe;
   id: string;
   title: string;
   alternateTitles?: string[] | undefined;
@@ -165,16 +167,11 @@ export interface Chapter {
   /**
    * 原文最后更新时间（从网站获取）
    * - 仅当网站明确提供 lastUpdated 时设置，否则保持为 undefined
-   * - 用于判断网站是否有更新，决定是否预选章节进行导入
    * - 合并已存在章节时：如果新章节有 lastUpdated 则使用新的，否则保留原有的
    *
-   * 预选逻辑（NovelScraperDialog）：
-   * - 未导入的章节：自动预选
-   * - 已导入的章节：
-   *   - 如果远程 lastUpdated > 本地 lastUpdated：自动预选（网站有更新）
-   *   - 如果远程 lastUpdated <= 本地 lastUpdated：不预选（本地已是最新）
-   *   - 如果远程没有 lastUpdated：不预选（无法判断是否有更新）
-   *   - 如果本地没有 lastUpdated 但远程有：自动预选（认为远程更新）
+   * 同步工作区的快速检查（内置站点）：
+   * - 远程 lastUpdated 较新（或本地没有而远程有）的已导入章节才抓取正文比对
+   * - 比对出的「有更新」章节从不自动勾选，由用户查看差异后决定
    */
   lastUpdated?: Date | undefined;
 

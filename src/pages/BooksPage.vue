@@ -12,7 +12,6 @@ import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import ConfirmDialog from 'primevue/confirmdialog';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
-import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import { useDeviceVariant } from 'src/composables/useDeviceVariant';
 import { provideBooksPage } from 'src/composables/books-page/useBooksPage';
 import BooksPageDesktop from './books-page/BooksPageDesktop.vue';
@@ -52,12 +51,6 @@ const variantComponent = computed(() => {
     :book="ctx.selectedBook.value"
     @save="ctx.handleSave"
     @cancel="ctx.showEditDialog.value = false"
-  />
-
-  <NovelScraperDialog
-    v-model:visible="ctx.showImportDialog.value"
-    :current-book="null"
-    @apply="ctx.handleImportBook"
   />
 
   <ConfirmDialog />

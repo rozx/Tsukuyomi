@@ -103,7 +103,10 @@ const DETAIL_KIND_RULES: readonly DetailKindRule[] = [
     kind: 'ask_user_batch',
     test: (a) => a.type === 'ask' && a.tool_name === 'ask_user_batch' && !!a.batch_questions,
   },
-  { kind: 'read_get_term', test: (a) => a.type === 'read' && a.tool_name === 'get_term' && !!a.name },
+  {
+    kind: 'read_get_term',
+    test: (a) => a.type === 'read' && a.tool_name === 'get_term' && !!a.name,
+  },
   {
     kind: 'read_get_paragraph_info',
     test: (a) => a.type === 'read' && a.tool_name === 'get_paragraph_info' && !!a.chapter_title,
@@ -121,7 +124,10 @@ const DETAIL_KIND_RULES: readonly DetailKindRule[] = [
     kind: 'read_get_help_doc',
     test: (a) => a.type === 'read' && a.tool_name === 'get_help_doc' && !!a.title,
   },
-  { kind: 'read_list_help_docs', test: (a) => a.type === 'read' && a.tool_name === 'list_help_docs' },
+  {
+    kind: 'read_list_help_docs',
+    test: (a) => a.type === 'read' && a.tool_name === 'list_help_docs',
+  },
   { kind: 'url', test: (a) => !!a.url },
   {
     kind: 'translation_batch_replace',
@@ -270,7 +276,9 @@ const COMPONENT_BY_KIND: Record<string, Component> = {
   read_tool_name: ChatBadgeReadSearchKw,
 };
 
-const detailComponent = computed<Component | null>(() => COMPONENT_BY_KIND[detailKind.value] ?? null);
+const detailComponent = computed<Component | null>(
+  () => COMPONENT_BY_KIND[detailKind.value] ?? null,
+);
 </script>
 
 <template>
@@ -284,18 +292,21 @@ const detailComponent = computed<Component | null>(() => COMPONENT_BY_KIND[detai
     >
       <i class="text-sm shrink-0 mt-0.5" :class="actionIconClass" />
       <span class="min-w-0 break-words">
-        {{ ACTION_LABELS[action.type] || '' }}
-        {{ ENTITY_LABELS[action.entity] || '' }}
-        <component
-          :is="detailComponent"
-          v-if="detailComponent"
-          :kind="detailKind"
-          :action="action"
-          :ext-action="extAction"
-          :get-short-id="getShortId"
-          :get-text-preview="getTextPreview"
-          :get-chapter-title-for-action="getChapterTitleForAction"
-        />
+        <template v-if="action.nameIsDescription">{{ action.name }}</template>
+        <template v-else>
+          {{ ACTION_LABELS[action.type] || '' }}
+          {{ ENTITY_LABELS[action.entity] || '' }}
+          <component
+            :is="detailComponent"
+            v-if="detailComponent"
+            :kind="detailKind"
+            :action="action"
+            :ext-action="extAction"
+            :get-short-id="getShortId"
+            :get-text-preview="getTextPreview"
+            :get-chapter-title-for-action="getChapterTitleForAction"
+          />
+        </template>
       </span>
     </div>
   </div>

@@ -161,6 +161,7 @@ describe('useGistSync (manifest-driven flow)', () => {
 
       expect(applySpy).toHaveBeenCalledWith(
         expect.objectContaining({ [novelEntryKey('book-1')]: expect.any(Object) }),
+        expect.objectContaining({ structureConflicts: expect.any(Array) }),
       );
       expect(mockSettingsStore.updateLastRemoteETag).toHaveBeenCalledWith('etag-v2');
       expect(mockSettingsStore.updateKnownRemoteHashes).toHaveBeenCalled();

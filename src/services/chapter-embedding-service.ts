@@ -582,7 +582,7 @@ export class ChapterEmbeddingService {
       const index = tx.store.index('by-bookId');
       return (await index.getAll(bookId)) as ChapterEmbedding[];
     } catch (error) {
-      console.warn(`[ChapterEmbeddingService] getChunksForBook(${bookId}) 失败:`, error);
+      console.warn('[ChapterEmbeddingService] getChunksForBook 失败:', bookId, error);
       return [];
     }
   }

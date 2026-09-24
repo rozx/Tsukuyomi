@@ -1,0 +1,470 @@
+import type { ImportTextStructureBatch } from './import-text-structure';
+import type { ImportDraftBatch } from './import-draft-batch';
+import type { ImportTextRange } from './import-pattern';
+import type { Novel, Paragraph } from './novel';
+import type { ImportReplacementRange } from './import-matching';
+import type { ChatMessage } from 'src/services/ai/types/ai-service';
+import type { ImportBatchProgress, ImportChapterBatch } from './import-batch';
+import type { BookUpdateRecipe } from './book-sync';
+
+/** 导入的宿主身份不属于模型工具参数，也不保存模型凭据。 */
+export interface ImportRunContext {
+  taskId: string;
+  runId: string;
+  runEpoch: number;
+  modelId: string;
+}
+
+export type ImportTaskState =
+  | 'draft'
+  | 'running'
+  | 'pausing'
+  | 'paused'
+  | 'waiting_user'
+  | 'failed'
+  | 'ready'
+  | 'applying'
+  | 'applied'
+  | 'reverting'
+  | 'reverted';
+
+export type ImportSourcePurpose = 'content-root' | 'content-derived' | 'metadata-only';
+
+export interface ImportSource {
+  id: string;
+  taskId: string;
+  name: string;
+  kind: 'url' | 'file' | 'directory' | 'epub-entry';
+  origin: 'user' | 'agent';
+  purpose: ImportSourcePurpose;
+  parentSourceId?: string;
+  discoveryId?: string;
+  /** 请求定位与章节锚点分开；查询参数不被丢弃。 */
+  url?: string;
+  anchor?: string;
+  relativePath?: string;
+  mediaType?: string;
+  byteLength?: number;
+  inputResourceId?: string;
+  currentSnapshotId?: string;
+  replacesSourceId?: string;
+  status: 'registered' | 'inspected' | 'extracted' | 'failed' | 'excluded';
+  /** 仅移除来源入口；已保存资源仍供草稿、预览和撤销追溯使用。 */
+  removedAt?: number;
+  error?: { code: string; message: string };
+  createdAt: number;
+}
+
+export interface ImportDiscovery {
+  id: string;
+  taskId: string;
+  sourceId: string;
+  snapshotId?: string;
+  name: string;
+  kind: 'url' | 'file' | 'epub-entry';
+  locator: string;
+  purpose: 'content-derived' | 'metadata-only';
+  relation: 'chapter' | 'catalog' | 'next' | 'file' | 'cover' | 'metadata' | 'unknown';
+  inputResourceId?: string;
+}
+
+/** 块标识由快照及位置生成，相同句子也有不同标识。偏移使用 UTF-16。 */
+export interface ImportTextBlock {
+  id: string;
+  text: string;
+  start: number;
+  end: number;
+  kind: 'body' | 'heading' | 'preface' | 'afterword' | 'note' | 'metadata' | 'whitespace';
+  locator?: string;
+  headingLevel?: number;
+  headingTitle?: string;
+}
+
+export interface ImportExtractionRules {
+  preset?: string;
+  selector?: string;
+  excludeSelectors?: string[];
+  ranges?: { start: number; end: number }[];
+  excludeRanges?: { start: number; end: number; reason: string }[];
+  encoding?: string;
+}
+
+interface ImportResourceBase {
+  id: string;
+  taskId: string;
+  sourceId: string;
+  createdAt: number;
+}
+
+export interface ImportInspection {
+  format: 'text' | 'markdown' | 'html' | 'epub';
+  kind: string;
+  metadata: Record<string, string>;
+  discoveryIds: string[];
+  warnings: string[];
+  missing: string[];
+  candidates?: { title?: string; author?: string; path: string }[];
+  coverResourceId?: string;
+}
+
+export type ImportResource = ImportResourceBase &
+  (
+    | { kind: 'input'; blob: Blob }
+    | { kind: 'chapter-batch'; batch: ImportChapterBatch }
+    | { kind: 'draft-edit-batch'; batch: ImportDraftBatch }
+    | { kind: 'text-structure-batch'; batch: ImportTextStructureBatch }
+    | {
+        kind: 'snapshot';
+        blob: Blob;
+        digest: string;
+        text?: string;
+        encoding?: string;
+        requestUrl?: string;
+        responseUrl?: string;
+        mediaType?: string;
+        transportUrl?: string;
+        status?: number;
+        inspection?: ImportInspection;
+      }
+    | {
+        kind: 'extraction';
+        snapshotId: string;
+        rules: ImportExtractionRules;
+        separator?: '' | '\n';
+        blocks: ImportTextBlock[];
+        excluded: { start: number; end: number; text: string; reason: string }[];
+        warnings: string[];
+        metadata: Record<string, string>;
+      }
+    | { kind: 'discovery'; discovery: ImportDiscovery }
+    | {
+        kind: 'directory';
+        entries: {
+          name: string;
+          path: string;
+          inputResourceId: string;
+          byteLength: number;
+          mediaType: string;
+        }[];
+      }
+  );
+
+/** 只能引用保存的原文或当前目标快照中的段落，不能传入生成的正文。 */
+export type ImportContentRef =
+  | {
+      kind: 'extraction';
+      excludeRanges?: ImportTextRange[];
+      resourceId: string;
+      blockId?: string;
+      endBlockId?: string;
+      start?: number;
+      end?: number;
+    }
+  | {
+      kind: 'existing';
+      excludeRanges?: ImportTextRange[];
+      bookId: string;
+      bookRevision: number;
+      chapterId: string;
+      paragraphId: string;
+    };
+
+export interface ImportMetadataValue {
+  value: string;
+  origin: 'user' | 'source' | 'inferred';
+  sourceId?: string;
+  resourceId?: string;
+  adopted: boolean;
+}
+
+export interface ImportDraftChapter {
+  id: string;
+  volumeId: string;
+  title: string;
+  inferredTitle: boolean;
+  inferredStructure: boolean;
+  selected: boolean;
+  content: ImportContentRef[];
+  sourceIds: string[];
+  status: 'pending' | 'ready' | 'failed' | 'missing';
+  /** 匹配建议与用户确认分开，工具操作只接受建议。 */
+  match?: { chapterIds: string[]; basis: 'url' | 'receipt' | 'suggestion' | 'user' };
+}
+
+export interface ImportNovelCandidate {
+  id: string;
+  title: string;
+  author?: string;
+  sourceIds: string[];
+  content?: ImportContentRef[];
+}
+
+/** 更新配方自测发现的问题；code 与 record_update_recipe 的错误码一致。 */
+export interface ImportRecipeIssue {
+  code: string;
+  message: string;
+  chapterId?: string;
+}
+
+export interface ImportRecipeSelfTest {
+  ok: boolean;
+  /** 回放正文与草稿逐段相同的章节数 */
+  verified: number;
+  /** 固定正文章节数 */
+  pinned: number;
+  issues: ImportRecipeIssue[];
+}
+
+/** 方案与界面展示用的配方概要，不含正文规则细节。 */
+export interface ImportRecipeSummary {
+  engine: string;
+  catalogUrls: string[];
+  cleanupRules: number;
+  pinned: number;
+  stripHeading: boolean;
+  verifiedChapterCount: number;
+}
+
+export interface ImportDraft {
+  revision: number;
+  /** Agent 声明且离线自测通过的更新配方；不含 skippedUrls，应用时再计算。 */
+  updateRecipe?: {
+    recipe: BookUpdateRecipe;
+    declaredAtRevision: number;
+    selfTest: ImportRecipeSelfTest;
+  };
+  metadata: Partial<
+    Record<
+      'title' | 'author' | 'description' | 'cover' | 'alternateTitles' | 'tags',
+      ImportMetadataValue
+    >
+  >;
+  metadataCandidates?: {
+    id: string;
+    field: keyof ImportDraft['metadata'];
+    value: ImportMetadataValue;
+    scopeRevision?: number;
+    conflicts?: string[];
+  }[];
+  replacementConsents?: { signature: string; bookId: string; bookRevision: number }[];
+  chapterSettingsSources?: Record<string, { chapterId: string; bookRevision: number }>;
+  volumes: { id: string; title: string; inferred: boolean }[];
+  chapters: ImportDraftChapter[];
+  target: { kind: 'new' } | { kind: 'existing'; bookId: string; basis: 'suggestion' | 'user' };
+  targetSuggestion?: { bookId: string | null };
+  novelScope: {
+    revision: number;
+    candidates: ImportNovelCandidate[];
+    selectedCandidateId?: string;
+    /** 只有宿主处理实际用户回答时写入；不在草稿工具操作的入参里。 */
+    confirmation?: { questionId: string; scopeRevision: number; answeredAt: number };
+    needsChoice: boolean;
+    requiresUserChoice?: boolean;
+    previousSelection?: Pick<ImportNovelCandidate, 'id' | 'title' | 'author'>;
+  };
+  completeness: { knownTotal?: number; confirmed: boolean; missing: string[] };
+}
+
+export type ImportDraftOperation =
+  | {
+      op: 'set_metadata';
+      field: keyof ImportDraft['metadata'];
+      value: string;
+      sourceId?: string;
+      resourceId?: string;
+    }
+  | { op: 'propose_target'; bookId: string | null }
+  | { op: 'declare_candidates'; candidates: ImportNovelCandidate[] }
+  | { op: 'upsert_volume'; id?: string; title: string; inferred?: boolean }
+  | { op: 'upsert_chapter'; chapter: Omit<ImportDraftChapter, 'match'> }
+  | { op: 'remove_chapter'; chapterId: string }
+  | { op: 'remove_volume'; volumeId: string }
+  | { op: 'clear_structure' }
+  | { op: 'reorder_chapters'; chapterIds: string[] }
+  | { op: 'reorder_volumes'; volumeIds: string[] }
+  | { op: 'propose_match'; chapterId: string; targetChapterIds: string[] }
+  | { op: 'set_completeness'; completeness: ImportDraft['completeness'] };
+
+export interface ImportDraftEdit {
+  baseDraftRevision: number;
+  operations: ImportDraftOperation[];
+}
+
+/** 草稿界面的三种删除范围；整卷删除和清空操作不在 Agent 工具中暴露。 */
+export type ImportDraftRemoval = Extract<
+  ImportDraftOperation,
+  { op: 'remove_chapter' | 'remove_volume' | 'clear_structure' }
+>;
+
+/** ask_user / ask_user_batch 的单个题目，字段沿用普通问答界面的约定。 */
+export interface ImportQuestionItem {
+  question: string;
+  suggestedAnswers: string[];
+  allowFreeText: boolean;
+  placeholder?: string;
+  maxLength?: number;
+}
+
+export interface ImportQuestionAnswer {
+  answers: { questionIndex: number; answer: string; selectedIndex?: number }[];
+  answeredAt: number;
+}
+
+export interface ImportPendingQuestion {
+  id: string;
+  toolCallId: string;
+  question: string;
+  options: { id: string; label: string }[];
+  kind: 'novel' | 'target' | 'match' | 'general';
+  scopeRevision: number;
+  draftRevision: number;
+  required: boolean;
+  /** Agent 提问的工具名与题目；恢复执行时据此补入原格式的工具结果。 */
+  tool?: 'ask_user' | 'ask_user_batch';
+  items?: ImportQuestionItem[];
+  /** 用户实际回答；工具结果补入后问题整体移除。 */
+  answer?: ImportQuestionAnswer;
+}
+
+export interface ImportTodo {
+  id: string;
+  text: string;
+  status: 'pending' | 'working' | 'done';
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ImportCheckpoint {
+  messages: ChatMessage[];
+  /** 仅包含模型已完整返回的调用。流式 JSON 片段不能进入此数组。 */
+  remainingCalls: { id: string; name: string; arguments: string }[];
+  completedCallIds: string[];
+  summary?: string;
+  deferredUserMessage?: string;
+}
+
+export interface ImportTask {
+  id: string;
+  name: string;
+  /** 谁命名了任务；缺省表示仍是默认名。用户命名后 Agent 不能覆盖。 */
+  nameSource?: 'agent' | 'user';
+  state: ImportTaskState;
+  draft: ImportDraft;
+  createdAt: number;
+  updatedAt: number;
+  runEpoch: number;
+  run?: ImportRunContext;
+  eventSequence: number;
+  checkpoint?: ImportCheckpoint;
+  pendingQuestion?: ImportPendingQuestion;
+  todos: ImportTodo[];
+  lastError?: { code: string; message: string };
+  appliedMappings?: { bookId: string; chapters: ImportPlan['mappings'] }[];
+  currentPlanId?: string;
+  streaming?: { text: string; reasoning?: string };
+  /** 正在总结对话历史（压缩上下文）。 */
+  compacting?: boolean;
+  batchProgress?: ImportBatchProgress;
+  /** 从书籍同步工作区发起的配方修复任务。 */
+  purpose?: { kind: 'recipe-repair'; bookId: string; reason: string };
+}
+
+export interface ImportEvent {
+  id: string;
+  taskId: string;
+  sequence: number;
+  createdAt: number;
+  kind: 'message' | 'tool-call' | 'tool-result' | 'progress' | 'question' | 'answer' | 'summary';
+  message?: ChatMessage;
+  callId?: string;
+  toolName?: string;
+  data: unknown;
+}
+
+export interface BookRevision {
+  bookId: string;
+  revision: number;
+  operationId?: string;
+}
+
+export interface ImportParagraphChange {
+  chapterId: string;
+  paragraphId: string;
+  kind: 'insert' | 'revise' | 'move' | 'remove' | 'retain';
+  before?: string;
+  after?: string;
+  clearedVersions: number;
+  fromChapterId?: string;
+  fromParagraphId?: string;
+}
+
+export interface ImportPlan {
+  id: string;
+  operationId: string;
+  taskId: string;
+  draftRevision: number;
+  targetBookId: string;
+  targetKind: 'new' | 'existing';
+  baseBookRevision: number;
+  baseDigest: string;
+  resourceIds: string[];
+  book: Novel;
+  chapters: { chapterId: string; content: Paragraph[] }[];
+  removedChapterIds: string[];
+  paragraphChanges: ImportParagraphChange[];
+  metadataChanges: { field: string; before?: string; after: string; sourceId?: string }[];
+  conflicts: { code: string; message: string; chapterId?: string }[];
+  completeness: ImportDraft['completeness'];
+  mappings: { draftChapterId: string; chapterId: string; sourceIds: string[] }[];
+  replacements?: ImportReplacementRange[];
+  /** 生成方案时重跑自测得到的配方变化；没有声明且目标书没有配方时省略。 */
+  recipeChange?: {
+    kind: 'add' | 'replace' | 'keep' | 'stale';
+    verified: number;
+    before?: ImportRecipeSummary;
+    after?: ImportRecipeSummary;
+    reason?: string;
+    issues?: ImportRecipeIssue[];
+  };
+  chapterChanges?: {
+    draftChapterId: string;
+    chapterId: string;
+    oldChapterIds: string[];
+    kind: 'insert' | 'update' | 'restructure';
+    title: string;
+  }[];
+  summary?: {
+    selectedChapters: number;
+    insertedParagraphs: number;
+    revisedParagraphs: number;
+    movedParagraphs: number;
+    removedParagraphs: number;
+    clearedParagraphs: number;
+    clearedVersions: number;
+    hasChanges: boolean;
+    partial: boolean;
+  };
+  createdAt: number;
+}
+
+export interface ImportOperation {
+  id: string;
+  taskId: string;
+  plan: ImportPlan;
+  state: 'planned' | 'applied' | 'reverted';
+  before?: {
+    book: Novel | null;
+    chapters: {
+      chapterId: string;
+      record: { content: string; lastModified: string; bookId?: string } | null;
+    }[];
+    target?: ImportDraft['target'];
+    mappings?: ImportTask['appliedMappings'];
+    filteredDrafts?: { chapterId: string; before: ImportContentRef[]; after: ImportContentRef[] }[];
+  };
+  postApplyBookRevision?: number;
+  postRevertBookRevision?: number;
+  appliedAt?: number;
+  revertedAt?: number;
+  pendingMaintenance: string[];
+}

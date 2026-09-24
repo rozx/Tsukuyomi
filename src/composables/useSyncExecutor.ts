@@ -1,5 +1,11 @@
 import { GistSyncService } from 'src/services/gist-sync-service';
-import { SyncDataService, type RestorableItem } from 'src/services/sync-data-service';
+import {
+  SyncDataService,
+  type RestorableItem,
+  type SyncMergeReport,
+  type SyncStructureConflict,
+} from 'src/services/sync-data-service';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
@@ -21,8 +27,9 @@ import {
 } from 'src/utils/sync-strip';
 import type { SyncConfig } from 'src/models/sync';
 import type { Memory } from 'src/models/memory';
-import { MANIFEST_FILE_NAME, type GistManifest } from 'src/models/manifest';
+import { MANIFEST_FILE_NAME, novelEntryKey, type GistManifest } from 'src/models/manifest';
 import { readFile, type GistFileLike } from 'src/services/gist-sync-incremental';
+import { recordStructureBaselines } from 'src/services/sync-chapter-baselines';
 
 /** downloadFromGistWithManifest 的非跳过分支（含 changedEntries/manifest 等字段） */
 type DownloadResult = Awaited<ReturnType<GistSyncService['downloadFromGistWithManifest']>>;
@@ -69,6 +76,33 @@ const UPLOAD_PHASE_START = DOWNLOAD_PHASE_MAX + APPLY_PHASE_MAX;
 /** 伪 CAS 检测到并发写入时的最大重试轮数 */
 const MAX_CONCURRENT_WRITE_RETRIES = 3;
 
+/** 结构冲突提示中最多列出的章节数 */
+const MAX_LISTED_STRUCTURE_CONFLICTS = 5;
+
+/** 按书籍与章节去重（伪 CAS 重试会重新合并同一章节） */
+function uniqueStructureConflicts(conflicts: SyncStructureConflict[]): SyncStructureConflict[] {
+  const seen = new Set<string>();
+  return conflicts.filter((conflict) => {
+    const key = `${conflict.bookId}\u0000${conflict.chapterId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatStructureConflictDetail(conflicts: SyncStructureConflict[]): string {
+  const listed = conflicts
+    .slice(0, MAX_LISTED_STRUCTURE_CONFLICTS)
+    .map((conflict) => `${conflict.bookTitle} · ${conflict.chapterTitle}`)
+    .join('、');
+  const suffix =
+    conflicts.length > MAX_LISTED_STRUCTURE_CONFLICTS ? ` 等 ${conflicts.length} 章` : '';
+  return (
+    `${listed}${suffix} 在两台设备上都修改了段落结构。` +
+    '已按较新的章节保留，并附加了另一方独有的段落，建议检查这些章节。'
+  );
+}
+
 /**
  * 共享同步执行器：基于 manifest 的增量同步
  *
@@ -88,6 +122,19 @@ export function useSyncExecutor() {
   const booksStore = useBooksStore();
   const coverHistoryStore = useCoverHistoryStore();
   const gistSyncService = new GistSyncService();
+  const toast = useToastWithHistory();
+
+  /** 同步结束后提示两方都改过结构的章节；每次同步最多提示一次 */
+  const notifyStructureConflicts = (report: SyncMergeReport): void => {
+    const conflicts = uniqueStructureConflicts(report.structureConflicts);
+    if (conflicts.length === 0) return;
+    toast.add({
+      severity: 'warn',
+      summary: '同步发现段落结构冲突',
+      detail: formatStructureConflictDetail(conflicts),
+      life: 10000,
+    });
+  };
 
   /**
    * 解析本轮迭代使用的同步配置。
@@ -308,6 +355,7 @@ export function useSyncExecutor() {
     prefixMsg: (m: string) => string,
     options: SyncExecutorOptions,
     restorableItems: RestorableItem[],
+    report: SyncMergeReport,
   ): Promise<boolean> => {
     const { onError } = options;
     settingsStore.updateSyncProgress({
@@ -339,6 +387,7 @@ export function useSyncExecutor() {
           legacyDownload.data,
           undefined,
           options.isManualRetrieval,
+          report,
         );
         restorableItems.push(...applied);
       } catch (error) {
@@ -374,6 +423,7 @@ export function useSyncExecutor() {
     downloadResult: DownloadResultActive,
     prefixMsg: (m: string) => string,
     onError: SyncExecutorOptions['onError'],
+    report: SyncMergeReport,
   ): Promise<boolean> => {
     settingsStore.updateSyncProgress({
       stage: 'applying',
@@ -385,7 +435,7 @@ export function useSyncExecutor() {
     let applyFailedKeys: string[] = [];
     try {
       applyFailedKeys =
-        (await SyncDataService.applyPartialRemoteData(downloadResult.changedEntries)) ?? [];
+        (await SyncDataService.applyPartialRemoteData(downloadResult.changedEntries, report)) ?? [];
       if (downloadResult.deletedEntries.length > 0) {
         await SyncDataService.applyRemoteDeletions(downloadResult.deletedEntries);
       }
@@ -544,9 +594,7 @@ export function useSyncExecutor() {
       const remoteHashes = await tryReadRemoteManifestHashes(verify.files);
       const knownHashes = latestConfig.knownRemoteHashes ?? {};
       if (remoteHashes && hashesEqual(remoteHashes, knownHashes)) {
-        console.info(
-          '[useSyncExecutor] 伪 CAS：ETag 漂移但远端 manifest 内容未变，视为 unchanged',
-        );
+        console.info('[useSyncExecutor] 伪 CAS：ETag 漂移但远端 manifest 内容未变，视为 unchanged');
         return { status: 'unchanged' };
       }
 
@@ -606,6 +654,7 @@ export function useSyncExecutor() {
         await settingsStore.setGistId(uploadResult.gistId);
       }
       await settingsStore.updateLastSyncTime(syncSnapshotTime);
+      await recordSyncedStructureBaselines(bundle, 'all');
       if (onSuccess) onSuccess('同步完成', '数据已同步到 Gist（首次）');
       return { success: true, restorableItems };
     } catch (error) {
@@ -613,6 +662,27 @@ export function useSyncExecutor() {
       onError('上传失败', errorMsg);
       return { success: false, restorableItems };
     }
+  };
+
+  /**
+   * 同步完全成功后写入章节结构基准：本地条目哈希等于最终已知远端哈希的书，
+   * 说明远端正是本次 bundle 中的内容。用 bundle（上传时序列化的那份数据）计算，
+   * 不读取当前本地数据，避免上传期间的本地修改被误记为远端结构。
+   * 覆盖两种情况：上传成功（远端哈希 = 本次上传的 manifest），以及无需上传时
+   * 为本地与远端逐字一致、但升级前还没有基准的书补写。
+   * `remoteHashes` 为 'all' 表示整个 bundle 都已上传（首次创建 Gist）。
+   */
+  const recordSyncedStructureBaselines = async (
+    bundle: Awaited<ReturnType<typeof buildLocalSyncBundle>>,
+    remoteHashes: Record<string, string> | 'all',
+  ): Promise<void> => {
+    const localHashes = manifestToHashes(bundle.localManifest);
+    const synced = bundle.novelsWithContent.filter((novel) => {
+      if (remoteHashes === 'all') return true;
+      const key = novelEntryKey(novel.id);
+      return localHashes[key] !== undefined && localHashes[key] === remoteHashes[key];
+    });
+    await recordStructureBaselines(synced);
   };
 
   /**
@@ -672,6 +742,7 @@ export function useSyncExecutor() {
       );
 
       await persistUploadState(uploadResult, syncSnapshotTime);
+      await recordSyncedStructureBaselines(bundle, manifestToHashes(uploadResult.manifest));
 
       settingsStore.updateSyncProgress({
         stage: 'uploading',
@@ -694,6 +765,8 @@ export function useSyncExecutor() {
    * 无需上传分支：仅更新 lastSyncTime、清理过期墓碑，并报告成功
    */
   const finalizeNoUploadNeeded = async (
+    bundle: Awaited<ReturnType<typeof buildLocalSyncBundle>>,
+    knownHashes: Record<string, string>,
     syncSnapshotTime: number,
     prefixMsg: (m: string) => string,
     onSuccess: SyncExecutorOptions['onSuccess'],
@@ -711,6 +784,7 @@ export function useSyncExecutor() {
     } catch (error) {
       console.error('[useSyncExecutor] 更新同步状态失败:', error);
     }
+    await recordSyncedStructureBaselines(bundle, knownHashes);
     if (onSuccess) onSuccess('同步完成', '数据已是最新，无需上传');
     return { success: true, restorableItems };
   };
@@ -724,6 +798,7 @@ export function useSyncExecutor() {
     prefixMsg: (m: string) => string,
     restorableItems: RestorableItem[],
     retriesRemaining: number,
+    report: SyncMergeReport,
   ): Promise<SyncExecutorResult | { retry: true }> => {
     const { onError, onSuccess, configOverride } = options;
     await ensureSyncStoresInitialized();
@@ -749,13 +824,14 @@ export function useSyncExecutor() {
         prefixMsg,
         options,
         restorableItems,
+        report,
       );
       if (!migrated) return { success: false, restorableItems: [] };
     }
 
     // ── 阶段 2：应用 changedEntries ──
     if (activeDownload) {
-      const applied = await runApplyPhase(activeDownload, prefixMsg, onError);
+      const applied = await runApplyPhase(activeDownload, prefixMsg, onError, report);
       if (!applied) return { success: false, restorableItems: [] };
     }
 
@@ -770,7 +846,14 @@ export function useSyncExecutor() {
     const shouldUpload = SyncDataService.hasLocalChangesByHash(localHashes, knownHashes);
 
     if (!shouldUpload) {
-      return finalizeNoUploadNeeded(syncSnapshotTime, prefixMsg, onSuccess, restorableItems);
+      return finalizeNoUploadNeeded(
+        bundle,
+        knownHashes,
+        syncSnapshotTime,
+        prefixMsg,
+        onSuccess,
+        restorableItems,
+      );
     }
     logUploadDiffs(localHashes, knownHashes);
 
@@ -820,18 +903,30 @@ export function useSyncExecutor() {
     const prefixMsg = (msg: string) => (messagePrefix ? `${messagePrefix}${msg}` : msg);
 
     const restorableItems: RestorableItem[] = [];
+    const report: SyncMergeReport = { structureConflicts: [] };
     let retriesRemaining = MAX_CONCURRENT_WRITE_RETRIES;
 
-    while (retriesRemaining > 0) {
-      retriesRemaining -= 1;
-      const outcome = await runSyncIteration(options, prefixMsg, restorableItems, retriesRemaining);
-      if ('retry' in outcome) continue; // 伪 CAS 触发重试
-      return outcome;
-    }
+    try {
+      while (retriesRemaining > 0) {
+        retriesRemaining -= 1;
+        const outcome = await runSyncIteration(
+          options,
+          prefixMsg,
+          restorableItems,
+          retriesRemaining,
+          report,
+        );
+        if ('retry' in outcome) continue; // 伪 CAS 触发重试
+        return outcome;
+      }
 
-    // 超出重试预算
-    onError('同步冲突', '其他设备正在频繁写入，请稍后再试');
-    return { success: false, restorableItems };
+      // 超出重试预算
+      onError('同步冲突', '其他设备正在频繁写入，请稍后再试');
+      return { success: false, restorableItems };
+    } finally {
+      // 合并已写入本地，即使后续上传失败也要让用户知道哪些章节需要检查
+      notifyStructureConflicts(report);
+    }
   };
 
   /**
@@ -965,6 +1060,7 @@ export function useSyncExecutor() {
 
       // 持久化新的远端状态（失败不影响推送成功判定）
       await persistUploadState(uploadResult, syncSnapshotTime);
+      await recordSyncedStructureBaselines(bundle, manifestToHashes(uploadResult.manifest));
 
       // 关闭强制模式 —— 即使上面的状态持久化失败，推送本身已经成功，不应把用户困在强制模式里
       try {

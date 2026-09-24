@@ -1,0 +1,55 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`配方回放 > 固定 HTML 解析和清理输出快照 1`] = `
+{
+  "blocks": [
+    {
+      "end": 83,
+      "kind": "preface",
+      "locator": "div:nth-of-type(1) > div:nth-of-type(1) > p:nth-of-type(1)",
+      "start": 80,
+      "text": "前書き",
+    },
+    {
+      "end": 126,
+      "kind": "body",
+      "locator": "div:nth-of-type(1) > div:nth-of-type(2) > p:nth-of-type(1)",
+      "start": 123,
+      "text": "　本文",
+    },
+    {
+      "end": 137,
+      "kind": "whitespace",
+      "locator": "div:nth-of-type(1) > div:nth-of-type(2) > p:nth-of-type(2)",
+      "start": 130,
+      "text": "",
+    },
+    {
+      "end": 142,
+      "kind": "body",
+      "locator": "div:nth-of-type(1) > div:nth-of-type(2) > p:nth-of-type(3)",
+      "start": 140,
+      "text": "続き",
+    },
+    {
+      "end": 210,
+      "kind": "afterword",
+      "locator": "div:nth-of-type(1) > div:nth-of-type(3) > p:nth-of-type(1)",
+      "start": 207,
+      "text": "後書き",
+    },
+  ],
+  "kind": "content",
+  "links": [],
+}
+`;
+
+exports[`配方回放 > 固定 HTML 解析和清理输出快照 2`] = `
+[
+  "前書き",
+  "　本文",
+  "",
+  "続き",
+  "後書き",
+]
+`;

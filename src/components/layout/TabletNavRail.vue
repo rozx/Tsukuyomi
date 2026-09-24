@@ -3,15 +3,19 @@ import { useMainNavActive, type MainNavTab } from 'src/composables/useMainNavAct
 import { useMainNavDispatch } from 'src/composables/layout/useMainNavDispatch';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
+import { isNavTabEnabled } from 'src/constants/features';
 
 type Item = { id: MainNavTab; icon: string; label: string };
 
-// 主导航三项（首页 · 书库 · AI 模型）在顶部，帮助 / 设置固定在底部。
-const primaryItems: Item[] = [
-  { id: 'home', icon: 'pi-home', label: '首页' },
-  { id: 'library', icon: 'pi-book', label: '书库' },
-  { id: 'ai', icon: 'pi-microchip-ai', label: 'AI 模型' },
-];
+// 主导航（首页 · 书库 · AI 导入 · AI 模型）在顶部，帮助 / 设置固定在底部。
+const primaryItems = (
+  [
+    { id: 'home', icon: 'pi-home', label: '首页' },
+    { id: 'library', icon: 'pi-book', label: '书库' },
+    { id: 'import', icon: 'pi-file-import', label: 'AI 导入' },
+    { id: 'ai', icon: 'pi-microchip-ai', label: 'AI 模型' },
+  ] satisfies Item[]
+).filter((item) => isNavTabEnabled(item.id));
 
 // 底部工具项：帮助 · 设置
 const secondaryItems: Item[] = [
@@ -28,11 +32,7 @@ const { dispatch: onItemClick } = useMainNavDispatch();
 
 <template>
   <nav class="tablet-navrail" aria-label="主导航">
-    <button
-      class="rail-logo"
-      :aria-label="APP_NAME.full"
-      @click="onItemClick('home')"
-    >
+    <button class="rail-logo" :aria-label="APP_NAME.full" @click="onItemClick('home')">
       <img :src="logoPath" :alt="APP_NAME.full" />
     </button>
 
@@ -79,7 +79,11 @@ const { dispatch: onItemClick } = useMainNavDispatch();
   gap: 6px;
   background: rgba(0, 0, 0, 0.2);
   border-right: 1px solid rgba(255, 255, 255, 0.04);
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 .rail-logo {
