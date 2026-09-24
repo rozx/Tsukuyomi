@@ -157,7 +157,7 @@
     font-weight: 600;
     font-size: 1.125rem;
     letter-spacing: -0.005em;
-    color: var(--fg-1, rgba(247, 244, 236, 1));
+    color: var(--moon-50);
   }
 
   /* 首页桌面卡片公共表面：最近编辑卡与快速操作卡共用同一套底色/边框/过渡，集中在此避免重复 */

@@ -103,7 +103,7 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
   background: rgba(108, 140, 255, 0.12);
   padding: 2px 7px;
   border-radius: 4px;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
 }
 
 .todos-count.all-done {

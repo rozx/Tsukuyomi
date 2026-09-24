@@ -158,12 +158,18 @@ const CUSTOM_CSS = `
   /* Primary（月白）and Paper（和纸）*/
   --moon-white: ${PRIMARY[200]};
   --paper: ${PRIMARY[50]};
+  /* 月光白（#FDFDFF）的 RGB 分量，逗号分隔：用于 rgba(var(--moon-rgb), <alpha>) */
+  --moon-rgb: 253, 253, 255;
 
+  --moon-opacity-5: rgba(253, 253, 255, 0.05);
   --moon-opacity-30: rgba(253, 253, 255, 0.3);
   --moon-opacity-40: rgba(253, 253, 255, 0.4);
   --moon-opacity-50: rgba(253, 253, 255, 0.5);
+  --moon-opacity-55: rgba(253, 253, 255, 0.55);
   --moon-opacity-60: rgba(253, 253, 255, 0.6);
+  --moon-opacity-65: rgba(253, 253, 255, 0.65);
   --moon-opacity-70: rgba(253, 253, 255, 0.7);
+  --moon-opacity-75: rgba(253, 253, 255, 0.75);
   --moon-opacity-80: rgba(253, 253, 255, 0.8);
   --moon-opacity-85: rgba(253, 253, 255, 0.85);
   --moon-opacity-90: rgba(253, 253, 255, 0.9);
@@ -276,6 +282,8 @@ const CUSTOM_CSS = `
   /* Moon（Paper 系列）solid —— 与 Tailwind moon-* palette 对应 */
   --moon-50: #F7F4EC;
   --moon-100: #F0EDE4;
+  /* moon-100 的 RGB 分量，逗号分隔：用于 rgb(var(--moon-100-rgb)) */
+  --moon-100-rgb: 240, 237, 228;
   --moon-200: #E9EDF5;
 
   /* tsukuyomi-500（薄藍 #6D88A8）完整透明度序列（2..95%）*/
@@ -379,7 +387,9 @@ const CUSTOM_CSS = `
   --color-danger-opacity-40: rgba(239, 95, 95, 0.4);
   --color-danger-400-opacity-15: rgba(248, 113, 113, 0.15);
   --color-danger-400-opacity-30: rgba(248, 113, 113, 0.3);
+  --red-500: #ef4444;
   --red-500-opacity-8: rgba(239, 68, 68, 0.08);
+  --red-500-opacity-10: rgba(239, 68, 68, 0.1);
   --red-500-opacity-18: rgba(239, 68, 68, 0.18);
   --red-500-opacity-28: rgba(239, 68, 68, 0.28);
   --red-500-opacity-30: rgba(239, 68, 68, 0.3);
@@ -391,16 +401,27 @@ const CUSTOM_CSS = `
   --color-success-opacity-30: rgba(127, 179, 137, 0.3);
   --color-success-300-opacity-10: rgba(167, 209, 176, 0.1);
   --color-success-300-opacity-28: rgba(167, 209, 176, 0.28);
+  --green-500: #22c55e;
+  --green-500-opacity-10: rgba(34, 197, 94, 0.1);
+  --green-500-opacity-80: rgba(34, 197, 94, 0.8);
 
   /* warning / amber 透明度 */
   --color-warning-opacity-12: rgba(242, 192, 55, 0.12);
   --color-warning-opacity-30: rgba(242, 192, 55, 0.3);
+
+  /* orange 调色（与 Tailwind / PrimeVue Aura orange-400/500 一致）*/
+  --orange-400: #fb923c;
+  --orange-400-opacity-12: rgba(251, 146, 60, 0.12);
+  --orange-500: #f97316;
 
   /* primary（月白 #E9EDF5）额外透明度 */
   --primary-opacity-35: rgba(233, 237, 245, 0.35);
 
   /* tsukuyomi-200（#BAC9DB）额外透明度 */
   --tsukuyomi-200-opacity-24: rgba(186, 201, 219, 0.24);
+
+  /* 等宽字体栈（与 tailwind.config.cjs fontFamily.mono 一致）*/
+  --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
 }
 
 /* Badge 样式优化 - Moonlight Glow 主题 */

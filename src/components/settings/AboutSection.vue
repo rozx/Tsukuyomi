@@ -108,7 +108,7 @@ const author = 'Rozx';
 }
 
 .about-meta-value {
-  color: var(--moon-90, #e9edf5);
+  color: var(--moon-200);
   font-weight: 500;
 }
 

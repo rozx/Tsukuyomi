@@ -188,7 +188,7 @@ onUnmounted(() => {
   font-size: 0.6875rem;
   color: var(--moon-opacity-50);
   font-weight: 500;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
 }
 
 .switcher-chevron {

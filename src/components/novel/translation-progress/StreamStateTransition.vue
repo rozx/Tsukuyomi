@@ -78,7 +78,7 @@ const toIcon = computed(() => getIcon(props.toStatus));
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   box-shadow: 0 0 12px rgba(168, 132, 255, 0.08);
 }
 

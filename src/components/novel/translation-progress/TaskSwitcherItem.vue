@@ -93,7 +93,7 @@ defineEmits<{ select: [taskId: string] }>();
 .dropdown-item-duration {
   font-size: 0.6875rem;
   color: var(--moon-opacity-50);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   font-weight: 500;
   flex-shrink: 0;
 }

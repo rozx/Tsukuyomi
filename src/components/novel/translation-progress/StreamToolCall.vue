@@ -82,7 +82,7 @@ const togglePopover = (event: Event) => {
 }
 
 .tool-name {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   font-weight: 500;
   font-size: 0.72rem;
   flex-shrink: 0;
@@ -155,7 +155,7 @@ const togglePopover = (event: Event) => {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--moon-opacity-80);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   font-size: 0.75rem;
   line-height: 1.45;
 }

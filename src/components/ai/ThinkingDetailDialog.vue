@@ -99,27 +99,27 @@ const handleClose = () => {
 
 .meta-pill.status-thinking,
 .meta-pill.status-processing {
-  background: var(--blue-500-opacity-15, rgba(108, 140, 255, 0.15));
-  color: var(--blue-500, #6c8cff);
+  background: rgba(108, 140, 255, 0.15);
+  color: #6c8cff;
 }
 
 .meta-pill.status-end {
-  background: var(--green-500-opacity-10, rgba(74, 222, 128, 0.12));
-  color: var(--green-500, #4ade80);
+  background: var(--green-500-opacity-10);
+  color: var(--green-500);
 }
 
 .meta-pill.status-error {
-  background: var(--red-500-opacity-10, rgba(248, 113, 113, 0.12));
-  color: var(--red-500, #f87171);
+  background: var(--red-500-opacity-10);
+  color: var(--red-500);
 }
 
 .meta-pill.status-cancelled {
-  background: var(--orange-400-opacity-12, rgba(251, 146, 60, 0.12));
-  color: var(--orange-400, #fb923c);
+  background: var(--orange-400-opacity-12);
+  color: var(--orange-400);
 }
 
 .meta-text {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
 }
 
 .thinking-detail-scroll {

@@ -17,7 +17,7 @@ defineProps<{
   color: rgba(108, 140, 255, 0.6);
   font-size: 0.6875rem;
   font-weight: 600;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
 }
 
 .stream-chunk-sep::before,

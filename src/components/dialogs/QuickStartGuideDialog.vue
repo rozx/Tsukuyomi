@@ -120,7 +120,7 @@ watch(
 }
 
 .doc-content {
-  color: rgb(var(--moon-rgb) / 0.9);
+  color: rgba(var(--moon-rgb), 0.9);
   line-height: 1.7;
 }
 

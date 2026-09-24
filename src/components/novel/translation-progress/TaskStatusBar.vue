@@ -82,7 +82,7 @@ const hasProgress = computed(() => progress.value && progress.value.total > 0);
   font-size: 0.72rem;
   font-weight: 500;
   color: rgba(253, 253, 255, 0.7);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   background: rgba(255, 255, 255, 0.05);
   padding: 4px 10px;
   border-radius: 6px;
@@ -108,7 +108,7 @@ const hasProgress = computed(() => progress.value && progress.value.total > 0);
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--moon-opacity-50);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
 }
 
 .progress-track {
@@ -147,7 +147,7 @@ const hasProgress = computed(() => progress.value && progress.value.total > 0);
 }
 
 .progress-fill.complete {
-  background: linear-gradient(90deg, var(--green-500), var(--green-500-opacity-80, #6ee7a0));
+  background: linear-gradient(90deg, var(--green-500), var(--green-500-opacity-80));
 }
 
 .progress-label {
@@ -159,14 +159,14 @@ const hasProgress = computed(() => progress.value && progress.value.total > 0);
 .progress-chunks {
   font-size: 0.6875rem;
   color: var(--moon-opacity-50);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   font-weight: 500;
 }
 
 .progress-percent {
   font-size: 0.6875rem;
   color: #6c8cff;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   font-weight: 600;
 }
 

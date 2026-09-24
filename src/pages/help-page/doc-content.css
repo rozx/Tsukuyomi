@@ -6,7 +6,7 @@
  * 不会造成全局样式泄漏，同时避免 Fallow 重复规则告警（三处曾字节级一致）。
  */
 .doc-content {
-  color: rgb(var(--moon-rgb) / 0.85);
+  color: rgba(var(--moon-rgb), 0.85);
   line-height: 1.75;
 }
 
@@ -73,7 +73,7 @@
 .doc-content :deep(pre code) {
   background: none;
   padding: 0;
-  color: rgb(var(--moon-rgb) / 0.9);
+  color: rgba(var(--moon-rgb), 0.9);
 }
 
 .doc-content :deep(blockquote) {
