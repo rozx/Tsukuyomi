@@ -14,12 +14,8 @@ import type { ActionInfo } from '../tools/types';
 import type { ToastCallback } from '../tools/toast-helper';
 import type { AIProcessingStore } from './utils/task-types';
 import { useContextStore } from 'src/stores/context';
-import { MemoryService } from 'src/services/memory-service';
 import { getTodosSystemPrompt } from './utils/todo-helper';
-import { TOOL_CALL_PLACEHOLDER, TOOL_CALL_PLACEHOLDER_VARIANTS } from './utils/stream-handler';
-import { UNLIMITED_TOKENS } from 'src/constants/ai';
-import { isCancelledError } from 'src/utils/is-cancelled-error';
-import { isContextOverflowError } from 'src/services/ai/context/context-overflow';
+import { TOOL_CALL_PLACEHOLDER } from './utils/stream-handler';
 import { AssistantExecutionPaused } from './utils/assistant-execution';
 import { runAssistantBookExecution } from './utils/assistant-book-execution';
 import type {
@@ -27,26 +23,14 @@ import type {
   AssistantExecutionCheckpoint,
   AssistantPauseReason,
 } from './utils/assistant-execution';
-import {
-  DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-  estimateMessagesTokenCount,
-  estimateToolSchemaTokens,
-} from 'src/utils/ai-token-utils';
-import {
-  getAssistantSystemPrompt,
-  getSessionSummaryPrompt,
-  SUMMARY_SYSTEM_PROMPT,
-} from './prompts';
+import { getAssistantSystemPrompt } from './prompts';
+import { resolveModelLimits } from '../model-limits/resolve';
+import type { EffectiveModelLimits } from '../model-limits/resolve';
+import type { ContextAnchor } from '../context/measure';
+import { AssistantContext } from '../context/assistant-context';
 
-// 常量定义
 const MAX_TOOL_CALL_TURNS = 50;
-const TOKEN_THRESHOLD_RATIO = 0.7; // 当达到 70% 时触发总结（留给工具循环充足的缓冲空间）
-const IN_LOOP_SUMMARIZE_THRESHOLD = 0.85; // 工具循环内的摘要兜底阈值（trim 救不回来时才触发）
-const MAX_IN_LOOP_SUMMARIZATIONS = 2; // 单次 chat() 调用中最多摘要次数，防止无限循环
-const SUMMARY_TEMPERATURE = 1;
 const DEFAULT_TEMPERATURE = 0.7;
-
-// 定义需要 bookId 的工具列表
 const TOOLS_REQUIRING_BOOK_ID = [
   'create_term',
   'get_term',
@@ -86,9 +70,6 @@ const TOOLS_REQUIRING_BOOK_ID = [
   'navigate_to_paragraph',
 ];
 
-/**
- * Assistant 服务选项
- */
 export interface AssistantServiceOptions {
   /** 宿主专属执行配置；省略时保持普通聊天的上下文和工具行为。 */
   execution?: AssistantExecution;
@@ -127,90 +108,34 @@ export interface AssistantServiceOptions {
   /**
    * 摘要开始时的回调（用于在 UI 中显示摘要气泡）
    */
-  onSummarizingStart?: () => void;
+  onSummarizingStart?: () => void | Promise<void>;
   /**
    * 摘要结束时的回调（用于在 UI 中恢复接收 chunk）
    */
-  onSummarizingEnd?: () => void;
+  onSummarizingEnd?: () => void | Promise<void>;
   /**
    * 聊天会话 ID（可选），如果提供，待办事项将关联到此会话而不是任务
    */
   sessionId?: string;
-  /**
-   * 跳过 token 限制检查和服务级摘要（可选）
-   * 当 UI 层已经处理了摘要时设置为 true，避免重复摘要
-   */
-  skipTokenLimitSummarization?: boolean;
+  contextAnchor?: ContextAnchor;
   /**
    * 任务创建时的回调（可选），用于获取任务 ID
    */
   onTaskCreated?: (taskId: string) => void;
 }
 
-/**
- * Assistant 对话结果
- */
 export interface AssistantResult {
   paused?: AssistantPauseReason;
   checkpoint?: AssistantExecutionCheckpoint;
   text: string;
   taskId?: string;
   actions?: ActionInfo[];
-  /**
-   * 更新后的对话历史（包含本次对话的所有消息）
-   */
   messageHistory?: ChatMessage[];
-  /**
-   * 是否需要重置会话（当达到 token 限制或发生错误时）
-   */
-  needsReset?: boolean;
-  /**
-   * 会话总结（当需要重置时提供）
-   */
-  summary?: string;
-  /**
-   * 工具调用产生的额外 token 开销（实际 API 上下文 token 数减去 UI 可见消息 token 数）。
-   * 用于修正 UI 进度条的 token 估算，使其反映真实的上下文占用。
-   */
-  toolCallTokenOverhead?: number;
+  summary?: string | undefined;
+  contextAnchor?: ContextAnchor | undefined;
 }
 
-/**
- * token 限制恢复流程的入参，attemptTokenLimitRecovery / tryRecoverFromTokenLimitError 共用
- */
-interface TokenLimitRecoveryParams {
-  error: unknown;
-  model: AIModel;
-  tools: AITool[];
-  options: AssistantServiceOptions;
-  systemPrompt: string;
-  userMessage: string;
-  context: ReturnType<typeof useContextStore>['getContext'];
-  finalSignal: AbortSignal | undefined;
-  aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined;
-  taskId: string | undefined;
-  sessionId: string | undefined;
-}
-
-/**
- * Assistant 服务
- * 提供智能助手功能，可以使用所有可用的 AI 工具，并基于用户当前上下文提供帮助
- */
 export class AssistantService {
-  private static mergeSummaries(
-    existingSummary: string | undefined,
-    nextSummary: string | undefined,
-  ): string | undefined {
-    const next = nextSummary?.trim();
-    if (!next) return existingSummary;
-    const existing = existingSummary?.trim();
-    return existing ? `${existing}\n\n${next}` : next;
-  }
-
-  /**
-   * 构建系统提示词
-   * 包含用户当前上下文信息
-   */
   private static buildSystemPrompt(
     context: {
       currentBookId: string | null;
@@ -226,375 +151,6 @@ export class AssistantService {
     return getAssistantSystemPrompt(todosPrompt, tools, context);
   }
 
-  /**
-   * 更新任务的上下文 token 统计
-   */
-  private static async updateTaskContextUsage(params: {
-    messages: ChatMessage[];
-    model: AIModel;
-    toolSchemaTokens?: number | undefined;
-    aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'] | undefined;
-    taskId?: string | undefined;
-  }): Promise<void> {
-    const { messages, model, toolSchemaTokens, aiProcessingStore, taskId } = params;
-    if (!aiProcessingStore || !taskId) return;
-
-    const messageTokens = estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER);
-    const contextTokens = messageTokens + (toolSchemaTokens ?? 0);
-    const contextWindow = model.maxInputTokens || 0;
-    const contextPercentage =
-      contextWindow > 0 ? Math.round((contextTokens / contextWindow) * 100) : undefined;
-
-    await aiProcessingStore.updateTask(taskId, {
-      contextTokens,
-      ...(contextWindow > 0 ? { contextWindow } : {}),
-      ...(contextPercentage !== undefined ? { contextPercentage } : {}),
-    });
-  }
-
-  /**
-   * 计算工具调用产生的 token 开销。
-   * = 完整内部消息列表的 token 数 - 仅 user/assistant 纯文本消息的 token 数。
-   * UI 侧只统计 user/assistant 纯文本，因此此差值用于修正进度条。
-   */
-  private static calculateToolCallTokenOverhead(messages: ChatMessage[]): number {
-    const totalTokens = estimateMessagesTokenCount(messages);
-    // 模拟 UI 侧的过滤逻辑：只保留 user/assistant 且有内容的消息，且只取纯 content
-    const uiVisibleMessages: ChatMessage[] = messages
-      .filter(
-        (msg) =>
-          (msg.role === 'user' || msg.role === 'assistant') &&
-          msg.content &&
-          msg.content.trim() &&
-          !TOOL_CALL_PLACEHOLDER_VARIANTS.includes(
-            msg.content as (typeof TOOL_CALL_PLACEHOLDER_VARIANTS)[number],
-          ),
-      )
-      .map((msg) => ({
-        role: msg.role,
-        content: msg.content || '',
-      }));
-    const uiTokens = estimateMessagesTokenCount(uiVisibleMessages);
-    return Math.max(0, totalTokens - uiTokens);
-  }
-
-  /**
-   * 确保摘要符合 token 限制
-   * @param systemPrompt 系统提示词
-   * @param summary 摘要内容
-   * @param userMessage 用户消息
-   * @param maxTokens 最大 token 数（如果 <= 0 或 UNLIMITED_TOKENS，直接返回原始摘要）
-   * @returns 截断后的摘要（如果原始摘要适合则返回原始摘要）
-   */
-  private static ensureSummaryFitsInContext(
-    systemPrompt: string,
-    summary: string,
-    userMessage: string,
-    maxInputTokens: number,
-  ): string {
-    // 处理无限制 token 的情况
-    if (maxInputTokens <= 0 || maxInputTokens === UNLIMITED_TOKENS) {
-      return summary;
-    }
-
-    // 保留 20% 用于响应生成，使用更保守的估算
-    const availableTokens = Math.floor(maxInputTokens * 0.8);
-
-    // 估算系统提示词和用户消息的 token 数（使用更保守的倍数）
-    const systemTokens = estimateMessagesTokenCount(
-      [{ role: 'system', content: systemPrompt }],
-      DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-    );
-    const userTokens = estimateMessagesTokenCount(
-      [{ role: 'user', content: userMessage }],
-      DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-    );
-
-    // 计算摘要可用的 token 数（预留 10% 缓冲）
-    const summaryTokens = Math.floor((availableTokens - systemTokens - userTokens) * 0.9);
-
-    // 如果可用 token 数不足，直接截断
-    if (summaryTokens <= 0) {
-      // 极端情况：只保留摘要的前 100 个字符
-      return summary.length > 100 ? summary.slice(0, 97) + '...' : summary;
-    }
-
-    // 如果摘要适合，直接返回
-    const currentSummaryTokens = estimateMessagesTokenCount(
-      [{ role: 'user', content: summary }],
-      DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-    );
-    if (currentSummaryTokens <= summaryTokens) {
-      return summary;
-    }
-
-    // 截断摘要以适配（保守：使用可用量的 90%）
-    const targetTokens = Math.floor(summaryTokens * 0.9);
-    const charsPerToken = 0.4; // 更保守的估算（中文/日文）
-    const maxChars = Math.floor(targetTokens / charsPerToken);
-
-    if (summary.length <= maxChars) {
-      return summary;
-    }
-
-    // 截断并添加省略号（优先截断尾部，保留开头的关键信息）
-    return summary.slice(0, maxChars - 3) + '...';
-  }
-
-  /**
-   * 降级策略：当摘要失败时，使用最近 N 条消息
-   * @param messages 消息历史
-   * @param count 保留的消息数量（默认 5）
-   * @returns 降级后的消息列表
-   */
-  private static getFallbackMessages(messages: ChatMessage[], count: number = 5): ChatMessage[] {
-    // 保留系统消息
-    const systemMessages = messages.filter((msg) => msg.role === 'system');
-    // 保留最后 N 条非系统消息；剔除开头的孤儿 tool 消息（其 tool_calls 已被切掉）
-    const recentMessages = this.dropLeadingOrphanToolMessages(
-      messages.filter((msg) => msg.role !== 'system').slice(-count),
-    );
-
-    return [...systemMessages, ...recentMessages];
-  }
-
-  /**
-   * 剔除开头的孤儿 tool 消息。按条数截取历史时，切点可能落在
-   * assistant(tool_calls) 与其 tool 结果之间；没有前置 tool_calls 的
-   * tool 消息会被 OpenAI 兼容端以 400 拒绝。
-   */
-  private static dropLeadingOrphanToolMessages(messages: ChatMessage[]): ChatMessage[] {
-    let start = 0;
-    while (start < messages.length && messages[start]?.role === 'tool') {
-      start++;
-    }
-    return start === 0 ? messages : messages.slice(start);
-  }
-
-  /**
-   * 为摘要请求截断输入：单条消息限长（工具结果可能非常大），
-   * 再按 token 预算从最新往回保留，丢弃更早的消息。
-   */
-  private static truncateMessagesForSummary(
-    model: AIModel,
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-  ): Array<{ role: 'user' | 'assistant'; content: string }> {
-    const PER_MESSAGE_MAX_CHARS = 2000;
-    const DEFAULT_SUMMARY_INPUT_TOKEN_BUDGET = 24_000;
-
-    const capped = messages.map((msg) =>
-      msg.content.length > PER_MESSAGE_MAX_CHARS
-        ? { ...msg, content: msg.content.slice(0, PER_MESSAGE_MAX_CHARS - 3) + '...' }
-        : msg,
-    );
-
-    const hasFiniteLimit =
-      typeof model.maxInputTokens === 'number' &&
-      model.maxInputTokens > 0 &&
-      model.maxInputTokens !== UNLIMITED_TOKENS;
-    const budget = hasFiniteLimit
-      ? Math.floor(model.maxInputTokens * 0.6)
-      : DEFAULT_SUMMARY_INPUT_TOKEN_BUDGET;
-
-    // 从最新往回累加 token，超过预算即丢弃更早的消息（至少保留最新一条）
-    const kept: typeof capped = [];
-    let usedTokens = 0;
-    for (let i = capped.length - 1; i >= 0; i--) {
-      const msg = capped[i];
-      if (!msg) continue;
-      const tokens = estimateMessagesTokenCount([{ role: msg.role, content: msg.content }]);
-      if (kept.length > 0 && usedTokens + tokens > budget) break;
-      kept.unshift(msg);
-      usedTokens += tokens;
-    }
-    if (kept.length < capped.length) {
-      console.warn(
-        `[AssistantService] 摘要输入过长，已从 ${capped.length} 条截断为最近 ${kept.length} 条`,
-      );
-    }
-    return kept;
-  }
-
-  /**
-   * 总结会话历史
-   * @param model AI 模型
-   * @param messages 要总结的消息列表
-   * @param options 选项
-   */
-  static async summarizeSession(
-    model: AIModel,
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    options: {
-      previousSummary?: string;
-      signal?: AbortSignal;
-      onChunk?: TextGenerationStreamCallback;
-    } = {},
-  ): Promise<string> {
-    const { previousSummary, signal, onChunk } = options;
-
-    // 摘要请求本身也要受上下文窗口约束：先截断超长消息并按预算丢弃最早的消息，
-    // 否则恰好在 context 快满时触发的摘要请求几乎必然自身超限而失败
-    const boundedMessages = this.truncateMessagesForSummary(model, messages);
-
-    // 将消息分为早期、中期和最近部分，重点关注最近的消息
-    const totalMessages = boundedMessages.length;
-    const recentThreshold = Math.max(1, Math.floor(totalMessages * 0.3)); // 最近30%的消息
-    const middleThreshold = Math.max(1, Math.floor(totalMessages * 0.6)); // 中间30%的消息
-
-    const recentMessages = boundedMessages.slice(-recentThreshold);
-    const middleMessages =
-      totalMessages > recentThreshold
-        ? boundedMessages.slice(-middleThreshold, -recentThreshold)
-        : [];
-    const earlyMessages =
-      totalMessages > middleThreshold ? boundedMessages.slice(0, -middleThreshold) : [];
-
-    // 构建消息历史，突出显示最近的消息
-    const formatMessages = (msgs: typeof messages, startIdx: number, label: string) => {
-      if (msgs.length === 0) return '';
-      return `\n【${label}】\n${msgs
-        .map((msg, idx) => {
-          const role = msg.role === 'user' ? '用户' : '助手';
-          return `[${startIdx + idx + 1}] ${role}: ${msg.content}`;
-        })
-        .join('\n\n')}`;
-    };
-
-    const earlySection = formatMessages(earlyMessages, 0, '早期对话');
-    const middleSection = formatMessages(middleMessages, earlyMessages.length, '中期对话');
-    const recentSection = formatMessages(
-      recentMessages,
-      earlyMessages.length + middleMessages.length,
-      '最近对话（重点关注）',
-    );
-
-    const normalizedPreviousSummary = previousSummary?.trim() ? previousSummary.trim() : '';
-    const previousSummarySection = normalizedPreviousSummary
-      ? `\n\n【已有会话摘要】\n${normalizedPreviousSummary}\n`
-      : '';
-
-    // 构建总结提示词（精简版，减少 token 消耗）
-    const dialogContent = `${earlySection}${middleSection}${recentSection}`;
-
-    // 构建总结提示词（精简版，减少 token 消耗）
-    const summaryPrompt = getSessionSummaryPrompt(previousSummarySection, dialogContent);
-
-    // 获取 AI 服务
-    const aiService = AIServiceFactory.getService(model.provider);
-
-    // 构建配置
-    const config: AIServiceConfig = {
-      apiKey: model.apiKey,
-      baseUrl: model.baseUrl,
-      model: model.model,
-      temperature: SUMMARY_TEMPERATURE, // 使用较低温度以获得更准确的总结
-      maxOutputTokens: model.maxOutputTokens,
-      signal,
-      useCorsProxy: model.useCorsProxy,
-      ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
-    };
-
-    // 构建请求（使用较低的 maxTokens 来限制摘要长度）
-    const summaryMaxTokens =
-      model.maxOutputTokens > 0 ? Math.min(model.maxOutputTokens, 1024) : 1024; // 摘要不需要太长
-    const request: TextGenerationRequest = {
-      messages: [
-        {
-          role: 'system',
-          content: SUMMARY_SYSTEM_PROMPT,
-        },
-        {
-          role: 'user',
-          content: summaryPrompt,
-        },
-      ],
-      temperature: SUMMARY_TEMPERATURE,
-      maxOutputTokens: summaryMaxTokens,
-    };
-
-    // 生成总结
-    let fullText = '';
-    const result = await aiService.generateText(config, request, async (chunk) => {
-      if (chunk.text) {
-        fullText += chunk.text;
-      }
-      if (onChunk) {
-        await onChunk(chunk);
-      }
-    });
-
-    const summary = result.text || fullText;
-
-    // 验证摘要质量
-    const validatedSummary = this.validateSummary(summary);
-    if (!validatedSummary) {
-      console.warn('[AssistantService] 摘要验证失败，返回降级摘要');
-      // 返回一个基本的降级摘要，避免完全失败；必须保留已有摘要，否则会清空多轮积累的上下文
-      return this.createFallbackSummary(boundedMessages, normalizedPreviousSummary);
-    }
-
-    return validatedSummary;
-  }
-
-  /**
-   * 验证摘要质量
-   * @param summary 摘要内容
-   * @returns 验证后的摘要，如果无效则返回 null
-   */
-  private static validateSummary(summary: string): string | null {
-    if (!summary) {
-      return null;
-    }
-
-    const trimmed = summary.trim();
-
-    // 最小长度检查（至少 20 个字符）
-    if (trimmed.length < 20) {
-      console.warn(`[AssistantService] 摘要太短: ${trimmed.length} 字符`);
-      return null;
-    }
-
-    // 检查是否只是错误信息或无意义内容
-    const invalidPatterns = [/^(error|错误|失败|无法)/i, /^抱歉/, /^我不/, /^sorry/i];
-
-    for (const pattern of invalidPatterns) {
-      if (pattern.test(trimmed)) {
-        console.warn(`[AssistantService] 摘要匹配无效模式: ${pattern}`);
-        return null;
-      }
-    }
-
-    return trimmed;
-  }
-
-  /**
-   * 创建降级摘要（当 AI 摘要失败时使用）
-   * @param messages 原始消息列表
-   * @returns 简单的降级摘要
-   */
-  private static createFallbackSummary(
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
-    previousSummary?: string,
-  ): string {
-    // 提取最近几条消息的关键内容
-    const recentMessages = messages.slice(-5);
-    const userMessages = recentMessages
-      .filter((m) => m.role === 'user')
-      .map((m) => m.content.slice(0, 50))
-      .join('；');
-
-    const base = userMessages
-      ? `最近讨论：${userMessages}${userMessages.length > 100 ? '...' : ''}`
-      : '（会话摘要生成失败，已保留最近对话上下文）';
-
-    // 降级摘要会整体覆盖 session.summary，必须把已有摘要拼接进来，避免丢失早期上下文
-    const prev = previousSummary?.trim();
-    return prev ? `${prev}\n\n${base}` : base;
-  }
-
-  /**
-   * 处理工具调用
-   */
   private static async handleToolCalls(
     toolCalls: AIToolCall[],
     tools: AITool[],
@@ -663,9 +219,6 @@ export class AssistantService {
 
   // ─── 重构提取的辅助方法 ─────────────────────────────────
 
-  /**
-   * 构建 AI 服务配置
-   */
   private static buildAIConfig(
     model: AIModel,
     overrides?: {
@@ -679,16 +232,13 @@ export class AssistantService {
       baseUrl: model.baseUrl,
       model: model.model,
       temperature: overrides?.temperature ?? model.temperature ?? DEFAULT_TEMPERATURE,
-      maxOutputTokens: overrides?.maxOutputTokens ?? model.maxOutputTokens,
+      maxOutputTokens: overrides?.maxOutputTokens,
       signal: overrides?.signal,
       useCorsProxy: model.useCorsProxy,
       ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
     };
   }
 
-  /**
-   * 构建文本生成请求
-   */
   private static buildTextRequest(
     messages: ChatMessage[],
     tools: AITool[],
@@ -707,10 +257,6 @@ export class AssistantService {
     };
   }
 
-  /**
-   * 创建助手流式处理回调
-   * @param appendOutput 是否将输出内容追加到任务面板（初始请求为 true，跟进请求为 false）
-   */
   private static createAssistantStreamHandler(params: {
     onTextAccumulate: (text: string) => void;
     onToolCallsAccumulate: (toolCalls: AIToolCall[]) => void;
@@ -799,13 +345,11 @@ export class AssistantService {
     await onChunk(this.buildFilteredUserChunk(chunk));
   }
 
-  /**
-   * 处理 generateText 返回结果，分发 reasoningContent
-   */
   private static async processGenerateTextResult(params: {
     result: { text: string; toolCalls?: AIToolCall[]; reasoningContent?: string };
     accumulatedText: string;
     accumulatedToolCalls: AIToolCall[];
+    streamedReasoning?: string;
     aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'] | undefined;
     taskId?: string | undefined;
     onThinkingChunk?: ((text: string) => void | Promise<void>) | undefined;
@@ -823,20 +367,17 @@ export class AssistantService {
     const finalToolCalls = result.toolCalls || accumulatedToolCalls;
     const reasoningContent = result.reasoningContent;
 
-    if (aiProcessingStore && taskId && reasoningContent) {
-      await aiProcessingStore.appendThinkingMessage(taskId, reasoningContent);
-    }
-    if (onThinkingChunk && reasoningContent) {
-      await onThinkingChunk(reasoningContent);
-    }
+    const rest =
+      params.streamedReasoning && reasoningContent?.startsWith(params.streamedReasoning)
+        ? reasoningContent.slice(params.streamedReasoning.length)
+        : reasoningContent;
+    if (aiProcessingStore && taskId && rest)
+      await aiProcessingStore.appendThinkingMessage(taskId, rest);
+    if (onThinkingChunk && rest) await onThinkingChunk(rest);
 
     return { text: finalText, toolCalls: finalToolCalls, reasoningContent };
   }
 
-  /**
-   * 将助手消息推送到消息历史
-   * 统一采用 TOOL_CALL_PLACEHOLDER 占位符（兼容 Moonshot/Kimi 等服务对 content 非空的要求）
-   */
   private static pushAssistantMessage(
     messages: ChatMessage[],
     text: string,
@@ -858,288 +399,6 @@ export class AssistantService {
     }
   }
 
-  /**
-   * 执行单次 AI 请求（流式处理 + 结果处理 + 消息推送）
-   */
-  private static async executeAIRequest(params: {
-    aiService: ReturnType<typeof AIServiceFactory.getService>;
-    config: AIServiceConfig;
-    request: TextGenerationRequest;
-    messages: ChatMessage[];
-    options: AssistantServiceOptions;
-    taskId?: string | undefined;
-    isInitialRequest: boolean;
-  }): Promise<{ text: string; toolCalls: AIToolCall[]; reasoningContent: string | undefined }> {
-    const { aiService, config, request, messages, options, taskId, isInitialRequest } = params;
-
-    await options.execution?.beforeRequest(messages, config.signal);
-
-    let fullText = '';
-    const toolCalls: AIToolCall[] = [];
-
-    const streamHandler = this.createAssistantStreamHandler({
-      onTextAccumulate: (text) => {
-        fullText += text;
-      },
-      onToolCallsAccumulate: (tc) => {
-        toolCalls.push(...tc);
-      },
-      aiProcessingStore: options.aiProcessingStore,
-      taskId,
-      onThinkingChunk: options.onThinkingChunk,
-      onChunk: options.onChunk,
-      appendOutput: isInitialRequest,
-    });
-
-    const result = await aiService.generateText(config, request, streamHandler);
-
-    const processed = await this.processGenerateTextResult({
-      result,
-      accumulatedText: fullText,
-      accumulatedToolCalls: toolCalls,
-      aiProcessingStore: options.aiProcessingStore,
-      taskId,
-      onThinkingChunk: options.onThinkingChunk,
-    });
-    if (options.execution)
-      processed.toolCalls = options.execution.normalizeCalls(processed.toolCalls);
-
-    this.pushAssistantMessage(
-      messages,
-      processed.text,
-      processed.toolCalls,
-      processed.reasoningContent,
-    );
-    await options.execution?.recordReply(messages, processed.toolCalls);
-
-    return processed;
-  }
-
-  /**
-   * 执行一轮工具调用、把结果推入 messages，并做 trim / context 用量更新。
-   */
-  private static async executeToolCallsAndTrim(params: {
-    toolCalls: AIToolCall[];
-    tools: AITool[];
-    bookId: string | null;
-    messages: ChatMessage[];
-    allActions: ActionInfo[];
-    options: AssistantServiceOptions;
-    taskId?: string | undefined;
-    sessionId?: string | undefined;
-    model: AIModel;
-    toolSchemaTokens: number;
-    signal?: AbortSignal | undefined;
-  }): Promise<void> {
-    const {
-      toolCalls,
-      tools,
-      bookId,
-      messages,
-      allActions,
-      options,
-      taskId,
-      sessionId,
-      model,
-      toolSchemaTokens,
-      signal,
-    } = params;
-
-    const toolResults = options.execution
-      ? []
-      : await this.handleToolCalls(
-          toolCalls,
-          tools,
-          bookId,
-          (action) => {
-            allActions.push(action);
-            options.onAction?.(action);
-          },
-          options.onToast,
-          taskId,
-          sessionId,
-          model.id,
-          signal,
-        );
-
-    await options.execution?.runTools(toolCalls, messages, signal);
-
-    messages.push(...toolResults);
-
-    // 工具结果累积后检查 context 使用量，超出时主动压缩早期工具消息
-    this.trimToolMessagesIfNeeded(messages, model, toolSchemaTokens);
-
-    await this.updateTaskContextUsage({
-      messages,
-      model,
-      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-      aiProcessingStore: options.aiProcessingStore,
-      taskId,
-    });
-  }
-
-  /**
-   * 发送跟进请求并更新 context 用量。
-   */
-  private static async runFollowUpRequest(params: {
-    messages: ChatMessage[];
-    tools: AITool[];
-    model: AIModel;
-    aiService: ReturnType<typeof AIServiceFactory.getService>;
-    config: AIServiceConfig;
-    options: AssistantServiceOptions;
-    taskId?: string | undefined;
-    toolSchemaTokens: number;
-  }): Promise<{ text: string; toolCalls: AIToolCall[] }> {
-    const { messages, tools, model, aiService, config, options, taskId, toolSchemaTokens } = params;
-
-    const followUpRequest = this.buildTextRequest(messages, tools, {
-      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-      maxOutputTokens: model.maxOutputTokens,
-    });
-
-    const followUpResult = await this.executeAIRequest({
-      aiService,
-      config,
-      request: followUpRequest,
-      messages,
-      options,
-      taskId,
-      isInitialRequest: false,
-    });
-
-    await this.updateTaskContextUsage({
-      messages,
-      model,
-      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-      aiProcessingStore: options.aiProcessingStore,
-      taskId,
-    });
-
-    return { text: followUpResult.text, toolCalls: followUpResult.toolCalls };
-  }
-
-  /**
-   * 运行工具调用循环
-   */
-  private static async runToolCallLoop(params: {
-    initialToolCalls: AIToolCall[];
-    messages: ChatMessage[];
-    tools: AITool[];
-    model: AIModel;
-    bookId: string | null;
-    aiService: ReturnType<typeof AIServiceFactory.getService>;
-    config: AIServiceConfig;
-    options: AssistantServiceOptions;
-    taskId?: string | undefined;
-    sessionId?: string | undefined;
-    toolSchemaTokens: number;
-    signal?: AbortSignal | undefined;
-  }): Promise<{ finalText: string; actions: ActionInfo[]; summary?: string }> {
-    const {
-      messages,
-      tools,
-      model,
-      bookId,
-      aiService,
-      config,
-      options,
-      taskId,
-      sessionId,
-      toolSchemaTokens,
-      signal,
-    } = params;
-    let toolCalls = params.initialToolCalls;
-    let currentTurnCount = 0;
-    let finalText = '';
-    const allActions: ActionInfo[] = [];
-    let summarizationCount = 0;
-    let inLoopSummary: string | undefined;
-    const turnLimit = options.execution?.maxToolTurns ?? MAX_TOOL_CALL_TURNS;
-
-    while (toolCalls.length > 0 && currentTurnCount < turnLimit) {
-      currentTurnCount++;
-
-      this.ensureRequestActive(signal);
-
-      // 执行工具调用
-      await this.executeToolCallsAndTrim({
-        toolCalls,
-        tools,
-        bookId,
-        messages,
-        allActions,
-        options,
-        taskId,
-        sessionId,
-        model,
-        toolSchemaTokens,
-        signal,
-      });
-
-      // trim 救不回来时，在循环内主动触发摘要，避免 followUp 请求超出 context
-      if (summarizationCount < MAX_IN_LOOP_SUMMARIZATIONS) {
-        const summarizeResult = await this.maybeSummarizeInLoop({
-          messages,
-          model,
-          tools,
-          bookId,
-          aiService,
-          config,
-          options,
-          toolSchemaTokens,
-          ...(taskId ? { taskId } : {}),
-          ...(signal ? { signal } : {}),
-        });
-        if (summarizeResult) {
-          summarizationCount++;
-          inLoopSummary = this.mergeSummaries(inLoopSummary, summarizeResult.summary);
-          if (summarizeResult.finalText && summarizeResult.finalText.trim()) {
-            finalText = summarizeResult.finalText;
-          }
-          toolCalls = summarizeResult.toolCalls;
-          if (toolCalls.length === 0) {
-            break;
-          }
-          continue;
-        }
-      }
-
-      // 跟进请求
-      const followUpResult = await this.runFollowUpRequest({
-        messages,
-        tools,
-        model,
-        aiService,
-        config,
-        options,
-        taskId,
-        toolSchemaTokens,
-      });
-
-      if (followUpResult.text && followUpResult.text.trim()) {
-        finalText = followUpResult.text;
-      }
-      toolCalls = followUpResult.toolCalls;
-
-      if (toolCalls.length === 0) {
-        break;
-      }
-    }
-
-    await this.finishToolLoop(messages, toolCalls, options.execution);
-
-    return {
-      finalText,
-      actions: allActions,
-      ...(inLoopSummary ? { summary: inLoopSummary } : {}),
-    };
-  }
-
-  /**
-   * 达到轮次上限仍有未执行的工具调用时，补齐占位 tool 结果。
-   * 否则历史会残留没有响应的 tool_calls 消息，下一轮请求会被 API 直接拒绝。
-   */
   private static fillPendingToolCallResults(
     messages: ChatMessage[],
     pendingToolCalls: AIToolCall[],
@@ -1175,894 +434,7 @@ export class AssistantService {
    *
    * 返回 null 表示无需（或无法）摘要，调用方继续正常的 followUp 请求。
    */
-  /**
-   * 判断当前 messages 是否已越过循环内摘要阈值;同时拿到 system / user 锚点。
-   * 若不满足(模型无 tokens 上限 / 未越过阈值 / 缺 system 或 user 消息),返回 null。
-   */
-  private static evaluateInLoopSummarizeTrigger(params: {
-    messages: ChatMessage[];
-    model: AIModel;
-    toolSchemaTokens: number;
-  }): {
-    systemPrompt: string;
-    userMessage: string;
-    systemMsg: ChatMessage;
-    userMsg: ChatMessage;
-    currentTokens: number;
-    threshold: number;
-  } | null {
-    const { messages, model, toolSchemaTokens } = params;
 
-    if (
-      !model.maxInputTokens ||
-      model.maxInputTokens <= 0 ||
-      model.maxInputTokens === UNLIMITED_TOKENS
-    ) {
-      return null;
-    }
-
-    const currentTokens =
-      estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
-    const threshold = Math.floor(model.maxInputTokens * IN_LOOP_SUMMARIZE_THRESHOLD);
-    if (currentTokens < threshold) {
-      return null;
-    }
-
-    const systemMsg = messages.find((m) => m.role === 'system');
-    const userMsg = messages.findLast((m) => m.role === 'user');
-    if (!systemMsg?.content || !userMsg?.content) {
-      return null;
-    }
-
-    return {
-      systemPrompt: systemMsg.content,
-      userMessage: userMsg.content,
-      systemMsg,
-      userMsg,
-      currentTokens,
-      threshold,
-    };
-  }
-
-  /**
-   * 从一批 messages 里抽出需要进入摘要的条目(剔除 system / 保留的原始 user / 空内容)。
-   */
-  private static collectMessagesToSummarize(
-    messages: ChatMessage[],
-    systemMsg: ChatMessage,
-    userMsg: ChatMessage,
-  ): Array<{ role: 'user' | 'assistant'; content: string }> {
-    return messages
-      .filter((m) => m !== systemMsg && m !== userMsg && (m.content ?? '').length > 0)
-      .map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content || '',
-      }));
-  }
-
-  /**
-   * 摘要成功后重启初始请求,拿到新一轮 toolCalls 供循环继续。
-   */
-  private static async restartInitialRequestAfterSummary(params: {
-    messages: ChatMessage[];
-    model: AIModel;
-    tools: AITool[];
-    aiService: ReturnType<typeof AIServiceFactory.getService>;
-    config: AIServiceConfig;
-    options: AssistantServiceOptions;
-    toolSchemaTokens: number;
-    taskId?: string;
-  }): Promise<{ finalText: string; toolCalls: AIToolCall[] }> {
-    const { messages, model, tools, aiService, config, options, toolSchemaTokens, taskId } = params;
-
-    // 摘要后 messages 只剩 [system+summary, user]，没有 pending tool_results，
-    // 必须以 isInitialRequest=true 重新拉一轮 AI 回复。
-    const restartRequest = this.buildTextRequest(messages, tools, {
-      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-      maxOutputTokens: model.maxOutputTokens,
-    });
-
-    const restartResult = await this.executeAIRequest({
-      aiService,
-      config,
-      request: restartRequest,
-      messages,
-      options,
-      ...(taskId ? { taskId } : {}),
-      isInitialRequest: true,
-    });
-
-    await this.updateTaskContextUsage({
-      messages,
-      model,
-      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-      aiProcessingStore: options.aiProcessingStore,
-      taskId,
-    });
-
-    return { finalText: restartResult.text, toolCalls: restartResult.toolCalls };
-  }
-
-  /**
-   * 将可选参数(signal / aiProcessingStore / taskId / onSummarizingStart)组装进
-   * requestSummaryReset 的 payload。单独封装避免 maybeSummarizeInLoop 里的 ternary-spread
-   * 被复杂度扫描器误判成多分支。
-   */
-  private static async requestInLoopSummary(params: {
-    model: AIModel;
-    systemPrompt: string;
-    userMessage: string;
-    messagesToSummarize: Array<{ role: 'user' | 'assistant'; content: string }>;
-    bookId: string | null;
-    options: AssistantServiceOptions;
-    taskId?: string;
-    signal?: AbortSignal;
-  }): Promise<{ summary?: string } | null> {
-    const {
-      model,
-      systemPrompt,
-      userMessage,
-      messagesToSummarize,
-      bookId,
-      options,
-      taskId,
-      signal,
-    } = params;
-    const extra: Record<string, unknown> = {};
-    if (signal) extra.finalSignal = signal;
-    if (options.aiProcessingStore) extra.aiProcessingStore = options.aiProcessingStore;
-    if (taskId) extra.taskId = taskId;
-    if (options.onSummarizingStart) extra.onSummarizingStart = options.onSummarizingStart;
-    if (options.onSummarizingEnd) extra.onSummarizingEnd = options.onSummarizingEnd;
-
-    return this.requestSummaryReset({
-      model,
-      systemPrompt,
-      userMessage,
-      messagesToSummarize,
-      context: { currentBookId: bookId },
-      ...extra,
-    });
-  }
-
-  /**
-   * 工具循环中的摘要兜底：当累积的 messages 超过 IN_LOOP_SUMMARIZE_THRESHOLD 时，
-   * 用 requestSummaryReset 生成整段会话摘要，替换掉中间所有工具调用/结果，
-   * 然后以 [system+summary, user] 重发起初始请求，拿到新一轮 toolCalls 供循环继续。
-   *
-   * 返回 null 表示无需（或无法）摘要，调用方继续正常的 followUp 请求。
-   */
-  private static async maybeSummarizeInLoop(params: {
-    messages: ChatMessage[];
-    model: AIModel;
-    tools: AITool[];
-    bookId: string | null;
-    aiService: ReturnType<typeof AIServiceFactory.getService>;
-    config: AIServiceConfig;
-    options: AssistantServiceOptions;
-    toolSchemaTokens: number;
-    taskId?: string;
-    signal?: AbortSignal;
-  }): Promise<{ finalText: string; toolCalls: AIToolCall[]; summary: string } | null> {
-    const {
-      messages,
-      model,
-      tools,
-      bookId,
-      aiService,
-      config,
-      options,
-      toolSchemaTokens,
-      taskId,
-      signal,
-    } = params;
-
-    const trigger = this.evaluateInLoopSummarizeTrigger({ messages, model, toolSchemaTokens });
-    if (!trigger) return null;
-    const { systemPrompt, userMessage, systemMsg, userMsg, currentTokens, threshold } = trigger;
-
-    const messagesToSummarize = this.collectMessagesToSummarize(messages, systemMsg, userMsg);
-    if (messagesToSummarize.length === 0) return null;
-
-    console.warn(
-      `[AssistantService] 工具循环 context 过载 (${currentTokens} >= ${threshold}，${Math.round(
-        (currentTokens / model.maxInputTokens!) * 100,
-      )}%)，触发循环内摘要`,
-    );
-
-    const summaryResult = await this.requestInLoopSummary({
-      model,
-      systemPrompt,
-      userMessage,
-      messagesToSummarize,
-      bookId,
-      options,
-      ...(taskId ? { taskId } : {}),
-      ...(signal ? { signal } : {}),
-    });
-
-    if (!summaryResult?.summary) {
-      console.warn('[AssistantService] 工具循环内摘要失败，回退到 followUp 请求');
-      return null;
-    }
-
-    await this.applyInLoopSummary({
-      messages,
-      model,
-      options,
-      toolSchemaTokens,
-      systemPrompt,
-      userMessage,
-      summary: summaryResult.summary,
-      ...(taskId ? { taskId } : {}),
-    });
-
-    const restartResult = await this.restartInitialRequestAfterSummary({
-      messages,
-      model,
-      tools,
-      aiService,
-      config,
-      options,
-      toolSchemaTokens,
-      ...(taskId ? { taskId } : {}),
-    });
-    return { ...restartResult, summary: summaryResult.summary };
-  }
-
-  /**
-   * 将生成的摘要套进 messages:通知 onSummarizingEnd、重建 messages、更新 context 占用。
-   */
-  private static async applyInLoopSummary(params: {
-    messages: ChatMessage[];
-    model: AIModel;
-    options: AssistantServiceOptions;
-    toolSchemaTokens: number;
-    systemPrompt: string;
-    userMessage: string;
-    summary: string;
-    taskId?: string;
-  }): Promise<void> {
-    const {
-      messages,
-      model,
-      options,
-      toolSchemaTokens,
-      systemPrompt,
-      userMessage,
-      summary,
-      taskId,
-    } = params;
-
-    options.onSummarizingEnd?.();
-    options.execution?.setSummary(summary);
-
-    const rebuilt = this.rebuildMessagesWithSummary(systemPrompt, summary, userMessage);
-    messages.length = 0;
-    messages.push(...rebuilt);
-
-    await this.updateTaskContextUsage({
-      messages,
-      model,
-      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-      aiProcessingStore: options.aiProcessingStore,
-      taskId,
-    });
-  }
-
-  /**
-   * 执行完整的 AI 请求（包括工具调用循环）
-   */
-  private static async executeFullRequest(params: {
-    model: AIModel;
-    messages: ChatMessage[];
-    tools: AITool[];
-    bookId: string | null;
-    options: AssistantServiceOptions;
-    taskId?: string | undefined;
-    sessionId?: string | undefined;
-    signal?: AbortSignal | undefined;
-    maxOutputTokens?: number | undefined;
-  }): Promise<AssistantResult> {
-    const { model, messages, tools, bookId, options, taskId, sessionId, signal, maxOutputTokens } =
-      params;
-
-    const toolSchemaTokens = estimateToolSchemaTokens(tools);
-    const aiService = AIServiceFactory.getService(model.provider);
-    const effectiveMaxTokens = maxOutputTokens ?? model.maxOutputTokens;
-    const config = this.buildAIConfig(model, { signal, maxOutputTokens: effectiveMaxTokens });
-    const request = this.buildTextRequest(messages, tools, {
-      temperature: model.temperature ?? DEFAULT_TEMPERATURE,
-      maxOutputTokens: effectiveMaxTokens,
-    });
-
-    // 初始请求
-    const pendingCalls = options.execution?.pendingCalls;
-    const initialResult = pendingCalls?.length
-      ? { text: '', toolCalls: pendingCalls }
-      : await this.executeAIRequest({
-          aiService,
-          config,
-          request,
-          messages,
-          options,
-          taskId,
-          isInitialRequest: true,
-        });
-
-    await this.updateTaskContextUsage({
-      messages,
-      model,
-      ...(toolSchemaTokens > 0 ? { toolSchemaTokens } : {}),
-      aiProcessingStore: options.aiProcessingStore,
-      taskId,
-    });
-
-    // 工具调用循环
-    const {
-      finalText: loopFinalText,
-      actions,
-      summary: inLoopSummary,
-    } = await this.runToolCallLoop({
-      initialToolCalls: initialResult.toolCalls,
-      messages,
-      tools,
-      model,
-      bookId,
-      aiService,
-      config,
-      options,
-      taskId,
-      sessionId,
-      toolSchemaTokens,
-      signal,
-    });
-
-    const finalResponseText = loopFinalText || initialResult.text;
-    await options.execution?.complete(messages);
-
-    // 更新任务状态
-    if (options.aiProcessingStore && taskId) {
-      await options.aiProcessingStore.updateTask(taskId, {
-        status: 'end',
-        message: '助手回复完成',
-      });
-    }
-
-    const finalText = finalResponseText.trim() || '抱歉，我没有收到有效的回复。请重试。';
-    const mergedInLoopSummary = inLoopSummary
-      ? this.mergeSummaries(options.sessionSummary, inLoopSummary)
-      : undefined;
-
-    if (!finalResponseText.trim()) {
-      console.error('[AssistantService] ❌ 错误：最终回复文本为空');
-    }
-
-    return {
-      text: finalText,
-      ...(taskId ? { taskId } : {}),
-      actions,
-      messageHistory: messages,
-      ...(mergedInLoopSummary ? { summary: mergedInLoopSummary } : {}),
-      toolCallTokenOverhead: this.calculateToolCallTokenOverhead(messages),
-    };
-  }
-
-  /**
-   * 工具调用循环中的 context 溢出保护。
-   * 当消息累积接近上下文窗口限制时，截断较早的 tool 结果内容，
-   * 避免 follow-up 请求因超出 context 而触发不必要的整会话摘要。
-   */
-  private static trimToolMessagesIfNeeded(
-    messages: ChatMessage[],
-    model: AIModel,
-    toolSchemaTokens: number,
-  ): void {
-    if (
-      !model.maxInputTokens ||
-      model.maxInputTokens <= 0 ||
-      model.maxInputTokens === UNLIMITED_TOKENS
-    ) {
-      return;
-    }
-
-    const currentTokens =
-      estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
-    // 为输出留出空间：至少保留 20% 给 completion
-    const maxAllowed = Math.floor(model.maxInputTokens * 0.8);
-
-    if (currentTokens <= maxAllowed) {
-      return;
-    }
-
-    console.warn(
-      `[AssistantService] 工具调用累积 context 过大 (${currentTokens} tokens, 限制 ${maxAllowed})，压缩早期工具结果`,
-    );
-
-    // 策略：从前往后找 tool 结果消息，将较早的大结果截断为摘要
-    // 保留最近的工具结果完整（AI 需要参考最新的结果）
-    const TRUNCATED_MARKER = '[内容已压缩，仅保留摘要]';
-    const MAX_TRUNCATED_LENGTH = 200; // 截断后保留的最大字符数
-
-    // 找出所有 tool 消息的索引（跳过最后 6 条消息，保护最近的交互）
-    const toolIndices: number[] = [];
-    const protectedTail = Math.max(0, messages.length - 6);
-    for (let i = 0; i < protectedTail; i++) {
-      if (
-        messages[i]?.role === 'tool' &&
-        messages[i]?.content &&
-        messages[i]!.content!.length > MAX_TRUNCATED_LENGTH * 2
-      ) {
-        toolIndices.push(i);
-      }
-    }
-
-    // 从最早的开始截断，直到 token 数降到限制以内
-    for (const idx of toolIndices) {
-      const msg = messages[idx];
-      if (!msg?.content) continue;
-
-      // 克隆后替换，避免原地修改与调用方 messageHistory 共享的消息对象
-      const original = msg.content;
-      messages[idx] = {
-        ...msg,
-        content: original.slice(0, MAX_TRUNCATED_LENGTH) + `\n\n${TRUNCATED_MARKER}`,
-      };
-
-      const newTokens =
-        estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
-        toolSchemaTokens;
-      if (newTokens <= maxAllowed) {
-        console.log(
-          `[AssistantService] 压缩了 ${toolIndices.indexOf(idx) + 1} 条工具结果，当前 ${newTokens} tokens`,
-        );
-        return;
-      }
-    }
-  }
-
-  /**
-   * 缩减消息历史以适应模型上下文窗口。
-   * 逐步移除中间历史消息，每次保留 50%，直到符合限制。
-   * 返回调整后的 maxOutputTokens。
-   */
-  private static reduceMessagesToFitContext(params: {
-    messages: ChatMessage[];
-    systemPrompt: string;
-    userMessage: string;
-    model: AIModel;
-    toolSchemaTokens: number;
-    effectiveMaxTokens: number;
-  }): { finalMaxTokens: number } {
-    const { messages, systemPrompt, userMessage, model, toolSchemaTokens, effectiveMaxTokens } =
-      params;
-
-    const currentEstimatedTokens =
-      estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) + toolSchemaTokens;
-    let finalMaxTokens = effectiveMaxTokens;
-
-    if (!model.maxInputTokens || model.maxInputTokens <= 0) {
-      return { finalMaxTokens };
-    }
-
-    const availableForCompletion = model.maxInputTokens - currentEstimatedTokens;
-    if (availableForCompletion >= effectiveMaxTokens) {
-      return { finalMaxTokens };
-    }
-
-    if (availableForCompletion > 0) {
-      // 可用空间不足但未超出，调整 maxTokens
-      return { finalMaxTokens: Math.floor(availableForCompletion * 0.9) };
-    }
-
-    // 消息已超出上下文窗口，需要逐步缩减
-    const { reducedMessages, finalEstimatedTokens } = this.shrinkMessagesToFit({
-      messages,
-      systemPrompt,
-      userMessage,
-      model,
-      toolSchemaTokens,
-      initialTokens: currentEstimatedTokens,
-    });
-
-    messages.length = 0;
-    messages.push(...reducedMessages);
-
-    const newAvailable = model.maxInputTokens - finalEstimatedTokens;
-    finalMaxTokens =
-      newAvailable > 0 ? Math.floor(newAvailable * 0.9) : Math.floor(model.maxInputTokens * 0.1);
-
-    return { finalMaxTokens };
-  }
-
-  /**
-   * 单次缩减：保留首尾消息（system / user），中间历史保留 50%
-   */
-  private static reduceMessagesOnce(reducedMessages: ChatMessage[]): ChatMessage[] | null {
-    const systemMsg = reducedMessages[0];
-    const userMsg = reducedMessages[reducedMessages.length - 1];
-    if (!systemMsg || !userMsg) return null;
-
-    const historyMessages = reducedMessages.slice(1, -1);
-    const keepCount = Math.max(0, Math.floor(historyMessages.length * 0.5));
-    const recentMessages = this.dropLeadingOrphanToolMessages(
-      keepCount > 0 ? historyMessages.slice(-keepCount) : [],
-    );
-
-    return [systemMsg, ...recentMessages, userMsg];
-  }
-
-  /**
-   * 逐步缩减消息历史直到符合预算（或在极限情况下退化为 [system, user]）
-   */
-  private static shrinkMessagesToFit(params: {
-    messages: ChatMessage[];
-    systemPrompt: string;
-    userMessage: string;
-    model: AIModel;
-    toolSchemaTokens: number;
-    initialTokens: number;
-  }): { reducedMessages: ChatMessage[]; finalEstimatedTokens: number } {
-    const { messages, systemPrompt, userMessage, model, toolSchemaTokens, initialTokens } = params;
-
-    console.warn(
-      `[AssistantService] 消息太大 (${initialTokens} tokens, 含工具 schema ${toolSchemaTokens})，缩减消息历史`,
-    );
-
-    const requiredForCompletion = Math.min(
-      model.maxOutputTokens || 0,
-      Math.floor(model.maxInputTokens * 0.5),
-    );
-    const maxAllowedForMessages = model.maxInputTokens - requiredForCompletion;
-
-    let reducedMessages = [...messages];
-    let currentEstimatedTokens = initialTokens;
-    let attemptCount = 0;
-
-    while (
-      currentEstimatedTokens > maxAllowedForMessages &&
-      attemptCount < 20 &&
-      reducedMessages.length > 2
-    ) {
-      const next = this.reduceMessagesOnce(reducedMessages);
-      if (!next) break;
-
-      reducedMessages = next;
-      currentEstimatedTokens =
-        estimateMessagesTokenCount(reducedMessages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
-        toolSchemaTokens;
-      attemptCount++;
-    }
-
-    // 如果仍然太大，只保留系统提示词和用户消息
-    if (currentEstimatedTokens > maxAllowedForMessages) {
-      reducedMessages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ];
-      currentEstimatedTokens =
-        estimateMessagesTokenCount(reducedMessages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER) +
-        toolSchemaTokens;
-      console.warn(`[AssistantService] 消息历史已减少到最小 (${currentEstimatedTokens} tokens)`);
-    } else {
-      console.warn(
-        `[AssistantService] 消息历史已减少到 ${reducedMessages.length} 条 (${currentEstimatedTokens} tokens)`,
-      );
-    }
-
-    return { reducedMessages, finalEstimatedTokens: currentEstimatedTokens };
-  }
-
-  /**
-   * 构建要总结的消息列表
-   */
-  private static buildMessagesToSummarize(
-    messageHistory: ChatMessage[],
-    excludeLastMessage: boolean,
-  ): Array<{ role: 'user' | 'assistant'; content: string }> {
-    let filtered = messageHistory.filter((msg) => msg.role !== 'system');
-    if (excludeLastMessage && filtered.length > 0) {
-      filtered = filtered.slice(0, -1);
-    }
-    return filtered.map((msg) => ({
-      role: msg.role as 'user' | 'assistant',
-      content: msg.content || '',
-    }));
-  }
-
-  /**
-   * 使用摘要重建消息数组
-   */
-  private static rebuildMessagesWithSummary(
-    systemPrompt: string,
-    summary: string,
-    userMessage: string,
-  ): ChatMessage[] {
-    const systemPromptWithSummary =
-      systemPrompt +
-      `\n\n## 之前的对话总结\n\n${summary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
-    return [
-      { role: 'system', content: systemPromptWithSummary },
-      { role: 'user', content: userMessage },
-    ];
-  }
-
-  // ─── 摘要与重试 ────────────────────────────────────────
-
-  /**
-   * 当会话触发 token 限制时，生成摘要并通知外部重新发起请求
-   */
-  private static async requestSummaryReset(params: {
-    model: AIModel;
-    systemPrompt: string;
-    userMessage: string;
-    messagesToSummarize: Array<{ role: 'user' | 'assistant'; content: string }>;
-    previousSummary?: string;
-    context: { currentBookId: string | null };
-    finalSignal?: AbortSignal;
-    aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'];
-    taskId?: string;
-    onSummarizingStart?: () => void;
-    onSummarizingEnd?: () => void;
-    originalMessageHistory?: ChatMessage[];
-  }): Promise<AssistantResult | null> {
-    const {
-      model,
-      systemPrompt,
-      userMessage,
-      messagesToSummarize,
-      previousSummary,
-      context,
-      finalSignal,
-      aiProcessingStore,
-      taskId,
-      onSummarizingStart,
-      onSummarizingEnd,
-      originalMessageHistory,
-    } = params;
-
-    if (messagesToSummarize.length === 0) {
-      return null;
-    }
-
-    if (finalSignal?.aborted) {
-      throw new Error('请求已取消');
-    }
-
-    onSummarizingStart?.();
-
-    let summary: string;
-    try {
-      summary = await this.summarizeSession(model, messagesToSummarize, {
-        ...(finalSignal ? { signal: finalSignal } : {}),
-        ...(previousSummary ? { previousSummary } : {}),
-      });
-    } catch (error) {
-      // 用户取消必须向外传播，不能当成"摘要失败"继续发起新请求
-      if (finalSignal?.aborted || isCancelledError(error)) {
-        throw error;
-      }
-      console.error('[AssistantService] 摘要生成失败', error);
-      // 已触发 onSummarizingStart，失败路径必须配对调用 End，
-      // 否则 UI 会永远停留在"总结中"状态并丢弃后续所有 chunk
-      onSummarizingEnd?.();
-      return null;
-    }
-
-    const truncatedSummary = this.ensureSummaryFitsInContext(
-      systemPrompt,
-      summary,
-      userMessage,
-      model.maxInputTokens,
-    );
-
-    if (context.currentBookId && summary) {
-      try {
-        const memorySummary = summary.length > 100 ? summary.slice(0, 100) + '...' : summary;
-        await MemoryService.createMemory(
-          context.currentBookId,
-          summary,
-          `会话摘要：${memorySummary}`,
-        );
-      } catch (error) {
-        console.error('Failed to create memory for session summary:', error);
-      }
-    }
-
-    if (aiProcessingStore && taskId) {
-      await aiProcessingStore.updateTask(taskId, {
-        status: 'processing',
-        message: '摘要完成，正在继续处理...',
-      });
-    }
-
-    return {
-      text: '',
-      ...(taskId ? { taskId } : {}),
-      ...(originalMessageHistory ? { messageHistory: originalMessageHistory } : {}),
-      needsReset: true,
-      summary: truncatedSummary,
-    };
-  }
-
-  /**
-   * 与助手对话
-   * @param model AI 模型
-   * @param userMessage 用户消息
-   * @param options 选项
-   */
-  static async chat(
-    model: AIModel,
-    userMessage: string,
-    options: AssistantServiceOptions = {},
-  ): Promise<AssistantResult> {
-    const context = options.execution?.context ?? useContextStore().getContext;
-    const tools =
-      options.execution?.tools ??
-      ToolRegistry.getAssistantToolsExcludingTranslationManagement(
-        context.currentBookId || undefined,
-      );
-    const history = options.messageHistory ?? options.execution?.history;
-    const configured = { ...options, ...(history?.length ? { messageHistory: history } : {}) };
-    const run = () => this.chatWithContext(model, userMessage, configured, context, tools);
-    return options.execution
-      ? run()
-      : runAssistantBookExecution(context, tools, run, options.sessionId);
-  }
-
-  private static async chatWithContext(
-    model: AIModel,
-    userMessage: string,
-    options: AssistantServiceOptions,
-    context: ReturnType<typeof useContextStore>['getContext'],
-    tools: AITool[],
-  ): Promise<AssistantResult> {
-    const { signal, aiProcessingStore, sessionId } = options;
-
-    // 创建任务（如果提供了 store）- 必须在构建系统提示词之前创建，以便传递 taskId
-    const { taskId, taskAbortSignal } = await this.prepareTaskAndSignal(model, options);
-
-    // 构建系统提示词（只传递 ID）- 必须在创建任务之后
-    const systemPrompt = options.execution
-      ? await options.execution.prompt()
-      : this.composeSystemPrompt(context, tools, taskId, sessionId, options.sessionSummary);
-
-    // 合并 signal：优先使用传入的 signal，如果没有则使用任务的 signal
-    const finalSignal = signal || taskAbortSignal;
-
-    try {
-      // 构建消息列表并保证 systemPrompt 在开头
-      const messages = options.execution
-        ? options.execution.initializeMessages(
-            systemPrompt,
-            userMessage,
-            options.messageHistory,
-            model.maxInputTokens,
-          )
-        : this.buildInitialMessages(options.messageHistory, systemPrompt, userMessage);
-      await options.execution?.begin(messages);
-
-      // 边界检查：用户消息是否过长
-      if (!options.execution)
-        await this.ensureUserMessageWithinLimit(model, userMessage, aiProcessingStore, taskId);
-
-      // 检查 token 限制（在发送请求前）
-      const toolSchemaTokens = estimateToolSchemaTokens(tools);
-      const tokenCheck = this.evaluateTokenBudget(messages, model, toolSchemaTokens, options);
-      const { estimatedTokens, effectiveMaxTokens, shouldSummarizeBeforeRequest } = tokenCheck;
-
-      if (aiProcessingStore && taskId) {
-        const contextWindow = model.maxInputTokens || 0;
-        const contextPercentage =
-          contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
-        await aiProcessingStore.updateTask(taskId, {
-          contextTokens: estimatedTokens,
-          ...(contextWindow > 0 ? { contextWindow } : {}),
-          ...(contextPercentage !== undefined ? { contextPercentage } : {}),
-        });
-      }
-
-      if (
-        shouldSummarizeBeforeRequest &&
-        !options.execution?.pendingCalls.length &&
-        options.messageHistory &&
-        options.messageHistory.length > 2
-      ) {
-        const summaryOutcome = await this.tryPreRequestSummarize({
-          model,
-          tools,
-          options,
-          systemPrompt,
-          userMessage,
-          context,
-          finalSignal,
-          aiProcessingStore,
-          taskId,
-          sessionId,
-          messages,
-        });
-
-        if (summaryOutcome) {
-          return summaryOutcome;
-        }
-      }
-
-      // 缩减消息历史以适应上下文窗口（如果需要）
-      const { finalMaxTokens } = options.execution?.pendingCalls.length
-        ? { finalMaxTokens: model.maxOutputTokens }
-        : this.reduceMessagesToFitContext({
-            messages,
-            systemPrompt,
-            userMessage,
-            model,
-            toolSchemaTokens,
-            effectiveMaxTokens,
-          });
-
-      await this.updateTaskContextUsage({
-        messages,
-        model,
-        toolSchemaTokens,
-        aiProcessingStore,
-        taskId,
-      });
-
-      // 执行完整请求（初始请求 + 工具调用循环）
-      return await this.executeFullRequest({
-        model,
-        messages,
-        tools,
-        bookId: context.currentBookId,
-        options,
-        taskId,
-        sessionId,
-        signal: finalSignal,
-        maxOutputTokens: finalMaxTokens,
-      });
-    } catch (error) {
-      const paused =
-        error instanceof AssistantExecutionPaused
-          ? error
-          : options.execution && finalSignal?.aborted
-            ? await options.execution.stop('user')
-            : undefined;
-      if (paused)
-        return {
-          text: '',
-          paused: paused.reason,
-          checkpoint: paused.checkpoint,
-          messageHistory: paused.checkpoint.messages,
-        };
-      this.logChatError(error, model, taskId);
-
-      // 检查是否是 token 限制错误，如果是，尝试总结并重试
-      const retryResult = await this.tryRecoverFromTokenLimitError({
-        error,
-        model,
-        tools,
-        options,
-        systemPrompt,
-        userMessage,
-        context,
-        finalSignal,
-        aiProcessingStore,
-        taskId,
-        sessionId,
-      });
-      if (retryResult) {
-        return retryResult;
-      }
-
-      // 更新任务状态
-      await this.finalizeErrorTask(error, aiProcessingStore, taskId);
-
-      throw error;
-    }
-  }
-
-  /**
-   * 创建任务（若提供 store），并返回 taskId 与任务的 abort signal
-   */
   private static async prepareTaskAndSignal(
     model: AIModel,
     options: AssistantServiceOptions,
@@ -2091,9 +463,6 @@ export class AssistantService {
     return { taskId, taskAbortSignal };
   }
 
-  /**
-   * 构建系统提示词（含会话摘要尾缀）
-   */
   private static composeSystemPrompt(
     context: ReturnType<typeof useContextStore>['getContext'],
     tools: AITool[],
@@ -2108,9 +477,6 @@ export class AssistantService {
     return systemPrompt;
   }
 
-  /**
-   * 基于可选的历史构建消息列表，保证 systemPrompt 是最新的并在开头
-   */
   private static buildInitialMessages(
     messageHistory: ChatMessage[] | undefined,
     systemPrompt: string,
@@ -2131,309 +497,6 @@ export class AssistantService {
     return messages;
   }
 
-  /**
-   * 用户消息过长时，更新任务状态并抛错
-   */
-  private static async ensureUserMessageWithinLimit(
-    model: AIModel,
-    userMessage: string,
-    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined,
-    taskId: string | undefined,
-  ): Promise<void> {
-    if (!(model.maxInputTokens > 0 && model.maxInputTokens !== UNLIMITED_TOKENS)) {
-      return;
-    }
-    const userMessageTokens = estimateMessagesTokenCount(
-      [{ role: 'user', content: userMessage }],
-      DEFAULT_TOKEN_ESTIMATION_MULTIPLIER,
-    );
-    if (userMessageTokens < model.maxInputTokens * 0.8) {
-      return;
-    }
-
-    const errorMessage = '用户消息过长，无法处理。请缩短消息长度后重试。';
-    if (aiProcessingStore && taskId) {
-      await aiProcessingStore.updateTask(taskId, {
-        status: 'error',
-        message: errorMessage,
-      });
-    }
-    throw new Error(errorMessage);
-  }
-
-  /**
-   * 估算 token、调整 effectiveMaxTokens、判定是否需要预先总结
-   */
-  private static evaluateTokenBudget(
-    messages: ChatMessage[],
-    model: AIModel,
-    toolSchemaTokens: number,
-    options: AssistantServiceOptions,
-  ): {
-    estimatedTokens: number;
-    effectiveMaxTokens: number;
-    shouldSummarizeBeforeRequest: boolean;
-  } {
-    const messageTokens = estimateMessagesTokenCount(messages, DEFAULT_TOKEN_ESTIMATION_MULTIPLIER);
-    const estimatedTokens = messageTokens + toolSchemaTokens;
-
-    // 检查是否超过模型的最大上下文长度
-    let effectiveMaxTokens = model.maxOutputTokens;
-    if (model.maxInputTokens && model.maxInputTokens > 0) {
-      const availableForCompletion = model.maxInputTokens - estimatedTokens;
-      if (availableForCompletion < model.maxOutputTokens) {
-        if (availableForCompletion <= 0) {
-          console.warn(
-            `[AssistantService] 消息 token 数 (${estimatedTokens}, 含工具 schema ${toolSchemaTokens}) 已超过或等于模型上下文窗口 (${model.maxInputTokens})，必须触发总结`,
-          );
-          effectiveMaxTokens = 0; // 标记需要总结
-        } else {
-          console.warn(
-            `[AssistantService] 调整 maxTokens 从 ${model.maxOutputTokens} 到 ${availableForCompletion} 以适应上下文窗口`,
-          );
-          effectiveMaxTokens = Math.floor(availableForCompletion * 0.9); // 留 10% 缓冲
-        }
-      }
-    }
-
-    const thresholdBase =
-      model.maxInputTokens && model.maxInputTokens > 0 ? model.maxInputTokens : 0;
-    const tokenThreshold =
-      thresholdBase > 0 && thresholdBase !== UNLIMITED_TOKENS
-        ? thresholdBase * TOKEN_THRESHOLD_RATIO
-        : 0;
-    const isTokenLimitReached =
-      thresholdBase > 0 && thresholdBase !== UNLIMITED_TOKENS && estimatedTokens >= tokenThreshold;
-    const isContextWindowFull = thresholdBase > 0 && effectiveMaxTokens === 0;
-    const shouldSummarizeBeforeRequest =
-      !options.skipTokenLimitSummarization && (isTokenLimitReached || isContextWindowFull);
-
-    // 调试日志：记录触发条件检查详情
-    console.log('[AssistantService] Token 限制检查:', {
-      estimatedTokens,
-      messageTokens,
-      toolSchemaTokens,
-      maxOutputTokens: model.maxOutputTokens,
-      contextWindow: model.maxInputTokens,
-      thresholdBase,
-      tokenThreshold: Math.round(tokenThreshold),
-      isTokenLimitReached,
-      isContextWindowFull,
-      effectiveMaxTokens,
-      shouldSummarizeBeforeRequest,
-      messageCount: options.messageHistory?.length || 0,
-    });
-
-    return { estimatedTokens, effectiveMaxTokens, shouldSummarizeBeforeRequest };
-  }
-
-  /**
-   * 请求预先摘要；若成功则执行重试请求并返回 AssistantResult；失败则回退到仅保留最近 5 条消息
-   * 返回 undefined 表示没有可用摘要路径（调用方继续正常请求）
-   */
-  private static async tryPreRequestSummarize(params: {
-    model: AIModel;
-    tools: AITool[];
-    options: AssistantServiceOptions;
-    systemPrompt: string;
-    userMessage: string;
-    context: ReturnType<typeof useContextStore>['getContext'];
-    finalSignal: AbortSignal | undefined;
-    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined;
-    taskId: string | undefined;
-    sessionId: string | undefined;
-    messages: ChatMessage[];
-  }): Promise<AssistantResult | undefined> {
-    const {
-      model,
-      tools,
-      options,
-      systemPrompt,
-      userMessage,
-      context,
-      finalSignal,
-      aiProcessingStore,
-      taskId,
-      sessionId,
-      messages,
-    } = params;
-
-    if (!options.messageHistory) return undefined;
-
-    // 构建要总结的消息（排除系统消息和当前用户消息）
-    const messagesToSummarize = this.buildMessagesToSummarize(options.messageHistory, true);
-    if (messagesToSummarize.length === 0) return undefined;
-
-    const summaryResult = await this.dispatchSummaryReset({
-      model,
-      systemPrompt,
-      userMessage,
-      messagesToSummarize,
-      context,
-      finalSignal,
-      aiProcessingStore,
-      taskId,
-      options,
-    });
-
-    if (summaryResult && summaryResult.summary) {
-      console.log(
-        '[AssistantService] 摘要成功，使用新摘要继续聊天，摘要长度:',
-        summaryResult.summary.length,
-      );
-      return this.finalizeSummarySuccess({
-        summary: summaryResult.summary,
-        model,
-        tools,
-        systemPrompt,
-        userMessage,
-        context,
-        options,
-        taskId,
-        sessionId,
-        finalSignal,
-      });
-    }
-
-    console.warn('[AssistantService] 自动总结失败，使用降级策略：只保留最近 5 条消息');
-    const fallbackMessages = this.getFallbackMessages(options.messageHistory, 5);
-    messages.length = 0;
-    messages.push({ role: 'system', content: systemPrompt });
-    messages.push(...fallbackMessages.filter((msg) => msg.role !== 'system'));
-    messages.push({ role: 'user', content: userMessage });
-    return undefined;
-  }
-
-  /**
-   * 摘要成功后的统一收尾：通知前端结束摘要中状态、调 executeSummaryRetry，再包装成 needsReset 响应。
-   */
-  private static async finalizeSummarySuccess(params: {
-    summary: string;
-    model: AIModel;
-    tools: AITool[];
-    systemPrompt: string;
-    userMessage: string;
-    context: ReturnType<typeof useContextStore>['getContext'];
-    options: AssistantServiceOptions;
-    taskId: string | undefined;
-    sessionId: string | undefined;
-    finalSignal: AbortSignal | undefined;
-  }): Promise<AssistantResult & { needsReset: true; summary: string }> {
-    const {
-      summary,
-      model,
-      tools,
-      systemPrompt,
-      userMessage,
-      context,
-      options,
-      taskId,
-      sessionId,
-      finalSignal,
-    } = params;
-    options.onSummarizingEnd?.();
-    const retryResult = await this.executeSummaryRetry({
-      model,
-      tools,
-      systemPrompt,
-      summary,
-      userMessage,
-      context,
-      options,
-      taskId,
-      sessionId,
-      finalSignal,
-    });
-    return { ...retryResult, needsReset: true, summary };
-  }
-
-  /**
-   * 构造并调用 requestSummaryReset 的参数组装（保持调用点签名整洁）
-   */
-  private static async dispatchSummaryReset(params: {
-    model: AIModel;
-    systemPrompt: string;
-    userMessage: string;
-    messagesToSummarize: Array<{ role: 'user' | 'assistant'; content: string }>;
-    context: ReturnType<typeof useContextStore>['getContext'];
-    finalSignal: AbortSignal | undefined;
-    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined;
-    taskId: string | undefined;
-    options: AssistantServiceOptions;
-  }): Promise<AssistantResult | null> {
-    const {
-      model,
-      systemPrompt,
-      userMessage,
-      messagesToSummarize,
-      context,
-      finalSignal,
-      aiProcessingStore,
-      taskId,
-      options,
-    } = params;
-
-    return this.requestSummaryReset({
-      model,
-      systemPrompt,
-      userMessage,
-      messagesToSummarize,
-      ...(options.sessionSummary ? { previousSummary: options.sessionSummary } : {}),
-      context: { currentBookId: context.currentBookId },
-      ...(finalSignal ? { finalSignal } : {}),
-      ...(aiProcessingStore ? { aiProcessingStore } : {}),
-      ...(taskId ? { taskId } : {}),
-      ...(options.onSummarizingStart ? { onSummarizingStart: options.onSummarizingStart } : {}),
-      ...(options.onSummarizingEnd ? { onSummarizingEnd: options.onSummarizingEnd } : {}),
-      ...(options.messageHistory ? { originalMessageHistory: options.messageHistory } : {}),
-    });
-  }
-
-  /**
-   * 用新摘要重建消息并执行一次完整请求
-   */
-  private static async executeSummaryRetry(params: {
-    model: AIModel;
-    tools: AITool[];
-    systemPrompt: string;
-    summary: string;
-    userMessage: string;
-    context: ReturnType<typeof useContextStore>['getContext'];
-    options: AssistantServiceOptions;
-    taskId: string | undefined;
-    sessionId: string | undefined;
-    finalSignal: AbortSignal | undefined;
-  }): Promise<AssistantResult> {
-    const {
-      model,
-      tools,
-      systemPrompt,
-      summary,
-      userMessage,
-      context,
-      options,
-      taskId,
-      sessionId,
-      finalSignal,
-    } = params;
-
-    const retryMessages = this.rebuildMessagesWithSummary(systemPrompt, summary, userMessage);
-    options.execution?.setSummary(summary);
-    return this.executeFullRequest({
-      model,
-      messages: retryMessages,
-      tools,
-      bookId: context.currentBookId,
-      options,
-      taskId,
-      sessionId,
-      signal: finalSignal,
-    });
-  }
-
-  /**
-   * catch 块中的错误日志
-   */
   private static logChatError(error: unknown, model: AIModel, taskId: string | undefined): void {
     const errorMessage =
       error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error';
@@ -2448,188 +511,6 @@ export class AssistantService {
     });
   }
 
-  /**
-   * 判断是否应尝试 token 限制恢复（错误类型 + 历史长度 + 模型存在上限）
-   */
-  private static shouldAttemptTokenRecovery(
-    error: unknown,
-    model: AIModel,
-    options: AssistantServiceOptions,
-  ): boolean {
-    if (!isContextOverflowError(error)) return false;
-    if (!options.messageHistory || options.messageHistory.length <= 2) return false;
-    // 注意：maxTokens=0 表示无限制，不应仅因 maxTokens=0 就触发摘要逻辑
-    const hasPositiveMaxTokensLimit =
-      model.maxOutputTokens > 0 && model.maxOutputTokens !== UNLIMITED_TOKENS;
-    const hasContextWindowLimit =
-      typeof model.maxInputTokens === 'number' && model.maxInputTokens > 0;
-    return hasPositiveMaxTokensLimit || hasContextWindowLimit;
-  }
-
-  /**
-   * 标记任务为「正在总结会话历史」
-   */
-  private static async markTaskSummarizing(
-    aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined,
-    taskId: string | undefined,
-  ): Promise<void> {
-    if (!aiProcessingStore || !taskId) return;
-    await aiProcessingStore.updateTask(taskId, {
-      status: 'processing',
-      message: '检测到 token 限制错误，正在总结会话历史...',
-    });
-  }
-
-  /**
-   * 摘要失败时的降级策略：仅保留最近 5 条消息后重新发起完整请求
-   */
-  private static async fallbackToRecentMessages(params: {
-    options: AssistantServiceOptions;
-    messageHistory: ChatMessage[];
-    systemPrompt: string;
-    userMessage: string;
-    model: AIModel;
-    tools: AITool[];
-    context: ReturnType<typeof useContextStore>['getContext'];
-    sessionId: string | undefined;
-    taskId: string | undefined;
-    finalSignal: AbortSignal | undefined;
-  }): Promise<AssistantResult> {
-    const {
-      options,
-      messageHistory,
-      systemPrompt,
-      userMessage,
-      model,
-      tools,
-      context,
-      sessionId,
-      taskId,
-      finalSignal,
-    } = params;
-
-    // onSummarizingEnd 已在 requestSummaryReset 的失败路径中配对调用，这里不再重复
-    console.warn('[AssistantService] 摘要失败，使用降级策略：只保留最近 5 条消息');
-
-    const fallbackMessages = this.getFallbackMessages(messageHistory, 5);
-    const retryMessages: ChatMessage[] = [
-      { role: 'system', content: systemPrompt },
-      ...fallbackMessages.filter((msg) => msg.role !== 'system'),
-      { role: 'user', content: userMessage },
-    ];
-
-    return this.executeFullRequest({
-      model,
-      messages: retryMessages,
-      tools,
-      bookId: context.currentBookId,
-      options,
-      taskId,
-      sessionId,
-      signal: finalSignal,
-    });
-  }
-
-  /**
-   * 在确认需要恢复后执行摘要 / 重试流程；返回 undefined 表示无可用恢复路径
-   */
-  private static async attemptTokenLimitRecovery(
-    params: TokenLimitRecoveryParams,
-  ): Promise<AssistantResult | undefined> {
-    const {
-      model,
-      tools,
-      options,
-      systemPrompt,
-      userMessage,
-      context,
-      finalSignal,
-      aiProcessingStore,
-      taskId,
-      sessionId,
-    } = params;
-
-    if (finalSignal?.aborted) {
-      throw new Error('请求已取消');
-    }
-
-    // shouldAttemptTokenRecovery 已保证 messageHistory 存在且长度 > 2，这里重新取值以收窄类型
-    const messageHistory = options.messageHistory;
-    if (!messageHistory) {
-      return undefined;
-    }
-
-    await this.markTaskSummarizing(aiProcessingStore, taskId);
-
-    const messagesToSummarize = this.buildMessagesToSummarize(messageHistory, false);
-    if (messagesToSummarize.length === 0) {
-      return undefined;
-    }
-
-    const summaryResult = await this.dispatchSummaryReset({
-      model,
-      systemPrompt,
-      userMessage,
-      messagesToSummarize,
-      context,
-      finalSignal,
-      aiProcessingStore,
-      taskId,
-      options,
-    });
-
-    if (summaryResult && summaryResult.summary) {
-      return this.finalizeSummarySuccess({
-        summary: summaryResult.summary,
-        model,
-        tools,
-        systemPrompt,
-        userMessage,
-        context,
-        options,
-        taskId,
-        sessionId,
-        finalSignal,
-      });
-    }
-
-    return this.fallbackToRecentMessages({
-      options,
-      messageHistory,
-      systemPrompt,
-      userMessage,
-      model,
-      tools,
-      context,
-      sessionId,
-      taskId,
-      finalSignal,
-    });
-  }
-
-  /**
-   * 若错误是 token 限制，尝试总结并重试；返回 undefined 表示继续向外抛错误
-   */
-  private static async tryRecoverFromTokenLimitError(
-    params: TokenLimitRecoveryParams,
-  ): Promise<AssistantResult | undefined> {
-    const { error, model, options } = params;
-
-    if (!this.shouldAttemptTokenRecovery(error, model, options)) {
-      return undefined;
-    }
-
-    try {
-      return await this.attemptTokenLimitRecovery(params);
-    } catch (summaryError) {
-      console.error('[AssistantService] ❌ 总结会话失败', summaryError);
-      return undefined;
-    }
-  }
-
-  /**
-   * 错误分支下的任务状态更新（取消 / 错误）
-   */
   private static async finalizeErrorTask(
     error: unknown,
     aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined,
@@ -2653,6 +534,215 @@ export class AssistantService {
         status: 'error',
         message: error instanceof Error ? error.message : '未知错误',
       });
+    }
+  }
+
+  private static async executeAIRequest(params: {
+    model: AIModel;
+    limits: EffectiveModelLimits;
+    messages: ChatMessage[];
+    tools: AITool[];
+    context: AssistantContext;
+    options: AssistantServiceOptions;
+    taskId: string | undefined;
+    signal: AbortSignal | undefined;
+    initial: boolean;
+  }) {
+    const { model, limits, messages, tools, context, options, taskId, signal, initial } = params;
+    const config = this.buildAIConfig(model, { signal, maxOutputTokens: limits.maxOutput ?? 0 });
+    config.maxInputTokens = limits.contextWindow;
+    const service = AIServiceFactory.getService(model.provider);
+    let text = '';
+    let calls: AIToolCall[] = [];
+    let streamedReasoning = '';
+    const stream = this.createAssistantStreamHandler({
+      onTextAccumulate: (chunk) => {
+        text += chunk;
+      },
+      onToolCallsAccumulate: (chunk) => {
+        calls.push(...chunk);
+      },
+      aiProcessingStore: options.aiProcessingStore,
+      taskId,
+      onChunk: options.onChunk,
+      onThinkingChunk: options.onThinkingChunk,
+      appendOutput: initial,
+    });
+    const result = await context.generate(() => {
+      text = '';
+      calls = [];
+      streamedReasoning = '';
+      return service.generateText(
+        config,
+        this.buildTextRequest(messages, tools, {
+          temperature: model.temperature,
+          maxOutputTokens: limits.maxOutput,
+        }),
+        async (chunk) => {
+          streamedReasoning += chunk.reasoningContent ?? '';
+          await stream(chunk);
+        },
+      );
+    });
+    const processed = await this.processGenerateTextResult({
+      result,
+      accumulatedText: text,
+      accumulatedToolCalls: calls,
+      aiProcessingStore: options.aiProcessingStore,
+      taskId,
+      onThinkingChunk: options.onThinkingChunk,
+      streamedReasoning,
+    });
+    if (options.execution)
+      processed.toolCalls = options.execution.normalizeCalls(processed.toolCalls);
+    this.pushAssistantMessage(
+      messages,
+      processed.text,
+      processed.toolCalls,
+      processed.reasoningContent,
+    );
+    await options.execution?.recordReply(messages, processed.toolCalls);
+    return processed;
+  }
+
+  private static async executeFullRequest(params: {
+    model: AIModel;
+    limits: EffectiveModelLimits;
+    messages: ChatMessage[];
+    tools: AITool[];
+    bookId: string | null;
+    options: AssistantServiceOptions;
+    context: AssistantContext;
+    taskId: string | undefined;
+    sessionId: string | undefined;
+    signal: AbortSignal | undefined;
+  }): Promise<AssistantResult> {
+    const { model, messages, tools, options, context, taskId, sessionId, signal, bookId } = params;
+    const pending = options.execution?.pendingCalls;
+    let response = pending?.length
+      ? { text: '', toolCalls: pending }
+      : await this.executeAIRequest({ ...params, initial: true });
+    let finalText = response.text;
+    const actions: ActionInfo[] = [];
+    const turnLimit = options.execution?.maxToolTurns ?? MAX_TOOL_CALL_TURNS;
+    for (let turn = 0; response.toolCalls.length && turn < turnLimit; turn++) {
+      this.ensureRequestActive(signal);
+      if (options.execution) await options.execution.runTools(response.toolCalls, messages, signal);
+      else
+        messages.push(
+          ...(await this.handleToolCalls(
+            response.toolCalls,
+            tools,
+            bookId,
+            (action) => {
+              actions.push(action);
+              options.onAction?.(action);
+            },
+            options.onToast,
+            taskId,
+            sessionId,
+            model.id,
+            signal,
+          )),
+        );
+      response = await this.executeAIRequest({ ...params, initial: false });
+      if (response.text.trim()) finalText = response.text;
+    }
+    await this.finishToolLoop(messages, response.toolCalls, options.execution);
+    await options.execution?.complete(messages);
+    if (options.aiProcessingStore && taskId)
+      await options.aiProcessingStore.updateTask(taskId, {
+        status: 'end',
+        message: '助手回复完成',
+      });
+    return {
+      text: finalText.trim() || '抱歉，我没有收到有效的回复。请重试。',
+      ...(taskId ? { taskId } : {}),
+      actions,
+      messageHistory: messages,
+      ...context.result,
+    };
+  }
+
+  static async chat(
+    model: AIModel,
+    userMessage: string,
+    options: AssistantServiceOptions = {},
+  ): Promise<AssistantResult> {
+    const context = options.execution?.context ?? useContextStore().getContext;
+    const tools =
+      options.execution?.tools ??
+      ToolRegistry.getAssistantToolsExcludingTranslationManagement(
+        context.currentBookId || undefined,
+      );
+    const history = options.messageHistory ?? options.execution?.history;
+    const configured = { ...options, ...(history?.length ? { messageHistory: history } : {}) };
+    const run = () => this.chatWithContext(model, userMessage, configured, context, tools);
+    return options.execution
+      ? run()
+      : runAssistantBookExecution(context, tools, run, options.sessionId);
+  }
+
+  private static async chatWithContext(
+    model: AIModel,
+    userMessage: string,
+    options: AssistantServiceOptions,
+    bookContext: ReturnType<typeof useContextStore>['getContext'],
+    tools: AITool[],
+  ): Promise<AssistantResult> {
+    const { taskId, taskAbortSignal } = await this.prepareTaskAndSignal(model, options);
+    const signal = options.signal || taskAbortSignal;
+    const prompt = (summary?: string) =>
+      this.composeSystemPrompt(bookContext, tools, taskId, options.sessionId, summary);
+    try {
+      const systemPrompt = options.execution
+        ? await options.execution.prompt()
+        : prompt(options.sessionSummary);
+      const messages = options.execution
+        ? options.execution.initializeMessages(systemPrompt, userMessage, options.messageHistory)
+        : this.buildInitialMessages(options.messageHistory, systemPrompt, userMessage);
+      await options.execution?.begin(messages);
+      const limits = await resolveModelLimits(model);
+      const context = new AssistantContext({
+        model,
+        limits,
+        messages,
+        tools,
+        options,
+        taskId,
+        signal,
+        prompt,
+      });
+      return await this.executeFullRequest({
+        model,
+        limits,
+        messages,
+        tools,
+        bookId: bookContext.currentBookId,
+        options,
+        context,
+        taskId,
+        sessionId: options.sessionId,
+        signal,
+      });
+    } catch (error) {
+      const paused =
+        error instanceof AssistantExecutionPaused
+          ? error
+          : options.execution && signal?.aborted
+            ? await options.execution.stop('user')
+            : undefined;
+      if (paused)
+        return {
+          text: '',
+          paused: paused.reason,
+          checkpoint: paused.checkpoint,
+          messageHistory: paused.checkpoint.messages,
+          contextAnchor: paused.checkpoint.contextAnchor,
+        };
+      this.logChatError(error, model, taskId);
+      await this.finalizeErrorTask(error, options.aiProcessingStore, taskId);
+      throw error;
     }
   }
 }

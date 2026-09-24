@@ -27,4 +27,4 @@
 
 用户导入模型后，六种模型经当前 OpenAI 兼容路由通过多轮助手与整章翻译，真实助手界面和章节落盘也已核对。真实 gate 额外发现并修复 system 消息入口和不含 token 的 context window 错误漏判，任务 7.3 因此提前接入。详见 [validation/spike-report.md](validation/spike-report.md)。
 
-原生 Gemini/OpenRouter 直连矩阵仍未覆盖，FlashX 无订阅权限，DeepSeek 超长输入返回的信息不足以可靠识别为上下文错误；尚不能切换默认适配器或删除旧实现。持久化修订已更新规划，运行时代码仍待阶段三实施。
+用户于 2026-09-24 确认“按当前范围验收，完成切换”。原生 Gemini/OpenRouter 直连未覆盖、FlashX 订阅限制和 DeepSeek 不透明错误继续作为明确限制记录，不伪称通过；按这一已批准的范围删除 legacy。上下文与原子持久化已实现，真实两次压缩、超限恢复和导入验证见 [validation/context-report.md](validation/context-report.md)。

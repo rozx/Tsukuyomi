@@ -107,14 +107,19 @@ const {
 
 const hasChildDialogOpen = computed(() => showUnsavedCloseConfirm.value);
 
-// 获取配置按钮的禁用条件（测试中、缺少必要凭据时禁用）
-const canFetchConfigDisabled = computed(() => {
-  return (
-    isTesting.value ||
-    !formData.value.apiKey?.trim() ||
-    !formData.value.model?.trim() ||
-    (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim())
-  );
+// 目录查询不需要凭据；未命中时由配置服务校验探测所需参数。
+const canFetchConfigDisabled = computed(() => isTesting.value || !formData.value.model?.trim());
+const limitsSourceLabel = computed(() => {
+  switch (formData.value.limitsSource) {
+    case 'catalog':
+      return '来源：模型目录';
+    case 'probe':
+      return '来源：模型自述，可能不准确';
+    case 'manual':
+      return '来源：手动设置';
+    default:
+      return '';
+  }
 });
 
 // 默认任务列表（标签 + isDefault 键），供 v-for 渲染
@@ -254,6 +259,7 @@ const buildTestDetailMessage = (result: AIConfigResult): string => {
 
 // 处理测试成功：更新配置信息与表单字段，并提示成功
 const handleTestSuccess = (result: AIConfigResult) => {
+  formData.value.limitsSource = result.limitsSource ?? 'probe';
   const config = buildAiConfigFromResult(result);
   aiConfig.value = Object.keys(config).length > 0 ? config : null;
 
@@ -272,7 +278,7 @@ const handleTestSuccess = (result: AIConfigResult) => {
 
   toast.add({
     severity: 'success',
-    summary: '测试成功',
+    summary: '已获取模型上限',
     detail: buildTestDetailMessage(result),
     life: 3000,
   });
@@ -549,6 +555,7 @@ const updateCustomHeaders = () => {
             :error="formErrors.maxInputTokens"
             :ai-config-value="aiConfig?.maxInputTokens"
             ai-hint-label="从 AI 获取的上下文窗口"
+            @update:model-value="formData.limitsSource = 'manual'"
           />
           <AiTokenField
             v-model="formData.maxOutputTokens"
@@ -558,8 +565,12 @@ const updateCustomHeaders = () => {
             :error="formErrors.maxOutputTokens"
             :ai-config-value="aiConfig?.maxOutputTokens"
             ai-hint-label="从 AI 获取"
+            @update:model-value="formData.limitsSource = 'manual'"
           />
         </div>
+        <small v-if="limitsSourceLabel" class="block text-xs text-moon/70">{{
+          limitsSourceLabel
+        }}</small>
       </div>
 
       <!-- 高级选项 (自定义 Headers) -->

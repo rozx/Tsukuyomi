@@ -5,6 +5,7 @@ import type { FormattedMessagePart } from 'src/composables/useThinkingFormatter'
 import { useStreamVisibility } from 'src/composables/translation-progress/useStreamVisibility';
 import StreamThinkingBlock from './StreamThinkingBlock.vue';
 import { throttle } from 'src/utils/throttle';
+import { formatContextUsage } from 'src/utils/context-usage-display';
 
 const props = defineProps<{
   task: AIProcessingTask;
@@ -17,6 +18,14 @@ const emit = defineEmits<{
 }>();
 
 const isComplete = computed(() => props.task.status === 'end');
+const contextLabel = computed(() =>
+  props.task.contextTokens === undefined
+    ? ''
+    : formatContextUsage(
+        { tokens: props.task.contextTokens, estimated: props.task.contextEstimated !== false },
+        props.task.contextWindow,
+      ).label,
+);
 
 const { showPanel } = useStreamVisibility(() => props.task);
 
@@ -62,6 +71,7 @@ onUnmounted(() => {
   <div class="stream-section">
     <div class="stream-header">
       <span class="stream-title">实时日志</span>
+      <span v-if="contextLabel" class="text-xs text-moon/60">上下文 {{ contextLabel }}</span>
       <button
         class="auto-scroll-btn"
         :class="{ enabled: autoScroll }"

@@ -1,6 +1,7 @@
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { AIConfigResult, AIServiceConfig } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from '../ai-service-factory';
+import { lookupModelLimits } from '../model-limits/resolve';
 
 /**
  * 配置服务选项
@@ -24,6 +25,16 @@ export class ConfigService {
    * @returns 配置获取结果
    */
   static async getConfig(model: AIModel, options?: ConfigServiceOptions): Promise<AIConfigResult> {
+    const catalog = await lookupModelLimits(model);
+    if (catalog) {
+      return {
+        success: true,
+        message: '已从模型目录获取上限',
+        limitsSource: 'catalog',
+        maxInputTokens: catalog.contextWindow,
+        maxOutputTokens: catalog.maxOutput ?? 0,
+      };
+    }
     const validationMessage = getConfigValidationMessage(model);
     if (validationMessage) {
       return {
@@ -34,7 +45,10 @@ export class ConfigService {
 
     try {
       const config = buildConfigServiceRequest(model, options?.signal);
-      return await AIServiceFactory.getConfig(model.provider, config);
+      const result = await AIServiceFactory.getConfig(model.provider, config);
+      return result.success
+        ? { ...result, limitsSource: 'probe', message: `${result.message}（模型自述，可能不准确）` }
+        : result;
     } catch (error) {
       return {
         success: false,
@@ -65,7 +79,10 @@ function hasNonEmptyTrim(value: string | undefined): boolean {
 /**
  * 构造配置获取请求所需的 AIServiceConfig
  */
-function buildConfigServiceRequest(model: AIModel, signal: AbortSignal | undefined): AIServiceConfig {
+function buildConfigServiceRequest(
+  model: AIModel,
+  signal: AbortSignal | undefined,
+): AIServiceConfig {
   return {
     apiKey: model.apiKey,
     baseUrl: model.provider === 'gemini' ? undefined : model.baseUrl,

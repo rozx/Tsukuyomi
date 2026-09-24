@@ -11,11 +11,7 @@ import { importAgentPrompt } from './import-agent-prompt';
 import { assertImportOwner, saveImportAgentCheckpoint } from './import-agent-journal';
 import { awaitingImportAnswer } from './import-question-service';
 import { conciseErrorText } from './import-error-text';
-import {
-  canCompactImport,
-  compactImportHistory,
-  importNeedsCompaction,
-} from './import-agent-compaction';
+import { compactImportHistory } from './import-agent-compaction';
 
 type UpdateListener = (taskId: string) => void;
 const listeners = new Set<UpdateListener>();
@@ -179,21 +175,35 @@ export class ImportAgentService {
     if (typeof navigator === 'undefined' || !navigator.locks)
       throw new Error('LOCK_UNAVAILABLE: 当前环境不能协调导入运行');
     const locks = navigator.locks;
-    return locks.request('tsukuyomi:import-agent', { ifAvailable: true }, async (lock) => {
-      if (!lock) throw new Error('IMPORT_BUSY: 已有导入任务正在运行，请先暂停该任务');
-      return locks.request(`${TASK_LOCK_PREFIX}${taskId}`, { ifAvailable: true }, async (owner) => {
-        if (!owner) throw new Error('IMPORT_BUSY: 当前任务仍有未结束的执行');
-        try {
-          await compactImportHistory(taskId, model, {
-            reason: 'manual',
-            notify: () => notify(taskId),
-          });
-        } finally {
-          notify(taskId);
-        }
-        return requireTask(taskId);
-      });
-    });
+    let resumeAfterCompaction = false;
+    const compacted = await locks.request(
+      'tsukuyomi:import-agent',
+      { ifAvailable: true },
+      async (lock) => {
+        if (!lock) throw new Error('IMPORT_BUSY: 已有导入任务正在运行，请先暂停该任务');
+        return locks.request(
+          `${TASK_LOCK_PREFIX}${taskId}`,
+          { ifAvailable: true },
+          async (owner) => {
+            if (!owner) throw new Error('IMPORT_BUSY: 当前任务仍有未结束的执行');
+            const previous = await requireTask(taskId);
+            resumeAfterCompaction =
+              previous.state === 'paused' && previous.lastError?.code === 'CONTEXT_LIMIT';
+            try {
+              await compactImportHistory(taskId, model, {
+                reason: 'manual',
+                notify: () => notify(taskId),
+              });
+            } finally {
+              notify(taskId);
+            }
+            return requireTask(taskId);
+          },
+        );
+      },
+    );
+    // 必须释放压缩锁后再通过正常入口恢复，避免同一任务重入锁。
+    return resumeAfterCompaction ? this.run(taskId, model, CONTINUE_AFTER_COMPACT) : compacted;
   }
 
   private static async perform(
@@ -291,7 +301,7 @@ export class ImportAgentService {
   }
 
   /**
-   * 与模型对话：历史接近上下文上限时先压缩；执行中因上下文上限暂停时压缩后自动继续一次。
+   * 与模型对话：压缩和一次超限恢复统一由助手请求入口管理。
    */
   private static async converse(
     taskId: string,
@@ -304,27 +314,23 @@ export class ImportAgentService {
     },
   ): Promise<void> {
     const { run, controller, stream } = ctx;
-    const compact = () =>
-      compactImportHistory(taskId, model, {
-        run,
-        reason: 'auto',
-        signal: controller.signal,
-        notify: () => notify(taskId),
+    const setCompacting = async (on: boolean) => {
+      await ImportRepository.mutateTask(taskId, (current) => {
+        assertImportOwner(current, run);
+        if (on) current.compacting = true;
+        else delete current.compacting;
+        return Promise.resolve();
       });
-    if (importNeedsCompaction(await requireTask(taskId), model)) await compact();
-    let prompt = message;
-    for (let attempt = 0; ; attempt++) {
-      const execution = this.execution(taskId, run, stream, await requireTask(taskId));
-      const result = await AssistantService.chat(model, prompt, {
-        execution,
-        signal: controller.signal,
-        onChunk: stream.onChunk,
-      });
-      if (result.paused !== 'context_limit' || attempt > 0 || controller.signal.aborted) return;
-      if (!canCompactImport(await requireTask(taskId))) return;
-      await compact();
-      prompt = CONTINUE_AFTER_COMPACT;
-    }
+      notify(taskId);
+    };
+    const execution = this.execution(taskId, run, stream, await requireTask(taskId));
+    await AssistantService.chat(model, message, {
+      execution,
+      signal: controller.signal,
+      onChunk: stream.onChunk,
+      onSummarizingStart: () => setCompacting(true),
+      onSummarizingEnd: () => setCompacting(false),
+    });
   }
 
   private static execution(

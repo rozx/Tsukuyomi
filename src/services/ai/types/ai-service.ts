@@ -38,6 +38,7 @@ export interface RateLimitInfo {
 export interface AIConfigResult {
   success: boolean;
   message: string;
+  limitsSource?: 'catalog' | 'probe';
   modelInfo?: ModelInfo | undefined;
   rateLimit?: RateLimitInfo | undefined;
   maxInputTokens?: number | undefined;

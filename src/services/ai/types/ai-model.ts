@@ -40,6 +40,8 @@ export interface AIModel {
    * 0 表示无限制
    */
   maxOutputTokens: number;
+  /** 上限的来源；旧模型没有此字段时允许目录提供更可靠的运行时上限。 */
+  limitsSource?: 'catalog' | 'probe' | 'manual';
   rateLimit?: number; // 速率限制（每分钟请求数）
   apiKey: string;
   baseUrl: string;

@@ -82,6 +82,8 @@ OpenAI 兼容模型用 `wrapLanguageModel({ model, middleware: extractReasoningM
 
 **备选**：直接替换、靠 git revert 回滚。放弃原因：兼容矩阵要用真实 key 反复 A/B 对比同一段对话，开关成本很低而收益明显。
 
+2026-09-24 用户确认按当前可用配置范围验收并完成切换：自建 OpenAI 兼容路由下的 GPT-6 Luna/Sol、DeepSeek V4 Pro/V4.1 Flash、GLM 5.3、Kimi K3 已通过真实助手与整章翻译。原生 Gemini/OpenRouter 直连未配置，仅有自动化契约覆盖；FlashX 订阅受限、DeepSeek 不透明超限错误保留为已知限制。此确认解除删除旧实现的 gate，最终只保留 AI SDK，不保留运行时开关。
+
 ### D8. 契约测试：stub 全局 fetch + SSE fixture，双实现跑同一套
 
 新旧实现在 jsdom 下最终都走全局 `fetch`（旧 OpenAI 实现经 `createProxiedFetch`，旧 Gemini SDK 直接用全局 fetch），因此契约测试 stub `globalThis.fetch`、mock `ProxyService.getProxiedUrlForAI`，用手写 SSE fixture（DeepSeek 风格 `reasoning_content`、跨 delta 的 `<think>`、分片工具参数、缺 id、截断参数、Gemini thought part + functionCall + thoughtSignature）驱动，用 `describe.each([legacy, aiSdk])` 跑同一套断言：

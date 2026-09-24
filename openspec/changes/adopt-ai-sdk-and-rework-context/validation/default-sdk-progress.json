@@ -1,0 +1,1082 @@
+{
+  "assistant": {
+    "model": "gpt-6-sol(high)",
+    "flag": null,
+    "anchor": {
+      "inputTokens": 6480,
+      "promptTokens": 4067,
+      "estimateAtAnchor": 6656,
+      "modelKey": "[\"a12a6d75-4d25-46fd-908d-a8eec281392d\",\"openai\",\"gpt-6-sol(high)\",\"https://router.rozx.moe/v1/\"]",
+      "historyLength": 5,
+      "historyFingerprint": "6253:3728310443:532247815",
+      "promptFingerprint": "8784:3029945012:336974888"
+    },
+    "historyLength": 6,
+    "toolMessages": 1,
+    "measurement": {
+      "tokens": 6495,
+      "estimated": false
+    },
+    "restoredHistoryIdentical": true,
+    "text": "CTX-ANCHOR-OK"
+  },
+  "translation": {
+    "taskId": "1790284198840-1h0iolb9l",
+    "status": "end",
+    "workflowStatus": "end",
+    "contextTokens": 14689,
+    "contextWindow": 922000,
+    "contextEstimated": false,
+    "contextPercentage": 2,
+    "routes": {
+      "assistant": "a12a6d75-4d25-46fd-908d-a8eec281392d",
+      "translation": "a12a6d75-4d25-46fd-908d-a8eec281392d",
+      "proofreading": "4606d779-c396-441b-b609-607deb60bebf",
+      "termsTranslation": "4606d779-c396-441b-b609-607deb60bebf"
+    }
+  },
+  "translationRun": {
+    "status": "ready",
+    "active": null,
+    "runs": [
+      {
+        "kind": "translation",
+        "model": "gpt-6-luna",
+        "label": "translation:gpt-6-luna",
+        "requestCount": 0,
+        "maxRequests": 32,
+        "timeoutSeconds": 240,
+        "startedAt": "2026-09-24T21:09:58.831Z",
+        "status": "passed",
+        "actions": [
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "chapter",
+            "tool": "update_chapter_title"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "translation"
+          },
+          {
+            "type": "update",
+            "entity": "translation"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          },
+          {
+            "type": "update",
+            "entity": "todo"
+          }
+        ],
+        "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+        "chapterId": "c2b0b3ee",
+        "callbackParagraphIds": [
+          "7e902e15",
+          "7038b8e7",
+          "824de2b4",
+          "87b9fdec"
+        ],
+        "result": {
+          "text": "清冷的月光洒在窗边那本旧书上。\n\n「这页里，有一个至今仍无人知晓的故事。」栞说道。\n\n蓮静静地点了点头，把凉掉的茶挪到桌边。\n\n两人从第一句话读起，缓缓地开始阅读。",
+          "translations": [
+            {
+              "id": "7038b8e7",
+              "translation": "清冷的月光洒在窗边那本旧书上。"
+            },
+            {
+              "id": "824de2b4",
+              "translation": "「这页里，有一个至今仍无人知晓的故事。」栞说道。"
+            },
+            {
+              "id": "7e902e15",
+              "translation": "蓮静静地点了点头，把凉掉的茶挪到桌边。"
+            },
+            {
+              "id": "87b9fdec",
+              "translation": "两人从第一句话读起，缓缓地开始阅读。"
+            }
+          ],
+          "translatedCount": 4,
+          "taskId": "1790284198840-1h0iolb9l"
+        },
+        "finishedAt": "2026-09-24T21:10:47.183Z"
+      }
+    ],
+    "requests": [],
+    "http": [
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:09:59.010Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:02.727Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:06.095Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:08.432Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:12.596Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:15.449Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:17.533Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:19.693Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:22.135Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:26.905Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:30.708Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:33.062Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:35.434Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:38.418Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:40.795Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      },
+      {
+        "run": "translation:gpt-6-luna",
+        "model": "gpt-6-luna",
+        "at": "2026-09-24T21:10:44.428Z",
+        "toolChoice": "auto",
+        "requestsUsage": true,
+        "toolTurns": [
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          },
+          {
+            "count": 1,
+            "hasReasoningField": true,
+            "hasReasoning": false,
+            "emptyContent": false
+          }
+        ],
+        "status": 200
+      }
+    ]
+  },
+  "translationVersionCounts": [
+    {
+      "id": "7038b8e7",
+      "versions": 2
+    },
+    {
+      "id": "824de2b4",
+      "versions": 2
+    },
+    {
+      "id": "7e902e15",
+      "versions": 2
+    },
+    {
+      "id": "87b9fdec",
+      "versions": 2
+    }
+  ],
+  "requestCounterNote": "最终默认实现验证以可见回复、持久化历史、任务实测值与4/4译文读回为准；临时服务拦截没有采集到请求，不推测次数。"
+}

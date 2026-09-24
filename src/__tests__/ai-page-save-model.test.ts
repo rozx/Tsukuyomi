@@ -5,6 +5,7 @@
  * - 编辑模型：对话框没有输入项的字段（rateLimit）原样保留
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import './setup';
 import { createApp, h } from 'vue';
 import type { App } from 'vue';
 import { getActivePinia } from 'pinia';
@@ -84,6 +85,19 @@ afterEach(() => {
 });
 
 describe('useAIPage 保存模型', () => {
+  it('新增和编辑后保留模型上限来源', async () => {
+    const store = mountPage();
+    await store.loadModels();
+    ctx.addModel();
+    ctx.handleSave(makeFormData({ limitsSource: 'catalog' }));
+    const saved = store.models.find((m) => m.name === '测试模型')!;
+    expect((await persisted(saved.id))?.limitsSource).toBe('catalog');
+    ctx.editModel(saved);
+    ctx.handleSave(makeFormData({ limitsSource: 'manual', maxInputTokens: 64000 }));
+    await vi.waitFor(async () =>
+      expect((await aiModelService.getModel(saved.id))?.limitsSource).toBe('manual'),
+    );
+  });
   it('新增模型时保存 customHeaders', async () => {
     const store = mountPage();
     ctx.addModel();

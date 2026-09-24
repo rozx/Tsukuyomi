@@ -29,9 +29,10 @@ describe('chatSessions store - 持久化安全性', () => {
     expect(store.sessions.map((s) => s.id)).toEqual([idA, idB]);
   });
 
-  it('localStorage 配额超限时应缩减保存量重试，而不是静默丢弃全部持久化', () => {
+  it('localStorage 配额超限时保留原存储，不删除会话或截断历史后重试', () => {
     const store = useChatSessionsStore();
     const idA = store.createSession({ bookId: 'a', chapterId: null, paragraphId: null });
+    const previous = localStorage.getItem('tsukuyomi-chat-sessions');
 
     const storage = globalThis.localStorage;
     const originalSetItem = storage.setItem.bind(storage);
@@ -54,6 +55,6 @@ describe('chatSessions store - 持久化安全性', () => {
 
     const stored = localStorage.getItem('tsukuyomi-chat-sessions');
     expect(stored).not.toBeNull();
-    expect(stored).toContain('触发保存');
+    expect(stored).toBe(previous);
   });
 });

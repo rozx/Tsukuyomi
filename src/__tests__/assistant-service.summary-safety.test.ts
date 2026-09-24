@@ -7,8 +7,6 @@ import { AssistantService } from 'src/services/ai/tasks/assistant-service';
 import { AIServiceFactory } from 'src/services/ai/ai-service-factory';
 import { ToolRegistry } from 'src/services/ai/tools/tool-registry';
 import { MemoryService } from 'src/services/memory-service';
-import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
-import { SUMMARY_SYSTEM_PROMPT } from 'src/services/ai/tasks/prompts/assistant';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
   AIService,
@@ -57,8 +55,7 @@ const makeAssistantModel = (overrides: Partial<AIModel> = {}): AIModel => ({
 });
 
 const isSummaryRequest = (request: TextGenerationRequest): boolean =>
-  request.messages?.[0]?.role === 'system' &&
-  request.messages[0]?.content === SUMMARY_SYSTEM_PROMPT;
+  request.messages?.[0]?.content?.includes('【新增对话内容】') ?? false;
 
 describe('AssistantService - 摘要失败与安全性', () => {
   beforeEach(() => {
@@ -105,7 +102,7 @@ describe('AssistantService - 摘要失败与安全性', () => {
       {
         messageHistory: [
           { role: 'user', content: '我们在验证上下文管理。' },
-          { role: 'assistant', content: '使用合成历史进行测试。' },
+          { role: 'assistant', content: '使用合成历史进行测试。'.repeat(3000) },
           { role: 'user', content: '发生超限时先摘要。' },
           { role: 'assistant', content: '摘要后继续回复。' },
         ],
@@ -224,47 +221,6 @@ describe('AssistantService - 摘要失败与安全性', () => {
     expect(generateTextMock).toHaveBeenCalledTimes(1);
   });
 
-  it('summarizeSession 应截断超长输入，使摘要请求本身不超过模型上下文窗口', async () => {
-    let capturedRequest: TextGenerationRequest | undefined;
-    generateTextMock.mockImplementation(
-      (_config: AIServiceConfig, request: TextGenerationRequest) => {
-        capturedRequest = request;
-        return { text: '这是一次有效的会话摘要内容，长度超过二十个字符以通过校验。' };
-      },
-    );
-
-    const model = makeAssistantModel({ maxInputTokens: 2000, maxOutputTokens: 500 });
-    const messages = Array.from({ length: 30 }, (_, i) => ({
-      role: i % 2 === 0 ? ('user' as const) : ('assistant' as const),
-      content: `消息${i}：` + 'あ'.repeat(1000),
-    }));
-
-    await AssistantService.summarizeSession(model, messages);
-
-    expect(capturedRequest).toBeDefined();
-    const promptTokens = estimateMessagesTokenCount(capturedRequest!.messages || []);
-    expect(promptTokens).toBeLessThanOrEqual(Math.floor(2000 * 0.8));
-    // 最近的消息应保留（截断从最早的开始丢弃）
-    const promptText = capturedRequest!.messages?.map((m) => m.content).join('\n') || '';
-    expect(promptText).toContain('消息29：');
-  });
-
-  it('摘要校验失败时降级摘要应保留 previousSummary，而不是丢弃既有上下文', async () => {
-    generateTextMock.mockImplementation(() => ({ text: '抱歉，我无法总结这段对话。' }));
-
-    const previousSummary = '之前累计的重要摘要内容：主角名字是月詠，正在翻译第三卷。';
-    const summary = await AssistantService.summarizeSession(
-      makeAssistantModel(),
-      [
-        { role: 'user', content: '继续翻译' },
-        { role: 'assistant', content: '好的' },
-      ],
-      { previousSummary },
-    );
-
-    expect(summary).toContain('主角名字是月詠');
-  });
-
   it('工具循环达到轮次上限时，历史不应残留没有工具结果的 tool_calls 消息', async () => {
     handleToolCallMock.mockImplementation(() =>
       Promise.resolve({
@@ -348,58 +304,5 @@ describe('AssistantService - 摘要失败与安全性', () => {
     ).rejects.toThrow();
 
     expect(handleToolCallMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('getFallbackMessages 不应以孤儿 tool 消息开头', () => {
-    const svc = AssistantService as unknown as {
-      getFallbackMessages(messages: ChatMessage[], count?: number): ChatMessage[];
-    };
-    const history: ChatMessage[] = [
-      { role: 'system', content: 'system' },
-      { role: 'user', content: '问题 1' },
-      {
-        role: 'assistant',
-        content: '（占位）',
-        tool_calls: [
-          { id: 'call-1', type: 'function', function: { name: 'small_tool', arguments: '{}' } },
-        ],
-      },
-      { role: 'tool', content: '{"success":true}', tool_call_id: 'call-1', name: 'small_tool' },
-      { role: 'tool', content: '{"success":true}', tool_call_id: 'call-2', name: 'small_tool' },
-      { role: 'assistant', content: '回答 1' },
-      { role: 'user', content: '问题 2' },
-      { role: 'assistant', content: '回答 2' },
-    ];
-
-    // slice(-5) 会以 tool 消息开头 → 修复后应剔除孤儿 tool 消息
-    const fallback = svc.getFallbackMessages(history, 5);
-    const nonSystem = fallback.filter((m) => m.role !== 'system');
-    expect(nonSystem[0]?.role).not.toBe('tool');
-  });
-
-  it('reduceMessagesOnce 缩减后不应以孤儿 tool 消息开头', () => {
-    const svc = AssistantService as unknown as {
-      reduceMessagesOnce(messages: ChatMessage[]): ChatMessage[] | null;
-    };
-    const messages: ChatMessage[] = [
-      { role: 'system', content: 'system' },
-      { role: 'user', content: '问题 1' },
-      {
-        role: 'assistant',
-        content: '（占位）',
-        tool_calls: [
-          { id: 'call-1', type: 'function', function: { name: 'small_tool', arguments: '{}' } },
-        ],
-      },
-      { role: 'tool', content: '{"r":1}', tool_call_id: 'call-1', name: 'small_tool' },
-      { role: 'tool', content: '{"r":2}', tool_call_id: 'call-2', name: 'small_tool' },
-      { role: 'assistant', content: '回答 1' },
-      { role: 'user', content: '最后的问题' },
-    ];
-
-    const reduced = svc.reduceMessagesOnce(messages);
-    expect(reduced).not.toBeNull();
-    const middle = reduced!.slice(1, -1);
-    expect(middle[0]?.role).not.toBe('tool');
   });
 });

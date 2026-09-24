@@ -43,7 +43,7 @@ FlashX 返回：`All credentials for model glm-5.3-flashx are cooling down via p
 
 - 验证书籍：`AI SDK 验证样本 · 2026-09-24`，本地 ID `18633539-e202-4d09-9c6d-0e09666261f0`；界面显示六章 100%，FlashX 预留章 0%。保留样本供用户检查。
 - 从真实助手输入框发送只读测试，完成两轮帮助文档工具调用及最终回复；3 次请求，保存 6 条 API 消息，工具链完整。
-- 临时 fetch/服务拦截已移除，localStorage 测试开关已恢复为原状态；代码默认仍为 legacy。
+- 临时 fetch/服务拦截已移除，localStorage 测试开关已恢复为原状态；该 checkpoint 的代码默认仍为 legacy；后续验收结论见文末。
 
 ### 章节写回界面
 
@@ -61,5 +61,9 @@ FlashX 返回：`All credentials for model glm-5.3-flashx are cooling down via p
 
 - 全量测试：2,757 通过，1 个已记录的 legacy 预期失败，5 个跳过。
 - lint、type-check、quality-check、SPA 生产构建、OpenSpec 严格校验通过。
-- 任务 7.3 已提前完成。原生 Gemini/OpenRouter 矩阵、FlashX 权限与 DeepSeek 不透明错误仍存在限制；未批准缩小原验收范围，故尚未切换默认实现或删除 legacy。
+- 任务 7.3 已提前完成。原生 Gemini/OpenRouter 矩阵、FlashX 权限与 DeepSeek 不透明错误仍存在限制；这一 checkpoint 尚未批准调整验收范围，因此当时未切换默认实现或删除 legacy。
 - 原始的去敏感记录见 `spike-progress.json`。测试错误原文来自实际 API，未编造缺失的状态或 usage。
+
+## 最终验收范围确认
+
+用户于 2026-09-24 明确选择“按当前范围验收，完成切换”：以现有兼容路由下六种可用模型的真实验证为验收范围。原生 Gemini/OpenRouter 直连未覆盖、FlashX 订阅受限、DeepSeek 不透明超限错误作为已知限制保留。按此确认移除旧实现和开关，AI SDK 成为唯一后端。后续上下文验收见 [context-report.md](context-report.md)，最终质量与构建数据见 ../tasks.md。

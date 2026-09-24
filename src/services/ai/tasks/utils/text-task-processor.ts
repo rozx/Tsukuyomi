@@ -54,7 +54,9 @@ import {
   completeTask,
 } from './stream-handler';
 import { getTodosSystemPrompt } from './todo-helper';
-import { estimateMessagesTokenCount } from 'src/utils/ai-token-utils';
+import { measureContext, modelContextKey } from 'src/services/ai/context/measure';
+import { withContextUsage } from 'src/services/ai/context/task-context';
+import { resolveModelLimits } from 'src/services/ai/model-limits/resolve';
 import { isSymbolOnly } from 'src/utils/text-utils';
 import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
@@ -368,6 +370,8 @@ export async function processTextTask(
   //   书籍ID: bookId || '无',
   // });
 
+  const limits = await resolveModelLimits(model);
+
   // 初始化任务
   const { taskId, abortController } = await initializeTask(
     aiProcessingStore,
@@ -377,7 +381,7 @@ export async function processTextTask(
       ...(typeof bookId === 'string' ? { bookId } : {}),
       ...(typeof chapterId === 'string' ? { chapterId } : {}),
       ...(typeof chapterTitle === 'string' ? { chapterTitle } : {}),
-      ...(model.maxInputTokens ? { maxInputTokens: model.maxInputTokens } : {}),
+      ...(limits.contextWindow ? { maxInputTokens: limits.contextWindow } : {}),
     },
   );
 
@@ -396,7 +400,6 @@ export async function processTextTask(
       excludeAskUser: skipAskUser,
       enableOriginalTextValidation,
     });
-    const toolSchemaContent = tools.length > 0 ? `【工具定义】\n${JSON.stringify(tools)}` : '';
 
     // 获取温度配置
     const modelTemperature =
@@ -409,6 +412,8 @@ export async function processTextTask(
       baseUrl: model.baseUrl,
       model: model.model,
       temperature: modelTemperature,
+      maxInputTokens: limits.contextWindow,
+      maxOutputTokens: limits.maxOutput,
       signal: finalSignal,
       useCorsProxy: model.useCorsProxy,
       ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
@@ -519,8 +524,8 @@ export async function processTextTask(
       chapterId,
       chapterTitle,
       bookId,
-      toolSchemaContent,
-      maxInputTokens: model.maxInputTokens,
+      modelKey: modelContextKey(model),
+      maxInputTokens: limits.contextWindow,
       maxRetries: MAX_RETRIES,
       tools,
       service,
@@ -731,7 +736,8 @@ function updateChunkTokenEstimate(params: {
   taskId: string | undefined;
   chunkHistory: ChatMessage[];
   chunkContent: string;
-  toolSchemaContent: string;
+  tools: AITool[];
+  modelKey: string;
   maxInputTokens: number | undefined;
   logLabel: string;
 }): void {
@@ -740,26 +746,33 @@ function updateChunkTokenEstimate(params: {
     taskId,
     chunkHistory,
     chunkContent,
-    toolSchemaContent,
+    tools,
+    modelKey,
     maxInputTokens,
     logLabel,
   } = params;
   if (!aiProcessingStore || !taskId) return;
 
-  const messagesForEstimate: ChatMessage[] = [
-    ...chunkHistory,
-    { role: 'user', content: chunkContent },
-  ];
-  if (toolSchemaContent) {
-    messagesForEstimate.splice(1, 0, { role: 'system', content: toolSchemaContent });
-  }
-  const estimatedTokens = estimateMessagesTokenCount(messagesForEstimate);
+  const measured = measureContext({
+    systemPrompt: chunkHistory
+      .filter((m) => m.role === 'system')
+      .map((m) => m.content ?? '')
+      .join('\n\n'),
+    history: [
+      ...chunkHistory.filter((m) => m.role !== 'system'),
+      { role: 'user', content: chunkContent },
+    ],
+    tools,
+    modelKey,
+  });
+  const estimatedTokens = measured.tokens;
   const contextWindow = maxInputTokens || 0;
   const contextPercentage =
     contextWindow > 0 ? Math.round((estimatedTokens / contextWindow) * 100) : undefined;
   aiProcessingStore
     .updateTask(taskId, {
       contextTokens: estimatedTokens,
+      contextEstimated: measured.estimated,
       ...(contextWindow > 0 ? { contextWindow } : {}),
       ...(contextPercentage !== undefined ? { contextPercentage } : {}),
     })
@@ -1009,7 +1022,7 @@ interface ChunkProcessingContext {
   chapterId: string | undefined;
   chapterTitle: string | undefined;
   bookId: string | undefined;
-  toolSchemaContent: string;
+  modelKey: string;
   maxInputTokens: number | undefined;
   maxRetries: number;
   tools: AITool[];
@@ -1116,7 +1129,8 @@ async function processSingleChunk(
     taskId: ctx.taskId,
     chunkHistory,
     chunkContent,
-    toolSchemaContent: ctx.toolSchemaContent,
+    tools: ctx.tools,
+    modelKey: ctx.modelKey,
     maxInputTokens: ctx.maxInputTokens,
     logLabel: ctx.logLabel,
   });
@@ -1153,9 +1167,7 @@ async function processSingleChunk(
       });
 
       if (loopResult.status !== 'end') {
-        throw new Error(
-          `${ctx.taskLabel}任务未完成（状态: ${loopResult.status}）。请重试。`,
-        );
+        throw new Error(`${ctx.taskLabel}任务未完成（状态: ${loopResult.status}）。请重试。`);
       }
 
       markProcessedParagraphsFromMap(loopResult.paragraphs, ctx.processedParagraphIds);
@@ -1236,7 +1248,12 @@ async function runToolLoopForChunk(params: {
   return executeToolCallLoop({
     history: chunkHistory,
     tools: ctx.tools,
-    generateText: ctx.service.generateText.bind(ctx.service),
+    generateText: withContextUsage(ctx.service.generateText.bind(ctx.service), {
+      modelKey: ctx.modelKey,
+      contextWindow: ctx.maxInputTokens,
+      aiProcessingStore: ctx.aiProcessingStore,
+      taskId: ctx.taskId,
+    }),
     aiServiceConfig: ctx.config,
     taskType: ctx.taskType,
     chunkText,
@@ -1257,7 +1274,12 @@ async function runToolLoopForChunk(params: {
         allComplete: ctx.onlyChangedParagraphs ? true : false,
         missingIds: [],
       })),
-    onParagraphsExtracted: wrapOnParagraphsExtracted({ ctx, actualChunk, chunkIndex, actionStartIndex }),
+    onParagraphsExtracted: wrapOnParagraphsExtracted({
+      ctx,
+      actualChunk,
+      chunkIndex,
+      actionStartIndex,
+    }),
     onTitleExtracted: wrapOnTitleExtracted({ ctx, isFirstChunk }),
     hasNextChunk: chunkIndex < ctx.chunks.length - 1,
     enableOriginalTextValidation: ctx.enableOriginalTextValidation,
@@ -1309,10 +1331,7 @@ function wrapOnParagraphsExtracted(params: {
 /**
  * 包装 onTitleExtracted 回调，处理 titleTranslation 回填
  */
-function wrapOnTitleExtracted(params: {
-  ctx: ChunkProcessingContext;
-  isFirstChunk: boolean;
-}) {
+function wrapOnTitleExtracted(params: { ctx: ChunkProcessingContext; isFirstChunk: boolean }) {
   const { ctx, isFirstChunk } = params;
   if (!(isFirstChunk && ctx.chapterTitle && ctx.onTitleExtracted)) {
     return undefined;

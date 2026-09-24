@@ -82,6 +82,7 @@ src/composables/<name-kebab>/use<Name>.ts         # 业务逻辑，通过 provid
 - **多版本翻译**: 每个 Paragraph 含 `translations: Translation[]` 数组，支持多个翻译版本并行
 - **章节懒加载**: 章节内容存储在独立的 `chapter-contents` IndexedDB store，按需读取
 - **AI 工具循环**: AI 任务通过工具调用循环执行（类似 function calling），30+ 个工具处理翻译、记忆更新等
+- **上下文管理**: 助手与导入共用实测 usage 锚点及自校准估算；临近模型有效窗口时保留近期完整工具轮次并更新结构化摘要，真实超限只恢复一次，摘要与保留历史原子保存。
 - **记忆注入**: 三信号自动打分（语义相似度 + 关键词匹配 + 时间衰减，权重 0.85/0.10/0.05；嵌入不可用时降级为关键词 0.75 + 时间衰减 0.25，满分 1.0），经最低分阈值 + 相对排名 + 字符预算贪心填充注入翻译上下文
 - **本地嵌入**: Transformers.js + `onnx-community/gte-multilingual-base` ONNX（768 维 CLS pooling + L2 归一化，动态 import 不进主 bundle，默认关闭，由 `enableLocalEmbedding` 开启），EmbeddingQueue 异步批量处理
 - **记忆搜索**: `search_memories` 工具接收自然语言 query，混合关键词 + 语义检索
@@ -160,7 +161,9 @@ bunx vitest run -t "测试描述"              # 按测试名过滤
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 
 describe('MyService', () => {
-  afterEach(() => { mock.restore(); });
+  afterEach(() => {
+    mock.restore();
+  });
   it('should work', async () => {
     spyOn(SomeService, 'method').mockImplementation(fn);
     const result = await MyService.doSomething();
@@ -171,7 +174,7 @@ describe('MyService', () => {
 
 **模块级 mock**（整个模块替换）必须用 `vi.mock('path', factory)`，并通过 `vi.hoisted(() => …)` 构造 factory 里引用的 spy —— vitest 会把 `vi.mock` 调用静态提升到所有 import 之前执行。**不要**用 `await mock.module(...)`，vite 的 transform 不会提升它。
 
-运行时 mock（根据每个测试动态换实现）用 `vi.doMock + vi.resetModules + 动态 `import()`，参考 `src/__tests__/local-embedding.test.ts`。
+运行时 mock（根据每个测试动态换实现）用 `vi.doMock + vi.resetModules + 动态 `import()`，参考 `src/**tests**/local-embedding.test.ts`。
 
 `bun test` 仍可用于极少数依赖 Bun 专属 API 的文件（scraper 测试用 `Bun.file(...)`），通过 `bun run test:bun` 触发；但主要 runner 是 vitest。
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { formatContextUsage } from 'src/utils/context-usage-display';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { FormattedMessagePart } from 'src/composables/useThinkingFormatter';
 import type { TodoItem } from 'src/services/todo-list-service';
@@ -33,7 +34,15 @@ const liveStatus = computed(() => (props.mobileIsRunning ? '正在翻译' : '已
 const progressMessage = computed(() => props.currentTask.progress?.message);
 const thinkingTail = computed(() => props.currentTask.thinkingMessage?.split('\n').slice(-1)[0]);
 const contextText = computed(() =>
-  props.currentTask.contextPercentage !== undefined ? `${props.currentTask.contextPercentage}%` : '—',
+  props.currentTask.contextTokens !== undefined
+    ? formatContextUsage(
+        {
+          tokens: props.currentTask.contextTokens,
+          estimated: props.currentTask.contextEstimated !== false,
+        },
+        props.currentTask.contextWindow,
+      ).label
+    : '—',
 );
 </script>
 
@@ -108,7 +117,11 @@ const contextText = computed(() =>
     <template v-else-if="mobileTab === 'todo'">
       <div class="mtp-todo-panel">
         <div v-if="currentTaskTodos.length > 0" class="mtp-todos-wrap mtp-todos-wrap--full">
-          <TaskTodos :todos="currentTaskTodos" :collapsed="false" @toggle-collapsed="$emit('toggleTodoCollapsed')" />
+          <TaskTodos
+            :todos="currentTaskTodos"
+            :collapsed="false"
+            @toggle-collapsed="$emit('toggleTodoCollapsed')"
+          />
         </div>
         <div v-else class="mtp-empty">暂无待办事项</div>
       </div>

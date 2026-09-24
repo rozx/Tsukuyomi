@@ -305,6 +305,7 @@ function createAIPageContext() {
       temperature: formData.temperature!,
       maxInputTokens: formData.maxInputTokens!,
       maxOutputTokens: formData.maxOutputTokens!,
+      ...(formData.limitsSource ? { limitsSource: formData.limitsSource } : {}),
       ...(formData.rateLimit !== undefined && formData.rateLimit !== null
         ? { rateLimit: formData.rateLimit }
         : {}),
@@ -337,6 +338,7 @@ function createAIPageContext() {
       temperature: formData.temperature!,
       maxInputTokens: formData.maxInputTokens!,
       maxOutputTokens: formData.maxOutputTokens!,
+      ...(formData.limitsSource ? { limitsSource: formData.limitsSource } : {}),
       apiKey: formData.apiKey!,
       baseUrl: formData.baseUrl!,
       enabled: formData.enabled ?? true,

@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   getAssistantSystemPrompt,
-  SUMMARY_SYSTEM_PROMPT,
-  getSessionSummaryPrompt,
+  getStructuredSummaryPrompt,
 } from 'src/services/ai/tasks/prompts/assistant';
 
 const EMPTY_CONTEXT = {
@@ -96,15 +95,9 @@ describe('上下文与拼接', () => {
 });
 
 describe('内部任务保持中性', () => {
-  it('SUMMARY_SYSTEM_PROMPT 不含月詠人格元素', () => {
-    expect(SUMMARY_SYSTEM_PROMPT).not.toContain('月詠');
-    expect(SUMMARY_SYSTEM_PROMPT).not.toContain('妾身');
-    expect(SUMMARY_SYSTEM_PROMPT).not.toContain('喵');
-  });
-
-  it('getSessionSummaryPrompt 输出不含月詠人格元素', () => {
-    const newSummary = getSessionSummaryPrompt('', '对话内容...');
-    const updatedSummary = getSessionSummaryPrompt('【已有摘要】xxx', '新增...');
+  it('getStructuredSummaryPrompt 输出不含月詠人格元素', () => {
+    const newSummary = getStructuredSummaryPrompt('', '对话内容...');
+    const updatedSummary = getStructuredSummaryPrompt('【已有摘要】xxx', '新增...');
     for (const out of [newSummary, updatedSummary]) {
       expect(out).not.toContain('月詠');
       expect(out).not.toContain('妾身');

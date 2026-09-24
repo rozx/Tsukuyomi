@@ -4,7 +4,7 @@ import type {
   AIToolCallResult,
   ChatMessage,
 } from 'src/services/ai/types/ai-service';
-import { estimateMessagesTokenCount, estimateToolSchemaTokens } from 'src/utils/ai-token-utils';
+import type { ContextAnchor } from 'src/services/ai/context/measure';
 
 export type AssistantPauseReason = 'waiting_user' | 'user' | 'tool_limit' | 'context_limit';
 export interface AssistantExecutionCheckpoint {
@@ -12,6 +12,7 @@ export interface AssistantExecutionCheckpoint {
   remainingCalls: AIToolCall[];
   completedCallIds: string[];
   summary?: string;
+  contextAnchor?: ContextAnchor;
   deferredUserMessage?: string;
 }
 interface ToolOutcome {
@@ -56,7 +57,6 @@ export class AssistantExecutionPaused extends Error {
 /** 只适配执行上下文和步骤保存；流式请求、工具循环及摘要仍由 AssistantService 执行。 */
 export class AssistantExecution {
   private current: AssistantExecutionCheckpoint;
-  private contextLimit = 0;
   readonly maxToolTurns: number;
 
   constructor(readonly profile: AssistantExecutionProfile) {
@@ -77,20 +77,30 @@ export class AssistantExecution {
   get history() {
     return this.current.messages;
   }
+  get summary() {
+    return this.current.summary;
+  }
+  get contextAnchor() {
+    return this.current.contextAnchor;
+  }
+  setContextAnchor(anchor: ContextAnchor | undefined): void {
+    if (anchor) this.current.contextAnchor = anchor;
+    else delete this.current.contextAnchor;
+  }
   prompt() {
     return this.profile.systemPrompt(this.current.summary);
   }
-  setSummary(summary: string): void {
-    this.current.summary = summary;
+  setSummary(summary: string | undefined): void {
+    if (summary) this.current.summary = summary;
+    else delete this.current.summary;
+    delete this.current.contextAnchor;
   }
 
   initializeMessages(
     systemPrompt: string,
     userMessage: string,
     history: ChatMessage[] | undefined,
-    contextLimit: number,
   ): ChatMessage[] {
-    this.contextLimit = contextLimit;
     const messages = structuredClone(this.profile.resume?.messages ?? history ?? []);
     const index = messages.findIndex((message) => message.role === 'system');
     if (index >= 0) messages[index] = { role: 'system', content: systemPrompt };
@@ -158,12 +168,6 @@ export class AssistantExecution {
       delete this.current.deferredUserMessage;
     }
     await this.save(this.snapshot(messages, []), 'running');
-    if (
-      this.contextLimit > 0 &&
-      estimateMessagesTokenCount(messages) + estimateToolSchemaTokens(this.tools) >=
-        this.contextLimit
-    )
-      throw await this.stop('context_limit');
   }
 
   async runTools(

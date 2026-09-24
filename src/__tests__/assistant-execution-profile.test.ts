@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
+import * as Summary from '../services/ai/context/summarize';
 import { AssistantService } from '../services/ai/tasks/assistant-service';
 import { AssistantExecution } from '../services/ai/tasks/utils/assistant-execution';
 import type {
@@ -151,7 +152,7 @@ describe('复用助手循环的专属执行配置', () => {
     expect(custom.saved()?.completedCallIds).toEqual([]);
   });
 
-  it('无法容纳上下文时保存并暂停，不发送超限请求', async () => {
+  it('估算超窗不会硬停，服务请求成功后正常完成', async () => {
     const custom = profile();
     const generate = vi.fn(() => Promise.resolve({ text: '不应调用' }));
     mockModel(generate);
@@ -160,9 +161,9 @@ describe('复用助手循环的专属执行配置', () => {
       '长原文'.repeat(500),
       { execution: new AssistantExecution(custom.config) },
     );
-    expect(response.paused).toBe('context_limit');
+    expect(response.paused).toBeUndefined();
     expect(custom.saved()?.messages.some((message) => message.role === 'user')).toBe(true);
-    expect(generate).not.toHaveBeenCalled();
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 
   it('循环内摘要沿用共享策略，后续请求仍使用专属提示词及工具', async () => {
@@ -312,5 +313,34 @@ describe('复用助手循环的专属执行配置', () => {
     ).rejects.toThrow('INCOMPLETE_TOOL_CALL');
     expect(execute).not.toHaveBeenCalled();
     expect(custom.saved()?.remainingCalls).toEqual([]);
+  });
+  it('压缩检查点保存失败时完整保留历史和旧摘要，再发送原始请求', async () => {
+    const long = '要保留的原始回复。'.repeat(10000);
+    const custom = profile({
+      resume: {
+        messages: [
+          { role: 'user', content: '旧请求' },
+          { role: 'assistant', content: long },
+        ],
+        remainingCalls: [],
+        completedCallIds: [],
+      },
+      saveCheckpoint: (checkpoint) =>
+        checkpoint.summary ? Promise.reject(new Error('保存失败')) : Promise.resolve(),
+    });
+    vi.spyOn(Summary, 'summarizeInto').mockResolvedValue(
+      '已有任务进度的有效新摘要，需要安全保存后才能替换原来的历史。',
+    );
+    const generate = vi.fn((request: TextGenerationRequest) => {
+      expect(request.messages?.some((m) => m.content === long)).toBe(true);
+      return Promise.resolve({ text: '继续完成' });
+    });
+    mockModel(generate);
+    const result = await AssistantService.chat(model, '继续', {
+      execution: new AssistantExecution(custom.config),
+      onToast: vi.fn(),
+    });
+    expect(result.summary).toBeUndefined();
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 });
