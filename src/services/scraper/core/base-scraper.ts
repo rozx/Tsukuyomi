@@ -197,6 +197,11 @@ export abstract class BaseScraper<
     };
   }
 
+  parseCatalogDate(value: string | Date | undefined): Date | undefined {
+    const date = this.parseChapterDate(value);
+    return date && !Number.isNaN(date.getTime()) ? date : undefined;
+  }
+
   /**
    * 解析可能为 string 或 Date 的日期值
    * 字符串会委托给 {@link parseDateString}，子类可覆盖该方法以支持站点特定格式

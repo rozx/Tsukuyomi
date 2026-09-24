@@ -228,7 +228,6 @@ function createBookDetailsPageContext() {
 
   // 书籍编辑对话框状态
   const showBookDialog = ref(false);
-  const showScraperDialog = ref(false);
 
   // 设置菜单状态
   const selectedSettingMenu = ref<SettingMenu | null>(null);
@@ -778,53 +777,6 @@ function createBookDetailsPageContext() {
         currentChapterId: null,
         hoveredParagraphId: null,
         selectedParagraphId: null,
-      });
-    }
-  };
-
-  const openScraperDialog = () => {
-    showScraperDialog.value = true;
-    if (bookId.value) {
-      contextStore.setContext({
-        currentBookId: bookId.value,
-        currentChapterId: null,
-        hoveredParagraphId: null,
-        selectedParagraphId: null,
-      });
-    }
-  };
-
-  const handleScraperUpdate = async (novel: Novel) => {
-    if (!book.value) return;
-
-    try {
-      const oldBook = cloneDeep(book.value);
-      const updatedBook = ChapterService.mergeNovelData(book.value, novel, {
-        chapterUpdateStrategy: 'merge',
-      });
-      await booksStore.updateBook(book.value.id, {
-        ...updatedBook,
-        lastEdited: new Date(),
-      });
-      showScraperDialog.value = false;
-      toast.add({
-        severity: 'success',
-        summary: '更新成功',
-        detail: '已从在线获取并更新章节数据',
-        life: 3000,
-        onRevert: async () => {
-          if (book.value) {
-            await booksStore.updateBook(book.value.id, oldBook);
-          }
-        },
-      });
-    } catch (error) {
-      console.error('更新失败:', error);
-      toast.add({
-        severity: 'error',
-        summary: '更新失败',
-        detail: error instanceof Error ? error.message : '从在线获取更新时发生错误',
-        life: 5000,
       });
     }
   };
@@ -2256,12 +2208,9 @@ function createBookDetailsPageContext() {
     isDeletingChapter,
     // book / scraper dialog
     showBookDialog,
-    showScraperDialog,
     isSavingBook,
     openBookDialog,
-    openScraperDialog,
     handleBookSave,
-    handleScraperUpdate,
     getCoverUrl,
     // settings navigation
     navigateToTermsSetting,

@@ -1,4 +1,6 @@
 import { draft } from './import-fixtures';
+import { CATALOG, SITE, catalogPage, webTask } from './import-update-recipe-fixtures';
+import { ImportParsingClient } from '../services/import/import-parsing-client';
 import { ImportWorkerFixture } from './import-worker-fixture';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
@@ -290,5 +292,119 @@ describe('导入专属工具执行器', () => {
     });
     expect(extracted.result.results).toHaveLength(1);
     expect((await ImportRepository.getSource(task.id, sources[1]!.id)).status).toBe('registered');
+  });
+});
+
+describe('record_update_recipe', () => {
+  const trimLast = (resource: { id: string; blocks: { id: string }[] }) => [
+    {
+      kind: 'extraction' as const,
+      resourceId: resource.id,
+      blockId: resource.blocks[0]!.id,
+      endBlockId: resource.blocks.at(-2)!.id,
+    },
+  ];
+
+  async function declare(web: Awaited<ReturnType<typeof webTask>>, args = {}) {
+    const { invoke } = await fixture(web.taskId);
+    return (
+      await invoke('record_update_recipe', {
+        base_draft_revision: web.revision,
+        catalog_source_ids: [web.catalog.id],
+        ...args,
+      })
+    ).result;
+  }
+
+  it('自测通过后写入草稿并递增修订号', async () => {
+    const web = await webTask([{ n: 1 }, { n: 2 }]);
+    const result = await declare(web);
+    expect(result).toMatchObject({
+      success: true,
+      draftRevision: web.revision + 1,
+      engine: 'html',
+      verified: 2,
+      pinned: 0,
+    });
+    const task = await ImportRepository.getTask(web.taskId);
+    expect(task?.draft.revision).toBe(web.revision + 1);
+    expect(task?.draft.updateRecipe).toMatchObject({
+      declaredAtRevision: web.revision,
+      selfTest: { ok: true, verified: 2 },
+      recipe: { catalogUrls: [CATALOG], verifiedChapterCount: 2 },
+    });
+    expect(task?.draft.updateRecipe?.recipe.skippedUrls).toBeUndefined();
+  });
+
+  async function rejected(
+    web: Awaited<ReturnType<typeof webTask>>,
+    args: Record<string, unknown>,
+    code: string,
+  ) {
+    const result = await declare(web, args);
+    expect(result.success).toBe(false);
+    expect((result.error as { code: string }).code).toBe(code);
+    const task = await ImportRepository.getTask(web.taskId);
+    expect(task?.draft.revision).toBe(web.revision);
+    expect(task?.draft.updateRecipe).toBeUndefined();
+    return result;
+  }
+
+  it('目录来源不属于本任务：SOURCE_NOT_FOUND', async () => {
+    await rejected(await webTask([{ n: 1 }]), { catalog_source_ids: ['x'] }, 'SOURCE_NOT_FOUND');
+  });
+
+  it('目录分页缺少快照：SNAPSHOT_MISSING', async () => {
+    const web = await webTask([{ n: 1 }], { catalog: catalogPage([1], '/book?p=2') });
+    await rejected(web, {}, 'SNAPSHOT_MISSING');
+  });
+
+  it('拆章：UNSUPPORTED_GRANULARITY', async () => {
+    const url = `${SITE}/book/12`;
+    const web = await webTask([
+      { n: 12, url, title: '上' },
+      { n: 12, url, title: '下' },
+    ]);
+    await rejected(web, {}, 'UNSUPPORTED_GRANULARITY');
+  });
+
+  it('正文不一致：CONTENT_MISMATCH 并带差异示例', async () => {
+    const web = await webTask([{ n: 3, lines: ['本文', '次の話へ'], content: trimLast }]);
+    const result = await rejected(web, {}, 'CONTENT_MISMATCH');
+    expect(result.issues).toEqual([
+      expect.objectContaining({ message: '「第3话」回放多出 1 行：次の話へ' }),
+    ]);
+  });
+
+  it('固定章节过多：PINNED_LIMIT', async () => {
+    const web = await webTask([{ n: 1, lines: ['本文', '手工'], content: trimLast }]);
+    await rejected(web, { pinned_chapter_ids: ['c1'] }, 'PINNED_LIMIT');
+  });
+
+  it('清理规则无效：CLEANUP_INVALID', async () => {
+    const web = await webTask([{ n: 1 }]);
+    await rejected(
+      web,
+      { cleanup: [{ pattern: { mode: 'regex', pattern: '(' }, action: 'remove_lines' }] },
+      'CLEANUP_INVALID',
+    );
+  });
+
+  it('清理规则超时：CLEANUP_TIMEOUT', async () => {
+    const web = await webTask([{ n: 1 }]);
+    // 声明时只有清理规则会调用解析 Worker，模拟它超时
+    vi.spyOn(ImportParsingClient.prototype, 'run').mockRejectedValue(
+      new Error('PROCESSING_LIMIT: Worker 解析超时'),
+    );
+    await rejected(
+      web,
+      { cleanup: [{ pattern: { mode: 'literal', pattern: 'x' }, action: 'remove_lines' }] },
+      'CLEANUP_TIMEOUT',
+    );
+  });
+
+  it('草稿版本过时：DRAFT_CHANGED', async () => {
+    const web = await webTask([{ n: 1 }]);
+    await rejected(web, { base_draft_revision: web.revision - 1 }, 'DRAFT_CHANGED');
   });
 });

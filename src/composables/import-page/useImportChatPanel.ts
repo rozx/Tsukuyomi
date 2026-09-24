@@ -16,6 +16,7 @@ import { importEventsToMessages } from 'src/composables/import-page/import-chat-
 import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
 import type { ActionDetailsContext } from 'src/utils/action-info-utils';
 import type { TodoItem } from 'src/services/todo-list-service';
+import { importRepairPrefill } from 'src/services/import/import-recipe-repair';
 
 type PanelControl = { toggle: (event: Event) => void; hide: () => void };
 
@@ -57,6 +58,19 @@ export function useImportChatPanel() {
       inputMessage.value = '';
       thinking.clearThinkingState();
     },
+  );
+  // 修复任务首次打开时预填失效说明，由用户决定是否发送；每个任务只预填一次
+  let prefilledFor: string | undefined;
+  watch(
+    () => [store.task, store.events.length] as const,
+    ([task, count]) => {
+      if (!task || prefilledFor === task.id || inputMessage.value) return;
+      const text = importRepairPrefill(task, count);
+      if (!text) return;
+      prefilledFor = task.id;
+      inputMessage.value = text;
+    },
+    { immediate: true },
   );
 
   const assistantModel = computed(() => aiModels.getDefaultModelForTask('assistant'));

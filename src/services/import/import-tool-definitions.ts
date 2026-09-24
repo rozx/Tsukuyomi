@@ -340,6 +340,48 @@ export const importTools: AITool[] = [
     ['name'],
   ),
   tool(
+    'record_update_recipe',
+    '网页来源的章节与目录一一对应并整理完成后，声明这本书的更新配方。宿主只用已保存的快照离线回放：要求草稿中该站点的已选章节与目录链接一一对应，并逐段复现草稿正文（固定正文章节除外，最多 20%）。不通过则拒绝并返回差异示例；通过后作为一次草稿修改写入。内置站点自动采用内置引擎（忽略 catalog_selector 和 chapter_filter），正文规则缺省时沿用导入时实际使用的提取规则。',
+    {
+      base_draft_revision: number,
+      catalog_source_ids: { ...strings, minItems: 1, maxItems: 20 },
+      catalog_selector: {
+        type: 'string',
+        description:
+          '目录链接不在标准目录容器（nav、.toc 等）中时，指定链接所在范围的 CSS 选择器。',
+      },
+      chapter_filter: importSourceFilterSchema,
+      content_rules: {
+        type: 'object',
+        properties: { preset: string, selector: string, excludeSelectors: strings },
+        description: '正文提取规则；缺省时从草稿章节导入时使用的规则推导。',
+      },
+      cleanup: {
+        type: 'array',
+        maxItems: 20,
+        items: {
+          type: 'object',
+          properties: {
+            pattern: importPatternSchema,
+            action: { type: 'string', enum: ['remove_matches', 'remove_lines'] },
+          },
+          required: ['pattern', 'action'],
+        },
+        description: '回放时依次执行的清理规则；草稿中用过的批量清理要一并声明。',
+      },
+      strip_heading: {
+        type: 'boolean',
+        description: '正文首个非空行与目录标题完全相同时删除该行。',
+      },
+      pinned_chapter_ids: {
+        ...strings,
+        maxItems: 500,
+        description: '有意手工修改过、回放无法复现的草稿章节；最多占对应章节数的 20%。',
+      },
+    },
+    ['base_draft_revision', 'catalog_source_ids'],
+  ),
+  tool(
     'preview_import',
     '根据当前草稿版本生成真实差异与译文影响，保存待用户检查的方案；不会应用。',
     { draft_revision: number },

@@ -32,15 +32,18 @@ export async function parseCatalog(
 ): Promise<CatalogPage> {
   verify(html, url);
   if (recipe.engine.kind === 'builtin') {
-    const page = adapter(url).parseNovelSnapshot(html, url);
+    const scraper = adapter(url);
+    const page = scraper.parseNovelSnapshot(html, url);
     const { info } = page;
     const entries = info.chapters.map((chapter, index): CatalogEntry => {
       const group = info.volumes?.filter((volume) => volume.startIndex <= index).at(-1)?.title;
+      // 站点日期是本地格式（如「2025年5月3日」），必须按站点规则解析，new Date 会得到无效日期
+      const lastUpdated = scraper.parseCatalogDate(chapter.lastUpdated);
       return {
         url: chapter.url,
         title: chapter.title,
         ...(group ? { group } : {}),
-        ...(chapter.lastUpdated ? { lastUpdated: new Date(chapter.lastUpdated) } : {}),
+        ...(lastUpdated ? { lastUpdated } : {}),
       };
     });
     return {

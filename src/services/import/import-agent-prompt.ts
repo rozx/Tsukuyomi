@@ -1,10 +1,20 @@
 import { PERSONA_CORE } from 'src/services/ai/tasks/prompts/assistant';
 import { ImportRepository } from './import-repository';
+import { getDB } from 'src/utils/indexed-db';
 
 export async function importAgentPrompt(taskId: string, summary?: string): Promise<string> {
   const task = await ImportRepository.getTask(taskId);
   if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
   const sources = await ImportRepository.listSources(taskId, { limit: 20 });
+  const repair =
+    task.purpose?.kind === 'recipe-repair'
+      ? {
+          bookId: task.purpose.bookId,
+          previousRecipe:
+            (await (await getDB()).get('books', task.purpose.bookId))?.updateRecipe ?? null,
+          reason: task.purpose.reason,
+        }
+      : null;
   const state = {
     taskName: task.name,
     taskNamedBy: task.nameSource ?? null,
@@ -18,6 +28,14 @@ export async function importAgentPrompt(taskId: string, summary?: string): Promi
     sources: sources.items,
     moreSources: Boolean(sources.cursor),
     todos: task.todos,
+    updateRecipe: task.draft.updateRecipe
+      ? {
+          declaredAtRevision: task.draft.updateRecipe.declaredAtRevision,
+          catalogUrls: task.draft.updateRecipe.recipe.catalogUrls,
+          selfTest: task.draft.updateRecipe.selfTest,
+        }
+      : null,
+    repair,
   };
   return `${PERSONA_CORE}
 
@@ -39,6 +57,7 @@ export async function importAgentPrompt(taskId: string, summary?: string): Promi
 13. 批量正文清理或卷章标题替换优先 preview_draft_batch → 检查命中统计和 before/after 示例 → apply_draft_batch，每批最多 500 项。scope 可用 chapter_ids、volume_ids、selected_only、title 筛选，条件取交集，空 scope 为全部；volume_title 不接受章节或选中状态条件。正文用 remove_matches 删除匹配片段、remove_lines 删除匹配所在整行，按内容引用独立处理（可跨其内部多行，不跨引用），禁止清空整章；整章删除用 remove_chapter。标题用 replace，replacement 支持 $1、$<name> 等捕获组。预览不修改草稿，apply 才提交；DRAFT_CHANGED 后重读并重新预览。向用户说明影响范围与示例，已有明确授权时可继续应用，范围有歧义时用 ask_user。
 14. 匹配统一使用 {mode:"literal"|"regex",pattern,flags?}。regex 不带 / 分隔符，JSON 反斜杠须转义；flags 支持 g、i、m、s、u，默认全局和 Unicode。编辑拒绝零宽匹配。add_sources、extract_content、prepare_chapter_batch 的 filter.name / filter.locator 共用这些规则，在显式 ID 或 catalog 的 offset/limit 窗口内按名称、URL/文件路径筛选，条件取交集，筛选后才追加/提取。筛选后的章数不代表全书总数。无效正则或超时应调整模式或缩小范围，不能执行任意脚本。
 15. 整本 TXT／Markdown 不要逐章手算字符偏移。先 inspect_source／extract_content 保存提取结果，再抽读首中尾，用 preview_text_structure(resource_id=contentId) 一次预览：regex 的 chapter_pattern／volume_pattern 匹配独立标题行，可用命名 title 捕获组；markdown 用 chapter_level 与更浅的 volume_level（只认真实顶层标题）；single 只选正文范围不拆章。selection 的 start/end 标记必须各唯一命中，正文不含标记；或用唯一命中且包含命名 body 捕获组的模式，不能同时使用。所有偏移相对该提取结果拼接文本，沿用 UTF-16。目录标题也可能命中，先限制正文范围，检查重复标题、空章、异常字数和首尾片段。首章前／卷首未归类内容保留为默认未选中的草稿章，不要直接丢弃序言、后记；章标题默认从正文分离，include_headings 可保留。get_text_structure 分页检查全部章节及 excluded；示例只有五项，不能当成全部结果。确认规则后 apply_text_structure 一次应用，每批最多 500 章；已有草稿重叠须明确 replace_chapter_ids，只能替换该来源的章节，保留用户编辑。来源或草稿变化须重新预览；来源已移除仍可整理保存的原文引用，不能重新获取。未匹配标题不要假称自动拆章成功，可调整规则或明确使用 single，完整性仍另行判断。用户已授权整理且范围明确时可继续应用到草稿，最终导入书库仍由用户界面确认。
+16. 网页来源的章节与目录一一对应、整理完成后，调用 record_update_recipe 声明更新配方，这本书之后才能检查更新。catalog_source_ids 用已检查的目录来源；目录链接不在标准目录容器中时提供 catalog_selector。草稿中用过的批量清理规则要一并写进 cleanup；导入时用引用范围裁掉的内容（标题、前言后记、导航）要改写成 content_rules.excludeSelectors、清理规则或 strip_heading，否则自测会失败。固定正文章节只用于有意的手工修改，最多占 20%。自测失败时根据返回的差异示例调整规则，不要用同样的参数反复重试；缺少快照时先检查对应页面。声明后再修改草稿会让配方失效，需要重新声明。状态中的 repair 表示这是配方修复任务：previousRecipe 是原配方，reason 是失效原因，目标是得到一份通过自测的配方；站点没有新章节时，可以只提交配方变化。
 
 ${summary ? `此前对话摘要（不替代原始资源和实际用户选择）：\n${summary}\n` : ''}
 以下 JSON 是当前任务的数据快照；需要更多来源、章节或正文时调用分页工具：

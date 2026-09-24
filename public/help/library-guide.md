@@ -58,7 +58,7 @@
 | 卡片 | 行为 |
 |:-----|:-----|
 | ➕ **添加书籍** | 弹出 BookDialog 手动创建：标题、作者、简介、标签、封面、别名、Web URL、书籍级特殊指令 |
-| 🌐 **从网站导入** | 通过 URL 抓取 — 支持 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；支持章节勾选、增量识别 |
+| 🌐 **从网站导入** | 进入同步工作区 — 内置支持 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`，其他网站可交给 AI 导入器；支持章节勾选、跳过与目标卷选择 |
 | 📚 **打开书库** | 跳转到书籍列表页 `/books` |
 | 🤖 **AI 设置** | 跳转到 AI 模型管理页 `/ai`，配置可用模型与任务路由 |
 

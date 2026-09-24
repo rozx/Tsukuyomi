@@ -7,10 +7,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
-import {
-  createImportBookHandler,
-  createSaveNewBookHandler,
-} from 'src/composables/shared/useBookImportActions';
+import { createSaveNewBookHandler } from 'src/composables/shared/useBookImportActions';
 import { CoverService } from 'src/services/cover-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
@@ -56,7 +53,6 @@ function createBooksPageContext() {
   // 对话框状态
   const showAddDialog = ref(false);
   const showEditDialog = ref(false);
-  const showImportDialog = ref(false);
   const selectedBook = ref<Novel | null>(null);
 
   // 删除确认对话框状态
@@ -240,7 +236,7 @@ function createBooksPageContext() {
   };
 
   const importBookFromWeb = () => {
-    showImportDialog.value = true;
+    void router.push('/books/new/web');
   };
 
   const importBookFromJson = () => {
@@ -379,15 +375,6 @@ function createBooksPageContext() {
 
     target.value = '';
   };
-
-  const handleImportBook = createImportBookHandler({
-    booksStore,
-    coverHistoryStore,
-    toast,
-    onAfterImport: () => {
-      showImportDialog.value = false;
-    },
-  });
 
   const editBook = (book: Novel) => {
     selectedBook.value = { ...book };
@@ -533,7 +520,6 @@ function createBooksPageContext() {
     // dialogs
     showAddDialog,
     showEditDialog,
-    showImportDialog,
     selectedBook,
     showDeleteConfirm,
     deleteConfirmInput,
@@ -562,7 +548,6 @@ function createBooksPageContext() {
     importBookFromWeb,
     importBookFromJson,
     handleFileSelect,
-    handleImportBook,
     editBook,
     deleteBook,
     confirmDeleteBook,

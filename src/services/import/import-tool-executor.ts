@@ -34,6 +34,7 @@ import { ImportChapterBatchService } from './import-chapter-batch';
 import type { ImportBatchInput } from 'src/models/import-batch';
 import { runChapterBatch } from './import-batch-runner';
 import { readChapterBatch, chapterBatchSummary } from './import-batch-state';
+import { recordImportRecipe } from './import-recipe-tool';
 export { importTools } from './import-tool-definitions';
 
 type ExecutionOptions = Parameters<AssistantExecutionProfile['executeTool']>[1];
@@ -92,6 +93,7 @@ function planResult(plan: ImportPlan) {
     conflicts: plan.conflicts,
     completeness: plan.completeness,
     metadataChanges: plan.metadataChanges,
+    ...(plan.recipeChange ? { recipeChange: plan.recipeChange } : {}),
   };
 }
 
@@ -249,36 +251,8 @@ export class ImportToolExecutor {
           options.signal,
         );
       case 'inspect_source':
-      case 'extract_novel_info': {
-        const sourceId = textArgument(args, 'source_id');
-        const source = await ImportRepository.getSource(taskId, sourceId);
-        if (source.kind === 'directory') {
-          const prepared = await ImportSourceService.prepareDirectoryInspection(
-            taskId,
-            sourceId,
-            pageArguments(args),
-          );
-          return save(
-            {
-              success: true,
-              sourceId,
-              format: 'directory',
-              discoveries: prepared.discoveries,
-              totalDiscoveries: prepared.total,
-              ...(prepared.nextOffset !== undefined ? { nextOffset: prepared.nextOffset } : {}),
-            },
-            { resources: prepared.resources, sources: [{ ...source, status: 'inspected' }] },
-          );
-        }
-        const prepared = await this.extraction.prepareInspection(taskId, sourceId, {
-          ...pageArguments(args),
-          ...(args.refresh === true ? { refresh: true } : {}),
-          ...(typeof args.encoding === 'string' ? { encoding: args.encoding } : {}),
-          ...(typeof args.snapshot_id === 'string' ? { snapshotId: args.snapshot_id } : {}),
-          ...(options.signal ? { signal: options.signal } : {}),
-        });
-        return save(prepared.result, prepared);
-      }
+      case 'extract_novel_info':
+        return this.inspect(args, save, options.signal);
       case 'extract_content': {
         const inputs = extractionInputs(args);
         const ids = new Set(
@@ -339,6 +313,10 @@ export class ImportToolExecutor {
           chapterCount: draft.chapters.length,
         };
       }
+      case 'record_update_recipe': {
+        const recorded = await recordImportRecipe(this.run, args, finish, options.signal);
+        return recorded.saved ? recorded.data : save(recorded.data);
+      }
       case 'rename_import_task':
         return ImportRepository.mutateTask(
           taskId,
@@ -374,5 +352,42 @@ export class ImportToolExecutor {
         return save({ success: true, ...(read as Record<string, unknown>) });
       }
     }
+  }
+
+  /** 检查来源：目录来源列出文件发现，其余来源读取快照结构与元信息。 */
+  private async inspect(
+    args: Record<string, unknown>,
+    save: (data: unknown, step?: SavedStep) => Promise<unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const taskId = this.run.taskId;
+    const sourceId = textArgument(args, 'source_id');
+    const source = await ImportRepository.getSource(taskId, sourceId);
+    if (source.kind === 'directory') {
+      const prepared = await ImportSourceService.prepareDirectoryInspection(
+        taskId,
+        sourceId,
+        pageArguments(args),
+      );
+      return save(
+        {
+          success: true,
+          sourceId,
+          format: 'directory',
+          discoveries: prepared.discoveries,
+          totalDiscoveries: prepared.total,
+          ...(prepared.nextOffset !== undefined ? { nextOffset: prepared.nextOffset } : {}),
+        },
+        { resources: prepared.resources, sources: [{ ...source, status: 'inspected' }] },
+      );
+    }
+    const prepared = await this.extraction.prepareInspection(taskId, sourceId, {
+      ...pageArguments(args),
+      ...(args.refresh === true ? { refresh: true } : {}),
+      ...(typeof args.encoding === 'string' ? { encoding: args.encoding } : {}),
+      ...(typeof args.snapshot_id === 'string' ? { snapshotId: args.snapshot_id } : {}),
+      ...(signal ? { signal } : {}),
+    });
+    return save(prepared.result, prepared);
   }
 }

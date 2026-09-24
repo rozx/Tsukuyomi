@@ -5,6 +5,7 @@ import type { Novel, Paragraph } from './novel';
 import type { ImportReplacementRange } from './import-matching';
 import type { ChatMessage } from 'src/services/ai/types/ai-service';
 import type { ImportBatchProgress, ImportChapterBatch } from './import-batch';
+import type { BookUpdateRecipe } from './book-sync';
 
 /** 导入的宿主身份不属于模型工具参数，也不保存模型凭据。 */
 export interface ImportRunContext {
@@ -198,8 +199,40 @@ export interface ImportNovelCandidate {
   content?: ImportContentRef[];
 }
 
+/** 更新配方自测发现的问题；code 与 record_update_recipe 的错误码一致。 */
+export interface ImportRecipeIssue {
+  code: string;
+  message: string;
+  chapterId?: string;
+}
+
+export interface ImportRecipeSelfTest {
+  ok: boolean;
+  /** 回放正文与草稿逐段相同的章节数 */
+  verified: number;
+  /** 固定正文章节数 */
+  pinned: number;
+  issues: ImportRecipeIssue[];
+}
+
+/** 方案与界面展示用的配方概要，不含正文规则细节。 */
+export interface ImportRecipeSummary {
+  engine: string;
+  catalogUrls: string[];
+  cleanupRules: number;
+  pinned: number;
+  stripHeading: boolean;
+  verifiedChapterCount: number;
+}
+
 export interface ImportDraft {
   revision: number;
+  /** Agent 声明且离线自测通过的更新配方；不含 skippedUrls，应用时再计算。 */
+  updateRecipe?: {
+    recipe: BookUpdateRecipe;
+    declaredAtRevision: number;
+    selfTest: ImportRecipeSelfTest;
+  };
   metadata: Partial<
     Record<'title' | 'author' | 'description' | 'cover' | 'alternateTitles', ImportMetadataValue>
   >;
@@ -329,6 +362,8 @@ export interface ImportTask {
   /** 正在总结对话历史（压缩上下文）。 */
   compacting?: boolean;
   batchProgress?: ImportBatchProgress;
+  /** 从书籍同步工作区发起的配方修复任务。 */
+  purpose?: { kind: 'recipe-repair'; bookId: string; reason: string };
 }
 
 export interface ImportEvent {
@@ -379,6 +414,15 @@ export interface ImportPlan {
   completeness: ImportDraft['completeness'];
   mappings: { draftChapterId: string; chapterId: string; sourceIds: string[] }[];
   replacements?: ImportReplacementRange[];
+  /** 生成方案时重跑自测得到的配方变化；没有声明且目标书没有配方时省略。 */
+  recipeChange?: {
+    kind: 'add' | 'replace' | 'keep' | 'stale';
+    verified: number;
+    before?: ImportRecipeSummary;
+    after?: ImportRecipeSummary;
+    reason?: string;
+    issues?: ImportRecipeIssue[];
+  };
   chapterChanges?: {
     draftChapterId: string;
     chapterId: string;

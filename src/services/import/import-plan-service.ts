@@ -20,6 +20,7 @@ import { assembleImportParagraphs } from './import-plan-content';
 import { buildImportBook } from './import-plan-layout';
 import type { ResolvedImportChapter } from './import-plan-layout';
 import { NovelScraperFactory } from 'src/services/scraper/novel-scraper-factory';
+import { applyImportRecipe, evaluateImportRecipe } from './import-plan-recipe';
 
 function comparableBook(book: ImportPlan['book']): string {
   const copy = JSON.parse(JSON.stringify(book)) as ImportPlan['book'];
@@ -416,7 +417,13 @@ export class ImportPlanService {
       chapterChanges: [],
       createdAt: Date.now(),
     };
-    if (!context.chapters.length)
+    const parser = new ImportParsingClient();
+    // 配方自测必须先于空选择判断：已有书籍只修配方时不算空选择。
+    const recipe = await evaluateImportRecipe(context, parser, options.signal);
+    if (recipe.change) plan.recipeChange = recipe.change;
+    const recipeOnly =
+      Boolean(context.snapshot) && ['add', 'replace'].includes(recipe.change?.kind ?? '');
+    if (!context.chapters.length && !recipeOnly)
       plan.conflicts.push({ code: 'EMPTY_SELECTION', message: '没有选中已取得正文的章节' });
     if (context.task.pendingQuestion?.required)
       plan.conflicts.push({ code: 'PENDING_QUESTION', message: '请先完成必要选择' });
@@ -431,7 +438,6 @@ export class ImportPlanService {
     const resolved: ResolvedImportChapter[] = [];
     const consumed = new Set<string>();
     const claimed = new Set<string>();
-    const parser = new ImportParsingClient();
     for (const group of groupImportChapters(matches)) {
       const result = await resolveGroup(
         context,
@@ -450,6 +456,12 @@ export class ImportPlanService {
       (id) => !resolved.some((entry) => entry.id === id),
     );
     await buildImportBook(context, resolved, consumed, plan);
+    applyImportRecipe(
+      context,
+      plan,
+      recipe,
+      resolved.flatMap((entry) => entry.match.urls),
+    );
     await completeness(context, plan);
     plan.resourceIds = [...context.resources.keys()];
     summarize(context, plan);

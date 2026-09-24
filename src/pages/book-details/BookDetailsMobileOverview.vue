@@ -141,7 +141,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
         <button
           class="mbd-btn mbd-btn-outline mbd-btn-icon"
           aria-label="检查更新"
-          @click="ctx.openScraperDialog"
+          @click="ctx.navigateToUpdateSetting"
         >
           <i class="pi pi-download" aria-hidden="true" />
         </button>

@@ -387,3 +387,71 @@ describe('导入操作对象与完整详情', () => {
     ).toBe(true);
   });
 });
+
+describe('更新配方声明', () => {
+  const args = {
+    base_draft_revision: 4,
+    catalog_source_ids: ['cat'],
+    cleanup: [{ pattern: { mode: 'literal', pattern: '次の話へ' }, action: 'remove_lines' }],
+    strip_heading: true,
+  };
+  const withNames = { ...options, sourceNames: new Map([['cat', '作品目录']]) };
+
+  it('进行中只显示目录来源和自测阶段', () => {
+    const [action] = importEventsToMessages(
+      exchange('r', 'record_update_recipe', args),
+      withNames,
+    ).flatMap((m) => m.actions ?? []);
+    expect(action?.name).toBe('声明更新配方：「作品目录」（进行中）');
+    expect(getActionDetails(action!, context)).toContainEqual({
+      label: '阶段',
+      value: '离线自测中',
+    });
+  });
+
+  it('通过时显示引擎与可复现章节数', () => {
+    const [action] = importEventsToMessages(
+      exchange('r', 'record_update_recipe', args, {
+        success: true,
+        draftRevision: 5,
+        engine: 'builtin:ncode',
+        catalogUrls: ['https://ncode.syosetu.com/n1234ab/'],
+        verified: 12,
+        pinned: 1,
+      }),
+      withNames,
+    ).flatMap((m) => m.actions ?? []);
+    expect(action?.name).toBe(
+      '声明更新配方：「作品目录」 · 内置站点（ncode）（可复现 12 章，固定 1 章）',
+    );
+    const details = getActionDetails(action!, context);
+    expect(details).toContainEqual({ label: '阶段', value: '自测通过，已写入草稿' });
+    expect(details).toContainEqual({ label: '引擎', value: '内置站点（ncode）' });
+    expect(details).toContainEqual({ label: '清理规则', value: '删除整行：次の話へ' });
+    expect(details).toContainEqual({ label: '剥离标题', value: '是' });
+  });
+
+  it('未通过时列出差异示例', () => {
+    const [action] = importEventsToMessages(
+      exchange('r', 'record_update_recipe', args, {
+        success: false,
+        error: { code: 'CONTENT_MISMATCH', message: '「第3话」回放多出 1 行：次の話へ' },
+        issues: [
+          { code: 'CONTENT_MISMATCH', message: '「第3话」回放多出 1 行：次の話へ' },
+          { code: 'CONTENT_MISMATCH', message: '「第4话」回放缺少 1 行：あとがき' },
+        ],
+        engine: 'html',
+        verified: 3,
+        pinned: 0,
+      }),
+      withNames,
+    ).flatMap((m) => m.actions ?? []);
+    expect(action?.name).toContain('（失败：「第3话」回放多出 1 行：次の話へ）');
+    const details = getActionDetails(action!, context);
+    expect(details).toContainEqual({ label: '阶段', value: '自测未通过，草稿未修改' });
+    expect(details).toContainEqual({
+      label: '差异示例',
+      value: '「第3话」回放多出 1 行：次の話へ\n「第4话」回放缺少 1 行：あとがき',
+    });
+  });
+});

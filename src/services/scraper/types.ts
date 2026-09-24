@@ -25,6 +25,8 @@ export interface NovelScraper {
   fetchPageSnapshot(url: string, signal?: AbortSignal): Promise<ScraperPageSnapshot>;
   parseNovelSnapshot(html: string, url: string): ParsedNovelPage;
   parseChapterSnapshot(html: string): { paragraphs: string[]; text: string };
+  /** 按站点日期格式解析目录中的章节日期；无法解析时返回 undefined，不返回无效日期 */
+  parseCatalogDate(value: string | Date | undefined): Date | undefined;
   /**
    * 验证 URL 是否为该服务支持的 URL
    * @param url 要验证的 URL

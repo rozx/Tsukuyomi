@@ -54,7 +54,7 @@ pages/components (UI) → composables (逻辑复用) → stores (Pinia 状态) �
 
 - Electron 永远强制 `'desktop'`（无论窗口尺寸）
 - Web 端按 `useResponsiveLayout()` 断点选择 `'mobile'` / `'tablet'` / `'desktop'`
-- 禁止在别处手写 `isElectron ? ... : isPhone ? ...`。叶子对话框（`BookDialog`、`NovelScraperDialog` 等）是明确豁免项
+- 禁止在别处手写 `isElectron ? ... : isPhone ? ...`。叶子对话框（`BookDialog`、`CoverManagerDialog` 等）是明确豁免项
 
 **标准文件结构**（以页面为例，布局/组件同构）：
 

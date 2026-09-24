@@ -65,6 +65,7 @@ const ACTION_SHAPES: Record<string, ActionShape> = {
   get_chapter_info: { type: 'read', entity: 'chapter' },
   search_web: { type: 'web_search', entity: 'web' },
   preview_import: { type: 'read', entity: 'book' },
+  record_update_recipe: { type: 'update', entity: 'book' },
   rename_import_task: { type: 'update', entity: 'book' },
   ask_user: { type: 'ask', entity: 'user' },
   ask_user_batch: { type: 'ask', entity: 'user' },
@@ -170,6 +171,8 @@ function outcome(name: string, result: Result): string {
   }
   if (name === 'edit_import_draft' && typeof result.draftRevision === 'number')
     return `（草稿版本 ${result.draftRevision}）`;
+  if (name === 'record_update_recipe' && typeof result.verified === 'number')
+    return `（可复现 ${result.verified} 章${typeof result.pinned === 'number' && result.pinned ? `，固定 ${result.pinned} 章` : ''}）`;
   if (name === 'preview_import' && Array.isArray(result.conflicts))
     return result.conflicts.length ? `（${result.conflicts.length} 个待处理）` : '（可检查）';
   return '';

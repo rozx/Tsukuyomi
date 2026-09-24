@@ -4,6 +4,7 @@
  *
  * 按 selectedChapter 在 Overview（卷/章节/术语/角色/记忆 概览）与 Reader（阅读器）
  * 之间切换。两者各自承载独立的 UI 状态与 picker，共用 injectBookDetailsPage() 上下文。
+ * 路由为 settings/update 时优先显示检查更新全屏页（不进概览的分段标签）。
  *
  * 注意：本文件保留全部手机端样式（非 scoped），因为 mbd- / mbr- 前缀仅在本页使用，
  * 抽出的子组件（Overview / Reader / ChapterTree / ParagraphList / ParagraphMeta）
@@ -12,12 +13,14 @@
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import BookDetailsMobileOverview from './BookDetailsMobileOverview.vue';
 import BookDetailsMobileReader from './BookDetailsMobileReader.vue';
+import BookDetailsMobileSync from './BookDetailsMobileSync.vue';
 
 const ctx = injectBookDetailsPage();
 </script>
 
 <template>
-  <BookDetailsMobileOverview v-if="!ctx.selectedChapter.value && ctx.book.value" />
+  <BookDetailsMobileSync v-if="ctx.selectedSettingMenu.value === 'update'" />
+  <BookDetailsMobileOverview v-else-if="!ctx.selectedChapter.value && ctx.book.value" />
   <BookDetailsMobileReader v-else-if="ctx.selectedChapter.value" />
 </template>
 

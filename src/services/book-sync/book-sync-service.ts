@@ -32,6 +32,7 @@ function emptyChanges(revision: number | null): BookSyncChangeset {
     skipped: [],
     failed: [],
     unchecked: [],
+    checked: [],
     status: 'unchecked',
   };
 }
@@ -66,6 +67,8 @@ class BookSyncSession {
   private newBookId = crypto.randomUUID();
   private readonly cache = new Map<string, string[]>();
   private readonly pending = new Map<string, Promise<string[]>>();
+  /** 新建书籍尚未落库，跳过只记在会话内，应用时随配方写入 */
+  private readonly localSkipped = new Set<string>();
   private busy = false;
 
   constructor(
@@ -97,7 +100,9 @@ class BookSyncSession {
 
   private classify(): void {
     const entries = this.catalog!.entries;
-    const skipped = this.snapshot ? (this.recipe.skippedUrls?.map((e) => e.url) ?? []) : [];
+    const skipped = this.snapshot
+      ? (this.recipe.skippedUrls?.map((e) => e.url) ?? [])
+      : [...this.localSkipped];
     const known = new Set(this.chapters().map((c) => c.webUrl));
     this.state = emptyChanges(this.snapshot?.revision ?? null);
     this.state.new = inferNewChapters(this.snapshot?.book, entries, skipped);
@@ -189,6 +194,7 @@ class BookSyncSession {
     this.state.updated = this.state.updated.filter((e) => e.url !== entry.url);
     if (update) this.state.updated.push(update);
     this.state.unchecked = this.state.unchecked.filter((url) => url !== entry.url);
+    if (!this.state.checked.includes(entry.url)) this.state.checked.push(entry.url);
     this.state.failed = this.state.failed.filter((e) => e.url !== entry.url);
   }
 
@@ -398,6 +404,31 @@ class BookSyncSession {
         failed,
         ...(creating && newBook.cover ? { cover: newBook.cover } : {}),
       };
+    });
+  }
+
+  /**
+   * 跳过或取消跳过未导入章节。已有书籍写入配方后重新分类，已比对章节从缓存重算，
+   * 不丢失深度检查结果；新建书籍只改会话内状态。
+   */
+  async setSkipped(
+    entries: Pick<CatalogEntry, 'url' | 'title'>[],
+    skipped: boolean,
+  ): Promise<BookSyncChangeset> {
+    return this.exclusive(async () => {
+      if (!this.catalog || this.state.status === 'invalid')
+        throw new BookSyncError('CHECK_REQUIRED', '请先完成目录检查');
+      if ('bookId' in this.target) {
+        await BookSyncService.setSkipped(this.target.bookId, entries, skipped);
+        await this.recompute();
+      } else {
+        for (const entry of entries) {
+          if (skipped) this.localSkipped.add(entry.url);
+          else this.localSkipped.delete(entry.url);
+        }
+        this.classify();
+      }
+      return this.changeset;
     });
   }
 

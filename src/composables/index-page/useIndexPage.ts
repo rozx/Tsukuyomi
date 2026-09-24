@@ -12,10 +12,7 @@ import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import {
-  createImportBookHandler,
-  createSaveNewBookHandler,
-} from 'src/composables/shared/useBookImportActions';
+import { createSaveNewBookHandler } from 'src/composables/shared/useBookImportActions';
 
 /**
  * IndexPage 业务逻辑 composable + provide/inject 辅助。
@@ -52,7 +49,6 @@ function createIndexPageContext() {
   const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
   const showAddDialog = ref(false);
-  const showImportDialog = ref(false);
 
   const { loadBookCharCount, getTotalWords, isLoadingCharCount } = useNovelCharCount();
 
@@ -99,17 +95,8 @@ function createIndexPageContext() {
   };
 
   const importBookFromWeb = () => {
-    showImportDialog.value = true;
+    void router.push('/books/new/web');
   };
-
-  const handleImportBook = createImportBookHandler({
-    booksStore,
-    coverHistoryStore,
-    toast,
-    onAfterImport: () => {
-      showImportDialog.value = false;
-    },
-  });
 
   const handleSave = createSaveNewBookHandler({
     booksStore,
@@ -161,7 +148,6 @@ function createIndexPageContext() {
     booksStore,
     logoPath,
     showAddDialog,
-    showImportDialog,
     isLoadingCharCount,
     getTotalWords,
     getTotalChapters,
@@ -181,7 +167,6 @@ function createIndexPageContext() {
     getCoverUrl,
     addBook,
     importBookFromWeb,
-    handleImportBook,
     handleSave,
     navigateToBookDetails,
     navigateToBooks,

@@ -72,6 +72,18 @@ src/components/book-sync/fragments/            跨变体复用的片段
 
 备选：保留旧对话框作为兜底入口 → 否决，会保留两套应用路径和绕过写入保护的写入。
 
+## 实现调整
+
+实施与浏览器验收中对上面的决策做了以下调整：
+
+- **会话提供者上移（修正 D1）**：`provideBookSync` 不放在 `BookSyncWorkspace` 里，而是放在外壳所在页面的 dispatcher：新建页由 `useBookSyncNew` 提供，书籍详情页由 `BookDetailsPage` 按路由（`setting=update` 时目标为 `{bookId}`，否则为 `null`）提供。外壳本身也是设备变体，断点切换会整体替换；状态放在页面层级，切换时才不会重新检查、丢失勾选与目标卷覆盖。`BookSyncWorkspace` 只负责选择变体并挂载唯一的确认弹窗。
+- **会话级跳过**：核心只提供了需要 bookId 的 `BookSyncService.setSkipped`，新建书籍无法使用，且不会重新分类。会话新增 `setSkipped(entries, skipped)`：已有书籍写入配方后调用 `recompute()`，从缓存重算已比对章节，保留深度检查结果；新建书籍只记在会话内，应用时随配方写入。
+- **变更集新增 `checked`**：记录已完成比对的已导入章节（含未变化的），D4 的占比才有分母。
+- **撤销入口**：应用成功的通知带撤销（`onRevert`，闭包持有会话），离开页面后（例如新建后跳到新书）仍可撤销；工作区应用栏也有撤销按钮。
+- **应用后清空目标卷覆盖**：`{ newTitle }` 每次应用都会新建卷；应用成功后会话已按最新书籍重新推断目标，保留覆盖会让下一次应用或重试再建一个同名卷。
+- **与核心的接口约束**：会话会 `structuredClone` 入参，界面传入前需去掉 Vue 响应式代理（`toRaw`）；`resolveRecipe` 同理。
+- **修复核心缺陷**：内置站点目录的章节日期是站点本地格式（如「2025年5月3日」），回放原先用 `new Date()` 解析，得到无效日期，导致新建书籍写入失败、快速检查失效。改为调用抓取器新增的 `parseCatalogDate`（复用各站点的 `parseChapterDate`，无法解析时返回 `undefined`）。
+
 ## Risks / Trade-offs
 
 - [手机端书籍详情的变体需要识别 `setting=update` 并切换为全屏] → 只在手机变体内处理，桌面和平板仍走面板；加上路由加变体渲染测试。

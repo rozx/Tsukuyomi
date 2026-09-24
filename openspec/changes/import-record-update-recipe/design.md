@@ -139,3 +139,14 @@ ImportRecipeRepair.open(book, reason):
 ## Migration Plan
 
 新增字段均为可选，不需要迁移。旧任务没有 `purpose`，旧草稿没有 `updateRecipe`，照常工作。
+
+## 实现调整
+
+- **固定正文章节存为网址**：工具参数是草稿章节 ID，构造配方时换成 `pinnedUrls` 写进配方；方案阶段重跑自测时按网址识别，不依赖草稿章节 ID 是否变化。
+- **「固定却与回放相同」沿用 `PINNED_LIMIT`**：D1 的错误码里没有单独的码，这种情况与数量超限同属固定章节约束。
+- **通用网页目录的翻页**：目录页有「下一页」链接时 `followNext` 为真，缺少快照的分页一律报 `SNAPSHOT_MISSING`，不静默只用第一页。离线回放与 `collectCatalog` 保持同一顺序，并同样要求每个目录页都识别出章节（否则报 `UNSUPPORTED_GRANULARITY` 并建议 `catalog_selector`）。
+- **`keep` 的含义**：没有声明、目标书已有配方时为 `keep`；没有声明且没有原配方时省略 `recipeChange`。
+- **没有已选站点章节时自测视为通过**（可复现 0 章）：这是「只修配方」方案成立的前提；检查更新时 `CATALOG_UNRECOGNIZED` 仍会拦住与已导入章节对不上的目录。
+- **修复任务命名**：任务名由宿主设为「修复更新配方：书名」，`nameSource` 记为 `user`，Agent 不会改名，也不必先命名才能生成方案。
+- **提示词状态**额外包含 `updateRecipe`（声明时的修订号、目录网址和自测结果），便于 Agent 判断是否需要重新声明；`preview_import` 的结果也带上 `recipeChange`。
+- **同步工作区入口文案**：缺少配方时为「用 AI 导入器建立配方」，配方失效时为「用 AI 导入器修复配方」；新建书籍的「交给 AI 导入器」不变。「另一个任务正在运行」的提示沿用导入工作台运行栏里已有的提示。

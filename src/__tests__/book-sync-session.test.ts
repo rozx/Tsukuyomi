@@ -4,18 +4,20 @@ import './setup';
 import { BookSyncService } from '../services/book-sync/book-sync-service';
 import * as transport from '../services/scraper/core/page-transport';
 import { NovelScraperFactory } from '../services/scraper/novel-scraper-factory';
-import { deferred } from './web-locks-fixture';
+import { deferred, webLocksFixture } from './web-locks-fixture';
 import {
   syncBook,
   syncRoot,
   syncSnapshot,
   syncCatalogHtml,
   saveSyncBook,
+  syncRecipe,
 } from './book-sync-fixtures';
 
 afterEach(() => {
   mock.restore();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('书籍同步检查会话', () => {
@@ -192,4 +194,110 @@ it('预览已导入章节遇到空正文会使整份变更集失效', async () =
   await expect(value.preview('https://example.com/1')).rejects.toThrow('CONTENT_EMPTY');
   expect(value.changeset.status).toBe('invalid');
   expect(value.changeset.new).toEqual([]);
+});
+
+describe('会话内跳过与取消跳过', () => {
+  it('已有书籍跳过后写入配方并重新分类，保留深度检查结果', async () => {
+    vi.stubGlobal('navigator', { locks: webLocksFixture() });
+    const book = syncBook(1);
+    await saveSyncBook(book);
+    spyOn(transport, 'fetchScraperPage').mockImplementation((url) =>
+      Promise.resolve(
+        url === syncRoot
+          ? syncSnapshot(syncCatalogHtml(3), url)
+          : syncSnapshot('<article>新正文</article>', url),
+      ),
+    );
+    const session = await BookSyncService.openSession({ target: { bookId: book.id } });
+    await session.quickCheck();
+    expect((await session.deepCheck()).updated.map((e) => e.url)).toEqual([
+      'https://example.com/1',
+    ]);
+
+    const skipped = await session.setSkipped(
+      [{ url: 'https://example.com/3', title: '第3话' }],
+      true,
+    );
+    expect(skipped.new.map((e) => e.url)).toEqual(['https://example.com/2']);
+    expect(skipped.skipped.map((e) => e.url)).toEqual(['https://example.com/3']);
+    expect(skipped.updated.map((e) => e.url)).toEqual(['https://example.com/1']);
+
+    const reopened = await BookSyncService.openSession({ target: { bookId: book.id } });
+    expect((await reopened.quickCheck()).skipped.map((e) => e.url)).toEqual([
+      'https://example.com/3',
+    ]);
+
+    const restored = await session.setSkipped(
+      [{ url: 'https://example.com/3', title: '第3话' }],
+      false,
+    );
+    expect(restored.new.map((e) => e.url)).toEqual([
+      'https://example.com/2',
+      'https://example.com/3',
+    ]);
+    expect(restored.skipped).toEqual([]);
+  });
+
+  it('新建书籍跳过只记在会话内，应用时写入配方的跳过列表', async () => {
+    spyOn(transport, 'fetchScraperPage').mockImplementation((url) =>
+      Promise.resolve(
+        url === syncRoot
+          ? syncSnapshot(syncCatalogHtml(2), url)
+          : syncSnapshot('<article>正文</article>', url),
+      ),
+    );
+    const session = await BookSyncService.openSession({
+      target: { newFrom: syncRoot },
+      recipe: structuredClone(syncRecipe),
+    });
+    await session.quickCheck();
+    const changes = await session.setSkipped(
+      [{ url: 'https://example.com/2', title: '第2话' }],
+      true,
+    );
+    expect(changes.new.map((e) => e.url)).toEqual(['https://example.com/1']);
+    expect(changes.skipped.map((e) => e.url)).toEqual(['https://example.com/2']);
+    const unskipped = await session.setSkipped(
+      [{ url: 'https://example.com/2', title: '第2话' }],
+      false,
+    );
+    expect(unskipped.new.map((e) => e.url)).toEqual([
+      'https://example.com/1',
+      'https://example.com/2',
+    ]);
+  });
+
+  it('尚未检查目录时拒绝跳过', async () => {
+    await saveSyncBook(syncBook(1));
+    const session = await BookSyncService.openSession({ target: { bookId: 'book' } });
+    await expect(
+      session.setSkipped([{ url: 'https://example.com/2', title: '第2话' }], true),
+    ).rejects.toThrow('CHECK_REQUIRED');
+  });
+});
+
+describe('已比对章节记录', () => {
+  it('深度检查记录已比对的已导入章节，未变化的也计入', async () => {
+    const book = syncBook(3);
+    await saveSyncBook(book);
+    spyOn(transport, 'fetchScraperPage').mockImplementation((url) =>
+      Promise.resolve(
+        url === syncRoot
+          ? syncSnapshot(syncCatalogHtml(3), url)
+          : syncSnapshot(
+              url.endsWith('/1') ? '<article>新正文</article>' : '<article>旧正文</article>',
+              url,
+            ),
+      ),
+    );
+    const session = await BookSyncService.openSession({ target: { bookId: book.id } });
+    expect((await session.quickCheck()).checked).toEqual([]);
+    const result = await session.deepCheck();
+    expect([...result.checked].sort()).toEqual([
+      'https://example.com/1',
+      'https://example.com/2',
+      'https://example.com/3',
+    ]);
+    expect(result.updated.map((e) => e.url)).toEqual(['https://example.com/1']);
+  });
 });

@@ -8,6 +8,8 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', component: () => import('src/pages/IndexPage.vue') },
       { path: 'books', component: () => import('src/pages/BooksPage.vue') },
+      // 静态段放在 books/:id 之前，避免 new 被当作书籍 ID
+      { path: 'books/new/web', component: () => import('src/pages/BookSyncNewPage.vue') },
       {
         path: 'books/:id/settings/:setting(terms|characters|memory|translation|update)',
         component: () => import('src/pages/BookDetailsPage.vue'),

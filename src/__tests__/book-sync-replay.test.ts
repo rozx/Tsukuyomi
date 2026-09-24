@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect } from 'vitest';
 import { afterEach, describe, it, mock, spyOn } from 'bun:test';
 import './setup';
@@ -224,4 +225,27 @@ it.each([false, true])('回放正文与导入器实际提取结果逐字一致�
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+describe('内置站点目录的更新日期', () => {
+  const fixture = (name: string) => readFileSync(`src/__tests__/examplePages/${name}`, 'utf8');
+  const recipeFor = (site: 'kakuyomu' | 'syosetu-org', url: string): BookUpdateRecipe => ({
+    ...builtin,
+    engine: { kind: 'builtin', site },
+    catalogUrls: [url],
+  });
+
+  it.each([
+    [
+      'kakuyomu',
+      'https://kakuyomu.jp/works/822139842947212336',
+      'kakuyumu-822139842947212336.html',
+    ],
+    ['syosetu-org', 'https://syosetu.org/novel/375522/', 'syosetu-org-375522.html'],
+  ] as const)('%s 按站点日期格式解析，不产生无效日期', async (site, url, file) => {
+    const result = await parseCatalog(fixture(file), url, recipeFor(site, url));
+    const dated = result.catalog.entries.filter((entry) => entry.lastUpdated);
+    expect(dated.length).toBeGreaterThan(0);
+    for (const entry of dated) expect(Number.isNaN(entry.lastUpdated!.getTime())).toBe(false);
+  });
 });

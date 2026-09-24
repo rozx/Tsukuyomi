@@ -6,7 +6,6 @@
  */
 import { computed } from 'vue';
 import BookDialog from 'src/components/dialogs/BookDialog.vue';
-import NovelScraperDialog from 'src/components/dialogs/NovelScraperDialog.vue';
 import { useDeviceVariant } from 'src/composables/useDeviceVariant';
 import { provideIndexPage } from 'src/composables/index-page/useIndexPage';
 import IndexPageDesktop from './index-page/IndexPageDesktop.vue';
@@ -38,10 +37,5 @@ const variantComponent = computed(() => {
     mode="add"
     @save="ctx.handleSave"
     @cancel="ctx.showAddDialog.value = false"
-  />
-  <NovelScraperDialog
-    v-model:visible="ctx.showImportDialog.value"
-    :current-book="null"
-    @apply="ctx.handleImportBook"
   />
 </template>

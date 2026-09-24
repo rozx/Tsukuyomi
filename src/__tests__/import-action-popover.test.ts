@@ -57,3 +57,77 @@ describe('导入操作详情浮层', () => {
     expect(document.querySelector('.action-popover-content')).toBeNull();
   });
 });
+
+describe('更新配方声明的详情浮层', () => {
+  it('展示阶段、引擎、可复现章节数和全部差异示例', async () => {
+    const { importEventsToMessages } =
+      await import('../composables/import-page/import-chat-messages');
+    const call = {
+      id: 'r',
+      type: 'function' as const,
+      function: {
+        name: 'record_update_recipe',
+        arguments: JSON.stringify({ base_draft_revision: 2, catalog_source_ids: ['cat'] }),
+      },
+    };
+    const [action] = importEventsToMessages(
+      [
+        {
+          id: 'm',
+          taskId: 't',
+          sequence: 1,
+          createdAt: 1,
+          kind: 'message',
+          data: {},
+          message: { role: 'assistant', content: '', tool_calls: [call] },
+        },
+        {
+          id: 'res',
+          taskId: 't',
+          sequence: 2,
+          createdAt: 2,
+          kind: 'tool-result',
+          callId: 'r',
+          toolName: 'record_update_recipe',
+          data: {
+            success: false,
+            error: { code: 'CONTENT_MISMATCH', message: '「第3话」回放多出 1 行：次の話へ' },
+            issues: [
+              { code: 'CONTENT_MISMATCH', message: '「第3话」回放多出 1 行：次の話へ' },
+              { code: 'CONTENT_MISMATCH', message: '「第5话」回放缺少 1 行：あとがき' },
+            ],
+            engine: 'html',
+            verified: 4,
+            pinned: 0,
+          },
+        },
+      ],
+      {
+        sourceNames: new Map([['cat', '作品目录']]),
+        task: { name: '书', draft: { chapters: [], volumes: [] } },
+      },
+    ).flatMap((message) => message.actions ?? []);
+    const panel = ref<InstanceType<typeof ChatActionDetailsPopover>>();
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    app = createApp({
+      setup: () => () =>
+        h('div', [
+          h('button', { onClick: (event: MouseEvent) => panel.value?.toggle(event) }, '操作'),
+          h(ChatActionDetailsPopover, {
+            ref: panel,
+            action: action!,
+            context: { getBookById: () => undefined, getCurrentBookId: () => null },
+          }),
+        ]),
+    });
+    app.use(createPinia()).use(PrimeVue).mount(host);
+    host.querySelector('button')!.click();
+    await nextTick();
+    const text = document.querySelector('.action-popover-content')?.textContent ?? '';
+    expect(text).toContain('自测未通过，草稿未修改');
+    expect(text).toContain('通用网页');
+    expect(text).toContain('可复现章节');
+    expect(text).toContain('「第5话」回放缺少 1 行：あとがき');
+  });
+});

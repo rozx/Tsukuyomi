@@ -70,6 +70,8 @@ export interface BookSyncChangeset {
   skipped: CatalogEntry[];
   failed: SyncFailure[];
   unchecked: string[];
+  /** 已完成比对的已导入章节（含未变化的），与 unchecked 互补，用于判断大面积差异 */
+  checked: string[];
   status: 'unchecked' | 'ready' | 'cancelled' | 'invalid';
 }
 

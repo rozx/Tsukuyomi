@@ -141,7 +141,7 @@ src/
 
 - Electron 永远强制 `'desktop'`（不看窗口尺寸）
 - Web 端按 `useResponsiveLayout()` 断点: `'mobile'` / `'tablet'` / `'desktop'`
-- 禁止在别处手写 `isElectron ? ... : isPhone ? ...`。豁免：叶子对话框（`BookDialog`、`NovelScraperDialog` 等）
+- 禁止在别处手写 `isElectron ? ... : isPhone ? ...`。豁免：叶子对话框（`BookDialog`、`CoverManagerDialog` 等）
 
 ### 标准文件结构
 

@@ -17,6 +17,7 @@ import type {
   ImportActionInfo,
 } from './import-action-context';
 import { describeImportBatch, describeImportSources } from './import-batch-description';
+import { describeRecipeDeclaration } from './import-recipe-description';
 function draftRead(
   args: ImportActionData,
   result: ImportActionData,
@@ -265,6 +266,8 @@ export function importActionInfo(
     };
   if (name === 'read_source')
     return { summary: sourceRead(args, result, context, details), details };
+  if (name === 'record_update_recipe')
+    return { summary: describeRecipeDeclaration(args, result, context, details), details };
   const structure = describeTextStructure(name, args, result, context, details);
   if (structure) return { summary: structure, details };
   const batch = describeImportBatch(name, args, result, context, details);
