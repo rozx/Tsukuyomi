@@ -1,4 +1,9 @@
-## ADDED Requirements
+# ai-todo-reminder Specification
+
+## Purpose
+在 AI 进入 review 状态或提交翻译批次后，把当前任务未完成的待办项回传给 AI，避免遗漏。
+
+## Requirements
 
 ### Requirement: AI receives todo reminder when entering review state
 

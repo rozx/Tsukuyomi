@@ -1,7 +1,7 @@
 # book-task-model-override Specification
 
 ## Purpose
-TBD - created by syncing change book-translation-settings. Update Purpose after archive.
+允许每本书为各 AI 任务覆盖默认模型：定义 Novel 上的覆盖字段、`getModelForTask` 的解析优先级、生效的消费点和覆盖下拉 UI。
 
 ## Requirements
 

@@ -1,154 +1,78 @@
-# Capability: Memory Detail View
+# memory-detail-view Specification
 
-## Overview
+## Purpose
+定义记忆详情弹窗（`MemoryDetailDialog.vue`）：完整查看记忆摘要与内容、元信息与向量状态，并在同一弹窗内编辑、删除或手动触发向量化。
 
-Rich detail dialog with full content, metadata, and entity navigation.
+## Requirements
 
-## User Stories
+### Requirement: Full memory content display
 
-- As a user, I want to view full memory content without truncation
-- As a user, I want to see when a memory was created and last accessed
-- As a user, I want to see all entities a memory is attached to and navigate to them
-- As a user, I want to edit or delete a memory from the detail view
+The memory detail dialog SHALL show the memory's full summary and content without truncation.
 
-## Functional Requirements
+#### Scenario: Opening a memory
 
-### Content Display
+- **GIVEN** the user clicks a memory card in the memory panel or a memory in the chapter memory preview
+- **WHEN** the detail dialog opens
+- **THEN** it shows the full summary and the full content, with the content in a scrollable area
+- **AND** a copy button copies the content to the clipboard and shows a toast
 
-- [ ] Show full memory content (not truncated)
-- [ ] Content area must be scrollable for long text
-- [ ] Syntax highlighting for structured content (optional)
-- [ ] Copy content button
+### Requirement: Memory metadata
 
-### Metadata Panel
+The dialog SHALL show the memory's metadata and embedding state.
 
-- [ ] Created time (absolute + relative)
-- [ ] Last accessed time (absolute + relative)
-- [ ] Access count (how many times used in translations)
-- [ ] Memory ID (for debugging)
+#### Scenario: Metadata section
 
-### Attachment List
+- **GIVEN** the detail dialog is open
+- **WHEN** the metadata section renders
+- **THEN** it shows the created time, the last accessed time (relative, falling back to an absolute date after 7 days), and the memory ID
+- **AND** it shows the embedding status (已向量化 / 待向量化 / 向量版本过期) and, when present, the `embeddingModel` version
 
-- [ ] Show all attachments with full details
-- [ ] Group by type (characters, terms, chapters)
-- [ ] Each attachment shows: icon + name + type label
-- [ ] Click to navigate to entity
-- [ ] Show "no attachments" message if empty
+#### Scenario: Manual embedding
 
-### Actions
+- **GIVEN** the memory's embedding status is not ready
+- **WHEN** the user clicks "为此记忆生成向量"
+- **THEN** the memory is enqueued in `EmbeddingQueue` and a toast confirms it
+- **AND** the loading state clears when the `embedding-updated` event for that memory or a queue error arrives
 
-- [ ] Edit button → opens edit dialog
-- [ ] Delete button → shows confirmation
-- [ ] Close button
-- [ ] Keyboard shortcut: ESC to close
+### Requirement: Edit in place
 
-## Technical Requirements
+The dialog SHALL let the user edit the summary and content in place.
 
-### Component Interface
+#### Scenario: Editing and saving
 
-```typescript
-interface MemoryDetailDialogProps {
-  visible: boolean;
-  memory: Memory | null;
-  bookId: string;
-}
+- **GIVEN** the dialog is in read-only mode
+- **WHEN** the user clicks 编辑, changes the summary or content, and clicks 保存
+- **THEN** the dialog emits `save` with the new values and returns to read-only mode
 
-interface MemoryDetailDialogEmits {
-  'update:visible': (visible: boolean) => void;
-  edit: (memory: Memory) => void;
-  delete: (memory: Memory) => void;
-  navigate: (type: string, id: string) => void;
-}
-```
+#### Scenario: Opening directly in edit mode
 
-### Dialog Layout
+- **GIVEN** the user clicks the edit button on a memory card
+- **WHEN** the dialog opens
+- **THEN** it starts in edit mode
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 📌 记忆标题                                          [×]    │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  📎 关联实体                                                 │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 角色                                                 │   │
-│  │ • 👤 主角                                            │   │
-│  │ • 👤 导师                                            │   │
-│  │                                                      │   │
-│  │ 章节                                                 │   │
-│  │ • 📖 第一章：魔法学院                                │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  📝 摘要                                                     │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 世界观-魔法系统                                       │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  📄 内容                                                     │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ (scrollable area)                                   │   │
-│  │ 在这个世界中，魔法分为以下几类：                     │   │
-│  │ 1. 元素魔法：火、水、风、土                           │   │
-│  │ ...                                                 │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ℹ️ 元信息                                                   │
-│  • 创建时间：2024-01-15 10:30                              │
-│  • 最后访问：2024-01-15 14:22 (2分钟前)                     │
-│  • 使用次数：15次                                          │
-│  • ID：a1b2c3d4                                            │
-│                                                             │
-├─────────────────────────────────────────────────────────────┤
-│                                    [编辑] [删除] [关闭]     │
-└─────────────────────────────────────────────────────────────┘
-```
+#### Scenario: Closing with unsaved changes
 
-### Styling
+- **GIVEN** the dialog is in edit mode with unsaved changes
+- **WHEN** the user closes it
+- **THEN** a confirmation asks whether to save or discard the changes
 
-- [ ] Dialog width: 800px max
-- [ ] Content area: max-height 400px with scroll
-- [ ] Section headers: bold, muted color
-- [ ] Metadata: small text, muted color
-- [ ] Responsive: Full screen on mobile
+### Requirement: Delete from detail view
 
-## UI/UX Requirements
+The dialog SHALL offer a delete action.
 
-### Opening the Dialog
+#### Scenario: Deleting a memory
 
-- [ ] Click memory card opens detail
-- [ ] Smooth fade-in animation
-- [ ] Focus trap within dialog
-- [ ] Background overlay clickable to close
+- **GIVEN** the detail dialog is open in read-only mode
+- **WHEN** the user clicks 删除
+- **THEN** the dialog emits `delete` and the parent deletes the memory, closes the dialog, and refreshes its list or preview
 
-### Navigation
+### Requirement: Adaptive dialog layout
 
-- [ ] Attachment links open entity popover/panel
-- [ ] Does not close memory dialog (stacked modals)
-- [ ] Breadcrumb or back button if needed
+The dialog SHALL use `AdaptiveDialog`, 800px wide on desktop and adapted to small screens.
 
-### Edit Flow
+#### Scenario: Dialog on different screens
 
-- [ ] Edit button opens edit dialog
-- [ ] Memory detail stays open in background
-- [ ] After save, detail updates automatically
-
-### Delete Flow
-
-- [ ] Delete button shows confirmation dialog
-- [ ] Confirm → close detail + show toast
-- [ ] Cancel → stay in detail view
-
-## Acceptance Criteria
-
-- [ ] User can view full memory content
-- [ ] User can see complete metadata
-- [ ] User can navigate to attached entities
-- [ ] User can edit memory from detail view
-- [ ] User can delete memory from detail view
-- [ ] Dialog is responsive and accessible
-
-## Dependencies
-
-- Memory model (existing)
-- MemoryAttachmentTag component (new)
-- CharacterPopover, TermPopover (existing)
-- PrimeVue Dialog component
+- **GIVEN** the memory detail dialog opens
+- **WHEN** it renders on desktop
+- **THEN** it is 800px wide
+- **AND** on smaller screens `AdaptiveDialog` presents it in its compact form

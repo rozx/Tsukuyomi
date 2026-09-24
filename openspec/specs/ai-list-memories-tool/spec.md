@@ -1,7 +1,8 @@
 # ai-list-memories-tool Specification
 
 ## Purpose
-TBD - created by archiving change add-list-memories-tool. Update Purpose after archive.
+为聊天助手提供 `list_memories` 工具（含拼写别名 `list_momeries`）列出书籍记忆，仅在 Assistant 上下文中可用。
+
 ## Requirements
 ### Requirement: AI 工具 `list_memories`
 系统 MUST 提供一个 AI 工具 `list_memories`，用于列出当前书籍的 Memory 记录列表，支持分页与排序，便于 Assistant 做管理/调试与快速盘点。

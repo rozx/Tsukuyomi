@@ -181,11 +181,50 @@ Allow AI to submit translation results in batches using function calling.
 - **AND** 原文为非符号文本且按比例计算的合法前缀长度窗口宽度小于 2 个字符
 - **THEN** 系统 SHALL 接受该前缀（不触发 `ORIGINAL_TEXT_PREFIX_TOO_LONG`）
 
-#### Scenario: Long text with sufficient window still rejects over-length prefix
+#### Scenario: Long text with sufficient window warns on over-length prefix
 
 - **WHEN** AI 提交的 `original_text_prefix` 长度超过 `max(3, floor(原文长度 * 0.8))` 且不等于原文全文
 - **AND** 原文按比例计算的合法前缀长度窗口宽度大于等于 2 个字符
-- **THEN** 系统 SHALL 拒绝该前缀并返回 `ORIGINAL_TEXT_PREFIX_TOO_LONG` 错误
+- **THEN** 系统 SHALL 在返回结果中附加 `ORIGINAL_TEXT_PREFIX_TOO_LONG` 警告
+- **AND** 该段落不因前缀过长而被拒绝
+
+### Requirement: Original text prefix validation
+
+当书籍的 `enableOriginalTextValidation` 为 `true` 时，`add_translation_batch` 工具 SHALL 使用 `original_text_prefix` 作为锚点逐段校验，防止 ID 错位导致译文写入错误段落。校验失败只拒绝该段落，其余段落照常接受。
+
+#### Scenario: Misaligned submission prevented
+
+- **GIVEN** 原文校验已开启
+- **AND GIVEN** AI 提交的 `original_text_prefix`（trim 后）不包含在该 `paragraph_id` 对应段落的原文中
+- **WHEN** 调用 `add_translation_batch` 时验证该段落
+- **THEN** 该段落被拒绝，失败项的错误码为 `ORIGINAL_TEXT_PREFIX_MISMATCH`，错误信息包含"原文前缀不匹配"
+
+#### Scenario: Missing prefix
+
+- **GIVEN** 原文校验已开启
+- **AND GIVEN** 某段落未提供 `original_text_prefix` 或 trim 后为空
+- **WHEN** 调用 `add_translation_batch` 时验证该段落
+- **THEN** 该段落被拒绝，错误码为 `MISSING_ORIGINAL_TEXT_PREFIX`
+
+#### Scenario: Prefix too short
+
+- **GIVEN** 原文校验已开启，且原文不是纯符号段落
+- **AND GIVEN** `original_text_prefix` trim 后短于 `min(3, 原文长度)` 个字符
+- **WHEN** 调用 `add_translation_batch` 时验证该段落
+- **THEN** 该段落被拒绝，错误码为 `ORIGINAL_TEXT_PREFIX_TOO_SHORT`，错误信息提示最少字符数
+
+#### Scenario: Symbol-only paragraph skips length checks
+
+- **GIVEN** 原文校验已开启，且原文是纯符号/装饰性段落（如 `◇◇◇`）
+- **WHEN** 调用 `add_translation_batch` 时验证该段落
+- **THEN** 系统跳过前缀长度校验，只校验前缀是否包含在原文中
+
+#### Scenario: Partial failure keeps other paragraphs
+
+- **GIVEN** 一个批次中部分段落前缀校验失败
+- **WHEN** 批次校验完成
+- **THEN** 工具返回 `success: true`，`acceptedItems` 包含通过的段落，`failedItems` 列出失败段落及其错误码
+- **AND** 若全部段落都失败，工具返回 `success: false`
 
 ### Requirement: Prefix validation as independent function
 

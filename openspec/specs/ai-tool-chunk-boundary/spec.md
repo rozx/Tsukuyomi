@@ -1,3 +1,10 @@
+# ai-tool-chunk-boundary Specification
+
+## Purpose
+在分块处理（翻译/润色/校对）时向工具上下文传递分块边界，限制段落类工具只能访问当前分块内的段落，并统一越界错误提示。
+
+## Requirements
+
 ### Requirement: Tool context includes chunk boundaries
 
 The system SHALL extend the `ToolContext` interface to include optional chunk boundary information for enforcing paragraph access restrictions during chunked processing.

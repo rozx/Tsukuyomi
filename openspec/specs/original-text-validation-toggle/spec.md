@@ -1,7 +1,8 @@
 # original-text-validation-toggle Specification
 
 ## Purpose
-TBD - created by archiving change add-original-text-validation-toggle. Update Purpose after archive.
+提供书籍级原文校验开关，按开关动态调整 `add_translation_batch` 的工具参数，关闭时跳过 `original_text_prefix` 校验。
+
 ## Requirements
 ### Requirement: Book-level original text validation toggle
 

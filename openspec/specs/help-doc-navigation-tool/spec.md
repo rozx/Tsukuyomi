@@ -1,4 +1,9 @@
-## ADDED Requirements
+# help-doc-navigation-tool Specification
+
+## Purpose
+为聊天助手提供 `navigate_to_help_doc` 工具，让 AI 能把用户导航到指定帮助文档及章节，并在聊天 UI 中呈现可点击的操作标签。
+
+## Requirements
 
 ### Requirement: AI 助手可导航用户到指定帮助文档
 

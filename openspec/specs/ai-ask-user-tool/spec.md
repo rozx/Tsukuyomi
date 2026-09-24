@@ -1,7 +1,8 @@
 # ai-ask-user-tool Specification
 
 ## Purpose
-TBD - created by archiving change add-ai-ask-user-tool. Update Purpose after archive.
+为 AI 提供 `ask_user` / `ask_user_batch` 工具，在翻译相关任务中通过全屏问答对话框向用户提问，排队处理多个问题，无 UI 时降级，并把问答记录为 action。
+
 ## Requirements
 ### Requirement: AI 工具 `ask_user`
 系统 MUST 提供一个 AI 工具 `ask_user`，允许 AI 在执行过程中向用户提出一个问题，并获取用户回答作为工具返回值。

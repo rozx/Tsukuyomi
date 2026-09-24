@@ -1,7 +1,8 @@
 # single-para-polish Specification
 
 ## Purpose
-TBD - created by archiving change single-para-polish-simplified. Update Purpose after archive.
+定义单段落润色/校对的直接处理模式：自动注入默认上下文，注册上下文获取工具，并记录单段落任务。
+
 ## Requirements
 ### Requirement: 单段落润色/校对直接处理模式
 

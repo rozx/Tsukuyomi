@@ -1,4 +1,9 @@
-## ADDED Requirements
+# ai-translation-result-canonicalization Specification
+
+## Purpose
+以 `add_translation_batch` 成功返回的 `accepted_paragraphs` 作为段落应用和完成度推进的唯一依据，失败提交不推进状态。
+
+## Requirements
 
 ### Requirement: Canonical accepted items drive translation application
 

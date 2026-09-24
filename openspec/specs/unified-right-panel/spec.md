@@ -1,8 +1,10 @@
 # unified-right-panel Specification
 
 ## Purpose
-TBD - created by archiving change unify-right-panel-tabs. Update Purpose after archive.
+定义右侧面板在 AI 助手与翻译进度之间切换：翻译开始时自动切到进度页签，进度跨页面可见并经全局 store 传递，取消任务后书籍详情页的局部状态同步更新。
+
 ## Requirements
+
 ### Requirement: 右侧面板支持 AI 助手与翻译进度的 Tab 切换
 
 AppRightPanel SHALL 提供「AI 助手」和「翻译进度」两个顶层 Tab，用户可随时手动切换，系统在特定条件下自动切换。
@@ -19,12 +21,17 @@ AppRightPanel SHALL 提供「AI 助手」和「翻译进度」两个顶层 Tab�
 
 ### Requirement: 翻译任务开始时自动切换到翻译进度 Tab
 
-当翻译、润色或校对任务创建时，系统 SHALL 自动将右侧面板切换到「翻译进度」Tab，使用户无需手动切换即可查看任务状态。
+当翻译、润色或校对任务创建时，系统 SHALL 自动将右侧面板切换到「翻译进度」Tab，并且翻译进度面板 SHALL 自动选中该新任务。
 
 #### Scenario: 翻译任务创建后自动跳转
 
 - **WHEN** 用户触发章节翻译、润色或校对操作，且右侧面板当前处于「AI 助手」Tab
 - **THEN** 系统 MUST 自动切换到「翻译进度」Tab
+
+#### Scenario: 新任务自动成为当前查看任务
+
+- **WHEN** 新的翻译/润色/校对任务被创建
+- **THEN** 翻译进度面板 MUST 自动将 selectedTaskId 设置为新任务的 ID
 
 #### Scenario: 用户手动切换后不再强制跳转（同一任务期间）
 
@@ -72,4 +79,3 @@ BookDetailsPage SHALL 通过监听 `aiProcessingStore.activeTasks` 检测到翻�
 
 - **WHEN** 用户在书籍详情页查看任意章节
 - **THEN** 章节内容区域 MUST 占据中间内容区的全部宽度，不存在翻译进度分栏布局
-

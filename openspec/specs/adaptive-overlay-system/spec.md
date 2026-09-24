@@ -1,8 +1,7 @@
 # adaptive-overlay-system Specification
 
 ## Purpose
-
-TBD - created by archiving change support-mobile-tablet-full-feature. Update Purpose after archive.
+定义弹层（对话框、抽屉、浮层）按断点自动选择形态，兼容可见区与安全区，并在各形态下保持一致、可撤销的交互。
 
 ## Requirements
 

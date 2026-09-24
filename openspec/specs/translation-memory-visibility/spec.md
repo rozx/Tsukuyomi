@@ -1,203 +1,70 @@
-# Capability: Translation Memory Visibility
+# translation-memory-visibility Specification
 
-## Overview
+## Purpose
+让用户看到 AI 翻译时参考了哪些记忆：翻译结果记录引用的记忆 ID 与打分明细，书籍详情页的记忆预览面板（`MemoryReferencePanel.vue`）列出当前章节会注入的记忆及其相关度构成，并可点开详情。
 
-Show which memories were referenced during AI translation to provide transparency and build user trust.
+## Requirements
 
-## User Stories
+### Requirement: Referenced memories stored with translations
 
-- As a user, I want to see which memories the AI used when translating a paragraph
-- As a user, I want to understand why a translation turned out a certain way
-- As a user, I want to verify that important context was considered by the AI
-- As a user, I want to click on a referenced memory to view its details
+Each `Translation` SHALL record the memories referenced while producing it.
 
-## Functional Requirements
+#### Scenario: Recording references for a chunk
 
-### Display in Translation Context
+- **GIVEN** a translation chunk during which the AI fetched memories via tools and the context builder injected scored memories
+- **WHEN** the translated paragraphs are saved
+- **THEN** `referencedMemories` holds the IDs from memory tool actions (`memory_id`, `id`, `found_memory_ids`) merged with the injected memory IDs
+- **AND** `memoryScoreBreakdown` holds the breakdown for each injected memory
+- **AND** both fields are omitted when empty
 
-- [ ] Show reference panel below translation result
-- [ ] Display count: "参考了 X 条记忆"
-- [ ] Expandable list of memory summaries
-- [ ] Each memory shows: icon + summary + click to view
+#### Scenario: Breakdowns stay local
 
-### Memory Reference Data
+- **GIVEN** translations with `memoryScoreBreakdown`
+- **WHEN** data is uploaded to sync
+- **THEN** `memoryScoreBreakdown` is stripped from the payload
 
-- [ ] Track which memories are accessed during translation
-- [ ] Store: memoryId, summary (snapshot), timestamp
-- [ ] Persist with translation result
-- [ ] Update when translation is regenerated
+### Requirement: Chapter memory preview panel
 
-### Reference Types
+The book details page SHALL show the memories that would be injected for the current chapter.
 
-- [ ] Explicit references: AI called `get_memory` or `search_memory_by_keywords`
-- [ ] Implicit references: Memories attached to entities in context
-- [ ] Distinguish between search results and actually used memories
+#### Scenario: Preview states
 
-### UI States
+- **GIVEN** the user opens the chapter memory popover
+- **WHEN** the panel renders
+- **THEN** it shows "检索记忆中..." while loading, "未参考记忆" when nothing is selected, and otherwise "AI 参考了 N 条记忆" followed by one row per memory with its summary
 
-- [ ] Loading: Show spinner while translating
-- [ ] Success: Show reference list
-- [ ] No references: Show "未参考记忆" message
-- [ ] Error: Show error state
+#### Scenario: Preview refreshes
 
-## Technical Requirements
+- **GIVEN** the chapter memory preview is shown
+- **WHEN** the selected chapter or its paragraph count changes, or a memory is saved or deleted from the detail dialog
+- **THEN** the preview is recomputed
 
-### Data Structure
+#### Scenario: Opening a memory
 
-```typescript
-interface MemoryReference {
-  memoryId: string;
-  summary: string; // Snapshot at translation time
-  accessedAt: number;
-  toolName: 'get_memory' | 'search_memory_by_keywords';
-}
+- **GIVEN** the preview lists memories
+- **WHEN** the user clicks a row or its view button
+- **THEN** the memory detail dialog opens for that memory
 
-interface TranslationResult {
-  // ... existing fields
-  referencedMemories: MemoryReference[];
-}
-```
+### Requirement: Score breakdown tooltip
 
-### Tracking Implementation
+Rows with a score breakdown SHALL show the relevance score and a tooltip explaining it.
 
-```typescript
-// Wrap memory tools to track access
-function createTrackedMemoryTools(onMemoryAccess: (ref: MemoryReference) => void) {
-  return memoryTools.map((tool) => ({
-    ...tool,
-    handler: async (args: any, ctx: ToolContext) => {
-      const result = await tool.handler(args, ctx);
+#### Scenario: Score label and tooltip
 
-      // Track access
-      if (tool.name === 'get_memory' && args.memory_id) {
-        onMemoryAccess({
-          memoryId: args.memory_id,
-          summary: extractSummaryFromResult(result),
-          accessedAt: Date.now(),
-          toolName: 'get_memory',
-        });
-      } else if (tool.name === 'search_memory_by_keywords') {
-        const memories = extractMemoriesFromResult(result);
-        memories.forEach((m) =>
-          onMemoryAccess({
-            memoryId: m.id,
-            summary: m.summary,
-            accessedAt: Date.now(),
-            toolName: 'search_memory_by_keywords',
-          }),
-        );
-      }
+- **GIVEN** a previewed memory with a `ScoreBreakdown`
+- **WHEN** its row renders
+- **THEN** the row shows an info icon with the total score to two decimals
+- **AND** hovering shows three rows (语义置信, 关键词, 时间衰减), each with raw value, weight, and weighted value, and a total 相关度 row
 
-      return result;
-    },
-  }));
-}
-```
+#### Scenario: Weights follow the scoring mode
 
-### Component Interface
+- **GIVEN** a breakdown with `scoringMode`
+- **WHEN** the weights are displayed
+- **THEN** semantic mode shows 0.85 / 0.10 / 0.05 and fallback mode shows 0 / 0.75 / 0.25
+- **AND** for legacy breakdowns without `scoringMode`, semantic mode is assumed when `semanticWeighted > 0`
 
-```typescript
-interface MemoryReferencePanelProps {
-  references: MemoryReference[];
-  bookId: string;
-  loading?: boolean;
-}
+#### Scenario: Memory without breakdown
 
-interface MemoryReferencePanelEmits {
-  'view-memory': (memoryId: string) => void;
-}
-```
-
-### Storage
-
-- [ ] Store references in paragraph.translations[n].referencedMemories
-- [ ] Update on each translation regeneration
-- [ ] Include in export/import
-
-## UI/UX Requirements
-
-### Reference Panel Layout
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 译文：                                                       │
-│ 在这个魔法世界中，主角开始学习...                             │
-│                                                             │
-│ 💡 AI 参考了 3 条记忆                              [查看 ▼]  │
-│ ┌─────────────────────────────────────────────────────┐    │
-│ │ • 📌 世界观-魔法系统                                 │    │
-│ │ • 📌 主角背景设定                                    │    │
-│ │ • 📌 魔法学院介绍                                    │    │
-│ └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Collapsed State
-
-```
-💡 AI 参考了 3 条记忆  [展开 ▼]
-```
-
-### Empty State
-
-```
-💡 未参考记忆
-```
-
-### Loading State
-
-```
-💡 检索记忆中...
-```
-
-### Interaction
-
-- [ ] Click memory opens MemoryDetailDialog
-- [ ] Expand/collapse with smooth animation
-- [ ] Hover shows tooltip with memory preview
-
-## Integration Points
-
-### ParagraphCard.vue
-
-```vue
-<template>
-  <!-- ... existing content ... -->
-
-  <MemoryReferencePanel
-    v-if="translation.referencedMemories?.length > 0"
-    :references="translation.referencedMemories"
-    :book-id="bookId"
-    @view-memory="openMemoryDetail"
-  />
-</template>
-```
-
-### Translation Service
-
-- [ ] Modify translation task to track memory access
-- [ ] Pass tracked references to result
-- [ ] Handle errors gracefully
-
-## Acceptance Criteria
-
-- [ ] User can see which memories were referenced
-- [ ] Reference list shows memory summaries
-- [ ] User can click to view memory details
-- [ ] References persist with translation
-- [ ] Works for both new and regenerated translations
-- [ ] Handles cases where memory is deleted after reference
-
-## Dependencies
-
-- MemoryService (existing)
-- MemoryDetailDialog component (new)
-- ParagraphCard.vue (modification)
-- Translation service (modification)
-- Memory tools (wrap for tracking)
-
-## Non-Goals
-
-- Real-time memory usage analytics
-- Memory effectiveness scoring
-- Automatic memory suggestions based on references
+- **GIVEN** a listed memory with no breakdown
+- **WHEN** its row renders
+- **THEN** no score label or tooltip is shown

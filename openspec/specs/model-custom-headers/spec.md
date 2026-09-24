@@ -1,4 +1,9 @@
-## ADDED Requirements
+# model-custom-headers Specification
+
+## Purpose
+允许为每个 AI 模型配置自定义 HTTP 请求头，并附加到该模型发出的所有 API 请求上。
+
+## Requirements
 
 ### Requirement: Configure Custom Headers per AI Model
 

@@ -1,4 +1,9 @@
-## ADDED Requirements
+# translation-batch-save Specification
+
+## Purpose
+保证多个章节并发翻译时各自的保存互不覆盖，不因异步写入竞争丢失数据。
+
+## Requirements
 
 ### Requirement: Concurrent multi-chapter translation saving
 

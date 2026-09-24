@@ -1,7 +1,7 @@
 # book-translation-settings-panel Specification
 
 ## Purpose
-TBD - created by syncing change book-translation-settings. Update Purpose after archive.
+定义书籍级翻译设置的入口与面板：桌面/平板从侧栏进入路由面板，章节齿轮弹窗只保留章节设置，手机端底部抽屉保留双页签。
 
 ## Requirements
 

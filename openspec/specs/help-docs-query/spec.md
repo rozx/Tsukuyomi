@@ -1,6 +1,9 @@
-# Spec: Help Docs Query
+# help-docs-query Specification
 
-## ADDED Requirements
+## Purpose
+为聊天助手提供帮助文档的列举、关键词搜索与全文读取工具，统一返回格式与错误处理，并支持中文内容。
+
+## Requirements
 
 ### Requirement: AI can search help documents by keywords
 

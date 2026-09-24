@@ -1,7 +1,8 @@
 # model-cors-toggle Specification
 
 ## Purpose
-TBD - created by archiving change add-model-cors-toggle. Update Purpose after archive.
+为每个 AI 模型提供独立的 CORS 代理开关，控制 API 请求是否经代理，随模型持久化，并在 Electron 版中隐藏。
+
 ## Requirements
 ### Requirement: AI model has independent CORS proxy toggle
 

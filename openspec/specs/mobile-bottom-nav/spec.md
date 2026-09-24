@@ -1,7 +1,8 @@
 # mobile-bottom-nav Specification
 
 ## Purpose
-TBD - created by archiving change mobile-bottom-nav. Update Purpose after archive.
+定义移动端底部导航栏，并在手机端隐藏版权页脚。
+
 ## Requirements
 ### Requirement: 移动端底部导航栏
 

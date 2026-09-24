@@ -1,4 +1,9 @@
-## ADDED Requirements
+# help-page Specification
+
+## Purpose
+定义帮助页如何渲染 Markdown 文档、提供文档导航与目录，并在不同设备上保持可用的阅读布局。
+
+## Requirements
 
 ### Requirement: Help page component enhancement
 
@@ -11,22 +16,23 @@ The system SHALL enhance the existing `src/pages/HelpPage.vue` component to rend
 
 ### Requirement: Help navigation
 
-The system SHALL provide navigation between different help documents on the help page across desktop, tablet, and mobile layouts while preserving full document access.
+The system SHALL provide navigation between different help documents on the help page across desktop, tablet, and mobile layouts while preserving full document access, and desktop SHALL keep both topic navigation and in-document TOC directly reachable inside the reading workspace.
 
 #### Scenario: Navigating between help topics
-
 - **WHEN** user selects a different help topic from navigation
 - **THEN** the help page SHALL load and display the selected document without page reload
 
 #### Scenario: Mobile help topic switching
-
 - **WHEN** user accesses help on a mobile device and opens the topic list
 - **THEN** the system SHALL provide a touch-friendly drawer or panel to switch topics and return to content
 
 #### Scenario: Tablet help topic visibility
-
 - **WHEN** user accesses help on a tablet device
 - **THEN** the system SHALL keep topic navigation continuously reachable through a persistent or quickly retrievable side panel
+
+#### Scenario: Desktop topic and TOC stay directly reachable
+- **WHEN** user accesses help on a desktop device and a document is selected
+- **THEN** the system SHALL keep the topic list and the current document TOC directly reachable alongside the article without replacing them with drawer-style navigation
 
 ### Requirement: Markdown rendering
 
@@ -39,14 +45,20 @@ The system SHALL properly render Markdown content with appropriate styling.
 
 ### Requirement: Responsive help layout
 
-The system SHALL provide a responsive layout for the help page suitable for desktop, tablet, and mobile viewing, and SHALL keep reading and navigation operations complete on all breakpoints.
+The system SHALL provide a responsive layout for the help page suitable for desktop, tablet, and mobile viewing, SHALL keep reading and navigation operations complete on all breakpoints, and SHALL provide a branded desktop help-center landing state when no document is selected.
 
 #### Scenario: Viewing help on mobile device
-
 - **WHEN** user accesses the help page on a mobile device
 - **THEN** the content SHALL be readable, navigation SHALL be touch-friendly, and key actions SHALL remain accessible without horizontal scrolling
 
 #### Scenario: Viewing help on tablet device
-
 - **WHEN** user accesses the help page on a tablet device
 - **THEN** the page SHALL optimize document width and topic navigation placement to support continuous reading
+
+#### Scenario: Viewing help on desktop device
+- **WHEN** user accesses the help page on a desktop device and a document is selected
+- **THEN** the page SHALL present a multi-column reading workspace with topic navigation, in-document TOC, and article content visible within the same desktop layout
+
+#### Scenario: Desktop help landing state
+- **WHEN** user accesses the help page on a desktop device without a selected document
+- **THEN** the page SHALL render a branded help-center landing state with quick-start guidance and direct topic entry points inside the desktop content area

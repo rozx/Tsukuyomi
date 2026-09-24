@@ -1,7 +1,8 @@
 # chapter-metadata-editing Specification
 
 ## Purpose
-TBD - created by archiving change enhance-chapter-update-detection. Update Purpose after archive.
+允许编辑章节的 `webUrl`，并只读展示章节的日期统计信息。
+
 ## Requirements
 ### Requirement: Editable webUrl field
 

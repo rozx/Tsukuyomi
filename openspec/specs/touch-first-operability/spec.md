@@ -1,8 +1,7 @@
 # touch-first-operability Specification
 
 ## Purpose
-
-TBD - created by archiving change support-mobile-tablet-full-feature. Update Purpose after archive.
+保证触控设备上的等价操作路径、命中区与反馈标准，并避免手势与滚动冲突。
 
 ## Requirements
 

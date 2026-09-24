@@ -1,7 +1,8 @@
 # global-config-cache Specification
 
 ## Purpose
-TBD - created by archiving change add-global-config-cache. Update Purpose after archive.
+提供全局配置缓存（GlobalConfig），与 store 保持一致，并可在非组件上下文中读取。
+
 ## Requirements
 ### Requirement: 全局配置缓存（GlobalConfig）
 系统 MUST 提供一个全局配置缓存/访问层（GlobalConfig），使应用在运行时可在任何模块中访问 settings/config，而不需要在运行过程中反复读取 IndexedDB。

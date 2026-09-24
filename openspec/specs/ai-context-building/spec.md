@@ -1,71 +1,96 @@
-## ADDED Requirements
+# ai-context-building Specification
 
-### Requirement: Automatic memory discovery from chunk entities
+## Purpose
+定义 AI 任务上下文的构建方式：按相关性打分从本书记忆中选取并格式化注入分块提示词，章节 UI 预览与实际注入共用同一选取结果；章节摘要不再注入，章节语义通过 `query_chapter` 按需获取。
 
-The system SHALL identify entities present in a chunk and retrieve their attached memories.
+## Requirements
 
-#### Scenario: Extract entities from chunk text
+### Requirement: Relevance-scored memory injection for chunks
 
-- **GIVEN** a chunk of text to be translated
-- **WHEN** building the translation context
-- **THEN** system extracts all terms present in the chunk
-- **AND** system extracts all characters present in the chunk
-- **AND** entity extraction uses the same logic as the terminology/character sidebar
+When building the context for a translation chunk, the system SHALL select memories with `selectRelevantMemoriesForChunk` according to the `memory-relevance-scoring` capability, instead of discovering them through entity attachments.
 
-#### Scenario: Retrieve memories for extracted entities
+#### Scenario: Selecting memories for a chunk
 
-- **GIVEN** entities have been extracted from chunk text
-- **WHEN** building the translation context
-- **THEN** system queries memories attached to each extracted entity
-- **AND** system aggregates all retrieved memories
+- **GIVEN** a chunk of text, the terms and characters present in it, and an optional chapter-level semantic query (chapter title original and translation)
+- **WHEN** the chunk context is built
+- **THEN** all memories of the book are loaded via `MemoryService.getAllBookMemories`
+- **AND** terms, characters, and character aliases become the keyword entities
+- **AND** the chapter query and the chunk text are embedded as query vectors when embedding is available
+- **AND** the memories are scored and selected by threshold, relative ranking, and character budget
+
+#### Scenario: Book has no memories
+
+- **GIVEN** a book with no memories
+- **WHEN** the chunk context is built
+- **THEN** no memory section is added
 
 ### Requirement: Memory context formatting in prompts
 
-The system SHALL format attached memories into readable context sections.
+Selected memories SHALL be injected as a single `【相关记忆】` section listing each memory's ID and summary.
 
-#### Scenario: Format single memory
+#### Scenario: Formatting selected memories
 
-- **GIVEN** one memory is attached to an entity in the chunk
-- **WHEN** building the context section
-- **THEN** the memory summary is included in the prompt
-- **AND** the format is: `- [Memory] {summary}`
+- **GIVEN** memories were selected for a chunk
+- **WHEN** the memory section is rendered
+- **THEN** it is `【相关记忆】` followed by one line per memory in the form `  - [<id>] <summary>`, in score order
+- **AND** memory content is not inlined; the AI can fetch it with `get_memory`
 
-#### Scenario: Format multiple memories
+#### Scenario: Scoring fails
 
-- **GIVEN** multiple memories are attached to entities in the chunk
-- **WHEN** building the context section
-- **THEN** all memory summaries are listed
-- **AND** each memory is prefixed with its type indicator
-- **AND** the section is titled "【相关记忆】"
+- **GIVEN** relevance scoring throws an error
+- **WHEN** the chunk context is built
+- **THEN** the system falls back to the most recently accessed memories (up to 15) in the same format
 
-#### Scenario: Memory context placement
+### Requirement: Memory preview matches injection
 
-- **GIVEN** memory context is being added to the prompt
-- **WHEN** the full prompt is assembled
-- **THEN** memory context appears after the "【当前部分出现的术语和角色】" section
-- **AND** memory context appears before the actual text to translate
+The chapter memory preview in the book details page SHALL use the same selection as prompt injection.
 
-### Requirement: Memory deduplication in context
+#### Scenario: Previewing a chapter's memories
 
-The system SHALL deduplicate memories when multiple entities in a chunk share the same memory.
+- **GIVEN** the user opens a chapter in the book details page
+- **WHEN** the memory preview refreshes
+- **THEN** it calls `selectRelevantMemoriesForChunk` with the chapter's paragraphs, used terms, used characters, and chapter query
+- **AND** the previewed memories and score breakdowns match what a translation of that text would inject
 
-#### Scenario: Memory attached to multiple entities in same chunk
+#### Scenario: Score breakdowns recorded for translation results
 
-- **GIVEN** a memory is attached to both character A and term B
-- **AND** both character A and term B appear in the current chunk
-- **WHEN** building the context
-- **THEN** the memory appears only once in the context
-- **AND** no duplicate information is presented to AI
+- **GIVEN** memories were selected for a chunk during translation
+- **WHEN** the translated paragraphs are returned
+- **THEN** the selected memory IDs are merged into `referencedMemories`
+- **AND** their breakdowns are attached as `memoryScoreBreakdown`
 
-### Requirement: Memory limit in context
+### Requirement: Chapter summary is not injected automatically
 
-The system SHALL limit the number of memories included to prevent context overflow.
+The system SHALL NOT inject chapter summaries into AI task prompts. The previous-chapter summary and the current-chapter summary context blocks are removed.
 
-#### Scenario: Many memories attached to chunk entities
+#### Scenario: Previous chapter context minimized to title only
 
-- **GIVEN** many entities in the chunk have attached memories
-- **AND** total memories exceed the limit (e.g., 10)
-- **WHEN** building the context
-- **THEN** only the most relevant memories are included
-- **AND** memories are prioritized by lastAccessedAt (most recent first)
-- **AND** a note indicates "... and X more memories" if some are omitted
+- **GIVEN** a translation chunk is being built for chapter N
+- **WHEN** the previous chapter (N-1) exists
+- **THEN** the prompt MAY include only the previous chapter's title for continuity awareness
+- **AND** the prompt MUST NOT include any summary text for the previous chapter
+
+#### Scenario: Single-paragraph default context excludes chapter summary
+
+- **GIVEN** a single-paragraph polish or proofread task is being prepared
+- **WHEN** the default context is assembled
+- **THEN** the context MUST NOT include a chapter-summary section
+- **AND** the existing terminology / character / surrounding-paragraphs sections are unaffected
+
+### Requirement: AI discovers chapter context via query_chapter
+
+The system SHALL inform AI tasks that chapter-level semantic context must be requested on demand via the `query_chapter` tool rather than arriving pre-injected.
+
+#### Scenario: Translation / polish / proofread system prompt advertises the tool
+
+- **GIVEN** a translation, polish, or proofread system prompt is being assembled
+- **WHEN** the tool-use guidance section is rendered
+- **THEN** the prompt describes `query_chapter` as the way to locate semantically relevant chapters for the current task
+- **AND** the prompt notes that `get_chapter_info` returns full chapter content but no summary
+
+#### Scenario: No fallback injection when tool is unavailable
+
+- **GIVEN** the embedding service has failed to initialize
+- **WHEN** a task prompt is built
+- **THEN** the system does not substitute a chapter summary or any generated context in place of the missing tool
+- **AND** the AI proceeds with whatever context was otherwise provided

@@ -1,4 +1,9 @@
-## ADDED Requirements
+# help-docs Specification
+
+## Purpose
+定义帮助文档的存放位置、首页文档与多文档组织方式，使其同时可供 Web UI 与 AI 助手使用。
+
+## Requirements
 
 ### Requirement: Help documentation storage
 

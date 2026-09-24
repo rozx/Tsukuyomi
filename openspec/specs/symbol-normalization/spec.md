@@ -1,7 +1,6 @@
-# Symbol Normalization
+# symbol-normalization Specification
 
-## Overview
-
+## Purpose
 This capability defines how translation text symbols are normalized to ensure consistent formatting in the output.
 
 ## Requirements

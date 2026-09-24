@@ -1,8 +1,7 @@
 # ai-paragraph-tools Specification
 
 ## Purpose
-
-TBD - created by archiving change allow-cross-chunk-paragraphs. Update Purpose after archive.
+定义 AI 段落工具的行为：跨分块获取上下文、与提交类工具协同、跟踪段落分配、聚焦的任务提示，以及段落序号采用章节原始序号。
 
 ## Requirements
 

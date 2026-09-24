@@ -1,4 +1,9 @@
-## ADDED Requirements
+# first-launch-quick-start-popup Specification
+
+## Purpose
+首次启动时自动展示基于 front-page 帮助文档的快速开始弹窗，并持久化、同步其关闭状态。
+
+## Requirements
 
 ### Requirement: 首次启动自动展示快速开始弹窗
 
