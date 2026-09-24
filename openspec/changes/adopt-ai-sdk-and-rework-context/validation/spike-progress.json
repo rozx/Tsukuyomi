@@ -1,0 +1,7758 @@
+{
+  "recordedAt": "2026-09-24T19:29:24.404120+00:00",
+  "transport": "用户配置的自建 OpenAI 兼容路由",
+  "fixture": {
+    "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+    "chapterByModel": {
+      "deepseek-v4-pro": "ee77badd",
+      "deepseek-v4.1-flash": "4e84f34c",
+      "glm-5.3": "582bb5ae",
+      "glm-5.3-flashx": "54033e66",
+      "gpt-6-luna": "c2b0b3ee",
+      "gpt-6-sol(high)": "cd121d59",
+      "kimi-k3": "c1c1a373"
+    }
+  },
+  "runs": [
+    {
+      "actions": [
+        {
+          "entity": "help_doc",
+          "tool": "list_help_docs",
+          "type": "read"
+        },
+        {
+          "entity": "help_doc",
+          "tool": "get_help_doc",
+          "type": "read"
+        }
+      ],
+      "finishedAt": "2026-09-24T18:37:55.022Z",
+      "kind": "assistant",
+      "label": "assistant:deepseek-v4-pro",
+      "maxRequests": 10,
+      "model": "deepseek-v4-pro",
+      "requestCount": 3,
+      "result": {
+        "historyLength": 7,
+        "summary": false,
+        "taskId": "1790275068193-05qwf001b",
+        "text": "配置一个模型需提供：模型名称、温度、提供商（OpenAI/Gemini）、API Key、模型标识，以及 OpenAI 提供商所需的「基础地址」（Gemini 无需填写），必要时还可设置 CORS 代理与自定义请求头。"
+      },
+      "startedAt": "2026-09-24T18:37:48.192Z",
+      "status": "passed"
+    },
+    {
+      "actions": [
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        }
+      ],
+      "error": "signal is aborted without reason",
+      "finishedAt": "2026-09-24T18:41:24.973Z",
+      "kind": "translation",
+      "label": "translation:deepseek-v4-pro",
+      "maxRequests": 10,
+      "model": "deepseek-v4-pro",
+      "requestCount": 5,
+      "startedAt": "2026-09-24T18:38:54.956Z",
+      "status": "aborted"
+    },
+    {
+      "actions": [
+        {
+          "entity": "term",
+          "tool": "search_terms_by_keywords",
+          "type": "read"
+        },
+        {
+          "entity": "memory",
+          "tool": "search_memories",
+          "type": "read"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "chapter",
+          "tool": "get_next_chapter",
+          "type": "read"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "character",
+          "type": "create"
+        },
+        {
+          "entity": "character",
+          "type": "create"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "chapter",
+          "tool": "update_chapter_title",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "translation",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        }
+      ],
+      "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+      "chapterId": "ee77badd",
+      "error": "译文未完整写回四个段落",
+      "finishedAt": "2026-09-24T18:47:25.941Z",
+      "kind": "translation",
+      "label": "translation:deepseek-v4-pro",
+      "maxRequests": 12,
+      "model": "deepseek-v4-pro",
+      "persistenceVerification": {
+        "method": "返回值交由调用方保存；初次测试未配置增量回调",
+        "translatedCount": 4
+      },
+      "requestCount": 12,
+      "result": {
+        "taskId": "1790275544516-fmh1firqb",
+        "text": "月光洒在窗边的旧书上。\n\n「这一页里，还藏着一个无人知晓的故事。」栞说道。\n\n蓮静静地点头，把凉掉的茶挪到了桌边。\n\n两人从第一句话开始，缓缓地读了起来。",
+        "translatedCount": 0,
+        "translations": [
+          {
+            "id": "456d643b",
+            "translation": "月光洒在窗边的旧书上。"
+          },
+          {
+            "id": "0533f704",
+            "translation": "「这一页里，还藏着一个无人知晓的故事。」栞说道。"
+          },
+          {
+            "id": "2e3a7a3b",
+            "translation": "蓮静静地点头，把凉掉的茶挪到了桌边。"
+          },
+          {
+            "id": "cbb4894b",
+            "translation": "两人从第一句话开始，缓缓地读了起来。"
+          }
+        ]
+      },
+      "startedAt": "2026-09-24T18:45:44.511Z",
+      "status": "failed",
+      "timeoutSeconds": 240
+    },
+    {
+      "actions": [
+        {
+          "entity": "help_doc",
+          "tool": "list_help_docs",
+          "type": "read"
+        },
+        {
+          "entity": "help_doc",
+          "tool": "get_help_doc",
+          "type": "read"
+        }
+      ],
+      "finishedAt": "2026-09-24T18:50:16.378Z",
+      "kind": "assistant",
+      "label": "assistant:gpt-6-luna",
+      "maxRequests": 6,
+      "model": "gpt-6-luna",
+      "requestCount": 3,
+      "result": {
+        "historyLength": 7,
+        "summary": false,
+        "taskId": "1790275806078-rbjek7k3o",
+        "text": "配置模型需要填写启用状态、模型名称、温度、提供商、API Key 和模型标识；若选择 OpenAI，还需填写基础地址。"
+      },
+      "startedAt": "2026-09-24T18:50:06.077Z",
+      "status": "passed",
+      "timeoutSeconds": 90
+    },
+    {
+      "actions": [
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "chapter",
+          "tool": "update_chapter_title",
+          "type": "update"
+        },
+        {
+          "entity": "translation",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        }
+      ],
+      "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+      "chapterId": "c2b0b3ee",
+      "error": "SPIKE_REQUEST_LIMIT",
+      "finishedAt": "2026-09-24T18:50:52.615Z",
+      "kind": "translation",
+      "label": "translation:gpt-6-luna",
+      "maxRequests": 12,
+      "model": "gpt-6-luna",
+      "requestCount": 13,
+      "startedAt": "2026-09-24T18:50:16.378Z",
+      "status": "aborted",
+      "timeoutSeconds": 240
+    },
+    {
+      "actions": [
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "chapter",
+          "tool": "update_chapter_title",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "translation",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        }
+      ],
+      "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+      "callbackParagraphIds": ["7038b8e7", "824de2b4", "7e902e15", "87b9fdec"],
+      "chapterId": "c2b0b3ee",
+      "finishedAt": "2026-09-24T18:54:06.456Z",
+      "kind": "translation",
+      "label": "translation:gpt-6-luna",
+      "maxRequests": 32,
+      "model": "gpt-6-luna",
+      "requestCount": 15,
+      "result": {
+        "taskId": "1790275989297-j8t9y6f8a",
+        "text": "月光照亮了窗边那本旧书。\n\n「这页里，藏着一个至今无人知晓的故事。」栞说道。\n\n蓮静静地点了点头，把凉透的茶挪到桌子一角。\n\n两人从第一句话开始，慢慢读了起来。",
+        "translatedCount": 4,
+        "translations": [
+          {
+            "id": "7038b8e7",
+            "translation": "月光照亮了窗边那本旧书。"
+          },
+          {
+            "id": "824de2b4",
+            "translation": "「这页里，藏着一个至今无人知晓的故事。」栞说道。"
+          },
+          {
+            "id": "7e902e15",
+            "translation": "蓮静静地点了点头，把凉透的茶挪到桌子一角。"
+          },
+          {
+            "id": "87b9fdec",
+            "translation": "两人从第一句话开始，慢慢读了起来。"
+          }
+        ]
+      },
+      "startedAt": "2026-09-24T18:53:09.289Z",
+      "status": "passed",
+      "timeoutSeconds": 240
+    },
+    {
+      "actions": [
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "chapter",
+          "tool": "update_chapter_title",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "translation",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        }
+      ],
+      "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+      "callbackParagraphIds": ["456d643b", "0533f704", "2e3a7a3b", "cbb4894b"],
+      "chapterId": "ee77badd",
+      "finishedAt": "2026-09-24T18:54:58.738Z",
+      "kind": "translation",
+      "label": "translation:deepseek-v4-pro",
+      "maxRequests": 32,
+      "model": "deepseek-v4-pro",
+      "requestCount": 9,
+      "result": {
+        "taskId": "1790276046472-4d9bpisn1",
+        "text": "月光照亮了窗边的旧书。\n\n「这一页里，藏着还没有任何人知晓的故事。」栞说道。\n\n蓮静静地点头，把凉了的茶推到桌子的一角。\n\n两人从第一句开始，缓缓读了起来。",
+        "translatedCount": 4,
+        "translations": [
+          {
+            "id": "456d643b",
+            "translation": "月光照亮了窗边的旧书。"
+          },
+          {
+            "id": "0533f704",
+            "translation": "「这一页里，藏着还没有任何人知晓的故事。」栞说道。"
+          },
+          {
+            "id": "2e3a7a3b",
+            "translation": "蓮静静地点头，把凉了的茶推到桌子的一角。"
+          },
+          {
+            "id": "cbb4894b",
+            "translation": "两人从第一句开始，缓缓读了起来。"
+          }
+        ]
+      },
+      "startedAt": "2026-09-24T18:54:06.456Z",
+      "status": "passed",
+      "timeoutSeconds": 240
+    },
+    {
+      "actions": [
+        {
+          "entity": "help_doc",
+          "tool": "list_help_docs",
+          "type": "read"
+        },
+        {
+          "entity": "help_doc",
+          "tool": "get_help_doc",
+          "type": "read"
+        }
+      ],
+      "finishedAt": "2026-09-24T18:55:08.824Z",
+      "kind": "assistant",
+      "label": "assistant:gpt-6-sol(high)",
+      "maxRequests": 6,
+      "model": "gpt-6-sol(high)",
+      "requestCount": 3,
+      "result": {
+        "historyLength": 7,
+        "summary": false,
+        "taskId": "1790276098738-b59y0fepe",
+        "text": "配置一个模型须填写模型名称、提供商（OpenAI 或 Gemini）、API Key 和模型标识；选择 OpenAI 时还须填写基础地址，启用状态、温度及其他参数可按需设置。"
+      },
+      "startedAt": "2026-09-24T18:54:58.738Z",
+      "status": "passed",
+      "timeoutSeconds": 90
+    },
+    {
+      "actions": [
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "chapter",
+          "tool": "get_previous_chapter",
+          "type": "read"
+        },
+        {
+          "entity": "paragraph",
+          "tool": "find_paragraph_by_keywords",
+          "type": "read"
+        },
+        {
+          "entity": "paragraph",
+          "tool": "find_paragraph_by_keywords",
+          "type": "read"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "chapter",
+          "tool": "update_chapter_title",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "translation",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        }
+      ],
+      "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+      "callbackParagraphIds": ["f9cd212e", "10131d8c", "040812ca", "c54e00ca"],
+      "chapterId": "cd121d59",
+      "finishedAt": "2026-09-24T18:56:09.393Z",
+      "kind": "translation",
+      "label": "translation:gpt-6-sol(high)",
+      "maxRequests": 32,
+      "model": "gpt-6-sol(high)",
+      "requestCount": 15,
+      "result": {
+        "taskId": "1790276108836-l09xjeysb",
+        "text": "月光照亮了窗边那本旧书。\n\n「这页里，藏着一个至今无人知晓的故事。」栞说道。\n\n蓮静静地点了点头，把凉透的茶挪到桌子一角。\n\n两人从第一句话开始，慢慢读了起来。",
+        "translatedCount": 4,
+        "translations": [
+          {
+            "id": "f9cd212e",
+            "translation": "月光照亮了窗边那本旧书。"
+          },
+          {
+            "id": "10131d8c",
+            "translation": "「这页里，藏着一个至今无人知晓的故事。」栞说道。"
+          },
+          {
+            "id": "040812ca",
+            "translation": "蓮静静地点了点头，把凉透的茶挪到桌子一角。"
+          },
+          {
+            "id": "c54e00ca",
+            "translation": "两人从第一句话开始，慢慢读了起来。"
+          }
+        ]
+      },
+      "startedAt": "2026-09-24T18:55:08.824Z",
+      "status": "passed",
+      "timeoutSeconds": 240
+    },
+    {
+      "actions": [],
+      "error": "signal is aborted without reason",
+      "finishedAt": "2026-09-24T18:57:39.408Z",
+      "kind": "assistant",
+      "label": "assistant:glm-5.3-flashx",
+      "maxRequests": 6,
+      "model": "glm-5.3-flashx",
+      "requestCount": 1,
+      "startedAt": "2026-09-24T18:56:09.393Z",
+      "status": "aborted",
+      "timeoutSeconds": 90
+    },
+    {
+      "backend": "ai-sdk",
+      "chunks": 0,
+      "error": "All credentials for model glm-5.3-flashx are cooling down via provider openai-compatible-glm (last error: 1311: Your current subscription plan does not yet include access to GLM-5.3-FlashX)",
+      "finishedAt": "2026-09-24T19:00:17.417Z",
+      "kind": "connectivity",
+      "label": "connectivity:ai-sdk:glm-5.3-flashx",
+      "model": "glm-5.3-flashx",
+      "requestCount": 1,
+      "startedAt": "2026-09-24T19:00:10.506Z",
+      "status": "failed"
+    },
+    {
+      "backend": "legacy",
+      "chunks": 0,
+      "error": "Request timed out.",
+      "finishedAt": "2026-09-24T19:02:20.320Z",
+      "kind": "connectivity",
+      "label": "connectivity:legacy:glm-5.3-flashx",
+      "model": "glm-5.3-flashx",
+      "requestCount": 1,
+      "startedAt": "2026-09-24T19:00:17.417Z",
+      "status": "timeout"
+    },
+    {
+      "actions": [
+        {
+          "entity": "help_doc",
+          "tool": "list_help_docs",
+          "type": "read"
+        },
+        {
+          "entity": "help_doc",
+          "tool": "get_help_doc",
+          "type": "read"
+        }
+      ],
+      "finishedAt": "2026-09-24T19:03:53.097Z",
+      "kind": "assistant",
+      "label": "assistant:glm-5.3",
+      "maxRequests": 6,
+      "model": "glm-5.3",
+      "requestCount": 3,
+      "result": {
+        "historyLength": 7,
+        "summary": false,
+        "taskId": "1790276615580-5fzu5pgxw",
+        "text": "验证毕，两步工具各司其职，数据未动分毫。仅以一句作答：\n\n配置一个模型需要填写模型名称、提供商（OpenAI 或 Gemini）、API Key 与模型标识这四项必填信息（其中 OpenAI 还需基础地址 baseUrl，Gemini 则无需），并可按需选填温度、启用开关、CORS 代理、自定义请求头及各任务的默认用途设置。"
+      },
+      "startedAt": "2026-09-24T19:03:35.580Z",
+      "status": "passed",
+      "timeoutSeconds": 90
+    },
+    {
+      "actions": [
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "chapter",
+          "tool": "update_chapter_title",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "translation",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        }
+      ],
+      "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+      "callbackParagraphIds": ["a8224794", "15d750b9", "ebe0a674", "6d2b2bde"],
+      "chapterId": "582bb5ae",
+      "finishedAt": "2026-09-24T19:05:03.012Z",
+      "kind": "translation",
+      "label": "translation:glm-5.3",
+      "maxRequests": 32,
+      "model": "glm-5.3",
+      "requestCount": 8,
+      "result": {
+        "taskId": "1790276633113-syo2r50pd",
+        "text": "月光洒落在窗边的旧书上。\n\n「这一页里，还藏着谁都不知道的故事」栞说道。\n\n蓮静静地点了点头，把凉掉的茶挪到了桌子一角。\n\n两人从开篇第一句开始，慢慢地读了起来。",
+        "translatedCount": 4,
+        "translations": [
+          {
+            "id": "a8224794",
+            "translation": "月光洒落在窗边的旧书上。"
+          },
+          {
+            "id": "15d750b9",
+            "translation": "「这一页里，还藏着谁都不知道的故事」栞说道。"
+          },
+          {
+            "id": "ebe0a674",
+            "translation": "蓮静静地点了点头，把凉掉的茶挪到了桌子一角。"
+          },
+          {
+            "id": "6d2b2bde",
+            "translation": "两人从开篇第一句开始，慢慢地读了起来。"
+          }
+        ]
+      },
+      "startedAt": "2026-09-24T19:03:53.098Z",
+      "status": "passed",
+      "timeoutSeconds": 240
+    },
+    {
+      "actions": [
+        {
+          "entity": "help_doc",
+          "tool": "list_help_docs",
+          "type": "read"
+        },
+        {
+          "entity": "help_doc",
+          "tool": "get_help_doc",
+          "type": "read"
+        }
+      ],
+      "finishedAt": "2026-09-24T19:05:08.930Z",
+      "kind": "assistant",
+      "label": "assistant:deepseek-v4.1-flash",
+      "maxRequests": 6,
+      "model": "deepseek-v4.1-flash",
+      "requestCount": 3,
+      "result": {
+        "historyLength": 7,
+        "summary": false,
+        "taskId": "1790276703012-9h4p4sl5b",
+        "text": "配置一个模型须填写：模型名称、提供商（OpenAI 或 Gemini）、API Key、模型标识，OpenAI 另须填写基础地址（Gemini 免填），并可设温度与最大输入／输出 Token。"
+      },
+      "startedAt": "2026-09-24T19:05:03.012Z",
+      "status": "passed",
+      "timeoutSeconds": 90
+    },
+    {
+      "actions": [
+        {
+          "entity": "chapter",
+          "tool": "get_previous_chapter",
+          "type": "read"
+        },
+        {
+          "entity": "memory",
+          "tool": "search_memories",
+          "type": "read"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "chapter",
+          "tool": "update_chapter_title",
+          "type": "update"
+        },
+        {
+          "entity": "translation",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        },
+        {
+          "entity": "todo",
+          "type": "update"
+        }
+      ],
+      "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+      "callbackParagraphIds": ["fddb99d9", "ee408727", "d0f3dfd0", "52c2ed82"],
+      "chapterId": "4e84f34c",
+      "finishedAt": "2026-09-24T19:05:34.351Z",
+      "kind": "translation",
+      "label": "translation:deepseek-v4.1-flash",
+      "maxRequests": 32,
+      "model": "deepseek-v4.1-flash",
+      "requestCount": 8,
+      "result": {
+        "taskId": "1790276708950-wlljnogct",
+        "text": "月光照着窗边的旧书。\n\n「这一页里，藏着一个尚无人知晓的故事。」栞说道。\n\n蓮静静地点头，将凉透的茶挪到桌角。\n\n两人从第一句开始，缓缓地读了起来。",
+        "translatedCount": 4,
+        "translations": [
+          {
+            "id": "fddb99d9",
+            "translation": "月光照着窗边的旧书。"
+          },
+          {
+            "id": "ee408727",
+            "translation": "「这一页里，藏着一个尚无人知晓的故事。」栞说道。"
+          },
+          {
+            "id": "d0f3dfd0",
+            "translation": "蓮静静地点头，将凉透的茶挪到桌角。"
+          },
+          {
+            "id": "52c2ed82",
+            "translation": "两人从第一句开始，缓缓地读了起来。"
+          }
+        ]
+      },
+      "startedAt": "2026-09-24T19:05:08.930Z",
+      "status": "passed",
+      "timeoutSeconds": 240
+    },
+    {
+      "actions": [
+        {
+          "entity": "help_doc",
+          "tool": "list_help_docs",
+          "type": "read"
+        },
+        {
+          "entity": "help_doc",
+          "tool": "get_help_doc",
+          "type": "read"
+        }
+      ],
+      "finishedAt": "2026-09-24T19:05:54.431Z",
+      "kind": "assistant",
+      "label": "assistant:kimi-k3",
+      "maxRequests": 6,
+      "model": "kimi-k3",
+      "requestCount": 3,
+      "result": {
+        "historyLength": 7,
+        "summary": false,
+        "taskId": "1790276734351-rko3cwech",
+        "text": "配置一个模型需提供：模型名称、提供商（OpenAI 或 Gemini）、API Key、模型标识、温度（0~2），OpenAI 还须填写基础地址（Gemini 无需），另可选设置启用开关、最大输入/输出 Token、CORS 代理、自定义请求头及默认任务。"
+      },
+      "startedAt": "2026-09-24T19:05:34.351Z",
+      "status": "passed",
+      "timeoutSeconds": 90
+    },
+    {
+      "actions": [],
+      "bookId": "18633539-e202-4d09-9c6d-0e09666261f0",
+      "callbackParagraphIds": [],
+      "chapterId": "c1c1a373",
+      "kind": "translation",
+      "label": "translation:kimi-k3",
+      "maxRequests": 32,
+      "model": "kimi-k3",
+      "note": "完整结束状态在页面导航后从存储核对；末尾请求明细未保留，不推测请求总数",
+      "requestCount": null,
+      "result": {
+        "taskId": "1790276754441-hgmuvatyq",
+        "translatedCount": 4,
+        "verifiedFrom": "持久化任务已完成及章节译文读回"
+      },
+      "startedAt": "2026-09-24T19:05:54.431Z",
+      "status": "passed",
+      "timeoutSeconds": 240
+    },
+    {
+      "error": "{\"model\":\"deepseek-v4.1-flash\"}",
+      "events": [],
+      "finishedAt": "2026-09-24T19:10:01.793Z",
+      "kind": "overflow",
+      "label": "overflow:deepseek-v4.1-flash",
+      "maxRequests": 5,
+      "model": "deepseek-v4.1-flash",
+      "requestCount": 1,
+      "startedAt": "2026-09-24T19:09:44.712Z",
+      "status": "failed",
+      "syntheticCharacters": 7200027,
+      "timeoutSeconds": 180
+    },
+    {
+      "error": "{\"model\":\"deepseek-v4.1-flash\"}",
+      "events": [],
+      "finishedAt": "2026-09-24T19:13:38.184Z",
+      "kind": "overflow",
+      "label": "overflow:deepseek-v4.1-flash",
+      "maxRequests": 5,
+      "model": "deepseek-v4.1-flash",
+      "requestCount": 1,
+      "startedAt": "2026-09-24T19:13:20.966Z",
+      "status": "failed",
+      "syntheticCharacters": 7200027,
+      "timeoutSeconds": 180
+    },
+    {
+      "error": "Your input exceeds the context window of this model. Please adjust your input and try again.",
+      "events": [],
+      "finishedAt": "2026-09-24T19:15:11.212Z",
+      "kind": "overflow",
+      "label": "overflow:gpt-6-luna",
+      "maxRequests": 5,
+      "model": "gpt-6-luna",
+      "requestCount": 1,
+      "startedAt": "2026-09-24T19:14:59.119Z",
+      "status": "failed",
+      "syntheticCharacters": 7200027,
+      "timeoutSeconds": 180
+    },
+    {
+      "events": ["summary-start", "summary-end"],
+      "finishedAt": "2026-09-24T19:21:32.663Z",
+      "kind": "overflow",
+      "label": "overflow:gpt-6-luna",
+      "maxRequests": 5,
+      "model": "gpt-6-luna",
+      "requestCount": 3,
+      "result": {
+        "historyMessages": 3,
+        "summaryChars": 85,
+        "taskId": "1790277674564-higut38bs",
+        "text": "本次验证旨在确认对话摘要后能否继续正常回复。"
+      },
+      "startedAt": "2026-09-24T19:21:14.554Z",
+      "status": "recovered",
+      "syntheticCharacters": 7200027,
+      "timeoutSeconds": 180
+    },
+    {
+      "finishedAt": "2026-09-24T19:27:26.325Z",
+      "kind": "ui-assistant",
+      "label": "ui-assistant:gpt-6-sol(high)",
+      "maxRequests": 6,
+      "model": "gpt-6-sol(high)",
+      "requestCount": 3,
+      "result": {
+        "apiMessages": 6,
+        "sessionId": "4c4f3edf-33a2-484c-94bb-1747a85a75dd",
+        "text": "月詠查阅文档后确认：接入 OpenAI 兼容接口需选择 OpenAI 提供商，填写模型名称、API Key、基础地址和模型标识，并按需设置温度、Token 上限及任务用途。",
+        "toolNames": ["list_help_docs", "get_help_doc"]
+      },
+      "startedAt": "2026-09-24T19:23:36.636Z",
+      "status": "passed"
+    }
+  ],
+  "requests": [
+    {
+      "durationMs": 2563,
+      "messages": 2,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 220,
+      "request": 1,
+      "run": "assistant:deepseek-v4-pro",
+      "start": 1790275068213,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_rpZEztvoIqaSgahpupcE8882",
+          "name": "list_help_docs",
+          "rawArgumentChars": 2
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 4045,
+        "outputTokens": 80,
+        "reasoningTokens": 49
+      }
+    },
+    {
+      "durationMs": 1735,
+      "messages": 4,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 86,
+      "request": 2,
+      "run": "assistant:deepseek-v4-pro",
+      "start": 1790275070798,
+      "textChars": 25,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_EA9bQYEMiP3ODXXlwNcZ6776",
+          "name": "get_help_doc",
+          "rawArgumentChars": 29
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 3968,
+        "inputTokens": 6360,
+        "outputTokens": 94,
+        "reasoningTokens": 23
+      }
+    },
+    {
+      "durationMs": 2470,
+      "messages": 6,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 107,
+      "request": 3,
+      "run": "assistant:deepseek-v4-pro",
+      "start": 1790275072547,
+      "textChars": 109,
+      "toolCalls": [],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 6400,
+        "inputTokens": 7902,
+        "outputTokens": 74,
+        "reasoningTokens": 21
+      }
+    },
+    {
+      "durationMs": 96647,
+      "messages": 3,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 26212,
+      "request": 1,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275135000,
+      "textChars": 287,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_qELnznou4OT95WzgWJpF4760",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 209
+        }
+      ],
+      "tools": 8,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 4837,
+        "outputTokens": 7769,
+        "reasoningTokens": 7409
+      }
+    },
+    {
+      "durationMs": 3417,
+      "messages": 5,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 73,
+      "request": 2,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275231667,
+      "textChars": 20,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_F4hpOjj2UY1WHUwqYC9V5743",
+          "name": "update_task_status",
+          "rawArgumentChars": 55
+        }
+      ],
+      "tools": 8,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 12897,
+        "outputTokens": 98,
+        "reasoningTokens": 16
+      }
+    },
+    {
+      "durationMs": 33915,
+      "messages": 8,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 9273,
+      "request": 3,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275235090,
+      "textChars": 204,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_Rbx5l1iW888jfqG0p5zj3284",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 89
+        }
+      ],
+      "tools": 8,
+      "usage": {
+        "cachedInputTokens": 4480,
+        "inputTokens": 12994,
+        "outputTokens": 2907,
+        "reasoningTokens": 2691
+      }
+    },
+    {
+      "durationMs": 2893,
+      "messages": 10,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 66,
+      "request": 4,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275269013,
+      "textChars": 18,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_BhQyEwy6cCvXYnokGQqb7552",
+          "name": "update_task_status",
+          "rawArgumentChars": 53
+        }
+      ],
+      "tools": 8,
+      "usage": {
+        "cachedInputTokens": 12544,
+        "inputTokens": 16041,
+        "outputTokens": 94,
+        "reasoningTokens": 15
+      }
+    },
+    {
+      "durationMs": 13055,
+      "error": "signal is aborted without reason",
+      "messages": 12,
+      "model": "deepseek-v4-pro",
+      "name": "AbortError",
+      "request": 5,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275271907,
+      "tools": 8
+    },
+    {
+      "durationMs": 10612,
+      "messages": 3,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 1848,
+      "request": 1,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275544541,
+      "textChars": 26,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_H5ZjJ5zJai17msG64PhP6809",
+          "name": "get_character",
+          "rawArgumentChars": 13
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_01_NWGs7uYA4gIZo92ES5uh2836",
+          "name": "get_character",
+          "rawArgumentChars": 13
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_02_ymiVOLiafMhfIrsWSb4L8335",
+          "name": "search_terms_by_keywords",
+          "rawArgumentChars": 27
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_03_ENLPlURkYY8qDCPvOktp9505",
+          "name": "search_memories",
+          "rawArgumentChars": 25
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 11730,
+        "outputTokens": 772,
+        "reasoningTokens": 595
+      }
+    },
+    {
+      "durationMs": 12846,
+      "messages": 8,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 3306,
+      "request": 2,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275555496,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_k0vVIEhcjVNfaKeFYijA1090",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 46
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_01_YMXtIJjkJQdRjtPSKhy70050",
+          "name": "get_previous_chapter",
+          "rawArgumentChars": 48
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_02_YFF0IliCLe17ZzhXhdSW4820",
+          "name": "get_next_chapter",
+          "rawArgumentChars": 48
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 3328,
+        "inputTokens": 12606,
+        "outputTokens": 1000,
+        "reasoningTokens": 823
+      }
+    },
+    {
+      "durationMs": 23375,
+      "messages": 12,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 5822,
+      "request": 3,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275568388,
+      "textChars": 148,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_FkdIAelI2yveN7Lw4W9p7374",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 129
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_01_dJxXV3tcPqZgNAVuFQ0d2243",
+          "name": "create_character",
+          "rawArgumentChars": 80
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_02_ntkSK7jrwX49CsjCtn3c5995",
+          "name": "create_character",
+          "rawArgumentChars": 78
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11392,
+        "inputTokens": 13887,
+        "outputTokens": 1967,
+        "reasoningTokens": 1568
+      }
+    },
+    {
+      "durationMs": 17546,
+      "messages": 16,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 2122,
+      "request": 4,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275591794,
+      "textChars": 76,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_vJZ8XxQzJwqfPHGFEmCt1861",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 46
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12160,
+        "inputTokens": 16275,
+        "outputTokens": 1339,
+        "reasoningTokens": 1218
+      }
+    },
+    {
+      "durationMs": 3063,
+      "messages": 18,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 53,
+      "request": 5,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275609340,
+      "textChars": 18,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_oU3jj5f0Zxxx3kmdn7B45032",
+          "name": "update_task_status",
+          "rawArgumentChars": 51
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 13440,
+        "inputTokens": 17670,
+        "outputTokens": 90,
+        "reasoningTokens": 11
+      }
+    },
+    {
+      "durationMs": 3710,
+      "messages": 21,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 372,
+      "request": 6,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275612405,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_hlt4YNQBAiBMNe11eqqT8831",
+          "name": "update_chapter_title",
+          "rawArgumentChars": 55
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 15872,
+        "inputTokens": 17763,
+        "outputTokens": 158,
+        "reasoningTokens": 88
+      }
+    },
+    {
+      "durationMs": 2607,
+      "messages": 23,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 62,
+      "request": 7,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275616140,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_0bnNviZnxqCnq3rQR2cw6035",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 46
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 17280,
+        "inputTokens": 18011,
+        "outputTokens": 82,
+        "reasoningTokens": 13
+      }
+    },
+    {
+      "durationMs": 7241,
+      "messages": 25,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 1005,
+      "request": 8,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275618762,
+      "textChars": 11,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_UXGUnThOLHHDcU9ERQG94131",
+          "name": "add_translation_batch",
+          "rawArgumentChars": 299
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 17536,
+        "inputTokens": 18287,
+        "outputTokens": 626,
+        "reasoningTokens": 450
+      }
+    },
+    {
+      "durationMs": 2546,
+      "messages": 27,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 105,
+      "request": 9,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275626021,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_kjCfcgBMHjaKSa4zjwwh9733",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 46
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 17792,
+        "inputTokens": 19172,
+        "outputTokens": 95,
+        "reasoningTokens": 23
+      }
+    },
+    {
+      "durationMs": 2639,
+      "messages": 29,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 64,
+      "request": 10,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275628578,
+      "textChars": 18,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_CH89UGH6o4sBqKXHpUN12514",
+          "name": "update_task_status",
+          "rawArgumentChars": 44
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 18048,
+        "inputTokens": 19334,
+        "outputTokens": 88,
+        "reasoningTokens": 14
+      }
+    },
+    {
+      "durationMs": 11949,
+      "messages": 32,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 1785,
+      "request": 11,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275631222,
+      "textChars": 314,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_2HX75CHLg07nS4o4Smom0815",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 129
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 18944,
+        "inputTokens": 19644,
+        "outputTokens": 1001,
+        "reasoningTokens": 662
+      }
+    },
+    {
+      "durationMs": 2738,
+      "messages": 34,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 51,
+      "request": 12,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790275643190,
+      "textChars": 18,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_ULw7CF53vX4CGDLWawH89874",
+          "name": "update_task_status",
+          "rawArgumentChars": 40
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 19200,
+        "inputTokens": 20796,
+        "outputTokens": 87,
+        "reasoningTokens": 12
+      }
+    },
+    {
+      "durationMs": 2278,
+      "messages": 2,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 1,
+      "run": "assistant:gpt-6-luna",
+      "start": 1790275806086,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_g7hqruYyyUaUe8jyrD8Ae3YH",
+          "name": "list_help_docs",
+          "rawArgumentChars": 2
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 3740,
+        "outputTokens": 15,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4076,
+      "messages": 4,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 2,
+      "run": "assistant:gpt-6-luna",
+      "start": 1790275808378,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_BvbFKo0zoFQdR7sqbaXoNd9U",
+          "name": "get_help_doc",
+          "rawArgumentChars": 28
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 3584,
+        "inputTokens": 6165,
+        "outputTokens": 23,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 3908,
+      "messages": 6,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 3,
+      "run": "assistant:gpt-6-luna",
+      "start": 1790275812465,
+      "textChars": 59,
+      "toolCalls": [],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 5632,
+        "inputTokens": 7720,
+        "outputTokens": 38,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2623,
+      "messages": 3,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 1,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275816401,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_4piqJRLjO7qLEMgcQ4xfT8IC",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 11194,
+        "outputTokens": 40,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 3077,
+      "messages": 5,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 2,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275819028,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_dVDCIYtbGuzXYjmHqBNflEkX",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 9728,
+        "inputTokens": 11418,
+        "outputTokens": 39,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2754,
+      "messages": 7,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 3,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275822109,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_sWtTe2GvjuvyWTwC6rhVlhyq",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10752,
+        "inputTokens": 11661,
+        "outputTokens": 42,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2842,
+      "messages": 9,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 4,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275824869,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_bGAkrinvTjxtOYKWWnP9aIPX",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10752,
+        "inputTokens": 11867,
+        "outputTokens": 45,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2703,
+      "messages": 11,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 5,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275827717,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_Wr8rjL5mpfUVmvAQp18WH7bV",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 9728,
+        "inputTokens": 12145,
+        "outputTokens": 41,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2225,
+      "messages": 13,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 6,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275830425,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_EkPUex26EacLpVTpqJe56c7W",
+          "name": "update_task_status",
+          "rawArgumentChars": 20
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 9728,
+        "inputTokens": 12252,
+        "outputTokens": 19,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4303,
+      "messages": 16,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 7,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275832656,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_AEgRmBMPmY9CJp9ExasKAzA0",
+          "name": "update_chapter_title",
+          "rawArgumentChars": 52
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11776,
+        "inputTokens": 12281,
+        "outputTokens": 35,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4196,
+      "messages": 18,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 8,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275836973,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_7Z9wchQnBL82fPvU3r7OBPiz",
+          "name": "add_translation_batch",
+          "rawArgumentChars": 283
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11776,
+        "inputTokens": 12419,
+        "outputTokens": 136,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 3447,
+      "messages": 20,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 9,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275841183,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_ExRJ0m5K2ZIJC44QaBVGQKMZ",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11776,
+        "inputTokens": 12877,
+        "outputTokens": 45,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 3297,
+      "messages": 22,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 10,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275844635,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_aShFFcUlicjybMxAtk7he4BM",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11776,
+        "inputTokens": 13125,
+        "outputTokens": 39,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2390,
+      "messages": 24,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 11,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275847938,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_Aw7d7MxXUna24TUxzMPgPgWg",
+          "name": "update_task_status",
+          "rawArgumentChars": 19
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12800,
+        "inputTokens": 13233,
+        "outputTokens": 19,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2264,
+      "messages": 27,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 12,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275850338,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_Mfibc0HpootQDaB80fM7oCTa",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12800,
+        "inputTokens": 13513,
+        "outputTokens": 41,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 3693,
+      "messages": 3,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 1,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275989316,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_bsVo5hyL8OlQQJLpMlFBjgkv",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10752,
+        "inputTokens": 11193,
+        "outputTokens": 41,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 3049,
+      "messages": 5,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 2,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275993016,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_wFVNhyWf0m1vGvZETDTZ3mwC",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 9728,
+        "inputTokens": 11426,
+        "outputTokens": 46,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 5863,
+      "messages": 7,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 3,
+      "run": "translation:gpt-6-luna",
+      "start": 1790275996073,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_jnaPLYTN2z4MGYMMdmUEDmRI",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10752,
+        "inputTokens": 11682,
+        "outputTokens": 41,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2802,
+      "messages": 9,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 4,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276001943,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_Npnvdz6COmMaJGukim1fFEdv",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10752,
+        "inputTokens": 11880,
+        "outputTokens": 39,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4364,
+      "messages": 11,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 5,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276004750,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_uAiwEIbr3A53zqiZVFWaTVGf",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 9728,
+        "inputTokens": 12144,
+        "outputTokens": 39,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2739,
+      "messages": 13,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 6,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276009117,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_owe6HtKQM6yfmf6NvJqoFS8a",
+          "name": "update_task_status",
+          "rawArgumentChars": 20
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 9728,
+        "inputTokens": 12247,
+        "outputTokens": 19,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2446,
+      "messages": 16,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 7,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276011861,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_sebSpAesAD7ab8ZgP8wFnBAL",
+          "name": "update_chapter_title",
+          "rawArgumentChars": 52
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11776,
+        "inputTokens": 12286,
+        "outputTokens": 35,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4610,
+      "messages": 18,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 8,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276014324,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_UzBDr8e7EDJXhxWs9XdEi2bx",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11776,
+        "inputTokens": 12427,
+        "outputTokens": 43,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4001,
+      "messages": 20,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 9,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276018942,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_xk9QjuDQXDDEsaDxh14XYfpJ",
+          "name": "add_translation_batch",
+          "rawArgumentChars": 286
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11776,
+        "inputTokens": 12678,
+        "outputTokens": 139,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2593,
+      "messages": 22,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 10,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276022951,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_LgPioBJdRaHFJ4iQk89ndh0G",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11776,
+        "inputTokens": 13105,
+        "outputTokens": 46,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2413,
+      "messages": 24,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 11,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276025552,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_8YipvwAacpJvi0xIsOOg17pu",
+          "name": "update_task_status",
+          "rawArgumentChars": 19
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12800,
+        "inputTokens": 13227,
+        "outputTokens": 19,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2774,
+      "messages": 27,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 12,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276027978,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_O5p10NViirfmOqsu1acop6OE",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12800,
+        "inputTokens": 13501,
+        "outputTokens": 39,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4594,
+      "messages": 29,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 13,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276030762,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_OdS0RQt16xDbmIFCZPwa1aU6",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12800,
+        "inputTokens": 13706,
+        "outputTokens": 107,
+        "reasoningTokens": 63
+      }
+    },
+    {
+      "durationMs": 8469,
+      "messages": 31,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 14,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276035365,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_BrLaisdDVrODLivhfLO6PLBA",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12800,
+        "inputTokens": 13921,
+        "outputTokens": 56,
+        "reasoningTokens": 14
+      }
+    },
+    {
+      "durationMs": 2603,
+      "messages": 33,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 15,
+      "run": "translation:gpt-6-luna",
+      "start": 1790276043838,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_1Seoc8VMUp73iP61X9nVGQqE",
+          "name": "update_task_status",
+          "rawArgumentChars": 16
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12800,
+        "inputTokens": 14026,
+        "outputTokens": 19,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 24271,
+      "messages": 3,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 5276,
+      "request": 1,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790276046491,
+      "textChars": 66,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_Wfvhd8z209TJLrhyPaVy0521",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 209
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 3072,
+        "inputTokens": 11803,
+        "outputTokens": 1888,
+        "reasoningTokens": 1677
+      }
+    },
+    {
+      "durationMs": 2487,
+      "messages": 5,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 50,
+      "request": 2,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790276070774,
+      "textChars": 15,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_0vWlu6we943OIgpfzHbF4515",
+          "name": "update_task_status",
+          "rawArgumentChars": 51
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11136,
+        "inputTokens": 13978,
+        "outputTokens": 89,
+        "reasoningTokens": 12
+      }
+    },
+    {
+      "durationMs": 3540,
+      "messages": 8,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 220,
+      "request": 3,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790276073270,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_UF9jQ8m9cKuUcmj62hcV2609",
+          "name": "update_chapter_title",
+          "rawArgumentChars": 55
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11392,
+        "inputTokens": 14076,
+        "outputTokens": 126,
+        "reasoningTokens": 56
+      }
+    },
+    {
+      "durationMs": 2314,
+      "messages": 10,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 152,
+      "request": 4,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790276076838,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_RUIUGpRxdlxswwLJXr7W1951",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 46
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 13952,
+        "inputTokens": 14293,
+        "outputTokens": 106,
+        "reasoningTokens": 32
+      }
+    },
+    {
+      "durationMs": 4862,
+      "messages": 12,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 344,
+      "request": 5,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790276079160,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_PXeUo8isV0dUhWLviQoK6853",
+          "name": "add_translation_batch",
+          "rawArgumentChars": 300
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 13952,
+        "inputTokens": 14592,
+        "outputTokens": 360,
+        "reasoningTokens": 193
+      }
+    },
+    {
+      "durationMs": 2646,
+      "messages": 14,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 47,
+      "request": 6,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790276084029,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_GofIWMdDpxTpG25WZEDU4677",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 46
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 14080,
+        "inputTokens": 15209,
+        "outputTokens": 77,
+        "reasoningTokens": 11
+      }
+    },
+    {
+      "durationMs": 3295,
+      "messages": 16,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 47,
+      "request": 7,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790276086676,
+      "textChars": 15,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_ZrecL3CERlmG0YB1kEUI4060",
+          "name": "update_task_status",
+          "rawArgumentChars": 53
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 14336,
+        "inputTokens": 15347,
+        "outputTokens": 89,
+        "reasoningTokens": 10
+      }
+    },
+    {
+      "durationMs": 6830,
+      "messages": 19,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 898,
+      "request": 8,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790276089974,
+      "textChars": 55,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_m1CgCFf5O0w4bDEsStqa7186",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 129
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 15232,
+        "inputTokens": 15656,
+        "outputTokens": 519,
+        "reasoningTokens": 364
+      }
+    },
+    {
+      "durationMs": 1922,
+      "messages": 21,
+      "model": "deepseek-v4-pro",
+      "reasoningChars": 41,
+      "request": 9,
+      "run": "translation:deepseek-v4-pro",
+      "start": 1790276096810,
+      "textChars": 15,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_GLyd480jNH9Piuiv14MT2228",
+          "name": "update_task_status",
+          "rawArgumentChars": 46
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 15232,
+        "inputTokens": 16322,
+        "outputTokens": 87,
+        "reasoningTokens": 9
+      }
+    },
+    {
+      "durationMs": 2743,
+      "messages": 2,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 1,
+      "run": "assistant:gpt-6-sol(high)",
+      "start": 1790276098745,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_BaZWoA2SZJhYQ4NnruRN3BvT",
+          "name": "list_help_docs",
+          "rawArgumentChars": 2
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 3740,
+        "outputTokens": 15,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2362,
+      "messages": 4,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 2,
+      "run": "assistant:gpt-6-sol(high)",
+      "start": 1790276101498,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_ZAQ3s5vn8ciSAHIFtYSNkFRy",
+          "name": "get_help_doc",
+          "rawArgumentChars": 28
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 3584,
+        "inputTokens": 6165,
+        "outputTokens": 23,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4945,
+      "messages": 6,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 3,
+      "run": "assistant:gpt-6-sol(high)",
+      "start": 1790276103874,
+      "textChars": 87,
+      "toolCalls": [],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 7720,
+        "outputTokens": 51,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4218,
+      "messages": 3,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 1,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276108860,
+      "textChars": 34,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_ueM6FiQebrwYNQhJ3vhgKNub",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 11188,
+        "outputTokens": 131,
+        "reasoningTokens": 52
+      }
+    },
+    {
+      "durationMs": 3135,
+      "messages": 5,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 2,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276113083,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_FJ8NjwrRx3bt5tA6QiiKMGlZ",
+          "name": "get_previous_chapter",
+          "rawArgumentChars": 35
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 11439,
+        "outputTokens": 68,
+        "reasoningTokens": 38
+      }
+    },
+    {
+      "durationMs": 5235,
+      "messages": 7,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 3,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276116250,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_FbVUsIuWYPuZo810hThHT09d",
+          "name": "find_paragraph_by_keywords",
+          "rawArgumentChars": 70
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 11682,
+        "outputTokens": 70,
+        "reasoningTokens": 31
+      }
+    },
+    {
+      "durationMs": 4588,
+      "messages": 9,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 4,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276121588,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_DNLSWzgkccwwjFKiCbZ97mii",
+          "name": "find_paragraph_by_keywords",
+          "rawArgumentChars": 111
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 11999,
+        "outputTokens": 136,
+        "reasoningTokens": 70
+      }
+    },
+    {
+      "durationMs": 3314,
+      "messages": 11,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 5,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276126208,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_hoXlDbsahKcVqClmCIDAzKy4",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 12455,
+        "outputTokens": 60,
+        "reasoningTokens": 16
+      }
+    },
+    {
+      "durationMs": 8740,
+      "messages": 13,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 6,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276129530,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_67v27QlHjUiW3hZxWbJABMeg",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 126
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 12706,
+        "outputTokens": 148,
+        "reasoningTokens": 55
+      }
+    },
+    {
+      "durationMs": 2539,
+      "messages": 15,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 7,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276138275,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_F8yhIfvnYgiOYxVevRF4lz09",
+          "name": "update_task_status",
+          "rawArgumentChars": 20
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 12989,
+        "outputTokens": 19,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 3494,
+      "messages": 18,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 8,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276140824,
+      "textChars": 38,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_YZUV53QwdkxQrgfkFdN7Mv4e",
+          "name": "update_chapter_title",
+          "rawArgumentChars": 52
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 13016,
+        "outputTokens": 87,
+        "reasoningTokens": 12
+      }
+    },
+    {
+      "durationMs": 2891,
+      "messages": 20,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 9,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276144332,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_hSqyoBakbBzhK2WGyVHfqVmW",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 13175,
+        "outputTokens": 40,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4643,
+      "messages": 22,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 10,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276147229,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_YI70GP8yV9wVdLrE63XkLnp9",
+          "name": "add_translation_batch",
+          "rawArgumentChars": 286
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 13414,
+        "outputTokens": 136,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4307,
+      "messages": 24,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 11,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276151886,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00NDcnoJcx06vpxzqrococ7t",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 13829,
+        "outputTokens": 43,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 3599,
+      "messages": 26,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 12,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276156199,
+      "textChars": 34,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_5ka57pzRx2WKVJsHKVSmOB39",
+          "name": "update_task_status",
+          "rawArgumentChars": 19
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 13945,
+        "outputTokens": 64,
+        "reasoningTokens": 8
+      }
+    },
+    {
+      "durationMs": 3784,
+      "messages": 29,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 13,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276159806,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_OoLmmDmXCSkz3cgX2cOMbC0b",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 14249,
+        "outputTokens": 72,
+        "reasoningTokens": 29
+      }
+    },
+    {
+      "durationMs": 3455,
+      "messages": 31,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 14,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276163597,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_ks5cBP4BEpqf7D3T2uNexn8I",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 87
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 14459,
+        "outputTokens": 83,
+        "reasoningTokens": 12
+      }
+    },
+    {
+      "durationMs": 2324,
+      "messages": 33,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 15,
+      "run": "translation:gpt-6-sol(high)",
+      "start": 1790276167058,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_DmIiE1tmdrJrRXbBXl0beOgy",
+          "name": "update_task_status",
+          "rawArgumentChars": 16
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 10112,
+        "inputTokens": 14649,
+        "outputTokens": 19,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 89997,
+      "error": "signal is aborted without reason",
+      "messages": 2,
+      "model": "glm-5.3-flashx",
+      "name": "AbortError",
+      "request": 1,
+      "run": "assistant:glm-5.3-flashx",
+      "start": 1790276169401,
+      "tools": 14
+    },
+    {
+      "durationMs": 5955,
+      "messages": 2,
+      "model": "glm-5.3",
+      "reasoningChars": 595,
+      "request": 1,
+      "run": "assistant:glm-5.3",
+      "start": 1790276615600,
+      "textChars": 16,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_55af38155fd646169c1e5743",
+          "name": "list_help_docs",
+          "rawArgumentChars": 2
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 3820,
+        "outputTokens": 154,
+        "reasoningTokens": 135
+      }
+    },
+    {
+      "durationMs": 4772,
+      "messages": 4,
+      "model": "glm-5.3",
+      "reasoningChars": 132,
+      "request": 2,
+      "run": "assistant:glm-5.3",
+      "start": 1790276621589,
+      "textChars": 46,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_e2c7da713e6c47b79a808e63",
+          "name": "get_help_doc",
+          "rawArgumentChars": 28
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 3776,
+        "inputTokens": 6157,
+        "outputTokens": 83,
+        "reasoningTokens": 38
+      }
+    },
+    {
+      "durationMs": 6709,
+      "messages": 6,
+      "model": "glm-5.3",
+      "reasoningChars": 390,
+      "request": 3,
+      "run": "assistant:glm-5.3",
+      "start": 1790276626380,
+      "textChars": 163,
+      "toolCalls": [],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 6144,
+        "inputTokens": 7704,
+        "outputTokens": 255,
+        "reasoningTokens": 162
+      }
+    },
+    {
+      "durationMs": 23096,
+      "messages": 3,
+      "model": "glm-5.3",
+      "reasoningChars": 4170,
+      "request": 1,
+      "run": "translation:glm-5.3",
+      "start": 1790276633166,
+      "textChars": 110,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_c0343ae39f754d439c0c9131",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 208
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 320,
+        "inputTokens": 11636,
+        "outputTokens": 1568,
+        "reasoningTokens": 1324
+      }
+    },
+    {
+      "durationMs": 5245,
+      "messages": 5,
+      "model": "glm-5.3",
+      "reasoningChars": 64,
+      "request": 2,
+      "run": "translation:glm-5.3",
+      "start": 1790276656263,
+      "textChars": 19,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_2cc11ccb9b8147f28f0a276f",
+          "name": "update_task_status",
+          "rawArgumentChars": 20
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11264,
+        "inputTokens": 13504,
+        "outputTokens": 38,
+        "reasoningTokens": 13
+      }
+    },
+    {
+      "durationMs": 8120,
+      "messages": 8,
+      "model": "glm-5.3",
+      "reasoningChars": 967,
+      "request": 3,
+      "run": "translation:glm-5.3",
+      "start": 1790276661510,
+      "textChars": 9,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_7116554d761f4c2481737c08",
+          "name": "update_chapter_title",
+          "rawArgumentChars": 54
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 13184,
+        "inputTokens": 13522,
+        "outputTokens": 261,
+        "reasoningTokens": 226
+      }
+    },
+    {
+      "durationMs": 6335,
+      "messages": 10,
+      "model": "glm-5.3",
+      "reasoningChars": 115,
+      "request": 4,
+      "run": "translation:glm-5.3",
+      "start": 1790276669639,
+      "textChars": 34,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_f37515eaee424a6b975f7b1a",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_c3f932ad84904f638f153028",
+          "name": "add_translation_batch",
+          "rawArgumentChars": 302
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 13376,
+        "inputTokens": 13861,
+        "outputTokens": 217,
+        "reasoningTokens": 24
+      }
+    },
+    {
+      "durationMs": 5086,
+      "messages": 13,
+      "model": "glm-5.3",
+      "reasoningChars": 96,
+      "request": 5,
+      "run": "translation:glm-5.3",
+      "start": 1790276675985,
+      "textChars": 25,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_a0e791e0d2054a95b54d8076",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 45
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 13696,
+        "inputTokens": 14505,
+        "outputTokens": 70,
+        "reasoningTokens": 19
+      }
+    },
+    {
+      "durationMs": 4827,
+      "messages": 15,
+      "model": "glm-5.3",
+      "reasoningChars": 62,
+      "request": 6,
+      "run": "translation:glm-5.3",
+      "start": 1790276681072,
+      "textChars": 17,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_e1f4ac08745e4ab1a532ebf4",
+          "name": "update_task_status",
+          "rawArgumentChars": 19
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 14272,
+        "inputTokens": 14627,
+        "outputTokens": 36,
+        "reasoningTokens": 13
+      }
+    },
+    {
+      "durationMs": 12724,
+      "messages": 18,
+      "model": "glm-5.3",
+      "reasoningChars": 1126,
+      "request": 7,
+      "run": "translation:glm-5.3",
+      "start": 1790276685905,
+      "textChars": 335,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_09e07db950264c1ca468e094",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 128
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 14464,
+        "inputTokens": 14871,
+        "outputTokens": 781,
+        "reasoningTokens": 450
+      }
+    },
+    {
+      "durationMs": 4375,
+      "messages": 20,
+      "model": "glm-5.3",
+      "reasoningChars": 52,
+      "request": 8,
+      "run": "translation:glm-5.3",
+      "start": 1790276698630,
+      "textChars": 14,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_8aafbe5d810749b69de9c55f",
+          "name": "update_task_status",
+          "rawArgumentChars": 16
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 14656,
+        "inputTokens": 15801,
+        "outputTokens": 33,
+        "reasoningTokens": 12
+      }
+    },
+    {
+      "durationMs": 1826,
+      "messages": 2,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 106,
+      "request": 1,
+      "run": "assistant:deepseek-v4.1-flash",
+      "start": 1790276703021,
+      "textChars": 13,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_mai8lbtag7ldz4i94xj5f4p1",
+          "name": "list_help_docs",
+          "rawArgumentChars": 2
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 3982,
+        "outputTokens": 63,
+        "reasoningTokens": 30
+      }
+    },
+    {
+      "durationMs": 2272,
+      "messages": 4,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 61,
+      "request": 2,
+      "run": "assistant:deepseek-v4.1-flash",
+      "start": 1790276704859,
+      "textChars": 49,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_zde67yfdctsfi8qmnxp1vrkf",
+          "name": "get_help_doc",
+          "rawArgumentChars": 29
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 3968,
+        "inputTokens": 6274,
+        "outputTokens": 92,
+        "reasoningTokens": 18
+      }
+    },
+    {
+      "durationMs": 1775,
+      "messages": 6,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 0,
+      "request": 3,
+      "run": "assistant:deepseek-v4.1-flash",
+      "start": 1790276707148,
+      "textChars": 96,
+      "toolCalls": [],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 6272,
+        "inputTokens": 7814,
+        "outputTokens": 49,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4848,
+      "messages": 3,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 1563,
+      "request": 1,
+      "run": "translation:deepseek-v4.1-flash",
+      "start": 1790276708972,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_aarf7m5b9e9k8wa8042ixb6i",
+          "name": "get_previous_chapter",
+          "rawArgumentChars": 39
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_01_1hhc4mikk7sb3sdon13l9hn1",
+          "name": "search_memories",
+          "rawArgumentChars": 25
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 11764,
+        "outputTokens": 532,
+        "reasoningTokens": 429
+      }
+    },
+    {
+      "durationMs": 5444,
+      "messages": 6,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 1128,
+      "request": 2,
+      "run": "translation:deepseek-v4.1-flash",
+      "start": 1790276713872,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_h27bdc3nuevakqfwytw3i4oi",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 209
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 11392,
+        "inputTokens": 12516,
+        "outputTokens": 478,
+        "reasoningTokens": 313
+      }
+    },
+    {
+      "durationMs": 1731,
+      "messages": 8,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 22,
+      "request": 3,
+      "run": "translation:deepseek-v4.1-flash",
+      "start": 1790276719324,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_m8iswa9k33bcmbzj6606hkpj",
+          "name": "update_task_status",
+          "rawArgumentChars": 21
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12160,
+        "inputTokens": 13289,
+        "outputTokens": 44,
+        "reasoningTokens": 5
+      }
+    },
+    {
+      "durationMs": 3068,
+      "messages": 11,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 151,
+      "request": 4,
+      "run": "translation:deepseek-v4.1-flash",
+      "start": 1790276721059,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_aojsfz49e28k4gsjrav80mpo",
+          "name": "update_chapter_title",
+          "rawArgumentChars": 57
+        },
+        {
+          "hasProviderMetadata": false,
+          "id": "call_01_cgdqfr3151za7ydnr39sptxt",
+          "name": "add_translation_batch",
+          "rawArgumentChars": 296
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12928,
+        "inputTokens": 13342,
+        "outputTokens": 251,
+        "reasoningTokens": 31
+      }
+    },
+    {
+      "durationMs": 2182,
+      "messages": 14,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 0,
+      "request": 5,
+      "run": "translation:deepseek-v4.1-flash",
+      "start": 1790276724142,
+      "textChars": 7,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_00vdlzfmfjz0abi2lgc1z7mj",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 89
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 13184,
+        "inputTokens": 13980,
+        "outputTokens": 97,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 1981,
+      "messages": 16,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 35,
+      "request": 6,
+      "run": "translation:deepseek-v4.1-flash",
+      "start": 1790276726331,
+      "textChars": 7,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_o599m7c552ifxdmdelzt3csv",
+          "name": "update_task_status",
+          "rawArgumentChars": 20
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12288,
+        "inputTokens": 14226,
+        "outputTokens": 53,
+        "reasoningTokens": 8
+      }
+    },
+    {
+      "durationMs": 3865,
+      "messages": 19,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 672,
+      "request": 7,
+      "run": "translation:deepseek-v4.1-flash",
+      "start": 1790276728316,
+      "textChars": 7,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_18pl6wkgngjfbki0owr5ur67",
+          "name": "mark_todo_done",
+          "rawArgumentChars": 129
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 13824,
+        "inputTokens": 14499,
+        "outputTokens": 374,
+        "reasoningTokens": 254
+      }
+    },
+    {
+      "durationMs": 2158,
+      "messages": 21,
+      "model": "deepseek-v4.1-flash",
+      "reasoningChars": 24,
+      "request": 8,
+      "run": "translation:deepseek-v4.1-flash",
+      "start": 1790276732184,
+      "textChars": 7,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_00_7o7d2z6zu10ffdd33eia9vba",
+          "name": "update_task_status",
+          "rawArgumentChars": 17
+        }
+      ],
+      "tools": 35,
+      "usage": {
+        "cachedInputTokens": 12288,
+        "inputTokens": 15022,
+        "outputTokens": 52,
+        "reasoningTokens": 7
+      }
+    },
+    {
+      "durationMs": 4866,
+      "messages": 2,
+      "model": "kimi-k3",
+      "reasoningChars": 383,
+      "request": 1,
+      "run": "assistant:kimi-k3",
+      "start": 1790276734357,
+      "textChars": 15,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "list_help_docs:0",
+          "name": "list_help_docs",
+          "rawArgumentChars": 2
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 3472,
+        "outputTokens": 125,
+        "reasoningTokens": 98
+      }
+    },
+    {
+      "durationMs": 4414,
+      "messages": 4,
+      "model": "kimi-k3",
+      "reasoningChars": 75,
+      "request": 2,
+      "run": "assistant:kimi-k3",
+      "start": 1790276739236,
+      "textChars": 44,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "get_help_doc:1",
+          "name": "get_help_doc",
+          "rawArgumentChars": 29
+        }
+      ],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 3584,
+        "inputTokens": 5743,
+        "outputTokens": 94,
+        "reasoningTokens": 22
+      }
+    },
+    {
+      "durationMs": 10762,
+      "messages": 6,
+      "model": "kimi-k3",
+      "reasoningChars": 510,
+      "request": 3,
+      "run": "assistant:kimi-k3",
+      "start": 1790276743666,
+      "textChars": 128,
+      "toolCalls": [],
+      "tools": 14,
+      "usage": {
+        "cachedInputTokens": 5632,
+        "inputTokens": 7254,
+        "outputTokens": 234,
+        "reasoningTokens": 187
+      }
+    },
+    {
+      "messages": 3,
+      "model": "kimi-k3",
+      "request": 1,
+      "run": "translation:kimi-k3",
+      "start": 1790276754455,
+      "tools": 35
+    },
+    {
+      "durationMs": 16426,
+      "error": "{\"model\":\"deepseek-v4.1-flash\"}",
+      "messages": 6,
+      "model": "deepseek-v4.1-flash",
+      "name": "AI_APICallError",
+      "request": 1,
+      "run": "overflow:deepseek-v4.1-flash",
+      "start": 1790276985358,
+      "tools": 56
+    },
+    {
+      "durationMs": 16627,
+      "error": "{\"model\":\"deepseek-v4.1-flash\"}",
+      "messages": 6,
+      "model": "deepseek-v4.1-flash",
+      "name": "AI_APICallError",
+      "request": 1,
+      "responseBody": "{\"model\":\"deepseek-v4.1-flash\"}",
+      "run": "overflow:deepseek-v4.1-flash",
+      "start": 1790277201554,
+      "statusCode": 400,
+      "tools": 56
+    },
+    {
+      "durationMs": 11546,
+      "error": "Your input exceeds the context window of this model. Please adjust your input and try again.",
+      "messages": 6,
+      "model": "gpt-6-luna",
+      "name": "AI_APICallError",
+      "request": 1,
+      "responseBody": "{\"error\":{\"message\":\"Your input exceeds the context window of this model. Please adjust your input and try again.\",\"type\":\"invalid_request_error\",\"code\":\"context_too_large\"}}",
+      "run": "overflow:gpt-6-luna",
+      "start": 1790277299662,
+      "statusCode": 400,
+      "tools": 56
+    },
+    {
+      "durationMs": 10767,
+      "error": "Your input exceeds the context window of this model. Please adjust your input and try again.",
+      "messages": 6,
+      "model": "gpt-6-luna",
+      "name": "AI_APICallError",
+      "request": 1,
+      "responseBody": "{\"error\":{\"message\":\"Your input exceeds the context window of this model. Please adjust your input and try again.\",\"type\":\"invalid_request_error\",\"code\":\"context_too_large\"}}",
+      "run": "overflow:gpt-6-luna",
+      "start": 1790277675169,
+      "statusCode": 400,
+      "tools": 56
+    },
+    {
+      "durationMs": 4380,
+      "messages": 2,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 2,
+      "run": "overflow:gpt-6-luna",
+      "start": 1790277685939,
+      "textChars": 85,
+      "toolCalls": [],
+      "tools": 0,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 865,
+        "outputTokens": 65,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2328,
+      "messages": 2,
+      "model": "gpt-6-luna",
+      "reasoningChars": 0,
+      "request": 3,
+      "run": "overflow:gpt-6-luna",
+      "start": 1790277690328,
+      "textChars": 22,
+      "toolCalls": [],
+      "tools": 56,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 12129,
+        "outputTokens": 20,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2583,
+      "messages": 2,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 1,
+      "run": "ui-assistant:gpt-6-sol(high)",
+      "start": 1790277832385,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_D65qqke5sU1X550PWZb4VJKE",
+          "name": "list_help_docs",
+          "rawArgumentChars": 2
+        }
+      ],
+      "tools": 56,
+      "usage": {
+        "cachedInputTokens": 0,
+        "inputTokens": 12077,
+        "outputTokens": 15,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 2135,
+      "messages": 4,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 2,
+      "run": "ui-assistant:gpt-6-sol(high)",
+      "start": 1790277834993,
+      "textChars": 0,
+      "toolCalls": [
+        {
+          "hasProviderMetadata": false,
+          "id": "call_MUaXUkV4fYZ9nZJzguXbv689",
+          "name": "get_help_doc",
+          "rawArgumentChars": 28
+        }
+      ],
+      "tools": 56,
+      "usage": {
+        "cachedInputTokens": 11904,
+        "inputTokens": 14502,
+        "outputTokens": 23,
+        "reasoningTokens": 0
+      }
+    },
+    {
+      "durationMs": 4121,
+      "messages": 6,
+      "model": "gpt-6-sol(high)",
+      "reasoningChars": 0,
+      "request": 3,
+      "run": "ui-assistant:gpt-6-sol(high)",
+      "start": 1790277837150,
+      "textChars": 86,
+      "toolCalls": [],
+      "tools": 56,
+      "usage": {
+        "cachedInputTokens": 14336,
+        "inputTokens": 16057,
+        "outputTokens": 57,
+        "reasoningTokens": 0
+      }
+    }
+  ],
+  "http": [
+    {
+      "at": "2026-09-24T18:37:48.218Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "assistant:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:37:50.801Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "assistant:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:37:52.550Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "assistant:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:38:55.001Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:40:31.669Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:40:35.092Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:41:09.016Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:41:11.911Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:45:44.543Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:45:55.497Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:46:08.391Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:46:31.797Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:46:49.343Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:46:52.407Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:46:56.144Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:46:58.766Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:47:06.025Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:47:08.581Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:47:11.227Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:47:23.195Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 4,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 3,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:06.088Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "assistant:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:50:08.379Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "assistant:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:12.466Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "assistant:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:16.402Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:50:19.030Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:22.111Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:24.870Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:27.719Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:30.427Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:32.658Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:36.976Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:41.186Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:44.638Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:47.941Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:50:50.341Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:09.317Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:53:13.017Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:16.076Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:21.946Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:24.752Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:29.118Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:31.862Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:34.327Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:38.945Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:42.952Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:45.555Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:47.981Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:50.766Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:53:55.369Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:03.841Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-luna",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:06.493Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:54:30.776Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:33.272Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:36.840Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:39.163Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:44.030Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:46.678Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:49.976Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:56.812Z",
+      "model": "deepseek-v4-pro",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4-pro",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:54:58.745Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "assistant:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:55:01.498Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "assistant:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:03.875Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "assistant:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:08.861Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:55:13.085Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:16.251Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:21.590Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:26.210Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:29.532Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:38.277Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:40.827Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:44.335Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:47.231Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:51.889Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:56.201Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:55:59.809Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:56:03.600Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:56:07.061Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "translation:gpt-6-sol(high)",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T18:56:09.402Z",
+      "model": "glm-5.3-flashx",
+      "requestsUsage": true,
+      "run": "assistant:glm-5.3-flashx",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:56:46.520Z",
+      "model": "glm-5.3-flashx",
+      "requestsUsage": true,
+      "run": "assistant:glm-5.3-flashx",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T18:57:14.921Z",
+      "model": "glm-5.3-flashx",
+      "requestsUsage": true,
+      "run": "assistant:glm-5.3-flashx",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:00:10.508Z",
+      "model": "glm-5.3-flashx",
+      "requestsUsage": true,
+      "run": "connectivity:ai-sdk:glm-5.3-flashx",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:00:13.223Z",
+      "model": "glm-5.3-flashx",
+      "requestsUsage": true,
+      "run": "connectivity:ai-sdk:glm-5.3-flashx",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:00:17.307Z",
+      "model": "glm-5.3-flashx",
+      "requestsUsage": true,
+      "run": "connectivity:ai-sdk:glm-5.3-flashx",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:00:17.425Z",
+      "model": "glm-5.3-flashx",
+      "requestsUsage": false,
+      "run": "connectivity:legacy:glm-5.3-flashx",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:02:19.543Z",
+      "model": "glm-5.3-flashx",
+      "requestsUsage": false,
+      "run": "connectivity:legacy:glm-5.3-flashx",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:02:20.319Z",
+      "model": "glm-5.3-flashx",
+      "requestsUsage": false,
+      "run": "connectivity:legacy:glm-5.3-flashx",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:03:35.602Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "assistant:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:03:41.591Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "assistant:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:03:46.382Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "assistant:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:03:53.168Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "translation:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:04:16.265Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "translation:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:04:21.512Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "translation:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:04:29.640Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "translation:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:04:35.988Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "translation:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:04:41.075Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "translation:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:04:45.908Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "translation:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:04:58.633Z",
+      "model": "glm-5.3",
+      "requestsUsage": true,
+      "run": "translation:glm-5.3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:03.022Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "assistant:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:05:04.860Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "assistant:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:07.149Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "assistant:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:08.973Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:05:13.874Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:19.326Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:21.062Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:24.145Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:26.334Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:28.320Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:32.186Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "translation:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 2,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:34.358Z",
+      "model": "kimi-k3",
+      "requestsUsage": true,
+      "run": "assistant:kimi-k3",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:05:39.237Z",
+      "model": "kimi-k3",
+      "requestsUsage": true,
+      "run": "assistant:kimi-k3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:43.668Z",
+      "model": "kimi-k3",
+      "requestsUsage": true,
+      "run": "assistant:kimi-k3",
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": true,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:05:54.456Z",
+      "model": "kimi-k3",
+      "requestsUsage": true,
+      "run": "translation:kimi-k3",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:09:45.411Z",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "overflow:deepseek-v4.1-flash",
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:13:21.574Z",
+      "errorBody": "{\"model\":\"deepseek-v4.1-flash\"}",
+      "model": "deepseek-v4.1-flash",
+      "requestsUsage": true,
+      "run": "overflow:deepseek-v4.1-flash",
+      "status": 400,
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:14:59.676Z",
+      "errorBody": "{\"error\":{\"message\":\"Your input exceeds the context window of this model. Please adjust your input and try again.\",\"type\":\"invalid_request_error\",\"code\":\"context_too_large\"}}",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "overflow:gpt-6-luna",
+      "status": 400,
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:21:15.226Z",
+      "errorBody": "{\"error\":{\"message\":\"Your input exceeds the context window of this model. Please adjust your input and try again.\",\"type\":\"invalid_request_error\",\"code\":\"context_too_large\"}}",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "overflow:gpt-6-luna",
+      "status": 400,
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:21:25.940Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "overflow:gpt-6-luna",
+      "status": 200,
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:21:30.329Z",
+      "model": "gpt-6-luna",
+      "requestsUsage": true,
+      "run": "overflow:gpt-6-luna",
+      "status": 200,
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:23:52.387Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "ui-assistant:gpt-6-sol(high)",
+      "status": 200,
+      "toolChoice": "auto",
+      "toolTurns": []
+    },
+    {
+      "at": "2026-09-24T19:23:54.996Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "ui-assistant:gpt-6-sol(high)",
+      "status": 200,
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    },
+    {
+      "at": "2026-09-24T19:23:57.152Z",
+      "model": "gpt-6-sol(high)",
+      "requestsUsage": true,
+      "run": "ui-assistant:gpt-6-sol(high)",
+      "status": 200,
+      "toolChoice": "auto",
+      "toolTurns": [
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        },
+        {
+          "count": 1,
+          "emptyContent": false,
+          "hasReasoning": false,
+          "hasReasoningField": true
+        }
+      ]
+    }
+  ]
+}

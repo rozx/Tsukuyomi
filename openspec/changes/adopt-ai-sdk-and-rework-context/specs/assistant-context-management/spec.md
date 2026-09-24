@@ -197,6 +197,23 @@ After a successful assistant compaction, the session SHALL store the updated sum
 - **WHEN** a request is made for a session with a summary
 - **THEN** the system prompt SHALL include the summary, marked as the summary of earlier conversation
 
+#### Scenario: Large kept history is persisted together with its summary
+
+- **WHEN** the serialized kept request history exceeds 512,000 characters
+- **THEN** the system SHALL still attempt to persist the summary, kept history, visible-message indices, and anchor as one session state
+- **AND** it SHALL NOT silently skip the history while saving the summary
+
+#### Scenario: Session persistence fails
+
+- **WHEN** saving the candidate session state fails, including a storage quota error
+- **THEN** the previous stored and in-memory summary, request history, indices, and anchor SHALL remain unchanged
+- **AND** the user SHALL be notified of the failure
+
+#### Scenario: Active session changes during a reply
+
+- **WHEN** the user switches to another session before the reply is saved
+- **THEN** the result SHALL be saved only to the session that initiated the request
+
 #### Scenario: Compaction shown in the transcript
 
 - **WHEN** compaction starts and finishes during a reply

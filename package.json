@@ -34,12 +34,15 @@
     "pack:electron": "bun scripts/desktop-release.ts pack"
   },
   "dependencies": {
+    "@ai-sdk/google": "^4",
+    "@ai-sdk/openai-compatible": "^3",
     "@google/generative-ai": "^0.24.1",
     "@huggingface/transformers": "^4.3",
     "@octokit/rest": "^22.0.1",
     "@primevue/themes": "^4.5.4",
     "@quasar/extras": "^1.18.0",
     "@tanstack/vue-virtual": "^3.13.30",
+    "ai": "^7",
     "axios": "^1.18.1",
     "cheerio": "^1.2.0",
     "co": "^4.6.0",
@@ -65,7 +68,8 @@
     "velopack": "1.2.158",
     "vue": "^3.5.39",
     "vue-i18n": "^11.4.6",
-    "vue-router": "^4.6.4"
+    "vue-router": "^4.6.4",
+    "zod": "^4"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

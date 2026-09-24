@@ -8,13 +8,10 @@ import type {
   TextGenerationStreamCallback,
   AvailableModelsResult,
 } from 'src/services/ai/types/ai-service';
-import type {
-  ParsedResponse,
-  ConfigJson,
-  ConfigParseResult,
-} from 'src/services/ai/types/interfaces';
+import type { ParsedResponse } from 'src/services/ai/types/interfaces';
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
 import { getErrorMessage } from 'src/utils/error-message';
+import { parseConfigJson } from '../providers/ai-sdk/config-parser';
 import { CONFIG_DISCOVERY_PROMPT } from './config-prompt';
 
 /**
@@ -45,7 +42,7 @@ export abstract class BaseAIService implements AIService {
       const modelInfo = this.buildModelInfo(config, parsedResponse);
 
       // 解析配置 JSON
-      const { maxInputTokens, maxOutputTokens } = this.parseConfigJson(parsedResponse.content);
+      const { maxInputTokens, maxOutputTokens } = parseConfigJson(parsedResponse.content);
 
       // 更新模型信息
       if (maxInputTokens !== undefined) {
@@ -219,80 +216,6 @@ export abstract class BaseAIService implements AIService {
   }
 
   /**
-   * 解析配置 JSON
-   */
-  protected parseConfigJson(content: string | null): ConfigParseResult {
-    if (!content) {
-      return {};
-    }
-
-    let maxInputTokens: number | undefined;
-    let maxOutputTokens: number | undefined;
-
-    try {
-      // 尝试解析 JSON
-      const configJson = JSON.parse(content) as ConfigJson & {
-        contextWindow?: number;
-        maxTokens?: number;
-      };
-      if (typeof configJson.maxInputTokens === 'number') {
-        maxInputTokens = configJson.maxInputTokens;
-      } else if (typeof configJson.contextWindow === 'number') {
-        // 兼容旧字段：contextWindow（总上下文窗口）
-        maxInputTokens = configJson.contextWindow;
-      }
-      if (typeof configJson.maxOutputTokens === 'number') {
-        maxOutputTokens = configJson.maxOutputTokens;
-      } else if (typeof configJson.maxTokens === 'number') {
-        // 兼容旧字段：maxTokens（历史上用于输出上限）
-        maxOutputTokens = configJson.maxTokens;
-      }
-    } catch {
-      // JSON 解析失败，尝试从文本中提取
-      const extracted = this.extractConfigFromText(content);
-      maxInputTokens = extracted.maxInputTokens;
-      maxOutputTokens = extracted.maxOutputTokens;
-    }
-
-    // 仅在值存在时包含属性，以符合 exactOptionalPropertyTypes
-    const result: ConfigParseResult = {};
-    if (maxInputTokens !== undefined) {
-      result.maxInputTokens = maxInputTokens;
-    }
-    if (maxOutputTokens !== undefined) {
-      result.maxOutputTokens = maxOutputTokens;
-    }
-    return result;
-  }
-
-  /**
-   * 从文本中提取配置信息
-   */
-  protected extractConfigFromText(text: string): ConfigParseResult {
-    const maxInputTokensMatch = text.match(/maxInputTokens["\s:]+(\d+)/i);
-    const contextWindowMatch = text.match(/contextWindow["\s:]+(\d+)/i);
-    const maxOutputTokensMatch = text.match(/maxOutputTokens["\s:]+(\d+)/i);
-    const maxTokensMatch = text.match(/maxTokens["\s:]+(\d+)/i);
-
-    const maxInputTokensRaw = firstRegexGroup(maxInputTokensMatch, contextWindowMatch);
-    const maxOutputTokensRaw = firstRegexGroup(maxOutputTokensMatch, maxTokensMatch);
-
-    const result: ConfigParseResult = {};
-
-    const maxInputTokens = parsePositiveInt(maxInputTokensRaw);
-    if (maxInputTokens !== undefined) {
-      result.maxInputTokens = maxInputTokens;
-    }
-
-    const maxOutputTokens = parsePositiveInt(maxOutputTokensRaw);
-    if (maxOutputTokens !== undefined) {
-      result.maxOutputTokens = maxOutputTokens;
-    }
-
-    return result;
-  }
-
-  /**
    * 计算最终的最大 token 数（已弃用，保留用于兼容）
    * @deprecated 使用 maxInputTokens 和 maxOutputTokens 代替
    */
@@ -323,24 +246,4 @@ export abstract class BaseAIService implements AIService {
       message: errorMessage,
     };
   }
-}
-
-/**
- * 返回首个匹配到捕获组的正则结果（按优先级）
- */
-function firstRegexGroup(...matches: Array<RegExpMatchArray | null>): string | undefined {
-  for (const match of matches) {
-    if (match?.[1]) return match[1];
-  }
-  return undefined;
-}
-
-/**
- * 将字符串解析为正整数，非法或非正时返回 undefined
- */
-function parsePositiveInt(raw: string | undefined): number | undefined {
-  if (!raw) return undefined;
-  const value = parseInt(raw, 10);
-  if (!isNaN(value) && value > 0) return value;
-  return undefined;
 }

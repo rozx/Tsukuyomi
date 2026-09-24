@@ -24,6 +24,7 @@
 ## Goals / Non-Goals
 
 **Goals:**
+
 - `AIService` 接口签名与上层调用方零改动；行为以 specs/ai-provider-adapter 为准。
 - 新旧实现可在运行时切换，用真实服务做兼容矩阵验证后再删旧实现。
 - 兼容逻辑集中在可单测的纯函数 / fetch 包装里，不依赖 AI SDK 内部序列化细节。
@@ -31,6 +32,7 @@
 - 压缩模块不依赖循环实现，今后迁到 `ToolLoopAgent` 时可直接在 `prepareStep` 里调用。
 
 **Non-Goals:**
+
 - 不使用 `ToolLoopAgent` / 多步 `stopWhen`（工具循环仍由 `task-runner` / `assistant-service` 驱动，后续 change 再迁）。
 - 不引入 AI SDK UI（`useChat` 等）、不走 `@ai-sdk/gateway`（永远传 provider 实例，不传字符串模型 id）。
 - 不新增 `AIProvider` 枚举值；模型配置 UI 只改「自动获取」的数据来源与提示文案。
@@ -49,7 +51,7 @@
 ### D2. 兼容逻辑分两层：消息转换器 + 请求级 compat fetch
 
 1. **消息转换器**（纯函数，`ChatMessage[] → ModelMessage[]`）：负责内容层规则——空 content 占位（`TOOL_CALL_PLACEHOLDER` / 「（工具返回为空）」）、丢弃空消息、prompt-only 转单条 user、system 消息提取、tool result 与 call 配对、Gemini thought signature 写回 `providerOptions.google`。
-2. **请求体改写**（`createOpenAICompatible` 的 `transformRequestBody` 选项，每次请求构造一个闭包）：改写 JSON body 的字段级规则——有 tools 时强制 `tool_choice: 'auto'`；带 `tool_calls` 的 assistant 消息补 `reasoning_content`（按 tool_call id 从本次请求的原始 `ChatMessage` 里查，查不到则 `null`）；tool 消息补 `name`；`max_tokens` 夹紧。`fetch` 选项只负责 CORS 代理，不再解析 body。
+2. **请求体改写**（`createOpenAICompatible` 的 `transformRequestBody` 选项，每次请求构造一个闭包）：改写 JSON body 的字段级规则——有 tools 时强制 `tool_choice: 'auto'`；带 `tool_calls` 的 assistant 消息补 `reasoning_content`（按 tool_call id 从本次请求的原始 `ChatMessage` 里查，查不到则 `null`）；tool 消息补 `name`；`max_tokens` 夹紧。`fetch` 请求侧负责 CORS 代理与错误重试分类，不再解析请求 body；响应侧仅按 D4 补兼容字段。
 
 **为什么字段级规则在请求体层做而不是依赖 AI SDK 序列化**：`@ai-sdk/openai-compatible` 是否把 assistant 的 reasoning part 序列化成 `reasoning_content`、是否透传 message 级 providerOptions、`toolChoice: 'auto'` 是否真的写进 body，文档都没有明确承诺，且可能随小版本变化。OpenAI Chat Completions 线格式本身是稳定的，在最终 body 上打补丁是确定的、可以直接断言请求 body 的单测。`transformRequestBody` 是 provider 官方提供的钩子，比在 fetch 里反序列化 body 更干净。**备选**：在 fetch 包装里解析 / 重写 body——仅在 spike 发现 `transformRequestBody` 拿不到需要的字段时回退。
 
@@ -60,8 +62,10 @@ OpenAI 兼容模型用 `wrapLanguageModel({ model, middleware: extractReasoningM
 ### D4. Provider 实例化与路由
 
 - `'openai'` → `createOpenAICompatible({ name, baseURL: normalize(baseUrl), apiKey, headers: customHeaders, fetch: compatFetch })`。baseUrl 规范化逻辑（补 `/v1`、`/api/ai/` 转绝对地址、默认 `https://api.openai.com/v1`）原样迁移为纯函数。
-- `'gemini'` → `createGoogleGenerativeAI({ baseURL: \`${baseUrl || 'https://generativelanguage.googleapis.com'}/v1beta\`, apiKey, headers: customHeaders, fetch: proxyFetch })`；模型名去 `models/` 前缀；名字含 `gemini-2` / `gemini-3` 时 `providerOptions.google.thinkingConfig.includeThoughts = true`；无 signal 时用 `AbortSignal.timeout(100_000)`。
+- `'gemini'` → `createGoogleGenerativeAI({ baseURL: \`${baseUrl || 'https://generativelanguage.googleapis.com'}/v1beta\`, apiKey, headers: customHeaders, fetch: proxyFetch })`；模型名去 `models/`前缀；名字含`gemini-2`/`gemini-3`时`providerOptions.google.thinkingConfig.includeThoughts = true`；无 signal 时用 `AbortSignal.timeout(100_000)`。
 - **专用 provider 仅在 spike 失败时启用**：若通用 provider 在 DeepSeek / Kimi 上丢 reasoning 或破坏多轮工具调用，按 baseUrl 域名（`api.deepseek.com` → `@ai-sdk/deepseek`，`api.moonshot.*` → `@ai-sdk/moonshotai`）分流。**备选**：在 compat fetch 里对 SSE 响应做 TransformStream，把 `reasoning` / `reasoning_details` 改写成 `reasoning_content`。两者择一，以 spike 结果决定，不影响 spec。
+
+2026-09-24 本地契约测试已证实 `@ai-sdk/openai-compatible@3.0.55` 拒绝缺失 id 的工具调用，并忽略 `reasoning_details`。因此先启用上述响应归一化：使用 AI SDK 导出的 `parseJsonEventStream` 解析 SSE，补稳定工具 id、缓冲先参数后名称的片段、丢弃最终无名调用、归一化 reasoning 字段，原始参数字符串保持不变。真实服务矩阵仍须通过，未因此勾选任务 4.2。另将 SDK 默认会重试的 408/409 标记为不可重试，并把浏览器无 Node cause.code 的连接错误标记为可重试，以满足既定 spec。
 
 ### D5. Gemini thought signature 作为不透明元数据透传
 
@@ -84,17 +88,18 @@ OpenAI 兼容模型用 `wrapLanguageModel({ model, middleware: extractReasoningM
 
 - 旧实现也能通过的用例 = 特征化测试，先在旧实现上跑绿，证明测试本身正确。
 - 旧实现本就不满足的用例（Gemini signature 回传、Gemini 代理 / baseUrl / 自定义头）只对新实现断言，先红后绿。
+- 实测补充：旧 OpenAI 的 think 内容可跨 delta，但标签本身拆分会泄漏到正文。旧实现记录为已知失败，新实现对同一 fixture 正常断言；不能将这一场景算成旧实现已经满足。
 - 请求侧断言直接检查 stub 收到的 URL / headers / JSON body，覆盖 D2 的全部字段规则。
 
 ### D8b. 透传真实 token 用量（阶段一只提供，阶段三才消费）
 
-`TextGenerationResult` 增加可选 `usage: { inputTokens?, outputTokens?, reasoningTokens?, cachedInputTokens? }`，取自 `streamText` 的 `totalUsage`（单步时等于该步用量）。OpenAI 兼容 provider 以 `includeUsage: true` 创建，请求里带 `stream_options.include_usage`；不支持的端点忽略该参数、结果里就没有 `usage`。
+`TextGenerationResult` 增加可选 `usage: { inputTokens?, outputTokens?, reasoningTokens?, cachedInputTokens? }`，取自 `streamText` 的单步 `finish-step.usage`（单步计数与 `totalUsage` 相同，但保留 `raw`）。实测 SDK 会把缺失细项补零，因此依据 `raw` 中厂商字段的存在性决定是否上报对应计数，不能把补零当成实测。OpenAI 兼容 provider 以 `includeUsage: true` 创建，请求里带 `stream_options.include_usage`；不支持的端点忽略该参数、结果里就没有 `usage`。
 
 阶段一**不**让上层消费 `usage`，保证厂商层迁移的回归可以单独定位；spike 中记录各服务是否真的返回 usage，作为阶段三（D12）的输入。
 
 ### D9. 依赖升级
 
-- 新增：`ai@^7`、`@ai-sdk/openai-compatible`、`@ai-sdk/google`、`zod@^4`（AI SDK 的 peer dependency；本变更不直接用 zod 定义 schema，现有 JSON Schema 经 `jsonSchema()` 包装）。
+- 新增：`ai@^7`、`@ai-sdk/openai-compatible`、`@ai-sdk/google`、`zod@^4`（同时用于响应归一化的宽松结构校验；工具仍沿用现有 JSON Schema，经 `jsonSchema()` 包装）。
 - 移除：`openai`、`@google/generative-ai`（删除旧实现时）。
 - 升级：`gpt-tokenizer` 3 → 4（major，只在 `utils/ai-token-utils.ts` 用 `countTokens`，需核对 v4 的 API / 模型参数变化）、`@huggingface/transformers` 4.2 → 4.3、`jsonrepair` 3.14 → 3.15。
 - 依赖升级单独成一个任务组、单独提交，先于实现落地，出问题可以单独回退。
@@ -115,7 +120,7 @@ OpenAI 兼容模型用 `wrapLanguageModel({ model, middleware: extractReasoningM
 
 ### D12. 上下文度量：锚点 + 增量 + 自校准
 
-- `ContextAnchor = { inputTokens, historyLength, promptFingerprint, modelKey, estimateAtAnchor }`：每次请求返回 `usage.inputTokens` 时记录。`historyLength` 是发送时历史条数；`promptFingerprint` 是 system prompt + 工具定义的哈希；`estimateAtAnchor` 是同一份请求内容的本地估算。
+- `ContextAnchor = { inputTokens, historyLength, historyFingerprint, promptFingerprint, promptTokens, modelKey, estimateAtAnchor }`：每次请求返回 `usage.inputTokens` 时记录。`historyLength` 是发送时历史条数；`historyFingerprint` 是该历史前缀的哈希；`promptFingerprint` 是 system prompt + 工具定义的哈希；`promptTokens` 是锚点时 system/tools 的估算值，用于计算提示词差值；`estimateAtAnchor` 是同一份请求内容未经自校准系数放大的本地估算。
 - `measureContext({ systemPrompt, tools, history, anchor, modelKey })`：
   - 有锚点且 `modelKey` 相同、`history` 以锚点时的前缀开头（`historyLength` 以内未被改写）→ `inputTokens + estimate(history.slice(historyLength))`，若 fingerprint 变了再加上 system/tools 估算差值；`estimated: false`。
   - 否则全量估算，`estimated: true`。
@@ -150,17 +155,17 @@ OpenAI 兼容模型用 `wrapLanguageModel({ model, middleware: extractReasoningM
 
 - **发送前**：`AssistantService.chat` 在构建消息后调用 `measureContext`，超阈值即 `compactHistory`（`pinnedIndex` = 新 user 消息）。UI 侧 `enforceMessageLimitBeforeSend` 只保留 200 条存储上限的拦截，不再发起摘要；`performUISummarization` 删除。
 - **循环步间**：在工具循环每次发起下一次请求前做同样检查，复用上一步的实测 `usage` 作为锚点。
-- **超限恢复**：请求抛错且 `isContextOverflowError(error)`（spec 列出的关键词，替换 `messageIndicatesTokenLimit`）→ 以减半预算 `compactHistory` 后重发一次；失败则抛出带用户可读提示的错误。导入 agent 保持现有契约：`execution` 模式下恢复失败时返回 `paused: 'context_limit'`，由 `ImportAgentService.converse` 走现有暂停 / 恢复逻辑。
+- **超限恢复**：请求抛错且 `isContextOverflowError(error)`（spec 列出的关键词，替换 `messageIndicatesTokenLimit`）→ 以减半预算 `compactHistory` 后重发一次；失败则抛出带用户可读提示的错误。导入 agent 保持暂停契约：`execution` 模式下恢复失败时返回 `paused: 'context_limit'`。该请求的恢复预算统一由 `AssistantService` 管理，`ImportAgentService.converse` 不再额外重试已耗尽恢复预算的请求；之后用户显式压缩成功仍按既有入口恢复运行。
 - **执行模式硬停改为只在恢复失败时触发**：删除 `AssistantExecution.beforeRequest` 里基于估算的 `context_limit` 检查以及 `initializeMessages` 的 `contextLimit` 参数；`context_limit` 暂停只由上面的超限恢复失败路径产生。否则它会在新的预判压缩之前按旧估算抢先暂停。
-- **结果回传**：`AssistantResult` 删除 `toolCallTokenOverhead`、`needsReset`，新增 `contextAnchor?`（本次最后一次请求的锚点）；`summary` 仅在本次回复内发生过压缩时出现。`persistChatResult` 的顺序改为：有 `summary` 时先 `applyCompaction(summary)`（只写摘要、清锚点、更新可见消息计数，**不删** `apiMessageHistory`）→ `updateApiMessageHistory(messageHistory)` → 写 `contextAnchor`。
+- **结果回传**：`AssistantResult` 删除 `toolCallTokenOverhead`、`needsReset`，新增 `contextAnchor?`（本次最后一次请求的锚点）；`summary` 仅在本次回复内发生过压缩时出现。`persistChatResult` 将结果传给统一的会话保存入口：在候选状态中应用摘要、替换 API 历史、更新可见消息索引、清除旧锚点并写入本次有效锚点；整份候选状态持久化成功后才替换内存状态。始终绑定发起请求的会话。普通回复也走同一入口，避免部分写入。
 - 摘要进度事件沿用现有 `onSummarizingStart` / `onSummarizingEnd` 回调，`useInternalSummarization` 的展示逻辑不变。
 - 从 `assistant-service.ts` 删除：`evaluateTokenBudget`、`tryPreRequestSummarize` 及其 retry / reset / fallback 链、`evaluateInLoopSummarizeTrigger` / `maybeSummarizeInLoop` / `applyInLoopSummary` 等循环内摘要方法、`trimToolMessagesIfNeeded`、`reduceMessagesToFitContext` / `reduceMessagesOnce` / `shrinkMessagesToFit`、`getFallbackMessages`、`ensureSummaryFitsInContext`、`truncateMessagesForSummary`、`createFallbackSummary`、`mergeSummaries`、`calculateToolCallTokenOverhead`、`attemptTokenLimitRecovery` 等。`summarizeSession` 由 `summarizeInto` 取代。
 
 ### D15. 会话数据与向后兼容
 
 - `ChatSession`：新增 `contextAnchor?`；`summary` 继续存摘要文本；压缩后 `apiMessageHistory = keep`、`apiMessageHistoryVisibleMessageCount` 设为当前可见消息数、`lastSummarizedMessageIndex` 设为当前可见消息数（保持旧的「无 API 历史时从可见消息重建」回退路径正确）。`toolCallTokenOverhead` 与 `updateToolCallTokenOverhead` 删除，旧值读到即忽略。
-- `summarizeAndReset` 改为 `applyCompaction(sessionId, summary)`，不再清空 `apiMessageHistory`（kept 历史随后由 `updateApiMessageHistory` 写入，见 D14 的顺序）。`ApiMessage.tool_calls` 的类型补上可选 `providerMetadata`——运行时它已经随 `pickApiMessageExtras` 原样透传并序列化进 localStorage，只是类型上缺失。
-- `apiMessageHistory` 超过 512 KB 跳过保存的现有保护保留；跳过时下次请求从可见消息重建，锚点前缀校验失败，度量自动退化为估算——不需要额外处理。
+- `summarizeAndReset` 由统一的原子结果保存入口取代，摘要与 kept 历史不会分别保存。`ApiMessage.tool_calls` 的类型补上可选 `providerMetadata`——运行时它已经随 `pickApiMessageExtras` 原样透传并序列化进 localStorage，只是类型上缺失。
+- 删除 `apiMessageHistory` 超过 512,000 字符时静默跳过保存的分支。存储失败时保留原有摘要、历史、索引和锚点，向用户报告失败；不得保存新摘要后继续读取旧历史，也不得悄悄丢弃 kept 消息。该修订于 2026-09-24 经用户确认，具体复现见 review.md。
 - 系统提示词里注入摘要的格式保持现有「## 之前的对话总结」小节，内容换成结构化摘要。
 - 导入检查点：压缩后 `messages = keep`，`summary` 更新；`remainingCalls` / `completedCallIds` 不变（规划阶段已保证有待执行调用时不压缩）。
 
@@ -179,6 +184,7 @@ OpenAI 兼容模型用 `wrapLanguageModel({ model, middleware: extractReasoningM
 - [Gemini 生成请求默认开始走 CORS 代理，代理不支持流式 POST 时 Gemini 会整体不可用] → spike 必测「Gemini + 代理」；用户可按模型关闭代理；Electron 不受影响。
 - [compat fetch 与 OpenAI 线格式耦合] → 规则集中在一个纯函数，由请求 body 断言测试守护；线格式本身稳定。
 - [AI SDK 的 AbortError / APICallError message 与旧 SDK 不同，影响上层基于 message 的 token 超限判断] → 契约测试断言错误 message 包含厂商原始错误文本；spike 用超长上下文实测一次 assistant 的 token 超限恢复路径。
+- 2026-09-24 实测补充：GPT 返回 `Your input exceeds the context window of this model. Please adjust your input and try again.`，旧检测因缺少 `token` 漏判。为完成阶段一 gate，提前实施 7.3 的共享错误分类；度量与压缩算法的其余改造仍按后续阶段执行。仅含模型名的 HTTP 400 无法区分上下文超限、参数或路由错误，不能无依据地触发摘要。
 - [bundle 体积变化] → 删除 `openai` SDK 可抵消一部分；实现前后各跑一次 `build:spa` 对比主 chunk 体积，明显变大时再考虑把 provider 包改为动态 import。
 - [`gpt-tokenizer` v4 计数结果变化，影响上下文预算与摘要触发阈值] → 升级后跑 `use-chat-summarizer.token-summary` 等相关测试，比较固定样本的计数差异；阶段三后估算只用于锚点之后的增量且会自校准，影响进一步缩小。
 - [部分 OpenAI 兼容端点不返回 usage，度量退化为纯估算] → 行为与现在一致（估算 + 自校准缺失时用默认系数），UI 标注「≈」；spike 记录各服务是否返回 usage。

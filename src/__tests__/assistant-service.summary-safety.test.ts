@@ -1,6 +1,7 @@
 import './setup';
 import { afterEach, beforeEach, describe, it, mock, spyOn } from 'bun:test';
 import { expect } from 'vitest';
+import { APICallError } from 'ai';
 import { createPinia, setActivePinia } from 'pinia';
 import { AssistantService } from 'src/services/ai/tasks/assistant-service';
 import { AIServiceFactory } from 'src/services/ai/ai-service-factory';
@@ -78,6 +79,44 @@ describe('AssistantService - 摘要失败与安全性', () => {
 
   afterEach(() => {
     mock.restore();
+  });
+
+  it('真实 context window 错误即使不含 token，也应摘要后恢复一次请求', async () => {
+    const summary = '本次对话使用合成历史验证上下文超限恢复，需要保留测试目标并继续正常回复。';
+    const onSummarizingStart = mock(() => {});
+    const onSummarizingEnd = mock(() => {});
+    generateTextMock
+      .mockImplementationOnce(() => {
+        throw new APICallError({
+          message:
+            'Your input exceeds the context window of this model. Please adjust your input and try again.',
+          url: 'https://fixture.test/v1/chat/completions',
+          requestBodyValues: {},
+          statusCode: 400,
+          isRetryable: false,
+        });
+      })
+      .mockReturnValueOnce({ text: summary })
+      .mockReturnValueOnce({ text: '已恢复回复。' });
+
+    const result = await AssistantService.chat(
+      makeAssistantModel({ maxInputTokens: 100_000 }),
+      '继续验证',
+      {
+        messageHistory: [
+          { role: 'user', content: '我们在验证上下文管理。' },
+          { role: 'assistant', content: '使用合成历史进行测试。' },
+          { role: 'user', content: '发生超限时先摘要。' },
+          { role: 'assistant', content: '摘要后继续回复。' },
+        ],
+        onSummarizingStart,
+        onSummarizingEnd,
+      },
+    );
+    expect(result).toMatchObject({ text: '已恢复回复。', summary });
+    expect(generateTextMock).toHaveBeenCalledTimes(3);
+    expect(onSummarizingStart).toHaveBeenCalledTimes(1);
+    expect(onSummarizingEnd).toHaveBeenCalledTimes(1);
   });
 
   it('预请求摘要失败时应调用 onSummarizingEnd，且后续回复正常返回', async () => {

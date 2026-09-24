@@ -1,3 +1,145 @@
+<template>
+  <div class="mobile-ai">
+    <header class="ma-header">
+      <div class="ma-heading">
+        <h1>AI 模型</h1>
+        <p>管理模型连接与默认任务</p>
+      </div>
+      <Button
+        v-if="ctx.aiModels.value.length > 0"
+        label="添加"
+        icon="pi pi-plus"
+        class="ma-header-add"
+        aria-label="添加 AI 模型"
+        @click="ctx.addModel"
+      />
+    </header>
+
+    <div class="ma-scroll">
+      <div v-if="ctx.isPageLoading.value" class="ma-loading" role="status">
+        <ProgressSpinner
+          class="ma-spinner"
+          stroke-width="4"
+          animation-duration=".8s"
+          aria-label="加载中"
+        />
+        <span>正在加载 AI 模型…</span>
+      </div>
+
+      <div v-else-if="ctx.aiModels.value.length === 0" class="ma-welcome">
+        <section class="ma-empty" aria-labelledby="ma-empty-title">
+          <div class="ma-empty-icon" aria-hidden="true">
+            <i class="pi pi-sparkles" />
+          </div>
+          <h2 id="ma-empty-title">连接你的第一个模型</h2>
+          <p class="ma-empty-description">让月詠帮你翻译、校对，<br />也聊聊书里的故事。</p>
+          <Button
+            label="添加 AI 模型"
+            icon="pi pi-plus"
+            class="ma-empty-add"
+            @click="ctx.addModel"
+          />
+          <p class="ma-supported">支持 OpenAI 兼容服务与 Google Gemini</p>
+        </section>
+
+        <section class="ma-guide" aria-labelledby="ma-guide-title">
+          <h2 id="ma-guide-title">两步开始使用</h2>
+          <ol>
+            <li>
+              <span class="ma-step" aria-hidden="true">1</span>
+              <div>
+                <h3>添加模型连接</h3>
+                <p>准备好 API Key、模型标识和服务地址。</p>
+              </div>
+            </li>
+            <li>
+              <span class="ma-step" aria-hidden="true">2</span>
+              <div>
+                <h3>选择默认任务</h3>
+                <p>翻译、校对与助手可以使用不同的模型。</p>
+              </div>
+            </li>
+          </ol>
+        </section>
+      </div>
+
+      <template v-else>
+        <section class="ma-section" aria-labelledby="ma-models-title">
+          <div class="ma-section-head">
+            <h2 id="ma-models-title">我的模型</h2>
+            <span class="ma-section-count">{{ ctx.aiModels.value.length }} 个</span>
+          </div>
+          <div class="ma-providers">
+            <section
+              v-for="group in ctx.providerGroups.value"
+              :key="group.provider"
+              class="ma-provider-card"
+              :aria-label="group.label"
+            >
+              <div class="ma-provider-head">
+                <span class="ma-provider-avatar" :style="{ color: group.color }" aria-hidden="true">
+                  {{ group.letter }}
+                </span>
+                <div class="ma-provider-body">
+                  <h3>{{ group.provider === 'openai' ? 'OpenAI 兼容' : group.label }}</h3>
+                  <p>{{ group.models.length }} 个模型 · {{ group.enabledCount }} 个已启用</p>
+                </div>
+              </div>
+              <div class="ma-provider-models">
+                <button
+                  v-for="model in group.models"
+                  :key="model.id"
+                  type="button"
+                  class="ma-model-row"
+                  :aria-label="`编辑模型 ${model.name}`"
+                  @click="ctx.editModel(model)"
+                >
+                  <span class="ma-model-main">
+                    <span class="ma-model-name">{{ model.name }}</span>
+                    <span class="ma-model-meta" :title="model.model">{{ model.model }}</span>
+                  </span>
+                  <span :class="badgeClass(model)">{{ badgeText(model) }}</span>
+                  <i class="pi pi-chevron-right ma-chevron" aria-hidden="true" />
+                </button>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="ma-section" aria-labelledby="ma-routing-title">
+          <div class="ma-section-head">
+            <h2 id="ma-routing-title">任务默认模型</h2>
+          </div>
+          <p class="ma-section-description">为每种任务选择合适的模型。</p>
+          <div class="ma-routing-card">
+            <button
+              v-for="row in ctx.taskRouting.value"
+              :key="row.task"
+              type="button"
+              class="ma-routing-row"
+              :aria-label="`编辑 ${row.label} 的默认模型`"
+              @click="ctx.openTaskRoutingPicker(row.task)"
+            >
+              <span class="ma-routing-main">
+                <span class="ma-routing-label">{{ row.label }}</span>
+                <span class="ma-routing-value" :title="row.value">{{ row.value }}</span>
+              </span>
+              <i class="pi pi-chevron-right ma-chevron" aria-hidden="true" />
+            </button>
+          </div>
+        </section>
+      </template>
+
+      <p class="ma-privacy">
+        <i class="pi pi-lock" aria-hidden="true" />
+        <span>使用自己的 API Key，密钥保存在本设备</span>
+      </p>
+    </div>
+
+    <AIRoutingPickerSheet />
+  </div>
+</template>
+
 <script setup lang="ts">
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
@@ -6,173 +148,59 @@ import AIRoutingPickerSheet from './AIRoutingPickerSheet.vue';
 
 const ctx = injectAIPage();
 
-// 模型徽章：吸收模板内的三元表达式
 const badgeClass = (model: { enabled: boolean }) =>
   model.enabled ? 'ma-badge ma-badge--on' : 'ma-badge ma-badge--off';
 const badgeText = (model: { enabled: boolean }) => (model.enabled ? '已启用' : '已禁用');
 </script>
 
-<template>
-  <div class="mobile-ai w-full h-full flex flex-col">
-    <header class="ma-largetitle">
-      <div class="ma-eyebrow">AI MODELS</div>
-      <h1 class="ma-title">AI 模型</h1>
-    </header>
-
-    <div class="ma-byok">
-      <i class="pi pi-shield" aria-hidden="true" />
-      <span>BYOK · 密钥仅存储在本设备。</span>
-    </div>
-
-    <div v-if="ctx.isPageLoading.value" class="ma-state">
-      <ProgressSpinner
-        style="width: 36px; height: 36px"
-        stroke-width="4"
-        animation-duration=".8s"
-        aria-label="加载中"
-      />
-      <span>正在加载 AI 模型…</span>
-    </div>
-
-    <div v-else-if="ctx.aiModels.value.length === 0" class="ma-state">
-      <i class="pi pi-sparkles ma-state-icon" aria-hidden="true" />
-      <span class="ma-state-title">暂无配置的 AI 模型</span>
-      <Button
-        label="添加第一个 AI 模型"
-        icon="pi pi-plus"
-        class="p-button-primary"
-        @click="ctx.addModel"
-      />
-    </div>
-
-    <div v-else class="ma-scroll">
-      <section class="ma-section">
-        <div class="ma-section-head">
-          <span class="ma-section-title">提供商</span>
-          <button class="ma-add-btn" @click="ctx.addModel">
-            <i class="pi pi-plus" aria-hidden="true" /> 添加
-          </button>
-        </div>
-        <div class="ma-providers">
-          <div
-            v-for="group in ctx.providerGroups.value"
-            :key="group.provider"
-            class="ma-provider-card"
-          >
-            <div class="ma-provider-head">
-              <div
-                class="ma-provider-avatar"
-                :style="{
-                  background: `${group.color}22`,
-                  color: group.color,
-                  borderColor: `${group.color}55`,
-                }"
-              >
-                {{ group.letter }}
-              </div>
-              <div class="ma-provider-body">
-                <div class="ma-provider-name">{{ group.label }}</div>
-                <div class="ma-provider-sub">
-                  {{ group.models.length }} 个模型 · 已启用 {{ group.enabledCount }}
-                </div>
-              </div>
-            </div>
-            <div class="ma-provider-models">
-              <div
-                v-for="model in group.models"
-                :key="model.id"
-                class="ma-model-row"
-                role="button"
-                @click="ctx.editModel(model)"
-              >
-                <div class="ma-model-main">
-                  <div class="ma-model-name">{{ model.name }}</div>
-                  <div class="ma-model-meta">{{ model.model }}</div>
-                </div>
-                <span :class="badgeClass(model)">{{ badgeText(model) }}</span>
-                <i class="pi pi-chevron-right ma-chev" aria-hidden="true" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="ma-section ma-section--last">
-        <div class="ma-section-head">
-          <span class="ma-section-title">任务路由</span>
-        </div>
-        <div class="ma-routing-card">
-          <button
-            v-for="(row, idx) in ctx.taskRouting.value"
-            :key="row.task"
-            type="button"
-            class="ma-routing-row"
-            :class="{ 'ma-routing-row--last': idx === ctx.taskRouting.value.length - 1 }"
-            :aria-label="`编辑 ${row.label} 的默认模型`"
-            @click="ctx.openTaskRoutingPicker(row.task)"
-          >
-            <span class="ma-routing-label">{{ row.label }}</span>
-            <span
-              class="ma-routing-value"
-              :class="{ 'ma-routing-value--unset': !row.modelId }"
-            >
-              <i class="pi pi-sparkles" aria-hidden="true" /> {{ row.value }}
-            </span>
-            <i class="pi pi-chevron-right ma-routing-chev" aria-hidden="true" />
-          </button>
-        </div>
-      </section>
-    </div>
-
-    <!-- 任务路由 picker —— 抽出到 AIRoutingPickerSheet -->
-    <AIRoutingPickerSheet />
-  </div>
-</template>
-
 <style scoped>
 .mobile-ai {
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
-}
-
-.ma-largetitle {
-  padding: 16px 20px 6px;
-  flex-shrink: 0;
-}
-
-.ma-eyebrow {
-  font-weight: 500;
-  font-size: 10px;
-  color: var(--moon-50-opacity-55);
-  text-transform: uppercase;
-  letter-spacing: 0.22em;
-  margin-bottom: 4px;
-}
-
-.ma-title {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-weight: 600;
-  font-size: 28px;
-  line-height: 1.15;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   color: var(--moon-50-opacity-100);
-  letter-spacing: -0.02em;
-  margin: 0;
 }
 
-.ma-byok {
-  margin: 10px 20px 0;
-  padding: 10px 12px;
-  background: var(--tsukuyomi-opacity-8); /* token: tsukuyomi-500 @ 8% */
-  border: 1px solid var(--tsukuyomi-opacity-25);
-  border-radius: 10px;
-  font-size: 12px;
-  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
+.ma-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 16px;
   flex-shrink: 0;
+  padding: 24px 20px 12px;
 }
 
-.ma-byok i {
+.ma-heading {
+  min-width: 0;
+}
+
+.ma-heading h1 {
+  margin: 0;
+  font-size: 27px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.03em;
+}
+
+.ma-heading p {
+  margin: 6px 0 0;
+  color: var(--moon-50-opacity-60);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ma-header-add {
+  min-height: 44px;
+  padding: 10px 14px;
+  flex-shrink: 0;
+  border-radius: 12px;
   font-size: 13px;
 }
 
@@ -181,248 +209,335 @@ const badgeText = (model: { enabled: boolean }) => (model.enabled ? '已启用' 
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding: 12px 20px 24px;
+  scrollbar-width: none;
 }
 
 .ma-scroll::-webkit-scrollbar {
-  width: 0;
+  display: none;
 }
 
-.ma-section {
-  padding: 16px 20px 0;
+.ma-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  min-height: 280px;
+  font-size: 14px;
+  color: var(--moon-50-opacity-65);
 }
 
-.ma-section--last {
-  padding-bottom: 24px;
+.ma-spinner {
+  width: 36px;
+  height: 36px;
+}
+
+.ma-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 20px 20px;
+  border: 1px solid var(--white-opacity-8);
+  border-radius: 20px;
+  background: var(--white-opacity-3);
+  text-align: center;
+}
+
+.ma-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 16px;
+  background: var(--white-opacity-4);
+  color: var(--moon-50-opacity-90);
+  font-size: 23px;
+}
+
+.ma-empty h2 {
+  margin: 20px 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.ma-empty-description {
+  margin: 0;
+  color: var(--moon-50-opacity-65);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.ma-empty-add {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 24px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ma-supported {
+  margin: 14px 0 0;
+  color: var(--moon-50-opacity-55);
+  font-size: 11px;
+  line-height: 1.6;
+  text-wrap: balance;
+}
+
+.ma-guide {
+  margin: 26px 4px 0;
+}
+
+.ma-guide h2,
+.ma-section-head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.ma-guide ol {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ma-guide li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ma-guide li + li {
+  margin-top: 18px;
+}
+
+.ma-step {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--white-opacity-12);
+  border-radius: 50%;
+  color: var(--moon-50-opacity-65);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ma-guide h3 {
+  margin: 2px 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.ma-guide li p {
+  margin: 0;
+  color: var(--moon-50-opacity-60);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.ma-section + .ma-section {
+  margin-top: 28px;
 }
 
 .ma-section-head {
   display: flex;
   align-items: center;
-  margin-bottom: 10px;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
-.ma-section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--moon-50-opacity-100);
-}
-
-.ma-add-btn {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+.ma-section-count {
   font-size: 12px;
-  font-weight: 500;
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-  background: var(--tsukuyomi-opacity-12);
-  border: 1px solid var(--tsukuyomi-opacity-30);
-  border-radius: 7px;
-  cursor: pointer;
-}
-
-.ma-add-btn i {
-  font-size: 10px;
+  color: var(--moon-50-opacity-60);
+  font-variant-numeric: tabular-nums;
 }
 
 .ma-providers {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
-.ma-provider-card {
-  background: var(--white-opacity-3);
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 12px;
+.ma-provider-card,
+.ma-routing-card {
   overflow: hidden;
+  border: 1px solid var(--white-opacity-8);
+  border-radius: 16px;
+  background: var(--white-opacity-3);
 }
 
 .ma-provider-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--white-opacity-6);
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--white-opacity-8);
 }
 
 .ma-provider-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-weight: 700;
-  font-size: 16px;
-  border: 1px solid;
+  display: grid;
+  place-items: center;
   flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--white-opacity-4);
+  font-size: 17px;
+  font-weight: 600;
 }
 
-.ma-provider-body {
+.ma-provider-body,
+.ma-model-main,
+.ma-routing-main {
   flex: 1;
   min-width: 0;
 }
 
-.ma-provider-name {
-  font-size: 14px;
+.ma-provider-body h3 {
+  margin: 0;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--moon-50-opacity-100);
+  line-height: 1.5;
 }
 
-.ma-provider-sub {
-  font-family: 'JetBrains Mono', monospace;
+.ma-provider-body p {
+  margin: 2px 0 0;
   font-size: 11px;
-  color: var(--moon-50-opacity-55);
-  margin-top: 2px;
+  line-height: 1.5;
+  color: var(--moon-50-opacity-60);
 }
 
-.ma-provider-models {
-  display: flex;
-  flex-direction: column;
-}
-
-.ma-model-row {
+.ma-model-row,
+.ma-routing-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--white-opacity-4);
+  gap: 12px;
+  width: 100%;
+  min-height: 68px;
+  padding: 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.ma-model-row:last-child {
-  border-bottom: none;
+.ma-model-row + .ma-model-row,
+.ma-routing-row + .ma-routing-row {
+  border-top: 1px solid var(--white-opacity-6);
 }
 
-.ma-model-row:active {
-  background: var(--white-opacity-3);
+.ma-model-row:active,
+.ma-routing-row:active {
+  background: var(--white-opacity-6);
 }
 
-.ma-model-main {
-  flex: 1;
-  min-width: 0;
+.ma-model-row:focus-visible,
+.ma-routing-row:focus-visible {
+  outline: 2px solid var(--primary-200);
+  outline-offset: -3px;
 }
 
-.ma-model-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--moon-50-opacity-90);
+.ma-model-name,
+.ma-model-meta,
+.ma-routing-label,
+.ma-routing-value {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ma-model-name,
+.ma-routing-label {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.ma-model-meta,
+.ma-routing-value {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--moon-50-opacity-60);
 }
 
 .ma-model-meta {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--moon-50-opacity-55);
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 11px;
 }
 
 .ma-badge {
   display: inline-flex;
   align-items: center;
-  padding: 3px 8px;
-  border-radius: 9999px;
-  font-size: 10px;
-  font-weight: 500;
-  border: 1px solid;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 11px;
   white-space: nowrap;
+}
+
+.ma-badge::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .ma-badge--on {
-  background: var(--color-success-opacity-12); /* token: success-500 @ 12% */
-  color: var(--color-success-300); /* token: success-300 */
-  border-color: var(--color-success-opacity-30); /* token: success-500 @ 30% */
+  color: var(--color-success-300);
 }
 
 .ma-badge--off {
-  background: var(--white-opacity-4);
-  color: var(--moon-50-opacity-55);
-  border-color: var(--white-opacity-10);
+  color: var(--moon-50-opacity-50);
 }
 
-.ma-chev {
-  color: var(--moon-50-opacity-35); /* token: moon-50 @ 35% */
+.ma-chevron {
+  flex-shrink: 0;
+  color: var(--moon-50-opacity-45);
   font-size: 11px;
 }
 
-.ma-routing-card {
-  background: var(--white-opacity-3);
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 12px;
-  padding: 4px 14px;
+.ma-section-description {
+  margin: -4px 0 14px;
+  color: var(--moon-50-opacity-60);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
-.ma-routing-row {
+.ma-privacy {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 0;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--white-opacity-6);
-  text-align: left;
-  cursor: pointer;
-  color: inherit;
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.ma-routing-row:active {
-  background: var(--white-opacity-3);
-}
-
-.ma-routing-row--last {
-  border-bottom: none;
-}
-
-.ma-routing-label {
-  font-size: 12px;
-  color: var(--moon-50-opacity-85);
-  flex: 1;
-}
-
-.ma-routing-value {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border-radius: 9999px;
-  font-size: 10px;
-  font-weight: 500;
-  background: var(--tsukuyomi-opacity-15);
-  color: var(--tsukuyomi-200); /* token: tsukuyomi-200 */
-  border: 1px solid var(--tsukuyomi-opacity-30);
-  max-width: 55%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ma-routing-value--unset {
-  background: var(--white-opacity-4);
+  justify-content: center;
+  gap: 7px;
+  margin: 28px 0 0;
   color: var(--moon-50-opacity-55);
-  border-color: var(--white-opacity-10);
+  font-size: 11px;
+  line-height: 1.6;
+  text-wrap: balance;
 }
 
-.ma-routing-value i {
-  font-size: 9px;
-  opacity: 0.85;
+.ma-privacy i {
   flex-shrink: 0;
+  font-size: 11px;
 }
 
-.ma-routing-chev {
-  color: var(--moon-50-opacity-35); /* token: moon-50 @ 35% */
-  font-size: 10px;
-  flex-shrink: 0;
+@media (prefers-reduced-motion: reduce) {
+  .ma-model-row,
+  .ma-routing-row {
+    transition: none;
+  }
 }
-
 </style>

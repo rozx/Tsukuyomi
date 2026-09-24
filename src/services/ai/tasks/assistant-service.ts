@@ -19,7 +19,7 @@ import { getTodosSystemPrompt } from './utils/todo-helper';
 import { TOOL_CALL_PLACEHOLDER, TOOL_CALL_PLACEHOLDER_VARIANTS } from './utils/stream-handler';
 import { UNLIMITED_TOKENS } from 'src/constants/ai';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
-import { getErrorMessage } from 'src/utils/error-message';
+import { isContextOverflowError } from 'src/services/ai/context/context-overflow';
 import { AssistantExecutionPaused } from './utils/assistant-execution';
 import { runAssistantBookExecution } from './utils/assistant-book-execution';
 import type {
@@ -369,14 +369,6 @@ export class AssistantService {
       start++;
     }
     return start === 0 ? messages : messages.slice(start);
-  }
-
-  /**
-   * 检查错误是否是 token 限制相关的错误
-   */
-  private static isTokenLimitError(error: unknown): boolean {
-    if (!error) return false;
-    return messageIndicatesTokenLimit(extractErrorMessage(error).toLowerCase());
   }
 
   /**
@@ -2464,7 +2456,7 @@ export class AssistantService {
     model: AIModel,
     options: AssistantServiceOptions,
   ): boolean {
-    if (!this.isTokenLimitError(error)) return false;
+    if (!isContextOverflowError(error)) return false;
     if (!options.messageHistory || options.messageHistory.length <= 2) return false;
     // 注意：maxTokens=0 表示无限制，不应仅因 maxTokens=0 就触发摘要逻辑
     const hasPositiveMaxTokensLimit =
@@ -2663,25 +2655,4 @@ export class AssistantService {
       });
     }
   }
-}
-
-/**
- * 从任意错误中提取可打印的消息字符串
- */
-function extractErrorMessage(error: unknown): string {
-  return getErrorMessage(error);
-}
-
-/**
- * 检查（小写的）错误消息是否包含常见的 token 限制关键词
- */
-function messageIndicatesTokenLimit(lowerMessage: string): boolean {
-  return (
-    lowerMessage.includes('token') &&
-    (lowerMessage.includes('limit') ||
-      lowerMessage.includes('exceed') ||
-      lowerMessage.includes('maximum') ||
-      lowerMessage.includes('too long') ||
-      lowerMessage.includes('context length'))
-  );
 }

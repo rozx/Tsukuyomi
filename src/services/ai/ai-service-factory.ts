@@ -7,12 +7,17 @@ import type {
 } from 'src/services/ai/types/ai-service';
 import { OpenAIService } from 'src/services/ai/providers/openai-service';
 import { GeminiService } from 'src/services/ai/providers/gemini-service';
+import { AiSdkAIService } from 'src/services/ai/providers/ai-sdk/service';
 
 /**
  * AI 服务工厂
  * 提供统一的 AI 服务访问接口
  */
 export class AIServiceFactory {
+  private static sdkServices: Map<AIProvider, AIService> = new Map([
+    ['openai', new AiSdkAIService('openai')],
+    ['gemini', new AiSdkAIService('gemini')],
+  ]);
   private static services: Map<AIProvider, AIService> = new Map<AIProvider, AIService>([
     ['openai', new OpenAIService()],
     ['gemini', new GeminiService()],
@@ -22,7 +27,13 @@ export class AIServiceFactory {
    * 获取指定提供商的服务实例
    */
   static getService(provider: AIProvider): AIService {
-    const service = this.services.get(provider);
+    let backend: string | null = null;
+    try {
+      backend = localStorage.getItem('tsukuyomi.aiProviderBackend');
+    } catch {
+      /* 存储被禁用时维持迁移期默认实现。 */
+    }
+    const service = (backend === 'ai-sdk' ? this.sdkServices : this.services).get(provider);
     if (!service) {
       throw new Error(`不支持的 AI 提供商: ${provider}`);
     }

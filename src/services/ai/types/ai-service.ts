@@ -66,6 +66,8 @@ export interface AITool {
 export interface AIToolCall {
   id: string;
   type: 'function';
+  /** 厂商要求在后续工具轮次回传的不透明元数据（如 Gemini thought signature）。 */
+  providerMetadata?: Record<string, Record<string, unknown>>;
   function: {
     name: string;
     arguments: string; // JSON 字符串
@@ -117,6 +119,13 @@ export interface TextGenerationResult {
   toolCalls?: AIToolCall[]; // 如果有工具调用
   finishReason?: string; // stop, length, tool_calls, content_filter, etc.
   reasoningContent?: string; // 思考内容（reasoning_content）- DeepSeek 等模型在使用工具时返回
+  /** 仅包含厂商实际报告的用量；缺失不代表零。 */
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    reasoningTokens?: number;
+    cachedInputTokens?: number;
+  };
 }
 
 /**
