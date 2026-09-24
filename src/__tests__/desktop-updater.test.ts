@@ -83,6 +83,40 @@ describe('桌面自动更新', () => {
     expect(install).not.toHaveBeenCalled();
   });
 
+  it('检查完成且无更新时记录检查时间，用于显示已是最新', async () => {
+    const updater = new DesktopUpdater({
+      version: '0.16.0',
+      check: () => Promise.resolve(null),
+      download: () => Promise.resolve(),
+      confirm: () => Promise.resolve(true),
+      prepare: () => Promise.resolve(),
+      install: () => {},
+      release: () => {},
+    });
+    expect(updater.snapshot().checkedAt).toBeUndefined();
+    await updater.check();
+    expect(updater.snapshot()).toMatchObject({ phase: 'idle', checkedAt: expect.any(Number) });
+  });
+
+  it('取消重启确认时清除上一次失败信息，避免重复提示旧原因', async () => {
+    let confirmed = true;
+    const updater = new DesktopUpdater({
+      version: '0.16.0',
+      check: () => Promise.resolve({ version: '0.16.1' }),
+      download: () => Promise.resolve(),
+      confirm: () => Promise.resolve(confirmed),
+      prepare: () => Promise.reject(new Error('正在保存')),
+      install: () => {},
+      release: () => {},
+    });
+    await updater.check();
+    await updater.restart();
+    expect(updater.snapshot().message).toBe('正在保存');
+    confirmed = false;
+    await updater.restart();
+    expect(updater.snapshot()).toMatchObject({ phase: 'ready', message: undefined });
+  });
+
   describe('已下载后继续检查', () => {
     type Target = { version: string };
     function setup(initial = '0.16.1') {

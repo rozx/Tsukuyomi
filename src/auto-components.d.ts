@@ -25,6 +25,7 @@ declare module 'vue' {
     ApiKeysSettingsTab: typeof import('./components/settings/ApiKeysSettingsTab.vue')['default']
     AppChatPanelDesktop: typeof import('./components/layout/AppChatPanelDesktop.vue')['default']
     AppFooter: typeof import('./components/layout/AppFooter.vue')['default']
+    AppFooterUpdateBadge: typeof import('./components/layout/AppFooterUpdateBadge.vue')['default']
     AppHeader: typeof import('./components/layout/AppHeader.vue')['default']
     ApplyBar: typeof import('./components/book-sync/fragments/ApplyBar.vue')['default']
     ApplyConfirm: typeof import('./components/book-sync/fragments/ApplyConfirm.vue')['default']

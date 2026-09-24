@@ -76,13 +76,18 @@ export class DesktopUpdater<T extends UpdateTarget = UpdateTarget> {
       throw error;
     }
     if (!target) {
-      if (!background) this.publish({ phase: 'idle' });
+      if (!background) this.publish({ phase: 'idle', checkedAt: Date.now() });
       return;
     }
     if (background && target.version === this.downloaded?.version) return;
     // 开始下载新目标后旧包可能被清理，不能再回退安装旧目标。
     this.downloaded = undefined;
-    this.publish({ phase: 'downloading', targetVersion: target.version, progress: 0 });
+    this.publish({
+      phase: 'downloading',
+      targetVersion: target.version,
+      progress: 0,
+      checkedAt: Date.now(),
+    });
     await this.deps.download(target, (progress) =>
       this.publish({ progress: Math.min(100, Math.max(0, progress)) }),
     );
@@ -102,7 +107,11 @@ export class DesktopUpdater<T extends UpdateTarget = UpdateTarget> {
 
   private async prepareAndInstall(target: T) {
     try {
-      if (!(await this.deps.confirm())) return;
+      if (!(await this.deps.confirm())) {
+        // 清除上一次失败原因，界面不应把旧原因当作这次取消的结果。
+        this.publish({});
+        return;
+      }
       this.publish({ phase: 'preparing' });
       await this.deps.prepare();
       this.publish({ phase: 'installing' });

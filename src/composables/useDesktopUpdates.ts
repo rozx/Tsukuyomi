@@ -5,6 +5,7 @@ import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { useSettingsStore } from 'src/stores/settings';
 import { desktopRestartGuard } from 'src/services/desktop-restart-guard';
 import { getDB } from 'src/utils/indexed-db';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
 
 const state = shallowRef<DesktopUpdateState>({ phase: 'unavailable', currentVersion: '' });
 let initialized = false;
@@ -110,4 +111,56 @@ export function useDesktopUpdates() {
     check: () => invoke('check'),
     restart: () => invoke('restart'),
   };
+}
+
+export interface UpdateBadge {
+  tone: 'latest' | 'update' | 'busy';
+  label: string;
+  title: string;
+  clickable: boolean;
+}
+
+/** 页脚徽标：只在确认过结果时显示，避免尚未检查就宣称“已是最新”。 */
+export function describeUpdateBadge(value: DesktopUpdateState): UpdateBadge | null {
+  const target = value.targetVersion ? `v${value.targetVersion}` : '新版本';
+  switch (value.phase) {
+    case 'idle':
+    case 'checking':
+      return value.checkedAt
+        ? { tone: 'latest', label: 'latest', title: '已是最新版本', clickable: false }
+        : null;
+    case 'downloading':
+      return {
+        tone: 'busy',
+        label: `${target} · ${Math.round(value.progress ?? 0)}%`,
+        title: `发现新版本 ${target}，正在后台下载`,
+        clickable: false,
+      };
+    case 'ready':
+      return {
+        tone: 'update',
+        label: `${target} available`,
+        title: `新版本 ${target} 已下载，点击重启并更新`,
+        clickable: true,
+      };
+    case 'preparing':
+    case 'installing':
+      return { tone: 'busy', label: 'updating…', title: '正在准备重启更新', clickable: false };
+    default:
+      return null;
+  }
+}
+
+/** 页脚徽标交互：点击后由主进程弹出确认框，失败原因用 toast 告知。 */
+export function useDesktopUpdateBadge() {
+  const { state, restart } = useDesktopUpdates();
+  const toast = useToastWithHistory();
+  const activate = async () => {
+    await restart();
+    const reason = state.value.message;
+    if (reason && state.value.phase === 'ready') {
+      toast.add({ severity: 'warn', summary: '暂时无法更新', detail: reason, life: 5000 });
+    }
+  };
+  return { badge: computed(() => describeUpdateBadge(state.value)), activate };
 }

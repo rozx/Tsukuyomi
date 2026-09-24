@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { APP_VERSION } from 'src/constants/version';
 import { APP_NAME } from 'src/constants/app';
+import AppFooterUpdateBadge from './AppFooterUpdateBadge.vue';
+
+// 只有桌面端暴露更新 API；Web 端不渲染徽标。
+const updatesAvailable = Boolean(window.electronAPI?.updates);
 </script>
 
 <template>
@@ -17,6 +21,7 @@ import { APP_NAME } from 'src/constants/app';
 
     <div class="dsk-statusbar-right">
       <span class="dsk-statusbar-version">v{{ APP_VERSION }}</span>
+      <AppFooterUpdateBadge v-if="updatesAvailable" />
       <a
         href="https://github.com/rozx/Tsukuyomi"
         target="_blank"
