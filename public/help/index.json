@@ -45,7 +45,7 @@
     "file": "import-guide.md",
     "path": "help",
     "category": "使用指南",
-    "description": "网址与文件来源、格式支持、元信息搜索、网站限制、草稿与方案、部分导入、暂停恢复、撤销条件及与翻译的互斥"
+    "description": "网址与文件导入、标签与元信息、批量提取与拆章、草稿整理、更新配方、部分导入、暂停恢复及撤销条件"
   },
   {
     "id": "toolbar-guide",
@@ -126,6 +126,14 @@
     "path": "help",
     "category": "书籍详情页",
     "description": "记忆库的创建和管理,为 AI 提供丰富的上下文信息"
+  },
+  {
+    "id": "v0.16.0",
+    "title": "v0.16.0",
+    "file": "RELEASE_NOTES_v0.16.0.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "AI 导入工作台、批量提取与拆章、标签导入、来源配方与检查更新重做、跨设备段落合并及抓取修复"
   },
   {
     "id": "v0.15.0",

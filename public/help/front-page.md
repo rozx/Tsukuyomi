@@ -21,9 +21,9 @@
 
 1. 进入左侧导航 **书籍列表**。
 2. 点击“新建书籍”，手动录入基础信息。
-3. 需要时可通过小说站点链接抓取元数据与章节内容。
+3. 小说站点链接可通过「从网站导入」检查并选择章节；TXT、Markdown、HTML、EPUB 或其他网站来源可进入 **AI 导入**，由月詠整理草稿，确认方案后导入。
 
-> 💡 详见 [书籍列表页](/help/books-page-guide)。
+> 💡 详见 [书籍列表页](/help/books-page-guide) 与 [AI 导入工作台](/help/import-guide)。
 
 ### 3) 开始翻译
 
@@ -124,6 +124,7 @@ A: 会。导入会覆盖当前资料，建议先导出一份本地备份。
 - [快速开始](/help/front-page)（本文）
 - [主页介绍](/help/library-guide)
 - [书籍列表页](/help/books-page-guide)
+- [AI 导入工作台](/help/import-guide)
 - [AI 模型配置](/help/ai-models-guide)
 - [聊天助手](/help/chat-assistant-guide)
 - [顶部工具栏](/help/toolbar-guide)
