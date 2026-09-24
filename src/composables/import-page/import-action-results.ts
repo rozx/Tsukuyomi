@@ -67,6 +67,7 @@ export function appendImportResultDetails(
     description: '简介',
     cover: '封面',
     alternateTitles: '别名',
+    tags: '标签',
   };
   const metadata = actionObject(result.metadata ?? actionObject(result.inspection).metadata);
   for (const [key, label] of Object.entries(metadataLabels))

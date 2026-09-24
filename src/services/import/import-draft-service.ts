@@ -99,7 +99,11 @@ async function metadataOperation(
   actor: 'user' | 'agent',
   validator: ImportDraftValidator,
 ): Promise<void> {
-  if (!['title', 'author', 'description', 'cover', 'alternateTitles'].includes(operation.field))
+  if (
+    !['title', 'author', 'description', 'cover', 'alternateTitles', 'tags'].includes(
+      operation.field,
+    )
+  )
     throw new Error('INVALID_OPERATION: 未知元信息字段');
   assertImportString(operation.value, '元信息', operation.field !== 'title');
   const candidate = await validator.metadata(

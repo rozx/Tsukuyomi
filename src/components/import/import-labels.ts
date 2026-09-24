@@ -49,7 +49,19 @@ export const METADATA_FIELDS = {
   description: '简介',
   cover: '封面',
   alternateTitles: '别名',
+  tags: '标签',
 } as const;
+
+/** 多值元信息按行存储，展示时用顿号连接。 */
+export function formatMetadataValue(field: keyof typeof METADATA_FIELDS, value: string): string {
+  return field === 'alternateTitles' || field === 'tags'
+    ? value
+        .split(/\r?\n/)
+        .map((text) => text.trim())
+        .filter(Boolean)
+        .join('、')
+    : value;
+}
 
 export function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString('zh-CN', {

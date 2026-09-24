@@ -48,6 +48,13 @@ function packageMetadata($: CheerioAPI): Record<string, string> {
     const value = elements($, tag).first().text().trim();
     if (value) values[field] = value;
   }
+  const subjects = new Set(
+    elements($, 'subject')
+      .map((_, node) => $(node).text().trim())
+      .get()
+      .filter(Boolean),
+  );
+  if (subjects.size) values.tags = [...subjects].join('\n');
   return values;
 }
 

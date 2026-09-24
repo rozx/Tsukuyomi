@@ -298,6 +298,25 @@ describe('基于真实数据的导入方案', () => {
     expect((await ImportRepository.getTask(input.taskId))?.state).toBe('ready');
   });
 
+  it('新建时采用的标签按行拆分写入书籍 tags，去除空行', async () => {
+    const input = await draft('正文');
+    await ImportDraftService.edit(
+      input.taskId,
+      {
+        baseDraftRevision: 1,
+        operations: [{ op: 'set_metadata', field: 'tags', value: '恋爱\n  \n百合 \n日常' }],
+      },
+      { actor: 'user' },
+    );
+    const plan = await ImportPlanService.preview(input.taskId, 2);
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.book.tags).toEqual(['恋爱', '百合', '日常']);
+    expect(plan.metadataChanges).toContainEqual({
+      field: 'tags',
+      after: JSON.stringify(['恋爱', '百合', '日常']),
+    });
+  });
+
   it('标题只提供候选；明确选择后才计算覆盖，并保留缺席旧章节及设置', async () => {
     const original = book();
     await BookService.saveBook(original);

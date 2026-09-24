@@ -11,7 +11,7 @@ function epub(extra: Record<string, Uint8Array> = {}, version = 3): Uint8Array {
       '<container><rootfiles><rootfile full-path="OPS/book.opf" media-type="application/oebps-package+xml"/></rootfiles></container>',
     ),
     'OPS/book.opf': strToU8(
-      `<package version="${version}.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>小说</dc:title><dc:creator>作者</dc:creator><dc:description>简介</dc:description><meta name="cover" content="cover"/></metadata><manifest><item id="second" href="chapter2.xhtml" media-type="application/xhtml+xml"/><item id="first" href="text/chapter1.xhtml" media-type="application/xhtml+xml"/><item id="copyright" href="copyright.xhtml" media-type="application/xhtml+xml"/><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="cover" href="images/cover.png" media-type="image/png" properties="cover-image"/></manifest><spine toc="ncx"><itemref idref="copyright" linear="no"/><itemref idref="first"/><itemref idref="second"/></spine></package>`,
+      `<package version="${version}.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>小说</dc:title><dc:creator>作者</dc:creator><dc:description>简介</dc:description><dc:subject>恋爱</dc:subject><dc:subject> 百合 </dc:subject><dc:subject>恋爱</dc:subject><meta name="cover" content="cover"/></metadata><manifest><item id="second" href="chapter2.xhtml" media-type="application/xhtml+xml"/><item id="first" href="text/chapter1.xhtml" media-type="application/xhtml+xml"/><item id="copyright" href="copyright.xhtml" media-type="application/xhtml+xml"/><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/><item id="cover" href="images/cover.png" media-type="image/png" properties="cover-image"/></manifest><spine toc="ncx"><itemref idref="copyright" linear="no"/><itemref idref="first"/><itemref idref="second"/></spine></package>`,
     ),
     'OPS/text/chapter1.xhtml': strToU8('<html><body><p>第一章正文</p></body></html>'),
     'OPS/chapter2.xhtml': strToU8('<html><body><p>第二章正文</p></body></html>'),
@@ -33,7 +33,12 @@ function epub(extra: Record<string, Uint8Array> = {}, version = 3): Uint8Array {
 describe('EPUB 包结构与有界解包', () => {
   it('按 spine 保留阅读顺序，解析元信息、目录和封面，不把所有条目变成正文', async () => {
     const result = await parseImportEpub(epub());
-    expect(result.metadata).toMatchObject({ title: '小说', author: '作者', description: '简介' });
+    expect(result.metadata).toMatchObject({
+      title: '小说',
+      author: '作者',
+      description: '简介',
+      tags: '恋爱\n百合',
+    });
     expect(
       result.entries.filter((entry) => entry.kind === 'content').map((entry) => entry.path),
     ).toEqual(['OPS/text/chapter1.xhtml', 'OPS/chapter2.xhtml']);

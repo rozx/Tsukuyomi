@@ -234,7 +234,10 @@ export interface ImportDraft {
     selfTest: ImportRecipeSelfTest;
   };
   metadata: Partial<
-    Record<'title' | 'author' | 'description' | 'cover' | 'alternateTitles', ImportMetadataValue>
+    Record<
+      'title' | 'author' | 'description' | 'cover' | 'alternateTitles' | 'tags',
+      ImportMetadataValue
+    >
   >;
   metadataCandidates?: {
     id: string;

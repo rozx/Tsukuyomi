@@ -88,7 +88,7 @@ const operations = {
       },
       field: {
         type: 'string',
-        enum: ['title', 'author', 'description', 'cover', 'alternateTitles'],
+        enum: ['title', 'author', 'description', 'cover', 'alternateTitles', 'tags'],
       },
       value: string,
       sourceId: string,

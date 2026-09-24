@@ -103,6 +103,8 @@ function enrichSiteInspection(
       const value = page.info[field];
       if (value && !(field === 'cover' && parsed.metadata.cover)) parsed.metadata[field] = value;
     }
+    // 多值字段与草稿元信息一致，按行存储
+    if (page.info.tags?.length) parsed.metadata.tags = page.info.tags.join('\n');
     const observed = new Map(parsed.links.map((link) => [link.href, link]));
     for (const chapter of page.info.chapters)
       observed.set(chapter.url, { name: chapter.title, href: chapter.url, relation: 'chapter' });

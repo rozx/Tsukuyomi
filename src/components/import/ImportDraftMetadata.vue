@@ -1,7 +1,8 @@
 <script setup lang="ts">
-/** 书名、作者、简介与导入目标（新建或更新书库中的小说）；月詠的目标建议需用户采用。 */
-import { computed, reactive, watch } from 'vue';
+/** 书名、作者、简介、标签与导入目标（新建或更新书库中的小说）；月詠的目标建议需用户采用。 */
+import { computed, reactive, ref, watch } from 'vue';
 import Button from 'primevue/button';
+import InputChips from 'primevue/inputchips';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import Textarea from 'primevue/textarea';
@@ -19,12 +20,19 @@ const locked = useDraftLock();
 
 const draft = computed(() => store.task?.draft);
 const values = reactive<Record<TextField, string>>({ title: '', author: '', description: '' });
+const tags = ref<string[]>([]);
+const splitLines = (value: string | undefined) =>
+  (value ?? '')
+    .split(/\r?\n/)
+    .map((text) => text.trim())
+    .filter(Boolean);
 watch(
   () => draft.value?.metadata,
   (metadata) => {
     values.title = metadata?.title?.value ?? '';
     values.author = metadata?.author?.value ?? '';
     values.description = metadata?.description?.value ?? '';
+    tags.value = splitLines(metadata?.tags?.value);
   },
   { immediate: true },
 );
@@ -39,6 +47,14 @@ const commit = (field: TextField) => {
     return;
   }
   void store.editDraft([{ op: 'set_metadata', field, value }]);
+};
+
+// 标签按行存储，与别名一致
+const commitTags = (next: string[]) => {
+  const value = [...new Set(next.map((text) => text.trim()).filter(Boolean))].join('\n');
+  tags.value = splitLines(value);
+  if (value === splitLines(draft.value?.metadata.tags?.value).join('\n')) return;
+  void store.editDraft([{ op: 'set_metadata', field: 'tags', value }]);
 };
 
 const targetBookId = computed(() =>
@@ -91,6 +107,17 @@ const suggestion = computed(() => {
         auto-resize
         rows="2"
         @blur="commit('description')"
+      />
+    </label>
+    <label class="idm-field idm-field--wide">
+      <span>{{ METADATA_FIELDS.tags }}</span>
+      <InputChips
+        :model-value="tags"
+        separator=","
+        add-on-blur
+        placeholder="输入标签后按回车"
+        :disabled="locked"
+        @update:model-value="commitTags"
       />
     </label>
     <label class="idm-field idm-field--wide">

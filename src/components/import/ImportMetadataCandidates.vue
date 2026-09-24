@@ -9,11 +9,11 @@ import Checkbox from 'primevue/checkbox';
 import Tag from 'primevue/tag';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import type { ImportDraft } from 'src/models/import';
-import { METADATA_FIELDS } from './import-labels';
+import { METADATA_FIELDS, formatMetadataValue } from './import-labels';
 import { useDraftLock } from './import-draft';
 
 type Field = keyof ImportDraft['metadata'];
-const OPTIONAL_FIELDS: Field[] = ['author', 'description', 'cover', 'alternateTitles'];
+const OPTIONAL_FIELDS: Field[] = ['author', 'description', 'cover', 'alternateTitles', 'tags'];
 
 const store = useImportWorkspaceStore();
 const locked = useDraftLock();
@@ -43,7 +43,9 @@ const toggle = (field: Field, adopted: boolean) => void store.setMetadataAdoptio
       <ul class="imc-list">
         <li v-for="candidate in candidates" :key="candidate.id" class="imc-row">
           <span class="imc-field">{{ METADATA_FIELDS[candidate.field] }}</span>
-          <span class="imc-value">{{ candidate.value.value }}</span>
+          <span class="imc-value">{{
+            formatMetadataValue(candidate.field, candidate.value.value)
+          }}</span>
           <span class="imc-actions">
             <Tag v-if="candidate.conflicts?.length" value="有冲突" severity="warn" />
             <span v-if="candidate.value.adopted" class="ipl-status ipl-status--success"

@@ -141,11 +141,15 @@ async function adoptBookMetadata(
     const after =
       field === 'cover'
         ? { url: await ImportMetadataService.resolveCover(context.task.id, value) }
-        : field === 'alternateTitles'
-          ? value.value
-              .split(/\r?\n/)
-              .map((text) => text.trim())
-              .filter(Boolean)
+        : field === 'alternateTitles' || field === 'tags'
+          ? [
+              ...new Set(
+                value.value
+                  .split(/\r?\n/)
+                  .map((text) => text.trim())
+                  .filter(Boolean),
+              ),
+            ]
           : value.value;
     if (canonicalStringify(before) !== canonicalStringify(after))
       plan.metadataChanges.push({

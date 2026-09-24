@@ -87,7 +87,7 @@ export function validateImportMetadata(
   const limit =
     field === 'description'
       ? 20000
-      : field === 'alternateTitles'
+      : field === 'alternateTitles' || field === 'tags'
         ? 5000
         : field === 'cover'
           ? 10000

@@ -48,7 +48,12 @@ describe('来源快照与显式提取步骤', () => {
       props: {
         pageProps: {
           __APOLLO_STATE__: {
-            'Work:12345': { title: '嵌入式目录小说', tableOfContents: [{ __ref: 'toc' }] },
+            'Work:12345': {
+              title: '嵌入式目录小说',
+              tagLabels: ['恋爱', '百合'],
+              genre: 'LOVE_STORY',
+              tableOfContents: [{ __ref: 'toc' }],
+            },
             toc: { episodeUnions: [{ __ref: 'episode' }] },
             episode: { id: '456', title: '第一章' },
           },
@@ -69,6 +74,7 @@ describe('来源快照与显式提取步骤', () => {
     expect(result.result.success).toBe(true);
     expect(result.result.kind).toBe('catalog');
     expect(result.result.metadata?.title).toBe('嵌入式目录小说');
+    expect(result.result.metadata?.tags).toBe('恋爱\n百合\nLOVE_STORY');
     expect(
       result.result.discoveries?.some(
         (entry) => entry.locator === 'https://kakuyomu.jp/works/12345/episodes/456',
