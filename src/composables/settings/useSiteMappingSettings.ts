@@ -41,10 +41,13 @@ export function createSiteMappingSettingsContext() {
     url: FIRECRAWL_MAPPING_TOKEN,
     description: '经 Firecrawl 抓取（消耗 Firecrawl 额度）',
   };
-  // Electron 不经 CORS 代理，只提供 Firecrawl 选项
-  const mappingOptions = computed<MappingOption[]>(() =>
-    electron ? [firecrawlOption] : [firecrawlOption, ...proxyList.value],
-  );
+  // Electron 直连、CORS 条目不生效，但仍可维护（映射会同步到网页端），选项中注明不生效
+  const mappingOptions = computed<MappingOption[]>(() => [
+    firecrawlOption,
+    ...proxyList.value.map((proxy) =>
+      electron ? { ...proxy, description: '桌面端不生效，仅网页端使用' } : proxy,
+    ),
+  ]);
 
   const isFirecrawlEntry = (entry: string) => entry === FIRECRAWL_MAPPING_TOKEN;
   /** 条目在当前平台是否生效：Electron 仅 firecrawl 生效 */

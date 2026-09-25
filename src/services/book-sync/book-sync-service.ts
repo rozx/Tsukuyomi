@@ -204,15 +204,19 @@ class BookSyncSession {
     return entry;
   }
 
-  /** 跨会话缓存键：抽取规则（引擎 / 清理 / 去标题）+ 网址，配方变化后不复用 */
-  private remoteCacheKey(url: string): string {
+  /**
+   * 跨会话缓存键：抽取规则（引擎 / 清理 / 去标题）+ 网址 + 目录给出的更新时间。
+   * 配方变化或目录日期变新（远端有新版本）后不复用旧正文，避免把新修订误判为未变。
+   */
+  private remoteCacheKey(entry: CatalogEntry): string {
     const r = this.recipe;
-    return `${JSON.stringify([r.engine, r.cleanup, r.stripHeading])}|${url}`;
+    const version = entry.lastUpdated ? new Date(entry.lastUpdated).getTime() : '';
+    return `${JSON.stringify([r.engine, r.cleanup, r.stripHeading])}|${entry.url}|${version}`;
   }
 
   private async content(entry: CatalogEntry, signal?: AbortSignal): Promise<string[]> {
     signal?.throwIfAborted();
-    const cached = this.cache.get(entry.url) ?? getCachedRemoteChapter(this.remoteCacheKey(entry.url));
+    const cached = this.cache.get(entry.url) ?? getCachedRemoteChapter(this.remoteCacheKey(entry));
     if (cached) {
       this.cache.set(entry.url, cached);
       return cached;
@@ -232,7 +236,7 @@ class BookSyncSession {
           throw new BookSyncError(result.code, result.message);
         }
         this.cache.set(entry.url, result.paragraphs);
-        setCachedRemoteChapter(this.remoteCacheKey(entry.url), result.paragraphs);
+        setCachedRemoteChapter(this.remoteCacheKey(entry), result.paragraphs);
         return result.paragraphs;
       })();
       this.pending.set(entry.url, pending);

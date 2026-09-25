@@ -294,7 +294,7 @@ describe('429 重试', () => {
     expect(post).toHaveBeenCalledTimes(4);
   });
 
-  it('keyless 普通 429 重试耗尽 → 额度耗尽', async () => {
+  it('keyless 普通 429（非日额度）重试耗尽 → 限速错误，不锁存额度', async () => {
     vi.useFakeTimers();
     mockPost(
       reply(429, ERROR_429_RATE, { 'retry-after': '1' }),
@@ -306,7 +306,11 @@ describe('429 重试', () => {
       (e: unknown) => e,
     );
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(await pending).toBeInstanceOf(FirecrawlQuotaError);
+    expect(await pending).toBeInstanceOf(FirecrawlRateLimitError);
+    mockPost(reply(200, SCRAPE_OK_RAW_HTML));
+    await expect(
+      FirecrawlClient.scrape('https://a.test/again', { format: 'rawHtml' }),
+    ).resolves.toMatchObject({ statusCode: 200 });
   });
 });
 

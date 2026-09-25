@@ -137,3 +137,37 @@ describe('已抓取章节正文在 30 分钟内跨检查会话复用', () => {
     vi.useRealTimers();
   });
 });
+
+describe('跨会话缓存按目录更新时间区分版本', () => {
+  it('缓存期内目录日期变新的章节重新抓取，未变的仍用缓存', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-25T00:00:00Z'));
+    const { fetch } = await datedBook(() => '新正文');
+    const deep = async () => {
+      const session = await BookSyncService.openSession({ target: { bookId: 'book' } });
+      await session.quickCheck();
+      return session.deepCheck();
+    };
+    await deep();
+
+    const scraper = NovelScraperFactory.getScraper(ROOT)!;
+    spyOn(scraper, 'parseNovelSnapshot').mockReturnValue({
+      catalogStartUrl: ROOT,
+      nextPageUrls: [],
+      info: {
+        title: '远端',
+        webUrl: ROOT,
+        chapters: [
+          { title: '第一话', url: `${ROOT}1/`, lastUpdated: new Date('2026-09-24') },
+          { title: '第二话', url: `${ROOT}2/`, lastUpdated: new Date('2026-09-22') },
+        ],
+      },
+    });
+    fetch.mockClear();
+    vi.setSystemTime(new Date('2026-09-25T00:10:00Z'));
+    await deep();
+    expect(fetch.mock.calls.map((c) => c[0])).toEqual([ROOT, `${ROOT}1/`]);
+    vi.useRealTimers();
+  });
+});
+

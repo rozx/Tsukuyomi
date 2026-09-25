@@ -158,13 +158,8 @@ function applyReplyPolicy(reply: HttpReply, key: string | undefined, attempt: nu
     return 'quota';
   }
   if (reply.status !== 429) return 'error';
-  if (attempt >= MAX_429_RETRIES) {
-    if (key === undefined) {
-      setQuotaLatch(key, reply);
-      return 'quota';
-    }
-    return 'rate-limit';
-  }
+  // 重试耗尽：只有明确的日额度信号才算额度耗尽（上面已处理），普通短期 429 仍是限速
+  if (attempt >= MAX_429_RETRIES) return 'rate-limit';
   // 暂停整个队列，而不是各请求各自等待后同时重试（避免连锁 429）
   limiter.pauseFor(Math.min(retryAfterMs(reply) ?? DEFAULT_RETRY_AFTER_MS, MAX_RETRY_AFTER_MS));
   return 'retry';

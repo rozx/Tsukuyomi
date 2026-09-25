@@ -146,11 +146,12 @@ describe('useSiteMappingSettings — Firecrawl 选项与平台规则', () => {
     expect(ctx.getProxyDisplayName(CORS)).toBe('CORS Tsukuyomi');
   });
 
-  it('Electron：只提供 Firecrawl 选项，CORS 条目显示为未生效', () => {
+  it('Electron：仍提供全部代理选项（便于维护同步到网页端的映射），CORS 条目标为不生效', () => {
     (window as unknown as { electronAPI?: unknown }).electronAPI = { isElectron: true };
     store.proxyList = [{ id: 'rozx.moe', name: 'CORS Tsukuyomi', url: CORS }];
     const ctx = createSiteMappingSettingsContext();
-    expect(ctx.mappingOptions.value.map((o) => o.name)).toEqual(['Firecrawl']);
+    expect(ctx.mappingOptions.value.map((o) => o.name)).toEqual(['Firecrawl', 'CORS Tsukuyomi']);
+    expect(ctx.mappingOptions.value[1]?.description).toContain('桌面端不生效');
     expect(ctx.mappingTagSeverity(true, CORS)).toBe('secondary');
     expect(ctx.mappingTagTitle(CORS)).toContain('不生效');
     expect(ctx.mappingTagSeverity(true, 'firecrawl')).not.toBe('secondary');
