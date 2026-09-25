@@ -161,6 +161,8 @@ class BookSyncSession {
       signal,
     );
     if (!result.ok) {
+      // 额度耗尽不代表配方失效：报检查失败（可稍后重试 / 补充额度），不引导重建配方
+      if (result.code === FIRECRAWL_QUOTA_CODE) throw new BookSyncError(result.code, result.message);
       this.invalidate(result.code, result.message);
       return false;
     }

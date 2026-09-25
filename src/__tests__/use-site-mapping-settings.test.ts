@@ -188,3 +188,34 @@ describe('useSiteMappingSettings — 删除映射', () => {
     );
   });
 });
+
+describe('useSiteMappingSettings — 禁用映射', () => {
+  it('添加时按映射实际保存的条目数检查上限（禁用映射也不能超过 3 项）', async () => {
+    store.proxyList = [{ id: 'p4', name: 'P4', url: 'p4' }];
+    store.proxySiteMapping = { 'a.com': { enabled: false, proxies: ['p1', 'p2', 'p3'] } };
+    store.getProxiesForSite = vi.fn(() => []);
+    const ctx = createSiteMappingSettingsContext();
+    ctx.newSiteInput.value = 'a.com';
+    ctx.newProxyInput.value = 'p4';
+    await ctx.addSiteMapping();
+    expect(store.addProxyForSite).not.toHaveBeenCalled();
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+  });
+});
+
+describe('useSiteMappingSettings — 编辑禁用映射（真实 store）', () => {
+  it('替换全部条目后仍保持禁用', async () => {
+    vi.restoreAllMocks();
+    vi.spyOn(ToastHistory, 'useToastWithHistory').mockReturnValue({ add: vi.fn() } as never);
+    const real = SettingsStore.useSettingsStore();
+    await real.loadSettings();
+    await real.updateSettings({
+      proxySiteMapping: { 'a.com': { enabled: false, proxies: ['old'] } },
+    });
+    const ctx = createSiteMappingSettingsContext();
+    ctx.openEditSiteMappingDialog('a.com');
+    ctx.selectedProxiesForEdit.value = ['new'];
+    await ctx.confirmEditSiteMapping();
+    expect(real.settings.proxySiteMapping?.['a.com']).toEqual({ enabled: false, proxies: ['new'] });
+  });
+});

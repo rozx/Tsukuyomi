@@ -103,9 +103,8 @@ function assertNotLatched(key: string | undefined): void {
 }
 
 /** 锁存额度耗尽状态：持续到 Firecrawl 给出的等待时间，未给出时 60 分钟 */
-function latchQuota(key: string | undefined, durationMs = QUOTA_LATCH_MS): never {
-  quotaLatch = { key, until: Date.now() + durationMs };
-  throw new FirecrawlQuotaError(key === undefined);
+function setQuotaLatch(key: string | undefined, reply: HttpReply): void {
+  quotaLatch = { key, until: Date.now() + (retryAfterMs(reply) ?? QUOTA_LATCH_MS) };
 }
 
 function errorText(data: unknown): string {
@@ -138,6 +137,39 @@ function isKeylessDailyLimit(reply: HttpReply): boolean {
   );
 }
 
+type ReplyOutcome = 'ok' | 'quota' | 'retry' | 'rate-limit' | 'error';
+
+/**
+ * 对响应应用策略（锁存额度 / 暂停队列）并给出结果。必须在释放限流名额之前调用，
+ * 否则排队中的下一个请求会在暂停或锁存生效前抢先发出。
+ */
+function applyReplyPolicy(reply: HttpReply, key: string | undefined, attempt: number): ReplyOutcome {
+  if (reply.status >= 200 && reply.status < 300) return 'ok';
+  // 浏览器控制台只显示状态码；记录 Firecrawl 返回的原因，便于区分限速 / 并发 / 日限额
+  console.warn(`[Firecrawl] 返回 ${reply.status}`, {
+    mode: key === undefined ? 'keyless' : 'api-key',
+    attempt: attempt + 1,
+    error: errorText(reply.data) || undefined,
+    reason: (reply.data as { reason?: unknown } | undefined)?.reason,
+    retryAfterMs: retryAfterMs(reply),
+  });
+  if (reply.status === 402 || (reply.status === 429 && key === undefined && isKeylessDailyLimit(reply))) {
+    setQuotaLatch(key, reply);
+    return 'quota';
+  }
+  if (reply.status !== 429) return 'error';
+  if (attempt >= MAX_429_RETRIES) {
+    if (key === undefined) {
+      setQuotaLatch(key, reply);
+      return 'quota';
+    }
+    return 'rate-limit';
+  }
+  // 暂停整个队列，而不是各请求各自等待后同时重试（避免连锁 429）
+  limiter.pauseFor(Math.min(retryAfterMs(reply) ?? DEFAULT_RETRY_AFTER_MS, MAX_RETRY_AFTER_MS));
+  return 'retry';
+}
+
 /**
  * 经限流器发送 POST，处理 402 / 429 / 其它非 2xx，返回 2xx 响应体。
  */
@@ -151,41 +183,25 @@ async function postWithPolicy(
     assertNotLatched(key);
     const release = await limiter.acquire(signal);
     let reply: HttpReply;
+    let outcome: ReplyOutcome;
     try {
+      // 排队期间其它请求可能已触发额度锁存：获准后再检查一次
+      assertNotLatched(key);
       reply = (await axios.post(`${API_BASE}${path}`, body, {
         headers: { 'Content-Type': 'application/json', ...authHeaders(key) },
         timeout: HTTP_TIMEOUT_MS,
         validateStatus: () => true,
         ...(signal ? { signal } : {}),
       })) as HttpReply;
+      outcome = applyReplyPolicy(reply, key, attempt);
     } finally {
       release();
     }
 
-    if (reply.status >= 200 && reply.status < 300) return reply.data;
-    // 浏览器控制台只显示状态码；记录 Firecrawl 返回的原因，便于区分限速 / 并发 / 日限额
-    console.warn(`[Firecrawl] ${path} 返回 ${reply.status}`, {
-      mode: key === undefined ? 'keyless' : 'api-key',
-      attempt: attempt + 1,
-      error: errorText(reply.data) || undefined,
-      reason: (reply.data as { reason?: unknown } | undefined)?.reason,
-      retryAfterMs: retryAfterMs(reply),
-    });
-    if (reply.status === 402) latchQuota(key);
-    if (reply.status === 429) {
-      if (key === undefined && isKeylessDailyLimit(reply)) {
-        latchQuota(key, Math.max(retryAfterMs(reply) ?? 0, QUOTA_LATCH_MS));
-      }
-      if (attempt >= MAX_429_RETRIES) {
-        if (key === undefined) latchQuota(key);
-        throw new FirecrawlRateLimitError();
-      }
-      // 暂停整个队列，而不是各请求各自等待后同时重试（避免连锁 429）
-      limiter.pauseFor(
-        Math.min(retryAfterMs(reply) ?? DEFAULT_RETRY_AFTER_MS, MAX_RETRY_AFTER_MS),
-      );
-      continue;
-    }
+    if (outcome === 'ok') return reply.data;
+    if (outcome === 'retry') continue;
+    if (outcome === 'quota') throw new FirecrawlQuotaError(key === undefined);
+    if (outcome === 'rate-limit') throw new FirecrawlRateLimitError();
     const detail = errorText(reply.data);
     throw new FirecrawlError(
       `Firecrawl 请求失败: ${reply.status}${detail ? ` ${detail}` : ''}`,

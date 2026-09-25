@@ -67,3 +67,15 @@ describe('书籍同步遇到 Firecrawl 额度耗尽时停止', () => {
     expect(session.changeset.status).not.toBe('invalid');
   });
 });
+
+describe('目录抓取遇到 Firecrawl 额度耗尽', () => {
+  it('快速检查报错为额度耗尽，不把配方标为失效', async () => {
+    await saveSyncBook(syncBook(2));
+    spyOn(transport, 'fetchScraperPage').mockImplementation(() =>
+      Promise.reject(new FirecrawlQuotaError(false)),
+    );
+    const session = await BookSyncService.openSession({ target: { bookId: 'book' } });
+    await expect(session.quickCheck()).rejects.toMatchObject({ code: 'FIRECRAWL_QUOTA' });
+    expect(session.changeset.status).not.toBe('invalid');
+  });
+});

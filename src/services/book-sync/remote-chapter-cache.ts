@@ -4,6 +4,8 @@
  */
 
 const TTL_MS = 30 * 60_000;
+/** 容量上限：长时间运行时检查多本大书也不会无限增长（Map 保持插入顺序，超出时淘汰最早写入的） */
+const MAX_ENTRIES = 500;
 
 const entries = new Map<string, { paragraphs: string[]; at: number }>();
 
@@ -18,7 +20,22 @@ export function getCachedRemoteChapter(key: string): string[] | undefined {
 }
 
 export function setCachedRemoteChapter(key: string, paragraphs: string[]): void {
-  entries.set(key, { paragraphs, at: Date.now() });
+  const now = Date.now();
+  // 写入时顺带清理过期条目：只访问过一次的章节不会永久留在内存中
+  for (const [k, hit] of entries) {
+    if (now - hit.at > TTL_MS) entries.delete(k);
+  }
+  entries.delete(key);
+  entries.set(key, { paragraphs, at: now });
+  while (entries.size > MAX_ENTRIES) {
+    const oldest = entries.keys().next().value;
+    if (oldest === undefined) break;
+    entries.delete(oldest);
+  }
+}
+
+export function remoteChapterCacheSize(): number {
+  return entries.size;
 }
 
 export function clearRemoteChapterCache(): void {

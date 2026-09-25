@@ -83,7 +83,8 @@ export function createSiteMappingSettingsContext() {
       toast.add({ severity: 'error', summary: '无效的域名', detail: '无法从输入中提取有效的域名', life: 3000 });
       return;
     }
-    const currentProxies = settingsStore.getProxiesForSite(rootDomain);
+    // 读取映射实际保存的条目（禁用映射的 getProxiesForSite 为空，不能据此判断上限）
+    const currentProxies = siteMapping.value[rootDomain]?.proxies ?? [];
     if (currentProxies.length >= MAX_MAPPING_ENTRIES) {
       toast.add({ severity: 'warn', summary: '已达到最大数量', detail: '每个网站最多只能配置 3 项', life: 3000 });
       return;
@@ -283,6 +284,10 @@ export function createSiteMappingSettingsContext() {
         await settingsStore.setProxySiteMappingEnabled(site, enabledForEdit.value);
       }
       await replaceSiteProxies(site, currentProxies, selectedProxiesForEdit.value);
+      // 删除最后一个旧条目会移除整条映射，再添加会以启用状态重建：替换后重新应用目标启用状态
+      if ((siteMapping.value[site]?.enabled ?? true) !== enabledForEdit.value) {
+        await settingsStore.setProxySiteMappingEnabled(site, enabledForEdit.value);
+      }
     } catch (err) {
       await handleEditMappingFailure(site, enabledChanged, originalEnabled, err);
       return;

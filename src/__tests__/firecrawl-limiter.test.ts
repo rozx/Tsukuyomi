@@ -1,3 +1,4 @@
+import './setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RequestLimiter } from 'src/services/firecrawl/firecrawl-limiter';
 

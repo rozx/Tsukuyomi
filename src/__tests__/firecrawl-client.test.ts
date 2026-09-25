@@ -1,3 +1,4 @@
+import './setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import { GlobalConfig } from 'src/services/global-config-cache';
@@ -244,6 +245,38 @@ describe('429 重试', () => {
     expect(FirecrawlClient.pauseRemainingMs()).toBe(0);
   });
 
+  it('在途请求收到 429 时，排队中的请求在暂停结束前不会借释放的名额发出', async () => {
+    vi.useFakeTimers();
+    apiKey = 'fc-abc';
+    const post = vi.spyOn(axios, 'post');
+    post.mockResolvedValueOnce(reply(429, ERROR_429_RATE, { 'retry-after': '3' }) as never);
+    post.mockImplementationOnce(() => new Promise(() => {}));
+    post.mockResolvedValue(reply(200, SCRAPE_OK_RAW_HTML) as never);
+    void FirecrawlClient.scrape('https://a.test/1', { format: 'rawHtml' });
+    void FirecrawlClient.scrape('https://a.test/2', { format: 'rawHtml' });
+    const third = FirecrawlClient.scrape('https://a.test/3', { format: 'rawHtml' });
+    await vi.advanceTimersByTimeAsync(2_999);
+    expect(post).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(post.mock.calls.length).toBeGreaterThan(2);
+    void third;
+  });
+
+  it('在途请求收到 402 时，排队中的请求不再发出而直接额度耗尽', async () => {
+    apiKey = 'fc-abc';
+    const post = vi.spyOn(axios, 'post');
+    post.mockResolvedValueOnce(reply(402, ERROR_402) as never);
+    post.mockImplementationOnce(() => new Promise(() => {}));
+    post.mockResolvedValue(reply(200, SCRAPE_OK_RAW_HTML) as never);
+    const first = FirecrawlClient.scrape('https://a.test/1', { format: 'rawHtml' }).catch((e) => e);
+    void FirecrawlClient.scrape('https://a.test/2', { format: 'rawHtml' });
+    const third = FirecrawlClient.scrape('https://a.test/3', { format: 'rawHtml' }).catch((e) => e);
+    expect(await first).toBeInstanceOf(FirecrawlQuotaError);
+    expect(await third).toBeInstanceOf(FirecrawlQuotaError);
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
   it('有 Key 时重试耗尽 → 限速错误', async () => {
     vi.useFakeTimers();
     apiKey = 'fc-abc';
@@ -372,6 +405,43 @@ describe('额度锁存', () => {
       FirecrawlClient.scrape('https://a.test/2', { format: 'rawHtml' }),
     ).rejects.toBeInstanceOf(FirecrawlQuotaError);
     await vi.advanceTimersByTimeAsync(81741_000);
+    await expect(
+      FirecrawlClient.scrape('https://a.test/3', { format: 'rawHtml' }),
+    ).resolves.toMatchObject({ statusCode: 200 });
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('服务端给出较短等待时间时按其锁存（不强制 60 分钟）', async () => {
+    vi.useFakeTimers();
+    const post = mockPost(
+      reply(429, { ...ERROR_429_KEYLESS_DAILY, retry_after_seconds: 300 }),
+      reply(200, SCRAPE_OK_RAW_HTML),
+    );
+    await FirecrawlClient.scrape('https://a.test/1', { format: 'rawHtml' }).catch(() => {});
+    await vi.advanceTimersByTimeAsync(299_000);
+    await expect(
+      FirecrawlClient.scrape('https://a.test/2', { format: 'rawHtml' }),
+    ).rejects.toBeInstanceOf(FirecrawlQuotaError);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(
+      FirecrawlClient.scrape('https://a.test/3', { format: 'rawHtml' }),
+    ).resolves.toMatchObject({ statusCode: 200 });
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  it('402 携带等待时间时按其锁存', async () => {
+    vi.useFakeTimers();
+    apiKey = 'fc-abc';
+    const post = mockPost(
+      reply(402, { ...ERROR_402, retry_after_seconds: 120 }),
+      reply(200, SCRAPE_OK_RAW_HTML),
+    );
+    await FirecrawlClient.scrape('https://a.test/1', { format: 'rawHtml' }).catch(() => {});
+    await vi.advanceTimersByTimeAsync(119_000);
+    await expect(
+      FirecrawlClient.scrape('https://a.test/2', { format: 'rawHtml' }),
+    ).rejects.toBeInstanceOf(FirecrawlQuotaError);
+    await vi.advanceTimersByTimeAsync(1_000);
     await expect(
       FirecrawlClient.scrape('https://a.test/3', { format: 'rawHtml' }),
     ).resolves.toMatchObject({ statusCode: 200 });

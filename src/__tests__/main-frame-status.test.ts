@@ -1,3 +1,4 @@
+import './setup';
 import { describe, expect, it } from 'vitest';
 import { trackMainFrameStatus } from '../../src-electron/main-frame-status';
 

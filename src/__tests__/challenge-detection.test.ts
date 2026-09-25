@@ -1,3 +1,4 @@
+import './setup';
 import { describe, expect, it } from 'vitest';
 import { isChallengePage } from 'src/services/scraper/core/challenge-detection';
 
