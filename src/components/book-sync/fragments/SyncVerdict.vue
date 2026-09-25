@@ -59,6 +59,9 @@ const percent = computed(() =>
           <span class="sv-hint">
             正在逐章比对正文
             <template v-if="deep.total">{{ deep.completed }} / {{ deep.total }}</template>
+            <template v-if="deep.waitSeconds > 0">
+              （等待 Firecrawl 限速，约 {{ deep.waitSeconds }} 秒）
+            </template>
           </span>
           <Button
             label="取消"

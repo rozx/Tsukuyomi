@@ -87,6 +87,21 @@ export class GlobalConfig {
     return settingsStore ? (settingsStore as any).tavilyApiKey : undefined;
   }
 
+  static getFirecrawlApiKey(): string | undefined {
+    const settingsStore = this.tryGetSettingsStore();
+    return settingsStore ? (settingsStore as any).firecrawlApiKey : undefined;
+  }
+
+  static getFirecrawlFallbackEnabled(): boolean {
+    const settingsStore = this.tryGetSettingsStore();
+    return settingsStore ? ((settingsStore as any).firecrawlFallbackEnabled ?? true) : false;
+  }
+
+  static getFirecrawlAutoAddMapping(): boolean {
+    const settingsStore = this.tryGetSettingsStore();
+    return settingsStore ? ((settingsStore as any).firecrawlAutoAddMapping ?? true) : false;
+  }
+
   /**
    * 获取 Gist 同步配置快照（只读）
    * - 返回 undefined 表示 store 不可用
@@ -115,21 +130,6 @@ export class GlobalConfig {
   static getProxyUrl(): string {
     const settingsStore = this.tryGetSettingsStore();
     return settingsStore ? ((settingsStore as any).proxyUrl ?? '') : '';
-  }
-
-  static getProxyAutoSwitch(): boolean {
-    const settingsStore = this.tryGetSettingsStore();
-    return settingsStore ? ((settingsStore as any).proxyAutoSwitch ?? false) : false;
-  }
-
-  static getProxyAutoAddMapping(): boolean {
-    const settingsStore = this.tryGetSettingsStore();
-    return settingsStore ? ((settingsStore as any).proxyAutoAddMapping ?? true) : true;
-  }
-
-  static getProxyList(): Array<{ id: string; name: string; url: string; description?: string }> {
-    const settingsStore = this.tryGetSettingsStore();
-    return settingsStore ? (((settingsStore as any).proxyList ?? []) as any[]) : [];
   }
 
   static getProxiesForSite(site: string): string[] {

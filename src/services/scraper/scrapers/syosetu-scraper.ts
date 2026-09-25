@@ -136,6 +136,47 @@ function extractSyosetuChapterDates(cells: cheerio.Cheerio<any>): {
   return { date: dateText, lastUpdated: dateText };
 }
 
+/** 新版目录的 `YYYY/MM/DD HH:mm` 转为旧版 `YYYY年MM月DD日 HH:mm`，以复用日期解析 */
+function normalizeEpisodeListDate(text: string | undefined): string | undefined {
+  const match = text?.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}:\d{2}))?/);
+  if (!match) return undefined;
+  const [, year, month, day, time] = match;
+  return `${year}年${month}月${day}日${time ? ` ${time}` : ''}`;
+}
+
+/**
+ * 解析新版目录（2026 起 `section.episode-list`）：
+ * `li.episode-list__chapter` 为卷标题，`li.episode-list__item a.episode-list__link` 为各话。
+ * 发布时间取 `<time>`，改稿时间取 `.episode-list__revision` 的 title。
+ */
+function parseSyosetuEpisodeList(
+  $: cheerio.CheerioAPI,
+  baseUrl: string,
+): { chapters: SyosetuChapter[]; volumeInfo: Array<{ title: string; startIndex: number }> } {
+  const chapters: SyosetuChapter[] = [];
+  const volumeInfo: Array<{ title: string; startIndex: number }> = [];
+  $('section.episode-list li').each((_, element) => {
+    const $item = $(element);
+    if ($item.hasClass('episode-list__chapter')) {
+      const title = $item.find('.episode-list__chapter-title').text().trim();
+      if (title) volumeInfo.push({ title, startIndex: chapters.length });
+      return;
+    }
+    const link = $item.find('a.episode-list__link').first();
+    const href = link.attr('href');
+    const title = link.find('.episode-list__title').text().trim() || link.text().trim();
+    if (!href || !title) return;
+    const chapter: SyosetuChapter = { title, url: resolveSyosetuHref(href, baseUrl) };
+    const published = normalizeEpisodeListDate(link.find('time').first().text());
+    const revised = normalizeEpisodeListDate(link.find('.episode-list__revision').attr('title'));
+    if (published) chapter.date = published;
+    const lastUpdated = revised ?? published;
+    if (lastUpdated) chapter.lastUpdated = lastUpdated;
+    chapters.push(chapter);
+  });
+  return { chapters, volumeInfo };
+}
+
 /**
  * 解析单个章节 tr：不是章节行（无 .html 链接 / 是 index.html）时返回 null。
  */
@@ -476,12 +517,13 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
       collectUniqueTagTexts($, $('.tag, .novel_tag, [class*="tag"]'), tags);
     }
 
-    // 提取章节列表和卷信息
-    const chapters: SyosetuChapter[] = [];
-    const volumeInfo: Array<{ title: string; startIndex: number }> = [];
+    // 提取章节列表和卷信息：新版 section.episode-list 优先，旧版 table 回退
+    const episodeList = parseSyosetuEpisodeList($, baseUrl);
+    const chapters: SyosetuChapter[] = episodeList.chapters;
+    const volumeInfo: Array<{ title: string; startIndex: number }> = episodeList.volumeInfo;
 
-    // 查找章节表格（syosetu.org 通常使用 table 标签）
-    const chapterTable = $('table').first();
+    // 查找章节表格（旧版 syosetu.org 使用 table 标签）
+    const chapterTable = chapters.length === 0 ? $('table').first() : $([]);
 
     if (chapterTable.length > 0) {
       let currentVolumeTitle: string | null = null;

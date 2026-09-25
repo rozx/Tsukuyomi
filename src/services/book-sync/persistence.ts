@@ -204,15 +204,35 @@ export async function undoSyncChanges(before: SyncBefore): Promise<SyncBefore> {
   });
 }
 
-export async function writeSkipped(
+/**
+ * 在单个事务内读取书籍、按 patch 修改元数据并递增修改序号（不涉及章节正文）。
+ */
+async function patchBookRecord(
   bookId: string,
-  entries: Pick<CatalogEntry, 'url' | 'title'>[],
-  skipped: boolean,
+  patch: (book: Novel) => Partial<Novel>,
 ): Promise<SyncBefore> {
   const tx = (await getDB()).transaction(['books', 'book-revisions'], 'readwrite');
   return completeIdbTransaction(tx, async () => {
     const book = await tx.objectStore('books').get(bookId);
     if (!book) throw new BookSyncError('BOOK_READ_FAILED', '书籍不存在');
+    await tx
+      .objectStore('books')
+      .put(serializeDates({ ...book, ...patch(book), lastEdited: new Date() }));
+    return {
+      bookId,
+      book,
+      chapters: new Map(),
+      postRevision: await bumpBookRevision(tx.objectStore('book-revisions'), bookId),
+    };
+  });
+}
+
+export async function writeSkipped(
+  bookId: string,
+  entries: Pick<CatalogEntry, 'url' | 'title'>[],
+  skipped: boolean,
+): Promise<SyncBefore> {
+  return patchBookRecord(bookId, (book) => {
     const recipe = resolveRecipe(book).recipe;
     const known = new Set(
       (book.volumes ?? []).flatMap((v) => (v.chapters ?? []).map((c) => c.webUrl)),
@@ -225,14 +245,47 @@ export async function writeSkipped(
     }
     recipe.skippedUrls = [...ignored.values()];
     recipe.recordedAt ||= Date.now();
-    await tx
-      .objectStore('books')
-      .put(serializeDates({ ...book, updateRecipe: recipe, lastEdited: new Date() }));
-    return {
-      bookId,
-      book,
-      chapters: new Map(),
-      postRevision: await bumpBookRevision(tx.objectStore('book-revisions'), bookId),
-    };
+    return { updateRecipe: recipe };
+  });
+}
+
+/** 逐章修改章节元数据（不涉及正文）；patch 返回原对象表示不改 */
+function patchChapters(bookId: string, patch: (chapter: Chapter) => Chapter): Promise<SyncBefore> {
+  return patchBookRecord(bookId, (book) => ({
+    volumes: (book.volumes ?? []).map((volume) => ({
+      ...volume,
+      chapters: (volume.chapters ?? []).map(patch),
+    })),
+  }));
+}
+
+/**
+ * 记录已比对确认正文未变的章节的远端更新日期（写回章节 lastUpdated），
+ * 使下次快速检查按日期判断为无变化，不再重复抓取正文。
+ */
+export async function writeConfirmedDates(
+  bookId: string,
+  confirmed: Pick<CatalogEntry, 'url' | 'lastUpdated'>[],
+): Promise<SyncBefore> {
+  const dates = new Map(
+    confirmed.flatMap((e) => (e.lastUpdated ? [[e.url, new Date(e.lastUpdated)] as const] : [])),
+  );
+  return patchChapters(bookId, (chapter) => {
+    const date = chapter.webUrl ? dates.get(chapter.webUrl) : undefined;
+    return date ? { ...chapter, lastUpdated: date } : chapter;
+  });
+}
+
+/**
+ * 为手动添加的章节写回推断出的来源网址（仅限仍没有网址的章节），使之后的检查按网址识别。
+ */
+export async function writeChapterUrls(
+  bookId: string,
+  links: { chapterId: string; url: string }[],
+): Promise<SyncBefore> {
+  const urls = new Map(links.map((l) => [l.chapterId, l.url]));
+  return patchChapters(bookId, (chapter) => {
+    const url = urls.get(chapter.id);
+    return url && !chapter.webUrl ? { ...chapter, webUrl: url } : chapter;
   });
 }

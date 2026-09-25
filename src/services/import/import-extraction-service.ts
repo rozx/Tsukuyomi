@@ -13,6 +13,7 @@ import { IMPORT_PARSE_LIMITS } from './import-work-limits';
 import { NovelScraperFactory } from 'src/services/scraper/novel-scraper-factory';
 import { fetchScraperPage } from 'src/services/scraper/core/page-transport';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
+import { FirecrawlQuotaError } from 'src/services/firecrawl/firecrawl-errors';
 import type { ImportParsedContent } from 'src/models/import-parsing';
 
 type Snapshot = Extract<ImportResource, { kind: 'snapshot' }>;
@@ -53,13 +54,16 @@ function ensureActive(signal?: AbortSignal): void {
   if (signal?.aborted) throw signal.reason ?? new DOMException('操作已取消', 'AbortError');
 }
 
+/** Firecrawl 额度耗尽：章节批次据此停止领取剩余章节 */
+export const FIRECRAWL_QUOTA_ERROR_CODE = 'FIRECRAWL_QUOTA';
+
 function errorResult(sourceId: string, error: unknown): SourceResult {
   const message = error instanceof Error ? error.message : String(error);
-  return {
-    success: false,
-    sourceId,
-    error: { code: /^([A-Z_]+):/.exec(message)?.[1] ?? 'SOURCE_FAILED', message },
-  };
+  const code =
+    error instanceof FirecrawlQuotaError
+      ? FIRECRAWL_QUOTA_ERROR_CODE
+      : (/^([A-Z_]+):/.exec(message)?.[1] ?? 'SOURCE_FAILED');
+  return { success: false, sourceId, error: { code, message } };
 }
 
 function formatOf(

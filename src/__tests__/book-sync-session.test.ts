@@ -35,7 +35,7 @@ describe('书籍同步检查会话', () => {
     expect(result.unchecked).toEqual(['https://example.com/1']);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
-  it('内置日期候选仅抓取较新的章节并用正文确认', async () => {
+  it('快速检查只抓目录，日期较新的章节留给逐章比对确认', async () => {
     const book = syncBook(2);
     delete book.updateRecipe;
     book.webUrl = ['https://ncode.syosetu.com/n1234ab/'];
@@ -65,8 +65,12 @@ describe('书籍同步检查会话', () => {
       paragraphs: ['新正文'],
     });
     const session = await BookSyncService.openSession({ target: { bookId: book.id } });
-    expect((await session.quickCheck()).updated.map((e) => e.chapterId)).toEqual(['c1']);
-    expect(fetch.mock.calls.map((c) => c[0])).toEqual([book.webUrl[0]!, book.webUrl[0] + '1/']);
+    const quick = await session.quickCheck();
+    expect(quick.updated).toEqual([]);
+    expect(quick.dateNewer).toEqual([book.webUrl[0] + '1/']);
+    expect(fetch.mock.calls.map((c) => c[0])).toEqual([book.webUrl[0]!]);
+    // 深度检查比对全部已导入章节（本例两章正文都与远端不同）
+    expect((await session.deepCheck()).updated.map((e) => e.chapterId)).toEqual(['c1', 'c2']);
   });
   it('深度检查最多三路并发，取消保留已完成结果且固定章节从不请求', async () => {
     const book = syncBook(6);
@@ -336,7 +340,7 @@ describe('按更新日期判断无变化', () => {
     };
   }
 
-  it('快速检查把日期没有变新的章节记为按日期无变化，没有日期的仍只是未检查', async () => {
+  it('快速检查只读目录：日期没变新的记为按日期无变化，变新的列为待比对，没有日期的仍只是未检查', async () => {
     const { root, session } = await builtinSession([
       new Date('2026-09-19'),
       undefined,
@@ -344,8 +348,9 @@ describe('按更新日期判断无变化', () => {
     ]);
     const result = await session.quickCheck();
     expect(result.dateUnchanged).toEqual([root + '1/']);
-    expect(result.unchecked).toEqual([root + '1/', root + '2/']);
-    expect(result.checked).toEqual([root + '3/']);
+    expect(result.dateNewer).toEqual([root + '3/']);
+    expect(result.unchecked).toEqual([root + '1/', root + '2/', root + '3/']);
+    expect(result.checked).toEqual([]);
   });
 
   it('深度检查比对后移出按日期无变化', async () => {

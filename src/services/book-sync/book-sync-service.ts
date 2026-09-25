@@ -11,12 +11,20 @@ import type {
 import { ImportLibraryReader } from 'src/services/import/import-library-reader';
 import { ChapterService } from 'src/services/chapter-service';
 import { resolveRecipe } from './recipe';
-import { BookSyncReplay } from './replay';
+import { BookSyncReplay, FIRECRAWL_QUOTA_CODE } from './replay';
+import { getCachedRemoteChapter, setCachedRemoteChapter } from './remote-chapter-cache';
 import { BookSyncError } from './errors';
-import { compareChapter, inferNewChapters } from './changes';
+import { compareChapter, inferNewChapters, linkManualChapters } from './changes';
 import { BookExecutionGuard } from 'src/services/book-execution-guard';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
-import { commitSyncChanges, notifySyncCommit, undoSyncChanges, writeSkipped } from './persistence';
+import {
+  commitSyncChanges,
+  notifySyncCommit,
+  undoSyncChanges,
+  writeChapterUrls,
+  writeConfirmedDates,
+  writeSkipped,
+} from './persistence';
 import type { SyncBefore, SyncWrite } from './persistence';
 
 type Snapshot = Extract<
@@ -34,6 +42,7 @@ function emptyChanges(revision: number | null): BookSyncChangeset {
     unchecked: [],
     checked: [],
     dateUnchanged: [],
+    dateNewer: [],
     status: 'unchecked',
   };
 }
@@ -117,6 +126,9 @@ class BookSyncSession {
     this.state.dateUnchanged = entries
       .filter((e) => e.lastUpdated && this.state.unchecked.includes(e.url) && !this.datedNewer(e))
       .map((e) => e.url);
+    this.state.dateNewer = entries
+      .filter((e) => this.state.unchecked.includes(e.url) && this.datedNewer(e))
+      .map((e) => e.url);
     this.state.status = 'ready';
   }
 
@@ -149,12 +161,40 @@ class BookSyncSession {
       signal,
     );
     if (!result.ok) {
+      // 额度耗尽不代表配方失效：报检查失败（可稍后重试 / 补充额度），不引导重建配方
+      if (result.code === FIRECRAWL_QUOTA_CODE) throw new BookSyncError(result.code, result.message);
       this.invalidate(result.code, result.message);
       return false;
     }
     this.catalog = result.catalog;
+    await this.linkManualChapters();
     this.classify();
     return true;
+  }
+
+  /**
+   * 手动添加的章节没有网址时按标题 / 位置推断对应的目录条目：先在本次会话内关联，
+   * 书籍未被占用时再写回网址（失败不影响检查）。
+   */
+  private async linkManualChapters(): Promise<void> {
+    if (!this.snapshot || !this.catalog) return;
+    const links = linkManualChapters(this.chapters(), this.catalog.entries);
+    if (!links.length) return;
+    const urls = new Map(links.map((l) => [l.chapterId, l.url]));
+    for (const chapter of this.chapters()) {
+      const url = urls.get(chapter.id);
+      if (url) chapter.webUrl = url;
+    }
+    if (!('bookId' in this.target)) return;
+    const bookId = this.target.bookId;
+    if ((await BookExecutionGuard.occupants(bookId)).length) return;
+    try {
+      const result = await BookExecutionGuard.commit(bookId, () => writeChapterUrls(bookId, links));
+      await notifySyncCommit(result);
+      await this.refreshBook();
+    } catch (error) {
+      console.warn('[BookSync] 写回手动章节网址失败', error);
+    }
   }
 
   private entry(value: CatalogEntry | string): CatalogEntry {
@@ -164,10 +204,23 @@ class BookSyncSession {
     return entry;
   }
 
+  /**
+   * 跨会话缓存键：抽取规则（引擎 / 清理 / 去标题）+ 网址 + 目录给出的更新时间。
+   * 配方变化或目录日期变新（远端有新版本）后不复用旧正文，避免把新修订误判为未变。
+   */
+  private remoteCacheKey(entry: CatalogEntry): string {
+    const r = this.recipe;
+    const version = entry.lastUpdated ? new Date(entry.lastUpdated).getTime() : '';
+    return `${JSON.stringify([r.engine, r.cleanup, r.stripHeading])}|${entry.url}|${version}`;
+  }
+
   private async content(entry: CatalogEntry, signal?: AbortSignal): Promise<string[]> {
     signal?.throwIfAborted();
-    const cached = this.cache.get(entry.url);
-    if (cached) return cached;
+    const cached = this.cache.get(entry.url) ?? getCachedRemoteChapter(this.remoteCacheKey(entry));
+    if (cached) {
+      this.cache.set(entry.url, cached);
+      return cached;
+    }
     let pending = this.pending.get(entry.url);
     if (!pending) {
       pending = (async () => {
@@ -183,6 +236,7 @@ class BookSyncSession {
           throw new BookSyncError(result.code, result.message);
         }
         this.cache.set(entry.url, result.paragraphs);
+        setCachedRemoteChapter(this.remoteCacheKey(entry), result.paragraphs);
         return result.paragraphs;
       })();
       this.pending.set(entry.url, pending);
@@ -212,6 +266,7 @@ class BookSyncSession {
     if (update) this.state.updated.push(update);
     this.state.unchecked = this.state.unchecked.filter((url) => url !== entry.url);
     this.state.dateUnchanged = this.state.dateUnchanged.filter((url) => url !== entry.url);
+    this.state.dateNewer = this.state.dateNewer.filter((url) => url !== entry.url);
     if (!this.state.checked.includes(entry.url)) this.state.checked.push(entry.url);
     this.state.failed = this.state.failed.filter((e) => e.url !== entry.url);
   }
@@ -248,6 +303,11 @@ class BookSyncSession {
                 ...this.state.failed.filter((e) => e.url !== entry.url),
                 { url: entry.url, code, message },
               ];
+              // Firecrawl 额度耗尽：停止剩余章节（保持未检查），不作废配方
+              if (code === FIRECRAWL_QUOTA_CODE) {
+                controller.abort();
+                break;
+              }
             }
           }
         }),
@@ -296,9 +356,10 @@ class BookSyncSession {
     const failed: SyncFailure[] = [];
     let cursor = 0;
     let fatal: BookSyncError | undefined;
+    let quotaFailure: SyncFailure | undefined;
     await Promise.all(
       Array.from({ length: Math.min(3, entries.length) }, async () => {
-        while (cursor < entries.length && !fatal) {
+        while (cursor < entries.length && !fatal && !quotaFailure) {
           const entry = entries[cursor++]!;
           const update = this.state.updated.find((e) => e.url === entry.url);
           const added = inferred.find((e) => e.url === entry.url);
@@ -333,11 +394,18 @@ class BookSyncSession {
               fatal = new BookSyncError(code, message);
               this.invalidate(code, message, entry.url);
             } else failed.push({ url: entry.url, code, message });
+            if (code === FIRECRAWL_QUOTA_CODE) quotaFailure ??= { url: entry.url, code, message };
           }
         }
       }),
     );
     if (fatal) throw fatal;
+    // Firecrawl 额度耗尽：未抓取的所选章节同样记为额度失败，已抓取的照常写入
+    if (quotaFailure) {
+      const { code, message } = quotaFailure;
+      for (const entry of entries.slice(cursor))
+        failed.push({ url: entry.url, code, message });
+    }
     return {
       writes: entries.flatMap((e) => (writes.has(e.url) ? [writes.get(e.url)!] : [])),
       failed,
@@ -347,6 +415,31 @@ class BookSyncSession {
   private recordFailures(failed: SyncFailure[]): void {
     this.state.failed = failed;
     this.state.new = this.state.new.filter((e) => !failed.some((f) => f.url === e.url));
+  }
+
+  /**
+   * 比对确认正文未变、且目录日期比本地新的已导入章节：把远端日期写回章节，
+   * 下次快速检查按日期判断为无变化。书籍被占用或写入失败时跳过（不影响检查结果）。
+   */
+  private async recordConfirmedDates(): Promise<void> {
+    if (!('bookId' in this.target) || !this.catalog || this.state.status === 'invalid') return;
+    const updated = new Set(this.state.updated.map((e) => e.url));
+    const confirmed = this.catalog.entries.filter(
+      (e) => this.state.checked.includes(e.url) && !updated.has(e.url) && this.datedNewer(e),
+    );
+    if (!confirmed.length) return;
+    const bookId = this.target.bookId;
+    if ((await BookExecutionGuard.occupants(bookId)).length) return;
+    const failed = this.state.failed;
+    try {
+      const result = await BookExecutionGuard.commit(bookId, () =>
+        writeConfirmedDates(bookId, confirmed),
+      );
+      await notifySyncCommit(result);
+      if (await this.refreshAfterCommit()) this.state.failed = failed;
+    } catch (error) {
+      console.warn('[BookSync] 记录已确认的更新日期失败', error);
+    }
   }
 
   private async refreshAfterCommit(): Promise<boolean> {
@@ -470,15 +563,14 @@ class BookSyncSession {
     });
   }
 
+  /**
+   * 快速检查：只回放目录，得出新章节 / 已跳过，并按站点更新日期把已导入章节分为
+   * 「按日期无变化」与「日期较新、待比对」。不抓取任何已导入章节的正文，正文比对由深度检查按需进行。
+   */
   async quickCheck(signal?: AbortSignal): Promise<BookSyncChangeset> {
     return this.exclusive(async () => {
       try {
-        if (await this.prepare(signal)) {
-          const entries = this.catalog!.entries.filter(
-            (entry) => this.state.unchecked.includes(entry.url) && this.datedNewer(entry),
-          );
-          await this.checkEntries(entries, signal);
-        }
+        await this.prepare(signal);
       } catch (error) {
         if (!signal?.aborted) throw error;
         this.state.status = 'cancelled';
@@ -503,6 +595,7 @@ class BookSyncSession {
             !this.recipe.skippedUrls?.some((s) => s.url === e.url),
         );
         await this.checkEntries(entries, options.signal, options.onProgress);
+        if (!options.signal?.aborted) await this.recordConfirmedDates();
       } catch (error) {
         if (!options.signal?.aborted) throw error;
         this.state.status = 'cancelled';

@@ -6,6 +6,7 @@ import { parseImportHtml } from 'src/services/import/import-html-parser';
 import { ImportParsingClient } from 'src/services/import/import-parsing-client';
 import { filterImportItems } from 'src/services/import/import-pattern-filter';
 import { normalizeChapterText } from './normalize';
+import { FirecrawlQuotaError } from 'src/services/firecrawl/firecrawl-errors';
 import { BookSyncError, cleanupError } from './errors';
 
 type Failure = { ok: false; code: string; message: string };
@@ -113,11 +114,19 @@ export function parseChapter(html: string, url: string, recipe: BookUpdateRecipe
     : adapter(url).parseChapterSnapshot(html).text;
 }
 
+/** Firecrawl 额度耗尽：批次需停止，但不代表配方失效 */
+export const FIRECRAWL_QUOTA_CODE = 'FIRECRAWL_QUOTA';
+
 function failure(error: unknown, fallback: string): Failure {
   if (error instanceof Error && error.name === 'AbortError') throw error;
   return {
     ok: false,
-    code: error instanceof BookSyncError ? error.code : fallback,
+    code:
+      error instanceof BookSyncError
+        ? error.code
+        : error instanceof FirecrawlQuotaError
+          ? FIRECRAWL_QUOTA_CODE
+          : fallback,
     message: error instanceof Error ? error.message : String(error),
   };
 }

@@ -2,7 +2,10 @@ import axios from 'axios';
 import { ProxyService } from 'src/services/proxy-service';
 import { isElectron } from 'src/utils/platform';
 import { runAbortable } from 'src/utils/abortable-operation';
+import { BlockedResponseError, HttpStatusError } from 'src/services/proxy-fetch-plan';
+import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import type { ScraperPageSnapshot } from '../types';
+import { isChallengePage } from './challenge-detection';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -32,8 +35,9 @@ async function fetchViaElectron(
     headers,
     timeout: FETCH_TIMEOUT_MS,
   });
-  if (response.status >= 400) {
-    throw new Error(`目标网站返回错误: ${response.status}`);
+  if (response.status >= 400) throw new HttpStatusError(response.status);
+  if (response.data && isChallengePage(response.data)) {
+    throw new BlockedResponseError('Electron 直连');
   }
   if (response.data)
     return {
@@ -119,6 +123,7 @@ async function fetchViaAxios(
     ? (extractHtmlFromJsonProxyResponse(response.data, dataStr) ?? response.data)
     : response.data;
   if (typeof html !== 'string') throw new Error('页面响应不是可解析的文本');
+  if (isChallengePage(html)) throw new BlockedResponseError(proxiedUrl);
   const responseUrl =
     proxiedUrl === originalUrl && typeof response.request?.responseURL === 'string'
       ? (response.request.responseURL as string)
@@ -130,6 +135,27 @@ async function fetchViaAxios(
     status: response.status,
     contentType,
     ...(responseUrl ? { responseUrl } : {}),
+  };
+}
+
+/** 经 Firecrawl 抓取页面原始 HTML（回退或 firecrawl 映射），站点附加请求头经 Firecrawl 转发 */
+async function fetchViaFirecrawl(
+  originalUrl: string,
+  extraHeaders: Record<string, string> = {},
+  signal?: AbortSignal,
+): Promise<ScraperPageSnapshot> {
+  const result = await FirecrawlClient.scrape(originalUrl, {
+    format: 'rawHtml',
+    ...(Object.keys(extraHeaders).length > 0 ? { headers: extraHeaders } : {}),
+    ...(signal ? { signal } : {}),
+  });
+  return {
+    html: result.content,
+    requestUrl: originalUrl,
+    transportUrl: `firecrawl:${originalUrl}`,
+    status: result.statusCode,
+    contentType: 'text/html',
+    ...(result.url && result.url !== originalUrl ? { responseUrl: result.url } : {}),
   };
 }
 
@@ -197,7 +223,7 @@ export async function fetchScraperPage(
         {
           skipExternalProxy: options.skipExternalProxy ?? false,
           skipInternalProxy: electron,
-          maxRetries: 3,
+          firecrawl: () => fetchViaFirecrawl(url, options.extraHeaders, options.signal),
           ...(options.signal ? { signal: options.signal } : {}),
         },
       ),

@@ -117,16 +117,17 @@ export class ToolRegistry {
     return this.mapTools(navigationTools);
   }
 
-  static getWebSearchTools(): AITool[] {
-    // 检查是否已配置 Tavily API Key
-    const apiKey = GlobalConfig.getTavilyApiKey();
-
-    // 如果没有配置 API Key，不返回网络搜索工具
-    if (!apiKey) {
-      return [];
+  /**
+   * 网络搜索 / 网页读取工具。配置 Tavily Key 时总是提供；
+   * allowFirecrawlOnly（助手聊天）时，Firecrawl 回退开启也可提供（未配置 Tavily 时经 Firecrawl）。
+   * 翻译 / 润色 / 校对任务不传该选项，避免长任务消耗与网页抓取共用的 keyless 额度。
+   */
+  static getWebSearchTools(options: { allowFirecrawlOnly?: boolean } = {}): AITool[] {
+    if (GlobalConfig.getTavilyApiKey()) return this.mapTools(webSearchTools);
+    if (options.allowFirecrawlOnly && GlobalConfig.getFirecrawlFallbackEnabled()) {
+      return this.mapTools(webSearchTools);
     }
-
-    return this.mapTools(webSearchTools);
+    return [];
   }
 
   static getTodoListTools(): AITool[] {
@@ -149,17 +150,24 @@ export class ToolRegistry {
    * 仅用于聊天助手的工具集合（包含帮助文档工具）
    */
   static getAssistantTools(bookId?: string): AITool[] {
-    return [...this.getAllTools(bookId), ...this.getHelpDocsTools()];
+    return [
+      ...this.getAllTools(bookId, undefined, { allowFirecrawlOnly: true }),
+      ...this.getHelpDocsTools(),
+    ];
   }
 
   static getTranslationToolsForAI(options?: CreateTranslationToolsOptions): AITool[] {
     return this.mapTools(createTranslationTools(options));
   }
 
-  static getAllTools(bookId?: string, toolOptions?: CreateTranslationToolsOptions): AITool[] {
+  static getAllTools(
+    bookId?: string,
+    toolOptions?: CreateTranslationToolsOptions,
+    webSearchOptions: { allowFirecrawlOnly?: boolean } = {},
+  ): AITool[] {
     const tools: AITool[] = [
-      // 网络搜索工具始终可用（不需要 bookId）
-      ...this.getWebSearchTools(),
+      // 网络搜索工具（不需要 bookId；可用性见 getWebSearchTools）
+      ...this.getWebSearchTools(webSearchOptions),
       // 待办事项工具始终可用（不需要 bookId）
       ...this.getTodoListTools(),
       // ask_user 始终可用（不需要 bookId；会阻塞等待用户回答）

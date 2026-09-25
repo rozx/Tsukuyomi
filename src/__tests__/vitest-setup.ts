@@ -9,6 +9,7 @@
 import { beforeEach, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { installLocalStoragePolyfill } from './local-storage-polyfill';
+import { clearRemoteChapterCache } from 'src/services/book-sync/remote-chapter-cache';
 
 // localStorage polyfill 必须在 setup（IndexedDB 初始化）之前装好，否则
 // stores / services 在模块加载阶段读 localStorage 就已经炸了
@@ -19,6 +20,7 @@ await import('./setup');
 beforeEach(() => {
   localStorage.clear();
   setActivePinia(createPinia());
+  clearRemoteChapterCache();
 });
 
 vi.mock('primevue/usetoast', () => ({

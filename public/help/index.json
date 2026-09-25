@@ -61,7 +61,7 @@
     "file": "settings-guide.md",
     "path": "help",
     "category": "使用指南",
-    "description": "设置弹窗功能详解、配置选项和最佳实践"
+    "description": "设置页各选项卡详解：AI 模型、代理设置、网站映射与 Firecrawl 回退、API Keys、同步等"
   },
   {
     "id": "local-embedding",

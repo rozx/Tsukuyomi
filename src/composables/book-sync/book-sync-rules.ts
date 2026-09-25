@@ -99,12 +99,15 @@ export function syncVerdict(changeset: BookSyncChangeset, creating: boolean): Sy
       details: [`目录共 ${changeset.new.length + skipped} 章`, ...skippedText],
     };
   const dated = new Set(changeset.dateUnchanged);
-  const pending = changeset.unchecked.filter((url) => !dated.has(url)).length;
+  const newer = new Set(changeset.dateNewer);
+  const datedNewer = changeset.unchecked.filter((url) => newer.has(url)).length;
+  const pending = changeset.unchecked.filter((url) => !dated.has(url) && !newer.has(url)).length;
   const unchanged = changeset.checked.length - changeset.updated.length;
   const details = [
     `已导入 ${changeset.unchecked.length + changeset.checked.length} 章`,
     ...(dated.size ? [`${dated.size} 章按更新日期无变化`] : []),
     ...(unchanged > 0 ? [`${unchanged} 章已比对无变化`] : []),
+    ...(datedNewer ? [`${datedNewer} 章更新日期较新、可能有修订`] : []),
     ...(pending ? [`${pending} 章未比对正文`] : []),
     ...skippedText,
   ];
@@ -114,8 +117,11 @@ export function syncVerdict(changeset: BookSyncChangeset, creating: boolean): Sy
   ];
   const deepHint = !changeset.unchecked.length
     ? undefined
-    : pending
-      ? `${pending} 章没有可用的更新日期，需要逐章比对正文才能确认是否有修订。`
+    : datedNewer || pending
+      ? [
+          ...(datedNewer ? [`${datedNewer} 章更新日期较新`] : []),
+          ...(pending ? [`${pending} 章没有可用的更新日期`] : []),
+        ].join('、') + '，逐章比对正文才能确认是否有修订。'
       : '更新日期不一定可靠。想确认正文是否被悄悄改过，可以逐章比对。';
   const verdict = (tone: SyncVerdict['tone'], title: string): SyncVerdict => ({
     tone,
@@ -125,7 +131,7 @@ export function syncVerdict(changeset: BookSyncChangeset, creating: boolean): Sy
   });
   if (changes.length) return verdict('changes', changes.join(' · '));
   if (changeset.failed.length) return verdict('failed', '部分章节检查失败');
-  return pending ? verdict('pending', '没有新章节') : verdict('latest', '已是最新');
+  return pending || datedNewer ? verdict('pending', '没有新章节') : verdict('latest', '已是最新');
 }
 
 /** 应用栏的一句话说明：本次会写入什么。 */

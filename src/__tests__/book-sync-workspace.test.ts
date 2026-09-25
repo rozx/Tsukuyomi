@@ -57,6 +57,7 @@ function changeset(partial: Partial<BookSyncChangeset> = {}): BookSyncChangeset 
     unchecked: [`${NCODE}2/`],
     checked: [`${NCODE}1/`],
     dateUnchanged: [],
+    dateNewer: [],
     status: 'ready',
     ...partial,
   };

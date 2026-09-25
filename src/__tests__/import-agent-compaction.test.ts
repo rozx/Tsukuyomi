@@ -172,7 +172,7 @@ describe('导入对话压缩', () => {
     expect(requests[0]!.messages![0]!.content).toContain('自动摘要');
     const events = (await ImportRepository.listEvents(task.id, { limit: 100 })).items;
     expect(events.some((event) => event.kind === 'summary')).toBe(true);
-  });
+  }, 20_000); // 构造 2.4 万字历史并估算上下文，CI 覆盖率模式下约慢 5 倍，默认 5 秒会偶发超时
 
   it('助手已经耗尽超限恢复时，导入外层不额外压缩和重试', async () => {
     const task = await taskWith({ messages: history });
