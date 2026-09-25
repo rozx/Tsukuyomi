@@ -61,17 +61,22 @@ A scrape that returns HTTP 200 SHALL still be treated as failed when `data.metad
 
 ### Requirement: Global rate limiting and 429 handling
 
-All Firecrawl requests in the app SHALL pass through a single shared queue that bounds concurrency and request rate regardless of which caller issued them. On HTTP 429 the client SHALL wait for the `Retry-After` duration (or a bounded default when absent) and retry, up to a bounded number of retries, after which it SHALL fail with a rate-limit error.
+All Firecrawl requests in the app SHALL pass through a single shared queue that bounds concurrency (2 in flight) regardless of which caller issued them. The queue MUST NOT impose a fixed per-minute cap, so higher Firecrawl plans are not slowed to the Free plan's rate. On HTTP 429 the client SHALL pause the whole queue (not only the failing request) for the wait Firecrawl gives — the `Retry-After` header, else the body's `retry_after_seconds`, else 20 seconds, capped at 60 seconds — and retry, up to a bounded number of retries, after which it SHALL fail with a rate-limit error. The remaining pause time SHALL be observable so the UI can show that it is waiting.
 
 #### Scenario: Concurrent imports share one limit
 
 - **WHEN** two import batches each request 10 scrapes at the same time
 - **THEN** the number of in-flight Firecrawl requests SHALL never exceed the shared concurrency bound
 
-#### Scenario: Retry-After honored
+#### Scenario: No fixed per-minute cap
 
-- **WHEN** Firecrawl responds 429 with `Retry-After: 3`
-- **THEN** the client SHALL not retry before 3 seconds have elapsed
+- **WHEN** 11 scrapes are requested with an API key and Firecrawl answers each with 200
+- **THEN** all 11 SHALL be sent without waiting for a per-minute window
+
+#### Scenario: 429 pauses the whole queue
+
+- **WHEN** one scrape receives 429 with `Retry-After: 3` while another scrape is queued
+- **THEN** neither request SHALL be sent again before 3 seconds have elapsed
 
 #### Scenario: Retries exhausted
 
@@ -80,7 +85,7 @@ All Firecrawl requests in the app SHALL pass through a single shared queue that 
 
 ### Requirement: Quota exhaustion is a distinguishable, batch-stopping error
 
-HTTP 402 responses, and keyless responses indicating the per-IP daily limit is exhausted, SHALL fail with a dedicated quota-exhausted error type distinct from other failures. Batch callers (chapter import, book-sync update check, and book-sync apply) SHALL stop processing the remaining items of that batch when they receive it, SHALL keep results already fetched, SHALL NOT mark the site recipe invalid because of it, and SHALL surface a message stating that Firecrawl quota is exhausted (with key: pointing to the credit check; keyless: mentioning the per-IP daily limit).
+HTTP 402 responses, and keyless 429 responses indicating the per-IP daily limit is exhausted (body `reason: "credits"`, a message explicitly mentioning a daily limit, or a wait longer than 2 minutes — the words "keyless" or "free" alone MUST NOT count, since short-term rate-limit messages contain them too), SHALL fail with a dedicated quota-exhausted error type distinct from other failures. Batch callers (chapter import, book-sync update check, and book-sync apply) SHALL stop processing the remaining items of that batch when they receive it, SHALL keep results already fetched, SHALL NOT mark the site recipe invalid because of it, and SHALL surface a message stating that Firecrawl quota is exhausted (with key: pointing to the credit check; keyless: mentioning the per-IP daily limit).
 
 #### Scenario: Key out of credits mid-import
 
@@ -101,7 +106,7 @@ HTTP 402 responses, and keyless responses indicating the per-IP daily limit is e
 
 ### Requirement: Quota latch
 
-After a quota-exhausted error, the client SHALL fail every subsequent Firecrawl request immediately with the same error type, without sending a network request, until the configured key changes, a credit-usage query with the current key reports remaining credits greater than zero, or 60 minutes have passed since the latch was set.
+After a quota-exhausted error, the client SHALL fail every subsequent Firecrawl request immediately with the same error type, without sending a network request, until the configured key changes, a credit-usage query with the current key reports remaining credits greater than zero, or the latch expires. The latch SHALL last for the wait Firecrawl gives (e.g. `retry_after_seconds`), and 60 minutes when none is given.
 
 #### Scenario: Fail fast after exhaustion
 

@@ -14,6 +14,9 @@
 - **修复** syosetu.org 目录解析：站点已改用 `section.episode-list` 新版目录（不再是 `<table>`），现有解析器在当前页面上取到 0 话；新增新版解析并保留旧版回退（实施中发现，经用户确认纳入本变更）。
 - **BREAKING（行为）** 移除「自动切换代理服务」：不再在全局代理列表中轮转，`proxyAutoSwitch` 字段退役（保留读取兼容、不再生效），原「自动添加映射」不再记录成功的 CORS 代理，只记录 Firecrawl。
 - **修改** AI 工具 `search_web` / `fetch_webpage`：有 Tavily Key 时先用 Tavily，Tavily 出错（额度 / 5xx / 网络）或未配置时回退 Firecrawl（受同一总开关控制）。「仅靠 Firecrawl」的可用性只开放给**助手聊天**与**导入 agent**；翻译 / 润色 / 校对任务仍仅在配置 Tavily Key 时提供网络工具，避免长翻译任务消耗与抓取共用的 keyless 额度。导入 agent 的 `search_web` 同样遵循此顺序。
+- **修改（归档后补充，2026-09-24/25 实测驱动）** 书籍更新检查：快速检查**只读目录**，不再抓取任何已导入章节正文；按站点日期把章节分为「按更新日期无变化 / 更新日期较新、可能有修订 / 未比对正文」，正文比对只在「逐章比对正文」时进行。逐章比对确认未变的章节写回站点日期；手动添加（无网址）的章节按标题或相邻位置自动关联目录条目并写回网址，不再重复列为新章节；空行差异不计为修订；已抓取正文 30 分钟内跨会话复用；逐章比对显示「等待 Firecrawl 限速」。
+- **修改（归档后补充）** Firecrawl 限速与额度：队列只限并发 2、不设固定每分钟上限（免费档每分钟 10 次由 Firecrawl 的 429 约束，付费档不被拖慢）；429 暂停整个队列（等待时间取 `Retry-After` 头、响应体 `retry_after_seconds`，否则 20 秒）。keyless 日额度按响应体 `reason: "credits"` 识别（不再按 keyless / free 字样），锁存持续到给出的等待时间。
+- **修复（归档后补充）** API Keys：设置异步加载完成前输入框为空、「保存」误可用会删除已保存 Key 的竞态；「检查额度」改为描边按钮；网站映射表新增删除按钮。
 - **不在范围**：移除默认 CORS 代理——新装用户自 `e8c24afc` 起已只有 CORS Tsukuyomi；本变更**不**迁移老用户已持久化的 `proxyList` / `proxySiteMapping`。AI 请求、封面、图片上传仍只走 CORS 代理，不经 Firecrawl。
 
 ## Capabilities
@@ -28,6 +31,7 @@
 ### Modified Capabilities
 
 - `novel18-age-verification`：经 Firecrawl 抓取 novel18 时 MUST 通过 Firecrawl `headers` 转发 `Cookie: over18=yes`，且年龄确认页判定同样适用于 Firecrawl 返回内容。
+- `book-sync-service`（归档后补充）：快速检查只读目录；逐章比对确认未变时记录站点日期；关联手动添加的章节；空行差异不计为修订。
 
 ## Impact
 

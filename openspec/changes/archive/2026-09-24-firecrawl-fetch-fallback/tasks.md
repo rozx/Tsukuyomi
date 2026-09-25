@@ -51,3 +51,16 @@
 - [x] 6.1 Update the help docs for the proxy settings, the new 网站映射 tab, and the Firecrawl card in API Keys (keyless limits, privacy, credit check); verify that help-doc tests / the help-docs query index pick up the pages
 - [ ] 6.2 Browser end-to-end check in the preview: with default settings, import `https://syosetu.org/novel/375522/6.html` on the web and confirm the chapter parses and `syosetu.org → ['firecrawl']` appears in 网站映射; then turn the master switch off and confirm the import fails with the 403 error. Follow the dev-profile caution (don't trigger sync). Then in `bun run dev:electron`, import one kakuyomu and one ncode chapter and confirm the Electron logs show navigation to the original URL (not `cors.rozx.moe`), and that syosetu.org either succeeds directly or falls back to Firecrawl — *Web part verified 2026-09-24 (CORS 403 → keyless Firecrawl, 607 paragraphs, mapping auto-added; fallback off → 403). Electron part waived by the user.*
 - [x] 6.3 Run `bun run test && bun run lint && bun run type-check && bun run quality-check` and fix any failures introduced by this change
+
+## 7. Post-archive fixes (2026-09-24/25)
+
+- [x] 7.1 Key box fills in after settings load, so 保存 can't delete the saved key by mistake; verified by `use-firecrawl-key-settings` tests
+- [x] 7.2 Detect the keyless daily limit from the body's `reason: "credits"`, lock until `retry_after_seconds`, and replace the fixture with the real response; verified by `firecrawl-client` tests
+- [x] 7.3 Deep check records the site date on chapters confirmed unchanged; the verdict separates 「更新日期较新」 from 「没有可用的更新日期」; verified by `book-sync-confirmed-dates` and `book-sync-rules` tests
+- [x] 7.4 Link manually added chapters by title and position, and write their URLs back; verified by `book-sync-link-manual` tests and on the real 36-chapter book in the preview (0 new chapters)
+- [x] 7.5 Pause the whole queue on 429 and remove the fixed per-minute cap (concurrency 2 only, 20s default wait); verified by `firecrawl-limiter` and `firecrawl-client` tests
+- [x] 7.6 30-minute cross-session cache for fetched chapter text; verified by `book-sync-confirmed-dates` tests
+- [x] 7.7 Blank-line differences are not revisions and aren't counted in 增/删; verified by `book-sync-changes` tests
+- [x] 7.8 Quick check reads only the catalog (`dateNewer`), and deep check shows 「等待 Firecrawl 限速」; verified by `book-sync-session`, `book-sync-apply` and `use-book-sync` tests, plus the real book opening in about 2s in the preview
+- [x] 7.9 网站映射 delete action and outlined 检查额度 button; verified by `firecrawl-settings-store` and `use-site-mapping-settings` tests and in the preview
+- [x] 7.10 Update the main specs `book-sync-service` and `firecrawl-client` and the help doc `book-details-chapters.md`; verified with `openspec validate --strict`, full tests, lint, type-check and Fallow
