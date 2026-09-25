@@ -1,8 +1,52 @@
 import axios from 'axios';
 import type { ToolDefinition, ToolContext } from './types';
 import { GlobalConfig } from 'src/services/global-config-cache';
+import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
+import {
+  FirecrawlQuotaError,
+  FirecrawlRateLimitError,
+  FirecrawlTargetError,
+} from 'src/services/firecrawl/firecrawl-errors';
+
+/**
+ * 网络搜索 / 网页读取：配置 Tavily Key 时优先 Tavily，Tavily 出错（额度 / 限速 / 5xx / 网络 / Key 无效）
+ * 或未配置时，若开启 Firecrawl 回退则改用 Firecrawl。结果形状与提供方无关，并标注 provider。
+ */
 
 const TAVILY_API_URL = 'https://api.tavily.com';
+const WEBPAGE_TEXT_LIMIT = 50000;
+const SEARCH_RESULT_LIMIT = 5;
+
+type Provider = 'tavily' | 'firecrawl';
+
+interface SearchResultItem {
+  title: string;
+  snippet: string;
+  url: string;
+}
+
+interface SearchWebResult {
+  success: boolean;
+  provider?: Provider;
+  results?: SearchResultItem[];
+  answer?: string;
+  error?: string;
+  message?: string;
+}
+
+interface FetchWebpageResult {
+  success: boolean;
+  provider?: Provider;
+  title?: string;
+  content?: string;
+  text?: string;
+  error?: string;
+  message?: string;
+}
+
+function errorMessageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * 判断错误是否为 Tavily API Key 鉴权失败（401 / unauthorized）
@@ -13,6 +57,17 @@ function isUnauthorizedError(error: unknown, errorMessage: string): boolean {
     errorMessage.includes('unauthorized') ||
     (axios.isAxiosError(error) && error.response?.status === 401)
   );
+}
+
+/**
+ * Tavily 错误是否可回退 Firecrawl：Key 无效、额度（432/433）、限速、5xx、网络 / 超时。
+ * 其它 4xx（如请求参数错误）不回退。
+ */
+function isTavilyFallbackEligible(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  const status = error.response?.status;
+  if (status === undefined) return true;
+  return status === 401 || status === 429 || status === 432 || status === 433 || status >= 500;
 }
 
 /**
@@ -38,209 +93,235 @@ function extractHtmlTitle(rawContent: string, fallback: string): string {
   return fallback;
 }
 
-/**
- * 使用 Tavily Search API (REST)
- * 文档: https://docs.tavily.com/docs/tavily-api/rest_api
- */
-export async function searchWeb(
-  query: string,
-  signal?: AbortSignal,
-): Promise<{
-  success: boolean;
-  results?: Array<{
-    title: string;
-    snippet: string;
-    url: string;
-  }>;
-  answer?: string;
-  error?: string;
-  message?: string;
-}> {
-  try {
-    // 获取 Tavily API Key
-    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
-    const apiKey = GlobalConfig.getTavilyApiKey();
-
-    if (!apiKey) {
-      console.warn('[WebSearch] ⚠️ 未配置 Tavily API Key');
-      return {
-        success: false,
-        error: '未配置 Tavily API Key',
-        message:
-          '请在设置中配置 Tavily API Key 以使用网络搜索功能。您可以在 https://tavily.com/ 注册并获取 API Key。',
-      };
-    }
-
-    // 调用 Tavily Search API
-    const response = await axios.post(
-      `${TAVILY_API_URL}/search`,
-      {
-        api_key: apiKey,
-        query,
-        search_depth: 'basic',
-        max_results: 5,
-        include_answer: true,
-        include_raw_content: false,
-        include_images: false,
-      },
-      {
-        timeout: 30000,
-        ...(signal ? { signal } : {}),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      },
-    );
-
-    // 转换结果格式以保持与旧版本的兼容性
-    const results =
-      response.data.results?.map((result: any) => ({
-        title: result.title,
-        snippet: result.content,
-        url: result.url,
-      })) || [];
-
-    const returnType: {
-      success: boolean;
-      results?: Array<{ title: string; snippet: string; url: string }>;
-      answer?: string;
-    } = {
-      success: true,
-      results,
-    };
-
-    if (response.data.answer) {
-      returnType.answer = response.data.answer;
-    }
-
-    return returnType;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('[WebSearch] ❌ 搜索请求失败', {
-      query,
-      error: errorMessage,
-    });
-
-    // 检查是否是 API Key 相关错误
-    if (isUnauthorizedError(error, errorMessage)) {
-      return {
-        success: false,
-        error: 'Tavily API Key 无效',
-        message:
-          '请检查设置的 Tavily API Key 是否正确。您可以在 https://tavily.com/ 获取有效的 API Key。',
-      };
-    }
-
+/** Firecrawl 失败时给 AI 的说明：区分额度（有 Key / keyless）、限速与目标网页错误 */
+function firecrawlFailure(error: unknown): { success: false; error: string; message: string } {
+  if (error instanceof FirecrawlQuotaError) {
     return {
       success: false,
-      error: errorMessage,
-      message: `网络搜索暂时不可用: ${errorMessage}。建议使用 AI 模型的内置知识库来回答关于"${query}"的问题。`,
+      error: 'Firecrawl 额度已用尽',
+      message: error.keyless
+        ? 'Firecrawl 免费额度（按 IP 每日限额）已用尽。可在设置 → API Keys 中配置 Firecrawl 或 Tavily API Key 后重试。'
+        : 'Firecrawl 额度已用尽，请在设置 → API Keys 中检查额度。',
     };
+  }
+  if (error instanceof FirecrawlRateLimitError) {
+    return {
+      success: false,
+      error: 'Firecrawl 请求过于频繁',
+      message: 'Firecrawl 请求过于频繁，请稍后再试。',
+    };
+  }
+  if (error instanceof FirecrawlTargetError) {
+    return {
+      success: false,
+      error: `目标网页返回错误 ${error.targetStatus}`,
+      message: `目标网页返回错误 ${error.targetStatus}，无法读取该网页。`,
+    };
+  }
+  const message = errorMessageOf(error);
+  return { success: false, error: message, message: `Firecrawl 请求失败: ${message}` };
+}
+
+async function tavilySearch(
+  apiKey: string,
+  query: string,
+  signal?: AbortSignal,
+): Promise<SearchWebResult> {
+  const response = await axios.post(
+    `${TAVILY_API_URL}/search`,
+    {
+      api_key: apiKey,
+      query,
+      search_depth: 'basic',
+      max_results: SEARCH_RESULT_LIMIT,
+      include_answer: true,
+      include_raw_content: false,
+      include_images: false,
+    },
+    {
+      timeout: 30000,
+      ...(signal ? { signal } : {}),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+  const results: SearchResultItem[] =
+    response.data.results?.map((result: any) => ({
+      title: result.title,
+      snippet: result.content,
+      url: result.url,
+    })) || [];
+  return {
+    success: true,
+    provider: 'tavily',
+    results,
+    ...(response.data.answer ? { answer: response.data.answer } : {}),
+  };
+}
+
+function tavilySearchFailure(error: unknown, query: string): SearchWebResult {
+  const errorMessage = errorMessageOf(error);
+  if (isUnauthorizedError(error, errorMessage)) {
+    return {
+      success: false,
+      error: 'Tavily API Key 无效',
+      message:
+        '请检查设置的 Tavily API Key 是否正确。您可以在 https://tavily.com/ 获取有效的 API Key。',
+    };
+  }
+  return {
+    success: false,
+    error: errorMessage,
+    message: `网络搜索暂时不可用: ${errorMessage}。建议使用 AI 模型的内置知识库来回答关于"${query}"的问题。`,
+  };
+}
+
+async function firecrawlSearch(query: string, signal?: AbortSignal): Promise<SearchWebResult> {
+  try {
+    const results = await FirecrawlClient.search(query, {
+      limit: SEARCH_RESULT_LIMIT,
+      ...(signal ? { signal } : {}),
+    });
+    return { success: true, provider: 'firecrawl', results };
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    console.error('[WebSearch] ❌ Firecrawl 搜索失败', { query, error: errorMessageOf(error) });
+    return firecrawlFailure(error);
   }
 }
 
 /**
- * 使用 Tavily Extract API 提取网页内容
- * 文档: https://docs.tavily.com/docs/tavily-api/rest_api/1-extract
+ * 网络搜索（助手 search_web 与导入 agent 元信息搜索共用）
  */
-async function fetchWebpage(url: string): Promise<{
-  success: boolean;
-  title?: string;
-  content?: string;
-  text?: string;
-  error?: string;
-  message?: string;
-}> {
-  try {
-    // 验证 URL
-    if (!isValidUrl(url)) {
-      return {
-        success: false,
-        error: '无效的 URL 格式',
-        message: `无法解析 URL: ${url}`,
-      };
+export async function searchWeb(query: string, signal?: AbortSignal): Promise<SearchWebResult> {
+  await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
+  const apiKey = GlobalConfig.getTavilyApiKey();
+  const fallbackEnabled = GlobalConfig.getFirecrawlFallbackEnabled();
+
+  if (apiKey) {
+    try {
+      return await tavilySearch(apiKey, query, signal);
+    } catch (error) {
+      console.error('[WebSearch] ❌ Tavily 搜索失败', { query, error: errorMessageOf(error) });
+      if (!fallbackEnabled || !isTavilyFallbackEligible(error)) {
+        return tavilySearchFailure(error, query);
+      }
     }
-
-    // 获取 Tavily API Key
-    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
-    const apiKey = GlobalConfig.getTavilyApiKey();
-
-    if (!apiKey) {
-      console.warn('[WebPage] ⚠️ 未配置 Tavily API Key');
-      return {
-        success: false,
-        error: '未配置 Tavily API Key',
-        message:
-          '请在设置中配置 Tavily API Key 以使用网页提取功能。您可以在 https://tavily.com/ 注册并获取 API Key。',
-      };
-    }
-
-    // 调用 Tavily Extract API
-    const response = await axios.post(
-      `${TAVILY_API_URL}/extract`,
-      {
-        api_key: apiKey,
-        urls: [url],
-        extract_depth: 'basic',
-        include_images: false,
-      },
-      {
-        timeout: 30000,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      },
-    );
-
-    // Tavily extract 返回 results 数组，取第一个结果
-    const firstResult = response.data.results?.[0];
-
-    if (!firstResult) {
-      return {
-        success: false,
-        error: '无法提取网页内容',
-        message: `Tavily 无法提取网页 ${url} 的内容。该网页可能无法访问或内容为空。`,
-      };
-    }
-
-    // 从 rawContent 中提取标题
-    const rawContent = firstResult.rawContent || '';
-    const title = extractHtmlTitle(rawContent, url);
-
-    // 移除 HTML 标签获取纯文本
-    const text = rawContent
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    return {
-      success: true,
-      title,
-      text: text.substring(0, 50000), // 限制长度
-      content: rawContent,
-    };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error('[WebPage] ❌ 网页获取失败', {
-      url,
-      error: errorMessage,
-    });
-
-    // 检查是否是 API Key 相关错误
-    if (isUnauthorizedError(error, errorMessage)) {
-      return {
-        success: false,
-        error: 'Tavily API Key 无效',
-        message: '请检查设置的 Tavily API Key 是否正确。',
-      };
-    }
-
+  } else if (!fallbackEnabled) {
     return {
       success: false,
-      error: errorMessage,
-      message: `无法访问网页 ${url}: ${errorMessage}。`,
+      error: '未配置网络搜索',
+      message:
+        '请在设置 → API Keys 中配置 Tavily API Key，或启用 Firecrawl 回退以使用网络搜索功能。',
     };
   }
+  return firecrawlSearch(query, signal);
+}
+
+async function tavilyExtract(apiKey: string, url: string): Promise<FetchWebpageResult> {
+  const response = await axios.post(
+    `${TAVILY_API_URL}/extract`,
+    {
+      api_key: apiKey,
+      urls: [url],
+      extract_depth: 'basic',
+      include_images: false,
+    },
+    {
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+  // Tavily extract 返回 results 数组，取第一个结果
+  const firstResult = response.data.results?.[0];
+  if (!firstResult) {
+    return {
+      success: false,
+      error: '无法提取网页内容',
+      message: `Tavily 无法提取网页 ${url} 的内容。该网页可能无法访问或内容为空。`,
+    };
+  }
+  const rawContent = firstResult.rawContent || '';
+  const text = rawContent
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return {
+    success: true,
+    provider: 'tavily',
+    title: extractHtmlTitle(rawContent, url),
+    text: text.substring(0, WEBPAGE_TEXT_LIMIT),
+    content: rawContent,
+  };
+}
+
+function tavilyExtractFailure(error: unknown, url: string): FetchWebpageResult {
+  const errorMessage = errorMessageOf(error);
+  if (isUnauthorizedError(error, errorMessage)) {
+    return {
+      success: false,
+      error: 'Tavily API Key 无效',
+      message: '请检查设置的 Tavily API Key 是否正确。',
+    };
+  }
+  return {
+    success: false,
+    error: errorMessage,
+    message: `无法访问网页 ${url}: ${errorMessage}。`,
+  };
+}
+
+async function firecrawlExtract(url: string): Promise<FetchWebpageResult> {
+  try {
+    const page = await FirecrawlClient.scrape(url, { format: 'markdown', onlyMainContent: true });
+    return {
+      success: true,
+      provider: 'firecrawl',
+      title: page.title || url,
+      text: page.content.substring(0, WEBPAGE_TEXT_LIMIT),
+    };
+  } catch (error) {
+    console.error('[WebPage] ❌ Firecrawl 网页读取失败', { url, error: errorMessageOf(error) });
+    return firecrawlFailure(error);
+  }
+}
+
+/**
+ * 读取指定网页内容（Tavily Extract 优先，按条件回退 Firecrawl）
+ */
+async function fetchWebpage(url: string): Promise<FetchWebpageResult> {
+  if (!isValidUrl(url)) {
+    return {
+      success: false,
+      error: '无效的 URL 格式',
+      message: `无法解析 URL: ${url}`,
+    };
+  }
+  await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
+  const apiKey = GlobalConfig.getTavilyApiKey();
+  const fallbackEnabled = GlobalConfig.getFirecrawlFallbackEnabled();
+
+  if (apiKey) {
+    try {
+      return await tavilyExtract(apiKey, url);
+    } catch (error) {
+      console.error('[WebPage] ❌ Tavily 网页获取失败', { url, error: errorMessageOf(error) });
+      if (!fallbackEnabled || !isTavilyFallbackEligible(error)) {
+        return tavilyExtractFailure(error, url);
+      }
+    }
+  } else if (!fallbackEnabled) {
+    return {
+      success: false,
+      error: '未配置网页读取',
+      message:
+        '请在设置 → API Keys 中配置 Tavily API Key，或启用 Firecrawl 回退以使用网页读取功能。',
+    };
+  }
+  return firecrawlExtract(url);
 }
 
 export const webSearchTools: ToolDefinition[] = [

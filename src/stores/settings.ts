@@ -15,7 +15,11 @@ import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 import { TOMBSTONE_TTL_DAYS } from 'src/models/manifest';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
-import { DEFAULT_PROXY_LIST, DEFAULT_PROXY_SITE_MAPPING } from 'src/constants/proxy';
+import {
+  DEFAULT_PROXY_LIST,
+  DEFAULT_PROXY_SITE_MAPPING,
+  FIRECRAWL_MAPPING_TOKEN,
+} from 'src/constants/proxy';
 import { getDB } from 'src/utils/indexed-db';
 
 // localStorage 仅用于向后兼容读取（历史版本曾使用 localStorage 存储 settings/syncs）
@@ -47,10 +51,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   lastOpenedSettingsTab: 0,
   proxyEnabled: true,
   proxyUrl: DEFAULT_PROXY_LIST[0]!.url,
+  // 已退役字段：保留默认值，使经同步读取设置的旧版本行为不变
   proxyAutoSwitch: true,
   proxyAutoAddMapping: true,
   proxyList: DEFAULT_PROXY_LIST,
   proxySiteMapping: DEFAULT_PROXY_SITE_MAPPING,
+  firecrawlFallbackEnabled: true,
+  firecrawlAutoAddMapping: true,
   booksSortOption: 'default',
   quickStartDismissed: false,
   memoryInjection: { ...DEFAULT_MEMORY_INJECTION },
@@ -412,20 +419,6 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
-     * 获取代理自动切换状态
-     */
-    proxyAutoSwitch: (state): boolean => {
-      return state.settings.proxyAutoSwitch ?? false;
-    },
-
-    /**
-     * 获取自动添加映射状态
-     */
-    proxyAutoAddMapping: (state): boolean => {
-      return state.settings.proxyAutoAddMapping ?? true;
-    },
-
-    /**
      * 获取网站-代理映射关系（新格式）
      */
     proxySiteMapping: (state): Record<string, ProxySiteMappingEntry> => {
@@ -444,6 +437,27 @@ export const useSettingsStore = defineStore('settings', {
      */
     tavilyApiKey: (state): string | undefined => {
       return state.settings.tavilyApiKey;
+    },
+
+    /**
+     * 获取 Firecrawl API Key（未配置时为 keyless 模式）
+     */
+    firecrawlApiKey: (state): string | undefined => {
+      return state.settings.firecrawlApiKey;
+    },
+
+    /**
+     * 获取 Firecrawl 回退总开关
+     */
+    firecrawlFallbackEnabled: (state): boolean => {
+      return state.settings.firecrawlFallbackEnabled ?? true;
+    },
+
+    /**
+     * 获取「回退成功时自动添加 firecrawl 映射」开关
+     */
+    firecrawlAutoAddMapping: (state): boolean => {
+      return state.settings.firecrawlAutoAddMapping ?? true;
     },
 
     /**
@@ -731,17 +745,51 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
-     * 设置代理自动切换状态
+     * 设置 Firecrawl API Key；传入空值时移除该字段（回到 keyless 模式）
      */
-    async setProxyAutoSwitch(enabled: boolean): Promise<void> {
-      await this.updateSettings({ proxyAutoSwitch: enabled });
+    async setFirecrawlApiKey(key: string | undefined): Promise<void> {
+      const trimmed = key?.trim();
+      if (trimmed) {
+        await this.updateSettings({ firecrawlApiKey: trimmed });
+        return;
+      }
+      const { firecrawlApiKey: _removed, ...rest } = this.settings;
+      this.settings = { ...rest, lastEdited: new Date() };
+      await saveSettingsToDB(this.settings);
     },
 
     /**
-     * 设置自动添加映射状态
+     * 设置 Firecrawl 回退总开关
      */
-    async setProxyAutoAddMapping(enabled: boolean): Promise<void> {
-      await this.updateSettings({ proxyAutoAddMapping: enabled });
+    async setFirecrawlFallbackEnabled(enabled: boolean): Promise<void> {
+      await this.updateSettings({ firecrawlFallbackEnabled: enabled });
+    },
+
+    /**
+     * 设置「回退成功时自动添加 firecrawl 映射」开关
+     */
+    async setFirecrawlAutoAddMapping(enabled: boolean): Promise<void> {
+      await this.updateSettings({ firecrawlAutoAddMapping: enabled });
+    },
+
+    /**
+     * 把 firecrawl 令牌置顶写入网站映射（其余条目保持原顺序），并启用该映射。
+     * 已在首位且映射已启用时不写入，避免并发回退重复触发持久化与同步。
+     */
+    async promoteFirecrawlForSite(site: string): Promise<void> {
+      const existing = this.settings.proxySiteMapping?.[site];
+      const proxies = existing?.proxies ?? [];
+      if (existing?.enabled !== false && proxies[0] === FIRECRAWL_MAPPING_TOKEN) return;
+      const reordered = [
+        FIRECRAWL_MAPPING_TOKEN,
+        ...proxies.filter((entry) => entry !== FIRECRAWL_MAPPING_TOKEN),
+      ];
+      await this.updateSettings({
+        proxySiteMapping: {
+          ...(this.settings.proxySiteMapping ?? {}),
+          [site]: { enabled: true, proxies: reordered },
+        },
+      });
     },
 
     /**
@@ -780,6 +828,15 @@ export const useSettingsStore = defineStore('settings', {
         }
       }
       await this.updateSettings({ proxySiteMapping: mapping });
+    },
+
+    /**
+     * 删除整条网站映射
+     */
+    async removeSiteMapping(site: string): Promise<void> {
+      if (!this.settings.proxySiteMapping?.[site]) return;
+      const { [site]: _removed, ...rest } = this.settings.proxySiteMapping;
+      await this.updateSettings({ proxySiteMapping: rest });
     },
 
     /**

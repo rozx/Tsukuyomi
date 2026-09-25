@@ -221,6 +221,13 @@ function copyOptionalAppSettingsFields(target: AppSettings, source: AppSettings)
     target.quickStartDismissed = source.quickStartDismissed;
   }
   if (source.tavilyApiKey !== undefined) target.tavilyApiKey = source.tavilyApiKey;
+  if (source.firecrawlApiKey !== undefined) target.firecrawlApiKey = source.firecrawlApiKey;
+  if (typeof source.firecrawlFallbackEnabled === 'boolean') {
+    target.firecrawlFallbackEnabled = source.firecrawlFallbackEnabled;
+  }
+  if (typeof source.firecrawlAutoAddMapping === 'boolean') {
+    target.firecrawlAutoAddMapping = source.firecrawlAutoAddMapping;
+  }
   if (source.booksSortOption !== undefined) target.booksSortOption = source.booksSortOption;
   if (source.memoryInjection !== undefined) target.memoryInjection = source.memoryInjection;
   if (typeof source.enableLocalEmbedding === 'boolean') {

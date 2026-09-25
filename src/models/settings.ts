@@ -95,19 +95,17 @@ export interface AppSettings {
    */
   proxyUrl?: string;
   /**
-   * 是否在遇到错误时自动切换代理服务
-   * 默认值：false
+   * @deprecated 已退役：抓取不再在代理列表中轮转，改由 Firecrawl 回退兜底。仅为读取兼容保留。
    */
   proxyAutoSwitch?: boolean;
   /**
-   * 是否在自动切换代理成功时自动添加到网站-代理映射
-   * 默认值：true
+   * @deprecated 已退役：由 firecrawlAutoAddMapping 取代。仅为读取兼容保留。
    */
   proxyAutoAddMapping?: boolean;
   /**
    * 网站-代理映射关系
-   * 键为网站域名（如 "kakuyomu.jp"），值为映射配置（包含启用状态和代理 URL 列表）
-   * 当自动切换代理时，会自动记录成功的代理服务
+   * 键为根域名（如 "kakuyomu.jp"），值为映射配置（启用状态 + 按优先级排列的代理 URL 列表）。
+   * 列表中可包含保留令牌 'firecrawl'（见 FIRECRAWL_MAPPING_TOKEN），表示经 Firecrawl 抓取。
    */
   proxySiteMapping?: Record<string, ProxySiteMappingEntry>;
   /**
@@ -126,6 +124,21 @@ export interface AppSettings {
    * 用于网络搜索功能 (https://tavily.com/)
    */
   tavilyApiKey?: string;
+  /**
+   * Firecrawl API Key（https://firecrawl.dev/）
+   * 未配置时使用 keyless 模式（按 IP 每日限额）
+   */
+  firecrawlApiKey?: string;
+  /**
+   * 是否启用 Firecrawl 回退（网页抓取被拦截时，以及 AI 助手 / 导入的网络搜索与网页读取）
+   * 默认值：true
+   */
+  firecrawlFallbackEnabled?: boolean;
+  /**
+   * 回退成功时是否自动把 firecrawl 置顶写入该站点的网站映射
+   * 默认值：true
+   */
+  firecrawlAutoAddMapping?: boolean;
   /**
    * 书籍列表排序选项
    * 默认值：'default'

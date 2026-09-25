@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter } from 'vue-router';
 import type { BookSyncApplyResult, BookSyncChangeset, SyncNewChapter } from 'src/models/book-sync';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { BookSyncError } from 'src/services/book-sync/errors';
+import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import { ImportRecipeRepair } from 'src/services/import/import-recipe-repair';
 import { ImportAgentService } from 'src/services/import/import-agent-service';
 import { useBooksStore } from 'src/stores/books';
@@ -47,6 +48,7 @@ function changeset(partial: Partial<BookSyncChangeset> = {}): BookSyncChangeset 
     unchecked: [],
     checked: ['x1'],
     dateUnchanged: [],
+    dateNewer: [],
     status: 'ready',
     ...partial,
   };
@@ -152,6 +154,37 @@ describe('useBookSync 会话生命周期', () => {
     expect(session.quickCheck).toHaveBeenCalledTimes(1);
     expect(ctx.phase.value).toBe('ready');
     expect([...ctx.selected.value].sort()).toEqual(['u1', 'u2']);
+  });
+
+  it('逐章比对进行中每秒暴露 Firecrawl 限速剩余等待秒数，结束后清零', async () => {
+    const session = fakeSession();
+    let finish: (() => void) | undefined;
+    session.deepCheck.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(session.changeset);
+        }),
+    );
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(session as never);
+    let remaining = 0;
+    vi.spyOn(FirecrawlClient, 'pauseRemainingMs').mockImplementation(() => remaining);
+    await mount(ref({ bookId: 'b1' }), shallowRef(VariantA));
+    vi.useFakeTimers();
+
+    const running = ctx.startDeepCheck();
+    remaining = 37_200;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.deep.value.waitSeconds).toBe(38);
+
+    remaining = 0;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.deep.value.waitSeconds).toBe(0);
+
+    finish!();
+    await running;
+    expect(ctx.deep.value.running).toBe(false);
+    expect(ctx.deep.value.waitSeconds).toBe(0);
+    vi.useRealTimers();
   });
 
   it('切换设备变体后勾选与目标卷覆盖保留，也不会重新检查', async () => {

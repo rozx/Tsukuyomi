@@ -17,6 +17,13 @@ export const DEFAULT_PROXY_LIST: Array<{
   },
 ];
 
+/**
+ * 网站映射中代表「经 Firecrawl 抓取」的保留令牌。
+ * 存放在 ProxySiteMappingEntry.proxies[] 中（而非独立字段），以便旧版本经同步保存时不会丢失。
+ * 任何把映射条目当作 URL 模板的路径都必须跳过它。
+ */
+export const FIRECRAWL_MAPPING_TOKEN = 'firecrawl';
+
 // 默认代理服务使用 DEFAULT_PROXY_LIST 的第一项
 export const DEFAULT_CORS_PROXY_FOR_AI = DEFAULT_PROXY_LIST[0]!.url;
 

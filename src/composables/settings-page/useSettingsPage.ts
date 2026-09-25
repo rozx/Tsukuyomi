@@ -13,6 +13,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { useElectron } from 'src/composables/useElectron';
 import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
 import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
+import SiteMappingSettingsTab from 'src/components/settings/SiteMappingSettingsTab.vue';
 import ApiKeysSettingsTab from 'src/components/settings/ApiKeysSettingsTab.vue';
 import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
 import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
@@ -39,7 +40,6 @@ export interface SettingsPageContext {
   isElectron: Ref<boolean>;
   activeTab: Ref<string>;
   tabs: Ref<SettingsTab[]>;
-  embeddingSettingsTabValue: Ref<string>;
   handleTabChange: (value: string | number) => void;
   goBack: () => void;
 }
@@ -62,34 +62,56 @@ export function injectSettingsPage(): SettingsPageContext {
   return ctx;
 }
 
-// 将 tab value 映射到对应的面板组件。Electron 与非 Electron 顺序略有差异，
-// 已由 `tabs` 列表处理，本函数只负责按 value 字符串分派。
-// 非 Electron: 0=AI 模型 · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入导出 · 7=关于
-// Electron:    0=AI 模型 · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入导出 · 6=关于
-const SETTINGS_PANEL_MAP_ELECTRON: Record<string, Component> = {
-  '0': AIModelSettingsTab,
-  '1': ApiKeysSettingsTab,
-  '2': SyncSettingsTab,
-  '3': EmbeddingSettingsTab,
-  '4': ScraperSettingsTab,
-  '5': ImportExportTab,
-  '6': AboutSection,
-};
+interface SettingsTabDef {
+  label: string;
+  /** 持久化到 lastOpenedSettingsTab 的稳定序号（沿用旧 SettingsDialog 语义，新增标签取新值） */
+  savedIndex: number;
+  component: Component;
+  /** 仅 Web 显示（Electron 直连，无 CORS 代理） */
+  webOnly?: boolean;
+}
 
-const SETTINGS_PANEL_MAP_WEB: Record<string, Component> = {
-  '0': AIModelSettingsTab,
-  '1': ProxySettingsTab,
-  '2': ApiKeysSettingsTab,
-  '3': SyncSettingsTab,
-  '4': EmbeddingSettingsTab,
-  '5': ScraperSettingsTab,
-  '6': ImportExportTab,
-  '7': AboutSection,
-};
+// 标签顺序与 public/help/settings-guide.md 一致。savedIndex 历史值：
+//   0=AI 模型 1=代理设置 2=同步 3=爬虫 4=导入/导出 6=API Keys 7=本地嵌入 8=关于 9=网站映射（新增）
+const SETTINGS_TAB_DEFS: readonly SettingsTabDef[] = [
+  { label: 'AI 模型', savedIndex: 0, component: AIModelSettingsTab },
+  { label: '代理设置', savedIndex: 1, component: ProxySettingsTab, webOnly: true },
+  { label: '网站映射', savedIndex: 9, component: SiteMappingSettingsTab },
+  { label: 'API Keys', savedIndex: 6, component: ApiKeysSettingsTab },
+  { label: '同步设置', savedIndex: 2, component: SyncSettingsTab },
+  { label: '本地嵌入', savedIndex: 7, component: EmbeddingSettingsTab },
+  { label: '爬虫设置', savedIndex: 3, component: ScraperSettingsTab },
+  { label: '导入/导出', savedIndex: 4, component: ImportExportTab },
+  { label: '关于', savedIndex: 8, component: AboutSection },
+];
+
+/** Electron 上不存在的标签（旧代理设置）回退到 API Keys */
+const ELECTRON_FALLBACK_SAVED_INDEX = 6;
+
+function platformTabDefs(isElectron: boolean): SettingsTabDef[] {
+  return SETTINGS_TAB_DEFS.filter((def) => !(isElectron && def.webOnly));
+}
+
+/** 当前平台的标签列表；value 为位置序号字符串 */
+export function settingsTabsFor(isElectron: boolean): SettingsTab[] {
+  return platformTabDefs(isElectron).map((def, index) => ({ value: String(index), label: def.label }));
+}
 
 export function getSettingsPanelComponent(isElectron: boolean, value: string): Component {
-  const map = isElectron ? SETTINGS_PANEL_MAP_ELECTRON : SETTINGS_PANEL_MAP_WEB;
-  return map[value] ?? AIModelSettingsTab;
+  return platformTabDefs(isElectron)[Number(value)]?.component ?? AIModelSettingsTab;
+}
+
+export function savedIndexToTabValue(isElectron: boolean, savedIndex: number): string {
+  const defs = platformTabDefs(isElectron);
+  let position = defs.findIndex((def) => def.savedIndex === savedIndex);
+  if (position < 0 && isElectron && savedIndex === 1) {
+    position = defs.findIndex((def) => def.savedIndex === ELECTRON_FALLBACK_SAVED_INDEX);
+  }
+  return String(Math.max(position, 0));
+}
+
+export function tabValueToSavedIndex(isElectron: boolean, value: string): number {
+  return platformTabDefs(isElectron)[Number(value)]?.savedIndex ?? 0;
 }
 
 function createSettingsPageContext(): SettingsPageContext {
@@ -100,90 +122,7 @@ function createSettingsPageContext(): SettingsPageContext {
   // 当前选中的标签页值（字符串）
   const activeTab = ref('0');
 
-  // 显式 tab 列表：Electron 环境移除 "代理设置"（由系统代理处理）。
-  // 顺序与 public/help/settings-guide.md 一致：
-  //   AI 模型 → (代理设置) → API Keys → 同步设置 → 本地嵌入 → 爬虫设置 → 导入/导出
-  const tabs = computed<SettingsTab[]>(() => {
-    const list: SettingsTab[] = [{ value: '0', label: 'AI 模型' }];
-    if (!isElectron.value) list.push({ value: '1', label: '代理设置' });
-    list.push({ value: isElectron.value ? '1' : '2', label: 'API Keys' });
-    list.push({ value: isElectron.value ? '2' : '3', label: '同步设置' });
-    list.push({ value: isElectron.value ? '3' : '4', label: '本地嵌入' });
-    list.push({ value: isElectron.value ? '4' : '5', label: '爬虫设置' });
-    list.push({ value: isElectron.value ? '5' : '6', label: '导入/导出' });
-    list.push({ value: isElectron.value ? '6' : '7', label: '关于' });
-    return list;
-  });
-
-  // 本地嵌入 tab 的 value（Electron: '3'，否则 '4'）
-  const embeddingSettingsTabValue = computed(() => (isElectron.value ? '3' : '4'));
-
-  // ── 持久化映射（保留向后兼容，savedIndex 沿用旧 SettingsDialog 的语义） ──
-  // 旧 savedIndex 含义（稳定不变）：
-  //   0=AI模型  1=代理设置  2=同步  3=爬虫  4=导入/导出  6=API Keys  7=本地嵌入
-  // 新 UI tab value：
-  //   非 Electron: 0=AI · 1=代理 · 2=API Keys · 3=同步 · 4=本地嵌入 · 5=爬虫 · 6=导入/导出
-  //   Electron:    0=AI · 1=API Keys · 2=同步 · 3=本地嵌入 · 4=爬虫 · 5=导入/导出
-  // 旧 savedIndex → 新 tab value 的映射表（按平台分）。
-  // 旧 savedIndex：0=AI 1=代理 2=同步 3=爬虫 4=导入/导出 6=API Keys 7=本地嵌入
-  // 新 tab value（非 Electron）：0=AI 1=代理 2=API Keys 3=同步 4=本地嵌入 5=爬虫 6=导入/导出
-  // 新 tab value（Electron，无代理）：0=AI 1=API Keys 2=同步 3=本地嵌入 4=爬虫 5=导入/导出
-  const SAVED_INDEX_TO_TAB_VALUE_ELECTRON: Record<number, string> = {
-    0: '0', // AI
-    1: '1', // 旧代理 → 退回 API Keys
-    2: '2', // 同步
-    3: '4', // 爬虫
-    4: '5', // 导入/导出
-    6: '1', // API Keys
-    7: '3', // 本地嵌入
-    8: '6', // 关于（新增）
-  };
-
-  const SAVED_INDEX_TO_TAB_VALUE_WEB: Record<number, string> = {
-    0: '0', // AI
-    1: '1', // 代理
-    2: '3', // 同步
-    3: '5', // 爬虫
-    4: '6', // 导入/导出
-    6: '2', // API Keys
-    7: '4', // 本地嵌入
-    8: '7', // 关于（新增）
-  };
-
-  const TAB_VALUE_TO_SAVED_INDEX_ELECTRON: Record<string, number> = {
-    '0': 0,
-    '1': 6,
-    '2': 2,
-    '3': 7,
-    '4': 3,
-    '5': 4,
-    '6': 8, // 关于（新增；savedIndex 8 为新分配，不与历史值冲突）
-  };
-
-  const TAB_VALUE_TO_SAVED_INDEX_WEB: Record<string, number> = {
-    '0': 0,
-    '1': 1,
-    '2': 6,
-    '3': 2,
-    '4': 7,
-    '5': 3,
-    '6': 4,
-    '7': 8, // 关于（新增）
-  };
-
-  const convertSavedTabIndex = (savedIndex: number): string => {
-    const table = isElectron.value
-      ? SAVED_INDEX_TO_TAB_VALUE_ELECTRON
-      : SAVED_INDEX_TO_TAB_VALUE_WEB;
-    return table[savedIndex] ?? '0';
-  };
-
-  const convertTabValueToIndex = (tabValue: string): number => {
-    const table = isElectron.value
-      ? TAB_VALUE_TO_SAVED_INDEX_ELECTRON
-      : TAB_VALUE_TO_SAVED_INDEX_WEB;
-    return table[tabValue] ?? 0;
-  };
+  const tabs = computed<SettingsTab[]>(() => settingsTabsFor(isElectron.value));
 
   // 确保 store 已加载
   const ensureStoreLoaded = async () => {
@@ -195,22 +134,15 @@ function createSettingsPageContext(): SettingsPageContext {
   // 初始化 activeTab（页面挂载时调用）
   const initializeActiveTab = async () => {
     await ensureStoreLoaded();
-    const lastTab = settingsStore.lastOpenedSettingsTab;
-    const tabValue = convertSavedTabIndex(lastTab);
-    const maxTabIndex = isElectron.value ? 6 : 7;
-    const tabIndex = Number(tabValue);
-    activeTab.value = tabIndex >= 0 && tabIndex <= maxTabIndex ? tabValue : '0';
+    activeTab.value = savedIndexToTabValue(isElectron.value, settingsStore.lastOpenedSettingsTab);
   };
 
   // 处理标签页切换
   const handleTabChange = (value: string | number) => {
     const stringValue = String(value);
     activeTab.value = stringValue;
-    const tabIndex = Number(stringValue);
-    const maxTabIndex = isElectron.value ? 6 : 7;
-    if (tabIndex >= 0 && tabIndex <= maxTabIndex) {
-      const savedIndex = convertTabValueToIndex(stringValue);
-      void settingsStore.setLastOpenedSettingsTab(savedIndex);
+    if (tabs.value.some((tab) => tab.value === stringValue)) {
+      void settingsStore.setLastOpenedSettingsTab(tabValueToSavedIndex(isElectron.value, stringValue));
     }
   };
 
@@ -233,7 +165,6 @@ function createSettingsPageContext(): SettingsPageContext {
     isElectron,
     activeTab,
     tabs,
-    embeddingSettingsTabValue,
     handleTabChange,
     goBack,
   };

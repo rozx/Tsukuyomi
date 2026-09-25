@@ -41,6 +41,7 @@ function changeset(partial: Partial<BookSyncChangeset> = {}): BookSyncChangeset 
     unchecked: [],
     checked: [],
     dateUnchanged: [],
+    dateNewer: [],
     status: 'ready',
     ...partial,
   };
@@ -190,6 +191,23 @@ describe('检查结论', () => {
     const verdict = syncVerdict(changeset({ unchecked: ['a', 'b'] }), false);
     expect(verdict).toMatchObject({ tone: 'pending', title: '没有新章节' });
     expect(verdict.deepHint).toContain('2 章');
+  });
+
+  it('日期较新但尚未比对的章节单独说明，不算作没有日期', () => {
+    const verdict = syncVerdict(
+      changeset({ unchecked: ['a', 'b', 'c'], dateNewer: ['a', 'b'] }),
+      false,
+    );
+    expect(verdict).toMatchObject({ tone: 'pending', title: '没有新章节' });
+    expect(verdict.details).toEqual(['已导入 3 章', '2 章更新日期较新、可能有修订', '1 章未比对正文']);
+    expect(verdict.deepHint).toBe(
+      '2 章更新日期较新、1 章没有可用的更新日期，逐章比对正文才能确认是否有修订。',
+    );
+  });
+
+  it('只有日期较新未比对的章节时不提「没有可用的更新日期」', () => {
+    const verdict = syncVerdict(changeset({ unchecked: ['a'], dateNewer: ['a'] }), false);
+    expect(verdict.deepHint).toBe('1 章更新日期较新，逐章比对正文才能确认是否有修订。');
   });
 
   it('全部比对过就不再提示逐章比对', () => {

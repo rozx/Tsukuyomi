@@ -236,10 +236,14 @@ it('内置更新保存远端时间，下一次快速检查不再抓同章，虚�
   });
   const value = await BookSyncService.openSession({ target: { bookId: 'book' } });
   await value.quickCheck();
+  await value.deepCheck();
   await value.apply({ urls: [root + '1/'] });
   fetch.mockClear();
   const next = await BookSyncService.openSession({ target: { bookId: 'book' } });
-  expect((await next.quickCheck()).updated).toEqual([]);
+  const again = await next.quickCheck();
+  expect(again.updated).toEqual([]);
+  expect(again.dateNewer).toEqual([]);
+  expect(again.dateUnchanged).toEqual([root + '1/']);
   expect(fetch.mock.calls.map((c) => c[0])).toEqual([root]);
   const saved = await (await getDB()).get('books', 'book');
   expect(saved?.updateRecipe).toBeUndefined();

@@ -9,6 +9,7 @@ import { ImportRepository } from '../services/import/import-repository';
 import { ImportSourceService } from '../services/import/import-source-service';
 import { ImportContentService } from '../services/import/import-content-service';
 import { useSettingsStore } from '../stores/settings';
+import { FirecrawlClient } from '../services/firecrawl/firecrawl-client';
 import { __resetDbPromiseForTesting, getDB } from '../utils/indexed-db';
 
 beforeEach(async () => {
@@ -75,7 +76,7 @@ describe('元信息搜索、采用及封面持久值', () => {
       },
       { actor: 'user' },
     );
-    await useSettingsStore().updateSettings({ tavilyApiKey: '' });
+    await useSettingsStore().updateSettings({ tavilyApiKey: '', firecrawlFallbackEnabled: false });
     const unavailable = await ImportMetadataService.prepareSearch(task.id, '补充作者');
     expect(unavailable.result.success).toBe(false);
     expect(unavailable.newSources).toEqual([]);
@@ -175,5 +176,39 @@ describe('元信息搜索、采用及封面持久值', () => {
     expect(current.value).not.toMatch(/^(blob:|data:)/);
     const durable = await ImportMetadataService.resolveCover(task.id, current);
     expect(durable).toBe(`data:image/png;base64,${btoa(String.fromCharCode(...bytes))}`);
+  });
+});
+
+describe('元信息搜索经 Firecrawl 回退', () => {
+  it('未配置 Tavily、回退开启：经 Firecrawl 搜索，结果仍只授予元信息用途', async () => {
+    await useSettingsStore().updateSettings({ tavilyApiKey: '', firecrawlFallbackEnabled: true });
+    const post = spyOn(axios, 'post');
+    const search = spyOn(FirecrawlClient, 'search').mockResolvedValue([
+      { title: '作者 Wiki', url: 'https://ja.wikipedia.org/wiki/a', snippet: '日本の作家' },
+    ]);
+    const task = await ImportRepository.createTask();
+    const prepared = await ImportMetadataService.prepareSearch(task.id, '無職転生 作者');
+    expect(post).not.toHaveBeenCalled();
+    expect(search).toHaveBeenCalledWith('無職転生 作者', expect.objectContaining({ limit: 5 }));
+    expect(prepared.result.success).toBe(true);
+    await ImportRepository.saveStep(task.id, prepared);
+    expect((await ImportRepository.listSources(task.id)).items[0]?.purpose).toBe('metadata-only');
+  });
+
+  it('搜索排队或进行中被取消：拒绝为取消错误且不记录结果', async () => {
+    await useSettingsStore().updateSettings({ tavilyApiKey: '', firecrawlFallbackEnabled: true });
+    let received: AbortSignal | undefined;
+    spyOn(FirecrawlClient, 'search').mockImplementation((_query, options) => {
+      received = options?.signal;
+      return new Promise(() => {});
+    });
+    const task = await ImportRepository.createTask();
+    const controller = new AbortController();
+    const pending = ImportMetadataService.prepareSearch(task.id, '作者', controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(received).toBe(controller.signal);
+    expect((await ImportRepository.listSources(task.id)).items).toHaveLength(0);
   });
 });

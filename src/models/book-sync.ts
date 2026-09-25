@@ -74,6 +74,8 @@ export interface BookSyncChangeset {
   checked: string[];
   /** unchecked 的子集：内置站点目录给出的更新日期没有变新，快速检查据此认为无变化 */
   dateUnchanged: string[];
+  /** unchecked 的子集：内置站点目录给出的更新日期比本地新、但正文尚未比对（如被取消或额度不足） */
+  dateNewer: string[];
   status: 'unchecked' | 'ready' | 'cancelled' | 'invalid';
 }
 

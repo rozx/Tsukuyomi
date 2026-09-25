@@ -21,6 +21,7 @@ import type {
 } from 'src/models/book-sync';
 import type { Volume } from 'src/models/novel';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
+import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import { BookSyncError } from 'src/services/book-sync/errors';
 import { resolveRecipe } from 'src/services/book-sync/recipe';
 import { FEATURES } from 'src/constants/features';
@@ -83,7 +84,7 @@ export interface BookSyncContext {
   volumeOverrides: Ref<Map<string, SyncVolumeTarget>>;
   drift: ComputedRef<boolean>;
   summary: ComputedRef<BookSyncConfirmSummary>;
-  deep: Ref<{ running: boolean; completed: number; total: number }>;
+  deep: Ref<{ running: boolean; completed: number; total: number; waitSeconds: number }>;
   confirm: Ref<BookSyncConfirm>;
   working: ComputedRef<boolean>;
   canUndo: Ref<boolean>;
@@ -151,7 +152,7 @@ function createBookSyncContext(
   const changeset = ref<BookSyncChangeset | null>(null);
   const selected = ref(new Set<string>());
   const volumeOverrides = ref(new Map<string, SyncVolumeTarget>());
-  const deep = ref({ running: false, completed: 0, total: 0 });
+  const deep = ref({ running: false, completed: 0, total: 0, waitSeconds: 0 });
   const confirm = ref<BookSyncConfirm>({ stage: 'closed' });
   const busy = ref(false);
   const canUndo = ref(false);
@@ -216,7 +217,7 @@ function createBookSyncContext(
     confirm.value = { stage: 'closed' };
     canUndo.value = false;
     message.value = '';
-    deep.value = { running: false, completed: 0, total: 0 };
+    deep.value = { running: false, completed: 0, total: 0, waitSeconds: 0 };
   }
 
   function fail(error: unknown): void {
@@ -270,19 +271,27 @@ function createBookSyncContext(
     const current = session.value;
     if (!current || working.value) return;
     deepController = new AbortController();
-    deep.value = { running: true, completed: 0, total: 0 };
+    deep.value = { running: true, completed: 0, total: 0, waitSeconds: 0 };
+    // Firecrawl 因 429 暂停队列时显示剩余等待秒数，避免进度看似卡住
+    const waitTimer = setInterval(() => {
+      deep.value = {
+        ...deep.value,
+        waitSeconds: Math.ceil(FirecrawlClient.pauseRemainingMs() / 1000),
+      };
+    }, 1000);
     try {
       const result = await current.deepCheck({
         signal: deepController.signal,
         onProgress: (completed, total) => {
-          deep.value = { running: true, completed, total };
+          deep.value = { ...deep.value, running: true, completed, total };
         },
       });
       if (session.value === current) setChangeset(result);
     } catch (error) {
       if (session.value === current) notifyError('深度检查失败', error);
     } finally {
-      deep.value = { ...deep.value, running: false };
+      clearInterval(waitTimer);
+      deep.value = { ...deep.value, running: false, waitSeconds: 0 };
     }
   }
 
@@ -509,6 +518,7 @@ function emptyChangeset(): BookSyncChangeset {
     unchecked: [],
     checked: [],
     dateUnchanged: [],
+    dateNewer: [],
     status: 'unchecked',
   };
 }

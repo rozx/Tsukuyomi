@@ -463,3 +463,42 @@ describe('Agent 章节批次', () => {
     ]);
   });
 });
+
+describe('章节批次遇到 Firecrawl 额度耗尽', () => {
+  it('停止领取剩余章节，保留已完成章，失败项标记额度错误', async () => {
+    const { FirecrawlQuotaError } = await import('../services/firecrawl/firecrawl-errors');
+    const f = await webBatch(5);
+    const held = new Map<string, () => void>();
+    const fetch = vi.spyOn(transport, 'fetchScraperPage').mockImplementation((url) => {
+      if (url.endsWith('/c2')) return Promise.reject(new FirecrawlQuotaError(true));
+      return new Promise((resolve) => {
+        held.set(url, () =>
+          resolve({
+            html: `<article><p>${url} 原文</p></article>`,
+            requestUrl: url,
+            transportUrl: url,
+            status: 200,
+            contentType: 'text/html',
+          }),
+        );
+      });
+    });
+    const running = f.invoke('run_chapter_batch', { batch_id: f.batchId, base_draft_revision: 3 });
+    await vi.waitFor(() => expect(held.size).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    for (const release of held.values()) release();
+
+    const result = await running;
+
+    expect(fetch.mock.calls.map(([url]) => url).sort()).toEqual([
+      'https://example.com/c1',
+      'https://example.com/c2',
+      'https://example.com/c3',
+    ]);
+    expect(result).toMatchObject({ ready: 2, failed: 1, pending: 2 });
+    const task = (await ImportRepository.getTask(f.taskId))!;
+    const failedChapter = task.draft.chapters.find((c) => c.status === 'failed');
+    expect(failedChapter).toBeDefined();
+    expect(JSON.stringify(result)).toContain('FIRECRAWL_QUOTA');
+  });
+});

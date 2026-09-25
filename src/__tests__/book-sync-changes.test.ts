@@ -32,6 +32,19 @@ describe('同步段落比对与归卷', () => {
     expect(sameChapterText(chapter, content, [' 本文 '])).toBe(true);
     expect(await compareChapter(chapter, content, ['本文'], entry)).toBeUndefined();
   });
+  it('只有空白段落不同（站点改版插入空行）时视为正文未变', async () => {
+    const content = [paragraph('　第一段', 1), paragraph('　第二段', 2)];
+    const remote = ['\n', '　第一段', '\n', '　第二段', '\n                 　'];
+    expect(sameChapterText(chapter, content, remote)).toBe(true);
+    expect(await compareChapter(chapter, content, remote, entry)).toBeUndefined();
+  });
+
+  it('修订计数不含空白段落的增删', async () => {
+    const content = [paragraph('甲', 1), paragraph('乙', 2)];
+    const result = await compareChapter(chapter, content, ['甲', '\n', '乙', '\n', '丙'], entry);
+    expect(result).toMatchObject({ revised: 0, inserted: 1, removed: 0 });
+  });
+
   it('只修改一个错字保留其余 79 段全部译文和选用', async () => {
     const content = Array.from({ length: 80 }, (_, i) => paragraph(`段落${i}`, i));
     const remote = content.map((p) => p.text);

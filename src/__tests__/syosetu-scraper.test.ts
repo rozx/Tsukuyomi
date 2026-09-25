@@ -95,3 +95,43 @@ describe('SyosetuScraper', () => {
     expect(novel?.tags).toContain('残酷な描写');
   });
 });
+
+describe('SyosetuScraper 新版目录（section.episode-list）', () => {
+  const html = readFileSync(join(examplePagesDir, 'firecrawl/syosetu-org-375522.html'), 'utf-8');
+  const idxUrl = 'https://syosetu.org/novel/375522/';
+
+  it('解析全部话与卷标题', () => {
+    const scraper = new SyosetuScraper();
+    const { info } = scraper.parseNovelSnapshot(html, idxUrl);
+    expect(info.chapters).toHaveLength(36);
+    expect(info.chapters[0]).toMatchObject({
+      title: '転生',
+      url: 'https://syosetu.org/novel/375522/1.html',
+    });
+    expect(info.chapters[35]?.url).toBe('https://syosetu.org/novel/375522/36.html');
+    expect(info.volumes?.map((v) => v.title)).toEqual(['転生前', '1周目', '2周目', '3周目']);
+    expect(info.volumes?.[0]?.startIndex).toBe(0);
+    expect(info.volumes?.[1]?.startIndex).toBe(1);
+  });
+
+  it('发布时间作为 date，改稿时间作为 lastUpdated（均可被日期解析）', () => {
+    const scraper = new SyosetuScraper();
+    const { info } = scraper.parseNovelSnapshot(html, idxUrl);
+    expect(info.chapters[0]?.date).toBe('2025年05月16日 08:13');
+    expect(info.chapters[0]?.lastUpdated).toBe('2026年08月06日 23:41');
+  });
+
+  it('fetchNovel 通过新版目录构建卷与章节', async () => {
+    class NewLayoutScraper extends SyosetuScraper {
+      protected override fetchPage(): Promise<string> {
+        return Promise.resolve(html);
+      }
+    }
+    const res = await new NewLayoutScraper().fetchNovel(idxUrl);
+    expect(res.success).toBe(true);
+    if (!res.success) return;
+    expect(res.novel?.volumes?.length).toBe(4);
+    const total = res.novel?.volumes?.reduce((n, v) => n + (v.chapters?.length ?? 0), 0);
+    expect(total).toBe(36);
+  });
+});

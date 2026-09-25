@@ -8,6 +8,7 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import pie from 'puppeteer-in-electron';
 import { getErrorMessage, toError } from '../src/utils/error-message';
 import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
+import { trackMainFrameStatus } from './main-frame-status';
 import { claimSingleInstance } from './single-instance';
 import { VelopackApp } from 'velopack';
 import { registerDesktopUpdates } from './desktop-update-ipc';
@@ -639,13 +640,20 @@ async function fetchUrlViaPuppeteer(
   if (Object.keys(headersWithoutCookie).length > 0) {
     await page.setExtraHTTPHeaders(headersWithoutCookie);
   }
-  console.log(`[Electron Fetch] Navigating to ${url}`);
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  // Wait for content (Stealth handles most Cloudflare checks; small buffer for the rest)
-  await new Promise((r) => setTimeout(r, 2000));
-  const content = await page.content();
-  console.log(`[Electron Fetch] Page loaded: ${await page.title()}`);
-  return { status: 200, statusText: 'OK', headers: {}, data: content };
+  // 记录最后一次主框架导航响应的状态码：质询被解决后为 200，持续被拦截时为 403 等
+  const mainFrameStatus = trackMainFrameStatus(page);
+  try {
+    console.log(`[Electron Fetch] Navigating to ${url}`);
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
+    // Wait for content (Stealth handles most Cloudflare checks; small buffer for the rest)
+    await new Promise((r) => setTimeout(r, 2000));
+    const content = await page.content();
+    const status = mainFrameStatus.current() ?? response?.status() ?? 200;
+    console.log(`[Electron Fetch] Page loaded (${status}): ${await page.title()}`);
+    return { status, statusText: status < 400 ? 'OK' : 'Error', headers: {}, data: content };
+  } finally {
+    mainFrameStatus.dispose();
+  }
 }
 
 function handleElectronFetchError(err: unknown, window: BrowserWindow | null): never {

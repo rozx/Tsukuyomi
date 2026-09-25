@@ -1,5 +1,6 @@
 import type { ImportRunContext } from 'src/models/import';
 import type { ImportExtractionService } from './import-extraction-service';
+import { FIRECRAWL_QUOTA_ERROR_CODE } from './import-extraction-service';
 import {
   chapterBatchSummary,
   checkChapterBatchActive,
@@ -29,9 +30,11 @@ export async function runChapterBatch(
   if (signal?.aborted) abort();
   let next = 0;
   let failure: Error | undefined;
+  // Firecrawl 额度耗尽后不再领取新章节（剩余保持 pending，可稍后重跑）
+  let quotaExhausted = false;
   const worker = async () => {
     try {
-      while (next < batch.items.length) {
+      while (next < batch.items.length && !quotaExhausted) {
         const index = next++;
         const item = batch.items[index]!;
         if (item.status !== 'pending') continue;
@@ -50,6 +53,7 @@ export async function runChapterBatch(
           controller.signal,
         );
         controller.signal.throwIfAborted();
+        if (prepared.results[0]?.error?.code === FIRECRAWL_QUOTA_ERROR_CODE) quotaExhausted = true;
         await saveBatchChapter(run, batch.id, index, prepared);
         notify?.();
       }

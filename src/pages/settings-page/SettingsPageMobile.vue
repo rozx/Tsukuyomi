@@ -9,44 +9,17 @@
  * so this variant renders only the settings body.
  */
 import { computed, type Component } from 'vue';
-import { injectSettingsPage } from 'src/composables/settings-page/useSettingsPage';
-import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
-import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
-import ApiKeysSettingsTab from 'src/components/settings/ApiKeysSettingsTab.vue';
+import {
+  getSettingsPanelComponent,
+  injectSettingsPage,
+} from 'src/composables/settings-page/useSettingsPage';
 import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
-import ScraperSettingsTab from 'src/components/settings/ScraperSettingsTab.vue';
-import ImportExportTab from 'src/components/settings/ImportExportTab.vue';
-import EmbeddingSettingsTab from 'src/components/settings/EmbeddingSettingsTab.vue';
-import AboutSection from 'src/components/settings/AboutSection.vue';
 
 const ctx = injectSettingsPage();
 
-// 各 tab 值 → 组件的静态映射（electron / web 两套）。本地嵌入 tab（'3'/'4'）单独处理。
-const ELECTRON_TAB_MAP: Record<string, Component> = {
-  '0': AIModelSettingsTab,
-  '1': ApiKeysSettingsTab,
-  '2': SyncSettingsTab,
-  '4': ScraperSettingsTab,
-  '5': ImportExportTab,
-  '6': AboutSection,
-};
-const WEB_TAB_MAP: Record<string, Component> = {
-  '0': AIModelSettingsTab,
-  '1': ProxySettingsTab,
-  '2': ApiKeysSettingsTab,
-  '3': SyncSettingsTab,
-  '5': ScraperSettingsTab,
-  '6': ImportExportTab,
-  '7': AboutSection,
-};
-
-// 把原先 7 路 v-if/v-else-if 折叠成单次 map 查表，消除模板与脚本双重分支
-const settingsTabComponent = computed<Component | null>(() => {
-  const tab = ctx.activeTab.value;
-  if (tab === ctx.embeddingSettingsTabValue.value) return EmbeddingSettingsTab;
-  const map = ctx.isElectron.value ? ELECTRON_TAB_MAP : WEB_TAB_MAP;
-  return map[tab] ?? null;
-});
+const settingsTabComponent = computed<Component>(() =>
+  getSettingsPanelComponent(ctx.isElectron.value, ctx.activeTab.value),
+);
 
 // SyncSettingsTab 需要额外传 :visible="true"，其余 tab 不传任何额外属性
 const settingsTabBindings = computed(() =>

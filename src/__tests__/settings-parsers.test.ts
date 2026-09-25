@@ -403,3 +403,32 @@ describe('parseAppSettings', () => {
     expect(result?.enableLocalEmbedding).toBeUndefined();
   });
 });
+
+describe('parseAppSettings（Firecrawl 字段）', () => {
+  it('透传三个 Firecrawl 字段，并保留映射中的 firecrawl 令牌与顺序', () => {
+    const parsed = parseAppSettings({
+      lastEdited: '2026-09-01T00:00:00.000Z',
+      scraperConcurrencyLimit: 3,
+      firecrawlApiKey: 'fc-abc',
+      firecrawlFallbackEnabled: false,
+      firecrawlAutoAddMapping: false,
+      proxySiteMapping: {
+        'syosetu.org': { enabled: true, proxies: ['firecrawl', 'https://cors.rozx.moe/?{url}'] },
+      },
+    });
+
+    expect(parsed?.firecrawlApiKey).toBe('fc-abc');
+    expect(parsed?.firecrawlFallbackEnabled).toBe(false);
+    expect(parsed?.firecrawlAutoAddMapping).toBe(false);
+    expect(parsed?.proxySiteMapping?.['syosetu.org']?.proxies).toEqual([
+      'firecrawl',
+      'https://cors.rozx.moe/?{url}',
+    ]);
+  });
+
+  it('缺少 Firecrawl 字段时不凭空生成', () => {
+    const parsed = parseAppSettings({ lastEdited: '2026-09-01T00:00:00.000Z' });
+    expect(parsed && 'firecrawlApiKey' in parsed).toBe(false);
+    expect(parsed && 'firecrawlFallbackEnabled' in parsed).toBe(false);
+  });
+});
