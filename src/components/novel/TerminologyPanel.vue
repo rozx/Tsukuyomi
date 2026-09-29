@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
@@ -17,6 +18,9 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { useToolbarExpand } from 'src/composables/useToolbarExpand';
 import { TerminologyService } from 'src/services/terminology-service';
+import { BookService } from 'src/services/book-service';
+import { getNameTranslation } from 'src/services/localization/selection';
+import { hasDuplicateEntityNames } from 'src/services/localization/entity-identity';
 import { useBooksStore } from 'src/stores/books';
 import { cloneDeep } from 'lodash';
 import co from 'co';
@@ -26,6 +30,7 @@ const props = defineProps<{
   book: Novel | null;
 }>();
 
+const { t } = useI18n();
 // 搜索关键词
 const searchQuery = ref('');
 
@@ -41,7 +46,7 @@ const allTerminologies = computed(() => {
     id: term.id,
     name: term.name,
     description: term.description,
-    translation: term.translation.translation,
+    translation: getNameTranslation(term, props.book?.targetLanguage ?? 'zh-CN')?.translation ?? '',
   }));
 });
 
@@ -71,6 +76,7 @@ const canExportTerms = computed(
   () => !!props.book?.terminologies && props.book.terminologies.length > 0,
 );
 
+const hasNameConflicts = computed(() => hasDuplicateEntityNames(props.book?.terminologies ?? []));
 const toast = useToastWithHistory();
 const confirm = useConfirm();
 const isSaving = ref(false);
@@ -139,7 +145,10 @@ const buildTermUpdates = (
   if (data.name.trim() !== existing.name) {
     updates.name = data.name.trim();
   }
-  if (data.translation.trim() !== existing.translation.translation) {
+  if (
+    data.translation.trim() !==
+    (getNameTranslation(existing, props.book?.targetLanguage ?? 'zh-CN')?.translation ?? '')
+  ) {
     updates.translation = data.translation.trim();
   }
   if (data.description.trim() !== (existing.description || '')) {
@@ -478,45 +487,20 @@ interface TermsImportResult {
   updatedTermsSnapshot: UpdatedTermSnapshot[];
 }
 
-const buildUpdatedTermSnapshot = (existingTerm: Terminology): UpdatedTermSnapshot =>
-  cloneDeep(existingTerm);
-
-// 执行导入：名称相同的更新，否则新增。返回新增/更新计数与撤销所需的快照
+// 整次导入保留文件的语言归属，并按稳定身份做差异写入。
 const executeTermsImport = async (
   bookId: string,
   importedTerminologies: Terminology[],
-  existingTerms: Terminology[] | undefined,
 ): Promise<TermsImportResult> => {
-  let addedCount = 0;
-  let updatedCount = 0;
-  const addedTermIds: string[] = [];
-  const updatedTermsSnapshot: UpdatedTermSnapshot[] = [];
-
-  for (const importedTerm of importedTerminologies) {
-    const existingTerm = existingTerms?.find((t) => t.name === importedTerm.name);
-    if (existingTerm) {
-      updatedTermsSnapshot.push(buildUpdatedTermSnapshot(existingTerm));
-      await TerminologyService.updateTerminology(bookId, existingTerm.id, {
-        translation: importedTerm.translation.translation,
-        ...(importedTerm.description !== undefined
-          ? { description: importedTerm.description }
-          : {}),
-      });
-      updatedCount++;
-    } else {
-      const newTerm = await TerminologyService.addTerminology(bookId, {
-        name: importedTerm.name,
-        translation: importedTerm.translation.translation,
-        ...(importedTerm.description !== undefined
-          ? { description: importedTerm.description }
-          : {}),
-      });
-      addedTermIds.push(newTerm.id);
-      addedCount++;
-    }
-  }
-
-  return { addedCount, updatedCount, addedTermIds, updatedTermsSnapshot, revertOperationId: v4() };
+  const result = await BookService.importEntities(bookId, 'term', importedTerminologies);
+  await useBooksStore().refreshBookFromStorage(bookId);
+  return {
+    addedCount: result.addedIds.length,
+    updatedCount: result.updatedBefore.length,
+    addedTermIds: result.addedIds,
+    updatedTermsSnapshot: result.updatedBefore,
+    revertOperationId: v4(),
+  };
 };
 
 // 撤销导入：删除新增条目，恢复被更新条目的快照字段
@@ -562,11 +546,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       return;
     }
 
-    const result = await executeTermsImport(
-      props.book.id,
-      importedTerminologies,
-      props.book.terminologies,
-    );
+    const result = await executeTermsImport(props.book.id, importedTerminologies);
 
     // 与 CharacterSettingPanel 的导入成功 toast 结构高度相似（onRevert 前序步骤一致），
     // 但后续恢复更新逻辑各自维护不同字段集合，强行抽公共回调反而更复杂，保留两处实现。
@@ -714,6 +694,14 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       />
     </div>
 
+    <AppMessage
+      v-if="hasNameConflicts"
+      severity="warn"
+      :message="t('books.nameConflict')"
+      :closable="false"
+      class="m-4"
+    />
+
     <!-- 内容区域 -->
     <div class="flex-1 p-6 min-h-0">
       <!-- 术语列表 -->
@@ -766,6 +754,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
 
     <!-- 添加术语对话框 -->
     <TermEditDialog
+      :target-language="book?.targetLanguage ?? 'zh-CN'"
       v-model:visible="showAddDialog"
       mode="add"
       :loading="isSaving"
@@ -774,6 +763,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
 
     <!-- 编辑术语对话框 -->
     <TermEditDialog
+      :target-language="book?.targetLanguage ?? 'zh-CN'"
       v-model:visible="showEditDialog"
       mode="edit"
       :term="selectedTerminology"

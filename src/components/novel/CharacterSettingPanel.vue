@@ -15,6 +15,9 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { useToolbarExpand } from 'src/composables/useToolbarExpand';
 import { CharacterSettingService } from 'src/services/character-setting-service';
+import { BookService } from 'src/services/book-service';
+import { getNameTranslation } from 'src/services/localization/selection';
+import { hasDuplicateEntityNames } from 'src/services/localization/entity-identity';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias, CharacterSetting } from 'src/models/novel';
 import { cloneDeep } from 'lodash';
@@ -34,6 +37,9 @@ const hasAliasConflicts = computed(() =>
         aliases.some((other, otherIndex) => otherIndex !== index && other.name === alias.name),
     ),
   ),
+);
+const hasNameConflicts = computed(() =>
+  hasDuplicateEntityNames(props.book?.characterSettings ?? []),
 );
 const toast = useToastWithHistory();
 const confirm = useConfirm();
@@ -68,7 +74,8 @@ const allCharacterSettings = computed(() => {
     sex: char.sex,
     description: char.description,
     speakingStyle: char.speakingStyle,
-    translations: char.translation.translation,
+    translations:
+      getNameTranslation(char, props.book?.targetLanguage ?? 'zh-CN')?.translation ?? '',
     aliases: char.aliases.map((a: Alias) => a.name),
     // 保留原始对象引用以便需要时使用
     _original: char,
@@ -291,30 +298,6 @@ const handleExport = () => {
   }
 };
 
-/**
- * 导入场景下把外部角色条目规整为 addCharacterSetting / updateCharacterSetting 所需的扁平载荷。
- * add 分支会在外层加 `name` 字段，update 分支直接传该对象。
- */
-type ImportedCharLike = {
-  sex?: 'male' | 'female' | 'other' | undefined;
-  translation: { translation: string };
-  description?: string | undefined;
-  speakingStyle?: string | undefined;
-  aliases: Array<{ name: string; translation: { translation: string } }>;
-};
-const buildImportedCharPayload = (importedChar: ImportedCharLike) => ({
-  ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
-  translation: importedChar.translation.translation,
-  ...(importedChar.description !== undefined ? { description: importedChar.description } : {}),
-  ...(importedChar.speakingStyle !== undefined
-    ? { speakingStyle: importedChar.speakingStyle }
-    : {}),
-  aliases: importedChar.aliases.map((a) => ({
-    name: a.name,
-    translation: a.translation.translation,
-  })),
-});
-
 // 导入角色的撤销快照（仅记录被更新条目的可恢复字段）
 type UpdatedCharSnapshot = CharacterSetting;
 
@@ -326,42 +309,19 @@ interface CharsImportResult {
   updatedCharsSnapshot: UpdatedCharSnapshot[];
 }
 
-const buildUpdatedCharSnapshot = (existingChar: CharacterSetting): UpdatedCharSnapshot =>
-  cloneDeep(existingChar);
-
-// 执行导入：名称相同的更新，否则新增。返回新增/更新计数与撤销所需的快照
 const executeCharsImport = async (
   bookId: string,
   importedCharacters: CharacterSetting[],
-  existingCharacters: CharacterSetting[] | undefined,
 ): Promise<CharsImportResult> => {
-  let addedCount = 0;
-  let updatedCount = 0;
-  const addedCharIds: string[] = [];
-  const updatedCharsSnapshot: UpdatedCharSnapshot[] = [];
-
-  for (const importedChar of importedCharacters) {
-    const existingChar = existingCharacters?.find((c) => c.name === importedChar.name);
-    if (existingChar) {
-      updatedCharsSnapshot.push(buildUpdatedCharSnapshot(existingChar));
-      // 更新现有角色：buildImportedCharPayload 不含 name，保持与原始实现一致
-      await CharacterSettingService.updateCharacterSetting(
-        bookId,
-        existingChar.id,
-        buildImportedCharPayload(importedChar),
-      );
-      updatedCount++;
-    } else {
-      const newChar = await CharacterSettingService.addCharacterSetting(bookId, {
-        name: importedChar.name,
-        ...buildImportedCharPayload(importedChar),
-      });
-      addedCharIds.push(newChar.id);
-      addedCount++;
-    }
-  }
-
-  return { addedCount, updatedCount, addedCharIds, updatedCharsSnapshot, revertOperationId: v4() };
+  const result = await BookService.importEntities(bookId, 'character', importedCharacters);
+  await useBooksStore().refreshBookFromStorage(bookId);
+  return {
+    addedCount: result.addedIds.length,
+    updatedCount: result.updatedBefore.length,
+    addedCharIds: result.addedIds,
+    updatedCharsSnapshot: result.updatedBefore,
+    revertOperationId: v4(),
+  };
 };
 
 // 撤销导入：删除新增条目，恢复被更新条目的快照字段
@@ -407,11 +367,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       return;
     }
 
-    const result = await executeCharsImport(
-      props.book.id,
-      importedCharacters,
-      props.book.characterSettings,
-    );
+    const result = await executeCharsImport(props.book.id, importedCharacters);
 
     // 与 TerminologyPanel 的导入成功 toast 结构高度相似（onRevert 前序步骤一致），
     // 但后续恢复更新逻辑各自维护不同字段集合，强行抽公共回调反而更复杂，保留两处实现。
@@ -525,6 +481,14 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     </div>
 
     <AppMessage
+      v-if="hasNameConflicts"
+      severity="warn"
+      :message="t('books.nameConflict')"
+      :closable="false"
+      class="m-4"
+    />
+
+    <AppMessage
       v-if="hasAliasConflicts"
       severity="warn"
       :message="t('books.aliasConflict')"
@@ -563,6 +527,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
 
     <!-- 角色编辑对话框 -->
     <CharacterEditDialog
+      :target-language="book?.targetLanguage ?? 'zh-CN'"
       v-model:visible="showDialog"
       :character="editDialogCharacter"
       :loading="isSaving"

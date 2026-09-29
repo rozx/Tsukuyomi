@@ -1,7 +1,9 @@
 import { ref, type Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
-import { ChapterService } from 'src/services/chapter-service';
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import type { ParagraphTranslationEdit } from 'src/services/localization/paragraph-edit';
+import type { AppLocale } from 'src/models/locale';
 import type { Chapter, Novel, Volume } from 'src/models/novel';
 
 export function useParagraphTranslation(
@@ -13,59 +15,44 @@ export function useParagraphTranslation(
   const booksStore = useBooksStore();
   const currentlyEditingParagraphId = ref<string | null>(null);
 
-  /**
-   * 持久化给定的段落内容数组：
-   * 1. 构造完整的 updatedChapter（保留最新 title 与必需字段）
-   * 2. 直接保存章节内容到 IndexedDB（saveChapterContent）
-   * 3. 立即更新 UI（selectedChapterWithContent）
-   * 4. 通过 ChapterService.updateChapter 刷新章节元数据
-   * 5. 调用 booksStore.updateBook 持久化书籍
-   *
-   * 抽取自 updateParagraphTranslation / selectParagraphTranslation 的共同尾部逻辑。
-   */
-  const persistUpdatedContent = async (
+  /** 在最新数据库正文上修改指定语言，不回存已打开的整章快照。 */
+  const persistEdits = async (
     chapter: Chapter,
-    updatedContent: NonNullable<Chapter['content']>,
+    language: AppLocale,
+    edits: ParagraphTranslationEdit[],
   ) => {
-    if (!book.value) return;
-
-    // 优化：直接保存章节内容到 IndexedDB，避免通过 updateBook 保存整个书籍
-    // 注意：使用 selectedChapterWithContent.value 而不是 chapter 引用，以保留最新的标题
-    // （可能已被并发执行的标题翻译更新）
-    // 确保所有必需字段存在（因为 chapter 不为 null，所以 selectedChapterWithContent.value 也不为 null）
-    const currentChapter = selectedChapterWithContent.value;
-    if (!currentChapter) return; // 类型守卫
-    const updatedChapter: Chapter = {
-      ...currentChapter,
-      id: chapter.id, // 明确包含 id 以确保类型正确
-      title: currentChapter.title ?? chapter.title, // 明确包含 title 以确保类型正确
-      createdAt: currentChapter.createdAt ?? chapter.createdAt, // 明确包含 createdAt 以确保类型正确
-      content: updatedContent,
-      lastEdited: new Date(),
-    };
-    await ChapterService.saveChapterContent(updatedChapter, book.value.id);
-
-    // 立即更新 UI，避免等待 updateBook 完成
-    selectedChapterWithContent.value = updatedChapter;
-
-    // 使用 ChapterService.updateChapter 更新章节的 lastEdited 时间
-    // 注意：这里传入的 content 是完整的数组，所以 updateBook 会跳过内容保留逻辑
-    // 同时传入 title 以确保使用最新的标题（可能已被 AI 翻译更新）
-    const updateData: Parameters<typeof ChapterService.updateChapter>[2] = {
-      content: updatedContent,
-      lastEdited: new Date(),
-    };
-    // 只在有值时才传递 title
-    if (updatedChapter.title) {
-      updateData.title = updatedChapter.title;
+    const bookId = book.value?.id;
+    if (!bookId) return;
+    try {
+      const content = await booksStore.editParagraphTranslations(
+        bookId,
+        chapter.id,
+        language,
+        edits,
+        language,
+      );
+      if (book.value?.id === bookId && selectedChapterWithContent.value?.id === chapter.id) {
+        selectedChapterWithContent.value = {
+          ...selectedChapterWithContent.value,
+          content,
+          lastEdited: new Date(),
+        };
+      }
+      return true;
+    } catch (error) {
+      toast.add({
+        severity: 'error',
+        summary: '保存失败',
+        detail:
+          error instanceof Error && error.message === 'BOOK_TARGET_LANGUAGE_CHANGED'
+            ? '书籍目标语言已改变，请重新打开编辑'
+            : error instanceof Error
+              ? error.message
+              : '无法保存译文',
+        life: 3000,
+      });
+      return false;
     }
-    const updatedVolumes = ChapterService.updateChapter(book.value, chapter.id, updateData);
-
-    // 保存书籍（由于 updatedContent 是完整数组，updateBook 会跳过内容保留逻辑）
-    await booksStore.updateBook(book.value.id, {
-      volumes: updatedVolumes,
-      lastEdited: new Date(),
-    });
   };
 
   /**
@@ -97,79 +84,55 @@ export function useParagraphTranslation(
     }
   };
 
-  // 更新段落翻译
-  const updateParagraphTranslation = async (paragraphId: string, newTranslation: string) => {
+  const resolveParagraphContext = (paragraphId: string) => {
     const chapter = selectedChapterWithContent.value;
-    if (!book.value || !chapter || !chapter.content) return;
-
-    // 清除编辑状态
-    if (currentlyEditingParagraphId.value === paragraphId) {
-      currentlyEditingParagraphId.value = null;
-    }
-
-    // 保存状态用于撤销
-    saveState?.('更新段落翻译');
-
-    // 查找段落
-    const paragraph = chapter.content.find((p) => p.id === paragraphId);
-    if (!paragraph || !paragraph.selectedTranslationId || !paragraph.translations) return;
-
-    // 更新章节内容中的翻译
-    const updatedContent = chapter.content.map((para) => {
-      if (para.id === paragraphId) {
-        return {
-          ...para,
-          translations: para.translations?.map((t) =>
-            t.id === paragraph.selectedTranslationId ? { ...t, translation: newTranslation } : t,
-          ),
-        };
-      }
-      return para;
-    });
-
-    await persistUpdatedContent(chapter, updatedContent);
+    const language = book.value?.targetLanguage ?? 'zh-CN';
+    const paragraph = chapter?.content?.find((value) => value.id === paragraphId);
+    return book.value && chapter && paragraph ? { chapter, language, paragraph } : undefined;
   };
 
-  // 选择段落翻译
+  // 更新当前目标语言选用的版本。
+  const updateParagraphTranslation = async (paragraphId: string, newTranslation: string) => {
+    const context = resolveParagraphContext(paragraphId);
+    if (!context) return false;
+    const { chapter, language, paragraph } = context;
+    const selected = getLanguageTranslation(paragraph, language);
+    if (!selected) return false;
+    saveState?.('更新段落翻译');
+    const saved = await persistEdits(chapter, language, [
+      {
+        type: 'update',
+        paragraphId,
+        originalText: paragraph.text,
+        translationId: selected.id,
+        text: newTranslation,
+      },
+    ]);
+    if (saved) currentlyEditingParagraphId.value = null;
+    return saved === true;
+  };
+
   const selectParagraphTranslation = async (paragraphId: string, translationId: string) => {
-    const chapter = selectedChapterWithContent.value;
-    if (!book.value || !chapter || !chapter.content) return;
-
-    // 查找段落
-    const paragraph = chapter.content.find((p) => p.id === paragraphId);
-    if (!paragraph) return;
-
-    // 验证翻译ID是否存在
-    const translation = paragraph.translations?.find((t) => t.id === translationId);
-    if (!translation) {
+    const context = resolveParagraphContext(paragraphId);
+    if (!context) return;
+    const { chapter, language, paragraph } = context;
+    saveState?.('切换段落翻译');
+    if (
+      await persistEdits(chapter, language, [
+        {
+          type: 'select',
+          paragraphId,
+          originalText: paragraph.text,
+          translationId,
+        },
+      ])
+    )
       toast.add({
-        severity: 'error',
-        summary: '选择失败',
-        detail: '未找到指定的翻译版本',
-        life: 3000,
+        severity: 'success',
+        summary: '已切换翻译',
+        detail: '已切换到选中的翻译版本',
+        life: 2000,
       });
-      return;
-    }
-
-    // 更新章节内容中的选中翻译ID
-    if (!chapter.content) return;
-
-    const updatedContent = chapter.content.map((para) => {
-      if (para.id !== paragraphId) return para;
-      return {
-        ...para,
-        selectedTranslationId: translationId,
-      };
-    });
-
-    await persistUpdatedContent(chapter, updatedContent);
-
-    toast.add({
-      severity: 'success',
-      summary: '已切换翻译',
-      detail: '已切换到选中的翻译版本',
-      life: 2000,
-    });
   };
 
   return {

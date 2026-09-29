@@ -155,11 +155,9 @@ const hasVolumes = computed(() => props.volumes.length > 0);
             @keydown.enter.prevent="handleToggleVolume(volume.id)"
             @keydown.space.prevent="handleToggleVolume(volume.id)"
           >
-            <i
-              :class="['pi volume-toggle-icon', volumeToggleIcon(volume.id)]"
-            ></i>
+            <i :class="['pi volume-toggle-icon', volumeToggleIcon(volume.id)]"></i>
             <i class="pi pi-book volume-icon"></i>
-            <span class="volume-title">{{ getVolumeDisplayTitle(volume) }}</span>
+            <span class="volume-title">{{ getVolumeDisplayTitle(volume, book) }}</span>
             <span v-if="hasChapters(volume)" class="volume-chapter-count">
               ({{ chapterCount(volume) }} 章)
             </span>
@@ -340,8 +338,7 @@ const hasVolumes = computed(() => props.volumes.length > 0);
 .volume-title {
   flex: 1;
   /* 设计系统：卷名用显示字体，强化"本卷"的阅读分章感 */
-  font-family:
-    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-family: 'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
   font-weight: 600;
   letter-spacing: -0.005em;
   min-width: 0;
@@ -351,8 +348,7 @@ const hasVolumes = computed(() => props.volumes.length > 0);
 }
 
 .volume-chapter-count {
-  font-family:
-    'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.75rem;
   color: var(--moon-opacity-70);
   font-weight: 400;

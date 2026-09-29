@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AppLocale } from 'src/models/locale';
+import { getNameTranslation } from 'src/services/localization/selection';
 import { toRef } from 'vue';
 import Popover from 'primevue/popover';
 import DataView from 'primevue/dataview';
@@ -8,6 +10,7 @@ import type { CharacterSetting } from 'src/models/novel';
 
 const props = defineProps<{
   usedCharacters: CharacterSetting[];
+  targetLanguage?: AppLocale;
 }>();
 
 const emit = defineEmits<{
@@ -27,6 +30,8 @@ const {
 } = useEntityListPopover<CharacterSetting>(toRef(props, 'usedCharacters'), emit);
 
 defineExpose({ popover, toggle, hide });
+const translationText = (owner: CharacterSetting) =>
+  getNameTranslation(owner, props.targetLanguage ?? 'zh-CN')?.translation ?? '';
 </script>
 
 <template>
@@ -83,7 +88,7 @@ defineExpose({ popover, toggle, hide });
                       </span>
                     </div>
                     <div class="text-xs text-primary-400 mt-0.5 break-words">
-                      {{ character.translation.translation }}
+                      {{ translationText(character) }}
                     </div>
                     <div
                       v-if="character.description"
@@ -144,4 +149,3 @@ defineExpose({ popover, toggle, hide });
   background: transparent !important;
 }
 </style>
-

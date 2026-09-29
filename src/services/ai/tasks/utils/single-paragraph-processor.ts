@@ -27,7 +27,9 @@ import {
   createUnifiedAbortController,
   handleTaskError,
 } from './stream-handler';
-import { getSelectedTranslation } from 'src/utils/text-utils';
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from './execution-languages';
 import {
   buildBookContextSection,
   buildChapterContextSection,
@@ -39,6 +41,7 @@ import {
 const MAX_TOOL_CALL_ROUNDS = 20;
 
 export interface SingleParagraphOptions {
+  languages?: ExecutionLanguages;
   signal?: AbortSignal;
   bookId?: string;
   chapterId?: string;
@@ -135,6 +138,7 @@ async function forwardAddTranslationBatchResult(
 }
 
 interface SingleParagraphRoundContext {
+  languages: ExecutionLanguages;
   service: ReturnType<typeof AIServiceFactory.getService>;
   aiConfig: AIServiceConfig;
   history: ChatMessage[];
@@ -294,6 +298,7 @@ async function runToolCallsForSingleParagraph(
  * 构建单段落系统提示词 / 用户提示词（含书籍/章节/特殊指令/默认上下文）
  */
 async function buildSingleParagraphPrompts(params: {
+  languages: ExecutionLanguages;
   paragraph: Paragraph;
   bookId: string | undefined;
   chapterId: string | undefined;
@@ -338,7 +343,8 @@ async function buildSingleParagraphPrompts(params: {
     ...(chapterTitle ? { chapterTitle } : {}),
   });
 
-  const currentTranslation = getSelectedTranslation(paragraph);
+  const currentTranslation =
+    getLanguageTranslation(paragraph, params.languages.targetLanguage)?.translation ?? '';
   const userPrompt = buildUserPrompt({
     paragraphId: paragraph.id,
     originalText: paragraph.text,
@@ -384,6 +390,12 @@ export async function processSingleParagraph(
   options: SingleParagraphOptions,
   config: SingleParagraphProcessConfig,
 ): Promise<SingleParagraphResult> {
+  const languages = captureExecutionLanguages(
+    options.languages?.uiLocale ?? 'zh-CN',
+    options.languages?.targetLanguage ?? 'zh-CN',
+  );
+  if (!getLanguageTranslation(paragraph, languages.targetLanguage))
+    throw new Error('NO_TARGET_TRANSLATION');
   const {
     signal,
     bookId,
@@ -425,6 +437,7 @@ export async function processSingleParagraph(
     const tools = ToolRegistry.getSingleParagraphPolishTools(bookId);
 
     const { systemPrompt, userPrompt } = await buildSingleParagraphPrompts({
+      languages,
       paragraph,
       bookId,
       chapterId,
@@ -446,6 +459,7 @@ export async function processSingleParagraph(
     console.log(`[${logLabel}] 开始单段落${taskLabel}，段落ID: ${paragraph.id}`);
 
     const roundCtx: SingleParagraphRoundContext = {
+      languages,
       service,
       aiConfig,
       history,

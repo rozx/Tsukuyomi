@@ -1,18 +1,12 @@
-import type {
-  CharacterSetting,
-  Occurrence,
-  Terminology,
-  Translation,
-  Novel,
-} from 'src/models/novel';
+import type { AppLocale } from 'src/models/locale';
+import { buildNameTranslation } from './localization/selection';
+import type { CharacterSetting, Occurrence, Terminology, Novel } from 'src/models/novel';
 import { flatMap, isEmpty, isArray } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
 import { SettingsService } from 'src/services/settings-service';
 import {
   UniqueIdGenerator,
   extractIds,
-  generateShortId,
-  normalizeTranslationQuotes,
   processItemsInBatches,
   ensureChapterContentLoaded,
 } from 'src/utils';
@@ -21,6 +15,8 @@ import {
  * 术语服务
  * 负责管理小说中的术语（添加、更新、删除、统计出现次数等）
  */
+type TerminologyMutationFields = { name: string; translation?: string; description?: string };
+
 export class TerminologyService {
   /**
    * 根据书籍 ID 读取当前术语列表，集中处理"书籍不存在"校验与
@@ -29,7 +25,12 @@ export class TerminologyService {
    * @returns Pinia books store 以及该书籍当前的 Terminology 数组
    * @throws 书籍不存在时抛出统一错误
    */
-  private static loadBookTerminologies(bookId: string): {
+  private static loadBookTerminologies(
+    bookId: string,
+    targetLanguage?: AppLocale,
+  ): {
+    book: Novel;
+    language: AppLocale;
     booksStore: ReturnType<typeof useBooksStore>;
     currentTerminologies: Terminology[];
     characterSettings: CharacterSetting[];
@@ -42,6 +43,8 @@ export class TerminologyService {
     }
 
     return {
+      book,
+      language: targetLanguage ?? book.targetLanguage ?? 'zh-CN',
       booksStore,
       currentTerminologies: book.terminologies || [],
       characterSettings: book.characterSettings || [],
@@ -136,14 +139,11 @@ export class TerminologyService {
    */
   static async addTerminology(
     bookId: string,
-    termData: {
-      name: string;
-      translation?: string;
-      description?: string;
-    },
+    termData: TerminologyMutationFields,
+    targetLanguage?: AppLocale,
   ): Promise<Terminology> {
-    const { booksStore, currentTerminologies, characterSettings } =
-      this.loadBookTerminologies(bookId);
+    const { language, booksStore, currentTerminologies, characterSettings } =
+      this.loadBookTerminologies(bookId, targetLanguage);
 
     // 检查是否已存在同名术语
     const existingTerm = currentTerminologies.find((t) => t.name === termData.name);
@@ -160,11 +160,7 @@ export class TerminologyService {
     const termId = idGenerator.generate();
 
     // 创建 Translation 对象
-    const translation: Translation = {
-      id: generateShortId(),
-      translation: normalizeTranslationQuotes(termData.translation || ''),
-      aiModelId: '', // 可以后续从默认模型获取
-    };
+    const translation = buildNameTranslation(undefined, termData.translation, language);
 
     // 创建新术语
     const newTerminology: Terminology = {
@@ -176,10 +172,17 @@ export class TerminologyService {
 
     // 更新书籍
     const updatedTerminologies = [...currentTerminologies, newTerminology];
-    await booksStore.updateBook(bookId, {
-      terminologies: updatedTerminologies,
-      lastEdited: new Date(),
-    });
+    await booksStore.updateBook(
+      bookId,
+      {
+        terminologies: updatedTerminologies,
+        lastEdited: new Date(),
+      },
+      {
+        targetLanguage: language,
+        ...(targetLanguage === undefined ? { expectedBookLanguage: language } : {}),
+      },
+    );
 
     return newTerminology;
   }
@@ -198,14 +201,11 @@ export class TerminologyService {
   static async updateTerminology(
     bookId: string,
     termId: string,
-    updates: {
-      name?: string;
-      translation?: string;
-      description?: string;
-    },
+    updates: Partial<TerminologyMutationFields>,
+    targetLanguage?: AppLocale,
   ): Promise<Terminology> {
-    const { booksStore, currentTerminologies, characterSettings } =
-      this.loadBookTerminologies(bookId);
+    const { language, booksStore, currentTerminologies, characterSettings } =
+      this.loadBookTerminologies(bookId, targetLanguage);
     const existingTerm = currentTerminologies.find((t) => t.id === termId);
 
     if (!existingTerm) {
@@ -230,14 +230,7 @@ export class TerminologyService {
       ...existingTerm,
       id: existingTerm.id,
       name: updatedName,
-      translation: {
-        id: existingTerm.translation.id,
-        translation:
-          updates.translation !== undefined
-            ? normalizeTranslationQuotes(updates.translation)
-            : existingTerm.translation.translation,
-        aiModelId: existingTerm.translation.aiModelId,
-      },
+      translation: buildNameTranslation(existingTerm, updates.translation, language),
     };
 
     // 处理 description：如果有值则设置，如果为空字符串则删除属性
@@ -254,10 +247,17 @@ export class TerminologyService {
     const updatedTerminologies = currentTerminologies.map((term) =>
       term.id === termId ? updatedTerm : term,
     );
-    await booksStore.updateBook(bookId, {
-      terminologies: updatedTerminologies,
-      lastEdited: new Date(),
-    });
+    await booksStore.updateBook(
+      bookId,
+      {
+        terminologies: updatedTerminologies,
+        lastEdited: new Date(),
+      },
+      {
+        targetLanguage: language,
+        ...(targetLanguage === undefined ? { expectedBookLanguage: language } : {}),
+      },
+    );
 
     return updatedTerm;
   }

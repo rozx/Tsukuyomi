@@ -107,11 +107,7 @@ const editChapterDialogProps = computed(() => ({
     </div>
 
     <!-- 变体内容 -->
-    <div
-      v-else
-      class="book-details-layout"
-      :class="{ 'is-phone': ctx.isPhone.value }"
-    >
+    <div v-else class="book-details-layout" :class="{ 'is-phone': ctx.isPhone.value }">
       <component :is="variantComponent" />
 
       <!-- 共享对话框与 Popover（无论变体都需要） -->
@@ -168,6 +164,7 @@ const editChapterDialogProps = computed(() => ({
       <TieredMenu ref="exportMenuRef" :model="ctx.exportMenuItems.value" popup />
 
       <TermPopover
+        :target-language="ctx.book.value?.targetLanguage ?? 'zh-CN'"
         ref="termPopover"
         :used-terms="ctx.usedTerms.value"
         @edit="ctx.openEditTermDialog"
@@ -176,6 +173,7 @@ const editChapterDialogProps = computed(() => ({
       />
 
       <CharacterPopover
+        :target-language="ctx.book.value?.targetLanguage ?? 'zh-CN'"
         ref="characterPopover"
         :used-characters="ctx.usedCharacters.value"
         @edit="ctx.openEditCharacterDialog"
@@ -222,6 +220,7 @@ const editChapterDialogProps = computed(() => ({
       />
 
       <TermEditDialog
+        :target-language="ctx.book.value?.targetLanguage ?? 'zh-CN'"
         v-model:visible="ctx.showEditTermDialog.value"
         :mode="ctx.termDialogMode.value"
         :term="ctx.editingTerm.value"
@@ -237,6 +236,7 @@ const editChapterDialogProps = computed(() => ({
       />
 
       <CharacterEditDialog
+        :target-language="ctx.book.value?.targetLanguage ?? 'zh-CN'"
         v-model:visible="ctx.showEditCharacterDialog.value"
         :character="ctx.editingCharacter.value"
         :loading="ctx.isSavingCharacter.value"

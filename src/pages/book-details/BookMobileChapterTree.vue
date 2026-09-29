@@ -46,12 +46,7 @@ const onVolumeMore = (e: Event, vol: Volume) => {
   e.stopPropagation();
   emit('volume-action', vol);
 };
-const onChapterMore = (
-  e: Event,
-  chapter: Chapter,
-  volumeId: string,
-  index: number,
-) => {
+const onChapterMore = (e: Event, chapter: Chapter, volumeId: string, index: number) => {
   e.stopPropagation();
   emit('chapter-action', { chapter, volumeId, index });
 };
@@ -68,20 +63,16 @@ const chapterCount = (vol: Volume) => vol.chapters?.length ?? 0;
       :role="volumeRole"
       @click="ctx.toggleVolumeById(vol.id)"
     >
-      <i
-        class="pi mbd-tree-vol-icon"
-        :class="folderIcon(vol.id)"
-        aria-hidden="true"
-      />
-      <span class="mbd-tree-row-title">{{ ctx.getVolumeDisplayTitle(vol) }}</span>
+      <i class="pi mbd-tree-vol-icon" :class="folderIcon(vol.id)" aria-hidden="true" />
+      <span class="mbd-tree-row-title">{{ ctx.getVolumeDisplayTitle(vol, ctx.book.value) }}</span>
       <span class="mbd-tree-row-count">{{ chapterCount(vol) }} 章</span>
-        <button
-          v-if="showRowActions"
-          type="button"
-          class="mbd-tree-row-more"
-          aria-label="卷操作"
-          @click="onVolumeMore($event, vol)"
-        >
+      <button
+        v-if="showRowActions"
+        type="button"
+        class="mbd-tree-row-more"
+        aria-label="卷操作"
+        @click="onVolumeMore($event, vol)"
+      >
         <i class="pi pi-ellipsis-v" aria-hidden="true" />
       </button>
     </component>

@@ -40,7 +40,12 @@ describe('思考等级接入实际服务入口', () => {
       if (task === 'term') await TermTranslationService.translate('こんにちは', model);
       if (task === 'paragraph')
         await processSingleParagraph(
-          { id: 'p1', text: '原文', translations: [], selectedTranslationId: '' },
+          {
+            id: 'p1',
+            text: '原文',
+            translations: [{ id: 't1', translation: '已有译文', aiModelId: '' }],
+            selectedTranslationId: 't1',
+          },
           model,
           {},
           {

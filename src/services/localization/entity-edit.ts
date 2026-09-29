@@ -125,6 +125,8 @@ export function applyBookEntityEdit(
     if (before && !next) throw new Error('ENTITY_MISSING');
     if (!next) next = { ...cloneDeep(desired), translationsByLanguage: {}, fieldRevisions: {} };
     else next = cloneDeep(next);
+    if (kind === 'alias' && (desired as Alias).legacyConflict)
+      (next as Alias).legacyConflict = true;
     for (const field of changedFields) {
       (next as unknown as Record<string, unknown>)[field] = cloneDeep(
         (desired as unknown as Record<string, unknown>)[field],
@@ -140,7 +142,11 @@ export function applyBookEntityEdit(
         now,
       );
     }
-    if (projectionEdited && !slotEdits.includes(locale)) {
+    if (
+      projectionEdited &&
+      (before || desired.translationsByLanguage === undefined) &&
+      !slotEdits.includes(locale)
+    ) {
       next = setNameTranslation(
         next,
         locale,

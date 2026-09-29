@@ -38,6 +38,7 @@ export function useChapterTranslation(
   const aiModelsStore = useAIModelsStore();
   const aiProcessingStore = useAIProcessingStore();
   const uiStore = useUiStore();
+  const targetLanguage = computed(() => book.value?.targetLanguage ?? 'zh-CN');
 
   const guarded =
     <Args extends unknown[]>(label: string, execute: (...args: Args) => Promise<void>) =>
@@ -745,7 +746,7 @@ export function useChapterTranslation(
       return null;
     }
 
-    if (options.requireTranslation && !hasParagraphTranslation(paragraph)) {
+    if (options.requireTranslation && !hasParagraphTranslation(paragraph, targetLanguage.value)) {
       toast.add({
         severity: 'error',
         summary: `${taskLabel}失败`,
@@ -1289,7 +1290,7 @@ export function useChapterTranslation(
 
   // 继续翻译（只翻译未翻译的段落）
   const isUntranslatedParagraph = (para: Paragraph): boolean => {
-    return !isEmptyParagraph(para.text) && !hasParagraphTranslation(para);
+    return !isEmptyParagraph(para.text) && !hasParagraphTranslation(para, targetLanguage.value);
   };
 
   /** 取当前选中章节的标题原文（兼容字符串 / 对象两种 title 形态） */
@@ -1472,7 +1473,7 @@ export function useChapterTranslation(
       return null;
     }
     const paragraphsWithTranslation = selectedChapterParagraphs.value.filter(
-      (para) => !isEmptyParagraph(para.text) && hasParagraphTranslation(para),
+      (para) => !isEmptyParagraph(para.text) && hasParagraphTranslation(para, targetLanguage.value),
     );
     if (paragraphsWithTranslation.length === 0) {
       toast.add({
@@ -1979,7 +1980,9 @@ export function useChapterTranslation(
       return { hasNone: true, hasPartial: false, hasAll: false };
     }
 
-    const translatedCount = nonEmptyParagraphs.filter(hasParagraphTranslation).length;
+    const translatedCount = nonEmptyParagraphs.filter((paragraph) =>
+      hasParagraphTranslation(paragraph, targetLanguage.value),
+    ).length;
     const totalCount = nonEmptyParagraphs.length;
 
     if (translatedCount === 0) {

@@ -130,7 +130,7 @@ const volumeFolderIcon = (volumeId: string) =>
         @click="emit('toggle-volume', vol.id)"
       >
         <i class="pi vt-vol-icon" :class="volumeFolderIcon(vol.id)" aria-hidden="true" />
-        <span class="vt-row-title">{{ getVolumeDisplayTitle(vol) }}</span>
+        <span class="vt-row-title">{{ getVolumeDisplayTitle(vol, book) }}</span>
         <span class="vt-row-count">{{ vol.chapters?.length ?? 0 }} 章</span>
         <button
           type="button"

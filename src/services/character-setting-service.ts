@@ -1,12 +1,10 @@
+import { v4 } from 'uuid';
+import type { AppLocale } from 'src/models/locale';
+import { buildNameTranslation } from './localization/selection';
 import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 import { SettingsService } from 'src/services/settings-service';
-import {
-  UniqueIdGenerator,
-  extractIds,
-  generateShortId,
-  normalizeTranslationQuotes,
-} from 'src/utils';
+import { UniqueIdGenerator, extractIds } from 'src/utils';
 
 /**
  * 角色设定服务
@@ -38,21 +36,10 @@ function assertNameNotTerm(
   }
 }
 
-function buildUpdatedCharacterTranslation(
-  existing: CharacterSetting,
-  translationUpdate: string | undefined,
-): Translation {
-  if (translationUpdate === undefined) return existing.translation;
-  return {
-    id: existing.translation.id,
-    translation: normalizeTranslationQuotes(translationUpdate),
-    aiModelId: existing.translation.aiModelId,
-  };
-}
-
 function buildUpdatedCharacterAliases(
-  aliasUpdates: Array<{ id?: string; name: string; translation: string }>,
+  aliasUpdates: Array<{ id?: string; name: string; translation?: string }>,
   existingChar: CharacterSetting,
+  language: AppLocale,
 ): Alias[] {
   const out: Alias[] = [];
   for (const aliasData of aliasUpdates) {
@@ -65,13 +52,9 @@ function buildUpdatedCharacterAliases(
     if (aliasData.id && !existingAlias) throw new Error('ALIAS_MISSING');
     out.push({
       ...existingAlias,
-      id: existingAlias?.id ?? generateShortId(),
+      id: existingAlias?.id ?? v4(),
       name: aliasData.name,
-      translation: {
-        id: existingAlias?.translation.id ?? generateShortId(),
-        translation: normalizeTranslationQuotes(aliasData.translation || ''),
-        aiModelId: existingAlias?.translation.aiModelId ?? '',
-      },
+      translation: buildNameTranslation(existingAlias, aliasData.translation, language),
     });
   }
   return out;
@@ -119,7 +102,7 @@ type CharacterMutationFields = {
   translation?: string;
   description?: string;
   speakingStyle?: string;
-  aliases?: Array<{ id?: string; name: string; translation: string }>;
+  aliases?: Array<{ id?: string; name: string; translation?: string }>;
 };
 
 export class CharacterSettingService {
@@ -138,6 +121,7 @@ export class CharacterSettingService {
   static async addCharacterSetting(
     bookId: string,
     charData: CharacterMutationFields,
+    targetLanguage?: AppLocale,
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
@@ -146,6 +130,7 @@ export class CharacterSettingService {
       throw new Error(`书籍不存在: ${bookId}`);
     }
 
+    const language = targetLanguage ?? book.targetLanguage ?? 'zh-CN';
     const currentSettings = book.characterSettings || [];
     const currentTerminologies = book.terminologies || [];
 
@@ -171,11 +156,7 @@ export class CharacterSettingService {
     const charId = idGenerator.generate();
 
     // 创建 Translation 对象
-    const translation: Translation = {
-      id: generateShortId(),
-      translation: normalizeTranslationQuotes(charData.translation || ''),
-      aiModelId: '', // 默认为空
-    };
+    const translation = buildNameTranslation(undefined, charData.translation, language);
 
     // 处理别名
     const aliases: Alias[] = [];
@@ -184,13 +165,9 @@ export class CharacterSettingService {
         if (!aliasData.name.trim()) continue;
 
         aliases.push({
-          id: generateShortId(),
+          id: v4(),
           name: aliasData.name,
-          translation: {
-            id: generateShortId(),
-            translation: normalizeTranslationQuotes(aliasData.translation || ''), // 使用提供的翻译，如果没有则使用名称
-            aiModelId: '',
-          },
+          translation: buildNameTranslation(undefined, aliasData.translation, language),
         });
       }
     }
@@ -208,10 +185,17 @@ export class CharacterSettingService {
 
     // 更新书籍
     const updatedSettings = [...currentSettings, newCharacter];
-    await booksStore.updateBook(bookId, {
-      characterSettings: updatedSettings,
-      lastEdited: new Date(),
-    });
+    await booksStore.updateBook(
+      bookId,
+      {
+        characterSettings: updatedSettings,
+        lastEdited: new Date(),
+      },
+      {
+        targetLanguage: language,
+        ...(targetLanguage === undefined ? { expectedBookLanguage: language } : {}),
+      },
+    );
 
     return newCharacter;
   }
@@ -227,11 +211,13 @@ export class CharacterSettingService {
     bookId: string,
     charId: string,
     updates: Partial<CharacterMutationFields>,
+    targetLanguage?: AppLocale,
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
     if (!book) throw new Error(`书籍不存在: ${bookId}`);
 
+    const language = targetLanguage ?? book.targetLanguage ?? 'zh-CN';
     const currentSettings = book.characterSettings || [];
     const currentTerminologies = book.terminologies || [];
     const existingChar = currentSettings.find((c) => c.id === charId);
@@ -251,11 +237,11 @@ export class CharacterSettingService {
       }
     }
 
-    const updatedTranslation = buildUpdatedCharacterTranslation(existingChar, updates.translation);
+    const updatedTranslation = buildNameTranslation(existingChar, updates.translation, language);
     const updatedAliases =
       updates.aliases === undefined
         ? existingChar.aliases || []
-        : buildUpdatedCharacterAliases(updates.aliases, existingChar);
+        : buildUpdatedCharacterAliases(updates.aliases, existingChar, language);
 
     const updatedChar = composeUpdatedCharacter(
       existingChar,
@@ -265,10 +251,17 @@ export class CharacterSettingService {
     );
 
     const updatedSettings = currentSettings.map((c) => (c.id === charId ? updatedChar : c));
-    await booksStore.updateBook(bookId, {
-      characterSettings: updatedSettings,
-      lastEdited: new Date(),
-    });
+    await booksStore.updateBook(
+      bookId,
+      {
+        characterSettings: updatedSettings,
+        lastEdited: new Date(),
+      },
+      {
+        targetLanguage: language,
+        ...(targetLanguage === undefined ? { expectedBookLanguage: language } : {}),
+      },
+    );
 
     return updatedChar;
   }

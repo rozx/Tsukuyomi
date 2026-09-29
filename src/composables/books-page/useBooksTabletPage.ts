@@ -18,7 +18,7 @@ import { useChapterManagement } from 'src/composables/book-details/useChapterMan
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { isPortrait } from 'src/utils/device-orientation';
-import { getVolumeDisplayTitle } from 'src/utils/novel-utils';
+import { getVolumeDisplayTitle, getChapterTranslationStats } from 'src/utils/novel-utils';
 import {
   getChapterStatus,
   chapterStatusIcon,
@@ -32,6 +32,7 @@ import {
   buildChapterActionMenuItems,
 } from 'src/components/novel/volumes-list-utils';
 import type Menu from 'primevue/menu';
+import type { AppLocale } from 'src/models/locale';
 import type { Chapter, Novel, Paragraph, Volume } from 'src/models/novel';
 
 export type BooksTabletPageContext = ReturnType<typeof createBooksTabletPageContext>;
@@ -49,14 +50,12 @@ function collectChapterIds(book: Novel): string[] {
 function buildChapterProgressMap(
   chapterIds: string[],
   contents: Map<string, Paragraph[] | undefined>,
+  targetLanguage: AppLocale,
 ): ChapterProgressMap {
   const map: ChapterProgressMap = new Map();
   for (const id of chapterIds) {
     const paras = contents.get(id) ?? [];
-    const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
-    const total = nonEmpty.length;
-    const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
-    map.set(id, { total, translated });
+    map.set(id, getChapterTranslationStats(paras, targetLanguage));
   }
   return map;
 }
@@ -120,6 +119,7 @@ function createBooksTabletPageContext() {
   const progressByChapter = ref<ChapterProgressMap | null>(null);
   const isLoadingProgress = ref(false);
   let progressLoadToken = 0;
+  const progressLanguage = computed(() => selectedBook.value?.targetLanguage ?? 'zh-CN');
   async function loadProgressFor(book: Novel | null) {
     const token = ++progressLoadToken;
     if (!book) {
@@ -139,7 +139,11 @@ function createBooksTabletPageContext() {
     try {
       const contents = await ChapterContentService.loadChapterContentsBatch(chapterIds);
       if (token !== progressLoadToken) return; // 切书后丢弃旧结果
-      progressByChapter.value = buildChapterProgressMap(chapterIds, contents);
+      progressByChapter.value = buildChapterProgressMap(
+        chapterIds,
+        contents,
+        progressLanguage.value,
+      );
     } catch (err) {
       // 章节内容批量加载失败：记录并提示，同时清空进度避免显示陈旧状态。
       // 否则异常会穿透到 watch 的 void loadProgressFor(...) 形成未处理 Promise，用户也看不到错误。
@@ -156,7 +160,7 @@ function createBooksTabletPageContext() {
     }
   }
   watch(
-    () => selectedBook.value?.id ?? null,
+    () => [selectedBook.value?.id, selectedBook.value?.targetLanguage],
     () => void loadProgressFor(selectedBook.value),
     { immediate: true },
   );
@@ -193,7 +197,10 @@ function createBooksTabletPageContext() {
   const selectedBookForEdit = computed<Novel | undefined>(() => selectedBook.value ?? undefined);
   const chapterMgmt = useChapterManagement(selectedBookForEdit);
   const volumeOptions = computed(() =>
-    (selectedBook.value?.volumes ?? []).map((v) => ({ label: getVolumeDisplayTitle(v), value: v.id })),
+    (selectedBook.value?.volumes ?? []).map((v) => ({
+      label: getVolumeDisplayTitle(v, selectedBook.value),
+      value: v.id,
+    })),
   );
 
   // ⋮ 动作菜单：单个 Menu 实例，根据当前 target 动态生成菜单项
@@ -227,12 +234,7 @@ function createBooksTabletPageContext() {
     actionTarget.value = { kind: 'volume', volume };
     actionMenuRef.value?.toggle(event);
   };
-  const openChapterMenu = (
-    event: Event,
-    chapter: Chapter,
-    volumeId: string,
-    index: number,
-  ) => {
+  const openChapterMenu = (event: Event, chapter: Chapter, volumeId: string, index: number) => {
     event.stopPropagation();
     actionTarget.value = { kind: 'chapter', chapter, volumeId, index };
     actionMenuRef.value?.toggle(event);

@@ -1,3 +1,5 @@
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import { BookService } from 'src/services/book-service';
 import {
   computed,
   ref,
@@ -75,10 +77,7 @@ import {
   buildChapterSemanticQuery,
   selectRelevantMemoriesForChunk,
 } from 'src/services/ai/tasks/utils/context-builder';
-import {
-  buildNovelSettingsUpdate,
-  hasChapterInstructionPayload,
-} from './chapter-settings-update';
+import { buildNovelSettingsUpdate, hasChapterInstructionPayload } from './chapter-settings-update';
 import type { ChapterSettingsFormData } from './chapter-settings-update';
 import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
@@ -170,9 +169,7 @@ function buildMergedSelectedChapter(
     ...current,
     ...(shouldUpdateMetadata ? updated : {}),
     content: shouldUpdateContent ? updated.content : (current.content ?? updated.content),
-    contentLoaded: shouldUpdateContent
-      ? true
-      : (current.contentLoaded ?? updated.contentLoaded),
+    contentLoaded: shouldUpdateContent ? true : (current.contentLoaded ?? updated.contentLoaded),
     lastEdited: shouldUpdateMetadata ? updated.lastEdited : current.lastEdited,
   };
 }
@@ -371,9 +368,22 @@ function createBookDetailsPageContext() {
     clearHistory,
   } = useUndoRedo(
     book,
-    async (updatedBook) => {
+    async (updatedBook, scope) => {
       if (!updatedBook) return;
-      await booksStore.updateBook(updatedBook.id, updatedBook);
+      if (scope) {
+        await BookService.restoreTranslationHistory(updatedBook, scope.chapterId, scope.language);
+        const current = await booksStore.refreshBookFromStorage(updatedBook.id, scope.chapterId);
+        if (current)
+          await syncSelectedChapterAfterUndoRedo(
+            current,
+            selectedChapterId.value,
+            selectedChapterWithContent,
+          );
+        return;
+      }
+      const currentTarget = booksStore.getBookById(updatedBook.id)?.targetLanguage ?? 'zh-CN';
+      const restored = { ...updatedBook, targetLanguage: currentTarget };
+      await booksStore.updateBook(updatedBook.id, restored);
       await syncSelectedChapterAfterUndoRedo(
         updatedBook,
         selectedChapterId.value,
@@ -382,6 +392,16 @@ function createBookDetailsPageContext() {
     },
     getEnhancedBook,
   );
+
+  const saveTranslationState = (description?: string) => {
+    const chapterId = selectedChapterWithContent.value?.id;
+    if (chapterId)
+      saveState(description, {
+        kind: 'translation',
+        chapterId,
+        language: book.value?.targetLanguage ?? 'zh-CN',
+      });
+  };
 
   // 监听书籍ID变化，切换书籍时清空历史记录
   watch(
@@ -519,7 +539,7 @@ function createBookDetailsPageContext() {
 
   const volumeOptions = computed(() => {
     return volumes.value.map((volume) => ({
-      label: getVolumeDisplayTitle(volume),
+      label: getVolumeDisplayTitle(volume, book.value),
       value: volume.id,
     }));
   });
@@ -646,8 +666,7 @@ function createBookDetailsPageContext() {
     bookValue: NonNullable<typeof book.value>,
     payload: MoveChapterPayload,
   ): number | null => {
-    const targetIndex =
-      payload.direction === 'up' ? payload.index - 1 : payload.index + 1;
+    const targetIndex = payload.direction === 'up' ? payload.index - 1 : payload.index + 1;
     if (targetIndex < 0) return null;
     const targetVolume = bookValue.volumes?.find((volume) => volume.id === payload.volumeId);
     if (!targetVolume?.chapters) return null;
@@ -835,13 +854,8 @@ function createBookDetailsPageContext() {
     byChapter: Map<string, ChapterProgress>;
   };
 
-  const computeChapterProgress = (
-    paragraphs: Paragraph[] | undefined,
-  ): ChapterProgress => {
-    const nonEmpty = (paragraphs ?? []).filter((p) => (p.text ?? '').trim().length > 0);
-    const total = nonEmpty.length;
-    const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
-    return { total, translated };
+  const computeChapterProgress = (paragraphs: Paragraph[] | undefined): ChapterProgress => {
+    return getChapterTranslationStats(paragraphs, book.value?.targetLanguage ?? 'zh-CN');
   };
 
   const aggregateProgressByChapter = (
@@ -858,7 +872,10 @@ function createBookDetailsPageContext() {
       total += progress.total;
       translated += progress.translated;
       byChapter.set(id, progress);
-      if (firstIncompleteChapterId === null && (progress.total === 0 || progress.translated < progress.total)) {
+      if (
+        firstIncompleteChapterId === null &&
+        (progress.total === 0 || progress.translated < progress.total)
+      ) {
         firstIncompleteChapterId = id;
       }
     }
@@ -909,9 +926,7 @@ function createBookDetailsPageContext() {
     return null;
   };
 
-  const firstChapterInBook = (
-    bookValue: NonNullable<typeof book.value>,
-  ): Chapter | null => {
+  const firstChapterInBook = (bookValue: NonNullable<typeof book.value>): Chapter | null => {
     for (const vol of bookValue.volumes || []) {
       for (const ch of vol.chapters || []) return ch;
     }
@@ -980,10 +995,14 @@ function createBookDetailsPageContext() {
   });
 
   const chapterStatusIcon = (chapterId: string): string =>
-    chapterStatusIconPure(getChapterStatusPure(translationProgressState.value?.byChapter, chapterId));
+    chapterStatusIconPure(
+      getChapterStatusPure(translationProgressState.value?.byChapter, chapterId),
+    );
 
   const chapterStatusColor = (chapterId: string): string =>
-    chapterStatusColorPure(getChapterStatusPure(translationProgressState.value?.byChapter, chapterId));
+    chapterStatusColorPure(
+      getChapterStatusPure(translationProgressState.value?.byChapter, chapterId),
+    );
 
   const chapterStatusTextColor = (chapterId: string): string =>
     chapterStatusTextColorPure(
@@ -1007,9 +1026,7 @@ function createBookDetailsPageContext() {
   });
 
   const getParagraphModelName = (paragraph: Paragraph): string | null => {
-    const list = paragraph.translations ?? [];
-    if (list.length === 0) return null;
-    const sel = list.find((t) => t.id === paragraph.selectedTranslationId) ?? list[0];
+    const sel = getLanguageTranslation(paragraph, book.value?.targetLanguage ?? 'zh-CN');
     if (!sel) return null;
     const model = aiModelsStore.models.find((m) => m.id === sel.aiModelId);
     return model?.name ?? null;
@@ -1021,7 +1038,10 @@ function createBookDetailsPageContext() {
   });
 
   const mobileReaderStats = computed(() =>
-    getChapterTranslationStats(selectedChapterParagraphs.value),
+    getChapterTranslationStats(
+      selectedChapterParagraphs.value,
+      book.value?.targetLanguage ?? 'zh-CN',
+    ),
   );
 
   // 段落翻译 composable
@@ -1030,7 +1050,7 @@ function createBookDetailsPageContext() {
     updateParagraphTranslation,
     selectParagraphTranslation,
     updateSelectedChapterWithContent,
-  } = useParagraphTranslation(book, selectedChapterWithContent, saveState);
+  } = useParagraphTranslation(book, selectedChapterWithContent, saveTranslationState);
 
   // 编辑模式 composable
   const {
@@ -1373,7 +1393,7 @@ function createBookDetailsPageContext() {
     selectedChapterParagraphs,
     updateParagraphTranslation,
     currentlyEditingParagraphId,
-    saveState,
+    saveTranslationState,
     updateSelectedChapterWithContent,
     chapterScrollToIndex,
   );
@@ -1952,25 +1972,6 @@ function createBookDetailsPageContext() {
     termDialogMode.value = 'edit';
   };
 
-  const buildUpdatedTerm = (
-    term: Terminology,
-    editingId: string,
-    data: TermFormData,
-  ): Terminology => {
-    if (term.id !== editingId) return term;
-    const updated: Terminology = {
-      ...term,
-      name: data.name,
-      translation: { ...term.translation, translation: data.translation },
-    };
-    if (data.description) {
-      updated.description = data.description;
-    } else {
-      delete updated.description;
-    }
-    return updated;
-  };
-
   const updateExistingTerm = async (
     bookValue: NonNullable<typeof book.value>,
     editing: Terminology,
@@ -1990,12 +1991,10 @@ function createBookDetailsPageContext() {
       return false;
     }
     saveState('保存术语');
-    const updatedTerminologies = currentTerminologies.map((term) =>
-      buildUpdatedTerm(term, editing.id, data),
-    );
-    await booksStore.updateBook(bookValue.id, {
-      terminologies: updatedTerminologies,
-      lastEdited: new Date(),
+    await TerminologyService.updateTerminology(bookValue.id, editing.id, {
+      name: data.name,
+      translation: data.translation,
+      description: data.description,
     });
     toast.add({
       severity: 'success',

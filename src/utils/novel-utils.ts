@@ -1,5 +1,7 @@
 import type { Novel, Chapter, Volume, Paragraph } from 'src/models/novel';
 import { loadChapterContent } from 'src/utils/chapter-content-loader';
+import { getNameTranslation, getLanguageTranslation } from 'src/services/localization/selection';
+import type { AppLocale } from 'src/models/locale';
 
 /**
  * 通过章节 ID 查找章节及其在小说中的位置。
@@ -35,7 +37,7 @@ export function findChapterById(
  * @param volume 卷对象
  * @returns 显示标题
  */
-export function getVolumeDisplayTitle(volume: Volume): string {
+export function getVolumeDisplayTitle(volume: Volume, book?: Novel | null): string {
   // 防御性检查：确保 title 存在
   if (!volume.title) {
     return '';
@@ -46,13 +48,11 @@ export function getVolumeDisplayTitle(volume: Volume): string {
     return volume.title;
   }
 
-  // 检查是否有翻译（防御性检查，处理旧数据或未正确初始化的数据）
-  if (volume.title.translation?.translation?.trim()) {
-    return volume.title.translation.translation;
-  }
-
-  // 返回原文
-  return volume.title.original || '';
+  return (
+    getNameTranslation(volume.title, book?.targetLanguage ?? 'zh-CN')?.translation ||
+    volume.title.original ||
+    ''
+  );
 }
 
 /**
@@ -119,30 +119,17 @@ export function getChapterDisplayTitle(chapter: Chapter, book?: Novel): string {
 
   // 兼容旧数据：如果 title 是字符串，直接返回
   if (typeof chapter.title === 'string') {
-    const title: string = chapter.title;
-    // 应用规范化（如果启用）
-    const normalize = chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
-    if (normalize) {
-      return normalizeChapterTitle(title);
-    }
-    return title;
+    return chapter.title;
   }
 
   // 检查是否有翻译（防御性检查，处理旧数据或未正确初始化的数据）
-  let title: string = '';
-  if (chapter.title.translation?.translation?.trim()) {
-    title = chapter.title.translation.translation;
-  } else if (chapter.title.original) {
-    // 返回原文
-    title = chapter.title.original;
-  } else {
-    // 如果既没有翻译也没有原文，返回空字符串
-    return '';
-  }
+  const translated = getNameTranslation(chapter.title, book?.targetLanguage ?? 'zh-CN');
+  if (!translated) return chapter.title.original || '';
+  let title = translated.translation;
 
   // 应用规范化（如果启用）
   const normalize = chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
-  if (normalize) {
+  if (normalize && book?.targetLanguage !== 'en-US') {
     title = normalizeChapterTitle(title);
   }
 
@@ -374,7 +361,10 @@ export function getCharacterNameVariants(name: string): string[] {
 /**
  * 统计章节段落的翻译进度：忽略纯空白段落，返回有实际文本的段落总数 + 已有翻译的段落数。
  */
-export function getChapterTranslationStats(paragraphs: Paragraph[] | null | undefined): {
+export function getChapterTranslationStats(
+  paragraphs: Paragraph[] | null | undefined,
+  targetLanguage: AppLocale = 'zh-CN',
+): {
   total: number;
   translated: number;
 } {
@@ -382,7 +372,7 @@ export function getChapterTranslationStats(paragraphs: Paragraph[] | null | unde
   const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
   return {
     total: nonEmpty.length,
-    translated: nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length,
+    translated: nonEmpty.filter((p) => hasParagraphTranslation(p, targetLanguage)).length,
   };
 }
 
@@ -391,12 +381,11 @@ export function getChapterTranslationStats(paragraphs: Paragraph[] | null | unde
  * @param paragraph 段落对象
  * @returns 如果段落有翻译返回 true，否则返回 false
  */
-export function hasParagraphTranslation(paragraph: Paragraph): boolean {
-  return !!(
-    paragraph.selectedTranslationId &&
-    paragraph.translations &&
-    paragraph.translations.some((t) => t.id === paragraph.selectedTranslationId)
-  );
+export function hasParagraphTranslation(
+  paragraph: Paragraph,
+  targetLanguage: AppLocale = 'zh-CN',
+): boolean {
+  return !!getLanguageTranslation(paragraph, targetLanguage);
 }
 
 /**

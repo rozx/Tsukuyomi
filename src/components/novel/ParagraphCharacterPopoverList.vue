@@ -1,11 +1,16 @@
 <script setup lang="ts">
+import type { AppLocale } from 'src/models/locale';
+import { getNameTranslation } from 'src/services/localization/selection';
 import type { CharacterSetting } from 'src/models/novel';
 
 // 角色提示框内容：多个匹配角色（按出现次数排序）的列表渲染。
 // 从 ParagraphPopovers 拆出以降低其模板认知复杂度。
-defineProps<{
+const props = defineProps<{
   characters: CharacterSetting[];
+  targetLanguage?: AppLocale;
 }>();
+const translationText = (owner: CharacterSetting) =>
+  getNameTranslation(owner, props.targetLanguage ?? 'zh-CN')?.translation ?? '';
 </script>
 
 <template>
@@ -27,7 +32,7 @@ defineProps<{
               {{ char.sex === 'male' ? '男' : char.sex === 'female' ? '女' : '其他' }}
             </span>
           </div>
-          <span class="popover-translation">{{ char.translation.translation }}</span>
+          <span class="popover-translation">{{ translationText(char) }}</span>
         </div>
         <div v-if="char.description" class="popover-description">{{ char.description }}</div>
         <div v-if="char.aliases && char.aliases.length > 0" class="popover-aliases">

@@ -25,15 +25,15 @@ const volIconClass = (volId: string) =>
   t.isVolumeExpanded(volId)
     ? 'pi-folder-open tl-tree-vol-icon-open'
     : 'pi-folder tl-tree-vol-icon-closed';
-const volTitle = (volume: Volume, vi: number) => getVolumeDisplayTitle(volume) || `卷 ${vi + 1}`;
+const volTitle = (volume: Volume, vi: number) =>
+  getVolumeDisplayTitle(volume, book.value) || `卷 ${vi + 1}`;
 const volChapterCount = (volume: Volume) => volume.chapters?.length ?? 0;
 const chapTitle = (chapter: Chapter, ci: number) =>
   getChapterDisplayTitle(chapter, book.value!) || `第 ${ci + 1} 章`;
 const chaptersOf = (volume: Volume) => volume.chapters ?? [];
 const volKey = (volume: Volume, vi: number) => volume.id ?? vi;
 const chapKey = (chapter: Chapter, ci: number) => chapter.id ?? ci;
-const remainingChapters = (volume: Volume) =>
-  (volume.chapters?.length ?? 0) - t.COLLAPSED_PREVIEW;
+const remainingChapters = (volume: Volume) => (volume.chapters?.length ?? 0) - t.COLLAPSED_PREVIEW;
 const hasCollapsedMore = (volume: Volume) =>
   !t.isVolumeExpanded(volume.id) && volChapterCount(volume) > t.COLLAPSED_PREVIEW;
 // 阻止冒泡到行 click
@@ -93,7 +93,12 @@ const onToggleVolume = (volId: string) => t.toggleVolume(volId);
           :role="t.chapterRowRole(chapter)"
           @click="onChapterClick(chapter)"
         >
-          <i class="pi" :class="t.chIcon(chapter.id)" :style="{ color: t.chColor(chapter.id) }" aria-hidden="true" />
+          <i
+            class="pi"
+            :class="t.chIcon(chapter.id)"
+            :style="{ color: t.chColor(chapter.id) }"
+            aria-hidden="true"
+          />
           <span class="tl-tree-chap-title">{{ chapTitle(chapter, ci) }}</span>
           <span class="tl-tree-count" :style="{ color: t.chTextColor(chapter.id) }">
             {{ t.chLabel(chapter.id) }}
@@ -118,8 +123,6 @@ const onToggleVolume = (volId: string) => t.toggleVolume(volId);
         </div>
       </div>
     </div>
-    <div v-else class="tl-chapters-empty">
-      <i class="pi pi-book" aria-hidden="true" /> 暂无章节
-    </div>
+    <div v-else class="tl-chapters-empty"><i class="pi pi-book" aria-hidden="true" /> 暂无章节</div>
   </section>
 </template>

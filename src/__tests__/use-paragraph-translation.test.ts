@@ -1,269 +1,107 @@
-import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
-import { ref } from 'vue';
+import { afterEach, describe, expect, it } from 'bun:test';
+import './setup';
+import { computed, createApp, ref } from 'vue';
+import type { App } from 'vue';
+import { createPinia, setActivePinia } from 'pinia';
+import ToastService from 'primevue/toastservice';
 import { useParagraphTranslation } from '../composables/book-details/useParagraphTranslation';
-import type { Novel, Chapter, Volume, Paragraph } from '../models/novel';
-import { generateShortId } from '../utils/id-generator';
-import { ChapterService } from '../services/chapter-service';
-import * as BooksStore from '../stores/books';
-import * as useToastHistory from '../composables/useToastHistory';
+import { useBooksStore } from '../stores/books';
+import { useToastHistoryStore } from '../stores/toast-history';
+import { ChapterContentService } from '../services/chapter-content-service';
+import type { Chapter, Novel } from '../models/novel';
 
-// Mock dependencies
-const mockToastAdd = mock(() => {});
-const mockToastRemove = mock(() => {});
-const mockToastRemoveGroup = mock(() => {});
-const mockToastRemoveAllGroups = mock(() => {});
-const mockUseToastWithHistory = mock(() => ({
-  add: mockToastAdd,
-  remove: mockToastRemove,
-  removeGroup: mockToastRemoveGroup,
-  removeAllGroups: mockToastRemoveAllGroups,
-}));
+let app: App | undefined;
+afterEach(() => {
+  app?.unmount();
+  app = undefined;
+});
 
-const mockUpdateChapter = mock((): Volume[] => []);
-const mockSaveChapterContent = mock(() => Promise.resolve());
-const mockBooksStoreUpdateBook = mock(() => Promise.resolve());
-
-// Helper functions
-function createTestParagraph(id: string, text: string, translation?: string): Paragraph {
-  const translationId = generateShortId();
-  return {
-    id,
-    text,
-    selectedTranslationId: translationId,
-    translations: translation
-      ? [
-          {
-            id: translationId,
-            translation,
-            aiModelId: 'model-1',
-          },
-        ]
-      : [],
-  };
-}
-
-function createTestChapter(id: string, paragraphs: Paragraph[]): Chapter {
-  return {
-    id,
-    title: {
-      original: 'Chapter 1',
-      translation: { id: generateShortId(), translation: '', aiModelId: '' },
-    },
-    content: paragraphs,
-    lastEdited: new Date(),
-    createdAt: new Date(),
-  };
-}
-
-function createTestNovel(chapters: Chapter[]): Novel {
-  return {
-    id: 'novel-1',
-    title: 'Test Novel',
-    volumes: [
+async function openEditor() {
+  const pinia = createPinia();
+  setActivePinia(pinia);
+  const books = useBooksStore();
+  const chapter = ref<Chapter>({
+    id: 'c',
+    title: { original: '章', translation: { id: 'title', translation: '当前标题', aiModelId: '' } },
+    createdAt: new Date(0),
+    lastEdited: new Date(0),
+    content: [
       {
-        id: 'volume-1',
-        title: {
-          original: 'Volume 1',
-          translation: { id: generateShortId(), translation: '', aiModelId: '' },
-        },
-        chapters,
+        id: 'p',
+        text: '原文',
+        selectedTranslationId: 't1',
+        translations: [
+          { id: 't1', translation: '原译文', aiModelId: '' },
+          { id: 't2', translation: '另一译文', aiModelId: '' },
+        ],
       },
     ],
-    lastEdited: new Date(),
-    createdAt: new Date(),
+  });
+  const book: Novel = {
+    id: 'b',
+    title: '书',
+    createdAt: new Date(0),
+    lastEdited: new Date(0),
+    volumes: [{ id: 'v', title: '卷', chapters: [chapter.value] }],
   };
+  await books.addBook(book);
+  let editor: ReturnType<typeof useParagraphTranslation> | undefined;
+  app = createApp({
+    setup() {
+      editor = useParagraphTranslation(
+        computed(() => books.getBookById('b')),
+        chapter,
+      );
+      return () => null;
+    },
+  });
+  app.use(pinia).use(ToastService).mount(document.createElement('div'));
+  return { editor: editor!, chapter, books };
 }
 
 describe('useParagraphTranslation', () => {
-  beforeEach(() => {
-    mockToastAdd.mockClear();
-    mockUpdateChapter.mockClear();
-    mockSaveChapterContent.mockClear();
-    mockBooksStoreUpdateBook.mockClear();
-    spyOn(BooksStore, 'useBooksStore').mockReturnValue({
-      updateBook: mockBooksStoreUpdateBook,
-    } as any);
-    spyOn(ChapterService, 'updateChapter').mockImplementation(mockUpdateChapter);
-    spyOn(ChapterService, 'saveChapterContent').mockImplementation(mockSaveChapterContent);
-    spyOn(useToastHistory, 'useToastWithHistory').mockImplementation(mockUseToastWithHistory);
+  it('旧简中段落编辑及历史选择保存后可重载', async () => {
+    const { editor } = await openEditor();
+    expect(editor.currentlyEditingParagraphId.value).toBeNull();
+    await editor.updateParagraphTranslation('p', '修改后的译文');
+    await editor.selectParagraphTranslation('p', 't2');
+    const saved = (await ChapterContentService.loadChapterContent('c'))![0]!;
+    expect(saved.translations.find((value) => value.id === 't1')?.translation).toBe('修改后的译文');
+    expect(saved.selectedTranslationId).toBe('t2');
+    expect(saved.selectedTranslations?.['zh-CN']?.value).toBe('t2');
   });
 
-  afterEach(() => {
-    mock.restore();
-  });
-
-  it('应该初始化状态', () => {
-    const book = ref<Novel | undefined>(undefined);
-    const selectedChapterWithContent = ref<Chapter | null>(null);
-
-    const { currentlyEditingParagraphId } = useParagraphTranslation(
-      book,
-      selectedChapterWithContent,
+  it('选择不存在的版本报错且正文保持不变', async () => {
+    const { editor } = await openEditor();
+    const before = await ChapterContentService.loadChapterContent('c');
+    await editor.selectParagraphTranslation('p', 'missing');
+    expect(await ChapterContentService.loadChapterContent('c')).toEqual(before);
+    expect(useToastHistoryStore().historyItems.some((item) => item.severity === 'error')).toBe(
+      true,
     );
-
-    expect(currentlyEditingParagraphId.value).toBeNull();
   });
 
-  it('应该更新段落翻译', async () => {
-    const paragraph = createTestParagraph('para-1', '原文', '原翻译');
-    const chapter = createTestChapter('chapter-1', [paragraph]);
-    const novel = createTestNovel([chapter]);
-
-    const book = ref<Novel | undefined>(novel);
-    const selectedChapterWithContent = ref<Chapter | null>(chapter);
-
-    const updatedVolumes: Volume[] = [
+  it('内容回填保留当前标题和章节元信息，忽略其他章节', async () => {
+    const { editor, chapter } = await openEditor();
+    const originalTitle = chapter.value.title;
+    editor.updateSelectedChapterWithContent([
       {
-        id: 'volume-1',
-        title: {
-          original: 'Volume 1',
-          translation: { id: generateShortId(), translation: '', aiModelId: '' },
-        },
+        id: 'v',
+        title: '卷',
         chapters: [
           {
-            ...chapter,
-            content: [
-              {
-                ...paragraph,
-                translations: paragraph.translations.map((t) =>
-                  t.id === paragraph.selectedTranslationId ? { ...t, translation: '新翻译' } : t,
-                ),
-              },
-            ],
+            ...chapter.value,
+            title: '过期标题',
+            content: [],
           },
         ],
       },
-    ];
-    mockUpdateChapter.mockReturnValueOnce(updatedVolumes);
-
-    const saveState = mock(() => {});
-    const { updateParagraphTranslation } = useParagraphTranslation(
-      book,
-      selectedChapterWithContent,
-      saveState,
-    );
-
-    await updateParagraphTranslation('para-1', '新翻译');
-
-    expect(saveState).toHaveBeenCalledWith('更新段落翻译');
-    expect(mockUpdateChapter).toHaveBeenCalled();
-    expect(mockBooksStoreUpdateBook).toHaveBeenCalled();
-  });
-
-  it('应该选择段落翻译', async () => {
-    const translation1Id = generateShortId();
-    const translation2Id = generateShortId();
-    const paragraph: Paragraph = {
-      id: 'para-1',
-      text: '原文',
-      selectedTranslationId: translation1Id,
-      translations: [
-        { id: translation1Id, translation: '翻译1', aiModelId: 'model-1' },
-        { id: translation2Id, translation: '翻译2', aiModelId: 'model-2' },
-      ],
-    };
-    const chapter = createTestChapter('chapter-1', [paragraph]);
-    const novel = createTestNovel([chapter]);
-
-    const book = ref<Novel | undefined>(novel);
-    const selectedChapterWithContent = ref<Chapter | null>(chapter);
-
-    const updatedVolumes: Volume[] = [
-      {
-        id: 'volume-1',
-        title: {
-          original: 'Volume 1',
-          translation: { id: generateShortId(), translation: '', aiModelId: '' },
-        },
-        chapters: [
-          {
-            ...chapter,
-            content: [
-              {
-                ...paragraph,
-                selectedTranslationId: translation2Id,
-              },
-            ],
-          },
-        ],
-      },
-    ];
-    mockUpdateChapter.mockReturnValueOnce(updatedVolumes);
-
-    const { selectParagraphTranslation } = useParagraphTranslation(
-      book,
-      selectedChapterWithContent,
-    );
-
-    await selectParagraphTranslation('para-1', translation2Id);
-
-    expect(mockUpdateChapter).toHaveBeenCalled();
-    expect(mockBooksStoreUpdateBook).toHaveBeenCalled();
-    expect(mockToastAdd).toHaveBeenCalledTimes(1);
-    const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
-    expect(calls.length).toBeGreaterThan(0);
-    const toastCall = calls[0]?.[0];
-    expect(toastCall).toBeDefined();
-    expect(toastCall.severity).toBe('success');
-    expect(toastCall.summary).toBe('已切换翻译');
-  });
-
-  it('应该在翻译ID不存在时显示错误', async () => {
-    const paragraph = createTestParagraph('para-1', '原文', '翻译');
-    const chapter = createTestChapter('chapter-1', [paragraph]);
-    const novel = createTestNovel([chapter]);
-
-    const book = ref<Novel | undefined>(novel);
-    const selectedChapterWithContent = ref<Chapter | null>(chapter);
-
-    const { selectParagraphTranslation } = useParagraphTranslation(
-      book,
-      selectedChapterWithContent,
-    );
-
-    await selectParagraphTranslation('para-1', 'non-existent-id');
-
-    expect(mockToastAdd).toHaveBeenCalledTimes(1);
-    const calls = mockToastAdd.mock.calls as unknown as Array<[any]>;
-    expect(calls.length).toBeGreaterThan(0);
-    const toastCall = calls[0]?.[0];
-    expect(toastCall).toBeDefined();
-    expect(toastCall.severity).toBe('error');
-    expect(toastCall.summary).toBe('选择失败');
-    expect(mockBooksStoreUpdateBook).not.toHaveBeenCalled();
-  });
-
-  it('应该更新 selectedChapterWithContent', () => {
-    const paragraph = createTestParagraph('para-1', '原文', '翻译');
-    const chapter = createTestChapter('chapter-1', [paragraph]);
-    const novel = createTestNovel([chapter]);
-
-    const book = ref<Novel | undefined>(novel);
-    const selectedChapterWithContent = ref<Chapter | null>(chapter);
-
-    const { updateSelectedChapterWithContent } = useParagraphTranslation(
-      book,
-      selectedChapterWithContent,
-    );
-
-    const updatedVolumes: Volume[] = [
-      {
-        id: 'volume-1',
-        title: {
-          original: 'Volume 1',
-          translation: { id: generateShortId(), translation: '', aiModelId: '' },
-        },
-        chapters: [
-          {
-            ...chapter,
-            content: [{ ...paragraph, text: '更新后的原文' }],
-          },
-        ],
-      },
-    ];
-
-    updateSelectedChapterWithContent(updatedVolumes);
-
-    expect(selectedChapterWithContent.value?.content?.[0]?.text).toBe('更新后的原文');
+    ]);
+    expect(chapter.value.title).toEqual(originalTitle);
+    expect(chapter.value.content).toEqual([]);
+    editor.updateSelectedChapterWithContent([
+      { id: 'v', title: '卷', chapters: [{ ...chapter.value, id: 'other', content: [] }] },
+    ]);
+    expect(chapter.value.id).toBe('c');
   });
 });

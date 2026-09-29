@@ -4,10 +4,10 @@ import {
   findChapterById,
   getChapterContentText,
   getChapterDisplayTitle,
-  normalizeChapterTitle,
 } from 'src/utils/novel-utils';
 import { hasNonEmptyTranslation } from 'src/utils/text-utils';
 import { formatTranslationForDisplay } from 'src/utils/translation-utils';
+import { getLanguageTranslation } from './localization/selection';
 import { ChapterContentService } from './chapter-content-service';
 import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 
@@ -27,14 +27,17 @@ type ScanStart = { volumeIndex: number; chapterIndex: number; paragraphIndex: nu
  * @param paragraph 段落对象
  * @returns 翻译文本，如果没有则返回空字符串
  */
-function getParagraphTranslationText(paragraph: Paragraph): string {
-  if (!paragraph.selectedTranslationId || !paragraph.translations) {
-    return '';
-  }
-  const selectedTranslation = paragraph.translations.find(
-    (t) => t.id === paragraph.selectedTranslationId,
-  );
-  return selectedTranslation?.translation || '';
+function getParagraphTranslationText(paragraph: Paragraph, book?: Novel): string {
+  return getLanguageTranslation(paragraph, book?.targetLanguage ?? 'zh-CN')?.translation || '';
+}
+
+function getExportParagraphText(
+  paragraph: Paragraph,
+  book: Novel | undefined,
+  chapter: Chapter,
+): string {
+  const translation = getParagraphTranslationText(paragraph, book);
+  return translation ? formatTranslationForDisplay(translation, book, chapter) : paragraph.text;
 }
 
 /**
@@ -56,9 +59,7 @@ function resolveExportChapterTitle(
   if (chapter.title) {
     title = typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
   }
-  const normalizeEnabled =
-    chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
-  return normalizeEnabled ? normalizeChapterTitle(title) : title;
+  return title;
 }
 
 function buildOriginalExportBody(paragraphs: Paragraph[]): string {
@@ -80,8 +81,7 @@ function buildTranslationExportBody(
 ): string {
   let consecutiveReturnParagraphs = 0;
   return paragraphs.reduce((acc, paragraph, idx, arr) => {
-    let translation = getParagraphTranslationText(paragraph);
-    translation = formatTranslationForDisplay(translation, book, chapter) ?? '';
+    const translation = getExportParagraphText(paragraph, book, chapter);
     const isLast = idx === arr.length - 1;
     const isOriginalEmpty = !paragraph.text || paragraph.text.trim().length === 0;
     const isReturnParagraph = isOriginalEmpty && translation.trim().length === 0;
@@ -119,9 +119,7 @@ function buildBilingualExportLines(
 ): string {
   const lines = paragraphs.map((p) => {
     const original = p.text;
-    let translation = getParagraphTranslationText(p);
-    translation = formatTranslationForDisplay(translation, book, chapter);
-    let normalizedTranslation = translation || original;
+    let normalizedTranslation = getExportParagraphText(p, book, chapter);
     const originalTrailingNewlines = countTrailingLineBreaks(original);
     normalizedTranslation = normalizedTranslation.replace(/\n+$/, '');
     normalizedTranslation += '\n'.repeat(originalTrailingNewlines);
@@ -145,11 +143,7 @@ function buildExportChapterContent(
   if (format === 'json') {
     const data = paragraphs.map((p) => ({
       original: p.text,
-      translation: formatTranslationForDisplay(
-        getParagraphTranslationText(p),
-        book,
-        chapterWithContent,
-      ),
+      translation: getExportParagraphText(p, book, chapterWithContent),
     }));
     return JSON.stringify({ title: chapterTitle, content: data }, null, 2);
   }
@@ -275,6 +269,26 @@ function shouldPreserveExistingContent(existing: Chapter, incoming: Chapter): bo
   return Array.isArray(incoming.content) && incoming.content.length === 0;
 }
 
+/** 原文修订使同 ID 的所有语言版本失效，换序和未修改段落不受影响。 */
+function invalidateRevisedParagraphs(existing: Chapter, content: Paragraph[]): Paragraph[] {
+  const previous = new Map(existing.content?.map((paragraph) => [paragraph.id, paragraph.text]));
+  return content.map((paragraph) =>
+    previous.has(paragraph.id) && previous.get(paragraph.id) !== paragraph.text
+      ? { ...paragraph, translations: [], selectedTranslationId: '', selectedTranslations: {} }
+      : paragraph,
+  );
+}
+
+function updateOriginalTitle(title: Chapter['title'], original: string): Chapter['title'] {
+  const text = original.trim();
+  if (typeof title !== 'string' && title.original === text) return title;
+  return {
+    original: text,
+    translationsByLanguage: {},
+    translation: { id: generateShortId(), translation: '', aiModelId: '', language: 'zh-CN' },
+  };
+}
+
 /**
  * findParagraphLocation 的内层扫描：在单个已加载章节的内容里查找段落，
  * 命中则返回带完整位置信息的 ParagraphSearchResult，否则返回 null。
@@ -304,9 +318,7 @@ function findAdjacentInSameVolume(
   volumeIndex: number,
   chapterIndex: number,
   direction: -1 | 1,
-):
-  | { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number }
-  | null {
+): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
   const currentVolume = volumes[volumeIndex];
   if (!currentVolume) return null;
   const nextInVolume = chapterIndex + direction;
@@ -330,9 +342,7 @@ function findAdjacentAcrossVolumes(
   volumes: NonNullable<Novel['volumes']>,
   volumeIndex: number,
   direction: -1 | 1,
-):
-  | { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number }
-  | null {
+): { chapter: Chapter; volume: Volume; volumeIndex: number; chapterIndex: number } | null {
   const end = direction === -1 ? -1 : volumes.length;
   for (let vIdx = volumeIndex + direction; vIdx !== end; vIdx += direction) {
     const volume = volumes[vIdx];
@@ -351,6 +361,9 @@ function applyChapterReplace(existing: Chapter, incoming: Chapter): Chapter {
     id: existing.id,
     createdAt: existing.createdAt,
     lastEdited: new Date(),
+    ...(incoming.content
+      ? { content: invalidateRevisedParagraphs(existing, incoming.content) }
+      : {}),
   };
   if (lastUpdated !== undefined) updated.lastUpdated = lastUpdated;
   return updated;
@@ -365,7 +378,11 @@ function applyChapterMerge(existing: Chapter, incoming: Chapter): Chapter {
     id: existing.id,
     createdAt: existing.createdAt,
     lastEdited: new Date(),
-    ...(preserveContent ? { content: existing.content } : {}),
+    ...(preserveContent
+      ? { content: existing.content }
+      : incoming.content
+        ? { content: invalidateRevisedParagraphs(existing, incoming.content) }
+        : {}),
   };
   if (lastUpdated !== undefined) updated.lastUpdated = lastUpdated;
   return updated;
@@ -551,7 +568,12 @@ function forEachChapterInRange(
   startVolumeIndex: number,
   endVolumeIndex: number,
   targetChapterIndex: number | null,
-  visit: (ctx: { chapter: Chapter; volume: Volume; vIndex: number; cIndex: number }) => void | 'stop-chapter' | 'stop-all',
+  visit: (ctx: {
+    chapter: Chapter;
+    volume: Volume;
+    vIndex: number;
+    cIndex: number;
+  }) => void | 'stop-chapter' | 'stop-all',
 ): void {
   for (let vIndex = startVolumeIndex; vIndex <= endVolumeIndex; vIndex++) {
     const volume = volumes[vIndex];
@@ -718,10 +740,7 @@ function mergeNovelListFields(
 ): void {
   if (flags.updateTags && newNovel.tags && newNovel.tags.length > 0) {
     const existingTags = merged.tags || [];
-    merged.tags = [
-      ...existingTags,
-      ...newNovel.tags.filter((tag) => !existingTags.includes(tag)),
-    ];
+    merged.tags = [...existingTags, ...newNovel.tags.filter((tag) => !existingTags.includes(tag))];
   }
   if (flags.updateWebUrl && newNovel.webUrl && newNovel.webUrl.length > 0) {
     const existingUrls = merged.webUrl || [];
@@ -753,10 +772,7 @@ function mergeSingleVolumeInto(
 ): void {
   const newVolumeOriginalTitle =
     typeof newVolume.title === 'string' ? newVolume.title : newVolume.title.original;
-  const existingVolumeIndex = findVolumeIndexByOriginalTitle(
-    mergedVolumes,
-    newVolumeOriginalTitle,
-  );
+  const existingVolumeIndex = findVolumeIndexByOriginalTitle(mergedVolumes, newVolumeOriginalTitle);
 
   if (existingVolumeIndex < 0) {
     mergedVolumes.push(newVolume);
@@ -1146,23 +1162,7 @@ export class ChapterService {
       const updateData: Partial<Volume> = { ...restData };
       if (titleData) {
         if (typeof titleData === 'string') {
-          // 兼容旧数据格式：如果现有 title 是字符串，创建新的翻译对象
-          let existingTranslation;
-          if (typeof existingVolume.title === 'string') {
-            // 旧数据格式，创建新的翻译对象
-            existingTranslation = {
-              id: generateShortId(),
-              translation: '',
-              aiModelId: '',
-            };
-          } else {
-            // 新数据格式，保留原有翻译
-            existingTranslation = existingVolume.title.translation;
-          }
-          updateData.title = {
-            original: titleData.trim(),
-            translation: existingTranslation,
-          };
+          updateData.title = updateOriginalTitle(existingVolume.title, titleData);
         } else {
           updateData.title = titleData;
         }
@@ -1269,25 +1269,12 @@ export class ChapterService {
     // 处理 title 更新：如果传入的是字符串，更新 title.original
     const { title: titleData, ...restData } = data;
     const updateData: Partial<Chapter> = { ...restData };
+    if (updateData.content) {
+      updateData.content = invalidateRevisedParagraphs(chapterToUpdate, updateData.content);
+    }
     if (titleData) {
       if (typeof titleData === 'string') {
-        // 兼容旧数据格式：如果现有 title 是字符串，创建新的翻译对象
-        let existingTranslation;
-        if (typeof chapterToUpdate.title === 'string') {
-          // 旧数据格式，创建新的翻译对象
-          existingTranslation = {
-            id: generateShortId(),
-            translation: '',
-            aiModelId: '',
-          };
-        } else {
-          // 新数据格式，保留原有翻译
-          existingTranslation = chapterToUpdate.title.translation;
-        }
-        updateData.title = {
-          original: titleData.trim(),
-          translation: existingTranslation,
-        };
+        updateData.title = updateOriginalTitle(chapterToUpdate.title, titleData);
       } else {
         updateData.title = titleData;
       }
@@ -1404,9 +1391,7 @@ export class ChapterService {
 
     // 3. 按指定位置插入目标章节
     const insertIndex =
-      targetIndex !== undefined && targetIndex !== null
-        ? targetIndex
-        : moved.targetChapters.length;
+      targetIndex !== undefined && targetIndex !== null ? targetIndex : moved.targetChapters.length;
 
     moved.targetChapters.splice(insertIndex, 0, chapterToMove);
     existingVolumes[targetVolumeIndex] = { ...moved.targetVolume, chapters: moved.targetChapters };
@@ -2355,7 +2340,10 @@ export class ChapterService {
         if (!content) return chapter;
 
         // 更新内容
-        const updatedContent = contentUpdater(content);
+        const updatedContent = invalidateRevisedParagraphs(
+          { ...chapter, content },
+          contentUpdater(content),
+        );
 
         // 使用 ChapterService.updateChapter 确保更新 lastEdited 时间
         // 但由于这是在批量操作中，我们直接返回更新后的章节

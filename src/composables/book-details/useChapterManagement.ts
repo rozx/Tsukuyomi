@@ -181,8 +181,8 @@ export function useChapterManagement(
     if (!book.value) return;
 
     const sourceVolumeId =
-      book.value.volumes?.find((volume) => volume.chapters?.some((c) => c.id === chapter.id))
-        ?.id ?? null;
+      book.value.volumes?.find((volume) => volume.chapters?.some((c) => c.id === chapter.id))?.id ??
+      null;
     const titleFields = extractTitleFields(chapter.title);
 
     editingChapterId.value = chapter.id;
@@ -313,8 +313,7 @@ export function useChapterManagement(
     oldVolumes: Volume[] | null,
     bookValue: NonNullable<typeof book.value>,
   ): void => {
-    const moved =
-      editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value;
+    const moved = editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value;
     toast.add({
       severity: 'success',
       summary: '更新成功',
@@ -370,13 +369,13 @@ export function useChapterManagement(
 
   const openDeleteVolumeConfirm = (volume: Volume) => {
     deletingVolumeId.value = volume.id;
-    deletingVolumeTitle.value = getVolumeDisplayTitle(volume);
+    deletingVolumeTitle.value = getVolumeDisplayTitle(volume, book.value);
     showDeleteVolumeConfirm.value = true;
   };
 
   const openDeleteChapterConfirm = (chapter: Chapter) => {
     deletingChapterId.value = chapter.id;
-    deletingChapterTitle.value = getChapterDisplayTitle(chapter);
+    deletingChapterTitle.value = getChapterDisplayTitle(chapter, book.value);
     showDeleteChapterConfirm.value = true;
   };
 

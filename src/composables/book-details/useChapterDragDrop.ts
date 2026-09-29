@@ -77,7 +77,7 @@ export function useChapterDragDrop(
     toast.add({
       severity: 'success',
       summary: '移动成功',
-      detail: `已将章节 "${getChapterDisplayTitle(chapter)}" ${
+      detail: `已将章节 "${getChapterDisplayTitle(chapter, book.value)}" ${
         sourceVolumeId === targetVolumeId ? '重新排序' : '移动到新卷'
       }`,
       life: 3000,

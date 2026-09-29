@@ -2,7 +2,8 @@ import { ref, computed, watch, type Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
-import { generateShortId } from 'src/utils/id-generator';
+import { UniqueIdGenerator } from 'src/utils/id-generator';
+import { matchImportParagraphs } from 'src/services/import/import-paragraph-matching';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 
 export type EditMode = 'original' | 'translation' | 'preview';
@@ -76,38 +77,22 @@ export function useEditMode(
       // 获取现有段落以保留翻译
       const existingParagraphs = selectedChapterWithContent.value.content || [];
 
-      // 更新段落文本，如果文本改变则清除翻译
-      const updatedParagraphs: Paragraph[] = textLines.map((line, index) => {
-        const existingParagraph = existingParagraphs[index];
-        if (existingParagraph) {
-          // 检查文本是否改变
-          const textChanged = existingParagraph.text !== line;
-          if (textChanged) {
-            // 文本改变，清除翻译
-            return {
-              ...existingParagraph,
-              text: line,
-              selectedTranslationId: '',
-              translations: [],
-              selectedTranslations: {},
-            };
-          } else {
-            // 文本未改变，保留翻译
-            return {
-              ...existingParagraph,
-              text: line,
-            };
-          }
-        } else {
-          // 创建新段落
-          return {
-            id: generateShortId(),
-            text: line,
-            selectedTranslationId: '',
-            translations: [],
-          };
-        }
+      // 按明确原文匹配保留身份；插入、移动和拆合不会按数组位置移植译文。
+      const chapterId = selectedChapterWithContent.value.id;
+      const bookId = book.value.id;
+      const ids = new UniqueIdGenerator(existingParagraphs.map((paragraph) => paragraph.id));
+      const matched = await matchImportParagraphs({
+        scopeId: chapterId,
+        old: existingParagraphs.map((paragraph) => ({ chapterId, paragraph })),
+        next: textLines.map((text, index) => ({
+          key: String(index),
+          chapterId,
+          text,
+          newId: ids.generate(),
+        })),
       });
+      if (book.value?.id !== bookId || selectedChapterWithContent.value?.id !== chapterId) return;
+      const updatedParagraphs = matched.paragraphs.map((entry) => entry.paragraph);
 
       // 更新章节内容（ChapterService.updateChapter 会自动更新 lastEdited 时间）
       const updatedVolumes = ChapterService.updateChapter(

@@ -7,10 +7,14 @@ import SelectButton from 'primevue/selectbutton';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import type { AppLocale } from 'src/models/locale';
+import { getNameTranslation } from 'src/services/localization/selection';
+import { useLanguageEditGuard } from 'src/composables/translation/useLanguageEditGuard';
 import type { CharacterSetting, Alias } from 'src/models/novel';
 
 const props = defineProps<{
   visible: boolean;
+  targetLanguage?: AppLocale;
   character?: CharacterSetting | null;
   loading?: boolean;
 }>();
@@ -29,6 +33,10 @@ const emit = defineEmits<{
     },
   ): void;
 }>();
+
+const { languageChanged, languageChangedMessage, captureLanguage } = useLanguageEditGuard(
+  () => props.targetLanguage ?? 'zh-CN',
+);
 
 // 表单数据
 const formData = ref({
@@ -53,8 +61,10 @@ const isFormDisabled = computed(() => !!props.loading);
 // 监听 visible 和 character 变化以重置/初始化表单
 watch(
   [() => props.visible, () => props.character],
-  ([visible, character]) => {
+  ([visible, character], previous) => {
     if (visible) {
+      if (previous?.[0] !== true) captureLanguage();
+      else if (languageChanged.value) return;
       if (character) {
         // 编辑模式：使用传入的角色数据
         formData.value = {
@@ -62,11 +72,12 @@ watch(
           sex: character.sex,
           description: character.description || '',
           speakingStyle: character.speakingStyle || '',
-          translation: character.translation.translation,
+          translation:
+            getNameTranslation(character, props.targetLanguage ?? 'zh-CN')?.translation ?? '',
           aliases: character.aliases.map((a: Alias) => ({
             ...(a.id ? { id: a.id } : {}),
             name: a.name,
-            translation: a.translation.translation,
+            translation: getNameTranslation(a, props.targetLanguage ?? 'zh-CN')?.translation ?? '',
           })),
         };
       } else {
@@ -86,6 +97,7 @@ watch(
 );
 
 const handleSave = () => {
+  if (languageChanged.value) return;
   emit('save', {
     name: formData.value.name,
     sex: formData.value.sex,
@@ -120,6 +132,12 @@ const removeAlias = (index: number) => {
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
+      <AppMessage
+        v-if="languageChanged"
+        severity="warn"
+        :message="languageChangedMessage"
+        :closable="false"
+      />
       <div class="space-y-2">
         <label class="text-sm text-moon-100/80">角色名称 *</label>
         <TranslatableInput
@@ -182,10 +200,11 @@ const removeAlias = (index: number) => {
         <div v-else class="space-y-2">
           <div
             v-for="(alias, index) in formData.aliases"
-            :key="index"
+            :key="alias.id ?? index"
             class="flex gap-2 items-center p-3 bg-white/5 rounded border border-white/10"
           >
             <div class="flex-1 space-y-2">
+              <p v-if="alias.id" class="text-xs text-moon-100/50 break-all">ID: {{ alias.id }}</p>
               <div>
                 <label class="text-xs text-moon-100/60 block mb-1">别名名称</label>
                 <TranslatableInput

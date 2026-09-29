@@ -2,6 +2,11 @@
 export const APP_LOCALES = ['zh-CN', 'zh-TW', 'en-US'] as const;
 export type AppLocale = (typeof APP_LOCALES)[number];
 
+export interface ExecutionLanguages {
+  readonly uiLocale: AppLocale;
+  readonly targetLanguage: AppLocale;
+}
+
 export function isAppLocale(value: unknown): value is AppLocale {
   return APP_LOCALES.some((locale) => locale === value);
 }

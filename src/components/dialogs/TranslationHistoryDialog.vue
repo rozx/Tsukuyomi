@@ -4,10 +4,14 @@ import Button from 'primevue/button';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Paragraph } from 'src/models/novel';
 import { useAIModelsStore } from 'src/stores/ai-models';
+import type { AppLocale } from 'src/models/locale';
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import { languageOptions } from 'src/i18n/translate';
 
 const props = defineProps<{
   visible: boolean;
   paragraph: Paragraph | null;
+  targetLanguage: AppLocale;
 }>();
 
 const emit = defineEmits<{
@@ -16,16 +20,22 @@ const emit = defineEmits<{
 }>();
 
 const aiModelsStore = useAIModelsStore();
+const selectedId = computed(() =>
+  props.paragraph ? getLanguageTranslation(props.paragraph, props.targetLanguage)?.id : undefined,
+);
+const languageLabel = (language: AppLocale = 'zh-CN') =>
+  languageOptions(language).find((option) => option.value === language)?.label ?? language;
+const canSelect = (language: AppLocale = 'zh-CN') => language === props.targetLanguage;
 
 // 获取可用的翻译历史（最多5个，按时间倒序，最新的在前）
 const translationHistory = computed(() => {
   if (!props.paragraph?.translations || props.paragraph.translations.length === 0) {
     return [];
   }
-  
+
   // 按数组顺序，最新的在最后，反转后取前5个
   const translations = [...props.paragraph.translations].reverse();
-  
+
   // 返回最多5个
   return translations.slice(0, 5);
 });
@@ -38,6 +48,8 @@ const getModelName = (modelId: string): string => {
 
 // 处理选择翻译
 const handleSelectTranslation = (translationId: string) => {
+  const translation = props.paragraph?.translations.find((value) => value.id === translationId);
+  if (!translation || !canSelect(translation.language)) return;
   emit('select-translation', translationId);
   emit('update:visible', false);
 };
@@ -67,18 +79,22 @@ const handleClose = () => {
           v-for="translation in translationHistory"
           :key="translation.id"
           class="translation-history-item"
-          :class="{ 'is-selected': translation.id === paragraph.selectedTranslationId }"
+          :class="{
+            'is-selected': translation.id === selectedId,
+            'is-disabled': !canSelect(translation.language),
+          }"
+          :aria-disabled="!canSelect(translation.language)"
           @click="handleSelectTranslation(translation.id)"
         >
           <div class="translation-history-header">
             <div class="translation-history-info">
-              <span class="translation-history-model">{{ getModelName(translation.aiModelId) }}</span>
+              <span class="translation-history-model">{{
+                getModelName(translation.aiModelId)
+              }}</span>
               <span class="translation-history-id">ID: {{ translation.id }}</span>
+              <span>{{ languageLabel(translation.language) }}</span>
             </div>
-            <i
-              v-if="translation.id === paragraph.selectedTranslationId"
-              class="pi pi-check translation-history-check"
-            />
+            <i v-if="translation.id === selectedId" class="pi pi-check translation-history-check" />
           </div>
           <div class="translation-history-text">
             {{ translation.translation }}
@@ -88,13 +104,7 @@ const handleClose = () => {
     </div>
 
     <template #footer>
-      <Button
-        label="关闭"
-        icon="pi pi-times"
-        text
-        severity="secondary"
-        @click="handleClose"
-      />
+      <Button label="关闭" icon="pi pi-times" text severity="secondary" @click="handleClose" />
     </template>
   </AdaptiveDialog>
 </template>
@@ -193,4 +203,3 @@ const handleClose = () => {
   white-space: pre-wrap;
 }
 </style>
-

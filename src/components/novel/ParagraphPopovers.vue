@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AppLocale } from 'src/models/locale';
+import { getNameTranslation } from 'src/services/localization/selection';
 import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import type { Terminology, CharacterSetting, Translation } from 'src/models/novel';
@@ -10,6 +12,7 @@ import ParagraphCharacterPopoverList from 'src/components/novel/ParagraphCharact
 // toggle/hide 给父级调用；hide/mouseenter 通过事件回传父级以管理延迟关闭定时器。
 const props = defineProps<{
   term: Terminology | null;
+  targetLanguage?: AppLocale;
   character: CharacterSetting | null;
   characters: CharacterSetting[];
   recentTranslation: Translation | null | undefined;
@@ -92,6 +95,8 @@ const onOpenHistory = () => {
   hideRecent();
   emit('open-history');
 };
+const translationText = (owner: Terminology) =>
+  getNameTranslation(owner, props.targetLanguage ?? 'zh-CN')?.translation ?? '';
 </script>
 
 <template>
@@ -112,7 +117,7 @@ const onOpenHistory = () => {
     >
       <div class="popover-header">
         <span class="popover-term-name">{{ term.name }}</span>
-        <span class="popover-translation">{{ term.translation.translation }}</span>
+        <span class="popover-translation">{{ translationText(term) }}</span>
       </div>
       <div v-if="term.description" class="popover-description">{{ term.description }}</div>
     </div>
@@ -133,7 +138,10 @@ const onOpenHistory = () => {
       @mouseenter="$emit('character-enter')"
       @mouseleave="hideCharacter"
     >
-      <ParagraphCharacterPopoverList :characters="characters" />
+      <ParagraphCharacterPopoverList
+        :characters="characters"
+        :target-language="targetLanguage ?? 'zh-CN'"
+      />
     </div>
   </Popover>
 

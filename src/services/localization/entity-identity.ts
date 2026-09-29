@@ -1,4 +1,9 @@
 import type { EntityTombstone, SyncRevision } from 'src/models/localized-data';
+
+/** 同名只用于提示冲突，不能充当已有稳定 ID 的身份。 */
+export function hasDuplicateEntityNames(values: readonly { name: string }[]): boolean {
+  return new Set(values.map((value) => value.name)).size !== values.length;
+}
 import { assertRevision } from './revision';
 
 export function entityKey(kind: EntityTombstone['kind'], id: string, parentId?: string): string {

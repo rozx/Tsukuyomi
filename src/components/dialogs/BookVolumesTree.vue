@@ -28,7 +28,7 @@
           <div class="flex items-center gap-2 flex-1">
             <i :class="volumeIconClass(volume.id)" />
             <span class="font-semibold text-sm text-moon/90">
-              {{ getVolumeDisplayTitle(volume) || '未命名卷' }}
+              {{ getVolumeDisplayTitle(volume, book) || '未命名卷' }}
             </span>
             <span class="text-xs text-moon/60"> ({{ chapterCount(volume) }} 章) </span>
           </div>

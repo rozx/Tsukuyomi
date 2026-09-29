@@ -182,7 +182,9 @@ export const characterTools: ToolDefinition[] = [
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      const character = book.characterSettings?.find((c) => c.name === name);
+      const exactMatches = book.characterSettings?.filter((c) => c.name === name) ?? [];
+      if (exactMatches.length > 1) throw new Error('AMBIGUOUS_CHARACTER_NAME');
+      const character = exactMatches[0];
 
       if (!character) {
         // Fallback search

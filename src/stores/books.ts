@@ -13,6 +13,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { ImportLibraryReader } from 'src/services/import/import-library-reader';
 import { deleteCacheEntry } from 'src/utils/chapter-content-loader';
 import type { AppLocale } from 'src/models/locale';
+import type { ParagraphTranslationEdit } from 'src/services/localization/paragraph-edit';
 
 function collectRemovedChapterIds(
   previousVolumes: Volume[] | undefined,
@@ -170,6 +171,27 @@ export const useBooksStore = defineStore('books', {
   },
 
   actions: {
+    async editParagraphTranslations(
+      bookId: string,
+      chapterId: string,
+      language: AppLocale,
+      edits: readonly ParagraphTranslationEdit[],
+      expectedBookLanguage?: AppLocale,
+    ): Promise<Paragraph[]> {
+      await BookService.editParagraphTranslations(
+        bookId,
+        chapterId,
+        language,
+        edits,
+        expectedBookLanguage,
+      );
+      const fresh = await this.refreshBookFromStorage(bookId, chapterId);
+      return (
+        fresh?.volumes
+          ?.flatMap((volume) => volume.chapters ?? [])
+          .find((chapter) => chapter.id === chapterId)?.content ?? []
+      );
+    },
     async rollbackBooks(books: Novel[]): Promise<void> {
       await BookService.rollbackBooks(books);
       this.books = await BookService.getAllBooks();
@@ -295,7 +317,12 @@ export const useBooksStore = defineStore('books', {
     async updateBook(
       id: string,
       updates: Partial<Novel>,
-      options?: { persist?: boolean; saveChapterContent?: boolean; targetLanguage?: AppLocale },
+      options?: {
+        persist?: boolean;
+        saveChapterContent?: boolean;
+        targetLanguage?: AppLocale;
+        expectedBookLanguage?: AppLocale;
+      },
     ): Promise<void> {
       const index = this.books.findIndex((book) => book.id === id);
       if (index < 0) return;
@@ -330,6 +357,7 @@ export const useBooksStore = defineStore('books', {
             existingBook,
             updates,
             options?.targetLanguage ?? existingBook.targetLanguage ?? 'zh-CN',
+            options?.expectedBookLanguage,
           );
           const {
             terminologies: _terms,

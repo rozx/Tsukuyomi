@@ -2,6 +2,12 @@
  * 翻译文本规范化工具
  * 用于确保翻译文本中的符号格式一致
  */
+import type { AppLocale } from 'src/models/locale';
+
+/** 英文写入保留原标点，简繁沿用既有译文引号规范。 */
+export function normalizeTranslationForLanguage(text: string, language: AppLocale): string {
+  return language === 'en-US' ? text : normalizeTranslationQuotes(text);
+}
 
 /**
  * 顺序应用一组 [正则, 替换串] 对，返回替换后的字符串
@@ -273,7 +279,12 @@ function countOccurrences(text: string, char: string): number {
   return count;
 }
 
-function replaceLastOccurrences(text: string, char: string, replacement: string, n: number): string {
+function replaceLastOccurrences(
+  text: string,
+  char: string,
+  replacement: string,
+  n: number,
+): string {
   if (n <= 0) return text;
   const chars = text.split('');
   let count = 0;

@@ -5,6 +5,8 @@ import type { LocalizedMap } from 'src/models/localized-data';
 import { assertNewRevision } from './revision';
 import { normalizeNameTranslations, normalizeParagraphLanguages } from './normalize';
 import { canonicalStringify } from 'src/utils/canonical-json';
+import { generateShortId } from 'src/utils/id-generator';
+import { normalizeTranslationForLanguage } from 'src/utils/translation-normalizer';
 
 export function getLanguageTranslation(
   paragraph: Paragraph,
@@ -123,6 +125,21 @@ export function updateLanguageTranslation(
 }
 
 type NameOwner = { translation: Translation; translationsByLanguage?: LocalizedMap<Translation> };
+
+/** 省略更新字段保留兼容投影；明确译名为当前语言复用或创建独立版本 ID。 */
+export function buildNameTranslation(
+  owner: NameOwner | undefined,
+  text: string | undefined,
+  locale: AppLocale,
+): Translation {
+  if (text === undefined && owner) return owner.translation;
+  const selected = owner ? getNameTranslation(owner, locale) : undefined;
+  return {
+    ...(selected ?? { id: generateShortId(), aiModelId: '' }),
+    translation: normalizeTranslationForLanguage(text ?? '', locale),
+    language: locale,
+  };
+}
 
 export function getNameTranslation(owner: NameOwner, locale: AppLocale): Translation | undefined {
   const value =

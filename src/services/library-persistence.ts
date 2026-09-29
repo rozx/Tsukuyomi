@@ -9,6 +9,8 @@ import { canonicalStringify } from 'src/utils/canonical-json';
 import { bumpBookRevision } from './book-revision';
 import { mergeBookDeletionRecords } from './sync-config-persistence';
 import type { AppLocale } from 'src/models/locale';
+import { isAppLocale } from 'src/models/locale';
+import type { SyncRevision } from 'src/models/localized-data';
 import {
   applyBookEntityEdit,
   collectBookRevisions,
@@ -25,6 +27,8 @@ import {
 } from './localization/restore';
 import { mergeBookEntityState } from './localization/entities';
 import type { CharacterSetting, Terminology } from 'src/models/novel';
+import { applyParagraphTranslationEdits } from './localization/paragraph-edit';
+import type { ParagraphTranslationEdit } from './localization/paragraph-edit';
 
 const STORES = [
   'books',
@@ -91,6 +95,16 @@ async function transaction<T>(
 ): Promise<T> {
   const tx = db.transaction(STORES, 'readwrite');
   return completeIdbTransaction(tx, () => work(tx));
+}
+
+/** 先预留不重用的逻辑版本，再打开编辑事务；两个编辑入口共用该边界。 */
+async function reservedEditTransaction<T>(
+  db: IDBPDatabase<TsukuyomiDB>,
+  observed: readonly SyncRevision[],
+  work: (tx: Transaction, revision: SyncRevision) => Promise<T>,
+): Promise<T> {
+  const revision = await reserveSyncRevision(db, observed);
+  return transaction(db, (tx) => work(tx, revision));
 }
 
 async function putChapter(
@@ -256,6 +270,75 @@ async function replaceLibraryRecords(
 
 /** 只处理持久化，不依赖 UI、缓存、网络或模型。 */
 export class LibraryPersistence {
+  static async editParagraphTranslations(
+    db: IDBPDatabase<TsukuyomiDB>,
+    bookId: string,
+    chapterId: string,
+    language: AppLocale,
+    edits: readonly ParagraphTranslationEdit[],
+    expectedBookLanguage?: AppLocale,
+  ): Promise<{ book: Novel; content: Paragraph[] }> {
+    if (
+      !isAppLocale(language) ||
+      (expectedBookLanguage !== undefined && !isAppLocale(expectedBookLanguage))
+    )
+      throw new Error('INVALID_LOCALE');
+    let observed: ReturnType<typeof collectParagraphRevisions> = [];
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const result = await reservedEditTransaction(db, observed, async (tx, revision) => {
+        const stored = await tx.objectStore('books').get(bookId);
+        if (!stored) throw new Error('BOOK_MISSING');
+        const book = normalizeBookLanguages(stored);
+        if (expectedBookLanguage && book.targetLanguage !== expectedBookLanguage)
+          throw new Error('BOOK_TARGET_LANGUAGE_CHANGED');
+        const chapter = indexBookChapters(book).get(chapterId);
+        if (!chapter) throw new Error('CHAPTER_MISSING');
+        const prior = await tx.objectStore('chapter-contents').get(chapterId);
+        if (prior?.bookId && prior.bookId !== bookId) throw new Error('CHAPTER_BOOK_MISMATCH');
+        const content = normalizeChapterLanguages(
+          prior ? JSON.parse(prior.content) : (chapter.content ?? []),
+        );
+        observed = [...collectBookRevisions(book), ...collectParagraphRevisions(content)];
+        if (observed.some((value) => value.counter >= revision.counter)) return undefined;
+        const updatedAt = Date.now();
+        const updated = applyParagraphTranslationEdits(
+          content,
+          language,
+          edits,
+          revision,
+          updatedAt,
+        );
+        const changed = await putChapter(
+          tx,
+          {
+            chapterId,
+            bookId,
+            content: canonicalStringify(updated),
+            lastModified: new Date(updatedAt).toISOString(),
+          },
+          { content: chapter.content },
+        );
+        if (!changed.changed) return { book, content: updated };
+        const lastEdited = new Date(updatedAt);
+        const next = serializeBookRecord({
+          ...book,
+          lastEdited,
+          volumes: book.volumes?.map((volume) => ({
+            ...volume,
+            chapters: volume.chapters?.map((value) =>
+              value.id === chapterId ? { ...value, lastEdited } : value,
+            ),
+          })),
+        });
+        await tx.objectStore('books').put(next);
+        await bumpBookRevision(tx.objectStore('book-revisions'), bookId);
+        return { book: next, content: updated };
+      });
+      if (result) return result;
+    }
+    throw new Error('PARAGRAPH_EDIT_CONFLICT');
+  }
+
   /** 内部失败回滚：保留备份身份与协议值，设备计数和操作分配记录不回退。 */
   static async rollbackBooks(db: IDBPDatabase<TsukuyomiDB>, books: Novel[]): Promise<void> {
     const prepared = books.map(normalizeBookLanguages);
@@ -426,15 +509,20 @@ export class LibraryPersistence {
     base: Novel,
     updates: EntityUpdates,
     locale: AppLocale,
+    expectedBookLanguage?: AppLocale,
   ): Promise<Novel> {
     const identified = identifyEntityUpdates(normalizeBookLanguages(base), updates);
-    let observed = collectBookRevisions(normalizeBookLanguages(base));
+    let observed = [
+      ...collectBookRevisions(normalizeBookLanguages(base)),
+      ...collectBookRevisions({ ...base, ...identified }),
+    ];
     for (let attempt = 0; attempt < 5; attempt++) {
-      const revision = await reserveSyncRevision(db, observed);
-      const result = await transaction(db, async (tx) => {
+      const result = await reservedEditTransaction(db, observed, async (tx, revision) => {
         const stored = await tx.objectStore('books').get(base.id);
         if (!stored) throw new Error('BOOK_MISSING');
         const current = normalizeBookLanguages(stored);
+        if (expectedBookLanguage && current.targetLanguage !== expectedBookLanguage)
+          throw new Error('BOOK_TARGET_LANGUAGE_CHANGED');
         observed = collectBookRevisions(current);
         // 预留与业务事务之间可能有其他标签页收到新远端版本，重新预留后再提交。
         if (observed.some((value) => value.counter >= revision.counter)) return undefined;

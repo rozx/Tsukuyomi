@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AppLocale } from 'src/models/locale';
+import { getNameTranslation } from 'src/services/localization/selection';
 import { toRef } from 'vue';
 import Popover from 'primevue/popover';
 import DataView from 'primevue/dataview';
@@ -8,6 +10,7 @@ import type { Terminology } from 'src/models/novel';
 
 const props = defineProps<{
   usedTerms: Terminology[];
+  targetLanguage?: AppLocale;
 }>();
 
 const emit = defineEmits<{
@@ -27,6 +30,8 @@ const {
 } = useEntityListPopover<Terminology>(toRef(props, 'usedTerms'), emit);
 
 defineExpose({ popover, toggle, hide });
+const translationText = (owner: Terminology) =>
+  getNameTranslation(owner, props.targetLanguage ?? 'zh-CN')?.translation ?? '';
 </script>
 
 <template>
@@ -64,7 +69,7 @@ defineExpose({ popover, toggle, hide });
                       {{ term.name }}
                     </div>
                     <div class="text-xs text-primary-400 mt-0.5 break-words">
-                      {{ term.translation.translation }}
+                      {{ translationText(term) }}
                     </div>
                     <div
                       v-if="term.description"
@@ -116,4 +121,3 @@ defineExpose({ popover, toggle, hide });
   background: transparent !important;
 }
 </style>
-

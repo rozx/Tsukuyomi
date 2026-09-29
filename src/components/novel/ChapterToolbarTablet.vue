@@ -55,7 +55,12 @@ const emit = defineEmits<{
 const overflowMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const translateMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
 
-const stats = computed(() => getChapterTranslationStats(props.selectedChapterParagraphs));
+const stats = computed(() =>
+  getChapterTranslationStats(
+    props.selectedChapterParagraphs,
+    props.book?.targetLanguage ?? 'zh-CN',
+  ),
+);
 
 const translatedCharLabel = computed(() => {
   const count = props.translatedCharCount;
@@ -94,42 +99,36 @@ const overflowMenuItems = computed<MenuItem[]>(() => [
     icon: 'pi pi-file-export',
     // PrimeVue Menu command 回调只暴露 MenuItemCommandEvent，originalEvent 可能缺失，
     // 这里仅用 event 用于 Popover 定位；缺失时使用 document.body 兜底。
-    command: (event) => emit('toggleExport', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleExport', event.originalEvent ?? new Event('click')),
   },
   { separator: true },
   {
     label: `术语（${props.usedTermCount}）`,
     icon: 'pi pi-bookmark',
-    command: (event) =>
-      emit('toggleTermPopover', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleTermPopover', event.originalEvent ?? new Event('click')),
   },
   {
     label: `角色（${props.usedCharacterCount}）`,
     icon: 'pi pi-user',
-    command: (event) =>
-      emit('toggleCharacterPopover', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleCharacterPopover', event.originalEvent ?? new Event('click')),
   },
   {
     label: `记忆（${props.usedMemoryCount}）`,
     icon: 'pi pi-lightbulb',
-    command: (event) =>
-      emit('toggleMemoryPopover', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleMemoryPopover', event.originalEvent ?? new Event('click')),
   },
   { separator: true },
   {
     label: '键盘快捷键',
     icon: 'pi pi-info-circle',
-    command: (event) =>
-      emit('toggleKeyboardShortcuts', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleKeyboardShortcuts', event.originalEvent ?? new Event('click')),
   },
 ]);
 
 const onOverflowToggle = (event: Event) => overflowMenuRef.value?.toggle(event);
 const onTranslateMenuToggle = (event: Event) => translateMenuRef.value?.toggle(event);
 
-const translateBusy = computed(
-  () => props.isTranslatingChapter || props.isPolishingChapter,
-);
+const translateBusy = computed(() => props.isTranslatingChapter || props.isPolishingChapter);
 const translateIcon = computed(() => {
   if (translateBusy.value) return 'pi pi-spin pi-spinner';
   return props.translationStatus.hasAll ? 'pi pi-sparkles' : 'pi pi-play';
@@ -192,12 +191,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
           <i class="pi pi-cog" aria-hidden="true" />
         </button>
 
-        <button
-          type="button"
-          class="ctt-icon-btn"
-          title="更多操作"
-          @click="onOverflowToggle"
-        >
+        <button type="button" class="ctt-icon-btn" title="更多操作" @click="onOverflowToggle">
           <i class="pi pi-ellipsis-v" aria-hidden="true" />
         </button>
         <Menu ref="overflowMenuRef" :model="overflowMenuItems" popup />
@@ -369,5 +363,4 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 .ctt-icon-btn i {
   font-size: 13px;
 }
-
 </style>

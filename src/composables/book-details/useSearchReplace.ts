@@ -1,7 +1,11 @@
 import { ref, computed, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { ChapterService } from 'src/services/chapter-service';
+import {
+  getLanguageTranslation,
+  updateLanguageTranslation,
+} from 'src/services/localization/selection';
+import type { ParagraphTranslationEdit } from 'src/services/localization/paragraph-edit';
 import { useBooksStore } from 'src/stores/books';
 import type { Chapter, Paragraph, Novel, Volume } from 'src/models/novel';
 import type { ChapterScrollToIndex } from 'src/composables/book-details/useChapterVirtualizer';
@@ -26,7 +30,10 @@ export function useSearchReplace(
   book: Ref<Novel | undefined>,
   selectedChapter: Ref<Chapter | null>,
   selectedChapterParagraphs: Ref<Paragraph[]>,
-  updateParagraphTranslation: (paragraphId: string, newTranslation: string) => Promise<void>,
+  updateParagraphTranslation: (
+    paragraphId: string,
+    newTranslation: string,
+  ) => Promise<void | boolean>,
   currentlyEditingParagraphId?: Ref<string | null>,
   saveState?: (description?: string) => void,
   updateSelectedChapterWithContent?: (updatedVolumes: Volume[]) => void,
@@ -57,15 +64,16 @@ export function useSearchReplace(
     const textarea = paragraphElement.querySelector<HTMLTextAreaElement>(
       '.paragraph-translation-edit textarea',
     );
-    return textarea?.value;
+    return textarea?.dataset.targetLanguage &&
+      textarea.dataset.targetLanguage !== (book.value?.targetLanguage ?? 'zh-CN')
+      ? undefined
+      : textarea?.value;
   };
 
   const getSavedTranslationText = (paragraph: Paragraph): string => {
-    if (!paragraph.selectedTranslationId || !paragraph.translations) return '';
-    const selectedTranslation = paragraph.translations.find(
-      (t) => t.id === paragraph.selectedTranslationId,
+    return (
+      getLanguageTranslation(paragraph, book.value?.targetLanguage ?? 'zh-CN')?.translation || ''
     );
-    return selectedTranslation?.translation || '';
   };
 
   const getParagraphRawTranslationText = (paragraph: Paragraph): string => {
@@ -95,7 +103,7 @@ export function useSearchReplace(
     }
 
     const normalizeOnDisplay = book.value?.normalizeSymbolsOnDisplay ?? false;
-    if (!normalizeOnDisplay) {
+    if (!normalizeOnDisplay || book.value?.targetLanguage === 'en-US') {
       return new RegExp(escapeRegex(q), flags);
     }
 
@@ -262,8 +270,8 @@ export function useSearchReplace(
       }
 
       try {
-        await updateParagraphTranslation(match.id, newText);
-        toast.add({ severity: 'success', summary: '已替换', life: 3000 });
+        const saved = await updateParagraphTranslation(match.id, newText);
+        if (saved !== false) toast.add({ severity: 'success', summary: '已替换', life: 3000 });
       } catch (error) {
         console.error('Failed to replace paragraph translation:', error);
         toast.add({ severity: 'error', summary: '替换失败', detail: '无法保存更改', life: 3000 });
@@ -304,38 +312,47 @@ export function useSearchReplace(
     paragraphs.map((para) => {
       const newTranslation = updates.get(para.id);
       if (newTranslation === undefined) return para;
-      return {
-        ...para,
-        translations: para.translations
-          ? para.translations.map((t) =>
-              t.id === para.selectedTranslationId ? { ...t, translation: newTranslation } : t,
-            )
-          : para.translations,
-      };
+      const language = book.value?.targetLanguage ?? 'zh-CN';
+      const selected = getLanguageTranslation(para, language);
+      return selected
+        ? updateLanguageTranslation(para, language, selected.id, newTranslation)
+        : para;
     });
 
   const persistReplacedChapter = async (
     chapter: Chapter,
     updatedContent: Paragraph[],
     bookValue: NonNullable<typeof book.value>,
+    changedIds: ReadonlyMap<string, string>,
   ): Promise<boolean> => {
     const booksStore = useBooksStore();
-    const updatedChapter: Chapter = {
-      ...chapter,
-      content: updatedContent,
-      lastEdited: new Date(),
-    };
+    const language = bookValue.targetLanguage ?? 'zh-CN';
+    const edits: ParagraphTranslationEdit[] = updatedContent.flatMap((paragraph) => {
+      if (!changedIds.has(paragraph.id)) return [];
+      const selected = getLanguageTranslation(paragraph, language);
+      return selected
+        ? [
+            {
+              type: 'update' as const,
+              paragraphId: paragraph.id,
+              originalText: paragraph.text,
+              translationId: selected.id,
+              text: selected.translation,
+            },
+          ]
+        : [];
+    });
     try {
-      await ChapterService.saveChapterContent(updatedChapter, bookValue.id);
-      const updatedVolumes = ChapterService.updateChapter(bookValue, chapter.id, {
-        content: updatedContent,
-        lastEdited: new Date(),
-      });
-      await booksStore.updateBook(bookValue.id, {
-        volumes: updatedVolumes,
-        lastEdited: new Date(),
-      });
-      updateSelectedChapterWithContent?.(updatedVolumes);
+      await booksStore.editParagraphTranslations(
+        bookValue.id,
+        chapter.id,
+        language,
+        edits,
+        language,
+      );
+      const current = booksStore.getBookById(bookValue.id);
+      if (book.value?.id === bookValue.id && selectedChapter.value?.id === chapter.id)
+        updateSelectedChapterWithContent?.(current?.volumes ?? []);
       return true;
     } catch (error) {
       console.error('Failed to replace all:', error);
@@ -372,7 +389,12 @@ export function useSearchReplace(
     if (plan.updates.size === 0) return;
 
     const updatedContent = applyReplacementsToContent(paragraphs, plan.updates);
-    const persisted = await persistReplacedChapter(chapter, updatedContent, bookValue);
+    const persisted = await persistReplacedChapter(
+      chapter,
+      updatedContent,
+      bookValue,
+      plan.updates,
+    );
     if (!persisted) return;
 
     syncEditingStateAfterReplace(plan);

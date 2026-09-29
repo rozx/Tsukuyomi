@@ -17,7 +17,9 @@ const ctx = injectBookDetailsPage();
 
 // picker 标题：有目标则显示对应卷 / 章节名，否则回退通用标题（三元收进 computed）
 const volumeSheetTitle = computed(() =>
-  volumeActionTarget.value ? ctx.getVolumeDisplayTitle(volumeActionTarget.value) : '卷操作',
+  volumeActionTarget.value
+    ? ctx.getVolumeDisplayTitle(volumeActionTarget.value, ctx.book.value)
+    : '卷操作',
 );
 const chapterSheetTitle = computed(() =>
   chapterActionTarget.value

@@ -129,7 +129,9 @@ describe('useChapterTranslation', () => {
     // composable 依赖的 store/composable：使用 spyOn 局部 mock（避免污染其它测试）
     spyOn(ToastHistory, 'useToastWithHistory').mockReturnValue({ add: mockToastAdd } as any);
     spyOn(AIModelsStore, 'useAIModelsStore').mockReturnValue(mockUseAIModelsStore() as any);
-    spyOn(AIProcessingStore, 'useAIProcessingStore').mockReturnValue(mockUseAIProcessingStore() as any);
+    spyOn(AIProcessingStore, 'useAIProcessingStore').mockReturnValue(
+      mockUseAIProcessingStore() as any,
+    );
 
     spyOn(ChapterService, 'updateChapter').mockImplementation(mockUpdateChapter);
     spyOn(ChapterService, 'getChapterContentForUpdate').mockImplementation(
@@ -142,6 +144,35 @@ describe('useChapterTranslation', () => {
 
   afterEach(() => {
     mock.restore();
+  });
+
+  it('只有简中版本时英文目标保持待翻译，切回简中恢复完成状态', () => {
+    const paragraph = createTestParagraph('p1', '原文', true);
+    const chapter = createTestChapter('c1', [paragraph]);
+    book.value = { ...createTestNovel([chapter]), targetLanguage: 'en-US' };
+    selectedChapter.value = chapter;
+    selectedChapterWithContent.value = chapter;
+    const result = useChapterTranslation(
+      book,
+      selectedChapter,
+      selectedChapterWithContent,
+      computed(() => [paragraph]),
+      updateSelectedChapterWithContent,
+      handleActionInfoToast,
+      countUniqueActions,
+      saveState,
+    );
+    expect(result.translationStatus.value).toEqual({
+      hasNone: true,
+      hasPartial: false,
+      hasAll: false,
+    });
+    book.value.targetLanguage = 'zh-CN';
+    expect(result.translationStatus.value).toEqual({
+      hasNone: false,
+      hasPartial: false,
+      hasAll: true,
+    });
   });
 
   it('应该初始化状态', () => {
