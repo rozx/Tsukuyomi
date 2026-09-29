@@ -227,6 +227,7 @@ export class TerminologyService {
     // 更新术语
     const updatedName = updates.name ?? existingTerm.name;
     const updatedTerm: Terminology = {
+      ...existingTerm,
       id: existingTerm.id,
       name: updatedName,
       translation: {
@@ -243,8 +244,7 @@ export class TerminologyService {
     if (updates.description !== undefined) {
       if (updates.description) {
         updatedTerm.description = updates.description;
-      }
-      // 如果为空字符串，不设置 description 属性（保持 undefined）
+      } else delete updatedTerm.description;
     } else if (existingTerm.description !== undefined) {
       // 如果没有提供 updates.description，保留原有的 description
       updatedTerm.description = existingTerm.description;

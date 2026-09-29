@@ -14,8 +14,9 @@ import type { Memory } from './memory';
  * - 2：增加 manifest.tombstones (仅 novel:<bookId>)
  * - 3：memories 改为 envelope 格式 `{ memories, tombstones }`，
  *      manifest.tombstones 同时支持 `memories:<bookId>` 形式
+ * - 4：书内实体稳定身份、逻辑版本、长期删除记录和多语言槽
  */
-export const MANIFEST_SCHEMA_VERSION = 3;
+export const MANIFEST_SCHEMA_VERSION = 4;
 
 /** Gist 中 manifest 文件的文件名 */
 export const MANIFEST_FILE_NAME = 'manifest.json';
@@ -113,9 +114,7 @@ export function memoriesEntryKey(bookId: string): string {
  * 判断 entry key 是否为 novel 类型，返回 bookId
  */
 export function parseNovelEntryKey(key: string): string | null {
-  return key.startsWith(ENTRY_KEYS.NOVEL_PREFIX)
-    ? key.slice(ENTRY_KEYS.NOVEL_PREFIX.length)
-    : null;
+  return key.startsWith(ENTRY_KEYS.NOVEL_PREFIX) ? key.slice(ENTRY_KEYS.NOVEL_PREFIX.length) : null;
 }
 
 /**

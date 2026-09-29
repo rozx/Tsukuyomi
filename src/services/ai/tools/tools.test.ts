@@ -97,9 +97,13 @@ describe('AI Tools Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // 确保 findChapterById 默认返回 undefined（防止跨测试泄露）
-    (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+    (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      undefined,
+    );
     // 默认不返回章节内容，避免上一个测试的 mock 实现泄露到下一个测试
-    (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (
+      ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(null);
     // Reset store mock
     mockContext.aiProcessingStore.activeTasks = [
       {
@@ -366,7 +370,9 @@ describe('AI Tools Tests', () => {
           },
         ],
       };
-      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockBook);
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        mockBook,
+      );
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
         volume: mockBook.volumes[0],
@@ -488,9 +494,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-        mockChapter.content,
-      );
+      (
+        ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockChapter.content);
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -541,9 +547,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-        mockChapter.content,
-      );
+      (
+        ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockChapter.content);
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -598,9 +604,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-        mockChapter.content,
-      );
+      (
+        ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockChapter.content);
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -655,9 +661,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-        mockChapter.content,
-      );
+      (
+        ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockChapter.content);
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -842,10 +848,7 @@ describe('AI Tools Tests', () => {
   // 断言 handler 调用会抛出包含指定消息的错误
   // （handler 返回类型是 Promise<string> | string，不能直接用 expect().rejects，
   // 否则会触发 @typescript-eslint/await-thenable）
-  const expectThrows = async (
-    invoke: () => Promise<string> | string,
-    message: string,
-  ) => {
+  const expectThrows = async (invoke: () => Promise<string> | string, message: string) => {
     let caught: unknown;
     try {
       await Promise.resolve(invoke());
@@ -897,10 +900,7 @@ describe('AI Tools Tests', () => {
           translation: { translation: '英雄' },
         } as any);
 
-        await createTermTool!.handler(
-          { name: '  hero  ', translation: '  英雄  ' },
-          mockContext,
-        );
+        await createTermTool!.handler({ name: '  hero  ', translation: '  英雄  ' }, mockContext);
 
         expect(addSpy).toHaveBeenCalledWith(
           mockBookId,
@@ -926,10 +926,7 @@ describe('AI Tools Tests', () => {
           description: '',
         } as any);
 
-        await updateTermTool!.handler(
-          { term_id: 't1', description: '' },
-          mockContext,
-        );
+        await updateTermTool!.handler({ term_id: 't1', description: '' }, mockContext);
 
         expect(updateSpy).toHaveBeenCalledWith(
           mockBookId,
@@ -946,10 +943,7 @@ describe('AI Tools Tests', () => {
           translation: { translation: '英雄' },
         } as any);
 
-        await updateTermTool!.handler(
-          { term_id: 't1', translation: '  英雄  ' },
-          mockContext,
-        );
+        await updateTermTool!.handler({ term_id: 't1', translation: '  英雄  ' }, mockContext);
 
         expect(updateSpy).toHaveBeenCalledWith(
           mockBookId,
@@ -984,7 +978,7 @@ describe('AI Tools Tests', () => {
         );
       });
 
-      it('rejects aliases with blank name or translation', async () => {
+      it('rejects aliases with blank name or non-string translation', async () => {
         await expectThrows(
           () =>
             createCharacterTool!.handler(
@@ -995,7 +989,7 @@ describe('AI Tools Tests', () => {
               },
               mockContext,
             ),
-          '别名的名称和翻译不能为空',
+          '别名名称不能为空，翻译必须是字符串',
         );
 
         await expectThrows(
@@ -1004,11 +998,11 @@ describe('AI Tools Tests', () => {
               {
                 name: '田中太郎',
                 translation: '田中太郎',
-                aliases: [{ name: '太郎', translation: '   ' }],
+                aliases: [{ name: '太郎', translation: 42 }],
               },
               mockContext,
             ),
-          '别名的名称和翻译不能为空',
+          '别名名称不能为空，翻译必须是字符串',
         );
       });
 
@@ -1044,8 +1038,7 @@ describe('AI Tools Tests', () => {
     describe('update_character', () => {
       it('rejects whitespace-only name', async () => {
         await expectThrows(
-          () =>
-            updateCharacterTool!.handler({ character_id: 'c1', name: '   ' }, mockContext),
+          () => updateCharacterTool!.handler({ character_id: 'c1', name: '   ' }, mockContext),
           '角色名称不能为空',
         );
       });
@@ -1053,25 +1046,22 @@ describe('AI Tools Tests', () => {
       it('rejects whitespace-only translation', async () => {
         await expectThrows(
           () =>
-            updateCharacterTool!.handler(
-              { character_id: 'c1', translation: '   ' },
-              mockContext,
-            ),
+            updateCharacterTool!.handler({ character_id: 'c1', translation: '   ' }, mockContext),
           '角色翻译不能为空',
         );
       });
 
-      it('rejects aliases with blank values', async () => {
+      it('rejects aliases with non-string translation', async () => {
         await expectThrows(
           () =>
             updateCharacterTool!.handler(
               {
                 character_id: 'c1',
-                aliases: [{ name: '田中', translation: '   ' }],
+                aliases: [{ name: '田中', translation: 42 }],
               },
               mockContext,
             ),
-          '别名的名称和翻译不能为空',
+          '别名名称不能为空，翻译必须是字符串',
         );
       });
 
@@ -1140,10 +1130,7 @@ describe('AI Tools Tests', () => {
           lastAccessedAt: 0,
         } as any);
 
-        await createMemoryTool!.handler(
-          { content: '  内容  ', summary: '  摘要  ' },
-          mockContext,
-        );
+        await createMemoryTool!.handler({ content: '  内容  ', summary: '  摘要  ' }, mockContext);
 
         expect(createSpy).toHaveBeenCalledWith(mockBookId, '内容', '摘要');
         createSpy.mockRestore();

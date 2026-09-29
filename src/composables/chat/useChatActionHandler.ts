@@ -22,6 +22,7 @@ import {
 } from 'src/utils/action-info-utils';
 import type { ActionInfo } from 'src/services/ai/tools';
 import type { CharacterSetting, Terminology, Translation, Alias } from 'src/models/novel';
+import { v4 } from 'uuid';
 
 export function useChatActionHandler(
   router: Router,
@@ -120,82 +121,17 @@ export function useChatActionHandler(
   };
 
   /**
-   * 将 CharacterSetting 展开为 add/update 接口所需的 payload（保留可选字段的 exactOptionalPropertyTypes 语义）。
-   */
-  const serializeCharacterForService = (character: CharacterSetting) => ({
-    name: character.name,
-    sex: character.sex,
-    translation: character.translation.translation,
-    ...(character.description !== undefined ? { description: character.description } : {}),
-    ...(character.speakingStyle !== undefined ? { speakingStyle: character.speakingStyle } : {}),
-    ...(character.aliases !== undefined
-      ? {
-          aliases: character.aliases.map((a: Alias) => ({
-            name: a.name,
-            translation: a.translation.translation,
-          })),
-        }
-      : {}),
-  });
-
-  /**
-   * 将 Terminology 展开为 add/update 接口所需的 payload。
-   */
-  const serializeTermForService = (term: Terminology) => ({
-    name: term.name,
-    translation: term.translation.translation,
-    ...(term.description !== undefined ? { description: term.description } : {}),
-  });
-
-  /**
-   * 构建更新操作的 revert 回调（恢复到之前的数据）
-   */
-  const buildUpdateRevert = (
-    entityType: 'character' | 'term',
-    previousData: CharacterSetting | Terminology,
-  ): (() => Promise<void>) => {
-    return async () => {
-      const bookId = contextStore.getContext.currentBookId;
-      if (!bookId) return;
-      if (entityType === 'character') {
-        const previousCharacter = previousData as CharacterSetting;
-        await CharacterSettingService.updateCharacterSetting(
-          bookId,
-          previousCharacter.id,
-          serializeCharacterForService(previousCharacter),
-        );
-      } else {
-        const previousTerm = previousData as Terminology;
-        await TerminologyService.updateTerminology(
-          bookId,
-          previousTerm.id,
-          serializeTermForService(previousTerm),
-        );
-      }
-    };
-  };
-
-  /**
    * 构建删除操作的 revert 回调（重新创建实体）
    */
-  const buildDeleteRevert = (
+  const buildEntityRestore = (
     entityType: 'character' | 'term',
     previousData: CharacterSetting | Terminology,
   ): (() => Promise<void>) => {
+    const bookId = contextStore.getContext.currentBookId;
+    const operationId = v4();
     return async () => {
-      const bookId = contextStore.getContext.currentBookId;
       if (!bookId) return;
-      if (entityType === 'character') {
-        await CharacterSettingService.addCharacterSetting(
-          bookId,
-          serializeCharacterForService(previousData as CharacterSetting),
-        );
-      } else {
-        await TerminologyService.addTerminology(
-          bookId,
-          serializeTermForService(previousData as Terminology),
-        );
-      }
+      await booksStore.restoreEntity(bookId, entityType, previousData, operationId);
     };
   };
 
@@ -235,7 +171,7 @@ export function useChatActionHandler(
           summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
           detail,
           life: 3000,
-          onRevert: buildUpdateRevert(entityType, previousData),
+          onRevert: buildEntityRestore(entityType, previousData),
         });
       }
     } else if (action.type === 'delete') {
@@ -248,7 +184,7 @@ export function useChatActionHandler(
           summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
           detail: deleteDetail,
           life: 3000,
-          onRevert: buildDeleteRevert(entityType, previousData),
+          onRevert: buildEntityRestore(entityType, previousData),
         });
       }
     }
@@ -542,9 +478,7 @@ export function useChatActionHandler(
     new_translation: string;
   };
 
-  const isSingleTranslationAction = (
-    data: unknown,
-  ): data is SingleTranslationActionData =>
+  const isSingleTranslationAction = (data: unknown): data is SingleTranslationActionData =>
     typeof data === 'object' &&
     data !== null &&
     'paragraph_id' in data &&
@@ -627,14 +561,19 @@ export function useChatActionHandler(
       : '';
 
   const handleCreateToast = (action: ActionInfo): ToastOutcome => {
-    if (!('name' in action.data)) return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+    if (!('name' in action.data))
+      return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
     if (action.entity === 'character' && 'id' in action.data) {
       return { detail: '', ...resolveEntityToast(action, 'character'), earlyReturn: false };
     }
     if (action.entity === 'term' && 'id' in action.data) {
       return { detail: '', ...resolveEntityToast(action, 'term'), earlyReturn: false };
     }
-    return { detail: resolveDefaultDetail(action), shouldShowRevertToast: false, earlyReturn: false };
+    return {
+      detail: resolveDefaultDetail(action),
+      shouldShowRevertToast: false,
+      earlyReturn: false,
+    };
   };
 
   const handleUpdateToast = (action: ActionInfo): ToastOutcome => {
@@ -656,14 +595,19 @@ export function useChatActionHandler(
   };
 
   const handleDeleteToast = (action: ActionInfo): ToastOutcome => {
-    if (!('name' in action.data)) return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
+    if (!('name' in action.data))
+      return { detail: '', shouldShowRevertToast: false, earlyReturn: false };
     if (action.entity === 'character' && action.previousData) {
       return { detail: '', ...resolveEntityToast(action, 'character'), earlyReturn: false };
     }
     if (action.entity === 'term' && action.previousData) {
       return { detail: '', ...resolveEntityToast(action, 'term'), earlyReturn: false };
     }
-    return { detail: resolveDefaultDetail(action), shouldShowRevertToast: false, earlyReturn: false };
+    return {
+      detail: resolveDefaultDetail(action),
+      shouldShowRevertToast: false,
+      earlyReturn: false,
+    };
   };
 
   const resolveActionToast = (action: ActionInfo): ToastOutcome => {

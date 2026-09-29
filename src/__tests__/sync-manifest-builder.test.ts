@@ -88,12 +88,8 @@ function makeMemory(id: string, bookId: string): Memory {
 // 写死绝对日期会随真实时间流逝而过期，导致测试悄悄开始失败（或因过期修剪而假通过）
 const TOMBSTONE_TIME = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
 const TOMBSTONE_ISO = TOMBSTONE_TIME.toISOString();
-const BEFORE_TOMBSTONE_ISO = new Date(
-  TOMBSTONE_TIME.getTime() - 24 * 60 * 60 * 1000,
-).toISOString();
-const AFTER_TOMBSTONE_ISO = new Date(
-  TOMBSTONE_TIME.getTime() + 24 * 60 * 60 * 1000,
-).toISOString();
+const BEFORE_TOMBSTONE_ISO = new Date(TOMBSTONE_TIME.getTime() - 24 * 60 * 60 * 1000).toISOString();
+const AFTER_TOMBSTONE_ISO = new Date(TOMBSTONE_TIME.getTime() + 24 * 60 * 60 * 1000).toISOString();
 
 function emptyInput(overrides: Partial<LocalManifestInput> = {}): LocalManifestInput {
   return {
@@ -168,12 +164,8 @@ describe('buildLocalManifest', () => {
   });
 
   it('hash changes when content changes', async () => {
-    const m1 = await buildLocalManifest(
-      emptyInput({ novels: [makeNovel('n1', '2026-01-01')] }),
-    );
-    const m2 = await buildLocalManifest(
-      emptyInput({ novels: [makeNovel('n1', '2026-02-02')] }),
-    );
+    const m1 = await buildLocalManifest(emptyInput({ novels: [makeNovel('n1', '2026-01-01')] }));
+    const m2 = await buildLocalManifest(emptyInput({ novels: [makeNovel('n1', '2026-02-02')] }));
     expect(m1.entries[novelEntryKey('n1')]!.hash).not.toBe(m2.entries[novelEntryKey('n1')]!.hash);
   });
 });
@@ -257,9 +249,7 @@ describe('rebuildManifestFromFiles', () => {
       'novel-chunk-abc_0.json': 'chunk0',
       'novel-chunk-abc_1.json': 'chunk1',
     });
-    expect(a.entries[novelEntryKey('abc')]!.hash).toEqual(
-      b.entries[novelEntryKey('abc')]!.hash,
-    );
+    expect(a.entries[novelEntryKey('abc')]!.hash).toEqual(b.entries[novelEntryKey('abc')]!.hash);
   });
 
   it('ignores meta sidecar files and does not mix them into entry hash', async () => {
@@ -306,8 +296,8 @@ describe('manifest TTL constants', () => {
     expect(TOMBSTONE_TTL_DAYS).toBe(90);
   });
 
-  it('MANIFEST_SCHEMA_VERSION is 3 (memories envelope + memories tombstones)', () => {
-    expect(MANIFEST_SCHEMA_VERSION).toBe(3);
+  it('MANIFEST_SCHEMA_VERSION is 4 (book entity protocol)', () => {
+    expect(MANIFEST_SCHEMA_VERSION).toBe(4);
   });
 });
 
@@ -443,14 +433,20 @@ describe('buildLocalManifest: memories envelope', () => {
   });
 
   it('tombstone insertion order does not affect hash (sorted by id)', () => {
-    const a = buildMemoriesPayload([], [
-      { id: 'b', deletedAt: 2 },
-      { id: 'a', deletedAt: 1 },
-    ]);
-    const b = buildMemoriesPayload([], [
-      { id: 'a', deletedAt: 1 },
-      { id: 'b', deletedAt: 2 },
-    ]);
+    const a = buildMemoriesPayload(
+      [],
+      [
+        { id: 'b', deletedAt: 2 },
+        { id: 'a', deletedAt: 1 },
+      ],
+    );
+    const b = buildMemoriesPayload(
+      [],
+      [
+        { id: 'a', deletedAt: 1 },
+        { id: 'b', deletedAt: 2 },
+      ],
+    );
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
@@ -460,10 +456,13 @@ describe('buildLocalManifest: memories envelope', () => {
   });
 
   it('memoryTombstonesByBook tombstone with non-finite deletedAt is filtered', () => {
-    const env = buildMemoriesPayload([], [
-      { id: 'good', deletedAt: 1_000_000 },
-      { id: 'bad', deletedAt: NaN as unknown as number },
-    ]);
+    const env = buildMemoriesPayload(
+      [],
+      [
+        { id: 'good', deletedAt: 1_000_000 },
+        { id: 'bad', deletedAt: NaN as unknown as number },
+      ],
+    );
     expect(env.tombstones).toEqual([{ id: 'good', deletedAt: 1_000_000 }]);
   });
 });
@@ -530,19 +529,25 @@ describe('buildLocalManifest: tombstones — additional edge cases', () => {
 
 describe('buildMemoriesPayload — additional edge cases', () => {
   it('过滤 id 为空字符串的墓碑（防御性）', () => {
-    const env = buildMemoriesPayload([], [
-      { id: '', deletedAt: 1 },
-      { id: 'real', deletedAt: 2 },
-    ]);
+    const env = buildMemoriesPayload(
+      [],
+      [
+        { id: '', deletedAt: 1 },
+        { id: 'real', deletedAt: 2 },
+      ],
+    );
     expect(env.tombstones?.map((t) => t.id)).toEqual(['real']);
   });
 
   it('过滤 id 为非字符串的墓碑（运行时健壮性）', () => {
-    const env = buildMemoriesPayload([], [
-      { id: 'real', deletedAt: 1 },
-      { id: 123 as unknown as string, deletedAt: 2 },
-      { id: null as unknown as string, deletedAt: 3 },
-    ]);
+    const env = buildMemoriesPayload(
+      [],
+      [
+        { id: 'real', deletedAt: 1 },
+        { id: 123 as unknown as string, deletedAt: 2 },
+        { id: null as unknown as string, deletedAt: 3 },
+      ],
+    );
     expect(env.tombstones).toEqual([{ id: 'real', deletedAt: 1 }]);
   });
 

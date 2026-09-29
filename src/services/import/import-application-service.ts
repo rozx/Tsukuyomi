@@ -1,5 +1,7 @@
 import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import type { ImportOperation } from 'src/models/import';
+import type { AppLocale } from 'src/models/locale';
+import { isAppLocale, resolveAppLocale } from 'src/models/locale';
 import { getDB } from 'src/utils/indexed-db';
 import { completeIdbTransaction } from 'src/utils/complete-idb-transaction';
 import { BookExecutionGuard } from 'src/services/book-execution-guard';
@@ -15,14 +17,23 @@ import {
 export interface ImportConfirmation {
   readonly nonce: symbol;
 }
-type ConfirmationContext = { taskId: string; operationId: string; action: 'apply' | 'revert' };
+type ConfirmationContext = {
+  taskId: string;
+  operationId: string;
+  action: 'apply' | 'revert';
+  creationLocale?: AppLocale;
+};
 
 /** 实例属于工作台宿主，确认不持久化，也不注册为模型工具。 */
 export class ImportApplicationService {
   private readonly confirmations = new WeakMap<ImportConfirmation, ConfirmationContext>();
 
-  async confirmApply(taskId: string, planId: string): Promise<ImportConfirmation> {
-    return this.confirm(taskId, planId, 'apply');
+  async confirmApply(
+    taskId: string,
+    planId: string,
+    expectedLocale?: AppLocale,
+  ): Promise<ImportConfirmation> {
+    return this.confirm(taskId, planId, 'apply', expectedLocale);
   }
 
   async confirmRevert(taskId: string, operationId: string): Promise<ImportConfirmation> {
@@ -33,10 +44,27 @@ export class ImportApplicationService {
     taskId: string,
     operationId: string,
     action: ConfirmationContext['action'],
+    expectedLocale?: AppLocale,
   ) {
-    await readImportOperation(taskId, operationId);
+    const operation = await readImportOperation(taskId, operationId);
+    let creationLocale: AppLocale | undefined;
+    if (action === 'apply' && operation.plan.targetKind === 'new') {
+      const settings = await (await getDB()).get('settings', 'app');
+      creationLocale =
+        expectedLocale ??
+        resolveAppLocale(
+          settings?.uiLocale,
+          typeof navigator === 'undefined' ? [] : navigator.languages,
+        );
+      if (!isAppLocale(creationLocale)) throw new Error('INVALID_LOCALE');
+    }
     const token = Object.freeze({ nonce: Symbol('import-confirmation') });
-    this.confirmations.set(token, { taskId, operationId, action });
+    this.confirmations.set(token, {
+      taskId,
+      operationId,
+      action,
+      ...(creationLocale ? { creationLocale } : {}),
+    });
     return token;
   }
 
@@ -64,7 +92,7 @@ export class ImportApplicationService {
       if (latest.state === terminal) return latest;
       const result =
         action === 'apply'
-          ? await applyImportOperation(latest)
+          ? await applyImportOperation(latest, confirmation.creationLocale)
           : await revertImportOperation(latest);
       return this.maintain(result);
     });

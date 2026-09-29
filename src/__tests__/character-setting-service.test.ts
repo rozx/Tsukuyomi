@@ -1,5 +1,6 @@
+import { expect } from 'vitest';
 import './setup';
-import { describe, test, expect, mock, beforeEach, spyOn, beforeAll, afterAll } from 'bun:test';
+import { describe, test, mock, beforeEach, spyOn, beforeAll, afterAll } from 'bun:test';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import type { Novel } from 'src/models/novel';
 import * as BooksStoreModule from 'src/stores/books';
@@ -69,6 +70,35 @@ describe('CharacterSettingService', () => {
     });
   });
 
+  test('别名按 ID 改名并保持译名留空，歧义名字更新被拒绝', async () => {
+    mockBook.characterSettings = [
+      {
+        id: 'c',
+        name: 'Alice',
+        sex: undefined,
+        translation: { id: 'cn', translation: '爱丽丝', aiModelId: '' },
+        aliases: [
+          { id: 'a', name: 'Al', translation: { id: 'cn-a', translation: '小爱', aiModelId: '' } },
+        ],
+      },
+    ];
+    const changed = await CharacterSettingService.updateCharacterSetting(bookId, 'c', {
+      aliases: [{ id: 'a', name: 'New name', translation: '' }],
+    });
+    expect(changed.aliases[0]!.id).toBe('a');
+    expect(changed.aliases[0]!.translation.translation).toBe('');
+    mockBook.characterSettings[0]!.aliases.push({
+      id: 'b',
+      name: 'Al',
+      translation: { id: 'cn-b', translation: '', aiModelId: '' },
+    });
+    await expect(
+      CharacterSettingService.updateCharacterSetting(bookId, 'c', {
+        aliases: [{ name: 'Al', translation: '译名' }],
+      }),
+    ).rejects.toThrow('AMBIGUOUS_ALIAS_NAME');
+  });
+
   describe('addCharacterSetting', () => {
     test('应该添加新角色', async () => {
       const charData = {
@@ -90,7 +120,6 @@ describe('CharacterSettingService', () => {
       expect(result.aliases).toHaveLength(1);
       expect(result.aliases[0]?.name).toBe('Ally');
       expect(result.aliases[0]?.translation?.translation).toBe('艾莉');
-
 
       expect(mockUpdateBook).toHaveBeenCalledTimes(1);
     });

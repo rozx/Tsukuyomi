@@ -20,6 +20,7 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { useBooksStore } from 'src/stores/books';
 import { cloneDeep } from 'lodash';
 import co from 'co';
+import { v4 } from 'uuid';
 
 const props = defineProps<{
   book: Novel | null;
@@ -175,6 +176,8 @@ const updateTerm = async (data: {
 }): Promise<void> => {
   if (!selectedTerminology.value) return;
   const oldTermSnapshot = cloneDeep(selectedTerminology.value);
+  const restoreBookId = props.book!.id;
+  const restoreOperationId = v4();
   const updates = buildTermUpdates(data, selectedTerminology.value);
 
   await TerminologyService.updateTerminology(props.book!.id, selectedTerminology.value.id, updates);
@@ -185,15 +188,12 @@ const updateTerm = async (data: {
     detail: `已成功更新术语 "${data.name.trim()}"`,
     life: 3000,
     onRevert: async () => {
-      if (oldTermSnapshot && props.book) {
-        await TerminologyService.updateTerminology(props.book.id, oldTermSnapshot.id, {
-          name: oldTermSnapshot.name,
-          translation: oldTermSnapshot.translation.translation,
-          ...(oldTermSnapshot.description !== undefined && {
-            description: oldTermSnapshot.description,
-          }),
-        });
-      }
+      await useBooksStore().restoreEntity(
+        restoreBookId,
+        'term',
+        oldTermSnapshot,
+        restoreOperationId,
+      );
     },
   });
 
@@ -264,6 +264,8 @@ const confirmDeleteTerm = async () => {
     // 保存要删除的术语数据用于撤销
     const termToRestore = props.book?.terminologies?.find((t) => t.id === terminology.id);
     const termSnapshot = termToRestore ? cloneDeep(termToRestore) : null;
+    const restoreBookId = props.book.id;
+    const restoreOperationId = v4();
 
     await TerminologyService.deleteTerminology(props.book.id, terminology.id);
 
@@ -273,19 +275,13 @@ const confirmDeleteTerm = async () => {
       detail: `已成功删除术语 "${terminology.name}"`,
       life: 3000,
       onRevert: async () => {
-        if (termSnapshot && props.book) {
-          const booksStore = useBooksStore();
-          const book = booksStore.getBookById(props.book.id);
-          if (book) {
-            const current = book.terminologies || [];
-            if (!current.some((t) => t.id === termSnapshot.id)) {
-              await booksStore.updateBook(book.id, {
-                terminologies: [...current, termSnapshot],
-                lastEdited: new Date(),
-              });
-            }
-          }
-        }
+        if (termSnapshot)
+          await useBooksStore().restoreEntity(
+            restoreBookId,
+            'term',
+            termSnapshot,
+            restoreOperationId,
+          );
       },
     });
 
@@ -369,6 +365,12 @@ const handleBulkDelete = () => {
     .join('、');
   const moreText = selectedCount > 3 ? `等 ${selectedCount} 个` : '';
 
+  const restoreBookId = props.book.id;
+  const restoreOperationId = v4();
+  const idsToDelete = Array.from(selectedTermIds.value);
+  const termsSnapshot = cloneDeep(
+    props.book.terminologies?.filter((term) => selectedTermIds.value.has(term.id)) ?? [],
+  );
   confirm.require({
     group: 'terminology',
     message: `确定要删除选中的 ${selectedCount} 个术语吗？\n${selectedNames}${moreText}`,
@@ -384,18 +386,15 @@ const handleBulkDelete = () => {
     },
     accept: () => {
       void co(function* () {
-        const idsToDelete = Array.from(selectedTermIds.value);
-        // 保存要删除的术语数据用于撤销
-        const termsToRestore =
-          props.book?.terminologies?.filter((t) => selectedTermIds.value.has(t.id)) || [];
-        const termsSnapshot = cloneDeep(termsToRestore);
+        const deletedIds = new Set<string>();
 
         let successCount = 0;
         let failCount = 0;
 
         for (const id of idsToDelete) {
           try {
-            yield TerminologyService.deleteTerminology(props.book!.id, id);
+            yield TerminologyService.deleteTerminology(restoreBookId, id);
+            deletedIds.add(id);
             successCount++;
           } catch (error) {
             console.error('删除术语失败:', error);
@@ -410,21 +409,13 @@ const handleBulkDelete = () => {
             detail: `已成功删除 ${successCount} 个术语`,
             life: 3000,
             onRevert: async () => {
-              if (termsSnapshot.length > 0 && props.book) {
-                const booksStore = useBooksStore();
-                const book = booksStore.getBookById(props.book.id);
-                if (book) {
-                  const current = book.terminologies || [];
-                  const toAdd = termsSnapshot.filter(
-                    (t: Terminology) => !current.some((c) => c.id === t.id),
-                  );
-                  if (toAdd.length > 0) {
-                    await booksStore.updateBook(book.id, {
-                      terminologies: [...current, ...toAdd],
-                      lastEdited: new Date(),
-                    });
-                  }
-                }
+              for (const term of termsSnapshot.filter((item) => deletedIds.has(item.id))) {
+                await useBooksStore().restoreEntity(
+                  restoreBookId,
+                  'term',
+                  term,
+                  `${restoreOperationId}:${term.id}`,
+                );
               }
             },
           });
@@ -477,26 +468,18 @@ const handleExport = () => {
 };
 
 // 导入术语的撤销快照（仅记录被更新条目的可恢复字段）
-type UpdatedTermSnapshot = {
-  id: string;
-  name: string;
-  translation: string;
-  description?: string;
-};
+type UpdatedTermSnapshot = Terminology;
 
 interface TermsImportResult {
+  revertOperationId: string;
   addedCount: number;
   updatedCount: number;
   addedTermIds: string[];
   updatedTermsSnapshot: UpdatedTermSnapshot[];
 }
 
-const buildUpdatedTermSnapshot = (existingTerm: Terminology): UpdatedTermSnapshot => ({
-  id: existingTerm.id,
-  name: existingTerm.name,
-  translation: existingTerm.translation.translation,
-  ...(existingTerm.description !== undefined ? { description: existingTerm.description } : {}),
-});
+const buildUpdatedTermSnapshot = (existingTerm: Terminology): UpdatedTermSnapshot =>
+  cloneDeep(existingTerm);
 
 // 执行导入：名称相同的更新，否则新增。返回新增/更新计数与撤销所需的快照
 const executeTermsImport = async (
@@ -533,20 +516,24 @@ const executeTermsImport = async (
     }
   }
 
-  return { addedCount, updatedCount, addedTermIds, updatedTermsSnapshot };
+  return { addedCount, updatedCount, addedTermIds, updatedTermsSnapshot, revertOperationId: v4() };
 };
 
 // 撤销导入：删除新增条目，恢复被更新条目的快照字段
 const revertTermsImport = async (bookId: string, result: TermsImportResult): Promise<void> => {
   for (const id of result.addedTermIds) {
-    await TerminologyService.deleteTerminology(bookId, id);
+    const book = useBooksStore().getBookById(bookId);
+    if (!book) throw new Error('BOOK_MISSING');
+    if (book.terminologies?.some((item) => item.id === id))
+      await TerminologyService.deleteTerminology(bookId, id);
   }
   for (const snapshot of result.updatedTermsSnapshot) {
-    await TerminologyService.updateTerminology(bookId, snapshot.id, {
-      name: snapshot.name,
-      translation: snapshot.translation,
-      ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
-    });
+    await useBooksStore().restoreEntity(
+      bookId,
+      'term',
+      snapshot,
+      `${result.revertOperationId}:${snapshot.id}`,
+    );
   }
 };
 

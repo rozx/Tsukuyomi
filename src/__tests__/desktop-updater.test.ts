@@ -4,6 +4,22 @@ import './setup';
 import { DesktopUpdater } from '../../src-electron/desktop-updater';
 
 describe('桌面自动更新', () => {
+  it('切换界面语言后不可更新原因重新解析，保留更新器状态', () => {
+    let reason = '开发环境不检查更新';
+    const updater = new DesktopUpdater({
+      version: '0.16.0',
+      unavailable: () => reason,
+      check: () => Promise.resolve(null),
+      download: () => Promise.resolve(),
+      confirm: () => Promise.resolve(false),
+      prepare: () => Promise.resolve(),
+      install: () => {},
+      release: () => {},
+    });
+    expect(updater.snapshot().message).toBe(reason);
+    reason = 'Updates are disabled in development';
+    expect(updater.snapshot()).toMatchObject({ phase: 'unavailable', message: reason });
+  });
   it('下载失败可重试；准备失败或用户取消不安装，已下载包仍可重启', async () => {
     let broken = true;
     let busy = true;

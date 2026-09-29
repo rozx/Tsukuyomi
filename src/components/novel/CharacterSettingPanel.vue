@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import ConfirmDialog from 'primevue/confirmdialog';
@@ -18,11 +19,22 @@ import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias, CharacterSetting } from 'src/models/novel';
 import { cloneDeep } from 'lodash';
 import co from 'co';
+import { v4 } from 'uuid';
 
 const props = defineProps<{
   book: Novel | null;
 }>();
 
+const { t } = useI18n();
+const hasAliasConflicts = computed(() =>
+  (props.book?.characterSettings ?? []).some((character) =>
+    character.aliases.some(
+      (alias, index, aliases) =>
+        alias.legacyConflict ||
+        aliases.some((other, otherIndex) => otherIndex !== index && other.name === alias.name),
+    ),
+  ),
+);
 const toast = useToastWithHistory();
 const confirm = useConfirm();
 
@@ -122,7 +134,7 @@ const handleSave = async (data: {
   translation: string;
   description: string;
   speakingStyle: string;
-  aliases: Array<{ name: string; translation: string }>;
+  aliases: Array<{ id?: string; name: string; translation: string }>;
 }) => {
   if (!props.book) return;
 
@@ -145,6 +157,8 @@ const handleSave = async (data: {
       const originalChar = props.book.characterSettings?.find((c) => c.id === charId);
       // 深拷贝保留原始数据用于撤销
       const previousCharData = originalChar ? cloneDeep(originalChar) : null;
+      const restoreBookId = props.book.id;
+      const restoreOperationId = v4();
 
       await CharacterSettingService.updateCharacterSetting(
         props.book.id,
@@ -157,27 +171,13 @@ const handleSave = async (data: {
         detail: `已更新角色 "${data.name}"`,
         life: 3000,
         onRevert: async () => {
-          if (previousCharData && props.book) {
-            await CharacterSettingService.updateCharacterSetting(
-              props.book.id,
-              previousCharData.id,
-              {
-                name: previousCharData.name,
-                ...(previousCharData.sex !== undefined && { sex: previousCharData.sex }),
-                translation: previousCharData.translation.translation,
-                ...(previousCharData.description !== undefined && {
-                  description: previousCharData.description,
-                }),
-                ...(previousCharData.speakingStyle !== undefined && {
-                  speakingStyle: previousCharData.speakingStyle,
-                }),
-                aliases: previousCharData.aliases.map((a: Alias) => ({
-                  name: a.name,
-                  translation: a.translation.translation,
-                })),
-              },
+          if (previousCharData)
+            await useBooksStore().restoreEntity(
+              restoreBookId,
+              'character',
+              previousCharData,
+              restoreOperationId,
             );
-          }
         },
       });
     } else {
@@ -220,7 +220,9 @@ const confirmDeleteCharacter = async () => {
 
   try {
     // 保存要删除的角色数据用于撤销
-    const charToRestore = cloneDeep(character._original);
+    const charToRestore = cloneDeep(character._original) as CharacterSetting;
+    const restoreBookId = props.book.id;
+    const restoreOperationId = v4();
 
     await CharacterSettingService.deleteCharacterSetting(props.book.id, character.id);
 
@@ -230,18 +232,12 @@ const confirmDeleteCharacter = async () => {
       detail: `已删除角色 "${character.name}"`,
       life: 3000,
       onRevert: async () => {
-        const booksStore = useBooksStore();
-        const book = booksStore.getBookById(props.book!.id);
-        if (book) {
-          const current = book.characterSettings || [];
-          // 检查是否存在（避免重复）
-          if (!current.some((c) => c.id === charToRestore.id)) {
-            await booksStore.updateBook(book.id, {
-              characterSettings: [...current, charToRestore],
-              lastEdited: new Date(),
-            });
-          }
-        }
+        await useBooksStore().restoreEntity(
+          restoreBookId,
+          'character',
+          charToRestore,
+          restoreOperationId,
+        );
       },
     });
 
@@ -320,37 +316,18 @@ const buildImportedCharPayload = (importedChar: ImportedCharLike) => ({
 });
 
 // 导入角色的撤销快照（仅记录被更新条目的可恢复字段）
-type UpdatedCharSnapshot = {
-  id: string;
-  name: string;
-  sex?: 'male' | 'female' | 'other';
-  translation: string;
-  description?: string;
-  speakingStyle?: string;
-  aliases: Array<{ name: string; translation: string }>;
-};
+type UpdatedCharSnapshot = CharacterSetting;
 
 interface CharsImportResult {
+  revertOperationId: string;
   addedCount: number;
   updatedCount: number;
   addedCharIds: string[];
   updatedCharsSnapshot: UpdatedCharSnapshot[];
-};
+}
 
-const buildUpdatedCharSnapshot = (existingChar: CharacterSetting): UpdatedCharSnapshot => ({
-  id: existingChar.id,
-  name: existingChar.name,
-  ...(existingChar.sex !== undefined ? { sex: existingChar.sex } : {}),
-  translation: existingChar.translation.translation,
-  ...(existingChar.description !== undefined ? { description: existingChar.description } : {}),
-  ...(existingChar.speakingStyle !== undefined
-    ? { speakingStyle: existingChar.speakingStyle }
-    : {}),
-  aliases: existingChar.aliases.map((a: Alias) => ({
-    name: a.name,
-    translation: a.translation.translation,
-  })),
-});
+const buildUpdatedCharSnapshot = (existingChar: CharacterSetting): UpdatedCharSnapshot =>
+  cloneDeep(existingChar);
 
 // 执行导入：名称相同的更新，否则新增。返回新增/更新计数与撤销所需的快照
 const executeCharsImport = async (
@@ -384,23 +361,24 @@ const executeCharsImport = async (
     }
   }
 
-  return { addedCount, updatedCount, addedCharIds, updatedCharsSnapshot };
+  return { addedCount, updatedCount, addedCharIds, updatedCharsSnapshot, revertOperationId: v4() };
 };
 
 // 撤销导入：删除新增条目，恢复被更新条目的快照字段
 const revertCharsImport = async (bookId: string, result: CharsImportResult): Promise<void> => {
   for (const id of result.addedCharIds) {
-    await CharacterSettingService.deleteCharacterSetting(bookId, id);
+    const book = useBooksStore().getBookById(bookId);
+    if (!book) throw new Error('BOOK_MISSING');
+    if (book.characterSettings?.some((item) => item.id === id))
+      await CharacterSettingService.deleteCharacterSetting(bookId, id);
   }
   for (const snapshot of result.updatedCharsSnapshot) {
-    await CharacterSettingService.updateCharacterSetting(bookId, snapshot.id, {
-      name: snapshot.name,
-      ...(snapshot.sex !== undefined ? { sex: snapshot.sex } : {}),
-      translation: snapshot.translation,
-      ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
-      ...(snapshot.speakingStyle !== undefined ? { speakingStyle: snapshot.speakingStyle } : {}),
-      aliases: snapshot.aliases,
-    });
+    await useBooksStore().restoreEntity(
+      bookId,
+      'character',
+      snapshot,
+      `${result.revertOperationId}:${snapshot.id}`,
+    );
   }
 };
 
@@ -545,6 +523,13 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
         :closable="false"
       />
     </div>
+
+    <AppMessage
+      v-if="hasAliasConflicts"
+      severity="warn"
+      :message="t('books.aliasConflict')"
+      :closable="false"
+    />
 
     <!-- 内容区域 -->
     <div class="flex-1 p-6 overflow-y-auto">

@@ -19,14 +19,10 @@ function groupMemoriesByBook(memories: Memory[]): Map<string, Memory[]> {
   return byBook;
 }
 
-function pickMemoryTimestamps(
-  memory: Memory,
-): { createdAt?: number; lastAccessedAt?: number } {
+function pickMemoryTimestamps(memory: Memory): { createdAt?: number; lastAccessedAt?: number } {
   return {
     ...(typeof memory.createdAt === 'number' ? { createdAt: memory.createdAt } : {}),
-    ...(typeof memory.lastAccessedAt === 'number'
-      ? { lastAccessedAt: memory.lastAccessedAt }
-      : {}),
+    ...(typeof memory.lastAccessedAt === 'number' ? { lastAccessedAt: memory.lastAccessedAt } : {}),
   };
 }
 
@@ -45,7 +41,7 @@ export async function importMemoriesPreservingIdentity(
     await MemoryService.clearAllMemories();
   } catch (error) {
     console.warn(`${logPrefix} 清空本地 Memory 失败：`, error);
-    return;
+    throw error;
   }
 
   if (memories.length === 0) return;
@@ -64,6 +60,7 @@ export async function importMemoriesPreservingIdentity(
       }
     } catch (error) {
       console.warn(`${logPrefix} 导入书籍 ${bookId} 的 Memory 失败:`, error);
+      throw error;
     }
   }
 }

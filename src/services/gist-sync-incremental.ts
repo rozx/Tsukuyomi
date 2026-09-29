@@ -16,7 +16,14 @@ import {
   type MemoriesPayload,
   type MemoryTombstone,
 } from 'src/models/manifest';
-import { buildLocalManifest, buildMemoriesPayload, diffManifests } from 'src/services/sync-manifest-builder';
+import {
+  buildLocalManifest,
+  buildMemoriesPayload,
+  diffManifests,
+} from 'src/services/sync-manifest-builder';
+import { parseGistManifest, UnsupportedManifestVersionError } from 'src/utils/manifest-protocol';
+import { normalizeBookLanguages } from './localization/normalize';
+import { stripNovelLocalFields } from 'src/utils/sync-strip';
 import { compressString, decompressString } from 'src/utils/compression';
 import { deserializeDates } from 'src/utils/serialize-dates';
 import { canonicalStringify } from 'src/utils/canonical-json';
@@ -100,6 +107,7 @@ export type IncrementalDownloadResult =
       manifest: GistManifest | null; // null 表示远端缺少 manifest，触发迁移
       /** 需要迁移（远端无 manifest） */
       needsMigration?: boolean;
+      needsSchemaUpgrade?: boolean;
       /** 客户端版本落后于远端 schemaVersion */
       schemaVersionTooNew?: boolean;
       /**
@@ -443,7 +451,9 @@ export async function deserializeEntry(
       fetchRaw,
     );
     if (raw === null) return null;
-    return { kind: 'novel', bookId: novelBookId, value: deserializeDates(raw) as Novel };
+    const book = normalizeBookLanguages(deserializeDates(raw) as Novel);
+    if (book.id !== novelBookId) throw new Error('NOVEL_ID_MISMATCH');
+    return { kind: 'novel', bookId: novelBookId, value: book };
   }
 
   const memoryBookId = parseMemoriesEntryKey(entryKey);
@@ -500,10 +510,7 @@ export function parseMemoriesEnvelope(raw: unknown): MemoriesPayload | null {
 }
 
 /** 单文件型条目(settings/ai-models/cover-history 或 chunks=0 的 novel/memories)的失败原因 */
-function describeSingleFileFailure(
-  name: string,
-  gistFiles: Record<string, GistFileLike>,
-): string {
+function describeSingleFileFailure(name: string, gistFiles: Record<string, GistFileLike>): string {
   const file = gistFiles[name];
   if (!file) return `文件 ${name} 缺失`;
   if (file.truncated && !file.raw_url) return `文件 ${name} 被截断且无 raw_url`;
@@ -859,11 +866,7 @@ function createFetchRaw(): (url: string) => Promise<string> {
 
 /** 解析 manifest.json 内容，解析失败时抛出带原因的错误 */
 function parseRemoteManifest(manifestContent: string): GistManifest {
-  try {
-    return JSON.parse(manifestContent) as GistManifest;
-  } catch (e) {
-    throw new Error(`manifest.json 解析失败: ${e instanceof Error ? e.message : String(e)}`);
-  }
+  return parseGistManifest(manifestContent);
 }
 
 /** 远端缺少 manifest 时的返回值：携带文件快照以便后续迁移清理遗留文件 */
@@ -892,6 +895,7 @@ function buildSchemaTooNewResult(
   remoteManifest: GistManifest,
   etag: string,
   updatedAt: string,
+  files: Record<string, GistFileLike>,
 ): IncrementalDownloadResult {
   return {
     success: true,
@@ -902,8 +906,9 @@ function buildSchemaTooNewResult(
     schemaVersionTooNew: true,
     changedEntries: {},
     deletedEntries: [],
-    remoteTombstones: extractRemoteTombstoneMap(remoteManifest),
-    remoteEntryKeys: Object.keys(remoteManifest.entries),
+    remoteTombstones: {},
+    remoteEntryKeys: [],
+    remoteFilesSnapshot: files,
   };
 }
 
@@ -957,6 +962,11 @@ async function readChangedEntries(
     try {
       value = await deserializeEntry(key, entry, files, fetchRaw);
     } catch (error) {
+      if (
+        error instanceof Error &&
+        ['UNSUPPORTED_ENTITY_SYNC_VERSION', 'INVALID_LOCALE'].includes(error.message)
+      )
+        throw error;
       console.error(`[gist-sync-incremental] 反序列化条目 ${key} 失败:`, error);
     }
     if (value) {
@@ -984,7 +994,11 @@ export async function downloadWithManifest(
   onProgress?.({ current: 0, total: 1, message: '正在检查远程变更...' });
 
   const token = resolveGistToken(config);
-  const result = await conditionalGetGist(token, gistId, config.lastRemoteETag);
+  const result = await conditionalGetGist(
+    token,
+    gistId,
+    config.knownRemoteSchemaVersion === MANIFEST_SCHEMA_VERSION ? config.lastRemoteETag : undefined,
+  );
   if (result.notModified) {
     return { success: true, skipped: true, remoteETag: result.etag };
   }
@@ -1005,17 +1019,27 @@ export async function downloadWithManifest(
     throw new Error('manifest.json 内容为空');
   }
 
-  const remoteManifest = parseRemoteManifest(manifestContent);
-
-  if (remoteManifest.schemaVersion > MANIFEST_SCHEMA_VERSION) {
-    return buildSchemaTooNewResult(remoteManifest, etag, updatedAt);
+  let remoteManifest: GistManifest;
+  try {
+    remoteManifest = parseRemoteManifest(manifestContent);
+  } catch (error) {
+    if (!(error instanceof UnsupportedManifestVersionError)) throw error;
+    return buildSchemaTooNewResult(
+      { schemaVersion: error.version, updatedAt, entries: {} },
+      etag,
+      updatedAt,
+      files,
+    );
   }
 
   // 计算 diff：remote vs knownRemote
   const diff = diffManifests(remoteManifest, buildKnownAsManifest(config.knownRemoteHashes));
 
   // 仅需要反序列化 changed + added（即远端有而本地尚未见过的）
-  const toRead = [...diff.changed, ...diff.added];
+  const needsSchemaUpgrade = remoteManifest.schemaVersion < MANIFEST_SCHEMA_VERSION;
+  const toRead = needsSchemaUpgrade
+    ? Object.keys(remoteManifest.entries)
+    : [...diff.changed, ...diff.added];
   const { changedEntries, failedEntryKeys } = await readChangedEntries(
     toRead,
     remoteManifest,
@@ -1038,6 +1062,7 @@ export async function downloadWithManifest(
     remoteETag: etag,
     remoteUpdatedAt: updatedAt,
     manifest: remoteManifest,
+    needsSchemaUpgrade,
     // 携带远端文件快照：uploadIncremental 用它来判断某个"待删除"的文件名是否
     // 真的在 Gist 上，避免 PATCH 中出现 "null 删除不存在的文件"——这会被
     // GitHub 以 422 missing_field:files 拒绝整个请求，连带丢掉其它合法的内容写入。
@@ -1062,6 +1087,19 @@ export async function uploadIncremental(
 ): Promise<IncrementalUploadResult> {
   const gistId = config.syncParams.gistId;
   if (!gistId) throw new Error('Gist ID 未配置');
+  if ((config.knownRemoteSchemaVersion ?? 0) > MANIFEST_SCHEMA_VERSION)
+    throw new UnsupportedManifestVersionError(config.knownRemoteSchemaVersion!);
+  const remoteManifestFile = remoteFilesSnapshot[MANIFEST_FILE_NAME];
+  const remoteManifest = remoteManifestFile
+    ? parseRemoteManifest(
+        (await readFile(MANIFEST_FILE_NAME, remoteFilesSnapshot, createFetchRaw())) ?? '',
+      )
+    : undefined;
+  if (remoteManifest && remoteManifest.schemaVersion > MANIFEST_SCHEMA_VERSION)
+    throw new Error('远程数据由较新版本的应用写入，请升级后再同步');
+  const upgrading = remoteManifest
+    ? remoteManifest.schemaVersion < MANIFEST_SCHEMA_VERSION
+    : config.knownRemoteSchemaVersion !== MANIFEST_SCHEMA_VERSION;
 
   // 整个 uploadIncremental 对外以统一的 0-100 进度标度输出——executor 把它
   // 线性映射到整条进度条的 upload 区段（60-100）。
@@ -1087,7 +1125,9 @@ export async function uploadIncremental(
 
   const knownEntries = config.knownRemoteEntries ?? {};
   const diff = diffManifests(localManifest, buildKnownAsManifest(config.knownRemoteHashes));
-  const toUpload = [...diff.changed, ...diff.added];
+  const toUpload = upgrading
+    ? Object.keys(localManifest.entries)
+    : [...diff.changed, ...diff.added];
   const toDelete = diff.deleted;
 
   // buildLocalManifest 不输出 chunks，序列化阶段也只会给本轮上传的条目补 chunks。
@@ -1155,7 +1195,7 @@ export async function uploadIncremental(
     message: '正在上传...',
   });
 
-  const additionBatches = buildAdditionBatches(allFiles);
+  const additionBatches = upgrading ? [{ ...allFiles }] : buildAdditionBatches(allFiles);
   appendDeletionsAndManifestToFinalBatch(additionBatches, allFiles, localManifest);
 
   const {
@@ -1376,7 +1416,8 @@ function getPayloadForEntry(entryKey: string, payload: UploadPayload): unknown {
 
   const novelId = parseNovelEntryKey(entryKey);
   if (novelId) {
-    return payload.novels.find((n) => n.id === novelId) ?? null;
+    const book = payload.novels.find((n) => n.id === novelId);
+    return book ? stripNovelLocalFields(normalizeBookLanguages(book)) : null;
   }
 
   const memBookId = parseMemoriesEntryKey(entryKey);

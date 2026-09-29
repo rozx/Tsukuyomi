@@ -16,6 +16,7 @@ import type {
   ImportSource,
   ImportTask,
 } from 'src/models/import';
+import type { EntityRestoreOperation } from 'src/services/localization/restore';
 
 /**
  * 书籍详情页面 UI 状态
@@ -56,6 +57,14 @@ export interface SyncChapterBaseline {
  * IndexedDB 数据库架构定义
  */
 export interface TsukuyomiDB extends DBSchema {
+  'entity-operations': {
+    key: string;
+    value: EntityRestoreOperation;
+  };
+  'sync-metadata': {
+    key: string;
+    value: { key: 'clock'; actorId: string; counter: number };
+  };
   'import-tasks': {
     key: string;
     value: ImportTask;
@@ -180,7 +189,7 @@ export interface TsukuyomiDB extends DBSchema {
 const DB_NAME = 'tsukuyomi';
 // v12 增量创建导入任务和书籍修改序号，不重写现有书籍或正文。
 // v13 增量创建同步章节结构基准，不改动现有存储。
-const DB_VERSION = 13;
+const DB_VERSION = 15;
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 let dbBlocked = false;
@@ -212,6 +221,12 @@ function nowMs(): number {
 
 function ensureObjectStores(db: IDBPDatabase<TsukuyomiDB>): void {
   ensureImportStores(db);
+  if (!db.objectStoreNames.contains('sync-metadata')) {
+    db.createObjectStore('sync-metadata', { keyPath: 'key' });
+  }
+  if (!db.objectStoreNames.contains('entity-operations')) {
+    db.createObjectStore('entity-operations', { keyPath: 'id' });
+  }
   if (!db.objectStoreNames.contains('books')) {
     const booksStore = db.createObjectStore('books', { keyPath: 'id' });
     booksStore.createIndex('by-lastEdited', 'lastEdited');
@@ -587,6 +602,8 @@ export async function migrateFromLocalStorage(): Promise<void> {
 async function clearAllData(): Promise<void> {
   const db = await getDB();
   const storeNames = [
+    'entity-operations',
+    'sync-metadata',
     'books',
     'ai-models',
     'settings',

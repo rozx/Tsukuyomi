@@ -267,6 +267,7 @@ function materialize(state: MatchState): ImportParagraphMatchResult {
       paragraph.text = item.text;
       paragraph.translations = [];
       paragraph.selectedTranslationId = '';
+      paragraph.selectedTranslations = {};
     }
     paragraphs.push({ key: item.key, chapterId: item.chapterId, paragraph });
     changes.push({

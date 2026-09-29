@@ -1,3 +1,6 @@
+import { useSettingsStore } from 'src/stores/settings';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { computed, ref, shallowRef } from 'vue';
 import type {
@@ -548,14 +551,26 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     );
 
   /** 仅由用户在确认对话框中点击确认后调用；确认只授权当前方案。 */
-  async function applyPlan(): Promise<ImportOperation | undefined> {
+  async function applyPlan(confirmation?: {
+    planId: string;
+    targetLanguage: AppLocale;
+  }): Promise<ImportOperation | undefined> {
     const current = task.value;
     const currentPlan = plan.value;
     if (!current || !currentPlan) return undefined;
     return act(
       'apply',
       current.id,
-      async () => application.apply(await application.confirmApply(current.id, currentPlan.id)),
+      async () => {
+        if (confirmation && confirmation.planId !== currentPlan.id) {
+          throw new Error(
+            `PLAN_STALE: ${translateText(useSettingsStore().uiLocale, 'import.planChanged')}`,
+          );
+        }
+        return application.apply(
+          await application.confirmApply(current.id, currentPlan.id, confirmation?.targetLanguage),
+        );
+      },
       importApplicationFeedback,
     );
   }

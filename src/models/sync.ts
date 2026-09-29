@@ -50,6 +50,7 @@ export interface SyncConfig {
   // 用于在上传时无需额外 GET 也能枚举一个 entry 的所有 Gist 文件名
   //（停止依赖 remoteFilesSnapshot：单独 hashes 不足以知道每本书的 chunk 数）
   knownRemoteEntries?: Record<string, { hash: string; chunks?: number }>;
+  knownRemoteSchemaVersion?: number;
   // 上次已知的远程墓碑（entryKey -> deletedAt ISO 字符串）
   // 用于在多设备间保留墓碑，避免单设备上传时丢失其他设备记录的删除
   knownRemoteTombstones?: Record<string, string>;
@@ -60,6 +61,7 @@ export interface SyncConfig {
   forceSyncMode?: {
     active: boolean;
     lastFailedAt?: number;
+    operationId?: string;
   };
 }
 

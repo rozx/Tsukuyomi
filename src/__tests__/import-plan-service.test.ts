@@ -350,7 +350,7 @@ describe('基于真实数据的导入方案', () => {
     ).toBe(true);
     expect(
       plan.chapters.find((chapter) => chapter.chapterId === 'old-c')?.content[1]?.translations,
-    ).toEqual(original.volumes![0]!.chapters![0]!.content![1]!.translations);
+    ).toMatchObject(original.volumes![0]!.chapters![0]!.content![1]!.translations);
     expect(
       (await BookService.getBookById('book', true))?.volumes?.[0]?.chapters?.[0]?.content?.[0]
         ?.text,

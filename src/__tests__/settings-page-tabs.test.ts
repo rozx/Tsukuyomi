@@ -15,6 +15,7 @@ const labelFor = (isElectron: boolean, value: string) =>
 describe('设置页标签列表', () => {
   it('Web：含代理设置与网站映射，顺序固定', () => {
     expect(settingsTabsFor(false).map((t) => t.label)).toEqual([
+      '通用设置',
       'AI 模型',
       '代理设置',
       '网站映射',
@@ -90,6 +91,17 @@ describe('已保存的标签序号在新增标签后仍指向同一逻辑标签'
       }
       const mapping = settingsTabsFor(electron).find((t) => t.label === '网站映射')!;
       expect(tabValueToSavedIndex(electron, mapping.value)).toBe(9);
+    }
+  });
+});
+
+describe('通用设置语言入口', () => {
+  it('新标签使用 10，英文与繁中均保留原有标签映射', () => {
+    for (const electron of [false, true]) {
+      const general = settingsTabsFor(electron, 'en-US')[0]!;
+      expect(general.label).toBe('General');
+      expect(tabValueToSavedIndex(electron, general.value)).toBe(10);
+      expect(settingsTabsFor(electron, 'zh-TW')[0]!.label).toBe('一般設定');
     }
   });
 });

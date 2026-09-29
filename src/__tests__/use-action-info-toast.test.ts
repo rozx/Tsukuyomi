@@ -23,10 +23,15 @@ const mockUseToastWithHistory = mock(() => ({
 }));
 
 const mockBooksStoreGetBookById = mock(() => null);
+const mockRestoreEntity = mock(
+  (_bookId: string, _kind: string, _entity: Terminology | CharacterSetting, _operationId: string) =>
+    Promise.resolve({} as Terminology),
+);
 const mockBooksStoreUpdateBook = mock(() => Promise.resolve());
 const mockUseBooksStore = mock(() => ({
   getBookById: mockBooksStoreGetBookById,
   updateBook: mockBooksStoreUpdateBook,
+  restoreEntity: mockRestoreEntity,
 }));
 
 const mockDeleteTerminology = mock(() => Promise.resolve());
@@ -146,12 +151,45 @@ describe('countUniqueActions', () => {
 });
 
 describe('useActionInfoToast', () => {
+  it('删除撤销固定原书籍和操作身份，重复点击使用同一回执', async () => {
+    const originalBook = ref({ id: 'original', title: 'Original' } as Novel);
+    const { handleActionInfoToast } = useActionInfoToast(originalBook);
+    const previous: Terminology = {
+      id: 'term',
+      name: 'Term',
+      translation: { id: 'cn', translation: '术语', aiModelId: 'm' },
+    };
+    handleActionInfoToast(
+      {
+        entity: 'term',
+        type: 'delete',
+        data: { id: 'term', name: 'Term' },
+        previousData: previous,
+      },
+      { withRevert: true },
+    );
+    const callback = (
+      mockToastAdd.mock.calls as unknown as Array<[{ onRevert: () => Promise<void> }]>
+    ).at(-1)![0].onRevert;
+    originalBook.value = { id: 'another', title: 'Another' } as Novel;
+    await callback();
+    await callback();
+    const first = mockRestoreEntity.mock.calls.at(-2);
+    const second = mockRestoreEntity.mock.calls.at(-1);
+    expect(first?.[0]).toBe('original');
+    expect(first?.[1]).toBe('term');
+    expect(first?.[2]).toEqual(previous);
+    expect(first?.[3]).toBeTruthy();
+    expect(first).toEqual(second);
+  });
+
   let mockBook: Novel;
 
   beforeEach(() => {
     mockToastAdd.mockClear();
     mockBooksStoreGetBookById.mockClear();
     mockBooksStoreUpdateBook.mockClear();
+    mockRestoreEntity.mockClear();
     mockDeleteTerminology.mockClear();
     mockUpdateTerminology.mockClear();
     mockDeleteCharacterSetting.mockClear();
@@ -168,6 +206,7 @@ describe('useActionInfoToast', () => {
     spyOn(BooksStore, 'useBooksStore').mockReturnValue({
       getBookById: mockBooksStoreGetBookById,
       updateBook: mockBooksStoreUpdateBook,
+      restoreEntity: mockRestoreEntity,
     } as any);
     spyOn(useToastHistory, 'useToastWithHistory').mockImplementation(mockUseToastWithHistory);
 

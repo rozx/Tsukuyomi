@@ -5,6 +5,7 @@ import { CharacterSettingService } from 'src/services/character-setting-service'
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { Terminology, CharacterSetting, Novel } from 'src/models/novel';
 import type { Ref } from 'vue';
+import { v4 } from 'uuid';
 
 /**
  * 统计唯一的操作数量（按实体类型分组）
@@ -20,58 +21,18 @@ async function revertCreate(bookId: string, action: ActionInfo): Promise<void> {
   }
 }
 
-async function revertUpdate(bookId: string, action: ActionInfo): Promise<void> {
-  if (action.entity === 'term') {
-    const previousTerm = action.previousData as Terminology;
-    await TerminologyService.updateTerminology(bookId, previousTerm.id, {
-      name: previousTerm.name,
-      translation: previousTerm.translation.translation,
-      ...(previousTerm.description !== undefined
-        ? { description: previousTerm.description }
-        : {}),
-    });
-    return;
-  }
-  const previousChar = action.previousData as CharacterSetting;
-  await CharacterSettingService.updateCharacterSetting(bookId, previousChar.id, {
-    name: previousChar.name,
-    ...(previousChar.sex !== undefined ? { sex: previousChar.sex } : {}),
-    translation: previousChar.translation.translation,
-    ...(previousChar.description !== undefined ? { description: previousChar.description } : {}),
-    ...(previousChar.speakingStyle !== undefined
-      ? { speakingStyle: previousChar.speakingStyle }
-      : {}),
-    aliases: previousChar.aliases.map((a) => ({
-      name: a.name,
-      translation: a.translation.translation,
-    })),
-  });
-}
-
-async function revertDelete(
+async function restorePreviousEntity(
   bookId: string,
   action: ActionInfo,
   booksStore: ReturnType<typeof useBooksStore>,
+  operationId: string,
 ): Promise<void> {
-  const currentBook = booksStore.getBookById(bookId);
-  if (!currentBook) return;
-  if (action.entity === 'term') {
-    const previousTerm = action.previousData as Terminology;
-    const current = currentBook.terminologies || [];
-    if (current.some((t) => t.id === previousTerm.id)) return;
-    await booksStore.updateBook(currentBook.id, {
-      terminologies: [...current, previousTerm],
-      lastEdited: new Date(),
-    });
-    return;
-  }
-  const previousChar = action.previousData as CharacterSetting;
-  const current = currentBook.characterSettings || [];
-  if (current.some((c) => c.id === previousChar.id)) return;
-  await booksStore.updateBook(currentBook.id, {
-    characterSettings: [...current, previousChar],
-    lastEdited: new Date(),
-  });
+  await booksStore.restoreEntity(
+    bookId,
+    action.entity === 'term' ? 'term' : 'character',
+    action.previousData as Terminology | CharacterSetting,
+    operationId,
+  );
 }
 
 export function countUniqueActions(actions: ActionInfo[]): { terms: number; characters: number } {
@@ -175,16 +136,17 @@ export function useActionInfoToast(book: Ref<Novel | undefined>) {
   const toast = useToastWithHistory();
   const booksStore = useBooksStore();
 
-  const buildRevertHandler = (action: ToastableAction) => async () => {
-    if (!book.value) return;
-    const bookId = book.value.id;
-    if (action.type === 'create') {
-      await revertCreate(bookId, action);
-    } else if (action.type === 'update' && action.previousData) {
-      await revertUpdate(bookId, action);
-    } else if (action.type === 'delete' && action.previousData) {
-      await revertDelete(bookId, action, booksStore);
-    }
+  const buildRevertHandler = (action: ToastableAction) => {
+    const bookId = book.value?.id;
+    const operationId = v4();
+    return async () => {
+      if (!bookId) return;
+      if (action.type === 'create') {
+        await revertCreate(bookId, action);
+      } else if (action.previousData) {
+        await restorePreviousEntity(bookId, action, booksStore, operationId);
+      }
+    };
   };
 
   const handleActionInfoToast = (

@@ -8,6 +8,9 @@
  * buildBookLevelPayload() 取书籍级 payload 落库。
  */
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { languageOptions } from 'src/i18n/translate';
+import { resolveAppLocale } from 'src/models/locale';
 import InputSwitch from 'primevue/inputswitch';
 import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
@@ -33,6 +36,8 @@ const props = defineProps<{
 }>();
 
 const aiModelsStore = useAIModelsStore();
+const { t, locale } = useI18n();
+const languages = computed(() => languageOptions(resolveAppLocale(locale.value, [])));
 
 // 表单状态从书籍同步（bookToFormState 承载字段映射与默认值语义）
 const state = ref(bookToFormState(props.book));
@@ -94,6 +99,20 @@ const proofreadingModelSelection = computed({
 <template>
   <!-- 宽屏两列（左列开关，右列模型覆盖+分块），窄容器（手机抽屉）退化为单列 -->
   <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
+    <div class="xl:col-span-2 rounded-lg border border-white/10 p-3 space-y-2">
+      <label for="book-target-language" class="block text-sm font-medium">{{
+        t('books.targetLanguage')
+      }}</label>
+      <Select
+        input-id="book-target-language"
+        v-model="state.targetLanguage"
+        :options="languages"
+        option-label="label"
+        option-value="value"
+        class="w-full max-w-md"
+      />
+      <p class="text-xs text-moon/60">{{ t('books.targetLanguageHint') }}</p>
+    </div>
     <div class="space-y-4">
       <!-- 开关设置（统一分组） -->
       <div class="rounded-lg border border-white/10 bg-white/5 overflow-hidden">

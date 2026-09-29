@@ -15,7 +15,7 @@
     "update:model-limits": "bun scripts/update-model-limits.ts",
     "lint": "bunx eslint --quiet .",
     "type-check": "bunx vue-tsc --noEmit",
-    "quality-check": "cross-env FALLOW_COVERAGE=coverage/coverage-final.json bunx fallow --baseline .fallow-baseline.json && bun run quality-check:ci",
+    "quality-check": "bun run check:i18n && cross-env FALLOW_COVERAGE=coverage/coverage-final.json bunx fallow --baseline .fallow-baseline.json && bun run quality-check:ci",
     "quality-check:ci": "cross-env FALLOW_COVERAGE=coverage/coverage-final.json bun scripts/fallow-ci-check.ts",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
     "test": "cross-env NODE_OPTIONS=--max-old-space-size=2048 vitest run",
@@ -32,12 +32,14 @@
     "build:electron:debug": "ELECTRON_DEBUG=true quasar build -m electron",
     "postinstall": "quasar prepare",
     "build:electron:app": "cross-env NODE_ENV=production quasar build -m electron",
-    "pack:electron": "bun scripts/desktop-release.ts pack"
+    "pack:electron": "bun scripts/desktop-release.ts pack",
+    "check:i18n": "bun scripts/check-i18n.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4",
     "@ai-sdk/openai-compatible": "^3",
     "@huggingface/transformers": "^4.3",
+    "@intlify/core-base": "11.4.6",
     "@octokit/rest": "^22.0.1",
     "@primevue/themes": "^4.5.4",
     "@quasar/extras": "^1.18.0",
@@ -73,6 +75,7 @@
   "devDependencies": {
     "@electron/packager": "20.3.0",
     "@eslint/js": "^9.39.4",
+    "@intlify/message-compiler": "11.4.6",
     "@intlify/unplugin-vue-i18n": "^4.0.0",
     "@quasar/app-vite": "^2.6.2",
     "@types/bun": "^1.3.14",

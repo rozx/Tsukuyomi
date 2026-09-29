@@ -18,7 +18,7 @@ import {
   formatRelativeBookDate,
   getTotalChapters as utilGetTotalChapters,
 } from 'src/utils';
-import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
+import { buildNovelRevertUpdates, buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { isConfirmationTextMatch } from 'src/utils/text-utils';
 import { cloneDeep } from 'lodash';
 
@@ -358,8 +358,7 @@ function createBooksPageContext() {
 
     try {
       const data = await SettingsService.readJsonFile(file);
-      const { novels: importedBooks, memoriesByBookId } =
-        SettingsService.parseBookImportData(data);
+      const { novels: importedBooks, memoriesByBookId } = SettingsService.parseBookImportData(data);
 
       const stats = await importBookEntries(importedBooks);
       const memory = await importMemoriesForBooks(memoriesByBookId, stats.oldIdToNewId);
@@ -482,6 +481,7 @@ function createBooksPageContext() {
   };
 
   const saveNewBook = createSaveNewBookHandler({
+    getUiLocale: () => settingsStore.uiLocale,
     booksStore,
     coverHistoryStore,
     toast,
@@ -494,6 +494,7 @@ function createBooksPageContext() {
     if (!selectedBook.value) return;
     const updates = buildNovelUpdatesFromFormData(formData);
     const oldBook = cloneDeep(selectedBook.value);
+    const revertUpdates = buildNovelRevertUpdates(oldBook, updates);
     await booksStore.updateBook(selectedBook.value.id, updates);
     showEditDialog.value = false;
     const bookTitle = updates.title || selectedBook.value.title;
@@ -503,7 +504,7 @@ function createBooksPageContext() {
       summary: '更新成功',
       detail: `已成功更新书籍 "${bookTitle}"`,
       life: 3000,
-      onRevert: () => booksStore.updateBook(oldBook.id, oldBook),
+      onRevert: () => booksStore.updateBook(oldBook.id, revertUpdates),
     });
   };
 

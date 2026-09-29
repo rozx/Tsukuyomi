@@ -162,7 +162,8 @@ class BookSyncSession {
     );
     if (!result.ok) {
       // 额度耗尽不代表配方失效：报检查失败（可稍后重试 / 补充额度），不引导重建配方
-      if (result.code === FIRECRAWL_QUOTA_CODE) throw new BookSyncError(result.code, result.message);
+      if (result.code === FIRECRAWL_QUOTA_CODE)
+        throw new BookSyncError(result.code, result.message);
       this.invalidate(result.code, result.message);
       return false;
     }
@@ -381,6 +382,7 @@ class BookSyncSession {
                   text,
                   translations: [],
                   selectedTranslationId: '',
+                  selectedTranslations: {},
                 })),
               ...(update ? { chapterId: update.chapterId } : {}),
               ...(proposed
@@ -403,8 +405,7 @@ class BookSyncSession {
     // Firecrawl 额度耗尽：未抓取的所选章节同样记为额度失败，已抓取的照常写入
     if (quotaFailure) {
       const { code, message } = quotaFailure;
-      for (const entry of entries.slice(cursor))
-        failed.push({ url: entry.url, code, message });
+      for (const entry of entries.slice(cursor)) failed.push({ url: entry.url, code, message });
     }
     return {
       writes: entries.flatMap((e) => (writes.has(e.url) ? [writes.get(e.url)!] : [])),

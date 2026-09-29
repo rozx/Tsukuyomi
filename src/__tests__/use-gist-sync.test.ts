@@ -52,6 +52,7 @@ function createMockSettingsStore(overrides: Record<string, unknown> = {}) {
     updateLastSyncTime: mock(() => Promise.resolve()),
     updateLastRemoteETag: mock(() => Promise.resolve()),
     updateKnownRemoteHashes: mock(() => Promise.resolve()),
+    updateKnownRemoteSchemaVersion: mock((_version: number) => Promise.resolve()),
     updateKnownRemoteEntries: mock(() => Promise.resolve()),
     updateKnownRemoteTombstones: mock(() => Promise.resolve()),
     cleanupOldDeletionRecords: mock(() => Promise.resolve()),
@@ -498,16 +499,15 @@ describe('useGistSync (manifest-driven flow)', () => {
       });
       spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
 
-      const verifySpy = spyOn(
-        GistSyncService.prototype,
-        'verifyRemoteUnchanged',
-      ).mockResolvedValue({
-        status: 'changed',
-        etag: 'etag-v2',
-        files: {
-          'manifest.json': { content: JSON.stringify(stableManifest) },
+      const verifySpy = spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockResolvedValue(
+        {
+          status: 'changed',
+          etag: 'etag-v2',
+          files: {
+            'manifest.json': { content: JSON.stringify(stableManifest) },
+          },
         },
-      });
+      );
 
       const uploadSpy = spyOn(
         GistSyncService.prototype,
@@ -775,9 +775,7 @@ describe('useGistSync (manifest-driven flow)', () => {
       await sync();
 
       const persisted = (
-        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as
-          | unknown[]
-          | undefined
+        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as unknown[] | undefined
       )?.[0] as Record<string, string>;
       // 失败条目保留旧哈希 → 下轮 diff 会重新拉取；其余条目正常采用新 manifest 值
       expect(persisted?.[novelEntryKey('book-1')]).toBe('old-hash');
@@ -810,9 +808,7 @@ describe('useGistSync (manifest-driven flow)', () => {
       await sync();
 
       const persisted = (
-        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as
-          | unknown[]
-          | undefined
+        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as unknown[] | undefined
       )?.[0] as Record<string, string>;
       expect(persisted?.[novelEntryKey('book-1')]).toBe('old-hash');
     });

@@ -47,7 +47,7 @@ describe('导入严格书库读取', () => {
       result.kind === 'loaded' &&
         result.chapters.inline?.kind === 'loaded' &&
         result.chapters.inline.content,
-    ).toEqual([paragraph]);
+    ).toMatchObject([paragraph]);
     expect(
       result.kind === 'loaded' &&
         result.chapters.inline?.kind === 'loaded' &&
@@ -86,12 +86,12 @@ describe('导入严格书库读取', () => {
     await db.put('chapter-contents', { chapterId: 'c', content, lastModified: 'time' });
     setCacheMiss('c');
     const loaded = await ImportLibraryReader.readChapter('c');
-    expect(loaded.kind === 'loaded' && loaded.content).toEqual([paragraph]);
+    expect(loaded.kind === 'loaded' && loaded.content).toMatchObject([paragraph]);
     const old = [{ ...paragraph, text: '旧缓存' }];
     setCacheEntry('c', { parsed: old, serialized: JSON.stringify(old) });
-    expect(await loadChapterContent('c')).toEqual(old);
+    expect(await loadChapterContent('c')).toMatchObject(old);
     const fresh = await ImportLibraryReader.readChapter('c');
-    expect(fresh.kind === 'loaded' && fresh.content).toEqual([paragraph]);
+    expect(fresh.kind === 'loaded' && fresh.content).toMatchObject([paragraph]);
     const failing = spyOn(db, 'transaction').mockImplementationOnce(() => {
       throw new Error('storage unavailable');
     });
@@ -99,7 +99,7 @@ describe('导入严格书库读取', () => {
     failing.mockRestore();
     expect((await ImportLibraryReader.readChapter('c')).kind).toBe('loaded');
     // 严格读入口不改变原 loader 的调用行为或缓存。
-    expect(await loadChapterContent('c')).toEqual(old);
+    expect(await loadChapterContent('c')).toMatchObject(old);
   });
 
   it('小说、修改序号和各章读取状态来自同一只读事务，不把错误章节装成空内容', async () => {

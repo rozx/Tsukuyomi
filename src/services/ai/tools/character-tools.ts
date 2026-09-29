@@ -59,6 +59,10 @@ export const characterTools: ToolDefinition[] = [
               items: {
                 type: 'object',
                 properties: {
+                  id: {
+                    type: 'string',
+                    description: '已有别名的稳定 ID；改名时必须保留。新增别名省略。',
+                  },
                   name: {
                     type: 'string',
                     description:
@@ -87,7 +91,7 @@ export const characterTools: ToolDefinition[] = [
         sex?: string;
         description?: string;
         speaking_style?: string;
-        aliases?: Array<{ name: string; translation: string }>;
+        aliases?: Array<{ id?: string; name: string; translation: string }>;
       }>(args);
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
@@ -104,7 +108,7 @@ export const characterTools: ToolDefinition[] = [
         sex?: 'male' | 'female' | 'other';
         description?: string;
         speakingStyle?: string;
-        aliases?: Array<{ name: string; translation: string }>;
+        aliases?: Array<{ id?: string; name: string; translation: string }>;
       } = {
         name: name.trim(),
         translation: normalizeTranslationQuotes(translation.trim()),
@@ -306,6 +310,10 @@ export const characterTools: ToolDefinition[] = [
               items: {
                 type: 'object',
                 properties: {
+                  id: {
+                    type: 'string',
+                    description: '已有别名的稳定 ID；改名时必须保留。新增别名省略。',
+                  },
                   name: {
                     type: 'string',
                     description: '别名名称（日文原文）',
@@ -333,7 +341,7 @@ export const characterTools: ToolDefinition[] = [
         sex?: string;
         description?: string;
         speaking_style?: string;
-        aliases?: Array<{ name: string; translation: string }>;
+        aliases?: Array<{ id?: string; name: string; translation: string }>;
       }>(args);
       const { bookId, onAction, character_id } = requireCharacterContext(context, parsedArgs);
       const { name, translation, sex, description, speaking_style, aliases } = parsedArgs;
@@ -356,7 +364,7 @@ export const characterTools: ToolDefinition[] = [
         translation?: string;
         description?: string;
         speakingStyle?: string;
-        aliases?: Array<{ name: string; translation: string }>;
+        aliases?: Array<{ id?: string; name: string; translation: string }>;
       } = {};
 
       if (name !== undefined) {

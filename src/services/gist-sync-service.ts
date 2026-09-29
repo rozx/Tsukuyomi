@@ -24,6 +24,8 @@ import {
   type UploadPayload,
 } from 'src/services/gist-sync-incremental';
 import type { EntryValue, GistFileLike } from 'src/services/gist-sync-incremental';
+import { ManifestProtocolError, parseGistManifest } from 'src/utils/manifest-protocol';
+import { normalizeBookLanguages } from './localization/normalize';
 
 /**
  * Gist 文件名称常量
@@ -883,7 +885,7 @@ export class GistSyncService {
       }
 
       const { files, uploadStats, preparePhaseItems, totalItems } = await this.prepareUploadFiles(
-        data,
+        { ...data, novels: data.novels.map(normalizeBookLanguages) },
         onProgress,
       );
       const estimatedUploadItems = totalItems - preparePhaseItems;
@@ -1120,6 +1122,7 @@ export class GistSyncService {
 
     try {
       const currentGist = await this.octokit.rest.gists.get({ gist_id: existingGistId });
+      await this.assertGistProtocol(currentGist.data.files ?? {});
       this.markOrphanedRemoteFilesForDeletion(files, currentGist.data.files || {});
 
       const allFiles = Object.entries(files);
@@ -1149,12 +1152,35 @@ export class GistSyncService {
       this.reportProgress(onProgress, totalItems, totalItems, '上传完成，正在验证...');
     } catch (error) {
       // 明确的更新失败或冲突：向外抛；其他错误（例如 Gist 不存在）吞掉，让调用方走"创建"路径
-      if (isExplicitUpdateFailure(error)) {
+      if (error instanceof ManifestProtocolError || isExplicitUpdateFailure(error)) {
         throw error;
       }
     }
 
     return { totalItems, gistId, gistUrl };
+  }
+
+  private async assertGistProtocol(
+    files: Record<string, GistFileLike | null | undefined>,
+  ): Promise<void> {
+    if (!files[MANIFEST_FILE_NAME]) return;
+    try {
+      const content = await readFile(
+        MANIFEST_FILE_NAME,
+        files as Record<string, GistFileLike>,
+        async (url) => {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.text();
+        },
+      );
+      parseGistManifest(content ?? '');
+    } catch (error) {
+      if (error instanceof ManifestProtocolError) throw error;
+      throw new ManifestProtocolError(
+        error instanceof Error ? error.message : 'manifest.json 读取失败',
+      );
+    }
   }
 
   /** 顺序 PATCH 所有批次；首批成功后记录新的 gistId/gistUrl */
@@ -1370,6 +1396,7 @@ export class GistSyncService {
       if (!gistFiles) {
         throw new Error('Gist 中没有文件');
       }
+      await this.assertGistProtocol(gistFiles);
 
       const result: GistSyncData = { aiModels: [], novels: [] };
       this.reportProgress(onProgress, 0, 1, '正在下载数据...');
@@ -1625,20 +1652,7 @@ export class GistSyncService {
       throw new Error('manifest.json 内容为空');
     }
 
-    let manifest: {
-      entries?: Record<string, { hash: string; lastEdited: string; chunks?: number }>;
-    };
-    try {
-      manifest = JSON.parse(manifestContent) as typeof manifest;
-    } catch (error) {
-      throw new Error(
-        `manifest.json 解析失败: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-
-    if (!manifest.entries || typeof manifest.entries !== 'object') {
-      throw new Error('manifest.json 缺少有效的 entries 字段');
-    }
+    const manifest = parseGistManifest(manifestContent);
 
     const result: GistSyncData = {
       aiModels: [],
@@ -1878,7 +1892,7 @@ export class GistSyncService {
 
     try {
       const parsedContent = await this.parseGistContent(fileContent);
-      return this.deserializeDates(parsedContent) as Novel;
+      return normalizeBookLanguages(this.deserializeDates(parsedContent) as Novel);
     } catch {
       return null;
     }
@@ -1900,7 +1914,7 @@ export class GistSyncService {
     if (fullChunkContent !== null) {
       try {
         const parsedContent = await this.parseGistContent(fullChunkContent);
-        return this.deserializeDates(parsedContent) as Novel;
+        return normalizeBookLanguages(this.deserializeDates(parsedContent) as Novel);
       } catch {
         // 分块解析失败，尝试单文件回退
       }

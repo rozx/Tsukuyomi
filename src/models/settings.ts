@@ -2,6 +2,7 @@ import type { AIModel, AIModelDefaultTasks } from '../services/ai/types/ai-model
 import type { Novel, CoverHistoryItem } from './novel';
 import type { SyncConfig } from './sync';
 import type { Memory } from './memory';
+import type { AppLocale } from './locale';
 
 /**
  * 任务默认模型配置
@@ -62,6 +63,8 @@ export interface ProxySiteMappingEntry {
  * 应用设置接口
  */
 export interface AppSettings {
+  /** 用户明确选择的界面语言；缺失时按本机系统语言匹配，不伪造同步偏好。 */
+  uiLocale?: AppLocale;
   /**
    * 最后编辑时间
    */

@@ -1,6 +1,13 @@
+import { indexBookChapters } from 'src/utils/book-chapters';
+import { normalizeBookLanguages } from '../localization/normalize';
+import { prepareBookRestore } from '../localization/restore';
+import { cloneDeep } from 'lodash';
 import type { IDBPTransaction } from 'idb';
 import type { ImportOperation, ImportPlan, ImportTask } from 'src/models/import';
 import type { Novel } from 'src/models/novel';
+import type { AppLocale } from 'src/models/locale';
+import { resolveAppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 import { getDB } from 'src/utils/indexed-db';
 import type { TsukuyomiDB } from 'src/utils/indexed-db';
 import { serializeDates } from 'src/utils/serialize-dates';
@@ -19,6 +26,7 @@ const STORES = [
   'import-tasks',
   'import-operations',
   'sync-configs',
+  'settings',
 ] as const;
 type Transaction = IDBPTransaction<TsukuyomiDB, typeof STORES, 'readwrite'>;
 
@@ -183,7 +191,10 @@ async function validatePreparedPlan(operation: ImportOperation) {
   return context;
 }
 
-export async function applyImportOperation(operation: ImportOperation): Promise<ImportOperation> {
+export async function applyImportOperation(
+  operation: ImportOperation,
+  creationLocale?: AppLocale,
+): Promise<ImportOperation> {
   const { plan } = operation;
   const context = await validatePreparedPlan(operation);
   const now = Date.now();
@@ -204,11 +215,24 @@ export async function applyImportOperation(operation: ImportOperation): Promise<
     const task = await tx.objectStore('import-tasks').get(plan.taskId);
     assertTask(task, plan);
     const book = await tx.objectStore('books').get(plan.targetBookId);
+    if (plan.targetKind === 'new') {
+      const settings = await tx.objectStore('settings').get('app');
+      const locale = resolveAppLocale(
+        settings?.uiLocale,
+        typeof navigator === 'undefined' ? [] : navigator.languages,
+      );
+      if (creationLocale !== locale)
+        throw new Error(
+          `CREATION_LOCALE_CHANGED: ${translateText(locale, 'import.creationLocaleChanged')}`,
+        );
+      next.targetLanguage = locale;
+    }
     const revision = (await tx.objectStore('book-revisions').get(plan.targetBookId))?.revision ?? 0;
     if (
       revision !== plan.baseBookRevision ||
       (book !== undefined) !== (plan.targetKind === 'existing') ||
-      canonicalStringify(book) !== canonicalStringify(context.snapshot?.book)
+      canonicalStringify(book ? normalizeBookLanguages(book) : book) !==
+        canonicalStringify(context.snapshot?.book)
     )
       throw new Error('PLAN_STALE: 目标小说已变化');
     const before = await captureBefore(tx, plan, book);
@@ -219,6 +243,7 @@ export async function applyImportOperation(operation: ImportOperation): Promise<
       before,
       state: 'applied',
       appliedAt: now,
+      appliedTargetLanguage: next.targetLanguage ?? 'zh-CN',
       pendingMaintenance: ['library'],
     };
     // 快照和书库属于同一个事务；先保存快照也不能留下单独的已应用回执。
@@ -274,7 +299,43 @@ function restoreTaskTarget(task: ImportTask, operation: ImportOperation): void {
   }
 }
 
+async function prepareRevertedBook(operation: ImportOperation): Promise<Novel | undefined> {
+  const receipt = await readImportOperation(operation.taskId, operation.id);
+  if (receipt.state !== 'applied' || !receipt.before?.book) return undefined;
+  const db = await getDB();
+  const current = await db.get('books', receipt.plan.targetBookId);
+  if (!current) return undefined;
+  const snapshot = cloneDeep(receipt.before.book);
+  const previous = cloneDeep(current);
+  const snapshotChapters = new Map(
+    (snapshot.volumes ?? []).flatMap((volume) =>
+      (volume.chapters ?? []).map((chapter) => [chapter.id, chapter] as const),
+    ),
+  );
+  const currentChapters = new Map(
+    (previous.volumes ?? []).flatMap((volume) =>
+      (volume.chapters ?? []).map((chapter) => [chapter.id, chapter] as const),
+    ),
+  );
+  for (const before of receipt.before.chapters) {
+    const old = ImportLibraryReader.decodeChapter(
+      before.record ? { ...before.record, chapterId: before.chapterId } : undefined,
+    );
+    if (old.kind === 'failed') throw new Error(`BOOK_READ_FAILED: ${old.message}`);
+    const desired = snapshotChapters.get(before.chapterId);
+    if (desired && old.kind === 'loaded') desired.content = old.content;
+    const existing = currentChapters.get(before.chapterId);
+    if (existing) {
+      const loaded = await ImportLibraryReader.readChapter(before.chapterId);
+      if (loaded.kind === 'failed') throw new Error(`BOOK_READ_FAILED: ${loaded.message}`);
+      if (loaded.kind === 'loaded') existing.content = loaded.content;
+    }
+  }
+  return prepareBookRestore(db, snapshot, previous, `import-revert:${receipt.id}`);
+}
+
 export async function revertImportOperation(operation: ImportOperation): Promise<ImportOperation> {
+  const restored = await prepareRevertedBook(operation);
   return mutateOperation(operation.id, 'reverted', async (tx, current) => {
     if (current?.state !== 'applied' || !current.before)
       throw new Error('UNDO_UNAVAILABLE: 此操作尚未应用或快照不可用');
@@ -287,8 +348,19 @@ export async function revertImportOperation(operation: ImportOperation): Promise
     if (revision !== current.postApplyBookRevision || !currentBook)
       throw new Error('BOOK_CHANGED: 目标小说已有后续修改，不能整次撤销');
     const now = Date.now();
+    const restoredChapters = indexBookChapters(restored);
     for (const chapter of before.chapters) {
-      if (chapter.record)
+      const restoredChapter = restoredChapters.get(chapter.chapterId);
+      if (chapter.record && restoredChapter?.content !== undefined) {
+        await tx.objectStore('chapter-contents').put({
+          ...(chapter.record ?? {
+            bookId: plan.targetBookId,
+            lastModified: String(restoredChapter.lastEdited),
+          }),
+          chapterId: chapter.chapterId,
+          content: canonicalStringify(restoredChapter.content),
+        });
+      } else if (chapter.record)
         await tx
           .objectStore('chapter-contents')
           .put({ ...chapter.record, chapterId: chapter.chapterId });
@@ -297,7 +369,7 @@ export async function revertImportOperation(operation: ImportOperation): Promise
     if (before.book)
       await tx.objectStore('books').put(
         serializeDates({
-          ...before.book,
+          ...restoredBookRecord(restored ?? before.book, before.chapters),
           ...(currentBook.defaultAIModel ? { defaultAIModel: currentBook.defaultAIModel } : {}),
           lastEdited: new Date(now),
         }),
@@ -322,4 +394,20 @@ export async function revertImportOperation(operation: ImportOperation): Promise
     await tx.objectStore('import-operations').put(current);
     return current;
   });
+}
+
+/** 保留撤销快照的物理布局：旧内嵌正文不被误写成独立记录。 */
+function restoredBookRecord(
+  book: Novel,
+  chapters: NonNullable<ImportOperation['before']>['chapters'],
+): Novel {
+  const result = cloneDeep(book);
+  const independent = new Set(
+    chapters.filter((chapter) => chapter.record !== null).map((chapter) => chapter.chapterId),
+  );
+  for (const volume of result.volumes ?? [])
+    for (const chapter of volume.chapters ?? []) {
+      if (independent.has(chapter.id)) delete chapter.content;
+    }
+  return result;
 }

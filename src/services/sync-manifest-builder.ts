@@ -16,6 +16,8 @@ import {
   type Tombstone,
 } from 'src/models/manifest';
 import { hashJson, hashString } from 'src/utils/content-hash';
+import { normalizeBookLanguages } from './localization/normalize';
+import { stripNovelLocalFields } from 'src/utils/sync-strip';
 
 /**
  * 构造本地 manifest 时需要的全部数据输入
@@ -58,18 +60,10 @@ export function buildMemoriesPayload(
   tombstones: MemoryTombstone[] | undefined,
 ): MemoriesPayload {
   const cleanTombstones = (tombstones ?? [])
-    .filter(
-      (t) =>
-        t &&
-        typeof t.id === 'string' &&
-        t.id.length > 0 &&
-        Number.isFinite(t.deletedAt),
-    )
+    .filter((t) => t && typeof t.id === 'string' && t.id.length > 0 && Number.isFinite(t.deletedAt))
     .slice()
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return cleanTombstones.length > 0
-    ? { memories, tombstones: cleanTombstones }
-    : { memories };
+  return cleanTombstones.length > 0 ? { memories, tombstones: cleanTombstones } : { memories };
 }
 
 /**
@@ -117,7 +111,7 @@ export async function buildLocalManifest(input: LocalManifestInput): Promise<Gis
   // 每本书
   for (const novel of input.novels) {
     entries[novelEntryKey(novel.id)] = {
-      hash: await hashJson(novel),
+      hash: await hashJson(stripNovelLocalFields(normalizeBookLanguages(novel))),
       lastEdited: new Date(novel.lastEdited ?? 0).toISOString(),
     };
   }
@@ -264,9 +258,10 @@ export function manifestToEntries(
 ): Record<string, { hash: string; chunks?: number }> {
   const result: Record<string, { hash: string; chunks?: number }> = {};
   for (const [key, entry] of Object.entries(manifest.entries)) {
-    result[key] = entry.chunks !== undefined
-      ? { hash: entry.hash, chunks: entry.chunks }
-      : { hash: entry.hash };
+    result[key] =
+      entry.chunks !== undefined
+        ? { hash: entry.hash, chunks: entry.chunks }
+        : { hash: entry.hash };
   }
   return result;
 }

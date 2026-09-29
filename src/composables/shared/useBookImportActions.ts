@@ -3,12 +3,14 @@ import type { useBooksStore } from 'src/stores/books';
 import type { useCoverHistoryStore } from 'src/stores/cover-history';
 import type { useToastWithHistory } from 'src/composables/useToastHistory';
 import { buildNovelFromFormData } from 'src/utils/novel-form';
+import type { AppLocale } from 'src/models/locale';
 
 /**
  * 新增书籍的共享依赖。差异只来自"关闭哪个弹窗"，通过 `onAfterImport` 回调传入。
  * （从网站导入已改为 /books/new/web 同步工作区，由同步服务写入。）
  */
 export interface CreateImportBookHandlerOptions {
+  getUiLocale: () => AppLocale;
   booksStore: ReturnType<typeof useBooksStore>;
   coverHistoryStore: ReturnType<typeof useCoverHistoryStore>;
   toast: ReturnType<typeof useToastWithHistory>;
@@ -24,7 +26,7 @@ export function createSaveNewBookHandler(options: CreateImportBookHandlerOptions
   const { booksStore, coverHistoryStore, toast, onAfterImport } = options;
 
   return async function saveNewBook(formData: Partial<Novel>): Promise<void> {
-    const newBook = buildNovelFromFormData(formData);
+    const newBook = buildNovelFromFormData(formData, options.getUiLocale());
     await booksStore.addBook(newBook);
 
     if (newBook.cover) {

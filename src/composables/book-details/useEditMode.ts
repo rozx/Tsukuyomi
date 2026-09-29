@@ -89,6 +89,7 @@ export function useEditMode(
               text: line,
               selectedTranslationId: '',
               translations: [],
+              selectedTranslations: {},
             };
           } else {
             // 文本未改变，保留翻译

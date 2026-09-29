@@ -1,8 +1,14 @@
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { BookUpdateRecipe } from './book-sync';
+import type { AppLocale } from './locale';
+import type { EntityTombstone, FieldRevisions, LocalizedMap } from './localized-data';
 
 // 小说
 export interface Novel {
+  /** 旧格式输入可缺省，由语言归一化入口补为简中。 */
+  targetLanguage?: AppLocale;
+  entitySyncVersion?: 1;
+  entityTombstones?: Record<string, EntityTombstone>;
   updateRecipe?: BookUpdateRecipe;
   id: string;
   title: string;
@@ -115,6 +121,7 @@ export interface Volume {
     | {
         original: string;
         translation: Translation;
+        translationsByLanguage?: LocalizedMap<Translation>;
       };
   description?: string | undefined;
   cover?: CoverImage | undefined;
@@ -128,6 +135,7 @@ export interface Chapter {
     | {
         original: string;
         translation: Translation;
+        translationsByLanguage?: LocalizedMap<Translation>;
       };
   webUrl?: string | undefined; // 网络地址
 
@@ -210,6 +218,7 @@ export interface Chapter {
 }
 
 export interface Paragraph {
+  selectedTranslations?: LocalizedMap<string>;
   id: string;
   text: string;
   selectedTranslationId: string; // id of Translation
@@ -232,6 +241,8 @@ export interface ScoreBreakdown {
 }
 
 export interface Translation {
+  /** 无标记的旧版本归简中；语言槽内的记录属于该槽语言。 */
+  language?: AppLocale;
   id: string;
   translation: string;
   aiModelId: string; // id of AIModel
@@ -255,6 +266,8 @@ export interface Note {
 
 // 术语
 export interface Terminology {
+  translationsByLanguage?: LocalizedMap<Translation>;
+  fieldRevisions?: FieldRevisions;
   id: string;
   name: string;
   description?: string | undefined;
@@ -263,6 +276,8 @@ export interface Terminology {
 
 // 角色设定
 export interface CharacterSetting {
+  translationsByLanguage?: LocalizedMap<Translation>;
+  fieldRevisions?: FieldRevisions;
   id: string;
   name: string;
   sex: 'male' | 'female' | 'other' | undefined;
@@ -278,6 +293,10 @@ export interface Occurrence {
 }
 
 export interface Alias {
+  legacyConflict?: boolean;
+  id?: string;
+  translationsByLanguage?: LocalizedMap<Translation>;
+  fieldRevisions?: FieldRevisions;
   name: string;
   translation: Translation;
 }

@@ -1147,3 +1147,60 @@ describe('GistSyncService.getGistRevisions', () => {
     expect(result.revisions?.[0]?.files).toEqual([]);
   });
 });
+
+it('旧上传入口遇到未来 manifest 不更新或重建 Gist', async () => {
+  const service = new GistSyncService();
+  const update = mock(() => Promise.resolve({ data: { id: 'g', html_url: 'url' } }));
+  const create = mock(() => Promise.resolve({ data: { id: 'new', html_url: 'url' } }));
+  const octokit = {
+    rest: {
+      gists: {
+        get: () =>
+          Promise.resolve({
+            data: { files: { 'manifest.json': { content: '{"schemaVersion":99,"entries":{}}' } } },
+          }),
+        update,
+        create,
+      },
+    },
+  };
+  const internal = service as unknown as {
+    octokit: typeof octokit;
+    initializeOctokit(config: SyncConfig): void;
+  };
+  internal.octokit = octokit;
+  spyOn(internal, 'initializeOctokit').mockImplementation(() => {});
+  const result = await service.uploadToGist(makeConfig(), {
+    novels: [],
+    aiModels: [],
+    appSettings: { lastEdited: new Date(0), scraperConcurrencyLimit: 3 },
+  });
+  expect(result.success).toBe(false);
+  expect(update).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+});
+
+it('旧下载入口不能将未来布局解析为空旧快照', async () => {
+  const service = new GistSyncService();
+  const octokit = {
+    rest: {
+      gists: {
+        get: () =>
+          Promise.resolve({
+            data: {
+              files: { 'manifest.json': { content: '{"schemaVersion":99,"newLayout":{}}' } },
+            },
+          }),
+      },
+    },
+  };
+  const internal = service as unknown as {
+    octokit: typeof octokit;
+    initializeOctokit(config: SyncConfig): void;
+  };
+  internal.octokit = octokit;
+  spyOn(internal, 'initializeOctokit').mockImplementation(() => {});
+  const result = await service.downloadFromGist(makeConfig());
+  expect(result.success).toBe(false);
+  expect(result.error).toContain('较新版本');
+});

@@ -1,3 +1,4 @@
+import { appendLanguageTranslation } from '../services/localization/selection';
 import { ImportPreviewService } from '../services/import/import-preview-service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
@@ -14,6 +15,50 @@ import { peekCacheEntry } from '../utils/chapter-content-loader';
 import { book, draft } from './import-fixtures';
 import * as maintenance from '../services/chapter-content-maintenance';
 import { deferred, webLocksFixture } from './web-locks-fixture';
+import { useSettingsStore } from '../stores/settings';
+import { normalizeChapterLanguages } from '../services/localization/normalize';
+import type { Paragraph } from '../models/novel';
+
+// 明确恢复分配新的选用版本；原文、历史译文、语言选用及物理存储形状仍须准确还原。
+function contentBusiness(content: Paragraph[]) {
+  return normalizeChapterLanguages(content).map(({ selectedTranslations, ...paragraph }) => ({
+    ...paragraph,
+    selectedTranslations: Object.fromEntries(
+      Object.entries(selectedTranslations ?? {}).map(([locale, slot]) => [
+        locale,
+        { value: slot.value },
+      ]),
+    ),
+  }));
+}
+function chaptersBusiness(
+  chapters: Extract<
+    Awaited<ReturnType<typeof ImportLibraryReader.readBook>>,
+    { kind: 'loaded' }
+  >['chapters'],
+) {
+  return Object.fromEntries(
+    Object.entries(chapters).map(([id, read]) => [
+      id,
+      read.kind !== 'loaded'
+        ? read
+        : {
+            ...read,
+            content: contentBusiness(read.content),
+            ...(read.record
+              ? {
+                  record: {
+                    ...read.record,
+                    content: JSON.stringify(
+                      contentBusiness(JSON.parse(read.record.content) as Paragraph[]),
+                    ),
+                  },
+                }
+              : {}),
+          },
+    ]),
+  );
+}
 
 beforeEach(() => vi.stubGlobal('navigator', { locks: webLocksFixture() }));
 afterEach(() => {
@@ -39,6 +84,88 @@ async function updatePlan(original = book()) {
 }
 
 describe('用户确认后的原子应用与撤销', () => {
+  it('整次撤销恢复实体时使用新身份并保留被替换身份的删除记录', async () => {
+    const original = book();
+    original.characterSettings = [
+      {
+        id: 'c',
+        name: 'Alice',
+        sex: undefined,
+        translation: { id: 'cn', translation: '爱丽丝', aiModelId: 'm' },
+        aliases: [
+          { id: 'a', name: 'Al', translation: { id: 'cn-a', translation: '小爱', aiModelId: 'm' } },
+        ],
+      },
+    ];
+    const plan = await updatePlan(original);
+    const service = new ImportApplicationService();
+    await service.apply(await service.confirmApply(plan.taskId, plan.id));
+    const token = await service.confirmRevert(plan.taskId, plan.id);
+    await service.revert(token);
+    const restored = (await BookService.getBookById('book'))!;
+    expect(restored.characterSettings![0]!.id).not.toBe('c');
+    expect(restored.characterSettings![0]!.aliases[0]!.id).not.toBe('a');
+    expect(restored.entityTombstones!['["character",null,"c"]']).toBeDefined();
+    expect(restored.characterSettings![0]!.translation.translation).toBe('爱丽丝');
+    await service.revert(token);
+    expect((await BookService.getBookById('book'))!.characterSettings![0]!.id).toBe(
+      restored.characterSettings![0]!.id,
+    );
+  });
+
+  it('修订清空所有语言，未变段落保留各语言选用，撤销恢复全部语言', async () => {
+    const original = book();
+    for (const chapter of original.volumes!.flatMap((v) => v.chapters ?? [])) {
+      chapter.content = chapter.content?.map((paragraph) =>
+        appendLanguageTranslation(
+          paragraph,
+          'en-US',
+          { id: `${paragraph.id}-en`, translation: `English ${paragraph.id}`, aiModelId: 'm' },
+          { counter: 1, actorId: 'A' },
+          1000,
+        ),
+      );
+    }
+    const plan = await updatePlan(original);
+    expect(plan.summary?.clearedVersions).toBe(7);
+    const before = await ImportLibraryReader.readBook('book');
+    const service = new ImportApplicationService();
+    await service.apply(await service.confirmApply(plan.taskId, plan.id));
+    const after = await ImportLibraryReader.readBook('book');
+    if (after.kind !== 'loaded') throw new Error('missing book');
+    const content = after.chapters['old-c'];
+    if (content?.kind !== 'loaded') throw new Error('missing content');
+    expect(content.content[0]?.translations).toEqual([]);
+    expect(content.content[0]?.selectedTranslations).toEqual({});
+    expect(content.content[1]?.selectedTranslations?.['en-US']?.value).toBe('p2-en');
+    await service.revert(await service.confirmRevert(plan.taskId, plan.id));
+    const restored = await ImportLibraryReader.readBook('book');
+    if (restored.kind !== 'loaded' || before.kind !== 'loaded') throw new Error('missing book');
+    expect(chaptersBusiness(restored.chapters)).toEqual(chaptersBusiness(before.chapters));
+    const selected = restored.chapters['old-c'];
+    if (selected?.kind !== 'loaded') throw new Error('missing content');
+    expect(selected.content[0]!.selectedTranslations!['en-US']!.revision.counter).toBeGreaterThan(
+      1,
+    );
+  });
+  it('创建语言取最终确认值，确认后语言变化拒绝写入，已应用重试保持原回执', async () => {
+    const settings = useSettingsStore();
+    await settings.setUiLocale('zh-CN');
+    const input = await draft('Text');
+    const plan = await ImportPlanService.preview(input.taskId, 1);
+    const service = new ImportApplicationService();
+    const oldConfirmation = await service.confirmApply(input.taskId, plan.id);
+    await settings.setUiLocale('en-US');
+    await expect(service.apply(oldConfirmation)).rejects.toThrow('CREATION_LOCALE_CHANGED');
+    expect(await BookService.getBookById(plan.targetBookId)).toBeUndefined();
+    const confirmation = await service.confirmApply(input.taskId, plan.id);
+    const applied = await service.apply(confirmation);
+    expect(applied.appliedTargetLanguage).toBe('en-US');
+    expect((await BookService.getBookById(plan.targetBookId))?.targetLanguage).toBe('en-US');
+    await settings.setUiLocale('zh-TW');
+    expect((await service.apply(confirmation)).appliedTargetLanguage).toBe('en-US');
+    expect((await BookService.getBookById(plan.targetBookId))?.targetLanguage).toBe('en-US');
+  });
   it('预览之后新增的其他小说占用了章节 ID 时，不写入共享正文', async () => {
     const input = await draft('新正文');
     const plan = await ImportPlanService.preview(input.taskId, 1);
@@ -91,7 +218,7 @@ describe('用户确认后的原子应用与撤销', () => {
     await service.revert(token);
     const restored = await ImportLibraryReader.readBook('book');
     if (before.kind !== 'loaded' || restored.kind !== 'loaded') throw new Error('missing');
-    expect(restored.chapters).toEqual(before.chapters);
+    expect(chaptersBusiness(restored.chapters)).toEqual(chaptersBusiness(before.chapters));
     expect(restored.book.volumes).toEqual(before.book.volumes);
   });
 
@@ -233,8 +360,13 @@ describe('用户确认后的原子应用与撤销', () => {
     const bookId = firstPlan.targetBookId;
     const translatedId = firstPlan.mappings[0]!.chapterId;
     const translated = (await ChapterContentService.loadChapterContent(translatedId))!;
-    translated[0]!.translations = [{ id: 't-after', translation: '导入后新译', aiModelId: 'm' }];
-    translated[0]!.selectedTranslationId = 't-after';
+    translated[0] = appendLanguageTranslation(
+      translated[0]!,
+      'zh-CN',
+      { id: 't-after', translation: '导入后新译', aiModelId: 'm' },
+      { counter: 1, actorId: 'translation-test' },
+      1000,
+    );
     await ChapterContentService.saveChapterContent(translatedId, translated, { bookId });
 
     const applied = (await ImportRepository.getTask(input.taskId))!;
@@ -366,7 +498,7 @@ describe('用户确认后的原子应用与撤销', () => {
     await service.revert(await service.confirmRevert(plan.taskId, plan.id));
     const after = await ImportLibraryReader.readBook('book');
     if (after.kind !== 'loaded') throw new Error('missing');
-    expect(after.chapters).toEqual(before.chapters);
+    expect(chaptersBusiness(after.chapters)).toEqual(chaptersBusiness(before.chapters));
     expect(after.book.volumes).toEqual(before.book.volumes);
     expect(after.revision).toBeGreaterThan(applied.revision);
     expect(new Date(after.book.lastEdited).getTime()).toBeGreaterThan(
@@ -450,10 +582,12 @@ describe('用户确认后的原子应用与撤销', () => {
     await service.apply(await service.confirmApply(plan.taskId, fresh.id));
     await service.revert(await service.confirmRevert(plan.taskId, fresh.id));
     expect(await db.get('chapter-contents', 'old-c')).toBeUndefined();
-    expect((await db.get('books', 'book'))?.volumes?.[0]?.chapters?.[0]?.content).toEqual(
-      book().volumes![0]!.chapters![0]!.content,
+    expect(
+      contentBusiness((await db.get('books', 'book'))!.volumes![0]!.chapters![0]!.content!),
+    ).toEqual(contentBusiness(book().volumes![0]!.chapters![0]!.content!));
+    expect(peekCacheEntry('old-c')?.parsed).toMatchObject(
+      book().volumes![0]!.chapters![0]!.content!,
     );
-    expect(peekCacheEntry('old-c')?.parsed).toEqual(book().volumes![0]!.chapters![0]!.content);
   });
   it('既有段落排除正文后只清除受影响译文，应用和撤销后草稿仍保持清理结果', async () => {
     await BookService.saveBook(book());

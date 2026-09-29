@@ -1,10 +1,18 @@
 import { defineStore, acceptHMRUpdate } from 'pinia';
-import type { Novel, Paragraph, Volume, Chapter } from 'src/models/novel';
+import type {
+  Novel,
+  Paragraph,
+  Volume,
+  Chapter,
+  Terminology,
+  CharacterSetting,
+} from 'src/models/novel';
 import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { ImportLibraryReader } from 'src/services/import/import-library-reader';
 import { deleteCacheEntry } from 'src/utils/chapter-content-loader';
+import type { AppLocale } from 'src/models/locale';
 
 function collectRemovedChapterIds(
   previousVolumes: Volume[] | undefined,
@@ -162,6 +170,27 @@ export const useBooksStore = defineStore('books', {
   },
 
   actions: {
+    async rollbackBooks(books: Novel[]): Promise<void> {
+      await BookService.rollbackBooks(books);
+      this.books = await BookService.getAllBooks();
+    },
+
+    async replaceBooks(books: Novel[], operationId: string): Promise<void> {
+      await BookService.replaceBooks(books, operationId);
+      this.books = await BookService.getAllBooks();
+    },
+
+    async restoreEntity<T extends Terminology | CharacterSetting>(
+      bookId: string,
+      kind: 'term' | 'character',
+      entity: T,
+      operationId: string,
+    ): Promise<T> {
+      const value = await BookService.restoreEntity(bookId, kind, entity, operationId);
+      await this.refreshBookFromStorage(bookId);
+      return value;
+    },
+
     /**
      * 从 IndexedDB 加载所有书籍
      */
@@ -266,7 +295,7 @@ export const useBooksStore = defineStore('books', {
     async updateBook(
       id: string,
       updates: Partial<Novel>,
-      options?: { persist?: boolean; saveChapterContent?: boolean },
+      options?: { persist?: boolean; saveChapterContent?: boolean; targetLanguage?: AppLocale },
     ): Promise<void> {
       const index = this.books.findIndex((book) => book.id === id);
       if (index < 0) return;
@@ -279,7 +308,7 @@ export const useBooksStore = defineStore('books', {
         ...updates,
         lastEdited: updates.lastEdited ?? new Date(),
       };
-      const updatedBook = { ...existingBook, ...updatesWithLastEdited } as Novel;
+      let updatedBook = { ...existingBook, ...updatesWithLastEdited } as Novel;
       // 如果 cover 是 null，删除该属性
       if ('cover' in updates && updates.cover === null) {
         delete updatedBook.cover;
@@ -293,9 +322,38 @@ export const useBooksStore = defineStore('books', {
         );
       }
 
-      this.books[index] = updatedBook;
-
       if (persist) {
+        const entityEdit =
+          updates.terminologies !== undefined || updates.characterSettings !== undefined;
+        if (entityEdit && existingBook) {
+          const committed = await BookService.editEntities(
+            existingBook,
+            updates,
+            options?.targetLanguage ?? existingBook.targetLanguage ?? 'zh-CN',
+          );
+          const {
+            terminologies: _terms,
+            characterSettings: _characters,
+            lastEdited: _time,
+            ...otherUpdates
+          } = updates;
+          updatedBook = { ...committed, ...otherUpdates };
+          if (committed.volumes && existingBook.volumes && !updates.volumes) {
+            updatedBook.volumes = await preserveChapterContentsOnVolumesUpdate(
+              existingBook.volumes,
+              committed.volumes,
+            );
+          } else if (updates.volumes) {
+            updatedBook.volumes = await preserveChapterContentsOnVolumesUpdate(
+              existingBook.volumes ?? [],
+              updates.volumes,
+            );
+          }
+          if (Object.keys(otherUpdates).length === 0) {
+            this.books[index] = updatedBook;
+            return;
+          }
+        }
         // 优化：只更新元数据（如 terminologies、characterSettings）时跳过保存章节内容
         const isOnlyMetadataUpdate = !updates.volumes;
         const saveChapterContent =
@@ -303,6 +361,7 @@ export const useBooksStore = defineStore('books', {
         await BookService.saveBook(updatedBook, { saveChapterContent });
         await cleanupRemovedChapterData(id, removedChapterIds);
       }
+      this.books[index] = updatedBook;
     },
 
     /**

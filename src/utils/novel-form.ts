@@ -1,15 +1,19 @@
 import type { Novel } from 'src/models/novel';
 import { v4 as uuidv4 } from 'uuid';
+import type { AppLocale } from 'src/models/locale';
+import { isAppLocale } from 'src/models/locale';
 
 /**
  * 从 BookDialog 的 `Partial<Novel>` 表单数据构造新增书籍对象（含自生成 UUID 和时间戳）。
  * - 仅写入非空可选字段（空字符串/空数组视为"未填"）
  * - `title` 来自表单，调用方负责校验非空
  */
-export function buildNovelFromFormData(formData: Partial<Novel>): Novel {
+export function buildNovelFromFormData(formData: Partial<Novel>, targetLanguage: AppLocale): Novel {
+  if (!isAppLocale(targetLanguage)) throw new Error('INVALID_LOCALE');
   const now = new Date();
   return {
     id: uuidv4(),
+    targetLanguage,
     title: formData.title!,
     ...(formData.alternateTitles && formData.alternateTitles.length > 0
       ? { alternateTitles: formData.alternateTitles }
@@ -65,4 +69,16 @@ export function buildNovelUpdatesFromFormData(formData: Partial<Novel>): Partial
     updates.proofreadingInstructions = formData.proofreadingInstructions;
   }
   return updates;
+}
+
+/** 仅撤销这次表单写入的字段，后续译文、实体与正文继续保留。 */
+export function buildNovelRevertUpdates(book: Novel, updates: Partial<Novel>): Partial<Novel> {
+  return Object.fromEntries(
+    Object.keys(updates)
+      .filter((key) => key !== 'lastEdited')
+      .map((key) => {
+        const value = book[key as keyof Novel];
+        return [key, key === 'volumes' ? (value ?? []) : value];
+      }),
+  ) as Partial<Novel>;
 }

@@ -1,4 +1,5 @@
 import type { AppSettings, Settings } from 'src/models/settings';
+import { isAppLocale } from 'src/models/locale';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { Novel, CoverHistoryItem } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
@@ -206,6 +207,7 @@ function pickScraperConcurrency(value: unknown): number {
  * 任何新增的顶层 AppSettings 字段都需要在这里追加，否则导出/导入会静默丢失该字段。
  */
 function copyOptionalAppSettingsFields(target: AppSettings, source: AppSettings): void {
+  if (isAppLocale(source.uiLocale)) target.uiLocale = source.uiLocale;
   if (source.lastOpenedSettingsTab !== undefined) {
     target.lastOpenedSettingsTab = source.lastOpenedSettingsTab;
   }

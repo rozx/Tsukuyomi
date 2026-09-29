@@ -1,10 +1,12 @@
 import './setup';
 import { describe, expect, it } from 'bun:test';
 import {
-  buildNovelFromFormData,
+  buildNovelFromFormData as buildNewBook,
   buildNovelUpdatesFromFormData,
 } from 'src/utils/novel-form';
 import type { Novel } from 'src/models/novel';
+
+const buildNovelFromFormData = (data: Partial<Novel>) => buildNewBook(data, 'zh-CN');
 
 describe('buildNovelFromFormData', () => {
   it('最小输入仅含 title 时返回含 id / 时间戳的完整 Novel', () => {
@@ -203,5 +205,26 @@ describe('buildNovelUpdatesFromFormData', () => {
     expect(updates.translationInstructions).toBe('');
     expect(updates.polishInstructions).toBe('');
     expect(updates.proofreadingInstructions).toBe('');
+  });
+});
+
+it('撤销书籍表单只恢复表单改动字段，保留范围外的多语言实体和章节', async () => {
+  const { buildNovelRevertUpdates } = await import('../utils/novel-form');
+  const book = {
+    id: 'b',
+    title: 'Old',
+    author: 'Author',
+    createdAt: new Date(0),
+    lastEdited: new Date(0),
+    targetLanguage: 'en-US' as const,
+    terminologies: [
+      { id: 't', name: 'Term', translation: { id: 'cn', translation: '术语', aiModelId: 'm' } },
+    ],
+  };
+  expect(
+    buildNovelRevertUpdates(book, { title: 'New', author: 'New author', lastEdited: new Date() }),
+  ).toEqual({ title: 'Old', author: 'Author' });
+  expect(buildNovelRevertUpdates(book, { volumes: [{ id: 'new', title: 'New' }] })).toEqual({
+    volumes: [],
   });
 });

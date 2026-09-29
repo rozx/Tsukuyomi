@@ -6,6 +6,7 @@ import {
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { toRaw } from 'vue';
 import { cloneDeep } from 'lodash';
+import { v4 } from 'uuid';
 import type {
   AppSettings,
   MemoryInjectionSettings,
@@ -21,6 +22,8 @@ import {
   FIRECRAWL_MAPPING_TOKEN,
 } from 'src/constants/proxy';
 import { getDB } from 'src/utils/indexed-db';
+import { isAppLocale, resolveAppLocale } from 'src/models/locale';
+import type { AppLocale } from 'src/models/locale';
 
 // localStorage 仅用于向后兼容读取（历史版本曾使用 localStorage 存储 settings/syncs）
 const SETTINGS_STORAGE_KEY = 'tsukuyomi-settings';
@@ -30,6 +33,15 @@ const LEGACY_SYNC_STORAGE_KEYS = ['luna-ai-sync', 'tsukuyomi-sync'] as const;
 
 // IndexedDB 存储键（与 src/utils/indexed-db.ts 的 schema 一致）
 const SETTINGS_DB_KEY = 'app';
+
+// 写入完成后才发布设置；串行合并避免两个异步保存都从旧状态构造快照。
+const settingsWrites = new WeakMap<object, Promise<void>>();
+function serializeSettingsWrite(owner: object, mutation: () => Promise<void>): Promise<void> {
+  const previous = settingsWrites.get(owner) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(mutation);
+  settingsWrites.set(owner, next);
+  return next;
+}
 
 /**
  * 默认设置
@@ -159,6 +171,7 @@ function normalizeLoadedSettings(raw: unknown): AppSettings {
     memoryInjection: mergedMemoryInjection,
   };
 
+  if (!isAppLocale(loadedSettings.uiLocale)) delete loadedSettings.uiLocale;
   return loadedSettings;
 }
 
@@ -215,6 +228,7 @@ async function saveSettingsToDB(settings: AppSettings): Promise<void> {
     await db.put('settings', { key: SETTINGS_DB_KEY, ...clean });
   } catch (error) {
     console.error('Failed to save settings to IndexedDB:', error);
+    throw error;
   }
 }
 
@@ -381,6 +395,11 @@ export const useSettingsStore = defineStore('settings', {
   }),
 
   getters: {
+    uiLocale: (state): AppLocale =>
+      resolveAppLocale(
+        state.settings.uiLocale,
+        typeof navigator === 'undefined' ? [] : navigator.languages,
+      ),
     /**
      * 获取爬虫并发数限制
      */
@@ -479,13 +498,17 @@ export const useSettingsStore = defineStore('settings', {
      * 获取强制推送模式状态
      * 旧数据缺失时返回 { active: false }
      */
-    forceSyncMode: (state): { active: boolean; lastFailedAt?: number } => {
+    forceSyncMode: (state): NonNullable<SyncConfig['forceSyncMode']> => {
       const gistSync = state.syncs.find((sync) => sync.syncType === SyncType.Gist);
       return gistSync?.forceSyncMode ?? { active: false };
     },
   },
 
   actions: {
+    async setUiLocale(locale: AppLocale): Promise<void> {
+      if (!isAppLocale(locale)) throw new Error('不支持的界面语言');
+      await this.updateSettings({ uiLocale: locale });
+    },
     /**
      * 加载设置和同步配置
      * 优先从 IndexedDB 读取（与迁移逻辑一致），localStorage 仅作向后兼容回退
@@ -524,24 +547,26 @@ export const useSettingsStore = defineStore('settings', {
      * 需要深度合并 taskDefaultModels
      */
     async updateSettings(updates: Partial<AppSettings>): Promise<void> {
-      // 深度合并 taskDefaultModels
-      // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
-      const mergedSettings: AppSettings = {
-        ...this.settings,
-        ...updates,
-        lastEdited: updates.lastEdited ?? new Date(),
-      };
-
-      if (updates.taskDefaultModels !== undefined) {
-        mergedSettings.taskDefaultModels = {
-          ...this.settings.taskDefaultModels,
-          ...updates.taskDefaultModels,
+      return serializeSettingsWrite(this, async () => {
+        // 深度合并 taskDefaultModels
+        // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
+        const mergedSettings: AppSettings = {
+          ...this.settings,
+          ...updates,
+          lastEdited: updates.lastEdited ?? new Date(),
         };
-      }
 
-      this.settings = mergedSettings;
-      await saveSettingsToDB(this.settings);
-      await Promise.resolve();
+        if (updates.taskDefaultModels !== undefined) {
+          mergedSettings.taskDefaultModels = {
+            ...this.settings.taskDefaultModels,
+            ...updates.taskDefaultModels,
+          };
+        }
+
+        await saveSettingsToDB(mergedSettings);
+        this.settings = mergedSettings;
+        await Promise.resolve();
+      });
     },
 
     /**
@@ -586,71 +611,74 @@ export const useSettingsStore = defineStore('settings', {
      * 注意：syncs 配置不在此处处理，由同步逻辑单独处理
      */
     async importSettings(settings: Partial<AppSettings> & { syncs?: SyncConfig[] }): Promise<void> {
-      const previousEnableSemantic = this.settings.memoryInjection?.enableSemantic;
+      return serializeSettingsWrite(this, async () => {
+        const previousEnableSemantic = this.settings.memoryInjection?.enableSemantic;
 
-      // 处理 lastEdited：如果导入的设置包含 lastEdited，转换为 Date 对象并保留它
-      let preservedLastEdited: Date | undefined;
-      if (settings.lastEdited) {
-        preservedLastEdited =
-          typeof settings.lastEdited === 'string'
-            ? new Date(settings.lastEdited)
-            : settings.lastEdited;
-      }
+        // 处理 lastEdited：如果导入的设置包含 lastEdited，转换为 Date 对象并保留它
+        let preservedLastEdited: Date | undefined;
+        if (settings.lastEdited) {
+          preservedLastEdited =
+            typeof settings.lastEdited === 'string'
+              ? new Date(settings.lastEdited)
+              : settings.lastEdited;
+        }
 
-      // 迁移 proxySiteMapping（如果存在）
-      let migratedProxySiteMapping: Record<string, ProxySiteMappingEntry> | undefined;
-      if (settings.proxySiteMapping !== undefined) {
-        migratedProxySiteMapping = migrateProxySiteMapping(settings.proxySiteMapping);
-      }
+        // 迁移 proxySiteMapping（如果存在）
+        let migratedProxySiteMapping: Record<string, ProxySiteMappingEntry> | undefined;
+        if (settings.proxySiteMapping !== undefined) {
+          migratedProxySiteMapping = migrateProxySiteMapping(settings.proxySiteMapping);
+        }
 
-      // 深度合并 taskDefaultModels，确保不会丢失本地配置
-      // 先移除 lastEdited、proxySiteMapping 和 syncs（syncs 由同步逻辑单独处理），稍后单独处理
-      const {
-        lastEdited: _removed,
-        proxySiteMapping: _proxyMapping,
-        syncs: _syncs,
-        ...settingsWithoutSpecial
-      } = settings;
-      const mergedSettings: Partial<AppSettings> = {
-        ...settingsWithoutSpecial,
-      };
-
-      if (settings.taskDefaultModels !== undefined) {
-        // 如果远程有 taskDefaultModels，深度合并
-        mergedSettings.taskDefaultModels = {
-          ...this.settings.taskDefaultModels,
-          ...settings.taskDefaultModels,
+        // 深度合并 taskDefaultModels，确保不会丢失本地配置
+        // 先移除 lastEdited、proxySiteMapping 和 syncs（syncs 由同步逻辑单独处理），稍后单独处理
+        const {
+          lastEdited: _removed,
+          proxySiteMapping: _proxyMapping,
+          syncs: _syncs,
+          ...settingsWithoutSpecial
+        } = settings;
+        const mergedSettings: Partial<AppSettings> = {
+          ...settingsWithoutSpecial,
         };
-      }
+        if (!isAppLocale(mergedSettings.uiLocale)) delete mergedSettings.uiLocale;
 
-      // embeddingModelCached 是设备本地状态（浏览器是否缓存了模型文件），
-      // 同步时应保留本地值,避免远程覆盖导致误判
-      if (mergedSettings.memoryInjection && this.settings.memoryInjection) {
-        mergedSettings.memoryInjection = {
-          ...mergedSettings.memoryInjection,
-          embeddingModelCached: this.settings.memoryInjection.embeddingModelCached,
+        if (settings.taskDefaultModels !== undefined) {
+          // 如果远程有 taskDefaultModels，深度合并
+          mergedSettings.taskDefaultModels = {
+            ...this.settings.taskDefaultModels,
+            ...settings.taskDefaultModels,
+          };
+        }
+
+        // embeddingModelCached 是设备本地状态（浏览器是否缓存了模型文件），
+        // 同步时应保留本地值,避免远程覆盖导致误判
+        if (mergedSettings.memoryInjection && this.settings.memoryInjection) {
+          mergedSettings.memoryInjection = {
+            ...mergedSettings.memoryInjection,
+            embeddingModelCached: this.settings.memoryInjection.embeddingModelCached,
+          };
+        }
+
+        // 深度合并 taskDefaultModels
+        const finalSettings: AppSettings = {
+          ...this.settings,
+          ...mergedSettings,
+          // 如果有保留的 lastEdited，使用它；否则保留本地的 lastEdited（同步操作不应该更新 lastEdited）
+          lastEdited: preservedLastEdited || this.settings.lastEdited,
+          // 使用迁移后的 proxySiteMapping
+          ...(migratedProxySiteMapping !== undefined
+            ? { proxySiteMapping: migratedProxySiteMapping }
+            : {}),
         };
-      }
 
-      // 深度合并 taskDefaultModels
-      const finalSettings: AppSettings = {
-        ...this.settings,
-        ...mergedSettings,
-        // 如果有保留的 lastEdited，使用它；否则保留本地的 lastEdited（同步操作不应该更新 lastEdited）
-        lastEdited: preservedLastEdited || this.settings.lastEdited,
-        // 使用迁移后的 proxySiteMapping
-        ...(migratedProxySiteMapping !== undefined
-          ? { proxySiteMapping: migratedProxySiteMapping }
-          : {}),
-      };
-
-      this.settings = finalSettings;
-      await saveSettingsToDB(this.settings);
-      await applyMemoryInjectionSemanticSideEffect(
-        previousEnableSemantic,
-        this.settings.memoryInjection?.enableSemantic,
-      );
-      await Promise.resolve();
+        await saveSettingsToDB(finalSettings);
+        this.settings = finalSettings;
+        await applyMemoryInjectionSemanticSideEffect(
+          previousEnableSemantic,
+          this.settings.memoryInjection?.enableSemantic,
+        );
+        await Promise.resolve();
+      });
     },
 
     /**
@@ -662,30 +690,32 @@ export const useSettingsStore = defineStore('settings', {
      * - memoryInjection.embeddingModelCached
      */
     async replaceSettingsFromSyncSnapshot(settings: Partial<AppSettings>): Promise<void> {
-      const previousEnableSemantic = this.settings.memoryInjection?.enableSemantic;
-      const localEmbeddingModelCached =
-        this.settings.memoryInjection?.embeddingModelCached ??
-        DEFAULT_MEMORY_INJECTION.embeddingModelCached;
+      return serializeSettingsWrite(this, async () => {
+        const previousEnableSemantic = this.settings.memoryInjection?.enableSemantic;
+        const localEmbeddingModelCached =
+          this.settings.memoryInjection?.embeddingModelCached ??
+          DEFAULT_MEMORY_INJECTION.embeddingModelCached;
 
-      const { syncs: _syncs, ...snapshotSettings } = settings as Partial<AppSettings> & {
-        syncs?: SyncConfig[];
-      };
-      const normalized = normalizeLoadedSettings(snapshotSettings);
+        const { syncs: _syncs, ...snapshotSettings } = settings as Partial<AppSettings> & {
+          syncs?: SyncConfig[];
+        };
+        const normalized = normalizeLoadedSettings(snapshotSettings);
 
-      // normalizeLoadedSettings 会始终补齐 memoryInjection 默认值，这里直接覆盖设备本地缓存状态。
-      normalized.memoryInjection = {
-        ...DEFAULT_MEMORY_INJECTION,
-        ...normalized.memoryInjection,
-        embeddingModelCached: localEmbeddingModelCached,
-      };
+        // normalizeLoadedSettings 会始终补齐 memoryInjection 默认值，这里直接覆盖设备本地缓存状态。
+        normalized.memoryInjection = {
+          ...DEFAULT_MEMORY_INJECTION,
+          ...normalized.memoryInjection,
+          embeddingModelCached: localEmbeddingModelCached,
+        };
 
-      this.settings = normalized;
-      await saveSettingsToDB(this.settings);
-      await applyMemoryInjectionSemanticSideEffect(
-        previousEnableSemantic,
-        this.settings.memoryInjection?.enableSemantic,
-      );
-      await Promise.resolve();
+        await saveSettingsToDB(normalized);
+        this.settings = normalized;
+        await applyMemoryInjectionSemanticSideEffect(
+          previousEnableSemantic,
+          this.settings.memoryInjection?.enableSemantic,
+        );
+        await Promise.resolve();
+      });
     },
 
     /**
@@ -935,6 +965,7 @@ export const useSettingsStore = defineStore('settings', {
         );
       } catch (error) {
         console.error('Failed to patch sync config in IndexedDB:', error);
+        throw error;
       }
 
       if (index >= 0 && this.syncs[index]) {
@@ -1080,6 +1111,12 @@ export const useSettingsStore = defineStore('settings', {
       await this.updateGistSync({ knownRemoteHashes: hashes });
     },
 
+    async updateKnownRemoteSchemaVersion(version: number): Promise<void> {
+      if (!Number.isSafeInteger(version) || version < 1)
+        throw new Error('INVALID_MANIFEST_VERSION');
+      await this.updateGistSync({ knownRemoteSchemaVersion: version });
+    },
+
     /**
      * 更新已知的远程 manifest 条目元数据（entryKey -> { hash, chunks }）
      *
@@ -1103,14 +1140,24 @@ export const useSettingsStore = defineStore('settings', {
      * 更新强制推送模式状态
      * 传 { active: false } 时会同时清除 lastFailedAt
      */
-    async updateForceSyncMode(partial: {
-      active: boolean;
-      lastFailedAt?: number | undefined;
-    }): Promise<void> {
+    async updateForceSyncMode(
+      partial: {
+        active: boolean;
+        lastFailedAt?: number | undefined;
+        operationId?: string;
+      },
+      expectedOperationId?: string,
+    ): Promise<void> {
+      const current = this.gistSync.forceSyncMode;
+      if (expectedOperationId !== undefined && current?.operationId !== expectedOperationId) return;
+      if (partial.operationId !== undefined && !partial.operationId.trim())
+        throw new Error('INVALID_FORCE_OPERATION');
       // active=false 时强制清除 lastFailedAt，保证语义：关闭 = 完全退出强制模式
-      const next: { active: boolean; lastFailedAt?: number } = partial.active
+      const next: NonNullable<SyncConfig['forceSyncMode']> = partial.active
         ? {
             active: true,
+            operationId:
+              partial.operationId ?? (current?.active ? current.operationId : undefined) ?? v4(),
             ...(partial.lastFailedAt !== undefined ? { lastFailedAt: partial.lastFailedAt } : {}),
           }
         : { active: false };

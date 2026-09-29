@@ -13,8 +13,13 @@ import { bookCommitBus } from 'src/services/book-commit-notifications';
 import { BookSyncError } from './errors';
 import { resolveRecipe } from './recipe';
 import { mergeBookDeletionRecords } from 'src/services/sync-config-persistence';
+import { resolveAppLocale } from 'src/models/locale';
+import {
+  normalizeBookLanguages,
+  normalizeChapterLanguages,
+} from 'src/services/localization/normalize';
 
-const WRITE_STORES = ['books', 'chapter-contents', 'book-revisions'] as const;
+const WRITE_STORES = ['books', 'chapter-contents', 'book-revisions', 'settings'] as const;
 type WriteTransaction = IDBPTransaction<TsukuyomiDB, typeof WRITE_STORES, 'readwrite'>;
 
 type ChapterRecord = TsukuyomiDB['chapter-contents']['value'];
@@ -106,6 +111,13 @@ export async function commitSyncChanges(input: {
     )
       throw new BookSyncError('BOOK_CHANGED', '书籍已变化，请重新核对变更');
     const next = structuredClone(current ?? input.newBook!);
+    if (!current) {
+      const settings = await tx.objectStore('settings').get('app');
+      next.targetLanguage = resolveAppLocale(
+        settings?.uiLocale,
+        typeof navigator === 'undefined' ? [] : navigator.languages,
+      );
+    }
     const before: SyncBefore = {
       bookId: input.bookId,
       book: current ?? null,
@@ -141,7 +153,7 @@ export async function commitSyncChanges(input: {
       await tx.objectStore('chapter-contents').put({
         chapterId: id,
         bookId: input.bookId,
-        content: JSON.stringify(write.paragraphs),
+        content: JSON.stringify(normalizeChapterLanguages(write.paragraphs)),
         lastModified: now.toISOString(),
       });
     }
@@ -154,7 +166,7 @@ export async function commitSyncChanges(input: {
     }
     next.lastEdited = now;
     // 未受影响的旧式内嵌正文仍留在书籍记录中，避免迁移时丢失。
-    await tx.objectStore('books').put(serializeDates(next));
+    await tx.objectStore('books').put(serializeDates(normalizeBookLanguages(next)));
     before.postRevision = await bumpBookRevision(tx.objectStore('book-revisions'), input.bookId);
     return before;
   });

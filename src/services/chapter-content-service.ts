@@ -1,4 +1,6 @@
 import { getDB } from 'src/utils/indexed-db';
+import { normalizeChapterLanguages } from './localization/normalize';
+import { canonicalStringify } from 'src/utils/canonical-json';
 import type { Paragraph, Novel } from 'src/models/novel';
 import {
   loadChapterContent as loaderLoadChapterContent,
@@ -33,7 +35,7 @@ export class ChapterContentService {
    * 注意：我们使用“序列化快照”来做变更检测，避免“同一对象引用被就地修改”时无法发现变化。
    */
   private static serializeContent(content: Paragraph[]): string {
-    return JSON.stringify(content);
+    return canonicalStringify(normalizeChapterLanguages(content));
   }
 
   /**
@@ -68,8 +70,8 @@ export class ChapterContentService {
         setCacheMiss(chapterId);
         return true;
       }
-      const savedSerialized = chapterContent.content;
-      const saved = JSON.parse(savedSerialized) as Paragraph[];
+      const saved = normalizeChapterLanguages(JSON.parse(chapterContent.content));
+      const savedSerialized = canonicalStringify(saved);
       setCacheEntry(chapterId, { parsed: saved, serialized: savedSerialized });
       touch(chapterId);
       return savedSerialized !== serialized;

@@ -53,6 +53,7 @@ const makeMockSettingsStore = () => ({
     return Promise.resolve();
   },
   updateKnownRemoteEntries: () => Promise.resolve(),
+  updateKnownRemoteSchemaVersion: () => Promise.resolve(),
   updateKnownRemoteTombstones: () => Promise.resolve(),
   updateLastSyncTime: () => Promise.resolve(),
   cleanupOldDeletionRecords: () => Promise.resolve(),
@@ -297,4 +298,70 @@ describe('结构冲突提示', () => {
 
     expect(toastAdd).not.toHaveBeenCalled();
   });
+});
+
+it('协议升级在内容 hash 相同仍上传，读取或应用失败不发布新协议', async () => {
+  stubDownloadNoChanges();
+  const upload = stubUpload();
+  await useSyncExecutor().executeSync(callbacks);
+  upload.mockClear();
+  const current = await buildLocalManifest({
+    appSettings: { lastEdited: new Date(0), scraperConcurrencyLimit: 3 },
+    aiModels: [],
+    coverHistory: [],
+    novels: [],
+    memoriesByBook: {},
+  });
+  const download = spyOn(
+    GistSyncService.prototype,
+    'downloadFromGistWithManifest',
+  ).mockResolvedValue({
+    success: true,
+    skipped: false,
+    remoteETag: 'etag',
+    remoteUpdatedAt: '',
+    remoteFilesSnapshot: {},
+    manifest: { ...current, schemaVersion: 3 },
+    needsSchemaUpgrade: true,
+    changedEntries: {},
+    deletedEntries: [],
+    remoteTombstones: {},
+    remoteEntryKeys: Object.keys(current.entries),
+  });
+  spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([]);
+  expect((await useSyncExecutor().executeSync(callbacks)).success).toBe(true);
+  expect(upload).toHaveBeenCalledTimes(1);
+  upload.mockClear();
+  download.mockResolvedValue({
+    success: true,
+    skipped: false,
+    remoteETag: 'etag',
+    remoteUpdatedAt: '',
+    remoteFilesSnapshot: {},
+    manifest: { ...current, schemaVersion: 3 },
+    needsSchemaUpgrade: true,
+    changedEntries: {},
+    deletedEntries: [],
+    remoteTombstones: {},
+    remoteEntryKeys: [],
+    failedEntryKeys: ['novel:missing'],
+  });
+  expect((await useSyncExecutor().executeSync(callbacks)).success).toBe(false);
+  expect(upload).not.toHaveBeenCalled();
+  download.mockResolvedValue({
+    success: true,
+    skipped: false,
+    remoteETag: 'etag',
+    remoteUpdatedAt: '',
+    remoteFilesSnapshot: {},
+    manifest: { ...current, schemaVersion: 3 },
+    needsSchemaUpgrade: true,
+    changedEntries: {},
+    deletedEntries: [],
+    remoteTombstones: {},
+    remoteEntryKeys: [],
+  });
+  spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue(['novel:failed-write']);
+  expect((await useSyncExecutor().executeSync(callbacks)).success).toBe(false);
+  expect(upload).not.toHaveBeenCalled();
 });

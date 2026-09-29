@@ -6,6 +6,7 @@ import type { ToolContext } from './types';
 
 /** 角色别名入参（工具层使用的扁平结构，翻译已是字符串） */
 export interface CharacterAliasInput {
+  id?: string;
   name: string;
   translation: string;
 }
@@ -17,10 +18,10 @@ export interface CharacterAliasInput {
 export function assertAliasesNotBlank(aliases: CharacterAliasInput[] | undefined): void {
   if (!aliases || !Array.isArray(aliases)) return;
   const hasBlankAlias = aliases.some(
-    (alias) => !alias?.name?.trim() || !alias?.translation?.trim(),
+    (alias) => !alias?.name?.trim() || typeof alias.translation !== 'string',
   );
   if (hasBlankAlias) {
-    throw new Error('别名的名称和翻译不能为空');
+    throw new Error('别名名称不能为空，翻译必须是字符串');
   }
 }
 
@@ -30,6 +31,7 @@ export function assertAliasesNotBlank(aliases: CharacterAliasInput[] | undefined
  */
 export function normalizeAliasList(aliases: CharacterAliasInput[]): CharacterAliasInput[] {
   return aliases.map((alias) => ({
+    ...(alias.id ? { id: alias.id } : {}),
     name: alias.name.trim(),
     translation: normalizeTranslationQuotes(alias.translation.trim()),
   }));
@@ -41,7 +43,7 @@ function serializeTranslationText(translation: { translation?: string } | undefi
 
 function serializeCharacterAliasesForTool(
   aliases: CharacterSetting['aliases'] | undefined,
-): Array<{ name: string; translation: string }> {
+): Array<{ id?: string; name: string; translation: string }> {
   if (!Array.isArray(aliases) || aliases.length === 0) {
     return [];
   }
@@ -52,6 +54,7 @@ function serializeCharacterAliasesForTool(
         !!alias && typeof alias.name === 'string' && alias.name.length > 0,
     )
     .map((alias) => ({
+      ...(alias.id ? { id: alias.id } : {}),
       name: alias.name,
       translation: serializeTranslationText(alias.translation),
     }));
@@ -68,7 +71,7 @@ export function serializeCharacterForTool(char: CharacterSetting): {
   sex: CharacterSetting['sex'];
   description: CharacterSetting['description'];
   speaking_style: CharacterSetting['speakingStyle'];
-  aliases: Array<{ name: string; translation: string }>;
+  aliases: Array<{ id?: string; name: string; translation: string }>;
 } {
   return {
     id: char.id,

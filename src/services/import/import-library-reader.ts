@@ -1,3 +1,4 @@
+import { normalizeBookLanguages, normalizeChapterLanguages } from '../localization/normalize';
 import type { Novel, Paragraph, Chapter } from 'src/models/novel';
 import { getDB } from 'src/utils/indexed-db';
 import { deserializeDates, serializeDates } from 'src/utils/serialize-dates';
@@ -72,7 +73,7 @@ export class ImportLibraryReader {
         throw new Error('INVALID_CHAPTER_CONTENT: 段落或译文数据形状无效');
       if (new Set(parsed.map((p) => p.id)).size !== parsed.length)
         throw new Error('INVALID_CHAPTER_CONTENT: 段落标识重复');
-      return { kind: 'loaded', content: parsed, record };
+      return { kind: 'loaded', content: normalizeChapterLanguages(parsed), record };
     } catch (error) {
       return failure(error);
     }
@@ -128,7 +129,12 @@ export class ImportLibraryReader {
         }
         await tx.done;
         // 旧数据可能是 Date 或 ISO 字符串，先统一再按日期字段恢复。
-        return { kind: 'loaded', book: deserializeDates(serializeDates(raw)), revision, chapters };
+        return {
+          kind: 'loaded',
+          book: normalizeBookLanguages(deserializeDates(serializeDates(raw))),
+          revision,
+          chapters,
+        };
       } finally {
         await done;
       }

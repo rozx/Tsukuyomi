@@ -1,13 +1,9 @@
 import { computed, onMounted, watch, ref, inject, provide, type InjectionKey } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
+import { useSettingsStore } from 'src/stores/settings';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
-import {
-  getTotalChapters,
-  getAssetUrl,
-  formatWordCount,
-  formatRelativeBookDate,
-} from 'src/utils';
+import { getTotalChapters, getAssetUrl, formatWordCount, formatRelativeBookDate } from 'src/utils';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
@@ -43,6 +39,7 @@ export function injectIndexPage(): IndexPageContext {
 function createIndexPageContext() {
   const router = useRouter();
   const booksStore = useBooksStore();
+  const settingsStore = useSettingsStore();
   const coverHistoryStore = useCoverHistoryStore();
   const toast = useToastWithHistory();
 
@@ -99,6 +96,7 @@ function createIndexPageContext() {
   };
 
   const handleSave = createSaveNewBookHandler({
+    getUiLocale: () => settingsStore.uiLocale,
     booksStore,
     coverHistoryStore,
     toast,

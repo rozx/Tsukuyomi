@@ -1,3 +1,4 @@
+import type { AppLocale } from './locale';
 import type { ContextAnchor } from 'src/services/ai/context/measure';
 import type { ImportTextStructureBatch } from './import-text-structure';
 import type { ImportDraftBatch } from './import-draft-batch';
@@ -450,6 +451,7 @@ export interface ImportPlan {
 }
 
 export interface ImportOperation {
+  appliedTargetLanguage?: AppLocale;
   id: string;
   taskId: string;
   plan: ImportPlan;

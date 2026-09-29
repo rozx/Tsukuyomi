@@ -69,6 +69,7 @@ describe('导入精确段落匹配', () => {
       text: '修订乙',
       translations: [],
       selectedTranslationId: '',
+      selectedTranslations: {},
     });
     expect(result.changes.find((change) => change.paragraphId === 'b')?.clearedVersions).toBe(3);
     expect(

@@ -1,3 +1,4 @@
+import { v4 } from 'uuid';
 import { onMounted, onUnmounted } from 'vue';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
@@ -6,7 +7,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
-import { importMemoriesPreservingIdentity } from 'src/services/settings/memory-import';
+import { SyncDataService } from 'src/services/sync-data-service';
 import { isElectron } from 'src/utils/platform';
 import type { Memory } from 'src/models/memory';
 import type { Novel } from 'src/models/novel';
@@ -66,36 +67,6 @@ export function useElectronSettings() {
     }
   };
 
-  // 覆盖语义：字段在快照里就替换（即便是空数组）。undefined 才跳过。
-
-  const importAiModels = async (
-    models: Exclude<ReturnType<typeof SettingsService.validateAndParseSettings>['data'], undefined>['models'] | undefined,
-  ): Promise<void> => {
-    if (models === undefined) return;
-    await aiModelsStore.bulkImportModels(models);
-  };
-
-  const importNovels = async (
-    novels: Array<Parameters<typeof booksStore.bulkAddBooks>[0][number]> | undefined,
-  ): Promise<void> => {
-    if (novels === undefined) return;
-    await booksStore.clearBooks();
-    await booksStore.bulkAddBooks(novels);
-  };
-
-  const importCoverHistory = async (
-    covers: Array<Parameters<typeof coverHistoryStore.addCover>[0]> | undefined,
-  ): Promise<void> => {
-    if (covers === undefined) return;
-    await coverHistoryStore.clearHistory();
-    for (const cover of covers) {
-      await coverHistoryStore.addCover(cover);
-    }
-  };
-
-  const importMemories = (memories: Memory[] | undefined): Promise<void> =>
-    importMemoriesPreservingIdentity(memories, '[useElectronSettings]');
-
   // 处理导入设置数据
   const handleImportData = async (content: string) => {
     try {
@@ -105,13 +76,7 @@ export function useElectronSettings() {
         console.error('Import validation failed:', result.error);
         return;
       }
-      const data = result.data;
-      await importAiModels(data.models);
-      await importNovels(data.novels);
-      await importCoverHistory(data.coverHistory);
-      await importMemories(data.memories);
-      if (data.appSettings) await settingsStore.importSettings(data.appSettings);
-      if (data.sync !== undefined) await settingsStore.importSyncs(data.sync);
+      await SyncDataService.importSettingsSnapshot(result.data, v4());
     } catch (error) {
       console.error('Import settings error:', error);
     }

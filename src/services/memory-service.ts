@@ -886,6 +886,16 @@ export class MemoryService {
     this.bookMemoryCache.clear();
   }
 
+  /** 内部回滚保留 ID、时间和本地向量，不提交新的嵌入任务。 */
+  static async rollbackMemories(memories: Memory[]): Promise<void> {
+    await withMemoryWrite(async (store) => {
+      await store.clear();
+      for (const memory of memories) await store.put(memory);
+    });
+    this.memoryCache.clear();
+    this.bookMemoryCache.clear();
+  }
+
   /**
    * 获取指定书籍的所有 Memory(带 60s TTL 缓存,返回的 Memory 保留 embeddings 字段)。
    * 供记忆注入打分模块使用:同一翻译任务中多次分块只会读一次 IDB。

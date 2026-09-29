@@ -4,6 +4,9 @@
  * 版面自上而下为：状态与操作、待处理项、数量概览、元信息与完整性、更新配方、章节变化、导入记录。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { useSettingsStore } from 'src/stores/settings';
+import { languageOptions } from 'src/i18n/translate';
 import { useRouter } from 'vue-router';
 import { useConfirm } from 'primevue/useconfirm';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
@@ -17,6 +20,8 @@ import ImportPlanChapters from './ImportPlanChapters.vue';
 import ImportHistoryList from './ImportHistoryList.vue';
 
 const store = useImportWorkspaceStore();
+const settings = useSettingsStore();
+const { t } = useI18n();
 const confirm = useConfirm();
 const router = useRouter();
 
@@ -43,6 +48,12 @@ const requestApply = () => {
   const current = plan.value;
   const summary = current?.summary;
   if (!current || !summary) return;
+  const targetLanguage =
+    current.targetKind === 'new' ? settings.uiLocale : (current.book.targetLanguage ?? 'zh-CN');
+  const language = languageOptions(settings.uiLocale).find(
+    (option) => option.value === targetLanguage,
+  )!.label;
+  const localeMessage = t('import.confirmTargetLanguage', { language });
   const title = current.book.title || '（未命名）';
   const target = current.targetKind === 'new' ? `新建《${title}》` : `更新《${title}》`;
   const cleared = summary.clearedVersions
@@ -54,11 +65,11 @@ const requestApply = () => {
     : '';
   confirm.require({
     header: '确认导入到书库',
-    message: `${target}：${summary.selectedChapters} 章。${cleared}${partial}${recipe}确认后才会写入书库，可在书籍没有后续修改前整次撤销。`,
+    message: `${target}：${summary.selectedChapters} 章。${localeMessage}${cleared}${partial}${recipe}确认后才会写入书库，可在书籍没有后续修改前整次撤销。`,
     icon: 'pi pi-exclamation-circle',
     acceptLabel: '确认导入',
     rejectLabel: '再检查一下',
-    accept: () => void store.applyPlan(),
+    accept: () => void store.applyPlan({ planId: current.id, targetLanguage }),
   });
 };
 const openBook = () => {

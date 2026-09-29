@@ -51,18 +51,25 @@ function buildUpdatedCharacterTranslation(
 }
 
 function buildUpdatedCharacterAliases(
-  aliasUpdates: Array<{ name: string; translation: string }>,
+  aliasUpdates: Array<{ id?: string; name: string; translation: string }>,
   existingChar: CharacterSetting,
 ): Alias[] {
   const out: Alias[] = [];
   for (const aliasData of aliasUpdates) {
     if (!aliasData.name.trim()) continue;
-    const existingAlias = (existingChar.aliases || []).find((a) => a.name === aliasData.name);
+    const matches = (existingChar.aliases || []).filter((a) => a.name === aliasData.name);
+    if (!aliasData.id && matches.length > 1) throw new Error('AMBIGUOUS_ALIAS_NAME');
+    const existingAlias = aliasData.id
+      ? existingChar.aliases.find((a) => a.id === aliasData.id)
+      : matches[0];
+    if (aliasData.id && !existingAlias) throw new Error('ALIAS_MISSING');
     out.push({
+      ...existingAlias,
+      id: existingAlias?.id ?? generateShortId(),
       name: aliasData.name,
       translation: {
         id: existingAlias?.translation.id ?? generateShortId(),
-        translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
+        translation: normalizeTranslationQuotes(aliasData.translation || ''),
         aiModelId: existingAlias?.translation.aiModelId ?? '',
       },
     });
@@ -82,6 +89,7 @@ function composeUpdatedCharacter(
   updatedAliases: Alias[],
 ): CharacterSetting {
   const updatedChar: CharacterSetting = {
+    ...existing,
     id: existing.id,
     name: updates.name ?? existing.name,
     sex: updates.sex !== undefined ? updates.sex : existing.sex,
@@ -111,7 +119,7 @@ type CharacterMutationFields = {
   translation?: string;
   description?: string;
   speakingStyle?: string;
-  aliases?: Array<{ name: string; translation: string }>;
+  aliases?: Array<{ id?: string; name: string; translation: string }>;
 };
 
 export class CharacterSettingService {
@@ -176,10 +184,11 @@ export class CharacterSettingService {
         if (!aliasData.name.trim()) continue;
 
         aliases.push({
+          id: generateShortId(),
           name: aliasData.name,
           translation: {
             id: generateShortId(),
-            translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name), // 使用提供的翻译，如果没有则使用名称
+            translation: normalizeTranslationQuotes(aliasData.translation || ''), // 使用提供的翻译，如果没有则使用名称
             aiModelId: '',
           },
         });
@@ -248,7 +257,12 @@ export class CharacterSettingService {
         ? existingChar.aliases || []
         : buildUpdatedCharacterAliases(updates.aliases, existingChar);
 
-    const updatedChar = composeUpdatedCharacter(existingChar, updates, updatedTranslation, updatedAliases);
+    const updatedChar = composeUpdatedCharacter(
+      existingChar,
+      updates,
+      updatedTranslation,
+      updatedAliases,
+    );
 
     const updatedSettings = currentSettings.map((c) => (c.id === charId ? updatedChar : c));
     await booksStore.updateBook(bookId, {

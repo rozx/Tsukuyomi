@@ -25,7 +25,7 @@ const emit = defineEmits<{
       translation: string;
       description: string;
       speakingStyle: string;
-      aliases: Array<{ name: string; translation: string }>;
+      aliases: Array<{ id?: string; name: string; translation: string }>;
     },
   ): void;
 }>();
@@ -37,7 +37,7 @@ const formData = ref({
   description: '',
   speakingStyle: '',
   translation: '',
-  aliases: [] as Array<{ name: string; translation: string }>,
+  aliases: [] as Array<{ id?: string; name: string; translation: string }>,
 });
 
 const sexOptions = [
@@ -64,6 +64,7 @@ watch(
           speakingStyle: character.speakingStyle || '',
           translation: character.translation.translation,
           aliases: character.aliases.map((a: Alias) => ({
+            ...(a.id ? { id: a.id } : {}),
             name: a.name,
             translation: a.translation.translation,
           })),

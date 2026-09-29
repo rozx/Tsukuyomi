@@ -1,3 +1,5 @@
+import { nativeText } from './native-text';
+import { registerNativeLocale } from './native-locale';
 import { app, BrowserWindow, ipcMain, Menu, shell, dialog } from 'electron';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -412,39 +414,39 @@ function createMenu() {
             label: app.name,
             submenu: [
               {
-                label: `关于 ${app.name}`,
+                label: nativeText('native.about', { name: app.name }),
                 click: () => {
                   app.showAboutPanel();
                 },
               },
               { type: 'separator' as const },
-              { role: 'services' as const },
+              { role: 'services' as const, label: nativeText('native.services') },
               { type: 'separator' as const },
-              { role: 'hide' as const },
-              { role: 'hideOthers' as const },
-              { role: 'unhide' as const },
+              { role: 'hide' as const, label: nativeText('native.hide', { name: app.name }) },
+              { role: 'hideOthers' as const, label: nativeText('native.hideOthers') },
+              { role: 'unhide' as const, label: nativeText('native.unhide') },
               { type: 'separator' as const },
-              { role: 'quit' as const },
+              { role: 'quit' as const, label: nativeText('native.quit') },
             ],
           },
         ]
       : []),
     // 文件菜单
     {
-      label: '文件',
+      label: nativeText('native.file'),
       submenu: [
         {
-          label: '导出设置...',
+          label: nativeText('native.exportSettingsMenu'),
           accelerator: 'CmdOrCtrl+E',
           click: () => {
             void (async () => {
               if (!mainWindow) return;
               const result = await dialog.showSaveDialog(mainWindow, {
-                title: '导出设置',
+                title: nativeText('native.exportSettings'),
                 defaultPath: `tsukuyomi-settings-${new Date().toISOString().split('T')[0]}.json`,
                 filters: [
-                  { name: 'JSON Files', extensions: ['json'] },
-                  { name: 'All Files', extensions: ['*'] },
+                  { name: nativeText('native.jsonFiles'), extensions: ['json'] },
+                  { name: nativeText('native.allFiles'), extensions: ['*'] },
                 ],
               });
 
@@ -458,17 +460,17 @@ function createMenu() {
           },
         },
         {
-          label: '导入设置...',
+          label: nativeText('native.importSettingsMenu'),
           accelerator: 'CmdOrCtrl+I',
           click: () => {
             void (async () => {
               if (!mainWindow) return;
               const result = await dialog.showOpenDialog(mainWindow, {
-                title: '导入设置',
+                title: nativeText('native.importSettings'),
                 filters: [
-                  { name: 'JSON Files', extensions: ['json'] },
-                  { name: 'Text Files', extensions: ['txt'] },
-                  { name: 'All Files', extensions: ['*'] },
+                  { name: nativeText('native.jsonFiles'), extensions: ['json'] },
+                  { name: nativeText('native.textFiles'), extensions: ['txt'] },
+                  { name: nativeText('native.allFiles'), extensions: ['*'] },
                 ],
                 properties: ['openFile'],
               });
@@ -484,8 +486,8 @@ function createMenu() {
                     mainWindow.webContents.send('import-settings-data', content);
                   } catch (error) {
                     dialog.showErrorBox(
-                      '导入失败',
-                      error instanceof Error ? error.message : '读取文件时发生错误',
+                      nativeText('native.importFailed'),
+                      error instanceof Error ? error.message : nativeText('native.readFailed'),
                     );
                   }
                 }
@@ -494,56 +496,58 @@ function createMenu() {
           },
         },
         { type: 'separator' as const },
-        isMac ? { role: 'close' as const } : { role: 'quit' as const },
+        isMac
+          ? { role: 'close' as const, label: nativeText('native.close') }
+          : { role: 'quit' as const, label: nativeText('native.quit') },
       ],
     },
     // 编辑菜单 (Edit) - 处理复制/粘贴等操作
     {
-      label: '编辑',
+      label: nativeText('native.edit'),
       submenu: [
-        { role: 'undo' as const, label: '撤销' },
-        { role: 'redo' as const, label: '重做' },
+        { role: 'undo' as const, label: nativeText('native.undo') },
+        { role: 'redo' as const, label: nativeText('native.redo') },
         { type: 'separator' as const },
-        { role: 'cut' as const, label: '剪切' },
-        { role: 'copy' as const, label: '复制' },
-        { role: 'paste' as const, label: '粘贴' },
+        { role: 'cut' as const, label: nativeText('native.cut') },
+        { role: 'copy' as const, label: nativeText('native.copy') },
+        { role: 'paste' as const, label: nativeText('native.paste') },
         ...(isMac
           ? [
-              { role: 'pasteAndMatchStyle' as const, label: '粘贴并匹配样式' },
-              { role: 'delete' as const, label: '删除' },
-              { role: 'selectAll' as const, label: '全选' },
+              { role: 'pasteAndMatchStyle' as const, label: nativeText('native.pasteStyle') },
+              { role: 'delete' as const, label: nativeText('native.delete') },
+              { role: 'selectAll' as const, label: nativeText('native.selectAll') },
               { type: 'separator' as const },
               {
-                label: '语音',
+                label: nativeText('native.speech'),
                 submenu: [
-                  { role: 'startSpeaking' as const, label: '开始朗读' },
-                  { role: 'stopSpeaking' as const, label: '停止朗读' },
+                  { role: 'startSpeaking' as const, label: nativeText('native.startSpeaking') },
+                  { role: 'stopSpeaking' as const, label: nativeText('native.stopSpeaking') },
                 ],
               },
             ]
           : [
-              { role: 'delete' as const, label: '删除' },
+              { role: 'delete' as const, label: nativeText('native.delete') },
               { type: 'separator' as const },
-              { role: 'selectAll' as const, label: '全选' },
+              { role: 'selectAll' as const, label: nativeText('native.selectAll') },
             ]),
       ],
     },
     // 视图菜单
     {
-      label: '视图',
+      label: nativeText('native.view'),
       submenu: [
-        { role: 'reload' as const, label: '重新加载' },
-        { role: 'forceReload' as const, label: '强制重新加载' },
-        { role: 'toggleDevTools' as const, label: '切换开发者工具' },
-        { role: 'togglefullscreen' as const, label: '切换全屏' },
+        { role: 'reload' as const, label: nativeText('native.reload') },
+        { role: 'forceReload' as const, label: nativeText('native.forceReload') },
+        { role: 'toggleDevTools' as const, label: nativeText('native.devTools') },
+        { role: 'togglefullscreen' as const, label: nativeText('native.fullScreen') },
       ],
     },
     // 帮助菜单
     {
-      label: '帮助',
+      label: nativeText('native.help'),
       submenu: [
         {
-          label: '了解更多',
+          label: nativeText('native.learnMore'),
           click: () => {
             void shell.openExternal('https://github.com/rozx/Tsukuyomi');
           },
@@ -552,7 +556,7 @@ function createMenu() {
           ? [
               { type: 'separator' as const },
               {
-                label: `关于 ${app.name}`,
+                label: nativeText('native.about', { name: app.name }),
                 click: () => {
                   app.showAboutPanel();
                 },
@@ -693,34 +697,43 @@ ipcMain.on('export-settings-save', (_event, filePath: string, data: string) => {
     if (mainWindow) {
       void dialog.showMessageBox(mainWindow, {
         type: 'info',
-        title: '导出成功',
-        message: '设置已成功导出',
-        detail: `文件已保存到:
-${filePath}`,
+        title: nativeText('native.exportSuccess'),
+        message: nativeText('native.settingsExported'),
+        detail: nativeText('native.fileSaved', { path: filePath }),
       });
     }
   } catch (error) {
     if (mainWindow) {
       dialog.showErrorBox(
-        '导出失败',
-        error instanceof Error ? error.message : '保存文件时发生错误',
+        nativeText('native.exportFailed'),
+        error instanceof Error ? error.message : nativeText('native.saveFailed'),
       );
     }
   }
 });
 
-function startPrimaryInstance(): void {
-  registerDesktopUpdates(() => mainWindow);
-  // 设置 About 面板信息
+function updateAboutPanel(): void {
   app.setAboutPanelOptions({
     applicationName: 'Tsukuyomi - Moonlit Translator',
     applicationVersion: app.getVersion(),
-    version: `Version ${app.getVersion()}`,
+    version: nativeText('native.version', { version: app.getVersion() }),
     copyright: '© 2025 rozx',
-    credits: 'Built with Electron, Quasar, and Vue 3',
+    credits: nativeText('native.credits'),
     website: 'https://github.com/rozx/Tsukuyomi',
   });
+}
 
+function startPrimaryInstance(): void {
+  const refreshUpdates = registerDesktopUpdates(() => mainWindow);
+  registerNativeLocale(
+    () => mainWindow,
+    () => {
+      createMenu();
+      updateAboutPanel();
+      refreshUpdates?.();
+    },
+  );
+  updateAboutPanel();
   createMenu();
   splashWindow = createSplashWindow();
   createWindow();
