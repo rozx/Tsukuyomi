@@ -490,7 +490,7 @@ function createBookDetailsPageContext() {
     void originalHandleEditChapter();
   };
 
-  const getCoverUrl = (b: Novel): string => CoverService.getCoverUrl(b);
+  const getCoverUrl = (b: Novel): string => CoverService.getCoverUrl(b, settings.uiLocale);
 
   // 页面加载状态
   const isPageLoading = ref(true);

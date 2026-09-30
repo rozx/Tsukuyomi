@@ -34,5 +34,21 @@ export default {
       firecrawlFailedDetail: 'Firecrawl 请求失败: {status} {detail}',
       firecrawlCreditFailed: '额度查询失败: {status}',
     },
+    execution: {
+      invalidBook: '缺少目标小说',
+      lockUnavailable: '当前环境无法协调导入提交，请使用支持 Web Locks 的环境',
+      busy: '{owners}，请等待执行和保存结束',
+      busyUnknown: '目标小说正在提交变更，请等待执行和保存结束',
+      ownerSeparator: '、',
+      storageUnavailable: '无法访问当前书库，执行未开始',
+      revisionOverflow: '书籍修改序号无效或已达到上限',
+      invalidNotice: '书库通知身份无效',
+    },
+    export: {
+      empty: '章节内容为空，无法导出',
+      clipboardFailed: '复制到剪贴板失败：{detail}',
+      clipboardFailedRetry: '复制到剪贴板失败：请重试或检查权限',
+      untitled: '未命名',
+    },
   },
 };

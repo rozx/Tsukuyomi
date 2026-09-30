@@ -1,3 +1,4 @@
+import { CodedLocalizedError } from 'src/utils/coded-localized-error';
 import type { BookRevision } from 'src/models/import';
 
 interface RevisionStore {
@@ -13,7 +14,7 @@ export async function bumpBookRevision(
 ): Promise<number> {
   const prior = (await store.get(bookId))?.revision ?? 0;
   if (!Number.isSafeInteger(prior) || prior < 0 || prior >= Number.MAX_SAFE_INTEGER)
-    throw new Error('REVISION_OVERFLOW: 书籍修改序号无效或已达到上限');
+    throw new CodedLocalizedError('REVISION_OVERFLOW', 'bookUi.execution.revisionOverflow');
   const revision = prior + 1;
   await store.put({ bookId, revision, ...(operationId ? { operationId } : {}) });
   return revision;

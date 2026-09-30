@@ -1,5 +1,8 @@
 import { getDB } from 'src/utils/indexed-db';
 import { desktopRestartGuard } from './desktop-restart-guard';
+import { CodedLocalizedError } from 'src/utils/coded-localized-error';
+import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
 
 export interface BookExecutionOwner {
   label: string;
@@ -11,6 +14,20 @@ const OWNER_PREFIX = 'tsukuyomi:book-execution-owner:';
 
 function manager(): LockManager | undefined {
   return typeof navigator === 'undefined' ? undefined : navigator.locks;
+}
+
+/** 目标书籍被占用：占用者标签按界面语言的分隔符连接，简中消息保持原样 */
+class BookBusyError extends CodedLocalizedError {
+  constructor(private readonly owners: string[]) {
+    super('TARGET_BUSY', owners.length ? 'bookUi.execution.busy' : 'bookUi.execution.busyUnknown', {
+      owners: owners.join('、'),
+    });
+  }
+  override messageFor(locale: AppLocale): string {
+    return translateText(locale, this.messageKey, {
+      owners: this.owners.join(translateText(locale, 'bookUi.execution.ownerSeparator')),
+    });
+  }
 }
 
 /** 与同源页面共同持锁；无锁环境仍允许原有翻译，但禁止新增导入提交。 */
@@ -73,23 +90,26 @@ export class BookExecutionGuard {
     mode: LockMode,
     work: () => Promise<T>,
   ): Promise<T> {
-    if (!bookId) throw new Error('INVALID_BOOK: 缺少目标小说');
+    if (!bookId) throw new CodedLocalizedError('INVALID_BOOK', 'bookUi.execution.invalidBook');
     const locks = manager();
     if (!locks)
-      throw new Error('LOCK_UNAVAILABLE: 当前环境无法协调导入提交，请使用支持 Web Locks 的环境');
+      throw new CodedLocalizedError('LOCK_UNAVAILABLE', 'bookUi.execution.lockUnavailable');
     return locks.request(`${PREFIX}${bookId}`, { mode, ifAvailable: true }, async (lock) => {
       if (!lock) {
         const owners = await this.occupants(bookId);
-        throw new Error(
-          `TARGET_BUSY: ${owners.map((owner) => owner.label).join('、') || '目标小说正在提交变更'}，请等待执行和保存结束`,
-        );
+        throw new BookBusyError(owners.map((owner) => owner.label).filter(Boolean));
       }
       // Electron 多进程的 Web Locks 不共享；先验证当前进程可访问实际书库。
       // 同一存储目录的 IndexedDB 所有权由现有 Chromium 存储进程协调，失败不得继续。
       try {
         await (await getDB()).count('book-revisions');
       } catch (error) {
-        throw new Error('STORAGE_UNAVAILABLE: 无法访问当前书库，执行未开始', { cause: error });
+        throw new CodedLocalizedError(
+          'STORAGE_UNAVAILABLE',
+          'bookUi.execution.storageUnavailable',
+          {},
+          { cause: error },
+        );
       }
       return work();
     });

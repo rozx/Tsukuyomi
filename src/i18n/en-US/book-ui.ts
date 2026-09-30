@@ -34,5 +34,22 @@ export default {
       firecrawlFailedDetail: 'Firecrawl request failed: {status} {detail}',
       firecrawlCreditFailed: 'Quota lookup failed: {status}',
     },
+    execution: {
+      invalidBook: 'No target novel was given',
+      lockUnavailable:
+        'This environment cannot coordinate import commits; use an environment that supports Web Locks',
+      busy: '{owners}: wait until they finish running and saving',
+      busyUnknown: 'The target novel is committing changes; wait until running and saving finish',
+      ownerSeparator: ', ',
+      storageUnavailable: 'The library cannot be accessed; nothing was run',
+      revisionOverflow: 'The book revision number is invalid or has reached its limit',
+      invalidNotice: 'The library notification has an invalid identity',
+    },
+    export: {
+      empty: 'The chapter is empty and cannot be exported',
+      clipboardFailed: 'Failed to copy to the clipboard: {detail}',
+      clipboardFailedRetry: 'Failed to copy to the clipboard: try again or check permissions',
+      untitled: 'Untitled',
+    },
   },
 };

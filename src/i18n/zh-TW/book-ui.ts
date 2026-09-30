@@ -34,5 +34,21 @@ export default {
       firecrawlFailedDetail: 'Firecrawl 請求失敗：{status} {detail}',
       firecrawlCreditFailed: '額度查詢失敗：{status}',
     },
+    execution: {
+      invalidBook: '缺少目標小說',
+      lockUnavailable: '目前環境無法協調匯入提交，請使用支援 Web Locks 的環境',
+      busy: '{owners}，請等待執行和儲存結束',
+      busyUnknown: '目標小說正在提交變更，請等待執行和儲存結束',
+      ownerSeparator: '、',
+      storageUnavailable: '無法存取目前書庫，執行未開始',
+      revisionOverflow: '書籍修改序號無效或已達上限',
+      invalidNotice: '書庫通知身分無效',
+    },
+    export: {
+      empty: '章節內容為空，無法匯出',
+      clipboardFailed: '複製到剪貼簿失敗：{detail}',
+      clipboardFailedRetry: '複製到剪貼簿失敗：請重試或檢查權限',
+      untitled: '未命名',
+    },
   },
 };
