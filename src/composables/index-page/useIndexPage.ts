@@ -88,7 +88,8 @@ function createIndexPageContext() {
 
   const { formatDate, formatWordCount } = useLibraryFormatting();
 
-  const getCoverUrl = (book: Novel): string => CoverService.getCoverUrl(book);
+  const getCoverUrl = (book: Novel): string =>
+    CoverService.getCoverUrl(book, settingsStore.uiLocale);
 
   const addBook = () => {
     showAddDialog.value = true;

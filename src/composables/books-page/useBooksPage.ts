@@ -225,7 +225,8 @@ function createBooksPageContext() {
     { immediate: true },
   );
 
-  const getCoverUrl = (book: Novel): string => CoverService.getCoverUrl(book);
+  const getCoverUrl = (book: Novel): string =>
+    CoverService.getCoverUrl(book, settingsStore.uiLocale);
 
   const { formatDate, formatWordCount } = useLibraryFormatting();
 
