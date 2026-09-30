@@ -57,7 +57,7 @@ const locateSource = (sourceId: string) => {
       <i class="pi pi-eye icp-title-icon" aria-hidden="true" />
       <span class="icp-title">{{ title }}</span>
       <span v-if="status" class="ipl-status" :class="`ipl-status--${status.severity}`">
-        {{ status.label }}
+        {{ t(status.label) }}
       </span>
       <button
         type="button"

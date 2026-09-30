@@ -129,15 +129,30 @@ async function mountVariant(variant: Component, locale: AppLocale, taskId: strin
 }
 
 /** 依次打开每个分区，收集整页可见文字与无障碍标签。 */
+function snapshot(texts: string[]): void {
+  texts.push(document.body.textContent ?? '');
+  for (const element of document.querySelectorAll('[aria-label], [title], [placeholder]'))
+    for (const name of ['aria-label', 'title', 'placeholder'])
+      texts.push(element.getAttribute(name) ?? '');
+}
+
+/** 依次打开每个分区（以及来源内容、章节正文检查），收集整页可见文字与无障碍标签。 */
 async function collect(ctx: ImportPageContext): Promise<string> {
   const texts: string[] = [];
   for (const section of ['tasks', 'chat', 'sources', 'draft', 'plan'] as const) {
     ctx.section.value = section;
     await settle();
-    texts.push(document.body.textContent ?? '');
-    for (const element of document.querySelectorAll('[aria-label], [title], [placeholder]'))
-      for (const name of ['aria-label', 'title', 'placeholder'])
-        texts.push(element.getAttribute(name) ?? '');
+    snapshot(texts);
+    if (section === 'sources') {
+      await ctx.showSource(useImportWorkspaceStore().sources[0]!.id);
+      await vi.waitFor(() => expect(ctx.sourceText.value).not.toBeNull());
+    } else if (section === 'draft') {
+      ctx.selectChapter('draft-c');
+      await vi.waitFor(() => expect(ctx.preview.value).not.toBeNull());
+    } else continue;
+    await settle();
+    snapshot(texts);
+    if (section === 'draft') ctx.selectChapter(null);
   }
   return texts.join('\n');
 }
@@ -155,6 +170,8 @@ describe('导入工作台三个设备变体跟随界面语言', () => {
       const ctx = await mountVariant(variant, 'en-US', taskId);
       const text = withoutOutOfScope(await collect(ctx));
       expect(text).toContain('Volume A');
+      expect(text).toContain('Line one');
+      expect(text).not.toContain('importUi.');
       const leaks = [...text.matchAll(/.{0,30}[\u3040-\u30ff\u3400-\u9fff]+.{0,30}/g)].map(
         (m) => m[0],
       );
@@ -166,6 +183,7 @@ describe('导入工作台三个设备变体跟随界面语言', () => {
       const ctx = await mountVariant(variant, 'zh-TW', taskId);
       const text = withoutOutOfScope(await collect(ctx));
       expect(text).toMatch(/匯入|來源/);
+      expect(text).not.toContain('importUi.');
       expect(text.split('\n').filter((line) => SIMPLIFIED.test(line))).toEqual([]);
     });
   }
