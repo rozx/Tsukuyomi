@@ -28,7 +28,9 @@ import {
   handleTaskError,
 } from './stream-handler';
 import { getLanguageTranslation } from 'src/services/localization/selection';
-import type { ExecutionLanguages } from 'src/models/locale';
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
+import { createCancelledError } from 'src/services/ai/core/errors';
 import { captureExecutionLanguages } from './execution-languages';
 import {
   buildBookContextSection,
@@ -41,7 +43,7 @@ import {
 const MAX_TOOL_CALL_ROUNDS = 20;
 
 export interface SingleParagraphOptions {
-  languages?: ExecutionLanguages;
+  languages: ExecutionLanguages;
   signal?: AbortSignal;
   bookId?: string;
   chapterId?: string;
@@ -93,7 +95,7 @@ async function registerSingleParagraphTask(
   aiProcessingStore: SingleParagraphOptions['aiProcessingStore'],
   model: AIModel,
   taskType: TaskType,
-  taskLabel: string,
+  uiLocale: AppLocale,
   bookId?: string,
   chapterId?: string,
   chapterTitle?: string,
@@ -106,7 +108,7 @@ async function registerSingleParagraphTask(
     modelName: model.name,
     status: 'thinking',
     workflowStatus: 'working',
-    message: `正在${taskLabel}段落...`,
+    message: translateText(uiLocale, `aiRun.single.${taskType}`),
     thinkingMessage: '',
     isSingleParagraph: true,
     ...(bookId ? { bookId } : {}),
@@ -148,7 +150,7 @@ interface SingleParagraphRoundContext {
   finalSignal: AbortSignal;
   aiProcessingStore: SingleParagraphOptions['aiProcessingStore'];
   taskId: string | undefined;
-  taskLabel: string;
+  taskType: TaskType;
   logLabel: string;
   onChunk: SingleParagraphOptions['onChunk'];
   onAction: SingleParagraphOptions['onAction'];
@@ -162,16 +164,16 @@ interface SingleParagraphRoundContext {
 /**
  * 更新单段落处理轮次状态（fire-and-forget）
  */
-function updateSingleParagraphRoundStatus(
-  aiProcessingStore: SingleParagraphOptions['aiProcessingStore'],
-  taskId: string | undefined,
-  taskLabel: string,
-): void {
-  if (!aiProcessingStore || !taskId) return;
-  void aiProcessingStore.updateTask(taskId, {
+function updateSingleParagraphRoundStatus(ctx: SingleParagraphRoundContext): void {
+  if (!ctx.aiProcessingStore || !ctx.taskId) return;
+  void ctx.aiProcessingStore.updateTask(ctx.taskId, {
     status: 'processing',
-    message: `正在${taskLabel}中...`,
+    message: workingMessage(ctx),
   });
+}
+
+function workingMessage(ctx: SingleParagraphRoundContext): string {
+  return translateText(ctx.languages.uiLocale, `aiRun.working.${ctx.taskType}`);
 }
 
 /**
@@ -192,9 +194,9 @@ function hasNoToolCalls(result: { toolCalls?: AIToolCall[] }): boolean {
 async function runSingleParagraphRound(
   ctx: SingleParagraphRoundContext,
 ): Promise<{ text: string; done: boolean }> {
-  if (ctx.finalSignal.aborted) throw new Error('请求已取消');
+  if (ctx.finalSignal.aborted) throw createCancelledError(ctx.languages.uiLocale);
 
-  updateSingleParagraphRoundStatus(ctx.aiProcessingStore, ctx.taskId, ctx.taskLabel);
+  updateSingleParagraphRoundStatus(ctx);
 
   const request: TextGenerationRequest = {
     messages: ctx.history,
@@ -210,7 +212,8 @@ async function runSingleParagraphRound(
         aiProcessingStore: ctx.aiProcessingStore,
         taskId: ctx.taskId,
         finalSignal: ctx.finalSignal,
-        processingMessage: `正在${ctx.taskLabel}中...`,
+        processingMessage: workingMessage(ctx),
+        uiLocale: ctx.languages.uiLocale,
         ...(ctx.onChunk ? { onChunk: ctx.onChunk } : {}),
       }),
     );
@@ -395,13 +398,14 @@ async function runSingleParagraphRounds(ctx: SingleParagraphRoundContext): Promi
 function completeSingleParagraphTask(
   aiProcessingStore: SingleParagraphOptions['aiProcessingStore'],
   taskId: string | undefined,
-  taskLabel: string,
+  taskType: TaskType,
+  uiLocale: AppLocale,
 ): void {
   if (!aiProcessingStore || !taskId) return;
   void aiProcessingStore.updateTask(taskId, {
     status: 'end',
     workflowStatus: 'end',
-    message: `${taskLabel}完成`,
+    message: translateText(uiLocale, `aiRun.done.${taskType}`),
   });
 }
 
@@ -412,8 +416,8 @@ export async function processSingleParagraph(
   config: SingleParagraphProcessConfig,
 ): Promise<SingleParagraphResult> {
   const languages = captureExecutionLanguages(
-    options.languages?.uiLocale ?? 'zh-CN',
-    options.languages?.targetLanguage ?? 'zh-CN',
+    options.languages.uiLocale,
+    options.languages.targetLanguage,
   );
   if (!getLanguageTranslation(paragraph, languages.targetLanguage))
     throw new Error('NO_TARGET_TRANSLATION');
@@ -440,7 +444,7 @@ export async function processSingleParagraph(
     aiProcessingStore,
     model,
     taskType,
-    taskLabel,
+    languages.uiLocale,
     bookId,
     chapterId,
     chapterTitle,
@@ -488,7 +492,7 @@ export async function processSingleParagraph(
       finalSignal,
       aiProcessingStore,
       taskId,
-      taskLabel,
+      taskType,
       logLabel,
       onChunk,
       onAction,
@@ -501,7 +505,7 @@ export async function processSingleParagraph(
 
     const finalText = await runSingleParagraphRounds(roundCtx);
 
-    completeSingleParagraphTask(aiProcessingStore, taskId, taskLabel);
+    completeSingleParagraphTask(aiProcessingStore, taskId, taskType, languages.uiLocale);
 
     console.log(`[${logLabel}] 单段落${taskLabel}完成，段落ID: ${paragraph.id}`);
 
@@ -511,10 +515,10 @@ export async function processSingleParagraph(
     };
   } catch (error) {
     console.error(`[${logLabel}] 单段落${taskLabel}失败:`, error);
-    await handleTaskError(error, taskId, aiProcessingStore, taskType);
+    await handleTaskError(error, taskId, aiProcessingStore, taskType, languages.uiLocale);
 
     if (error instanceof Error) throw error;
-    throw new Error(`${taskLabel}时发生未知错误`);
+    throw new Error(translateText(languages.uiLocale, `aiRun.unknownError.${taskType}`));
   } finally {
     cleanupAbort();
   }

@@ -35,6 +35,8 @@ import { resolveModelLimits } from '../model-limits/resolve';
 import type { EffectiveModelLimits } from '../model-limits/resolve';
 import type { ContextAnchor } from '../context/measure';
 import { AssistantContext } from '../context/assistant-context';
+import { isCancelledError } from 'src/utils/is-cancelled-error';
+import { describeAIError } from '../core/errors';
 
 const MAX_TOOL_CALL_TURNS = 50;
 const DEFAULT_TEMPERATURE = 0.7;
@@ -548,11 +550,7 @@ export class AssistantService {
   ): Promise<void> {
     if (!aiProcessingStore || !taskId) return;
 
-    const isCancelled =
-      error instanceof Error &&
-      (error.message === '请求已取消' ||
-        error.message.includes('aborted') ||
-        error.name === 'AbortError');
+    const isCancelled = isCancelledError(error);
 
     if (isCancelled) {
       await aiProcessingStore.updateTask(taskId, {
@@ -562,10 +560,11 @@ export class AssistantService {
     } else {
       await aiProcessingStore.updateTask(taskId, {
         status: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : translateText(uiLocale, 'aiAssistant.unknownError'),
+        message: describeAIError(
+          error,
+          uiLocale,
+          translateText(uiLocale, 'aiAssistant.unknownError'),
+        ),
       });
     }
   }

@@ -1,5 +1,7 @@
 import type { ChatMessage } from '../types/ai-service';
 import { TOOL_CALL_PLACEHOLDER_VARIANTS } from 'src/constants/chat';
+import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
 
 const clip = (text: string, length: number): string =>
   text.length <= length ? text : `${text.slice(0, length - 3)}...`;
@@ -8,6 +10,7 @@ const isQuestion = (name: string): boolean => name === 'ask_user' || name === 'a
 /** 问答保留全文；普通工具内容裁剪，但保留名称、调用 id 与参数开头的资源标识。 */
 export function formatSummaryMessages(
   messages: ChatMessage[],
+  uiLocale: AppLocale,
 ): { role: 'user' | 'assistant'; content: string }[] {
   const callNames = new Map(
     messages.flatMap((message) =>
@@ -22,7 +25,11 @@ export function formatSummaryMessages(
       const content = message.content ?? '';
       output.push({
         role: 'assistant',
-        content: `工具结果 ${name} (${message.tool_call_id ?? ''}): ${isQuestion(name) ? content : clip(content, 1200)}`,
+        content: translateText(uiLocale, 'aiRun.summaryToolResult', {
+          name,
+          id: message.tool_call_id ?? '',
+          content: isQuestion(name) ? content : clip(content, 1200),
+        }),
       });
       continue;
     }
@@ -34,7 +41,11 @@ export function formatSummaryMessages(
       const args = call.function.arguments || '{}';
       output.push({
         role: 'assistant',
-        content: `工具调用 ${call.function.name} (${call.id}): ${isQuestion(call.function.name) ? args : clip(args, 240)}`,
+        content: translateText(uiLocale, 'aiRun.summaryToolCall', {
+          name: call.function.name,
+          id: call.id,
+          content: isQuestion(call.function.name) ? args : clip(args, 240),
+        }),
       });
     }
   }

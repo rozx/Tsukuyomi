@@ -1,4 +1,6 @@
-import type { ExecutionLanguages } from 'src/models/locale';
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import { createCancelledError, describeAIError } from 'src/services/ai/core/errors';
+import { isCancelledError } from 'src/utils/is-cancelled-error';
 import { captureExecutionLanguages } from './utils/execution-languages';
 import { translateText } from 'src/i18n/translate';
 import { getNameTranslation } from 'src/services/localization/selection';
@@ -39,7 +41,7 @@ import type { CharacterSetting, Terminology } from 'src/models/novel';
  * 术语翻译服务选项
  */
 export interface TermTranslationServiceOptions {
-  languages?: ExecutionLanguages;
+  languages: ExecutionLanguages;
   /**
    * 自定义提示词（可选）
    */
@@ -87,17 +89,17 @@ type TaskType = NonNullable<TermTranslationServiceOptions['taskType']>;
 /**
  * 校验模型是否启用且支持指定任务类型
  */
-function assertModelSupportsTask(model: AIModel, taskType: TaskType): void {
+function assertModelSupportsTask(model: AIModel, taskType: TaskType, uiLocale: AppLocale): void {
   if (!model.enabled) {
-    throw new Error('所选模型未启用');
+    throw new Error(translateText(uiLocale, 'aiRun.modelDisabled'));
   }
   if (taskType === 'termsTranslation') {
     if (!model.isDefault.termsTranslation?.enabled) {
-      throw new Error('所选模型不支持术语翻译任务');
+      throw new Error(translateText(uiLocale, 'aiRun.term.termUnsupported'));
     }
   } else {
     if (!model.isDefault.translation?.enabled) {
-      throw new Error('所选模型不支持翻译任务');
+      throw new Error(translateText(uiLocale, 'aiRun.term.translationUnsupported'));
     }
   }
 }
@@ -109,12 +111,13 @@ async function createProcessingTask(
   store: AIProcessingStore,
   taskType: TaskType,
   modelName: string,
+  uiLocale: AppLocale,
 ): Promise<{ taskId: string; abortController: AbortController | undefined }> {
   const taskId = await store.addTask({
     type: taskType,
     modelName,
     status: 'thinking',
-    message: '正在分析文本...',
+    message: translateText(uiLocale, 'aiRun.term.analyzing'),
     thinkingMessage: '',
   });
 
@@ -245,17 +248,17 @@ async function buildRelatedContextInfo(
 /**
  * 解析 AI 响应文本为翻译结果，失败时抛出错误
  */
-function parseTranslationResponse(responseText: string): string {
+function parseTranslationResponse(responseText: string, uiLocale: AppLocale): string {
   const jsonMatch = responseText.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error('未找到有效的 JSON 格式');
+    throw new Error(translateText(uiLocale, 'aiRun.term.noJson'));
   }
 
   const parsed = JSON.parse(jsonMatch[0]);
   // 支持简化格式 "t" 和完整格式 "translation"
   const translation = parsed.t ?? parsed.translation;
   if (!parsed || typeof translation !== 'string') {
-    throw new Error('JSON 中缺少 t/translation 字段');
+    throw new Error(translateText(uiLocale, 'aiRun.term.missingField'));
   }
 
   return translation;
@@ -264,20 +267,24 @@ function parseTranslationResponse(responseText: string): string {
 /**
  * 错误分支下的任务状态更新（取消 / 错误）
  */
-function handleErrorTaskUpdate(store: AIProcessingStore, taskId: string, error: unknown): void {
-  const isCancelled = error instanceof Error && error.message === '翻译已取消';
-  if (isCancelled) {
+function handleErrorTaskUpdate(
+  store: AIProcessingStore,
+  taskId: string,
+  error: unknown,
+  uiLocale: AppLocale,
+): void {
+  if (isCancelledError(error)) {
     const currentTask = store.activeTasks.find((t) => t.id === taskId);
     if (currentTask && currentTask.status !== 'cancelled') {
       void store.updateTask(taskId, {
         status: 'cancelled',
-        message: '已取消',
+        message: translateText(uiLocale, 'aiRun.cancelled'),
       });
     }
   } else {
     void store.updateTask(taskId, {
       status: 'error',
-      message: error instanceof Error ? error.message : '翻译时发生未知错误',
+      message: describeAIError(error, uiLocale, translateText(uiLocale, 'aiRun.term.unknownError')),
     });
   }
 }
@@ -285,9 +292,9 @@ function handleErrorTaskUpdate(store: AIProcessingStore, taskId: string, error: 
 /**
  * 校验待翻译文本非空
  */
-function assertNonEmptyTranslationText(text: string): void {
+function assertNonEmptyTranslationText(text: string, uiLocale: AppLocale): void {
   if (!text?.trim()) {
-    throw new Error('要翻译的文本不能为空');
+    throw new Error(translateText(uiLocale, 'aiRun.term.emptyText'));
   }
 }
 
@@ -308,11 +315,12 @@ function completeTermTranslationTask(
   aiProcessingStore: AIProcessingStore | undefined,
   taskId: string | undefined,
   finalText: string,
+  uiLocale: AppLocale,
 ): void {
   if (!aiProcessingStore || !taskId || !finalText) return;
   void aiProcessingStore.updateTask(taskId, {
     status: 'end',
-    message: '翻译完成',
+    message: translateText(uiLocale, 'aiRun.term.done'),
   });
 }
 
@@ -323,14 +331,15 @@ function handleTranslationCatch(
   error: unknown,
   aiProcessingStore: AIProcessingStore | undefined,
   taskId: string | undefined,
+  uiLocale: AppLocale,
 ): never {
   if (aiProcessingStore && taskId) {
-    handleErrorTaskUpdate(aiProcessingStore, taskId, error);
+    handleErrorTaskUpdate(aiProcessingStore, taskId, error, uiLocale);
   }
   if (error instanceof Error) {
     throw error;
   }
-  throw new Error('翻译时发生未知错误');
+  throw new Error(translateText(uiLocale, 'aiRun.term.unknownError'));
 }
 
 /**
@@ -348,9 +357,9 @@ export class TermTranslationService {
   static async translate(
     text: string,
     model: AIModel,
-    options?: TermTranslationServiceOptions,
+    options: TermTranslationServiceOptions,
   ): Promise<{ text: string; taskId?: string }> {
-    const requestedLanguages = options?.languages ?? captureExecutionLanguages('zh-CN');
+    const requestedLanguages = options.languages;
     const languages = captureExecutionLanguages(
       requestedLanguages.uiLocale,
       requestedLanguages.targetLanguage,
@@ -366,18 +375,23 @@ export class TermTranslationService {
       onAction: _onAction,
       onToast: _onToast,
       aiProcessingStore,
-    } = options || {};
+    } = options;
 
-    assertNonEmptyTranslationText(text);
+    assertNonEmptyTranslationText(text, languages.uiLocale);
 
-    assertModelSupportsTask(model, taskType);
+    assertModelSupportsTask(model, taskType, languages.uiLocale);
 
     // 如果提供了 aiProcessingStore，自动创建和管理任务
     let taskId: string | undefined;
     let abortController: AbortController | undefined;
 
     if (aiProcessingStore) {
-      const created = await createProcessingTask(aiProcessingStore, taskType, model.name);
+      const created = await createProcessingTask(
+        aiProcessingStore,
+        taskType,
+        model.name,
+        languages.uiLocale,
+      );
       taskId = created.taskId;
       abortController = created.abortController;
     }
@@ -427,11 +441,11 @@ export class TermTranslationService {
       });
 
       // 更新任务状态为完成（只在真正完成时更新）
-      completeTermTranslationTask(aiProcessingStore, taskId, finalText);
+      completeTermTranslationTask(aiProcessingStore, taskId, finalText, languages.uiLocale);
 
       return { text: finalText, ...(taskId ? { taskId } : {}) };
     } catch (error) {
-      handleTranslationCatch(error, aiProcessingStore, taskId);
+      handleTranslationCatch(error, aiProcessingStore, taskId, languages.uiLocale);
     } finally {
       // 清理事件监听器
       cleanupAbort();
@@ -446,11 +460,15 @@ function updateTranslationTaskStatus(
   aiProcessingStore: AIProcessingStore | undefined,
   taskId: string | undefined,
   jsonRetryCount: number,
+  uiLocale: AppLocale,
 ): void {
   if (!aiProcessingStore || !taskId) return;
   void aiProcessingStore.updateTask(taskId, {
     status: 'processing',
-    message: jsonRetryCount > 0 ? '正在重试获取规范 JSON 输出...' : '正在生成翻译...',
+    message: translateText(
+      uiLocale,
+      jsonRetryCount > 0 ? 'aiRun.term.retryingJson' : 'aiRun.term.generating',
+    ),
   });
 }
 
@@ -469,9 +487,8 @@ function appendTranslationReasoning(
 /**
  * 构造达到最大重试次数时的错误消息
  */
-function buildTranslationRetryErrorMessage(parseError: unknown): string {
-  const errorMessage = getErrorMessage(parseError);
-  return `AI 响应格式错误：${errorMessage}。已达到最大重试次数，无法获取有效翻译。`;
+function buildTranslationRetryErrorMessage(parseError: unknown, uiLocale: AppLocale): string {
+  return translateText(uiLocale, 'aiRun.term.formatError', { detail: getErrorMessage(parseError) });
 }
 
 /**
@@ -488,23 +505,22 @@ async function runTranslationLoop(params: {
   taskId: string | undefined;
 }): Promise<string> {
   const { history, finalSignal, service, config, onChunk, aiProcessingStore, taskId } = params;
+  const uiLocale = params.languages.uiLocale;
   const MAX_JSON_RETRIES = 3;
   let jsonRetryCount = 0;
 
   while (jsonRetryCount <= MAX_JSON_RETRIES) {
-    if (finalSignal.aborted) {
-      throw new Error('翻译已取消');
-    }
+    if (finalSignal.aborted) throw createCancelledError(uiLocale);
 
-    updateTranslationTaskStatus(aiProcessingStore, taskId, jsonRetryCount);
+    updateTranslationTaskStatus(aiProcessingStore, taskId, jsonRetryCount, uiLocale);
 
     const request: TextGenerationRequest = { messages: history };
     const wrappedOnChunk = createTaskChunkForwarder({
       aiProcessingStore,
       taskId,
       finalSignal,
-      processingMessage: '正在生成翻译...',
-      abortMessage: '翻译已取消',
+      processingMessage: translateText(uiLocale, 'aiRun.term.generating'),
+      uiLocale,
       ...(onChunk ? { onChunk } : {}),
     });
 
@@ -515,10 +531,10 @@ async function runTranslationLoop(params: {
     const responseText = result.text || '';
 
     try {
-      return parseTranslationResponse(responseText);
+      return parseTranslationResponse(responseText, uiLocale);
     } catch (parseError) {
       if (jsonRetryCount >= MAX_JSON_RETRIES) {
-        throw new Error(buildTranslationRetryErrorMessage(parseError));
+        throw new Error(buildTranslationRetryErrorMessage(parseError, uiLocale));
       }
 
       jsonRetryCount++;

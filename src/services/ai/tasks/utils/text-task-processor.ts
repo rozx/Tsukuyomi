@@ -2,6 +2,7 @@ import type { TodoParagraphInput } from 'src/services/todo-list-service';
 import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
 import { translateText } from 'src/i18n/translate';
 import { captureExecutionLanguages } from './execution-languages';
+import { createCancelledError, isAIDegradationError } from 'src/services/ai/core/errors';
 import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
 /**
  * 通用文本任务处理器
@@ -68,16 +69,6 @@ import { ChapterService } from 'src/services/chapter-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 
 /**
- * 检查是否为 AI 降级错误
- */
-function isAIDegradationError(error: unknown): boolean {
-  if (error instanceof Error) {
-    return error.message.includes('AI降级检测') || error.message.includes('重复字符');
-  }
-  return false;
-}
-
-/**
  * 进度回调类型
  */
 export interface ProgressInfo {
@@ -90,7 +81,7 @@ export interface ProgressInfo {
  * 通用文本任务选项
  */
 export interface TextTaskOptions {
-  languages?: ExecutionLanguages | undefined;
+  languages: ExecutionLanguages;
   // 回调函数
   onChunk?: TextGenerationStreamCallback | undefined;
   onProgress?: ((progress: ProgressInfo) => void) | undefined;
@@ -142,13 +133,12 @@ type _MissingTextTaskOptionKey = Exclude<
 const _textTaskOptionsExhaustive: [_MissingTextTaskOptionKey] extends [never] ? true : never = true;
 void _textTaskOptionsExhaustive;
 
-export function pickTextTaskOptions(options: TextTaskOptions | undefined): TextTaskOptions {
-  if (!options) return {};
-  const picked: TextTaskOptions = {};
+export function pickTextTaskOptions(options: TextTaskOptions): TextTaskOptions {
+  const picked: TextTaskOptions = { languages: options.languages };
   for (const key of TEXT_TASK_OPTION_KEYS) {
     if (key in options) {
       // 保留 exactOptionalPropertyTypes 下的"仅在存在时赋值"语义
-      (picked as Record<string, unknown>)[key] = options[key];
+      (picked as unknown as Record<string, unknown>)[key] = options[key];
     }
   }
   return picked;
@@ -341,7 +331,7 @@ export async function processTextTask(
   const { onChunk, onProgress, signal, bookId, aiProcessingStore, chapterId, chapterTitle } =
     options;
 
-  const requestedLanguages = options.languages ?? captureExecutionLanguages('zh-CN');
+  const requestedLanguages = options.languages;
   const languages = captureExecutionLanguages(
     requestedLanguages.uiLocale,
     requestedLanguages.targetLanguage,
@@ -360,7 +350,7 @@ export async function processTextTask(
 
   // 验证输入
   if (!content || content.length === 0) {
-    throw new Error(`要${taskLabel}的内容不能为空`);
+    throw new Error(translateText(languages.uiLocale, `aiRun.emptyContent.${taskType}`));
   }
 
   // 构建原始索引映射 + 过滤有效段落
@@ -374,14 +364,17 @@ export async function processTextTask(
 
   if (validParagraphs.length === 0) {
     throw new Error(
-      requiresTranslation
-        ? `要${taskLabel}的段落必须包含当前选中的翻译`
-        : `要${taskLabel}的内容不能为空`,
+      translateText(
+        languages.uiLocale,
+        requiresTranslation
+          ? `aiRun.needsTranslation.${taskType}`
+          : `aiRun.emptyContent.${taskType}`,
+      ),
     );
   }
 
   if (!model.enabled) {
-    throw new Error('所选模型未启用');
+    throw new Error(translateText(languages.uiLocale, 'aiRun.modelDisabled'));
   }
 
   // console.log(`[${logLabel}] 🚀 开始${taskLabel}任务`, {
@@ -399,6 +392,7 @@ export async function processTextTask(
     aiProcessingStore,
     taskType,
     model.name,
+    languages.uiLocale,
     {
       ...(typeof bookId === 'string' ? { bookId } : {}),
       ...(typeof chapterId === 'string' ? { chapterId } : {}),
@@ -493,7 +487,7 @@ export async function processTextTask(
 
     if (aiProcessingStore && taskId) {
       aiProcessingStore
-        .updateTask(taskId, { message: '正在建立连接...' })
+        .updateTask(taskId, { message: translateText(languages.uiLocale, 'aiRun.connecting') })
         .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
     }
 
@@ -598,7 +592,7 @@ export async function processTextTask(
     }
 
     // 完成任务
-    void completeTask(taskId, aiProcessingStore, taskType);
+    void completeTask(taskId, aiProcessingStore, taskType, languages.uiLocale);
 
     // 收集引用的记忆 ID
     const referencedMemoryIds = new Set<string>();
@@ -617,7 +611,7 @@ export async function processTextTask(
       ...(taskId ? { taskId } : {}),
     };
   } catch (error) {
-    void handleTaskError(error, taskId, aiProcessingStore, taskType);
+    void handleTaskError(error, taskId, aiProcessingStore, taskType, languages.uiLocale);
     throw error;
   } finally {
     cleanupAbort();
@@ -735,7 +729,9 @@ function maybeRebuildChunk(params: {
 function updateChunkStartStatus(params: {
   aiProcessingStore: AIProcessingStore | undefined;
   taskId: string | undefined;
+  taskType: TaskType;
   taskLabel: string;
+  uiLocale: AppLocale;
   chunkIndex: number;
   totalChunks: number;
   logLabel: string;
@@ -745,7 +741,10 @@ function updateChunkStartStatus(params: {
 
   aiProcessingStore
     .updateTask(taskId, {
-      message: `正在${taskLabel}第 ${chunkIndex + 1}/${totalChunks} 部分...`,
+      message: translateText(params.uiLocale, `aiRun.chunk.${params.taskType}`, {
+        current: chunkIndex + 1,
+        total: totalChunks,
+      }),
       status: 'processing',
       workflowStatus: 'planning',
     })
@@ -754,6 +753,7 @@ function updateChunkStartStatus(params: {
   aiProcessingStore
     .appendThinkingMessage(
       taskId,
+      // 协议标记，由思考面板格式化器解析，不随执行语言变化
       `\n\n[=== ${taskLabel}块 ${chunkIndex + 1}/${totalChunks} ===]\n\n`,
     )
     .catch((error) => console.error(`[${logLabel}] Failed to append thinking message:`, error));
@@ -843,6 +843,7 @@ function prepareChunkRetry(params: {
   aiProcessingStore: AIProcessingStore | undefined;
   taskId: string | undefined;
   logLabel: string;
+  uiLocale: AppLocale;
 }): void {
   const {
     chunkHistory,
@@ -868,7 +869,10 @@ function prepareChunkRetry(params: {
   if (aiProcessingStore && taskId) {
     aiProcessingStore
       .updateTask(taskId, {
-        message: `检测到AI降级，正在重试第 ${retryCount}/${maxRetries} 次...`,
+        message: translateText(params.uiLocale, 'aiRun.retrying', {
+          count: retryCount,
+          max: maxRetries,
+        }),
         status: 'processing',
       })
       .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
@@ -1001,6 +1005,7 @@ function handleChunkError(params: {
   retryCount: number;
   maxRetries: number;
   logLabel: string;
+  uiLocale: AppLocale;
 }): number {
   const { error, chunkIndex, totalChunks, retryCount, maxRetries, logLabel } = params;
   if (!isAIDegradationError(error)) {
@@ -1016,9 +1021,7 @@ function handleChunkError(params: {
         重试次数: maxRetries,
       },
     );
-    throw new Error(
-      `AI降级：检测到重复字符，已重试 ${maxRetries} 次仍失败。请检查AI服务状态或稍后重试。`,
-    );
+    throw new Error(translateText(params.uiLocale, 'aiRun.degradedFinal', { max: maxRetries }));
   }
   return next;
 }
@@ -1105,7 +1108,7 @@ async function runChunkProcessingLoop(ctx: ChunkProcessingContext): Promise<stri
 
   while (chunkIndex < ctx.chunks.length) {
     if (ctx.finalSignal.aborted) {
-      throw new Error('请求已取消');
+      throw createCancelledError(ctx.languages.uiLocale);
     }
 
     const chunk = ctx.chunks[chunkIndex];
@@ -1158,7 +1161,9 @@ async function processSingleChunk(
   updateChunkStartStatus({
     aiProcessingStore: ctx.aiProcessingStore,
     taskId: ctx.taskId,
+    taskType: ctx.taskType,
     taskLabel: ctx.taskLabel,
+    uiLocale: ctx.languages.uiLocale,
     chunkIndex,
     totalChunks: ctx.chunks.length,
     logLabel: ctx.logLabel,
@@ -1203,6 +1208,7 @@ async function processSingleChunk(
           aiProcessingStore: ctx.aiProcessingStore,
           taskId: ctx.taskId,
           logLabel: ctx.logLabel,
+          uiLocale: ctx.languages.uiLocale,
         });
       }
 
@@ -1220,7 +1226,11 @@ async function processSingleChunk(
       });
 
       if (loopResult.status !== 'end') {
-        throw new Error(`${ctx.taskLabel}任务未完成（状态: ${loopResult.status}）。请重试。`);
+        throw new Error(
+          translateText(ctx.languages.uiLocale, `aiRun.incomplete.${ctx.taskType}`, {
+            status: loopResult.status,
+          }),
+        );
       }
 
       markProcessedParagraphsFromMap(loopResult.paragraphs, ctx.processedParagraphIds);
@@ -1240,11 +1250,16 @@ async function processSingleChunk(
         retryCount,
         maxRetries: ctx.maxRetries,
         logLabel: ctx.logLabel,
+        uiLocale: ctx.languages.uiLocale,
       });
     }
   }
   // 防御性兜底：handleChunkError 应当已经抛出，这里仅为 TS 控制流
-  throw new Error(`${ctx.taskLabel}任务重试 ${ctx.maxRetries} 次后仍未完成`);
+  throw new Error(
+    translateText(ctx.languages.uiLocale, `aiRun.retriesExhausted.${ctx.taskType}`, {
+      max: ctx.maxRetries,
+    }),
+  );
 }
 
 /**

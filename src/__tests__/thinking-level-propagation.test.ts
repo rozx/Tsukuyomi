@@ -1,4 +1,5 @@
 import './setup';
+import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-languages';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AIServiceFactory } from '../services/ai/ai-service-factory';
 import { AssistantService } from '../services/ai/tasks/assistant-service';
@@ -37,7 +38,10 @@ describe('思考等级接入实际服务入口', () => {
       vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({ generateText: generate } as never);
       if (task === 'assistant') await AssistantService.chat(model, '简短回答');
       if (task === 'term') generate.mockResolvedValue({ text: '{"t":"你好"}' });
-      if (task === 'term') await TermTranslationService.translate('こんにちは', model);
+      if (task === 'term')
+        await TermTranslationService.translate('こんにちは', model, {
+          languages: captureExecutionLanguages('zh-CN'),
+        });
       if (task === 'paragraph')
         await processSingleParagraph(
           {
@@ -47,7 +51,7 @@ describe('思考等级接入实际服务入口', () => {
             selectedTranslationId: 't1',
           },
           model,
-          {},
+          { languages: captureExecutionLanguages('zh-CN') },
           {
             taskType: 'polish',
             logLabel: 'test',

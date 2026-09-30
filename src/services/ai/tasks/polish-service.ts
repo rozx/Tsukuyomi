@@ -23,7 +23,7 @@ import {
  * 润色服务选项
  */
 export interface PolishServiceOptions {
-  languages?: ExecutionLanguages;
+  languages: ExecutionLanguages;
   /**
    * 流式数据回调函数，用于接收润色过程中的数据块
    */
@@ -103,11 +103,11 @@ export class PolishService {
   static async polish(
     content: Paragraph[],
     model: AIModel,
-    options?: PolishServiceOptions,
+    options: PolishServiceOptions,
   ): Promise<PolishResult> {
     // 构建段落提取回调
     const onParagraphsExtracted = buildChangedParagraphsExtractCallback({
-      onChangedParagraphs: options?.onParagraphPolish,
+      onChangedParagraphs: options.onParagraphPolish,
       logLabel: 'PolishService',
       taskLabel: '段落润色',
     });
@@ -142,9 +142,9 @@ export class PolishService {
   static async polishSingle(
     paragraph: Paragraph,
     model: AIModel,
-    options?: SingleParagraphOptions,
+    options: SingleParagraphOptions,
   ): Promise<SingleParagraphResult> {
-    return processSingleParagraph(paragraph, model, options || {}, {
+    return processSingleParagraph(paragraph, model, options, {
       taskType: 'polish',
       logLabel: 'PolishService',
       temperature: model.isDefault.proofreading?.temperature ?? 0.7,

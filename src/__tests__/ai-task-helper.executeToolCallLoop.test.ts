@@ -1,4 +1,5 @@
 import './setup';
+import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { describe, test, expect, spyOn, mock } from 'bun:test';
 import type {
   ChatMessage,
@@ -92,6 +93,7 @@ describe('executeToolCallLoop', () => {
           taskId: undefined,
           aiProcessingStore: undefined,
           isBriefPlanning: true,
+          languages: captureExecutionLanguages('zh-CN'),
           logLabel: 'Test',
           maxTurns: 1,
         });
@@ -181,6 +183,7 @@ describe('executeToolCallLoop', () => {
           onToast: undefined,
           taskId: undefined,
           aiProcessingStore: undefined,
+          languages: captureExecutionLanguages('zh-CN'),
           logLabel: 'Test',
           maxTurns: 1,
         });
@@ -329,6 +332,7 @@ describe('executeToolCallLoop', () => {
         onToast: undefined,
         taskId: undefined,
         aiProcessingStore: undefined,
+        languages: captureExecutionLanguages('zh-CN'),
         logLabel: 'Test',
         maxTurns: 10,
       });
@@ -470,6 +474,7 @@ describe('executeToolCallLoop', () => {
         onToast: undefined,
         taskId: undefined,
         aiProcessingStore: undefined,
+        languages: captureExecutionLanguages('zh-CN'),
         logLabel: 'Test',
         maxTurns: 10,
       });
@@ -603,6 +608,7 @@ describe('executeToolCallLoop', () => {
         onToast: undefined,
         taskId: undefined,
         aiProcessingStore: undefined,
+        languages: captureExecutionLanguages('zh-CN'),
         logLabel: 'Test',
         maxTurns: 10,
       });
@@ -739,6 +745,7 @@ describe('executeToolCallLoop', () => {
         onToast: undefined,
         taskId: undefined,
         aiProcessingStore: undefined,
+        languages: captureExecutionLanguages('zh-CN'),
         logLabel: 'Test',
         maxTurns: 10,
       });
@@ -865,6 +872,7 @@ describe('executeToolCallLoop', () => {
         onToast: undefined,
         taskId: undefined,
         aiProcessingStore: undefined,
+        languages: captureExecutionLanguages('zh-CN'),
         logLabel: 'Test',
         maxTurns: 10,
       });
@@ -993,6 +1001,7 @@ describe('executeToolCallLoop', () => {
         onToast: undefined,
         taskId: undefined,
         aiProcessingStore: undefined,
+        languages: captureExecutionLanguages('zh-CN'),
         logLabel: 'Test',
         maxTurns: 10,
       });
@@ -1086,6 +1095,7 @@ describe('executeToolCallLoop', () => {
           onToast: undefined,
           taskId: undefined,
           aiProcessingStore: undefined,
+          languages: captureExecutionLanguages('zh-CN'),
           logLabel: 'Test',
         });
       } catch (error) {
@@ -1213,6 +1223,7 @@ describe('executeToolCallLoop', () => {
         onToast: undefined,
         taskId: undefined,
         aiProcessingStore: undefined,
+        languages: captureExecutionLanguages('zh-CN'),
         logLabel: 'Test',
         maxTurns: 10,
       });

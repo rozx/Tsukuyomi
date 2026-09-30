@@ -39,8 +39,9 @@ const countVisibleMessagesSinceSummary = (
   allMessages: ChatSessionMessage[],
 ): number => buildVisibleMessagesToSummarize(session, allMessages).length;
 
+// 这里只用于计数，标签语言不影响结果
 const buildApiMessagesToSummarize = (session: ChatSession): SummarizableMessage[] =>
-  formatSummaryMessages(session.apiMessageHistory ?? []);
+  formatSummaryMessages(session.apiMessageHistory ?? [], 'zh-CN');
 
 const countApiContextMessages = (session: ChatSession): number =>
   buildApiMessagesToSummarize(session).length;

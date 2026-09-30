@@ -23,7 +23,7 @@ import {
  * 校对服务选项
  */
 export interface ProofreadingServiceOptions {
-  languages?: ExecutionLanguages;
+  languages: ExecutionLanguages;
   /**
    * 流式数据回调函数，用于接收校对过程中的数据块
    */
@@ -103,11 +103,11 @@ export class ProofreadingService {
   static async proofread(
     content: Paragraph[],
     model: AIModel,
-    options?: ProofreadingServiceOptions,
+    options: ProofreadingServiceOptions,
   ): Promise<ProofreadingResult> {
     // 构建段落提取回调
     const onParagraphsExtracted = buildChangedParagraphsExtractCallback({
-      onChangedParagraphs: options?.onParagraphProofreading,
+      onChangedParagraphs: options.onParagraphProofreading,
       logLabel: 'ProofreadingService',
       taskLabel: '段落校对',
     });
@@ -142,9 +142,9 @@ export class ProofreadingService {
   static async proofreadSingle(
     paragraph: Paragraph,
     model: AIModel,
-    options?: SingleParagraphOptions,
+    options: SingleParagraphOptions,
   ): Promise<SingleParagraphResult> {
-    return processSingleParagraph(paragraph, model, options || {}, {
+    return processSingleParagraph(paragraph, model, options, {
       taskType: 'proofreading',
       logLabel: 'ProofreadingService',
       temperature: model.isDefault.proofreading?.temperature ?? 0.3,

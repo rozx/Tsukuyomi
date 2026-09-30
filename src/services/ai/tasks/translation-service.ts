@@ -18,7 +18,7 @@ import { buildTranslationSystemPrompt } from './prompts/translation';
  * 翻译服务选项
  */
 export interface TranslationServiceOptions {
-  languages?: ExecutionLanguages;
+  languages: ExecutionLanguages;
   /**
    * 流式数据回调函数
    */
@@ -102,10 +102,10 @@ export class TranslationService {
   static async translate(
     content: Paragraph[],
     model: AIModel,
-    options?: TranslationServiceOptions,
+    options: TranslationServiceOptions,
   ): Promise<TranslationResult> {
     // 构建段落提取回调
-    const onParagraphsExtracted = options?.onParagraphTranslation
+    const onParagraphsExtracted = options.onParagraphTranslation
       ? async (params: ParagraphExtractCallbackParams) => {
           const { paragraphs, actions, actionStartIndex } = params;
           const referencedMemoryIds = collectChunkReferencedMemoryIds(
@@ -132,7 +132,7 @@ export class TranslationService {
       : undefined;
 
     // 构建标题提取回调
-    const onTitleExtracted = options?.onTitleTranslation
+    const onTitleExtracted = options.onTitleTranslation
       ? async (params: TitleExtractCallbackParams) => {
           try {
             await Promise.resolve(options.onTitleTranslation!(params.title));

@@ -46,7 +46,7 @@ describe('文本任务目标语言', () => {
         model,
         { languages: captureExecutionLanguages('en-US') },
       ),
-    ).rejects.toThrow('段落必须包含当前选中的翻译');
+    ).rejects.toThrow('Paragraphs to polish must have a selected translation');
     expect(generate).not.toHaveBeenCalled();
   });
 });

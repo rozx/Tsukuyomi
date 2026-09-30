@@ -11,7 +11,7 @@ import {
   type TaskType,
   type AIProcessingStore,
 } from './task-types';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { AIDegradationError } from 'src/services/ai/core/errors';
 import { TOOL_CALL_PLACEHOLDER } from './stream-handler';
 import type {
   TextGenerationRequest,
@@ -58,7 +58,7 @@ const ABSOLUTE_MAX_TURNS = 200;
  * 处理工具调用循环
  */
 export interface ToolCallLoopConfig {
-  languages?: ExecutionLanguages;
+  languages: ExecutionLanguages;
   paragraphInputs?: readonly TodoParagraphInput[];
   history: ChatMessage[];
   tools: AITool[];
@@ -220,7 +220,6 @@ class TaskLoopSession {
 
   // Config & Helpers
   private allowedToolNames: Set<string>;
-  private taskLabel: string;
   private metrics: PerformanceMetrics;
   private readonly promptPolicy: IPromptPolicy;
   private stateMachine: StateMachineEngine;
@@ -230,9 +229,8 @@ class TaskLoopSession {
   private lastTodoMessage: ChatMessage | undefined;
 
   constructor(private config: ToolCallLoopConfig) {
-    this.promptPolicy = createPromptPolicy(config.languages?.uiLocale ?? 'zh-CN');
+    this.promptPolicy = createPromptPolicy(config.languages.uiLocale);
     this.allowedToolNames = new Set(config.tools.map((t) => t.function.name));
-    this.taskLabel = TASK_TYPE_LABELS[config.taskType];
     this.stateMachine = new StateMachineEngine(config.taskType, this.currentStatus);
     this.metrics = createInitialMetrics();
     this.toolDispatcher = new ToolDispatcher({
@@ -326,7 +324,7 @@ class TaskLoopSession {
       aiProcessingStore,
       chunkText,
       logLabel,
-      taskType: this.config.taskType,
+      uiLocale: this.config.languages.uiLocale,
     });
 
     // Save reasoning
@@ -356,9 +354,7 @@ class TaskLoopSession {
     this.finalResponseText = responseText;
 
     if (detectRepeatingCharacters(responseText, chunkText, { logLabel })) {
-      throw new Error(
-        `AI降级检测：最终响应中检测到重复字符（chunkIndex: ${this.config.chunkIndex ?? 'unknown'}）`,
-      );
+      throw new AIDegradationError(this.config.languages.uiLocale);
     }
 
     const previousStatus = this.currentStatus;
@@ -478,7 +474,7 @@ class TaskLoopSession {
     console.warn(
       `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
     );
-    return translateText(this.config.languages?.uiLocale ?? 'zh-CN', 'aiState.gate', {
+    return translateText(this.config.languages.uiLocale, 'aiState.gate', {
       status: newStatus,
       count: gate.incompleteItems.length,
       items: todoList,
@@ -914,7 +910,7 @@ class TaskLoopSession {
       const postOutputPrompt = buildPostOutputPrompt(
         taskType,
         this.config.taskId,
-        this.config.languages?.uiLocale ?? 'zh-CN',
+        this.config.languages.uiLocale,
       );
       this.config.history.push({
         role: 'user',
@@ -969,7 +965,7 @@ class TaskLoopSession {
       for (const id of missingIds) {
         const paragraph = contentMap.get(id);
         const selected = paragraph
-          ? getLanguageTranslation(paragraph, this.config.languages?.targetLanguage ?? 'zh-CN')
+          ? getLanguageTranslation(paragraph, this.config.languages.targetLanguage)
           : undefined;
         if (selected) this.accumulatedParagraphs.set(id, selected.translation);
         else stillMissing.push(id);
@@ -1046,7 +1042,10 @@ class TaskLoopSession {
   private checkMaxTurns(effectiveMaxTurns: number) {
     if (this.currentStatus !== 'end' && this.currentTurnCount >= effectiveMaxTurns) {
       throw new Error(
-        `AI在${effectiveMaxTurns}回合内未完成${this.taskLabel}任务（当前状态: ${this.currentStatus}）。请重试。`,
+        translateText(this.config.languages.uiLocale, `aiRun.maxTurns.${this.config.taskType}`, {
+          turns: effectiveMaxTurns,
+          status: this.currentStatus,
+        }),
       );
     }
   }
