@@ -132,9 +132,11 @@ async function flush() {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   toastAdd.mockClear();
   seen.length = 0;
+  // 这些用例断言简中提示；英文见 book-sync-ui-languages.test.ts
+  await useSettingsStore().setUiLocale('zh-CN');
 });
 
 afterEach(() => {

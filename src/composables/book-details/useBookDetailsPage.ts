@@ -697,7 +697,7 @@ function createBookDetailsPageContext() {
 
     isMovingChapter.value = true;
     try {
-      saveState?.('触控排序章节');
+      saveState?.(translateText(settings.uiLocale, 'bookUi.details.touchSortState'));
       const updatedVolumes = ChapterService.moveChapter(
         book.value,
         payload.chapter.id,

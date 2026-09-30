@@ -6,6 +6,7 @@ import { generateShortId } from '../utils/id-generator';
 import * as BooksStore from '../stores/books';
 import { ChapterService } from '../services/chapter-service';
 import * as useToastHistory from '../composables/useToastHistory';
+import { useSettingsStore } from '../stores/settings';
 
 // Mock HTMLElement for Node.js/Bun environment
 class MockHTMLElement {
@@ -104,7 +105,9 @@ function createTestNovel(volumes: Volume[]): Novel {
 }
 
 describe('useChapterDragDrop', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // 断言简中撤销标签；界面语言见 book-details-ui-languages.test.ts
+    await useSettingsStore().setUiLocale('zh-CN');
     mockToastAdd.mockClear();
     mockMoveChapter.mockClear();
     mockBooksStoreUpdateBook.mockClear();

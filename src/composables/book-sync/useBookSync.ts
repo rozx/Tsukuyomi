@@ -22,12 +22,15 @@ import type {
 import type { Volume } from 'src/models/novel';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
-import { BookSyncError } from 'src/services/book-sync/errors';
 import { resolveRecipe } from 'src/services/book-sync/recipe';
 import { FEATURES } from 'src/constants/features';
 import { useBooksStore } from 'src/stores/books';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { getErrorMessage } from 'src/utils/error-message';
+import { LocalizedError, localizedErrorMessage } from 'src/utils/localized-error';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
+import type { AppLocale } from 'src/models/locale';
 import {
   buildConfirmSummary,
   driftWarning,
@@ -77,7 +80,8 @@ export interface BookSyncOptions {
 export interface BookSyncContext {
   target: Readonly<Ref<BookSyncTarget | null>>;
   phase: Ref<BookSyncPhase>;
-  message: Ref<string>;
+  /** 无法回放或检查出错时的说明：按当前界面语言渲染 */
+  message: Readonly<Ref<string>>;
   changeset: Ref<BookSyncChangeset | null>;
   recipe: ComputedRef<BookSyncRecipeView | null>;
   volumes: ComputedRef<Volume[]>;
@@ -124,14 +128,23 @@ export function injectBookSync(): BookSyncContext {
 }
 
 function errorCode(error: unknown): string {
-  if (error instanceof BookSyncError) return error.code;
+  if (error instanceof LocalizedError) return error.code;
   return /^([A-Z_]+):/.exec(getErrorMessage(error))?.[1] ?? '';
 }
 
-/** BookSyncError 的 message 带 `CODE: ` 前缀，界面只显示说明部分 */
-function errorText(error: unknown): string {
-  return getErrorMessage(error).replace(/^[A-Z_]+:\s*/, '');
+/** 自有错误按界面语言渲染；外部诊断保持原文，只去掉 `CODE: ` 前缀 */
+function errorText(error: unknown, locale: AppLocale): string {
+  return localizedErrorMessage(error, locale, 'bookUi.sync.unknownError').replace(
+    /^[A-Z_]+:\s*/,
+    '',
+  );
 }
+
+/** 说明来源：保存原始错误或失效变更集，界面语言切换时重新渲染 */
+type MessageSource =
+  | { kind: 'none' }
+  | { kind: 'invalid'; changeset: BookSyncChangeset }
+  | { kind: 'error'; error: unknown };
 
 const SITE_LABELS: Record<string, string> = {
   'syosetu-org': 'ハーメルン',
@@ -147,9 +160,18 @@ function createBookSyncContext(
   const router = useRouter();
   const booksStore = useBooksStore();
   const toast = useToastWithHistory();
+  const settingsStore = useSettingsStore();
+  const t = (key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, key, values);
 
   const phase = ref<BookSyncPhase>('idle');
-  const message = ref('');
+  const messageSource = shallowRef<MessageSource>({ kind: 'none' });
+  const message = computed(() => {
+    const source = messageSource.value;
+    if (source.kind === 'invalid') return repairReason(source.changeset, settingsStore.uiLocale);
+    if (source.kind === 'error') return errorText(source.error, settingsStore.uiLocale);
+    return '';
+  });
   const changeset = ref<BookSyncChangeset | null>(null);
   const selected = ref(new Set<string>());
   const volumeOverrides = ref(new Map<string, SyncVolumeTarget>());
@@ -203,10 +225,10 @@ function createBookSyncContext(
     seenNew = reconciled.seenNew;
     if (next.status === 'invalid') {
       phase.value = 'invalid';
-      message.value = repairReason(next, useSettingsStore().uiLocale);
+      messageSource.value = { kind: 'invalid', changeset: next };
     } else {
       phase.value = 'ready';
-      message.value = '';
+      messageSource.value = { kind: 'none' };
     }
   }
 
@@ -217,13 +239,13 @@ function createBookSyncContext(
     seenNew = new Set();
     confirm.value = { stage: 'closed' };
     canUndo.value = false;
-    message.value = '';
+    messageSource.value = { kind: 'none' };
     deep.value = { running: false, completed: 0, total: 0, waitSeconds: 0 };
   }
 
   function fail(error: unknown): void {
     phase.value = errorCode(error) === 'RECIPE_MISSING' ? 'missing' : 'error';
-    message.value = errorText(error);
+    messageSource.value = { kind: 'error', error };
   }
 
   async function open(value: BookSyncTarget | null): Promise<void> {
@@ -289,7 +311,7 @@ function createBookSyncContext(
       });
       if (session.value === current) setChangeset(result);
     } catch (error) {
-      if (session.value === current) notifyError('深度检查失败', error);
+      if (session.value === current) notifyError(t('bookUi.sync.deepCheckFailed'), error);
     } finally {
       clearInterval(waitTimer);
       deep.value = { ...deep.value, running: false, waitSeconds: 0 };
@@ -336,14 +358,17 @@ function createBookSyncContext(
       // 取消跳过表示用户要导入这些章节，直接勾选
       setChangeset(result, skipped ? [] : entries.map((entry) => entry.url));
     } catch (error) {
-      notifyError(skipped ? '跳过失败' : '取消跳过失败', error);
+      notifyError(t(skipped ? 'bookUi.sync.skipFailed' : 'bookUi.sync.unskipFailed'), error);
     } finally {
       busy.value = false;
     }
   }
 
   function preview(url: string): Promise<string[]> {
-    if (!session.value) return Promise.reject(new Error('同步会话尚未就绪'));
+    if (!session.value)
+      return Promise.reject(
+        new LocalizedError('SYNC_SESSION_NOT_READY', 'bookUi.sync.sessionNotReady'),
+      );
     return session.value.preview(url);
   }
 
@@ -385,11 +410,13 @@ function createBookSyncContext(
       if (code === 'TARGET_BUSY') {
         toast.add({
           severity: 'warn',
-          summary: '书籍正在被占用',
-          detail: `请等待以下任务结束后再应用：${errorText(error)}`,
+          summary: t('bookUi.sync.busyTitle'),
+          detail: t('bookUi.sync.busyDetail', {
+            owners: errorText(error, settingsStore.uiLocale),
+          }),
           life: 6000,
         });
-      } else notifyError('应用失败', error);
+      } else notifyError(t('bookUi.sync.applyFailed'), error);
     } finally {
       busy.value = false;
     }
@@ -413,15 +440,15 @@ function createBookSyncContext(
         setChangeset(current.changeset);
         canUndo.value = false;
       }
-      toast.add({ severity: 'info', summary: '已撤销同步', life: 3000 });
+      toast.add({ severity: 'info', summary: t('bookUi.sync.undone'), life: 3000 });
     } catch (error) {
       toast.add({
         severity: 'error',
-        summary: '无法撤销',
+        summary: t('bookUi.sync.undoFailed'),
         detail:
           errorCode(error) === 'BOOK_CHANGED'
-            ? '书籍已有后续修改，无法撤销本次同步'
-            : errorText(error),
+            ? t('bookUi.sync.undoChanged')
+            : errorText(error, settingsStore.uiLocale),
         life: 6000,
       });
     }
@@ -437,19 +464,21 @@ function createBookSyncContext(
     if (result.status === 'failed') {
       toast.add({
         severity: 'error',
-        summary: '同步失败',
-        detail: `${result.failed.length} 个章节获取失败，可在失败列表中重试`,
+        summary: t('bookUi.sync.syncFailed'),
+        detail: t('bookUi.sync.syncFailedDetail', { count: result.failed.length }),
         life: 6000,
       });
       return;
     }
     toast.add({
       severity: result.status === 'partial' ? 'warn' : 'success',
-      summary: result.status === 'partial' ? '部分章节已同步' : '同步完成',
+      summary: t(
+        result.status === 'partial' ? 'bookUi.sync.partialTitle' : 'bookUi.sync.doneTitle',
+      ),
       detail:
         result.status === 'partial'
-          ? `已写入 ${count} 章，${result.failed.length} 章失败，可在失败列表中重试`
-          : `已写入 ${count} 章`,
+          ? t('bookUi.sync.partialDetail', { count, failed: result.failed.length })
+          : t('bookUi.sync.doneDetail', { count }),
       life: 5000,
       // 闭包持有会话：离开页面（例如新建后跳转到新书）后仍可从通知撤销
       onRevert: () => undoWith(current),
@@ -457,7 +486,12 @@ function createBookSyncContext(
   }
 
   function notifyError(summaryText: string, error: unknown): void {
-    toast.add({ severity: 'error', summary: summaryText, detail: errorText(error), life: 6000 });
+    toast.add({
+      severity: 'error',
+      summary: summaryText,
+      detail: errorText(error, settingsStore.uiLocale),
+      life: 6000,
+    });
   }
 
   async function handoff(): Promise<void> {
@@ -468,14 +502,11 @@ function createBookSyncContext(
       else if (book.value)
         await repairWithImporter(
           toRaw(book.value),
-          repairReason(
-            phase.value === 'invalid' ? changeset.value : null,
-            useSettingsStore().uiLocale,
-          ),
+          repairReason(phase.value === 'invalid' ? changeset.value : null, settingsStore.uiLocale),
           router,
         );
     } catch (error) {
-      notifyError('无法交给 AI 导入器', error);
+      notifyError(t('bookUi.sync.handoffFailed'), error);
     }
   }
 

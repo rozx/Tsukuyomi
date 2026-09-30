@@ -1,18 +1,26 @@
 <script setup lang="ts">
 /** 手机：全屏页面，顶栏返回，下方网址输入与单列工作区。 */
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import { injectBookSyncNew } from 'src/composables/book-sync-new/useBookSyncNew';
 import SourceUrlForm from 'src/components/book-sync/fragments/SourceUrlForm.vue';
 import BookSyncWorkspace from 'src/components/book-sync/BookSyncWorkspace.vue';
 
 const { goBack } = injectBookSyncNew();
+const { t } = useI18n();
 </script>
 
 <template>
   <div class="bsn-m">
     <header class="bsn-m-bar">
-      <Button icon="pi pi-arrow-left" text rounded aria-label="返回" @click="goBack" />
-      <h1 class="bsn-m-title">从网站导入</h1>
+      <Button
+        icon="pi pi-arrow-left"
+        text
+        rounded
+        :aria-label="t('bookUi.sync.back')"
+        @click="goBack"
+      />
+      <h1 class="bsn-m-title">{{ t('bookUi.sync.importFromWeb') }}</h1>
     </header>
     <div class="bsn-m-body">
       <SourceUrlForm />

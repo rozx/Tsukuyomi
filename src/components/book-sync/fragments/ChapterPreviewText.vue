@@ -1,21 +1,34 @@
 <script setup lang="ts">
 /** 按需抓取并显示一章的来源正文（会话内缓存，应用时不会重复请求）。 */
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
-import { getErrorMessage } from 'src/utils/error-message';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+import { resolveAppLocale } from 'src/models/locale';
 
 const props = defineProps<{ url: string }>();
 const { preview } = injectBookSync();
 
+const { t, locale } = useI18n();
 const paragraphs = ref<string[]>([]);
 const loading = ref(true);
-const error = ref('');
+const failure = ref<unknown>(null);
+// 自有错误按界面语言渲染，外部诊断保留原文；去掉 `CODE: ` 前缀
+const error = computed(() =>
+  failure.value === null
+    ? ''
+    : localizedErrorMessage(
+        failure.value,
+        resolveAppLocale(locale.value),
+        'bookUi.sync.unknownError',
+      ).replace(/^[A-Z_]+:\s*/, ''),
+);
 
 onMounted(async () => {
   try {
     paragraphs.value = await preview(props.url);
   } catch (reason) {
-    error.value = getErrorMessage(reason).replace(/^[A-Z_]+:\s*/, '');
+    failure.value = reason;
   } finally {
     loading.value = false;
   }
@@ -24,7 +37,9 @@ onMounted(async () => {
 
 <template>
   <div class="cpt">
-    <p v-if="loading" class="cpt-muted"><i class="pi pi-spin pi-spinner" /> 正在获取正文…</p>
+    <p v-if="loading" class="cpt-muted">
+      <i class="pi pi-spin pi-spinner" /> {{ t('bookUi.sync.loadingPreview') }}
+    </p>
     <p v-else-if="error" class="cpt-error">{{ error }}</p>
     <template v-else>
       <p v-for="(text, index) in paragraphs" :key="index" class="cpt-text">{{ text }}</p>

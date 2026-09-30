@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
+import { useSettingsStore } from 'src/stores/settings';
 import { createApp, defineComponent, h, nextTick } from 'vue';
 import type { App } from 'vue';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
@@ -76,7 +77,8 @@ async function mountAt(path: string): Promise<Router> {
   return router;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await useSettingsStore().setUiLocale('zh-CN');
   open = vi
     .spyOn(BookSyncService, 'openSession')
     .mockImplementation(() => Promise.resolve(session() as never));

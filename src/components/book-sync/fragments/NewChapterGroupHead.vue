@@ -4,6 +4,7 @@
  * 目标卷覆盖只收集到 useBookSync，应用时由同步服务处理。
  */
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import type { SyncVolumeTarget } from 'src/models/book-sync';
@@ -14,17 +15,20 @@ import { getVolumeDisplayTitle } from 'src/utils/novel-utils';
 const props = defineProps<{ group: NewChapterGroup }>();
 const { volumes, selected, working, toggle, setGroupTarget } = injectBookSync();
 
+const { t } = useI18n();
 const editing = ref(false);
 const newTitle = ref('');
 
 function targetName(target: SyncVolumeTarget): string {
   if ('newTitle' in target) return target.newTitle;
   const volume = volumes.value.find((entry) => entry.id === target.volumeId);
-  return volume ? getVolumeDisplayTitle(volume) : '已有卷';
+  return volume ? getVolumeDisplayTitle(volume) : t('bookUi.sync.existingVolume');
 }
 
 function targetLabel(target: SyncVolumeTarget): string {
-  return `${'newTitle' in target ? '新建卷' : '放入'}「${targetName(target)}」`;
+  return t('newTitle' in target ? 'bookUi.sync.targetNew' : 'bookUi.sync.targetExisting', {
+    name: targetName(target),
+  });
 }
 
 function isAllSelected(): boolean {
@@ -60,21 +64,31 @@ function useNewVolume(): void {
       aria-hidden="true"
     />
     <span class="ncg-target">
-      <span class="ncg-kind">{{ 'newTitle' in group.target ? '新建卷' : '放入' }}</span
+      <span class="ncg-kind">{{
+        t('newTitle' in group.target ? 'bookUi.sync.newVolumeKind' : 'bookUi.sync.putIntoKind')
+      }}</span
       >「{{ targetName(group.target) }}」
     </span>
-    <span class="ncg-meta">{{ group.chapters.length }} 章</span>
-    <span v-if="group.overridden" class="bsw-badge bsw-badge--info">已改选</span>
+    <span class="ncg-meta">{{
+      t('bookUi.sync.groupChapters', { count: group.chapters.length })
+    }}</span>
+    <span v-if="group.overridden" class="bsw-badge bsw-badge--info">{{
+      t('bookUi.sync.overridden')
+    }}</span>
     <span class="ncg-tools">
       <Button
-        :label="isAllSelected() ? '全部取消' : '全选'"
-        :aria-label="`${isAllSelected() ? '取消全选' : '全选'} ${targetLabel(group.target)} 的新章节`"
+        :label="t(isAllSelected() ? 'bookUi.sync.deselectAll' : 'bookUi.sync.selectAll')"
+        :aria-label="
+          t(isAllSelected() ? 'bookUi.sync.deselectGroupAria' : 'bookUi.sync.selectGroupAria', {
+            target: targetLabel(group.target),
+          })
+        "
         size="small"
         text
         @click="toggleGroup()"
       />
       <Button
-        label="更改目标卷"
+        :label="t('bookUi.sync.changeVolume')"
         icon="pi pi-pencil"
         size="small"
         text
@@ -87,7 +101,7 @@ function useNewVolume(): void {
     <div class="ncg-volumes">
       <Button
         v-if="group.overridden"
-        label="恢复推断的位置"
+        :label="t('bookUi.sync.restoreVolume')"
         size="small"
         severity="secondary"
         outlined
@@ -108,10 +122,15 @@ function useNewVolume(): void {
         v-model="newTitle"
         data-testid="bsw-new-volume"
         size="small"
-        placeholder="新卷名称"
+        :placeholder="t('bookUi.sync.newVolumePlaceholder')"
         @keydown.enter="useNewVolume()"
       />
-      <Button label="使用新卷" size="small" :disabled="!newTitle.trim()" @click="useNewVolume()" />
+      <Button
+        :label="t('bookUi.sync.useNewVolume')"
+        size="small"
+        :disabled="!newTitle.trim()"
+        @click="useNewVolume()"
+      />
     </div>
   </div>
 </template>

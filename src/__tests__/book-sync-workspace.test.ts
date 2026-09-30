@@ -4,6 +4,9 @@ import { createApp, defineComponent, h, nextTick, ref } from 'vue';
 import type { App } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import PrimeVue from 'primevue/config';
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
+import { useSettingsStore } from 'src/stores/settings';
 import type { BookSyncChangeset, SyncUpdatedChapter } from 'src/models/book-sync';
 import type { ImportParagraphChange } from 'src/models/import';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
@@ -112,6 +115,7 @@ async function mount(target: BookSyncTarget | null = { newFrom: NCODE }) {
   );
   app.use(router);
   app.use(PrimeVue);
+  app.use(zhI18n());
   app.mount(host);
   await flush();
   return { router };
@@ -131,9 +135,15 @@ function hasButton(label: string): boolean {
   );
 }
 
-beforeEach(() => {
+// 这些用例断言简中界面文字；英文与繁中见 book-sync-ui-languages.test.ts
+function zhI18n() {
+  return createI18n({ legacy: false, locale: 'zh-CN', messages });
+}
+
+beforeEach(async () => {
   toastAdd.mockClear();
   variant.value = 'desktop';
+  await useSettingsStore().setUiLocale('zh-CN');
 });
 
 afterEach(() => {
@@ -338,6 +348,7 @@ describe('段落差异视图', () => {
       { chapterId: 'c', paragraphId: 'd', kind: 'remove', before: '删除段', clearedVersions: 1 },
     ];
     app = createApp(ParagraphDiffView, { changes });
+    app.use(zhI18n());
     app.mount(host);
     await flush();
     const rows = [...host.querySelectorAll('[data-kind]')].map((row) =>

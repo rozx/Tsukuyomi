@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /** 应用栏：一句话说明本次会写入什么、会话内撤销与应用入口（应用前先弹出确认摘要）。 */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import { applyDescription } from 'src/composables/book-sync/book-sync-rules';
 import Button from 'primevue/button';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
@@ -8,6 +10,7 @@ import { injectBookSync } from 'src/composables/book-sync/useBookSync';
 const { changeset, summary, selected, working, canUndo, target, requestApply, undo } =
   injectBookSync();
 
+const { t, locale } = useI18n();
 const creating = computed(() => !!target.value && 'newFrom' in target.value);
 // 没有可应用的章节、也没有可撤销的同步时不显示
 const visible = computed(
@@ -18,15 +21,15 @@ const visible = computed(
 <template>
   <div v-if="visible" class="ab" data-testid="bsw-apply-bar">
     <span class="ab-text">
-      {{ applyDescription(summary) }}
+      {{ applyDescription(summary, resolveAppLocale(locale)) }}
       <span v-if="summary.clearedVersions" class="ab-loss">
-        · 将清空 {{ summary.clearedVersions }} 个译文版本
+        · {{ t('bookUi.sync.willClear', { count: summary.clearedVersions }) }}
       </span>
     </span>
     <span class="ab-actions">
       <Button
         v-if="canUndo"
-        label="撤销本次同步"
+        :label="t('bookUi.sync.undoSync')"
         icon="pi pi-undo"
         size="small"
         severity="secondary"
@@ -35,7 +38,7 @@ const visible = computed(
         @click="undo()"
       />
       <Button
-        :label="creating ? '应用并创建书籍' : '应用到书籍'"
+        :label="t(creating ? 'bookUi.sync.applyCreate' : 'bookUi.sync.applyToBook')"
         icon="pi pi-check"
         size="small"
         :disabled="selected.size === 0 || working"
