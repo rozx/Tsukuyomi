@@ -4,12 +4,14 @@
  * 对外仍暴露 `toggle(event)` / `hide()`，兼容 useRightPanel 对 Ref 的既有调用。
  */
 import { computed, onBeforeUnmount } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { AppLocale } from 'src/models/locale';
 import Popover from 'primevue/popover';
 import MobileBottomSheet from './MobileBottomSheet.vue';
 import { usePopoverBottomSheet } from 'src/composables/layout/usePopoverBottomSheet';
 import type { MessageAction } from 'src/stores/chat-sessions';
 import type { ActionDetailsContext } from 'src/utils/action-info-utils';
-import { getActionDetails, ACTION_LABELS, ENTITY_LABELS } from 'src/utils/action-info-utils';
+import { getActionDetails, actionSummaryLabel } from 'src/utils/action-info-utils';
 
 interface Props {
   action: MessageAction | null;
@@ -17,6 +19,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t, locale } = useI18n();
 
 const emit = defineEmits<{
   hide: [];
@@ -50,10 +53,14 @@ onBeforeUnmount(cancelHide);
 
 const getActionTitle = (action: MessageAction): string =>
   action.nameIsDescription
-    ? '操作详情'
-    : `${ACTION_LABELS[action.type] ?? ''}${ENTITY_LABELS[action.entity] ?? ''}`;
+    ? t('activityUi.detailsTitle')
+    : actionSummaryLabel(locale.value as AppLocale, action.type, action.entity);
 
 const title = computed(() => (props.action ? getActionTitle(props.action) : ''));
+// 详情标签随界面语言重绘；存储的名称/说明等自由文本原样展示
+const details = computed(() =>
+  props.action ? getActionDetails(props.action, props.context, locale.value as AppLocale) : [],
+);
 
 defineExpose({ toggle, hide });
 </script>
@@ -81,12 +88,10 @@ defineExpose({ toggle, hide });
         <span class="popover-title">{{ getActionTitle(props.action) }}</span>
       </div>
       <div class="popover-details">
-        <div
-          v-for="(detail, detailIdx) in getActionDetails(props.action, props.context)"
-          :key="detailIdx"
-          class="popover-detail-item"
-        >
-          <span class="popover-detail-label">{{ detail.label }}：</span>
+        <div v-for="(detail, detailIdx) in details" :key="detailIdx" class="popover-detail-item">
+          <span class="popover-detail-label">{{
+            t('activityUi.detailLabel', { label: detail.label })
+          }}</span>
           <span class="popover-detail-value">{{ detail.value }}</span>
         </div>
       </div>
@@ -96,18 +101,16 @@ defineExpose({ toggle, hide });
   <MobileBottomSheet
     v-else
     :visible="mobileVisible"
-    :title="title || '操作详情'"
+    :title="title || t('activityUi.detailsTitle')"
     eyebrow="CHAT · ACTION"
     max-height="70dvh"
     @update:visible="onMobileVisibleChange"
   >
     <div v-if="props.action" class="popover-details">
-      <div
-        v-for="(detail, detailIdx) in getActionDetails(props.action, props.context)"
-        :key="detailIdx"
-        class="popover-detail-item"
-      >
-        <span class="popover-detail-label">{{ detail.label }}：</span>
+      <div v-for="(detail, detailIdx) in details" :key="detailIdx" class="popover-detail-item">
+        <span class="popover-detail-label">{{
+          t('activityUi.detailLabel', { label: detail.label })
+        }}</span>
         <span class="popover-detail-value">{{ detail.value }}</span>
       </div>
     </div>

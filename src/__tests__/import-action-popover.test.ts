@@ -4,6 +4,8 @@ import { createApp, h, nextTick, ref } from 'vue';
 import type { App } from 'vue';
 import { createPinia } from 'pinia';
 import PrimeVue from 'primevue/config';
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import ChatActionDetailsPopover from '../components/layout/ChatActionDetailsPopover.vue';
 
 let app: App | undefined;
@@ -42,7 +44,11 @@ describe('导入操作详情浮层', () => {
           }),
         ]),
     });
-    app.use(createPinia()).use(PrimeVue).mount(host);
+    app
+      .use(createPinia())
+      .use(PrimeVue)
+      .use(createI18n({ legacy: false, locale: 'zh-CN', messages }))
+      .mount(host);
     host.querySelector('button')!.click();
     await nextTick();
     expect(document.body.textContent).toContain(full);
@@ -121,7 +127,11 @@ describe('更新配方声明的详情浮层', () => {
           }),
         ]),
     });
-    app.use(createPinia()).use(PrimeVue).mount(host);
+    app
+      .use(createPinia())
+      .use(PrimeVue)
+      .use(createI18n({ legacy: false, locale: 'zh-CN', messages }))
+      .mount(host);
     host.querySelector('button')!.click();
     await nextTick();
     const text = document.querySelector('.action-popover-content')?.textContent ?? '';

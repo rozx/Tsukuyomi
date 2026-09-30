@@ -1,4 +1,5 @@
 import type { ContextAnchor } from 'src/services/ai/context/measure';
+import type { AppLocale } from 'src/models/locale';
 import type { ChatMessage, AIToolCall } from 'src/services/ai/types/ai-service';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { v4 as uuidv4 } from 'uuid';
@@ -35,6 +36,8 @@ export interface MessageAction {
     | 'user'
     | 'help_doc';
   name?: string;
+  /** 操作执行时的目标语言；详情按该语言读取术语/角色译名。旧记录缺省时回退书籍目标语言。 */
+  language?: AppLocale;
   /** name 已是完整操作说明时，直接展示，不再拼接操作／实体前缀。 */
   nameIsDescription?: boolean;
   /** 完整说明的结构化详情，气泡摘要之外的信息供浮层展示。 */

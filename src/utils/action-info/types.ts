@@ -1,4 +1,7 @@
 import type { Novel } from 'src/models/novel';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageSchema } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 
 /**
  * 操作详情项接口
@@ -23,4 +26,22 @@ export interface ActionDetailsContext {
  */
 export function preview(text: string, maxLength: number): string {
   return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+}
+
+type DetailKey = keyof MessageSchema['activityUi']['detail'];
+
+/**
+ * 详情固定标签/取值按界面语言渲染；存储的操作只保存结构化字段，显示时再投影。
+ */
+export function detailText(
+  locale: AppLocale,
+  key: DetailKey,
+  values?: Record<string, string | number>,
+): string {
+  return translateText(locale, `activityUi.detail.${key}`, values);
+}
+
+/** 关键词等列表的界面分隔符（简中「、」，英文「, 」）。 */
+export function joinList(locale: AppLocale, items: string[]): string {
+  return items.join(translateText(locale, 'activityUi.listSeparator'));
 }
