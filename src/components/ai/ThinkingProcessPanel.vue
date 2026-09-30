@@ -10,14 +10,13 @@ import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import ThinkingProcessBody from './ThinkingProcessBody.vue';
 
-const { t } = useI18n();
-
 const uiStore = useUiStore();
 const isPhone = computed(() => uiStore.deviceType === 'phone');
 
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const mobileVisible = ref(false);
 const popoverVisible = ref(false);
+const { t } = useI18n();
 
 const active = computed(() => (isPhone.value ? mobileVisible.value : popoverVisible.value));
 

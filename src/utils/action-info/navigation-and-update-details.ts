@@ -1,7 +1,7 @@
 import type { MessageAction } from 'src/stores/chat-sessions';
 import type { AppLocale } from 'src/models/locale';
 import type { ActionDetail, ActionDetailsContext } from './types';
-import { detailText } from './types';
+import { appendDetail, detailText } from './types';
 import { appendChapterDetailByChapterId } from './chapter-location';
 
 /**
@@ -15,12 +15,8 @@ export function appendChapterUpdateDetails(
 ): void {
   if (action.tool_name !== 'update_chapter_title') return;
 
-  if (action.old_title) {
-    details.push({ label: detailText(locale, 'oldTitle'), value: action.old_title });
-  }
-  if (action.new_title) {
-    details.push({ label: detailText(locale, 'newTitle'), value: action.new_title });
-  }
+  appendDetail(details, locale, 'oldTitle', action.old_title);
+  appendDetail(details, locale, 'newTitle', action.new_title);
   if (action.chapter_id) {
     appendChapterDetailByChapterId(details, action.chapter_id, context, locale);
   }
@@ -31,15 +27,9 @@ function appendHelpDocNavigateDetails(
   action: MessageAction,
   locale: AppLocale,
 ): void {
-  if (action.doc_id) {
-    details.push({ label: detailText(locale, 'docId'), value: action.doc_id });
-  }
-  if (action.title) {
-    details.push({ label: detailText(locale, 'docTitle'), value: action.title });
-  }
-  if (action.section_id) {
-    details.push({ label: detailText(locale, 'sectionAnchor'), value: action.section_id });
-  }
+  appendDetail(details, locale, 'docId', action.doc_id);
+  appendDetail(details, locale, 'docTitle', action.title);
+  appendDetail(details, locale, 'sectionAnchor', action.section_id);
 }
 
 /**
@@ -65,13 +55,8 @@ export function appendNavigateDetails(
     appendChapterDetailByChapterId(details, action.chapter_id, context, locale, bookIdOverride);
   }
 
-  if (action.chapter_title) {
-    details.push({ label: detailText(locale, 'chapterTitle'), value: action.chapter_title });
-  }
-
-  if (action.paragraph_id) {
-    details.push({ label: detailText(locale, 'paragraphId'), value: action.paragraph_id });
-  }
+  appendDetail(details, locale, 'chapterTitle', action.chapter_title);
+  appendDetail(details, locale, 'paragraphId', action.paragraph_id);
 
   if (action.entity === 'help_doc') {
     appendHelpDocNavigateDetails(details, action, locale);

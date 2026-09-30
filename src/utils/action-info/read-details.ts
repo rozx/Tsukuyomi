@@ -3,7 +3,7 @@ import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { MessageAction } from 'src/stores/chat-sessions';
 import type { AppLocale } from 'src/models/locale';
 import type { ActionDetail, ActionDetailsContext } from './types';
-import { detailText, joinList, preview } from './types';
+import { appendDetail, detailText, joinList, preview } from './types';
 import { appendChapterDetailByChapterId } from './chapter-location';
 
 function appendBookInfo(
@@ -142,17 +142,13 @@ function appendCommonReadFields(
   context: ActionDetailsContext,
   locale: AppLocale,
 ): void {
-  if (action.chapter_title) {
-    details.push({ label: detailText(locale, 'chapterTitle'), value: action.chapter_title });
-  }
+  appendDetail(details, locale, 'chapterTitle', action.chapter_title);
   if (action.paragraph_id) {
-    details.push({ label: detailText(locale, 'paragraphId'), value: action.paragraph_id });
+    appendDetail(details, locale, 'paragraphId', action.paragraph_id);
     appendParagraphPreviewByPath(details, action, context, locale);
   }
-  if (action.character_name) {
-    details.push({ label: detailText(locale, 'characterName'), value: action.character_name });
-  }
-  if (action.name) details.push({ label: detailText(locale, 'name'), value: action.name });
+  appendDetail(details, locale, 'characterName', action.character_name);
+  appendDetail(details, locale, 'name', action.name);
 }
 
 export function appendReadDetails(

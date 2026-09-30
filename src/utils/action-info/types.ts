@@ -45,3 +45,13 @@ export function detailText(
 export function joinList(locale: AppLocale, items: string[]): string {
   return items.join(translateText(locale, 'activityUi.listSeparator'));
 }
+
+/** 值存在时追加一条「固定标签：原样取值」详情，减少各构建器里的重复判断。 */
+export function appendDetail(
+  details: ActionDetail[],
+  locale: AppLocale,
+  key: DetailKey,
+  value: string | undefined,
+): void {
+  if (value) details.push({ label: detailText(locale, key), value });
+}

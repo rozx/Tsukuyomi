@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import type { AppLocale } from 'src/models/locale';
 import Popover from 'primevue/popover';
 import MobileBottomSheet from './MobileBottomSheet.vue';
+import ChatActionDetailRows from './ChatActionDetailRows.vue';
 import { usePopoverBottomSheet } from 'src/composables/layout/usePopoverBottomSheet';
 import type { MessageAction } from 'src/stores/chat-sessions';
 import type { ActionDetailsContext } from 'src/utils/action-info-utils';
@@ -59,7 +60,12 @@ const getActionTitle = (action: MessageAction): string =>
 const title = computed(() => (props.action ? getActionTitle(props.action) : ''));
 // 详情标签随界面语言重绘；存储的名称/说明等自由文本原样展示
 const details = computed(() =>
-  props.action ? getActionDetails(props.action, props.context, locale.value as AppLocale) : [],
+  props.action
+    ? getActionDetails(props.action, props.context, locale.value as AppLocale).map((d) => ({
+        label: t('activityUi.detailLabel', { label: d.label }),
+        value: d.value,
+      }))
+    : [],
 );
 
 defineExpose({ toggle, hide });
@@ -87,14 +93,7 @@ defineExpose({ toggle, hide });
       <div class="popover-header">
         <span class="popover-title">{{ getActionTitle(props.action) }}</span>
       </div>
-      <div class="popover-details">
-        <div v-for="(detail, detailIdx) in details" :key="detailIdx" class="popover-detail-item">
-          <span class="popover-detail-label">{{
-            t('activityUi.detailLabel', { label: detail.label })
-          }}</span>
-          <span class="popover-detail-value">{{ detail.value }}</span>
-        </div>
-      </div>
+      <ChatActionDetailRows :details="details" />
     </div>
   </Popover>
 
@@ -106,14 +105,7 @@ defineExpose({ toggle, hide });
     max-height="70dvh"
     @update:visible="onMobileVisibleChange"
   >
-    <div v-if="props.action" class="popover-details">
-      <div v-for="(detail, detailIdx) in details" :key="detailIdx" class="popover-detail-item">
-        <span class="popover-detail-label">{{
-          t('activityUi.detailLabel', { label: detail.label })
-        }}</span>
-        <span class="popover-detail-value">{{ detail.value }}</span>
-      </div>
-    </div>
+    <ChatActionDetailRows v-if="props.action" :details="details" />
   </MobileBottomSheet>
 </template>
 
@@ -140,33 +132,5 @@ defineExpose({ toggle, hide });
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--moon-opacity-100);
-}
-
-.popover-details {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  max-height: 60dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.popover-detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.8125rem;
-}
-
-.popover-detail-label {
-  color: var(--moon-opacity-70);
-  font-weight: 500;
-}
-
-.popover-detail-value {
-  color: var(--moon-opacity-90);
-  word-break: break-word;
-  line-height: 1.5;
-  white-space: pre-wrap;
 }
 </style>

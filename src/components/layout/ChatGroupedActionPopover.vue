@@ -28,6 +28,11 @@ const title = computed(() => {
   return t('activityUi.badge.todoGroup', { count });
 });
 
+// 待办名称是 AI 写入的自由文本，原样显示；缺省名称按界面语言显示
+const todoNames = computed(() =>
+  (props.actions ?? []).map((action) => action.name || t('activityUi.badge.todo')),
+);
+
 defineExpose({ toggle, hide });
 </script>
 
@@ -46,15 +51,9 @@ defineExpose({ toggle, hide });
         <span class="popover-title">{{ title }}</span>
       </div>
       <div class="popover-details">
-        <div
-          v-for="(todoAction, todoIdx) in props.actions"
-          :key="todoIdx"
-          class="popover-detail-item"
-        >
+        <div v-for="(name, todoIdx) in todoNames" :key="todoIdx" class="popover-detail-item">
           <span class="popover-detail-label">{{ todoIdx + 1 }}.</span>
-          <span class="popover-detail-value">{{
-            todoAction.name || t('activityUi.badge.todo')
-          }}</span>
+          <span class="popover-detail-value">{{ name }}</span>
         </div>
       </div>
     </div>
@@ -70,14 +69,12 @@ defineExpose({ toggle, hide });
   >
     <div v-if="props.actions" class="popover-details">
       <div
-        v-for="(todoAction, todoIdx) in props.actions"
+        v-for="(name, todoIdx) in todoNames"
         :key="todoIdx"
         class="popover-detail-item popover-detail-item--row"
       >
         <span class="popover-detail-label">{{ todoIdx + 1 }}.</span>
-        <span class="popover-detail-value">{{
-          todoAction.name || t('activityUi.badge.todo')
-        }}</span>
+        <span class="popover-detail-value">{{ name }}</span>
       </div>
     </div>
   </MobileBottomSheet>
