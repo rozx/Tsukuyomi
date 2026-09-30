@@ -72,3 +72,32 @@
 - 导入记录中已持久化的 `TARGET_BUSY` 错误：句子按界面语言重投影，占用者名称为保存时的简中串（实时显示已完全本地化）。
 - 旧版本页面写入的无 `labelKey` 的执行占用者，按保存的简中标签显示。
 - 界面切换不重译历史 toast、AI 生成文字与用户内容（按设计）。
+
+# 回归、构建与界面检查（任务 12.4）
+
+记录日期：2026-09-30，`feat/i18n-implementation`（APP_VERSION 0.16.2.46）。
+
+| 检查 | 结果 |
+| --- | --- |
+| `bun run lint` | 通过 |
+| `bun run type-check` | 通过 |
+| `bun run check:i18n` | 通过 |
+| `bun run test:coverage`（全量 Vitest） | 418 个文件 / 3768 个用例通过，5 个跳过 |
+| `bun run quality-check`（含 CI 检查） | 通过：0 死代码、0 新增重复、0 健康度问题 |
+| Prettier（本轮所有修改的源码文件） | 已格式化 |
+| `bun run build:spa` | 构建成功 |
+| `bun run build:electron:app`（Electron UI / Main / Preload 编译与打包） | 构建成功；Velopack 发布封装（`build:electron` 的 vpk 步骤）属发布流程，未在本机执行 |
+
+## 实际界面检查（开发服务器，真实数据只读，界面语言仅在内存中切换）
+
+| 区域 | 桌面 | 平板 | 手机 | 语言 |
+| --- | --- | --- | --- | --- |
+| 首页、书库、AI 页、404（10.1） | ✓ | ✓ | ✓（标签栏英文不溢出） | en-US、zh-TW |
+| 设置全部标签、同步面板、修订历史（10.3） | ✓ | — | — | en-US |
+| 书籍详情（目录、阅读器、设置入口）（10.2） | ✓ | — | ✓ | en-US、zh-TW |
+| 聊天面板、会话列表、消息历史（10.4） | ✓ | — | — | en-US |
+| AI 导入工作台（10.5，空状态） | ✓ | — | ✓ | en-US、zh-TW |
+
+- 剩余中文仅为用户数据（书名、章节、正文、历史 toast）与品牌名。
+- 平板/手机中未逐一截图的组合由共享 composable/组件及挂载测试覆盖（`book-details-variants-ui-languages`、`import-page-ui-languages`、`chat-components-languages` 等在三种变体下断言无中文 / 无简体 / 无原始 key）。
+- 导入工作台的非空状态、Electron 原生菜单与对话框的实际界面检查并入 12.1 人工走查（不在真实数据中创建导入任务）。
