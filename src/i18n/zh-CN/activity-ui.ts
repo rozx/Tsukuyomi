@@ -183,6 +183,7 @@ export default {
       sendFailed: '发送失败',
       selectModel: '请选择 AI 模型',
       selectModelDetail: '请在设置中配置至少一个 AI 模型',
+      bookDeleted: '目标小说已删除',
       saveContextFailed: '保存会话上下文失败，原有摘要与历史已保留。请检查浏览器存储空间。',
       justNow: '刚刚',
       minutesAgo: '{count}分钟前',

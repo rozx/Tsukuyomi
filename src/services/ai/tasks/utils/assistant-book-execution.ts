@@ -1,6 +1,7 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { BookExecutionGuard } from 'src/services/book-execution-guard';
 import { useBooksStore } from 'src/stores/books';
+import { LocalizedError } from 'src/utils/localized-error';
 
 const BOOK_WRITERS = new Set([
   'create_term',
@@ -43,7 +44,8 @@ export function runAssistantBookExecution<T>(
         bookId,
         context.currentChapterId ?? undefined,
       );
-      if (!book) throw new Error('BOOK_CHANGED: 目标小说已删除');
+      // 用户可见：由聊天发送失败提示按界面语言渲染，按错误码识别
+      if (!book) throw new LocalizedError('BOOK_CHANGED', 'activityUi.chat.bookDeleted');
     },
   );
 }

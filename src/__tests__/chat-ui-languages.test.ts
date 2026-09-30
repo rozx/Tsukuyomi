@@ -15,6 +15,10 @@ import { DEFAULT_SESSION_TITLE, sessionDisplayTitle } from '../constants/chat';
 import { AssistantService } from '../services/ai/tasks';
 import { LocalizedError } from '../utils/localized-error';
 import type { AIModel } from '../services/ai/types/ai-model';
+import type { AITool } from '../services/ai/types/ai-service';
+import { runAssistantBookExecution } from '../services/ai/tasks/utils/assistant-book-execution';
+import { BookExecutionGuard } from '../services/book-execution-guard';
+import { useBooksStore } from '../stores/books';
 import type { Chapter, Novel } from '../models/novel';
 
 const CJK = /[㐀-鿿]/;
@@ -188,5 +192,27 @@ describe('聊天发送反馈', () => {
     const payload = toast.add.mock.calls.find((c) => c[0].severity === 'error')![0];
     expect(payload.summary).toBe('Could not send');
     expect(payload.detail).toContain('Could not save the chat context');
+  });
+});
+
+describe('助手写书执行的自有错误', () => {
+  it('目标小说已删除时抛出带错误码的本地化错误', async () => {
+    vi.spyOn(BookExecutionGuard, 'write').mockImplementation(
+      async (_bookId, _owner, work, prepare) => {
+        await prepare?.();
+        return work();
+      },
+    );
+    vi.spyOn(useBooksStore(), 'refreshBookFromStorage').mockResolvedValue(undefined);
+    const tools = [{ type: 'function', function: { name: 'create_term' } }] as AITool[];
+    const error = await runAssistantBookExecution(
+      { currentBookId: 'gone', currentChapterId: null },
+      tools,
+      () => Promise.resolve('ok'),
+    ).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(LocalizedError);
+    expect((error as LocalizedError).code).toBe('BOOK_CHANGED');
+    expect((error as LocalizedError).messageFor('en-US')).toBe('The target book was deleted');
+    expect((error as LocalizedError).message).toBe('目标小说已删除');
   });
 });

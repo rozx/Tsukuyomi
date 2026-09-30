@@ -184,6 +184,7 @@ export default {
       sendFailed: 'Could not send',
       selectModel: 'Select an AI model',
       selectModelDetail: 'Configure at least one AI model in settings',
+      bookDeleted: 'The target book was deleted',
       saveContextFailed:
         'Could not save the chat context. The existing summary and history were kept. Check your browser storage space.',
       justNow: 'Just now',
