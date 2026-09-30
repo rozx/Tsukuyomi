@@ -26,7 +26,7 @@ describe('网页工具自有反馈为简中单源', () => {
     vi.spyOn(FirecrawlClient, 'search').mockRejectedValue(
       new FirecrawlError('Firecrawl 请求失败: 503 provider 原始诊断', 503, 'provider 原始诊断'),
     );
-    const result = await searchWeb('query', undefined, 'en-US');
+    const result = await searchWeb('query');
     expect(result.error_code).toBe('FIRECRAWL_HTTP_FAILED');
     expect(result.error).toBe(agentText('aiWebFeedback.httpError', { status: 503 }));
     expect(result.message).toBe(
@@ -114,7 +114,7 @@ describe('网页工具自有反馈为简中单源', () => {
     it(`${code} 英文执行也用简中解释并保留错误身份`, async () => {
       setup(true);
       vi.spyOn(FirecrawlClient, 'search').mockRejectedValue(error);
-      const result = await searchWeb('query', undefined, 'en-US');
+      const result = await searchWeb('query');
       expect(result.error_code).toBe(code);
       expect(result.error).toMatch(/\p{Script=Han}/u);
       expect(result.message).toMatch(/\p{Script=Han}/u);

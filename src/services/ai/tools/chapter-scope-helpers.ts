@@ -1,4 +1,3 @@
-import type { AppLocale } from 'src/models/locale';
 import { LocalizedError } from 'src/utils/localized-error';
 import { useBooksStore } from 'src/stores/books';
 import { ensureChapterContentLoaded, getChapterContentText } from 'src/utils/novel-utils';
@@ -67,16 +66,11 @@ export function requireValidKeywords(raw: unknown): string[] {
  * 注意：使用同步的 `useBooksStore().getBookById`，与 `book-tools.ts` 中基于
  * `BookService.getBookById` 的异步版本不通用。仅用于工具已在 store 初始化后的场景。
  */
-export function resolveBookSync(bookId: string, feedbackLocale: AppLocale = 'zh-CN'): Novel {
+export function resolveBookSync(bookId: string): Novel {
   const booksStore = useBooksStore();
   const book = booksStore.getBookById(bookId);
   if (!book) {
-    throw new LocalizedError(
-      'BOOK_NOT_FOUND',
-      'aiEntityFeedback.bookMissing',
-      { id: bookId },
-      feedbackLocale,
-    );
+    throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
   }
   return book;
 }

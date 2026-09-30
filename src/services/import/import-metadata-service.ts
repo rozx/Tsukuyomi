@@ -11,10 +11,9 @@ export class ImportMetadataService {
   static async prepareSearch(taskId: string, query: string, signal?: AbortSignal) {
     const task = await ImportRepository.getTask(taskId);
     if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
-    const uiLocale = task.checkpoint?.uiLocale ?? 'zh-CN';
     if (typeof query !== 'string' || !query.trim() || query.length > 1000)
       throw importError('INVALID_QUERY', 'invalidQueryInvalidMetadataSearchQuery', {});
-    const searched = await runAbortable(signal, () => searchWeb(query, signal, uiLocale));
+    const searched = await runAbortable(signal, () => searchWeb(query, signal));
     const newSources: ImportSource[] = [];
     const results: { title: string; snippet: string; url: string; sourceId: string }[] = [];
     const seen = new Map<string, ImportSource>();

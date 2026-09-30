@@ -94,12 +94,11 @@ function buildBatchTodoResponse(
   todos: TodoItem[],
   errors: string[],
   autoAdvanced: TodoItem | null | undefined,
-  feedbackLocale: AppLocale,
 ): string {
   return JSON.stringify({
     success: true,
     message: autoAdvanced
-      ? translateText(feedbackLocale, 'aiTodoFeedback.advanced', { message })
+      ? translateText(AGENT_LOCALE, 'aiTodoFeedback.advanced', { message })
       : message,
     todos: todos.map((todo) => ({ id: todo.id, text: todo.text, status: todo.status })),
     count: todos.length,
@@ -115,13 +114,12 @@ function createBatchTodos(
   onAction: ((action: TodoAction) => void) | undefined,
   todoLocale: AppLocale,
 ): string {
-  const feedbackLocale = AGENT_LOCALE;
   const createdTodos: TodoItem[] = [];
   const errors: string[] = [];
 
   for (const itemText of items) {
     if (!itemText || !itemText.trim()) {
-      errors.push(translateText(feedbackLocale, 'aiTodoFeedback.contentRequired'));
+      errors.push(translateText(AGENT_LOCALE, 'aiTodoFeedback.contentRequired'));
       continue;
     }
     try {
@@ -132,21 +130,18 @@ function createBatchTodos(
       dispatchTodoCreated(todo, onAction);
     } catch (error) {
       errors.push(
-        translateText(feedbackLocale, 'aiTodoFeedback.createItemFailed', {
+        translateText(AGENT_LOCALE, 'aiTodoFeedback.createItemFailed', {
           text: itemText.slice(0, 20),
-          detail: localizedErrorMessage(error, feedbackLocale, 'aiTodoFeedback.unknownError'),
+          detail: localizedErrorMessage(error, AGENT_LOCALE, 'aiTodoFeedback.unknownError'),
         }),
       );
     }
   }
 
   if (createdTodos.length === 0) {
-    throw new LocalizedError(
-      'TODO_BATCH_CREATE_FAILED',
-      'aiTodoFeedback.batchCreateFailed',
-      { details: errors.join('; ') },
-      feedbackLocale,
-    );
+    throw new LocalizedError('TODO_BATCH_CREATE_FAILED', 'aiTodoFeedback.batchCreateFailed', {
+      details: errors.join('; '),
+    });
   }
 
   const promoted = autoAdvanceNextTodo({ taskId, sessionId }, onAction);
@@ -155,16 +150,15 @@ function createBatchTodos(
     : createdTodos;
 
   return buildBatchTodoResponse(
-    translateText(feedbackLocale, 'aiTodoFeedback.batchCreated', {
+    translateText(AGENT_LOCALE, 'aiTodoFeedback.batchCreated', {
       count: createdTodos.length,
       failed: errors.length
-        ? translateText(feedbackLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
+        ? translateText(AGENT_LOCALE, 'aiTodoFeedback.failedCount', { count: errors.length })
         : '',
     }),
     reported,
     errors,
     promoted,
-    feedbackLocale,
   );
 }
 
@@ -210,16 +204,10 @@ function runTodoStatusTransition(
   successMessage: string,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
   advanceScope: AdvanceScope | undefined,
-  feedbackLocale: AppLocale,
 ): string {
   const targetIds = args.ids?.length ? args.ids : args.id ? [args.id] : [];
   if (targetIds.length === 0) {
-    throw new LocalizedError(
-      'TODO_ARGUMENTS_REQUIRED',
-      'aiTodoFeedback.idOrIds',
-      {},
-      feedbackLocale,
-    );
+    throw new LocalizedError('TODO_ARGUMENTS_REQUIRED', 'aiTodoFeedback.idOrIds', {});
   }
 
   const updatedTodos: TodoItem[] = [];
@@ -227,7 +215,7 @@ function runTodoStatusTransition(
 
   for (const todoId of targetIds) {
     if (!todoId) {
-      errors.push(translateText(feedbackLocale, 'aiTodoFeedback.idRequired'));
+      errors.push(translateText(AGENT_LOCALE, 'aiTodoFeedback.idRequired'));
       continue;
     }
     try {
@@ -237,34 +225,31 @@ function runTodoStatusTransition(
       updatedTodos.push(updatedTodo);
     } catch (error) {
       errors.push(
-        `${todoId}: ${localizedErrorMessage(error, feedbackLocale, 'aiTodoFeedback.unknownError')}`,
+        `${todoId}: ${localizedErrorMessage(error, AGENT_LOCALE, 'aiTodoFeedback.unknownError')}`,
       );
     }
   }
 
   if (updatedTodos.length === 0) {
-    throw new LocalizedError(
-      'TODO_TRANSITION_FAILED',
-      'aiTodoFeedback.transitionFailed',
-      { message: successMessage, details: errors.join('; ') },
-      feedbackLocale,
-    );
+    throw new LocalizedError('TODO_TRANSITION_FAILED', 'aiTodoFeedback.transitionFailed', {
+      message: successMessage,
+      details: errors.join('; '),
+    });
   }
 
   const promoted = autoAdvanceNextTodo(advanceScope, onAction);
 
   return buildBatchTodoResponse(
-    translateText(feedbackLocale, 'aiTodoFeedback.statusCount', {
+    translateText(AGENT_LOCALE, 'aiTodoFeedback.statusCount', {
       message: successMessage,
       count: updatedTodos.length,
       failed: errors.length
-        ? translateText(feedbackLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
+        ? translateText(AGENT_LOCALE, 'aiTodoFeedback.failedCount', { count: errors.length })
         : '',
     }),
     updatedTodos,
     errors,
     promoted,
-    feedbackLocale,
   );
 }
 
@@ -287,15 +272,13 @@ function createTodoStatusHandler(
       languages?: ExecutionLanguages;
     },
   ) => {
-    const feedbackLocale = AGENT_LOCALE;
     const { id, ids } = args as { id?: string; ids?: string[] };
     return runTodoStatusTransition(
       { ...(id ? { id } : {}), ...(ids ? { ids } : {}) },
       mutate,
-      translateText(feedbackLocale, successMessage),
+      translateText(AGENT_LOCALE, successMessage),
       ctx.onAction,
       autoAdvance ? { taskId: ctx.taskId, sessionId: ctx.sessionId } : undefined,
-      feedbackLocale,
     );
   };
 }
@@ -304,15 +287,14 @@ function updateSingleTodoItem(
   item: { id: string; text?: string; status?: TodoStatus },
   onAction: ((action: UpdateTodoAction) => void) | undefined,
   errors: string[],
-  feedbackLocale: AppLocale,
 ): TodoItem | null {
   if (!item.id) {
-    errors.push(translateText(feedbackLocale, 'aiTodoFeedback.idRequired'));
+    errors.push(translateText(AGENT_LOCALE, 'aiTodoFeedback.idRequired'));
     return null;
   }
   if (item.status !== undefined && !VALID_TODO_STATUSES.includes(item.status)) {
     errors.push(
-      translateText(feedbackLocale, 'aiTodoFeedback.itemInvalidStatus', {
+      translateText(AGENT_LOCALE, 'aiTodoFeedback.itemInvalidStatus', {
         id: item.id,
         status: item.status,
         valid: VALID_TODO_STATUSES.join(', '),
@@ -330,9 +312,9 @@ function updateSingleTodoItem(
     return updatedTodo;
   } catch (error) {
     errors.push(
-      translateText(feedbackLocale, 'aiTodoFeedback.updateItemFailed', {
+      translateText(AGENT_LOCALE, 'aiTodoFeedback.updateItemFailed', {
         id: item.id,
-        detail: localizedErrorMessage(error, feedbackLocale, 'aiTodoFeedback.unknownError'),
+        detail: localizedErrorMessage(error, AGENT_LOCALE, 'aiTodoFeedback.unknownError'),
       }),
     );
     return null;
@@ -343,37 +325,32 @@ function updateBatchTodos(
   items: Array<{ id: string; text?: string; status?: TodoStatus }>,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
   advanceScope: AdvanceScope | undefined,
-  feedbackLocale: AppLocale,
 ): string {
   const updatedTodos: TodoItem[] = [];
   const errors: string[] = [];
   for (const item of items) {
-    const updated = updateSingleTodoItem(item, onAction, errors, feedbackLocale);
+    const updated = updateSingleTodoItem(item, onAction, errors);
     if (updated) updatedTodos.push(updated);
   }
   if (updatedTodos.length === 0) {
-    throw new LocalizedError(
-      'TODO_BATCH_UPDATE_FAILED',
-      'aiTodoFeedback.batchUpdateFailed',
-      { details: errors.join('; ') },
-      feedbackLocale,
-    );
+    throw new LocalizedError('TODO_BATCH_UPDATE_FAILED', 'aiTodoFeedback.batchUpdateFailed', {
+      details: errors.join('; '),
+    });
   }
   const promoted = autoAdvanceNextTodo(advanceScope, onAction);
   const reported = promoted
     ? updatedTodos.map((todo) => (todo.id === promoted.id ? promoted : todo))
     : updatedTodos;
   return buildBatchTodoResponse(
-    translateText(feedbackLocale, 'aiTodoFeedback.batchUpdated', {
+    translateText(AGENT_LOCALE, 'aiTodoFeedback.batchUpdated', {
       count: updatedTodos.length,
       failed: errors.length
-        ? translateText(feedbackLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
+        ? translateText(AGENT_LOCALE, 'aiTodoFeedback.failedCount', { count: errors.length })
         : '',
     }),
     reported,
     errors,
     promoted,
-    feedbackLocale,
   );
 }
 
@@ -383,7 +360,6 @@ function updateOneTodo(
   status: TodoStatus | undefined,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
   advanceScope: AdvanceScope | undefined,
-  feedbackLocale: AppLocale,
 ): string {
   const updates: { text?: string; status?: TodoStatus } = {};
   if (text !== undefined) updates.text = text;
@@ -396,10 +372,10 @@ function updateOneTodo(
   return JSON.stringify({
     success: true,
     message: promoted
-      ? translateText(feedbackLocale, 'aiTodoFeedback.advanced', {
-          message: translateText(feedbackLocale, 'aiTodoFeedback.updated'),
+      ? translateText(AGENT_LOCALE, 'aiTodoFeedback.advanced', {
+          message: translateText(AGENT_LOCALE, 'aiTodoFeedback.updated'),
         })
-      : translateText(feedbackLocale, 'aiTodoFeedback.updated'),
+      : translateText(AGENT_LOCALE, 'aiTodoFeedback.updated'),
     todo: { id: reported.id, text: reported.text, status: reported.status },
     ...autoAdvancedField(promoted),
   });
@@ -412,14 +388,8 @@ function createSingleTodo(
   onAction: ((action: TodoAction) => void) | undefined,
   todoLocale: AppLocale,
 ): string {
-  const feedbackLocale = AGENT_LOCALE;
   if (!text || !text.trim()) {
-    throw new LocalizedError(
-      'TODO_CONTENT_REQUIRED',
-      'aiTodoFeedback.contentRequired',
-      {},
-      feedbackLocale,
-    );
+    throw new LocalizedError('TODO_CONTENT_REQUIRED', 'aiTodoFeedback.contentRequired', {});
   }
   const todo = TodoListService.createTodo(text, taskId, sessionId, { uiLocale: todoLocale });
   dispatchTodoCreated(todo, onAction);
@@ -428,10 +398,10 @@ function createSingleTodo(
   return JSON.stringify({
     success: true,
     message: promoted
-      ? translateText(feedbackLocale, 'aiTodoFeedback.advanced', {
-          message: translateText(feedbackLocale, 'aiTodoFeedback.created'),
+      ? translateText(AGENT_LOCALE, 'aiTodoFeedback.advanced', {
+          message: translateText(AGENT_LOCALE, 'aiTodoFeedback.created'),
         })
-      : translateText(feedbackLocale, 'aiTodoFeedback.created'),
+      : translateText(AGENT_LOCALE, 'aiTodoFeedback.created'),
     todo: { id: reported.id, text: reported.text, status: reported.status },
     ...autoAdvancedField(promoted),
   });
@@ -456,18 +426,12 @@ export const todoListTools: ToolDefinition[] = [
       },
     }),
     handler: (args, { onAction, taskId, sessionId, languages }) => {
-      const feedbackLocale = AGENT_LOCALE;
       const { text, items } = args as {
         text?: string;
         items?: string[];
       };
       if (!taskId) {
-        throw new LocalizedError(
-          'TODO_CONTEXT_REQUIRED',
-          'aiTodoFeedback.contextRequired',
-          {},
-          feedbackLocale,
-        );
+        throw new LocalizedError('TODO_CONTEXT_REQUIRED', 'aiTodoFeedback.contextRequired', {});
       }
 
       // 待办记录界面语言；返回给模型的说明固定简中
@@ -478,12 +442,7 @@ export const todoListTools: ToolDefinition[] = [
       if (text !== undefined && text !== null) {
         return createSingleTodo(text, taskId, sessionId, onAction as never, todoLocale);
       }
-      throw new LocalizedError(
-        'TODO_ARGUMENTS_REQUIRED',
-        'aiTodoFeedback.textOrItems',
-        {},
-        feedbackLocale,
-      );
+      throw new LocalizedError('TODO_ARGUMENTS_REQUIRED', 'aiTodoFeedback.textOrItems', {});
     },
   },
   {
@@ -535,7 +494,6 @@ export const todoListTools: ToolDefinition[] = [
       },
     }),
     handler: (args, { onAction, taskId, sessionId, languages }) => {
-      const feedbackLocale = AGENT_LOCALE;
       const { id, text, status, items } = args as {
         id?: string;
         text?: string;
@@ -544,17 +502,12 @@ export const todoListTools: ToolDefinition[] = [
       };
       const advanceScope: AdvanceScope = { taskId, sessionId };
       if (items && Array.isArray(items) && items.length > 0) {
-        return updateBatchTodos(items, onAction as never, advanceScope, feedbackLocale);
+        return updateBatchTodos(items, onAction as never, advanceScope);
       }
       if (id) {
-        return updateOneTodo(id, text, status, onAction as never, advanceScope, feedbackLocale);
+        return updateOneTodo(id, text, status, onAction as never, advanceScope);
       }
-      throw new LocalizedError(
-        'TODO_ARGUMENTS_REQUIRED',
-        'aiTodoFeedback.idOrItems',
-        {},
-        feedbackLocale,
-      );
+      throw new LocalizedError('TODO_ARGUMENTS_REQUIRED', 'aiTodoFeedback.idOrItems', {});
     },
   },
   {
@@ -575,27 +528,16 @@ export const todoListTools: ToolDefinition[] = [
   {
     definition: toolDefinition('delete_todo', TODO_BY_ID_PARAMETERS),
     handler: (args, { onAction, taskId, sessionId, languages }) => {
-      const feedbackLocale = AGENT_LOCALE;
       const { id } = args as {
         id: string;
       };
       if (!id) {
-        throw new LocalizedError(
-          'TODO_ID_REQUIRED',
-          'aiTodoFeedback.idRequired',
-          {},
-          feedbackLocale,
-        );
+        throw new LocalizedError('TODO_ID_REQUIRED', 'aiTodoFeedback.idRequired', {});
       }
 
       const todo = TodoListService.getTodoById(id);
       if (!todo) {
-        throw new LocalizedError(
-          'TODO_NOT_FOUND',
-          'aiTodoFeedback.missing',
-          { id },
-          feedbackLocale,
-        );
+        throw new LocalizedError('TODO_NOT_FOUND', 'aiTodoFeedback.missing', { id });
       }
 
       TodoListService.deleteTodo(id);
@@ -614,10 +556,10 @@ export const todoListTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: promoted
-          ? translateText(feedbackLocale, 'aiTodoFeedback.advanced', {
-              message: translateText(feedbackLocale, 'aiTodoFeedback.deleted'),
+          ? translateText(AGENT_LOCALE, 'aiTodoFeedback.advanced', {
+              message: translateText(AGENT_LOCALE, 'aiTodoFeedback.deleted'),
             })
-          : translateText(feedbackLocale, 'aiTodoFeedback.deleted'),
+          : translateText(AGENT_LOCALE, 'aiTodoFeedback.deleted'),
         todo: {
           id: todo.id,
           text: todo.text,
@@ -638,18 +580,12 @@ export const todoListTools: ToolDefinition[] = [
       },
     }),
     handler: (args, { taskId, sessionId, languages }) => {
-      const feedbackLocale = AGENT_LOCALE;
       const { filter = 'all' } = args as {
         filter?: 'all' | 'active' | 'completed';
       };
 
       if (!taskId) {
-        throw new LocalizedError(
-          'TODO_CONTEXT_REQUIRED',
-          'aiTodoFeedback.listContextRequired',
-          {},
-          feedbackLocale,
-        );
+        throw new LocalizedError('TODO_CONTEXT_REQUIRED', 'aiTodoFeedback.listContextRequired', {});
       }
 
       // taskId 和 sessionId 由服务层自动提供

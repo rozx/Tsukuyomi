@@ -1,4 +1,3 @@
-import { AGENT_LOCALE } from 'src/i18n/translate';
 import { LocalizedError } from 'src/utils/localized-error';
 import { cloneDeep } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
@@ -144,7 +143,6 @@ export function characterEditContext<T extends { character_id: string }>(
   const parsedArgs = parseToolArgs<T>(args);
   return {
     parsedArgs,
-    feedbackLocale: AGENT_LOCALE,
     language: context.languages?.targetLanguage ?? 'zh-CN',
     ...requireCharacterContext(context, parsedArgs),
   };

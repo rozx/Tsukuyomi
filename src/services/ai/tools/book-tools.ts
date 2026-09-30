@@ -25,7 +25,6 @@ import { searchRelatedMemoriesHybrid } from './memory-helper';
  */
 async function resolveBookByIdOrError(
   bookId: string | null | undefined,
-  feedbackLocale: AppLocale = 'zh-CN',
 ): Promise<{ kind: 'error'; json: string } | { kind: 'ok'; bookId: string; book: Novel }> {
   if (!bookId) {
     return {
@@ -187,7 +186,6 @@ function buildBookInfoStats(book: Novel): {
 function buildGetBookInfoPayload(
   book: Novel,
   language: AppLocale = 'zh-CN',
-  feedbackLocale: AppLocale = 'zh-CN',
 ): {
   id: string;
   title: string;
@@ -220,8 +218,8 @@ function buildGetBookInfoPayload(
   return {
     id: book.id,
     title: book.title,
-    author: book.author || translateText(feedbackLocale, 'aiBookFeedback.unknown'),
-    description: book.description || translateText(feedbackLocale, 'aiBookFeedback.none'),
+    author: book.author || translateText(AGENT_LOCALE, 'aiBookFeedback.unknown'),
+    description: book.description || translateText(AGENT_LOCALE, 'aiBookFeedback.none'),
     tags: book.tags || [],
     notes,
     structure,
@@ -293,23 +291,20 @@ function buildBookInfoUpdates(params: {
 /**
  * 收集用户可读的已更新字段中文标签
  */
-function collectUpdatedFieldLabels(
-  params: {
-    description?: string | undefined;
-    tags?: string[] | undefined;
-    author?: string | undefined;
-    alternate_titles?: string[] | undefined;
-  },
-  feedbackLocale: AppLocale,
-): string[] {
+function collectUpdatedFieldLabels(params: {
+  description?: string | undefined;
+  tags?: string[] | undefined;
+  author?: string | undefined;
+  alternate_titles?: string[] | undefined;
+}): string[] {
   const labels: string[] = [];
   if (params.description !== undefined)
-    labels.push(translateText(feedbackLocale, 'aiBookFeedback.description'));
-  if (params.tags !== undefined) labels.push(translateText(feedbackLocale, 'aiBookFeedback.tags'));
+    labels.push(translateText(AGENT_LOCALE, 'aiBookFeedback.description'));
+  if (params.tags !== undefined) labels.push(translateText(AGENT_LOCALE, 'aiBookFeedback.tags'));
   if (params.author !== undefined)
-    labels.push(translateText(feedbackLocale, 'aiBookFeedback.author'));
+    labels.push(translateText(AGENT_LOCALE, 'aiBookFeedback.author'));
   if (params.alternate_titles !== undefined)
-    labels.push(translateText(feedbackLocale, 'aiBookFeedback.aliases'));
+    labels.push(translateText(AGENT_LOCALE, 'aiBookFeedback.aliases'));
   return labels;
 }
 
@@ -319,11 +314,10 @@ function collectUpdatedFieldLabels(
 function describeStringFieldDiff(
   previous: string | undefined,
   current: string | undefined,
-  feedbackLocale: AppLocale,
 ): { old: string; new: string } {
   return {
-    old: previous || translateText(feedbackLocale, 'aiBookFeedback.none'),
-    new: current || translateText(feedbackLocale, 'aiBookFeedback.none'),
+    old: previous || translateText(AGENT_LOCALE, 'aiBookFeedback.none'),
+    new: current || translateText(AGENT_LOCALE, 'aiBookFeedback.none'),
   };
 }
 
@@ -340,33 +334,26 @@ function describeArrayFieldDiff<T>(
 /**
  * 构建返回体中 updated_fields 的 old/new 对比结构
  */
-function buildBookInfoUpdatedFieldsDiff(
-  params: {
-    description?: string | undefined;
-    tags?: string[] | undefined;
-    author?: string | undefined;
-    alternate_titles?: string[] | undefined;
-    previousData: BookInfoSnapshot;
-    updates: Partial<Novel>;
-  },
-  feedbackLocale: AppLocale,
-): Record<string, unknown> {
+function buildBookInfoUpdatedFieldsDiff(params: {
+  description?: string | undefined;
+  tags?: string[] | undefined;
+  author?: string | undefined;
+  alternate_titles?: string[] | undefined;
+  previousData: BookInfoSnapshot;
+  updates: Partial<Novel>;
+}): Record<string, unknown> {
   const { description, tags, author, alternate_titles, previousData, updates } = params;
   return {
     ...(description !== undefined
       ? {
-          description: describeStringFieldDiff(
-            previousData.description,
-            updates.description,
-            feedbackLocale,
-          ),
+          description: describeStringFieldDiff(previousData.description, updates.description),
         }
       : {}),
     ...(tags !== undefined
       ? { tags: describeArrayFieldDiff(previousData.tags, updates.tags) }
       : {}),
     ...(author !== undefined
-      ? { author: describeStringFieldDiff(previousData.author, updates.author, feedbackLocale) }
+      ? { author: describeStringFieldDiff(previousData.author, updates.author) }
       : {}),
     ...(alternate_titles !== undefined
       ? {
@@ -544,7 +531,6 @@ function buildAdjacentChapterTool(spec: {
           errorMessage: spec.errorMessage,
         },
         languages?.targetLanguage ?? 'zh-CN',
-        AGENT_LOCALE,
       ),
   };
 }
@@ -593,7 +579,6 @@ async function handleAdjacentChapterTool(
     errorMessage: MessageKey;
   },
   language: AppLocale = 'zh-CN',
-  feedbackLocale: AppLocale = 'zh-CN',
 ): Promise<string> {
   const parsedArgs = parseToolArgs<{
     chapter_id: string;
@@ -898,7 +883,6 @@ function bookToolInput<T>(args: Record<string, unknown>, context: ToolContext) {
     bookId: context.bookId,
     onAction: context.onAction,
     language: context.languages?.targetLanguage ?? 'zh-CN',
-    feedbackLocale: AGENT_LOCALE,
   };
 }
 
@@ -922,18 +906,18 @@ export const bookTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, parsedArgs } = bookToolInput<{
         include_memory?: boolean;
       }>(args, context);
 
-      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
+      const resolved = await resolveBookByIdOrError(bookId);
       if (resolved.kind === 'error') return resolved.json;
       const book = resolved.book;
 
       try {
         emitBookReadAction(onAction, { book_id: bookId, tool_name: 'get_book_info' });
 
-        const info = buildGetBookInfoPayload(book, language, feedbackLocale);
+        const info = buildGetBookInfoPayload(book, language);
         const { include_memory = true } = parsedArgs;
         const relatedMemories = await maybeFetchBookRelatedMemories(
           book,
@@ -970,13 +954,13 @@ export const bookTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, parsedArgs } = bookToolInput<{
         limit?: number;
         offset?: number;
       }>(args, context);
       const { limit, offset = 0 } = parsedArgs;
 
-      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
+      const resolved = await resolveBookByIdOrError(bookId);
       if (resolved.kind === 'error') return resolved.json;
       const book = resolved.book;
 
@@ -1028,7 +1012,7 @@ export const bookTools: ToolDefinition[] = [
       required: ['volume_ids'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, parsedArgs } = bookToolInput<{
         volume_ids: string[];
       }>(args, context);
       const { volume_ids } = parsedArgs;
@@ -1037,7 +1021,7 @@ export const bookTools: ToolDefinition[] = [
         return toolErrorJson('VOLUME_IDS_REQUIRED', 'aiBookFeedback.volumeIdsRequired');
       }
 
-      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
+      const resolved = await resolveBookByIdOrError(bookId);
       if (resolved.kind === 'error') return resolved.json;
       const book = resolved.book;
 
@@ -1071,7 +1055,7 @@ export const bookTools: ToolDefinition[] = [
       required: ['query'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, parsedArgs } = bookToolInput<{
         query: string;
         limit?: number;
       }>(args, context);
@@ -1093,8 +1077,8 @@ export const bookTools: ToolDefinition[] = [
             success: false,
             error_code: 'EMBEDDING_DISABLED',
             error: isMobileDevice()
-              ? translateText(feedbackLocale, 'aiBookFeedback.mobileDisabled')
-              : translateText(feedbackLocale, 'aiBookFeedback.userDisabled'),
+              ? translateText(AGENT_LOCALE, 'aiBookFeedback.mobileDisabled')
+              : translateText(AGENT_LOCALE, 'aiBookFeedback.userDisabled'),
             feature_disabled: true,
             reason: isMobileDevice() ? 'mobile_device' : 'user_disabled',
           });
@@ -1105,7 +1089,7 @@ export const bookTools: ToolDefinition[] = [
           return JSON.stringify({
             success: false,
             error_code: 'EMBEDDING_NOT_READY',
-            error: translateText(feedbackLocale, 'aiBookFeedback.embeddingNotReady'),
+            error: translateText(AGENT_LOCALE, 'aiBookFeedback.embeddingNotReady'),
             service_status: EmbeddingService.getStatus(),
           });
         }
@@ -1158,7 +1142,7 @@ export const bookTools: ToolDefinition[] = [
       required: ['chapter_id'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, parsedArgs } = bookToolInput<{
         chapter_id: string;
         limit?: number;
         offset?: number;
@@ -1170,7 +1154,7 @@ export const bookTools: ToolDefinition[] = [
         return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired');
       }
 
-      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
+      const resolved = await resolveBookByIdOrError(bookId);
       if (resolved.kind === 'error') return resolved.json;
       const { book, bookId: resolvedBookId } = resolved;
 
@@ -1270,7 +1254,6 @@ export const bookTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages, aiModelId }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const feedbackLocale = AGENT_LOCALE;
       const parsedArgs = parseToolArgs<{
         chapter_id: string;
         title_original?: string;
@@ -1353,7 +1336,7 @@ export const bookTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(feedbackLocale, 'aiBookFeedback.titleUpdated'),
+          message: translateText(AGENT_LOCALE, 'aiBookFeedback.titleUpdated'),
           chapter_id,
           old_title: oldTitle,
           new_title: newTitle,
@@ -1405,7 +1388,7 @@ export const bookTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction, feedbackLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, parsedArgs } = bookToolInput<{
         description?: string;
         tags?: string[];
         author?: string;
@@ -1419,7 +1402,7 @@ export const bookTools: ToolDefinition[] = [
         return toolErrorJson('BOOK_FIELDS_REQUIRED', 'aiBookFeedback.fieldsRequired');
       }
 
-      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
+      const resolved = await resolveBookByIdOrError(bookId);
       if (resolved.kind === 'error') return resolved.json;
       const { book, bookId: resolvedBookId } = resolved;
 
@@ -1451,34 +1434,28 @@ export const bookTools: ToolDefinition[] = [
           });
         }
 
-        const updatedFields = collectUpdatedFieldLabels(
-          {
-            description,
-            tags,
-            author,
-            alternate_titles,
-          },
-          feedbackLocale,
-        );
+        const updatedFields = collectUpdatedFieldLabels({
+          description,
+          tags,
+          author,
+          alternate_titles,
+        });
 
         return JSON.stringify({
           success: true,
-          message: translateText(feedbackLocale, 'aiBookFeedback.bookUpdated', {
+          message: translateText(AGENT_LOCALE, 'aiBookFeedback.bookUpdated', {
             fields: updatedFields.join('、'),
           }),
           book_id: bookId,
           book_title: updatedBook?.title || book.title,
-          updated_fields: buildBookInfoUpdatedFieldsDiff(
-            {
-              description,
-              tags,
-              author,
-              alternate_titles,
-              previousData,
-              updates,
-            },
-            feedbackLocale,
-          ),
+          updated_fields: buildBookInfoUpdatedFieldsDiff({
+            description,
+            tags,
+            author,
+            alternate_titles,
+            previousData,
+            updates,
+          }),
         });
       } catch (error) {
         return caughtToolErrorJson(error, 'BOOK_UPDATE_FAILED', 'aiBookFeedback.bookUpdateFailed');

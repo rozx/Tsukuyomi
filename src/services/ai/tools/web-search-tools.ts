@@ -1,6 +1,5 @@
-import type { AppLocale } from 'src/models/locale';
-import type { AgentMessageKey, MessageKey } from 'src/i18n/types';
-import { agentText, AGENT_LOCALE, translateText } from 'src/i18n/translate';
+import type { AgentMessageKey } from 'src/i18n/types';
+import { agentText } from 'src/i18n/translate';
 import { toolErrorJson } from './tool-feedback';
 import { validToolQuery } from './tool-feedback';
 import { describeTool, stringToolParameter, toolDefinition } from './tool-localization';
@@ -105,7 +104,6 @@ function extractHtmlTitle(rawContent: string, fallback: string): string {
 
 /** Firecrawl 失败时给 AI 的说明：区分额度（有 Key / keyless）、限速与目标网页错误 */
 function webFailure(
-  feedbackLocale: AppLocale,
   code: string,
   errorKey: AgentMessageKey,
   messageKey: AgentMessageKey,
@@ -118,43 +116,30 @@ function webFailure(
     message: agentText(messageKey, values),
   };
 }
-function firecrawlFailure(error: unknown, feedbackLocale: AppLocale): SearchWebResult {
+function firecrawlFailure(error: unknown): SearchWebResult {
   if (error instanceof FirecrawlQuotaError)
     return webFailure(
-      feedbackLocale,
       'FIRECRAWL_QUOTA_EXHAUSTED',
       'aiWebFeedback.quota',
       error.keyless ? 'aiWebFeedback.quotaKeyless' : 'aiWebFeedback.quotaKey',
     );
   if (error instanceof FirecrawlRateLimitError)
-    return webFailure(
-      feedbackLocale,
-      'FIRECRAWL_RATE_LIMITED',
-      'aiWebFeedback.rate',
-      'aiWebFeedback.retryLater',
-    );
+    return webFailure('FIRECRAWL_RATE_LIMITED', 'aiWebFeedback.rate', 'aiWebFeedback.retryLater');
   if (error instanceof FirecrawlTargetError)
     return webFailure(
-      feedbackLocale,
       'FIRECRAWL_TARGET_FAILED',
       'aiWebFeedback.targetError',
       'aiWebFeedback.targetMessage',
       { status: error.targetStatus },
     );
   if (error instanceof FirecrawlEmptyContentError)
-    return webFailure(
-      feedbackLocale,
-      'FIRECRAWL_EMPTY_CONTENT',
-      'aiWebFeedback.empty',
-      'aiWebFeedback.empty',
-    );
+    return webFailure('FIRECRAWL_EMPTY_CONTENT', 'aiWebFeedback.empty', 'aiWebFeedback.empty');
   if (
     error instanceof FirecrawlError &&
     error.status !== undefined &&
     error.diagnostic !== undefined
   ) {
     return webFailure(
-      feedbackLocale,
       'FIRECRAWL_HTTP_FAILED',
       'aiWebFeedback.httpError',
       'aiWebFeedback.httpMessage',
@@ -208,15 +193,10 @@ async function tavilySearch(
   };
 }
 
-function tavilySearchFailure(
-  error: unknown,
-  query: string,
-  feedbackLocale: AppLocale,
-): SearchWebResult {
+function tavilySearchFailure(error: unknown, query: string): SearchWebResult {
   const detail = errorMessageOf(error);
   if (isUnauthorizedError(error, detail))
     return webFailure(
-      feedbackLocale,
       'TAVILY_UNAUTHORIZED',
       'aiWebFeedback.keyInvalid',
       'aiWebFeedback.checkSearchKey',
@@ -229,11 +209,7 @@ function tavilySearchFailure(
   };
 }
 
-async function firecrawlSearch(
-  query: string,
-  feedbackLocale: AppLocale,
-  signal?: AbortSignal,
-): Promise<SearchWebResult> {
+async function firecrawlSearch(query: string, signal?: AbortSignal): Promise<SearchWebResult> {
   try {
     const results = await FirecrawlClient.search(query, {
       limit: SEARCH_RESULT_LIMIT,
@@ -243,18 +219,14 @@ async function firecrawlSearch(
   } catch (error) {
     if (signal?.aborted) throw error;
     console.error('[WebSearch] ❌ Firecrawl 搜索失败', { query, error: errorMessageOf(error) });
-    return firecrawlFailure(error, feedbackLocale);
+    return firecrawlFailure(error);
   }
 }
 
 /**
  * 网络搜索（助手 search_web 与导入 agent 元信息搜索共用）
  */
-export async function searchWeb(
-  query: string,
-  signal?: AbortSignal,
-  feedbackLocale: AppLocale = 'zh-CN',
-): Promise<SearchWebResult> {
+export async function searchWeb(query: string, signal?: AbortSignal): Promise<SearchWebResult> {
   await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
   const apiKey = GlobalConfig.getTavilyApiKey();
   const fallbackEnabled = GlobalConfig.getFirecrawlFallbackEnabled();
@@ -265,25 +237,20 @@ export async function searchWeb(
     } catch (error) {
       console.error('[WebSearch] ❌ Tavily 搜索失败', { query, error: errorMessageOf(error) });
       if (!fallbackEnabled || !isTavilyFallbackEligible(error)) {
-        return tavilySearchFailure(error, query, feedbackLocale);
+        return tavilySearchFailure(error, query);
       }
     }
   } else if (!fallbackEnabled) {
     return webFailure(
-      feedbackLocale,
       'WEB_SEARCH_NOT_CONFIGURED',
       'aiWebFeedback.searchMissing',
       'aiWebFeedback.searchConfigure',
     );
   }
-  return firecrawlSearch(query, feedbackLocale, signal);
+  return firecrawlSearch(query, signal);
 }
 
-async function tavilyExtract(
-  apiKey: string,
-  url: string,
-  feedbackLocale: AppLocale,
-): Promise<FetchWebpageResult> {
+async function tavilyExtract(apiKey: string, url: string): Promise<FetchWebpageResult> {
   const response = await axios.post(
     `${TAVILY_API_URL}/extract`,
     {
@@ -303,7 +270,6 @@ async function tavilyExtract(
   const firstResult = response.data.results?.[0];
   if (!firstResult) {
     return webFailure(
-      feedbackLocale,
       'WEB_EXTRACT_EMPTY',
       'aiWebFeedback.extractEmpty',
       'aiWebFeedback.extractMessage',
@@ -324,15 +290,10 @@ async function tavilyExtract(
   };
 }
 
-function tavilyExtractFailure(
-  error: unknown,
-  url: string,
-  feedbackLocale: AppLocale,
-): FetchWebpageResult {
+function tavilyExtractFailure(error: unknown, url: string): FetchWebpageResult {
   const detail = errorMessageOf(error);
   if (isUnauthorizedError(error, detail))
     return webFailure(
-      feedbackLocale,
       'TAVILY_UNAUTHORIZED',
       'aiWebFeedback.keyInvalid',
       'aiWebFeedback.checkFetchKey',
@@ -345,10 +306,7 @@ function tavilyExtractFailure(
   };
 }
 
-async function firecrawlExtract(
-  url: string,
-  feedbackLocale: AppLocale,
-): Promise<FetchWebpageResult> {
+async function firecrawlExtract(url: string): Promise<FetchWebpageResult> {
   try {
     const page = await FirecrawlClient.scrape(url, { format: 'markdown', onlyMainContent: true });
     return {
@@ -359,22 +317,18 @@ async function firecrawlExtract(
     };
   } catch (error) {
     console.error('[WebPage] ❌ Firecrawl 网页读取失败', { url, error: errorMessageOf(error) });
-    return firecrawlFailure(error, feedbackLocale);
+    return firecrawlFailure(error);
   }
 }
 
 /**
  * 读取指定网页内容（Tavily Extract 优先，按条件回退 Firecrawl）
  */
-async function fetchWebpage(url: string, feedbackLocale: AppLocale): Promise<FetchWebpageResult> {
+async function fetchWebpage(url: string): Promise<FetchWebpageResult> {
   if (!isValidUrl(url)) {
-    return webFailure(
-      feedbackLocale,
-      'WEB_URL_INVALID',
-      'aiWebFeedback.urlInvalid',
-      'aiWebFeedback.urlParse',
-      { url },
-    );
+    return webFailure('WEB_URL_INVALID', 'aiWebFeedback.urlInvalid', 'aiWebFeedback.urlParse', {
+      url,
+    });
   }
   await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
   const apiKey = GlobalConfig.getTavilyApiKey();
@@ -382,22 +336,21 @@ async function fetchWebpage(url: string, feedbackLocale: AppLocale): Promise<Fet
 
   if (apiKey) {
     try {
-      return await tavilyExtract(apiKey, url, feedbackLocale);
+      return await tavilyExtract(apiKey, url);
     } catch (error) {
       console.error('[WebPage] ❌ Tavily 网页获取失败', { url, error: errorMessageOf(error) });
       if (!fallbackEnabled || !isTavilyFallbackEligible(error)) {
-        return tavilyExtractFailure(error, url, feedbackLocale);
+        return tavilyExtractFailure(error, url);
       }
     }
   } else if (!fallbackEnabled) {
     return webFailure(
-      feedbackLocale,
       'WEB_FETCH_NOT_CONFIGURED',
       'aiWebFeedback.fetchMissing',
       'aiWebFeedback.fetchConfigure',
     );
   }
-  return firecrawlExtract(url, feedbackLocale);
+  return firecrawlExtract(url);
 }
 
 export const webSearchTools: ToolDefinition[] = [
@@ -412,13 +365,12 @@ export const webSearchTools: ToolDefinition[] = [
     handler: async (args, context: ToolContext) => {
       const { query } = args;
       const { onAction } = context;
-      const feedbackLocale = AGENT_LOCALE;
 
       if (!validToolQuery(query, 'WebSearch')) {
         return toolErrorJson('WEB_QUERY_REQUIRED', 'aiWebFeedback.queryRequired');
       }
 
-      const result = await searchWeb(query, undefined, feedbackLocale);
+      const result = await searchWeb(query, undefined);
 
       // 报告操作
       if (onAction) {
@@ -449,7 +401,6 @@ export const webSearchTools: ToolDefinition[] = [
     handler: async (args, context: ToolContext) => {
       const { url } = args;
       const { onAction } = context;
-      const feedbackLocale = AGENT_LOCALE;
 
       if (!url || typeof url !== 'string') {
         console.error('[WebPage] ❌ 无效的 URL', {
@@ -459,7 +410,7 @@ export const webSearchTools: ToolDefinition[] = [
         return toolErrorJson('WEB_URL_REQUIRED', 'aiWebFeedback.urlRequired');
       }
 
-      const result = await fetchWebpage(url, feedbackLocale);
+      const result = await fetchWebpage(url);
 
       // 报告操作
       if (onAction) {

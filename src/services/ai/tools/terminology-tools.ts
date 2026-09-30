@@ -1,6 +1,6 @@
 import { bookToolContext, fuzzyMatches } from './tool-feedback';
 import { toolDefinition } from './tool-localization';
-import { translateText } from 'src/i18n/translate';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { LocalizedError } from 'src/utils/localized-error';
 import { describeTool } from './tool-localization';
 import { TerminologyService } from 'src/services/terminology-service';
@@ -76,7 +76,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['name', 'translation'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
+      const { bookId, onAction, language } = bookToolContext(context);
       const { name, translation, description } = args as {
         name: string;
         translation: string;
@@ -87,7 +87,6 @@ export const terminologyTools: ToolDefinition[] = [
           'TERM_FIELDS_REQUIRED',
           'aiEntityFeedback.termNameAndTranslation',
           {},
-          feedbackLocale,
         );
       }
 
@@ -115,7 +114,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(feedbackLocale, 'aiEntityFeedback.termCreated'),
+        message: translateText(AGENT_LOCALE, 'aiEntityFeedback.termCreated'),
         term: {
           id: term.id,
           name: term.name,
@@ -141,21 +140,16 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['name'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
+      const { bookId, onAction, language } = bookToolContext(context);
       const rawArgs = args as { name: string; include_memory?: boolean };
       const { include_memory = true } = rawArgs;
       // 类型守卫：确保 name 为有效字符串
       const name = typeof rawArgs.name === 'string' ? rawArgs.name.trim() : '';
       if (!name) {
-        throw new LocalizedError(
-          'TERM_NAME_REQUIRED',
-          'aiEntityFeedback.termNameRequired',
-          {},
-          feedbackLocale,
-        );
+        throw new LocalizedError('TERM_NAME_REQUIRED', 'aiEntityFeedback.termNameRequired', {});
       }
 
-      const book = resolveBookSync(bookId, feedbackLocale);
+      const book = resolveBookSync(bookId);
 
       const term = book.terminologies?.find((t) => t.name === name);
 
@@ -186,7 +180,6 @@ export const terminologyTools: ToolDefinition[] = [
           const { items: limitedMatches, ...matchSummary } = fuzzyMatches(
             fallbackMatches,
             MAX_FALLBACK_RESULTS,
-            feedbackLocale,
             name,
           );
 
@@ -204,7 +197,7 @@ export const terminologyTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'TERM_NOT_FOUND',
-          message: translateText(feedbackLocale, 'aiEntityFeedback.termNoMatch', { name }),
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.termNoMatch', { name }),
         });
       }
 
@@ -271,19 +264,14 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['term_id'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
+      const { bookId, onAction, language } = bookToolContext(context);
       const { term_id, translation, description } = args as {
         term_id: string;
         translation?: string;
         description?: string;
       };
       if (!term_id) {
-        throw new LocalizedError(
-          'TERM_ID_REQUIRED',
-          'aiEntityFeedback.termIdRequired',
-          {},
-          feedbackLocale,
-        );
+        throw new LocalizedError('TERM_ID_REQUIRED', 'aiEntityFeedback.termIdRequired', {});
       }
 
       if (translation !== undefined && translation !== '' && !translation.trim()) {
@@ -291,7 +279,6 @@ export const terminologyTools: ToolDefinition[] = [
           'TERM_TRANSLATION_REQUIRED',
           'aiEntityFeedback.termTranslationRequired',
           {},
-          feedbackLocale,
         );
       }
 
@@ -333,7 +320,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(feedbackLocale, 'aiEntityFeedback.termUpdated'),
+        message: translateText(AGENT_LOCALE, 'aiEntityFeedback.termUpdated'),
         term: {
           id: term.id,
           name: term.name,
@@ -355,17 +342,12 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['term_id'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, feedbackLocale } = bookToolContext(context);
+      const { bookId, onAction } = bookToolContext(context);
       const { term_id } = args as {
         term_id: string;
       };
       if (!term_id) {
-        throw new LocalizedError(
-          'TERM_ID_REQUIRED',
-          'aiEntityFeedback.termIdRequired',
-          {},
-          feedbackLocale,
-        );
+        throw new LocalizedError('TERM_ID_REQUIRED', 'aiEntityFeedback.termIdRequired', {});
       }
 
       // 在删除前获取术语信息，以便在 toast 中显示详细信息和 revert
@@ -387,7 +369,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(feedbackLocale, 'aiEntityFeedback.termDeleted'),
+        message: translateText(AGENT_LOCALE, 'aiEntityFeedback.termDeleted'),
       });
     },
   },
@@ -411,7 +393,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
+      const { bookId, onAction, language } = bookToolContext(context);
       const {
         chapter_id,
         all_chapters = false,
@@ -478,7 +460,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['keywords'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
+      const { bookId, onAction, language } = bookToolContext(context);
       const {
         keywords,
         translation_only = false,
@@ -572,17 +554,12 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['keywords'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, feedbackLocale } = bookToolContext(context);
+      const { bookId, onAction } = bookToolContext(context);
       const { keywords } = args as {
         keywords: string[];
       };
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-        throw new LocalizedError(
-          'KEYWORDS_REQUIRED',
-          'aiEntityFeedback.keywordsRequired',
-          {},
-          feedbackLocale,
-        );
+        throw new LocalizedError('KEYWORDS_REQUIRED', 'aiEntityFeedback.keywordsRequired', {});
       }
 
       // 报告读取操作

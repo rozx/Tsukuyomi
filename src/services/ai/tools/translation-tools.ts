@@ -1,11 +1,7 @@
-import {
-  agentErrorMessage,
-  localizedErrorCode,
-  localizedErrorMessage,
-} from 'src/utils/localized-error';
+import { agentErrorMessage, localizedErrorCode } from 'src/utils/localized-error';
 import { toolDefinition } from './tool-localization';
 import { describeTool } from './tool-localization';
-import { agentText, AGENT_LOCALE, translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import type { ToolDefinition, ToolContext } from './types';
 import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import { BookService } from 'src/services/book-service';
@@ -161,7 +157,7 @@ const QUOTE_PAIR_RULES: Array<{
 ];
 
 // 错误消息常量
-function createBatchMessages(feedbackLocale: AppLocale) {
+function createBatchMessages() {
   return {
     MISSING_PARAGRAPH_ID: agentText('aiBatchFeedback.MISSING_PARAGRAPH_ID'),
     INVALID_PARAGRAPH_ID: agentText('aiBatchFeedback.INVALID_PARAGRAPH_ID'),
@@ -314,7 +310,7 @@ function createBatchMessages(feedbackLocale: AppLocale) {
   };
 }
 type BatchMessages = ReturnType<typeof createBatchMessages>;
-const DEFAULT_BATCH_MESSAGES = Object.freeze(createBatchMessages('zh-CN'));
+const DEFAULT_BATCH_MESSAGES = Object.freeze(createBatchMessages());
 
 /**
  * 验证段落标识符（仅支持 paragraph_id）
@@ -1247,7 +1243,6 @@ function validateSingleItem(
   paragraph: Paragraph,
   enableOriginalTextValidation: boolean | undefined,
   targetLanguage: AppLocale,
-  feedbackLocale: AppLocale,
   messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): ItemValidationOutcome {
   const warnings: string[] = [];
@@ -1433,7 +1428,6 @@ function validateAllItems(
   targetParagraphsMap: Map<string, Paragraph>,
   enableOriginalTextValidation: boolean | undefined,
   targetLanguage: AppLocale,
-  feedbackLocale: AppLocale,
   messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): ValidationSummary {
   const warnings: string[] = [];
@@ -1449,7 +1443,6 @@ function validateAllItems(
       paragraph,
       enableOriginalTextValidation,
       targetLanguage,
-      feedbackLocale,
       messages,
     );
     warnings.push(...outcome.warnings);
@@ -1527,9 +1520,8 @@ async function processTranslationBatch(
   preloadedBook?: Novel,
   enableOriginalTextValidation?: boolean,
   targetLanguage: AppLocale = 'zh-CN',
-  feedbackLocale: AppLocale = 'zh-CN',
 ): Promise<ProcessTranslationBatchResult> {
-  const messages = createBatchMessages(feedbackLocale);
+  const messages = createBatchMessages();
   // aiModelId 保留在签名中以维持调用方兼容；实际翻译写入由 onParagraphsExtracted 回调完成
   void aiModelId;
   try {
@@ -1579,7 +1571,6 @@ async function processTranslationBatch(
       targetParagraphsMap,
       enableOriginalTextValidation,
       targetLanguage,
-      feedbackLocale,
       messages,
     );
     return buildBatchValidationResult(summary, messages);
@@ -1955,13 +1946,12 @@ async function handleAddTranslationBatch(
   args: Record<string, unknown>,
   context: ToolContext,
 ): Promise<string> {
-  const feedbackLocale = AGENT_LOCALE;
   const targetLanguage = context.languages?.targetLanguage ?? 'zh-CN';
   context = {
     ...context,
     languages: Object.freeze({ uiLocale: context.languages?.uiLocale ?? 'zh-CN', targetLanguage }),
   };
-  const messages = createBatchMessages(feedbackLocale);
+  const messages = createBatchMessages();
   const { bookId, onAction, taskId, aiProcessingStore, submittedParagraphIds } = context;
   const { paragraphs } = args as unknown as AddTranslationBatchArgs;
 
@@ -2008,7 +1998,6 @@ async function handleAddTranslationBatch(
     preloadedBook,
     context.enableOriginalTextValidation,
     context.languages?.targetLanguage ?? 'zh-CN',
-    AGENT_LOCALE,
   );
 
   const combinedWarnings = [...(result.warnings ?? []), ...correctionWarnings];

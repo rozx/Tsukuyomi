@@ -8,7 +8,6 @@ import type {
   AskUserResult,
 } from 'src/stores/ask-user';
 import { GlobalConfig } from 'src/services/global-config-cache';
-import type { AppLocale } from 'src/models/locale';
 import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { localizedErrorMessage, localizedErrorCode } from 'src/utils/localized-error';
 
@@ -102,7 +101,6 @@ async function invokeAskUserBridge(
   payload: AskUserPayload,
   askFn: (p: AskUserPayload) => Promise<AskUserResult>,
   onAction: AskUserOnAction,
-  feedbackLocale: AppLocale,
 ): Promise<string> {
   try {
     const result = await askFn(payload);
@@ -116,7 +114,7 @@ async function invokeAskUserBridge(
     }
     return JSON.stringify(buildAskUserSuccessJson(question, result));
   } catch (error) {
-    return JSON.stringify(buildAskUserErrorJson(question, error, feedbackLocale));
+    return JSON.stringify(buildAskUserErrorJson(question, error));
   }
 }
 
@@ -168,8 +166,8 @@ function buildAskUserSuccessJson(question: string, result: AskUserResult) {
 /**
  * ask_user 异常时的 JSON 响应体
  */
-function buildAskUserErrorJson(question: string, error: unknown, feedbackLocale: AppLocale) {
-  const msg = localizedErrorMessage(error, feedbackLocale, 'aiEntityFeedback.askFailed');
+function buildAskUserErrorJson(question: string, error: unknown) {
+  const msg = localizedErrorMessage(error, AGENT_LOCALE, 'aiEntityFeedback.askFailed');
   return { success: false, error_code: localizedErrorCode(error), error: msg, question };
 }
 
@@ -181,7 +179,6 @@ export const askUserTools: ToolDefinition[] = [
       required: ASK_USER_QUESTION_REQUIRED,
     }),
     handler: async (args, context: ToolContext) => {
-      const feedbackLocale = AGENT_LOCALE;
       const { onAction } = context;
       const parsedArgs = parseToolArgs<AskUserPayload>(args);
       const question = typeof parsedArgs?.question === 'string' ? parsedArgs.question.trim() : '';
@@ -189,7 +186,7 @@ export const askUserTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'QUESTION_REQUIRED',
-          error: translateText(feedbackLocale, 'aiEntityFeedback.questionRequired'),
+          error: translateText(AGENT_LOCALE, 'aiEntityFeedback.questionRequired'),
         });
       }
 
@@ -204,10 +201,10 @@ export const askUserTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'ASK_UI_UNAVAILABLE',
-          error: translateText(feedbackLocale, 'aiEntityFeedback.askUnavailable'),
+          error: translateText(AGENT_LOCALE, 'aiEntityFeedback.askUnavailable'),
         });
       }
-      return invokeAskUserBridge(question, payload, askFn, onAction, feedbackLocale);
+      return invokeAskUserBridge(question, payload, askFn, onAction);
     },
   },
   {
@@ -227,7 +224,6 @@ export const askUserTools: ToolDefinition[] = [
       required: ['questions'],
     }),
     handler: async (args, context: ToolContext) => {
-      const feedbackLocale = AGENT_LOCALE;
       const { onAction } = context;
       const parsedArgs = parseToolArgs<AskUserBatchPayload>(args);
 
@@ -244,7 +240,7 @@ export const askUserTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'QUESTIONS_REQUIRED',
-          error: translateText(feedbackLocale, 'aiEntityFeedback.questionsRequired'),
+          error: translateText(AGENT_LOCALE, 'aiEntityFeedback.questionsRequired'),
         });
       }
 
@@ -288,7 +284,7 @@ export const askUserTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'ASK_UI_UNAVAILABLE',
-          error: translateText(feedbackLocale, 'aiEntityFeedback.askBatchUnavailable'),
+          error: translateText(AGENT_LOCALE, 'aiEntityFeedback.askBatchUnavailable'),
         });
       }
 
@@ -321,7 +317,7 @@ export const askUserTools: ToolDefinition[] = [
           answers: result.answers,
         });
       } catch (error) {
-        const msg = localizedErrorMessage(error, feedbackLocale, 'aiEntityFeedback.askFailed');
+        const msg = localizedErrorMessage(error, AGENT_LOCALE, 'aiEntityFeedback.askFailed');
         return JSON.stringify({
           success: false,
           error_code: localizedErrorCode(error),

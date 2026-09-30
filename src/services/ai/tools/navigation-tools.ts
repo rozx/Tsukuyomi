@@ -1,7 +1,6 @@
 import { toolErrorJson, caughtToolErrorJson, checkedToolBookContext } from './tool-feedback';
 import { toolDefinition } from './tool-localization';
-import { translateText } from 'src/i18n/translate';
-import { localizedErrorMessage } from 'src/utils/localized-error';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { describeTool } from './tool-localization';
 import { ChapterService } from 'src/services/chapter-service';
 import { BookService } from 'src/services/book-service';
@@ -42,7 +41,7 @@ export const navigationTools: ToolDefinition[] = [
     handler: async (args, context: ToolContext) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, feedbackLocale } = checked;
+      const { bookId, onAction } = checked;
 
       const { chapter_id } = args as {
         chapter_id: string;
@@ -83,7 +82,7 @@ export const navigationTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(feedbackLocale, 'aiEntityFeedback.navigatedChapter', {
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.navigatedChapter', {
             title: chapterTitle,
           }),
           book_id: bookId,
@@ -109,7 +108,7 @@ export const navigationTools: ToolDefinition[] = [
     handler: async (args, context: ToolContext) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, feedbackLocale } = checked;
+      const { bookId, onAction } = checked;
 
       const { paragraph_id } = args as {
         paragraph_id: string;
@@ -153,7 +152,7 @@ export const navigationTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(feedbackLocale, 'aiEntityFeedback.navigatedParagraph', {
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.navigatedParagraph', {
             title: chapterTitle,
           }),
           book_id: bookId,

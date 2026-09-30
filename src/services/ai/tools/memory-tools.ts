@@ -1,6 +1,5 @@
 import { toolErrorJson, caughtToolErrorJson, checkedToolBookContext } from './tool-feedback';
 import { toolDefinition } from './tool-localization';
-import type { AppLocale } from 'src/models/locale';
 import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { LocalizedError } from 'src/utils/localized-error';
 import { describeTool } from './tool-localization';
@@ -35,7 +34,6 @@ async function requireMemoryById(bookId: string, memoryId: string | undefined): 
  */
 function parseContentSummary(
   args: Record<string, unknown>,
-  feedbackLocale: AppLocale,
 ): { content: string; summary: string } | { error: string } {
   const { content, summary } = args as { content?: string; summary?: string };
   if (!content?.trim()) {
@@ -61,7 +59,6 @@ function parseContentSummary(
 function createListMemoriesHandler(toolName: 'list_memories') {
   return async (args: Record<string, unknown>, context: ToolContext) => {
     const { bookId, onAction } = context;
-    const feedbackLocale = AGENT_LOCALE;
     const parsedArgs = parseToolArgs<{
       offset?: number;
       limit?: number;
@@ -138,7 +135,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
 function memoryIdHandler(
   handler: (
     args: Record<string, unknown>,
-    context: ToolContext & { bookId: string; feedbackLocale: AppLocale; memory_id: string },
+    context: ToolContext & { bookId: string; memory_id: string },
   ) => Promise<string>,
 ): ToolDefinition['handler'] {
   return (args, context) => {
@@ -191,7 +188,6 @@ export const memoryTools: ToolDefinition[] = [
     }),
     handler: async (args, context: ToolContext) => {
       const { bookId, onAction } = context;
-      const feedbackLocale = AGENT_LOCALE;
       const parsedArgs = parseToolArgs<{ memory_id: string }>(args);
       if (!bookId) {
         return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
@@ -242,7 +238,7 @@ export const memoryTools: ToolDefinition[] = [
     handler: async (args, context) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, feedbackLocale, language } = checked;
+      const { bookId, onAction, language } = checked;
       const { query } = args as { query: string };
       if (!query || typeof query !== 'string' || !query.trim()) {
         return toolErrorJson('MEMORY_QUERY_REQUIRED', 'aiEntityFeedback.memoryQueryRequired');
@@ -301,8 +297,8 @@ export const memoryTools: ToolDefinition[] = [
     handler: async (args, context) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, feedbackLocale, language } = checked;
-      const parsed = parseContentSummary(args, feedbackLocale);
+      const { bookId, onAction, language } = checked;
+      const parsed = parseContentSummary(args);
       if ('error' in parsed) {
         return parsed.error;
       }
@@ -325,7 +321,7 @@ export const memoryTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(feedbackLocale, 'aiEntityFeedback.memoryCreated'),
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.memoryCreated'),
           memory: {
             id: memory.id,
             summary: memory.summary,
@@ -360,8 +356,8 @@ export const memoryTools: ToolDefinition[] = [
       },
       required: ['memory_id', 'content', 'summary'],
     }),
-    handler: memoryIdHandler(async (args, { bookId, onAction, feedbackLocale, memory_id }) => {
-      const parsed = parseContentSummary(args, feedbackLocale);
+    handler: memoryIdHandler(async (args, { bookId, onAction, memory_id }) => {
+      const parsed = parseContentSummary(args);
       if ('error' in parsed) return parsed.error;
       const { content, summary } = parsed;
 
@@ -386,7 +382,7 @@ export const memoryTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(feedbackLocale, 'aiEntityFeedback.memoryUpdated'),
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.memoryUpdated'),
           memory: {
             id: memory.id,
             summary: memory.summary,
@@ -414,7 +410,7 @@ export const memoryTools: ToolDefinition[] = [
       },
       required: ['memory_id'],
     }),
-    handler: memoryIdHandler(async (args, { bookId, onAction, feedbackLocale, memory_id }) => {
+    handler: memoryIdHandler(async (args, { bookId, onAction, memory_id }) => {
       try {
         // 在删除前获取 Memory 信息，以便在 action 中显示
         const memory = await requireMemoryById(bookId, memory_id);
@@ -435,7 +431,7 @@ export const memoryTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(feedbackLocale, 'aiEntityFeedback.memoryDeleted'),
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.memoryDeleted'),
         });
       } catch (error) {
         return caughtToolErrorJson(

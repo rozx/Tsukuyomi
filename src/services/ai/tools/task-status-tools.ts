@@ -1,10 +1,5 @@
-import { agentText, AGENT_LOCALE, translateText } from 'src/i18n/translate';
-import {
-  agentErrorMessage,
-  AgentError,
-  LocalizedError,
-  localizedErrorMessage,
-} from 'src/utils/localized-error';
+import { agentText, translateText } from 'src/i18n/translate';
+import { agentErrorMessage, AgentError } from 'src/utils/localized-error';
 import { toolDefinition } from './tool-localization';
 import { describeTool } from './tool-localization';
 import type { AppLocale } from 'src/models/locale';
@@ -55,7 +50,6 @@ function getTransitionErrorMessage(
   taskType: TaskType,
   currentStatus: TaskStatus,
   newStatus: TaskStatus,
-  feedbackLocale: AppLocale = 'zh-CN',
 ): string {
   if (newStatus === 'preparing') {
     return agentText('aiTaskFeedback.preparing');
@@ -94,7 +88,6 @@ function isValidTransition(
   taskType: TaskType,
   currentStatus: TaskStatus | undefined,
   newStatus: TaskStatus,
-  feedbackLocale: AppLocale = 'zh-CN',
 ): { valid: boolean; error?: string } {
   // 如果是首次状态更新，必须是 planning
   if (!currentStatus) {
@@ -119,7 +112,7 @@ function isValidTransition(
   if (!allowedTransitions || !allowedTransitions.includes(newStatus)) {
     return {
       valid: false,
-      error: getTransitionErrorMessage(taskType, currentStatus, newStatus, feedbackLocale),
+      error: getTransitionErrorMessage(taskType, currentStatus, newStatus),
     };
   }
 
@@ -175,7 +168,7 @@ const MAX_IDS_SHOW = 10;
 /**
  * 将缺失段落 ID 列表截断为展示字符串
  */
-function formatMissingIds(ids: string[], feedbackLocale: AppLocale): string {
+function formatMissingIds(ids: string[]): string {
   const head = ids.slice(0, MAX_IDS_SHOW).join(', ');
   return ids.length > MAX_IDS_SHOW
     ? agentText('aiTaskFeedback.idSummary', { head, count: ids.length })
@@ -221,12 +214,11 @@ function findMissingNonEmptyParagraphIds(
  * 返回 null 表示通过或无法完整判断需要回退到数据库检查；返回 {error} 表示检查失败
  */
 async function checkReviewWithAccumulated(params: {
-  feedbackLocale: AppLocale;
   chapterId: string;
   accumulatedParagraphs: Map<string, string>;
   chunkBoundaries: { paragraphIds: string[]; allowedParagraphIds: Set<string> } | undefined;
 }): Promise<ReviewCheckFailure | null> {
-  const { chapterId, accumulatedParagraphs, chunkBoundaries, feedbackLocale } = params;
+  const { chapterId, accumulatedParagraphs, chunkBoundaries } = params;
   const paragraphIdsToCheck: string[] = chunkBoundaries ? chunkBoundaries.paragraphIds : [];
 
   if (paragraphIdsToCheck.length === 0) {
@@ -250,7 +242,7 @@ async function checkReviewWithAccumulated(params: {
       return {
         error: agentText('aiTaskFeedback.missingChunk', {
           count: missingIds.length,
-          ids: formatMissingIds(missingIds, feedbackLocale),
+          ids: formatMissingIds(missingIds),
         }),
       };
     }
@@ -270,7 +262,7 @@ async function checkReviewWithAccumulated(params: {
     return {
       error: agentText('aiTaskFeedback.missingUninitialized', {
         count: notSubmitted.length,
-        ids: formatMissingIds(notSubmitted, feedbackLocale),
+        ids: formatMissingIds(notSubmitted),
       }),
     };
   }
@@ -281,12 +273,11 @@ async function checkReviewWithAccumulated(params: {
  * 通过数据库内容进行 review 校验（向后兼容路径）
  */
 async function checkReviewWithDatabase(params: {
-  feedbackLocale: AppLocale;
   language: AppLocale;
   chapterId: string;
   chunkBoundaries: { allowedParagraphIds: Set<string> } | undefined;
 }): Promise<ReviewCheckFailure | null> {
-  const { chapterId, chunkBoundaries, language, feedbackLocale } = params;
+  const { chapterId, chunkBoundaries, language } = params;
   const { ChapterContentService } = await import('src/services/chapter-content-service');
   const dbContent = await ChapterContentService.loadChapterContent(chapterId);
   const contentToCheck =
@@ -310,7 +301,7 @@ async function checkReviewWithDatabase(params: {
     error: agentText('aiTaskFeedback.missingDatabase', {
       scope: scopeMsg,
       count: untranslated.length,
-      ids: formatMissingIds(ids, feedbackLocale),
+      ids: formatMissingIds(ids),
     }),
   };
 }
@@ -323,7 +314,6 @@ async function validateTranslationReview(
   task: { chapterId?: string; bookId?: string },
   context: ToolContext,
 ): Promise<ReviewCheckFailure | null> {
-  const feedbackLocale = AGENT_LOCALE;
   const language = context.languages?.targetLanguage ?? 'zh-CN';
   const chapterId = task.chapterId;
   const bookId = task.bookId || context.bookId;
@@ -361,7 +351,6 @@ async function validateTranslationReview(
 
     if (accumulatedParagraphs && accumulatedParagraphs.size > 0) {
       const failure = await checkReviewWithAccumulated({
-        feedbackLocale,
         chapterId,
         accumulatedParagraphs,
         chunkBoundaries: context.chunkBoundaries,
@@ -373,7 +362,6 @@ async function validateTranslationReview(
       // 路径二：回退到数据库检查（向后兼容）
       // 当 accumulatedParagraphs 为空，或者是全章非分块场景时使用
       const failure = await checkReviewWithDatabase({
-        feedbackLocale,
         language,
         chapterId,
         chunkBoundaries: context.chunkBoundaries,
@@ -431,7 +419,6 @@ export const taskStatusTools: ToolDefinition[] = [
       required: ['status'],
     }),
     handler: async (args, context: ToolContext) => {
-      const feedbackLocale = AGENT_LOCALE;
       const actionLocale = context.languages?.uiLocale ?? 'zh-CN';
       const { taskId, onAction } = context;
       const { status, reason: _reason } = args as { status: string; reason?: string };
@@ -468,7 +455,7 @@ export const taskStatusTools: ToolDefinition[] = [
 
       // 验证状态转换
       const currentStatus = getTaskCurrentStatus(aiProcessingStore, taskId);
-      const validation = isValidTransition(taskType, currentStatus, status, feedbackLocale);
+      const validation = isValidTransition(taskType, currentStatus, status);
       if (!validation.valid) {
         return jsonError(
           validation.error ?? agentText('aiTaskFeedback.validationFailed'),

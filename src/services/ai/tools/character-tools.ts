@@ -1,7 +1,7 @@
 import { singleIdToolParameters } from './tool-localization';
 import { bookToolContext, fuzzyMatches } from './tool-feedback';
 import { toolDefinition } from './tool-localization';
-import { translateText } from 'src/i18n/translate';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { LocalizedError } from 'src/utils/localized-error';
 import { describeTool, stringToolParameter } from './tool-localization';
 import { CharacterSettingService } from 'src/services/character-setting-service';
@@ -92,7 +92,7 @@ export const characterTools: ToolDefinition[] = [
       required: ['name', 'translation'],
     }),
     handler: async (args, context: ToolContext) => {
-      const { feedbackLocale, bookId, onAction, language } = bookToolContext(context);
+      const { bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{
         name: string;
         translation: string;
@@ -107,7 +107,6 @@ export const characterTools: ToolDefinition[] = [
           'CHARACTER_FIELDS_REQUIRED',
           'aiEntityFeedback.characterNameAndTranslation',
           {},
-          feedbackLocale,
         );
       }
       assertAliasesNotBlank(aliases);
@@ -151,7 +150,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(feedbackLocale, 'aiEntityFeedback.characterCreated'),
+        message: translateText(AGENT_LOCALE, 'aiEntityFeedback.characterCreated'),
         character: serializeCharacterForTool(character, language),
       });
     },
@@ -172,7 +171,7 @@ export const characterTools: ToolDefinition[] = [
       required: ['name'],
     }),
     handler: async (args, context: ToolContext) => {
-      const { feedbackLocale, bookId, onAction, language } = bookToolContext(context);
+      const { bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{ name: string; include_memory?: boolean }>(args);
       const { include_memory = true } = parsedArgs;
       // 类型守卫：确保 name 为有效字符串
@@ -182,11 +181,10 @@ export const characterTools: ToolDefinition[] = [
           'CHARACTER_NAME_REQUIRED',
           'aiEntityFeedback.characterNameRequired',
           {},
-          feedbackLocale,
         );
       }
 
-      const book = resolveBookSync(bookId, feedbackLocale);
+      const book = resolveBookSync(bookId);
 
       const exactMatches = book.characterSettings?.filter((c) => c.name === name) ?? [];
       if (exactMatches.length > 1)
@@ -194,7 +192,6 @@ export const characterTools: ToolDefinition[] = [
           'AMBIGUOUS_CHARACTER_NAME',
           'aiEntityFeedback.ambiguousCharacter',
           {},
-          feedbackLocale,
         );
       const character = exactMatches[0];
 
@@ -236,7 +233,6 @@ export const characterTools: ToolDefinition[] = [
           const { items: limitedMatches, ...matchSummary } = fuzzyMatches(
             fallbackMatches,
             MAX_FALLBACK_RESULTS,
-            feedbackLocale,
             name,
           );
 
@@ -249,7 +245,7 @@ export const characterTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'CHARACTER_NOT_FOUND',
-          message: translateText(feedbackLocale, 'aiEntityFeedback.characterNoMatch', { name }),
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.characterNoMatch', { name }),
         });
       }
 
@@ -345,23 +341,21 @@ export const characterTools: ToolDefinition[] = [
       required: ['character_id'],
     }),
     handler: async (args, context: ToolContext) => {
-      const { parsedArgs, feedbackLocale, bookId, onAction, language, character_id } =
-        characterEditContext<{
-          character_id: string;
-          name?: string;
-          translation?: string;
-          sex?: string;
-          description?: string;
-          speaking_style?: string;
-          aliases?: Array<{ id?: string; name: string; translation: string }>;
-        }>(args, context);
+      const { parsedArgs, bookId, onAction, language, character_id } = characterEditContext<{
+        character_id: string;
+        name?: string;
+        translation?: string;
+        sex?: string;
+        description?: string;
+        speaking_style?: string;
+        aliases?: Array<{ id?: string; name: string; translation: string }>;
+      }>(args, context);
       const { name, translation, sex, description, speaking_style, aliases } = parsedArgs;
       if (name !== undefined && !name.trim()) {
         throw new LocalizedError(
           'CHARACTER_NAME_REQUIRED',
           'aiEntityFeedback.characterNameRequired',
           {},
-          feedbackLocale,
         );
       }
       if (translation !== undefined && translation !== '' && !translation.trim()) {
@@ -369,7 +363,6 @@ export const characterTools: ToolDefinition[] = [
           'CHARACTER_TRANSLATION_REQUIRED',
           'aiEntityFeedback.characterTranslationRequired',
           {},
-          feedbackLocale,
         );
       }
 
@@ -428,7 +421,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(feedbackLocale, 'aiEntityFeedback.characterUpdated'),
+        message: translateText(AGENT_LOCALE, 'aiEntityFeedback.characterUpdated'),
         character: serializeCharacterForTool(character, language),
       });
     },
@@ -439,10 +432,9 @@ export const characterTools: ToolDefinition[] = [
       singleIdToolParameters('delete_character', 'character_id'),
     ),
     handler: async (args, context: ToolContext) => {
-      const { parsedArgs, feedbackLocale, bookId, onAction, language, character_id } =
-        characterEditContext<{
-          character_id: string;
-        }>(args, context);
+      const { parsedArgs, bookId, onAction, language, character_id } = characterEditContext<{
+        character_id: string;
+      }>(args, context);
 
       // 在删除前获取角色信息，以便在 toast 中显示详细信息和 revert
       const { character, previousData } = resolveCharacterForTool(bookId, character_id);
@@ -460,7 +452,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(feedbackLocale, 'aiEntityFeedback.characterDeleted'),
+        message: translateText(AGENT_LOCALE, 'aiEntityFeedback.characterDeleted'),
       });
     },
   },
@@ -491,7 +483,7 @@ export const characterTools: ToolDefinition[] = [
       required: ['keywords'],
     }),
     handler: async (args, context: ToolContext) => {
-      const { feedbackLocale, bookId, onAction, language } = bookToolContext(context);
+      const { bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{
         keywords: string[];
         translation_only?: boolean;
@@ -594,7 +586,7 @@ export const characterTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context: ToolContext) => {
-      const { feedbackLocale, bookId, onAction, language } = bookToolContext(context);
+      const { bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{
         chapter_id?: string;
         all_chapters?: boolean;

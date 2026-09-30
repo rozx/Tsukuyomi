@@ -1,5 +1,5 @@
-import { agentText, AGENT_LOCALE, translateText } from 'src/i18n/translate';
-import type { AgentMessageKey, MessageKey } from 'src/i18n/types';
+import { agentText } from 'src/i18n/translate';
+import type { AgentMessageKey } from 'src/i18n/types';
 import { AgentError, LocalizedError } from 'src/utils/localized-error';
 import { toolErrorJson } from './tool-feedback';
 import { toolDefinition } from './tool-localization';
@@ -90,37 +90,24 @@ function toDisplayParagraphIndex(paragraphIndex: number): number {
  * 工具处理器前置校验：bookId 非空 + 从 store 取书。
  * 用于 paragraph-tools 里近十个处理器共用的入口样板，失败时抛出错误。
  */
-function resolveBookOrThrow(bookId: string | null | undefined, feedbackLocale: AppLocale): Novel {
-  return resolveBookAndStoreOrThrow(bookId, feedbackLocale).book;
+function resolveBookOrThrow(bookId: string | null | undefined): Novel {
+  return resolveBookAndStoreOrThrow(bookId).book;
 }
 
 /**
  * 工具处理器前置校验，同时返回 booksStore 用于后续 updateBook。
  */
-function resolveBookAndStoreOrThrow(
-  bookId: string | null | undefined,
-  feedbackLocale: AppLocale,
-): {
+function resolveBookAndStoreOrThrow(bookId: string | null | undefined): {
   book: Novel;
   booksStore: ReturnType<typeof useBooksStore>;
 } {
   if (!bookId) {
-    throw new LocalizedError(
-      'BOOK_ID_REQUIRED',
-      'aiEntityFeedback.bookRequired',
-      {},
-      feedbackLocale,
-    );
+    throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', {});
   }
   const booksStore = useBooksStore();
   const book = booksStore.getBookById(bookId);
   if (!book) {
-    throw new LocalizedError(
-      'BOOK_NOT_FOUND',
-      'aiEntityFeedback.bookMissing',
-      { id: bookId },
-      feedbackLocale,
-    );
+    throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
   }
   return { book, booksStore };
 }
@@ -132,7 +119,6 @@ function resolveBookAndStoreOrThrow(
 async function findParagraphLocationOrErrorJson(
   book: Novel,
   paragraphId: string,
-  feedbackLocale: AppLocale,
 ): Promise<{ kind: 'error'; json: string } | { kind: 'ok'; location: ParagraphLocation }> {
   const location = await ChapterService.findParagraphLocationAsync(book, paragraphId);
   if (!location) {
@@ -153,15 +139,14 @@ async function findParagraphLocationOrErrorJson(
 async function resolveBookAndParagraphOrError(
   bookId: string | null | undefined,
   paragraphId: string,
-  feedbackLocale: AppLocale,
 ): Promise<
   { kind: 'error'; json: string } | { kind: 'ok'; book: Novel; location: ParagraphLocation }
 > {
   if (!paragraphId) {
     throw new AgentError('PARAGRAPH_ID_REQUIRED', 'aiParagraphFeedback.paragraphRequired', {});
   }
-  const book = resolveBookOrThrow(bookId, feedbackLocale);
-  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId, feedbackLocale);
+  const book = resolveBookOrThrow(bookId);
+  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId);
   if (locationResult.kind === 'error') return { kind: 'error', json: locationResult.json };
   return { kind: 'ok', book, location: locationResult.location };
 }
@@ -311,7 +296,6 @@ async function loadRelatedMemoriesFromFirstParagraph(
 function buildTranslationListPayload(
   paragraph: Paragraph,
   language: AppLocale = 'zh-CN',
-  feedbackLocale: AppLocale = 'zh-CN',
 ): Array<{
   id: string;
   translation: string;
@@ -343,7 +327,6 @@ function findTranslationIndexOrError(
   paragraph: ParagraphLocation['paragraph'],
   translationId: string,
   language: AppLocale,
-  feedbackLocale: AppLocale,
 ): { kind: 'error'; json: string } | { kind: 'ok'; index: number; translation: Translation } {
   if (!paragraph.translations || paragraph.translations.length === 0) {
     return {
@@ -384,7 +367,6 @@ async function resolveParagraphForWriteOrError(
   bookId: string | null | undefined,
   paragraphId: string,
   emptyParagraphError: AgentMessageKey,
-  feedbackLocale: AppLocale,
 ): Promise<
   | { kind: 'error'; json: string }
   | {
@@ -396,8 +378,8 @@ async function resolveParagraphForWriteOrError(
       paragraph: ParagraphLocation['paragraph'];
     }
 > {
-  const { book, booksStore } = resolveBookAndStoreOrThrow(bookId, feedbackLocale);
-  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId, feedbackLocale);
+  const { book, booksStore } = resolveBookAndStoreOrThrow(bookId);
+  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId);
   if (locationResult.kind === 'error') return { kind: 'error', json: locationResult.json };
   const { paragraph } = locationResult.location;
   if (isEmptyParagraph(paragraph.text)) {
@@ -425,7 +407,6 @@ async function resolveParagraphTranslationForUpdate(
   bookId: string | null | undefined,
   paragraphId: string,
   translationId: string,
-  feedbackLocale: AppLocale,
 ): Promise<
   | { kind: 'error'; json: string }
   | {
@@ -444,8 +425,8 @@ async function resolveParagraphTranslationForUpdate(
       {},
     );
   }
-  const { book, booksStore } = resolveBookAndStoreOrThrow(bookId, feedbackLocale);
-  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId, feedbackLocale);
+  const { book, booksStore } = resolveBookAndStoreOrThrow(bookId);
+  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId);
   if (locationResult.kind === 'error') return { kind: 'error', json: locationResult.json };
   return {
     kind: 'ok',
@@ -465,7 +446,6 @@ async function resolveParagraphTranslationForUpdate(
 async function resolveParagraphIdReadArgs(
   args: unknown,
   bookId: string | null | undefined,
-  feedbackLocale: AppLocale,
 ): Promise<
   | { kind: 'error'; json: string }
   | {
@@ -480,7 +460,7 @@ async function resolveParagraphIdReadArgs(
     paragraph_id: string;
     include_memory?: boolean;
   };
-  const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id, feedbackLocale);
+  const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id);
   if (resolved.kind === 'error') return { kind: 'error', json: resolved.json };
   return {
     kind: 'ok',
@@ -494,7 +474,7 @@ async function resolveParagraphIdReadArgs(
 function paragraphReadHandler(
   handler: (
     readArgs: Extract<Awaited<ReturnType<typeof resolveParagraphIdReadArgs>>, { kind: 'ok' }>,
-    context: ToolContext & { feedbackLocale: AppLocale; language: AppLocale },
+    context: ToolContext & { language: AppLocale },
   ) => Promise<string>,
 ): ToolDefinition['handler'] {
   return async (args, context) => {
@@ -505,10 +485,9 @@ function paragraphReadHandler(
     const capturedContext = {
       ...context,
       languages,
-      feedbackLocale: AGENT_LOCALE,
       language: languages.targetLanguage,
     };
-    const readArgs = await resolveParagraphIdReadArgs(args, capturedContext.bookId, AGENT_LOCALE);
+    const readArgs = await resolveParagraphIdReadArgs(args, capturedContext.bookId);
     if (readArgs.kind === 'error') return readArgs.json;
     return handler(readArgs, capturedContext);
   };
@@ -522,7 +501,6 @@ function paragraphReadHandler(
 async function resolveTranslationIdToolArgs(
   args: unknown,
   bookId: string | null | undefined,
-  feedbackLocale: AppLocale,
 ): Promise<
   | { kind: 'error'; json: string }
   | {
@@ -540,12 +518,7 @@ async function resolveTranslationIdToolArgs(
     paragraph_id: string;
     translation_id: string;
   };
-  const resolved = await resolveParagraphTranslationForUpdate(
-    bookId,
-    paragraph_id,
-    translation_id,
-    feedbackLocale,
-  );
+  const resolved = await resolveParagraphTranslationForUpdate(bookId, paragraph_id, translation_id);
   if (resolved.kind === 'error') return { kind: 'error', json: resolved.json };
   return {
     kind: 'ok',
@@ -595,7 +568,6 @@ function buildDirectionalParagraphsHandler(
 ): ToolHandler {
   return async (args, { bookId, onAction, languages }) => {
     const language = languages?.targetLanguage ?? 'zh-CN';
-    const feedbackLocale = AGENT_LOCALE;
     const {
       paragraph_id,
       count = 3,
@@ -609,7 +581,7 @@ function buildDirectionalParagraphsHandler(
       throw new AgentError('PARAGRAPH_ID_REQUIRED', 'aiParagraphFeedback.paragraphRequired', {});
     }
 
-    const book = resolveBookOrThrow(bookId, feedbackLocale);
+    const book = resolveBookOrThrow(bookId);
 
     emitParagraphReadAction(onAction, toolName, { paragraph_id });
 
@@ -856,7 +828,6 @@ function resolveModelIdForAddTranslation(
   aiModelId: string | undefined,
   aiModelsStore: ReturnType<typeof useAIModelsStore>,
   book: Novel,
-  feedbackLocale: AppLocale,
 ): { kind: 'ok'; modelId: string } | { kind: 'error'; json: string } {
   if (aiModelId) return { kind: 'ok', modelId: aiModelId };
   const existingModelId = paragraph.translations?.[0]?.aiModelId;
@@ -919,7 +890,6 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const feedbackLocale = AGENT_LOCALE;
       const {
         paragraph_id,
         include_previous = false,
@@ -939,7 +909,7 @@ export const paragraphTools: ToolDefinition[] = [
       //   return getOutOfBoundsError(chunkBoundaries);
       // }
 
-      const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id, feedbackLocale);
+      const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id);
       if (resolved.kind === 'error') return resolved.json;
       const book = resolved.book;
       const {
@@ -1042,75 +1012,73 @@ export const paragraphTools: ToolDefinition[] = [
   },
   {
     definition: toolDefinition('get_paragraph_info', buildParagraphIdSchema(undefined, true)),
-    handler: paragraphReadHandler(
-      async (readArgs, { bookId, onAction, language, feedbackLocale }) => {
-        const { paragraph_id, include_memory, location } = readArgs;
-        const { paragraph, chapter, volume } = location;
-        const chapterTitle = getChapterDisplayTitle(chapter, undefined, language);
+    handler: paragraphReadHandler(async (readArgs, { bookId, onAction, language }) => {
+      const { paragraph_id, include_memory, location } = readArgs;
+      const { paragraph, chapter, volume } = location;
+      const chapterTitle = getChapterDisplayTitle(chapter, undefined, language);
 
-        // 报告读取操作
-        if (onAction) {
-          onAction({
-            type: 'read',
-            entity: 'paragraph',
-            data: {
-              paragraph_id,
-              chapter_id: chapter.id,
-              chapter_title: chapterTitle,
-              tool_name: 'get_paragraph_info',
-            },
-          });
-        }
-
-        // 构建翻译信息（包含 aiModelId）
-        const translations = buildTranslationListPayload(paragraph, language, feedbackLocale);
-
-        // 搜索相关记忆（从段落文本中提取关键词）
-        const relatedMemories = await loadRelatedMemoriesFromFirstParagraph(
-          bookId,
-          include_memory,
-          paragraph.text,
-          language,
-        );
-
-        return JSON.stringify({
-          success: true,
-          paragraph: {
-            id: paragraph.id,
-            text: paragraph.text,
-            selectedTranslationId: getLanguageTranslation(paragraph, language)?.id ?? '',
-            translations,
-            chapter: {
-              id: chapter.id,
-              title: chapterTitle,
-              title_original:
-                typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
-              title_translation:
-                typeof chapter.title === 'string'
-                  ? ''
-                  : (getNameTranslation(chapter.title, language)?.translation ?? ''),
-            },
-            volume: volume
-              ? {
-                  id: volume.id,
-                  title:
-                    typeof volume.title === 'string' ? volume.title : volume.title.original || '',
-                  title_translation:
-                    typeof volume.title === 'string'
-                      ? ''
-                      : (getNameTranslation(volume.title, language)?.translation ?? ''),
-                }
-              : null,
-            paragraphIndex: toDisplayParagraphIndex(location.paragraphIndex),
-            chapterIndex: location.chapterIndex,
-            volumeIndex: location.volumeIndex,
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'paragraph',
+          data: {
+            paragraph_id,
+            chapter_id: chapter.id,
+            chapter_title: chapterTitle,
+            tool_name: 'get_paragraph_info',
           },
-          ...(include_memory && relatedMemories.length > 0
-            ? { related_memories: relatedMemories }
-            : {}),
         });
-      },
-    ),
+      }
+
+      // 构建翻译信息（包含 aiModelId）
+      const translations = buildTranslationListPayload(paragraph, language);
+
+      // 搜索相关记忆（从段落文本中提取关键词）
+      const relatedMemories = await loadRelatedMemoriesFromFirstParagraph(
+        bookId,
+        include_memory,
+        paragraph.text,
+        language,
+      );
+
+      return JSON.stringify({
+        success: true,
+        paragraph: {
+          id: paragraph.id,
+          text: paragraph.text,
+          selectedTranslationId: getLanguageTranslation(paragraph, language)?.id ?? '',
+          translations,
+          chapter: {
+            id: chapter.id,
+            title: chapterTitle,
+            title_original:
+              typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
+            title_translation:
+              typeof chapter.title === 'string'
+                ? ''
+                : (getNameTranslation(chapter.title, language)?.translation ?? ''),
+          },
+          volume: volume
+            ? {
+                id: volume.id,
+                title:
+                  typeof volume.title === 'string' ? volume.title : volume.title.original || '',
+                title_translation:
+                  typeof volume.title === 'string'
+                    ? ''
+                    : (getNameTranslation(volume.title, language)?.translation ?? ''),
+              }
+            : null,
+          paragraphIndex: toDisplayParagraphIndex(location.paragraphIndex),
+          chapterIndex: location.chapterIndex,
+          volumeIndex: location.volumeIndex,
+        },
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
+      });
+    }),
   },
   {
     definition: toolDefinition('get_previous_paragraphs', {
@@ -1207,7 +1175,6 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const feedbackLocale = AGENT_LOCALE;
       const {
         keywords,
         translation_keywords,
@@ -1228,10 +1195,9 @@ export const paragraphTools: ToolDefinition[] = [
       const { validKeywords, validTranslationKeywords } = normalizeFindKeywords(
         keywords,
         translation_keywords,
-        feedbackLocale,
       );
 
-      const book = resolveBookOrThrow(bookId, feedbackLocale);
+      const book = resolveBookOrThrow(bookId);
       const resolvedBookId = bookId as string;
 
       // 报告读取操作
@@ -1350,7 +1316,6 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const feedbackLocale = AGENT_LOCALE;
       const {
         regex_pattern,
         chapter_id,
@@ -1372,7 +1337,7 @@ export const paragraphTools: ToolDefinition[] = [
         throw new AgentError('PARAGRAPH_REGEX_REQUIRED', 'aiParagraphFeedback.regexRequired', {});
       }
 
-      const book = resolveBookOrThrow(bookId, feedbackLocale);
+      const book = resolveBookOrThrow(bookId);
 
       // 验证正则表达式是否有效
       try {
@@ -1414,53 +1379,51 @@ export const paragraphTools: ToolDefinition[] = [
   },
   {
     definition: toolDefinition('get_translation_history', buildParagraphIdSchema(undefined, true)),
-    handler: paragraphReadHandler(
-      async (readArgs, { bookId, onAction, language, feedbackLocale }) => {
-        const { paragraph_id, include_memory } = readArgs;
-        const { paragraph } = readArgs.location;
+    handler: paragraphReadHandler(async (readArgs, { bookId, onAction, language }) => {
+      const { paragraph_id, include_memory } = readArgs;
+      const { paragraph } = readArgs.location;
 
-        // 报告读取操作
-        if (onAction) {
-          onAction({
-            type: 'read',
-            entity: 'paragraph',
-            data: {
-              paragraph_id,
-              tool_name: 'get_translation_history',
-            },
-          });
-        }
-
-        // 构建完整的翻译历史信息（叠加 index / isLatest）
-        const translationsBase = buildTranslationListPayload(paragraph, language, feedbackLocale);
-        const total = translationsBase.length;
-        const translationHistory = translationsBase.map((t, index) => ({
-          ...t,
-          index: index + 1, // 从1开始的索引
-          isLatest: index === total - 1, // 是否是最新的翻译
-        }));
-
-        // 搜索相关记忆（从段落文本中提取关键词）
-        const relatedMemories = await loadRelatedMemoriesFromFirstParagraph(
-          bookId,
-          include_memory,
-          paragraph.text,
-          language,
-        );
-
-        return JSON.stringify({
-          success: true,
-          paragraph_id: paragraph.id,
-          paragraph_text: paragraph.text,
-          selected_translation_id: getLanguageTranslation(paragraph, language)?.id ?? '',
-          translation_history: translationHistory,
-          total_count: translationHistory.length,
-          ...(include_memory && relatedMemories.length > 0
-            ? { related_memories: relatedMemories }
-            : {}),
+      // 报告读取操作
+      if (onAction) {
+        onAction({
+          type: 'read',
+          entity: 'paragraph',
+          data: {
+            paragraph_id,
+            tool_name: 'get_translation_history',
+          },
         });
-      },
-    ),
+      }
+
+      // 构建完整的翻译历史信息（叠加 index / isLatest）
+      const translationsBase = buildTranslationListPayload(paragraph, language);
+      const total = translationsBase.length;
+      const translationHistory = translationsBase.map((t, index) => ({
+        ...t,
+        index: index + 1, // 从1开始的索引
+        isLatest: index === total - 1, // 是否是最新的翻译
+      }));
+
+      // 搜索相关记忆（从段落文本中提取关键词）
+      const relatedMemories = await loadRelatedMemoriesFromFirstParagraph(
+        bookId,
+        include_memory,
+        paragraph.text,
+        language,
+      );
+
+      return JSON.stringify({
+        success: true,
+        paragraph_id: paragraph.id,
+        paragraph_text: paragraph.text,
+        selected_translation_id: getLanguageTranslation(paragraph, language)?.id ?? '',
+        translation_history: translationHistory,
+        total_count: translationHistory.length,
+        ...(include_memory && relatedMemories.length > 0
+          ? { related_memories: relatedMemories }
+          : {}),
+      });
+    }),
   },
   {
     definition: toolDefinition('update_translation', {
@@ -1483,7 +1446,6 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const feedbackLocale = AGENT_LOCALE;
       const { paragraph_id, translation_id, new_translation } = args as {
         paragraph_id: string;
         translation_id: string;
@@ -1501,13 +1463,12 @@ export const paragraphTools: ToolDefinition[] = [
         bookId,
         paragraph_id,
         'aiParagraphFeedback.emptyUpdate',
-        feedbackLocale,
       );
       if (resolved.kind === 'error') return resolved.json;
       const { paragraph, chapterId, bookId: resolvedBookId } = resolved;
 
       // 查找要更新的翻译
-      const tRes = findTranslationIndexOrError(paragraph, translation_id, language, feedbackLocale);
+      const tRes = findTranslationIndexOrError(paragraph, translation_id, language);
       if (tRes.kind === 'error') return tRes.json;
       const translationToUpdate = tRes.translation;
 
@@ -1559,13 +1520,12 @@ export const paragraphTools: ToolDefinition[] = [
     // fallow-ignore-next-line code-duplication
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const feedbackLocale = AGENT_LOCALE;
-      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId, feedbackLocale);
+      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId);
       if (resolvedArgs.kind === 'error') return resolvedArgs.json;
       const { paragraph_id, translation_id, chapterId, paragraph, resolvedBookId } = resolvedArgs;
 
       // 验证翻译ID是否存在（校验通过后才上报 action，无效 ID 不产生任何操作记录）
-      const tRes = findTranslationIndexOrError(paragraph, translation_id, language, feedbackLocale);
+      const tRes = findTranslationIndexOrError(paragraph, translation_id, language);
       if (tRes.kind === 'error') return tRes.json;
       const translation = tRes.translation;
 
@@ -1628,7 +1588,6 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const feedbackLocale = AGENT_LOCALE;
       const {
         paragraph_id,
         translation,
@@ -1652,20 +1611,13 @@ export const paragraphTools: ToolDefinition[] = [
         bookId,
         paragraph_id,
         'aiParagraphFeedback.emptyAdd',
-        feedbackLocale,
       );
       if (resolved.kind === 'error') return resolved.json;
       const { book, paragraph, chapterId, bookId: resolvedBookId } = resolved;
       const aiModelsStore = useAIModelsStore();
 
       // 确定使用的 AI 模型 ID
-      const modelRes = resolveModelIdForAddTranslation(
-        paragraph,
-        ai_model_id,
-        aiModelsStore,
-        book,
-        feedbackLocale,
-      );
+      const modelRes = resolveModelIdForAddTranslation(paragraph, ai_model_id, aiModelsStore, book);
       if (modelRes.kind === 'error') return modelRes.json;
       const modelId = modelRes.modelId;
 
@@ -1739,13 +1691,12 @@ export const paragraphTools: ToolDefinition[] = [
     // fallow-ignore-next-line code-duplication
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const feedbackLocale = AGENT_LOCALE;
-      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId, feedbackLocale);
+      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId);
       if (resolvedArgs.kind === 'error') return resolvedArgs.json;
       const { paragraph_id, translation_id, chapterId, paragraph, resolvedBookId } = resolvedArgs;
 
       // 验证翻译是否存在
-      const tRes = findTranslationIndexOrError(paragraph, translation_id, language, feedbackLocale);
+      const tRes = findTranslationIndexOrError(paragraph, translation_id, language);
       if (tRes.kind === 'error') return tRes.json;
       const translationToDelete = tRes.translation;
 
@@ -1831,7 +1782,6 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const feedbackLocale = AGENT_LOCALE;
       const {
         keywords,
         original_keywords,
@@ -1855,10 +1805,9 @@ export const paragraphTools: ToolDefinition[] = [
       const { validKeywords, validOriginalKeywords } = normalizeReplaceKeywords(
         keywords,
         original_keywords,
-        feedbackLocale,
       );
 
-      const { book, booksStore } = resolveBookAndStoreOrThrow(bookId, feedbackLocale);
+      const { book, booksStore } = resolveBookAndStoreOrThrow(bookId);
       const replace_all_translations = false;
       const resolvedBookId = bookId as string;
 
@@ -2013,7 +1962,6 @@ function filterValidKeywords(input: unknown): string[] {
 function normalizeFindKeywords(
   keywords: unknown,
   translationKeywords: unknown,
-  feedbackLocale: AppLocale,
 ): { validKeywords: string[]; validTranslationKeywords: string[] } {
   const hasKeywords = Array.isArray(keywords) && keywords.length > 0;
   const hasTranslation = Array.isArray(translationKeywords) && translationKeywords.length > 0;
@@ -2480,7 +2428,6 @@ async function lookupRelatedMemoriesForFind(params: {
 function normalizeReplaceKeywords(
   keywords: unknown,
   originalKeywords: unknown,
-  feedbackLocale: AppLocale,
 ): { validKeywords: string[]; validOriginalKeywords: string[] } {
   const hasKeywords = Array.isArray(keywords) && keywords.length > 0;
   const hasOriginal = Array.isArray(originalKeywords) && originalKeywords.length > 0;
