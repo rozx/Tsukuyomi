@@ -10,6 +10,7 @@
  * - `<component :is>` mounts one of Desktop / Tablet / Mobile based on `useDeviceVariant()`.
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import TieredMenu from 'primevue/tieredmenu';
 import Popover from 'primevue/popover';
 import ProgressSpinner from 'primevue/progressspinner';
@@ -89,6 +90,7 @@ const editChapterDialogProps = computed(() => ({
   polishInstructions: ctx.editingChapterPolishInstructions.value || '',
   proofreadingInstructions: ctx.editingChapterProofreadingInstructions.value || '',
 }));
+const { t } = useI18n();
 </script>
 
 <template>
@@ -100,9 +102,9 @@ const editChapterDialogProps = computed(() => ({
           style="width: 50px; height: 50px"
           stroke-width="4"
           animation-duration=".8s"
-          aria-label="加载中"
+          :aria-label="t('bookUi.details.loading')"
         />
-        <p class="text-moon/70 mt-4">正在加载书籍信息...</p>
+        <p class="text-moon/70 mt-4">{{ t('bookUi.details.loadingBook') }}</p>
       </div>
     </div>
 

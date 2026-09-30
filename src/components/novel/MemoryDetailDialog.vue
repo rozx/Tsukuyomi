@@ -323,7 +323,7 @@ onUnmounted(() => {
             </span>
           </div>
           <div class="flex min-w-0 items-center gap-2">
-            <span class="shrink-0 text-moon-100/50">ID：</span>
+            <span class="shrink-0 text-moon-100/50">{{ t('bookUi.details.idLabel') }}</span>
             <span class="memory-detail-identifier min-w-0 text-moon-100/30 font-mono">
               {{ memory.id }}
             </span>

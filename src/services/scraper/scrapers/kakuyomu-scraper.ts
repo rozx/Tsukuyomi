@@ -6,6 +6,7 @@ import type {
   ParsedVolumeInfo,
 } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
+import { LocalizedError } from 'src/utils/localized-error';
 import { visitCheerioContents } from '../core/cheerio-text-extract';
 
 /**
@@ -83,8 +84,8 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
     return url;
   }
 
-  protected override getInvalidUrlError(): string {
-    return '无效的 kakuyomu.jp 小说 URL';
+  protected override getInvalidUrlError(): LocalizedError {
+    return this.invalidUrlError('kakuyomu.jp');
   }
 
   /**
@@ -122,7 +123,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
     ]);
 
     if (!contentElement) {
-      throw new Error('无法找到章节正文内容');
+      throw new LocalizedError('SCRAPER_CONTENT_MISSING', 'bookUi.scraper.contentMissing');
     }
 
     // 移除导航链接（如"前の話"、"次の話"等）
@@ -252,9 +253,10 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
         .slice(0, 5),
     });
 
-    throw new Error(
-      `无法找到 Kakuyomu 数据（__NEXT_DATA__ 不存在）。页面可能未完全加载或结构已改变。HTML 长度: ${htmlLength}，脚本标签数: ${hasScriptTags}`,
-    );
+    throw new LocalizedError('SCRAPER_PARSE_FAILED', 'bookUi.scraper.kakuyomuNextDataMissing', {
+      htmlLength,
+      scriptTags: hasScriptTags,
+    });
   }
 
   /**
@@ -269,22 +271,22 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
     try {
       pageData = JSON.parse(nextDataScript);
     } catch {
-      throw new Error('解析 Kakuyomu 数据失败');
+      throw new LocalizedError('SCRAPER_PARSE_FAILED', 'bookUi.scraper.kakuyomuParseFailed');
     }
 
     const apolloState: ApolloState = pageData.props?.pageProps?.__APOLLO_STATE__;
     if (!apolloState) {
-      throw new Error('无法找到 Apollo State 数据');
+      throw new LocalizedError('SCRAPER_PARSE_FAILED', 'bookUi.scraper.kakuyomuApolloMissing');
     }
 
     const novelId = pageData.query?.workId;
     if (!novelId) {
-      throw new Error('无法找到小说 ID');
+      throw new LocalizedError('SCRAPER_PARSE_FAILED', 'bookUi.scraper.kakuyomuIdMissing');
     }
 
     const workData: KakuyomuWorkData = apolloState[`Work:${novelId}`];
     if (!workData) {
-      throw new Error('无法找到作品数据');
+      throw new LocalizedError('SCRAPER_PARSE_FAILED', 'bookUi.scraper.kakuyomuWorkMissing');
     }
 
     return { apolloState, novelId, workData };

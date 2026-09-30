@@ -1,11 +1,14 @@
 <script setup lang="ts">
 /** 打开会话与快速检查（读取目录）进行中的占位。 */
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 </script>
 
 <template>
   <div class="chk" role="status">
     <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-    <span>正在读取目录并检查更新…</span>
+    <span>{{ t('bookUi.sync.checking') }}</span>
   </div>
 </template>
 

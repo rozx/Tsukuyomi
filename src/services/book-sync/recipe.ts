@@ -1,3 +1,4 @@
+import { CodedLocalizedError } from 'src/utils/coded-localized-error';
 import type { Novel } from 'src/models/novel';
 import type { BookUpdateRecipe } from 'src/models/book-sync';
 import { NovelScraperFactory } from 'src/services/scraper/novel-scraper-factory';
@@ -24,7 +25,7 @@ export function resolveRecipe(book: Pick<Novel, 'updateRecipe' | 'webUrl'>): {
   if (book.updateRecipe) return { recipe: structuredClone(book.updateRecipe), virtual: false };
   const url = book.webUrl?.[0];
   const site = url ? builtinSite(url) : undefined;
-  if (!url || !site) throw new Error('RECIPE_MISSING: 尚未建立更新配方');
+  if (!url || !site) throw new CodedLocalizedError('RECIPE_MISSING', 'bookUi.sync.recipeNone');
   return {
     virtual: true,
     recipe: {

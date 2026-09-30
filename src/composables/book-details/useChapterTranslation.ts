@@ -16,7 +16,32 @@ import { useSettingsStore } from 'src/stores/settings';
 import { translateText } from 'src/i18n/translate';
 import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { saveLanguageParagraphResults } from 'src/services/ai/tasks/utils/save-language-results';
-import type { ExecutionLanguages } from 'src/models/locale';
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+import { CodedLocalizedError } from 'src/utils/coded-localized-error';
+
+/** 章节任务种类：决定反馈文案的资源 key */
+type ChapterTaskKind = 'translation' | 'polish' | 'proofreading';
+type ChapterTaskMessage =
+  | 'Failed'
+  | 'NotFound'
+  | 'NoModel'
+  | 'Done'
+  | 'ParagraphDone'
+  | 'BulkDetail'
+  | 'Init'
+  | 'Progress';
+
+/** 用户可见的任务反馈；按执行开始时冻结的界面语言渲染 */
+function taskText(
+  locale: AppLocale,
+  kind: ChapterTaskKind,
+  message: ChapterTaskMessage,
+  values?: Record<string, string | number>,
+): string {
+  return translateText(locale, `bookUi.chapterTask.${kind}${message}`, values);
+}
 
 export function useChapterTranslation(
   book: Ref<Novel | undefined>,
@@ -72,7 +97,7 @@ export function useChapterTranslation(
 
   const guarded =
     <Args extends unknown[]>(
-      label: string,
+      labelKey: MessageKey,
       execute: (languages: ExecutionLanguages, ...args: Args) => Promise<void>,
     ) =>
     async (...args: Args): Promise<void> => {
@@ -80,22 +105,25 @@ export function useChapterTranslation(
       const chapterId = selectedChapter.value?.id;
       if (!bookId || !chapterId) return;
       const languages = captureExecutionLanguages(settingsStore.uiLocale, targetLanguage.value);
+      const label = translateText(languages.uiLocale, labelKey);
       try {
         await BookExecutionGuard.write(
           bookId,
-          { label, chapterId },
+          { label: translateText('zh-CN', labelKey), labelKey, chapterId },
           async () => {
             if (book.value?.id !== bookId || selectedChapter.value?.id !== chapterId) return;
             await execute(languages, ...args);
           },
           async () => {
             const fresh = await booksStore.refreshBookFromStorage(bookId, chapterId);
-            if (!fresh) throw new Error('BOOK_CHANGED: 目标小说已删除');
+            if (!fresh)
+              throw new CodedLocalizedError('BOOK_CHANGED', 'bookUi.chapterTask.bookDeleted');
             if (book.value?.id !== bookId || selectedChapter.value?.id !== chapterId) return;
             const chapter = fresh.volumes
               ?.flatMap((volume) => volume.chapters ?? [])
               .find((entry) => entry.id === chapterId);
-            if (!chapter) throw new Error('BOOK_CHANGED: 目标章节已变化，请重新选择');
+            if (!chapter)
+              throw new CodedLocalizedError('BOOK_CHANGED', 'bookUi.chapterTask.chapterChanged');
             selectedChapterWithContent.value = chapter;
             updateSelectedChapterWithContent(fresh.volumes);
           },
@@ -103,8 +131,12 @@ export function useChapterTranslation(
       } catch (error) {
         toast.add({
           severity: 'error',
-          summary: `${label}未开始`,
-          detail: error instanceof Error ? error.message : String(error),
+          summary: translateText(languages.uiLocale, 'bookUi.chapterTask.notStarted', { label }),
+          detail: localizedErrorMessage(
+            error,
+            languages.uiLocale,
+            'bookUi.chapterTask.unknownError',
+          ),
           life: 6000,
         });
       }
@@ -343,9 +375,8 @@ export function useChapterTranslation(
    */
   const resolveSingleParagraphContext = (
     paragraphId: string,
-    taskLabel: string,
+    kind: ChapterTaskKind,
     modelTaskKey: 'translation' | 'proofreading',
-    noModelDetail: string,
     options: { requireTranslation: boolean; languages: ExecutionLanguages },
   ): {
     paragraph: Paragraph;
@@ -366,12 +397,13 @@ export function useChapterTranslation(
     const chapterId = selectedChapterWithContent.value.id;
     const bookId = book.value.id;
 
+    const locale = options.languages.uiLocale;
     const paragraph = selectedChapterWithContent.value.content.find((p) => p.id === paragraphId);
     if (!paragraph) {
       toast.add({
         severity: 'error',
-        summary: `${taskLabel}失败`,
-        detail: `未找到要${taskLabel}的段落`,
+        summary: taskText(locale, kind, 'Failed'),
+        detail: taskText(locale, kind, 'NotFound'),
         life: 3000,
       });
       return null;
@@ -383,8 +415,8 @@ export function useChapterTranslation(
     ) {
       toast.add({
         severity: 'error',
-        summary: `${taskLabel}失败`,
-        detail: '该段落还没有翻译，请先翻译段落',
+        summary: taskText(locale, kind, 'Failed'),
+        detail: translateText(locale, 'bookUi.chapterTask.needsTranslation'),
         life: 3000,
       });
       return null;
@@ -394,8 +426,8 @@ export function useChapterTranslation(
     if (!selectedModel) {
       toast.add({
         severity: 'error',
-        summary: `${taskLabel}失败`,
-        detail: noModelDetail,
+        summary: taskText(locale, kind, 'Failed'),
+        detail: taskText(locale, kind, 'NoModel'),
         life: 3000,
       });
       return null;
@@ -433,8 +465,8 @@ export function useChapterTranslation(
     if (!selectedModel) {
       toast.add({
         severity: 'error',
-        summary: '翻译失败',
-        detail: '未找到可用的翻译模型，请在设置中配置',
+        summary: taskText(languages.uiLocale, 'translation', 'Failed'),
+        detail: taskText(languages.uiLocale, 'translation', 'NoModel'),
         life: 3000,
       });
       return null;
@@ -495,7 +527,7 @@ export function useChapterTranslation(
     aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
     onProgress: createBulkProgressHandler({
       taskType: 'translation',
-      taskLabel: '翻译',
+      locale: params.languages.uiLocale,
       state: params.state,
       targetChapterId: params.chapterId,
       setInFlight: (ids) => {
@@ -562,19 +594,27 @@ export function useChapterTranslation(
    * "并执行了 X 个术语操作、Y 个角色操作" 后缀。
    */
   const buildBulkTaskCompletionDetail = (
-    taskVerb: string,
+    kind: ChapterTaskKind,
     count: number,
     actions: ActionInfo[] | undefined,
+    locale: AppLocale,
   ): string => {
-    let detail = `已成功${taskVerb} ${count} 个段落`;
+    const detail = taskText(locale, kind, 'BulkDetail', { count });
     const actionList = actions || [];
     if (actionList.length === 0) return detail;
     const { terms, characters } = countUniqueActions(actionList);
     const parts: string[] = [];
-    if (terms > 0) parts.push(`${terms} 个术语操作`);
-    if (characters > 0) parts.push(`${characters} 个角色操作`);
-    if (parts.length > 0) detail += `，并执行了 ${parts.join('、')}`;
-    return detail;
+    if (terms > 0)
+      parts.push(translateText(locale, 'bookUi.chapterTask.termActions', { count: terms }));
+    if (characters > 0)
+      parts.push(
+        translateText(locale, 'bookUi.chapterTask.characterActions', { count: characters }),
+      );
+    if (parts.length === 0) return detail;
+    return translateText(locale, 'bookUi.chapterTask.actionsSuffix', {
+      detail,
+      parts: parts.join(translateText(locale, 'bookUi.chapterTask.actionsJoin')),
+    });
   };
 
   // 润色单个段落
@@ -582,13 +622,10 @@ export function useChapterTranslation(
     executionLanguages: ExecutionLanguages,
     paragraphId: string,
   ) => {
-    const ctx = resolveSingleParagraphContext(
-      paragraphId,
-      '润色',
-      'proofreading',
-      '未找到可用的润色模型，请在设置中配置',
-      { requireTranslation: true, languages: executionLanguages },
-    );
+    const ctx = resolveSingleParagraphContext(paragraphId, 'polish', 'proofreading', {
+      requireTranslation: true,
+      languages: executionLanguages,
+    });
     if (!ctx) return;
     const {
       paragraph,
@@ -621,8 +658,8 @@ export function useChapterTranslation(
 
       toast.add({
         severity: 'success',
-        summary: '润色完成',
-        detail: '段落已润色',
+        summary: taskText(executionLanguages.uiLocale, 'polish', 'Done'),
+        detail: taskText(executionLanguages.uiLocale, 'polish', 'ParagraphDone'),
         life: 3000,
       });
     } catch (error) {
@@ -634,20 +671,17 @@ export function useChapterTranslation(
       state.abortController = null;
     }
   };
-  const polishParagraph = guarded('润色段落', runPolishParagraph);
+  const polishParagraph = guarded('translationUi.polishParagraph', runPolishParagraph);
 
   // 校对单个段落
   const runProofreadParagraph = async (
     executionLanguages: ExecutionLanguages,
     paragraphId: string,
   ) => {
-    const ctx = resolveSingleParagraphContext(
-      paragraphId,
-      '校对',
-      'proofreading',
-      '未找到可用的校对模型，请在设置中配置',
-      { requireTranslation: true, languages: executionLanguages },
-    );
+    const ctx = resolveSingleParagraphContext(paragraphId, 'proofreading', 'proofreading', {
+      requireTranslation: true,
+      languages: executionLanguages,
+    });
     if (!ctx) return;
     const {
       paragraph,
@@ -680,8 +714,8 @@ export function useChapterTranslation(
 
       toast.add({
         severity: 'success',
-        summary: '校对完成',
-        detail: '段落已校对',
+        summary: taskText(executionLanguages.uiLocale, 'proofreading', 'Done'),
+        detail: taskText(executionLanguages.uiLocale, 'proofreading', 'ParagraphDone'),
         life: 3000,
       });
     } catch (error) {
@@ -693,20 +727,17 @@ export function useChapterTranslation(
       state.abortController = null;
     }
   };
-  const proofreadParagraph = guarded('校对段落', runProofreadParagraph);
+  const proofreadParagraph = guarded('translationUi.proofreadParagraph', runProofreadParagraph);
 
   // 重新翻译单个段落
   const runRetranslateParagraph = async (
     executionLanguages: ExecutionLanguages,
     paragraphId: string,
   ) => {
-    const ctx = resolveSingleParagraphContext(
-      paragraphId,
-      '翻译',
-      'translation',
-      '未找到可用的翻译模型，请在设置中配置',
-      { requireTranslation: false, languages: executionLanguages },
-    );
+    const ctx = resolveSingleParagraphContext(paragraphId, 'translation', 'translation', {
+      requireTranslation: false,
+      languages: executionLanguages,
+    });
     if (!ctx) return;
     const {
       paragraph,
@@ -779,8 +810,8 @@ export function useChapterTranslation(
 
       toast.add({
         severity: 'success',
-        summary: '翻译完成',
-        detail: '段落已重新翻译',
+        summary: taskText(executionLanguages.uiLocale, 'translation', 'Done'),
+        detail: taskText(executionLanguages.uiLocale, 'translation', 'ParagraphDone'),
         life: 3000,
       });
     } catch (error) {
@@ -792,7 +823,10 @@ export function useChapterTranslation(
       state.abortController = null;
     }
   };
-  const retranslateParagraph = guarded('翻译段落', runRetranslateParagraph);
+  const retranslateParagraph = guarded(
+    'bookUi.chapterTask.translateParagraphLabel',
+    runRetranslateParagraph,
+  );
 
   // 翻译章节所有段落
   const runTranslateAllParagraphs = async (
@@ -828,7 +862,7 @@ export function useChapterTranslation(
     state.progress = {
       current: 0,
       total: targetParagraphIds.size,
-      message: '正在初始化翻译...',
+      message: taskText(executionLanguages.uiLocale, 'translation', 'Init'),
     };
 
     // 创建 AbortController 用于取消翻译
@@ -922,8 +956,13 @@ export function useChapterTranslation(
 
       toast.add({
         severity: 'success',
-        summary: '翻译完成',
-        detail: buildBulkTaskCompletionDetail('翻译', lastAppliedTranslations.size, result.actions),
+        summary: taskText(executionLanguages.uiLocale, 'translation', 'Done'),
+        detail: buildBulkTaskCompletionDetail(
+          'translation',
+          lastAppliedTranslations.size,
+          result.actions,
+          executionLanguages.uiLocale,
+        ),
         life: 3000,
       });
     } catch (error) {
@@ -934,10 +973,19 @@ export function useChapterTranslation(
       if (translationFailed && lastAppliedTranslations.size > 0) {
         toast.add({
           severity: abortController.signal.aborted ? 'info' : 'warn',
-          summary: abortController.signal.aborted
-            ? '已取消翻译（已保存部分结果）'
-            : '翻译中断（已保存部分结果）',
-          detail: `已保存已翻译的 ${lastAppliedTranslations.size} 个段落`,
+          summary: translateText(
+            executionLanguages.uiLocale,
+            abortController.signal.aborted
+              ? 'bookUi.chapterTask.cancelledPartial'
+              : 'bookUi.chapterTask.interruptedPartial',
+          ),
+          detail: translateText(
+            executionLanguages.uiLocale,
+            'bookUi.chapterTask.savedPartialDetail',
+            {
+              count: lastAppliedTranslations.size,
+            },
+          ),
           life: 5000,
         });
       }
@@ -955,7 +1003,10 @@ export function useChapterTranslation(
       }, 1000);
     }
   };
-  const translateAllParagraphs = guarded('翻译章节', runTranslateAllParagraphs);
+  const translateAllParagraphs = guarded(
+    'bookUi.chapterTask.translateChapterLabel',
+    runTranslateAllParagraphs,
+  );
 
   // 继续翻译（只翻译未翻译的段落）
   const isUntranslatedParagraph = (para: Paragraph, languages: ExecutionLanguages): boolean => {
@@ -995,8 +1046,11 @@ export function useChapterTranslation(
     if (untranslatedParagraphs.length === 0) {
       toast.add({
         severity: 'info',
-        summary: '无需翻译',
-        detail: '所有段落都已翻译',
+        summary: translateText(
+          executionLanguages.uiLocale,
+          'bookUi.chapterTask.nothingToTranslate',
+        ),
+        detail: translateText(executionLanguages.uiLocale, 'bookUi.chapterTask.allTranslated'),
         life: 3000,
       });
       return;
@@ -1025,7 +1079,7 @@ export function useChapterTranslation(
     state.progress = {
       current: 0,
       total: targetParagraphIds.size,
-      message: '正在初始化翻译...',
+      message: taskText(executionLanguages.uiLocale, 'translation', 'Init'),
     };
 
     // 创建 AbortController 用于取消翻译
@@ -1099,8 +1153,10 @@ export function useChapterTranslation(
       const totalTranslatedCount = lastAppliedTranslations.size;
       toast.add({
         severity: 'success',
-        summary: '翻译完成',
-        detail: `已成功翻译 ${totalTranslatedCount} 个段落`,
+        summary: taskText(executionLanguages.uiLocale, 'translation', 'Done'),
+        detail: taskText(executionLanguages.uiLocale, 'translation', 'BulkDetail', {
+          count: totalTranslatedCount,
+        }),
         life: 3000,
       });
     } catch (error) {
@@ -1119,7 +1175,7 @@ export function useChapterTranslation(
       }, 1000);
     }
   };
-  const continueTranslation = guarded('继续翻译', runContinueTranslation);
+  const continueTranslation = guarded('bookUi.chapterTask.continueLabel', runContinueTranslation);
 
   // 重新翻译所有段落
   const retranslateAllParagraphs = async () => {
@@ -1133,7 +1189,7 @@ export function useChapterTranslation(
    * 返回 null 表示校验失败，调用方应直接 return。
    */
   const prepareBulkChapterTask = (
-    taskLabel: '润色' | '校对',
+    kind: 'polish' | 'proofreading',
     languages: ExecutionLanguages,
   ): {
     targetBook: Novel;
@@ -1156,8 +1212,8 @@ export function useChapterTranslation(
     if (!selectedModel) {
       toast.add({
         severity: 'error',
-        summary: `${taskLabel}失败`,
-        detail: `未找到可用的${taskLabel}模型，请在设置中配置`,
+        summary: taskText(languages.uiLocale, kind, 'Failed'),
+        detail: taskText(languages.uiLocale, kind, 'NoModel'),
         life: 3000,
       });
       return null;
@@ -1169,8 +1225,8 @@ export function useChapterTranslation(
     if (paragraphsWithTranslation.length === 0) {
       toast.add({
         severity: 'error',
-        summary: `${taskLabel}失败`,
-        detail: `没有可${taskLabel}的段落，请先翻译章节`,
+        summary: taskText(languages.uiLocale, kind, 'Failed'),
+        detail: translateText(languages.uiLocale, `bookUi.chapterTask.${kind}NoParagraphs`),
         life: 3000,
       });
       return null;
@@ -1200,8 +1256,8 @@ export function useChapterTranslation(
   const createBulkProgressHandler = <
     S extends { progress: { current: number; total: number; message: string } },
   >(opts: {
-    taskType: 'translation' | 'polish' | 'proofreading';
-    taskLabel: string;
+    taskType: ChapterTaskKind;
+    locale: AppLocale;
     state: S;
     targetChapterId: string;
     setInFlight: (ids: Set<string>) => void;
@@ -1217,14 +1273,17 @@ export function useChapterTranslation(
       const newProgress = {
         current: resolved.current,
         total: resolved.total,
-        message: `正在${opts.taskLabel}第 ${progress.current}/${progress.total} 部分...`,
+        message: taskText(opts.locale, opts.taskType, 'Progress', {
+          current: progress.current,
+          total: progress.total,
+        }),
       };
       opts.state.progress = newProgress;
       syncProgressToStore(opts.taskType, opts.targetChapterId, newProgress);
       if (progress.currentParagraphs) {
         opts.setInFlight(new Set(progress.currentParagraphs));
       }
-      console.debug(`${opts.taskLabel}进度:`, progress);
+      console.debug(`${opts.taskType} 进度:`, progress);
     };
   };
 
@@ -1237,7 +1296,7 @@ export function useChapterTranslation(
       proofreadingInstructions?: string;
     },
   ) => {
-    const prepared = prepareBulkChapterTask('润色', executionLanguages);
+    const prepared = prepareBulkChapterTask('polish', executionLanguages);
     if (!prepared) return;
     const {
       targetBook,
@@ -1261,7 +1320,7 @@ export function useChapterTranslation(
     state.progress = {
       current: 0,
       total: targetParagraphIds.size,
-      message: '正在初始化润色...',
+      message: taskText(executionLanguages.uiLocale, 'polish', 'Init'),
     };
     state.abortController = abortController;
 
@@ -1281,7 +1340,7 @@ export function useChapterTranslation(
         aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
         onProgress: createBulkProgressHandler({
           taskType: 'polish',
-          taskLabel: '润色',
+          locale: executionLanguages.uiLocale,
           state,
           targetChapterId,
           setInFlight: (ids) => {
@@ -1320,8 +1379,13 @@ export function useChapterTranslation(
       // 构建成功消息（所有段落都已通过 onParagraphPolish 回调立即更新）
       toast.add({
         severity: 'success',
-        summary: '润色完成',
-        detail: buildBulkTaskCompletionDetail('润色', lastAppliedTranslations.size, result.actions),
+        summary: taskText(executionLanguages.uiLocale, 'polish', 'Done'),
+        detail: buildBulkTaskCompletionDetail(
+          'polish',
+          lastAppliedTranslations.size,
+          result.actions,
+          executionLanguages.uiLocale,
+        ),
         life: 3000,
       });
     } catch (error) {
@@ -1341,7 +1405,10 @@ export function useChapterTranslation(
       }, 1000);
     }
   };
-  const polishAllParagraphs = guarded('润色章节', runPolishAllParagraphs);
+  const polishAllParagraphs = guarded(
+    'bookUi.chapterTask.polishChapterLabel',
+    runPolishAllParagraphs,
+  );
 
   // 取消翻译
   const cancelTranslation = (targetChapterId?: string) => {
@@ -1426,7 +1493,7 @@ export function useChapterTranslation(
       proofreadingInstructions?: string;
     },
   ) => {
-    const prepared = prepareBulkChapterTask('校对', executionLanguages);
+    const prepared = prepareBulkChapterTask('proofreading', executionLanguages);
     if (!prepared) return;
     const {
       targetBook,
@@ -1450,7 +1517,7 @@ export function useChapterTranslation(
     state.progress = {
       current: 0,
       total: targetParagraphIds.size,
-      message: '正在初始化校对...',
+      message: taskText(executionLanguages.uiLocale, 'proofreading', 'Init'),
     };
     state.abortController = abortController;
 
@@ -1470,7 +1537,7 @@ export function useChapterTranslation(
         aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
         onProgress: createBulkProgressHandler({
           taskType: 'proofreading',
-          taskLabel: '校对',
+          locale: executionLanguages.uiLocale,
           state,
           targetChapterId,
           setInFlight: (ids) => {
@@ -1509,8 +1576,13 @@ export function useChapterTranslation(
       // 构建成功消息（所有段落都已通过 onParagraphProofreading 回调立即更新）
       toast.add({
         severity: 'success',
-        summary: '校对完成',
-        detail: buildBulkTaskCompletionDetail('校对', lastAppliedTranslations.size, result.actions),
+        summary: taskText(executionLanguages.uiLocale, 'proofreading', 'Done'),
+        detail: buildBulkTaskCompletionDetail(
+          'proofreading',
+          lastAppliedTranslations.size,
+          result.actions,
+          executionLanguages.uiLocale,
+        ),
         life: 3000,
       });
     } catch (error) {
@@ -1530,7 +1602,10 @@ export function useChapterTranslation(
       }, 1000);
     }
   };
-  const proofreadAllParagraphs = guarded('校对章节', runProofreadAllParagraphs);
+  const proofreadAllParagraphs = guarded(
+    'bookUi.chapterTask.proofreadChapterLabel',
+    runProofreadAllParagraphs,
+  );
 
   // 取消校对
   const cancelProofreading = (targetChapterId?: string) => {

@@ -4,6 +4,7 @@
  * 两种形态共享同一个 `ThinkingProcessBody`。
  */
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Popover from 'primevue/popover';
 import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
@@ -15,6 +16,7 @@ const isPhone = computed(() => uiStore.deviceType === 'phone');
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const mobileVisible = ref(false);
 const popoverVisible = ref(false);
+const { t } = useI18n();
 
 const active = computed(() => (isPhone.value ? mobileVisible.value : popoverVisible.value));
 
@@ -58,7 +60,7 @@ defineExpose({
   <MobileBottomSheet
     v-else
     v-model:visible="mobileVisible"
-    title="AI 思考过程"
+    :title="t('activityUi.thinking.title')"
     eyebrow="ACTIVE TASKS"
     max-height="86dvh"
   >

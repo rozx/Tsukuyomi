@@ -2,9 +2,11 @@
 /**
  * query / url / name / memory_id / memory_keyword 等单值徽章细节。从 ChatActionBadge 拆出。
  */
+import { useI18n } from 'vue-i18n';
 import type { BadgeDetailProps } from 'src/components/layout/chat-badge/badge-detail';
 
 defineProps<BadgeDetailProps>();
+const { t } = useI18n();
 </script>
 
 <template>
@@ -15,6 +17,6 @@ defineProps<BadgeDetailProps>();
     Memory ID: {{ action.memory_id }}
   </span>
   <span v-else-if="kind === 'memory_keyword'" class="font-semibold text-xs">
-    搜索: "{{ action.keyword }}"
+    {{ t('activityUi.badge.search', { keyword: action.keyword ?? '' }) }}
   </span>
 </template>

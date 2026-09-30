@@ -1,11 +1,19 @@
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { AppLocale } from 'src/models/locale';
+import { chunkSeparatorLabel } from 'src/composables/useThinkingFormatter';
+
+const props = defineProps<{
   chunkInfo: string;
 }>();
+const { locale } = useI18n();
+// 思考流中存的是简中分块标记，显示时按当前界面语言渲染
+const label = computed(() => chunkSeparatorLabel(props.chunkInfo, locale.value as AppLocale));
 </script>
 
 <template>
-  <div class="stream-chunk-sep">{{ chunkInfo }}</div>
+  <div class="stream-chunk-sep">{{ label }}</div>
 </template>
 
 <style scoped>

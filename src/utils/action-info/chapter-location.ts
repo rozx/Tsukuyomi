@@ -1,6 +1,8 @@
 import { ChapterService } from 'src/services/chapter-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
+import type { AppLocale } from 'src/models/locale';
 import type { ActionDetail, ActionDetailsContext } from './types';
+import { detailText } from './types';
 
 /**
  * 根据 chapterId 解析章节标题并追加到 details。
@@ -11,24 +13,19 @@ export function appendChapterDetailByChapterId(
   details: ActionDetail[],
   chapterId: string,
   context: ActionDetailsContext,
+  locale: AppLocale,
   bookIdOverride?: string,
 ): void {
+  const idDetail = { label: detailText(locale, 'chapterId'), value: chapterId };
   const bookId = bookIdOverride ?? context.getCurrentBookId();
-  if (!bookId) {
-    details.push({ label: '章节 ID', value: chapterId });
-    return;
-  }
-
-  const book = context.getBookById(bookId);
-  if (!book) {
-    details.push({ label: '章节 ID', value: chapterId });
-    return;
-  }
-
-  const chapterResult = ChapterService.findChapterById(book, chapterId);
+  const book = bookId ? context.getBookById(bookId) : undefined;
+  const chapterResult = book ? ChapterService.findChapterById(book, chapterId) : null;
   if (chapterResult?.chapter) {
-    details.push({ label: '章节', value: getChapterDisplayTitle(chapterResult.chapter) });
+    details.push({
+      label: detailText(locale, 'chapter'),
+      value: getChapterDisplayTitle(chapterResult.chapter),
+    });
   } else {
-    details.push({ label: '章节 ID', value: chapterId });
+    details.push(idDetail);
   }
 }

@@ -4,7 +4,7 @@
     :header="t('helpUi.quickStartTitle')"
     desktop-width="min(960px, 92vw)"
     desktop-height="90vh"
-    eyebrow="GUIDE"
+    :eyebrow="t('appUi.eyebrow.guide')"
     dialog-class="quick-start-dialog"
     @update:visible="handleVisibleChange"
   >

@@ -1,16 +1,18 @@
 <script setup lang="ts">
 /** 新建工作区的网址输入：提交后建立同步会话；改网址会重建会话。 */
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import { injectBookSyncNew } from 'src/composables/book-sync-new/useBookSyncNew';
 
 const { url, error, sync, submit } = injectBookSyncNew();
 const { working } = sync;
+const { t } = useI18n();
 </script>
 
 <template>
   <form class="suf" @submit.prevent="submit">
-    <label class="suf-label" for="book-sync-new-url">小说目录网址</label>
+    <label class="suf-label" for="book-sync-new-url">{{ t('bookUi.sync.urlLabel') }}</label>
     <div class="suf-row">
       <InputText
         id="book-sync-new-url"
@@ -20,11 +22,16 @@ const { working } = sync;
         autocomplete="off"
         spellcheck="false"
       />
-      <Button type="submit" label="检查" icon="pi pi-search" :disabled="working" />
+      <Button
+        type="submit"
+        :label="t('bookUi.sync.check')"
+        icon="pi pi-search"
+        :disabled="working"
+      />
     </div>
     <p v-if="error" class="suf-error">{{ error }}</p>
     <p v-else class="suf-hint">
-      支持小説家になろう、カクヨム、ハーメルン等内置站点；其他网站可交给 AI 导入器处理。
+      {{ t('bookUi.sync.urlHint') }}
     </p>
   </form>
 </template>

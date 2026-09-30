@@ -3,6 +3,7 @@
  * 批量 Action 列表面板（例如"创建 N 个待办"）—— 桌面 Popover、手机 MobileBottomSheet。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Popover from 'primevue/popover';
 import MobileBottomSheet from './MobileBottomSheet.vue';
 import { usePopoverBottomSheet } from 'src/composables/layout/usePopoverBottomSheet';
@@ -13,6 +14,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 
 const emit = defineEmits<{
   hide: [];
@@ -23,8 +25,13 @@ const { isPhone, popoverRef, mobileVisible, onMobileVisibleChange, toggle, hide 
 
 const title = computed(() => {
   const count = props.actions?.length ?? 0;
-  return `创建 ${count} 个待办事项`;
+  return t('activityUi.badge.todoGroup', { count });
 });
+
+// 待办名称是 AI 写入的自由文本，原样显示；缺省名称按界面语言显示
+const todoNames = computed(() =>
+  (props.actions ?? []).map((action) => action.name || t('activityUi.badge.todo')),
+);
 
 defineExpose({ toggle, hide });
 </script>
@@ -44,13 +51,9 @@ defineExpose({ toggle, hide });
         <span class="popover-title">{{ title }}</span>
       </div>
       <div class="popover-details">
-        <div
-          v-for="(todoAction, todoIdx) in props.actions"
-          :key="todoIdx"
-          class="popover-detail-item"
-        >
+        <div v-for="(name, todoIdx) in todoNames" :key="todoIdx" class="popover-detail-item">
           <span class="popover-detail-label">{{ todoIdx + 1 }}.</span>
-          <span class="popover-detail-value">{{ todoAction.name || '待办事项' }}</span>
+          <span class="popover-detail-value">{{ name }}</span>
         </div>
       </div>
     </div>
@@ -66,12 +69,12 @@ defineExpose({ toggle, hide });
   >
     <div v-if="props.actions" class="popover-details">
       <div
-        v-for="(todoAction, todoIdx) in props.actions"
+        v-for="(name, todoIdx) in todoNames"
         :key="todoIdx"
         class="popover-detail-item popover-detail-item--row"
       >
         <span class="popover-detail-label">{{ todoIdx + 1 }}.</span>
-        <span class="popover-detail-value">{{ todoAction.name || '待办事项' }}</span>
+        <span class="popover-detail-value">{{ name }}</span>
       </div>
     </div>
   </MobileBottomSheet>

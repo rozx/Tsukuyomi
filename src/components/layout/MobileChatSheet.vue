@@ -9,6 +9,7 @@
  * 状态来自 useRightPanel（chat 专属），与 MobileProgressSheet 完全独立。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import ChatActionPopovers from 'src/components/layout/ChatActionPopovers.vue';
 import ChatSendButton from 'src/components/layout/ChatSendButton.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
@@ -34,6 +35,7 @@ const localVisible = computed({
 // useRightPanel 解构 + bindXxxRef 样板已抽到 useChatPanelSetup，Tablet 变体也走同一份 helper。
 // 保留整个 panel 对象传给 useChatPanelBindings，避免逐字段重复实参；模板用到的字段才解构。
 const panel = useChatPanelSetup();
+const { t } = useI18n();
 const {
   chatSessionsStore,
   panelContainerRef,
@@ -52,24 +54,21 @@ const {
 // 发送状态 / 浮层绑定 / 消息列表绑定一次性产出（与 Desktop / Tablet 同构，差异仅前缀与 placeholder）。
 const { composer, actionPopoverBindings, messageListBindings } = useChatPanelBindings(panel, {
   sendClassPrefix: 'mc-send',
-  readyPlaceholder: '请月詠相助…',
+  readyPlaceholderKey: 'activityUi.chat.placeholder',
 });
 const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSendClick } = composer;
 </script>
 
 <template>
-  <MobileBottomSheet v-model:visible="localVisible" title="月詠" full-bleed>
+  <MobileBottomSheet v-model:visible="localVisible" :title="t('activityUi.chat.name')" full-bleed>
     <!-- 按设计稿：logo + 标题 + 副标题 + 动作按钮 + 关闭X 单行紧凑布局 -->
     <template #header="{ close }">
       <header class="mc-appbar">
         <AssistantAvatar :size="28" class="mc-appbar-avatar" />
         <div class="mc-appbar-text">
-          <div class="mc-appbar-title">月詠</div>
+          <div class="mc-appbar-title">{{ t('activityUi.chat.name') }}</div>
           <div class="mc-appbar-sub">
-            <span
-              class="mc-status-dot"
-              :class="{ 'mc-status-dot--off': !assistantModel }"
-            />
+            <span class="mc-status-dot" :class="{ 'mc-status-dot--off': !assistantModel }" />
             {{ assistantStatusText }}
           </div>
         </div>
@@ -77,18 +76,22 @@ const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSend
           v-if="chatSessionsStore.allSessions.length > 1"
           id="session-list-button"
           class="mc-icon-btn"
-          aria-label="会话历史"
+          :aria-label="t('activityUi.chat.history')"
           @click="toggleSessionListPopover"
         >
           <i class="pi pi-history" aria-hidden="true" />
         </button>
-        <button class="mc-icon-btn" aria-label="新聊天" @click="createNewSession">
+        <button
+          class="mc-icon-btn"
+          :aria-label="t('activityUi.chat.newChat')"
+          @click="createNewSession"
+        >
           <i class="pi pi-plus" aria-hidden="true" />
         </button>
         <button
           type="button"
           class="mc-icon-btn mc-icon-btn--close"
-          aria-label="关闭"
+          :aria-label="t('activityUi.chat.close')"
           @click="close"
         >
           <i class="pi pi-times" aria-hidden="true" />
@@ -117,7 +120,7 @@ const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSend
       <!-- 胶囊状输入栏 -->
       <div class="mc-composer-wrap">
         <div class="mc-composer">
-          <button class="mc-plus" aria-label="更多操作">
+          <button class="mc-plus" :aria-label="t('activityUi.chat.more')">
             <i class="pi pi-plus" aria-hidden="true" />
           </button>
           <input

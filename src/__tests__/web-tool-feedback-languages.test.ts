@@ -24,7 +24,7 @@ describe('网页工具自有反馈为简中单源', () => {
   it('结构化Firecrawl HTTP失败的自有前缀为简中，诊断作为原文保留', async () => {
     setup(true);
     vi.spyOn(FirecrawlClient, 'search').mockRejectedValue(
-      new FirecrawlError('Firecrawl 请求失败: 503 provider 原始诊断', 503, 'provider 原始诊断'),
+      FirecrawlError.http(503, 'provider 原始诊断'),
     );
     const result = await searchWeb('query');
     expect(result.error_code).toBe('FIRECRAWL_HTTP_FAILED');

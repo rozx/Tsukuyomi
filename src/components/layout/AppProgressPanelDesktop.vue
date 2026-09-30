@@ -3,11 +3,13 @@
  * 桌面翻译进度面板 —— 与 TabletProgressPanel 同构，桌面侧栏展开时由
  * AppRightPanelDesktop 挂载。关闭按钮直接折叠成图标栏。
  */
+import { useI18n } from 'vue-i18n';
 import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
 import { useUiStore } from 'src/stores/ui';
 import { useTranslationProgressPanel } from 'src/composables/translation-progress/useTranslationProgressPanel';
 
 const ui = useUiStore();
+const { t } = useI18n();
 const { currentTask, mobileCurrentChapterLabel, mobileWorkflowLabel } =
   useTranslationProgressPanel();
 
@@ -15,23 +17,23 @@ const close = () => ui.closeRightPanel();
 </script>
 
 <template>
-  <section class="pp-shell" aria-label="翻译进度">
+  <section class="pp-shell" :aria-label="t('activityUi.progress.title')">
     <header class="pp-appbar">
       <div class="pp-appbar-icon"><i class="pi pi-bolt" aria-hidden="true" /></div>
       <div class="pp-appbar-text">
-        <div class="pp-appbar-title">翻译进度</div>
+        <div class="pp-appbar-title">{{ t('activityUi.progress.title') }}</div>
         <div class="pp-appbar-sub">
           <template v-if="currentTask && mobileCurrentChapterLabel">
             {{ mobileCurrentChapterLabel }} · {{ mobileWorkflowLabel }}
           </template>
           <template v-else-if="currentTask">{{ mobileWorkflowLabel }}</template>
-          <template v-else>暂无翻译任务</template>
+          <template v-else>{{ t('activityUi.progress.empty') }}</template>
         </div>
       </div>
       <button
         type="button"
         class="pp-icon-btn pp-icon-btn--close"
-        aria-label="关闭"
+        :aria-label="t('activityUi.progress.close')"
         @click="close"
       >
         <i class="pi pi-times" aria-hidden="true" />

@@ -4,6 +4,8 @@
  * 已有书籍还有未比对正文的章节时，在这里提供逐章比对（带进度，可取消）。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
@@ -11,6 +13,8 @@ import { syncVerdict } from 'src/composables/book-sync/book-sync-rules';
 
 const { changeset, drift, deep, working, target, startDeepCheck, cancelDeepCheck } =
   injectBookSync();
+
+const { t, locale } = useI18n();
 
 const ICONS = {
   latest: 'pi pi-check-circle',
@@ -21,7 +25,9 @@ const ICONS = {
 
 const creating = computed(() => !!target.value && 'newFrom' in target.value);
 const verdict = computed(() =>
-  changeset.value ? syncVerdict(changeset.value, creating.value) : undefined,
+  changeset.value
+    ? syncVerdict(changeset.value, creating.value, resolveAppLocale(locale.value))
+    : undefined,
 );
 const percent = computed(() =>
   deep.value.total ? Math.round((deep.value.completed / deep.value.total) * 100) : 0,
@@ -48,24 +54,21 @@ const percent = computed(() =>
     </div>
     <div v-if="drift" class="ipl-banner ipl-banner--warn" role="alert">
       <i class="pi pi-exclamation-triangle" aria-hidden="true" />
-      <span>
-        已比对的章节中超过半数显示有修订，可能是站点改版或配方过期。请先查看几章差异再决定是否应用；
-        有修订的章节不会被自动勾选。
-      </span>
+      <span>{{ t('bookUi.sync.driftWarning') }}</span>
     </div>
     <div v-if="!creating && (deep.running || verdict.deepHint)" class="sv-deep">
       <template v-if="deep.running">
         <div class="sv-deep-row">
           <span class="sv-hint">
-            正在逐章比对正文
+            {{ t('bookUi.sync.comparing') }}
             <template v-if="deep.total">{{ deep.completed }} / {{ deep.total }}</template>
             <template v-if="deep.waitSeconds > 0">
-              （等待 Firecrawl 限速，约 {{ deep.waitSeconds }} 秒）
+              {{ t('bookUi.sync.waitFirecrawl', { seconds: deep.waitSeconds }) }}
             </template>
           </span>
           <Button
-            label="取消"
-            aria-label="取消深度检查"
+            :label="t('bookUi.sync.cancel')"
+            :aria-label="t('bookUi.sync.cancelDeepAria')"
             size="small"
             severity="secondary"
             text
@@ -77,7 +80,7 @@ const percent = computed(() =>
       <div v-else class="sv-deep-row">
         <span class="sv-hint">{{ verdict.deepHint }}</span>
         <Button
-          label="逐章比对正文"
+          :label="t('bookUi.sync.deepCompare')"
           icon="pi pi-search"
           size="small"
           outlined

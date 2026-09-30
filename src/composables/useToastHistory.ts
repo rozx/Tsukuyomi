@@ -2,6 +2,7 @@ import { computed } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import type { ToastMessageOptions } from 'primevue/toast';
 import { useToastHistoryStore } from 'src/stores/toast-history';
+import { useSettingsStore } from 'src/stores/settings';
 import { formatRelativeTimeWithFallback } from 'src/utils/format';
 import co from 'co';
 
@@ -17,6 +18,7 @@ export interface ToastMessageWithHistoryOptions extends ToastMessageOptions {
  */
 export function useToastHistory() {
   const store = useToastHistoryStore();
+  const settingsStore = useSettingsStore();
 
   /**
    * 未读消息数量（在上次查看之后的消息）
@@ -26,16 +28,23 @@ export function useToastHistory() {
   /**
    * 格式化时间戳为可读格式
    */
-  const formatTimestamp = (timestamp: number): string =>
-    formatRelativeTimeWithFallback(timestamp, (date) =>
-      date.toLocaleDateString('zh-CN', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+  // 时间是显示时生成的固定标签，按当前界面语言渲染；历史里的摘要/详情是自由文本，原样显示
+  const formatTimestamp = (timestamp: number): string => {
+    const locale = settingsStore.uiLocale;
+    return formatRelativeTimeWithFallback(
+      timestamp,
+      (date) =>
+        date.toLocaleDateString(locale, {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      undefined,
+      locale,
     );
+  };
 
   return {
     historyItems: computed(() => store.historyItems),

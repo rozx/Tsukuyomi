@@ -13,6 +13,10 @@ import { AssistantService } from 'src/services/ai/tasks';
 import { buildAssistantMessageHistory } from 'src/utils/ai-context-utils';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
 import type { AIModel } from 'src/services/ai/types/ai-model';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
+import { localizedErrorMessage } from 'src/utils/localized-error';
 
 import { useChatActionHandler } from './useChatActionHandler';
 import { useInternalSummarization } from './useInternalSummarization';
@@ -51,6 +55,8 @@ export function useChatSending(
 ) {
   const chatSessionsStore = useChatSessionsStore();
   const aiProcessingStore = useAIProcessingStore();
+  const settingsStore = useSettingsStore();
+  const t = (key: MessageKey) => translateText(settingsStore.uiLocale, key);
   const isSending = ref(false);
 
   const { handleAction } = useChatActionHandler(
@@ -84,8 +90,8 @@ export function useChatSending(
     if (countVisibleMessages(messages.value) + 1 < MAX_MESSAGES_PER_SESSION) return false;
     toast.add({
       severity: 'warn',
-      summary: '会话消息数已达上限',
-      detail: '请创建新会话继续对话',
+      summary: t('activityUi.chat.sessionLimit'),
+      detail: t('activityUi.chat.sessionLimitDetail'),
       life: 3000,
     });
     return true;
@@ -218,8 +224,8 @@ export function useChatSending(
       console.error('Failed to send message:', error);
       toast.add({
         severity: 'error',
-        summary: '发送失败',
-        detail: error instanceof Error ? error.message : 'Unknown error',
+        summary: t('activityUi.chat.sendFailed'),
+        detail: localizedErrorMessage(error, settingsStore.uiLocale, 'aiAssistant.unknownError'),
         life: 5000,
       });
     }
@@ -263,8 +269,8 @@ export function useChatSending(
   const warnNoAssistantModel = (): void => {
     toast.add({
       severity: 'warn',
-      summary: '请选择 AI 模型',
-      detail: '请在设置中配置至少一个 AI 模型',
+      summary: t('activityUi.chat.selectModel'),
+      detail: t('activityUi.chat.selectModelDetail'),
       life: 3000,
     });
   };

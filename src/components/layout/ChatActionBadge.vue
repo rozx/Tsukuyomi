@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { Component } from 'vue';
 import type { MessageAction } from 'src/stores/chat-sessions';
-import { ACTION_LABELS, ENTITY_LABELS } from 'src/utils/action-info-utils';
+import type { AppLocale } from 'src/models/locale';
+import { actionTypeLabel, entityTypeLabel } from 'src/utils/action-info-utils';
 import ChatBadgeSimple from 'src/components/layout/chat-badge/ChatBadgeSimple.vue';
 import ChatBadgeAsk from 'src/components/layout/chat-badge/ChatBadgeAsk.vue';
 import ChatBadgeReadValue from 'src/components/layout/chat-badge/ChatBadgeReadValue.vue';
@@ -32,6 +34,10 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { locale } = useI18n();
+// 固定的操作/实体标签在渲染时按当前界面语言投影，历史记录只存 type/entity 代码
+const typeLabel = computed(() => actionTypeLabel(locale.value as AppLocale, props.action.type));
+const entityLabel = computed(() => entityTypeLabel(locale.value as AppLocale, props.action.entity));
 const emit = defineEmits<{
   hover: [event: Event];
   leave: [];
@@ -294,8 +300,8 @@ const detailComponent = computed<Component | null>(
       <span class="min-w-0 break-words">
         <template v-if="action.nameIsDescription">{{ action.name }}</template>
         <template v-else>
-          {{ ACTION_LABELS[action.type] || '' }}
-          {{ ENTITY_LABELS[action.entity] || '' }}
+          {{ typeLabel }}
+          {{ entityLabel }}
           <component
             :is="detailComponent"
             v-if="detailComponent"

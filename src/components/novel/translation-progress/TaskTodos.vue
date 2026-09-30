@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { TodoItem } from 'src/services/todo-list-service';
 
+const { t } = useI18n();
 const props = defineProps<{
   todos: TodoItem[];
   collapsed: boolean;
@@ -17,14 +19,10 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
 </script>
 
 <template>
-  <div
-    v-if="todos.length > 0"
-    class="todos-section"
-    :class="{ 'is-expanded': !collapsed }"
-  >
+  <div v-if="todos.length > 0" class="todos-section" :class="{ 'is-expanded': !collapsed }">
     <button class="todos-header" @click="emit('toggleCollapsed')">
       <div class="todos-header-left">
-        <span class="todos-title">待办事项</span>
+        <span class="todos-title">{{ t('activityUi.progress.todos') }}</span>
         <span class="todos-count" :class="{ 'all-done': allDone }">
           {{ allDone ? `${todos.length} ✓` : incompleteTodos.length }}
         </span>
@@ -45,7 +43,10 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
         class="todo-item"
         :class="{ completed: todo.status === 'done', working: todo.status === 'working' }"
       >
-        <span class="todo-checkbox" :class="{ checked: todo.status === 'done', working: todo.status === 'working' }" />
+        <span
+          class="todo-checkbox"
+          :class="{ checked: todo.status === 'done', working: todo.status === 'working' }"
+        />
         <span class="todo-text">{{ todo.text }}</span>
       </div>
     </div>
@@ -177,8 +178,13 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
 }
 
 @keyframes pulse-working {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(108, 140, 255, 0.3); }
-  50% { box-shadow: 0 0 0 3px rgba(108, 140, 255, 0); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(108, 140, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(108, 140, 255, 0);
+  }
 }
 
 .todo-checkbox.checked {

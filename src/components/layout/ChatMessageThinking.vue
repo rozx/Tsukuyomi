@@ -4,6 +4,7 @@
  * 把 chevron / 文案 / spinner 等 v-if 与三元收进子组件，降低父模板圈复杂度。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { ChatSessionMessage } from 'src/stores/chat-sessions';
 
 interface Props {
@@ -18,6 +19,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 
 const showBlock = computed(
   () =>
@@ -29,7 +31,9 @@ const isExpanded = computed(() => props.thinkingExpanded.get(props.message.id) =
 const chevronIcon = computed(() =>
   isExpanded.value ? 'pi pi-chevron-down' : 'pi pi-chevron-right',
 );
-const labelText = computed(() => (isActive.value ? props.thinkingPhrase : '思考过程'));
+const labelText = computed(() =>
+  isActive.value ? props.thinkingPhrase : t('activityUi.chat.thinkingProcess'),
+);
 const thinkingContent = computed(() => props.displayedThinkingProcess[props.message.id] ?? '');
 const previewContent = computed(
   () => props.displayedThinkingPreview[props.message.id] || thinkingContent.value,

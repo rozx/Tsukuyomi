@@ -10,20 +10,23 @@
  */
 import type { Ref } from 'vue';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { taskTypeLabel } from 'src/constants/ai';
 import { formatTaskDuration } from 'src/utils';
+import { useSettingsStore } from 'src/stores/settings';
 
 export function useThinkingTaskCard(
   nowMs: Ref<number> | (() => number),
   statusIconMap: Record<string, string>,
 ) {
   const getNowMs = (): number => (typeof nowMs === 'function' ? nowMs() : nowMs.value);
+  const settingsStore = useSettingsStore();
 
   const statusIcon = (status: string): string => statusIconMap[status] ?? '';
+  // 类型标签与时长按当前界面语言渲染；三种设备的卡片共用这份派生逻辑
   const typeLabel = (type: AIProcessingTask['type']): string =>
-    TASK_TYPE_LABELS[type] || type;
+    taskTypeLabel(settingsStore.uiLocale, type);
   const formatDuration = (startTime: number, endTime?: number): string =>
-    formatTaskDuration(startTime, endTime, getNowMs());
+    formatTaskDuration(startTime, endTime, getNowMs(), settingsStore.uiLocale);
   const hasThinking = (t: AIProcessingTask): boolean =>
     !!t.thinkingMessage && t.thinkingMessage.trim() !== '';
 

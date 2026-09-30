@@ -4,6 +4,7 @@
  * 把状态图标 :class 对象、各类 v-if 收进子组件，降低父模板圈复杂度。
  */
 import Button from 'primevue/button';
+import { useI18n } from 'vue-i18n';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { useThinkingTaskCard } from 'src/composables/ai/useThinkingTaskCard';
 
@@ -14,6 +15,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t, locale } = useI18n();
 
 // 已完成任务只可能出现 end / error / cancelled 三态
 const STATUS_ICON: Record<string, string> = {
@@ -46,8 +48,8 @@ const { statusIcon, typeLabel, formatDuration, hasThinking } = useThinkingTaskCa
         icon="pi pi-external-link"
         class="p-button-text p-button-sm p-button-rounded flex-shrink-0"
         :pt="{ root: { class: '!p-1 !min-w-0 !h-6 !w-6' } }"
-        title="查看完整思考过程"
-        aria-label="查看完整思考过程"
+        :title="t('activityUi.thinking.viewFull')"
+        :aria-label="t('activityUi.thinking.viewFull')"
         @click="onOpenDetail(task)"
       />
     </div>
@@ -55,7 +57,7 @@ const { statusIcon, typeLabel, formatDuration, hasThinking } = useThinkingTaskCa
       {{ task.message }}
     </p>
     <div v-if="hasThinking(task)" class="mt-2 p-2 rounded bg-white/3 border border-white/5">
-      <p class="text-xs text-moon/50 mb-1">思考过程：</p>
+      <p class="text-xs text-moon/50 mb-1">{{ t('activityUi.thinking.thinkingLabel') }}</p>
       <p
         class="text-xs text-moon/70 whitespace-pre-wrap break-words max-h-24 overflow-y-auto"
         style="word-break: break-all; overflow-wrap: anywhere"
@@ -65,7 +67,11 @@ const { statusIcon, typeLabel, formatDuration, hasThinking } = useThinkingTaskCa
     </div>
     <div class="flex items-center gap-2 mt-2 text-xs text-moon/50 break-words">
       <span v-if="task.endTime" class="break-words">
-        完成于 {{ new Date(task.endTime).toLocaleString('zh-CN') }}
+        {{
+          t('activityUi.thinking.finishedAtPlain', {
+            time: new Date(task.endTime).toLocaleString(locale),
+          })
+        }}
       </span>
     </div>
   </div>

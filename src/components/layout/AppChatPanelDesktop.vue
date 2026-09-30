@@ -5,6 +5,7 @@
  * 关闭按钮直接调用 `ui.closeRightPanel()` 折叠成图标栏。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Textarea from 'primevue/textarea';
 import ProgressBar from 'primevue/progressbar';
 import ChatActionPopovers from 'src/components/layout/ChatActionPopovers.vue';
@@ -19,6 +20,7 @@ import { useChatPanelBindings } from 'src/composables/right-panel/useChatPanelBi
 // Desktop 直接用 useRightPanel（需要 todo / sessionStats / inputRef 等桌面专属字段），
 // 整个 panel 对象 + 自带的三个 bind 回调传给 useChatPanelBindings，避免逐字段重复实参。
 const panel = useRightPanel();
+const { t } = useI18n();
 const {
   ui,
   chatSessionsStore,
@@ -62,7 +64,7 @@ const { composer, actionPopoverBindings, messageListBindings } = useChatPanelBin
   { ...panel, bindActionPopoverRef, bindGroupedActionPopoverRef },
   {
     sendClassPrefix: 'cp-send',
-    readyPlaceholder: '请月詠相助… (Shift+Enter 换行)',
+    readyPlaceholderKey: 'activityUi.chat.placeholderDesktop',
   },
 );
 const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSendClick } = composer;
@@ -77,11 +79,11 @@ const usageText = computed(() => {
 </script>
 
 <template>
-  <section class="cp-shell" aria-label="月詠 AI 助手">
+  <section class="cp-shell" :aria-label="t('activityUi.chat.assistantAria')">
     <header class="cp-appbar">
       <AssistantAvatar :size="28" class="cp-appbar-avatar" />
       <div class="cp-appbar-text">
-        <div class="cp-appbar-title">月詠</div>
+        <div class="cp-appbar-title">{{ t('activityUi.chat.name') }}</div>
         <div class="cp-appbar-sub">
           <span class="cp-status-dot" :class="statusDotClass" />
           {{ assistantStatusText }}
@@ -92,24 +94,34 @@ const usageText = computed(() => {
         id="session-list-button-desktop"
         type="button"
         class="cp-icon-btn"
-        aria-label="会话历史"
+        :aria-label="t('activityUi.chat.history')"
         @click="toggleSessionListPopover"
       >
         <i class="pi pi-history" aria-hidden="true" />
       </button>
-      <button type="button" class="cp-icon-btn" aria-label="新聊天" @click="createNewSession">
+      <button
+        type="button"
+        class="cp-icon-btn"
+        :aria-label="t('activityUi.chat.newChat')"
+        @click="createNewSession"
+      >
         <i class="pi pi-plus" aria-hidden="true" />
       </button>
       <button
         v-if="messages.length > 0"
         type="button"
         class="cp-icon-btn"
-        aria-label="清空聊天"
+        :aria-label="t('activityUi.chat.clear')"
         @click="clearChat"
       >
         <i class="pi pi-trash" aria-hidden="true" />
       </button>
-      <button type="button" class="cp-icon-btn cp-icon-btn--close" aria-label="关闭" @click="close">
+      <button
+        type="button"
+        class="cp-icon-btn cp-icon-btn--close"
+        :aria-label="t('activityUi.chat.close')"
+        @click="close"
+      >
         <i class="pi pi-times" aria-hidden="true" />
       </button>
     </header>
@@ -123,7 +135,7 @@ const usageText = computed(() => {
       @select="switchToSession"
     />
 
-    <div v-if="contextInfo !== '无上下文'" class="cp-context">
+    <div v-if="contextInfo" class="cp-context">
       <p>{{ contextInfo }}</p>
     </div>
 

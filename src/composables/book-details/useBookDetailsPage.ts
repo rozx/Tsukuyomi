@@ -490,7 +490,7 @@ function createBookDetailsPageContext() {
     void originalHandleEditChapter();
   };
 
-  const getCoverUrl = (b: Novel): string => CoverService.getCoverUrl(b);
+  const getCoverUrl = (b: Novel): string => CoverService.getCoverUrl(b, settings.uiLocale);
 
   // 页面加载状态
   const isPageLoading = ref(true);
@@ -697,7 +697,7 @@ function createBookDetailsPageContext() {
 
     isMovingChapter.value = true;
     try {
-      saveState?.('触控排序章节');
+      saveState?.(translateText(settings.uiLocale, 'bookUi.details.touchSortState'));
       const updatedVolumes = ChapterService.moveChapter(
         book.value,
         payload.chapter.id,

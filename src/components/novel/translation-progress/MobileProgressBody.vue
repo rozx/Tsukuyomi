@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { formatContextUsage } from 'src/utils/context-usage-display';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { FormattedMessagePart } from 'src/composables/useThinkingFormatter';
@@ -30,7 +31,11 @@ defineEmits<{
 const spinnerIcon = computed(() =>
   props.mobileIsRunning ? 'pi-spin pi-spinner' : 'pi-check-circle',
 );
-const liveStatus = computed(() => (props.mobileIsRunning ? '正在翻译' : '已停止'));
+// 模板里的 v-for 使用 t 作为循环变量，i18n 函数命名为 tr 避免遮蔽
+const { t: tr } = useI18n();
+const liveStatus = computed(() =>
+  tr(props.mobileIsRunning ? 'activityUi.progress.translating' : 'activityUi.progress.stopped'),
+);
 const progressMessage = computed(() => props.currentTask.progress?.message);
 const thinkingTail = computed(() => props.currentTask.thinkingMessage?.split('\n').slice(-1)[0]);
 const contextText = computed(() =>
@@ -67,12 +72,12 @@ const contextText = computed(() =>
           <div class="mtp-live-bar-fill" :style="{ width: `${mobileProgress.percent}%` }" />
         </div>
         <div class="mtp-live-meta">
-          <span>上下文 {{ contextText }}</span>
+          <span>{{ tr('activityUi.progress.context', { label: contextText }) }}</span>
           <span>{{ formatDuration(currentTask.startTime, currentTask.endTime) }}</span>
         </div>
       </div>
 
-      <div class="mtp-section-label">活动记录</div>
+      <div class="mtp-section-label">{{ tr('activityUi.progress.activity') }}</div>
       <div class="mtp-stream-wrap mtp-stream-wrap--compact">
         <TaskStream
           :task="currentTask"
@@ -85,23 +90,25 @@ const contextText = computed(() =>
 
     <!-- 统计 -->
     <template v-else-if="mobileTab === 'stats'">
-      <div class="mtp-section-label">模型使用</div>
+      <div class="mtp-section-label">{{ tr('activityUi.progress.modelUsage') }}</div>
       <div class="mtp-model-card">
         <div class="mtp-model-head">
           <span class="mtp-model-dot" />
           <span class="mtp-model-name">{{ currentTask.modelName }}</span>
-          <span class="mtp-model-count">{{ mobileProgress.current }} 次调用</span>
+          <span class="mtp-model-count">{{
+            tr('activityUi.progress.calls', { count: mobileProgress.current })
+          }}</span>
         </div>
         <div class="mtp-model-bar">
           <div class="mtp-model-bar-fill" :style="{ width: `${mobileProgress.percent}%` }" />
         </div>
         <div class="mtp-model-meta">
-          <span>进度 {{ mobileProgress.percent }}%</span>
+          <span>{{ tr('activityUi.progress.percent', { percent: mobileProgress.percent }) }}</span>
           <span>{{ mobileWorkflowLabel }}</span>
         </div>
       </div>
 
-      <div class="mtp-section-label">本次批量</div>
+      <div class="mtp-section-label">{{ tr('activityUi.progress.batch') }}</div>
       <div class="mtp-totals">
         <div v-for="t in mobileStatTotals" :key="t.label" class="mtp-total">
           <div class="mtp-total-head">
@@ -123,7 +130,7 @@ const contextText = computed(() =>
             @toggle-collapsed="$emit('toggleTodoCollapsed')"
           />
         </div>
-        <div v-else class="mtp-empty">暂无待办事项</div>
+        <div v-else class="mtp-empty">{{ tr('activityUi.progress.noTodos') }}</div>
       </div>
     </template>
 

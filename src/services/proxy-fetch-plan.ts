@@ -1,4 +1,5 @@
 import { FIRECRAWL_MAPPING_TOKEN } from 'src/constants/proxy';
+import { LocalizedError } from 'src/utils/localized-error';
 
 /**
  * 网页抓取尝试链的纯函数部分：决定本次抓取依次请求哪些 URL、是否直接走 Firecrawl，
@@ -84,17 +85,21 @@ export function resolveFetchPlan(input: FetchPlanInput): FetchPlan {
 }
 
 /** 携带 HTTP 状态码的抓取错误（Electron 抓取与非 axios 路径使用） */
-export class HttpStatusError extends Error {
+export class HttpStatusError extends LocalizedError {
   constructor(readonly status: number) {
-    super(`目标网站返回错误: ${status}`);
+    super('FETCH_HTTP_STATUS', 'bookUi.fetch.httpStatus', { status });
     this.name = 'HttpStatusError';
   }
 }
 
-/** 响应成功但内容是反爬质询页 */
-export class BlockedResponseError extends Error {
-  constructor(reason: string) {
-    super(`目标网站返回了反爬质询页（${reason}）`);
+/** 响应成功但内容是反爬质询页；url 为经过的代理地址，缺省表示 Electron 直连 */
+export class BlockedResponseError extends LocalizedError {
+  constructor(url?: string) {
+    super(
+      'FETCH_BLOCKED',
+      url === undefined ? 'bookUi.fetch.blockedElectron' : 'bookUi.fetch.blockedProxy',
+      url === undefined ? {} : { url },
+    );
     this.name = 'BlockedResponseError';
   }
 }

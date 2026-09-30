@@ -6,11 +6,15 @@
  * 发送按钮 class / 禁用 / aria-label / 图标，以及点击切换发送/停止。差异只有两处：
  *   1. 发送按钮的 CSS class 前缀（`cp-send` / `tcp-send` / `mc-send`）；
  *   2. 桌面 placeholder 末尾带 `(Shift+Enter 换行)` 提示。
- * 故把前缀与 placeholder 文案作为入参，逻辑收敛到这里，渲染结果逐字不变。
+ * 故把前缀与 placeholder 文案 key 作为入参，逻辑收敛到这里；文字按当前界面语言渲染，
+ * 三个设备变体共用同一份派生结果。
  */
 import { computed } from 'vue';
 import type { Ref } from 'vue';
 import type { AIModel } from 'src/services/ai/types/ai-model';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
+import { useSettingsStore } from 'src/stores/settings';
 
 /** 渲染 `ChatSendButton.vue` 所需的全部 props。供 composable 与组件共用，字段只声明一处。 */
 export interface ChatSendButtonBindings {
@@ -37,8 +41,10 @@ interface ChatComposerStateOptions {
   stopGeneration: () => void;
   /** 发送按钮 CSS class 前缀，如 'cp-send' / 'tcp-send' / 'mc-send'。 */
   sendClassPrefix: string;
-  /** 已配置模型时的输入框 placeholder。 */
-  readyPlaceholder: string;
+  /** 已配置模型时的输入框 placeholder 文案 key（按当前界面语言渲染）。 */
+  readyPlaceholderKey?: MessageKey;
+  /** 未提供 key 时的 placeholder：固定文字或响应式 getter（兼容自带文案的调用方）。 */
+  readyPlaceholder?: string | (() => string);
 }
 
 export function useChatComposerState(options: ChatComposerStateOptions) {
@@ -49,16 +55,26 @@ export function useChatComposerState(options: ChatComposerStateOptions) {
     sendMessage,
     stopGeneration,
     sendClassPrefix,
+    readyPlaceholderKey,
     readyPlaceholder,
   } = options;
+  const settingsStore = useSettingsStore();
+  const t = (key: MessageKey, values?: Record<string, string>) =>
+    translateText(settingsStore.uiLocale, key, values);
 
   const assistantStatusText = computed(() =>
     assistantModel.value
-      ? `${assistantModel.value.name || assistantModel.value.id} · 在线`
-      : '未配置助手模型',
+      ? t('activityUi.chat.online', {
+          model: assistantModel.value.name || assistantModel.value.id,
+        })
+      : t('activityUi.chat.noModel'),
   );
+  const readyText = (): string => {
+    if (readyPlaceholderKey) return t(readyPlaceholderKey);
+    return typeof readyPlaceholder === 'function' ? readyPlaceholder() : (readyPlaceholder ?? '');
+  };
   const inputPlaceholder = computed(() =>
-    assistantModel.value ? readyPlaceholder : '未配置助手模型',
+    assistantModel.value ? readyText() : t('activityUi.chat.noModel'),
   );
   const inputDisabled = computed(() => isSending.value || !assistantModel.value);
   const sendClass = computed(() => ({
@@ -68,7 +84,9 @@ export function useChatComposerState(options: ChatComposerStateOptions) {
   const sendDisabled = computed(
     () => !isSending.value && (!inputMessage.value.trim() || !assistantModel.value),
   );
-  const sendAriaLabel = computed(() => (isSending.value ? '停止' : '发送'));
+  const sendAriaLabel = computed(() =>
+    t(isSending.value ? 'activityUi.chat.stop' : 'activityUi.chat.send'),
+  );
   const sendIcon = computed(() => (isSending.value ? 'pi-stop-circle' : 'pi-send'));
   const onSendClick = () => {
     if (isSending.value) stopGeneration();

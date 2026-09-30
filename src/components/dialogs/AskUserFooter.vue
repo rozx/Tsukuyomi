@@ -3,7 +3,7 @@
     <div class="footer-left">
       <Button
         v-if="isBatch"
-        label="上一题"
+        :label="t('appUi.askUser.prev')"
         icon="pi pi-angle-left"
         severity="secondary"
         :disabled="!canPrev"
@@ -11,7 +11,7 @@
       />
       <Button
         v-if="isBatch"
-        label="下一题"
+        :label="t('appUi.askUser.next')"
         icon="pi pi-angle-right"
         icon-pos="right"
         severity="secondary"
@@ -40,6 +40,9 @@
 
 <script setup lang="ts">
 import Button from 'primevue/button';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 defineProps<{
   isBatch: boolean;

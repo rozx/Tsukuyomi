@@ -205,11 +205,7 @@ async function postWithPolicy(
     if (outcome === 'quota') throw new FirecrawlQuotaError(key === undefined);
     if (outcome === 'rate-limit') throw new FirecrawlRateLimitError();
     const detail = errorText(reply.data);
-    throw new FirecrawlError(
-      `Firecrawl 请求失败: ${reply.status}${detail ? ` ${detail}` : ''}`,
-      reply.status,
-      detail,
-    );
+    throw FirecrawlError.http(reply.status, detail);
   }
 }
 
@@ -285,7 +281,12 @@ async function getCreditUsage(key: string): Promise<FirecrawlCreditUsage> {
   })) as HttpReply;
   if (reply.status === 401) return { kind: 'invalid-key' };
   if (reply.status < 200 || reply.status >= 300) {
-    throw new FirecrawlError(`额度查询失败: ${reply.status}`, reply.status);
+    throw new FirecrawlError(
+      'FIRECRAWL_CREDIT_FAILED',
+      'bookUi.fetch.firecrawlCreditFailed',
+      { status: reply.status },
+      reply.status,
+    );
   }
   const data = (reply.data as { data?: Record<string, unknown> }).data ?? {};
   const remainingCredits = Number(data.remainingCredits ?? 0);

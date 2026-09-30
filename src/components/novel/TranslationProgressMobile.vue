@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useTranslationProgressPanel } from 'src/composables/translation-progress/useTranslationProgressPanel';
 import TaskEmptyState from './translation-progress/TaskEmptyState.vue';
 import MobileProgressBody from './translation-progress/MobileProgressBody.vue';
@@ -22,14 +23,16 @@ const {
   mobileLegend,
 } = useTranslationProgressPanel();
 
+const { t } = useI18n();
+
 // 手机端分段 tab（实时/待办/统计/日志）— 纯视图局部状态
 const mobileTab = ref<'live' | 'todo' | 'stats' | 'log'>('live');
 // 分段按钮配置：把四个近乎相同的按钮收敛为 v-for，降低模板圈复杂度
 const mobileTabs = computed(() => [
-  { key: 'live' as const, label: '实时' },
-  { key: 'todo' as const, label: '待办' },
-  { key: 'stats' as const, label: '统计' },
-  { key: 'log' as const, label: '日志' },
+  { key: 'live' as const, label: t('activityUi.progress.tabLive') },
+  { key: 'todo' as const, label: t('activityUi.progress.tabTodo') },
+  { key: 'stats' as const, label: t('activityUi.progress.tabStats') },
+  { key: 'log' as const, label: t('activityUi.progress.tabLog') },
 ]);
 </script>
 
@@ -47,11 +50,11 @@ const mobileTabs = computed(() => [
               {{ mobileProgress.current
               }}<span class="mtp-hero-den"> / {{ mobileProgress.total }}</span>
             </div>
-            <div class="mtp-hero-label">段落已完成</div>
+            <div class="mtp-hero-label">{{ t('activityUi.progress.paragraphsDone') }}</div>
           </div>
           <div class="mtp-hero-right">
             <div class="mtp-hero-eta">{{ mobileEta }}</div>
-            <div class="mtp-hero-label">预计剩余</div>
+            <div class="mtp-hero-label">{{ t('activityUi.progress.eta') }}</div>
           </div>
         </div>
         <div class="mtp-bar">
@@ -114,10 +117,10 @@ const mobileTabs = computed(() => [
           class="mtp-btn mtp-btn-outline mtp-btn-danger"
           @click="stopTask"
         >
-          <i class="pi pi-stop-circle" aria-hidden="true" />停止
+          <i class="pi pi-stop-circle" aria-hidden="true" />{{ t('activityUi.progress.stop') }}
         </button>
         <button v-else class="mtp-btn mtp-btn-outline" @click="clearCompletedTasks">
-          <i class="pi pi-trash" aria-hidden="true" />清除已完成
+          <i class="pi pi-trash" aria-hidden="true" />{{ t('activityUi.progress.clearDone') }}
         </button>
       </div>
     </template>
@@ -155,7 +158,11 @@ const mobileTabs = computed(() => [
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 .mtp-head {
@@ -286,7 +293,11 @@ const mobileTabs = computed(() => [
 
 .mtp-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--tsukuyomi-500), var(--primary-300)); /* tokens: tsukuyomi-500 → primary-300 */
+  background: linear-gradient(
+    90deg,
+    var(--tsukuyomi-500),
+    var(--primary-300)
+  ); /* tokens: tsukuyomi-500 → primary-300 */
   border-radius: 3px;
   box-shadow: 0 0 12px var(--tsukuyomi-opacity-50); /* token: tsukuyomi-500 @ 50% */
   transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);

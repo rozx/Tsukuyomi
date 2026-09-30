@@ -2,24 +2,26 @@
 /**
  * read 系「取值」类徽章细节（书籍/记忆/章节标题/角色名/帮助文档等）。从 ChatActionBadge 拆出。
  */
+import { useI18n } from 'vue-i18n';
 import type { BadgeDetailProps } from 'src/components/layout/chat-badge/badge-detail';
 
 defineProps<BadgeDetailProps>();
+const { t } = useI18n();
 </script>
 
 <template>
   <span v-if="kind === 'help_doc_search'" class="font-semibold text-xs">
-    文档搜索
+    {{ t('activityUi.badge.docSearch') }}
     <span v-if="action.query" class="opacity-70 ml-1">"{{ action.query }}"</span>
   </span>
   <span v-else-if="kind === 'read_get_help_doc'" class="font-semibold text-xs">
-    帮助文档: "{{ action.title }}"
+    {{ t('activityUi.badge.helpDoc', { title: action.title ?? '' }) }}
   </span>
   <span v-else-if="kind === 'read_list_help_docs'" class="font-semibold text-xs">
-    帮助文档列表
+    {{ t('activityUi.badge.helpDocList') }}
   </span>
   <span v-else-if="kind === 'read_get_book_info'" class="font-semibold text-xs">
-    书籍信息
+    {{ t('activityUi.badge.bookInfo') }}
   </span>
   <span v-else-if="kind === 'read_get_memory'" class="font-semibold text-xs">
     Memory ({{ getShortId(action.memory_id) }})

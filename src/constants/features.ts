@@ -1,3 +1,5 @@
+import { LocalizedError } from 'src/utils/localized-error';
+
 /**
  * 功能开关。
  *
@@ -16,5 +18,5 @@ export function isNavTabEnabled(tab: string): boolean {
 
 export function assertImportWorkspaceEnabled(): void {
   if (!FEATURES.importWorkspace)
-    throw new Error('IMPORT_DISABLED: 当前版本已关闭 AI 导入，已有任务与小说均已保留');
+    throw new LocalizedError('IMPORT_DISABLED', 'appUi.errors.importDisabled');
 }

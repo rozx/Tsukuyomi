@@ -1,19 +1,23 @@
 <script setup lang="ts">
 /** 来源：站点与目录网址、重新检查；引擎、清理规则等配方细节默认收起。 */
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
 
 const { recipe, working, recheck, target } = injectBookSync();
 
+const { t } = useI18n();
 const expanded = ref(false);
 const siteLabel = computed(() => {
   const value = recipe.value;
   if (!value) return '';
-  return value.engine === 'builtin' ? (value.site ?? '内置站点') : '网页来源';
+  return value.engine === 'builtin'
+    ? (value.site ?? t('bookUi.sync.builtinSite'))
+    : t('bookUi.sync.webSource');
 });
 const engineLabel = computed(() =>
-  recipe.value?.engine === 'builtin' ? '内置站点规则' : '通用网页配方（由 AI 导入器记录）',
+  t(recipe.value?.engine === 'builtin' ? 'bookUi.sync.builtinEngine' : 'bookUi.sync.htmlEngine'),
 );
 </script>
 
@@ -27,11 +31,11 @@ const engineLabel = computed(() =>
           {{ recipe.catalogUrl }}
         </a>
       </template>
-      <span v-else class="rh-url rh-url--none">尚未建立更新配方</span>
+      <span v-else class="rh-url rh-url--none">{{ t('bookUi.sync.recipeNone') }}</span>
       <span class="rh-actions">
         <Button
           v-if="recipe"
-          label="配方详情"
+          :label="t('bookUi.sync.recipeDetails')"
           :icon="expanded ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
           icon-pos="right"
           size="small"
@@ -41,7 +45,7 @@ const engineLabel = computed(() =>
         />
         <Button
           v-if="target"
-          label="重新检查"
+          :label="t('bookUi.sync.recheck')"
           icon="pi pi-refresh"
           size="small"
           text
@@ -52,15 +56,15 @@ const engineLabel = computed(() =>
     </div>
     <dl v-if="recipe && expanded" class="rh-meta">
       <div>
-        <dt>引擎</dt>
+        <dt>{{ t('bookUi.sync.engine') }}</dt>
         <dd>{{ engineLabel }}</dd>
       </div>
       <div>
-        <dt>清理规则</dt>
-        <dd>{{ recipe.cleanupCount }} 条</dd>
+        <dt>{{ t('bookUi.sync.cleanupRules') }}</dt>
+        <dd>{{ t('bookUi.sync.cleanupCount', { count: recipe.cleanupCount }) }}</dd>
       </div>
       <p v-if="recipe.virtual" class="rh-note">
-        由站点规则自动识别，没有单独保存；以后的检查也按站点规则进行。
+        {{ t('bookUi.sync.virtualNote') }}
       </p>
     </dl>
   </section>

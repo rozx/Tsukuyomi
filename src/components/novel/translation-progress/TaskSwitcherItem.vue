@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 
 // 任务下拉项：纯展示组件，由 TaskSwitcher 在 v-for 中渲染。
 // 把单个条目的多分支 class/状态逻辑收敛到这里，降低父模板的圈复杂度。
+const { t } = useI18n();
+
 defineProps<{
   task: AIProcessingTask;
   isSelected: boolean;
@@ -25,12 +28,18 @@ defineEmits<{ select: [taskId: string] }>();
     />
     <div class="dropdown-item-info">
       <span class="dropdown-item-type">{{ typeLabel(task) }}</span>
-      <span class="dropdown-item-title">{{ chapterLabel(task) || '未知章节' }}</span>
+      <span class="dropdown-item-title">{{
+        chapterLabel(task) || t('activityUi.progress.unknownChapter')
+      }}</span>
     </div>
     <span class="dropdown-item-duration">{{ duration(task) }}</span>
     <span
       class="dropdown-item-badge"
-      :class="{ active: isActive(task), done: task.status === 'end', error: task.status === 'error' }"
+      :class="{
+        active: isActive(task),
+        done: task.status === 'end',
+        error: task.status === 'error',
+      }"
       >{{ statusLabel(task) }}</span
     >
     <span v-if="hasUnseen" class="notification-dot" />
