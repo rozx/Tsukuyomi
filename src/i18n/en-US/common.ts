@@ -11,6 +11,7 @@ import bookDialog from './book-dialog';
 import libraryUi from './library-ui';
 import settingsUi from './settings-ui';
 import syncUi from './sync-ui';
+import appUi from './app-ui';
 export default {
   ...aiUi,
   ...embeddingUi,
@@ -25,6 +26,7 @@ export default {
   ...libraryUi,
   ...settingsUi,
   ...syncUi,
+  ...appUi,
   failed: 'Action failed',
   success: 'Action was successful',
 };

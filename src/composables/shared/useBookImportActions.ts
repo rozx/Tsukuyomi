@@ -4,6 +4,7 @@ import type { useCoverHistoryStore } from 'src/stores/cover-history';
 import type { useToastWithHistory } from 'src/composables/useToastHistory';
 import { buildNovelFromFormData } from 'src/utils/novel-form';
 import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 
 /**
  * 新增书籍的共享依赖。差异只来自"关闭哪个弹窗"，通过 `onAfterImport` 回调传入。
@@ -26,7 +27,8 @@ export function createSaveNewBookHandler(options: CreateImportBookHandlerOptions
   const { booksStore, coverHistoryStore, toast, onAfterImport } = options;
 
   return async function saveNewBook(formData: Partial<Novel>): Promise<void> {
-    const newBook = buildNovelFromFormData(formData, options.getUiLocale());
+    const locale = options.getUiLocale();
+    const newBook = buildNovelFromFormData(formData, locale);
     await booksStore.addBook(newBook);
 
     if (newBook.cover) {
@@ -36,8 +38,8 @@ export function createSaveNewBookHandler(options: CreateImportBookHandlerOptions
     onAfterImport?.();
     toast.add({
       severity: 'success',
-      summary: '添加成功',
-      detail: `已成功添加书籍 "${newBook.title}"`,
+      summary: translateText(locale, 'appUi.bookAdded.summary'),
+      detail: translateText(locale, 'appUi.bookAdded.detail', { title: newBook.title }),
       life: 3000,
       onRevert: () => booksStore.deleteBook(newBook.id),
     });

@@ -465,7 +465,7 @@ watch(
     :header="mode === 'add' ? t('aiUi.addModel') : t('aiUi.editModel')"
     desktop-width="750px"
     desktop-height="90vh"
-    eyebrow="AI · MODEL"
+    :eyebrow="t('appUi.eyebrow.aiModel')"
     :closable="!hasChildDialogOpen"
     :dismissable-mask="!hasChildDialogOpen"
     :close-on-escape="!hasChildDialogOpen"
@@ -516,7 +516,9 @@ watch(
           :class="availabilityResult.success ? 'text-green-400' : 'text-red-400'"
         >
           {{ availabilityResult.message }}
-          <span class="text-moon/60">（{{ availabilityResult.durationMs }} ms）</span>
+          <span class="text-moon/60">{{
+            t('appUi.modelTestDuration', { ms: availabilityResult.durationMs })
+          }}</span>
         </div>
       </div>
 
@@ -626,7 +628,7 @@ watch(
       v-model:visible="showUnsavedCloseConfirm"
       :header="t('aiUi.discardTitle')"
       desktop-width="420px"
-      eyebrow="UNSAVED"
+      :eyebrow="t('bookDialogUi.unsaved')"
       sheet-min-height="auto"
     >
       <div class="space-y-3">

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router';
 import Button from 'primevue/button';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 </script>
 
 <template>
@@ -10,10 +13,10 @@ import Button from 'primevue/button';
     <div>
       <div style="font-size: 30vh">404</div>
 
-      <div class="text-2xl" style="opacity: 0.4">Oops. Nothing here...</div>
+      <div class="text-2xl" style="opacity: 0.4">{{ t('appUi.notFound.oops') }}</div>
 
       <RouterLink to="/">
-        <Button label="Go Home" icon="pi pi-home" class="mt-8" />
+        <Button :label="t('appUi.notFound.goHome')" icon="pi pi-home" class="mt-8" />
       </RouterLink>
     </div>
   </div>

@@ -24,6 +24,7 @@ import {
 import { getDB } from 'src/utils/indexed-db';
 import { isAppLocale, resolveAppLocale } from 'src/models/locale';
 import type { AppLocale } from 'src/models/locale';
+import { LocalizedError } from 'src/utils/localized-error';
 
 // localStorage 仅用于向后兼容读取（历史版本曾使用 localStorage 存储 settings/syncs）
 const SETTINGS_STORAGE_KEY = 'tsukuyomi-settings';
@@ -506,7 +507,9 @@ export const useSettingsStore = defineStore('settings', {
 
   actions: {
     async setUiLocale(locale: AppLocale): Promise<void> {
-      if (!isAppLocale(locale)) throw new Error('不支持的界面语言');
+      if (!isAppLocale(locale)) {
+        throw new LocalizedError('UNSUPPORTED_UI_LOCALE', 'appUi.errors.unsupportedUiLocale');
+      }
       await this.updateSettings({ uiLocale: locale });
     },
     /**

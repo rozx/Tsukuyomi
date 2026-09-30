@@ -4,8 +4,8 @@ import { useToastHistory, useToastWithHistory } from 'src/composables/useToastHi
 import { useAutoSync } from 'src/composables/useAutoSync';
 import { useQuickStartGuide } from 'src/composables/useQuickStartGuide';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
-import type { useSettingsStore } from 'src/stores/settings';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { useSettingsStore } from 'src/stores/settings';
+import { taskCancelToasts, taskErrorToast } from './task-status-toasts';
 import {
   useAskUserStore,
   type AskUserBatchPayload,
@@ -29,6 +29,7 @@ export function useMainLayoutShell() {
   const ui = useUiStore();
   const aiProcessingStore = useAIProcessingStore();
   const askUserStore = useAskUserStore();
+  const settingsStore = useSettingsStore();
   const { markAsReadByMessage } = useToastHistory();
   const toast = useToastWithHistory();
   const { quickStartGuideVisible, dismissQuickStartGuide } = useQuickStartGuide();
@@ -78,56 +79,11 @@ export function useMainLayoutShell() {
   };
 
   const showTaskErrorToasts = (errorTasks: AIProcessingTask[]): void => {
-    for (const task of errorTasks) {
-      const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
-      toast.add({
-        severity: 'error',
-        summary: 'AI 任务失败',
-        detail: `${task.modelName} 执行${taskTypeLabel}任务时出错：${task.message || '未知错误'}`,
-        life: 5000,
-      });
-    }
-  };
-
-  const cancelToastDetail = (task: AIProcessingTask): string => {
-    const taskTypeLabel = TASK_TYPE_LABELS[task.type] || task.type;
-    return `${task.modelName} 的${taskTypeLabel}任务已取消`;
-  };
-
-  const showAssistantCancelToast = (assistantCancelled: AIProcessingTask[]): void => {
-    if (assistantCancelled.length === 0) return;
-    if (assistantCancelled.length > 1) {
-      toast.add({
-        severity: 'warn',
-        summary: 'AI 任务已取消',
-        detail: `已取消 ${assistantCancelled.length} 个助手任务`,
-        life: 3000,
-      });
-      return;
-    }
-    const task = assistantCancelled[0];
-    if (!task) return;
-    toast.add({
-      severity: 'warn',
-      summary: 'AI 任务已取消',
-      detail: cancelToastDetail(task),
-      life: 3000,
-    });
+    for (const task of errorTasks) toast.add(taskErrorToast(task, settingsStore.uiLocale));
   };
 
   const showTaskCancelToasts = (cancelledTasks: AIProcessingTask[]): void => {
-    if (cancelledTasks.length === 0) return;
-    const assistantCancelled = cancelledTasks.filter((t) => t.type === 'assistant');
-    const otherCancelled = cancelledTasks.filter((t) => t.type !== 'assistant');
-    showAssistantCancelToast(assistantCancelled);
-    for (const task of otherCancelled) {
-      toast.add({
-        severity: 'warn',
-        summary: 'AI 任务已取消',
-        detail: cancelToastDetail(task),
-        life: 3000,
-      });
-    }
+    for (const item of taskCancelToasts(cancelledTasks, settingsStore.uiLocale)) toast.add(item);
   };
 
   const prunePreviousTasks = (newTasks: AIProcessingTask[]): void => {
@@ -179,10 +135,7 @@ export function useMainLayoutShell() {
     // 清到过东西说明原先的 embeddingModelCached 标记对应的是已失效的旧模型 → 复位，
     // 避免 warmup 以为新模型也已缓存从而静默触发不必要的下载。
     const legacyCleaned = await EmbeddingService.cleanupLegacyModelCache();
-    if (
-      legacyCleaned > 0 &&
-      settings.settings.memoryInjection?.embeddingModelCached === true
-    ) {
+    if (legacyCleaned > 0 && settings.settings.memoryInjection?.embeddingModelCached === true) {
       await settings.updateMemoryInjection({ embeddingModelCached: false });
     }
 
@@ -197,14 +150,12 @@ export function useMainLayoutShell() {
 
     // 语义检索启用且模型已被缓存时，应用启动后自动预热（复用浏览器已缓存的模型文件，无需重新下载）
     // 注意：首次安装/首次启用时不会自动触发，需用户在设置页主动下载，避免意外产生 ~195MB 带宽消耗
-    const { useSettingsStore } = await import('src/stores/settings');
-    const settings = useSettingsStore();
-    if (!settings.isLoaded) await settings.loadSettings();
+    if (!settingsStore.isLoaded) await settingsStore.loadSettings();
 
     // 本地嵌入是总电源（默认 false），关闭或手机端时连模型缓存扫描都跳过，避免无意义 IO。
     const { isLocalEmbeddingEffectivelyEnabled } = await import('src/utils/local-embedding');
-    if (!isLocalEmbeddingEffectivelyEnabled(settings.settings.enableLocalEmbedding)) return;
-    await warmupEmbeddingIfCached(settings);
+    if (!isLocalEmbeddingEffectivelyEnabled(settingsStore.settings.enableLocalEmbedding)) return;
+    await warmupEmbeddingIfCached(settingsStore);
   });
 
   onUnmounted(() => {
