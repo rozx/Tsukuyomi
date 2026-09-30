@@ -8,7 +8,7 @@ export default {
     create_term__parameters__properties__description:
       'Optional concise description; include important information only.',
     get_term:
-      'Get a term by name. If exact matching fails, search source names and target translations with fuzzy/partial matching and return relevant candidates. Query get_term or search_terms_by_keywords before search_memories; consult memories only when no record is found.',
+      'Get a term by name. If exact matching fails, search source names and target translations with fuzzy/partial matching and return relevant candidates. Query this tool or search_terms_by_keywords before search_memories; consult memories only when no record is found.',
     get_term__parameters__properties__name: 'Term source name in any language.',
     get_term__parameters__properties__include_memory:
       'Include related memories in the response (default true).',
@@ -30,7 +30,7 @@ export default {
     list_terms__parameters__properties__limit:
       'Optional maximum number of terms; by default return all.',
     search_terms_by_keywords:
-      'Search source term names or target translations using keyword OR matching. translation_only returns only terms with a target translation. Query this database or get_term before searching memories for term information.',
+      'Search source term names or target translations using keyword OR matching. translation_only returns only terms with a target translation. Query this database or get_term before using search_memories for term information.',
     search_terms_by_keywords__parameters__properties__keywords:
       'Keyword array; return terms matching any keyword.',
     search_terms_by_keywords__parameters__properties__translation_only:
@@ -60,7 +60,7 @@ export default {
     create_character__parameters__properties__aliases:
       'Optional aliases, including known surname/given-name parts of the full name. Honorific aliases must not be generated automatically.',
     get_character:
-      'Get a character by name. If exact matching fails, search source names, target translations, and recorded aliases with fuzzy/partial matching. Query get_character or search_characters_by_keywords before searching memories for character information.',
+      'Get a character by name. If exact matching fails, search source names, target translations, and recorded aliases with fuzzy/partial matching. Query this tool or search_characters_by_keywords before using search_memories for character information.',
     get_character__parameters__properties__name: 'Character source name in any language.',
     get_character__parameters__properties__include_memory:
       'Include related memories in the response (default true).',
@@ -89,7 +89,7 @@ export default {
     delete_character__parameters__properties__character_id:
       'Character ID from get_character or list_characters.',
     search_characters_by_keywords:
-      'Search character source names, aliases, or target translations using keyword OR matching. translation_only returns only characters with a target translation. Query this database or get_character before searching memories for character information.',
+      'Search character source names, aliases, or target translations using keyword OR matching. translation_only returns only characters with a target translation. Query this database or get_character before using search_memories for character information.',
     search_characters_by_keywords__parameters__properties__keywords:
       'Keyword array; return characters matching any keyword.',
     search_characters_by_keywords__parameters__properties__translation_only:
@@ -116,26 +116,26 @@ export default {
     get_paragraph_position__parameters__properties__next_count:
       'Number of following paragraphs (default 3).',
     get_paragraph_info:
-      'Get a paragraph source, translation versions, and selected translation. paragraphIndex is one-based for display; chapterIndex and volumeIndex are zero-based array indexes.',
+      'Get a paragraph source, translation versions, and selected translation. paragraphIndex is 1-based for display; chapterIndex and volumeIndex are 0-based array indexes.',
     get_paragraph_info__parameters__properties__paragraph_id: 'Paragraph ID.',
     get_paragraph_info__parameters__properties__include_memory:
       'Include related memories in the response (default true).',
     get_previous_paragraphs:
-      'Get paragraphs preceding the supplied paragraph for reference. paragraph_index is one-based for display; chapter_index and volume_index are zero-based array indexes.',
+      'Get paragraphs preceding the supplied paragraph for reference. paragraph_index is 1-based for display; chapter_index and volume_index are 0-based array indexes.',
     get_previous_paragraphs__parameters__properties__paragraph_id: 'Current paragraph ID.',
     get_previous_paragraphs__parameters__properties__count:
       'Number of paragraphs to return (default 3).',
     get_previous_paragraphs__parameters__properties__include_memory:
       'Include related memories in the response (default true).',
     get_next_paragraphs:
-      'Get paragraphs following the supplied paragraph for reference. paragraph_index is one-based for display; chapter_index and volume_index are zero-based array indexes.',
+      'Get paragraphs following the supplied paragraph for reference. paragraph_index is 1-based for display; chapter_index and volume_index are 0-based array indexes.',
     get_next_paragraphs__parameters__properties__paragraph_id: 'Current paragraph ID.',
     get_next_paragraphs__parameters__properties__count:
       'Number of paragraphs to return (default 3).',
     get_next_paragraphs__parameters__properties__include_memory:
       'Include related memories in the response (default true).',
     find_paragraph_by_keywords:
-      'Find paragraphs with keyword OR matching in the source or target translation. When both source and translation keywords are supplied, require both conditions. For Japanese honorifics, first consult search_memories for established address rules, then search previous paragraph usage. chapter_id limits the search to that chapter; otherwise search the book. paragraph_index is one-based; chapter_index and volume_index are zero-based.',
+      'Find paragraphs with keyword OR matching in the source or target translation. When both source and translation keywords are supplied, require both conditions. For Japanese honorifics, first consult search_memories for established address rules, then search previous paragraph usage. chapter_id limits the search to that chapter; otherwise search the book. paragraph_index is 1-based; chapter_index and volume_index are 0-based.',
     find_paragraph_by_keywords__parameters__properties__keywords:
       'Optional source keywords with OR matching. When translation_keywords are also supplied, both conditions must match.',
     find_paragraph_by_keywords__parameters__properties__translation_keywords:
@@ -149,7 +149,7 @@ export default {
     find_paragraph_by_keywords__parameters__properties__include_memory:
       'Include related memories in the response (default true).',
     search_paragraphs_by_regex:
-      'Search source or target translation text with a regular expression, including complex formats, number patterns, or character combinations. paragraph_index is one-based; chapter_index and volume_index are zero-based.',
+      'Search source or target translation text with a regular expression, including complex formats, number patterns, or character combinations. paragraph_index is 1-based; chapter_index and volume_index are 0-based.',
     search_paragraphs_by_regex__parameters__properties__regex_pattern:
       'Regular expression string. Examples: "\\\\d+" matches numbers; "[あ-ん]+" matches hiragana.',
     search_paragraphs_by_regex__parameters__properties__chapter_id:
@@ -178,7 +178,7 @@ export default {
     select_translation__parameters__properties__translation_id:
       'Existing target language version ID to select from this paragraph’s history.',
     add_translation:
-      'Add a translation version for the execution target language. Keep at most five versions per language; evict the oldest target version when necessary while preserving other languages.',
+      'Add a translation version for the execution target language. Keep at most 5 versions per language; evict the oldest target version when necessary while preserving other languages.',
     add_translation__parameters__properties__paragraph_id: 'Paragraph ID.',
     add_translation__parameters__properties__translation:
       'New translation text for the execution target language.',
@@ -230,14 +230,14 @@ export default {
     query_chapter__parameters__properties__query:
       'Natural language query in any language. Prefer source title/series words, character plus concrete actions/details, or event anchors. Avoid vague impressions or names without actions. Maintained names may be normalized across languages; source title words are usually stronger anchors.',
     query_chapter__parameters__properties__limit:
-      'Default 5 candidates. Inspect the top 3–5 rather than assuming the first is best; use 8–10 when uncertain, then get_chapter_info to confirm.',
+      'Default 5 candidates. Inspect the top 3–5 rather than assuming the top 1 is best; use 8–10 when uncertain, then get_chapter_info to confirm.',
     get_chapter_info:
       'Get chapter details, title, paged paragraphs, and translation progress. Use a small limit to confirm relevance, then continue with offset; do not load a long chapter into context at once. Default 30 paragraphs, maximum 200.',
     get_chapter_info__parameters__properties__chapter_id: 'Chapter ID.',
     get_chapter_info__parameters__properties__limit:
       'Maximum paragraphs (default 30, maximum 200); page long chapters instead of loading all content.',
     get_chapter_info__parameters__properties__offset:
-      'Starting paragraph index (zero-based, default 0); use with limit for pagination.',
+      'Starting paragraph index (0-based, default 0); use with limit for pagination.',
     get_chapter_info__parameters__properties__include_memory:
       'Include related memories in the response (default true).',
     get_previous_chapter:
@@ -250,7 +250,7 @@ export default {
     get_previous_chapter__parameters__properties__limit:
       'Maximum paragraphs to return (default 30, maximum 200).',
     get_previous_chapter__parameters__properties__offset:
-      'Starting paragraph index (zero-based, default 0); use with limit for pagination.',
+      'Starting paragraph index (0-based, default 0); use with limit for pagination.',
     get_next_chapter:
       'Get the following chapter for reference and translation consistency. Page content with limit/offset: default 30 paragraphs, maximum 200. Continue with offset when more content is needed.',
     get_next_chapter__parameters__properties__chapter_id: 'Current chapter ID.',
@@ -261,7 +261,7 @@ export default {
     get_next_chapter__parameters__properties__limit:
       'Maximum paragraphs to return (default 30, maximum 200).',
     get_next_chapter__parameters__properties__offset:
-      'Starting paragraph index (zero-based, default 0); use with limit for pagination.',
+      'Starting paragraph index (0-based, default 0); use with limit for pagination.',
     update_chapter_title:
       'Update a chapter source title (title_original) or its execution target translation (title_translation). Use this to correct titles.',
     update_chapter_title__parameters__properties__chapter_id: 'Chapter ID.',
@@ -281,7 +281,7 @@ export default {
       'New alternate-title array (optional); omitted means unchanged.',
     list_memories:
       'List book memories for management or debugging, with pagination and sorting. By default return lightweight id/summary/createdAt/lastAccessedAt fields; set include_content=true for full text.',
-    list_memories__parameters__properties__offset: 'Pagination offset (zero-based).',
+    list_memories__parameters__properties__offset: 'Pagination offset (0-based).',
     list_memories__parameters__properties__limit:
       'Number to return (default 20, recommended at most 50).',
     list_memories__parameters__properties__sort_by:
@@ -319,7 +319,7 @@ export default {
     create_todo__parameters__properties__text:
       'One detailed, concrete, actionable todo; use either text or items. Example: translate paragraphs 1–5 and check terminology, rather than merely "translate text".',
     create_todo__parameters__properties__items:
-      'Several detailed actionable todos; use either items or text. Create an independent todo for each step.',
+      'Several detailed actionable todos; use either items or text. Create an independent todo for each step. For example: ["Translate paragraphs 1-5 and check terminology consistency", "Translate paragraphs 6-10 and keep character names consistent"] rather than ["Translate text", "Check consistency"].',
     update_todos:
       'Update one todo using id or multiple todos using items. Change text, status, or both; omitted fields remain unchanged.',
     update_todos__parameters__properties__id: 'Single todo ID; use either id or items.',
@@ -359,7 +359,7 @@ export default {
     ask_user__parameters__properties__max_length: 'Maximum custom answer length (optional).',
     ask_user_batch:
       'Ask several questions together and wait for answers, one screen per question. Use for related preference decisions or ambiguities. Cancellation returns partial answers already provided.',
-    ask_user_batch__parameters__properties__questions: 'Question list (required, at least one).',
+    ask_user_batch__parameters__properties__questions: 'Question list (required, at least 1).',
     ask_user_batch__parameters__properties__questions__items__properties__question:
       'Question to show the user (required).',
     ask_user_batch__parameters__properties__questions__items__properties__suggested_answers:

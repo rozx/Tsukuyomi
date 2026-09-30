@@ -121,7 +121,7 @@ describe('导入任务命名', () => {
 
   it('提示词带上当前任务名与命名状态，并要求识别书本后命名', async () => {
     const { task } = await fixture();
-    const prompt = await importAgentPrompt(task.id);
+    const prompt = await importAgentPrompt(task.id, undefined, 'zh-CN');
     expect(prompt).toContain('rename_import_task');
     expect(prompt).toContain('"taskName":"新的导入任务"');
     expect(prompt).toContain('"taskNamedBy":null');

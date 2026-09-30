@@ -7,8 +7,8 @@ import { getDB } from 'src/utils/indexed-db';
 
 export async function importAgentPrompt(
   taskId: string,
-  summary?: string,
-  uiLocale: AppLocale = 'zh-CN',
+  summary: string | undefined,
+  uiLocale: AppLocale,
 ): Promise<string> {
   const task = await ImportRepository.getTask(taskId);
   if (!task)

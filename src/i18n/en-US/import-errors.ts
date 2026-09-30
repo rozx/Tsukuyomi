@@ -486,6 +486,7 @@ export default {
     defaultUnassigned: 'Unassigned content',
     defaultTask: 'New import task',
     defaultWebsiteTask: 'Import: {host}',
+    recipeChangedReopen: 'The update recipe changed; reopen the check session',
     recipeStale: 'The recipe is invalid and will not be saved in this import: {detail}',
     recipeExtraLines: 'Replay for “{title}” contains {count} extra lines: {sample}',
     recipeMissingLines: 'Replay for “{title}” is missing {count} lines: {sample}',

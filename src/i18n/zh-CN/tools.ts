@@ -28,7 +28,7 @@ export default {
       '是否列出所有章节的术语（默认 false）。如果为 true，忽略 chapter_id 参数，返回所有术语。',
     list_terms__parameters__properties__limit: '返回的术语数量限制（可选，默认返回所有）',
     search_terms_by_keywords:
-      '根据多个关键词搜索术语。可以搜索术语名称或翻译。支持多个关键词，返回包含任一关键词的术语（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的术语。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
+      '根据多个关键词搜索术语。可以搜索术语名称或翻译。支持多个关键词，返回包含任一关键词的术语（OR 逻辑）。支持可选参数 translation_only 只返回有翻译的术语。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
     search_terms_by_keywords__parameters__properties__keywords:
       '搜索关键词数组（返回包含任一关键词的术语）',
     search_terms_by_keywords__parameters__properties__translation_only:
@@ -85,7 +85,7 @@ export default {
     delete_character__parameters__properties__character_id:
       '角色 ID（从 get_character 或 list_characters 获取）',
     search_characters_by_keywords:
-      '根据多个关键词搜索角色。可以搜索角色主名称、别名或翻译。支持多个关键词，返回包含任一关键词的角色（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的角色。[警告] **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
+      '根据多个关键词搜索角色。可以搜索角色主名称、别名或翻译。支持多个关键词，返回包含任一关键词的角色（OR 逻辑）。支持可选参数 translation_only 只返回有翻译的角色。[警告] **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
     search_characters_by_keywords__parameters__properties__keywords:
       '搜索关键词数组（返回包含任一关键词的角色）',
     search_characters_by_keywords__parameters__properties__translation_only:
@@ -218,7 +218,7 @@ export default {
     query_chapter__parameters__properties__limit:
       '默认 5。Top1 未必最佳 — 把它当候选定位器,默认看 Top3-5;抽象 / 不确定时调到 8-10,再用 get_chapter_info 二次确认',
     get_chapter_info:
-      '获取章节的详细信息，包括标题、段落列表（默认分页）、翻译进度等。章节可能很长，返回内容会按 limit/offset 分页；先用小 limit 确认方向，需要更多段落再通过 offset 继续读取，避免一次性拉整章把上下文塞满。',
+      '获取章节的详细信息，包括标题、段落列表（默认分页）、翻译进度等。章节可能很长，返回内容会按 limit/offset 分页；先用小 limit 确认方向，需要更多段落再通过 offset 继续读取，避免一次性拉整章把上下文塞满。默认每页 30 段，最多 200 段。',
     get_chapter_info__parameters__properties__chapter_id: '章节 ID',
     get_chapter_info__parameters__properties__limit:
       '返回的段落数量上限（默认 30，最大 200）。章节可能有上百段，默认只取前 30 段避免 context 爆炸。',
@@ -376,7 +376,7 @@ export default {
       '根据关键词搜索应用的帮助文档。在标题和描述中进行模糊匹配。当用户询问应用的使用方法、功能介绍、操作指南等问题时，使用此工具搜索相关帮助文档。',
     search_help_docs__parameters__properties__query: '搜索关键词，可以是功能名称、操作描述等',
     get_help_doc:
-      '获取指定帮助文档的完整内容。需要传入文档 ID（可通过 search_help_docs 或 list_help_docs 获取）。返回文档的标题、分类和 Markdown 格式的完整内容。',
+      '获取指定帮助文档的完整内容。需要传入文档 ID（doc_id，可通过 search_help_docs 或 list_help_docs 获取）。返回文档的标题、分类和 Markdown 格式的完整内容。',
     get_help_doc__parameters__properties__doc_id:
       '帮助文档的唯一 ID（例如 "front-page"、"ai-models-guide"）',
     navigate_to_help_doc:

@@ -397,6 +397,7 @@ export default {
     defaultUnassigned: '待归类内容',
     defaultTask: '新的导入任务',
     defaultWebsiteTask: '导入：{host}',
+    recipeChangedReopen: '更新配方已修改，请重新打开检查会话',
     recipeStale: '配方已失效，本次不会写入配方：{detail}',
     recipeExtraLines: '「{title}」回放多出 {count} 行：{sample}',
     recipeMissingLines: '「{title}」回放缺少 {count} 行：{sample}',

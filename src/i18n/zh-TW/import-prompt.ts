@@ -41,6 +41,8 @@ export default {
     compactNoConversation: '沒有可壓縮的對話，或還有未完成的工具調用',
     compactNoSafePart: '當前歷史沒有可以安全壓縮的部分',
     compactStale: '對話在壓縮期間已更新，請重試',
+    recipeMissingReason: '這本書還沒有更新配方',
+    recipeReplayFailed: '配方回放失敗',
     recipeName: '修復更新配方：{title}',
     recipePrefill:
       '這本書的更新配方需要修復：{reason}。請檢查目錄來源和章節頁，建立一份通過自測的更新配方；站點沒有新章節時，可以只提交配方變化。',

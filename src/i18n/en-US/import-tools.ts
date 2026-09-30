@@ -51,7 +51,7 @@ export default {
     apply_draft_batch:
       'Apply a previewed draft batch atomically. Preview again after draft changes. Reapplying the same batch is idempotent; never write the library.',
     run_chapter_batch:
-      'Extract pending chapters from a prepared plan and save each to the draft, with at most three concurrent operations. Return counts and a few exceptions, not body text. Resume after interruption; retry_failed retries failed items only.',
+      'Extract pending chapters from a prepared plan and save each to the draft, with at most 3 concurrent operations. Return counts and a few exceptions, not body text. Resume after interruption; retry_failed retries failed items only.',
     get_chapter_batch:
       'Read chapter batch statuses, errors, and content references with pagination. Use read_source to spot-check body text.',
     prepare_chapter_batch:
@@ -160,7 +160,7 @@ export default {
     ask_user__parameters__properties__max_length: 'Maximum custom answer length (optional).',
     ask_user_batch:
       'Ask several necessary questions, save them, and pause import execution. Resume only after the user answers every question in the import workspace.',
-    ask_user_batch__parameters__properties__questions: 'Question list (required, at least one).',
+    ask_user_batch__parameters__properties__questions: 'Question list (required, at least 1).',
     ask_user_batch__parameters__properties__questions__items__properties__question:
       'Question to show the user (required).',
     ask_user_batch__parameters__properties__questions__items__properties__suggested_answers:
@@ -180,7 +180,7 @@ export default {
     create_todo__parameters__properties__text:
       'One detailed, concrete, actionable todo; use either text or items. Example: translate paragraphs 1–5 and check terminology, rather than merely "translate text".',
     create_todo__parameters__properties__items:
-      'Several detailed actionable todos; use either items or text. Create an independent todo for each step.',
+      'Several detailed actionable todos; use either items or text. Create an independent todo for each step. For example: ["Translate paragraphs 1-5 and check terminology consistency", "Translate paragraphs 6-10 and keep character names consistent"] rather than ["Translate text", "Check consistency"].',
     update_todos:
       'Update one todo using id or multiple todos using items. Change text, status, or both; omitted fields remain unchanged.',
     update_todos__parameters__properties__id: 'Single todo ID; use either id or items.',

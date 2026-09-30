@@ -36,7 +36,7 @@ export default {
     titleInstruction:
       '\n\nTranslate the current chapter title with update_chapter_title during working: {title}',
     count:
-      'This chunk contains {count} paragraphs; empty paragraphs are excluded. [index] is the original one-based chapter position and may skip numbers. It is for reading only. Submit paragraph_id from [ID: ...].',
+      'This chunk contains {count} paragraphs; empty paragraphs are excluded. [index] is the original 1-based chapter position and may skip numbers. It is for reading only. Submit paragraph_id from [ID: ...].',
     maintenance: '\nEmpty paragraphs are excluded; do not output or restore them.',
     changedMaintenance:
       '\nEmpty paragraphs are excluded. Return only changed paragraphs; finish if none need changes.',

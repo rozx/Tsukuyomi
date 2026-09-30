@@ -129,7 +129,7 @@ export default {
     get_book_info__parameters__properties__include_memory:
       '是否在響應中包含相關的記憶資訊（預設 true）',
     get_chapter_info:
-      '取得章節的詳細資訊，包括標題、段落列表（預設分頁）、翻譯進度等。章節可能很長，回傳內容會按 limit/offset 分頁；先用小 limit 確認方向，需要更多段落再通過 offset 繼續讀取，避免一次性拉整章把上下文塞滿。',
+      '取得章節的詳細資訊，包括標題、段落列表（預設分頁）、翻譯進度等。章節可能很長，回傳內容會按 limit/offset 分頁；先用小 limit 確認方向，需要更多段落再通過 offset 繼續讀取，避免一次性拉整章把上下文塞滿。預設每頁 30 段，最多 200 段。',
     get_chapter_info__parameters__properties__chapter_id: '章節 ID',
     get_chapter_info__parameters__properties__include_memory:
       '是否在響應中包含相關的記憶資訊（預設 true）',
@@ -143,7 +143,7 @@ export default {
       '是否在響應中包含相關的記憶資訊（預設 true）',
     get_character__parameters__properties__name: '角色名稱（原文）',
     get_help_doc:
-      '取得指定幫助文檔的完整內容。需要傳入文檔 ID（可通過 search_help_docs 或 list_help_docs 取得）。回傳文檔的標題、分類和 Markdown 格式的完整內容。',
+      '取得指定幫助文檔的完整內容。需要傳入文檔 ID（doc_id，可通過 search_help_docs 或 list_help_docs 取得）。回傳文檔的標題、分類和 Markdown 格式的完整內容。',
     get_help_doc__parameters__properties__doc_id:
       '幫助文檔的唯一 ID（例如 "front-page"、"ai-models-guide"）',
     get_memory: '按 ID 取得已保存的記憶參考內容。',
@@ -278,7 +278,7 @@ export default {
     remove_translation__parameters__properties__translation_id:
       '要刪除的翻譯 ID（必須是該段落翻譯歷史中存在的翻譯ID）',
     search_characters_by_keywords:
-      '根據多個關鍵詞搜尋角色。可以搜尋角色主名稱、別名或翻譯。支持多個關鍵詞，回傳包含任一關鍵詞的角色（OR 邏輯）。支持可選參數 translationOnly 只回傳有翻譯的角色。[警告] **重要**：查詢角色資訊時，必須**先**使用此工具或 get_character 查詢角色資料庫，**只有在資料庫中沒有找到時**才可以使用 search_memories 搜尋記憶。',
+      '根據多個關鍵詞搜尋角色。可以搜尋角色主名稱、別名或翻譯。支持多個關鍵詞，回傳包含任一關鍵詞的角色（OR 邏輯）。支持可選參數 translation_only 只回傳有翻譯的角色。[警告] **重要**：查詢角色資訊時，必須**先**使用此工具或 get_character 查詢角色資料庫，**只有在資料庫中沒有找到時**才可以使用 search_memories 搜尋記憶。',
     search_characters_by_keywords__parameters__properties__include_memory:
       '是否在響應中包含相關的記憶資訊（預設 true）',
     search_characters_by_keywords__parameters__properties__keywords:
@@ -305,7 +305,7 @@ export default {
     search_paragraphs_by_regex__parameters__properties__search_in_translation:
       '是否在翻譯文本中搜尋（預設 false）。當設置為 true 時，在翻譯文本中搜尋；當設置為 false 時，在原文中搜尋。',
     search_terms_by_keywords:
-      '根據多個關鍵詞搜尋術語。可以搜尋術語名稱或翻譯。支持多個關鍵詞，回傳包含任一關鍵詞的術語（OR 邏輯）。支持可選參數 translationOnly 只回傳有翻譯的術語。[警告] **重要**：查詢術語資訊時，必須**先**使用此工具或 get_term 查詢術語資料庫，**只有在資料庫中沒有找到時**才可以使用 search_memories 搜尋記憶。',
+      '根據多個關鍵詞搜尋術語。可以搜尋術語名稱或翻譯。支持多個關鍵詞，回傳包含任一關鍵詞的術語（OR 邏輯）。支持可選參數 translation_only 只回傳有翻譯的術語。[警告] **重要**：查詢術語資訊時，必須**先**使用此工具或 get_term 查詢術語資料庫，**只有在資料庫中沒有找到時**才可以使用 search_memories 搜尋記憶。',
     search_terms_by_keywords__parameters__properties__include_memory:
       '是否在響應中包含相關的記憶資訊（預設 true）',
     search_terms_by_keywords__parameters__properties__keywords:

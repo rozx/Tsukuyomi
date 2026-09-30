@@ -398,6 +398,7 @@ export default {
     defaultUnassigned: '待分類內容',
     defaultTask: '新的匯入任務',
     defaultWebsiteTask: '匯入：{host}',
+    recipeChangedReopen: '更新配方已修改，請重新開啟檢查工作階段',
     recipeStale: '配方已失效，本次不會寫入配方：{detail}',
     recipeExtraLines: '「{title}」重播多出 {count} 行：{sample}',
     recipeMissingLines: '「{title}」重播缺少 {count} 行：{sample}',

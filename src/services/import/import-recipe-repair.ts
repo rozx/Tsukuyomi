@@ -17,7 +17,7 @@ export class ImportRecipeRepair {
   static async open(
     book: Pick<Novel, 'id' | 'title' | 'updateRecipe' | 'webUrl'>,
     reason: string,
-    uiLocale: AppLocale = 'zh-CN',
+    uiLocale: AppLocale,
   ): Promise<string> {
     const tasks = await (await getDB()).getAll('import-tasks');
     const existing = tasks.find(
@@ -46,7 +46,7 @@ export class ImportRecipeRepair {
 export function importRepairPrefill(
   task: ImportTask,
   eventCount: number,
-  uiLocale: AppLocale = 'zh-CN',
+  uiLocale: AppLocale,
 ): string {
   if (task.purpose?.kind !== 'recipe-repair' || eventCount > 0) return '';
   return translateText(uiLocale, 'aiImportPrompt.recipePrefill', { reason: task.purpose.reason });

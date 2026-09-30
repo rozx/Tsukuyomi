@@ -1,5 +1,6 @@
 import type { ImportFailure } from 'src/models/import-feedback';
 import {
+  importError,
   readImportError,
   restoreImportError,
   serializeImportError,
@@ -361,7 +362,11 @@ class BookSyncSession {
     const extraction = (r: BookUpdateRecipe) =>
       JSON.stringify([r.engine, r.catalogUrls, r.cleanup, r.stripHeading]);
     if (extraction(currentRecipe) !== extraction(this.recipe)) {
-      this.invalidate('RECIPE_CHANGED', '更新配方已修改，请重新打开检查会话');
+      const failure = serializeImportError(
+        importError('RECIPE_CHANGED', 'recipeChangedReopen'),
+        'RECIPE_CHANGED',
+      );
+      this.invalidate(failure.code, failure.message, '', failure.localization);
       return false;
     }
     this.recipe = currentRecipe;

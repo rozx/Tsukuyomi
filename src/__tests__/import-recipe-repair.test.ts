@@ -41,7 +41,7 @@ describe('配方修复任务', () => {
     expect((await ImportRepository.getTask(id))!.name).toBe('Repair update recipe: 作品');
   });
   it('英文修复预填保留原始原因并说明配方单独提交条件', async () => {
-    const id = await ImportRecipeRepair.open(book(), '原始原因');
+    const id = await ImportRecipeRepair.open(book(), '原始原因', 'zh-CN');
     const task = (await ImportRepository.getTask(id))!;
     const text = importRepairPrefill(task, 0, 'en-US');
     expect(text).toContain('原始原因');
@@ -49,7 +49,7 @@ describe('配方修复任务', () => {
     expect(text).not.toContain('这本书的更新配方');
   });
   it('新建时预设任务名、已确认的目标、目录来源和失效原因', async () => {
-    const id = await ImportRecipeRepair.open(book(), '目录无法复现至少半数已导入章节');
+    const id = await ImportRecipeRepair.open(book(), '目录无法复现至少半数已导入章节', 'zh-CN');
     const task = await ImportRepository.getTask(id);
     expect(task).toMatchObject({
       name: '修复更新配方：作品',
@@ -63,42 +63,50 @@ describe('配方修复任务', () => {
   });
 
   it('重复点击只有一个任务', async () => {
-    const first = await ImportRecipeRepair.open(book(), '失效');
-    const second = await ImportRecipeRepair.open(book(), '失效');
+    const first = await ImportRecipeRepair.open(book(), '失效', 'zh-CN');
+    const second = await ImportRecipeRepair.open(book(), '失效', 'zh-CN');
     expect(second).toBe(first);
     expect(await repairTasks()).toHaveLength(1);
   });
 
   it('已应用或已撤销的修复任务不再复用', async () => {
-    const first = await ImportRecipeRepair.open(book(), '失效');
+    const first = await ImportRecipeRepair.open(book(), '失效', 'zh-CN');
     const db = await getDB();
     await db.put('import-tasks', { ...(await db.get('import-tasks', first))!, state: 'applied' });
-    const second = await ImportRecipeRepair.open(book(), '失效');
+    const second = await ImportRecipeRepair.open(book(), '失效', 'zh-CN');
     expect(second).not.toBe(first);
   });
 
   it('没有配方时用书籍首个来源网址；都没有时不登记来源', async () => {
-    const fallback = await ImportRecipeRepair.open(withoutRecipe({ id: 'b2' }), '缺少配方');
+    const fallback = await ImportRecipeRepair.open(
+      withoutRecipe({ id: 'b2' }),
+      '缺少配方',
+      'zh-CN',
+    );
     expect((await ImportRepository.listSources(fallback)).items.map((s) => s.url)).toEqual([
       'https://mirror.example/book',
     ]);
-    const none = await ImportRecipeRepair.open(withoutRecipe({ id: 'b3', webUrl: [] }), '缺少配方');
+    const none = await ImportRecipeRepair.open(
+      withoutRecipe({ id: 'b3', webUrl: [] }),
+      '缺少配方',
+      'zh-CN',
+    );
     expect((await ImportRepository.listSources(none)).items).toEqual([]);
   });
 
   it('只在没有对话的修复任务上预填失效说明', async () => {
-    const id = await ImportRecipeRepair.open(book(), '目录无法复现');
+    const id = await ImportRecipeRepair.open(book(), '目录无法复现', 'zh-CN');
     const task = (await ImportRepository.getTask(id))!;
-    expect(importRepairPrefill(task, 0)).toContain('目录无法复现');
-    expect(importRepairPrefill(task, 3)).toBe('');
+    expect(importRepairPrefill(task, 0, 'zh-CN')).toContain('目录无法复现');
+    expect(importRepairPrefill(task, 3, 'zh-CN')).toBe('');
     const plain = await ImportRepository.createTask();
-    expect(importRepairPrefill(plain, 0)).toBe('');
+    expect(importRepairPrefill(plain, 0, 'zh-CN')).toBe('');
   });
 
   it('提示词状态包含原配方与失效原因，并说明配方录入方式', async () => {
     await (await getDB()).put('books', book() as never);
-    const id = await ImportRecipeRepair.open(book(), '目录无法复现');
-    const prompt = await importAgentPrompt(id);
+    const id = await ImportRecipeRepair.open(book(), '目录无法复现', 'zh-CN');
+    const prompt = await importAgentPrompt(id, undefined, 'zh-CN');
     expect(prompt).toContain(
       `"repair":${JSON.stringify({ bookId: 'book', previousRecipe: recipe, reason: '目录无法复现' })}`,
     );
@@ -116,6 +124,6 @@ describe('配方修复任务', () => {
 
   it('普通任务的提示词状态没有 repair', async () => {
     const task = await ImportRepository.createTask();
-    expect(await importAgentPrompt(task.id)).toContain('"repair":null');
+    expect(await importAgentPrompt(task.id, undefined, 'zh-CN')).toContain('"repair":null');
   });
 });

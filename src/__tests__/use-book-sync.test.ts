@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { translateText } from '../i18n/translate';
 import './setup';
 import { createApp, defineComponent, h, nextTick, ref, shallowRef } from 'vue';
 import type { App, Component, Ref } from 'vue';
@@ -498,7 +499,7 @@ describe('配方修复入口', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('缺少配方时以「还没有更新配方」作为原因', async () => {
+  it('缺少配方时以当前界面语言的「还没有更新配方」作为原因', async () => {
     vi.spyOn(BookSyncService, 'openSession').mockRejectedValue(
       new BookSyncError('RECIPE_MISSING', '尚未建立更新配方'),
     );
@@ -506,10 +507,11 @@ describe('配方修复入口', () => {
     await mount(ref({ bookId: 'b1' }), shallowRef(VariantA));
     expect(ctx.phase.value).toBe('missing');
     await ctx.handoff();
+    const uiLocale = useSettingsStore().uiLocale;
     expect(open).toHaveBeenCalledWith(
       expect.anything(),
-      '这本书还没有更新配方',
-      useSettingsStore().uiLocale,
+      translateText(uiLocale, 'aiImportPrompt.recipeMissingReason'),
+      uiLocale,
     );
   });
 });

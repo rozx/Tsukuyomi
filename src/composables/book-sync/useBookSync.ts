@@ -34,7 +34,8 @@ import {
   reconcileSelection,
   type BookSyncConfirmSummary,
 } from './book-sync-rules';
-import { handoffToImporter, repairWithImporter } from './book-sync-handoff';
+import { handoffToImporter, repairReason, repairWithImporter } from './book-sync-handoff';
+import { useSettingsStore } from 'src/stores/settings';
 
 /**
  * 书籍同步工作区的共享状态（新建与更新共用）。
@@ -202,7 +203,7 @@ function createBookSyncContext(
     seenNew = reconciled.seenNew;
     if (next.status === 'invalid') {
       phase.value = 'invalid';
-      message.value = next.failed[0]?.message ?? '配方回放失败';
+      message.value = repairReason(next, useSettingsStore().uiLocale);
     } else {
       phase.value = 'ready';
       message.value = '';
@@ -467,7 +468,10 @@ function createBookSyncContext(
       else if (book.value)
         await repairWithImporter(
           toRaw(book.value),
-          phase.value === 'invalid' ? message.value : '这本书还没有更新配方',
+          repairReason(
+            phase.value === 'invalid' ? changeset.value : null,
+            useSettingsStore().uiLocale,
+          ),
           router,
         );
     } catch (error) {
