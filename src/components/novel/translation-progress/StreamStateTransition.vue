@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { TaskStatus } from 'src/services/ai/tasks/utils/task-types';
 
 const props = defineProps<{
@@ -7,13 +8,15 @@ const props = defineProps<{
   toStatus: string;
 }>();
 
+const { t } = useI18n();
+
 // 用 Record<TaskStatus, ...> 强制穷尽所有工作流状态：若 TaskStatus 新增值，编译器会报错
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  planning: '规划',
-  preparing: '准备',
-  working: '工作',
-  review: '复核',
-  end: '完成',
+const STATUS_KEYS: Record<TaskStatus, `activityUi.transition.${TaskStatus}`> = {
+  planning: 'activityUi.transition.planning',
+  preparing: 'activityUi.transition.preparing',
+  working: 'activityUi.transition.working',
+  review: 'activityUi.transition.review',
+  end: 'activityUi.transition.end',
 };
 
 const STATUS_ICONS: Record<TaskStatus, string> = {
@@ -25,7 +28,8 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
 };
 
 function getLabel(status: string): string {
-  return STATUS_LABELS[status as TaskStatus] ?? status;
+  const key = STATUS_KEYS[status as TaskStatus];
+  return key ? t(key) : status;
 }
 
 function getIcon(status: string): string {

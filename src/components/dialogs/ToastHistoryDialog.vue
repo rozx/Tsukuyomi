@@ -4,11 +4,14 @@
  * 两种形态共享同一个 `ToastHistoryBody`。
  */
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Popover from 'primevue/popover';
 import { useToastHistory } from 'src/composables/useToastHistory';
 import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import ToastHistoryBody from './ToastHistoryBody.vue';
+
+const { t } = useI18n();
 
 const uiStore = useUiStore();
 const isPhone = computed(() => uiStore.deviceType === 'phone');
@@ -61,7 +64,7 @@ defineExpose({
   <MobileBottomSheet
     v-else
     v-model:visible="mobileVisible"
-    title="消息历史"
+    :title="t('activityUi.toastHistory.title')"
     eyebrow="NOTIFICATIONS"
     max-height="86dvh"
   >

@@ -12,6 +12,7 @@ import libraryUi from './library-ui';
 import settingsUi from './settings-ui';
 import syncUi from './sync-ui';
 import appUi from './app-ui';
+import activityUi from './activity-ui';
 export default {
   ...aiUi,
   ...embeddingUi,
@@ -27,6 +28,7 @@ export default {
   ...settingsUi,
   ...syncUi,
   ...appUi,
+  ...activityUi,
   failed: '操作失敗',
   success: '操作成功',
 };

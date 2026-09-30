@@ -1,7 +1,7 @@
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="AI 提问"
+    :header="t('activityUi.askUser.header')"
     desktop-width="min(920px, 92vw)"
     desktop-height="88vh"
     eyebrow="AI · ASK"
@@ -19,10 +19,10 @@
       </div>
 
       <div class="question">
-        <div class="label">问题</div>
+        <div class="label">{{ t('activityUi.askUser.question') }}</div>
         <div class="text">{{ question }}</div>
         <div v-if="showAnsweredHint" class="answered-hint">
-          <span class="hint-label">已答：</span>
+          <span class="hint-label">{{ t('activityUi.askUser.answered') }}</span>
           <span class="hint-text">{{ answeredHintText }}</span>
         </div>
       </div>
@@ -37,7 +37,7 @@
       />
 
       <div v-if="showFreeTextArea" class="free-text">
-        <div class="label">自定义答案</div>
+        <div class="label">{{ t('activityUi.askUser.customAnswer') }}</div>
         <Textarea
           v-model="freeText"
           :placeholder="freeTextPlaceholder"
@@ -70,6 +70,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Textarea from 'primevue/textarea';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import AskUserChoices from './AskUserChoices.vue';
@@ -77,6 +78,7 @@ import AskUserFooter from './AskUserFooter.vue';
 import { useAskUserStore } from 'src/stores/ask-user';
 
 const askUserStore = useAskUserStore();
+const { t } = useI18n();
 
 const visible = computed(() => askUserStore.isVisible);
 const payload = computed(() => askUserStore.currentPayload);
@@ -103,7 +105,7 @@ const isOtherSelected = ref(false);
 const selectedIndex = ref<number | null>(null);
 const selectedAnswer = ref('');
 
-const otherLabel = '其他：自定义输入';
+const otherLabel = computed(() => t('activityUi.askUser.other'));
 
 const showFreeTextArea = computed(() => {
   if (!allowFreeText.value) return false;
@@ -127,15 +129,26 @@ const canSubmit = computed(() => {
 const question = computed(() => payload.value?.question);
 const showAnsweredHint = computed(() => isBatch.value && !!currentBatchAnswer.value);
 const answeredHintText = computed(() => currentBatchAnswer.value?.answer ?? '');
-const batchProgressText = computed(
-  () => `第 ${(batchProgress.value?.index ?? 0) + 1} / ${batchProgress.value?.total ?? 0} 题`,
+const batchProgressText = computed(() =>
+  t('activityUi.askUser.progress', {
+    current: (batchProgress.value?.index ?? 0) + 1,
+    total: batchProgress.value?.total ?? 0,
+  }),
 );
-const cancelLabel = computed(() => payload.value?.cancel_label || '取消');
+// AI 通过工具参数给出的按钮文字/占位是模型撰写的自由文本，原样显示；缺省时使用界面语言
+const cancelLabel = computed(() => payload.value?.cancel_label || t('activityUi.askUser.cancel'));
 const submitLabel = computed(
   () =>
-    payload.value?.submit_label || (isBatch.value && isLastBatchQuestion.value ? '完成' : '提交'),
+    payload.value?.submit_label ||
+    t(
+      isBatch.value && isLastBatchQuestion.value
+        ? 'activityUi.askUser.finish'
+        : 'activityUi.askUser.submit',
+    ),
 );
-const freeTextPlaceholder = computed(() => payload.value?.placeholder || '请输入你的答案…');
+const freeTextPlaceholder = computed(
+  () => payload.value?.placeholder || t('activityUi.askUser.placeholder'),
+);
 const freeTextMaxlength = computed(() =>
   typeof payload.value?.max_length === 'number' ? payload.value.max_length : undefined,
 );

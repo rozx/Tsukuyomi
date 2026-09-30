@@ -1,9 +1,8 @@
-import { translateText } from 'src/i18n/translate';
-import type { AppLocale } from 'src/models/locale';
-
 /**
  * 时间工具函数
  */
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 
 /**
  * 将 Date / 时间戳 / ISO 字符串统一转换为毫秒时间戳。

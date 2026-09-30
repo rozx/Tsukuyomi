@@ -8,6 +8,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import Button from 'primevue/button';
 import { useConfirm } from 'primevue/useconfirm';
+import { useI18n } from 'vue-i18n';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { useUiStore } from 'src/stores/ui';
@@ -24,12 +25,12 @@ const props = defineProps<{
 
 const aiProcessing = useAIProcessingStore();
 const confirm = useConfirm();
+const { t } = useI18n();
 const uiStore = useUiStore();
 
 const isPhone = computed(() => uiStore.deviceType === 'phone');
 const hasHeaderActions = computed(
-  () =>
-    aiProcessing.reviewedTasksList.length > 0 || aiProcessing.allTasksList.length > 0,
+  () => aiProcessing.reviewedTasksList.length > 0 || aiProcessing.allTasksList.length > 0,
 );
 // 头部是否渲染、以及手机端「仅动作」变体的 class，收进 computed 压低模板圈复杂度
 const showHeader = computed(() => !isPhone.value || hasHeaderActions.value);
@@ -54,11 +55,11 @@ const stopTask = async (taskId: string) => {
 const clearAllTasks = () => {
   confirm.require({
     group: 'thinking-process',
-    message: '确定要清空所有思考过程记录吗？此操作不可恢复。',
-    header: '确认清空',
+    message: t('activityUi.thinking.clearMessage'),
+    header: t('activityUi.thinking.clearHeader'),
     icon: 'pi pi-exclamation-triangle',
-    rejectProps: { label: '取消', severity: 'secondary' },
-    acceptProps: { label: '清空', severity: 'danger' },
+    rejectProps: { label: t('activityUi.thinking.cancel'), severity: 'secondary' },
+    acceptProps: { label: t('activityUi.thinking.clear'), severity: 'danger' },
     accept: async () => {
       await aiProcessing.clearAllTasks();
     },
@@ -270,20 +271,22 @@ onUnmounted(() => {
       class="thinking-header flex items-center justify-between mb-4 pb-3 border-b border-white/10"
       :class="headerClass"
     >
-      <h3 v-if="!isPhone" class="text-lg font-semibold text-moon/90">AI 思考过程</h3>
+      <h3 v-if="!isPhone" class="text-lg font-semibold text-moon/90">
+        {{ t('activityUi.thinking.title') }}
+      </h3>
       <div class="thinking-header-actions flex items-center gap-2">
         <Button
           v-if="aiProcessing.reviewedTasksList.length > 0"
           icon="pi pi-trash"
           class="p-button-text p-button-danger p-button-sm"
-          title="清空已完成"
+          :title="t('activityUi.thinking.clearDone')"
           @click="aiProcessing.clearReviewedTasks()"
         />
         <Button
           v-if="aiProcessing.allTasksList.length > 0"
           icon="pi pi-times-circle"
           class="p-button-text p-button-danger p-button-sm"
-          title="清空所有"
+          :title="t('activityUi.thinking.clearAll')"
           @click="clearAllTasks"
         />
       </div>
@@ -292,7 +295,7 @@ onUnmounted(() => {
     <div class="thinking-list overflow-auto min-h-0 space-y-3" :style="listContainerStyle()">
       <div v-if="aiProcessing.allTasksList.length === 0" class="text-center py-8">
         <i class="pi pi-check-circle text-4xl text-moon/40 mb-4" />
-        <p class="text-moon/60">当前没有思考过程记录</p>
+        <p class="text-moon/60">{{ t('activityUi.thinking.empty') }}</p>
       </div>
 
       <ThinkingTaskCard
@@ -307,7 +310,9 @@ onUnmounted(() => {
       />
 
       <div v-if="aiProcessing.reviewedTasksList.length > 0" class="mt-6">
-        <h4 class="text-sm font-medium text-moon/70 mb-3">已完成的任务</h4>
+        <h4 class="text-sm font-medium text-moon/70 mb-3">
+          {{ t('activityUi.thinking.completedTasks') }}
+        </h4>
         <div class="space-y-2">
           <ThinkingReviewedCard
             v-for="task in aiProcessing.reviewedTasksList.slice(0, 10)"

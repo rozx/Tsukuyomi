@@ -6,6 +6,9 @@ import { useContextStore } from 'src/stores/context';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
 import {
   useChatSessionsStore,
   type ChatSessionMessage,
@@ -42,15 +45,57 @@ function findChapterInNovel(book: Novel, chapterId: string): Chapter | undefined
   return undefined;
 }
 
-function formatChapterInfo(chapter: Chapter | undefined, book: Novel | undefined): string {
-  if (!chapter) return '当前章节';
-  const title = getChapterDisplayTitle(chapter, book);
-  return title ? `章节：${title}` : '当前章节';
+function formatChapterInfo(
+  chapter: Chapter | undefined,
+  book: Novel | undefined,
+  locale: AppLocale,
+): string {
+  const title = chapter ? getChapterDisplayTitle(chapter, book) : '';
+  return title
+    ? translateText(locale, 'activityUi.chat.contextChapter', { title })
+    : translateText(locale, 'activityUi.chat.currentChapter');
 }
 
-function formatParagraphInfo(chapter: Chapter | undefined, paragraphId: string): string {
+function formatParagraphInfo(
+  chapter: Chapter | undefined,
+  paragraphId: string,
+  locale: AppLocale,
+): string {
   const paraIndex = chapter?.content ? chapter.content.findIndex((p) => p.id === paragraphId) : -1;
-  return paraIndex >= 0 ? `段落：#${paraIndex + 1}` : '当前段落';
+  return paraIndex >= 0
+    ? translateText(locale, 'activityUi.chat.contextParagraph', { index: paraIndex + 1 })
+    : translateText(locale, 'activityUi.chat.currentParagraph');
+}
+
+/** 聊天面板顶部的上下文说明所需数据。 */
+interface ChatContextParts {
+  bookId: string | null;
+  book?: Novel | undefined;
+  chapterId: string | null;
+  chapter?: Chapter | undefined;
+  paragraphId: string | null;
+}
+
+/**
+ * 聊天上下文说明：固定前缀按界面语言渲染，书名/章节标题原样保留；
+ * 没有任何上下文时返回空字符串，由界面决定是否显示该区域。
+ */
+export function describeChatContext(parts: ChatContextParts, locale: AppLocale): string {
+  const info: string[] = [];
+  if (parts.bookId) {
+    info.push(
+      parts.book
+        ? translateText(locale, 'activityUi.chat.contextBook', { title: parts.book.title })
+        : translateText(locale, 'activityUi.chat.currentBook'),
+    );
+  }
+  if (parts.chapterId) {
+    info.push(formatChapterInfo(parts.chapter, parts.book, locale));
+  }
+  if (parts.paragraphId) {
+    info.push(formatParagraphInfo(parts.chapter, parts.paragraphId, locale));
+  }
+  return info.join(' | ');
 }
 
 /**
@@ -68,6 +113,7 @@ export function useRightPanel() {
   const contextStore = useContextStore();
   const aiModelsStore = useAIModelsStore();
   const booksStore = useBooksStore();
+  const settingsStore = useSettingsStore();
   const aiProcessingStore = useAIProcessingStore();
   const chatSessionsStore = useChatSessionsStore();
   const toast = useToastWithHistory();
@@ -303,17 +349,16 @@ export function useRightPanel() {
         ? findChapterInNovel(currentBook, context.currentChapterId)
         : undefined;
 
-    const info: string[] = [];
-    if (context.currentBookId) {
-      info.push(currentBook ? `书籍：${currentBook.title}` : '当前书籍');
-    }
-    if (context.currentChapterId) {
-      info.push(formatChapterInfo(currentChapter, currentBook));
-    }
-    if (context.selectedParagraphId) {
-      info.push(formatParagraphInfo(currentChapter, context.selectedParagraphId));
-    }
-    return info.length > 0 ? info.join(' | ') : '无上下文';
+    return describeChatContext(
+      {
+        bookId: context.currentBookId,
+        book: currentBook,
+        chapterId: context.currentChapterId,
+        chapter: currentChapter,
+        paragraphId: context.selectedParagraphId,
+      },
+      settingsStore.uiLocale,
+    );
   });
 
   const effectiveLimits = ref<EffectiveModelLimits>();
@@ -346,7 +391,13 @@ export function useRightPanel() {
       model,
     );
     const display = formatContextUsage(measured, effectiveLimits.value?.contextWindow);
-    return { ...measured, ...display, summary: `上下文使用：${display.label}` };
+    return {
+      ...measured,
+      ...display,
+      summary: translateText(settingsStore.uiLocale, 'activityUi.chat.contextUsage', {
+        label: display.label,
+      }),
+    };
   });
 
   // 消息操作

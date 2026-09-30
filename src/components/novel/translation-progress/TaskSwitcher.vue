@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import type { AppLocale } from 'src/models/locale';
+import { taskStatusLabel, taskTypeLabel as typeLabelFor } from 'src/constants/ai';
 import TaskSwitcherItem from './TaskSwitcherItem.vue';
 
 const props = defineProps<{
@@ -17,10 +19,9 @@ const emit = defineEmits<{
 }>();
 
 const isOpen = ref(false);
+const { t, locale } = useI18n();
 
-const selectedTask = computed(() =>
-  props.tasks.find((t) => t.id === props.selectedTaskId) ?? null,
-);
+const selectedTask = computed(() => props.tasks.find((t) => t.id === props.selectedTaskId) ?? null);
 
 const selectedIndex = computed(() => {
   if (!props.selectedTaskId) return -1;
@@ -28,33 +29,26 @@ const selectedIndex = computed(() => {
 });
 
 // 触发器展示文案与状态类：从模板内联三元表达式收敛为 computed，降低模板圈复杂度
-const triggerType = computed(() =>
-  selectedTask.value ? taskTypeLabel(selectedTask.value) : '',
-);
+const triggerType = computed(() => (selectedTask.value ? taskTypeLabel(selectedTask.value) : ''));
 const triggerTitle = computed(() =>
   selectedTask.value
-    ? (props.getWorkingChapterLabel(selectedTask.value) || '未知章节')
-    : '选择任务',
+    ? props.getWorkingChapterLabel(selectedTask.value) || t('activityUi.progress.unknownChapter')
+    : t('activityUi.progress.selectTask'),
 );
 const triggerDotClass = computed(() => ({
   active: !!(selectedTask.value && isActive(selectedTask.value)),
   completed: selectedTask.value?.status === 'end',
 }));
 
-const taskTypeLabel = (task: AIProcessingTask) => {
-  const key = task.type;
-  return TASK_TYPE_LABELS[key] || task.type;
-};
+const taskTypeLabel = (task: AIProcessingTask) =>
+  typeLabelFor(locale.value as AppLocale, task.type);
 
 const isActive = (task: AIProcessingTask) =>
   task.status === 'thinking' || task.status === 'processing';
 
 const statusLabel = (task: AIProcessingTask) => {
-  if (isActive(task)) return '进行中';
-  if (task.status === 'end') return '已完成';
-  if (task.status === 'error') return '错误';
-  if (task.status === 'cancelled') return '已取消';
-  return task.status;
+  if (isActive(task)) return t('activityUi.progress.inProgress');
+  return taskStatusLabel(locale.value as AppLocale, task.status);
 };
 
 const select = (taskId: string) => {

@@ -4,6 +4,8 @@ import { useBookDetailsStore } from 'src/stores/book-details';
 import { useBooksStore } from 'src/stores/books';
 import { useContextStore } from 'src/stores/context';
 import { useUiStore } from 'src/stores/ui';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useThinkingFormatter } from 'src/composables/useThinkingFormatter';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
@@ -29,7 +31,9 @@ export function useTranslationProgressPanel() {
   const booksStore = useBooksStore();
   const contextStore = useContextStore();
   const uiStore = useUiStore();
+  const settingsStore = useSettingsStore();
   const toast = useToastWithHistory();
+  const uiLocale = computed(() => settingsStore.uiLocale);
 
   // 实时时钟（用于驱动持续刷新的时长 / ETA 计算）
   const { now } = useNowClock();
@@ -122,7 +126,7 @@ export function useTranslationProgressPanel() {
   // ─── 时间格式化 ───
   // 使用共享 formatTaskDuration 并传入响应式 now.value，让计时器随 1Hz 定时器持续刷新
   const formatDuration = (startTime: number, endTime?: number): string =>
-    formatTaskDuration(startTime, endTime, now.value);
+    formatTaskDuration(startTime, endTime, now.value, uiLocale.value);
 
   // ─── 任务选择 ───
 
@@ -217,8 +221,10 @@ export function useTranslationProgressPanel() {
     translationTasks.forEach((t) => bookDetailsStore.clearTaskTranslationProgress(t.id));
     toast.add({
       severity: 'success',
-      summary: '清除成功',
-      detail: `已清除 ${translationTasks.length} 个已结束任务`,
+      summary: translateText(uiLocale.value, 'activityUi.progress.cleared'),
+      detail: translateText(uiLocale.value, 'activityUi.progress.clearedDetail', {
+        count: translationTasks.length,
+      }),
       life: 3000,
     });
   };
@@ -247,7 +253,12 @@ export function useTranslationProgressPanel() {
 
   // ─── 手机端派生数据 ───
 
-  const mobile = useMobilePanelData({ currentTask, now, getWorkingChapterLabel });
+  const mobile = useMobilePanelData({
+    currentTask,
+    now,
+    getWorkingChapterLabel,
+    locale: uiLocale,
+  });
 
   return {
     // store refs variants may need

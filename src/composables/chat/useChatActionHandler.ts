@@ -17,9 +17,14 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { restoreTranslationAction } from 'src/services/ai/tools/translation-action-restore';
 import {
   createMessageActionFromActionInfo,
-  ACTION_LABELS,
-  ENTITY_LABELS,
+  actionSummaryLabel,
+  entityTypeLabel,
 } from 'src/utils/action-info-utils';
+import { entityNameTranslation, sexLabel } from 'src/utils/action-info/named-entity-details';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
+import type { AppLocale } from 'src/models/locale';
 import type { ActionInfo } from 'src/services/ai/tools';
 import type { CharacterSetting, Terminology, Translation, Alias } from 'src/models/novel';
 import { v4 } from 'uuid';
@@ -38,47 +43,70 @@ export function useChatActionHandler(
   const bookDetailsStore = useBookDetailsStore();
   const contextStore = useContextStore();
   const chatSessionsStore = useChatSessionsStore();
+  const settingsStore = useSettingsStore();
 
-  const SEX_LABELS: Record<string, string> = {
-    male: '男',
-    female: '女',
-    other: '其他',
-  };
+  /**
+   * toast 是写入历史的自由文本：优先使用执行快照的界面语言生成，
+   * 没有快照时使用当前界面语言；之后不再随语言切换重译。
+   */
+  const toastLocale = (action: ActionInfo): AppLocale =>
+    action.execution?.languages.uiLocale ?? settingsStore.uiLocale;
 
-  const formatEntityMainInfo = (entity: CharacterSetting | Terminology): string => {
+  const text = (locale: AppLocale, key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(locale, key, values);
+
+  /** 术语/角色译名按执行目标语言读取，旧操作回退书籍目标语言 */
+  const entityLanguage = (action: ActionInfo, bookId: string | null): AppLocale =>
+    action.execution?.languages.targetLanguage ??
+    (bookId ? booksStore.getBookById(bookId)?.targetLanguage : undefined) ??
+    'zh-CN';
+
+  const formatEntityMainInfo = (
+    entity: CharacterSetting | Terminology,
+    language: AppLocale,
+  ): string => {
     if (!entity.name) return '';
-    const translation = entity.translation?.translation;
+    const translation = entityNameTranslation(entity, language);
     return translation ? `${entity.name} → ${translation}` : entity.name;
   };
 
-  const formatCharacterDetails = (character: CharacterSetting): string[] => {
+  const formatCharacterDetails = (character: CharacterSetting, locale: AppLocale): string[] => {
     const details: string[] = [];
     if (character.sex) {
-      details.push(`性别：${SEX_LABELS[character.sex] || character.sex}`);
+      details.push(
+        text(locale, 'activityUi.toast.sex', { value: sexLabel(locale, character.sex) }),
+      );
     }
     if (character.speakingStyle) {
-      details.push(`口吻：${character.speakingStyle}`);
+      details.push(
+        text(locale, 'activityUi.toast.speakingStyle', { value: character.speakingStyle }),
+      );
     }
     if (character.aliases && character.aliases.length > 0) {
-      details.push(`别名：${character.aliases.length} 个`);
+      details.push(text(locale, 'activityUi.toast.aliases', { count: character.aliases.length }));
     }
     return details;
   };
 
-  const formatTermDetails = (term: Terminology): string[] =>
-    term.description ? [`描述：${term.description}`] : [];
+  const formatTermDetails = (term: Terminology, locale: AppLocale): string[] =>
+    term.description
+      ? [text(locale, 'activityUi.toast.description', { value: term.description })]
+      : [];
 
   const joinEntityParts = (
     mainInfo: string,
     details: string[],
     entityType: 'character' | 'term',
     fallbackName: string,
+    locale: AppLocale,
   ): string => {
     if (mainInfo && details.length > 0) return `${mainInfo} | ${details.join(' | ')}`;
     if (mainInfo) return mainInfo;
     if (details.length > 0) return details.join(' | ');
-    const entityLabel = entityType === 'character' ? '角色' : '术语';
-    return `${entityLabel} "${fallbackName}" 已处理`;
+    return text(locale, 'activityUi.toast.entityHandled', {
+      entity: entityTypeLabel(locale, entityType),
+      name: fallbackName,
+    });
   };
 
   /**
@@ -87,14 +115,19 @@ export function useChatActionHandler(
   const formatEntityInfo = (
     entity: CharacterSetting | Terminology,
     entityType: 'character' | 'term',
+    locale: AppLocale,
+    language: AppLocale,
   ): string => {
-    const mainInfo = formatEntityMainInfo(entity);
+    const mainInfo = formatEntityMainInfo(entity, language);
     const details =
       entityType === 'character'
-        ? formatCharacterDetails(entity as CharacterSetting)
-        : formatTermDetails(entity as Terminology);
-    return joinEntityParts(mainInfo, details, entityType, entity.name ?? '');
+        ? formatCharacterDetails(entity as CharacterSetting, locale)
+        : formatTermDetails(entity as Terminology, locale);
+    return joinEntityParts(mainInfo, details, entityType, entity.name ?? '', locale);
   };
+
+  const summaryOf = (action: ActionInfo): string =>
+    actionSummaryLabel(toastLocale(action), action.type, action.entity);
 
   /**
    * 构建创建操作的 revert 回调（删除实体）
@@ -128,9 +161,11 @@ export function useChatActionHandler(
     shouldShowRevertToastRef: { value: boolean },
   ): void => {
     const entity = action.data as CharacterSetting | Terminology;
-    const detail = formatEntityInfo(entity, entityType);
-
     const bookId = action.execution?.bookId ?? contextStore.getContext.currentBookId;
+    const locale = toastLocale(action);
+    const language = entityLanguage(action, bookId);
+    const detail = formatEntityInfo(entity, entityType, locale, language);
+
     if (!bookId) return;
 
     shouldShowRevertToastRef.value = true;
@@ -139,7 +174,7 @@ export function useChatActionHandler(
       // 创建操作：添加删除 revert
       toast.add({
         severity: 'success',
-        summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
+        summary: summaryOf(action),
         detail,
         life: 3000,
         onRevert: buildCreateRevert(entityType, entity.id, bookId),
@@ -150,7 +185,7 @@ export function useChatActionHandler(
       if (previousData) {
         toast.add({
           severity: 'success',
-          summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
+          summary: summaryOf(action),
           detail,
           life: 3000,
           onRevert: buildEntityRestore(action, bookId),
@@ -160,10 +195,10 @@ export function useChatActionHandler(
       // 删除操作：添加重新创建 revert
       const previousData = action.previousData as CharacterSetting | Terminology | undefined;
       if (previousData) {
-        const deleteDetail = formatEntityInfo(previousData, entityType);
+        const deleteDetail = formatEntityInfo(previousData, entityType, locale, language);
         toast.add({
           severity: 'success',
-          summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
+          summary: summaryOf(action),
           detail: deleteDetail,
           life: 3000,
           onRevert: buildEntityRestore(action, bookId),
@@ -315,24 +350,39 @@ export function useChatActionHandler(
     replace_all_translations: boolean;
   };
 
-  const formatBatchReplaceKeywords = (data: BatchReplaceActionData): string => {
+  const formatBatchReplaceKeywords = (data: BatchReplaceActionData, locale: AppLocale): string => {
     const parts: string[] = [];
     if (data.keywords && data.keywords.length > 0) {
-      parts.push(`翻译关键词: ${data.keywords.join(', ')}`);
+      parts.push(
+        text(locale, 'activityUi.toast.translationKeywords', {
+          keywords: data.keywords.join(', '),
+        }),
+      );
     }
     if (data.original_keywords && data.original_keywords.length > 0) {
-      parts.push(`原文关键词: ${data.original_keywords.join(', ')}`);
+      parts.push(
+        text(locale, 'activityUi.toast.originalKeywords', {
+          keywords: data.original_keywords.join(', '),
+        }),
+      );
     }
     return parts.length > 0 ? ` | ${parts.join(' | ')}` : '';
   };
 
-  const formatBatchReplaceDetail = (data: BatchReplaceActionData): string => {
+  const formatBatchReplaceDetail = (data: BatchReplaceActionData, locale: AppLocale): string => {
     const replacementPreview =
       data.replacement_text.length > 30
         ? data.replacement_text.substring(0, 30) + '...'
         : data.replacement_text;
-    const keywordInfo = formatBatchReplaceKeywords(data);
-    return `已批量替换 ${data.replaced_paragraph_count} 个段落（共 ${data.replaced_translation_count} 个翻译版本） | 替换为: "${replacementPreview}"${keywordInfo}`;
+    const keywordInfo = formatBatchReplaceKeywords(data, locale);
+    const replaced = text(locale, 'activityUi.toast.batchReplaceDetail', {
+      paragraphs: data.replaced_paragraph_count,
+      translations: data.replaced_translation_count,
+    });
+    const replacedWith = text(locale, 'activityUi.toast.replacedWith', {
+      text: replacementPreview,
+    });
+    return `${replaced} | ${replacedWith}${keywordInfo}`;
   };
 
   const buildTranslationRevert = (action: ActionInfo, bookId: string) => async () => {
@@ -357,8 +407,8 @@ export function useChatActionHandler(
 
     const toastPayload: Record<string, unknown> = {
       severity: 'success',
-      summary: '批量替换翻译',
-      detail: formatBatchReplaceDetail(batchData),
+      summary: text(toastLocale(action), 'activityUi.toast.batchReplace'),
+      detail: formatBatchReplaceDetail(batchData, toastLocale(action)),
       life: 5000,
     };
     if (canRevert && previousData) {
@@ -390,8 +440,13 @@ export function useChatActionHandler(
 
     const translationData = action.data;
     const previousTranslation = action.previousData as Translation | undefined;
-    const detail = `段落翻译已更新 | 旧: "${truncateForPreview(translationData.old_translation)}" → 新: "${truncateForPreview(translationData.new_translation)}"`;
-    const summary = `${ACTION_LABELS[action.type as keyof typeof ACTION_LABELS]}${ENTITY_LABELS[action.entity as keyof typeof ENTITY_LABELS]}`;
+    const locale = toastLocale(action);
+    const oldNew = text(locale, 'activityUi.toast.oldNew', {
+      old: truncateForPreview(translationData.old_translation),
+      new: truncateForPreview(translationData.new_translation),
+    });
+    const detail = `${text(locale, 'activityUi.toast.translationUpdated')} | ${oldNew}`;
+    const summary = summaryOf(action);
     const bookId = action.execution?.bookId ?? contextStore.getContext.currentBookId;
     const canRevert = !!(previousTranslation && bookId);
 
@@ -423,10 +478,17 @@ export function useChatActionHandler(
     return { shouldShowRevertToast: revertRef.value };
   };
 
-  const resolveDefaultDetail = (action: ActionInfo): string =>
-    'name' in action.data
-      ? `${ENTITY_LABELS[action.entity]} "${action.data.name}" 已${ACTION_LABELS[action.type]}`
-      : '';
+  const resolveDefaultDetail = (action: ActionInfo): string => {
+    if (!('name' in action.data)) return '';
+    if (action.type !== 'create' && action.type !== 'update' && action.type !== 'delete') {
+      return '';
+    }
+    const locale = toastLocale(action);
+    return text(locale, `activityUi.toast.done.${action.type}`, {
+      entity: entityTypeLabel(locale, action.entity),
+      name: String(action.data.name),
+    });
+  };
 
   const handleCreateToast = (action: ActionInfo): ToastOutcome => {
     if (!('name' in action.data))
@@ -501,7 +563,7 @@ export function useChatActionHandler(
     if (!outcome.shouldShowRevertToast && outcome.detail) {
       toast.add({
         severity: 'success',
-        summary: `${ACTION_LABELS[action.type as keyof typeof ACTION_LABELS]}${ENTITY_LABELS[action.entity as keyof typeof ENTITY_LABELS]}`,
+        summary: summaryOf(action),
         detail: outcome.detail,
         life: 3000,
       });

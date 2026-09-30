@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import './setup';
 import { createApp } from 'vue';
 import type { App } from 'vue';
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import ChatActionBadge from '../components/layout/ChatActionBadge.vue';
 import { importEventsToMessages } from '../composables/import-page/import-chat-messages';
 import { getActionDetails } from '../utils/action-info-utils';
@@ -61,7 +63,7 @@ function badgeText(action: MessageAction): string {
     popoverKey: 'action',
     getChapterTitleForAction: () => undefined,
   });
-  app.mount(host);
+  app.use(createI18n({ legacy: false, locale: 'zh-CN', messages })).mount(host);
   return host.textContent!.replace(/\s+/g, ' ').trim();
 }
 

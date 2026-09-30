@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 
+const { t } = useI18n();
 const props = defineProps<{
   task: AIProcessingTask;
   showOnlyCurrentChapter: boolean;
@@ -13,8 +15,8 @@ const emit = defineEmits<{
   toggleChapterFilter: [];
 }>();
 
-const isActive = computed(() =>
-  props.task.status === 'thinking' || props.task.status === 'processing',
+const isActive = computed(
+  () => props.task.status === 'thinking' || props.task.status === 'processing',
 );
 </script>
 
@@ -26,15 +28,19 @@ const isActive = computed(() =>
       @click="emit('toggleChapterFilter')"
     >
       <i class="pi" :class="showOnlyCurrentChapter ? 'pi-filter' : 'pi-filter-slash'" />
-      {{ showOnlyCurrentChapter ? '仅本章' : '全部章节' }}
+      {{
+        showOnlyCurrentChapter
+          ? t('activityUi.progress.onlyChapter')
+          : t('activityUi.progress.allChapters')
+      }}
     </button>
     <button v-if="isActive" class="action-btn stop-btn" @click="emit('stop')">
       <i class="pi pi-stop-circle" />
-      停止
+      {{ t('activityUi.progress.stop') }}
     </button>
     <button v-else class="action-btn clear-btn" @click="emit('clear')">
       <i class="pi pi-trash" />
-      清除已完成
+      {{ t('activityUi.progress.clearDone') }}
     </button>
   </div>
 </template>

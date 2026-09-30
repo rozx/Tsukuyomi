@@ -17,6 +17,7 @@ import type {
 } from 'src/composables/right-panel/useChatMessageListBindings';
 import type { Ref, ComputedRef } from 'vue';
 import type { AIModel } from 'src/services/ai/types/ai-model';
+import type { MessageKey } from 'src/i18n/types';
 import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
 import type { ActionDetailsContext } from 'src/utils/action-info-utils';
 
@@ -47,8 +48,10 @@ interface ChatPanelBindingsSource extends ChatMessageListSource {
 interface ChatPanelBindingsOptions {
   /** 发送按钮 CSS class 前缀（'cp-send' / 'tcp-send' / 'mc-send'）。 */
   sendClassPrefix: string;
-  /** 已配置模型时输入框 placeholder（桌面带换行提示）。 */
-  readyPlaceholder: string;
+  /** 已配置模型时输入框 placeholder 文案 key（桌面带换行提示）。 */
+  readyPlaceholderKey?: MessageKey;
+  /** 未提供 key 时的 placeholder：固定文字或响应式 getter。 */
+  readyPlaceholder?: string | (() => string);
 }
 
 export function useChatPanelBindings(
@@ -62,7 +65,10 @@ export function useChatPanelBindings(
     sendMessage: panel.sendMessage,
     stopGeneration: panel.stopGeneration,
     sendClassPrefix: options.sendClassPrefix,
-    readyPlaceholder: options.readyPlaceholder,
+    ...(options.readyPlaceholderKey ? { readyPlaceholderKey: options.readyPlaceholderKey } : {}),
+    ...(options.readyPlaceholder !== undefined
+      ? { readyPlaceholder: options.readyPlaceholder }
+      : {}),
   });
 
   const actionPopoverBindings: ComputedRef<ChatActionPopoverBindings> = useChatActionPopovers({

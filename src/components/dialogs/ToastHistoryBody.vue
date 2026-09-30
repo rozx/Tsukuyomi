@@ -4,6 +4,7 @@
  * 桌面 Popover 和手机 MobileBottomSheet 通过它共享完全相同的渲染逻辑。
  */
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
 import Tag from 'primevue/tag';
@@ -12,19 +13,23 @@ import { useToastHistory, type ToastHistoryItem } from 'src/composables/useToast
 import { useUiStore } from 'src/stores/ui';
 
 const uiStore = useUiStore();
+const { t } = useI18n();
 const { historyItems, clearHistory, removeHistoryItem, formatTimestamp, revert, canRevert } =
   useToastHistory();
 
 const selectedSeverity = ref<'all' | ToastHistoryItem['severity']>('all');
 const isPhone = computed(() => uiStore.deviceType === 'phone');
 
-const severityOptions = [
-  { label: '全部', value: 'all' },
-  { label: '错误', value: 'error' },
-  { label: '警告', value: 'warn' },
-  { label: '成功', value: 'success' },
-  { label: '信息', value: 'info' },
-];
+const severityLabel = (severity: ToastHistoryItem['severity']): string =>
+  t(`activityUi.toastHistory.${severity}`);
+
+const severityOptions = computed(() => [
+  { label: t('activityUi.toastHistory.all'), value: 'all' },
+  { label: severityLabel('error'), value: 'error' },
+  { label: severityLabel('warn'), value: 'warn' },
+  { label: severityLabel('success'), value: 'success' },
+  { label: severityLabel('info'), value: 'info' },
+]);
 
 const sortedHistoryItems = computed(() => {
   let items = [...historyItems.value];
@@ -75,11 +80,8 @@ const handleRevert = async (id: string) => {
       class="toast-history-header flex items-center justify-between mb-4 pb-3 border-b border-white/10 flex-wrap gap-2"
     >
       <div class="toast-history-header-main flex items-center gap-3 min-w-0">
-        <h3
-          v-if="!isPhone"
-          class="text-lg font-semibold text-moon/90 whitespace-nowrap"
-        >
-          消息历史
+        <h3 v-if="!isPhone" class="text-lg font-semibold text-moon/90 whitespace-nowrap">
+          {{ t('activityUi.toastHistory.title') }}
         </h3>
         <Select
           v-model="selectedSeverity"
@@ -87,14 +89,14 @@ const handleRevert = async (id: string) => {
           optionLabel="label"
           optionValue="value"
           class="toast-history-filter min-w-32 p-inputtext-sm"
-          placeholder="筛选"
+          :placeholder="t('activityUi.toastHistory.filter')"
         />
       </div>
       <Button
         v-if="historyItems.length > 0"
         icon="pi pi-trash"
         class="toast-history-actions p-button-text p-button-danger p-button-sm flex-shrink-0"
-        title="清空所有历史"
+        :title="t('activityUi.toastHistory.clearAll')"
         @click="handleClear"
       />
     </div>
@@ -113,7 +115,7 @@ const handleRevert = async (id: string) => {
         <template #empty>
           <div class="text-center py-12">
             <i class="pi pi-inbox text-4xl text-moon/50 mb-4" />
-            <p class="text-moon/70">暂无消息历史</p>
+            <p class="text-moon/70">{{ t('activityUi.toastHistory.empty') }}</p>
           </div>
         </template>
 
@@ -145,21 +147,13 @@ const handleRevert = async (id: string) => {
                         {{ item.summary }}
                       </h4>
                       <Tag
-                        :value="
-                          item.severity === 'success'
-                            ? '成功'
-                            : item.severity === 'error'
-                              ? '错误'
-                              : item.severity === 'info'
-                                ? '信息'
-                                : '警告'
-                        "
+                        :value="severityLabel(item.severity as ToastHistoryItem['severity'])"
                         :severity="severityTags[item.severity as ToastHistoryItem['severity']]"
                         class="text-xs"
                       />
                       <Tag
                         v-if="item.reverted"
-                        value="已撤销"
+                        :value="t('activityUi.toastHistory.reverted')"
                         severity="info"
                         class="text-xs opacity-70"
                       />
@@ -169,13 +163,13 @@ const handleRevert = async (id: string) => {
                         v-if="canRevert(item.id)"
                         icon="pi pi-undo"
                         class="p-button-text p-button-sm p-button-rounded flex-shrink-0 text-primary-400 hover:text-primary-300"
-                        title="撤销操作"
+                        :title="t('activityUi.toastHistory.revert')"
                         @click="() => handleRevert(item.id)"
                       />
                       <Button
                         icon="pi pi-times"
                         class="p-button-text p-button-sm p-button-rounded flex-shrink-0 text-moon/50 hover:text-red-400"
-                        title="删除记录"
+                        :title="t('activityUi.toastHistory.remove')"
                         @click="() => void removeHistoryItem(item.id)"
                       />
                     </div>

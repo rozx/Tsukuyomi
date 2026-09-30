@@ -1,5 +1,8 @@
 import { computed, type Ref, type ComputedRef } from 'vue';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 
 /**
  * 手机端派生数据 composable。
@@ -13,8 +16,12 @@ export function useMobilePanelData(params: {
   currentTask: ComputedRef<AIProcessingTask | null>;
   now: Ref<number>;
   getWorkingChapterLabel: (task: AIProcessingTask) => string | null;
+  /** 当前界面语言；固定标签随其变化重绘 */
+  locale: ComputedRef<AppLocale>;
 }) {
-  const { currentTask, now, getWorkingChapterLabel } = params;
+  const { currentTask, now, getWorkingChapterLabel, locale } = params;
+  const t = (key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(locale.value, key, values);
 
   // 进度：current/total
   const mobileProgress = computed(() => {
@@ -24,28 +31,30 @@ export function useMobilePanelData(params: {
     return { current: p.current, total: p.total, percent };
   });
 
-  const TERMINAL_STATUS_LABELS: Record<string, string> = {
-    end: '已完成',
-    error: '已失败',
-    cancelled: '已取消',
+  const TERMINAL_STATUS_KEYS: Record<string, MessageKey> = {
+    end: 'activityUi.status.end',
+    error: 'activityUi.progress.failed',
+    cancelled: 'activityUi.status.cancelled',
   };
 
-  const WORKFLOW_STATUS_LABELS: Record<string, string> = {
-    planning: '规划阶段',
-    working: '翻译中',
-    review: '审核阶段',
-    end: '已完成',
+  const WORKFLOW_STATUS_KEYS: Record<string, MessageKey> = {
+    planning: 'activityUi.workflow.planning',
+    working: 'activityUi.progress.mobileTranslating',
+    review: 'activityUi.progress.mobileReview',
+    end: 'activityUi.status.end',
   };
 
   // 手机端任务状态描述（ChineseWorkflow）
   const mobileWorkflowLabel = computed<string>(() => {
     const task = currentTask.value;
     if (!task) return '';
-    const terminal = TERMINAL_STATUS_LABELS[task.status];
-    if (terminal) return terminal;
-    const workflow = WORKFLOW_STATUS_LABELS[task.workflowStatus ?? ''];
-    if (workflow) return workflow;
-    return task.status === 'thinking' ? '思考中' : '处理中';
+    const terminal = TERMINAL_STATUS_KEYS[task.status];
+    if (terminal) return t(terminal);
+    const workflow = WORKFLOW_STATUS_KEYS[task.workflowStatus ?? ''];
+    if (workflow) return t(workflow);
+    return t(
+      task.status === 'thinking' ? 'activityUi.status.thinking' : 'activityUi.status.processing',
+    );
   });
 
   // 预计剩余（线性外推）
@@ -53,18 +62,21 @@ export function useMobilePanelData(params: {
     const task = currentTask.value;
     if (!task) return '—';
     if (task.status === 'end' || task.status === 'error' || task.status === 'cancelled')
-      return '已结束';
+      return t('activityUi.progress.ended');
     const { current, total } = mobileProgress.value;
     if (!total || current <= 0) return '—';
-    if (current >= total) return '即将完成';
+    if (current >= total) return t('activityUi.progress.almostDone');
     const elapsed = Math.max(0, now.value - task.startTime);
     const rate = elapsed / current; // ms per unit
     const remaining = (total - current) * rate;
     const seconds = Math.max(0, Math.floor(remaining / 1000));
-    if (seconds < 60) return `~ ${seconds} 秒`;
+    if (seconds < 60) return t('activityUi.progress.etaSeconds', { seconds });
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `~ ${mins} 分 ${String(secs).padStart(2, '0')} 秒`;
+    return t('activityUi.progress.etaMinutes', {
+      minutes: mins,
+      seconds: String(secs).padStart(2, '0'),
+    });
   });
 
   // 当前章节标题（用于副标题）
@@ -94,7 +106,9 @@ export function useMobilePanelData(params: {
     if (current <= 0) return '—';
     const avgMs = Math.round(elapsedMs / current);
     if (avgMs <= 0) return '—';
-    return avgMs >= 1000 ? `${(avgMs / 1000).toFixed(1)}s/段` : `${avgMs}ms/段`;
+    return avgMs >= 1000
+      ? t('activityUi.progress.speedSeconds', { value: (avgMs / 1000).toFixed(1) })
+      : t('activityUi.progress.speedMs', { value: avgMs });
   };
 
   const mobileStatTotals = computed(() => {
@@ -103,34 +117,40 @@ export function useMobilePanelData(params: {
     const current = task?.progress?.current ?? 0;
     const elapsedMs = task ? Math.max(0, (task.endTime ?? now.value) - task.startTime) : 0;
     return [
-      { label: '总段数', value: String(total), icon: 'pi-list' },
-      { label: '已完成', value: String(current), icon: 'pi-check-circle' },
-      { label: '总耗时', value: formatElapsedLabel(elapsedMs), icon: 'pi-clock' },
-      { label: '平均速度', value: formatAvgSpeed(elapsedMs, current), icon: 'pi-bolt' },
+      { label: t('activityUi.progress.totalParagraphs'), value: String(total), icon: 'pi-list' },
+      {
+        label: t('activityUi.progress.completed'),
+        value: String(current),
+        icon: 'pi-check-circle',
+      },
+      {
+        label: t('activityUi.progress.elapsed'),
+        value: formatElapsedLabel(elapsedMs),
+        icon: 'pi-clock',
+      },
+      {
+        label: t('activityUi.progress.avgSpeed'),
+        value: formatAvgSpeed(elapsedMs, current),
+        icon: 'pi-bolt',
+      },
     ];
   });
 
   // 手机端状态图例（颜色 · 数量）
   const mobileLegend = computed(() => {
     const task = currentTask.value;
-    if (!task) {
-      return [
-        { color: '#A7D1B0', label: '成功', value: 0 },
-        { color: '#A3B7CF', label: '进行中', value: 0 },
-        { color: '#F2C037', label: '排队', value: 0 },
-        { color: '#EF5F5F', label: '失败', value: 0 },
-      ];
-    }
+    const legend = (success: number, running: number, queued: number, failed: number) => [
+      { color: '#A7D1B0', label: t('activityUi.progress.legendSuccess'), value: success },
+      { color: '#A3B7CF', label: t('activityUi.progress.legendRunning'), value: running },
+      { color: '#F2C037', label: t('activityUi.progress.legendQueued'), value: queued },
+      { color: '#EF5F5F', label: t('activityUi.progress.legendFailed'), value: failed },
+    ];
+    if (!task) return legend(0, 0, 0, 0);
     const { current, total } = mobileProgress.value;
     const queued = Math.max(0, total - current - (mobileIsRunning.value ? 1 : 0));
     const running = mobileIsRunning.value ? 1 : 0;
     const failed = task.status === 'error' ? 1 : 0;
-    return [
-      { color: '#A7D1B0', label: '成功', value: current },
-      { color: '#A3B7CF', label: '进行中', value: running },
-      { color: '#F2C037', label: '排队', value: queued },
-      { color: '#EF5F5F', label: '失败', value: failed },
-    ];
+    return legend(current, running, queued, failed);
   });
 
   return {

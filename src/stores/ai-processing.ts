@@ -3,6 +3,8 @@ import { toRaw } from 'vue';
 import { getDB } from 'src/utils/indexed-db';
 import { type AIWorkflowStatus } from 'src/constants/ai';
 import { TodoListService } from 'src/services/todo-list-service';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
 import {
   buildStreamAppendText,
   inferStreamMode,
@@ -547,7 +549,10 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
               const interruptedTask = {
                 ...task,
                 status: 'error' as const,
-                message: '任务被中断（应用重启或刷新）',
+                message: translateText(
+                  useSettingsStore().uiLocale,
+                  'activityUi.thinking.interrupted',
+                ),
                 endTime: Date.now(),
               };
               // 删除关联的待办事项（因为任务被中断，视为错误状态）
@@ -682,7 +687,7 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         clearTaskThrottle(id, task);
         // 更新任务状态（确保响应式更新）
         task.status = 'cancelled';
-        task.message = '已取消';
+        task.message = translateText(useSettingsStore().uiLocale, 'aiRun.cancelled');
         task.endTime = Date.now();
         // 删除关联的待办事项
         try {

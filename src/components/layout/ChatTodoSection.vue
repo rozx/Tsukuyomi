@@ -5,6 +5,7 @@
  * 渲染结果与原先逐字一致。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { TodoItem } from 'src/services/todo-list-service';
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
 }>();
@@ -44,7 +46,7 @@ const toggle = () => emit('update:modelValue', !props.modelValue);
     <button class="cp-todo-toggle" @click="toggle">
       <div class="cp-todo-toggle-copy">
         <i class="pi pi-list"></i>
-        <span>待办事项</span>
+        <span>{{ t('activityUi.chat.todos') }}</span>
         <span v-if="incompleteTodoCount > 0" class="cp-todo-badge">
           {{ incompleteTodoCount }}
         </span>
@@ -52,7 +54,9 @@ const toggle = () => emit('update:modelValue', !props.modelValue);
       <i class="pi cp-todo-chevron" :class="chevronIcon"></i>
     </button>
     <div v-if="modelValue" class="cp-todo-list">
-      <div v-if="todos.length === 0" class="cp-todo-empty">暂无待办事项</div>
+      <div v-if="todos.length === 0" class="cp-todo-empty">
+        {{ t('activityUi.chat.noTodos') }}
+      </div>
       <div v-else class="cp-todo-items">
         <div
           v-for="todo in todos"

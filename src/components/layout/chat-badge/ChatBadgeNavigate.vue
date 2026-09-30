@@ -3,9 +3,11 @@
  * 章节标题更新 / 导航类徽章细节。从 ChatActionBadge 拆出。
  * 用到 extAction 的扩展字段（old_title / new_title）。
  */
+import { useI18n } from 'vue-i18n';
 import type { BadgeDetailProps } from 'src/components/layout/chat-badge/badge-detail';
 
 defineProps<BadgeDetailProps>();
+const { t } = useI18n();
 </script>
 
 <template>
@@ -21,9 +23,11 @@ defineProps<BadgeDetailProps>();
   </span>
   <span v-else-if="kind === 'navigate_chapter_title'" class="font-semibold text-xs">
     "{{ action.chapter_title }}"
-    <span v-if="action.paragraph_id" class="opacity-70 ml-1">段落</span>
+    <span v-if="action.paragraph_id" class="opacity-70 ml-1">{{
+      t('activityUi.badge.paragraph')
+    }}</span>
   </span>
   <span v-else-if="kind === 'navigate_paragraph'" class="font-semibold text-xs">
-    段落 ({{ getShortId(action.paragraph_id) }})
+    {{ t('activityUi.badge.paragraphId', { id: getShortId(action.paragraph_id) }) }}
   </span>
 </template>
