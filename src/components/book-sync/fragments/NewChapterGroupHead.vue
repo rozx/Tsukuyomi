@@ -67,7 +67,7 @@ function useNewVolume(): void {
       <span class="ncg-kind">{{
         t('newTitle' in group.target ? 'bookUi.sync.newVolumeKind' : 'bookUi.sync.putIntoKind')
       }}</span
-      >「{{ targetName(group.target) }}」
+      >{{ t('bookUi.sync.quotedName', { name: targetName(group.target) }) }}
     </span>
     <span class="ncg-meta">{{
       t('bookUi.sync.groupChapters', { count: group.chapters.length })

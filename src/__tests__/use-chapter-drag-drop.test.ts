@@ -106,7 +106,7 @@ function createTestNovel(volumes: Volume[]): Novel {
 
 describe('useChapterDragDrop', () => {
   beforeEach(async () => {
-    // 断言简中撤销标签；界面语言见 book-details-ui-languages.test.ts
+    // 断言简中撤销标签；英文见本文件「英文界面」用例
     await useSettingsStore().setUiLocale('zh-CN');
     mockToastAdd.mockClear();
     mockMoveChapter.mockClear();
@@ -260,6 +260,36 @@ describe('useChapterDragDrop', () => {
     expect(mockBooksStoreUpdateBook).toHaveBeenCalled();
     expect(mockToastAdd).toHaveBeenCalledTimes(1);
     expect(draggedChapter.value).toBeNull();
+  });
+
+  it('英文界面：撤销标签与同卷排序提示为英文', async () => {
+    await useSettingsStore().setUiLocale('en-US');
+    const chapter = createTestChapter('chapter-1', 'Chapter 1');
+    const volume1: Volume = {
+      id: 'volume-1',
+      title: {
+        original: 'Volume 1',
+        translation: { id: generateShortId(), translation: '', aiModelId: '' },
+      },
+      chapters: [chapter],
+    };
+    const book = ref<Novel | undefined>(createTestNovel([volume1]));
+    mockMoveChapter.mockReturnValueOnce([volume1]);
+    const saveState = mock(() => {});
+    const { handleDragStart, handleDrop } = useChapterDragDrop(book, saveState);
+    handleDragStart(
+      createMockDragEvent('dragstart', {
+        dataTransfer: { effectAllowed: 'move', setData: mock(() => {}) },
+      }),
+      chapter,
+      'volume-1',
+      0,
+    );
+    await handleDrop(createMockDragEvent('drop'), 'volume-1', 0);
+    expect(saveState).toHaveBeenCalledWith('Move chapter');
+    expect(mockToastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'Moved', detail: 'Reordered chapter “Chapter 1”' }),
+    );
   });
 
   it('应该在书籍为空时不执行移动', async () => {

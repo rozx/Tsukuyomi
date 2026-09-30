@@ -24,7 +24,7 @@ import { BookSyncReplay } from 'src/services/book-sync/replay';
 import { importNoticeText } from 'src/services/import/import-error';
 import type { BookUpdateRecipe } from 'src/models/book-sync';
 
-const CJK = /[぀-ヿ㐀-鿿]/;
+const CJK = /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/;
 
 function expectLocalized(error: unknown, code: string, zhCN: string): LocalizedError {
   expect(error).toBeInstanceOf(LocalizedError);

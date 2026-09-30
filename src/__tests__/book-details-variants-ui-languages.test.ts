@@ -22,7 +22,7 @@ vi.mock('src/composables/useDeviceVariant', async () => {
 
 import BookDetailsPage from '../pages/BookDetailsPage.vue';
 
-const CJK = /[぀-ヿ㐀-鿿]/;
+const CJK = /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/;
 /** 品牌名与用户内容以外，界面自有文字不应出现中日文 */
 const ALLOWED = ['月詠'];
 

@@ -8,7 +8,7 @@ import { deferred, webLocksFixture } from './web-locks-fixture';
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
 import type { AppLocale } from '../models/locale';
 
-const CJK = /[぀-ヿ㐀-鿿]/;
+const CJK = /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/;
 let dispose: (() => void) | undefined;
 afterEach(() => {
   dispose?.();

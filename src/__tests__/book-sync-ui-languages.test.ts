@@ -25,7 +25,7 @@ import {
   type BookSyncNewContext,
 } from 'src/composables/book-sync-new/useBookSyncNew';
 
-const CJK = /[぀-ヿ㐀-鿿]/;
+const CJK = /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/;
 const toastAdd = vi.hoisted(() => vi.fn());
 vi.mock('src/composables/useToastHistory', () => ({
   useToastWithHistory: () => ({ add: toastAdd }),
@@ -223,6 +223,18 @@ describe('同步工作区英文界面', () => {
     expect(ctx.message.value).toBe('Network connection failed; check your network settings');
     await useSettingsStore().setUiLocale('zh-CN');
     expect(ctx.message.value).toBe('网络连接失败，请检查网络设置');
+  });
+
+  it('确认弹窗的数量插值使用英文单复数', async () => {
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(fakeSession(changeset()) as never);
+    await mount('en-US');
+    ctx.requestApply();
+    await flush();
+    const dialog = document.querySelector('[data-testid="bsw-confirm"]');
+    expect(dialog?.textContent).toContain('Add 1 chapter');
+    expect(dialog?.textContent).toContain('Update 0 chapters');
+    expect(dialog?.textContent).toContain('New volume “Arc 2”');
+    expect(document.body.textContent).toContain('New volume “Arc 2”');
   });
 
   it('撤销失败提示为英文', async () => {
