@@ -39,7 +39,7 @@ describe('工具名称解析', () => {
         { character_id: character.id, aliases: [{ name: 'After', translation: '不能猜测' }] },
         { bookId: 'b' },
       ),
-    ).rejects.toThrow('AMBIGUOUS_ALIAS_NAME');
+    ).rejects.toMatchObject({ code: 'AMBIGUOUS_ALIAS_NAME' });
   });
   it('同名不同角色 ID 的查询拒绝歧义，不能随数组顺序选择', async () => {
     setActivePinia(createPinia());
@@ -61,6 +61,6 @@ describe('工具名称解析', () => {
     )!;
     await expect(
       tool.handler({ name: 'Same', include_memory: false }, { bookId: 'b' }),
-    ).rejects.toThrow('AMBIGUOUS_CHARACTER_NAME');
+    ).rejects.toMatchObject({ code: 'AMBIGUOUS_CHARACTER_NAME' });
   });
 });

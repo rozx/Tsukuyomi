@@ -1,3 +1,8 @@
+import { bookToolContext, fuzzyMatches } from './tool-feedback';
+import { toolDefinition } from './tool-localization';
+import { translateText } from 'src/i18n/translate';
+import { LocalizedError } from 'src/utils/localized-error';
+import { describeTool } from './tool-localization';
 import { TerminologyService } from 'src/services/terminology-service';
 import type { AppLocale } from 'src/models/locale';
 import { getNameTranslation } from 'src/services/localization/selection';
@@ -21,7 +26,7 @@ function savedTerm(bookId: string, id: string): Terminology {
   const term = useBooksStore()
     .getBookById(bookId)
     ?.terminologies?.find((value) => value.id === id);
-  if (!term) throw new Error('TERM_WRITE_REJECTED');
+  if (!term) throw new LocalizedError('TERM_WRITE_REJECTED', 'aiEntityFeedback.termWriteRejected');
   return term;
 }
 
@@ -52,46 +57,38 @@ function buildListTermsResponse(
 
 export const terminologyTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'create_term',
-        description:
-          '创建新术语。当翻译过程中遇到新的术语时，可以使用此工具创建术语记录。[警告] **重要**：不要创建具有固定/常见翻译的术语（例如：基本的日语词汇、常见的日常用语、标准词典中的标准翻译等）。术语应该只用于需要特殊处理、上下文相关翻译或作品特定的专有名词。[禁止] **特别禁止**：如果日文术语和中文翻译完全相同（例如：魔王 -> 魔王），**不应**创建术语，除非该术语在作品中有特殊的上下文含义需要特别说明。',
-        parameters: {
-          type: 'object',
-          properties: {
-            name: {
-              type: 'string',
-              description: '术语名称（日文原文）',
-            },
-            translation: {
-              type: 'string',
-              description:
-                '术语的中文翻译。[警告] **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。',
-            },
-            description: {
-              type: 'string',
-              description:
-                '术语的简短描述（可选）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
-            },
-          },
-          required: ['name', 'translation'],
+    definition: toolDefinition('create_term', {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: describeTool('create_term.parameters.properties.name'),
+        },
+        translation: {
+          type: 'string',
+          description: describeTool('create_term.parameters.properties.translation'),
+        },
+        description: {
+          type: 'string',
+          description: describeTool('create_term.parameters.properties.description'),
         },
       },
-    },
-    handler: async (args, { bookId, onAction, languages }) => {
-      const language = languages?.targetLanguage ?? 'zh-CN';
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+      required: ['name', 'translation'],
+    }),
+    handler: async (args, context) => {
+      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
       const { name, translation, description } = args as {
         name: string;
         translation: string;
         description?: string;
       };
       if (!name?.trim() || !translation?.trim()) {
-        throw new Error('术语名称和翻译不能为空');
+        throw new LocalizedError(
+          'TERM_FIELDS_REQUIRED',
+          'aiEntityFeedback.termNameAndTranslation',
+          {},
+          uiLocale,
+        );
       }
 
       const created = await TerminologyService.addTerminology(
@@ -118,7 +115,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '术语创建成功',
+        message: translateText(uiLocale, 'aiEntityFeedback.termCreated'),
         term: {
           id: term.id,
           name: term.name,
@@ -129,46 +126,36 @@ export const terminologyTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_term',
-        description:
-          '根据术语名称获取术语信息。在翻译过程中，如果遇到已存在的术语，可以使用此工具查询其翻译。[注意] **极重要**：如果名称无法精确匹配，该工具会自动在后台对术语的原名、翻译文本记录进行模糊搜索和部分匹配，并返回最相关的结果列表。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 search_terms_by_keywords 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
-        parameters: {
-          type: 'object',
-          properties: {
-            name: {
-              type: 'string',
-              description: '术语名称（日文原文）',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-          },
-          required: ['name'],
+    definition: toolDefinition('get_term', {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: describeTool('get_term.parameters.properties.name'),
+        },
+        include_memory: {
+          type: 'boolean',
+          description: describeTool('get_term.parameters.properties.include_memory'),
         },
       },
-    },
-    handler: async (args, { bookId, onAction, languages }) => {
-      const language = languages?.targetLanguage ?? 'zh-CN';
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+      required: ['name'],
+    }),
+    handler: async (args, context) => {
+      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
       const rawArgs = args as { name: string; include_memory?: boolean };
       const { include_memory = true } = rawArgs;
       // 类型守卫：确保 name 为有效字符串
       const name = typeof rawArgs.name === 'string' ? rawArgs.name.trim() : '';
       if (!name) {
-        throw new Error('术语名称不能为空');
+        throw new LocalizedError(
+          'TERM_NAME_REQUIRED',
+          'aiEntityFeedback.termNameRequired',
+          {},
+          uiLocale,
+        );
       }
 
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const book = resolveBookSync(bookId, uiLocale);
 
       const term = book.terminologies?.find((t) => t.name === name);
 
@@ -196,28 +183,28 @@ export const terminologyTools: ToolDefinition[] = [
           }
 
           // 限制返回条目数，避免 token 膨胀
-          const limitedMatches = fallbackMatches.slice(0, MAX_FALLBACK_RESULTS);
-          const truncated = fallbackMatches.length > MAX_FALLBACK_RESULTS;
+          const { items: limitedMatches, ...matchSummary } = fuzzyMatches(
+            fallbackMatches,
+            MAX_FALLBACK_RESULTS,
+            uiLocale,
+            name,
+          );
 
           return JSON.stringify({
-            success: true,
-            message: `精确匹配未找到 "${name}"。已返回相关的模糊匹配结果${
-              truncated ? `（前 ${MAX_FALLBACK_RESULTS} 条，共 ${fallbackMatches.length} 条）` : ''
-            }。`,
+            ...matchSummary,
             terms: limitedMatches.map((t) => ({
               id: t.id,
               name: t.name,
               translation: getNameTranslation(t, language)?.translation ?? '',
               description: t.description,
             })),
-            total_matches: fallbackMatches.length,
-            truncated,
           });
         }
 
         return JSON.stringify({
           success: false,
-          message: `术语 "${name}" 不存在，且没有找到相关匹配项。`,
+          error_code: 'TERM_NOT_FOUND',
+          message: translateText(uiLocale, 'aiEntityFeedback.termNoMatch', { name }),
         });
       }
 
@@ -264,50 +251,47 @@ export const terminologyTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'update_term',
-        description:
-          '更新现有术语的翻译或描述。[警告] **重要**：当发现术语的翻译需要修正时（如翻译错误、格式错误等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。',
-        parameters: {
-          type: 'object',
-          properties: {
-            term_id: {
-              type: 'string',
-              description: '术语 ID（从 get_term 或 list_terms 获取）',
-            },
-            translation: {
-              type: 'string',
-              description:
-                '新的翻译文本（可选）。[警告] **重要**：每个术语只能有一个翻译，不要使用多个翻译（如"路人角色／龙套"），应选择一个最合适的翻译（如"龙套"）。如果发现现有翻译包含多个选项，必须更新为单一翻译。',
-            },
-            description: {
-              type: 'string',
-              description:
-                '新的描述（可选，设置为空字符串可删除描述）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
-            },
-          },
-          required: ['term_id'],
+    definition: toolDefinition('update_term', {
+      type: 'object',
+      properties: {
+        term_id: {
+          type: 'string',
+          description: describeTool('update_term.parameters.properties.term_id'),
+        },
+        translation: {
+          type: 'string',
+          description: describeTool('update_term.parameters.properties.translation'),
+        },
+        description: {
+          type: 'string',
+          description: describeTool('update_term.parameters.properties.description'),
         },
       },
-    },
-    handler: async (args, { bookId, onAction, languages }) => {
-      const language = languages?.targetLanguage ?? 'zh-CN';
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+      required: ['term_id'],
+    }),
+    handler: async (args, context) => {
+      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
       const { term_id, translation, description } = args as {
         term_id: string;
         translation?: string;
         description?: string;
       };
       if (!term_id) {
-        throw new Error('术语 ID 不能为空');
+        throw new LocalizedError(
+          'TERM_ID_REQUIRED',
+          'aiEntityFeedback.termIdRequired',
+          {},
+          uiLocale,
+        );
       }
 
       if (translation !== undefined && translation !== '' && !translation.trim()) {
-        throw new Error('术语翻译不能为空');
+        throw new LocalizedError(
+          'TERM_TRANSLATION_REQUIRED',
+          'aiEntityFeedback.termTranslationRequired',
+          {},
+          uiLocale,
+        );
       }
 
       // 在更新前获取原始数据，用于 revert
@@ -348,7 +332,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '术语更新成功',
+        message: translateText(uiLocale, 'aiEntityFeedback.termUpdated'),
         term: {
           id: term.id,
           name: term.name,
@@ -359,32 +343,28 @@ export const terminologyTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'delete_term',
-        description: '删除术语。当确定某个术语不再需要时，可以使用此工具删除。',
-        parameters: {
-          type: 'object',
-          properties: {
-            term_id: {
-              type: 'string',
-              description: '术语 ID（从 get_term 或 list_terms 获取）',
-            },
-          },
-          required: ['term_id'],
+    definition: toolDefinition('delete_term', {
+      type: 'object',
+      properties: {
+        term_id: {
+          type: 'string',
+          description: describeTool('delete_term.parameters.properties.term_id'),
         },
       },
-    },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+      required: ['term_id'],
+    }),
+    handler: async (args, context) => {
+      const { bookId, onAction, uiLocale } = bookToolContext(context);
       const { term_id } = args as {
         term_id: string;
       };
       if (!term_id) {
-        throw new Error('术语 ID 不能为空');
+        throw new LocalizedError(
+          'TERM_ID_REQUIRED',
+          'aiEntityFeedback.termIdRequired',
+          {},
+          uiLocale,
+        );
       }
 
       // 在删除前获取术语信息，以便在 toast 中显示详细信息和 revert
@@ -406,44 +386,31 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '术语删除成功',
+        message: translateText(uiLocale, 'aiEntityFeedback.termDeleted'),
       });
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'list_terms',
-        description:
-          '列出术语。可以通过 chapter_id 参数指定章节（只返回该章节中出现的术语），或设置 all_chapters=true 列出所有章节的术语。如果不提供 chapter_id 且 all_chapters 为 false，则返回所有术语。在翻译开始前，可以使用此工具获取相关术语，以便在翻译时保持一致性。',
-        parameters: {
-          type: 'object',
-          properties: {
-            chapter_id: {
-              type: 'string',
-              description:
-                '章节 ID（可选）。如果提供，只返回在该章节中出现的术语。如果不提供且 all_chapters 为 false，则返回所有术语。',
-            },
-            all_chapters: {
-              type: 'boolean',
-              description:
-                '是否列出所有章节的术语（默认 false）。如果为 true，忽略 chapter_id 参数，返回所有术语。',
-            },
-            limit: {
-              type: 'number',
-              description: '返回的术语数量限制（可选，默认返回所有）',
-            },
-          },
-          required: [],
+    definition: toolDefinition('list_terms', {
+      type: 'object',
+      properties: {
+        chapter_id: {
+          type: 'string',
+          description: describeTool('list_terms.parameters.properties.chapter_id'),
+        },
+        all_chapters: {
+          type: 'boolean',
+          description: describeTool('list_terms.parameters.properties.all_chapters'),
+        },
+        limit: {
+          type: 'number',
+          description: describeTool('list_terms.parameters.properties.limit'),
         },
       },
-    },
-    handler: async (args, { bookId, onAction, languages }) => {
-      const language = languages?.targetLanguage ?? 'zh-CN';
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+      required: [],
+    }),
+    handler: async (args, context) => {
+      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
       const {
         chapter_id,
         all_chapters = false,
@@ -484,40 +451,33 @@ export const terminologyTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'search_terms_by_keywords',
-        description:
-          '根据多个关键词搜索术语。可以搜索术语名称或翻译。支持多个关键词，返回包含任一关键词的术语（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的术语。[警告] **重要**：查询术语信息时，必须**先**使用此工具或 get_term 查询术语数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
-        parameters: {
-          type: 'object',
-          properties: {
-            keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description: '搜索关键词数组（返回包含任一关键词的术语）',
-            },
-            translation_only: {
-              type: 'boolean',
-              description: '是否只返回有翻译的术语（默认 false）',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
+    definition: toolDefinition('search_terms_by_keywords', {
+      type: 'object',
+      properties: {
+        keywords: {
+          type: 'array',
+          items: {
+            type: 'string',
           },
-          required: ['keywords'],
+          description: describeTool('search_terms_by_keywords.parameters.properties.keywords'),
+        },
+        translation_only: {
+          type: 'boolean',
+          description: describeTool(
+            'search_terms_by_keywords.parameters.properties.translation_only',
+          ),
+        },
+        include_memory: {
+          type: 'boolean',
+          description: describeTool(
+            'search_terms_by_keywords.parameters.properties.include_memory',
+          ),
         },
       },
-    },
-    handler: async (args, { bookId, onAction, languages }) => {
-      const language = languages?.targetLanguage ?? 'zh-CN';
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+      required: ['keywords'],
+    }),
+    handler: async (args, context) => {
+      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
       const {
         keywords,
         translation_only = false,
@@ -591,36 +551,31 @@ export const terminologyTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_occurrences_by_keywords',
-        description:
-          '根据提供的关键词获取其在书籍各章节中的出现次数。用于统计特定词汇在文本中的分布情况，帮助理解词汇的使用频率和上下文。',
-        parameters: {
-          type: 'object',
-          properties: {
-            keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description: '关键词数组，可以包含一个或多个关键词',
-            },
+    definition: toolDefinition('get_occurrences_by_keywords', {
+      type: 'object',
+      properties: {
+        keywords: {
+          type: 'array',
+          items: {
+            type: 'string',
           },
-          required: ['keywords'],
+          description: describeTool('get_occurrences_by_keywords.parameters.properties.keywords'),
         },
       },
-    },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
+      required: ['keywords'],
+    }),
+    handler: async (args, context) => {
+      const { bookId, onAction, uiLocale } = bookToolContext(context);
       const { keywords } = args as {
         keywords: string[];
       };
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-        throw new Error('关键词数组不能为空');
+        throw new LocalizedError(
+          'KEYWORDS_REQUIRED',
+          'aiEntityFeedback.keywordsRequired',
+          {},
+          uiLocale,
+        );
       }
 
       // 报告读取操作

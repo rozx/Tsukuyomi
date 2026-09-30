@@ -120,6 +120,7 @@ export class ProofreadingService {
       onlyChangedParagraphs: true,
       buildSystemPrompt: (params) =>
         buildProofreadingSystemPrompt({
+          languages: params.languages,
           todosPrompt: params.todosPrompt,
           bookContextSection: params.bookContextSection,
           chapterContextSection: params.chapterContextSection,
@@ -149,6 +150,7 @@ export class ProofreadingService {
       temperature: model.isDefault.proofreading?.temperature ?? 0.3,
       buildSystemPrompt: (params) =>
         buildSingleParagraphProofreadingSystemPrompt({
+          languages: params.languages,
           bookContextSection: params.bookContextSection,
           chapterContextSection: params.chapterContextSection,
           specialInstructionsSection: params.specialInstructionsSection,

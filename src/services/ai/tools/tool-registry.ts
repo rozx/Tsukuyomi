@@ -1,7 +1,8 @@
 import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type { ActionInfo, ToolDefinition } from './types';
 import type { ToastCallback } from './toast-helper';
-import type { ExecutionLanguages } from 'src/models/locale';
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import { localizeToolDefinition } from './tool-localization';
 import {
   buildErrorToolResult,
   buildUnknownToolResult,
@@ -78,28 +79,28 @@ export class ToolRegistry {
   /**
    * 通用的工具映射方法
    */
-  private static mapTools(toolDefinitions: ToolDefinition[]): AITool[] {
-    return toolDefinitions.map((t) => t.definition);
+  private static mapTools(toolDefinitions: ToolDefinition[], uiLocale: AppLocale): AITool[] {
+    return toolDefinitions.map((tool) => localizeToolDefinition(tool.definition, uiLocale));
   }
 
-  static getTerminologyTools(bookId?: string): AITool[] {
+  static getTerminologyTools(bookId?: string, uiLocale: AppLocale = 'zh-CN'): AITool[] {
     if (!bookId) return [];
-    return this.mapTools(terminologyTools);
+    return this.mapTools(terminologyTools, uiLocale);
   }
 
-  static getCharacterSettingTools(bookId?: string): AITool[] {
+  static getCharacterSettingTools(bookId?: string, uiLocale: AppLocale = 'zh-CN'): AITool[] {
     if (!bookId) return [];
-    return this.mapTools(characterTools);
+    return this.mapTools(characterTools, uiLocale);
   }
 
-  static getParagraphTools(bookId?: string): AITool[] {
+  static getParagraphTools(bookId?: string, uiLocale: AppLocale = 'zh-CN'): AITool[] {
     if (!bookId) return [];
-    return this.mapTools(paragraphTools);
+    return this.mapTools(paragraphTools, uiLocale);
   }
 
-  static getBookTools(bookId?: string): AITool[] {
+  static getBookTools(bookId?: string, uiLocale: AppLocale = 'zh-CN'): AITool[] {
     if (!bookId) return [];
-    const all = this.mapTools(bookTools);
+    const all = this.mapTools(bookTools, uiLocale);
     // 本地嵌入关闭(手机端 / 用户 toggle off)时,剔除依赖嵌入的工具,
     // 让模型的工具列表和 prompt 描述保持一致 —— 不描述用不了的工具。
     if (!isLocalEmbeddingOn()) {
@@ -108,14 +109,14 @@ export class ToolRegistry {
     return all;
   }
 
-  static getMemoryTools(bookId?: string): AITool[] {
+  static getMemoryTools(bookId?: string, uiLocale: AppLocale = 'zh-CN'): AITool[] {
     if (!bookId) return [];
-    return this.mapTools(memoryTools);
+    return this.mapTools(memoryTools, uiLocale);
   }
 
-  static getNavigationTools(bookId?: string): AITool[] {
+  static getNavigationTools(bookId?: string, uiLocale: AppLocale = 'zh-CN'): AITool[] {
     if (!bookId) return [];
-    return this.mapTools(navigationTools);
+    return this.mapTools(navigationTools, uiLocale);
   }
 
   /**
@@ -123,71 +124,78 @@ export class ToolRegistry {
    * allowFirecrawlOnly（助手聊天）时，Firecrawl 回退开启也可提供（未配置 Tavily 时经 Firecrawl）。
    * 翻译 / 润色 / 校对任务不传该选项，避免长任务消耗与网页抓取共用的 keyless 额度。
    */
-  static getWebSearchTools(options: { allowFirecrawlOnly?: boolean } = {}): AITool[] {
-    if (GlobalConfig.getTavilyApiKey()) return this.mapTools(webSearchTools);
+  static getWebSearchTools(
+    options: { allowFirecrawlOnly?: boolean } = {},
+    uiLocale: AppLocale = 'zh-CN',
+  ): AITool[] {
+    if (GlobalConfig.getTavilyApiKey()) return this.mapTools(webSearchTools, uiLocale);
     if (options.allowFirecrawlOnly && GlobalConfig.getFirecrawlFallbackEnabled()) {
-      return this.mapTools(webSearchTools);
+      return this.mapTools(webSearchTools, uiLocale);
     }
     return [];
   }
 
-  static getTodoListTools(): AITool[] {
-    return this.mapTools(todoListTools);
+  static getTodoListTools(uiLocale: AppLocale = 'zh-CN'): AITool[] {
+    return this.mapTools(todoListTools, uiLocale);
   }
 
-  static getAskUserTools(): AITool[] {
-    return this.mapTools(askUserTools);
+  static getAskUserTools(uiLocale: AppLocale = 'zh-CN'): AITool[] {
+    return this.mapTools(askUserTools, uiLocale);
   }
 
-  static getTaskStatusTools(): AITool[] {
-    return this.mapTools(taskStatusTools);
+  static getTaskStatusTools(uiLocale: AppLocale = 'zh-CN'): AITool[] {
+    return this.mapTools(taskStatusTools, uiLocale);
   }
 
-  static getHelpDocsTools(): AITool[] {
-    return this.mapTools(helpDocsTools);
+  static getHelpDocsTools(uiLocale: AppLocale = 'zh-CN'): AITool[] {
+    return this.mapTools(helpDocsTools, uiLocale);
   }
 
   /**
    * 仅用于聊天助手的工具集合（包含帮助文档工具）
    */
-  static getAssistantTools(bookId?: string): AITool[] {
+  static getAssistantTools(bookId?: string, uiLocale: AppLocale = 'zh-CN'): AITool[] {
     return [
-      ...this.getAllTools(bookId, undefined, { allowFirecrawlOnly: true }),
-      ...this.getHelpDocsTools(),
+      ...this.getAllTools(bookId, undefined, { allowFirecrawlOnly: true }, uiLocale),
+      ...this.getHelpDocsTools(uiLocale),
     ];
   }
 
-  static getTranslationToolsForAI(options?: CreateTranslationToolsOptions): AITool[] {
-    return this.mapTools(createTranslationTools(options));
+  static getTranslationToolsForAI(
+    options?: CreateTranslationToolsOptions,
+    uiLocale: AppLocale = 'zh-CN',
+  ): AITool[] {
+    return this.mapTools(createTranslationTools(options), uiLocale);
   }
 
   static getAllTools(
     bookId?: string,
     toolOptions?: CreateTranslationToolsOptions,
     webSearchOptions: { allowFirecrawlOnly?: boolean } = {},
+    uiLocale: AppLocale = 'zh-CN',
   ): AITool[] {
     const tools: AITool[] = [
       // 网络搜索工具（不需要 bookId；可用性见 getWebSearchTools）
-      ...this.getWebSearchTools(webSearchOptions),
+      ...this.getWebSearchTools(webSearchOptions, uiLocale),
       // 待办事项工具始终可用（不需要 bookId）
-      ...this.getTodoListTools(),
+      ...this.getTodoListTools(uiLocale),
       // ask_user 始终可用（不需要 bookId；会阻塞等待用户回答）
-      ...this.getAskUserTools(),
+      ...this.getAskUserTools(uiLocale),
       // AI 任务状态工具始终可用
-      ...this.getTaskStatusTools(),
+      ...this.getTaskStatusTools(uiLocale),
     ];
 
     // 其他工具需要 bookId
     if (bookId) {
       tools.push(
-        ...this.getTerminologyTools(bookId),
-        ...this.getCharacterSettingTools(bookId),
-        ...this.getParagraphTools(bookId),
-        ...this.getBookTools(bookId),
-        ...this.getMemoryTools(bookId),
-        ...this.getNavigationTools(bookId),
+        ...this.getTerminologyTools(bookId, uiLocale),
+        ...this.getCharacterSettingTools(bookId, uiLocale),
+        ...this.getParagraphTools(bookId, uiLocale),
+        ...this.getBookTools(bookId, uiLocale),
+        ...this.getMemoryTools(bookId, uiLocale),
+        ...this.getNavigationTools(bookId, uiLocale),
         // 翻译相关工具（add_translation_batch）- 用于 translation/polish/proofreading
-        ...this.getTranslationToolsForAI(toolOptions),
+        ...this.getTranslationToolsForAI(toolOptions, uiLocale),
       );
     }
 
@@ -201,8 +209,9 @@ export class ToolRegistry {
   static getToolsExcludingTranslationManagement(
     bookId?: string,
     toolOptions?: CreateTranslationToolsOptions,
+    uiLocale: AppLocale = 'zh-CN',
   ): AITool[] {
-    const allTools = this.getAllTools(bookId, toolOptions);
+    const allTools = this.getAllTools(bookId, toolOptions, {}, uiLocale);
     return this.filterTools(allTools, TRANSLATION_MANAGEMENT_TOOLS);
   }
 
@@ -212,8 +221,11 @@ export class ToolRegistry {
    * - add_translation_batch: 翻译/润色/校对专用，不在助手聊天中可用
    * - update_task_status: 任务状态管理专用，不在助手聊天中可用
    */
-  static getAssistantToolsExcludingTranslationManagement(bookId?: string): AITool[] {
-    const allTools = this.getAssistantTools(bookId);
+  static getAssistantToolsExcludingTranslationManagement(
+    bookId?: string,
+    uiLocale: AppLocale = 'zh-CN',
+  ): AITool[] {
+    const allTools = this.getAssistantTools(bookId, uiLocale);
     return this.filterTools(allTools, ['add_translation_batch', 'update_task_status']);
   }
 
@@ -222,7 +234,7 @@ export class ToolRegistry {
    * 包含只读上下文工具 + add_translation_batch
    * 排除数据修改工具、update_task_status、ask_user、待办事项和导航工具
    */
-  static getSingleParagraphPolishTools(bookId?: string): AITool[] {
+  static getSingleParagraphPolishTools(bookId?: string, uiLocale: AppLocale = 'zh-CN'): AITool[] {
     if (!bookId) return [];
 
     const allowedToolNames = [
@@ -258,13 +270,13 @@ export class ToolRegistry {
     ];
 
     const allTools = [
-      ...this.getParagraphTools(bookId),
-      ...this.getTerminologyTools(bookId),
-      ...this.getCharacterSettingTools(bookId),
-      ...this.getMemoryTools(bookId),
-      ...this.getBookTools(bookId),
-      ...this.getWebSearchTools(),
-      ...this.getTranslationToolsForAI(),
+      ...this.getParagraphTools(bookId, uiLocale),
+      ...this.getTerminologyTools(bookId, uiLocale),
+      ...this.getCharacterSettingTools(bookId, uiLocale),
+      ...this.getMemoryTools(bookId, uiLocale),
+      ...this.getBookTools(bookId, uiLocale),
+      ...this.getWebSearchTools({}, uiLocale),
+      ...this.getTranslationToolsForAI(undefined, uiLocale),
     ];
 
     return allTools.filter((tool) => allowedToolNames.includes(tool.function.name));
@@ -277,12 +289,13 @@ export class ToolRegistry {
   static getTranslationTools(
     bookId?: string,
     options?: { excludeAskUser?: boolean; enableOriginalTextValidation?: boolean },
+    uiLocale: AppLocale = 'zh-CN',
   ): AITool[] {
     const toolOptions: CreateTranslationToolsOptions | undefined =
       options?.enableOriginalTextValidation !== undefined
         ? { enableOriginalTextValidation: options.enableOriginalTextValidation }
         : undefined;
-    const allTools = this.getToolsExcludingTranslationManagement(bookId, toolOptions);
+    const allTools = this.getToolsExcludingTranslationManagement(bookId, toolOptions, uiLocale);
     let tools = this.filterTools(allTools, NAVIGATION_AND_LIST_TOOLS);
     tools = this.filterTools(tools, TODO_MUTATION_TOOLS);
 
@@ -337,7 +350,7 @@ export class ToolRegistry {
     );
 
     if (!tool) {
-      return buildUnknownToolResult(toolCall);
+      return buildUnknownToolResult(toolCall, languages?.uiLocale);
     }
 
     // truthy 的可选参数统一拷贝进 options（数据驱动，避免逐字段写三元）
@@ -368,7 +381,7 @@ export class ToolRegistry {
     try {
       return await invokeToolHandler(tool, toolCall, options);
     } catch (error) {
-      return buildErrorToolResult(toolCall, error);
+      return buildErrorToolResult(toolCall, error, languages?.uiLocale);
     }
   }
 }

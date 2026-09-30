@@ -1,3 +1,5 @@
+import { validToolQuery } from './tool-feedback';
+import { describeTool, stringToolParameter, toolDefinition } from './tool-localization';
 import axios from 'axios';
 import type { ToolDefinition, ToolContext } from './types';
 import { getAssetUrl } from 'src/utils/assets';
@@ -106,33 +108,18 @@ async function fetchHelpDoc(
 
 export const helpDocsTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'search_help_docs',
-        description:
-          '根据关键词搜索应用的帮助文档。在标题和描述中进行模糊匹配。当用户询问应用的使用方法、功能介绍、操作指南等问题时，使用此工具搜索相关帮助文档。',
-        parameters: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: '搜索关键词，可以是功能名称、操作描述等',
-            },
-          },
-          required: ['query'],
-        },
+    definition: toolDefinition('search_help_docs', {
+      type: 'object',
+      properties: {
+        query: stringToolParameter('search_help_docs.parameters.properties.query'),
       },
-    },
+      required: ['query'],
+    }),
     handler: async (args, context: ToolContext) => {
       const { query } = args;
       const { onAction } = context;
 
-      if (!query || typeof query !== 'string') {
-        console.error('[HelpDocs] ❌ 无效的搜索查询', {
-          query,
-          queryType: typeof query,
-        });
+      if (!validToolQuery(query, 'HelpDocs')) {
         return JSON.stringify({
           success: false,
           error: '搜索关键词不能为空',
@@ -190,24 +177,16 @@ export const helpDocsTools: ToolDefinition[] = [
 
   // get_help_doc - 获取指定帮助文档的完整内容
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_help_doc',
-        description:
-          '获取指定帮助文档的完整内容。需要传入文档 ID（可通过 search_help_docs 或 list_help_docs 获取）。返回文档的标题、分类和 Markdown 格式的完整内容。',
-        parameters: {
-          type: 'object',
-          properties: {
-            doc_id: {
-              type: 'string',
-              description: '帮助文档的唯一 ID（例如 "front-page"、"ai-models-guide"）',
-            },
-          },
-          required: ['doc_id'],
+    definition: toolDefinition('get_help_doc', {
+      type: 'object',
+      properties: {
+        doc_id: {
+          type: 'string',
+          description: describeTool('get_help_doc.parameters.properties.doc_id'),
         },
       },
-    },
+      required: ['doc_id'],
+    }),
     handler: async (args, context: ToolContext) => {
       const { doc_id } = args;
       const { onAction } = context;
@@ -256,30 +235,20 @@ export const helpDocsTools: ToolDefinition[] = [
 
   // navigate_to_help_doc - 导航到指定的帮助文档页面
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'navigate_to_help_doc',
-        description:
-          '导航到指定的帮助文档页面。将用户界面跳转到帮助中心并打开指定的文档，可选定位到文档内的具体章节。当用户询问使用方法后需要查看完整文档，或需要引导用户前往相关帮助页面时使用此工具。',
-        parameters: {
-          type: 'object',
-          properties: {
-            doc_id: {
-              type: 'string',
-              description:
-                '帮助文档的唯一 ID（例如 "front-page"、"ai-models-guide"），可通过 search_help_docs 或 list_help_docs 获取',
-            },
-            section_id: {
-              type: 'string',
-              description:
-                '文档内的章节锚点 ID（可选）。用于定位到文档内的具体章节，例如 "openai-配置"。锚点 ID 通常是章节标题的小写形式，空格替换为连字符',
-            },
-          },
-          required: ['doc_id'],
+    definition: toolDefinition('navigate_to_help_doc', {
+      type: 'object',
+      properties: {
+        doc_id: {
+          type: 'string',
+          description: describeTool('navigate_to_help_doc.parameters.properties.doc_id'),
+        },
+        section_id: {
+          type: 'string',
+          description: describeTool('navigate_to_help_doc.parameters.properties.section_id'),
         },
       },
-    },
+      required: ['doc_id'],
+    }),
     handler: async (args, context: ToolContext) => {
       const { doc_id, section_id } = args as {
         doc_id: string;
@@ -318,19 +287,11 @@ export const helpDocsTools: ToolDefinition[] = [
 
   // list_help_docs - 列出所有可用的帮助文档
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'list_help_docs',
-        description:
-          '列出所有可用的帮助文档，按类别分组。当用户想了解有哪些帮助文档可用，或需要浏览帮助目录时使用此工具。',
-        parameters: {
-          type: 'object',
-          properties: {},
-          required: [],
-        },
-      },
-    },
+    definition: toolDefinition('list_help_docs', {
+      type: 'object',
+      properties: {},
+      required: [],
+    }),
     handler: async (_args, context: ToolContext) => {
       const { onAction } = context;
 

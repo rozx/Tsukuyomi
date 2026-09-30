@@ -1,3 +1,4 @@
+import { LocalizedError } from 'src/utils/localized-error';
 import type { IDBPIndex } from 'idb';
 import type { TsukuyomiDB } from 'src/utils/indexed-db';
 import { withMemoryWrite } from './memory-persistence';
@@ -186,11 +187,15 @@ export class MemoryService {
     const memory = await store.get(memoryId);
 
     if (!memory) {
-      throw new Error(`Memory 不存在: ${memoryId}`);
+      throw new LocalizedError('MEMORY_NOT_FOUND', 'aiEntityFeedback.memoryMissing', {
+        id: memoryId,
+      });
     }
 
     if (memory.bookId !== bookId) {
-      throw new Error(`Memory 不属于指定的书籍: ${bookId}`);
+      throw new LocalizedError('MEMORY_BOOK_MISMATCH', 'aiEntityFeedback.memoryWrongBook', {
+        id: bookId,
+      });
     }
 
     return memory as MemoryStorage;
@@ -207,16 +212,16 @@ export class MemoryService {
     summary: string,
   ): void {
     if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
+      throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
     if (!memoryId) {
-      throw new Error('Memory ID 不能为空');
+      throw new LocalizedError('MEMORY_ID_REQUIRED', 'aiEntityFeedback.memoryIdRequired');
     }
     if (!content) {
-      throw new Error('内容不能为空');
+      throw new LocalizedError('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired');
     }
     if (!summary) {
-      throw new Error('摘要不能为空');
+      throw new LocalizedError('MEMORY_SUMMARY_REQUIRED', 'aiEntityFeedback.memorySummaryRequired');
     }
   }
 
@@ -392,13 +397,13 @@ export class MemoryService {
    */
   static async createMemory(bookId: string, content: string, summary: string): Promise<Memory> {
     if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
+      throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
     if (!content) {
-      throw new Error('内容不能为空');
+      throw new LocalizedError('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired');
     }
     if (!summary) {
-      throw new Error('摘要不能为空');
+      throw new LocalizedError('MEMORY_SUMMARY_REQUIRED', 'aiEntityFeedback.memorySummaryRequired');
     }
 
     try {
@@ -428,7 +433,7 @@ export class MemoryService {
         }
 
         if (!id) {
-          throw new Error('无法生成唯一 ID，请重试');
+          throw new LocalizedError('ID_GENERATION_FAILED', 'aiEntityFeedback.uniqueIdFailed');
         }
 
         // 3. 创建新 Memory
@@ -450,7 +455,7 @@ export class MemoryService {
       return this.finalizeMemoryPersistence(memory, 'created');
     } catch (error) {
       console.error('Failed to create memory:', error);
-      throw new Error('创建 Memory 失败');
+      throw new LocalizedError('MEMORY_CREATE_FAILED', 'aiEntityFeedback.memoryCreateFailed');
     }
   }
 
@@ -475,10 +480,10 @@ export class MemoryService {
    */
   static async upsertMemoryForSync(memory: Memory): Promise<void> {
     if (!memory?.id) {
-      throw new Error('Memory ID 不能为空');
+      throw new LocalizedError('MEMORY_ID_REQUIRED', 'aiEntityFeedback.memoryIdRequired');
     }
     if (!memory.bookId) {
-      throw new Error('书籍 ID 不能为空');
+      throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
     const { storage, embeddingDecision } = await withMemoryWrite(async (store) => {
       const existing = (await store.get(memory.id)) as MemoryStorage | undefined;
@@ -487,7 +492,9 @@ export class MemoryService {
       // 另一本书里恰好同 id 的记录会被静默改 bookId / 覆盖。Memory id 是 8 位 hex，
       // 碰撞罕见但不是零——必须显式拒绝，让上层看到错误并回退到冲突解决。
       if (existing && existing.bookId !== memory.bookId) {
-        throw new Error(`Memory ID 冲突：${memory.id}`);
+        throw new LocalizedError('MEMORY_ID_CONFLICT', 'aiEntityFeedback.memoryIdConflict', {
+          id: memory.id,
+        });
       }
 
       const storage: MemoryStorage = {
@@ -547,7 +554,10 @@ export class MemoryService {
     try {
       const { existing, memory, evictedId } = await withMemoryWrite(async (store) => {
         const existing = await store.get(memoryId);
-        if (existing && existing.bookId !== bookId) throw new Error(`Memory ID 冲突：${memoryId}`);
+        if (existing && existing.bookId !== bookId)
+          throw new LocalizedError('MEMORY_ID_CONFLICT', 'aiEntityFeedback.memoryIdConflict', {
+            id: memoryId,
+          });
         const evictedId = existing
           ? undefined
           : await this.evictOldestMemoryIfAtCapacity(store, store.index('by-bookId'), bookId);
@@ -574,7 +584,7 @@ export class MemoryService {
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error('创建 Memory 失败');
+      throw new LocalizedError('MEMORY_CREATE_FAILED', 'aiEntityFeedback.memoryCreateFailed');
     }
   }
 
@@ -601,10 +611,10 @@ export class MemoryService {
    */
   static async getMemory(bookId: string, memoryId: string): Promise<Memory | null> {
     if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
+      throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
     if (!memoryId) {
-      throw new Error('Memory ID 不能为空');
+      throw new LocalizedError('MEMORY_ID_REQUIRED', 'aiEntityFeedback.memoryIdRequired');
     }
 
     const cacheKey = this.getCacheKey(bookId, memoryId);
@@ -636,7 +646,7 @@ export class MemoryService {
       return result;
     } catch (error) {
       console.error('Failed to get memory:', error);
-      throw new Error('获取 Memory 失败');
+      throw new LocalizedError('MEMORY_GET_FAILED', 'aiEntityFeedback.memoryGetFailed');
     }
   }
 
@@ -660,10 +670,10 @@ export class MemoryService {
     limit = 8,
   ): Promise<ScoredMemory[]> {
     if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
+      throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
     if (!query || !query.trim()) {
-      throw new Error('搜索查询不能为空');
+      throw new LocalizedError('MEMORY_QUERY_REQUIRED', 'aiEntityFeedback.memoryQueryRequired');
     }
 
     const queryText = query.trim();
@@ -743,7 +753,7 @@ export class MemoryService {
       return filtered;
     } catch (error) {
       console.error('Failed to search memories:', error);
-      throw new Error('搜索 Memory 失败');
+      throw new LocalizedError('MEMORY_SEARCH_FAILED', 'aiEntityFeedback.memorySearchFailed');
     }
   }
 
@@ -792,7 +802,7 @@ export class MemoryService {
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error('更新 Memory 失败');
+      throw new LocalizedError('MEMORY_UPDATE_FAILED', 'aiEntityFeedback.memoryUpdateFailed');
     }
   }
 
@@ -801,10 +811,10 @@ export class MemoryService {
    */
   static async deleteMemory(bookId: string, memoryId: string): Promise<void> {
     if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
+      throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
     if (!memoryId) {
-      throw new Error('Memory ID 不能为空');
+      throw new LocalizedError('MEMORY_ID_REQUIRED', 'aiEntityFeedback.memoryIdRequired');
     }
 
     try {
@@ -849,7 +859,7 @@ export class MemoryService {
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error('删除 Memory 失败');
+      throw new LocalizedError('MEMORY_DELETE_FAILED', 'aiEntityFeedback.memoryDeleteFailed');
     }
   }
 
@@ -902,7 +912,7 @@ export class MemoryService {
    */
   static async getAllBookMemories(bookId: string): Promise<Memory[]> {
     if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
+      throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
 
     const now = Date.now();
@@ -925,7 +935,7 @@ export class MemoryService {
       return memories;
     } catch (error) {
       console.error('Failed to get all book memories:', error);
-      throw new Error('获取书籍全部 Memory 失败');
+      throw new LocalizedError('MEMORY_BOOK_LIST_FAILED', 'aiEntityFeedback.memoryBookListFailed');
     }
   }
 
@@ -966,7 +976,7 @@ export class MemoryService {
    */
   static async getAllMemories(bookId: string): Promise<Memory[]> {
     if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
+      throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
 
     try {
@@ -980,7 +990,7 @@ export class MemoryService {
       return this.mapMemoriesWithCache(allMemories as MemoryStorage[], bookId);
     } catch (error) {
       console.error('Failed to get all memories:', error);
-      throw new Error('获取所有 Memory 失败');
+      throw new LocalizedError('MEMORY_LIST_FAILED', 'aiEntityFeedback.memoryAllFailed');
     }
   }
 
@@ -1043,10 +1053,10 @@ export class MemoryService {
     updateAccessTime: boolean = true,
   ): Promise<Memory[]> {
     if (!bookId) {
-      throw new Error('书籍 ID 不能为空');
+      throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
     if (limit <= 0) {
-      throw new Error('限制数量必须大于 0');
+      throw new LocalizedError('MEMORY_LIMIT_INVALID', 'aiEntityFeedback.memoryLimitInvalid');
     }
 
     try {
@@ -1096,7 +1106,7 @@ export class MemoryService {
       return this.mapMemoriesWithCache(recentMemories as MemoryStorage[], bookId);
     } catch (error) {
       console.error('Failed to get recent memories:', error);
-      throw new Error('获取最近 Memory 失败');
+      throw new LocalizedError('MEMORY_RECENT_FAILED', 'aiEntityFeedback.memoryRecentFailed');
     }
   }
 }

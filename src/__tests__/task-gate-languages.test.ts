@@ -102,7 +102,8 @@ describe('任务门禁语言', () => {
       ),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toContain('标题');
+    expect(result.error_code).toBe('TRANSLATION_INCOMPLETE');
+    expect(result.error).toContain('chapter title');
   });
   it('复核中的数据库交叉读取不会把简中版本载入英文结果映射', async () => {
     const { taskId, adapter } = await setup(false, false);

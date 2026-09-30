@@ -145,6 +145,7 @@ export class TranslationService {
 
     // 构建系统提示词函数（支持第一个/后续 chunk 不同提示词）
     const buildSystemPrompt = (params: {
+      languages: ExecutionLanguages;
       todosPrompt: string;
       bookContextSection: string;
       chapterContextSection: string;
@@ -155,6 +156,7 @@ export class TranslationService {
       enableOriginalTextValidation: boolean;
     }) => {
       return buildTranslationSystemPrompt({
+        languages: params.languages,
         todosPrompt: params.todosPrompt,
         bookContextSection: params.bookContextSection,
         chapterContextSection: params.chapterContextSection,

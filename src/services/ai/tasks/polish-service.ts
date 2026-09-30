@@ -120,6 +120,7 @@ export class PolishService {
       onlyChangedParagraphs: true,
       buildSystemPrompt: (params) =>
         buildPolishSystemPrompt({
+          languages: params.languages,
           todosPrompt: params.todosPrompt,
           bookContextSection: params.bookContextSection,
           chapterContextSection: params.chapterContextSection,
@@ -149,6 +150,7 @@ export class PolishService {
       temperature: model.isDefault.proofreading?.temperature ?? 0.7,
       buildSystemPrompt: (params) =>
         buildSingleParagraphPolishSystemPrompt({
+          languages: params.languages,
           bookContextSection: params.bookContextSection,
           chapterContextSection: params.chapterContextSection,
           specialInstructionsSection: params.specialInstructionsSection,

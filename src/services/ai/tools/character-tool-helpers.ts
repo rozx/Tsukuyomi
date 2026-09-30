@@ -1,3 +1,4 @@
+import { LocalizedError } from 'src/utils/localized-error';
 import { cloneDeep } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
 import type { AppLocale } from 'src/models/locale';
@@ -5,6 +6,7 @@ import { getNameTranslation } from 'src/services/localization/selection';
 import { normalizeTranslationForLanguage } from 'src/utils/translation-normalizer';
 import type { CharacterSetting, Novel } from 'src/models/novel';
 import type { ToolContext } from './types';
+import { parseToolArgs } from './types';
 
 /** 角色别名入参（工具层使用的扁平结构，翻译已是字符串） */
 export interface CharacterAliasInput {
@@ -23,7 +25,7 @@ export function assertAliasesNotBlank(aliases: CharacterAliasInput[] | undefined
     (alias) => !alias?.name?.trim() || typeof alias.translation !== 'string',
   );
   if (hasBlankAlias) {
-    throw new Error('别名名称不能为空，翻译必须是字符串');
+    throw new LocalizedError('ALIAS_INVALID', 'aiEntityFeedback.aliasInvalid');
   }
 }
 
@@ -110,11 +112,11 @@ export function requireCharacterContext<T extends { character_id: string }>(
 ): { bookId: string; onAction: ToolContext['onAction']; character_id: string } {
   const { bookId, onAction } = context;
   if (!bookId) {
-    throw new Error('书籍 ID 不能为空');
+    throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
   }
   const character_id = parsedArgs.character_id;
   if (!character_id) {
-    throw new Error('角色 ID 不能为空');
+    throw new LocalizedError('CHARACTER_ID_REQUIRED', 'aiEntityFeedback.characterIdRequired');
   }
   return { bookId, onAction, character_id };
 }
@@ -132,4 +134,16 @@ export function resolveCharacterForTool(
   const character = book?.characterSettings?.find((c) => c.id === characterId);
   const previousData = character ? cloneDeep(character) : undefined;
   return { book, character, previousData };
+}
+
+export function characterEditContext<T extends { character_id: string }>(
+  args: Record<string, unknown>,
+  context: ToolContext,
+) {
+  const parsedArgs = parseToolArgs<T>(args);
+  return {
+    parsedArgs,
+    uiLocale: context.languages?.uiLocale ?? 'zh-CN',
+    ...requireCharacterContext(context, parsedArgs),
+  };
 }

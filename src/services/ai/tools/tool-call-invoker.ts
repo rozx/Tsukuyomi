@@ -2,7 +2,9 @@ import { jsonrepair } from 'jsonrepair';
 import type { AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type { ActionInfo, ChunkBoundaries, ToolContext, ToolDefinition } from './types';
 import type { ToastCallback } from './toast-helper';
-import type { ExecutionLanguages } from 'src/models/locale';
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
+import { localizedErrorMessage, localizedErrorCode } from 'src/utils/localized-error';
 import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 
 const ARGS_PREVIEW_LIMIT = 200;
@@ -42,7 +44,11 @@ function previewForLog(value: unknown, maxLength = ARGS_PREVIEW_LIMIT): string {
 /**
  * 解析工具参数；JSON.parse 失败时尝试 jsonrepair 修复常见格式问题。
  */
-function parseToolCallArguments(rawArgs: string, functionName: string): Record<string, unknown> {
+function parseToolCallArguments(
+  rawArgs: string,
+  functionName: string,
+  uiLocale: AppLocale,
+): Record<string, unknown> {
   // 部分 provider 对无参工具（required: [] 的 list_characters 等）会流式返回 ""
   // 作为 arguments。空/纯空白参数是合法的"无参调用"，必须先于截断检测放行。
   if (rawArgs.trim() === '') {
@@ -56,15 +62,14 @@ function parseToolCallArguments(rawArgs: string, functionName: string): Record<s
     // jsonrepair 会把这种残缺 JSON“补全”成语法合法但内容缺失的对象（例如半截译文），
     // 若放行会以 success 静默入库损坏数据，必须直接拒绝、让模型缩小批次后重试。
     if (!rawArgs.trimEnd().endsWith('}')) {
-      const truncatedMsg =
-        '工具参数疑似被截断（输出可能达到 token 上限）。请缩小单次提交的内容量（例如减少批次段落数）后重试。';
+      const truncatedMsg = translateText(uiLocale, 'aiToolFeedback.truncated');
       console.error(
         `[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`,
         truncatedMsg,
         '\n参数结尾:',
         rawArgs.slice(-120),
       );
-      throw new Error(truncatedMsg);
+      throw Object.assign(new Error(truncatedMsg), { code: 'TOOL_ARGUMENTS_TRUNCATED' });
     }
     try {
       const repairedJson = jsonrepair(rawArgs);
@@ -72,14 +77,16 @@ function parseToolCallArguments(rawArgs: string, functionName: string): Record<s
       console.log(`[ToolRegistry] 🔧 使用 jsonrepair 修复了格式错误的 JSON [${functionName}]`);
       return parsed;
     } catch {
-      const errorMsg = `无法解析工具参数: ${e instanceof Error ? e.message : String(e)}`;
+      const errorMsg = translateText(uiLocale, 'aiToolFeedback.parseFailed', {
+        detail: e instanceof Error ? e.message : String(e),
+      });
       console.error(
         `[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`,
         errorMsg,
         '\n原始参数:',
         rawArgs,
       );
-      throw new Error(errorMsg);
+      throw Object.assign(new Error(errorMsg), { code: 'TOOL_ARGUMENTS_INVALID' });
     }
   }
 }
@@ -151,29 +158,44 @@ function buildToolHandlerContext(options: HandleToolCallOptions): ToolContext {
 /**
  * 构造"未知工具"错误结果。
  */
-export function buildUnknownToolResult(toolCall: AIToolCall): AIToolCallResult {
+export function buildUnknownToolResult(
+  toolCall: AIToolCall,
+  uiLocale: AppLocale = 'zh-CN',
+): AIToolCallResult {
   const functionName = toolCall.function.name;
   console.warn(`[ToolRegistry] ⚠️ 未知的工具: ${functionName}`);
   return {
     tool_call_id: toolCall.id,
     role: 'tool',
     name: functionName,
-    content: JSON.stringify({ success: false, error: `未知的工具: ${functionName}` }),
+    content: JSON.stringify({
+      success: false,
+      error_code: 'UNKNOWN_TOOL',
+      error: translateText(uiLocale, 'aiToolFeedback.unknownTool', { tool: functionName }),
+    }),
   };
 }
 
 /**
  * 构造"调用失败"错误结果。
  */
-export function buildErrorToolResult(toolCall: AIToolCall, error: unknown): AIToolCallResult {
+export function buildErrorToolResult(
+  toolCall: AIToolCall,
+  error: unknown,
+  uiLocale: AppLocale = 'zh-CN',
+): AIToolCallResult {
   const functionName = toolCall.function.name;
-  const errorMsg = error instanceof Error ? error.message : '未知错误';
+  const errorMsg = localizedErrorMessage(error, uiLocale, 'aiToolFeedback.unknownError');
   console.error(`[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`, errorMsg);
   return {
     tool_call_id: toolCall.id,
     role: 'tool',
     name: functionName,
-    content: JSON.stringify({ success: false, error: errorMsg }),
+    content: JSON.stringify({
+      success: false,
+      error_code: localizedErrorCode(error),
+      error: errorMsg,
+    }),
   };
 }
 
@@ -186,7 +208,11 @@ export async function invokeToolHandler(
   options: HandleToolCallOptions,
 ): Promise<AIToolCallResult> {
   const functionName = toolCall.function.name;
-  const args = parseToolCallArguments(toolCall.function.arguments, functionName);
+  const args = parseToolCallArguments(
+    toolCall.function.arguments,
+    functionName,
+    options.languages?.uiLocale ?? 'zh-CN',
+  );
 
   console.log(
     `[ToolRegistry] 🔧 AI 调用工具: ${functionName}${options.bookId ? ` (bookId: ${options.bookId})` : ''}`,

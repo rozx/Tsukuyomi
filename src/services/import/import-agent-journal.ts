@@ -7,10 +7,14 @@ import { ImportRepository } from './import-repository';
 import type { ImportTransaction, NewEvent } from './import-repository';
 import { importCheckpoint } from './import-tool-executor';
 import { awaitingImportAnswer } from './import-question-service';
+import { translateText } from 'src/i18n/translate';
 
 export function assertImportOwner(task: ImportTask, run: ImportRunContext): void {
   if (task.run?.runId !== run.runId || task.runEpoch !== run.runEpoch)
-    throw new Error('RUN_STALE: 导入运行已被替代');
+    throw new Error(
+      'RUN_STALE: ' +
+        translateText(task.checkpoint?.uiLocale ?? 'zh-CN', 'aiImportPrompt.ownerStale'),
+    );
 }
 
 async function hasToolEvent(
@@ -94,10 +98,12 @@ export async function saveImportAgentCheckpoint(
         if (state.reason && state.reason !== 'user' && state.reason !== 'waiting_user')
           task.lastError = {
             code: state.reason.toUpperCase(),
-            message:
+            message: translateText(
+              checkpoint.uiLocale ?? task.checkpoint?.uiLocale ?? 'zh-CN',
               state.reason === 'context_limit'
-                ? '上下文达到上限，已保存进度，请继续整理或缩小当前范围。'
-                : '本轮工具调用达到上限，已保存剩余调用，可继续执行。',
+                ? 'aiImportPrompt.contextLimit'
+                : 'aiImportPrompt.toolLimit',
+            ),
           };
         events.push({ kind: 'progress', data: { state: task.state, reason: state.reason } });
         delete task.streaming;

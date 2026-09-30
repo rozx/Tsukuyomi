@@ -1,3 +1,4 @@
+import { LocalizedError } from 'src/utils/localized-error';
 import type { AppLocale } from 'src/models/locale';
 import { buildNameTranslation } from './localization/selection';
 import type { CharacterSetting, Occurrence, Terminology, Novel } from 'src/models/novel';
@@ -39,7 +40,7 @@ export class TerminologyService {
     const book = booksStore.getBookById(bookId);
 
     if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
+      throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
     }
 
     return {
@@ -61,10 +62,16 @@ export class TerminologyService {
   ): void {
     for (const ch of characterSettings) {
       if (ch.name === termName) {
-        throw new Error(`术语 "${termName}" 与角色名重复`);
+        throw new LocalizedError(
+          'TERM_CHARACTER_CONFLICT',
+          'aiEntityFeedback.termConflictsCharacter',
+          { name: termName },
+        );
       }
       if (ch.aliases?.some((a) => a.name === termName)) {
-        throw new Error(`术语 "${termName}" 与角色别名重复`);
+        throw new LocalizedError('TERM_ALIAS_CONFLICT', 'aiEntityFeedback.termConflictsAlias', {
+          name: termName,
+        });
       }
     }
   }
@@ -148,7 +155,9 @@ export class TerminologyService {
     // 检查是否已存在同名术语
     const existingTerm = currentTerminologies.find((t) => t.name === termData.name);
     if (existingTerm) {
-      throw new Error(`术语 "${termData.name}" 已存在`);
+      throw new LocalizedError('TERM_NAME_CONFLICT', 'aiEntityFeedback.termDuplicate', {
+        name: termData.name,
+      });
     }
 
     // 检查是否与角色（主名或别名）冲突
@@ -209,7 +218,7 @@ export class TerminologyService {
     const existingTerm = currentTerminologies.find((t) => t.id === termId);
 
     if (!existingTerm) {
-      throw new Error(`术语不存在: ${termId}`);
+      throw new LocalizedError('TERM_NOT_FOUND', 'aiEntityFeedback.termMissing', { id: termId });
     }
 
     // 如果更新名称，检查是否与其他术语 / 角色冲突
@@ -219,7 +228,9 @@ export class TerminologyService {
         (t) => t.id !== termId && t.name === updates.name,
       );
       if (nameConflict) {
-        throw new Error(`术语 "${updates.name}" 已存在`);
+        throw new LocalizedError('TERM_NAME_CONFLICT', 'aiEntityFeedback.termDuplicate', {
+          name: updates.name,
+        });
       }
       this.assertTermNameNotCharacter(characterSettings, updates.name);
     }
@@ -273,14 +284,14 @@ export class TerminologyService {
     const book = booksStore.getBookById(bookId);
 
     if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
+      throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
     }
 
     const currentTerminologies = book.terminologies || [];
     const termExists = currentTerminologies.some((t) => t.id === termId);
 
     if (!termExists) {
-      throw new Error(`术语不存在: ${termId}`);
+      throw new LocalizedError('TERM_NOT_FOUND', 'aiEntityFeedback.termMissing', { id: termId });
     }
 
     // 更新书籍，移除该术语
@@ -307,7 +318,7 @@ export class TerminologyService {
     const book = booksStore.getBookById(bookId);
 
     if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
+      throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
     }
 
     // 如果关键词数组为空，返回空 Map
@@ -356,7 +367,7 @@ export class TerminologyService {
           !term.translation ||
           typeof term.translation.translation !== 'string'
         ) {
-          throw new Error('文件格式错误：术语数据不完整');
+          throw new LocalizedError('TERM_FILE_INCOMPLETE', 'aiEntityFeedback.termFileIncomplete');
         }
       }
       terminologies = data as Terminology[];
@@ -372,7 +383,7 @@ export class TerminologyService {
         description: undefined,
       }));
     } else {
-      throw new Error('文件格式错误：应为术语数组或键值对对象');
+      throw new LocalizedError('TERM_FILE_SHAPE', 'aiEntityFeedback.termFileShape');
     }
 
     return terminologies;

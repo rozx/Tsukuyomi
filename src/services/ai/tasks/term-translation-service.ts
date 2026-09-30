@@ -136,9 +136,16 @@ async function buildSystemPrompt(
   }
 
   const specialInstructions = getSpecialInstructions(bookId, chapterId, 'translation');
-  const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
-  const bookContextSection = await buildBookContextSection(bookId);
-  const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+  const specialInstructionsSection = buildSpecialInstructionsSection(
+    specialInstructions,
+    languages.uiLocale,
+  );
+  const bookContextSection = await buildBookContextSection(bookId, languages.uiLocale);
+  const chapterContextSection = buildChapterContextSection(
+    chapterId,
+    chapterTitle,
+    languages.uiLocale,
+  );
 
   return buildTermTranslationSystemPrompt({
     languages,

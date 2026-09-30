@@ -1,12 +1,14 @@
 import { taskPromptLabel, statusCall } from './runner';
 import type { AppLocale } from 'src/models/locale';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from '../utils/execution-languages';
+import { aiLanguageName } from './language';
 import { translateText } from 'src/i18n/translate';
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 export { MAX_TRANSLATION_BATCH_SIZE };
 import type { TaskType, TaskStatus } from '../utils/task-types';
 import { getTaskStateWorkflowText } from '../utils/task-types';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
 
 /**
  * 判断本次请求是否提供了 `query_chapter` 工具。
@@ -31,15 +33,17 @@ export function getToolScopeRules(tools?: AITool[], uiLocale: AppLocale = 'zh-CN
 /**
  * 获取全角符号格式规则（精简版）
  */
-export function getSymbolFormatRules(): string {
-  return `**格式规则**: 使用全角中文标点（，。？！：；「」『』（）——……），数字英文保持半角
-
-⚠️ **保持原始格式**:
-- 段落换行、缩进、特殊符号（★ ☆ ♥ ○ ● 等）
-- 数字格式和英文数字间空格
-- ⚠️ **非常重要**！确保翻译没有缺少原文的引号，如「」、『』和 ""
-- ⚠️ 原文中的中黑点「・」必须原样保留（如「・・」「・・・」），**禁止**将其转换为省略号「……」或其他符号
-- ⛔ 禁止添加/删除符号或修改排版`;
+export function getSymbolFormatRules(
+  uiLocale: AppLocale = 'zh-CN',
+  targetLanguage: AppLocale = 'zh-CN',
+): string {
+  return [
+    translateText(
+      uiLocale,
+      targetLanguage === 'en-US' ? 'aiText.symbolEnglish' : 'aiText.symbolChinese',
+    ),
+    translateText(uiLocale, 'aiText.preserveFormat'),
+  ].join('\n\n');
 }
 
 /**
@@ -87,172 +91,77 @@ export function getCurrentStatusInfo(
  * 获取敬语处理规则（独立模块）
  * [警告] 核心规则：严禁将敬语添加为别名
  */
-export function getHonorificRules(): string {
-  return `【敬语处理规则】
-⛔ **核心禁止**: 严禁自动将敬语（如"田中さん"）添加为角色别名（别名爆炸会破坏一致性，别名由用户手动维护）
-
-**常见敬语对照**（仅为参考，最终按角色关系与历史翻译决定）:
-- さん: 通用敬语 → "先生/小姐/同学"，或省略（如"田中さん" → "田中先生" / "田中"）
-- くん: 男性非正式 → "君"，或省略
-- ちゃん: 亲近/年幼 → "~酱"，或亲昵称呼
-- 様: 正式敬语 → "大人/阁下"
-- 殿: 古风敬语 → "殿/阁下"
-- 先輩/後輩: → "前辈/学长学姐" / "后辈/学弟学妹"
-
-**处理流程**（严格按顺序执行）:
-1. **别名优先**: 若【相关角色参考】的 \`aliases\` 中存在完全匹配的带敬语别名且有译文，**必须直接使用**，不得重新翻译
-2. **检查角色关系**: 查看角色描述中的关系字段，判断亲密度与场合
-3. **搜索历史翻译**: 使用 \`find_paragraph_by_keywords\` 查找该角色+敬语组合的既有译法，必须保持一致
-4. **搜索记忆**: 若有相关敬语处理方式的记忆，遵循记忆约定
-5. **按关系决定**: 上述均无结果时，根据关系与上下文判断
-
-**关系与策略对应**:
-- 亲密关系（妹妹/好友/青梅竹马/恋人）: 可省略敬语或使用亲密称呼
-- 正式关系（上司/老师/长辈/客户）: 必须保留并翻译为对应中文敬语
-- 同辈关系（同学/同事）: 根据场景与语气判断
-- 初次见面/陌生人: 保留正式敬语
-- 关系不明: 优先保留敬语，结合上下文判断，并与历史翻译保持一致
-
-⚠️ **一致性铁律**:
-- **章节内必须一致**: 同一章内同一角色的同一称呼**必须**翻译完全相同，禁止出现混用（例如同章内既翻成"田中先生"又翻成"田中"）
-- **跨章节保持一致**: 同一角色同一称呼在全文中应始终翻译一致，若发现不一致应以最早出现或用户已确认的译法为准
-- **敬语自检**: 扫描本批次内同一角色的所有敬语译法是否统一；必要时使用 \`find_paragraph_by_keywords\` 在当前章节内校验`;
+export function getHonorificRules(
+  languages: ExecutionLanguages = captureExecutionLanguages('zh-CN'),
+): string {
+  return translateText(languages.uiLocale, 'aiText.honorific', {
+    targetLanguage: aiLanguageName(languages.uiLocale, languages.targetLanguage),
+  });
 }
 
-/**
- * 获取数据管理规则（术语/角色/记忆工作流）
- */
-export function getDataManagementRules(): string {
-  return `【数据管理规则】
-**状态约束**:
-- planning：可创建/更新术语、角色、记忆（输出前唯一的数据维护窗口）
-- working：仅执行翻译/润色/校对输出，禁止数据写入
-- review：仅翻译任务可用，且可创建/更新术语、角色、记忆
-
-**术语/角色分离**:
-- 术语表：专有名词、概念、技能、地名、物品（⛔ 禁止放人名）
-- 角色表：全名为主名称，姓/名为别名（⛔ 禁止放术语）
-- ⚠️ 每个术语只能有一个翻译（如"龙套"而非"路人角色／龙套"）
-
-**角色管理**: 新角色先检查是否为已有别名，描述需简短（性别/关系/关键特征）
-
-⚠️ **保持数据最新**:
-- 发现全名 → 更新主名称，原名移入别名
-- 发现新信息 → 在可写阶段尽快 \`update_term\`/\`update_character\`
-- 空翻译/重复/误分类 → 在可写阶段尽快修复
-- 新术语/角色 → 先检查是否存在，不存在则创建`;
+/** 获取数据维护规则，协议状态名称保持固定。 */
+export function getDataManagementRules(uiLocale: AppLocale = 'zh-CN'): string {
+  return translateText(uiLocale, 'aiText.data');
 }
 
-/**
- * 获取记忆管理规则（精简版）
- */
-export function getMemoryWorkflowRules(): string {
-  return `【记忆管理】
-目标：**短、有效、可检索、可复用**（写少但写对）
-
-**⛔ 内容限制（重要）**：
-- **只保留翻译相关**：术语翻译、角色名称翻译、文风偏好、特定短语翻译选择、敬语处理方式等
-- **严禁存储**：故事设定、背景、世界观、剧情内容、情节发展等（这些属于冗余信息，不应占用记忆空间）
-- 记忆的核心目的是帮助未来翻译保持一致性和质量，而非记录故事情节
-
-**自动召回**：Embedding 可用时系统以语义相似度为主、关键词与时间衰减为辅；不可用时回退到关键词与时间衰减，自动选择最相关的记忆注入翻译上下文，无需手动关联。
-- 在 summary 和 content 中明确提及相关角色/术语名称，可提升关键词匹配得分
-
-**搜索**：使用 \`search_memories\` 传入自然语言查询（如"主角的敬语习惯"），系统自动混合关键词和语义检索
-- 需要详细内容时用 \`get_memory\` 获取完整记忆
-
-**写入规则**：
-- 写入时机：仅在可写阶段执行 \`create_memory\`/\`update_memory\`（planning；翻译任务还可在 review）
-- 写入门槛：仅对未来有长期收益、可复用时才写入（⛔ 一次性信息不写入）
-- ⚠️ **默认不新建**：优先合并到已有记忆，重写为更短清晰的版本
-
-**字段约束**：summary ≤40字 + 关键词 | content 1-3条要点（总 ≤300字）`;
+/** 获取共享记忆规则，用户内容不被重译。 */
+export function getMemoryWorkflowRules(uiLocale: AppLocale = 'zh-CN'): string {
+  return translateText(uiLocale, 'aiText.memory');
 }
 
-/**
- * 获取待办事项工具描述（精简版）
- */
-function getTodoToolsDescription(_taskType: TaskType): string {
-  return `**待办管理**: 系统自动生成待办清单，完成一项就用 \`mark_todo_done\` 标记（\`id\` 单条或 \`ids\` 批量，无需先标记进行中）。所有待办完成后方可切换阶段。`;
-}
-
-/**
- * 获取状态字段说明（精简版）
- */
-function getStatusFieldDescription(taskType: TaskType): string {
-  return `**状态流程**: ${getTaskStateWorkflowText(taskType)}`;
-}
-
-/**
- * 获取工具化输出格式规则（新方式：使用工具调用替代 JSON）
- */
+/** 工具化输出协议，JSON 示例作为插值避免被消息编译器改写。 */
 export function getOutputFormatRules(
   taskType: TaskType,
-  options?: { includeChapterTitle?: boolean; enableOriginalTextValidation?: boolean },
+  options?: {
+    includeChapterTitle?: boolean;
+    enableOriginalTextValidation?: boolean;
+    languages?: ExecutionLanguages;
+  },
 ): string {
-  const onlyChanged = taskType !== 'translation' ? '（只返回有变化的段落）' : '';
+  const uiLocale = options?.languages?.uiLocale ?? 'zh-CN';
   const isTranslation = taskType === 'translation';
-  // 标题翻译指令仅在第一个 chunk 时包含（后续 chunk 标题已在第一个 chunk 中翻译）
   const includeTitle = isTranslation && (options?.includeChapterTitle ?? true);
   const validateOriginal = options?.enableOriginalTextValidation === true;
-
-  const titleToolSection = includeTitle
-    ? '3. update_chapter_title（仅 working）参数：{"chapter_id": "章节ID", "title_translation": "标题翻译"}'
-    : '';
-
-  const titleToolRestriction = includeTitle ? ' / update_chapter_title' : '';
-
-  const toolRestriction = isTranslation
-    ? `⛔ add_translation_batch${titleToolRestriction}：仅 working/review 可调用（单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段）
-   - working 禁止创建/更新术语、角色、记忆
-   - end 禁止再调用工具`
-    : `⛔ add_translation_batch：仅 working 可调用（单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段）
-   - working 禁止创建/更新术语、角色、记忆
-   - end 禁止再调用工具`;
-
-  return `【输出格式】添加翻译结果必须使用工具调用。按待办清单顺序执行。
-
-**工具要点**
-1. update_task_status：完成当前阶段所有待办后切换 {"status": "..."}
-2. add_translation_batch：一次最多 ${MAX_TRANSLATION_BATCH_SIZE} 段，${validateOriginal ? '必须使用 paragraph_id + original_text_prefix 标识并锚定段落：{"paragraph_id": "xxx", "original_text_prefix": "原文前3-10字", "translated_text": "..."}（从段落 [ID: xxx] 与原文开头提取，禁止使用 index 提交；原文不足3字时填完整原文）' : '必须使用 paragraph_id 标识段落：{"paragraph_id": "xxx", "translated_text": "..."}（从段落 [ID: xxx] 获取，禁止使用 index 提交）'}${titleToolSection ? '\n' + titleToolSection : ''}
-3. 若 add_translation_batch 返回结构化错误（如 error_code / invalid_items / invalid_paragraph_ids / failed_paragraphs），必须仅修复报错条目后重试，禁止重排段落、猜测或替换 paragraph_id
-
-${getStatusFieldDescription(taskType)}
-- 段落 ID 与原文 1:1 对应${onlyChanged}
-- ${isTranslation ? '必须全覆盖' : '仅提交修改过的段落'}
-${toolRestriction}
-
-【用户回报】
-- 及时向用户回报当前专注的任务以及翻译进度
-- 输出要精简，不要一次性输出太多内容。
-
-`;
+  const paragraphExample = JSON.stringify({
+    paragraph_id: 'xxx',
+    ...(validateOriginal ? { original_text_prefix: 'source' } : {}),
+    translated_text: '...',
+  });
+  return translateText(uiLocale, 'aiText.output', {
+    statusExample: JSON.stringify({ status: '...' }),
+    max: MAX_TRANSLATION_BATCH_SIZE,
+    prefix: validateOriginal ? translateText(uiLocale, 'aiText.prefix') : '',
+    paragraphExample,
+    title: includeTitle
+      ? translateText(uiLocale, 'aiText.title', {
+          example: JSON.stringify({ chapter_id: 'chapter-id', title_translation: '...' }),
+        })
+      : '',
+    flow: getTaskStateWorkflowText(taskType),
+    coverage: translateText(
+      uiLocale,
+      isTranslation ? 'aiText.coverage.translation' : 'aiText.coverage.changed',
+    ),
+    restriction: translateText(uiLocale, 'aiText.restriction', {
+      states: isTranslation ? 'working / review' : 'working',
+      max: MAX_TRANSLATION_BATCH_SIZE,
+    }),
+  });
 }
 
-/**
- * 获取工具使用说明（精简版）
- */
+/** 工具范围、查询与 todo 维护建议使用执行 UI 语言。 */
 export function getToolUsageInstructions(
   taskType: TaskType,
   tools?: AITool[],
   skipAskUser?: boolean,
+  uiLocale: AppLocale = 'zh-CN',
 ): string {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
-  const askUserLine = !skipAskUser
-    ? '- **询问**: 当有需要用户确认/做决定时，用 `ask_user_batch` 一次性解决所有疑问\n'
-    : '';
-  const queryChapterLine = hasQueryChapterTool(tools)
-    ? '- **章节混合检索**：需要跨章节回忆剧情/场景/人物关系/设定时，用 `query_chapter`（语义 + 标题/正文关键词 + IDF 稀有词加权 + 章号/卷号 identifier 强匹配），返回章节 ID、标题、匹配度、前 200 字预览；再按需调 `get_chapter_info` 读全文。\n' +
-      '  - **三类最稳 query**：① 标题/系列名直搜（"第二王女" / "深渊之森攻略" / "星天 ⑥"）；② 人物+身份+具体动作+独特细节（"夏洛特紧张到胃痛接近芬恩"）；③ 事件锚点（"吻痕被发现后开始审问"）。\n' +
-      '  - **较弱**：抽象读后感（"后宫气氛成形"）→ 改成具体场面；仅人名无动作 → 补动作/细节；不存在的系列词 → 改用 `list_chapters` 看真实标题。\n' +
-      '  - **中文转述日文标题**：字面差异大时不稳，**优先用原文标题词**或加更强锚点（人物+动作）。\n' +
-      '  - **把它当候选定位器**：Top1 未必最佳，默认看 Top3-5；不确定时 `limit` 调到 8-10。\n'
-    : '';
-  return `${getToolScopeRules(tools)}
-
-【工具使用建议】
-- 用途：获取上下文、维护术语/角色/记忆、查询历史翻译、查询待办事项。
-- 优先用本地数据，网络工具仅用于外部知识
-${queryChapterLine}${askUserLine}- 最小必要：拿到信息后立刻回到${taskLabel}输出
-- ${getTodoToolsDescription(taskType)}`;
+  return [
+    getToolScopeRules(tools, uiLocale),
+    translateText(uiLocale, 'aiText.usage', {
+      query: hasQueryChapterTool(tools) ? translateText(uiLocale, 'aiText.query') : '',
+      ask: skipAskUser ? '' : translateText(uiLocale, 'aiText.ask'),
+      task: taskPromptLabel(taskType, uiLocale),
+    }),
+  ].join('\n\n');
 }

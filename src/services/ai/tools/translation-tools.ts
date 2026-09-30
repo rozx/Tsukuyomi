@@ -1,3 +1,5 @@
+import { toolDefinition } from './tool-localization';
+import { describeTool } from './tool-localization';
 import { translateText } from 'src/i18n/translate';
 import type { ToolDefinition, ToolContext } from './types';
 import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
@@ -5,7 +7,7 @@ import { BookService } from 'src/services/book-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
-import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
+import { TRANSLATION_BATCH_LIMITS } from 'src/services/ai/constants';
 import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
 import { TodoListService } from 'src/services/todo-list-service';
 import type { AppLocale } from 'src/models/locale';
@@ -59,10 +61,9 @@ interface FailedParagraphItem {
 
 // ============ Constants ============
 
-const MAX_BATCH_SIZE = MAX_TRANSLATION_BATCH_SIZE;
-const BATCH_SIZE_TOLERANCE_RATIO = 0.1;
-const MAX_BATCH_SIZE_WITH_TOLERANCE = Math.ceil(MAX_BATCH_SIZE * (1 + BATCH_SIZE_TOLERANCE_RATIO));
-const MAX_BATCH_SIZE_DOUBLE = MAX_BATCH_SIZE * 2;
+const MAX_BATCH_SIZE = TRANSLATION_BATCH_LIMITS.normal;
+const MAX_BATCH_SIZE_WITH_TOLERANCE = TRANSLATION_BATCH_LIMITS.withTolerance;
+const MAX_BATCH_SIZE_DOUBLE = TRANSLATION_BATCH_LIMITS.remaining;
 const MIN_ORIGINAL_TEXT_PREFIX_LENGTH = 3;
 const MAX_ORIGINAL_TEXT_PREFIX_LENGTH = 20;
 const MAX_PARAGRAPH_ID_EDIT_DISTANCE = 2;
@@ -1850,50 +1851,47 @@ export interface CreateTranslationToolsOptions {
 
 export function createTranslationTools(options?: CreateTranslationToolsOptions): ToolDefinition[] {
   const validate = options?.enableOriginalTextValidation === true;
-  const prefixDescription = validate
-    ? '原文前缀锚点（建议取原文前 5-10 个字符，trim 后最少 3 个字符、最多 20 个字符），用于校验 paragraph_id 与原文是否对齐'
-    : '原文前缀锚点（可选，当前已禁用校验）';
   const itemRequired = validate
     ? ['paragraph_id', 'original_text_prefix', 'translated_text']
     : ['paragraph_id', 'translated_text'];
 
   return [
     {
-      definition: {
-        type: 'function',
-        function: {
-          name: 'add_translation_batch',
-          description: `批量提交段落翻译/润色/校对结果。只能在 working 状态下调用此工具！必须使用 paragraph_id 标识段落。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）。当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许单次最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。`,
-          parameters: {
-            type: 'object',
-            properties: {
-              paragraphs: {
-                type: 'array',
-                description: `段落处理结果数组。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）；当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。必须使用 paragraph_id 标识段落（不支持 index）。`,
-                items: {
-                  type: 'object',
-                  properties: {
-                    paragraph_id: {
-                      type: 'string',
-                      description: '段落 ID（唯一提交标识，从 chunk 中 [ID: xxx] 获取）',
-                    },
-                    original_text_prefix: {
-                      type: 'string',
-                      description: prefixDescription,
-                    },
-                    translated_text: {
-                      type: 'string',
-                      description: '翻译/润色/校对后的文本',
-                    },
-                  },
-                  required: itemRequired,
+      definition: toolDefinition('add_translation_batch', {
+        type: 'object',
+        properties: {
+          paragraphs: {
+            type: 'array',
+            description: describeTool('add_translation_batch.parameters.properties.paragraphs'),
+            items: {
+              type: 'object',
+              properties: {
+                paragraph_id: {
+                  type: 'string',
+                  description: describeTool(
+                    'add_translation_batch.parameters.properties.paragraphs.items.properties.paragraph_id',
+                  ),
+                },
+                original_text_prefix: {
+                  type: 'string',
+                  description: describeTool(
+                    'add_translation_batch.parameters.properties.paragraphs.items.properties.original_text_prefix' +
+                      (validate ? '.enabled' : '.disabled'),
+                  ),
+                },
+                translated_text: {
+                  type: 'string',
+                  description: describeTool(
+                    'add_translation_batch.parameters.properties.paragraphs.items.properties.translated_text',
+                  ),
                 },
               },
+              required: itemRequired,
             },
-            required: ['paragraphs'],
           },
         },
-      },
+        required: ['paragraphs'],
+      }),
       handler: async (args, context: ToolContext) => handleAddTranslationBatch(args, context),
     },
   ];

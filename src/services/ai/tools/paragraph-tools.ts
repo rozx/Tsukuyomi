@@ -1,9 +1,11 @@
+import { toolDefinition } from './tool-localization';
+import { describeTool } from './tool-localization';
 import type { AppLocale } from 'src/models/locale';
 import type {
   ParagraphTranslationEdit,
   ChapterTranslationEditGroup,
 } from 'src/services/localization/paragraph-edit';
-import { getLanguageTranslation } from 'src/services/localization/selection';
+import { getLanguageTranslation, getNameTranslation } from 'src/services/localization/selection';
 import { BookService } from 'src/services/book-service';
 import {
   ChapterService,
@@ -167,7 +169,10 @@ function buildParagraphIdSchema(
   required: string[];
 } {
   const properties: Record<string, { type: string; description: string }> = {
-    paragraph_id: { type: 'string', description: '段落 ID' },
+    paragraph_id: {
+      type: 'string',
+      description: describeTool('get_paragraph_position.parameters.properties.paragraph_id'),
+    },
   };
   const required = ['paragraph_id'];
   if (translationIdDescription) {
@@ -177,7 +182,7 @@ function buildParagraphIdSchema(
   if (withIncludeMemory) {
     properties.include_memory = {
       type: 'boolean',
-      description: '是否在响应中包含相关的记忆信息（默认 true）',
+      description: describeTool('get_term.parameters.properties.include_memory'),
     };
   }
   return { type: 'object', properties, required };
@@ -191,22 +196,21 @@ type ParagraphLocation = NonNullable<
 /**
  * 从段落翻译数组中挑当前选中的翻译文本；缺失时回退到第一条、再回退到空串。
  */
-function resolveSelectedTranslationText(paragraph: {
-  translations: Translation[];
-  selectedTranslationId?: string;
-}): string {
-  return (
-    paragraph.translations.find((t) => t.id === paragraph.selectedTranslationId)?.translation ||
-    paragraph.translations[0]?.translation ||
-    ''
-  );
+function resolveSelectedTranslationText(
+  paragraph: Paragraph,
+  language: AppLocale = 'zh-CN',
+): string {
+  return getLanguageTranslation(paragraph, language)?.translation ?? '';
 }
 
 /**
  * 精简版的段落负载（只有 id / text / translation / paragraph_index），
  * 用于 get_paragraph_position 的 previous_paragraphs / next_paragraphs 等场景。
  */
-function buildMinimalParagraphPayload(result: ParagraphSearchResult): {
+function buildMinimalParagraphPayload(
+  result: ParagraphSearchResult,
+  language: AppLocale = 'zh-CN',
+): {
   id: string;
   text: string;
   translation: string;
@@ -215,7 +219,7 @@ function buildMinimalParagraphPayload(result: ParagraphSearchResult): {
   return {
     id: result.paragraph.id,
     text: result.paragraph.text,
-    translation: resolveSelectedTranslationText(result.paragraph),
+    translation: resolveSelectedTranslationText(result.paragraph, language),
     paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
   };
 }
@@ -225,7 +229,10 @@ function buildMinimalParagraphPayload(result: ParagraphSearchResult): {
  * 用于 get_previous_paragraphs / get_next_paragraphs / find_paragraph_by_keywords /
  * search_paragraphs_by_regex 四处的 `paragraphs: validResults.map(...)` 样板。
  */
-function buildParagraphPayload(result: ParagraphSearchResult): {
+function buildParagraphPayload(
+  result: ParagraphSearchResult,
+  language: AppLocale = 'zh-CN',
+): {
   id: string;
   text: string;
   translation: string;
@@ -238,7 +245,7 @@ function buildParagraphPayload(result: ParagraphSearchResult): {
   return {
     id: result.paragraph.id,
     text: result.paragraph.text,
-    translation: resolveSelectedTranslationText(result.paragraph),
+    translation: resolveSelectedTranslationText(result.paragraph, language),
     chapter: {
       id: result.chapter.id,
       title:
@@ -248,7 +255,7 @@ function buildParagraphPayload(result: ParagraphSearchResult): {
       title_translation:
         typeof result.chapter.title === 'string'
           ? ''
-          : result.chapter.title.translation?.translation || '',
+          : (getNameTranslation(result.chapter.title, language)?.translation ?? ''),
     },
     volume: {
       id: result.volume.id,
@@ -259,7 +266,7 @@ function buildParagraphPayload(result: ParagraphSearchResult): {
       title_translation:
         typeof result.volume.title === 'string'
           ? ''
-          : result.volume.title.translation?.translation || '',
+          : (getNameTranslation(result.volume.title, language)?.translation ?? ''),
     },
     paragraph_index: toDisplayParagraphIndex(result.paragraphIndex),
     chapter_index: result.chapterIndex,
@@ -287,10 +294,10 @@ async function loadRelatedMemoriesFromFirstParagraph(
 /**
  * 将段落的 translations 映射为工具响应里统一的结构（含 aiModelName / isSelected）。
  */
-function buildTranslationListPayload(paragraph: {
-  translations?: Translation[];
-  selectedTranslationId?: string;
-}): Array<{
+function buildTranslationListPayload(
+  paragraph: Paragraph,
+  language: AppLocale = 'zh-CN',
+): Array<{
   id: string;
   translation: string;
   aiModelId: string;
@@ -299,13 +306,15 @@ function buildTranslationListPayload(paragraph: {
 }> {
   const aiModelsStore = useAIModelsStore();
   return (
-    paragraph.translations?.map((t) => ({
-      id: t.id,
-      translation: t.translation,
-      aiModelId: t.aiModelId,
-      aiModelName: aiModelsStore.getModelById(t.aiModelId)?.name || '未知模型',
-      isSelected: t.id === paragraph.selectedTranslationId,
-    })) || []
+    paragraph.translations
+      ?.filter((value) => (value.language ?? 'zh-CN') === language)
+      .map((t) => ({
+        id: t.id,
+        translation: t.translation,
+        aiModelId: t.aiModelId,
+        aiModelName: aiModelsStore.getModelById(t.aiModelId)?.name || '未知模型',
+        isSelected: t.id === getLanguageTranslation(paragraph, language)?.id,
+      })) || []
   );
 }
 
@@ -448,6 +457,19 @@ async function resolveParagraphIdReadArgs(
   };
 }
 
+function paragraphReadHandler(
+  handler: (
+    readArgs: Extract<Awaited<ReturnType<typeof resolveParagraphIdReadArgs>>, { kind: 'ok' }>,
+    context: ToolContext,
+  ) => Promise<string>,
+): ToolDefinition['handler'] {
+  return async (args, context) => {
+    const readArgs = await resolveParagraphIdReadArgs(args, context.bookId);
+    if (readArgs.kind === 'error') return readArgs.json;
+    return handler(readArgs, context);
+  };
+}
+
 /**
  * select_translation / remove_translation 等 `{ paragraph_id, translation_id }` 工具的
  * 统一前置：解构参数、走 resolveParagraphTranslationForUpdate、再把常用字段摊开返回。
@@ -499,7 +521,8 @@ function buildDirectionalParagraphsHandler(
     count: number,
   ) => Promise<ParagraphSearchResult[]>,
 ): ToolHandler {
-  return async (args, { bookId, onAction }) => {
+  return async (args, { bookId, onAction, languages }) => {
+    const language = languages?.targetLanguage ?? 'zh-CN';
     const {
       paragraph_id,
       count = 3,
@@ -537,7 +560,7 @@ function buildDirectionalParagraphsHandler(
 
     return JSON.stringify({
       success: true,
-      paragraphs: validResults.map(buildParagraphPayload),
+      paragraphs: validResults.map((result) => buildParagraphPayload(result, language)),
       count: validResults.length,
       ...(include_memory && relatedMemories.length > 0
         ? { related_memories: relatedMemories }
@@ -810,41 +833,36 @@ async function persistParagraphEdit(
 
 export const paragraphTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_paragraph_position',
-        description:
-          '获取段落在章节中的位置信息，包括段落在章节中的索引、章节中段落的总数，以及可选的前后段落。用于了解当前段落在章节中的位置，方便进行上下文分析。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-            include_previous: {
-              type: 'boolean',
-              description: '是否包含前 x 个段落（默认 false）',
-            },
-            include_next: {
-              type: 'boolean',
-              description: '是否包含后 x 个段落（默认 false）',
-            },
-            previous_count: {
-              type: 'number',
-              description: '前段落数量（默认 3）',
-            },
-            next_count: {
-              type: 'number',
-              description: '后段落数量（默认 3）',
-            },
-          },
-          required: ['paragraph_id'],
+    definition: toolDefinition('get_paragraph_position', {
+      type: 'object',
+      properties: {
+        paragraph_id: {
+          type: 'string',
+          description: describeTool('get_paragraph_position.parameters.properties.paragraph_id'),
+        },
+        include_previous: {
+          type: 'boolean',
+          description: describeTool(
+            'get_paragraph_position.parameters.properties.include_previous',
+          ),
+        },
+        include_next: {
+          type: 'boolean',
+          description: describeTool('get_paragraph_position.parameters.properties.include_next'),
+        },
+        previous_count: {
+          type: 'number',
+          description: describeTool('get_paragraph_position.parameters.properties.previous_count'),
+        },
+        next_count: {
+          type: 'number',
+          description: describeTool('get_paragraph_position.parameters.properties.next_count'),
         },
       },
-    },
-    handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries }) => {
+      required: ['paragraph_id'],
+    }),
+    handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const {
         paragraph_id,
         include_previous = false,
@@ -919,7 +937,7 @@ export const paragraphTools: ToolDefinition[] = [
         success: true,
         paragraph_id: paragraph.id,
         chapter_id: chapter.id,
-        chapter_title: getChapterDisplayTitle(chapter),
+        chapter_title: getChapterDisplayTitle(chapter, undefined, language),
         paragraph_index: displayParagraphIndex,
         total_paragraphs: totalParagraphs,
         progress_percentage:
@@ -939,7 +957,9 @@ export const paragraphTools: ToolDefinition[] = [
         );
         // 移除块边界过滤
         // validPreviousResults = filterResultsByChunkBoundary(validPreviousResults, chunkBoundaries);
-        response.previous_paragraphs = validPreviousResults.map(buildMinimalParagraphPayload);
+        response.previous_paragraphs = validPreviousResults.map((result) =>
+          buildMinimalParagraphPayload(result, language),
+        );
       }
 
       // 可选：获取后 x 个段落（受块边界限制）
@@ -955,29 +975,21 @@ export const paragraphTools: ToolDefinition[] = [
         );
         // 移除块边界过滤
         // validNextResults = filterResultsByChunkBoundary(validNextResults, chunkBoundaries);
-        response.next_paragraphs = validNextResults.map(buildMinimalParagraphPayload);
+        response.next_paragraphs = validNextResults.map((result) =>
+          buildMinimalParagraphPayload(result, language),
+        );
       }
 
       return JSON.stringify(response);
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_paragraph_info',
-        description:
-          '获取段落的详细信息，包括原文、所有翻译版本、选中的翻译等。当需要了解当前段落的完整信息时使用此工具。返回的 paragraphIndex 为展示序号（从 1 开始计数），chapterIndex / volumeIndex 为数组索引（从 0 开始计数）。',
-        // fallow-ignore-next-line code-duplication
-        parameters: buildParagraphIdSchema(undefined, true),
-      },
-    },
-    handler: async (args, { bookId, onAction }) => {
-      const readArgs = await resolveParagraphIdReadArgs(args, bookId);
-      if (readArgs.kind === 'error') return readArgs.json;
+    definition: toolDefinition('get_paragraph_info', buildParagraphIdSchema(undefined, true)),
+    handler: paragraphReadHandler(async (readArgs, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const { paragraph_id, include_memory, location } = readArgs;
       const { paragraph, chapter, volume } = location;
-      const chapterTitle = getChapterDisplayTitle(chapter);
+      const chapterTitle = getChapterDisplayTitle(chapter, undefined, language);
 
       // 报告读取操作
       if (onAction) {
@@ -994,7 +1006,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 构建翻译信息（包含 aiModelId）
-      const translations = buildTranslationListPayload(paragraph);
+      const translations = buildTranslationListPayload(paragraph, language);
 
       // 搜索相关记忆（从段落文本中提取关键词）
       const relatedMemories = await loadRelatedMemoriesFromFirstParagraph(
@@ -1008,7 +1020,7 @@ export const paragraphTools: ToolDefinition[] = [
         paragraph: {
           id: paragraph.id,
           text: paragraph.text,
-          selectedTranslationId: paragraph.selectedTranslationId || '',
+          selectedTranslationId: getLanguageTranslation(paragraph, language)?.id ?? '',
           translations,
           chapter: {
             id: chapter.id,
@@ -1016,7 +1028,9 @@ export const paragraphTools: ToolDefinition[] = [
             title_original:
               typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
             title_translation:
-              typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '',
+              typeof chapter.title === 'string'
+                ? ''
+                : (getNameTranslation(chapter.title, language)?.translation ?? ''),
           },
           volume: volume
             ? {
@@ -1026,7 +1040,7 @@ export const paragraphTools: ToolDefinition[] = [
                 title_translation:
                   typeof volume.title === 'string'
                     ? ''
-                    : volume.title.translation?.translation || '',
+                    : (getNameTranslation(volume.title, language)?.translation ?? ''),
               }
             : null,
           paragraphIndex: toDisplayParagraphIndex(location.paragraphIndex),
@@ -1037,35 +1051,27 @@ export const paragraphTools: ToolDefinition[] = [
           ? { related_memories: relatedMemories }
           : {}),
       });
-    },
+    }),
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_previous_paragraphs',
-        description:
-          '获取指定段落之前的若干个段落。用于查看当前段落之前的上下文，帮助理解文本的连贯性。返回的 paragraph_index 为展示序号（从 1 开始计数），chapter_index / volume_index 为数组索引（从 0 开始计数）。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID（当前段落的 ID）',
-            },
-            count: {
-              type: 'number',
-              description: '要获取的段落数量（默认 3）',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-          },
-          required: ['paragraph_id'],
+    definition: toolDefinition('get_previous_paragraphs', {
+      type: 'object',
+      properties: {
+        paragraph_id: {
+          type: 'string',
+          description: describeTool('get_previous_paragraphs.parameters.properties.paragraph_id'),
+        },
+        count: {
+          type: 'number',
+          description: describeTool('get_previous_paragraphs.parameters.properties.count'),
+        },
+        include_memory: {
+          type: 'boolean',
+          description: describeTool('get_previous_paragraphs.parameters.properties.include_memory'),
         },
       },
-    },
+      required: ['paragraph_id'],
+    }),
     handler: buildDirectionalParagraphsHandler(
       'get_previous_paragraphs',
       (book, paragraphId, count) =>
@@ -1073,85 +1079,75 @@ export const paragraphTools: ToolDefinition[] = [
     ),
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_next_paragraphs',
-        description:
-          '获取指定段落之后的若干个段落。用于查看当前段落之后的上下文，帮助理解文本的连贯性。返回的 paragraph_index 为展示序号（从 1 开始计数），chapter_index / volume_index 为数组索引（从 0 开始计数）。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID（当前段落的 ID）',
-            },
-            count: {
-              type: 'number',
-              description: '要获取的段落数量（默认 3）',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-          },
-          required: ['paragraph_id'],
+    definition: toolDefinition('get_next_paragraphs', {
+      type: 'object',
+      properties: {
+        paragraph_id: {
+          type: 'string',
+          description: describeTool('get_next_paragraphs.parameters.properties.paragraph_id'),
+        },
+        count: {
+          type: 'number',
+          description: describeTool('get_next_paragraphs.parameters.properties.count'),
+        },
+        include_memory: {
+          type: 'boolean',
+          description: describeTool('get_next_paragraphs.parameters.properties.include_memory'),
         },
       },
-    },
+      required: ['paragraph_id'],
+    }),
     handler: buildDirectionalParagraphsHandler('get_next_paragraphs', (book, paragraphId, count) =>
       ChapterService.getNextParagraphsAsync(book, paragraphId, count),
     ),
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'find_paragraph_by_keywords',
-        description:
-          '根据多个关键词查找包含任一关键词的段落。用于在翻译过程中查找特定内容或验证翻译的一致性。支持在原文或翻译文本中搜索，如果同时提供两者，则只返回同时满足两个条件的段落。支持多个关键词，返回包含任一关键词的段落（OR 逻辑）。[警告] **敬语翻译**：翻译敬语时，必须**首先**使用 search_memories 搜索记忆中关于该角色敬语翻译的相关信息，**然后**再使用此工具搜索该角色在之前段落中的翻译，以确保翻译一致性。如果提供 chapter_id 参数，则仅在指定章节内搜索；如果不提供，则搜索所有章节。返回的 paragraph_index 为展示序号（从 1 开始计数），chapter_index / volume_index 为数组索引（从 0 开始计数）。',
-        parameters: {
-          type: 'object',
-          properties: {
-            keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description:
-                '原文关键词数组（可选），用于在原文中搜索包含任一关键词的段落（OR 逻辑）。如果与 translation_keywords 同时提供，则段落必须同时满足两个条件。',
-            },
-            translation_keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description:
-                '翻译文本关键词数组（可选），用于在翻译文本中搜索包含任一关键词的段落（OR 逻辑）。如果与 keywords 同时提供，则段落必须同时满足两个条件。',
-            },
-            chapter_id: {
-              type: 'string',
-              description: '可选的章节 ID，如果提供则仅在该章节内搜索（不搜索其他章节）',
-            },
-            max_paragraphs: {
-              type: 'number',
-              description: '可选的最大返回段落数量（默认 1）',
-            },
-            only_with_translation: {
-              type: 'boolean',
-              description:
-                '是否只返回有翻译的段落（默认 false）。当设置为 true 时，只返回已翻译的段落，用于查看之前如何翻译某个关键词，确保翻译一致性。',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
+    definition: toolDefinition('find_paragraph_by_keywords', {
+      type: 'object',
+      properties: {
+        keywords: {
+          type: 'array',
+          items: {
+            type: 'string',
           },
-          required: [],
+          description: describeTool('find_paragraph_by_keywords.parameters.properties.keywords'),
+        },
+        translation_keywords: {
+          type: 'array',
+          items: {
+            type: 'string',
+          },
+          description: describeTool(
+            'find_paragraph_by_keywords.parameters.properties.translation_keywords',
+          ),
+        },
+        chapter_id: {
+          type: 'string',
+          description: describeTool('find_paragraph_by_keywords.parameters.properties.chapter_id'),
+        },
+        max_paragraphs: {
+          type: 'number',
+          description: describeTool(
+            'find_paragraph_by_keywords.parameters.properties.max_paragraphs',
+          ),
+        },
+        only_with_translation: {
+          type: 'boolean',
+          description: describeTool(
+            'find_paragraph_by_keywords.parameters.properties.only_with_translation',
+          ),
+        },
+        include_memory: {
+          type: 'boolean',
+          description: describeTool(
+            'find_paragraph_by_keywords.parameters.properties.include_memory',
+          ),
         },
       },
-    },
-    handler: async (args, { bookId, onAction }) => {
+      required: [],
+    }),
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const {
         keywords,
         translation_keywords,
@@ -1246,7 +1242,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        paragraphs: validResults.map(buildParagraphPayload),
+        paragraphs: validResults.map((result) => buildParagraphPayload(result, language)),
         count: validResults.length,
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
@@ -1255,44 +1251,42 @@ export const paragraphTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'search_paragraphs_by_regex',
-        description:
-          '使用正则表达式搜索段落。支持在原文或翻译文本中搜索，可以匹配复杂的文本模式。用于查找符合特定模式的段落，例如查找包含特定格式的文本、数字模式、特定字符组合等。返回的 paragraph_index 为展示序号（从 1 开始计数），chapter_index / volume_index 为数组索引（从 0 开始计数）。',
-        parameters: {
-          type: 'object',
-          properties: {
-            regex_pattern: {
-              type: 'string',
-              description:
-                '正则表达式模式（字符串格式）。例如："\\d+年" 匹配包含数字和"年"的文本，"[あ-ん]+" 匹配平假名等。',
-            },
-            chapter_id: {
-              type: 'string',
-              description: '可选的章节 ID，如果提供则仅在该章节内搜索（不搜索其他章节）',
-            },
-            max_paragraphs: {
-              type: 'number',
-              description: '可选的最大返回段落数量（默认 1）',
-            },
-            only_with_translation: {
-              type: 'boolean',
-              description:
-                '是否只返回有翻译的段落（默认 false）。当设置为 true 时，只返回已翻译的段落。',
-            },
-            search_in_translation: {
-              type: 'boolean',
-              description:
-                '是否在翻译文本中搜索（默认 false）。当设置为 true 时，在翻译文本中搜索；当设置为 false 时，在原文中搜索。',
-            },
-          },
-          required: ['regex_pattern'],
+    definition: toolDefinition('search_paragraphs_by_regex', {
+      type: 'object',
+      properties: {
+        regex_pattern: {
+          type: 'string',
+          description: describeTool(
+            'search_paragraphs_by_regex.parameters.properties.regex_pattern',
+          ),
+        },
+        chapter_id: {
+          type: 'string',
+          description: describeTool('search_paragraphs_by_regex.parameters.properties.chapter_id'),
+        },
+        max_paragraphs: {
+          type: 'number',
+          description: describeTool(
+            'search_paragraphs_by_regex.parameters.properties.max_paragraphs',
+          ),
+        },
+        only_with_translation: {
+          type: 'boolean',
+          description: describeTool(
+            'search_paragraphs_by_regex.parameters.properties.only_with_translation',
+          ),
+        },
+        search_in_translation: {
+          type: 'boolean',
+          description: describeTool(
+            'search_paragraphs_by_regex.parameters.properties.search_in_translation',
+          ),
         },
       },
-    },
-    handler: async (args, { bookId, onAction }) => {
+      required: ['regex_pattern'],
+    }),
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const {
         regex_pattern,
         chapter_id,
@@ -1354,7 +1348,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        paragraphs: validResults.map(buildParagraphPayload),
+        paragraphs: validResults.map((result) => buildParagraphPayload(result, language)),
         count: validResults.length,
         regex_pattern: regex_pattern.trim(),
         search_in_translation,
@@ -1362,19 +1356,9 @@ export const paragraphTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_translation_history',
-        description:
-          '获取段落的完整翻译历史。返回该段落的所有翻译版本，包括翻译ID、翻译内容、使用的AI模型等信息。用于查看段落的翻译历史记录。',
-        // fallow-ignore-next-line code-duplication
-        parameters: buildParagraphIdSchema(undefined, true),
-      },
-    },
-    handler: async (args, { bookId, onAction }) => {
-      const readArgs = await resolveParagraphIdReadArgs(args, bookId);
-      if (readArgs.kind === 'error') return readArgs.json;
+    definition: toolDefinition('get_translation_history', buildParagraphIdSchema(undefined, true)),
+    handler: paragraphReadHandler(async (readArgs, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const { paragraph_id, include_memory } = readArgs;
       const { paragraph } = readArgs.location;
 
@@ -1391,7 +1375,7 @@ export const paragraphTools: ToolDefinition[] = [
       }
 
       // 构建完整的翻译历史信息（叠加 index / isLatest）
-      const translationsBase = buildTranslationListPayload(paragraph);
+      const translationsBase = buildTranslationListPayload(paragraph, language);
       const total = translationsBase.length;
       const translationHistory = translationsBase.map((t, index) => ({
         ...t,
@@ -1410,42 +1394,34 @@ export const paragraphTools: ToolDefinition[] = [
         success: true,
         paragraph_id: paragraph.id,
         paragraph_text: paragraph.text,
-        selected_translation_id: paragraph.selectedTranslationId || '',
+        selected_translation_id: getLanguageTranslation(paragraph, language)?.id ?? '',
         translation_history: translationHistory,
         total_count: translationHistory.length,
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
           : {}),
       });
-    },
+    }),
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'update_translation',
-        description:
-          '更新段落中指定翻译版本的内容。用于编辑和修正翻译历史中的某个翻译版本。更新后，该翻译版本的内容会被修改，但ID和AI模型信息保持不变。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-            translation_id: {
-              type: 'string',
-              description: '要更新的翻译 ID（必须是该段落翻译历史中存在的翻译ID）',
-            },
-            new_translation: {
-              type: 'string',
-              description: '新的翻译内容',
-            },
-          },
-          required: ['paragraph_id', 'translation_id', 'new_translation'],
+    definition: toolDefinition('update_translation', {
+      type: 'object',
+      properties: {
+        paragraph_id: {
+          type: 'string',
+          description: describeTool('update_translation.parameters.properties.paragraph_id'),
+        },
+        translation_id: {
+          type: 'string',
+          description: describeTool('update_translation.parameters.properties.translation_id'),
+        },
+        new_translation: {
+          type: 'string',
+          description: describeTool('update_translation.parameters.properties.new_translation'),
         },
       },
-    },
+      required: ['paragraph_id', 'translation_id', 'new_translation'],
+    }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
       const { paragraph_id, translation_id, new_translation } = args as {
@@ -1509,15 +1485,12 @@ export const paragraphTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'select_translation',
-        description:
-          '选择段落中的某个翻译版本作为当前选中的翻译。用于在翻译历史中切换不同的翻译版本，将指定的翻译版本设置为段落当前使用的翻译。',
-        parameters: buildParagraphIdSchema('要选择的翻译 ID（必须是该段落翻译历史中存在的翻译ID）'),
-      },
-    },
+    definition: toolDefinition(
+      'select_translation',
+      buildParagraphIdSchema(
+        describeTool('select_translation.parameters.properties.translation_id'),
+      ),
+    ),
     // fallow-ignore-next-line code-duplication
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
@@ -1565,36 +1538,28 @@ export const paragraphTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'add_translation',
-        description:
-          '为段落添加新的翻译版本。用于在段落中添加新的翻译内容，新翻译会被添加到翻译历史中。如果段落已有5个翻译版本，最旧的翻译会被自动删除。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '段落 ID',
-            },
-            translation: {
-              type: 'string',
-              description: '新的翻译内容',
-            },
-            ai_model_id: {
-              type: 'string',
-              description: 'AI 模型 ID（可选，如果不提供则使用当前默认模型）',
-            },
-            set_as_selected: {
-              type: 'boolean',
-              description: '是否将新翻译设置为当前选中的翻译（默认 true）',
-            },
-          },
-          required: ['paragraph_id', 'translation'],
+    definition: toolDefinition('add_translation', {
+      type: 'object',
+      properties: {
+        paragraph_id: {
+          type: 'string',
+          description: describeTool('add_translation.parameters.properties.paragraph_id'),
+        },
+        translation: {
+          type: 'string',
+          description: describeTool('add_translation.parameters.properties.translation'),
+        },
+        ai_model_id: {
+          type: 'string',
+          description: describeTool('add_translation.parameters.properties.ai_model_id'),
+        },
+        set_as_selected: {
+          type: 'boolean',
+          description: describeTool('add_translation.parameters.properties.set_as_selected'),
         },
       },
-    },
+      required: ['paragraph_id', 'translation'],
+    }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
       const {
@@ -1688,15 +1653,12 @@ export const paragraphTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'remove_translation',
-        description:
-          '从段落中删除指定的翻译版本。用于清理不需要的翻译历史记录。如果删除的是当前选中的翻译，会自动选择其他翻译（优先选择最新的翻译）。',
-        parameters: buildParagraphIdSchema('要删除的翻译 ID（必须是该段落翻译历史中存在的翻译ID）'),
-      },
-    },
+    definition: toolDefinition(
+      'remove_translation',
+      buildParagraphIdSchema(
+        describeTool('remove_translation.parameters.properties.translation_id'),
+      ),
+    ),
     // fallow-ignore-next-line code-duplication
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
@@ -1745,55 +1707,50 @@ export const paragraphTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'batch_replace_translations',
-        description:
-          '批量替换段落翻译中的关键词部分。根据关键词在原文或翻译文本中查找段落，并只替换匹配的关键词部分（保留翻译文本的其他内容）。支持同时搜索原文和翻译文本，如果同时提供两者，则只替换同时满足两个条件的段落。用于批量修正翻译中的错误或统一翻译风格。重要：工具只会替换匹配的关键词部分，不会替换整个翻译文本。例如：翻译"大姐abc"中的"大姐"会被替换为"姐姐"，结果变为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），工具会在翻译文本中查找对应的关键词进行替换；如果找不到匹配的关键词，则跳过该段落。',
-        parameters: {
-          type: 'object',
-          properties: {
-            keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description:
-                '关键词数组（可选），用于在翻译文本中搜索包含任一关键词的段落（OR 逻辑）。如果与 original_keywords 同时提供，则段落必须同时满足两个条件。',
-            },
-            original_keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description:
-                '原文关键词数组（可选），用于在原文中搜索包含任一关键词的段落（OR 逻辑）。如果与 keywords 同时提供，则段落必须同时满足两个条件。',
-            },
-            replacement_text: {
-              type: 'string',
-              description:
-                '替换文本，用于替换匹配的关键词部分（不是替换整个翻译）。例如：如果关键词是"大姐"，替换文本是"姐姐"，则"大姐abc"会被替换为"姐姐abc"。如果只提供原文关键词（没有翻译关键词），工具会在翻译文本中查找对应的关键词进行替换；如果找不到匹配的关键词，则跳过该段落。',
-            },
-            chapter_id: {
-              type: 'string',
-              description: '可选的章节 ID，如果提供则仅在该章节内搜索和替换（不处理其他章节）',
-            },
-            replace_all_translations: {
-              type: 'boolean',
-              description:
-                '是否替换所有翻译版本（默认 false）。如果为 true，则替换段落的所有翻译版本；如果为 false，则只替换当前选中的翻译版本。',
-            },
-            max_replacements: {
-              type: 'number',
-              description:
-                '可选的最大替换数量（默认 100）。用于限制一次操作替换的段落数量，避免意外替换过多内容。',
-            },
+    definition: toolDefinition('batch_replace_translations', {
+      type: 'object',
+      properties: {
+        keywords: {
+          type: 'array',
+          items: {
+            type: 'string',
           },
-          required: ['replacement_text'],
+          description: describeTool('batch_replace_translations.parameters.properties.keywords'),
+        },
+        original_keywords: {
+          type: 'array',
+          items: {
+            type: 'string',
+          },
+          description: describeTool(
+            'batch_replace_translations.parameters.properties.original_keywords',
+          ),
+        },
+        replacement_text: {
+          type: 'string',
+          description: describeTool(
+            'batch_replace_translations.parameters.properties.replacement_text',
+          ),
+        },
+        chapter_id: {
+          type: 'string',
+          description: describeTool('batch_replace_translations.parameters.properties.chapter_id'),
+        },
+        replace_all_translations: {
+          type: 'boolean',
+          description: describeTool(
+            'batch_replace_translations.parameters.properties.replace_all_translations',
+          ),
+        },
+        max_replacements: {
+          type: 'number',
+          description: describeTool(
+            'batch_replace_translations.parameters.properties.max_replacements',
+          ),
         },
       },
-    },
+      required: ['replacement_text'],
+    }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
       const {

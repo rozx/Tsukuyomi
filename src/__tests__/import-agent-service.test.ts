@@ -54,6 +54,34 @@ afterEach(() => {
 });
 
 describe('导入 Agent 执行生命周期', () => {
+  it('启动失败使用当前 UI 语言并保留稳定错误前缀', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().setUiLocale('en-US');
+    const task = await ImportRepository.createTask();
+    await expect(ImportAgentService.run(task.id, { ...model, enabled: false })).rejects.toThrow(
+      'MODEL_UNAVAILABLE: Select an available assistant model first',
+    );
+  });
+  it('恢复中断通知使用检查点语言而非当前设置', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().setUiLocale('zh-TW');
+    const task = await ImportRepository.createTask();
+    await ImportRepository.mutateTask(task.id, (current) => {
+      current.state = 'running';
+      current.checkpoint = {
+        uiLocale: 'en-US',
+        messages: [],
+        remainingCalls: [],
+        completedCallIds: [],
+      };
+      return Promise.resolve();
+    });
+    await ImportAgentService.recover(task.id);
+    const recovered = (await ImportRepository.getTask(task.id))!;
+    expect(recovered.lastError?.code).toBe('INTERRUPTED');
+    expect(recovered.lastError?.message).toContain('previous execution was interrupted');
+    expect(recovered.state).toBe('paused');
+  });
   it('一个批次调用处理多个章节，进行中的已保存进度通知工作台且不会逐章请求模型', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
     const task = await ImportRepository.createTask();
@@ -419,9 +447,18 @@ describe('导入 Agent 执行生命周期', () => {
     const task = await ImportRepository.createTask();
     const languagesAtRequest: unknown[] = [];
     vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
-      generateText: async () => {
+      generateText: async (_config: AIServiceConfig, request: TextGenerationRequest) => {
         const checkpoint = (await ImportRepository.getTask(task.id))!.checkpoint!;
         languagesAtRequest.push(checkpoint.uiLocale);
+        const previewTool = request.tools!.find((tool) => tool.function.name === 'preview_import')!;
+        expect(previewTool.function.description).toContain('does not apply');
+        expect(JSON.stringify(request.tools)).not.toMatch(/[\p{Script=Han}]/u);
+        const system = request.messages!.find((message) => message.role === 'system')!
+          .content as string;
+        expect(system).toContain('independent AI novel import workspace');
+        const latestUser = request.messages!.findLast((message) => message.role === 'user')!
+          .content as string;
+        if (languagesAtRequest.length === 2) expect(latestUser).toContain('Continue organizing');
         expect(checkpoint).not.toHaveProperty('targetLanguage');
         await settings.setUiLocale('zh-TW');
         return { text: 'Waiting for more input' };

@@ -36,6 +36,18 @@ async function repairTasks() {
 }
 
 describe('配方修复任务', () => {
+  it('英文界面创建的修复任务名称保持书名原文', async () => {
+    const id = await ImportRecipeRepair.open(book(), '原始原因', 'en-US');
+    expect((await ImportRepository.getTask(id))!.name).toBe('Repair update recipe: 作品');
+  });
+  it('英文修复预填保留原始原因并说明配方单独提交条件', async () => {
+    const id = await ImportRecipeRepair.open(book(), '原始原因');
+    const task = (await ImportRepository.getTask(id))!;
+    const text = importRepairPrefill(task, 0, 'en-US');
+    expect(text).toContain('原始原因');
+    expect(text).toContain('If there are no new chapters');
+    expect(text).not.toContain('这本书的更新配方');
+  });
   it('新建时预设任务名、已确认的目标、目录来源和失效原因', async () => {
     const id = await ImportRecipeRepair.open(book(), '目录无法复现至少半数已导入章节');
     const task = await ImportRepository.getTask(id);

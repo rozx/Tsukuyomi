@@ -1,3 +1,9 @@
+import { toolDefinition } from './tool-localization';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { LocalizedError, localizedErrorMessage } from 'src/utils/localized-error';
+import { describeTool } from './tool-localization';
 import type { AppLocale } from 'src/models/locale';
 import { TodoListService, type TodoItem, type TodoStatus } from 'src/services/todo-list-service';
 import type { ToolDefinition } from './types';
@@ -16,7 +22,7 @@ const TODO_BY_ID_PARAMETERS = {
   properties: {
     id: {
       type: 'string',
-      description: '待办事项的 ID',
+      description: describeTool('update_todos.parameters.properties.items.items.properties.id'),
     },
   },
   required: ['id'],
@@ -31,12 +37,12 @@ const TODO_STATUS_PARAMETERS = {
   properties: {
     id: {
       type: 'string',
-      description: '单个待办事项的 ID（与 ids 二选一）',
+      description: describeTool('mark_todo_done.parameters.properties.id'),
     },
     ids: {
       type: 'array' as const,
       items: { type: 'string' },
-      description: '多个待办事项的 ID 列表（与 id 二选一）。一次性标记多项时优先使用。',
+      description: describeTool('mark_todo_done.parameters.properties.ids'),
     },
   },
 };
@@ -87,11 +93,14 @@ function buildBatchTodoResponse(
   message: string,
   todos: TodoItem[],
   errors: string[],
-  autoAdvanced?: TodoItem | null,
+  autoAdvanced: TodoItem | null | undefined,
+  uiLocale: AppLocale,
 ): string {
   return JSON.stringify({
     success: true,
-    message: autoAdvanced ? `${message}；已自动将下一项待办标记为进行中` : message,
+    message: autoAdvanced
+      ? translateText(uiLocale, 'aiTodoFeedback.advanced', { message })
+      : message,
     todos: todos.map((todo) => ({ id: todo.id, text: todo.text, status: todo.status })),
     count: todos.length,
     ...(errors.length > 0 ? { errors } : {}),
@@ -111,7 +120,7 @@ function createBatchTodos(
 
   for (const itemText of items) {
     if (!itemText || !itemText.trim()) {
-      errors.push('待办事项内容不能为空');
+      errors.push(translateText(uiLocale, 'aiTodoFeedback.contentRequired'));
       continue;
     }
     try {
@@ -120,13 +129,21 @@ function createBatchTodos(
       dispatchTodoCreated(todo, onAction);
     } catch (error) {
       errors.push(
-        `创建待办事项 "${itemText.slice(0, 20)}..." 失败: ${error instanceof Error ? error.message : String(error)}`,
+        translateText(uiLocale, 'aiTodoFeedback.createItemFailed', {
+          text: itemText.slice(0, 20),
+          detail: localizedErrorMessage(error, uiLocale, 'aiTodoFeedback.unknownError'),
+        }),
       );
     }
   }
 
   if (createdTodos.length === 0) {
-    throw new Error(`批量创建待办事项失败：${errors.join('; ')}`);
+    throw new LocalizedError(
+      'TODO_BATCH_CREATE_FAILED',
+      'aiTodoFeedback.batchCreateFailed',
+      { details: errors.join('; ') },
+      uiLocale,
+    );
   }
 
   const promoted = autoAdvanceNextTodo({ taskId, sessionId }, onAction);
@@ -135,10 +152,16 @@ function createBatchTodos(
     : createdTodos;
 
   return buildBatchTodoResponse(
-    `成功创建 ${createdTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
+    translateText(uiLocale, 'aiTodoFeedback.batchCreated', {
+      count: createdTodos.length,
+      failed: errors.length
+        ? translateText(uiLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
+        : '',
+    }),
     reported,
     errors,
     promoted,
+    uiLocale,
   );
 }
 
@@ -183,11 +206,12 @@ function runTodoStatusTransition(
   mutate: (id: string) => TodoItem,
   successMessage: string,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
-  advanceScope?: AdvanceScope,
+  advanceScope: AdvanceScope | undefined,
+  uiLocale: AppLocale,
 ): string {
   const targetIds = args.ids?.length ? args.ids : args.id ? [args.id] : [];
   if (targetIds.length === 0) {
-    throw new Error('必须提供 id 或 ids 参数之一');
+    throw new LocalizedError('TODO_ARGUMENTS_REQUIRED', 'aiTodoFeedback.idOrIds', {}, uiLocale);
   }
 
   const updatedTodos: TodoItem[] = [];
@@ -195,7 +219,7 @@ function runTodoStatusTransition(
 
   for (const todoId of targetIds) {
     if (!todoId) {
-      errors.push('待办事项 ID 不能为空');
+      errors.push(translateText(uiLocale, 'aiTodoFeedback.idRequired'));
       continue;
     }
     try {
@@ -204,21 +228,35 @@ function runTodoStatusTransition(
       dispatchTodoUpdated(previousTodo, updatedTodo, onAction);
       updatedTodos.push(updatedTodo);
     } catch (error) {
-      errors.push(`${todoId}: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(
+        `${todoId}: ${localizedErrorMessage(error, uiLocale, 'aiTodoFeedback.unknownError')}`,
+      );
     }
   }
 
   if (updatedTodos.length === 0) {
-    throw new Error(`${successMessage}失败：${errors.join('; ')}`);
+    throw new LocalizedError(
+      'TODO_TRANSITION_FAILED',
+      'aiTodoFeedback.transitionFailed',
+      { message: successMessage, details: errors.join('; ') },
+      uiLocale,
+    );
   }
 
   const promoted = autoAdvanceNextTodo(advanceScope, onAction);
 
   return buildBatchTodoResponse(
-    `${successMessage}（${updatedTodos.length} 项）${errors.length > 0 ? `，${errors.length} 项失败` : ''}`,
+    translateText(uiLocale, 'aiTodoFeedback.statusCount', {
+      message: successMessage,
+      count: updatedTodos.length,
+      failed: errors.length
+        ? translateText(uiLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
+        : '',
+    }),
     updatedTodos,
     errors,
     promoted,
+    uiLocale,
   );
 }
 
@@ -229,7 +267,7 @@ function runTodoStatusTransition(
  */
 function createTodoStatusHandler(
   mutate: (id: string) => TodoItem,
-  successMessage: string,
+  successMessage: MessageKey,
   autoAdvance = false,
 ) {
   return (
@@ -238,15 +276,18 @@ function createTodoStatusHandler(
       onAction?: (action: UpdateTodoAction) => void;
       taskId?: string;
       sessionId?: string;
+      languages?: ExecutionLanguages;
     },
   ) => {
+    const uiLocale = ctx.languages?.uiLocale ?? 'zh-CN';
     const { id, ids } = args as { id?: string; ids?: string[] };
     return runTodoStatusTransition(
       { ...(id ? { id } : {}), ...(ids ? { ids } : {}) },
       mutate,
-      successMessage,
+      translateText(uiLocale, successMessage),
       ctx.onAction,
       autoAdvance ? { taskId: ctx.taskId, sessionId: ctx.sessionId } : undefined,
+      uiLocale,
     );
   };
 }
@@ -255,14 +296,19 @@ function updateSingleTodoItem(
   item: { id: string; text?: string; status?: TodoStatus },
   onAction: ((action: UpdateTodoAction) => void) | undefined,
   errors: string[],
+  uiLocale: AppLocale,
 ): TodoItem | null {
   if (!item.id) {
-    errors.push('待办事项 ID 不能为空');
+    errors.push(translateText(uiLocale, 'aiTodoFeedback.idRequired'));
     return null;
   }
   if (item.status !== undefined && !VALID_TODO_STATUSES.includes(item.status)) {
     errors.push(
-      `待办事项 "${item.id}" 状态无效: "${item.status}"，有效值为: ${VALID_TODO_STATUSES.join(', ')}`,
+      translateText(uiLocale, 'aiTodoFeedback.itemInvalidStatus', {
+        id: item.id,
+        status: item.status,
+        valid: VALID_TODO_STATUSES.join(', '),
+      }),
     );
     return null;
   }
@@ -276,7 +322,10 @@ function updateSingleTodoItem(
     return updatedTodo;
   } catch (error) {
     errors.push(
-      `更新待办事项 "${item.id}" 失败: ${error instanceof Error ? error.message : String(error)}`,
+      translateText(uiLocale, 'aiTodoFeedback.updateItemFailed', {
+        id: item.id,
+        detail: localizedErrorMessage(error, uiLocale, 'aiTodoFeedback.unknownError'),
+      }),
     );
     return null;
   }
@@ -285,26 +334,38 @@ function updateSingleTodoItem(
 function updateBatchTodos(
   items: Array<{ id: string; text?: string; status?: TodoStatus }>,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
-  advanceScope?: AdvanceScope,
+  advanceScope: AdvanceScope | undefined,
+  uiLocale: AppLocale,
 ): string {
   const updatedTodos: TodoItem[] = [];
   const errors: string[] = [];
   for (const item of items) {
-    const updated = updateSingleTodoItem(item, onAction, errors);
+    const updated = updateSingleTodoItem(item, onAction, errors, uiLocale);
     if (updated) updatedTodos.push(updated);
   }
   if (updatedTodos.length === 0) {
-    throw new Error(`批量更新待办事项失败：${errors.join('; ')}`);
+    throw new LocalizedError(
+      'TODO_BATCH_UPDATE_FAILED',
+      'aiTodoFeedback.batchUpdateFailed',
+      { details: errors.join('; ') },
+      uiLocale,
+    );
   }
   const promoted = autoAdvanceNextTodo(advanceScope, onAction);
   const reported = promoted
     ? updatedTodos.map((todo) => (todo.id === promoted.id ? promoted : todo))
     : updatedTodos;
   return buildBatchTodoResponse(
-    `成功更新 ${updatedTodos.length} 个待办事项${errors.length > 0 ? `，${errors.length} 个失败` : ''}`,
+    translateText(uiLocale, 'aiTodoFeedback.batchUpdated', {
+      count: updatedTodos.length,
+      failed: errors.length
+        ? translateText(uiLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
+        : '',
+    }),
     reported,
     errors,
     promoted,
+    uiLocale,
   );
 }
 
@@ -313,7 +374,8 @@ function updateOneTodo(
   text: string | undefined,
   status: TodoStatus | undefined,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
-  advanceScope?: AdvanceScope,
+  advanceScope: AdvanceScope | undefined,
+  uiLocale: AppLocale,
 ): string {
   const updates: { text?: string; status?: TodoStatus } = {};
   if (text !== undefined) updates.text = text;
@@ -325,7 +387,11 @@ function updateOneTodo(
   const reported = promoted && promoted.id === updatedTodo.id ? promoted : updatedTodo;
   return JSON.stringify({
     success: true,
-    message: promoted ? '待办事项更新成功；已自动将下一项待办标记为进行中' : '待办事项更新成功',
+    message: promoted
+      ? translateText(uiLocale, 'aiTodoFeedback.advanced', {
+          message: translateText(uiLocale, 'aiTodoFeedback.updated'),
+        })
+      : translateText(uiLocale, 'aiTodoFeedback.updated'),
     todo: { id: reported.id, text: reported.text, status: reported.status },
     ...autoAdvancedField(promoted),
   });
@@ -339,7 +405,12 @@ function createSingleTodo(
   uiLocale: AppLocale = 'zh-CN',
 ): string {
   if (!text || !text.trim()) {
-    throw new Error('待办事项内容不能为空');
+    throw new LocalizedError(
+      'TODO_CONTENT_REQUIRED',
+      'aiTodoFeedback.contentRequired',
+      {},
+      uiLocale,
+    );
   }
   const todo = TodoListService.createTodo(text, taskId, sessionId, { uiLocale });
   dispatchTodoCreated(todo, onAction);
@@ -347,7 +418,11 @@ function createSingleTodo(
   const reported = promoted && promoted.id === todo.id ? promoted : todo;
   return JSON.stringify({
     success: true,
-    message: promoted ? '待办事项创建成功；已自动将下一项待办标记为进行中' : '待办事项创建成功',
+    message: promoted
+      ? translateText(uiLocale, 'aiTodoFeedback.advanced', {
+          message: translateText(uiLocale, 'aiTodoFeedback.created'),
+        })
+      : translateText(uiLocale, 'aiTodoFeedback.created'),
     todo: { id: reported.id, text: reported.text, status: reported.status },
     ...autoAdvancedField(promoted),
   });
@@ -355,40 +430,34 @@ function createSingleTodo(
 
 export const todoListTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'create_todo',
-        description:
-          '创建新的待办事项。可以创建单个待办事项（使用 text 参数）或多个待办事项（使用 items 参数）。当用户要求添加任务或待办事项时使用此工具。[警告] 重要：创建待办事项时，必须创建详细、可执行的待办事项，而不是总结性的待办事项。每个待办事项应该是具体且可操作的，而不是高层次的总结。如果你规划了一个包含多个步骤的任务，必须为每个步骤创建一个独立的待办事项。',
-        parameters: {
-          type: 'object',
-          properties: {
-            text: {
-              type: 'string',
-              description:
-                '单个待办事项的内容描述（与 items 参数二选一）。[警告] 重要：必须提供详细、具体、可执行的描述，而不是总结性的描述。例如："翻译第1-5段，检查术语一致性" 而不是 "翻译文本"。',
-            },
-            items: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description:
-                '多个待办事项的内容列表（与 text 参数二选一）。用于批量创建多个待办事项。[警告] 重要：每个待办事项必须提供详细、具体、可执行的描述，而不是总结性的描述。例如：["翻译第1-5段，检查术语一致性", "翻译第6-10段，确保角色名称翻译一致"] 而不是 ["翻译文本", "检查一致性"]。',
-            },
+    definition: toolDefinition('create_todo', {
+      type: 'object',
+      properties: {
+        text: {
+          type: 'string',
+          description: describeTool('create_todo.parameters.properties.text'),
+        },
+        items: {
+          type: 'array',
+          items: {
+            type: 'string',
           },
+          description: describeTool('create_todo.parameters.properties.items'),
         },
       },
-    },
+    }),
     handler: (args, { onAction, taskId, sessionId, languages }) => {
+      const uiLocale = languages?.uiLocale ?? 'zh-CN';
       const { text, items } = args as {
         text?: string;
         items?: string[];
       };
       if (!taskId) {
-        throw new Error(
-          '任务 ID 未提供，待办事项必须关联到 AI 任务。这通常表示服务层未正确传递任务上下文。',
+        throw new LocalizedError(
+          'TODO_CONTEXT_REQUIRED',
+          'aiTodoFeedback.contextRequired',
+          {},
+          uiLocale,
         );
       }
 
@@ -398,60 +467,64 @@ export const todoListTools: ToolDefinition[] = [
       if (text !== undefined && text !== null) {
         return createSingleTodo(text, taskId, sessionId, onAction as never, languages?.uiLocale);
       }
-      throw new Error('必须提供 text 或 items 参数之一');
+      throw new LocalizedError(
+        'TODO_ARGUMENTS_REQUIRED',
+        'aiTodoFeedback.textOrItems',
+        {},
+        uiLocale,
+      );
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'update_todos',
-        description:
-          '更新待办事项的内容或状态。可以更新单个待办事项（使用 id 参数）或多个待办事项（使用 items 参数）。可以更新文本内容或状态。',
-        parameters: {
-          type: 'object',
-          properties: {
-            id: {
-              type: 'string',
-              description: '单个待办事项的 ID（与 items 参数二选一）',
-            },
-            text: {
-              type: 'string',
-              description: '新的待办事项内容（可选，仅当使用 id 参数时有效）',
-            },
-            status: {
-              type: 'string',
-              enum: ['pending', 'working', 'done'],
-              description: '新的待办事项状态（可选，仅当使用 id 参数时有效）',
-            },
-            items: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  id: {
-                    type: 'string',
-                    description: '待办事项的 ID',
-                  },
-                  text: {
-                    type: 'string',
-                    description: '新的待办事项内容（可选）',
-                  },
-                  status: {
-                    type: 'string',
-                    enum: ['pending', 'working', 'done'],
-                    description: '新的待办事项状态（可选）',
-                  },
-                },
-                required: ['id'],
+    definition: toolDefinition('update_todos', {
+      type: 'object',
+      properties: {
+        id: {
+          type: 'string',
+          description: describeTool('update_todos.parameters.properties.id'),
+        },
+        text: {
+          type: 'string',
+          description: describeTool('update_todos.parameters.properties.text'),
+        },
+        status: {
+          type: 'string',
+          enum: ['pending', 'working', 'done'],
+          description: describeTool('update_todos.parameters.properties.status'),
+        },
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                description: describeTool(
+                  'update_todos.parameters.properties.items.items.properties.id',
+                ),
               },
-              description: '多个待办事项的更新列表（与 id 参数二选一）。用于批量更新多个待办事项。',
+              text: {
+                type: 'string',
+                description: describeTool(
+                  'update_todos.parameters.properties.items.items.properties.text',
+                ),
+              },
+              status: {
+                type: 'string',
+                enum: ['pending', 'working', 'done'],
+                description: describeTool(
+                  'update_todos.parameters.properties.items.items.properties.status',
+                ),
+              },
             },
+            required: ['id'],
           },
+          description: describeTool('update_todos.parameters.properties.items'),
         },
       },
-    },
-    handler: (args, { onAction, taskId, sessionId }) => {
+    }),
+    handler: (args, { onAction, taskId, sessionId, languages }) => {
+      const uiLocale = languages?.uiLocale ?? 'zh-CN';
       const { id, text, status, items } = args as {
         id?: string;
         text?: string;
@@ -460,65 +533,43 @@ export const todoListTools: ToolDefinition[] = [
       };
       const advanceScope: AdvanceScope = { taskId, sessionId };
       if (items && Array.isArray(items) && items.length > 0) {
-        return updateBatchTodos(items, onAction as never, advanceScope);
+        return updateBatchTodos(items, onAction as never, advanceScope, uiLocale);
       }
       if (id) {
-        return updateOneTodo(id, text, status, onAction as never, advanceScope);
+        return updateOneTodo(id, text, status, onAction as never, advanceScope, uiLocale);
       }
-      throw new Error('必须提供 id 或 items 参数之一');
+      throw new LocalizedError('TODO_ARGUMENTS_REQUIRED', 'aiTodoFeedback.idOrItems', {}, uiLocale);
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'mark_todo_done',
-        description:
-          '将待办事项标记为完成。无需先标记进行中。完成多项时用 ids 一次性批量标记，避免逐条调用。标记完成后，系统会自动把下一项待办标记为进行中。',
-        parameters: TODO_STATUS_PARAMETERS,
-      },
-    },
+    definition: toolDefinition('mark_todo_done', TODO_STATUS_PARAMETERS),
     handler: createTodoStatusHandler(
       (todoId) => TodoListService.markTodoAsDone(todoId),
-      '待办事项已标记为完成',
+      'aiTodoFeedback.done',
       true,
     ),
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'mark_todo_working',
-        description:
-          '将待办事项标记为进行中。通常无需调用：完成/创建待办后系统会自动把下一项标记为进行中；仅在需要手动切换当前进行项时使用。',
-        parameters: TODO_STATUS_PARAMETERS,
-      },
-    },
+    definition: toolDefinition('mark_todo_working', TODO_STATUS_PARAMETERS),
     handler: createTodoStatusHandler(
       (todoId) => TodoListService.markTodoAsWorking(todoId),
-      '待办事项已标记为进行中',
+      'aiTodoFeedback.working',
     ),
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'delete_todo',
-        description: '删除待办事项。',
-        parameters: TODO_BY_ID_PARAMETERS,
-      },
-    },
-    handler: (args, { onAction, taskId, sessionId }) => {
+    definition: toolDefinition('delete_todo', TODO_BY_ID_PARAMETERS),
+    handler: (args, { onAction, taskId, sessionId, languages }) => {
+      const uiLocale = languages?.uiLocale ?? 'zh-CN';
       const { id } = args as {
         id: string;
       };
       if (!id) {
-        throw new Error('待办事项 ID 不能为空');
+        throw new LocalizedError('TODO_ID_REQUIRED', 'aiTodoFeedback.idRequired', {}, uiLocale);
       }
 
       const todo = TodoListService.getTodoById(id);
       if (!todo) {
-        throw new Error(`待办事项不存在: ${id}`);
+        throw new LocalizedError('TODO_NOT_FOUND', 'aiTodoFeedback.missing', { id }, uiLocale);
       }
 
       TodoListService.deleteTodo(id);
@@ -536,7 +587,11 @@ export const todoListTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: promoted ? '待办事项删除成功；已自动将下一项待办标记为进行中' : '待办事项删除成功',
+        message: promoted
+          ? translateText(uiLocale, 'aiTodoFeedback.advanced', {
+              message: translateText(uiLocale, 'aiTodoFeedback.deleted'),
+            })
+          : translateText(uiLocale, 'aiTodoFeedback.deleted'),
         todo: {
           id: todo.id,
           text: todo.text,
@@ -546,32 +601,29 @@ export const todoListTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'list_todos',
-        description:
-          '列出当前任务的待办事项列表。返回当前任务关联的所有待办事项，每个待办事项包含 id、text、completed 等字段。可以过滤获取所有、仅未完成或仅已完成的待办事项。注意：此工具仅返回当前任务（taskId）的待办事项，不会返回其他任务的待办事项。',
-        parameters: {
-          type: 'object',
-          properties: {
-            filter: {
-              type: 'string',
-              enum: ['all', 'active', 'completed'],
-              description:
-                '过滤类型：all-返回所有待办事项列表，active-仅返回未完成的待办事项列表，completed-仅返回已完成的待办事项列表',
-            },
-          },
+    definition: toolDefinition('list_todos', {
+      type: 'object',
+      properties: {
+        filter: {
+          type: 'string',
+          enum: ['all', 'active', 'completed'],
+          description: describeTool('list_todos.parameters.properties.filter'),
         },
       },
-    },
-    handler: (args, { taskId, sessionId }) => {
+    }),
+    handler: (args, { taskId, sessionId, languages }) => {
+      const uiLocale = languages?.uiLocale ?? 'zh-CN';
       const { filter = 'all' } = args as {
         filter?: 'all' | 'active' | 'completed';
       };
 
       if (!taskId) {
-        throw new Error('任务 ID 未提供，无法列出待办事项。这通常表示服务层未正确传递任务上下文。');
+        throw new LocalizedError(
+          'TODO_CONTEXT_REQUIRED',
+          'aiTodoFeedback.listContextRequired',
+          {},
+          uiLocale,
+        );
       }
 
       // taskId 和 sessionId 由服务层自动提供

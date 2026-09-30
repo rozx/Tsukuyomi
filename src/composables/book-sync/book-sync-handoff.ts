@@ -4,6 +4,7 @@ import { ImportRepository } from 'src/services/import/import-repository';
 import { ImportSourceService } from 'src/services/import/import-source-service';
 import { ImportRecipeRepair } from 'src/services/import/import-recipe-repair';
 import type { Novel } from 'src/models/novel';
+import { useSettingsStore } from 'src/stores/settings';
 
 /**
  * 把无法回放的网址交给 AI 导入器：创建任务、登记网址为来源并跳转到该任务。
@@ -27,7 +28,7 @@ export async function repairWithImporter(
   router: Router,
 ): Promise<string> {
   assertImportWorkspaceEnabled();
-  const taskId = await ImportRecipeRepair.open(book, reason);
+  const taskId = await ImportRecipeRepair.open(book, reason, useSettingsStore().uiLocale);
   await router.push(`/import/${taskId}`);
   return taskId;
 }

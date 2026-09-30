@@ -96,7 +96,7 @@ describe('CharacterSettingService', () => {
       CharacterSettingService.updateCharacterSetting(bookId, 'c', {
         aliases: [{ name: 'Al', translation: '译名' }],
       }),
-    ).rejects.toThrow('AMBIGUOUS_ALIAS_NAME');
+    ).rejects.toMatchObject({ code: 'AMBIGUOUS_ALIAS_NAME' });
   });
 
   describe('addCharacterSetting', () => {

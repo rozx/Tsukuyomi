@@ -6,6 +6,8 @@ import { contextBudgets } from 'src/services/ai/context/constants';
 import { resolveModelLimits } from 'src/services/ai/model-limits/resolve';
 import { ImportRepository } from './import-repository';
 import { assertImportOwner } from './import-agent-journal';
+import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
 
 function conversation(checkpoint: ImportCheckpoint | undefined) {
   return (checkpoint?.messages ?? []).filter((message) => message.role !== 'system');
@@ -31,12 +33,19 @@ export async function compactImportHistory(
     reason: 'manual' | 'auto';
     signal?: AbortSignal;
     notify?: () => void;
+    uiLocale?: AppLocale;
   },
 ): Promise<void> {
   const task = await ImportRepository.getTask(taskId);
-  if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+  if (!task)
+    throw new Error(
+      'TASK_NOT_FOUND: ' + translateText(options.uiLocale ?? 'zh-CN', 'aiImportPrompt.taskMissing'),
+    );
+  const uiLocale = task.checkpoint?.uiLocale ?? 'zh-CN';
   if (!canCompactImport(task))
-    throw new Error('COMPACT_UNAVAILABLE: 没有可压缩的对话，或还有未完成的工具调用');
+    throw new Error(
+      'COMPACT_UNAVAILABLE: ' + translateText(uiLocale, 'aiImportPrompt.compactNoConversation'),
+    );
   const history = conversation(task.checkpoint);
   const previousCheckpoint = JSON.stringify(task.checkpoint);
   const { run } = options;
@@ -60,7 +69,10 @@ export async function compactImportHistory(
       model,
       signal: options.signal,
     });
-    if (!result) throw new Error('COMPACT_UNAVAILABLE: 当前历史没有可以安全压缩的部分');
+    if (!result)
+      throw new Error(
+        'COMPACT_UNAVAILABLE: ' + translateText(uiLocale, 'aiImportPrompt.compactNoSafePart'),
+      );
     options.signal?.throwIfAborted();
     const checkpoint: ImportCheckpoint = {
       ...task.checkpoint!,
@@ -73,7 +85,9 @@ export async function compactImportHistory(
       (current) => {
         if (run) assertImportOwner(current, run);
         if (JSON.stringify(current.checkpoint) !== previousCheckpoint)
-          throw new Error('COMPACT_STALE: 对话在压缩期间已更新，请重试');
+          throw new Error(
+            'COMPACT_STALE: ' + translateText(uiLocale, 'aiImportPrompt.compactStale'),
+          );
         delete current.compacting;
         if (run && current.state === 'paused' && current.lastError?.code === 'CONTEXT_LIMIT') {
           current.state = 'running';

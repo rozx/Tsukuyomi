@@ -1,5 +1,6 @@
 import type { TodoParagraphInput } from 'src/services/todo-list-service';
 import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 import { captureExecutionLanguages } from './execution-languages';
 import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
 /**
@@ -203,6 +204,7 @@ export interface TaskSpecificConfig {
   onTitleExtracted?: ((params: TitleExtractCallbackParams) => void | Promise<void>) | undefined;
   // 构建系统提示词函数
   buildSystemPrompt: (params: {
+    languages: ExecutionLanguages;
     todosPrompt: string;
     bookContextSection: string;
     chapterContextSection: string;
@@ -416,10 +418,14 @@ export async function processTextTask(
     const service = AIServiceFactory.getService(model.provider);
     const skipAskUser = await isSkipAskUserEnabled(bookId);
     const enableOriginalTextValidation = isOriginalTextValidationEnabled(bookId);
-    const tools = ToolRegistry.getTranslationTools(bookId, {
-      excludeAskUser: skipAskUser,
-      enableOriginalTextValidation,
-    });
+    const tools = ToolRegistry.getTranslationTools(
+      bookId,
+      {
+        excludeAskUser: skipAskUser,
+        enableOriginalTextValidation,
+      },
+      languages.uiLocale,
+    );
 
     // 获取温度配置
     const modelTemperature =
@@ -439,12 +445,20 @@ export async function processTextTask(
 
     // 构建系统提示词
     const todosPrompt = getTodosSystemPrompt(!!taskId, languages.uiLocale);
-    const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
-    const bookContextSection = await buildBookContextSection(bookId);
-    const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+    const specialInstructionsSection = buildSpecialInstructionsSection(
+      specialInstructions,
+      languages.uiLocale,
+    );
+    const bookContextSection = await buildBookContextSection(bookId, languages.uiLocale);
+    const chapterContextSection = buildChapterContextSection(
+      chapterId,
+      chapterTitle,
+      languages.uiLocale,
+    );
 
     // 获取前一章节标题（仅翻译服务;摘要字段已移除,仅注入标题保持时序感知）
     const previousChapterSection = resolvePreviousChapterSection({
+      languages,
       enablePreviousChapter,
       bookId,
       chapterId,
@@ -453,6 +467,7 @@ export async function processTextTask(
 
     // 构建系统提示词（第一个 chunk）
     const systemPromptFirst = buildSystemPrompt({
+      languages,
       todosPrompt,
       bookContextSection,
       chapterContextSection: chapterContextSection + previousChapterSection,
@@ -465,6 +480,7 @@ export async function processTextTask(
 
     // 构建系统提示词（后续 chunk）
     const systemPromptSubsequent = buildSystemPrompt({
+      languages,
       todosPrompt,
       bookContextSection,
       chapterContextSection: chapterContextSection + previousChapterSection,
@@ -493,6 +509,7 @@ export async function processTextTask(
     // 这样 buildChunks 在遍历 allChapterParagraphs 时，只会包含目标段落，而非所有段落
     const validParagraphIds = new Set(validParagraphs.map((p) => p.id));
     const buildChunksForIds = makeBuildChunksForIds({
+      uiLocale: languages.uiLocale,
       targetLanguage: languages.targetLanguage,
       requiresTranslation,
       validParagraphs,
@@ -611,6 +628,7 @@ export async function processTextTask(
  * 获取前一章节标题注入的 section（仅启用 enablePreviousChapter 时）
  */
 function resolvePreviousChapterSection(params: {
+  languages: ExecutionLanguages;
   enablePreviousChapter: boolean;
   bookId: string | undefined;
   chapterId: string | undefined;
@@ -630,8 +648,11 @@ function resolvePreviousChapterSection(params: {
     if (!prev) {
       return '';
     }
-    const prevTitle = getChapterDisplayTitle(prev.chapter);
-    return buildPreviousChapterSection(prevTitle);
+    const prevTitle = getChapterDisplayTitle(prev.chapter, {
+      ...book,
+      targetLanguage: params.languages.targetLanguage,
+    });
+    return buildPreviousChapterSection(prevTitle, params.languages.uiLocale);
   } catch (error) {
     console.warn(`[${logLabel}] 获取前一章节信息失败:`, error);
     return '';
@@ -643,6 +664,7 @@ function resolvePreviousChapterSection(params: {
  * 其余任务走 buildChunks + ID 谓词。初次分块与后续重建都复用此闭包。
  */
 function makeBuildChunksForIds(params: {
+  uiLocale: AppLocale;
   targetLanguage: AppLocale;
   requiresTranslation: boolean;
   validParagraphs: Paragraph[];
@@ -666,6 +688,7 @@ function makeBuildChunksForIds(params: {
         chunkSize,
         originalIndices,
         params.targetLanguage,
+        params.uiLocale,
       );
     }
     return buildChunks(
@@ -1235,9 +1258,11 @@ async function buildChunkUserContent(params: {
   isFirstChunk: boolean;
 }): Promise<string> {
   const { ctx, actualChunk, chunkIndex, chunkText, isFirstChunk } = params;
-  const maintenanceReminder = buildMaintenanceReminder(ctx.taskType);
+  const maintenanceReminder = buildMaintenanceReminder(ctx.taskType, ctx.languages.uiLocale);
   const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
-  const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。段落标签 [index] 为章节原始位置（从 1 开始，可能跳号），仅用于阅读定位。提交翻译必须使用 paragraph_id（即 [ID: ...] 中的值）。`;
+  const paragraphCountNote = translateText(ctx.languages.uiLocale, 'aiContext.count', {
+    count: currentChunkParagraphCount,
+  });
 
   const firstParagraphId = actualChunk.paragraphIds?.[0];
   const hasPreviousParagraphs = getHasPreviousParagraphs(
@@ -1257,6 +1282,7 @@ async function buildChunkUserContent(params: {
     ctx.bookId,
     hasPreviousParagraphs,
     firstParagraphId,
+    ctx.languages,
   );
 }
 

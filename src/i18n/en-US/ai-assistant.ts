@@ -1,5 +1,13 @@
 export default {
   aiAssistant: {
+    emptyReply: 'No valid response was received. Please try again.',
+    finished: 'Assistant reply complete',
+    cancelled: 'Cancelled',
+    cancelRequest: 'Request cancelled',
+    unknownError: 'Unknown error',
+    toolNotAllowed: 'Tool {tool} is not available for this execution.',
+    bookRequired: 'No current book context is available for this tool.',
+    toolLimit: 'The tool turn limit was reached; this call was not executed.',
     persona:
       'You are a professional translation and reading assistant for this application. Use neutral, clear English. Be concise, accurate, and courteous. Do not roleplay a character, use third-person self-reference, or add theatrical mannerisms.',
     capabilities:

@@ -65,12 +65,14 @@ interface SingleParagraphProcessConfig {
   logLabel: string;
   temperature: number;
   buildSystemPrompt: (params: {
+    languages: ExecutionLanguages;
     bookContextSection: string;
     chapterContextSection: string;
     specialInstructionsSection: string;
     tools: AITool[];
   }) => string;
   buildUserPrompt: (params: {
+    languages: ExecutionLanguages;
     paragraphId: string;
     originalText: string;
     currentTranslation: string;
@@ -328,14 +330,24 @@ async function buildSingleParagraphPrompts(params: {
     buildUserPrompt,
   } = params;
 
-  const bookContextSection = bookId ? await buildBookContextSection(bookId) : '';
-  const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
+  const bookContextSection = bookId
+    ? await buildBookContextSection(bookId, params.languages.uiLocale)
+    : '';
+  const chapterContextSection = buildChapterContextSection(
+    chapterId,
+    chapterTitle,
+    params.languages.uiLocale,
+  );
   const specialInstructions = bookId
     ? getSpecialInstructions(bookId, chapterId, taskType)
     : undefined;
-  const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
+  const specialInstructionsSection = buildSpecialInstructionsSection(
+    specialInstructions,
+    params.languages.uiLocale,
+  );
 
   const systemPrompt = buildSystemPrompt({
+    languages: params.languages,
     bookContextSection,
     chapterContextSection,
     specialInstructionsSection,
@@ -343,6 +355,7 @@ async function buildSingleParagraphPrompts(params: {
   });
 
   const defaultContext = await buildSingleParagraphDefaultContext({
+    languages: params.languages,
     currentParagraphId: paragraph.id,
     allChapterParagraphs,
     ...(bookId ? { bookId } : {}),
@@ -353,6 +366,7 @@ async function buildSingleParagraphPrompts(params: {
   const currentTranslation =
     getLanguageTranslation(paragraph, params.languages.targetLanguage)?.translation ?? '';
   const userPrompt = buildUserPrompt({
+    languages: params.languages,
     paragraphId: paragraph.id,
     originalText: paragraph.text,
     currentTranslation,
@@ -441,7 +455,7 @@ export async function processSingleParagraph(
   try {
     const service = AIServiceFactory.getService(model.provider);
 
-    const tools = ToolRegistry.getSingleParagraphPolishTools(bookId);
+    const tools = ToolRegistry.getSingleParagraphPolishTools(bookId, languages.uiLocale);
 
     const { systemPrompt, userPrompt } = await buildSingleParagraphPrompts({
       languages,

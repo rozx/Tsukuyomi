@@ -1,3 +1,5 @@
+import { toolDefinition } from './tool-localization';
+import { describeTool } from './tool-localization';
 import { parseToolArgs, type ActionInfo, type ToolDefinition, type ToolContext } from './types';
 import type {
   AskUserBatchPayload,
@@ -6,7 +8,9 @@ import type {
   AskUserResult,
 } from 'src/stores/ask-user';
 import { GlobalConfig } from 'src/services/global-config-cache';
-import { getErrorMessage } from 'src/utils/error-message';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
+import { localizedErrorMessage, localizedErrorCode } from 'src/utils/localized-error';
 
 type AskUserOnAction = ToolContext['onAction'];
 
@@ -16,32 +20,32 @@ type AskUserOnAction = ToolContext['onAction'];
 const ASK_USER_QUESTION_PROPERTIES = {
   question: {
     type: 'string',
-    description: '要向用户展示的问题（必填）',
+    description: describeTool('ask_user.parameters.properties.question'),
   },
   suggested_answers: {
     type: 'array',
-    description: '可选的候选答案列表（用户可一键选择）',
+    description: describeTool('ask_user.parameters.properties.suggested_answers'),
     items: { type: 'string' },
   },
   allow_free_text: {
     type: 'boolean',
-    description: '是否允许用户输入自定义答案（默认 true）',
+    description: describeTool('ask_user.parameters.properties.allow_free_text'),
   },
   placeholder: {
     type: 'string',
-    description: '自定义输入框的占位符（可选）',
+    description: describeTool('ask_user.parameters.properties.placeholder'),
   },
   submit_label: {
     type: 'string',
-    description: '提交按钮文本（可选）',
+    description: describeTool('ask_user.parameters.properties.submit_label'),
   },
   cancel_label: {
     type: 'string',
-    description: '取消按钮文本（可选）',
+    description: describeTool('ask_user.parameters.properties.cancel_label'),
   },
   max_length: {
     type: 'number',
-    description: '自定义输入最大长度（可选）',
+    description: describeTool('ask_user.parameters.properties.max_length'),
   },
 } as const;
 
@@ -98,6 +102,7 @@ async function invokeAskUserBridge(
   payload: AskUserPayload,
   askFn: (p: AskUserPayload) => Promise<AskUserResult>,
   onAction: AskUserOnAction,
+  uiLocale: AppLocale,
 ): Promise<string> {
   try {
     const result = await askFn(payload);
@@ -111,7 +116,7 @@ async function invokeAskUserBridge(
     }
     return JSON.stringify(buildAskUserSuccessJson(question, result));
   } catch (error) {
-    return JSON.stringify(buildAskUserErrorJson(question, error));
+    return JSON.stringify(buildAskUserErrorJson(question, error, uiLocale));
   }
 }
 
@@ -163,32 +168,29 @@ function buildAskUserSuccessJson(question: string, result: AskUserResult) {
 /**
  * ask_user 异常时的 JSON 响应体
  */
-function buildAskUserErrorJson(question: string, error: unknown) {
-  const msg = getErrorMessage(error);
-  return { success: false, error: msg, question };
+function buildAskUserErrorJson(question: string, error: unknown, uiLocale: AppLocale) {
+  const msg = localizedErrorMessage(error, uiLocale, 'aiEntityFeedback.askFailed');
+  return { success: false, error_code: localizedErrorCode(error), error: msg, question };
 }
 
 export const askUserTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'ask_user',
-        description:
-          '向用户提问并等待用户回答。会弹出全屏对话框展示问题与候选答案，用户也可以输入自定义答案。适用于关键歧义、缺失信息或需要用户偏好决策的场景。',
-        parameters: {
-          type: 'object',
-          properties: ASK_USER_QUESTION_PROPERTIES,
-          required: ASK_USER_QUESTION_REQUIRED,
-        },
-      },
-    },
+    definition: toolDefinition('ask_user', {
+      type: 'object',
+      properties: ASK_USER_QUESTION_PROPERTIES,
+      required: ASK_USER_QUESTION_REQUIRED,
+    }),
     handler: async (args, context: ToolContext) => {
+      const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
       const { onAction } = context;
       const parsedArgs = parseToolArgs<AskUserPayload>(args);
       const question = typeof parsedArgs?.question === 'string' ? parsedArgs.question.trim() : '';
       if (!question) {
-        return JSON.stringify({ success: false, error: 'question 不能为空' });
+        return JSON.stringify({
+          success: false,
+          error_code: 'QUESTION_REQUIRED',
+          error: translateText(uiLocale, 'aiEntityFeedback.questionRequired'),
+        });
       }
 
       const bookId = typeof context?.bookId === 'string' ? context.bookId : undefined;
@@ -201,37 +203,31 @@ export const askUserTools: ToolDefinition[] = [
       if (!askFn) {
         return JSON.stringify({
           success: false,
-          error: 'AskUser UI 不可用（无法弹出对话框）',
+          error_code: 'ASK_UI_UNAVAILABLE',
+          error: translateText(uiLocale, 'aiEntityFeedback.askUnavailable'),
         });
       }
-      return invokeAskUserBridge(question, payload, askFn, onAction);
+      return invokeAskUserBridge(question, payload, askFn, onAction, uiLocale);
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'ask_user_batch',
-        description:
-          '向用户一次性提出多个问题并等待回答（Stepper 一题一屏）。适用于需要用户一次确认多个偏好/关键歧义的场景；用户中途取消会返回已答部分（partial answers）。',
-        parameters: {
-          type: 'object',
-          properties: {
-            questions: {
-              type: 'array',
-              description: '问题列表（必填，至少 1 题）',
-              items: {
-                type: 'object',
-                properties: ASK_USER_QUESTION_PROPERTIES,
-                required: ASK_USER_QUESTION_REQUIRED,
-              },
-            },
+    definition: toolDefinition('ask_user_batch', {
+      type: 'object',
+      properties: {
+        questions: {
+          type: 'array',
+          description: describeTool('ask_user_batch.parameters.properties.questions'),
+          items: {
+            type: 'object',
+            properties: ASK_USER_QUESTION_PROPERTIES,
+            required: ASK_USER_QUESTION_REQUIRED,
           },
-          required: ['questions'],
         },
       },
-    },
+      required: ['questions'],
+    }),
     handler: async (args, context: ToolContext) => {
+      const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
       const { onAction } = context;
       const parsedArgs = parseToolArgs<AskUserBatchPayload>(args);
 
@@ -245,7 +241,11 @@ export const askUserTools: ToolDefinition[] = [
       const nonEmptyQuestionTexts = questionTextsByIndex.filter((q) => !!q);
 
       if (nonEmptyQuestionTexts.length === 0) {
-        return JSON.stringify({ success: false, error: 'questions 不能为空' });
+        return JSON.stringify({
+          success: false,
+          error_code: 'QUESTIONS_REQUIRED',
+          error: translateText(uiLocale, 'aiEntityFeedback.questionsRequired'),
+        });
       }
 
       // 书籍级配置：若开启“跳过 AI 追问”，则直接返回 cancelled（不弹 UI）
@@ -287,7 +287,8 @@ export const askUserTools: ToolDefinition[] = [
       if (!askBatchFn) {
         return JSON.stringify({
           success: false,
-          error: 'AskUserBatch UI 不可用（无法弹出对话框）',
+          error_code: 'ASK_UI_UNAVAILABLE',
+          error: translateText(uiLocale, 'aiEntityFeedback.askBatchUnavailable'),
         });
       }
 
@@ -320,8 +321,12 @@ export const askUserTools: ToolDefinition[] = [
           answers: result.answers,
         });
       } catch (error) {
-        const msg = getErrorMessage(error);
-        return JSON.stringify({ success: false, error: msg });
+        const msg = localizedErrorMessage(error, uiLocale, 'aiEntityFeedback.askFailed');
+        return JSON.stringify({
+          success: false,
+          error_code: localizedErrorCode(error),
+          error: msg,
+        });
       }
     },
   },

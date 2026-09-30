@@ -3,14 +3,15 @@ import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationChunk } from 'src/services/ai/types/ai-service';
 import { useSettingsStore } from 'src/stores/settings';
-import type { ExecutionLanguages } from 'src/models/locale';
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
 import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { AssistantService } from 'src/services/ai/tasks/assistant-service';
 import { AssistantExecution } from 'src/services/ai/tasks/utils/assistant-execution';
 import type { AssistantExecutionCheckpoint } from 'src/services/ai/tasks/utils/assistant-execution';
 import type { ImportRunContext, ImportTask } from 'src/models/import';
 import { ImportRepository } from './import-repository';
-import { ImportToolExecutor, importTools } from './import-tool-executor';
+import { ImportToolExecutor } from './import-tool-executor';
+import { getImportTools } from './import-tool-definitions';
 import { importAgentPrompt } from './import-agent-prompt';
 import { assertImportOwner, saveImportAgentCheckpoint } from './import-agent-journal';
 import { awaitingImportAnswer } from './import-question-service';
@@ -43,9 +44,10 @@ function restoredCheckpoint(task: ImportTask): AssistantExecutionCheckpoint | un
     })),
   };
 }
-async function requireTask(taskId: string): Promise<ImportTask> {
+async function requireTask(taskId: string, uiLocale: AppLocale = 'zh-CN'): Promise<ImportTask> {
   const task = await ImportRepository.getTask(taskId);
-  if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+  if (!task)
+    throw new Error('TASK_NOT_FOUND: ' + translateText(uiLocale, 'aiImportPrompt.taskMissing'));
   return task;
 }
 
@@ -73,29 +75,32 @@ export class ImportAgentService {
     assertImportWorkspaceEnabled();
     const startUiLocale = useSettingsStore().uiLocale;
     if (typeof navigator === 'undefined' || !navigator.locks)
-      throw new Error('LOCK_UNAVAILABLE: 当前环境不能协调导入运行');
-    if (!model.id || !model.enabled) throw new Error('MODEL_UNAVAILABLE: 请先选择可用的助手模型');
+      throw new Error(
+        'LOCK_UNAVAILABLE: ' + translateText(startUiLocale, 'aiImportPrompt.lockUnavailable'),
+      );
+    if (!model.id || !model.enabled)
+      throw new Error(
+        'MODEL_UNAVAILABLE: ' + translateText(startUiLocale, 'aiImportPrompt.modelUnavailable'),
+      );
     const locks = navigator.locks;
     return locks.request('tsukuyomi:import-agent', { ifAvailable: true }, async (lock) => {
-      if (!lock) throw new Error('IMPORT_BUSY: 已有导入任务正在运行，请先暂停该任务');
-      const task = await requireTask(taskId);
+      if (!lock)
+        throw new Error('IMPORT_BUSY: ' + translateText(startUiLocale, 'aiImportPrompt.busy'));
+      const task = await requireTask(taskId, startUiLocale);
+      const uiLocale = task.checkpoint ? (task.checkpoint.uiLocale ?? 'zh-CN') : startUiLocale;
       if (awaitingImportAnswer(task))
-        throw new Error('PENDING_QUESTION: 请先完成当前任务的必要选择');
+        throw new Error(
+          'PENDING_QUESTION: ' + translateText(uiLocale, 'aiImportPrompt.questionPending'),
+        );
       const prompt = message.trim()
         ? message
         : task.checkpoint?.remainingCalls.length
           ? ''
-          : '请根据当前来源与草稿继续整理，并生成可检查的导入方案。';
+          : translateText(uiLocale, 'aiImportPrompt.continue');
       return locks.request(`${TASK_LOCK_PREFIX}${taskId}`, { ifAvailable: true }, async (owner) => {
-        if (!owner) throw new Error('IMPORT_BUSY: 当前任务仍有未结束的执行');
-        return this.runOwned(
-          taskId,
-          model,
-          prompt,
-          captureExecutionLanguages(
-            task.checkpoint ? (task.checkpoint.uiLocale ?? 'zh-CN') : startUiLocale,
-          ),
-        );
+        if (!owner)
+          throw new Error('IMPORT_BUSY: ' + translateText(uiLocale, 'aiImportPrompt.ownerBusy'));
+        return this.runOwned(taskId, model, prompt, captureExecutionLanguages(uiLocale));
       });
     });
   }
@@ -156,7 +161,10 @@ export class ImportAgentService {
       if (current.state === 'running')
         current.lastError = {
           code: 'INTERRUPTED',
-          message: '上次执行在页面关闭或刷新时中断，已保存的进度可以继续。',
+          message: translateText(
+            current.checkpoint?.uiLocale ?? 'zh-CN',
+            'aiImportPrompt.recovered',
+          ),
         };
       current.state = awaitingImportAnswer(current) ? 'waiting_user' : 'paused';
       delete current.run;
@@ -184,25 +192,33 @@ export class ImportAgentService {
   /** 手动压缩对话上下文：与运行共用锁，运行中或另一任务占用时不压缩。 */
   static async compact(taskId: string, model: AIModel): Promise<ImportTask> {
     assertImportWorkspaceEnabled();
+    const startUiLocale = useSettingsStore().uiLocale;
     if (typeof navigator === 'undefined' || !navigator.locks)
-      throw new Error('LOCK_UNAVAILABLE: 当前环境不能协调导入运行');
+      throw new Error(
+        'LOCK_UNAVAILABLE: ' + translateText(startUiLocale, 'aiImportPrompt.lockUnavailable'),
+      );
     const locks = navigator.locks;
     let resumeAfterCompaction = false;
     const compacted = await locks.request(
       'tsukuyomi:import-agent',
       { ifAvailable: true },
       async (lock) => {
-        if (!lock) throw new Error('IMPORT_BUSY: 已有导入任务正在运行，请先暂停该任务');
+        if (!lock)
+          throw new Error('IMPORT_BUSY: ' + translateText(startUiLocale, 'aiImportPrompt.busy'));
         return locks.request(
           `${TASK_LOCK_PREFIX}${taskId}`,
           { ifAvailable: true },
           async (owner) => {
-            if (!owner) throw new Error('IMPORT_BUSY: 当前任务仍有未结束的执行');
-            const previous = await requireTask(taskId);
+            if (!owner)
+              throw new Error(
+                'IMPORT_BUSY: ' + translateText(startUiLocale, 'aiImportPrompt.ownerBusy'),
+              );
+            const previous = await requireTask(taskId, startUiLocale);
             resumeAfterCompaction =
               previous.state === 'paused' && previous.lastError?.code === 'CONTEXT_LIMIT';
             try {
               await compactImportHistory(taskId, model, {
+                uiLocale: previous.checkpoint?.uiLocale ?? 'zh-CN',
                 reason: 'manual',
                 notify: () => notify(taskId),
               });
@@ -237,7 +253,7 @@ export class ImportAgentService {
     try {
       await this.converse(taskId, model, message, { run, controller, stream, languages });
     } catch (error) {
-      await this.recordFailure(taskId, model, run, controller, error);
+      await this.recordFailure(taskId, model, run, controller, error, languages.uiLocale);
     } finally {
       clearInterval(timer);
       await ImportRepository.mutateTask(taskId, (current) => {
@@ -310,7 +326,11 @@ export class ImportAgentService {
         lastSave = Date.now();
         await ImportRepository.mutateTask(taskId, (current) => {
           assertImportOwner(current, run);
-          if (current.state !== 'running') throw new Error('RUN_STALE: 执行已停止');
+          if (current.state !== 'running')
+            throw new Error(
+              'RUN_STALE: ' +
+                translateText(current.checkpoint?.uiLocale ?? 'zh-CN', 'aiImportPrompt.runStale'),
+            );
           current.streaming = { text };
           return Promise.resolve();
         });
@@ -376,8 +396,8 @@ export class ImportAgentService {
         hoveredParagraphId: null,
         selectedParagraphId: null,
       },
-      tools: importTools,
-      systemPrompt: (summary) => importAgentPrompt(taskId, summary),
+      tools: getImportTools(languages.uiLocale),
+      systemPrompt: (summary) => importAgentPrompt(taskId, summary, languages.uiLocale),
       ...(resume ? { resume } : {}),
       executeTool: (call, options) => executor.execute(call, options),
       saveCheckpoint: async (checkpoint, state) => {
@@ -394,10 +414,13 @@ export class ImportAgentService {
     run: ImportRunContext,
     controller: AbortController,
     error: unknown,
+    uiLocale: AppLocale,
   ): Promise<void> {
     const raw = error instanceof Error ? error.message : String(error);
     const message = conciseErrorText(
-      model.apiKey ? raw.replaceAll(model.apiKey, '[已隐藏凭据]') : raw,
+      model.apiKey
+        ? raw.replaceAll(model.apiKey, translateText(uiLocale, 'aiImportPrompt.credentialsHidden'))
+        : raw,
     );
     await ImportRepository.mutateTask(taskId, (current) => {
       assertImportOwner(current, run);

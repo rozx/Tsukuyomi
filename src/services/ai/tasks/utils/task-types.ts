@@ -65,7 +65,7 @@ export function getTaskStateWorkflowText(taskType: TaskType): string {
       return 'planning → working → review → end';
     case 'polish':
     case 'proofreading':
-      return 'planning → working → end（润色/校对任务禁止使用 review）';
+      return 'planning → working → end';
 
     default: {
       const _exhaustive: never = taskType;

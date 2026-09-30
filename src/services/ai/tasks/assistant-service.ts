@@ -1,4 +1,5 @@
 import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
 import { buildModelServiceConfig } from '../core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
@@ -179,7 +180,7 @@ export class AssistantService {
     const results = [];
     for (const toolCall of toolCalls) {
       // 用户取消后立即停止执行剩余工具，避免已取消的 CRUD 写入继续落库
-      this.ensureRequestActive(signal);
+      this.ensureRequestActive(signal, languages?.uiLocale);
 
       // [警告] 严格限制：只能调用本次会话提供的 tools
       if (!allowedToolNames.has(toolCall.function.name)) {
@@ -189,7 +190,10 @@ export class AssistantService {
           name: toolCall.function.name,
           content: JSON.stringify({
             success: false,
-            error: `工具 ${toolCall.function.name} 未在本次会话提供的 tools 列表中，禁止调用`,
+            error_code: 'TOOL_NOT_ALLOWED',
+            error: translateText(languages?.uiLocale ?? 'zh-CN', 'aiAssistant.toolNotAllowed', {
+              tool: toolCall.function.name,
+            }),
           }),
         });
         continue;
@@ -203,7 +207,8 @@ export class AssistantService {
           name: toolCall.function.name,
           content: JSON.stringify({
             success: false,
-            error: '没有当前书籍上下文，无法执行此工具操作',
+            error_code: 'BOOK_CONTEXT_REQUIRED',
+            error: translateText(languages?.uiLocale ?? 'zh-CN', 'aiAssistant.bookRequired'),
           }),
         });
         continue;
@@ -411,6 +416,7 @@ export class AssistantService {
   private static fillPendingToolCallResults(
     messages: ChatMessage[],
     pendingToolCalls: AIToolCall[],
+    uiLocale: AppLocale,
   ): void {
     if (pendingToolCalls.length === 0) return;
     messages.push(
@@ -418,7 +424,11 @@ export class AssistantService {
         role: 'tool' as const,
         tool_call_id: call.id,
         name: call.function.name,
-        content: JSON.stringify({ success: false, error: '已达到工具调用轮次上限，调用未执行' }),
+        content: JSON.stringify({
+          success: false,
+          error_code: 'TOOL_TURN_LIMIT',
+          error: translateText(uiLocale, 'aiAssistant.toolLimit'),
+        }),
       })),
     );
   }
@@ -427,13 +437,18 @@ export class AssistantService {
     messages: ChatMessage[],
     calls: AIToolCall[],
     execution?: AssistantExecution,
+    uiLocale: AppLocale = 'zh-CN',
   ): Promise<void> {
     if (execution && calls.length) throw await execution.stop('tool_limit');
-    this.fillPendingToolCallResults(messages, calls);
+    this.fillPendingToolCallResults(messages, calls, uiLocale);
   }
 
-  private static ensureRequestActive(signal?: AbortSignal): void {
-    if (signal?.aborted) throw new Error('请求已取消');
+  private static ensureRequestActive(signal?: AbortSignal, uiLocale: AppLocale = 'zh-CN'): void {
+    if (signal?.aborted) {
+      const error = new Error(translateText(uiLocale, 'aiAssistant.cancelRequest'));
+      error.name = 'AbortError';
+      throw error;
+    }
   }
 
   /**
@@ -529,6 +544,7 @@ export class AssistantService {
     error: unknown,
     aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined,
     taskId: string | undefined,
+    uiLocale: AppLocale,
   ): Promise<void> {
     if (!aiProcessingStore || !taskId) return;
 
@@ -541,12 +557,15 @@ export class AssistantService {
     if (isCancelled) {
       await aiProcessingStore.updateTask(taskId, {
         status: 'cancelled',
-        message: '已取消',
+        message: translateText(uiLocale, 'aiAssistant.cancelled'),
       });
     } else {
       await aiProcessingStore.updateTask(taskId, {
         status: 'error',
-        message: error instanceof Error ? error.message : '未知错误',
+        message:
+          error instanceof Error
+            ? error.message
+            : translateText(uiLocale, 'aiAssistant.unknownError'),
       });
     }
   }
@@ -640,7 +659,7 @@ export class AssistantService {
     const actions: ActionInfo[] = [];
     const turnLimit = options.execution?.maxToolTurns ?? MAX_TOOL_CALL_TURNS;
     for (let turn = 0; response.toolCalls.length && turn < turnLimit; turn++) {
-      this.ensureRequestActive(signal);
+      this.ensureRequestActive(signal, options.languages?.uiLocale);
       if (options.execution) await options.execution.runTools(response.toolCalls, messages, signal);
       else
         messages.push(
@@ -663,15 +682,22 @@ export class AssistantService {
       response = await this.executeAIRequest({ ...params, initial: false });
       if (response.text.trim()) finalText = response.text;
     }
-    await this.finishToolLoop(messages, response.toolCalls, options.execution);
+    await this.finishToolLoop(
+      messages,
+      response.toolCalls,
+      options.execution,
+      options.languages?.uiLocale,
+    );
     await options.execution?.complete(messages);
     if (options.aiProcessingStore && taskId)
       await options.aiProcessingStore.updateTask(taskId, {
         status: 'end',
-        message: '助手回复完成',
+        message: translateText(options.languages?.uiLocale ?? 'zh-CN', 'aiAssistant.finished'),
       });
     return {
-      text: finalText.trim() || '抱歉，我没有收到有效的回复。请重试。',
+      text:
+        finalText.trim() ||
+        translateText(options.languages?.uiLocale ?? 'zh-CN', 'aiAssistant.emptyReply'),
       ...(taskId ? { taskId } : {}),
       actions,
       messageHistory: messages,
@@ -700,6 +726,7 @@ export class AssistantService {
       options.execution?.tools ??
       ToolRegistry.getAssistantToolsExcludingTranslationManagement(
         context.currentBookId || undefined,
+        languages.uiLocale,
       );
     const history = options.messageHistory ?? options.execution?.history;
     const configured = {
@@ -778,7 +805,12 @@ export class AssistantService {
           contextAnchor: paused.checkpoint.contextAnchor,
         };
       this.logChatError(error, model, taskId);
-      await this.finalizeErrorTask(error, options.aiProcessingStore, taskId);
+      await this.finalizeErrorTask(
+        error,
+        options.aiProcessingStore,
+        taskId,
+        options.languages?.uiLocale ?? 'zh-CN',
+      );
       throw error;
     }
   }

@@ -111,7 +111,11 @@ export function normalizeChapterTitle(title: string): string {
  * @param book 书籍对象（可选，用于获取书籍级别的设置）
  * @returns 显示标题
  */
-export function getChapterDisplayTitle(chapter: Chapter, book?: Novel): string {
+export function getChapterDisplayTitle(
+  chapter: Chapter,
+  book?: Novel,
+  targetLanguage = book?.targetLanguage ?? 'zh-CN',
+): string {
   // 防御性检查：确保 chapter 和 title 存在
   if (!chapter || !chapter.title) {
     return '';
@@ -123,13 +127,13 @@ export function getChapterDisplayTitle(chapter: Chapter, book?: Novel): string {
   }
 
   // 检查是否有翻译（防御性检查，处理旧数据或未正确初始化的数据）
-  const translated = getNameTranslation(chapter.title, book?.targetLanguage ?? 'zh-CN');
+  const translated = getNameTranslation(chapter.title, targetLanguage);
   if (!translated) return chapter.title.original || '';
   let title = translated.translation;
 
   // 应用规范化（如果启用）
   const normalize = chapter.normalizeTitleOnDisplay ?? book?.normalizeTitleOnDisplay ?? false;
-  if (normalize && book?.targetLanguage !== 'en-US') {
+  if (normalize && targetLanguage !== 'en-US') {
     title = normalizeChapterTitle(title);
   }
 
