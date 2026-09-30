@@ -57,16 +57,16 @@ const formatSessionTime = (timestamp: number): string => {
 
 const sessionCount = computed(() => props.sessions.length);
 
-// 显示用行数据：标题 / 时间 / 消息数等固定标签随界面语言重绘，桌面与手机共用
-const sessionRows = computed(() =>
+// 显示用行数据：标题 / 时间 / 消息数等固定标签随界面语言重绘，桌面与手机共用。
+// 用函数而非 computed：相对时间依赖 Date.now()，每次渲染（如重新打开面板）都要重新计算
+const sessionRows = () =>
   props.sessions.map((session) => ({
     id: session.id,
     title: displayTitle(session.title),
     time: formatSessionTime(session.updatedAt),
     count: session.messages.length,
     countLabel: t('activityUi.chat.messageCount', { count: session.messages.length }),
-  })),
-);
+  }));
 
 const onSelect = (sessionId: string) => {
   emit('select', sessionId);
@@ -104,7 +104,7 @@ defineExpose({ toggle, hide });
       </div>
       <ChatSessionRows
         v-else
-        :rows="sessionRows"
+        :rows="sessionRows()"
         :current-session-id="props.currentSessionId"
         @select="onSelect"
       />
@@ -125,7 +125,7 @@ defineExpose({ toggle, hide });
     </div>
     <ChatSessionRows
       v-else
-      :rows="sessionRows"
+      :rows="sessionRows()"
       :current-session-id="props.currentSessionId"
       @select="onSelect"
     />

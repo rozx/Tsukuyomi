@@ -9,6 +9,7 @@ import messages from '../i18n';
 import ChatActionBadge from '../components/layout/ChatActionBadge.vue';
 import ChatMessageItem from '../components/layout/ChatMessageItem.vue';
 import ChatBadgeTranslation from '../components/layout/chat-badge/ChatBadgeTranslation.vue';
+import ChatBadgeAsk from '../components/layout/chat-badge/ChatBadgeAsk.vue';
 import { SUMMARIZING_MESSAGE_CONTENT } from '../composables/chat/constants';
 import type { ChatSessionMessage, MessageAction } from '../stores/chat-sessions';
 
@@ -69,6 +70,24 @@ describe('聊天组件固定标签随界面语言即时重绘', () => {
       getChapterTitleForAction: () => undefined,
     });
     expect(text()).toBe('Batch replaced 2 paragraphs (4 translation versions)');
+  });
+
+  it('组件内的复数文案按数量选择单复数形式', () => {
+    const { text } = mount(ChatBadgeAsk, {
+      kind: 'ask_user_batch',
+      action: {
+        type: 'ask',
+        entity: 'user',
+        timestamp: 1,
+        batch_questions: ['问题'],
+        batch_answers: [{ question_index: 0, answer: '答' }],
+      },
+      extAction: {},
+      getShortId: (v: string) => v,
+      getTextPreview: (v: string) => v,
+      getChapterTitleForAction: () => undefined,
+    });
+    expect(text()).toBe('1 question → 1 answered');
   });
 
   it('总结气泡按语言显示，普通助手回复保持原文', async () => {
