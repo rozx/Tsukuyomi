@@ -1,14 +1,18 @@
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 /**
  * 格式化数字为易读格式
  * @param count 数字
  * @returns 格式化后的字符串（如：1.5k, 10.2万）
  */
-function formatNumber(count: number | null): string {
+function formatNumber(count: number | null, locale: AppLocale = 'zh-CN'): string {
   if (count === null) return '-';
   if (count === 0) return '0';
   if (count < 1000) return count.toString();
   if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-  return `${(count / 10000).toFixed(1)}万`;
+  if (locale === 'en-US')
+    return count < 1000000 ? `${(count / 1000).toFixed(1)}k` : `${(count / 1000000).toFixed(1)}m`;
+  return `${(count / 10000).toFixed(1)}${locale === 'zh-TW' ? '萬' : '万'}`;
 }
 
 /**
@@ -16,8 +20,8 @@ function formatNumber(count: number | null): string {
  * @param count 字符数
  * @returns 格式化后的字符串（如：3.2k 字, 6.7万 字）
  */
-export function formatCharCount(count: number | null): string {
-  const formatted = formatNumber(count);
+export function formatCharCount(count: number | null, locale: AppLocale = 'zh-CN'): string {
+  const formatted = formatNumber(count, locale);
   return formatted === '-' ? '-' : `${formatted}`;
 }
 
@@ -26,8 +30,8 @@ export function formatCharCount(count: number | null): string {
  * @param count 字数
  * @returns 格式化后的字符串
  */
-export function formatWordCount(count: number | null): string {
-  return formatCharCount(count);
+export function formatWordCount(count: number | null, locale: AppLocale = 'zh-CN'): string {
+  return formatCharCount(count, locale);
 }
 
 /**
@@ -62,17 +66,27 @@ export function formatRelativeTimeWithFallback(
  * 与 `formatRelativeTime` 不同的是：这里以"天"为最小粒度、不显示小时/分钟，
  * 适合书库卡片、首页"最近阅读"等粗粒度时间展示。
  */
-export function formatRelativeBookDate(date: Date | string): string {
+export function formatRelativeBookDate(date: Date | string, locale: AppLocale = 'zh-CN'): string {
   const d = new Date(date);
   if (Number.isNaN(d.getTime())) return '—';
   const now = new Date();
   const days = Math.floor((now.getTime() - d.getTime()) / 86_400_000);
-  if (days <= 0) return '今天';
-  if (days === 1) return '昨天';
-  if (days < 7) return `${days} 天前`;
-  if (days < 30) return `${Math.floor(days / 7)} 周前`;
-  if (days < 365) return `${Math.floor(days / 30)} 个月前`;
-  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' });
+  if (days <= 0) return translateText(locale, 'libraryUi.today');
+  if (days === 1) return translateText(locale, 'libraryUi.yesterday');
+  if (days < 7) return translateText(locale, 'libraryUi.daysAgo', { count: days });
+  if (days < 30) {
+    const count = Math.floor(days / 7);
+    return translateText(locale, count === 1 ? 'libraryUi.weekAgo' : 'libraryUi.weeksAgo', {
+      count,
+    });
+  }
+  if (days < 365) {
+    const count = Math.floor(days / 30);
+    return translateText(locale, count === 1 ? 'libraryUi.monthAgo' : 'libraryUi.monthsAgo', {
+      count,
+    });
+  }
+  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 /**
@@ -108,10 +122,7 @@ export function formatDate(date: Date | string | undefined | null): string {
  * @param nowMs 当前时间戳（毫秒，可选）。传入该参数可用于让 UI 基于响应式 now 刷新显示。
  * @returns 格式化后的相对时间字符串
  */
-export function formatRelativeTime(
-  timestamp: number | undefined | null,
-  nowMs?: number,
-): string {
+export function formatRelativeTime(timestamp: number | undefined | null, nowMs?: number): string {
   if (!timestamp || timestamp === 0) {
     return '从未';
   }
@@ -128,4 +139,3 @@ export function formatRelativeTime(
     nowMs,
   );
 }
-

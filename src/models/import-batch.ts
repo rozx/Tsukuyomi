@@ -1,3 +1,4 @@
+import type { ImportFailure, ImportNotice } from './import-feedback';
 import type { ImportSourceFilter } from './import-pattern';
 import type { ImportDraftChapter, ImportExtractionRules } from './import';
 
@@ -8,8 +9,8 @@ export interface ImportChapterBatchItem {
   status: 'pending' | 'ready' | 'failed';
   contentId?: string;
   characters?: number;
-  warnings?: string[];
-  error?: { code: string; message: string };
+  warnings?: ImportNotice[];
+  error?: ImportFailure;
 }
 
 export interface ImportChapterBatch {

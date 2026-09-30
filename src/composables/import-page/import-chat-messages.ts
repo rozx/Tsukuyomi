@@ -1,3 +1,4 @@
+import type { AppLocale } from 'src/models/locale';
 import { importActionInfo } from './import-action-info';
 import { actionObject, createImportActionContext } from './import-action-context';
 import type { ImportActionContext, ImportActionTask } from './import-action-context';
@@ -27,6 +28,7 @@ function fingerprint(actions: MessageAction[]): string {
 }
 
 interface MessageOptions {
+  uiLocale?: AppLocale;
   sourceNames: Map<string, string>;
   task?: ImportActionTask;
   sources?: Pick<ImportSource, 'id' | 'name' | 'url' | 'relativePath'>[];

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
 import { APP_VERSION } from 'src/constants/version';
 import { APP_NAME } from 'src/constants/app';
 import AppFooterUpdateBadge from './AppFooterUpdateBadge.vue';
@@ -26,11 +28,11 @@ const updatesAvailable = Boolean(window.electronAPI?.updates);
         href="https://github.com/rozx/Tsukuyomi"
         target="_blank"
         rel="noopener noreferrer"
-        aria-label="Visit Tsukuyomi on GitHub"
+        :aria-label="i18nT('libraryUi.github')"
         class="dsk-statusbar-github"
       >
         <i class="pi pi-github" aria-hidden="true" />
-        <span>By Rozx</span>
+        <span>{{ i18nT('libraryUi.byAuthor') }}</span>
       </a>
     </div>
   </footer>

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import { useUiStore } from 'src/stores/ui';
@@ -31,14 +34,16 @@ const {
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
 const aiTaskLabel = computed(() =>
-  latestThinkingStatus.value === 'processing' ? '处理中' : '思考中',
+  latestThinkingStatus.value === 'processing'
+    ? i18nT('libraryUi.processing')
+    : i18nT('libraryUi.thinking'),
 );
 
 // 思考态徽章：thinking 时是 pill + 脉冲圆点，否则普通 chip + sparkles 图标。
 // 用一个描述对象驱动单个 <button>，避免模板里 v-if/v-else 分支。
 const thinkingChip = computed(() => ({
-  class: thinking.value ? 'dsk-chip pill thinking' : 'dsk-chip',
-  label: thinking.value ? `AI ${aiTaskLabel.value}` : 'AI 思考',
+  class: thinking.value ? 'system-bar-chip dsk-chip pill thinking' : 'system-bar-chip dsk-chip',
+  label: thinking.value ? `AI ${aiTaskLabel.value}` : i18nT('libraryUi.aiThinking'),
   labelClass: thinking.value ? '' : 'dsk-chip-label',
   showLabel: thinking.value || !isPhone.value,
 }));
@@ -49,50 +54,50 @@ const syncChip = computed(() => {
   switch (syncState.value) {
     case 'syncing':
       return {
-        class: 'dsk-chip pill sync-pending',
+        class: 'system-bar-chip dsk-chip pill sync-pending',
         icon: 'pi pi-spin pi-spinner',
-        label: '同步中',
-        aria: '同步中',
+        label: i18nT('libraryUi.syncing'),
+        aria: i18nT('libraryUi.syncing'),
         showLabel: true,
         labelClass: '',
         meta: null as string | null,
       };
     case 'changes':
       return {
-        class: 'dsk-chip pill sync-changes',
+        class: 'system-bar-chip dsk-chip pill sync-changes',
         icon: 'pi pi-cloud-upload',
-        label: `${pendingCount.value} 项变更`,
-        aria: `${pendingCount.value} 项变更`,
+        label: i18nT('libraryUi.changes', { count: pendingCount.value }),
+        aria: i18nT('libraryUi.changes', { count: pendingCount.value }),
         showLabel: true,
         labelClass: '',
         meta: null as string | null,
       };
     case 'ok':
       return {
-        class: 'dsk-chip pill sync-ok',
+        class: 'system-bar-chip dsk-chip pill sync-ok',
         icon: 'pi pi-cloud-check',
-        label: '已同步',
-        aria: '已同步',
+        label: i18nT('libraryUi.synced'),
+        aria: i18nT('libraryUi.synced'),
         showLabel: true,
         labelClass: '',
         meta: syncSecondaryLabel.value,
       };
     case 'pending':
       return {
-        class: 'dsk-chip',
+        class: 'system-bar-chip dsk-chip',
         icon: 'pi pi-cloud',
-        label: '未同步',
-        aria: '未同步',
+        label: i18nT('libraryUi.unsynced'),
+        aria: i18nT('libraryUi.unsynced'),
         showLabel: !isPhone.value,
         labelClass: 'dsk-chip-label',
         meta: null as string | null,
       };
     default:
       return {
-        class: 'dsk-chip',
+        class: 'system-bar-chip dsk-chip',
         icon: 'pi pi-cloud',
-        label: '同步',
-        aria: '同步状态',
+        label: i18nT('libraryUi.sync'),
+        aria: i18nT('libraryUi.syncStatus'),
         showLabel: !isPhone.value,
         labelClass: 'dsk-chip-label',
         meta: null as string | null,
@@ -131,7 +136,7 @@ const syncSecondaryLabel = computed<string | null>(() => {
   const next = nextSyncTime.value;
   if (!next) return null;
   const diff = next - nowTick.value;
-  if (diff <= 0) return '即将';
+  if (diff <= 0) return i18nT('libraryUi.soon');
   const totalSeconds = Math.floor(diff / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const totalMinutes = Math.floor(totalSeconds / 60);
@@ -144,7 +149,7 @@ const syncSecondaryLabel = computed<string | null>(() => {
   <header class="dsk-sysbar">
     <div class="dsk-brand">
       <Button
-        aria-label="切换侧边栏"
+        :aria-label="i18nT('libraryUi.toggleSidebar')"
         class="p-button-text p-button-rounded dsk-brand-toggle"
         :class="{ active: ui.sideMenuOpen }"
         icon="pi pi-bars"
@@ -161,9 +166,9 @@ const syncSecondaryLabel = computed<string | null>(() => {
       <!-- AI 思考过程 -->
       <button
         type="button"
-        class="dsk-chip"
+        class="system-bar-chip dsk-chip"
         :class="thinkingChip.class"
-        aria-label="AI 思考过程"
+        :aria-label="i18nT('libraryUi.thinkingProcess')"
         @click="toggleThinking"
       >
         <span v-if="thinking" class="dsk-dot" />
@@ -176,7 +181,7 @@ const syncSecondaryLabel = computed<string | null>(() => {
       <!-- 同步状态 -->
       <button
         type="button"
-        class="dsk-chip"
+        class="system-bar-chip dsk-chip"
         :class="syncChip.class"
         :aria-label="syncChip.aria"
         @click="toggleSync"
@@ -193,8 +198,8 @@ const syncSecondaryLabel = computed<string | null>(() => {
       <!-- 消息历史 -->
       <button
         type="button"
-        class="dsk-chip"
-        aria-label="消息历史"
+        class="system-bar-chip dsk-chip"
+        :aria-label="i18nT('libraryUi.messageHistory')"
         @click="toggleHistory"
       >
         <i class="pi pi-bell" aria-hidden="true" />
@@ -202,7 +207,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
           {{ unreadBadge }}
         </NotificationBadge>
       </button>
-
     </div>
 
     <ToastHistoryDialog ref="toastHistoryRef" />
@@ -294,30 +298,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.dsk-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: rgba(192, 198, 209, 0.85);
-  font-family:
-    'Noto Sans SC',
-    'PingFang SC',
-    -apple-system,
-    sans-serif;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  flex-shrink: 0;
 }
 
 .dsk-chip i {

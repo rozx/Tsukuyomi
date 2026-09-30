@@ -1,3 +1,9 @@
+import { FirecrawlQuotaError } from '../services/firecrawl/firecrawl-errors';
+import {
+  localizeImportFeedback,
+  serializeImportError,
+  importError,
+} from '../services/import/import-error';
 import { afterEach, beforeEach, describe, it, mock, spyOn } from 'bun:test';
 import { expect, vi } from 'vitest';
 import './setup';
@@ -41,6 +47,58 @@ async function session(count = 2, fail = '') {
 }
 
 describe('同步受保护应用', () => {
+  it('额度耗尽后剩余所选章节复用失败记录，不产生未定义变量或写入正文', async () => {
+    const { value, fetch } = await session(6);
+    const quota = new FirecrawlQuotaError(true);
+    quota.message = 'External quota detail';
+    fetch.mockRejectedValue(quota);
+    const result = await value.apply({ urls: value.changeset.new.map((entry) => entry.url) });
+    expect(result.status).toBe('failed');
+    expect(result.failed).toHaveLength(5);
+    expect(result.failed.every((error) => error.code === 'FIRECRAWL_QUOTA')).toBe(true);
+    expect(result.failed.every((error) => error.message.includes('External quota detail'))).toBe(
+      true,
+    );
+  });
+
+  for (const code of ['CONTENT_EMPTY', 'VERIFICATION_REQUIRED']) {
+    it(`应用收集失败${code}保留身份，英文反馈不丢失且不写入失败正文`, async () => {
+      const { value, fetch } = await session();
+      fetch.mockImplementation((url) =>
+        Promise.resolve(
+          syncSnapshot(
+            code === 'CONTENT_EMPTY'
+              ? '<article></article>'
+              : '<html><head><title>ログイン</title></head><body>ログイン</body></html>',
+            url,
+          ),
+        ),
+      );
+      let data: unknown;
+      try {
+        data = await value.apply({ urls: ['https://example.com/2'] });
+      } catch (error) {
+        data = serializeImportError(error);
+      }
+      const result = JSON.stringify(localizeImportFeedback(data, 'en-US'));
+      expect(result).toContain(code);
+      expect(result).toContain(code === 'CONTENT_EMPTY' ? 'empty' : 'verification');
+      expect(result).not.toContain('来源章节正文为空');
+      expect(result).not.toContain('来源页面需要登录或验证');
+      const book = await ImportLibraryReader.readBook('book');
+      expect(book.kind === 'loaded' && book.book.volumes?.[0]?.chapters?.length).toBe(1);
+    });
+  }
+  it('逐章比对的常规失败返回保留本应用错误语言身份', async () => {
+    const { value, fetch } = await session();
+    fetch.mockRejectedValue(
+      importError('INVALID_SELECTOR', 'invalidSelectorInvalidCSSScopeOrExclusionRules'),
+    );
+    const result = localizeImportFeedback(await value.deepCheck(), 'en-US');
+    expect(result.failed[0]!.message).toContain('CSS');
+    expect(result.failed[0]!.message).not.toMatch(/\p{Script=Han}/u);
+  });
+
   it('占用时在抓取前拒绝并返回占用者标签', async () => {
     const { value, fetch } = await session();
     await BookExecutionGuard.write('book', { label: '整章翻译' }, async () => {

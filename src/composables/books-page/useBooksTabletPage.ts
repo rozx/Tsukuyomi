@@ -1,3 +1,5 @@
+import { resolveAppLocale } from 'src/models/locale';
+import { useI18n } from 'vue-i18n';
 /**
  * BooksPageTablet（书库 · 平板主从布局）业务逻辑 composable + provide/inject 辅助。
  *
@@ -61,6 +63,7 @@ function buildChapterProgressMap(
 }
 
 function createBooksTabletPageContext() {
+  const { t: i18nT, locale } = useI18n();
   const ctx = injectBooksPage();
   const router = useRouter();
   const bookDetailsStore = useBookDetailsStore();
@@ -72,16 +75,26 @@ function createBooksTabletPageContext() {
   // 添加书籍菜单：与桌面 SplitButton、手机底部选择器语义一致
   const addMenuRef = ref<InstanceType<typeof Menu> | null>(null);
   const addMenuItems = computed(() => [
-    { label: '新建书籍', icon: 'pi pi-plus', command: () => ctx.addBook() },
-    { label: '从网站导入', icon: 'pi pi-globe', command: () => ctx.importBookFromWeb() },
-    { label: '从 JSON 导入', icon: 'pi pi-file-import', command: () => ctx.importBookFromJson() },
+    { label: i18nT('libraryUi.newBook'), icon: 'pi pi-plus', command: () => ctx.addBook() },
+    {
+      label: i18nT('libraryUi.importWeb'),
+      icon: 'pi pi-globe',
+      command: () => ctx.importBookFromWeb(),
+    },
+    {
+      label: i18nT('libraryUi.importJson'),
+      icon: 'pi pi-file-import',
+      command: () => ctx.importBookFromJson(),
+    },
   ]);
   const toggleAddMenu = (event: Event) => addMenuRef.value?.toggle(event);
   const toggleSortMenu = (event: Event) => {
     ctx.sortMenuRef.value?.toggle(event);
   };
   const currentSortLabel = computed(
-    () => ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label ?? '排序',
+    () =>
+      ctx.sortOptions.value.find((opt) => opt.value === ctx.selectedSort.value)?.label ??
+      i18nT('libraryUi.sort'),
   );
 
   // 本地 UI 状态：当前选中的书（主从布局右侧详情）。不写入任何 store。
@@ -151,7 +164,7 @@ function createBooksTabletPageContext() {
       console.error('[useBooksTabletPage] 加载章节翻译进度失败:', err);
       toast.add({
         severity: 'error',
-        summary: '进度加载失败',
+        summary: i18nT('libraryUi.progressFailed'),
         detail: err instanceof Error ? err.message : String(err),
         life: 3000,
       });
@@ -213,21 +226,27 @@ function createBooksTabletPageContext() {
     const target = actionTarget.value;
     if (!target) return [];
     if (target.kind === 'volume') {
-      return buildVolumeActionMenuItems({
-        onEdit: () => chapterMgmt.openEditVolumeDialog(target.volume),
-        onDelete: () => chapterMgmt.openDeleteVolumeConfirm(target.volume),
-      });
+      return buildVolumeActionMenuItems(
+        {
+          onEdit: () => chapterMgmt.openEditVolumeDialog(target.volume),
+          onDelete: () => chapterMgmt.openDeleteVolumeConfirm(target.volume),
+        },
+        resolveAppLocale(locale.value),
+      );
     }
     const vol = selectedBook.value?.volumes?.find((v) => v.id === target.volumeId);
     const canMoveDown = !!vol?.chapters && target.index < vol.chapters.length - 1;
-    return buildChapterActionMenuItems({
-      canMoveUp: target.index > 0,
-      canMoveDown,
-      onEdit: () => chapterMgmt.openEditChapterDialog(target.chapter),
-      onMoveUp: () => void moveChapter(target, 'up'),
-      onMoveDown: () => void moveChapter(target, 'down'),
-      onDelete: () => chapterMgmt.openDeleteChapterConfirm(target.chapter),
-    });
+    return buildChapterActionMenuItems(
+      {
+        canMoveUp: target.index > 0,
+        canMoveDown,
+        onEdit: () => chapterMgmt.openEditChapterDialog(target.chapter),
+        onMoveUp: () => void moveChapter(target, 'up'),
+        onMoveDown: () => void moveChapter(target, 'down'),
+        onDelete: () => chapterMgmt.openDeleteChapterConfirm(target.chapter),
+      },
+      resolveAppLocale(locale.value),
+    );
   });
   const openVolumeMenu = (event: Event, volume: Volume) => {
     event.stopPropagation();
@@ -272,7 +291,7 @@ function createBooksTabletPageContext() {
     } catch (err) {
       toast.add({
         severity: 'error',
-        summary: '排序失败',
+        summary: i18nT('libraryUi.sortFailed'),
         detail: err instanceof Error ? err.message : String(err),
         life: 3000,
       });

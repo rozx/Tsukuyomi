@@ -1,3 +1,5 @@
+import { readImportError } from 'src/services/import/import-error';
+import { LocalizedError } from 'src/utils/localized-error';
 import type { IDBPTransaction } from 'idb';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { BookUpdateRecipe, CatalogEntry, SyncVolumeTarget } from 'src/models/book-sync';
@@ -46,9 +48,19 @@ async function captureChapter(
 ): Promise<ChapterRecord | null> {
   const chapter = book?.volumes?.flatMap((v) => v.chapters ?? []).find((c) => c.id === id);
   const record = await tx.objectStore('chapter-contents').get(id);
-  if (write.chapterId && !chapter) throw new BookSyncError('BOOK_CHANGED', '目标章节已不存在');
+  if (write.chapterId && !chapter)
+    throw new BookSyncError(
+      'BOOK_CHANGED',
+      new LocalizedError(
+        'BOOK_CHANGED',
+        'aiImportErrors.bookSyncBookChangedTheTargetChapterNoLonger',
+      ),
+    );
   if ((!write.chapterId && record) || otherIds.has(id))
-    throw new BookSyncError('BOOK_CHANGED', '章节标识已被占用');
+    throw new BookSyncError(
+      'BOOK_CHANGED',
+      new LocalizedError('BOOK_CHANGED', 'aiImportErrors.bookSyncBookChangedTheChapterIDIsAlready'),
+    );
   const fallback =
     chapter?.content !== undefined
       ? {
@@ -58,7 +70,8 @@ async function captureChapter(
         }
       : undefined;
   const loaded = ImportLibraryReader.decodeChapter(record ?? fallback);
-  if (loaded.kind === 'failed') throw new BookSyncError('BOOK_READ_FAILED', loaded.message);
+  if (loaded.kind === 'failed')
+    throw new BookSyncError('BOOK_READ_FAILED', readImportError(loaded));
   return record ?? null;
 }
 
@@ -68,7 +81,14 @@ function resolveVolume(
   created: Map<string, string>,
   ids: UniqueIdGenerator,
 ) {
-  if (!target) throw new BookSyncError('TARGET_VOLUME_MISSING', '新章节缺少目标卷');
+  if (!target)
+    throw new BookSyncError(
+      'TARGET_VOLUME_MISSING',
+      new LocalizedError(
+        'TARGET_VOLUME_MISSING',
+        'aiImportErrors.bookSyncTargetVolumeMissingANewChapterRequiresA',
+      ),
+    );
   book.volumes ??= [];
   let id = 'volumeId' in target ? target.volumeId : created.get(target.newTitle);
   if (!('volumeId' in target) && !id) {
@@ -77,7 +97,14 @@ function resolveVolume(
     created.set(target.newTitle, id);
   }
   const volume = book.volumes.find((v) => v.id === id);
-  if (!volume) throw new BookSyncError('TARGET_VOLUME_MISSING', '指定的卷已不存在');
+  if (!volume)
+    throw new BookSyncError(
+      'TARGET_VOLUME_MISSING',
+      new LocalizedError(
+        'TARGET_VOLUME_MISSING',
+        'aiImportErrors.bookSyncTargetVolumeMissingTheSpecifiedVolumeNoLonger',
+      ),
+    );
   return volume;
 }
 
@@ -109,7 +136,13 @@ export async function commitSyncChanges(input: {
         ? Boolean(current) || revision !== 0
         : !current || revision !== input.baseRevision
     )
-      throw new BookSyncError('BOOK_CHANGED', '书籍已变化，请重新核对变更');
+      throw new BookSyncError(
+        'BOOK_CHANGED',
+        new LocalizedError(
+          'BOOK_CHANGED',
+          'aiImportErrors.bookSyncBookChangedTheBookChangedReviewThe',
+        ),
+      );
     const next = structuredClone(current ?? input.newBook!);
     if (!current) {
       const settings = await tx.objectStore('settings').get('app');
@@ -196,7 +229,13 @@ export async function undoSyncChanges(before: SyncBefore): Promise<SyncBefore> {
     const current = await tx.objectStore('books').get(before.bookId);
     const revision = (await tx.objectStore('book-revisions').get(before.bookId))?.revision ?? 0;
     if (!current || revision !== before.postRevision)
-      throw new BookSyncError('BOOK_CHANGED', '书籍已有后续修改，无法撤销');
+      throw new BookSyncError(
+        'BOOK_CHANGED',
+        new LocalizedError(
+          'BOOK_CHANGED',
+          'aiImportErrors.bookSyncBookChangedTheBookHasLaterChanges',
+        ),
+      );
     for (const [id, record] of before.chapters) {
       if (record) await tx.objectStore('chapter-contents').put(record);
       else {
@@ -226,7 +265,14 @@ async function patchBookRecord(
   const tx = (await getDB()).transaction(['books', 'book-revisions'], 'readwrite');
   return completeIdbTransaction(tx, async () => {
     const book = await tx.objectStore('books').get(bookId);
-    if (!book) throw new BookSyncError('BOOK_READ_FAILED', '书籍不存在');
+    if (!book)
+      throw new BookSyncError(
+        'BOOK_READ_FAILED',
+        new LocalizedError(
+          'BOOK_READ_FAILED',
+          'aiImportErrors.bookSyncBookReadFailedTheBookDoesNotExist',
+        ),
+      );
     await tx
       .objectStore('books')
       .put(serializeDates({ ...book, ...patch(book), lastEdited: new Date() }));

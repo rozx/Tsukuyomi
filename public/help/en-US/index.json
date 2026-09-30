@@ -5,7 +5,7 @@
     "file": "front-page.md",
     "path": "help/en-US",
     "category": "User guides",
-    "description": "Core features and first steps with Tsukuyomi Translator",
+    "description": "Quick start: interface and target language, model configuration, book creation and import, translation, editing, terms, characters, memories, and sync",
     "categoryId": "guides",
     "sectionAliases": {
       "tsukuyomi月咏翻译器使用指南": "front-page-section-1",

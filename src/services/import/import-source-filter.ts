@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type { ImportSourceFilter } from 'src/models/import-pattern';
 import { ImportRepository } from './import-repository';
 import { filterImportItems } from './import-pattern-filter';
@@ -22,7 +23,7 @@ export async function filterImportSourceIds(
     } else {
       const resource = await ImportRepository.getResource(taskId, id);
       if (resource?.kind !== 'discovery')
-        throw new Error('SOURCE_SCOPE: 发现引用不存在或不属于当前任务');
+        throw importError('SOURCE_SCOPE', 'sourceScopeTheDiscoveryReferenceDoesNotExist', {});
       const discovery = resource.discovery;
       items.push({ id, name: discovery.name, locator: discovery.locator });
     }

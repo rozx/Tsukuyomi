@@ -1,3 +1,4 @@
+import { importNoticeText } from '../services/import/import-error';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import type { BookUpdateRecipe } from '../models/book-sync';
@@ -181,7 +182,7 @@ describe('方案中的配方变化', () => {
     ).revision;
     const plan = await ImportPlanService.preview(web.taskId, revision);
     expect(plan.recipeChange?.kind).toBe('stale');
-    expect(plan.recipeChange?.reason).toContain('配方已失效，本次不会写入配方');
+    expect(importNoticeText(plan.recipeChange?.reason)).toContain('配方已失效，本次不会写入配方');
     expect(plan.recipeChange?.issues?.[0]).toMatchObject({ chapterId: 'c2' });
     expect(plan.conflicts).toEqual([]);
     await apply(web.taskId, plan.id);

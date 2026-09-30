@@ -33,6 +33,7 @@ export function useImportChatPanel() {
 
   const messages = computed<ChatSessionMessage[]>(() =>
     importEventsToMessages(store.events, {
+      uiLocale: useSettingsStore().uiLocale,
       sourceNames: store.sourceNames,
       sources: store.sources,
       ...(store.task ? { task: store.task } : {}),

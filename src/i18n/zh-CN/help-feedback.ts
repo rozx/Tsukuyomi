@@ -1,5 +1,7 @@
 export default {
   helpUi: {
+    quickStartTitle: '快速开始指南',
+    dismissGuide: '我知道了，不再提示',
     center: '帮助中心',
     documents: '文档',
     toc: '目录',

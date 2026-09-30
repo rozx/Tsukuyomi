@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import { useSystemBar } from 'src/composables/layout/useSystemBar';
@@ -29,35 +32,35 @@ const syncChip = computed(() => {
   switch (syncState.value) {
     case 'syncing':
       return {
-        class: 'tst-chip pill sync-pending',
+        class: 'system-bar-chip tst-chip pill sync-pending',
         icon: 'pi pi-spin pi-spinner',
-        label: '同步中',
+        label: i18nT('libraryUi.syncing'),
         labelClass: '',
-        aria: '同步中',
+        aria: i18nT('libraryUi.syncing'),
       };
     case 'changes':
       return {
-        class: 'tst-chip pill sync-changes',
+        class: 'system-bar-chip tst-chip pill sync-changes',
         icon: 'pi pi-cloud-upload',
-        label: `${pendingCount.value} 项变更`,
+        label: i18nT('libraryUi.changes', { count: pendingCount.value }),
         labelClass: '',
-        aria: `${pendingCount.value} 项变更`,
+        aria: i18nT('libraryUi.changes', { count: pendingCount.value }),
       };
     case 'ok':
       return {
-        class: 'tst-chip pill sync-ok',
+        class: 'system-bar-chip tst-chip pill sync-ok',
         icon: 'pi pi-cloud-check',
-        label: '已同步',
+        label: i18nT('libraryUi.synced'),
         labelClass: '',
-        aria: '已同步',
+        aria: i18nT('libraryUi.synced'),
       };
     default:
       return {
-        class: 'tst-chip',
+        class: 'system-bar-chip tst-chip',
         icon: 'pi pi-cloud',
-        label: '同步',
+        label: i18nT('libraryUi.sync'),
         labelClass: 'tst-chip-label',
-        aria: '同步状态',
+        aria: i18nT('libraryUi.syncStatus'),
       };
   }
 });
@@ -74,19 +77,19 @@ const syncChip = computed(() => {
       <!-- AI thinking：单个持久按钮（作为弹层锚点不可被 v-if 卸载），内部内容随状态切换 -->
       <button
         type="button"
-        class="tst-chip"
+        class="system-bar-chip tst-chip"
         :class="{ 'pill thinking': thinking }"
         data-testid="tst-thinking-chip"
-        aria-label="AI 思考过程"
+        :aria-label="i18nT('libraryUi.thinkingProcess')"
         @click="toggleThinking"
       >
         <template v-if="thinking">
           <span class="tst-dot" />
-          <span>AI 思考中</span>
+          <span>{{ i18nT('libraryUi.aiThinkingActive') }}</span>
         </template>
         <template v-else>
           <i class="pi pi-sparkles" aria-hidden="true" />
-          <span class="tst-chip-label">AI 思考过程</span>
+          <span class="tst-chip-label">{{ i18nT('libraryUi.thinkingProcess') }}</span>
         </template>
       </button>
 
@@ -107,8 +110,8 @@ const syncChip = computed(() => {
       <!-- Notifications -->
       <button
         type="button"
-        class="tst-chip"
-        aria-label="通知"
+        class="system-bar-chip tst-chip"
+        :aria-label="i18nT('libraryUi.notifications')"
         @click="toggleHistory"
       >
         <i class="pi pi-bell" aria-hidden="true" />
@@ -149,7 +152,11 @@ const syncChip = computed(() => {
   flex-direction: column;
   justify-content: center;
   gap: 1px;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -182,26 +189,6 @@ const syncChip = computed(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.tst-chip {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: rgba(192, 198, 209, 0.85);
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  flex-shrink: 0;
 }
 
 .tst-chip i {

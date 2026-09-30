@@ -1,3 +1,6 @@
+import { importCancelled, importError } from './import-error';
+import type { AppLocale } from 'src/models/locale';
+
 import { validateImportToolArguments } from './import-tool-arguments';
 import { importStructureSchema } from './import-structure-tools';
 import type { ImportRunContext } from 'src/models/import';
@@ -16,7 +19,7 @@ import { validateStructurePlan } from './import-structure-validation';
 
 type Finish = ImportTaskMutationOptions<ImportStructureSummary>['finish'];
 function active(signal?: AbortSignal) {
-  if (signal?.aborted) throw new DOMException('拆章已取消', 'AbortError');
+  if (signal?.aborted) throw importCancelled('splitCancelled');
 }
 
 export class ImportTextStructureService {
@@ -27,22 +30,31 @@ export class ImportTextStructureService {
     input: ImportStructureInput,
     finish?: Finish,
     signal?: AbortSignal,
+    uiLocale?: AppLocale,
   ): Promise<ImportStructureSummary> {
     active(signal);
     validateImportToolArguments(importStructureSchema, input);
     const task = await ImportRepository.getDraftTask(run, input.base_draft_revision);
     const resource = await ImportRepository.getResource(run.taskId, input.resource_id);
     if (resource?.kind !== 'extraction')
-      throw new Error('INVALID_CONTENT_REF: 请指定已保存的正文提取资源');
+      throw importError(
+        'INVALID_CONTENT_REF',
+        'invalidContentRefSpecifyASavedBodyExtractionResource',
+        {},
+      );
     const snapshot = await ImportRepository.getResource(run.taskId, resource.snapshotId);
     const format = snapshot?.kind === 'snapshot' && snapshot.inspection?.format;
     if (!['text', 'markdown'].includes(format || '') || resource.separator !== '')
-      throw new Error('UNSUPPORTED_FORMAT: 文本拆章仅支持 TXT／Markdown 提取结果');
+      throw importError(
+        'UNSUPPORTED_FORMAT',
+        'unsupportedFormatTextSplittingSupportsOnlyTXTMarkdown',
+        {},
+      );
     const source = await ImportRepository.getSource(run.taskId, resource.sourceId);
     if (source.currentSnapshotId !== resource.snapshotId)
-      throw new Error('SOURCE_CHANGED: 来源快照已变化，请重新提取和预览');
+      throw importError('SOURCE_CHANGED', 'sourceChangedTheSourceSnapshotChangedExtractAnd', {});
     if (source.purpose === 'metadata-only')
-      throw new Error('METADATA_ONLY: 元信息来源不能作为正文');
+      throw importError('METADATA_ONLY', 'metadataOnlyMetadataSourcesCannotBeBodyText', {});
     const { value } = await this.parser.run(
       {
         kind: 'structure',
@@ -50,7 +62,7 @@ export class ImportTextStructureService {
         format: format as 'text' | 'markdown',
         rules: input.rules,
       },
-      signal ? { signal } : {},
+      { ...(signal ? { signal } : {}), uiLocale: uiLocale ?? task.checkpoint?.uiLocale ?? 'zh-CN' },
     );
     const batch = buildStructurePlan(resource, value, input, task.draft, source.name);
     return ImportRepository.mutateTask(
@@ -58,7 +70,11 @@ export class ImportTextStructureService {
       async (current, tx) => {
         active(signal);
         if (current.draft.revision !== input.base_draft_revision)
-          throw new Error('DRAFT_CHANGED: 草稿已变化，请重新预览');
+          throw importError(
+            'DRAFT_CHANGED',
+            'draftChangedTheDraftChangedGenerateAnotherPreview',
+            {},
+          );
         await validateStructurePlan(current, tx, batch);
         active(signal);
         await tx.objectStore('import-resources').add({
@@ -78,7 +94,7 @@ export class ImportTextStructureService {
   private async batch(taskId: string, batchId: string): Promise<ImportTextStructureBatch> {
     const resource = await ImportRepository.getResource(taskId, batchId);
     if (resource?.kind !== 'text-structure-batch')
-      throw new Error('BATCH_NOT_FOUND: 文本结构方案不存在');
+      throw importError('BATCH_NOT_FOUND', 'batchNotFoundTheTextStructurePlanDoesNot', {});
     return resource.batch;
   }
 
@@ -97,7 +113,7 @@ export class ImportTextStructureService {
       limit < 1 ||
       limit > 100
     )
-      throw new Error('INVALID_PAGE: 拆章方案分页无效');
+      throw importError('INVALID_PAGE', 'invalidPageInvalidTextStructurePagination', {});
     const batch = await this.batch(taskId, batchId);
     const items = view === 'chapters' ? batch.items : batch.excluded;
     return {
@@ -120,6 +136,7 @@ export class ImportTextStructureService {
     batchId: string,
     finish?: Finish,
     signal?: AbortSignal,
+    uiLocale?: AppLocale,
   ): Promise<ImportStructureSummary> {
     return ImportRepository.mutateTask(
       run.taskId,
@@ -127,12 +144,20 @@ export class ImportTextStructureService {
         active(signal);
         const resource = await tx.objectStore('import-resources').get(batchId);
         if (resource?.taskId !== run.taskId || resource.kind !== 'text-structure-batch')
-          throw new Error('BATCH_NOT_FOUND: 文本结构方案不存在或不属于当前任务');
+          throw importError(
+            'BATCH_NOT_FOUND',
+            'batchNotFoundTheTextStructurePlanDoesNotVariant272',
+            {},
+          );
         const batch = resource.batch;
         if (batch.appliedRevision !== undefined)
           return { ...batch.summary, applied: true, draftRevision: batch.appliedRevision };
         if (current.draft.revision !== batch.input.base_draft_revision)
-          throw new Error('DRAFT_CHANGED: 草稿已变化，请重新预览');
+          throw importError(
+            'DRAFT_CHANGED',
+            'draftChangedTheDraftChangedGenerateAnotherPreview',
+            {},
+          );
         const chapters = await validateStructurePlan(current, tx, batch);
         for (const volume of batch.volumes)
           if (!current.draft.volumes.some((v) => v.id === volume.id))

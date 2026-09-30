@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
 /**
  * Device-variant dispatcher for the books list page.
  * Provides BooksPage context once; mounts Desktop / Tablet / Mobile variant and
@@ -58,9 +60,9 @@ const variantComponent = computed(() => {
   <!-- 删除确认对话框 -->
   <AdaptiveDialog
     v-model:visible="ctx.showDeleteConfirm.value"
-    header="确认删除"
+    :header="i18nT('libraryUi.confirmDelete')"
     desktop-width="30rem"
-    eyebrow="DELETE"
+    :eyebrow="i18nT('libraryUi.delete')"
     dialog-class="delete-confirm-dialog"
   >
     <div class="space-y-4">
@@ -68,12 +70,13 @@ const variantComponent = computed(() => {
         <i class="pi pi-exclamation-triangle text-2xl text-yellow-400 flex-shrink-0 mt-0.5" />
         <div class="flex-1">
           <p class="text-moon/90 mb-2">
-            确定要删除书籍
-            <strong class="text-moon/95">"{{ ctx.bookToDelete.value?.title }}"</strong> 吗？
+            {{ i18nT('libraryUi.deleteQuestion', { title: ctx.bookToDelete.value?.title ?? '' }) }}
           </p>
-          <p class="text-sm text-moon/70 mb-4">请在下方的输入框中输入书籍标题以确认删除。</p>
+          <p class="text-sm text-moon/70 mb-4">{{ i18nT('libraryUi.deleteInstructions') }}</p>
           <div class="space-y-2">
-            <label class="block text-sm font-medium text-moon/90">输入书籍标题:</label>
+            <label class="block text-sm font-medium text-moon/90">{{
+              i18nT('libraryUi.enterBookTitle')
+            }}</label>
             <InputGroup class="w-full">
               <InputText
                 v-model="ctx.deleteConfirmInput.value"
@@ -86,14 +89,14 @@ const variantComponent = computed(() => {
                 <Button
                   icon="pi pi-copy"
                   class="p-button-text p-button-sm input-action-button"
-                  title="复制标题"
+                  :title="i18nT('libraryUi.copyTitle')"
                   @click="ctx.copyBookTitle"
                 />
               </InputGroupAddon>
             </InputGroup>
             <small class="text-xs text-moon/60 block">
               <i class="pi pi-info-circle mr-1" />
-              提示：点击右侧的复制按钮会将标题复制到剪贴板并自动填充到输入框
+              {{ i18nT('libraryUi.copyTitleHint') }}
             </small>
           </div>
         </div>
@@ -101,14 +104,14 @@ const variantComponent = computed(() => {
     </div>
     <template #footer>
       <Button
-        label="取消"
+        :label="i18nT('libraryUi.cancel')"
         icon="pi pi-times"
         class="p-button-text"
         :disabled="ctx.isDeletingBook.value"
         @click="ctx.cancelDeleteBook"
       />
       <Button
-        label="删除"
+        :label="i18nT('libraryUi.delete')"
         icon="pi pi-trash"
         class="p-button-danger"
         :loading="ctx.isDeletingBook.value"

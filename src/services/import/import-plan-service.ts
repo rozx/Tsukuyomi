@@ -1,3 +1,6 @@
+import { importNoticeText } from './import-error';
+import { importCancelled, readImportError, importFailure, importError } from './import-error';
+
 import type { Chapter } from 'src/models/novel';
 import type { ImportPlan, ImportOperation, ImportSource } from 'src/models/import';
 import type { ImportNewParagraph, ImportOldParagraph } from 'src/models/import-matching';
@@ -49,8 +52,10 @@ function targetConflicts(context: ImportPlanContext, plan: ImportPlan): void {
   );
   if (candidates.length !== 1 || candidates[0]?.id !== target.bookId)
     plan.conflicts.push({
-      code: 'TARGET_CONFIRMATION_REQUIRED',
-      message: '目标身份或版本尚不明确，请明确选择更新目标',
+      ...importFailure(
+        'TARGET_CONFIRMATION_REQUIRED',
+        'targetConfirmationRequiredTheTargetIdentityOrVersionIs',
+      ),
     });
 }
 
@@ -82,8 +87,12 @@ function readGroupParagraphs(
     const content = context.snapshot!.chapters[chapter.id];
     if (content?.kind === 'failed') {
       plan.conflicts.push({
-        code: 'BOOK_READ_FAILED',
-        message: `“${typeof chapter.title === 'string' ? chapter.title : chapter.title.original}”正文读取失败：${content.message}`,
+        ...importFailure('BOOK_READ_FAILED', 'bookReadFailedCannotReadContentForDetailDetail', {
+          value1: String(
+            typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
+          ),
+          value2: readImportError(content),
+        }),
         chapterId: draftChapterId,
       });
       return undefined;
@@ -96,8 +105,7 @@ function readGroupParagraphs(
       )
     ) {
       plan.conflicts.push({
-        code: 'SHARED_CHAPTER_ID',
-        message: '旧数据中多个小说共用了章节标识，不能安全覆盖',
+        ...importFailure('SHARED_CHAPTER_ID', 'sharedChapterIdSeveralLegacyNovelsShareAChapter'),
         chapterId: chapter.id,
       });
       return undefined;
@@ -131,8 +139,10 @@ function groupScope(
     )
   ) {
     plan.conflicts.push({
-      code: 'PARTIAL_RESTRUCTURE',
-      message: '同一重组范围包含未选择或未取得内容的章节，请完整选择该范围或调整对应关系',
+      ...importFailure(
+        'PARTIAL_RESTRUCTURE',
+        'partialRestructureTheRestructureScopeIncludesUnselectedOr',
+      ),
       chapterId: group[0]!.draft.id,
     });
     return undefined;
@@ -200,8 +210,7 @@ async function resolveGroup(
   plan.replacements!.push(...result.replacements);
   plan.conflicts.push(
     ...result.conflicts.map((conflict) => ({
-      code: conflict.code,
-      message: conflict.message,
+      ...conflict,
       chapterId: group[0]!.draft.id,
     })),
   );
@@ -258,6 +267,28 @@ function belongsTo(
   return false;
 }
 
+function missingChapters(
+  task: ImportPlanContext['task'],
+  urls: Map<string, string>,
+  covered: Set<string>,
+) {
+  const missing = new Map(
+    task.draft.completeness.missing.map((item) => [importNoticeText(item, 'zh-CN'), item]),
+  );
+  for (const [url, title] of urls) if (!covered.has(url)) missing.set(title, title);
+  for (const chapter of task.draft.chapters)
+    if (!chapter.selected || chapter.status !== 'ready') {
+      const notice = importFailure(
+        'MISSING_CHAPTER',
+        chapter.selected ? 'missingNotRead' : 'missingNotSelected',
+        { title: chapter.title },
+      );
+      const key = notice.message;
+      if (!missing.has(key)) missing.set(key, notice);
+    }
+  return [...missing.values()];
+}
+
 async function completeness(context: ImportPlanContext, plan: ImportPlan): Promise<void> {
   const selected = context.task.draft.novelScope.candidates.find(
     (candidate) => candidate.id === context.task.draft.novelScope.selectedCandidateId,
@@ -302,11 +333,6 @@ async function completeness(context: ImportPlanContext, plan: ImportPlan): Promi
       }),
     ),
   );
-  const missing = new Set(context.task.draft.completeness.missing);
-  for (const [url, title] of urls) if (!covered.has(url)) missing.add(title);
-  for (const chapter of context.task.draft.chapters)
-    if (!chapter.selected || chapter.status !== 'ready')
-      missing.add(`${chapter.title}（${chapter.selected ? '未取得正文' : '未选择'}）`);
   const completeCatalog =
     urls.size > 0 &&
     terminal &&
@@ -315,7 +341,7 @@ async function completeness(context: ImportPlanContext, plan: ImportPlan): Promi
   plan.completeness = {
     confirmed: completeCatalog,
     ...(completeCatalog ? { knownTotal: urls.size } : {}),
-    missing: [...missing],
+    missing: missingChapters(context.task, urls, covered),
   };
 }
 
@@ -352,7 +378,7 @@ async function savePlan(
   await completeIdbTransaction(tx, async () => {
     const task = await tx.objectStore('import-tasks').get(plan.taskId);
     if (!task || task.draft.revision !== plan.draftRevision)
-      throw new Error('DRAFT_CHANGED: 草稿已变化，请重新预览');
+      throw importError('DRAFT_CHANGED', 'draftChangedTheDraftChangedGenerateAnotherPreview', {});
     checkImportRun(task, options.run);
     const revision = (await tx.objectStore('book-revisions').get(plan.targetBookId))?.revision ?? 0;
     const exists = await tx.objectStore('books').getKey(plan.targetBookId);
@@ -360,12 +386,12 @@ async function savePlan(
       revision !== plan.baseBookRevision ||
       (plan.targetKind === 'existing') !== (exists !== undefined)
     )
-      throw new Error('PLAN_STALE: 目标小说已变化');
+      throw importError('PLAN_STALE', 'planStaleTheTargetNovelChanged', {});
     if (
       task.pendingQuestion?.required &&
       task.pendingQuestion.id !== context.task.pendingQuestion?.id
     )
-      throw new Error('PLAN_STALE: 有新的必要问题待处理');
+      throw importError('PLAN_STALE', 'planStaleNewRequiredQuestionsArePending', {});
     const operation: ImportOperation = {
       id: plan.operationId,
       taskId: task.id,
@@ -424,9 +450,13 @@ export class ImportPlanService {
     const recipeOnly =
       Boolean(context.snapshot) && ['add', 'replace'].includes(recipe.change?.kind ?? '');
     if (!context.chapters.length && !recipeOnly)
-      plan.conflicts.push({ code: 'EMPTY_SELECTION', message: '没有选中已取得正文的章节' });
+      plan.conflicts.push({
+        ...importFailure('EMPTY_SELECTION', 'emptySelectionNoChaptersWithRetrievedBodyText'),
+      });
     if (context.task.pendingQuestion?.required)
-      plan.conflicts.push({ code: 'PENDING_QUESTION', message: '请先完成必要选择' });
+      plan.conflicts.push({
+        ...importFailure('PENDING_QUESTION', 'pendingQuestionCompleteTheRequiredChoicesFirst'),
+      });
     targetConflicts(context, plan);
     const matches = matchImportChapters(context, plan.conflicts);
     const paragraphIds = new UniqueIdGenerator(
@@ -465,8 +495,7 @@ export class ImportPlanService {
     await completeness(context, plan);
     plan.resourceIds = [...context.resources.keys()];
     summarize(context, plan);
-    if (options.signal?.aborted)
-      throw options.signal.reason ?? new DOMException('预览已取消', 'AbortError');
+    if (options.signal?.aborted) throw options.signal.reason ?? importCancelled('previewCancelled');
     await savePlan(context, plan, options);
     return plan;
   }
@@ -485,10 +514,10 @@ export class ImportPlanService {
     const plan = await this.get(planId);
     const change = plan?.chapterChanges?.find((entry) => entry.draftChapterId === draftChapterId);
     if (!plan || plan.taskId !== taskId || !change?.oldChapterIds.includes(chapterId))
-      throw new Error('PLAN_STALE: 章节设置来源不在当前方案中');
+      throw importError('PLAN_STALE', 'planStaleTheChapterSettingsSourceIsOutside', {});
     return ImportRepository.mutateTask(taskId, (task) => {
       if (task.draft.revision !== plan.draftRevision || task.currentPlanId !== planId)
-        throw new Error('PLAN_STALE: 请重新检查章节设置');
+        throw importError('PLAN_STALE', 'planStaleReviewChapterSettingsAgain', {});
       task.draft.chapterSettingsSources ??= {};
       task.draft.chapterSettingsSources[draftChapterId] = {
         chapterId,
@@ -512,10 +541,10 @@ export class ImportPlanService {
       plan.taskId !== taskId ||
       !plan.replacements?.some((entry) => entry.signature === signature)
     )
-      throw new Error('PLAN_STALE: 替换范围不存在');
+      throw importError('PLAN_STALE', 'planStaleTheReplacementScopeDoesNotExist', {});
     return ImportRepository.mutateTask(taskId, (task) => {
       if (task.draft.revision !== plan.draftRevision || task.currentPlanId !== planId)
-        throw new Error('PLAN_STALE: 请重新检查替换范围');
+        throw importError('PLAN_STALE', 'planStaleReviewTheReplacementScopeAgain', {});
       task.draft.replacementConsents ??= [];
       task.draft.replacementConsents.push({
         signature,

@@ -1,3 +1,5 @@
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 /**
  * 回归测试：平板系统栏的弹层锚点按钮在状态切换时必须保持同一个 DOM 节点。
  *
@@ -65,6 +67,7 @@ const mountSysBar = () => {
   host = document.createElement('div');
   document.body.appendChild(host);
   app = createApp(TabletSysBar);
+  app.use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
   app.mount(host);
   return host;
 };

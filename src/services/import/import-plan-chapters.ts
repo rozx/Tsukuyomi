@@ -1,3 +1,4 @@
+import { importFailure } from './import-error';
 import type { Chapter } from 'src/models/novel';
 import type { ImportDraftChapter, ImportPlan, ImportSource } from 'src/models/import';
 import type { ImportPlanContext } from './import-plan-context';
@@ -59,8 +60,13 @@ export function matchImportChapters(
         else if (exact.length === 1 && urls.length === 1) oldIds = [exact[0]!.id];
         else if (exact.length > 1)
           conflicts.push({
-            code: 'CHAPTER_MATCH_REQUIRED',
-            message: `“${draft.title}”的网址对应多个旧章节`,
+            ...importFailure(
+              'CHAPTER_MATCH_REQUIRED',
+              'chapterMatchRequiredTheURLForDetailMatchesSeveral',
+              {
+                value1: String(draft.title),
+              },
+            ),
             chapterId: draft.id,
           });
       }
@@ -73,14 +79,21 @@ export function matchImportChapters(
       .map((chapter) => chapter.id);
     if (!oldIds.length && candidates.length && draft.match?.basis !== 'user')
       conflicts.push({
-        code: 'CHAPTER_MATCH_REQUIRED',
-        message: `请确认“${draft.title}”是新增章节还是覆盖候选章节`,
+        ...importFailure(
+          'CHAPTER_MATCH_REQUIRED',
+          'chapterMatchRequiredConfirmWhetherDetailIsNewOr',
+          {
+            value1: String(draft.title),
+          },
+        ),
         chapterId: draft.id,
       });
     if (oldIds.some((id) => !old.some((chapter) => chapter.id === id)))
       conflicts.push({
-        code: 'CHAPTER_MATCH_REQUIRED',
-        message: '已选择的旧章节不再存在',
+        ...importFailure(
+          'CHAPTER_MATCH_REQUIRED',
+          'chapterMatchRequiredTheSelectedExistingChapterNoLonger',
+        ),
         chapterId: draft.id,
       });
     return { draft, oldIds, candidates, urls };

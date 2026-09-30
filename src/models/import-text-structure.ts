@@ -1,3 +1,4 @@
+import type { ImportNotice } from './import-feedback';
 import type { ImportDraft, ImportDraftChapter } from './import';
 import type { ImportTextPattern, ImportTextRange } from './import-pattern';
 
@@ -22,12 +23,12 @@ export interface ImportStructureChapter extends ImportTextRange {
   title: string;
   volumeIndex: number;
   unassigned: boolean;
-  warnings: string[];
+  warnings: ImportNotice[];
 }
 export interface ImportStructureResult {
   volumes: { title: string; inferred: boolean }[];
   chapters: ImportStructureChapter[];
-  excluded: (ImportTextRange & { reason: string })[];
+  excluded: (ImportTextRange & { reason: ImportNotice })[];
   selected: ImportTextRange;
 }
 export interface ImportStructureJob {

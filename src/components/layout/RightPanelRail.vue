@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 /**
  * 桌面右侧面板的折叠态纯图标竖排栏。从 AppRightPanelDesktop 拆出，
  * 让父模板只保留「折叠 rail / 展开面板」的二选一，降低模板圈复杂度。
@@ -32,13 +35,13 @@ const toggleBatchEmbeddingsPanel = () => {
 </script>
 
 <template>
-  <aside class="rp-rail rail-base-shell" aria-label="右侧面板">
+  <aside class="rp-rail rail-base-shell" :aria-label="i18nT('libraryUi.rightPanel')">
     <button
       type="button"
       class="rp-rail-item rail-base-btn"
       :class="{ active: chatActive }"
-      aria-label="月詠 AI 助手"
-      title="月詠"
+      :aria-label="i18nT('libraryUi.assistantLabel')"
+      :title="i18nT('libraryUi.assistant')"
       @click="emit('expand', 'chat')"
     >
       <i class="pi pi-comments" aria-hidden="true" />
@@ -47,8 +50,8 @@ const toggleBatchEmbeddingsPanel = () => {
       type="button"
       class="rp-rail-item rail-base-btn"
       :class="{ active: progressActive }"
-      aria-label="翻译进度"
-      title="翻译进度"
+      :aria-label="i18nT('libraryUi.progress')"
+      :title="i18nT('libraryUi.progress')"
       @click="emit('expand', 'progress')"
     >
       <i class="pi pi-list-check" aria-hidden="true" />
@@ -62,8 +65,8 @@ const toggleBatchEmbeddingsPanel = () => {
       <button
         type="button"
         class="rp-rail-item rail-base-btn"
-        aria-label="向量索引"
-        title="向量索引"
+        :aria-label="i18nT('libraryUi.vectors')"
+        :title="i18nT('libraryUi.vectors')"
         @click="toggleBatchEmbeddingsPanel"
       >
         <i class="pi pi-bolt" aria-hidden="true" />
@@ -85,7 +88,11 @@ const toggleBatchEmbeddingsPanel = () => {
 .rp-rail {
   width: 100%;
   height: 100%;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 /* 按钮基础样式来自 .rail-base-btn，这里仅补 padding 归零 */

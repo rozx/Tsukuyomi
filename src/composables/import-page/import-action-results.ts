@@ -77,13 +77,13 @@ export function appendImportResultDetails(
     actionDetail(details, '完整性', completeness.confirmed ? '已确认' : '未确认');
   actionDetail(details, '已知总章数', completeness.knownTotal);
   if (Array.isArray(completeness.missing))
-    actionDetail(details, '缺失章节', completeness.missing.map(String).join('\n'));
+    actionDetail(details, '缺失章节', completeness.missing.map(actionText).join('\n'));
   actionItems(result.results).forEach((item, index) => {
     const source = actionLabel(item.sourceId, context.sources, '来源');
     const error = actionObject(item.error);
     const lines = [source, item.success === false ? '失败' : '成功', actionText(error.message)];
     if (typeof item.totalCharacters === 'number') lines.push(`${item.totalCharacters} 字符`);
-    if (Array.isArray(item.warnings)) lines.push(...item.warnings.map(String));
+    if (Array.isArray(item.warnings)) lines.push(...item.warnings.map(actionText));
     actionDetail(details, `来源结果 ${index + 1}`, lines.filter(Boolean).join('\n'));
   });
 }

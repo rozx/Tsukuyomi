@@ -1,3 +1,8 @@
+import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
+import type { ImportNotice } from 'src/models/import-feedback';
+import { importCancelled, importFailure, serializeImportError, importError } from './import-error';
+
 import type {
   ImportDiscovery,
   ImportExtractionRules,
@@ -30,7 +35,7 @@ interface SourceResult {
   totalDiscoveries?: number;
   preview?: string;
   totalCharacters?: number;
-  warnings?: string[];
+  warnings?: ImportNotice[];
   missing?: string[];
   candidates?: ImportInspection['candidates'];
   coverResourceId?: string;
@@ -51,19 +56,16 @@ interface InspectionOptions {
 }
 
 function ensureActive(signal?: AbortSignal): void {
-  if (signal?.aborted) throw signal.reason ?? new DOMException('操作已取消', 'AbortError');
+  if (signal?.aborted) throw signal.reason ?? importCancelled('operationCancelled');
 }
 
 /** Firecrawl 额度耗尽：章节批次据此停止领取剩余章节 */
 export const FIRECRAWL_QUOTA_ERROR_CODE = 'FIRECRAWL_QUOTA';
 
 function errorResult(sourceId: string, error: unknown): SourceResult {
-  const message = error instanceof Error ? error.message : String(error);
-  const code =
-    error instanceof FirecrawlQuotaError
-      ? FIRECRAWL_QUOTA_ERROR_CODE
-      : (/^([A-Z_]+):/.exec(message)?.[1] ?? 'SOURCE_FAILED');
-  return { success: false, sourceId, error: { code, message } };
+  const failure = serializeImportError(error, 'SOURCE_FAILED');
+  if (error instanceof FirecrawlQuotaError) failure.code = FIRECRAWL_QUOTA_ERROR_CODE;
+  return { success: false, sourceId, error: failure };
 }
 
 function formatOf(
@@ -97,6 +99,7 @@ function enrichSiteInspection(
   source: ImportSource,
   snapshot: Snapshot,
   parsed: ImportParsedContent,
+  uiLocale: AppLocale,
 ): void {
   if (!source.url || snapshot.text === undefined) return;
   const adapter = NovelScraperFactory.getScraper(source.url);
@@ -113,7 +116,11 @@ function enrichSiteInspection(
     for (const chapter of page.info.chapters)
       observed.set(chapter.url, { name: chapter.title, href: chapter.url, relation: 'chapter' });
     for (const next of page.nextPageUrls)
-      observed.set(next, { name: '下一页', href: next, relation: 'next' });
+      observed.set(next, {
+        name: translateText(uiLocale, 'aiImportErrors.defaultNextPage'),
+        href: next,
+        relation: 'next',
+      });
     parsed.links = [...observed.values()];
     if (page.info.chapters.length) {
       let hasBody = false;
@@ -142,7 +149,7 @@ export class ImportExtractionService {
     if (snapshotId) {
       const stored = await ImportRepository.getResource(source.taskId, snapshotId);
       if (options.snapshotId && (stored?.kind !== 'snapshot' || stored.sourceId !== source.id))
-        throw new Error('SOURCE_SCOPE: 快照不属于当前来源');
+        throw importError('SOURCE_SCOPE', 'sourceScopeTheSnapshotBelongsToAnotherSource', {});
       const encoding = options.encoding ? new TextDecoder(options.encoding).encoding : undefined;
       if (
         stored?.kind === 'snapshot' &&
@@ -158,7 +165,7 @@ export class ImportExtractionService {
 
   private async readSnapshot(source: ImportSource, options: InspectionOptions): Promise<Snapshot> {
     if (source.kind === 'url' && options.encoding)
-      throw new Error('INVALID_ENCODING: 网页已由现有请求层解码，字节编码仅适用于文件');
+      throw importError('INVALID_ENCODING', 'invalidEncodingPagesAreAlreadyDecodedByThe', {});
     const cached = await this.cachedSnapshot(source, options);
     if (cached) return cached;
     if (source.kind === 'url' && source.url) {
@@ -168,7 +175,7 @@ export class ImportExtractionService {
         : await fetchScraperPage(source.url, options.signal ? { signal: options.signal } : {});
       ensureActive(options.signal);
       if (response.html.length > IMPORT_PARSE_LIMITS.textCharacters)
-        throw new Error('PROCESSING_LIMIT: 网页超过文本上限');
+        throw importError('PROCESSING_LIMIT', 'processingLimitThePageExceedsTheTextLimit', {});
       return ImportContentService.prepareSnapshot(
         source,
         new Blob([response.html], { type: 'text/html' }),
@@ -184,15 +191,19 @@ export class ImportExtractionService {
       source.inputResourceId &&
       (await ImportRepository.getResource(source.taskId, source.inputResourceId));
     if (!input || input.kind !== 'input')
-      throw new Error('SOURCE_UNAVAILABLE: 文件未保存，请重新提供');
+      throw importError('SOURCE_UNAVAILABLE', 'sourceUnavailableTheFileWasNotSavedProvide', {});
     if (input.blob.size > IMPORT_PARSE_LIMITS.inputBytes)
-      throw new Error('PROCESSING_LIMIT: 文件超过输入上限');
+      throw importError('PROCESSING_LIMIT', 'processingLimitTheFileExceedsTheInputLimit', {});
     const bytes = new Uint8Array(await input.blob.arrayBuffer());
     ensureActive(options.signal);
     if (formatOf(source, bytes) === 'epub')
       return ImportContentService.prepareSnapshot(source, input.blob);
     if (new TextDecoder().decode(bytes.subarray(0, 5)) === '%PDF-')
-      throw new Error('UNSUPPORTED_FORMAT: 当前没有 PDF 正文解析能力，请提供可读文本');
+      throw importError(
+        'UNSUPPORTED_FORMAT',
+        'unsupportedFormatPDFBodyParsingIsUnavailableProvide',
+        {},
+      );
     const decoded = (
       await this.parser.run(
         { kind: 'decode', bytes, ...(options.encoding ? { encoding: options.encoding } : {}) },
@@ -265,7 +276,8 @@ export class ImportExtractionService {
   ): Promise<ImportResource[]> {
     const format =
       source.kind === 'url' ? 'html' : formatOf(source, new Uint8Array(), snapshot.text);
-    if (format === 'epub') throw new Error('EPUB_STRUCTURE: EPUB 快照未正确解包');
+    if (format === 'epub')
+      throw importError('EPUB_STRUCTURE', 'epubStructureTheEPUBSnapshotWasNotUnpacked', {});
     const baseUrl = snapshot.responseUrl ?? source.url;
     const parsed = (
       await this.parser.run(
@@ -273,7 +285,12 @@ export class ImportExtractionService {
         signal ? { signal } : {},
       )
     ).value;
-    enrichSiteInspection(source, snapshot, parsed);
+    enrichSiteInspection(
+      source,
+      snapshot,
+      parsed,
+      (await ImportRepository.getTask(source.taskId))?.checkpoint?.uiLocale ?? 'zh-CN',
+    );
     const observed =
       source.kind === 'url'
         ? parsed.links.map((link) => ({
@@ -317,7 +334,7 @@ export class ImportExtractionService {
       limit < 1 ||
       limit > 100
     )
-      throw new Error('INVALID_PAGE: 来源检查分页无效');
+      throw importError('INVALID_PAGE', 'invalidPageInvalidSourceInspectionPagination', {});
     const discoveries: ImportDiscovery[] = [];
     for (const id of inspection.discoveryIds.slice(offset, offset + limit)) {
       const resource =
@@ -339,8 +356,10 @@ export class ImportExtractionService {
       ...(unavailable
         ? {
             error: {
-              code: 'SOURCE_UNAVAILABLE',
-              message: '未取得小说正文：来源为登录、验证页或动态空壳，可在本任务补充文件。',
+              ...importFailure(
+                'SOURCE_UNAVAILABLE',
+                'sourceUnavailableNoNovelContentWasObtainedThis',
+              ),
             },
           }
         : {}),
@@ -409,7 +428,7 @@ export class ImportExtractionService {
     let resources: ImportResource[] = [];
     try {
       if (source.purpose === 'metadata-only')
-        throw new Error('METADATA_ONLY: 元信息来源不能提取为小说正文');
+        throw importError('METADATA_ONLY', 'metadataOnlyMetadataSourcesCannotBeExtractedAs', {});
       let snapshot: ImportResource | undefined;
       {
         const inspected = await this.prepareInspection(taskId, source.id, {
@@ -424,11 +443,11 @@ export class ImportExtractionService {
           (await ImportRepository.getResource(taskId, inspected.result.snapshotId!));
       }
       if (snapshot?.kind !== 'snapshot' || snapshot.sourceId !== source.id)
-        throw new Error('SOURCE_SCOPE: 快照不属于当前来源');
+        throw importError('SOURCE_SCOPE', 'sourceScopeTheSnapshotBelongsToAnotherSource', {});
       if (!snapshot.inspection || snapshot.inspection.format === 'epub')
-        throw new Error('SELECT_RESOURCE: 请先检查来源并选择其中的章节资源');
+        throw importError('SELECT_RESOURCE', 'selectResourceInspectTheSourceAndSelectA', {});
       if (['verification', 'dynamic'].includes(snapshot.inspection.kind))
-        throw new Error('SOURCE_UNAVAILABLE: 来源没有可用正文，请补充文件');
+        throw importError('SOURCE_UNAVAILABLE', 'sourceUnavailableTheSourceHasNoUsableBody', {});
       const parsed = (
         await this.parser.run(
           {
@@ -442,7 +461,7 @@ export class ImportExtractionService {
         )
       ).value;
       if (parsed.kind !== 'content')
-        throw new Error('EMPTY_CONTENT: 当前规则没有提取到小说正文，请调整范围');
+        throw importError('EMPTY_CONTENT', 'emptyContentTheCurrentRulesExtractedNoNovel', {});
       const content = ImportContentService.prepareExtraction(snapshot, {
         ...parsed,
         separator: parsed.format === 'html' ? '\n' : '',
@@ -489,7 +508,7 @@ export class ImportExtractionService {
       inputs.length > 8 ||
       new Set(inputs.map((input) => input.sourceId)).size !== inputs.length
     )
-      throw new Error('BATCH_LIMIT: 一次提取须包含 1–8 个不同来源');
+      throw importError('BATCH_LIMIT', 'batchLimitExtractionRequiresDistinctSources', {});
     const batch: { resources: ImportResource[]; sources: ImportSource[]; results: SourceResult[] } =
       { resources: [], sources: [], results: [] };
     for (const input of inputs) {

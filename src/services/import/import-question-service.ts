@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type {
   ImportPendingQuestion,
   ImportQuestionAnswer,
@@ -19,7 +20,8 @@ export function awaitingImportAnswer(task: ImportTask): boolean {
 function questionItem(value: unknown): ImportQuestionItem {
   const entry = value as Record<string, unknown>;
   const question = typeof entry.question === 'string' ? entry.question.trim() : '';
-  if (!question) throw new Error('INVALID_ARGUMENTS: question 不能为空');
+  if (!question)
+    throw importError('INVALID_ARGUMENTS', 'invalidArgumentsQuestionMustBeNonempty', {});
   const suggestedAnswers = Array.isArray(entry.suggested_answers)
     ? (entry.suggested_answers as string[]).map((answer) => answer.trim()).filter(Boolean)
     : [];
@@ -38,7 +40,8 @@ function questionItem(value: unknown): ImportQuestionItem {
 function questionItems(tool: AskTool, args: Record<string, unknown>): ImportQuestionItem[] {
   if (tool === 'ask_user') return [questionItem(args)];
   const items = (args.questions as unknown[]).map(questionItem);
-  if (!items.length) throw new Error('INVALID_ARGUMENTS: questions 不能为空');
+  if (!items.length)
+    throw importError('INVALID_ARGUMENTS', 'invalidArgumentsQuestionsMustBeNonempty', {});
   return items;
 }
 
@@ -66,13 +69,15 @@ function answerResult(question: ImportPendingQuestion): Record<string, unknown> 
 
 function checkAnswer(item: ImportQuestionItem, entry: AnswerInput[number]): void {
   const answer = entry.answer.trim();
-  if (!answer) throw new Error('INVALID_ANSWER: 回答不能为空');
+  if (!answer) throw importError('INVALID_ANSWER', 'invalidAnswerAnswersMustBeNonempty', {});
   if (item.maxLength && answer.length > item.maxLength)
-    throw new Error(`INVALID_ANSWER: 回答不能超过 ${item.maxLength} 字`);
+    throw importError('INVALID_ANSWER', 'invalidAnswerAnswersAreLimitedToDetailCharacters', {
+      value1: String(item.maxLength),
+    });
   if (entry.selectedIndex !== undefined && item.suggestedAnswers[entry.selectedIndex] !== answer)
-    throw new Error('INVALID_ANSWER: 选中项与回答不一致');
+    throw importError('INVALID_ANSWER', 'invalidAnswerTheSelectedOptionDoesNotMatch', {});
   if (!item.allowFreeText && !item.suggestedAnswers.includes(answer))
-    throw new Error('INVALID_ANSWER: 只能从候选答案中选择');
+    throw importError('INVALID_ANSWER', 'invalidAnswerChooseOnlyFromTheProvidedOptions', {});
 }
 
 function normalizedAnswers(question: ImportPendingQuestion, answers: AnswerInput): AnswerInput {
@@ -80,12 +85,12 @@ function normalizedAnswers(question: ImportPendingQuestion, answers: AnswerInput
   const indexes = new Set(answers.map((entry) => entry.questionIndex));
   // 部分回答等同于中途取消，不能解除等待
   if (answers.length !== items.length || indexes.size !== items.length)
-    throw new Error('INVALID_ANSWER: 需要回答全部问题');
+    throw importError('INVALID_ANSWER', 'invalidAnswerAnswerEveryQuestion', {});
   return [...answers]
     .sort((a, b) => a.questionIndex - b.questionIndex)
     .map((entry) => {
       const item = items[entry.questionIndex];
-      if (!item) throw new Error('INVALID_ANSWER: 问题序号无效');
+      if (!item) throw importError('INVALID_ANSWER', 'invalidAnswerInvalidQuestionIndex', {});
       checkAnswer(item, entry);
       return { ...entry, answer: entry.answer.trim() };
     });
@@ -111,7 +116,7 @@ export class ImportQuestionService {
         (current) => {
           const question = current.pendingQuestion;
           if (question?.toolCallId !== callId || !question.answer)
-            throw new Error('QUESTION_CHANGED: 问题已变化');
+            throw importError('QUESTION_CHANGED', 'questionChangedTheQuestionChanged', {});
           delete current.pendingQuestion;
           return Promise.resolve(answerResult(question));
         },
@@ -168,7 +173,11 @@ export class ImportQuestionService {
           question.answer ||
           question.scopeRevision !== task.draft.novelScope.revision
         )
-          throw new Error('QUESTION_CHANGED: 问题已变化或已回答');
+          throw importError(
+            'QUESTION_CHANGED',
+            'questionChangedTheQuestionChangedOrWasAlready',
+            {},
+          );
         question.answer = { answers: normalizedAnswers(question, answers), answeredAt: Date.now() };
         if (task.state === 'waiting_user') task.state = 'paused';
         return Promise.resolve(task);

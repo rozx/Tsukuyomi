@@ -1,12 +1,16 @@
 <template>
   <div class="space-y-2 lg:sticky lg:top-0">
-    <label class="block text-sm font-medium text-moon/90">封面</label>
+    <label class="block text-sm font-medium text-moon/90">{{ i18nT('libraryUi.cover') }}</label>
     <div class="space-y-2">
       <div
         v-if="coverUrl"
         class="relative w-full aspect-[2/3] overflow-hidden rounded-lg bg-white/5 border border-white/10"
       >
-        <img :src="coverUrl" alt="封面预览" class="w-full h-full object-cover" />
+        <img
+          :src="coverUrl"
+          :alt="i18nT('libraryUi.coverPreview')"
+          class="w-full h-full object-cover"
+        />
       </div>
       <div class="flex flex-nowrap gap-2 items-stretch">
         <Button
@@ -19,7 +23,7 @@
           v-if="coverUrl"
           icon="pi pi-times"
           class="p-button-outlined p-button-danger flex-shrink-0"
-          title="清除封面"
+          :title="i18nT('libraryUi.clearCover')"
           @click="emit('clear')"
         />
       </div>
@@ -31,7 +35,7 @@
             icon="pi pi-copy"
             class="p-button-text p-button-sm"
             size="small"
-            title="复制 URL"
+            :title="i18nT('libraryUi.copyUrl')"
             @click="emit('copy-url')"
           />
         </div>
@@ -45,11 +49,14 @@
         </a>
       </div>
     </div>
-    <small class="text-moon/60 text-xs block">点击按钮管理书籍封面图片</small>
+    <small class="text-moon/60 text-xs block">{{ i18nT('libraryUi.coverHint') }}</small>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import type { Novel } from 'src/models/novel';
@@ -67,6 +74,8 @@ const emit = defineEmits<{
 const coverUrl = computed(() => props.cover?.url);
 
 // 管理/上传按钮的文案与图标
-const manageButtonLabel = computed(() => (coverUrl.value ? '管理封面' : '上传封面'));
+const manageButtonLabel = computed(() =>
+  coverUrl.value ? i18nT('libraryUi.manageCover') : i18nT('libraryUi.uploadCover'),
+);
 const manageButtonIcon = computed(() => (coverUrl.value ? 'pi pi-image' : 'pi pi-upload'));
 </script>

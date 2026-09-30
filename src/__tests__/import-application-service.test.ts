@@ -1,3 +1,4 @@
+import { localizeImportFeedback } from '../services/import/import-error';
 import { appendLanguageTranslation } from '../services/localization/selection';
 import { ImportPreviewService } from '../services/import/import-preview-service';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -403,7 +404,10 @@ describe('用户确认后的原子应用与撤销', () => {
     expect(await ImportRepository.listOperations(plan.taskId)).toHaveLength(1);
     expect(await service.revertStatus(plan.taskId, plan.id)).toMatchObject({
       available: false,
-      reason: expect.stringContaining('尚未应用'),
+      reason: expect.objectContaining({
+        code: 'UNDO_NOT_APPLIED',
+        message: expect.stringContaining('尚未应用'),
+      }),
     });
     await service.apply(await service.confirmApply(plan.taskId, plan.id));
     expect(await service.revertStatus(plan.taskId, plan.id)).toEqual({ available: true });
@@ -412,7 +416,10 @@ describe('用户确认后的原子应用与撤销', () => {
     await BookService.saveBook({ ...edited, title: '导入后改名' });
     expect(await service.revertStatus(plan.taskId, plan.id)).toMatchObject({
       available: false,
-      reason: expect.stringContaining('后续修改'),
+      reason: expect.objectContaining({
+        code: 'UNDO_BOOK_CHANGED',
+        message: expect.stringContaining('后续修改'),
+      }),
     });
   });
 

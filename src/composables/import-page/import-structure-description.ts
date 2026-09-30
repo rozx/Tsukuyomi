@@ -64,7 +64,7 @@ function appendItems(details: ActionDetail[], items: ImportActionData[], prefix:
     actionDetail(details, `${label} · 开头片段`, item.head);
     actionDetail(details, `${label} · 结尾片段`, item.tail);
     if (Array.isArray(item.warnings))
-      actionDetail(details, `${label} · 提示`, item.warnings.join('\n'));
+      actionDetail(details, `${label} · 提示`, item.warnings.map(actionText).join('\n'));
     if (item.unassigned === true) actionDetail(details, `${label} · 归类`, '待归类，默认不选中');
   });
 }

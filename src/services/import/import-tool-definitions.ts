@@ -1,6 +1,9 @@
-import { describeImportTool } from 'src/services/ai/tools/tool-localization';
+import {
+  describeImportTool,
+  localizeToolDefinition,
+} from 'src/services/ai/tools/tool-localization';
 import { importStructureTools } from './import-structure-tools';
-import { localizeToolDefinition } from 'src/services/ai/tools/tool-localization';
+
 import type { AppLocale } from 'src/models/locale';
 import { importPatternSchema, importSourceFilterSchema } from './import-pattern-schema';
 import type { AITool } from 'src/services/ai/types/ai-service';

@@ -1,3 +1,4 @@
+import type { ImportFailure } from './import-feedback';
 import type { ImportExtractionRules, ImportParagraphChange } from './import';
 import type { ImportSourceFilter, ImportTextPattern } from './import-pattern';
 import type { CoverImage, Paragraph } from './novel';
@@ -58,10 +59,8 @@ export interface SyncUpdatedChapter extends CatalogEntry {
   removed: number;
   clearedVersions: number;
 }
-export interface SyncFailure {
+export interface SyncFailure extends ImportFailure {
   url: string;
-  code: string;
-  message: string;
 }
 export interface BookSyncChangeset {
   baseRevision: number | null;

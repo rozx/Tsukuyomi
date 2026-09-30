@@ -1,3 +1,6 @@
+import { importFailure, importError } from './import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 import { load } from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
 import type { ImportExtractionRules, ImportTextBlock } from 'src/models/import';
@@ -162,7 +165,7 @@ function selectedRoots(
     rules.preset && rules.preset !== 'auto'
       ? BODY_PRESETS[rules.preset]
       : Object.values(BODY_PRESETS).flat();
-  if (!selectors) throw new Error('INVALID_PRESET: 未知的提取规则');
+  if (!selectors) throw importError('INVALID_PRESET', 'invalidPresetUnknownExtractionPreset', {});
   for (const selector of selectors) {
     const nodes = $(selector).toArray();
     if (nodes.length) return { nodes, preset: true };
@@ -178,12 +181,14 @@ function excludedReason(
   $: CheerioAPI,
   node: HtmlNode,
   rules: ImportExtractionRules,
-): string | undefined {
+): ImportNotice | undefined {
   const element = $(node);
   for (const selector of rules.excludeSelectors ?? [])
-    if (element.is(selector)) return `用户指定排除 ${selector}`;
-  if (element.is(METADATA)) return '元信息';
-  if (element.is(EXCLUDED)) return `排除 ${nodeName(node)} 导航、脚本或非正文资源`;
+    if (element.is(selector))
+      return importFailure('EXCLUDED_SELECTOR', 'noticeExcludedSelector', { selector });
+  if (element.is(METADATA)) return importFailure('METADATA_BLOCK', 'noticeMetadata');
+  if (element.is(EXCLUDED))
+    return importFailure('EXCLUDED_NODE', 'noticeExcludedNode', { node: nodeName(node) });
   return undefined;
 }
 
@@ -311,7 +316,7 @@ export function parseImportHtml(
     selected = selectedRoots($, rules);
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('INVALID_PRESET')) throw error;
-    throw new Error('INVALID_SELECTOR: CSS 范围或排除规则无效');
+    throw importError('INVALID_SELECTOR', 'invalidSelectorInvalidCSSScopeOrExclusionRules', {});
   }
   const info = metadata($, baseUrl);
   const foundLinks = links($, baseUrl);
@@ -338,7 +343,7 @@ export function parseImportHtml(
     rules,
     warnings:
       !selected.preset && !rules.selector && kind === 'content'
-        ? ['使用通用正文范围，请检查是否包含页眉或附属文字。']
+        ? [importFailure('GENERIC_BODY', 'noticeGenericBody')]
         : [],
   };
 }

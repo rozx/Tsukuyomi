@@ -1,3 +1,5 @@
+import { importCancelled, importError } from './import-error';
+
 import type { ImportContentRef, ImportDraftChapter } from 'src/models/import';
 import type { ImportDraftBatchInput, ImportDraftBatchSummary } from 'src/models/import-draft-batch';
 import { ImportContentService } from './import-content-service';
@@ -17,11 +19,16 @@ export async function draftReferenceText(
   if (!books.has(ref.bookId)) books.set(ref.bookId, await ImportLibraryReader.readBook(ref.bookId));
   const book = books.get(ref.bookId);
   if (book?.kind !== 'loaded' || book.revision !== ref.bookRevision)
-    throw new Error('BOOK_CHANGED: 既有正文引用已过时或无法读取');
+    throw importError('BOOK_CHANGED', 'bookChangedTheExistingContentReferenceIsOutdated', {});
   const chapter = book.chapters[ref.chapterId];
   const paragraph =
     chapter?.kind === 'loaded' && chapter.content.find((p) => p.id === ref.paragraphId);
-  if (!paragraph) throw new Error('CHAPTER_READ_FAILED: 既有正文无法读取');
+  if (!paragraph)
+    throw importError(
+      'CHAPTER_READ_FAILED',
+      'chapterReadFailedExistingChapterContentCannotBeRead',
+      {},
+    );
   return paragraph.text;
 }
 
@@ -38,13 +45,17 @@ export async function cleanDraftChapters(
   let characters = 0;
   for (const chapter of chapters) {
     if (chapter.status !== 'ready')
-      throw new Error('CHAPTER_NOT_READY: 正文清理只接受已就绪章节，请缩小范围');
+      throw importError(
+        'CHAPTER_NOT_READY',
+        'chapterNotReadyBodyCleanupAcceptsOnlyReadyChapters',
+        {},
+      );
     for (const ref of chapter.content) {
-      if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
+      if (signal?.aborted) throw importCancelled('cancelled');
       const original = await draftReferenceText(taskId, ref, books);
       characters += original.length;
       if (characters > IMPORT_PARSE_LIMITS.textCharacters || entries.length >= 10000)
-        throw new Error('PROCESSING_LIMIT: 批量正文过多，请缩小范围');
+        throw importError('PROCESSING_LIMIT', 'processingLimitTooMuchBodyTextInThe', {});
       entries.push({
         chapterId: chapter.id,
         ref,
@@ -95,7 +106,7 @@ export async function cleanDraftChapters(
   });
   for (const id of changed)
     if (!nonEmpty.has(id))
-      throw new Error('EMPTY_CONTENT: 规则会清空整章，请调整规则或使用删除章节');
+      throw importError('EMPTY_CONTENT', 'emptyContentTheRuleWouldEmptyTheChapter', {});
   return {
     chapters: chapters
       .filter((c) => changed.has(c.id))

@@ -22,23 +22,23 @@
       /* 对比色 - 温暖的琥珀色（与冷色调形成对比）*/
       radial-gradient(circle at 50% 20%, rgba(255, 183, 77, 0.08), transparent 60%),
       /* 对比色 - 柔和的紫色（与蓝色形成对比）*/
-      radial-gradient(circle at 70% 30%, rgba(186, 104, 200, 0.06), transparent 65%),
+        radial-gradient(circle at 70% 30%, rgba(186, 104, 200, 0.06), transparent 65%),
       /* 顶部左侧 - 明亮的月光效果（Highlight 薄藍）*/
-      radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%),
+        radial-gradient(circle at 15% 15%, rgba(109, 136, 168, 0.35), transparent 45%),
       /* 顶部右侧 - 明亮的月光效果（Accent 銀月）*/
-      radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%),
+        radial-gradient(circle at 85% 10%, rgba(174, 183, 198, 0.28), transparent 50%),
       /* 中间左侧 - 中等强度的月光 */
-      radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%),
+        radial-gradient(circle at 25% 50%, rgba(109, 136, 168, 0.15), transparent 55%),
       /* 中间右侧 - 中等强度的月光 */
-      radial-gradient(circle at 75% 50%, rgba(174, 183, 198, 0.18), transparent 60%),
+        radial-gradient(circle at 75% 50%, rgba(174, 183, 198, 0.18), transparent 60%),
       /* 底部左侧 - 微妙的月光反射 */
-      radial-gradient(circle at 10% 85%, rgba(109, 136, 168, 0.12), transparent 65%),
+        radial-gradient(circle at 10% 85%, rgba(109, 136, 168, 0.12), transparent 65%),
       /* 底部右侧 - 微妙的月光反射 */
-      radial-gradient(circle at 90% 90%, rgba(174, 183, 198, 0.15), transparent 70%),
+        radial-gradient(circle at 90% 90%, rgba(174, 183, 198, 0.15), transparent 70%),
       /* 中心 - 柔和的月光扩散 */
-      radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%),
+        radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%),
       /* 基础渐变 - Secondary（影墨）- 增强明暗对比 */
-      linear-gradient(135deg, #0A0C0F 0%, #0F1114 20%, #1C1F26 50%, #242730 80%, #2C2F3A 100%);
+        linear-gradient(135deg, #0a0c0f 0%, #0f1114 20%, #1c1f26 50%, #242730 80%, #2c2f3a 100%);
     background-attachment: fixed;
   }
 }
@@ -152,8 +152,7 @@
   /* 标题用 Noto Serif JP（font-display），强调文学感；正文仍用 Noto Sans SC */
   .p-dialog-header .p-dialog-title,
   .p-dialog-header span.p-dialog-title {
-    font-family:
-      'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+    font-family: 'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
     font-weight: 600;
     font-size: 1.125rem;
     letter-spacing: -0.005em;
@@ -179,4 +178,29 @@
     border-color: var(--tsukuyomi-200-opacity-30); /* token: tsukuyomi-200 @ 30% */
     background: var(--tsukuyomi-200-opacity-6); /* token: tsukuyomi-200 @ 6% */
   }
+}
+
+/* 桌面与平板系统栏共用的 chip 基础样式。 */
+.system-bar-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(192, 198, 209, 0.85);
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  flex-shrink: 0;
 }

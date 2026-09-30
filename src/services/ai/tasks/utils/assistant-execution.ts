@@ -1,3 +1,5 @@
+import { LocalizedError } from 'src/utils/localized-error';
+import type { MessageKey } from 'src/i18n/types';
 import type {
   AITool,
   AIToolCall,
@@ -47,6 +49,12 @@ export interface AssistantExecutionProfile {
   ): Promise<void>;
   resume?: AssistantExecutionCheckpoint;
   maxToolTurns?: number;
+}
+
+function executionError(code: string, locale: AppLocale, key: MessageKey): LocalizedError {
+  const error = new LocalizedError(code, key, {}, locale);
+  error.message = `${error.code}: ${error.message}`;
+  return error;
 }
 
 export class AssistantExecutionPaused extends Error {
@@ -129,10 +137,18 @@ export class AssistantExecution {
       try {
         argumentsValue = JSON.parse(call.function.arguments);
       } catch {
-        throw new Error('INCOMPLETE_TOOL_CALL: 工具参数不是完整 JSON');
+        throw executionError(
+          'INCOMPLETE_TOOL_CALL',
+          this.languages.uiLocale,
+          'aiToolFeedback.incompleteCallJson',
+        );
       }
       if (!argumentsValue || typeof argumentsValue !== 'object' || Array.isArray(argumentsValue))
-        throw new Error('INCOMPLETE_TOOL_CALL: 工具参数必须是对象');
+        throw executionError(
+          'INCOMPLETE_TOOL_CALL',
+          this.languages.uiLocale,
+          'aiToolFeedback.incompleteCallObject',
+        );
     }
     // 兼容服务常在每次回复中复用 tool_call_0；宿主身份必须跨恢复和多轮唯一。
     return calls.map((call) => ({
@@ -204,18 +220,32 @@ export class AssistantExecution {
               name: call.function.name,
               content: JSON.stringify({
                 success: false,
-                error: 'TOOL_NOT_ALLOWED: 工具不在当前执行配置中',
+                error: executionError(
+                  'TOOL_NOT_ALLOWED',
+                  this.languages.uiLocale,
+                  'aiToolFeedback.toolNotAllowed',
+                ).message,
+                error_code: 'TOOL_NOT_ALLOWED',
               }),
             },
           };
       if (outcome.result) {
         if (outcome.result.tool_call_id !== call.id || outcome.result.name !== call.function.name)
-          throw new Error('TOOL_PAIR: 工具结果身份不一致');
+          throw executionError(
+            'TOOL_PAIR',
+            this.languages.uiLocale,
+            'aiToolFeedback.toolPairIdentity',
+          );
         const next = afterResult(outcome.result);
         if (outcome.checkpointCommitted) this.current = next;
         else await this.save(next, 'running');
         messages.push(outcome.result);
-      } else if (!outcome.pause) throw new Error('TOOL_PAIR: 工具没有完成结果或让出原因');
+      } else if (!outcome.pause)
+        throw executionError(
+          'TOOL_PAIR',
+          this.languages.uiLocale,
+          'aiToolFeedback.toolPairMissing',
+        );
       if (outcome.pause) throw await this.stop(outcome.pause);
     }
   }

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 /**
  * 平板翻译进度面板——参考 MobileProgressSheet 的布局（appbar icon + 标题 +
  * 副标题 + close），但外壳从 MobileBottomSheet 改成右侧侧滑面板。与
@@ -6,6 +9,7 @@
  */
 import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
 import { useUiStore } from 'src/stores/ui';
+import TranslationProgressSubtitle from 'src/components/layout/TranslationProgressSubtitle.vue';
 import { useTranslationProgressPanel } from 'src/composables/translation-progress/useTranslationProgressPanel';
 
 const ui = useUiStore();
@@ -16,20 +20,20 @@ const close = () => ui.closeRightPanel();
 </script>
 
 <template>
-  <aside class="tpp-shell" aria-label="翻译进度">
+  <aside class="tpp-shell" :aria-label="i18nT('libraryUi.progress')">
     <header class="tpp-appbar">
       <div class="tpp-appbar-icon"><i class="pi pi-bolt" aria-hidden="true" /></div>
       <div class="tpp-appbar-text">
-        <div class="tpp-appbar-title">翻译进度</div>
+        <div class="tpp-appbar-title">{{ i18nT('libraryUi.progress') }}</div>
         <div class="tpp-appbar-sub">
-          <template v-if="currentTask && mobileCurrentChapterLabel">
-            {{ mobileCurrentChapterLabel }} · {{ mobileWorkflowLabel }}
-          </template>
-          <template v-else-if="currentTask">{{ mobileWorkflowLabel }}</template>
-          <template v-else>暂无翻译任务</template>
+          <TranslationProgressSubtitle
+            :has-task="!!currentTask"
+            :chapter-label="mobileCurrentChapterLabel"
+            :workflow-label="mobileWorkflowLabel"
+          />
         </div>
       </div>
-      <button type="button" class="tpp-close" aria-label="关闭" @click="close">
+      <button type="button" class="tpp-close" :aria-label="i18nT('libraryUi.close')" @click="close">
         <i class="pi pi-times" aria-hidden="true" />
       </button>
     </header>

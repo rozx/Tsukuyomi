@@ -1,3 +1,4 @@
+import { importNoticeText } from '../services/import/import-error';
 import { describe, it } from 'bun:test';
 import { expect } from 'vitest';
 import './setup';
@@ -28,7 +29,11 @@ describe('导入书库只读对照', () => {
     const result = await ImportLibraryService.search(task.id, { query: '同名小说' });
     expect(result.ambiguous).toBe(true);
     expect(result.items).toHaveLength(2);
-    expect(result.items.every((item) => item.reasons.includes('书名匹配'))).toBe(true);
+    expect(
+      result.items.every((item) =>
+        item.reasons.map((w) => importNoticeText(w)).includes('书名匹配'),
+      ),
+    ).toBe(true);
     expect(
       (await ImportLibraryService.search(task.id, { query: '', author: '甲' })).items.map(
         (item) => item.id,

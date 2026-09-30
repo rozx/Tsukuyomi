@@ -1,3 +1,6 @@
+import { importFailure, importError } from './import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 import { excludeImportText } from './import-content-exclusions';
 import type { ImportContentRef, ImportDraftChapter, ImportSource } from 'src/models/import';
 import { ImportRepository } from './import-repository';
@@ -20,7 +23,7 @@ export interface ImportChapterPreview {
   /** 引用到的原始来源（用于在来源列表中定位）。 */
   sources: ImportSource[];
   /** 这些提取结果在提取时排除的内容，供用户核对清理是否正确。 */
-  excluded: { resourceId: string; text: string; reason: string }[];
+  excluded: { resourceId: string; text: string; reason: ImportNotice }[];
   /** 读取失败的引用，界面显示失败而不是空正文。 */
   failures: string[];
 }
@@ -31,18 +34,30 @@ type BookRead = Awaited<ReturnType<typeof ImportLibraryReader.readBook>>;
 async function existingText(ref: ExistingRef, books: Map<string, Promise<BookRead>>) {
   if (!books.has(ref.bookId)) books.set(ref.bookId, ImportLibraryReader.readBook(ref.bookId));
   const read = await books.get(ref.bookId)!;
-  if (read.kind !== 'loaded') throw new Error('BOOK_READ_FAILED: 目标小说读取失败');
-  if (read.revision !== ref.bookRevision) throw new Error('BOOK_CHANGED: 既有正文引用已过时');
+  if (read.kind !== 'loaded')
+    throw importError('BOOK_READ_FAILED', 'bookReadFailedFailedToReadTheTargetNovel', {});
+  if (read.revision !== ref.bookRevision)
+    throw importError(
+      'BOOK_CHANGED',
+      'bookChangedTheExistingContentReferenceIsOutdatedVariant177',
+      {},
+    );
   const chapter = read.chapters[ref.chapterId];
-  if (chapter?.kind !== 'loaded') throw new Error('CHAPTER_READ_FAILED: 原章节读取失败');
+  if (chapter?.kind !== 'loaded')
+    throw importError('CHAPTER_READ_FAILED', 'chapterReadFailedFailedToReadTheOriginalChapter', {});
   const paragraph = chapter.content.find((entry) => entry.id === ref.paragraphId);
-  if (!paragraph) throw new Error('PARAGRAPH_NOT_FOUND: 原段落不存在');
+  if (!paragraph)
+    throw importError(
+      'PARAGRAPH_NOT_FOUND',
+      'paragraphNotFoundTheOriginalParagraphDoesNotExist',
+      {},
+    );
   return excludeImportText(paragraph.text, ref.excludeRanges);
 }
 
 export type ImportSourcePage =
   | { kind: 'text'; text: string; nextOffset?: number }
-  | { kind: 'note'; note: string };
+  | { kind: 'note'; note: ImportNotice };
 
 /** 只读：把草稿章节的内容引用还原成可检查的正文，不修改任务或书库。 */
 export class ImportPreviewService {
@@ -55,8 +70,11 @@ export class ImportPreviewService {
     const source = await ImportRepository.getSource(taskId, sourceId);
     if (!source.currentSnapshotId) {
       if (source.status === 'failed')
-        return { kind: 'note', note: source.error?.message ?? '读取失败' };
-      return { kind: 'note', note: '尚未读取：月詠检查或提取该来源后才会保存内容。' };
+        return {
+          kind: 'note',
+          note: source.error ?? importFailure('SOURCE_READ_FAILED', 'sourceReadFailed'),
+        };
+      return { kind: 'note', note: importFailure('SOURCE_NOT_READ', 'sourceNotRead') };
     }
     const page = await ImportContentService.read(taskId, source.currentSnapshotId, {
       offset: options.offset ?? 0,
@@ -72,7 +90,8 @@ export class ImportPreviewService {
   static async chapter(taskId: string, chapterId: string): Promise<ImportChapterPreview> {
     const task = await ImportRepository.getTask(taskId);
     const chapter = task?.draft.chapters.find((entry) => entry.id === chapterId);
-    if (!chapter) throw new Error('CHAPTER_NOT_FOUND: 草稿章节不存在');
+    if (!chapter)
+      throw importError('CHAPTER_NOT_FOUND', 'chapterNotFoundTheDraftChapterDoesNotExist', {});
     const preview: ImportChapterPreview = {
       chapterId,
       title: chapter.title,
@@ -94,7 +113,12 @@ export class ImportPreviewService {
           continue;
         }
         const resource = await ImportRepository.getResource(taskId, ref.resourceId);
-        if (resource?.kind !== 'extraction') throw new Error('INVALID_CONTENT_REF: 提取结果不存在');
+        if (resource?.kind !== 'extraction')
+          throw importError(
+            'INVALID_CONTENT_REF',
+            'invalidContentRefTheExtractionResultDoesNotExist',
+            {},
+          );
         sourceIds.add(resource.sourceId);
         // 与方案生成一致：拼接引用范围后按行拆成段落
         const lines = resolveImportText(resource, ref).replace(/\r\n?/g, '\n').split('\n');

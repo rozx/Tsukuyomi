@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { importNoticeText } from 'src/services/import/import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 /**
  * 本任务的导入记录与撤销。书籍在导入后有任何后续修改时撤销不可用，并说明原因。
  */
@@ -9,10 +14,13 @@ import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import type { ImportOperation } from 'src/models/import';
 import { formatTime, readableError } from './import-labels';
 
+const { locale } = useI18n();
+const noticeText = (value: unknown) => importNoticeText(value, resolveAppLocale(locale.value));
+
 const store = useImportWorkspaceStore();
 const confirm = useConfirm();
 
-type RevertState = { available: boolean; reason?: string };
+type RevertState = { available: boolean; reason?: ImportNotice };
 const revertState = ref<Record<string, RevertState>>({});
 
 const history = computed(() => store.operations.filter((entry) => entry.state !== 'planned'));
@@ -42,7 +50,7 @@ const rows = computed(() =>
       applied,
       title: `${entry.plan.targetKind === 'new' ? '新建' : '更新'}《${entry.plan.book.title}》`,
       time: `${applied ? '导入于' : '撤销于'} ${formatTime(time)}`,
-      reason: state?.reason ?? '',
+      reason: noticeText(state?.reason),
       canRevert: Boolean(state?.available) && !store.isRunning,
     };
   }),

@@ -8,13 +8,21 @@ import { createRouter, createMemoryHistory } from 'vue-router';
 import axios from 'axios';
 import { provideHelpPage } from '../composables/help-page/useHelpPage';
 import messages from '../i18n';
+import { helpDocsTools } from '../services/ai/tools/help-docs-tools';
+import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-languages';
 vi.mock('vue', async (importOriginal) => {
   const original = await importOriginal<typeof Vue>();
   return { ...original, nextTick: vi.fn(original.nextTick) };
 });
+const device = vi.hoisted(() => ({ variant: 'desktop' }));
 vi.mock('src/composables/useResponsiveLayout', async () => {
   const { ref } = await import('vue');
-  return { useResponsiveLayout: () => ({ isPhone: ref(false), isTablet: ref(false) }) };
+  return {
+    useResponsiveLayout: () => ({
+      isPhone: ref(device.variant === 'mobile'),
+      isTablet: ref(device.variant === 'tablet'),
+    }),
+  };
 });
 let app: App | undefined;
 const oldScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
@@ -25,6 +33,7 @@ beforeEach(() =>
   }),
 );
 afterEach(() => {
+  device.variant = 'desktop';
   app?.unmount();
   app = undefined;
   vi.restoreAllMocks();
@@ -71,12 +80,12 @@ async function flush() {
     await nextTick();
   }
 }
-async function mount() {
+async function mount(path = '/help/front-page#front-settings') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/help/:docId?', component: { render: () => null } }],
   });
-  await router.push('/help/front-page#front-settings');
+  await router.push(path);
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages });
   let ctx!: ReturnType<typeof provideHelpPage>;
   app = createApp({
@@ -94,6 +103,42 @@ async function mount() {
   return { ctx, i18n, router };
 }
 describe('帮助页面语言切换', () => {
+  for (const variant of ['desktop', 'tablet', 'mobile']) {
+    it(`${variant}初次打开帮助默认读取快速开始完整正文`, async () => {
+      device.variant = variant;
+      resources();
+      const { ctx } = await mount('/help');
+      expect(ctx.currentDoc.value?.id).toBe('front-page');
+      expect(ctx.content.value).toContain('完整简中正文');
+    });
+  }
+
+  it('英文执行导航到已切繁中的同文档章节，工具反馈保持英文', async () => {
+    resources();
+    const { ctx, i18n, router } = await mount();
+    i18n.global.locale.value = 'zh-TW';
+    await flush();
+    const tool = helpDocsTools.find(
+      (entry) => entry.definition.function.name === 'navigate_to_help_doc',
+    )!;
+    const actions: Array<{ data: Record<string, unknown> }> = [];
+    const result = JSON.parse(
+      await tool.handler(
+        { doc_id: 'front-page', section_id: '设置' },
+        {
+          languages: captureExecutionLanguages('en-US'),
+          onAction: (action) => actions.push(action as { data: Record<string, unknown> }),
+        },
+      ),
+    );
+    const action = actions[0]!;
+    await router.push(`/help/${String(action.data.doc_id)}#${String(action.data.section_id)}`);
+    await flush();
+    expect(result.message).toContain('Navigated');
+    expect(ctx.currentDoc.value?.title).toBe('快速開始');
+    expect(ctx.activeHeading.value).toBe('front-settings');
+  });
+
   it('缓存定位等待期间切语言后不再滚动旧章节', async () => {
     const get = resources();
     const { ctx, i18n } = await mount();

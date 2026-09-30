@@ -1,3 +1,5 @@
+import type { ImportNotice } from 'src/models/import-feedback';
+import { importError } from './import-error';
 import type {
   ImportContentRef,
   ImportResource,
@@ -18,7 +20,7 @@ function checkRange(start: number, end: number, length: number): void {
     end < start ||
     end > length
   ) {
-    throw new Error('INVALID_RANGE: 内容范围超出原始数据');
+    throw importError('INVALID_RANGE', 'invalidRangeTheContentRangeExceedsTheOriginal', {});
   }
 }
 
@@ -56,7 +58,7 @@ export class ImportContentService {
       blocks: Omit<ImportTextBlock, 'id'>[];
       rules: Extraction['rules'];
       excluded: Extraction['excluded'];
-      warnings: string[];
+      warnings: ImportNotice[];
       metadata: Record<string, string>;
       separator?: '' | '\n';
     },
@@ -66,9 +68,10 @@ export class ImportContentService {
         (b) => b.text.trim() && !['metadata', 'heading', 'whitespace'].includes(b.kind),
       )
     ) {
-      throw new Error('EMPTY_CONTENT: 没有提取到正文，请调整规则');
+      throw importError('EMPTY_CONTENT', 'emptyContentNoBodyTextWasExtractedAdjust', {});
     }
-    if (snapshot.text === undefined) throw new Error('UNDECODED_SOURCE: 请先解码来源');
+    if (snapshot.text === undefined)
+      throw importError('UNDECODED_SOURCE', 'undecodedSourceDecodeTheSourceFirst', {});
     for (const block of [...result.blocks, ...result.excluded])
       checkRange(block.start, block.end, snapshot.text.length);
     return {
@@ -102,11 +105,16 @@ export class ImportContentService {
         : resource?.kind === 'extraction'
           ? resource.blocks.map((b) => b.text).join(resource.separator ?? '\n')
           : undefined;
-    if (text === undefined) throw new Error('UNREADABLE_RESOURCE: 资源没有可读取的文本');
+    if (text === undefined)
+      throw importError(
+        'UNREADABLE_RESOURCE',
+        'unreadableResourceTheResourceHasNoReadableText',
+        {},
+      );
     const offset = options.offset ?? 0;
     const limit = options.limit ?? 4000;
     if (!Number.isInteger(limit) || limit < 1 || limit > 16000)
-      throw new Error('INVALID_PAGE: 每次最多读取 16000 字符');
+      throw importError('INVALID_PAGE', 'invalidPageReadAtMostCharactersAtA', {});
     checkRange(offset, offset, text.length);
     const end = Math.min(offset + limit, text.length);
     return {
@@ -123,10 +131,10 @@ export class ImportContentService {
   ): Promise<string> {
     const resource = await ImportRepository.getResource(taskId, ref.resourceId);
     if (resource?.kind !== 'extraction')
-      throw new Error('INVALID_CONTENT_REF: 正文引用不是提取结果');
+      throw importError('INVALID_CONTENT_REF', 'invalidContentRefTheBodyReferenceIsNotAn', {});
     const source = await ImportRepository.getSource(taskId, resource.sourceId);
     if (source.purpose === 'metadata-only')
-      throw new Error('METADATA_ONLY: 元信息来源不能作为小说正文');
+      throw importError('METADATA_ONLY', 'metadataOnlyMetadataSourcesCannotBeNovelContent', {});
     return resolveImportText(resource, ref);
   }
 }

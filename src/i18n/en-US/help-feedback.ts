@@ -1,5 +1,7 @@
 export default {
   helpUi: {
+    quickStartTitle: 'Quick start guide',
+    dismissGuide: 'Got it, do not show again',
     center: 'Help center',
     documents: 'Documents',
     toc: 'Contents',

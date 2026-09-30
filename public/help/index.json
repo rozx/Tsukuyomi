@@ -5,7 +5,7 @@
     "file": "front-page.md",
     "path": "help",
     "category": "使用指南",
-    "description": "Tsukuyomi 翻译器核心功能介绍和快速入门",
+    "description": "快速开始：界面与书籍目标语言、模型配置、建书与导入、翻译编辑、术语角色记忆和数据同步",
     "categoryId": "guides",
     "sectionAliases": {
       "tsukuyomi月咏翻译器使用指南": "front-page-section-1",

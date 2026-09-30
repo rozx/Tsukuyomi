@@ -168,7 +168,10 @@ function createHelpPageContext() {
         );
         categoriesInitialized = true;
       }
-      const id = typeof route.params.docId === 'string' ? route.params.docId : currentDoc.value?.id;
+      const id =
+        typeof route.params.docId === 'string' && route.params.docId
+          ? route.params.docId
+          : (currentDoc.value?.id ?? 'front-page');
       const doc = result.find((entry) => entry.id === id);
       if (doc) {
         await loadDocumentContent(doc);

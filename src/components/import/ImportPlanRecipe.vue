@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { importNoticeText } from 'src/services/import/import-error';
+
 /**
  * 方案中的更新配方：新增、替换、保留原有，或声明已失效（本次不写入，保留原配方）。
  * 没有声明且目标书没有配方时不显示。
@@ -7,6 +11,9 @@ import { computed } from 'vue';
 import Tag from 'primevue/tag';
 import type { ImportPlan, ImportRecipeSummary } from 'src/models/import';
 import { recipeEngineLabel } from 'src/composables/import-page/import-recipe-description';
+
+const { locale } = useI18n();
+const noticeText = (value: unknown) => importNoticeText(value, resolveAppLocale(locale.value));
 
 const props = defineProps<{ plan: ImportPlan }>();
 
@@ -57,9 +64,11 @@ const issues = computed(() => change.value?.issues?.slice(0, 5) ?? []);
       </template>
     </dl>
     <template v-if="change.kind === 'stale'">
-      <p v-if="change.reason" class="ipr-reason" data-testid="ipr-reason">{{ change.reason }}</p>
+      <p v-if="change.reason" class="ipr-reason" data-testid="ipr-reason">
+        {{ noticeText(change.reason) }}
+      </p>
       <ul v-if="issues.length" class="ipr-issues">
-        <li v-for="(issue, index) in issues" :key="index">{{ issue.message }}</li>
+        <li v-for="(issue, index) in issues" :key="index">{{ noticeText(issue) }}</li>
       </ul>
     </template>
   </section>

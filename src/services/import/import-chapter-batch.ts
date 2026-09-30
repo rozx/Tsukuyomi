@@ -1,3 +1,5 @@
+import { importCancelled, importError } from './import-error';
+
 import type { ImportBatchInput, ImportChapterBatch } from 'src/models/import-batch';
 import type { ImportResource, ImportRunContext } from 'src/models/import';
 import { ImportRepository } from './import-repository';
@@ -18,14 +20,18 @@ export class ImportChapterBatchService {
     return ImportRepository.mutateTask(
       run.taskId,
       async (task, tx) => {
-        if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
+        if (signal?.aborted) throw importCancelled('cancelled');
         if (task.draft.revision !== input.base_draft_revision)
-          throw new Error('DRAFT_CHANGED: 草稿已变化，请重新读取');
+          throw importError('DRAFT_CHANGED', 'draftChangedTheDraftChangedRereadIt', {});
         if (!task.draft.volumes.some((volume) => volume.id === input.volume_id))
-          throw new Error('INVALID_OPERATION: 目标卷不存在');
+          throw importError(
+            'INVALID_OPERATION',
+            'invalidOperationTheDestinationVolumeDoesNotExist',
+            {},
+          );
         const ids = await batchSourceIds(run.taskId, input, tx);
         if (!ids.length || ids.length > 500 || new Set(ids).size !== ids.length)
-          throw new Error('BATCH_LIMIT: 一次批处理须包含 1–500 个不同来源');
+          throw importError('BATCH_LIMIT', 'batchLimitABatchRequiresDistinctSources', {});
         const validator = importTransactionValidator(run.taskId, tx);
         const batch: ImportChapterBatch = {
           id: crypto.randomUUID(),
@@ -37,9 +43,13 @@ export class ImportChapterBatchService {
         for (const id of ids) {
           const source = await validator.batchSource(task.draft, id);
           if (task.draft.chapters.some((chapter) => chapter.sourceIds.includes(id)))
-            throw new Error('SOURCE_OVERLAP: 来源已有草稿章节，请使用原章节编辑或重试原批次');
+            throw importError(
+              'SOURCE_OVERLAP',
+              'sourceOverlapTheSourceAlreadyHasDraftChapters',
+              {},
+            );
           if (!source.name.trim() || source.name.length > 500)
-            throw new Error('METADATA_LIMIT: 来源名称不适合作为章节标题，请先单独整理');
+            throw importError('METADATA_LIMIT', 'metadataLimitTheSourceNameIsUnsuitableAs', {});
           const chapter = {
             id: crypto.randomUUID(),
             volumeId: input.volume_id,

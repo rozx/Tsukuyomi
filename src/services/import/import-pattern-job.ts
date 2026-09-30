@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import { importExpression } from './import-expression';
 import { excludeImportText } from './import-content-exclusions';
 import type {
@@ -28,7 +29,7 @@ export async function processImportPattern(
     input.texts.length > 10000 ||
     input.texts.reduce((sum, text) => sum + text.length, 0) > work.limits.textCharacters
   )
-    throw new Error('PROCESSING_LIMIT: 批量匹配文本过多，请缩小范围');
+    throw importError('PROCESSING_LIMIT', 'processingLimitTooMuchTextForBatchMatching', {});
   const results: ImportPatternResult[] = [];
   for (const text of input.texts) {
     await work.checkpoint();
@@ -39,7 +40,7 @@ export async function processImportPattern(
     }
     const result = editText(input, regex, text);
     if (result.text.length > work.limits.textCharacters)
-      throw new Error('PROCESSING_LIMIT: 替换结果过长');
+      throw importError('PROCESSING_LIMIT', 'processingLimitTheReplacementResultIsTooLong', {});
     results.push(result);
   }
   return results;
@@ -49,8 +50,10 @@ function editText(input: ImportPatternJob, regex: RegExp, text: string): ImportP
   const ranges: ImportTextRange[] = [];
   let matches = 0;
   for (const match of text.matchAll(regex)) {
-    if (!match[0].length) throw new Error('EMPTY_MATCH: 编辑规则不能匹配空字符串');
-    if (++matches > 10000) throw new Error('PROCESSING_LIMIT: 匹配次数超过上限');
+    if (!match[0].length)
+      throw importError('EMPTY_MATCH', 'emptyMatchEditingRulesCannotMatchAnEmpty', {});
+    if (++matches > 10000)
+      throw importError('PROCESSING_LIMIT', 'processingLimitTooManyMatches', {});
     const range =
       input.action === 'remove_lines'
         ? lineRange(text, match.index, match.index + match[0].length)
@@ -62,7 +65,7 @@ function editText(input: ImportPatternJob, regex: RegExp, text: string): ImportP
   let result = '';
   if (input.action === 'replace') {
     if (typeof input.replacement !== 'string' || input.replacement.length > 500)
-      throw new Error('INVALID_PATTERN: 标题替换文本不能超过 500 字符');
+      throw importError('INVALID_PATTERN', 'invalidPatternTitleReplacementTextIsLimitedTo', {});
     result = text.replace(regex, input.replacement);
   } else {
     result = excludeImportText(text, ranges);

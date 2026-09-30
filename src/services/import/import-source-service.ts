@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type { ImportDiscovery, ImportResource, ImportSource } from 'src/models/import';
 import { ImportRepository, withImportWrite } from './import-repository';
 import type { ImportTaskMutationOptions, ImportTransaction } from './import-repository';
@@ -16,7 +17,7 @@ function networkLocation(input: string, base?: string): { url: string; anchor?: 
     url.hash = '';
     return { url: url.href, ...(anchor ? { anchor } : {}) };
   } catch {
-    throw new Error('INVALID_URL: 只接受不含登录凭据的 HTTP(S) 网址');
+    throw importError('INVALID_URL', 'invalidUrlOnlyHTTPSURLsWithoutLogin', {});
   }
 }
 
@@ -28,7 +29,7 @@ function relativePath(path: string): string {
     /^[a-z]:/i.test(normalized) ||
     normalized.split('/').some((part) => !part || part === '..' || part === '.')
   ) {
-    throw new Error('INVALID_PATH: 文件必须位于用户选择的目录内');
+    throw importError('INVALID_PATH', 'invalidPathFilesMustRemainInsideTheUser', {});
   }
   return normalized;
 }
@@ -50,7 +51,7 @@ function newSource(taskId: string, name: string, kind: ImportSource['kind']): Im
 async function registerUnique(source: ImportSource): Promise<ImportSource> {
   return withImportWrite(async (tx) => {
     const task = await tx.objectStore('import-tasks').get(source.taskId);
-    if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+    if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
     const result = await insertUnique(tx, source);
     task.updatedAt = Date.now();
     await tx.objectStore('import-tasks').put(task);
@@ -79,7 +80,7 @@ async function insertUnique(tx: ImportTransaction, source: ImportSource): Promis
     source.origin === 'agent' &&
     matching.some((item) => item.parentSourceId === source.parentSourceId)
   )
-    throw new Error('SOURCE_REMOVED: 该来源已被用户移除，请让用户重新添加');
+    throw importError('SOURCE_REMOVED', 'sourceRemovedTheUserRemovedThisSourceAsk', {});
   await store.add(source);
   return source;
 }
@@ -89,11 +90,11 @@ export class ImportSourceService {
   static async remove(taskId: string, sourceId: string): Promise<number> {
     return ImportRepository.mutateTask(taskId, async (task, tx) => {
       if (task.run || ['running', 'pausing', 'applying', 'reverting'].includes(task.state))
-        throw new Error('TASK_BUSY: 请先暂停当前任务并等待操作结束，再删除来源');
+        throw importError('TASK_BUSY', 'taskBusyPauseTheTaskAndWaitFor', {});
       const store = tx.objectStore('import-sources');
       const sources = await store.index('by-task').getAll(taskId);
       if (!sources.some((source) => source.id === sourceId))
-        throw new Error('SOURCE_SCOPE: 来源不属于当前任务');
+        throw importError('SOURCE_SCOPE', 'sourceScopeTheSourceBelongsToAnotherTask', {});
       const removed = new Set([sourceId]);
       let previousSize = 0;
       while (previousSize !== removed.size) {
@@ -194,7 +195,8 @@ export class ImportSourceService {
     taskId: string,
     files: readonly { file: InputFile; path: string }[],
   ): Promise<ImportSource> {
-    if (!files.length) throw new Error('EMPTY_DIRECTORY: 未选择文件');
+    if (!files.length)
+      throw importError('EMPTY_DIRECTORY', 'emptyDirectoryNoFilesWereSelected', {});
     const entries = files.map(({ file, path }) => ({
       name: file.name,
       path: relativePath(path),
@@ -203,7 +205,7 @@ export class ImportSourceService {
       mediaType: file.type,
     }));
     if (new Set(entries.map((entry) => entry.path)).size !== entries.length)
-      throw new Error('INVALID_PATH: 文件路径重复');
+      throw importError('INVALID_PATH', 'invalidPathDuplicateFilePath', {});
     const source = newSource(taskId, entries[0]!.path.split('/')[0]!, 'directory');
     source.inputResourceId = crypto.randomUUID();
     const resources: ImportResource[] = files.map(({ file }, index) => ({
@@ -242,11 +244,11 @@ export class ImportSourceService {
       source.inputResourceId &&
       (await ImportRepository.getResource(taskId, source.inputResourceId));
     if (!resource || resource.kind !== 'directory')
-      throw new Error('NOT_DIRECTORY: 来源不是已登记目录');
+      throw importError('NOT_DIRECTORY', 'notDirectoryTheSourceIsNotARegistered', {});
     const offset = options.offset ?? 0;
     const limit = options.limit ?? Math.max(1, resource.entries.length);
     if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1)
-      throw new Error('INVALID_PAGE: 目录分页无效');
+      throw importError('INVALID_PAGE', 'invalidPageInvalidDirectoryPagination', {});
     const prepared = await this.prepareDiscoveries(
       taskId,
       sourceId,
@@ -297,7 +299,7 @@ export class ImportSourceService {
           (prepared.resources?.find((resource) => resource.id === item.inputResourceId) ??
             (await ImportRepository.getResource(taskId, item.inputResourceId)));
         if (!input || input.sourceId !== sourceId)
-          throw new Error('SOURCE_SCOPE: 文件不在当前来源范围内');
+          throw importError('SOURCE_SCOPE', 'sourceScopeTheFileIsOutsideTheAuthorized', {});
       }
       const metadata =
         source.purpose === 'metadata-only' || ['metadata', 'cover'].includes(item.relation);
@@ -339,7 +341,7 @@ export class ImportSourceService {
       discoveryIds.length > 16 ||
       discoveryIds.some((id) => typeof id !== 'string')
     )
-      throw new Error('BATCH_LIMIT: 一次追加须包含 1–16 个发现引用');
+      throw importError('BATCH_LIMIT', 'batchLimitAddDiscoveryReferencesAtATime', {});
     return ImportRepository.mutateTask(
       taskId,
       async (_task, tx) => {
@@ -358,13 +360,16 @@ export class ImportSourceService {
     tx: ImportTransaction,
   ): Promise<ImportSource> {
     const resource = await tx.objectStore('import-resources').get(discoveryId);
-    if (resource?.taskId !== taskId) throw new Error('SOURCE_SCOPE: 发现引用不属于当前任务');
-    if (resource?.kind !== 'discovery') throw new Error('SOURCE_SCOPE: 未找到已观察到的资源引用');
+    if (resource?.taskId !== taskId)
+      throw importError('SOURCE_SCOPE', 'sourceScopeTheDiscoveryReferenceBelongsToAnother', {});
+    if (resource?.kind !== 'discovery')
+      throw importError('SOURCE_SCOPE', 'sourceScopeNoObservedResourceReferenceWasFound', {});
     const discovery = resource.discovery;
     const parent = await tx.objectStore('import-sources').get(discovery.sourceId);
-    if (!parent || parent.taskId !== taskId) throw new Error('SOURCE_SCOPE: 父来源不属于当前任务');
+    if (!parent || parent.taskId !== taskId)
+      throw importError('SOURCE_SCOPE', 'sourceScopeTheParentSourceBelongsToAnother', {});
     if (parent.removedAt !== undefined)
-      throw new Error('SOURCE_REMOVED: 父来源已被用户移除，不能继续追加其发现的来源');
+      throw importError('SOURCE_REMOVED', 'sourceRemovedTheUserRemovedTheParentSource', {});
     const source: ImportSource = {
       ...newSource(taskId, discovery.name, discovery.kind),
       origin: 'agent',

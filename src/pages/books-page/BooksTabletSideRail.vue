@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 /**
  * 平板书库右侧竖向 rail（列表 dock 切换 + 月詠 + 翻译进度）。
  * 从 BooksPageTablet 抽出。样式由 BooksPageTablet.vue 提供。
@@ -10,7 +13,9 @@ import { injectBooksTabletPage } from 'src/composables/books-page/useBooksTablet
 
 const t = injectBooksTabletPage();
 
-const listButtonTitle = computed(() => (t.isListOpen.value ? '收起书籍列表' : '展开书籍列表'));
+const listButtonTitle = computed(() =>
+  t.isListOpen.value ? i18nT('libraryUi.collapseBooks') : i18nT('libraryUi.expandBooks'),
+);
 const sidebarIcon = computed(() => (t.isListOpen.value ? 'pi-angle-double-left' : 'pi-bars'));
 const hasActiveTask = computed(() => t.activeTranslationTaskCount.value > 0);
 </script>
@@ -37,7 +42,7 @@ const hasActiveTask = computed(() => t.activeTranslationTaskCount.value > 0);
       type="button"
       class="tsr-btn rail-base-btn"
       :class="{ 'tsr-btn--active': t.isChatActive.value }"
-      title="月詠"
+      :title="i18nT('libraryUi.assistant')"
       @click="() => t.toggleRail('chat')"
     >
       <i class="pi pi-sparkles" aria-hidden="true" />
@@ -47,7 +52,7 @@ const hasActiveTask = computed(() => t.activeTranslationTaskCount.value > 0);
       type="button"
       class="tsr-btn rail-base-btn"
       :class="{ 'tsr-btn--active': t.isProgressActive.value }"
-      title="翻译进度"
+      :title="i18nT('libraryUi.progress')"
       @click="() => t.toggleRail('progress')"
     >
       <i class="pi pi-objects-column" aria-hidden="true" />

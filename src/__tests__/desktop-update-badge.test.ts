@@ -1,3 +1,5 @@
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { createApp, h, nextTick } from 'vue';
@@ -76,7 +78,7 @@ describe('页脚更新徽标交互', () => {
         return () => h(AppFooter);
       },
     });
-    app.use(createPinia());
+    app.use(createPinia()).use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
     app.mount(element);
     return { element, restart, unmount: () => app.unmount() };
   }
@@ -91,7 +93,7 @@ describe('页脚更新徽标交互', () => {
   it('Web 端不显示徽标', () => {
     const element = document.createElement('div');
     const app = createApp(AppFooter);
-    app.use(createPinia());
+    app.use(createPinia()).use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
     app.mount(element);
     expect(element.querySelector('.dsk-statusbar-update')).toBeNull();
     app.unmount();

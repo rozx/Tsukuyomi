@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { useMainNavActive, type MainNavTab } from 'src/composables/useMainNavActive';
 import { useMainNavDispatch } from 'src/composables/layout/useMainNavDispatch';
 import { getAssetUrl } from 'src/utils';
@@ -8,20 +12,22 @@ import { isNavTabEnabled } from 'src/constants/features';
 type Item = { id: MainNavTab; icon: string; label: string };
 
 // 主导航（首页 · 书库 · AI 导入 · AI 模型）在顶部，帮助 / 设置固定在底部。
-const primaryItems = (
-  [
-    { id: 'home', icon: 'pi-home', label: '首页' },
-    { id: 'library', icon: 'pi-book', label: '书库' },
-    { id: 'import', icon: 'pi-file-import', label: 'AI 导入' },
-    { id: 'ai', icon: 'pi-microchip-ai', label: 'AI 模型' },
-  ] satisfies Item[]
-).filter((item) => isNavTabEnabled(item.id));
+const primaryItems = computed(() =>
+  (
+    [
+      { id: 'home', icon: 'pi-home', label: i18nT('libraryUi.home') },
+      { id: 'library', icon: 'pi-book', label: i18nT('libraryUi.library') },
+      { id: 'import', icon: 'pi-file-import', label: i18nT('libraryUi.aiImport') },
+      { id: 'ai', icon: 'pi-microchip-ai', label: i18nT('libraryUi.aiModels') },
+    ] satisfies Item[]
+  ).filter((item) => isNavTabEnabled(item.id)),
+);
 
 // 底部工具项：帮助 · 设置
-const secondaryItems: Item[] = [
-  { id: 'help', icon: 'pi-question-circle', label: '帮助' },
-  { id: 'settings', icon: 'pi-cog', label: '设置' },
-];
+const secondaryItems = computed<Item[]>(() => [
+  { id: 'help', icon: 'pi-question-circle', label: i18nT('libraryUi.help') },
+  { id: 'settings', icon: 'pi-cog', label: i18nT('libraryUi.settings') },
+]);
 
 const activeTab = useMainNavActive();
 
@@ -31,7 +37,7 @@ const { dispatch: onItemClick } = useMainNavDispatch();
 </script>
 
 <template>
-  <nav class="tablet-navrail" aria-label="主导航">
+  <nav class="tablet-navrail" :aria-label="i18nT('libraryUi.mainNav')">
     <button class="rail-logo" :aria-label="APP_NAME.full" @click="onItemClick('home')">
       <img :src="logoPath" :alt="APP_NAME.full" />
     </button>

@@ -2,7 +2,7 @@
   {
     "category": "使用指南",
     "categoryId": "guides",
-    "description": "Tsukuyomi 翻譯器核心功能介紹和快速入門",
+    "description": "快速開始：介面與書籍目標語言、模型設定、建立書籍與匯入、翻譯編輯、術語角色記憶和資料同步",
     "file": "front-page.md",
     "id": "front-page",
     "path": "help/zh-TW",

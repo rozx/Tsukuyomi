@@ -1,9 +1,16 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { importNoticeText } from 'src/services/import/import-error';
+
 /** 方案的元信息变化与完整性，宽屏并排、窄屏上下排列。 */
 import { computed } from 'vue';
 import Tag from 'primevue/tag';
 import type { ImportPlan } from 'src/models/import';
 import { METADATA_FIELDS } from './import-labels';
+
+const { locale } = useI18n();
+const noticeText = (value: unknown) => importNoticeText(value, resolveAppLocale(locale.value));
 
 const props = defineProps<{ plan: ImportPlan }>();
 
@@ -60,7 +67,7 @@ const completeness = computed(() => {
       <template v-if="completeness.total">
         <div class="ipdt-missing-title">缺失 {{ completeness.total }} 项</div>
         <ul class="ipdt-missing">
-          <li v-for="item in completeness.missing" :key="item">{{ item }}</li>
+          <li v-for="(item, index) in completeness.missing" :key="index">{{ noticeText(item) }}</li>
           <li v-if="completeness.more" class="ipdt-more">另有 {{ completeness.more }} 项</li>
         </ul>
       </template>

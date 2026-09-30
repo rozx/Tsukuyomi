@@ -1,3 +1,5 @@
+import { importError } from './import-error';
+import type { ImportErrorKey } from './import-error';
 /**
  * 导入工具参数的 JSON Schema 子集校验。
  *
@@ -17,8 +19,12 @@ interface ArgumentSchema {
   maxItems?: number;
 }
 
-function invalid(path: string, reason: string): Error {
-  return new Error(`INVALID_ARGUMENTS: ${path || '参数'} ${reason}`);
+function invalid(
+  path: string,
+  key: ImportErrorKey,
+  values: Record<string, string | number> = {},
+): Error {
+  return importError('INVALID_ARGUMENTS', key, { path: path || 'arguments', ...values });
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -50,27 +56,27 @@ function checkObject(schema: ArgumentSchema, value: Record<string, unknown>, pat
   const properties = schema.properties ?? {};
   for (const key of Object.keys(value)) {
     const child = path ? `${path}.${key}` : key;
-    if (!(key in properties)) throw invalid(child, '不是允许的字段');
+    if (!(key in properties)) throw invalid(child, 'argumentUnknown');
     validate(properties[key]!, value[key], child);
   }
   for (const key of schema.required ?? [])
-    if (!(key in value)) throw invalid(path ? `${path}.${key}` : key, '缺失');
+    if (!(key in value)) throw invalid(path ? `${path}.${key}` : key, 'argumentMissing');
 }
 
 function checkArray(schema: ArgumentSchema, value: unknown[], path: string): void {
   if (schema.minItems !== undefined && value.length < schema.minItems)
-    throw invalid(path, `至少需要 ${schema.minItems} 项`);
+    throw invalid(path, 'argumentMinItems', { count: schema.minItems });
   if (schema.maxItems !== undefined && value.length > schema.maxItems)
-    throw invalid(path, `最多 ${schema.maxItems} 项`);
+    throw invalid(path, 'argumentMaxItems', { count: schema.maxItems });
   if (schema.items)
     value.forEach((item, index) => validate(schema.items!, item, `${path}[${index}]`));
 }
 
 function checkRange(schema: ArgumentSchema, value: number, path: string): void {
   if (schema.minimum !== undefined && value < schema.minimum)
-    throw invalid(path, `不能小于 ${schema.minimum}`);
+    throw invalid(path, 'argumentMinimum', { count: schema.minimum });
   if (schema.maximum !== undefined && value > schema.maximum)
-    throw invalid(path, `不能大于 ${schema.maximum}`);
+    throw invalid(path, 'argumentMaximum', { count: schema.maximum });
 }
 
 export function validateImportToolArguments(schema: object, value: unknown, path = ''): void {
@@ -80,8 +86,8 @@ export function validateImportToolArguments(schema: object, value: unknown, path
 function validate(schema: ArgumentSchema, value: unknown, path: string): void {
   const types = schema.type === undefined ? [] : [schema.type].flat();
   if (types.length && !types.some((type) => matchesType(type, value)))
-    throw invalid(path, `类型须为 ${types.join(' 或 ')}`);
-  if (schema.enum && !schema.enum.includes(value)) throw invalid(path, '不在允许值中');
+    throw invalid(path, 'argumentType', { types: types.join(' / ') });
+  if (schema.enum && !schema.enum.includes(value)) throw invalid(path, 'argumentEnum');
   if (typeof value === 'number') checkRange(schema, value, path);
   if (Array.isArray(value)) checkArray(schema, value, path);
   else if (isPlainObject(value) && (schema.properties || schema.required))

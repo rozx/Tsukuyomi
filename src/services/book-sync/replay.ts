@@ -1,3 +1,6 @@
+import { serializeImportError } from 'src/services/import/import-error';
+import type { ImportFailure } from 'src/models/import-feedback';
+import { LocalizedError } from 'src/utils/localized-error';
 import { load } from 'cheerio';
 import type { BookUpdateRecipe, CatalogEntry, SyncCatalog } from 'src/models/book-sync';
 import { NovelScraperFactory } from 'src/services/scraper/novel-scraper-factory';
@@ -9,18 +12,31 @@ import { normalizeChapterText } from './normalize';
 import { FirecrawlQuotaError } from 'src/services/firecrawl/firecrawl-errors';
 import { BookSyncError, cleanupError } from './errors';
 
-type Failure = { ok: false; code: string; message: string };
+type Failure = ImportFailure & { ok: false };
 type CatalogPage = { catalog: SyncCatalog; nextUrls: string[]; startUrl?: string };
 
 function adapter(url: string) {
   const value = NovelScraperFactory.getScraper(url);
-  if (!value) throw new BookSyncError('CATALOG_FETCH_FAILED', '来源网址不属于内置站点');
+  if (!value)
+    throw new BookSyncError(
+      'CATALOG_FETCH_FAILED',
+      new LocalizedError(
+        'CATALOG_FETCH_FAILED',
+        'aiImportErrors.bookSyncCatalogFetchFailedTheSourceURLIsNot',
+      ),
+    );
   return value;
 }
 
 function verify(html: string, url: string): void {
   if (parseImportHtml(html, {}, url).kind === 'verification')
-    throw new BookSyncError('VERIFICATION_REQUIRED', '来源页面需要登录或验证');
+    throw new BookSyncError(
+      'VERIFICATION_REQUIRED',
+      new LocalizedError(
+        'VERIFICATION_REQUIRED',
+        'aiImportErrors.bookSyncVerificationRequiredTheSourcePageRequiresLogin',
+      ),
+    );
 }
 
 /** 只回放给定快照；正则筛选复用隔离 Worker，不会发起网页请求。 */
@@ -121,13 +137,13 @@ function failure(error: unknown, fallback: string): Failure {
   if (error instanceof Error && error.name === 'AbortError') throw error;
   return {
     ok: false,
+    ...serializeImportError(error, fallback),
     code:
       error instanceof BookSyncError
         ? error.code
         : error instanceof FirecrawlQuotaError
           ? FIRECRAWL_QUOTA_CODE
           : fallback,
-    message: error instanceof Error ? error.message : String(error),
   };
 }
 
@@ -180,7 +196,13 @@ export class BookSyncReplay {
       ];
       const found = new Set(catalog.entries.map((entry) => entry.url));
       if (known.length && known.filter((url) => found.has(url)).length < known.length / 2)
-        throw new BookSyncError('CATALOG_UNRECOGNIZED', '目录无法复现至少半数已导入章节');
+        throw new BookSyncError(
+          'CATALOG_UNRECOGNIZED',
+          new LocalizedError(
+            'CATALOG_UNRECOGNIZED',
+            'aiImportErrors.bookSyncCatalogUnrecognizedTheContentsCannotReproduceAt',
+          ),
+        );
       return { ok: true, catalog };
     } catch (error) {
       return failure(error, 'CATALOG_FETCH_FAILED');
@@ -214,14 +236,33 @@ export class BookSyncReplay {
         continue;
       }
       if (!page.catalog.entries.length)
-        throw new BookSyncError('CATALOG_EMPTY', '目录未识别出章节');
+        throw new BookSyncError(
+          'CATALOG_EMPTY',
+          new LocalizedError(
+            'CATALOG_EMPTY',
+            'aiImportErrors.bookSyncCatalogEmptyNoChaptersWereDetectedIn',
+          ),
+        );
       meta ??= page.catalog.meta;
       priorGroup = appendCatalogEntries(entries, page.catalog.entries, builtin, priorGroup);
       pending.push(...page.nextUrls.filter((next) => !visited.has(next)));
     }
     if (builtin && pending.some((url) => !visited.has(url)))
-      throw new BookSyncError('CATALOG_FETCH_FAILED', '目录超过分页上限，无法确认完整性');
-    if (!meta || !entries.size) throw new BookSyncError('CATALOG_EMPTY', '目录未识别出章节');
+      throw new BookSyncError(
+        'CATALOG_FETCH_FAILED',
+        new LocalizedError(
+          'CATALOG_FETCH_FAILED',
+          'aiImportErrors.bookSyncCatalogFetchFailedTheContentsExceedsThePagination',
+        ),
+      );
+    if (!meta || !entries.size)
+      throw new BookSyncError(
+        'CATALOG_EMPTY',
+        new LocalizedError(
+          'CATALOG_EMPTY',
+          'aiImportErrors.bookSyncCatalogEmptyNoChaptersWereDetectedIn',
+        ),
+      );
     return { meta, entries: [...entries.values()] };
   }
 
@@ -240,7 +281,13 @@ export class BookSyncReplay {
         ...(signal ? { signal } : {}),
       });
       if (!paragraphs.some((text) => text.trim()))
-        throw new BookSyncError('CONTENT_EMPTY', '来源章节正文为空');
+        throw new BookSyncError(
+          'CONTENT_EMPTY',
+          new LocalizedError(
+            'CONTENT_EMPTY',
+            'aiImportErrors.bookSyncContentEmptyTheSourceChapterBodyIs',
+          ),
+        );
       return { ok: true, paragraphs };
     } catch (error) {
       return failure(error, 'CONTENT_FETCH_FAILED');

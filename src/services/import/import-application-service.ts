@@ -1,3 +1,6 @@
+import { importFailure, importError } from './import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import type { ImportOperation } from 'src/models/import';
 import type { AppLocale } from 'src/models/locale';
@@ -83,7 +86,11 @@ export class ImportApplicationService {
   ): Promise<ImportOperation> {
     const confirmation = this.confirmations.get(token);
     if (!confirmation || confirmation.action !== action)
-      throw new Error('CONFIRMATION_REQUIRED: 需要当前工作台对具体方案的用户确认');
+      throw importError(
+        'CONFIRMATION_REQUIRED',
+        'confirmationRequiredThisWorkspaceRequiresUserConfirmationOf',
+        {},
+      );
     const operation = await readImportOperation(confirmation.taskId, confirmation.operationId);
     const terminal = action === 'apply' ? 'applied' : 'reverted';
     if (operation.state === terminal) return operation;
@@ -102,19 +109,21 @@ export class ImportApplicationService {
   async revertStatus(
     taskId: string,
     operationId: string,
-  ): Promise<{ available: true } | { available: false; reason: string }> {
+  ): Promise<{ available: true } | { available: false; reason: ImportNotice }> {
     const operation = await readImportOperation(taskId, operationId);
     if (operation.state === 'planned')
-      return { available: false, reason: '该方案尚未应用，没有可撤销的内容。' };
-    if (operation.state === 'reverted') return { available: false, reason: '该次导入已撤销。' };
+      return { available: false, reason: importFailure('UNDO_NOT_APPLIED', 'undoNotApplied') };
+    if (operation.state === 'reverted')
+      return { available: false, reason: importFailure('UNDO_ALREADY_REVERTED', 'undoAlready') };
     const db = await getDB();
     const revision = (await db.get('book-revisions', operation.plan.targetBookId))?.revision ?? 0;
     const exists = (await db.getKey('books', operation.plan.targetBookId)) !== undefined;
-    if (!exists) return { available: false, reason: '目标小说已被删除。' };
+    if (!exists)
+      return { available: false, reason: importFailure('UNDO_BOOK_DELETED', 'undoDeleted') };
     if (revision !== operation.postApplyBookRevision)
       return {
         available: false,
-        reason: '导入后这本小说已有后续修改（翻译、编辑、同步或其他导入），不能整次撤销。',
+        reason: importFailure('UNDO_BOOK_CHANGED', 'undoChanged'),
       };
     return { available: true };
   }

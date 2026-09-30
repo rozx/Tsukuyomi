@@ -1,3 +1,4 @@
+import { importError } from '../services/import/import-error';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { File } from 'node:buffer';
@@ -54,6 +55,22 @@ afterEach(() => {
 });
 
 describe('导入 Agent 执行生命周期', () => {
+  it('持久化失败记录和抛出反馈使用本次执行语言，运行中切设置不改归属', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().setUiLocale('en-US');
+    const task = await ImportRepository.createTask();
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
+      generateText: async () => {
+        await useSettingsStore().setUiLocale('zh-TW');
+        throw importError('EMPTY_CONTENT', 'emptyContentNoBodyTextWasExtractedAdjust');
+      },
+    } as never);
+    await expect(ImportAgentService.run(task.id, model)).rejects.toThrow('extracted');
+    const failed = (await ImportRepository.getTask(task.id))!;
+    expect(failed.lastError?.message).toContain('extracted');
+    expect(failed.lastError?.message).not.toMatch(/\p{Script=Han}/u);
+  });
+
   it('启动失败使用当前 UI 语言并保留稳定错误前缀', async () => {
     setActivePinia(createPinia());
     await useSettingsStore().setUiLocale('en-US');

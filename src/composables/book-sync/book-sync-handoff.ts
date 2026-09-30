@@ -1,3 +1,4 @@
+import { translateText } from 'src/i18n/translate';
 import type { Router } from 'vue-router';
 import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import { ImportRepository } from 'src/services/import/import-repository';
@@ -12,7 +13,11 @@ import { useSettingsStore } from 'src/stores/settings';
  */
 export async function handoffToImporter(url: string, router: Router): Promise<string> {
   assertImportWorkspaceEnabled();
-  const task = await ImportRepository.createTask(`导入：${new URL(url).hostname}`);
+  const task = await ImportRepository.createTask(
+    translateText(useSettingsStore().uiLocale, 'aiImportErrors.defaultWebsiteTask', {
+      host: new URL(url).hostname,
+    }),
+  );
   await ImportSourceService.registerUrl(task.id, url);
   await router.push(`/import/${task.id}`);
   return task.id;

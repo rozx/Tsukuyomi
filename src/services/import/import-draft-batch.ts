@@ -1,3 +1,5 @@
+import { importCancelled, importError } from './import-error';
+
 import type { ImportRunContext } from 'src/models/import';
 import type {
   ImportDraftBatch,
@@ -43,9 +45,13 @@ export class ImportDraftBatchService {
     return ImportRepository.mutateTask(
       task.id,
       async (current, tx) => {
-        if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
+        if (signal?.aborted) throw importCancelled('cancelled');
         if (current.draft.revision !== input.base_draft_revision)
-          throw new Error('DRAFT_CHANGED: 草稿已变化，请重新预览');
+          throw importError(
+            'DRAFT_CHANGED',
+            'draftChangedTheDraftChangedGenerateAnotherPreview',
+            {},
+          );
         await tx.objectStore('import-resources').add({
           id: batchId,
           taskId: task.id,
@@ -67,7 +73,7 @@ export class ImportDraftBatchService {
     signal?: AbortSignal,
   ): Promise<ImportDraftBatchSummary> {
     const task = await ImportRepository.getTask(run.taskId);
-    if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+    if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
     const books = new Map();
     if (task.draft.target.kind === 'existing') {
       const id = task.draft.target.bookId;
@@ -76,18 +82,22 @@ export class ImportDraftBatchService {
     return ImportRepository.mutateTask(
       run.taskId,
       async (current, tx) => {
-        if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
+        if (signal?.aborted) throw importCancelled('cancelled');
         const resource = await tx.objectStore('import-resources').get(batchId);
         if (resource?.taskId !== run.taskId || resource.kind !== 'draft-edit-batch')
-          throw new Error('BATCH_NOT_FOUND: 草稿批次不存在或不属于当前任务');
+          throw importError('BATCH_NOT_FOUND', 'batchNotFoundTheDraftBatchDoesNotExist', {});
         const batch = resource.batch;
         if (batch.appliedRevision !== undefined)
           return { ...batch.summary, draftRevision: batch.appliedRevision };
         if (current.draft.revision !== batch.input.base_draft_revision)
-          throw new Error('DRAFT_CHANGED: 草稿已变化，请重新预览');
+          throw importError(
+            'DRAFT_CHANGED',
+            'draftChangedTheDraftChangedGenerateAnotherPreview',
+            {},
+          );
         const validator = importTransactionValidator(run.taskId, tx, books);
         for (const chapter of batch.chapters) {
-          if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
+          if (signal?.aborted) throw importCancelled('cancelled');
           const { match, ...editable } = chapter;
           const checked = await validator.chapter(current.draft, editable, 'agent');
           const index = current.draft.chapters.findIndex((c) => c.id === chapter.id);
@@ -106,7 +116,7 @@ export class ImportDraftBatchService {
           current.draft.revision++;
           invalidateImportPreview(current);
         }
-        if (signal?.aborted) throw new DOMException('已取消', 'AbortError');
+        if (signal?.aborted) throw importCancelled('cancelled');
         batch.appliedRevision = current.draft.revision;
         await tx.objectStore('import-resources').put(resource);
         return { ...batch.summary, draftRevision: current.draft.revision };

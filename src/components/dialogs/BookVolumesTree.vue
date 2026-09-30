@@ -1,10 +1,12 @@
 <template>
   <div v-if="volumes.length > 0" class="space-y-2">
     <div class="flex items-center justify-between">
-      <label class="block text-sm font-medium text-moon/90">卷和章节</label>
+      <label class="block text-sm font-medium text-moon/90">{{
+        i18nT('libraryUi.volumesAndChapters')
+      }}</label>
       <Button
         icon="pi pi-trash"
-        label="清除全部"
+        :label="i18nT('libraryUi.clearAll')"
         class="p-button-text p-button-danger p-button-sm"
         size="small"
         @click="emit('clear')"
@@ -28,9 +30,11 @@
           <div class="flex items-center gap-2 flex-1">
             <i :class="volumeIconClass(volume.id)" />
             <span class="font-semibold text-sm text-moon/90">
-              {{ getVolumeDisplayTitle(volume, book) || '未命名卷' }}
+              {{ getVolumeDisplayTitle(volume, book) || i18nT('libraryUi.unnamedVolume') }}
             </span>
-            <span class="text-xs text-moon/60"> ({{ chapterCount(volume) }} 章) </span>
+            <span class="text-xs text-moon/60">
+              ({{ i18nT('libraryUi.chapterCount', { count: chapterCount(volume) }) }})
+            </span>
           </div>
         </div>
 
@@ -44,11 +48,14 @@
         />
       </div>
     </div>
-    <small class="text-moon/60 text-xs block">点击卷标题展开/折叠章节列表（只读）</small>
+    <small class="text-moon/60 text-xs block">{{ i18nT('libraryUi.treeHint') }}</small>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import Button from 'primevue/button';
 import type { Chapter, Novel, Volume } from 'src/models/novel';
 import { getVolumeDisplayTitle } from 'src/utils';

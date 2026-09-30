@@ -1,7 +1,7 @@
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="快速开始指南"
+    :header="t('helpUi.quickStartTitle')"
     desktop-width="min(960px, 92vw)"
     desktop-height="90vh"
     eyebrow="GUIDE"
@@ -11,7 +11,7 @@
     <div class="quick-start-content">
       <div v-if="loading" class="state-box">
         <i class="pi pi-spin pi-spinner text-primary text-xl"></i>
-        <span class="text-moon/80">正在加载快速开始指南...</span>
+        <span class="text-moon/80">{{ t('helpUi.loading') }}</span>
       </div>
       <div v-else-if="error" class="state-box state-error">
         <i class="pi pi-exclamation-triangle text-red-400 text-xl"></i>
@@ -21,19 +21,21 @@
     </div>
 
     <template #footer>
-      <Button label="我知道了，不再提示" icon="pi pi-check" @click="handleDismiss" />
+      <Button :label="t('helpUi.dismissGuide')" icon="pi pi-check" @click="handleDismiss" />
     </template>
   </AdaptiveDialog>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { getAssetUrl } from 'src/utils/assets';
-import { parseHelpHeading } from 'src/services/help-service';
+import { HelpService, parseHelpHeading } from 'src/services/help-service';
+import { resolveAppLocale } from 'src/models/locale';
+import { localizedErrorMessage } from 'src/utils/localized-error';
 
 const props = defineProps<{
   visible: boolean;
@@ -46,34 +48,38 @@ const emit = defineEmits<{
 const loading = ref(false);
 const error = ref('');
 const contentHtml = ref('');
-const hasLoadedContent = ref(false);
+const { t, locale } = useI18n();
+const uiLocale = computed(() => resolveAppLocale(locale.value));
+let loadedLocale = '';
+let requestId = 0;
+let disposed = false;
 
 const loadGuideContent = async (): Promise<void> => {
-  if (hasLoadedContent.value || loading.value) {
-    return;
-  }
+  const language = uiLocale.value;
+  if (disposed || loadedLocale === language) return;
+  const request = ++requestId;
+  const current = () => !disposed && request === requestId && uiLocale.value === language;
 
   loading.value = true;
   error.value = '';
   try {
-    const response = await fetch(getAssetUrl('help/front-page.md'));
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const markdown = await response.text();
+    const { markdown } = await HelpService.getDocument('front-page', language);
+    if (!current()) return;
     const renderer = new marked.Renderer();
     renderer.heading = (token) => {
       const heading = parseHelpHeading(token.text, token.depth);
       return `<h${heading.level} id="${heading.id}">${heading.text}</h${heading.level}>`;
     };
     const renderedHtml = await marked.parse(markdown, { renderer });
+    if (!current()) return;
     contentHtml.value = DOMPurify.sanitize(renderedHtml);
-    hasLoadedContent.value = true;
+    loadedLocale = language;
   } catch (loadError) {
     console.error('Failed to load quick start guide:', loadError);
-    error.value = '无法加载快速开始指南，请稍后重试。';
+    if (current())
+      error.value = localizedErrorMessage(loadError, language, 'helpFeedback.requestFailed');
   } finally {
-    loading.value = false;
+    if (current()) loading.value = false;
   }
 };
 
@@ -88,14 +94,24 @@ const handleVisibleChange = (nextVisible: boolean): void => {
 };
 
 watch(
-  () => props.visible,
-  (isVisible) => {
+  [() => props.visible, uiLocale],
+  ([isVisible]) => {
+    ++requestId;
+    loading.value = false;
+    if (loadedLocale !== uiLocale.value) {
+      loadedLocale = '';
+      contentHtml.value = '';
+    }
     if (isVisible) {
       void loadGuideContent();
     }
   },
-  { immediate: true },
+  { immediate: true, flush: 'sync' },
 );
+onUnmounted(() => {
+  disposed = true;
+  ++requestId;
+});
 </script>
 
 <style scoped>

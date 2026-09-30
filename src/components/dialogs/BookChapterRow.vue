@@ -4,11 +4,17 @@
     <div class="flex-1 min-w-0">
       <div class="flex items-start justify-between gap-2">
         <div class="text-sm text-moon/80 line-clamp-2 flex-1">
-          {{ getChapterDisplayTitle(chapter, book || undefined) || '未命名章节' }}
+          {{
+            getChapterDisplayTitle(chapter, book || undefined) || i18nT('libraryUi.unnamedChapter')
+          }}
         </div>
         <span class="text-xs text-moon/60 flex-shrink-0">
           <Skeleton v-if="charLoading" width="40px" height="12px" />
-          <span v-else>{{ formatCharCount(charDisplay) }} 字</span>
+          <span v-else>{{
+            i18nT('libraryUi.characterCount', {
+              count: formatCharCount(charDisplay, resolveAppLocale(locale)),
+            })
+          }}</span>
         </span>
       </div>
       <div class="flex items-center gap-3 mt-1 text-xs text-moon/50">
@@ -34,6 +40,10 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+const { t: i18nT, locale } = useI18n();
+
 import Skeleton from 'primevue/skeleton';
 import type { Chapter, Novel } from 'src/models/novel';
 import { formatCharCount, formatDate, getChapterDisplayTitle } from 'src/utils';

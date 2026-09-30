@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 /**
  * 平板右侧竖向图标导航条——BookDetailsTablet / BooksPageTablet 共用。
  *
@@ -20,7 +23,7 @@
 </script>
 
 <template>
-  <aside class="tsr-rail rail-base-shell" aria-label="辅助工具">
+  <aside class="tsr-rail rail-base-shell" :aria-label="i18nT('libraryUi.tools')">
     <slot />
   </aside>
 </template>

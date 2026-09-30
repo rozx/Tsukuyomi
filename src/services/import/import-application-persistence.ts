@@ -1,3 +1,5 @@
+import { readImportError, importError } from './import-error';
+
 import { indexBookChapters } from 'src/utils/book-chapters';
 import { normalizeBookLanguages } from '../localization/normalize';
 import { prepareBookRestore } from '../localization/restore';
@@ -38,7 +40,7 @@ async function mutateOperation(
   const tx = (await getDB()).transaction(STORES, 'readwrite');
   return completeIdbTransaction(tx, async () => {
     const current = await tx.objectStore('import-operations').get(id);
-    if (!current) throw new Error('PLAN_STALE: 操作已不存在');
+    if (!current) throw importError('PLAN_STALE', 'planStaleTheOperationNoLongerExists', {});
     if (current.state === terminal) return current;
     return update(tx, current);
   });
@@ -56,17 +58,17 @@ export async function readImportOperation(
 ): Promise<ImportOperation> {
   const operation = await (await getDB()).get('import-operations', operationId);
   if (!operation || operation.taskId !== taskId)
-    throw new Error('PLAN_STALE: 导入方案不存在或不属于当前任务');
+    throw importError('PLAN_STALE', 'planStaleTheImportPlanDoesNotExist', {});
   return operation;
 }
 
 function assertTask(task: ImportTask | undefined, plan: ImportPlan): asserts task is ImportTask {
   if (!task || task.currentPlanId !== plan.id || task.draft.revision !== plan.draftRevision)
-    throw new Error('PLAN_STALE: 草稿或预览已变化，请重新检查');
+    throw importError('PLAN_STALE', 'planStaleTheDraftOrPreviewChangedReview', {});
   if (['running', 'pausing', 'applying', 'reverting'].includes(task.state))
-    throw new Error('TASK_BUSY: 导入任务仍在执行');
+    throw importError('TASK_BUSY', 'taskBusyTheImportTaskIsStillRunning', {});
   if (task.pendingQuestion?.required || task.draft.novelScope.needsChoice || plan.conflicts.length)
-    throw new Error('PLAN_CONFLICT: 请先处理必要选择及匹配冲突');
+    throw importError('PLAN_CONFLICT', 'planConflictResolveTheRequiredChoicesAndMatching', {});
 }
 
 async function captureBefore(
@@ -86,7 +88,7 @@ async function captureBefore(
         ),
     )
   )
-    throw new Error('PLAN_STALE: 受影响的章节标识已被其他小说引用');
+    throw importError('PLAN_STALE', 'planStaleAnAffectedChapterIDIsReferenced', {});
   const old = (book?.volumes ?? []).flatMap((volume) => volume.chapters ?? []);
   for (const id of affectedImportChapters(plan)) {
     const record = await tx.objectStore('chapter-contents').get(id);
@@ -101,8 +103,11 @@ async function captureBefore(
             }
           : undefined),
     );
-    if (loaded.kind === 'failed') throw new Error(`BOOK_READ_FAILED: ${loaded.message}`);
-    if (record && !chapter) throw new Error('PLAN_STALE: 新章节标识已被占用');
+    if (loaded.kind === 'failed')
+      throw importError('BOOK_READ_FAILED', 'bookReadFailedDetail', {
+        value1: readImportError(loaded),
+      });
+    if (record && !chapter) throw importError('PLAN_STALE', 'planStaleANewChapterIDIsAlready', {});
     chapters.push({ chapterId: id, record: record ?? null });
   }
   if (!book) return { book: null, chapters };
@@ -170,19 +175,19 @@ async function validatePreparedPlan(operation: ImportOperation) {
   const context = await loadImportPlanContext(plan.taskId, plan.draftRevision).catch(
     (error: unknown) => {
       if (error instanceof Error && error.message.startsWith('DRAFT_CHANGED'))
-        throw new Error('PLAN_STALE: 草稿已变化');
+        throw importError('PLAN_STALE', 'planStaleTheDraftChanged', {});
       throw error;
     },
   );
   assertTask(context.task, plan);
   for (const id of affectedImportChapters(plan))
     if (context.snapshot?.chapters[id]?.kind === 'failed')
-      throw new Error('BOOK_READ_FAILED: 受影响正文读取失败');
+      throw importError('BOOK_READ_FAILED', 'bookReadFailedFailedToReadAffectedChapterContent', {});
   if (
     (context.snapshot?.revision ?? 0) !== plan.baseBookRevision ||
     (await fingerprintImportBook(context.snapshot)) !== plan.baseDigest
   )
-    throw new Error('PLAN_STALE: 目标小说已变化，请重新预览');
+    throw importError('PLAN_STALE', 'planStaleTheTargetNovelChangedGenerateAnother', {});
   for (const chapter of context.chapters) {
     const { match: _match, ...plain } = chapter;
     await context.validator.chapter(context.task.draft, plain, 'user');
@@ -211,7 +216,8 @@ export async function applyImportOperation(
     lastModified: new Date(now).toISOString(),
   }));
   return mutateOperation(operation.id, 'applied', async (tx, current) => {
-    if (current?.state !== 'planned') throw new Error('PLAN_STALE: 方案已失效');
+    if (current?.state !== 'planned')
+      throw importError('PLAN_STALE', 'planStaleThePlanIsNoLongerValid', {});
     const task = await tx.objectStore('import-tasks').get(plan.taskId);
     assertTask(task, plan);
     const book = await tx.objectStore('books').get(plan.targetBookId);
@@ -222,9 +228,9 @@ export async function applyImportOperation(
         typeof navigator === 'undefined' ? [] : navigator.languages,
       );
       if (creationLocale !== locale)
-        throw new Error(
-          `CREATION_LOCALE_CHANGED: ${translateText(locale, 'import.creationLocaleChanged')}`,
-        );
+        throw importError('CREATION_LOCALE_CHANGED', 'creationLocaleChangedDetail', {
+          value1: String(translateText(locale, 'import.creationLocaleChanged')),
+        });
       next.targetLanguage = locale;
     }
     const revision = (await tx.objectStore('book-revisions').get(plan.targetBookId))?.revision ?? 0;
@@ -234,7 +240,7 @@ export async function applyImportOperation(
       canonicalStringify(book ? normalizeBookLanguages(book) : book) !==
         canonicalStringify(context.snapshot?.book)
     )
-      throw new Error('PLAN_STALE: 目标小说已变化');
+      throw importError('PLAN_STALE', 'planStaleTheTargetNovelChanged', {});
     const before = await captureBefore(tx, plan, book);
     before.target = task.draft.target;
     if (task.appliedMappings) before.mappings = structuredClone(task.appliedMappings);
@@ -321,13 +327,19 @@ async function prepareRevertedBook(operation: ImportOperation): Promise<Novel | 
     const old = ImportLibraryReader.decodeChapter(
       before.record ? { ...before.record, chapterId: before.chapterId } : undefined,
     );
-    if (old.kind === 'failed') throw new Error(`BOOK_READ_FAILED: ${old.message}`);
+    if (old.kind === 'failed')
+      throw importError('BOOK_READ_FAILED', 'bookReadFailedDetail', {
+        value1: readImportError(old),
+      });
     const desired = snapshotChapters.get(before.chapterId);
     if (desired && old.kind === 'loaded') desired.content = old.content;
     const existing = currentChapters.get(before.chapterId);
     if (existing) {
       const loaded = await ImportLibraryReader.readChapter(before.chapterId);
-      if (loaded.kind === 'failed') throw new Error(`BOOK_READ_FAILED: ${loaded.message}`);
+      if (loaded.kind === 'failed')
+        throw importError('BOOK_READ_FAILED', 'bookReadFailedDetail', {
+          value1: readImportError(loaded),
+        });
       if (loaded.kind === 'loaded') existing.content = loaded.content;
     }
   }
@@ -338,15 +350,15 @@ export async function revertImportOperation(operation: ImportOperation): Promise
   const restored = await prepareRevertedBook(operation);
   return mutateOperation(operation.id, 'reverted', async (tx, current) => {
     if (current?.state !== 'applied' || !current.before)
-      throw new Error('UNDO_UNAVAILABLE: 此操作尚未应用或快照不可用');
+      throw importError('UNDO_UNAVAILABLE', 'undoUnavailableTheOperationWasNotAppliedOr', {});
     const { plan, before } = current;
     const task = await tx.objectStore('import-tasks').get(current.taskId);
     if (!task || ['running', 'pausing'].includes(task.state))
-      throw new Error('TASK_BUSY: 请等待导入任务停止');
+      throw importError('TASK_BUSY', 'taskBusyWaitForTheImportTaskTo', {});
     const revision = (await tx.objectStore('book-revisions').get(plan.targetBookId))?.revision ?? 0;
     const currentBook = await tx.objectStore('books').get(plan.targetBookId);
     if (revision !== current.postApplyBookRevision || !currentBook)
-      throw new Error('BOOK_CHANGED: 目标小说已有后续修改，不能整次撤销');
+      throw importError('BOOK_CHANGED', 'bookChangedTheTargetNovelHasLaterChanges', {});
     const now = Date.now();
     const restoredChapters = indexBookChapters(restored);
     for (const chapter of before.chapters) {

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 /**
  * 平板书库左侧列表（标题 / 搜索 / 排序 / 添加 + 加载·空态 + 书籍行列表）。
  * 从 BooksPageTablet 抽出。样式由 BooksPageTablet.vue 提供。
@@ -16,41 +19,65 @@ const starredCount = computed(() => t.ctx.booksStore.books.filter((b) => b.starr
 const hasStarred = computed(() => starredCount.value > 0);
 const isLoading = computed(() => t.ctx.booksStore.isLoading || !t.ctx.booksStore.isLoaded);
 const isEmpty = computed(() => t.ctx.filteredBooks.value.length === 0);
-const emptyText = computed(() => (t.ctx.searchQuery.value ? '未找到匹配的书籍' : '暂无书籍'));
-const sortButtonTitle = computed(() => `排序：${t.currentSortLabel.value}`);
+const emptyText = computed(() =>
+  t.ctx.searchQuery.value ? i18nT('libraryUi.noMatches') : i18nT('libraryUi.noBooks'),
+);
+const sortButtonTitle = computed(() =>
+  i18nT('libraryUi.sortLabel', { label: t.currentSortLabel.value }),
+);
 </script>
 
 <template>
   <aside class="tl-list">
     <header class="tl-list-head">
-      <div class="tl-eyebrow">LIBRARY</div>
-      <h1 class="tl-title">书库</h1>
+      <div class="tl-eyebrow">{{ i18nT('libraryUi.library') }}</div>
+      <h1 class="tl-title">{{ i18nT('libraryUi.library') }}</h1>
       <div class="tl-meta">
-        {{ t.ctx.booksStore.books.length }} 本
-        <template v-if="hasStarred"> · {{ starredCount }} 本收藏 </template>
+        {{ i18nT('libraryUi.bookCount', { count: t.ctx.booksStore.books.length }) }}
+        <template v-if="hasStarred">
+          · {{ i18nT('libraryUi.starredCount', { count: starredCount }) }}
+        </template>
       </div>
       <div class="tl-toolbar">
         <div class="tl-input-wrap">
           <i class="pi pi-search" aria-hidden="true" />
-          <input v-model="t.ctx.searchQuery.value" class="tl-input" placeholder="搜索书名、作者…" />
+          <input
+            v-model="t.ctx.searchQuery.value"
+            class="tl-input"
+            :placeholder="i18nT('libraryUi.searchShort')"
+          />
           <button
             v-if="t.ctx.searchQuery.value"
             class="tl-input-clear"
-            aria-label="清除搜索"
+            :aria-label="i18nT('libraryUi.clearSearch')"
             @click="t.ctx.searchQuery.value = ''"
           >
             <i class="pi pi-times" />
           </button>
         </div>
-        <button class="tl-icon-btn" :title="sortButtonTitle" aria-haspopup="true" @click="t.toggleSortMenu">
+        <button
+          class="tl-icon-btn"
+          :title="sortButtonTitle"
+          aria-haspopup="true"
+          @click="t.toggleSortMenu"
+        >
           <i class="pi pi-sort-alt" aria-hidden="true" />
         </button>
-        <button class="tl-icon-btn" title="添加书籍" aria-haspopup="true" @click="t.toggleAddMenu">
+        <button
+          class="tl-icon-btn"
+          :title="i18nT('libraryUi.addBook')"
+          aria-haspopup="true"
+          @click="t.toggleAddMenu"
+        >
           <i class="pi pi-plus" aria-hidden="true" />
         </button>
         <Menu ref="addMenuRef" :model="t.addMenuItems.value" :popup="true" append-to="body" />
         <TieredMenu
-          :ref="(el) => { t.ctx.sortMenuRef.value = el as unknown as typeof t.ctx.sortMenuRef.value; }"
+          :ref="
+            (el) => {
+              t.ctx.sortMenuRef.value = el as unknown as typeof t.ctx.sortMenuRef.value;
+            }
+          "
           :model="t.ctx.sortMenuItems.value"
           popup
           append-to="body"
@@ -63,9 +90,9 @@ const sortButtonTitle = computed(() => `排序：${t.currentSortLabel.value}`);
         style="width: 28px; height: 28px"
         stroke-width="4"
         animation-duration=".8s"
-        aria-label="加载中"
+        :aria-label="i18nT('libraryUi.loading')"
       />
-      <span>正在加载…</span>
+      <span>{{ i18nT('libraryUi.loadingShort') }}</span>
     </div>
 
     <div v-else-if="isEmpty" class="tl-state">
@@ -74,11 +101,7 @@ const sortButtonTitle = computed(() => `排序：${t.currentSortLabel.value}`);
     </div>
 
     <div v-else class="tl-list-scroll">
-      <BooksTabletBookRow
-        v-for="book in t.ctx.filteredBooks.value"
-        :key="book.id"
-        :book="book"
-      />
+      <BooksTabletBookRow v-for="book in t.ctx.filteredBooks.value" :key="book.id" :book="book" />
     </div>
   </aside>
 </template>

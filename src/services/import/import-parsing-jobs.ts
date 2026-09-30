@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import { parseImportStructure } from './import-structure-parser';
 import { mergeImportRanges } from './import-content-exclusions';
 import { processImportPattern } from './import-pattern-job';
@@ -28,7 +29,7 @@ function validateRange(text: string, start: number, end: number): void {
     splitsSurrogate(start) ||
     splitsSurrogate(end)
   )
-    throw new Error('INVALID_RANGE: 范围越界或拆开了字符');
+    throw importError('INVALID_RANGE', 'invalidRangeTheRangeIsOutOfBounds', {});
 }
 
 function selectedRanges(
@@ -39,7 +40,8 @@ function selectedRanges(
   let previousEnd = -1;
   for (const range of ranges) {
     validateRange(text, range.start, range.end);
-    if (range.start < previousEnd) throw new Error('INVALID_RANGE: 选择范围重叠或顺序无效');
+    if (range.start < previousEnd)
+      throw importError('INVALID_RANGE', 'invalidRangeSelectionRangesOverlapOrAreOut', {});
     previousEnd = range.end;
   }
   for (const range of rules.excludeRanges ?? []) validateRange(text, range.start, range.end);
@@ -92,9 +94,7 @@ function applyRanges(text: string, parsed: ImportParsedContent): ImportParsedCon
       const pieces = retainedRanges(start, end, excludedRanges);
       for (const piece of pieces) {
         if (parsed.format === 'html' && (piece.start !== block.start || piece.end !== block.end))
-          throw new Error(
-            'INVALID_RANGE: HTML 范围须覆盖完整正文块；块内切分请使用提取后的内容引用',
-          );
+          throw importError('INVALID_RANGE', 'invalidRangeHTMLRangesMustCoverWholeBody', {});
         const value = parsed.format === 'html' ? block.text : text.slice(piece.start, piece.end);
         blocks.push({
           ...block,
@@ -130,8 +130,8 @@ export async function processImportJob<T extends ImportParseRequest>(
   await work.checkpoint(true);
   if (request.kind === 'structure') {
     if (request.text.length > work.limits.textCharacters)
-      throw new Error('PROCESSING_LIMIT: 拆章文本超过上限');
-    const structure = parseImportStructure(request);
+      throw importError('PROCESSING_LIMIT', 'processingLimitTheChapterSplittingTextExceedsThe', {});
+    const structure = parseImportStructure(request, options.uiLocale);
     await work.checkpoint(true);
     return structure as ImportParseResponse<T>;
   }
@@ -140,18 +140,18 @@ export async function processImportJob<T extends ImportParseRequest>(
   if (request.kind === 'match')
     return (await matchImportParagraphs(request.input, options)) as ImportParseResponse<T>;
   if ('bytes' in request && request.bytes.byteLength > work.limits.inputBytes)
-    throw new Error('PROCESSING_LIMIT: 输入超过当前解析环境的上限');
+    throw importError('PROCESSING_LIMIT', 'processingLimitInputExceedsThisParsingEnvironmentS', {});
   if (request.kind === 'epub')
     return (await parseImportEpub(request.bytes, options)) as ImportParseResponse<T>;
   if (request.kind === 'decode') {
     const decoded = decodeImportText(request.bytes, request.encoding);
     work.check();
     if (decoded.text.length > work.limits.textCharacters)
-      throw new Error('PROCESSING_LIMIT: 解码文本超过上限');
+      throw importError('PROCESSING_LIMIT', 'processingLimitDecodedTextExceedsTheLimit', {});
     return decoded as ImportParseResponse<T>;
   }
   if (request.text.length > work.limits.textCharacters)
-    throw new Error('PROCESSING_LIMIT: 文本超过当前解析环境的上限');
+    throw importError('PROCESSING_LIMIT', 'processingLimitTextExceedsThisParsingEnvironmentS', {});
   const rules = request.rules ?? {};
   const parsed: ImportParsedContent =
     request.format === 'html'

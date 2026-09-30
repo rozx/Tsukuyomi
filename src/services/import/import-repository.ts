@@ -1,3 +1,6 @@
+import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
+import { importError } from './import-error';
 import { completeIdbTransaction } from 'src/utils/complete-idb-transaction';
 import type { IDBPDatabase, IDBPTransaction } from 'idb';
 import type {
@@ -35,7 +38,7 @@ export async function withImportWrite<T>(work: (tx: ImportTransaction) => Promis
 
 function pageLimit(limit = 50): number {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100)
-    throw new Error('INVALID_PAGE: 每页须为 1–100 条');
+    throw importError('INVALID_PAGE', 'invalidPageAPageMustContainItems', {});
   return limit;
 }
 
@@ -72,7 +75,7 @@ async function updateCheckpoint(
   for (const id of checkpoint.completedCallIds) {
     const events = await writer.toolEvents(task.id, id);
     if (!events.some((event) => event.kind === 'tool-result'))
-      throw new Error('TOOL_PAIR: 检查点引用未完成的调用');
+      throw importError('TOOL_PAIR', 'toolPairTheCheckpointReferencesAnIncompleteTool', {});
   }
   task.checkpoint = checkpoint;
 }
@@ -85,7 +88,7 @@ export function checkImportRun(task: ImportTask, run?: ImportRunContext): void {
       run.runId !== task.run?.runId ||
       task.state !== 'running')
   ) {
-    throw new Error('RUN_STALE: 执行已停止或被新的运行替代');
+    throw importError('RUN_STALE', 'runStaleExecutionStoppedOrWasReplacedBy', {});
   }
 }
 
@@ -94,7 +97,11 @@ function checkToolArguments(value: unknown): void {
     const parsed: unknown = typeof value === 'string' ? JSON.parse(value) : null;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
   } catch {
-    throw new Error('INCOMPLETE_TOOL_CALL: 工具参数尚未完整返回');
+    throw importError(
+      'INCOMPLETE_TOOL_CALL',
+      'incompleteToolCallToolArgumentsHaveNotBeenFully',
+      {},
+    );
   }
 }
 
@@ -105,16 +112,18 @@ async function writeEvents(
 ): Promise<void> {
   for (const event of events) {
     if (event.kind === 'tool-call' || event.kind === 'tool-result') {
-      if (!event.callId || !event.toolName) throw new Error('TOOL_PAIR: 缺少工具调用身份');
+      if (!event.callId || !event.toolName)
+        throw importError('TOOL_PAIR', 'toolPairTheToolCallIdentityIsMissing', {});
       const prior = await writer.toolEvents(task.id, event.callId);
       if (event.kind === 'tool-call') {
         checkToolArguments(event.data);
-        if (prior.length) throw new Error('TOOL_PAIR: 工具调用已记录');
+        if (prior.length)
+          throw importError('TOOL_PAIR', 'toolPairTheToolCallWasAlreadyRecorded', {});
       } else if (
         !prior.some((e) => e.kind === 'tool-call' && e.toolName === event.toolName) ||
         prior.some((e) => e.kind === 'tool-result')
       ) {
-        throw new Error('TOOL_PAIR: 工具结果缺少调用或已保存');
+        throw importError('TOOL_PAIR', 'toolPairTheToolResultHasNoMatching', {});
       }
     }
     await writer.event({
@@ -138,7 +147,7 @@ async function addSources(
       source.taskId !== taskId ||
       (source.origin === 'agent' && source.purpose === 'content-root')
     )
-      throw new Error('SOURCE_SCOPE: 来源授权无效');
+      throw importError('SOURCE_SCOPE', 'sourceScopeInvalidSourceAuthorization', {});
     if (source.parentSourceId) {
       const parent =
         sources.find((item) => item.id === source.parentSourceId) ??
@@ -148,9 +157,9 @@ async function addSources(
         parent.taskId !== taskId ||
         (parent.purpose === 'metadata-only' && source.purpose !== 'metadata-only')
       )
-        throw new Error('SOURCE_SCOPE: 父来源不允许此用途');
+        throw importError('SOURCE_SCOPE', 'sourceScopeTheParentSourceDoesNotAllow', {});
     } else if (source.purpose === 'content-derived')
-      throw new Error('SOURCE_SCOPE: 正文派生来源缺少父来源');
+      throw importError('SOURCE_SCOPE', 'sourceScopeDerivedContentSourcesRequireAParent', {});
     await store.add(source);
   }
 }
@@ -164,7 +173,7 @@ async function writeResources(
   for (const resource of resources) {
     const source = await tx.objectStore('import-sources').get(resource.sourceId);
     if (resource.taskId !== taskId || source?.taskId !== taskId)
-      throw new Error('SOURCE_SCOPE: 资源不属于当前来源');
+      throw importError('SOURCE_SCOPE', 'sourceScopeTheResourceBelongsToAnotherSource', {});
     if (resource.kind === 'extraction') {
       const snapshot = await store.get(resource.snapshotId);
       if (
@@ -172,7 +181,7 @@ async function writeResources(
         snapshot.taskId !== taskId ||
         snapshot.sourceId !== resource.sourceId
       ) {
-        throw new Error('SOURCE_SCOPE: 提取结果没有有效来源快照');
+        throw importError('SOURCE_SCOPE', 'sourceScopeTheExtractionResultHasNoValid', {});
       }
     }
     await store.add(resource);
@@ -188,7 +197,7 @@ async function updateSources(
   for (const source of sources) {
     const prior = await store.get(source.id);
     if (!prior || prior.taskId !== taskId || source.taskId !== taskId)
-      throw new Error('SOURCE_SCOPE: 来源不属于当前任务');
+      throw importError('SOURCE_SCOPE', 'sourceScopeTheSourceBelongsToAnotherTask', {});
     for (const key of [
       'purpose',
       'origin',
@@ -199,7 +208,8 @@ async function updateSources(
       'url',
       'kind',
     ] as const) {
-      if (prior[key] !== source[key]) throw new Error('SOURCE_SCOPE: 不能变更来源授权');
+      if (prior[key] !== source[key])
+        throw importError('SOURCE_SCOPE', 'sourceScopeSourceAuthorizationCannotBeChanged', {});
     }
     if (source.currentSnapshotId) {
       const snapshot = await tx.objectStore('import-resources').get(source.currentSnapshotId);
@@ -208,7 +218,7 @@ async function updateSources(
         snapshot.sourceId !== source.id ||
         snapshot.taskId !== taskId
       )
-        throw new Error('SOURCE_SCOPE: 快照不属于当前来源');
+        throw importError('SOURCE_SCOPE', 'sourceScopeTheSnapshotBelongsToAnotherSource', {});
     }
     await store.put(source);
   }
@@ -231,7 +241,7 @@ export class ImportRepository {
   ): Promise<T> {
     return withImportWrite(async (tx) => {
       const task = await tx.objectStore('import-tasks').get(taskId);
-      if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+      if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
       checkImportRun(task, options.run);
       const result = await update(task, tx);
       const finished = options.finish?.(result);
@@ -244,11 +254,11 @@ export class ImportRepository {
       return result;
     });
   }
-  static async createTask(name = '新的导入任务'): Promise<ImportTask> {
+  static async createTask(name?: string, uiLocale: AppLocale = 'zh-CN'): Promise<ImportTask> {
     const now = Date.now();
     const task: ImportTask = {
       id: crypto.randomUUID(),
-      name,
+      name: name ?? translateText(uiLocale, 'aiImportErrors.defaultTask'),
       state: 'draft',
       createdAt: now,
       updatedAt: now,
@@ -277,9 +287,10 @@ export class ImportRepository {
   /** 在昂贵的批量计算前读取并核对草稿；提交时仍须在事务内复核。 */
   static async getDraftTask(run: ImportRunContext, revision: number): Promise<ImportTask> {
     const task = await this.getTask(run.taskId);
-    if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+    if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
     checkImportRun(task, run);
-    if (task.draft.revision !== revision) throw new Error('DRAFT_CHANGED: 草稿已变化，请重新预览');
+    if (task.draft.revision !== revision)
+      throw importError('DRAFT_CHANGED', 'draftChangedTheDraftChangedGenerateAnotherPreview', {});
     return task;
   }
 
@@ -296,7 +307,7 @@ export class ImportRepository {
         typeof position[0] !== 'number' ||
         typeof position[1] !== 'string')
     ) {
-      throw new Error('INVALID_PAGE: 游标无效');
+      throw importError('INVALID_PAGE', 'invalidPageInvalidCursor', {});
     }
     let cursor = await db
       .transaction('import-tasks')
@@ -352,7 +363,8 @@ export class ImportRepository {
 
   static async getSource(taskId: string, sourceId: string): Promise<ImportSource> {
     const source = await (await getDB()).get('import-sources', sourceId);
-    if (!source || source.taskId !== taskId) throw new Error('SOURCE_SCOPE: 来源不属于当前任务');
+    if (!source || source.taskId !== taskId)
+      throw importError('SOURCE_SCOPE', 'sourceScopeTheSourceBelongsToAnotherTask', {});
     return source;
   }
 
@@ -360,7 +372,7 @@ export class ImportRepository {
   static async getActiveSource(taskId: string, sourceId: string): Promise<ImportSource> {
     const source = await this.getSource(taskId, sourceId);
     if (source.removedAt !== undefined)
-      throw new Error('SOURCE_REMOVED: 来源已被用户移除，请先重新添加；已生成的草稿仍然保留');
+      throw importError('SOURCE_REMOVED', 'sourceRemovedTheUserRemovedTheSourceAdd', {});
     return source;
   }
 
@@ -369,7 +381,8 @@ export class ImportRepository {
     resourceId: string,
   ): Promise<ImportResource | undefined> {
     const resource = await (await getDB()).get('import-resources', resourceId);
-    if (resource && resource.taskId !== taskId) throw new Error('SOURCE_SCOPE: 资源不属于当前任务');
+    if (resource && resource.taskId !== taskId)
+      throw importError('SOURCE_SCOPE', 'sourceScopeTheResourceBelongsToAnotherTask', {});
     return resource;
   }
 
@@ -382,7 +395,7 @@ export class ImportRepository {
     await ImportStorageStatus.track(taskId, () =>
       withImportWrite(async (tx) => {
         const task = await tx.objectStore('import-tasks').get(taskId);
-        if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+        if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
         await addSources(tx, taskId, sources);
         await writeResources(tx, taskId, resources);
         task.updatedAt = Date.now();
@@ -453,12 +466,16 @@ export class ImportRepository {
       const task = await tx.objectStore('import-tasks').get(taskId);
       if (!task) return;
       if (['running', 'pausing', 'applying', 'reverting'].includes(task.state)) {
-        throw new Error('TASK_BUSY: 请先等待任务停止');
+        throw importError('TASK_BUSY', 'taskBusyWaitForTheTaskToStop', {});
       }
       // 已导入小说的缓存／索引补维护依赖操作记录，删除前必须先完成
       const operations = await tx.objectStore('import-operations').index('by-task').getAll(taskId);
       if (operations.some((operation) => operation.pendingMaintenance.length))
-        throw new Error('MAINTENANCE_PENDING: 已导入小说的缓存与索引维护尚未完成，请先重试维护');
+        throw importError(
+          'MAINTENANCE_PENDING',
+          'maintenancePendingTheImportedNovelSCacheIndex',
+          {},
+        );
       for (const name of [
         'import-sources',
         'import-resources',

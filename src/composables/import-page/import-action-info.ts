@@ -1,3 +1,4 @@
+import { localizeImportFeedback } from 'src/services/import/import-error';
 import { describeTextStructure } from './import-structure-description';
 import { appendImportResultDetails } from './import-action-results';
 import type { ActionDetail } from 'src/utils/action-info-utils';
@@ -229,9 +230,10 @@ function sourceList(
 export function importActionInfo(
   name: string,
   args: ImportActionData,
-  result: ImportActionData,
+  rawResult: ImportActionData,
   context: ImportActionContext,
 ): ImportActionInfo {
+  const result = localizeImportFeedback(rawResult, context.uiLocale ?? 'zh-CN');
   const details: ActionDetail[] = [];
   actionDetail(details, '导入任务', context.task?.name);
   actionDetail(

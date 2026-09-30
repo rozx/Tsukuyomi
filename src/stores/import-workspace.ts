@@ -300,7 +300,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
 
   async function createTask(name?: string): Promise<ImportTask | undefined> {
     try {
-      const created = await ImportRepository.createTask(name);
+      const created = await ImportRepository.createTask(name, useSettingsStore().uiLocale);
       upsertTask(created, created.id);
       channel?.postMessage({ taskId: created.id });
       setError(null);

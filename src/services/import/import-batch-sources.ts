@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type { ImportResource } from 'src/models/import';
 import { ImportRepository } from './import-repository';
 import { filterImportSourceIds } from './import-source-filter';
@@ -15,7 +16,7 @@ export async function batchSourceIds(
     [input.source_ids, input.discovery_ids, input.catalog].filter((value) => value !== undefined)
       .length !== 1
   )
-    throw new Error('INVALID_ARGUMENTS: source_ids、discovery_ids、catalog 必须且只能选择一种');
+    throw importError('INVALID_ARGUMENTS', 'invalidArgumentsChooseExactlyOneOfSourceIds', {});
   if (input.source_ids) return input.source_ids;
   let discoveries = input.discovery_ids;
   if (input.catalog) {
@@ -30,7 +31,7 @@ export async function batchSourceIds(
       found?.kind !== 'discovery' ||
       !['chapter', 'file', 'unknown'].includes(found.discovery.relation)
     )
-      throw new Error('SOURCE_SCOPE: 请选择章节或文件引用，目录、封面和下一页不能批量建章');
+      throw importError('SOURCE_SCOPE', 'sourceScopeSelectChapterOrFileReferencesContents', {});
     ids.push((await ImportSourceService.addDiscoveryInTransaction(taskId, id, tx)).id);
   }
   return ids;
@@ -44,7 +45,7 @@ async function catalogIds(
   const { snapshot_id, offset, limit } = catalog;
   const snapshot = await read(snapshot_id);
   if (snapshot?.taskId !== taskId || snapshot.kind !== 'snapshot' || !snapshot.inspection)
-    throw new Error('SOURCE_SCOPE: 目录快照不属于当前任务或尚未检查');
+    throw importError('SOURCE_SCOPE', 'sourceScopeTheContentsSnapshotBelongsToAnother', {});
   const chapters: string[] = [];
   for (const id of snapshot.inspection.discoveryIds) {
     const found = await read(id);
@@ -57,7 +58,7 @@ async function catalogIds(
       chapters.push(id);
   }
   if (offset + limit > chapters.length)
-    throw new Error('INVALID_PAGE: 范围超出当前快照已发现的章节，不能把截断当作完整目录');
+    throw importError('INVALID_PAGE', 'invalidPageTheRangeExceedsDiscoveredChaptersA', {});
   return chapters.slice(offset, offset + limit);
 }
 
@@ -71,7 +72,7 @@ export async function filterChapterBatchInput(
     [input.source_ids, input.discovery_ids, input.catalog].filter((v) => v !== undefined).length !==
     1
   )
-    throw new Error('INVALID_ARGUMENTS: source_ids、discovery_ids、catalog 必须且只能选择一种');
+    throw importError('INVALID_ARGUMENTS', 'invalidArgumentsChooseExactlyOneOfSourceIds', {});
   const ids =
     input.source_ids ??
     input.discovery_ids ??
@@ -83,7 +84,7 @@ export async function filterChapterBatchInput(
     input.filter,
     signal,
   );
-  if (!selected.length) throw new Error('NO_MATCHES: 当前来源范围没有匹配项');
+  if (!selected.length) throw importError('NO_MATCHES', 'noMatchesNoMatchesInTheCurrentSource', {});
   const {
     source_ids: _sources,
     discovery_ids: _discoveries,

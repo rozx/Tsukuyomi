@@ -233,6 +233,7 @@ declare module 'vue' {
     TranslationProgress: typeof import('./components/novel/TranslationProgress.vue')['default']
     TranslationProgressDesktop: typeof import('./components/novel/TranslationProgressDesktop.vue')['default']
     TranslationProgressMobile: typeof import('./components/novel/TranslationProgressMobile.vue')['default']
+    TranslationProgressSubtitle: typeof import('./components/layout/TranslationProgressSubtitle.vue')['default']
     TranslationProgressTablet: typeof import('./components/novel/TranslationProgressTablet.vue')['default']
     UpdatedChapterList: typeof import('./components/book-sync/fragments/UpdatedChapterList.vue')['default']
     VolumesList: typeof import('./components/novel/VolumesList.vue')['default']

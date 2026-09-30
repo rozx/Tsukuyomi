@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type { ImportTask } from 'src/models/import';
 
 const TASK_NAME_MAX = 80;
@@ -12,11 +13,13 @@ export function renameImportTask(
   actor: 'agent' | 'user',
 ): { success: true; name: string } {
   const trimmed = name.trim();
-  if (!trimmed) throw new Error('NAME_INVALID: 任务名不能为空');
+  if (!trimmed) throw importError('NAME_INVALID', 'nameInvalidTaskNamesMustBeNonempty', {});
   if (trimmed.length > TASK_NAME_MAX)
-    throw new Error(`NAME_INVALID: 任务名不能超过 ${TASK_NAME_MAX} 个字符`);
+    throw importError('NAME_INVALID', 'nameInvalidTaskNamesAreLimitedToDetail', {
+      value1: String(TASK_NAME_MAX),
+    });
   if (actor === 'agent' && task.nameSource === 'user')
-    throw new Error('NAME_LOCKED: 用户已手动命名这个任务，不要再修改');
+    throw importError('NAME_LOCKED', 'nameLockedTheUserNamedThisTaskManually', {});
   task.name = trimmed;
   task.nameSource = actor;
   return { success: true, name: trimmed };
@@ -25,7 +28,5 @@ export function renameImportTask(
 /** 生成方案前必须已命名，保证任务列表可以区分。 */
 export function assertImportTaskNamed(task: ImportTask): void {
   if (!task.nameSource)
-    throw new Error(
-      'TASK_UNNAMED: 请先根据识别到的书本信息调用 rename_import_task 命名任务，再生成导入方案',
-    );
+    throw importError('TASK_UNNAMED', 'taskUnnamedUseRenameImportTaskWithThe', {});
 }

@@ -1,3 +1,5 @@
+import { importCancelled, importError } from './import-error';
+
 import type { ImportDraft, ImportMetadataValue, ImportSource } from 'src/models/import';
 import { ImportRepository } from './import-repository';
 import { ImportSourceService } from './import-source-service';
@@ -8,10 +10,10 @@ import { runAbortable } from 'src/utils/abortable-operation';
 export class ImportMetadataService {
   static async prepareSearch(taskId: string, query: string, signal?: AbortSignal) {
     const task = await ImportRepository.getTask(taskId);
-    if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+    if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
     const uiLocale = task.checkpoint?.uiLocale ?? 'zh-CN';
     if (typeof query !== 'string' || !query.trim() || query.length > 1000)
-      throw new Error('INVALID_QUERY: 元信息检索词无效');
+      throw importError('INVALID_QUERY', 'invalidQueryInvalidMetadataSearchQuery', {});
     const searched = await runAbortable(signal, () => searchWeb(query, signal, uiLocale));
     const newSources: ImportSource[] = [];
     const results: { title: string; snippet: string; url: string; sourceId: string }[] = [];
@@ -38,7 +40,7 @@ export class ImportMetadataService {
         if (!(error instanceof Error) || !error.message.startsWith('INVALID_URL')) throw error;
       }
     }
-    if (signal?.aborted) throw signal.reason ?? new DOMException('搜索已取消', 'AbortError');
+    if (signal?.aborted) throw signal.reason ?? importCancelled('searchCancelled');
     return {
       newSources,
       result: {
@@ -73,10 +75,14 @@ export class ImportMetadataService {
   static async adopt(taskId: string, candidateId: string, revision: number): Promise<ImportDraft> {
     return ImportRepository.mutateTask(taskId, (task) => {
       if (task.draft.revision !== revision)
-        throw new Error('DRAFT_CHANGED: 草稿已变化，请重新检查元信息候选');
+        throw importError(
+          'DRAFT_CHANGED',
+          'draftChangedTheDraftChangedReviewMetadataCandidates',
+          {},
+        );
       const candidate = task.draft.metadataCandidates?.find((item) => item.id === candidateId);
       if (!candidate || candidate.scopeRevision !== task.draft.novelScope.revision)
-        throw new Error('METADATA_CHANGED: 候选或小说范围已改变');
+        throw importError('METADATA_CHANGED', 'metadataChangedTheCandidateOrNovelScopeChanged', {});
       task.draft.metadata[candidate.field] = { ...candidate.value, adopted: true };
       task.draft.metadataCandidates = task.draft.metadataCandidates!.filter(
         (item) => item.id !== candidateId,
@@ -94,10 +100,15 @@ export class ImportMetadataService {
     revision: number,
   ): Promise<ImportDraft> {
     return ImportRepository.mutateTask(taskId, (task) => {
-      if (task.draft.revision !== revision) throw new Error('DRAFT_CHANGED: 草稿已变化');
+      if (task.draft.revision !== revision)
+        throw importError('DRAFT_CHANGED', 'draftChangedTheDraftChanged', {});
       const value = task.draft.metadata[field];
       if (!value || typeof adopted !== 'boolean')
-        throw new Error('INVALID_OPERATION: 元信息字段或选择无效');
+        throw importError(
+          'INVALID_OPERATION',
+          'invalidOperationInvalidMetadataFieldOrSelection',
+          {},
+        );
       value.adopted = adopted;
       task.draft.revision++;
       invalidateImportPreview(task);
@@ -110,10 +121,11 @@ export class ImportMetadataService {
     if (!value.value.startsWith('resource:')) {
       const url = new URL(value.value);
       if (!['http:', 'https:'].includes(url.protocol))
-        throw new Error('INVALID_COVER: 封面地址不能使用临时 object URL');
+        throw importError('INVALID_COVER', 'invalidCoverCoverURLsCannotUseTemporaryObject', {});
       return url.href;
     }
-    if (!value.resourceId || !value.sourceId) throw new Error('INVALID_COVER: 缺少封面资源引用');
+    if (!value.resourceId || !value.sourceId)
+      throw importError('INVALID_COVER', 'invalidCoverTheCoverResourceReferenceIsMissing', {});
     const resource = await ImportRepository.getResource(taskId, value.resourceId);
     const source = await ImportRepository.getSource(taskId, value.sourceId);
     if (
@@ -121,8 +133,9 @@ export class ImportMetadataService {
       !resource.blob.type.startsWith('image/') ||
       (resource.sourceId !== source.id && source.inputResourceId !== resource.id)
     )
-      throw new Error('INVALID_COVER: 图片资源不可用');
-    if (resource.blob.size > 10 * 1024 * 1024) throw new Error('COVER_LIMIT: 封面超过 10 MiB');
+      throw importError('INVALID_COVER', 'invalidCoverTheImageResourceIsUnavailable', {});
+    if (resource.blob.size > 10 * 1024 * 1024)
+      throw importError('COVER_LIMIT', 'coverLimitTheCoverExceedsMiB', {});
     const bytes = new Uint8Array(await resource.blob.arrayBuffer());
     let binary = '';
     for (let offset = 0; offset < bytes.length; offset += 32768)

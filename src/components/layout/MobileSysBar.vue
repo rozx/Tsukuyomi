@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import Button from 'primevue/button';
@@ -54,16 +57,16 @@ const openHelp = () => {
       <button
         v-if="thinking"
         class="tsm-sys-chip pill thinking"
-        aria-label="AI 思考过程"
+        :aria-label="i18nT('libraryUi.thinkingProcess')"
         @click="toggleThinking"
       >
         <span class="tsm-sys-dot" />
-        <span>AI 思考中</span>
+        <span>{{ i18nT('libraryUi.aiThinkingActive') }}</span>
       </button>
       <button
         v-else
         class="tsm-sys-chip"
-        aria-label="AI 思考过程"
+        :aria-label="i18nT('libraryUi.thinkingProcess')"
         @click="toggleThinking"
       >
         <i class="pi pi-sparkles" aria-hidden="true" />
@@ -73,34 +76,34 @@ const openHelp = () => {
       <button
         v-if="syncState === 'syncing'"
         class="tsm-sys-chip pill sync-pending"
-        aria-label="同步中"
+        :aria-label="i18nT('libraryUi.syncing')"
         @click="toggleSync"
       >
         <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-        <span>同步中</span>
+        <span>{{ i18nT('libraryUi.syncing') }}</span>
       </button>
       <button
         v-else-if="syncState === 'changes'"
         class="tsm-sys-chip pill sync-changes"
-        :aria-label="`${pendingCount} 项变更`"
+        :aria-label="i18nT('libraryUi.changes', { count: pendingCount })"
         @click="toggleSync"
       >
         <i class="pi pi-cloud-upload" aria-hidden="true" />
-        <span>{{ pendingCount }} 项变更</span>
+        <span>{{ i18nT('libraryUi.changes', { count: pendingCount }) }}</span>
       </button>
       <button
         v-else-if="syncState === 'ok'"
         class="tsm-sys-chip pill sync-ok"
-        aria-label="已同步"
+        :aria-label="i18nT('libraryUi.synced')"
         @click="toggleSync"
       >
         <i class="pi pi-cloud-check" aria-hidden="true" />
-        <span>已同步</span>
+        <span>{{ i18nT('libraryUi.synced') }}</span>
       </button>
       <button
         v-else
         class="tsm-sys-chip"
-        aria-label="同步状态"
+        :aria-label="i18nT('libraryUi.syncStatus')"
         @click="toggleSync"
       >
         <i class="pi pi-cloud" aria-hidden="true" />
@@ -111,7 +114,7 @@ const openHelp = () => {
       <!-- Notifications -->
       <button
         class="tsm-sys-chip"
-        aria-label="通知"
+        :aria-label="i18nT('libraryUi.notifications')"
         @click="toggleHistory"
       >
         <i class="pi pi-bell" aria-hidden="true" />
@@ -124,7 +127,7 @@ const openHelp = () => {
       <button
         class="tsm-sys-chip"
         :class="{ active: isHelpActive }"
-        aria-label="帮助"
+        :aria-label="i18nT('libraryUi.help')"
         @click="openHelp"
       >
         <i class="pi pi-question-circle" aria-hidden="true" />
@@ -161,7 +164,11 @@ const openHelp = () => {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -223,7 +230,11 @@ const openHelp = () => {
   background: transparent;
   border: 1px solid transparent;
   color: rgba(192, 198, 209, 0.85);
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   font-size: 10px;
   font-weight: 500;
   cursor: pointer;

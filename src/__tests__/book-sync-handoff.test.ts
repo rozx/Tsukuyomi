@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+import { useSettingsStore } from '../stores/settings';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import type { Router } from 'vue-router';
 import { FEATURES } from 'src/constants/features';
@@ -7,6 +9,10 @@ import { ImportSourceService } from 'src/services/import/import-source-service';
 import { ImportAgentService } from 'src/services/import/import-agent-service';
 import { handoffToImporter, repairWithImporter } from 'src/composables/book-sync/book-sync-handoff';
 
+beforeEach(async () => {
+  setActivePinia(createPinia());
+  await useSettingsStore().setUiLocale('en-US');
+});
 afterEach(() => {
   FEATURES.importWorkspace = true;
   vi.restoreAllMocks();
@@ -27,7 +33,7 @@ describe('交给 AI 导入器', () => {
 
     const taskId = await handoffToImporter('https://example.com/novel/1', nav);
 
-    expect(createTask).toHaveBeenCalledWith('导入：example.com');
+    expect(createTask).toHaveBeenCalledWith('Import: example.com');
     expect(registerUrl).toHaveBeenCalledWith(taskId, 'https://example.com/novel/1');
     expect(nav.push).toHaveBeenCalledWith(`/import/${taskId}`);
     expect(run).not.toHaveBeenCalled();

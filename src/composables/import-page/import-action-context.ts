@@ -1,3 +1,4 @@
+import type { AppLocale } from 'src/models/locale';
 import type { ImportEvent, ImportSource, ImportDraftChapter } from 'src/models/import';
 import type { ActionDetail } from 'src/utils/action-info-utils';
 
@@ -10,6 +11,7 @@ export interface ImportActionTask {
   };
 }
 export interface ImportActionContext {
+  uiLocale?: AppLocale;
   task?: ImportActionTask;
   sources: Map<string, string>;
   chapters: Map<string, string>;
@@ -41,7 +43,16 @@ export function actionItems(value: unknown): ImportActionData[] {
   return Array.isArray(value) ? value.map(actionObject) : [];
 }
 export function actionText(value: unknown): string {
-  return typeof value === 'string' ? value : '';
+  return typeof value === 'string'
+    ? value
+    : value &&
+        typeof value === 'object' &&
+        'code' in value &&
+        typeof value.code === 'string' &&
+        'message' in value &&
+        typeof value.message === 'string'
+      ? value.message
+      : '';
 }
 export function actionValue(value: unknown): string {
   return typeof value === 'number' ? String(value) : actionText(value);
@@ -55,8 +66,8 @@ export function actionLabel(id: unknown, names: Map<string, string>, fallback: s
   return names.get(key) || (key ? `${fallback} ${key.slice(0, 8)}` : fallback);
 }
 export function actionDetail(details: ActionDetail[], label: string, value: unknown): void {
-  if (typeof value === 'number' || (typeof value === 'string' && value.length))
-    details.push({ label, value: String(value) });
+  const text = actionValue(value);
+  if (text) details.push({ label, value: text });
 }
 export function actionRange(
   args: ImportActionData,
@@ -144,12 +155,14 @@ function rememberResult(
 export function createImportActionContext(
   events: ImportEvent[],
   options: {
+    uiLocale?: AppLocale;
     sourceNames: Map<string, string>;
     task?: ImportActionTask;
     sources?: Pick<ImportSource, 'id' | 'name' | 'url' | 'relativePath'>[];
   },
 ): ImportActionContext {
   const context: ImportActionContext = {
+    uiLocale: options.uiLocale ?? 'zh-CN',
     ...(options.task ? { task: options.task } : {}),
     sources: new Map(options.sourceNames),
     locations: new Map(),

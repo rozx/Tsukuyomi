@@ -1,3 +1,7 @@
+import { importFailure, importError, readImportError, serializeImportError } from './import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+import type { AppLocale } from 'src/models/locale';
+
 import type { Novel, Chapter } from 'src/models/novel';
 import { getDB } from 'src/utils/indexed-db';
 import { ImportRepository } from './import-repository';
@@ -25,7 +29,8 @@ function publicInfo(book: Novel) {
 }
 
 async function requireTask(taskId: string): Promise<void> {
-  if (!(await ImportRepository.getTask(taskId))) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+  if (!(await ImportRepository.getTask(taskId)))
+    throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
 }
 
 function pagination(
@@ -41,7 +46,7 @@ function pagination(
     limit < 1 ||
     limit > 100
   )
-    throw new Error('INVALID_PAGE: 每页须为 1–100 条');
+    throw importError('INVALID_PAGE', 'invalidPageAPageMustContainItems', {});
   return { offset, limit };
 }
 
@@ -51,7 +56,7 @@ async function metadata(bookId: string) {
   const done = tx.done.catch(() => undefined);
   try {
     const book = await tx.objectStore('books').get(bookId);
-    if (!book) throw new Error('BOOK_NOT_FOUND: 指定小说不存在');
+    if (!book) throw importError('BOOK_NOT_FOUND', 'bookNotFoundTheSpecifiedNovelDoesNotExist', {});
     const revision = (await tx.objectStore('book-revisions').get(bookId))?.revision ?? 0;
     await tx.done;
     return { book, revision };
@@ -67,16 +72,19 @@ export class ImportLibraryService {
     options: { query: string; author?: string; url?: string; offset?: number; limit?: number },
   ) {
     await requireTask(taskId);
-    if (typeof options.query !== 'string') throw new Error('INVALID_QUERY: 书库查询必须是文本');
+    if (typeof options.query !== 'string')
+      throw importError('INVALID_QUERY', 'invalidQueryLibraryQueriesMustBeText', {});
     const { offset, limit } = pagination(options, 20);
     const query = options.query.trim().toLowerCase();
     const items = (await (await getDB()).getAll('books')).flatMap((book) => {
       const names = [book.title, ...(book.alternateTitles ?? [])];
-      const reasons: string[] = [];
+      const reasons: ImportNotice[] = [];
       if (query && names.some((name) => name.toLowerCase().includes(query)))
-        reasons.push('书名匹配');
-      if (options.author && book.author?.includes(options.author)) reasons.push('作者匹配');
-      if (options.url && book.webUrl?.includes(options.url)) reasons.push('来源网址匹配');
+        reasons.push(importFailure('TITLE_MATCH', 'matchTitle'));
+      if (options.author && book.author?.includes(options.author))
+        reasons.push(importFailure('AUTHOR_MATCH', 'matchAuthor'));
+      if (options.url && book.webUrl?.includes(options.url))
+        reasons.push(importFailure('URL_MATCH', 'matchUrl'));
       if ((query || options.author || options.url) && !reasons.length) return [];
       return [{ ...publicInfo(book), reasons }];
     });
@@ -125,19 +133,23 @@ export class ImportLibraryService {
     taskId: string,
     bookId: string,
     chapterId: string,
-    options: { offset?: number; limit?: number } = {},
+    options: { offset?: number; limit?: number; uiLocale?: AppLocale } = {},
   ) {
     await requireTask(taskId);
     const { offset, limit } = pagination(options, 30);
     const snapshot = await ImportLibraryReader.readBook(bookId);
     if (snapshot.kind !== 'loaded')
-      throw new Error(
-        `BOOK_READ_FAILED: ${snapshot.kind === 'failed' ? snapshot.message : '小说不存在'}`,
-      );
+      throw importError('BOOK_READ_FAILED', 'bookReadFailedDetail', {
+        value1:
+          snapshot.kind === 'failed'
+            ? readImportError(snapshot)
+            : importError('BOOK_READ_FAILED', 'bookReadFailedTheTargetNovelDoesNotExist'),
+      });
     const chapter = (snapshot.book.volumes ?? [])
       .flatMap((volume) => volume.chapters ?? [])
       .find((entry) => entry.id === chapterId);
-    if (!chapter) throw new Error('TARGET_SCOPE: 章节不属于指定小说');
+    if (!chapter)
+      throw importError('TARGET_SCOPE', 'targetScopeTheChapterBelongsToAnotherNovel', {});
     const loaded = snapshot.chapters[chapterId]!;
     const paragraphs: {
       id: string;
@@ -170,7 +182,15 @@ export class ImportLibraryService {
       status: loaded.kind,
       paragraphs,
       total,
-      ...(loaded.kind === 'failed' ? { error: loaded.message } : {}),
+      ...(loaded.kind === 'failed'
+        ? {
+            error: serializeImportError(
+              readImportError(loaded),
+              'CHAPTER_READ_FAILED',
+              options.uiLocale ?? 'zh-CN',
+            ).message,
+          }
+        : {}),
       ...(total !== undefined && offset + paragraphs.length < total
         ? { nextOffset: offset + paragraphs.length }
         : {}),

@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type { ImportDraft } from 'src/models/import';
 import type { ImportDraftBatch, ImportDraftBatchInput } from 'src/models/import-draft-batch';
 import type { ImportParsingClient } from './import-parsing-client';
@@ -11,7 +12,7 @@ function checkIds(ids: string[] | undefined, available: { id: string }[]) {
       new Set(ids).size !== ids.length ||
       ids.some((id) => !available.some((item) => item.id === id)))
   )
-    throw new Error('INVALID_SCOPE: 范围包含不存在或重复的 ID');
+    throw importError('INVALID_SCOPE', 'invalidScopeTheScopeContainsMissingOrDuplicate', {});
 }
 
 export async function prepareDraftBatchChanges(
@@ -25,7 +26,7 @@ export async function prepareDraftBatchChanges(
   checkIds(scope.chapter_ids, draft.chapters);
   checkIds(scope.volume_ids, draft.volumes);
   if (input.target === 'volume_title' && (scope.chapter_ids || scope.selected_only !== undefined))
-    throw new Error('INVALID_SCOPE: 卷标题仅接受卷 ID 或标题筛选');
+    throw importError('INVALID_SCOPE', 'invalidScopeVolumeTitlesAcceptOnlyVolumeIDs', {});
   const items: { id: string; title: string }[] =
     input.target === 'volume_title'
       ? draft.volumes.filter((v) => !scope.volume_ids || scope.volume_ids.includes(v.id))
@@ -41,13 +42,18 @@ export async function prepareDraftBatchChanges(
     parser,
     signal,
   );
-  if (selected.length > 500) throw new Error('BATCH_LIMIT: 每批最多 500 项，请缩小范围');
+  if (selected.length > 500)
+    throw importError('BATCH_LIMIT', 'batchLimitABatchIsLimitedToItems', {});
   if (input.target === 'body') {
     if (
       !['remove_matches', 'remove_lines'].includes(input.action) ||
       input.replacement !== undefined
     )
-      throw new Error('INVALID_OPERATION: 正文仅支持删除匹配片段或整行');
+      throw importError(
+        'INVALID_OPERATION',
+        'invalidOperationBodyOperationsCanOnlyRemoveMatching',
+        {},
+      );
     const ids = new Set(selected.map((item) => item.id));
     const result = await cleanDraftChapters(
       taskId,
@@ -59,7 +65,7 @@ export async function prepareDraftBatchChanges(
     return { ...result, volumes: [] };
   }
   if (!['chapter_title', 'volume_title'].includes(input.target) || input.action !== 'replace')
-    throw new Error('INVALID_OPERATION: 标题修改须使用 replace');
+    throw importError('INVALID_OPERATION', 'invalidOperationTitleChangesMustUseReplace', {});
   const { value } = await parser.run(
     {
       kind: 'pattern',
@@ -77,7 +83,7 @@ export async function prepareDraftBatchChanges(
     const result = value[index]!;
     matches += result.matches;
     if (!result.text.trim() || result.text.length > 500)
-      throw new Error('METADATA_LIMIT: 标题不能为空或超过 500 字符');
+      throw importError('METADATA_LIMIT', 'metadataLimitTitlesMustBeNonemptyAndAt', {});
     if (item.title === result.text) return;
     updates.set(item.id, result.text);
     if (examples.length < 5)

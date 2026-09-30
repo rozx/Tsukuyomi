@@ -1,3 +1,4 @@
+import type { ImportFailure, ImportNotice } from './import-feedback';
 import type { AppLocale } from './locale';
 import type { ContextAnchor } from 'src/services/ai/context/measure';
 import type { ImportTextStructureBatch } from './import-text-structure';
@@ -53,7 +54,7 @@ export interface ImportSource {
   status: 'registered' | 'inspected' | 'extracted' | 'failed' | 'excluded';
   /** 仅移除来源入口；已保存资源仍供草稿、预览和撤销追溯使用。 */
   removedAt?: number;
-  error?: { code: string; message: string };
+  error?: ImportFailure;
   createdAt: number;
 }
 
@@ -103,7 +104,7 @@ export interface ImportInspection {
   kind: string;
   metadata: Record<string, string>;
   discoveryIds: string[];
-  warnings: string[];
+  warnings: ImportNotice[];
   missing: string[];
   candidates?: { title?: string; author?: string; path: string }[];
   coverResourceId?: string;
@@ -134,8 +135,8 @@ export type ImportResource = ImportResourceBase &
         rules: ImportExtractionRules;
         separator?: '' | '\n';
         blocks: ImportTextBlock[];
-        excluded: { start: number; end: number; text: string; reason: string }[];
-        warnings: string[];
+        excluded: { start: number; end: number; text: string; reason: ImportNotice }[];
+        warnings: ImportNotice[];
         metadata: Record<string, string>;
       }
     | { kind: 'discovery'; discovery: ImportDiscovery }
@@ -202,9 +203,7 @@ export interface ImportNovelCandidate {
 }
 
 /** 更新配方自测发现的问题；code 与 record_update_recipe 的错误码一致。 */
-export interface ImportRecipeIssue {
-  code: string;
-  message: string;
+export interface ImportRecipeIssue extends ImportFailure {
   chapterId?: string;
 }
 
@@ -246,7 +245,7 @@ export interface ImportDraft {
     field: keyof ImportDraft['metadata'];
     value: ImportMetadataValue;
     scopeRevision?: number;
-    conflicts?: string[];
+    conflicts?: ImportNotice[];
   }[];
   replacementConsents?: { signature: string; bookId: string; bookRevision: number }[];
   chapterSettingsSources?: Record<string, { chapterId: string; bookRevision: number }>;
@@ -264,7 +263,7 @@ export interface ImportDraft {
     requiresUserChoice?: boolean;
     previousSelection?: Pick<ImportNovelCandidate, 'id' | 'title' | 'author'>;
   };
-  completeness: { knownTotal?: number; confirmed: boolean; missing: string[] };
+  completeness: { knownTotal?: number; confirmed: boolean; missing: ImportNotice[] };
 }
 
 export type ImportDraftOperation =
@@ -363,7 +362,7 @@ export interface ImportTask {
   checkpoint?: ImportCheckpoint;
   pendingQuestion?: ImportPendingQuestion;
   todos: ImportTodo[];
-  lastError?: { code: string; message: string };
+  lastError?: ImportFailure;
   appliedMappings?: { bookId: string; chapters: ImportPlan['mappings'] }[];
   currentPlanId?: string;
   streaming?: { text: string; reasoning?: string };
@@ -418,7 +417,7 @@ export interface ImportPlan {
   removedChapterIds: string[];
   paragraphChanges: ImportParagraphChange[];
   metadataChanges: { field: string; before?: string; after: string; sourceId?: string }[];
-  conflicts: { code: string; message: string; chapterId?: string }[];
+  conflicts: (ImportFailure & { chapterId?: string })[];
   completeness: ImportDraft['completeness'];
   mappings: { draftChapterId: string; chapterId: string; sourceIds: string[] }[];
   replacements?: ImportReplacementRange[];
@@ -428,7 +427,7 @@ export interface ImportPlan {
     verified: number;
     before?: ImportRecipeSummary;
     after?: ImportRecipeSummary;
-    reason?: string;
+    reason?: ImportNotice;
     issues?: ImportRecipeIssue[];
   };
   chapterChanges?: {

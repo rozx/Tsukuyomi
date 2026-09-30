@@ -107,7 +107,10 @@ describe('来源内容查看', () => {
     ]);
     expect(await ImportPreviewService.source(task.id, source!.id)).toMatchObject({
       kind: 'note',
-      note: expect.stringContaining('尚未读取'),
+      note: expect.objectContaining({
+        code: 'SOURCE_NOT_READ',
+        message: expect.stringContaining('尚未读取'),
+      }),
     });
     const db = await getDB();
     await db.put('import-sources', {
@@ -117,7 +120,7 @@ describe('来源内容查看', () => {
     });
     expect(await ImportPreviewService.source(task.id, source!.id)).toEqual({
       kind: 'note',
-      note: 'FETCH_FAILED: 需要登录',
+      note: { code: 'FETCH_FAILED', message: 'FETCH_FAILED: 需要登录' },
     });
   });
 });

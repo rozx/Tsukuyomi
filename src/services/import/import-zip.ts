@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import { createImportWork } from './import-work-limits';
 import type { ImportParseLimits, ImportWorkOptions } from './import-work-limits';
 
@@ -21,7 +22,7 @@ export function validateArchivePath(path: string): string {
     /^[a-z]:/i.test(normalized) ||
     normalized.split('/').some((part) => !part || part === '.' || part === '..')
   )
-    throw new Error('INVALID_ARCHIVE_PATH: 归档路径越界或无效');
+    throw importError('INVALID_ARCHIVE_PATH', 'invalidArchivePathTheArchivePathIsInvalidOr', {});
   return normalized;
 }
 
@@ -41,10 +42,10 @@ function localDataOffset(
     view.getUint16(local + 6, true) !== flags ||
     view.getUint16(local + 8, true) !== method
   )
-    throw new Error('CORRUPT_ARCHIVE: 本地条目与目录不一致');
+    throw importError('CORRUPT_ARCHIVE', 'corruptArchiveTheLocalEntryDoesNotMatch', {});
   const localNameLength = view.getUint16(local + 26, true);
   if (decoder.decode(bytes.subarray(local + 30, local + 30 + localNameLength)) !== name)
-    throw new Error('CORRUPT_ARCHIVE: 条目名称不一致');
+    throw importError('CORRUPT_ARCHIVE', 'corruptArchiveEntryNamesDoNotMatch', {});
   const offset = local + 30 + localNameLength + view.getUint16(local + 28, true);
   return offset;
 }
@@ -68,24 +69,26 @@ function directory(bytes: Uint8Array, limits: ImportParseLimits): ZipEntry[] {
     }
     end--;
   }
-  if (end < searchStart) throw new Error('CORRUPT_ARCHIVE: 没有 ZIP 中央目录');
+  if (end < searchStart)
+    throw importError('CORRUPT_ARCHIVE', 'corruptArchiveTheZIPCentralDirectoryIsMissing', {});
   const count = view.getUint16(end + 10, true);
   let cursor = view.getUint32(end + 16, true);
-  if (count > limits.entries || count === 65535) throw new Error('ARCHIVE_LIMIT: 归档条目过多');
+  if (count > limits.entries || count === 65535)
+    throw importError('ARCHIVE_LIMIT', 'archiveLimitTooManyArchiveEntries', {});
   if (
     view.getUint16(end + 4, true) ||
     view.getUint16(end + 6, true) ||
     view.getUint16(end + 8, true) !== count ||
     cursor + view.getUint32(end + 12, true) !== end
   )
-    throw new Error('CORRUPT_ARCHIVE: 分卷或目录范围无效');
+    throw importError('CORRUPT_ARCHIVE', 'corruptArchiveInvalidSplitArchiveOrDirectoryRange', {});
   const entries: ZipEntry[] = [];
   const names = new Set<string>();
   let total = 0;
   const decoder = new TextDecoder('utf-8', { fatal: true });
   for (let index = 0; index < count; index++) {
     if (cursor + 46 > end || view.getUint32(cursor, true) !== 0x02014b50)
-      throw new Error('CORRUPT_ARCHIVE: 目录条目损坏');
+      throw importError('CORRUPT_ARCHIVE', 'corruptArchiveTheDirectoryEntryIsCorrupt', {});
     const flags = view.getUint16(cursor + 8, true);
     const method = view.getUint16(cursor + 10, true);
     const size = view.getUint32(cursor + 20, true);
@@ -93,15 +96,20 @@ function directory(bytes: Uint8Array, limits: ImportParseLimits): ZipEntry[] {
     const nameLength = view.getUint16(cursor + 28, true);
     const name = decoder.decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength));
     const path = validateArchivePath(name);
-    if (flags & 0x2041) throw new Error('EPUB_ENCRYPTED: 不支持加密归档');
+    if (flags & 0x2041)
+      throw importError('EPUB_ENCRYPTED', 'epubEncryptedEncryptedArchivesAreUnsupported', {});
     if (method !== 0 && method !== 8)
-      throw new Error('UNSUPPORTED_ARCHIVE: 只支持存储和 DEFLATE 压缩');
+      throw importError(
+        'UNSUPPORTED_ARCHIVE',
+        'unsupportedArchiveOnlyStoredAndDEFLATECompressionAre',
+        {},
+      );
     total += originalSize;
     if (originalSize > limits.entryBytes || total > limits.totalBytes)
-      throw new Error('ARCHIVE_LIMIT: 解压量超过上限');
+      throw importError('ARCHIVE_LIMIT', 'archiveLimitDecompressedDataExceedsTheLimit', {});
     const offset = localDataOffset(view, bytes, cursor, name, flags, method, decoder);
     if (offset + size > view.getUint32(end + 16, true) || names.has(path))
-      throw new Error('CORRUPT_ARCHIVE: 数据范围或重复路径无效');
+      throw importError('CORRUPT_ARCHIVE', 'corruptArchiveInvalidDataRangeOrDuplicatePath', {});
     names.add(path);
     if (!name.endsWith('/'))
       entries.push({
@@ -115,7 +123,8 @@ function directory(bytes: Uint8Array, limits: ImportParseLimits): ZipEntry[] {
     cursor +=
       46 + nameLength + view.getUint16(cursor + 30, true) + view.getUint16(cursor + 32, true);
   }
-  if (cursor !== end) throw new Error('CORRUPT_ARCHIVE: 目录长度不一致');
+  if (cursor !== end)
+    throw importError('CORRUPT_ARCHIVE', 'corruptArchiveDirectoryLengthsDoNotMatch', {});
   return entries;
 }
 
@@ -130,13 +139,14 @@ export async function unpackImportZip(
 ): Promise<Map<string, Uint8Array>> {
   const work = createImportWork(options);
   work.check();
-  if (bytes.length > work.limits.inputBytes) throw new Error('ARCHIVE_LIMIT: 输入文件超过上限');
+  if (bytes.length > work.limits.inputBytes)
+    throw importError('ARCHIVE_LIMIT', 'archiveLimitTheInputFileExceedsTheLimit', {});
   let entries: ZipEntry[];
   try {
     entries = directory(bytes, work.limits);
   } catch (error) {
     if (error instanceof RangeError || error instanceof TypeError)
-      throw new Error('CORRUPT_ARCHIVE: ZIP 结构或文件名编码损坏');
+      throw importError('CORRUPT_ARCHIVE', 'corruptArchiveZIPStructureOrFilenameEncodingIs', {});
     throw error;
   }
   const { Inflate } = await import('fflate');
@@ -151,8 +161,13 @@ export async function unpackImportZip(
       length += data.length;
       total += data.length;
       if (length > work.limits.entryBytes || total > work.limits.totalBytes)
-        throw new Error('ARCHIVE_LIMIT: 实际解压量超过上限');
-      if (length > entry.originalSize) throw new Error('CORRUPT_ARCHIVE: 解压长度与声明不符');
+        throw importError('ARCHIVE_LIMIT', 'archiveLimitActualDecompressedDataExceedsTheLimit', {});
+      if (length > entry.originalSize)
+        throw importError(
+          'CORRUPT_ARCHIVE',
+          'corruptArchiveTheDecompressedLengthDiffersFromIts',
+          {},
+        );
       for (const byte of data) crc = CRC_TABLE[(crc ^ byte) & 255]! ^ (crc >>> 8);
       chunks.push(data.slice());
     };
@@ -172,10 +187,10 @@ export async function unpackImportZip(
         options.signal?.aborted
       )
         throw error;
-      throw new Error('CORRUPT_ARCHIVE: 无法解压文件内容');
+      throw importError('CORRUPT_ARCHIVE', 'corruptArchiveCannotDecompressFileContent', {});
     }
     if (length !== entry.originalSize || (crc ^ 0xffffffff) >>> 0 !== entry.crc)
-      throw new Error('CORRUPT_ARCHIVE: 长度或 CRC 校验失败');
+      throw importError('CORRUPT_ARCHIVE', 'corruptArchiveLengthOrCRCValidationFailed', {});
     const combined = new Uint8Array(length);
     let offset = 0;
     for (const chunk of chunks) {

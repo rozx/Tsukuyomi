@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 /**
  * 平板首页「继续阅读 / 活跃任务」Hero 卡片区。从 IndexPageTablet 抽出以降低其模板圈复杂度。
  * 自行注入 useIndexPage 与 ai-processing store。
@@ -24,7 +27,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
     <article v-if="hasActiveJob" class="th-hero-card th-hero-card--active">
       <header class="th-hero-card-head">
         <i class="pi pi-spin pi-spinner th-hero-card-status-icon" aria-hidden="true" />
-        <span class="th-hero-card-status">正在翻译</span>
+        <span class="th-hero-card-status">{{ i18nT('libraryUi.translating') }}</span>
       </header>
       <IndexHeroCardHeading
         :title="ctx.continueReadingBook.value.title"
@@ -32,7 +35,7 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
       />
       <div class="th-hero-card-actions">
         <Button
-          label="查看进度"
+          :label="i18nT('libraryUi.viewProgress')"
           icon="pi pi-external-link"
           class="p-button-primary p-button-sm"
           @click="ctx.navigateToBookDetails(ctx.continueReadingBook.value!)"
@@ -43,20 +46,28 @@ const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
     <!-- 继续阅读卡 -->
     <article class="th-hero-card">
       <header class="th-hero-card-head">
-        <span class="th-hero-card-kicker">继续阅读</span>
+        <span class="th-hero-card-kicker">{{ i18nT('libraryUi.continueReading') }}</span>
       </header>
       <IndexHeroCardHeading
         :title="ctx.continueReadingBook.value.title"
         :author="ctx.continueReadingBook.value.author"
       />
       <div class="th-hero-card-subline">
-        <span>{{ ctx.getTotalChapters(ctx.continueReadingBook.value) }} 章</span>
+        <span>{{
+          i18nT('libraryUi.chapterCount', {
+            count: ctx.getTotalChapters(ctx.continueReadingBook.value),
+          })
+        }}</span>
         <span class="th-dot">·</span>
-        <span>更新于 {{ ctx.formatDate(ctx.continueReadingBook.value.lastEdited) }}</span>
+        <span>{{
+          i18nT('libraryUi.updatedAt', {
+            date: ctx.formatDate(ctx.continueReadingBook.value.lastEdited),
+          })
+        }}</span>
       </div>
       <div class="th-hero-card-actions">
         <Button
-          label="继续翻译"
+          :label="i18nT('libraryUi.continueTranslation')"
           icon="pi pi-play"
           class="p-button-primary p-button-sm"
           @click="ctx.navigateToBookDetails(ctx.continueReadingBook.value!)"

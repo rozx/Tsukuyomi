@@ -1,3 +1,5 @@
+import { readImportError, importError } from './import-error';
+
 import type { ImportTransaction } from './import-repository';
 import { excludeImportText } from './import-content-exclusions';
 import type {
@@ -33,7 +35,11 @@ export function assertImportKeys(
     Array.isArray(value) ||
     Object.keys(value).some((key) => !allowed.includes(key))
   )
-    throw new Error('INVALID_OPERATION: 操作包含未知字段或无效数据');
+    throw importError(
+      'INVALID_OPERATION',
+      'invalidOperationTheOperationContainsUnknownFieldsOr',
+      {},
+    );
 }
 
 export function assertImportString(
@@ -42,7 +48,9 @@ export function assertImportString(
   allowEmpty = false,
 ): asserts value is string {
   if (typeof value !== 'string' || (!allowEmpty && !value.trim()))
-    throw new Error(`INVALID_OPERATION: ${label}无效`);
+    throw importError('INVALID_OPERATION', 'invalidOperationInvalidDetail', {
+      value1: String(label),
+    });
 }
 
 function checkRef(ref: ImportContentRef): void {
@@ -53,7 +61,7 @@ function checkRef(ref: ImportContentRef): void {
       : ['kind', 'bookId', 'bookRevision', 'chapterId', 'paragraphId', 'excludeRanges'],
   );
   if (ref.kind !== 'extraction' && ref.kind !== 'existing')
-    throw new Error('INVALID_CONTENT_REF: 未知正文引用');
+    throw importError('INVALID_CONTENT_REF', 'invalidContentRefUnknownBodyReference', {});
 }
 
 export class ImportDraftValidator {
@@ -78,7 +86,7 @@ export class ImportDraftValidator {
     if (!resource) {
       resource = await this.lookup.resource(id);
       if (!resource || resource.taskId !== this.taskId)
-        throw new Error('SOURCE_SCOPE: 内容不属于当前任务');
+        throw importError('SOURCE_SCOPE', 'sourceScopeTheContentBelongsToAnotherTask', {});
       this.resources.set(id, resource);
     }
     return resource;
@@ -89,7 +97,7 @@ export class ImportDraftValidator {
     if (!source) {
       source = await this.lookup.source(id);
       if (!source || source.taskId !== this.taskId)
-        throw new Error('SOURCE_SCOPE: 来源不属于当前任务');
+        throw importError('SOURCE_SCOPE', 'sourceScopeTheSourceBelongsToAnotherTask', {});
       this.sources.set(id, source);
     }
     return source;
@@ -155,17 +163,17 @@ export class ImportDraftValidator {
   async batchSource(draft: ImportDraft, sourceId: string): Promise<ImportSource> {
     const source = await this.source(sourceId);
     if (source.removedAt !== undefined)
-      throw new Error('SOURCE_REMOVED: 批次来源已被用户移除，请先重新添加或单独整理保留的草稿');
+      throw importError('SOURCE_REMOVED', 'sourceRemovedTheUserRemovedABatchSource', {});
     const candidate = this.selected(draft);
     if (source.purpose === 'metadata-only')
-      throw new Error('METADATA_ONLY: 元信息来源不能作为正文');
+      throw importError('METADATA_ONLY', 'metadataOnlyMetadataSourcesCannotBeBodyText', {});
     if (source.status === 'excluded' || source.kind === 'directory')
-      throw new Error('SOURCE_SCOPE: 来源已排除或不是章节资源');
+      throw importError('SOURCE_SCOPE', 'sourceScopeTheSourceIsExcludedOrIs', {});
     if (candidate.content || !(await this.sourceGrant(candidate, source.id)))
-      throw new Error('SOURCE_SCOPE: 批次来源未完整归属所选小说');
+      throw importError('SOURCE_SCOPE', 'sourceScopeBatchSourcesAreNotFullyAssigned', {});
     for (const other of draft.novelScope.candidates) {
       if (other.id !== candidate.id && (await this.sourceGrant(other, source.id)))
-        throw new Error('SOURCE_SCOPE: 批次来源可能属于多个作品');
+        throw importError('SOURCE_SCOPE', 'sourceScopeBatchSourcesMayBelongToSeveral', {});
     }
     return source;
   }
@@ -175,11 +183,16 @@ export class ImportDraftValidator {
   ): Promise<{ resource: Extraction; source: ImportSource; segments: ImportContentSegment[] }> {
     const resource = await this.resource(ref.resourceId);
     if (resource.kind !== 'extraction')
-      throw new Error('INVALID_CONTENT_REF: 正文引用必须来自提取结果');
+      throw importError(
+        'INVALID_CONTENT_REF',
+        'invalidContentRefBodyReferencesMustUseExtractionResults',
+        {},
+      );
     const source = await this.source(resource.sourceId);
     if (source.purpose === 'metadata-only')
-      throw new Error('METADATA_ONLY: 元信息来源不能作为正文');
-    if (source.status === 'excluded') throw new Error('SOURCE_SCOPE: 来源已被排除');
+      throw importError('METADATA_ONLY', 'metadataOnlyMetadataSourcesCannotBeBodyText', {});
+    if (source.status === 'excluded')
+      throw importError('SOURCE_SCOPE', 'sourceScopeTheSourceIsExcluded', {});
     return { resource, source, segments: resolveImportSegments(resource, ref) };
   }
 
@@ -190,29 +203,47 @@ export class ImportDraftValidator {
       candidates.length > 50 ||
       new Set(candidates.map((candidate) => candidate.id)).size !== candidates.length
     )
-      throw new Error('INVALID_OPERATION: 小说候选不能为空、重复或超过 50 本');
+      throw importError(
+        'INVALID_OPERATION',
+        'invalidOperationNovelCandidatesMustBeNonemptyDistinct',
+        {},
+      );
     for (const candidate of candidates) {
       assertImportKeys(candidate, ['id', 'title', 'author', 'sourceIds', 'content']);
-      assertImportString(candidate.id, '候选 ID');
-      assertImportString(candidate.title, '候选标题');
-      if (candidate.title.length > 500) throw new Error('METADATA_LIMIT: 小说标题超过 500 字符');
-      if (candidate.author !== undefined) assertImportString(candidate.author, '作者', true);
+      assertImportString(candidate.id, 'candidate.id');
+      assertImportString(candidate.title, 'candidate.title');
+      if (candidate.title.length > 500)
+        throw importError('METADATA_LIMIT', 'metadataLimitNovelTitlesAreLimitedToCharacters', {});
+      if (candidate.author !== undefined)
+        assertImportString(candidate.author, 'candidate.author', true);
       if (
         !Array.isArray(candidate.sourceIds) ||
         candidate.sourceIds.some((id) => typeof id !== 'string')
       )
-        throw new Error('INVALID_OPERATION: 候选来源列表无效');
+        throw importError('INVALID_OPERATION', 'invalidOperationInvalidCandidateSourceList', {});
       for (const id of candidate.sourceIds) {
         if ((await this.source(id)).purpose === 'metadata-only')
-          throw new Error('METADATA_ONLY: 搜索结果不能授权正文');
+          throw importError(
+            'METADATA_ONLY',
+            'metadataOnlySearchResultsCannotAuthorizeNovelBody',
+            {},
+          );
       }
       if (candidate.content !== undefined) {
         if (!Array.isArray(candidate.content) || !candidate.content.length)
-          throw new Error('INVALID_OPERATION: 候选正文范围不能为空');
+          throw importError(
+            'INVALID_OPERATION',
+            'invalidOperationCandidateBodyRangesMustBeNonempty',
+            {},
+          );
         for (const ref of candidate.content) {
           checkRef(ref);
           if (ref.kind !== 'extraction' || ref.excludeRanges?.length)
-            throw new Error('SOURCE_SCOPE: 小说候选只能声明输入来源范围');
+            throw importError(
+              'SOURCE_SCOPE',
+              'sourceScopeNovelCandidatesCanOnlyDeclareAuthorized',
+              {},
+            );
           await this.extraction(ref);
         }
       }
@@ -227,7 +258,11 @@ export class ImportDraftValidator {
       !candidate ||
       (scope.requiresUserChoice && scope.confirmation?.scopeRevision !== scope.revision)
     )
-      throw new Error('NOVEL_CHOICE_REQUIRED: 请先确认本次处理的唯一小说');
+      throw importError(
+        'NOVEL_CHOICE_REQUIRED',
+        'novelChoiceRequiredConfirmTheSingleNovelForThis',
+        {},
+      );
     return candidate;
   }
 
@@ -236,17 +271,27 @@ export class ImportDraftValidator {
     ref: Extract<ImportContentRef, { kind: 'existing' }>,
   ): string {
     if (draft.target.kind !== 'existing' || draft.target.bookId !== ref.bookId)
-      throw new Error('TARGET_SCOPE: 既有段落不属于当前目标');
+      throw importError('TARGET_SCOPE', 'targetScopeTheExistingParagraphBelongsToAnother', {});
     const snapshot = this.books.get(ref.bookId);
-    if (snapshot?.kind !== 'loaded') throw new Error('BOOK_READ_FAILED: 无法读取目标小说');
-    if (snapshot.revision !== ref.bookRevision) throw new Error('BOOK_CHANGED: 目标小说快照已改变');
+    if (snapshot?.kind !== 'loaded')
+      throw importError('BOOK_READ_FAILED', 'bookReadFailedCannotReadTheTargetNovel', {});
+    if (snapshot.revision !== ref.bookRevision)
+      throw importError('BOOK_CHANGED', 'bookChangedTheTargetNovelSnapshotChanged', {});
     const chapter = snapshot.chapters[ref.chapterId];
-    if (chapter?.kind === 'failed') throw new Error(`BOOK_READ_FAILED: ${chapter.message}`);
+    if (chapter?.kind === 'failed')
+      throw importError('BOOK_READ_FAILED', 'bookReadFailedDetail', {
+        value1: readImportError(chapter),
+      });
     const paragraph =
       chapter?.kind === 'loaded'
         ? chapter.content.find((item) => item.id === ref.paragraphId)
         : undefined;
-    if (!paragraph) throw new Error('INVALID_CONTENT_REF: 既有段落不存在');
+    if (!paragraph)
+      throw importError(
+        'INVALID_CONTENT_REF',
+        'invalidContentRefTheExistingParagraphDoesNotExist',
+        {},
+      );
     return excludeImportText(paragraph.text, ref.excludeRanges);
   }
 
@@ -267,14 +312,15 @@ export class ImportDraftValidator {
       'status',
     ]);
     for (const key of ['id', 'volumeId', 'title'] as const) assertImportString(chapter[key], key);
-    if (chapter.title.length > 500) throw new Error('METADATA_LIMIT: 章节标题超过 500 字符');
+    if (chapter.title.length > 500)
+      throw importError('METADATA_LIMIT', 'metadataLimitChapterTitlesAreLimitedToCharacters', {});
     if (
       !draft.volumes.some((volume) => volume.id === chapter.volumeId) ||
       !Array.isArray(chapter.content) ||
       !Array.isArray(chapter.sourceIds) ||
       !['pending', 'ready', 'failed', 'missing'].includes(chapter.status)
     )
-      throw new Error('INVALID_OPERATION: 章节归属或内容无效');
+      throw importError('INVALID_OPERATION', 'invalidOperationInvalidChapterVolumeOrContent', {});
     const candidate = this.selected(draft);
     const ids = new Set<string>();
     let hasText = false;
@@ -291,10 +337,10 @@ export class ImportDraftValidator {
       const { resource, source, segments } = await this.extraction(ref);
       for (const segment of segments) {
         if (!(await this.grants(candidate, resource, segment)))
-          throw new Error('SOURCE_SCOPE: 该正文范围尚未归属所选小说');
+          throw importError('SOURCE_SCOPE', 'sourceScopeThisBodyRangeHasNotBeen', {});
         for (const other of draft.novelScope.candidates) {
           if (other.id !== candidate.id && (await this.grants(other, resource, segment)))
-            throw new Error('SOURCE_SCOPE: 正文同时归属多个小说，需要细化范围');
+            throw importError('SOURCE_SCOPE', 'sourceScopeTheBodyBelongsToSeveralNovels', {});
         }
       }
       const filteredText = resolveImportText(resource, ref);
@@ -315,7 +361,7 @@ export class ImportDraftValidator {
       }
     }
     if (chapter.status === 'ready' && !hasText)
-      throw new Error('EMPTY_CONTENT: 就绪章节必须有已提取正文');
+      throw importError('EMPTY_CONTENT', 'emptyContentReadyChaptersRequireExtractedBodyText', {});
     return {
       ...chapter,
       sourceIds: [...ids],

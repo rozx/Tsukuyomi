@@ -1,3 +1,4 @@
+import { localizeImportFeedback } from './import-error';
 import type { AppLocale } from 'src/models/locale';
 import type { MessageKey } from 'src/i18n/types';
 import { translateText } from 'src/i18n/translate';
@@ -56,7 +57,9 @@ export async function importAgentPrompt(
     translateText(uiLocale, 'aiImportPrompt.intro'),
     translateText(uiLocale, 'aiImportPrompt.workflow') + '\n' + rules,
     summary ? translateText(uiLocale, 'aiImportPrompt.summary', { summary }) : '',
-    translateText(uiLocale, 'aiImportPrompt.snapshot', { state: JSON.stringify(state) }),
+    translateText(uiLocale, 'aiImportPrompt.snapshot', {
+      state: JSON.stringify(localizeImportFeedback(state, uiLocale)),
+    }),
   ]
     .filter(Boolean)
     .join('\n\n');

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
@@ -10,14 +13,12 @@ const ctx = injectIndexPage();
 
 // 列表状态显隐：吸收模板内的 && / || / 比较
 const hasRecent = computed(() => ctx.recentBooks.value.length > 0);
-const isEmptyState = computed(
-  () => ctx.booksStore.isLoaded && ctx.booksStore.books.length === 0,
-);
+const isEmptyState = computed(() => ctx.booksStore.isLoaded && ctx.booksStore.books.length === 0);
 const isLoadingState = computed(() => ctx.booksStore.isLoading || !ctx.booksStore.isLoaded);
 const greetingSub = computed(() =>
   ctx.continueReadingBook.value
-    ? `上次停在《${ctx.continueReadingBook.value.title}》。`
-    : '开启今晚的翻译旅程吧。',
+    ? i18nT('libraryUi.lastBook', { title: ctx.continueReadingBook.value.title })
+    : i18nT('libraryUi.startTonight'),
 );
 </script>
 
@@ -35,8 +36,8 @@ const greetingSub = computed(() =>
     <!-- 问候语 -->
     <section class="mh-greeting">
       <h1 class="mh-greeting-title">
-        {{ ctx.greeting.value }}，<br />
-        <span class="mh-greeting-name">欢迎回来</span>。
+        {{ ctx.greeting.value }}<br />
+        <span class="mh-greeting-name">{{ i18nT('libraryUi.welcome') }}</span>
       </h1>
       <p class="mh-greeting-sub">
         {{ greetingSub }}
@@ -59,15 +60,23 @@ const greetingSub = computed(() =>
           <div class="mh-cta-cover-overlay" />
         </div>
         <div class="mh-cta-body">
-          <div class="mh-cta-kicker">继续翻译</div>
+          <div class="mh-cta-kicker">{{ i18nT('libraryUi.continueTranslation') }}</div>
           <div class="mh-cta-title">{{ ctx.continueReadingBook.value.title }}</div>
           <div v-if="ctx.continueReadingBook.value.author" class="mh-cta-author">
             {{ ctx.continueReadingBook.value.author }}
           </div>
           <div class="mh-cta-meta">
-            <span>{{ ctx.getTotalChapters(ctx.continueReadingBook.value) }} 章</span>
+            <span>{{
+              i18nT('libraryUi.chapterCount', {
+                count: ctx.getTotalChapters(ctx.continueReadingBook.value),
+              })
+            }}</span>
             <span class="mh-dot">·</span>
-            <span>更新于 {{ ctx.formatDate(ctx.continueReadingBook.value.lastEdited) }}</span>
+            <span>{{
+              i18nT('libraryUi.updatedAt', {
+                date: ctx.formatDate(ctx.continueReadingBook.value.lastEdited),
+              })
+            }}</span>
           </div>
         </div>
         <i class="pi pi-arrow-right mh-cta-arrow" aria-hidden="true" />
@@ -79,28 +88,28 @@ const greetingSub = computed(() =>
       <div class="mh-stats-grid">
         <div class="mh-stat-card">
           <div class="mh-stat-head">
-            <span class="mh-stat-label">书籍</span>
+            <span class="mh-stat-label">{{ i18nT('libraryUi.books') }}</span>
             <i class="pi pi-book mh-stat-icon mh-stat-icon--tsukuyomi" />
           </div>
           <div class="mh-stat-value">{{ ctx.totalBooks.value }}</div>
         </div>
         <div class="mh-stat-card">
           <div class="mh-stat-head">
-            <span class="mh-stat-label">章节</span>
+            <span class="mh-stat-label">{{ i18nT('libraryUi.chapters') }}</span>
             <i class="pi pi-list mh-stat-icon mh-stat-icon--green" />
           </div>
           <div class="mh-stat-value">{{ ctx.totalChapters.value }}</div>
         </div>
         <div class="mh-stat-card">
           <div class="mh-stat-head">
-            <span class="mh-stat-label">字数</span>
+            <span class="mh-stat-label">{{ i18nT('libraryUi.characters') }}</span>
             <i class="pi pi-file-edit mh-stat-icon mh-stat-icon--moon" />
           </div>
           <div class="mh-stat-value">{{ ctx.formatWordCount(ctx.totalWords.value) }}</div>
         </div>
         <div class="mh-stat-card">
           <div class="mh-stat-head">
-            <span class="mh-stat-label">收藏</span>
+            <span class="mh-stat-label">{{ i18nT('libraryUi.favorites') }}</span>
             <i class="pi pi-star-fill mh-stat-icon mh-stat-icon--warning" />
           </div>
           <div class="mh-stat-value">{{ ctx.starredBooks.value }}</div>
@@ -111,9 +120,9 @@ const greetingSub = computed(() =>
     <!-- 最近编辑 -->
     <section v-if="hasRecent" class="mh-section">
       <header class="mh-section-head">
-        <span class="mh-section-title">最近编辑</span>
+        <span class="mh-section-title">{{ i18nT('libraryUi.recentlyEdited') }}</span>
         <button class="mh-section-link" @click="ctx.navigateToBooks">
-          查看全部 <i class="pi pi-arrow-right" aria-hidden="true" />
+          {{ i18nT('libraryUi.viewAll') }} <i class="pi pi-arrow-right" aria-hidden="true" />
         </button>
       </header>
       <div class="mh-recent-grid">
@@ -133,7 +142,11 @@ const greetingSub = computed(() =>
             <Skeleton width="36px" height="10px" />
           </div>
           <div v-else class="mh-recent-meta">
-            {{ ctx.formatWordCount(ctx.getTotalWords(book)) }} 字
+            {{
+              i18nT('libraryUi.characterCount', {
+                count: ctx.formatWordCount(ctx.getTotalWords(book)),
+              })
+            }}
           </div>
         </div>
       </div>
@@ -142,17 +155,17 @@ const greetingSub = computed(() =>
     <!-- 快速操作 -->
     <section class="mh-section mh-section--last">
       <header class="mh-section-head">
-        <span class="mh-section-title">快速操作</span>
+        <span class="mh-section-title">{{ i18nT('libraryUi.quickActions') }}</span>
       </header>
       <div class="mh-actions-grid">
         <Button
-          label="添加书籍"
+          :label="i18nT('libraryUi.addBook')"
           icon="pi pi-plus"
           class="p-button-primary mh-action-btn"
           @click="ctx.addBook"
         />
         <Button
-          label="从网站导入"
+          :label="i18nT('libraryUi.importWeb')"
           icon="pi pi-globe"
           class="p-button-outlined mh-action-btn"
           @click="ctx.importBookFromWeb"
@@ -161,27 +174,21 @@ const greetingSub = computed(() =>
     </section>
 
     <!-- 空状态 -->
-    <div
-      v-if="isEmptyState"
-      class="mh-empty"
-    >
+    <div v-if="isEmptyState" class="mh-empty">
       <i class="pi pi-book mh-empty-icon" aria-hidden="true" />
-      <div class="mh-empty-title">还没有书籍</div>
-      <div class="mh-empty-sub">开始添加您的第一本书籍吧</div>
+      <div class="mh-empty-title">{{ i18nT('libraryUi.noBooksShort') }}</div>
+      <div class="mh-empty-sub">{{ i18nT('libraryUi.firstBookHint') }}</div>
     </div>
 
     <!-- 加载状态 -->
-    <div
-      v-else-if="isLoadingState"
-      class="mh-loading"
-    >
+    <div v-else-if="isLoadingState" class="mh-loading">
       <ProgressSpinner
         style="width: 36px; height: 36px"
         stroke-width="4"
         animation-duration=".8s"
-        aria-label="加载中"
+        :aria-label="i18nT('libraryUi.loading')"
       />
-      <span>正在加载数据…</span>
+      <span>{{ i18nT('libraryUi.loadingData') }}</span>
     </div>
   </div>
 </template>
@@ -189,7 +196,11 @@ const greetingSub = computed(() =>
 <style scoped>
 .mobile-home {
   padding: 12px 0 32px;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 .mh-brandbar {

@@ -1,3 +1,12 @@
+import {
+  importCancelled,
+  localizeImportFeedback,
+  serializeImportError,
+  importError,
+} from './import-error';
+import type { AppLocale } from 'src/models/locale';
+import { LocalizedError } from 'src/utils/localized-error';
+
 import { ImportTextStructureService } from './import-text-structure';
 import type { ImportStructureInput } from 'src/models/import-text-structure';
 import { filterImportSourceIds } from './import-source-filter';
@@ -55,15 +64,16 @@ export function importCheckpoint(checkpoint: AssistantExecutionCheckpoint): Impo
 function parseArguments(call: AIToolCall, exposed: Set<string>): Record<string, unknown> {
   const tool = importTools.find((entry) => entry.function.name === call.function.name);
   if (!tool || !exposed.has(call.function.name))
-    throw new Error('TOOL_NOT_ALLOWED: 工具未在本次导入执行中提供');
+    throw importError('TOOL_NOT_ALLOWED', 'toolNotAllowedTheToolWasNotExposedIn', {});
   if (call.function.arguments.length > 128000)
-    throw new Error('ARGUMENT_LIMIT: 请缩小本次操作范围');
+    throw importError('ARGUMENT_LIMIT', 'argumentLimitReduceTheOperationScope', {});
   const args: unknown = JSON.parse(call.function.arguments);
   validateImportToolArguments({ ...tool.function.parameters, type: 'object' }, args);
   return args as Record<string, unknown>;
 }
 function extractionInputs(args: Record<string, unknown>) {
-  if (!Array.isArray(args.sources)) throw new Error('INVALID_ARGUMENTS: sources 必须是数组');
+  if (!Array.isArray(args.sources))
+    throw importError('INVALID_ARGUMENTS', 'invalidArgumentsSourcesMustBeAnArray', {});
   return args.sources.map((value: unknown) => {
     assertImportKeys(value, ['source_id', 'snapshot_id', 'rules']);
     if (value.rules !== undefined)
@@ -105,25 +115,31 @@ export class ImportToolExecutor {
     private readonly extraction = new ImportExtractionService(),
     toolNames = importTools.map((tool) => tool.function.name),
     private readonly onProgress?: () => void,
+    private readonly uiLocale?: AppLocale,
   ) {
     this.exposed = new Set(toolNames);
   }
 
   async execute(call: AIToolCall, options: ExecutionOptions): Promise<Outcome> {
     const task = await ImportRepository.getTask(this.run.taskId);
-    if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+    if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
     checkImportRun(task, this.run);
-    if (options.signal?.aborted)
-      throw options.signal.reason ?? new DOMException('已取消', 'AbortError');
+    const uiLocale = this.uiLocale ?? task.checkpoint?.uiLocale ?? 'zh-CN';
+    if (options.signal?.aborted) throw options.signal.reason ?? importCancelled('cancelled');
     const reply = (data: unknown): AIToolCallResult => ({
       role: 'tool',
       tool_call_id: call.id,
       name: call.function.name,
-      content: JSON.stringify(data),
+      content: JSON.stringify(localizeImportFeedback(data, uiLocale)),
     });
     const finish = (data: unknown) => ({
       events: [
-        { kind: 'tool-result' as const, callId: call.id, toolName: call.function.name, data },
+        {
+          kind: 'tool-result' as const,
+          callId: call.id,
+          toolName: call.function.name,
+          data: localizeImportFeedback(data, uiLocale),
+        },
       ],
       checkpoint: importCheckpoint(options.afterResult(reply(data))),
     });
@@ -138,18 +154,27 @@ export class ImportToolExecutor {
         data = await ImportQuestionService.ask(this.run, call.id, call.function.name, args, finish);
         // 问题已保存但尚未回答：让出运行，调用保留在检查点中等待恢复
         if (data === undefined) return { pause: 'waiting_user' };
-      } else data = await this.dispatch(call.function.name, args, options, save, finish, call.id);
+      } else
+        data = await this.dispatch(
+          call.function.name,
+          args,
+          options,
+          save,
+          finish,
+          call.id,
+          uiLocale,
+        );
     } catch (error) {
       if (
         options.signal?.aborted ||
         !(error instanceof Error) ||
-        !/^[A-Z_]+:/.test(error.message) ||
+        (!(error instanceof LocalizedError) && !/^[A-Z_]+:/.test(error.message)) ||
         error.message.startsWith('RUN_STALE')
       )
         throw error;
       data = await save({
         success: false,
-        error: { code: error.message.split(':', 1)[0], message: error.message },
+        error: serializeImportError(error, 'IMPORT_FAILED', uiLocale),
       });
     }
     const after = await ImportRepository.getTask(this.run.taskId);
@@ -167,6 +192,7 @@ export class ImportToolExecutor {
     save: (data: unknown, step?: SavedStep) => Promise<unknown>,
     finish: (data: unknown) => { events: NewEvent[]; checkpoint: ImportCheckpoint },
     callId: string,
+    uiLocale: AppLocale,
   ): Promise<unknown> {
     const taskId = this.run.taskId;
     switch (name) {
@@ -176,6 +202,7 @@ export class ImportToolExecutor {
           args as unknown as ImportStructureInput,
           finish,
           options.signal,
+          uiLocale,
         );
       case 'apply_text_structure':
         return new ImportTextStructureService().apply(
@@ -348,7 +375,7 @@ export class ImportToolExecutor {
             (task) => Promise.resolve(applyImportTodoTool(task, name, args)),
             { run: this.run, finish },
           );
-        const read = await readImportTool(this.run, name, args);
+        const read = await readImportTool(this.run, name, args, uiLocale);
         return save({ success: true, ...(read as Record<string, unknown>) });
       }
     }

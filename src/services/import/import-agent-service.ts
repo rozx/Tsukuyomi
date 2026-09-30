@@ -1,3 +1,4 @@
+import { importErrorText } from './import-error';
 import { translateText } from 'src/i18n/translate';
 import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import type { AIModel } from 'src/services/ai/types/ai-model';
@@ -381,12 +382,18 @@ export class ImportAgentService {
     languages: ExecutionLanguages,
   ): AssistantExecution {
     let lastProgressAt = -Infinity;
-    const executor = new ImportToolExecutor(run, undefined, undefined, () => {
-      // 来源列表刷新有实际开销；逐章持久化，界面最多每 250ms 刷新，最终结果由检查点立即通知。
-      if (Date.now() - lastProgressAt < 250) return;
-      lastProgressAt = Date.now();
-      notify(taskId);
-    });
+    const executor = new ImportToolExecutor(
+      run,
+      undefined,
+      undefined,
+      () => {
+        // 来源列表刷新有实际开销；逐章持久化，界面最多每 250ms 刷新，最终结果由检查点立即通知。
+        if (Date.now() - lastProgressAt < 250) return;
+        lastProgressAt = Date.now();
+        notify(taskId);
+      },
+      languages.uiLocale,
+    );
     const resume = restoredCheckpoint(task);
     return new AssistantExecution({
       languages,
@@ -416,11 +423,12 @@ export class ImportAgentService {
     error: unknown,
     uiLocale: AppLocale,
   ): Promise<void> {
-    const raw = error instanceof Error ? error.message : String(error);
+    const raw = importErrorText(error, uiLocale);
     const message = conciseErrorText(
       model.apiKey
         ? raw.replaceAll(model.apiKey, translateText(uiLocale, 'aiImportPrompt.credentialsHidden'))
         : raw,
+      uiLocale,
     );
     await ImportRepository.mutateTask(taskId, (current) => {
       assertImportOwner(current, run);

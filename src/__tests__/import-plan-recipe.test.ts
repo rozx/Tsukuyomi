@@ -1,3 +1,5 @@
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import { afterEach, describe, expect, it } from 'vitest';
 import './setup';
 import { createApp, h } from 'vue';
@@ -28,7 +30,10 @@ function render(recipeChange?: ImportPlan['recipeChange']): HTMLElement {
   app = createApp({
     setup: () => () => h(ImportPlanRecipe, { plan: { recipeChange } as unknown as ImportPlan }),
   });
-  app.use(PrimeVue).mount(host);
+  app
+    .use(PrimeVue)
+    .use(createI18n({ legacy: false, locale: 'zh-CN', messages }))
+    .mount(host);
   return host;
 }
 const text = (host: HTMLElement, id: string) =>
