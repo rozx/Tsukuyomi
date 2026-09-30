@@ -1,6 +1,6 @@
 <template>
   <div v-if="suggestedAnswers.length > 0" class="suggested">
-    <div class="label">推荐答案</div>
+    <div class="label">{{ t('appUi.askUser.suggested') }}</div>
     <div class="buttons">
       <Button
         v-for="(ans, idx) in suggestedAnswers"
@@ -25,6 +25,9 @@
 
 <script setup lang="ts">
 import Button from 'primevue/button';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 defineProps<{
   suggestedAnswers: string[];

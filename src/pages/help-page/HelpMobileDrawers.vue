@@ -33,7 +33,7 @@ const tocItemClass = (item: TocItem) => [
   <MobileBottomSheet
     v-model:visible="ctx.showDocumentNavDrawer.value"
     :title="t('helpUi.documents')"
-    eyebrow="HELP · DOCS"
+    :eyebrow="t('appUi.eyebrow.helpDocs')"
     max-height="86dvh"
   >
     <nav class="space-y-1">
@@ -72,7 +72,7 @@ const tocItemClass = (item: TocItem) => [
     v-if="hasToc"
     v-model:visible="ctx.showTocDrawer.value"
     :title="t('helpUi.toc')"
-    eyebrow="TABLE OF CONTENTS"
+    :eyebrow="t('appUi.eyebrow.toc')"
     max-height="82dvh"
   >
     <nav class="space-y-1">

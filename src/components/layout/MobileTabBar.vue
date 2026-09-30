@@ -55,6 +55,7 @@ const { dispatch: onTabClick } = useMainNavDispatch();
 
 .tab {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -81,6 +82,14 @@ const { dispatch: onTabClick } = useMainNavDispatch();
   transition:
     color 150ms cubic-bezier(0.4, 0, 0.2, 1),
     text-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 英文等较长标签不换行，超出时省略，避免五个标签挤压成两行 */
+.tab span {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .tab:active {
