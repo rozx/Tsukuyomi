@@ -2,7 +2,10 @@ import { ref, type Ref } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import type { ChatSessionMessage } from 'src/stores/chat-sessions';
 import type { useChatSessionsStore } from 'src/stores/chat-sessions';
-import { SUMMARIZING_MESSAGE_CONTENT } from 'src/composables/chat/constants';
+import {
+  SUMMARIZED_BUBBLE_CONTENT,
+  SUMMARIZING_MESSAGE_CONTENT,
+} from 'src/composables/chat/constants';
 
 export function useInternalSummarization(
   messages: Ref<ChatSessionMessage[]>,
@@ -68,7 +71,7 @@ export function useInternalSummarization(
         if (existingMsg) {
           messages.value[summarizationMsgIndex] = {
             ...existingMsg,
-            content: '📝 已完成对话总结',
+            content: SUMMARIZED_BUBBLE_CONTENT,
           };
         }
       }

@@ -10,6 +10,7 @@ import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import * as BooksStore from 'src/stores/books';
 import * as useToastHistory from '../composables/useToastHistory';
+import { useSettingsStore } from '../stores/settings';
 
 const mockToastAdd = mock(() => {});
 const mockToastRemove = mock(() => {});
@@ -216,6 +217,7 @@ describe('useActionInfoToast', () => {
       lastEdited: new Date(),
       createdAt: new Date(),
     };
+    useSettingsStore().settings.uiLocale = 'zh-CN';
   });
 
   afterEach(() => {
@@ -271,6 +273,45 @@ describe('useActionInfoToast', () => {
     expect(callArgs).toBeDefined();
     expect(callArgs.summary).toBe('已更新角色');
     expect(callArgs.detail).toContain('角色 "测试角色"');
+  });
+
+  it('英文界面的 toast 固定文字为英文，用户名称原样保留', () => {
+    useSettingsStore().settings.uiLocale = 'en-US';
+    const { handleActionInfoToast } = useActionInfoToast(ref<Novel | undefined>(mockBook));
+    handleActionInfoToast({ entity: 'term', type: 'delete', data: { id: 't', name: '测试术语' } });
+    const callArgs = (mockToastAdd.mock.calls as unknown as Array<[any]>)[0]![0];
+    expect(callArgs.summary).toBe('Deleted term');
+    expect(callArgs.detail).toBe('Deleted term “测试术语”');
+  });
+
+  it('有执行快照时使用快照的界面语言与目标语言译名', () => {
+    const { handleActionInfoToast } = useActionInfoToast(ref<Novel | undefined>(mockBook));
+    const revision = { counter: 1, actorId: 'a' };
+    handleActionInfoToast({
+      entity: 'term',
+      type: 'create',
+      data: {
+        id: 't',
+        name: 'ゆうしゃ',
+        translation: { id: 'z', translation: '勇者', aiModelId: 'm' },
+        translationsByLanguage: {
+          'zh-CN': {
+            value: { id: 'z', translation: '勇者', aiModelId: 'm' },
+            revision,
+            updatedAt: 1,
+          },
+          'zh-TW': {
+            value: { id: 'w', translation: '勇者大人', aiModelId: 'm' },
+            revision,
+            updatedAt: 1,
+          },
+        },
+      } as Terminology,
+      execution: { bookId: 'book-1', languages: { uiLocale: 'zh-TW', targetLanguage: 'zh-TW' } },
+    });
+    const callArgs = (mockToastAdd.mock.calls as unknown as Array<[any]>)[0]![0];
+    expect(callArgs.summary).toBe('已建立術語');
+    expect(callArgs.detail).toBe('術語 "ゆうしゃ"，翻譯: "勇者大人"');
   });
 
   it('应该显示删除术语的 toast', () => {

@@ -7,6 +7,11 @@ import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { Terminology, CharacterSetting, Novel } from 'src/models/novel';
 import type { Ref } from 'vue';
 import { v4 } from 'uuid';
+import type { AppLocale } from 'src/models/locale';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+import { entityTypeLabel } from 'src/utils/action-info-utils';
+import { entityNameTranslation } from 'src/utils/action-info/named-entity-details';
 
 /**
  * 统计唯一的操作数量（按实体类型分组）
@@ -92,41 +97,53 @@ function shouldSkipActionToast(action: ActionInfo): boolean {
   return false;
 }
 
+interface ToastLanguages {
+  /** toast 文字语言（执行快照的界面语言，缺省为当前界面语言） */
+  locale: AppLocale;
+  /** 读取术语/角色译名的目标语言 */
+  language: AppLocale;
+}
+
 function buildDeleteToastMessages(
   action: ToastableAction,
-  entityLabel: string,
+  { locale }: ToastLanguages,
 ): { summary: string; detail: string } {
   const deleteData = action.data as { id: string; name?: string };
-  const name = deleteData.name || '未知';
+  const entity = entityTypeLabel(locale, action.entity);
+  const name = deleteData.name || translateText(locale, 'activityUi.toast.unknown');
   return {
-    summary: `已删除${entityLabel}`,
-    detail: `${entityLabel} "${name}" 已被删除`,
+    summary: translateText(locale, 'activityUi.toast.deletedSummary', { entity }),
+    detail: translateText(locale, 'activityUi.toast.deletedDetail', { entity, name }),
   };
 }
 
 function buildUpsertToastMessages(
-  action: ToastableAction,
-  entityLabel: string,
-  typeLabel: string,
+  action: ToastableAction & { type: 'create' | 'update' },
+  { locale, language }: ToastLanguages,
 ): { summary: string; detail: string } {
   const data = action.data as Terminology | CharacterSetting;
-  const name = data.name || '未知';
-  const parts: string[] = [`${entityLabel} "${name}"`];
-  const translation = data.translation?.translation;
+  const entity = entityTypeLabel(locale, action.entity);
+  const name = data.name || translateText(locale, 'activityUi.toast.unknown');
+  const parts: string[] = [translateText(locale, 'activityUi.toast.entityName', { entity, name })];
+  const translation = entityNameTranslation(data, language);
   if (translation) {
-    parts.push(`翻译: "${translation}"`);
+    parts.push(translateText(locale, 'activityUi.toast.translationPart', { text: translation }));
   }
   return {
-    summary: `已${typeLabel}${entityLabel}`,
-    detail: parts.join('，'),
+    summary: translateText(locale, `activityUi.toast.upsertSummary.${action.type}`, { entity }),
+    detail: parts.join(translateText(locale, 'activityUi.toast.partSeparator')),
   };
 }
 
-function buildActionToastMessages(action: ToastableAction): { summary: string; detail: string } {
-  const entityLabel = action.entity === 'term' ? '术语' : '角色';
-  if (action.type === 'delete') return buildDeleteToastMessages(action, entityLabel);
-  const typeLabel = action.type === 'create' ? '创建' : '更新';
-  return buildUpsertToastMessages(action, entityLabel, typeLabel);
+function buildActionToastMessages(
+  action: ToastableAction,
+  languages: ToastLanguages,
+): { summary: string; detail: string } {
+  if (action.type === 'delete') return buildDeleteToastMessages(action, languages);
+  return buildUpsertToastMessages(
+    action as ToastableAction & { type: 'create' | 'update' },
+    languages,
+  );
 }
 
 /**
@@ -141,6 +158,13 @@ function buildActionToastMessages(action: ToastableAction): { summary: string; d
 export function useActionInfoToast(book: Ref<Novel | undefined>) {
   const toast = useToastWithHistory();
   const booksStore = useBooksStore();
+  const settingsStore = useSettingsStore();
+
+  // toast 写入历史后是自由文本：按执行快照的界面语言生成，之后不随语言切换重译
+  const toastLanguages = (action: ActionInfo): ToastLanguages => ({
+    locale: action.execution?.languages.uiLocale ?? settingsStore.uiLocale,
+    language: action.execution?.languages.targetLanguage ?? book.value?.targetLanguage ?? 'zh-CN',
+  });
 
   const buildRevertHandler = (action: ToastableAction) => {
     const bookId = action.execution?.bookId ?? book.value?.id;
@@ -167,7 +191,7 @@ export function useActionInfoToast(book: Ref<Novel | undefined>) {
     const toastable = action as ToastableAction;
 
     const { severity = 'info', life = 3000, withRevert = false } = options;
-    const { summary, detail } = buildActionToastMessages(toastable);
+    const { summary, detail } = buildActionToastMessages(toastable, toastLanguages(action));
     const onRevert = withRevert ? buildRevertHandler(toastable) : undefined;
 
     toast.add({

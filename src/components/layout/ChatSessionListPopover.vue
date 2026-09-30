@@ -6,6 +6,9 @@
  * sessionListPopoverRef 的既有调用（parent 拿 template ref 后直接调方法）。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { AppLocale } from 'src/models/locale';
+import { sessionDisplayTitle } from 'src/constants/chat';
 import Popover from 'primevue/popover';
 import MobileBottomSheet from './MobileBottomSheet.vue';
 import { usePopoverBottomSheet } from 'src/composables/layout/usePopoverBottomSheet';
@@ -27,6 +30,11 @@ const emit = defineEmits<{
 
 const { isPhone, popoverRef, mobileVisible, onMobileVisibleChange, toggle, hide } =
   usePopoverBottomSheet(() => emit('hide'));
+const { t, locale } = useI18n();
+
+// 默认会话标题是存储哨兵，按当前界面语言显示；用户消息生成的标题原样显示
+const displayTitle = (title: string): string =>
+  sessionDisplayTitle(title, locale.value as AppLocale);
 
 const formatSessionTime = (timestamp: number): string => {
   const now = Date.now();
@@ -35,12 +43,12 @@ const formatSessionTime = (timestamp: number): string => {
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
 
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  if (hours < 24) return `${hours}小时前`;
-  if (days < 7) return `${days}天前`;
+  if (minutes < 1) return t('activityUi.chat.justNow');
+  if (minutes < 60) return t('activityUi.chat.minutesAgo', { count: minutes });
+  if (hours < 24) return t('activityUi.chat.hoursAgo', { count: hours });
+  if (days < 7) return t('activityUi.chat.daysAgo', { count: days });
 
-  return new Date(timestamp).toLocaleDateString('zh-CN', {
+  return new Date(timestamp).toLocaleDateString(locale.value, {
     month: 'short',
     day: 'numeric',
   });
@@ -71,7 +79,7 @@ defineExpose({ toggle, hide });
   >
     <div class="session-list-popover-content">
       <div class="popover-header">
-        <span class="popover-title">最近会话</span>
+        <span class="popover-title">{{ t('activityUi.chat.recentSessions') }}</span>
         <span
           v-if="sessionCount > 0"
           class="px-1.5 py-0.5 text-xs font-medium rounded bg-primary-500/30 text-primary-200"
@@ -80,7 +88,7 @@ defineExpose({ toggle, hide });
         </span>
       </div>
       <div v-if="sessionCount === 0" class="px-4 py-3 text-xs text-moon-60 text-center">
-        暂无其他会话
+        {{ t('activityUi.chat.noOtherSessions') }}
       </div>
       <div v-else class="popover-sessions-list">
         <button
@@ -91,15 +99,17 @@ defineExpose({ toggle, hide });
           @click="onSelect(session.id)"
         >
           <div class="session-item-header">
-            <span class="session-item-title" :title="session.title">
-              {{ session.title }}
+            <span class="session-item-title" :title="displayTitle(session.title)">
+              {{ displayTitle(session.title) }}
             </span>
             <span class="session-item-time">
               {{ formatSessionTime(session.updatedAt) }}
             </span>
           </div>
           <div v-if="session.messages.length > 0" class="session-item-meta">
-            <span class="text-xs text-moon-60">{{ session.messages.length }} 条消息</span>
+            <span class="text-xs text-moon-60">{{
+              t('activityUi.chat.messageCount', { count: session.messages.length })
+            }}</span>
           </div>
         </button>
       </div>
@@ -110,13 +120,13 @@ defineExpose({ toggle, hide });
   <MobileBottomSheet
     v-else
     :visible="mobileVisible"
-    title="最近会话"
+    :title="t('activityUi.chat.recentSessions')"
     eyebrow="CHAT · SESSIONS"
     max-height="82dvh"
     @update:visible="onMobileVisibleChange"
   >
     <div v-if="sessionCount === 0" class="px-4 py-8 text-sm text-moon-60 text-center">
-      暂无其他会话
+      {{ t('activityUi.chat.noOtherSessions') }}
     </div>
     <div v-else class="popover-sessions-list">
       <button
@@ -127,15 +137,17 @@ defineExpose({ toggle, hide });
         @click="onSelect(session.id)"
       >
         <div class="session-item-header">
-          <span class="session-item-title" :title="session.title">
-            {{ session.title }}
+          <span class="session-item-title" :title="displayTitle(session.title)">
+            {{ displayTitle(session.title) }}
           </span>
           <span class="session-item-time">
             {{ formatSessionTime(session.updatedAt) }}
           </span>
         </div>
         <div v-if="session.messages.length > 0" class="session-item-meta">
-          <span class="text-xs text-moon-60">{{ session.messages.length }} 条消息</span>
+          <span class="text-xs text-moon-60">{{
+            t('activityUi.chat.messageCount', { count: session.messages.length })
+          }}</span>
         </div>
       </button>
     </div>

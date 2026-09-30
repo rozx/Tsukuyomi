@@ -3,6 +3,8 @@ import type { AppLocale } from 'src/models/locale';
 import type { ChatMessage, AIToolCall } from 'src/services/ai/types/ai-service';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { v4 as uuidv4 } from 'uuid';
+import { DEFAULT_SESSION_TITLE } from 'src/constants/chat';
+import { LocalizedError } from 'src/utils/localized-error';
 
 const STORAGE_KEY = 'tsukuyomi-chat-sessions';
 const CURRENT_SESSION_ID_KEY = 'tsukuyomi-chat-current-session-id';
@@ -252,9 +254,9 @@ function generateSessionTitle(messages: ChatSessionMessage[]): string {
   const firstUserMessage = messages.find((msg) => msg.role === 'user');
   if (firstUserMessage) {
     const title = firstUserMessage.content.trim().substring(0, 30);
-    return title || '新会话';
+    return title || DEFAULT_SESSION_TITLE;
   }
-  return '新会话';
+  return DEFAULT_SESSION_TITLE;
 }
 
 /**
@@ -314,7 +316,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
       const now = Date.now();
       const newSession: ChatSession = {
         id: sessionId,
-        title: '新会话',
+        title: DEFAULT_SESSION_TITLE,
         messages: [],
         context,
         createdAt: now,
@@ -350,7 +352,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         session.updatedAt = Date.now();
 
         // 如果消息列表不为空且标题还是"新会话"，生成新标题
-        if (messages.length > 0 && session.title === '新会话') {
+        if (messages.length > 0 && session.title === DEFAULT_SESSION_TITLE) {
           session.title = generateSessionTitle(messages);
         }
 
@@ -370,7 +372,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         session.updatedAt = Date.now();
 
         // 如果这是第一条用户消息，生成标题
-        if (session.title === '新会话' && message.role === 'user') {
+        if (session.title === DEFAULT_SESSION_TITLE && message.role === 'user') {
           session.title = generateSessionTitle(session.messages);
         }
 
@@ -413,7 +415,7 @@ export const useChatSessionsStore = defineStore('chatSessions', {
       const session = this.sessions.find((s) => s.id === this.currentSessionId);
       if (session) {
         session.messages = [];
-        session.title = '新会话';
+        session.title = DEFAULT_SESSION_TITLE;
         delete session.summary;
         delete session.contextAnchor;
         delete session.apiMessageHistory;
@@ -458,9 +460,11 @@ export const useChatSessionsStore = defineStore('chatSessions', {
         localStorage.setItem(STORAGE_KEY, serialized);
         this.sessions = JSON.parse(serialized) as ChatSession[];
       } catch (error) {
-        throw new Error('保存会话上下文失败，原有摘要与历史已保留。请检查浏览器存储空间。', {
-          cause: error,
-        });
+        // 自有错误携带 key，显示处按界面语言渲染；原始存储异常保留为 cause
+        throw Object.assign(
+          new LocalizedError('CHAT_CONTEXT_SAVE_FAILED', 'activityUi.chat.saveContextFailed'),
+          { cause: error },
+        );
       }
     },
   },

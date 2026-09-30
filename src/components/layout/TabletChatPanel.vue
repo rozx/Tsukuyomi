@@ -8,6 +8,7 @@
  * 内部状态完全来自 useRightPanel，与 AppRightPanelDesktop 共享 composable；
  * 这里只换一层 chrome、不 duplicate 任何消息/输入逻辑。
  */
+import { useI18n } from 'vue-i18n';
 import ChatActionPopovers from 'src/components/layout/ChatActionPopovers.vue';
 import ChatSendButton from 'src/components/layout/ChatSendButton.vue';
 import ChatSessionListPopover from 'src/components/layout/ChatSessionListPopover.vue';
@@ -22,6 +23,7 @@ const ui = useUiStore();
 // useRightPanel 解构 + bindXxxRef 样板已抽到 useChatPanelSetup，Mobile 变体也走同一份 helper。
 // 保留整个 panel 对象传给 useChatPanelBindings，避免逐字段重复实参；模板用到的字段才解构。
 const panel = useChatPanelSetup();
+const { t } = useI18n();
 const {
   chatSessionsStore,
   panelContainerRef,
@@ -42,22 +44,19 @@ const close = () => ui.closeRightPanel();
 // 发送状态 / 浮层绑定 / 消息列表绑定一次性产出（与 Desktop / Mobile 同构，差异仅前缀与 placeholder）。
 const { composer, actionPopoverBindings, messageListBindings } = useChatPanelBindings(panel, {
   sendClassPrefix: 'tcp-send',
-  readyPlaceholder: '请月詠相助…',
+  readyPlaceholderKey: 'activityUi.chat.placeholder',
 });
 const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSendClick } = composer;
 </script>
 
 <template>
-  <aside ref="panelContainerRef" class="tcp-shell" aria-label="月詠 AI 助手">
+  <aside ref="panelContainerRef" class="tcp-shell" :aria-label="t('activityUi.chat.assistantAria')">
     <header class="tcp-appbar">
       <AssistantAvatar :size="28" class="tcp-appbar-avatar" />
       <div class="tcp-appbar-text">
-        <div class="tcp-appbar-title">月詠</div>
+        <div class="tcp-appbar-title">{{ t('activityUi.chat.name') }}</div>
         <div class="tcp-appbar-sub">
-          <span
-            class="tcp-status-dot"
-            :class="{ 'tcp-status-dot--off': !assistantModel }"
-          />
+          <span class="tcp-status-dot" :class="{ 'tcp-status-dot--off': !assistantModel }" />
           {{ assistantStatusText }}
         </div>
       </div>
@@ -66,18 +65,23 @@ const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSend
         id="session-list-button-tablet"
         type="button"
         class="tcp-icon-btn"
-        aria-label="会话历史"
+        :aria-label="t('activityUi.chat.history')"
         @click="toggleSessionListPopover"
       >
         <i class="pi pi-history" aria-hidden="true" />
       </button>
-      <button type="button" class="tcp-icon-btn" aria-label="新聊天" @click="createNewSession">
+      <button
+        type="button"
+        class="tcp-icon-btn"
+        :aria-label="t('activityUi.chat.newChat')"
+        @click="createNewSession"
+      >
         <i class="pi pi-plus" aria-hidden="true" />
       </button>
       <button
         type="button"
         class="tcp-icon-btn tcp-icon-btn--close"
-        aria-label="关闭"
+        :aria-label="t('activityUi.chat.close')"
         @click="close"
       >
         <i class="pi pi-times" aria-hidden="true" />
@@ -93,16 +97,13 @@ const { assistantStatusText, inputPlaceholder, inputDisabled, sendButton, onSend
       @select="switchToSession"
     />
 
-    <div
-      ref="messagesContainerRef"
-      class="tcp-messages"
-    >
+    <div ref="messagesContainerRef" class="tcp-messages">
       <ChatMessageList v-bind="messageListBindings" />
     </div>
 
     <div class="tcp-composer-wrap">
       <div class="tcp-composer">
-        <button class="tcp-plus" aria-label="更多操作">
+        <button class="tcp-plus" :aria-label="t('activityUi.chat.more')">
           <i class="pi pi-plus" aria-hidden="true" />
         </button>
         <input
