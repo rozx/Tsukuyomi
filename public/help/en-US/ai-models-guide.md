@@ -137,7 +137,7 @@ The AI model page sets global defaults. For a book needing a different style, ca
 
 Priority: **valid enabled book override → global task default**. A disabled/deleted override silently falls back to the global default. Book settings retain an invalid-selection placeholder so you can replace it.
 
-Overrides do not affect terminology, chat, or explanation tasks. See [AI translation](/help/book-details-translation#本书模型覆盖).
+Overrides do not affect terminology, chat, or explanation tasks. See [AI translation](/help/book-details-translation#book-details-translation-section-18).
 
 ---
 
