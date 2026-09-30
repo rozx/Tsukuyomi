@@ -265,6 +265,23 @@ describe('useGistSync (manifest-driven flow)', () => {
       );
     });
 
+    it('数据协议错误码在同步提示中显示为界面语言说明而非原始代码', async () => {
+      mockSettingsStore.uiLocale = 'en-US';
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockRejectedValue(
+        new Error('UNSUPPORTED_ENTITY_SYNC_VERSION'),
+      );
+
+      await useGistSync().sync();
+
+      expect(mockToastAdd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: 'Download failed',
+          detail:
+            'The remote data uses a newer term/character format. Update the app before syncing.',
+        }),
+      );
+    });
+
     it('英文界面下失败提示为英文，自有错误按界面语言重新渲染', async () => {
       mockSettingsStore.uiLocale = 'en-US';
       spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockRejectedValue(

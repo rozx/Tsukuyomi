@@ -352,5 +352,12 @@ export default {
         memory: 'Item',
       },
     },
+    codes: {
+      UNSUPPORTED_ENTITY_SYNC_VERSION:
+        'The remote data uses a newer term/character format. Update the app before syncing.',
+      INVALID_LOCALE: 'The remote data contains an unsupported language, so sync was stopped',
+      INVALID_FORCE_OPERATION: 'The force push state is invalid. Turn force push off and on again.',
+      FORCE_OPERATION_CHANGED: 'The force push state was changed by another operation. Try again.',
+    },
   },
 };

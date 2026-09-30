@@ -115,6 +115,14 @@ function formatStructureConflictDetail(
   return t('structureDetail', { listed, suffix });
 }
 
+/** 数据层直接以错误码作为 message 抛出、可能到达同步提示的错误 */
+const SYNC_ERROR_CODES = new Set([
+  'UNSUPPORTED_ENTITY_SYNC_VERSION',
+  'INVALID_LOCALE',
+  'INVALID_FORCE_OPERATION',
+  'FORCE_OPERATION_CHANGED',
+]);
+
 /** 同步执行器的用户可见文案（syncUi.executor.*） */
 function executorText(
   locale: AppLocale,
@@ -146,13 +154,18 @@ export function useSyncExecutor() {
   const toast = useToastWithHistory();
   const t = (key: string, values?: Record<string, string | number>) =>
     executorText(settingsStore.uiLocale, key, values);
-  /** 自有错误按当前界面语言渲染，第三方诊断保持原文 */
+  /**
+   * 自有错误按当前界面语言渲染，第三方诊断保持原文；
+   * 数据层以错误码为 message 的协议错误（见 SYNC_ERROR_CODES）映射为说明，避免提示原始代码。
+   */
   const errText = (error: unknown, fallback: string) =>
-    localizedErrorMessage(
-      error,
-      settingsStore.uiLocale,
-      `syncUi.executor.${fallback}` as MessageKey,
-    );
+    error instanceof Error && SYNC_ERROR_CODES.has(error.message)
+      ? translateText(settingsStore.uiLocale, `syncUi.codes.${error.message}` as MessageKey)
+      : localizedErrorMessage(
+          error,
+          settingsStore.uiLocale,
+          `syncUi.executor.${fallback}` as MessageKey,
+        );
 
   /** 同步结束后提示两方都改过结构的章节；每次同步最多提示一次 */
   const notifyStructureConflicts = (report: SyncMergeReport): void => {

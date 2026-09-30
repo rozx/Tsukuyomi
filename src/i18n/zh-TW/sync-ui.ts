@@ -340,5 +340,11 @@ export default {
         memory: '項目',
       },
     },
+    codes: {
+      UNSUPPORTED_ENTITY_SYNC_VERSION: '遠端資料使用了較新的術語/角色格式，請升級應用程式後再同步',
+      INVALID_LOCALE: '遠端資料包含不支援的語言，已中止同步',
+      INVALID_FORCE_OPERATION: '強制推送狀態無效，請關閉後重新開啟強制推送',
+      FORCE_OPERATION_CHANGED: '強制推送狀態已被其他操作變更，請重試',
+    },
   },
 };

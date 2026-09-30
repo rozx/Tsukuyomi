@@ -340,5 +340,11 @@ export default {
         memory: '项目',
       },
     },
+    codes: {
+      UNSUPPORTED_ENTITY_SYNC_VERSION: '远程数据使用了较新的术语/角色格式，请升级应用后再同步',
+      INVALID_LOCALE: '远程数据包含不支持的语言，已中止同步',
+      INVALID_FORCE_OPERATION: '强制推送状态无效，请关闭后重新开启强制推送',
+      FORCE_OPERATION_CHANGED: '强制推送状态已被其他操作更改，请重试',
+    },
   },
 };
