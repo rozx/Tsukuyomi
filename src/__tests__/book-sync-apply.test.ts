@@ -50,15 +50,19 @@ describe('同步受保护应用', () => {
   it('额度耗尽后剩余所选章节复用失败记录，不产生未定义变量或写入正文', async () => {
     const { value, fetch } = await session(6);
     const quota = new FirecrawlQuotaError(true);
-    quota.message = 'External quota detail';
     fetch.mockRejectedValue(quota);
     const result = await value.apply({ urls: value.changeset.new.map((entry) => entry.url) });
     expect(result.status).toBe('failed');
     expect(result.failed).toHaveLength(5);
     expect(result.failed.every((error) => error.code === 'FIRECRAWL_QUOTA')).toBe(true);
-    expect(result.failed.every((error) => error.message.includes('External quota detail'))).toBe(
-      true,
-    );
+    // 额度失败记录携带可重投影的自有说明身份
+    expect(
+      result.failed.every(
+        (error) =>
+          error.message.includes(quota.message) &&
+          error.localization?.key === 'bookUi.fetch.firecrawlQuotaKeyless',
+      ),
+    ).toBe(true);
   });
 
   for (const code of ['CONTENT_EMPTY', 'VERIFICATION_REQUIRED']) {

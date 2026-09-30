@@ -56,7 +56,12 @@ export interface NovelScraper {
 export interface FetchNovelResult {
   success: boolean;
   novel?: Novel;
+  /** 失败说明（自有错误为简中默认文本，第三方诊断保持原文），仅供日志与旧调用方 */
   error?: string;
+  /** 稳定错误码：自有错误取 LocalizedError.code，其它错误为 SCRAPER_FAILED */
+  errorCode?: string;
+  /** 原始错误：展示处用 localizedErrorMessage(cause, uiLocale, fallback) 按界面语言渲染 */
+  cause?: Error;
 }
 
 /**

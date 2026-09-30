@@ -1,0 +1,38 @@
+export default {
+  bookUi: {
+    scraper: {
+      invalidUrl: '无效的 {site} 小说 URL',
+      contentMissing: '无法找到章节正文内容',
+      ageGate: '目标网站返回了年龄确认页，未能获取小说内容',
+      notFound: '小说页面不存在 (404)',
+      unknown: '获取小说信息时发生未知错误',
+      kakuyomuNextDataMissing:
+        '无法找到 Kakuyomu 数据（__NEXT_DATA__ 不存在）。页面可能未完全加载或结构已改变。HTML 长度: {htmlLength}，脚本标签数: {scriptTags}',
+      kakuyomuParseFailed: '解析 Kakuyomu 数据失败',
+      kakuyomuApolloMissing: '无法找到 Apollo State 数据',
+      kakuyomuIdMissing: '无法找到小说 ID',
+      kakuyomuWorkMissing: '无法找到作品数据',
+    },
+    fetch: {
+      electronApiMissing: 'Electron API 未正确加载，请检查 preload 脚本',
+      emptyResponse: '返回的内容为空',
+      httpStatus: '目标网站返回错误: {status}',
+      notText: '页面响应不是可解析的文本',
+      httpFailed: '获取页面失败: {status} {statusText}',
+      networkFailed: '网络连接失败，请检查网络设置',
+      requestInvalid: '请求配置错误: {detail}',
+      unknown: '获取页面时发生未知错误',
+      blockedElectron: '目标网站返回了反爬质询页（Electron 直连）',
+      blockedProxy: '目标网站返回了反爬质询页（{url}）',
+      firecrawlQuotaKeyless:
+        'Firecrawl 免费额度（按 IP 每日限额）已用尽，可在设置 → API Keys 配置 Firecrawl Key',
+      firecrawlQuota: 'Firecrawl 额度已用尽，请在设置 → API Keys 中检查额度',
+      firecrawlRateLimited: 'Firecrawl 请求过于频繁，请稍后重试',
+      firecrawlTarget: '目标网站返回错误: {status}（经 Firecrawl）',
+      firecrawlEmpty: 'Firecrawl 返回的内容为空',
+      firecrawlFailed: 'Firecrawl 请求失败: {status}',
+      firecrawlFailedDetail: 'Firecrawl 请求失败: {status} {detail}',
+      firecrawlCreditFailed: '额度查询失败: {status}',
+    },
+  },
+};

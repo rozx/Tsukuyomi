@@ -6,6 +6,7 @@ import { BlockedResponseError, HttpStatusError } from 'src/services/proxy-fetch-
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import type { ScraperPageSnapshot } from '../types';
 import { isChallengePage } from './challenge-detection';
+import { LocalizedError } from 'src/utils/localized-error';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -20,7 +21,7 @@ async function fetchViaElectron(
   extraHeaders: Record<string, string> = {},
 ): Promise<ScraperPageSnapshot> {
   if (!window.electronAPI?.fetch) {
-    throw new Error('Electron API 未正确加载，请检查 preload 脚本');
+    throw new LocalizedError('FETCH_ELECTRON_UNAVAILABLE', 'bookUi.fetch.electronApiMissing');
   }
   const headers: Record<string, string> = {
     'User-Agent': USER_AGENT,
@@ -37,7 +38,7 @@ async function fetchViaElectron(
   });
   if (response.status >= 400) throw new HttpStatusError(response.status);
   if (response.data && isChallengePage(response.data)) {
-    throw new BlockedResponseError('Electron 直连');
+    throw new BlockedResponseError();
   }
   if (response.data)
     return {
@@ -47,7 +48,7 @@ async function fetchViaElectron(
       status: response.status,
       contentType: response.headers['content-type'] ?? 'text/html',
     };
-  throw new Error('返回的内容为空');
+  throw emptyResponseError();
 }
 
 /** axios 头部 content-type 的多种形态统一转为字符串 */
@@ -110,9 +111,9 @@ async function fetchViaAxios(
     validateStatus: (status) => status >= 200 && status < 400,
   });
   if (response.status >= 400) {
-    throw new Error(`目标网站返回错误: ${response.status}`);
+    throw new HttpStatusError(response.status);
   }
-  if (!response.data) throw new Error('返回的内容为空');
+  if (!response.data) throw emptyResponseError();
 
   // 某些代理服务返回 JSON 包装，需要拆出实际 HTML
   const contentType = normalizeContentType(
@@ -122,7 +123,7 @@ async function fetchViaAxios(
   const html = looksLikeJsonProxyResponse(contentType, dataStr)
     ? (extractHtmlFromJsonProxyResponse(response.data, dataStr) ?? response.data)
     : response.data;
-  if (typeof html !== 'string') throw new Error('页面响应不是可解析的文本');
+  if (typeof html !== 'string') throw new LocalizedError('FETCH_NOT_TEXT', 'bookUi.fetch.notText');
   if (isChallengePage(html)) throw new BlockedResponseError(proxiedUrl);
   const responseUrl =
     proxiedUrl === originalUrl && typeof response.request?.responseURL === 'string'
@@ -185,18 +186,29 @@ function extractHtmlFromJsonProxyResponse(rawData: unknown, dataStr: string): st
   return null;
 }
 
-/** 将 axios 错误归一化为用户友好的 Error */
+/** 返回内容为空：各抓取路径共用同一错误码 */
+function emptyResponseError(): LocalizedError {
+  return new LocalizedError('FETCH_EMPTY_RESPONSE', 'bookUi.fetch.emptyResponse');
+}
+
+/** 将 axios 错误归一化为带错误码的自有错误；第三方状态说明作为参数保留原文 */
 function normalizeFetchError(error: unknown): Error {
   if (axios.isAxiosError(error)) {
     if (error.response) {
-      return new Error(
-        `获取页面失败: ${error.response.status} ${error.response.statusText || error.message}`,
-      );
+      return new LocalizedError('FETCH_HTTP_FAILED', 'bookUi.fetch.httpFailed', {
+        status: error.response.status,
+        statusText: error.response.statusText || error.message,
+      });
     }
-    if (error.request) return new Error('网络连接失败，请检查网络设置');
-    return new Error(`请求配置错误: ${error.message}`);
+    if (error.request)
+      return new LocalizedError('FETCH_NETWORK_FAILED', 'bookUi.fetch.networkFailed');
+    return new LocalizedError('FETCH_REQUEST_INVALID', 'bookUi.fetch.requestInvalid', {
+      detail: error.message,
+    });
   }
-  return error instanceof Error ? error : new Error('获取页面时发生未知错误');
+  return error instanceof Error
+    ? error
+    : new LocalizedError('FETCH_UNKNOWN', 'bookUi.fetch.unknown');
 }
 
 /** 共用现有代理链路，只读取指定页面，不发现或跟随后续页面。 */
