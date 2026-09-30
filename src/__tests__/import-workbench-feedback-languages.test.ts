@@ -18,6 +18,7 @@ import {
   serializeImportError,
 } from '../services/import/import-error';
 import { readableError } from '../components/import/import-labels';
+import { LocalizedError } from '../utils/localized-error';
 import type { ImportDraft, ImportOperation, ImportPlan, ImportTask } from '../models/import';
 
 const CJK = /[぀-ヿ㐀-鿿]/;
@@ -165,5 +166,17 @@ describe('工作台错误说明按界面语言显示', () => {
     expect(readableError(serializeImportError(new Error('remote 503')), 'zh-TW')).toBe(
       'remote 503',
     );
+  });
+
+  it('抓取与爬虫自有错误保存到来源后，按查看时的界面语言显示', () => {
+    const stored = serializeImportError(
+      new LocalizedError('FETCH_EMPTY_RESPONSE', 'bookUi.fetch.emptyResponse'),
+      'SOURCE_FAILED',
+    );
+    expect(stored.code).toBe('FETCH_EMPTY_RESPONSE');
+    const en = readableError(stored, 'en-US');
+    expect(en).not.toMatch(CJK);
+    expect(en).not.toMatch(/^FETCH_EMPTY_RESPONSE/);
+    expect(readableError(stored, 'zh-CN')).toMatch(/[\u4e00-\u9fff]/);
   });
 });

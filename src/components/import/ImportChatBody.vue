@@ -32,7 +32,7 @@ const {
 
 const { composer, actionPopoverBindings, messageListBindings } = useChatPanelBindings(panel, {
   sendClassPrefix: 'tcp-send',
-  readyPlaceholder: t('importUi.chat.readyPlaceholder'),
+  readyPlaceholderKey: 'importUi.chat.readyPlaceholder',
 });
 const { inputPlaceholder, sendButton, onSendClick } = composer;
 

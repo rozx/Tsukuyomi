@@ -25,18 +25,8 @@ vi.mock('primevue/useconfirm', () => ({ useConfirm: () => ({ require: vi.fn() })
 vi.mock('primevue/textarea', () => ({ default: { render: () => null } }));
 
 const CJK = /[぀-ヿ㐀-鿿]/;
-/**
- * 不属于导入工作台的文字：共用聊天组件（消息列表空状态、头像、发送按钮、未配置模型占位）
- * 由聊天面板迁移负责；「小说」是测试草稿夹具中的候选作品名（用户数据）。
- */
-const OUT_OF_SCOPE = [
-  '妾身月詠，于此恭候',
-  '可问翻译、术语、章节诸事',
-  '月詠',
-  '未配置助手模型',
-  '发送',
-  '小说',
-];
+/** 「小说」是测试草稿夹具中的候选作品名（用户数据），不属于固定文字。 */
+const OUT_OF_SCOPE = ['小说'];
 function withoutOutOfScope(text: string): string {
   return OUT_OF_SCOPE.reduce((rest, entry) => rest.split(entry).join(''), text);
 }
