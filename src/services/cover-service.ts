@@ -2,6 +2,8 @@ import type { Novel } from 'src/models/novel';
 // 从独立色值模块导入，避免把 PrimeVue 主题（definePreset + Aura）拉进广泛使用的服务 bundle
 import { PRIMARY, SURFACE_DARK, TRANSLATION_TEXT_COLOR } from 'src/theme/color-tokens';
 import { ProxyService } from 'src/services/proxy-service';
+import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
 
 /**
  * 封面服务
@@ -167,7 +169,10 @@ export class CoverService {
     const fill = colors.text.primary;
 
     const tspanElements = titleLines
-      .map((line, i) => `<tspan x="${centerX}" dy="${i === 0 ? '0' : this.TEXT.lineSpacing}">${line}</tspan>`)
+      .map(
+        (line, i) =>
+          `<tspan x="${centerX}" dy="${i === 0 ? '0' : this.TEXT.lineSpacing}">${line}</tspan>`,
+      )
       .join('');
 
     return this.createTextElement(centerX, titleY, tspanElements, size, weight, fill);
@@ -177,11 +182,12 @@ export class CoverService {
    * 生成默认封面 SVG（基于书籍标题和作者）
    * @param title 书籍标题
    * @param author 作者（可选）
+   * @param locale 无标题时占位名使用的界面语言
    * @returns 默认封面的 data URL
    */
-  static generateDefaultCover(title: string, author?: string): string {
+  static generateDefaultCover(title: string, author?: string, locale: AppLocale = 'zh-CN'): string {
     // 转义 HTML 特殊字符
-    const escapedTitle = this.escapeHtml(title || '未命名');
+    const escapedTitle = this.escapeHtml(title || translateText(locale, 'bookUi.export.untitled'));
     const escapedAuthor = author ? this.escapeHtml(author) : '';
 
     // 将标题分行
@@ -229,9 +235,10 @@ export class CoverService {
    * 获取书籍的封面 URL（如果有自定义封面则返回，否则返回默认封面）
    * 在 SPA 构建中，外部 URL 会自动使用默认 CORS 代理
    * @param book 书籍对象
+   * @param locale 生成默认封面时的界面语言（仅影响无标题占位名）
    * @returns 封面 URL
    */
-  static getCoverUrl(book: Novel): string {
+  static getCoverUrl(book: Novel, locale: AppLocale = 'zh-CN'): string {
     if (book.cover?.url) {
       const coverUrl = book.cover.url;
       // 如果是外部 URL（http:// 或 https://），在 SPA 构建中使用 CORS 代理
@@ -242,7 +249,6 @@ export class CoverService {
       return coverUrl;
     }
     // 生成默认封面
-    return CoverService.generateDefaultCover(book.title, book.author);
+    return CoverService.generateDefaultCover(book.title, book.author, locale);
   }
 }
-

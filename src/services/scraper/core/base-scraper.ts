@@ -10,6 +10,7 @@ import type {
 import type { Novel, Chapter, Volume, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, generateShortId } from 'src/utils/id-generator';
 import { fetchScraperPage } from './page-transport';
+import { LocalizedError, localizedErrorCode } from 'src/utils/localized-error';
 import type { ScraperPageSnapshot, ParsedNovelPage } from '../types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,15 +63,22 @@ export abstract class BaseScraper<
       return this.createSuccessResult(novel);
     } catch (error) {
       return this.createErrorResult(
-        error instanceof Error ? error : new Error('获取小说信息时发生未知错误'),
+        error instanceof Error
+          ? error
+          : new LocalizedError('SCRAPER_UNKNOWN', 'bookUi.scraper.unknown'),
       );
     }
   }
 
   /**
-   * 当传入的 URL 不符合该站点的格式时返回的错误消息
+   * 当传入的 URL 不符合该站点的格式时返回的错误（带错误码，默认说明为简中）
    */
-  protected abstract getInvalidUrlError(): string;
+  protected abstract getInvalidUrlError(): LocalizedError;
+
+  /** 各站点共用的无效 URL 错误：只有站点域名不同 */
+  protected invalidUrlError(site: string): LocalizedError {
+    return new LocalizedError('SCRAPER_INVALID_URL', 'bookUi.scraper.invalidUrl', { site });
+  }
 
   /**
    * 从任意 URL（小说主页或章节 URL）推导出小说主页 URL
@@ -178,10 +186,12 @@ export abstract class BaseScraper<
    * @param error 错误信息
    * @returns FetchNovelResult
    */
-  protected createErrorResult(error: string | Error): FetchNovelResult {
+  protected createErrorResult(error: Error): FetchNovelResult {
     return {
       success: false,
-      error: error instanceof Error ? error.message : error,
+      error: error.message,
+      errorCode: localizedErrorCode(error, 'SCRAPER_FAILED'),
+      cause: error,
     };
   }
 

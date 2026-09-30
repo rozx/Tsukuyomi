@@ -10,6 +10,7 @@ import { hasNonEmptyTranslation } from 'src/utils/text-utils';
 import { formatTranslationForDisplay } from 'src/utils/translation-utils';
 import { getLanguageTranslation } from './localization/selection';
 import { ChapterContentService } from './chapter-content-service';
+import { LocalizedError } from 'src/utils/localized-error';
 import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 
 export type { ParagraphSearchResult };
@@ -166,11 +167,11 @@ async function performChapterExportAction(
     try {
       await navigator.clipboard.writeText(content);
     } catch (err) {
-      throw new Error(
-        err instanceof Error
-          ? `复制到剪贴板失败：${err.message}`
-          : '复制到剪贴板失败：请重试或检查权限',
-      );
+      throw err instanceof Error
+        ? new LocalizedError('CLIPBOARD_FAILED', 'bookUi.export.clipboardFailed', {
+            detail: err.message,
+          })
+        : new LocalizedError('CLIPBOARD_FAILED', 'bookUi.export.clipboardFailedRetry');
     }
     return;
   }
@@ -1077,34 +1078,6 @@ export class ChapterService {
    */
   static getChapterContentText(chapter: Chapter): string {
     return getChapterContentText(chapter);
-  }
-
-  /**
-   * 获取章节的导入状态信息
-   * @param novel 小说对象
-   * @param chapter 章节对象
-   * @returns 导入状态信息，如果未导入则返回 null
-   */
-  static getChapterImportStatus(
-    novel: Novel | null | undefined,
-    chapter: Chapter,
-  ): { text: string; class: string } | null {
-    if (!ChapterService.isChapterImported(novel, chapter)) {
-      return null;
-    }
-
-    const isNewer = ChapterService.shouldUpdateChapter(novel, chapter);
-    if (isNewer) {
-      return {
-        text: '已导入（有更新）',
-        class: 'px-2 py-0.5 text-xs bg-yellow-500/20 text-yellow-400 rounded flex-shrink-0',
-      };
-    } else {
-      return {
-        text: '已导入',
-        class: 'px-2 py-0.5 text-xs bg-green-500/20 text-green-400 rounded flex-shrink-0',
-      };
-    }
   }
 
   // --- CRUD 操作 ---
@@ -2266,10 +2239,10 @@ export class ChapterService {
     format: 'txt' | 'json' | 'clipboard',
     book?: Novel,
   ): Promise<void> {
-    if (!chapter) throw new Error('章节内容为空，无法导出');
+    if (!chapter) throw new LocalizedError('EXPORT_EMPTY', 'bookUi.export.empty');
     const chapterWithContent = await this.loadChapterContent(chapter);
     if (!chapterWithContent.content || chapterWithContent.content.length === 0) {
-      throw new Error('章节内容为空，无法导出');
+      throw new LocalizedError('EXPORT_EMPTY', 'bookUi.export.empty');
     }
 
     const chapterTitle = resolveExportChapterTitle(chapter, type, book);

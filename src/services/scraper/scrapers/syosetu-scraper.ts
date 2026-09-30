@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import type { Novel } from 'src/models/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/services/scraper/scrapers/syosetu-types';
 import { BaseScraper } from '../core';
+import { LocalizedError } from 'src/utils/localized-error';
 import {
   extractParagraphText,
   extractTextWithFormatting,
@@ -240,8 +241,8 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
     return url;
   }
 
-  protected override getInvalidUrlError(): string {
-    return '无效的 syosetu.org 小说 URL';
+  protected override getInvalidUrlError(): LocalizedError {
+    return this.invalidUrlError('syosetu.org');
   }
 
   /**
@@ -284,7 +285,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
     ]);
 
     if (!contentElement) {
-      throw new Error('无法找到章节正文内容');
+      throw new LocalizedError('SCRAPER_CONTENT_MISSING', 'bookUi.scraper.contentMissing');
     }
 
     // 移除不需要的元素（脚本、样式、导航、广告等）

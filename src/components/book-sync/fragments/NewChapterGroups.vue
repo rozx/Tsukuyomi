@@ -3,6 +3,7 @@
  * 新章节：按目标卷分组，每组标题见 NewChapterGroupHead；逐章可勾选、预览正文、跳过。
  */
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
 import { effectiveTarget, type NewChapterGroup } from 'src/composables/book-sync/book-sync-rules';
@@ -11,6 +12,7 @@ import NewChapterGroupHead from './NewChapterGroupHead.vue';
 import SelectableChapterRow from './SelectableChapterRow.vue';
 
 const { changeset, volumeOverrides, working, setSkipped } = injectBookSync();
+const { t } = useI18n();
 
 const groups = computed<NewChapterGroup[]>(() => {
   const result: NewChapterGroup[] = [];
@@ -44,7 +46,7 @@ function togglePreview(url: string): void {
   <section v-if="groups.length" class="ipl-card">
     <div class="ipl-card-head">
       <h3 class="ipl-card-title">
-        <i class="pi pi-plus-circle" aria-hidden="true" />新章节
+        <i class="pi pi-plus-circle" aria-hidden="true" />{{ t('bookUi.sync.newChaptersTitle') }}
         <span class="ipl-count">{{ changeset?.new.length ?? 0 }}</span>
       </h3>
     </div>
@@ -63,7 +65,7 @@ function togglePreview(url: string): void {
               size="small"
               text
               rounded
-              :aria-label="`预览${chapter.title}`"
+              :aria-label="t('bookUi.sync.previewAria', { title: chapter.title })"
               @click="togglePreview(chapter.url)"
             />
             <Button
@@ -71,7 +73,7 @@ function togglePreview(url: string): void {
               size="small"
               text
               rounded
-              :aria-label="`跳过${chapter.title}`"
+              :aria-label="t('bookUi.sync.skipAria', { title: chapter.title })"
               :disabled="working"
               @click="setSkipped([{ url: chapter.url, title: chapter.title }], true)"
             />

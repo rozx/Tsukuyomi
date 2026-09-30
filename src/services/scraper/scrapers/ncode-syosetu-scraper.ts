@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 import type { Novel } from 'src/models/novel';
 import type { ParsedChapterInfo, ParsedNovelInfo } from 'src/services/scraper/types';
 import { BaseScraper } from '../core';
+import { LocalizedError } from 'src/utils/localized-error';
 import { extractParagraphText, extractTextWithFormatting } from '../core/cheerio-text-extract';
 
 /**
@@ -20,6 +21,11 @@ function resolveEplistHref(href: string, baseUrl: string): string {
  * 用于从 ncode.syosetu.com 获取和解析小说信息
  * 注意：ncode.syosetu.com 和 syosetu.org 是两个不同的网站
  */
+/** 抓取链路的自有错误把 HTTP 状态放在参数里（直连、代理与 Firecrawl 目标站状态） */
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof LocalizedError && error.values.status === 404;
+}
+
 export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
   protected override useProxy: boolean = false; // ncode.syosetu.com 不使用代理
 
@@ -62,8 +68,8 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
     return url;
   }
 
-  protected override getInvalidUrlError(): string {
-    return '无效的 ncode.syosetu.com 小说 URL';
+  protected override getInvalidUrlError(): LocalizedError {
+    return this.invalidUrlError('ncode.syosetu.com');
   }
 
   /**
@@ -140,7 +146,7 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
     });
 
     if (!hasBodyContent) {
-      throw new Error('无法找到章节正文内容');
+      throw new LocalizedError('SCRAPER_CONTENT_MISSING', 'bookUi.scraper.contentMissing');
     }
 
     return paragraphs;
@@ -568,9 +574,9 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
     try {
       firstPageHtml = await this.fetchPage(baseUrl);
     } catch (error) {
-      // 检查是否是 404 错误
-      if (error instanceof Error && error.message.includes('404')) {
-        throw new Error('小说页面不存在 (404)');
+      // 按错误码与状态参数识别 404，不依赖说明文字
+      if (isNotFoundError(error)) {
+        throw new LocalizedError('SCRAPER_NOT_FOUND', 'bookUi.scraper.notFound');
       }
       throw error;
     }

@@ -1,5 +1,6 @@
 import { isElectron } from 'src/utils/platform';
 import { NcodeSyosetuScraper } from './ncode-syosetu-scraper';
+import { LocalizedError } from 'src/utils/localized-error';
 
 /**
  * novel18.syosetu.com 小说爬虫服务
@@ -51,15 +52,15 @@ export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
     return url;
   }
 
-  protected override getInvalidUrlError(): string {
-    return '无效的 novel18.syosetu.com 小说 URL';
+  protected override getInvalidUrlError(): LocalizedError {
+    return this.invalidUrlError('novel18.syosetu.com');
   }
 
   protected override parseNovelPage(html: string, baseUrl: string) {
     const isAgeVerificationPage =
       /<title>\s*年齢確認\s*<\/title>/i.test(html) && /\bid=["']yes18["']/i.test(html);
     if (isAgeVerificationPage) {
-      throw new Error('目标网站返回了年龄确认页，未能获取小说内容');
+      throw new LocalizedError('SCRAPER_AGE_GATE', 'bookUi.scraper.ageGate');
     }
     return super.parseNovelPage(html, baseUrl);
   }

@@ -1,20 +1,28 @@
 <script setup lang="ts">
 /** 桌面：标题栏 + 网址输入 + 同步工作区。 */
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import { injectBookSyncNew } from 'src/composables/book-sync-new/useBookSyncNew';
 import SourceUrlForm from 'src/components/book-sync/fragments/SourceUrlForm.vue';
 import BookSyncWorkspace from 'src/components/book-sync/BookSyncWorkspace.vue';
 
 const { goBack } = injectBookSyncNew();
+const { t } = useI18n();
 </script>
 
 <template>
   <div class="bsn">
     <header class="bsn-header">
-      <Button icon="pi pi-arrow-left" text rounded aria-label="返回" @click="goBack" />
+      <Button
+        icon="pi pi-arrow-left"
+        text
+        rounded
+        :aria-label="t('bookUi.sync.back')"
+        @click="goBack"
+      />
       <div>
-        <h1 class="bsn-title">从网站导入</h1>
-        <p class="bsn-desc">读取来源网站的目录，选择要导入的章节后创建新书</p>
+        <h1 class="bsn-title">{{ t('bookUi.sync.importFromWeb') }}</h1>
+        <p class="bsn-desc">{{ t('bookUi.sync.importFromWebDesc') }}</p>
       </div>
     </header>
     <SourceUrlForm class="bsn-form" />

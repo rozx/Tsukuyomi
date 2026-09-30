@@ -4,11 +4,13 @@
  * 书籍在确认后被修改时，会话重算后再次打开并要求重新确认。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
 
 const { confirm, target, confirmApply, cancelConfirm } = injectBookSync();
+const { t } = useI18n();
 
 const visible = computed(() => confirm.value.stage !== 'closed');
 const state = computed(() => (confirm.value.stage === 'closed' ? null : confirm.value));
@@ -23,7 +25,7 @@ function onVisible(value: boolean): void {
   <Dialog
     :visible="visible"
     modal
-    :header="creating ? '确认创建书籍' : '确认应用到书籍'"
+    :header="t(creating ? 'bookUi.sync.confirmCreateTitle' : 'bookUi.sync.confirmApplyTitle')"
     :closable="state?.stage !== 'applying'"
     :style="{ width: '28rem', maxWidth: 'calc(100vw - 2rem)' }"
     @update:visible="onVisible"
@@ -31,36 +33,53 @@ function onVisible(value: boolean): void {
     <div v-if="state" class="ac" data-testid="bsw-confirm">
       <div v-if="state.reconfirm" class="ac-reconfirm" role="alert">
         <i class="pi pi-history" aria-hidden="true" />
-        书籍在你确认后被修改，以下是按最新内容重新计算的结果，请再次确认。
+        {{ t('bookUi.sync.reconfirmNotice') }}
       </div>
       <ul class="ac-list">
-        <li>
-          新增 <strong>{{ state.summary.newCount }}</strong> 章
-        </li>
-        <li v-if="!creating">
-          更新 <strong>{{ state.summary.updatedCount }}</strong> 章
-        </li>
-        <li v-if="!creating" :class="{ 'ac-loss': state.summary.clearedVersions > 0 }">
-          <template v-if="state.summary.clearedVersions">
-            将清空
-            <strong>{{ state.summary.clearedVersions }}</strong> 个译文版本（原文被修订的段落）
+        <i18n-t keypath="bookUi.sync.confirmNew" tag="li" :plural="state.summary.newCount">
+          <template #count>
+            <strong>{{ state.summary.newCount }}</strong>
           </template>
-          <template v-else>不会清空已有译文</template>
+        </i18n-t>
+        <i18n-t
+          v-if="!creating"
+          keypath="bookUi.sync.confirmUpdated"
+          tag="li"
+          :plural="state.summary.updatedCount"
+        >
+          <template #count>
+            <strong>{{ state.summary.updatedCount }}</strong>
+          </template>
+        </i18n-t>
+        <li v-if="!creating" :class="{ 'ac-loss': state.summary.clearedVersions > 0 }">
+          <i18n-t
+            v-if="state.summary.clearedVersions"
+            keypath="bookUi.sync.confirmClear"
+            tag="span"
+            :plural="state.summary.clearedVersions"
+          >
+            <template #count>
+              <strong>{{ state.summary.clearedVersions }}</strong>
+            </template>
+          </i18n-t>
+          <template v-else>{{ t('bookUi.sync.confirmNoClear') }}</template>
         </li>
-        <li v-for="title in state.summary.newVolumes" :key="title">新建卷「{{ title }}」</li>
+        <li v-for="title in state.summary.newVolumes" :key="title">
+          {{ t('bookUi.sync.confirmNewVolume', { title }) }}
+        </li>
       </ul>
-      <p class="ac-note">应用会在书籍没有其他任务占用时写入；写入后可在本次会话内撤销。</p>
+      <p class="ac-note">{{ t('bookUi.sync.confirmNote') }}</p>
     </div>
     <template #footer>
       <Button
-        label="再检查一下"
+        :label="t('bookUi.sync.reviewAgain')"
         severity="secondary"
         text
         :disabled="state?.stage === 'applying'"
         @click="cancelConfirm()"
       />
       <Button
-        :label="state?.reconfirm ? '再次确认应用' : '确认应用'"
+        :label="t(state?.reconfirm ? 'bookUi.sync.confirmAgain' : 'bookUi.sync.confirm')"
         icon="pi pi-check"
         :loading="state?.stage === 'applying'"
         @click="confirmApply()"

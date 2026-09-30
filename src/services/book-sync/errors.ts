@@ -1,6 +1,9 @@
 import { LocalizedError } from 'src/utils/localized-error';
+import type { AppLocale } from 'src/models/locale';
 
 export class BookSyncError extends LocalizedError {
+  /** 自有详情保留原错误，按语言渲染时交给它（可能覆盖了 messageFor） */
+  private readonly detail: LocalizedError | undefined;
   constructor(code: string, detail: string | Error) {
     super(
       code,
@@ -11,6 +14,10 @@ export class BookSyncError extends LocalizedError {
     );
     this.message = `${code}: ${this.message}`;
     this.name = 'BookSyncError';
+    this.detail = detail instanceof LocalizedError ? detail : undefined;
+  }
+  override messageFor(locale: AppLocale): string {
+    return this.detail ? this.detail.messageFor(locale) : super.messageFor(locale);
   }
 }
 
