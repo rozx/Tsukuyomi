@@ -4,10 +4,13 @@ import type {
   AIToolCallResult,
   ChatMessage,
 } from 'src/services/ai/types/ai-service';
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from './execution-languages';
 import type { ContextAnchor } from 'src/services/ai/context/measure';
 
 export type AssistantPauseReason = 'waiting_user' | 'user' | 'tool_limit' | 'context_limit';
 export interface AssistantExecutionCheckpoint {
+  uiLocale?: AppLocale;
   messages: ChatMessage[];
   remainingCalls: AIToolCall[];
   completedCallIds: string[];
@@ -22,6 +25,7 @@ interface ToolOutcome {
   checkpointCommitted?: boolean;
 }
 export interface AssistantExecutionProfile {
+  languages?: ExecutionLanguages;
   context: {
     currentBookId: string | null;
     currentChapterId: string | null;
@@ -58,11 +62,18 @@ export class AssistantExecutionPaused extends Error {
 export class AssistantExecution {
   private current: AssistantExecutionCheckpoint;
   readonly maxToolTurns: number;
+  readonly languages: ExecutionLanguages;
 
   constructor(readonly profile: AssistantExecutionProfile) {
+    const uiLocale = profile.languages?.uiLocale ?? profile.resume?.uiLocale ?? 'zh-CN';
+    this.languages = captureExecutionLanguages(
+      uiLocale,
+      profile.languages?.targetLanguage ?? uiLocale,
+    );
     this.current = structuredClone(
       profile.resume ?? { messages: [], remainingCalls: [], completedCallIds: [] },
     );
+    this.current.uiLocale = this.languages.uiLocale;
     this.maxToolTurns = Math.min(50, Math.max(1, profile.maxToolTurns ?? 50));
   }
   get context() {

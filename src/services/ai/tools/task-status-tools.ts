@@ -1,3 +1,6 @@
+import type { AppLocale } from 'src/models/locale';
+import type { Chapter } from 'src/models/novel';
+import { getLanguageTranslation, getNameTranslation } from 'src/services/localization/selection';
 import type { ToolDefinition, ToolContext } from './types';
 import type {
   TaskType,
@@ -166,16 +169,12 @@ function formatMissingIds(ids: string[]): string {
 /**
  * 判断章节标题是否已翻译
  */
-function hasTitleTranslation(chapter: { title: unknown }): boolean {
-  const title = chapter.title as
-    | string
-    | { translation?: { translation?: string } | null }
-    | undefined;
-  if (typeof title === 'string') {
-    // 旧格式，无法区分，假设已翻译或是原文
-    return true;
-  }
-  return !!(title && title.translation && title.translation.translation);
+function hasTitleTranslation(chapter: Pick<Chapter, 'title'>, language: AppLocale): boolean {
+  const title = chapter.title;
+  if (typeof title === 'string') return !title.trim();
+  if (!title) return false;
+  if (typeof title.original === 'string' && !title.original.trim()) return true;
+  return !!getNameTranslation(title, language);
 }
 
 interface ReviewCheckFailure {
@@ -262,10 +261,11 @@ async function checkReviewWithAccumulated(params: {
  * 通过数据库内容进行 review 校验（向后兼容路径）
  */
 async function checkReviewWithDatabase(params: {
+  language: AppLocale;
   chapterId: string;
   chunkBoundaries: { allowedParagraphIds: Set<string> } | undefined;
 }): Promise<ReviewCheckFailure | null> {
-  const { chapterId, chunkBoundaries } = params;
+  const { chapterId, chunkBoundaries, language } = params;
   const { ChapterContentService } = await import('src/services/chapter-content-service');
   const dbContent = await ChapterContentService.loadChapterContent(chapterId);
   const contentToCheck =
@@ -278,9 +278,7 @@ async function checkReviewWithDatabase(params: {
   }
 
   const nonEmptyParagraphs = contentToCheck.filter((p) => p.text && p.text.trim().length > 0);
-  const untranslated = nonEmptyParagraphs.filter(
-    (p) => !p.translations || p.translations.length === 0,
-  );
+  const untranslated = nonEmptyParagraphs.filter((p) => !getLanguageTranslation(p, language));
   if (untranslated.length === 0) {
     return null;
   }
@@ -323,23 +321,14 @@ async function validateTranslationReview(
     const { chapter } = chapterInfo;
 
     // 检查: 章节标题是否已翻译（仅首块需要检查）
-    if (isFirstChunk && !hasTitleTranslation(chapter)) {
+    if (
+      isFirstChunk &&
+      !hasTitleTranslation(chapter, context.languages?.targetLanguage ?? 'zh-CN')
+    ) {
       return { error: '无法提交复核：章节标题尚未翻译' };
     }
 
-    // 检查: 所有非空段落是否有翻译
-    //
-    // ⚠️ 重要：不要依赖 BookService.getBookById() 返回的 chapter.content 或
-    // ChapterContentService.loadChapterContent() 的数据。
-    //
-    // 根本原因：translateAllParagraphs 使用 skipSave:true 优化，翻译实时写入
-    // 内存的 book.value.volumes（Vue 响应式对象），但直到整个翻译完成才批量落盘
-    // 到 IndexedDB。BookService.getBookById() 读取的是 IndexedDB 快照，不包含
-    // 这部分尚未落盘的翻译，导致误报"段落未翻译"。
-    //
-    // 修复策略：优先使用 accumulatedParagraphs（task-runner.ts 在内存中实时维护
-    // 的、本次 session 已成功翻译的段落 ID → 翻译文本映射）。若存在该数据，直接
-    // 以此为准；否则回退到数据库检查（保持向后兼容）。
+    // 分块优先使用本次已完成保存的提交记录；全章/旧调用按执行语言读正文。
     const accumulatedParagraphs = context.accumulatedParagraphs;
 
     if (accumulatedParagraphs && accumulatedParagraphs.size > 0) {
@@ -355,6 +344,7 @@ async function validateTranslationReview(
       // 路径二：回退到数据库检查（向后兼容）
       // 当 accumulatedParagraphs 为空，或者是全章非分块场景时使用
       const failure = await checkReviewWithDatabase({
+        language: context.languages?.targetLanguage ?? 'zh-CN',
         chapterId,
         chunkBoundaries: context.chunkBoundaries,
       });
@@ -423,9 +413,7 @@ export const taskStatusTools: ToolDefinition[] = [
 
       // 验证状态值
       if (!isValidStatus(status)) {
-        return jsonError(
-          `无效的状态值: "${status}"。有效的状态值为：${VALID_STATUSES.join('、')}`,
-        );
+        return jsonError(`无效的状态值: "${status}"。有效的状态值为：${VALID_STATUSES.join('、')}`);
       }
 
       // 获取 AI 处理 Store（由服务层注入）

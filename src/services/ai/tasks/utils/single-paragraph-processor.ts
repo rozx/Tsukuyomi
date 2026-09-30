@@ -240,6 +240,7 @@ async function runSingleParagraphRound(
     ctx.onAction,
     ctx.onToast,
     ctx.onParagraphResult,
+    ctx.languages,
   );
 
   return { text, done: false };
@@ -257,6 +258,7 @@ async function runToolCallsForSingleParagraph(
   onAction: SingleParagraphOptions['onAction'],
   onToast: SingleParagraphOptions['onToast'],
   onParagraphResult: SingleParagraphOptions['onParagraphResult'],
+  languages: ExecutionLanguages,
 ): Promise<void> {
   if (!result.toolCalls || result.toolCalls.length === 0) return;
 
@@ -280,6 +282,11 @@ async function runToolCallsForSingleParagraph(
       [paragraphId],
       aiProcessingStore,
       model.id,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      languages,
     );
 
     if (toolCall.function.name === 'add_translation_batch') {

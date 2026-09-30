@@ -8,7 +8,9 @@ import { AIServiceFactory } from '../services/ai/ai-service-factory';
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { AIServiceConfig, TextGenerationRequest } from '../services/ai/types/ai-service';
 import { deferred, webLocksFixture } from './web-locks-fixture';
-import { getDB } from '../utils/indexed-db';
+import { getDB, __resetDbPromiseForTesting } from '../utils/indexed-db';
+import { createPinia, setActivePinia } from 'pinia';
+import { useSettingsStore } from '../stores/settings';
 import { ImportToolExecutor } from '../services/import/import-tool-executor';
 import { ImportExtractionService } from '../services/import/import-extraction-service';
 import type { ImportRunContext } from '../models/import';
@@ -408,6 +410,47 @@ describe('导入 Agent 执行生命周期', () => {
     expect(inspect).toHaveBeenCalledTimes(2);
     expect(await results()).toHaveLength(1);
     expect(requests).toBe(2);
+  });
+
+  it('检查点只持久化启动 UI 语言，关闭数据库并切设置后恢复仍使用原语言', async () => {
+    setActivePinia(createPinia());
+    const settings = useSettingsStore();
+    await settings.setUiLocale('en-US');
+    const task = await ImportRepository.createTask();
+    const languagesAtRequest: unknown[] = [];
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
+      generateText: async () => {
+        const checkpoint = (await ImportRepository.getTask(task.id))!.checkpoint!;
+        languagesAtRequest.push(checkpoint.uiLocale);
+        expect(checkpoint).not.toHaveProperty('targetLanguage');
+        await settings.setUiLocale('zh-TW');
+        return { text: 'Waiting for more input' };
+      },
+    } as never);
+    await ImportAgentService.run(task.id, model, 'Inspect');
+    await __resetDbPromiseForTesting();
+    setActivePinia(createPinia());
+    await useSettingsStore().loadSettings();
+    expect(useSettingsStore().uiLocale).toBe('zh-TW');
+    await ImportAgentService.recover(task.id);
+    await ImportAgentService.run(task.id, model);
+    expect(languagesAtRequest).toEqual(['en-US', 'en-US']);
+    expect((await ImportRepository.getTask(task.id))!.checkpoint!.uiLocale).toBe('en-US');
+  });
+
+  it('旧检查点缺失语言时按简中恢复，不使用当前英文 UI', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().setUiLocale('en-US');
+    const task = await ImportRepository.createTask();
+    await ImportRepository.mutateTask(task.id, (value) => {
+      value.checkpoint = { messages: [], remainingCalls: [], completedCallIds: [] };
+      return Promise.resolve();
+    });
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
+      generateText: () => Promise.resolve({ text: 'Done' }),
+    } as never);
+    await ImportAgentService.run(task.id, model);
+    expect((await ImportRepository.getTask(task.id))!.checkpoint!.uiLocale).toBe('zh-CN');
   });
 
   it('模型服务返回整页 HTML 错误时只保存简短说明，不把网页写入任务或界面', async () => {

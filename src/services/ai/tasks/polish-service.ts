@@ -1,3 +1,4 @@
+import type { ExecutionLanguages } from 'src/models/locale';
 // fallow-ignore-next-line code-duplication
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
@@ -22,6 +23,7 @@ import {
  * 润色服务选项
  */
 export interface PolishServiceOptions {
+  languages?: ExecutionLanguages;
   /**
    * 流式数据回调函数，用于接收润色过程中的数据块
    */
@@ -110,29 +112,24 @@ export class PolishService {
       taskLabel: '段落润色',
     });
 
-    return processTextTask(
-      content,
-      model,
-      pickTextTaskOptions(options),
-      {
-        taskType: 'polish',
-        logLabel: 'PolishService',
-        temperature: model.isDefault.proofreading?.temperature ?? 0.7,
-        requiresTranslation: true,
-        onlyChangedParagraphs: true,
-        buildSystemPrompt: (params) =>
-          buildPolishSystemPrompt({
-            todosPrompt: params.todosPrompt,
-            bookContextSection: params.bookContextSection,
-            chapterContextSection: params.chapterContextSection,
-            specialInstructionsSection: params.specialInstructionsSection,
-            tools: params.tools,
-            skipAskUser: params.skipAskUser,
-            enableOriginalTextValidation: params.enableOriginalTextValidation,
-          }),
-        onParagraphsExtracted,
-      },
-    );
+    return processTextTask(content, model, pickTextTaskOptions(options), {
+      taskType: 'polish',
+      logLabel: 'PolishService',
+      temperature: model.isDefault.proofreading?.temperature ?? 0.7,
+      requiresTranslation: true,
+      onlyChangedParagraphs: true,
+      buildSystemPrompt: (params) =>
+        buildPolishSystemPrompt({
+          todosPrompt: params.todosPrompt,
+          bookContextSection: params.bookContextSection,
+          chapterContextSection: params.chapterContextSection,
+          specialInstructionsSection: params.specialInstructionsSection,
+          tools: params.tools,
+          skipAskUser: params.skipAskUser,
+          enableOriginalTextValidation: params.enableOriginalTextValidation,
+        }),
+      onParagraphsExtracted,
+    });
   }
 
   /**

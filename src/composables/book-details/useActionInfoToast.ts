@@ -1,3 +1,4 @@
+import { restoreEntityAction } from 'src/services/ai/tools/entity-action-restore';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
 import { TerminologyService } from 'src/services/terminology-service';
@@ -27,6 +28,11 @@ async function restorePreviousEntity(
   booksStore: ReturnType<typeof useBooksStore>,
   operationId: string,
 ): Promise<void> {
+  if (action.type === 'update' && action.execution) {
+    await restoreEntityAction(action, bookId, operationId);
+    await booksStore.refreshBookFromStorage(bookId);
+    return;
+  }
   await booksStore.restoreEntity(
     bookId,
     action.entity === 'term' ? 'term' : 'character',
@@ -137,7 +143,7 @@ export function useActionInfoToast(book: Ref<Novel | undefined>) {
   const booksStore = useBooksStore();
 
   const buildRevertHandler = (action: ToastableAction) => {
-    const bookId = book.value?.id;
+    const bookId = action.execution?.bookId ?? book.value?.id;
     const operationId = v4();
     return async () => {
       if (!bookId) return;

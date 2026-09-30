@@ -8,8 +8,12 @@ import { maintainLibraryChanges } from './chapter-content-maintenance';
 import type { AppLocale } from 'src/models/locale';
 import type { EntityUpdates } from './localization/entity-edit';
 import { prepareForceBook } from './localization/force';
-import type { ParagraphTranslationEdit } from './localization/paragraph-edit';
+import type {
+  ParagraphTranslationEdit,
+  ChapterTranslationEditGroup,
+} from './localization/paragraph-edit';
 import { prepareImportedEntities } from './localization/entity-import';
+import type { TitleEdit } from './localization/title-edit';
 
 async function maintainWholeBooks(books: Novel[]): Promise<void> {
   await maintainLibraryChanges(
@@ -29,6 +33,25 @@ async function maintainWholeBooks(books: Novel[]): Promise<void> {
  * 负责书籍的 CRUD 操作和持久化
  */
 export class BookService {
+  static async editTitle(
+    bookId: string,
+    language: AppLocale,
+    edit: TitleEdit,
+    expectedBookLanguage?: AppLocale,
+  ): Promise<Novel> {
+    const book = deserializeDates(
+      await LibraryPersistence.editTitle(
+        await getDB(),
+        bookId,
+        language,
+        edit,
+        expectedBookLanguage,
+      ),
+    );
+    await maintainWholeBooks([book]);
+    return book;
+  }
+
   static async importEntities<T extends Terminology | CharacterSetting>(
     bookId: string,
     kind: 'term' | 'character',
@@ -61,6 +84,24 @@ export class BookService {
             : null,
     }));
     return BookService.editParagraphTranslations(snapshot.id, chapterId, language, edits);
+  }
+
+  static async editParagraphTranslationGroups(
+    bookId: string,
+    language: AppLocale,
+    groups: readonly ChapterTranslationEditGroup[],
+    expectedBookLanguage?: AppLocale,
+  ) {
+    const result = await LibraryPersistence.editParagraphTranslationGroups(
+      await getDB(),
+      bookId,
+      language,
+      groups,
+      expectedBookLanguage,
+    );
+    if (groups.length)
+      await maintainLibraryChanges(new Map([[bookId, groups.map((group) => group.chapterId)]]));
+    return { ...result, book: deserializeDates(result.book) };
   }
 
   static async editParagraphTranslations(

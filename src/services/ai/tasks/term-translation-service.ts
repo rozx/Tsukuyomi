@@ -1,3 +1,7 @@
+import type { ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from './utils/execution-languages';
+import { translateText } from 'src/i18n/translate';
+import { getNameTranslation } from 'src/services/localization/selection';
 import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
@@ -35,6 +39,7 @@ import type { CharacterSetting, Terminology } from 'src/models/novel';
  * 术语翻译服务选项
  */
 export interface TermTranslationServiceOptions {
+  languages?: ExecutionLanguages;
   /**
    * 自定义提示词（可选）
    */
@@ -124,9 +129,10 @@ async function buildSystemPrompt(
   bookId: string | undefined,
   chapterId: string | undefined,
   chapterTitle: string | undefined,
+  languages: ExecutionLanguages,
 ): Promise<string> {
   if (!bookId) {
-    return buildTermTranslationSystemPromptBase();
+    return buildTermTranslationSystemPromptBase(languages);
   }
 
   const specialInstructions = getSpecialInstructions(bookId, chapterId, 'translation');
@@ -135,6 +141,7 @@ async function buildSystemPrompt(
   const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
   return buildTermTranslationSystemPrompt({
+    languages,
     bookContextSection,
     chapterContextSection,
     specialInstructionsSection,
@@ -144,46 +151,55 @@ async function buildSystemPrompt(
 /**
  * 将匹配到的角色信息格式化成一行描述
  */
-function formatCharacterDetail(c: CharacterSetting): string {
-  const parts: string[] = [];
-  const sexLabels: Record<string, string> = {
-    male: '男',
-    female: '女',
-    other: '其他',
-  };
-
-  parts.push(`ID：${c.id}`);
-  parts.push(`${c.name} → ${c.translation.translation}`);
-  parts.push(`性别：${c.sex ? sexLabels[c.sex] || c.sex : '未设置'}`);
-  parts.push(`描述：${c.description || '无'}`);
-  parts.push(`说话风格：${c.speakingStyle || '无'}`);
-
-  // 别名格式与 context-builder 共享；为空时输出占位符"别名：无"
-  parts.push(formatCharacterAliases(c.aliases) ?? '别名：无');
-  return parts.join(' | ');
+function formatCharacterDetail(c: CharacterSetting, languages: ExecutionLanguages): string {
+  const t = (key: 'sex' | 'description' | 'speakingStyle', value: string) =>
+    translateText(languages.uiLocale, `aiTasks.term.${key}`, { value });
+  const sex = c.sex
+    ? translateText(languages.uiLocale, `aiTasks.term.${c.sex}`)
+    : translateText(languages.uiLocale, 'aiTasks.term.unset');
+  const none = translateText(languages.uiLocale, 'aiTasks.term.none');
+  return [
+    `ID: ${c.id}`,
+    `${c.name} → ${getNameTranslation(c, languages.targetLanguage)?.translation ?? ''}`,
+    t('sex', sex),
+    t('description', c.description || none),
+    t('speakingStyle', c.speakingStyle || none),
+    formatCharacterAliases(c.aliases, languages.targetLanguage, languages.uiLocale) ??
+      translateText(languages.uiLocale, 'aiTasks.context.aliases', { aliases: none }),
+  ].join(' | ');
 }
 
 /**
  * 将匹配到的角色格式化为上下文片段
  */
-function formatRelatedCharactersSection(foundCharacters: CharacterSetting[]): string {
+function formatRelatedCharactersSection(
+  foundCharacters: CharacterSetting[],
+  languages: ExecutionLanguages,
+): string {
   if (foundCharacters.length === 0) return '';
-  const characterDetails = foundCharacters.map(formatCharacterDetail).join('\n');
-  return `登场角色：\n${characterDetails}\n`;
+  const characterDetails = foundCharacters
+    .map((character) => formatCharacterDetail(character, languages))
+    .join('\n');
+  return translateText(languages.uiLocale, 'aiTasks.term.characters', {
+    details: characterDetails,
+  });
 }
 
 /**
  * 将匹配到的术语格式化为上下文片段
  */
-function formatRelatedTermsSection(foundTerms: Terminology[]): string {
+function formatRelatedTermsSection(
+  foundTerms: Terminology[],
+  languages: ExecutionLanguages,
+): string {
   if (foundTerms.length === 0) return '';
   const termList = foundTerms
     .map(
       (t) =>
-        `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`,
+        `- ${t.name} → ${getNameTranslation(t, languages.targetLanguage)?.translation ?? ''}${t.description ? `: ${t.description}` : ''}`,
     )
     .join('\n');
-  return `相关术语：\n${termList}\n`;
+  return translateText(languages.uiLocale, 'aiTasks.term.terms', { details: termList });
 }
 
 /**
@@ -192,6 +208,7 @@ function formatRelatedTermsSection(foundTerms: Terminology[]): string {
 async function buildRelatedContextInfo(
   bookId: string | undefined,
   trimmedText: string,
+  languages: ExecutionLanguages,
 ): Promise<string> {
   if (!bookId) {
     return '';
@@ -210,9 +227,9 @@ async function buildRelatedContextInfo(
     return '';
   }
 
-  let relatedContextInfo = '\n\n相关背景信息（从当前书籍中匹配到）：\n';
-  relatedContextInfo += formatRelatedCharactersSection(foundCharacters);
-  relatedContextInfo += formatRelatedTermsSection(foundTerms);
+  let relatedContextInfo = translateText(languages.uiLocale, 'aiTasks.term.related');
+  relatedContextInfo += formatRelatedCharactersSection(foundCharacters, languages);
+  relatedContextInfo += formatRelatedTermsSection(foundTerms, languages);
 
   console.log('术语翻译 - 相关上下文信息：', relatedContextInfo);
   return relatedContextInfo;
@@ -326,6 +343,11 @@ export class TermTranslationService {
     model: AIModel,
     options?: TermTranslationServiceOptions,
   ): Promise<{ text: string; taskId?: string }> {
+    const requestedLanguages = options?.languages ?? captureExecutionLanguages('zh-CN');
+    const languages = captureExecutionLanguages(
+      requestedLanguages.uiLocale,
+      requestedLanguages.targetLanguage,
+    );
     const {
       prompt,
       onChunk,
@@ -369,11 +391,12 @@ export class TermTranslationService {
 
       const config = buildModelServiceConfig(model, { temperature, signal: finalSignal });
 
-      const systemPrompt = await buildSystemPrompt(bookId, chapterId, chapterTitle);
-      const relatedContextInfo = await buildRelatedContextInfo(bookId, trimmedText);
+      const systemPrompt = await buildSystemPrompt(bookId, chapterId, chapterTitle, languages);
+      const relatedContextInfo = await buildRelatedContextInfo(bookId, trimmedText, languages);
 
       // 构建用户提示词
       const userPrompt = buildTermTranslationUserPrompt({
+        languages,
         text: trimmedText,
         relatedContextInfo,
         customPrompt: prompt,
@@ -386,6 +409,7 @@ export class TermTranslationService {
       ];
 
       const finalText = await runTranslationLoop({
+        languages,
         history,
         finalSignal,
         service,
@@ -447,6 +471,7 @@ function buildTranslationRetryErrorMessage(parseError: unknown): string {
  * 运行 JSON 解析重试循环，直到拿到合法翻译或超过最大重试次数
  */
 async function runTranslationLoop(params: {
+  languages: ExecutionLanguages;
   history: ChatMessage[];
   finalSignal: AbortSignal;
   service: ReturnType<typeof AIServiceFactory.getService>;
@@ -493,7 +518,7 @@ async function runTranslationLoop(params: {
       history.push({ role: 'assistant', content: responseText });
       history.push({
         role: 'user',
-        content: buildTermTranslationRetryPrompt(),
+        content: buildTermTranslationRetryPrompt(params.languages),
       });
     }
   }

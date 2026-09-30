@@ -7,6 +7,12 @@ import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { AIServiceConfig, TextGenerationRequest } from '../services/ai/types/ai-service';
 import type { Paragraph } from '../models/novel';
+import { useBooksStore } from '../stores/books';
+import { useAIProcessingStore } from '../stores/ai-processing';
+import { createAIProcessingStoreAdapter } from '../services/ai/tasks/utils/task-types';
+import { saveLanguageParagraphResults } from '../services/ai/tasks/utils/save-language-results';
+import { ChapterContentService } from '../services/chapter-content-service';
+import { BookService } from '../services/book-service';
 
 afterEach(() => vi.restoreAllMocks());
 const task = { enabled: true, temperature: 0.7 };
@@ -45,6 +51,92 @@ const config = {
 };
 
 describe('单段执行语言', () => {
+  it('工具轮次使用冻结目标，晚到回调保存英文而保留新目标和简中版本', async () => {
+    setActivePinia(createPinia());
+    const books = useBooksStore();
+    const source = { ...paragraph, id: '11111111' };
+    await books.addBook({
+      id: 'b',
+      title: '书',
+      targetLanguage: 'en-US',
+      createdAt: new Date(0),
+      lastEdited: new Date(0),
+      volumes: [
+        {
+          id: 'v',
+          title: '卷',
+          chapters: [
+            {
+              id: 'c',
+              title: '章',
+              createdAt: new Date(0),
+              lastEdited: new Date(0),
+              content: [source],
+            },
+          ],
+        },
+      ],
+    });
+    const processing = useAIProcessingStore();
+    let turn = 0;
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
+      generateText: async () => {
+        if (turn++ > 0) return { text: 'DONE' };
+        await books.updateBook('b', { targetLanguage: 'zh-TW' });
+        return {
+          text: '',
+          toolCalls: [
+            {
+              id: 'call',
+              type: 'function',
+              function: {
+                name: 'add_translation_batch',
+                arguments: JSON.stringify({
+                  paragraphs: [
+                    {
+                      paragraph_id: '11111111',
+                      original_text_prefix: 'source',
+                      translated_text: 'CN_ONLY',
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        };
+      },
+    } as never);
+    const languages = captureExecutionLanguages('en-US');
+    await processSingleParagraph(
+      source,
+      model,
+      {
+        bookId: 'b',
+        chapterId: 'c',
+        languages,
+        allChapterParagraphs: [source],
+        aiProcessingStore: createAIProcessingStoreAdapter(processing),
+        onParagraphResult: (results) =>
+          saveLanguageParagraphResults(
+            'b',
+            'c',
+            languages.targetLanguage,
+            model.id,
+            [source],
+            results,
+          ).then(() => {}),
+      },
+      config,
+    );
+    const saved = (await ChapterContentService.loadChapterContent('c'))![0]!;
+    expect(
+      saved.translations.find(
+        (value) => value.translation === 'CN_ONLY' && value.language === 'en-US',
+      )?.language,
+    ).toBe('en-US');
+    expect(saved.translations.find((value) => value.id === 'cn')?.translation).toBe('CN_ONLY');
+    expect((await BookService.getBookById('b'))?.targetLanguage).toBe('zh-TW');
+  });
   it('启动时捕获目标语言，异步准备期间更改 options 不改变发给模型的选用', async () => {
     setActivePinia(createPinia());
     const sent: string[] = [];

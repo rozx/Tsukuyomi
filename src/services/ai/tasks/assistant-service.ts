@@ -15,6 +15,10 @@ import type { ActionInfo } from '../tools/types';
 import type { ToastCallback } from '../tools/toast-helper';
 import type { AIProcessingStore } from './utils/task-types';
 import { useContextStore } from 'src/stores/context';
+import { useSettingsStore } from 'src/stores/settings';
+import { useBooksStore } from 'src/stores/books';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from './utils/execution-languages';
 import { getTodosSystemPrompt } from './utils/todo-helper';
 import { TOOL_CALL_PLACEHOLDER } from './utils/stream-handler';
 import { AssistantExecutionPaused } from './utils/assistant-execution';
@@ -72,6 +76,7 @@ const TOOLS_REQUIRING_BOOK_ID = [
 ];
 
 export interface AssistantServiceOptions {
+  languages?: ExecutionLanguages;
   /** 宿主专属执行配置；省略时保持普通聊天的上下文和工具行为。 */
   execution?: AssistantExecution;
   /**
@@ -162,6 +167,7 @@ export class AssistantService {
     sessionId?: string,
     aiModelId?: string,
     signal?: AbortSignal,
+    languages?: ExecutionLanguages,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
     const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
@@ -212,6 +218,11 @@ export class AssistantService {
         undefined, // paragraphIds
         undefined, // aiProcessingStore
         aiModelId,
+        undefined, // chunkIndex
+        undefined, // submittedParagraphIds
+        undefined, // accumulatedParagraphs
+        undefined, // enableOriginalTextValidation
+        languages,
       );
       results.push(result);
     }
@@ -639,6 +650,7 @@ export class AssistantService {
             sessionId,
             model.id,
             signal,
+            options.languages,
           )),
         );
       response = await this.executeAIRequest({ ...params, initial: false });
@@ -666,13 +678,28 @@ export class AssistantService {
     options: AssistantServiceOptions = {},
   ): Promise<AssistantResult> {
     const context = options.execution?.context ?? useContextStore().getContext;
+    const uiLocale = useSettingsStore().uiLocale;
+    const requested =
+      options.execution?.languages ??
+      options.languages ??
+      captureExecutionLanguages(
+        uiLocale,
+        context.currentBookId
+          ? (useBooksStore().getBookById(context.currentBookId)?.targetLanguage ?? 'zh-CN')
+          : uiLocale,
+      );
+    const languages = captureExecutionLanguages(requested.uiLocale, requested.targetLanguage);
     const tools =
       options.execution?.tools ??
       ToolRegistry.getAssistantToolsExcludingTranslationManagement(
         context.currentBookId || undefined,
       );
     const history = options.messageHistory ?? options.execution?.history;
-    const configured = { ...options, ...(history?.length ? { messageHistory: history } : {}) };
+    const configured = {
+      ...options,
+      languages,
+      ...(history?.length ? { messageHistory: history } : {}),
+    };
     const run = () => this.chatWithContext(model, userMessage, configured, context, tools);
     return options.execution
       ? run()

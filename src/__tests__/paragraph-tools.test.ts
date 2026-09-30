@@ -1,3 +1,5 @@
+import { BookService } from '../services/book-service';
+import { getDB } from '../utils/indexed-db';
 import './setup'; // 导入测试环境设置（IndexedDB polyfill等）
 import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
 import { containsWholeKeyword, replaceWholeKeyword } from '../services/ai/tools/paragraph-tools';
@@ -231,12 +233,18 @@ const mockBooksStore: {
   books: Novel[];
   getBookById: (id: string) => Novel | undefined;
   updateBook: (id: string, updates: Partial<Novel>) => Promise<void>;
+  refreshBookFromStorage: (id: string) => Promise<Novel | undefined>;
 } = {
   books: [],
   getBookById: (id: string) => {
     return mockBooksStore.books.find((book) => book.id === id);
   },
   updateBook: mockUpdateBook,
+  refreshBookFromStorage: async (id) => {
+    const saved = await BookService.getBookById(id);
+    if (saved) mockBooksStore.books = [saved];
+    return saved;
+  },
 };
 
 // Mock useAIModelsStore
@@ -248,6 +256,13 @@ const mockUseAIModelsStore = mock(() => ({
     model: 'gpt-4',
   })),
 }));
+
+async function savedParagraph(chapterId: string, paragraphId: string): Promise<Paragraph> {
+  const record = await (await getDB()).get('chapter-contents', chapterId);
+  return (JSON.parse(record!.content) as Paragraph[]).find(
+    (paragraph) => paragraph.id === paragraphId,
+  )!;
+}
 
 describe('batch_replace_translations', () => {
   const mockLoadChapterContent = mock((_chapterId: string) =>
@@ -297,6 +312,7 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // 验证书籍可以被找到
     expect(mockBooksStore.getBookById(novel.id)).toBeDefined();
@@ -341,24 +357,30 @@ describe('batch_replace_translations', () => {
     // 注意：现在只替换匹配的关键词部分，而不是整个翻译
     if (resultObj.replaced_count >= 2) {
       // "这是测试翻译" 中的 "测试" 被替换为 "新翻译文本" → "这是新翻译文本翻译"
-      expect(para1.translations[0]?.translation).toBe('这是新翻译文本翻译');
+      expect((await savedParagraph('chapter1', para1.id)).translations[0]?.translation).toBe(
+        '这是新翻译文本翻译',
+      );
       // para2 的翻译是 "这是另一个测试"，"测试" 被替换为 "新翻译文本" → "这是另一个新翻译文本"
-      expect(para2.translations[0]?.translation).toBe('这是另一个新翻译文本');
-      expect(para3.translations[0]?.translation).toBe('这是普通翻译'); // 不应该被替换
+      expect((await savedParagraph('chapter1', para2.id)).translations[0]?.translation).toBe(
+        '这是另一个新翻译文本',
+      );
+      expect((await savedParagraph('chapter1', para3.id)).translations[0]?.translation).toBe(
+        '这是普通翻译',
+      ); // 不应该被替换
     }
   });
 
   test('应该在 onAction.previousData 中保存 old_selected_translation_id，用于撤销恢复', async () => {
-    // 创建测试数据：段落没有选中翻译（selectedTranslationId 为空字符串）
+    // 创建测试数据：撤销需要保留操作前的目标选用 ID
     const para1 = createTestParagraph('para1', '原文1', [
       { id: 'trans1', translation: '这是测试翻译', aiModelId: 'model1' },
     ]);
-    para1.selectedTranslationId = '';
 
     const chapter = createTestChapter('chapter1', [para1]);
     const volume = createTestVolume('volume1', [chapter]);
     const novel = createTestNovel([volume]);
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     mockLoadChapterContentsBatch.mockImplementation((_chapterIds: string[]) => {
       return Promise.resolve(new Map<string, Paragraph[]>());
@@ -386,8 +408,10 @@ describe('batch_replace_translations', () => {
     const actionArg = (onAction as any).mock.calls[0][0];
     expect(actionArg?.previousData?.replaced_paragraphs?.length).toBe(1);
     expect(actionArg.previousData.replaced_paragraphs[0].paragraph_id).toBe('para1');
-    // 关键断言：必须保存旧的选中翻译 ID（这里为空字符串）
-    expect(actionArg.previousData.replaced_paragraphs[0].old_selected_translation_id).toBe('');
+    // 关键断言：保存旧的目标语言选用 ID
+    expect(actionArg.previousData.replaced_paragraphs[0].old_selected_translation_id).toBe(
+      'trans1',
+    );
   });
 
   test('当使用全文索引时，应传入 novel 引用并正确替换保存（避免对象引用不一致）', async () => {
@@ -405,6 +429,7 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((_chapterIds: string[]) => {
@@ -454,12 +479,17 @@ describe('batch_replace_translations', () => {
     expect(resultObj.success).toBe(true);
     expect(resultObj.replaced_count).toBe(1);
 
-    // 关键断言：必须替换到 store 内的真实段落对象
-    expect(para1.translations[0]?.translation).toBe('这是新翻译翻译');
-    expect(para2.translations[0]?.translation).toBe('这是普通翻译');
+    // 关键断言：候选对象只用于准备编辑，实际结果落入正文存储
+    expect((await savedParagraph('chapter1', para1.id)).translations[0]?.translation).toBe(
+      '这是新翻译翻译',
+    );
+    expect((await savedParagraph('chapter1', para2.id)).translations[0]?.translation).toBe(
+      '这是普通翻译',
+    );
 
-    // 并且应触发保存（updateBook）
-    expect(mockUpdateBook).toHaveBeenCalled();
+    // 旧候选快照不被就地修改或用于整书覆盖。
+    expect(para1.translations[0]?.translation).toBe('这是测试翻译');
+    expect(mockUpdateBook).not.toHaveBeenCalled();
   });
 
   test('应该只匹配完整的关键词，不匹配部分词', async () => {
@@ -480,6 +510,7 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
@@ -513,11 +544,17 @@ describe('batch_replace_translations', () => {
 
     // 验证所有翻译已被替换（只替换关键词部分）
     // "这是测试翻译" 中的 "测试" 被替换为 "新翻译" → "这是新翻译翻译"
-    expect(para1.translations[0]?.translation).toBe('这是新翻译翻译');
+    expect((await savedParagraph('chapter1', para1.id)).translations[0]?.translation).toBe(
+      '这是新翻译翻译',
+    );
     // "这是测试中" 中的 "测试" 被替换为 "新翻译" → "这是新翻译中"
-    expect(para2.translations[0]?.translation).toBe('这是新翻译中');
+    expect((await savedParagraph('chapter1', para2.id)).translations[0]?.translation).toBe(
+      '这是新翻译中',
+    );
     // "这是测试文本" 中的 "测试" 被替换为 "新翻译" → "这是新翻译文本"
-    expect(para3.translations[0]?.translation).toBe('这是新翻译文本');
+    expect((await savedParagraph('chapter1', para3.id)).translations[0]?.translation).toBe(
+      '这是新翻译文本',
+    );
   });
 
   test('应该只匹配完整的关键词，不匹配部分词（英文）', async () => {
@@ -538,6 +575,7 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
@@ -572,11 +610,15 @@ describe('batch_replace_translations', () => {
     // 验证只有 para1 的翻译被替换（只替换关键词部分）
     // "This is a test." 中的 "test" 被替换为 "New translation" → "This is a New translation."
     // 注意：normalizeTranslationQuotes 可能会规范化标点符号
-    const replaced = para1.translations[0]?.translation;
+    const replaced = (await savedParagraph('chapter1', para1.id)).translations[0]?.translation;
     expect(replaced).toContain('This is a New translation');
     expect(replaced).not.toContain('test');
-    expect(para2.translations[0]?.translation).toBe('This is testing.'); // 不应该被替换
-    expect(para3.translations[0]?.translation).toBe('I am tested.'); // 不应该被替换
+    expect((await savedParagraph('chapter1', para2.id)).translations[0]?.translation).toBe(
+      'This is testing.',
+    ); // 不应该被替换
+    expect((await savedParagraph('chapter1', para3.id)).translations[0]?.translation).toBe(
+      'I am tested.',
+    ); // 不应该被替换
   });
 
   test('应该支持原文关键词搜索（仅在翻译文本中找到关键词时才替换）', async () => {
@@ -599,6 +641,7 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
@@ -631,11 +674,13 @@ describe('batch_replace_translations', () => {
     expect(resultObj.replaced_count).toBe(1); // 只有 para1 应该被替换（因为"测试"在翻译文本中）
 
     // "这是测试翻译" 中的 "测试" 被替换为 "新翻译" → "这是新翻译翻译"
-    expect(para1.translations[0]?.translation).toBe('这是新翻译翻译');
+    expect((await savedParagraph('chapter1', para1.id)).translations[0]?.translation).toBe(
+      '这是新翻译翻译',
+    );
     // para2 的翻译不包含"测试"，所以被跳过，不会被替换
-    expect(para2.translations[0]?.translation).toBe('翻译2');
+    expect((await savedParagraph('chapter1', para2.id)).translations[0]?.translation).toBe('翻译2');
     // para3 的原文不包含"测试"，所以不会被匹配
-    expect(para3.translations[0]?.translation).toBe('翻译3');
+    expect((await savedParagraph('chapter1', para3.id)).translations[0]?.translation).toBe('翻译3');
   });
 
   test('应该支持同时使用原文和翻译关键词', async () => {
@@ -655,6 +700,7 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
@@ -688,9 +734,15 @@ describe('batch_replace_translations', () => {
     expect(resultObj.replaced_count).toBe(1); // 只有 para1 同时满足两个条件
 
     // "测试翻译" 中的 "测试" 被替换为 "新翻译" → "新翻译翻译"
-    expect(para1.translations[0]?.translation).toBe('新翻译翻译');
-    expect(para2.translations[0]?.translation).toBe('普通翻译'); // 原文匹配但翻译不匹配
-    expect(para3.translations[0]?.translation).toBe('测试翻译'); // 翻译匹配但原文不匹配
+    expect((await savedParagraph('chapter1', para1.id)).translations[0]?.translation).toBe(
+      '新翻译翻译',
+    );
+    expect((await savedParagraph('chapter1', para2.id)).translations[0]?.translation).toBe(
+      '普通翻译',
+    ); // 原文匹配但翻译不匹配
+    expect((await savedParagraph('chapter1', para3.id)).translations[0]?.translation).toBe(
+      '测试翻译',
+    ); // 翻译匹配但原文不匹配
   });
 
   test('应该限制最大替换数量', async () => {
@@ -710,6 +762,7 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
@@ -754,6 +807,7 @@ describe('batch_replace_translations', () => {
 
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
@@ -791,6 +845,7 @@ describe('batch_replace_translations', () => {
     const novel = createTestNovel([]);
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {
@@ -823,6 +878,7 @@ describe('batch_replace_translations', () => {
     const novel = createTestNovel([]);
     // Mock store to return the novel
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     // Mock chapter content loading - chapters already have content, so return empty map
     mockLoadChapterContentsBatch.mockImplementation((chapterIds: string[]) => {

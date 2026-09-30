@@ -1,6 +1,7 @@
 import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type { ActionInfo, ToolDefinition } from './types';
 import type { ToastCallback } from './toast-helper';
+import type { ExecutionLanguages } from 'src/models/locale';
 import {
   buildErrorToolResult,
   buildUnknownToolResult,
@@ -328,6 +329,7 @@ export class ToolRegistry {
     submittedParagraphIds?: Set<string>,
     accumulatedParagraphs?: Map<string, string>,
     enableOriginalTextValidation?: boolean,
+    languages?: ExecutionLanguages,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const tool = this.getAllToolDefinitions().find(
@@ -350,6 +352,7 @@ export class ToolRegistry {
       aiModelId,
       submittedParagraphIds,
       accumulatedParagraphs,
+      languages,
     };
     for (const key of Object.keys(optionalTruthy)) {
       const value = optionalTruthy[key];

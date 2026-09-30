@@ -1,8 +1,6 @@
+import type { ExecutionLanguages } from 'src/models/locale';
 import type { AIModel } from 'src/services/ai/types/ai-model';
-import type {
-  TextGenerationStreamCallback,
-  AITool,
-} from 'src/services/ai/types/ai-service';
+import type { TextGenerationStreamCallback, AITool } from 'src/services/ai/types/ai-service';
 import type { Paragraph, ScoreBreakdown } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
@@ -20,6 +18,7 @@ import { buildTranslationSystemPrompt } from './prompts/translation';
  * 翻译服务选项
  */
 export interface TranslationServiceOptions {
+  languages?: ExecutionLanguages;
   /**
    * 流式数据回调函数
    */
@@ -127,6 +126,7 @@ export class TranslationService {
             await Promise.resolve(options.onParagraphTranslation!(enrichedParagraphs));
           } catch (error) {
             console.error('[TranslationService] ⚠️ 段落翻译回调失败:', error);
+            throw error;
           }
         }
       : undefined;
@@ -138,6 +138,7 @@ export class TranslationService {
             await Promise.resolve(options.onTitleTranslation!(params.title));
           } catch (error) {
             console.error('[TranslationService] ⚠️ 标题回调失败:', error);
+            throw error;
           }
         }
       : undefined;
@@ -166,23 +167,18 @@ export class TranslationService {
       });
     };
 
-    return processTextTask(
-      content,
-      model,
-      pickTextTaskOptions(options),
-      {
-        taskType: 'translation',
-        logLabel: 'TranslationService',
-        temperature: model.isDefault.translation?.temperature ?? 0.7,
-        requiresTranslation: false,
-        onlyChangedParagraphs: false,
-        buildSystemPrompt,
-        onParagraphsExtracted,
-        onTitleExtracted,
-        enablePreviousChapter: true,
-        enableBriefPlanning: true,
-      },
-    );
+    return processTextTask(content, model, pickTextTaskOptions(options), {
+      taskType: 'translation',
+      logLabel: 'TranslationService',
+      temperature: model.isDefault.translation?.temperature ?? 0.7,
+      requiresTranslation: false,
+      onlyChangedParagraphs: false,
+      buildSystemPrompt,
+      onParagraphsExtracted,
+      onTitleExtracted,
+      enablePreviousChapter: true,
+      enableBriefPlanning: true,
+    });
   }
 }
 
@@ -231,7 +227,12 @@ function enrichParagraphsWithMemory(
   paragraphs: { id: string; translation: string }[],
   referencedMemories: string[],
   memoryScoreBreakdown: Record<string, ScoreBreakdown> | undefined,
-): Array<{ id: string; translation: string; referencedMemories?: string[]; memoryScoreBreakdown?: Record<string, ScoreBreakdown> }> {
+): Array<{
+  id: string;
+  translation: string;
+  referencedMemories?: string[];
+  memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+}> {
   return paragraphs.map((p) => ({
     ...p,
     ...(referencedMemories.length > 0 ? { referencedMemories } : {}),

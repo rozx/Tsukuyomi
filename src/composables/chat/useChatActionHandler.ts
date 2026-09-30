@@ -1,3 +1,4 @@
+import { restoreEntityAction } from 'src/services/ai/tools/entity-action-restore';
 import { nextTick, type Ref } from 'vue';
 import { type Router } from 'vue-router';
 import co from 'co';
@@ -13,8 +14,7 @@ import {
 } from 'src/stores/chat-sessions';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { TerminologyService } from 'src/services/terminology-service';
-import { ChapterService } from 'src/services/chapter-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
+import { restoreTranslationAction } from 'src/services/ai/tools/translation-action-restore';
 import {
   createMessageActionFromActionInfo,
   ACTION_LABELS,
@@ -99,39 +99,22 @@ export function useChatActionHandler(
   /**
    * 构建创建操作的 revert 回调（删除实体）
    */
-  const buildCreateRevert = (
-    entityType: 'character' | 'term',
-    entityId: string,
-  ): (() => Promise<void>) => {
-    return async () => {
-      if (contextStore.getContext.currentBookId) {
-        if (entityType === 'character') {
-          await CharacterSettingService.deleteCharacterSetting(
-            contextStore.getContext.currentBookId,
-            entityId,
-          );
-        } else {
-          await TerminologyService.deleteTerminology(
-            contextStore.getContext.currentBookId,
-            entityId,
-          );
-        }
-      }
+  const buildCreateRevert =
+    (entityType: 'character' | 'term', entityId: string, bookId: string): (() => Promise<void>) =>
+    async () => {
+      if (entityType === 'character')
+        await CharacterSettingService.deleteCharacterSetting(bookId, entityId);
+      else await TerminologyService.deleteTerminology(bookId, entityId);
     };
-  };
 
   /**
    * 构建删除操作的 revert 回调（重新创建实体）
    */
-  const buildEntityRestore = (
-    entityType: 'character' | 'term',
-    previousData: CharacterSetting | Terminology,
-  ): (() => Promise<void>) => {
-    const bookId = contextStore.getContext.currentBookId;
+  const buildEntityRestore = (action: ActionInfo, bookId: string): (() => Promise<void>) => {
     const operationId = v4();
     return async () => {
-      if (!bookId) return;
-      await booksStore.restoreEntity(bookId, entityType, previousData, operationId);
+      await restoreEntityAction(action, bookId, operationId);
+      await booksStore.refreshBookFromStorage(bookId);
     };
   };
 
@@ -147,9 +130,8 @@ export function useChatActionHandler(
     const entity = action.data as CharacterSetting | Terminology;
     const detail = formatEntityInfo(entity, entityType);
 
-    if (!contextStore.getContext.currentBookId) {
-      return;
-    }
+    const bookId = action.execution?.bookId ?? contextStore.getContext.currentBookId;
+    if (!bookId) return;
 
     shouldShowRevertToastRef.value = true;
 
@@ -160,7 +142,7 @@ export function useChatActionHandler(
         summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
         detail,
         life: 3000,
-        onRevert: buildCreateRevert(entityType, entity.id),
+        onRevert: buildCreateRevert(entityType, entity.id, bookId),
       });
     } else if (action.type === 'update') {
       // 更新操作：添加恢复 revert
@@ -171,7 +153,7 @@ export function useChatActionHandler(
           summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
           detail,
           life: 3000,
-          onRevert: buildEntityRestore(entityType, previousData),
+          onRevert: buildEntityRestore(action, bookId),
         });
       }
     } else if (action.type === 'delete') {
@@ -184,7 +166,7 @@ export function useChatActionHandler(
           summary: `${ACTION_LABELS[action.type]}${ENTITY_LABELS[action.entity]}`,
           detail: deleteDetail,
           life: 3000,
-          onRevert: buildEntityRestore(entityType, previousData),
+          onRevert: buildEntityRestore(action, bookId),
         });
       }
     }
@@ -353,6 +335,11 @@ export function useChatActionHandler(
     return `已批量替换 ${data.replaced_paragraph_count} 个段落（共 ${data.replaced_translation_count} 个翻译版本） | 替换为: "${replacementPreview}"${keywordInfo}`;
   };
 
+  const buildTranslationRevert = (action: ActionInfo, bookId: string) => async () => {
+    await restoreTranslationAction(action, bookId);
+    await booksStore.refreshBookFromStorage(bookId);
+  };
+
   const handleBatchReplaceTranslationToast = (action: ActionInfo): void => {
     const batchData = action.data as BatchReplaceActionData;
     const previousData = action.previousData as
@@ -365,9 +352,8 @@ export function useChatActionHandler(
           }>;
         }
       | undefined;
-    const canRevert = !!(
-      previousData?.replaced_paragraphs && contextStore.getContext.currentBookId
-    );
+    const bookId = action.execution?.bookId ?? contextStore.getContext.currentBookId;
+    const canRevert = !!(previousData?.replaced_paragraphs && bookId);
 
     const toastPayload: Record<string, unknown> = {
       severity: 'success',
@@ -376,99 +362,9 @@ export function useChatActionHandler(
       life: 5000,
     };
     if (canRevert && previousData) {
-      toastPayload.onRevert = () => revertBatchReplaceTranslations(previousData);
+      toastPayload.onRevert = buildTranslationRevert(action, bookId!);
     }
     toast.add(toastPayload);
-  };
-
-  type ReplacedParagraph = {
-    paragraph_id: string;
-    chapter_id: string;
-    old_selected_translation_id?: string;
-    old_translations: Array<{ id: string; translation: string; aiModelId: string }>;
-  };
-
-  type BatchReplaceRevertData = {
-    replaced_paragraphs: ReplacedParagraph[];
-  };
-
-  const collectChaptersNeedingLoad = (
-    book: ReturnType<typeof booksStore.getBookById> & object,
-    replacedParagraphs: ReplacedParagraph[],
-  ): string[] => {
-    const chapterIds = Array.from(
-      new Set(replacedParagraphs.map((p) => p.chapter_id).filter((id): id is string => !!id)),
-    );
-    return chapterIds.filter((chapterId) => {
-      const found = ChapterService.findChapterById(book, chapterId);
-      return !!found && found.chapter.content === undefined;
-    });
-  };
-
-  const ensureChaptersLoadedForRevert = async (
-    book: ReturnType<typeof booksStore.getBookById> & object,
-    chaptersToLoad: string[],
-  ): Promise<void> => {
-    if (chaptersToLoad.length === 0) return;
-    const contentsMap = await ChapterContentService.loadChapterContentsBatch(chaptersToLoad);
-    for (const chapterId of chaptersToLoad) {
-      const found = ChapterService.findChapterById(book, chapterId);
-      if (!found) continue;
-      found.chapter.content = contentsMap.get(chapterId) || [];
-      found.chapter.contentLoaded = true;
-    }
-  };
-
-  const restoreTranslationsInPlace = (
-    paragraph: NonNullable<
-      NonNullable<ReturnType<typeof ChapterService.findChapterById>>['chapter']['content']
-    >[number],
-    oldTranslations: ReplacedParagraph['old_translations'],
-  ): void => {
-    if (!paragraph?.translations || paragraph.translations.length === 0) return;
-    for (const oldTranslation of oldTranslations) {
-      const idx = paragraph.translations.findIndex((t) => t.id === oldTranslation.id);
-      const target = paragraph.translations[idx];
-      if (idx !== -1 && target) {
-        target.translation = oldTranslation.translation;
-        target.aiModelId = oldTranslation.aiModelId;
-      }
-    }
-  };
-
-  const applyRevertToBook = (
-    book: ReturnType<typeof booksStore.getBookById> & object,
-    replacedParagraphs: ReplacedParagraph[],
-  ): void => {
-    for (const replaced of replacedParagraphs) {
-      const chapterInfo = ChapterService.findChapterById(book, replaced.chapter_id);
-      if (!chapterInfo?.chapter.content) continue;
-      const paragraph = chapterInfo.chapter.content.find((p) => p?.id === replaced.paragraph_id);
-      if (!paragraph?.translations || paragraph.translations.length === 0) continue;
-      if ('old_selected_translation_id' in replaced) {
-        paragraph.selectedTranslationId = replaced.old_selected_translation_id || '';
-      }
-      restoreTranslationsInPlace(paragraph, replaced.old_translations);
-    }
-  };
-
-  const revertBatchReplaceTranslations = async (
-    previousData: BatchReplaceRevertData,
-  ): Promise<void> => {
-    const bookId = contextStore.getContext.currentBookId;
-    if (!bookId) return;
-    const book = booksStore.getBookById(bookId);
-    if (!book) return;
-
-    // 按需加载尚未加载的章节，避免 findParagraphLocation 查不到导致撤销失效
-    const chaptersToLoad = collectChaptersNeedingLoad(book, previousData.replaced_paragraphs);
-    await ensureChaptersLoadedForRevert(book, chaptersToLoad);
-
-    applyRevertToBook(book, previousData.replaced_paragraphs);
-
-    if (book.volumes) {
-      await booksStore.updateBook(bookId, { volumes: book.volumes });
-    }
   };
 
   type SingleTranslationActionData = {
@@ -496,7 +392,8 @@ export function useChatActionHandler(
     const previousTranslation = action.previousData as Translation | undefined;
     const detail = `段落翻译已更新 | 旧: "${truncateForPreview(translationData.old_translation)}" → 新: "${truncateForPreview(translationData.new_translation)}"`;
     const summary = `${ACTION_LABELS[action.type as keyof typeof ACTION_LABELS]}${ENTITY_LABELS[action.entity as keyof typeof ENTITY_LABELS]}`;
-    const canRevert = !!(previousTranslation && contextStore.getContext.currentBookId);
+    const bookId = action.execution?.bookId ?? contextStore.getContext.currentBookId;
+    const canRevert = !!(previousTranslation && bookId);
 
     const toastPayload: Record<string, unknown> = {
       severity: 'success',
@@ -505,39 +402,10 @@ export function useChatActionHandler(
       life: 3000,
     };
     if (canRevert && previousTranslation) {
-      toastPayload.onRevert = () =>
-        revertSingleTranslationUpdate(translationData, previousTranslation);
+      toastPayload.onRevert = buildTranslationRevert(action, bookId!);
     }
     toast.add(toastPayload);
     return canRevert;
-  };
-
-  const revertSingleTranslationUpdate = async (
-    translationData: { paragraph_id: string; translation_id: string },
-    previousTranslation: Translation,
-  ): Promise<void> => {
-    const bookId = contextStore.getContext.currentBookId;
-    if (!bookId) return;
-    const book = booksStore.getBookById(bookId);
-    if (!book) return;
-
-    const location = ChapterService.findParagraphLocation(book, translationData.paragraph_id);
-    if (!location) return;
-
-    const { paragraph } = location;
-    const translationIndex = paragraph.translations.findIndex(
-      (t) => t.id === translationData.translation_id,
-    );
-    if (translationIndex === -1) return;
-
-    const translationToRestore = paragraph.translations[translationIndex];
-    if (translationToRestore) {
-      translationToRestore.translation = previousTranslation.translation;
-    }
-
-    if (book.volumes) {
-      await booksStore.updateBook(bookId, { volumes: book.volumes });
-    }
   };
 
   type ToastOutcome = {

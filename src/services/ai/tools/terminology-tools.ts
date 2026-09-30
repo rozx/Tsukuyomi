@@ -1,5 +1,6 @@
 import { TerminologyService } from 'src/services/terminology-service';
-import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
+import type { AppLocale } from 'src/models/locale';
+import { getNameTranslation } from 'src/services/localization/selection';
 import { useBooksStore } from 'src/stores/books';
 import type { Terminology, Novel } from 'src/models/novel';
 import type { ToolDefinition } from './types';
@@ -15,6 +16,15 @@ import {
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
 
+/** 保存后的语言槽由事务生成，响应读取持久化后的对象。 */
+function savedTerm(bookId: string, id: string): Terminology {
+  const term = useBooksStore()
+    .getBookById(bookId)
+    ?.terminologies?.find((value) => value.id === id);
+  if (!term) throw new Error('TERM_WRITE_REJECTED');
+  return term;
+}
+
 /**
  * 构造 list_terms 工具的统一响应体（含分章/全量标记）
  */
@@ -23,13 +33,14 @@ function buildListTermsResponse(
   book: Novel,
   chapter_id: string | undefined,
   all_chapters: boolean,
+  language: AppLocale,
 ) {
   return {
     success: true,
     terms: terms.map((term) => ({
       id: term.id,
       name: term.name,
-      translation: term.translation.translation,
+      translation: getNameTranslation(term, language)?.translation ?? '',
       description: term.description,
     })),
     total: terms.length,
@@ -69,7 +80,8 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -82,11 +94,17 @@ export const terminologyTools: ToolDefinition[] = [
         throw new Error('术语名称和翻译不能为空');
       }
 
-      const term = await TerminologyService.addTerminology(bookId, {
-        name: name.trim(),
-        translation: normalizeTranslationQuotes(translation.trim()),
-        ...(description !== undefined ? { description } : {}),
-      });
+      const created = await TerminologyService.addTerminology(
+        bookId,
+        {
+          name: name.trim(),
+          translation: translation.trim(),
+          ...(description !== undefined ? { description } : {}),
+        },
+        language,
+      );
+
+      const term = savedTerm(bookId, created.id);
 
       // 通过 onAction 回调传递操作信息，统一由 handleActionInfoToast 处理 toast
       // 不再直接调用 showToolToast，避免重复显示 toast
@@ -104,7 +122,7 @@ export const terminologyTools: ToolDefinition[] = [
         term: {
           id: term.id,
           name: term.name,
-          translation: term.translation.translation,
+          translation: getNameTranslation(term, language)?.translation ?? '',
           description: term.description,
         },
       });
@@ -133,7 +151,8 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -159,7 +178,8 @@ export const terminologyTools: ToolDefinition[] = [
         const allTerms = book.terminologies || [];
         const fallbackMatches = allTerms.filter((t) => {
           if (t.name.toLowerCase().includes(keywordLower)) return true;
-          if (t.translation?.translation?.toLowerCase().includes(keywordLower)) return true;
+          if (getNameTranslation(t, language)?.translation.toLowerCase().includes(keywordLower))
+            return true;
           return false;
         });
 
@@ -187,7 +207,7 @@ export const terminologyTools: ToolDefinition[] = [
             terms: limitedMatches.map((t) => ({
               id: t.id,
               name: t.name,
-              translation: t.translation.translation,
+              translation: getNameTranslation(t, language)?.translation ?? '',
               description: t.description,
             })),
             total_matches: fallbackMatches.length,
@@ -234,7 +254,7 @@ export const terminologyTools: ToolDefinition[] = [
         term: {
           id: term.id,
           name: term.name,
-          translation: term.translation.translation,
+          translation: getNameTranslation(term, language)?.translation ?? '',
           description: term.description,
         },
         ...(include_memory && relatedMemories.length > 0
@@ -272,7 +292,8 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -284,7 +305,8 @@ export const terminologyTools: ToolDefinition[] = [
       if (!term_id) {
         throw new Error('术语 ID 不能为空');
       }
-      if (translation !== undefined && !translation.trim()) {
+
+      if (translation !== undefined && translation !== '' && !translation.trim()) {
         throw new Error('术语翻译不能为空');
       }
 
@@ -300,13 +322,20 @@ export const terminologyTools: ToolDefinition[] = [
       } = {};
 
       if (translation !== undefined) {
-        updates.translation = normalizeTranslationQuotes(translation.trim());
+        updates.translation = translation.trim();
       }
       if (description !== undefined) {
         updates.description = description;
       }
 
-      const term = await TerminologyService.updateTerminology(bookId, term_id, updates);
+      const changed = await TerminologyService.updateTerminology(
+        bookId,
+        term_id,
+        updates,
+        language,
+      );
+
+      const term = savedTerm(bookId, changed.id);
 
       if (onAction) {
         onAction({
@@ -323,7 +352,7 @@ export const terminologyTools: ToolDefinition[] = [
         term: {
           id: term.id,
           name: term.name,
-          translation: term.translation.translation,
+          translation: getNameTranslation(term, language)?.translation ?? '',
           description: term.description,
         },
       });
@@ -410,7 +439,8 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -441,12 +471,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       // 如果 all_chapters 为 false 且提供了 chapter_id，按章节文本过滤
       if (!all_chapters && chapter_id) {
-        terms = await filterEntitiesForChapter(
-          book,
-          chapter_id,
-          terms,
-          findUniqueTermsInText,
-        );
+        terms = await filterEntitiesForChapter(book, chapter_id, terms, findUniqueTermsInText);
       }
 
       if (limit && limit > 0) {
@@ -454,7 +479,7 @@ export const terminologyTools: ToolDefinition[] = [
       }
 
       return JSON.stringify(
-        buildListTermsResponse(terms, book, chapter_id, all_chapters),
+        buildListTermsResponse(terms, book, chapter_id, all_chapters, language),
       );
     },
   },
@@ -488,7 +513,8 @@ export const terminologyTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       if (!bookId) {
         throw new Error('书籍 ID 不能为空');
       }
@@ -527,12 +553,12 @@ export const terminologyTools: ToolDefinition[] = [
         );
         // 搜索翻译
         const translationMatch = keywordsLower.some((keyword) =>
-          term.translation?.translation?.toLowerCase().includes(keyword),
+          getNameTranslation(term, language)?.translation.toLowerCase().includes(keyword),
         );
 
         if (translation_only) {
           // 如果设置了只返回有翻译的，则必须同时有翻译且匹配
-          return translationMatch && term.translation?.translation;
+          return translationMatch && getNameTranslation(term, language)?.translation;
         }
 
         // 否则只要名称或翻译匹配任一关键词即可（OR 逻辑）
@@ -554,7 +580,7 @@ export const terminologyTools: ToolDefinition[] = [
         terms: filteredTerms.map((term: Terminology) => ({
           id: term.id,
           name: term.name,
-          translation: term.translation.translation,
+          translation: getNameTranslation(term, language)?.translation ?? '',
           description: term.description,
         })),
         count: filteredTerms.length,

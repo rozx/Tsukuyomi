@@ -1,6 +1,9 @@
 import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationChunk } from 'src/services/ai/types/ai-service';
+import { useSettingsStore } from 'src/stores/settings';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { AssistantService } from 'src/services/ai/tasks/assistant-service';
 import { AssistantExecution } from 'src/services/ai/tasks/utils/assistant-execution';
 import type { AssistantExecutionCheckpoint } from 'src/services/ai/tasks/utils/assistant-execution';
@@ -68,6 +71,7 @@ export class ImportAgentService {
 
   static async run(taskId: string, model: AIModel, message = ''): Promise<ImportTask> {
     assertImportWorkspaceEnabled();
+    const startUiLocale = useSettingsStore().uiLocale;
     if (typeof navigator === 'undefined' || !navigator.locks)
       throw new Error('LOCK_UNAVAILABLE: 当前环境不能协调导入运行');
     if (!model.id || !model.enabled) throw new Error('MODEL_UNAVAILABLE: 请先选择可用的助手模型');
@@ -84,7 +88,14 @@ export class ImportAgentService {
           : '请根据当前来源与草稿继续整理，并生成可检查的导入方案。';
       return locks.request(`${TASK_LOCK_PREFIX}${taskId}`, { ifAvailable: true }, async (owner) => {
         if (!owner) throw new Error('IMPORT_BUSY: 当前任务仍有未结束的执行');
-        return this.runOwned(taskId, model, prompt);
+        return this.runOwned(
+          taskId,
+          model,
+          prompt,
+          captureExecutionLanguages(
+            task.checkpoint ? (task.checkpoint.uiLocale ?? 'zh-CN') : startUiLocale,
+          ),
+        );
       });
     });
   }
@@ -93,9 +104,10 @@ export class ImportAgentService {
     taskId: string,
     model: AIModel,
     message: string,
+    languages: ExecutionLanguages,
   ): Promise<ImportTask> {
     const controller = new AbortController();
-    const promise = this.perform(taskId, model, message, controller);
+    const promise = this.perform(taskId, model, message, controller, languages);
     const active = { taskId, controller, promise };
     this.active = active;
     notify(taskId);
@@ -211,12 +223,13 @@ export class ImportAgentService {
     model: AIModel,
     message: string,
     controller: AbortController,
+    languages: ExecutionLanguages,
   ): Promise<ImportTask> {
     const run = await this.startRun(taskId, model, message);
     const stream = this.streamWriter(taskId, run, controller);
     const timer = setInterval(this.pauseChecker(taskId, run, controller), 750);
     try {
-      await this.converse(taskId, model, message, { run, controller, stream });
+      await this.converse(taskId, model, message, { run, controller, stream, languages });
     } catch (error) {
       await this.recordFailure(taskId, model, run, controller, error);
     } finally {
@@ -309,6 +322,7 @@ export class ImportAgentService {
     message: string,
     ctx: {
       run: ImportRunContext;
+      languages: ExecutionLanguages;
       controller: AbortController;
       stream: ReturnType<typeof ImportAgentService.streamWriter>;
     },
@@ -323,7 +337,7 @@ export class ImportAgentService {
       });
       notify(taskId);
     };
-    const execution = this.execution(taskId, run, stream, await requireTask(taskId));
+    const execution = this.execution(taskId, run, stream, await requireTask(taskId), ctx.languages);
     await AssistantService.chat(model, message, {
       execution,
       signal: controller.signal,
@@ -338,6 +352,7 @@ export class ImportAgentService {
     run: ImportRunContext,
     stream: { reset: () => void },
     task: ImportTask,
+    languages: ExecutionLanguages,
   ): AssistantExecution {
     let lastProgressAt = -Infinity;
     const executor = new ImportToolExecutor(run, undefined, undefined, () => {
@@ -348,6 +363,7 @@ export class ImportAgentService {
     });
     const resume = restoredCheckpoint(task);
     return new AssistantExecution({
+      languages,
       context: {
         currentBookId: null,
         currentChapterId: null,

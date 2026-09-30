@@ -1,3 +1,5 @@
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import type { ExecutionLanguages } from 'src/models/locale';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/tool-registry';
 import type { ActionInfo } from 'src/services/ai/tools/types';
@@ -54,6 +56,7 @@ const ABSOLUTE_MAX_TURNS = 200;
  * 处理工具调用循环
  */
 export interface ToolCallLoopConfig {
+  languages?: ExecutionLanguages;
   history: ChatMessage[];
   tools: AITool[];
   generateText: (
@@ -372,17 +375,7 @@ class TaskLoopSession {
       this.executeStatusTransition(previousStatus, newStatus, responseText);
     }
 
-    if (this.pendingTitleTranslation) {
-      this.titleTranslation = this.pendingTitleTranslation;
-      if (this.config.onTitleExtracted) {
-        try {
-          await this.config.onTitleExtracted(this.titleTranslation);
-        } catch (error) {
-          console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
-        }
-      }
-      this.pendingTitleTranslation = undefined;
-    }
+    await this.flushPendingTitle();
 
     history.push({ role: 'assistant', content: responseText });
     return this.handleStateLogic();
@@ -447,6 +440,7 @@ class TaskLoopSession {
       this.submittedParagraphIds, // 传入已提交段落 ID 集合用于计算剩余 chunk 大小
       this.accumulatedParagraphs, // 传入已积累的翻译内存，用于 review 完整性检查（避免依赖过时的 DB 数据）
       this.config.enableOriginalTextValidation, // 传入原文校验设置
+      this.config.languages,
     );
     recordToolCall(this.metrics, Date.now() - start);
 
@@ -550,11 +544,23 @@ class TaskLoopSession {
     return { role: 'user', content: statusPrompt };
   }
 
+  private async flushPendingTitle(): Promise<void> {
+    const title = this.pendingTitleTranslation;
+    if (!title) return;
+    await this.config.onTitleExtracted?.(title);
+    this.titleTranslation = title;
+    this.pendingTitleTranslation = undefined;
+  }
+
   private async handleBatchExtraction(
     toolName: string,
     toolCall: AIToolCall,
     toolResultContent: string,
   ) {
+    if (toolName === 'update_chapter_title') {
+      await this.flushPendingTitle();
+      return;
+    }
     if (toolName !== 'add_translation_batch') {
       return;
     }
@@ -564,6 +570,17 @@ class TaskLoopSession {
       return;
     }
 
+    if (this.config.onParagraphsExtracted) {
+      try {
+        await this.config.onParagraphsExtracted(extracted);
+      } catch (error) {
+        console.error(
+          `[${this.config.logLabel}] ⚠️ 段落回调失败（工具 add_translation_batch）`,
+          error,
+        );
+        throw error;
+      }
+    }
     // 检测本次会话中重复提交的段落（可能是 AI 修正翻译错误，属于正常行为）
     const duplicateIds: string[] = [];
     for (const para of extracted) {
@@ -578,17 +595,6 @@ class TaskLoopSession {
         duplicateIds.slice(0, 5).join(', ') +
           (duplicateIds.length > 5 ? ` 等 ${duplicateIds.length} 个` : ''),
       );
-    }
-
-    if (this.config.onParagraphsExtracted) {
-      try {
-        await this.config.onParagraphsExtracted(extracted);
-      } catch (error) {
-        console.error(
-          `[${this.config.logLabel}] ⚠️ 段落回调失败（工具 add_translation_batch）`,
-          error,
-        );
-      }
     }
   }
 
@@ -942,19 +948,11 @@ class TaskLoopSession {
 
       for (const id of missingIds) {
         const paragraph = contentMap.get(id);
-        if (paragraph?.translations && paragraph.translations.length > 0) {
-          // 数据库已有翻译，同步到内存
-          const selectedTranslation = paragraph.translations.find(
-            (t) => t.id === paragraph.selectedTranslationId,
-          );
-          const translationText =
-            selectedTranslation?.translation || paragraph.translations[0]?.translation;
-          if (translationText) {
-            this.accumulatedParagraphs.set(id, translationText);
-          }
-        } else {
-          stillMissing.push(id);
-        }
+        const selected = paragraph
+          ? getLanguageTranslation(paragraph, this.config.languages?.targetLanguage ?? 'zh-CN')
+          : undefined;
+        if (selected) this.accumulatedParagraphs.set(id, selected.translation);
+        else stillMissing.push(id);
       }
 
       return stillMissing;

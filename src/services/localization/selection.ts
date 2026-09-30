@@ -51,6 +51,7 @@ export function appendLanguageTranslation(
   value: Translation,
   revision: SyncRevision,
   updatedAt: number,
+  selectNew = true,
 ): Paragraph {
   const normalized = normalizeParagraphLanguages(paragraph);
   if (value.language !== undefined && value.language !== locale)
@@ -61,16 +62,25 @@ export function appendLanguageTranslation(
   const existing = normalized.translations.find(
     (entry) => entry.language === locale && entry.translation === value.translation,
   );
-  const translations = existing
+  const combined = existing
     ? normalized.translations
     : [...normalized.translations, { ...value, language: locale }];
-  return withSelection(
-    { ...normalized, translations },
-    locale,
-    existing?.id ?? value.id,
-    revision,
-    updatedAt,
+  const addedId = existing?.id ?? value.id;
+  // 同文复用的版本也必须保留，避免导入较长历史后产生悬空选用。
+  // 历史上限只逐出当前语言的旧版本，其他语言始终保留。
+  const targetIds = new Set([
+    ...combined
+      .filter((entry) => entry.language === locale && entry.id !== addedId)
+      .slice(-4)
+      .map((entry) => entry.id),
+    addedId,
+  ]);
+  const translations = combined.filter(
+    (entry) => entry.language !== locale || targetIds.has(entry.id),
   );
+  const previousId = normalized.selectedTranslations?.[locale]?.value;
+  const selectedId = !selectNew && previousId && targetIds.has(previousId) ? previousId : addedId;
+  return withSelection({ ...normalized, translations }, locale, selectedId, revision, updatedAt);
 }
 
 function targetVersion(paragraph: Paragraph, locale: AppLocale, id: string): Translation {

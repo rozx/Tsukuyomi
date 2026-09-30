@@ -1,3 +1,4 @@
+import type { ExecutionLanguages } from 'src/models/locale';
 // fallow-ignore-next-line code-duplication
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
@@ -22,6 +23,7 @@ import {
  * 校对服务选项
  */
 export interface ProofreadingServiceOptions {
+  languages?: ExecutionLanguages;
   /**
    * 流式数据回调函数，用于接收校对过程中的数据块
    */
@@ -110,29 +112,24 @@ export class ProofreadingService {
       taskLabel: '段落校对',
     });
 
-    return processTextTask(
-      content,
-      model,
-      pickTextTaskOptions(options),
-      {
-        taskType: 'proofreading',
-        logLabel: 'ProofreadingService',
-        temperature: model.isDefault.proofreading?.temperature ?? 0.3,
-        requiresTranslation: true,
-        onlyChangedParagraphs: true,
-        buildSystemPrompt: (params) =>
-          buildProofreadingSystemPrompt({
-            todosPrompt: params.todosPrompt,
-            bookContextSection: params.bookContextSection,
-            chapterContextSection: params.chapterContextSection,
-            specialInstructionsSection: params.specialInstructionsSection,
-            tools: params.tools,
-            skipAskUser: params.skipAskUser,
-            enableOriginalTextValidation: params.enableOriginalTextValidation,
-          }),
-        onParagraphsExtracted,
-      },
-    );
+    return processTextTask(content, model, pickTextTaskOptions(options), {
+      taskType: 'proofreading',
+      logLabel: 'ProofreadingService',
+      temperature: model.isDefault.proofreading?.temperature ?? 0.3,
+      requiresTranslation: true,
+      onlyChangedParagraphs: true,
+      buildSystemPrompt: (params) =>
+        buildProofreadingSystemPrompt({
+          todosPrompt: params.todosPrompt,
+          bookContextSection: params.bookContextSection,
+          chapterContextSection: params.chapterContextSection,
+          specialInstructionsSection: params.specialInstructionsSection,
+          tools: params.tools,
+          skipAskUser: params.skipAskUser,
+          enableOriginalTextValidation: params.enableOriginalTextValidation,
+        }),
+      onParagraphsExtracted,
+    });
   }
 
   /**

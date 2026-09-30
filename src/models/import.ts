@@ -337,6 +337,8 @@ export interface ImportTodo {
 }
 
 export interface ImportCheckpoint {
+  /** 执行所用界面语言；旧检查点缺失时按简中恢复。 */
+  uiLocale?: AppLocale;
   contextAnchor?: ContextAnchor;
   messages: ChatMessage[];
   /** 仅包含模型已完整返回的调用。流式 JSON 片段不能进入此数组。 */

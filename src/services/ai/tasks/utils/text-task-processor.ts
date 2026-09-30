@@ -1,3 +1,5 @@
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from './execution-languages';
 import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
 /**
  * 通用文本任务处理器
@@ -86,6 +88,7 @@ export interface ProgressInfo {
  * 通用文本任务选项
  */
 export interface TextTaskOptions {
+  languages?: ExecutionLanguages | undefined;
   // 回调函数
   onChunk?: TextGenerationStreamCallback | undefined;
   onProgress?: ((progress: ProgressInfo) => void) | undefined;
@@ -115,6 +118,7 @@ export interface TextTaskOptions {
  * 被遗忘导致静默丢字段。
  */
 const TEXT_TASK_OPTION_KEYS = [
+  'languages',
   'onChunk',
   'onProgress',
   'onAction',
@@ -285,14 +289,19 @@ function buildOriginalIndices(
 /**
  * 过滤出有效段落（有文本 + 可选翻译要求）
  */
-function filterValidParagraphs(content: Paragraph[], requiresTranslation: boolean): Paragraph[] {
+function filterValidParagraphs(
+  content: Paragraph[],
+  requiresTranslation: boolean,
+  targetLanguage: AppLocale,
+): Paragraph[] {
   const validParagraphs: Paragraph[] = [];
   for (let i = 0; i < content.length; i++) {
     const paragraph = content[i];
     if (!paragraph) continue;
 
     const hasText = paragraph.text?.trim();
-    const hasSelectedTranslation = getSelectedTranslation(paragraph).trim().length > 0;
+    const hasSelectedTranslation =
+      getSelectedTranslation(paragraph, targetLanguage).trim().length > 0;
     const isValid = requiresTranslation ? hasText && hasSelectedTranslation : hasText;
 
     if (isValid) {
@@ -329,6 +338,11 @@ export async function processTextTask(
   const { onChunk, onProgress, signal, bookId, aiProcessingStore, chapterId, chapterTitle } =
     options;
 
+  const requestedLanguages = options.languages ?? captureExecutionLanguages('zh-CN');
+  const languages = captureExecutionLanguages(
+    requestedLanguages.uiLocale,
+    requestedLanguages.targetLanguage,
+  );
   const actions: ActionInfo[] = [...collectedActions];
   const taskLabel = TASK_TYPE_LABELS[taskType];
   let titleTranslation: string | undefined;
@@ -349,7 +363,11 @@ export async function processTextTask(
   // 构建原始索引映射 + 过滤有效段落
   const allParagraphs = options.allChapterParagraphs;
   const originalIndices = buildOriginalIndices(content, allParagraphs);
-  const validParagraphs = filterValidParagraphs(content, requiresTranslation);
+  const validParagraphs = filterValidParagraphs(
+    content,
+    requiresTranslation,
+    languages.targetLanguage,
+  );
 
   if (validParagraphs.length === 0) {
     throw new Error(
@@ -474,6 +492,7 @@ export async function processTextTask(
     // 这样 buildChunks 在遍历 allChapterParagraphs 时，只会包含目标段落，而非所有段落
     const validParagraphIds = new Set(validParagraphs.map((p) => p.id));
     const buildChunksForIds = makeBuildChunksForIds({
+      targetLanguage: languages.targetLanguage,
       requiresTranslation,
       validParagraphs,
       translationSourceParagraphs,
@@ -487,7 +506,7 @@ export async function processTextTask(
 
     // 存储原始翻译（用于比较变化）
     const originalTranslations = requiresTranslation
-      ? buildOriginalTranslationsMap(validParagraphs)
+      ? buildOriginalTranslationsMap(validParagraphs, languages.targetLanguage)
       : new Map<string, string>();
 
     // 跟踪已处理的段落
@@ -502,6 +521,7 @@ export async function processTextTask(
     // 处理每个块
     const MAX_RETRIES = 2;
     const appendedText = await runChunkProcessingLoop({
+      languages,
       chunks,
       buildChunksForIds,
       finalSignal,
@@ -617,6 +637,7 @@ function resolvePreviousChapterSection(params: {
  * 其余任务走 buildChunks + ID 谓词。初次分块与后续重建都复用此闭包。
  */
 function makeBuildChunksForIds(params: {
+  targetLanguage: AppLocale;
   requiresTranslation: boolean;
   validParagraphs: Paragraph[];
   translationSourceParagraphs: Paragraph[];
@@ -634,7 +655,12 @@ function makeBuildChunksForIds(params: {
     const idSet = targetIds instanceof Set ? targetIds : new Set(targetIds);
     if (requiresTranslation) {
       const filteredParagraphs = validParagraphs.filter((p) => idSet.has(p.id));
-      return buildFormattedChunks(filteredParagraphs, chunkSize, originalIndices);
+      return buildFormattedChunks(
+        filteredParagraphs,
+        chunkSize,
+        originalIndices,
+        params.targetLanguage,
+      );
     }
     return buildChunks(
       translationSourceParagraphs,
@@ -1000,6 +1026,7 @@ function verifyTranslationCompleteness(
  * 单个 chunk 处理所需的上下文
  */
 interface ChunkProcessingContext {
+  languages: ExecutionLanguages;
   chunks: TextChunk[];
   buildChunksForIds: (targetIds: Set<string> | string[]) => TextChunk[];
   finalSignal: AbortSignal;
@@ -1242,6 +1269,7 @@ async function runToolLoopForChunk(params: {
     params;
 
   return executeToolCallLoop({
+    languages: ctx.languages,
     history: chunkHistory,
     tools: ctx.tools,
     generateText: withContextUsage(ctx.service.generateText.bind(ctx.service), {
@@ -1299,12 +1327,11 @@ function wrapOnParagraphsExtracted(params: {
   const onParagraphsExtracted = ctx.onParagraphsExtracted;
   const paragraphIds = actualChunk.paragraphIds;
 
-  return (paragraphs: { id: string; translation: string }[]) => {
-    markProcessedParagraphs(paragraphs, ctx.processedParagraphIds);
+  return async (paragraphs: { id: string; translation: string }[]) => {
     // 必须返回 Promise，以便 task-runner 中的 await 能正确等待回调完成。
     // 之前使用 void 导致 fire-and-forget，翻译数据写入内存/存储的操作可能
     // 在 batchSaveChapter 之后才完成，造成切换页面时丢失最后批次翻译的 bug。
-    return Promise.resolve(
+    await Promise.resolve(
       onParagraphsExtracted({
         paragraphs,
         paragraphIds,
@@ -1320,7 +1347,9 @@ function wrapOnParagraphsExtracted(params: {
         `[${ctx.logLabel}] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${ctx.chunks.length}）`,
         error,
       );
+      throw error;
     });
+    markProcessedParagraphs(paragraphs, ctx.processedParagraphIds);
   };
 }
 
@@ -1338,6 +1367,7 @@ function wrapOnTitleExtracted(params: { ctx: ChunkProcessingContext; isFirstChun
     ctx.setTitleTranslation(title);
     return Promise.resolve(onTitleExtracted({ title })).catch((error) => {
       console.error(`[${ctx.logLabel}] ⚠️ 标题回调失败`, error);
+      throw error;
     });
   };
 }

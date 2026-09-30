@@ -4,8 +4,11 @@ import type { TodoItem } from 'src/services/todo-list-service';
 import type { AITool } from 'src/services/ai/types/ai-service';
 import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import type { ToastCallback } from './toast-helper';
+import type { ExecutionLanguages } from 'src/models/locale';
 
 export interface ActionInfo {
+  /** 宿主绑定的操作范围，不能由模型参数或工具反馈改写。 */
+  execution?: Readonly<{ bookId: string; languages: ExecutionLanguages }>;
   type:
     | 'create'
     | 'update'
@@ -44,6 +47,8 @@ export interface ActionInfo {
       }
     | {
         paragraph_id: string;
+        chapter_id?: string;
+        original_text?: string;
         translation_id: string;
         old_translation: string;
         new_translation: string;
@@ -116,6 +121,7 @@ export interface ActionInfo {
         replaced_paragraphs?: Array<{
           paragraph_id: string;
           chapter_id: string;
+          original_text?: string;
           old_selected_translation_id?: string;
           old_translations: Translation[];
         }>;
@@ -145,6 +151,7 @@ export interface ChunkBoundaries {
 }
 
 export interface ToolContext {
+  languages?: ExecutionLanguages;
   bookId?: string; // 某些工具（如网络搜索）不需要 bookId
   taskId?: string; // AI 任务 ID，由服务层自动提供，用于关联待办事项等
   sessionId?: string; // 聊天会话 ID，由服务层自动提供，用于关联助手聊天的待办事项

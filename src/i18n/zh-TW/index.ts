@@ -1,3 +1,4 @@
+import ai from './ai';
 import importer from './import';
 import books from './books';
 import native from './native';
@@ -6,4 +7,13 @@ import common from './common';
 import memory from './memory';
 import chat from './chat';
 
-export default { ...common, ...memory, ...chat, ...settings, ...native, ...books, ...importer };
+export default {
+  ...ai,
+  ...common,
+  ...memory,
+  ...chat,
+  ...settings,
+  ...native,
+  ...books,
+  ...importer,
+};

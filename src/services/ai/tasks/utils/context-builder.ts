@@ -1,3 +1,6 @@
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
+import { getNameTranslation } from 'src/services/localization/selection';
 import type {
   Paragraph,
   CharacterSetting,
@@ -856,10 +859,14 @@ function buildSurroundingParagraphsContext(
  */
 export function formatCharacterAliases(
   aliases: CharacterSetting['aliases'] | undefined,
+  language: AppLocale = 'zh-CN',
+  uiLocale: AppLocale = 'zh-CN',
 ): string | null {
   if (!aliases || aliases.length === 0) return null;
-  const aliasList = aliases.map((a) => `${a.name} → ${a.translation.translation}`).join('、');
-  return `别名：${aliasList}`;
+  const aliasList = aliases
+    .map((alias) => `${alias.name} → ${getNameTranslation(alias, language)?.translation ?? ''}`)
+    .join(uiLocale === 'en-US' ? ', ' : '、');
+  return translateText(uiLocale, 'aiTasks.context.aliases', { aliases: aliasList });
 }
 
 /**

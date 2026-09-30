@@ -604,7 +604,6 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
     /**
      * 添加新的处理任务
      */
-    // fallow-ignore-next-line unused-store-members
     addTask(task: Omit<AIProcessingTask, 'id' | 'startTime'>): Promise<string> {
       const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       const newTask: AIProcessingTask = {

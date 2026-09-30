@@ -1,12 +1,7 @@
-/**
- * 解释服务提示词
- */
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 
-/**
- * 构建解释任务的用户提示词
- * @param selectedText 选中的日文文本
- */
-export function buildExplainPrompt(selectedText: string): string {
-  return `请简短精要地解释以下日文文本的含义、语法和文化背景，和这本书的关联或者意义：\n\n${selectedText}`;
+/** 解释使用界面语言，原文不限制语言；用户文本作为参数原样保留。 */
+export function buildExplainPrompt(selectedText: string, uiLocale: AppLocale = 'zh-CN'): string {
+  return translateText(uiLocale, 'aiTasks.explain', { text: selectedText });
 }
-

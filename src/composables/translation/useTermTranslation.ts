@@ -1,6 +1,9 @@
 import { computed, ref } from 'vue';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useSettingsStore } from 'src/stores/settings';
+import { useBooksStore } from 'src/stores/books';
+import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TermTranslationService } from 'src/services/ai';
@@ -87,9 +90,17 @@ export function useTermTranslation() {
     try {
       // 获取当前上下文
       const context = contextStore.getContext;
+      const uiLocale = useSettingsStore().uiLocale;
+      const languages = captureExecutionLanguages(
+        uiLocale,
+        context.currentBookId
+          ? (useBooksStore().getBookById(context.currentBookId)?.targetLanguage ?? 'zh-CN')
+          : uiLocale,
+      );
 
       // 构建选项对象，只在有值时才传递 bookId 和 chapterId
       const options: Parameters<typeof TermTranslationService.translate>[2] = {
+        languages,
         taskType: 'termsTranslation',
         aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
       };

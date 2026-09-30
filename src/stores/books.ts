@@ -14,6 +14,7 @@ import { ImportLibraryReader } from 'src/services/import/import-library-reader';
 import { deleteCacheEntry } from 'src/utils/chapter-content-loader';
 import type { AppLocale } from 'src/models/locale';
 import type { ParagraphTranslationEdit } from 'src/services/localization/paragraph-edit';
+import type { TitleEdit } from 'src/services/localization/title-edit';
 
 function collectRemovedChapterIds(
   previousVolumes: Volume[] | undefined,
@@ -171,6 +172,15 @@ export const useBooksStore = defineStore('books', {
   },
 
   actions: {
+    async editTitle(
+      bookId: string,
+      language: AppLocale,
+      edit: TitleEdit,
+      expectedBookLanguage?: AppLocale,
+    ): Promise<void> {
+      await BookService.editTitle(bookId, language, edit, expectedBookLanguage);
+      await this.refreshBookFromStorage(bookId);
+    },
     async editParagraphTranslations(
       bookId: string,
       chapterId: string,
@@ -202,6 +212,8 @@ export const useBooksStore = defineStore('books', {
       this.books = await BookService.getAllBooks();
     },
 
+    // 撤销 helper 通过传入的 store 参数调用，Fallow 不追踪该参数绑定。
+    // fallow-ignore-next-line unused-store-member
     async restoreEntity<T extends Terminology | CharacterSetting>(
       bookId: string,
       kind: 'term' | 'character',

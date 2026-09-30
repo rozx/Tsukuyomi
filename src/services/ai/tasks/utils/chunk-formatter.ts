@@ -1,4 +1,5 @@
 import type { Paragraph } from 'src/models/novel';
+import type { AppLocale } from 'src/models/locale';
 import { getSelectedTranslation } from 'src/utils';
 
 /**
@@ -75,12 +76,13 @@ export function buildFormattedChunks(
   paragraphs: Paragraph[],
   chunkSize: number,
   originalIndices?: Map<string, number>,
+  targetLanguage: AppLocale = 'zh-CN',
 ): Array<{ text: string; paragraphIds: string[] }> {
   return buildChunks(
     paragraphs,
     chunkSize,
     (paragraph, arrayIndex) => {
-      const currentTranslation = getSelectedTranslation(paragraph);
+      const currentTranslation = getSelectedTranslation(paragraph, targetLanguage);
       // 使用原始索引（如果提供），否则使用数组索引；展示索引从 1 开始
       const originalIndex = originalIndices?.get(paragraph.id) ?? arrayIndex;
       const displayIndex = originalIndex + 1;

@@ -836,7 +836,7 @@ const handleExplainSelection = () => {
   const selectedText = getSelectedText();
   if (selectedText) {
     // 使用 ExplainService 生成解释提示词并发送到助手输入框
-    const explainPrompt = ExplainService.generatePrompt(selectedText);
+    const explainPrompt = ExplainService.generatePrompt(selectedText, settingsStore.uiLocale);
     uiStore.setAssistantInputMessage(explainPrompt);
   }
 };

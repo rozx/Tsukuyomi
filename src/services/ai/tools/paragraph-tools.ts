@@ -1,3 +1,10 @@
+import type { AppLocale } from 'src/models/locale';
+import type {
+  ParagraphTranslationEdit,
+  ChapterTranslationEditGroup,
+} from 'src/services/localization/paragraph-edit';
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import { BookService } from 'src/services/book-service';
 import {
   ChapterService,
   bulkLoadMissingChapters,
@@ -16,7 +23,7 @@ import {
   isEmptyOrSymbolOnly,
 } from 'src/utils/text-utils';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
-import type { Translation, Chapter, Novel, Volume } from 'src/models/novel';
+import type { Translation, Chapter, Novel, Volume, Paragraph } from 'src/models/novel';
 import type {
   ToolDefinition,
   ToolHandler,
@@ -133,8 +140,7 @@ async function resolveBookAndParagraphOrError(
   bookId: string | null | undefined,
   paragraphId: string,
 ): Promise<
-  | { kind: 'error'; json: string }
-  | { kind: 'ok'; book: Novel; location: ParagraphLocation }
+  { kind: 'error'; json: string } | { kind: 'ok'; book: Novel; location: ParagraphLocation }
 > {
   if (!paragraphId) {
     throw new Error('段落 ID 不能为空');
@@ -281,9 +287,10 @@ async function loadRelatedMemoriesFromFirstParagraph(
 /**
  * 将段落的 translations 映射为工具响应里统一的结构（含 aiModelName / isSelected）。
  */
-function buildTranslationListPayload(
-  paragraph: { translations?: Translation[]; selectedTranslationId?: string },
-): Array<{
+function buildTranslationListPayload(paragraph: {
+  translations?: Translation[];
+  selectedTranslationId?: string;
+}): Array<{
   id: string;
   translation: string;
   aiModelId: string;
@@ -309,6 +316,7 @@ function buildTranslationListPayload(
 function findTranslationIndexOrError(
   paragraph: ParagraphLocation['paragraph'],
   translationId: string,
+  language?: AppLocale,
 ): { kind: 'error'; json: string } | { kind: 'ok'; index: number; translation: Translation } {
   if (!paragraph.translations || paragraph.translations.length === 0) {
     return { kind: 'error', json: JSON.stringify({ success: false, error: '段落没有翻译历史' }) };
@@ -327,6 +335,8 @@ function findTranslationIndexOrError(
       json: JSON.stringify({ success: false, error: `无法找到目标翻译` }),
     };
   }
+  if (language && (translation.language ?? 'zh-CN') !== language)
+    throw new Error('TRANSLATION_LANGUAGE_MISMATCH');
   return { kind: 'ok', index, translation };
 }
 
@@ -345,6 +355,7 @@ async function resolveParagraphForWriteOrError(
       bookId: string;
       book: Novel;
       booksStore: ReturnType<typeof useBooksStore>;
+      chapterId: string;
       paragraph: ParagraphLocation['paragraph'];
     }
 > {
@@ -358,7 +369,14 @@ async function resolveParagraphForWriteOrError(
       json: JSON.stringify({ success: false, error: emptyParagraphError }),
     };
   }
-  return { kind: 'ok', bookId: bookId as string, book, booksStore, paragraph };
+  return {
+    kind: 'ok',
+    bookId: bookId as string,
+    book,
+    booksStore,
+    paragraph,
+    chapterId: locationResult.location.chapter.id,
+  };
 }
 
 /**
@@ -377,6 +395,7 @@ async function resolveParagraphTranslationForUpdate(
       bookId: string;
       book: Novel;
       booksStore: ReturnType<typeof useBooksStore>;
+      chapterId: string;
       paragraph: ParagraphLocation['paragraph'];
     }
 > {
@@ -392,6 +411,7 @@ async function resolveParagraphTranslationForUpdate(
     book,
     booksStore,
     paragraph: locationResult.location.paragraph,
+    chapterId: locationResult.location.chapter.id,
   };
 }
 
@@ -446,6 +466,7 @@ async function resolveTranslationIdToolArgs(
       booksStore: ReturnType<typeof useBooksStore>;
       paragraph: ParagraphLocation['paragraph'];
       resolvedBookId: string;
+      chapterId: string;
     }
 > {
   const { paragraph_id, translation_id } = args as {
@@ -462,6 +483,7 @@ async function resolveTranslationIdToolArgs(
     booksStore: resolved.booksStore,
     paragraph: resolved.paragraph,
     resolvedBookId: resolved.bookId,
+    chapterId: resolved.chapterId,
   };
 }
 
@@ -775,27 +797,15 @@ function resolveModelIdForAddTranslation(
  * 否则若原本无选中且存在翻译则自动选中第一条；若原选中翻译已被 5 条上限逐出
  * （selectedTranslationId 悬空），则改选新添加的翻译，避免选中 ID 指向不存在的翻译。
  */
-function applySelectionAfterAdd(
-  paragraph: ParagraphLocation['paragraph'],
-  newTranslationId: string,
-  setAsSelected: boolean,
-  updatedTranslations: Translation[],
-): void {
-  if (setAsSelected) {
-    paragraph.selectedTranslationId = newTranslationId;
-    return;
-  }
-  if (!paragraph.selectedTranslationId && updatedTranslations.length > 0) {
-    paragraph.selectedTranslationId = updatedTranslations[0]?.id || '';
-    return;
-  }
-  // 5 条上限可能逐出最旧的翻译；若原选中翻译已不在数组中，改选新添加的翻译
-  const selectionStillExists = updatedTranslations.some(
-    (t) => t.id === paragraph.selectedTranslationId,
-  );
-  if (!selectionStillExists) {
-    paragraph.selectedTranslationId = newTranslationId;
-  }
+async function persistParagraphEdit(
+  bookId: string,
+  chapterId: string,
+  language: AppLocale,
+  edit: ParagraphTranslationEdit,
+): Promise<ParagraphLocation['paragraph']> {
+  const saved = await BookService.editParagraphTranslations(bookId, chapterId, language, [edit]);
+  await useBooksStore().refreshBookFromStorage(bookId, chapterId);
+  return saved.content.find((paragraph) => paragraph.id === edit.paragraphId)!;
 }
 
 export const paragraphTools: ToolDefinition[] = [
@@ -1089,10 +1099,8 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: buildDirectionalParagraphsHandler(
-      'get_next_paragraphs',
-      (book, paragraphId, count) =>
-        ChapterService.getNextParagraphsAsync(book, paragraphId, count),
+    handler: buildDirectionalParagraphsHandler('get_next_paragraphs', (book, paragraphId, count) =>
+      ChapterService.getNextParagraphsAsync(book, paragraphId, count),
     ),
   },
   {
@@ -1438,7 +1446,8 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const { paragraph_id, translation_id, new_translation } = args as {
         paragraph_id: string;
         translation_id: string;
@@ -1454,24 +1463,23 @@ export const paragraphTools: ToolDefinition[] = [
         '无法更新空段落的翻译',
       );
       if (resolved.kind === 'error') return resolved.json;
-      const { book, booksStore, paragraph, bookId: resolvedBookId } = resolved;
+      const { paragraph, chapterId, bookId: resolvedBookId } = resolved;
 
       // 查找要更新的翻译
-      const tRes = findTranslationIndexOrError(paragraph, translation_id);
+      const tRes = findTranslationIndexOrError(paragraph, translation_id, language);
       if (tRes.kind === 'error') return tRes.json;
       const translationToUpdate = tRes.translation;
 
       // 保存原始翻译用于撤销
       const originalTranslation = { ...translationToUpdate };
 
-      // 更新翻译内容（原样保存，不进行任何处理）
-      // 缩进过滤会在显示和导出时应用
-      translationToUpdate.translation = new_translation;
-
-      // 更新书籍（保存更改）
-      // 注意：booksStore.updateBook 会调用 BookService.saveBook，章节内容保存会启用 skipIfUnchanged。
-      // ChapterContentService 使用“序列化快照”检测变化（含就地修改），既能正确持久化修改，也能避免未修改内容的重复写入。
-      await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
+      await persistParagraphEdit(resolvedBookId, chapterId, language, {
+        type: 'update',
+        paragraphId: paragraph_id,
+        originalText: paragraph.text,
+        translationId: translation_id,
+        text: new_translation,
+      });
 
       // 报告操作
       if (onAction) {
@@ -1480,6 +1488,8 @@ export const paragraphTools: ToolDefinition[] = [
           entity: 'translation',
           data: {
             paragraph_id,
+            chapter_id: chapterId,
+            original_text: paragraph.text,
             translation_id,
             old_translation: originalTranslation.translation,
             new_translation: new_translation,
@@ -1509,26 +1519,26 @@ export const paragraphTools: ToolDefinition[] = [
       },
     },
     // fallow-ignore-next-line code-duplication
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId);
       if (resolvedArgs.kind === 'error') return resolvedArgs.json;
-      const { paragraph_id, translation_id, book, booksStore, paragraph, resolvedBookId } =
-        resolvedArgs;
+      const { paragraph_id, translation_id, chapterId, paragraph, resolvedBookId } = resolvedArgs;
 
       // 验证翻译ID是否存在（校验通过后才上报 action，无效 ID 不产生任何操作记录）
-      const tRes = findTranslationIndexOrError(paragraph, translation_id);
+      const tRes = findTranslationIndexOrError(paragraph, translation_id, language);
       if (tRes.kind === 'error') return tRes.json;
       const translation = tRes.translation;
 
       // 保存原始选中的翻译ID
-      const originalSelectedId = paragraph.selectedTranslationId || '';
+      const originalSelectedId = getLanguageTranslation(paragraph, language)?.id ?? '';
 
-      // 更新选中的翻译ID
-      paragraph.selectedTranslationId = translation_id;
-
-      // 更新书籍（保存更改）
-      // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
-      await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
+      await persistParagraphEdit(resolvedBookId, chapterId, language, {
+        type: 'select',
+        paragraphId: paragraph_id,
+        originalText: paragraph.text,
+        translationId: translation_id,
+      });
 
       // 报告更新操作（选择翻译会写入 DB，属于更新而非读取），携带原选中 ID 便于回溯
       if (onAction) {
@@ -1585,7 +1595,8 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const {
         paragraph_id,
         translation,
@@ -1607,7 +1618,7 @@ export const paragraphTools: ToolDefinition[] = [
         '无法为空段落添加翻译',
       );
       if (resolved.kind === 'error') return resolved.json;
-      const { book, booksStore, paragraph, bookId: resolvedBookId } = resolved;
+      const { book, paragraph, chapterId, bookId: resolvedBookId } = resolved;
       const aiModelsStore = useAIModelsStore();
 
       // 确定使用的 AI 模型 ID
@@ -1633,23 +1644,20 @@ export const paragraphTools: ToolDefinition[] = [
         id: idGenerator.generate(),
         translation: translation,
         aiModelId: modelId,
+        language,
       };
 
-      // 添加翻译（使用 ChapterService 的辅助方法，自动限制最多5个）
-      const updatedTranslations = ChapterService.addParagraphTranslation(
-        existingTranslations,
-        newTranslation,
-      );
-
-      // 更新段落的翻译数组
-      paragraph.translations = updatedTranslations;
-
-      // 如果设置为选中，更新选中的翻译 ID；否则在无选中时自动选中第一条
-      applySelectionAfterAdd(paragraph, newTranslation.id, set_as_selected, updatedTranslations);
-
-      // 更新书籍（保存更改）
-      // 注意：章节内容保存会启用 skipIfUnchanged，并用"序列化快照"检测变化（含就地修改）。
-      await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
+      const saved = await persistParagraphEdit(resolvedBookId, chapterId, language, {
+        type: 'append',
+        paragraphId: paragraph_id,
+        originalText: paragraph.text,
+        translation: newTranslation,
+        selectNew: set_as_selected,
+      });
+      const selected = getLanguageTranslation(saved, language);
+      const savedTranslation = saved.translations.find(
+        (value) => value.language === language && value.translation === newTranslation.translation,
+      )!;
 
       // 报告操作
       if (onAction) {
@@ -1658,7 +1666,7 @@ export const paragraphTools: ToolDefinition[] = [
           entity: 'translation',
           data: {
             paragraph_id,
-            translation_id: newTranslation.id,
+            translation_id: savedTranslation.id,
             old_translation: '',
             new_translation: newTranslation.translation,
           },
@@ -1669,12 +1677,13 @@ export const paragraphTools: ToolDefinition[] = [
         success: true,
         message: '翻译已添加',
         paragraph_id,
-        translation_id: newTranslation.id,
+        translation_id: savedTranslation.id,
         translation: newTranslation.translation,
         ai_model_id: modelId,
         ai_model_name: model.name,
-        is_selected: set_as_selected,
-        total_translations: updatedTranslations.length,
+        is_selected: selected?.id === savedTranslation.id,
+        total_translations: saved.translations.filter((value) => value.language === language)
+          .length,
       });
     },
   },
@@ -1689,38 +1698,24 @@ export const paragraphTools: ToolDefinition[] = [
       },
     },
     // fallow-ignore-next-line code-duplication
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId);
       if (resolvedArgs.kind === 'error') return resolvedArgs.json;
-      const { paragraph_id, translation_id, book, booksStore, paragraph, resolvedBookId } =
-        resolvedArgs;
+      const { paragraph_id, translation_id, chapterId, paragraph, resolvedBookId } = resolvedArgs;
 
       // 验证翻译是否存在
-      const tRes = findTranslationIndexOrError(paragraph, translation_id);
+      const tRes = findTranslationIndexOrError(paragraph, translation_id, language);
       if (tRes.kind === 'error') return tRes.json;
-      const translationIndex = tRes.index;
       const translationToDelete = tRes.translation;
 
-      const wasSelected = paragraph.selectedTranslationId === translation_id;
-
-      // 删除翻译
-      paragraph.translations.splice(translationIndex, 1);
-
-      // 如果删除的是选中的翻译，需要重新选择
-      if (wasSelected) {
-        if (paragraph.translations.length > 0) {
-          // 优先选择最新的翻译（数组最后一个）
-          paragraph.selectedTranslationId =
-            paragraph.translations[paragraph.translations.length - 1]?.id || '';
-        } else {
-          // 如果没有翻译了，清空选中的翻译 ID
-          paragraph.selectedTranslationId = '';
-        }
-      }
-
-      // 更新书籍（保存更改）
-      // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
-      await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
+      const wasSelected = getLanguageTranslation(paragraph, language)?.id === translation_id;
+      const saved = await persistParagraphEdit(resolvedBookId, chapterId, language, {
+        type: 'remove',
+        paragraphId: paragraph_id,
+        originalText: paragraph.text,
+        translationId: translation_id,
+      });
 
       // 报告操作
       if (onAction) {
@@ -1743,8 +1738,9 @@ export const paragraphTools: ToolDefinition[] = [
         translation_id,
         deleted_translation: translationToDelete.translation,
         was_selected: wasSelected,
-        new_selected_id: paragraph.selectedTranslationId || null,
-        remaining_translations: paragraph.translations.length,
+        new_selected_id: getLanguageTranslation(saved, language)?.id ?? null,
+        remaining_translations: saved.translations.filter((value) => value.language === language)
+          .length,
       });
     },
   },
@@ -1798,13 +1794,14 @@ export const paragraphTools: ToolDefinition[] = [
         },
       },
     },
-    handler: async (args, { bookId, onAction }) => {
+    handler: async (args, { bookId, onAction, languages }) => {
+      const language = languages?.targetLanguage ?? 'zh-CN';
       const {
         keywords,
         original_keywords,
         replacement_text,
         chapter_id,
-        replace_all_translations = false,
+        replace_all_translations: _legacyReplaceAll = false,
         max_replacements = 100,
       } = args as {
         keywords?: string[];
@@ -1825,6 +1822,7 @@ export const paragraphTools: ToolDefinition[] = [
       );
 
       const { book, booksStore } = resolveBookAndStoreOrThrow(bookId);
+      const replace_all_translations = false;
       const resolvedBookId = bookId as string;
 
       // 注意：不在这里发送 read action，批量替换完成后会发送一个汇总的 update action
@@ -1861,6 +1859,7 @@ export const paragraphTools: ToolDefinition[] = [
           return emptyReplaceResponse('书籍没有卷');
         }
         await collectLinearReplaceMatches({
+          language,
           book,
           chapter_id,
           targetVolumeIndex,
@@ -1875,6 +1874,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       // 第二遍：优先使用全文索引定位段落
       const indexSucceeded = await collectIndexReplaceMatches({
+        language,
         bookId: resolvedBookId,
         book,
         chapter_id,
@@ -1900,16 +1900,35 @@ export const paragraphTools: ToolDefinition[] = [
 
       // 执行替换操作
       const replacedParagraphs = applyKeywordReplacements({
+        language,
         results,
         validKeywords,
         validOriginalKeywords,
         replacementText: replacement_text,
-        replaceAllTranslations: replace_all_translations,
       });
 
-      // 更新书籍（保存更改）
-      // 注意：章节内容保存会启用 skipIfUnchanged，并用“序列化快照”检测变化（含就地修改）。
-      await booksStore.updateBook(resolvedBookId, { volumes: book.volumes });
+      const groups = new Map<string, ChapterTranslationEditGroup>();
+      for (const record of replacedParagraphs) {
+        const group = groups.get(record.chapter_id) ?? { chapterId: record.chapter_id, edits: [] };
+        groups.set(record.chapter_id, {
+          chapterId: group.chapterId,
+          edits: [
+            ...group.edits,
+            {
+              type: 'update',
+              paragraphId: record.paragraph_id,
+              originalText: record.original_text,
+              translationId: record.updated_translation.id,
+              text: record.updated_translation.translation,
+              expectedSelectedTranslationId: record.old_selected_translation_id,
+            },
+          ],
+        });
+      }
+      await BookService.editParagraphTranslationGroups(resolvedBookId, language, [
+        ...groups.values(),
+      ]);
+      await booksStore.refreshBookFromStorage(resolvedBookId);
 
       // 报告批量替换操作（单个汇总 action，而不是每个替换一个）
       if (onAction && replacedParagraphs.length > 0) {
@@ -2090,9 +2109,7 @@ async function ensureChaptersLoaded(
   const chapterIds = Array.from(chaptersNeeded);
   const contentsMap = await ChapterContentService.loadChapterContentsBatch(chapterIds);
   for (const chapterId of chapterIds) {
-    const chapter = book.volumes
-      ?.flatMap((v) => v.chapters || [])
-      .find((c) => c.id === chapterId);
+    const chapter = book.volumes?.flatMap((v) => v.chapters || []).find((c) => c.id === chapterId);
     if (chapter) {
       const content = contentsMap.get(chapterId);
       chapter.content = content || [];
@@ -2269,15 +2286,8 @@ async function scanVolumeForTranslationKeyword(params: {
   max_paragraphs: number;
   allResults: Map<string, ParagraphSearchResult>;
 }): Promise<void> {
-  const {
-    volume,
-    vIndex,
-    startC,
-    endC,
-    translationKeywordLower,
-    max_paragraphs,
-    allResults,
-  } = params;
+  const { volume, vIndex, startC, endC, translationKeywordLower, max_paragraphs, allResults } =
+    params;
   for (let cIndex = startC; cIndex <= endC; cIndex++) {
     if (allResults.size >= max_paragraphs) break;
     const chapter = volume.chapters?.[cIndex];
@@ -2483,31 +2493,51 @@ async function preloadReplaceRange(
  * 返回 null 表示不匹配（需要跳过）
  */
 function evaluateKeywordMatch(
-  paragraph: { text?: string; translations?: Translation[] },
+  paragraph: Paragraph,
   validKeywords: string[],
   validOriginalKeywords: string[],
+  language: AppLocale,
 ): boolean | null {
   const matchesOriginal =
     validOriginalKeywords.length === 0 ||
     validOriginalKeywords.some((kw) => containsWholeKeyword(paragraph.text || '', kw));
 
-  if (validKeywords.length > 0) {
-    if (!paragraph.translations || paragraph.translations.length === 0) return null;
-    const matchesTranslation = paragraph.translations.some((t) =>
-      validKeywords.some((kw) => containsWholeKeyword(t.translation || '', kw)),
-    );
-    return matchesOriginal && matchesTranslation;
-  }
+  const selected = getLanguageTranslation(paragraph, language);
+  if (!selected) return null;
+  const matchesTranslation =
+    !validKeywords.length ||
+    validKeywords.some((keyword) => containsWholeKeyword(selected.translation, keyword));
+  return matchesOriginal && matchesTranslation;
+}
 
-  // 仅原文关键词：仍要求段落存在翻译，否则无法替换
-  if (!paragraph.translations || paragraph.translations.length === 0) return null;
-  return matchesOriginal;
+function collectReplaceCandidate(
+  result: ParagraphSearchResult,
+  params: {
+    language: AppLocale;
+    validKeywords: string[];
+    validOriginalKeywords: string[];
+    allResults: Map<string, ParagraphSearchResult>;
+  },
+): void {
+  const paragraph = result.paragraph;
+  if (isEmptyParagraph(paragraph.text) || params.allResults.has(paragraph.id)) return;
+  if (
+    evaluateKeywordMatch(
+      paragraph,
+      params.validKeywords,
+      params.validOriginalKeywords,
+      params.language,
+    )
+  ) {
+    params.allResults.set(paragraph.id, result);
+  }
 }
 
 /**
  * 使用全文索引服务收集匹配段落；索引失败或无可用关键词时返回 false
  */
 async function collectIndexReplaceMatches(params: {
+  language: AppLocale;
   bookId: string;
   book: Novel;
   chapter_id: string | undefined;
@@ -2541,15 +2571,10 @@ async function collectIndexReplaceMatches(params: {
 
     // 过滤结果：检查是否同时满足两个条件（如果提供了两种关键词）
     // 注意：FullTextIndexService.search 已支持传入 novel 引用，这里拿到的 paragraph/chapter
-    // 应与当前 booksStore 中的 book 保持同一引用，可直接修改并保存。
+    // 候选只用于准备命令，实际写入重读存储并校验原文与选用。
     for (const result of indexResults) {
       if (allResults.size >= maxReplacements) break;
-      const paragraph = result.paragraph;
-      if (isEmptyParagraph(paragraph.text)) continue;
-      const matched = evaluateKeywordMatch(paragraph, validKeywords, validOriginalKeywords);
-      if (matched && !allResults.has(paragraph.id)) {
-        allResults.set(paragraph.id, result);
-      }
+      collectReplaceCandidate(result, params);
     }
     return true;
   } catch (error) {
@@ -2562,6 +2587,7 @@ async function collectIndexReplaceMatches(params: {
  * 对范围内的所有章节执行线性扫描，补充/替代索引匹配结果
  */
 async function collectLinearReplaceMatches(params: {
+  language: AppLocale;
   book: Novel;
   chapter_id: string | undefined;
   targetVolumeIndex: number | null;
@@ -2572,6 +2598,7 @@ async function collectLinearReplaceMatches(params: {
   allResults: Map<string, ParagraphSearchResult>;
 }): Promise<void> {
   const {
+    language,
     book,
     chapter_id,
     targetVolumeIndex,
@@ -2597,6 +2624,7 @@ async function collectLinearReplaceMatches(params: {
         await ensureSingleChapterContentLoaded(chapter);
         if (!chapter.content) continue;
         scanChapterForReplaceMatches({
+          language,
           chapter,
           cIndex,
           volume,
@@ -2615,6 +2643,7 @@ async function collectLinearReplaceMatches(params: {
  * 扫描单个章节，将匹配的段落写入 allResults
  */
 function scanChapterForReplaceMatches(params: {
+  language: AppLocale;
   chapter: Chapter;
   cIndex: number;
   volume: Volume;
@@ -2624,39 +2653,30 @@ function scanChapterForReplaceMatches(params: {
   maxReplacements: number;
   allResults: Map<string, ParagraphSearchResult>;
 }): void {
-  const {
-    chapter,
-    cIndex,
-    volume,
-    vIndex,
-    validKeywords,
-    validOriginalKeywords,
-    maxReplacements,
-    allResults,
-  } = params;
+  const { chapter, cIndex, volume, vIndex, maxReplacements, allResults } = params;
   const content = chapter.content;
   if (!content) return;
   for (let pIndex = 0; pIndex < content.length; pIndex++) {
     if (allResults.size >= maxReplacements) return;
     const paragraph = content[pIndex];
     if (!paragraph) continue;
-    if (isEmptyParagraph(paragraph.text)) continue;
-
-    const matched = evaluateKeywordMatch(paragraph, validKeywords, validOriginalKeywords);
-    if (matched && !allResults.has(paragraph.id)) {
-      allResults.set(paragraph.id, {
+    collectReplaceCandidate(
+      {
         paragraph,
         paragraphIndex: pIndex,
         chapter,
         chapterIndex: cIndex,
         volume,
         volumeIndex: vIndex,
-      });
-    }
+      },
+      params,
+    );
   }
 }
 
 interface ReplacedParagraphRecord {
+  original_text: string;
+  updated_translation: Translation;
   paragraph_id: string;
   chapter_id: string;
   old_selected_translation_id: string;
@@ -2667,10 +2687,7 @@ interface ReplacedParagraphRecord {
 /**
  * 在候选翻译中找到第一个包含给定关键词集的关键词
  */
-function findMatchedKeyword(
-  translations: Translation[],
-  keywords: string[],
-): string | null {
+function findMatchedKeyword(translations: Translation[], keywords: string[]): string | null {
   for (const translation of translations) {
     for (const keyword of keywords) {
       if (containsWholeKeyword(translation.translation || '', keyword)) {
@@ -2687,73 +2704,28 @@ function findMatchedKeyword(
 function replaceParagraphTranslations(
   result: ParagraphSearchResult,
   params: {
+    language: AppLocale;
     validKeywords: string[];
     validOriginalKeywords: string[];
     replacementText: string;
-    replaceAllTranslations: boolean;
   },
 ): ReplacedParagraphRecord | null {
-  const { paragraph } = result;
-  if (!paragraph.translations || paragraph.translations.length === 0) return null;
-
-  // 依次尝试翻译关键词、原文关键词（后者用于数字、专有名词等场景）
-  const matchedKeyword =
-    (params.validKeywords.length > 0
-      ? findMatchedKeyword(paragraph.translations, params.validKeywords)
-      : null) ??
-    (params.validOriginalKeywords.length > 0
-      ? findMatchedKeyword(paragraph.translations, params.validOriginalKeywords)
-      : null);
-
-  if (!matchedKeyword) return null;
-  const keywordToReplace = matchedKeyword;
-  const replacement = params.replacementText.trim();
-
-  const oldSelectedTranslationId = paragraph.selectedTranslationId || '';
-  const oldTranslations: Translation[] = [];
-
-  const performReplacement = (translation: Translation) => {
-    translation.translation = replaceWholeKeyword(
-      translation.translation || '',
-      keywordToReplace,
-      replacement,
-    );
-  };
-
-  const snapshot = (t: Translation): Translation => ({
-    id: t.id,
-    translation: t.translation || '',
-    aiModelId: t.aiModelId || '',
-  });
-
-  if (params.replaceAllTranslations) {
-    for (const translation of paragraph.translations) {
-      if (!translation || !translation.id) continue;
-      oldTranslations.push(snapshot(translation));
-      performReplacement(translation);
-    }
-  } else if (paragraph.selectedTranslationId) {
-    const selected = paragraph.translations.find((t) => t.id === paragraph.selectedTranslationId);
-    if (selected && selected.id) {
-      oldTranslations.push(snapshot(selected));
-      performReplacement(selected);
-    }
-  } else {
-    const first = paragraph.translations[0];
-    if (first && first.id) {
-      oldTranslations.push(snapshot(first));
-      performReplacement(first);
-      paragraph.selectedTranslationId = first.id;
-    }
-  }
-
-  if (oldTranslations.length === 0) return null;
+  const selected = getLanguageTranslation(result.paragraph, params.language);
+  if (!selected) return null;
+  const keyword =
+    findMatchedKeyword([selected], params.validKeywords) ??
+    findMatchedKeyword([selected], params.validOriginalKeywords);
+  if (!keyword) return null;
+  const text = replaceWholeKeyword(selected.translation, keyword, params.replacementText.trim());
+  if (text === selected.translation) return null;
   return {
-    paragraph_id: paragraph.id,
+    paragraph_id: result.paragraph.id,
     chapter_id: result.chapter.id,
-    old_selected_translation_id: oldSelectedTranslationId,
-    old_translations: oldTranslations,
-    new_translation: replacement,
+    original_text: result.paragraph.text,
+    old_selected_translation_id: selected.id,
+    old_translations: [{ ...selected }],
+    updated_translation: { ...selected, translation: text },
+    new_translation: params.replacementText.trim(),
   };
 }
 
@@ -2761,19 +2733,19 @@ function replaceParagraphTranslations(
  * 对所有候选段落执行替换并收集结果
  */
 function applyKeywordReplacements(params: {
+  language: AppLocale;
   results: ParagraphSearchResult[];
   validKeywords: string[];
   validOriginalKeywords: string[];
   replacementText: string;
-  replaceAllTranslations: boolean;
 }): ReplacedParagraphRecord[] {
   const replaced: ReplacedParagraphRecord[] = [];
   for (const result of params.results) {
     const record = replaceParagraphTranslations(result, {
+      language: params.language,
       validKeywords: params.validKeywords,
       validOriginalKeywords: params.validOriginalKeywords,
       replacementText: params.replacementText,
-      replaceAllTranslations: params.replaceAllTranslations,
     });
     if (record) replaced.push(record);
   }
@@ -2813,6 +2785,7 @@ function emitReplaceAction(params: {
       replaced_paragraphs: params.replacedParagraphs.map((p) => ({
         paragraph_id: p.paragraph_id,
         chapter_id: p.chapter_id,
+        original_text: p.original_text,
         old_selected_translation_id: p.old_selected_translation_id,
         old_translations: p.old_translations,
       })),

@@ -2,6 +2,8 @@ import { jsonrepair } from 'jsonrepair';
 import type { AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type { ActionInfo, ChunkBoundaries, ToolContext, ToolDefinition } from './types';
 import type { ToastCallback } from './toast-helper';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 
 const ARGS_PREVIEW_LIMIT = 200;
 
@@ -9,6 +11,7 @@ const ARGS_PREVIEW_LIMIT = 200;
  * handleToolCall 的可选字段。所有都是 optional，未提供的字段不会传递给 tool.handler。
  */
 export interface HandleToolCallOptions {
+  languages?: ExecutionLanguages;
   bookId: string;
   onAction?: (action: ActionInfo) => void;
   onToast?: ToastCallback;
@@ -39,10 +42,7 @@ function previewForLog(value: unknown, maxLength = ARGS_PREVIEW_LIMIT): string {
 /**
  * 解析工具参数；JSON.parse 失败时尝试 jsonrepair 修复常见格式问题。
  */
-function parseToolCallArguments(
-  rawArgs: string,
-  functionName: string,
-): Record<string, unknown> {
+function parseToolCallArguments(rawArgs: string, functionName: string): Record<string, unknown> {
   // 部分 provider 对无参工具（required: [] 的 list_characters 等）会流式返回 ""
   // 作为 arguments。空/纯空白参数是合法的"无参调用"，必须先于截断检测放行。
   if (rawArgs.trim() === '') {
@@ -87,9 +87,7 @@ function parseToolCallArguments(
 /**
  * 根据 paragraphIds 构建 chunk 边界；若未提供或为空则返回 undefined。
  */
-function buildChunkBoundaries(
-  paragraphIds: string[] | undefined,
-): ChunkBoundaries | undefined {
+function buildChunkBoundaries(paragraphIds: string[] | undefined): ChunkBoundaries | undefined {
   if (!paragraphIds || paragraphIds.length === 0) return undefined;
   return {
     allowedParagraphIds: new Set(paragraphIds),
@@ -120,6 +118,11 @@ const TRUTHY_CONTEXT_FIELDS = [
  */
 function buildToolHandlerContext(options: HandleToolCallOptions): ToolContext {
   const context: ToolContext = {};
+  if (options.languages)
+    context.languages = captureExecutionLanguages(
+      options.languages.uiLocale,
+      options.languages.targetLanguage,
+    );
   const chunkBoundaries = buildChunkBoundaries(options.paragraphIds);
 
   // truthy 字段统一拷贝
@@ -128,6 +131,12 @@ function buildToolHandlerContext(options: HandleToolCallOptions): ToolContext {
     if (value) {
       (context as Record<string, unknown>)[key] = value;
     }
+  }
+
+  if (context.languages && context.onAction) {
+    const execution = Object.freeze({ bookId: options.bookId, languages: context.languages });
+    const onAction = context.onAction;
+    context.onAction = (action) => onAction({ ...action, execution });
   }
 
   if (chunkBoundaries) context.chunkBoundaries = chunkBoundaries;
@@ -156,10 +165,7 @@ export function buildUnknownToolResult(toolCall: AIToolCall): AIToolCallResult {
 /**
  * 构造"调用失败"错误结果。
  */
-export function buildErrorToolResult(
-  toolCall: AIToolCall,
-  error: unknown,
-): AIToolCallResult {
+export function buildErrorToolResult(toolCall: AIToolCall, error: unknown): AIToolCallResult {
   const functionName = toolCall.function.name;
   const errorMsg = error instanceof Error ? error.message : '未知错误';
   console.error(`[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`, errorMsg);

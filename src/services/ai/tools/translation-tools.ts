@@ -7,6 +7,8 @@ import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
 import { TodoListService } from 'src/services/todo-list-service';
+import type { AppLocale } from 'src/models/locale';
+import { getLanguageTranslation } from 'src/services/localization/selection';
 
 // ============ Types ============
 
@@ -1008,18 +1010,23 @@ async function collectTargetParagraphsLazy(
 function checkTranslationDuplicate(
   paragraph: Paragraph,
   translatedText: string,
+  targetLanguage: AppLocale,
 ): { status: 'none' } | { status: 'selected' } | { status: 'history' } {
   if (!paragraph.translations || paragraph.translations.length === 0) {
     return { status: 'none' };
   }
-  const selected = paragraph.translations.find((t) => t.id === paragraph.selectedTranslationId);
+  const selected = getLanguageTranslation(paragraph, targetLanguage);
   if (selected && selected.translation === translatedText) {
     return { status: 'selected' };
   }
   // 倒序遍历：重复更可能出现在最近的翻译中，倒序可以更快命中
   for (let i = paragraph.translations.length - 1; i >= 0; i--) {
     const candidate = paragraph.translations[i];
-    if (candidate && candidate.translation === translatedText) {
+    if (
+      candidate &&
+      (candidate.language ?? 'zh-CN') === targetLanguage &&
+      candidate.translation === translatedText
+    ) {
       return { status: 'history' };
     }
   }
@@ -1095,6 +1102,7 @@ function validateSingleItem(
   item: BatchItem,
   paragraph: Paragraph,
   enableOriginalTextValidation: boolean | undefined,
+  targetLanguage: AppLocale,
 ): ItemValidationOutcome {
   const warnings: string[] = [];
   const trimmedPrefix = item.originalTextPrefix.trim();
@@ -1115,7 +1123,7 @@ function validateSingleItem(
     warnings.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL_COMPLETENESS(item.paragraphId));
   }
 
-  const dupe = checkTranslationDuplicate(paragraph, item.translatedText);
+  const dupe = checkTranslationDuplicate(paragraph, item.translatedText, targetLanguage);
   if (dupe.status === 'selected') {
     return {
       kind: 'failed',
@@ -1173,7 +1181,9 @@ function resolveBook(
 ): { book: Novel } | { error: ProcessTranslationBatchResult } {
   const resolved = preloadedBook;
   if (!resolved) {
-    return { error: { success: false, error: ERROR_MESSAGES.BOOK_NOT_FOUND(bookId), processedCount: 0 } };
+    return {
+      error: { success: false, error: ERROR_MESSAGES.BOOK_NOT_FOUND(bookId), processedCount: 0 },
+    };
   }
   if (!resolved.volumes) {
     return { error: { success: false, error: ERROR_MESSAGES.BOOK_NO_VOLUMES, processedCount: 0 } };
@@ -1241,6 +1251,7 @@ function validateAllItems(
   items: BatchItem[],
   targetParagraphsMap: Map<string, Paragraph>,
   enableOriginalTextValidation: boolean | undefined,
+  targetLanguage: AppLocale,
 ): ValidationSummary {
   const warnings: string[] = [];
   let duplicateCount = 0;
@@ -1250,7 +1261,12 @@ function validateAllItems(
   for (const item of items) {
     const paragraph = targetParagraphsMap.get(item.paragraphId);
     if (!paragraph) continue;
-    const outcome = validateSingleItem(item, paragraph, enableOriginalTextValidation);
+    const outcome = validateSingleItem(
+      item,
+      paragraph,
+      enableOriginalTextValidation,
+      targetLanguage,
+    );
     warnings.push(...outcome.warnings);
     if (outcome.kind === 'failed') {
       failedItems.push({
@@ -1321,6 +1337,7 @@ async function processTranslationBatch(
   chapterId?: string,
   preloadedBook?: Novel,
   enableOriginalTextValidation?: boolean,
+  targetLanguage: AppLocale = 'zh-CN',
 ): Promise<ProcessTranslationBatchResult> {
   // aiModelId 保留在签名中以维持调用方兼容；实际翻译写入由 onParagraphsExtracted 回调完成
   void aiModelId;
@@ -1353,7 +1370,12 @@ async function processTranslationBatch(
     // 收集所有验证错误和警告，一次性返回，方便 AI 批量修复
     // 注意：实际的翻译写入由调用方的 onParagraphsExtracted 回调统一完成，
     // 工具层只负责验证，不直接修改段落数据，避免双重写入
-    const summary = validateAllItems(items, targetParagraphsMap, enableOriginalTextValidation);
+    const summary = validateAllItems(
+      items,
+      targetParagraphsMap,
+      enableOriginalTextValidation,
+      targetLanguage,
+    );
     return buildBatchValidationResult(summary);
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : '未知错误';
@@ -1512,8 +1534,9 @@ async function prepareBatchParams(
   }
   const preloadedBook = preloadResult.book;
 
-  const chapterId = context.aiProcessingStore!.activeTasks.find((t) => t.id === context.taskId)
-    ?.chapterId;
+  const chapterId = context.aiProcessingStore!.activeTasks.find(
+    (t) => t.id === context.taskId,
+  )?.chapterId;
   const normalizedIdsResult = await normalizeParagraphIds(
     paragraphs,
     resolvedIds,
@@ -1557,7 +1580,9 @@ function collectIncompleteTodos(
   taskId: string | undefined,
 ): { incomplete_count: number; todos: Array<{ id: string; text: string }> } | undefined {
   if (!taskId) return undefined;
-  const incompleteTodos = TodoListService.getTodosByTaskId(taskId).filter((t) => t.status !== 'done');
+  const incompleteTodos = TodoListService.getTodosByTaskId(taskId).filter(
+    (t) => t.status !== 'done',
+  );
   if (incompleteTodos.length === 0) return undefined;
   return {
     incomplete_count: incompleteTodos.length,
@@ -1727,6 +1752,7 @@ async function handleAddTranslationBatch(
     chapterId,
     preloadedBook,
     context.enableOriginalTextValidation,
+    context.languages?.targetLanguage ?? 'zh-CN',
   );
 
   const combinedWarnings = [...(result.warnings ?? []), ...correctionWarnings];
@@ -1767,9 +1793,7 @@ export interface CreateTranslationToolsOptions {
   enableOriginalTextValidation?: boolean;
 }
 
-export function createTranslationTools(
-  options?: CreateTranslationToolsOptions,
-): ToolDefinition[] {
+export function createTranslationTools(options?: CreateTranslationToolsOptions): ToolDefinition[] {
   const validate = options?.enableOriginalTextValidation === true;
   const prefixDescription = validate
     ? '原文前缀锚点（建议取原文前 5-10 个字符，trim 后最少 3 个字符、最多 20 个字符），用于校验 paragraph_id 与原文是否对齐'
@@ -1779,43 +1803,43 @@ export function createTranslationTools(
     : ['paragraph_id', 'translated_text'];
 
   return [
-  {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'add_translation_batch',
-        description: `批量提交段落翻译/润色/校对结果。只能在 working 状态下调用此工具！必须使用 paragraph_id 标识段落。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）。当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许单次最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。`,
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraphs: {
-              type: 'array',
-              description: `段落处理结果数组。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）；当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。必须使用 paragraph_id 标识段落（不支持 index）。`,
-              items: {
-                type: 'object',
-                properties: {
-                  paragraph_id: {
-                    type: 'string',
-                    description: '段落 ID（唯一提交标识，从 chunk 中 [ID: xxx] 获取）',
+    {
+      definition: {
+        type: 'function',
+        function: {
+          name: 'add_translation_batch',
+          description: `批量提交段落翻译/润色/校对结果。只能在 working 状态下调用此工具！必须使用 paragraph_id 标识段落。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）。当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许单次最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。`,
+          parameters: {
+            type: 'object',
+            properties: {
+              paragraphs: {
+                type: 'array',
+                description: `段落处理结果数组。常规最多 ${MAX_BATCH_SIZE} 个段落（允许 10% 容差，最多 ${MAX_BATCH_SIZE_WITH_TOLERANCE}）；当当前 chunk 剩余未提交段落数 ≤ ${MAX_BATCH_SIZE_DOUBLE} 时，允许最多 ${MAX_BATCH_SIZE_DOUBLE} 个段落。必须使用 paragraph_id 标识段落（不支持 index）。`,
+                items: {
+                  type: 'object',
+                  properties: {
+                    paragraph_id: {
+                      type: 'string',
+                      description: '段落 ID（唯一提交标识，从 chunk 中 [ID: xxx] 获取）',
+                    },
+                    original_text_prefix: {
+                      type: 'string',
+                      description: prefixDescription,
+                    },
+                    translated_text: {
+                      type: 'string',
+                      description: '翻译/润色/校对后的文本',
+                    },
                   },
-                  original_text_prefix: {
-                    type: 'string',
-                    description: prefixDescription,
-                  },
-                  translated_text: {
-                    type: 'string',
-                    description: '翻译/润色/校对后的文本',
-                  },
+                  required: itemRequired,
                 },
-                required: itemRequired,
               },
             },
+            required: ['paragraphs'],
           },
-          required: ['paragraphs'],
         },
       },
+      handler: async (args, context: ToolContext) => handleAddTranslationBatch(args, context),
     },
-    handler: async (args, context: ToolContext) => handleAddTranslationBatch(args, context),
-  },
-];
+  ];
 }
