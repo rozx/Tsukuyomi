@@ -4,10 +4,13 @@
  * 两种形态共享同一个 `ThinkingProcessBody`。
  */
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Popover from 'primevue/popover';
 import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import ThinkingProcessBody from './ThinkingProcessBody.vue';
+
+const { t } = useI18n();
 
 const uiStore = useUiStore();
 const isPhone = computed(() => uiStore.deviceType === 'phone');
@@ -58,7 +61,7 @@ defineExpose({
   <MobileBottomSheet
     v-else
     v-model:visible="mobileVisible"
-    title="AI 思考过程"
+    :title="t('activityUi.thinking.title')"
     eyebrow="ACTIVE TASKS"
     max-height="86dvh"
   >

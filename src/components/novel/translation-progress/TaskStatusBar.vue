@@ -1,32 +1,29 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import { AI_WORKFLOW_STATUS_LABELS } from 'src/constants/ai';
+import type { AppLocale } from 'src/models/locale';
+import { taskStatusLabel, workflowStatusLabel } from 'src/constants/ai';
 
 const props = defineProps<{
   task: AIProcessingTask;
   formatDuration: (startTime: number, endTime?: number) => string;
 }>();
 
-const taskStatusLabels: Record<string, string> = {
-  thinking: '思考中',
-  processing: '处理中',
-  end: '已完成',
-  error: '错误',
-  cancelled: '已取消',
-};
+const { t, locale } = useI18n();
 
-const isActive = computed(() =>
-  props.task.status === 'thinking' || props.task.status === 'processing',
+const isActive = computed(
+  () => props.task.status === 'thinking' || props.task.status === 'processing',
 );
 
 const isComplete = computed(() => props.task.status === 'end');
 
 const statusLabel = computed(() => {
+  const current = locale.value as AppLocale;
   if (props.task.workflowStatus) {
-    return AI_WORKFLOW_STATUS_LABELS[props.task.workflowStatus] || props.task.workflowStatus;
+    return workflowStatusLabel(current, props.task.workflowStatus);
   }
-  return taskStatusLabels[props.task.status] || props.task.status;
+  return taskStatusLabel(current, props.task.status);
 });
 
 const progress = computed(() => props.task.progress);
@@ -52,13 +49,15 @@ const hasProgress = computed(() => progress.value && progress.value.total > 0);
       <div
         class="progress-fill"
         :class="{ active: isActive, complete: isComplete }"
-        :style="{ width: hasProgress ? `${percent}%` : (isComplete ? '100%' : '0%') }"
+        :style="{ width: hasProgress ? `${percent}%` : isComplete ? '100%' : '0%' }"
       />
     </div>
     <div v-if="hasProgress" class="progress-label">
-      <span class="progress-chunks">{{ progress!.current }} / {{ progress!.total }} 块</span>
+      <span class="progress-chunks">{{
+        t('activityUi.progress.chunks', { current: progress!.current, total: progress!.total })
+      }}</span>
       <span class="progress-percent" :class="{ complete: isComplete }">
-        {{ isComplete ? '完成' : `${Math.round(percent)}%` }}
+        {{ isComplete ? t('activityUi.progress.complete') : `${Math.round(percent)}%` }}
       </span>
     </div>
   </div>
@@ -142,8 +141,13 @@ const hasProgress = computed(() => progress.value && progress.value.total > 0);
 }
 
 @keyframes shimmer {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .progress-fill.complete {

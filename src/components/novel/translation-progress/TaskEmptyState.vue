@@ -4,12 +4,15 @@
  * Used by both the Desktop and Mobile variants — extract so markup + styles
  * live in one place instead of being duplicated across variant files.
  */
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 </script>
 
 <template>
   <div class="empty-state">
     <i class="pi pi-info-circle" />
-    <span>暂无翻译任务</span>
+    <span>{{ t('activityUi.progress.empty') }}</span>
   </div>
 </template>
 

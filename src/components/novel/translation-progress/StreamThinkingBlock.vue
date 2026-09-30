@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { FormattedMessagePart } from 'src/composables/useThinkingFormatter';
 import { useStreamVisibility } from 'src/composables/translation-progress/useStreamVisibility';
@@ -62,13 +63,17 @@ const mergedParts = computed(() => {
 
 // 折叠时只保留输出内容（相当于「只看译文」）
 const visibleParts = computed(() =>
-  thinkingExpanded.value ? mergedParts.value : mergedParts.value.filter((i) => i.part.mode === 'output'),
+  thinkingExpanded.value
+    ? mergedParts.value
+    : mergedParts.value.filter((i) => i.part.mode === 'output'),
 );
 
 // 折叠且尚无输出时，用思考尾巴给个两行预览，避免整块空白
 const showPreview = computed(() => !thinkingExpanded.value && !hasOutput.value);
 
 // 光标跟随当前正在流式输出的内容类型变色
+const { t } = useI18n();
+
 const cursorIsOutput = computed(
   () => mergedParts.value[mergedParts.value.length - 1]?.part.mode === 'output',
 );
@@ -78,7 +83,7 @@ const cursorIsOutput = computed(
   <div v-if="showPanel" class="thinking-block" :class="{ 'is-expanded': thinkingExpanded }">
     <button class="thinking-toggle" @click="thinkingExpanded = !thinkingExpanded">
       <i class="pi" :class="thinkingChevron" />
-      <span class="thinking-toggle-label">思考过程</span>
+      <span class="thinking-toggle-label">{{ t('activityUi.progress.thinkingProcess') }}</span>
       <i v-if="isActive" class="pi pi-spin pi-spinner thinking-spinner" />
     </button>
 

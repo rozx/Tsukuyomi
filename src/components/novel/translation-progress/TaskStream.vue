@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import type { FormattedMessagePart } from 'src/composables/useThinkingFormatter';
 import { useStreamVisibility } from 'src/composables/translation-progress/useStreamVisibility';
@@ -18,6 +19,7 @@ const emit = defineEmits<{
 }>();
 
 const isComplete = computed(() => props.task.status === 'end');
+const { t } = useI18n();
 const contextLabel = computed(() =>
   props.task.contextTokens === undefined
     ? ''
@@ -70,23 +72,27 @@ onUnmounted(() => {
 <template>
   <div class="stream-section">
     <div class="stream-header">
-      <span class="stream-title">实时日志</span>
-      <span v-if="contextLabel" class="text-xs text-moon/60">上下文 {{ contextLabel }}</span>
+      <span class="stream-title">{{ t('activityUi.progress.liveLog') }}</span>
+      <span v-if="contextLabel" class="text-xs text-moon/60">{{
+        t('activityUi.progress.context', { label: contextLabel })
+      }}</span>
       <button
         class="auto-scroll-btn"
         :class="{ enabled: autoScroll }"
         @click="emit('toggleAutoScroll')"
       >
         <i class="pi pi-arrow-down text-[0.625rem]" />
-        自动滚动
+        {{ t('activityUi.progress.autoScroll') }}
       </button>
     </div>
 
     <!-- 完成提示 -->
     <div v-if="isComplete" class="completed-banner">
       <span class="completed-icon">&#x2713;</span>
-      任务已完成
-      <template v-if="task.progress"> · 共处理 {{ task.progress.total }} 个翻译块 </template>
+      {{ t('activityUi.progress.taskDone') }}
+      <template v-if="task.progress">{{
+        t('activityUi.progress.totalChunks', { count: task.progress.total })
+      }}</template>
     </div>
 
     <!-- 合并面板：思考 / 工具调用 / 输出内容同处一条时间线，共用一个滚动容器 -->

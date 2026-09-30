@@ -284,6 +284,7 @@ export default {
       runtime: '运行时间 {duration}',
       runtimeColon: '运行时间: {duration}',
       finishedAt: '· 完成于 {time}',
+      finishedAtPlain: '完成于 {time}',
       noThinking: '该任务暂无思考过程记录',
       close: '关闭',
       clearMessage: '确定要清空所有思考过程记录吗？此操作不可恢复。',

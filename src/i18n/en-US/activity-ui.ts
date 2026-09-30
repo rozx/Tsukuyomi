@@ -287,6 +287,7 @@ export default {
       runtime: 'Runtime {duration}',
       runtimeColon: 'Runtime: {duration}',
       finishedAt: '· Finished at {time}',
+      finishedAtPlain: 'Finished at {time}',
       noThinking: 'No thinking process was recorded for this task',
       close: 'Close',
       clearMessage: 'Clear all thinking process records? This cannot be undone.',
