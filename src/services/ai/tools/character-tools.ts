@@ -92,7 +92,7 @@ export const characterTools: ToolDefinition[] = [
       required: ['name', 'translation'],
     }),
     handler: async (args, context: ToolContext) => {
-      const { uiLocale, bookId, onAction } = bookToolContext(context);
+      const { uiLocale, bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{
         name: string;
         translation: string;
@@ -126,10 +126,7 @@ export const characterTools: ToolDefinition[] = [
 
       // 规范化别名翻译
       if (aliases && Array.isArray(aliases)) {
-        characterData.aliases = normalizeAliasList(
-          aliases,
-          context.languages?.targetLanguage ?? 'zh-CN',
-        );
+        characterData.aliases = normalizeAliasList(aliases, language);
       }
 
       if (sex) characterData.sex = sex as 'male' | 'female' | 'other';
@@ -139,7 +136,7 @@ export const characterTools: ToolDefinition[] = [
       const created = await CharacterSettingService.addCharacterSetting(
         bookId,
         characterData,
-        context.languages?.targetLanguage ?? 'zh-CN',
+        language,
       );
 
       const character = savedCharacter(bookId, created.id);
@@ -155,10 +152,7 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: translateText(uiLocale, 'aiEntityFeedback.characterCreated'),
-        character: serializeCharacterForTool(
-          character,
-          context.languages?.targetLanguage ?? 'zh-CN',
-        ),
+        character: serializeCharacterForTool(character, language),
       });
     },
   },
@@ -178,7 +172,7 @@ export const characterTools: ToolDefinition[] = [
       required: ['name'],
     }),
     handler: async (args, context: ToolContext) => {
-      const { uiLocale, bookId, onAction } = bookToolContext(context);
+      const { uiLocale, bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{ name: string; include_memory?: boolean }>(args);
       const { include_memory = true } = parsedArgs;
       // 类型守卫：确保 name 为有效字符串
@@ -210,17 +204,13 @@ export const characterTools: ToolDefinition[] = [
         const allCharacters = book.characterSettings || [];
         const fallbackMatches = allCharacters.filter((char) => {
           if (char.name.toLowerCase().includes(keywordLower)) return true;
-          if (
-            getNameTranslation(char, context.languages?.targetLanguage ?? 'zh-CN')
-              ?.translation.toLowerCase()
-              .includes(keywordLower)
-          )
+          if (getNameTranslation(char, language)?.translation.toLowerCase().includes(keywordLower))
             return true;
           if (
             char.aliases?.some(
               (alias) =>
                 alias.name.toLowerCase().includes(keywordLower) ||
-                getNameTranslation(alias, context.languages?.targetLanguage ?? 'zh-CN')
+                getNameTranslation(alias, language)
                   ?.translation.toLowerCase()
                   .includes(keywordLower),
             )
@@ -252,9 +242,7 @@ export const characterTools: ToolDefinition[] = [
 
           return JSON.stringify({
             ...matchSummary,
-            characters: limitedMatches.map((char) =>
-              serializeCharacterForTool(char, context.languages?.targetLanguage ?? 'zh-CN'),
-            ),
+            characters: limitedMatches.map((char) => serializeCharacterForTool(char, language)),
           });
         }
 
@@ -286,15 +274,13 @@ export const characterTools: ToolDefinition[] = [
           [{ type: 'character', id: character.id }],
           [name, ...aliasKeywords],
           5,
+          language,
         );
       }
 
       return JSON.stringify({
         success: true,
-        character: serializeCharacterForTool(
-          character,
-          context.languages?.targetLanguage ?? 'zh-CN',
-        ),
+        character: serializeCharacterForTool(character, language),
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
           : {}),
@@ -359,15 +345,16 @@ export const characterTools: ToolDefinition[] = [
       required: ['character_id'],
     }),
     handler: async (args, context: ToolContext) => {
-      const { parsedArgs, uiLocale, bookId, onAction, character_id } = characterEditContext<{
-        character_id: string;
-        name?: string;
-        translation?: string;
-        sex?: string;
-        description?: string;
-        speaking_style?: string;
-        aliases?: Array<{ id?: string; name: string; translation: string }>;
-      }>(args, context);
+      const { parsedArgs, uiLocale, bookId, onAction, language, character_id } =
+        characterEditContext<{
+          character_id: string;
+          name?: string;
+          translation?: string;
+          sex?: string;
+          description?: string;
+          speaking_style?: string;
+          aliases?: Array<{ id?: string; name: string; translation: string }>;
+        }>(args, context);
       const { name, translation, sex, description, speaking_style, aliases } = parsedArgs;
       if (name !== undefined && !name.trim()) {
         throw new LocalizedError(
@@ -418,14 +405,14 @@ export const characterTools: ToolDefinition[] = [
         updates.speakingStyle = speaking_style;
       }
       if (aliases !== undefined) {
-        updates.aliases = normalizeAliasList(aliases, context.languages?.targetLanguage ?? 'zh-CN');
+        updates.aliases = normalizeAliasList(aliases, language);
       }
 
       const changed = await CharacterSettingService.updateCharacterSetting(
         bookId,
         character_id,
         updates,
-        context.languages?.targetLanguage ?? 'zh-CN',
+        language,
       );
 
       const character = savedCharacter(bookId, changed.id);
@@ -442,10 +429,7 @@ export const characterTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: translateText(uiLocale, 'aiEntityFeedback.characterUpdated'),
-        character: serializeCharacterForTool(
-          character,
-          context.languages?.targetLanguage ?? 'zh-CN',
-        ),
+        character: serializeCharacterForTool(character, language),
       });
     },
   },
@@ -455,9 +439,10 @@ export const characterTools: ToolDefinition[] = [
       singleIdToolParameters('delete_character', 'character_id'),
     ),
     handler: async (args, context: ToolContext) => {
-      const { parsedArgs, uiLocale, bookId, onAction, character_id } = characterEditContext<{
-        character_id: string;
-      }>(args, context);
+      const { parsedArgs, uiLocale, bookId, onAction, language, character_id } =
+        characterEditContext<{
+          character_id: string;
+        }>(args, context);
 
       // 在删除前获取角色信息，以便在 toast 中显示详细信息和 revert
       const { character, previousData } = resolveCharacterForTool(bookId, character_id);
@@ -506,7 +491,7 @@ export const characterTools: ToolDefinition[] = [
       required: ['keywords'],
     }),
     handler: async (args, context: ToolContext) => {
-      const { uiLocale, bookId, onAction } = bookToolContext(context);
+      const { uiLocale, bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{
         keywords: string[];
         translation_only?: boolean;
@@ -539,26 +524,21 @@ export const characterTools: ToolDefinition[] = [
         );
         // 搜索翻译
         const translationMatch = keywordsLower.some((keyword) =>
-          getNameTranslation(char, context.languages?.targetLanguage ?? 'zh-CN')
-            ?.translation.toLowerCase()
-            .includes(keyword),
+          getNameTranslation(char, language)?.translation.toLowerCase().includes(keyword),
         );
         // 搜索别名
         const aliasMatch = char.aliases?.some((alias) =>
           keywordsLower.some(
             (keyword) =>
               alias.name.toLowerCase().includes(keyword) ||
-              getNameTranslation(alias, context.languages?.targetLanguage ?? 'zh-CN')
-                ?.translation.toLowerCase()
-                .includes(keyword),
+              getNameTranslation(alias, language)?.translation.toLowerCase().includes(keyword),
           ),
         );
 
         if (translation_only) {
           // 如果设置了只返回有翻译的，则必须同时有翻译且匹配
           return (
-            (translationMatch || aliasMatch) &&
-            getNameTranslation(char, context.languages?.targetLanguage ?? 'zh-CN')?.translation
+            (translationMatch || aliasMatch) && getNameTranslation(char, language)?.translation
           );
         }
 
@@ -573,13 +553,19 @@ export const characterTools: ToolDefinition[] = [
           type: 'character' as const,
           id: char.id,
         }));
-        relatedMemories = await searchRelatedMemoriesHybrid(bookId, attachments, validKeywords, 5);
+        relatedMemories = await searchRelatedMemoriesHybrid(
+          bookId,
+          attachments,
+          validKeywords,
+          5,
+          language,
+        );
       }
 
       return JSON.stringify({
         success: true,
         characters: filteredCharacters.map((char: CharacterSetting) =>
-          serializeCharacterForTool(char, context.languages?.targetLanguage ?? 'zh-CN'),
+          serializeCharacterForTool(char, language),
         ),
         count: filteredCharacters.length,
         ...(include_memory && relatedMemories.length > 0
@@ -608,7 +594,7 @@ export const characterTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context: ToolContext) => {
-      const { uiLocale, bookId, onAction } = bookToolContext(context);
+      const { uiLocale, bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{
         chapter_id?: string;
         all_chapters?: boolean;
@@ -647,9 +633,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        characters: characters.map((char) =>
-          serializeCharacterForTool(char, context.languages?.targetLanguage ?? 'zh-CN'),
-        ),
+        characters: characters.map((char) => serializeCharacterForTool(char, language)),
         total: characters.length,
         all_characters_count: book.characterSettings?.length || 0,
         ...(chapter_id ? { chapter_id } : {}),

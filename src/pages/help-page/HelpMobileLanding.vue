@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
 /**
  * 手机帮助页落地态（未选中文档时的品牌入口）。从 HelpPageMobile 抽出以降低其模板圈复杂度。
  */
@@ -18,17 +20,17 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
     <section class="mhl-hero">
       <img :src="ctx.logoPath" :alt="APP_NAME.full" class="mhl-hero-logo" />
       <div class="mhl-hero-brand">TSUKUYOMI 月詠</div>
-      <div class="mhl-hero-tagline">让每一次翻页，</div>
-      <div class="mhl-hero-tagline mhl-hero-tagline--accent">都如月光般流畅。</div>
+      <div class="mhl-hero-tagline">{{ t('helpUi.heroFirst') }}</div>
+      <div class="mhl-hero-tagline mhl-hero-tagline--accent">{{ t('helpUi.heroSecond') }}</div>
       <p class="mhl-hero-desc">
-        专业的日本小说翻译工具，支持 AI 翻译、校对润色、术语管理等功能。
+        {{ t('helpUi.heroDescription') }}
       </p>
     </section>
 
     <section class="mhl-section">
-      <div class="mhl-section-title">快速开始</div>
+      <div class="mhl-section-title">{{ t('helpUi.quickStart') }}</div>
       <div class="mhl-steps">
-        <div v-for="step in ctx.quickStartSteps" :key="step.n" class="mhl-step">
+        <div v-for="step in ctx.quickStartSteps.value" :key="step.n" class="mhl-step">
           <div class="mhl-step-num">{{ step.n }}</div>
           <div class="mhl-step-body">
             <div class="mhl-step-title">{{ step.t }}</div>
@@ -39,7 +41,7 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
     </section>
 
     <section class="mhl-section mhl-section--last">
-      <div class="mhl-section-title">主题</div>
+      <div class="mhl-section-title">{{ t('helpUi.topics') }}</div>
       <div class="mhl-topics">
         <button
           v-for="topic in ctx.topicTiles.value"
@@ -55,7 +57,7 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
 
       <button class="mhl-all-docs" @click="ctx.showDocumentNavDrawer.value = true">
         <i class="pi pi-bars" aria-hidden="true" />
-        <span>查看所有文档</span>
+        <span>{{ t('helpUi.allDocs') }}</span>
         <i class="pi pi-arrow-right mhl-all-docs-arrow" aria-hidden="true" />
       </button>
     </section>
@@ -64,7 +66,11 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
 
 <style scoped>
 .mobile-help-landing {
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   padding: 4px 0 32px;
 }
 

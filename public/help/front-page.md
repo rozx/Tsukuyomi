@@ -1,12 +1,12 @@
-# Tsukuyomi（月咏）翻译器使用指南
+# Tsukuyomi（月咏）翻译器使用指南 {#front-page-section-1}
 
 欢迎使用 **Tsukuyomi**。本文档用于快速了解当前版本的主要功能与使用路径。
 
 ---
 
-## 🚀 快速开始
+## 🚀 快速开始 {#front-page-section-2}
 
-### 1) 配置 AI 模型
+### 1) 配置 AI 模型 {#front-page-section-3}
 
 1. 进入左侧导航 **AI列表**。
 2. 新增模型并填写必要信息：
@@ -17,7 +17,7 @@
 
 > 💡 详见 [AI 模型配置](/help/ai-models-guide)。
 
-### 2) 创建并导入书籍
+### 2) 创建并导入书籍 {#front-page-section-4}
 
 1. 进入左侧导航 **书籍列表**。
 2. 点击“新建书籍”，手动录入基础信息。
@@ -25,7 +25,7 @@
 
 > 💡 详见 [书籍列表页](/help/books-page-guide) 与 [AI 导入工作台](/help/import-guide)。
 
-### 3) 开始翻译
+### 3) 开始翻译 {#front-page-section-5}
 
 1. 打开任一本书进入书籍详情页。
 2. 在章节面板中添加章节或抓取章节。
@@ -35,9 +35,9 @@
 
 ---
 
-## ✨ 核心能力概览
+## ✨ 核心能力概览 {#front-page-section-6}
 
-### 📖 翻译与编辑
+### 📖 翻译与编辑 {#front-page-section-7}
 
 - 支持段落级翻译结果与多版本切换。
 - 支持翻译模式、原文编辑模式、译文预览模式。
@@ -46,7 +46,7 @@
 
 > 💡 详见 [内容编辑](/help/book-details-editing)。
 
-### 🧩 术语、角色与记忆
+### 🧩 术语、角色与记忆 {#front-page-section-8}
 
 - **术语设置**：维护专有名词及译法。
 - **角色设置**：维护角色信息、别名与表达风格。
@@ -55,7 +55,7 @@
 
 > 💡 详见 [术语管理](/help/book-details-terminology)、[角色设定管理](/help/book-details-characters)、[记忆管理](/help/book-details-memory)。
 
-### 🤖 任务类型
+### 🤖 任务类型 {#front-page-section-9}
 
 - 翻译（Translation）
 - 润色（Polish）
@@ -63,7 +63,7 @@
 
 > AI 章节摘要功能已在 v0.12 移除，改由 [本地嵌入](/help/local-embedding) + `query_chapter` 工具按需检索原文。
 
-### 💬 月詠 · 聊天助手
+### 💬 月詠 · 聊天助手 {#front-page-section-10}
 
 应用内 AI 助手以**月詠（Tsukuyomi）**为名——月下学者、本应用之化身。
 
@@ -74,7 +74,7 @@
 
 > 💡 详见 [月詠 · 聊天助手](/help/chat-assistant-guide)。
 
-### 🛠️ 系统栏与右栏
+### 🛠️ 系统栏与右栏 {#front-page-section-11}
 
 - **AI 思考过程**：查看任务状态与思考流。
 - **同步状态**：查看 Gist 同步状态与入口。
@@ -84,7 +84,7 @@
 
 > 💡 详见 [系统栏与导航](/help/toolbar-guide)、[本地嵌入](/help/local-embedding)。
 
-### 💾 数据与同步
+### 💾 数据与同步 {#front-page-section-12}
 
 - 数据本地存储（IndexedDB）。
 - 支持 GitHub Gist 同步。
@@ -94,7 +94,7 @@
 
 ---
 
-## ✅ 使用建议
+## ✅ 使用建议 {#front-page-section-13}
 
 1. 先配置好默认模型，再开始大批量翻译。
 2. 先完成章节结构，再分批翻译与复核。
@@ -103,7 +103,7 @@
 
 ---
 
-## ❓ 常见问题
+## ❓ 常见问题 {#front-page-section-14}
 
 **Q: 翻译任务中断怎么办？**
 
@@ -119,7 +119,7 @@ A: 会。导入会覆盖当前资料，建议先导出一份本地备份。
 
 ---
 
-## 📚 相关文档
+## 📚 相关文档 {#front-page-section-15}
 
 - [快速开始](/help/front-page)（本文）
 - [主页介绍](/help/library-guide)

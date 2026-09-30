@@ -1,3 +1,4 @@
+import type { AppLocale } from 'src/models/locale';
 import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
 import { UniqueIdGenerator, extractIds, generateShortId } from 'src/utils/id-generator';
 import {
@@ -1423,6 +1424,8 @@ export class ChapterService {
     chapterId?: string,
     maxParagraphs: number = 1,
     onlyWithTranslation: boolean = false,
+    language?: AppLocale,
+    translationKeywords: string[] = [],
   ): Promise<ParagraphSearchResult[]> {
     if (!novel || !novel.volumes || !keyword.trim()) {
       return [];
@@ -1438,6 +1441,8 @@ export class ChapterService {
         searchInTranslations: false, // 只搜索原文
         // 传入当前 novel 引用，确保返回的段落/章节对象与调用方一致
         novel,
+        ...(language ? { language } : {}),
+        translationKeywords,
       };
       if (chapterId) {
         searchOptions.chapterId = chapterId;
@@ -1459,8 +1464,22 @@ export class ChapterService {
       novel,
       chapterId,
       maxParagraphs,
-      onlyWithTranslation,
-      (paragraph) => paragraph.text.toLowerCase().includes(trimmedKeyword),
+      language ? false : onlyWithTranslation,
+      (paragraph) => {
+        const translation = getLanguageTranslation(
+          paragraph,
+          language ?? novel.targetLanguage ?? 'zh-CN',
+        );
+        if (language && onlyWithTranslation && !translation) return false;
+        if (
+          translationKeywords.length > 0 &&
+          !translationKeywords.some((keyword) =>
+            translation?.translation.toLowerCase().includes(keyword.toLowerCase()),
+          )
+        )
+          return false;
+        return paragraph.text.toLowerCase().includes(trimmedKeyword);
+      },
     );
   }
 
@@ -1481,6 +1500,7 @@ export class ChapterService {
     maxParagraphs: number = 1,
     onlyWithTranslation: boolean = false,
     searchInTranslation: boolean = false,
+    language?: AppLocale,
   ): Promise<ParagraphSearchResult[]> {
     if (!novel || !novel.volumes || !regexPattern.trim()) {
       return [];
@@ -1500,21 +1520,25 @@ export class ChapterService {
       novel,
       chapterId,
       maxParagraphs,
-      onlyWithTranslation,
+      language ? false : onlyWithTranslation,
       (paragraph) => {
+        if (language && onlyWithTranslation && !getLanguageTranslation(paragraph, language))
+          return false;
         // 确定要搜索的文本
         let searchText: string;
         if (searchInTranslation) {
-          // 在翻译文本中搜索
-          if (!paragraph.translations || paragraph.translations.length === 0) {
-            return false; // 如果没有翻译，跳过
+          if (language) {
+            const selectedTranslation = getLanguageTranslation(paragraph, language);
+            if (!selectedTranslation) return false;
+            searchText = selectedTranslation.translation;
+          } else {
+            if (!paragraph.translations?.length) return false;
+            const selectedTranslation = paragraph.translations.find(
+              (t) => t.id === paragraph.selectedTranslationId,
+            );
+            searchText =
+              selectedTranslation?.translation || paragraph.translations[0]?.translation || '';
           }
-          // 使用选中的翻译，如果没有则使用第一个翻译
-          const selectedTranslation = paragraph.translations.find(
-            (t) => t.id === paragraph.selectedTranslationId,
-          );
-          searchText =
-            selectedTranslation?.translation || paragraph.translations[0]?.translation || '';
         } else {
           // 在原文中搜索
           searchText = paragraph.text;

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
 import { computed } from 'vue';
 import { injectHelpPage } from 'src/composables/help-page/useHelpPage';
 import HelpDesktopNav from './HelpDesktopNav.vue';
@@ -22,7 +24,7 @@ const currentDocDescription = computed(() => ctx.currentDoc.value?.description);
       <!-- Loading -->
       <div v-if="ctx.loading.value" class="help-state">
         <i class="pi pi-spin pi-spinner help-state-icon" aria-hidden="true" />
-        <p class="help-state-text">加载文档中...</p>
+        <p class="help-state-text">{{ t('helpUi.loading') }}</p>
       </div>
 
       <!-- Error -->
@@ -31,7 +33,7 @@ const currentDocDescription = computed(() => ctx.currentDoc.value?.description);
           <i class="pi pi-exclamation-triangle help-state-card-icon" aria-hidden="true" />
           <p class="help-state-card-msg">{{ ctx.error.value }}</p>
           <button type="button" class="help-state-card-retry" @click="ctx.loadDocumentIndex">
-            重试
+            {{ t('helpUi.retry') }}
           </button>
         </div>
       </div>
@@ -43,8 +45,8 @@ const currentDocDescription = computed(() => ctx.currentDoc.value?.description);
       <div v-else class="help-reader">
         <aside v-if="ctx.toc.value.length > 0" class="help-toc">
           <header class="help-toc-head">
-            <span class="help-toc-eyebrow">TABLE OF CONTENTS</span>
-            <h3 class="help-toc-title">目录</h3>
+            <span class="help-toc-eyebrow">{{ t('helpUi.toc') }}</span>
+            <h3 class="help-toc-title">{{ t('helpUi.toc') }}</h3>
           </header>
           <nav class="help-toc-body">
             <a
@@ -70,7 +72,7 @@ const currentDocDescription = computed(() => ctx.currentDoc.value?.description);
           <article class="help-article">
             <header class="help-article-head">
               <div class="help-article-crumbs">
-                <span class="help-article-crumb-eyebrow">HELP</span>
+                <span class="help-article-crumb-eyebrow">{{ t('helpUi.center') }}</span>
                 <span class="help-article-crumb-sep" aria-hidden="true" />
                 <span class="help-article-crumb-category">
                   {{ currentDocCategory }}
@@ -346,10 +348,7 @@ const currentDocDescription = computed(() => ctx.currentDoc.value?.description);
 
 .help-article-title {
   margin: 0;
-  font-family:
-    'Noto Serif JP',
-    'Songti SC',
-    serif;
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: clamp(1.6rem, 1vw + 1.35rem, 2.15rem);
   font-weight: 600;
   letter-spacing: -0.01em;

@@ -1,3 +1,4 @@
+import { localizedErrorCode, localizedErrorMessage } from 'src/utils/localized-error';
 import { toolDefinition } from './tool-localization';
 import { describeTool } from './tool-localization';
 import { translateText } from 'src/i18n/translate';
@@ -156,109 +157,191 @@ const QUOTE_PAIR_RULES: Array<{
 ];
 
 // 错误消息常量
-const ERROR_MESSAGES = {
-  //段落标识相关
-  MISSING_PARAGRAPH_ID: '必须提供 paragraph_id（不支持 index）',
-  INVALID_PARAGRAPH_ID: 'paragraph_id 必须是非空字符串',
-  LEGACY_INDEX_REJECTED:
-    '检测到使用已废弃的 index 字段提交。请使用 paragraph_id 标识段落（从 chunk 中 [ID: xxx] 获取）',
-  // 批次验证相关
-  EMPTY_PARAGRAPH_LIST: '段落列表不能为空',
-  BATCH_SIZE_EXCEEDED: (current: number, max: number) =>
-    `单次批次最多支持 ${max} 个段落，当前批次包含 ${current} 个段落`,
-  BATCH_SIZE_TOLERANCE_WARNING: (current: number, max: number, allowedMax: number) =>
-    `本次批次包含 ${current} 个段落，已超过限制 ${max} 个，但在容差范围内（最多 ${allowedMax} 个）。请尽量控制在限制内。`,
-  BATCH_SIZE_DOUBLE_WARNING: (
-    current: number,
-    max: number,
-    allowedMax: number,
-    remainingCount: number,
-  ) =>
-    `本次批次包含 ${current} 个段落，已超过常规限制 ${max} 个。由于当前 chunk 剩余 ${remainingCount} 个未提交段落（≤ ${allowedMax}），允许最多提交 ${allowedMax} 个段落。`,
-  EMPTY_PARAGRAPH_ITEM: (index: number) => `批次中第 ${index + 1} 个段落项为空`,
-  INVALID_PARAGRAPH: (index: number, error: string) => `批次中第 ${index + 1} 个段落: ${error}`,
-  MISSING_TRANSLATION: (index: number) =>
-    `批次中第 ${index + 1} 个段落缺少翻译文本 (translated_text)`,
-  MISSING_ORIGINAL_TEXT_PREFIX: (paragraphId: string) =>
-    `段落 ${paragraphId} 缺少 original_text_prefix（用于防错位校验）`,
-  ORIGINAL_TEXT_PREFIX_TOO_SHORT: (paragraphId: string, minLength: number) =>
-    `段落 ${paragraphId} 的 original_text_prefix 长度不足（最少 ${minLength} 个字符）`,
-  ORIGINAL_TEXT_PREFIX_TOO_LONG: (paragraphId: string, maxLength: number) =>
-    `段落 ${paragraphId} 的 original_text_prefix 过长（最多 ${maxLength} 个字符）`,
-  ORIGINAL_TEXT_PREFIX_MISMATCH: (paragraphId: string, prefix: string) =>
-    `段落 ${paragraphId} 的原文前缀不匹配："${prefix}"`,
-  DUPLICATE_PARAGRAPHS: (ids: string[]) => `批次中存在重复的段落 ID: ${ids.join(', ')}`,
-  OUT_OF_RANGE_PARAGRAPHS: (ids: string[], count: number) =>
-    `以下段落不在当前任务范围内: ${ids.slice(0, 5).join(', ')}${count > 5 ? ` 等 ${count} 个段落` : ''}`,
-  PARAGRAPH_ID_AUTO_CORRECTED: (originalId: string, correctedId: string, distance: number) =>
-    `段落 ID 自动纠正：${originalId} -> ${correctedId}（编辑距离 ${distance}）`,
-  PARAGRAPH_ID_AMBIGUOUS_CANDIDATES: (
-    originalId: string,
-    distance: number,
-    candidateIds: string[],
-  ) =>
-    `段落 ID 无法唯一匹配：${originalId}（最小编辑距离 ${distance}），候选: ${candidateIds.join(', ')}`,
-  // 翻译内容验证相关
-  MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
-    `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
-  TRANSLATION_DUPLICATE: (count: number) =>
-    `${count} 个段落译文与历史版本相同（已自动复用历史翻译）。`,
-  TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
-    `段落 ${paragraphId} 的译文长度仅为原文的 ${percentage}%，可能过短。`,
-  TRANSLATION_LENGTH_LONG: (paragraphId: string, percentage: number) =>
-    `段落 ${paragraphId} 的译文长度为原文的 ${percentage}%，可能过长。`,
-  // 任务状态相关
-  AI_STORE_NOT_INITIALIZED: 'AI 处理 Store 未初始化',
-  TASK_ID_MISSING: '未提供任务 ID',
-  TASK_NOT_FOUND: (taskId: string) => `任务不存在: ${taskId}`,
-  TASK_STATUS_INVALID: (currentStatus: string | undefined) =>
-    `只能在 'working' 或 'review' 状态下调用此工具，当前状态为: ${currentStatus || '未设置'}`,
-  TASK_TYPE_MISSING: (taskId: string) => `无法确定任务类型，请检查任务信息。taskId=${taskId}`,
-  TASK_TYPE_UNSUPPORTED: (taskType: string) => `任务类型不支持批量提交: ${taskType}`,
-  // 书籍/章节数据相关
-  BOOK_NOT_FOUND: (bookId: string) => `书籍不存在: ${bookId}`,
-  BOOK_NO_VOLUMES: '书籍缺少章节数据',
-  CHAPTER_NOT_FOUND: (chapterId: string) => `章节不存在: ${chapterId}`,
-  PARAGRAPH_NOT_FOUND: (ids: string[]) => `未找到以下段落: ${ids.join(', ')}`,
-  EMPTY_PARAGRAPH_CANNOT_TRANSLATE: (ids: string[]) => `无法翻译空段落: ${ids.join(', ')}`,
-  //上下文相关
-  BOOK_ID_MISSING: '未提供书籍 ID',
-  AI_MODEL_ID_MISSING: '未提供 AI 模型 ID，无法写入翻译来源',
-  CHAPTER_ID_MISSING: '任务缺少 chapterId，将触发惰性章节扫描，可能影响性能',
-  PARAM_VALIDATION_FAILED: '参数验证失败',
-  PARTIAL_SUCCESS_SUMMARY: (acceptedCount: number, failedCount: number) =>
-    `部分成功：已处理 ${acceptedCount} 个段落，${failedCount} 个段落校验失败，请仅修复失败段落后重试。`,
-  ALL_PARAGRAPHS_FAILED:
-    '本次批次所有段落均验证失败，未保存任何结果。请根据 failed_paragraphs 逐条修复后重试。',
-  // 处理错误
-  BATCH_PROCESS_ERROR: (errorMsg: string) => `处理批次时出错: ${errorMsg}`,
-} as const;
+function createBatchMessages(uiLocale: AppLocale) {
+  return {
+    MISSING_PARAGRAPH_ID: translateText(uiLocale, 'aiBatchFeedback.MISSING_PARAGRAPH_ID'),
+    INVALID_PARAGRAPH_ID: translateText(uiLocale, 'aiBatchFeedback.INVALID_PARAGRAPH_ID'),
+    LEGACY_INDEX_REJECTED: translateText(uiLocale, 'aiBatchFeedback.LEGACY_INDEX_REJECTED'),
+    EMPTY_PARAGRAPH_LIST: translateText(uiLocale, 'aiBatchFeedback.EMPTY_PARAGRAPH_LIST'),
+    BATCH_SIZE_EXCEEDED: (current: number, max: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.BATCH_SIZE_EXCEEDED', {
+        max: max,
+        current: current,
+      }),
+    BATCH_SIZE_TOLERANCE_WARNING: (current: number, max: number, allowedMax: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.BATCH_SIZE_TOLERANCE_WARNING', {
+        current: current,
+        max: max,
+        allowedMax: allowedMax,
+      }),
+    BATCH_SIZE_DOUBLE_WARNING: (
+      current: number,
+      max: number,
+      allowedMax: number,
+      remainingCount: number,
+    ) =>
+      translateText(uiLocale, 'aiBatchFeedback.BATCH_SIZE_DOUBLE_WARNING', {
+        current: current,
+        max: max,
+        remainingCount: remainingCount,
+        allowedMax: allowedMax,
+        value4: allowedMax,
+      }),
+    EMPTY_PARAGRAPH_ITEM: (index: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.EMPTY_PARAGRAPH_ITEM', { index: index + 1 }),
+    INVALID_PARAGRAPH: (index: number, error: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.INVALID_PARAGRAPH', {
+        index: index + 1,
+        error: error,
+      }),
+    MISSING_TRANSLATION: (index: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.MISSING_TRANSLATION', { index: index + 1 }),
+    MISSING_ORIGINAL_TEXT_PREFIX: (paragraphId: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.MISSING_ORIGINAL_TEXT_PREFIX', {
+        paragraphId: paragraphId,
+      }),
+    ORIGINAL_TEXT_PREFIX_TOO_SHORT: (paragraphId: string, minLength: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.ORIGINAL_TEXT_PREFIX_TOO_SHORT', {
+        paragraphId: paragraphId,
+        minLength: minLength,
+      }),
+    ORIGINAL_TEXT_PREFIX_TOO_LONG: (paragraphId: string, maxLength: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.ORIGINAL_TEXT_PREFIX_TOO_LONG', {
+        paragraphId: paragraphId,
+        maxLength: maxLength,
+      }),
+    ORIGINAL_TEXT_PREFIX_MISMATCH: (paragraphId: string, prefix: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.ORIGINAL_TEXT_PREFIX_MISMATCH', {
+        paragraphId: paragraphId,
+        prefix: prefix,
+      }),
+    DUPLICATE_PARAGRAPHS: (ids: string[]) =>
+      translateText(uiLocale, 'aiBatchFeedback.DUPLICATE_PARAGRAPHS', { ids: ids.join(', ') }),
+    OUT_OF_RANGE_PARAGRAPHS: (ids: string[], count: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.OUT_OF_RANGE_PARAGRAPHS', {
+        ids: ids.slice(0, 5).join(', '),
+        extra:
+          count > 5 ? translateText(uiLocale, 'aiBatchFeedback.COUNT_REMAINING', { count }) : '',
+      }),
+    PARAGRAPH_ID_AUTO_CORRECTED: (originalId: string, correctedId: string, distance: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.PARAGRAPH_ID_AUTO_CORRECTED', {
+        originalId: originalId,
+        correctedId: correctedId,
+        distance: distance,
+      }),
+    PARAGRAPH_ID_AMBIGUOUS_CANDIDATES: (
+      originalId: string,
+      distance: number,
+      candidateIds: string[],
+    ) =>
+      translateText(uiLocale, 'aiBatchFeedback.PARAGRAPH_ID_AMBIGUOUS_CANDIDATES', {
+        originalId: originalId,
+        distance: distance,
+        candidateIds: candidateIds.join(', '),
+      }),
+    MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
+      translateText(uiLocale, 'aiBatchFeedback.MISSING_QUOTE_SYMBOLS', {
+        paragraphId: paragraphId,
+        missingTypes: missingTypes.join(' '),
+      }),
+    TRANSLATION_DUPLICATE: (count: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.TRANSLATION_DUPLICATE', { count: count }),
+    TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.TRANSLATION_LENGTH_SHORT', {
+        paragraphId: paragraphId,
+        percentage: percentage,
+      }),
+    TRANSLATION_LENGTH_LONG: (paragraphId: string, percentage: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.TRANSLATION_LENGTH_LONG', {
+        paragraphId: paragraphId,
+        percentage: percentage,
+      }),
+    AI_STORE_NOT_INITIALIZED: translateText(uiLocale, 'aiBatchFeedback.AI_STORE_NOT_INITIALIZED'),
+    TASK_ID_MISSING: translateText(uiLocale, 'aiBatchFeedback.TASK_ID_MISSING'),
+    TASK_NOT_FOUND: (taskId: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.TASK_NOT_FOUND', { taskId: taskId }),
+    TASK_STATUS_INVALID: (currentStatus: string | undefined) =>
+      translateText(uiLocale, 'aiBatchFeedback.TASK_STATUS_INVALID', {
+        currentStatus: currentStatus || translateText(uiLocale, 'aiBatchFeedback.UNSET'),
+      }),
+    TASK_TYPE_MISSING: (taskId: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.TASK_TYPE_MISSING', { taskId: taskId }),
+    TASK_TYPE_UNSUPPORTED: (taskType: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.TASK_TYPE_UNSUPPORTED', { taskType: taskType }),
+    BOOK_NOT_FOUND: (bookId: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.BOOK_NOT_FOUND', { bookId: bookId }),
+    BOOK_NO_VOLUMES: translateText(uiLocale, 'aiBatchFeedback.BOOK_NO_VOLUMES'),
+    CHAPTER_NOT_FOUND: (chapterId: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.CHAPTER_NOT_FOUND', { chapterId: chapterId }),
+    PARAGRAPH_NOT_FOUND: (ids: string[]) =>
+      translateText(uiLocale, 'aiBatchFeedback.PARAGRAPH_NOT_FOUND', { ids: ids.join(', ') }),
+    EMPTY_PARAGRAPH_CANNOT_TRANSLATE: (ids: string[]) =>
+      translateText(uiLocale, 'aiBatchFeedback.EMPTY_PARAGRAPH_CANNOT_TRANSLATE', {
+        ids: ids.join(', '),
+      }),
+    BOOK_ID_MISSING: translateText(uiLocale, 'aiBatchFeedback.BOOK_ID_MISSING'),
+    AI_MODEL_ID_MISSING: translateText(uiLocale, 'aiBatchFeedback.AI_MODEL_ID_MISSING'),
+    CHAPTER_ID_MISSING: translateText(uiLocale, 'aiBatchFeedback.CHAPTER_ID_MISSING'),
+    PARAM_VALIDATION_FAILED: translateText(uiLocale, 'aiBatchFeedback.PARAM_VALIDATION_FAILED'),
+    PARTIAL_SUCCESS_SUMMARY: (acceptedCount: number, failedCount: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.PARTIAL_SUCCESS_SUMMARY', {
+        acceptedCount: acceptedCount,
+        failedCount: failedCount,
+      }),
+    ALL_PARAGRAPHS_FAILED: translateText(uiLocale, 'aiBatchFeedback.ALL_PARAGRAPHS_FAILED'),
+    BATCH_PROCESS_ERROR: (errorMsg: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.BATCH_PROCESS_ERROR', { errorMsg: errorMsg }),
+    PROCESSED: (count: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.PROCESSED', { count: count }),
+    ACTION: (count: number, preview: string, suffix: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.ACTION', {
+        count: count,
+        preview: preview,
+        suffix: suffix,
+      }),
+    QUOTE_OPEN: (symbol: string, accepted: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.QUOTE_OPEN', { symbol, accepted }),
+    QUOTE_CLOSE: (symbol: string, accepted: string) =>
+      translateText(uiLocale, 'aiBatchFeedback.QUOTE_CLOSE', { symbol, accepted }),
+    ASCII_QUOTE_PAIR: translateText(uiLocale, 'aiBatchFeedback.ASCII_QUOTE_PAIR'),
+    CORRECTION_PREFIX_MISSING: (originalId: string, candidateId: string, distance: number) =>
+      translateText(uiLocale, 'aiBatchFeedback.CORRECTION_PREFIX_MISSING', {
+        originalId,
+        candidateId,
+        distance,
+      }),
+    ID_NOTE: translateText(uiLocale, 'aiBatchFeedback.ID_NOTE'),
+    NOTE_SEPARATOR: translateText(uiLocale, 'aiBatchFeedback.NOTE_SEPARATOR'),
+    NOTE_SUFFIX: translateText(uiLocale, 'aiBatchFeedback.NOTE_SUFFIX'),
+    INVALID_ID: translateText(uiLocale, 'aiBatchFeedback.INVALID_ID'),
+    UNKNOWN_ERROR: translateText(uiLocale, 'aiBatchFeedback.UNKNOWN_ERROR'),
+  };
+}
+type BatchMessages = ReturnType<typeof createBatchMessages>;
+const DEFAULT_BATCH_MESSAGES = Object.freeze(createBatchMessages('zh-CN'));
 
 /**
  * 验证段落标识符（仅支持 paragraph_id）
  */
-function resolveParagraphId(item: TranslationBatchItem): { id: string | null; error?: string } {
+function resolveParagraphId(
+  item: TranslationBatchItem,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
+): { id: string | null; error?: string; errorCode?: BatchErrorCode } {
   if (!item.paragraph_id || typeof item.paragraph_id !== 'string') {
     // 检查是否存在旧的 index 字段（BREAKING：明确拒绝）
     if ('index' in item && typeof (item as Record<string, unknown>).index === 'number') {
-      return { id: null, error: ERROR_MESSAGES.LEGACY_INDEX_REJECTED };
+      return {
+        id: null,
+        error: messages.LEGACY_INDEX_REJECTED,
+        errorCode: 'LEGACY_INDEX_REJECTED',
+      };
     }
-    return { id: null, error: ERROR_MESSAGES.MISSING_PARAGRAPH_ID };
+    return { id: null, error: messages.MISSING_PARAGRAPH_ID, errorCode: 'MISSING_PARAGRAPH_ID' };
   }
   if (item.paragraph_id.trim().length === 0) {
-    return { id: null, error: ERROR_MESSAGES.INVALID_PARAGRAPH_ID };
+    return { id: null, error: messages.INVALID_PARAGRAPH_ID, errorCode: 'INVALID_PARAGRAPH_ID' };
   }
   return { id: item.paragraph_id };
-}
-
-function mapParagraphIdErrorToCode(error: string): BatchErrorCode {
-  if (error === ERROR_MESSAGES.LEGACY_INDEX_REJECTED) {
-    return 'LEGACY_INDEX_REJECTED';
-  }
-  if (error === ERROR_MESSAGES.INVALID_PARAGRAPH_ID) {
-    return 'INVALID_PARAGRAPH_ID';
-  }
-  return 'MISSING_PARAGRAPH_ID';
 }
 
 interface BuildErrorResponseOptions {
@@ -320,25 +403,31 @@ function buildErrorResponse(error: string, options?: BuildErrorResponseOptions):
 function validateTaskStatus(
   aiProcessingStore: AIProcessingStore | undefined,
   taskId: string | undefined,
-): { valid: boolean; error?: string; currentStatus?: string | undefined } {
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
+): { valid: boolean; error?: string; errorCode?: string; currentStatus?: string | undefined } {
   if (!aiProcessingStore) {
-    return { valid: false, error: ERROR_MESSAGES.AI_STORE_NOT_INITIALIZED };
+    return {
+      valid: false,
+      error: messages.AI_STORE_NOT_INITIALIZED,
+      errorCode: 'AI_STORE_NOT_INITIALIZED',
+    };
   }
 
   if (!taskId) {
-    return { valid: false, error: ERROR_MESSAGES.TASK_ID_MISSING };
+    return { valid: false, error: messages.TASK_ID_MISSING, errorCode: 'TASK_ID_MISSING' };
   }
 
   const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
   if (!task) {
-    return { valid: false, error: ERROR_MESSAGES.TASK_NOT_FOUND(taskId) };
+    return { valid: false, error: messages.TASK_NOT_FOUND(taskId), errorCode: 'TASK_NOT_FOUND' };
   }
 
   const currentStatus = task.workflowStatus;
   if (currentStatus !== 'working' && currentStatus !== 'review') {
     return {
       valid: false,
-      error: ERROR_MESSAGES.TASK_STATUS_INVALID(currentStatus),
+      error: messages.TASK_STATUS_INVALID(currentStatus),
+      errorCode: 'TASK_STATUS_INVALID',
       currentStatus,
     };
   }
@@ -385,6 +474,7 @@ function validateBatchArgs(
   args: AddTranslationBatchArgs,
   chunkParagraphIds?: string[],
   submittedParagraphIds?: Set<string>,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): {
   valid: boolean;
   error?: string;
@@ -399,7 +489,7 @@ function validateBatchArgs(
   if (!paragraphs || !Array.isArray(paragraphs) || paragraphs.length === 0) {
     return {
       valid: false,
-      error: ERROR_MESSAGES.EMPTY_PARAGRAPH_LIST,
+      error: messages.EMPTY_PARAGRAPH_LIST,
       errorCode: 'EMPTY_PARAGRAPH_LIST',
     };
   }
@@ -416,20 +506,20 @@ function validateBatchArgs(
     if (paragraphs.length > hardMax) {
       return {
         valid: false,
-        error: ERROR_MESSAGES.BATCH_SIZE_EXCEEDED(paragraphs.length, hardMax),
+        error: messages.BATCH_SIZE_EXCEEDED(paragraphs.length, hardMax),
         errorCode: 'BATCH_SIZE_EXCEEDED',
       };
     }
 
     if (allowDoubleBatchSize) {
-      warning = ERROR_MESSAGES.BATCH_SIZE_DOUBLE_WARNING(
+      warning = messages.BATCH_SIZE_DOUBLE_WARNING(
         paragraphs.length,
         MAX_BATCH_SIZE,
         MAX_BATCH_SIZE_DOUBLE,
         remainingCount,
       );
     } else {
-      warning = ERROR_MESSAGES.BATCH_SIZE_TOLERANCE_WARNING(
+      warning = messages.BATCH_SIZE_TOLERANCE_WARNING(
         paragraphs.length,
         MAX_BATCH_SIZE,
         MAX_BATCH_SIZE_WITH_TOLERANCE,
@@ -445,19 +535,19 @@ function validateBatchArgs(
     if (!item) {
       return {
         valid: false,
-        error: ERROR_MESSAGES.EMPTY_PARAGRAPH_ITEM(i),
+        error: messages.EMPTY_PARAGRAPH_ITEM(i),
         errorCode: 'EMPTY_PARAGRAPH_ITEM',
         invalidItems: [{ index: i, reason: 'EMPTY_PARAGRAPH_ITEM' }],
       };
     }
 
     // 解析段落标识符（仅支持 paragraph_id）
-    const { id, error } = resolveParagraphId(item);
+    const { id, error, errorCode } = resolveParagraphId(item, messages);
     if (error || !id) {
-      const reason = mapParagraphIdErrorToCode(error || ERROR_MESSAGES.MISSING_PARAGRAPH_ID);
+      const reason = errorCode ?? 'MISSING_PARAGRAPH_ID';
       return {
         valid: false,
-        error: ERROR_MESSAGES.INVALID_PARAGRAPH(i, error || '无效的段落标识'),
+        error: messages.INVALID_PARAGRAPH(i, error || messages.INVALID_ID),
         errorCode: reason,
         invalidItems: [
           {
@@ -474,7 +564,7 @@ function validateBatchArgs(
     if (!item.translated_text || typeof item.translated_text !== 'string') {
       return {
         valid: false,
-        error: ERROR_MESSAGES.MISSING_TRANSLATION(i),
+        error: messages.MISSING_TRANSLATION(i),
         errorCode: 'MISSING_TRANSLATION',
         invalidItems: [{ index: i, reason: 'MISSING_TRANSLATION', paragraph_id: id }],
       };
@@ -516,6 +606,7 @@ function detectDuplicateParagraphIds(paragraphIds: string[]): {
 function validateParagraphsInRange(
   paragraphIds: string[],
   allowedParagraphIds: Set<string> | undefined,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): { valid: boolean; error?: string; errorCode?: BatchErrorCode; invalidIds?: string[] } {
   if (!allowedParagraphIds || allowedParagraphIds.size === 0) {
     // 如果没有提供边界限制，允许所有段落
@@ -526,7 +617,7 @@ function validateParagraphsInRange(
   if (invalidIds.length > 0) {
     return {
       valid: false,
-      error: ERROR_MESSAGES.OUT_OF_RANGE_PARAGRAPHS(invalidIds, invalidIds.length),
+      error: messages.OUT_OF_RANGE_PARAGRAPHS(invalidIds, invalidIds.length),
       errorCode: 'OUT_OF_RANGE_PARAGRAPHS',
       invalidIds,
     };
@@ -739,6 +830,7 @@ async function normalizeParagraphIds(
   allowedParagraphIds: Set<string> | undefined,
   book?: Novel,
   chapterId?: string,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): Promise<ParagraphIdNormalizationResult> {
   if (!allowedParagraphIds || allowedParagraphIds.size === 0) {
     return {
@@ -818,7 +910,11 @@ async function normalizeParagraphIds(
         : '';
     if (!prefix) {
       correctionWarnings.push(
-        `段落 ${correction.originalId} 存在拼写纠错候选 ${correction.candidateId}（编辑距离 ${correction.distance}），但 original_text_prefix 为空，无法验证纠错。请提供 original_text_prefix 以启用自动纠正。`,
+        messages.CORRECTION_PREFIX_MISSING(
+          correction.originalId,
+          correction.candidateId,
+          correction.distance,
+        ),
       );
       continue;
     }
@@ -830,7 +926,7 @@ async function normalizeParagraphIds(
 
     normalizedIds[correction.index] = correction.candidateId;
     correctionWarnings.push(
-      ERROR_MESSAGES.PARAGRAPH_ID_AUTO_CORRECTED(
+      messages.PARAGRAPH_ID_AUTO_CORRECTED(
         correction.originalId,
         correction.candidateId,
         correction.distance,
@@ -912,6 +1008,7 @@ function detectMissingQuoteSymbols(
   originalText: string,
   translatedText: string,
   targetLanguage: AppLocale,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): string[] {
   const hasOriginalQuotes = QUOTE_PAIR_RULES.some(
     (rule) => originalText.includes(rule.originalOpen) || originalText.includes(rule.originalClose),
@@ -920,7 +1017,7 @@ function detectMissingQuoteSymbols(
 
   const missingTypes: string[] = [];
   const asciiQuotes = targetLanguage === 'en-US' ? countSymbol(translatedText, '"') : 0;
-  if (asciiQuotes % 2) missingTypes.push('ASCII double quotes must be paired');
+  if (asciiQuotes % 2) missingTypes.push(messages.ASCII_QUOTE_PAIR);
   let remainingAsciiPairs = Math.floor(asciiQuotes / 2);
   const remainingSymbols = new Map(
     QUOTE_PAIR_RULES.flatMap((rule) => [...rule.acceptedOpens, ...rule.acceptedCloses]).map(
@@ -959,11 +1056,11 @@ function detectMissingQuoteSymbols(
     remainingAsciiPairs -= usedAsciiPairs;
 
     if (translatedOpenCount + usedAsciiPairs < requiredOpenCount) {
-      missingTypes.push(`开引号 ${rule.originalOpen}（可用: ${rule.acceptedOpens.join(' ')}）`);
+      missingTypes.push(messages.QUOTE_OPEN(rule.originalOpen, rule.acceptedOpens.join(' ')));
     }
 
     if (translatedCloseCount + usedAsciiPairs < requiredCloseCount) {
-      missingTypes.push(`闭引号 ${rule.originalClose}（可用: ${rule.acceptedCloses.join(' ')}）`);
+      missingTypes.push(messages.QUOTE_CLOSE(rule.originalClose, rule.acceptedCloses.join(' ')));
     }
   }
 
@@ -978,7 +1075,7 @@ interface BatchItem {
 
 interface CollectTargetParagraphsResult {
   paragraphs: Paragraph[];
-  error?: { error: string };
+  error?: { error: string; errorCode: string };
 }
 
 /**
@@ -988,10 +1085,14 @@ async function collectTargetParagraphsFromChapter(
   book: Novel,
   chapterId: string,
   items: BatchItem[],
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): Promise<CollectTargetParagraphsResult> {
   const found = ChapterService.findChapterById(book, chapterId);
   if (!found) {
-    return { paragraphs: [], error: { error: ERROR_MESSAGES.CHAPTER_NOT_FOUND(chapterId) } };
+    return {
+      paragraphs: [],
+      error: { error: messages.CHAPTER_NOT_FOUND(chapterId), errorCode: 'CHAPTER_NOT_FOUND' },
+    };
   }
   const chapter = found.chapter;
   if (chapter.content === undefined) {
@@ -1095,13 +1196,14 @@ function validateOriginalTextPrefix(
   item: BatchItem,
   trimmedPrefix: string,
   trimmedOriginalText: string,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): { failure?: { errorCode: BatchErrorCode; error: string }; warnings: string[] } {
   const warnings: string[] = [];
   if (!trimmedPrefix) {
     return {
       failure: {
         errorCode: 'MISSING_ORIGINAL_TEXT_PREFIX',
-        error: ERROR_MESSAGES.MISSING_ORIGINAL_TEXT_PREFIX(item.paragraphId),
+        error: messages.MISSING_ORIGINAL_TEXT_PREFIX(item.paragraphId),
       },
       warnings,
     };
@@ -1117,19 +1219,14 @@ function validateOriginalTextPrefix(
         return {
           failure: {
             errorCode: 'ORIGINAL_TEXT_PREFIX_TOO_SHORT',
-            error: ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_SHORT(
-              item.paragraphId,
-              prefixCheck.limit,
-            ),
+            error: messages.ORIGINAL_TEXT_PREFIX_TOO_SHORT(item.paragraphId, prefixCheck.limit),
           },
           warnings,
         };
       }
       if (prefixCheck.errorCode === 'ORIGINAL_TEXT_PREFIX_TOO_LONG') {
         // TOO_LONG 改为仅警告，不阻止提交。
-        warnings.push(
-          ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_TOO_LONG(item.paragraphId, prefixCheck.limit),
-        );
+        warnings.push(messages.ORIGINAL_TEXT_PREFIX_TOO_LONG(item.paragraphId, prefixCheck.limit));
       }
     }
   }
@@ -1138,7 +1235,7 @@ function validateOriginalTextPrefix(
     return {
       failure: {
         errorCode: 'ORIGINAL_TEXT_PREFIX_MISMATCH',
-        error: ERROR_MESSAGES.ORIGINAL_TEXT_PREFIX_MISMATCH(item.paragraphId, trimmedPrefix),
+        error: messages.ORIGINAL_TEXT_PREFIX_MISMATCH(item.paragraphId, trimmedPrefix),
       },
       warnings,
     };
@@ -1155,13 +1252,19 @@ function validateSingleItem(
   enableOriginalTextValidation: boolean | undefined,
   targetLanguage: AppLocale,
   uiLocale: AppLocale,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): ItemValidationOutcome {
   const warnings: string[] = [];
   const trimmedPrefix = item.originalTextPrefix.trim();
   const trimmedOriginalText = paragraph.text.trim();
 
   if (enableOriginalTextValidation === true) {
-    const prefixResult = validateOriginalTextPrefix(item, trimmedPrefix, trimmedOriginalText);
+    const prefixResult = validateOriginalTextPrefix(
+      item,
+      trimmedPrefix,
+      trimmedOriginalText,
+      messages,
+    );
     warnings.push(...prefixResult.warnings);
     if (prefixResult.failure) {
       return { kind: 'failed', ...prefixResult.failure, warnings };
@@ -1188,11 +1291,11 @@ function validateSingleItem(
     const maxRatio = targetLanguage === 'en-US' ? 6 : 3;
     if (lengthRatio < minRatio) {
       warnings.push(
-        ERROR_MESSAGES.TRANSLATION_LENGTH_SHORT(item.paragraphId, Math.round(lengthRatio * 100)),
+        messages.TRANSLATION_LENGTH_SHORT(item.paragraphId, Math.round(lengthRatio * 100)),
       );
     } else if (lengthRatio > maxRatio) {
       warnings.push(
-        ERROR_MESSAGES.TRANSLATION_LENGTH_LONG(item.paragraphId, Math.round(lengthRatio * 100)),
+        messages.TRANSLATION_LENGTH_LONG(item.paragraphId, Math.round(lengthRatio * 100)),
       );
     }
   }
@@ -1201,12 +1304,13 @@ function validateSingleItem(
     paragraph.text,
     item.translatedText,
     targetLanguage,
+    messages,
   );
   if (missingQuoteSymbols.length > 0) {
     return {
       kind: 'failed',
       errorCode: 'PARAM_VALIDATION_FAILED',
-      error: ERROR_MESSAGES.MISSING_QUOTE_SYMBOLS(item.paragraphId, missingQuoteSymbols),
+      error: messages.MISSING_QUOTE_SYMBOLS(item.paragraphId, missingQuoteSymbols),
       warnings,
     };
   }
@@ -1216,6 +1320,7 @@ function validateSingleItem(
 
 interface ProcessTranslationBatchResult {
   success: boolean;
+  errorCode?: string;
   error?: string;
   errors?: string[];
   warnings?: string[];
@@ -1229,15 +1334,28 @@ interface ProcessTranslationBatchResult {
 function resolveBook(
   bookId: string,
   preloadedBook: Novel | undefined,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): { book: Novel } | { error: ProcessTranslationBatchResult } {
   const resolved = preloadedBook;
   if (!resolved) {
     return {
-      error: { success: false, error: ERROR_MESSAGES.BOOK_NOT_FOUND(bookId), processedCount: 0 },
+      error: {
+        success: false,
+        error: messages.BOOK_NOT_FOUND(bookId),
+        errorCode: 'BOOK_NOT_FOUND',
+        processedCount: 0,
+      },
     };
   }
   if (!resolved.volumes) {
-    return { error: { success: false, error: ERROR_MESSAGES.BOOK_NO_VOLUMES, processedCount: 0 } };
+    return {
+      error: {
+        success: false,
+        error: messages.BOOK_NO_VOLUMES,
+        errorCode: 'BOOK_NO_VOLUMES',
+        processedCount: 0,
+      },
+    };
   }
   return { book: resolved };
 }
@@ -1249,11 +1367,24 @@ async function collectTargetParagraphs(
   bookId: string,
   taskType: 'translation' | 'polish' | 'proofreading',
   chapterId: string | undefined,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): Promise<{ paragraphs: Paragraph[] } | { error: ProcessTranslationBatchResult }> {
   if (chapterId) {
-    const chapterResult = await collectTargetParagraphsFromChapter(book, chapterId, items);
+    const chapterResult = await collectTargetParagraphsFromChapter(
+      book,
+      chapterId,
+      items,
+      messages,
+    );
     if (chapterResult.error) {
-      return { error: { success: false, error: chapterResult.error.error, processedCount: 0 } };
+      return {
+        error: {
+          success: false,
+          error: chapterResult.error.error,
+          errorCode: chapterResult.error.errorCode,
+          processedCount: 0,
+        },
+      };
     }
     return { paragraphs: chapterResult.paragraphs };
   }
@@ -1266,6 +1397,7 @@ function buildMissingParagraphsError(
   items: BatchItem[],
   targetParagraphs: Paragraph[],
   targetParagraphsMap: Map<string, Paragraph>,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): ProcessTranslationBatchResult | null {
   const missingParagraphIds = items
     .filter((item) => !targetParagraphsMap.has(item.paragraphId))
@@ -1280,13 +1412,15 @@ function buildMissingParagraphsError(
   if (blankParagraphIds.length > 0) {
     return {
       success: false,
-      error: ERROR_MESSAGES.EMPTY_PARAGRAPH_CANNOT_TRANSLATE(blankParagraphIds),
+      error: messages.EMPTY_PARAGRAPH_CANNOT_TRANSLATE(blankParagraphIds),
+      errorCode: 'EMPTY_PARAGRAPH_CANNOT_TRANSLATE',
       processedCount: 0,
     };
   }
   return {
     success: false,
-    error: ERROR_MESSAGES.PARAGRAPH_NOT_FOUND(missingParagraphIds),
+    error: messages.PARAGRAPH_NOT_FOUND(missingParagraphIds),
+    errorCode: 'PARAGRAPH_NOT_FOUND',
     processedCount: 0,
   };
 }
@@ -1304,6 +1438,7 @@ function validateAllItems(
   enableOriginalTextValidation: boolean | undefined,
   targetLanguage: AppLocale,
   uiLocale: AppLocale,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): ValidationSummary {
   const warnings: string[] = [];
   let duplicateCount = 0;
@@ -1319,6 +1454,7 @@ function validateAllItems(
       enableOriginalTextValidation,
       targetLanguage,
       uiLocale,
+      messages,
     );
     warnings.push(...outcome.warnings);
     if (outcome.kind === 'failed') {
@@ -1335,21 +1471,25 @@ function validateAllItems(
   }
 
   if (duplicateCount > 0) {
-    warnings.push(ERROR_MESSAGES.TRANSLATION_DUPLICATE(duplicateCount));
+    warnings.push(messages.TRANSLATION_DUPLICATE(duplicateCount));
   }
 
   return { warnings, acceptedItems, failedItems };
 }
 
 /** 根据校验结果装配最终返回值（成功 / 部分成功 / 全部失败） */
-function buildBatchValidationResult(summary: ValidationSummary): ProcessTranslationBatchResult {
+function buildBatchValidationResult(
+  summary: ValidationSummary,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
+): ProcessTranslationBatchResult {
   const { warnings, acceptedItems, failedItems } = summary;
   const warningsField = warnings.length > 0 ? { warnings } : {};
 
   if (failedItems.length > 0 && acceptedItems.length === 0) {
     return {
       success: false,
-      error: ERROR_MESSAGES.ALL_PARAGRAPHS_FAILED,
+      error: messages.ALL_PARAGRAPHS_FAILED,
+      errorCode: 'ALL_PARAGRAPHS_FAILED',
       errors: failedItems.map((it) => it.error),
       failedItems,
       ...warningsField,
@@ -1393,18 +1533,27 @@ async function processTranslationBatch(
   targetLanguage: AppLocale = 'zh-CN',
   uiLocale: AppLocale = 'zh-CN',
 ): Promise<ProcessTranslationBatchResult> {
+  const messages = createBatchMessages(uiLocale);
   // aiModelId 保留在签名中以维持调用方兼容；实际翻译写入由 onParagraphsExtracted 回调完成
   void aiModelId;
   try {
     const bookResolved = resolveBook(
       bookId,
       preloadedBook ?? (await BookService.getBookById(bookId)) ?? undefined,
+      messages,
     );
     if ('error' in bookResolved) return bookResolved.error;
     const book = bookResolved.book;
 
     // 收集目标段落：优先使用 chapterId 限定范围（避免加载所有章节）
-    const collectResult = await collectTargetParagraphs(book, items, bookId, taskType, chapterId);
+    const collectResult = await collectTargetParagraphs(
+      book,
+      items,
+      bookId,
+      taskType,
+      chapterId,
+      messages,
+    );
     if ('error' in collectResult) return collectResult.error;
     const targetParagraphs = collectResult.paragraphs;
 
@@ -1412,7 +1561,12 @@ async function processTranslationBatch(
     const validTargetParagraphs = targetParagraphs.filter((p) => !isEmptyParagraph(p.text));
     const targetParagraphsMap = new Map(validTargetParagraphs.map((p) => [p.id, p]));
 
-    const missingError = buildMissingParagraphsError(items, targetParagraphs, targetParagraphsMap);
+    const missingError = buildMissingParagraphsError(
+      items,
+      targetParagraphs,
+      targetParagraphsMap,
+      messages,
+    );
     if (missingError) return missingError;
 
     // 处理每个段落
@@ -1430,13 +1584,15 @@ async function processTranslationBatch(
       enableOriginalTextValidation,
       targetLanguage,
       uiLocale,
+      messages,
     );
-    return buildBatchValidationResult(summary);
+    return buildBatchValidationResult(summary, messages);
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : '未知错误';
+    const errorMsg = localizedErrorMessage(error, uiLocale, 'aiBatchFeedback.UNKNOWN_ERROR');
     return {
       success: false,
-      error: ERROR_MESSAGES.BATCH_PROCESS_ERROR(errorMsg),
+      error: messages.BATCH_PROCESS_ERROR(errorMsg),
+      errorCode: localizedErrorCode(error, 'BATCH_PROCESS_ERROR'),
       processedCount: 0,
     };
   }
@@ -1447,20 +1603,27 @@ async function processTranslationBatch(
 /**
  * add_translation_batch 的前置条件校验，返回错误字符串或 null
  */
-function validateAddBatchPreconditions(params: {
-  bookId: string | undefined;
-  taskType: string | undefined;
-  aiModelId: string | undefined;
-  chapterId: string | undefined;
-  taskId: string | undefined;
-}): string | null {
+function validateAddBatchPreconditions(
+  params: {
+    bookId: string | undefined;
+    taskType: string | undefined;
+    aiModelId: string | undefined;
+    chapterId: string | undefined;
+    taskId: string | undefined;
+  },
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
+): { error: string; errorCode: string } | null {
   const { bookId, taskType, aiModelId, chapterId, taskId } = params;
-  if (!bookId) return ERROR_MESSAGES.BOOK_ID_MISSING;
-  if (!taskType) return ERROR_MESSAGES.TASK_TYPE_MISSING(taskId || 'unknown');
+  if (!bookId) return { error: messages.BOOK_ID_MISSING, errorCode: 'BOOK_ID_MISSING' };
+  if (!taskType)
+    return {
+      error: messages.TASK_TYPE_MISSING(taskId || 'unknown'),
+      errorCode: 'TASK_TYPE_MISSING',
+    };
   if (!['translation', 'polish', 'proofreading'].includes(taskType)) {
-    return ERROR_MESSAGES.TASK_TYPE_UNSUPPORTED(taskType);
+    return { error: messages.TASK_TYPE_UNSUPPORTED(taskType), errorCode: 'TASK_TYPE_UNSUPPORTED' };
   }
-  if (!aiModelId) return ERROR_MESSAGES.AI_MODEL_ID_MISSING;
+  if (!aiModelId) return { error: messages.AI_MODEL_ID_MISSING, errorCode: 'AI_MODEL_ID_MISSING' };
   if (!chapterId) {
     console.warn('[translation-tools] 任务缺少 chapterId，将触发惰性章节扫描', {
       taskId,
@@ -1484,11 +1647,12 @@ type PrepareBatchParamsResult =
 /** 构造 validateBatchArgs 失败时的响应字符串 */
 function buildParamValidationFailure(
   paramValidation: ReturnType<typeof validateBatchArgs>,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): string {
-  return buildErrorResponse(paramValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
+  return buildErrorResponse(paramValidation.error || messages.PARAM_VALIDATION_FAILED, {
     errorCode: paramValidation.errorCode || 'PARAM_VALIDATION_FAILED',
     ...(paramValidation.invalidItems ? { invalidItems: paramValidation.invalidItems } : {}),
-    note: '请确保每个段落都包含有效的 paragraph_id（从 chunk 中 [ID: xxx] 获取）。',
+    note: messages.ID_NOTE,
   });
 }
 
@@ -1496,13 +1660,16 @@ function buildParamValidationFailure(
 async function preloadBookIfNeeded(
   bookId: string,
   chunkBoundaries: ToolContext['chunkBoundaries'],
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): Promise<{ book: Novel | undefined } | { failure: string }> {
   if (!chunkBoundaries?.allowedParagraphIds || chunkBoundaries.allowedParagraphIds.size === 0) {
     return { book: undefined };
   }
   const preloaded = (await BookService.getBookById(bookId)) ?? undefined;
   if (!preloaded) {
-    return { failure: buildErrorResponse(ERROR_MESSAGES.BOOK_NOT_FOUND(bookId)) };
+    return {
+      failure: buildErrorResponse(messages.BOOK_NOT_FOUND(bookId), { errorCode: 'BOOK_NOT_FOUND' }),
+    };
   }
   return { book: preloaded };
 }
@@ -1512,8 +1679,9 @@ function buildDuplicateIdsFailure(
   duplicates: string[],
   warning: string | undefined,
   correctionWarnings: string[],
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): string {
-  return buildErrorResponse(ERROR_MESSAGES.DUPLICATE_PARAGRAPHS(duplicates), {
+  return buildErrorResponse(messages.DUPLICATE_PARAGRAPHS(duplicates), {
     errorCode: 'DUPLICATE_PARAGRAPHS',
     invalidParagraphIds: duplicates,
     warning,
@@ -1525,19 +1693,16 @@ function buildDuplicateIdsFailure(
 function buildAmbiguousNote(
   ambiguousMatches: ParagraphIdAmbiguousMatch[],
   invalidIds: string[] | undefined,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): string | undefined {
   if (!invalidIds || invalidIds.length === 0) return undefined;
-  const messages = ambiguousMatches
+  const notes = ambiguousMatches
     .filter((item) => invalidIds.includes(item.originalId))
     .map((item) =>
-      ERROR_MESSAGES.PARAGRAPH_ID_AMBIGUOUS_CANDIDATES(
-        item.originalId,
-        item.distance,
-        item.candidateIds,
-      ),
+      messages.PARAGRAPH_ID_AMBIGUOUS_CANDIDATES(item.originalId, item.distance, item.candidateIds),
     );
-  if (messages.length === 0) return undefined;
-  return `${messages.slice(0, 3).join('；')}${messages.length > 3 ? '；…' : ''}`;
+  if (notes.length === 0) return undefined;
+  return `${notes.slice(0, 3).join(messages.NOTE_SEPARATOR)}${notes.length > 3 ? messages.NOTE_SUFFIX : ''}`;
 }
 
 /** 构造范围校验失败的响应 */
@@ -1546,9 +1711,10 @@ function buildRangeValidationFailure(
   ambiguousMatches: ParagraphIdAmbiguousMatch[],
   warning: string | undefined,
   correctionWarnings: string[],
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): string {
-  const note = buildAmbiguousNote(ambiguousMatches, rangeValidation.invalidIds);
-  return buildErrorResponse(rangeValidation.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
+  const note = buildAmbiguousNote(ambiguousMatches, rangeValidation.invalidIds, messages);
+  return buildErrorResponse(rangeValidation.error || messages.PARAM_VALIDATION_FAILED, {
     errorCode: rangeValidation.errorCode || 'OUT_OF_RANGE_PARAGRAPHS',
     ...(rangeValidation.invalidIds ? { invalidParagraphIds: rangeValidation.invalidIds } : {}),
     warning,
@@ -1563,10 +1729,14 @@ function buildRangeValidationFailure(
 async function prepareBatchParams(
   args: AddTranslationBatchArgs,
   context: ToolContext,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): Promise<PrepareBatchParamsResult> {
   const { bookId, chunkBoundaries, submittedParagraphIds } = context;
   if (!bookId) {
-    return { kind: 'failure', failure: buildErrorResponse(ERROR_MESSAGES.BOOK_ID_MISSING) };
+    return {
+      kind: 'failure',
+      failure: buildErrorResponse(messages.BOOK_ID_MISSING, { errorCode: 'BOOK_ID_MISSING' }),
+    };
   }
 
   const { paragraphs } = args;
@@ -1574,16 +1744,17 @@ async function prepareBatchParams(
     { paragraphs },
     chunkBoundaries?.paragraphIds,
     submittedParagraphIds,
+    messages,
   );
   if (!paramValidation.valid || !paramValidation.resolvedIds) {
-    return { kind: 'failure', failure: buildParamValidationFailure(paramValidation) };
+    return { kind: 'failure', failure: buildParamValidationFailure(paramValidation, messages) };
   }
 
   const resolvedIds = paramValidation.resolvedIds;
   const warning = paramValidation.warning;
 
   // 预加载书籍对象（仅在纠错逻辑需要时提前加载）
-  const preloadResult = await preloadBookIfNeeded(bookId, chunkBoundaries);
+  const preloadResult = await preloadBookIfNeeded(bookId, chunkBoundaries, messages);
   if ('failure' in preloadResult) {
     return { kind: 'failure', failure: preloadResult.failure };
   }
@@ -1598,6 +1769,7 @@ async function prepareBatchParams(
     chunkBoundaries?.allowedParagraphIds,
     preloadedBook,
     chapterId,
+    messages,
   );
   const { normalizedIds, correctionWarnings } = normalizedIdsResult;
 
@@ -1605,13 +1777,19 @@ async function prepareBatchParams(
   if (duplicateCheck.hasDuplicates) {
     return {
       kind: 'failure',
-      failure: buildDuplicateIdsFailure(duplicateCheck.duplicates, warning, correctionWarnings),
+      failure: buildDuplicateIdsFailure(
+        duplicateCheck.duplicates,
+        warning,
+        correctionWarnings,
+        messages,
+      ),
     };
   }
 
   const rangeValidation = validateParagraphsInRange(
     normalizedIds,
     chunkBoundaries?.allowedParagraphIds,
+    messages,
   );
   if (!rangeValidation.valid) {
     return {
@@ -1621,6 +1799,7 @@ async function prepareBatchParams(
         normalizedIdsResult.ambiguousMatches,
         warning,
         correctionWarnings,
+        messages,
       ),
     };
   }
@@ -1670,9 +1849,12 @@ function buildProcessFailureResponse(
   result: ProcessTranslationBatchResult,
   combinedWarnings: string[],
   warning: string | undefined,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): string {
-  return buildErrorResponse(result.error || ERROR_MESSAGES.PARAM_VALIDATION_FAILED, {
-    errorCode: result.failedItems?.length ? 'ALL_PARAGRAPHS_FAILED' : undefined,
+  return buildErrorResponse(result.error || messages.PARAM_VALIDATION_FAILED, {
+    errorCode:
+      result.errorCode ??
+      (result.failedItems?.length ? 'ALL_PARAGRAPHS_FAILED' : 'BATCH_PROCESS_ERROR'),
     errors: result.errors,
     warnings: combinedWarnings.length > 0 ? combinedWarnings : undefined,
     failedParagraphs: result.failedItems,
@@ -1697,6 +1879,7 @@ function emitBatchActionReport(
   processedCount: number,
   firstParagraphId: string,
   acceptedParagraphs: AcceptedParagraph[],
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): void {
   if (!onAction) return;
   const preview = acceptedParagraphs
@@ -1711,7 +1894,7 @@ function emitBatchActionReport(
       paragraph_id: firstParagraphId,
       translation_id: `batch_${processedCount}_${Date.now()}`,
       old_translation: '',
-      new_translation: `批量处理 ${processedCount} 个段落 (${preview}${suffix})`,
+      new_translation: messages.ACTION(processedCount, preview, suffix),
     },
   });
 }
@@ -1727,7 +1910,10 @@ interface BuildSuccessResponseParams {
 }
 
 /** 组装 add_translation_batch 工具成功时返回的 JSON 结构 */
-function buildSuccessResponse(params: BuildSuccessResponseParams): string {
+function buildSuccessResponse(
+  params: BuildSuccessResponseParams,
+  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
+): string {
   const {
     processedCount,
     acceptedParagraphs,
@@ -1742,8 +1928,8 @@ function buildSuccessResponse(params: BuildSuccessResponseParams): string {
     success: true,
     message:
       failedParagraphs.length > 0
-        ? ERROR_MESSAGES.PARTIAL_SUCCESS_SUMMARY(processedCount, failedParagraphs.length)
-        : `成功处理 ${processedCount} 个段落`,
+        ? messages.PARTIAL_SUCCESS_SUMMARY(processedCount, failedParagraphs.length)
+        : messages.PROCESSED(processedCount),
     processed_count: processedCount,
     accepted_paragraphs: acceptedParagraphs,
     ...(failedParagraphs.length > 0
@@ -1768,13 +1954,19 @@ async function handleAddTranslationBatch(
   args: Record<string, unknown>,
   context: ToolContext,
 ): Promise<string> {
+  const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+  const targetLanguage = context.languages?.targetLanguage ?? 'zh-CN';
+  context = { ...context, languages: Object.freeze({ uiLocale, targetLanguage }) };
+  const messages = createBatchMessages(uiLocale);
   const { bookId, onAction, taskId, aiProcessingStore, submittedParagraphIds } = context;
   const { paragraphs } = args as unknown as AddTranslationBatchArgs;
 
   // 验证任务状态 - 只能在 working 状态下调用
-  const statusValidation = validateTaskStatus(aiProcessingStore, taskId);
+  const statusValidation = validateTaskStatus(aiProcessingStore, taskId, messages);
   if (!statusValidation.valid) {
-    return buildErrorResponse(statusValidation.error || ERROR_MESSAGES.TASK_ID_MISSING);
+    return buildErrorResponse(statusValidation.error || messages.TASK_ID_MISSING, {
+      errorCode: statusValidation.errorCode ?? 'TASK_ID_MISSING',
+    });
   }
 
   // 复用验证过的任务对象
@@ -1783,16 +1975,20 @@ async function handleAddTranslationBatch(
   const chapterId = task.chapterId;
   const aiModelId = context.aiModelId;
 
-  const precondError = validateAddBatchPreconditions({
-    bookId,
-    taskType,
-    aiModelId,
-    chapterId,
-    taskId,
-  });
-  if (precondError) return buildErrorResponse(precondError);
+  const precondError = validateAddBatchPreconditions(
+    {
+      bookId,
+      taskType,
+      aiModelId,
+      chapterId,
+      taskId,
+    },
+    messages,
+  );
+  if (precondError)
+    return buildErrorResponse(precondError.error, { errorCode: precondError.errorCode });
 
-  const prepared = await prepareBatchParams({ paragraphs }, context);
+  const prepared = await prepareBatchParams({ paragraphs }, context, messages);
   if (prepared.kind === 'failure') return prepared.failure;
   const { normalizedIds, correctionWarnings, warning, preloadedBook } = prepared;
 
@@ -1814,7 +2010,7 @@ async function handleAddTranslationBatch(
   const combinedWarnings = [...(result.warnings ?? []), ...correctionWarnings];
 
   if (!result.success) {
-    return buildProcessFailureResponse(result, combinedWarnings, warning);
+    return buildProcessFailureResponse(result, combinedWarnings, warning, messages);
   }
 
   // 从规范化的 acceptedItems 构建 accepted_paragraphs（仅包含实际通过验证的段落）
@@ -1832,17 +2028,21 @@ async function handleAddTranslationBatch(
     result.processedCount,
     acceptedParagraphs[0]?.paragraph_id || '',
     acceptedParagraphs,
+    messages,
   );
 
-  return buildSuccessResponse({
-    processedCount: result.processedCount,
-    acceptedParagraphs,
-    failedParagraphs,
-    taskType,
-    combinedWarnings,
-    warning,
-    taskId,
-  });
+  return buildSuccessResponse(
+    {
+      processedCount: result.processedCount,
+      acceptedParagraphs,
+      failedParagraphs,
+      taskType,
+      combinedWarnings,
+      warning,
+      taskId,
+    },
+    messages,
+  );
 }
 
 export interface CreateTranslationToolsOptions {

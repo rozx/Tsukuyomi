@@ -1,3 +1,4 @@
+import webFeedback from './web-feedback';
 import taskFeedback from './task-feedback';
 import bookToolFeedback from './book-tool-feedback';
 import todoFeedback from './todo-feedback';
@@ -21,6 +22,7 @@ import memory from './memory';
 import chat from './chat';
 
 export default {
+  ...webFeedback,
   ...taskFeedback,
   ...bookToolFeedback,
   ...todoFeedback,

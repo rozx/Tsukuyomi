@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
 /**
  * 桌面帮助页落地态（未选中文档时的品牌化入口）。从 HelpPageDesktop 抽出以降低其模板圈复杂度。
  */
@@ -20,21 +22,22 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
         <img :src="ctx.logoPath" :alt="APP_NAME.full" class="hld-hero-logo" />
         <div class="hld-hero-copy">
           <span class="hld-hero-eyebrow">{{ APP_NAME.en }} · {{ APP_NAME.zh }}</span>
-          <h1 class="hld-hero-title">让每一次翻页，<span>都如月光般流畅。</span></h1>
+          <h1 class="hld-hero-title">
+            {{ t('helpUi.heroFirst') }}<span>{{ t('helpUi.heroSecond') }}</span>
+          </h1>
           <p class="hld-hero-desc">
-            专业的日本轻小说翻译工作台，面向 AI 协作翻译、校对润色、术语 /
-            角色 / 记忆管理等连续工作场景设计。
+            {{ t('helpUi.heroDescription') }}
           </p>
         </div>
       </section>
 
       <section class="hld-section">
         <div class="hld-section-head">
-          <span class="hld-section-eyebrow">QUICK START</span>
-          <h2 class="hld-section-title">快速开始</h2>
+          <span class="hld-section-eyebrow">{{ t('helpUi.quickStart') }}</span>
+          <h2 class="hld-section-title">{{ t('helpUi.quickStart') }}</h2>
         </div>
         <ol class="hld-steps">
-          <li v-for="step in ctx.quickStartSteps" :key="step.n" class="hld-step">
+          <li v-for="step in ctx.quickStartSteps.value" :key="step.n" class="hld-step">
             <span class="hld-step-num">{{ step.n }}</span>
             <div class="hld-step-body">
               <span class="hld-step-title">{{ step.t }}</span>
@@ -46,8 +49,8 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
 
       <section class="hld-section">
         <div class="hld-section-head">
-          <span class="hld-section-eyebrow">TOPICS</span>
-          <h2 class="hld-section-title">主题入口</h2>
+          <span class="hld-section-eyebrow">{{ t('helpUi.topics') }}</span>
+          <h2 class="hld-section-title">{{ t('helpUi.topics') }}</h2>
         </div>
         <div class="hld-topics">
           <button
@@ -65,7 +68,9 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
             <span v-if="topic.doc" class="hld-topic-hint">
               {{ topic.doc.title }}
             </span>
-            <span v-else class="hld-topic-hint hld-topic-hint--muted">暂未收录</span>
+            <span v-else class="hld-topic-hint hld-topic-hint--muted">{{
+              t('helpUi.notAvailable')
+            }}</span>
           </button>
         </div>
       </section>
@@ -134,10 +139,7 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
 
 .hld-hero-title {
   margin: 0;
-  font-family:
-    'Noto Serif JP',
-    'Songti SC',
-    serif;
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: clamp(1.55rem, 1vw + 1.3rem, 2rem);
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -184,10 +186,7 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
 
 .hld-section-title {
   margin: 0;
-  font-family:
-    'Noto Serif JP',
-    'Songti SC',
-    serif;
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--moon-opacity-95);

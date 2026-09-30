@@ -170,9 +170,11 @@ const MAX_IDS_SHOW = 10;
 /**
  * 将缺失段落 ID 列表截断为展示字符串
  */
-function formatMissingIds(ids: string[]): string {
+function formatMissingIds(ids: string[], uiLocale: AppLocale): string {
   const head = ids.slice(0, MAX_IDS_SHOW).join(', ');
-  return ids.length > MAX_IDS_SHOW ? `${head}... (等共 ${ids.length} 个)` : head;
+  return ids.length > MAX_IDS_SHOW
+    ? translateText(uiLocale, 'aiTaskFeedback.idSummary', { head, count: ids.length })
+    : head;
 }
 
 /**
@@ -243,7 +245,7 @@ async function checkReviewWithAccumulated(params: {
       return {
         error: translateText(uiLocale, 'aiTaskFeedback.missingChunk', {
           count: missingIds.length,
-          ids: formatMissingIds(missingIds),
+          ids: formatMissingIds(missingIds, uiLocale),
         }),
       };
     }
@@ -263,7 +265,7 @@ async function checkReviewWithAccumulated(params: {
     return {
       error: translateText(uiLocale, 'aiTaskFeedback.missingUninitialized', {
         count: notSubmitted.length,
-        ids: formatMissingIds(notSubmitted),
+        ids: formatMissingIds(notSubmitted, uiLocale),
       }),
     };
   }
@@ -306,7 +308,7 @@ async function checkReviewWithDatabase(params: {
     error: translateText(uiLocale, 'aiTaskFeedback.missingDatabase', {
       scope: scopeMsg,
       count: untranslated.length,
-      ids: formatMissingIds(ids),
+      ids: formatMissingIds(ids, uiLocale),
     }),
   };
 }
@@ -320,6 +322,7 @@ async function validateTranslationReview(
   context: ToolContext,
 ): Promise<ReviewCheckFailure | null> {
   const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+  const language = context.languages?.targetLanguage ?? 'zh-CN';
   const chapterId = task.chapterId;
   const bookId = task.bookId || context.bookId;
   // 非首块不需要检查标题翻译（标题仅在首块处理）
@@ -348,10 +351,7 @@ async function validateTranslationReview(
     const { chapter } = chapterInfo;
 
     // 检查: 章节标题是否已翻译（仅首块需要检查）
-    if (
-      isFirstChunk &&
-      !hasTitleTranslation(chapter, context.languages?.targetLanguage ?? 'zh-CN')
-    ) {
+    if (isFirstChunk && !hasTitleTranslation(chapter, language)) {
       return { error: translateText(uiLocale, 'aiTaskFeedback.missingTitle') };
     }
 
@@ -373,7 +373,7 @@ async function validateTranslationReview(
       // 当 accumulatedParagraphs 为空，或者是全章非分块场景时使用
       const failure = await checkReviewWithDatabase({
         uiLocale,
-        language: context.languages?.targetLanguage ?? 'zh-CN',
+        language,
         chapterId,
         chunkBoundaries: context.chunkBoundaries,
       });

@@ -1,5 +1,6 @@
 export default {
   aiTaskFeedback: {
+    idSummary: '{head}... (等共 {count} 个)',
     preparing: 'preparing 阶段已并入 planning，请直接切换到 working',
     translationReview: '翻译任务必须先进入 review 状态',
     polishReview: '润色任务不支持 review 状态',

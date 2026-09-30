@@ -10,6 +10,7 @@ import { ImportSourceService } from '../services/import/import-source-service';
 import { ImportContentService } from '../services/import/import-content-service';
 import { useSettingsStore } from '../stores/settings';
 import { FirecrawlClient } from '../services/firecrawl/firecrawl-client';
+import { GlobalConfig } from '../services/global-config-cache';
 import { __resetDbPromiseForTesting, getDB } from '../utils/indexed-db';
 
 beforeEach(async () => {
@@ -18,6 +19,25 @@ beforeEach(async () => {
 afterEach(() => mock.restore());
 
 describe('元信息搜索、采用及封面持久值', () => {
+  it('元信息检索沿用检查点语言并保留网络失败code', async () => {
+    const task = await ImportRepository.createTask();
+    await ImportRepository.mutateTask(task.id, (current) => {
+      current.checkpoint = {
+        uiLocale: 'en-US',
+        messages: [],
+        remainingCalls: [],
+        completedCallIds: [],
+      };
+      return Promise.resolve(undefined);
+    });
+    spyOn(GlobalConfig, 'getTavilyApiKey').mockReturnValue(undefined);
+    spyOn(GlobalConfig, 'getFirecrawlFallbackEnabled').mockReturnValue(false);
+    const result = await ImportMetadataService.prepareSearch(task.id, '用户原文 query');
+    expect(result.result.error_code).toBe('WEB_SEARCH_NOT_CONFIGURED');
+    expect(result.result.message).toContain('Settings');
+    expect(result.result.message).not.toMatch(/\p{Script=Han}/u);
+  });
+
   it('应用后采用新候选会回到草稿，用户也能取消采用某个字段', async () => {
     const task = await ImportRepository.createTask();
     const draft = await ImportMetadataService.propose(task.id, 0, {

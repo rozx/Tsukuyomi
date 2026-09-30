@@ -1,5 +1,6 @@
 export default {
   aiTaskFeedback: {
+    idSummary: '{head}... ({count} total)',
     preparing: 'preparing is merged into planning; move directly to working',
     translationReview: 'Translation must enter review before ending',
     polishReview: 'Polishing does not support review',

@@ -144,6 +144,7 @@ export function characterEditContext<T extends { character_id: string }>(
   return {
     parsedArgs,
     uiLocale: context.languages?.uiLocale ?? 'zh-CN',
+    language: context.languages?.targetLanguage ?? 'zh-CN',
     ...requireCharacterContext(context, parsedArgs),
   };
 }

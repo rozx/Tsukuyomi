@@ -7,6 +7,7 @@ import {
   __resetFirecrawlClientForTesting,
 } from 'src/services/firecrawl/firecrawl-client';
 import {
+  FirecrawlError,
   FirecrawlEmptyContentError,
   FirecrawlQuotaError,
   FirecrawlRateLimitError,
@@ -52,6 +53,21 @@ function mockPost(...replies: Reply[]) {
 }
 
 describe('scrape 请求形状', () => {
+  it('HTTP失败保留原诊断独立字段，旧message兼容且不改变重试次数', async () => {
+    apiKey = 'fc-abc';
+    const post = mockPost(reply(400, { success: false, error: 'provider 原始诊断 {x}|raw' }));
+    const error = await FirecrawlClient.search('query', { limit: 5 }).catch(
+      (value: unknown) => value,
+    );
+    expect(error).toBeInstanceOf(FirecrawlError);
+    expect(error).toMatchObject({
+      status: 400,
+      diagnostic: 'provider 原始诊断 {x}|raw',
+      message: 'Firecrawl 请求失败: 400 provider 原始诊断 {x}|raw',
+    });
+    expect(post).toHaveBeenCalledTimes(1);
+  });
+
   it('配置 Key 时发送 Bearer 认证', async () => {
     apiKey = 'fc-abc';
     const post = mockPost(reply(200, SCRAPE_OK_RAW_HTML));

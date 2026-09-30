@@ -686,7 +686,11 @@ export class LibraryPersistence {
           await tx.objectStore('books').put(record);
         if (metadataChanged || contentChanged)
           await bumpBookRevision(tx.objectStore('book-revisions'), record.id);
-        if (saved.length) changes.set(record.id, [...(changes.get(record.id) ?? []), ...saved]);
+        const targetChanged =
+          prior && (prior.targetLanguage ?? 'zh-CN') !== (record.targetLanguage ?? 'zh-CN');
+        if (targetChanged) saved.push(...chapterIds(record));
+        if (saved.length)
+          changes.set(record.id, [...new Set([...(changes.get(record.id) ?? []), ...saved])]);
       }
       return changes;
     });

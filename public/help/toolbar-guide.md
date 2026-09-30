@@ -1,4 +1,4 @@
-# 🛠️ 系统栏与导航
+# 🛠️ 系统栏与导航 {#toolbar-guide-section-1}
 
 Tsukuyomi 在不同设备上采用不同的系统栏（System Bar）布局，但功能集合一致：**导航 / AI 思考 / 同步 / 消息 / 右栏面板**。本文按设备变体逐一说明各栏的位置与入口。
 
@@ -6,7 +6,7 @@ Tsukuyomi 在不同设备上采用不同的系统栏（System Bar）布局，但
 
 ---
 
-## 🖥️ 桌面端布局
+## 🖥️ 桌面端布局 {#toolbar-guide-section-2}
 
 桌面端（`useResponsiveLayout` 判定为 `desktop` 或 Electron 强制 desktop）由四个区域组成：
 
@@ -23,7 +23,7 @@ Tsukuyomi 在不同设备上采用不同的系统栏（System Bar）布局，但
 +------------------------------------------------------------+
 ```
 
-### 1) 顶部 Sysbar（`AppHeader`）
+### 1) 顶部 Sysbar（`AppHeader`） {#toolbar-guide-section-3}
 
 chip 风格的状态栏，从左到右：
 
@@ -49,7 +49,7 @@ chip 风格的状态栏，从左到右：
 
 > **批量摘要按钮已移除**（v0.12 起 AI 章节摘要功能撤回，由 `query_chapter` 工具按需检索原文取代）。
 
-### 2) 左栏图标轨道（`AppSideMenu`）
+### 2) 左栏图标轨道（`AppSideMenu`） {#toolbar-guide-section-4}
 
 默认是窄轨道，只显示图标；鼠标悬停或按 `☰` 展开成完整菜单。
 
@@ -64,7 +64,7 @@ chip 风格的状态栏，从左到右：
 - ⚙️ **设置** — `/settings`
 - ❓ **帮助** — `/help`
 
-### 3) 右栏图标轨道（`AppRightPanelDesktop`）
+### 3) 右栏图标轨道（`AppRightPanelDesktop`） {#toolbar-guide-section-5}
 
 固定宽度 + 拖拽 resize 手柄；展开后显示当前激活面板。轨道入口：
 
@@ -74,7 +74,7 @@ chip 风格的状态栏，从左到右：
 
 > 切换轨道入口会自动激活对应面板；未激活面板**不挂载**任何 watcher，避免跨面板的副作用。
 
-### 4) 底部 Footer（`AppFooter`）
+### 4) 底部 Footer（`AppFooter`） {#toolbar-guide-section-6}
 
 显示版本号与 GitHub 链接（GitHub 图标）。Electron 桌面版会用同样的 footer。
 
@@ -89,7 +89,7 @@ Electron 桌面版在版本号右侧额外显示**更新徽标**（v0.16.1 起�
 
 ---
 
-## 📱 平板端布局
+## 📱 平板端布局 {#toolbar-guide-section-7}
 
 平板端（`tablet` 断点）使用紧凑型 sysbar：
 
@@ -103,23 +103,23 @@ Electron 桌面版在版本号右侧额外显示**更新徽标**（v0.16.1 起�
 +--------------------------------------------------------+
 ```
 
-### Sysbar 结构
+### Sysbar 结构 {#toolbar-guide-section-8}
 
 - **左侧**：品牌名 + 版本号（`v0.12.1`）。
 - **右侧 chips**：AI 思考过程 / 同步状态 / 消息历史 — 各项行为与桌面端一致，只是 chip 文字更紧凑（如「AI 思考中 → AI 思考过程」，「N 项变更 / 已同步 / 同步中」）。
 
-### 导航与右栏
+### 导航与右栏 {#toolbar-guide-section-9}
 
 - 主导航走 Quasar 抽屉（点击 sysbar 左侧的菜单图标），包含首页 / 书籍 / AI / 设置 / 帮助。
 - 右栏由独立的「聊天 / 进度」开关控制（路由进入书籍详情页时按需展开），交互细节与桌面端一致，只是没有图标轨道。
 
-### 关于本地嵌入入口
+### 关于本地嵌入入口 {#toolbar-guide-section-10}
 
 平板端**没有**专用的「向量索引」按钮：物理移动设备 UA 会强制锁住本地嵌入；如果是桌面浏览器缩到平板宽度，则可以在**设置 → 本地嵌入**配置开关，但批量嵌入抽屉仅在桌面布局下渲染。
 
 ---
 
-## 📲 移动端布局
+## 📲 移动端布局 {#toolbar-guide-section-11}
 
 移动端（`mobile` 断点）使用极简 sysbar + 主体内容：
 
@@ -134,7 +134,7 @@ Electron 桌面版在版本号右侧额外显示**更新徽标**（v0.16.1 起�
 +----------------------------------+
 ```
 
-### Sysbar 结构
+### Sysbar 结构 {#toolbar-guide-section-12}
 
 - **左侧**：Logo + 应用名 + 版本号。
 - **右侧 chips**：
@@ -147,7 +147,7 @@ Electron 桌面版在版本号右侧额外显示**更新徽标**（v0.16.1 起�
 
 ---
 
-## 🔁 跨设备一致的状态语义
+## 🔁 跨设备一致的状态语义 {#toolbar-guide-section-13}
 
 不论哪个变体，下列状态来源都是同一份 `useSystemBar()`：
 
@@ -160,7 +160,7 @@ Electron 桌面版在版本号右侧额外显示**更新徽标**（v0.16.1 起�
 
 ---
 
-## ❓ 常见问题
+## ❓ 常见问题 {#toolbar-guide-section-14}
 
 **Q: 桌面端为什么找不到「批量摘要」按钮？**
 A: 章节摘要功能已在 v0.12 移除。AI 现在通过 `query_chapter` 工具按需对原文做语义检索，不再需要预生成摘要。
@@ -179,7 +179,7 @@ A: 物理移动设备的 UA 标识不会因窗口尺寸改变而消失。本地�
 
 ---
 
-## 📚 相关文档
+## 📚 相关文档 {#toolbar-guide-section-15}
 
 - [主页介绍](/help/library-guide)
 - [设置说明](/help/settings-guide)

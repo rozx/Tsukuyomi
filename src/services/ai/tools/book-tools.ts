@@ -118,6 +118,7 @@ async function fetchChapterRelatedMemories(
   bookId: string,
   chapter: Chapter,
   includeMemory: boolean,
+  language: AppLocale,
 ): Promise<Array<{ id: string; summary: string }>> {
   if (!includeMemory || !bookId) return [];
   const titleOriginal = typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
@@ -126,6 +127,7 @@ async function fetchChapterRelatedMemories(
     [{ type: 'chapter', id: chapter.id }],
     titleOriginal ? [titleOriginal] : [],
     5,
+    language,
   );
 }
 
@@ -134,14 +136,14 @@ function summarizeChapterForBookInfo(
   language: AppLocale = 'zh-CN',
 ): {
   title: string;
-  translation: string | undefined;
+  translation: string;
 } {
   if (typeof c.title === 'string') {
     return { title: c.title, translation: '' };
   }
   return {
     title: c.title.original,
-    translation: getNameTranslation(c.title, language)?.translation,
+    translation: getNameTranslation(c.title, language)?.translation ?? '',
   };
 }
 
@@ -150,13 +152,13 @@ function summarizeVolumeForBookInfo(
   language: AppLocale = 'zh-CN',
 ): {
   title: string;
-  translation: string | undefined;
+  translation: string;
   chapter_count: number;
-  chapters: Array<{ title: string; translation: string | undefined }> | undefined;
+  chapters: Array<{ title: string; translation: string }> | undefined;
 } {
   const title = typeof v.title === 'string' ? v.title : v.title.original;
   const translation =
-    typeof v.title === 'string' ? '' : getNameTranslation(v.title, language)?.translation;
+    typeof v.title === 'string' ? '' : (getNameTranslation(v.title, language)?.translation ?? '');
   return {
     title,
     translation,
@@ -234,12 +236,13 @@ async function maybeFetchBookRelatedMemories(
   book: Novel,
   bookId: string | null | undefined,
   includeMemory: boolean,
+  language: AppLocale,
 ): Promise<Array<{ id: string; summary: string }>> {
   if (!includeMemory || !bookId) return [];
   const keywords: string[] = [];
   if (book.title) keywords.push(book.title);
   if (book.author) keywords.push(book.author);
-  return searchRelatedMemoriesHybrid(bookId, [{ type: 'book', id: bookId }], keywords, 5);
+  return searchRelatedMemoriesHybrid(bookId, [{ type: 'book', id: bookId }], keywords, 5, language);
 }
 
 interface BookInfoSnapshot {
@@ -640,7 +643,12 @@ async function handleAdjacentChapterTool(
     }
 
     const { paragraphCount, translatedCount } = countChapterTranslationStats(chapter, language);
-    const relatedMemories = await fetchChapterRelatedMemories(bookId, chapter, include_memory);
+    const relatedMemories = await fetchChapterRelatedMemories(
+      bookId,
+      chapter,
+      include_memory,
+      language,
+    );
 
     return JSON.stringify(
       buildAdjacentChapterResponse(
@@ -882,6 +890,24 @@ function buildUpdateBookInfoActionData(
   };
 }
 
+/** 工具参数与执行语言在任何异步读取前统一捕获。 */
+function bookToolInput<T>(args: Record<string, unknown>, context: ToolContext) {
+  return {
+    parsedArgs: parseToolArgs<T>(args),
+    bookId: context.bookId,
+    onAction: context.onAction,
+    language: context.languages?.targetLanguage ?? 'zh-CN',
+    uiLocale: context.languages?.uiLocale ?? 'zh-CN',
+  };
+}
+
+function emitBookReadAction(
+  onAction: ToolContext['onAction'],
+  data: { book_id: string | undefined; tool_name: string; volume_ids?: string[] },
+): void {
+  onAction?.({ type: 'read', entity: 'book', data });
+}
+
 export const bookTools: ToolDefinition[] = [
   {
     definition: toolDefinition('get_book_info', {
@@ -895,27 +921,25 @@ export const bookTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context: ToolContext) => {
-      const language = context.languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
-      const { bookId, onAction } = context;
-      const parsedArgs = parseToolArgs<{ include_memory?: boolean }>(args);
+      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
+        include_memory?: boolean;
+      }>(args, context);
 
       const resolved = await resolveBookByIdOrError(bookId, uiLocale);
       if (resolved.kind === 'error') return resolved.json;
       const book = resolved.book;
 
       try {
-        if (onAction) {
-          onAction({
-            type: 'read',
-            entity: 'book',
-            data: { book_id: bookId, tool_name: 'get_book_info' },
-          });
-        }
+        emitBookReadAction(onAction, { book_id: bookId, tool_name: 'get_book_info' });
 
         const info = buildGetBookInfoPayload(book, language, uiLocale);
         const { include_memory = true } = parsedArgs;
-        const relatedMemories = await maybeFetchBookRelatedMemories(book, bookId, include_memory);
+        const relatedMemories = await maybeFetchBookRelatedMemories(
+          book,
+          bookId,
+          include_memory,
+          language,
+        );
 
         return JSON.stringify({
           success: true,
@@ -949,10 +973,11 @@ export const bookTools: ToolDefinition[] = [
       },
       required: [],
     }),
-    handler: async (args, { bookId, onAction, languages }) => {
-      const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
-      const parsedArgs = parseToolArgs<{ limit?: number; offset?: number }>(args);
+    handler: async (args, context) => {
+      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
+        limit?: number;
+        offset?: number;
+      }>(args, context);
       const { limit, offset = 0 } = parsedArgs;
 
       const resolved = await resolveBookByIdOrError(bookId, uiLocale);
@@ -1007,10 +1032,10 @@ export const bookTools: ToolDefinition[] = [
       },
       required: ['volume_ids'],
     }),
-    handler: async (args, { bookId, onAction, languages }) => {
-      const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
-      const parsedArgs = parseToolArgs<{ volume_ids: string[] }>(args);
+    handler: async (args, context) => {
+      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
+        volume_ids: string[];
+      }>(args, context);
       const { volume_ids } = parsedArgs;
 
       if (!volume_ids || !Array.isArray(volume_ids) || volume_ids.length === 0) {
@@ -1023,17 +1048,11 @@ export const bookTools: ToolDefinition[] = [
 
       try {
         // 报告读取操作
-        if (onAction) {
-          onAction({
-            type: 'read',
-            entity: 'book',
-            data: {
-              book_id: bookId,
-              tool_name: 'list_chapters_by_volume',
-              volume_ids,
-            },
-          });
-        }
+        emitBookReadAction(onAction, {
+          book_id: bookId,
+          tool_name: 'list_chapters_by_volume',
+          volume_ids,
+        });
 
         return JSON.stringify(buildListChaptersByVolumeResponse(book, volume_ids, language));
       } catch (error) {
@@ -1061,10 +1080,11 @@ export const bookTools: ToolDefinition[] = [
       },
       required: ['query'],
     }),
-    handler: async (args, { bookId, onAction, languages }) => {
-      const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
-      const parsedArgs = parseToolArgs<{ query: string; limit?: number }>(args);
+    handler: async (args, context) => {
+      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
+        query: string;
+        limit?: number;
+      }>(args, context);
       if (!bookId) {
         return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', uiLocale);
       }
@@ -1113,7 +1133,7 @@ export const bookTools: ToolDefinition[] = [
         }
 
         const { ChapterEmbeddingService } = await import('src/services/chapter-embedding-service');
-        const matches = await ChapterEmbeddingService.queryChapters(bookId, query, limit);
+        const matches = await ChapterEmbeddingService.queryChapters(bookId, query, limit, language);
 
         return JSON.stringify({
           success: true,
@@ -1152,15 +1172,13 @@ export const bookTools: ToolDefinition[] = [
       },
       required: ['chapter_id'],
     }),
-    handler: async (args, { bookId, onAction, languages }) => {
-      const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
-      const parsedArgs = parseToolArgs<{
+    handler: async (args, context) => {
+      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
         chapter_id: string;
         limit?: number;
         offset?: number;
         include_memory?: boolean;
-      }>(args);
+      }>(args, context);
       const { chapter_id, include_memory = true } = parsedArgs;
       const { limit, offset } = resolveChapterPaging(parsedArgs);
       if (!chapter_id) {
@@ -1208,6 +1226,7 @@ export const bookTools: ToolDefinition[] = [
           resolvedBookId,
           chapter,
           include_memory,
+          language,
         );
 
         const titleFields = formatChapterTitleFields(chapter, language);
@@ -1407,15 +1426,12 @@ export const bookTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context: ToolContext) => {
-      const language = context.languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
-      const { bookId, onAction } = context;
-      const parsedArgs = parseToolArgs<{
+      const { bookId, onAction, uiLocale, parsedArgs } = bookToolInput<{
         description?: string;
         tags?: string[];
         author?: string;
         alternate_titles?: string[];
-      }>(args);
+      }>(args, context);
 
       const { description, tags, author, alternate_titles } = parsedArgs;
 

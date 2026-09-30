@@ -229,6 +229,7 @@ export const terminologyTools: ToolDefinition[] = [
             [{ type: 'term', id: term.id }],
             [name],
             5,
+            language,
           );
         } catch (error) {
           // 静默失败，不影响主要功能
@@ -532,7 +533,13 @@ export const terminologyTools: ToolDefinition[] = [
           type: 'term' as const,
           id: term.id,
         }));
-        relatedMemories = await searchRelatedMemoriesHybrid(bookId, attachments, validKeywords, 5);
+        relatedMemories = await searchRelatedMemoriesHybrid(
+          bookId,
+          attachments,
+          validKeywords,
+          5,
+          language,
+        );
       }
 
       return JSON.stringify({

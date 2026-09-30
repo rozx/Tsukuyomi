@@ -119,8 +119,9 @@ export function calculateKeywordHitRatio(
  * - IDENTIFIER_RUN:**单字符即入**,因为圈号/罗马数字本身就是完整的章节序号 token
  *   (轻小说章节标题大量用 ① ⑥ Ⅴ 这类),长度过滤会把它们误删
  */
-const CJK_RUN = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff々ー〇]+/g;
-const ALPHA_RUN = /[a-z0-9]{2,}/g;
+const CJK_RUN =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}々ー〇][\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{M}々ー〇]*/gu;
+const ALPHA_RUN = /[\p{L}\p{N}][\p{L}\p{N}\p{M}]*/gu;
 /**
  * Identifier 字符:
  * - U+2460–U+24FF: 圈号(① ② ⑥ ⑳ ㈠ ㊀ etc.)
@@ -140,10 +141,13 @@ export function extractQueryUnits(query: string): string[] {
   const units: string[] = [];
   const lower = normalizeFullWidthAscii(query).toLowerCase();
   for (const m of lower.matchAll(CJK_RUN)) {
-    if (m[0].length >= 2) units.push(m[0]);
+    if ([...m[0]].length >= 2) units.push(m[0]);
   }
-  for (const m of lower.matchAll(ALPHA_RUN)) {
-    units.push(m[0]);
+  // CJK 与章节序号各自成组，其他脚本保留组合符；孤立组合符不是词。
+  const otherScripts = lower.replace(CJK_RUN, ' ').replace(IDENTIFIER_RUN, ' ');
+  for (const m of otherScripts.matchAll(ALPHA_RUN)) {
+    if ([...m[0]].filter((character) => /[\p{L}\p{N}]/u.test(character)).length >= 2)
+      units.push(m[0]);
   }
   for (const m of lower.matchAll(IDENTIFIER_RUN)) {
     units.push(m[0]);

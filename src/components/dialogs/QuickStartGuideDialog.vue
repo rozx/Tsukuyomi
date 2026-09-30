@@ -21,11 +21,7 @@
     </div>
 
     <template #footer>
-      <Button
-        label="我知道了，不再提示"
-        icon="pi pi-check"
-        @click="handleDismiss"
-      />
+      <Button label="我知道了，不再提示" icon="pi pi-check" @click="handleDismiss" />
     </template>
   </AdaptiveDialog>
 </template>
@@ -37,6 +33,7 @@ import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { getAssetUrl } from 'src/utils/assets';
+import { parseHelpHeading } from 'src/services/help-service';
 
 const props = defineProps<{
   visible: boolean;
@@ -64,7 +61,12 @@ const loadGuideContent = async (): Promise<void> => {
       throw new Error(`HTTP ${response.status}`);
     }
     const markdown = await response.text();
-    const renderedHtml = await marked.parse(markdown);
+    const renderer = new marked.Renderer();
+    renderer.heading = (token) => {
+      const heading = parseHelpHeading(token.text, token.depth);
+      return `<h${heading.level} id="${heading.id}">${heading.text}</h${heading.level}>`;
+    };
+    const renderedHtml = await marked.parse(markdown, { renderer });
     contentHtml.value = DOMPurify.sanitize(renderedHtml);
     hasLoadedContent.value = true;
   } catch (loadError) {
@@ -105,7 +107,6 @@ watch(
 .quick-start-content {
   padding-right: 0.25rem;
 }
-
 
 .state-box {
   min-height: 240px;

@@ -299,7 +299,8 @@ describe('HelpDocsTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('获取帮助文档索引失败');
+      expect(parsed.error_code).toBe('HELP_INDEX_LOAD_FAILED');
+      expect(parsed.error).toContain('Network Error');
     });
 
     test('get_help_doc 在网络错误时应返回错误信息', async () => {
@@ -321,7 +322,8 @@ describe('HelpDocsTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('获取帮助文档内容失败');
+      expect(parsed.error_code).toBe('HELP_DOCUMENT_LOAD_FAILED');
+      expect(parsed.error).toContain('Network Error');
     });
 
     test('list_help_docs 在网络错误时应返回错误信息', async () => {
@@ -337,7 +339,8 @@ describe('HelpDocsTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('获取帮助文档索引失败');
+      expect(parsed.error_code).toBe('HELP_INDEX_LOAD_FAILED');
+      expect(parsed.error).toContain('Network Error');
     });
   });
 });

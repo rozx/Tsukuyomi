@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
 /**
  * 平板帮助页正文区的 loading / error 状态块。从 HelpPageTablet 抽出以降低其模板圈复杂度。
  * 把原先 v-if loading / v-else-if error 两条分支折叠为单个由 state 驱动的组件。
@@ -13,13 +15,13 @@ defineEmits<{ retry: [] }>();
 <template>
   <div v-if="state === 'loading'" class="ht-state">
     <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-    <p>加载文档中...</p>
+    <p>{{ t('helpUi.loading') }}</p>
   </div>
 
   <div v-else class="ht-state ht-state--error">
     <i class="pi pi-exclamation-triangle" aria-hidden="true" />
     <p>{{ error }}</p>
-    <button class="ht-state-retry" @click="$emit('retry')">重试</button>
+    <button class="ht-state-retry" @click="$emit('retry')">{{ t('helpUi.retry') }}</button>
   </div>
 </template>
 

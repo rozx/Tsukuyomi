@@ -35,9 +35,7 @@ export async function lookupChapterBookFromDB(
         for (const chapter of volume.chapters) {
           if (chapter.id === chapterId) {
             const chapterTitle =
-              typeof chapter.title === 'string'
-                ? chapter.title
-                : chapter.title?.original ?? '';
+              typeof chapter.title === 'string' ? chapter.title : (chapter.title?.original ?? '');
             return { bookId: book.id, chapterTitle, chapter };
           }
         }

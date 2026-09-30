@@ -20,10 +20,17 @@ export function validToolQuery(query: unknown, logLabel: string): query is strin
 
 export function checkedToolBookContext(
   context: ToolContext,
-): { error: string } | (ToolContext & { bookId: string; uiLocale: AppLocale }) {
+):
+  | { error: string }
+  | (ToolContext & { bookId: string; uiLocale: AppLocale; language: AppLocale }) {
   const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
   return context.bookId
-    ? { ...context, bookId: context.bookId, uiLocale }
+    ? {
+        ...context,
+        bookId: context.bookId,
+        uiLocale,
+        language: context.languages?.targetLanguage ?? 'zh-CN',
+      }
     : { error: toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', uiLocale) };
 }
 import type { MessageKey } from 'src/i18n/types';

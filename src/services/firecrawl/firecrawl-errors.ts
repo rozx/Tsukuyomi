@@ -7,6 +7,7 @@ export class FirecrawlError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly diagnostic?: string,
   ) {
     super(message);
     this.name = 'FirecrawlError';

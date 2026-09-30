@@ -8,6 +8,8 @@ import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
 import { useAIProcessingStore } from '../stores/ai-processing';
 import { TodoListService } from '../services/todo-list-service';
+import { BookService } from '../services/book-service';
+import type { ToolContext } from '../services/ai/tools/types';
 import type { AITool, AIToolCall } from '../services/ai/types/ai-service';
 const statusTool = taskStatusTools.find(
   (entry) => entry.definition.function.name === 'update_task_status',
@@ -56,6 +58,78 @@ afterEach(() => {
 });
 
 describe('任务门禁语言', () => {
+  it('review 等待数据库期间保留开始时目标', async () => {
+    const { taskId, adapter } = await setup(true, true);
+    const original = BookService.getBookById.bind(BookService);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    vi.spyOn(BookService, 'getBookById').mockImplementation(async (...args) => {
+      entered.resolve();
+      await release.promise;
+      return original(...args);
+    });
+    const context: ToolContext = {
+      bookId: 'fixture-book',
+      taskId,
+      aiProcessingStore: adapter,
+      languages: captureExecutionLanguages('en-US'),
+    };
+    const pending = statusTool.handler({ status: 'review' }, context);
+    await entered.promise;
+    context.languages = captureExecutionLanguages('zh-CN');
+    release.resolve();
+    expect(JSON.parse(await pending)).toMatchObject({ success: true, new_status: 'review' });
+  });
+  for (const accumulated of [false, true]) {
+    it(`超过十个未译段落的英文错误不夹中文（提交记录=${accumulated}）`, async () => {
+      const chapter = translationChapter('c', '11111111');
+      chapter.content = Array.from({ length: 12 }, (_, index) => ({
+        id: index.toString(16).padStart(8, '0'),
+        text: `source ${index}`,
+        translations: [],
+        selectedTranslationId: '',
+      }));
+      await chapterTranslationFixture([chapter]);
+      const store = useAIProcessingStore();
+      const taskId = await store.addTask({
+        type: 'translation',
+        modelName: 'Fixture',
+        status: 'processing',
+        workflowStatus: 'working',
+        bookId: 'fixture-book',
+        chapterId: 'c',
+      });
+      const paragraphIds = chapter.content.map((p) => p.id);
+      const result = JSON.parse(
+        await statusTool.handler(
+          { status: 'review' },
+          {
+            bookId: 'fixture-book',
+            taskId,
+            aiProcessingStore: createAIProcessingStoreAdapter(store),
+            chunkIndex: 1,
+            languages: captureExecutionLanguages('en-US'),
+            ...(accumulated
+              ? {
+                  accumulatedParagraphs: new Map([[paragraphIds[11]!, 'done']]),
+                  chunkBoundaries: {
+                    firstParagraphId: paragraphIds[0]!,
+                    lastParagraphId: paragraphIds.at(-1)!,
+                    paragraphIds,
+                    allowedParagraphIds: new Set(paragraphIds),
+                  },
+                }
+              : {}),
+          },
+        ),
+      );
+      expect(result.error_code).toBe('TRANSLATION_INCOMPLETE');
+      expect(result.error).not.toMatch(/\p{Script=Han}/u);
+      expect(result.error).toContain(accumulated ? '11' : '12');
+      expect(store.activeTasks.find((task) => task.id === taskId)!.workflowStatus).toBe('working');
+    });
+  }
+
   it('首块英文标题和正文齐全时可复核，不能只看简中标题投影', async () => {
     const { taskId, adapter } = await setup(true, true);
     const result = JSON.parse(

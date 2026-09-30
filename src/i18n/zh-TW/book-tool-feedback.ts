@@ -1,5 +1,7 @@
 export default {
   aiBookFeedback: {
+    fullTextChanged: '全文索引輸入已變更，舊計算已捨棄，請重試。',
+    cacheRebuilding: '章節向量快取正依目標語言重建，請稍後重試或使用原文／目標語言讀取工具。',
     volumeIdsRequired: '必須提供有效的 volume_ids 清單',
     queryRequired: 'query 不能為空',
     titleRequired: '必須提供 title_original 或 title_translation 至少一個參數',

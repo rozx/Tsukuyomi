@@ -1,3 +1,4 @@
+import { getDB } from '../utils/indexed-db';
 /**
  * Title chunk 嵌入路径测试 — 覆盖 composeTitleChunkInput 和 embedChapter 在不同
  * 章节状态(正常 / 无段落 / 首段空白 / 标题空)下的行为。
@@ -22,8 +23,8 @@ function mkPara(id: string, text: string): Paragraph {
     id,
     text,
     translations: [],
-    selectedTranslationId: null,
-  } as unknown as Paragraph;
+    selectedTranslationId: '',
+  };
 }
 
 function mkBook(bookId: string, chapterId: string, chapterTitle: string): Novel {
@@ -114,9 +115,7 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
   });
 
   /** 装一本只有一个章节的假书,塞 books store + IndexedDB */
-  async function seedBook(
-    chapterTitle: string,
-  ): Promise<{ bookId: string; chapterId: string }> {
+  async function seedBook(chapterTitle: string): Promise<{ bookId: string; chapterId: string }> {
     const bookId = 'book-A';
     const chapterId = 'ch-1';
     const book = mkBook(bookId, chapterId, chapterTitle);
@@ -135,11 +134,18 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
   }
 
   it('正常嵌入:同一章节同时写入 content + title chunk', async () => {
-    const { chapterId } = await seedBook('第二王女');
-    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
-      mkPara('p1', '夏洛特推开沉重的橡木门,深呼吸。'),
-      mkPara('p2', '“殿下,该出发了。”'),
-    ]);
+    const { bookId, chapterId } = await seedBook('第二王女');
+    await (
+      await getDB()
+    ).put('chapter-contents', {
+      chapterId: chapterId,
+      bookId: bookId,
+      content: JSON.stringify([
+        mkPara('p1', '夏洛特推开沉重的橡木门,深呼吸。'),
+        mkPara('p2', '“殿下,该出发了。”'),
+      ]),
+      lastModified: new Date().toISOString(),
+    });
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
     const embedSpy = spyOn(EmbeddingService, 'embedBatch').mockImplementation((inputs: string[]) =>
       Promise.resolve(inputs.map((_, i) => new Float32Array([0.1 + i * 0.01]))),
@@ -163,8 +169,15 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
   });
 
   it('章节无段落:既不写 content 也不写 title,清空残留', async () => {
-    const { chapterId } = await seedBook('某章');
-    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([]);
+    const { bookId, chapterId } = await seedBook('某章');
+    await (
+      await getDB()
+    ).put('chapter-contents', {
+      chapterId: chapterId,
+      bookId: bookId,
+      content: JSON.stringify([]),
+      lastModified: new Date().toISOString(),
+    });
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
     const embedSpy = spyOn(EmbeddingService, 'embedBatch');
 
@@ -176,11 +189,15 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
   });
 
   it('段落全空白:既不写 content 也不写 title', async () => {
-    const { chapterId } = await seedBook('某章');
-    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
-      mkPara('p1', ''),
-      mkPara('p2', '   '),
-    ]);
+    const { bookId, chapterId } = await seedBook('某章');
+    await (
+      await getDB()
+    ).put('chapter-contents', {
+      chapterId: chapterId,
+      bookId: bookId,
+      content: JSON.stringify([mkPara('p1', ''), mkPara('p2', '   ')]),
+      lastModified: new Date().toISOString(),
+    });
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
     const embedSpy = spyOn(EmbeddingService, 'embedBatch');
 
@@ -192,10 +209,15 @@ describe('ChapterEmbeddingService.embedChapter — title chunk 集成', () => {
   });
 
   it('标题为空但首段有内容:title chunk 仍写入(嵌入输入只是首段)', async () => {
-    const { chapterId } = await seedBook('');
-    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
-      mkPara('p1', '没有标题但有内容'),
-    ]);
+    const { bookId, chapterId } = await seedBook('');
+    await (
+      await getDB()
+    ).put('chapter-contents', {
+      chapterId: chapterId,
+      bookId: bookId,
+      content: JSON.stringify([mkPara('p1', '没有标题但有内容')]),
+      lastModified: new Date().toISOString(),
+    });
     spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
     const embedSpy = spyOn(EmbeddingService, 'embedBatch').mockImplementation((inputs: string[]) =>
       Promise.resolve(inputs.map(() => new Float32Array([0.5]))),

@@ -4,6 +4,7 @@ import { paragraphTools } from '../services/ai/tools/paragraph-tools';
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
 import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-languages';
 import { ChapterContentService } from '../services/chapter-content-service';
+import { FullTextIndexService } from '../services/full-text-index-service';
 import { BookService } from '../services/book-service';
 import { getLanguageTranslation } from '../services/localization/selection';
 import type { ToolContext } from '../services/ai/tools/types';
@@ -37,6 +38,22 @@ const load = async () => (await ChapterContentService.loadChapterContent('c'))![
 afterEach(() => vi.restoreAllMocks());
 
 describe('段落工具执行语言', () => {
+  it('书籍目标切换后旧英文任务的索引替换仍只改英文选用', async () => {
+    const { books } = await setup();
+    await books.updateBook('fixture-book', { targetLanguage: 'zh-TW' });
+    const search = vi.spyOn(FullTextIndexService, 'search');
+    const result = await invoke('batch_replace_translations', {
+      keywords: ['English'],
+      replacement_text: 'Updated',
+    });
+    expect(result.replaced_count).toBe(1);
+    expect(search.mock.calls[0]![2]).toMatchObject({ language: 'en-US' });
+    const saved = await load();
+    expect(getLanguageTranslation(saved, 'en-US')?.translation).toBe('Updated original');
+    expect(getLanguageTranslation(saved, 'zh-CN')?.translation).toBe('CN original');
+    expect((await BookService.getBookById('fixture-book'))!.targetLanguage).toBe('zh-TW');
+  });
+
   for (const name of ['select_translation', 'update_translation', 'remove_translation']) {
     it(`${name} 拒绝其他语言 ID，不改变数据库与选用`, async () => {
       await setup();
@@ -47,7 +64,7 @@ describe('段落工具执行语言', () => {
           translation_id: 'cn',
           new_translation: 'Wrong language',
         }),
-      ).rejects.toThrow('TRANSLATION_LANGUAGE_MISMATCH');
+      ).rejects.toMatchObject({ code: 'TRANSLATION_LANGUAGE_MISMATCH' });
       expect(await load()).toEqual(before);
     });
   }

@@ -35,6 +35,7 @@ export async function maintainChapterContent(bookId: string, chapterIds: string[
           parsed: JSON.parse(serialized) as Paragraph[],
           serialized,
         });
+        await ChapterEmbeddingService.invalidateStaleChunksForChapter(id);
         markChapterDirty(id);
       } else {
         cancelChapterDirty(id);

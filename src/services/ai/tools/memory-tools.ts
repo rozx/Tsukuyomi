@@ -260,7 +260,7 @@ export const memoryTools: ToolDefinition[] = [
     handler: async (args, context) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, uiLocale } = checked;
+      const { bookId, onAction, uiLocale, language } = checked;
       const { query } = args as { query: string };
       if (!query || typeof query !== 'string' || !query.trim()) {
         return toolErrorJson(
@@ -271,7 +271,7 @@ export const memoryTools: ToolDefinition[] = [
       }
 
       try {
-        const memories = await MemoryService.searchMemories(bookId, query.trim());
+        const memories = await MemoryService.searchMemories(bookId, query.trim(), language);
 
         if (onAction) {
           onAction({
@@ -324,7 +324,7 @@ export const memoryTools: ToolDefinition[] = [
     handler: async (args, context) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, uiLocale } = checked;
+      const { bookId, onAction, uiLocale, language } = checked;
       const parsed = parseContentSummary(args, uiLocale);
       if ('error' in parsed) {
         return parsed.error;

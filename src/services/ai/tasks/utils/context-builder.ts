@@ -423,27 +423,25 @@ export function buildChapterSemanticQuery(
  * 4. 逐条打分 → 阈值过滤 → 字符预算填充
  * 5. 严格返回通过相关性门槛的记忆；不按访问时间凑数
  *
- * 同时写入 `lastScoreBreakdownsByBook`,供 translation-service 读取。
+ * 纯选择入口；生产评分旁路仅由实际注入入口发布，预览不修改执行数据。
  */
 function buildChunkEntities(
   terms: Terminology[] | undefined,
   characters: CharacterSetting[] | undefined,
+  targetLanguage: AppLocale,
 ): Array<{ name: string }> {
   const out: Array<{ name: string }> = [];
-  if (terms) {
-    for (const t of terms) {
-      if (t?.name) out.push({ name: t.name });
-    }
-  }
-  if (characters) {
-    for (const c of characters) {
-      if (c?.name) out.push({ name: c.name });
-      if (c?.aliases) {
-        for (const alias of c.aliases) {
-          if (alias?.name) out.push({ name: alias.name });
-        }
-      }
-    }
+  const addNames = (
+    entity: Terminology | CharacterSetting | CharacterSetting['aliases'][number],
+  ) => {
+    if (entity.name) out.push({ name: entity.name });
+    const translation = getNameTranslation(entity, targetLanguage)?.translation;
+    if (translation) out.push({ name: translation });
+  };
+  for (const term of terms ?? []) addNames(term);
+  for (const character of characters ?? []) {
+    addNames(character);
+    for (const alias of character.aliases ?? []) addNames(alias);
   }
   return out;
 }
@@ -475,12 +473,13 @@ function collectBreakdownsForMemories(
   return breakdowns;
 }
 
-export async function selectRelevantMemoriesForChunk(
+async function selectMemoriesByScore(
   bookId: string,
   chunkText: string,
   existingTerms?: Terminology[],
   existingCharacters?: CharacterSetting[],
   semanticQueryContext?: string,
+  targetLanguage: AppLocale = 'zh-CN',
 ): Promise<SelectedMemories> {
   const empty: SelectedMemories = {
     memories: [],
@@ -490,10 +489,9 @@ export async function selectRelevantMemoriesForChunk(
   };
   if (!bookId || !chunkText) return empty;
 
+  const chunkEntities = buildChunkEntities(existingTerms, existingCharacters, targetLanguage);
   const allMemories = await MemoryService.getAllBookMemories(bookId);
   if (allMemories.length === 0) return empty;
-
-  const chunkEntities = buildChunkEntities(existingTerms, existingCharacters);
   const semanticContextEmbeddings = semanticQueryContext?.trim()
     ? await computeChunkEmbeddings(semanticQueryContext)
     : [];
@@ -511,14 +509,37 @@ export async function selectRelevantMemoriesForChunk(
   const memories = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
   const breakdowns = collectBreakdownsForMemories(memories, scored);
 
-  lastScoreBreakdownsByBook.set(bookId, breakdowns);
-
   return {
     memories,
     breakdowns,
     fromFallback: false,
     totalMemoryCount: allMemories.length,
   };
+}
+
+/** 预览与实际注入共用的只读选择入口，评分失败统一回退最近记忆。 */
+export async function selectRelevantMemoriesForChunk(
+  bookId: string,
+  chunkText: string,
+  existingTerms?: Terminology[],
+  existingCharacters?: CharacterSetting[],
+  semanticQueryContext?: string,
+  targetLanguage: AppLocale = 'zh-CN',
+): Promise<SelectedMemories> {
+  try {
+    return await selectMemoriesByScore(
+      bookId,
+      chunkText,
+      existingTerms,
+      existingCharacters,
+      semanticQueryContext,
+      targetLanguage,
+    );
+  } catch (error) {
+    console.warn('[context-builder] 混合相关性打分失败,退回最近记忆:', error);
+    const memories = await MemoryService.getRecentMemories(bookId, 15, 'lastAccessedAt', false);
+    return { memories, breakdowns: {}, fromFallback: true, totalMemoryCount: memories.length };
+  }
 }
 
 /**
@@ -536,6 +557,7 @@ export async function getRelatedMemoriesForChunk(
   existingCharacters?: CharacterSetting[],
   semanticQueryContext?: string,
   uiLocale: AppLocale = 'zh-CN',
+  targetLanguage: AppLocale = 'zh-CN',
 ): Promise<string> {
   if (!bookId || !chunkText) return '';
 
@@ -547,8 +569,10 @@ export async function getRelatedMemoriesForChunk(
         existingTerms,
         existingCharacters,
         semanticQueryContext,
+        targetLanguage,
       );
 
+    lastScoreBreakdownsByBook.set(bookId, breakdowns);
     if (memories.length === 0) return '';
 
     const logLines = memories.map((m) => {
@@ -565,6 +589,7 @@ export async function getRelatedMemoriesForChunk(
 
     return formatMemoryContext(memories, uiLocale);
   } catch (error) {
+    lastScoreBreakdownsByBook.set(bookId, {});
     console.warn('[context-builder] 混合相关性打分失败,退回 legacy LRU:', error);
     return getRelatedMemoriesForChunkLegacy(bookId, chunkText, 15, uiLocale);
   }
@@ -651,6 +676,7 @@ async function buildCurrentChunkContext(
     characters,
     semanticQueryContext,
     languages.uiLocale,
+    languages.targetLanguage,
   );
   if (memoryContext) {
     currentChunkContext += memoryContext;

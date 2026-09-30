@@ -7,11 +7,12 @@ import { runAbortable } from 'src/utils/abortable-operation';
 
 export class ImportMetadataService {
   static async prepareSearch(taskId: string, query: string, signal?: AbortSignal) {
-    if (!(await ImportRepository.getTask(taskId)))
-      throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+    const task = await ImportRepository.getTask(taskId);
+    if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+    const uiLocale = task.checkpoint?.uiLocale ?? 'zh-CN';
     if (typeof query !== 'string' || !query.trim() || query.length > 1000)
       throw new Error('INVALID_QUERY: 元信息检索词无效');
-    const searched = await runAbortable(signal, () => searchWeb(query, signal));
+    const searched = await runAbortable(signal, () => searchWeb(query, signal, uiLocale));
     const newSources: ImportSource[] = [];
     const results: { title: string; snippet: string; url: string; sourceId: string }[] = [];
     const seen = new Map<string, ImportSource>();
@@ -44,6 +45,7 @@ export class ImportMetadataService {
         success: searched.success,
         results,
         ...(searched.error ? { error: searched.error } : {}),
+        ...(searched.error_code ? { error_code: searched.error_code } : {}),
         ...(searched.message ? { message: searched.message } : {}),
         ...(searched.answer ? { answer: searched.answer } : {}),
         purpose: 'metadata-only' as const,

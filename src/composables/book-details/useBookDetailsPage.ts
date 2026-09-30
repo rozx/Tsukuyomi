@@ -1,3 +1,4 @@
+import { useMemoryReferences } from './useMemoryReferences';
 import { getLanguageTranslation } from 'src/services/localization/selection';
 import { BookService } from 'src/services/book-service';
 import {
@@ -52,9 +53,7 @@ import type {
   Terminology,
   CharacterSetting,
   Paragraph,
-  ScoreBreakdown,
 } from 'src/models/novel';
-import type { MemoryReference } from 'src/components/novel/memory-reference-types';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
 import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import {
@@ -73,10 +72,6 @@ import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { MemoryService } from 'src/services/memory-service';
-import {
-  buildChapterSemanticQuery,
-  selectRelevantMemoriesForChunk,
-} from 'src/services/ai/tasks/utils/context-builder';
 import { buildNovelSettingsUpdate, hasChapterInstructionPayload } from './chapter-settings-update';
 import type { ChapterSettingsFormData } from './chapter-settings-update';
 import type { Memory } from 'src/models/memory';
@@ -1324,19 +1319,6 @@ function createBookDetailsPageContext() {
     }
   };
 
-  let memoryPreviewTimer: ReturnType<typeof setTimeout> | null = null;
-  const scheduleMemoryPreview = (delayMs = 500) => {
-    if (memoryPreviewTimer) clearTimeout(memoryPreviewTimer);
-    if (selectedChapterParagraphs.value.length === 0) {
-      usedMemoryReferences.value = [];
-      mergedScoreBreakdowns.value = {};
-      return;
-    }
-    memoryPreviewTimer = setTimeout(() => {
-      void refreshReferencedMemories();
-    }, delayMs);
-  };
-
   onMounted(() => {
     setTimeout(() => {
       isPageLoading.value = false;
@@ -1364,10 +1346,7 @@ function createBookDetailsPageContext() {
     contextStore.clearContext();
     embeddingUnsubscribers.forEach((u) => u());
     embeddingUnsubscribers.length = 0;
-    if (memoryPreviewTimer) {
-      clearTimeout(memoryPreviewTimer);
-      memoryPreviewTimer = null;
-    }
+
     cleanupParagraphNavigation();
     window.removeEventListener('keydown', handleKeydown, true);
     window.removeEventListener('click', handleClick);
@@ -1627,49 +1606,15 @@ function createBookDetailsPageContext() {
 
   const memoryPopover = ref<InstanceType<typeof Popover> | null>(null);
   const isMemoryPopoverOpen = ref(false);
-  const usedMemoryReferences = ref<MemoryReference[]>([]);
-  const isLoadingMemoryReferences = ref(false);
   const showMemoryDetailDialog = ref(false);
   const detailMemory = ref<Memory | null>(null);
-  const mergedScoreBreakdowns = ref<Record<string, ScoreBreakdown>>({});
-
-  const refreshReferencedMemories = async () => {
-    if (!bookId.value || !selectedChapterParagraphs.value.length) {
-      usedMemoryReferences.value = [];
-      mergedScoreBreakdowns.value = {};
-      return;
-    }
-
-    isLoadingMemoryReferences.value = true;
-    try {
-      const chunkText = selectedChapterParagraphs.value.map((p) => p.text).join('\n');
-      if (!chunkText.trim()) {
-        usedMemoryReferences.value = [];
-        mergedScoreBreakdowns.value = {};
-        return;
-      }
-
-      const { memories, breakdowns } = await selectRelevantMemoriesForChunk(
-        bookId.value,
-        chunkText,
-        usedTerms.value,
-        usedCharacters.value,
-        buildChapterSemanticQuery(selectedChapterWithContent.value ?? undefined),
-      );
-
-      mergedScoreBreakdowns.value = breakdowns;
-      usedMemoryReferences.value = memories.map((m) => ({
-        memoryId: m.id,
-        summary: m.summary,
-        accessedAt: m.lastAccessedAt,
-        toolName: 'search_memories' as const,
-      }));
-    } catch (error) {
-      console.warn('Failed to compute memory preview:', error);
-    } finally {
-      isLoadingMemoryReferences.value = false;
-    }
-  };
+  const {
+    usedMemoryReferences,
+    isLoadingMemoryReferences,
+    mergedScoreBreakdowns,
+    refreshReferencedMemories,
+    scheduleMemoryPreview,
+  } = useMemoryReferences(book, selectedChapterWithContent, usedTerms, usedCharacters);
 
   const handleToggleMemoryPopover = (event: Event) => {
     memoryPopover.value?.toggle(event);
@@ -1682,12 +1627,6 @@ function createBookDetailsPageContext() {
   const handleMemoryPopoverHide = () => {
     isMemoryPopoverOpen.value = false;
   };
-
-  watch(
-    () => [selectedChapterId.value, selectedChapterParagraphs.value.length] as const,
-    () => scheduleMemoryPreview(),
-    { immediate: true },
-  );
 
   const closeMemoryPopover = () => {
     memoryPopover.value?.hide();

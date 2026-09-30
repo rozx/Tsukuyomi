@@ -1,3 +1,4 @@
+import type { AppLocale } from 'src/models/locale';
 import { LocalizedError } from 'src/utils/localized-error';
 import type { IDBPIndex } from 'idb';
 import type { TsukuyomiDB } from 'src/utils/indexed-db';
@@ -668,6 +669,7 @@ export class MemoryService {
     bookId: string,
     query: string,
     limit = 8,
+    language?: AppLocale,
   ): Promise<ScoredMemory[]> {
     if (!bookId) {
       throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
@@ -706,7 +708,10 @@ export class MemoryService {
             import('src/services/chapter-embedding-service'),
           ]);
         const book = await loadBookMetaFromDB(bookId);
-        expandedQuery = expandQueryWithAliases(queryText, buildBookAliasIndex(book));
+        expandedQuery = expandQueryWithAliases(
+          queryText,
+          buildBookAliasIndex(book, language ?? book?.targetLanguage ?? 'zh-CN'),
+        );
       } catch {
         // 元数据不可用时保留原始 query
       }
@@ -758,8 +763,12 @@ export class MemoryService {
   }
 
   /** 搜索 Memory 的简化入口，只返回记忆实体。 */
-  static async searchMemories(bookId: string, query: string): Promise<Memory[]> {
-    const scored = await this.searchMemoriesWithScores(bookId, query);
+  static async searchMemories(
+    bookId: string,
+    query: string,
+    language?: AppLocale,
+  ): Promise<Memory[]> {
+    const scored = await this.searchMemoriesWithScores(bookId, query, 8, language);
     return scored.map((item) => item.memory);
   }
 

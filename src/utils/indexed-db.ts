@@ -1,5 +1,6 @@
 import { LibraryPersistence } from 'src/services/library-persistence';
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import type { AppLocale } from 'src/models/locale';
 import type { Novel } from 'src/models/novel';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { AppSettings } from 'src/models/settings';
@@ -172,6 +173,10 @@ export interface TsukuyomiDB extends DBSchema {
     key: string;
     value: {
       bookId: string;
+      schemaVersion?: number;
+      inputSignature?: string;
+      sourceRevision?: number;
+      targetLanguage?: AppLocale;
       indexData: string; // 序列化的 Fuse.js 索引数据
       lastUpdated: string; // ISO 日期字符串
     };

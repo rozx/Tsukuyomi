@@ -1,4 +1,10 @@
+import helpFeedback from './help-feedback';
+import paragraphFeedback from './paragraph-feedback';
+import batchFeedback from './batch-feedback';
 export default {
+  ...helpFeedback,
+  ...paragraphFeedback,
+  ...batchFeedback,
   aiToolFeedback: {
     unknownTool: 'Unknown tool: {tool}',
     unknownError: 'Unknown error',

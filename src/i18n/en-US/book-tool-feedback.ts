@@ -1,5 +1,8 @@
 export default {
   aiBookFeedback: {
+    fullTextChanged: 'Full-text index inputs changed. The outdated result was discarded; retry.',
+    cacheRebuilding:
+      'Chapter embeddings are being rebuilt for the target language. Retry later or use original and target-language reading tools.',
     volumeIdsRequired: 'Provide a valid volume_ids list',
     queryRequired: 'A chapter query is required',
     titleRequired: 'Provide title_original or title_translation',
