@@ -190,6 +190,7 @@ const confirmDelete = (task: ImportTask) => {
 
 .itl-tag {
   font-size: 0.65rem;
+  white-space: nowrap;
 }
 
 .itl-running {

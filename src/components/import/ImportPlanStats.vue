@@ -149,8 +149,10 @@ const translation = computed(() => {
 
 .ist-label {
   font-size: 0.7rem;
+  line-height: 1.25;
   color: rgba(226, 232, 240, 0.55);
-  white-space: nowrap;
+  /* 英文标签较长，窄栏四列时换行而不是溢出 */
+  overflow-wrap: break-word;
 }
 
 .ist-cell--zero .ist-value {
