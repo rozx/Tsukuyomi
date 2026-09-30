@@ -59,6 +59,15 @@ const moveChapter = (chapterId: string, delta: number) => emit('moveChapter', ch
 const visible = computed(() => props.chapters.slice(0, props.shown));
 const remaining = computed(() => props.chapters.length - visible.value.length);
 const collapsed = computed(() => props.shown === 0 && props.chapters.length > 0);
+const moveToLabel = computed(() => t('importUi.draftVolume.moveTo'));
+const toggleLabel = computed(() =>
+  t(collapsed.value ? 'importUi.draftVolume.expand' : 'importUi.draftVolume.collapse', {
+    title: props.volume.title,
+  }),
+);
+const showMoreLabel = computed(() =>
+  t('importUi.draftVolume.showMoreLabel', { title: props.volume.title, count: remaining.value }),
+);
 const toggle = () =>
   emit('show', props.volume.id, toggleDraftVolume(props.shown, props.chapters.length));
 const showMore = () =>
@@ -92,11 +101,7 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
         v-if="chapters.length"
         type="button"
         class="idv-icon"
-        :aria-label="
-          t(collapsed ? 'importUi.draftVolume.expand' : 'importUi.draftVolume.collapse', {
-            title: volume.title,
-          })
-        "
+        :aria-label="toggleLabel"
         :aria-expanded="!collapsed"
         @click="toggle"
       >
@@ -172,9 +177,7 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
       v-if="!collapsed && remaining > 0"
       type="button"
       class="idv-more"
-      :aria-label="
-        t('importUi.draftVolume.showMoreLabel', { title: volume.title, count: remaining })
-      "
+      :aria-label="showMoreLabel"
       @click="showMore"
     >
       <i class="pi pi-angle-double-down" aria-hidden="true" />
@@ -186,9 +189,9 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
       }}
     </button>
     <Menu ref="volumeMenu" :model="volumeMenuItems" popup>
-      <template #start
-        ><div class="idv-menu-title">{{ t('importUi.draftVolume.moveTo') }}</div></template
-      >
+      <template #start>
+        <div class="idv-menu-title">{{ moveToLabel }}</div>
+      </template>
     </Menu>
   </div>
 </template>
