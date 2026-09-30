@@ -2,6 +2,8 @@ import { useConfirm } from 'primevue/useconfirm';
 import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
 import { useSettingsStore } from 'src/stores/settings';
 import type { SyncConfig } from 'src/models/sync';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 
 /**
  * 强制推送 composable：封装"弹出确认对话框 → 调用 forceSync"的交互
@@ -13,6 +15,8 @@ export function useForceSync() {
   const confirm = useConfirm();
   const { forceSync } = useGistSync();
   const settingsStore = useSettingsStore();
+  const t = (key: string, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, `syncUi.actions.${key}` as MessageKey, values);
 
   /**
    * 弹出确认对话框；用户确认后执行强制推送。
@@ -39,16 +43,15 @@ export function useForceSync() {
     return new Promise<void>((resolve, reject) => {
       confirm.require({
         group: 'force-sync',
-        header: '确认强制推送',
-        message:
-          '这将用本地数据完全覆盖远程 Gist。远程上本地没有的书籍、记忆、AI 模型配置将被永久删除。此操作不可撤销。确认继续？',
+        header: t('forceConfirmHeader'),
+        message: t('forceConfirmMessage'),
         icon: 'pi pi-exclamation-triangle',
         rejectProps: {
-          label: '取消',
+          label: t('cancel'),
           severity: 'secondary',
         },
         acceptProps: {
-          label: '强制推送',
+          label: t('forcePush'),
           severity: 'danger',
         },
         accept: () => {

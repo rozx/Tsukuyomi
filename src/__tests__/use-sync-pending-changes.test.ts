@@ -7,7 +7,7 @@ import * as CoverHistoryStore from 'src/stores/cover-history';
 import * as SettingsStore from 'src/stores/settings';
 import { dispatchMemoryChanged } from 'src/services/memory-cache';
 import { MemoryService } from 'src/services/memory-service';
-import { useSyncPendingChanges } from 'src/composables/useSyncPendingChanges';
+import { useSyncPendingChanges, useSyncStatusDisplay } from 'src/composables/useSyncPendingChanges';
 import { getDB } from 'src/utils/indexed-db';
 
 const flushPendingChanges = async () => {
@@ -30,7 +30,9 @@ const waitForPendingItem = async (
 
 describe('useSyncPendingChanges', () => {
   const settingsStore = reactive({
+    uiLocale: 'zh-CN',
     gistSync: {
+      enabled: true,
       lastSyncTime: 1_000,
       deletedNovelIds: [],
       deletedModelIds: [],
@@ -48,6 +50,7 @@ describe('useSyncPendingChanges', () => {
   const coverHistoryStore = reactive({ covers: [] });
 
   beforeEach(() => {
+    settingsStore.uiLocale = 'zh-CN';
     settingsStore.gistSync.lastSyncTime = 1_000;
     settingsStore.gistSync.deletedNovelIds = [];
     settingsStore.gistSync.deletedModelIds = [];
@@ -201,6 +204,27 @@ describe('useSyncPendingChanges', () => {
       ]),
     );
 
+    scope.stop();
+  });
+
+  it('删除记录与状态文案跟随界面语言', async () => {
+    settingsStore.uiLocale = 'en-US';
+    booksStore.books = [];
+    settingsStore.gistSync.deletedNovelIds = [{ id: 'b9', deletedAt: 2_000 }] as never;
+    settingsStore.gistSync.deletedMemoryIds = [{ id: 'm9', deletedAt: 2_000 }] as never;
+    const colors = { disabled: '', syncing: '', pending: '', synced: '', unsynced: '' };
+
+    const scope = effectScope();
+    const state = scope.run(() => useSyncStatusDisplay(colors));
+    await flushPendingChanges();
+
+    expect(state?.pendingItems.value.map((item) => item.label).sort()).toEqual([
+      'Book b9',
+      'Memory m9',
+    ]);
+    expect(state?.syncStatus.value.label).toBe('2 changes');
+    settingsStore.uiLocale = 'zh-TW';
+    expect(state?.syncStatus.value.label).toBe('2 項變更');
     scope.stop();
   });
 });

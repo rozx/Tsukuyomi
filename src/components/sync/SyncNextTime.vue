@@ -5,6 +5,10 @@
  */
 import { computed } from 'vue';
 import { formatRelativeTime } from 'src/utils/format';
+import { useSettingsStore } from 'src/stores/settings';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 interface Props {
   enabled: boolean;
@@ -13,17 +17,18 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const settingsStore = useSettingsStore();
 
 const formatNextSyncTime = computed(() => {
   const next = props.nextSyncTime;
-  if (!next) return '未设置';
+  if (!next) return t('syncUi.panel.notScheduled');
   const diff = next - props.nowMs;
-  if (diff <= 0) return '即将同步';
+  if (diff <= 0) return t('syncUi.panel.soon');
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(minutes / 60);
-  if (hours > 0) return `${hours} 小时后`;
-  if (minutes > 0) return `${minutes} 分钟后`;
-  return '即将同步';
+  if (hours > 0) return t('syncUi.panel.inHours', { count: hours });
+  if (minutes > 0) return t('syncUi.panel.inMinutes', { count: minutes });
+  return t('syncUi.panel.soon');
 });
 
 const showRelative = computed(() => props.enabled && !!props.nextSyncTime);
@@ -31,14 +36,14 @@ const showRelative = computed(() => props.enabled && !!props.nextSyncTime);
 
 <template>
   <div>
-    <label class="text-xs text-moon/60">下次同步时间</label>
+    <label class="text-xs text-moon/60">{{ t('syncUi.panel.next') }}</label>
     <p v-if="enabled && nextSyncTime" class="text-sm text-moon/90 mt-1">
       {{ formatNextSyncTime }}
     </p>
-    <p v-else-if="enabled" class="text-sm text-moon/70 mt-1">未设置自动同步</p>
-    <p v-else class="text-sm text-moon/70 mt-1">未启用</p>
+    <p v-else-if="enabled" class="text-sm text-moon/70 mt-1">{{ t('syncUi.panel.autoOff') }}</p>
+    <p v-else class="text-sm text-moon/70 mt-1">{{ t('syncUi.panel.off') }}</p>
     <p v-if="showRelative" class="text-xs text-moon/50 mt-1">
-      {{ formatRelativeTime(nextSyncTime!, nowMs) }}
+      {{ formatRelativeTime(nextSyncTime!, nowMs, settingsStore.uiLocale) }}
     </p>
   </div>
 </template>

@@ -9,6 +9,9 @@ import type { Memory } from 'src/models/memory';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSyncExecutor } from 'src/composables/useSyncExecutor';
 import type { SyncConfig } from 'src/models/sync';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 
 /**
  * Gist 同步 composable
@@ -21,6 +24,14 @@ export function useGistSync() {
   const coverHistoryStore = useCoverHistoryStore();
   const toast = useToastWithHistory();
   const { executeSync, executeForceSync } = useSyncExecutor();
+  const t = (key: string, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, `syncUi.actions.${key}` as MessageKey, values);
+  const errText = (error: unknown, fallback: string) =>
+    localizedErrorMessage(
+      error,
+      settingsStore.uiLocale,
+      `syncUi.actions.${fallback}` as MessageKey,
+    );
 
   /**
    * 构造传给 executeSync / executeForceSync 的选项
@@ -70,10 +81,10 @@ export function useGistSync() {
       return result.restorableItems;
     } catch (error) {
       console.error('[useGistSync] 同步异常:', error);
-      const errorMsg = error instanceof Error ? error.message : '同步时发生未知错误';
+      const errorMsg = errText(error, 'syncUnknown');
       toast.add({
         severity: 'error',
-        summary: '同步失败',
+        summary: t('syncFailed'),
         detail: errorMsg,
         life: 5000,
       });
@@ -99,16 +110,19 @@ export function useGistSync() {
 
     toast.add({
       severity: 'success',
-      summary: '恢复成功',
-      detail: `已恢复 ${items.length} 个项目`,
+      summary: t('restored'),
+      detail: t('restoredCount', { count: items.length }),
       life: 3000,
     });
   };
 
   /** 按 type 把待恢复项分成 novels / models / covers / memories 四组 */
-  function groupRestorableItems(
-    items: RestorableItem[],
-  ): { novels: unknown[]; models: unknown[]; covers: unknown[]; memories: unknown[] } {
+  function groupRestorableItems(items: RestorableItem[]): {
+    novels: unknown[];
+    models: unknown[];
+    covers: unknown[];
+    memories: unknown[];
+  } {
     const novels: unknown[] = [];
     const models: unknown[] = [];
     const covers: unknown[] = [];
@@ -260,10 +274,10 @@ export function useGistSync() {
       await executeForceSync(buildExecutorOptions(config));
     } catch (error) {
       console.error('[useGistSync] 强制推送异常:', error);
-      const errorMsg = error instanceof Error ? error.message : '强制推送时发生未知错误';
+      const errorMsg = errText(error, 'forceUnknown');
       toast.add({
         severity: 'error',
-        summary: '强制推送失败',
+        summary: t('forceFailed'),
         detail: errorMsg,
         life: 5000,
       });

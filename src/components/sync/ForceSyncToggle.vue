@@ -12,6 +12,9 @@
 import { computed, useId } from 'vue';
 import Checkbox from 'primevue/checkbox';
 import { useSettingsStore } from 'src/stores/settings';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -51,9 +54,11 @@ const hasFailure = computed(
         @update:model-value="(value) => (active = value as boolean)"
       />
       <label :for="inputId" class="flex-1 cursor-pointer">
-        <div class="text-xs text-moon/90 leading-tight">强制推送本地数据到远程（覆盖远程）</div>
+        <div class="text-xs text-moon/90 leading-tight">
+          {{ t('syncUi.panel.force.title') }}
+        </div>
         <div class="text-[10px] text-moon/60 mt-0.5 leading-snug">
-          开启后，点击同步会将本地数据完全覆盖远程，远程上本地没有的条目将被删除
+          {{ t('syncUi.panel.force.hint') }}
         </div>
       </label>
     </div>
@@ -63,7 +68,7 @@ const hasFailure = computed(
     >
       <i class="pi pi-exclamation-triangle text-red-400 text-xs" />
       <span class="text-[10px] text-red-300 leading-tight">
-        上次强制推送失败 —— 点击同步重试，或关闭 toggle 退出
+        {{ t('syncUi.panel.force.failed') }}
       </span>
     </div>
   </div>

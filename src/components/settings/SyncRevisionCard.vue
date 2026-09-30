@@ -6,8 +6,12 @@
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import { formatRelativeTime } from 'src/utils/format';
+import { useSettingsStore } from 'src/stores/settings';
 import type { RevisionFileStatus } from 'src/components/settings/sync-revision-display';
 import SyncRevisionFileList from './SyncRevisionFileList.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   version: string;
@@ -28,9 +32,14 @@ const emit = defineEmits<{
   revert: [event: Event];
 }>();
 
+const settingsStore = useSettingsStore();
 const shortVersion = computed(() => props.version.substring(0, 7));
-const relativeTime = computed(() => formatRelativeTime(new Date(props.committedAt).getTime()));
-const localTime = computed(() => new Date(props.committedAt).toLocaleString('zh-CN'));
+const relativeTime = computed(() =>
+  formatRelativeTime(new Date(props.committedAt).getTime(), undefined, settingsStore.uiLocale),
+);
+const localTime = computed(() =>
+  new Date(props.committedAt).toLocaleString(settingsStore.uiLocale),
+);
 const chevronIcon = computed(() =>
   props.isExpanded ? 'pi pi-chevron-down' : 'pi pi-chevron-right',
 );
@@ -67,7 +76,7 @@ const onRevertClick = (event: Event) => {
       </div>
       <div class="revision-actions flex items-center gap-2 ml-4 flex-shrink-0">
         <Button
-          label="恢复"
+          :label="t('syncUi.revision.restore')"
           icon="pi pi-undo"
           class="p-button-text p-button-sm"
           :disabled="isRestoreDisabled"

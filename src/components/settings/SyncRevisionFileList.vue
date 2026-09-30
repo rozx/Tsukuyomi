@@ -5,12 +5,16 @@
  */
 import { computed } from 'vue';
 import { useBooksStore } from 'src/stores/books';
+import { useSettingsStore } from 'src/stores/settings';
 import {
   getGroupedFiles,
   formatFileSize,
   type GroupedRevisionFile,
   type RevisionFileStatus,
 } from 'src/components/settings/sync-revision-display';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   isLoading: boolean;
@@ -25,10 +29,11 @@ const props = defineProps<{
 }>();
 
 const booksStore = useBooksStore();
+const settingsStore = useSettingsStore();
 
 const hasFiles = computed(() => !!props.files && props.files.length > 0);
 const groupedFiles = computed<GroupedRevisionFile[]>(() =>
-  getGroupedFiles(props.files ?? [], booksStore.books),
+  getGroupedFiles(props.files ?? [], booksStore.books, settingsStore.uiLocale),
 );
 const sizeText = (file: GroupedRevisionFile) =>
   file.size !== undefined ? formatFileSize(file.size) : '-';
@@ -46,7 +51,7 @@ const sizeDiffText = (file: GroupedRevisionFile) =>
 <template>
   <div v-if="isLoading" class="text-center py-4">
     <i class="pi pi-spin pi-spinner text-moon/60" />
-    <span class="text-sm text-moon/60 ml-2">加载中...</span>
+    <span class="text-sm text-moon/60 ml-2">{{ t('syncUi.revision.loading') }}</span>
   </div>
   <div v-else-if="hasFiles" class="space-y-2">
     <div
@@ -66,5 +71,7 @@ const sizeDiffText = (file: GroupedRevisionFile) =>
       </div>
     </div>
   </div>
-  <p v-else class="text-sm text-moon/60 text-center py-2">无文件变更信息</p>
+  <p v-else class="text-sm text-moon/60 text-center py-2">
+    {{ t('syncUi.revision.noFiles') }}
+  </p>
 </template>

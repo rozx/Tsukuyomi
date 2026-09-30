@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 import './setup';
+import { ManifestProtocolError } from 'src/utils/manifest-protocol';
 
 import { useGistSync } from '../composables/useGistUploadWithConflictCheck';
 import { GistSyncService } from '../services/gist-sync-service';
@@ -261,6 +262,23 @@ describe('useGistSync (manifest-driven flow)', () => {
       expect(uploadSpy).not.toHaveBeenCalled();
       expect(mockToastAdd).toHaveBeenCalledWith(
         expect.objectContaining({ severity: 'error', summary: '下载失败' }),
+      );
+    });
+
+    it('英文界面下失败提示为英文，自有错误按界面语言重新渲染', async () => {
+      mockSettingsStore.uiLocale = 'en-US';
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockRejectedValue(
+        new ManifestProtocolError('MANIFEST_INVALID', 'invalid'),
+      );
+
+      await useGistSync().sync();
+
+      expect(mockToastAdd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severity: 'error',
+          summary: 'Download failed',
+          detail: 'manifest.json has an invalid format',
+        }),
       );
     });
   });
