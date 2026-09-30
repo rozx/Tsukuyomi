@@ -1,6 +1,5 @@
 import { importFailure, importError, readImportError, serializeImportError } from './import-error';
 import type { ImportNotice } from 'src/models/import-feedback';
-import type { AppLocale } from 'src/models/locale';
 
 import type { Novel, Chapter } from 'src/models/novel';
 import { getDB } from 'src/utils/indexed-db';
@@ -133,7 +132,7 @@ export class ImportLibraryService {
     taskId: string,
     bookId: string,
     chapterId: string,
-    options: { offset?: number; limit?: number; uiLocale?: AppLocale } = {},
+    options: { offset?: number; limit?: number } = {},
   ) {
     await requireTask(taskId);
     const { offset, limit } = pagination(options, 30);
@@ -184,11 +183,8 @@ export class ImportLibraryService {
       total,
       ...(loaded.kind === 'failed'
         ? {
-            error: serializeImportError(
-              readImportError(loaded),
-              'CHAPTER_READ_FAILED',
-              options.uiLocale ?? 'zh-CN',
-            ).message,
+            // 保留可重投影的自有错误记录：返回模型时投影为简中，工作台事件按界面语言展示
+            error: serializeImportError(readImportError(loaded), 'CHAPTER_READ_FAILED'),
           }
         : {}),
       ...(total !== undefined && offset + paragraphs.length < total

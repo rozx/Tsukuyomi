@@ -1,4 +1,4 @@
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import type { MessageKey } from 'src/i18n/types';
 import type { ExecutionLanguages, AppLocale } from 'src/models/locale';
 import { captureExecutionLanguages } from './execution-languages';
@@ -271,7 +271,7 @@ export class TodoWorkflow {
       predefinedTodos.find((t) => t.status === 'working') ??
       predefinedTodos.find((t) => t.status !== 'done');
 
-    let block = translateText(this.languages.uiLocale, 'aiWorkflow.header');
+    let block = agentText('aiWorkflow.header');
 
     for (const todo of predefinedTodos) {
       const firstLine = todo.text.split('\n')[0]!;
@@ -287,13 +287,13 @@ export class TodoWorkflow {
     // 提醒行
     if (currentTodo) {
       const firstLine = currentTodo.text.split('\n')[0]!;
-      block += translateText(this.languages.uiLocale, 'aiWorkflow.current', { text: firstLine });
+      block += agentText('aiWorkflow.current', { text: firstLine });
     }
 
     if (allDone) {
-      block += translateText(this.languages.uiLocale, 'aiWorkflow.complete');
+      block += agentText('aiWorkflow.complete');
     } else {
-      block += translateText(this.languages.uiLocale, 'aiWorkflow.incomplete');
+      block += agentText('aiWorkflow.incomplete');
     }
 
     return block;

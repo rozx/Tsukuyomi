@@ -209,23 +209,20 @@ describe('AI 执行反馈语言', () => {
     });
   }
 
-  it('压缩摘要输入的工具标签使用执行语言', () => {
-    const lines = formatSummaryMessages(
-      [
-        {
-          role: 'assistant',
-          content: '',
-          tool_calls: [
-            { id: 'x', type: 'function', function: { name: 'list_chapters', arguments: '{}' } },
-          ],
-        },
-        { role: 'tool', tool_call_id: 'x', name: 'list_chapters', content: '[]' },
-      ],
-      'en-US',
-    );
+  it('压缩摘要输入的工具标签只给模型阅读，为简中单源', () => {
+    const lines = formatSummaryMessages([
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'x', type: 'function', function: { name: 'list_chapters', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'x', name: 'list_chapters', content: '[]' },
+    ]);
     expect(lines.map((line) => line.content)).toEqual([
-      'Tool call list_chapters (x): {}',
-      'Tool result list_chapters (x): []',
+      '工具调用 list_chapters (x): {}',
+      '工具结果 list_chapters (x): []',
     ]);
   });
 });

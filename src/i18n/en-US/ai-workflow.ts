@@ -1,7 +1,5 @@
 export default {
   aiWorkflow: {
-    postOutput:
-      'Done. {reminder}To revise existing output, return to working and submit only changed paragraphs. Otherwise finish according to the workflow.',
     planning: {
       '1': 'Confirm characters, terminology, and memories already in context; query tools only for missing or inaccurate information.',
       '2': 'Check surrounding paragraphs, chapters, or earlier events when needed.',
@@ -21,13 +19,5 @@ export default {
     title: 'Translate chapter title: {title}',
     batch: 'Process paragraph batch {index}/{total} ({count} paragraphs):\n{lines}',
     all: 'Process all paragraphs ({count} paragraphs):\n{lines}',
-    header: '\n[Todo list]\n',
-    current: '\nCurrent task: {text} — call mark_todo_done when finished.\n',
-    complete: '\nAll todos are complete. Proceed to the next stage.\n',
-    incomplete: 'Complete all todos before proceeding to the next stage.\n',
-    reminder: '\n[Todo reminder]\n',
-    workingReminder: 'Current item: {text}\nCall mark_todo_done when finished.\n',
-    pendingReminder:
-      '{count} todos remain.\nCall mark_todo_done when finished; use ids for a batch.\n',
   },
 };

@@ -377,7 +377,7 @@ export class ImportToolExecutor {
             (task) => Promise.resolve(applyImportTodoTool(task, name, args)),
             { run: this.run, finish },
           );
-        const read = await readImportTool(this.run, name, args, AGENT_LOCALE);
+        const read = await readImportTool(this.run, name, args);
         return save({ success: true, ...(read as Record<string, unknown>) });
       }
     }

@@ -83,7 +83,5 @@ export default {
       translationUnsupported: '所選模型不支援翻譯任務',
     },
     batchAction: '批次處理 {count} 個段落 ({preview}{suffix})',
-    summaryToolCall: '工具呼叫 {name} ({id}): {content}',
-    summaryToolResult: '工具結果 {name} ({id}): {content}',
   },
 };

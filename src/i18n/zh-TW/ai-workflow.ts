@@ -1,7 +1,5 @@
 export default {
   aiWorkflow: {
-    postOutput:
-      '完成。{reminder}需要修改已輸出結果時回到 working，只提交變化段落；否則按工作流程結束。',
     planning: {
       '1': '確認角色、術語、記憶資訊（上下文已提供，缺失或不準確時呼叫工具補充/搜尋）',
       '2': '取得前後文（如需要，可呼叫工具預覽段落/章節，或確認先前劇情）',
@@ -21,13 +19,5 @@ export default {
     title: '翻譯章節標題：「{title}」',
     batch: '處理段落批次 {index}/{total}（{count} 段）：\n{lines}',
     all: '處理全部段落（{count} 段）：\n{lines}',
-    header: '\n【待辦清單】\n',
-    current: '\n⚠️ 目前任務：{text} — 完成後呼叫 mark_todo_done 標記\n',
-    complete: '\n✅ 所有待辦已完成，可以進入下一階段\n',
-    incomplete: '⚠️ 完成所有待辦後才能進入下一階段\n',
-    reminder: '\n**[待辦提醒]**\n',
-    workingReminder: '→ 目前進行中：{text}\n完成後請呼叫 mark_todo_done 標記\n',
-    pendingReminder:
-      '還有 {count} 個待辦事項待處理\n完成後呼叫 mark_todo_done（多項可用 ids 批次標記）\n',
   },
 };

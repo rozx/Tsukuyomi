@@ -62,7 +62,7 @@ export async function summarizeInto({
   const budget = limits.contextWindow ? Math.floor(limits.contextWindow * 0.6) : 24000;
   const maxOutputTokens = Math.min(2048, limits.maxOutput ?? 2048);
   const multiplier = getEstimationMultiplier(modelContextKey(model));
-  const text = formatSummaryMessages(messages, uiLocale)
+  const text = formatSummaryMessages(messages)
     .map((message) => `[${message.role}] ${message.content}`)
     .join('\n\n');
   if (!text) throw new Error(translateText(uiLocale, 'aiAssistant.summaryEmpty'));

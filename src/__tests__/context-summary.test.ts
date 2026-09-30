@@ -82,7 +82,7 @@ describe('共享结构化摘要', () => {
       },
       { role: 'tool', tool_call_id: 'read1', name: 'read_book', content: 'x'.repeat(5000) },
     ];
-    const text = JSON.stringify(formatSummaryMessages(input, 'zh-CN'));
+    const text = JSON.stringify(formatSummaryMessages(input));
     expect(text).toContain('末尾问题');
     expect(text).toContain('最终答案');
     expect(text).toContain('book-123');
@@ -114,7 +114,7 @@ describe('共享结构化摘要', () => {
     });
     expect(spy.mock.calls.length).toBeGreaterThan(2);
     expect(chunks.join('')).toBe(
-      formatSummaryMessages(longMessages, 'zh-CN')
+      formatSummaryMessages(longMessages)
         .map((m) => `[${m.role}] ${m.content}`)
         .join('\n\n'),
     );

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { agentText } from '../i18n/translate';
 import './setup';
 import { TodoWorkflow } from '../services/ai/tasks/utils/todo-workflow';
 import { TodoListService } from '../services/todo-list-service';
@@ -41,5 +42,27 @@ describe('todo 执行语言和结构化预览', () => {
       'Process all paragraphs',
     );
     expect(TodoListService.getTodosByTaskId('locale-task')).toHaveLength(1);
+  });
+  it('待办文字按执行界面语言，注入模型的待办清单提示为简中单源', () => {
+    const workflow = new TodoWorkflow(
+      'translation',
+      'reminder-task',
+      0,
+      false,
+      captureExecutionLanguages('en-US', 'zh-CN'),
+    );
+    workflow.generateForState('working', {
+      paragraphIds: ['11111111'],
+      paragraphInputs: [{ id: '11111111', displayIndex: 1, originalText: 'source' }],
+      chunkText: '',
+      chunkIndex: 0,
+    });
+    const block = workflow.buildTodoContextBlock('working');
+    // 待办条目本身是用户可见文字，保持英文
+    expect(block).toContain('Process all paragraphs');
+    // 清单标题与提醒只给模型阅读
+    expect(block).toContain(agentText('aiWorkflow.header'));
+    expect(block).toContain('⚠️ 当前任务：');
+    expect(block).toContain(agentText('aiWorkflow.incomplete'));
   });
 });

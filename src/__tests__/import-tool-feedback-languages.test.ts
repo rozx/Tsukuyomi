@@ -64,8 +64,8 @@ async function fixture(locale: AppLocale) {
   return { task, run, invoke };
 }
 describe('导入工具自有错误沿检查点语言', () => {
-  it('章节读取的部分失败字符串返回模型时为简中单源，目标书名原文保留', async () => {
-    const { invoke } = await fixture('en-US');
+  it('章节读取失败返回模型时为简中、工作台事件按执行语言展示，目标书名原文保留', async () => {
+    const { task, invoke } = await fixture('en-US');
     const failure = ImportLibraryReader.decodeChapter({
       chapterId: 'c',
       content: '[{}]',
@@ -83,7 +83,16 @@ describe('导入工具自有错误沿检查点语言', () => {
     } as never);
     const result = await invoke('get_chapter_info', { book_id: 'b', chapter_id: 'c' });
     expect(result.status).toBe('failed');
-    expect(result.error).toContain('段落或译文数据形状无效');
+    expect(result.error.code).toBe('INVALID_CHAPTER_CONTENT');
+    expect(result.error.message).toContain('段落或译文数据形状无效');
+    // 失败保留可重投影的自有错误记录，工作台事件按检查点的英文展示
+    const { items } = await ImportRepository.listEvents(task.id);
+    const event = items.findLast(
+      (item) => item.kind === 'tool-result' && item.toolName === 'get_chapter_info',
+    )!;
+    const shown = (event.data as { error: { message: string } }).error.message;
+    expect(shown).toMatch(/paragraph/i);
+    expect(shown).not.toMatch(/\p{Script=Han}/u);
   });
 
   it('无标题HTML诊断的自有摘要说明使用英文，状态码与外部标题保留', () => {

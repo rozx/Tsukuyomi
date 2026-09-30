@@ -44,12 +44,12 @@ export function getPostToolCallReminder(
   const workingTodo = todos.find((t) => t.status === 'working');
   const pendingTodos = todos.filter((t) => t.status === 'pending');
 
-  let reminder = translateText(uiLocale, 'aiWorkflow.reminder');
+  let reminder = agentText('aiWorkflow.reminder');
   if (workingTodo) {
     const firstLine = workingTodo.text.split('\n')[0]!;
-    reminder += translateText(uiLocale, 'aiWorkflow.workingReminder', { text: firstLine });
+    reminder += agentText('aiWorkflow.workingReminder', { text: firstLine });
   } else if (pendingTodos.length > 0) {
-    reminder += translateText(uiLocale, 'aiWorkflow.pendingReminder', {
+    reminder += agentText('aiWorkflow.pendingReminder', {
       count: pendingTodos.length,
     });
   }

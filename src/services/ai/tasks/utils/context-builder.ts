@@ -163,7 +163,7 @@ export function buildBookContextSectionFromBook(
     parts.push(agentText('aiContext.description') + ': ' + normalizedDesc);
   }
   if (tags.length > 0) {
-    parts.push(agentText('aiContext.tags') + ': ' + tags.join(uiLocale === 'en-US' ? ', ' : '、'));
+    parts.push(agentText('aiContext.tags') + ': ' + tags.join('、'));
   }
   if (skipAskUser) {
     parts.push(agentText('aiContext.skipAsk'));
@@ -254,7 +254,7 @@ export function buildPostOutputPrompt(
   uiLocale: AppLocale = 'zh-CN',
 ): string {
   const reminder = taskId ? getPostToolCallReminder(undefined, taskId, undefined, uiLocale) : '';
-  return translateText(uiLocale, 'aiWorkflow.postOutput', { reminder });
+  return agentText('aiWorkflow.postOutput', { reminder });
 }
 
 /**
@@ -600,7 +600,7 @@ function buildChunkTermsSection(terms: Terminology[], languages: ExecutionLangua
       (term) =>
         term.name + ' → ' + (getNameTranslation(term, languages.targetLanguage)?.translation ?? ''),
     )
-    .join(languages.uiLocale === 'en-US' ? ', ' : '、');
+    .join('、');
   return '**' + agentText('aiContext.terms') + '**: ' + termList;
 }
 
@@ -973,7 +973,7 @@ export function formatCharacterAliases(
   if (!aliases || aliases.length === 0) return null;
   const aliasList = aliases
     .map((alias) => `${alias.name} → ${getNameTranslation(alias, language)?.translation ?? ''}`)
-    .join(uiLocale === 'en-US' ? ', ' : '、');
+    .join('、');
   return agentText('aiTasks.context.aliases', { aliases: aliasList });
 }
 

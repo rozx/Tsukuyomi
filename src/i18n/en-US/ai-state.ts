@@ -88,7 +88,5 @@ export default {
       translationUnsupported: 'The selected model does not support translation',
     },
     batchAction: 'Batch processed {count} paragraphs ({preview}{suffix})',
-    summaryToolCall: 'Tool call {name} ({id}): {content}',
-    summaryToolResult: 'Tool result {name} ({id}): {content}',
   },
 };

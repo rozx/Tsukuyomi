@@ -1,4 +1,3 @@
-import type { AppLocale } from 'src/models/locale';
 import { importError } from './import-error';
 import type { ImportDraftChapter, ImportResource, ImportRunContext } from 'src/models/import';
 import { ImportRepository } from './import-repository';
@@ -129,7 +128,6 @@ export async function readImportTool(
   run: ImportRunContext,
   name: string,
   args: Record<string, unknown>,
-  uiLocale: AppLocale = 'zh-CN',
 ): Promise<unknown> {
   const id = run.taskId;
   switch (name) {
@@ -162,7 +160,7 @@ export async function readImportTool(
         id,
         textArgument(args, 'book_id'),
         textArgument(args, 'chapter_id'),
-        { ...pageArguments(args), uiLocale },
+        pageArguments(args),
       );
     default:
       throw importError('TOOL_NOT_ALLOWED', 'toolNotAllowedUnsupportedReadTool', {});
