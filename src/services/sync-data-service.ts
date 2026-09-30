@@ -30,6 +30,7 @@ import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 import { stripNovelLocalFields } from 'src/utils/sync-strip';
 import { getErrorMessage } from 'src/utils/error-message';
+import { LocalizedError } from 'src/utils/localized-error';
 import { chapterStructureHash } from 'src/utils/chapter-structure-hash';
 import { getChapterBaselines, recordStructureBaselines } from 'src/services/sync-chapter-baselines';
 
@@ -1162,7 +1163,7 @@ export class SyncDataService {
       console.log('[SyncDataService] 数据恢复完成');
     } catch (restoreError) {
       console.error('[SyncDataService] 恢复数据失败:', restoreError);
-      throw new Error('数据恢复失败，请检查本地数据完整性');
+      throw new LocalizedError('SYNC_RESTORE_FAILED', 'syncUi.data.restoreFailed');
     }
   }
 
@@ -1196,7 +1197,7 @@ export class SyncDataService {
     // 验证远程数据的完整性
     if (!SyncDataService.validateRemoteData(remoteData)) {
       console.error('[SyncDataService] 远程数据验证失败，拒绝应用数据');
-      throw new Error('远程数据格式无效，无法应用');
+      throw new LocalizedError('SYNC_REMOTE_INVALID', 'syncUi.data.remoteInvalid');
     }
 
     // 创建数据备份（用于回滚，含内联章节内容）
@@ -1267,7 +1268,7 @@ export class SyncDataService {
     } catch (error) {
       // 发生错误，回滚到备份数据
       console.error('[SyncDataService] 应用下载数据时发生错误，正在回滚:', error);
-      await SyncDataService.rollbackWithBackupOrThrow(backup, error, '应用数据失败');
+      await SyncDataService.rollbackWithBackupOrThrow(backup, error, 'syncUi.data.rollbackApply');
       throw error; // unreachable，但 TS 的控制流推断需要这行
     }
   }
@@ -1279,16 +1280,16 @@ export class SyncDataService {
   private static async rollbackWithBackupOrThrow(
     backup: DataBackup,
     error: unknown,
-    errorPrefix: string,
+    failureKey: 'syncUi.data.rollbackApply' | 'syncUi.data.rollbackSnapshot',
   ): Promise<never> {
     try {
       await SyncDataService.restoreFromBackup(backup);
     } catch (rollbackError) {
       console.error('[SyncDataService] 回滚失败:', rollbackError);
-      throw new Error(
-        `${errorPrefix}: ${getErrorMessage(error)}; ` +
-          `回滚也失败: ${getErrorMessage(rollbackError)}`,
-      );
+      throw new LocalizedError('SYNC_ROLLBACK_FAILED', failureKey, {
+        error: getErrorMessage(error),
+        rollback: getErrorMessage(rollbackError),
+      });
     }
     throw error;
   }
@@ -2139,7 +2140,7 @@ export class SyncDataService {
 
     if (!SyncDataService.validateRemoteData(remoteData)) {
       console.error('[SyncDataService] 远程数据验证失败，拒绝覆盖');
-      throw new Error('远程数据格式无效，无法应用');
+      throw new LocalizedError('SYNC_REMOTE_INVALID', 'syncUi.data.remoteInvalid');
     }
 
     const db = await getDB();
@@ -2183,7 +2184,11 @@ export class SyncDataService {
       );
     } catch (error) {
       console.error('[SyncDataService] 覆盖快照时发生错误，正在回滚:', error);
-      await SyncDataService.rollbackWithBackupOrThrow(backup, error, '应用快照失败');
+      await SyncDataService.rollbackWithBackupOrThrow(
+        backup,
+        error,
+        'syncUi.data.rollbackSnapshot',
+      );
     }
   }
 

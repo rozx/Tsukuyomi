@@ -28,6 +28,7 @@ const state = {
 };
 
 const makeMockSettingsStore = () => ({
+  uiLocale: 'zh-CN',
   get gistSync() {
     return {
       enabled: true,
@@ -270,6 +271,31 @@ describe('结构冲突提示', () => {
     expect(message.detail).toContain('测试书 · 第5话');
     expect(message.detail).not.toContain('第6话');
     expect(message.detail).toContain('等 7 章');
+  });
+
+  it('英文界面下结构冲突提示与失败说明均为英文', async () => {
+    spyOn(SettingsStore, 'useSettingsStore').mockImplementation((() => ({
+      ...makeMockSettingsStore(),
+      uiLocale: 'en-US',
+    })) as unknown as typeof SettingsStore.useSettingsStore);
+    stubDownloadWithNovelChange();
+    spyOn(GistSyncService.prototype, 'uploadToGistIncremental').mockRejectedValue('offline');
+    mockBooksStore.books = [book('b1', [p('p1', '一')])];
+    spyOn(SyncDataService, 'applyPartialRemoteData').mockImplementation((_entries, report) => {
+      report?.structureConflicts.push(conflict(1));
+      return Promise.resolve([]);
+    });
+    const errors: string[] = [];
+
+    await useSyncExecutor().executeSync({
+      ...callbacks,
+      onError: (summary, detail) => errors.push(summary, detail),
+    });
+
+    const message = toastAdd.mock.calls[0]![0] as { summary: string; detail: string };
+    expect(message.summary).toBe('Sync found paragraph structure conflicts');
+    expect(message.detail).toContain('测试书 · 第1话: the paragraph structure was changed');
+    expect(errors).toEqual(['Upload failed', 'offline']);
   });
 
   it('同步失败时，已合并章节的冲突仍然提示', async () => {

@@ -22,6 +22,30 @@ import {
   diffManifests,
 } from 'src/services/sync-manifest-builder';
 import { parseGistManifest, UnsupportedManifestVersionError } from 'src/utils/manifest-protocol';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
+import { LocalizedError } from 'src/utils/localized-error';
+
+type SyncProgress = (progress: { current: number; total: number; message: string }) => void;
+
+/** 增量同步进度文案（syncUi.incremental.*），按调用方传入的界面语言生成 */
+function progressText(
+  locale: AppLocale,
+  key: string,
+  values: Record<string, string | number> = {},
+): string {
+  return translateText(locale, `syncUi.incremental.${key}` as MessageKey, values);
+}
+
+/** 增量同步的自有错误：带稳定错误码，显示时可按任意界面语言重新渲染 */
+function syncError(
+  code: string,
+  key: string,
+  values: Record<string, string | number> = {},
+): LocalizedError {
+  return new LocalizedError(code, `syncUi.incremental.${key}` as MessageKey, values);
+}
 import { normalizeBookLanguages } from './localization/normalize';
 import { stripNovelLocalFields } from 'src/utils/sync-strip';
 import { compressString, decompressString } from 'src/utils/compression';
@@ -286,7 +310,7 @@ async function serializeEntry(
   const bookId = bookIdForNovel ?? bookIdForMemory;
 
   if (!prefix || !chunkPrefix || !bookId) {
-    throw new Error(`未知的 entry key: ${entryKey}`);
+    throw syncError('SYNC_UNKNOWN_ENTRY', 'unknownEntry', { key: entryKey });
   }
 
   const singleName = `${prefix}${bookId}.json`;
@@ -509,14 +533,31 @@ export function parseMemoriesEnvelope(raw: unknown): MemoriesPayload | null {
   return null;
 }
 
+/**
+ * 条目读取失败的原因说明：文案 key（syncUi.service.* 下）与插值参数，
+ * 由调用方按界面语言渲染
+ */
+export interface SyncFailureReason {
+  key: string;
+  values: Record<string, string | number>;
+}
+
+const reason = (key: string, values: Record<string, string | number> = {}): SyncFailureReason => ({
+  key: `diagnose.${key}`,
+  values,
+});
+
 /** 单文件型条目(settings/ai-models/cover-history 或 chunks=0 的 novel/memories)的失败原因 */
-function describeSingleFileFailure(name: string, gistFiles: Record<string, GistFileLike>): string {
+function describeSingleFileFailure(
+  name: string,
+  gistFiles: Record<string, GistFileLike>,
+): SyncFailureReason {
   const file = gistFiles[name];
-  if (!file) return `文件 ${name} 缺失`;
-  if (file.truncated && !file.raw_url) return `文件 ${name} 被截断且无 raw_url`;
-  if (file.truncated) return `文件 ${name} 被截断,从 raw_url 获取失败`;
-  if (file.content == null) return `文件 ${name} 内容为空`;
-  return `文件 ${name} 内容解析失败`;
+  if (!file) return reason('fileMissing', { name });
+  if (file.truncated && !file.raw_url) return reason('fileTruncatedNoRaw', { name });
+  if (file.truncated) return reason('fileTruncatedFetch', { name });
+  if (file.content == null) return reason('fileEmpty', { name });
+  return reason('fileParse', { name });
 }
 
 /** 扫 gistFiles 里属于给定 bookId 的所有分块文件(宽松匹配,用于布局一致性检查) */
@@ -541,15 +582,15 @@ function describeBookSingleFileFailure(
   prefix: string,
   chunkPrefix: string,
   gistFiles: Record<string, GistFileLike>,
-): string {
+): SyncFailureReason {
   const singleName = `${prefix}${bookId}.json`;
   if (gistFiles[singleName]) return describeSingleFileFailure(singleName, gistFiles);
 
   const actualChunks = collectBookChunkFilenames(chunkPrefix, bookId, gistFiles);
   if (actualChunks.length > 0) {
-    return `manifest 声明为单文件,但实际存在 ${actualChunks.length} 个分块文件,布局不一致`;
+    return reason('singleButChunks', { count: actualChunks.length });
   }
-  return `${singleName} 缺失,也没有找到对应分块`;
+  return reason('singleMissing', { name: singleName });
 }
 
 /** 按 chunk 索引扫描分块分布(三种分隔符都查),返回每块的存在/截断状态 */
@@ -593,26 +634,26 @@ function describeBookChunkedFailure(
   chunkPrefix: string,
   chunks: number,
   gistFiles: Record<string, GistFileLike>,
-): string {
+): SyncFailureReason {
   const singleName = `${prefix}${bookId}.json`;
   const { missing, truncated } = scanChunkIndices(bookId, chunkPrefix, chunks, gistFiles);
 
   if (missing.length === chunks) {
     if (gistFiles[singleName]) {
-      return `manifest 声明 ${chunks} 块但实际为单文件布局,且单文件也读取失败`;
+      return reason('chunksButSingle', { chunks });
     }
-    return `manifest 声明 ${chunks} 块分块文件全部缺失`;
+    return reason('chunksAllMissing', { chunks });
   }
   if (missing.length > 0) {
     const sample = missing.slice(0, 3).join(', ');
-    const suffix = missing.length > 3 ? ` 等 ${missing.length} 块` : '';
-    return `缺失分块索引 ${sample}${suffix}（共 ${chunks} 块）`;
+    return missing.length > 3
+      ? reason('chunksMissingMore', { sample, count: missing.length, chunks })
+      : reason('chunksMissing', { sample, chunks });
   }
   if (truncated.length > 0) {
-    const sample = truncated.slice(0, 3).join(', ');
-    return `分块 ${sample} 被截断且无 raw_url（共 ${chunks} 块）`;
+    return reason('chunksTruncated', { sample: truncated.slice(0, 3).join(', '), chunks });
   }
-  return `分块完整但 raw_url 获取或解析失败（共 ${chunks} 块）`;
+  return reason('chunksFetch', { chunks });
 }
 
 /**
@@ -623,7 +664,7 @@ export function diagnoseRevisionEntryFailure(
   entryKey: string,
   manifestEntry: ManifestEntry,
   gistFiles: Record<string, GistFileLike>,
-): string {
+): SyncFailureReason {
   if (entryKey === ENTRY_KEYS.SETTINGS) {
     return describeSingleFileFailure(FILE_NAMES.SETTINGS, gistFiles);
   }
@@ -637,7 +678,7 @@ export function diagnoseRevisionEntryFailure(
   const novelBookId = parseNovelEntryKey(entryKey);
   const memoryBookId = parseMemoriesEntryKey(entryKey);
   const bookId = novelBookId ?? memoryBookId;
-  if (!bookId) return '未知条目类型';
+  if (!bookId) return reason('unknownEntry');
 
   const prefix = novelBookId ? FILE_NAMES.NOVEL_PREFIX : FILE_NAMES.MEMORIES_PREFIX;
   const chunkPrefix = novelBookId
@@ -826,7 +867,10 @@ export async function conditionalGetGist(
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(`GitHub Gist API 错误 ${response.status}: ${text.slice(0, 200)}`);
+    throw syncError('GIST_API_ERROR', 'apiError', {
+      status: response.status,
+      detail: text.slice(0, 200),
+    });
   }
 
   const data = (await response.json()) as {
@@ -841,10 +885,7 @@ export async function conditionalGetGist(
   // → 下载缺数据；新设备的上传 diff 甚至会把"看不见"的远端文件当作已删除
   // 批量清空。必须在这里响亮地中止。
   if (data.truncated === true) {
-    throw new Error(
-      'Gist 文件数超过 GitHub API 单次返回上限（300 个），文件列表被截断，无法安全同步。' +
-        '请清理该 Gist 中的冗余文件，或改用新的 Gist 重新同步。',
-    );
+    throw syncError('GIST_FILE_LIST_TRUNCATED', 'gistTruncated');
   }
 
   return buildGistDataResult(data, etag);
@@ -947,7 +988,8 @@ async function readChangedEntries(
   remoteManifest: GistManifest,
   files: Record<string, GistFileLike>,
   fetchRaw: (url: string) => Promise<string>,
-  onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+  onProgress: SyncProgress | undefined,
+  locale: AppLocale,
 ): Promise<{ changedEntries: Record<string, EntryValue>; failedEntryKeys: string[] }> {
   const changedEntries: Record<string, EntryValue> = {};
   const failedEntryKeys: string[] = [];
@@ -957,7 +999,7 @@ async function readChangedEntries(
     const key = toRead[i]!;
     const entry = remoteManifest.entries[key];
     if (!entry) continue;
-    onProgress?.({ current: i, total, message: `正在下载: ${key}` });
+    onProgress?.({ current: i, total, message: progressText(locale, 'downloadingEntry', { key }) });
     let value: EntryValue | null = null;
     try {
       value = await deserializeEntry(key, entry, files, fetchRaw);
@@ -984,14 +1026,15 @@ async function readChangedEntries(
  */
 export async function downloadWithManifest(
   config: SyncConfig,
-  onProgress?: (progress: { current: number; total: number; message: string }) => void,
+  onProgress?: SyncProgress,
+  locale: AppLocale = 'zh-CN',
 ): Promise<IncrementalDownloadResult> {
   const gistId = config.syncParams.gistId;
   if (!gistId) {
-    throw new Error('Gist ID 未配置');
+    throw new LocalizedError('GIST_ID_MISSING', 'syncUi.service.gistIdMissing');
   }
 
-  onProgress?.({ current: 0, total: 1, message: '正在检查远程变更...' });
+  onProgress?.({ current: 0, total: 1, message: progressText(locale, 'checkingRemote') });
 
   const token = resolveGistToken(config);
   const result = await conditionalGetGist(
@@ -1016,7 +1059,7 @@ export async function downloadWithManifest(
 
   const manifestContent = await readFile(MANIFEST_FILE_NAME, files, fetchRaw);
   if (!manifestContent) {
-    throw new Error('manifest.json 内容为空');
+    throw new LocalizedError('MANIFEST_EMPTY', 'syncUi.service.manifestEmpty');
   }
 
   let remoteManifest: GistManifest;
@@ -1046,9 +1089,14 @@ export async function downloadWithManifest(
     files,
     fetchRaw,
     onProgress,
+    locale,
   );
 
-  onProgress?.({ current: toRead.length, total: toRead.length, message: '下载完成' });
+  onProgress?.({
+    current: toRead.length,
+    total: toRead.length,
+    message: progressText(locale, 'downloaded'),
+  });
 
   // 合并两种"删除"来源：
   // 1. 隐式：knownRemote 中有，但远端 manifest.entries 中没有（diff.deleted）
@@ -1083,10 +1131,11 @@ export async function uploadIncremental(
   config: SyncConfig,
   payload: UploadPayload,
   remoteFilesSnapshot: Record<string, GistFileLike>,
-  onProgress?: (progress: { current: number; total: number; message: string }) => void,
+  onProgress?: SyncProgress,
+  locale: AppLocale = 'zh-CN',
 ): Promise<IncrementalUploadResult> {
   const gistId = config.syncParams.gistId;
-  if (!gistId) throw new Error('Gist ID 未配置');
+  if (!gistId) throw new LocalizedError('GIST_ID_MISSING', 'syncUi.service.gistIdMissing');
   if ((config.knownRemoteSchemaVersion ?? 0) > MANIFEST_SCHEMA_VERSION)
     throw new UnsupportedManifestVersionError(config.knownRemoteSchemaVersion!);
   const remoteManifestFile = remoteFilesSnapshot[MANIFEST_FILE_NAME];
@@ -1096,7 +1145,7 @@ export async function uploadIncremental(
       )
     : undefined;
   if (remoteManifest && remoteManifest.schemaVersion > MANIFEST_SCHEMA_VERSION)
-    throw new Error('远程数据由较新版本的应用写入，请升级后再同步');
+    throw new UnsupportedManifestVersionError(remoteManifest.schemaVersion);
   const upgrading = remoteManifest
     ? remoteManifest.schemaVersion < MANIFEST_SCHEMA_VERSION
     : config.knownRemoteSchemaVersion !== MANIFEST_SCHEMA_VERSION;
@@ -1109,7 +1158,11 @@ export async function uploadIncremental(
   // - 20-100% 实际 PATCH 批次（网络等待，按 batch 均分）
   const PROGRESS_TOTAL = 100;
   const PREP_END = 20; // 序列化阶段结束时的百分比
-  onProgress?.({ current: 0, total: PROGRESS_TOTAL, message: '正在计算本地 manifest...' });
+  onProgress?.({
+    current: 0,
+    total: PROGRESS_TOTAL,
+    message: progressText(locale, 'computingManifest'),
+  });
 
   const localManifest = await buildLocalManifest({
     appSettings: payload.appSettings,
@@ -1177,6 +1230,7 @@ export async function uploadIncremental(
     PREP_END,
     PROGRESS_TOTAL,
     onProgress,
+    locale,
   );
 
   // 处理删除的 entry
@@ -1192,7 +1246,7 @@ export async function uploadIncremental(
   onProgress?.({
     current: PREP_END,
     total: PROGRESS_TOTAL,
-    message: '正在上传...',
+    message: progressText(locale, 'uploading'),
   });
 
   const additionBatches = upgrading ? [{ ...allFiles }] : buildAdditionBatches(allFiles);
@@ -1209,12 +1263,13 @@ export async function uploadIncremental(
     PREP_END,
     PROGRESS_TOTAL,
     onProgress,
+    locale,
   );
 
   onProgress?.({
     current: PROGRESS_TOTAL,
     total: PROGRESS_TOTAL,
-    message: '上传完成',
+    message: progressText(locale, 'uploaded'),
   });
 
   return {
@@ -1241,7 +1296,8 @@ async function serializeEntriesIntoFiles(
   resolveStaleFilenames: (entryKey: string) => string[],
   PREP_END: number,
   PROGRESS_TOTAL: number,
-  onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+  onProgress: SyncProgress | undefined,
+  locale: AppLocale,
 ): Promise<void> {
   for (let i = 0; i < toUpload.length; i++) {
     const entryKey = toUpload[i]!;
@@ -1253,7 +1309,7 @@ async function serializeEntriesIntoFiles(
     onProgress?.({
       current: Math.round(5 + (PREP_END - 5) * serializeFraction),
       total: PROGRESS_TOTAL,
-      message: `正在准备: ${entryKey}`,
+      message: progressText(locale, 'preparingEntry', { key: entryKey }),
     });
     const { files, chunks } = await serializeEntry(entryKey, payloadValue);
 
@@ -1352,7 +1408,8 @@ async function executePatchBatches(
   additionBatches: Array<Record<string, { content: string } | null>>,
   PREP_END: number,
   PROGRESS_TOTAL: number,
-  onProgress: ((progress: { current: number; total: number; message: string }) => void) | undefined,
+  onProgress: SyncProgress | undefined,
+  locale: AppLocale,
 ): Promise<{ etag: string; htmlUrl: string | undefined; updatedAt: string }> {
   let newETag = '';
   let htmlUrl: string | undefined;
@@ -1389,14 +1446,18 @@ async function executePatchBatches(
     onProgress?.({
       current: PREP_END + Math.round((bi / totalBatches) * uploadSpan),
       total: PROGRESS_TOTAL,
-      message: `正在上传批次 ${bi + 1} / ${totalBatches} (${Object.keys(batch).length} 个文件)...`,
+      message: progressText(locale, 'uploadingBatch', {
+        current: bi + 1,
+        total: totalBatches,
+        files: Object.keys(batch).length,
+      }),
     });
     await runBatch(batch, firstBatch);
     firstBatch = false;
     onProgress?.({
       current: PREP_END + Math.round(((bi + 1) / totalBatches) * uploadSpan),
       total: PROGRESS_TOTAL,
-      message: `已上传批次 ${bi + 1} / ${totalBatches}`,
+      message: progressText(locale, 'uploadedBatch', { current: bi + 1, total: totalBatches }),
     });
   }
 

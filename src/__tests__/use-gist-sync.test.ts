@@ -43,6 +43,7 @@ function createSyncConfigWithoutGistId(): SyncConfig {
 
 function createMockSettingsStore(overrides: Record<string, unknown> = {}) {
   return {
+    uiLocale: 'zh-CN',
     isSyncing: false,
     gistSync: createSyncConfig(),
     setSyncing: mock(() => {}),

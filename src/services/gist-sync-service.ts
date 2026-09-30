@@ -23,9 +23,21 @@ import {
   type IncrementalUploadResult,
   type UploadPayload,
 } from 'src/services/gist-sync-incremental';
-import type { EntryValue, GistFileLike } from 'src/services/gist-sync-incremental';
+import type {
+  EntryValue,
+  GistFileLike,
+  SyncFailureReason,
+} from 'src/services/gist-sync-incremental';
 import { ManifestProtocolError, parseGistManifest } from 'src/utils/manifest-protocol';
 import { normalizeBookLanguages } from './localization/normalize';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
+import { LocalizedError, localizedErrorCode } from 'src/utils/localized-error';
+
+/** 同步服务的用户可见文案 key（syncUi.service.*） */
+type SyncServiceKey = string;
+type SyncValues = Record<string, string | number>;
 
 /**
  * Gist 文件名称常量
@@ -297,10 +309,17 @@ function computeBatchRetryDelay(baseDelayMs: number, attempt: number): number {
   return baseDelayMs * Math.pow(2, attempt);
 }
 
-/** 判断错误是否为明确的 Gist 更新失败 / 冲突（应向上抛出而非吞掉） */
+const EXPLICIT_UPDATE_FAILURE_CODES = new Set(['GIST_UPDATE_CONFLICT', 'GIST_UPDATE_FAILED']);
+
+/**
+ * 判断错误是否为明确的 Gist 更新失败 / 冲突（应向上抛出而非吞掉，否则会误走"新建 Gist"路径）。
+ * 依据错误码判定；批次失败会把原始错误放在 cause 中，一并检查。
+ */
 function isExplicitUpdateFailure(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return error.message.includes('Gist 更新失败') || error.message.includes('Gist 更新冲突');
+  const cause = error instanceof Error ? error.cause : undefined;
+  return [error, cause].some((value) =>
+    EXPLICIT_UPDATE_FAILURE_CODES.has(localizedErrorCode(value, '')),
+  );
 }
 
 /**
@@ -383,6 +402,38 @@ export class GistSyncService {
   private config: SyncConfig | null = null;
 
   /**
+   * @param getLocale 返回当前界面语言；结果、进度与错误说明在生成时按它本地化
+   *   （服务不依赖 Pinia，由调用方注入）
+   */
+  constructor(private readonly getLocale: () => AppLocale = () => 'zh-CN') {}
+
+  /** 生成用户可见文案 */
+  private text(key: SyncServiceKey, values: SyncValues = {}): string {
+    return translateText(this.getLocale(), `syncUi.service.${key}` as MessageKey, values);
+  }
+
+  /** 用户可见的错误说明：自有错误按当前界面语言重新渲染，第三方诊断保持原文 */
+  private errorText(error: unknown, fallback: SyncServiceKey): string {
+    if (error instanceof LocalizedError) return error.messageFor(this.getLocale());
+    return error instanceof Error ? error.message : this.text(fallback);
+  }
+
+  /** 渲染条目读取失败原因 */
+  private describeReason(failure: SyncFailureReason): string {
+    return this.text(failure.key, failure.values);
+  }
+
+  /** 构造带稳定错误码的用户可见错误 */
+  private fail(code: string, key: SyncServiceKey, values: SyncValues = {}): LocalizedError {
+    return new LocalizedError(
+      code,
+      `syncUi.service.${key}` as MessageKey,
+      values,
+      this.getLocale(),
+    );
+  }
+
+  /**
    * 从 SyncConfig 获取 Gist 配置参数
    */
   private getGistParams(config: SyncConfig): {
@@ -395,10 +446,10 @@ export class GistSyncService {
     const gistId = config.syncParams.gistId;
 
     if (!username || !username.trim()) {
-      throw new Error('GitHub 用户名不能为空');
+      throw this.fail('GITHUB_USERNAME_REQUIRED', 'usernameRequired');
     }
     if (!token || !token.trim()) {
-      throw new Error('GitHub token 不能为空');
+      throw this.fail('GITHUB_TOKEN_REQUIRED', 'tokenRequired');
     }
 
     return {
@@ -424,7 +475,7 @@ export class GistSyncService {
    */
   private validateConfig(config: SyncConfig): void {
     if (config.syncType !== SyncType.Gist) {
-      throw new Error('同步类型必须是 gist');
+      throw this.fail('SYNC_TYPE_UNSUPPORTED', 'gistOnly');
     }
     this.getGistParams(config); // 这会验证参数
   }
@@ -483,7 +534,7 @@ export class GistSyncService {
     }>,
   ): Promise<string | undefined> {
     if (!this.octokit) {
-      throw new Error('Octokit 客户端未初始化，无法验证上传');
+      throw this.fail('GIST_CLIENT_MISSING', 'verifyClientMissing');
     }
 
     // 验证 GET 也要带重试：上传已经成功，仅因一次瞬时网络错误就报失败
@@ -496,7 +547,7 @@ export class GistSyncService {
     const remoteUpdatedAt = response.data.updated_at ?? undefined;
     const uploadedFiles = response.data.files;
     if (!uploadedFiles) {
-      throw new Error('无法获取上传的文件信息');
+      throw this.fail('GIST_VERIFY_FAILED', 'uploadedInfoMissing');
     }
 
     const errors: string[] = [];
@@ -504,7 +555,7 @@ export class GistSyncService {
     this.collectChunkIntegrityErrors(uploadStats, uploadedFiles, errors);
 
     if (errors.length > 0) {
-      throw new Error(`文件验证失败:\n${errors.join('\n')}`);
+      throw this.fail('GIST_VERIFY_FAILED', 'verifyFailed', { errors: errors.join('\n') });
     }
 
     return remoteUpdatedAt;
@@ -520,7 +571,7 @@ export class GistSyncService {
     for (const [fileName, expectedFile] of Object.entries(expectedFiles)) {
       const uploadedFile = uploadedFiles[fileName];
       if (!uploadedFile) {
-        errors.push(`文件缺失: ${fileName}`);
+        errors.push(this.text('fileMissing', { name: fileName }));
         continue;
       }
       const expectedSize = new Blob([expectedFile.content]).size;
@@ -529,7 +580,12 @@ export class GistSyncService {
       const sizeDiffPercent = expectedSize > 0 ? (sizeDiff / expectedSize) * 100 : 0;
       if (sizeDiffPercent > 5) {
         errors.push(
-          `文件大小不匹配: ${fileName} (期望: ${(expectedSize / 1024).toFixed(2)} KB, 实际: ${(uploadedSize / 1024).toFixed(2)} KB, 差异: ${sizeDiffPercent.toFixed(2)}%)`,
+          this.text('sizeMismatch', {
+            name: fileName,
+            expected: (expectedSize / 1024).toFixed(2),
+            actual: (uploadedSize / 1024).toFixed(2),
+            diff: sizeDiffPercent.toFixed(2),
+          }),
         );
       }
     }
@@ -588,7 +644,9 @@ export class GistSyncService {
     for (let i = 0; i < stat.chunkCount; i++) {
       const chunkFileName = `${GIST_FILE_NAMES.NOVEL_CHUNK_PREFIX}${stat.novelId}_${i}.json`;
       if (!uploadedFiles[chunkFileName]) {
-        errors.push(`书籍 "${stat.title}" 的分块 ${i} 缺失: ${chunkFileName}`);
+        errors.push(
+          this.text('chunkMissing', { title: stat.title, index: i, name: chunkFileName }),
+        );
       }
     }
   }
@@ -603,7 +661,7 @@ export class GistSyncService {
     const metadataFileName = `${GIST_FILE_NAMES.NOVEL_PREFIX}${stat.novelId}.meta.json`;
     const metadataFile = uploadedFiles[metadataFileName];
     if (!metadataFile) {
-      errors.push(`书籍 "${stat.title}" 的元数据文件缺失: ${metadataFileName}`);
+      errors.push(this.text('metadataMissing', { title: stat.title, name: metadataFileName }));
       return;
     }
     if (!metadataFile.content) return;
@@ -615,11 +673,15 @@ export class GistSyncService {
       };
       if (metadata.chunks !== stat.chunkCount) {
         errors.push(
-          `书籍 "${stat.title}" 的元数据块数量不匹配: 期望 ${stat.chunkCount}, 实际 ${metadata.chunks}`,
+          this.text('metadataCountMismatch', {
+            title: stat.title,
+            expected: stat.chunkCount,
+            actual: metadata.chunks,
+          }),
         );
       }
     } catch {
-      errors.push(`书籍 "${stat.title}" 的元数据解析失败`);
+      errors.push(this.text('metadataParseFailed', { title: stat.title }));
     }
   }
 
@@ -800,10 +862,10 @@ export class GistSyncService {
     const totalItems = preparePhaseItems + estimatedUploadItems;
     let processedItems = 0;
 
-    this.reportProgress(onProgress, processedItems, totalItems, '正在准备设置文件...');
+    this.reportProgress(onProgress, processedItems, totalItems, this.text('preparingSettings'));
 
     processedItems = 1;
-    this.reportProgress(onProgress, processedItems, totalItems, '设置文件准备完成');
+    this.reportProgress(onProgress, processedItems, totalItems, this.text('settingsPrepared'));
 
     // 2. 每本书的文件
     for (let novelIndex = 0; novelIndex < novelsWithContent.length; novelIndex++) {
@@ -814,7 +876,11 @@ export class GistSyncService {
           onProgress,
           processedItems,
           totalItems,
-          this.formatPrepareProgressMessage('跳过无效书籍', processedItems, totalItems),
+          this.formatPrepareProgressMessage(
+            this.text('skipInvalidBook'),
+            processedItems,
+            totalItems,
+          ),
         );
         continue;
       }
@@ -826,14 +892,14 @@ export class GistSyncService {
         processedItems,
         totalItems,
         this.formatPrepareProgressMessage(
-          `正在准备书籍: ${novel.title}`,
+          this.text('preparingBook', { title: novel.title }),
           processedItems,
           totalItems,
         ),
       );
     }
 
-    this.reportProgress(onProgress, processedItems, totalItems, '准备完成，正在开始上传...');
+    this.reportProgress(onProgress, processedItems, totalItems, this.text('prepared'));
 
     return { files, uploadStats, novelsWithContent, preparePhaseItems, totalItems, processedItems };
   }
@@ -881,7 +947,7 @@ export class GistSyncService {
       this.initializeOctokit(config);
 
       if (!this.octokit) {
-        throw new Error('Octokit 客户端未初始化');
+        throw this.fail('GIST_CLIENT_MISSING', 'clientMissing');
       }
 
       const { files, uploadStats, preparePhaseItems, totalItems } = await this.prepareUploadFiles(
@@ -921,7 +987,7 @@ export class GistSyncService {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '同步到 Gist 时发生未知错误',
+        error: this.errorText(error, 'uploadUnknown'),
         ...(resolvedGistId ? { gistId: resolvedGistId } : {}),
       };
     }
@@ -994,7 +1060,7 @@ export class GistSyncService {
     isRecreated: boolean;
     remoteUpdatedAt: string | undefined;
   }): SyncResult {
-    const message = args.gistId ? '数据已成功同步到 Gist' : 'Gist 已创建';
+    const message = args.gistId ? this.text('synced') : this.text('created');
     return {
       success: true,
       message,
@@ -1042,7 +1108,7 @@ export class GistSyncService {
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
-        if (!this.octokit) throw new Error('Octokit 客户端未初始化');
+        if (!this.octokit) throw this.fail('GIST_CLIENT_MISSING', 'clientMissing');
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const response: any = await this.octokit.rest.gists.update({
           gist_id: gistId,
@@ -1057,7 +1123,7 @@ export class GistSyncService {
 
         // 409：Gist 在读取后被修改或并发更新冲突——不重试
         if (statusCode === 409) {
-          throw new Error('Gist 更新冲突：Gist 自上次读取后已被修改，请尝试重新同步。');
+          throw this.fail('GIST_UPDATE_CONFLICT', 'updateConflict');
         }
 
         const canRetry = isRetryableBatchStatus(statusCode) && attempt < MAX_RETRIES - 1;
@@ -1075,7 +1141,7 @@ export class GistSyncService {
       }
     }
 
-    throw lastError || new Error('批量更新失败：未知错误');
+    throw lastError || this.fail('GIST_BATCH_FAILED', 'batchUnknown');
   }
 
   /** 从批次错误对象中提取 HTTP 状态码与响应体（兼容 axios 风格 error.response） */
@@ -1096,7 +1162,7 @@ export class GistSyncService {
     console.error(`[GistSyncService] 批量更新失败（批次 ${batchIndex}）:`, lastError);
     if (errorData) {
       console.error('Validation errors:', JSON.stringify(errorData, null, 2));
-      throw new Error(`Gist 更新失败: ${JSON.stringify(errorData)}`);
+      throw this.fail('GIST_UPDATE_FAILED', 'updateFailed', { detail: JSON.stringify(errorData) });
     }
     throw lastError;
   }
@@ -1115,7 +1181,7 @@ export class GistSyncService {
       | ((progress: { current: number; total: number; message: string }) => void)
       | undefined,
   ): Promise<{ totalItems: number; gistId: string | undefined; gistUrl: string | undefined }> {
-    if (!this.octokit) throw new Error('Octokit 客户端未初始化');
+    if (!this.octokit) throw this.fail('GIST_CLIENT_MISSING', 'clientMissing');
     let gistId: string | undefined = existingGistId;
     let gistUrl: string | undefined;
     let totalItems = totalItemsIn;
@@ -1135,7 +1201,7 @@ export class GistSyncService {
         totalItems = preparePhaseItems + totalBatches;
       }
 
-      this.reportProgress(onProgress, uploadPhaseStart, totalItems, '正在上传文件...');
+      this.reportProgress(onProgress, uploadPhaseStart, totalItems, this.text('uploading'));
 
       const batchResult = await this.runUpdateBatches(
         existingGistId,
@@ -1149,7 +1215,7 @@ export class GistSyncService {
       if (batchResult.firstGistId) gistId = batchResult.firstGistId;
       if (batchResult.firstGistUrl) gistUrl = batchResult.firstGistUrl;
 
-      this.reportProgress(onProgress, totalItems, totalItems, '上传完成，正在验证...');
+      this.reportProgress(onProgress, totalItems, totalItems, this.text('uploadedVerifying'));
     } catch (error) {
       // 明确的更新失败或冲突：向外抛；其他错误（例如 Gist 不存在）吞掉，让调用方走"创建"路径
       if (error instanceof ManifestProtocolError || isExplicitUpdateFailure(error)) {
@@ -1177,9 +1243,9 @@ export class GistSyncService {
       parseGistManifest(content ?? '');
     } catch (error) {
       if (error instanceof ManifestProtocolError) throw error;
-      throw new ManifestProtocolError(
-        error instanceof Error ? error.message : 'manifest.json 读取失败',
-      );
+      throw new ManifestProtocolError('MANIFEST_READ_FAILED', 'readFailed', {
+        detail: this.errorText(error, 'manifestReadFailed'),
+      });
     }
   }
 
@@ -1206,7 +1272,7 @@ export class GistSyncService {
         onProgress,
         uploadPhaseStart + batchIndex + 1,
         totalItems,
-        `正在上传文件批次 ${batchIndex + 1}/${totalBatches}...`,
+        this.text('uploadingBatch', { current: batchIndex + 1, total: totalBatches }),
       );
 
       try {
@@ -1240,11 +1306,20 @@ export class GistSyncService {
         `已完成 ${batchIndex}/${totalBatches} 个批次。Gist 可能处于不一致状态。`,
       batchError,
     );
-    const reason = batchError instanceof Error ? ` 原因: ${batchError.message}` : '';
-    return new Error(
-      `${errorLabel}在第 ${batchIndex + 1}/${totalBatches} 批次失败，` +
-        `已有 ${batchIndex} 个批次已提交。建议重新上传以修复不一致状态。${reason}`,
-    );
+    const reason =
+      batchError instanceof Error
+        ? this.text('batchReason', { message: this.errorText(batchError, 'batchUnknown') })
+        : '';
+    const error = this.fail('GIST_BATCH_FAILED', 'batchFailed', {
+      label: errorLabel,
+      current: batchIndex + 1,
+      total: totalBatches,
+      committed: batchIndex,
+      reason,
+    });
+    // 原始错误保留在 cause 中，上层据其错误码区分"更新冲突/失败"与可回退的其他失败
+    error.cause = batchError;
+    return error;
   }
 
   /** 构造批次上传失败的错误（消息中携带原因，便于上层按"更新失败/冲突"判定） */
@@ -1255,7 +1330,7 @@ export class GistSyncService {
   ): Error {
     return this.buildBatchFailure(
       `批次 ${batchIndex + 1}/${totalBatches} 上传失败，`,
-      'Gist 批量上传',
+      this.text('batchUploadLabel'),
       batchIndex,
       totalBatches,
       batchError,
@@ -1272,13 +1347,13 @@ export class GistSyncService {
       | ((progress: { current: number; total: number; message: string }) => void)
       | undefined,
   ): Promise<{ gistId: string; gistUrl: string | undefined }> {
-    if (!this.octokit) throw new Error('Octokit 客户端未初始化');
+    if (!this.octokit) throw this.fail('GIST_CLIENT_MISSING', 'clientMissing');
 
     const filesForCreate = this.collectNonNullFiles(files);
     const createEntries = Object.entries(filesForCreate);
 
     if (createEntries.length <= CREATE_BATCH_SIZE) {
-      this.reportProgress(onProgress, totalItems, totalItems, '正在创建 Gist...');
+      this.reportProgress(onProgress, totalItems, totalItems, this.text('creating'));
       const response = await this.octokit.rest.gists.create({
         description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
         public: false,
@@ -1292,7 +1367,7 @@ export class GistSyncService {
       onProgress,
       totalItems - totalCreateBatches,
       totalItems,
-      `正在创建 Gist（批次 1/${totalCreateBatches}）...`,
+      this.text('creatingBatch', { current: 1, total: totalCreateBatches }),
     );
 
     // 第一批：创建 Gist
@@ -1314,7 +1389,7 @@ export class GistSyncService {
       onProgress,
     );
 
-    this.reportProgress(onProgress, totalItems, totalItems, '创建完成，正在验证...');
+    this.reportProgress(onProgress, totalItems, totalItems, this.text('createdVerifying'));
 
     return { gistId: newGistId, gistUrl: newGistUrl };
   }
@@ -1336,7 +1411,7 @@ export class GistSyncService {
         onProgress,
         totalItems - totalCreateBatches + batchIndex + 1,
         totalItems,
-        `正在创建 Gist（批次 ${batchIndex + 1}/${totalCreateBatches}）...`,
+        this.text('creatingBatch', { current: batchIndex + 1, total: totalCreateBatches }),
       );
       try {
         await this.octokit!.rest.gists.update({ gist_id: newGistId, files: batchFiles });
@@ -1354,7 +1429,7 @@ export class GistSyncService {
   ): Error {
     return this.buildBatchFailure(
       `创建批次 ${batchIndex + 1}/${totalBatches} 失败，`,
-      'Gist 批量创建',
+      this.text('batchCreateLabel'),
       batchIndex,
       totalBatches,
       batchError,
@@ -1378,7 +1453,7 @@ export class GistSyncService {
 
       const params = this.getGistParams(config);
       if (!this.octokit || !params.gistId) {
-        throw new Error('Gist ID 未配置或 Octokit 客户端未初始化');
+        throw this.fail('GIST_NOT_CONFIGURED', 'gistNotConfigured');
       }
 
       const octokit = this.octokit;
@@ -1394,12 +1469,12 @@ export class GistSyncService {
 
       const gistFiles = response.data.files;
       if (!gistFiles) {
-        throw new Error('Gist 中没有文件');
+        throw this.fail('GIST_EMPTY', 'gistEmpty');
       }
       await this.assertGistProtocol(gistFiles);
 
       const result: GistSyncData = { aiModels: [], novels: [] };
-      this.reportProgress(onProgress, 0, 1, '正在下载数据...');
+      this.reportProgress(onProgress, 0, 1, this.text('downloading'));
 
       const settingsFailure = await this.downloadAndPopulateSettingsFile(gistFiles, result);
 
@@ -1412,7 +1487,7 @@ export class GistSyncService {
       );
 
       const progressTotal = totalNovels || 1;
-      this.reportProgress(onProgress, progressTotal, progressTotal, '下载完成');
+      this.reportProgress(onProgress, progressTotal, progressTotal, this.text('downloaded'));
 
       // 任何条目（settings / 书籍）读取失败都必须整体失败：
       // 唯一消费方是旧布局迁移（runLegacyMigration），它只检查 success，
@@ -1426,7 +1501,7 @@ export class GistSyncService {
       }
 
       return this.buildDownloadSuccessResult({
-        message: '从 Gist 下载数据成功',
+        message: this.text('downloadSucceeded'),
         result,
         remoteUpdatedAt,
         gistId: params.gistId,
@@ -1435,7 +1510,7 @@ export class GistSyncService {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '从 Gist 下载数据时发生未知错误',
+        error: this.errorText(error, 'downloadUnknown'),
       };
     }
   }
@@ -1470,7 +1545,7 @@ export class GistSyncService {
         success: true,
         skipped: true,
         remoteUpdatedAt,
-        message: '远程数据未发生变更，跳过下载',
+        message: this.text('unchanged'),
       };
     }
     return null;
@@ -1493,7 +1568,7 @@ export class GistSyncService {
       onProgress({
         current: 0,
         total: totalNovels,
-        message: `正在下载 ${totalNovels} 本书籍...`,
+        message: this.text('downloadingBooks', { count: totalNovels }),
       });
     }
 
@@ -1521,7 +1596,7 @@ export class GistSyncService {
           onProgress,
           processedNovels,
           totalNovels,
-          `处理书籍时出错 (${processedNovels}/${totalNovels})`,
+          this.text('bookError', { current: processedNovels, total: totalNovels }),
         );
       }
     }
@@ -1536,9 +1611,13 @@ export class GistSyncService {
     totalNovels: number,
   ): string {
     if (novel) {
-      return `正在下载书籍: ${novel.title || novelId} (${processedNovels}/${totalNovels})`;
+      return this.text('downloadingBook', {
+        title: novel.title || novelId,
+        current: processedNovels,
+        total: totalNovels,
+      });
     }
-    return `跳过书籍 ${novelId} (${processedNovels}/${totalNovels})`;
+    return this.text('skipBook', { id: novelId, current: processedNovels, total: totalNovels });
   }
 
   /**
@@ -1549,14 +1628,20 @@ export class GistSyncService {
     settingsFailure: string | null,
   ): SyncResult & { failedEntries: string[] } {
     console.error('[GistSyncService] 下载不完整，失败条目：', failedEntries.join('、'));
-    const shown = failedEntries.slice(0, 3).join('、');
-    const suffix = failedEntries.length > 3 ? ` 等 ${failedEntries.length} 项` : '';
-    const settingsDetail = settingsFailure ? `（${settingsFailure}）` : '';
+    const shown = failedEntries.slice(0, 3).join(this.text('listSeparator'));
+    const suffix =
+      failedEntries.length > 3 ? this.text('moreItems', { count: failedEntries.length }) : '';
+    const settingsDetail = settingsFailure
+      ? this.text('settingsDetail', { detail: settingsFailure })
+      : '';
     return {
       success: false,
-      error:
-        `从 Gist 下载数据不完整：${failedEntries.length} 个条目读取失败：` +
-        `${shown}${suffix}${settingsDetail}。已中止，未应用任何数据。`,
+      error: this.text('incompleteDownload', {
+        count: failedEntries.length,
+        shown,
+        suffix,
+        settings: settingsDetail,
+      }),
       failedEntries,
     };
   }
@@ -1594,7 +1679,7 @@ export class GistSyncService {
 
       // 设置文件存在但内容无法获取（截断且 raw_url 拿不到 / 内容为空）：视为失败
       if (!settingsContent) {
-        return '设置文件内容为空或无法获取';
+        return this.text('settingsEmpty');
       }
 
       const settingsData = (await this.parseGistContent(settingsContent)) as {
@@ -1622,7 +1707,9 @@ export class GistSyncService {
         '[GistSyncService] 设置文件解析失败，aiModels/appSettings/coverHistory 可能为空:',
         parseError,
       );
-      return `设置文件解析失败: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
+      return this.text('settingsParseFailed', {
+        detail: parseError instanceof Error ? parseError.message : String(parseError),
+      });
     }
   }
 
@@ -1649,7 +1736,7 @@ export class GistSyncService {
 
     const manifestContent = await readFile(GIST_FILE_NAMES.MANIFEST, gistFiles, fetchRaw);
     if (!manifestContent) {
-      throw new Error('manifest.json 内容为空');
+      throw this.fail('MANIFEST_EMPTY', 'manifestEmpty');
     }
 
     const manifest = parseGistManifest(manifestContent);
@@ -1666,7 +1753,9 @@ export class GistSyncService {
       if (!entry) {
         failures.push({
           entryKey,
-          reason: diagnoseRevisionEntryFailure(entryKey, manifestEntry, gistFiles),
+          reason: this.describeReason(
+            diagnoseRevisionEntryFailure(entryKey, manifestEntry, gistFiles),
+          ),
         });
         continue;
       }
@@ -1676,7 +1765,7 @@ export class GistSyncService {
     // 任何 entry 反序列化失败(chunk 截断且 raw_url 拿不到、内容缺失等)都必须抛错：
     // 上游 overwriteFromSnapshot 会先清空本地再写入快照，若静默跳过会导致本地数据被
     // 不完整快照覆盖——恰好就是用户看到的"本地书被删但 Gist 该版本仍然存在"。
-    this.throwIfRevisionEntriesFailed(failures, '该修订版本');
+    this.throwIfRevisionEntriesFailed(failures, this.text('revisionScope'));
 
     return result;
   }
@@ -1695,12 +1784,16 @@ export class GistSyncService {
       failures.map((f) => `${f.entryKey}: ${f.reason}`).join('\n'),
     );
     const shown = failures.slice(0, 3);
-    const detail = shown.map((f) => `${f.entryKey}（${f.reason}）`).join('；');
-    const suffix = failures.length > 3 ? ` 等 ${failures.length} 项` : '';
-    throw new Error(
-      `${scopeLabel}中 ${failures.length} 个条目无法读取：${detail}${suffix}；` +
-        `已中止恢复以保护本地数据。详情见控制台。`,
-    );
+    const detail = shown
+      .map((f) => this.text('revisionEntry', { key: f.entryKey, reason: f.reason }))
+      .join(this.text('revisionEntrySeparator'));
+    const suffix = failures.length > 3 ? this.text('moreItems', { count: failures.length }) : '';
+    throw this.fail('REVISION_ENTRIES_UNREADABLE', 'revisionFailed', {
+      scope: scopeLabel,
+      count: failures.length,
+      detail,
+      suffix,
+    });
   }
 
   /**
@@ -1733,11 +1826,11 @@ export class GistSyncService {
       if (novel) {
         result.novels.push(novel);
       } else {
-        failures.push({ entryKey: `novel:${novelId}`, reason: '下载或解析失败' });
+        failures.push({ entryKey: `novel:${novelId}`, reason: this.text('legacyBookFailed') });
       }
     }
 
-    this.throwIfRevisionEntriesFailed(failures, '该修订版本（旧布局）');
+    this.throwIfRevisionEntriesFailed(failures, this.text('revisionScopeLegacy'));
   }
 
   private assignRevisionEntry(result: GistSyncData, entry: EntryValue): void {
@@ -1932,7 +2025,7 @@ export class GistSyncService {
       this.initializeOctokit(config);
 
       if (!this.octokit) {
-        throw new Error('Octokit 客户端未初始化');
+        throw this.fail('GIST_CLIENT_MISSING', 'clientMissing');
       }
 
       // 尝试获取当前用户信息来验证 token
@@ -1942,7 +2035,7 @@ export class GistSyncService {
     } catch (error) {
       return {
         valid: false,
-        error: error instanceof Error ? error.message : 'Token 验证失败',
+        error: this.errorText(error, 'tokenInvalid'),
       };
     }
   }
@@ -2207,13 +2300,13 @@ export class GistSyncService {
 
       return {
         success: true,
-        message: `获取到 ${revisions.length} 个修订版本`,
+        message: this.text('revisionsLoaded', { count: revisions.length }),
         revisions,
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '获取 Gist 修订历史时发生未知错误',
+        error: this.errorText(error, 'revisionsUnknown'),
       };
     }
   }
@@ -2233,12 +2326,12 @@ export class GistSyncService {
     this.initializeOctokit(config);
 
     if (!this.octokit) {
-      throw new Error('Octokit 客户端未初始化');
+      throw this.fail('GIST_CLIENT_MISSING', 'clientMissing');
     }
 
     const params = this.getGistParams(config);
     if (!params.gistId) {
-      throw new Error('Gist ID 未配置');
+      throw this.fail('GIST_ID_MISSING', 'gistIdMissing');
     }
     return { octokit: this.octokit, gistId: params.gistId };
   }
@@ -2279,7 +2372,7 @@ export class GistSyncService {
 
       return {
         success: true,
-        message: '获取修订版本详情成功',
+        message: this.text('revisionLoaded'),
         data: {
           files,
         },
@@ -2287,7 +2380,7 @@ export class GistSyncService {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '获取修订版本详情失败',
+        error: this.errorText(error, 'revisionUnknown'),
       };
     }
   }
@@ -2342,7 +2435,7 @@ export class GistSyncService {
 
       const gistFiles = response.data.files;
       if (!gistFiles) {
-        throw new Error('Gist 中没有文件');
+        throw this.fail('GIST_EMPTY', 'gistEmpty');
       }
 
       const result: GistSyncData = {
@@ -2369,14 +2462,14 @@ export class GistSyncService {
 
       return {
         success: true,
-        message: '从修订版本下载数据成功',
+        message: this.text('revisionDownloaded'),
         data: result,
         ...(params.gistId ? { gistId: params.gistId } : {}),
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '从修订版本下载数据时发生未知错误',
+        error: this.errorText(error, 'revisionDownloadUnknown'),
       };
     }
   }
@@ -2396,7 +2489,7 @@ export class GistSyncService {
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
   ): Promise<IncrementalDownloadResult> {
     this.validateConfig(config);
-    return downloadWithManifest(config, onProgress);
+    return downloadWithManifest(config, onProgress, this.getLocale());
   }
 
   /**
@@ -2422,9 +2515,16 @@ export class GistSyncService {
     this.validateConfig(config);
     this.initializeOctokit(config);
     if (!this.octokit) {
-      throw new Error('Octokit 客户端未初始化');
+      throw this.fail('GIST_CLIENT_MISSING', 'clientMissing');
     }
-    return uploadIncremental(this.octokit, config, payload, remoteFilesSnapshot, onProgress);
+    return uploadIncremental(
+      this.octokit,
+      config,
+      payload,
+      remoteFilesSnapshot,
+      onProgress,
+      this.getLocale(),
+    );
   }
 
   /**
@@ -2440,7 +2540,7 @@ export class GistSyncService {
     this.validateConfig(config);
     const gistId = config.syncParams.gistId;
     if (!gistId) {
-      throw new Error('Gist ID 未配置');
+      throw this.fail('GIST_ID_MISSING', 'gistIdMissing');
     }
     const token = config.secret || config.syncParams.token || '';
     const result = await conditionalGetGist(token, gistId, config.lastRemoteETag);
@@ -2464,12 +2564,12 @@ export class GistSyncService {
 
       return {
         success: true,
-        message: 'Gist 已成功删除',
+        message: this.text('deleted'),
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '删除 Gist 时发生未知错误',
+        error: this.errorText(error, 'deleteUnknown'),
       };
     }
   }

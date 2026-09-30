@@ -35,6 +35,7 @@ const mockSettings = {
 };
 
 const makeMockSettingsStore = () => ({
+  uiLocale: 'zh-CN',
   get gistSync() {
     const s = mockSettings.syncState;
     return {
