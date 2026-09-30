@@ -1,3 +1,6 @@
+import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
+
 /**
  * 时间工具函数
  */
@@ -46,10 +49,7 @@ export function isTimeDifferent(
  * @returns 如果是在上次同步后添加的，返回 true
  *          如果是首次同步（lastSyncTime <= 0），返回 true（所有项目都应该同步）
  */
-export function isNewlyAdded(
-  lastEdited: Date | number | string,
-  lastSyncTime: number,
-): boolean {
+export function isNewlyAdded(lastEdited: Date | number | string, lastSyncTime: number): boolean {
   // 首次同步时，所有项目都应该被视为"新添加"的，需要同步
   if (lastSyncTime <= 0) return true;
   return toMillis(lastEdited) > lastSyncTime;
@@ -64,6 +64,7 @@ export function isNewlyAdded(
  *                 对需要"活动任务每秒滴答刷新"的组件（如 TranslationProgress、
  *                 ThinkingProcessPanel），应传入响应式的 now.value —— Vue 模板
  *                 在其变化时会重新渲染表达式，从而驱动计时器走动。
+ * @param locale - 界面语言（默认简中，与旧行为一致）
  *
  * 合并了原本散落在 TranslationProgress / ThinkingProcessPanel / ThinkingDetailDialog
  * 三个组件的重复实现。
@@ -72,12 +73,12 @@ export function formatTaskDuration(
   startMs: number,
   endMs?: number,
   nowMs?: number,
+  locale: AppLocale = 'zh-CN',
 ): string {
   const end = endMs ?? nowMs ?? Date.now();
   const duration = Math.floor((end - startMs) / 1000);
-  if (duration < 60) return `${duration}秒`;
+  if (duration < 60) return translateText(locale, 'appUi.duration.seconds', { seconds: duration });
   const minutes = Math.floor(duration / 60);
   const seconds = duration % 60;
-  return `${minutes}分${seconds}秒`;
+  return translateText(locale, 'appUi.duration.minutesSeconds', { minutes, seconds });
 }
-
