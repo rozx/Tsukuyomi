@@ -162,6 +162,10 @@ export default {
       testSucceeded: '代理测试成功',
       testSucceededDetail: '{name} 测试通过',
       testFailed: '代理测试失败',
+      builtIn: {
+        name: 'CORS Tsukuyomi (推荐使用)',
+        description: 'Tsukuyomi（月詠） - Moonlit Translator 默认代理 (#^.^#)。',
+      },
     },
     importExport: {
       exported: '导出成功',

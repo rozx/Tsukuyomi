@@ -1,4 +1,6 @@
 import type { ProxySiteMappingEntry } from 'src/models/settings';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 
 /**
  * 默认代理列表
@@ -16,6 +18,22 @@ export const DEFAULT_PROXY_LIST: Array<{
     description: 'Tsukuyomi（月詠） - Moonlit Translator 默认代理 (#^.^#)。',
   },
 ];
+
+type ProxyEntry = (typeof DEFAULT_PROXY_LIST)[number];
+
+/**
+ * 内置代理的显示投影：名称/说明仍是内置原文（用户未改过）时按界面语言显示，
+ * 存储与同步的数据保持不变；自定义代理与用户改过的字段原样返回。
+ */
+export function displayProxy<T extends ProxyEntry>(proxy: T, locale: AppLocale): T {
+  const builtIn = DEFAULT_PROXY_LIST.find((entry) => entry.id === proxy.id);
+  if (!builtIn) return proxy;
+  const pick = (field: 'name' | 'description') =>
+    proxy[field] === builtIn[field]
+      ? translateText(locale, `settingsUi.proxy.builtIn.${field}`)
+      : proxy[field];
+  return { ...proxy, name: pick('name') ?? proxy.name, description: pick('description') };
+}
 
 /**
  * 网站映射中代表「经 Firecrawl 抓取」的保留令牌。

@@ -11,7 +11,7 @@ import { translateText } from 'src/i18n/translate';
 import type { MessageKey } from 'src/i18n/types';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { extractRootDomain } from 'src/utils/domain-utils';
-import { FIRECRAWL_MAPPING_TOKEN } from 'src/constants/proxy';
+import { FIRECRAWL_MAPPING_TOKEN, displayProxy } from 'src/constants/proxy';
 import { isElectron } from 'src/utils/platform';
 
 export type SiteMappingSettingsContext = ReturnType<typeof createSiteMappingSettingsContext>;
@@ -39,7 +39,9 @@ export function createSiteMappingSettingsContext() {
     translateText(settingsStore.uiLocale, key, values);
   const electron = isElectron();
 
-  const proxyList = computed(() => settingsStore.proxyList);
+  const proxyList = computed(() =>
+    settingsStore.proxyList.map((proxy) => displayProxy(proxy, settingsStore.uiLocale)),
+  );
   // Electron 直连、CORS 条目不生效，但仍可维护（映射会同步到网页端），选项中注明不生效
   const mappingOptions = computed<MappingOption[]>(() => [
     {

@@ -10,7 +10,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { translateText } from 'src/i18n/translate';
 import type { MessageKey } from 'src/i18n/types';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { DEFAULT_CORS_PROXY_FOR_AI, DEFAULT_PROXY_LIST } from 'src/constants/proxy';
+import { DEFAULT_CORS_PROXY_FOR_AI, DEFAULT_PROXY_LIST, displayProxy } from 'src/constants/proxy';
 import axios from 'axios';
 
 export type ProxySettingsContext = ReturnType<typeof createProxySettingsContext>;
@@ -24,7 +24,10 @@ function createProxySettingsContext() {
   const t = (key: MessageKey, values?: Record<string, string | number>) =>
     translateText(settingsStore.uiLocale, key, values);
 
-  const proxyList = computed(() => settingsStore.proxyList);
+  // 显示用列表：内置代理未改动时按界面语言显示名称/说明
+  const proxyList = computed(() =>
+    settingsStore.proxyList.map((proxy) => displayProxy(proxy, settingsStore.uiLocale)),
+  );
   const selectedProxyId = ref<string | null>(null);
 
   const findProxyIdByUrl = (url: string): string | null => {
@@ -102,10 +105,12 @@ function createProxySettingsContext() {
     url: string;
     description?: string;
   }) => {
-    editingProxy.value = proxy;
-    newProxyName.value = proxy.name;
-    newProxyUrl.value = proxy.url;
-    newProxyDescription.value = proxy.description ?? '';
+    // 编辑以存储原文为准，避免把显示投影写回数据
+    const stored = settingsStore.proxyList.find((entry) => entry.id === proxy.id) ?? proxy;
+    editingProxy.value = stored;
+    newProxyName.value = stored.name;
+    newProxyUrl.value = stored.url;
+    newProxyDescription.value = stored.description ?? '';
     showProxyDialog.value = true;
   };
 

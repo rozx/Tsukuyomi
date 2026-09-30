@@ -169,6 +169,10 @@ export default {
       testSucceeded: 'Proxy test passed',
       testSucceededDetail: '{name} passed the test',
       testFailed: 'Proxy test failed',
+      builtIn: {
+        name: 'CORS Tsukuyomi (recommended)',
+        description: 'Default proxy for Tsukuyomi - Moonlit Translator (#^.^#)',
+      },
     },
     importExport: {
       exported: 'Export succeeded',
