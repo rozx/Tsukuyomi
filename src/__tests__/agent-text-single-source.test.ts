@@ -9,6 +9,7 @@ import { importAgentPrompt } from '../services/import/import-agent-prompt';
 import { ImportRepository } from '../services/import/import-repository';
 import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-languages';
 import type { AITool } from '../services/ai/types/ai-service';
+import { agentText } from '../i18n/translate';
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
 
 const CJK = /[一-鿿]/;
@@ -53,6 +54,19 @@ describe('模型可见文字保持简中单源', () => {
     expect(prompt).not.toMatch(/Translation rules|Output protocol/);
     expect(prompt).toContain('繁体中文');
     expect(prompt).toContain('英文');
+  });
+
+  it('符号格式规则只由目标语言决定，与界面语言无关', () => {
+    const chineseTarget = buildTextTaskSystemPrompt('translation', {
+      languages: captureExecutionLanguages('en-US', 'zh-CN'),
+    });
+    const englishTarget = buildTextTaskSystemPrompt('translation', {
+      languages: captureExecutionLanguages('zh-CN', 'en-US'),
+    });
+    expect(chineseTarget).toContain(agentText('aiText.symbolChinese'));
+    expect(chineseTarget).not.toContain(agentText('aiText.symbolEnglish'));
+    expect(englishTarget).toContain(agentText('aiText.symbolEnglish'));
+    expect(englishTarget).not.toContain(agentText('aiText.symbolChinese'));
   });
 
   it('解释提示词为简中并要求以界面语言回复', () => {

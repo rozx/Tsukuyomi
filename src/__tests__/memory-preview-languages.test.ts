@@ -94,7 +94,6 @@ describe('页面记忆预览目标与请求归属', () => {
       [],
       buildChapterSemanticQuery(selected.value, 'en-US'),
       'en-US',
-      'en-US',
     );
     expect(prompt).toContain(`[${memory.id}] Shared fallback`);
     expect(getLastScoreBreakdowns('fixture-book')).toEqual({});
@@ -124,7 +123,6 @@ describe('页面记忆预览目标与请求归属', () => {
       [],
       [],
       buildChapterSemanticQuery(selected.value, 'zh-CN'),
-      'en-US',
       'zh-CN',
     );
     const fresh = getLastScoreBreakdowns('fixture-book');

@@ -139,16 +139,9 @@ async function buildSystemPrompt(
   }
 
   const specialInstructions = getSpecialInstructions(bookId, chapterId, 'translation');
-  const specialInstructionsSection = buildSpecialInstructionsSection(
-    specialInstructions,
-    languages.uiLocale,
-  );
-  const bookContextSection = await buildBookContextSection(bookId, languages.uiLocale);
-  const chapterContextSection = buildChapterContextSection(
-    chapterId,
-    chapterTitle,
-    languages.uiLocale,
-  );
+  const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
+  const bookContextSection = await buildBookContextSection(bookId);
+  const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
   return buildTermTranslationSystemPrompt({
     languages,
@@ -172,7 +165,7 @@ function formatCharacterDetail(c: CharacterSetting, languages: ExecutionLanguage
     t('sex', sex),
     t('description', c.description || none),
     t('speakingStyle', c.speakingStyle || none),
-    formatCharacterAliases(c.aliases, languages.targetLanguage, languages.uiLocale) ??
+    formatCharacterAliases(c.aliases, languages.targetLanguage) ??
       agentText('aiTasks.context.aliases', { aliases: none }),
   ].join(' | ');
 }

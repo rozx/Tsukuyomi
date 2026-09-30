@@ -2,7 +2,7 @@ import type { AITool } from 'src/services/ai/types/ai-service';
 import type { ExecutionLanguages } from 'src/models/locale';
 import { captureExecutionLanguages } from '../utils/execution-languages';
 import type { TaskType } from '../utils/task-types';
-import { agentText, translateText } from 'src/i18n/translate';
+import { agentText } from 'src/i18n/translate';
 import { aiLanguageName } from './language';
 import { taskPromptLabel } from './runner';
 import {
@@ -37,7 +37,7 @@ export function buildTextTaskSystemPrompt(
   single = false,
 ): string {
   const languages = params.languages ?? captureExecutionLanguages('zh-CN');
-  const { uiLocale, targetLanguage } = languages;
+  const { targetLanguage } = languages;
   const sections = [
     agentText(`aiText.role.${taskType}`, {
       targetLanguage: aiLanguageName(targetLanguage),
@@ -53,12 +53,12 @@ export function buildTextTaskSystemPrompt(
     agentText(`aiText.core.${taskType}`, {
       scope: agentText(single ? 'aiText.singleScope' : 'aiText.batchScope'),
     }),
-    getSymbolFormatRules(uiLocale, targetLanguage),
+    getSymbolFormatRules(targetLanguage),
     getHonorificRules(languages),
   ];
   if (single) {
     sections.push(
-      getToolScopeRules(params.tools, uiLocale),
+      getToolScopeRules(params.tools),
       agentText('aiText.single', {
         query: hasQueryChapterTool(params.tools) ? agentText('aiText.query') : '',
         max: MAX_TRANSLATION_BATCH_SIZE,
@@ -66,9 +66,9 @@ export function buildTextTaskSystemPrompt(
     );
   } else {
     sections.push(
-      getDataManagementRules(uiLocale),
-      getToolUsageInstructions(taskType, params.tools, params.skipAskUser, uiLocale),
-      getMemoryWorkflowRules(uiLocale),
+      getDataManagementRules(),
+      getToolUsageInstructions(taskType, params.tools, params.skipAskUser),
+      getMemoryWorkflowRules(),
       getOutputFormatRules(taskType, { ...params, languages }),
     );
     if (taskType === 'translation')
@@ -91,9 +91,8 @@ export function buildSingleParagraphUserPrompt(
   taskType: TaskType,
   params: SingleParagraphUserPromptParams,
 ): string {
-  const uiLocale = params.languages?.uiLocale ?? 'zh-CN';
   return agentText('aiText.singleUser', {
-    task: taskPromptLabel(taskType, uiLocale),
+    task: taskPromptLabel(taskType),
     context: params.defaultContext,
     id: params.paragraphId,
     original: params.originalText,

@@ -77,7 +77,7 @@ describe('助手用量与服务端使用同一份请求上下文', () => {
     current.contextAnchor = createContextAnchor(
       {
         systemPrompt:
-          getAssistantSystemPrompt(getTodosSystemPrompt(true, 'en-US'), [], context, en) +
+          getAssistantSystemPrompt(getTodosSystemPrompt(true), [], context, en) +
           '\n\n' +
           agentText('aiAssistant.summaryWrap', { summary: 'Earlier work' }),
         history: current.apiMessageHistory!,

@@ -2,8 +2,8 @@ import { jsonrepair } from 'jsonrepair';
 import type { AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type { ActionInfo, ChunkBoundaries, ToolContext, ToolDefinition } from './types';
 import type { ToastCallback } from './toast-helper';
-import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
-import { agentText, AGENT_LOCALE, translateText } from 'src/i18n/translate';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { agentText, AGENT_LOCALE } from 'src/i18n/translate';
 import { localizedErrorMessage, localizedErrorCode } from 'src/utils/localized-error';
 import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 
@@ -44,11 +44,7 @@ function previewForLog(value: unknown, maxLength = ARGS_PREVIEW_LIMIT): string {
 /**
  * 解析工具参数；JSON.parse 失败时尝试 jsonrepair 修复常见格式问题。
  */
-function parseToolCallArguments(
-  rawArgs: string,
-  functionName: string,
-  uiLocale: AppLocale,
-): Record<string, unknown> {
+function parseToolCallArguments(rawArgs: string, functionName: string): Record<string, unknown> {
   // 部分 provider 对无参工具（required: [] 的 list_characters 等）会流式返回 ""
   // 作为 arguments。空/纯空白参数是合法的"无参调用"，必须先于截断检测放行。
   if (rawArgs.trim() === '') {
@@ -200,7 +196,7 @@ export async function invokeToolHandler(
   options: HandleToolCallOptions,
 ): Promise<AIToolCallResult> {
   const functionName = toolCall.function.name;
-  const args = parseToolCallArguments(toolCall.function.arguments, functionName, AGENT_LOCALE);
+  const args = parseToolCallArguments(toolCall.function.arguments, functionName);
 
   console.log(
     `[ToolRegistry] 🔧 AI 调用工具: ${functionName}${options.bookId ? ` (bookId: ${options.bookId})` : ''}`,

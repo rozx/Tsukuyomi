@@ -434,17 +434,10 @@ export async function processTextTask(
     const specialInstructions = getSpecialInstructions(bookId, chapterId, taskType);
 
     // 构建系统提示词
-    const todosPrompt = getTodosSystemPrompt(!!taskId, languages.uiLocale);
-    const specialInstructionsSection = buildSpecialInstructionsSection(
-      specialInstructions,
-      languages.uiLocale,
-    );
-    const bookContextSection = await buildBookContextSection(bookId, languages.uiLocale);
-    const chapterContextSection = buildChapterContextSection(
-      chapterId,
-      chapterTitle,
-      languages.uiLocale,
-    );
+    const todosPrompt = getTodosSystemPrompt(!!taskId);
+    const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
+    const bookContextSection = await buildBookContextSection(bookId);
+    const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
     // 获取前一章节标题（仅翻译服务;摘要字段已移除,仅注入标题保持时序感知）
     const previousChapterSection = resolvePreviousChapterSection({
@@ -499,7 +492,6 @@ export async function processTextTask(
     // 这样 buildChunks 在遍历 allChapterParagraphs 时，只会包含目标段落，而非所有段落
     const validParagraphIds = new Set(validParagraphs.map((p) => p.id));
     const buildChunksForIds = makeBuildChunksForIds({
-      uiLocale: languages.uiLocale,
       targetLanguage: languages.targetLanguage,
       requiresTranslation,
       validParagraphs,
@@ -642,7 +634,7 @@ function resolvePreviousChapterSection(params: {
       ...book,
       targetLanguage: params.languages.targetLanguage,
     });
-    return buildPreviousChapterSection(prevTitle, params.languages.uiLocale);
+    return buildPreviousChapterSection(prevTitle);
   } catch (error) {
     console.warn(`[${logLabel}] 获取前一章节信息失败:`, error);
     return '';
@@ -654,7 +646,6 @@ function resolvePreviousChapterSection(params: {
  * 其余任务走 buildChunks + ID 谓词。初次分块与后续重建都复用此闭包。
  */
 function makeBuildChunksForIds(params: {
-  uiLocale: AppLocale;
   targetLanguage: AppLocale;
   requiresTranslation: boolean;
   validParagraphs: Paragraph[];
@@ -678,7 +669,6 @@ function makeBuildChunksForIds(params: {
         chunkSize,
         originalIndices,
         params.targetLanguage,
-        params.uiLocale,
       );
     }
     return buildChunks(
@@ -1269,7 +1259,7 @@ async function buildChunkUserContent(params: {
   isFirstChunk: boolean;
 }): Promise<string> {
   const { ctx, actualChunk, chunkIndex, chunkText, isFirstChunk } = params;
-  const maintenanceReminder = buildMaintenanceReminder(ctx.taskType, ctx.languages.uiLocale);
+  const maintenanceReminder = buildMaintenanceReminder(ctx.taskType);
   const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
   const paragraphCountNote = agentText('aiContext.count', {
     count: currentChunkParagraphCount,

@@ -160,7 +160,7 @@ export class AssistantService {
     sessionId: string | undefined,
     languages: ExecutionLanguages,
   ): string {
-    const todosPrompt = getTodosSystemPrompt(!!taskId || !!sessionId, languages.uiLocale);
+    const todosPrompt = getTodosSystemPrompt(!!taskId || !!sessionId);
 
     return getAssistantSystemPrompt(todosPrompt, tools, context, languages);
   }
@@ -414,7 +414,6 @@ export class AssistantService {
   private static fillPendingToolCallResults(
     messages: ChatMessage[],
     pendingToolCalls: AIToolCall[],
-    uiLocale: AppLocale,
   ): void {
     if (pendingToolCalls.length === 0) return;
     messages.push(
@@ -435,10 +434,9 @@ export class AssistantService {
     messages: ChatMessage[],
     calls: AIToolCall[],
     execution?: AssistantExecution,
-    uiLocale: AppLocale = 'zh-CN',
   ): Promise<void> {
     if (execution && calls.length) throw await execution.stop('tool_limit');
-    this.fillPendingToolCallResults(messages, calls, uiLocale);
+    this.fillPendingToolCallResults(messages, calls);
   }
 
   private static ensureRequestActive(signal?: AbortSignal, uiLocale: AppLocale = 'zh-CN'): void {
@@ -677,12 +675,7 @@ export class AssistantService {
       response = await this.executeAIRequest({ ...params, initial: false });
       if (response.text.trim()) finalText = response.text;
     }
-    await this.finishToolLoop(
-      messages,
-      response.toolCalls,
-      options.execution,
-      options.languages.uiLocale,
-    );
+    await this.finishToolLoop(messages, response.toolCalls, options.execution);
     await options.execution?.complete(messages);
     if (options.aiProcessingStore && taskId)
       await options.aiProcessingStore.updateTask(taskId, {

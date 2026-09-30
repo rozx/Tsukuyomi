@@ -1,7 +1,7 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
 import type { AgentMessageKey } from 'src/i18n/types';
 import messages from 'src/i18n';
-import { AGENT_LOCALE, agentText } from 'src/i18n/translate';
+import { agentText } from 'src/i18n/translate';
 import { TRANSLATION_BATCH_LIMITS } from 'src/services/ai/constants';
 
 const PREFIX_PATH =

@@ -117,7 +117,6 @@ describe('记忆预览和注入目标一致', () => {
         characters,
         undefined,
         'en-US',
-        'en-US',
       );
       expect(prompt).toContain(`[${selected.id}]`);
       expect(prompt).not.toContain(`[${other.id}]`);

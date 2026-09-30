@@ -22,7 +22,7 @@ export function getAssistantSystemPrompt(
     assistantPersona(locale),
     todosPrompt,
     agentText('aiAssistant.capabilities'),
-    getToolScopeRules(tools, locale),
+    getToolScopeRules(tools),
     agentText('aiAssistant.principles'),
   ];
   if (hasQueryChapterTool(tools)) sections.push(agentText('aiAssistant.semantic'));

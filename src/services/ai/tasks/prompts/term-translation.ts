@@ -1,5 +1,5 @@
 import type { ExecutionLanguages } from 'src/models/locale';
-import { agentText, translateText } from 'src/i18n/translate';
+import { agentText } from 'src/i18n/translate';
 import { aiLanguageName } from './language';
 import { captureExecutionLanguages } from '../utils/execution-languages';
 

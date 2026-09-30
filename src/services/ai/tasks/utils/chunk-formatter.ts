@@ -1,6 +1,6 @@
 import type { Paragraph } from 'src/models/novel';
 import type { AppLocale } from 'src/models/locale';
-import { agentText, translateText } from 'src/i18n/translate';
+import { agentText } from 'src/i18n/translate';
 import { getSelectedTranslation } from 'src/utils';
 
 /**
@@ -78,7 +78,6 @@ export function buildFormattedChunks(
   chunkSize: number,
   originalIndices?: Map<string, number>,
   targetLanguage: AppLocale = 'zh-CN',
-  uiLocale: AppLocale = 'zh-CN',
 ): Array<{ text: string; paragraphIds: string[] }> {
   return buildChunks(
     paragraphs,

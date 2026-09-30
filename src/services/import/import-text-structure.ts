@@ -136,7 +136,6 @@ export class ImportTextStructureService {
     batchId: string,
     finish?: Finish,
     signal?: AbortSignal,
-    uiLocale?: AppLocale,
   ): Promise<ImportStructureSummary> {
     return ImportRepository.mutateTask(
       run.taskId,

@@ -327,21 +327,12 @@ async function buildSingleParagraphPrompts(params: {
     buildUserPrompt,
   } = params;
 
-  const bookContextSection = bookId
-    ? await buildBookContextSection(bookId, params.languages.uiLocale)
-    : '';
-  const chapterContextSection = buildChapterContextSection(
-    chapterId,
-    chapterTitle,
-    params.languages.uiLocale,
-  );
+  const bookContextSection = bookId ? await buildBookContextSection(bookId) : '';
+  const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
   const specialInstructions = bookId
     ? getSpecialInstructions(bookId, chapterId, taskType)
     : undefined;
-  const specialInstructionsSection = buildSpecialInstructionsSection(
-    specialInstructions,
-    params.languages.uiLocale,
-  );
+  const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
 
   const systemPrompt = buildSystemPrompt({
     languages: params.languages,

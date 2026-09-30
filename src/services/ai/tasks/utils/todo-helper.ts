@@ -1,5 +1,4 @@
-import type { AppLocale } from 'src/models/locale';
-import { agentText, translateText } from 'src/i18n/translate';
+import { agentText } from 'src/i18n/translate';
 /**
  * Todo 辅助函数
  * 用于在 AI 任务服务中管理待办事项
@@ -11,7 +10,7 @@ import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
  * 获取待办事项的系统提示词片段
  * @param hasContext 是否存在任务/会话上下文（无上下文时不注入待办说明）
  */
-export function getTodosSystemPrompt(hasContext: boolean, uiLocale: AppLocale = 'zh-CN'): string {
+export function getTodosSystemPrompt(hasContext: boolean): string {
   return hasContext ? agentText('aiTodo.system') : '';
 }
 
@@ -25,7 +24,6 @@ export function getPostToolCallReminder(
   currentTodos: TodoItem[] | undefined,
   taskId: string,
   sessionId?: string,
-  uiLocale: AppLocale = 'zh-CN',
 ): string {
   if (!taskId) {
     return '';

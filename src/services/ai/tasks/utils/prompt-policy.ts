@@ -1,4 +1,3 @@
-import type { AppLocale } from 'src/models/locale';
 import { getCurrentStatusInfo } from '../prompts/common';
 import {
   getBriefPlanningToolWarningPrompt,
@@ -48,21 +47,18 @@ export interface IPromptPolicy {
 /**
  * 提示词策略层：集中管理 task-runner 的所有提示词生成
  */
-export function createPromptPolicy(locale: AppLocale = 'zh-CN'): IPromptPolicy {
+export function createPromptPolicy(): IPromptPolicy {
   return {
-    getCurrentStatusInfo: (task, status, brief, next) =>
-      getCurrentStatusInfo(task, status, brief, next, locale),
-    getPlanningLoopPrompt: (task, brief, loop) => getPlanningLoopPrompt(task, brief, loop, locale),
-    getWorkingLoopPrompt: (task) => getWorkingLoopPrompt(task, locale),
-    getWorkingFinishedPrompt: (task) => getWorkingFinishedPrompt(task, locale),
-    getWorkingContinuePrompt: (task) => getWorkingContinuePrompt(task, locale),
-    getMissingParagraphsPrompt: (task, ids) => getMissingParagraphsPrompt(task, ids, locale),
-    getReviewLoopPrompt: (task) => getReviewLoopPrompt(task, locale),
-    getUnauthorizedToolPrompt: (task, tool) => getUnauthorizedToolPrompt(task, tool, locale),
-    getStatusRestrictedToolPrompt: (tool, status, task) =>
-      getStatusRestrictedToolPrompt(tool, status, task, locale),
-    getToolLimitReachedPrompt: (tool, limit) => getToolLimitReachedPrompt(tool, limit, locale),
-    getBriefPlanningToolWarningPrompt: () => getBriefPlanningToolWarningPrompt(locale),
+    getCurrentStatusInfo,
+    getPlanningLoopPrompt,
+    getWorkingLoopPrompt,
+    getWorkingFinishedPrompt,
+    getWorkingContinuePrompt,
+    getMissingParagraphsPrompt,
+    getReviewLoopPrompt,
+    getUnauthorizedToolPrompt,
+    getStatusRestrictedToolPrompt,
+    getToolLimitReachedPrompt,
+    getBriefPlanningToolWarningPrompt,
   };
 }
-export const PromptPolicy = createPromptPolicy();

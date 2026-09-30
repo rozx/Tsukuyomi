@@ -229,7 +229,7 @@ class TaskLoopSession {
   private lastTodoMessage: ChatMessage | undefined;
 
   constructor(private config: ToolCallLoopConfig) {
-    this.promptPolicy = createPromptPolicy(config.languages.uiLocale);
+    this.promptPolicy = createPromptPolicy();
     this.allowedToolNames = new Set(config.tools.map((t) => t.function.name));
     this.stateMachine = new StateMachineEngine(config.taskType, this.currentStatus);
     this.metrics = createInitialMetrics();
@@ -910,11 +910,7 @@ class TaskLoopSession {
           this.promptPolicy.getReviewLoopPrompt(this.config.taskType),
       });
     } else {
-      const postOutputPrompt = buildPostOutputPrompt(
-        taskType,
-        this.config.taskId,
-        this.config.languages.uiLocale,
-      );
+      const postOutputPrompt = buildPostOutputPrompt(taskType, this.config.taskId);
       this.config.history.push({
         role: 'user',
         content: `${this.getCurrentStatusInfoMsg()}\n\n${postOutputPrompt}`,
