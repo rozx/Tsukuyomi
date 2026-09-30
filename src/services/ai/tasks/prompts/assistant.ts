@@ -1,11 +1,10 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
 import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { AGENT_LOCALE, agentText } from 'src/i18n/translate';
 import { captureExecutionLanguages } from '../utils/execution-languages';
-import { aiLanguageName } from './language';
+import { aiLanguageName, assistantPersona } from './language';
 import { getToolScopeRules, hasQueryChapterTool } from './common';
 
-export const PERSONA_CORE = translateText('zh-CN', 'aiAssistant.persona');
 const DEFAULT_LANGUAGES = captureExecutionLanguages('zh-CN');
 
 export function getAssistantSystemPrompt(
@@ -20,30 +19,28 @@ export function getAssistantSystemPrompt(
 ): string {
   const locale = languages.uiLocale;
   const sections = [
-    translateText(locale, 'aiAssistant.persona'),
+    assistantPersona(locale),
     todosPrompt,
-    translateText(locale, 'aiAssistant.capabilities'),
+    agentText('aiAssistant.capabilities'),
     getToolScopeRules(tools, locale),
-    translateText(locale, 'aiAssistant.principles'),
+    agentText('aiAssistant.principles'),
   ];
-  if (hasQueryChapterTool(tools)) sections.push(translateText(locale, 'aiAssistant.semantic'));
+  if (hasQueryChapterTool(tools)) sections.push(agentText('aiAssistant.semantic'));
   const details = [
-    context.currentBookId
-      ? translateText(locale, 'aiAssistant.book', { id: context.currentBookId })
-      : '',
+    context.currentBookId ? agentText('aiAssistant.book', { id: context.currentBookId }) : '',
     context.currentChapterId
-      ? translateText(locale, 'aiAssistant.chapter', { id: context.currentChapterId })
+      ? agentText('aiAssistant.chapter', { id: context.currentChapterId })
       : '',
     context.selectedParagraphId
-      ? translateText(locale, 'aiAssistant.paragraph', { id: context.selectedParagraphId })
+      ? agentText('aiAssistant.paragraph', { id: context.selectedParagraphId })
       : '',
   ]
     .filter(Boolean)
     .join('\n');
-  if (details) sections.push(translateText(locale, 'aiAssistant.context', { details }));
+  if (details) sections.push(agentText('aiAssistant.context', { details }));
   sections.push(
-    translateText(locale, 'aiAssistant.time', {
-      time: new Date().toLocaleString(locale, {
+    agentText('aiAssistant.time', {
+      time: new Date().toLocaleString(AGENT_LOCALE, {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -53,25 +50,26 @@ export function getAssistantSystemPrompt(
       }),
     }),
   );
-  const targetLanguage = aiLanguageName(locale, languages.targetLanguage);
-  sections.push(translateText(locale, 'aiAssistant.constraints', { targetLanguage }));
+  const targetLanguage = aiLanguageName(languages.targetLanguage);
+  sections.push(agentText('aiAssistant.constraints', { targetLanguage }));
   sections.push(
-    translateText(locale, 'aiAssistant.reply', {
+    agentText(locale === 'en-US' ? 'aiAssistant.replyNeutral' : 'aiAssistant.reply', {
       targetLanguage,
-      dialogLanguage: aiLanguageName(locale, locale),
+      dialogLanguage: aiLanguageName(locale),
     }),
   );
   return sections.filter(Boolean).join('\n\n');
 }
 
-/** 摘要内的对话、问答和标识均作为数据，不提升为系统指令。 */
+/** 摘要内的对话、问答和标识均作为数据，不提升为系统指令；摘要展示给用户，以界面语言撰写。 */
 export function getStructuredSummaryPrompt(
   previousSummary: string,
   dialogContent: string,
-  uiLocale: AppLocale = 'zh-CN',
+  uiLocale: AppLocale,
 ): string {
-  return translateText(uiLocale, 'aiAssistant.summary', {
-    previousSummary: previousSummary || translateText(uiLocale, 'aiAssistant.none'),
+  return agentText('aiAssistant.summary', {
+    previousSummary: previousSummary || agentText('aiAssistant.none'),
     dialogContent,
+    dialogLanguage: aiLanguageName(uiLocale),
   });
 }

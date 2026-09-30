@@ -128,6 +128,7 @@ export default {
       termUnsupported: '所选模型不支持术语翻译任务',
       translationUnsupported: '所选模型不支持翻译任务',
     },
+    batchAction: '批量处理 {count} 个段落 ({preview}{suffix})',
     summaryToolCall: '工具调用 {name} ({id}): {content}',
     summaryToolResult: '工具结果 {name} ({id}): {content}',
   },

@@ -33,8 +33,8 @@ afterEach(() => vi.restoreAllMocks());
 const tool = createTranslationTools({ enableOriginalTextValidation: true }).find(
   (entry) => entry.definition.function.name === 'add_translation_batch',
 )!;
-describe('批次译文反馈语言与协议身份', () => {
-  it('英文部分成功与长度警告三语接线完整，工具仍只验证不直接保存', async () => {
+describe('批次译文反馈为简中单源并保留协议身份', () => {
+  it('英文执行的部分成功与长度警告为简中说明，工具仍只验证不直接保存', async () => {
     const context = await fixture('en-US');
     await ChapterContentService.saveChapterContent(
       'c',
@@ -67,10 +67,10 @@ describe('批次译文反馈语言与协议身份', () => {
     expect(result.success).toBe(true);
     expect(result.result_code).toBe('PARTIAL_SUCCESS');
     expect(result.processed_count).toBe(1);
-    expect(result.message).toContain('Partial success');
+    expect(result.message).toMatch(/^部分成功/);
     expect(result.failed_paragraphs[0].error_code).toBe('ORIGINAL_TEXT_PREFIX_MISMATCH');
     expect(result.quality_warnings.length).toBeGreaterThan(0);
-    expect(result.quality_warnings.join(' ')).not.toMatch(/\p{Script=Han}/u);
+    expect(result.quality_warnings.join(' ')).toMatch(/\p{Script=Han}/u);
     expect(
       (await ChapterContentService.loadChapterContent('c'))!.every(
         (paragraph) => paragraph.translations.length === 0,
@@ -103,7 +103,7 @@ describe('批次译文反馈语言与协议身份', () => {
     context.languages = captureExecutionLanguages('zh-CN', 'zh-TW');
     release.resolve();
     const result = JSON.parse(await pending);
-    expect(result.message).toContain('Processed');
+    expect(result.message).toMatch(/^成功处理 1 个段落/);
     expect(result.task_type).toBe('translation');
     expect(result.accepted_paragraphs[0].translated_text).toBe('New English');
   });
@@ -126,14 +126,14 @@ describe('批次译文反馈语言与协议身份', () => {
       );
     const owned = JSON.parse(await tool.handler(args, context));
     expect(owned.error_code).toBe('BOOK_NOT_FOUND');
-    expect(owned.error).toBe('Batch processing failed: Book not found: source-book');
+    expect(owned.error).toBe('处理批次时出错: 书籍不存在: source-book');
     read.mockRejectedValue({ message: 'provider 原始诊断 {x}|raw' });
     const external = JSON.parse(await tool.handler(args, context));
     expect(external.error_code).toBe('BATCH_PROCESS_ERROR');
     expect(external.error).toContain('provider 原始诊断 {x}|raw');
   });
 
-  it('英文UI的缺引号细节及繁中UI的ASCII配对提示均本地化', async () => {
+  it('缺引号细节与 ASCII 配对提示在任意界面语言下均为简中说明', async () => {
     const context = await fixture('en-US');
     await ChapterContentService.saveChapterContent(
       'c',
@@ -155,7 +155,7 @@ describe('批次译文反馈语言与协议身份', () => {
       ),
     );
     expect(missing.failed_paragraphs[0].error_code).toBe('PARAM_VALIDATION_FAILED');
-    expect(missing.failed_paragraphs[0].error).not.toMatch(/\p{Script=Han}/u);
+    expect(missing.failed_paragraphs[0].error).toContain('缺少原文引号符号');
     const odd = JSON.parse(
       await tool.handler(
         {
@@ -170,7 +170,7 @@ describe('批次译文反馈语言与协议身份', () => {
         { ...context, languages: captureExecutionLanguages('zh-TW', 'en-US') },
       ),
     );
-    expect(odd.failed_paragraphs[0].error).toContain('成對');
+    expect(odd.failed_paragraphs[0].error).toContain('成对');
   });
 
   it('书籍与模型前置错误不依赖显示字符串', async () => {
@@ -190,7 +190,7 @@ describe('批次译文反馈语言与协议身份', () => {
       await tool.handler({ paragraphs }, { ...context, bookId: 'missing-book' }),
     );
     expect(missing.error_code).toBe('BOOK_NOT_FOUND');
-    expect(missing.error).not.toMatch(/\p{Script=Han}/u);
+    expect(missing.error).toMatch(/^书籍不存在/);
   });
 
   for (const locale of ['zh-CN', 'zh-TW', 'en-US'] as const) {
@@ -209,11 +209,11 @@ describe('批次译文反馈语言与协议身份', () => {
         const result = JSON.parse(await tool.handler({ paragraphs: [paragraph] }, context));
         expect(result.error_code).toBe(code);
         expect(result.invalid_items[0].reason).toBe(code);
-        if (locale === 'en-US') expect(result.error).not.toMatch(/\p{Script=Han}/u);
+        expect(result.error).toMatch(/\p{Script=Han}/u);
       }
     });
   }
-  it('成功反馈和动作概要用英文，实际译文与协议字段保持原样', async () => {
+  it('成功反馈为简中，界面动作概要不含批量说明，实际译文与协议字段保持原样', async () => {
     const context = await fixture('en-US');
     const actions: unknown[] = [];
     const result = JSON.parse(
@@ -232,11 +232,12 @@ describe('批次译文反馈语言与协议身份', () => {
     );
     expect(result.success).toBe(true);
     expect(result.processed_count).toBe(1);
-    expect(result.message).toContain('Processed');
-    expect(JSON.stringify(actions)).not.toContain('批量处理');
+    expect(result.message).toMatch(/^成功处理 1 个段落/);
+    // 操作概要展示在界面上，保持执行的英文
+    expect(JSON.stringify(actions)).toContain('Batch processed 1 paragraphs (11111111)');
     expect(result.accepted_paragraphs[0].paragraph_id).toBe('11111111');
   });
-  it('英文原文前缀和任务前置拒绝反馈有固定身份', async () => {
+  it('原文前缀和任务前置拒绝反馈有固定身份', async () => {
     const context = await fixture('en-US');
     const result = JSON.parse(
       await tool.handler(
@@ -253,11 +254,11 @@ describe('批次译文反馈语言与协议身份', () => {
       ),
     );
     expect(result.failed_paragraphs[0].error_code).toBe('ORIGINAL_TEXT_PREFIX_MISMATCH');
-    expect(result.failed_paragraphs[0].error).not.toMatch(/\p{Script=Han}/u);
+    expect(result.failed_paragraphs[0].error).toContain('原文前缀不匹配');
     const missing = JSON.parse(
       await tool.handler({ paragraphs: [] }, { languages: captureExecutionLanguages('en-US') }),
     );
     expect(missing.error_code).toBe('AI_STORE_NOT_INITIALIZED');
-    expect(missing.error).not.toMatch(/\p{Script=Han}/u);
+    expect(missing.error).toMatch(/\p{Script=Han}/u);
   });
 });

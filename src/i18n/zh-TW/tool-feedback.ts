@@ -1,12 +1,8 @@
 import importErrors from './import-errors';
 import helpFeedback from './help-feedback';
-import paragraphFeedback from './paragraph-feedback';
-import batchFeedback from './batch-feedback';
 export default {
   ...importErrors,
   ...helpFeedback,
-  ...paragraphFeedback,
-  ...batchFeedback,
   aiToolFeedback: {
     toolPairIdentity: '工具結果身分不一致',
     toolPairMissing: '工具沒有完成結果或讓出原因',

@@ -2,7 +2,7 @@ import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
 import { createCancelledError, describeAIError } from 'src/services/ai/core/errors';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
 import { captureExecutionLanguages } from './utils/execution-languages';
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import { getNameTranslation } from 'src/services/localization/selection';
 import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
@@ -163,11 +163,9 @@ async function buildSystemPrompt(
  */
 function formatCharacterDetail(c: CharacterSetting, languages: ExecutionLanguages): string {
   const t = (key: 'sex' | 'description' | 'speakingStyle', value: string) =>
-    translateText(languages.uiLocale, `aiTasks.term.${key}`, { value });
-  const sex = c.sex
-    ? translateText(languages.uiLocale, `aiTasks.term.${c.sex}`)
-    : translateText(languages.uiLocale, 'aiTasks.term.unset');
-  const none = translateText(languages.uiLocale, 'aiTasks.term.none');
+    agentText(`aiTasks.term.${key}`, { value });
+  const sex = c.sex ? agentText(`aiTasks.term.${c.sex}`) : agentText('aiTasks.term.unset');
+  const none = agentText('aiTasks.term.none');
   return [
     `ID: ${c.id}`,
     `${c.name} → ${getNameTranslation(c, languages.targetLanguage)?.translation ?? ''}`,
@@ -175,7 +173,7 @@ function formatCharacterDetail(c: CharacterSetting, languages: ExecutionLanguage
     t('description', c.description || none),
     t('speakingStyle', c.speakingStyle || none),
     formatCharacterAliases(c.aliases, languages.targetLanguage, languages.uiLocale) ??
-      translateText(languages.uiLocale, 'aiTasks.context.aliases', { aliases: none }),
+      agentText('aiTasks.context.aliases', { aliases: none }),
   ].join(' | ');
 }
 
@@ -190,7 +188,7 @@ function formatRelatedCharactersSection(
   const characterDetails = foundCharacters
     .map((character) => formatCharacterDetail(character, languages))
     .join('\n');
-  return translateText(languages.uiLocale, 'aiTasks.term.characters', {
+  return agentText('aiTasks.term.characters', {
     details: characterDetails,
   });
 }
@@ -209,7 +207,7 @@ function formatRelatedTermsSection(
         `- ${t.name} → ${getNameTranslation(t, languages.targetLanguage)?.translation ?? ''}${t.description ? `: ${t.description}` : ''}`,
     )
     .join('\n');
-  return translateText(languages.uiLocale, 'aiTasks.term.terms', { details: termList });
+  return agentText('aiTasks.term.terms', { details: termList });
 }
 
 /**
@@ -237,7 +235,7 @@ async function buildRelatedContextInfo(
     return '';
   }
 
-  let relatedContextInfo = translateText(languages.uiLocale, 'aiTasks.term.related');
+  let relatedContextInfo = agentText('aiTasks.term.related');
   relatedContextInfo += formatRelatedCharactersSection(foundCharacters, languages);
   relatedContextInfo += formatRelatedTermsSection(foundTerms, languages);
 

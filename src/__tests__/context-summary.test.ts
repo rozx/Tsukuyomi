@@ -35,7 +35,7 @@ const generate = () => vi.spyOn(AIServiceFactory.getService('openai'), 'generate
 
 describe('共享结构化摘要', () => {
   it('提示词更新同一份摘要，包含所有规定小节', () => {
-    const prompt = getStructuredSummaryPrompt('旧摘要内容', '新增消息内容');
+    const prompt = getStructuredSummaryPrompt('旧摘要内容', '新增消息内容', 'zh-CN');
     for (const section of [
       '目标',
       '约束与偏好',

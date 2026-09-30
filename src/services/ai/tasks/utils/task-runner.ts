@@ -38,7 +38,7 @@ import {
 import { type PerformanceMetrics } from './tool-executor';
 import { buildPostOutputPrompt } from './context-builder';
 import { createPromptPolicy, type IPromptPolicy } from './prompt-policy';
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import { StateMachineEngine } from './state-machine-engine';
 import { ToolDispatcher } from './tool-dispatcher';
 import { TodoWorkflow } from './todo-workflow';
@@ -477,7 +477,7 @@ class TaskLoopSession {
     console.warn(
       `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
     );
-    return translateText(this.config.languages.uiLocale, 'aiState.gate', {
+    return agentText('aiState.gate', {
       status: newStatus,
       count: gate.incompleteItems.length,
       items: todoList,

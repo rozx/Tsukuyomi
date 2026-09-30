@@ -67,7 +67,7 @@ export function requireValidKeywords(raw: unknown): string[] {
  * 注意：使用同步的 `useBooksStore().getBookById`，与 `book-tools.ts` 中基于
  * `BookService.getBookById` 的异步版本不通用。仅用于工具已在 store 初始化后的场景。
  */
-export function resolveBookSync(bookId: string, uiLocale: AppLocale = 'zh-CN'): Novel {
+export function resolveBookSync(bookId: string, feedbackLocale: AppLocale = 'zh-CN'): Novel {
   const booksStore = useBooksStore();
   const book = booksStore.getBookById(bookId);
   if (!book) {
@@ -75,7 +75,7 @@ export function resolveBookSync(bookId: string, uiLocale: AppLocale = 'zh-CN'): 
       'BOOK_NOT_FOUND',
       'aiEntityFeedback.bookMissing',
       { id: bookId },
-      uiLocale,
+      feedbackLocale,
     );
   }
   return book;

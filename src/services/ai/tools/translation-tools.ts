@@ -1,7 +1,11 @@
-import { localizedErrorCode, localizedErrorMessage } from 'src/utils/localized-error';
+import {
+  agentErrorMessage,
+  localizedErrorCode,
+  localizedErrorMessage,
+} from 'src/utils/localized-error';
 import { toolDefinition } from './tool-localization';
 import { describeTool } from './tool-localization';
-import { translateText } from 'src/i18n/translate';
+import { agentText, AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import type { ToolDefinition, ToolContext } from './types';
 import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import { BookService } from 'src/services/book-service';
@@ -157,19 +161,19 @@ const QUOTE_PAIR_RULES: Array<{
 ];
 
 // 错误消息常量
-function createBatchMessages(uiLocale: AppLocale) {
+function createBatchMessages(feedbackLocale: AppLocale) {
   return {
-    MISSING_PARAGRAPH_ID: translateText(uiLocale, 'aiBatchFeedback.MISSING_PARAGRAPH_ID'),
-    INVALID_PARAGRAPH_ID: translateText(uiLocale, 'aiBatchFeedback.INVALID_PARAGRAPH_ID'),
-    LEGACY_INDEX_REJECTED: translateText(uiLocale, 'aiBatchFeedback.LEGACY_INDEX_REJECTED'),
-    EMPTY_PARAGRAPH_LIST: translateText(uiLocale, 'aiBatchFeedback.EMPTY_PARAGRAPH_LIST'),
+    MISSING_PARAGRAPH_ID: agentText('aiBatchFeedback.MISSING_PARAGRAPH_ID'),
+    INVALID_PARAGRAPH_ID: agentText('aiBatchFeedback.INVALID_PARAGRAPH_ID'),
+    LEGACY_INDEX_REJECTED: agentText('aiBatchFeedback.LEGACY_INDEX_REJECTED'),
+    EMPTY_PARAGRAPH_LIST: agentText('aiBatchFeedback.EMPTY_PARAGRAPH_LIST'),
     BATCH_SIZE_EXCEEDED: (current: number, max: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.BATCH_SIZE_EXCEEDED', {
+      agentText('aiBatchFeedback.BATCH_SIZE_EXCEEDED', {
         max: max,
         current: current,
       }),
     BATCH_SIZE_TOLERANCE_WARNING: (current: number, max: number, allowedMax: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.BATCH_SIZE_TOLERANCE_WARNING', {
+      agentText('aiBatchFeedback.BATCH_SIZE_TOLERANCE_WARNING', {
         current: current,
         max: max,
         allowedMax: allowedMax,
@@ -180,7 +184,7 @@ function createBatchMessages(uiLocale: AppLocale) {
       allowedMax: number,
       remainingCount: number,
     ) =>
-      translateText(uiLocale, 'aiBatchFeedback.BATCH_SIZE_DOUBLE_WARNING', {
+      agentText('aiBatchFeedback.BATCH_SIZE_DOUBLE_WARNING', {
         current: current,
         max: max,
         remainingCount: remainingCount,
@@ -188,43 +192,42 @@ function createBatchMessages(uiLocale: AppLocale) {
         value4: allowedMax,
       }),
     EMPTY_PARAGRAPH_ITEM: (index: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.EMPTY_PARAGRAPH_ITEM', { index: index + 1 }),
+      agentText('aiBatchFeedback.EMPTY_PARAGRAPH_ITEM', { index: index + 1 }),
     INVALID_PARAGRAPH: (index: number, error: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.INVALID_PARAGRAPH', {
+      agentText('aiBatchFeedback.INVALID_PARAGRAPH', {
         index: index + 1,
         error: error,
       }),
     MISSING_TRANSLATION: (index: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.MISSING_TRANSLATION', { index: index + 1 }),
+      agentText('aiBatchFeedback.MISSING_TRANSLATION', { index: index + 1 }),
     MISSING_ORIGINAL_TEXT_PREFIX: (paragraphId: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.MISSING_ORIGINAL_TEXT_PREFIX', {
+      agentText('aiBatchFeedback.MISSING_ORIGINAL_TEXT_PREFIX', {
         paragraphId: paragraphId,
       }),
     ORIGINAL_TEXT_PREFIX_TOO_SHORT: (paragraphId: string, minLength: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.ORIGINAL_TEXT_PREFIX_TOO_SHORT', {
+      agentText('aiBatchFeedback.ORIGINAL_TEXT_PREFIX_TOO_SHORT', {
         paragraphId: paragraphId,
         minLength: minLength,
       }),
     ORIGINAL_TEXT_PREFIX_TOO_LONG: (paragraphId: string, maxLength: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.ORIGINAL_TEXT_PREFIX_TOO_LONG', {
+      agentText('aiBatchFeedback.ORIGINAL_TEXT_PREFIX_TOO_LONG', {
         paragraphId: paragraphId,
         maxLength: maxLength,
       }),
     ORIGINAL_TEXT_PREFIX_MISMATCH: (paragraphId: string, prefix: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.ORIGINAL_TEXT_PREFIX_MISMATCH', {
+      agentText('aiBatchFeedback.ORIGINAL_TEXT_PREFIX_MISMATCH', {
         paragraphId: paragraphId,
         prefix: prefix,
       }),
     DUPLICATE_PARAGRAPHS: (ids: string[]) =>
-      translateText(uiLocale, 'aiBatchFeedback.DUPLICATE_PARAGRAPHS', { ids: ids.join(', ') }),
+      agentText('aiBatchFeedback.DUPLICATE_PARAGRAPHS', { ids: ids.join(', ') }),
     OUT_OF_RANGE_PARAGRAPHS: (ids: string[], count: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.OUT_OF_RANGE_PARAGRAPHS', {
+      agentText('aiBatchFeedback.OUT_OF_RANGE_PARAGRAPHS', {
         ids: ids.slice(0, 5).join(', '),
-        extra:
-          count > 5 ? translateText(uiLocale, 'aiBatchFeedback.COUNT_REMAINING', { count }) : '',
+        extra: count > 5 ? agentText('aiBatchFeedback.COUNT_REMAINING', { count }) : '',
       }),
     PARAGRAPH_ID_AUTO_CORRECTED: (originalId: string, correctedId: string, distance: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.PARAGRAPH_ID_AUTO_CORRECTED', {
+      agentText('aiBatchFeedback.PARAGRAPH_ID_AUTO_CORRECTED', {
         originalId: originalId,
         correctedId: correctedId,
         distance: distance,
@@ -234,87 +237,80 @@ function createBatchMessages(uiLocale: AppLocale) {
       distance: number,
       candidateIds: string[],
     ) =>
-      translateText(uiLocale, 'aiBatchFeedback.PARAGRAPH_ID_AMBIGUOUS_CANDIDATES', {
+      agentText('aiBatchFeedback.PARAGRAPH_ID_AMBIGUOUS_CANDIDATES', {
         originalId: originalId,
         distance: distance,
         candidateIds: candidateIds.join(', '),
       }),
     MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
-      translateText(uiLocale, 'aiBatchFeedback.MISSING_QUOTE_SYMBOLS', {
+      agentText('aiBatchFeedback.MISSING_QUOTE_SYMBOLS', {
         paragraphId: paragraphId,
         missingTypes: missingTypes.join(' '),
       }),
     TRANSLATION_DUPLICATE: (count: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.TRANSLATION_DUPLICATE', { count: count }),
+      agentText('aiBatchFeedback.TRANSLATION_DUPLICATE', { count: count }),
     TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.TRANSLATION_LENGTH_SHORT', {
+      agentText('aiBatchFeedback.TRANSLATION_LENGTH_SHORT', {
         paragraphId: paragraphId,
         percentage: percentage,
       }),
     TRANSLATION_LENGTH_LONG: (paragraphId: string, percentage: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.TRANSLATION_LENGTH_LONG', {
+      agentText('aiBatchFeedback.TRANSLATION_LENGTH_LONG', {
         paragraphId: paragraphId,
         percentage: percentage,
       }),
-    AI_STORE_NOT_INITIALIZED: translateText(uiLocale, 'aiBatchFeedback.AI_STORE_NOT_INITIALIZED'),
-    TASK_ID_MISSING: translateText(uiLocale, 'aiBatchFeedback.TASK_ID_MISSING'),
+    AI_STORE_NOT_INITIALIZED: agentText('aiBatchFeedback.AI_STORE_NOT_INITIALIZED'),
+    TASK_ID_MISSING: agentText('aiBatchFeedback.TASK_ID_MISSING'),
     TASK_NOT_FOUND: (taskId: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.TASK_NOT_FOUND', { taskId: taskId }),
+      agentText('aiBatchFeedback.TASK_NOT_FOUND', { taskId: taskId }),
     TASK_STATUS_INVALID: (currentStatus: string | undefined) =>
-      translateText(uiLocale, 'aiBatchFeedback.TASK_STATUS_INVALID', {
-        currentStatus: currentStatus || translateText(uiLocale, 'aiBatchFeedback.UNSET'),
+      agentText('aiBatchFeedback.TASK_STATUS_INVALID', {
+        currentStatus: currentStatus || agentText('aiBatchFeedback.UNSET'),
       }),
     TASK_TYPE_MISSING: (taskId: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.TASK_TYPE_MISSING', { taskId: taskId }),
+      agentText('aiBatchFeedback.TASK_TYPE_MISSING', { taskId: taskId }),
     TASK_TYPE_UNSUPPORTED: (taskType: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.TASK_TYPE_UNSUPPORTED', { taskType: taskType }),
+      agentText('aiBatchFeedback.TASK_TYPE_UNSUPPORTED', { taskType: taskType }),
     BOOK_NOT_FOUND: (bookId: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.BOOK_NOT_FOUND', { bookId: bookId }),
-    BOOK_NO_VOLUMES: translateText(uiLocale, 'aiBatchFeedback.BOOK_NO_VOLUMES'),
+      agentText('aiBatchFeedback.BOOK_NOT_FOUND', { bookId: bookId }),
+    BOOK_NO_VOLUMES: agentText('aiBatchFeedback.BOOK_NO_VOLUMES'),
     CHAPTER_NOT_FOUND: (chapterId: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.CHAPTER_NOT_FOUND', { chapterId: chapterId }),
+      agentText('aiBatchFeedback.CHAPTER_NOT_FOUND', { chapterId: chapterId }),
     PARAGRAPH_NOT_FOUND: (ids: string[]) =>
-      translateText(uiLocale, 'aiBatchFeedback.PARAGRAPH_NOT_FOUND', { ids: ids.join(', ') }),
+      agentText('aiBatchFeedback.PARAGRAPH_NOT_FOUND', { ids: ids.join(', ') }),
     EMPTY_PARAGRAPH_CANNOT_TRANSLATE: (ids: string[]) =>
-      translateText(uiLocale, 'aiBatchFeedback.EMPTY_PARAGRAPH_CANNOT_TRANSLATE', {
+      agentText('aiBatchFeedback.EMPTY_PARAGRAPH_CANNOT_TRANSLATE', {
         ids: ids.join(', '),
       }),
-    BOOK_ID_MISSING: translateText(uiLocale, 'aiBatchFeedback.BOOK_ID_MISSING'),
-    AI_MODEL_ID_MISSING: translateText(uiLocale, 'aiBatchFeedback.AI_MODEL_ID_MISSING'),
-    CHAPTER_ID_MISSING: translateText(uiLocale, 'aiBatchFeedback.CHAPTER_ID_MISSING'),
-    PARAM_VALIDATION_FAILED: translateText(uiLocale, 'aiBatchFeedback.PARAM_VALIDATION_FAILED'),
+    BOOK_ID_MISSING: agentText('aiBatchFeedback.BOOK_ID_MISSING'),
+    AI_MODEL_ID_MISSING: agentText('aiBatchFeedback.AI_MODEL_ID_MISSING'),
+    CHAPTER_ID_MISSING: agentText('aiBatchFeedback.CHAPTER_ID_MISSING'),
+    PARAM_VALIDATION_FAILED: agentText('aiBatchFeedback.PARAM_VALIDATION_FAILED'),
     PARTIAL_SUCCESS_SUMMARY: (acceptedCount: number, failedCount: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.PARTIAL_SUCCESS_SUMMARY', {
+      agentText('aiBatchFeedback.PARTIAL_SUCCESS_SUMMARY', {
         acceptedCount: acceptedCount,
         failedCount: failedCount,
       }),
-    ALL_PARAGRAPHS_FAILED: translateText(uiLocale, 'aiBatchFeedback.ALL_PARAGRAPHS_FAILED'),
+    ALL_PARAGRAPHS_FAILED: agentText('aiBatchFeedback.ALL_PARAGRAPHS_FAILED'),
     BATCH_PROCESS_ERROR: (errorMsg: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.BATCH_PROCESS_ERROR', { errorMsg: errorMsg }),
-    PROCESSED: (count: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.PROCESSED', { count: count }),
-    ACTION: (count: number, preview: string, suffix: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.ACTION', {
-        count: count,
-        preview: preview,
-        suffix: suffix,
-      }),
+      agentText('aiBatchFeedback.BATCH_PROCESS_ERROR', { errorMsg: errorMsg }),
+    PROCESSED: (count: number) => agentText('aiBatchFeedback.PROCESSED', { count: count }),
     QUOTE_OPEN: (symbol: string, accepted: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.QUOTE_OPEN', { symbol, accepted }),
+      agentText('aiBatchFeedback.QUOTE_OPEN', { symbol, accepted }),
     QUOTE_CLOSE: (symbol: string, accepted: string) =>
-      translateText(uiLocale, 'aiBatchFeedback.QUOTE_CLOSE', { symbol, accepted }),
-    ASCII_QUOTE_PAIR: translateText(uiLocale, 'aiBatchFeedback.ASCII_QUOTE_PAIR'),
+      agentText('aiBatchFeedback.QUOTE_CLOSE', { symbol, accepted }),
+    ASCII_QUOTE_PAIR: agentText('aiBatchFeedback.ASCII_QUOTE_PAIR'),
     CORRECTION_PREFIX_MISSING: (originalId: string, candidateId: string, distance: number) =>
-      translateText(uiLocale, 'aiBatchFeedback.CORRECTION_PREFIX_MISSING', {
+      agentText('aiBatchFeedback.CORRECTION_PREFIX_MISSING', {
         originalId,
         candidateId,
         distance,
       }),
-    ID_NOTE: translateText(uiLocale, 'aiBatchFeedback.ID_NOTE'),
-    NOTE_SEPARATOR: translateText(uiLocale, 'aiBatchFeedback.NOTE_SEPARATOR'),
-    NOTE_SUFFIX: translateText(uiLocale, 'aiBatchFeedback.NOTE_SUFFIX'),
-    INVALID_ID: translateText(uiLocale, 'aiBatchFeedback.INVALID_ID'),
-    UNKNOWN_ERROR: translateText(uiLocale, 'aiBatchFeedback.UNKNOWN_ERROR'),
+    ID_NOTE: agentText('aiBatchFeedback.ID_NOTE'),
+    NOTE_SEPARATOR: agentText('aiBatchFeedback.NOTE_SEPARATOR'),
+    NOTE_SUFFIX: agentText('aiBatchFeedback.NOTE_SUFFIX'),
+    INVALID_ID: agentText('aiBatchFeedback.INVALID_ID'),
+    UNKNOWN_ERROR: agentText('aiBatchFeedback.UNKNOWN_ERROR'),
   };
 }
 type BatchMessages = ReturnType<typeof createBatchMessages>;
@@ -1251,7 +1247,7 @@ function validateSingleItem(
   paragraph: Paragraph,
   enableOriginalTextValidation: boolean | undefined,
   targetLanguage: AppLocale,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
   messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): ItemValidationOutcome {
   const warnings: string[] = [];
@@ -1275,7 +1271,7 @@ function validateSingleItem(
   const trimmedTranslatedText = item.translatedText.trim();
   const sourceKept = trimmedTranslatedText === trimmedOriginalText;
   if (!isSymbolOnly(trimmedOriginalText) && sourceKept) {
-    warnings.push(translateText(uiLocale, 'aiValidation.sourceKept', { id: item.paragraphId }));
+    warnings.push(agentText('aiValidation.sourceKept', { id: item.paragraphId }));
   }
 
   const dupe = checkTranslationDuplicate(paragraph, item.translatedText, targetLanguage);
@@ -1437,7 +1433,7 @@ function validateAllItems(
   targetParagraphsMap: Map<string, Paragraph>,
   enableOriginalTextValidation: boolean | undefined,
   targetLanguage: AppLocale,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
   messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
 ): ValidationSummary {
   const warnings: string[] = [];
@@ -1453,7 +1449,7 @@ function validateAllItems(
       paragraph,
       enableOriginalTextValidation,
       targetLanguage,
-      uiLocale,
+      feedbackLocale,
       messages,
     );
     warnings.push(...outcome.warnings);
@@ -1531,9 +1527,9 @@ async function processTranslationBatch(
   preloadedBook?: Novel,
   enableOriginalTextValidation?: boolean,
   targetLanguage: AppLocale = 'zh-CN',
-  uiLocale: AppLocale = 'zh-CN',
+  feedbackLocale: AppLocale = 'zh-CN',
 ): Promise<ProcessTranslationBatchResult> {
-  const messages = createBatchMessages(uiLocale);
+  const messages = createBatchMessages(feedbackLocale);
   // aiModelId 保留在签名中以维持调用方兼容；实际翻译写入由 onParagraphsExtracted 回调完成
   void aiModelId;
   try {
@@ -1583,12 +1579,12 @@ async function processTranslationBatch(
       targetParagraphsMap,
       enableOriginalTextValidation,
       targetLanguage,
-      uiLocale,
+      feedbackLocale,
       messages,
     );
     return buildBatchValidationResult(summary, messages);
   } catch (error) {
-    const errorMsg = localizedErrorMessage(error, uiLocale, 'aiBatchFeedback.UNKNOWN_ERROR');
+    const errorMsg = agentErrorMessage(error, 'aiBatchFeedback.UNKNOWN_ERROR');
     return {
       success: false,
       error: messages.BATCH_PROCESS_ERROR(errorMsg),
@@ -1879,7 +1875,7 @@ function emitBatchActionReport(
   processedCount: number,
   firstParagraphId: string,
   acceptedParagraphs: AcceptedParagraph[],
-  messages: BatchMessages = DEFAULT_BATCH_MESSAGES,
+  actionLocale: AppLocale,
 ): void {
   if (!onAction) return;
   const preview = acceptedParagraphs
@@ -1894,7 +1890,12 @@ function emitBatchActionReport(
       paragraph_id: firstParagraphId,
       translation_id: `batch_${processedCount}_${Date.now()}`,
       old_translation: '',
-      new_translation: messages.ACTION(processedCount, preview, suffix),
+      // 操作概要展示在界面上，使用执行的界面语言
+      new_translation: translateText(actionLocale, 'aiRun.batchAction', {
+        count: processedCount,
+        preview,
+        suffix,
+      }),
     },
   });
 }
@@ -1954,10 +1955,13 @@ async function handleAddTranslationBatch(
   args: Record<string, unknown>,
   context: ToolContext,
 ): Promise<string> {
-  const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+  const feedbackLocale = AGENT_LOCALE;
   const targetLanguage = context.languages?.targetLanguage ?? 'zh-CN';
-  context = { ...context, languages: Object.freeze({ uiLocale, targetLanguage }) };
-  const messages = createBatchMessages(uiLocale);
+  context = {
+    ...context,
+    languages: Object.freeze({ uiLocale: context.languages?.uiLocale ?? 'zh-CN', targetLanguage }),
+  };
+  const messages = createBatchMessages(feedbackLocale);
   const { bookId, onAction, taskId, aiProcessingStore, submittedParagraphIds } = context;
   const { paragraphs } = args as unknown as AddTranslationBatchArgs;
 
@@ -2004,7 +2008,7 @@ async function handleAddTranslationBatch(
     preloadedBook,
     context.enableOriginalTextValidation,
     context.languages?.targetLanguage ?? 'zh-CN',
-    context.languages?.uiLocale ?? 'zh-CN',
+    AGENT_LOCALE,
   );
 
   const combinedWarnings = [...(result.warnings ?? []), ...correctionWarnings];
@@ -2028,7 +2032,7 @@ async function handleAddTranslationBatch(
     result.processedCount,
     acceptedParagraphs[0]?.paragraph_id || '',
     acceptedParagraphs,
-    messages,
+    context.languages?.uiLocale ?? 'zh-CN',
   );
 
   return buildSuccessResponse(

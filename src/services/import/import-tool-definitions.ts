@@ -1,10 +1,9 @@
 import {
   describeImportTool,
-  localizeToolDefinition,
+  finalizeToolDefinition,
 } from 'src/services/ai/tools/tool-localization';
 import { importStructureTools } from './import-structure-tools';
 
-import type { AppLocale } from 'src/models/locale';
 import { importPatternSchema, importSourceFilterSchema } from './import-pattern-schema';
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { askUserTools } from 'src/services/ai/tools/ask-user-tools';
@@ -170,8 +169,8 @@ function tool(name: string, properties: Record<string, unknown>, required: strin
   };
 }
 
-export function getImportTools(uiLocale: AppLocale): AITool[] {
-  return importTools.map((tool) => localizeToolDefinition(tool, uiLocale, 'aiImportTools'));
+export function getImportTools(): AITool[] {
+  return importTools.map((tool) => finalizeToolDefinition(tool, 'aiImportTools'));
 }
 
 export const importTools: AITool[] = [

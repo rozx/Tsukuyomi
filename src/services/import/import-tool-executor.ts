@@ -1,3 +1,4 @@
+import { AGENT_LOCALE } from 'src/i18n/translate';
 import {
   importCancelled,
   localizeImportFeedback,
@@ -130,7 +131,8 @@ export class ImportToolExecutor {
       role: 'tool',
       tool_call_id: call.id,
       name: call.function.name,
-      content: JSON.stringify(localizeImportFeedback(data, uiLocale)),
+      // 返回给模型的说明固定简中；工作台事件仍按执行界面语言展示
+      content: JSON.stringify(localizeImportFeedback(data, AGENT_LOCALE)),
     });
     const finish = (data: unknown) => ({
       events: [
@@ -375,7 +377,7 @@ export class ImportToolExecutor {
             (task) => Promise.resolve(applyImportTodoTool(task, name, args)),
             { run: this.run, finish },
           );
-        const read = await readImportTool(this.run, name, args, uiLocale);
+        const read = await readImportTool(this.run, name, args, AGENT_LOCALE);
         return save({ success: true, ...(read as Record<string, unknown>) });
       }
     }

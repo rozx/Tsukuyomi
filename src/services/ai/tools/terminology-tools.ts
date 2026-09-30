@@ -76,7 +76,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['name', 'translation'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
+      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
       const { name, translation, description } = args as {
         name: string;
         translation: string;
@@ -87,7 +87,7 @@ export const terminologyTools: ToolDefinition[] = [
           'TERM_FIELDS_REQUIRED',
           'aiEntityFeedback.termNameAndTranslation',
           {},
-          uiLocale,
+          feedbackLocale,
         );
       }
 
@@ -115,7 +115,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(uiLocale, 'aiEntityFeedback.termCreated'),
+        message: translateText(feedbackLocale, 'aiEntityFeedback.termCreated'),
         term: {
           id: term.id,
           name: term.name,
@@ -141,7 +141,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['name'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
+      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
       const rawArgs = args as { name: string; include_memory?: boolean };
       const { include_memory = true } = rawArgs;
       // 类型守卫：确保 name 为有效字符串
@@ -151,11 +151,11 @@ export const terminologyTools: ToolDefinition[] = [
           'TERM_NAME_REQUIRED',
           'aiEntityFeedback.termNameRequired',
           {},
-          uiLocale,
+          feedbackLocale,
         );
       }
 
-      const book = resolveBookSync(bookId, uiLocale);
+      const book = resolveBookSync(bookId, feedbackLocale);
 
       const term = book.terminologies?.find((t) => t.name === name);
 
@@ -186,7 +186,7 @@ export const terminologyTools: ToolDefinition[] = [
           const { items: limitedMatches, ...matchSummary } = fuzzyMatches(
             fallbackMatches,
             MAX_FALLBACK_RESULTS,
-            uiLocale,
+            feedbackLocale,
             name,
           );
 
@@ -204,7 +204,7 @@ export const terminologyTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'TERM_NOT_FOUND',
-          message: translateText(uiLocale, 'aiEntityFeedback.termNoMatch', { name }),
+          message: translateText(feedbackLocale, 'aiEntityFeedback.termNoMatch', { name }),
         });
       }
 
@@ -271,7 +271,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['term_id'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
+      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
       const { term_id, translation, description } = args as {
         term_id: string;
         translation?: string;
@@ -282,7 +282,7 @@ export const terminologyTools: ToolDefinition[] = [
           'TERM_ID_REQUIRED',
           'aiEntityFeedback.termIdRequired',
           {},
-          uiLocale,
+          feedbackLocale,
         );
       }
 
@@ -291,7 +291,7 @@ export const terminologyTools: ToolDefinition[] = [
           'TERM_TRANSLATION_REQUIRED',
           'aiEntityFeedback.termTranslationRequired',
           {},
-          uiLocale,
+          feedbackLocale,
         );
       }
 
@@ -333,7 +333,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(uiLocale, 'aiEntityFeedback.termUpdated'),
+        message: translateText(feedbackLocale, 'aiEntityFeedback.termUpdated'),
         term: {
           id: term.id,
           name: term.name,
@@ -355,7 +355,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['term_id'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, uiLocale } = bookToolContext(context);
+      const { bookId, onAction, feedbackLocale } = bookToolContext(context);
       const { term_id } = args as {
         term_id: string;
       };
@@ -364,7 +364,7 @@ export const terminologyTools: ToolDefinition[] = [
           'TERM_ID_REQUIRED',
           'aiEntityFeedback.termIdRequired',
           {},
-          uiLocale,
+          feedbackLocale,
         );
       }
 
@@ -387,7 +387,7 @@ export const terminologyTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(uiLocale, 'aiEntityFeedback.termDeleted'),
+        message: translateText(feedbackLocale, 'aiEntityFeedback.termDeleted'),
       });
     },
   },
@@ -411,7 +411,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
+      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
       const {
         chapter_id,
         all_chapters = false,
@@ -478,7 +478,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['keywords'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, uiLocale, language } = bookToolContext(context);
+      const { bookId, onAction, feedbackLocale, language } = bookToolContext(context);
       const {
         keywords,
         translation_only = false,
@@ -572,7 +572,7 @@ export const terminologyTools: ToolDefinition[] = [
       required: ['keywords'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, uiLocale } = bookToolContext(context);
+      const { bookId, onAction, feedbackLocale } = bookToolContext(context);
       const { keywords } = args as {
         keywords: string[];
       };
@@ -581,7 +581,7 @@ export const terminologyTools: ToolDefinition[] = [
           'KEYWORDS_REQUIRED',
           'aiEntityFeedback.keywordsRequired',
           {},
-          uiLocale,
+          feedbackLocale,
         );
       }
 

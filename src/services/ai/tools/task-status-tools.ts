@@ -1,5 +1,10 @@
-import { translateText } from 'src/i18n/translate';
-import { LocalizedError, localizedErrorMessage } from 'src/utils/localized-error';
+import { agentText, AGENT_LOCALE, translateText } from 'src/i18n/translate';
+import {
+  agentErrorMessage,
+  AgentError,
+  LocalizedError,
+  localizedErrorMessage,
+} from 'src/utils/localized-error';
 import { toolDefinition } from './tool-localization';
 import { describeTool } from './tool-localization';
 import type { AppLocale } from 'src/models/locale';
@@ -50,26 +55,26 @@ function getTransitionErrorMessage(
   taskType: TaskType,
   currentStatus: TaskStatus,
   newStatus: TaskStatus,
-  uiLocale: AppLocale = 'zh-CN',
+  feedbackLocale: AppLocale = 'zh-CN',
 ): string {
   if (newStatus === 'preparing') {
-    return translateText(uiLocale, 'aiTaskFeedback.preparing');
+    return agentText('aiTaskFeedback.preparing');
   }
 
   if (taskType === 'translation' && currentStatus === 'working' && newStatus === 'end') {
-    return translateText(uiLocale, 'aiTaskFeedback.translationReview');
+    return agentText('aiTaskFeedback.translationReview');
   }
 
   if (newStatus === 'review') {
     if (taskType === 'polish') {
-      return translateText(uiLocale, 'aiTaskFeedback.polishReview');
+      return agentText('aiTaskFeedback.polishReview');
     }
     if (taskType === 'proofreading') {
-      return translateText(uiLocale, 'aiTaskFeedback.proofreadReview');
+      return agentText('aiTaskFeedback.proofreadReview');
     }
   }
 
-  return translateText(uiLocale, 'aiTaskFeedback.invalidTransition', {
+  return agentText('aiTaskFeedback.invalidTransition', {
     previous: currentStatus,
     next: newStatus,
   });
@@ -89,14 +94,14 @@ function isValidTransition(
   taskType: TaskType,
   currentStatus: TaskStatus | undefined,
   newStatus: TaskStatus,
-  uiLocale: AppLocale = 'zh-CN',
+  feedbackLocale: AppLocale = 'zh-CN',
 ): { valid: boolean; error?: string } {
   // 如果是首次状态更新，必须是 planning
   if (!currentStatus) {
     if (newStatus !== 'planning') {
       return {
         valid: false,
-        error: translateText(uiLocale, 'aiTaskFeedback.initial'),
+        error: agentText('aiTaskFeedback.initial'),
       };
     }
     return { valid: true };
@@ -106,7 +111,7 @@ function isValidTransition(
   if (!rules) {
     return {
       valid: false,
-      error: translateText(uiLocale, 'aiTaskFeedback.unknownType', { type: taskType }),
+      error: agentText('aiTaskFeedback.unknownType', { type: taskType }),
     };
   }
 
@@ -114,7 +119,7 @@ function isValidTransition(
   if (!allowedTransitions || !allowedTransitions.includes(newStatus)) {
     return {
       valid: false,
-      error: getTransitionErrorMessage(taskType, currentStatus, newStatus, uiLocale),
+      error: getTransitionErrorMessage(taskType, currentStatus, newStatus, feedbackLocale),
     };
   }
 
@@ -153,7 +158,7 @@ async function updateTaskStatus(
   newStatus: TaskStatus,
 ): Promise<void> {
   if (!aiProcessingStore) {
-    throw new LocalizedError('AI_STORE_REQUIRED', 'aiTaskFeedback.storeMissing');
+    throw new AgentError('AI_STORE_REQUIRED', 'aiTaskFeedback.storeMissing');
   }
 
   // 只更新 workflowStatus，不要设置 store 级 status。
@@ -170,10 +175,10 @@ const MAX_IDS_SHOW = 10;
 /**
  * 将缺失段落 ID 列表截断为展示字符串
  */
-function formatMissingIds(ids: string[], uiLocale: AppLocale): string {
+function formatMissingIds(ids: string[], feedbackLocale: AppLocale): string {
   const head = ids.slice(0, MAX_IDS_SHOW).join(', ');
   return ids.length > MAX_IDS_SHOW
-    ? translateText(uiLocale, 'aiTaskFeedback.idSummary', { head, count: ids.length })
+    ? agentText('aiTaskFeedback.idSummary', { head, count: ids.length })
     : head;
 }
 
@@ -216,12 +221,12 @@ function findMissingNonEmptyParagraphIds(
  * 返回 null 表示通过或无法完整判断需要回退到数据库检查；返回 {error} 表示检查失败
  */
 async function checkReviewWithAccumulated(params: {
-  uiLocale: AppLocale;
+  feedbackLocale: AppLocale;
   chapterId: string;
   accumulatedParagraphs: Map<string, string>;
   chunkBoundaries: { paragraphIds: string[]; allowedParagraphIds: Set<string> } | undefined;
 }): Promise<ReviewCheckFailure | null> {
-  const { chapterId, accumulatedParagraphs, chunkBoundaries, uiLocale } = params;
+  const { chapterId, accumulatedParagraphs, chunkBoundaries, feedbackLocale } = params;
   const paragraphIdsToCheck: string[] = chunkBoundaries ? chunkBoundaries.paragraphIds : [];
 
   if (paragraphIdsToCheck.length === 0) {
@@ -243,9 +248,9 @@ async function checkReviewWithAccumulated(params: {
     );
     if (missingIds.length > 0) {
       return {
-        error: translateText(uiLocale, 'aiTaskFeedback.missingChunk', {
+        error: agentText('aiTaskFeedback.missingChunk', {
           count: missingIds.length,
-          ids: formatMissingIds(missingIds, uiLocale),
+          ids: formatMissingIds(missingIds, feedbackLocale),
         }),
       };
     }
@@ -263,9 +268,9 @@ async function checkReviewWithAccumulated(params: {
   const notSubmitted = paragraphIdsToCheck.filter((id) => !accumulatedParagraphs.has(id));
   if (notSubmitted.length > 0) {
     return {
-      error: translateText(uiLocale, 'aiTaskFeedback.missingUninitialized', {
+      error: agentText('aiTaskFeedback.missingUninitialized', {
         count: notSubmitted.length,
-        ids: formatMissingIds(notSubmitted, uiLocale),
+        ids: formatMissingIds(notSubmitted, feedbackLocale),
       }),
     };
   }
@@ -276,12 +281,12 @@ async function checkReviewWithAccumulated(params: {
  * 通过数据库内容进行 review 校验（向后兼容路径）
  */
 async function checkReviewWithDatabase(params: {
-  uiLocale: AppLocale;
+  feedbackLocale: AppLocale;
   language: AppLocale;
   chapterId: string;
   chunkBoundaries: { allowedParagraphIds: Set<string> } | undefined;
 }): Promise<ReviewCheckFailure | null> {
-  const { chapterId, chunkBoundaries, language, uiLocale } = params;
+  const { chapterId, chunkBoundaries, language, feedbackLocale } = params;
   const { ChapterContentService } = await import('src/services/chapter-content-service');
   const dbContent = await ChapterContentService.loadChapterContent(chapterId);
   const contentToCheck =
@@ -299,16 +304,13 @@ async function checkReviewWithDatabase(params: {
     return null;
   }
 
-  const scopeMsg = translateText(
-    uiLocale,
-    chunkBoundaries ? 'aiTaskFeedback.chunk' : 'aiTaskFeedback.chapter',
-  );
+  const scopeMsg = agentText(chunkBoundaries ? 'aiTaskFeedback.chunk' : 'aiTaskFeedback.chapter');
   const ids = untranslated.map((p) => p.id);
   return {
-    error: translateText(uiLocale, 'aiTaskFeedback.missingDatabase', {
+    error: agentText('aiTaskFeedback.missingDatabase', {
       scope: scopeMsg,
       count: untranslated.length,
-      ids: formatMissingIds(ids, uiLocale),
+      ids: formatMissingIds(ids, feedbackLocale),
     }),
   };
 }
@@ -321,7 +323,7 @@ async function validateTranslationReview(
   task: { chapterId?: string; bookId?: string },
   context: ToolContext,
 ): Promise<ReviewCheckFailure | null> {
-  const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+  const feedbackLocale = AGENT_LOCALE;
   const language = context.languages?.targetLanguage ?? 'zh-CN';
   const chapterId = task.chapterId;
   const bookId = task.bookId || context.bookId;
@@ -330,9 +332,8 @@ async function validateTranslationReview(
 
   if (!chapterId || !bookId) {
     return {
-      error: translateText(uiLocale, 'aiTaskFeedback.missingScope', {
-        scope: translateText(
-          uiLocale,
+      error: agentText('aiTaskFeedback.missingScope', {
+        scope: agentText(
           !chapterId ? 'aiTaskFeedback.chapterAssociation' : 'aiTaskFeedback.bookAssociation',
         ),
       }),
@@ -352,7 +353,7 @@ async function validateTranslationReview(
 
     // 检查: 章节标题是否已翻译（仅首块需要检查）
     if (isFirstChunk && !hasTitleTranslation(chapter, language)) {
-      return { error: translateText(uiLocale, 'aiTaskFeedback.missingTitle') };
+      return { error: agentText('aiTaskFeedback.missingTitle') };
     }
 
     // 分块优先使用本次已完成保存的提交记录；全章/旧调用按执行语言读正文。
@@ -360,7 +361,7 @@ async function validateTranslationReview(
 
     if (accumulatedParagraphs && accumulatedParagraphs.size > 0) {
       const failure = await checkReviewWithAccumulated({
-        uiLocale,
+        feedbackLocale,
         chapterId,
         accumulatedParagraphs,
         chunkBoundaries: context.chunkBoundaries,
@@ -372,7 +373,7 @@ async function validateTranslationReview(
       // 路径二：回退到数据库检查（向后兼容）
       // 当 accumulatedParagraphs 为空，或者是全章非分块场景时使用
       const failure = await checkReviewWithDatabase({
-        uiLocale,
+        feedbackLocale,
         language,
         chapterId,
         chunkBoundaries: context.chunkBoundaries,
@@ -384,8 +385,8 @@ async function validateTranslationReview(
   } catch (checkError) {
     console.error('Review check failed:', checkError);
     return {
-      error: translateText(uiLocale, 'aiTaskFeedback.reviewFailed', {
-        detail: localizedErrorMessage(checkError, uiLocale, 'aiTaskFeedback.unknownError'),
+      error: agentText('aiTaskFeedback.reviewFailed', {
+        detail: agentErrorMessage(checkError, 'aiTaskFeedback.unknownError'),
       }),
     };
   }
@@ -430,16 +431,17 @@ export const taskStatusTools: ToolDefinition[] = [
       required: ['status'],
     }),
     handler: async (args, context: ToolContext) => {
-      const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
+      const actionLocale = context.languages?.uiLocale ?? 'zh-CN';
       const { taskId, onAction } = context;
       const { status, reason: _reason } = args as { status: string; reason?: string };
 
       // 验证状态值
       if (!isValidStatus(status)) {
         return jsonError(
-          translateText(uiLocale, 'aiTaskFeedback.invalidStatus', {
+          agentText('aiTaskFeedback.invalidStatus', {
             status,
-            valid: VALID_STATUSES.join(uiLocale === 'en-US' ? ', ' : '、'),
+            valid: VALID_STATUSES.join('、'),
           }),
           'TASK_STATUS_INVALID',
         );
@@ -450,35 +452,26 @@ export const taskStatusTools: ToolDefinition[] = [
       const aiProcessingStore = context.aiProcessingStore;
 
       if (!taskId) {
-        return jsonError(
-          translateText(uiLocale, 'aiTaskFeedback.taskMissingId'),
-          'TASK_ID_REQUIRED',
-        );
+        return jsonError(agentText('aiTaskFeedback.taskMissingId'), 'TASK_ID_REQUIRED');
       }
       if (!aiProcessingStore) {
-        return jsonError(
-          translateText(uiLocale, 'aiTaskFeedback.storeMissing'),
-          'AI_STORE_REQUIRED',
-        );
+        return jsonError(agentText('aiTaskFeedback.storeMissing'), 'AI_STORE_REQUIRED');
       }
 
       // 获取当前任务信息以确定任务类型
       const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
       if (!task) {
-        return jsonError(
-          translateText(uiLocale, 'aiTaskFeedback.taskMissing', { id: taskId }),
-          'TASK_NOT_FOUND',
-        );
+        return jsonError(agentText('aiTaskFeedback.taskMissing', { id: taskId }), 'TASK_NOT_FOUND');
       }
 
       const taskType = task.type as TaskType;
 
       // 验证状态转换
       const currentStatus = getTaskCurrentStatus(aiProcessingStore, taskId);
-      const validation = isValidTransition(taskType, currentStatus, status, uiLocale);
+      const validation = isValidTransition(taskType, currentStatus, status, feedbackLocale);
       if (!validation.valid) {
         return jsonError(
-          validation.error ?? translateText(uiLocale, 'aiTaskFeedback.validationFailed'),
+          validation.error ?? agentText('aiTaskFeedback.validationFailed'),
           'TASK_TRANSITION_INVALID',
         );
       }
@@ -502,8 +495,10 @@ export const taskStatusTools: ToolDefinition[] = [
             entity: 'todo',
             data: {
               id: taskId,
-              name: translateText(uiLocale, 'aiTaskFeedback.actionName', {
-                previous: currentStatus || translateText(uiLocale, 'aiTaskFeedback.initialLabel'),
+              // 操作名称展示在界面上，使用执行的界面语言
+              name: translateText(actionLocale, 'aiTaskFeedback.actionName', {
+                previous:
+                  currentStatus || translateText(actionLocale, 'aiTaskFeedback.initialLabel'),
                 next: status,
               }),
             },
@@ -515,8 +510,8 @@ export const taskStatusTools: ToolDefinition[] = [
 
         const result: Record<string, unknown> = {
           success: true,
-          message: translateText(uiLocale, 'aiTaskFeedback.changed', {
-            previous: currentStatus || translateText(uiLocale, 'aiTaskFeedback.initialLabel'),
+          message: agentText('aiTaskFeedback.changed', {
+            previous: currentStatus || agentText('aiTaskFeedback.initialLabel'),
             next: status,
           }),
           task_id: taskId,
@@ -528,9 +523,9 @@ export const taskStatusTools: ToolDefinition[] = [
 
         return JSON.stringify(result);
       } catch (error) {
-        const errorMsg = localizedErrorMessage(error, uiLocale, 'aiTaskFeedback.unknownError');
+        const errorMsg = agentErrorMessage(error, 'aiTaskFeedback.unknownError');
         return jsonError(
-          translateText(uiLocale, 'aiTaskFeedback.updateFailed', { detail: errorMsg }),
+          agentText('aiTaskFeedback.updateFailed', { detail: errorMsg }),
           'TASK_STATUS_UPDATE_FAILED',
         );
       }

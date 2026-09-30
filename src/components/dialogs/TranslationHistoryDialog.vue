@@ -8,7 +8,7 @@ import type { Paragraph } from 'src/models/novel';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import type { AppLocale } from 'src/models/locale';
 import { getLanguageTranslation } from 'src/services/localization/selection';
-import { aiLanguageName } from 'src/services/ai/tasks/prompts/language';
+import { languageName } from 'src/i18n/translate';
 import { resolveAppLocale } from 'src/models/locale';
 const { t, locale } = useI18n();
 
@@ -28,7 +28,7 @@ const selectedId = computed(() =>
   props.paragraph ? getLanguageTranslation(props.paragraph, props.targetLanguage)?.id : undefined,
 );
 const languageLabel = (language: AppLocale = 'zh-CN') =>
-  aiLanguageName(resolveAppLocale(locale.value), language);
+  languageName(resolveAppLocale(locale.value), language);
 const canSelect = (language: AppLocale = 'zh-CN') => language === props.targetLanguage;
 
 // 获取可用的翻译历史（最多5个，按时间倒序，最新的在前）

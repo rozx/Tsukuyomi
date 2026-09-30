@@ -6,7 +6,7 @@ import type { ChatSessionMessage, ChatSession } from 'src/stores/chat-sessions';
 import { measureContext, modelContextKey } from 'src/services/ai/context/measure';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { ExecutionLanguages } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 
 export type SessionWithSummaryIndex = ChatSession & { lastSummarizedMessageIndex?: number };
 
@@ -85,14 +85,11 @@ const buildAssistantSystemPromptForStats = (
 ): { prompt: string; tools: AITool[] } => {
   const tools = ToolRegistry.getAssistantToolsExcludingTranslationManagement(
     context.currentBookId || undefined,
-    languages.uiLocale,
   );
   const todosPrompt = getTodosSystemPrompt(!!session?.id, languages.uiLocale);
   let systemPrompt = getAssistantSystemPrompt(todosPrompt, tools, context, languages);
   if (session?.summary) {
-    systemPrompt +=
-      '\n\n' +
-      translateText(languages.uiLocale, 'aiAssistant.summaryWrap', { summary: session.summary });
+    systemPrompt += '\n\n' + agentText('aiAssistant.summaryWrap', { summary: session.summary });
   }
   return { prompt: systemPrompt, tools };
 };

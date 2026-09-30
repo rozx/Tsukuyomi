@@ -1,5 +1,5 @@
 import type { MessageKey } from 'src/i18n/types';
-import { translateText } from 'src/i18n/translate';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { toolErrorJson, caughtToolErrorJson } from './tool-feedback';
 import type { AppLocale } from 'src/models/locale';
 import { toolDefinition } from './tool-localization';
@@ -25,19 +25,19 @@ import { searchRelatedMemoriesHybrid } from './memory-helper';
  */
 async function resolveBookByIdOrError(
   bookId: string | null | undefined,
-  uiLocale: AppLocale = 'zh-CN',
+  feedbackLocale: AppLocale = 'zh-CN',
 ): Promise<{ kind: 'error'; json: string } | { kind: 'ok'; bookId: string; book: Novel }> {
   if (!bookId) {
     return {
       kind: 'error',
-      json: toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', uiLocale),
+      json: toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired'),
     };
   }
   const book = await BookService.getBookById(bookId);
   if (!book) {
     return {
       kind: 'error',
-      json: toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', uiLocale, {
+      json: toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', {
         id: bookId,
       }),
     };
@@ -187,7 +187,7 @@ function buildBookInfoStats(book: Novel): {
 function buildGetBookInfoPayload(
   book: Novel,
   language: AppLocale = 'zh-CN',
-  uiLocale: AppLocale = 'zh-CN',
+  feedbackLocale: AppLocale = 'zh-CN',
 ): {
   id: string;
   title: string;
@@ -220,8 +220,8 @@ function buildGetBookInfoPayload(
   return {
     id: book.id,
     title: book.title,
-    author: book.author || translateText(uiLocale, 'aiBookFeedback.unknown'),
-    description: book.description || translateText(uiLocale, 'aiBookFeedback.none'),
+    author: book.author || translateText(feedbackLocale, 'aiBookFeedback.unknown'),
+    description: book.description || translateText(feedbackLocale, 'aiBookFeedback.none'),
     tags: book.tags || [],
     notes,
     structure,
@@ -300,15 +300,16 @@ function collectUpdatedFieldLabels(
     author?: string | undefined;
     alternate_titles?: string[] | undefined;
   },
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): string[] {
   const labels: string[] = [];
   if (params.description !== undefined)
-    labels.push(translateText(uiLocale, 'aiBookFeedback.description'));
-  if (params.tags !== undefined) labels.push(translateText(uiLocale, 'aiBookFeedback.tags'));
-  if (params.author !== undefined) labels.push(translateText(uiLocale, 'aiBookFeedback.author'));
+    labels.push(translateText(feedbackLocale, 'aiBookFeedback.description'));
+  if (params.tags !== undefined) labels.push(translateText(feedbackLocale, 'aiBookFeedback.tags'));
+  if (params.author !== undefined)
+    labels.push(translateText(feedbackLocale, 'aiBookFeedback.author'));
   if (params.alternate_titles !== undefined)
-    labels.push(translateText(uiLocale, 'aiBookFeedback.aliases'));
+    labels.push(translateText(feedbackLocale, 'aiBookFeedback.aliases'));
   return labels;
 }
 
@@ -318,11 +319,11 @@ function collectUpdatedFieldLabels(
 function describeStringFieldDiff(
   previous: string | undefined,
   current: string | undefined,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): { old: string; new: string } {
   return {
-    old: previous || translateText(uiLocale, 'aiBookFeedback.none'),
-    new: current || translateText(uiLocale, 'aiBookFeedback.none'),
+    old: previous || translateText(feedbackLocale, 'aiBookFeedback.none'),
+    new: current || translateText(feedbackLocale, 'aiBookFeedback.none'),
   };
 }
 
@@ -348,7 +349,7 @@ function buildBookInfoUpdatedFieldsDiff(
     previousData: BookInfoSnapshot;
     updates: Partial<Novel>;
   },
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): Record<string, unknown> {
   const { description, tags, author, alternate_titles, previousData, updates } = params;
   return {
@@ -357,7 +358,7 @@ function buildBookInfoUpdatedFieldsDiff(
           description: describeStringFieldDiff(
             previousData.description,
             updates.description,
-            uiLocale,
+            feedbackLocale,
           ),
         }
       : {}),
@@ -365,7 +366,7 @@ function buildBookInfoUpdatedFieldsDiff(
       ? { tags: describeArrayFieldDiff(previousData.tags, updates.tags) }
       : {}),
     ...(author !== undefined
-      ? { author: describeStringFieldDiff(previousData.author, updates.author, uiLocale) }
+      ? { author: describeStringFieldDiff(previousData.author, updates.author, feedbackLocale) }
       : {}),
     ...(alternate_titles !== undefined
       ? {
@@ -543,7 +544,7 @@ function buildAdjacentChapterTool(spec: {
           errorMessage: spec.errorMessage,
         },
         languages?.targetLanguage ?? 'zh-CN',
-        languages?.uiLocale ?? 'zh-CN',
+        AGENT_LOCALE,
       ),
   };
 }
@@ -592,7 +593,7 @@ async function handleAdjacentChapterTool(
     errorMessage: MessageKey;
   },
   language: AppLocale = 'zh-CN',
-  uiLocale: AppLocale = 'zh-CN',
+  feedbackLocale: AppLocale = 'zh-CN',
 ): Promise<string> {
   const parsedArgs = parseToolArgs<{
     chapter_id: string;
@@ -602,25 +603,25 @@ async function handleAdjacentChapterTool(
     offset?: number;
   }>(args);
   if (!bookId) {
-    return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', uiLocale);
+    return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
   }
   const { chapter_id, include_memory = true, summary_only = false } = parsedArgs;
   if (!chapter_id) {
-    return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired', uiLocale);
+    return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired');
   }
   const { limit, offset } = resolveChapterPaging(parsedArgs);
 
   try {
     const book = await BookService.getBookById(bookId);
     if (!book) {
-      return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', uiLocale, {
+      return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', {
         id: bookId,
       });
     }
 
     const adjacentInfo = getAdjacentChapter(book, chapter_id, config.direction);
     if (!adjacentInfo) {
-      return toolErrorJson('ADJACENT_CHAPTER_NOT_FOUND', config.notFoundError, uiLocale);
+      return toolErrorJson('ADJACENT_CHAPTER_NOT_FOUND', config.notFoundError);
     }
 
     const { chapter, volume } = adjacentInfo;
@@ -666,7 +667,7 @@ async function handleAdjacentChapterTool(
       ),
     );
   } catch (error) {
-    return caughtToolErrorJson(error, uiLocale, 'ADJACENT_CHAPTER_FAILED', config.errorMessage);
+    return caughtToolErrorJson(error, 'ADJACENT_CHAPTER_FAILED', config.errorMessage);
   }
 }
 
@@ -897,7 +898,7 @@ function bookToolInput<T>(args: Record<string, unknown>, context: ToolContext) {
     bookId: context.bookId,
     onAction: context.onAction,
     language: context.languages?.targetLanguage ?? 'zh-CN',
-    uiLocale: context.languages?.uiLocale ?? 'zh-CN',
+    feedbackLocale: AGENT_LOCALE,
   };
 }
 
@@ -921,18 +922,18 @@ export const bookTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
         include_memory?: boolean;
       }>(args, context);
 
-      const resolved = await resolveBookByIdOrError(bookId, uiLocale);
+      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
       if (resolved.kind === 'error') return resolved.json;
       const book = resolved.book;
 
       try {
         emitBookReadAction(onAction, { book_id: bookId, tool_name: 'get_book_info' });
 
-        const info = buildGetBookInfoPayload(book, language, uiLocale);
+        const info = buildGetBookInfoPayload(book, language, feedbackLocale);
         const { include_memory = true } = parsedArgs;
         const relatedMemories = await maybeFetchBookRelatedMemories(
           book,
@@ -949,12 +950,7 @@ export const bookTools: ToolDefinition[] = [
             : {}),
         });
       } catch (error) {
-        return caughtToolErrorJson(
-          error,
-          uiLocale,
-          'BOOK_INFO_FAILED',
-          'aiBookFeedback.bookGetFailed',
-        );
+        return caughtToolErrorJson(error, 'BOOK_INFO_FAILED', 'aiBookFeedback.bookGetFailed');
       }
     },
   },
@@ -974,13 +970,13 @@ export const bookTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
         limit?: number;
         offset?: number;
       }>(args, context);
       const { limit, offset = 0 } = parsedArgs;
 
-      const resolved = await resolveBookByIdOrError(bookId, uiLocale);
+      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
       if (resolved.kind === 'error') return resolved.json;
       const book = resolved.book;
 
@@ -1011,7 +1007,6 @@ export const bookTools: ToolDefinition[] = [
       } catch (error) {
         return caughtToolErrorJson(
           error,
-          uiLocale,
           'CHAPTER_LIST_FAILED',
           'aiBookFeedback.chapterListFailed',
         );
@@ -1033,16 +1028,16 @@ export const bookTools: ToolDefinition[] = [
       required: ['volume_ids'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
         volume_ids: string[];
       }>(args, context);
       const { volume_ids } = parsedArgs;
 
       if (!volume_ids || !Array.isArray(volume_ids) || volume_ids.length === 0) {
-        return toolErrorJson('VOLUME_IDS_REQUIRED', 'aiBookFeedback.volumeIdsRequired', uiLocale);
+        return toolErrorJson('VOLUME_IDS_REQUIRED', 'aiBookFeedback.volumeIdsRequired');
       }
 
-      const resolved = await resolveBookByIdOrError(bookId, uiLocale);
+      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
       if (resolved.kind === 'error') return resolved.json;
       const book = resolved.book;
 
@@ -1056,12 +1051,7 @@ export const bookTools: ToolDefinition[] = [
 
         return JSON.stringify(buildListChaptersByVolumeResponse(book, volume_ids, language));
       } catch (error) {
-        return caughtToolErrorJson(
-          error,
-          uiLocale,
-          'VOLUME_LIST_FAILED',
-          'aiBookFeedback.volumeListFailed',
-        );
+        return caughtToolErrorJson(error, 'VOLUME_LIST_FAILED', 'aiBookFeedback.volumeListFailed');
       }
     },
   },
@@ -1081,16 +1071,16 @@ export const bookTools: ToolDefinition[] = [
       required: ['query'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
         query: string;
         limit?: number;
       }>(args, context);
       if (!bookId) {
-        return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', uiLocale);
+        return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
       }
       const { query, limit = 5 } = parsedArgs;
       if (!query || typeof query !== 'string' || !query.trim()) {
-        return toolErrorJson('QUERY_REQUIRED', 'aiBookFeedback.queryRequired', uiLocale);
+        return toolErrorJson('QUERY_REQUIRED', 'aiBookFeedback.queryRequired');
       }
 
       try {
@@ -1103,8 +1093,8 @@ export const bookTools: ToolDefinition[] = [
             success: false,
             error_code: 'EMBEDDING_DISABLED',
             error: isMobileDevice()
-              ? translateText(uiLocale, 'aiBookFeedback.mobileDisabled')
-              : translateText(uiLocale, 'aiBookFeedback.userDisabled'),
+              ? translateText(feedbackLocale, 'aiBookFeedback.mobileDisabled')
+              : translateText(feedbackLocale, 'aiBookFeedback.userDisabled'),
             feature_disabled: true,
             reason: isMobileDevice() ? 'mobile_device' : 'user_disabled',
           });
@@ -1115,7 +1105,7 @@ export const bookTools: ToolDefinition[] = [
           return JSON.stringify({
             success: false,
             error_code: 'EMBEDDING_NOT_READY',
-            error: translateText(uiLocale, 'aiBookFeedback.embeddingNotReady'),
+            error: translateText(feedbackLocale, 'aiBookFeedback.embeddingNotReady'),
             service_status: EmbeddingService.getStatus(),
           });
         }
@@ -1140,12 +1130,7 @@ export const bookTools: ToolDefinition[] = [
           matches,
         });
       } catch (error) {
-        return caughtToolErrorJson(
-          error,
-          uiLocale,
-          'CHAPTER_QUERY_FAILED',
-          'aiBookFeedback.queryFailed',
-        );
+        return caughtToolErrorJson(error, 'CHAPTER_QUERY_FAILED', 'aiBookFeedback.queryFailed');
       }
     },
   },
@@ -1173,7 +1158,7 @@ export const bookTools: ToolDefinition[] = [
       required: ['chapter_id'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction, language, uiLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, language, feedbackLocale, parsedArgs } = bookToolInput<{
         chapter_id: string;
         limit?: number;
         offset?: number;
@@ -1182,10 +1167,10 @@ export const bookTools: ToolDefinition[] = [
       const { chapter_id, include_memory = true } = parsedArgs;
       const { limit, offset } = resolveChapterPaging(parsedArgs);
       if (!chapter_id) {
-        return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired', uiLocale);
+        return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired');
       }
 
-      const resolved = await resolveBookByIdOrError(bookId, uiLocale);
+      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
       if (resolved.kind === 'error') return resolved.json;
       const { book, bookId: resolvedBookId } = resolved;
 
@@ -1193,7 +1178,7 @@ export const bookTools: ToolDefinition[] = [
         // 查找章节及其所属卷
         const located = locateChapterInBook(book, chapter_id);
         if (!located) {
-          return toolErrorJson('CHAPTER_NOT_FOUND', 'aiEntityFeedback.chapterMissing', uiLocale, {
+          return toolErrorJson('CHAPTER_NOT_FOUND', 'aiEntityFeedback.chapterMissing', {
             id: chapter_id,
           });
         }
@@ -1248,12 +1233,7 @@ export const bookTools: ToolDefinition[] = [
           ),
         );
       } catch (error) {
-        return caughtToolErrorJson(
-          error,
-          uiLocale,
-          'CHAPTER_INFO_FAILED',
-          'aiBookFeedback.chapterGetFailed',
-        );
+        return caughtToolErrorJson(error, 'CHAPTER_INFO_FAILED', 'aiBookFeedback.chapterGetFailed');
       }
     },
   },
@@ -1290,28 +1270,28 @@ export const bookTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages, aiModelId }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const parsedArgs = parseToolArgs<{
         chapter_id: string;
         title_original?: string;
         title_translation?: string;
       }>(args);
       if (!bookId) {
-        return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', uiLocale);
+        return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
       }
       const { chapter_id, title_original, title_translation } = parsedArgs;
       if (!chapter_id) {
-        return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired', uiLocale);
+        return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired');
       }
       if (title_original === undefined && title_translation === undefined) {
-        return toolErrorJson('TITLE_FIELD_REQUIRED', 'aiBookFeedback.titleRequired', uiLocale);
+        return toolErrorJson('TITLE_FIELD_REQUIRED', 'aiBookFeedback.titleRequired');
       }
 
       try {
         const booksStore = useBooksStore();
         const book = booksStore.getBookById(bookId);
         if (!book) {
-          return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', uiLocale, {
+          return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', {
             id: bookId,
           });
         }
@@ -1319,7 +1299,7 @@ export const bookTools: ToolDefinition[] = [
         // 查找章节
         const chapterInfo = ChapterService.findChapterById(book, chapter_id);
         if (!chapterInfo) {
-          return toolErrorJson('CHAPTER_NOT_FOUND', 'aiEntityFeedback.chapterMissing', uiLocale, {
+          return toolErrorJson('CHAPTER_NOT_FOUND', 'aiEntityFeedback.chapterMissing', {
             id: chapter_id,
           });
         }
@@ -1373,7 +1353,7 @@ export const bookTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(uiLocale, 'aiBookFeedback.titleUpdated'),
+          message: translateText(feedbackLocale, 'aiBookFeedback.titleUpdated'),
           chapter_id,
           old_title: oldTitle,
           new_title: newTitle,
@@ -1389,7 +1369,6 @@ export const bookTools: ToolDefinition[] = [
       } catch (error) {
         return caughtToolErrorJson(
           error,
-          uiLocale,
           'CHAPTER_TITLE_UPDATE_FAILED',
           'aiBookFeedback.titleUpdateFailed',
         );
@@ -1426,7 +1405,7 @@ export const bookTools: ToolDefinition[] = [
       required: [],
     }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction, uiLocale, parsedArgs } = bookToolInput<{
+      const { bookId, onAction, feedbackLocale, parsedArgs } = bookToolInput<{
         description?: string;
         tags?: string[];
         author?: string;
@@ -1437,10 +1416,10 @@ export const bookTools: ToolDefinition[] = [
 
       // 检查是否至少提供了一个要更新的字段
       if (!hasAnyBookInfoUpdate({ description, tags, author, alternate_titles })) {
-        return toolErrorJson('BOOK_FIELDS_REQUIRED', 'aiBookFeedback.fieldsRequired', uiLocale);
+        return toolErrorJson('BOOK_FIELDS_REQUIRED', 'aiBookFeedback.fieldsRequired');
       }
 
-      const resolved = await resolveBookByIdOrError(bookId, uiLocale);
+      const resolved = await resolveBookByIdOrError(bookId, feedbackLocale);
       if (resolved.kind === 'error') return resolved.json;
       const { book, bookId: resolvedBookId } = resolved;
 
@@ -1479,13 +1458,13 @@ export const bookTools: ToolDefinition[] = [
             author,
             alternate_titles,
           },
-          uiLocale,
+          feedbackLocale,
         );
 
         return JSON.stringify({
           success: true,
-          message: translateText(uiLocale, 'aiBookFeedback.bookUpdated', {
-            fields: updatedFields.join(uiLocale === 'en-US' ? ', ' : '、'),
+          message: translateText(feedbackLocale, 'aiBookFeedback.bookUpdated', {
+            fields: updatedFields.join('、'),
           }),
           book_id: bookId,
           book_title: updatedBook?.title || book.title,
@@ -1498,16 +1477,11 @@ export const bookTools: ToolDefinition[] = [
               previousData,
               updates,
             },
-            uiLocale,
+            feedbackLocale,
           ),
         });
       } catch (error) {
-        return caughtToolErrorJson(
-          error,
-          uiLocale,
-          'BOOK_UPDATE_FAILED',
-          'aiBookFeedback.bookUpdateFailed',
-        );
+        return caughtToolErrorJson(error, 'BOOK_UPDATE_FAILED', 'aiBookFeedback.bookUpdateFailed');
       }
     },
   },

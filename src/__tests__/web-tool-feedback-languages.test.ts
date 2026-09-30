@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { agentText } from '../i18n/translate';
 import './setup';
 import axios, { AxiosError, AxiosHeaders } from 'axios';
 import { webSearchTools, searchWeb } from '../services/ai/tools/web-search-tools';
@@ -19,19 +20,21 @@ function setup(fallback: boolean) {
   vi.spyOn(GlobalConfig, 'getTavilyApiKey').mockReturnValue('');
   vi.spyOn(GlobalConfig, 'getFirecrawlFallbackEnabled').mockReturnValue(fallback);
 }
-describe('网页工具自有反馈按执行语言', () => {
-  it('结构化Firecrawl HTTP失败本地化自有前缀，诊断作为原文保留', async () => {
+describe('网页工具自有反馈为简中单源', () => {
+  it('结构化Firecrawl HTTP失败的自有前缀为简中，诊断作为原文保留', async () => {
     setup(true);
     vi.spyOn(FirecrawlClient, 'search').mockRejectedValue(
       new FirecrawlError('Firecrawl 请求失败: 503 provider 原始诊断', 503, 'provider 原始诊断'),
     );
     const result = await searchWeb('query', undefined, 'en-US');
     expect(result.error_code).toBe('FIRECRAWL_HTTP_FAILED');
-    expect(result.error).toBe('Firecrawl returned HTTP 503');
-    expect(result.message).toBe('Firecrawl request failed (HTTP 503): provider 原始诊断');
+    expect(result.error).toBe(agentText('aiWebFeedback.httpError', { status: 503 }));
+    expect(result.message).toBe(
+      agentText('aiWebFeedback.httpMessage', { status: 503, detail: 'provider 原始诊断' }),
+    );
   });
 
-  it('英文网页读取保留来源标题/内容，格式与空提取反馈使用执行语言', async () => {
+  it('英文网页读取保留来源标题/内容，格式与空提取反馈为简中单源', async () => {
     setup(false);
     const fetch = webSearchTools.find((tool) => tool.definition.function.name === 'fetch_webpage')!;
     const context = { languages: captureExecutionLanguages('en-US') };
@@ -43,7 +46,7 @@ describe('网页工具自有反馈按执行语言', () => {
     const empty = JSON.parse(await fetch.handler({ url: 'https://source.test/{raw}' }, context));
     expect(empty.error_code).toBe('WEB_EXTRACT_EMPTY');
     expect(empty.message).toContain('https://source.test/{raw}');
-    expect(empty.message).not.toMatch(/\p{Script=Han}/u);
+    expect(empty.message).toMatch(/\p{Script=Han}/u);
     vi.spyOn(axios, 'post').mockResolvedValue({
       data: { results: [{ rawContent: '<title>来源标题</title><p>原文内容</p>' }] },
     });
@@ -52,7 +55,7 @@ describe('网页工具自有反馈按执行语言', () => {
     expect(page.content).toBe('<title>来源标题</title><p>原文内容</p>');
     expect(page.provider).toBe('tavily');
   });
-  it('Tavily鉴权失败的搜索与网页说明三语言一致保持固定code', async () => {
+  it('Tavily鉴权失败的搜索与网页说明在三种执行语言下相同并保持固定code', async () => {
     setup(false);
     vi.spyOn(GlobalConfig, 'getTavilyApiKey').mockReturnValue('fixture');
     vi.spyOn(axios, 'post').mockRejectedValue(
@@ -81,7 +84,8 @@ describe('网页工具自有反馈按执行语言', () => {
           ),
         );
         expect(result.error_code).toBe('TAVILY_UNAUTHORIZED');
-        if (locale === 'en-US') expect(result.message).not.toMatch(/\p{Script=Han}/u);
+        expect(result.message).toMatch(/Tavily API Key/);
+        expect(result.message).toMatch(/\p{Script=Han}/u);
       }
     }
   });
@@ -98,8 +102,7 @@ describe('网页工具自有反馈按执行语言', () => {
       expect(JSON.parse(await fetch.handler({}, context)).error_code).toBe('WEB_URL_REQUIRED');
       const result = JSON.parse(await search.handler({ query: 'ユーザー {raw}|query' }, context));
       expect(result.error_code).toBe('WEB_SEARCH_NOT_CONFIGURED');
-      if (locale === 'en-US') expect(result.message).not.toMatch(/\p{Script=Han}/u);
-      if (locale === 'zh-TW') expect(result.message).toContain('設定');
+      expect(result.message).toBe(agentText('aiWebFeedback.searchConfigure'));
     });
   }
   for (const [error, code] of [
@@ -108,13 +111,13 @@ describe('网页工具自有反馈按执行语言', () => {
     [new FirecrawlTargetError(403), 'FIRECRAWL_TARGET_FAILED'],
     [new FirecrawlEmptyContentError(), 'FIRECRAWL_EMPTY_CONTENT'],
   ] as const) {
-    it(`${code} 用英文解释并保留错误身份`, async () => {
+    it(`${code} 英文执行也用简中解释并保留错误身份`, async () => {
       setup(true);
       vi.spyOn(FirecrawlClient, 'search').mockRejectedValue(error);
       const result = await searchWeb('query', undefined, 'en-US');
       expect(result.error_code).toBe(code);
-      expect(result.error).not.toMatch(/\p{Script=Han}/u);
-      expect(result.message).not.toMatch(/\p{Script=Han}/u);
+      expect(result.error).toMatch(/\p{Script=Han}/u);
+      expect(result.message).toMatch(/\p{Script=Han}/u);
     });
   }
   it('等配置初始化期间更换上下文也保留开始时语言，查询与外部诊断原样', async () => {
@@ -137,6 +140,6 @@ describe('网页工具自有反馈按执行语言', () => {
     expect(result.error_code).toBe('WEB_SEARCH_FAILED');
     expect(result.error).toBe('provider 原始诊断 {x}|raw');
     expect(result.message).toContain('用户 query {x}|raw');
-    expect(result.message).toContain('Web search is unavailable');
+    expect(result.message).toMatch(/^网络搜索暂时不可用/);
   });
 });

@@ -3,7 +3,7 @@ import type { AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-serv
 import type { ActionInfo, ChunkBoundaries, ToolContext, ToolDefinition } from './types';
 import type { ToastCallback } from './toast-helper';
 import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { agentText, AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { localizedErrorMessage, localizedErrorCode } from 'src/utils/localized-error';
 import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 
@@ -62,7 +62,7 @@ function parseToolCallArguments(
     // jsonrepair 会把这种残缺 JSON“补全”成语法合法但内容缺失的对象（例如半截译文），
     // 若放行会以 success 静默入库损坏数据，必须直接拒绝、让模型缩小批次后重试。
     if (!rawArgs.trimEnd().endsWith('}')) {
-      const truncatedMsg = translateText(uiLocale, 'aiToolFeedback.truncated');
+      const truncatedMsg = agentText('aiToolFeedback.truncated');
       console.error(
         `[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`,
         truncatedMsg,
@@ -77,7 +77,7 @@ function parseToolCallArguments(
       console.log(`[ToolRegistry] 🔧 使用 jsonrepair 修复了格式错误的 JSON [${functionName}]`);
       return parsed;
     } catch {
-      const errorMsg = translateText(uiLocale, 'aiToolFeedback.parseFailed', {
+      const errorMsg = agentText('aiToolFeedback.parseFailed', {
         detail: e instanceof Error ? e.message : String(e),
       });
       console.error(
@@ -157,10 +157,7 @@ function buildToolHandlerContext(options: HandleToolCallOptions): ToolContext {
 /**
  * 构造"未知工具"错误结果。
  */
-export function buildUnknownToolResult(
-  toolCall: AIToolCall,
-  uiLocale: AppLocale = 'zh-CN',
-): AIToolCallResult {
+export function buildUnknownToolResult(toolCall: AIToolCall): AIToolCallResult {
   const functionName = toolCall.function.name;
   console.warn(`[ToolRegistry] ⚠️ 未知的工具: ${functionName}`);
   return {
@@ -170,7 +167,7 @@ export function buildUnknownToolResult(
     content: JSON.stringify({
       success: false,
       error_code: 'UNKNOWN_TOOL',
-      error: translateText(uiLocale, 'aiToolFeedback.unknownTool', { tool: functionName }),
+      error: agentText('aiToolFeedback.unknownTool', { tool: functionName }),
     }),
   };
 }
@@ -178,13 +175,9 @@ export function buildUnknownToolResult(
 /**
  * 构造"调用失败"错误结果。
  */
-export function buildErrorToolResult(
-  toolCall: AIToolCall,
-  error: unknown,
-  uiLocale: AppLocale = 'zh-CN',
-): AIToolCallResult {
+export function buildErrorToolResult(toolCall: AIToolCall, error: unknown): AIToolCallResult {
   const functionName = toolCall.function.name;
-  const errorMsg = localizedErrorMessage(error, uiLocale, 'aiToolFeedback.unknownError');
+  const errorMsg = localizedErrorMessage(error, AGENT_LOCALE, 'aiToolFeedback.unknownError');
   console.error(`[ToolRegistry] ❌ 工具调用失败 [${functionName}]:`, errorMsg);
   return {
     tool_call_id: toolCall.id,
@@ -207,11 +200,7 @@ export async function invokeToolHandler(
   options: HandleToolCallOptions,
 ): Promise<AIToolCallResult> {
   const functionName = toolCall.function.name;
-  const args = parseToolCallArguments(
-    toolCall.function.arguments,
-    functionName,
-    options.languages?.uiLocale ?? 'zh-CN',
-  );
+  const args = parseToolCallArguments(toolCall.function.arguments, functionName, AGENT_LOCALE);
 
   console.log(
     `[ToolRegistry] 🔧 AI 调用工具: ${functionName}${options.bookId ? ` (bookId: ${options.bookId})` : ''}`,

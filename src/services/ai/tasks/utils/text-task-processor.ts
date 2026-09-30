@@ -1,6 +1,6 @@
 import type { TodoParagraphInput } from 'src/services/todo-list-service';
 import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import { captureExecutionLanguages } from './execution-languages';
 import { createCancelledError, isAIDegradationError } from 'src/services/ai/core/errors';
 import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
@@ -412,14 +412,10 @@ export async function processTextTask(
     const service = AIServiceFactory.getService(model.provider);
     const skipAskUser = await isSkipAskUserEnabled(bookId);
     const enableOriginalTextValidation = isOriginalTextValidationEnabled(bookId);
-    const tools = ToolRegistry.getTranslationTools(
-      bookId,
-      {
-        excludeAskUser: skipAskUser,
-        enableOriginalTextValidation,
-      },
-      languages.uiLocale,
-    );
+    const tools = ToolRegistry.getTranslationTools(bookId, {
+      excludeAskUser: skipAskUser,
+      enableOriginalTextValidation,
+    });
 
     // 获取温度配置
     const modelTemperature =
@@ -1275,7 +1271,7 @@ async function buildChunkUserContent(params: {
   const { ctx, actualChunk, chunkIndex, chunkText, isFirstChunk } = params;
   const maintenanceReminder = buildMaintenanceReminder(ctx.taskType, ctx.languages.uiLocale);
   const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
-  const paragraphCountNote = translateText(ctx.languages.uiLocale, 'aiContext.count', {
+  const paragraphCountNote = agentText('aiContext.count', {
     count: currentChunkParagraphCount,
   });
 

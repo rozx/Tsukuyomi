@@ -1,5 +1,5 @@
 import { toolDefinition } from './tool-localization';
-import { translateText } from 'src/i18n/translate';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import type { MessageKey } from 'src/i18n/types';
 import type { ExecutionLanguages } from 'src/models/locale';
 import { LocalizedError, localizedErrorMessage } from 'src/utils/localized-error';
@@ -94,12 +94,12 @@ function buildBatchTodoResponse(
   todos: TodoItem[],
   errors: string[],
   autoAdvanced: TodoItem | null | undefined,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): string {
   return JSON.stringify({
     success: true,
     message: autoAdvanced
-      ? translateText(uiLocale, 'aiTodoFeedback.advanced', { message })
+      ? translateText(feedbackLocale, 'aiTodoFeedback.advanced', { message })
       : message,
     todos: todos.map((todo) => ({ id: todo.id, text: todo.text, status: todo.status })),
     count: todos.length,
@@ -113,25 +113,28 @@ function createBatchTodos(
   taskId: string,
   sessionId: string | undefined,
   onAction: ((action: TodoAction) => void) | undefined,
-  uiLocale: AppLocale = 'zh-CN',
+  todoLocale: AppLocale,
 ): string {
+  const feedbackLocale = AGENT_LOCALE;
   const createdTodos: TodoItem[] = [];
   const errors: string[] = [];
 
   for (const itemText of items) {
     if (!itemText || !itemText.trim()) {
-      errors.push(translateText(uiLocale, 'aiTodoFeedback.contentRequired'));
+      errors.push(translateText(feedbackLocale, 'aiTodoFeedback.contentRequired'));
       continue;
     }
     try {
-      const todo = TodoListService.createTodo(itemText.trim(), taskId, sessionId, { uiLocale });
+      const todo = TodoListService.createTodo(itemText.trim(), taskId, sessionId, {
+        uiLocale: todoLocale,
+      });
       createdTodos.push(todo);
       dispatchTodoCreated(todo, onAction);
     } catch (error) {
       errors.push(
-        translateText(uiLocale, 'aiTodoFeedback.createItemFailed', {
+        translateText(feedbackLocale, 'aiTodoFeedback.createItemFailed', {
           text: itemText.slice(0, 20),
-          detail: localizedErrorMessage(error, uiLocale, 'aiTodoFeedback.unknownError'),
+          detail: localizedErrorMessage(error, feedbackLocale, 'aiTodoFeedback.unknownError'),
         }),
       );
     }
@@ -142,7 +145,7 @@ function createBatchTodos(
       'TODO_BATCH_CREATE_FAILED',
       'aiTodoFeedback.batchCreateFailed',
       { details: errors.join('; ') },
-      uiLocale,
+      feedbackLocale,
     );
   }
 
@@ -152,16 +155,16 @@ function createBatchTodos(
     : createdTodos;
 
   return buildBatchTodoResponse(
-    translateText(uiLocale, 'aiTodoFeedback.batchCreated', {
+    translateText(feedbackLocale, 'aiTodoFeedback.batchCreated', {
       count: createdTodos.length,
       failed: errors.length
-        ? translateText(uiLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
+        ? translateText(feedbackLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
         : '',
     }),
     reported,
     errors,
     promoted,
-    uiLocale,
+    feedbackLocale,
   );
 }
 
@@ -207,11 +210,16 @@ function runTodoStatusTransition(
   successMessage: string,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
   advanceScope: AdvanceScope | undefined,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): string {
   const targetIds = args.ids?.length ? args.ids : args.id ? [args.id] : [];
   if (targetIds.length === 0) {
-    throw new LocalizedError('TODO_ARGUMENTS_REQUIRED', 'aiTodoFeedback.idOrIds', {}, uiLocale);
+    throw new LocalizedError(
+      'TODO_ARGUMENTS_REQUIRED',
+      'aiTodoFeedback.idOrIds',
+      {},
+      feedbackLocale,
+    );
   }
 
   const updatedTodos: TodoItem[] = [];
@@ -219,7 +227,7 @@ function runTodoStatusTransition(
 
   for (const todoId of targetIds) {
     if (!todoId) {
-      errors.push(translateText(uiLocale, 'aiTodoFeedback.idRequired'));
+      errors.push(translateText(feedbackLocale, 'aiTodoFeedback.idRequired'));
       continue;
     }
     try {
@@ -229,7 +237,7 @@ function runTodoStatusTransition(
       updatedTodos.push(updatedTodo);
     } catch (error) {
       errors.push(
-        `${todoId}: ${localizedErrorMessage(error, uiLocale, 'aiTodoFeedback.unknownError')}`,
+        `${todoId}: ${localizedErrorMessage(error, feedbackLocale, 'aiTodoFeedback.unknownError')}`,
       );
     }
   }
@@ -239,24 +247,24 @@ function runTodoStatusTransition(
       'TODO_TRANSITION_FAILED',
       'aiTodoFeedback.transitionFailed',
       { message: successMessage, details: errors.join('; ') },
-      uiLocale,
+      feedbackLocale,
     );
   }
 
   const promoted = autoAdvanceNextTodo(advanceScope, onAction);
 
   return buildBatchTodoResponse(
-    translateText(uiLocale, 'aiTodoFeedback.statusCount', {
+    translateText(feedbackLocale, 'aiTodoFeedback.statusCount', {
       message: successMessage,
       count: updatedTodos.length,
       failed: errors.length
-        ? translateText(uiLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
+        ? translateText(feedbackLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
         : '',
     }),
     updatedTodos,
     errors,
     promoted,
-    uiLocale,
+    feedbackLocale,
   );
 }
 
@@ -279,15 +287,15 @@ function createTodoStatusHandler(
       languages?: ExecutionLanguages;
     },
   ) => {
-    const uiLocale = ctx.languages?.uiLocale ?? 'zh-CN';
+    const feedbackLocale = AGENT_LOCALE;
     const { id, ids } = args as { id?: string; ids?: string[] };
     return runTodoStatusTransition(
       { ...(id ? { id } : {}), ...(ids ? { ids } : {}) },
       mutate,
-      translateText(uiLocale, successMessage),
+      translateText(feedbackLocale, successMessage),
       ctx.onAction,
       autoAdvance ? { taskId: ctx.taskId, sessionId: ctx.sessionId } : undefined,
-      uiLocale,
+      feedbackLocale,
     );
   };
 }
@@ -296,15 +304,15 @@ function updateSingleTodoItem(
   item: { id: string; text?: string; status?: TodoStatus },
   onAction: ((action: UpdateTodoAction) => void) | undefined,
   errors: string[],
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): TodoItem | null {
   if (!item.id) {
-    errors.push(translateText(uiLocale, 'aiTodoFeedback.idRequired'));
+    errors.push(translateText(feedbackLocale, 'aiTodoFeedback.idRequired'));
     return null;
   }
   if (item.status !== undefined && !VALID_TODO_STATUSES.includes(item.status)) {
     errors.push(
-      translateText(uiLocale, 'aiTodoFeedback.itemInvalidStatus', {
+      translateText(feedbackLocale, 'aiTodoFeedback.itemInvalidStatus', {
         id: item.id,
         status: item.status,
         valid: VALID_TODO_STATUSES.join(', '),
@@ -322,9 +330,9 @@ function updateSingleTodoItem(
     return updatedTodo;
   } catch (error) {
     errors.push(
-      translateText(uiLocale, 'aiTodoFeedback.updateItemFailed', {
+      translateText(feedbackLocale, 'aiTodoFeedback.updateItemFailed', {
         id: item.id,
-        detail: localizedErrorMessage(error, uiLocale, 'aiTodoFeedback.unknownError'),
+        detail: localizedErrorMessage(error, feedbackLocale, 'aiTodoFeedback.unknownError'),
       }),
     );
     return null;
@@ -335,12 +343,12 @@ function updateBatchTodos(
   items: Array<{ id: string; text?: string; status?: TodoStatus }>,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
   advanceScope: AdvanceScope | undefined,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): string {
   const updatedTodos: TodoItem[] = [];
   const errors: string[] = [];
   for (const item of items) {
-    const updated = updateSingleTodoItem(item, onAction, errors, uiLocale);
+    const updated = updateSingleTodoItem(item, onAction, errors, feedbackLocale);
     if (updated) updatedTodos.push(updated);
   }
   if (updatedTodos.length === 0) {
@@ -348,7 +356,7 @@ function updateBatchTodos(
       'TODO_BATCH_UPDATE_FAILED',
       'aiTodoFeedback.batchUpdateFailed',
       { details: errors.join('; ') },
-      uiLocale,
+      feedbackLocale,
     );
   }
   const promoted = autoAdvanceNextTodo(advanceScope, onAction);
@@ -356,16 +364,16 @@ function updateBatchTodos(
     ? updatedTodos.map((todo) => (todo.id === promoted.id ? promoted : todo))
     : updatedTodos;
   return buildBatchTodoResponse(
-    translateText(uiLocale, 'aiTodoFeedback.batchUpdated', {
+    translateText(feedbackLocale, 'aiTodoFeedback.batchUpdated', {
       count: updatedTodos.length,
       failed: errors.length
-        ? translateText(uiLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
+        ? translateText(feedbackLocale, 'aiTodoFeedback.failedCount', { count: errors.length })
         : '',
     }),
     reported,
     errors,
     promoted,
-    uiLocale,
+    feedbackLocale,
   );
 }
 
@@ -375,7 +383,7 @@ function updateOneTodo(
   status: TodoStatus | undefined,
   onAction: ((action: UpdateTodoAction) => void) | undefined,
   advanceScope: AdvanceScope | undefined,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): string {
   const updates: { text?: string; status?: TodoStatus } = {};
   if (text !== undefined) updates.text = text;
@@ -388,10 +396,10 @@ function updateOneTodo(
   return JSON.stringify({
     success: true,
     message: promoted
-      ? translateText(uiLocale, 'aiTodoFeedback.advanced', {
-          message: translateText(uiLocale, 'aiTodoFeedback.updated'),
+      ? translateText(feedbackLocale, 'aiTodoFeedback.advanced', {
+          message: translateText(feedbackLocale, 'aiTodoFeedback.updated'),
         })
-      : translateText(uiLocale, 'aiTodoFeedback.updated'),
+      : translateText(feedbackLocale, 'aiTodoFeedback.updated'),
     todo: { id: reported.id, text: reported.text, status: reported.status },
     ...autoAdvancedField(promoted),
   });
@@ -402,27 +410,28 @@ function createSingleTodo(
   taskId: string,
   sessionId: string | undefined,
   onAction: ((action: TodoAction) => void) | undefined,
-  uiLocale: AppLocale = 'zh-CN',
+  todoLocale: AppLocale,
 ): string {
+  const feedbackLocale = AGENT_LOCALE;
   if (!text || !text.trim()) {
     throw new LocalizedError(
       'TODO_CONTENT_REQUIRED',
       'aiTodoFeedback.contentRequired',
       {},
-      uiLocale,
+      feedbackLocale,
     );
   }
-  const todo = TodoListService.createTodo(text, taskId, sessionId, { uiLocale });
+  const todo = TodoListService.createTodo(text, taskId, sessionId, { uiLocale: todoLocale });
   dispatchTodoCreated(todo, onAction);
   const promoted = autoAdvanceNextTodo({ taskId, sessionId }, onAction);
   const reported = promoted && promoted.id === todo.id ? promoted : todo;
   return JSON.stringify({
     success: true,
     message: promoted
-      ? translateText(uiLocale, 'aiTodoFeedback.advanced', {
-          message: translateText(uiLocale, 'aiTodoFeedback.created'),
+      ? translateText(feedbackLocale, 'aiTodoFeedback.advanced', {
+          message: translateText(feedbackLocale, 'aiTodoFeedback.created'),
         })
-      : translateText(uiLocale, 'aiTodoFeedback.created'),
+      : translateText(feedbackLocale, 'aiTodoFeedback.created'),
     todo: { id: reported.id, text: reported.text, status: reported.status },
     ...autoAdvancedField(promoted),
   });
@@ -447,7 +456,7 @@ export const todoListTools: ToolDefinition[] = [
       },
     }),
     handler: (args, { onAction, taskId, sessionId, languages }) => {
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const { text, items } = args as {
         text?: string;
         items?: string[];
@@ -457,21 +466,23 @@ export const todoListTools: ToolDefinition[] = [
           'TODO_CONTEXT_REQUIRED',
           'aiTodoFeedback.contextRequired',
           {},
-          uiLocale,
+          feedbackLocale,
         );
       }
 
+      // 待办记录界面语言；返回给模型的说明固定简中
+      const todoLocale = languages?.uiLocale ?? 'zh-CN';
       if (items && Array.isArray(items) && items.length > 0) {
-        return createBatchTodos(items, taskId, sessionId, onAction as never, languages?.uiLocale);
+        return createBatchTodos(items, taskId, sessionId, onAction as never, todoLocale);
       }
       if (text !== undefined && text !== null) {
-        return createSingleTodo(text, taskId, sessionId, onAction as never, languages?.uiLocale);
+        return createSingleTodo(text, taskId, sessionId, onAction as never, todoLocale);
       }
       throw new LocalizedError(
         'TODO_ARGUMENTS_REQUIRED',
         'aiTodoFeedback.textOrItems',
         {},
-        uiLocale,
+        feedbackLocale,
       );
     },
   },
@@ -524,7 +535,7 @@ export const todoListTools: ToolDefinition[] = [
       },
     }),
     handler: (args, { onAction, taskId, sessionId, languages }) => {
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const { id, text, status, items } = args as {
         id?: string;
         text?: string;
@@ -533,12 +544,17 @@ export const todoListTools: ToolDefinition[] = [
       };
       const advanceScope: AdvanceScope = { taskId, sessionId };
       if (items && Array.isArray(items) && items.length > 0) {
-        return updateBatchTodos(items, onAction as never, advanceScope, uiLocale);
+        return updateBatchTodos(items, onAction as never, advanceScope, feedbackLocale);
       }
       if (id) {
-        return updateOneTodo(id, text, status, onAction as never, advanceScope, uiLocale);
+        return updateOneTodo(id, text, status, onAction as never, advanceScope, feedbackLocale);
       }
-      throw new LocalizedError('TODO_ARGUMENTS_REQUIRED', 'aiTodoFeedback.idOrItems', {}, uiLocale);
+      throw new LocalizedError(
+        'TODO_ARGUMENTS_REQUIRED',
+        'aiTodoFeedback.idOrItems',
+        {},
+        feedbackLocale,
+      );
     },
   },
   {
@@ -559,17 +575,27 @@ export const todoListTools: ToolDefinition[] = [
   {
     definition: toolDefinition('delete_todo', TODO_BY_ID_PARAMETERS),
     handler: (args, { onAction, taskId, sessionId, languages }) => {
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const { id } = args as {
         id: string;
       };
       if (!id) {
-        throw new LocalizedError('TODO_ID_REQUIRED', 'aiTodoFeedback.idRequired', {}, uiLocale);
+        throw new LocalizedError(
+          'TODO_ID_REQUIRED',
+          'aiTodoFeedback.idRequired',
+          {},
+          feedbackLocale,
+        );
       }
 
       const todo = TodoListService.getTodoById(id);
       if (!todo) {
-        throw new LocalizedError('TODO_NOT_FOUND', 'aiTodoFeedback.missing', { id }, uiLocale);
+        throw new LocalizedError(
+          'TODO_NOT_FOUND',
+          'aiTodoFeedback.missing',
+          { id },
+          feedbackLocale,
+        );
       }
 
       TodoListService.deleteTodo(id);
@@ -588,10 +614,10 @@ export const todoListTools: ToolDefinition[] = [
       return JSON.stringify({
         success: true,
         message: promoted
-          ? translateText(uiLocale, 'aiTodoFeedback.advanced', {
-              message: translateText(uiLocale, 'aiTodoFeedback.deleted'),
+          ? translateText(feedbackLocale, 'aiTodoFeedback.advanced', {
+              message: translateText(feedbackLocale, 'aiTodoFeedback.deleted'),
             })
-          : translateText(uiLocale, 'aiTodoFeedback.deleted'),
+          : translateText(feedbackLocale, 'aiTodoFeedback.deleted'),
         todo: {
           id: todo.id,
           text: todo.text,
@@ -612,7 +638,7 @@ export const todoListTools: ToolDefinition[] = [
       },
     }),
     handler: (args, { taskId, sessionId, languages }) => {
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const { filter = 'all' } = args as {
         filter?: 'all' | 'active' | 'completed';
       };
@@ -622,7 +648,7 @@ export const todoListTools: ToolDefinition[] = [
           'TODO_CONTEXT_REQUIRED',
           'aiTodoFeedback.listContextRequired',
           {},
-          uiLocale,
+          feedbackLocale,
         );
       }
 

@@ -2,7 +2,7 @@ import { validToolQuery, toolErrorJson, caughtToolErrorJson } from './tool-feedb
 import { describeTool, stringToolParameter, toolDefinition } from './tool-localization';
 import type { ToolDefinition, ToolContext } from './types';
 import type { AppLocale } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { HelpService, resolveHelpSection } from 'src/services/help-service';
 import { LocalizedError } from 'src/utils/localized-error';
 
@@ -14,25 +14,31 @@ function helpHandler(
   ) => Promise<string>,
 ): ToolDefinition['handler'] {
   return async (args, context) => {
+    // 帮助正文按执行界面语言读取；返回给模型的说明固定简中
     const locale = context.languages?.uiLocale ?? 'zh-CN';
     try {
       return await handler(args, context, locale);
     } catch (error) {
-      return caughtToolErrorJson(
-        error,
-        locale,
-        'HELP_REQUEST_FAILED',
-        'helpFeedback.requestFailed',
-      );
+      return caughtToolErrorJson(error, 'HELP_REQUEST_FAILED', 'helpFeedback.requestFailed');
     }
   };
 }
 async function resolveDoc(id: unknown, locale: AppLocale) {
   if (typeof id !== 'string' || !id)
-    throw new LocalizedError('HELP_DOC_ID_REQUIRED', 'helpFeedback.docIdRequired', {}, locale);
+    throw new LocalizedError(
+      'HELP_DOC_ID_REQUIRED',
+      'helpFeedback.docIdRequired',
+      {},
+      AGENT_LOCALE,
+    );
   const doc = (await HelpService.getIndex(locale)).find((entry) => entry.id === id);
   if (!doc)
-    throw new LocalizedError('HELP_DOCUMENT_NOT_FOUND', 'helpFeedback.notFound', { id }, locale);
+    throw new LocalizedError(
+      'HELP_DOCUMENT_NOT_FOUND',
+      'helpFeedback.notFound',
+      { id },
+      AGENT_LOCALE,
+    );
   return doc;
 }
 
@@ -46,7 +52,7 @@ export const helpDocsTools: ToolDefinition[] = [
     handler: helpHandler(async (args, { onAction }, locale) => {
       const { query } = args;
       if (!validToolQuery(query, 'HelpDocs'))
-        return toolErrorJson('HELP_QUERY_REQUIRED', 'helpFeedback.queryRequired', locale);
+        return toolErrorJson('HELP_QUERY_REQUIRED', 'helpFeedback.queryRequired');
       const docs = await HelpService.getIndex(locale);
       const lower = query.toLowerCase();
       const matched = docs.filter(
@@ -60,9 +66,7 @@ export const helpDocsTools: ToolDefinition[] = [
           query,
           tool_name: 'search_help_docs',
           results: matched,
-          name: matched.length
-            ? matched.map((doc) => doc.title).join(locale === 'en-US' ? ', ' : '、')
-            : undefined,
+          name: matched.length ? matched.map((doc) => doc.title).join('、') : undefined,
         },
       });
       return JSON.stringify({
@@ -93,7 +97,7 @@ export const helpDocsTools: ToolDefinition[] = [
     }),
     handler: helpHandler(async ({ doc_id }, { onAction }, locale) => {
       if (typeof doc_id !== 'string' || !doc_id)
-        return toolErrorJson('HELP_DOC_ID_REQUIRED', 'helpFeedback.docIdRequired', locale);
+        return toolErrorJson('HELP_DOC_ID_REQUIRED', 'helpFeedback.docIdRequired');
       const { doc, markdown, headings } = await HelpService.getDocument(doc_id, locale);
       onAction?.({
         type: 'read',
@@ -151,9 +155,11 @@ export const helpDocsTools: ToolDefinition[] = [
       });
       return JSON.stringify({
         success: true,
-        message: translateText(locale, 'helpFeedback.navigated', {
+        message: translateText(AGENT_LOCALE, 'helpFeedback.navigated', {
           title: doc.title,
-          section: section ? translateText(locale, 'helpFeedback.section', { id: section }) : '',
+          section: section
+            ? translateText(AGENT_LOCALE, 'helpFeedback.section', { id: section })
+            : '',
         }),
         doc_id: doc.id,
         doc_title: doc.title,
@@ -176,7 +182,7 @@ export const helpDocsTools: ToolDefinition[] = [
           description: doc.description,
         });
       if (docs.length) {
-        const title = translateText(locale, 'helpFeedback.listTitle');
+        const title = translateText(AGENT_LOCALE, 'helpFeedback.listTitle');
         onAction?.({
           type: 'read',
           entity: 'help_doc',

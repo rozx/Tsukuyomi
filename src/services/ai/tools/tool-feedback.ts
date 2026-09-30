@@ -1,10 +1,15 @@
 import type { AppLocale } from 'src/models/locale';
 import type { ToolContext } from './types';
-export function fuzzyMatches<T>(matches: T[], max: number, uiLocale: AppLocale, name: string) {
+export function fuzzyMatches<T>(
+  matches: T[],
+  max: number,
+  feedbackLocale: AppLocale,
+  name: string,
+) {
   return {
     items: matches.slice(0, max),
     success: true,
-    message: fuzzyMatchMessage(uiLocale, name, max, matches.length),
+    message: fuzzyMatchMessage(feedbackLocale, name, max, matches.length),
     total_matches: matches.length,
     truncated: matches.length > max,
   };
@@ -22,82 +27,79 @@ export function checkedToolBookContext(
   context: ToolContext,
 ):
   | { error: string }
-  | (ToolContext & { bookId: string; uiLocale: AppLocale; language: AppLocale }) {
-  const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+  | (ToolContext & { bookId: string; feedbackLocale: AppLocale; language: AppLocale }) {
+  const feedbackLocale = AGENT_LOCALE;
   return context.bookId
     ? {
         ...context,
         bookId: context.bookId,
-        uiLocale,
+        feedbackLocale,
         language: context.languages?.targetLanguage ?? 'zh-CN',
       }
-    : { error: toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', uiLocale) };
+    : { error: toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired') };
 }
-import type { MessageKey } from 'src/i18n/types';
-import { translateText } from 'src/i18n/translate';
-import {
-  LocalizedError,
-  localizedErrorCode,
-  localizedErrorMessage,
-} from 'src/utils/localized-error';
+import type { AgentMessageKey } from 'src/i18n/types';
+import { AGENT_LOCALE, agentText, translateText } from 'src/i18n/translate';
+import { agentErrorMessage, LocalizedError, localizedErrorCode } from 'src/utils/localized-error';
 
 export function requireToolBookId(
   bookId: string | undefined,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): asserts bookId is string {
   if (!bookId)
-    throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', {}, uiLocale);
+    throw new LocalizedError(
+      'BOOK_ID_REQUIRED',
+      'aiEntityFeedback.bookRequired',
+      {},
+      feedbackLocale,
+    );
 }
 
-/** 保留统一错误协议，不把显示说明作为业务身份。 */
+/** 保留统一错误协议，不把显示说明作为业务身份；说明只返回给模型，固定简中。 */
 export function toolErrorJson(
   code: string,
-  key: MessageKey,
-  uiLocale: AppLocale,
+  key: AgentMessageKey,
   values: Record<string, string | number> = {},
 ): string {
   return JSON.stringify({
     success: false,
     error_code: code,
-    error: translateText(uiLocale, key, values),
+    error: agentText(key, values),
   });
 }
 
-export function caughtToolErrorJson(
-  error: unknown,
-  uiLocale: AppLocale,
-  code: string,
-  key: MessageKey,
-): string {
+export function caughtToolErrorJson(error: unknown, code: string, key: AgentMessageKey): string {
   return JSON.stringify({
     success: false,
     error_code: localizedErrorCode(error, code),
-    error: localizedErrorMessage(error, uiLocale, key),
+    error: agentErrorMessage(error, key),
   });
 }
 
 export function bookToolContext(
   context: ToolContext,
-): ToolContext & { bookId: string; uiLocale: AppLocale; language: AppLocale } {
-  const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
-  requireToolBookId(context.bookId, uiLocale);
+): ToolContext & { bookId: string; feedbackLocale: AppLocale; language: AppLocale } {
+  const feedbackLocale = AGENT_LOCALE;
+  requireToolBookId(context.bookId, feedbackLocale);
   return {
     ...context,
     bookId: context.bookId,
-    uiLocale,
+    feedbackLocale,
     language: context.languages?.targetLanguage ?? 'zh-CN',
   };
 }
 
 export function fuzzyMatchMessage(
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
   name: string,
   max: number,
   total: number,
 ): string {
-  return translateText(uiLocale, 'aiEntityFeedback.fuzzy', {
+  return translateText(feedbackLocale, 'aiEntityFeedback.fuzzy', {
     name,
     limit:
-      total > max ? translateText(uiLocale, 'aiEntityFeedback.fuzzyLimit', { max, total }) : '',
+      total > max
+        ? translateText(feedbackLocale, 'aiEntityFeedback.fuzzyLimit', { max, total })
+        : '',
   });
 }

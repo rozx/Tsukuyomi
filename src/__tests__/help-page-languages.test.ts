@@ -113,7 +113,7 @@ describe('帮助页面语言切换', () => {
     });
   }
 
-  it('英文执行导航到已切繁中的同文档章节，工具反馈保持英文', async () => {
+  it('英文执行导航到已切繁中的同文档章节，工具反馈为简中单源', async () => {
     resources();
     const { ctx, i18n, router } = await mount();
     i18n.global.locale.value = 'zh-TW';
@@ -134,7 +134,7 @@ describe('帮助页面语言切换', () => {
     const action = actions[0]!;
     await router.push(`/help/${String(action.data.doc_id)}#${String(action.data.section_id)}`);
     await flush();
-    expect(result.message).toContain('Navigated');
+    expect(result.message).toMatch(/^已导航到帮助文档: /);
     expect(ctx.currentDoc.value?.title).toBe('快速開始');
     expect(ctx.activeHeading.value).toBe('front-settings');
   });

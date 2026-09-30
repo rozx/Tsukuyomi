@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { agentText } from '../i18n/translate';
 import './setup';
 import { taskStatusTools } from '../services/ai/tools/task-status-tools';
 import { ToolRegistry } from '../services/ai/tools/tool-registry';
@@ -81,7 +82,7 @@ describe('任务门禁语言', () => {
     expect(JSON.parse(await pending)).toMatchObject({ success: true, new_status: 'review' });
   });
   for (const accumulated of [false, true]) {
-    it(`超过十个未译段落的英文错误不夹中文（提交记录=${accumulated}）`, async () => {
+    it(`超过十个未译段落的门禁说明为简中单源并给出正确数量（提交记录=${accumulated}）`, async () => {
       const chapter = translationChapter('c', '11111111');
       chapter.content = Array.from({ length: 12 }, (_, index) => ({
         id: index.toString(16).padStart(8, '0'),
@@ -124,7 +125,7 @@ describe('任务门禁语言', () => {
         ),
       );
       expect(result.error_code).toBe('TRANSLATION_INCOMPLETE');
-      expect(result.error).not.toMatch(/\p{Script=Han}/u);
+      expect(result.error).toMatch(/^无法提交复核/);
       expect(result.error).toContain(accumulated ? '11' : '12');
       expect(store.activeTasks.find((task) => task.id === taskId)!.workflowStatus).toBe('working');
     });
@@ -177,7 +178,7 @@ describe('任务门禁语言', () => {
     );
     expect(result.success).toBe(false);
     expect(result.error_code).toBe('TRANSLATION_INCOMPLETE');
-    expect(result.error).toContain('chapter title');
+    expect(result.error).toBe(agentText('aiTaskFeedback.missingTitle'));
   });
   it('复核中的数据库交叉读取不会把简中版本载入英文结果映射', async () => {
     const { taskId, adapter } = await setup(false, false);

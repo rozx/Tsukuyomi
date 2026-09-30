@@ -13,7 +13,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { resolveAppLocale } from 'src/models/locale';
-import { aiLanguageName } from 'src/services/ai/tasks/prompts/language';
+import { languageName } from 'src/i18n/translate';
 import BookDetailsDesktop from './BookDetailsDesktop.vue';
 import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
@@ -24,7 +24,7 @@ const { t, locale } = useI18n();
 const ctx = injectBookDetailsPage();
 const columnsHeader = computed(() => {
   const target = ctx.book.value?.targetLanguage ?? 'zh-CN';
-  const language = aiLanguageName(resolveAppLocale(locale.value), target);
+  const language = languageName(resolveAppLocale(locale.value), target);
   return t('readerUi.sourceTranslationHeader', { language });
 });
 const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();

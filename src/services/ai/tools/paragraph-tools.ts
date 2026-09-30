@@ -1,6 +1,6 @@
-import { translateText } from 'src/i18n/translate';
-import type { MessageKey } from 'src/i18n/types';
-import { LocalizedError } from 'src/utils/localized-error';
+import { agentText, AGENT_LOCALE, translateText } from 'src/i18n/translate';
+import type { AgentMessageKey, MessageKey } from 'src/i18n/types';
+import { AgentError, LocalizedError } from 'src/utils/localized-error';
 import { toolErrorJson } from './tool-feedback';
 import { toolDefinition } from './tool-localization';
 import { describeTool } from './tool-localization';
@@ -90,8 +90,8 @@ function toDisplayParagraphIndex(paragraphIndex: number): number {
  * 工具处理器前置校验：bookId 非空 + 从 store 取书。
  * 用于 paragraph-tools 里近十个处理器共用的入口样板，失败时抛出错误。
  */
-function resolveBookOrThrow(bookId: string | null | undefined, uiLocale: AppLocale): Novel {
-  return resolveBookAndStoreOrThrow(bookId, uiLocale).book;
+function resolveBookOrThrow(bookId: string | null | undefined, feedbackLocale: AppLocale): Novel {
+  return resolveBookAndStoreOrThrow(bookId, feedbackLocale).book;
 }
 
 /**
@@ -99,13 +99,18 @@ function resolveBookOrThrow(bookId: string | null | undefined, uiLocale: AppLoca
  */
 function resolveBookAndStoreOrThrow(
   bookId: string | null | undefined,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): {
   book: Novel;
   booksStore: ReturnType<typeof useBooksStore>;
 } {
   if (!bookId) {
-    throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', {}, uiLocale);
+    throw new LocalizedError(
+      'BOOK_ID_REQUIRED',
+      'aiEntityFeedback.bookRequired',
+      {},
+      feedbackLocale,
+    );
   }
   const booksStore = useBooksStore();
   const book = booksStore.getBookById(bookId);
@@ -114,7 +119,7 @@ function resolveBookAndStoreOrThrow(
       'BOOK_NOT_FOUND',
       'aiEntityFeedback.bookMissing',
       { id: bookId },
-      uiLocale,
+      feedbackLocale,
     );
   }
   return { book, booksStore };
@@ -127,13 +132,13 @@ function resolveBookAndStoreOrThrow(
 async function findParagraphLocationOrErrorJson(
   book: Novel,
   paragraphId: string,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): Promise<{ kind: 'error'; json: string } | { kind: 'ok'; location: ParagraphLocation }> {
   const location = await ChapterService.findParagraphLocationAsync(book, paragraphId);
   if (!location) {
     return {
       kind: 'error',
-      json: toolErrorJson('PARAGRAPH_NOT_FOUND', 'aiParagraphFeedback.paragraphMissing', uiLocale, {
+      json: toolErrorJson('PARAGRAPH_NOT_FOUND', 'aiParagraphFeedback.paragraphMissing', {
         id: paragraphId,
       }),
     };
@@ -148,20 +153,15 @@ async function findParagraphLocationOrErrorJson(
 async function resolveBookAndParagraphOrError(
   bookId: string | null | undefined,
   paragraphId: string,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): Promise<
   { kind: 'error'; json: string } | { kind: 'ok'; book: Novel; location: ParagraphLocation }
 > {
   if (!paragraphId) {
-    throw new LocalizedError(
-      'PARAGRAPH_ID_REQUIRED',
-      'aiParagraphFeedback.paragraphRequired',
-      {},
-      uiLocale,
-    );
+    throw new AgentError('PARAGRAPH_ID_REQUIRED', 'aiParagraphFeedback.paragraphRequired', {});
   }
-  const book = resolveBookOrThrow(bookId, uiLocale);
-  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId, uiLocale);
+  const book = resolveBookOrThrow(bookId, feedbackLocale);
+  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId, feedbackLocale);
   if (locationResult.kind === 'error') return { kind: 'error', json: locationResult.json };
   return { kind: 'ok', book, location: locationResult.location };
 }
@@ -311,7 +311,7 @@ async function loadRelatedMemoriesFromFirstParagraph(
 function buildTranslationListPayload(
   paragraph: Paragraph,
   language: AppLocale = 'zh-CN',
-  uiLocale: AppLocale = 'zh-CN',
+  feedbackLocale: AppLocale = 'zh-CN',
 ): Array<{
   id: string;
   translation: string;
@@ -329,7 +329,7 @@ function buildTranslationListPayload(
         aiModelId: t.aiModelId,
         aiModelName:
           aiModelsStore.getModelById(t.aiModelId)?.name ||
-          translateText(uiLocale, 'aiParagraphFeedback.unknownModel'),
+          agentText('aiParagraphFeedback.unknownModel'),
         isSelected: t.id === getLanguageTranslation(paragraph, language)?.id,
       })) || []
   );
@@ -343,47 +343,35 @@ function findTranslationIndexOrError(
   paragraph: ParagraphLocation['paragraph'],
   translationId: string,
   language: AppLocale,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): { kind: 'error'; json: string } | { kind: 'ok'; index: number; translation: Translation } {
   if (!paragraph.translations || paragraph.translations.length === 0) {
     return {
       kind: 'error',
-      json: toolErrorJson(
-        'TRANSLATION_HISTORY_EMPTY',
-        'aiParagraphFeedback.historyEmpty',
-        uiLocale,
-      ),
+      json: toolErrorJson('TRANSLATION_HISTORY_EMPTY', 'aiParagraphFeedback.historyEmpty'),
     };
   }
   const index = paragraph.translations.findIndex((t) => t.id === translationId);
   if (index === -1) {
     return {
       kind: 'error',
-      json: toolErrorJson(
-        'TRANSLATION_NOT_FOUND',
-        'aiParagraphFeedback.translationMissing',
-        uiLocale,
-        { id: translationId },
-      ),
+      json: toolErrorJson('TRANSLATION_NOT_FOUND', 'aiParagraphFeedback.translationMissing', {
+        id: translationId,
+      }),
     };
   }
   const translation = paragraph.translations[index];
   if (!translation) {
     return {
       kind: 'error',
-      json: toolErrorJson(
-        'TRANSLATION_NOT_FOUND',
-        'aiParagraphFeedback.translationUnavailable',
-        uiLocale,
-      ),
+      json: toolErrorJson('TRANSLATION_NOT_FOUND', 'aiParagraphFeedback.translationUnavailable'),
     };
   }
   if (language && (translation.language ?? 'zh-CN') !== language)
-    throw new LocalizedError(
+    throw new AgentError(
       'TRANSLATION_LANGUAGE_MISMATCH',
       'aiParagraphFeedback.languageMismatch',
       {},
-      uiLocale,
     );
   return { kind: 'ok', index, translation };
 }
@@ -395,8 +383,8 @@ function findTranslationIndexOrError(
 async function resolveParagraphForWriteOrError(
   bookId: string | null | undefined,
   paragraphId: string,
-  emptyParagraphError: MessageKey,
-  uiLocale: AppLocale,
+  emptyParagraphError: AgentMessageKey,
+  feedbackLocale: AppLocale,
 ): Promise<
   | { kind: 'error'; json: string }
   | {
@@ -408,14 +396,14 @@ async function resolveParagraphForWriteOrError(
       paragraph: ParagraphLocation['paragraph'];
     }
 > {
-  const { book, booksStore } = resolveBookAndStoreOrThrow(bookId, uiLocale);
-  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId, uiLocale);
+  const { book, booksStore } = resolveBookAndStoreOrThrow(bookId, feedbackLocale);
+  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId, feedbackLocale);
   if (locationResult.kind === 'error') return { kind: 'error', json: locationResult.json };
   const { paragraph } = locationResult.location;
   if (isEmptyParagraph(paragraph.text)) {
     return {
       kind: 'error',
-      json: toolErrorJson('PARAGRAPH_EMPTY', emptyParagraphError, uiLocale),
+      json: toolErrorJson('PARAGRAPH_EMPTY', emptyParagraphError),
     };
   }
   return {
@@ -437,7 +425,7 @@ async function resolveParagraphTranslationForUpdate(
   bookId: string | null | undefined,
   paragraphId: string,
   translationId: string,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): Promise<
   | { kind: 'error'; json: string }
   | {
@@ -450,15 +438,14 @@ async function resolveParagraphTranslationForUpdate(
     }
 > {
   if (!paragraphId || !translationId) {
-    throw new LocalizedError(
+    throw new AgentError(
       'TRANSLATION_IDS_REQUIRED',
       'aiParagraphFeedback.translationIdsRequired',
       {},
-      uiLocale,
     );
   }
-  const { book, booksStore } = resolveBookAndStoreOrThrow(bookId, uiLocale);
-  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId, uiLocale);
+  const { book, booksStore } = resolveBookAndStoreOrThrow(bookId, feedbackLocale);
+  const locationResult = await findParagraphLocationOrErrorJson(book, paragraphId, feedbackLocale);
   if (locationResult.kind === 'error') return { kind: 'error', json: locationResult.json };
   return {
     kind: 'ok',
@@ -478,7 +465,7 @@ async function resolveParagraphTranslationForUpdate(
 async function resolveParagraphIdReadArgs(
   args: unknown,
   bookId: string | null | undefined,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): Promise<
   | { kind: 'error'; json: string }
   | {
@@ -493,7 +480,7 @@ async function resolveParagraphIdReadArgs(
     paragraph_id: string;
     include_memory?: boolean;
   };
-  const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id, uiLocale);
+  const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id, feedbackLocale);
   if (resolved.kind === 'error') return { kind: 'error', json: resolved.json };
   return {
     kind: 'ok',
@@ -507,7 +494,7 @@ async function resolveParagraphIdReadArgs(
 function paragraphReadHandler(
   handler: (
     readArgs: Extract<Awaited<ReturnType<typeof resolveParagraphIdReadArgs>>, { kind: 'ok' }>,
-    context: ToolContext & { uiLocale: AppLocale; language: AppLocale },
+    context: ToolContext & { feedbackLocale: AppLocale; language: AppLocale },
   ) => Promise<string>,
 ): ToolDefinition['handler'] {
   return async (args, context) => {
@@ -518,14 +505,10 @@ function paragraphReadHandler(
     const capturedContext = {
       ...context,
       languages,
-      uiLocale: languages.uiLocale,
+      feedbackLocale: AGENT_LOCALE,
       language: languages.targetLanguage,
     };
-    const readArgs = await resolveParagraphIdReadArgs(
-      args,
-      capturedContext.bookId,
-      capturedContext.languages!.uiLocale,
-    );
+    const readArgs = await resolveParagraphIdReadArgs(args, capturedContext.bookId, AGENT_LOCALE);
     if (readArgs.kind === 'error') return readArgs.json;
     return handler(readArgs, capturedContext);
   };
@@ -539,7 +522,7 @@ function paragraphReadHandler(
 async function resolveTranslationIdToolArgs(
   args: unknown,
   bookId: string | null | undefined,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): Promise<
   | { kind: 'error'; json: string }
   | {
@@ -561,7 +544,7 @@ async function resolveTranslationIdToolArgs(
     bookId,
     paragraph_id,
     translation_id,
-    uiLocale,
+    feedbackLocale,
   );
   if (resolved.kind === 'error') return { kind: 'error', json: resolved.json };
   return {
@@ -612,7 +595,7 @@ function buildDirectionalParagraphsHandler(
 ): ToolHandler {
   return async (args, { bookId, onAction, languages }) => {
     const language = languages?.targetLanguage ?? 'zh-CN';
-    const uiLocale = languages?.uiLocale ?? 'zh-CN';
+    const feedbackLocale = AGENT_LOCALE;
     const {
       paragraph_id,
       count = 3,
@@ -623,15 +606,10 @@ function buildDirectionalParagraphsHandler(
       include_memory?: boolean;
     };
     if (!paragraph_id) {
-      throw new LocalizedError(
-        'PARAGRAPH_ID_REQUIRED',
-        'aiParagraphFeedback.paragraphRequired',
-        {},
-        uiLocale,
-      );
+      throw new AgentError('PARAGRAPH_ID_REQUIRED', 'aiParagraphFeedback.paragraphRequired', {});
     }
 
-    const book = resolveBookOrThrow(bookId, uiLocale);
+    const book = resolveBookOrThrow(bookId, feedbackLocale);
 
     emitParagraphReadAction(onAction, toolName, { paragraph_id });
 
@@ -878,7 +856,7 @@ function resolveModelIdForAddTranslation(
   aiModelId: string | undefined,
   aiModelsStore: ReturnType<typeof useAIModelsStore>,
   book: Novel,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): { kind: 'ok'; modelId: string } | { kind: 'error'; json: string } {
   if (aiModelId) return { kind: 'ok', modelId: aiModelId };
   const existingModelId = paragraph.translations?.[0]?.aiModelId;
@@ -887,7 +865,7 @@ function resolveModelIdForAddTranslation(
   if (!defaultModel) {
     return {
       kind: 'error',
-      json: toolErrorJson('AI_MODEL_REQUIRED', 'aiParagraphFeedback.modelRequired', uiLocale),
+      json: toolErrorJson('AI_MODEL_REQUIRED', 'aiParagraphFeedback.modelRequired'),
     };
   }
   return { kind: 'ok', modelId: defaultModel.id };
@@ -941,7 +919,7 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, chunkBoundaries: _chunkBoundaries, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const {
         paragraph_id,
         include_previous = false,
@@ -961,7 +939,7 @@ export const paragraphTools: ToolDefinition[] = [
       //   return getOutOfBoundsError(chunkBoundaries);
       // }
 
-      const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id, uiLocale);
+      const resolved = await resolveBookAndParagraphOrError(bookId, paragraph_id, feedbackLocale);
       if (resolved.kind === 'error') return resolved.json;
       const book = resolved.book;
       const {
@@ -1064,73 +1042,75 @@ export const paragraphTools: ToolDefinition[] = [
   },
   {
     definition: toolDefinition('get_paragraph_info', buildParagraphIdSchema(undefined, true)),
-    handler: paragraphReadHandler(async (readArgs, { bookId, onAction, language, uiLocale }) => {
-      const { paragraph_id, include_memory, location } = readArgs;
-      const { paragraph, chapter, volume } = location;
-      const chapterTitle = getChapterDisplayTitle(chapter, undefined, language);
+    handler: paragraphReadHandler(
+      async (readArgs, { bookId, onAction, language, feedbackLocale }) => {
+        const { paragraph_id, include_memory, location } = readArgs;
+        const { paragraph, chapter, volume } = location;
+        const chapterTitle = getChapterDisplayTitle(chapter, undefined, language);
 
-      // 报告读取操作
-      if (onAction) {
-        onAction({
-          type: 'read',
-          entity: 'paragraph',
-          data: {
-            paragraph_id,
-            chapter_id: chapter.id,
-            chapter_title: chapterTitle,
-            tool_name: 'get_paragraph_info',
+        // 报告读取操作
+        if (onAction) {
+          onAction({
+            type: 'read',
+            entity: 'paragraph',
+            data: {
+              paragraph_id,
+              chapter_id: chapter.id,
+              chapter_title: chapterTitle,
+              tool_name: 'get_paragraph_info',
+            },
+          });
+        }
+
+        // 构建翻译信息（包含 aiModelId）
+        const translations = buildTranslationListPayload(paragraph, language, feedbackLocale);
+
+        // 搜索相关记忆（从段落文本中提取关键词）
+        const relatedMemories = await loadRelatedMemoriesFromFirstParagraph(
+          bookId,
+          include_memory,
+          paragraph.text,
+          language,
+        );
+
+        return JSON.stringify({
+          success: true,
+          paragraph: {
+            id: paragraph.id,
+            text: paragraph.text,
+            selectedTranslationId: getLanguageTranslation(paragraph, language)?.id ?? '',
+            translations,
+            chapter: {
+              id: chapter.id,
+              title: chapterTitle,
+              title_original:
+                typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
+              title_translation:
+                typeof chapter.title === 'string'
+                  ? ''
+                  : (getNameTranslation(chapter.title, language)?.translation ?? ''),
+            },
+            volume: volume
+              ? {
+                  id: volume.id,
+                  title:
+                    typeof volume.title === 'string' ? volume.title : volume.title.original || '',
+                  title_translation:
+                    typeof volume.title === 'string'
+                      ? ''
+                      : (getNameTranslation(volume.title, language)?.translation ?? ''),
+                }
+              : null,
+            paragraphIndex: toDisplayParagraphIndex(location.paragraphIndex),
+            chapterIndex: location.chapterIndex,
+            volumeIndex: location.volumeIndex,
           },
+          ...(include_memory && relatedMemories.length > 0
+            ? { related_memories: relatedMemories }
+            : {}),
         });
-      }
-
-      // 构建翻译信息（包含 aiModelId）
-      const translations = buildTranslationListPayload(paragraph, language, uiLocale);
-
-      // 搜索相关记忆（从段落文本中提取关键词）
-      const relatedMemories = await loadRelatedMemoriesFromFirstParagraph(
-        bookId,
-        include_memory,
-        paragraph.text,
-        language,
-      );
-
-      return JSON.stringify({
-        success: true,
-        paragraph: {
-          id: paragraph.id,
-          text: paragraph.text,
-          selectedTranslationId: getLanguageTranslation(paragraph, language)?.id ?? '',
-          translations,
-          chapter: {
-            id: chapter.id,
-            title: chapterTitle,
-            title_original:
-              typeof chapter.title === 'string' ? chapter.title : chapter.title.original,
-            title_translation:
-              typeof chapter.title === 'string'
-                ? ''
-                : (getNameTranslation(chapter.title, language)?.translation ?? ''),
-          },
-          volume: volume
-            ? {
-                id: volume.id,
-                title:
-                  typeof volume.title === 'string' ? volume.title : volume.title.original || '',
-                title_translation:
-                  typeof volume.title === 'string'
-                    ? ''
-                    : (getNameTranslation(volume.title, language)?.translation ?? ''),
-              }
-            : null,
-          paragraphIndex: toDisplayParagraphIndex(location.paragraphIndex),
-          chapterIndex: location.chapterIndex,
-          volumeIndex: location.volumeIndex,
-        },
-        ...(include_memory && relatedMemories.length > 0
-          ? { related_memories: relatedMemories }
-          : {}),
-      });
-    }),
+      },
+    ),
   },
   {
     definition: toolDefinition('get_previous_paragraphs', {
@@ -1227,7 +1207,7 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const {
         keywords,
         translation_keywords,
@@ -1248,10 +1228,10 @@ export const paragraphTools: ToolDefinition[] = [
       const { validKeywords, validTranslationKeywords } = normalizeFindKeywords(
         keywords,
         translation_keywords,
-        uiLocale,
+        feedbackLocale,
       );
 
-      const book = resolveBookOrThrow(bookId, uiLocale);
+      const book = resolveBookOrThrow(bookId, feedbackLocale);
       const resolvedBookId = bookId as string;
 
       // 报告读取操作
@@ -1308,7 +1288,7 @@ export const paragraphTools: ToolDefinition[] = [
           if (noVolumes) {
             return JSON.stringify({
               success: true,
-              message: translateText(uiLocale, 'aiParagraphFeedback.noVolumes'),
+              message: agentText('aiParagraphFeedback.noVolumes'),
               replaced_count: 0,
             });
           }
@@ -1370,7 +1350,7 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const {
         regex_pattern,
         chapter_id,
@@ -1389,26 +1369,18 @@ export const paragraphTools: ToolDefinition[] = [
         typeof regex_pattern !== 'string' ||
         regex_pattern.trim().length === 0
       ) {
-        throw new LocalizedError(
-          'PARAGRAPH_REGEX_REQUIRED',
-          'aiParagraphFeedback.regexRequired',
-          {},
-          uiLocale,
-        );
+        throw new AgentError('PARAGRAPH_REGEX_REQUIRED', 'aiParagraphFeedback.regexRequired', {});
       }
 
-      const book = resolveBookOrThrow(bookId, uiLocale);
+      const book = resolveBookOrThrow(bookId, feedbackLocale);
 
       // 验证正则表达式是否有效
       try {
         new RegExp(regex_pattern.trim());
       } catch (error) {
-        return toolErrorJson(
-          'PARAGRAPH_REGEX_INVALID',
-          'aiParagraphFeedback.regexInvalid',
-          uiLocale,
-          { detail: error instanceof Error ? error.message : String(error) },
-        );
+        return toolErrorJson('PARAGRAPH_REGEX_INVALID', 'aiParagraphFeedback.regexInvalid', {
+          detail: error instanceof Error ? error.message : String(error),
+        });
       }
 
       // 报告读取操作
@@ -1442,51 +1414,53 @@ export const paragraphTools: ToolDefinition[] = [
   },
   {
     definition: toolDefinition('get_translation_history', buildParagraphIdSchema(undefined, true)),
-    handler: paragraphReadHandler(async (readArgs, { bookId, onAction, language, uiLocale }) => {
-      const { paragraph_id, include_memory } = readArgs;
-      const { paragraph } = readArgs.location;
+    handler: paragraphReadHandler(
+      async (readArgs, { bookId, onAction, language, feedbackLocale }) => {
+        const { paragraph_id, include_memory } = readArgs;
+        const { paragraph } = readArgs.location;
 
-      // 报告读取操作
-      if (onAction) {
-        onAction({
-          type: 'read',
-          entity: 'paragraph',
-          data: {
-            paragraph_id,
-            tool_name: 'get_translation_history',
-          },
+        // 报告读取操作
+        if (onAction) {
+          onAction({
+            type: 'read',
+            entity: 'paragraph',
+            data: {
+              paragraph_id,
+              tool_name: 'get_translation_history',
+            },
+          });
+        }
+
+        // 构建完整的翻译历史信息（叠加 index / isLatest）
+        const translationsBase = buildTranslationListPayload(paragraph, language, feedbackLocale);
+        const total = translationsBase.length;
+        const translationHistory = translationsBase.map((t, index) => ({
+          ...t,
+          index: index + 1, // 从1开始的索引
+          isLatest: index === total - 1, // 是否是最新的翻译
+        }));
+
+        // 搜索相关记忆（从段落文本中提取关键词）
+        const relatedMemories = await loadRelatedMemoriesFromFirstParagraph(
+          bookId,
+          include_memory,
+          paragraph.text,
+          language,
+        );
+
+        return JSON.stringify({
+          success: true,
+          paragraph_id: paragraph.id,
+          paragraph_text: paragraph.text,
+          selected_translation_id: getLanguageTranslation(paragraph, language)?.id ?? '',
+          translation_history: translationHistory,
+          total_count: translationHistory.length,
+          ...(include_memory && relatedMemories.length > 0
+            ? { related_memories: relatedMemories }
+            : {}),
         });
-      }
-
-      // 构建完整的翻译历史信息（叠加 index / isLatest）
-      const translationsBase = buildTranslationListPayload(paragraph, language, uiLocale);
-      const total = translationsBase.length;
-      const translationHistory = translationsBase.map((t, index) => ({
-        ...t,
-        index: index + 1, // 从1开始的索引
-        isLatest: index === total - 1, // 是否是最新的翻译
-      }));
-
-      // 搜索相关记忆（从段落文本中提取关键词）
-      const relatedMemories = await loadRelatedMemoriesFromFirstParagraph(
-        bookId,
-        include_memory,
-        paragraph.text,
-        language,
-      );
-
-      return JSON.stringify({
-        success: true,
-        paragraph_id: paragraph.id,
-        paragraph_text: paragraph.text,
-        selected_translation_id: getLanguageTranslation(paragraph, language)?.id ?? '',
-        translation_history: translationHistory,
-        total_count: translationHistory.length,
-        ...(include_memory && relatedMemories.length > 0
-          ? { related_memories: relatedMemories }
-          : {}),
-      });
-    }),
+      },
+    ),
   },
   {
     definition: toolDefinition('update_translation', {
@@ -1509,18 +1483,17 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const { paragraph_id, translation_id, new_translation } = args as {
         paragraph_id: string;
         translation_id: string;
         new_translation: string;
       };
       if (!paragraph_id || !translation_id || !new_translation) {
-        throw new LocalizedError(
+        throw new AgentError(
           'TRANSLATION_UPDATE_REQUIRED',
           'aiParagraphFeedback.updateRequired',
           {},
-          uiLocale,
         );
       }
 
@@ -1528,13 +1501,13 @@ export const paragraphTools: ToolDefinition[] = [
         bookId,
         paragraph_id,
         'aiParagraphFeedback.emptyUpdate',
-        uiLocale,
+        feedbackLocale,
       );
       if (resolved.kind === 'error') return resolved.json;
       const { paragraph, chapterId, bookId: resolvedBookId } = resolved;
 
       // 查找要更新的翻译
-      const tRes = findTranslationIndexOrError(paragraph, translation_id, language, uiLocale);
+      const tRes = findTranslationIndexOrError(paragraph, translation_id, language, feedbackLocale);
       if (tRes.kind === 'error') return tRes.json;
       const translationToUpdate = tRes.translation;
 
@@ -1568,7 +1541,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(uiLocale, 'aiParagraphFeedback.updated'),
+        message: agentText('aiParagraphFeedback.updated'),
         paragraph_id,
         translation_id,
         old_translation: originalTranslation.translation,
@@ -1586,13 +1559,13 @@ export const paragraphTools: ToolDefinition[] = [
     // fallow-ignore-next-line code-duplication
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
-      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId, uiLocale);
+      const feedbackLocale = AGENT_LOCALE;
+      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId, feedbackLocale);
       if (resolvedArgs.kind === 'error') return resolvedArgs.json;
       const { paragraph_id, translation_id, chapterId, paragraph, resolvedBookId } = resolvedArgs;
 
       // 验证翻译ID是否存在（校验通过后才上报 action，无效 ID 不产生任何操作记录）
-      const tRes = findTranslationIndexOrError(paragraph, translation_id, language, uiLocale);
+      const tRes = findTranslationIndexOrError(paragraph, translation_id, language, feedbackLocale);
       if (tRes.kind === 'error') return tRes.json;
       const translation = tRes.translation;
 
@@ -1622,7 +1595,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(uiLocale, 'aiParagraphFeedback.selected'),
+        message: agentText('aiParagraphFeedback.selected'),
         paragraph_id,
         translation_id,
         previous_selected_id: originalSelectedId || null,
@@ -1655,7 +1628,7 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const {
         paragraph_id,
         translation,
@@ -1668,11 +1641,10 @@ export const paragraphTools: ToolDefinition[] = [
         set_as_selected?: boolean;
       };
       if (!paragraph_id || !translation) {
-        throw new LocalizedError(
+        throw new AgentError(
           'TRANSLATION_TEXT_REQUIRED',
           'aiParagraphFeedback.translationTextRequired',
           {},
-          uiLocale,
         );
       }
 
@@ -1680,7 +1652,7 @@ export const paragraphTools: ToolDefinition[] = [
         bookId,
         paragraph_id,
         'aiParagraphFeedback.emptyAdd',
-        uiLocale,
+        feedbackLocale,
       );
       if (resolved.kind === 'error') return resolved.json;
       const { book, paragraph, chapterId, bookId: resolvedBookId } = resolved;
@@ -1692,7 +1664,7 @@ export const paragraphTools: ToolDefinition[] = [
         ai_model_id,
         aiModelsStore,
         book,
-        uiLocale,
+        feedbackLocale,
       );
       if (modelRes.kind === 'error') return modelRes.json;
       const modelId = modelRes.modelId;
@@ -1700,7 +1672,7 @@ export const paragraphTools: ToolDefinition[] = [
       // 验证模型是否存在
       const model = aiModelsStore.getModelById(modelId);
       if (!model) {
-        return toolErrorJson('AI_MODEL_NOT_FOUND', 'aiParagraphFeedback.modelMissing', uiLocale, {
+        return toolErrorJson('AI_MODEL_NOT_FOUND', 'aiParagraphFeedback.modelMissing', {
           id: modelId,
         });
       }
@@ -1745,7 +1717,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(uiLocale, 'aiParagraphFeedback.added'),
+        message: agentText('aiParagraphFeedback.added'),
         paragraph_id,
         translation_id: savedTranslation.id,
         translation: newTranslation.translation,
@@ -1767,13 +1739,13 @@ export const paragraphTools: ToolDefinition[] = [
     // fallow-ignore-next-line code-duplication
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
-      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId, uiLocale);
+      const feedbackLocale = AGENT_LOCALE;
+      const resolvedArgs = await resolveTranslationIdToolArgs(args, bookId, feedbackLocale);
       if (resolvedArgs.kind === 'error') return resolvedArgs.json;
       const { paragraph_id, translation_id, chapterId, paragraph, resolvedBookId } = resolvedArgs;
 
       // 验证翻译是否存在
-      const tRes = findTranslationIndexOrError(paragraph, translation_id, language, uiLocale);
+      const tRes = findTranslationIndexOrError(paragraph, translation_id, language, feedbackLocale);
       if (tRes.kind === 'error') return tRes.json;
       const translationToDelete = tRes.translation;
 
@@ -1801,7 +1773,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(uiLocale, 'aiParagraphFeedback.removed'),
+        message: agentText('aiParagraphFeedback.removed'),
         paragraph_id,
         translation_id,
         deleted_translation: translationToDelete.translation,
@@ -1859,7 +1831,7 @@ export const paragraphTools: ToolDefinition[] = [
     }),
     handler: async (args, { bookId, onAction, languages }) => {
       const language = languages?.targetLanguage ?? 'zh-CN';
-      const uiLocale = languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const {
         keywords,
         original_keywords,
@@ -1876,22 +1848,17 @@ export const paragraphTools: ToolDefinition[] = [
         max_replacements?: number;
       };
       if (!replacement_text || typeof replacement_text !== 'string') {
-        throw new LocalizedError(
-          'REPLACEMENT_REQUIRED',
-          'aiParagraphFeedback.replaceRequired',
-          {},
-          uiLocale,
-        );
+        throw new AgentError('REPLACEMENT_REQUIRED', 'aiParagraphFeedback.replaceRequired', {});
       }
 
       // 验证并规范化输入的关键词数组
       const { validKeywords, validOriginalKeywords } = normalizeReplaceKeywords(
         keywords,
         original_keywords,
-        uiLocale,
+        feedbackLocale,
       );
 
-      const { book, booksStore } = resolveBookAndStoreOrThrow(bookId, uiLocale);
+      const { book, booksStore } = resolveBookAndStoreOrThrow(bookId, feedbackLocale);
       const replace_all_translations = false;
       const resolvedBookId = bookId as string;
 
@@ -1909,13 +1876,13 @@ export const paragraphTools: ToolDefinition[] = [
       // 如果提供了 chapter_id，定位目标章节；若找不到则提前返回
       const target = locateTargetChapter(book, chapter_id);
       if (chapter_id && !target) {
-        return emptyReplaceResponse(translateText(uiLocale, 'aiParagraphFeedback.chapterNotFound'));
+        return emptyReplaceResponse(agentText('aiParagraphFeedback.chapterNotFound'));
       }
       const targetVolumeIndex = target?.volumeIndex ?? null;
       const targetChapterIndex = target?.chapterIndex ?? null;
 
       if (!book.volumes) {
-        return emptyReplaceResponse(translateText(uiLocale, 'aiParagraphFeedback.noVolumes'));
+        return emptyReplaceResponse(agentText('aiParagraphFeedback.noVolumes'));
       }
 
       // 第一遍：批量加载需要的章节内容
@@ -1926,7 +1893,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       const runLinearSearch = async (): Promise<string | null> => {
         if (!book.volumes) {
-          return emptyReplaceResponse(translateText(uiLocale, 'aiParagraphFeedback.noVolumes'));
+          return emptyReplaceResponse(agentText('aiParagraphFeedback.noVolumes'));
         }
         await collectLinearReplaceMatches({
           language,
@@ -1965,7 +1932,7 @@ export const paragraphTools: ToolDefinition[] = [
       const results = Array.from(allResults.values()).slice(0, max_replacements);
 
       if (results.length === 0) {
-        return emptyReplaceResponse(translateText(uiLocale, 'aiParagraphFeedback.noMatches'));
+        return emptyReplaceResponse(agentText('aiParagraphFeedback.noMatches'));
       }
 
       // 执行替换操作
@@ -2014,7 +1981,7 @@ export const paragraphTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: translateText(uiLocale, 'aiParagraphFeedback.replaced', {
+        message: agentText('aiParagraphFeedback.replaced', {
           count: replacedParagraphs.length,
         }),
         replaced_count: replacedParagraphs.length,
@@ -2046,27 +2013,21 @@ function filterValidKeywords(input: unknown): string[] {
 function normalizeFindKeywords(
   keywords: unknown,
   translationKeywords: unknown,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): { validKeywords: string[]; validTranslationKeywords: string[] } {
   const hasKeywords = Array.isArray(keywords) && keywords.length > 0;
   const hasTranslation = Array.isArray(translationKeywords) && translationKeywords.length > 0;
   if (!hasKeywords && !hasTranslation) {
-    throw new LocalizedError(
+    throw new AgentError(
       'PARAGRAPH_KEYWORDS_REQUIRED',
       'aiParagraphFeedback.findKeywordsRequired',
       {},
-      uiLocale,
     );
   }
   const validKeywords = filterValidKeywords(keywords);
   const validTranslationKeywords = filterValidKeywords(translationKeywords);
   if (validKeywords.length === 0 && validTranslationKeywords.length === 0) {
-    throw new LocalizedError(
-      'KEYWORDS_REQUIRED',
-      'aiParagraphFeedback.validKeywordsRequired',
-      {},
-      uiLocale,
-    );
+    throw new AgentError('KEYWORDS_REQUIRED', 'aiParagraphFeedback.validKeywordsRequired', {});
   }
   return { validKeywords, validTranslationKeywords };
 }
@@ -2519,27 +2480,21 @@ async function lookupRelatedMemoriesForFind(params: {
 function normalizeReplaceKeywords(
   keywords: unknown,
   originalKeywords: unknown,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): { validKeywords: string[]; validOriginalKeywords: string[] } {
   const hasKeywords = Array.isArray(keywords) && keywords.length > 0;
   const hasOriginal = Array.isArray(originalKeywords) && originalKeywords.length > 0;
   if (!hasKeywords && !hasOriginal) {
-    throw new LocalizedError(
+    throw new AgentError(
       'REPLACEMENT_KEYWORDS_REQUIRED',
       'aiParagraphFeedback.replaceKeywordsRequired',
       {},
-      uiLocale,
     );
   }
   const validKeywords = filterValidKeywords(keywords);
   const validOriginalKeywords = filterValidKeywords(originalKeywords);
   if (validKeywords.length === 0 && validOriginalKeywords.length === 0) {
-    throw new LocalizedError(
-      'KEYWORDS_REQUIRED',
-      'aiParagraphFeedback.validKeywordsRequired',
-      {},
-      uiLocale,
-    );
+    throw new AgentError('KEYWORDS_REQUIRED', 'aiParagraphFeedback.validKeywordsRequired', {});
   }
   return { validKeywords, validOriginalKeywords };
 }

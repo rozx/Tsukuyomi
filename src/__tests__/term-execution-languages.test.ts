@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 describe('术语执行语言', () => {
-  it('有书籍的术语请求使用英文宿主标签并保留用户原文', async () => {
+  it('有书籍的术语请求使用简中宿主标签、繁中目标并保留用户原文', async () => {
     const { books } = await chapterTranslationFixture([translationChapter('c', '11111111')]);
     await books.updateBook('fixture-book', { translationInstructions: '用户保留的翻译要求' });
     let system = '';
@@ -38,12 +38,10 @@ describe('术语执行语言', () => {
       chapterTitle: 'Source title',
       languages: captureExecutionLanguages('en-US', 'zh-TW'),
     });
-    expect(system).toContain('[Book information]');
-    expect(system).toContain('[Current chapter]');
-    expect(system).toContain('[Special instructions (user content)]');
+    expect(system).toContain('【书籍信息】');
+    expect(system).toContain('特殊指令（用户自定义）');
     expect(system).toContain('用户保留的翻译要求');
-    expect(system).toContain('Traditional Chinese');
-    expect(system).not.toMatch(/【书籍信息】|当前章节 ID|特殊指令（用户自定义）/);
+    expect(system).toContain('繁体中文');
   });
   it('重试仍使用启动英文提示与目标译名，运行中改目标不注入简中译名', async () => {
     const { books } = await chapterTranslationFixture([translationChapter('c', '11111111')]);
@@ -77,7 +75,9 @@ describe('术语执行语言', () => {
       const input = request.messages!.map((message) => message.content).join('\n');
       expect(input).toContain('EN_ONLY');
       expect(input).not.toContain('CN_ONLY');
-      expect(input).toContain('English');
+      // 目标语言以简中名称写入指令，运行中改为繁中不影响
+      expect(input).toContain('英文');
+      expect(input).not.toContain('繁体中文');
     }
     expect(requests[1]?.messages?.at(-1)?.content).toContain('JSON');
   });

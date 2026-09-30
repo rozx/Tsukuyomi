@@ -9,7 +9,7 @@ import type {
 } from 'src/stores/ask-user';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import type { AppLocale } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { localizedErrorMessage, localizedErrorCode } from 'src/utils/localized-error';
 
 type AskUserOnAction = ToolContext['onAction'];
@@ -102,7 +102,7 @@ async function invokeAskUserBridge(
   payload: AskUserPayload,
   askFn: (p: AskUserPayload) => Promise<AskUserResult>,
   onAction: AskUserOnAction,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): Promise<string> {
   try {
     const result = await askFn(payload);
@@ -116,7 +116,7 @@ async function invokeAskUserBridge(
     }
     return JSON.stringify(buildAskUserSuccessJson(question, result));
   } catch (error) {
-    return JSON.stringify(buildAskUserErrorJson(question, error, uiLocale));
+    return JSON.stringify(buildAskUserErrorJson(question, error, feedbackLocale));
   }
 }
 
@@ -168,8 +168,8 @@ function buildAskUserSuccessJson(question: string, result: AskUserResult) {
 /**
  * ask_user 异常时的 JSON 响应体
  */
-function buildAskUserErrorJson(question: string, error: unknown, uiLocale: AppLocale) {
-  const msg = localizedErrorMessage(error, uiLocale, 'aiEntityFeedback.askFailed');
+function buildAskUserErrorJson(question: string, error: unknown, feedbackLocale: AppLocale) {
+  const msg = localizedErrorMessage(error, feedbackLocale, 'aiEntityFeedback.askFailed');
   return { success: false, error_code: localizedErrorCode(error), error: msg, question };
 }
 
@@ -181,7 +181,7 @@ export const askUserTools: ToolDefinition[] = [
       required: ASK_USER_QUESTION_REQUIRED,
     }),
     handler: async (args, context: ToolContext) => {
-      const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const { onAction } = context;
       const parsedArgs = parseToolArgs<AskUserPayload>(args);
       const question = typeof parsedArgs?.question === 'string' ? parsedArgs.question.trim() : '';
@@ -189,7 +189,7 @@ export const askUserTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'QUESTION_REQUIRED',
-          error: translateText(uiLocale, 'aiEntityFeedback.questionRequired'),
+          error: translateText(feedbackLocale, 'aiEntityFeedback.questionRequired'),
         });
       }
 
@@ -204,10 +204,10 @@ export const askUserTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'ASK_UI_UNAVAILABLE',
-          error: translateText(uiLocale, 'aiEntityFeedback.askUnavailable'),
+          error: translateText(feedbackLocale, 'aiEntityFeedback.askUnavailable'),
         });
       }
-      return invokeAskUserBridge(question, payload, askFn, onAction, uiLocale);
+      return invokeAskUserBridge(question, payload, askFn, onAction, feedbackLocale);
     },
   },
   {
@@ -227,7 +227,7 @@ export const askUserTools: ToolDefinition[] = [
       required: ['questions'],
     }),
     handler: async (args, context: ToolContext) => {
-      const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const { onAction } = context;
       const parsedArgs = parseToolArgs<AskUserBatchPayload>(args);
 
@@ -244,7 +244,7 @@ export const askUserTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'QUESTIONS_REQUIRED',
-          error: translateText(uiLocale, 'aiEntityFeedback.questionsRequired'),
+          error: translateText(feedbackLocale, 'aiEntityFeedback.questionsRequired'),
         });
       }
 
@@ -288,7 +288,7 @@ export const askUserTools: ToolDefinition[] = [
         return JSON.stringify({
           success: false,
           error_code: 'ASK_UI_UNAVAILABLE',
-          error: translateText(uiLocale, 'aiEntityFeedback.askBatchUnavailable'),
+          error: translateText(feedbackLocale, 'aiEntityFeedback.askBatchUnavailable'),
         });
       }
 
@@ -321,7 +321,7 @@ export const askUserTools: ToolDefinition[] = [
           answers: result.answers,
         });
       } catch (error) {
-        const msg = localizedErrorMessage(error, uiLocale, 'aiEntityFeedback.askFailed');
+        const msg = localizedErrorMessage(error, feedbackLocale, 'aiEntityFeedback.askFailed');
         return JSON.stringify({
           success: false,
           error_code: localizedErrorCode(error),

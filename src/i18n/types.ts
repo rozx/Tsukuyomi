@@ -11,7 +11,7 @@ export type MessageLanguages = AppLocale;
  */
 export type MessageSchema = (typeof messages)['en-US'];
 
-type StringPaths<T> = {
+export type StringPaths<T> = {
   [K in keyof T & string]: T[K] extends string
     ? K
     : T[K] extends readonly unknown[]
@@ -22,3 +22,9 @@ type StringPaths<T> = {
 }[keyof T & string];
 
 export type MessageKey = StringPaths<MessageSchema>;
+
+/**
+ * 模型可见文字的 key：以简中资源为准，包含只存在于简中的模型专用文字。
+ * 用户可见文字必须三语齐全，因此 MessageKey 仍以英文资源为准。
+ */
+export type AgentMessageKey = StringPaths<(typeof messages)['zh-CN']>;

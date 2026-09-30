@@ -1,7 +1,8 @@
 import { localizeImportFeedback } from './import-error';
 import type { AppLocale } from 'src/models/locale';
-import type { MessageKey } from 'src/i18n/types';
-import { translateText } from 'src/i18n/translate';
+import type { AgentMessageKey } from 'src/i18n/types';
+import { AGENT_LOCALE, agentText, translateText } from 'src/i18n/translate';
+import { aiLanguageName, assistantPersona } from 'src/services/ai/tasks/prompts/language';
 import { ImportRepository } from './import-repository';
 import { getDB } from 'src/utils/indexed-db';
 
@@ -50,15 +51,15 @@ export async function importAgentPrompt(
     (_, index) =>
       String(index + 1) +
       '. ' +
-      translateText(uiLocale, ('aiImportPrompt.rules.' + String(index + 1)) as MessageKey),
+      agentText(('aiImportPrompt.rules.' + String(index + 1)) as AgentMessageKey),
   ).join('\n');
   return [
-    translateText(uiLocale, 'aiAssistant.persona'),
-    translateText(uiLocale, 'aiImportPrompt.intro'),
-    translateText(uiLocale, 'aiImportPrompt.workflow') + '\n' + rules,
-    summary ? translateText(uiLocale, 'aiImportPrompt.summary', { summary }) : '',
-    translateText(uiLocale, 'aiImportPrompt.snapshot', {
-      state: JSON.stringify(localizeImportFeedback(state, uiLocale)),
+    assistantPersona(uiLocale),
+    agentText('aiImportPrompt.intro', { dialogLanguage: aiLanguageName(uiLocale) }),
+    agentText('aiImportPrompt.workflow') + '\n' + rules,
+    summary ? agentText('aiImportPrompt.summary', { summary }) : '',
+    agentText('aiImportPrompt.snapshot', {
+      state: JSON.stringify(localizeImportFeedback(state, AGENT_LOCALE)),
     }),
   ]
     .filter(Boolean)

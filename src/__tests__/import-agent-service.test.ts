@@ -457,7 +457,7 @@ describe('导入 Agent 执行生命周期', () => {
     expect(requests).toBe(2);
   });
 
-  it('检查点只持久化启动 UI 语言，关闭数据库并切设置后恢复仍使用原语言', async () => {
+  it('检查点只持久化启动 UI 语言，关闭数据库并切设置后恢复仍按原语言回复', async () => {
     setActivePinia(createPinia());
     const settings = useSettingsStore();
     await settings.setUiLocale('en-US');
@@ -467,12 +467,13 @@ describe('导入 Agent 执行生命周期', () => {
       generateText: async (_config: AIServiceConfig, request: TextGenerationRequest) => {
         const checkpoint = (await ImportRepository.getTask(task.id))!.checkpoint!;
         languagesAtRequest.push(checkpoint.uiLocale);
+        // 工具说明与规则为简中单源；恢复后仍按检查点的英文要求回复语言
         const previewTool = request.tools!.find((tool) => tool.function.name === 'preview_import')!;
-        expect(previewTool.function.description).toContain('does not apply');
-        expect(JSON.stringify(request.tools)).not.toMatch(/[\p{Script=Han}]/u);
+        expect(previewTool.function.description).toMatch(/[\p{Script=Han}]/u);
         const system = request.messages!.find((message) => message.role === 'system')!
           .content as string;
-        expect(system).toContain('independent AI novel import workspace');
+        expect(system).toContain('说明与交互使用英文');
+        expect(system).not.toContain('月詠');
         const latestUser = request.messages!.findLast((message) => message.role === 'user')!
           .content as string;
         if (languagesAtRequest.length === 2) expect(latestUser).toContain('Continue organizing');

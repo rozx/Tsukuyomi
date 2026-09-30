@@ -1,5 +1,5 @@
 import type { AppLocale } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 /**
  * Todo 辅助函数
  * 用于在 AI 任务服务中管理待办事项
@@ -12,7 +12,7 @@ import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
  * @param hasContext 是否存在任务/会话上下文（无上下文时不注入待办说明）
  */
 export function getTodosSystemPrompt(hasContext: boolean, uiLocale: AppLocale = 'zh-CN'): string {
-  return hasContext ? translateText(uiLocale, 'aiTodo.system') : '';
+  return hasContext ? agentText('aiTodo.system') : '';
 }
 
 /**

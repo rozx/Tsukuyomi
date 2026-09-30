@@ -64,7 +64,7 @@ async function fixture(locale: AppLocale) {
   return { task, run, invoke };
 }
 describe('导入工具自有错误沿检查点语言', () => {
-  it('章节读取的部分失败字符串也使用执行语言，目标书名原文保留', async () => {
+  it('章节读取的部分失败字符串返回模型时为简中单源，目标书名原文保留', async () => {
     const { invoke } = await fixture('en-US');
     const failure = ImportLibraryReader.decodeChapter({
       chapterId: 'c',
@@ -83,8 +83,7 @@ describe('导入工具自有错误沿检查点语言', () => {
     } as never);
     const result = await invoke('get_chapter_info', { book_id: 'b', chapter_id: 'c' });
     expect(result.status).toBe('failed');
-    expect(result.error).toContain('paragraph');
-    expect(result.error).not.toMatch(/\p{Script=Han}/u);
+    expect(result.error).toContain('段落或译文数据形状无效');
   });
 
   it('无标题HTML诊断的自有摘要说明使用英文，状态码与外部标题保留', () => {
@@ -96,10 +95,10 @@ describe('导入工具自有错误沿检查点语言', () => {
     );
   });
 
-  it('缺书与损坏读取保留自有错误身份，正文读取不会把简中说明当原始诊断', async () => {
+  it('缺书与损坏读取保留自有错误身份，返回模型的说明为简中单源', async () => {
     const { invoke } = await fixture('en-US');
     const missing = await invoke('get_chapter_info', { book_id: 'missing', chapter_id: 'chapter' });
-    expect(missing.error.message).not.toMatch(/\p{Script=Han}/u);
+    expect(missing.error.message).toMatch(/\p{Script=Han}/u);
     const failure = ImportLibraryReader.decodeChapter({
       chapterId: 'c',
       content: '[{}]',
@@ -108,8 +107,7 @@ describe('导入工具自有错误沿检查点语言', () => {
     expect(failure.kind).toBe('failed');
     vi.spyOn(ImportLibraryReader, 'readBook').mockResolvedValue(failure as never);
     const corrupt = await invoke('get_chapter_info', { book_id: 'b', chapter_id: 'c' });
-    expect(corrupt.error.message).toContain('paragraph');
-    expect(corrupt.error.message).not.toMatch(/\p{Script=Han}/u);
+    expect(corrupt.error.message).toContain('段落或译文数据形状无效');
   });
   it('存储失败自有提示可用英文，外部异常名称保留', async () => {
     let failure: unknown;
@@ -161,16 +159,24 @@ describe('导入工具自有错误沿检查点语言', () => {
     expect(JSON.stringify(localizeImportFeedback(input, 'en-US'))).toBe(JSON.stringify(input));
   });
 
-  it('方案冲突说明按英文执行投影，业务冲突码和最终确认限制保持', async () => {
-    const { invoke } = await fixture('en-US');
+  it('方案冲突说明返回模型时为简中、工作台事件为英文，业务冲突码和最终确认限制保持', async () => {
+    const { task, invoke } = await fixture('en-US');
     await invoke('rename_import_task', { name: 'Untranslated source title' });
     const result = await invoke('preview_import', { draft_revision: 0 });
     expect(result.success).toBe(true);
     expect(
       result.conflicts.some((entry: { code: string }) => entry.code === 'EMPTY_SELECTION'),
     ).toBe(true);
-    for (const conflict of result.conflicts)
-      expect(conflict.message).not.toMatch(/\p{Script=Han}/u);
+    for (const conflict of result.conflicts) expect(conflict.message).toMatch(/\p{Script=Han}/u);
+    // 工作台展示的工具结果事件仍按检查点的英文投影
+    const { items } = await ImportRepository.listEvents(task.id);
+    const event = items.findLast(
+      (item) => item.kind === 'tool-result' && item.toolName === 'preview_import',
+    )!;
+    const shown = (event.data as { conflicts: { code: string; message: string }[] }).conflicts;
+    expect(shown.find((entry) => entry.code === 'EMPTY_SELECTION')!.message).not.toMatch(
+      /\p{Script=Han}/u,
+    );
     expect(await (await getDB()).count('books')).toBe(0);
   });
 
@@ -195,11 +201,11 @@ describe('导入工具自有错误沿检查点语言', () => {
   });
 
   for (const [locale, missing, notAllowed] of [
-    ['en-US', 'required', 'not exposed'],
-    ['zh-TW', '缺少', '提供'],
+    ['en-US', '缺失', '提供'],
+    ['zh-TW', '缺失', '提供'],
     ['zh-CN', '缺失', '提供'],
   ] as const) {
-    it(`${locale}参数校验与工具权限错误保留身份并使用执行语言`, async () => {
+    it(`${locale}参数校验与工具权限错误保留身份，返回模型的说明为简中单源`, async () => {
       const { invoke } = await fixture(locale);
       const invalid = await invoke('inspect_source', {});
       expect(invalid.error.code).toBe('INVALID_ARGUMENTS');
@@ -207,15 +213,13 @@ describe('导入工具自有错误沿检查点语言', () => {
       const denied = await invoke('apply_import', {});
       expect(denied.error.code).toBe('TOOL_NOT_ALLOWED');
       expect(denied.error.message).toContain(notAllowed);
-      if (locale === 'en-US') expect(invalid.error.message).not.toMatch(/\p{Script=Han}/u);
     });
   }
-  it('来源范围校验使用英文，失败不会生成来源或书籍', async () => {
+  it('来源范围校验返回模型的说明为简中单源，失败不会生成来源或书籍', async () => {
     const { invoke } = await fixture('en-US');
     const result = await invoke('inspect_source', { source_id: 'foreign-source' });
     expect(result.error.code).toBe('SOURCE_SCOPE');
-    expect(result.error.message).toContain('source');
-    expect(result.error.message).not.toMatch(/\p{Script=Han}/u);
+    expect(result.error.message).toContain('来源不属于当前任务');
     expect(await (await getDB()).count('books')).toBe(0);
   });
 });

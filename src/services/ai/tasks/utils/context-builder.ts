@@ -1,5 +1,5 @@
 import type { AppLocale } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import { getNameTranslation } from 'src/services/localization/selection';
 import type {
   Paragraph,
@@ -77,8 +77,7 @@ export function buildMaintenanceReminder(
   taskType: TaskType,
   uiLocale: AppLocale = 'zh-CN',
 ): string {
-  return translateText(
-    uiLocale,
+  return agentText(
     taskType === 'translation' ? 'aiContext.maintenance' : 'aiContext.changedMaintenance',
   );
 }
@@ -96,13 +95,13 @@ export function buildChapterContextSection(
 ): string {
   const parts: string[] = [];
   if (chapterId) {
-    parts.push(translateText(uiLocale, 'aiContext.chapterId') + ': ' + chapterId);
+    parts.push(agentText('aiContext.chapterId') + ': ' + chapterId);
   }
   if (chapterTitle) {
-    parts.push(translateText(uiLocale, 'aiContext.chapterTitle') + ': ' + chapterTitle);
+    parts.push(agentText('aiContext.chapterTitle') + ': ' + chapterTitle);
   }
   return parts.length > 0
-    ? '\n\n[' + translateText(uiLocale, 'aiContext.chapter') + ']\n' + parts.join('\n') + '\n'
+    ? '\n\n[' + agentText('aiContext.chapter') + ']\n' + parts.join('\n') + '\n'
     : '';
 }
 
@@ -116,9 +115,9 @@ export function buildPreviousChapterSection(title?: string, uiLocale: AppLocale 
   if (!title) return '';
   return (
     '\n\n[' +
-    translateText(uiLocale, 'aiContext.previous') +
+    agentText('aiContext.previous') +
     ']\n' +
-    translateText(uiLocale, 'aiContext.previousTitle') +
+    agentText('aiContext.previousTitle') +
     ': ' +
     title +
     '\n'
@@ -153,31 +152,27 @@ export function buildBookContextSectionFromBook(
   // 简介可能很长，做一个保守截断（避免提示词过长）
   const normalizedDesc =
     description.length > MAX_DESC_LEN
-      ? description.slice(0, MAX_DESC_LEN) + translateText(uiLocale, 'aiContext.truncated')
+      ? description.slice(0, MAX_DESC_LEN) + agentText('aiContext.truncated')
       : description;
 
   const parts: string[] = [];
   if (title) {
-    parts.push(translateText(uiLocale, 'aiContext.title') + ': ' + title);
+    parts.push(agentText('aiContext.title') + ': ' + title);
   }
   if (normalizedDesc) {
-    parts.push(translateText(uiLocale, 'aiContext.description') + ': ' + normalizedDesc);
+    parts.push(agentText('aiContext.description') + ': ' + normalizedDesc);
   }
   if (tags.length > 0) {
-    parts.push(
-      translateText(uiLocale, 'aiContext.tags') +
-        ': ' +
-        tags.join(uiLocale === 'en-US' ? ', ' : '、'),
-    );
+    parts.push(agentText('aiContext.tags') + ': ' + tags.join(uiLocale === 'en-US' ? ', ' : '、'));
   }
   if (skipAskUser) {
-    parts.push(translateText(uiLocale, 'aiContext.skipAsk'));
+    parts.push(agentText('aiContext.skipAsk'));
   }
 
   return (
     '\n\n' +
-    translateText(uiLocale, 'aiContext.heading', {
-      label: translateText(uiLocale, 'aiContext.book'),
+    agentText('aiContext.heading', {
+      label: agentText('aiContext.book'),
     }) +
     '\n' +
     parts.join('\n') +
@@ -270,8 +265,8 @@ function formatMemoryContext(memories: Memory[], uiLocale: AppLocale): string {
   const lines = memories.map((memory) => `  - [${memory.id}] ${memory.summary}`);
   return (
     '\n\n' +
-    translateText(uiLocale, 'aiContext.heading', {
-      label: translateText(uiLocale, 'aiContext.memories'),
+    agentText('aiContext.heading', {
+      label: agentText('aiContext.memories'),
     }) +
     '\n' +
     lines.join('\n')
@@ -606,7 +601,7 @@ function buildChunkTermsSection(terms: Terminology[], languages: ExecutionLangua
         term.name + ' → ' + (getNameTranslation(term, languages.targetLanguage)?.translation ?? ''),
     )
     .join(languages.uiLocale === 'en-US' ? ', ' : '、');
-  return '**' + translateText(languages.uiLocale, 'aiContext.terms') + '**: ' + termList;
+  return '**' + agentText('aiContext.terms') + '**: ' + termList;
 }
 
 function buildChunkCharactersSection(
@@ -617,9 +612,7 @@ function buildChunkCharactersSection(
   const details = characters.map(
     (character) => '  - ' + formatCharacterDetail(character, languages),
   );
-  return (
-    '**' + translateText(languages.uiLocale, 'aiContext.characters') + '**:\n' + details.join('\n')
-  );
+  return '**' + agentText('aiContext.characters') + '**:\n' + details.join('\n');
 }
 
 /**
@@ -656,13 +649,13 @@ async function buildCurrentChunkContext(
   if (contextParts.length > 0) {
     currentChunkContext =
       '\n\n' +
-      translateText(languages.uiLocale, 'aiContext.heading', {
-        label: translateText(languages.uiLocale, 'aiContext.entities'),
+      agentText('aiContext.heading', {
+        label: agentText('aiContext.entities'),
       }) +
       '\n' +
       contextParts.join('\n') +
       '\n' +
-      translateText(languages.uiLocale, 'aiContext.fresh') +
+      agentText('aiContext.fresh') +
       '\n';
   }
 
@@ -695,11 +688,7 @@ function buildStartContextHint(
   uiLocale: AppLocale,
 ): string {
   if (hasPreviousParagraphs !== true || !firstParagraphId) return '';
-  return (
-    '\n\n' +
-    translateText(uiLocale, 'aiContext.start', { id: firstParagraphId, task: taskLabel }) +
-    '\n'
-  );
+  return '\n\n' + agentText('aiContext.start', { id: firstParagraphId, task: taskLabel }) + '\n';
 }
 
 interface FirstChunkPromptParams {
@@ -718,12 +707,12 @@ interface FirstChunkPromptParams {
 }
 
 function buildFirstChunkPrompt(p: FirstChunkPromptParams): string {
-  return translateText(p.uiLocale, 'aiContext.first', {
+  return agentText('aiContext.first', {
     task: p.taskLabel,
     status: getCurrentStatusInfo(p.taskType, 'planning', false, undefined, p.uiLocale),
     title:
       p.chapterTitle && p.taskType === 'translation'
-        ? translateText(p.uiLocale, 'aiContext.titleInstruction', { title: p.chapterTitle })
+        ? agentText('aiContext.titleInstruction', { title: p.chapterTitle })
         : '',
     context: p.currentChunkContext,
     start: p.startContextHint,
@@ -742,14 +731,14 @@ type SubsequentChunkPromptParams = Omit<
 >;
 
 function buildSubsequentChunkPrompt(p: SubsequentChunkPromptParams): string {
-  return translateText(p.uiLocale, 'aiContext.subsequent', {
+  return agentText('aiContext.subsequent', {
     task: p.taskLabel,
     index: p.chunkIndex + 1,
     total: p.totalChunks,
     context: p.currentChunkContext,
     start: p.startContextHint,
     status: getCurrentStatusInfo(p.taskType, 'planning', true, undefined, p.uiLocale),
-    reference: p.currentChunkContext ? translateText(p.uiLocale, 'aiContext.reference') : '',
+    reference: p.currentChunkContext ? agentText('aiContext.reference') : '',
     count: p.paragraphCountNote,
     text: p.chunkText,
     maintenance: p.maintenanceReminder,
@@ -790,8 +779,7 @@ export async function buildIndependentChunkPrompt(
   const taskLabel = taskPromptLabel(taskType, uiLocale);
 
   // 工具提示：避免与 system prompt 重复，只保留最小必要提醒
-  const contextToolsReminder =
-    '\n\n' + translateText(uiLocale, 'aiContext.contextReminder', { task: taskLabel });
+  const contextToolsReminder = '\n\n' + agentText('aiContext.contextReminder', { task: taskLabel });
 
   const currentChunkContext = await buildCurrentChunkContext(
     bookId,
@@ -849,7 +837,7 @@ export function buildSpecialInstructionsSection(
 ): string {
   return specialInstructions
     ? '\n\n========================================\n[' +
-        translateText(uiLocale, 'aiContext.special') +
+        agentText('aiContext.special') +
         ']\n========================================\n' +
         specialInstructions +
         '\n'
@@ -942,12 +930,10 @@ function buildSurroundingParagraphsContext(
 
   const formatParagraph = (p: Paragraph): string => {
     const translation = getSelectedTranslation(p, languages.targetLanguage);
-    return translateText(languages.uiLocale, 'aiContext.surrounding', {
+    return agentText('aiContext.surrounding', {
       id: p.id,
       original: p.text,
-      translation: translation
-        ? translateText(languages.uiLocale, 'aiContext.translationLine', { translation })
-        : '',
+      translation: translation ? agentText('aiContext.translationLine', { translation }) : '',
     });
   };
 
@@ -957,7 +943,7 @@ function buildSurroundingParagraphsContext(
   const prevStart = Math.max(0, currentIndex - count);
   const prevParagraphs = allParagraphs.slice(prevStart, currentIndex).filter((p) => p.text?.trim());
   if (prevParagraphs.length > 0) {
-    parts.push('[' + translateText(languages.uiLocale, 'aiContext.previousParagraphs') + ']');
+    parts.push('[' + agentText('aiContext.previousParagraphs') + ']');
     parts.push(...prevParagraphs.map(formatParagraph));
   }
 
@@ -966,7 +952,7 @@ function buildSurroundingParagraphsContext(
     .slice(currentIndex + 1, currentIndex + 1 + count)
     .filter((p) => p.text?.trim());
   if (nextParagraphs.length > 0) {
-    parts.push('[' + translateText(languages.uiLocale, 'aiContext.nextParagraphs') + ']');
+    parts.push('[' + agentText('aiContext.nextParagraphs') + ']');
     parts.push(...nextParagraphs.map(formatParagraph));
   }
 
@@ -988,7 +974,7 @@ export function formatCharacterAliases(
   const aliasList = aliases
     .map((alias) => `${alias.name} → ${getNameTranslation(alias, language)?.translation ?? ''}`)
     .join(uiLocale === 'en-US' ? ', ' : '、');
-  return translateText(uiLocale, 'aiTasks.context.aliases', { aliases: aliasList });
+  return agentText('aiTasks.context.aliases', { aliases: aliasList });
 }
 
 /**
@@ -1005,15 +991,14 @@ function formatCharacterDetail(c: CharacterSetting, languages: ExecutionLanguage
       other: 'aiTasks.term.other',
     } as const;
     parts.push(
-      translateText(uiLocale, 'aiTasks.term.sex', {
-        value: translateText(uiLocale, sexKeys[c.sex]),
+      agentText('aiTasks.term.sex', {
+        value: agentText(sexKeys[c.sex]),
       }),
     );
   }
-  if (c.description)
-    parts.push(translateText(uiLocale, 'aiTasks.term.description', { value: c.description }));
+  if (c.description) parts.push(agentText('aiTasks.term.description', { value: c.description }));
   if (c.speakingStyle)
-    parts.push(translateText(uiLocale, 'aiTasks.term.speakingStyle', { value: c.speakingStyle }));
+    parts.push(agentText('aiTasks.term.speakingStyle', { value: c.speakingStyle }));
   const aliases = formatCharacterAliases(c.aliases, targetLanguage, uiLocale);
   if (aliases) parts.push(aliases);
   return parts.join(' | ');
@@ -1033,8 +1018,8 @@ function buildChapterCharactersContext(
   );
   return (
     '\n\n' +
-    translateText(languages.uiLocale, 'aiContext.heading', {
-      label: translateText(languages.uiLocale, 'aiContext.chapterCharacters'),
+    agentText('aiContext.heading', {
+      label: agentText('aiContext.chapterCharacters'),
     }) +
     '\n' +
     details.join('\n') +
@@ -1088,8 +1073,8 @@ function buildTermsContextPart(
     .join('\n');
   return (
     '\n\n' +
-    translateText(languages.uiLocale, 'aiContext.heading', {
-      label: translateText(languages.uiLocale, 'aiContext.relatedTerms'),
+    agentText('aiContext.heading', {
+      label: agentText('aiContext.relatedTerms'),
     }) +
     '\n' +
     termList +

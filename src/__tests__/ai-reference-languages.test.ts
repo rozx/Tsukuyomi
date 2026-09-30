@@ -92,7 +92,7 @@ describe('AI 自动参考内容按执行目标投影', () => {
         chapterId: 'c',
       });
       expectReferences(context, english);
-      expect(context).toContain('Aliases:');
+      expect(context).toContain('别名：');
     });
     it(`批次参考内容使用目标槽，存在英文=${english}`, async () => {
       const chapter = await references(english);

@@ -72,10 +72,10 @@ describe('AI帮助工具沿执行UI读取同一资源', () => {
       ),
     );
     expect(result.section_id).toBe('front-page-section-1');
-    expect(result.message).toContain('Navigated');
+    expect(result.message).toMatch(/^已导航到帮助文档: Quick start/);
     expect(JSON.stringify(actions)).toContain('front-page-section-1');
   });
-  it('缺译本与必填失败均有固定身份和英文说明', async () => {
+  it('缺译本与必填失败均有固定身份，说明为简中单源', async () => {
     resources().mockImplementation((url) =>
       String(url).endsWith('index.json')
         ? Promise.resolve({ data: [doc] })
@@ -83,7 +83,7 @@ describe('AI帮助工具沿执行UI读取同一资源', () => {
     );
     const missing = await invoke('get_help_doc', { doc_id: 'front-page' });
     expect(missing.error_code).toBe('HELP_DOCUMENT_LOAD_FAILED');
-    expect(missing.error).toContain('Unable to load document');
+    expect(missing.error).toMatch(/^无法加载文档 Quick start/);
     expect((await invoke('get_help_doc', {})).error_code).toBe('HELP_DOC_ID_REQUIRED');
     expect((await invoke('search_help_docs', {})).error_code).toBe('HELP_QUERY_REQUIRED');
   });

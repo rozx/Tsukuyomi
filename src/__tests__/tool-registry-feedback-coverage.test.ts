@@ -12,7 +12,6 @@ import type { AIToolCall } from '../services/ai/types/ai-service';
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
 import { useBooksStore } from '../stores/books';
 
-const CJK = /[぀-ヿ一-鿿]/;
 const BOOK = 'fixture-book';
 
 afterEach(() => {
@@ -34,14 +33,13 @@ function call(name: string, args: Record<string, unknown>): AIToolCall {
   };
 }
 
-/** 协议部分：成功标志与错误码；自然语言说明不参与比较。 */
-function protocol(content: string) {
-  try {
-    const data = JSON.parse(content) as Record<string, unknown>;
-    return { success: data.success, error_code: data.error_code };
-  } catch {
-    return { raw: 'non-json' };
-  }
+/** 抹去每次运行生成的 ID 与时间戳。 */
+function normalize(content: string): string {
+  return content
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<uuid>')
+    .replace(/\d{13}-[a-z0-9]+/g, '<task>')
+    .replace(/\b\d{13}\b/g, '<time>')
+    .replace(/\b(?!1{8}\b|2{8}\b|f{8}\b)[0-9a-f]{8}\b/g, '<id>');
 }
 
 async function invoke(locale: AppLocale, toolCall: AIToolCall, taskId: string) {
@@ -55,8 +53,8 @@ async function invoke(locale: AppLocale, toolCall: AIToolCall, taskId: string) {
   });
 }
 
-describe('注册工具全集的反馈语言', () => {
-  it('每个工具的参数校验反馈三语言协议一致，英文不含中文', async () => {
+describe('注册工具全集的反馈与界面语言无关', () => {
+  it('每个工具的参数校验反馈在三种执行语言下逐字相同', async () => {
     await chapterTranslationFixture([translationChapter('c', '11111111')]);
     const taskId = await useAIProcessingStore().addTask({
       type: 'translation',
@@ -66,24 +64,20 @@ describe('注册工具全集的反馈语言', () => {
       message: '',
       thinkingMessage: '',
     });
-    const leaks: string[] = [];
     const mismatches: string[] = [];
     for (const { definition } of definitions()) {
       const name = definition.function.name;
       const toolCall = call(name, {});
       const results = [];
       for (const locale of APP_LOCALES) results.push(await invoke(locale, toolCall, taskId));
-      const [reference, ...others] = results.map((result) => protocol(result.content));
-      if (others.some((other) => JSON.stringify(other) !== JSON.stringify(reference)))
-        mismatches.push(name);
-      const english = results[APP_LOCALES.indexOf('en-US')]!.content;
-      if (CJK.test(english)) leaks.push(`${name}: ${english.slice(0, 200)}`);
+      // 返回给模型的内容与界面语言无关：三种执行语言逐字相同
+      const [reference, ...others] = results.map((result) => result.content);
+      if (others.some((other) => other !== reference)) mismatches.push(name);
     }
     expect(mismatches).toEqual([]);
-    expect(leaks).toEqual([]);
   });
 
-  it('逐个工具以真实参数执行：成功与业务失败的协议三语言一致，英文反馈不含中文', async () => {
+  it('逐个工具以真实参数执行：返回给模型的内容在三种执行语言下逐字相同', async () => {
     const runs: Record<string, { name: string; content: string }[]> = {};
     for (const locale of APP_LOCALES) runs[locale] = await scenario(locale);
     const names = runs['zh-CN']!.map((entry) => entry.name);
@@ -102,19 +96,16 @@ describe('注册工具全集的反馈语言', () => {
         .map(({ definition }) => definition.function.name)
         .filter((name) => !covered.has(name) && !external.includes(name)),
     ).toEqual([]);
+    // 各语言各自新建书籍，生成的 ID 与时间戳不同；归一化后返回给模型的内容必须逐字相同
     const mismatches: string[] = [];
     for (const locale of APP_LOCALES) {
       runs[locale]!.forEach((entry, index) => {
         const reference = runs['zh-CN']![index]!;
-        if (JSON.stringify(protocol(entry.content)) !== JSON.stringify(protocol(reference.content)))
+        if (normalize(entry.content) !== normalize(reference.content))
           mismatches.push(`${locale} ${entry.name}: ${entry.content.slice(0, 160)}`);
       });
     }
     expect(mismatches).toEqual([]);
-    const leaks = runs['en-US']!.filter((entry) => CJK.test(entry.content)).map(
-      (entry) => `${entry.name}: ${entry.content.slice(0, 240)}`,
-    );
-    expect(leaks).toEqual([]);
   });
 });
 

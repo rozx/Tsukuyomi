@@ -3,7 +3,7 @@ import type { AppLocale } from 'src/models/locale';
 import type { ExecutionLanguages } from 'src/models/locale';
 import { captureExecutionLanguages } from '../utils/execution-languages';
 import { aiLanguageName } from './language';
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 export { MAX_TRANSLATION_BATCH_SIZE };
@@ -26,8 +26,8 @@ export function getToolScopeRules(tools?: AITool[], uiLocale: AppLocale = 'zh-CN
   const names = tools?.map((tool) => tool.function.name) ?? [];
   const list = names.length
     ? names.map((name) => `- \`${name}\``).join('\n')
-    : translateText(uiLocale, 'aiCommon.noTools');
-  return translateText(uiLocale, 'aiCommon.scope', { tools: list });
+    : agentText('aiCommon.noTools');
+  return agentText('aiCommon.scope', { tools: list });
 }
 
 /**
@@ -38,11 +38,8 @@ export function getSymbolFormatRules(
   targetLanguage: AppLocale = 'zh-CN',
 ): string {
   return [
-    translateText(
-      uiLocale,
-      targetLanguage === 'en-US' ? 'aiText.symbolEnglish' : 'aiText.symbolChinese',
-    ),
-    translateText(uiLocale, 'aiText.preserveFormat'),
+    agentText(targetLanguage === 'en-US' ? 'aiText.symbolEnglish' : 'aiText.symbolChinese'),
+    agentText('aiText.preserveFormat'),
   ].join('\n\n');
 }
 
@@ -57,18 +54,16 @@ export function getCurrentStatusInfo(
   locale: AppLocale = 'zh-CN',
 ): string {
   if (status === 'planning' || status === 'preparing')
-    return translateText(
-      locale,
+    return agentText(
       brief ? 'aiState.brief' : 'aiState.planning',
       brief
         ? { transition: statusCall('working') }
         : { task: taskPromptLabel(taskType, locale), transition: statusCall('working') },
     );
   if (status === 'working')
-    return translateText(locale, 'aiState.working', {
+    return agentText('aiState.working', {
       task: taskPromptLabel(taskType, locale),
-      focus: translateText(
-        locale,
+      focus: agentText(
         taskType === 'translation'
           ? 'aiState.focusTranslation'
           : taskType === 'polish'
@@ -77,13 +72,12 @@ export function getCurrentStatusInfo(
       ),
       maintenance: taskType === 'translation' ? 'planning / review' : 'planning',
       max: MAX_TRANSLATION_BATCH_SIZE,
-      changed: taskType === 'translation' ? '' : translateText(locale, 'aiState.changed'),
+      changed: taskType === 'translation' ? '' : agentText('aiState.changed'),
       transition: statusCall(taskType === 'translation' ? 'review' : 'end'),
     });
-  if (status === 'review')
-    return translateText(locale, 'aiState.review', { transition: statusCall('end') });
-  return translateText(locale, 'aiState.end', {
-    next: translateText(locale, hasNext ? 'aiState.next' : 'aiState.last'),
+  if (status === 'review') return agentText('aiState.review', { transition: statusCall('end') });
+  return agentText('aiState.end', {
+    next: agentText(hasNext ? 'aiState.next' : 'aiState.last'),
   });
 }
 
@@ -94,19 +88,19 @@ export function getCurrentStatusInfo(
 export function getHonorificRules(
   languages: ExecutionLanguages = captureExecutionLanguages('zh-CN'),
 ): string {
-  return translateText(languages.uiLocale, 'aiText.honorific', {
-    targetLanguage: aiLanguageName(languages.uiLocale, languages.targetLanguage),
+  return agentText('aiText.honorific', {
+    targetLanguage: aiLanguageName(languages.targetLanguage),
   });
 }
 
 /** 获取数据维护规则，协议状态名称保持固定。 */
 export function getDataManagementRules(uiLocale: AppLocale = 'zh-CN'): string {
-  return translateText(uiLocale, 'aiText.data');
+  return agentText('aiText.data');
 }
 
 /** 获取共享记忆规则，用户内容不被重译。 */
 export function getMemoryWorkflowRules(uiLocale: AppLocale = 'zh-CN'): string {
-  return translateText(uiLocale, 'aiText.memory');
+  return agentText('aiText.memory');
 }
 
 /** 工具化输出协议，JSON 示例作为插值避免被消息编译器改写。 */
@@ -127,25 +121,23 @@ export function getOutputFormatRules(
     ...(validateOriginal ? { original_text_prefix: 'source' } : {}),
     translated_text: '...',
   });
-  return translateText(uiLocale, 'aiText.output', {
+  return agentText('aiText.output', {
     statusExample: JSON.stringify({ status: '...' }),
     max: MAX_TRANSLATION_BATCH_SIZE,
-    prefix: validateOriginal ? translateText(uiLocale, 'aiText.prefix') : '',
+    prefix: validateOriginal ? agentText('aiText.prefix') : '',
     paragraphExample,
     title: includeTitle
-      ? translateText(uiLocale, 'aiText.title', {
+      ? agentText('aiText.title', {
           example: JSON.stringify({ chapter_id: 'chapter-id', title_translation: '...' }),
         })
       : '',
     flow: getTaskStateWorkflowText(taskType),
-    coverage: translateText(
-      uiLocale,
-      isTranslation ? 'aiText.coverage.translation' : 'aiText.coverage.changed',
-    ),
-    restriction: translateText(uiLocale, 'aiText.restriction', {
+    coverage: agentText(isTranslation ? 'aiText.coverage.translation' : 'aiText.coverage.changed'),
+    restriction: agentText('aiText.restriction', {
       states: isTranslation ? 'working / review' : 'working',
       max: MAX_TRANSLATION_BATCH_SIZE,
     }),
+    dialogLanguage: aiLanguageName(uiLocale),
   });
 }
 
@@ -158,9 +150,9 @@ export function getToolUsageInstructions(
 ): string {
   return [
     getToolScopeRules(tools, uiLocale),
-    translateText(uiLocale, 'aiText.usage', {
-      query: hasQueryChapterTool(tools) ? translateText(uiLocale, 'aiText.query') : '',
-      ask: skipAskUser ? '' : translateText(uiLocale, 'aiText.ask'),
+    agentText('aiText.usage', {
+      query: hasQueryChapterTool(tools) ? agentText('aiText.query') : '',
+      ask: skipAskUser ? '' : agentText('aiText.ask'),
       task: taskPromptLabel(taskType, uiLocale),
     }),
   ].join('\n\n');

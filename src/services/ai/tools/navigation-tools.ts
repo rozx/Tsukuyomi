@@ -42,19 +42,19 @@ export const navigationTools: ToolDefinition[] = [
     handler: async (args, context: ToolContext) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, uiLocale } = checked;
+      const { bookId, onAction, feedbackLocale } = checked;
 
       const { chapter_id } = args as {
         chapter_id: string;
       };
       if (!chapter_id) {
-        return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired', uiLocale);
+        return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired');
       }
 
       try {
         const book = await BookService.getBookById(bookId);
         if (!book) {
-          return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', uiLocale, {
+          return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', {
             id: bookId,
           });
         }
@@ -62,7 +62,7 @@ export const navigationTools: ToolDefinition[] = [
         // 查找章节
         const foundChapter = findChapterInBook(book, chapter_id);
         if (!foundChapter) {
-          return toolErrorJson('CHAPTER_NOT_FOUND', 'aiEntityFeedback.chapterMissing', uiLocale, {
+          return toolErrorJson('CHAPTER_NOT_FOUND', 'aiEntityFeedback.chapterMissing', {
             id: chapter_id,
           });
         }
@@ -83,7 +83,7 @@ export const navigationTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(uiLocale, 'aiEntityFeedback.navigatedChapter', {
+          message: translateText(feedbackLocale, 'aiEntityFeedback.navigatedChapter', {
             title: chapterTitle,
           }),
           book_id: bookId,
@@ -91,12 +91,7 @@ export const navigationTools: ToolDefinition[] = [
           chapter_title: chapterTitle,
         });
       } catch (error) {
-        return caughtToolErrorJson(
-          error,
-          uiLocale,
-          'NAVIGATION_FAILED',
-          'aiEntityFeedback.navigationFailed',
-        );
+        return caughtToolErrorJson(error, 'NAVIGATION_FAILED', 'aiEntityFeedback.navigationFailed');
       }
     },
   },
@@ -114,23 +109,19 @@ export const navigationTools: ToolDefinition[] = [
     handler: async (args, context: ToolContext) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, uiLocale } = checked;
+      const { bookId, onAction, feedbackLocale } = checked;
 
       const { paragraph_id } = args as {
         paragraph_id: string;
       };
       if (!paragraph_id) {
-        return toolErrorJson(
-          'PARAGRAPH_ID_REQUIRED',
-          'aiEntityFeedback.paragraphRequired',
-          uiLocale,
-        );
+        return toolErrorJson('PARAGRAPH_ID_REQUIRED', 'aiEntityFeedback.paragraphRequired');
       }
 
       try {
         const book = await BookService.getBookById(bookId);
         if (!book) {
-          return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', uiLocale, {
+          return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', {
             id: bookId,
           });
         }
@@ -138,14 +129,9 @@ export const navigationTools: ToolDefinition[] = [
         // 查找段落位置
         const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
         if (!location) {
-          return toolErrorJson(
-            'PARAGRAPH_NOT_FOUND',
-            'aiEntityFeedback.paragraphMissing',
-            uiLocale,
-            {
-              id: paragraph_id,
-            },
-          );
+          return toolErrorJson('PARAGRAPH_NOT_FOUND', 'aiEntityFeedback.paragraphMissing', {
+            id: paragraph_id,
+          });
         }
 
         const { chapter } = location;
@@ -167,7 +153,7 @@ export const navigationTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(uiLocale, 'aiEntityFeedback.navigatedParagraph', {
+          message: translateText(feedbackLocale, 'aiEntityFeedback.navigatedParagraph', {
             title: chapterTitle,
           }),
           book_id: bookId,
@@ -176,12 +162,7 @@ export const navigationTools: ToolDefinition[] = [
           paragraph_id,
         });
       } catch (error) {
-        return caughtToolErrorJson(
-          error,
-          uiLocale,
-          'NAVIGATION_FAILED',
-          'aiEntityFeedback.navigationFailed',
-        );
+        return caughtToolErrorJson(error, 'NAVIGATION_FAILED', 'aiEntityFeedback.navigationFailed');
       }
     },
   },

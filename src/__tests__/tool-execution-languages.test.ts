@@ -8,7 +8,6 @@ import type { AppLocale } from '../models/locale';
 import type { AITool, AIToolCall } from '../services/ai/types/ai-service';
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
 
-const CJK = /[぀-ヿ一-鿿]/;
 const BOOK = 'fixture-book';
 
 afterEach(() => {
@@ -40,10 +39,10 @@ describe('工具执行的语言上下文', () => {
   it('各场景的工具集合（权限）在三种执行语言下完全相同', async () => {
     await chapterTranslationFixture([translationChapter('c', '11111111')]);
     const sets = (locale: AppLocale) => [
-      names(ToolRegistry.getAssistantToolsExcludingTranslationManagement(BOOK, locale)),
-      names(ToolRegistry.getTranslationTools(BOOK, { excludeAskUser: true }, locale)),
-      names(ToolRegistry.getSingleParagraphPolishTools(BOOK, locale)),
-      names(ToolRegistry.getAssistantToolsExcludingTranslationManagement(undefined, locale)),
+      names(ToolRegistry.getAssistantToolsExcludingTranslationManagement(BOOK)),
+      names(ToolRegistry.getTranslationTools(BOOK, { excludeAskUser: true })),
+      names(ToolRegistry.getSingleParagraphPolishTools(BOOK)),
+      names(ToolRegistry.getAssistantToolsExcludingTranslationManagement(undefined)),
     ];
     const reference = sets('zh-CN');
     expect(reference.every((list) => list.length > 0)).toBe(true);
@@ -68,8 +67,9 @@ describe('工具执行的语言上下文', () => {
       const results = await Promise.all(APP_LOCALES.map((locale) => invoke(locale, toolCall)));
       const [reference, ...others] = results.map((result) => protocol(result.content));
       for (const other of others) expect(other, toolCall.function.name).toEqual(reference);
-      const english = results[APP_LOCALES.indexOf('en-US')]!.content;
-      expect(CJK.test(english), `${toolCall.function.name}: ${english}`).toBe(false);
+      // 返回给模型的内容与界面语言无关
+      const contents = results.map((result) => result.content);
+      expect(new Set(contents).size, toolCall.function.name).toBe(1);
     }
   });
 });

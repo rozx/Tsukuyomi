@@ -1,7 +1,7 @@
 import { toolErrorJson, caughtToolErrorJson, checkedToolBookContext } from './tool-feedback';
 import { toolDefinition } from './tool-localization';
 import type { AppLocale } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { LocalizedError } from 'src/utils/localized-error';
 import { describeTool } from './tool-localization';
 import { MemoryService } from 'src/services/memory-service';
@@ -35,25 +35,17 @@ async function requireMemoryById(bookId: string, memoryId: string | undefined): 
  */
 function parseContentSummary(
   args: Record<string, unknown>,
-  uiLocale: AppLocale,
+  feedbackLocale: AppLocale,
 ): { content: string; summary: string } | { error: string } {
   const { content, summary } = args as { content?: string; summary?: string };
   if (!content?.trim()) {
     return {
-      error: toolErrorJson(
-        'MEMORY_CONTENT_REQUIRED',
-        'aiEntityFeedback.memoryContentRequired',
-        uiLocale,
-      ),
+      error: toolErrorJson('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired'),
     };
   }
   if (!summary?.trim()) {
     return {
-      error: toolErrorJson(
-        'MEMORY_SUMMARY_REQUIRED',
-        'aiEntityFeedback.memorySummaryRequired',
-        uiLocale,
-      ),
+      error: toolErrorJson('MEMORY_SUMMARY_REQUIRED', 'aiEntityFeedback.memorySummaryRequired'),
     };
   }
   return { content: content.trim(), summary: summary.trim() };
@@ -69,7 +61,7 @@ function parseContentSummary(
 function createListMemoriesHandler(toolName: 'list_memories') {
   return async (args: Record<string, unknown>, context: ToolContext) => {
     const { bookId, onAction } = context;
-    const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+    const feedbackLocale = AGENT_LOCALE;
     const parsedArgs = parseToolArgs<{
       offset?: number;
       limit?: number;
@@ -77,7 +69,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
       include_content?: boolean;
     }>(args);
     if (!bookId) {
-      return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', uiLocale);
+      return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
 
     const {
@@ -138,12 +130,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
         sort_by: validSortBy,
       });
     } catch (error) {
-      return caughtToolErrorJson(
-        error,
-        uiLocale,
-        'MEMORY_LIST_FAILED',
-        'aiEntityFeedback.memoryListFailed',
-      );
+      return caughtToolErrorJson(error, 'MEMORY_LIST_FAILED', 'aiEntityFeedback.memoryListFailed');
     }
   };
 }
@@ -151,7 +138,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
 function memoryIdHandler(
   handler: (
     args: Record<string, unknown>,
-    context: ToolContext & { bookId: string; uiLocale: AppLocale; memory_id: string },
+    context: ToolContext & { bookId: string; feedbackLocale: AppLocale; memory_id: string },
   ) => Promise<string>,
 ): ToolDefinition['handler'] {
   return (args, context) => {
@@ -204,10 +191,10 @@ export const memoryTools: ToolDefinition[] = [
     }),
     handler: async (args, context: ToolContext) => {
       const { bookId, onAction } = context;
-      const uiLocale = context.languages?.uiLocale ?? 'zh-CN';
+      const feedbackLocale = AGENT_LOCALE;
       const parsedArgs = parseToolArgs<{ memory_id: string }>(args);
       if (!bookId) {
-        return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired', uiLocale);
+        return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
       }
       const { memory_id } = parsedArgs;
 
@@ -237,12 +224,7 @@ export const memoryTools: ToolDefinition[] = [
           },
         });
       } catch (error) {
-        return caughtToolErrorJson(
-          error,
-          uiLocale,
-          'MEMORY_GET_FAILED',
-          'aiEntityFeedback.memoryGetFailed',
-        );
+        return caughtToolErrorJson(error, 'MEMORY_GET_FAILED', 'aiEntityFeedback.memoryGetFailed');
       }
     },
   },
@@ -260,14 +242,10 @@ export const memoryTools: ToolDefinition[] = [
     handler: async (args, context) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, uiLocale, language } = checked;
+      const { bookId, onAction, feedbackLocale, language } = checked;
       const { query } = args as { query: string };
       if (!query || typeof query !== 'string' || !query.trim()) {
-        return toolErrorJson(
-          'MEMORY_QUERY_REQUIRED',
-          'aiEntityFeedback.memoryQueryRequired',
-          uiLocale,
-        );
+        return toolErrorJson('MEMORY_QUERY_REQUIRED', 'aiEntityFeedback.memoryQueryRequired');
       }
 
       try {
@@ -299,7 +277,6 @@ export const memoryTools: ToolDefinition[] = [
       } catch (error) {
         return caughtToolErrorJson(
           error,
-          uiLocale,
           'MEMORY_SEARCH_FAILED',
           'aiEntityFeedback.memorySearchFailed',
         );
@@ -324,8 +301,8 @@ export const memoryTools: ToolDefinition[] = [
     handler: async (args, context) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction, uiLocale, language } = checked;
-      const parsed = parseContentSummary(args, uiLocale);
+      const { bookId, onAction, feedbackLocale, language } = checked;
+      const parsed = parseContentSummary(args, feedbackLocale);
       if ('error' in parsed) {
         return parsed.error;
       }
@@ -348,7 +325,7 @@ export const memoryTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(uiLocale, 'aiEntityFeedback.memoryCreated'),
+          message: translateText(feedbackLocale, 'aiEntityFeedback.memoryCreated'),
           memory: {
             id: memory.id,
             summary: memory.summary,
@@ -358,7 +335,6 @@ export const memoryTools: ToolDefinition[] = [
       } catch (error) {
         return caughtToolErrorJson(
           error,
-          uiLocale,
           'MEMORY_CREATE_FAILED',
           'aiEntityFeedback.memoryCreateFailed',
         );
@@ -384,8 +360,8 @@ export const memoryTools: ToolDefinition[] = [
       },
       required: ['memory_id', 'content', 'summary'],
     }),
-    handler: memoryIdHandler(async (args, { bookId, onAction, uiLocale, memory_id }) => {
-      const parsed = parseContentSummary(args, uiLocale);
+    handler: memoryIdHandler(async (args, { bookId, onAction, feedbackLocale, memory_id }) => {
+      const parsed = parseContentSummary(args, feedbackLocale);
       if ('error' in parsed) return parsed.error;
       const { content, summary } = parsed;
 
@@ -410,7 +386,7 @@ export const memoryTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(uiLocale, 'aiEntityFeedback.memoryUpdated'),
+          message: translateText(feedbackLocale, 'aiEntityFeedback.memoryUpdated'),
           memory: {
             id: memory.id,
             summary: memory.summary,
@@ -421,7 +397,6 @@ export const memoryTools: ToolDefinition[] = [
       } catch (error) {
         return caughtToolErrorJson(
           error,
-          uiLocale,
           'MEMORY_UPDATE_FAILED',
           'aiEntityFeedback.memoryUpdateFailed',
         );
@@ -439,7 +414,7 @@ export const memoryTools: ToolDefinition[] = [
       },
       required: ['memory_id'],
     }),
-    handler: memoryIdHandler(async (args, { bookId, onAction, uiLocale, memory_id }) => {
+    handler: memoryIdHandler(async (args, { bookId, onAction, feedbackLocale, memory_id }) => {
       try {
         // 在删除前获取 Memory 信息，以便在 action 中显示
         const memory = await requireMemoryById(bookId, memory_id);
@@ -460,12 +435,11 @@ export const memoryTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: translateText(uiLocale, 'aiEntityFeedback.memoryDeleted'),
+          message: translateText(feedbackLocale, 'aiEntityFeedback.memoryDeleted'),
         });
       } catch (error) {
         return caughtToolErrorJson(
           error,
-          uiLocale,
           'MEMORY_DELETE_FAILED',
           'aiEntityFeedback.memoryDeleteFailed',
         );

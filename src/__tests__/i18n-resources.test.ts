@@ -16,6 +16,23 @@ describe('语言资源发布检查', () => {
     expect(errors.some((s) => s.includes('en-US') && s.includes('hello'))).toBe(true);
   });
 
+  it('只存在于简中的模型专用文字无需繁中/英文版本，界面文字缺任一语言仍被拒绝', () => {
+    expect(
+      validateCatalogs({
+        'zh-CN': { agent: '用{dialogLanguage}回复', ui: '就绪' },
+        'zh-TW': { ui: '就緒' },
+        'en-US': { ui: 'Ready' },
+      }),
+    ).toEqual([]);
+    const errors = validateCatalogs({
+      'zh-CN': { partial: '就绪', broken: '{oops' },
+      'zh-TW': {},
+      'en-US': { partial: 'Ready' },
+    });
+    expect(errors.some((s) => s.includes('zh-TW') && s.includes('partial'))).toBe(true);
+    expect(errors.some((s) => s.includes('zh-CN') && s.includes('broken'))).toBe(true);
+  });
+
   it('JSON、正则与特殊符号的字面量保留，协议片段变更使检查失败', () => {
     const source = `调用 {'{'}"status":"working"{'}'}；正则 \\d+{'|'}x；{'@'}user；{name}`;
     const catalogs = {

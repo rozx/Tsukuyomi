@@ -32,7 +32,7 @@ describe('ToolRegistry: query_chapter gated on enableLocalEmbedding', () => {
 
   test('总开关关闭时,getBookTools 不返回 query_chapter', () => {
     mockEnableLocalEmbedding = false;
-    const tools = ToolRegistry.getBookTools('book-1', 'zh-CN');
+    const tools = ToolRegistry.getBookTools('book-1');
     expect(tools.some((t) => t.function.name === 'query_chapter')).toBe(false);
     // 其它 book 工具仍然存在(回归保护)
     expect(tools.some((t) => t.function.name === 'get_book_info')).toBe(true);
@@ -41,19 +41,19 @@ describe('ToolRegistry: query_chapter gated on enableLocalEmbedding', () => {
 
   test('总开关开启时,getBookTools 正常返回 query_chapter', () => {
     mockEnableLocalEmbedding = true;
-    const tools = ToolRegistry.getBookTools('book-1', 'zh-CN');
+    const tools = ToolRegistry.getBookTools('book-1');
     expect(tools.some((t) => t.function.name === 'query_chapter')).toBe(true);
   });
 
   test('getAllTools 继承过滤结果:关闭时整个工具图里都不含 query_chapter', () => {
     mockEnableLocalEmbedding = false;
-    const tools = ToolRegistry.getAllTools('book-1', undefined, {}, 'zh-CN');
+    const tools = ToolRegistry.getAllTools('book-1', undefined, {});
     expect(tools.some((t) => t.function.name === 'query_chapter')).toBe(false);
   });
 
   test('getSingleParagraphPolishTools 继承过滤结果:关闭时整个工具图里都不含 query_chapter', () => {
     mockEnableLocalEmbedding = false;
-    const tools = ToolRegistry.getSingleParagraphPolishTools('book-1', 'zh-CN');
+    const tools = ToolRegistry.getSingleParagraphPolishTools('book-1');
     expect(tools.some((t) => t.function.name === 'query_chapter')).toBe(false);
   });
 });

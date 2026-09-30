@@ -1,12 +1,8 @@
 import importErrors from './import-errors';
 import helpFeedback from './help-feedback';
-import paragraphFeedback from './paragraph-feedback';
-import batchFeedback from './batch-feedback';
 export default {
   ...importErrors,
   ...helpFeedback,
-  ...paragraphFeedback,
-  ...batchFeedback,
   aiToolFeedback: {
     toolPairIdentity: 'Tool result identity does not match',
     toolPairMissing: 'The tool returned neither a result nor a pause reason',

@@ -37,7 +37,7 @@ export default {
       '需要章节上下文时用 query_chapter，优先原文标题/系列词、人物加具体动作细节或事件锚点，查看 Top3-5 后按需 get_chapter_info。',
     listLookup: '需要章节上下文时用 list_chapters 找到章节 ID，再用 get_chapter_info 读全文。',
     output:
-      '【输出协议】必须用工具提交结果，按 todo 顺序执行。\n1. 当前阶段所有 todo 完成后用 update_task_status 切换阶段。示例：{statusExample}\n2. add_translation_batch 单次最多{max}段，使用 [ID: xxx] 中的 paragraph_id，禁止使用 index。{prefix}示例：{paragraphExample}\n{title}3. 遇到 error_code、invalid_items、invalid_paragraph_ids、failed_paragraphs 等结构化错误时，只修复报错项后重试，禁止重排段落、猜测或替换 paragraph_id。\n状态流程：{flow}\n段落 ID 与原文 1:1 对应。{coverage}\n{restriction}\n向用户简短报告当前任务与进度。',
+      '【输出协议】必须用工具提交结果，按 todo 顺序执行。\n1. 当前阶段所有 todo 完成后用 update_task_status 切换阶段。示例：{statusExample}\n2. add_translation_batch 单次最多{max}段，使用 [ID: xxx] 中的 paragraph_id，禁止使用 index。{prefix}示例：{paragraphExample}\n{title}3. 遇到 error_code、invalid_items、invalid_paragraph_ids、failed_paragraphs 等结构化错误时，只修复报错项后重试，禁止重排段落、猜测或替换 paragraph_id。\n状态流程：{flow}\n段落 ID 与原文 1:1 对应。{coverage}\n{restriction}\n使用{dialogLanguage}向用户简短报告当前任务与进度。',
     prefix: 'original_text_prefix 使用原文开头3–10字，不足3字则用完整原文。',
     title: 'update_chapter_title 仅在 working 翻译当前章节标题。示例：{example}\n',
     coverage: {

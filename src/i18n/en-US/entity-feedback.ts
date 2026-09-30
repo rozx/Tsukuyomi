@@ -16,7 +16,7 @@ export default {
     memoryBookListFailed: 'Failed to get all book memories',
     memoryAllFailed: 'Failed to get all memories',
     memoryRecentFailed: 'Failed to get recent memories',
-    memoryLimitInvalid: 'The memory limit must be greater than zero',
+    memoryLimitInvalid: 'The memory limit must be greater than 0',
     memoryIdRequired: 'Memory ID is required',
     memoryMissing: 'Memory not found: {id}',
     memoryWrongBook: 'Memory does not belong to book: {id}',

@@ -2,7 +2,7 @@ import type { AITool } from 'src/services/ai/types/ai-service';
 import type { ExecutionLanguages } from 'src/models/locale';
 import { captureExecutionLanguages } from '../utils/execution-languages';
 import type { TaskType } from '../utils/task-types';
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import { aiLanguageName } from './language';
 import { taskPromptLabel } from './runner';
 import {
@@ -39,19 +39,19 @@ export function buildTextTaskSystemPrompt(
   const languages = params.languages ?? captureExecutionLanguages('zh-CN');
   const { uiLocale, targetLanguage } = languages;
   const sections = [
-    translateText(uiLocale, `aiText.role.${taskType}`, {
-      targetLanguage: aiLanguageName(uiLocale, targetLanguage),
+    agentText(`aiText.role.${taskType}`, {
+      targetLanguage: aiLanguageName(targetLanguage),
     }) +
       (params.todosPrompt ?? '') +
       (params.bookContextSection ?? '') +
       (params.chapterContextSection ?? '') +
       (params.previousChapterSection ?? '') +
       (params.specialInstructionsSection ?? ''),
-    translateText(uiLocale, 'aiText.source', {
-      targetLanguage: aiLanguageName(uiLocale, targetLanguage),
+    agentText('aiText.source', {
+      targetLanguage: aiLanguageName(targetLanguage),
     }),
-    translateText(uiLocale, `aiText.core.${taskType}`, {
-      scope: translateText(uiLocale, single ? 'aiText.singleScope' : 'aiText.batchScope'),
+    agentText(`aiText.core.${taskType}`, {
+      scope: agentText(single ? 'aiText.singleScope' : 'aiText.batchScope'),
     }),
     getSymbolFormatRules(uiLocale, targetLanguage),
     getHonorificRules(languages),
@@ -59,8 +59,8 @@ export function buildTextTaskSystemPrompt(
   if (single) {
     sections.push(
       getToolScopeRules(params.tools, uiLocale),
-      translateText(uiLocale, 'aiText.single', {
-        query: hasQueryChapterTool(params.tools) ? translateText(uiLocale, 'aiText.query') : '',
+      agentText('aiText.single', {
+        query: hasQueryChapterTool(params.tools) ? agentText('aiText.query') : '',
         max: MAX_TRANSLATION_BATCH_SIZE,
       }),
     );
@@ -73,10 +73,7 @@ export function buildTextTaskSystemPrompt(
     );
     if (taskType === 'translation')
       sections.push(
-        translateText(
-          uiLocale,
-          hasQueryChapterTool(params.tools) ? 'aiText.lookup' : 'aiText.listLookup',
-        ),
+        agentText(hasQueryChapterTool(params.tools) ? 'aiText.lookup' : 'aiText.listLookup'),
       );
   }
   return sections.join('\n\n');
@@ -95,7 +92,7 @@ export function buildSingleParagraphUserPrompt(
   params: SingleParagraphUserPromptParams,
 ): string {
   const uiLocale = params.languages?.uiLocale ?? 'zh-CN';
-  return translateText(uiLocale, 'aiText.singleUser', {
+  return agentText('aiText.singleUser', {
     task: taskPromptLabel(taskType, uiLocale),
     context: params.defaultContext,
     id: params.paragraphId,

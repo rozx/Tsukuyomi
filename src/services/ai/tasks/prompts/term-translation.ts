@@ -1,13 +1,13 @@
 import type { ExecutionLanguages } from 'src/models/locale';
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import { aiLanguageName } from './language';
 import { captureExecutionLanguages } from '../utils/execution-languages';
 
 const DEFAULT_LANGUAGES = captureExecutionLanguages('zh-CN');
 function values(languages: ExecutionLanguages) {
   return {
-    targetLanguage: aiLanguageName(languages.uiLocale, languages.targetLanguage),
-    example: JSON.stringify({ t: translateText(languages.uiLocale, 'aiTasks.term.example') }),
+    targetLanguage: aiLanguageName(languages.targetLanguage),
+    example: JSON.stringify({ t: agentText('aiTasks.term.example') }),
   };
 }
 export interface TermTranslationSystemPromptParams {
@@ -18,7 +18,7 @@ export interface TermTranslationSystemPromptParams {
 }
 
 export function buildTermTranslationSystemPromptBase(languages = DEFAULT_LANGUAGES): string {
-  return translateText(languages.uiLocale, 'aiTasks.term.base', values(languages));
+  return agentText('aiTasks.term.base', values(languages));
 }
 export function buildTermTranslationSystemPrompt(
   params: TermTranslationSystemPromptParams,
@@ -35,7 +35,7 @@ export function buildTermTranslationSystemPrompt(
     chapterContextSection +
     specialInstructionsSection +
     '\n\n' +
-    translateText(languages.uiLocale, 'aiTasks.term.rules', values(languages))
+    agentText('aiTasks.term.rules', values(languages))
   );
 }
 export interface TermTranslationUserPromptParams {
@@ -47,12 +47,12 @@ export interface TermTranslationUserPromptParams {
 export function buildTermTranslationUserPrompt(params: TermTranslationUserPromptParams): string {
   const { languages = DEFAULT_LANGUAGES, text, relatedContextInfo = '', customPrompt } = params;
   if (customPrompt) return customPrompt;
-  return translateText(languages.uiLocale, 'aiTasks.term.user', {
+  return agentText('aiTasks.term.user', {
     ...values(languages),
     text,
     relatedContextInfo,
   });
 }
 export function buildTermTranslationRetryPrompt(languages = DEFAULT_LANGUAGES): string {
-  return translateText(languages.uiLocale, 'aiTasks.term.retry', values(languages));
+  return agentText('aiTasks.term.retry', values(languages));
 }

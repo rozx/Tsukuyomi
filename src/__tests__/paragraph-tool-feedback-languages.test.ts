@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { agentText } from '../i18n/translate';
 import './setup';
 import { paragraphTools } from '../services/ai/tools/paragraph-tools';
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
@@ -32,7 +33,7 @@ async function invoke(
   );
 }
 describe('段落工具自有反馈本地化', () => {
-  it('未知模型标签及模型校验采用UI语言，关键词缺省保持固定code', async () => {
+  it('返回给模型的未知模型标签及模型校验为简中单源，关键词缺省保持固定code', async () => {
     const { books } = await fixture();
     const chapter = books.getBookById('fixture-book')!.volumes![0]!.chapters![0]!;
     const content = chapter.content!.map((paragraph) => ({
@@ -52,14 +53,18 @@ describe('段落工具自有反馈本地化', () => {
       { paragraph_id: '11111111', include_memory: false },
       'en-US',
     );
-    expect(history.translation_history[0].aiModelName).toBe('Unknown model');
+    expect(history.translation_history[0].aiModelName).toBe(
+      agentText('aiParagraphFeedback.unknownModel'),
+    );
     const missing = await invoke(
       'add_translation',
       { paragraph_id: '11111111', translation: 'New', ai_model_id: 'missing-model' },
       'en-US',
     );
     expect(missing.error_code).toBe('AI_MODEL_NOT_FOUND');
-    expect(missing.error).toBe('AI model not found: missing-model');
+    expect(missing.error).toBe(
+      agentText('aiParagraphFeedback.modelMissing', { id: 'missing-model' }),
+    );
     await expect(invoke('find_paragraph_by_keywords', {}, 'en-US')).rejects.toMatchObject({
       code: 'PARAGRAPH_KEYWORDS_REQUIRED',
     });
@@ -79,34 +84,29 @@ describe('段落工具自有反馈本地化', () => {
         locale,
       );
       expect(version.error_code).toBe('TRANSLATION_NOT_FOUND');
-      if (locale === 'en-US') {
-        expect(missing.error).not.toMatch(/\p{Script=Han}/u);
-        expect(version.error).not.toMatch(/\p{Script=Han}/u);
-      }
+      // 说明为简中单源，与执行语言无关
+      expect(missing.error).toMatch(/^段落不存在/);
+      expect(version.error).toMatch(/\p{Script=Han}/u);
     });
     it(`${locale} 正则校验固定code并保留提供方细节`, async () => {
       await fixture();
       const result = await invoke('search_paragraphs_by_regex', { regex_pattern: '[' }, locale);
       expect(result.error_code).toBe('PARAGRAPH_REGEX_INVALID');
-      if (locale === 'en-US') expect(result.error).not.toMatch(/\p{Script=Han}/u);
+      expect(result.error).toMatch(/^无效的正则表达式模式/);
     });
   }
   for (const [name, args, expected] of [
-    [
-      'update_translation',
-      { translation_id: 'en', new_translation: 'Dr. "A".' },
-      'Translation updated',
-    ],
-    ['select_translation', { translation_id: 'en' }, 'Translation selected'],
-    ['add_translation', { translation: 'User 原文 {x}|text' }, 'Translation added'],
-    ['remove_translation', { translation_id: 'en' }, 'Translation removed'],
+    ['update_translation', { translation_id: 'en', new_translation: 'Dr. "A".' }, '翻译已更新'],
+    ['select_translation', { translation_id: 'en' }, '翻译已选择'],
+    ['add_translation', { translation: 'User 原文 {x}|text' }, '翻译已添加'],
+    ['remove_translation', { translation_id: 'en' }, '翻译已删除'],
     [
       'batch_replace_translations',
       { keywords: ['English'], replacement_text: 'Updated' },
-      'Replaced translations',
+      '成功替换 1 个段落的翻译',
     ],
   ] as const) {
-    it(`${name} 成功反馈英文，用户文本不转换`, async () => {
+    it(`${name} 英文执行的成功反馈为简中单源，用户文本不转换`, async () => {
       await fixture();
       const result = await invoke(name, { paragraph_id: '11111111', ...args }, 'en-US');
       expect(result.success).toBe(true);
@@ -115,11 +115,11 @@ describe('段落工具自有反馈本地化', () => {
       if (name === 'update_translation') expect(result.new_translation).toBe('Dr. "A".');
     });
   }
-  it('必填拒绝采用稳定code和英文异常说明', async () => {
+  it('必填拒绝采用稳定code，说明为简中单源', async () => {
     await fixture();
     await expect(invoke('get_paragraph_info', {}, 'en-US')).rejects.toMatchObject({
       code: 'PARAGRAPH_ID_REQUIRED',
-      message: 'Paragraph ID is required',
+      message: agentText('aiParagraphFeedback.paragraphRequired'),
     });
     await expect(
       invoke('get_paragraph_info', { paragraph_id: '11111111' }, 'en-US', ''),

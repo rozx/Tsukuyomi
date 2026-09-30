@@ -58,7 +58,7 @@ const call = (name: string, args: unknown, turn: number) => ({
 });
 
 describe('AI 执行反馈语言', () => {
-  it('文本任务降级重试与状态反馈沿用启动语言，运行中改界面和目标不影响', async () => {
+  it('文本任务降级重试与状态反馈沿用启动语言，运行中改界面和目标不影响回复与目标语言', async () => {
     const chapter = translationChapter('c', '11111111');
     chapter.content![0]!.translations = [
       { id: 'en', translation: 'Existing English', language: 'en-US', aiModelId: '' },
@@ -114,11 +114,13 @@ describe('AI 执行反馈语言', () => {
     expect(saved).toEqual(['Polished English']);
     expect(messages.some((message) => /retry/i.test(message))).toBe(true);
     expect(messages.filter((message) => CJK.test(message))).toEqual([]);
-    const injected = requests
-      .at(-1)!
-      .messages!.filter((message) => message.role === 'user')
-      .map((message) => String(message.content));
-    expect(injected.filter((content) => CJK.test(content))).toEqual([]);
+    // 模型指令为简中单源；运行中改界面与目标后，仍按启动时的英文回复、英文目标产出
+    const system = String(
+      requests.at(-1)!.messages!.find((message) => message.role === 'system')!.content,
+    );
+    expect(system).toContain('润色英文译文');
+    expect(system).toContain('使用英文向用户简短报告当前任务与进度');
+    expect(system).not.toContain('繁体中文');
     expect((await BookService.getBookById('fixture-book'))?.targetLanguage).toBe('zh-TW');
   });
 

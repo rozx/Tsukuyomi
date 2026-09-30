@@ -1,4 +1,4 @@
-import { translateText } from 'src/i18n/translate';
+import { agentText, translateText } from 'src/i18n/translate';
 import type { AppLocale } from 'src/models/locale';
 import { buildModelServiceConfig } from '../core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
@@ -196,7 +196,7 @@ export class AssistantService {
           content: JSON.stringify({
             success: false,
             error_code: 'TOOL_NOT_ALLOWED',
-            error: translateText(languages.uiLocale, 'aiAssistant.toolNotAllowed', {
+            error: agentText('aiAssistant.toolNotAllowed', {
               tool: toolCall.function.name,
             }),
           }),
@@ -213,7 +213,7 @@ export class AssistantService {
           content: JSON.stringify({
             success: false,
             error_code: 'BOOK_CONTEXT_REQUIRED',
-            error: translateText(languages.uiLocale, 'aiAssistant.bookRequired'),
+            error: agentText('aiAssistant.bookRequired'),
           }),
         });
         continue;
@@ -425,7 +425,7 @@ export class AssistantService {
         content: JSON.stringify({
           success: false,
           error_code: 'TOOL_TURN_LIMIT',
-          error: translateText(uiLocale, 'aiAssistant.toolLimit'),
+          error: agentText('aiAssistant.toolLimit'),
         }),
       })),
     );
@@ -497,7 +497,7 @@ export class AssistantService {
     if (sessionSummary) {
       systemPrompt +=
         '\n\n' +
-        translateText(languages.uiLocale, 'aiAssistant.summaryWrap', {
+        agentText('aiAssistant.summaryWrap', {
           summary: sessionSummary,
         });
     }
@@ -725,7 +725,6 @@ export class AssistantService {
       options.execution?.tools ??
       ToolRegistry.getAssistantToolsExcludingTranslationManagement(
         context.currentBookId || undefined,
-        languages.uiLocale,
       );
     const history = options.messageHistory ?? options.execution?.history;
     const configured = {

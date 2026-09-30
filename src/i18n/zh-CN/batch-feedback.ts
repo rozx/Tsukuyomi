@@ -65,6 +65,5 @@ export default {
     UNKNOWN_ERROR: '未知错误',
     INVALID_ID: '无效的段落标识',
     PROCESSED: '成功处理 {count} 个段落',
-    ACTION: '批量处理 {count} 个段落 ({preview}{suffix})',
   },
 };

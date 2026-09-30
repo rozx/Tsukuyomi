@@ -1,3 +1,4 @@
+import { AGENT_LOCALE } from 'src/i18n/translate';
 import { LocalizedError } from 'src/utils/localized-error';
 import type { MessageKey } from 'src/i18n/types';
 import type {
@@ -220,9 +221,10 @@ export class AssistantExecution {
               name: call.function.name,
               content: JSON.stringify({
                 success: false,
+                // 返回给模型的说明固定简中
                 error: executionError(
                   'TOOL_NOT_ALLOWED',
-                  this.languages.uiLocale,
+                  AGENT_LOCALE,
                   'aiToolFeedback.toolNotAllowed',
                 ).message,
                 error_code: 'TOOL_NOT_ALLOWED',

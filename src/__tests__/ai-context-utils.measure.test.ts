@@ -7,7 +7,7 @@ import { getAssistantSystemPrompt } from '../services/ai/tasks/prompts/assistant
 import { getTodosSystemPrompt } from '../services/ai/tasks/utils/todo-helper';
 import type { ChatSession } from '../stores/chat-sessions';
 import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-languages';
-import { translateText } from '../i18n/translate';
+import { agentText } from '../i18n/translate';
 import type { AIModel } from '../services/ai/types/ai-model';
 const model = {
   id: 'meter-model',
@@ -67,7 +67,7 @@ describe('助手用量与服务端使用同一份请求上下文', () => {
       ),
     ).toEqual({ tokens: 42000, estimated: false });
   });
-  it('按执行语言构建统计用提示词、工具与摘要，英文会话锚点保持有效', () => {
+  it('按执行语言构建统计用提示词与摘要，英文会话锚点保持有效', () => {
     const tools = vi
       .spyOn(ToolRegistry, 'getAssistantToolsExcludingTranslationManagement')
       .mockReturnValue([]);
@@ -79,7 +79,7 @@ describe('助手用量与服务端使用同一份请求上下文', () => {
         systemPrompt:
           getAssistantSystemPrompt(getTodosSystemPrompt(true, 'en-US'), [], context, en) +
           '\n\n' +
-          translateText('en-US', 'aiAssistant.summaryWrap', { summary: 'Earlier work' }),
+          agentText('aiAssistant.summaryWrap', { summary: 'Earlier work' }),
         history: current.apiMessageHistory!,
         tools: [],
         modelKey: modelContextKey(model),
@@ -92,7 +92,8 @@ describe('助手用量与服务端使用同一份请求上下文', () => {
         model,
       ),
     ).toEqual({ tokens: 42000, estimated: false });
-    expect(tools).toHaveBeenCalledWith(undefined, 'en-US');
+    // 工具声明与界面语言无关
+    expect(tools).toHaveBeenCalledWith(undefined);
   });
   it('有效实测锚点直接显示实测值，不重复加工具开销', () => {
     vi.spyOn(ToolRegistry, 'getAssistantToolsExcludingTranslationManagement').mockReturnValue([]);

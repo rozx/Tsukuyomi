@@ -453,7 +453,7 @@ export async function processSingleParagraph(
   try {
     const service = AIServiceFactory.getService(model.provider);
 
-    const tools = ToolRegistry.getSingleParagraphPolishTools(bookId, languages.uiLocale);
+    const tools = ToolRegistry.getSingleParagraphPolishTools(bookId);
 
     const { systemPrompt, userPrompt } = await buildSingleParagraphPrompts({
       languages,

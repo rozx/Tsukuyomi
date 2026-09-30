@@ -403,7 +403,7 @@ export class ImportAgentService {
         hoveredParagraphId: null,
         selectedParagraphId: null,
       },
-      tools: getImportTools(languages.uiLocale),
+      tools: getImportTools(),
       systemPrompt: (summary) => importAgentPrompt(taskId, summary, languages.uiLocale),
       ...(resume ? { resume } : {}),
       executeTool: (call, options) => executor.execute(call, options),

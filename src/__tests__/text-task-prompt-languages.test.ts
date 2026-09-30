@@ -9,6 +9,9 @@ import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-
 import { getOutputFormatRules } from '../services/ai/tasks/prompts/common';
 import type { Paragraph } from '../models/novel';
 import type { AppLocale } from '../models/locale';
+import { APP_LOCALES } from '../models/locale';
+import { agentText } from '../i18n/translate';
+import { aiLanguageName } from '../services/ai/tasks/prompts/language';
 import type { AIServiceConfig, TextGenerationRequest } from '../services/ai/types/ai-service';
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
 
@@ -45,55 +48,47 @@ function captureRequests() {
   } as never);
   return requests;
 }
-describe('正文任务提示词使用执行语言', () => {
+describe('正文任务提示词为简中单源，以参数指定目标与回复语言', () => {
   for (const [task, run] of taskMethods) {
-    for (const uiLocale of ['zh-CN', 'zh-TW'] as const) {
-      it(`${task} ${uiLocale} 指令可独立产出英文`, async () => {
-        const requests = captureRequests();
-        await expect(
-          run([paragraph('en-US')], useAIModelsStore().models[0]!, {
-            languages: captureExecutionLanguages(uiLocale, 'en-US'),
-          }),
-        ).rejects.toThrow('MODEL_REACHED');
-        const system = requests[0]!.messages!.find((message) => message.role === 'system')!
-          .content as string;
-        expect(system).toContain(uiLocale === 'zh-TW' ? '你是專業的小說' : '你是专业的小说');
-        expect(system).toContain('ASCII');
-        expect(system).not.toContain('中文译文使用全角中文标点');
-        expect(system).not.toContain('中文譯文使用全形中文標點');
-        expect(system).toContain('paragraph_id');
-      });
-    }
-    for (const target of ['zh-CN', 'zh-TW', 'en-US'] as const) {
-      it(`${task} 英文交互可独立产出 ${target}`, async () => {
-        const requests = captureRequests();
-        await expect(
-          run([paragraph(target)], useAIModelsStore().models[0]!, {
-            languages: captureExecutionLanguages('en-US', target),
-          }),
-        ).rejects.toThrow('MODEL_REACHED');
-        const system = requests[0]!.messages!.find((message) => message.role === 'system')!
-          .content as string;
-        const user = requests[0]!.messages!.find((message) => message.role === 'user')!
-          .content as string;
-        expect(system).toContain(
-          { 'zh-CN': 'Simplified Chinese', 'zh-TW': 'Traditional Chinese', 'en-US': 'English' }[
-            target
-          ],
-        );
-        expect(system).toContain('Detect the source language');
-        expect(system).toContain('If the source contains Japanese honorifics');
-        expect(system).toContain('paragraph_id');
-        expect(system).not.toMatch(/日轻小说|必须|校对检查项|全角中文标点|未翻译的日语/);
-        if (target === 'en-US') expect(system).toContain('ASCII');
-        expect(user).toContain(source);
-        expect(user).not.toMatch(/[\p{Script=Han}]/u);
-        expect(requests[0]!.tools!.length).toBeGreaterThan(0);
-        expect(JSON.stringify(requests[0]!.tools)).not.toMatch(/[\p{Script=Han}]/u);
-      });
+    for (const uiLocale of APP_LOCALES) {
+      for (const target of APP_LOCALES) {
+        it(`${task} ${uiLocale} 界面产出 ${target}`, async () => {
+          const requests = captureRequests();
+          await expect(
+            run([paragraph(target)], useAIModelsStore().models[0]!, {
+              languages: captureExecutionLanguages(uiLocale, target),
+            }),
+          ).rejects.toThrow('MODEL_REACHED');
+          const system = requests[0]!.messages!.find((message) => message.role === 'system')!
+            .content as string;
+          const user = requests[0]!.messages!.find((message) => message.role === 'user')!
+            .content as string;
+          const targetName = aiLanguageName(target);
+          expect(system).toContain(
+            agentText(`aiText.role.${task}`, { targetLanguage: targetName }),
+          );
+          expect(system).toContain(agentText('aiText.source', { targetLanguage: targetName }));
+          expect(system).toContain('仅当实际原文包含日语敬语时');
+          expect(system).toContain(`使用${aiLanguageName(uiLocale)}向用户简短报告当前任务与进度`);
+          expect(system).toContain('paragraph_id');
+          expect(system).not.toMatch(/日轻小说|未翻译的日语/);
+          if (target === 'en-US') {
+            expect(system).toContain(agentText('aiText.symbolEnglish'));
+            expect(system).not.toContain('全角中文标点');
+          } else {
+            expect(system).toContain(agentText('aiText.symbolChinese'));
+          }
+          expect(user).toContain(source);
+          // 工具说明与界面语言无关
+          expect(
+            requests[0]!.tools!.find((tool) => tool.function.name === 'update_task_status')!
+              .function.description,
+          ).toBe(agentText('aiTools.update_task_status'));
+        });
+      }
     }
   }
-  for (const uiLocale of ['zh-CN', 'zh-TW', 'en-US'] as const) {
+  for (const uiLocale of APP_LOCALES) {
     it(`${uiLocale} 的 JSON 示例与前缀开关不改变协议字段`, () => {
       for (const enabled of [false, true]) {
         const prompt = getOutputFormatRules('translation', {
@@ -109,20 +104,13 @@ describe('正文任务提示词使用执行语言', () => {
         });
         expect(examples).toContainEqual({ chapter_id: 'chapter-id', title_translation: '...' });
       }
-      if (uiLocale === 'en-US') {
-        expect(
-          getOutputFormatRules('polish', {
-            languages: captureExecutionLanguages(uiLocale),
-          }),
-        ).not.toMatch(/[\p{Script=Han}]/u);
-      }
     });
   }
   for (const [task, run] of [
     ['polish', PolishService.polishSingle.bind(PolishService)],
     ['proofreading', ProofreadingService.proofreadSingle.bind(ProofreadingService)],
   ] as const) {
-    it(`${task} 单段系统和用户指令使用英文且原文不变`, async () => {
+    it(`${task} 单段指令为简中、目标为英文且原文不变`, async () => {
       const requests = captureRequests();
       await expect(
         run(paragraph('en-US'), useAIModelsStore().models[0]!, {
@@ -132,13 +120,12 @@ describe('正文任务提示词使用执行语言', () => {
       const messages = requests[0]!.messages!;
       const system = messages.find((message) => message.role === 'system')!.content as string;
       const user = messages.find((message) => message.role === 'user')!.content as string;
-      expect(system).toContain('English');
-      expect(system).toContain('Only process the current paragraph');
-      expect(system).not.toMatch(/日轻小说|必须|待润色|校对检查项/);
-      expect(user).toContain(`Original: ${source}`);
+      expect(system).toContain(agentText(`aiText.role.${task}`, { targetLanguage: '英文' }));
+      expect(system).toContain(agentText('aiText.singleScope'));
+      expect(system).toContain(agentText('aiText.symbolEnglish'));
+      expect(user).toContain(`原文: ${source}`);
       expect(user).toContain('[ID: 11111111]');
-      expect(user).toContain('Current translation: Existing text');
-      expect(user).not.toMatch(/原文:|当前翻译:|待校对|待润色/);
+      expect(user).toContain('当前翻译: Existing text');
     });
     it(`${task} 单段上下文只自动提供目标语言选用`, async () => {
       const requests = captureRequests();

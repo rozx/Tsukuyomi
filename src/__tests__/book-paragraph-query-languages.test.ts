@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { translateText } from '../i18n/translate';
 import './setup';
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
 import { bookTools } from '../services/ai/tools/book-tools';
@@ -236,7 +237,7 @@ describe('书籍和段落查询只自动提供目标成果', () => {
       ),
     );
     expect(result.success).toBe(true);
-    expect(result.message).toContain('Book information updated');
+    expect(result.message).toMatch(/^书籍信息已更新/);
     const book = (await BookService.getBookById('fixture-book'))!;
     expect(book).toMatchObject({
       targetLanguage: 'zh-CN',
@@ -304,7 +305,7 @@ describe('书籍和段落查询只自动提供目标成果', () => {
       await tool.handler({}, { languages: captureExecutionLanguages('en-US') }),
     );
     expect(result.error_code).toBe('BOOK_ID_REQUIRED');
-    expect(result.error).toBe('Book ID is required');
+    expect(result.error).toBe(translateText('zh-CN', 'aiEntityFeedback.bookRequired'));
   });
   it('缺失繁中成果时章节回原文、完成数为零，不借用其他语言', async () => {
     await fixture();
