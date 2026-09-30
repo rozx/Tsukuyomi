@@ -5,6 +5,7 @@
  * 基于旧版本的修改会被拒绝并重新载入，不会覆盖较新的内容。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
@@ -17,6 +18,7 @@ import { draftChapterWindows } from 'src/composables/import-page/import-draft-wi
 
 const store = useImportWorkspaceStore();
 const ctx = injectImportPage();
+const { t } = useI18n();
 const locked = useDraftLock();
 
 const draft = computed(() => store.task?.draft);
@@ -86,21 +88,26 @@ const moveVolume = (volumeId: string, delta: number) => {
   if (ids) void store.editDraft([{ op: 'reorder_volumes', volumeIds: ids }]);
 };
 const addVolume = () =>
-  void store.editDraft([{ op: 'upsert_volume', title: `新卷 ${volumes.value.length + 1}` }]);
+  void store.editDraft([
+    {
+      op: 'upsert_volume',
+      title: t('importUi.draft.newVolumeTitle', { number: volumes.value.length + 1 }),
+    },
+  ]);
 </script>
 
 <template>
-  <section v-if="draft" class="idp" aria-label="导入草稿">
+  <section v-if="draft" class="idp" :aria-label="t('importUi.draft.region')">
     <div v-if="needsChoice" class="ipl-banner ipl-banner--warn" role="status">
       <i class="pi pi-exclamation-triangle" aria-hidden="true" />
-      <span
-        >检测到多个作品或来源归属变化，请先在月詠对话中选择本次导入的小说，之后才能编辑卷章。</span
-      >
+      <span>{{ t('importUi.draft.needsChoice') }}</span>
     </div>
 
     <section class="ipl-card">
       <div class="ipl-card-head">
-        <h3 class="ipl-card-title"><i class="pi pi-id-card" aria-hidden="true" />基本信息</h3>
+        <h3 class="ipl-card-title">
+          <i class="pi pi-id-card" aria-hidden="true" />{{ t('importUi.draft.basics') }}
+        </h3>
       </div>
       <ImportDraftMetadata />
     </section>
@@ -110,14 +117,19 @@ const addVolume = () =>
     <section class="ipl-card">
       <div class="ipl-card-head">
         <h3 class="ipl-card-title">
-          <i class="pi pi-sitemap" aria-hidden="true" />卷章结构
-          <span class="ipl-count">{{ overview.volumes }} 卷 · {{ overview.chapters }} 章</span>
+          <i class="pi pi-sitemap" aria-hidden="true" />{{ t('importUi.draft.structure') }}
+          <span class="ipl-count">{{
+            t('importUi.draft.structureCount', {
+              volumes: overview.volumes,
+              chapters: overview.chapters,
+            })
+          }}</span>
         </h3>
         <div class="idp-toolbar">
           <Button
             icon="pi pi-trash"
-            label="清空卷章"
-            aria-label="清空全部卷章草稿"
+            :label="t('importUi.draft.clear')"
+            :aria-label="t('importUi.draft.clearLabel')"
             size="small"
             text
             severity="danger"
@@ -126,7 +138,7 @@ const addVolume = () =>
           />
           <Button
             icon="pi pi-plus"
-            label="新卷"
+            :label="t('importUi.draft.newVolume')"
             size="small"
             outlined
             :disabled="locked"
@@ -136,22 +148,29 @@ const addVolume = () =>
       </div>
 
       <div v-if="overview.chapters" class="idp-stats">
-        <span>已选 {{ overview.selected }} / {{ overview.chapters }} 章导入</span>
-        <span class="ipl-status ipl-status--success">已取得正文 {{ overview.ready }}</span>
+        <span>{{
+          t('importUi.draft.selected', {
+            selected: overview.selected,
+            count: overview.chapters,
+          })
+        }}</span>
+        <span class="ipl-status ipl-status--success">{{
+          t('importUi.draft.ready', { count: overview.ready })
+        }}</span>
         <span v-if="overview.pending" class="ipl-status ipl-status--secondary">
-          待处理 {{ overview.pending }}
+          {{ t('importUi.draft.pending', { count: overview.pending }) }}
         </span>
         <span v-if="overview.missing" class="ipl-status ipl-status--warn">
-          缺失 {{ overview.missing }}
+          {{ t('importUi.draft.missing', { count: overview.missing }) }}
         </span>
         <span v-if="overview.failed" class="ipl-status ipl-status--danger">
-          提取失败 {{ overview.failed }}
+          {{ t('importUi.draft.failed', { count: overview.failed }) }}
         </span>
       </div>
 
       <div v-if="isEmpty" class="idp-empty">
         <i class="pi pi-book" aria-hidden="true" />
-        <span>草稿还没有卷章。提供来源后，让月詠检查并整理，或在对话中说明希望的分卷方式。</span>
+        <span>{{ t('importUi.draft.empty') }}</span>
       </div>
 
       <ImportDraftVolume
@@ -174,7 +193,7 @@ const addVolume = () =>
 
       <div v-if="overview.orphans" class="ipl-banner ipl-banner--warn">
         <i class="pi pi-exclamation-triangle" aria-hidden="true" />
-        <span>有 {{ overview.orphans }} 章尚未归属任何卷，请让月詠整理或新建卷后移动。</span>
+        <span>{{ t('importUi.draft.orphans', { count: overview.orphans }) }}</span>
       </div>
     </section>
   </section>

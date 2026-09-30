@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 草稿中的一章：导入选择、标题、所属卷、上下移动与正文检查。 */
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Checkbox from 'primevue/checkbox';
 import InputText from 'primevue/inputtext';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 }>();
 
 const ctx = injectImportPage();
+const { t } = useI18n();
 const store = useImportWorkspaceStore();
 const locked = useDraftLock();
 
@@ -62,28 +64,37 @@ const toggleSelected = (selected: boolean) => update({ selected });
       :model-value="chapter.selected"
       binary
       :disabled="locked"
-      :aria-label="`导入 ${chapter.title}`"
+      :aria-label="t('importUi.draftChapter.include', { title: chapter.title })"
       @update:model-value="toggleSelected"
     />
     <span class="idcr-number" aria-hidden="true">{{ number }}</span>
     <InputText
       v-model="title"
       class="idcr-title"
-      :aria-label="`章节标题：${chapter.title}`"
+      :aria-label="t('importUi.draftChapter.titleInput', { title: chapter.title })"
       :disabled="locked"
       @blur="commitTitle"
       @keydown.enter="commitTitle"
     />
     <span class="idcr-meta">
-      <span v-if="!chapter.selected" class="idcr-badge">不导入</span>
-      <span v-if="chapter.inferredTitle" class="idcr-badge" title="标题由月詠推断">推断</span>
-      <span class="ipl-status" :class="`ipl-status--${status.severity}`">{{ status.label }}</span>
+      <span v-if="!chapter.selected" class="idcr-badge">{{
+        t('importUi.draftChapter.excluded')
+      }}</span>
+      <span
+        v-if="chapter.inferredTitle"
+        class="idcr-badge"
+        :title="t('importUi.draftChapter.inferredTitle')"
+        >{{ t('importUi.draft.inferred') }}</span
+      >
+      <span class="ipl-status" :class="`ipl-status--${status.severity}`">{{
+        t(status.label)
+      }}</span>
     </span>
     <span class="idcr-actions">
       <button
         type="button"
         class="idcr-icon"
-        aria-label="章节上移"
+        :aria-label="t('importUi.draftChapter.moveUp')"
         :disabled="locked || first"
         @click="emit('move', chapter.id, -1)"
       >
@@ -92,7 +103,7 @@ const toggleSelected = (selected: boolean) => update({ selected });
       <button
         type="button"
         class="idcr-icon"
-        aria-label="章节下移"
+        :aria-label="t('importUi.draftChapter.moveDown')"
         :disabled="locked || last"
         @click="emit('move', chapter.id, 1)"
       >
@@ -102,8 +113,8 @@ const toggleSelected = (selected: boolean) => update({ selected });
         v-if="showVolumeMenu"
         type="button"
         class="idcr-icon"
-        :aria-label="`移动 ${chapter.title} 到其他卷`"
-        title="移到其他卷"
+        :aria-label="t('importUi.draftChapter.moveToVolumeLabel', { title: chapter.title })"
+        :title="t('importUi.draftChapter.moveToVolume')"
         :disabled="locked"
         @click="(event: MouseEvent) => emit('volumeMenu', event, chapter)"
       >
@@ -112,8 +123,8 @@ const toggleSelected = (selected: boolean) => update({ selected });
       <button
         type="button"
         class="idcr-icon idcr-icon--preview"
-        :aria-label="`查看 ${chapter.title} 的正文`"
-        title="检查正文"
+        :aria-label="t('importUi.draftChapter.previewLabel', { title: chapter.title })"
+        :title="t('importUi.draftChapter.preview')"
         @click="ctx.selectChapter(chapter.id)"
       >
         <i class="pi pi-eye" aria-hidden="true" />
@@ -121,8 +132,8 @@ const toggleSelected = (selected: boolean) => update({ selected });
       <button
         type="button"
         class="idcr-icon idcr-icon--delete"
-        :aria-label="`删除草稿章节 ${chapter.title}`"
-        title="删除草稿章节"
+        :aria-label="t('importUi.draftChapter.removeLabel', { title: chapter.title })"
+        :title="t('importUi.draftChapter.remove')"
         :disabled="locked"
         @click="ctx.requestDraftRemoval({ op: 'remove_chapter', chapterId: chapter.id })"
       >

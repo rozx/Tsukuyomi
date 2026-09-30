@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 草稿中的一卷：卷标题、卷的上下移动，以及其中的章节。 */
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import InputText from 'primevue/inputtext';
 import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
@@ -35,6 +36,7 @@ const emit = defineEmits<{
 }>();
 
 const store = useImportWorkspaceStore();
+const { t } = useI18n();
 const ctx = injectImportPage();
 const locked = useDraftLock();
 
@@ -90,27 +92,40 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
         v-if="chapters.length"
         type="button"
         class="idv-icon"
-        :aria-label="`${collapsed ? '展开卷' : '折叠卷'} ${volume.title}`"
+        :aria-label="
+          t(collapsed ? 'importUi.draftVolume.expand' : 'importUi.draftVolume.collapse', {
+            title: volume.title,
+          })
+        "
         :aria-expanded="!collapsed"
         @click="toggle"
       >
         <i :class="['pi', collapsed ? 'pi-chevron-right' : 'pi-chevron-down']" aria-hidden="true" />
       </button>
-      <span class="idv-index" aria-hidden="true">卷 {{ index + 1 }}</span>
+      <span class="idv-index" aria-hidden="true">{{
+        t('importUi.draftVolume.index', { number: index + 1 })
+      }}</span>
       <InputText
         v-model="title"
         class="idv-title"
-        :aria-label="`卷标题：${volume.title}`"
+        :aria-label="t('importUi.draftVolume.titleInput', { title: volume.title })"
         :disabled="locked"
         @blur="commitTitle"
         @keydown.enter="commitTitle"
       />
-      <span v-if="volume.inferred" class="idv-badge" title="卷结构由月詠推断">推断</span>
-      <span class="idv-count">{{ chapters.length }} 章</span>
+      <span
+        v-if="volume.inferred"
+        class="idv-badge"
+        :title="t('importUi.draftVolume.inferredStructure')"
+        >{{ t('importUi.draft.inferred') }}</span
+      >
+      <span class="idv-count">{{
+        t('importUi.draftVolume.chapters', { count: chapters.length })
+      }}</span>
       <button
         type="button"
         class="idv-icon"
-        aria-label="卷上移"
+        :aria-label="t('importUi.draftVolume.moveUp')"
         :disabled="locked || first"
         @click="emit('moveVolume', volume.id, -1)"
       >
@@ -119,7 +134,7 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
       <button
         type="button"
         class="idv-icon"
-        aria-label="卷下移"
+        :aria-label="t('importUi.draftVolume.moveDown')"
         :disabled="locked || last"
         @click="emit('moveVolume', volume.id, 1)"
       >
@@ -128,15 +143,17 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
       <button
         type="button"
         class="idv-icon idv-icon--delete"
-        :aria-label="`删除草稿卷 ${volume.title}`"
-        title="删除整卷及其章节"
+        :aria-label="t('importUi.draftVolume.removeLabel', { title: volume.title })"
+        :title="t('importUi.draftVolume.remove')"
         :disabled="locked"
         @click="ctx.requestDraftRemoval({ op: 'remove_volume', volumeId: volume.id })"
       >
         <i class="pi pi-trash" aria-hidden="true" />
       </button>
     </div>
-    <p v-if="collapsed" class="idv-empty">已折叠 {{ chapters.length }} 章。</p>
+    <p v-if="collapsed" class="idv-empty">
+      {{ t('importUi.draftVolume.collapsed', { count: chapters.length }) }}
+    </p>
     <ol v-else-if="chapters.length" class="idv-chapters">
       <ImportDraftChapterRow
         v-for="chapter in visible"
@@ -150,19 +167,28 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
         @volume-menu="openVolumeMenu"
       />
     </ol>
-    <p v-else class="idv-empty">这一卷还没有章节。</p>
+    <p v-else class="idv-empty">{{ t('importUi.draftVolume.empty') }}</p>
     <button
       v-if="!collapsed && remaining > 0"
       type="button"
       class="idv-more"
-      :aria-label="`显示更多章节（${volume.title}，剩余 ${remaining} 章）`"
+      :aria-label="
+        t('importUi.draftVolume.showMoreLabel', { title: volume.title, count: remaining })
+      "
       @click="showMore"
     >
       <i class="pi pi-angle-double-down" aria-hidden="true" />
-      再显示 {{ Math.min(DRAFT_PAGE, remaining) }} 章 · 剩余 {{ remaining }} 章
+      {{
+        t('importUi.draftVolume.showMore', {
+          next: Math.min(DRAFT_PAGE, remaining),
+          count: remaining,
+        })
+      }}
     </button>
     <Menu ref="volumeMenu" :model="volumeMenuItems" popup>
-      <template #start><div class="idv-menu-title">移到</div></template>
+      <template #start
+        ><div class="idv-menu-title">{{ t('importUi.draftVolume.moveTo') }}</div></template
+      >
     </Menu>
   </div>
 </template>

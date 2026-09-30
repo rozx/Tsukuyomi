@@ -4,6 +4,8 @@
  * 已在草稿中的字段可选择导入时是否写入书库（例如更新时保留原作者）。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import Tag from 'primevue/tag';
@@ -16,6 +18,7 @@ type Field = keyof ImportDraft['metadata'];
 const OPTIONAL_FIELDS: Field[] = ['author', 'description', 'cover', 'alternateTitles', 'tags'];
 
 const store = useImportWorkspaceStore();
+const { t, locale } = useI18n();
 const locked = useDraftLock();
 
 const candidates = computed(() => store.task?.draft.metadataCandidates ?? []);
@@ -34,26 +37,30 @@ const toggle = (field: Field, adopted: boolean) => void store.setMetadataAdoptio
   <section v-if="candidates.length || adoptable.length" class="ipl-card">
     <div class="ipl-card-head">
       <h3 class="ipl-card-title">
-        <i class="pi pi-sparkles" aria-hidden="true" />元信息候选
+        <i class="pi pi-sparkles" aria-hidden="true" />{{ t('importUi.candidates.title') }}
         <span v-if="candidates.length" class="ipl-count">{{ candidates.length }}</span>
       </h3>
     </div>
     <template v-if="candidates.length">
-      <p class="ipl-muted">月詠找到的信息只作为候选，采用后才会进入草稿。</p>
+      <p class="ipl-muted">{{ t('importUi.candidates.hint') }}</p>
       <ul class="imc-list">
         <li v-for="candidate in candidates" :key="candidate.id" class="imc-row">
-          <span class="imc-field">{{ METADATA_FIELDS[candidate.field] }}</span>
+          <span class="imc-field">{{ t(METADATA_FIELDS[candidate.field]) }}</span>
           <span class="imc-value">{{
-            formatMetadataValue(candidate.field, candidate.value.value)
+            formatMetadataValue(candidate.field, candidate.value.value, resolveAppLocale(locale))
           }}</span>
           <span class="imc-actions">
-            <Tag v-if="candidate.conflicts?.length" value="有冲突" severity="warn" />
-            <span v-if="candidate.value.adopted" class="ipl-status ipl-status--success"
-              >已采用</span
-            >
+            <Tag
+              v-if="candidate.conflicts?.length"
+              :value="t('importUi.candidates.conflict')"
+              severity="warn"
+            />
+            <span v-if="candidate.value.adopted" class="ipl-status ipl-status--success">{{
+              t('importUi.candidates.adopted')
+            }}</span>
             <Button
               v-else
-              label="采用"
+              :label="t('importUi.candidates.adopt')"
               size="small"
               outlined
               :disabled="locked"
@@ -64,7 +71,7 @@ const toggle = (field: Field, adopted: boolean) => void store.setMetadataAdoptio
       </ul>
     </template>
     <div v-if="adoptable.length" class="imc-adopt">
-      <span class="imc-adopt-title">导入时写入书库</span>
+      <span class="imc-adopt-title">{{ t('importUi.candidates.writeOnImport') }}</span>
       <label v-for="entry in adoptable" :key="entry.field" class="imc-check">
         <Checkbox
           :model-value="entry.adopted"
@@ -72,7 +79,7 @@ const toggle = (field: Field, adopted: boolean) => void store.setMetadataAdoptio
           :disabled="locked"
           @update:model-value="(value: boolean) => toggle(entry.field, value)"
         />
-        {{ entry.label }}
+        {{ t(entry.label) }}
       </label>
     </div>
   </section>

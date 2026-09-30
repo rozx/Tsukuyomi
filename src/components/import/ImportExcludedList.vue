@@ -7,13 +7,13 @@ import type { ImportNotice } from 'src/models/import-feedback';
 /** 提取时排除的内容（导航、广告、版权等），可展开核对清理是否正确。 */
 import { computed, ref } from 'vue';
 
-const { locale } = useI18n();
+const { t, locale } = useI18n();
 const noticeText = (value: unknown) => importNoticeText(value, resolveAppLocale(locale.value));
 
 const props = defineProps<{ entries: { text: string; reason: ImportNotice }[] }>();
 const open = ref(false);
 const chevron = computed(() => (open.value ? 'pi-chevron-down' : 'pi-chevron-right'));
-const label = computed(() => `提取时排除的内容（${props.entries.length} 处）`);
+const label = computed(() => t('importUi.excluded.label', { count: props.entries.length }));
 </script>
 
 <template>

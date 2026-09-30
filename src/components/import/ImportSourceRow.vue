@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /** 来源列表的一行：名称、网址或大小、错误，以及「月詠发现」「仅元信息」与处理状态。 */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import type { ImportSource } from 'src/models/import';
 import { SOURCE_ICON, SOURCE_STATUS, readableError } from './import-labels';
 
@@ -12,6 +14,7 @@ const props = defineProps<{
   removeDisabled: boolean;
 }>();
 const emit = defineEmits<{ open: [sourceId: string]; remove: [sourceId: string] }>();
+const { t, locale } = useI18n();
 
 const rowClass = computed(() => ({
   'isr--selected': props.selected,
@@ -31,7 +34,9 @@ const detail = computed(() => {
   if (url && url !== name) return url;
   return byteLength !== undefined ? formatBytes(byteLength) : '';
 });
-const error = computed(() => (props.source.error ? readableError(props.source.error.message) : ''));
+const error = computed(() =>
+  props.source.error ? readableError(props.source.error, resolveAppLocale(locale.value)) : '',
+);
 const status = computed(() => SOURCE_STATUS[props.source.status]);
 </script>
 
@@ -46,17 +51,21 @@ const status = computed(() => SOURCE_STATUS[props.source.status]);
       </span>
     </button>
     <span class="isr-meta">
-      <span v-if="source.origin === 'agent'" class="isr-badge isr-badge--agent">月詠发现</span>
-      <span v-if="source.purpose === 'metadata-only'" class="isr-badge">仅元信息</span>
-      <span class="ipl-status" :class="`ipl-status--${status.severity}`">{{ status.label }}</span>
+      <span v-if="source.origin === 'agent'" class="isr-badge isr-badge--agent">{{
+        t('importUi.sources.agent')
+      }}</span>
+      <span v-if="source.purpose === 'metadata-only'" class="isr-badge">{{
+        t('importUi.sources.metadataOnly')
+      }}</span>
+      <span class="ipl-status" :class="`ipl-status--${status.severity}`">{{
+        t(status.label)
+      }}</span>
       <button
         type="button"
         class="isr-delete"
-        :aria-label="`删除来源 ${label}`"
+        :aria-label="t('importUi.sources.removeLabel', { name: label })"
         :title="
-          removeDisabled
-            ? '请先等待当前操作结束，运行中的任务需先暂停'
-            : '删除来源入口，保留草稿章节'
+          removeDisabled ? t('importUi.sources.removeLocked') : t('importUi.sources.removeTitle')
         "
         :disabled="removeDisabled"
         @click="emit('remove', source.id)"

@@ -4,22 +4,30 @@
  * 未取得正文的章节只显示缺失／失败状态，不显示伪造的正文。
  */
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import ProgressSpinner from 'primevue/progressspinner';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import ImportExcludedList from './ImportExcludedList.vue';
 import { CHAPTER_STATUS, readableError } from './import-labels';
 
 const ctx = injectImportPage();
+const { t, locale } = useI18n();
+const uiLocale = computed(() => resolveAppLocale(locale.value));
 const PAGE = 200;
 const shown = ref(PAGE);
 
 const preview = computed(() => ctx.preview.value);
-const title = computed(() => preview.value?.title ?? '章节正文');
+const title = computed(() => preview.value?.title ?? t('importUi.chapterPreview.title'));
 const status = computed(() => (preview.value ? CHAPTER_STATUS[preview.value.status] : undefined));
 const loading = computed(() => ctx.previewLoading.value && !preview.value);
-const error = computed(() => (ctx.previewError.value ? readableError(ctx.previewError.value) : ''));
+const error = computed(() =>
+  ctx.previewError.value ? readableError(ctx.previewError.value, uiLocale.value) : '',
+);
 const sources = computed(() => preview.value?.sources ?? []);
-const failures = computed(() => (preview.value?.failures ?? []).map(readableError));
+const failures = computed(() =>
+  (preview.value?.failures ?? []).map((failure) => readableError(failure, uiLocale.value)),
+);
 const paragraphs = computed(() => preview.value?.paragraphs.slice(0, shown.value) ?? []);
 const remaining = computed(() =>
   Math.max(0, (preview.value?.paragraphs.length ?? 0) - shown.value),
@@ -28,8 +36,8 @@ const excluded = computed(() => preview.value?.excluded ?? []);
 const emptyNote = computed(() => {
   if (!preview.value || preview.value.paragraphs.length) return '';
   return preview.value.status === 'ready'
-    ? '引用范围内没有正文。'
-    : '这一章尚未取得正文，导入时不会生成内容。';
+    ? t('importUi.chapterPreview.emptyReady')
+    : t('importUi.chapterPreview.emptyPending');
 });
 
 /** 空段落保留高度，与导入后的空行一致 */
@@ -44,7 +52,7 @@ const locateSource = (sourceId: string) => {
 </script>
 
 <template>
-  <section class="icp" aria-label="章节正文检查">
+  <section class="icp" :aria-label="t('importUi.chapterPreview.region')">
     <header class="icp-head">
       <i class="pi pi-eye icp-title-icon" aria-hidden="true" />
       <span class="icp-title">{{ title }}</span>
@@ -54,7 +62,7 @@ const locateSource = (sourceId: string) => {
       <button
         type="button"
         class="icp-close"
-        aria-label="关闭正文检查"
+        :aria-label="t('importUi.chapterPreview.close')"
         @click="ctx.selectChapter(null)"
       >
         <i class="pi pi-times" aria-hidden="true" />
@@ -67,7 +75,7 @@ const locateSource = (sourceId: string) => {
     <p v-else-if="error" class="icp-note icp-note--error">{{ error }}</p>
     <template v-else-if="preview">
       <div v-if="sources.length" class="icp-sources">
-        <span class="icp-label">来源</span>
+        <span class="icp-label">{{ t('importUi.chapterPreview.sources') }}</span>
         <button
           v-for="source in sources"
           :key="source.id"
@@ -80,7 +88,7 @@ const locateSource = (sourceId: string) => {
       </div>
 
       <p v-for="failure in failures" :key="failure" class="icp-note icp-note--error">
-        读取失败：{{ failure }}
+        {{ t('importUi.chapterPreview.readFailed', { failure }) }}
       </p>
       <p v-if="emptyNote" class="icp-note">{{ emptyNote }}</p>
 
@@ -94,7 +102,7 @@ const locateSource = (sourceId: string) => {
           {{ displayText(paragraph.text) }}
         </p>
         <button v-if="remaining" type="button" class="icp-more" @click="shown += PAGE">
-          显示更多（剩余 {{ remaining }} 段）
+          {{ t('importUi.chapterPreview.showMore', { count: remaining }) }}
         </button>
       </div>
 

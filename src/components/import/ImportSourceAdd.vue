@@ -4,11 +4,13 @@
  * 月詠通过工具检查后才会读取内容。
  */
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 
 const store = useImportWorkspaceStore();
+const { t } = useI18n();
 
 const url = ref('');
 const dragging = ref(false);
@@ -47,25 +49,27 @@ const onDrop = (event: DragEvent) => {
   <section
     class="ipl-card isa"
     :class="{ 'isa--dragging': dragging }"
-    aria-label="添加来源"
+    :aria-label="t('importUi.sourceAdd.title')"
     @dragover.prevent="dragging = true"
     @dragleave.self="dragging = false"
     @drop.prevent="onDrop"
   >
     <div class="ipl-card-head">
-      <h3 class="ipl-card-title"><i class="pi pi-plus-circle" aria-hidden="true" />添加来源</h3>
+      <h3 class="ipl-card-title">
+        <i class="pi pi-plus-circle" aria-hidden="true" />{{ t('importUi.sourceAdd.title') }}
+      </h3>
     </div>
     <form class="isa-url" @submit.prevent="addUrl">
       <InputText
         v-model="url"
-        placeholder="小说目录或章节网址（http/https）"
-        aria-label="来源网址"
+        :placeholder="t('importUi.sourceAdd.urlPlaceholder')"
+        :aria-label="t('importUi.sourceAdd.url')"
         class="isa-url-input"
       />
       <Button
         type="submit"
         icon="pi pi-link"
-        label="添加网址"
+        :label="t('importUi.sourceAdd.addUrl')"
         size="small"
         :disabled="!canAddUrl"
         :loading="adding"
@@ -73,11 +77,11 @@ const onDrop = (event: DragEvent) => {
     </form>
     <div class="isa-drop">
       <i class="pi pi-cloud-upload isa-drop-icon" aria-hidden="true" />
-      <span class="isa-drop-text">把 TXT、Markdown、HTML、EPUB 文件拖到这里，或</span>
+      <span class="isa-drop-text">{{ t('importUi.sourceAdd.drop') }}</span>
       <div class="isa-pick">
         <Button
           icon="pi pi-file"
-          label="选择文件"
+          :label="t('importUi.sourceAdd.chooseFiles')"
           size="small"
           outlined
           @click="fileInput?.click()"
@@ -85,7 +89,7 @@ const onDrop = (event: DragEvent) => {
         <Button
           v-if="folderSupported"
           icon="pi pi-folder-open"
-          label="选择文件夹"
+          :label="t('importUi.sourceAdd.chooseFolder')"
           size="small"
           outlined
           @click="folderInput?.click()"
@@ -113,8 +117,8 @@ const onDrop = (event: DragEvent) => {
       />
     </div>
     <p class="ipl-muted">
-      添加只登记访问范围，月詠检查后才会读取内容。需要登录或验证的网站请改为提供文件。
-      <template v-if="!folderSupported">当前环境不支持选择文件夹，可以一次选择多个文件。</template>
+      {{ t('importUi.sourceAdd.hint') }}
+      <template v-if="!folderSupported">{{ t('importUi.sourceAdd.noFolder') }}</template>
     </p>
   </section>
 </template>

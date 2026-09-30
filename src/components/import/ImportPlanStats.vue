@@ -1,19 +1,21 @@
 <script setup lang="ts">
 /** 方案的数量概览：导入章节数、段落变化，以及对已有译文的影响。 */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { ImportPlan } from 'src/models/import';
 
 const props = defineProps<{ plan: ImportPlan }>();
+const { t } = useI18n();
 
 const summary = computed(() => props.plan.summary);
 const paragraphs = computed(() => {
   const value = summary.value;
   if (!value) return [];
   return [
-    { label: '新增段落', value: value.insertedParagraphs },
-    { label: '修订段落', value: value.revisedParagraphs },
-    { label: '移动段落', value: value.movedParagraphs },
-    { label: '删除段落', value: value.removedParagraphs },
+    { label: t('importUi.planStats.inserted'), value: value.insertedParagraphs },
+    { label: t('importUi.planStats.revised'), value: value.revisedParagraphs },
+    { label: t('importUi.planStats.moved'), value: value.movedParagraphs },
+    { label: t('importUi.planStats.removed'), value: value.removedParagraphs },
   ];
 });
 
@@ -23,10 +25,13 @@ const translation = computed(() => {
   return value.clearedVersions
     ? {
         loss: true,
-        text: `将清空 ${value.clearedParagraphs} 段的 ${value.clearedVersions} 个译文版本`,
-        detail: '这些段落的原文被修订，旧译文不再对应，导入时会被清空。',
+        text: t('importUi.planStats.loss', {
+          paragraphs: value.clearedParagraphs,
+          versions: value.clearedVersions,
+        }),
+        detail: t('importUi.planStats.lossDetail'),
       }
-    : { loss: false, text: '不会清空任何已有译文', detail: '' };
+    : { loss: false, text: t('importUi.planStats.noLoss'), detail: '' };
 });
 </script>
 
@@ -35,8 +40,12 @@ const translation = computed(() => {
     <div class="ist-card">
       <div class="ist-chapters">
         <span class="ist-chapters-value">{{ summary.selectedChapters }}</span>
-        <span class="ist-chapters-label">章将导入</span>
-        <span v-if="summary.partial" class="ist-partial">部分导入</span>
+        <span class="ist-chapters-label">{{
+          t('importUi.planStats.chapters', { count: summary.selectedChapters })
+        }}</span>
+        <span v-if="summary.partial" class="ist-partial">{{
+          t('importUi.planStats.partial')
+        }}</span>
       </div>
       <dl class="ist-grid">
         <div
