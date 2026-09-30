@@ -5,7 +5,26 @@ import { ImportRepository } from './import-repository';
 import { ImportSourceService } from './import-source-service';
 import { ImportDraftService, invalidateImportPreview } from './import-draft-service';
 import { searchWeb } from 'src/services/ai/tools/web-search-tools';
+import type { WebFeedbackEntry } from 'src/services/ai/tools/web-search-tools';
+import type { ImportFailure } from 'src/models/import-feedback';
 import { runAbortable } from 'src/utils/abortable-operation';
+
+/**
+ * 网络失败的自有说明转为带身份的记录：模型读取时投影为简中，工作台事件按界面语言重新投影；
+ * 外部原始诊断（无身份）保持原文字符串。
+ */
+function webNotice(
+  code: string | undefined,
+  entry: WebFeedbackEntry | undefined,
+  text: string,
+): string | ImportFailure {
+  if (!entry) return text;
+  return {
+    code: code ?? 'WEB_SEARCH_FAILED',
+    message: text,
+    localization: { key: `importUi.web.${entry.key}`, values: { ...entry.values } },
+  };
+}
 
 export class ImportMetadataService {
   static async prepareSearch(taskId: string, query: string, signal?: AbortSignal) {
@@ -45,9 +64,15 @@ export class ImportMetadataService {
       result: {
         success: searched.success,
         results,
-        ...(searched.error ? { error: searched.error } : {}),
+        ...(searched.error
+          ? { error: webNotice(searched.error_code, searched.feedback?.error, searched.error) }
+          : {}),
         ...(searched.error_code ? { error_code: searched.error_code } : {}),
-        ...(searched.message ? { message: searched.message } : {}),
+        ...(searched.message
+          ? {
+              message: webNotice(searched.error_code, searched.feedback?.message, searched.message),
+            }
+          : {}),
         ...(searched.answer ? { answer: searched.answer } : {}),
         purpose: 'metadata-only' as const,
       },

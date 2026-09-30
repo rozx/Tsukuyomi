@@ -35,8 +35,11 @@ describe('元信息搜索、采用及封面持久值', () => {
     spyOn(GlobalConfig, 'getFirecrawlFallbackEnabled').mockReturnValue(false);
     const result = await ImportMetadataService.prepareSearch(task.id, '用户原文 query');
     expect(result.result.error_code).toBe('WEB_SEARCH_NOT_CONFIGURED');
-    // 英文界面的执行也返回简中说明（模型专用文字）
-    expect(result.result.message).toBe(agentText('aiWebFeedback.searchConfigure'));
+    // 英文界面的执行也返回简中说明（模型专用文字）；说明带身份以便工作台按界面语言重新投影
+    expect(result.result.message).toMatchObject({
+      code: 'WEB_SEARCH_NOT_CONFIGURED',
+      message: agentText('aiWebFeedback.searchConfigure'),
+    });
   });
 
   it('应用后采用新候选会回到草稿，用户也能取消采用某个字段', async () => {

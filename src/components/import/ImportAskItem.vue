@@ -1,17 +1,19 @@
 <script setup lang="ts">
 /** 月詠提问中的一题：候选答案可一键选择；允许时也可以输入自己的回答。 */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import InputText from 'primevue/inputtext';
 import type { ImportQuestionItem } from 'src/models/import';
 import type { ImportAskValue } from './import-ask';
 
 const props = defineProps<{ item: ImportQuestionItem; modelValue: ImportAskValue }>();
 const emit = defineEmits<{ 'update:modelValue': [value: ImportAskValue] }>();
+const { t } = useI18n();
 
 const typedText = computed(() =>
   props.modelValue.selectedIndex === undefined ? props.modelValue.text : '',
 );
-const placeholder = computed(() => props.item.placeholder ?? '或输入你的回答');
+const placeholder = computed(() => props.item.placeholder ?? t('importUi.ask.placeholder'));
 const isChosen = (choice: number) => props.modelValue.selectedIndex === choice;
 const pick = (choice: number, label: string) =>
   emit('update:modelValue', { text: label, selectedIndex: choice });

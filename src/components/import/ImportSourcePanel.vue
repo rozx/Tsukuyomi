@@ -4,6 +4,7 @@
  * 并查看已保存的内容。宽屏时列表与内容并排。
  */
 import { computed, nextTick, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useConfirm } from 'primevue/useconfirm';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
@@ -21,6 +22,7 @@ import { SOURCE_STATUS } from './import-labels';
 
 const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
+const { t } = useI18n();
 const confirm = useConfirm();
 const removeDisabled = computed(
   () =>
@@ -32,11 +34,11 @@ const removeDisabled = computed(
 
 const confirmRemove = (source: ImportSource) => {
   confirm.require({
-    header: '删除来源',
-    message: `从来源列表移除「${source.relativePath || source.name}」及其派生来源？已生成的草稿章节和书库内容会保留。`,
+    header: t('importUi.sources.removeHeader'),
+    message: t('importUi.sources.removeMessage', { name: source.relativePath || source.name }),
     icon: 'pi pi-exclamation-triangle',
-    acceptLabel: '删除来源',
-    rejectLabel: '取消',
+    acceptLabel: t('importUi.sources.removeHeader'),
+    rejectLabel: t('importUi.common.cancel'),
     acceptClass: 'p-button-danger',
     accept: () => {
       void store.removeSource(source.id, source.taskId).then((removed) => {
@@ -62,10 +64,10 @@ const STATUS_ORDER: ImportSource['status'][] = [
 const filter = ref<SourceFilter>('all');
 const overview = computed(() => sourceOverview(store.sources));
 const filters = computed(() => [
-  { id: 'all' as SourceFilter, label: '全部', count: overview.value.total },
+  { id: 'all' as SourceFilter, label: t('importUi.common.all'), count: overview.value.total },
   ...STATUS_ORDER.map((status) => ({
     id: status as SourceFilter,
-    label: SOURCE_STATUS[status].label,
+    label: t(SOURCE_STATUS[status].label),
     count: overview.value.status[status],
   })).filter((entry) => entry.count > 0),
 ]);
@@ -76,9 +78,9 @@ watch(filters, (entries) => {
 const rows = computed(() => sourceRows(store.sources, filter.value));
 const origins = computed(() => {
   const { total, agent, metadataOnly } = overview.value;
-  const parts = [`用户提供 ${total - agent}`];
-  if (agent) parts.push(`月詠发现 ${agent}`);
-  if (metadataOnly) parts.push(`仅元信息 ${metadataOnly}`);
+  const parts = [t('importUi.sources.userProvided', { count: total - agent })];
+  if (agent) parts.push(t('importUi.sources.agentFound', { count: agent }));
+  if (metadataOnly) parts.push(t('importUi.sources.metadataOnlyCount', { count: metadataOnly }));
   return parts.join(' · ');
 });
 
@@ -100,7 +102,7 @@ const open = async (sourceId: string) => {
 </script>
 
 <template>
-  <section class="isp" aria-label="来源">
+  <section class="isp" :aria-label="t('importUi.sources.title')">
     <div class="isp-layout" :class="{ 'isp-layout--split': selectedSource }">
       <div class="isp-main">
         <ImportSourceAdd />
@@ -108,21 +110,21 @@ const open = async (sourceId: string) => {
         <section class="ipl-card">
           <div class="ipl-card-head">
             <h3 class="ipl-card-title">
-              <i class="pi pi-folder" aria-hidden="true" />来源
+              <i class="pi pi-folder" aria-hidden="true" />{{ t('importUi.sources.title') }}
               <span class="ipl-count">{{ overview.total }}</span>
             </h3>
             <ImportFilterChips
               v-if="filters.length > 2"
               v-model="filter"
               :filters="filters"
-              label="按状态筛选"
+              :label="t('importUi.sources.filter')"
             />
           </div>
           <p v-if="overview.total" class="ipl-muted">{{ origins }}</p>
 
           <div v-if="!overview.total" class="isp-empty">
             <i class="pi pi-inbox" aria-hidden="true" />
-            <span>还没有来源。添加网址或文件后，让月詠开始检查。</span>
+            <span>{{ t('importUi.sources.empty') }}</span>
           </div>
           <ul v-else class="isp-list">
             <ImportSourceRow

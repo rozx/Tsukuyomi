@@ -9,15 +9,17 @@ import Tag from 'primevue/tag';
 import type { ImportPlan } from 'src/models/import';
 import { METADATA_FIELDS } from './import-labels';
 
-const { locale } = useI18n();
+const { t, locale } = useI18n();
 const noticeText = (value: unknown) => importNoticeText(value, resolveAppLocale(locale.value));
 
 const props = defineProps<{ plan: ImportPlan }>();
 
 const MISSING_SHOWN = 12;
 
-const fieldLabel = (field: string) =>
-  METADATA_FIELDS[field as keyof typeof METADATA_FIELDS] ?? field;
+const fieldLabel = (field: string) => {
+  const key = METADATA_FIELDS[field as keyof typeof METADATA_FIELDS];
+  return key ? t(key) : field;
+};
 
 const completeness = computed(() => {
   const { confirmed, knownTotal, missing } = props.plan.completeness;
@@ -25,8 +27,8 @@ const completeness = computed(() => {
   return {
     known,
     text: known
-      ? `目录已确认共 ${knownTotal} 章。`
-      : '目录完整性尚未确认，本次只导入当前已发现的章节。',
+      ? t('importUi.planDetails.knownTotal', { count: knownTotal })
+      : t('importUi.planDetails.unconfirmed'),
     missing: missing.slice(0, MISSING_SHOWN),
     more: Math.max(0, missing.length - MISSING_SHOWN),
     total: missing.length,
@@ -38,12 +40,16 @@ const completeness = computed(() => {
   <div class="ipdt">
     <section class="ipl-card">
       <div class="ipl-card-head">
-        <h3 class="ipl-card-title"><i class="pi pi-id-card" aria-hidden="true" />元信息</h3>
+        <h3 class="ipl-card-title">
+          <i class="pi pi-id-card" aria-hidden="true" />{{ t('importUi.planDetails.metadata') }}
+        </h3>
         <span v-if="plan.metadataChanges.length" class="ipl-count">
-          {{ plan.metadataChanges.length }} 项变化
+          {{ t('importUi.planDetails.metadataChanges', { count: plan.metadataChanges.length }) }}
         </span>
       </div>
-      <p v-if="!plan.metadataChanges.length" class="ipl-muted">元信息没有变化。</p>
+      <p v-if="!plan.metadataChanges.length" class="ipl-muted">
+        {{ t('importUi.planDetails.noMetadataChanges') }}
+      </p>
       <dl v-else class="ipdt-meta">
         <template v-for="change in plan.metadataChanges" :key="change.field">
           <dt>{{ fieldLabel(change.field) }}</dt>
@@ -57,18 +63,30 @@ const completeness = computed(() => {
 
     <section class="ipl-card">
       <div class="ipl-card-head">
-        <h3 class="ipl-card-title"><i class="pi pi-list" aria-hidden="true" />完整性</h3>
+        <h3 class="ipl-card-title">
+          <i class="pi pi-list" aria-hidden="true" />{{ t('importUi.planDetails.completeness') }}
+        </h3>
         <Tag
-          :value="completeness.known ? '已确认' : '未确认'"
+          :value="
+            t(
+              completeness.known
+                ? 'importUi.planDetails.confirmed'
+                : 'importUi.planDetails.notConfirmed',
+            )
+          "
           :severity="completeness.known ? 'success' : 'warn'"
         />
       </div>
       <p class="ipl-muted">{{ completeness.text }}</p>
       <template v-if="completeness.total">
-        <div class="ipdt-missing-title">缺失 {{ completeness.total }} 项</div>
+        <div class="ipdt-missing-title">
+          {{ t('importUi.planDetails.missing', { count: completeness.total }) }}
+        </div>
         <ul class="ipdt-missing">
           <li v-for="(item, index) in completeness.missing" :key="index">{{ noticeText(item) }}</li>
-          <li v-if="completeness.more" class="ipdt-more">另有 {{ completeness.more }} 项</li>
+          <li v-if="completeness.more" class="ipdt-more">
+            {{ t('importUi.planDetails.more', { count: completeness.more }) }}
+          </li>
         </ul>
       </template>
     </section>

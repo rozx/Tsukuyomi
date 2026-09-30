@@ -4,6 +4,8 @@
  * 每次处理都会修改草稿并重新生成方案。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
@@ -14,6 +16,7 @@ import { readableError } from './import-labels';
 
 const props = defineProps<{ plan: ImportPlan; disabled: boolean }>();
 const store = useImportWorkspaceStore();
+const { t, locale } = useI18n();
 const booksStore = useBooksStore();
 
 const NEW_CHAPTER = '__new__';
@@ -24,7 +27,7 @@ const bookChapters = computed(() =>
   ),
 );
 const matchOptions = computed(() => [
-  { label: '作为新章节导入', value: NEW_CHAPTER },
+  { label: t('importUi.planConflicts.newChapter'), value: NEW_CHAPTER },
   ...bookChapters.value.map(({ volume, chapter }) => ({
     label: `${getVolumeDisplayTitle(volume)} · ${getChapterDisplayTitle(chapter)}`,
     value: chapter.id,
@@ -49,7 +52,11 @@ const conflicts = computed(() =>
       resolver = 'match';
     else if (conflict.code === 'CHAPTER_SETTINGS_CONFLICT' && chapterId) resolver = 'settings';
     else if (conflict.code === 'TARGET_CONFIRMATION_REQUIRED') resolver = 'target';
-    return { message: readableError(conflict.message), chapterId, resolver };
+    return {
+      message: readableError(conflict, resolveAppLocale(locale.value)),
+      chapterId,
+      resolver,
+    };
   }),
 );
 const replacements = computed(() =>
@@ -57,7 +64,11 @@ const replacements = computed(() =>
     .filter((entry) => !entry.confirmed)
     .map((entry) => ({
       signature: entry.signature,
-      text: `${entry.oldKeys.length} 段旧原文将被 ${entry.newKeys.length} 段新原文替换，清空 ${entry.clearedVersions} 个译文版本`,
+      text: t('importUi.planConflicts.replacement', {
+        removed: entry.oldKeys.length,
+        added: entry.newKeys.length,
+        versions: entry.clearedVersions,
+      }),
     })),
 );
 
@@ -71,11 +82,13 @@ const chooseSettings = (chapterId: string, value: string) =>
   <section v-if="conflicts.length || replacements.length" class="ipl-card ipc">
     <div class="ipl-card-head">
       <h3 class="ipl-card-title">
-        <i class="pi pi-exclamation-triangle" aria-hidden="true" />待处理
+        <i class="pi pi-exclamation-triangle" aria-hidden="true" />{{
+          t('importUi.planConflicts.title')
+        }}
         <span class="ipl-count">{{ conflicts.length + replacements.length }}</span>
       </h3>
     </div>
-    <p class="ipl-muted">处理完这些项目后才能导入；每次处理都会更新草稿并重新生成方案。</p>
+    <p class="ipl-muted">{{ t('importUi.planConflicts.hint') }}</p>
     <ul class="ipc-list">
       <li v-for="(conflict, index) in conflicts" :key="index" class="ipc-item">
         <span class="ipc-text">{{ conflict.message }}</span>
@@ -85,7 +98,7 @@ const chooseSettings = (chapterId: string, value: string) =>
           option-label="label"
           option-value="value"
           filter
-          placeholder="选择对应关系"
+          :placeholder="t('importUi.planConflicts.matchPlaceholder')"
           size="small"
           class="ipc-select"
           :disabled="disabled"
@@ -96,7 +109,7 @@ const chooseSettings = (chapterId: string, value: string) =>
           :options="settingsOptions(conflict.chapterId)"
           option-label="label"
           option-value="value"
-          placeholder="沿用哪一章的设置"
+          :placeholder="t('importUi.planConflicts.settingsPlaceholder')"
           size="small"
           class="ipc-select"
           :disabled="disabled"
@@ -104,7 +117,7 @@ const chooseSettings = (chapterId: string, value: string) =>
         />
         <Button
           v-else-if="conflict.resolver === 'target'"
-          label="确认更新这本小说"
+          :label="t('importUi.planConflicts.confirmTarget')"
           size="small"
           outlined
           :disabled="disabled"
@@ -114,7 +127,7 @@ const chooseSettings = (chapterId: string, value: string) =>
       <li v-for="entry in replacements" :key="entry.signature" class="ipc-item">
         <span class="ipc-text">{{ entry.text }}</span>
         <Button
-          label="确认替换"
+          :label="t('importUi.planConflicts.confirmReplacement')"
           size="small"
           severity="warn"
           outlined

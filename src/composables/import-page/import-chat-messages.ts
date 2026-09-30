@@ -1,6 +1,13 @@
 import type { AppLocale } from 'src/models/locale';
 import { importActionInfo } from './import-action-info';
-import { actionObject, createImportActionContext } from './import-action-context';
+import type { MessageKey } from 'src/i18n/types';
+import { localizeImportFeedback } from 'src/services/import/import-error';
+import {
+  actionList,
+  actionObject,
+  actionT,
+  createImportActionContext,
+} from './import-action-context';
 import type { ImportActionContext, ImportActionTask } from './import-action-context';
 /**
  * 把导入任务的持久事件转换成月詠聊天组件使用的消息格式。
@@ -36,9 +43,6 @@ interface MessageOptions {
   /** 正在压缩上下文：末尾显示临时的总结气泡。 */
   compacting?: boolean;
 }
-
-const COMPACTED_TEXT = '对话上下文已压缩为摘要，来源、草稿和操作记录保持不变。';
-const COMPACTING_TEXT = '正在压缩对话上下文…';
 
 type Args = Record<string, unknown>;
 type Result = Record<string, unknown> | undefined;
@@ -100,90 +104,152 @@ function count(value: unknown): number {
   return Array.isArray(value) ? value.length : 0;
 }
 
-type Describe = (args: Args, names: Map<string, string>) => string;
-
-function extractionLabel(args: Args, names: Map<string, string>): string {
-  if (args.filter) return '筛选并提取正文';
-  const sources = (Array.isArray(args.sources) ? args.sources : []) as Args[];
-  const labels = sources.slice(0, 3).map((entry) => sourceLabel(entry.source_id, names));
-  const more = sources.length > 3 ? ` 等 ${sources.length} 个` : '';
-  return `提取正文：${labels.join('、')}${more}`;
+function numberOf(value: unknown): number {
+  return typeof value === 'number' ? value : 0;
 }
 
-const libraryLabel: Describe = () => '对照本地小说';
+type Describe = (args: Args, context: ImportActionContext) => string;
+
+function extractionLabel(args: Args, context: ImportActionContext): string {
+  if (args.filter) return actionT(context, 'importUi.action.chat.filterExtract');
+  const sources = (Array.isArray(args.sources) ? args.sources : []) as Args[];
+  const labels = sources.slice(0, 3).map((entry) => sourceLabel(entry.source_id, context.sources));
+  return actionT(context, 'importUi.action.chat.extract', {
+    sources: labels.join(actionList(context)),
+    more:
+      sources.length > 3
+        ? actionT(context, 'importUi.action.chat.moreSources', { count: sources.length })
+        : '',
+  });
+}
+
+const fixed =
+  (key: MessageKey): Describe =>
+  (_args, context) =>
+    actionT(context, key);
+const libraryLabel = fixed('importUi.action.chat.library');
 
 /** 操作本身的描述：处理了哪些来源、范围或草稿（未由 importActionInfo 给出摘要时使用）。 */
 const DESCRIPTIONS: Record<string, Describe> = {
-  preview_draft_batch: (args) =>
-    args.target === 'body' ? '预览批量正文清理' : '预览卷章标题批量替换',
-  apply_draft_batch: () => '应用草稿批量修改',
-  prepare_chapter_batch: () => '准备章节批次',
-  run_chapter_batch: (args) => (args.retry_failed ? '重试失败章节' : '批量提取章节'),
-  get_chapter_batch: () => '查看批次进度',
-  list_sources: () => '列出来源',
-  inspect_source: (args, names) => `检查来源：${sourceLabel(args.source_id, names)}`,
-  read_source: () => '查看来源内容',
-  extract_novel_info: (args, names) => `读取小说信息：${sourceLabel(args.source_id, names)}`,
-  add_sources: (args) =>
-    args.filter ? '筛选并追加来源' : `追加 ${count(args.discovery_ids)} 个发现的来源`,
+  preview_draft_batch: (args, context) =>
+    actionT(
+      context,
+      args.target === 'body'
+        ? 'importUi.action.chat.previewBodyBatch'
+        : 'importUi.action.chat.previewTitleBatch',
+    ),
+  apply_draft_batch: fixed('importUi.action.chat.applyBatch'),
+  prepare_chapter_batch: fixed('importUi.action.batch.prepare'),
+  run_chapter_batch: (args, context) =>
+    actionT(
+      context,
+      args.retry_failed ? 'importUi.action.batch.retry' : 'importUi.action.batch.run',
+    ),
+  get_chapter_batch: fixed('importUi.action.batch.progress'),
+  list_sources: fixed('importUi.action.chat.listSources'),
+  inspect_source: (args, context) =>
+    actionT(context, 'importUi.action.chat.inspectSource', {
+      source: sourceLabel(args.source_id, context.sources),
+    }),
+  read_source: fixed('importUi.action.chat.readSource'),
+  extract_novel_info: (args, context) =>
+    actionT(context, 'importUi.action.chat.novelInfo', {
+      source: sourceLabel(args.source_id, context.sources),
+    }),
+  add_sources: (args, context) =>
+    args.filter
+      ? actionT(context, 'importUi.action.chat.filterAddSources')
+      : actionT(context, 'importUi.action.chat.addDiscoveries', {
+          count: count(args.discovery_ids),
+        }),
   extract_content: extractionLabel,
-  get_import_draft: () => '读取草稿',
-  edit_import_draft: (args) => `编辑草稿：${count(args.operations)} 项操作`,
-  search_books: (args) => `查找本地小说：${text(args.query)}`,
+  get_import_draft: fixed('importUi.action.chat.readDraft'),
+  edit_import_draft: (args, context) =>
+    actionT(context, 'importUi.action.chat.editDraft', { count: count(args.operations) }),
+  search_books: (args, context) =>
+    actionT(context, 'importUi.action.chat.searchBooks', { query: text(args.query) }),
   get_book_info: libraryLabel,
   list_chapters: libraryLabel,
   get_chapter_info: libraryLabel,
-  preview_import: () => '生成导入方案',
-  rename_import_task: (args) => `命名任务：${text(args.name)}`,
+  preview_import: fixed('importUi.action.chat.previewImport'),
+  rename_import_task: (args, context) =>
+    actionT(context, 'importUi.action.chat.rename', { name: text(args.name) }),
+  search_web: (args, context) =>
+    actionT(context, 'importUi.action.chat.searchWeb', { query: text(args.query) }),
 };
 
-function describe(name: string, args: Args, names: Map<string, string>): string {
-  return DESCRIPTIONS[name]?.(args, names) ?? name;
+function describe(name: string, args: Args, context: ImportActionContext): string {
+  return DESCRIPTIONS[name]?.(args, context) ?? name;
 }
 
-function errorMessage(result: Args): string {
+function errorMessage(result: Args, context: ImportActionContext): string {
   const error = result.error;
   if (typeof error === 'string') return error;
   if (error && typeof error === 'object') {
     const message = (error as Args).message;
     if (typeof message === 'string') return message.replace(/^[A-Z_]+:\s*/, '');
   }
-  return '未知错误';
+  return actionT(context, 'importUi.action.chat.unknownError');
 }
 
-/** 实际结果：成功/失败数量或错误原因；尚无结果时显示进行中。 */
-function outcome(name: string, result: Result): string {
-  if (!result) return '（进行中）';
-  if (result.success === false && name !== 'extract_content')
-    return `（失败：${errorMessage(result)}）`;
+function batchOutcome(name: string, result: Args, context: ImportActionContext): string {
   if (['preview_draft_batch', 'apply_draft_batch'].includes(name))
-    return `（影响 ${typeof result.affected === 'number' ? result.affected : 0} 项／命中 ${typeof result.matches === 'number' ? result.matches : 0} 处）`;
+    return actionT(context, 'importUi.action.chat.affected', {
+      affected: numberOf(result.affected),
+      matches: numberOf(result.matches),
+    });
   if (name === 'add_sources' && Array.isArray(result.sources))
-    return `（已追加 ${result.sources.length} 个）`;
-  if (['prepare_chapter_batch', 'run_chapter_batch', 'get_chapter_batch'].includes(name)) {
-    const ready = typeof result.ready === 'number' ? result.ready : 0;
-    const failed = typeof result.failed === 'number' ? result.failed : 0;
-    const pending = typeof result.pending === 'number' ? result.pending : 0;
-    return `（成功 ${ready}／失败 ${failed}／待处理 ${pending}）`;
-  }
+    return actionT(context, 'importUi.action.chat.added', { count: result.sources.length });
+  if (['prepare_chapter_batch', 'run_chapter_batch', 'get_chapter_batch'].includes(name))
+    return actionT(context, 'importUi.action.chat.batchCounts', {
+      ready: numberOf(result.ready),
+      failed: numberOf(result.failed),
+      pending: numberOf(result.pending),
+    });
   if (name === 'extract_content' && Array.isArray(result.results)) {
     const results = result.results as Args[];
     const ok = results.filter((entry) => entry.success === true).length;
-    return `（成功 ${ok}／失败 ${results.length - ok}）`;
+    return actionT(context, 'importUi.action.chat.extractCounts', {
+      ready: ok,
+      failed: results.length - ok,
+    });
   }
-  if (name === 'edit_import_draft' && typeof result.draftRevision === 'number')
-    return `（草稿版本 ${result.draftRevision}）`;
-  if (name === 'record_update_recipe' && typeof result.verified === 'number')
-    return `（可复现 ${result.verified} 章${typeof result.pinned === 'number' && result.pinned ? `，固定 ${result.pinned} 章` : ''}）`;
-  if (name === 'preview_import' && Array.isArray(result.conflicts))
-    return result.conflicts.length ? `（${result.conflicts.length} 个待处理）` : '（可检查）';
   return '';
 }
 
-function todoName(args: Args): string {
+/** 实际结果：成功/失败数量或错误原因；尚无结果时显示进行中。 */
+function outcome(name: string, result: Result, context: ImportActionContext): string {
+  if (!result) return actionT(context, 'importUi.action.chat.inProgress');
+  if (result.success === false && name !== 'extract_content')
+    return actionT(context, 'importUi.action.chat.failed', {
+      reason: errorMessage(result, context),
+    });
+  const batch = batchOutcome(name, result, context);
+  if (batch) return batch;
+  if (name === 'edit_import_draft' && typeof result.draftRevision === 'number')
+    return actionT(context, 'importUi.action.chat.revision', { revision: result.draftRevision });
+  if (name === 'record_update_recipe' && typeof result.verified === 'number')
+    return actionT(context, 'importUi.action.chat.recipe', {
+      verified: result.verified,
+      pinned:
+        typeof result.pinned === 'number' && result.pinned
+          ? actionT(context, 'importUi.action.chat.recipePinned', { count: result.pinned })
+          : '',
+    });
+  if (name === 'preview_import' && Array.isArray(result.conflicts))
+    return result.conflicts.length
+      ? actionT(context, 'importUi.action.chat.pending', { count: result.conflicts.length })
+      : actionT(context, 'importUi.action.chat.reviewable');
+  if (name === 'search_web' && Array.isArray(result.results))
+    return actionT(context, 'importUi.action.chat.results', { count: result.results.length });
+  return '';
+}
+
+function todoName(args: Args, context: ImportActionContext): string {
   if (typeof args.text === 'string') return args.text;
-  if (Array.isArray(args.items)) return (args.items as unknown[]).map(String).join('、');
-  return typeof args.id === 'string' ? args.id : '待办';
+  if (Array.isArray(args.items))
+    return (args.items as unknown[]).map(String).join(actionList(context));
+  return typeof args.id === 'string' ? args.id : actionT(context, 'importUi.action.chat.todo');
 }
 
 type AnswerData = { answers?: { questionIndex: number; answer: string; selectedIndex?: number }[] };
@@ -228,15 +294,19 @@ function toAction(
   const shape = ACTION_SHAPES[tool] ?? { type: 'read', entity: 'web' };
   const base = { ...shape, timestamp, tool_name: tool };
   if (shape.type === 'ask') return { ...base, ...askAction(call, args, answers.get(call.id)) };
-  if (shape.entity === 'todo') return { ...base, name: todoName(args) };
-  if (shape.type === 'web_search')
+  if (shape.entity === 'todo') return { ...base, name: todoName(args, context) };
+  const raw = results.get(call.id);
+  // 结果中的自有说明按当前界面语言重新投影；旧记录的纯文字保持原样
+  const result = raw && localizeImportFeedback(raw, context.uiLocale ?? 'zh-CN');
+  if (shape.type === 'web_search' && !result)
     return { ...base, query: typeof args.query === 'string' ? args.query : '' };
-  const info = importActionInfo(tool, args, actionObject(results.get(call.id)), context);
+  const info = importActionInfo(tool, args, actionObject(result), context);
   return {
     ...base,
+    ...(shape.type === 'web_search' ? { query: text(args.query) } : {}),
     nameIsDescription: true,
     descriptionDetails: info.details,
-    name: `${info.summary ?? describe(tool, args, context.sources)}${outcome(tool, results.get(call.id))}`,
+    name: `${info.summary ?? describe(tool, args, context)}${outcome(tool, result, context)}`,
   };
 }
 
@@ -259,7 +329,7 @@ export function importEventsToMessages(
       messages.push({
         id: event.id,
         role: 'assistant',
-        content: COMPACTED_TEXT,
+        content: actionT(context, 'importUi.action.chat.compacted'),
         timestamp: event.createdAt,
         isSummarization: true,
       });
@@ -296,7 +366,7 @@ export function importEventsToMessages(
     messages.push({
       id: 'import-compacting',
       role: 'assistant',
-      content: COMPACTING_TEXT,
+      content: actionT(context, 'importUi.chat.compacting'),
       timestamp: Date.now(),
       isSummarization: true,
     });

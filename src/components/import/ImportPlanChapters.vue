@@ -1,27 +1,31 @@
 <script setup lang="ts">
 /** 方案的章节变化：按新增／更新／重组筛选的列表。 */
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { MessageKey } from 'src/i18n/types';
 import type { ImportPlan } from 'src/models/import';
 import ImportFilterChips from './ImportFilterChips.vue';
 
 type Kind = NonNullable<ImportPlan['chapterChanges']>[number]['kind'];
 
 const props = defineProps<{ plan: ImportPlan }>();
+const { t } = useI18n();
 
-const KINDS: { id: Kind; label: string }[] = [
-  { id: 'insert', label: '新增' },
-  { id: 'update', label: '更新' },
-  { id: 'restructure', label: '重组' },
-];
-const KIND_LABEL: Record<Kind, string> = { insert: '新增', update: '更新', restructure: '重组' };
+const KIND_LABEL: Record<Kind, MessageKey> = {
+  insert: 'importUi.planChapters.insert',
+  update: 'importUi.planChapters.update',
+  restructure: 'importUi.planChapters.restructure',
+};
+const KINDS: Kind[] = ['insert', 'update', 'restructure'];
 
 const filter = ref<Kind | 'all'>('all');
 const changes = computed(() => props.plan.chapterChanges ?? []);
 const filters = computed(() => [
-  { id: 'all' as const, label: '全部', count: changes.value.length },
+  { id: 'all' as const, label: t('importUi.common.all'), count: changes.value.length },
   ...KINDS.map((kind) => ({
-    ...kind,
-    count: changes.value.filter((change) => change.kind === kind.id).length,
+    id: kind,
+    label: t(KIND_LABEL[kind]),
+    count: changes.value.filter((change) => change.kind === kind).length,
   })).filter((kind) => kind.count > 0),
 ]);
 const shown = computed(() =>
@@ -39,20 +43,20 @@ watch(filters, (entries) => {
   <section v-if="changes.length" class="ipl-card">
     <div class="ipl-card-head">
       <h3 class="ipl-card-title">
-        <i class="pi pi-book" aria-hidden="true" />章节变化
+        <i class="pi pi-book" aria-hidden="true" />{{ t('importUi.planChapters.title') }}
         <span class="ipl-count">{{ changes.length }}</span>
       </h3>
       <ImportFilterChips
         v-if="filters.length > 2"
         v-model="filter"
         :filters="filters"
-        label="筛选章节变化"
+        :label="t('importUi.planChapters.filter')"
       />
     </div>
     <ol class="ipch-list">
       <li v-for="change in shown" :key="change.draftChapterId" class="ipch-row">
         <span class="ipch-kind" :class="`ipch-kind--${change.kind}`">
-          {{ KIND_LABEL[change.kind] }}
+          {{ t(KIND_LABEL[change.kind]) }}
         </span>
         <span class="ipch-title">{{ change.title }}</span>
       </li>

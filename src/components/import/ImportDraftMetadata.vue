@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 书名、作者、简介、标签与导入目标（新建或更新书库中的小说）；月詠的目标建议需用户采用。 */
 import { computed, reactive, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import InputChips from 'primevue/inputchips';
 import InputText from 'primevue/inputtext';
@@ -15,6 +16,7 @@ type TextField = 'title' | 'author' | 'description';
 const NEW_BOOK = '__new__';
 
 const store = useImportWorkspaceStore();
+const { t } = useI18n();
 const booksStore = useBooksStore();
 const locked = useDraftLock();
 
@@ -61,7 +63,7 @@ const targetBookId = computed(() =>
   draft.value?.target.kind === 'existing' ? draft.value.target.bookId : null,
 );
 const bookOptions = computed(() => [
-  { label: '新建小说', value: NEW_BOOK },
+  { label: t('importUi.draftMetadata.newBook'), value: NEW_BOOK },
   ...booksStore.books.map((book) => ({ label: book.title, value: book.id })),
 ]);
 const targetValue = computed(() => targetBookId.value ?? NEW_BOOK);
@@ -73,16 +75,16 @@ const setTarget = (value: string) => {
 const suggestion = computed(() => {
   const suggested = draft.value?.targetSuggestion;
   if (!suggested || suggested.bookId === targetBookId.value) return undefined;
-  if (!suggested.bookId) return { bookId: null, label: '新建小说' };
+  if (!suggested.bookId) return { bookId: null, label: t('importUi.draftMetadata.newBook') };
   const title = booksStore.getBookById(suggested.bookId)?.title ?? suggested.bookId;
-  return { bookId: suggested.bookId, label: `更新《${title}》` };
+  return { bookId: suggested.bookId, label: t('importUi.common.updateBook', { title }) };
 });
 </script>
 
 <template>
   <div class="idm">
     <label class="idm-field">
-      <span>{{ METADATA_FIELDS.title }}</span>
+      <span>{{ t(METADATA_FIELDS.title) }}</span>
       <InputText
         v-model="values.title"
         :disabled="locked"
@@ -91,7 +93,7 @@ const suggestion = computed(() => {
       />
     </label>
     <label class="idm-field">
-      <span>{{ METADATA_FIELDS.author }}</span>
+      <span>{{ t(METADATA_FIELDS.author) }}</span>
       <InputText
         v-model="values.author"
         :disabled="locked"
@@ -100,7 +102,7 @@ const suggestion = computed(() => {
       />
     </label>
     <label class="idm-field idm-field--wide">
-      <span>{{ METADATA_FIELDS.description }}</span>
+      <span>{{ t(METADATA_FIELDS.description) }}</span>
       <Textarea
         v-model="values.description"
         :disabled="locked"
@@ -110,18 +112,18 @@ const suggestion = computed(() => {
       />
     </label>
     <label class="idm-field idm-field--wide">
-      <span>{{ METADATA_FIELDS.tags }}</span>
+      <span>{{ t(METADATA_FIELDS.tags) }}</span>
       <InputChips
         :model-value="tags"
         separator=","
         add-on-blur
-        placeholder="输入标签后按回车"
+        :placeholder="t('importUi.draftMetadata.tagsPlaceholder')"
         :disabled="locked"
         @update:model-value="commitTags"
       />
     </label>
     <label class="idm-field idm-field--wide">
-      <span>导入到</span>
+      <span>{{ t('importUi.draftMetadata.target') }}</span>
       <Select
         :model-value="targetValue"
         :options="bookOptions"
@@ -134,9 +136,11 @@ const suggestion = computed(() => {
     </label>
     <div v-if="suggestion" class="ipl-banner ipl-banner--info idm-note">
       <i class="pi pi-lightbulb" aria-hidden="true" />
-      <span class="idm-note-text">月詠建议：{{ suggestion.label }}</span>
+      <span class="idm-note-text">{{
+        t('importUi.draftMetadata.suggestion', { target: suggestion.label })
+      }}</span>
       <Button
-        label="采用建议"
+        :label="t('importUi.draftMetadata.adoptSuggestion')"
         size="small"
         outlined
         :disabled="locked"

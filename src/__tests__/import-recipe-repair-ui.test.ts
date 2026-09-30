@@ -1,3 +1,5 @@
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { createApp, defineComponent, h, nextTick } from 'vue';
@@ -38,7 +40,10 @@ function mountPanel() {
       },
     }),
   );
-  app.use(pinia).mount(document.createElement('div'));
+  app
+    .use(pinia)
+    .use(createI18n({ legacy: false, locale: 'zh-CN', messages }))
+    .mount(document.createElement('div'));
   return { panel, store: useImportWorkspaceStore() };
 }
 
@@ -75,7 +80,11 @@ describe('工作台打开修复任务', () => {
     store.runningTaskId = 'other-task';
     const host = document.createElement('div');
     app = createApp({ setup: () => () => h(ImportRunBar) });
-    app.use(pinia).use(PrimeVue).mount(host);
+    app
+      .use(pinia)
+      .use(PrimeVue)
+      .use(createI18n({ legacy: false, locale: 'zh-CN', messages }))
+      .mount(host);
     await nextTick();
     expect(host.textContent).toContain(
       '另一个导入任务正在运行。同一时间只能运行一个任务，请先暂停它。',

@@ -4,6 +4,8 @@
  * 不等于已导入书库；目录完整性未确认时只报告「已发现」数量。
  */
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import Message from 'primevue/message';
@@ -13,6 +15,8 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { CHAT_ERROR_ACTIONS, TASK_STATE, readableError } from './import-labels';
 
 const store = useImportWorkspaceStore();
+const { t, locale } = useI18n();
+const uiLocale = computed(() => resolveAppLocale(locale.value));
 const aiModels = useAIModelsStore();
 
 const task = computed(() => store.task);
@@ -54,17 +58,22 @@ const chapterProgress = computed(() => {
   const { completeness } = draft;
   if (completeness.confirmed && completeness.knownTotal !== undefined) {
     const missing = completeness.missing.length;
-    return `目录共 ${completeness.knownTotal} 章 · 已取得 ${ready} 章${missing ? ` · 缺 ${missing} 章` : ''}`;
+    const known = t('importUi.runBar.knownProgress', { total: completeness.knownTotal, ready });
+    return missing ? `${known}${t('importUi.runBar.missingSuffix', { count: missing })}` : known;
   }
-  return `已发现 ${draft.chapters.length} 章 · 已取得 ${ready} 章 · 完整性未确认`;
+  return t('importUi.runBar.foundProgress', { found: draft.chapters.length, ready });
 });
 
 const continueLabel = computed(() =>
-  task.value?.checkpoint?.remainingCalls.length ? '继续执行' : '继续整理',
+  t(
+    task.value?.checkpoint?.remainingCalls.length
+      ? 'importUi.chat.continueCalls'
+      : 'importUi.chat.continue',
+  ),
 );
 const lastError = computed(() => {
   const error = task.value?.lastError;
-  return error ? readableError(error.message) : '';
+  return error ? readableError(error, uiLocale.value) : '';
 });
 
 const workspaceError = computed(
@@ -75,22 +84,22 @@ const continueRun = () => void store.send('');
 </script>
 
 <template>
-  <section v-if="task" class="irb" aria-label="任务状态">
+  <section v-if="task" class="irb" :aria-label="t('importUi.runBar.region')">
     <div class="irb-row">
       <InputText
         v-model="name"
         class="irb-name"
-        aria-label="任务名称"
+        :aria-label="t('importUi.runBar.name')"
         maxlength="80"
         @blur="saveName"
         @keydown.enter="saveName"
       />
-      <Tag v-if="state" :value="state.label" :severity="state.severity" />
+      <Tag v-if="state" :value="t(state.label)" :severity="state.severity" />
       <div class="irb-actions">
         <Button
           v-if="running"
           icon="pi pi-pause"
-          label="暂停"
+          :label="t('importUi.runBar.pause')"
           size="small"
           severity="warn"
           :loading="task.state === 'pausing'"
@@ -109,36 +118,52 @@ const continueRun = () => void store.send('');
 
     <div class="irb-progress">
       <span>
-        来源 {{ sourceProgress.extracted }}/{{ sourceProgress.total }} 已提取
-        <template v-if="sourceProgress.failed"> · {{ sourceProgress.failed }} 个失败</template>
+        {{
+          t('importUi.runBar.sources', {
+            extracted: sourceProgress.extracted,
+            total: sourceProgress.total,
+          })
+        }}
+        <template v-if="sourceProgress.failed">
+          · {{ t('importUi.runBar.sourcesFailed', { count: sourceProgress.failed }) }}</template
+        >
       </span>
       <span>{{ chapterProgress }}</span>
       <span v-if="task.batchProgress" aria-live="polite">
-        当前批次 {{ task.batchProgress.ready }}/{{ task.batchProgress.total }} 章已取得 · 待处理
-        {{ task.batchProgress.pending }}
+        {{
+          t('importUi.runBar.batch', {
+            ready: task.batchProgress.ready,
+            total: task.batchProgress.total,
+            pending: task.batchProgress.pending,
+          })
+        }}
         <template v-if="task.batchProgress.failed">
-          · 失败 {{ task.batchProgress.failed }}</template
+          · {{ t('importUi.runBar.batchFailed', { count: task.batchProgress.failed }) }}</template
         >
       </span>
     </div>
 
     <Message v-if="store.storageIssue" severity="error" :closable="false" class="irb-msg">
-      {{ store.storageIssue.message }} 在恢复前，最新进度不能保证在关闭页面后仍可找回。
+      {{
+        t('importUi.runBar.storageIssue', {
+          message: readableError(store.storageIssue, uiLocale),
+        })
+      }}
     </Message>
     <Message v-if="awaitingAnswer" severity="warn" :closable="false" class="irb-msg">
-      月詠在等待你的回答（见对话区），回答后才会继续。
+      {{ t('importUi.runBar.awaitingAnswer') }}
     </Message>
     <Message v-if="runningOther" severity="info" :closable="false" class="irb-msg">
-      另一个导入任务正在运行。同一时间只能运行一个任务，请先暂停它。
+      {{ t('importUi.runBar.otherRunning') }}
     </Message>
     <Message v-if="!hasModel" severity="warn" :closable="false" class="irb-msg">
-      尚未配置助手模型，请先在「AI 模型」中为助手指定默认模型。
+      {{ t('importUi.runBar.noModel') }}
     </Message>
     <Message v-if="lastError && !running" severity="secondary" :closable="false" class="irb-msg">
       {{ lastError }}
     </Message>
     <Message v-if="workspaceError" severity="error" class="irb-msg" @close="store.clearError">
-      {{ readableError(store.error ?? '') }}
+      {{ readableError(store.error ?? '', uiLocale) }}
     </Message>
   </section>
 </template>

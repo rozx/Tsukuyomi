@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 多小说选择：必须由用户实际选中一个候选，取消或关闭不解除等待。 */
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import RadioButton from 'primevue/radiobutton';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
@@ -8,6 +9,7 @@ import type { ImportPendingQuestion } from 'src/models/import';
 
 const props = defineProps<{ question: ImportPendingQuestion }>();
 const store = useImportWorkspaceStore();
+const { t } = useI18n();
 
 const selected = ref('');
 watch(
@@ -28,7 +30,7 @@ const confirm = () => void store.chooseNovel(selected.value);
     <span>{{ option.label }}</span>
   </label>
   <Button
-    label="确认选择"
+    :label="t('importUi.question.confirmChoice')"
     size="small"
     :disabled="confirmDisabled"
     :loading="busy"

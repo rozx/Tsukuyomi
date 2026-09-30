@@ -1,24 +1,32 @@
 import type { ActionDetail } from 'src/utils/action-info-utils';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 import {
   actionClip,
   actionDetail,
   actionItems,
   actionLabel,
   actionObject,
+  actionT,
   actionText,
 } from './import-action-context';
 import type { ImportActionContext, ImportActionData } from './import-action-context';
 
 /** 配方概要里的引擎标识转成界面文字，例如 builtin:ncode → 内置站点（ncode）。 */
-export function recipeEngineLabel(engine: unknown): string {
+export function recipeEngineLabel(engine: unknown, locale: AppLocale = 'zh-CN'): string {
   const value = actionText(engine);
   if (!value) return '';
-  return value.startsWith('builtin:') ? `内置站点（${value.slice(8)}）` : '通用网页';
+  return value.startsWith('builtin:')
+    ? translateText(locale, 'importUi.action.recipe.builtin', { site: value.slice(8) })
+    : translateText(locale, 'importUi.action.recipe.generic');
 }
 
-function stage(result: ImportActionData): string {
-  if (!Object.keys(result).length) return '离线自测中';
-  return result.success === false ? '自测未通过，草稿未修改' : '自测通过，已写入草稿';
+function stage(result: ImportActionData): MessageKey {
+  if (!Object.keys(result).length) return 'importUi.action.recipe.testing';
+  return result.success === false
+    ? 'importUi.action.recipe.testFailed'
+    : 'importUi.action.recipe.testPassed';
 }
 
 /** record_update_recipe 的气泡与详情：阶段、引擎、可复现章节数和差异示例。 */
@@ -28,40 +36,61 @@ export function describeRecipeDeclaration(
   context: ImportActionContext,
   details: ActionDetail[],
 ): string {
+  const t = (key: MessageKey, values?: Record<string, string | number>) =>
+    actionT(context, key, values);
   const catalogs = (Array.isArray(args.catalog_source_ids) ? args.catalog_source_ids : []).map(
-    (id) => actionLabel(id, context.sources, '来源'),
+    (id) => actionLabel(id, context.sources, t('importUi.action.label.source')),
   );
-  const engine = recipeEngineLabel(result.engine);
-  actionDetail(details, '阶段', stage(result));
-  actionDetail(details, '引擎', engine);
-  actionDetail(details, '目录来源', catalogs.join('\n'));
+  const engine = recipeEngineLabel(result.engine, context.uiLocale);
+  actionDetail(details, t('importUi.action.recipe.stage'), t(stage(result)));
+  actionDetail(details, t('importUi.recipe.engine'), engine);
+  actionDetail(details, t('importUi.action.batch.catalogSource'), catalogs.join('\n'));
   actionDetail(
     details,
-    '目录网址',
+    t('importUi.action.recipe.catalogUrls'),
     (Array.isArray(result.catalogUrls) ? result.catalogUrls : []).map(actionText).join('\n'),
   );
-  actionDetail(details, '目录链接范围', args.catalog_selector);
-  actionDetail(details, '可复现章节', result.verified);
-  actionDetail(details, '固定正文章节', result.pinned);
+  actionDetail(details, t('importUi.action.recipe.catalogSelector'), args.catalog_selector);
+  actionDetail(details, t('importUi.action.recipe.verified'), result.verified);
+  actionDetail(details, t('importUi.action.recipe.pinned'), result.pinned);
   actionDetail(
     details,
-    '清理规则',
+    t('importUi.recipe.cleanup'),
     actionItems(args.cleanup)
       .map((rule) => {
         const pattern = actionObject(rule.pattern);
-        const action = rule.action === 'remove_lines' ? '删除整行' : '删除匹配';
-        return `${action}：${actionText(pattern.pattern)}${pattern.mode === 'regex' ? '（正则）' : ''}`;
+        return t(
+          pattern.mode === 'regex'
+            ? 'importUi.action.recipe.cleanupRegex'
+            : 'importUi.action.recipe.cleanupText',
+          {
+            action: t(
+              rule.action === 'remove_lines'
+                ? 'importUi.action.batch.removeLines'
+                : 'importUi.action.recipe.removeMatches',
+            ),
+            pattern: actionText(pattern.pattern),
+          },
+        );
       })
       .join('\n'),
   );
-  if (args.strip_heading === true) actionDetail(details, '剥离标题', '是');
+  if (args.strip_heading === true)
+    actionDetail(
+      details,
+      t('importUi.action.recipe.stripHeading'),
+      t('importUi.action.recipe.yes'),
+    );
   actionDetail(
     details,
-    '差异示例',
+    t('importUi.action.recipe.issues'),
     actionItems(result.issues)
       .map((issue) => actionText(issue.message))
       .join('\n'),
   );
-  const target = catalogs[0] ? `「${actionClip(catalogs[0])}」` : '';
-  return `声明更新配方：${target}${engine ? ` · ${engine}` : ''}`;
+  const target = catalogs[0] ? t('importUi.action.quoted', { value: actionClip(catalogs[0]) }) : '';
+  return t('importUi.action.recipe.summary', {
+    target,
+    engine: engine ? ` · ${engine}` : '',
+  });
 }
