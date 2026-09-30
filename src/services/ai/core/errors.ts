@@ -1,5 +1,6 @@
 import { translateText } from 'src/i18n/translate';
 import type { AppLocale } from 'src/models/locale';
+import { LocalizedError } from 'src/utils/localized-error';
 
 /**
  * AI 返回空响应时抛出的错误
@@ -41,5 +42,6 @@ export function createCancelledError(uiLocale: AppLocale): Error {
 export function describeAIError(error: unknown, uiLocale: AppLocale, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
   if (error.name === 'AIEmptyResponseError') return translateText(uiLocale, 'aiRun.emptyText');
+  if (error instanceof LocalizedError) return error.messageFor(uiLocale);
   return error.message;
 }

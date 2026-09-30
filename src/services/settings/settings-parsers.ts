@@ -1,5 +1,7 @@
 import type { AppSettings, Settings } from 'src/models/settings';
 import { isAppLocale } from 'src/models/locale';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { Novel, CoverHistoryItem } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
@@ -17,26 +19,22 @@ function toTimestamp(value: Date | number | string): number {
 /**
  * 校验 settings 顶层结构。结构非法时返回错误消息，否则返回 null。
  */
-export function validateSettingsShape(settings: Settings): string | null {
+export function validateSettingsShape(
+  settings: Settings,
+  locale: AppLocale = 'zh-CN',
+): string | null {
   if (!settings || typeof settings !== 'object') {
-    return '无效的设置数据格式';
+    return translateText(locale, 'settingsUi.backup.invalidFormat');
   }
   if (!Array.isArray(settings.aiModels)) {
-    return '设置数据中缺少有效的 aiModels 数组';
+    return translateText(locale, 'settingsUi.backup.missingModels');
   }
-  if (settings.novels !== undefined && !Array.isArray(settings.novels)) {
-    return '设置数据中的 novels 字段格式无效';
-  }
-  if (settings.coverHistory !== undefined && !Array.isArray(settings.coverHistory)) {
-    return '设置数据中的 coverHistory 字段格式无效';
-  }
-  if (settings.memories !== undefined && !Array.isArray(settings.memories)) {
-    return '设置数据中的 memories 字段格式无效';
-  }
-  if (settings.sync !== undefined && !Array.isArray(settings.sync)) {
-    return '设置数据中的 sync 字段格式无效';
-  }
-  return null;
+  const invalidField = (['novels', 'coverHistory', 'memories', 'sync'] as const).find(
+    (field) => settings[field] !== undefined && !Array.isArray(settings[field]),
+  );
+  return invalidField
+    ? translateText(locale, 'settingsUi.backup.invalidField', { field: invalidField })
+    : null;
 }
 
 export function parseAiModels(raw: unknown[]): AIModel[] {

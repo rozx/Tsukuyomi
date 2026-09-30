@@ -2,6 +2,7 @@ import type { AIProvider } from 'src/services/ai/types/ai-model';
 import type { AIServiceConfig, ModelInfo } from 'src/services/ai/types/ai-service';
 import { normalizeBaseUrl } from 'src/services/ai/providers/ai-sdk/messages';
 import { createProxyFetch } from 'src/services/ai/providers/ai-sdk/request';
+import { LocalizedError } from 'src/utils/localized-error';
 
 interface ModelList {
   data?: { id: string; owned_by?: string }[];
@@ -29,7 +30,10 @@ export async function listModels(
       },
     });
     if (!response.ok)
-      throw new Error(`获取模型列表失败: ${response.status} ${await response.text()}`);
+      throw new LocalizedError('AI_MODEL_LIST_FAILED', 'settingsUi.models.errors.modelListFailed', {
+        status: response.status,
+        detail: await response.text(),
+      });
     const data = (await response.json()) as ModelList;
     if (provider === 'openai')
       return (data.data ?? []).map((model) => ({

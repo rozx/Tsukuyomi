@@ -37,6 +37,13 @@ export default {
       description:
         'Choose the default AI model for each task. These settings are saved with import/export',
       select: 'Select a model',
+      errors: {
+        apiKeyRequired: 'API key is required',
+        modelRequired: 'Model name is required',
+        promptRequired: 'A prompt or message list is required',
+        unsupportedProvider: 'Unsupported AI provider: {provider}',
+        modelListFailed: 'Fetching the model list failed: {status} {detail}',
+      },
     },
     embedding: {
       statusIdle: 'Not loaded',
@@ -229,6 +236,29 @@ export default {
       restartPending: 'Preparing to restart for an update. Try again later',
       pendingWork: 'Some actions or saves have not finished. Try again later',
       interrupted: 'New work started during preparation. Try again later',
+    },
+    backup: {
+      invalidFormat: 'The settings data format is invalid',
+      missingModels: 'The settings data has no valid aiModels array',
+      invalidField: 'The {field} field in the settings data is invalid',
+      unrecognizedBook: 'Unrecognized file format. Make sure the file contains book data.',
+      noBooks: 'No valid book data was found in the file',
+      fileType: 'Choose a JSON or TXT file',
+      exported: 'Settings were exported to a local file',
+      exportUnknown: 'An unknown error occurred while exporting settings',
+      parseUnknown: 'An unknown error occurred while reading the settings file',
+      noContent:
+        'The settings data has no valid AI models, books, cover history, memories, sync settings or app settings',
+      importedSummary: 'Imported {items}',
+      count: {
+        models: '{count} AI model setting | {count} AI model settings',
+        novels: '{count} book | {count} books',
+        coverHistory: '{count} cover history record | {count} cover history records',
+        memories: '{count} memory record | {count} memory records',
+        sync: '{count} sync setting | {count} sync settings',
+        appSettings: 'app settings',
+      },
+      separator: ', ',
     },
   },
 };

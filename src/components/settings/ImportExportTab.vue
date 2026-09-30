@@ -45,7 +45,7 @@ const exportSettings = async () => {
     appSettings: settingsStore.getAllSettings(),
   };
 
-  const result = SettingsService.exportSettings(settings);
+  const result = SettingsService.exportSettings(settings, settingsStore.uiLocale);
 
   if (result.success) {
     toast.add({
@@ -72,7 +72,7 @@ const applyImportedData = (data: ImportedSettings) =>
  */
 const handleFileSelect = createFileSelectHandler(async (file) => {
   // 使用设置服务导入文件
-  const result = await SettingsService.importSettingsFromFile(file);
+  const result = await SettingsService.importSettingsFromFile(file, settingsStore.uiLocale);
 
   if (result.success && result.data) {
     await applyImportedData(result.data);

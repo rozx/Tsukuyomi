@@ -10,6 +10,9 @@ import {
   parseSyncConfigs,
   validateSettingsShape,
 } from './settings/settings-parsers';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
+import { LocalizedError, localizedErrorMessage } from 'src/utils/localized-error';
 
 /**
  * 设置服务
@@ -53,7 +56,7 @@ function extractBookImportShape(data: Record<string, unknown>): BookImportShape 
   if (data.title) {
     return { novels: [data], rawMemories: [], memoriesAnchorBookId: undefined };
   }
-  throw new Error('无法识别的文件格式。请确保文件包含书籍数据。');
+  throw new LocalizedError('BOOK_IMPORT_UNRECOGNIZED', 'settingsUi.backup.unrecognizedBook');
 }
 
 function groupMemoriesByBookId(
@@ -79,15 +82,15 @@ function groupMemoriesByBookId(
   return map;
 }
 
-function buildImportMessage(counts: ImportCounts): string {
-  const parts: string[] = [];
-  if (counts.models > 0) parts.push(`${counts.models} 个 AI 模型配置`);
-  if (counts.novels > 0) parts.push(`${counts.novels} 本书籍`);
-  if (counts.coverHistory > 0) parts.push(`${counts.coverHistory} 个封面历史记录`);
-  if (counts.memories > 0) parts.push(`${counts.memories} 条 Memory 记录`);
-  if (counts.sync > 0) parts.push(`${counts.sync} 个同步配置`);
-  if (counts.appSettings) parts.push('应用设置');
-  return parts.join('、');
+function buildImportMessage(counts: ImportCounts, locale: AppLocale): string {
+  const { appSettings, ...numbers } = counts;
+  const parts = (Object.keys(numbers) as Array<keyof typeof numbers>)
+    .filter((key) => numbers[key] > 0)
+    .map((key) => translateText(locale, `settingsUi.backup.count.${key}`, { count: numbers[key] }));
+  if (appSettings) parts.push(translateText(locale, 'settingsUi.backup.count.appSettings'));
+  return translateText(locale, 'settingsUi.backup.importedSummary', {
+    items: parts.join(translateText(locale, 'settingsUi.backup.separator')),
+  });
 }
 
 /**
@@ -148,24 +151,24 @@ export class SettingsService {
     const isValidFile =
       file.type.includes('json') || file.name.endsWith('.json') || file.name.endsWith('.txt');
     if (!isValidFile) {
-      throw new Error('请选择 JSON 或 TXT 格式的文件');
+      throw new LocalizedError('SETTINGS_FILE_TYPE', 'settingsUi.backup.fileType');
     }
     const content = await file.text();
     return JSON.parse(content);
   }
 
-  static exportSettings(settings: Settings): ExportResult {
+  static exportSettings(settings: Settings, locale: AppLocale = 'zh-CN'): ExportResult {
     try {
       const filename = `tsukuyomi-settings-${new Date().toISOString().split('T')[0]}.json`;
       this.downloadJson(settings, filename);
       return {
         success: true,
-        message: '设置已成功导出到本地文件',
+        message: translateText(locale, 'settingsUi.backup.exported'),
       };
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '导出设置时发生未知错误',
+        error: localizedErrorMessage(error, locale, 'settingsUi.backup.exportUnknown'),
       };
     }
   }
@@ -175,14 +178,17 @@ export class SettingsService {
    * @param file 文件对象
    * @returns Promise<ImportResult> 导入结果
    */
-  static async importSettingsFromFile(file: File): Promise<ImportResult> {
+  static async importSettingsFromFile(
+    file: File,
+    locale: AppLocale = 'zh-CN',
+  ): Promise<ImportResult> {
     try {
       const settings = (await this.readJsonFile(file)) as Settings;
-      return this.validateAndParseSettings(settings);
+      return this.validateAndParseSettings(settings, locale);
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : '解析设置文件时发生未知错误',
+        error: localizedErrorMessage(error, locale, 'settingsUi.backup.parseUnknown'),
       };
     }
   }
@@ -192,8 +198,8 @@ export class SettingsService {
    * @param settings 原始设置数据
    * @returns ImportResult 验证和解析结果
    */
-  static validateAndParseSettings(settings: Settings): ImportResult {
-    const shapeError = validateSettingsShape(settings);
+  static validateAndParseSettings(settings: Settings, locale: AppLocale = 'zh-CN'): ImportResult {
+    const shapeError = validateSettingsShape(settings, locale);
     if (shapeError) {
       return { success: false, error: shapeError };
     }
@@ -203,20 +209,23 @@ export class SettingsService {
     if (!hasImportedContent(sections)) {
       return {
         success: false,
-        error: '设置数据中没有有效的 AI 模型、书籍、封面历史、Memory、同步设置或应用设置',
+        error: translateText(locale, 'settingsUi.backup.noContent'),
       };
     }
 
     return {
       success: true,
-      message: `成功导入 ${buildImportMessage({
-        models: sections.models.length,
-        novels: sections.novels.length,
-        coverHistory: sections.coverHistory.length,
-        memories: sections.memories.length,
-        sync: sections.sync.length,
-        appSettings: Boolean(sections.appSettings),
-      })}`,
+      message: buildImportMessage(
+        {
+          models: sections.models.length,
+          novels: sections.novels.length,
+          coverHistory: sections.coverHistory.length,
+          memories: sections.memories.length,
+          sync: sections.sync.length,
+          appSettings: Boolean(sections.appSettings),
+        },
+        locale,
+      ),
       data: {
         models: sections.models,
         novels: sections.novels,
@@ -230,7 +239,7 @@ export class SettingsService {
 
   static parseBookImportData(raw: unknown): BookImportData {
     if (!raw || typeof raw !== 'object') {
-      throw new Error('无法识别的文件格式。请确保文件包含书籍数据。');
+      throw new LocalizedError('BOOK_IMPORT_UNRECOGNIZED', 'settingsUi.backup.unrecognizedBook');
     }
 
     const { novels, rawMemories, memoriesAnchorBookId } = extractBookImportShape(
@@ -238,7 +247,7 @@ export class SettingsService {
     );
 
     if (novels.length === 0) {
-      throw new Error('文件中没有找到有效的书籍数据');
+      throw new LocalizedError('BOOK_IMPORT_EMPTY', 'settingsUi.backup.noBooks');
     }
 
     return {

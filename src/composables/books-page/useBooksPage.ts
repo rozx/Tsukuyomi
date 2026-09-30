@@ -19,6 +19,7 @@ import { useLibraryFormatting } from 'src/composables/shared/useLibraryFormattin
 import { buildNovelRevertUpdates, buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { isConfirmationTextMatch } from 'src/utils/text-utils';
 import { cloneDeep } from 'lodash';
+import { localizedErrorMessage } from 'src/utils/localized-error';
 
 export type BooksPageContext = ReturnType<typeof createBooksPageContext>;
 
@@ -377,7 +378,7 @@ function createBooksPageContext() {
       toast.add({
         severity: 'error',
         summary: t('libraryUi.importFailure'),
-        detail: error instanceof Error ? error.message : t('libraryUi.unknownParse'),
+        detail: localizedErrorMessage(error, settingsStore.uiLocale, 'libraryUi.unknownParse'),
         life: 5000,
       });
     }
