@@ -745,5 +745,38 @@ export default {
         'No assistant model configured: set a default assistant model under “AI models” first.',
       taskNotSelected: 'Select an import task first',
     },
+    web: {
+      httpError: 'Firecrawl returned HTTP {status}',
+      httpMessage: 'Firecrawl request failed (HTTP {status}): {detail}',
+      queryRequired: 'The search query cannot be empty',
+      urlRequired: 'The URL cannot be empty',
+      urlInvalid: 'Invalid URL format',
+      urlParse: 'Could not parse URL: {url}',
+      quota: 'Firecrawl quota exhausted',
+      quotaKeyless:
+        'The free Firecrawl quota (daily limit per IP) is used up. Configure a Firecrawl or Tavily API key in Settings → API Keys and try again.',
+      quotaKey: 'Firecrawl quota exhausted. Check your quota in Settings → API Keys.',
+      rate: 'Too many Firecrawl requests',
+      retryLater: 'Too many Firecrawl requests. Try again later.',
+      targetError: 'The target page returned error {status}',
+      targetMessage: 'The target page returned error {status} and could not be read.',
+      empty: 'Firecrawl returned empty content',
+      failed: 'Firecrawl request failed: {detail}',
+      keyInvalid: 'Invalid Tavily API key',
+      checkSearchKey:
+        'Check that the configured Tavily API key is correct. You can get a valid key at https://tavily.com/.',
+      checkFetchKey: 'Check that the configured Tavily API key is correct.',
+      searchFailed: `Web search is temporarily unavailable: {detail}. The AI model's built-in knowledge will be used for questions about “{query}”.`,
+      searchMissing: 'Web search is not configured',
+      searchConfigure:
+        'Configure a Tavily API key in Settings → API Keys, or enable the Firecrawl fallback to use web search.',
+      extractEmpty: 'Could not extract the page content',
+      extractMessage:
+        'Tavily could not extract the content of {url}. The page may be unreachable or empty.',
+      fetchFailed: 'Could not access {url}: {detail}.',
+      fetchMissing: 'Web page reading is not configured',
+      fetchConfigure:
+        'Configure a Tavily API key in Settings → API Keys, or enable the Firecrawl fallback to read web pages.',
+    },
   },
 };

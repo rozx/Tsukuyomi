@@ -1,3 +1,5 @@
+import webFeedback from './web-feedback';
+
 export default {
   importUi: {
     listSeparator: '、',
@@ -714,5 +716,6 @@ export default {
       noModel: '未配置助手模型：请先在「AI 模型」中为助手指定默认模型。',
       taskNotSelected: '请先选择导入任务',
     },
+    web: webFeedback.aiWebFeedback,
   },
 };

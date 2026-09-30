@@ -1,4 +1,4 @@
-import type { AgentMessageKey } from 'src/i18n/types';
+import type webFeedback from 'src/i18n/zh-CN/web-feedback';
 import { agentText } from 'src/i18n/translate';
 import { toolErrorJson } from './tool-feedback';
 import { validToolQuery } from './tool-feedback';
@@ -26,6 +26,23 @@ const SEARCH_RESULT_LIMIT = 5;
 
 type Provider = 'tavily' | 'firecrawl';
 
+type WebFeedbackKey = keyof typeof webFeedback.aiWebFeedback;
+
+/** 自有失败说明的身份（aiWebFeedback 下的 key 与参数）。 */
+export interface WebFeedbackEntry {
+  key: WebFeedbackKey;
+  values: Record<string, string | number>;
+}
+
+/**
+ * 失败说明的结构化身份，供导入工作台按界面语言重新投影；返回给模型的 JSON 中不包含它。
+ * error 缺省表示错误原因为外部原始诊断，保持原文。
+ */
+export interface WebFailureFeedback {
+  error?: WebFeedbackEntry;
+  message: WebFeedbackEntry;
+}
+
 interface SearchResultItem {
   title: string;
   snippet: string;
@@ -40,6 +57,7 @@ interface SearchWebResult {
   error?: string;
   error_code?: string;
   message?: string;
+  feedback?: WebFailureFeedback;
 }
 
 interface FetchWebpageResult {
@@ -51,6 +69,14 @@ interface FetchWebpageResult {
   error?: string;
   error_code?: string;
   message?: string;
+  feedback?: WebFailureFeedback;
+}
+
+/** 返回给模型的 JSON：去掉仅供界面重投影的结构化身份。 */
+function modelJson(result: SearchWebResult | FetchWebpageResult): string {
+  const { feedback, ...rest } = result;
+  void feedback;
+  return JSON.stringify(rest);
 }
 
 function errorMessageOf(error: unknown): string {
@@ -105,54 +131,61 @@ function extractHtmlTitle(rawContent: string, fallback: string): string {
 /** Firecrawl 失败时给 AI 的说明：区分额度（有 Key / keyless）、限速与目标网页错误 */
 function webFailure(
   code: string,
-  errorKey: AgentMessageKey,
-  messageKey: AgentMessageKey,
+  errorKey: WebFeedbackKey,
+  messageKey: WebFeedbackKey,
   values: Record<string, string | number> = {},
 ) {
   return {
     success: false as const,
     error_code: code,
-    error: agentText(errorKey, values),
-    message: agentText(messageKey, values),
+    error: agentText(`aiWebFeedback.${errorKey}`, values),
+    message: agentText(`aiWebFeedback.${messageKey}`, values),
+    feedback: { error: { key: errorKey, values }, message: { key: messageKey, values } },
+  };
+}
+
+/** 错误原因为外部原始诊断（保持原文）时，只有说明带有自有身份。 */
+function rawFailure(
+  code: string,
+  detail: string,
+  messageKey: WebFeedbackKey,
+  values: Record<string, string | number>,
+) {
+  return {
+    success: false as const,
+    error_code: code,
+    error: detail,
+    message: agentText(`aiWebFeedback.${messageKey}`, values),
+    feedback: { message: { key: messageKey, values } },
   };
 }
 function firecrawlFailure(error: unknown): SearchWebResult {
   if (error instanceof FirecrawlQuotaError)
     return webFailure(
       'FIRECRAWL_QUOTA_EXHAUSTED',
-      'aiWebFeedback.quota',
-      error.keyless ? 'aiWebFeedback.quotaKeyless' : 'aiWebFeedback.quotaKey',
+      'quota',
+      error.keyless ? 'quotaKeyless' : 'quotaKey',
     );
   if (error instanceof FirecrawlRateLimitError)
-    return webFailure('FIRECRAWL_RATE_LIMITED', 'aiWebFeedback.rate', 'aiWebFeedback.retryLater');
+    return webFailure('FIRECRAWL_RATE_LIMITED', 'rate', 'retryLater');
   if (error instanceof FirecrawlTargetError)
-    return webFailure(
-      'FIRECRAWL_TARGET_FAILED',
-      'aiWebFeedback.targetError',
-      'aiWebFeedback.targetMessage',
-      { status: error.targetStatus },
-    );
+    return webFailure('FIRECRAWL_TARGET_FAILED', 'targetError', 'targetMessage', {
+      status: error.targetStatus,
+    });
   if (error instanceof FirecrawlEmptyContentError)
-    return webFailure('FIRECRAWL_EMPTY_CONTENT', 'aiWebFeedback.empty', 'aiWebFeedback.empty');
+    return webFailure('FIRECRAWL_EMPTY_CONTENT', 'empty', 'empty');
   if (
     error instanceof FirecrawlError &&
     error.status !== undefined &&
     error.diagnostic !== undefined
   ) {
-    return webFailure(
-      'FIRECRAWL_HTTP_FAILED',
-      'aiWebFeedback.httpError',
-      'aiWebFeedback.httpMessage',
-      { status: error.status, detail: error.diagnostic },
-    );
+    return webFailure('FIRECRAWL_HTTP_FAILED', 'httpError', 'httpMessage', {
+      status: error.status,
+      detail: error.diagnostic,
+    });
   }
   const detail = errorMessageOf(error);
-  return {
-    success: false,
-    error_code: 'FIRECRAWL_FAILED',
-    error: detail,
-    message: agentText('aiWebFeedback.failed', { detail }),
-  };
+  return rawFailure('FIRECRAWL_FAILED', detail, 'failed', { detail });
 }
 
 async function tavilySearch(
@@ -196,17 +229,8 @@ async function tavilySearch(
 function tavilySearchFailure(error: unknown, query: string): SearchWebResult {
   const detail = errorMessageOf(error);
   if (isUnauthorizedError(error, detail))
-    return webFailure(
-      'TAVILY_UNAUTHORIZED',
-      'aiWebFeedback.keyInvalid',
-      'aiWebFeedback.checkSearchKey',
-    );
-  return {
-    success: false,
-    error_code: 'WEB_SEARCH_FAILED',
-    error: detail,
-    message: agentText('aiWebFeedback.searchFailed', { detail, query }),
-  };
+    return webFailure('TAVILY_UNAUTHORIZED', 'keyInvalid', 'checkSearchKey');
+  return rawFailure('WEB_SEARCH_FAILED', detail, 'searchFailed', { detail, query });
 }
 
 async function firecrawlSearch(query: string, signal?: AbortSignal): Promise<SearchWebResult> {
@@ -241,11 +265,7 @@ export async function searchWeb(query: string, signal?: AbortSignal): Promise<Se
       }
     }
   } else if (!fallbackEnabled) {
-    return webFailure(
-      'WEB_SEARCH_NOT_CONFIGURED',
-      'aiWebFeedback.searchMissing',
-      'aiWebFeedback.searchConfigure',
-    );
+    return webFailure('WEB_SEARCH_NOT_CONFIGURED', 'searchMissing', 'searchConfigure');
   }
   return firecrawlSearch(query, signal);
 }
@@ -269,12 +289,7 @@ async function tavilyExtract(apiKey: string, url: string): Promise<FetchWebpageR
   // Tavily extract 返回 results 数组，取第一个结果
   const firstResult = response.data.results?.[0];
   if (!firstResult) {
-    return webFailure(
-      'WEB_EXTRACT_EMPTY',
-      'aiWebFeedback.extractEmpty',
-      'aiWebFeedback.extractMessage',
-      { url },
-    );
+    return webFailure('WEB_EXTRACT_EMPTY', 'extractEmpty', 'extractMessage', { url });
   }
   const rawContent = firstResult.rawContent || '';
   const text = rawContent
@@ -293,17 +308,8 @@ async function tavilyExtract(apiKey: string, url: string): Promise<FetchWebpageR
 function tavilyExtractFailure(error: unknown, url: string): FetchWebpageResult {
   const detail = errorMessageOf(error);
   if (isUnauthorizedError(error, detail))
-    return webFailure(
-      'TAVILY_UNAUTHORIZED',
-      'aiWebFeedback.keyInvalid',
-      'aiWebFeedback.checkFetchKey',
-    );
-  return {
-    success: false,
-    error_code: 'WEB_FETCH_FAILED',
-    error: detail,
-    message: agentText('aiWebFeedback.fetchFailed', { url, detail }),
-  };
+    return webFailure('TAVILY_UNAUTHORIZED', 'keyInvalid', 'checkFetchKey');
+  return rawFailure('WEB_FETCH_FAILED', detail, 'fetchFailed', { url, detail });
 }
 
 async function firecrawlExtract(url: string): Promise<FetchWebpageResult> {
@@ -326,7 +332,7 @@ async function firecrawlExtract(url: string): Promise<FetchWebpageResult> {
  */
 async function fetchWebpage(url: string): Promise<FetchWebpageResult> {
   if (!isValidUrl(url)) {
-    return webFailure('WEB_URL_INVALID', 'aiWebFeedback.urlInvalid', 'aiWebFeedback.urlParse', {
+    return webFailure('WEB_URL_INVALID', 'urlInvalid', 'urlParse', {
       url,
     });
   }
@@ -344,11 +350,7 @@ async function fetchWebpage(url: string): Promise<FetchWebpageResult> {
       }
     }
   } else if (!fallbackEnabled) {
-    return webFailure(
-      'WEB_FETCH_NOT_CONFIGURED',
-      'aiWebFeedback.fetchMissing',
-      'aiWebFeedback.fetchConfigure',
-    );
+    return webFailure('WEB_FETCH_NOT_CONFIGURED', 'fetchMissing', 'fetchConfigure');
   }
   return firecrawlExtract(url);
 }
@@ -384,7 +386,7 @@ export const webSearchTools: ToolDefinition[] = [
         });
       }
 
-      return JSON.stringify(result);
+      return modelJson(result);
     },
   },
   {
@@ -428,7 +430,7 @@ export const webSearchTools: ToolDefinition[] = [
         });
       }
 
-      return JSON.stringify(result);
+      return modelJson(result);
     },
   },
 ];
