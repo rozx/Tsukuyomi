@@ -1,4 +1,4 @@
-import { importFailure, importError } from './import-error';
+import { importFailure, importError, serializeImportError } from './import-error';
 import type { ImportNotice } from 'src/models/import-feedback';
 
 import { excludeImportText } from './import-content-exclusions';
@@ -24,8 +24,8 @@ export interface ImportChapterPreview {
   sources: ImportSource[];
   /** 这些提取结果在提取时排除的内容，供用户核对清理是否正确。 */
   excluded: { resourceId: string; text: string; reason: ImportNotice }[];
-  /** 读取失败的引用，界面显示失败而不是空正文。 */
-  failures: string[];
+  /** 读取失败的引用，界面显示失败而不是空正文；自有错误保留身份以按界面语言显示。 */
+  failures: ImportNotice[];
 }
 
 type ExistingRef = Extract<ImportContentRef, { kind: 'existing' }>;
@@ -141,7 +141,7 @@ export class ImportPreviewService {
           );
         }
       } catch (error) {
-        preview.failures.push(error instanceof Error ? error.message : String(error));
+        preview.failures.push(serializeImportError(error, 'PREVIEW_READ_FAILED'));
       }
     }
     for (const id of sourceIds) {

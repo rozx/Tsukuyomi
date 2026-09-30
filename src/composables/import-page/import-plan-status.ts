@@ -2,6 +2,8 @@
  * 导入方案的整体状态：决定方案页头部的状态标签、说明，以及能否生成或确认导入。
  */
 import type { ImportPlan } from 'src/models/import';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 
 export type ImportPlanStatusKind =
   | 'none'
@@ -30,50 +32,54 @@ interface StatusInput {
   applied: boolean;
   /** 不能生成或确认的原因（运行中、等待回答），空串表示不受阻。 */
   blocked: string;
+  /** 状态文字的界面语言，缺省为简中。 */
+  locale?: AppLocale;
 }
 
 type Base = Omit<ImportPlanStatus, 'canPreview' | 'canApply'>;
 
 function describePlan(plan: ImportPlan, input: StatusInput): Base {
+  const t = (key: Parameters<typeof translateText>[1], values?: Record<string, number>) =>
+    translateText(input.locale ?? 'zh-CN', key, values);
   const pending =
     plan.conflicts.length + (plan.replacements ?? []).filter((entry) => !entry.confirmed).length;
   if (input.applied)
     return {
       kind: 'applied',
-      label: '已导入',
+      label: t('importUi.planStatus.applied'),
       severity: 'success',
-      message: '这个方案已写入书库。书籍没有后续修改前，可以在下方导入记录中撤销。',
+      message: t('importUi.planStatus.appliedMessage'),
       pending,
     };
   if (plan.draftRevision !== input.draftRevision)
     return {
       kind: 'stale',
-      label: '已过时',
+      label: t('importUi.planStatus.stale'),
       severity: 'warn',
-      message: '草稿在生成方案后又有修改，请重新生成方案再确认。',
+      message: t('importUi.planStatus.staleMessage'),
       pending,
     };
   if (pending)
     return {
       kind: 'conflicts',
-      label: `待处理 ${pending} 项`,
+      label: t('importUi.planStatus.conflicts', { count: pending }),
       severity: 'warn',
-      message: '处理下方的待处理项后才能导入，每次处理都会更新草稿并重新生成方案。',
+      message: t('importUi.planStatus.conflictsMessage'),
       pending,
     };
   if (plan.summary && !plan.summary.hasChanges)
     return {
       kind: 'unchanged',
-      label: '无变化',
+      label: t('importUi.planStatus.unchanged'),
       severity: 'secondary',
-      message: '方案与书库现状一致，没有需要写入的内容。',
+      message: t('importUi.planStatus.unchangedMessage'),
       pending,
     };
   return {
     kind: 'ready',
-    label: '可以导入',
+    label: t('importUi.planStatus.ready'),
     severity: 'success',
-    message: '检查下方的变化，确认无误后导入。确认前不会写入书库。',
+    message: t('importUi.planStatus.readyMessage'),
     pending,
   };
 }
@@ -83,9 +89,10 @@ export function importPlanStatus(input: StatusInput): ImportPlanStatus {
   if (!input.plan)
     return {
       kind: 'none',
-      label: '尚未生成',
+      label: translateText(input.locale ?? 'zh-CN', 'importUi.planStatus.none'),
       severity: 'secondary',
-      message: input.blocked || '整理好草稿后生成方案，检查实际变化再决定是否导入。',
+      message:
+        input.blocked || translateText(input.locale ?? 'zh-CN', 'importUi.planStatus.noneMessage'),
       pending: 0,
       canPreview,
       canApply: false,

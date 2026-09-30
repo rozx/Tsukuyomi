@@ -27,7 +27,7 @@ function createImportPage() {
   const ready = ref(false);
   const selectedChapterId = ref<string | null>(null);
   const preview = ref<ImportChapterPreview | null>(null);
-  const previewError = ref<string | null>(null);
+  const previewError = ref<ImportNotice | null>(null);
   const previewLoading = ref(false);
   const selectedSourceId = ref<string | null>(null);
   const sourceText = ref<{ sourceId: string; text: string; nextOffset?: number } | null>(null);
@@ -95,7 +95,7 @@ function createImportPage() {
     } catch (error) {
       if (token === previewToken) {
         preview.value = null;
-        previewError.value = error instanceof Error ? error.message : String(error);
+        previewError.value = serializeImportError(error, 'PREVIEW_FAILED');
       }
     } finally {
       if (token === previewToken) previewLoading.value = false;
