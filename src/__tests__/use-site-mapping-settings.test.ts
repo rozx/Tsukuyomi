@@ -8,6 +8,7 @@ import { createSiteMappingSettingsContext } from '../composables/settings/useSit
 // handleEditMappingFailure）与 Firecrawl 选项 / 平台生效规则。
 
 interface MockStore {
+  uiLocale: 'zh-CN' | 'zh-TW' | 'en-US';
   proxyList: unknown[];
   proxySiteMapping: Record<string, { enabled: boolean; proxies: string[] }>;
   firecrawlFallbackEnabled: boolean;
@@ -27,6 +28,7 @@ let toastAdd: ReturnType<typeof vi.fn>;
 
 function makeStore(): MockStore {
   return {
+    uiLocale: 'zh-CN',
     proxyList: [],
     proxySiteMapping: { 'a.com': { enabled: true, proxies: ['p1', 'p2'] } },
     firecrawlFallbackEnabled: true,
@@ -155,6 +157,17 @@ describe('useSiteMappingSettings — Firecrawl 选项与平台规则', () => {
     expect(ctx.mappingTagSeverity(true, CORS)).toBe('secondary');
     expect(ctx.mappingTagTitle(CORS)).toContain('不生效');
     expect(ctx.mappingTagSeverity(true, 'firecrawl')).not.toBe('secondary');
+  });
+
+  it('选项说明与提示跟随界面语言', () => {
+    (window as unknown as { electronAPI?: unknown }).electronAPI = { isElectron: true };
+    store.uiLocale = 'en-US';
+    store.proxyList = [{ id: 'rozx.moe', name: 'CORS Tsukuyomi', url: CORS }];
+    const ctx = createSiteMappingSettingsContext();
+    expect(ctx.mappingOptions.value[0]?.description).toBe(
+      'Fetch through Firecrawl (uses Firecrawl credits)',
+    );
+    expect(ctx.mappingOptions.value[1]?.description).toBe('Not used on desktop; web app only');
   });
 
   it('自动添加映射在 Firecrawl 回退关闭时禁用', () => {

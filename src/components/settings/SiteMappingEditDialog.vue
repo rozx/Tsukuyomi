@@ -8,6 +8,9 @@ import ToggleSwitch from 'primevue/toggleswitch';
 import Tag from 'primevue/tag';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { injectSiteMappingSettings } from 'src/composables/settings/useSiteMappingSettings';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const s = injectSiteMappingSettings();
 </script>
@@ -15,30 +18,35 @@ const s = injectSiteMappingSettings();
 <template>
   <AdaptiveDialog
     :visible="s.showEditSiteMappingDialog.value"
-    header="编辑网站映射"
+    :header="t('settingsUi.sites.editTitle')"
     desktop-width="min(700px, 94vw)"
     eyebrow="MAPPING"
-    @update:visible="(next) => { if (!next) s.cancelEditSiteMapping(); }"
+    @update:visible="
+      (next) => {
+        if (!next) s.cancelEditSiteMapping();
+      }
+    "
   >
     <div v-if="s.editingSiteMapping.value" class="space-y-4">
       <div>
         <p class="text-sm text-moon/80 mb-2">
-          网站：<span class="font-medium">{{ s.editingSiteMapping.value.site }}</span>
+          {{ t('settingsUi.sites.siteLabel')
+          }}<span class="font-medium">{{ s.editingSiteMapping.value.site }}</span>
         </p>
       </div>
 
       <div class="flex items-center justify-between">
-        <label class="text-xs text-moon/80">启用此映射规则</label>
+        <label class="text-xs text-moon/80">{{ t('settingsUi.sites.ruleEnabled') }}</label>
         <ToggleSwitch v-model="s.enabledForEdit.value" />
       </div>
 
       <div class="border-t border-moon/20 pt-3">
         <div class="flex items-center justify-between mb-3">
-          <h4 class="text-sm font-medium text-moon/90">已选择（按顺序使用）</h4>
+          <h4 class="text-sm font-medium text-moon/90">{{ t('settingsUi.sites.selected') }}</h4>
           <span class="text-xs text-moon/60">{{ s.selectedProxiesForEdit.value.length }}/3</span>
         </div>
         <div v-if="s.hasSelectedProxies.value" class="text-xs text-moon/60 italic mb-3">
-          暂无条目，请从下方添加（最多 3 个）
+          {{ t('settingsUi.sites.noEntries') }}
         </div>
         <div v-else class="space-y-2 mb-3">
           <div
@@ -63,7 +71,7 @@ const s = injectSiteMappingSettings();
                 text
                 rounded
                 :disabled="index === 0"
-                title="上移"
+                :title="t('settingsUi.sites.moveUp')"
                 @click="s.moveProxyUp(index)"
               />
               <Button
@@ -73,7 +81,7 @@ const s = injectSiteMappingSettings();
                 text
                 rounded
                 :disabled="index === s.selectedProxiesForEdit.value.length - 1"
-                title="下移"
+                :title="t('settingsUi.sites.moveDown')"
                 @click="s.moveProxyDown(index)"
               />
               <Button
@@ -82,7 +90,7 @@ const s = injectSiteMappingSettings();
                 severity="danger"
                 text
                 rounded
-                title="移除"
+                :title="t('settingsUi.sites.remove')"
                 @click="s.removeProxyFromMapping(proxyUrl)"
               />
             </div>
@@ -91,8 +99,10 @@ const s = injectSiteMappingSettings();
       </div>
 
       <div class="border-t border-moon/20 pt-3">
-        <h4 class="text-sm font-medium text-moon/90 mb-3">可添加</h4>
-        <div v-if="s.hasAvailableProxies.value" class="text-xs text-moon/60 italic">已全部添加</div>
+        <h4 class="text-sm font-medium text-moon/90 mb-3">{{ t('settingsUi.sites.available') }}</h4>
+        <div v-if="s.hasAvailableProxies.value" class="text-xs text-moon/60 italic">
+          {{ t('settingsUi.sites.allAdded') }}
+        </div>
         <div v-else class="space-y-2">
           <div
             v-for="proxy in s.availableProxiesForEdit.value"
@@ -101,7 +111,9 @@ const s = injectSiteMappingSettings();
           >
             <div class="flex-1">
               <div class="text-sm font-medium">{{ proxy.name }}</div>
-              <div v-if="proxy.description" class="text-xs text-moon/60">{{ proxy.description }}</div>
+              <div v-if="proxy.description" class="text-xs text-moon/60">
+                {{ proxy.description }}
+              </div>
               <div class="text-xs text-moon/50 mt-1 break-all">{{ proxy.url }}</div>
             </div>
             <Button
@@ -110,7 +122,7 @@ const s = injectSiteMappingSettings();
               severity="success"
               text
               rounded
-              :title="`添加 ${proxy.name}`"
+              :title="t('settingsUi.sites.addEntry', { name: proxy.name })"
               :disabled="s.selectedProxiesFull.value"
               @click="s.addProxyToMapping(proxy.url)"
             />
@@ -119,8 +131,17 @@ const s = injectSiteMappingSettings();
       </div>
 
       <div class="flex justify-end gap-2 pt-3 border-t border-moon/20">
-        <Button label="取消" size="small" text @click="s.cancelEditSiteMapping" />
-        <Button label="保存" size="small" @click="s.confirmEditSiteMapping" />
+        <Button
+          :label="t('settingsUi.common.cancel')"
+          size="small"
+          text
+          @click="s.cancelEditSiteMapping"
+        />
+        <Button
+          :label="t('settingsUi.common.save')"
+          size="small"
+          @click="s.confirmEditSiteMapping"
+        />
       </div>
     </div>
   </AdaptiveDialog>

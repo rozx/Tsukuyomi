@@ -12,6 +12,9 @@ import ProxyOptionLabel from './ProxyOptionLabel.vue';
 import Tag from 'primevue/tag';
 import { provideSiteMappingSettings } from 'src/composables/settings/useSiteMappingSettings';
 import SiteMappingEditDialog from './SiteMappingEditDialog.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const s = provideSiteMappingSettings();
 </script>
@@ -19,17 +22,17 @@ const s = provideSiteMappingSettings();
 <template>
   <div class="site-mapping-tab p-4 space-y-3">
     <div>
-      <h3 class="text-sm font-medium text-moon/90 mb-1">网站映射</h3>
+      <h3 class="text-sm font-medium text-moon/90 mb-1">{{ t('settingsUi.sites.title') }}</h3>
       <p class="text-xs text-moon/70">
-        为特定网站指定抓取方式，按顺序优先使用。
-        <template v-if="s.electron">桌面端直连网站，只有 Firecrawl 条目生效。</template>
-        <template v-else>可选 CORS 代理或 Firecrawl。</template>
+        {{ t('settingsUi.sites.description') }}
+        <template v-if="s.electron">{{ t('settingsUi.sites.electronHint') }}</template>
+        <template v-else>{{ t('settingsUi.sites.webHint') }}</template>
       </p>
     </div>
 
     <div class="space-y-1">
       <div class="site-mapping-toggle-row flex items-center justify-between gap-3">
-        <label class="text-xs text-moon/80">仅 Firecrawl 可用时自动添加映射</label>
+        <label class="text-xs text-moon/80">{{ t('settingsUi.sites.autoAdd') }}</label>
         <ToggleSwitch
           :model-value="s.autoAddMapping.value"
           :disabled="s.autoAddDisabled.value"
@@ -37,11 +40,10 @@ const s = provideSiteMappingSettings();
         />
       </div>
       <p v-if="s.autoAddDisabled.value" class="text-xs text-amber-400">
-        需要先在「API Keys」中启用 Firecrawl 回退
+        {{ t('settingsUi.sites.autoAddDisabled') }}
       </p>
       <p v-else class="text-xs text-moon/60">
-        网站无法直接或经代理访问、改由 Firecrawl 抓取成功时，自动把 Firecrawl 置顶记入该网站的映射，之后直接使用
-        Firecrawl。
+        {{ t('settingsUi.sites.autoAddHint') }}
       </p>
     </div>
 
@@ -49,7 +51,7 @@ const s = provideSiteMappingSettings();
       <div class="flex flex-col gap-2 sm:flex-row">
         <InputText
           v-model="s.newSiteInput.value"
-          placeholder="网站域名或URL（如：kakuyomu.jp 或 https://www.kakuyomu.jp）"
+          :placeholder="t('settingsUi.sites.domainPlaceholder')"
           class="w-full sm:flex-1"
         />
         <Select
@@ -57,7 +59,7 @@ const s = provideSiteMappingSettings();
           :options="s.mappingOptions.value"
           option-label="name"
           option-value="id"
-          placeholder="选择抓取方式"
+          :placeholder="t('settingsUi.sites.methodPlaceholder')"
           class="w-full sm:flex-1"
         >
           <template #option="slotProps">
@@ -68,7 +70,7 @@ const s = provideSiteMappingSettings();
           </template>
         </Select>
         <Button
-          label="添加"
+          :label="t('settingsUi.sites.add')"
           size="small"
           class="w-full sm:w-auto"
           :disabled="s.addMappingDisabled.value"
@@ -86,20 +88,27 @@ const s = provideSiteMappingSettings();
           class="proxy-data-table text-xs"
           tableStyle="min-width: 38rem"
         >
-          <Column field="site" header="网站" class="text-xs" style="width: 150px">
+          <Column
+            field="site"
+            :header="t('settingsUi.sites.site')"
+            class="text-xs"
+            style="width: 150px"
+          >
             <template #body="{ data }">
               <span class="font-medium">{{ data.site }}</span>
             </template>
           </Column>
-          <Column header="启用" class="text-xs" style="width: 80px">
+          <Column :header="t('settingsUi.sites.enabled')" class="text-xs" style="width: 80px">
             <template #body="{ data }">
               <ToggleSwitch
                 :model-value="data.enabled"
-                @update:model-value="(value: boolean) => s.toggleSiteMappingEnabled(data.site, value)"
+                @update:model-value="
+                  (value: boolean) => s.toggleSiteMappingEnabled(data.site, value)
+                "
               />
             </template>
           </Column>
-          <Column field="proxies" header="抓取方式（按顺序）" class="text-xs">
+          <Column field="proxies" :header="t('settingsUi.sites.methods')" class="text-xs">
             <template #body="{ data }">
               <div class="flex flex-wrap gap-1">
                 <Tag
@@ -113,7 +122,7 @@ const s = provideSiteMappingSettings();
               </div>
             </template>
           </Column>
-          <Column header="操作" class="text-xs" style="width: 120px">
+          <Column :header="t('settingsUi.sites.actions')" class="text-xs" style="width: 120px">
             <template #body="{ data }">
               <div class="flex gap-1 flex-nowrap justify-start sm:justify-end">
                 <Button
@@ -122,7 +131,7 @@ const s = provideSiteMappingSettings();
                   severity="secondary"
                   text
                   rounded
-                  title="编辑映射"
+                  :title="t('settingsUi.sites.edit')"
                   @click="s.openEditSiteMappingDialog(data.site)"
                 />
                 <Button
@@ -131,8 +140,8 @@ const s = provideSiteMappingSettings();
                   severity="danger"
                   text
                   rounded
-                  aria-label="删除映射"
-                  title="删除映射"
+                  :aria-label="t('settingsUi.sites.delete')"
+                  :title="t('settingsUi.sites.delete')"
                   @click="s.deleteSiteMapping(data.site)"
                 />
               </div>
@@ -142,7 +151,7 @@ const s = provideSiteMappingSettings();
       </div>
     </div>
     <p v-else class="text-xs text-moon/60 italic">
-      暂无网站映射。开启自动添加后，只能经 Firecrawl 访问的网站会自动记录。
+      {{ t('settingsUi.sites.empty') }}
     </p>
 
     <SiteMappingEditDialog />

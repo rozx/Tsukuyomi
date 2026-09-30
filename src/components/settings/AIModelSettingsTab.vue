@@ -3,18 +3,20 @@ import Select from 'primevue/select';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useSettingsStore } from 'src/stores/settings';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 
 const aiModelsStore = useAIModelsStore();
 const settingsStore = useSettingsStore();
+const { t } = useI18n();
 
-// 任务配置（使用集中化的标签常量）
-const taskLabels: Record<keyof AIModelDefaultTasks, string> = {
-  translation: TASK_TYPE_LABELS.translation,
-  proofreading: '校对和润色', // proofreading 任务用于校对和润色
-  termsTranslation: TASK_TYPE_LABELS.termsTranslation,
-  assistant: TASK_TYPE_LABELS.assistant,
-};
+// 任务标签随界面语言变化（proofreading 任务同时用于校对和润色）
+const taskLabels = computed<Record<keyof AIModelDefaultTasks, string>>(() => ({
+  translation: t('aiUi.translation'),
+  proofreading: t('aiUi.proofreadingCombined'),
+  termsTranslation: t('aiUi.termsTranslation'),
+  assistant: t('aiUi.assistant'),
+}));
 
 // 获取指定任务的可用模型选项（只显示该任务 isDefault 中 enabled 为 true 的模型）
 const getModelOptionsForTask = (task: keyof AIModelDefaultTasks) => {
@@ -22,7 +24,7 @@ const getModelOptionsForTask = (task: keyof AIModelDefaultTasks) => {
   // 过滤出支持该任务的模型（isDefault[task].enabled === true）
   const availableModels = enabledModels.filter((model) => model.isDefault[task]?.enabled === true);
   return [
-    { label: '未设置', value: null },
+    { label: t('settingsUi.models.unset'), value: null },
     ...availableModels.map((model) => ({
       label: model.name,
       value: model.id,
@@ -55,9 +57,9 @@ const setTaskModelId = (task: keyof AIModelDefaultTasks, modelId: string | null)
 <template>
   <div class="p-4 space-y-3">
     <div>
-      <h3 class="text-sm font-medium text-moon/90 mb-1">AI 模型默认设置</h3>
+      <h3 class="text-sm font-medium text-moon/90 mb-1">{{ t('settingsUi.models.title') }}</h3>
       <p class="text-xs text-moon/70">
-        为不同任务选择默认使用的 AI 模型，这些设置会随导入/导出一起保存
+        {{ t('settingsUi.models.description') }}
       </p>
     </div>
     <div class="space-y-3">
@@ -69,7 +71,7 @@ const setTaskModelId = (task: keyof AIModelDefaultTasks, modelId: string | null)
             :options="getModelOptionsForTask(task)"
             option-label="label"
             option-value="value"
-            placeholder="选择模型"
+            :placeholder="t('settingsUi.models.select')"
             class="w-full"
             @update:model-value="(value) => setTaskModelId(task, value)"
           />

@@ -3,6 +3,7 @@ import { describe, it } from 'bun:test';
 import './setup';
 import { DesktopRestartGuard, desktopRestartGuard } from '../services/desktop-restart-guard';
 import { BookExecutionGuard } from '../services/book-execution-guard';
+import { LocalizedError } from '../utils/localized-error';
 
 describe('桌面更新重启保护', () => {
   it('未完成 action 阻止重启，准备期间不允许启动新工作，取消后恢复', async () => {
@@ -14,6 +15,18 @@ describe('桌面更新重启保护', () => {
     expect(() => guard.beginAction()).toThrow('重启');
     guard.release();
     guard.beginAction()();
+  });
+
+  it('拒绝原因带稳定错误码，并可按界面语言显示', async () => {
+    const guard = new DesktopRestartGuard();
+    const done = guard.beginAction();
+    const failure = await guard.prepare(() => Promise.resolve()).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(LocalizedError);
+    expect((failure as LocalizedError).code).toBe('RESTART_PENDING_WORK');
+    expect((failure as LocalizedError).messageFor('en-US')).toBe(
+      'Some actions or saves have not finished. Try again later',
+    );
+    done();
   });
 
   it('保存检查失败或超时取消后不能继续确认，且解除冻结', async () => {

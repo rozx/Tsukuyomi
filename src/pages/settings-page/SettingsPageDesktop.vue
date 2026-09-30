@@ -7,21 +7,28 @@ import {
   getSettingsPanelComponent,
   injectSettingsPage,
 } from 'src/composables/settings-page/useSettingsPage';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const ctx = injectSettingsPage();
 
 const currentTabLabel = computed(
-  () => ctx.tabs.value.find((tab) => tab.value === ctx.activeTab.value)?.label ?? 'AI 模型',
+  () =>
+    ctx.tabs.value.find((tab) => tab.value === ctx.activeTab.value)?.label ??
+    t('settings.tabs.models'),
 );
 
-const pageSummary = computed(
-  () => `当前位于“${currentTabLabel.value}”分区，可在桌面工具页中连续浏览与调整设置。`,
-);
+const pageSummary = computed(() => t('settingsUi.page.summary', { tab: currentTabLabel.value }));
 
 const settingsMetrics = computed(() => [
-  { label: '设置分区', value: ctx.tabs.value.length },
-  { label: '当前分区', value: currentTabLabel.value, wide: true },
-  { label: '运行环境', value: ctx.isElectron.value ? 'Electron' : 'Web', wide: true },
+  { label: t('settingsUi.page.sections'), value: ctx.tabs.value.length },
+  { label: t('settingsUi.page.current'), value: currentTabLabel.value, wide: true },
+  {
+    label: t('settingsUi.page.environment'),
+    value: ctx.isElectron.value ? 'Electron' : 'Web',
+    wide: true,
+  },
 ]);
 
 const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.value, value);
@@ -29,19 +36,23 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
 
 <template>
   <div class="desktop-settings-page">
-    <nav class="desktop-settings-crumbs" aria-label="返回">
+    <nav class="desktop-settings-crumbs" :aria-label="t('settingsUi.page.back')">
       <button
         type="button"
         class="settings-back-chip"
-        aria-label="返回"
+        :aria-label="t('settingsUi.page.back')"
         @click="ctx.goBack"
       >
         <i class="pi pi-chevron-left" aria-hidden="true" />
-        <span>返回</span>
+        <span>{{ t('settingsUi.page.back') }}</span>
       </button>
     </nav>
 
-    <DesktopWorkbenchHeader eyebrow="Settings" title="设置工作台" :description="pageSummary">
+    <DesktopWorkbenchHeader
+      eyebrow="Settings"
+      :title="t('settingsUi.page.workbench')"
+      :description="pageSummary"
+    >
       <template #metrics>
         <DesktopWorkbenchMetrics :items="settingsMetrics" />
       </template>

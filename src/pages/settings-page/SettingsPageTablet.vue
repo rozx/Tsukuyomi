@@ -3,6 +3,9 @@ import {
   getSettingsPanelComponent,
   injectSettingsPage,
 } from 'src/composables/settings-page/useSettingsPage';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const ctx = injectSettingsPage();
 
@@ -16,12 +19,12 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
       <header class="st-head">
         <div>
           <div class="st-eyebrow">SETTINGS</div>
-          <h1 class="st-title">设置</h1>
+          <h1 class="st-title">{{ t('settingsUi.page.title') }}</h1>
         </div>
         <button
           type="button"
           class="st-close"
-          aria-label="返回上一页"
+          :aria-label="t('settingsUi.page.backPrevious')"
           @click="ctx.goBack"
         >
           <i class="pi pi-times" aria-hidden="true" />
@@ -59,7 +62,11 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
   justify-content: center;
   align-items: center;
   overflow: hidden;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 .st-scrim {

@@ -11,6 +11,9 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import { SettingsService } from 'src/services/settings-service';
 import type { ImportResult } from 'src/models/settings';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 type ImportedSettings = NonNullable<ImportResult['data']>;
 
@@ -47,15 +50,15 @@ const exportSettings = async () => {
   if (result.success) {
     toast.add({
       severity: 'success',
-      summary: '导出成功',
-      detail: result.message || '设置已成功导出到本地文件',
+      summary: t('settingsUi.importExport.exported'),
+      detail: result.message || t('settingsUi.importExport.exportedDetail'),
       life: 3000,
     });
   } else {
     toast.add({
       severity: 'error',
-      summary: '导出失败',
-      detail: result.error || '导出设置时发生未知错误',
+      summary: t('settingsUi.importExport.exportFailed'),
+      detail: result.error || t('settingsUi.importExport.exportFailedDetail'),
       life: 5000,
     });
   }
@@ -75,15 +78,15 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     await applyImportedData(result.data);
     toast.add({
       severity: 'success',
-      summary: '导入成功',
-      detail: result.message || '设置已成功导入',
+      summary: t('settingsUi.importExport.imported'),
+      detail: result.message || t('settingsUi.importExport.importedDetail'),
       life: 3000,
     });
   } else {
     toast.add({
       severity: 'error',
-      summary: '导入失败',
-      detail: result.error || '导入设置时发生未知错误',
+      summary: t('settingsUi.importExport.importFailed'),
+      detail: result.error || t('settingsUi.importExport.importFailedDetail'),
       life: 5000,
     });
   }
@@ -96,14 +99,15 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     <div class="p-4 rounded-lg border border-white/10 bg-white/5">
       <div class="space-y-3">
         <div>
-          <h3 class="text-sm font-medium text-moon/90 mb-1">导入资料</h3>
+          <h3 class="text-sm font-medium text-moon/90 mb-1">
+            {{ t('settingsUi.importExport.importTitle') }}
+          </h3>
           <p class="text-xs text-moon/70">
-            从 JSON 或 TXT 文件导入设置，将覆盖当前的 AI
-            模型配置、书籍数据、封面历史、Memory、同步设置和应用设置
+            {{ t('settingsUi.importExport.importHint') }}
           </p>
         </div>
         <Button
-          label="导入资料"
+          :label="t('settingsUi.importExport.importTitle')"
           icon="pi pi-upload"
           class="p-button-primary w-full"
           @click="importSettings"
@@ -115,14 +119,15 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     <div class="p-4 rounded-lg border border-white/10 bg-white/5">
       <div class="space-y-3">
         <div>
-          <h3 class="text-sm font-medium text-moon/90 mb-1">导出资料</h3>
+          <h3 class="text-sm font-medium text-moon/90 mb-1">
+            {{ t('settingsUi.importExport.exportTitle') }}
+          </h3>
           <p class="text-xs text-moon/70">
-            将当前设置（包括 AI 模型配置、书籍数据、封面历史、Memory、同步设置和应用设置）导出为
-            JSON 文件
+            {{ t('settingsUi.importExport.exportHint') }}
           </p>
         </div>
         <Button
-          label="导出资料"
+          :label="t('settingsUi.importExport.exportTitle')"
           icon="pi pi-download"
           class="p-button-outlined w-full"
           @click="exportSettings"
