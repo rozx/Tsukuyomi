@@ -42,6 +42,9 @@ export default {
       ownerSeparator: '、',
       storageUnavailable: '無法存取目前書庫，執行未開始',
       revisionOverflow: '書籍修改序號無效或已達上限',
+      assistantOwner: '月詠助手（工作階段 {session}）',
+      assistantOwnerDefault: '月詠助手',
+      ownerList: '{owners}',
       invalidNotice: '書庫通知身分無效',
     },
     export: {
@@ -144,6 +147,7 @@ export default {
       changeVolume: '變更目標卷',
       restoreVolume: '恢復推斷的位置',
       newVolumePlaceholder: '新卷名稱',
+      quotedName: '「{name}」',
       useNewVolume: '使用新卷',
       newChaptersTitle: '新章節',
       previewAria: '預覽{title}',

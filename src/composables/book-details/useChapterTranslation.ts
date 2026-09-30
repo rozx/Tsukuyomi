@@ -109,7 +109,7 @@ export function useChapterTranslation(
       try {
         await BookExecutionGuard.write(
           bookId,
-          { label, chapterId },
+          { label: translateText('zh-CN', labelKey), labelKey, chapterId },
           async () => {
             if (book.value?.id !== bookId || selectedChapter.value?.id !== chapterId) return;
             await execute(languages, ...args);

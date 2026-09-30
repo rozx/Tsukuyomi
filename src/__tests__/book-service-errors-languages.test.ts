@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
-import { BookExecutionGuard } from '../services/book-execution-guard';
+import { BookExecutionGuard, executionOwnersError } from '../services/book-execution-guard';
+import { runAssistantBookExecution } from '../services/ai/tasks/utils/assistant-book-execution';
+import { BookSyncError } from '../services/book-sync/errors';
+import { useBooksStore } from '../stores/books';
 import { bumpBookRevision } from '../services/book-revision';
 import { ChapterService } from '../services/chapter-service';
 import { CoverService } from '../services/cover-service';
@@ -8,7 +11,7 @@ import { LocalizedError, localizedErrorMessage } from '../utils/localized-error'
 import { deferred, webLocksFixture } from './web-locks-fixture';
 import type { Chapter } from '../models/novel';
 
-const CJK = /[぀-ヿ㐀-鿿]/;
+const CJK = /[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]/;
 
 async function rejection(promise: Promise<unknown>): Promise<LocalizedError> {
   const error = await promise.then(
@@ -50,6 +53,55 @@ describe('书籍执行占用错误', () => {
     );
     ending.resolve();
     await Promise.all([writing, other]);
+  });
+
+  it('助手占用者带结构化身份：简中与现状一致，英文不含中文', async () => {
+    vi.stubGlobal('navigator', { locks: webLocksFixture() });
+    await useBooksStore().addBook({
+      id: 'book',
+      title: 'Book',
+      createdAt: new Date(),
+      lastEdited: new Date(),
+    });
+    const started = deferred();
+    const ending = deferred();
+    const running = runAssistantBookExecution(
+      { currentBookId: 'book', currentChapterId: null },
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'create_term',
+            description: '',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+      ],
+      async () => {
+        started.resolve();
+        await ending.promise;
+      },
+      's1',
+    );
+    await started.promise;
+    const error = await rejection(BookExecutionGuard.commit('book', () => Promise.resolve()));
+    expect(error.message).toBe('TARGET_BUSY: 月詠助手（会话 s1），请等待执行和保存结束');
+    expect(error.messageFor('en-US')).toBe(
+      'Tsukuyomi assistant (session s1): wait until they finish running and saving',
+    );
+    expect(localizedErrorMessage(error, 'zh-TW', 'bookUi.chapterTask.unknownError')).toBe(
+      '月詠助手（工作階段 s1），請等待執行和儲存結束',
+    );
+    // 书籍同步只展示占用者列表，同样按界面语言渲染
+    const syncError = new BookSyncError(
+      'TARGET_BUSY',
+      executionOwnersError(await BookExecutionGuard.occupants('book')),
+    );
+    expect(syncError.code).toBe('TARGET_BUSY');
+    expect(syncError.message).toBe('TARGET_BUSY: 月詠助手（会话 s1）');
+    expect(syncError.messageFor('en-US')).toBe('Tsukuyomi assistant (session s1)');
+    ending.resolve();
+    await running;
   });
 
   it('没有 Web Locks 时导入提交错误可渲染为英文', async () => {

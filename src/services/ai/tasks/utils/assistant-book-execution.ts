@@ -1,6 +1,7 @@
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { BookExecutionGuard } from 'src/services/book-execution-guard';
 import { useBooksStore } from 'src/stores/books';
+import { translateText } from 'src/i18n/translate';
 
 const BOOK_WRITERS = new Set([
   'create_term',
@@ -34,7 +35,19 @@ export function runAssistantBookExecution<T>(
   return BookExecutionGuard.write(
     bookId,
     {
-      label: sessionId ? `月詠助手（会话 ${sessionId}）` : '月詠助手',
+      // 结构化身份：占用提示在各页面按界面语言渲染，label 为简中回退
+      ...(sessionId
+        ? {
+            label: translateText('zh-CN', 'bookUi.execution.assistantOwner', {
+              session: sessionId,
+            }),
+            labelKey: 'bookUi.execution.assistantOwner' as const,
+            labelValues: { session: sessionId },
+          }
+        : {
+            label: translateText('zh-CN', 'bookUi.execution.assistantOwnerDefault'),
+            labelKey: 'bookUi.execution.assistantOwnerDefault' as const,
+          }),
       ...(context.currentChapterId ? { chapterId: context.currentChapterId } : {}),
     },
     run,

@@ -43,6 +43,9 @@ export default {
       ownerSeparator: ', ',
       storageUnavailable: 'The library cannot be accessed; nothing was run',
       revisionOverflow: 'The book revision number is invalid or has reached its limit',
+      assistantOwner: 'Tsukuyomi assistant (session {session})',
+      assistantOwnerDefault: 'Tsukuyomi assistant',
+      ownerList: '{owners}',
       invalidNotice: 'The library notification has an invalid identity',
     },
     export: {
@@ -159,6 +162,7 @@ export default {
       changeVolume: 'Change target volume',
       restoreVolume: 'Restore the inferred position',
       newVolumePlaceholder: 'New volume name',
+      quotedName: ' “{name}”',
       useNewVolume: 'Use new volume',
       newChaptersTitle: 'New chapters',
       previewAria: 'Preview {title}',

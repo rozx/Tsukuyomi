@@ -23,7 +23,7 @@ import { BookSyncReplay, FIRECRAWL_QUOTA_CODE } from './replay';
 import { getCachedRemoteChapter, setCachedRemoteChapter } from './remote-chapter-cache';
 import { BookSyncError } from './errors';
 import { compareChapter, inferNewChapters, linkManualChapters } from './changes';
-import { BookExecutionGuard } from 'src/services/book-execution-guard';
+import { BookExecutionGuard, executionOwnersError } from 'src/services/book-execution-guard';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import {
   commitSyncChanges,
@@ -77,8 +77,7 @@ const invalidRecipeCodes = new Set([
 
 async function assertAvailable(bookId: string): Promise<void> {
   const occupants = await BookExecutionGuard.occupants(bookId);
-  if (occupants.length)
-    throw new BookSyncError('TARGET_BUSY', occupants.map((o) => o.label).join('、'));
+  if (occupants.length) throw new BookSyncError('TARGET_BUSY', executionOwnersError(occupants));
 }
 
 /** 仅持有本次页面会话的数据；对外返回副本，避免预览组件改变提交内容。 */
