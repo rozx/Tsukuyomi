@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import { useFirecrawlKeySettings } from 'src/composables/settings/useFirecrawlKeySettings';
 import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
 import { createPinia, setActivePinia } from 'pinia';
 import { nextTick } from 'vue';
 
@@ -67,7 +68,9 @@ describe('useFirecrawlKeySettings', () => {
     s.keyInput.value = 'fc-wrong';
     await s.save();
     expect(useSettingsStore().firecrawlApiKey).toBe('fc-old');
-    expect(s.error.value).toBe('无效的 API Key');
+    expect(s.error.value).toBe(
+      translateText(useSettingsStore().uiLocale, 'settingsUi.apiKeys.invalidKey'),
+    );
   });
 
   it('网络错误：不保存并提示无法验证', async () => {
@@ -76,7 +79,9 @@ describe('useFirecrawlKeySettings', () => {
     s.keyInput.value = 'fc-abc';
     await s.save();
     expect(useSettingsStore().firecrawlApiKey).toBeUndefined();
-    expect(s.error.value).toContain('无法验证');
+    expect(s.error.value).toBe(
+      translateText(useSettingsStore().uiLocale, 'settingsUi.apiKeys.verifyFailed'),
+    );
   });
 
   it('清空后保存：移除 Key 且不发请求', async () => {

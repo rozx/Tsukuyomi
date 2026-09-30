@@ -2,6 +2,9 @@
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import DesktopUpdateSection from './DesktopUpdateSection.vue';
 import { APP_VERSION } from 'src/constants/version';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const version = APP_VERSION;
 const githubUrl = 'https://github.com/rozx/Tsukuyomi';
@@ -13,13 +16,13 @@ const author = 'Rozx';
   <section class="about-section">
     <AssistantAvatar :size="128" glowing class="about-avatar" />
     <h2 class="about-title">月詠 · Tsukuyomi</h2>
-    <p class="about-tagline">月之神官，伴君译笔</p>
+    <p class="about-tagline">{{ t('settingsUi.about.tagline') }}</p>
     <p class="about-version">v{{ version }}</p>
     <DesktopUpdateSection />
 
     <div class="about-meta">
       <div class="about-meta-row">
-        <span class="about-meta-label">作者</span>
+        <span class="about-meta-label">{{ t('settingsUi.about.author') }}</span>
         <a class="about-meta-link" :href="authorUrl" target="_blank" rel="noopener noreferrer">
           <i class="pi pi-user" aria-hidden="true" />
           <span>{{ author }}</span>
@@ -27,7 +30,7 @@ const author = 'Rozx';
         </a>
       </div>
       <div class="about-meta-row">
-        <span class="about-meta-label">仓库</span>
+        <span class="about-meta-label">{{ t('settingsUi.about.repository') }}</span>
         <a class="about-meta-link" :href="githubUrl" target="_blank" rel="noopener noreferrer">
           <i class="pi pi-github" aria-hidden="true" />
           <span>github.com/rozx/Tsukuyomi</span>

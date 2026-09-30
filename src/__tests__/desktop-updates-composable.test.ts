@@ -1,10 +1,12 @@
 import { expect } from 'vitest';
+import { translateText } from '../i18n/translate';
 import { describe, it, mock, afterEach } from 'bun:test';
 import './setup';
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import { initializeDesktopUpdates, useDesktopUpdates } from '../composables/useDesktopUpdates';
 import { useAIProcessingStore } from '../stores/ai-processing';
+import { useSettingsStore } from '../stores/settings';
 import { desktopRestartGuard } from '../services/desktop-restart-guard';
 
 afterEach(() => {
@@ -47,7 +49,10 @@ describe('桌面更新界面桥接', () => {
         id: 'active',
         status: 'processing',
       } as (typeof ai.activeTasks)[number]);
-      await expect(prepare()).rejects.toThrow('任务');
+      // 拒绝原因按当前界面语言说明
+      await expect(prepare()).rejects.toThrow(
+        translateText(useSettingsStore(pinia).uiLocale, 'settingsUi.update.busyTasks'),
+      );
       expect(document.body.inert).toBe(false);
       expect(onState).toHaveBeenCalledTimes(1);
       await useDesktopUpdates().check();

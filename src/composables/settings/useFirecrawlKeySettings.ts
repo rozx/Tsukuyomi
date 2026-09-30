@@ -1,5 +1,7 @@
 import { computed, ref, watch } from 'vue';
 import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 
 /**
@@ -15,6 +17,9 @@ interface FirecrawlCredits {
 
 export function useFirecrawlKeySettings() {
   const settingsStore = useSettingsStore();
+  // 在组件外（测试、服务）也可调用：按当前界面语言取文案，computed 中随语言切换更新
+  const t = (key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, key, values);
 
   const keyInput = ref(settingsStore.firecrawlApiKey ?? '');
   const busy = ref(false);
@@ -40,7 +45,7 @@ export function useFirecrawlKeySettings() {
     try {
       const result = await FirecrawlClient.getCreditUsage(key);
       if (result.kind === 'invalid-key') {
-        error.value = '无效的 API Key';
+        error.value = t('settingsUi.apiKeys.invalidKey');
         return false;
       }
       credits.value = {
@@ -50,7 +55,7 @@ export function useFirecrawlKeySettings() {
       };
       return true;
     } catch {
-      error.value = '无法验证 API Key，请检查网络后重试';
+      error.value = t('settingsUi.apiKeys.verifyFailed');
       return false;
     }
   }

@@ -11,8 +11,10 @@ import { EmbeddingQueue } from 'src/services/embedding-queue';
 import type { EmbeddingStatus, EmbeddingProgressEvent } from 'src/services/embedding-service';
 import { MODEL_ID } from 'src/services/embedding-service';
 import { isMobileDevice } from 'src/utils/platform';
+import { useI18n } from 'vue-i18n';
 
 const settingsStore = useSettingsStore();
+const { t } = useI18n();
 
 const memoryInjection = computed(() => settingsStore.settings.memoryInjection);
 const enableLocalEmbedding = ref(false);
@@ -22,9 +24,7 @@ const minScoreThreshold = ref(0.38);
 
 const isMobile = computed(() => isMobileDevice());
 /** 手机端强制禁用 — 与 `utils/local-embedding` 的判定保持一致 */
-const effectiveEnableLocalEmbedding = computed(
-  () => !isMobile.value && enableLocalEmbedding.value,
-);
+const effectiveEnableLocalEmbedding = computed(() => !isMobile.value && enableLocalEmbedding.value);
 
 const embeddingStatus = ref<EmbeddingStatus>(EmbeddingService.getStatus());
 const downloadProgress = ref<number | null>(null);
@@ -42,10 +42,10 @@ watch(memoryInjection, () => syncFormState(), { deep: true });
 
 const statusLabel = computed(() => {
   const labels: Record<EmbeddingStatus, string> = {
-    idle: '未加载',
-    loading: '加载中…',
-    ready: '已就绪',
-    failed: '加载失败',
+    idle: t('settingsUi.embedding.statusIdle'),
+    loading: t('settingsUi.embedding.statusLoading'),
+    ready: t('settingsUi.embedding.statusReady'),
+    failed: t('settingsUi.embedding.statusFailed'),
   };
   return labels[embeddingStatus.value];
 });
@@ -159,7 +159,7 @@ onMounted(async () => {
   unsubscribers.push(
     EmbeddingService.addEventListener('error', (e: CustomEvent) => {
       const detail = e.detail as { error?: Error };
-      lastError.value = detail.error?.message ?? '未知错误';
+      lastError.value = detail.error?.message ?? t('settingsUi.common.unknownError');
     }),
   );
 });
@@ -180,20 +180,39 @@ const showProgressBar = computed(
   () => embeddingStatus.value === 'loading' && downloadProgress.value != null,
 );
 const progressValue = computed(() => downloadProgress.value ?? 0);
-const showError = computed(
-  () => !!lastError.value && embeddingStatus.value === 'failed',
-);
-const statusAction = computed<
-  | { label: string; icon: string; severity: 'secondary' | 'warn'; text: boolean; handler: () => void }
-  | null
->(() => {
+const showError = computed(() => !!lastError.value && embeddingStatus.value === 'failed');
+const statusAction = computed<{
+  label: string;
+  icon: string;
+  severity: 'secondary' | 'warn';
+  text: boolean;
+  handler: () => void;
+} | null>(() => {
   switch (embeddingStatus.value) {
     case 'idle':
-      return { label: '下载模型', icon: 'pi pi-download', severity: 'secondary', text: false, handler: handleDownload };
+      return {
+        label: t('settingsUi.embedding.download'),
+        icon: 'pi pi-download',
+        severity: 'secondary',
+        text: false,
+        handler: handleDownload,
+      };
     case 'failed':
-      return { label: '重试', icon: 'pi pi-refresh', severity: 'warn', text: false, handler: handleRetry };
+      return {
+        label: t('settingsUi.embedding.retry'),
+        icon: 'pi pi-refresh',
+        severity: 'warn',
+        text: false,
+        handler: handleRetry,
+      };
     case 'ready':
-      return { label: '重新加载', icon: 'pi pi-refresh', severity: 'secondary', text: true, handler: handleRetry };
+      return {
+        label: t('settingsUi.embedding.reload'),
+        icon: 'pi pi-refresh',
+        severity: 'secondary',
+        text: true,
+        handler: handleRetry,
+      };
     default:
       return null;
   }
@@ -205,36 +224,28 @@ const semanticDescClass = computed(() =>
   effectiveEnableLocalEmbedding.value ? 'text-moon/60' : 'text-moon/40',
 );
 const semanticDescription = computed(() => {
-  if (effectiveEnableLocalEmbedding.value) return '关闭后记忆打分仅用关键词和时间衰减';
-  if (isMobile.value) return '移动设备上本地嵌入被强制禁用，仅用关键词和时间衰减';
-  return '需要先在上方开启“本地嵌入”总开关';
+  if (effectiveEnableLocalEmbedding.value) return t('settingsUi.embedding.semanticOn');
+  if (isMobile.value) return t('settingsUi.embedding.semanticMobile');
+  return t('settingsUi.embedding.semanticNeedsEmbedding');
 });
 </script>
 
 <template>
   <div class="p-4 space-y-5">
     <!-- 本地嵌入总开关 -->
-    <div
-      class="p-3 rounded-lg border space-y-2"
-      :class="toggleCardClass"
-    >
+    <div class="p-3 rounded-lg border space-y-2" :class="toggleCardClass">
       <div class="flex items-start justify-between gap-3">
         <div class="flex-1 min-w-0">
-          <label
-            class="text-sm font-medium block"
-            :class="enableLabelClass"
-          >
-            启用本地嵌入
+          <label class="text-sm font-medium block" :class="enableLabelClass">
+            {{ t('settingsUi.embedding.enable') }}
           </label>
           <p class="text-xs mt-0.5" :class="enableDescClass">
             <template v-if="isMobile">
               <span class="pi pi-mobile mr-1"></span>
-              移动设备不支持本地嵌入(模型过大、WebGPU 不稳定)。手机端检索仅用关键词匹配 ——
-              向量是设备本地状态,不参与同步;在桌面端启用后也只影响桌面端自己的语义检索。
+              {{ t('settingsUi.embedding.mobileHint') }}
             </template>
             <template v-else>
-              启用后下载嵌入模型到浏览器,支持语义记忆检索与章节向量搜索;
-              关闭时仅用关键词匹配,节省 ~340–465 MB 存储。
+              {{ t('settingsUi.embedding.desktopHint') }}
             </template>
           </p>
         </div>
@@ -249,9 +260,11 @@ const semanticDescription = computed(() => {
     <!-- 嵌入模型 -->
     <div v-if="effectiveEnableLocalEmbedding" class="space-y-3">
       <div>
-        <h3 class="text-sm font-medium text-moon/90 mb-1">嵌入模型</h3>
+        <h3 class="text-sm font-medium text-moon/90 mb-1">
+          {{ t('settingsUi.embedding.modelTitle') }}
+        </h3>
         <p class="text-xs text-moon/70">
-          本地运行的嵌入模型,为下方记忆注入与章节嵌入提供向量
+          {{ t('settingsUi.embedding.modelDescription') }}
         </p>
       </div>
 
@@ -284,7 +297,7 @@ const semanticDescription = computed(() => {
         <p class="text-xs text-moon/60">
           <span class="pi pi-info-circle mr-1"></span>
           {{ MODEL_ID }}
-          (WebGPU: q4f16 ~465 MB / 无 WebGPU 回落 WASM: int8 ~340 MB,首次使用需下载到浏览器缓存)
+          {{ t('settingsUi.embedding.modelSize') }}
         </p>
       </div>
     </div>
@@ -292,9 +305,11 @@ const semanticDescription = computed(() => {
     <!-- 记忆注入 -->
     <div class="space-y-3">
       <div>
-        <h3 class="text-sm font-medium text-moon/90 mb-1">记忆注入</h3>
+        <h3 class="text-sm font-medium text-moon/90 mb-1">
+          {{ t('settingsUi.embedding.memoryTitle') }}
+        </h3>
         <p class="text-xs text-moon/70">
-          翻译时自动选择最相关的记忆作为上下文
+          {{ t('settingsUi.embedding.memoryDescription') }}
         </p>
       </div>
 
@@ -302,7 +317,7 @@ const semanticDescription = computed(() => {
         <!-- 字符预算 -->
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
-            <label class="text-xs text-moon/80">字符预算</label>
+            <label class="text-xs text-moon/80">{{ t('settingsUi.embedding.charBudget') }}</label>
             <span class="text-xs text-moon/60 tabular-nums">{{ charBudget }}</span>
           </div>
           <Slider
@@ -322,8 +337,10 @@ const semanticDescription = computed(() => {
         <!-- 最低分数阈值 -->
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
-            <label class="text-xs text-moon/80">最低相关度</label>
-            <span class="text-xs text-moon/60 tabular-nums">{{ minScoreThreshold.toFixed(2) }}</span>
+            <label class="text-xs text-moon/80">{{ t('settingsUi.embedding.minScore') }}</label>
+            <span class="text-xs text-moon/60 tabular-nums">{{
+              minScoreThreshold.toFixed(2)
+            }}</span>
           </div>
           <Slider
             v-model="minScoreThreshold"
@@ -334,7 +351,7 @@ const semanticDescription = computed(() => {
             @slideend="updateMinScoreThreshold($event)"
           />
           <div class="flex justify-between text-xs text-moon/40">
-            <span>0(全部注入)</span>
+            <span>{{ t('settingsUi.embedding.minScoreAll') }}</span>
             <span>0.5</span>
           </div>
         </div>
@@ -342,16 +359,10 @@ const semanticDescription = computed(() => {
         <!-- 语义信号开关 -->
         <div class="flex items-center justify-between pt-1">
           <div class="pr-3">
-            <label
-              class="text-xs block"
-              :class="semanticLabelClass"
-            >
-              启用语义信号
+            <label class="text-xs block" :class="semanticLabelClass">
+              {{ t('settingsUi.embedding.semantic') }}
             </label>
-            <p
-              class="text-xs mt-0.5"
-              :class="semanticDescClass"
-            >
+            <p class="text-xs mt-0.5" :class="semanticDescClass">
               {{ semanticDescription }}
             </p>
           </div>
@@ -366,8 +377,7 @@ const semanticDescription = computed(() => {
       <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
         <p class="text-xs text-moon/70">
           <span class="pi pi-info-circle mr-1"></span>
-          Embedding 可用时以语义相似度为主（0.85），关键词与时间衰减仅作辅助（0.10 /
-          0.05）；关闭或不可用时自动切换到关键词与时间衰减（0.75 / 0.25）。
+          {{ t('settingsUi.embedding.weights') }}
         </p>
       </div>
     </div>
@@ -375,18 +385,20 @@ const semanticDescription = computed(() => {
     <!-- 章节嵌入 -->
     <div class="space-y-3">
       <div>
-        <h3 class="text-sm font-medium text-moon/90 mb-1">章节嵌入</h3>
+        <h3 class="text-sm font-medium text-moon/90 mb-1">
+          {{ t('settingsUi.embedding.chapterTitle') }}
+        </h3>
         <p class="text-xs text-moon/70">
-          为每章生成多段向量,让 AI 按剧情/事件/人物语义找相关章节
+          {{ t('settingsUi.embedding.chapterDescription') }}
         </p>
       </div>
 
       <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
         <p class="text-xs text-moon/70">
           <span class="pi pi-info-circle mr-1"></span>
-          章节嵌入在后台自动运行,段落或译文变更后 60 秒防抖重算,无可配置项。
-          要查看 / 回填 / 重算进度,请在书籍详情页顶部的
-          <strong class="text-moon/90">向量索引</strong> popup 中操作。
+          {{ t('settingsUi.embedding.chapterAuto') }}
+          <strong class="text-moon/90">{{ t('settingsUi.embedding.vectorIndex') }}</strong>
+          {{ t('settingsUi.embedding.chapterAutoSuffix') }}
         </p>
       </div>
     </div>

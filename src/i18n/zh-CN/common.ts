@@ -9,6 +9,7 @@ import structureUi from './structure-ui';
 import coverUi from './cover-ui';
 import bookDialog from './book-dialog';
 import libraryUi from './library-ui';
+import settingsUi from './settings-ui';
 export default {
   ...aiUi,
   ...embeddingUi,
@@ -21,6 +22,7 @@ export default {
   ...coverUi,
   ...bookDialog,
   ...libraryUi,
+  ...settingsUi,
   failed: '操作失败',
   success: '操作成功',
 };

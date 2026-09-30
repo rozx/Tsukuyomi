@@ -7,6 +7,8 @@
  */
 import { ref, computed, onMounted, provide, inject, type InjectionKey } from 'vue';
 import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { extractRootDomain } from 'src/utils/domain-utils';
 import { FIRECRAWL_MAPPING_TOKEN } from 'src/constants/proxy';
@@ -32,20 +34,22 @@ interface MappingOption {
 export function createSiteMappingSettingsContext() {
   const settingsStore = useSettingsStore();
   const toast = useToastWithHistory();
+  // 在组件外（测试、服务）也可调用：按当前界面语言取文案，computed 中随语言切换更新
+  const t = (key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, key, values);
   const electron = isElectron();
 
   const proxyList = computed(() => settingsStore.proxyList);
-  const firecrawlOption: MappingOption = {
-    id: FIRECRAWL_OPTION_ID,
-    name: 'Firecrawl',
-    url: FIRECRAWL_MAPPING_TOKEN,
-    description: '经 Firecrawl 抓取（消耗 Firecrawl 额度）',
-  };
   // Electron 直连、CORS 条目不生效，但仍可维护（映射会同步到网页端），选项中注明不生效
   const mappingOptions = computed<MappingOption[]>(() => [
-    firecrawlOption,
+    {
+      id: FIRECRAWL_OPTION_ID,
+      name: 'Firecrawl',
+      url: FIRECRAWL_MAPPING_TOKEN,
+      description: t('settingsUi.sites.firecrawlOption'),
+    },
     ...proxyList.value.map((proxy) =>
-      electron ? { ...proxy, description: '桌面端不生效，仅网页端使用' } : proxy,
+      electron ? { ...proxy, description: t('settingsUi.sites.desktopInactive') } : proxy,
     ),
   ]);
 
@@ -83,13 +87,23 @@ export function createSiteMappingSettingsContext() {
     if (!selected) return;
     const rootDomain = extractRootDomain(inputSite);
     if (!rootDomain) {
-      toast.add({ severity: 'error', summary: '无效的域名', detail: '无法从输入中提取有效的域名', life: 3000 });
+      toast.add({
+        severity: 'error',
+        summary: t('settingsUi.sites.invalidDomain'),
+        detail: t('settingsUi.sites.invalidDomainDetail'),
+        life: 3000,
+      });
       return;
     }
     // 读取映射实际保存的条目（禁用映射的 getProxiesForSite 为空，不能据此判断上限）
     const currentProxies = siteMapping.value[rootDomain]?.proxies ?? [];
     if (currentProxies.length >= MAX_MAPPING_ENTRIES) {
-      toast.add({ severity: 'warn', summary: '已达到最大数量', detail: '每个网站最多只能配置 3 项', life: 3000 });
+      toast.add({
+        severity: 'warn',
+        summary: t('settingsUi.sites.limitReached'),
+        detail: t('settingsUi.sites.limitDetail', { max: MAX_MAPPING_ENTRIES }),
+        life: 3000,
+      });
       return;
     }
     const proxyExists = currentProxies.includes(selected.url);
@@ -97,7 +111,7 @@ export function createSiteMappingSettingsContext() {
     if (wasAdded) {
       toast.add({
         severity: 'success',
-        summary: proxyExists ? '映射已更新' : '映射已添加',
+        summary: proxyExists ? t('settingsUi.sites.updated') : t('settingsUi.sites.added'),
         detail: `${rootDomain} -> ${selected.name}`,
         life: 2000,
       });
@@ -106,8 +120,8 @@ export function createSiteMappingSettingsContext() {
     } else if (proxyExists) {
       toast.add({
         severity: 'info',
-        summary: '条目已存在',
-        detail: `${rootDomain} 已包含 ${selected.name}`,
+        summary: t('settingsUi.sites.exists'),
+        detail: t('settingsUi.sites.existsDetail', { site: rootDomain, name: selected.name }),
         life: 2000,
       });
     }
@@ -117,8 +131,10 @@ export function createSiteMappingSettingsContext() {
     await settingsStore.setProxySiteMappingEnabled(site, enabled);
     toast.add({
       severity: 'success',
-      summary: enabled ? '规则已启用' : '规则已禁用',
-      detail: `${site} 的映射规则已${enabled ? '启用' : '禁用'}`,
+      summary: enabled ? t('settingsUi.sites.ruleOn') : t('settingsUi.sites.ruleOff'),
+      detail: t(enabled ? 'settingsUi.sites.ruleOnDetail' : 'settingsUi.sites.ruleOffDetail', {
+        site,
+      }),
       life: 2000,
     });
   };
@@ -128,14 +144,26 @@ export function createSiteMappingSettingsContext() {
       await settingsStore.removeSiteMapping(site);
     } catch (err) {
       console.error('[useSiteMappingSettings] 删除网站映射失败:', err);
-      toast.add({ severity: 'error', summary: '删除失败', detail: formatErrorMessage(err), life: 5000 });
+      toast.add({
+        severity: 'error',
+        summary: t('settingsUi.sites.deleteFailed'),
+        detail: formatErrorMessage(err),
+        life: 5000,
+      });
       return;
     }
-    toast.add({ severity: 'success', summary: '映射已删除', detail: `已删除 ${site} 的网站映射`, life: 2000 });
+    toast.add({
+      severity: 'success',
+      summary: t('settingsUi.sites.deleted'),
+      detail: t('settingsUi.sites.deletedDetail', { site }),
+      life: 2000,
+    });
   };
 
   // 编辑网站映射
-  const editingSiteMapping = ref<{ site: string; enabled: boolean; proxies: string[] } | null>(null);
+  const editingSiteMapping = ref<{ site: string; enabled: boolean; proxies: string[] } | null>(
+    null,
+  );
   const showEditSiteMappingDialog = ref(false);
   const selectedProxiesForEdit = ref<string[]>([]);
   const enabledForEdit = ref(false);
@@ -143,7 +171,11 @@ export function createSiteMappingSettingsContext() {
   const openEditSiteMappingDialog = (site: string) => {
     const entry = siteMapping.value[site];
     if (entry) {
-      editingSiteMapping.value = { site, enabled: entry.enabled ?? true, proxies: [...(entry.proxies ?? [])] };
+      editingSiteMapping.value = {
+        site,
+        enabled: entry.enabled ?? true,
+        proxies: [...(entry.proxies ?? [])],
+      };
       selectedProxiesForEdit.value = [...(entry.proxies ?? [])];
       enabledForEdit.value = entry.enabled ?? true;
       showEditSiteMappingDialog.value = true;
@@ -162,7 +194,12 @@ export function createSiteMappingSettingsContext() {
       if (selectedProxiesForEdit.value.length < MAX_MAPPING_ENTRIES) {
         selectedProxiesForEdit.value.push(proxyUrl);
       } else {
-        toast.add({ severity: 'warn', summary: '已达到最大数量', detail: '每个网站最多只能配置 3 项', life: 3000 });
+        toast.add({
+          severity: 'warn',
+          summary: t('settingsUi.sites.limitReached'),
+          detail: t('settingsUi.sites.limitDetail', { max: MAX_MAPPING_ENTRIES }),
+          life: 3000,
+        });
       }
     }
   };
@@ -197,7 +234,11 @@ export function createSiteMappingSettingsContext() {
   // 把网站映射的条目整体替换为 nextProxies（最多 3 个）。
   // store 未提供原子替换，只能「先删后加」；任一步失败时整体回滚到 currentProxies，
   // 避免留下半更新（旧映射已删、新映射只加了一部分）的损坏配置。失败时回滚后重新抛出。
-  const replaceSiteProxies = async (site: string, currentProxies: string[], nextProxies: string[]) => {
+  const replaceSiteProxies = async (
+    site: string,
+    currentProxies: string[],
+    nextProxies: string[],
+  ) => {
     const original = [...currentProxies];
     try {
       // 用快照遍历，避免 store 原地更新代理数组导致漏删
@@ -234,7 +275,7 @@ export function createSiteMappingSettingsContext() {
     try {
       return JSON.stringify(err);
     } catch {
-      return '未知错误';
+      return t('settingsUi.common.unknownError');
     }
   };
 
@@ -259,11 +300,14 @@ export function createSiteMappingSettingsContext() {
     console.error('[useSiteMappingSettings] 更新网站映射失败:', err);
     const detail =
       rollbackError !== null
-        ? `${formatErrorMessage(err)}；回滚启用状态也失败：${formatErrorMessage(rollbackError)}`
+        ? t('settingsUi.sites.rollbackFailed', {
+            error: formatErrorMessage(err),
+            rollback: formatErrorMessage(rollbackError),
+          })
         : formatErrorMessage(err);
     toast.add({
       severity: 'error',
-      summary: '映射更新失败',
+      summary: t('settingsUi.sites.updateFailed'),
       detail,
       life: 5000,
     });
@@ -274,7 +318,12 @@ export function createSiteMappingSettingsContext() {
       return;
     }
     if (selectedProxiesForEdit.value.length > MAX_MAPPING_ENTRIES) {
-      toast.add({ severity: 'error', summary: '数量超限', detail: '每个网站最多只能配置 3 项', life: 3000 });
+      toast.add({
+        severity: 'error',
+        summary: t('settingsUi.sites.limitExceeded'),
+        detail: t('settingsUi.sites.limitDetail', { max: MAX_MAPPING_ENTRIES }),
+        life: 3000,
+      });
       return;
     }
     const site = editingSiteMapping.value.site;
@@ -295,7 +344,12 @@ export function createSiteMappingSettingsContext() {
       await handleEditMappingFailure(site, enabledChanged, originalEnabled, err);
       return;
     }
-    toast.add({ severity: 'success', summary: '映射已更新', detail: `${site} 的网站映射已更新`, life: 2000 });
+    toast.add({
+      severity: 'success',
+      summary: t('settingsUi.sites.updated'),
+      detail: t('settingsUi.sites.updatedDetail', { site }),
+      life: 2000,
+    });
     cancelEditSiteMapping();
   };
 
@@ -319,7 +373,7 @@ export function createSiteMappingSettingsContext() {
     return isFirecrawlEntry(entry) ? 'warn' : 'info';
   };
   const mappingTagTitle = (entry: string) =>
-    isEntryActive(entry) ? '' : '桌面端直连网站，CORS 代理条目不生效';
+    isEntryActive(entry) ? '' : t('settingsUi.sites.corsInactive');
 
   onMounted(async () => {
     if (!settingsStore.isLoaded) {

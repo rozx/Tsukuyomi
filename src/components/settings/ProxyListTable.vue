@@ -7,6 +7,9 @@ import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import Button from 'primevue/button';
 import { injectProxySettings } from 'src/composables/settings/useProxySettings';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const s = injectProxySettings();
 </script>
@@ -21,8 +24,12 @@ const s = injectProxySettings();
       row-reorder
       @row-reorder="s.onRowReorder"
     >
-      <Column row-reorder-header="拖拽排序" :row-reorder="true" style="width: 3rem" />
-      <Column field="name" header="名称" class="text-xs">
+      <Column
+        :row-reorder-header="t('settingsUi.proxy.dragSort')"
+        :row-reorder="true"
+        style="width: 3rem"
+      />
+      <Column field="name" :header="t('settingsUi.proxy.name')" class="text-xs">
         <template #body="{ data }">
           <span class="font-medium">{{ data.name }}</span>
         </template>
@@ -32,13 +39,15 @@ const s = injectProxySettings();
           <span class="text-moon/70 text-xs break-all">{{ data.url }}</span>
         </template>
       </Column>
-      <Column field="description" header="描述" class="text-xs">
+      <Column field="description" :header="t('settingsUi.proxy.descriptionColumn')" class="text-xs">
         <template #body="{ data }">
           <span v-if="data.description" class="text-xs text-moon/60">{{ data.description }}</span>
-          <span v-else class="text-xs text-moon/40 italic">无描述</span>
+          <span v-else class="text-xs text-moon/40 italic">{{
+            t('settingsUi.proxy.noDescription')
+          }}</span>
         </template>
       </Column>
-      <Column header="操作" class="text-xs" style="width: 150px">
+      <Column :header="t('settingsUi.sites.actions')" class="text-xs" style="width: 150px">
         <template #body="{ data }">
           <div class="flex gap-1 flex-nowrap">
             <Button
@@ -47,7 +56,7 @@ const s = injectProxySettings();
               severity="info"
               text
               rounded
-              aria-label="测试代理"
+              :aria-label="t('settingsUi.proxy.test')"
               :title="s.testProxyTitle(data.id)"
               :loading="s.isTestingProxy(data.id)"
               :disabled="s.isTestingProxy(data.id)"
@@ -59,8 +68,8 @@ const s = injectProxySettings();
               severity="secondary"
               text
               rounded
-              aria-label="编辑代理"
-              title="编辑"
+              :aria-label="t('settingsUi.proxy.editProxy')"
+              :title="t('settingsUi.proxy.edit')"
               @click="s.openEditProxyDialog(data)"
             />
             <Button
@@ -69,8 +78,8 @@ const s = injectProxySettings();
               severity="danger"
               text
               rounded
-              aria-label="删除代理"
-              title="删除"
+              :aria-label="t('settingsUi.proxy.deleteProxy')"
+              :title="t('settingsUi.proxy.delete')"
               @click="s.deleteProxy(data.id)"
             />
           </div>
