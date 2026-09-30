@@ -277,22 +277,16 @@ async function runToolCallsForSingleParagraph(
   for (const toolCall of result.toolCalls) {
     console.log(`[${logLabel}] 处理工具调用: ${toolCall.function.name}`);
 
-    const toolResult = await ToolRegistry.handleToolCall(
-      toolCall,
-      bookId || '',
-      onAction,
-      onToast,
-      taskId,
-      undefined,
-      [paragraphId],
-      aiProcessingStore,
-      model.id,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+    const toolResult = await ToolRegistry.handleToolCall(toolCall, {
       languages,
-    );
+      bookId: bookId || '',
+      paragraphIds: [paragraphId],
+      aiModelId: model.id,
+      ...(onAction ? { onAction } : {}),
+      ...(onToast ? { onToast } : {}),
+      ...(taskId ? { taskId } : {}),
+      ...(aiProcessingStore ? { aiProcessingStore } : {}),
+    });
 
     if (toolCall.function.name === 'add_translation_batch') {
       await forwardAddTranslationBatchResult(toolResult.content, logLabel, onParagraphResult);

@@ -428,22 +428,25 @@ class TaskLoopSession {
     const argsStr = toolCall.function.arguments || '';
 
     const start = Date.now();
-    const toolResult = await ToolRegistry.handleToolCall(
-      toolCall,
+    const toolResult = await ToolRegistry.handleToolCall(toolCall, {
+      languages: this.config.languages,
       bookId,
-      handleAction,
-      onToast,
-      taskId,
-      undefined, // sessionId
-      this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
-      aiProcessingStore, // 传入 AI 处理 Store
-      this.config.aiModelId,
-      this.config.chunkIndex, // 传入块索引用于 review 检查
-      this.submittedParagraphIds, // 传入已提交段落 ID 集合用于计算剩余 chunk 大小
-      this.accumulatedParagraphs, // 传入已积累的翻译内存，用于 review 完整性检查（避免依赖过时的 DB 数据）
-      this.config.enableOriginalTextValidation, // 传入原文校验设置
-      this.config.languages,
-    );
+      ...(handleAction ? { onAction: handleAction } : {}),
+      ...(onToast ? { onToast } : {}),
+      ...(taskId ? { taskId } : {}),
+      // 段落 ID 列表启用块边界限制
+      ...(this.config.paragraphIds ? { paragraphIds: this.config.paragraphIds } : {}),
+      ...(aiProcessingStore ? { aiProcessingStore } : {}),
+      ...(this.config.aiModelId ? { aiModelId: this.config.aiModelId } : {}),
+      // 块索引用于 review 检查
+      ...(this.config.chunkIndex !== undefined ? { chunkIndex: this.config.chunkIndex } : {}),
+      // 已提交段落用于计算剩余 chunk 大小；已积累译文用于 review 完整性检查（避免依赖过时的 DB 数据）
+      submittedParagraphIds: this.submittedParagraphIds,
+      accumulatedParagraphs: this.accumulatedParagraphs,
+      ...(this.config.enableOriginalTextValidation !== undefined
+        ? { enableOriginalTextValidation: this.config.enableOriginalTextValidation }
+        : {}),
+    });
     recordToolCall(this.metrics, Date.now() - start);
 
     // 原子写入 [调用工具] + [工具结果]：避免两次 append 之间发生终态切换（completeTask /

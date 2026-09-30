@@ -1,4 +1,5 @@
 import { describe, expect, it, mock, afterEach } from 'bun:test';
+import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { invokeToolHandler } from '../services/ai/tools/tool-call-invoker';
 import type { ToolDefinition } from '../services/ai/tools/types';
 import type { AIToolCall } from '../services/ai/types/ai-service';
@@ -23,7 +24,11 @@ function makeStubTool(handler: ReturnType<typeof mock>): ToolDefinition {
   return {
     definition: {
       type: 'function',
-      function: { name: 'test_tool', description: 'stub', parameters: { type: 'object', properties: {} } },
+      function: {
+        name: 'test_tool',
+        description: 'stub',
+        parameters: { type: 'object', properties: {} },
+      },
     },
     handler: handler as never,
   };
@@ -45,7 +50,10 @@ describe('tool-call-invoker - 截断参数检测', () => {
     const truncated = fullArgs.slice(0, Math.floor(fullArgs.length * 0.6));
 
     await (expect(
-      invokeToolHandler(tool, makeToolCall(truncated), { bookId: 'book-1' }),
+      invokeToolHandler(tool, makeToolCall(truncated), {
+        bookId: 'book-1',
+        languages: captureExecutionLanguages('zh-CN'),
+      }),
     ).rejects.toThrow(/截断/) as unknown as Promise<void>);
     expect(handler).not.toHaveBeenCalled();
   });
@@ -55,7 +63,10 @@ describe('tool-call-invoker - 截断参数检测', () => {
     const handler = mock(() => Promise.resolve('{"success":true}'));
     const tool = makeStubTool(handler);
 
-    await invokeToolHandler(tool, makeToolCall(''), { bookId: 'book-1' });
+    await invokeToolHandler(tool, makeToolCall(''), {
+      bookId: 'book-1',
+      languages: captureExecutionLanguages('zh-CN'),
+    });
     expect(handler).toHaveBeenCalledTimes(1);
     const receivedArgs = (handler.mock.calls[0] as unknown as [Record<string, unknown>])[0];
     expect(receivedArgs).toEqual({});
@@ -65,7 +76,10 @@ describe('tool-call-invoker - 截断参数检测', () => {
     const handler = mock(() => Promise.resolve('{"success":true}'));
     const tool = makeStubTool(handler);
 
-    await invokeToolHandler(tool, makeToolCall('  \n '), { bookId: 'book-1' });
+    await invokeToolHandler(tool, makeToolCall('  \n '), {
+      bookId: 'book-1',
+      languages: captureExecutionLanguages('zh-CN'),
+    });
     expect(handler).toHaveBeenCalledTimes(1);
     const receivedArgs = (handler.mock.calls[0] as unknown as [Record<string, unknown>])[0];
     expect(receivedArgs).toEqual({});
@@ -79,6 +93,7 @@ describe('tool-call-invoker - 截断参数检测', () => {
 
     const result = await invokeToolHandler(tool, makeToolCall(malformedButComplete), {
       bookId: 'book-1',
+      languages: captureExecutionLanguages('zh-CN'),
     });
     expect(handler).toHaveBeenCalledTimes(1);
     const receivedArgs = (handler.mock.calls[0] as unknown as [Record<string, unknown>])[0];
@@ -90,7 +105,10 @@ describe('tool-call-invoker - 截断参数检测', () => {
     const handler = mock(() => Promise.resolve('{"success":true}'));
     const tool = makeStubTool(handler);
 
-    await invokeToolHandler(tool, makeToolCall('{"paragraph_id":"para-1"}'), { bookId: 'book-1' });
+    await invokeToolHandler(tool, makeToolCall('{"paragraph_id":"para-1"}'), {
+      bookId: 'book-1',
+      languages: captureExecutionLanguages('zh-CN'),
+    });
     expect(handler).toHaveBeenCalledTimes(1);
   });
 });

@@ -6,6 +6,8 @@ import { ToolRegistry } from '../services/ai/tools/tool-registry';
 import { getAssistantSystemPrompt } from '../services/ai/tasks/prompts/assistant';
 import { getTodosSystemPrompt } from '../services/ai/tasks/utils/todo-helper';
 import type { ChatSession } from '../stores/chat-sessions';
+import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-languages';
+import { translateText } from '../i18n/translate';
 import type { AIModel } from '../services/ai/types/ai-model';
 const model = {
   id: 'meter-model',
@@ -24,6 +26,7 @@ const session = (): ChatSession => ({
   messages: [{ id: '1', role: 'user', content: '旧问题', timestamp: 1 }],
   apiMessageHistory: [{ role: 'user', content: '旧问题' }],
 });
+const cn = captureExecutionLanguages('zh-CN');
 afterEach(() => vi.restoreAllMocks());
 describe('助手用量与服务端使用同一份请求上下文', () => {
   it('重建持久化工具历史保留 null、reasoning 与厂商元数据，锚点继续有效', () => {
@@ -59,10 +62,37 @@ describe('助手用量与服务端使用同一份请求上下文', () => {
     expect(buildAssistantMessageHistory(current)).toEqual(current.apiMessageHistory);
     expect(
       measureAssistantContext(
-        { context, session: current, currentMessages: current.messages },
+        { context, session: current, currentMessages: current.messages, languages: cn },
         model,
       ),
     ).toEqual({ tokens: 42000, estimated: false });
+  });
+  it('按执行语言构建统计用提示词、工具与摘要，英文会话锚点保持有效', () => {
+    const tools = vi
+      .spyOn(ToolRegistry, 'getAssistantToolsExcludingTranslationManagement')
+      .mockReturnValue([]);
+    const en = captureExecutionLanguages('en-US');
+    const current = session();
+    current.summary = 'Earlier work';
+    current.contextAnchor = createContextAnchor(
+      {
+        systemPrompt:
+          getAssistantSystemPrompt(getTodosSystemPrompt(true, 'en-US'), [], context, en) +
+          '\n\n' +
+          translateText('en-US', 'aiAssistant.summaryWrap', { summary: 'Earlier work' }),
+        history: current.apiMessageHistory!,
+        tools: [],
+        modelKey: modelContextKey(model),
+      },
+      42000,
+    )!;
+    expect(
+      measureAssistantContext(
+        { context, session: current, currentMessages: current.messages, languages: en },
+        model,
+      ),
+    ).toEqual({ tokens: 42000, estimated: false });
+    expect(tools).toHaveBeenCalledWith(undefined, 'en-US');
   });
   it('有效实测锚点直接显示实测值，不重复加工具开销', () => {
     vi.spyOn(ToolRegistry, 'getAssistantToolsExcludingTranslationManagement').mockReturnValue([]);
@@ -78,14 +108,14 @@ describe('助手用量与服务端使用同一份请求上下文', () => {
     )!;
     expect(
       measureAssistantContext(
-        { context, session: current, currentMessages: current.messages },
+        { context, session: current, currentMessages: current.messages, languages: cn },
         model,
       ),
     ).toEqual({ tokens: 42000, estimated: false });
     const legacy = { ...current, toolCallTokenOverhead: 500000 };
     expect(
       measureAssistantContext(
-        { context, session: legacy, currentMessages: legacy.messages },
+        { context, session: legacy, currentMessages: legacy.messages, languages: cn },
         model,
       ),
     ).toEqual({ tokens: 42000, estimated: false });
@@ -94,13 +124,13 @@ describe('助手用量与服务端使用同一份请求上下文', () => {
     const current = session();
     delete current.apiMessageHistory;
     const base = measureAssistantContext(
-      { context, session: current, currentMessages: current.messages },
+      { context, session: current, currentMessages: current.messages, languages: cn },
       model,
     );
     const legacy = { ...current, toolCallTokenOverhead: 500000 };
     expect(
       measureAssistantContext(
-        { context, session: legacy, currentMessages: legacy.messages },
+        { context, session: legacy, currentMessages: legacy.messages, languages: cn },
         model,
       ),
     ).toEqual(base);
@@ -109,8 +139,10 @@ describe('助手用量与服务端使用同一份请求上下文', () => {
       { id: '2', role: 'user' as const, content: '新增请求内容'.repeat(30), timestamp: 2 },
     ];
     expect(
-      measureAssistantContext({ context, session: current, currentMessages: pending }, model)
-        .tokens,
+      measureAssistantContext(
+        { context, session: current, currentMessages: pending, languages: cn },
+        model,
+      ).tokens,
     ).toBeGreaterThan(base.tokens);
     expect(base.estimated).toBe(true);
   });

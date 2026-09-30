@@ -17,6 +17,7 @@ import { getAssetUrl } from 'src/utils';
 import { ChapterService } from 'src/services/chapter-service';
 import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
 import { measureAssistantContext } from 'src/utils/ai-context-utils';
+import { AssistantService } from 'src/services/ai/tasks/assistant-service';
 import { resolveModelLimits } from 'src/services/ai/model-limits/resolve';
 import type { EffectiveModelLimits } from 'src/services/ai/model-limits/resolve';
 import { formatContextUsage } from 'src/utils/context-usage-display';
@@ -340,6 +341,7 @@ export function useRightPanel() {
         context: contextStore.getContext,
         session: chatSessionsStore.currentSession,
         currentMessages: messages.value,
+        languages: AssistantService.currentLanguages(contextStore.getContext.currentBookId),
       },
       model,
     );

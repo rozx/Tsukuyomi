@@ -57,7 +57,7 @@
 - [x] 7.1 在普通助手、翻译/术语/解释、单段/批量任务和 importer/配方修复入口捕获 uiLocale/targetLanguage；验证无书籍请求缺省值及相互独立的两个并发执行。
 - [x] 7.2 将语言上下文贯穿 runner、状态机、tool invocation、重试、分块、压缩继续、助手会话内暂停继续，以及 importer 持久化 checkpoint（仅记录 uiLocale）；验证运行中设置变化不改变已有任务，新执行使用新值，importer 重启后按原 uiLocale 恢复、旧 checkpoint 按简中恢复；不为 task-runner/普通助手新增跨重启恢复。
 - [x] 7.3 接通批次译文、单段回调、最终保存、章节/卷标题、术语/角色/别名工具写入的语言归属；`select_translation`/`update_translation`/`remove_translation` 拒绝非目标语言版本 ID，`batch_replace_translations` 只改目标语言选用版本；验证模型不能指定其他语言槽，晚到保存合并最新数据且不撤回用户新目标设置。
-- [ ] 7.4 将 ToolRegistry 及 importer 工具声明改为按执行 locale 生成不可变描述，handler 自然语言反馈使用相同上下文；验证工具名、参数、枚举、权限及业务校验三语言相同。
+- [x] 7.4 将 ToolRegistry 及 importer 工具声明改为按执行 locale 生成不可变描述，handler 自然语言反馈使用相同上下文；验证工具名、参数、枚举、权限及业务校验三语言相同。
 
 ## 8. AI 三语言资源与任意原文
 

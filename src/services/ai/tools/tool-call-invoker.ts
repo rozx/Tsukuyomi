@@ -10,10 +10,10 @@ import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution
 const ARGS_PREVIEW_LIMIT = 200;
 
 /**
- * handleToolCall 的可选字段。所有都是 optional，未提供的字段不会传递给 tool.handler。
+ * handleToolCall 的参数。languages 必填；其余可选字段未提供时不会传递给 tool.handler。
  */
 export interface HandleToolCallOptions {
-  languages?: ExecutionLanguages;
+  languages: ExecutionLanguages;
   bookId: string;
   onAction?: (action: ActionInfo) => void;
   onToast?: ToastCallback;
@@ -124,12 +124,11 @@ const TRUTHY_CONTEXT_FIELDS = [
  * 组装传给 tool.handler 的 context；只包含已提供的可选字段（避免传 undefined）。
  */
 function buildToolHandlerContext(options: HandleToolCallOptions): ToolContext {
-  const context: ToolContext = {};
-  if (options.languages)
-    context.languages = captureExecutionLanguages(
-      options.languages.uiLocale,
-      options.languages.targetLanguage,
-    );
+  const languages = captureExecutionLanguages(
+    options.languages.uiLocale,
+    options.languages.targetLanguage,
+  );
+  const context: ToolContext = { languages };
   const chunkBoundaries = buildChunkBoundaries(options.paragraphIds);
 
   // truthy 字段统一拷贝
@@ -140,8 +139,8 @@ function buildToolHandlerContext(options: HandleToolCallOptions): ToolContext {
     }
   }
 
-  if (context.languages && context.onAction) {
-    const execution = Object.freeze({ bookId: options.bookId, languages: context.languages });
+  if (context.onAction) {
+    const execution = Object.freeze({ bookId: options.bookId, languages });
     const onAction = context.onAction;
     context.onAction = (action) => onAction({ ...action, execution });
   }

@@ -75,11 +75,11 @@ describe('助手执行语言隔离', () => {
     await AssistantService.chat(model, 'Request B');
     finish.resolve();
     await a;
-    expect(invoke.mock.calls.map((args) => args[13])).toEqual([
+    expect(invoke.mock.calls.map((args) => args[1].languages)).toEqual([
       { uiLocale: 'en-US', targetLanguage: 'zh-TW' },
       { uiLocale: 'zh-CN', targetLanguage: 'en-US' },
     ]);
-    expect(invoke.mock.calls.every((args) => Object.isFrozen(args[13]))).toBe(true);
+    expect(invoke.mock.calls.every((args) => Object.isFrozen(args[1].languages))).toBe(true);
   });
   it('无书籍执行以启动 UI 语言为目标', async () => {
     const { model, invoke, settings } = await fixture();
@@ -102,6 +102,9 @@ describe('助手执行语言隔离', () => {
       },
     } as never);
     await AssistantService.chat(model, 'Help');
-    expect(invoke.mock.calls[0]?.[13]).toEqual({ uiLocale: 'en-US', targetLanguage: 'en-US' });
+    expect(invoke.mock.calls[0]?.[1].languages).toEqual({
+      uiLocale: 'en-US',
+      targetLanguage: 'en-US',
+    });
   });
 });

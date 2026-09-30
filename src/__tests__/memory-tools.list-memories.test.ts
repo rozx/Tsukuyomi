@@ -102,10 +102,10 @@ describe('MemoryTools - list_memories', () => {
   });
 
   test('作用域：getAllTools(Assistant) 包含 list_memories，但 getTranslationTools 不包含', () => {
-    const allTools = ToolRegistry.getAllTools(bookId);
+    const allTools = ToolRegistry.getAllTools(bookId, undefined, {}, 'zh-CN');
     expect(allTools.some((t) => t.function.name === 'list_memories')).toBe(true);
 
-    const translationTools = ToolRegistry.getTranslationTools(bookId);
+    const translationTools = ToolRegistry.getTranslationTools(bookId, undefined, 'zh-CN');
     expect(translationTools.some((t) => t.function.name === 'list_memories')).toBe(false);
   });
 });

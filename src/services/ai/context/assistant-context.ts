@@ -1,7 +1,7 @@
 import { translateText } from 'src/i18n/translate';
 import type { AIModel } from '../types/ai-model';
 import type { AITool, ChatMessage, TextGenerationResult } from '../types/ai-service';
-import type { AssistantServiceOptions } from '../tasks/assistant-service';
+import type { ResolvedAssistantOptions } from '../tasks/assistant-service';
 import type { EffectiveModelLimits } from '../model-limits/resolve';
 import type { ContextAnchor } from './measure';
 import { createContextAnchor, measureContext, modelContextKey } from './measure';
@@ -23,7 +23,7 @@ export class AssistantContext {
       limits: EffectiveModelLimits;
       messages: ChatMessage[];
       tools: AITool[];
-      options: AssistantServiceOptions;
+      options: ResolvedAssistantOptions;
       taskId: string | undefined;
       signal: AbortSignal | undefined;
       prompt(summary?: string): string;
@@ -92,7 +92,7 @@ export class AssistantContext {
     try {
       const result = await compactHistory(
         {
-          uiLocale: options.languages?.uiLocale ?? 'zh-CN',
+          uiLocale: options.languages.uiLocale,
           history,
           pinnedIndex,
           keepRecentBudget,
@@ -146,14 +146,8 @@ export class AssistantContext {
         showToolToast(
           {
             severity: 'warn',
-            summary: translateText(
-              options.languages?.uiLocale ?? 'zh-CN',
-              'aiAssistant.compactFailed',
-            ),
-            detail: translateText(
-              options.languages?.uiLocale ?? 'zh-CN',
-              'aiAssistant.historyKept',
-            ),
+            summary: translateText(options.languages.uiLocale, 'aiAssistant.compactFailed'),
+            detail: translateText(options.languages.uiLocale, 'aiAssistant.historyKept'),
             life: 5000,
           },
           options.onToast,
@@ -196,12 +190,9 @@ export class AssistantContext {
         await options.execution.beforeRequest(messages, signal);
         throw await options.execution.stop('context_limit');
       }
-      throw new Error(
-        translateText(options.languages?.uiLocale ?? 'zh-CN', 'aiAssistant.contextLimit'),
-        {
-          cause: error,
-        },
-      );
+      throw new Error(translateText(options.languages.uiLocale, 'aiAssistant.contextLimit'), {
+        cause: error,
+      });
     }
   }
 }

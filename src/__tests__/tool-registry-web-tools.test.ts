@@ -22,28 +22,42 @@ afterEach(() => {
 
 describe('网络工具可用性按上下文区分', () => {
   it('无 Tavily Key、回退开启：助手聊天提供，翻译 / 润色任务不提供', () => {
-    expect(hasWebTools(ToolRegistry.getAssistantToolsExcludingTranslationManagement('b'))).toEqual(
-      [true, true],
-    );
-    expect(hasWebTools(ToolRegistry.getAssistantTools('b'))).toEqual([true, true]);
-    expect(hasWebTools(ToolRegistry.getTranslationTools('b'))).toEqual([false, false]);
-    expect(hasWebTools(ToolRegistry.getToolsExcludingTranslationManagement('b'))).toEqual([
+    expect(
+      hasWebTools(ToolRegistry.getAssistantToolsExcludingTranslationManagement('b', 'zh-CN')),
+    ).toEqual([true, true]);
+    expect(hasWebTools(ToolRegistry.getAssistantTools('b', 'zh-CN'))).toEqual([true, true]);
+    expect(hasWebTools(ToolRegistry.getTranslationTools('b', undefined, 'zh-CN'))).toEqual([
       false,
       false,
     ]);
-    expect(hasWebTools(ToolRegistry.getSingleParagraphPolishTools('b'))).toEqual([false, false]);
+    expect(
+      hasWebTools(ToolRegistry.getToolsExcludingTranslationManagement('b', undefined, 'zh-CN')),
+    ).toEqual([false, false]);
+    expect(hasWebTools(ToolRegistry.getSingleParagraphPolishTools('b', 'zh-CN'))).toEqual([
+      false,
+      false,
+    ]);
   });
 
   it('配置 Tavily Key：所有上下文都提供', () => {
     tavilyKey = 'tvly-abc';
-    expect(hasWebTools(ToolRegistry.getAssistantTools('b'))).toEqual([true, true]);
-    expect(hasWebTools(ToolRegistry.getTranslationTools('b'))).toEqual([true, true]);
-    expect(hasWebTools(ToolRegistry.getSingleParagraphPolishTools('b'))).toEqual([true, true]);
+    expect(hasWebTools(ToolRegistry.getAssistantTools('b', 'zh-CN'))).toEqual([true, true]);
+    expect(hasWebTools(ToolRegistry.getTranslationTools('b', undefined, 'zh-CN'))).toEqual([
+      true,
+      true,
+    ]);
+    expect(hasWebTools(ToolRegistry.getSingleParagraphPolishTools('b', 'zh-CN'))).toEqual([
+      true,
+      true,
+    ]);
   });
 
   it('无 Tavily Key、回退关闭：任何上下文都不提供', () => {
     fallbackEnabled = false;
-    expect(hasWebTools(ToolRegistry.getAssistantTools('b'))).toEqual([false, false]);
-    expect(hasWebTools(ToolRegistry.getTranslationTools('b'))).toEqual([false, false]);
+    expect(hasWebTools(ToolRegistry.getAssistantTools('b', 'zh-CN'))).toEqual([false, false]);
+    expect(hasWebTools(ToolRegistry.getTranslationTools('b', undefined, 'zh-CN'))).toEqual([
+      false,
+      false,
+    ]);
   });
 });

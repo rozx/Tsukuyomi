@@ -134,6 +134,9 @@ export interface AssistantServiceOptions {
   onTaskCreated?: (taskId: string) => void;
 }
 
+/** chat() 解析后的内部选项：执行语言已固定，内部步骤不再回退默认语言。 */
+export type ResolvedAssistantOptions = AssistantServiceOptions & { languages: ExecutionLanguages };
+
 export interface AssistantResult {
   paused?: AssistantPauseReason;
   checkpoint?: AssistantExecutionCheckpoint;
@@ -153,11 +156,11 @@ export class AssistantService {
       selectedParagraphId: string | null;
     },
     tools: AITool[],
-    taskId?: string,
-    sessionId?: string,
-    languages?: ExecutionLanguages,
+    taskId: string | undefined,
+    sessionId: string | undefined,
+    languages: ExecutionLanguages,
   ): string {
-    const todosPrompt = getTodosSystemPrompt(!!taskId || !!sessionId, languages?.uiLocale);
+    const todosPrompt = getTodosSystemPrompt(!!taskId || !!sessionId, languages.uiLocale);
 
     return getAssistantSystemPrompt(todosPrompt, tools, context, languages);
   }
@@ -166,13 +169,13 @@ export class AssistantService {
     toolCalls: AIToolCall[],
     tools: AITool[],
     bookId: string | null,
-    onAction?: (action: ActionInfo) => void,
-    onToast?: ToastCallback,
-    taskId?: string,
-    sessionId?: string,
-    aiModelId?: string,
-    signal?: AbortSignal,
-    languages?: ExecutionLanguages,
+    onAction: ((action: ActionInfo) => void) | undefined,
+    onToast: ToastCallback | undefined,
+    taskId: string | undefined,
+    sessionId: string | undefined,
+    aiModelId: string | undefined,
+    signal: AbortSignal | undefined,
+    languages: ExecutionLanguages,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
     const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
@@ -182,7 +185,7 @@ export class AssistantService {
     const results = [];
     for (const toolCall of toolCalls) {
       // 用户取消后立即停止执行剩余工具，避免已取消的 CRUD 写入继续落库
-      this.ensureRequestActive(signal, languages?.uiLocale);
+      this.ensureRequestActive(signal, languages.uiLocale);
 
       // [警告] 严格限制：只能调用本次会话提供的 tools
       if (!allowedToolNames.has(toolCall.function.name)) {
@@ -193,7 +196,7 @@ export class AssistantService {
           content: JSON.stringify({
             success: false,
             error_code: 'TOOL_NOT_ALLOWED',
-            error: translateText(languages?.uiLocale ?? 'zh-CN', 'aiAssistant.toolNotAllowed', {
+            error: translateText(languages.uiLocale, 'aiAssistant.toolNotAllowed', {
               tool: toolCall.function.name,
             }),
           }),
@@ -210,29 +213,22 @@ export class AssistantService {
           content: JSON.stringify({
             success: false,
             error_code: 'BOOK_CONTEXT_REQUIRED',
-            error: translateText(languages?.uiLocale ?? 'zh-CN', 'aiAssistant.bookRequired'),
+            error: translateText(languages.uiLocale, 'aiAssistant.bookRequired'),
           }),
         });
         continue;
       }
 
       // 调用工具处理函数（对于不需要 bookId 的工具，可以传递空字符串）
-      const result = await ToolRegistry.handleToolCall(
-        toolCall,
-        bookId || '',
-        onAction,
-        onToast,
-        taskId,
-        sessionId,
-        undefined, // paragraphIds
-        undefined, // aiProcessingStore
-        aiModelId,
-        undefined, // chunkIndex
-        undefined, // submittedParagraphIds
-        undefined, // accumulatedParagraphs
-        undefined, // enableOriginalTextValidation
+      const result = await ToolRegistry.handleToolCall(toolCall, {
         languages,
-      );
+        bookId: bookId || '',
+        ...(onAction ? { onAction } : {}),
+        ...(onToast ? { onToast } : {}),
+        ...(taskId ? { taskId } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        ...(aiModelId ? { aiModelId } : {}),
+      });
       results.push(result);
     }
     return results;
@@ -463,7 +459,7 @@ export class AssistantService {
 
   private static async prepareTaskAndSignal(
     model: AIModel,
-    options: AssistantServiceOptions,
+    options: ResolvedAssistantOptions,
   ): Promise<{ taskId: string | undefined; taskAbortSignal: AbortSignal | undefined }> {
     const { aiProcessingStore } = options;
     if (!aiProcessingStore) {
@@ -474,7 +470,7 @@ export class AssistantService {
       type: 'assistant',
       modelName: model.name || model.id,
       status: 'processing',
-      message: translateText(options.languages?.uiLocale ?? 'zh-CN', 'aiAssistant.processing'),
+      message: translateText(options.languages.uiLocale, 'aiAssistant.processing'),
     });
 
     // 通知外部任务已创建
@@ -495,13 +491,13 @@ export class AssistantService {
     taskId: string | undefined,
     sessionId: string | undefined,
     sessionSummary: string | undefined,
-    languages: ExecutionLanguages | undefined,
+    languages: ExecutionLanguages,
   ): string {
     let systemPrompt = this.buildSystemPrompt(context, tools, taskId, sessionId, languages);
     if (sessionSummary) {
       systemPrompt +=
         '\n\n' +
-        translateText(languages?.uiLocale ?? 'zh-CN', 'aiAssistant.summaryWrap', {
+        translateText(languages.uiLocale, 'aiAssistant.summaryWrap', {
           summary: sessionSummary,
         });
     }
@@ -575,7 +571,7 @@ export class AssistantService {
     messages: ChatMessage[];
     tools: AITool[];
     context: AssistantContext;
-    options: AssistantServiceOptions;
+    options: ResolvedAssistantOptions;
     taskId: string | undefined;
     signal: AbortSignal | undefined;
     initial: boolean;
@@ -643,7 +639,7 @@ export class AssistantService {
     messages: ChatMessage[];
     tools: AITool[];
     bookId: string | null;
-    options: AssistantServiceOptions;
+    options: ResolvedAssistantOptions;
     context: AssistantContext;
     taskId: string | undefined;
     sessionId: string | undefined;
@@ -658,7 +654,7 @@ export class AssistantService {
     const actions: ActionInfo[] = [];
     const turnLimit = options.execution?.maxToolTurns ?? MAX_TOOL_CALL_TURNS;
     for (let turn = 0; response.toolCalls.length && turn < turnLimit; turn++) {
-      this.ensureRequestActive(signal, options.languages?.uiLocale);
+      this.ensureRequestActive(signal, options.languages.uiLocale);
       if (options.execution) await options.execution.runTools(response.toolCalls, messages, signal);
       else
         messages.push(
@@ -685,23 +681,33 @@ export class AssistantService {
       messages,
       response.toolCalls,
       options.execution,
-      options.languages?.uiLocale,
+      options.languages.uiLocale,
     );
     await options.execution?.complete(messages);
     if (options.aiProcessingStore && taskId)
       await options.aiProcessingStore.updateTask(taskId, {
         status: 'end',
-        message: translateText(options.languages?.uiLocale ?? 'zh-CN', 'aiAssistant.finished'),
+        message: translateText(options.languages.uiLocale, 'aiAssistant.finished'),
       });
     return {
-      text:
-        finalText.trim() ||
-        translateText(options.languages?.uiLocale ?? 'zh-CN', 'aiAssistant.emptyReply'),
+      text: finalText.trim() || translateText(options.languages.uiLocale, 'aiAssistant.emptyReply'),
       ...(taskId ? { taskId } : {}),
       actions,
       messageHistory: messages,
       ...context.result,
     };
+  }
+
+  /**
+   * 新助手执行的语言快照：当前界面语言 + 当前书籍目标语言（无书籍时以界面语言为目标）。
+   * 上下文用量统计也以此构建提示词，保证统计与真实请求一致。
+   */
+  static currentLanguages(bookId: string | null): ExecutionLanguages {
+    const uiLocale = useSettingsStore().uiLocale;
+    return captureExecutionLanguages(
+      uiLocale,
+      bookId ? (useBooksStore().getBookById(bookId)?.targetLanguage ?? 'zh-CN') : uiLocale,
+    );
   }
 
   static async chat(
@@ -710,16 +716,10 @@ export class AssistantService {
     options: AssistantServiceOptions = {},
   ): Promise<AssistantResult> {
     const context = options.execution?.context ?? useContextStore().getContext;
-    const uiLocale = useSettingsStore().uiLocale;
     const requested =
       options.execution?.languages ??
       options.languages ??
-      captureExecutionLanguages(
-        uiLocale,
-        context.currentBookId
-          ? (useBooksStore().getBookById(context.currentBookId)?.targetLanguage ?? 'zh-CN')
-          : uiLocale,
-      );
+      this.currentLanguages(context.currentBookId);
     const languages = captureExecutionLanguages(requested.uiLocale, requested.targetLanguage);
     const tools =
       options.execution?.tools ??
@@ -742,7 +742,7 @@ export class AssistantService {
   private static async chatWithContext(
     model: AIModel,
     userMessage: string,
-    options: AssistantServiceOptions,
+    options: ResolvedAssistantOptions,
     bookContext: ReturnType<typeof useContextStore>['getContext'],
     tools: AITool[],
   ): Promise<AssistantResult> {
@@ -808,7 +808,7 @@ export class AssistantService {
         error,
         options.aiProcessingStore,
         taskId,
-        options.languages?.uiLocale ?? 'zh-CN',
+        options.languages.uiLocale,
       );
       throw error;
     }
