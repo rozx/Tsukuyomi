@@ -560,13 +560,13 @@ function escapeRegex(keyword: string): string {
  */
 type WholeKeywordStrategy = 'english' | 'cjk' | 'latin';
 
-function pickWholeKeywordStrategy(text: string, keyword: string): WholeKeywordStrategy {
+function pickWholeKeywordStrategy(_text: string, keyword: string): WholeKeywordStrategy {
   const keywordHasCJK = hasCJK(keyword);
   const isEnglishWord = /^[a-zA-Z]+$/.test(keyword);
   if (isEnglishWord && !keywordHasCJK) {
     return 'english';
   }
-  if (keywordHasCJK || hasCJK(text)) {
+  if (keywordHasCJK) {
     return 'cjk';
   }
   return 'latin';
@@ -577,10 +577,7 @@ function pickWholeKeywordStrategy(text: string, keyword: string): WholeKeywordSt
  * `flags` 控制全局 / 大小写等；replace 用 'giu'，test 用 'iu'。
  */
 function buildEnglishBoundaryPattern(escapedKeyword: string, flags: string): RegExp {
-  return new RegExp(
-    `(^|[^a-zA-Z0-9]|[${CJK_CHAR_CLASS}])${escapedKeyword}([^a-zA-Z0-9]|[${CJK_CHAR_CLASS}]|$)`,
-    flags,
-  );
+  return buildLatinBoundaryPattern(escapedKeyword, flags);
 }
 
 /**
@@ -594,7 +591,10 @@ function buildCJKBoundaryPattern(escapedKeyword: string, flags: string): RegExp 
  * `latin` 策略下的 Unicode 字母 / 数字边界正则（主要覆盖英文以外的纯拉丁语系文本）。
  */
 function buildLatinBoundaryPattern(escapedKeyword: string, flags: string): RegExp {
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapedKeyword}([^\\p{L}\\p{N}]|$)`, flags);
+  return new RegExp(
+    `(^|[^\\p{L}\\p{N}\\p{M}]|[${CJK_CHAR_CLASS}])${escapedKeyword}([^\\p{L}\\p{N}\\p{M}]|[${CJK_CHAR_CLASS}]|$)`,
+    flags,
+  );
 }
 
 /**

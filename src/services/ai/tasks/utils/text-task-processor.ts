@@ -1,3 +1,4 @@
+import type { TodoParagraphInput } from 'src/services/todo-list-service';
 import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
 import { captureExecutionLanguages } from './execution-languages';
 import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
@@ -437,7 +438,7 @@ export async function processTextTask(
     const specialInstructions = getSpecialInstructions(bookId, chapterId, taskType);
 
     // 构建系统提示词
-    const todosPrompt = getTodosSystemPrompt(!!taskId);
+    const todosPrompt = getTodosSystemPrompt(!!taskId, languages.uiLocale);
     const specialInstructionsSection = buildSpecialInstructionsSection(specialInstructions);
     const bookContextSection = await buildBookContextSection(bookId);
     const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
@@ -521,6 +522,11 @@ export async function processTextTask(
     // 处理每个块
     const MAX_RETRIES = 2;
     const appendedText = await runChunkProcessingLoop({
+      paragraphInputs: content.map((paragraph, index) => ({
+        id: paragraph.id,
+        originalText: paragraph.text,
+        displayIndex: (originalIndices.get(paragraph.id) ?? index) + 1,
+      })),
       languages,
       chunks,
       buildChunksForIds,
@@ -1026,6 +1032,7 @@ function verifyTranslationCompleteness(
  * 单个 chunk 处理所需的上下文
  */
 interface ChunkProcessingContext {
+  paragraphInputs: readonly TodoParagraphInput[];
   languages: ExecutionLanguages;
   chunks: TextChunk[];
   buildChunksForIds: (targetIds: Set<string> | string[]) => TextChunk[];
@@ -1270,6 +1277,9 @@ async function runToolLoopForChunk(params: {
 
   return executeToolCallLoop({
     languages: ctx.languages,
+    paragraphInputs: ctx.paragraphInputs.filter((paragraph) =>
+      actualChunk.paragraphIds.includes(paragraph.id),
+    ),
     history: chunkHistory,
     tools: ctx.tools,
     generateText: withContextUsage(ctx.service.generateText.bind(ctx.service), {

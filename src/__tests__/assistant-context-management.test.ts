@@ -1,3 +1,4 @@
+import { useSettingsStore } from '../stores/settings';
 import './setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssistantService } from '../services/ai/tasks/assistant-service';
@@ -35,7 +36,7 @@ const history: ChatMessage[] = [
   { role: 'assistant', content: '旧回复 '.repeat(18000) },
 ];
 const isSummary = (request: TextGenerationRequest) =>
-  request.messages?.some((m) => m.content?.includes('【新增对话内容】'));
+  request.messages?.length === 1 && request.messages[0]?.role === 'user';
 const tool: AITool = {
   type: 'function',
   function: {
@@ -48,6 +49,7 @@ let requests: ChatMessage[][];
 let summaries: number;
 let main: (request: TextGenerationRequest) => TextGenerationResult | Promise<TextGenerationResult>;
 beforeEach(() => {
+  useSettingsStore().settings.uiLocale = 'zh-CN';
   requests = [];
   summaries = 0;
   main = () => ({ text: '本轮完成。', usage: { inputTokens: 42000 } });

@@ -105,7 +105,7 @@ describe('executeToolCallLoop', () => {
           m.tool_call_id === 'call-brief-1' &&
           m.name === 'list_terms' &&
           typeof m.content === 'string' &&
-          m.content.includes('后续 chunk 无需重复调用此工具'),
+          m.content.includes('后续区块无需重复调用'),
       );
 
       expect(warnedToolMessage).toBeDefined();
@@ -198,7 +198,7 @@ describe('executeToolCallLoop', () => {
           mm.role === 'tool' &&
           mm.name === 'list_terms' &&
           typeof mm.content === 'string' &&
-          mm.content.includes('未在本次会话提供')
+          mm.content.includes('未在本次 tools 列表中')
         );
       });
       expect(refused).toBe(true);
@@ -346,7 +346,7 @@ describe('executeToolCallLoop', () => {
         return (
           mm.role === 'tool' &&
           mm.name === 'create_term' &&
-          mm.content?.includes('当前状态为 working')
+          mm.content?.includes('当前状态 working')
         );
       });
       expect(hasStatusRestrictionPrompt).toBe(true);

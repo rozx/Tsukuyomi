@@ -1,3 +1,4 @@
+import { translateText } from 'src/i18n/translate';
 import { buildModelServiceConfig } from '../core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
@@ -151,10 +152,11 @@ export class AssistantService {
     tools: AITool[],
     taskId?: string,
     sessionId?: string,
+    languages?: ExecutionLanguages,
   ): string {
-    const todosPrompt = getTodosSystemPrompt(!!taskId || !!sessionId);
+    const todosPrompt = getTodosSystemPrompt(!!taskId || !!sessionId, languages?.uiLocale);
 
-    return getAssistantSystemPrompt(todosPrompt, tools, context);
+    return getAssistantSystemPrompt(todosPrompt, tools, context, languages);
   }
 
   private static async handleToolCalls(
@@ -455,7 +457,7 @@ export class AssistantService {
       type: 'assistant',
       modelName: model.name || model.id,
       status: 'processing',
-      message: '正在处理助手请求...',
+      message: translateText(options.languages?.uiLocale ?? 'zh-CN', 'aiAssistant.processing'),
     });
 
     // 通知外部任务已创建
@@ -476,10 +478,15 @@ export class AssistantService {
     taskId: string | undefined,
     sessionId: string | undefined,
     sessionSummary: string | undefined,
+    languages: ExecutionLanguages | undefined,
   ): string {
-    let systemPrompt = this.buildSystemPrompt(context, tools, taskId, sessionId);
+    let systemPrompt = this.buildSystemPrompt(context, tools, taskId, sessionId, languages);
     if (sessionSummary) {
-      systemPrompt += `\n\n## 之前的对话总结\n\n${sessionSummary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
+      systemPrompt +=
+        '\n\n' +
+        translateText(languages?.uiLocale ?? 'zh-CN', 'aiAssistant.summaryWrap', {
+          summary: sessionSummary,
+        });
     }
     return systemPrompt;
   }
@@ -716,7 +723,14 @@ export class AssistantService {
     const { taskId, taskAbortSignal } = await this.prepareTaskAndSignal(model, options);
     const signal = options.signal || taskAbortSignal;
     const prompt = (summary?: string) =>
-      this.composeSystemPrompt(bookContext, tools, taskId, options.sessionId, summary);
+      this.composeSystemPrompt(
+        bookContext,
+        tools,
+        taskId,
+        options.sessionId,
+        summary,
+        options.languages,
+      );
     try {
       const systemPrompt = options.execution
         ? await options.execution.prompt()

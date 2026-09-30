@@ -1,13 +1,12 @@
 import type { ExecutionLanguages } from 'src/models/locale';
-import { translateText, languageOptions } from 'src/i18n/translate';
+import { translateText } from 'src/i18n/translate';
+import { aiLanguageName } from './language';
 import { captureExecutionLanguages } from '../utils/execution-languages';
 
 const DEFAULT_LANGUAGES = captureExecutionLanguages('zh-CN');
 function values(languages: ExecutionLanguages) {
   return {
-    targetLanguage: languageOptions(languages.uiLocale).find(
-      (option) => option.value === languages.targetLanguage,
-    )!.label,
+    targetLanguage: aiLanguageName(languages.uiLocale, languages.targetLanguage),
     example: JSON.stringify({ t: translateText(languages.uiLocale, 'aiTasks.term.example') }),
   };
 }

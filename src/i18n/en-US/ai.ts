@@ -1,4 +1,8 @@
 export default {
+  aiValidation: {
+    sourceKept:
+      'Paragraph {id} was submitted unchanged. Content already in the target language may remain as written; no artificial rewriting is needed.',
+  },
   aiTasks: {
     explain:
       'Briefly explain this text in English: its meaning, grammar, cultural context, and relationship to the current book. Detect its source language and handle mixed languages as needed:\n\n{text}',

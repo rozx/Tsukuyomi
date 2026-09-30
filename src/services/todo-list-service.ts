@@ -1,3 +1,5 @@
+import type { AppLocale } from 'src/models/locale';
+import { isAppLocale } from 'src/models/locale';
 /**
  * 待办事项服务
  * 负责管理待办事项（使用 localStorage 存储）
@@ -8,7 +10,15 @@ import type { TaskStatus } from 'src/services/ai/tasks/utils/task-types';
 
 export type TodoStatus = 'pending' | 'working' | 'done';
 
+export interface TodoParagraphInput {
+  id: string;
+  displayIndex: number;
+  originalText: string;
+}
+
 export interface TodoItem {
+  uiLocale?: AppLocale;
+  paragraphInputs?: TodoParagraphInput[];
   id: string;
   text: string;
   status: TodoStatus;
@@ -113,8 +123,16 @@ export class TodoListService {
     text: string,
     taskId: string,
     sessionId?: string,
-    options?: { predefined?: boolean; taskState?: TaskStatus; chunkIndex?: number },
+    options?: {
+      predefined?: boolean;
+      taskState?: TaskStatus;
+      chunkIndex?: number;
+      uiLocale?: AppLocale;
+      paragraphInputs?: TodoParagraphInput[];
+    },
   ): TodoItem {
+    if (options?.uiLocale !== undefined && !isAppLocale(options.uiLocale))
+      throw new Error('INVALID_TODO_LANGUAGE');
     const trimmedText = text.trim();
     const trimmedTaskId = taskId.trim();
     const trimmedSessionId = sessionId?.trim();
@@ -136,6 +154,10 @@ export class TodoListService {
       updatedAt: now,
       taskId: trimmedTaskId,
       ...(trimmedSessionId ? { sessionId: trimmedSessionId } : {}),
+      ...(options?.uiLocale ? { uiLocale: options.uiLocale } : {}),
+      ...(options?.paragraphInputs
+        ? { paragraphInputs: structuredClone(options.paragraphInputs) }
+        : {}),
       ...(options?.predefined ? { predefined: true } : {}),
       ...(options?.taskState ? { taskState: options.taskState } : {}),
       ...(options?.chunkIndex !== undefined ? { chunkIndex: options.chunkIndex } : {}),
@@ -180,6 +202,8 @@ export class TodoListService {
       createdAt: todo.createdAt,
       updatedAt: Date.now(),
       taskId: todo.taskId,
+      ...(todo.uiLocale ? { uiLocale: todo.uiLocale } : {}),
+      ...(todo.paragraphInputs ? { paragraphInputs: todo.paragraphInputs } : {}),
       ...(todo.sessionId ? { sessionId: todo.sessionId } : {}),
       ...(todo.predefined ? { predefined: true } : {}),
       ...(todo.taskState ? { taskState: todo.taskState } : {}),

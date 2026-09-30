@@ -134,12 +134,12 @@ export function hasNonEmptyTranslation(paragraph: Paragraph): boolean {
 }
 
 /**
- * 检查文本是否仅包含符号（不包含字母、数字或CJK字符）
+ * 检查文本是否仅包含符号（不包含任何 Unicode 字母或数字）
  * @param text 文本
  * @returns 如果仅包含符号，返回 true
  */
 export function isSymbolOnly(text: string): boolean {
-  const hasContent = new RegExp(`[a-zA-Z0-9${CJK_CHAR_CLASS}]`).test(text);
+  const hasContent = /[\p{L}\p{N}]/u.test(text);
   return !hasContent;
 }
 

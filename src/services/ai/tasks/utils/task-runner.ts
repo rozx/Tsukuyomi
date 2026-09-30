@@ -1,3 +1,4 @@
+import type { TodoParagraphInput } from 'src/services/todo-list-service';
 import { getLanguageTranslation } from 'src/services/localization/selection';
 import type { ExecutionLanguages } from 'src/models/locale';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
@@ -36,7 +37,8 @@ import {
 } from './productivity-monitor';
 import { type PerformanceMetrics } from './tool-executor';
 import { buildPostOutputPrompt } from './context-builder';
-import { PromptPolicy } from './prompt-policy';
+import { createPromptPolicy, type IPromptPolicy } from './prompt-policy';
+import { translateText } from 'src/i18n/translate';
 import { StateMachineEngine } from './state-machine-engine';
 import { ToolDispatcher } from './tool-dispatcher';
 import { TodoWorkflow } from './todo-workflow';
@@ -57,6 +59,7 @@ const ABSOLUTE_MAX_TURNS = 200;
  */
 export interface ToolCallLoopConfig {
   languages?: ExecutionLanguages;
+  paragraphInputs?: readonly TodoParagraphInput[];
   history: ChatMessage[];
   tools: AITool[];
   generateText: (
@@ -219,6 +222,7 @@ class TaskLoopSession {
   private allowedToolNames: Set<string>;
   private taskLabel: string;
   private metrics: PerformanceMetrics;
+  private readonly promptPolicy: IPromptPolicy;
   private stateMachine: StateMachineEngine;
   private toolDispatcher: ToolDispatcher;
   private todoWorkflow: TodoWorkflow | undefined;
@@ -226,6 +230,7 @@ class TaskLoopSession {
   private lastTodoMessage: ChatMessage | undefined;
 
   constructor(private config: ToolCallLoopConfig) {
+    this.promptPolicy = createPromptPolicy(config.languages?.uiLocale ?? 'zh-CN');
     this.allowedToolNames = new Set(config.tools.map((t) => t.function.name));
     this.taskLabel = TASK_TYPE_LABELS[config.taskType];
     this.stateMachine = new StateMachineEngine(config.taskType, this.currentStatus);
@@ -252,7 +257,7 @@ class TaskLoopSession {
           this.metrics.workingRejectedWriteCount++;
         },
         logLabel: this.config.logLabel,
-        promptPolicy: PromptPolicy,
+        promptPolicy: this.promptPolicy,
         taskType: this.config.taskType,
       },
       allowedToolNames: this.allowedToolNames,
@@ -269,6 +274,7 @@ class TaskLoopSession {
         config.taskId,
         config.chunkIndex ?? 0,
         !!config.isBriefPlanning,
+        config.languages,
       );
       // 生成 planning 阶段的初始待办
       this.todoWorkflow.generateForState('planning');
@@ -472,7 +478,11 @@ class TaskLoopSession {
     console.warn(
       `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
     );
-    return `⛔ 无法进入 ${newStatus}：还有 ${gate.incompleteItems.length} 个未完成的待办事项\n${todoList}\n\n请先完成所有待办事项后再切换状态。`;
+    return translateText(this.config.languages?.uiLocale ?? 'zh-CN', 'aiState.gate', {
+      status: newStatus,
+      count: gate.incompleteItems.length,
+      items: todoList,
+    });
   }
 
   /**
@@ -505,6 +515,9 @@ class TaskLoopSession {
           this.todoWorkflow.generateForState(newStatus, {
             paragraphIds: this.config.paragraphIds || [],
             chunkText: this.config.chunkText,
+            ...(this.config.paragraphInputs
+              ? { paragraphInputs: this.config.paragraphInputs }
+              : {}),
             chunkIndex: this.config.chunkIndex ?? 0,
             chapterTitle: this.config.chapterTitle,
           });
@@ -697,7 +710,7 @@ class TaskLoopSession {
     if (keyTools.has(toolName)) {
       if (this.config.isBriefPlanning) {
         console.warn(`[${this.config.logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolName}`);
-        const warning = PromptPolicy.getBriefPlanningToolWarningPrompt();
+        const warning = this.promptPolicy.getBriefPlanningToolWarningPrompt();
         // 验证 content 不为空
         const toolResultContent = content || '';
         this.config.history.push({
@@ -776,7 +789,7 @@ class TaskLoopSession {
         this.planningResponses.push(this.finalResponseText);
       }
 
-      const prompt = PromptPolicy.getPlanningLoopPrompt(
+      const prompt = this.promptPolicy.getPlanningLoopPrompt(
         this.config.taskType,
         !!this.config.isBriefPlanning,
         this.consecutivePlanningCount >= MAX_CONSECUTIVE_STATUS,
@@ -823,7 +836,8 @@ class TaskLoopSession {
       this.config.history.push({
         role: 'user',
         content:
-          `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingLoopPrompt(taskType),
+          `${this.getCurrentStatusInfoMsg()}\n\n` +
+          this.promptPolicy.getWorkingLoopPrompt(taskType),
       });
       return { shouldContinue: true };
     }
@@ -841,13 +855,15 @@ class TaskLoopSession {
       this.config.history.push({
         role: 'user',
         content:
-          `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingFinishedPrompt(taskType),
+          `${this.getCurrentStatusInfoMsg()}\n\n` +
+          this.promptPolicy.getWorkingFinishedPrompt(taskType),
       });
     } else {
       this.config.history.push({
         role: 'user',
         content:
-          `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingContinuePrompt(taskType),
+          `${this.getCurrentStatusInfoMsg()}\n\n` +
+          this.promptPolicy.getWorkingContinuePrompt(taskType),
       });
     }
     return { shouldContinue: true };
@@ -872,7 +888,7 @@ class TaskLoopSession {
             role: 'user',
             content:
               `${this.getCurrentStatusInfoMsg()}\n\n` +
-              PromptPolicy.getMissingParagraphsPrompt(taskType, dbConfirmedMissing),
+              this.promptPolicy.getMissingParagraphsPrompt(taskType, dbConfirmedMissing),
           });
           this.consecutiveReviewCount = 0;
           return { shouldContinue: true };
@@ -892,10 +908,14 @@ class TaskLoopSession {
         role: 'user',
         content:
           `${this.getCurrentStatusInfoMsg()}\n\n` +
-          PromptPolicy.getReviewLoopPrompt(this.config.taskType),
+          this.promptPolicy.getReviewLoopPrompt(this.config.taskType),
       });
     } else {
-      const postOutputPrompt = buildPostOutputPrompt(taskType, this.config.taskId);
+      const postOutputPrompt = buildPostOutputPrompt(
+        taskType,
+        this.config.taskId,
+        this.config.languages?.uiLocale ?? 'zh-CN',
+      );
       this.config.history.push({
         role: 'user',
         content: `${this.getCurrentStatusInfoMsg()}\n\n${postOutputPrompt}`,
@@ -998,7 +1018,7 @@ class TaskLoopSession {
    * 否则每条状态消息都会夹带一份过时快照。
    */
   private getCurrentStatusInfoMsg() {
-    return PromptPolicy.getCurrentStatusInfo(
+    return this.promptPolicy.getCurrentStatusInfo(
       this.config.taskType,
       this.currentStatus,
       this.config.isBriefPlanning,

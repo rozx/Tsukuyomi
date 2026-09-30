@@ -52,6 +52,7 @@ export async function compactImportHistory(
         ? 0
         : contextBudgets(await resolveModelLimits(model)).keepRecentBudget;
     const result = await compactHistory({
+      uiLocale: task.checkpoint?.uiLocale ?? 'zh-CN',
       history,
       pinnedIndex: history.findLastIndex((message) => message.role === 'user'),
       keepRecentBudget: budget,

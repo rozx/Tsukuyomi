@@ -1,3 +1,4 @@
+import type { AppLocale } from 'src/models/locale';
 import { TodoListService, type TodoItem, type TodoStatus } from 'src/services/todo-list-service';
 import type { ToolDefinition } from './types';
 
@@ -98,12 +99,12 @@ function buildBatchTodoResponse(
   });
 }
 
-
 function createBatchTodos(
   items: string[],
   taskId: string,
   sessionId: string | undefined,
   onAction: ((action: TodoAction) => void) | undefined,
+  uiLocale: AppLocale = 'zh-CN',
 ): string {
   const createdTodos: TodoItem[] = [];
   const errors: string[] = [];
@@ -114,7 +115,7 @@ function createBatchTodos(
       continue;
     }
     try {
-      const todo = TodoListService.createTodo(itemText.trim(), taskId, sessionId);
+      const todo = TodoListService.createTodo(itemText.trim(), taskId, sessionId, { uiLocale });
       createdTodos.push(todo);
       dispatchTodoCreated(todo, onAction);
     } catch (error) {
@@ -335,11 +336,12 @@ function createSingleTodo(
   taskId: string,
   sessionId: string | undefined,
   onAction: ((action: TodoAction) => void) | undefined,
+  uiLocale: AppLocale = 'zh-CN',
 ): string {
   if (!text || !text.trim()) {
     throw new Error('待办事项内容不能为空');
   }
-  const todo = TodoListService.createTodo(text, taskId, sessionId);
+  const todo = TodoListService.createTodo(text, taskId, sessionId, { uiLocale });
   dispatchTodoCreated(todo, onAction);
   const promoted = autoAdvanceNextTodo({ taskId, sessionId }, onAction);
   const reported = promoted && promoted.id === todo.id ? promoted : todo;
@@ -379,7 +381,7 @@ export const todoListTools: ToolDefinition[] = [
         },
       },
     },
-    handler: (args, { onAction, taskId, sessionId }) => {
+    handler: (args, { onAction, taskId, sessionId, languages }) => {
       const { text, items } = args as {
         text?: string;
         items?: string[];
@@ -391,10 +393,10 @@ export const todoListTools: ToolDefinition[] = [
       }
 
       if (items && Array.isArray(items) && items.length > 0) {
-        return createBatchTodos(items, taskId, sessionId, onAction as never);
+        return createBatchTodos(items, taskId, sessionId, onAction as never, languages?.uiLocale);
       }
       if (text !== undefined && text !== null) {
-        return createSingleTodo(text, taskId, sessionId, onAction as never);
+        return createSingleTodo(text, taskId, sessionId, onAction as never, languages?.uiLocale);
       }
       throw new Error('必须提供 text 或 items 参数之一');
     },

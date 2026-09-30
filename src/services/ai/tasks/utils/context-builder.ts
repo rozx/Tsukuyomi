@@ -218,16 +218,13 @@ export function isOriginalTextValidationEnabled(bookId?: string): boolean {
 /**
  * 构建输出内容后的后续操作提示 - 精简版
  */
-export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): string {
-  const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
-
-  // 翻译相关任务：在 review 阶段额外提醒可回到 working 更新既有译文
-  const canGoBackToWorkingReminder =
-    taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
-      ? '如果你想更新任何已输出的译文/润色/校对结果，请用 `update_task_status({"status":"working"})` 切回 working，并只提交需要更新的段落；'
-      : '';
-
-  return `完成。${todosReminder}${canGoBackToWorkingReminder}如需后续操作请调用工具，否则使用 \`update_task_status({"status":"end"})\` 结束。`;
+export function buildPostOutputPrompt(
+  _taskType: TaskType,
+  taskId?: string,
+  uiLocale: AppLocale = 'zh-CN',
+): string {
+  const reminder = taskId ? getPostToolCallReminder(undefined, taskId, undefined, uiLocale) : '';
+  return translateText(uiLocale, 'aiWorkflow.postOutput', { reminder });
 }
 
 /**

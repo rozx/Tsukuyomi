@@ -1,3 +1,5 @@
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 import { buildModelServiceConfig } from '../core/model-config';
 import type { AIModel } from '../types/ai-model';
 import type { ChatMessage } from '../types/ai-service';
@@ -10,35 +12,46 @@ import { getEstimationMultiplier } from './calibration';
 import { modelContextKey } from './measure';
 
 export interface SummarizeInput {
+  uiLocale?: AppLocale;
   previousSummary?: string | undefined;
   messages: ChatMessage[];
   model: AIModel;
   signal?: AbortSignal | undefined;
 }
 
-function summaryRequest(previous: string, segment: string): ChatMessage[] {
-  return [{ role: 'user', content: getStructuredSummaryPrompt(previous, segment) }];
+function summaryRequest(previous: string, segment: string, uiLocale: AppLocale): ChatMessage[] {
+  return [{ role: 'user', content: getStructuredSummaryPrompt(previous, segment, uiLocale) }];
 }
 
 /** 每次按更新后的摘要重新计算输入预算；超长普通消息也分段，不能跳过尾部。 */
-function segmentLength(text: string, previous: string, budget: number, multiplier: number): number {
+function segmentLength(
+  text: string,
+  previous: string,
+  budget: number,
+  multiplier: number,
+  uiLocale: AppLocale,
+): number {
   let low = 0;
   let high = text.length;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
     if (
-      estimateMessagesTokenCount(summaryRequest(previous, text.slice(0, mid)), multiplier) <= budget
+      estimateMessagesTokenCount(
+        summaryRequest(previous, text.slice(0, mid), uiLocale),
+        multiplier,
+      ) <= budget
     )
       low = mid;
     else high = mid - 1;
   }
   // 不把 UTF-16 代理对拆开。
   if (low < text.length && low > 0 && /[\uD800-\uDBFF]/.test(text[low - 1]!)) low--;
-  if (!low) throw new Error('摘要输入超出模型可用窗口，无法安全压缩；请更换更大窗口的模型。');
+  if (!low) throw new Error(translateText(uiLocale, 'aiAssistant.summaryWindow'));
   return low;
 }
 
 export async function summarizeInto({
+  uiLocale = 'zh-CN',
   previousSummary = '',
   messages,
   model,
@@ -52,15 +65,15 @@ export async function summarizeInto({
   const text = formatSummaryMessages(messages)
     .map((message) => `[${message.role}] ${message.content}`)
     .join('\n\n');
-  if (!text) throw new Error('没有可以生成摘要的内容');
+  if (!text) throw new Error(translateText(uiLocale, 'aiAssistant.summaryEmpty'));
   const service = AIServiceFactory.getService(model.provider);
   let summary = previousSummary;
   let offset = 0;
   while (offset < text.length) {
     signal?.throwIfAborted();
     const rest = text.slice(offset);
-    const length = segmentLength(rest, summary, budget, multiplier);
-    const requestMessages = summaryRequest(summary, rest.slice(0, length));
+    const length = segmentLength(rest, summary, budget, multiplier, uiLocale);
+    const requestMessages = summaryRequest(summary, rest.slice(0, length), uiLocale);
     const result = await service.generateText(
       buildModelServiceConfig(model, {
         temperature: 0.3,
@@ -72,7 +85,8 @@ export async function summarizeInto({
     );
     signal?.throwIfAborted();
     const candidate = result.text.trim();
-    if (candidate.length < 20) throw new Error('摘要生成失败：内容为空或过短，原始历史已保留。');
+    if (candidate.length < 20)
+      throw new Error(translateText(uiLocale, 'aiAssistant.summaryFailed'));
     summary = candidate;
     offset += length;
   }

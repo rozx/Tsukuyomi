@@ -1,3 +1,6 @@
+import aiState from './ai-state';
+import aiWorkflow from './ai-workflow';
+import aiAssistant from './ai-assistant';
 import ai from './ai';
 import importer from './import';
 import books from './books';
@@ -8,6 +11,9 @@ import memory from './memory';
 import chat from './chat';
 
 export default {
+  ...aiState,
+  ...aiWorkflow,
+  ...aiAssistant,
   ...ai,
   ...common,
   ...memory,

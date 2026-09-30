@@ -1307,7 +1307,8 @@ describe('add_translation_batch', () => {
       const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
       expect(Array.isArray(resultObj.quality_warnings)).toBe(true);
-      expect(resultObj.quality_warnings.join('\n')).toContain('检查翻译完整性');
+      expect(resultObj.quality_warnings.join('\n')).toContain('允许保持原文');
+      expect(resultObj.quality_warnings.join('\n')).not.toContain('检查翻译完整性');
     });
 
     test('纯符号段落提交与原文相同时不应触发完整性警告', async () => {
@@ -1345,7 +1346,7 @@ describe('add_translation_batch', () => {
       expect(resultObj.quality_warnings).toBeUndefined();
     });
 
-    test('与原文相同且命中当前选中版本时仍应拒绝', async () => {
+    test('与原文相同且命中当前选中版本时仍计为已处理', async () => {
       const para1 = createTestParagraph('para1', '这是原文文本', [
         { id: 'trans-selected', translation: '这是原文文本', aiModelId: 'model-old' },
       ]);
@@ -1380,12 +1381,12 @@ describe('add_translation_batch', () => {
       );
 
       const resultObj = JSON.parse(result);
-      expect(resultObj.success).toBe(false);
-      expect(Array.isArray(resultObj.errors)).toBe(true);
-      expect(resultObj.errors.join('\n')).toContain('当前选中版本相同');
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.processed_count).toBe(1);
+      expect(resultObj.accepted_paragraphs[0].paragraph_id).toBe('para1');
     });
 
-    test('重复译文命中当前选中版本时应拒绝提交', async () => {
+    test('重复译文命中当前选中版本时复用并计为已处理', async () => {
       const para1 = createTestParagraph('para1', '原文1', [
         { id: 'trans-old', translation: '重复译文', aiModelId: 'model-old' },
         { id: 'trans-current', translation: '重复译文', aiModelId: 'model-current' },
@@ -1416,9 +1417,9 @@ describe('add_translation_batch', () => {
       );
 
       const resultObj = JSON.parse(result);
-      expect(resultObj.success).toBe(false);
-      expect(Array.isArray(resultObj.errors)).toBe(true);
-      expect(resultObj.errors.join('\n')).toContain('当前选中版本相同');
+      expect(resultObj.success).toBe(true);
+      expect(resultObj.processed_count).toBe(1);
+      expect(resultObj.accepted_paragraphs[0].paragraph_id).toBe('para1');
       expect(para1.selectedTranslationId).toBe('trans-current');
       expect(para1.translations?.length).toBe(originalCount);
     });
@@ -1460,7 +1461,7 @@ describe('add_translation_batch', () => {
       expect(para1.translations?.length).toBe(originalCount);
     });
 
-    test('存在校验错误时重复译文错误应阻止提交', async () => {
+    test('当前选用重复不会把合法批次变成部分失败', async () => {
       const para1 = createTestParagraph('para1', '原文1', [
         { id: 'trans-selected', translation: '重复译文', aiModelId: 'model-selected' },
       ]);
@@ -1494,16 +1495,12 @@ describe('add_translation_batch', () => {
 
       const resultObj = JSON.parse(result);
       expect(resultObj.success).toBe(true);
-      expect(resultObj.result_code).toBe('PARTIAL_SUCCESS');
-      expect(resultObj.processed_count).toBe(1);
-      expect(Array.isArray(resultObj.failed_paragraphs)).toBe(true);
-      expect(resultObj.failed_paragraphs).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            paragraph_id: 'para1',
-          }),
-        ]),
-      );
+      expect(resultObj.result_code).toBeUndefined();
+      expect(resultObj.processed_count).toBe(2);
+      expect(resultObj.failed_paragraphs ?? []).toEqual([]);
+      expect(
+        resultObj.accepted_paragraphs.map((item: { paragraph_id: string }) => item.paragraph_id),
+      ).toEqual(['para1', 'para2']);
     });
 
     test('润色任务应验证通过并返回成功（实际写入由回调层完成）', async () => {

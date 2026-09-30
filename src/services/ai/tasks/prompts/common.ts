@@ -1,3 +1,6 @@
+import { taskPromptLabel, statusCall } from './runner';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 import type { AITool } from 'src/services/ai/types/ai-service';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 export { MAX_TRANSLATION_BATCH_SIZE };
@@ -17,19 +20,12 @@ export function hasQueryChapterTool(tools?: AITool[]): boolean {
 /**
  * 工具范围规则：严格限制 AI 只能调用本次请求提供的 tools
  */
-export function getToolScopeRules(tools?: AITool[]): string {
-  const toolNames = tools?.map((t) => t.function.name) ?? [];
-  const toolList =
-    toolNames.length > 0
-      ? toolNames.map((n) => `- \`${n}\``).join('\n')
-      : '- （本次未提供任何工具）';
-
-  return `【工具范围】⚠️ **只能使用本次会话提供的工具**
-- ⛔ 禁止调用未在列表中的工具
-- 工具未提供时：基于已有上下文继续任务
-
-【本次可用工具列表】
-${toolList}`;
+export function getToolScopeRules(tools?: AITool[], uiLocale: AppLocale = 'zh-CN'): string {
+  const names = tools?.map((tool) => tool.function.name) ?? [];
+  const list = names.length
+    ? names.map((name) => `- \`${name}\``).join('\n')
+    : translateText(uiLocale, 'aiCommon.noTools');
+  return translateText(uiLocale, 'aiCommon.scope', { tools: list });
 }
 
 /**
@@ -49,103 +45,42 @@ export function getSymbolFormatRules(): string {
 /**
  * 获取规划阶段描述
  */
-function getPlanningStateDescription(taskLabel: string, isBriefPlanning?: boolean): string {
-  if (isBriefPlanning) {
-    return `**当前状态：简短规划阶段 (planning)**
-已继承前一部分的规划上下文。如需补充信息可调用工具，本阶段也可创建/更新术语、角色、记忆。
-按待办清单逐项确认，完成后 \`update_task_status({"status": "working"})\`。`;
-  }
-
-  return `**当前状态：规划阶段 (planning)**
-上下文中提供的术语/角色/记忆已为最新，无需重新获取。按待办清单逐项确认，缺失时再调用工具补充。
-- 本阶段是唯一的输出前数据维护窗口：可创建/更新术语、角色、记忆
-- ⚠️ 当前阶段禁止提交${taskLabel}结果
-⚠️ 所有待办标记 done 后才能切换：\`update_task_status({"status": "working"})\``;
-}
-
-function getWorkingStateDescription(taskType: TaskType): string {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
-  let focusDesc = '';
-  switch (taskType) {
-    case 'translation':
-      focusDesc = '1:1翻译，敬语按流程处理';
-      break;
-    case 'polish':
-      focusDesc = '语气词优化、摆脱翻译腔、节奏调整';
-      break;
-    default:
-      focusDesc = '文字（错别字/标点/语法）、内容（一致性/逻辑）、格式检查';
-  }
-
-  const onlyChangedNote = taskType === 'translation' ? '' : '（只返回有变化的段落）';
-  const nextStatus = taskType === 'translation' ? 'review' : 'end';
-  const nextStatusNote =
-    taskType === 'translation' ? '' : '（⚠️ 注意：此任务没有 review 阶段，直接进入 end）';
-  const dataWriteRestrictionNote =
-    taskType === 'translation' ? '（请在 planning 或 review 阶段处理）' : '（请在 planning 阶段处理）';
-  const dataWriteRestrictionLine = dataWriteRestrictionNote
-    ? `- ⛔ 禁止创建/更新术语、角色、记忆${dataWriteRestrictionNote}\n`
-    : '';
-
-  return `**当前状态：${taskLabel}中 (working)**
-- 专注于${taskLabel}：${focusDesc}
-${dataWriteRestrictionLine}- 使用 \`add_translation_batch\` 提交结果 ${onlyChangedNote}（**单次上限 ${MAX_TRANSLATION_BATCH_SIZE} 段**）
-按待办清单逐批完成，每批完成后标记 done。
-⚠️ 所有待办标记 done 后才能切换：\`update_task_status({"status": "${nextStatus}"})\`${nextStatusNote}`;
-}
-
-/**
- * 获取复核阶段描述
- */
-function getReviewStateDescription(_taskLabel: string): string {
-  return `**当前状态：复核阶段 (review)**
-按待办清单逐项检查，发现问题可直接用 \`add_translation_batch\` 修正。
-可创建/更新术语、角色、记忆。
-⚠️ 所有待办标记 done 后才能切换：\`update_task_status({"status": "end"})\``;
-}
-
-/**
- * 获取结束阶段描述
- */
-function getEndStateDescription(hasNextChunk?: boolean): string {
-  const nextChunkNote = hasNextChunk
-    ? '当前块已完成，系统将自动提供下一个块。'
-    : '所有内容已处理完毕，这是最后一个块。';
-
-  return `**当前状态：完成 (end)**
-${nextChunkNote}
-⚠️ **注意**：任务已结束，你不应再调用任何工具或输出内容，请直接结束本次会话。`;
-}
-
-/**
- * 获取当前状态信息（用于告知AI当前处于哪个阶段）
- * @param taskType 任务类型
- * @param status 当前状态
- * @param isBriefPlanning 是否为简短规划阶段（用于后续 chunk，已继承前一个 chunk 的规划上下文）
- * @param hasNextChunk 是否有下一个块可用
- */
 export function getCurrentStatusInfo(
   taskType: TaskType,
   status: TaskStatus,
-  isBriefPlanning?: boolean,
-  hasNextChunk?: boolean,
+  brief?: boolean,
+  hasNext?: boolean,
+  locale: AppLocale = 'zh-CN',
 ): string {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
-
-  switch (status) {
-    // preparing 已并入 planning，旧持久化任务恢复到该状态时复用同一段描述
-    case 'planning':
-    case 'preparing':
-      return getPlanningStateDescription(taskLabel, isBriefPlanning);
-    case 'working':
-      return getWorkingStateDescription(taskType);
-    case 'review':
-      return getReviewStateDescription(taskLabel);
-    case 'end':
-      return getEndStateDescription(hasNextChunk);
-    default:
-      return '';
-  }
+  if (status === 'planning' || status === 'preparing')
+    return translateText(
+      locale,
+      brief ? 'aiState.brief' : 'aiState.planning',
+      brief
+        ? { transition: statusCall('working') }
+        : { task: taskPromptLabel(taskType, locale), transition: statusCall('working') },
+    );
+  if (status === 'working')
+    return translateText(locale, 'aiState.working', {
+      task: taskPromptLabel(taskType, locale),
+      focus: translateText(
+        locale,
+        taskType === 'translation'
+          ? 'aiState.focusTranslation'
+          : taskType === 'polish'
+            ? 'aiState.focusPolish'
+            : 'aiState.focusProofread',
+      ),
+      maintenance: taskType === 'translation' ? 'planning / review' : 'planning',
+      max: MAX_TRANSLATION_BATCH_SIZE,
+      changed: taskType === 'translation' ? '' : translateText(locale, 'aiState.changed'),
+      transition: statusCall(taskType === 'translation' ? 'review' : 'end'),
+    });
+  if (status === 'review')
+    return translateText(locale, 'aiState.review', { transition: statusCall('end') });
+  return translateText(locale, 'aiState.end', {
+    next: translateText(locale, hasNext ? 'aiState.next' : 'aiState.last'),
+  });
 }
 
 /**

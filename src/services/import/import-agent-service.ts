@@ -1,3 +1,4 @@
+import { translateText } from 'src/i18n/translate';
 import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationChunk } from 'src/services/ai/types/ai-service';
@@ -20,7 +21,6 @@ type UpdateListener = (taskId: string) => void;
 const listeners = new Set<UpdateListener>();
 const TASK_LOCK_PREFIX = 'tsukuyomi:import-task:';
 const RELEASE_TIMEOUT_MS = 30_000;
-const CONTINUE_AFTER_COMPACT = '上下文已压缩为摘要，请根据摘要与当前任务数据继续之前的整理。';
 function notify(taskId: string): void {
   for (const listener of listeners) {
     try {
@@ -215,7 +215,13 @@ export class ImportAgentService {
       },
     );
     // 必须释放压缩锁后再通过正常入口恢复，避免同一任务重入锁。
-    return resumeAfterCompaction ? this.run(taskId, model, CONTINUE_AFTER_COMPACT) : compacted;
+    return resumeAfterCompaction
+      ? this.run(
+          taskId,
+          model,
+          translateText(compacted.checkpoint?.uiLocale ?? 'zh-CN', 'aiAssistant.continueCompact'),
+        )
+      : compacted;
   }
 
   private static async perform(

@@ -1,3 +1,4 @@
+import { translateText } from 'src/i18n/translate';
 import type { ToolDefinition, ToolContext } from './types';
 import type { AIProcessingStore } from 'src/services/ai/tasks/utils/task-types';
 import { BookService } from 'src/services/book-service';
@@ -125,7 +126,7 @@ function validatePrefixLength(prefix: string, originalText: string): PrefixLengt
  * 引号对匹配规则：
  * - 「」 原文 → 译文可用 「」 或 \u201c\u201d（智能双引号）或 \u2018\u2019（智能单引号）
  * - 『』 原文 → 译文可用 『』 或 \u201c\u201d（智能双引号）或 \u2018\u2019（智能单引号）
- * 注意：不接受 ASCII 直引号 ' 和 "，因为它们在英文文本中过于常见，容易导致误判
+ * 简繁保持原有规则；英文目标额外接受成对 ASCII 双引号。
  */
 const QUOTE_PAIR_RULES: Array<{
   originalOpen: string;
@@ -199,10 +200,6 @@ const ERROR_MESSAGES = {
   // 翻译内容验证相关
   MISSING_QUOTE_SYMBOLS: (paragraphId: string, missingTypes: string[]) =>
     `段落 ${paragraphId} 的译文缺少原文引号符号: ${missingTypes.join(' ')}`,
-  TRANSLATION_SAME_AS_SELECTED: (paragraphId: string) =>
-    `段落 ${paragraphId} 的译文与当前选中版本相同，请不要提交相同内容。`,
-  TRANSLATION_SAME_AS_ORIGINAL_COMPLETENESS: (paragraphId: string) =>
-    `段落 ${paragraphId} 的译文与原文相同，请检查翻译完整性，确认不存在遗漏的未翻译内容。`,
   TRANSLATION_DUPLICATE: (count: number) =>
     `${count} 个段落译文与历史版本相同（已自动复用历史翻译）。`,
   TRANSLATION_LENGTH_SHORT: (paragraphId: string, percentage: number) =>
@@ -871,6 +868,38 @@ function countSymbols(text: string, symbols: string[]): number {
   return count;
 }
 
+/** 英文路径按剩余配额取用引号，避免不同原文规则重复使用同一符号。 */
+function consumeQuoteSymbols(
+  remaining: Map<string, number>,
+  symbols: string[],
+  required: number,
+): number {
+  let count = 0;
+  for (const symbol of symbols) {
+    if (symbol === '"') continue;
+    const available = remaining.get(symbol) ?? 0;
+    const used = Math.min(available, required - count);
+    remaining.set(symbol, available - used);
+    count += used;
+    if (count === required) break;
+  }
+  return count;
+}
+
+/** 原文不平衡时只要求可确认的符号，避免抓取噪声阻止提交。 */
+function getRequiredQuoteCounts(
+  originalText: string,
+  rule: (typeof QUOTE_PAIR_RULES)[number],
+): { open: number; close: number } {
+  const open = countSymbol(originalText, rule.originalOpen);
+  const close = countSymbol(originalText, rule.originalClose);
+  if (open > 0 && close > 0) {
+    const pairs = Math.min(open, close);
+    return { open: pairs, close: pairs };
+  }
+  return { open: open > 0 ? 1 : 0, close: close > 0 ? 1 : 0 };
+}
+
 /**
  * 检查译文是否遗漏原文中的引号。
  *
@@ -878,41 +907,62 @@ function countSymbols(text: string, symbols: string[]): number {
  * - 原文引号平衡时：按成对数量严格校验
  * - 原文引号不平衡时：降级为最小可用校验，避免因原文脏数据导致无法提交
  */
-function detectMissingQuoteSymbols(originalText: string, translatedText: string): string[] {
+function detectMissingQuoteSymbols(
+  originalText: string,
+  translatedText: string,
+  targetLanguage: AppLocale,
+): string[] {
+  const hasOriginalQuotes = QUOTE_PAIR_RULES.some(
+    (rule) => originalText.includes(rule.originalOpen) || originalText.includes(rule.originalClose),
+  );
+  if (!hasOriginalQuotes) return [];
+
   const missingTypes: string[] = [];
+  const asciiQuotes = targetLanguage === 'en-US' ? countSymbol(translatedText, '"') : 0;
+  if (asciiQuotes % 2) missingTypes.push('ASCII double quotes must be paired');
+  let remainingAsciiPairs = Math.floor(asciiQuotes / 2);
+  const remainingSymbols = new Map(
+    QUOTE_PAIR_RULES.flatMap((rule) => [...rule.acceptedOpens, ...rule.acceptedCloses]).map(
+      (symbol) => [symbol, countSymbol(translatedText, symbol)] as const,
+    ),
+  );
 
-  for (const rule of QUOTE_PAIR_RULES) {
-    const originalOpenCount = countSymbol(originalText, rule.originalOpen);
-    const originalCloseCount = countSymbol(originalText, rule.originalClose);
+  // 先满足候选类型较少的规则，避免宽规则占用仅窄规则可用的引号。
+  const quoteRules =
+    targetLanguage === 'en-US'
+      ? [...QUOTE_PAIR_RULES].sort((a, b) => a.acceptedOpens.length - b.acceptedOpens.length)
+      : QUOTE_PAIR_RULES;
+  for (const rule of quoteRules) {
+    const { open: requiredOpenCount, close: requiredCloseCount } = getRequiredQuoteCounts(
+      originalText,
+      rule,
+    );
 
-    if (originalOpenCount === 0 && originalCloseCount === 0) continue;
+    const translatedOpenCount =
+      targetLanguage === 'en-US'
+        ? consumeQuoteSymbols(remainingSymbols, rule.acceptedOpens, requiredOpenCount)
+        : countSymbols(translatedText, rule.acceptedOpens);
+    const translatedCloseCount =
+      targetLanguage === 'en-US'
+        ? consumeQuoteSymbols(remainingSymbols, rule.acceptedCloses, requiredCloseCount)
+        : countSymbols(translatedText, rule.acceptedCloses);
+    // 每对 ASCII 引号只能补足一类原文引号，不能在后续规则中重复计数。
+    const usedAsciiPairs = Math.min(
+      remainingAsciiPairs,
+      Math.max(
+        requiredOpenCount - translatedOpenCount,
+        requiredCloseCount - translatedCloseCount,
+        0,
+      ),
+    );
+    remainingAsciiPairs -= usedAsciiPairs;
 
-    let requiredOpenCount = 0;
-    let requiredCloseCount = 0;
-
-    // 原文引号计数可能不平衡（例如 OCR/抓取噪声或原文标点错误）
-    // 平衡时保持严格；不平衡时仅要求最小可用数量，避免“无论怎么译都过不了”
-    if (originalOpenCount > 0 && originalCloseCount > 0) {
-      const requiredPairCount = Math.min(originalOpenCount, originalCloseCount);
-      requiredOpenCount = requiredPairCount;
-      requiredCloseCount = requiredPairCount;
-    } else {
-      requiredOpenCount = originalOpenCount > 0 ? 1 : 0;
-      requiredCloseCount = originalCloseCount > 0 ? 1 : 0;
+    if (translatedOpenCount + usedAsciiPairs < requiredOpenCount) {
+      missingTypes.push(`开引号 ${rule.originalOpen}（可用: ${rule.acceptedOpens.join(' ')}）`);
     }
 
-    if (requiredOpenCount > 0) {
-      const translatedOpenCount = countSymbols(translatedText, rule.acceptedOpens);
-      if (translatedOpenCount < requiredOpenCount) {
-        missingTypes.push(`开引号 ${rule.originalOpen}（可用: ${rule.acceptedOpens.join(' ')}）`);
-      }
-    }
-
-    if (requiredCloseCount > 0) {
-      const translatedCloseCount = countSymbols(translatedText, rule.acceptedCloses);
-      if (translatedCloseCount < requiredCloseCount) {
-        missingTypes.push(`闭引号 ${rule.originalClose}（可用: ${rule.acceptedCloses.join(' ')}）`);
-      }
+    if (translatedCloseCount + usedAsciiPairs < requiredCloseCount) {
+      missingTypes.push(`闭引号 ${rule.originalClose}（可用: ${rule.acceptedCloses.join(' ')}）`);
     }
   }
 
@@ -1103,6 +1153,7 @@ function validateSingleItem(
   paragraph: Paragraph,
   enableOriginalTextValidation: boolean | undefined,
   targetLanguage: AppLocale,
+  uiLocale: AppLocale,
 ): ItemValidationOutcome {
   const warnings: string[] = [];
   const trimmedPrefix = item.originalTextPrefix.trim();
@@ -1116,41 +1167,40 @@ function validateSingleItem(
     }
   }
 
-  // 允许译文与原文相同：不再在工具层阻止该提交。
-  // 若命中“当前选中版本重复”规则，仍会在后续校验中被拒绝。
+  // 原样保留时不把原文自带的标点误判为翻译丢失，例如英文英寸符号。
   const trimmedTranslatedText = item.translatedText.trim();
-  if (!isSymbolOnly(trimmedOriginalText) && trimmedTranslatedText === trimmedOriginalText) {
-    warnings.push(ERROR_MESSAGES.TRANSLATION_SAME_AS_ORIGINAL_COMPLETENESS(item.paragraphId));
+  const sourceKept = trimmedTranslatedText === trimmedOriginalText;
+  if (!isSymbolOnly(trimmedOriginalText) && sourceKept) {
+    warnings.push(translateText(uiLocale, 'aiValidation.sourceKept', { id: item.paragraphId }));
   }
 
   const dupe = checkTranslationDuplicate(paragraph, item.translatedText, targetLanguage);
-  if (dupe.status === 'selected') {
-    return {
-      kind: 'failed',
-      errorCode: 'PARAM_VALIDATION_FAILED',
-      error: ERROR_MESSAGES.TRANSLATION_SAME_AS_SELECTED(item.paragraphId),
-      warnings,
-    };
-  }
-  if (dupe.status === 'history') {
-    return { kind: 'accepted', warnings, duplicate: true };
+  const duplicate = dupe.status === 'selected' || dupe.status === 'history';
+  if (sourceKept || duplicate) {
+    return { kind: 'accepted', warnings, duplicate };
   }
 
   // 检查翻译长度异常（仅警告，不阻止提交）
   if (paragraph.text.length > 0) {
     const lengthRatio = item.translatedText.length / paragraph.text.length;
-    if (lengthRatio < 0.3) {
+    const minRatio = targetLanguage === 'en-US' ? 0.15 : 0.3;
+    const maxRatio = targetLanguage === 'en-US' ? 6 : 3;
+    if (lengthRatio < minRatio) {
       warnings.push(
         ERROR_MESSAGES.TRANSLATION_LENGTH_SHORT(item.paragraphId, Math.round(lengthRatio * 100)),
       );
-    } else if (lengthRatio > 3) {
+    } else if (lengthRatio > maxRatio) {
       warnings.push(
         ERROR_MESSAGES.TRANSLATION_LENGTH_LONG(item.paragraphId, Math.round(lengthRatio * 100)),
       );
     }
   }
 
-  const missingQuoteSymbols = detectMissingQuoteSymbols(paragraph.text, item.translatedText);
+  const missingQuoteSymbols = detectMissingQuoteSymbols(
+    paragraph.text,
+    item.translatedText,
+    targetLanguage,
+  );
   if (missingQuoteSymbols.length > 0) {
     return {
       kind: 'failed',
@@ -1252,6 +1302,7 @@ function validateAllItems(
   targetParagraphsMap: Map<string, Paragraph>,
   enableOriginalTextValidation: boolean | undefined,
   targetLanguage: AppLocale,
+  uiLocale: AppLocale,
 ): ValidationSummary {
   const warnings: string[] = [];
   let duplicateCount = 0;
@@ -1266,6 +1317,7 @@ function validateAllItems(
       paragraph,
       enableOriginalTextValidation,
       targetLanguage,
+      uiLocale,
     );
     warnings.push(...outcome.warnings);
     if (outcome.kind === 'failed') {
@@ -1338,6 +1390,7 @@ async function processTranslationBatch(
   preloadedBook?: Novel,
   enableOriginalTextValidation?: boolean,
   targetLanguage: AppLocale = 'zh-CN',
+  uiLocale: AppLocale = 'zh-CN',
 ): Promise<ProcessTranslationBatchResult> {
   // aiModelId 保留在签名中以维持调用方兼容；实际翻译写入由 onParagraphsExtracted 回调完成
   void aiModelId;
@@ -1375,6 +1428,7 @@ async function processTranslationBatch(
       targetParagraphsMap,
       enableOriginalTextValidation,
       targetLanguage,
+      uiLocale,
     );
     return buildBatchValidationResult(summary);
   } catch (error) {
@@ -1753,6 +1807,7 @@ async function handleAddTranslationBatch(
     preloadedBook,
     context.enableOriginalTextValidation,
     context.languages?.targetLanguage ?? 'zh-CN',
+    context.languages?.uiLocale ?? 'zh-CN',
   );
 
   const combinedWarnings = [...(result.warnings ?? []), ...correctionWarnings];

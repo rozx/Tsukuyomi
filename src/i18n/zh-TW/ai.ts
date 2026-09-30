@@ -1,4 +1,7 @@
 export default {
+  aiValidation: {
+    sourceKept: '段落 {id} 已原樣提交。已符合目標語言的內容可保留原文，不需為改變文字而改寫。',
+  },
   aiTasks: {
     explain:
       '請用繁體中文簡短解釋以下文字的含義、語法、文化背景，以及與目前書籍的關聯。自動判斷原文語言；按需要分別解釋混合語言內容：\n\n{text}',

@@ -112,6 +112,11 @@ describe('TodoWorkflow', () => {
       const workflow = new TodoWorkflow('translation', taskId);
       const todos = workflow.generateForState('working', {
         paragraphIds: ['abc12345', 'def67890', 'ghi11111'],
+        paragraphInputs: [
+          { id: 'abc12345', displayIndex: 1, originalText: 'これは最初の段落です。テスト' },
+          { id: 'def67890', displayIndex: 2, originalText: '次の段落は少し長くなります。' },
+          { id: 'ghi11111', displayIndex: 3, originalText: '三番目の段落です。' },
+        ],
         chunkText,
         chunkIndex: 1,
         chapterTitle: undefined,

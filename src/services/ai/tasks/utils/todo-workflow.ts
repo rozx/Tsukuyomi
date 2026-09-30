@@ -1,9 +1,17 @@
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
+import type { ExecutionLanguages, AppLocale } from 'src/models/locale';
+import { captureExecutionLanguages } from './execution-languages';
 /**
  * TodoWorkflow — 结构化待办事项工作流
  * 负责预定义待办模板、状态入口生成、gate 检查和上下文块构建
  */
 
-import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
+import {
+  TodoListService,
+  type TodoItem,
+  type TodoParagraphInput,
+} from 'src/services/todo-list-service';
 import { MAX_TRANSLATION_BATCH_SIZE } from 'src/services/ai/constants';
 import type { TaskType, TaskStatus } from './task-types';
 
@@ -14,6 +22,7 @@ type TodoTemplate = string[];
 export interface WorkingTodoConfig {
   paragraphIds: string[];
   chunkText: string;
+  paragraphInputs?: readonly TodoParagraphInput[];
   chunkIndex: number;
   chapterTitle?: string | undefined;
 }
@@ -32,113 +41,68 @@ export interface GateResult {
  * - "确认角色口吻" 与 "确认敬语策略" 高度重叠，合并为一条
  * - preparing 的三条创建/更新项合并为一条数据维护项
  */
-const PLANNING_TEMPLATE: TodoTemplate = [
-  '确认角色、术语、记忆信息（上下文已提供，缺失或不准确时调用工具补充/搜索）',
-  '获取前后文上下文（如需要，可调用工具预览段落/章节，或用工具确认之前的剧情）',
-  '确认角色口吻与敬语策略（自称/他称/语气词；搜索记忆、既往译文与角色关系，确保跨章节一致）',
-  '确认翻译策略（如需调整，可调用工具修改）',
-  '创建/更新术语、角色、记忆（无需操作时直接标记完成；描述/口吻/别名/全名缺失或不准确时补充，推荐更新已有记忆而非新建）',
-];
+const PLANNING_TEMPLATE = [1, 2, 3, 4, 5].map(
+  (index) => `aiWorkflow.planning.${index}` as MessageKey,
+);
+const BRIEF_PLANNING_TEMPLATE = [1, 2].map((index) => `aiWorkflow.brief.${index}` as MessageKey);
+const REVIEW_TEMPLATE = [1, 2, 3].map((index) => `aiWorkflow.review.${index}` as MessageKey);
 
-/**
- * 简短规划模板：后续 chunk 已继承前一个 chunk 的规划上下文，
- * 只保留真正与本 chunk 相关的两项。
- */
-const BRIEF_PLANNING_TEMPLATE: TodoTemplate = [
-  '确认本部分与上一部分的衔接（如需要，预览相邻段落确认剧情与称呼延续）',
-  '补充本部分新出现的术语/角色/记忆（无新增时直接标记完成）',
-];
-
-/**
- * review 模板（原 5 条中的一致性检查三项合并为一条）
- */
-const REVIEW_TEMPLATE: TodoTemplate = [
-  '校对译文与原文一致性（含敬语、人称代词、语气词、角色说话口吻的前后一致）',
-  '修正发现的问题段落（直接使用 add_translation_batch 提交修正）',
-  '更新术语、角色、记忆（如有新发现、缺失或不准确）',
-];
-
-/**
- * 获取预定义模板
- *
- * preparing 已并入 planning，故 state='preparing' 不再产出模板。
- */
 function getTemplates(
   taskType: TaskType,
   state: TaskStatus,
   isBriefPlanning: boolean,
+  uiLocale: AppLocale,
 ): TodoTemplate | null {
-  switch (state) {
-    case 'planning':
-      return isBriefPlanning ? BRIEF_PLANNING_TEMPLATE : PLANNING_TEMPLATE;
-    case 'review':
-      // 润色/校对没有 review 阶段
-      return taskType === 'translation' ? REVIEW_TEMPLATE : null;
-    // working 为动态模板，preparing/end 不产出
-    default:
-      return null;
-  }
+  const keys =
+    state === 'planning'
+      ? isBriefPlanning
+        ? BRIEF_PLANNING_TEMPLATE
+        : PLANNING_TEMPLATE
+      : state === 'review' && taskType === 'translation'
+        ? REVIEW_TEMPLATE
+        : null;
+  return keys?.map((key) => translateText(uiLocale, key)) ?? null;
 }
 
-/**
- * 从 chunk text 中提取段落信息
- * chunk 格式: [displayIndex] [ID: paragraphId] 原文: text\n翻译: translation
- */
-function extractParagraphInfo(
-  chunkText: string,
-  paragraphIds: string[],
-): Array<{ displayIndex: number; id: string; preview: string }> {
-  const result: Array<{ displayIndex: number; id: string; preview: string }> = [];
-  const lines = chunkText.split('\n');
-
-  for (const id of paragraphIds) {
-    const line = lines.find((l) => l.includes(`[ID: ${id}]`));
-    if (line) {
-      const displayIndexMatch = line.match(/^\[(\d+)\]/);
-      const textMatch = line.match(/原文: (.+)$/);
-      const displayIndex = displayIndexMatch ? parseInt(displayIndexMatch[1]!, 10) : 0;
-      const originalText = textMatch ? textMatch[1]! : '';
-      const preview = originalText.length > 20 ? originalText.slice(0, 20) + '...' : originalText;
-      result.push({ displayIndex, id, preview });
-    }
-  }
-  return result;
-}
-
-/**
- * 构建 verbose working 待办文本
- */
-function buildWorkingTodoTexts(config: WorkingTodoConfig): string[] {
-  const { paragraphIds, chunkText, chunkIndex, chapterTitle } = config;
-  const todos: string[] = [];
-
-  // 章节标题待办（仅第一个 chunk 且有标题时）
-  if (chunkIndex === 0 && chapterTitle) {
-    todos.push(`翻译章节标题：「${chapterTitle}」`);
-  }
-
-  // 按 MAX_TRANSLATION_BATCH_SIZE 分批
-  const totalBatches = Math.ceil(paragraphIds.length / MAX_TRANSLATION_BATCH_SIZE);
-  const paragraphInfos = extractParagraphInfo(chunkText, paragraphIds);
-
-  for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
-    const start = batchIdx * MAX_TRANSLATION_BATCH_SIZE;
-    const end = Math.min(start + MAX_TRANSLATION_BATCH_SIZE, paragraphIds.length);
-    const batchIds = paragraphIds.slice(start, end);
-    const batchInfos = paragraphInfos.filter((p) => batchIds.includes(p.id));
-
-    const batchLines = batchInfos
-      .map((p) => `  [${p.displayIndex}] [${p.id}] ${p.preview}`)
+function buildWorkingTodos(
+  config: WorkingTodoConfig,
+  uiLocale: AppLocale,
+): Array<{ text: string; paragraphInputs?: TodoParagraphInput[] }> {
+  const { paragraphIds, chunkIndex, chapterTitle } = config;
+  const todos: Array<{ text: string; paragraphInputs?: TodoParagraphInput[] }> = [];
+  if (chunkIndex === 0 && chapterTitle)
+    todos.push({ text: translateText(uiLocale, 'aiWorkflow.title', { title: chapterTitle }) });
+  const total = Math.ceil(paragraphIds.length / MAX_TRANSLATION_BATCH_SIZE);
+  const inputs = new Map(config.paragraphInputs?.map((paragraph) => [paragraph.id, paragraph]));
+  for (let index = 0; index < total; index++) {
+    const ids = paragraphIds.slice(
+      index * MAX_TRANSLATION_BATCH_SIZE,
+      (index + 1) * MAX_TRANSLATION_BATCH_SIZE,
+    );
+    const paragraphInputs = ids.map(
+      (id, offset) =>
+        inputs.get(id) ?? {
+          id,
+          displayIndex: index * MAX_TRANSLATION_BATCH_SIZE + offset + 1,
+          originalText: '',
+        },
+    );
+    const lines = paragraphInputs
+      .map(
+        (paragraph) =>
+          `  [${paragraph.displayIndex}] [${paragraph.id}] ${paragraph.originalText.length > 20 ? paragraph.originalText.slice(0, 20) + '...' : paragraph.originalText}`,
+      )
       .join('\n');
-
-    const batchLabel =
-      totalBatches > 1
-        ? `处理段落批次 ${batchIdx + 1}/${totalBatches}（${batchIds.length} 段）：\n${batchLines}`
-        : `处理全部段落（${batchIds.length} 段）：\n${batchLines}`;
-
-    todos.push(batchLabel);
+    todos.push({
+      text: translateText(uiLocale, total > 1 ? 'aiWorkflow.batch' : 'aiWorkflow.all', {
+        index: index + 1,
+        total,
+        count: ids.length,
+        lines,
+      }),
+      paragraphInputs,
+    });
   }
-
   return todos;
 }
 
@@ -150,6 +114,7 @@ export class TodoWorkflow {
   private taskId: string;
   private chunkIndex: number;
   private isBriefPlanning: boolean;
+  private readonly languages: ExecutionLanguages;
   private initializedStates: Set<TaskStatus> = new Set();
 
   constructor(
@@ -157,7 +122,9 @@ export class TodoWorkflow {
     taskId: string,
     chunkIndex: number = 0,
     isBriefPlanning: boolean = false,
+    languages: ExecutionLanguages = captureExecutionLanguages('zh-CN'),
   ) {
+    this.languages = captureExecutionLanguages(languages.uiLocale, languages.targetLanguage);
     this.taskType = taskType;
     this.taskId = taskId;
     this.chunkIndex = chunkIndex;
@@ -204,10 +171,16 @@ export class TodoWorkflow {
     this.initializedStates.add(state);
 
     // 静态模板
-    const templates = getTemplates(this.taskType, state, this.isBriefPlanning);
+    const templates = getTemplates(
+      this.taskType,
+      state,
+      this.isBriefPlanning,
+      this.languages.uiLocale,
+    );
     if (templates) {
       const created = templates.map((text) =>
         TodoListService.createTodo(text, this.taskId, undefined, {
+          uiLocale: this.languages.uiLocale,
           predefined: true,
           taskState: state,
           chunkIndex: this.chunkIndex,
@@ -218,9 +191,11 @@ export class TodoWorkflow {
 
     // working 状态的动态模板
     if (state === 'working' && config) {
-      const texts = buildWorkingTodoTexts(config);
-      const created = texts.map((text) =>
-        TodoListService.createTodo(text, this.taskId, undefined, {
+      const texts = buildWorkingTodos(config, this.languages.uiLocale);
+      const created = texts.map((todo) =>
+        TodoListService.createTodo(todo.text, this.taskId, undefined, {
+          uiLocale: this.languages.uiLocale,
+          ...(todo.paragraphInputs ? { paragraphInputs: todo.paragraphInputs } : {}),
           predefined: true,
           taskState: state,
           chunkIndex: this.chunkIndex,
@@ -243,9 +218,7 @@ export class TodoWorkflow {
     if (taskTodos.some((t) => t.status === 'working')) return stateTodos;
 
     // 以存储中的最新状态为准（传入的可能是创建时的快照，状态或已被外部翻转）
-    const first = stateTodos.find(
-      (t) => TodoListService.getTodoById(t.id)?.status === 'pending',
-    );
+    const first = stateTodos.find((t) => TodoListService.getTodoById(t.id)?.status === 'pending');
     if (!first) return stateTodos;
 
     const updated = TodoListService.markTodoAsWorking(first.id);
@@ -298,7 +271,7 @@ export class TodoWorkflow {
       predefinedTodos.find((t) => t.status === 'working') ??
       predefinedTodos.find((t) => t.status !== 'done');
 
-    let block = '\n【待办清单】\n';
+    let block = translateText(this.languages.uiLocale, 'aiWorkflow.header');
 
     for (const todo of predefinedTodos) {
       const firstLine = todo.text.split('\n')[0]!;
@@ -314,13 +287,13 @@ export class TodoWorkflow {
     // 提醒行
     if (currentTodo) {
       const firstLine = currentTodo.text.split('\n')[0]!;
-      block += `\n⚠️ 当前任务：${firstLine} — 完成后调用 mark_todo_done 标记\n`;
+      block += translateText(this.languages.uiLocale, 'aiWorkflow.current', { text: firstLine });
     }
 
     if (allDone) {
-      block += '\n✅ 所有待办已完成，可以进入下一阶段\n';
+      block += translateText(this.languages.uiLocale, 'aiWorkflow.complete');
     } else {
-      block += '⚠️ 完成所有待办后方可进入下一阶段\n';
+      block += translateText(this.languages.uiLocale, 'aiWorkflow.incomplete');
     }
 
     return block;
