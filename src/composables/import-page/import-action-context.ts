@@ -1,4 +1,6 @@
 import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 import type { ImportEvent, ImportSource, ImportDraftChapter } from 'src/models/import';
 import type { ActionDetail } from 'src/utils/action-info-utils';
 
@@ -33,6 +35,18 @@ export interface ImportActionContext {
 export interface ImportActionInfo {
   summary?: string;
   details: ActionDetail[];
+}
+/** 操作记录的固定文字按上下文的界面语言显示（显示时生成，不写入事件）。 */
+export function actionT(
+  context: Pick<ImportActionContext, 'uiLocale'>,
+  key: MessageKey,
+  values?: Record<string, string | number>,
+): string {
+  return translateText(context.uiLocale ?? 'zh-CN', key, values);
+}
+/** 界面语言的列举分隔符（简中、繁中为顿号）。 */
+export function actionList(context: Pick<ImportActionContext, 'uiLocale'>): string {
+  return actionT(context, 'importUi.listSeparator');
 }
 export function actionObject(value: unknown): ImportActionData {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -69,23 +83,45 @@ export function actionDetail(details: ActionDetail[], label: string, value: unkn
   const text = actionValue(value);
   if (text) details.push({ label, value: text });
 }
+export type ImportRangeUnit = 'item' | 'chapter' | 'character' | 'paragraph';
+const RANGE_UNITS: Record<ImportRangeUnit, MessageKey> = {
+  item: 'importUi.action.unit.item',
+  chapter: 'importUi.action.unit.chapter',
+  character: 'importUi.action.unit.character',
+  paragraph: 'importUi.action.unit.paragraph',
+};
 export function actionRange(
+  context: Pick<ImportActionContext, 'uiLocale'>,
   args: ImportActionData,
   result: ImportActionData,
   count: number | undefined,
-  unit: string,
+  unitKind: ImportRangeUnit,
 ): string {
+  const unit = actionT(context, RANGE_UNITS[unitKind]);
   const offset =
     typeof result.offset === 'number'
       ? result.offset
       : typeof args.offset === 'number'
         ? args.offset
         : 0;
-  const total = typeof result.total === 'number' ? `／共${result.total}${unit}` : '';
-  if (count === 0) return `返回0${unit}${total}`;
-  if (count !== undefined) return `第${offset + 1}–${offset + count}${unit}${total}`;
+  const total =
+    typeof result.total === 'number'
+      ? actionT(context, 'importUi.action.range.total', { total: result.total, unit })
+      : '';
+  if (count === 0) return actionT(context, 'importUi.action.range.returned', { unit, total });
+  if (count !== undefined)
+    return actionT(context, 'importUi.action.range.span', {
+      from: offset + 1,
+      to: offset + count,
+      unit,
+      total,
+    });
   const limit = typeof args.limit === 'number' ? args.limit : 30;
-  return `请求第${offset + 1}–${offset + limit}${unit}`;
+  return actionT(context, 'importUi.action.range.requested', {
+    from: offset + 1,
+    to: offset + limit,
+    unit,
+  });
 }
 
 function callArguments(value: unknown): ImportActionData {
@@ -182,7 +218,8 @@ export function createImportActionContext(
       titles.add(chapter.title);
       resourceChapters.set(ref.resourceId, titles);
     }
-  for (const [id, titles] of resourceChapters) context.resources.set(id, [...titles].join('、'));
+  for (const [id, titles] of resourceChapters)
+    context.resources.set(id, [...titles].join(actionList(context)));
   const calls = new Map<string, { name: string; args: ImportActionData }>();
   for (const event of events) {
     if (event.kind === 'tool-call' && event.callId && event.toolName)
