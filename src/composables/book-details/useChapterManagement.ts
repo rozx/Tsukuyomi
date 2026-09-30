@@ -11,6 +11,7 @@ import { normalizeNameTranslations } from 'src/services/localization/normalize';
 import { titleOriginal } from 'src/services/localization/title-edit';
 import type { TitleEdit } from 'src/services/localization/title-edit';
 import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
 import { translateText } from 'src/i18n/translate';
 import { useSettingsStore } from 'src/stores/settings';
 import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
@@ -22,6 +23,9 @@ export function useChapterManagement(
 ) {
   const booksStore = useBooksStore();
   const toast = useToastWithHistory();
+  const settings = useSettingsStore();
+  const text = (key: MessageKey, values: Record<string, string | number> = {}) =>
+    translateText(settings.uiLocale, key, values);
 
   // Add Volume/Chapter Dialog State
   const showAddVolumeDialog = ref(false);
@@ -40,7 +44,6 @@ export function useChapterManagement(
   const volumeOriginal = ref('');
   const chapterOriginal = ref('');
   let chapterBefore: Chapter | null = null;
-  const settings = useSettingsStore();
   const checkLanguage = (language: AppLocale) => {
     if (language === (book.value?.targetLanguage ?? 'zh-CN')) return true;
     toast.add({
@@ -98,8 +101,8 @@ export function useChapterManagement(
 
       toast.add({
         severity: 'success',
-        summary: '添加成功',
-        detail: `已添加卷 "${newVolumeTitle.value.trim()}"`,
+        summary: text('readerUi.added'),
+        detail: text('readerUi.addedVolume', { name: newVolumeTitle.value.trim() }),
         life: 3000,
       });
 
@@ -138,8 +141,8 @@ export function useChapterManagement(
 
       toast.add({
         severity: 'success',
-        summary: '添加成功',
-        detail: `已添加章节 "${newChapterTitle.value.trim()}"`,
+        summary: text('readerUi.added'),
+        detail: text('readerUi.addedChapter', { name: newChapterTitle.value.trim() }),
         life: 3000,
       });
 
@@ -155,8 +158,8 @@ export function useChapterManagement(
     if (!book.value || !book.value.volumes || book.value.volumes.length === 0) {
       toast.add({
         severity: 'warn',
-        summary: '无法添加章节',
-        detail: '请先添加至少一个卷',
+        summary: text('readerUi.cannotAddChapter'),
+        detail: text('readerUi.addVolumeFirst'),
         life: 3000,
       });
       return;
@@ -274,8 +277,8 @@ export function useChapterManagement(
       await booksStore.editTitle(bookId, language, edit, language);
       toast.add({
         severity: 'success',
-        summary: '更新成功',
-        detail: '已更新卷标题',
+        summary: text('readerUi.updated'),
+        detail: text('readerUi.volumeUpdated'),
         life: 3000,
         onRevert: () => revertTitle(bookId, language, edit, before),
       });
@@ -368,8 +371,8 @@ export function useChapterManagement(
         revertUpdates[key] = before[key];
       toast.add({
         severity: 'success',
-        summary: '更新成功',
-        detail: `已更新章节标题${moved ? '并移动到新卷' : ''}`,
+        summary: text('readerUi.updated'),
+        detail: text(moved ? 'readerUi.chapterMoved' : 'readerUi.chapterUpdated'),
         life: 3000,
         onRevert: () =>
           revertTitle(
@@ -419,8 +422,8 @@ export function useChapterManagement(
 
       toast.add({
         severity: 'success',
-        summary: '删除成功',
-        detail: `已删除卷 "${deletingVolumeTitle.value}"`,
+        summary: text('readerUi.deleted'),
+        detail: text('readerUi.deletedVolume', { name: deletingVolumeTitle.value }),
         life: 3000,
       });
 
@@ -449,8 +452,8 @@ export function useChapterManagement(
 
       toast.add({
         severity: 'success',
-        summary: '删除成功',
-        detail: `已删除章节 "${deletingChapterTitle.value}"`,
+        summary: text('readerUi.deleted'),
+        detail: text('readerUi.deletedChapter', { name: deletingChapterTitle.value }),
         life: 3000,
       });
 

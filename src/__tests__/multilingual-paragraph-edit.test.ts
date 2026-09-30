@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { computed, createApp, ref } from 'vue';
 import type { App } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
@@ -8,6 +8,7 @@ import type { Novel, Paragraph } from '../models/novel';
 import { BookService } from '../services/book-service';
 import { ChapterContentService } from '../services/chapter-content-service';
 import { useBooksStore } from '../stores/books';
+import { useSettingsStore } from '../stores/settings';
 import { useParagraphTranslation } from '../composables/book-details/useParagraphTranslation';
 import { useSearchReplace } from '../composables/book-details/useSearchReplace';
 import { useToastHistoryStore } from '../stores/toast-history';
@@ -110,7 +111,7 @@ describe('目标语言段落编辑事务', () => {
       { bookId: 'b' },
     );
     await search!.replaceCurrent();
-    expect(useToastHistoryStore().historyItems.some((item) => item.summary === '已替换')).toBe(
+    expect(useToastHistoryStore().historyItems.some((item) => item.severity === 'success')).toBe(
       false,
     );
     expect((await ChapterContentService.loadChapterContent('c'))![0]!.text).toBe('修订后的原文');
@@ -118,6 +119,7 @@ describe('目标语言段落编辑事务', () => {
   it('搜索与批量替换仅命中当前语言，保存不修改其他语言', async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
+    await useSettingsStore().setUiLocale('en-US');
     const books = useBooksStore();
     const other: Paragraph = {
       id: 'other',
@@ -139,6 +141,7 @@ describe('目标语言段落编辑事务', () => {
     };
     await books.addBook(withOther);
     const chapter = ref(withOther.volumes![0]!.chapters![0]!);
+    const saveState = vi.fn();
     let search: ReturnType<typeof useSearchReplace> | undefined;
     app = createApp({
       setup() {
@@ -150,7 +153,7 @@ describe('目标语言段落编辑事务', () => {
           computed(() => chapter.value.content ?? []),
           editor.updateParagraphTranslation,
           editor.currentlyEditingParagraphId,
-          undefined,
+          saveState,
           editor.updateSelectedChapterWithContent,
         );
         return () => null;
@@ -172,6 +175,10 @@ describe('目标语言段落编辑事务', () => {
       },
     ]);
     await search!.replaceAll();
+    expect(saveState).toHaveBeenCalledWith('Replace all');
+    expect(
+      useToastHistoryStore().historyItems.some((item) => item.summary === 'Replaced 1 match'),
+    ).toBe(true);
     const saved = (await ChapterContentService.loadChapterContent('c'))![0]!;
     expect(saved.translations.find((value) => value.id === 'en')?.translation).toBe('Replaced');
     expect(saved.translations.find((value) => value.id === 'en2')?.translation).toBe('English two');

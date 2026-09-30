@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-const { t: i18nT } = useI18n();
+import { resolveAppLocale } from 'src/models/locale';
+const { t: i18nT, locale } = useI18n();
 
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -354,6 +355,7 @@ const clearConfirmDisabled = computed(() => {
 // 复制封面 URL
 const handleCopyUrl = async () => {
   await copyTextWithToast(formData.value.cover?.url, toast, {
+    locale: resolveAppLocale(locale.value),
     successDetail: i18nT('bookDialogUi.copyCoverSuccess'),
     errorDetail: i18nT('bookDialogUi.copyCoverFailure'),
   });
@@ -528,7 +530,7 @@ watch(
     :header="dialogHeader"
     desktop-width="900px"
     desktop-height="90vh"
-    eyebrow="BOOK"
+    :eyebrow="i18nT('structureUi.book')"
     :closable="dialogClosable"
     :dismissable-mask="!hasChildDialogOpen"
     :close-on-escape="!hasChildDialogOpen"

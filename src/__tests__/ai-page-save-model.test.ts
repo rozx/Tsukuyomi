@@ -6,6 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
+import { createAppI18n } from '../i18n/vue';
 import { createApp, h } from 'vue';
 import type { App } from 'vue';
 import { getActivePinia } from 'pinia';
@@ -53,7 +54,7 @@ function mountPage() {
       return () => h('div');
     },
   });
-  app.use(getActivePinia()!);
+  app.use(getActivePinia()!).use(createAppI18n('zh-CN'));
   app.mount(host);
   return useAIModelsStore();
 }

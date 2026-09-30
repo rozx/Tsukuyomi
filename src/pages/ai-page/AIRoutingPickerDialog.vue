@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 任务路由 picker（平板端 Dialog）。从 AIPageTablet 抽出以降低其模板圈复杂度。
  * 自行注入 useAIPage 上下文。
@@ -6,16 +8,12 @@
 import { computed } from 'vue';
 import Dialog from 'primevue/dialog';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
+const { t } = useI18n();
 
 const ctx = injectAIPage();
 
-const routingPickerVisible = computed({
-  get: () => !!ctx.routingPickerTask.value,
-  set: (value: boolean) => {
-    if (!value) ctx.closeTaskRoutingPicker();
-  },
-});
-const routingPickerTitle = computed(() => ctx.routingPickerTaskLabel.value || '任务路由');
+const routingPickerVisible = ctx.routingPickerVisible;
+const routingPickerTitle = ctx.routingPickerTitle;
 const hasNoPickerModel = computed(() => !ctx.routingPickerCurrentModelId.value);
 const isPickerModelActive = (model: { id: string }) =>
   model.id === ctx.routingPickerCurrentModelId.value;
@@ -37,14 +35,10 @@ const isPickerModelActive = (model: { id: string }) =>
         @click="ctx.pickModelForTask(null)"
       >
         <div class="ait-picker-option-body">
-          <div class="ait-picker-option-name">未设置</div>
-          <div class="ait-picker-option-sub">该任务将无默认模型</div>
+          <div class="ait-picker-option-name">{{ t('aiUi.unset') }}</div>
+          <div class="ait-picker-option-sub">{{ t('aiUi.unsetHint') }}</div>
         </div>
-        <i
-          v-if="hasNoPickerModel"
-          class="pi pi-check ait-picker-check"
-          aria-hidden="true"
-        />
+        <i v-if="hasNoPickerModel" class="pi pi-check ait-picker-check" aria-hidden="true" />
       </button>
       <button
         v-for="model in ctx.routingPickerOptions.value"

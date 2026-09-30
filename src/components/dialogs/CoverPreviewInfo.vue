@@ -1,12 +1,12 @@
 <template>
   <div class="space-y-3">
-    <div class="text-sm font-medium text-moon/90">当前选中封面</div>
+    <div class="text-sm font-medium text-moon/90">{{ t('coverUi.currentCover') }}</div>
     <div
       class="relative w-full aspect-[2/3] max-w-xs mx-auto overflow-hidden rounded-lg bg-white/5 border border-white/10"
     >
       <img
         :src="cover.url"
-        alt="封面预览"
+        :alt="t('coverUi.preview')"
         class="w-full h-full object-cover"
         @error="
           (e) => {
@@ -26,7 +26,7 @@
               icon="pi pi-copy"
               class="p-button-text p-button-sm"
               size="small"
-              title="复制 URL"
+              :title="t('coverUi.copyUrl')"
               @click="emit('copy-url')"
             />
           </div>
@@ -40,16 +40,16 @@
           </a>
         </div>
         <div v-if="info" class="flex items-center justify-between gap-2">
-          <span class="text-moon/60">尺寸:</span>
+          <span class="text-moon/60">{{ t('coverUi.dimensions') }}</span>
           <span class="text-moon/90">{{ info.width }} × {{ info.height }} px</span>
         </div>
         <div v-if="info?.size" class="flex items-center justify-between gap-2">
-          <span class="text-moon/60">大小:</span>
+          <span class="text-moon/60">{{ t('coverUi.size') }}</span>
           <span class="text-moon/90">{{ formatFileSize(info.size) }}</span>
         </div>
         <div v-if="info && !info.size" class="flex items-center justify-between gap-2">
-          <span class="text-moon/60">大小:</span>
-          <span class="text-moon/60 italic">无法获取</span>
+          <span class="text-moon/60">{{ t('coverUi.size') }}</span>
+          <span class="text-moon/60 italic">{{ t('coverUi.unavailable') }}</span>
         </div>
       </div>
     </div>
@@ -57,9 +57,12 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import { formatFileSize } from 'src/utils/format';
 import type { CoverImage } from 'src/models/novel';
+
+const { t } = useI18n();
 
 defineProps<{
   cover: CoverImage;

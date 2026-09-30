@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 书籍详情左侧栏（书籍概览 + 设置快捷入口 + 目录头 + 卷/章节列表）。
  * 从 BookDetailsDesktop 抽出以降低其模板复杂度。样式（book-sidebar* / book-header* / sidebar-*）
@@ -12,19 +14,18 @@ import VolumesListTablet from 'src/components/novel/VolumesListTablet.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import BookSidebarSettingsMenu from './BookSidebarSettingsMenu.vue';
 
+const { t } = useI18n();
+
 const ctx = injectBookDetailsPage();
 
 // 侧栏显隐 / 折叠的复合 class（吸收 && 分支，保持模板零分支）
 const sidebarClass = computed(() => ({
-  'book-sidebar-mobile-hidden':
-    ctx.isPhone.value && ctx.workspaceMode.value !== 'catalog',
+  'book-sidebar-mobile-hidden': ctx.isPhone.value && ctx.workspaceMode.value !== 'catalog',
   'book-sidebar-mobile-visible': ctx.isPhone.value && ctx.workspaceMode.value === 'catalog',
   'book-sidebar-tablet-collapsed': ctx.isTablet.value && !ctx.isTabletSidebarOpen.value,
 }));
 const isDesktop = computed(() => !ctx.isPhone.value);
-const showStatsSkeleton = computed(
-  () => !ctx.stats.value && ctx.isStatsCalculating.value,
-);
+const showStatsSkeleton = computed(() => !ctx.stats.value && ctx.isStatsCalculating.value);
 
 // 以下 computed 把模板里的 || / ?: 收进脚本侧；目录头两个互斥 v-if 折叠成 component:is
 const coverSrc = computed(() => (ctx.book.value ? ctx.getCoverUrl(ctx.book.value) : ''));
@@ -40,7 +41,7 @@ const catalogHeaderTag = computed<'span' | 'h2'>(() => (isDesktop.value ? 'span'
 const catalogHeaderClass = computed(() =>
   isDesktop.value ? 'sidebar-eyebrow sidebar-eyebrow--inline' : 'sidebar-title',
 );
-const catalogHeaderText = computed(() => (isDesktop.value ? 'CATALOG' : '目录'));
+const catalogHeaderText = computed(() => t('readerUi.catalog'));
 </script>
 
 <template>
@@ -48,16 +49,11 @@ const catalogHeaderText = computed(() => (isDesktop.value ? 'CATALOG' : '目录'
     <div class="sidebar-content">
       <!-- 书籍概览 -->
       <section v-if="ctx.book.value" class="sidebar-section sidebar-section--book book-header">
-        <span v-if="isDesktop" class="sidebar-eyebrow">BOOK</span>
+        <span v-if="isDesktop" class="sidebar-eyebrow">{{ t('readerUi.book') }}</span>
         <div class="book-header-content" @click="ctx.openBookDialog">
           <i class="pi pi-info-circle book-edit-icon" />
           <div class="book-cover-wrapper">
-            <img
-              :src="coverSrc"
-              :alt="coverAlt"
-              class="book-cover"
-              @error="onCoverError"
-            />
+            <img :src="coverSrc" :alt="coverAlt" class="book-cover" @error="onCoverError" />
           </div>
           <div class="book-info">
             <h3 class="book-title">{{ ctx.book.value.title }}</h3>
@@ -65,13 +61,17 @@ const catalogHeaderText = computed(() => (isDesktop.value ? 'CATALOG' : '目录'
               <div class="stat-item stat-item-volume">
                 <i class="pi pi-file stat-icon" />
                 <span class="stat-value">{{ ctx.stats.value.volumeCount }}</span>
-                <span class="stat-label">卷</span>
+                <span class="stat-label">{{
+                  t('readerUi.volumeUnit', ctx.stats.value.volumeCount)
+                }}</span>
               </div>
               <span class="stat-separator">|</span>
               <div class="stat-item stat-item-chapter">
                 <i class="pi pi-list stat-icon" />
                 <span class="stat-value">{{ ctx.stats.value.chapterCount }}</span>
-                <span class="stat-label">章</span>
+                <span class="stat-label">{{
+                  t('readerUi.chapterUnit', ctx.stats.value.chapterCount)
+                }}</span>
               </div>
               <span class="stat-separator">|</span>
               <div class="stat-item stat-item-wordcount">
@@ -92,22 +92,24 @@ const catalogHeaderText = computed(() => (isDesktop.value ? 'CATALOG' : '目录'
 
       <!-- 目录工具 -->
       <div class="sidebar-section-header sidebar-title-wrapper">
-        <component :is="catalogHeaderTag" :class="catalogHeaderClass">{{ catalogHeaderText }}</component>
+        <component :is="catalogHeaderTag" :class="catalogHeaderClass">{{
+          catalogHeaderText
+        }}</component>
         <div class="sidebar-actions">
           <Button
             icon="pi pi-plus"
-            label="新卷"
+            :label="t('readerUi.newVolume')"
             class="p-button-text p-button-sm"
             size="small"
-            title="添加新卷"
+            :title="t('readerUi.addVolume')"
             @click="ctx.showAddVolumeDialog.value = true"
           />
           <Button
             icon="pi pi-plus-circle"
-            label="新章节"
+            :label="t('readerUi.newChapter')"
             class="p-button-text p-button-sm"
             size="small"
-            title="添加新章节"
+            :title="t('readerUi.addChapter')"
             @click="ctx.openAddChapterDialog"
           />
         </div>

@@ -1,4 +1,6 @@
 import type { ToastMessageOptions } from 'primevue/toast';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 
 interface ToastLike {
   add: (msg: ToastMessageOptions) => void;
@@ -16,6 +18,7 @@ export async function copyTextWithToast(
   text: string | undefined | null,
   toast: ToastLike,
   options: {
+    locale?: AppLocale;
     successSummary?: string;
     successDetail?: string;
     errorSummary?: string;
@@ -24,10 +27,11 @@ export async function copyTextWithToast(
 ): Promise<void> {
   if (!text) return;
   const {
-    successSummary = '已复制',
-    successDetail = '已复制到剪贴板',
-    errorSummary = '复制失败',
-    errorDetail = '无法复制到剪贴板',
+    locale = 'zh-CN',
+    successSummary = translateText(locale, 'coverUi.copied'),
+    successDetail = translateText(locale, 'coverUi.copiedDetail'),
+    errorSummary = translateText(locale, 'coverUi.copyFailed'),
+    errorDetail = translateText(locale, 'coverUi.copyFailedDetail'),
   } = options;
   try {
     await navigator.clipboard.writeText(text);

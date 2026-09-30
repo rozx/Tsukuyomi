@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import type { Memory } from 'src/models/memory';
 import { getMemoryEmbeddingStatus } from 'src/services/memory-service';
 import { formatRelativeTimeWithFallback } from 'src/utils/format';
+const { t, locale } = useI18n();
 
 interface Props {
   memory: Memory;
@@ -42,12 +46,12 @@ const embeddingBadgeClass = computed(() => {
 const embeddingBadgeTitle = computed(() => {
   switch (embeddingStatus.value) {
     case 'ready':
-      return '已向量化';
+      return t('memoryUi.ready');
     case 'stale':
-      return '向量版本过期，将被重新计算';
+      return t('memoryUi.staleDescription');
     case 'pending':
     default:
-      return '待向量化';
+      return t('memoryUi.pending');
   }
 });
 
@@ -60,8 +64,11 @@ const contentPreview = computed(() => {
 
 // 格式化相对时间（≥ 7 天回落到短日期格式）
 const relativeTime = computed(() =>
-  formatRelativeTimeWithFallback(props.memory.lastAccessedAt, (date) =>
-    date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
+  formatRelativeTimeWithFallback(
+    props.memory.lastAccessedAt,
+    (date) => date.toLocaleDateString(locale.value, { month: 'short', day: 'numeric' }),
+    undefined,
+    resolveAppLocale(locale.value),
   ),
 );
 
@@ -118,11 +125,13 @@ function handleCheck(checked: boolean) {
       >
         <Button
           icon="pi pi-pencil"
+          :aria-label="t('memoryUi.edit')"
           class="p-button-text p-button-sm !w-8 !h-8 !text-white/80 hover:!text-white"
           @click.stop="$emit('click', memory, true)"
         />
         <Button
           icon="pi pi-trash"
+          :aria-label="t('memoryUi.delete')"
           class="p-button-text p-button-sm p-button-danger !w-8 !h-8"
           @click.stop="$emit('delete', memory)"
         />

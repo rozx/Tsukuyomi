@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
@@ -9,6 +11,8 @@ import {
   canNavigateToChapter,
 } from 'src/components/novel/volumes-list-utils';
 import ChapterListItem from 'src/components/novel/ChapterListItem.vue';
+
+const { t } = useI18n();
 
 interface DraggedChapter {
   chapter: Chapter;
@@ -159,7 +163,7 @@ const hasVolumes = computed(() => props.volumes.length > 0);
             <i class="pi pi-book volume-icon"></i>
             <span class="volume-title">{{ getVolumeDisplayTitle(volume, book) }}</span>
             <span v-if="hasChapters(volume)" class="volume-chapter-count">
-              ({{ chapterCount(volume) }} 章)
+              ({{ t('readerUi.chapterCount', { count: chapterCount(volume) }) }})
             </span>
           </div>
           <div
@@ -171,14 +175,14 @@ const hasVolumes = computed(() => props.volumes.length > 0);
               icon="pi pi-pencil"
               class="p-button-text p-button-sm p-button-rounded action-button"
               size="small"
-              title="编辑"
+              :title="t('readerUi.edit')"
               @click="handleEditVolume(volume)"
             />
             <Button
               icon="pi pi-trash"
               class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
               size="small"
-              title="删除"
+              :title="t('readerUi.delete')"
               @click="handleDeleteVolume(volume)"
             />
           </div>
@@ -219,7 +223,7 @@ const hasVolumes = computed(() => props.volumes.length > 0);
       </div>
     </div>
     <div v-else class="empty-state">
-      <p class="text-moon/60 text-sm">暂无卷和章节</p>
+      <p class="text-moon/60 text-sm">{{ t('readerUi.noVolumes') }}</p>
     </div>
   </div>
 </template>

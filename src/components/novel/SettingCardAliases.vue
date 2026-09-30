@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
+
 // 设置卡片别名展示：undefined 时渲染占位 spacer 保持卡片底部对齐，否则渲染别名标签列表。
 defineProps<{
   aliases?: string[] | undefined;
@@ -7,7 +10,7 @@ defineProps<{
 
 <template>
   <div v-if="aliases !== undefined" class="mb-auto">
-    <span class="text-xs text-moon-100/50 block mb-1.5">别名</span>
+    <span class="text-xs text-moon-100/50 block mb-1.5">{{ t('panelUi.aliases') }}</span>
     <div class="flex flex-wrap gap-1.5">
       <span
         v-for="(alias, index) in aliases"
@@ -16,7 +19,9 @@ defineProps<{
       >
         {{ alias }}
       </span>
-      <span v-if="aliases.length === 0" class="text-moon-100/30 text-xs italic">无</span>
+      <span v-if="aliases.length === 0" class="text-moon-100/30 text-xs italic">{{
+        t('panelUi.none')
+      }}</span>
     </div>
   </div>
   <div v-else class="mb-auto"></div>

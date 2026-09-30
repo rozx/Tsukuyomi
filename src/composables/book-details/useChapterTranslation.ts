@@ -13,6 +13,7 @@ import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { MenuItem } from 'primevue/menuitem';
 import { BookExecutionGuard } from 'src/services/book-execution-guard';
 import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
 import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { saveLanguageParagraphResults } from 'src/services/ai/tasks/utils/save-language-results';
 import type { ExecutionLanguages } from 'src/models/locale';
@@ -1705,11 +1706,11 @@ export function useChapterTranslation(
   // SplitButton 的标签和菜单项
   const translationButtonLabel = computed(() => {
     if (translationStatus.value.hasNone) {
-      return '翻译本章';
+      return translateText(settingsStore.uiLocale, 'readerUi.translateChapter');
     } else if (translationStatus.value.hasPartial) {
-      return '继续翻译';
+      return translateText(settingsStore.uiLocale, 'readerUi.continueTranslation');
     } else {
-      return '润色本章';
+      return translateText(settingsStore.uiLocale, 'readerUi.polishChapter');
     }
   });
 
@@ -1718,7 +1719,7 @@ export function useChapterTranslation(
 
     // 总是显示"重新翻译"
     items.push({
-      label: '重新翻译',
+      label: translateText(settingsStore.uiLocale, 'readerUi.retranslate'),
       icon: 'pi pi-refresh',
       command: () => {
         void translateAllParagraphs();
@@ -1728,7 +1729,7 @@ export function useChapterTranslation(
     // 如果所有段落都已翻译，显示"校对本章"
     if (translationStatus.value.hasAll) {
       items.push({
-        label: '校对本章',
+        label: translateText(settingsStore.uiLocale, 'readerUi.proofreadChapter'),
         icon: 'pi pi-check-circle',
         command: () => {
           void proofreadAllParagraphs();

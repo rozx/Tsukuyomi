@@ -2,15 +2,15 @@
   <div class="mobile-ai">
     <header class="ma-header">
       <div class="ma-heading">
-        <h1>AI 模型</h1>
-        <p>管理模型连接与默认任务</p>
+        <h1>{{ t('aiUi.models') }}</h1>
+        <p>{{ t('aiUi.pageHint') }}</p>
       </div>
       <Button
         v-if="ctx.aiModels.value.length > 0"
-        label="添加"
+        :label="t('aiUi.add')"
         icon="pi pi-plus"
         class="ma-header-add"
-        aria-label="添加 AI 模型"
+        :aria-label="t('aiUi.addModel')"
         @click="ctx.addModel"
       />
     </header>
@@ -21,9 +21,9 @@
           class="ma-spinner"
           stroke-width="4"
           animation-duration=".8s"
-          aria-label="加载中"
+          :aria-label="t('aiUi.loading')"
         />
-        <span>正在加载 AI 模型…</span>
+        <span>{{ t('aiUi.loadingModels') }}</span>
       </div>
 
       <div v-else-if="ctx.aiModels.value.length === 0" class="ma-welcome">
@@ -31,32 +31,32 @@
           <div class="ma-empty-icon" aria-hidden="true">
             <i class="pi pi-sparkles" />
           </div>
-          <h2 id="ma-empty-title">连接你的第一个模型</h2>
-          <p class="ma-empty-description">让月詠帮你翻译、校对，<br />也聊聊书里的故事。</p>
+          <h2 id="ma-empty-title">{{ t('aiUi.connectFirst') }}</h2>
+          <p class="ma-empty-description">{{ t('aiUi.emptyHint') }}</p>
           <Button
-            label="添加 AI 模型"
+            :label="t('aiUi.addModel')"
             icon="pi pi-plus"
             class="ma-empty-add"
             @click="ctx.addModel"
           />
-          <p class="ma-supported">支持 OpenAI 兼容服务与 Google Gemini</p>
+          <p class="ma-supported">{{ t('aiUi.supported') }}</p>
         </section>
 
         <section class="ma-guide" aria-labelledby="ma-guide-title">
-          <h2 id="ma-guide-title">两步开始使用</h2>
+          <h2 id="ma-guide-title">{{ t('aiUi.twoSteps') }}</h2>
           <ol>
             <li>
               <span class="ma-step" aria-hidden="true">1</span>
               <div>
-                <h3>添加模型连接</h3>
-                <p>准备好 API Key、模型标识和服务地址。</p>
+                <h3>{{ t('aiUi.addConnection') }}</h3>
+                <p>{{ t('aiUi.connectionHint') }}</p>
               </div>
             </li>
             <li>
               <span class="ma-step" aria-hidden="true">2</span>
               <div>
-                <h3>选择默认任务</h3>
-                <p>翻译、校对与助手可以使用不同的模型。</p>
+                <h3>{{ t('aiUi.chooseDefaults') }}</h3>
+                <p>{{ t('aiUi.chooseDefaultsHint') }}</p>
               </div>
             </li>
           </ol>
@@ -66,8 +66,10 @@
       <template v-else>
         <section class="ma-section" aria-labelledby="ma-models-title">
           <div class="ma-section-head">
-            <h2 id="ma-models-title">我的模型</h2>
-            <span class="ma-section-count">{{ ctx.aiModels.value.length }} 个</span>
+            <h2 id="ma-models-title">{{ t('aiUi.myModels') }}</h2>
+            <span class="ma-section-count">{{
+              t('aiUi.itemsCount', { count: ctx.aiModels.value.length })
+            }}</span>
           </div>
           <div class="ma-providers">
             <section
@@ -81,8 +83,17 @@
                   {{ group.letter }}
                 </span>
                 <div class="ma-provider-body">
-                  <h3>{{ group.provider === 'openai' ? 'OpenAI 兼容' : group.label }}</h3>
-                  <p>{{ group.models.length }} 个模型 · {{ group.enabledCount }} 个已启用</p>
+                  <h3>
+                    {{ group.provider === 'openai' ? t('aiUi.openaiCompatible') : group.label }}
+                  </h3>
+                  <p>
+                    {{
+                      t('aiUi.providerStats', {
+                        total: group.models.length,
+                        enabled: group.enabledCount,
+                      })
+                    }}
+                  </p>
                 </div>
               </div>
               <div class="ma-provider-models">
@@ -91,7 +102,7 @@
                   :key="model.id"
                   type="button"
                   class="ma-model-row"
-                  :aria-label="`编辑模型 ${model.name}`"
+                  :aria-label="t('aiUi.editModelAria', { name: model.name })"
                   @click="ctx.editModel(model)"
                 >
                   <span class="ma-model-main">
@@ -108,16 +119,16 @@
 
         <section class="ma-section" aria-labelledby="ma-routing-title">
           <div class="ma-section-head">
-            <h2 id="ma-routing-title">任务默认模型</h2>
+            <h2 id="ma-routing-title">{{ t('aiUi.routingTitle') }}</h2>
           </div>
-          <p class="ma-section-description">为每种任务选择合适的模型。</p>
+          <p class="ma-section-description">{{ t('aiUi.routingHint') }}</p>
           <div class="ma-routing-card">
             <button
               v-for="row in ctx.taskRouting.value"
               :key="row.task"
               type="button"
               class="ma-routing-row"
-              :aria-label="`编辑 ${row.label} 的默认模型`"
+              :aria-label="t('aiUi.editRoutingAria', { task: row.label })"
               @click="ctx.openTaskRoutingPicker(row.task)"
             >
               <span class="ma-routing-main">
@@ -132,7 +143,7 @@
 
       <p class="ma-privacy">
         <i class="pi pi-lock" aria-hidden="true" />
-        <span>使用自己的 API Key，密钥保存在本设备；开启 Gist 同步时会随模型上传</span>
+        <span>{{ t('aiUi.byokHint') }}</span>
       </p>
     </div>
 
@@ -141,16 +152,20 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
 import AIRoutingPickerSheet from './AIRoutingPickerSheet.vue';
+const { t } = useI18n();
 
 const ctx = injectAIPage();
 
 const badgeClass = (model: { enabled: boolean }) =>
   model.enabled ? 'ma-badge ma-badge--on' : 'ma-badge ma-badge--off';
-const badgeText = (model: { enabled: boolean }) => (model.enabled ? '已启用' : '已禁用');
+const badgeText = (model: { enabled: boolean }) =>
+  model.enabled ? t('aiUi.enabled') : t('aiUi.disabled');
 </script>
 
 <style scoped>

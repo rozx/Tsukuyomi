@@ -1,3 +1,7 @@
+import type { MessageKey } from 'src/i18n/types';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+import { translateText } from 'src/i18n/translate';
+import { useSettingsStore } from 'src/stores/settings';
 import { ref, computed } from 'vue';
 import type { Ref } from 'vue';
 import type { MenuItem } from 'primevue/menuitem';
@@ -12,6 +16,9 @@ export function useChapterExport(
   book?: Ref<Novel | undefined>,
 ) {
   const toast = useToastWithHistory();
+  const settings = useSettingsStore();
+  const text = (key: MessageKey, values: Record<string, string | number> = {}) =>
+    translateText(settings.uiLocale, key, values);
 
   // 导出菜单状态
   const exportMenuRef = ref<InstanceType<typeof TieredMenu> | null>(null);
@@ -39,12 +46,12 @@ export function useChapterExport(
 
       // 显示成功消息
       if (format === 'clipboard') {
-        toast.add({ severity: 'success', summary: '已复制到剪贴板', life: 3000 });
+        toast.add({ severity: 'success', summary: text('translationUi.copied'), life: 3000 });
       } else {
         toast.add({
           severity: 'success',
-          summary: '导出成功',
-          detail: `已导出为 ${format.toUpperCase()} 文件`,
+          summary: text('translationUi.exported'),
+          detail: text('translationUi.exportFormat', { format: format.toUpperCase() }),
           life: 3000,
         });
       }
@@ -52,8 +59,11 @@ export function useChapterExport(
       console.error('Export failed:', err);
       toast.add({
         severity: 'error',
-        summary: format === 'clipboard' ? '复制失败' : '导出失败',
-        detail: err instanceof Error ? err.message : '请重试或检查权限',
+        summary:
+          format === 'clipboard'
+            ? text('translationUi.copyFailed')
+            : text('translationUi.exportFailed'),
+        detail: localizedErrorMessage(err, settings.uiLocale, 'translationUi.retryPermissions'),
         life: 3000,
       });
     }
@@ -64,8 +74,8 @@ export function useChapterExport(
     if (!selectedChapter.value || !selectedChapterParagraphs.value.length) {
       toast.add({
         severity: 'warn',
-        summary: '无法复制',
-        detail: '当前章节没有内容',
+        summary: text('translationUi.cannotCopy'),
+        detail: text('translationUi.noChapterContent'),
         life: 3000,
       });
       return;
@@ -74,22 +84,27 @@ export function useChapterExport(
     try {
       const currentBook = book?.value;
       if (currentBook) {
-        await ChapterService.exportChapter(selectedChapter.value, 'translation', 'clipboard', currentBook);
+        await ChapterService.exportChapter(
+          selectedChapter.value,
+          'translation',
+          'clipboard',
+          currentBook,
+        );
       } else {
         await ChapterService.exportChapter(selectedChapter.value, 'translation', 'clipboard');
       }
       toast.add({
         severity: 'success',
-        summary: '已复制到剪贴板',
-        detail: '已复制所有已翻译文本',
+        summary: text('translationUi.copied'),
+        detail: text('translationUi.copiedTranslations'),
         life: 3000,
       });
     } catch (err) {
       console.error('Copy failed:', err);
       toast.add({
         severity: 'error',
-        summary: '复制失败',
-        detail: err instanceof Error ? err.message : '请重试或检查权限',
+        summary: text('translationUi.copyFailed'),
+        detail: localizedErrorMessage(err, settings.uiLocale, 'translationUi.retryPermissions'),
         life: 3000,
       });
     }
@@ -98,63 +113,63 @@ export function useChapterExport(
   // 导出菜单项
   const exportMenuItems = computed<MenuItem[]>(() => [
     {
-      label: '导出原文',
+      label: text('translationUi.exportOriginal'),
       icon: 'pi pi-file',
       items: [
         {
-          label: '复制到剪贴板',
+          label: text('translationUi.copyClipboard'),
           icon: 'pi pi-copy',
           command: () => void exportChapter('original', 'clipboard'),
         },
         {
-          label: '导出为 JSON',
+          label: text('translationUi.exportJson'),
           icon: 'pi pi-code',
           command: () => void exportChapter('original', 'json'),
         },
         {
-          label: '导出为 TXT',
+          label: text('translationUi.exportTxt'),
           icon: 'pi pi-file',
           command: () => void exportChapter('original', 'txt'),
         },
       ],
     },
     {
-      label: '导出译文',
+      label: text('translationUi.exportTranslation'),
       icon: 'pi pi-language',
       items: [
         {
-          label: '复制到剪贴板',
+          label: text('translationUi.copyClipboard'),
           icon: 'pi pi-copy',
           command: () => void exportChapter('translation', 'clipboard'),
         },
         {
-          label: '导出为 JSON',
+          label: text('translationUi.exportJson'),
           icon: 'pi pi-code',
           command: () => void exportChapter('translation', 'json'),
         },
         {
-          label: '导出为 TXT',
+          label: text('translationUi.exportTxt'),
           icon: 'pi pi-file',
           command: () => void exportChapter('translation', 'txt'),
         },
       ],
     },
     {
-      label: '导出双语',
+      label: text('translationUi.exportBilingual'),
       icon: 'pi pi-book',
       items: [
         {
-          label: '复制到剪贴板',
+          label: text('translationUi.copyClipboard'),
           icon: 'pi pi-copy',
           command: () => void exportChapter('bilingual', 'clipboard'),
         },
         {
-          label: '导出为 JSON',
+          label: text('translationUi.exportJson'),
           icon: 'pi pi-code',
           command: () => void exportChapter('bilingual', 'json'),
         },
         {
-          label: '导出为 TXT',
+          label: text('translationUi.exportTxt'),
           icon: 'pi pi-file',
           command: () => void exportChapter('bilingual', 'txt'),
         },

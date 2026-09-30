@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import { computed, ref, watch } from 'vue';
 import InputChips from 'primevue/inputchips';
 import Button from 'primevue/button';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import Checkbox from 'primevue/checkbox';
 import { useTermTranslation } from 'src/composables/translation/useTermTranslation';
+
+const { t } = useI18n();
 
 interface Props {
   modelValue: string[];
@@ -133,8 +136,8 @@ const handleApplyTranslation = () => {
   if (selectedTagIndices.value.size === 0) {
     toast.add({
       severity: 'warn',
-      summary: '未选择标签',
-      detail: '请至少选择一个翻译结果',
+      summary: t('structureUi.noTagsSelected'),
+      detail: t('structureUi.selectTranslation'),
       life: 2000,
     });
     return;
@@ -145,8 +148,8 @@ const handleApplyTranslation = () => {
     if (!updatedTags) {
       toast.add({
         severity: 'error',
-        summary: '应用失败',
-        detail: '无法生成更新后的标签',
+        summary: t('structureUi.applyFailed'),
+        detail: t('structureUi.tagsUnavailable'),
         life: 3000,
       });
       return;
@@ -156,16 +159,16 @@ const handleApplyTranslation = () => {
     showTranslationDialog.value = false;
     toast.add({
       severity: 'success',
-      summary: '翻译已应用',
-      detail: `已替换 ${selectedTagIndices.value.size} 个标签`,
+      summary: t('structureUi.applied'),
+      detail: t('structureUi.replacedTags', { count: selectedTagIndices.value.size }),
       life: 3000,
     });
   } catch (error) {
     console.error('应用翻译时出错:', error);
     toast.add({
       severity: 'error',
-      summary: '应用失败',
-      detail: error instanceof Error ? error.message : '应用翻译时发生未知错误',
+      summary: t('structureUi.applyFailed'),
+      detail: error instanceof Error ? error.message : t('structureUi.applyUnknown'),
       life: 3000,
     });
   }
@@ -268,6 +271,7 @@ const handleTranslate = async () => {
     <div class="translatable-chips-button-wrapper">
       <Button
         icon="pi pi-language"
+        :aria-label="t('structureUi.translate')"
         :loading="translating"
         :disabled="isTranslateDisabled"
         class="translatable-icon-button translatable-chips-button"
@@ -282,16 +286,16 @@ const handleTranslate = async () => {
   <!-- 翻译结果对话框 -->
   <AdaptiveDialog
     v-model:visible="showTranslationDialog"
-    header="翻译完成"
+    :header="t('structureUi.translated')"
     desktop-width="50rem"
-    eyebrow="TRANSLATION"
+    :eyebrow="t('structureUi.translation')"
     dialog-class="translation-dialog"
   >
     <div class="translation-result-container">
       <div class="translation-result-header">
-        <div class="translation-result-label">翻译结果：</div>
+        <div class="translation-result-label">{{ t('structureUi.result') }}</div>
         <Button
-          :label="isAllSelected ? '取消全选' : '全选'"
+          :label="isAllSelected ? t('structureUi.deselectAll') : t('structureUi.selectAll')"
           icon="pi pi-check-square"
           class="p-button-text p-button-sm"
           @click="toggleSelectAll"
@@ -316,20 +320,24 @@ const handleTranslate = async () => {
         </div>
       </div>
       <div class="translation-result-info">
-        已选择 <strong>{{ selectedTagIndices.size }}</strong> /
-        {{ translationResult.length }} 个标签
+        {{
+          t('structureUi.selectedCount', {
+            selected: selectedTagIndices.size,
+            total: translationResult.length,
+          })
+        }}
       </div>
-      <div class="translation-result-question">是否要应用选中的翻译？</div>
+      <div class="translation-result-question">{{ t('structureUi.applySelectedQuestion') }}</div>
     </div>
     <template #footer>
       <Button
-        label="取消"
+        :label="t('structureUi.cancel')"
         icon="pi pi-times"
         class="p-button-text"
         @click="showTranslationDialog = false"
       />
       <Button
-        label="应用"
+        :label="t('structureUi.apply')"
         icon="pi pi-check"
         class="p-button-primary"
         :disabled="selectedTagIndices.size === 0"

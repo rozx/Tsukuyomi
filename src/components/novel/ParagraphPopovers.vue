@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import type { AppLocale } from 'src/models/locale';
 import { getNameTranslation } from 'src/services/localization/selection';
 import Popover from 'primevue/popover';
@@ -41,6 +43,7 @@ const contextMenuPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const recentTranslationPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
 import { ref, computed } from 'vue';
+const { t } = useI18n();
 
 const characterPopoverWidth = computed(() => (props.characters.length > 1 ? '24rem' : '20rem'));
 
@@ -155,10 +158,10 @@ const translationText = (owner: Terminology) =>
   >
     <div v-if="recentTranslation" class="recent-translation-popover-content">
       <div class="popover-header">
-        <span class="popover-label">最近的翻译</span>
+        <span class="popover-label">{{ t('translationUi.recentTranslation') }}</span>
       </div>
       <div class="recent-translation-text">{{ recentTranslation.translation }}</div>
-      <div class="recent-translation-hint">点击按钮查看完整翻译历史</div>
+      <div class="recent-translation-hint">{{ t('translationUi.historyHint') }}</div>
     </div>
   </Popover>
 
@@ -173,7 +176,7 @@ const translationText = (owner: Terminology) =>
     <div class="context-menu-content">
       <Button
         v-if="hasTextSelection"
-        label="解释选中文本"
+        :label="t('translationUi.explainSelection')"
         icon="pi pi-question-circle"
         class="context-menu-button"
         text
@@ -181,28 +184,28 @@ const translationText = (owner: Terminology) =>
       />
       <div v-if="hasTextSelection" class="context-menu-divider" />
       <Button
-        label="校对段落"
+        :label="t('translationUi.proofreadParagraph')"
         icon="pi pi-check-circle"
         class="context-menu-button"
         text
         @click="onProofread"
       />
       <Button
-        label="润色段落"
+        :label="t('translationUi.polishParagraph')"
         icon="pi pi-sparkles"
         class="context-menu-button"
         text
         @click="onPolish"
       />
       <Button
-        label="重新翻译"
+        :label="t('translationUi.retranslate')"
         icon="pi pi-refresh"
         class="context-menu-button"
         text
         @click="onRetranslate"
       />
       <Button
-        label="复制原文到助手"
+        :label="t('translationUi.copyOriginalToAssistant')"
         icon="pi pi-copy"
         class="context-menu-button"
         text
@@ -215,7 +218,7 @@ const translationText = (owner: Terminology) =>
       <!-- 翻译历史按钮 -->
       <Button
         v-if="translationHistoryCount > 0"
-        :label="`翻译历史 (${translationHistoryCount})`"
+        :label="t('translationUi.historyCount', { count: translationHistoryCount })"
         icon="pi pi-history"
         class="context-menu-button"
         text

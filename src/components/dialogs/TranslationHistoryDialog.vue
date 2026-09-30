@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
@@ -6,7 +8,9 @@ import type { Paragraph } from 'src/models/novel';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import type { AppLocale } from 'src/models/locale';
 import { getLanguageTranslation } from 'src/services/localization/selection';
-import { languageOptions } from 'src/i18n/translate';
+import { aiLanguageName } from 'src/services/ai/tasks/prompts/language';
+import { resolveAppLocale } from 'src/models/locale';
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   visible: boolean;
@@ -24,7 +28,7 @@ const selectedId = computed(() =>
   props.paragraph ? getLanguageTranslation(props.paragraph, props.targetLanguage)?.id : undefined,
 );
 const languageLabel = (language: AppLocale = 'zh-CN') =>
-  languageOptions(language).find((option) => option.value === language)?.label ?? language;
+  aiLanguageName(resolveAppLocale(locale.value), language);
 const canSelect = (language: AppLocale = 'zh-CN') => language === props.targetLanguage;
 
 // 获取可用的翻译历史（最多5个，按时间倒序，最新的在前）
@@ -43,7 +47,7 @@ const translationHistory = computed(() => {
 // 获取模型名称
 const getModelName = (modelId: string): string => {
   const model = aiModelsStore.getModelById(modelId);
-  return model?.name || '未知模型';
+  return model?.name || t('translationUi.unknownModel');
 };
 
 // 处理选择翻译
@@ -63,14 +67,14 @@ const handleClose = () => {
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="翻译历史"
+    :header="t('translationUi.history')"
     desktop-width="32rem"
-    eyebrow="TRANSLATION"
+    :eyebrow="t('translationUi.translationCategory')"
     @update:visible="handleClose"
   >
     <div v-if="!paragraph || translationHistory.length === 0" class="empty-state">
       <i class="pi pi-history empty-icon" />
-      <p class="empty-text">暂无翻译历史</p>
+      <p class="empty-text">{{ t('translationUi.noHistory') }}</p>
     </div>
 
     <div v-else class="translation-history-content">
@@ -104,7 +108,13 @@ const handleClose = () => {
     </div>
 
     <template #footer>
-      <Button label="关闭" icon="pi pi-times" text severity="secondary" @click="handleClose" />
+      <Button
+        :label="t('translationUi.close')"
+        icon="pi pi-times"
+        text
+        severity="secondary"
+        @click="handleClose"
+      />
     </template>
   </AdaptiveDialog>
 </template>

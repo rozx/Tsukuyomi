@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed, ref, watch, type Component } from 'vue';
 import ChapterToolbar from 'src/components/novel/ChapterToolbar.vue';
 import ChapterToolbarTablet from 'src/components/novel/ChapterToolbarTablet.vue';
@@ -14,6 +16,8 @@ import type { EditMode } from 'src/composables/book-details/useEditMode';
 import type { ChapterScrollToIndex } from 'src/composables/book-details/useChapterVirtualizer';
 import BookSidebar from './BookSidebar.vue';
 
+const { t } = useI18n();
+
 const ctx = injectBookDetailsPage();
 
 // 章节内容面板组件 ref：挂载后把其 scrollToParagraphIndex 注册到页面上下文，供键盘导航/搜索按索引滚动。
@@ -21,21 +25,43 @@ const ctx = injectBookDetailsPage();
 // 触发 eslint no-redundant-type-constituents）。
 const chapterPanelRef = ref<{ scrollToParagraphIndex: ChapterScrollToIndex } | null>(null);
 watch(chapterPanelRef, (comp) => {
-  ctx.registerChapterScroller(comp ? (index, options) => comp.scrollToParagraphIndex(index, options) : null);
+  ctx.registerChapterScroller(
+    comp ? (index, options) => comp.scrollToParagraphIndex(index, options) : null,
+  );
 });
 
 const settingContextMeta = computed(() => {
   switch (ctx.selectedSettingMenu.value) {
     case 'terms':
-      return { eyebrow: 'Terms', label: '术语设置', icon: 'pi pi-bookmark' };
+      return {
+        eyebrow: t('readerUi.terms'),
+        label: t('readerUi.termsSetting'),
+        icon: 'pi pi-bookmark',
+      };
     case 'characters':
-      return { eyebrow: 'Characters', label: '角色设置', icon: 'pi pi-users' };
+      return {
+        eyebrow: t('readerUi.characters'),
+        label: t('readerUi.charactersSetting'),
+        icon: 'pi pi-users',
+      };
     case 'memory':
-      return { eyebrow: 'Memory', label: '记忆管理', icon: 'pi pi-database' };
+      return {
+        eyebrow: t('readerUi.memory'),
+        label: t('readerUi.memorySetting'),
+        icon: 'pi pi-database',
+      };
     case 'translation':
-      return { eyebrow: 'Translation', label: '翻译设置', icon: 'pi pi-sliders-h' };
+      return {
+        eyebrow: t('readerUi.translation'),
+        label: t('readerUi.translationSetting'),
+        icon: 'pi pi-sliders-h',
+      };
     case 'update':
-      return { eyebrow: 'Update', label: '检查更新', icon: 'pi pi-download' };
+      return {
+        eyebrow: t('readerUi.update'),
+        label: t('readerUi.checkUpdates'),
+        icon: 'pi pi-download',
+      };
     default:
       return null;
   }
@@ -61,15 +87,12 @@ const mainContentClass = computed(() => ({
   'overflow-hidden': hasSettingMenu.value,
   'book-main-content--settings': hasSettingMenu.value,
   'book-main-content--reading': !hasSettingMenu.value && hasSelectedChapter.value,
-  'book-main-content-mobile-hidden':
-    ctx.isPhone.value && ctx.workspaceMode.value === 'catalog',
+  'book-main-content-mobile-hidden': ctx.isPhone.value && ctx.workspaceMode.value === 'catalog',
 }));
 const scrollableClass = computed(() => ({
   '!overflow-hidden': hasSettingMenu.value,
   'scrollable-content-mobile-hidden':
-    ctx.isPhone.value &&
-    ctx.workspaceMode.value === 'settings' &&
-    !hasSettingMenu.value,
+    ctx.isPhone.value && ctx.workspaceMode.value === 'settings' && !hasSettingMenu.value,
 }));
 const pageContainerClass = computed(() => ({
   '!h-full !overflow-hidden !min-h-0 flex flex-col !p-0': hasSettingMenu.value,
@@ -113,9 +136,7 @@ const settingsPanelComponent = computed<Component | null>(() => {
       <span class="workspace-context-eyebrow">{{ contextEyebrow }}</span>
       <span class="workspace-context-sep" aria-hidden="true" />
       <span class="workspace-context-label">{{ contextLabel }}</span>
-      <span v-if="ctx.book.value" class="workspace-context-book"
-        >· {{ ctx.book.value.title }}</span
-      >
+      <span v-if="ctx.book.value" class="workspace-context-book">· {{ ctx.book.value.title }}</span>
     </header>
 
     <!-- 章节阅读工具栏：平板单独用 ChapterToolbarTablet（更干净的 header），其余设备仍用 ChapterToolbar -->
@@ -157,7 +178,7 @@ const settingsPanelComponent = computed<Component | null>(() => {
       :undo-description="undoDescriptionOrNull"
       :redo-description="redoDescriptionOrNull"
       :edit-mode="ctx.editMode.value"
-      :edit-mode-options="[...ctx.editModeOptions]"
+      :edit-mode-options="[...ctx.editModeOptions.value]"
       :selected-chapter-paragraphs="ctx.selectedChapterParagraphs.value"
       :used-term-count="ctx.usedTermCount.value"
       :used-character-count="ctx.usedCharacterCount.value"
@@ -197,11 +218,7 @@ const settingsPanelComponent = computed<Component | null>(() => {
       @replace-all="ctx.replaceAll"
     />
 
-    <div
-      :ref="ctx.setScrollableContentRef"
-      class="scrollable-content"
-      :class="scrollableClass"
-    >
+    <div :ref="ctx.setScrollableContentRef" class="scrollable-content" :class="scrollableClass">
       <div class="page-container" :class="pageContainerClass">
         <component
           :is="settingsPanelComponent"
@@ -272,13 +289,14 @@ const settingsPanelComponent = computed<Component | null>(() => {
 
         <div v-else class="no-chapter-selected">
           <i class="pi pi-book-open no-selection-icon" />
-          <p class="no-selection-text">请从左侧选择一个章节</p>
-          <p class="no-selection-hint text-moon/60 text-sm">点击章节标题查看内容</p>
+          <p class="no-selection-text">{{ t('readerUi.selectChapter') }}</p>
+          <p class="no-selection-hint text-moon/60 text-sm">
+            {{ t('readerUi.chapterContentHint') }}
+          </p>
         </div>
       </div>
     </div>
   </div>
-
 </template>
 
 <style scoped>
@@ -292,12 +310,11 @@ const settingsPanelComponent = computed<Component | null>(() => {
 
 .book-main-content--reading {
   /* tokens: tsukuyomi-500 @ 10% → 3% (moonlight vignette at top) */
-  background:
-    radial-gradient(
-      ellipse at top,
-      var(--tsukuyomi-opacity-10) 0%,
-      var(--tsukuyomi-opacity-3) 70%
-    );
+  background: radial-gradient(
+    ellipse at top,
+    var(--tsukuyomi-opacity-10) 0%,
+    var(--tsukuyomi-opacity-3) 70%
+  );
 }
 
 .book-main-content--settings {
@@ -343,10 +360,7 @@ const settingsPanelComponent = computed<Component | null>(() => {
 }
 
 .workspace-context-label {
-  font-family:
-    'Noto Serif JP',
-    'Songti SC',
-    serif;
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 0.88rem;
   font-weight: 600;
   letter-spacing: -0.005em;

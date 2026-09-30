@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import type { EmbeddingQueueCurrentTask } from 'src/services/embedding-queue';
+const { t } = useI18n();
 
 // 队列当前任务提示：跨书处理时高亮并显示书名。
 defineProps<{
@@ -22,11 +25,13 @@ defineProps<{
     <i class="pi pi-spin pi-spinner shrink-0 mt-0.5"></i>
     <div class="flex-1 min-w-0">
       <div v-if="isProcessingOtherBook">
-        <div class="truncate">其它书籍 · {{ kindLabel }} ×{{ activeTask.itemCount }}</div>
+        <div class="truncate">
+          {{ t('embeddingUi.otherBookTask', { kind: kindLabel, count: activeTask.itemCount }) }}
+        </div>
         <div class="truncate font-medium mt-0.5">{{ bookTitle }}</div>
       </div>
       <div v-else class="truncate">
-        本书 {{ kindLabel }} ×{{ activeTask.itemCount }}
+        {{ t('embeddingUi.thisBookTask', { kind: kindLabel, count: activeTask.itemCount }) }}
       </div>
     </div>
   </div>

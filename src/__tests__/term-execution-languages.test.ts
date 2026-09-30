@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { createApp } from 'vue';
+import { createAppI18n } from '../i18n/vue';
 import type { App } from 'vue';
 import ToastService from 'primevue/toastservice';
 import { TermTranslationService } from '../services/ai/tasks/term-translation-service';
@@ -91,7 +92,11 @@ describe('术语执行语言', () => {
         return () => null;
       },
     });
-    app.use(fixture.pinia).use(ToastService).mount(document.createElement('div'));
+    app
+      .use(fixture.pinia)
+      .use(ToastService)
+      .use(createAppI18n('en-US'))
+      .mount(document.createElement('div'));
     const translate = vi
       .spyOn(TermTranslationService, 'translate')
       .mockResolvedValue({ text: 'English' });

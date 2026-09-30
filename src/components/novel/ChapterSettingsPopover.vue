@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 章节 / 书籍翻译设置面板 —— 桌面走 PrimeVue Popover，手机走 MobileBottomSheet。
  * 两种形态共享同一个 `ChapterSettingsBody`。
@@ -16,6 +18,7 @@ import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import ChapterSettingsBody from './ChapterSettingsBody.vue';
 import type { Novel, Chapter } from 'src/models/novel';
 import type { ChapterSettingsFormData as SavePayload } from 'src/composables/book-details/chapter-settings-update';
+const { t } = useI18n();
 
 defineProps<{
   book: Novel | null;
@@ -73,8 +76,8 @@ defineExpose({
   <MobileBottomSheet
     v-else
     v-model:visible="mobileVisible"
-    title="翻译设置"
-    eyebrow="CHAPTER · 设置"
+    :title="t('translationUi.title')"
+    :eyebrow="t('translationUi.chapterCategory')"
     max-height="86dvh"
   >
     <ChapterSettingsBody

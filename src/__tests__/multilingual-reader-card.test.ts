@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { beforeEach, vi } from 'vitest';
 import './setup';
+import { createAppI18n } from '../i18n/vue';
 import { createApp, h, nextTick } from 'vue';
 import type { App } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
@@ -55,6 +56,7 @@ describe('阅读卡片目标语言', () => {
     app
       .use(pinia)
       .use(PrimeVue)
+      .use(createAppI18n('zh-CN'))
       .mount(document.body.appendChild(document.createElement('div')));
     await nextTick();
     const rows = [...document.querySelectorAll<HTMLElement>('.translation-history-item')];
@@ -101,7 +103,7 @@ describe('阅读卡片目标语言', () => {
           onUpdateTranslation: (_id: string, text: string) => writes.push(text),
         }),
     });
-    app.use(pinia).use(PrimeVue).use(ToastService).mount(host);
+    app.use(pinia).use(PrimeVue).use(createAppI18n('zh-CN')).use(ToastService).mount(host);
     (host.querySelector('.p-inplace-display') as HTMLElement).click();
     await nextTick();
     books.books[0]!.targetLanguage = 'zh-CN';
@@ -146,7 +148,7 @@ describe('阅读卡片目标语言', () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     app = createApp({ render: () => h(ParagraphCard, { paragraph, bookId: 'b' }) });
-    app.use(pinia).use(PrimeVue).use(ToastService).mount(host);
+    app.use(pinia).use(PrimeVue).use(createAppI18n('zh-CN')).use(ToastService).mount(host);
     await nextTick();
     expect(host.textContent).toContain('English translation');
     expect(host.textContent).not.toContain('中文译文');

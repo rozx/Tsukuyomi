@@ -1,4 +1,6 @@
 import { ref, computed, watch, type Ref } from 'vue';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
@@ -17,6 +19,7 @@ export function useEditMode(
   saveState?: (description?: string) => void,
 ) {
   const toast = useToastWithHistory();
+  const settings = useSettingsStore();
   const booksStore = useBooksStore();
 
   // 编辑模式状态
@@ -56,8 +59,8 @@ export function useEditMode(
     if (originalTextEditChapterId.value !== selectedChapterWithContent.value.id) {
       toast.add({
         severity: 'warn',
-        summary: '章节已切换',
-        detail: '检测到章节已切换，请重新编辑当前章节',
+        summary: translateText(settings.uiLocale, 'translationUi.chapterChanged'),
+        detail: translateText(settings.uiLocale, 'translationUi.chapterChangedHint'),
         life: 3000,
       });
       // 重置编辑状态
@@ -68,7 +71,7 @@ export function useEditMode(
     }
 
     // 保存状态用于撤销
-    saveState?.('编辑原始文本');
+    saveState?.(translateText(settings.uiLocale, 'translationUi.editOriginal'));
 
     try {
       // 将文本按换行符分割为段落（允许空段落）
@@ -114,8 +117,8 @@ export function useEditMode(
 
       toast.add({
         severity: 'success',
-        summary: '保存成功',
-        detail: '已更新原始文本',
+        summary: translateText(settings.uiLocale, 'translationUi.saved'),
+        detail: translateText(settings.uiLocale, 'translationUi.originalUpdated'),
         life: 3000,
       });
 
@@ -127,8 +130,8 @@ export function useEditMode(
       console.error('保存原始文本失败:', error);
       toast.add({
         severity: 'error',
-        summary: '保存失败',
-        detail: '保存原始文本时发生错误',
+        summary: translateText(settings.uiLocale, 'translationUi.saveFailed'),
+        detail: translateText(settings.uiLocale, 'translationUi.originalSaveUnknown'),
         life: 3000,
       });
     }
@@ -144,11 +147,26 @@ export function useEditMode(
   };
 
   // 编辑模式选项（只用于图标，不显示标签）
-  const editModeOptions = [
-    { value: 'original', icon: 'pi pi-pencil', title: '原文编辑' },
-    { value: 'translation', icon: 'pi pi-language', title: '翻译模式' },
-    { value: 'preview', icon: 'pi pi-eye', title: '译文预览' },
-  ] as const;
+  const editModeOptions = computed(
+    () =>
+      [
+        {
+          value: 'original',
+          icon: 'pi pi-pencil',
+          title: translateText(settings.uiLocale, 'readerUi.originalEdit'),
+        },
+        {
+          value: 'translation',
+          icon: 'pi pi-language',
+          title: translateText(settings.uiLocale, 'readerUi.translationMode'),
+        },
+        {
+          value: 'preview',
+          icon: 'pi pi-eye',
+          title: translateText(settings.uiLocale, 'readerUi.previewMode'),
+        },
+      ] as const,
+  );
 
   // 监听编辑模式变化
   watch(editMode, (newMode: EditMode) => {

@@ -1,12 +1,16 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import type { AppLocale } from 'src/models/locale';
 import { getNameTranslation } from 'src/services/localization/selection';
 import { toRef } from 'vue';
 import Popover from 'primevue/popover';
 import DataView from 'primevue/dataview';
 import Button from 'primevue/button';
+import EntityPopoverHeader from './EntityPopoverHeader.vue';
 import { useEntityListPopover } from 'src/composables/novel/useEntityListPopover';
 import type { Terminology } from 'src/models/novel';
+const { t } = useI18n();
 
 const props = defineProps<{
   usedTerms: Terminology[];
@@ -40,21 +44,11 @@ const translationText = (owner: Terminology) =>
       <div class="flex-1 min-h-0 overflow-hidden flex flex-col">
         <DataView :value="usedTerms" data-key="id" layout="list" class="term-popover-dataview">
           <template #header>
-            <div class="p-3">
-              <div class="flex justify-between items-start gap-2">
-                <div>
-                  <h4 class="font-medium text-moon-100">本章使用的术语</h4>
-                  <p class="text-xs text-moon/60 mt-1">共 {{ usedTermCount }} 个</p>
-                </div>
-                <Button
-                  icon="pi pi-plus"
-                  label="新建"
-                  size="small"
-                  class="!text-xs !px-2 !py-1 !h-auto"
-                  @click="handleCreate"
-                />
-              </div>
-            </div>
+            <EntityPopoverHeader
+              :title="t('panelUi.chapterTerms')"
+              :count="usedTermCount"
+              @create="handleCreate"
+            />
           </template>
           <template #list="slotProps">
             <div class="flex flex-col gap-2 p-2">
@@ -81,11 +75,13 @@ const translationText = (owner: Terminology) =>
                   <div class="flex gap-1 flex-shrink-0">
                     <Button
                       icon="pi pi-pencil"
+                      :aria-label="t('panelUi.edit')"
                       class="p-button-text p-button-sm !p-1 !w-7 !h-7"
                       @click="handleEdit(term)"
                     />
                     <Button
                       icon="pi pi-trash"
+                      :aria-label="t('panelUi.delete')"
                       class="p-button-text p-button-danger p-button-sm !p-1 !w-7 !h-7"
                       @click="handleDelete(term)"
                     />
@@ -95,7 +91,9 @@ const translationText = (owner: Terminology) =>
             </div>
           </template>
           <template #empty>
-            <div class="text-center py-8 text-moon/50 text-sm">本章暂无术语</div>
+            <div class="text-center py-8 text-moon/50 text-sm">
+              {{ t('panelUi.noChapterTerms') }}
+            </div>
           </template>
         </DataView>
       </div>

@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useSettingsStore } from 'src/stores/settings';
@@ -24,6 +25,7 @@ import { createAIProcessingStoreAdapter } from 'src/services/ai/tasks/utils/task
  * vs 直接展示）保持在各自组件里；本 composable 只处理“中间这一段”共享流程。
  */
 export function useTermTranslation() {
+  const { t } = useI18n();
   const aiModelsStore = useAIModelsStore();
   const aiProcessingStore = useAIProcessingStore();
   const contextStore = useContextStore();
@@ -47,7 +49,7 @@ export function useTermTranslation() {
       return lines.length > 0 ? lines[lines.length - 1] : task.thinkingMessage;
     }
 
-    return task.message || `${task.modelName} 正在处理...`;
+    return task.message || t('structureUi.modelProcessing', { model: task.modelName });
   });
 
   // 获取所有可用的术语翻译模型
@@ -79,8 +81,8 @@ export function useTermTranslation() {
     if (!selectedModel) {
       toast.add({
         severity: 'error',
-        summary: '翻译失败',
-        detail: '未找到可用的术语翻译模型，请在设置中配置',
+        summary: t('structureUi.translationFailed'),
+        detail: t('structureUi.noModel'),
         life: 3000,
       });
       translating.value = false;

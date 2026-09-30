@@ -1,3 +1,7 @@
+import type { MessageKey } from 'src/i18n/types';
+import { localizedErrorMessage, localizedErrorCode } from 'src/utils/localized-error';
+import { translateText } from 'src/i18n/translate';
+import { useSettingsStore } from 'src/stores/settings';
 import { ref, type Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
@@ -12,6 +16,9 @@ export function useParagraphTranslation(
   saveState?: (description?: string) => void,
 ) {
   const toast = useToastWithHistory();
+  const settings = useSettingsStore();
+  const text = (key: MessageKey, values: Record<string, string | number> = {}) =>
+    translateText(settings.uiLocale, key, values);
   const booksStore = useBooksStore();
   const currentlyEditingParagraphId = ref<string | null>(null);
 
@@ -42,13 +49,16 @@ export function useParagraphTranslation(
     } catch (error) {
       toast.add({
         severity: 'error',
-        summary: '保存失败',
+        summary: text('translationUi.saveFailed'),
         detail:
-          error instanceof Error && error.message === 'BOOK_TARGET_LANGUAGE_CHANGED'
-            ? '书籍目标语言已改变，请重新打开编辑'
-            : error instanceof Error
-              ? error.message
-              : '无法保存译文',
+          localizedErrorCode(error, error instanceof Error ? error.message : '') ===
+          'BOOK_TARGET_LANGUAGE_CHANGED'
+            ? text('translationUi.targetChanged')
+            : localizedErrorMessage(
+                error,
+                settings.uiLocale,
+                'translationUi.cannotSaveTranslation',
+              ),
         life: 3000,
       });
       return false;
@@ -98,7 +108,7 @@ export function useParagraphTranslation(
     const { chapter, language, paragraph } = context;
     const selected = getLanguageTranslation(paragraph, language);
     if (!selected) return false;
-    saveState?.('更新段落翻译');
+    saveState?.(text('translationUi.updateParagraph'));
     const saved = await persistEdits(chapter, language, [
       {
         type: 'update',
@@ -116,7 +126,7 @@ export function useParagraphTranslation(
     const context = resolveParagraphContext(paragraphId);
     if (!context) return;
     const { chapter, language, paragraph } = context;
-    saveState?.('切换段落翻译');
+    saveState?.(text('translationUi.selectParagraph'));
     if (
       await persistEdits(chapter, language, [
         {
@@ -129,8 +139,8 @@ export function useParagraphTranslation(
     )
       toast.add({
         severity: 'success',
-        summary: '已切换翻译',
-        detail: '已切换到选中的翻译版本',
+        summary: text('translationUi.translationSelected'),
+        detail: text('translationUi.translationSelectedHint'),
         life: 2000,
       });
   };

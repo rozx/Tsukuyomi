@@ -1,4 +1,5 @@
 import './setup';
+import { createAppI18n } from '../i18n/vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, ref } from 'vue';
 import type { App } from 'vue';
@@ -62,7 +63,7 @@ async function mountDialog(overrides: Partial<AIModel> = {}, initialVisible = fa
     setup: () => () =>
       h(AIModelDialog, { visible: visible.value, mode: 'edit', model, onSave: save }),
   });
-  app.use(getActivePinia()!).use(PrimeVue).mount(host);
+  app.use(getActivePinia()!).use(PrimeVue).use(createAppI18n('zh-CN')).mount(host);
   visible.value = true;
   await nextTick();
   await nextTick();

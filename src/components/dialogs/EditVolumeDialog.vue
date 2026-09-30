@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import { ref, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   visible: boolean;
@@ -69,21 +72,21 @@ const handleTranslationApplied = (value: string) => {
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="编辑卷标题"
+    :header="t('structureUi.editVolume')"
     desktop-width="30rem"
-    eyebrow="VOLUME"
+    :eyebrow="t('structureUi.volume')"
     sheet-min-height="auto"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
       <div class="space-y-2">
-        <label for="edit-volume-title" class="block text-sm font-medium text-moon/90"
-          >卷标题（原文）*</label
-        >
+        <label for="edit-volume-title" class="block text-sm font-medium text-moon/90">{{
+          t('structureUi.originalVolumeTitle')
+        }}</label>
         <TranslatableInput
           id="edit-volume-title"
           v-model="volumeTitle"
-          placeholder="输入卷标题..."
+          :placeholder="t('structureUi.volumePlaceholder')"
           type="input"
           :apply-translation-to-input="false"
           @translation-applied="handleTranslationApplied"
@@ -91,22 +94,27 @@ const handleTranslationApplied = (value: string) => {
         />
       </div>
       <div class="space-y-2">
-        <label for="edit-volume-translation" class="block text-sm font-medium text-moon/90"
-          >翻译</label
-        >
+        <label for="edit-volume-translation" class="block text-sm font-medium text-moon/90">{{
+          t('structureUi.translation')
+        }}</label>
         <InputText
           id="edit-volume-translation"
           v-model="volumeTranslation"
-          placeholder="输入翻译（可选）"
+          :placeholder="t('structureUi.translationPlaceholder')"
           class="w-full"
           @keyup.enter="handleSave"
         />
       </div>
     </div>
     <template #footer>
-      <Button label="取消" class="p-button-text" :disabled="loading" @click="handleCancel" />
       <Button
-        label="保存"
+        :label="t('structureUi.cancel')"
+        class="p-button-text"
+        :disabled="loading"
+        @click="handleCancel"
+      />
+      <Button
+        :label="t('structureUi.save')"
         :loading="loading"
         :disabled="!volumeTitle.trim() || loading"
         @click="handleSave"
@@ -114,4 +122,3 @@ const handleTranslationApplied = (value: string) => {
     </template>
   </AdaptiveDialog>
 </template>
-

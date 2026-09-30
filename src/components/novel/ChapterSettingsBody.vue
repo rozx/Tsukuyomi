@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 章节/书籍设置面板的内容部分。桌面 Popover 和手机 MobileBottomSheet 共享同一份。
  * 父面板监听 `save` / `close` 事件来关闭 shell 并上抛保存数据。
@@ -22,6 +24,7 @@ import type {
   BookTranslationSettingsFormHandle,
   ChapterSettingsFormData,
 } from 'src/composables/book-details/chapter-settings-update';
+const { t } = useI18n();
 
 const props = defineProps<{
   book: Novel | null;
@@ -106,12 +109,12 @@ const handleInstructionTabChange = (value: string | number) => {
 <template>
   <div class="chapter-settings-body" :class="rootClass">
     <div v-if="!isPhone" class="cs-header p-3 border-b border-white/10 flex-shrink-0">
-      <h4 class="font-medium text-moon-100">{{ showGlobalTab ? '翻译设置' : '章节设置' }}</h4>
+      <h4 class="font-medium text-moon-100">
+        {{ showGlobalTab ? t('translationUi.title') : t('translationUi.chapterSettings') }}
+      </h4>
       <p class="text-xs text-moon/60 mt-1">
         {{
-          showGlobalTab
-            ? '全局设置应用于整个书籍，章节设置仅应用于当前章节'
-            : '章节特殊指令仅应用于当前章节；书籍级设置请在侧栏「翻译设置」中配置'
+          showGlobalTab ? t('translationUi.bookAndChapterHint') : t('translationUi.chapterOnlyHint')
         }}
       </p>
     </div>
@@ -124,8 +127,8 @@ const handleInstructionTabChange = (value: string | number) => {
           @update:value="handleMainTabChange"
         >
           <TabList v-if="showGlobalTab">
-            <Tab value="global">全局设置</Tab>
-            <Tab value="chapter" :disabled="!chapter">章节设置</Tab>
+            <Tab value="global">{{ t('translationUi.globalSettings') }}</Tab>
+            <Tab value="chapter" :disabled="!chapter">{{ t('translationUi.chapterSettings') }}</Tab>
           </TabList>
           <TabPanels>
             <TabPanel v-if="showGlobalTab" value="global">
@@ -138,9 +141,11 @@ const handleInstructionTabChange = (value: string | number) => {
               <div v-if="chapter">
                 <div class="rounded-lg border border-white/10 bg-white/5 overflow-hidden mt-2">
                   <div class="px-3 py-2 border-b border-white/10">
-                    <div class="text-sm font-medium text-moon-100">章节特殊指令</div>
+                    <div class="text-sm font-medium text-moon-100">
+                      {{ t('translationUi.chapterInstructions') }}
+                    </div>
                     <div class="text-xs text-moon/60 mt-1">
-                      仅作用于当前章节；会添加到对应任务的系统提示词中
+                      {{ t('translationUi.chapterInstructionsHint') }}
                     </div>
                   </div>
 
@@ -151,51 +156,55 @@ const handleInstructionTabChange = (value: string | number) => {
                       @update:value="handleInstructionTabChange"
                     >
                       <TabList>
-                        <Tab value="translation">翻译指令</Tab>
-                        <Tab value="polish">润色指令</Tab>
-                        <Tab value="proofreading">校对指令</Tab>
+                        <Tab value="translation">{{
+                          t('translationUi.translationInstructions')
+                        }}</Tab>
+                        <Tab value="polish">{{ t('translationUi.polishInstructions') }}</Tab>
+                        <Tab value="proofreading">{{
+                          t('translationUi.proofreadInstructions')
+                        }}</Tab>
                       </TabList>
                       <TabPanels>
                         <TabPanel value="translation">
                           <div class="space-y-2 pt-2">
                             <Textarea
                               v-model="translationInstructions"
-                              placeholder="输入翻译任务的特殊指令（可选）"
+                              :placeholder="t('translationUi.translationPlaceholder')"
                               :rows="8"
                               :auto-resize="true"
                               class="w-full"
                             />
-                            <small class="text-moon/60 text-xs block">
-                              这些指令将在执行翻译任务时添加到系统提示词中，仅应用于当前章节
-                            </small>
+                            <small class="text-moon/60 text-xs block">{{
+                              t('translationUi.translationHint')
+                            }}</small>
                           </div>
                         </TabPanel>
                         <TabPanel value="polish">
                           <div class="space-y-2 pt-2">
                             <Textarea
                               v-model="polishInstructions"
-                              placeholder="输入润色任务的特殊指令（可选）"
+                              :placeholder="t('translationUi.polishPlaceholder')"
                               :rows="8"
                               :auto-resize="true"
                               class="w-full"
                             />
-                            <small class="text-moon/60 text-xs block">
-                              这些指令将在执行润色任务时添加到系统提示词中，仅应用于当前章节
-                            </small>
+                            <small class="text-moon/60 text-xs block">{{
+                              t('translationUi.polishHint')
+                            }}</small>
                           </div>
                         </TabPanel>
                         <TabPanel value="proofreading">
                           <div class="space-y-2 pt-2">
                             <Textarea
                               v-model="proofreadingInstructions"
-                              placeholder="输入校对任务的特殊指令（可选）"
+                              :placeholder="t('translationUi.proofreadPlaceholder')"
                               :rows="8"
                               :auto-resize="true"
                               class="w-full"
                             />
-                            <small class="text-moon/60 text-xs block">
-                              这些指令将在执行校对任务时添加到系统提示词中，仅应用于当前章节
-                            </small>
+                            <small class="text-moon/60 text-xs block">{{
+                              t('translationUi.proofreadHint')
+                            }}</small>
                           </div>
                         </TabPanel>
                       </TabPanels>
@@ -203,15 +212,25 @@ const handleInstructionTabChange = (value: string | number) => {
                   </div>
                 </div>
               </div>
-              <div v-else class="pt-4 text-center text-moon/60 text-sm">请先选择一个章节</div>
+              <div v-else class="pt-4 text-center text-moon/60 text-sm">
+                {{ t('translationUi.selectChapter') }}
+              </div>
             </TabPanel>
           </TabPanels>
         </Tabs>
       </div>
     </div>
     <div class="cs-footer p-3 border-t border-white/10 flex justify-end gap-2 flex-shrink-0">
-      <Button label="取消" class="p-button-text p-button-sm" @click="handleCancel" />
-      <Button label="保存" class="p-button-primary p-button-sm" @click="handleSave" />
+      <Button
+        :label="t('translationUi.cancel')"
+        class="p-button-text p-button-sm"
+        @click="handleCancel"
+      />
+      <Button
+        :label="t('translationUi.save')"
+        class="p-button-primary p-button-sm"
+        @click="handleSave"
+      />
     </div>
   </div>
 </template>

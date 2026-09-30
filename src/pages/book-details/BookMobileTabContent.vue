@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 手机端 Overview 标签内容（章节树 / 术语 / 角色 / 记忆 面板四选一）。
  * 从 BookDetailsMobileOverview 抽出以降低其模板复杂度。样式由 BookDetailsMobile.vue 提供。
@@ -10,6 +12,8 @@ import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { Chapter, Volume } from 'src/models/novel';
 import BookMobileChapterTree from './BookMobileChapterTree.vue';
+
+const { t } = useI18n();
 
 const ctx = injectBookDetailsPage();
 
@@ -32,10 +36,10 @@ const onChapterAction = (payload: { chapter: Chapter; volumeId: string; index: n
     <template v-if="isChaptersTab">
       <div class="mbd-chapter-actions">
         <button class="mbd-link-btn" @click="ctx.showAddVolumeDialog.value = true">
-          <i class="pi pi-plus" aria-hidden="true" />新卷
+          <i class="pi pi-plus" aria-hidden="true" />{{ t('readerUi.newVolume') }}
         </button>
         <button class="mbd-link-btn" @click="ctx.openAddChapterDialog">
-          <i class="pi pi-plus-circle" aria-hidden="true" />新章节
+          <i class="pi pi-plus-circle" aria-hidden="true" />{{ t('readerUi.newChapter') }}
         </button>
       </div>
 

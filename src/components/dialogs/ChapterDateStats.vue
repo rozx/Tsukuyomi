@@ -4,28 +4,28 @@
       <div v-if="lastUpdated" class="flex flex-col gap-1">
         <span
           class="text-[10px] text-moon/50 uppercase tracking-wider flex items-center gap-1 font-medium"
-          ><i class="pi pi-globe text-[10px]"></i> 远程更新</span
+          ><i class="pi pi-globe text-[10px]"></i> {{ t('structureUi.remoteUpdated') }}</span
         >
         <span class="text-xs text-moon/90 font-mono">{{
-          new Date(lastUpdated).toLocaleString('zh-CN')
+          new Date(lastUpdated).toLocaleString(locale)
         }}</span>
       </div>
       <div v-if="lastEdited" class="flex flex-col gap-1">
         <span
           class="text-[10px] text-moon/50 uppercase tracking-wider flex items-center gap-1 font-medium"
-          ><i class="pi pi-pencil text-[10px]"></i> 本地编辑</span
+          ><i class="pi pi-pencil text-[10px]"></i> {{ t('structureUi.localEdited') }}</span
         >
         <span class="text-xs text-moon/90 font-mono">{{
-          new Date(lastEdited).toLocaleString('zh-CN')
+          new Date(lastEdited).toLocaleString(locale)
         }}</span>
       </div>
       <div v-if="createdAt" class="flex flex-col gap-1">
         <span
           class="text-[10px] text-moon/50 uppercase tracking-wider flex items-center gap-1 font-medium"
-          ><i class="pi pi-calendar-plus text-[10px]"></i> 创建时间</span
+          ><i class="pi pi-calendar-plus text-[10px]"></i> {{ t('structureUi.createdAt') }}</span
         >
         <span class="text-xs text-moon/90 font-mono">{{
-          new Date(createdAt).toLocaleString('zh-CN')
+          new Date(createdAt).toLocaleString(locale)
         }}</span>
       </div>
     </div>
@@ -33,6 +33,8 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t, locale } = useI18n();
 import { computed } from 'vue';
 
 const props = defineProps<{

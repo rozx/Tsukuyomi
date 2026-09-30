@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { localizedErrorMessage } from 'src/utils/localized-error';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
@@ -9,7 +12,6 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ImageUploadService } from 'src/services/image-upload-service';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { copyTextWithToast } from 'src/utils/clipboard';
-import { formatFileSize } from 'src/utils/format';
 import type { CoverImage } from 'src/models/novel';
 
 const props = defineProps<{
@@ -22,6 +24,7 @@ const emit = defineEmits<{
   'update:cover': [cover: CoverImage | null];
 }>();
 
+const { t, locale } = useI18n();
 const toast = useToastWithHistory();
 const coverHistoryStore = useCoverHistoryStore();
 const uploading = ref(false);
@@ -57,9 +60,13 @@ const selectedCover = computed(() => {
 });
 
 // 上传按钮文案
-const uploadLabel = computed(() => (uploading.value ? '上传中...' : '上传图片'));
+const uploadLabel = computed(() =>
+  uploading.value ? t('coverUi.uploading') : t('coverUi.uploadImage'),
+);
 // URL 添加按钮文案
-const urlToggleButtonLabel = computed(() => (showUrlInput.value ? '取消' : '通过 URL 添加'));
+const urlToggleButtonLabel = computed(() =>
+  showUrlInput.value ? t('coverUi.cancel') : t('coverUi.addByUrl'),
+);
 
 // 加载图片信息（尺寸和大小）
 const loadImageInfo = async (url: string) => {
@@ -164,14 +171,17 @@ const handleFileSelect = async (event: Event) => {
 
   try {
     // 使用图片上传服务上传图片
-    const result = await ImageUploadService.uploadImage(file);
+    const result = await ImageUploadService.uploadImage(file, resolveAppLocale(locale.value));
 
     const newCover: CoverImage = {
       url: result.url,
       ...(result.deleteUrl && { deleteUrl: result.deleteUrl }),
     };
 
-    await registerAndSelectCover(newCover, { summary: '上传成功', detail: '封面图片已上传' });
+    await registerAndSelectCover(newCover, {
+      summary: t('coverUi.uploadSuccess'),
+      detail: t('coverUi.uploaded'),
+    });
 
     // 重置文件输入
     if (fileInputRef.value) {
@@ -181,8 +191,8 @@ const handleFileSelect = async (event: Event) => {
     console.error('上传封面失败:', error);
     toast.add({
       severity: 'error',
-      summary: '上传失败',
-      detail: error instanceof Error ? error.message : '上传封面图片时发生错误',
+      summary: t('coverUi.uploadFailure'),
+      detail: localizedErrorMessage(error, resolveAppLocale(locale.value), 'coverUi.uploadUnknown'),
       life: 3000,
     });
   } finally {
@@ -196,8 +206,8 @@ const handleAddByUrl = async () => {
   if (!url) {
     toast.add({
       severity: 'warn',
-      summary: '请输入 URL',
-      detail: '请输入图片的 URL 地址',
+      summary: t('coverUi.urlRequired'),
+      detail: t('coverUi.urlRequiredDetail'),
       life: 2000,
     });
     return;
@@ -210,8 +220,8 @@ const handleAddByUrl = async () => {
   } catch {
     toast.add({
       severity: 'error',
-      summary: 'URL 格式错误',
-      detail: '请输入有效的图片 URL 地址',
+      summary: t('coverUi.invalidUrl'),
+      detail: t('coverUi.invalidUrlDetail'),
       life: 3000,
     });
     return;
@@ -222,8 +232,8 @@ const handleAddByUrl = async () => {
   if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
     toast.add({
       severity: 'error',
-      summary: 'URL 协议不支持',
-      detail: '仅支持 http/https 图片地址',
+      summary: t('coverUi.unsupportedProtocol'),
+      detail: t('coverUi.supportedProtocols'),
       life: 3000,
     });
     return;
@@ -238,8 +248,8 @@ const handleAddByUrl = async () => {
   if (!isImageUrl) {
     toast.add({
       severity: 'warn',
-      summary: '可能不是图片',
-      detail: 'URL 可能不是图片格式，请确认',
+      summary: t('coverUi.possiblyNotImage'),
+      detail: t('coverUi.verifyImageUrl'),
       life: 2000,
     });
   }
@@ -248,7 +258,10 @@ const handleAddByUrl = async () => {
     url: url,
   };
 
-  await registerAndSelectCover(newCover, { summary: '添加成功', detail: '封面已通过 URL 添加' });
+  await registerAndSelectCover(newCover, {
+    summary: t('coverUi.added'),
+    detail: t('coverUi.addedByUrl'),
+  });
   urlInput.value = '';
   showUrlInput.value = false;
 };
@@ -280,7 +293,10 @@ const handleDelete = async () => {
   // 如果有删除 URL，尝试调用删除 API
   if (selectedCover.value.deleteUrl) {
     try {
-      await ImageUploadService.deleteImage(selectedCover.value.deleteUrl);
+      await ImageUploadService.deleteImage(
+        selectedCover.value.deleteUrl,
+        resolveAppLocale(locale.value),
+      );
     } catch (error) {
       // 即使删除失败，也继续移除本地引用
       console.warn('删除远程图片失败:', error);
@@ -296,8 +312,8 @@ const handleDelete = async () => {
   emit('update:cover', null);
   toast.add({
     severity: 'success',
-    summary: '已删除',
-    detail: '封面图片已删除',
+    summary: t('coverUi.deleted'),
+    detail: t('coverUi.coverDeleted'),
     life: 2000,
   });
 };
@@ -307,8 +323,9 @@ const handleDelete = async () => {
 // 复制封面 URL
 const handleCopyUrl = async () => {
   await copyTextWithToast(selectedCover.value?.url, toast, {
-    successDetail: '封面 URL 已复制到剪贴板',
-    errorDetail: '无法复制 URL 到剪贴板',
+    locale: resolveAppLocale(locale.value),
+    successDetail: t('coverUi.copyUrlSuccess'),
+    errorDetail: t('coverUi.copyUrlFailure'),
   });
 };
 
@@ -321,9 +338,9 @@ const handleClose = () => {
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="管理封面"
+    :header="t('coverUi.header')"
     desktop-width="700px"
-    eyebrow="COVER"
+    :eyebrow="t('coverUi.cover')"
     dialog-class="cover-manager-dialog"
     @update:visible="$emit('update:visible', $event)"
   >
@@ -345,7 +362,7 @@ const handleClose = () => {
 
       <!-- 添加封面 -->
       <div class="space-y-3 border-t border-white/10 pt-3">
-        <div class="text-sm font-medium text-moon/90">添加封面</div>
+        <div class="text-sm font-medium text-moon/90">{{ t('coverUi.addCover') }}</div>
 
         <!-- 上传文件 -->
         <div class="space-y-2">
@@ -367,7 +384,7 @@ const handleClose = () => {
               @click="fileInputRef?.click()"
             />
           </div>
-          <small class="text-moon/60 block"> 支持 JPG、PNG、GIF 等图片格式，最大 5MB </small>
+          <small class="text-moon/60 block"> {{ t('coverUi.formatsHint') }} </small>
         </div>
 
         <!-- 通过 URL 添加 -->
@@ -381,14 +398,19 @@ const handleClose = () => {
           <div v-if="showUrlInput" class="space-y-2">
             <InputText
               v-model="urlInput"
-              placeholder="输入图片 URL 地址"
+              :placeholder="t('coverUi.urlPlaceholder')"
               class="w-full"
               @keyup.enter="handleAddByUrl"
             />
             <div class="flex gap-2">
-              <Button label="添加" icon="pi pi-check" class="flex-1" @click="handleAddByUrl" />
               <Button
-                label="取消"
+                :label="t('coverUi.add')"
+                icon="pi pi-check"
+                class="flex-1"
+                @click="handleAddByUrl"
+              />
+              <Button
+                :label="t('coverUi.cancel')"
                 icon="pi pi-times"
                 class="flex-1 p-button-text"
                 @click="
@@ -404,7 +426,7 @@ const handleClose = () => {
       <!-- 删除按钮 -->
       <div v-if="selectedCover" class="border-t border-white/10 pt-3">
         <Button
-          label="删除当前封面"
+          :label="t('coverUi.deleteCurrent')"
           icon="pi pi-trash"
           class="p-button-danger w-full"
           :loading="uploading"
@@ -414,13 +436,13 @@ const handleClose = () => {
     </div>
     <template #footer>
       <Button
-        label="取消"
+        :label="t('coverUi.cancel')"
         icon="pi pi-times"
         class="p-button-text icon-button-hover"
         @click="handleClose"
       />
       <Button
-        label="确认"
+        :label="t('coverUi.confirm')"
         icon="pi pi-check"
         class="p-button-primary icon-button-hover"
         @click="handleConfirm"

@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia';
 import ToastService from 'primevue/toastservice';
 import { useParagraphTranslation } from '../composables/book-details/useParagraphTranslation';
 import { useBooksStore } from '../stores/books';
+import { useSettingsStore } from '../stores/settings';
 import { useToastHistoryStore } from '../stores/toast-history';
 import { ChapterContentService } from '../services/chapter-content-service';
 import type { Chapter, Novel } from '../models/novel';
@@ -60,6 +61,17 @@ async function openEditor() {
 }
 
 describe('useParagraphTranslation', () => {
+  it('选择译文反馈使用当前界面语言，原有简中版本仍按书籍目标选用', async () => {
+    const { books, chapter, editor } = await openEditor();
+    await useSettingsStore().setUiLocale('en-US');
+    await editor.selectParagraphTranslation('p', 't2');
+    expect(chapter.value.content?.[0]?.selectedTranslationId).toBe('t2');
+    expect(
+      useToastHistoryStore().historyItems.find((item) => item.severity === 'success')?.summary,
+    ).toBe('Translation selected');
+    expect(books.getBookById('b')!.targetLanguage).toBe('zh-CN');
+  });
+
   it('旧简中段落编辑及历史选择保存后可重载', async () => {
     const { editor } = await openEditor();
     expect(editor.currentlyEditingParagraphId.value).toBeNull();

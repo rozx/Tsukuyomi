@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+
 import { computed, ref, watch, onUnmounted } from 'vue';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
@@ -12,6 +15,7 @@ import { EmbeddingQueue } from 'src/services/embedding-queue';
 import { MemoryService } from 'src/services/memory-service';
 import { getMemoryEmbeddingStatus } from 'src/services/memory-service';
 import { formatRelativeTimeWithFallback } from 'src/utils/format';
+const { t, locale } = useI18n();
 
 interface Props {
   visible: boolean;
@@ -37,8 +41,8 @@ const editedSummary = ref('');
 const editedContent = ref('');
 
 const dialogHeader = computed(() => {
-  if (isEditing.value) return '编辑记忆';
-  return '记忆详情';
+  if (isEditing.value) return t('memoryUi.editTitle');
+  return t('memoryUi.detailTitle');
 });
 
 // 嵌入状态
@@ -47,12 +51,12 @@ const embeddingStatus = computed(() => getMemoryEmbeddingStatus(props.memory));
 const embeddingStatusLabel = computed(() => {
   switch (embeddingStatus.value) {
     case 'ready':
-      return '已向量化';
+      return t('memoryUi.ready');
     case 'stale':
-      return '向量版本过期';
+      return t('memoryUi.stale');
     case 'pending':
     default:
-      return '待向量化';
+      return t('memoryUi.pending');
   }
 });
 
@@ -61,7 +65,7 @@ const canManualEmbed = computed(() => embeddingStatus.value !== 'ready');
 // 格式化日期时间
 function formatDateTime(timestamp: number): string {
   const date = new Date(timestamp);
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(locale.value, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -72,7 +76,12 @@ function formatDateTime(timestamp: number): string {
 
 // 格式化相对时间（≥ 7 天回落到日期+时间格式）
 function formatRelativeTime(timestamp: number): string {
-  return formatRelativeTimeWithFallback(timestamp, () => formatDateTime(timestamp));
+  return formatRelativeTimeWithFallback(
+    timestamp,
+    () => formatDateTime(timestamp),
+    undefined,
+    resolveAppLocale(locale.value),
+  );
 }
 
 // 处理关闭
@@ -80,11 +89,19 @@ function handleClose() {
   // 如果有未保存的更改，询问是否保存
   if (isEditing.value && hasUnsavedChanges.value) {
     confirm.require({
-      message: '有未保存的更改，是否保存？',
-      header: '确认',
+      get message() {
+        return t('memoryUi.unsaved');
+      },
+      get header() {
+        return t('memoryUi.confirm');
+      },
       icon: 'pi pi-exclamation-triangle',
-      acceptLabel: '保存',
-      rejectLabel: '放弃更改',
+      get acceptLabel() {
+        return t('memoryUi.save');
+      },
+      get rejectLabel() {
+        return t('memoryUi.discard');
+      },
       accept: () => {
         handleSave();
         emit('update:visible', false);
@@ -148,8 +165,8 @@ function handleManualEmbed() {
   EmbeddingQueue.enqueue(props.memory.id);
   toast.add({
     severity: 'info',
-    summary: '已加入嵌入队列',
-    detail: '向量生成完成后将自动更新',
+    summary: t('memoryUi.queued'),
+    detail: t('memoryUi.queueHint'),
     life: 2000,
   });
 }
@@ -163,16 +180,16 @@ async function copyContent() {
     await navigator.clipboard.writeText(contentToCopy);
     toast.add({
       severity: 'success',
-      summary: '已复制',
-      detail: '内容已复制到剪贴板',
+      summary: t('memoryUi.copied'),
+      detail: t('memoryUi.contentCopied'),
       life: 2000,
     });
   } catch (error) {
     console.error('复制失败:', error);
     toast.add({
       severity: 'error',
-      summary: '复制失败',
-      detail: '无法复制内容到剪贴板',
+      summary: t('memoryUi.copyFailed'),
+      detail: t('memoryUi.copyFailedDetail'),
       life: 3000,
     });
   }
@@ -230,7 +247,7 @@ onUnmounted(() => {
     :visible="visible"
     :header="dialogHeader"
     desktop-width="800px"
-    eyebrow="MEMORY"
+    :eyebrow="t('memoryUi.memoryCategory')"
     dialog-class="memory-detail-dialog"
     @update:visible="handleClose"
   >
@@ -238,8 +255,7 @@ onUnmounted(() => {
       <!-- 摘要 -->
       <div class="min-w-0">
         <h4 class="text-sm font-medium text-moon-100/70 mb-3 flex items-center gap-2">
-          <i class="pi pi-tag"></i>
-          摘要
+          <i class="pi pi-tag"></i>{{ t('memoryUi.summary') }}
         </h4>
         <!-- 只读模式 -->
         <div v-if="!isEditing" class="bg-white/5 rounded-lg p-3 border border-white/10">
@@ -248,20 +264,24 @@ onUnmounted(() => {
           </p>
         </div>
         <!-- 编辑模式 -->
-        <InputText v-else v-model="editedSummary" placeholder="输入摘要..." class="w-full" />
+        <InputText
+          v-else
+          v-model="editedSummary"
+          :placeholder="t('memoryUi.summaryPlaceholder')"
+          class="w-full"
+        />
       </div>
 
       <!-- 内容 -->
       <div class="min-w-0">
         <div class="flex items-center justify-between mb-3">
           <h4 class="text-sm font-medium text-moon-100/70 flex items-center gap-2 m-0">
-            <i class="pi pi-file"></i>
-            内容
+            <i class="pi pi-file"></i>{{ t('memoryUi.content') }}
           </h4>
           <Button
             icon="pi pi-copy"
             class="p-button-text p-button-sm"
-            label="复制"
+            :label="t('memoryUi.copy')"
             @click="copyContent"
           />
         </div>
@@ -279,7 +299,7 @@ onUnmounted(() => {
           v-else
           v-model="editedContent"
           rows="10"
-          placeholder="输入内容..."
+          :placeholder="t('memoryUi.detailContentPlaceholder')"
           class="w-full"
         />
       </div>
@@ -287,18 +307,17 @@ onUnmounted(() => {
       <!-- 元信息 -->
       <div class="min-w-0 pt-4 border-t border-white/5">
         <h4 class="text-sm font-medium text-moon-100/70 mb-3 flex items-center gap-2">
-          <i class="pi pi-info-circle"></i>
-          元信息
+          <i class="pi pi-info-circle"></i>{{ t('memoryUi.metadata') }}
         </h4>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div class="flex min-w-0 items-center gap-2">
-            <span class="shrink-0 text-moon-100/50">创建时间：</span>
+            <span class="shrink-0 text-moon-100/50">{{ t('memoryUi.createdAt') }}</span>
             <span class="min-w-0 text-moon-100/70">
               {{ formatDateTime(memory.createdAt) }}
             </span>
           </div>
           <div class="flex min-w-0 items-center gap-2">
-            <span class="shrink-0 text-moon-100/50">最后访问：</span>
+            <span class="shrink-0 text-moon-100/50">{{ t('memoryUi.lastAccessed') }}</span>
             <span class="min-w-0 text-moon-100/70">
               {{ formatRelativeTime(memory.lastAccessedAt) }}
             </span>
@@ -310,11 +329,11 @@ onUnmounted(() => {
             </span>
           </div>
           <div class="flex min-w-0 items-center gap-2">
-            <span class="shrink-0 text-moon-100/50">向量状态：</span>
+            <span class="shrink-0 text-moon-100/50">{{ t('memoryUi.embeddingStatus') }}</span>
             <span class="min-w-0 text-moon-100/70">{{ embeddingStatusLabel }}</span>
           </div>
           <div v-if="memory.embeddingModel" class="flex min-w-0 items-start gap-2 md:col-span-2">
-            <span class="shrink-0 text-moon-100/50">嵌入模型：</span>
+            <span class="shrink-0 text-moon-100/50">{{ t('memoryUi.embeddingModel') }}</span>
             <span class="memory-detail-identifier min-w-0 text-moon-100/50 font-mono text-xs">
               {{ memory.embeddingModel }}
             </span>
@@ -323,7 +342,7 @@ onUnmounted(() => {
         <div v-if="canManualEmbed" class="mt-3">
           <Button
             icon="pi pi-refresh"
-            label="为此记忆生成向量"
+            :label="t('memoryUi.embedMemory')"
             class="p-button-outlined p-button-sm"
             :loading="isEmbedding"
             @click="handleManualEmbed"
@@ -336,18 +355,33 @@ onUnmounted(() => {
       <div class="flex justify-end gap-2 mt-6">
         <template v-if="!isEditing">
           <Button
-            label="删除"
+            :label="t('memoryUi.delete')"
             icon="pi pi-trash"
             class="p-button-danger p-button-text"
             @click="handleDelete"
           />
-          <Button label="编辑" icon="pi pi-pencil" class="p-button-text" @click="startEditing" />
-          <Button label="关闭" icon="pi pi-times" class="p-button-secondary" @click="handleClose" />
+          <Button
+            :label="t('memoryUi.edit')"
+            icon="pi pi-pencil"
+            class="p-button-text"
+            @click="startEditing"
+          />
+          <Button
+            :label="t('memoryUi.close')"
+            icon="pi pi-times"
+            class="p-button-secondary"
+            @click="handleClose"
+          />
         </template>
         <template v-else>
-          <Button label="取消" icon="pi pi-times" class="p-button-text" @click="handleCancel" />
           <Button
-            label="保存"
+            :label="t('memoryUi.cancel')"
+            icon="pi pi-times"
+            class="p-button-text"
+            @click="handleCancel"
+          />
+          <Button
+            :label="t('memoryUi.save')"
             icon="pi pi-check"
             class="p-button-primary"
             :disabled="!editedContent.trim()"

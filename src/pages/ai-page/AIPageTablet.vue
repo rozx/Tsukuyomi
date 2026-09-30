@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed, ref } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -9,6 +11,7 @@ import { injectAIPage } from 'src/composables/ai-page/useAIPage';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import { isPortrait } from 'src/utils/device-orientation';
 import AIRoutingPickerDialog from './AIRoutingPickerDialog.vue';
+const { t } = useI18n();
 
 const ctx = injectAIPage();
 
@@ -24,11 +27,12 @@ const routingToggleClass = computed(() => [
   isRoutingOpen.value ? 'p-button-primary' : 'p-button-outlined',
 ]);
 const emptyModelsText = computed(() =>
-  ctx.searchQuery.value ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型',
+  ctx.searchQuery.value ? t('aiUi.noMatches') : t('aiUi.noModels'),
 );
 const hasNoSearch = computed(() => !ctx.searchQuery.value);
-const modelBadgeText = (model: { enabled: boolean }) => (model.enabled ? '已启用' : '已禁用');
-const hasDefaultTasks = (model: AIModel) => ctx.getDefaultTasks(model) !== '无';
+const modelBadgeText = (model: { enabled: boolean }) =>
+  model.enabled ? t('aiUi.enabled') : t('aiUi.disabled');
+const hasDefaultTasks = (model: AIModel) => ctx.hasDefaultTasks(model);
 const isRoutingRowEmpty = (row: { modelId: string | null }) => !row.modelId;
 const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
   group.models.filter((m) => ctx.filteredModels.value.includes(m));
@@ -40,13 +44,15 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
 
     <header class="ait-head">
       <div class="ait-head-text">
-        <div class="ait-eyebrow">AI MODELS</div>
-        <h1 class="ait-title">AI 模型管理</h1>
+        <div class="ait-eyebrow">{{ t('aiUi.models') }}</div>
+        <h1 class="ait-title">{{ t('aiUi.management') }}</h1>
         <p class="ait-subtitle">
-          管理可用的 AI 翻译模型配置 · 共 {{ ctx.aiModels.value.length }} 个模型，{{
-            ctx.aiModels.value.filter((m) => m.enabled).length
+          {{
+            t('aiUi.managementSummary', {
+              total: ctx.aiModels.value.length,
+              enabled: ctx.aiModels.value.filter((model) => model.enabled).length,
+            })
           }}
-          个已启用
         </p>
       </div>
       <div class="ait-head-actions">
@@ -54,7 +60,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
           <InputGroupAddon>
             <i class="pi pi-search" />
           </InputGroupAddon>
-          <InputText v-model="ctx.searchQuery.value" placeholder="搜索模型、提供商或任务…" />
+          <InputText v-model="ctx.searchQuery.value" :placeholder="t('aiUi.tabletSearch')" />
           <InputGroupAddon v-if="ctx.searchQuery.value">
             <Button
               icon="pi pi-times"
@@ -64,7 +70,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
           </InputGroupAddon>
         </InputGroup>
         <Button
-          label="添加 AI 模型"
+          :label="t('aiUi.addModel')"
           icon="pi pi-plus"
           class="p-button-primary p-button-sm ait-add-btn"
           @click="ctx.addModel"
@@ -72,15 +78,15 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
         <Button
           icon="pi pi-plus"
           class="p-button-primary p-button-sm ait-add-btn-compact"
-          title="添加 AI 模型"
-          aria-label="添加 AI 模型"
+          :title="t('aiUi.addModel')"
+          :aria-label="t('aiUi.addModel')"
           @click="ctx.addModel"
         />
         <Button
           icon="pi pi-sliders-h"
           :class="routingToggleClass"
-          title="任务路由"
-          aria-label="任务路由"
+          :title="t('aiUi.routing')"
+          :aria-label="t('aiUi.routing')"
           @click="toggleRouting"
         />
       </div>
@@ -94,17 +100,17 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
             style="width: 36px; height: 36px"
             stroke-width="4"
             animation-duration=".8s"
-            aria-label="加载中"
+            :aria-label="t('aiUi.loading')"
           />
-          <span>正在加载 AI 模型…</span>
+          <span>{{ t('aiUi.loadingModels') }}</span>
         </div>
 
         <template v-else>
           <!-- BYOK banner -->
           <div class="ait-byok">
             <i class="pi pi-shield" aria-hidden="true" />
-            <span>BYOK · 密钥保存在本设备 IndexedDB</span>
-            <span class="ait-byok-sub">开启 Gist 同步时会随模型上传</span>
+            <span>{{ t('aiUi.byokLocal') }}</span>
+            <span class="ait-byok-sub">{{ t('aiUi.byokSync') }}</span>
           </div>
 
           <div v-if="ctx.filteredModels.value.length === 0" class="ait-empty">
@@ -112,7 +118,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
             <p>{{ emptyModelsText }}</p>
             <Button
               v-if="hasNoSearch"
-              label="添加第一个 AI 模型"
+              :label="t('aiUi.firstModel')"
               icon="pi pi-plus"
               class="p-button-primary"
               @click="ctx.addModel"
@@ -133,7 +139,9 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
                   {{ group.letter }}
                 </div>
                 <span class="ait-group-name">{{ group.label }}</span>
-                <span class="ait-group-count">· {{ group.models.length }} 个模型</span>
+                <span class="ait-group-count"
+                  >· {{ t('aiUi.modelCount', { count: group.models.length }) }}</span
+                >
               </div>
 
               <div v-for="model in visibleGroupModels(group)" :key="model.id" class="ait-model">
@@ -155,34 +163,34 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
                   <Button
                     icon="pi pi-copy"
                     class="p-button-text p-button-sm ait-icon-btn"
-                    title="复制"
+                    :title="t('aiUi.copy')"
                     @click="ctx.duplicateModel(model)"
                   />
                   <Button
                     icon="pi pi-pencil"
                     class="p-button-text p-button-sm ait-icon-btn"
-                    title="编辑"
+                    :title="t('aiUi.edit')"
                     @click="ctx.editModel(model)"
                   />
                   <Button
                     icon="pi pi-trash"
                     class="p-button-text p-button-sm p-button-danger ait-icon-btn"
-                    title="删除"
+                    :title="t('aiUi.delete')"
                     @click="ctx.deleteModel(model)"
                   />
                 </div>
 
                 <div class="ait-params">
                   <div class="ait-param">
-                    <div class="ait-param-label">温度</div>
+                    <div class="ait-param-label">{{ t('aiUi.temperature') }}</div>
                     <div class="ait-param-value">{{ model.temperature }}</div>
                   </div>
                   <div class="ait-param">
-                    <div class="ait-param-label">上下文</div>
+                    <div class="ait-param-label">{{ t('aiUi.contextShort') }}</div>
                     <div class="ait-param-value">{{ model.maxInputTokens }}</div>
                   </div>
                   <div class="ait-param">
-                    <div class="ait-param-label">最大输出</div>
+                    <div class="ait-param-label">{{ t('aiUi.maxOutput') }}</div>
                     <div class="ait-param-value">{{ model.maxOutputTokens }}</div>
                   </div>
                   <div class="ait-param">
@@ -192,7 +200,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
                     </div>
                   </div>
                   <div class="ait-param ait-param-full">
-                    <div class="ait-param-label">默认任务</div>
+                    <div class="ait-param-label">{{ t('aiUi.defaultTasks') }}</div>
                     <div
                       class="ait-param-value"
                       :class="{ 'ait-param-accent': hasDefaultTasks(model) }"
@@ -210,9 +218,9 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
       <!-- Task routing sidebar -->
       <aside class="ait-routing">
         <header class="ait-routing-head">
-          <div class="ait-routing-eyebrow">TASK ROUTING</div>
-          <div class="ait-routing-title">任务路由</div>
-          <p class="ait-routing-sub">为不同任务选择默认模型。设置会随 导入 / 导出 一起保存。</p>
+          <div class="ait-routing-eyebrow">{{ t('aiUi.routing') }}</div>
+          <div class="ait-routing-title">{{ t('aiUi.routing') }}</div>
+          <p class="ait-routing-sub">{{ t('aiUi.routingExportHint') }}</p>
         </header>
 
         <div class="ait-routing-body">

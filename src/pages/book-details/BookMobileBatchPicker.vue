@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 手机端阅读器「批量操作」picker（MobileBottomSheet 外壳 + 菜单项循环 + 空态）。
  *
@@ -9,6 +11,8 @@
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { MenuItem } from 'primevue/menuitem';
+
+const { t } = useI18n();
 
 const ctx = injectBookDetailsPage();
 
@@ -22,8 +26,8 @@ const isDanger = (item: MenuItem) => item.class === 'mbr-menu-danger';
 <template>
   <MobileBottomSheet
     v-model:visible="ctx.showMobileBatchPicker.value"
-    title="批量操作"
-    eyebrow="CHAPTER · 批量"
+    :title="t('readerUi.batch')"
+    :eyebrow="t('readerUi.batchCategory')"
   >
     <template v-for="(item, idx) in ctx.mobileBatchMenuItems.value" :key="itemKey(item, idx)">
       <div v-if="item.separator" class="mbr-batch-picker-sep" />
@@ -45,7 +49,7 @@ const isDanger = (item: MenuItem) => item.class === 'mbr-menu-danger';
     </template>
     <div v-if="ctx.mobileBatchMenuItems.value.length === 0" class="mbr-batch-picker-empty">
       <i class="pi pi-info-circle" aria-hidden="true" />
-      <span>当前章节没有可执行的批量操作。</span>
+      <span>{{ t('readerUi.noBatchActions') }}</span>
     </div>
   </MobileBottomSheet>
 </template>

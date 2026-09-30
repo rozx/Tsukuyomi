@@ -1,3 +1,6 @@
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
+import { useSettingsStore } from 'src/stores/settings';
 import { ref, computed, nextTick, watch } from 'vue';
 import type { Ref } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -41,6 +44,9 @@ export function useSearchReplace(
   chapterScrollToIndex?: Ref<ChapterScrollToIndex | null>,
 ) {
   const toast = useToastWithHistory();
+  const settings = useSettingsStore();
+  const text = (key: MessageKey, values: Record<string, string | number> = {}) =>
+    translateText(settings.uiLocale, key, values);
 
   // Search State
   const isSearchVisible = ref(false);
@@ -271,10 +277,16 @@ export function useSearchReplace(
 
       try {
         const saved = await updateParagraphTranslation(match.id, newText);
-        if (saved !== false) toast.add({ severity: 'success', summary: '已替换', life: 3000 });
+        if (saved !== false)
+          toast.add({ severity: 'success', summary: text('translationUi.replaced'), life: 3000 });
       } catch (error) {
         console.error('Failed to replace paragraph translation:', error);
-        toast.add({ severity: 'error', summary: '替换失败', detail: '无法保存更改', life: 3000 });
+        toast.add({
+          severity: 'error',
+          summary: text('translationUi.replaceFailed'),
+          detail: text('translationUi.cannotSaveChanges'),
+          life: 3000,
+        });
       }
     }
   };
@@ -356,7 +368,12 @@ export function useSearchReplace(
       return true;
     } catch (error) {
       console.error('Failed to replace all:', error);
-      toast.add({ severity: 'error', summary: '批量替换失败', detail: '无法保存更改', life: 3000 });
+      toast.add({
+        severity: 'error',
+        summary: text('translationUi.replaceAllFailed'),
+        detail: text('translationUi.cannotSaveChanges'),
+        life: 3000,
+      });
       return false;
     }
   };
@@ -383,7 +400,7 @@ export function useSearchReplace(
     const bookValue = book.value;
     if (!chapter || !bookValue) return;
 
-    saveState?.('批量替换');
+    saveState?.(text('translationUi.bulkReplace'));
 
     const plan = buildReplacementPlan(paragraphs);
     if (plan.updates.size === 0) return;
@@ -398,7 +415,11 @@ export function useSearchReplace(
     if (!persisted) return;
 
     syncEditingStateAfterReplace(plan);
-    toast.add({ severity: 'success', summary: `已替换 ${plan.updates.size} 处内容`, life: 3000 });
+    toast.add({
+      severity: 'success',
+      summary: text('translationUi.replacedCount', { count: plan.updates.size }),
+      life: 3000,
+    });
   };
 
   // Watchers

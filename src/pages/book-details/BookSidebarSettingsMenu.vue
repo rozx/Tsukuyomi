@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 书籍详情侧栏 · 设置快捷入口菜单（展开 / 折叠两态，带高度过渡）。
  * 从 BookDetailsDesktop 抽出以降低侧栏模板复杂度。样式（settings-menu* + sidebar-eyebrow 基础）
@@ -8,6 +10,8 @@ import { ref } from 'vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import { useUiStore } from 'src/stores/ui';
 import type { SettingMenu } from 'src/composables/book-details/useBookDetailsPage';
+
+const { t } = useI18n();
 
 const ctx = injectBookDetailsPage();
 const ui = useUiStore();
@@ -48,12 +52,12 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
       >
         <div v-if="ui.bookSettingsMenuExpanded" key="expanded" class="settings-menu-expanded">
           <div class="settings-menu-header">
-            <span class="sidebar-eyebrow settings-menu-eyebrow">SETTINGS</span>
+            <span class="sidebar-eyebrow settings-menu-eyebrow">{{ t('readerUi.settings') }}</span>
             <button
               type="button"
               class="settings-menu-toggle"
-              title="收起设置菜单"
-              aria-label="收起设置菜单"
+              :title="t('readerUi.collapseSettings')"
+              :aria-label="t('readerUi.collapseSettings')"
               @click="ui.toggleBookSettingsMenu"
             >
               <i class="pi pi-chevron-up" />
@@ -66,7 +70,7 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
               @click="ctx.navigateToTranslationSetting"
             >
               <i class="pi pi-sliders-h settings-menu-icon" />
-              <span class="settings-menu-label">翻译设置</span>
+              <span class="settings-menu-label">{{ t('readerUi.translationSetting') }}</span>
             </button>
             <button
               class="settings-menu-item"
@@ -74,7 +78,7 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
               @click="ctx.navigateToTermsSetting"
             >
               <i class="pi pi-bookmark settings-menu-icon" />
-              <span class="settings-menu-label">术语设置</span>
+              <span class="settings-menu-label">{{ t('readerUi.termsSetting') }}</span>
             </button>
             <button
               class="settings-menu-item"
@@ -82,7 +86,7 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
               @click="ctx.navigateToCharactersSetting"
             >
               <i class="pi pi-users settings-menu-icon" />
-              <span class="settings-menu-label">角色设置</span>
+              <span class="settings-menu-label">{{ t('readerUi.charactersSetting') }}</span>
             </button>
             <button
               class="settings-menu-item"
@@ -90,7 +94,7 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
               @click="ctx.navigateToMemorySetting"
             >
               <i class="pi pi-database settings-menu-icon" />
-              <span class="settings-menu-label">记忆管理</span>
+              <span class="settings-menu-label">{{ t('readerUi.memorySetting') }}</span>
             </button>
             <button
               class="settings-menu-item"
@@ -98,7 +102,7 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
               @click="ctx.navigateToUpdateSetting"
             >
               <i class="pi pi-download settings-menu-icon" />
-              <span class="settings-menu-label">检查更新</span>
+              <span class="settings-menu-label">{{ t('readerUi.checkUpdates') }}</span>
             </button>
           </div>
         </div>
@@ -107,8 +111,8 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
             type="button"
             class="settings-menu-item"
             :class="{ 'settings-menu-item-selected': isSelected('translation') }"
-            title="翻译设置"
-            aria-label="翻译设置"
+            :title="t('readerUi.translationSetting')"
+            :aria-label="t('readerUi.translationSetting')"
             @click="ctx.navigateToTranslationSetting"
           >
             <i class="pi pi-sliders-h settings-menu-icon" />
@@ -117,8 +121,8 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
             type="button"
             class="settings-menu-item"
             :class="{ 'settings-menu-item-selected': isSelected('terms') }"
-            title="术语设置"
-            aria-label="术语设置"
+            :title="t('readerUi.termsSetting')"
+            :aria-label="t('readerUi.termsSetting')"
             @click="ctx.navigateToTermsSetting"
           >
             <i class="pi pi-bookmark settings-menu-icon" />
@@ -127,8 +131,8 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
             type="button"
             class="settings-menu-item"
             :class="{ 'settings-menu-item-selected': isSelected('characters') }"
-            title="角色设置"
-            aria-label="角色设置"
+            :title="t('readerUi.charactersSetting')"
+            :aria-label="t('readerUi.charactersSetting')"
             @click="ctx.navigateToCharactersSetting"
           >
             <i class="pi pi-users settings-menu-icon" />
@@ -137,8 +141,8 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
             type="button"
             class="settings-menu-item"
             :class="{ 'settings-menu-item-selected': isSelected('memory') }"
-            title="记忆管理"
-            aria-label="记忆管理"
+            :title="t('readerUi.memorySetting')"
+            :aria-label="t('readerUi.memorySetting')"
             @click="ctx.navigateToMemorySetting"
           >
             <i class="pi pi-database settings-menu-icon" />
@@ -147,8 +151,8 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
             type="button"
             class="settings-menu-item"
             :class="{ 'settings-menu-item-selected': isSelected('update') }"
-            title="检查更新"
-            aria-label="检查更新"
+            :title="t('readerUi.checkUpdates')"
+            :aria-label="t('readerUi.checkUpdates')"
             @click="ctx.navigateToUpdateSetting"
           >
             <i class="pi pi-download settings-menu-icon" />
@@ -156,8 +160,8 @@ const isSelected = (menu: SettingMenu) => ctx.selectedSettingMenu.value === menu
           <button
             type="button"
             class="settings-menu-item settings-menu-expand"
-            title="展开设置菜单"
-            aria-label="展开设置菜单"
+            :title="t('readerUi.expandSettings')"
+            :aria-label="t('readerUi.expandSettings')"
             @click="ui.toggleBookSettingsMenu"
           >
             <i class="pi pi-chevron-down settings-menu-icon" />

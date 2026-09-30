@@ -1,12 +1,16 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import type { AppLocale } from 'src/models/locale';
 import { getNameTranslation } from 'src/services/localization/selection';
 import { toRef } from 'vue';
 import Popover from 'primevue/popover';
 import DataView from 'primevue/dataview';
 import Button from 'primevue/button';
+import EntityPopoverHeader from './EntityPopoverHeader.vue';
 import { useEntityListPopover } from 'src/composables/novel/useEntityListPopover';
 import type { CharacterSetting } from 'src/models/novel';
+const { t } = useI18n();
 
 const props = defineProps<{
   usedCharacters: CharacterSetting[];
@@ -45,21 +49,11 @@ const translationText = (owner: CharacterSetting) =>
           class="character-popover-dataview"
         >
           <template #header>
-            <div class="p-3">
-              <div class="flex justify-between items-start gap-2">
-                <div>
-                  <h4 class="font-medium text-moon-100">本章使用的角色设定</h4>
-                  <p class="text-xs text-moon/60 mt-1">共 {{ usedCharacterCount }} 个</p>
-                </div>
-                <Button
-                  icon="pi pi-plus"
-                  label="新建"
-                  size="small"
-                  class="!text-xs !px-2 !py-1 !h-auto"
-                  @click="handleCreate"
-                />
-              </div>
-            </div>
+            <EntityPopoverHeader
+              :title="t('panelUi.chapterCharacters')"
+              :count="usedCharacterCount"
+              @create="handleCreate"
+            />
           </template>
           <template #list="slotProps">
             <div class="flex flex-col gap-2 p-2">
@@ -80,10 +74,10 @@ const translationText = (owner: CharacterSetting) =>
                       >
                         {{
                           character.sex === 'male'
-                            ? '男'
+                            ? t('panelUi.maleShort')
                             : character.sex === 'female'
-                              ? '女'
-                              : '其他'
+                              ? t('panelUi.femaleShort')
+                              : t('panelUi.other')
                         }}
                       </span>
                     </div>
@@ -100,20 +94,26 @@ const translationText = (owner: CharacterSetting) =>
                       v-if="character.aliases && character.aliases.length > 0"
                       class="text-xs text-moon/60 mt-1"
                     >
-                      <span class="text-moon/50">别名：</span>
+                      <span class="text-moon/50">{{ t('panelUi.aliasesLabel') }}</span>
                       <span class="break-words">
-                        {{ character.aliases.map((a: { name: string }) => a.name).join('、') }}
+                        {{
+                          character.aliases
+                            .map((a: { name: string }) => a.name)
+                            .join(t('panelUi.separator'))
+                        }}
                       </span>
                     </div>
                   </div>
                   <div class="flex gap-1 flex-shrink-0">
                     <Button
                       icon="pi pi-pencil"
+                      :aria-label="t('panelUi.edit')"
                       class="p-button-text p-button-sm !p-1 !w-7 !h-7"
                       @click="handleEdit(character)"
                     />
                     <Button
                       icon="pi pi-trash"
+                      :aria-label="t('panelUi.delete')"
                       class="p-button-text p-button-danger p-button-sm !p-1 !w-7 !h-7"
                       @click="handleDelete(character)"
                     />
@@ -123,7 +123,9 @@ const translationText = (owner: CharacterSetting) =>
             </div>
           </template>
           <template #empty>
-            <div class="text-center py-8 text-moon/50 text-sm">本章暂无角色设定</div>
+            <div class="text-center py-8 text-moon/50 text-sm">
+              {{ t('panelUi.noChapterCharacters') }}
+            </div>
           </template>
         </DataView>
       </div>

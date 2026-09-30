@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed, ref, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue';
 import Inplace from 'primevue/inplace';
 import Skeleton from 'primevue/skeleton';
@@ -19,6 +21,7 @@ import { getLanguageTranslation } from 'src/services/localization/selection';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSettingsStore } from 'src/stores/settings';
 import { translateText } from 'src/i18n/translate';
+const { t } = useI18n();
 
 const props = defineProps<{
   paragraph: Paragraph;
@@ -1049,18 +1052,18 @@ defineExpose({
               />
               <div class="translation-edit-actions">
                 <div class="translation-edit-hints">
-                  <span class="hint-text">Enter 保存，Shift+Enter 换行，Esc 取消</span>
+                  <span class="hint-text">{{ t('translationUi.editorHint') }}</span>
                 </div>
                 <div class="translation-edit-buttons">
                   <Button
-                    label="取消"
+                    :label="t('translationUi.cancel')"
                     icon="pi pi-times"
                     class="p-button-text p-button-sm"
                     size="small"
                     @click="cancelTranslation(closeCallback)"
                   />
                   <Button
-                    label="应用"
+                    :label="t('translationUi.apply')"
                     icon="pi pi-check"
                     class="p-button-sm"
                     size="small"

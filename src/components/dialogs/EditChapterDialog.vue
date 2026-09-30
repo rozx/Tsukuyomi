@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import { ref, computed, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -12,6 +13,8 @@ import TabPanel from 'primevue/tabpanel';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import ChapterDateStats from './ChapterDateStats.vue';
+
+const { t } = useI18n();
 
 interface VolumeOption {
   label: string;
@@ -136,20 +139,20 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="编辑章节"
+    :header="t('structureUi.editChapter')"
     desktop-width="30rem"
-    eyebrow="CHAPTER"
+    :eyebrow="t('structureUi.chapter')"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
       <div class="space-y-2">
-        <label for="edit-chapter-title" class="block text-sm font-medium text-moon/90"
-          >章节标题（原文）*</label
-        >
+        <label for="edit-chapter-title" class="block text-sm font-medium text-moon/90">{{
+          t('structureUi.originalChapterTitle')
+        }}</label>
         <TranslatableInput
           id="edit-chapter-title"
           v-model="chapterTitle"
-          placeholder="输入章节标题..."
+          :placeholder="t('structureUi.chapterPlaceholder')"
           type="input"
           :apply-translation-to-input="false"
           @translation-applied="handleTranslationApplied"
@@ -157,45 +160,43 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
         />
       </div>
       <div class="space-y-2">
-        <label for="edit-chapter-translation" class="block text-sm font-medium text-moon/90"
-          >翻译</label
-        >
+        <label for="edit-chapter-translation" class="block text-sm font-medium text-moon/90">{{
+          t('structureUi.translation')
+        }}</label>
         <InputText
           id="edit-chapter-translation"
           v-model="chapterTranslation"
-          placeholder="输入翻译（可选）"
+          :placeholder="t('structureUi.translationPlaceholder')"
           class="w-full"
           @keyup.enter="handleSave"
         />
       </div>
       <div class="space-y-2" v-if="volumeOptions.length > 0">
-        <label for="edit-chapter-volume" class="block text-sm font-medium text-moon/90"
-          >所属卷</label
-        >
+        <label for="edit-chapter-volume" class="block text-sm font-medium text-moon/90">{{
+          t('structureUi.belongsToVolume')
+        }}</label>
         <Select
           id="edit-chapter-volume"
           v-model="selectedVolumeId"
           :options="volumeOptions"
           optionLabel="label"
           optionValue="value"
-          placeholder="选择卷"
+          :placeholder="t('structureUi.selectVolume')"
           class="w-full"
         />
       </div>
       <div class="space-y-2">
-        <label for="edit-chapter-weburl" class="block text-sm font-medium text-moon/90"
-          >网络来源地址</label
-        >
+        <label for="edit-chapter-weburl" class="block text-sm font-medium text-moon/90">{{
+          t('structureUi.webUrl')
+        }}</label>
         <InputText
           id="edit-chapter-weburl"
           v-model="chapterWebUrl"
-          placeholder="输入章节的网络 URL（可选）"
+          :placeholder="t('structureUi.webUrlPlaceholder')"
           class="w-full"
           @keyup.enter="handleSave"
         />
-        <small class="text-moon/60 text-xs block"
-          >用于关联网络来源，设置后可通过在线获取检测更新。清空则解除关联。</small
-        >
+        <small class="text-moon/60 text-xs block">{{ t('structureUi.webUrlHint') }}</small>
       </div>
 
       <!-- 日期统计信息 -->
@@ -208,10 +209,12 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
       <!-- 特殊指令 -->
       <div class="space-y-2 pt-2 border-t border-white/10">
         <div>
-          <label class="block text-sm font-medium text-moon/90">特殊指令（章节级别）</label>
-          <small class="text-moon/60 text-xs block mt-1"
-            >这些指令将覆盖书籍级别的指令，仅应用于当前章节。</small
-          >
+          <label class="block text-sm font-medium text-moon/90">{{
+            t('structureUi.specialInstructions')
+          }}</label>
+          <small class="text-moon/60 text-xs block mt-1">{{
+            t('structureUi.instructionsOverride')
+          }}</small>
         </div>
         <Tabs
           :value="specialInstructionsActiveTab"
@@ -219,9 +222,9 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
           class="special-instructions-tabs"
         >
           <TabList>
-            <Tab value="translation">翻译指令</Tab>
-            <Tab value="polish">润色指令</Tab>
-            <Tab value="proofreading">校对指令</Tab>
+            <Tab value="translation">{{ t('bookDialogUi.translationInstructions') }}</Tab>
+            <Tab value="polish">{{ t('bookDialogUi.polishInstructions') }}</Tab>
+            <Tab value="proofreading">{{ t('bookDialogUi.proofreadInstructions') }}</Tab>
           </TabList>
           <TabPanels>
             <TabPanel value="translation">
@@ -229,14 +232,14 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
                 <Textarea
                   id="edit-chapter-translation-instructions"
                   v-model="chapterTranslationInstructions"
-                  placeholder="输入翻译任务的特殊指令（可选）"
+                  :placeholder="t('bookDialogUi.translationPlaceholder')"
                   :rows="6"
                   :auto-resize="true"
                   class="w-full"
                 />
-                <small class="text-moon/60 text-xs block"
-                  >这些指令将在执行翻译任务时添加到系统提示词中</small
-                >
+                <small class="text-moon/60 text-xs block">{{
+                  t('bookDialogUi.translationHint')
+                }}</small>
               </div>
             </TabPanel>
             <TabPanel value="polish">
@@ -244,14 +247,12 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
                 <Textarea
                   id="edit-chapter-polish-instructions"
                   v-model="chapterPolishInstructions"
-                  placeholder="输入润色任务的特殊指令（可选）"
+                  :placeholder="t('bookDialogUi.polishPlaceholder')"
                   :rows="6"
                   :auto-resize="true"
                   class="w-full"
                 />
-                <small class="text-moon/60 text-xs block"
-                  >这些指令将在执行润色任务时添加到系统提示词中</small
-                >
+                <small class="text-moon/60 text-xs block">{{ t('bookDialogUi.polishHint') }}</small>
               </div>
             </TabPanel>
             <TabPanel value="proofreading">
@@ -259,14 +260,14 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
                 <Textarea
                   id="edit-chapter-proofreading-instructions"
                   v-model="chapterProofreadingInstructions"
-                  placeholder="输入校对任务的特殊指令（可选）"
+                  :placeholder="t('bookDialogUi.proofreadPlaceholder')"
                   :rows="6"
                   :auto-resize="true"
                   class="w-full"
                 />
-                <small class="text-moon/60 text-xs block"
-                  >这些指令将在执行校对任务时添加到系统提示词中</small
-                >
+                <small class="text-moon/60 text-xs block">{{
+                  t('bookDialogUi.proofreadHint')
+                }}</small>
               </div>
             </TabPanel>
           </TabPanels>
@@ -274,8 +275,18 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
       </div>
     </div>
     <template #footer>
-      <Button label="取消" class="p-button-text" :disabled="loading" @click="handleCancel" />
-      <Button label="保存" :loading="loading" :disabled="isSaveDisabled" @click="handleSave" />
+      <Button
+        :label="t('structureUi.cancel')"
+        class="p-button-text"
+        :disabled="loading"
+        @click="handleCancel"
+      />
+      <Button
+        :label="t('structureUi.save')"
+        :loading="loading"
+        :disabled="isSaveDisabled"
+        @click="handleSave"
+      />
     </template>
   </AdaptiveDialog>
 </template>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 手机端阅读器段落列表（虚拟滚动）。
  *
@@ -13,6 +15,8 @@ import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetai
 import { useChapterVirtualizer } from 'src/composables/book-details/useChapterVirtualizer';
 import type { Paragraph } from 'src/models/novel';
 import BookMobileParagraphMeta from './BookMobileParagraphMeta.vue';
+
+const { t } = useI18n();
 
 const ctx = injectBookDetailsPage();
 
@@ -61,8 +65,7 @@ const recomputeMbrScrollMargin = () => {
 
 // 段落选中切换与上 / 下章导航：抽成方法以避免模板内的三元赋值与 && 短路贡献复杂度
 const toggleParagraph = (p: Paragraph) => {
-  ctx.mobileSelectedParagraphId.value =
-    ctx.mobileSelectedParagraphId.value === p.id ? null : p.id;
+  ctx.mobileSelectedParagraphId.value = ctx.mobileSelectedParagraphId.value === p.id ? null : p.id;
 };
 const goToPrevChapter = () => {
   if (ctx.prevChapter.value) ctx.onNavigateToChapter(ctx.prevChapter.value);
@@ -90,15 +93,15 @@ watch(
           style="width: 28px; height: 28px"
           stroke-width="4"
           animation-duration=".8s"
-          aria-label="加载中"
+          :aria-label="t('readerUi.loading')"
         />
-        <span>加载章节内容…</span>
+        <span>{{ t('readerUi.loadingChapter') }}</span>
       </div>
       <template v-else>
         <!-- 空章节状态 -->
         <div v-if="ctx.selectedChapterParagraphs.value.length === 0" class="mbr-state">
           <i class="pi pi-inbox" aria-hidden="true" />
-          <span>本章暂无段落</span>
+          <span>{{ t('readerUi.noParagraphs') }}</span>
         </div>
 
         <!-- 段落列表虚拟滚动 · block translation -->
@@ -133,19 +136,11 @@ watch(
 
         <!-- Prev / Next chapter -->
         <div class="mbr-chapter-nav">
-          <button
-            class="mbr-nav-btn"
-            :disabled="!ctx.prevChapter.value"
-            @click="goToPrevChapter"
-          >
-            <i class="pi pi-chevron-left" aria-hidden="true" />上一章
+          <button class="mbr-nav-btn" :disabled="!ctx.prevChapter.value" @click="goToPrevChapter">
+            <i class="pi pi-chevron-left" aria-hidden="true" />{{ t('readerUi.prevChapter') }}
           </button>
-          <button
-            class="mbr-nav-btn"
-            :disabled="!ctx.nextChapter.value"
-            @click="goToNextChapter"
-          >
-            下一章<i class="pi pi-chevron-right" aria-hidden="true" />
+          <button class="mbr-nav-btn" :disabled="!ctx.nextChapter.value" @click="goToNextChapter">
+            {{ t('readerUi.nextChapter') }}<i class="pi pi-chevron-right" aria-hidden="true" />
           </button>
         </div>
       </template>

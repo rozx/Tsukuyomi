@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import Button from 'primevue/button';
+const { t } = useI18n();
 
 // 全局状态块：模型版本 / 后端(WebGPU/WASM/—) / 状态 + 暂停/恢复按钮。
 defineProps<{
@@ -21,14 +24,16 @@ defineEmits<{
 <template>
   <div class="flex flex-col gap-1 text-xs text-moon-50 px-1">
     <div class="flex items-start justify-between gap-2">
-      <span class="shrink-0">模型:</span>
+      <span class="shrink-0">{{ t('embeddingUi.model') }}</span>
       <span class="font-mono text-right min-w-0 break-all"
         >{{ modelVersion
-        }}<span class="text-moon-300">(章节: @{{ chapterModelVersion.split('@').pop() }})</span></span
+        }}<span class="text-moon-300">{{
+          t('embeddingUi.chapterModel', { version: chapterModelVersion.split('@').pop() ?? '' })
+        }}</span></span
       >
     </div>
     <div class="flex items-center justify-between">
-      <span>后端:</span>
+      <span>{{ t('embeddingUi.backend') }}</span>
       <span
         :class="
           activeBackend === 'webgpu'
@@ -39,18 +44,18 @@ defineEmits<{
         "
       >
         <template v-if="activeBackend === 'webgpu'">WebGPU</template>
-        <template v-else-if="activeBackend === 'wasm'">WASM (慢)</template>
+        <template v-else-if="activeBackend === 'wasm'">{{ t('embeddingUi.slowWasm') }}</template>
         <template v-else>—</template>
       </span>
     </div>
     <div class="flex items-center justify-between">
-      <span>状态:</span>
+      <span>{{ t('embeddingUi.status') }}</span>
       <span :class="statusColor">● {{ statusText }}</span>
     </div>
     <div v-if="running || paused" class="flex justify-end mt-2">
       <Button
         v-if="!paused"
-        label="暂停"
+        :label="t('embeddingUi.pause')"
         size="small"
         severity="warning"
         icon="pi pi-pause"
@@ -58,7 +63,7 @@ defineEmits<{
       />
       <Button
         v-else
-        label="恢复"
+        :label="t('embeddingUi.resume')"
         size="small"
         severity="success"
         icon="pi pi-play"

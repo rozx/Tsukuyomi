@@ -926,16 +926,18 @@ export class ChapterEmbeddingService {
     limit = 5,
     targetLanguage?: AppLocale,
   ): Promise<ChapterQueryMatch[]> {
-    if (!bookId) throw new Error('bookId 不能为空');
-    if (!query || !query.trim()) throw new Error('query 不能为空');
+    if (!bookId) throw new LocalizedError('BOOK_ID_REQUIRED', 'embeddingUi.bookRequired');
+    if (!query || !query.trim())
+      throw new LocalizedError('EMBEDDING_QUERY_REQUIRED', 'embeddingUi.queryRequired');
     if (!EmbeddingService.isReady()) {
-      throw new Error('EmbeddingService 未就绪');
+      throw new LocalizedError('EMBEDDING_NOT_READY', 'embeddingUi.serviceNotReady');
     }
 
     const initialBook = await loadBookMetaFromDB(bookId);
     const language = targetLanguage ?? initialBook?.targetLanguage ?? 'zh-CN';
     const queryVec = await EmbeddingService.embed(query, 'query');
-    if (!queryVec) throw new Error('query embedding 计算失败');
+    if (!queryVec)
+      throw new LocalizedError('QUERY_EMBEDDING_FAILED', 'embeddingUi.calculationFailed');
 
     const { book, chunks, hasUnavailableInput } = await loadQuerySnapshot(bookId, language);
     if (chunks.length === 0) {

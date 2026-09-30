@@ -4,6 +4,7 @@ import { createApp, defineComponent, h, nextTick, ref } from 'vue';
 import type { App } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import PrimeVue from 'primevue/config';
+import { createAppI18n } from '../i18n/vue';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { provideBookSync } from 'src/composables/book-sync/useBookSync';
 
@@ -83,6 +84,7 @@ async function mount(setting: string | null) {
   );
   app.use(router);
   app.use(PrimeVue);
+  app.use(createAppI18n('zh-CN'));
   app.mount(host);
   await flush();
   return { host, router };
@@ -95,7 +97,7 @@ describe('手机端检查更新全屏页', () => {
     expect(host.querySelector('.bsw--mobile')).not.toBeNull();
     expect(host.textContent).toContain('第9话');
 
-    host.querySelector<HTMLButtonElement>('button[aria-label="返回书籍概览"]')!.click();
+    host.querySelector<HTMLButtonElement>('button[aria-label="返回书籍详情"]')!.click();
     await flush();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(router.currentRoute.value.path).toBe('/books/b1');

@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+
 import Button from 'primevue/button';
 import type { Chapter, Novel } from 'src/models/novel';
 import { getChapterDisplayTitle, formatWordCount } from 'src/utils';
+
+const { t, locale } = useI18n();
 
 // 默认模式章节头部：标题 + 编辑按钮 + 段落/字数统计 + 发布/编辑时间 + 原文链接。
 defineProps<{
@@ -26,7 +31,7 @@ defineEmits<{
         icon="pi pi-pencil"
         class="p-button-text p-button-sm p-button-rounded"
         size="small"
-        title="编辑章节标题"
+        :title="t('readerUi.editChapterTitle')"
         @click="$emit('open-edit-chapter-dialog', chapter)"
       />
     </div>
@@ -34,25 +39,27 @@ defineEmits<{
       <div class="chapter-stat-item">
         <i class="pi pi-list chapter-stat-icon"></i>
         <span class="chapter-stat-value">{{ paragraphCount }}</span>
-        <span class="chapter-stat-label">段落</span>
+        <span class="chapter-stat-label">{{ t('readerUi.paragraphs') }}</span>
       </div>
       <span class="chapter-stat-separator">|</span>
       <div class="chapter-stat-item">
         <i class="pi pi-align-left chapter-stat-icon"></i>
-        <span class="chapter-stat-value">{{ formatWordCount(charCount) }}</span>
+        <span class="chapter-stat-value">{{
+          formatWordCount(charCount, resolveAppLocale(locale))
+        }}</span>
       </div>
     </div>
     <div v-if="chapter.lastUpdated" class="chapter-meta">
       <i class="pi pi-clock chapter-meta-icon"></i>
-      <span class="chapter-meta-text"
-        >发布于: {{ new Date(chapter.lastUpdated).toLocaleString('zh-CN') }}</span
-      >
+      <span class="chapter-meta-text">{{
+        t('readerUi.published', { date: new Date(chapter.lastUpdated).toLocaleString(locale) })
+      }}</span>
     </div>
     <div v-if="chapter.lastEdited" class="chapter-meta">
       <i class="pi pi-clock chapter-meta-icon"></i>
-      <span class="chapter-meta-text"
-        >本地最后编辑: {{ new Date(chapter.lastEdited).toLocaleString('zh-CN') }}</span
-      >
+      <span class="chapter-meta-text">{{
+        t('readerUi.lastEdited', { date: new Date(chapter.lastEdited).toLocaleString(locale) })
+      }}</span>
     </div>
     <a
       v-if="chapter.webUrl"
@@ -62,7 +69,7 @@ defineEmits<{
       class="chapter-web-url"
     >
       <i class="pi pi-external-link"></i>
-      <span>查看原文</span>
+      <span>{{ t('readerUi.viewSource') }}</span>
     </a>
   </div>
 </template>
@@ -80,8 +87,7 @@ defineEmits<{
 
 .chapter-title {
   /* 设计系统：章节标题用显示字体（Noto Serif JP）营造阅读仪式感 */
-  font-family:
-    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-family: 'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
   font-size: 1.875rem;
   font-weight: 600;
   letter-spacing: -0.01em;

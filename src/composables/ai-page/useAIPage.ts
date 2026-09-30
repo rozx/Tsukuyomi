@@ -5,7 +5,7 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { AIModel, AIModelDefaultTasks, AIProvider } from 'src/services/ai/types/ai-model';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useSettingsStore } from 'src/stores/settings';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { useI18n } from 'vue-i18n';
 import { cloneDeep } from 'lodash';
 
 type TaskKey = keyof AIModelDefaultTasks;
@@ -60,6 +60,7 @@ function buildAIModelDefaults(formData: Partial<AIModel>): AIModel['isDefault'] 
 }
 
 function createAIPageContext() {
+  const { t } = useI18n();
   const aiModelsStore = useAIModelsStore();
   const settingsStore = useSettingsStore();
   const confirm = useConfirm();
@@ -82,18 +83,20 @@ function createAIPageContext() {
     return provider === 'openai' ? 'OpenAI' : 'Gemini';
   };
 
-  const DEFAULT_TASK_LABELS: Array<{ key: keyof AIModel['isDefault']; label: string }> = [
-    { key: 'translation', label: TASK_TYPE_LABELS.translation },
-    { key: 'proofreading', label: '校对和润色' },
-    { key: 'termsTranslation', label: TASK_TYPE_LABELS.termsTranslation },
-    { key: 'assistant', label: TASK_TYPE_LABELS.assistant },
-  ];
+  const DEFAULT_TASK_LABELS = computed<Array<{ key: keyof AIModel['isDefault']; label: string }>>(
+    () => [
+      { key: 'translation', label: t('aiUi.translation') },
+      { key: 'proofreading', label: t('aiUi.proofreadingCombined') },
+      { key: 'termsTranslation', label: t('aiUi.termsTranslation') },
+      { key: 'assistant', label: t('aiUi.assistant') },
+    ],
+  );
 
   const getDefaultTasks = (model: AIModel) => {
-    const tasks = DEFAULT_TASK_LABELS.filter(({ key }) => model.isDefault[key]?.enabled).map(
-      ({ label }) => label,
-    );
-    return tasks.join('、') || '无';
+    const tasks = DEFAULT_TASK_LABELS.value
+      .filter(({ key }) => model.isDefault[key]?.enabled)
+      .map(({ label }) => label);
+    return tasks.join(t('aiUi.separator')) || t('aiUi.none');
   };
 
   const providerGroups = computed<ProviderGroup[]>(() => {
@@ -125,15 +128,15 @@ function createAIPageContext() {
   // 任务路由行 — 每行包含任务 key、显示标签，以及当前绑定的模型 ID / 显示值。
   // 数据来自 `aiModelsStore.getDefaultModelForTask`（优先读 settings.taskDefaultModels，
   // 回退到模型自身的 isDefault 标记），与实际 AI 任务分发逻辑保持一致。
-  const TASK_ROWS: Array<{ task: TaskKey; label: string }> = [
-    { task: 'translation', label: '翻译 (初译)' },
-    { task: 'proofreading', label: '校对 / 润色' },
-    { task: 'termsTranslation', label: '术语翻译' },
-    { task: 'assistant', label: 'AI 助手' },
-  ];
+  const TASK_ROWS = computed<Array<{ task: TaskKey; label: string }>>(() => [
+    { task: 'translation', label: t('aiUi.firstTranslation') },
+    { task: 'proofreading', label: t('aiUi.proofreading') },
+    { task: 'termsTranslation', label: t('aiUi.termsTranslation') },
+    { task: 'assistant', label: t('aiUi.assistant') },
+  ]);
 
   const taskRouting = computed(() =>
-    TASK_ROWS.map((row) => {
+    TASK_ROWS.value.map((row) => {
       // 依赖 models 数组触发 re-eval（getter 本身不在 computed 追踪链里）
       void aiModels.value;
       const model = aiModelsStore.getDefaultModelForTask(row.task);
@@ -141,7 +144,9 @@ function createAIPageContext() {
         task: row.task,
         label: row.label,
         modelId: model?.id ?? null,
-        value: model ? `${getProviderLabel(model.provider)} · ${model.name}` : '未配置',
+        value: model
+          ? `${getProviderLabel(model.provider)} · ${model.name}`
+          : t('aiUi.notConfigured'),
       };
     }),
   );
@@ -151,7 +156,7 @@ function createAIPageContext() {
       (model) => model.isDefault[task]?.enabled === true,
     );
     return [
-      { label: '自动选择', value: AUTO_TASK_ROUTING_VALUE },
+      { label: t('aiUi.automatic'), value: AUTO_TASK_ROUTING_VALUE },
       ...availableModels.map((model) => ({
         label: `${getProviderLabel(model.provider)} · ${model.name}`,
         value: model.id,
@@ -202,7 +207,7 @@ function createAIPageContext() {
   const routingPickerTaskLabel = computed(() => {
     const task = routingPickerTask.value;
     if (!task) return '';
-    return TASK_ROWS.find((row) => row.task === task)?.label ?? '';
+    return TASK_ROWS.value.find((row) => row.task === task)?.label ?? '';
   });
 
   const openTaskRoutingPicker = (task: TaskKey) => {
@@ -223,8 +228,8 @@ function createAIPageContext() {
       console.error('Failed to set task default model:', error);
       toast.add({
         severity: 'error',
-        summary: '设置失败',
-        detail: '无法保存任务路由设置，请重试。',
+        summary: t('aiUi.settingFailed'),
+        detail: t('aiUi.routingSaveFailed'),
         life: 3000,
       });
     }
@@ -240,8 +245,8 @@ function createAIPageContext() {
       console.error('Failed to set task default model:', error);
       toast.add({
         severity: 'error',
-        summary: '设置失败',
-        detail: '无法保存任务路由设置，请重试。',
+        summary: t('aiUi.settingFailed'),
+        detail: t('aiUi.routingSaveFailed'),
         life: 3000,
       });
     }
@@ -280,15 +285,15 @@ function createAIPageContext() {
     const duplicatedModel: AIModel = {
       ...model,
       id: generateId(),
-      name: `${model.name} (副本)`,
+      name: t('aiUi.copyName', { name: model.name }),
       enabled: false,
       lastEdited: new Date(),
     };
     void aiModelsStore.addModel(duplicatedModel);
     toast.add({
       severity: 'success',
-      summary: '复制成功',
-      detail: `已成功复制模型 "${model.name}"`,
+      summary: t('aiUi.copied'),
+      detail: t('aiUi.copiedModel', { name: model.name }),
       life: 3000,
       onRevert: () => aiModelsStore.deleteModel(duplicatedModel.id),
     });
@@ -326,8 +331,8 @@ function createAIPageContext() {
     showAddDialog.value = false;
     toast.add({
       severity: 'success',
-      summary: '添加成功',
-      detail: `已成功添加模型 "${newModel.name}"`,
+      summary: t('aiUi.added'),
+      detail: t('aiUi.addedModel', { name: newModel.name }),
       life: 3000,
       onRevert: () => aiModelsStore.deleteModel(newModel.id),
     });
@@ -344,8 +349,8 @@ function createAIPageContext() {
     selectedModel.value = null;
     toast.add({
       severity: 'success',
-      summary: '更新成功',
-      detail: `已成功更新模型 "${modelName}"`,
+      summary: t('aiUi.updated'),
+      detail: t('aiUi.updatedModel', { name: modelName }),
       life: 3000,
       onRevert: () => aiModelsStore.updateModel(oldModel.id, oldModel),
     });
@@ -359,19 +364,33 @@ function createAIPageContext() {
   const deleteModel = (model: AIModel) => {
     confirm.require({
       group: 'ai-model',
-      message: `确定要删除模型 "${model.name}" 吗？`,
-      header: '确认删除',
+      get message() {
+        return t('aiUi.deleteQuestion', { name: model.name });
+      },
+      get header() {
+        return t('aiUi.confirmDelete');
+      },
       icon: 'pi pi-exclamation-triangle',
-      rejectProps: { label: '取消', severity: 'secondary' },
-      acceptProps: { label: '删除', severity: 'danger' },
+      rejectProps: {
+        get label() {
+          return t('aiUi.cancel');
+        },
+        severity: 'secondary',
+      },
+      acceptProps: {
+        get label() {
+          return t('aiUi.delete');
+        },
+        severity: 'danger',
+      },
       accept: () => {
         const modelName = model.name;
         const modelToRestore = cloneDeep(model);
         void aiModelsStore.deleteModel(model.id);
         toast.add({
           severity: 'success',
-          summary: '删除成功',
-          detail: `已成功删除模型 "${modelName}"`,
+          summary: t('aiUi.deleted'),
+          detail: t('aiUi.deletedModel', { name: modelName }),
           life: 3000,
           onRevert: () => aiModelsStore.addModel(modelToRestore),
         });
@@ -423,6 +442,13 @@ function createAIPageContext() {
     showEditDialog,
     searchQuery,
     routingPickerTask,
+    routingPickerVisible: computed({
+      get: () => !!routingPickerTask.value,
+      set: (visible: boolean) => {
+        if (!visible) closeTaskRoutingPicker();
+      },
+    }),
+    routingPickerTitle: computed(() => routingPickerTaskLabel.value || t('aiUi.routing')),
     routingPickerOptions,
     routingPickerCurrentModelId,
     routingPickerTaskLabel,
@@ -435,6 +461,8 @@ function createAIPageContext() {
     // 其他
     getProviderLabel,
     getDefaultTasks,
+    hasDefaultTasks: (model: AIModel) =>
+      Object.values(model.isDefault).some((task) => task?.enabled === true),
     formatApiKey,
     addModel,
     editModel,

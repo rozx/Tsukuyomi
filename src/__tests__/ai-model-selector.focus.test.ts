@@ -1,4 +1,5 @@
 import './setup';
+import { createAppI18n } from '../i18n/vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { computed, createApp, h, nextTick, provide, ref } from 'vue';
 import type { App } from 'vue';
@@ -45,7 +46,7 @@ async function mountSelector(hasModels = true) {
   });
   const host = document.createElement('div');
   document.body.append(host);
-  app.use(PrimeVue).mount(host);
+  app.use(PrimeVue).use(createAppI18n('zh-CN')).mount(host);
   await nextTick();
   return formData;
 }

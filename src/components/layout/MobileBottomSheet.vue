@@ -14,6 +14,8 @@
  * 各自重复编写 backdrop / sheet 容器 / 动画。
  */
 import { onBeforeUnmount, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -47,7 +49,6 @@ const props = withDefaults(
   }>(),
   {
     eyebrow: '',
-    closeLabel: '关闭',
     maxHeight: '92dvh',
     minHeight: '80dvh',
     dismissOnMaskClick: true,
@@ -154,7 +155,7 @@ function releaseBodyScrollLock() {
             v-if="closable"
             type="button"
             class="mbs-grabber"
-            :aria-label="closeLabel"
+            :aria-label="closeLabel ?? t('coverUi.close')"
             @click="close"
           >
             <div class="mbs-grabber-bar" />
@@ -174,7 +175,7 @@ function releaseBodyScrollLock() {
                 v-if="closable"
                 type="button"
                 class="mbs-close"
-                :aria-label="closeLabel"
+                :aria-label="closeLabel ?? t('coverUi.close')"
                 @click="close"
               >
                 <i class="pi pi-times" aria-hidden="true" />
@@ -217,7 +218,11 @@ function releaseBodyScrollLock() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 /* Grabber 手柄 */

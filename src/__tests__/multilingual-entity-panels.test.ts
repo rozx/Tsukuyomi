@@ -99,7 +99,7 @@ describe('译名面板目标语言', () => {
           ],
         }),
     });
-    app.mount(host);
+    app.use(createAppI18n('en-US')).mount(host);
     expect(host.textContent).toContain('SOURCE');
     expect(host.textContent).not.toContain('不能显示的简中译名');
   });
@@ -127,6 +127,7 @@ describe('译名面板目标语言', () => {
       .use(pinia)
       .use(PrimeVue)
       .use(ToastService)
+      .use(createAppI18n('zh-CN'))
       .mount(document.body.appendChild(document.createElement('div')));
     visible.value = true;
     await nextTick();

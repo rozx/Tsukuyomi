@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 手机端段落元信息行：§ 序号 + 翻译 / 润色 / 校对 / 已译状态徽章。
  *
@@ -7,6 +9,8 @@
  */
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { Paragraph } from 'src/models/novel';
+
+const { t } = useI18n();
 
 const ctx = injectBookDetailsPage();
 
@@ -21,18 +25,18 @@ defineProps<{
     <span class="mbr-p-num">§ {{ String(index + 1).padStart(3, '0') }}</span>
     <template v-if="ctx.translatingParagraphIds.value.has(p.id)">
       <span class="mbr-badge mbr-badge-blue">
-        <i class="pi pi-spin pi-spinner" aria-hidden="true" />翻译中…
-      </span>
+        <i class="pi pi-spin pi-spinner" aria-hidden="true" />{{ t('readerUi.translating') }}</span
+      >
     </template>
     <template v-else-if="ctx.polishingParagraphIds.value.has(p.id)">
       <span class="mbr-badge mbr-badge-blue">
-        <i class="pi pi-spin pi-spinner" aria-hidden="true" />润色中…
-      </span>
+        <i class="pi pi-spin pi-spinner" aria-hidden="true" />{{ t('readerUi.polishing') }}</span
+      >
     </template>
     <template v-else-if="ctx.proofreadingParagraphIds.value.has(p.id)">
       <span class="mbr-badge mbr-badge-blue">
-        <i class="pi pi-spin pi-spinner" aria-hidden="true" />校对中…
-      </span>
+        <i class="pi pi-spin pi-spinner" aria-hidden="true" />{{ t('readerUi.proofreading') }}</span
+      >
     </template>
     <template v-else-if="(p.translations?.length ?? 0) > 0">
       <i class="pi pi-sparkles mbr-p-meta-ai" aria-hidden="true" />

@@ -43,6 +43,7 @@ export function formatRelativeTimeWithFallback(
   timestamp: number,
   fallback: (date: Date) => string,
   nowMs?: number,
+  locale: AppLocale = 'zh-CN',
 ): string {
   const date = new Date(timestamp);
   const now = nowMs !== undefined ? new Date(nowMs) : new Date();
@@ -52,10 +53,19 @@ export function formatRelativeTimeWithFallback(
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (seconds < 60) return '刚刚';
-  if (minutes < 60) return `${minutes} 分钟前`;
-  if (hours < 24) return `${hours} 小时前`;
-  if (days < 7) return `${days} 天前`;
+  if (seconds < 60) return translateText(locale, 'memoryUi.justNow');
+  if (minutes < 60)
+    return translateText(locale, minutes === 1 ? 'memoryUi.minuteAgo' : 'memoryUi.minutesAgo', {
+      count: minutes,
+    });
+  if (hours < 24)
+    return translateText(locale, hours === 1 ? 'memoryUi.hourAgo' : 'memoryUi.hoursAgo', {
+      count: hours,
+    });
+  if (days < 7)
+    return translateText(locale, days === 1 ? 'memoryUi.dayAgo' : 'memoryUi.daysAgo', {
+      count: days,
+    });
   return fallback(date);
 }
 

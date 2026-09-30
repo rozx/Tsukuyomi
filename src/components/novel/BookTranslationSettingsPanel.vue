@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 书籍翻译设置面板（桌面/平板路由面板，/books/:id/settings/translation）。
  * 壳组件：标题区 + 滚动容器 + 共享表单 + 显式保存/取消，
@@ -11,6 +13,7 @@ import BookTranslationSettingsForm from './BookTranslationSettingsForm.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { Novel } from 'src/models/novel';
 import type { BookTranslationSettingsFormHandle } from 'src/composables/book-details/chapter-settings-update';
+const { t } = useI18n();
 
 defineProps<{
   book: Novel | null;
@@ -34,10 +37,8 @@ const handleCancel = () => {
 <template>
   <div class="book-translation-settings-panel h-full flex flex-col">
     <div class="panel-header border-b border-white/10">
-      <h1 class="panel-title font-semibold text-moon-100">翻译设置</h1>
-      <p class="panel-desc text-sm text-moon/70">
-        书籍级翻译行为设置，应用于本书所有章节；章节级特殊指令请在章节工具栏的「章节设置」中配置
-      </p>
+      <h1 class="panel-title font-semibold text-moon-100">{{ t('translationUi.title') }}</h1>
+      <p class="panel-desc text-sm text-moon/70">{{ t('translationUi.panelHint') }}</p>
     </div>
 
     <div class="flex-1 min-h-0 overflow-y-auto">
@@ -47,8 +48,16 @@ const handleCancel = () => {
     </div>
 
     <div class="panel-footer border-t border-white/10 flex justify-end gap-2 flex-shrink-0">
-      <Button label="取消" class="p-button-text p-button-sm" @click="handleCancel" />
-      <Button label="保存" class="p-button-primary p-button-sm" @click="handleSave" />
+      <Button
+        :label="t('translationUi.cancel')"
+        class="p-button-text p-button-sm"
+        @click="handleCancel"
+      />
+      <Button
+        :label="t('translationUi.save')"
+        class="p-button-primary p-button-sm"
+        @click="handleSave"
+      />
     </div>
   </div>
 </template>

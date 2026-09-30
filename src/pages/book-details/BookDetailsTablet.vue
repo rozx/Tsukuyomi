@@ -10,18 +10,31 @@
  * fork ParagraphCard / ChapterContentPanel (~2,700 LoC of highlighted-text /
  * term popover / character popover / editing / multi-version selection).
  */
+import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { aiLanguageName } from 'src/services/ai/tasks/prompts/language';
 import BookDetailsDesktop from './BookDetailsDesktop.vue';
 import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import { useTabletRightRail } from 'src/composables/useTabletRightRail';
 
+const { t, locale } = useI18n();
 const ctx = injectBookDetailsPage();
+const columnsHeader = computed(() => {
+  const target = ctx.book.value?.targetLanguage ?? 'zh-CN';
+  const language = aiLanguageName(resolveAppLocale(locale.value), target);
+  return t('readerUi.sourceTranslationHeader', { language });
+});
 const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 </script>
 
 <template>
-  <div class="book-details-tablet">
+  <div
+    class="book-details-tablet"
+    :style="{ '--reader-columns-header': JSON.stringify(columnsHeader) }"
+  >
     <BookDetailsDesktop />
 
     <!-- 竖屏叠层遮罩：sidebar dock 打开时点击外侧关闭。横屏由 CSS display:none
@@ -38,8 +51,16 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
         type="button"
         class="tsr-btn rail-base-btn"
         :class="{ 'tsr-btn--active': ctx.isTabletSidebarOpen.value }"
-        :title="ctx.isTabletSidebarOpen.value ? '收起目录' : '展开目录'"
-        :aria-label="ctx.isTabletSidebarOpen.value ? '收起目录' : '展开目录'"
+        :title="
+          ctx.isTabletSidebarOpen.value
+            ? t('readerUi.collapseCatalog')
+            : t('readerUi.expandCatalog')
+        "
+        :aria-label="
+          ctx.isTabletSidebarOpen.value
+            ? t('readerUi.collapseCatalog')
+            : t('readerUi.expandCatalog')
+        "
         :aria-pressed="ctx.isTabletSidebarOpen.value"
         @click="ctx.toggleTabletSidebar"
       >
@@ -66,7 +87,7 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
         type="button"
         class="tsr-btn rail-base-btn"
         :class="{ 'tsr-btn--active': isProgressActive }"
-        title="翻译进度"
+        :title="t('readerUi.progress')"
         @click="() => toggleRail('progress')"
       >
         <i class="pi pi-objects-column" aria-hidden="true" />
@@ -258,7 +279,7 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 }
 
 .book-details-tablet :deep(.chapter-content-panel)::before {
-  content: '原文 · 日本語  |  译文 · 中文';
+  content: var(--reader-columns-header);
   display: block;
   position: sticky;
   top: 0;
@@ -268,7 +289,11 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--white-opacity-6);
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.14em;
@@ -288,5 +313,4 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 .book-details-tablet :deep(.context-menu-icon-button) {
   z-index: 3;
 }
-
 </style>

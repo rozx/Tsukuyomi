@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+
 import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import Panel from 'primevue/panel';
@@ -6,6 +9,7 @@ import type { ScoreBreakdown } from 'src/models/novel';
 import { FALLBACK_WEIGHTS, SCORING_WEIGHTS } from 'src/services/memory-scoring';
 import type { MemoryReference } from './memory-reference-types';
 import { formatRelativeTimeWithFallback } from 'src/utils/format';
+const { t, locale } = useI18n();
 
 interface Props {
   references: MemoryReference[];
@@ -74,8 +78,11 @@ function getSignalWeight(memoryId: string, signal: 'semantic' | 'keyword' | 'rec
 
 // 格式化相对时间（≥ 7 天回落到短日期格式）
 function formatRelativeTime(timestamp: number): string {
-  return formatRelativeTimeWithFallback(timestamp, (date) =>
-    date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
+  return formatRelativeTimeWithFallback(
+    timestamp,
+    (date) => date.toLocaleDateString(locale.value, { month: 'short', day: 'numeric' }),
+    undefined,
+    resolveAppLocale(locale.value),
   );
 }
 </script>
@@ -85,13 +92,13 @@ function formatRelativeTime(timestamp: number): string {
     <!-- 加载状态 -->
     <div v-if="loading" class="flex items-center gap-2 text-moon-100/50 text-sm py-2">
       <i class="pi pi-spinner pi-spin"></i>
-      <span>检索记忆中...</span>
+      <span>{{ t('memoryUi.referenceLoading') }}</span>
     </div>
 
     <!-- 无引用状态 -->
     <div v-else-if="!hasReferences" class="flex items-center gap-2 text-moon-100/40 text-sm py-2">
       <i class="pi pi-lightbulb"></i>
-      <span>未参考记忆</span>
+      <span>{{ t('memoryUi.noReferences') }}</span>
     </div>
 
     <!-- 有引用状态 -->
@@ -103,14 +110,16 @@ function formatRelativeTime(timestamp: number): string {
       >
         <div class="flex items-center gap-2">
           <i class="pi pi-lightbulb text-primary-400"></i>
-          <span class="text-sm text-moon-100/80"> AI 参考了 {{ referenceCount }} 条记忆 </span>
+          <span class="text-sm text-moon-100/80">
+            {{ t('memoryUi.referenceCount', { count: referenceCount }) }}
+          </span>
         </div>
 
         <Button
           v-if="!isAlwaysExpanded"
           :icon="isExpanded ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
           class="p-button-text p-button-sm !w-8 !h-8"
-          :label="isExpanded ? '收起' : '展开'"
+          :label="isExpanded ? t('memoryUi.collapse') : t('memoryUi.expand')"
           @click.stop="toggleExpanded"
         />
       </div>
@@ -145,7 +154,11 @@ function formatRelativeTime(timestamp: number): string {
               <div class="score-tooltip-trigger relative">
                 <span
                   class="text-xs text-primary-400/70 cursor-help"
-                  :title="`相关度 ${getBreakdown(reference.memoryId)!.total.toFixed(2)}`"
+                  :title="
+                    t('memoryUi.relevanceTooltip', {
+                      score: getBreakdown(reference.memoryId)!.total.toFixed(2),
+                    })
+                  "
                 >
                   <i class="pi pi-info-circle"></i>
                   {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }}
@@ -159,13 +172,13 @@ function formatRelativeTime(timestamp: number): string {
                     <div
                       class="flex justify-between text-moon-100/40 pb-1 border-b border-white/10"
                     >
-                      <span class="w-16">信号</span>
-                      <span class="tabular-nums w-9 text-right">原值</span>
-                      <span class="tabular-nums w-9 text-right">权重</span>
-                      <span class="tabular-nums w-10 text-right">加权</span>
+                      <span class="w-16">{{ t('memoryUi.signal') }}</span>
+                      <span class="tabular-nums w-9 text-right">{{ t('memoryUi.rawValue') }}</span>
+                      <span class="tabular-nums w-9 text-right">{{ t('memoryUi.weight') }}</span>
+                      <span class="tabular-nums w-10 text-right">{{ t('memoryUi.weighted') }}</span>
                     </div>
                     <div class="flex justify-between text-moon-100/70">
-                      <span class="w-16">语义置信</span>
+                      <span class="w-16">{{ t('memoryUi.semanticConfidence') }}</span>
                       <span class="tabular-nums w-9 text-right">
                         {{ getBreakdown(reference.memoryId)!.semantic.toFixed(2) }}
                       </span>
@@ -177,7 +190,7 @@ function formatRelativeTime(timestamp: number): string {
                       </span>
                     </div>
                     <div class="flex justify-between text-moon-100/70">
-                      <span class="w-16">关键词</span>
+                      <span class="w-16">{{ t('memoryUi.keywords') }}</span>
                       <span class="tabular-nums w-9 text-right">
                         {{ getBreakdown(reference.memoryId)!.keyword.toFixed(2) }}
                       </span>
@@ -189,7 +202,7 @@ function formatRelativeTime(timestamp: number): string {
                       </span>
                     </div>
                     <div class="flex justify-between text-moon-100/70">
-                      <span class="w-16">时间衰减</span>
+                      <span class="w-16">{{ t('memoryUi.timeDecay') }}</span>
                       <span class="tabular-nums w-9 text-right">
                         {{ getBreakdown(reference.memoryId)!.recency.toFixed(2) }}
                       </span>
@@ -203,7 +216,7 @@ function formatRelativeTime(timestamp: number): string {
                     <div
                       class="pt-1.5 mt-1 border-t border-white/10 flex justify-between font-medium text-moon-100/90"
                     >
-                      <span>相关度</span>
+                      <span>{{ t('memoryUi.relevance') }}</span>
                       <span class="tabular-nums">
                         {{ getBreakdown(reference.memoryId)!.total.toFixed(2) }}
                       </span>
@@ -216,6 +229,7 @@ function formatRelativeTime(timestamp: number): string {
             <!-- 查看按钮 -->
             <Button
               icon="pi pi-eye"
+              :aria-label="t('memoryUi.viewDetail')"
               class="p-button-text p-button-sm !w-7 !h-7 opacity-0 group-hover:opacity-100 transition-opacity"
               @click.stop="viewMemory(reference.memoryId)"
             />

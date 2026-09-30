@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 手机端 · 书籍详情 Overview（卷 / 章节 / 术语 / 角色 / 记忆 概览）。
  *
@@ -13,18 +15,20 @@ import BookMobileHero from './BookMobileHero.vue';
 import BookMobileSegTabs from './BookMobileSegTabs.vue';
 import BookMobileTabContent from './BookMobileTabContent.vue';
 
+const { t } = useI18n();
+
 const ctx = injectBookDetailsPage();
 
 // picker 标题：有目标则显示对应卷 / 章节名，否则回退通用标题（三元收进 computed）
 const volumeSheetTitle = computed(() =>
   volumeActionTarget.value
     ? ctx.getVolumeDisplayTitle(volumeActionTarget.value, ctx.book.value)
-    : '卷操作',
+    : t('readerUi.volumeActions'),
 );
 const chapterSheetTitle = computed(() =>
   chapterActionTarget.value
     ? ctx.getChapterDisplayTitle(chapterActionTarget.value.chapter, ctx.book.value || undefined)
-    : '章节操作',
+    : t('readerUi.chapterActions'),
 );
 const moveUpDisabled = computed(() => !chapterActionCanMoveUp.value);
 const moveDownDisabled = computed(() => !chapterActionCanMoveDown.value);
@@ -106,7 +110,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
     <header class="mbd-appbar">
       <button
         class="mbd-icon-btn"
-        aria-label="返回书籍列表"
+        :aria-label="t('readerUi.backToBooks')"
         @click="() => void ctx.router.push('/books')"
       >
         <i class="pi pi-chevron-left" aria-hidden="true" />
@@ -115,7 +119,11 @@ const runChapterMove = (direction: 'up' | 'down') => {
         <div class="mbd-appbar-title">{{ ctx.book.value.title }}</div>
         <div v-if="ctx.book.value.author" class="mbd-appbar-sub">{{ ctx.book.value.author }}</div>
       </div>
-      <button class="mbd-icon-btn" aria-label="更多操作" @click="ctx.openBookDialog">
+      <button
+        class="mbd-icon-btn"
+        :aria-label="t('readerUi.moreActions')"
+        @click="ctx.openBookDialog"
+      >
         <i class="pi pi-ellipsis-h" aria-hidden="true" />
       </button>
     </header>
@@ -131,18 +139,18 @@ const runChapterMove = (direction: 'up' | 'down') => {
           :disabled="!ctx.continueReadingChapter.value"
           @click="ctx.continueReadingOnPhone"
         >
-          <i class="pi pi-play" aria-hidden="true" />继续翻译
+          <i class="pi pi-play" aria-hidden="true" />{{ t('readerUi.continueTranslation') }}
         </button>
         <button
           class="mbd-btn mbd-btn-outline mbd-btn-icon"
-          aria-label="编辑书籍"
+          :aria-label="t('readerUi.editBook')"
           @click="ctx.openBookDialog"
         >
           <i class="pi pi-pencil" aria-hidden="true" />
         </button>
         <button
           class="mbd-btn mbd-btn-outline mbd-btn-icon"
-          aria-label="检查更新"
+          :aria-label="t('readerUi.checkUpdates')"
           @click="ctx.navigateToUpdateSetting"
         >
           <i class="pi pi-download" aria-hidden="true" />
@@ -153,19 +161,19 @@ const runChapterMove = (direction: 'up' | 'down') => {
       <div v-if="ctx.stats.value" class="mbd-stats">
         <div class="mbd-stat">
           <div class="mbd-stat-value">{{ ctx.stats.value.volumeCount }}</div>
-          <div class="mbd-stat-label">卷数</div>
+          <div class="mbd-stat-label">{{ t('readerUi.volumeCount') }}</div>
         </div>
         <div class="mbd-stat">
           <div class="mbd-stat-value">{{ ctx.stats.value.chapterCount }}</div>
-          <div class="mbd-stat-label">章节</div>
+          <div class="mbd-stat-label">{{ t('readerUi.chapterLabel') }}</div>
         </div>
         <div class="mbd-stat">
           <div class="mbd-stat-value">{{ ctx.formatWordCount(ctx.stats.value.wordCount) }}</div>
-          <div class="mbd-stat-label">字数</div>
+          <div class="mbd-stat-label">{{ t('readerUi.wordCount') }}</div>
         </div>
         <div class="mbd-stat">
           <div class="mbd-stat-value">{{ ctx.formatRelativeDate(ctx.book.value.lastEdited) }}</div>
-          <div class="mbd-stat-label">更新</div>
+          <div class="mbd-stat-label">{{ t('readerUi.update') }}</div>
         </div>
       </div>
 
@@ -192,7 +200,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
   >
     <button type="button" class="mbr-batch-picker-option" @click="runVolumeEdit">
       <i class="pi pi-pencil mbr-batch-picker-option-icon" aria-hidden="true" />
-      <span class="mbr-batch-picker-option-label">编辑卷</span>
+      <span class="mbr-batch-picker-option-label">{{ t('readerUi.editVolume') }}</span>
       <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
     </button>
     <button
@@ -201,7 +209,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
       @click="runVolumeDelete"
     >
       <i class="pi pi-trash mbr-batch-picker-option-icon" aria-hidden="true" />
-      <span class="mbr-batch-picker-option-label">删除卷</span>
+      <span class="mbr-batch-picker-option-label">{{ t('readerUi.deleteVolume') }}</span>
       <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
     </button>
   </MobileBottomSheet>
@@ -215,7 +223,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
   >
     <button type="button" class="mbr-batch-picker-option" @click="runChapterEdit">
       <i class="pi pi-pencil mbr-batch-picker-option-icon" aria-hidden="true" />
-      <span class="mbr-batch-picker-option-label">编辑章节</span>
+      <span class="mbr-batch-picker-option-label">{{ t('readerUi.editChapter') }}</span>
       <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
     </button>
     <button
@@ -225,7 +233,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
       @click="runChapterMove('up')"
     >
       <i class="pi pi-arrow-up mbr-batch-picker-option-icon" aria-hidden="true" />
-      <span class="mbr-batch-picker-option-label">上移</span>
+      <span class="mbr-batch-picker-option-label">{{ t('readerUi.moveUp') }}</span>
       <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
     </button>
     <button
@@ -235,7 +243,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
       @click="runChapterMove('down')"
     >
       <i class="pi pi-arrow-down mbr-batch-picker-option-icon" aria-hidden="true" />
-      <span class="mbr-batch-picker-option-label">下移</span>
+      <span class="mbr-batch-picker-option-label">{{ t('readerUi.moveDown') }}</span>
       <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
     </button>
     <div class="mbr-batch-picker-sep" />
@@ -245,7 +253,7 @@ const runChapterMove = (direction: 'up' | 'down') => {
       @click="runChapterDelete"
     >
       <i class="pi pi-trash mbr-batch-picker-option-icon" aria-hidden="true" />
-      <span class="mbr-batch-picker-option-label">删除章节</span>
+      <span class="mbr-batch-picker-option-label">{{ t('readerUi.deleteChapter') }}</span>
       <i class="pi pi-chevron-right mbr-batch-picker-chev" aria-hidden="true" />
     </button>
   </MobileBottomSheet>

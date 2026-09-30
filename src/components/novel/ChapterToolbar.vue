@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import SplitButton from 'primevue/splitbutton';
@@ -20,6 +22,8 @@ interface TranslationStatus {
 }
 
 import type { MenuItem } from 'primevue/menuitem';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   selectedChapter: Chapter | null;
@@ -87,18 +91,24 @@ const translationSplitIcon = computed(() =>
 const expandToggleIcon = computed(() =>
   isToolbarExpanded.value ? 'pi pi-chevron-up' : 'pi pi-chevron-down',
 );
-const expandToggleTitle = computed(() => (isToolbarExpanded.value ? '收起工具栏' : '展开工具栏'));
+const expandToggleTitle = computed(() =>
+  isToolbarExpanded.value ? t('readerUi.collapseToolbar') : t('readerUi.expandToolbar'),
+);
 const undoBtnTitle = computed(() =>
-  props.undoDescription ? `撤销: ${props.undoDescription}` : '撤销 (Ctrl+Z)',
+  props.undoDescription
+    ? t('readerUi.undoDescription', { description: props.undoDescription })
+    : t('readerUi.undoShortcut'),
 );
 const redoBtnTitle = computed(() =>
-  props.redoDescription ? `重做: ${props.redoDescription}` : '重做 (Ctrl+Y)',
+  props.redoDescription
+    ? t('readerUi.redoDescription', { description: props.redoDescription })
+    : t('readerUi.redoShortcut'),
 );
 const searchBtnIcon = computed(() =>
   props.isSearchVisible ? 'pi pi-search-minus' : 'pi pi-search',
 );
 const searchBtnTitle = computed(() =>
-  props.isSearchVisible ? '关闭搜索 (Ctrl+F)' : '搜索与替换 (Ctrl+F)',
+  props.isSearchVisible ? t('readerUi.closeSearchShortcut') : t('readerUi.searchShortcut'),
 );
 const progressBtnActive = computed(
   () => uiStore.rightPanelOpen && uiStore.activeRightTab === 'progress',
@@ -107,7 +117,10 @@ const translationBtnLoading = computed(
   () => props.isTranslatingChapter || props.isPolishingChapter,
 );
 const translationBtnDisabled = computed(
-  () => props.isTranslatingChapter || props.isPolishingChapter || !props.selectedChapterParagraphs.length,
+  () =>
+    props.isTranslatingChapter ||
+    props.isPolishingChapter ||
+    !props.selectedChapterParagraphs.length,
 );
 const editModeBtnClass = (value: EditMode) =>
   value === props.editMode ? '!bg-primary/20 !text-primary' : 'text-moon/70 hover:text-moon';
@@ -224,7 +237,7 @@ const editModeBtnClass = (value: EditMode) =>
             text
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
-            title="导出章节内容"
+            :title="t('readerUi.exportContent')"
             @click="(event: Event) => emit('toggleExport', event)"
           />
         </div>
@@ -236,19 +249,19 @@ const editModeBtnClass = (value: EditMode) =>
           <ToolbarBadgeButton
             icon="pi pi-bookmark"
             :count="usedTermCount"
-            :title="`本章共使用了 ${usedTermCount} 个术语`"
+            :title="t('readerUi.termsTooltip', { count: usedTermCount })"
             @click="handleToggleTermPopover"
           />
           <ToolbarBadgeButton
             icon="pi pi-user"
             :count="usedCharacterCount"
-            :title="`本章共使用了 ${usedCharacterCount} 个角色设定`"
+            :title="t('readerUi.charactersTooltip', { count: usedCharacterCount })"
             @click="handleToggleCharacterPopover"
           />
           <ToolbarBadgeButton
             icon="pi pi-lightbulb"
             :count="usedMemoryCount"
-            :title="`本章共参考了 ${usedMemoryCount} 条记忆`"
+            :title="t('readerUi.memoriesTooltip', { count: usedMemoryCount })"
             @click="handleToggleMemoryPopover"
           />
         </div>
@@ -263,7 +276,7 @@ const editModeBtnClass = (value: EditMode) =>
             text
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
-            title="键盘快捷键"
+            :title="t('readerUi.shortcuts')"
             @click="handleToggleKeyboardShortcuts"
           />
 
@@ -274,9 +287,14 @@ const editModeBtnClass = (value: EditMode) =>
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
             :class="{ '!bg-primary/20 !text-primary': progressBtnActive }"
-            title="翻译进度"
+            :title="t('readerUi.progress')"
             :disabled="isSmallScreen"
-            @click="() => { uiStore.openRightPanel(); uiStore.setActiveRightTab('progress'); }"
+            @click="
+              () => {
+                uiStore.openRightPanel();
+                uiStore.setActiveRightTab('progress');
+              }
+            "
           />
 
           <Button
@@ -285,7 +303,7 @@ const editModeBtnClass = (value: EditMode) =>
             text
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
-            title="章节设置"
+            :title="t('readerUi.chapterSettings')"
             @click="(event: Event) => emit('toggleSpecialInstructions', event)"
           />
         </div>

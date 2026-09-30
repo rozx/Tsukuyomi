@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -15,6 +19,7 @@ import { MemoryService } from 'src/services/memory-service';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import type { Memory } from 'src/models/memory';
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   visible: boolean;
@@ -34,8 +39,19 @@ const QUERY_LIMIT = 5;
 const query = ref('');
 const lastTarget = ref<TestTarget | null>(null);
 const loading = ref(false);
-const errorMessage = ref<string | null>(null);
+const queryError = ref<unknown>(null);
+const errorMessage = computed(() =>
+  queryError.value === null
+    ? null
+    : localizedErrorMessage(
+        queryError.value,
+        resolveAppLocale(locale.value),
+        'embeddingUi.queryFailed',
+      ),
+);
 const results = ref<TestResultItem[]>([]);
+let queryRequest = 0;
+onUnmounted(() => queryRequest++);
 
 // 记忆详情（子对话框）
 const memoryDetailVisible = ref(false);
@@ -56,8 +72,8 @@ const isMemoryLoading = computed(() => loading.value && lastTarget.value === 'me
 const showResults = computed(() => !!lastTarget.value && !loading.value);
 
 const targetLabel = computed(() => {
-  if (lastTarget.value === 'chapter') return '章节';
-  if (lastTarget.value === 'memory') return '记忆';
+  if (lastTarget.value === 'chapter') return t('embeddingUi.chapter');
+  if (lastTarget.value === 'memory') return t('embeddingUi.memory');
   return '';
 });
 
@@ -65,13 +81,28 @@ watch(
   () => props.visible,
   (next) => {
     if (!next) {
+      queryRequest++;
+      loading.value = false;
       query.value = '';
       lastTarget.value = null;
-      errorMessage.value = null;
+      queryError.value = null;
       results.value = [];
       memoryDetailVisible.value = false;
       selectedMemory.value = null;
     }
+  },
+);
+
+watch(
+  () => props.bookId,
+  () => {
+    queryRequest++;
+    loading.value = false;
+    lastTarget.value = null;
+    queryError.value = null;
+    results.value = [];
+    memoryDetailVisible.value = false;
+    selectedMemory.value = null;
   },
 );
 
@@ -85,7 +116,7 @@ async function queryChaptersForDisplay(id: string, q: string): Promise<TestResul
   return matches.map((m) => ({
     kind: 'chapter' as const,
     targetId: m.chapter_id,
-    title: m.title || '(无标题)',
+    title: m.title || '',
     score: m.score,
     preview: m.preview,
   }));
@@ -97,7 +128,7 @@ async function queryMemoriesForDisplay(id: string, q: string): Promise<TestResul
   return matches.map(({ memory, breakdown }) => ({
     kind: 'memory' as const,
     targetId: memory.id,
-    title: (memory.summary ?? '').trim() || '(无摘要)',
+    title: (memory.summary ?? '').trim(),
     score: breakdown.total,
     preview: (memory.content ?? '').trim().slice(0, 160),
   }));
@@ -107,21 +138,24 @@ async function runQuery(target: TestTarget): Promise<void> {
   const id = props.bookId;
   const q = query.value.trim();
   if (!id || !q) return;
+  const request = ++queryRequest;
+  const isCurrent = () => request === queryRequest && props.bookId === id && props.visible;
 
   lastTarget.value = target;
   loading.value = true;
-  errorMessage.value = null;
+  queryError.value = null;
   results.value = [];
 
   try {
-    results.value =
+    const found =
       target === 'chapter'
         ? await queryChaptersForDisplay(id, q)
         : await queryMemoriesForDisplay(id, q);
+    if (isCurrent()) results.value = found;
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : String(error);
+    if (isCurrent()) queryError.value = error;
   } finally {
-    loading.value = false;
+    if (isCurrent()) loading.value = false;
   }
 }
 
@@ -146,8 +180,12 @@ async function navigateToChapter(chapterId: string): Promise<void> {
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '跳转失败',
-      detail: error instanceof Error ? error.message : String(error),
+      summary: t('embeddingUi.navigationFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'embeddingUi.unknownError',
+      ),
       life: 3000,
     });
   }
@@ -161,8 +199,8 @@ async function openMemoryDetail(memoryId: string): Promise<void> {
     if (!memory) {
       toast.add({
         severity: 'warn',
-        summary: '记忆不存在',
-        detail: '该记忆可能已被删除',
+        summary: t('embeddingUi.memoryMissing'),
+        detail: t('embeddingUi.memoryDeleted'),
         life: 3000,
       });
       return;
@@ -172,8 +210,12 @@ async function openMemoryDetail(memoryId: string): Promise<void> {
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '加载失败',
-      detail: error instanceof Error ? error.message : String(error),
+      summary: t('embeddingUi.loadFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'embeddingUi.unknownError',
+      ),
       life: 3000,
     });
   }
@@ -190,7 +232,7 @@ async function handleMemorySave(memoryId: string, summary: string, content: stri
       const existing = results.value[idx]!;
       results.value[idx] = {
         ...existing,
-        title: summary.trim() || '(无摘要)',
+        title: summary.trim(),
         preview: content.trim().slice(0, 160),
       };
     }
@@ -199,14 +241,18 @@ async function handleMemorySave(memoryId: string, summary: string, content: stri
     }
     toast.add({
       severity: 'success',
-      summary: '已保存',
+      summary: t('embeddingUi.saved'),
       life: 2000,
     });
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '保存失败',
-      detail: error instanceof Error ? error.message : String(error),
+      summary: t('embeddingUi.saveFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'embeddingUi.unknownError',
+      ),
       life: 3000,
     });
   }
@@ -222,14 +268,18 @@ async function handleMemoryDelete(memory: Memory): Promise<void> {
     selectedMemory.value = null;
     toast.add({
       severity: 'success',
-      summary: '已删除',
+      summary: t('embeddingUi.deleted'),
       life: 2000,
     });
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '删除失败',
-      detail: error instanceof Error ? error.message : String(error),
+      summary: t('embeddingUi.deleteFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'embeddingUi.unknownError',
+      ),
       life: 3000,
     });
   }
@@ -241,29 +291,27 @@ const handleClose = () => emit('update:visible', false);
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="测试向量查询"
-    eyebrow="EMBEDDING"
+    :header="t('embeddingUi.testQuery')"
+    :eyebrow="t('embeddingUi.title')"
     desktop-width="52rem"
     @update:visible="emit('update:visible', $event)"
   >
     <div class="flex flex-col gap-4 min-w-0">
       <div class="space-y-2">
-        <label class="text-sm text-moon/80">查询语句</label>
+        <label class="text-sm text-moon/80">{{ t('embeddingUi.query') }}</label>
         <InputText
           v-model="query"
-          placeholder="例：主角与神明订立契约的场景"
+          :placeholder="t('embeddingUi.queryPlaceholder')"
           class="w-full"
           autofocus
           @keydown.enter.prevent="handleEnter"
         />
-        <div class="text-xs text-moon/60">
-          回车默认执行章节查询；记忆查询仅匹配当前模型版本的条目。
-        </div>
+        <div class="text-xs text-moon/60">{{ t('embeddingUi.queryHint') }}</div>
       </div>
 
       <div class="flex gap-2">
         <Button
-          label="查询章节"
+          :label="t('embeddingUi.queryChapters')"
           icon="pi pi-book"
           severity="secondary"
           :disabled="!canRun"
@@ -272,7 +320,7 @@ const handleClose = () => emit('update:visible', false);
           @click="() => runQuery('chapter')"
         />
         <Button
-          label="查询记忆"
+          :label="t('embeddingUi.queryMemories')"
           icon="pi pi-bookmark"
           severity="secondary"
           :disabled="!canRun"
@@ -299,7 +347,12 @@ const handleClose = () => emit('update:visible', false);
     </div>
 
     <template #footer>
-      <Button label="关闭" icon="pi pi-times" class="p-button-text" @click="handleClose" />
+      <Button
+        :label="t('embeddingUi.close')"
+        icon="pi pi-times"
+        class="p-button-text"
+        @click="handleClose"
+      />
     </template>
   </AdaptiveDialog>
 

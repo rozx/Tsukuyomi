@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import { ref, computed, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -7,32 +8,20 @@ import SelectButton from 'primevue/selectbutton';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
-import type { AppLocale } from 'src/models/locale';
+import type { EntityDialogProps, EntityDialogEmits, EntityNameForm } from './entity-dialog-types';
 import { getNameTranslation } from 'src/services/localization/selection';
 import { useLanguageEditGuard } from 'src/composables/translation/useLanguageEditGuard';
 import type { CharacterSetting, Alias } from 'src/models/novel';
 
-const props = defineProps<{
-  visible: boolean;
-  targetLanguage?: AppLocale;
-  character?: CharacterSetting | null;
-  loading?: boolean;
-}>();
+const { t } = useI18n();
 
-const emit = defineEmits<{
-  (e: 'update:visible', value: boolean): void;
-  (
-    e: 'save',
-    data: {
-      name: string;
-      sex?: 'male' | 'female' | 'other' | undefined;
-      translation: string;
-      description: string;
-      speakingStyle: string;
-      aliases: Array<{ id?: string; name: string; translation: string }>;
-    },
-  ): void;
-}>();
+interface CharacterForm extends EntityNameForm {
+  sex?: 'male' | 'female' | 'other' | undefined;
+  speakingStyle: string;
+  aliases: Array<{ id?: string; name: string; translation: string }>;
+}
+const props = defineProps<EntityDialogProps & { character?: CharacterSetting | null }>();
+const emit = defineEmits<EntityDialogEmits<CharacterForm>>();
 
 const { languageChanged, languageChangedMessage, captureLanguage } = useLanguageEditGuard(
   () => props.targetLanguage ?? 'zh-CN',
@@ -48,12 +37,12 @@ const formData = ref({
   aliases: [] as Array<{ id?: string; name: string; translation: string }>,
 });
 
-const sexOptions = [
-  { label: '未知', value: undefined },
-  { label: '男性', value: 'male' },
-  { label: '女性', value: 'female' },
-  { label: '其他', value: 'other' },
-];
+const sexOptions = computed(() => [
+  { label: t('entityUi.unknown'), value: undefined },
+  { label: t('entityUi.male'), value: 'male' },
+  { label: t('entityUi.female'), value: 'female' },
+  { label: t('entityUi.other'), value: 'other' },
+]);
 
 // 表单禁用状态（加载中时禁用所有输入控件）
 const isFormDisabled = computed(() => !!props.loading);
@@ -126,9 +115,9 @@ const removeAlias = (index: number) => {
 <template>
   <AdaptiveDialog
     :visible="visible"
-    :header="character ? '编辑角色' : '添加角色'"
+    :header="character ? t('entityUi.editCharacter') : t('entityUi.addCharacter')"
     desktop-width="700px"
-    eyebrow="CHARACTER"
+    :eyebrow="t('entityUi.character')"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
@@ -139,10 +128,10 @@ const removeAlias = (index: number) => {
         :closable="false"
       />
       <div class="space-y-2">
-        <label class="text-sm text-moon-100/80">角色名称 *</label>
+        <label class="text-sm text-moon-100/80">{{ t('entityUi.characterName') }}</label>
         <TranslatableInput
           v-model="formData.name"
-          placeholder="输入角色名称"
+          :placeholder="t('entityUi.characterPlaceholder')"
           type="input"
           :apply-translation-to-input="false"
           :disabled="isFormDisabled"
@@ -152,11 +141,11 @@ const removeAlias = (index: number) => {
             }
           "
         />
-        <p class="text-xs text-moon-100/60">点击翻译图标可翻译名称，翻译结果将填入翻译字段</p>
+        <p class="text-xs text-moon-100/60">{{ t('entityUi.nameTranslationHint') }}</p>
       </div>
 
       <div class="space-y-2">
-        <label class="text-sm text-moon-100/80">性别</label>
+        <label class="text-sm text-moon-100/80">{{ t('entityUi.sex') }}</label>
         <SelectButton
           v-model="formData.sex"
           :options="sexOptions"
@@ -168,26 +157,22 @@ const removeAlias = (index: number) => {
       </div>
 
       <div class="space-y-2">
-        <label class="text-sm text-moon-100/80">翻译</label>
+        <label class="text-sm text-moon-100/80">{{ t('entityUi.translation') }}</label>
         <InputText
           v-model="formData.translation"
-          placeholder="输入翻译"
+          :placeholder="t('entityUi.translationPlaceholder')"
           class="w-full"
           :disabled="isFormDisabled"
         />
-        <AppMessage
-          severity="info"
-          message="留空则让翻译 AI 在翻译章节时自动添加、更新或删除翻译内容"
-          :closable="false"
-        />
+        <AppMessage severity="info" :message="t('entityUi.translationAiHint')" :closable="false" />
       </div>
 
       <div class="space-y-2">
         <div class="flex justify-between items-center">
-          <label class="text-sm text-moon-100/80">别名</label>
+          <label class="text-sm text-moon-100/80">{{ t('entityUi.aliases') }}</label>
           <Button
             icon="pi pi-plus"
-            label="添加别名"
+            :label="t('entityUi.addAlias')"
             class="p-button-text p-button-sm"
             size="small"
             @click="addAlias"
@@ -195,7 +180,7 @@ const removeAlias = (index: number) => {
           />
         </div>
         <div v-if="formData.aliases.length === 0" class="text-xs text-moon-100/50 italic py-2 mb-2">
-          暂无别名，点击"添加别名"按钮添加
+          {{ t('entityUi.noAliases') }}
         </div>
         <div v-else class="space-y-2">
           <div
@@ -206,10 +191,12 @@ const removeAlias = (index: number) => {
             <div class="flex-1 space-y-2">
               <p v-if="alias.id" class="text-xs text-moon-100/50 break-all">ID: {{ alias.id }}</p>
               <div>
-                <label class="text-xs text-moon-100/60 block mb-1">别名名称</label>
+                <label class="text-xs text-moon-100/60 block mb-1">{{
+                  t('entityUi.aliasName')
+                }}</label>
                 <TranslatableInput
                   v-model="alias.name"
-                  placeholder="输入别名名称"
+                  :placeholder="t('entityUi.aliasPlaceholder')"
                   type="input"
                   :apply-translation-to-input="false"
                   :disabled="isFormDisabled"
@@ -220,14 +207,16 @@ const removeAlias = (index: number) => {
                   "
                 />
                 <p class="text-xs text-moon-100/50 mt-1">
-                  点击翻译图标可翻译别名，翻译结果将填入别名翻译字段
+                  {{ t('entityUi.aliasTranslationHint') }}
                 </p>
               </div>
               <div>
-                <label class="text-xs text-moon-100/60 block mb-1">别名翻译</label>
+                <label class="text-xs text-moon-100/60 block mb-1">{{
+                  t('entityUi.aliasTranslation')
+                }}</label>
                 <InputText
                   v-model="alias.translation"
-                  placeholder="输入别名翻译"
+                  :placeholder="t('entityUi.aliasTranslationPlaceholder')"
                   class="w-full"
                   :disabled="isFormDisabled"
                 />
@@ -242,57 +231,45 @@ const removeAlias = (index: number) => {
             />
           </div>
         </div>
-        <AppMessage
-          severity="info"
-          message="别名翻译留空时，AI 在翻译章节时会自动添加、更新或删除别名及其翻译"
-          :closable="false"
-        />
+        <AppMessage severity="info" :message="t('entityUi.aliasAiHint')" :closable="false" />
       </div>
 
       <div class="space-y-2">
-        <label class="text-sm text-moon-100/80">描述</label>
+        <label class="text-sm text-moon-100/80">{{ t('entityUi.description') }}</label>
         <Textarea
           v-model="formData.description"
-          placeholder="输入描述（可选）"
+          :placeholder="t('entityUi.descriptionPlaceholder')"
           :rows="3"
           class="w-full"
           :disabled="isFormDisabled"
         />
-        <AppMessage
-          severity="info"
-          message="留空则让翻译 AI 在翻译章节时自动添加、更新或删除描述内容"
-          :closable="false"
-        />
+        <AppMessage severity="info" :message="t('entityUi.descriptionAiHint')" :closable="false" />
       </div>
 
       <div class="space-y-2">
-        <label class="text-sm text-moon-100/80">说话口吻</label>
+        <label class="text-sm text-moon-100/80">{{ t('entityUi.speakingStyle') }}</label>
         <Textarea
           v-model="formData.speakingStyle"
-          placeholder="输入说话口吻（可选）。例如：傲娇、古风、口癖(desu/nya)等"
+          :placeholder="t('entityUi.speakingStylePlaceholder')"
           :rows="2"
           class="w-full"
           :disabled="isFormDisabled"
         />
-        <AppMessage
-          severity="info"
-          message="说话口吻有助于 AI 在翻译对话时保持角色个性一致"
-          :closable="false"
-        />
+        <AppMessage severity="info" :message="t('entityUi.speakingStyleHint')" :closable="false" />
       </div>
     </div>
 
     <template #footer>
       <div class="flex justify-end gap-2 mt-6">
         <Button
-          label="取消"
+          :label="t('entityUi.cancel')"
           icon="pi pi-times"
           class="p-button-text"
           @click="handleClose"
           :disabled="loading"
         />
         <Button
-          label="保存"
+          :label="t('entityUi.save')"
           icon="pi pi-check"
           class="p-button-primary"
           @click="handleSave"

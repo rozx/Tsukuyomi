@@ -3,13 +3,13 @@
     <div v-for="(header, index) in headers" :key="index" class="flex items-center gap-2">
       <InputText
         v-model="header.key"
-        placeholder="Header Key (例如: User-Agent)"
+        :placeholder="t('aiUi.headerPlaceholder')"
         class="flex-1"
         @input="emit('change')"
       />
       <InputText
         v-model="header.value"
-        placeholder="Value"
+        :placeholder="t('aiUi.headerValue')"
         class="flex-1"
         @input="emit('change')"
       />
@@ -23,18 +23,19 @@
       v-if="headers.length === 0"
       class="text-xs text-moon/60 italic text-center py-2 bg-white/5 rounded"
     >
-      未配置自定义请求头
+      {{ t('aiUi.noHeaders') }}
     </div>
-    <div class="text-xs text-amber-500/80 mt-1">
-      * 注意：某些 Header 可能会被浏览器安全策略阻止，或覆盖默认的 API Key 认证机制。
-    </div>
+    <div class="text-xs text-amber-500/80 mt-1">{{ t('aiUi.headerHint') }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import InputText from 'primevue/inputtext';
 import Button from 'primevue/button';
 import type { CustomHeaderItem } from './ai-model-form-types';
+const { t } = useI18n();
 
 defineProps<{
   headers: CustomHeaderItem[];

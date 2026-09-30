@@ -1,5 +1,7 @@
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref, computed, type ComputedRef, type Ref } from 'vue';
+import { createPinia, setActivePinia } from 'pinia';
+import { useSettingsStore } from '../stores/settings';
 import { useChapterTranslation } from '../composables/book-details/useChapterTranslation';
 import type { Novel, Chapter, Paragraph, Volume } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
@@ -102,6 +104,8 @@ describe('useChapterTranslation', () => {
   let saveState: ReturnType<typeof mock>;
 
   beforeEach(() => {
+    setActivePinia(createPinia());
+    useSettingsStore().settings.uiLocale = 'zh-CN';
     book = ref<Novel | undefined>(undefined);
     selectedChapter = ref<Chapter | null>(null);
     selectedChapterWithContent = ref<Chapter | null>(null);

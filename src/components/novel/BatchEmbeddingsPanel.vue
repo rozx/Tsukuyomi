@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import Drawer from 'primevue/drawer';
@@ -31,6 +33,7 @@ import BatchEmbeddingsActiveTask from 'src/components/novel/BatchEmbeddingsActiv
 import BatchEmbeddingsBackendStatus from 'src/components/novel/BatchEmbeddingsBackendStatus.vue';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
 import { isMobileDevice } from 'src/utils/platform';
+const { t } = useI18n();
 
 const route = useRoute();
 const router = useRouter();
@@ -221,7 +224,7 @@ const activeBookTitle = computed(() => {
 });
 
 const activeKindLabel = computed(() =>
-  activeTask.value?.kind === 'chapter' ? '章节' : '记忆',
+  activeTask.value?.kind === 'chapter' ? t('embeddingUi.chapter') : t('embeddingUi.memory'),
 );
 
 const chapterPercent = computed(() => {
@@ -238,28 +241,30 @@ const memoryPercent = computed(() => {
 const etaText = computed(() => {
   const eta = progress.value.etaMs;
   if (eta == null) return '—';
-  if (eta === 0) return '已完成';
+  if (eta === 0) return t('embeddingUi.completed');
   const seconds = Math.round(eta / 1000);
-  if (seconds < 60) return `约 ${seconds} 秒`;
+  if (seconds < 60) return t('embeddingUi.etaSeconds', { count: seconds });
   const minutes = Math.floor(seconds / 60);
   const restSec = seconds % 60;
-  return restSec > 0 ? `约 ${minutes} 分 ${restSec} 秒` : `约 ${minutes} 分`;
+  return restSec > 0
+    ? t('embeddingUi.etaMinutesSeconds', { minutes, seconds: restSec })
+    : t('embeddingUi.etaMinutes', { count: minutes });
 });
 
 const statusLabel = computed(() => {
   // 嵌入功能总开关关闭(含手机端强制关)优先显示,避免用"未就绪"误导用户以为是加载问题
   if (!isEmbeddingEnabled.value) {
-    return { text: '已禁用', color: 'text-moon/50' };
+    return { text: t('embeddingUi.disabled'), color: 'text-moon/50' };
   }
   switch (embeddingStatus.value) {
     case 'ready':
-      return { text: '就绪', color: 'text-green-400' };
+      return { text: t('embeddingUi.ready'), color: 'text-green-400' };
     case 'loading':
-      return { text: '模型加载中', color: 'text-primary-400' };
+      return { text: t('embeddingUi.loading'), color: 'text-primary-400' };
     case 'failed':
-      return { text: '加载失败', color: 'text-red-400' };
+      return { text: t('embeddingUi.loadFailed'), color: 'text-red-400' };
     default:
-      return { text: '未就绪', color: 'text-moon-50' };
+      return { text: t('embeddingUi.notReady'), color: 'text-moon-50' };
   }
 });
 
@@ -293,9 +298,7 @@ const backfillMemories = () => {
 const pauseQueue = () => EmbeddingQueue.pause();
 const resumeQueue = () => EmbeddingQueue.resume();
 
-const hasStale = computed(
-  () => staleCounts.value.chapter > 0 || staleCounts.value.memory > 0,
-);
+const hasStale = computed(() => staleCounts.value.chapter > 0 || staleCounts.value.memory > 0);
 
 // 队列正在处理任何嵌入任务时,禁用会新增队列工作的按钮,避免用户重复触发或与
 // 正在进行的重建/回填冲突。
@@ -361,13 +364,13 @@ defineExpose({ toggle });
       <div class="bed-appbar">
         <div class="bed-appbar-icon"><i class="pi pi-bolt" aria-hidden="true" /></div>
         <div class="bed-appbar-text">
-          <div class="bed-appbar-title">本地向量索引</div>
-          <div class="bed-appbar-sub">BYOK · IndexedDB 本地保存</div>
+          <div class="bed-appbar-title">{{ t('embeddingUi.title') }}</div>
+          <div class="bed-appbar-sub">{{ t('embeddingUi.storage') }}</div>
         </div>
         <button
           type="button"
           class="bed-appbar-close"
-          aria-label="关闭"
+          :aria-label="t('embeddingUi.close')"
           @click="close"
         >
           <i class="pi pi-times" aria-hidden="true" />
@@ -376,7 +379,7 @@ defineExpose({ toggle });
     </template>
     <div class="flex flex-col gap-4 p-1">
       <div v-if="!currentBook" class="text-sm text-center text-moon-50 py-4">
-        请在小说详情页使用此功能
+        {{ t('embeddingUi.openBook') }}
       </div>
 
       <template v-else>
@@ -386,7 +389,7 @@ defineExpose({ toggle });
             {{ currentBook.title }}
           </div>
           <div class="flex items-center gap-4 text-xs text-moon-50">
-            <span>共 {{ totalChapters }} 章节</span>
+            <span>{{ t('embeddingUi.chapterCount', { count: totalChapters }) }}</span>
           </div>
         </div>
 
@@ -409,76 +412,90 @@ defineExpose({ toggle });
 
         <!-- 章节 Embedding -->
         <template v-if="isEmbeddingEnabled">
-        <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
-          <div class="flex items-center justify-between">
-            <div class="text-sm font-medium text-moon-100">章节 Embedding</div>
-            <div class="text-xs text-moon-50">
-              已嵌入 {{ chapterStats.embedded }} / {{ chapterStats.total }}
+          <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
+            <div class="flex items-center justify-between">
+              <div class="text-sm font-medium text-moon-100">
+                {{ t('embeddingUi.chapterEmbeddings') }}
+              </div>
+              <div class="text-xs text-moon-50">
+                {{
+                  t('embeddingUi.embeddedCount', {
+                    completed: chapterStats.embedded,
+                    total: chapterStats.total,
+                  })
+                }}
+              </div>
+            </div>
+            <ProgressBar :value="chapterPercent" :show-value="false" style="height: 6px" />
+            <div class="flex items-center justify-between text-xs text-moon-50">
+              <span>{{ t('embeddingUi.pendingCount', { count: chapterPendingInQueue }) }}</span>
+              <span v-if="chapterEtaVisible">ETA: {{ etaText }}</span>
+            </div>
+            <div class="flex gap-2 mt-1">
+              <Button
+                :label="t('embeddingUi.fillMissing')"
+                size="small"
+                severity="secondary"
+                icon="pi pi-refresh"
+                @click="backfillChapters"
+                :disabled="actionsDisabled"
+                class="flex-1"
+              />
+              <Button
+                :label="t('embeddingUi.rebuildAll')"
+                size="small"
+                severity="secondary"
+                icon="pi pi-sync"
+                @click="recomputeAllChapters"
+                :disabled="actionsDisabled"
+                class="flex-1"
+              />
             </div>
           </div>
-          <ProgressBar :value="chapterPercent" :show-value="false" style="height: 6px" />
-          <div class="flex items-center justify-between text-xs text-moon-50">
-            <span>待处理: {{ chapterPendingInQueue }}</span>
-            <span v-if="chapterEtaVisible">ETA: {{ etaText }}</span>
-          </div>
-          <div class="flex gap-2 mt-1">
-            <Button
-              label="回填缺失"
-              size="small"
-              severity="secondary"
-              icon="pi pi-refresh"
-              @click="backfillChapters"
-              :disabled="actionsDisabled"
-              class="flex-1"
-            />
-            <Button
-              label="全部重算"
-              size="small"
-              severity="secondary"
-              icon="pi pi-sync"
-              @click="recomputeAllChapters"
-              :disabled="actionsDisabled"
-              class="flex-1"
-            />
-          </div>
-        </div>
 
-        <!-- 记忆 Embedding -->
-        <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
-          <div class="flex items-center justify-between">
-            <div class="text-sm font-medium text-moon-100">记忆 Embedding</div>
-            <div class="text-xs text-moon-50">
-              已嵌入 {{ memoryStats.embedded }} / {{ memoryStats.total }}
+          <!-- 记忆 Embedding -->
+          <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
+            <div class="flex items-center justify-between">
+              <div class="text-sm font-medium text-moon-100">
+                {{ t('embeddingUi.memoryEmbeddings') }}
+              </div>
+              <div class="text-xs text-moon-50">
+                {{
+                  t('embeddingUi.embeddedCount', {
+                    completed: memoryStats.embedded,
+                    total: memoryStats.total,
+                  })
+                }}
+              </div>
+            </div>
+            <ProgressBar :value="memoryPercent" :show-value="false" style="height: 6px" />
+            <div class="flex items-center justify-between text-xs text-moon-50">
+              <span>{{ t('embeddingUi.pendingCount', { count: memoryPendingInQueue }) }}</span>
+              <span v-if="memoryEtaVisible">ETA: {{ etaText }}</span>
+            </div>
+            <div class="flex gap-2 mt-1">
+              <Button
+                :label="t('embeddingUi.fillMissing')"
+                size="small"
+                severity="secondary"
+                icon="pi pi-refresh"
+                @click="backfillMemories"
+                :disabled="actionsDisabled"
+                class="flex-1"
+              />
             </div>
           </div>
-          <ProgressBar :value="memoryPercent" :show-value="false" style="height: 6px" />
-          <div class="flex items-center justify-between text-xs text-moon-50">
-            <span>待处理: {{ memoryPendingInQueue }}</span>
-            <span v-if="memoryEtaVisible">ETA: {{ etaText }}</span>
-          </div>
-          <div class="flex gap-2 mt-1">
-            <Button
-              label="回填缺失"
-              size="small"
-              severity="secondary"
-              icon="pi pi-refresh"
-              @click="backfillMemories"
-              :disabled="actionsDisabled"
-              class="flex-1"
-            />
-          </div>
-        </div>
 
-        <!-- 测试查询入口 -->
-        <Button
-          label="测试向量查询"
-          size="small"
-          severity="secondary"
-          icon="pi pi-search"
-          class="w-full"
-          :disabled="testDisabled"
-          @click="openTestDialog"
-        />
+          <!-- 测试查询入口 -->
+          <Button
+            :label="t('embeddingUi.testQuery')"
+            size="small"
+            severity="secondary"
+            icon="pi pi-search"
+            class="w-full"
+            :disabled="testDisabled"
+            @click="openTestDialog"
+          />
         </template>
 
         <!-- 队列当前任务提示(跨书时高亮) -->

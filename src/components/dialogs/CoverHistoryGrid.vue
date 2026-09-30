@@ -1,8 +1,8 @@
 <template>
   <div class="space-y-3">
     <div class="flex items-center justify-between">
-      <div class="text-sm font-medium text-moon/90">封面历史</div>
-      <div class="text-xs text-moon/60">{{ covers.length }} 个封面</div>
+      <div class="text-sm font-medium text-moon/90">{{ t('coverUi.history') }}</div>
+      <div class="text-xs text-moon/60">{{ t('coverUi.count', { count: covers.length }) }}</div>
     </div>
     <div
       v-if="covers.length > 0"
@@ -26,7 +26,7 @@
       >
         <img
           :src="cover.url"
-          alt="封面"
+          :alt="t('coverUi.cover')"
           class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
           @error="
             (e) => {
@@ -50,12 +50,15 @@
         </div>
       </div>
     </div>
-    <div v-else class="text-center py-8 text-moon/60 text-sm">暂无封面历史记录</div>
+    <div v-else class="text-center py-8 text-moon/60 text-sm">{{ t('coverUi.noHistory') }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import type { CoverImage } from 'src/models/novel';
+
+const { t } = useI18n();
 
 defineProps<{
   covers: Array<CoverImage & { id: string }>;
