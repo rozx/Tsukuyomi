@@ -1,8 +1,9 @@
 import type { Novel } from 'src/models/novel';
 import type { SyncRevision } from 'src/models/localized-data';
 import { replaceLanguageSlots } from './versioned-values';
+import { assertNewRevision } from './revision';
 
-/** 对明确覆盖范围内的标题和段落选用分配新版本。 */
+/** 对明确覆盖范围内的标题、段落选用以及与另一侧不同的同 ID 译文版本分配新版本。 */
 export function replaceBookLanguageSlots(
   local: Novel,
   remote: Novel,
@@ -53,6 +54,15 @@ export function replaceBookLanguageSlots(
         const prior = other?.content?.find(
           (item) => item.id === paragraph.id && item.text === paragraph.text,
         );
+        // 保留的同 ID 版本若与另一侧文本不同，必须带上本次 revision，
+        // 否则另一侧较新的副本会在之后的合并中把覆盖结果改回去
+        const others = new Map((prior?.translations ?? []).map((value) => [value.id, value]));
+        paragraph.translations = paragraph.translations.map((value) => {
+          const other = others.get(value.id);
+          if (!other || other.translation === value.translation) return value;
+          assertNewRevision(revision, other.revision);
+          return { ...value, revision: { ...revision } };
+        });
         paragraph.selectedTranslations = replaceLanguageSlots(
           paragraph.selectedTranslations,
           prior?.selectedTranslations,
