@@ -1,4 +1,5 @@
 import { mergeParagraphLanguageState } from './localization/merge';
+import { createParagraphMatcher } from './localization/paragraph-pairing';
 import { mergeBookEntityState } from './localization/entities';
 import { mergeTitlePreservingTranslation } from './localization/title-merge';
 import {
@@ -671,41 +672,13 @@ function mergeParagraphTranslations(
   const primary = preferRemoteSelection ? remoteParagraphs : localParagraphs;
   const secondary = preferRemoteSelection ? localParagraphs : remoteParagraphs;
 
-  const secondaryById = new Map<string, Paragraph>();
-  for (const p of secondary) secondaryById.set(p.id, p);
-
-  // 文本回退：用于同段落在不同设备 ID 不同（例如重新抓取）的匹配。
-  // 用 FIFO 队列而非单值映射——否则小说里常见的重复文本（分隔符、「……」、
-  // 重复台词等）会让多个 primary 段落同时吃到同一个 secondary，造成错误翻译
-  // 被复制到多处 + 副方段落在末尾重复追加。每条文本按顺序只消费一次。
-  const secondaryByText = new Map<string, Paragraph[]>();
-  for (const p of secondary) {
-    const queue = secondaryByText.get(p.text);
-    if (queue) queue.push(p);
-    else secondaryByText.set(p.text, [p]);
-  }
-
-  const consumedSecondaryIds = new Set<string>();
+  // 配对规则（id 优先、按原文 FIFO 回退）与覆盖准备共用，见 createParagraphMatcher
+  const { match: matchSecondary, consumed: consumedSecondaryIds } =
+    createParagraphMatcher(secondary);
 
   const mergeOne = (primaryPara: Paragraph): Paragraph => {
-    let match = secondaryById.get(primaryPara.id);
-    if (!match) {
-      const queue = secondaryByText.get(primaryPara.text);
-      // 注意：队列里可能放着已经通过 id 匹配被消费过的段落；跳过它们，
-      // 保证同一 secondary 段落不会被双重消费
-      while (queue && queue.length > 0) {
-        const candidate = queue.shift();
-        if (candidate && !consumedSecondaryIds.has(candidate.id)) {
-          match = candidate;
-          break;
-        }
-      }
-    }
-    if (!match) {
-      return primaryPara;
-    }
-    consumedSecondaryIds.add(match.id);
-    if (match.text !== primaryPara.text) {
+    const match = matchSecondary(primaryPara);
+    if (!match || match.text !== primaryPara.text) {
       return primaryPara;
     }
 

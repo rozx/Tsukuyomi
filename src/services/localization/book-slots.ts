@@ -3,6 +3,7 @@ import type { SyncRevision } from 'src/models/localized-data';
 import { replaceLanguageSlots } from './versioned-values';
 import { assertNewRevision } from './revision';
 import { replaceTranslationDeletions } from './translation-deletions';
+import { createParagraphMatcher } from './paragraph-pairing';
 
 /** 对明确覆盖范围内的标题、段落选用以及与另一侧不同的同 ID 译文版本分配新版本。 */
 export function replaceBookLanguageSlots(
@@ -51,10 +52,12 @@ export function replaceBookLanguageSlots(
     for (const chapter of volume.chapters ?? []) {
       const other = chapters.get(chapter.id);
       chapter.title = forceTitle(chapter.title, other?.title ?? '');
+      // 与同步合并相同的配对（id 优先、按原文回退），否则重新抓取导致段落 ID 不同时，
+      // 另一侧的版本既不会被盖戳也不会写入删除记录，之后又被同步合并回来
+      const { match } = createParagraphMatcher(other?.content ?? []);
       for (const paragraph of chapter.content ?? []) {
-        const prior = other?.content?.find(
-          (item) => item.id === paragraph.id && item.text === paragraph.text,
-        );
+        const paired = match(paragraph);
+        const prior = paired?.text === paragraph.text ? paired : undefined;
         // 保留的同 ID 版本若与另一侧文本不同，必须带上本次 revision，
         // 否则另一侧较新的副本会在之后的合并中把覆盖结果改回去
         const others = new Map((prior?.translations ?? []).map((value) => [value.id, value]));

@@ -58,8 +58,8 @@ export function normalizeTranslationDeletions(paragraph: Paragraph): Paragraph {
     throw new Error('INVALID_TRANSLATION_DELETION');
   const records: DeletionMap = new Map();
   for (const [id, record] of Object.entries(value as Deletions)) {
+    // 键沿用译文版本 ID 的取值范围（任意字符串，含旧数据中的空串），否则删除后无法重新加载
     if (
-      !id ||
       !record ||
       !Number.isFinite(record.deletedAt) ||
       record.deletedAt < 0 ||

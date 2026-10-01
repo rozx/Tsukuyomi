@@ -166,7 +166,6 @@ describe('译文版本删除记录：规范化与时钟', () => {
     const bad = [
       { e9: { revision: rev(1), deletedAt: -1 } },
       { e9: { revision: { counter: -1, actorId: 'a' }, deletedAt: 1 } },
-      { '': { revision: rev(1), deletedAt: 1 } },
       [],
     ];
     for (const records of bad)
@@ -255,6 +254,34 @@ describe('译文版本删除记录：强制覆盖 / 快照恢复', () => {
     replaceBookLanguageSlots(local, remote, rev(9, 'me'), 50);
     expect(para(local).deletedTranslations?.e1?.revision).toEqual(rev(2));
     expect(ids(mergeBoth(para(local), base()))).toEqual(['e2']);
+  });
+});
+
+describe('译文版本删除记录：空字符串版本 ID', () => {
+  it('旧数据里 ID 为空字符串的版本被删除后，记录可以重新加载并在合并后保持删除', () => {
+    const start: Paragraph = { ...base(), translations: [en(''), en('e2')] };
+    const deleted = edit(start, [{ type: 'remove', translationId: '' }], rev(2));
+    const reloaded = normalizeParagraphLanguages(
+      JSON.parse(canonicalStringify(deleted)) as Paragraph,
+    );
+    expect(Object.hasOwn(reloaded.deletedTranslations ?? {}, '')).toBe(true);
+    expect(ids(mergeBoth(reloaded, start))).toEqual(['e2']);
+  });
+});
+
+describe('译文版本删除记录：覆盖时按同步规则配对段落', () => {
+  it('两侧同原文段落 ID 不同（重新抓取）时，覆盖仍为对端独有版本写入删除记录', () => {
+    const local = book({
+      ...base(),
+      id: 'p-new',
+      translations: [en('e1')],
+      selectedTranslations: {},
+    });
+    const remote = book(base());
+    replaceBookLanguageSlots(local, remote, rev(9, 'me'), 50);
+    expect(para(local).deletedTranslations?.e2).toEqual({ revision: rev(9, 'me'), deletedAt: 50 });
+    // 段落合并保留主方 ID（同步先按 id / 原文配对再合并），这里让旧段落沿用配对后的 ID
+    expect(ids(mergeBoth(para(local), { ...base(), id: 'p-new' }))).toEqual(['e1']);
   });
 });
 
