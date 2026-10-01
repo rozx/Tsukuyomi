@@ -118,4 +118,41 @@ describe('原地编辑译文的并发合并', () => {
       expect(getLanguageTranslation(merged, 'en-US')?.translation).toBe('Old English');
     }
   });
+
+  it('撤销把已删除的版本重新加回时同样记录新 revision，不被另一设备的修改副本改回', () => {
+    const removed = applyParagraphTranslationEdits(
+      [base()],
+      'en-US',
+      [{ type: 'remove', paragraphId: 'p', originalText: '原文', translationId: 'en' }],
+      { counter: 2, actorId: 'device-a' },
+      2,
+    )[0]!;
+    const restored = applyParagraphTranslationEdits(
+      [removed],
+      'en-US',
+      [
+        {
+          type: 'restore-language',
+          paragraphId: 'p',
+          originalText: '原文',
+          translations: base().translations.filter((value) => value.language === 'en-US'),
+          selectedTranslationId: 'en',
+        },
+      ],
+      { counter: 4, actorId: 'device-a' },
+      4,
+    )[0]!;
+    expect(restored.translations.find((value) => value.id === 'en')!.revision).toEqual({
+      counter: 4,
+      actorId: 'device-a',
+    });
+    // 另一设备在删除前同步到了 en，并原地修改过
+    const remote = edit('en-US', 'en', 'Remote edit', 'device-b');
+    for (const merged of [
+      mergeParagraphLanguageState(restored, remote),
+      mergeParagraphLanguageState(remote, restored),
+    ]) {
+      expect(getLanguageTranslation(merged, 'en-US')?.translation).toBe('Old English');
+    }
+  });
 });
