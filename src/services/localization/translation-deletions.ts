@@ -5,7 +5,7 @@ import { assertNewRevision, assertRevision, compareRevision } from './revision';
 
 type Deletions = Record<string, TranslationDeletion>;
 /**
- * 内部一律用 Map：版本 ID 是任意非空字符串，可能与 Object.prototype 的属性同名
+ * 内部一律用 Map：版本 ID 是任意字符串（含旧数据中的空串），可能与 Object.prototype 的属性同名
  * （`constructor`、`__proto__` 等），普通对象的读写会命中继承属性或原型 setter。
  */
 type DeletionMap = Map<string, TranslationDeletion>;

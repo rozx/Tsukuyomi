@@ -285,6 +285,18 @@ describe('译文版本删除记录：覆盖时按同步规则配对段落', () =
   });
 });
 
+describe('译文版本删除记录：覆盖时按同步规则配对卷与章节', () => {
+  it('两侧卷 / 章节 ID 不同但卷原文标题与章节 webUrl 相同时，覆盖仍为对端独有版本写入删除记录', () => {
+    const local = book({ ...base(), translations: [en('e1')], selectedTranslations: {} });
+    local.volumes![0]!.id = 'v-new';
+    local.volumes![0]!.chapters![0]!.id = 'c-new';
+    const remote = book(base());
+    for (const value of [local, remote]) value.volumes![0]!.chapters![0]!.webUrl = 'https://x/1';
+    replaceBookLanguageSlots(local, remote, rev(9, 'me'), 50);
+    expect(para(local).deletedTranslations?.e2).toEqual({ revision: rev(9, 'me'), deletedAt: 50 });
+  });
+});
+
 describe('译文版本删除记录：与 Object.prototype 同名的版本 ID', () => {
   it('删除 ID 为 constructor / toString / __proto__ 的版本同样写入记录并在合并后保持删除', () => {
     for (const id of ['constructor', 'toString', '__proto__']) {
