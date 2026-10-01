@@ -4,6 +4,15 @@ import { TOMBSTONE_TTL_MS } from 'src/models/manifest';
 import { assertNewRevision, assertRevision, compareRevision } from './revision';
 
 type Deletions = Record<string, TranslationDeletion>;
+/**
+ * 内部一律用 Map：版本 ID 是任意非空字符串，可能与 Object.prototype 的属性同名
+ * （`constructor`、`__proto__` 等），普通对象的读写会命中继承属性或原型 setter。
+ */
+type DeletionMap = Map<string, TranslationDeletion>;
+
+function deletionMap(records: Deletions | undefined): DeletionMap {
+  return new Map(Object.entries(records ?? {}));
+}
 
 /**
  * 删除记录的保留期，与 manifest 删除记录一致。以段落自身最近一次活动（选用写入或删除）为基准，
@@ -22,13 +31,14 @@ function validRevision(value: SyncRevision): boolean {
 }
 
 /** 按 ID 排序输出；没有记录时省略字段，旧数据规范化后保持原样。 */
-function withDeletions(paragraph: Paragraph, records: Deletions): Paragraph {
+function withDeletions(paragraph: Paragraph, records: DeletionMap): Paragraph {
   const { deletedTranslations: _previous, ...rest } = paragraph;
-  const ids = Object.keys(records).sort();
-  if (!ids.length) return rest;
+  if (!records.size) return rest;
   return {
     ...rest,
-    deletedTranslations: Object.fromEntries(ids.map((id) => [id, records[id]!])),
+    deletedTranslations: Object.fromEntries(
+      [...records].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+    ),
   };
 }
 
@@ -46,7 +56,7 @@ export function normalizeTranslationDeletions(paragraph: Paragraph): Paragraph {
   if (value === undefined) return paragraph;
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('INVALID_TRANSLATION_DELETION');
-  const records: Deletions = {};
+  const records: DeletionMap = new Map();
   for (const [id, record] of Object.entries(value as Deletions)) {
     if (
       !id ||
@@ -56,7 +66,7 @@ export function normalizeTranslationDeletions(paragraph: Paragraph): Paragraph {
       !validRevision(record.revision)
     )
       throw new Error('INVALID_TRANSLATION_DELETION');
-    records[id] = { revision: { ...record.revision }, deletedAt: record.deletedAt };
+    records.set(id, { revision: { ...record.revision }, deletedAt: record.deletedAt });
   }
   return withDeletions(
     { ...paragraph, translations: reconcileTranslations(paragraph, records) },
@@ -65,40 +75,42 @@ export function normalizeTranslationDeletions(paragraph: Paragraph): Paragraph {
 }
 
 /** 同 ID 两条记录取 revision 较新者；revision 相同是同一次删除，取较晚的时间保证对称。 */
-export function mergeTranslationDeletions(a: Deletions = {}, b: Deletions = {}): Deletions {
-  const result: Deletions = { ...a };
-  for (const [id, record] of Object.entries(b)) {
-    const existing = result[id];
+export function mergeTranslationDeletions(a?: Deletions, b?: Deletions): Deletions {
+  return Object.fromEntries(mergeDeletionMaps(deletionMap(a), deletionMap(b)));
+}
+
+function mergeDeletionMaps(a: DeletionMap, b: DeletionMap): DeletionMap {
+  const result = new Map(a);
+  for (const [id, record] of b) {
+    const existing = result.get(id);
     const order = existing ? compareRevision(record.revision, existing.revision) : 1;
-    if (order > 0) result[id] = record;
-    else if (order === 0 && record.deletedAt > existing!.deletedAt) result[id] = record;
+    if (order > 0 || (order === 0 && record.deletedAt > existing!.deletedAt))
+      result.set(id, record);
   }
   return result;
 }
 
 /** 返回存活版本；被保留版本的记录从 `records` 中撤销。 */
-function reconcileTranslations(paragraph: Paragraph, records: Deletions): Translation[] {
+function reconcileTranslations(paragraph: Paragraph, records: DeletionMap): Translation[] {
   const selected = new Set(
     Object.values(paragraph.selectedTranslations ?? {}).map((slot) => slot.value),
   );
   return paragraph.translations.filter((value) => {
-    const record = records[value.id];
+    const record = records.get(value.id);
     if (!record) return true;
     const keep = selected.has(value.id) || supersedes(value, record);
-    if (keep) delete records[value.id];
+    if (keep) records.delete(value.id);
     return keep;
   });
 }
 
-function pruneDeletions(records: Deletions, paragraph: Paragraph): Deletions {
+function pruneDeletions(records: DeletionMap, paragraph: Paragraph): DeletionMap {
   const activity = Math.max(
     0,
-    ...Object.values(records).map((record) => record.deletedAt),
+    ...[...records.values()].map((record) => record.deletedAt),
     ...Object.values(paragraph.selectedTranslations ?? {}).map((slot) => slot.updatedAt),
   );
-  return Object.fromEntries(
-    Object.entries(records).filter(([, record]) => record.deletedAt >= activity - RETENTION_MS),
-  );
+  return new Map([...records].filter(([, record]) => record.deletedAt >= activity - RETENTION_MS));
 }
 
 /**
@@ -107,7 +119,7 @@ function pruneDeletions(records: Deletions, paragraph: Paragraph): Deletions {
  * 结果只取决于输入数据，两个方向合并得到相同结果。
  */
 export function settleTranslationDeletions(paragraph: Paragraph): Paragraph {
-  const records: Deletions = { ...paragraph.deletedTranslations };
+  const records = deletionMap(paragraph.deletedTranslations);
   const translations = reconcileTranslations(paragraph, records);
   return withDeletions({ ...paragraph, translations }, pruneDeletions(records, paragraph));
 }
@@ -123,21 +135,26 @@ export function recordTranslationDeletions(
   deletedAt: number,
 ): Paragraph {
   const remaining = new Set(after.translations.map((value) => value.id));
-  const records: Deletions = { ...after.deletedTranslations };
+  const records = deletionMap(after.deletedTranslations);
   for (const value of before.translations)
-    if (!remaining.has(value.id)) records[value.id] ??= { revision: { ...revision }, deletedAt };
-  const translations = after.translations.map((value) => {
-    const record = records[value.id];
-    if (!record || supersedes(value, record)) return value;
-    assertNewRevision(revision, record.revision);
-    return { ...value, revision: { ...revision } };
-  });
-  return settleTranslationDeletions({ ...after, translations, deletedTranslations: records });
+    if (!remaining.has(value.id) && !records.has(value.id))
+      records.set(value.id, { revision: { ...revision }, deletedAt });
+  const translations = after.translations.map((value) => stampOver(value, records, revision));
+  return settleTranslationDeletions(withDeletions({ ...after, translations }, records));
+}
+
+/** 版本带着删除记录存活时以本次 revision 盖戳，使其压过该记录。 */
+function stampOver(value: Translation, records: DeletionMap, revision: SyncRevision): Translation {
+  const record = records.get(value.id);
+  if (!record || supersedes(value, record)) return value;
+  assertNewRevision(revision, record.revision);
+  return { ...value, revision: { ...revision } };
 }
 
 /**
- * 明确覆盖（强制推送、快照恢复）：另一侧独有的版本按覆盖意图写入删除记录；保留的版本若在
- * 另一侧已被删除，以本次 revision 盖戳压过该记录。
+ * 明确覆盖（强制推送、快照恢复）：另一侧独有的版本按覆盖意图写入删除记录；另一侧已有的删除
+ * 记录一并保留（覆盖结果会成为对端的新状态，丢掉它们会让仍持有旧版本的设备把版本带回来）；
+ * 保留的版本若在另一侧已被删除，以本次 revision 盖戳压过该记录。
  */
 export function replaceTranslationDeletions(
   paragraph: Paragraph,
@@ -145,19 +162,17 @@ export function replaceTranslationDeletions(
   revision: SyncRevision,
   deletedAt: number,
 ): Paragraph {
-  const others = prior?.deletedTranslations ?? {};
-  const translations = paragraph.translations.map((value) => {
-    const record = others[value.id];
-    if (!record || supersedes(value, record)) return value;
-    assertNewRevision(revision, record.revision);
-    return { ...value, revision: { ...revision } };
-  });
-  const kept = new Set(translations.map((value) => value.id));
-  const records: Deletions = { ...paragraph.deletedTranslations };
+  const records = mergeDeletionMaps(
+    deletionMap(paragraph.deletedTranslations),
+    deletionMap(prior?.deletedTranslations),
+  );
+  const translations = paragraph.translations.map((value) => stampOver(value, records, revision));
+  for (const value of translations) records.delete(value.id);
   for (const value of prior?.translations ?? []) {
-    const existing = records[value.id];
-    if (kept.has(value.id) || (existing && !supersedes(value, existing))) continue;
-    records[value.id] = { revision: { ...revision }, deletedAt };
+    const existing = records.get(value.id);
+    if (translations.some((entry) => entry.id === value.id)) continue;
+    if (existing && !supersedes(value, existing)) continue;
+    records.set(value.id, { revision: { ...revision }, deletedAt });
   }
   return withDeletions({ ...paragraph, translations }, records);
 }

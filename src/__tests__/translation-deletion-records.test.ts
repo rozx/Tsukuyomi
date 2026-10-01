@@ -248,6 +248,28 @@ describe('译文版本删除记录：强制覆盖 / 快照恢复', () => {
     expect(para(local).translations[0]!.revision).toEqual(rev(9, 'me'));
     expect(ids(mergeBoth(para(local), para(remote)))).toEqual(['e1']);
   });
+
+  it('覆盖时保留对端已有的删除记录，第三台仍持有旧版本的设备合并后不会复活', () => {
+    const local = book({ ...base(), translations: [en('e2')], selectedTranslations: {} });
+    const remote = book(edit(base(), [{ type: 'remove', translationId: 'e1' }], rev(2)));
+    replaceBookLanguageSlots(local, remote, rev(9, 'me'), 50);
+    expect(para(local).deletedTranslations?.e1?.revision).toEqual(rev(2));
+    expect(ids(mergeBoth(para(local), base()))).toEqual(['e2']);
+  });
+});
+
+describe('译文版本删除记录：与 Object.prototype 同名的版本 ID', () => {
+  it('删除 ID 为 constructor / toString / __proto__ 的版本同样写入记录并在合并后保持删除', () => {
+    for (const id of ['constructor', 'toString', '__proto__']) {
+      const start: Paragraph = { ...base(), translations: [en(id), en('e2')] };
+      const deleted = edit(start, [{ type: 'remove', translationId: id }], rev(2));
+      expect(Object.hasOwn(deleted.deletedTranslations ?? {}, id)).toBe(true);
+      const roundTrip = JSON.parse(canonicalStringify(deleted)) as Paragraph;
+      expect(ids(mergeBoth(roundTrip, start))).toEqual(['e2']);
+      // 没有该 ID 记录的段落不会把继承属性误当成删除记录
+      expect(ids(mergeBoth(start, base()))).toContain(id);
+    }
+  });
 });
 
 describe('译文版本删除记录：持久化与同步序列化', () => {

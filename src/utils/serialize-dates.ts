@@ -21,11 +21,13 @@ export function serializeDates<T>(obj: T): T {
   }
 
   if (typeof obj === 'object') {
-    const serialized: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-      serialized[key] = serializeDates(value);
-    }
-    return serialized as unknown as T;
+    // fromEntries 定义自有属性，`__proto__` 等键不会被原型 setter 吞掉
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(([key, value]) => [
+        key,
+        serializeDates(value),
+      ]),
+    ) as unknown as T;
   }
 
   return obj;
@@ -35,12 +37,7 @@ export function serializeDates<T>(obj: T): T {
  * 日期字段白名单——只有这些键的字符串值会在反序列化时转换回 Date。
  * 避免误将小说内容或消息正文里的日期字符串转换。
  */
-const DATE_FIELD_NAMES = new Set<string>([
-  'lastEdited',
-  'createdAt',
-  'addedAt',
-  'lastUpdated',
-]);
+const DATE_FIELD_NAMES = new Set<string>(['lastEdited', 'createdAt', 'addedAt', 'lastUpdated']);
 
 /**
  * 递归将 ISO 日期字符串还原为 Date 对象（仅限白名单字段）
@@ -64,11 +61,12 @@ export function deserializeDates<T>(obj: T, parentKey?: string): T {
   }
 
   if (typeof obj === 'object') {
-    const deserialized: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-      deserialized[key] = deserializeDates(value, key);
-    }
-    return deserialized as unknown as T;
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(([key, value]) => [
+        key,
+        deserializeDates(value, key),
+      ]),
+    ) as unknown as T;
   }
 
   return obj;

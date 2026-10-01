@@ -15,12 +15,10 @@ function toCanonicalForm(value: unknown): unknown {
   if (typeof value === 'object') {
     const entries = Object.entries(value as Record<string, unknown>);
     entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    const result: Record<string, unknown> = {};
-    for (const [key, v] of entries) {
-      if (v === undefined) continue;
-      result[key] = toCanonicalForm(v);
-    }
-    return result;
+    // fromEntries 定义自有属性：`__proto__` 等键（例如译文版本 ID）不会被原型 setter 吞掉
+    return Object.fromEntries(
+      entries.filter(([, v]) => v !== undefined).map(([key, v]) => [key, toCanonicalForm(v)]),
+    );
   }
   return value;
 }
