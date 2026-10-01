@@ -368,7 +368,7 @@ function createBookDetailsPageContext() {
     clearHistory,
   } = useUndoRedo(
     book,
-    async (updatedBook, scope) => {
+    async (updatedBook, scope, operationId) => {
       if (!updatedBook) return;
       if (scope) {
         await BookService.restoreTranslationHistory(updatedBook, scope.chapterId, scope.language);
@@ -381,7 +381,7 @@ function createBookDetailsPageContext() {
           );
         return;
       }
-      await applyBookSnapshot(booksStore, updatedBook);
+      await applyBookSnapshot(booksStore, updatedBook, operationId);
       await syncSelectedChapterAfterUndoRedo(
         updatedBook,
         selectedChapterId.value,
