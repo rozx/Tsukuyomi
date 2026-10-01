@@ -98,24 +98,33 @@ function keepLatestBy(
  * IndexedDB 以 id 为主键，若同 id 两条都进内存，库与内存会立即分叉
  */
 function normalizeCoverBatch(items: readonly CoverRecordInput[]): CoverHistoryItem[] {
-  const normalized = items.map(normalizeCoverRecord);
+  return dedupeCoverBatch(items.map(normalizeCoverRecord));
+}
+
+function dedupeCoverBatch(items: readonly CoverHistoryItem[]): CoverHistoryItem[] {
   return keepLatestBy(
-    keepLatestBy(normalized, (item) => item.url),
+    keepLatestBy(items, (item) => item.url),
     (item) => item.id,
   );
 }
 
-/** 取代本地记录时沿用较新的本地 addedAt（如本地刚重新添加过），身份仍取传入记录 */
-function keepNewerLocalTime(
-  incoming: readonly CoverHistoryItem[],
+/**
+ * 与对应的本地记录（同 id 或同 URL）合并，身份始终取传入记录：
+ * 本地较新（如刚重新添加过）时沿用完整本地记录，避免丢失 deleteUrl 等字段；
+ * 否则在传入记录缺 deleteUrl 时补回同 URL 本地记录的删除凭据
+ */
+function mergeWithLocal(
+  item: CoverHistoryItem,
   existing: readonly CoverHistoryItem[],
-): CoverHistoryItem[] {
-  return incoming.map((item) => {
-    const newest = existing
-      .filter((local) => local.id === item.id || local.url.trim() === item.url)
-      .reduce((max, local) => Math.max(max, local.addedAt.getTime()), item.addedAt.getTime());
-    return newest > item.addedAt.getTime() ? { ...item, addedAt: new Date(newest) } : item;
-  });
+): CoverHistoryItem {
+  const matches = existing.filter((local) => local.id === item.id || local.url.trim() === item.url);
+  const newest = keepLatestBy(matches, () => '')[0];
+  if (newest && newest.addedAt.getTime() > item.addedAt.getTime()) {
+    return { ...newest, url: newest.url.trim(), id: item.id };
+  }
+  const deleteUrl =
+    item.deleteUrl ?? matches.find((local) => local.url.trim() === item.url)?.deleteUrl;
+  return deleteUrl ? { ...item, deleteUrl } : item;
 }
 
 /**
@@ -278,10 +287,12 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
     /**
      * 按给定记录原样合并进封面历史（保留 id 与添加时间），用于增量同步与恢复删除项。
      * 同 id 直接覆盖；同 URL 但 id 不同的本地记录被取代（不写删除墓碑，避免跨设备误删）。
-     * 被取代 / 覆盖的本地记录 addedAt 更新时保留本地时间，与其他合并路径「较新者胜」一致。
+     * 被取代 / 覆盖的本地记录更新时保留本地记录内容（含 deleteUrl），与其他合并路径「较新者胜」一致。
      */
     async upsertCovers(items: readonly CoverRecordInput[]): Promise<void> {
-      const incoming = keepNewerLocalTime(normalizeCoverBatch(items), this.covers);
+      const incoming = dedupeCoverBatch(
+        normalizeCoverBatch(items).map((item) => mergeWithLocal(item, this.covers)),
+      );
       if (incoming.length === 0) return;
       const displaced = collectDisplacedIds(incoming, this.covers);
       await writeCoversAtomically(incoming, { removeIds: displaced });

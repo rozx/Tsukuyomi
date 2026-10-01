@@ -85,6 +85,75 @@ describe('封面历史按原身份合并', () => {
     expect(covers.covers[0]).toMatchObject(expected[0]!);
   });
 
+  it('本地记录较新时保留其 deleteUrl 等完整字段，只采用远端 id', async () => {
+    setActivePinia(createPinia());
+    const db = await getDB();
+    await db.clear('cover-history');
+    await db.put('cover-history', {
+      id: 'local-a',
+      url: URL_A,
+      addedAt: new Date(900),
+      deleteUrl: 'https://img.example/delete/a',
+    });
+    await db.put('cover-history', {
+      id: 'same-b',
+      url: URL_B,
+      addedAt: new Date(800),
+      deleteUrl: 'https://img.example/delete/b',
+    });
+    const covers = useCoverHistoryStore();
+    await covers.loadCoverHistory();
+
+    await covers.upsertCovers([
+      { id: 'remote-a', url: URL_A, addedAt: new Date(100) },
+      { id: 'same-b', url: URL_B, addedAt: new Date(200) },
+    ]);
+
+    const expected = [
+      {
+        id: 'remote-a',
+        url: URL_A,
+        addedAt: new Date(900),
+        deleteUrl: 'https://img.example/delete/a',
+      },
+      {
+        id: 'same-b',
+        url: URL_B,
+        addedAt: new Date(800),
+        deleteUrl: 'https://img.example/delete/b',
+      },
+    ];
+    expect(await persisted()).toEqual(expected);
+    expect([...covers.covers].sort((a, b) => a.id.localeCompare(b.id))).toEqual(expected);
+  });
+
+  it('远端记录较新但缺 deleteUrl 时沿用同 URL 本地记录的 deleteUrl', async () => {
+    setActivePinia(createPinia());
+    const db = await getDB();
+    await db.clear('cover-history');
+    await db.put('cover-history', {
+      id: 'local-a',
+      url: URL_A,
+      addedAt: new Date(100),
+      deleteUrl: 'https://img.example/delete/a',
+    });
+    const covers = useCoverHistoryStore();
+    await covers.loadCoverHistory();
+
+    await covers.upsertCovers([{ id: 'remote-a', url: URL_A, addedAt: new Date(900) }]);
+
+    const expected = [
+      {
+        id: 'remote-a',
+        url: URL_A,
+        addedAt: new Date(900),
+        deleteUrl: 'https://img.example/delete/a',
+      },
+    ];
+    expect(await persisted()).toEqual(expected);
+    expect(covers.covers).toEqual(expected);
+  });
+
   it('远端身份取代本地记录时保留较新的本地 addedAt', async () => {
     setActivePinia(createPinia());
     const db = await getDB();
