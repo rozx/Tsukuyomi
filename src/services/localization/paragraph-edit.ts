@@ -39,10 +39,11 @@ function restoreLanguageHistory(
   // 恢复的是旧文本但沿用原 ID：内容与当前版本不同时盖上本次 revision，否则合并时
   // 另一设备上修改过的同 ID 副本会以较新的 revision 把撤销结果改回去
   const current = new Map(paragraph.translations.map((value) => [value.id, value]));
+  // 重新加回已删除的版本（本地没有同 ID 副本）同样要盖戳：另一设备可能仍持有该 ID 的修改副本
   const restored = edit.translations.map((value) => {
     const existing = current.get(value.id);
-    if (!existing || existing.translation === value.translation) return value;
-    assertNewRevision(revision, existing.revision);
+    if (existing?.translation === value.translation) return value;
+    if (existing) assertNewRevision(revision, existing.revision);
     return { ...value, revision: { ...revision } };
   });
   // 与其他选用写入路径一致：版本号必须单调递增，避免重放旧编辑让选用版本倒退
