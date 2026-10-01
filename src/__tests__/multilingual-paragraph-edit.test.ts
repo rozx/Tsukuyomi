@@ -56,6 +56,78 @@ const initial: Novel = {
   ],
 };
 
+describe('同步下来的译文版本号', () => {
+  // 另一设备原地修改过英文版本，带着远高于本机时钟的 revision 同步下来
+  const imported = (): Novel => ({
+    ...initial,
+    id: 'synced',
+    volumes: [
+      {
+        id: 'v',
+        title: '卷',
+        chapters: [
+          {
+            id: 'sc',
+            title: '章',
+            createdAt: new Date(0),
+            lastEdited: new Date(0),
+            content: [
+              {
+                ...paragraph,
+                translations: paragraph.translations.map((value) =>
+                  value.id === 'en'
+                    ? {
+                        ...value,
+                        translation: 'Remote edit',
+                        revision: { counter: 500, actorId: 'other' },
+                      }
+                    : value,
+                ),
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const enVersion = async () =>
+    (await ChapterContentService.loadChapterContent('sc'))![0]!.translations.find(
+      (value) => value.id === 'en',
+    )!;
+
+  it('本机再修改该版本不会因时钟落后而失败，新 revision 高于同步下来的版本', async () => {
+    await BookService.saveBook(imported());
+    await BookService.editParagraphTranslations('synced', 'sc', 'en-US', [
+      {
+        type: 'update',
+        paragraphId: 'p',
+        originalText: '原文',
+        translationId: 'en',
+        text: 'Local edit',
+      },
+    ]);
+    const saved = await enVersion();
+    expect(saved.translation).toBe('Local edit');
+    expect(saved.revision!.counter).toBeGreaterThan(500);
+  });
+
+  it('撤销恢复旧文本时记录的 revision 同样高于同步下来的版本', async () => {
+    await BookService.saveBook(imported());
+    await BookService.editParagraphTranslations('synced', 'sc', 'en-US', [
+      {
+        type: 'restore-language',
+        paragraphId: 'p',
+        originalText: '原文',
+        translations: paragraph.translations.filter((value) => value.language === 'en-US'),
+        selectedTranslationId: 'en',
+      },
+    ]);
+    const saved = await enVersion();
+    expect(saved.translation).toBe('English');
+    expect(saved.revision!.counter).toBeGreaterThan(500);
+  });
+});
+
 describe('目标语言段落编辑事务', () => {
   it('不支持的写入语言在持久化前被拒绝', async () => {
     await BookService.saveBook(initial);
