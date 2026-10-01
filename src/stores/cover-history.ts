@@ -33,6 +33,83 @@ function plainCoverItem(item: CoverHistoryItem): CoverHistoryItem {
   };
 }
 
+/** 同步载荷里的封面记录：addedAt 可能是字符串，极旧载荷可能缺 id */
+export type CoverRecordInput = Omit<CoverHistoryItem, 'id' | 'addedAt'> & {
+  id?: string | undefined;
+  addedAt?: Date | string | number | undefined;
+};
+
+/** FNV-1a 32 位哈希：为缺 id 的旧记录从 URL 派生稳定 id，各设备结果一致 */
+function stableUrlHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * 规范化同步 / 导入来的封面记录：保留原 id 与添加时间（字符串转 Date，无效时间回落到纪元 0），
+ * 缺 id 时按 URL 派生确定性 id，保证同一条记录每次同步得到同一身份
+ */
+export function normalizeCoverRecord(item: CoverRecordInput): CoverHistoryItem {
+  const url = typeof item.url === 'string' ? item.url.trim() : '';
+  const addedAt = item.addedAt instanceof Date ? item.addedAt : new Date(item.addedAt ?? 0);
+  return {
+    ...item,
+    url,
+    id: item.id || `cover-${stableUrlHash(url)}`,
+    addedAt: Number.isNaN(addedAt.getTime()) ? new Date(0) : addedAt,
+  };
+}
+
+/** 找出被传入记录按 URL 取代、但 id 不同的本地记录 id（需要从库中移除，且不记删除墓碑） */
+function collectDisplacedIds(
+  incoming: readonly CoverHistoryItem[],
+  existing: readonly CoverHistoryItem[],
+): Set<string> {
+  const incomingIds = new Set(incoming.map((item) => item.id));
+  const incomingUrls = new Set(incoming.map((item) => item.url));
+  return new Set(
+    existing
+      .filter((item) => !incomingIds.has(item.id) && incomingUrls.has(item.url.trim()))
+      .map((item) => item.id),
+  );
+}
+
+/** 按 URL 去重（后出现者胜），避免同一批次写入两条同 URL 记录 */
+function dedupeByUrl(items: readonly CoverHistoryItem[]): CoverHistoryItem[] {
+  const byUrl = new Map<string, CoverHistoryItem>();
+  for (const item of items) byUrl.set(item.url, item);
+  return [...byUrl.values()];
+}
+
+/**
+ * 在单个事务内删除 removeIds 并写入 items；任一写入失败整体回滚并向上抛出
+ */
+async function writeCoversAtomically(
+  items: readonly CoverHistoryItem[],
+  options: { clear?: boolean; removeIds?: ReadonlySet<string> },
+): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction('cover-history', 'readwrite');
+  try {
+    if (options.clear) await tx.store.clear();
+    for (const id of options.removeIds ?? []) await tx.store.delete(id);
+    for (const item of items) await tx.store.put(plainCoverItem(item));
+    await tx.done;
+  } catch (error) {
+    try {
+      tx.abort();
+    } catch {
+      /* 事务已因错误自动中止 */
+    }
+    await tx.done.catch(() => undefined);
+    throw error;
+  }
+}
+
 /**
  * 保存单个封面历史到 IndexedDB
  */
@@ -155,31 +232,30 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
     },
 
     /**
-     * 按给定记录原样替换封面历史（保留 id 与添加时间），用于回滚到备份。
-     * addCover 会重新生成身份，回滚若走它会让同步身份与删除记录失配。
+     * 按给定记录原样替换封面历史（保留 id 与添加时间），用于回滚、导入与同步重建。
+     * addCover 会重新生成身份，同步若走它会让同步身份与删除记录失配。
+     * 清空与写入在同一事务内，提交成功后才更新内存。
      */
-    async replaceHistory(items: readonly CoverHistoryItem[]): Promise<void> {
-      const restored = items.map((item) => ({
-        ...item,
-        addedAt: item.addedAt instanceof Date ? item.addedAt : new Date(item.addedAt),
-      }));
-      // 清空与写入在同一事务内：任一写入失败整体回滚并向上抛出，提交成功后才更新内存
-      const db = await getDB();
-      const tx = db.transaction('cover-history', 'readwrite');
-      try {
-        await tx.store.clear();
-        for (const item of restored) await tx.store.put(plainCoverItem(item));
-        await tx.done;
-      } catch (error) {
-        try {
-          tx.abort();
-        } catch {
-          /* 事务已因错误自动中止 */
-        }
-        await tx.done.catch(() => undefined);
-        throw error;
-      }
+    async replaceHistory(items: readonly CoverRecordInput[]): Promise<void> {
+      const restored = items.map(normalizeCoverRecord);
+      await writeCoversAtomically(restored, { clear: true });
       this.covers = restored;
+    },
+
+    /**
+     * 按给定记录原样合并进封面历史（保留 id 与添加时间），用于增量同步与恢复删除项。
+     * 同 id 直接覆盖；同 URL 但 id 不同的本地记录被取代（不写删除墓碑，避免跨设备误删）。
+     */
+    async upsertCovers(items: readonly CoverRecordInput[]): Promise<void> {
+      const incoming = dedupeByUrl(items.map(normalizeCoverRecord));
+      if (incoming.length === 0) return;
+      const displaced = collectDisplacedIds(incoming, this.covers);
+      await writeCoversAtomically(incoming, { removeIds: displaced });
+      const incomingIds = new Set(incoming.map((item) => item.id));
+      this.covers = [
+        ...this.covers.filter((item) => !displaced.has(item.id) && !incomingIds.has(item.id)),
+        ...incoming,
+      ];
     },
 
     /**

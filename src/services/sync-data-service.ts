@@ -14,7 +14,8 @@ import { v4 } from 'uuid';
 import { mergeUiLocalePreference } from 'src/models/locale';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
-import { useCoverHistoryStore } from 'src/stores/cover-history';
+import { normalizeCoverRecord, useCoverHistoryStore } from 'src/stores/cover-history';
+import type { CoverRecordInput } from 'src/stores/cover-history';
 import { useSettingsStore, getSyncDeletionPropagationStateClearedPatch } from 'src/stores/settings';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { GlobalConfig } from 'src/services/global-config-cache';
@@ -1752,7 +1753,7 @@ export class SyncDataService {
   }
 
   /**
-   * 应用远端封面历史到本地：合并远端/本地、URL 去重，最后 clear+add 重建。
+   * 应用远端封面历史到本地：合并远端/本地、URL 去重，最后按原身份整体替换。
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private static async applyDownloadedCoverHistory(
@@ -1803,12 +1804,8 @@ export class SyncDataService {
       ...SyncDataService.collectLocalOnlyCovers(coverHistoryStore.covers, remoteCovers, syncTime),
     );
 
-    const deduped = dedupeCoverHistoryByUrl(finalCovers);
-
-    await coverHistoryStore.clearHistory();
-    for (const cover of deduped) {
-      await coverHistoryStore.addCover(cover);
-    }
+    // 原样写入合并结果（保留 id 与 addedAt），否则每次同步都会重铸身份，删除墓碑随之失配
+    await coverHistoryStore.replaceHistory(dedupeCoverHistoryByUrl(finalCovers));
   }
 
   /**
@@ -2214,9 +2211,7 @@ export class SyncDataService {
     }));
 
     const remoteCovers = Array.isArray(remoteData.coverHistory) ? remoteData.coverHistory : [];
-    for (const cover of remoteCovers) {
-      await coverHistoryStore.addCover(cover);
-    }
+    await coverHistoryStore.replaceHistory(dedupeCoverHistoryByUrl(remoteCovers));
 
     const remoteMemories = Array.isArray(remoteData.memories) ? remoteData.memories : [];
     for (const memory of remoteMemories) {
@@ -3027,25 +3022,32 @@ export class SyncDataService {
     const coverHistoryStore = useCoverHistoryStore();
     const gistSync = GlobalConfig.getGistSyncSnapshot();
     const lastSyncTime = gistSync?.lastSyncTime ?? 0;
-    const deletedCoverMap = new Map<string, number>(
-      (gistSync?.deletedCoverIds ?? []).map((r) => [r.id, r.deletedAt]),
+    const { deletedCoverIdsMap, deletedCoverUrlsMap } =
+      SyncDataService.buildCoverDeletionMaps(gistSync);
+
+    const normalizedRemote = remoteCovers.map((rc) =>
+      normalizeCoverRecord(rc as unknown as CoverRecordInput),
     );
-
-    const remoteCoverIds = new Set<string>();
-    for (const rc of remoteCovers) {
-      const rcId = rc.id as string;
-      remoteCoverIds.add(rcId);
-      const deletedAt = deletedCoverMap.get(rcId);
-      if (deletedAt !== undefined && deletedAt > lastSyncTime) continue;
-      await coverHistoryStore.addCover(
-        rc as unknown as Parameters<typeof coverHistoryStore.addCover>[0],
+    const remoteCoverIds = new Set(normalizedRemote.map((rc) => rc.id));
+    const remoteCoverUrls = new Set(normalizedRemote.map((rc) => rc.url).filter(Boolean));
+    // 本设备自上次同步后按 id 或 URL 删除过的封面不复活
+    const kept = normalizedRemote.filter((rc) => {
+      const deletedAt = SyncDataService.lookupCoverDeletionRecord(
+        rc.id,
+        rc.url,
+        deletedCoverIdsMap,
+        deletedCoverUrlsMap,
       );
-    }
+      return deletedAt === undefined || deletedAt <= lastSyncTime;
+    });
+    // 原样合并远端记录（保留 id 与 addedAt），同 URL 的旧本地记录被远端身份取代
+    await coverHistoryStore.upsertCovers(kept);
 
-    // 跨设备删除传播
+    // 跨设备删除传播：远端按 id 与 URL 都找不到的本地封面才视为远端已删除
     const localCoversSnapshot = [...coverHistoryStore.covers];
     for (const localCover of localCoversSnapshot) {
       if (remoteCoverIds.has(localCover.id)) continue;
+      if (remoteCoverUrls.has(normalizeCoverUrl(localCover.url))) continue;
       const addedAt = localCover.addedAt
         ? new Date(localCover.addedAt as unknown as string | number | Date).getTime()
         : 0;

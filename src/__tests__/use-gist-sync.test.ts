@@ -97,6 +97,7 @@ describe('useGistSync (manifest-driven flow)', () => {
     spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
       covers: [],
       addCover: mock(() => Promise.resolve()),
+      upsertCovers: mock(() => Promise.resolve()),
     } as any);
     spyOn(ToastHistory, 'useToastWithHistory').mockReturnValue({ add: mockToastAdd } as any);
 
@@ -405,6 +406,7 @@ describe('useGistSync (manifest-driven flow)', () => {
           return Promise.resolve();
         }),
         addCover: mock(() => Promise.resolve()),
+        upsertCovers: mock(() => Promise.resolve()),
       };
 
       spyOn(SettingsStore, 'useSettingsStore').mockReturnValue(coldSettingsStore as any);
@@ -913,6 +915,44 @@ describe('useGistSync (manifest-driven flow)', () => {
       };
       expect(gistSyncPatch?.knownRemoteTombstones?.['novel:novel-1']).toBeUndefined();
       expect(gistSyncPatch?.knownRemoteTombstones?.['novel:other']).toBeDefined();
+    });
+
+    it('恢复已删除封面时保留原 id，只把 addedAt 刷新为当前时刻', async () => {
+      const addCoverSpy = mock(() => Promise.resolve());
+      const upsertCoversSpy = mock((_items: unknown) => Promise.resolve());
+      spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
+        covers: [],
+        addCover: addCoverSpy,
+        upsertCovers: upsertCoversSpy,
+      } as any);
+      const deletedAt = new Date('2023-01-01T00:00:00.000Z').getTime();
+
+      const { restoreDeletedItems } = useGistSync();
+      const before = Date.now();
+      await restoreDeletedItems([
+        {
+          id: 'cover-1',
+          type: 'cover',
+          title: 'https://img.example/c.png',
+          deletedAt,
+          data: {
+            id: 'cover-1',
+            url: 'https://img.example/c.png',
+            addedAt: '2020-01-01T00:00:00.000Z',
+          },
+        },
+      ]);
+
+      expect(addCoverSpy).not.toHaveBeenCalled();
+      const restored = upsertCoversSpy.mock.calls[0]?.[0] as Array<{
+        id: string;
+        url: string;
+        addedAt: Date;
+      }>;
+      expect(restored.map((c) => ({ id: c.id, url: c.url }))).toEqual([
+        { id: 'cover-1', url: 'https://img.example/c.png' },
+      ]);
+      expect(new Date(restored[0]!.addedAt).getTime()).toBeGreaterThanOrEqual(before);
     });
 
     it('首次上传失败但 Gist 已创建时，应持久化 gistId 防止重试产生孤儿 Gist', async () => {

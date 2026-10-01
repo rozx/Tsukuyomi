@@ -306,11 +306,11 @@ describe('数据同步服务 (SyncDataService)', () => {
         }),
       );
 
-      // Verify Cover History
-      expect(mockCoverHistoryStore.clearHistory).toHaveBeenCalled();
-      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
+      // Verify Cover History：按远端身份整体替换，不走会重铸 id 的 addCover
+      expect(mockCoverHistoryStore.addCover).not.toHaveBeenCalled();
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([
         expect.objectContaining({ id: 'c1', url: 'remote.jpg' }),
-      );
+      ]);
     });
 
     it('当远程数据较新时，应更新本地数据', async () => {
@@ -1578,8 +1578,9 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, false);
       expect(result).toEqual([]);
-      // 不应把该封面写回（即 addCover 不应被调用）
+      // 不应把该封面写回（替换后的封面历史为空）
       expect(mockCoverHistoryStore.addCover).not.toHaveBeenCalled();
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([]);
     });
 
     it('同步 Memory 时不应因为生成新 ID 而重复创建（应保留远程 memory.id）', async () => {
@@ -3298,9 +3299,9 @@ describe('数据同步服务 (SyncDataService)', () => {
         expect.arrayContaining([expect.objectContaining({ id: 'snap-book' })]),
       );
       expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'snap-model' }));
-      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([
         expect.objectContaining({ id: 'snap-cover' }),
-      );
+      ]);
 
       // store 内存状态仅包含快照模型
       expect(mockAIModelsStore.models).toHaveLength(1);
@@ -3340,9 +3341,9 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       // 模型、封面、记忆都被写入
       expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'm1' }));
-      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([
         expect.objectContaining({ id: 'c1' }),
-      );
+      ]);
       expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
         'b1',
         'mem1',
