@@ -246,11 +246,6 @@ async function saveBookFieldUpdates(
   return (await BookService.updateBookFields(existingBook.id, patch)) ?? committed;
 }
 
-/** 已提交记录不含章节正文：内存中的卷章（含已加载正文）原样保留 */
-function withMemoryVolumes(committed: Novel, existingBook: Novel): Novel {
-  return existingBook.volumes ? { ...committed, volumes: existingBook.volumes } : committed;
-}
-
 /** 在内存快照上合并更新；更新了 volumes 时保留现有章节正文（独立 IndexedDB 存储不应丢失） */
 async function mergeBookUpdates(existingBook: Novel, updates: Partial<Novel>): Promise<Novel> {
   // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
@@ -505,7 +500,7 @@ export const useBooksStore = defineStore('books', {
         const committed = await saveBookFieldUpdates(existingBook, updates, options);
         if (committed) {
           const current = this.books.findIndex((book) => book.id === id);
-          if (current >= 0) this.books[current] = withMemoryVolumes(committed, existingBook);
+          if (current >= 0) this.books[current] = withLoadedContent(committed, existingBook);
           return;
         }
       }
