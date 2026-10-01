@@ -512,10 +512,11 @@ watch(
       // 重置到默认标签页
       specialInstructionsActiveTab.value = 'translation';
       formErrors.value = {};
-      // 等待 DOM 更新后加载字符数
+      // 填充表单后立即捕获快照：编辑保存只提交与快照不同的字段，晚于用户输入捕获会吞掉改动
+      captureSnapshot();
+      // 等待 DOM 更新后加载字符数（不改写 formData）
       await nextTick();
       await loadAllVisibleChapterCharCounts();
-      captureSnapshot();
     } else {
       // 关闭时重置
       resetForm();

@@ -143,10 +143,24 @@ describe('书籍对话框保存载荷中的 volumes', () => {
     expect(payload).toEqual({ volumes: [] });
   });
 
-  it('保存后对话框表单仍保留卷章节用于展示', async () => {
-    await mount('edit', makeBook());
+  it('保存不改动对话框表单，再次保存时没有改动字段', async () => {
+    const { onSave } = await mount('edit', makeBook());
+    typeInto(findInputByValue('作者'), '新作者');
+    await settle();
     clickButton(t('bookDialogUi.save'));
     await settle();
-    expect(document.body.textContent).toContain('第一卷');
+    clickButton(t('bookDialogUi.save'));
+    await settle();
+
+    expect(onSave).toHaveBeenCalledTimes(2);
+    // 表单仍是改后的完整数据：第二次与快照比较只剩 author，卷章节等未被第一次保存剥掉
+    expect(onSave.mock.calls[1]![0]).toEqual({ author: '新作者' });
+  });
+
+  it('未做任何改动直接保存时载荷为空对象', async () => {
+    const { onSave } = await mount('edit', makeBook());
+    clickButton(t('bookDialogUi.save'));
+    await settle();
+    expect(onSave.mock.calls[0]![0]).toEqual({});
   });
 });

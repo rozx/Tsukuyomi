@@ -254,8 +254,8 @@ async function mergeBookUpdates(existingBook: Novel, updates: Partial<Novel>): P
     ...updates,
     lastEdited: updates.lastEdited ?? new Date(),
   } as Novel;
-  // 如果 cover 是 null，删除该属性
-  if ('cover' in updates && updates.cover === null) {
+  // 显式传入 cover 为 null / undefined 表示清除封面，删除该属性（与字段增量路径一致）
+  if ('cover' in updates && updates.cover == null) {
     delete updatedBook.cover;
   }
   if (updates.volumes && existingBook.volumes) {
