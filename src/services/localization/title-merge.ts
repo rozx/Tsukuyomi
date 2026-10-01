@@ -9,7 +9,8 @@ export function mergeTitlePreservingTranslation(
 ): Chapter['title'] {
   const original = typeof winnerTitle === 'string' ? winnerTitle : winnerTitle?.original;
   const otherOriginal = typeof loserTitle === 'string' ? loserTitle : loserTitle?.original;
-  if (original !== otherOriginal || !original) return winnerTitle;
+  // 空字符串原文（未命名卷章）同样是可合并的标题；只有原文不同或缺失标题时才不合并
+  if (original !== otherOriginal || original === undefined) return winnerTitle;
   if (typeof winnerTitle === 'string')
     return typeof loserTitle === 'string' ? winnerTitle : normalizeNameTranslations(loserTitle, 0);
   if (typeof loserTitle === 'string') return normalizeNameTranslations(winnerTitle, 0);

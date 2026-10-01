@@ -7,6 +7,7 @@ import { LibraryPersistence } from '../services/library-persistence';
 import { getDB } from '../utils/indexed-db';
 import { canonicalStringify } from '../utils/canonical-json';
 import type { Novel } from '../models/novel';
+import { buildBookFieldPatch } from '../services/book-field-patch';
 
 async function tab() {
   setActivePinia(createPinia());
@@ -74,18 +75,52 @@ describe('书籍元数据按字段增量保存', () => {
     expect(inStale.description).toBe('新简介');
   });
 
+  it('表单为未设置字段生成的空占位值不会清除其他标签页新写入的值', async () => {
+    await BookService.saveBook({ ...baseBook('delta-blank'), volumes: undefined });
+    const stale = await tab();
+    const other = await tab();
+    await other.updateBook('delta-blank', {
+      author: '新作者',
+      tags: ['新'],
+      webUrl: ['https://a'],
+      translationInstructions: '指令',
+    });
+
+    await stale.updateBook('delta-blank', {
+      title: '书',
+      author: '',
+      tags: [],
+      webUrl: [],
+      alternateTitles: [],
+      translationInstructions: '',
+      description: '新简介',
+    });
+
+    const saved = (await BookService.getBookById('delta-blank'))!;
+    expect(saved.author).toBe('新作者');
+    expect(saved.tags).toEqual(['新']);
+    expect(saved.webUrl).toEqual(['https://a']);
+    expect(saved.translationInstructions).toBe('指令');
+    expect(saved.description).toBe('新简介');
+  });
+
   it('表单整体提交时，与旧快照相同的字段不会覆盖其他标签页的修改', async () => {
     await BookService.saveBook(baseBook('delta-form', { author: '甲', tags: ['a'] }));
     const stale = await tab();
     const other = await tab();
     await other.updateBook('delta-form', { author: '乙', tags: ['b'] });
 
-    await stale.updateBook('delta-form', { title: '书', author: '甲', tags: ['a'], notes: [] });
+    await stale.updateBook('delta-form', {
+      title: '书',
+      author: '甲',
+      tags: ['a'],
+      description: '改',
+    });
 
     const saved = (await BookService.getBookById('delta-form'))!;
     expect(saved.author).toBe('乙');
     expect(saved.tags).toEqual(['b']);
-    expect(saved.notes).toEqual([]);
+    expect(saved.description).toBe('改');
   });
 
   it('另一标签页更换了封面后，旧快照保存无关字段不会把封面改回去', async () => {
@@ -273,5 +308,37 @@ describe('LibraryPersistence.updateBookFields', () => {
       undefined,
     );
     expect(await db.get('books', 'missing')).toBe(undefined);
+  });
+});
+
+describe('buildBookFieldPatch', () => {
+  const base = baseBook('patch', { author: '甲', tags: ['a'] });
+
+  it('空输入得到空补丁', () => {
+    expect(buildBookFieldPatch(base, {})).toEqual({});
+  });
+
+  it('未设置字段的空字符串 / 空数组占位视为未改动', () => {
+    expect(buildBookFieldPatch(base, { description: '', webUrl: [], alternateTitles: [] })).toEqual(
+      {},
+    );
+  });
+
+  it('把已有值清空为空字符串 / 空数组仍是修改', () => {
+    expect(buildBookFieldPatch(base, { author: '', tags: [] })).toEqual({ author: '', tags: [] });
+  });
+
+  it('跳过卷章、实体与身份字段，lastEdited 原样携带', () => {
+    const lastEdited = new Date(1);
+    expect(
+      buildBookFieldPatch(base, {
+        id: 'x',
+        createdAt: new Date(2),
+        volumes: [],
+        terminologies: [],
+        characterSettings: [],
+        lastEdited,
+      }),
+    ).toEqual({ lastEdited });
   });
 });

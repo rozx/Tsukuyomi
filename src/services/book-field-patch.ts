@@ -26,10 +26,16 @@ export type BookFieldPatch = Omit<
   | 'entitySyncVersion'
 >;
 
+/** 空字符串 / 空数组与未设置等价：表单为未设置的可选字段生成的空占位不算修改 */
+function emptyAsUnset(value: unknown): unknown {
+  if (value === '' || (Array.isArray(value) && value.length === 0)) return null;
+  return value ?? null;
+}
+
 /** 与快照值相同即视为未改动；同一对象引用可能已被调用方原地修改，无法判断，按已改动处理 */
 function unchangedFromBase(value: unknown, base: unknown): boolean {
   if (value === base && typeof value === 'object' && value !== null) return false;
-  return canonicalStringify(value ?? null) === canonicalStringify(base ?? null);
+  return canonicalStringify(emptyAsUnset(value)) === canonicalStringify(emptyAsUnset(base));
 }
 
 /**

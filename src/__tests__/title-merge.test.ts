@@ -21,4 +21,35 @@ describe('卷章标题语言槽合并', () => {
     );
     expect(mergeTitlePreservingTranslation(title, structuredClone(title))).toEqual(title);
   });
+
+  it('原文为空字符串的未命名卷章两侧也合并各自的语言槽', () => {
+    const blank = { id: '', translation: '', aiModelId: '', language: 'zh-CN' as const };
+    const slot = (id: string, text: string, language: 'en-US' | 'zh-TW', counter: number) => ({
+      value: { id, translation: text, aiModelId: '', language },
+      revision: { counter, actorId: 'a' },
+      updatedAt: 1,
+    });
+    const english = normalizeNameTranslations(
+      {
+        original: '',
+        translation: blank,
+        translationsByLanguage: { 'en-US': slot('en', 'Untitled', 'en-US', 1) },
+      },
+      0,
+    );
+    const traditional = normalizeNameTranslations(
+      {
+        original: '',
+        translation: blank,
+        translationsByLanguage: { 'zh-TW': slot('tw', '未命名', 'zh-TW', 2) },
+      },
+      0,
+    );
+    const merged = mergeTitlePreservingTranslation(english, traditional) as Exclude<
+      ReturnType<typeof mergeTitlePreservingTranslation>,
+      string
+    >;
+    expect(merged.translationsByLanguage?.['en-US']?.value?.translation).toBe('Untitled');
+    expect(merged.translationsByLanguage?.['zh-TW']?.value?.translation).toBe('未命名');
+  });
 });
