@@ -163,3 +163,24 @@ it('三语言书籍通过设置 JSON 解析和覆盖导入往返，分配记录�
   expect(raw['sync-metadata']).toBeUndefined();
   expect(raw['entity-operations']).toBeUndefined();
 });
+
+it('导入失败回滚时封面历史按备份原样恢复，id 与添加时间不变', async () => {
+  const { useCoverHistoryStore } = await import('../stores/cover-history');
+  setActivePinia(createPinia());
+  const settings = useSettingsStore();
+  await settings.loadSettings();
+  const covers = useCoverHistoryStore();
+  const original = { id: 'cover-1', url: 'https://img.example/a.png', addedAt: new Date(1000) };
+  await (await getDB()).put('cover-history', original);
+  await covers.loadCoverHistory();
+  const fail = vi.spyOn(settings, 'importSettings').mockRejectedValueOnce(new Error('quota'));
+  await expect(
+    SyncDataService.importSettingsSnapshot(
+      { coverHistory: [{ url: 'https://img.example/new.png' }], appSettings: {} } as never,
+      'cover-rollback',
+    ),
+  ).rejects.toThrow('quota');
+  fail.mockRestore();
+  expect(covers.covers).toEqual([original]);
+  expect(await (await getDB()).getAll('cover-history')).toEqual([original]);
+});

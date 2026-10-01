@@ -122,7 +122,7 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
         const gistSync = settingsStore.gistSync;
         const deletedCoverIds = gistSync.deletedCoverIds || [];
         const deletedCoverUrls = gistSync.deletedCoverUrls || [];
-        
+
         // 检查是否已存在（避免重复）
         if (!deletedCoverIds.find((record) => record.id === id)) {
           deletedCoverIds.push({
@@ -148,6 +148,20 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
           }
         }
       }
+    },
+
+    /**
+     * 按给定记录原样替换封面历史（保留 id 与添加时间），用于回滚到备份。
+     * addCover 会重新生成身份，回滚若走它会让同步身份与删除记录失配。
+     */
+    async replaceHistory(items: readonly CoverHistoryItem[]): Promise<void> {
+      await this.clearHistory();
+      const restored = items.map((item) => ({
+        ...item,
+        addedAt: item.addedAt instanceof Date ? item.addedAt : new Date(item.addedAt),
+      }));
+      for (const item of restored) await saveCoverHistoryItemToDB(item);
+      this.covers = restored;
     },
 
     /**

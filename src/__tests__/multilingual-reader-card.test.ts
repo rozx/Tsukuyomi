@@ -160,4 +160,56 @@ describe('阅读卡片目标语言', () => {
     await nextTick();
     expect(host.textContent).toContain('中文译文');
   });
+
+  it('点取消关闭编辑器时同样清除草稿并通知父组件停止编辑', async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    useBooksStore().books = [
+      {
+        id: 'b',
+        title: '书',
+        targetLanguage: 'zh-CN',
+        createdAt: new Date(0),
+        lastEdited: new Date(0),
+      },
+    ];
+    const paragraph: Paragraph = {
+      id: 'p',
+      text: 'source',
+      selectedTranslationId: 'cn',
+      translations: [{ id: 'cn', translation: '中文', language: 'zh-CN', aiModelId: '' }],
+    };
+    const drafts = new Map<string, string>();
+    const stops: string[] = [];
+    const writes: string[] = [];
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    app = createApp({
+      render: () =>
+        h(ParagraphCard, {
+          paragraph,
+          bookId: 'b',
+          editDraftStore: drafts,
+          onParagraphEditStop: (id: string) => stops.push(id),
+          onUpdateTranslation: (_id: string, text: string) => writes.push(text),
+        }),
+    });
+    app.use(pinia).use(PrimeVue).use(createAppI18n('zh-CN')).use(ToastService).mount(host);
+    (host.querySelector('.p-inplace-display') as HTMLElement).click();
+    await nextTick();
+    const textarea = host.querySelector('textarea')!;
+    textarea.value = '未保存草稿';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    expect(drafts.get('p:zh-CN')).toBe('未保存草稿');
+    const cancel = [...host.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('取消'),
+    )!;
+    cancel.click();
+    await nextTick();
+    expect(stops).toEqual(['p']);
+    expect(drafts.has('p:zh-CN')).toBe(false);
+    expect(writes).toEqual([]);
+    expect(host.querySelector('textarea')).toBeNull();
+  });
 });

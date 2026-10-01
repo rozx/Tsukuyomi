@@ -64,4 +64,46 @@ describe('译文历史显示语言', () => {
     expect(document.body.textContent).toContain('翻譯歷史');
     expect(document.body.textContent).toContain('用户简中译文');
   });
+
+  it('其他语言最近有多个版本时，目标语言的历史版本仍出现且可选回', async () => {
+    const choose = vi.fn();
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages });
+    const english = Array.from({ length: 5 }, (_, i) => ({
+      id: `en${i}`,
+      translation: `English ${i}`,
+      language: 'en-US' as const,
+      aiModelId: '',
+    }));
+    app = createApp({
+      setup: () => () =>
+        h(TranslationHistoryDialog, {
+          visible: true,
+          targetLanguage: 'zh-CN',
+          paragraph: {
+            id: 'p',
+            text: '原文',
+            selectedTranslationId: 'cn-new',
+            translations: [
+              { id: 'cn-old', translation: '旧简中译文', language: 'zh-CN', aiModelId: '' },
+              { id: 'cn-new', translation: '新简中译文', language: 'zh-CN', aiModelId: '' },
+              ...english,
+            ],
+          },
+          'onSelect-translation': choose,
+        }),
+    });
+    app
+      .use(createPinia())
+      .use(i18n)
+      .use(PrimeVue)
+      .mount(document.body.appendChild(document.createElement('div')));
+    await nextTick();
+    const items = [...document.querySelectorAll<HTMLElement>('.translation-history-item')];
+    expect(items.length).toBeLessThanOrEqual(5);
+    const old = items.find((item) => item.textContent?.includes('旧简中译文'));
+    expect(old).toBeDefined();
+    expect(old!.classList.contains('is-disabled')).toBe(false);
+    old!.click();
+    expect(choose).toHaveBeenCalledWith('cn-old');
+  });
 });

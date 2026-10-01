@@ -7,20 +7,22 @@ import { BookService } from 'src/services/book-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { ToolDefinition, ToolContext } from './types';
 import type { Chapter, Novel } from 'src/models/novel';
+import type { AppLocale } from 'src/models/locale';
 
 /**
- * 在书籍卷章结构中查找指定章节，返回章节对象与展示标题
+ * 在书籍卷章结构中查找指定章节，返回章节对象与执行目标语言下的展示标题
  */
 function findChapterInBook(
   book: Novel,
   chapterId: string,
+  language: AppLocale,
 ): { chapter: Chapter; title: string } | null {
   if (!book.volumes) return null;
   for (const volume of book.volumes) {
     if (!volume.chapters) continue;
     const found = volume.chapters.find((ch) => ch.id === chapterId);
     if (found) {
-      return { chapter: found, title: getChapterDisplayTitle(found) };
+      return { chapter: found, title: getChapterDisplayTitle(found, book, language) };
     }
   }
   return null;
@@ -41,7 +43,7 @@ export const navigationTools: ToolDefinition[] = [
     handler: async (args, context: ToolContext) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction } = checked;
+      const { bookId, onAction, language } = checked;
 
       const { chapter_id } = args as {
         chapter_id: string;
@@ -59,7 +61,7 @@ export const navigationTools: ToolDefinition[] = [
         }
 
         // 查找章节
-        const foundChapter = findChapterInBook(book, chapter_id);
+        const foundChapter = findChapterInBook(book, chapter_id, language);
         if (!foundChapter) {
           return toolErrorJson('CHAPTER_NOT_FOUND', 'aiEntityFeedback.chapterMissing', {
             id: chapter_id,
@@ -108,7 +110,7 @@ export const navigationTools: ToolDefinition[] = [
     handler: async (args, context: ToolContext) => {
       const checked = checkedToolBookContext(context);
       if ('error' in checked) return checked.error;
-      const { bookId, onAction } = checked;
+      const { bookId, onAction, language } = checked;
 
       const { paragraph_id } = args as {
         paragraph_id: string;
@@ -134,7 +136,7 @@ export const navigationTools: ToolDefinition[] = [
         }
 
         const { chapter } = location;
-        const chapterTitle = getChapterDisplayTitle(chapter);
+        const chapterTitle = getChapterDisplayTitle(chapter, book, language);
 
         // 触发导航操作
         if (onAction) {

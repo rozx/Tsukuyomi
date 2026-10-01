@@ -634,10 +634,13 @@ const onTranslationClose = () => {
   } else if (editingTranslationValue.value !== rawTranslationText.value) {
     emit('update-translation', props.paragraph.id, editingTranslationValue.value);
   }
+  endTranslationEdit();
+};
+
+// 结束编辑的公共清理（apply / cancel / Esc / 失焦共用）：清除暂存草稿并通知父组件停止编辑
+const endTranslationEdit = () => {
   isEditingTranslation.value = false;
-  // 编辑结束，清除暂存草稿（apply / cancel / Esc / 失焦都经此关闭路径）
   props.editDraftStore?.delete(`${props.paragraph.id}:${editingLanguage.value}`);
-  // 通知父组件停止编辑
   emit('paragraph-edit-stop', props.paragraph.id);
 };
 
@@ -651,7 +654,8 @@ const applyTranslation = (closeCallback: () => void) => {
 const cancelTranslation = (closeCallback: () => void) => {
   // 恢复为原始翻译文本，而不是格式化后的文本
   editingTranslationValue.value = rawTranslationText.value;
-  isEditingTranslation.value = false;
+  // 先做公共清理再关闭：之后触发的 @close 因已不在编辑态而直接返回，不会保存
+  endTranslationEdit();
   closeCallback();
 };
 

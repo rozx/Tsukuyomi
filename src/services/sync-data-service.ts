@@ -1149,11 +1149,8 @@ export class SyncDataService {
       await booksStore.rollbackBooks(backup.books);
       await MemoryService.rollbackMemories(backup.memories);
 
-      // 恢复封面历史
-      await coverHistoryStore.clearHistory();
-      for (const cover of backup.covers) {
-        await coverHistoryStore.addCover(cover);
-      }
+      // 恢复封面历史：按备份原样写回，保留 id 与添加时间
+      await coverHistoryStore.replaceHistory(backup.covers);
 
       // 恢复设置
       await settingsStore.replaceSettingsFromSyncSnapshot(backup.settings);

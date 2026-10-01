@@ -31,17 +31,19 @@ const languageLabel = (language: AppLocale = 'zh-CN') =>
   languageName(resolveAppLocale(locale.value), language);
 const canSelect = (language: AppLocale = 'zh-CN') => language === props.targetLanguage;
 
-// 获取可用的翻译历史（最多5个，按时间倒序，最新的在前）
+// 获取可用的翻译历史（最多5个，按时间倒序，最新的在前）。
+// 先取目标语言的版本，剩余名额再给其他语言（只读展示），
+// 避免其他语言的近期版本占满名额后目标语言的旧版本无法选回。
 const translationHistory = computed(() => {
   if (!props.paragraph?.translations || props.paragraph.translations.length === 0) {
     return [];
   }
 
-  // 按数组顺序，最新的在最后，反转后取前5个
+  // 按数组顺序，最新的在最后
   const translations = [...props.paragraph.translations].reverse();
-
-  // 返回最多5个
-  return translations.slice(0, 5);
+  const selectable = translations.filter((value) => canSelect(value.language)).slice(0, 5);
+  const others = translations.filter((value) => !canSelect(value.language));
+  return [...selectable, ...others.slice(0, 5 - selectable.length)];
 });
 
 // 获取模型名称
