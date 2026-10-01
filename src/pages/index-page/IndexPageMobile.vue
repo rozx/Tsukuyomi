@@ -23,7 +23,7 @@ const greetingSub = computed(() =>
 </script>
 
 <template>
-  <div class="mobile-home w-full h-full overflow-y-auto">
+  <div class="mobile-home w-full">
     <!-- 顶部品牌条 -->
     <div class="mh-brandbar">
       <img :src="ctx.logoPath" :alt="APP_NAME.full" class="mh-brandbar-logo" />

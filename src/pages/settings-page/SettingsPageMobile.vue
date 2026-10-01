@@ -66,7 +66,6 @@ const settingsTabBindings = computed(() =>
 .tsm-settings-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
   background: transparent;
 }
@@ -170,7 +169,7 @@ const settingsTabBindings = computed(() =>
 /* 滚动内容 */
 .tsm-settings-scroll {
   flex: 1;
-  overflow-y: auto;
+  overflow: visible;
   -webkit-overflow-scrolling: touch;
   padding: 18px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
   min-height: 0;

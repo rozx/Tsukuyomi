@@ -37,10 +37,9 @@ const ctx = injectBookDetailsPage();
   flex: 1;
   min-height: 0;
   min-width: 0;
-  height: 100%;
   width: 100%;
   background: transparent;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .mbd-appbar {
@@ -115,7 +114,7 @@ const ctx = injectBookDetailsPage();
 .mbd-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: visible;
   /* Horizontal + bottom padding only — NO padding-top. Sticky elements inside
      (panel toolbars in terminology / character / memory tabs) use `top: 0` to
      stick under the appbar; padding-top would offset their stick point and
@@ -487,10 +486,9 @@ const ctx = injectBookDetailsPage();
   flex: 1;
   min-height: 0;
   width: 100%;
-  height: 100%;
-  overflow: hidden;
-  /* 作为 .mbr-actionbar 的定位父级，让浮动操作栏贴在 reader 底部之上，
-     而不是视口底部（后者会与 MobileTabBar 重叠导致遮挡） */
+  overflow: visible;
+  /* 行高变化由虚拟列表补偿，避免浏览器原生锚定再调整一次滚动位置。 */
+  overflow-anchor: none;
   position: relative;
 }
 
@@ -625,7 +623,7 @@ const ctx = injectBookDetailsPage();
   border-radius: 999px;
 }
 
-/* 非滚动定位锚点：精确包住正文滚动区，作为自定义滚动条的 Teleport 目标 */
+/* 手机正文参与文档滚动，由窗口虚拟列表控制挂载范围。 */
 .mbr-scroll-wrap {
   position: relative;
   flex: 1;
@@ -637,9 +635,8 @@ const ctx = injectBookDetailsPage();
 .mbr-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  /* 右侧预留 22px 走廊给自定义滚动条，避免滑块压在正文上 */
-  padding: 14px 22px 32px 14px;
+  overflow: visible;
+  padding: 14px 14px 32px;
   scrollbar-width: none;
   transition: padding-bottom 180ms cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -812,13 +809,11 @@ const ctx = injectBookDetailsPage();
 }
 
 .mbr-actionbar {
-  /* 相对于 .mobile-reader 的底部 —— reader 的 bottom 边界刚好位于 MobileTabBar
-     上方（由 MainLayoutMobile 的 flex 布局保证），因此 absolute + bottom:12px
-     自然留出 tab bar 上方的呼吸空间，不再依赖 env(safe-area-inset-bottom) 推算 */
-  position: absolute;
+  /* 文档很长时操作栏仍贴着视口，避开底部应用导航。 */
+  position: fixed;
   left: 12px;
   right: 12px;
-  bottom: 12px;
+  bottom: calc(var(--mobile-tabbar-height) + 12px);
   display: flex;
   align-items: center;
   gap: 4px;

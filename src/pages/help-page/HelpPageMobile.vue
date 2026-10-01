@@ -17,8 +17,8 @@ const currentDocDescription = computed(() => ctx.currentDoc.value?.description);
 </script>
 
 <template>
-  <div class="w-full h-full flex overflow-hidden relative">
-    <main class="flex-1 h-full flex flex-col min-w-0">
+  <div class="w-full relative">
+    <main class="min-w-0">
       <!-- 手机端顶部工具栏 -->
       <div
         class="px-3 py-2 border-b border-white/10 flex items-center justify-between bg-night-900/30"
@@ -64,8 +64,8 @@ const currentDocDescription = computed(() => ctx.currentDoc.value?.description);
       <HelpMobileLanding v-else-if="!ctx.currentDoc.value" />
 
       <!-- Document Content -->
-      <div v-else class="flex-1 h-full flex overflow-hidden">
-        <div class="flex-1 h-full overflow-y-auto help-content-scroll">
+      <div v-else>
+        <div class="help-content-scroll">
           <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
             <header class="mb-10">
               <div class="flex items-center gap-2 text-sm text-primary mb-3">
@@ -100,6 +100,9 @@ const currentDocDescription = computed(() => ctx.currentDoc.value?.description);
 
 <style scoped>
 /* 文档正文样式抽到 ./doc-content.css，见下方 `<style scoped src>` */
+.help-content-scroll :deep([id]) {
+  scroll-margin-top: 48px;
+}
 </style>
 
 <!-- 文档正文共享样式，scoped src 会重新作用到本组件作用域 -->

@@ -16,7 +16,7 @@ const onTopicClick = (topic: { doc: HelpDocument | undefined }) => {
 </script>
 
 <template>
-  <div class="mobile-help-landing flex-1 h-full overflow-y-auto">
+  <div class="mobile-help-landing">
     <section class="mhl-hero">
       <img :src="ctx.logoPath" :alt="APP_NAME.full" class="mhl-hero-logo" />
       <div class="mhl-hero-brand">TSUKUYOMI 月詠</div>

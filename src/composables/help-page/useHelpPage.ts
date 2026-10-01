@@ -224,11 +224,20 @@ function createHelpPageContext() {
     },
   );
 
+  function getContentScrollElement(): HTMLElement | null {
+    return isPhone.value
+      ? ((document.scrollingElement as HTMLElement | null) ?? document.documentElement)
+      : document.querySelector<HTMLElement>('.help-content-scroll');
+  }
+
   function captureReadingSection(): string {
-    const container = document.querySelector<HTMLElement>('.help-content-scroll');
+    const container = getContentScrollElement();
     if (!container || !content.value) return activeHeading.value;
     if (container.scrollTop === 0 && route.hash) return route.hash.substring(1);
-    const top = container.getBoundingClientRect().top + 8;
+    const top =
+      (isPhone.value
+        ? (document.querySelector('.mobile-shell-sysbar')?.getBoundingClientRect().bottom ?? 0)
+        : container.getBoundingClientRect().top) + 8;
     const visible = toc.value.filter((heading) => {
       const element = document.getElementById(heading.id);
       return element && element.getBoundingClientRect().top <= top;
@@ -304,7 +313,7 @@ function createHelpPageContext() {
       const headingId = position ? resolveHelpSection(resource.doc, position) : '';
       if (headingId) scrollToHeading(headingId, false);
       else {
-        const container = document.querySelector('.help-content-scroll');
+        const container = getContentScrollElement();
         if (container) container.scrollTop = 0;
       }
       if (route.hash && headingId !== route.hash.substring(1))
@@ -317,16 +326,18 @@ function createHelpPageContext() {
     }
   }
 
-  function scrollToHeading(section: string, updateUrl = true) {
+  async function scrollToHeading(section: string, updateUrl = true) {
     const id = currentDoc.value ? resolveHelpSection(currentDoc.value, section) : section;
     const element = document.getElementById(id);
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       activeHeading.value = id;
       showTocDrawer.value = false;
       if (updateUrl) {
-        router.replace({ ...route, hash: `#${id}` });
+        await router.replace({ ...route, hash: `#${id}` });
       }
+      await nextTick();
+      if (disposed || !element.isConnected) return;
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }
 

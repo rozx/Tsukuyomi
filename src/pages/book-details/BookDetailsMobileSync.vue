@@ -43,7 +43,6 @@ const goBack = () => {
 .mbs {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
   width: 100%;
 }
@@ -79,7 +78,7 @@ const goBack = () => {
 .mbs-body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: visible;
   padding: 0.85rem 1rem;
 }
 </style>

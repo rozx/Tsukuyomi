@@ -33,7 +33,6 @@ const { t } = useI18n();
 .bsn-m {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
   width: 100%;
 }
@@ -60,6 +59,6 @@ const { t } = useI18n();
   flex-direction: column;
   gap: 0.85rem;
   padding: 0.85rem 1rem;
-  overflow-y: auto;
+  overflow: visible;
 }
 </style>

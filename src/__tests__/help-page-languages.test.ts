@@ -10,6 +10,7 @@ import { provideHelpPage } from '../composables/help-page/useHelpPage';
 import messages from '../i18n';
 import { helpDocsTools } from '../services/ai/tools/help-docs-tools';
 import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-languages';
+import MobileBottomSheet from '../components/layout/MobileBottomSheet.vue';
 vi.mock('vue', async (importOriginal) => {
   const original = await importOriginal<typeof Vue>();
   return { ...original, nextTick: vi.fn(original.nextTick) };
@@ -38,6 +39,7 @@ afterEach(() => {
   app = undefined;
   vi.restoreAllMocks();
   document.body.innerHTML = '';
+  document.documentElement.scrollTop = 0;
   if (oldScroll) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', oldScroll);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
@@ -80,7 +82,7 @@ async function flush() {
     await nextTick();
   }
 }
-async function mount(path = '/help/front-page#front-settings') {
+async function mount(path = '/help/front-page#front-settings', withTocSheet = false) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/help/:docId?', component: { render: () => null } }],
@@ -92,8 +94,13 @@ async function mount(path = '/help/front-page#front-settings') {
     setup() {
       ctx = provideHelpPage();
       return () =>
-        h('div', { class: 'help-content-scroll' }, [
-          h('article', { innerHTML: ctx.content.value }),
+        h('div', [
+          h('div', { class: 'help-content-scroll' }, [
+            h('article', { innerHTML: ctx.content.value }),
+          ]),
+          withTocSheet
+            ? h(MobileBottomSheet, { visible: ctx.showTocDrawer.value, title: '目录' })
+            : null,
         ]);
     },
   });
@@ -279,6 +286,55 @@ Configure models.`,
     await flush();
     expect(ctx.activeHeading.value).toBe('front-settings');
     expect(ctx.content.value).toContain('Full English content');
+  });
+
+  it('手机文档滚动后切语言保留视口正在阅读的章节，而非旧 hash', async () => {
+    device.variant = 'mobile';
+    resources();
+    const { ctx, i18n } = await mount('/help/front-page#front-start');
+    document.documentElement.scrollTop = 400;
+    const header = document.body.appendChild(document.createElement('div'));
+    header.className = 'mobile-shell-sysbar';
+    vi.spyOn(header, 'getBoundingClientRect').mockReturnValue({ bottom: 37 } as DOMRect);
+    vi.spyOn(
+      document.querySelector('.help-content-scroll')!,
+      'getBoundingClientRect',
+    ).mockReturnValue({
+      top: -300,
+    } as DOMRect);
+    vi.spyOn(document.getElementById('front-start')!, 'getBoundingClientRect').mockReturnValue({
+      top: -280,
+    } as DOMRect);
+    vi.spyOn(document.getElementById('front-settings')!, 'getBoundingClientRect').mockReturnValue({
+      top: 30,
+    } as DOMRect);
+
+    i18n.global.locale.value = 'en-US';
+    await flush();
+
+    expect(ctx.activeHeading.value).toBe('front-settings');
+    expect(ctx.content.value).toContain('Full English content');
+    document.documentElement.scrollTop = 0;
+  });
+
+  it('手机目录跳转先关闭抽屉并释放文档滚动锁，再定位章节', async () => {
+    device.variant = 'mobile';
+    resources();
+    const { ctx } = await mount('/help/front-page#front-start', true);
+    ctx.showTocDrawer.value = true;
+    await flush();
+    expect(document.body.style.overflow).toBe('hidden');
+    const lockedAtScroll: boolean[] = [];
+    vi.spyOn(HTMLElement.prototype, 'scrollIntoView').mockImplementation(() => {
+      lockedAtScroll.push(document.body.style.overflow === 'hidden');
+    });
+
+    ctx.scrollToHeading('front-settings');
+    await flush();
+
+    expect(lockedAtScroll.length).toBeGreaterThan(0);
+    expect(lockedAtScroll).not.toContain(true);
+    expect(ctx.showTocDrawer.value).toBe(false);
   });
 
   for (const pendingPart of ['index', 'markdown'] as const) {

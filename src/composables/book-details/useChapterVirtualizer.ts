@@ -7,7 +7,7 @@ import {
   type MaybeRefOrGetter,
   type ComponentPublicInstance,
 } from 'vue';
-import { useVirtualizer } from '@tanstack/vue-virtual';
+import { useVirtualizer, useWindowVirtualizer } from '@tanstack/vue-virtual';
 import type { ScrollToOptions as VirtualScrollToOptions } from '@tanstack/vue-virtual';
 import type { Paragraph } from 'src/models/novel';
 
@@ -192,8 +192,10 @@ export function computeListResetKey(
 }
 
 export interface UseChapterVirtualizerOptions {
-  /** 真实滚动容器元素（桌面 = .chapter-content-panel wrapper；移动 = .mbr-scroll） */
+  /** 真实滚动容器元素；窗口模式下用于章节切换时复位文档滚动位置 */
   scrollElement: Ref<HTMLElement | null>;
+  /** 桌面使用内部容器；手机使用文档滚动，允许浏览器收起工具栏。 */
+  scrollTarget?: 'element' | 'window';
   /** 段落数组（响应式） */
   paragraphs: Ref<Paragraph[]> | ComputedRef<Paragraph[]>;
   /** 渲染面；桌面在 preview/edit 间切换，可传 ref/getter */
@@ -239,7 +241,10 @@ export function useChapterVirtualizer(opts: UseChapterVirtualizerOptions) {
   // （已含我们加的 margin），若再加一次 margin 会每次重测都累加，导致 totalSize 无限膨胀。
   // 自己测真实盒子则每次都得到稳定值。getBoundingClientRect / borderBoxSize 均为边框盒（含 padding、不含 margin），
   // 与「窗口按文档流堆叠、margin 推进下一行」精确一致 —— 最后一行不会溢出 spacer 压到上下章按钮。
-  const measureElementOption = (element: Element, entry: ResizeObserverEntry | undefined): number => {
+  const measureElementOption = (
+    element: Element,
+    entry: ResizeObserverEntry | undefined,
+  ): number => {
     const borderBox = entry?.borderBoxSize?.[0];
     let size = borderBox ? Math.round(borderBox.blockSize) : element.getBoundingClientRect().height;
     if (element instanceof HTMLElement) {
@@ -250,17 +255,20 @@ export function useChapterVirtualizer(opts: UseChapterVirtualizerOptions) {
     return size;
   };
 
-  const virtualizer = useVirtualizer(
-    computed(() => ({
-      count: opts.paragraphs.value.length,
-      getScrollElement: () => opts.scrollElement.value,
-      estimateSize,
-      measureElement: measureElementOption,
-      overscan,
-      scrollMargin: opts.scrollMargin?.value ?? 0,
-      getItemKey: (index: number) => opts.paragraphs.value[index]?.id ?? index,
-    })),
-  );
+  const options = computed(() => ({
+    count: opts.paragraphs.value.length,
+    estimateSize,
+    measureElement: measureElementOption,
+    overscan,
+    scrollMargin: opts.scrollMargin?.value ?? 0,
+    getItemKey: (index: number) => opts.paragraphs.value[index]?.id ?? index,
+  }));
+  const virtualizer =
+    opts.scrollTarget === 'window'
+      ? useWindowVirtualizer(options)
+      : useVirtualizer(
+          computed(() => ({ ...options.value, getScrollElement: () => opts.scrollElement.value })),
+        );
 
   // 章节切换（段落 id 序列变化）或 preview↔edit 模式切换时，清空按索引缓存的测量高度并重测：
   // calibrator 按 index 长期缓存，跨章节/跨模式复用旧高度会让 estimateSize / totalSize / 滚动条
@@ -319,12 +327,7 @@ export function useChapterVirtualizer(opts: UseChapterVirtualizerOptions) {
   // 稳定引用：作为 :ref 回调挂到每个行元素/组件（其根元素需带 data-index）。
   // 普通元素直接用；组件实例取其 $el 根元素（data-index 通过 fallthrough 落在根上）。
   const measureElement = (el: Element | ComponentPublicInstance | null): void => {
-    const node =
-      el instanceof Element
-        ? el
-        : el && el.$el instanceof Element
-          ? el.$el
-          : null;
+    const node = el instanceof Element ? el : el && el.$el instanceof Element ? el.$el : null;
     virtualizer.value.measureElement(node);
   };
 

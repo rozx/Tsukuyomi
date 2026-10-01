@@ -51,10 +51,10 @@ useOverlayCloseStack({
 </script>
 
 <template>
-  <div class="h-[100dvh] overflow-hidden bg-tsukuyomi-sky text-moon-100 flex flex-col">
-    <MobileSysBar />
+  <div class="mobile-shell bg-tsukuyomi-sky text-moon-100">
+    <div class="mobile-shell-sysbar"><MobileSysBar /></div>
 
-    <div class="flex flex-1 overflow-hidden min-h-0 relative max-w-full">
+    <div class="mobile-shell-content">
       <!-- 侧边菜单遮罩 -->
       <div v-if="ui.sideMenuOpen" class="layout-overlay-mask z-40" @click="closeSideMenu" />
 
@@ -66,13 +66,13 @@ useOverlayCloseStack({
         <AppSideMenu />
       </div>
 
-      <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60">
+      <main class="bg-night-900/60">
         <!-- 页面由 MainLayout 渲染并 Teleport 到这里，断点切换时不重新挂载 -->
         <div id="route-outlet-mobile" class="route-outlet" />
       </main>
     </div>
 
-    <MobileTabBar />
+    <div class="mobile-shell-tabbar"><MobileTabBar /></div>
 
     <!-- 两张底部抽屉：chat 和 progress 互斥挂载，但都常驻 DOM，
          这样各自的 useRightPanel / TranslationProgress 内部状态不会被 sheet
@@ -83,22 +83,48 @@ useOverlayCloseStack({
 </template>
 
 <style scoped>
+.mobile-shell {
+  --mobile-tabbar-height: calc(77px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  overflow-x: clip;
+}
+
+.mobile-shell-sysbar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+}
+
+.mobile-shell-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-shell-tabbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 40;
+}
+
 .route-outlet {
   display: contents;
 }
 
 .layout-overlay-mask {
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 45;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(1px);
 }
 
 .phone-sidebar-wrapper {
-  position: absolute;
-  top: 0;
+  position: fixed;
+  top: 37px;
   left: 0;
-  bottom: 0;
+  bottom: var(--mobile-tabbar-height);
   width: 16rem;
   max-width: 86vw;
   transform: translateX(-100%);
@@ -110,9 +136,11 @@ useOverlayCloseStack({
 }
 
 main {
-  overflow-y: auto;
-  overflow-x: hidden;
-  min-height: 0;
-  height: 100%;
+  min-width: 0;
+  overflow: visible;
+}
+
+:global(body:has(.phone-sidebar-open)) {
+  overflow: hidden;
 }
 </style>

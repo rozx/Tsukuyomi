@@ -59,7 +59,6 @@
         radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%),
         linear-gradient(135deg, #0a0c0f 0%, #0f1114 20%, #1c1f26 50%, #242730 80%, #2c2f3a 100%);
       background-attachment: fixed;
-      overflow: hidden;
     "
   >
     <!--
@@ -73,6 +72,7 @@
       id="initial-loading-screen"
       style="
         position: fixed;
+        touch-action: none;
         top: 0;
         left: 0;
         width: 100%;
@@ -155,8 +155,6 @@
           setTimeout(function () {
             if (loadingScreen && loadingScreen.parentNode) {
               loadingScreen.style.display = 'none';
-              // 恢复 body 的 overflow（CSS 会处理背景）
-              document.body.style.overflow = '';
             }
           }, 300);
         }

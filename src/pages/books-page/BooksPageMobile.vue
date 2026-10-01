@@ -50,7 +50,7 @@ const pickImportFromJson = () => {
 </script>
 
 <template>
-  <div class="mobile-library w-full h-full flex flex-col">
+  <div class="mobile-library w-full flex flex-col flex-nowrap">
     <!-- 大标题区 -->
     <header class="ml-largetitle">
       <div class="ml-eyebrow">{{ i18nT('libraryUi.library') }}</div>
@@ -331,8 +331,7 @@ const pickImportFromJson = () => {
 .ml-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
 }
 
 .ml-scroll::-webkit-scrollbar {

@@ -119,10 +119,11 @@ const handleInstructionTabChange = (value: string | number) => {
       </p>
     </div>
     <div :class="contentClass">
-      <div class="p-4">
+      <div class="cs-content-padding p-4">
         <!-- showGlobalTab=false 时隐藏主 TabList、固定停在章节页签，复用同一份章节指令模板 -->
         <Tabs
           :value="currentMainTab"
+          :show-navigators="false"
           class="chapter-settings-main-tabs"
           @update:value="handleMainTabChange"
         >
@@ -152,17 +153,38 @@ const handleInstructionTabChange = (value: string | number) => {
                   <div class="p-3">
                     <Tabs
                       :value="currentInstructionTab"
+                      :show-navigators="false"
                       class="chapter-settings-instruction-tabs"
                       @update:value="handleInstructionTabChange"
                     >
                       <TabList>
-                        <Tab value="translation">{{
-                          t('translationUi.translationInstructions')
-                        }}</Tab>
-                        <Tab value="polish">{{ t('translationUi.polishInstructions') }}</Tab>
-                        <Tab value="proofreading">{{
-                          t('translationUi.proofreadInstructions')
-                        }}</Tab>
+                        <Tab
+                          value="translation"
+                          :aria-label="t('translationUi.translationInstructions')"
+                        >
+                          {{
+                            t(
+                              isPhone
+                                ? 'readerUi.translation'
+                                : 'translationUi.translationInstructions',
+                            )
+                          }}
+                        </Tab>
+                        <Tab value="polish" :aria-label="t('translationUi.polishInstructions')">
+                          {{ t(isPhone ? 'readerUi.polish' : 'translationUi.polishInstructions') }}
+                        </Tab>
+                        <Tab
+                          value="proofreading"
+                          :aria-label="t('translationUi.proofreadInstructions')"
+                        >
+                          {{
+                            t(
+                              isPhone
+                                ? 'readerUi.proofread'
+                                : 'translationUi.proofreadInstructions',
+                            )
+                          }}
+                        </Tab>
                       </TabList>
                       <TabPanels>
                         <TabPanel value="translation">
@@ -236,14 +258,23 @@ const handleInstructionTabChange = (value: string | number) => {
 </template>
 
 <style scoped>
+.chapter-settings-body {
+  /* Quasar 的 flex 默认允许换列，会让长标签撑宽整列内容。 */
+  flex-wrap: nowrap;
+}
+
 .chapter-settings-main-tabs :deep(.p-tablist) {
   border-bottom: 1px solid var(--white-opacity-10);
   margin-bottom: 0.5rem;
 }
 
 .chapter-settings-main-tabs :deep(.p-tab) {
+  flex: 1 1 0;
+  min-width: 0;
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: var(--moon-opacity-60);
   transition: all 0.2s;
 }
@@ -284,6 +315,24 @@ const handleInstructionTabChange = (value: string | number) => {
 
 .chapter-settings-instruction-tabs :deep(.p-tabpanels) {
   padding: 0;
+}
+
+@media (max-width: 640px) {
+  .cs-content-padding {
+    padding: 0.5rem 0;
+  }
+
+  .chapter-settings-instruction-tabs :deep(.p-tab) {
+    padding-inline: 0.25rem;
+  }
+
+  .cs-footer {
+    padding-inline: 0;
+  }
+
+  .cs-footer :deep(.p-button) {
+    flex: 1;
+  }
 }
 
 .chapter-settings-instruction-tabs :deep([data-pc-name='tablist']),

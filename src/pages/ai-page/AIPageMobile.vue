@@ -173,7 +173,6 @@ const badgeText = (model: { enabled: boolean }) =>
   display: flex;
   flex-direction: column;
   width: 100%;
-  height: 100%;
   min-height: 0;
   font-family:
     'Noto Sans SC',
@@ -222,8 +221,7 @@ const badgeText = (model: { enabled: boolean }) =>
 .ma-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
   padding: 12px 20px 24px;
   scrollbar-width: none;
 }
