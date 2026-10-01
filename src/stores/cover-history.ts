@@ -53,7 +53,7 @@ function stableUrlHash(value: string): string {
  * 规范化同步 / 导入来的封面记录：保留原 id 与添加时间（字符串转 Date，无效时间回落到纪元 0），
  * 缺 id 时按 URL 派生确定性 id，保证同一条记录每次同步得到同一身份
  */
-export function normalizeCoverRecord(item: CoverRecordInput): CoverHistoryItem {
+function normalizeCoverRecord(item: CoverRecordInput): CoverHistoryItem {
   const url = typeof item.url === 'string' ? item.url.trim() : '';
   const addedAt = item.addedAt instanceof Date ? item.addedAt : new Date(item.addedAt ?? 0);
   return {
@@ -97,7 +97,7 @@ function keepLatestBy(
  * 规范化并去重一批封面记录：同 URL 或同 id 只留 addedAt 最新的一条。
  * IndexedDB 以 id 为主键，若同 id 两条都进内存，库与内存会立即分叉
  */
-function normalizeCoverBatch(items: readonly CoverRecordInput[]): CoverHistoryItem[] {
+export function normalizeCoverBatch(items: readonly CoverRecordInput[]): CoverHistoryItem[] {
   return dedupeCoverBatch(items.map(normalizeCoverRecord));
 }
 

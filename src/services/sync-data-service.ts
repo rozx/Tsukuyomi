@@ -14,7 +14,7 @@ import { v4 } from 'uuid';
 import { mergeUiLocalePreference } from 'src/models/locale';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
-import { normalizeCoverRecord, useCoverHistoryStore } from 'src/stores/cover-history';
+import { normalizeCoverBatch, useCoverHistoryStore } from 'src/stores/cover-history';
 import type { CoverRecordInput } from 'src/stores/cover-history';
 import { useSettingsStore, getSyncDeletionPropagationStateClearedPatch } from 'src/stores/settings';
 import type { GistSyncData } from 'src/services/gist-sync-service';
@@ -3029,9 +3029,8 @@ export class SyncDataService {
     const { deletedCoverIdsMap, deletedCoverUrlsMap } =
       SyncDataService.buildCoverDeletionMaps(gistSync);
 
-    const normalizedRemote = remoteCovers.map((rc) =>
-      normalizeCoverRecord(rc as unknown as CoverRecordInput),
-    );
+    // 先按 URL / id 去重出远端赢家，删除保护集合必须只由实际写入的记录构成
+    const normalizedRemote = normalizeCoverBatch(remoteCovers as unknown as CoverRecordInput[]);
     const remoteCoverIds = new Set(normalizedRemote.map((rc) => rc.id));
     const remoteCoverUrls = new Set(normalizedRemote.map((rc) => rc.url).filter(Boolean));
     // 本设备自上次同步后按 id 或 URL 删除过的封面不复活
@@ -3045,7 +3044,7 @@ export class SyncDataService {
       return deletedAt === undefined || deletedAt <= lastSyncTime;
     });
     // 原样合并远端记录（保留 id 与 addedAt），同 URL 的旧本地记录被远端身份取代
-    await coverHistoryStore.upsertCovers(dedupeCoverHistoryByUrl(kept));
+    await coverHistoryStore.upsertCovers(kept);
 
     // 跨设备删除传播：远端按 id 与 URL 都找不到的本地封面才视为远端已删除
     const localCoversSnapshot = [...coverHistoryStore.covers];

@@ -141,6 +141,24 @@ describe('增量同步 cover-history 条目保留封面身份', () => {
     expect(store).toEqual([]);
   });
 
+  it('远端含同 id 不同 URL 的损坏记录时，只按去重后的远端赢家保护本地封面', async () => {
+    const syncedAt = new Date(LAST_SYNC - 1000);
+    await seedLocal([{ id: 'local-old', url: URL_A, addedAt: syncedAt }]);
+
+    await SyncDataService.applyPartialRemoteData({
+      'cover-history': {
+        kind: 'cover-history',
+        value: [
+          { id: 'dup', url: URL_A, addedAt: '2025-01-01T00:00:00.000Z' },
+          { id: 'dup', url: URL_B, addedAt: '2025-06-01T00:00:00.000Z' },
+        ],
+      },
+    });
+
+    const expected = [{ id: 'dup', url: URL_B, addedAt: Date.parse('2025-06-01T00:00:00.000Z') }];
+    expect(await snapshotIdentities()).toEqual({ db: expected, store: expected });
+  });
+
   it('远端已删除的封面在本设备下一次同步时被传播删除', async () => {
     const syncedAt = new Date(LAST_SYNC - 1000);
     await seedLocal([
