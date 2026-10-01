@@ -1,7 +1,13 @@
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { BookUpdateRecipe } from './book-sync';
 import type { AppLocale } from './locale';
-import type { EntityTombstone, FieldRevisions, LocalizedMap, SyncRevision } from './localized-data';
+import type {
+  EntityTombstone,
+  FieldRevisions,
+  LocalizedMap,
+  SyncRevision,
+  TranslationDeletion,
+} from './localized-data';
 
 // 小说
 export interface Novel {
@@ -223,6 +229,8 @@ export interface Paragraph {
   text: string;
   selectedTranslationId: string; // id of Translation
   translations: Translation[];
+  /** 已删除（含历史上限逐出）的译文版本 ID，防止同步时被仍持有旧版本的设备合并回来；无记录时省略 */
+  deletedTranslations?: Record<string, TranslationDeletion>;
 }
 
 /**

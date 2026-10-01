@@ -9,6 +9,7 @@ import {
 } from './selection';
 import { normalizeParagraphLanguages } from './normalize';
 import { assertNewRevision } from './revision';
+import { recordTranslationDeletions } from './translation-deletions';
 
 export type ParagraphTranslationEdit = {
   paragraphId: string;
@@ -52,8 +53,12 @@ function restoreLanguageHistory(
     ...paragraph.selectedTranslations,
     [language]: { value: edit.selectedTranslationId, revision: { ...revision }, updatedAt },
   };
+  // 重新加回的版本已盖上本次 revision，其删除记录由调用方的记账统一撤销
+  const deletedTranslations = { ...paragraph.deletedTranslations };
+  for (const value of restored) delete deletedTranslations[value.id];
   return normalizeParagraphLanguages({
     ...paragraph,
+    deletedTranslations,
     translations: [
       ...paragraph.translations.filter((value) => (value.language ?? 'zh-CN') !== language),
       ...restored,
@@ -82,8 +87,7 @@ export function applyParagraphTranslationEdits(
         throw new Error('PARAGRAPH_SELECTION_CHANGED');
     }
     if (paragraph.text !== edit.originalText) throw new Error('PARAGRAPH_SOURCE_CHANGED');
-    values.set(
-      edit.paragraphId,
+    const next =
       edit.type === 'append'
         ? appendLanguageTranslation(
             paragraph,
@@ -111,8 +115,9 @@ export function applyParagraphTranslationEdits(
                   edit.translationId,
                   revision,
                   updatedAt,
-                ),
-    );
+                );
+    // 消失的版本（删除、历史上限逐出、撤销去掉）写入删除记录，防止同步时被合并回来
+    values.set(edit.paragraphId, recordTranslationDeletions(paragraph, next, revision, updatedAt));
   }
   return content.map((paragraph) => values.get(paragraph.id)!);
 }

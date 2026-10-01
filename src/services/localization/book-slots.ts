@@ -2,6 +2,7 @@ import type { Novel } from 'src/models/novel';
 import type { SyncRevision } from 'src/models/localized-data';
 import { replaceLanguageSlots } from './versioned-values';
 import { assertNewRevision } from './revision';
+import { replaceTranslationDeletions } from './translation-deletions';
 
 /** 对明确覆盖范围内的标题、段落选用以及与另一侧不同的同 ID 译文版本分配新版本。 */
 export function replaceBookLanguageSlots(
@@ -70,6 +71,11 @@ export function replaceBookLanguageSlots(
           now,
         );
         paragraph.selectedTranslationId = paragraph.selectedTranslations['zh-CN']?.value ?? '';
+        const replaced = replaceTranslationDeletions(paragraph, prior, revision, now);
+        paragraph.translations = replaced.translations;
+        if (replaced.deletedTranslations)
+          paragraph.deletedTranslations = replaced.deletedTranslations;
+        else delete paragraph.deletedTranslations;
       }
     }
   }

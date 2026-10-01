@@ -4,6 +4,7 @@ import { mergeLanguageSlots } from './versioned-values';
 import { compareRevision } from './revision';
 import { canonicalStringify } from 'src/utils/canonical-json';
 import { translationBusinessValue } from './translation-value';
+import { mergeTranslationDeletions, settleTranslationDeletions } from './translation-deletions';
 export { mergeLanguageSlots } from './versioned-values';
 
 /**
@@ -45,10 +46,15 @@ export function mergeParagraphLanguageState(primary: Paragraph, secondary: Parag
     left.selectedTranslations,
     right.selectedTranslations,
   );
-  return {
+  // 删除记录压过不比它新的副本；两侧记录先按 revision 合并，再统一裁决
+  return settleTranslationDeletions({
     ...left,
     translations,
     selectedTranslations,
     selectedTranslationId: selectedTranslations['zh-CN']?.value ?? '',
-  };
+    deletedTranslations: mergeTranslationDeletions(
+      left.deletedTranslations,
+      right.deletedTranslations,
+    ),
+  });
 }

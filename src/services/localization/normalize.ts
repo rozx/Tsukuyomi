@@ -17,6 +17,7 @@ import type {
 } from 'src/models/localized-data';
 import { assertRevision, legacyAliasId, legacyRevision, legacySlot } from './revision';
 import { normalizeTombstones } from './entity-identity';
+import { normalizeTranslationDeletions } from './translation-deletions';
 import { mergeLanguageSlots } from './versioned-values';
 import { canonicalStringify } from 'src/utils/canonical-json';
 
@@ -118,12 +119,12 @@ export function normalizeParagraphLanguages(paragraph: Paragraph, edited = 0): P
       return id;
     },
   );
-  return {
+  return normalizeTranslationDeletions({
     ...paragraph,
     translations,
     selectedTranslations,
     selectedTranslationId: selectedTranslations['zh-CN']?.value ?? '',
-  };
+  });
 }
 
 function title(value: Chapter['title'], edited: number): Chapter['title'] {
