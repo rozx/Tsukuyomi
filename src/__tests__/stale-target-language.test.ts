@@ -44,4 +44,41 @@ describe('持有旧快照的元数据保存与目标语言', () => {
     await books.updateBook('lang-book-2', { targetLanguage: 'zh-TW' });
     expect((await BookService.getBookById('lang-book-2'))!.targetLanguage).toBe('zh-TW');
   });
+
+  it('旧快照保存后，内存里的卷章标题也换成库中合并后的最新译名', async () => {
+    const { getNameTranslation } = await import('../services/localization/selection');
+    const title = {
+      original: '第1話',
+      translation: { id: 'cn', translation: '第一话', aiModelId: '' },
+    };
+    await BookService.saveBook({
+      id: 'title-book',
+      title: '书',
+      targetLanguage: 'en-US',
+      createdAt: new Date(0),
+      lastEdited: new Date(0),
+      volumes: [
+        {
+          id: 'v',
+          title,
+          chapters: [{ id: 'c', title, createdAt: new Date(0), lastEdited: new Date(0) }],
+        },
+      ],
+    });
+    const stale = await tab();
+    await BookService.editTitle('title-book', 'en-US', {
+      kind: 'chapter',
+      id: 'c',
+      expectedOriginal: '第1話',
+      translation: 'Chapter One',
+    });
+
+    await stale.updateBook('title-book', { description: '新简介' });
+
+    const chapter = stale.getBookById('title-book')!.volumes![0]!.chapters![0]!;
+    expect(
+      getNameTranslation(chapter.title as Exclude<typeof chapter.title, string>, 'en-US')
+        ?.translation,
+    ).toBe('Chapter One');
+  });
 });

@@ -176,11 +176,33 @@ it('导入失败回滚时封面历史按备份原样恢复，id 与添加时间�
   const fail = vi.spyOn(settings, 'importSettings').mockRejectedValueOnce(new Error('quota'));
   await expect(
     SyncDataService.importSettingsSnapshot(
-      { coverHistory: [{ url: 'https://img.example/new.png' }], appSettings: {} } as never,
+      {
+        coverHistory: [
+          { id: 'cover-new', url: 'https://img.example/new.png', addedAt: new Date(5) },
+        ],
+        appSettings: {},
+      } as never,
       'cover-rollback',
     ),
   ).rejects.toThrow('quota');
   fail.mockRestore();
   expect(covers.covers).toEqual([original]);
   expect(await (await getDB()).getAll('cover-history')).toEqual([original]);
+});
+
+it('设置导入成功时封面历史按导入记录原样写入，保留 id 与添加时间', async () => {
+  const { useCoverHistoryStore } = await import('../stores/cover-history');
+  setActivePinia(createPinia());
+  const settings = useSettingsStore();
+  await settings.loadSettings();
+  const covers = useCoverHistoryStore();
+  await covers.loadCoverHistory();
+  const imported = [
+    { id: 'cover-a', url: 'https://img.example/a.png', addedAt: new Date(1000) },
+    { id: 'cover-b', url: 'https://img.example/b.png', addedAt: new Date(2000) },
+  ];
+  await SyncDataService.importSettingsSnapshot({ coverHistory: imported } as never, 'cover-import');
+  const byId = (items: { id: string }[]) => [...items].sort((a, b) => a.id.localeCompare(b.id));
+  expect(byId(covers.covers)).toEqual(imported);
+  expect(byId(await (await getDB()).getAll('cover-history'))).toEqual(imported);
 });

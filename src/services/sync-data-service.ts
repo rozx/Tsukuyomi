@@ -985,10 +985,9 @@ export class SyncDataService {
     try {
       if (data.models !== undefined) await models.bulkImportModels(data.models);
       if (data.novels !== undefined) await books.replaceBooks(data.novels, bookScope);
-      if (data.coverHistory !== undefined) {
-        await covers.clearHistory();
-        for (const cover of data.coverHistory) await covers.addCover(cover);
-      }
+      // 按导入记录原样写入（保留 id 与添加时间），同一 URL 只留最新一条
+      if (data.coverHistory !== undefined)
+        await covers.replaceHistory(dedupeCoverHistoryByUrl(data.coverHistory));
       await importMemoriesPreservingIdentity(data.memories, '[SyncDataService]');
       if (data.appSettings !== undefined) await settings.importSettings(data.appSettings);
       if (data.sync !== undefined) await settings.importSyncs(data.sync);

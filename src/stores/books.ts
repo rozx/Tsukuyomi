@@ -151,8 +151,9 @@ async function preserveChapterContentsOnVolumesUpdate(
 }
 
 /**
- * 保存书籍元数据。未修改目标语言的保存保留库中已存值（其他标签页可能刚改过），
- * 并把已存目标语言同步回内存副本。
+ * 保存书籍元数据。未修改目标语言的保存保留库中已存值（其他标签页可能刚改过）；
+ * 保存后以库中合并后的记录（目标语言、卷章标题语言槽、术语角色）作为内存副本，
+ * 只沿用内存中已加载的章节正文。
  */
 async function saveBookMetadata(
   updatedBook: Novel,
@@ -166,11 +167,36 @@ async function saveBookMetadata(
     saveChapterContent,
     keepStoredTargetLanguage: !changesTarget,
   });
-  if (changesTarget) return updatedBook;
   const stored = await BookService.getBookById(updatedBook.id);
-  return stored?.targetLanguage
-    ? { ...updatedBook, targetLanguage: stored.targetLanguage }
-    : updatedBook;
+  return stored ? withLoadedContent(stored, updatedBook) : updatedBook;
+}
+
+/** 把内存副本里已加载的章节正文挂到库中读取的书籍记录上（库记录不含正文）。 */
+function withLoadedContent(stored: Novel, inMemory: Novel): Novel {
+  const loaded = new Map(
+    (inMemory.volumes ?? []).flatMap((volume) =>
+      (volume.chapters ?? [])
+        .filter((chapter) => chapter.content !== undefined)
+        .map((chapter) => [chapter.id, chapter] as const),
+    ),
+  );
+  if (!stored.volumes || loaded.size === 0) return stored;
+  return {
+    ...stored,
+    volumes: stored.volumes.map((volume) =>
+      volume.chapters
+        ? {
+            ...volume,
+            chapters: volume.chapters.map((chapter) => {
+              const memory = loaded.get(chapter.id);
+              return memory?.content
+                ? { ...chapter, content: memory.content, contentLoaded: true }
+                : chapter;
+            }),
+          }
+        : volume,
+    ),
+  };
 }
 
 export const useBooksStore = defineStore('books', {
