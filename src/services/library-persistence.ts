@@ -50,6 +50,11 @@ const STORES = [
 type Transaction = IDBPTransaction<TsukuyomiDB, typeof STORES, 'readwrite'>;
 type ChapterRecord = TsukuyomiDB['chapter-contents']['value'];
 type Changes = Map<string, string[]>;
+/** 一次恢复的术语与角色 */
+export interface EntityRestoreSet {
+  terminologies: Terminology[];
+  characterSettings: CharacterSetting[];
+}
 
 function stripContent(chapter: Chapter): Chapter {
   const {
@@ -560,39 +565,63 @@ export class LibraryPersistence {
     entity: T,
     operationId: string,
   ): Promise<T> {
+    const restored = await this.restoreEntities(
+      db,
+      bookId,
+      kind === 'term'
+        ? { terminologies: [entity as Terminology] }
+        : { characterSettings: [entity as CharacterSetting] },
+      operationId,
+    );
+    return (kind === 'term' ? restored.terminologies[0] : restored.characterSettings[0]) as T;
+  }
+
+  /**
+   * 以同一操作回执恢复多个已删除的术语 / 角色，并在一个事务中全部写入；任一失败整体回滚，
+   * 用同一操作 ID 重试沿用原来分配的身份和版本。
+   */
+  static async restoreEntities(
+    db: IDBPDatabase<TsukuyomiDB>,
+    bookId: string,
+    entities: Partial<EntityRestoreSet>,
+    operationId: string,
+  ): Promise<EntityRestoreSet> {
     const stored = await db.get('books', bookId);
     if (!stored) throw new Error('BOOK_MISSING');
     const current = normalizeBookLanguages(stored);
+    const terms = entities.terminologies ?? [];
+    const characters = entities.characterSettings ?? [];
+    const termIds = new Set(terms.map((value) => value.id));
+    const characterIds = new Set(characters.map((value) => value.id));
     const desired: Novel = {
       id: bookId,
       title: '',
       createdAt: new Date(0),
       lastEdited: new Date(0),
-      ...(kind === 'term'
-        ? { terminologies: [entity as Terminology] }
-        : { characterSettings: [entity as CharacterSetting] }),
+      ...(terms.length ? { terminologies: terms } : {}),
+      ...(characters.length ? { characterSettings: characters } : {}),
     };
     const scoped = {
       ...current,
       volumes: undefined,
-      terminologies: current.terminologies?.filter(
-        (value) => kind === 'term' && value.id === entity.id,
-      ),
-      characterSettings: current.characterSettings?.filter(
-        (value) => kind === 'character' && value.id === entity.id,
-      ),
+      terminologies: current.terminologies?.filter((value) => termIds.has(value.id)),
+      characterSettings: current.characterSettings?.filter((value) => characterIds.has(value.id)),
     };
     const restored = await prepareBookRestore(db, desired, scoped, operationId);
     return transaction(db, async (tx) => {
       const latest = await tx.objectStore('books').get(bookId);
       if (!latest) throw new Error('BOOK_MISSING');
       const merged = mergeBookEntityState(latest, restored);
-      const restoredId =
-        kind === 'term' ? restored.terminologies![0]!.id : restored.characterSettings![0]!.id;
-      const value = (kind === 'term' ? merged.terminologies : merged.characterSettings)?.find(
-        (item) => item.id === restoredId,
-      );
-      if (!value) throw new Error('ENTITY_DELETED');
+      const pick = <T extends { id: string }>(values: T[] | undefined, wanted: T[] | undefined) =>
+        (wanted ?? []).map((item) => {
+          const value = values?.find((candidate) => candidate.id === item.id);
+          if (!value) throw new Error('ENTITY_DELETED');
+          return value;
+        });
+      const result = {
+        terminologies: pick(merged.terminologies, restored.terminologies),
+        characterSettings: pick(merged.characterSettings, restored.characterSettings),
+      };
       const next = serializeBookRecord({ ...latest, ...merged });
       if (semanticBook(latest) !== semanticBook(next)) {
         next.lastEdited = new Date().toISOString() as unknown as Date;
@@ -600,7 +629,7 @@ export class LibraryPersistence {
         await bumpBookRevision(tx.objectStore('book-revisions'), bookId);
       }
       await markBookRestoreApplied(tx.objectStore('entity-operations'), operationId, bookId);
-      return value as T;
+      return result;
     });
   }
 

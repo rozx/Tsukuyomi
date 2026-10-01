@@ -2,6 +2,7 @@ import { ref, computed, nextTick, type Ref } from 'vue';
 import { cloneDeep } from 'lodash';
 import type { Novel } from 'src/models/novel';
 import type { AppLocale } from 'src/models/locale';
+import { generateShortId } from 'src/utils/id-generator';
 
 export interface TranslationUndoScope {
   kind: 'translation';
@@ -17,17 +18,29 @@ interface HistoryItem {
   timestamp: number;
   description?: string;
   scope?: TranslationUndoScope;
+  /** 首次应用时分配；失败留在栈中重试时沿用，使恢复操作幂等 */
+  operationId?: string;
+}
+
+/** 本条历史的恢复操作 ID：同一条历史的重试保持不变，移到另一个栈的新条目重新分配 */
+function historyOperationId(item: HistoryItem): string {
+  item.operationId ??= generateShortId();
+  return item.operationId;
 }
 
 /**
  * 撤销/重做功能 Composable
  * @param bookRef 书籍的响应式引用
- * @param onStateChange 状态变化回调函数，用于保存书籍
+ * @param onStateChange 状态变化回调函数，用于保存书籍；operationId 在同一条历史失败重试时保持不变
  * @param getEnhancedBook 可选的函数，用于获取增强的书籍对象（例如包含当前已加载的章节内容）
  */
 export function useUndoRedo(
   bookRef: Ref<Novel | undefined>,
-  onStateChange: (book: Novel, scope?: TranslationUndoScope) => Promise<void> | void,
+  onStateChange: (
+    book: Novel,
+    scope: TranslationUndoScope | undefined,
+    operationId: string,
+  ) => Promise<void> | void,
   getEnhancedBook?: () => Novel | undefined,
 ) {
   // 历史记录栈（撤销栈）
@@ -113,7 +126,11 @@ export function useUndoRedo(
       }
 
       // 将当前状态保存到重做栈（在恢复之前保存，确保可以重做）
-      await onStateChange(cloneDeep(previousState.book), previousState.scope);
+      await onStateChange(
+        cloneDeep(previousState.book),
+        previousState.scope,
+        historyOperationId(previousState),
+      );
       undoStack.value.pop();
       redoStack.value.push({
         book: currentState,
@@ -156,7 +173,11 @@ export function useUndoRedo(
       }
 
       // 将当前状态保存到撤销栈（在恢复之前保存，确保可以撤销）
-      await onStateChange(cloneDeep(nextState.book), nextState.scope);
+      await onStateChange(
+        cloneDeep(nextState.book),
+        nextState.scope,
+        historyOperationId(nextState),
+      );
       redoStack.value.pop();
       undoStack.value.push({
         book: currentState,

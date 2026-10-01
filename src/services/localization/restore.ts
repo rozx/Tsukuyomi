@@ -97,6 +97,26 @@ export async function resetRestoreCompletion(
 }
 const RESTORE_NAMESPACE = '1f5afad0-c3ce-4e14-9d1e-26ae2b9ba514';
 
+function restoreIdentity(
+  key: string,
+  bookId: string,
+  kind: string,
+  id: string,
+  parentId?: string,
+): string {
+  return v5(canonicalStringify([key, bookId, kind, parentId ?? null, id]), RESTORE_NAMESPACE);
+}
+
+/** 书籍恢复操作为该实体分配的新身份；同一操作 ID 总是得到同一身份，可据此判断是否已恢复。 */
+export function restoredEntityId(
+  operationId: string,
+  bookId: string,
+  kind: 'term' | 'character',
+  id: string,
+): string {
+  return restoreIdentity(restoreOperationKey('book', operationId, bookId), bookId, kind, id);
+}
+
 function restoreBook(
   snapshot: Novel,
   current: Novel,
@@ -117,10 +137,7 @@ function restoreBook(
     for (const alias of character.aliases) remove('alias', alias.id!, character.id);
   }
   const identity = (kind: string, id: string, parentId?: string) =>
-    v5(
-      canonicalStringify([operationId, snapshot.id, kind, parentId ?? null, id]),
-      RESTORE_NAMESPACE,
-    );
+    restoreIdentity(operationId, snapshot.id, kind, id, parentId);
   function restoreName<
     T extends { translation: Translation; translationsByLanguage?: LocalizedMap<Translation> },
   >(value: T): T {

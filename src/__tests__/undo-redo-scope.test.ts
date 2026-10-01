@@ -34,4 +34,27 @@ describe('撤销重做范围', () => {
     expect(scopes).toEqual([scope, scope]);
     expect(book.value.title).toBe('After');
   });
+
+  it('失败后重试沿用同一操作 ID，撤销后的重做使用新 ID', async () => {
+    const book = ref<Novel | undefined>(initial);
+    const operations: string[] = [];
+    let fail = true;
+    const history = useUndoRedo(book, (saved, _scope, operationId) => {
+      operations.push(operationId);
+      if (fail) throw new Error('STORAGE_FAILED');
+      book.value = saved;
+    });
+    history.saveState('改标题');
+    book.value = { ...initial, title: 'After' };
+    await expect(history.undo()).rejects.toThrow('STORAGE_FAILED');
+    fail = false;
+    await history.undo();
+    await history.redo();
+    await history.undo();
+
+    const [failed, retried, redone, undoneAgain] = operations;
+    expect(failed).toBeTruthy();
+    expect(retried).toBe(failed);
+    expect(new Set([retried, redone, undoneAgain]).size).toBe(3);
+  });
 });
