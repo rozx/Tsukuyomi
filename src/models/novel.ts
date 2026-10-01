@@ -1,7 +1,7 @@
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { BookUpdateRecipe } from './book-sync';
 import type { AppLocale } from './locale';
-import type { EntityTombstone, FieldRevisions, LocalizedMap } from './localized-data';
+import type { EntityTombstone, FieldRevisions, LocalizedMap, SyncRevision } from './localized-data';
 
 // 小说
 export interface Novel {
@@ -246,6 +246,11 @@ export interface Translation {
   id: string;
   translation: string;
   aiModelId: string; // id of AIModel
+  /**
+   * 原地修改该版本文本时的逻辑版本（ID 保持不变）。合并同 ID 的两份副本时取版本较新的一份；
+   * 缺省表示创建后未被修改过。
+   */
+  revision?: SyncRevision;
   referencedMemories?: string[]; // IDs of memories referenced during translation
   /**
    * 记忆打分详情（仅对由打分系统注入的记忆有效；AI 主动调用的不会有条目）

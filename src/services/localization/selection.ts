@@ -134,6 +134,30 @@ export function updateLanguageTranslation(
   };
 }
 
+/**
+ * 持久化的译文修改：保持版本 ID 不变（界面、撤销和工具都按 ID 引用），并为该版本记录新的
+ * revision。合并同 ID 的两份副本时取 revision 较新的一份，另一设备携带的旧副本不会覆盖本次修改。
+ * 文本未变时原样返回。
+ */
+export function reviseLanguageTranslation(
+  paragraph: Paragraph,
+  locale: AppLocale,
+  id: string,
+  text: string,
+  revision: SyncRevision,
+): Paragraph {
+  const normalized = normalizeParagraphLanguages(paragraph);
+  const current = targetVersion(normalized, locale, id);
+  if (current.translation === text) return normalized;
+  assertNewRevision(revision, current.revision);
+  return {
+    ...normalized,
+    translations: normalized.translations.map((value) =>
+      value.id === id ? { ...value, translation: text, revision: { ...revision } } : value,
+    ),
+  };
+}
+
 type NameOwner = { translation: Translation; translationsByLanguage?: LocalizedMap<Translation> };
 
 /** 省略更新字段保留兼容投影；明确译名为当前语言复用或创建独立版本 ID。 */

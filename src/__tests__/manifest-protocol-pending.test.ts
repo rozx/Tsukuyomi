@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import './setup';
 import { effectiveSchemaVersion, parseGistManifest } from '../utils/manifest-protocol';
 
 const base = { schemaVersion: 4, updatedAt: '', entries: {} };

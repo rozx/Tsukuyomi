@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import './setup';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import messages from '../i18n';

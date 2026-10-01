@@ -10,6 +10,7 @@ import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useSettingsStore } from 'src/stores/settings';
+import { formatClockTime } from 'src/utils/format';
 import { useThinkingDisplay } from 'src/composables/chat/useThinkingDisplay';
 import { useChatMessageDisplay } from 'src/composables/chat/useChatMessageDisplay';
 import { useMarkdownRenderer } from 'src/composables/chat/useMarkdownRenderer';
@@ -135,7 +136,7 @@ export function useImportChatPanel() {
     toggleThinking: thinking.toggleThinking,
     renderMarkdown,
     formatMessageTime: (timestamp: number) =>
-      new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+      formatClockTime(timestamp, useSettingsStore().uiLocale),
     getChapterTitleForAction: () => undefined,
     hoveredAction,
     hoveredGroupedAction,
