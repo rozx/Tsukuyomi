@@ -155,4 +155,25 @@ describe('原地编辑译文的并发合并', () => {
       expect(getLanguageTranslation(merged, 'en-US')?.translation).toBe('Old English');
     }
   });
+
+  it('双方各自新增不同版本时，无论哪一侧做主方，合并结果完全相同', () => {
+    const add = (id: string, text: string, actor: string) =>
+      applyParagraphTranslationEdits(
+        [base()],
+        'en-US',
+        [
+          {
+            type: 'append',
+            paragraphId: 'p',
+            originalText: '原文',
+            translation: { id, translation: text, aiModelId: '', language: 'en-US' },
+          },
+        ],
+        { counter: 2, actorId: actor },
+        2,
+      )[0]!;
+    const a = add('en-a', 'From A', 'device-a');
+    const b = add('en-b', 'From B', 'device-b');
+    expect(mergeParagraphLanguageState(a, b)).toEqual(mergeParagraphLanguageState(b, a));
+  });
 });

@@ -641,9 +641,10 @@ describe('数据同步服务 (SyncDataService)', () => {
       const chapter = addedBooks?.[0]?.volumes?.[0]?.chapters?.[0];
       expect(chapter?.title).toBe('新标题');
       expect(chapter?.content?.[0]?.selectedTranslationId).toBe('t-remote');
+      // 合并后的版本顺序与哪一侧为主方无关（ID 序列较小的一侧为基）
       expect(
         chapter?.content?.[0]?.translations?.map((translation: { id: string }) => translation.id),
-      ).toEqual(['t-remote', 't-local']);
+      ).toEqual(['t-local', 't-remote']);
     });
 
     it('当远程书籍较新且已删除本地旧卷时，不应在合并后复活该卷', async () => {
@@ -1183,8 +1184,8 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       expect(paragraph.selectedTranslationId).toBe('');
       expect(paragraph.translations.map((translation: { id: string }) => translation.id)).toEqual([
-        't-remote',
         't-local',
+        't-remote',
       ]);
     });
 

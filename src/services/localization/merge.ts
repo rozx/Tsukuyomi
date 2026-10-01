@@ -27,14 +27,20 @@ function newerVersion(candidate: Translation, current: Translation): boolean {
 export function mergeParagraphLanguageState(primary: Paragraph, secondary: Paragraph): Paragraph {
   const left = normalizeParagraphLanguages(primary);
   const right = normalizeParagraphLanguages(secondary);
-  const translations = [...left.translations];
+  // 同 ID 先裁决内容（较新 revision 胜，否则保留主方）
+  const resolved = new Map(left.translations.map((value) => [value.id, value]));
   for (const value of right.translations) {
-    const index = translations.findIndex((t) => t.id === value.id);
-    const existing = translations[index];
-    if (!existing) translations.push(value);
+    const existing = resolved.get(value.id);
+    if (!existing) resolved.set(value.id, value);
     else if (existing.language !== value.language) throw new Error('TRANSLATION_ID_CONFLICT');
-    else if (newerVersion(value, existing)) translations[index] = value;
+    else if (newerVersion(value, existing)) resolved.set(value.id, value);
   }
+  // 顺序与主方无关：以 ID 序列较小的一侧为基（保留其时间顺序），另一侧独有版本追加在后，
+  // 否则两端各自以本地为主方合并会得到顺序不同、哈希不同的结果，同步时反复互相上传
+  const ids = (paragraph: Paragraph) => canonicalStringify(paragraph.translations.map((t) => t.id));
+  const [first, second] = ids(left) <= ids(right) ? [left, right] : [right, left];
+  const order = [...first.translations, ...second.translations].map((value) => value.id);
+  const translations = [...new Set(order)].map((id) => resolved.get(id)!);
   const selectedTranslations = mergeLanguageSlots(
     left.selectedTranslations,
     right.selectedTranslations,
