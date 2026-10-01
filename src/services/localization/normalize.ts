@@ -31,7 +31,9 @@ function translation(value: Translation, language: AppLocale = 'zh-CN'): Transla
   const actual = value.language ?? language;
   if (!isAppLocale(actual)) throw new Error('INVALID_LOCALE');
   if (actual !== language) throw new Error('TRANSLATION_LANGUAGE_MISMATCH');
-  return { ...value, language: actual };
+  if (value.revision === undefined) return { ...value, language: actual };
+  assertRevision(value.revision);
+  return { ...value, language: actual, revision: { ...value.revision } };
 }
 
 function slots<T>(
