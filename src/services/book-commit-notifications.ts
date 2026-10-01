@@ -1,3 +1,4 @@
+import { CodedLocalizedError } from 'src/utils/coded-localized-error';
 export interface BookCommitNotice {
   bookId: string;
   revision: number;
@@ -64,7 +65,8 @@ export class BookCommitBus {
   }
 
   async publish(notice: BookCommitNotice): Promise<void> {
-    if (!validNotice(notice)) throw new Error('INVALID_NOTICE: 书库通知身份无效');
+    if (!validNotice(notice))
+      throw new CodedLocalizedError('INVALID_NOTICE', 'bookUi.execution.invalidNotice');
     const channel = this.channel ?? this.open();
     try {
       channel?.postMessage(notice);

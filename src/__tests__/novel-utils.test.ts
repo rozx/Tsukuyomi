@@ -147,7 +147,7 @@ describe('getChapterDisplayTitle with normalization', () => {
         original: title,
         translation: {
           id: 'trans-1',
-          translation: '',
+          translation: title,
           aiModelId: '',
         },
       },
@@ -223,7 +223,7 @@ describe('getChapterDisplayTitle with normalization', () => {
       lastEdited: new Date(),
       createdAt: new Date(),
     } as Chapter;
-    expect(getChapterDisplayTitle(chapter)).toBe('第110话　猫屋花梨很担心姐姐');
+    expect(getChapterDisplayTitle(chapter)).toBe('第110话 猫屋花梨很担心姐姐');
   });
 
   test('应该处理没有标题的情况', () => {
@@ -272,7 +272,7 @@ describe('getChapterDisplayTitle with normalization', () => {
       lastEdited: new Date(),
       createdAt: new Date(),
     };
-    expect(getChapterDisplayTitle(chapter)).toBe('第110话　测试');
+    expect(getChapterDisplayTitle(chapter)).toBe('第110话 测试');
   });
 
   test('应该处理翻译为空字符串的情况', () => {
@@ -291,7 +291,7 @@ describe('getChapterDisplayTitle with normalization', () => {
       createdAt: new Date(),
     };
     // 应该使用原文
-    expect(getChapterDisplayTitle(chapter)).toBe('第110话　测试');
+    expect(getChapterDisplayTitle(chapter)).toBe('第110话 测试');
   });
 
   test('应该处理各种数字格式的组合', () => {

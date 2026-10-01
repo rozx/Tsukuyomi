@@ -65,10 +65,10 @@
 
 ## 📚 相关文档
 
-- **AI 模型配置（模型资料、可用性测试、思考等级）**: [`help/ai-models-guide.md`](../help/ai-models-guide.md)
-- **AI 助手（上下文与会话）**: [`help/chat-assistant-guide.md`](../help/chat-assistant-guide.md)
-- **设置说明（Gist 同步包含 API Key）**: [`help/settings-guide.md`](../help/settings-guide.md)
-- **书籍导入（长对话压缩）**: [`help/import-guide.md`](../help/import-guide.md)
+- **AI 模型配置（模型资料、可用性测试、思考等级）**: [`help/ai-models-guide.md`](../help/zh-CN/ai-models-guide.md)
+- **AI 助手（上下文与会话）**: [`help/chat-assistant-guide.md`](../help/zh-CN/chat-assistant-guide.md)
+- **设置说明（Gist 同步包含 API Key）**: [`help/settings-guide.md`](../help/zh-CN/settings-guide.md)
+- **书籍导入（长对话压缩）**: [`help/import-guide.md`](../help/zh-CN/import-guide.md)
 
 ---
 

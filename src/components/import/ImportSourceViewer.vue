@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /** 已保存的来源内容（分页读取）；尚未读取或读取失败时说明原因，不触发新的抓取。 */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import Button from 'primevue/button';
 import { injectImportPage } from 'src/composables/import-page/useImportPage';
 import type { ImportSource } from 'src/models/import';
@@ -8,9 +10,12 @@ import { SOURCE_ICON, SOURCE_STATUS, readableError } from './import-labels';
 
 const props = defineProps<{ source: ImportSource }>();
 const ctx = injectImportPage();
+const { t, locale } = useI18n();
 
 const note = computed(() =>
-  ctx.sourceTextError.value ? readableError(ctx.sourceTextError.value) : '',
+  ctx.sourceTextError.value
+    ? readableError(ctx.sourceTextError.value, resolveAppLocale(locale.value))
+    : '',
 );
 const text = computed(() => ctx.sourceText.value?.text ?? '');
 const nextOffset = computed(() => ctx.sourceText.value?.nextOffset);
@@ -19,25 +24,32 @@ const loadMore = () => void ctx.showSource(props.source.id, nextOffset.value);
 </script>
 
 <template>
-  <section class="ipl-card isv" aria-live="polite" aria-label="来源内容">
+  <section class="ipl-card isv" aria-live="polite" :aria-label="t('importUi.sourceViewer.region')">
     <div class="ipl-card-head isv-head">
       <h3 class="ipl-card-title isv-title">
         <i :class="SOURCE_ICON[source.kind]" aria-hidden="true" />
         <span class="isv-name">{{ source.relativePath || source.name }}</span>
       </h3>
-      <span class="ipl-status" :class="`ipl-status--${status.severity}`">{{ status.label }}</span>
-      <button type="button" class="isv-close" aria-label="关闭来源内容" @click="ctx.closeSource">
+      <span class="ipl-status" :class="`ipl-status--${status.severity}`">{{
+        t(status.label)
+      }}</span>
+      <button
+        type="button"
+        class="isv-close"
+        :aria-label="t('importUi.sourceViewer.close')"
+        @click="ctx.closeSource"
+      >
         <i class="pi pi-times" aria-hidden="true" />
       </button>
     </div>
-    <p class="ipl-muted">保存的内容（只读，不会重新抓取）</p>
+    <p class="ipl-muted">{{ t('importUi.sourceViewer.hint') }}</p>
     <p v-if="note" class="isv-note">{{ note }}</p>
     <template v-else-if="text">
       <pre class="isv-text">{{ text }}</pre>
       <Button
         v-if="nextOffset !== undefined"
         icon="pi pi-angle-double-down"
-        label="继续加载"
+        :label="t('importUi.sourceViewer.loadMore')"
         size="small"
         text
         @click="loadMore"

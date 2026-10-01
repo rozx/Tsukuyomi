@@ -1,3 +1,5 @@
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { createApp, defineComponent, h, nextTick } from 'vue';
@@ -39,7 +41,7 @@ async function mount(mode: 'add' | 'edit', book: Novel | null = null) {
       setup: () => () => h(BookDialog, { visible: true, mode, book, 'onUpdate:visible': visible }),
     }),
   );
-  app.use(router);
+  app.use(router).use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
   app.use(PrimeVue);
   const host = document.createElement('div');
   document.body.appendChild(host);

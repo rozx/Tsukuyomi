@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
@@ -12,8 +15,8 @@ const ctx = injectIndexPage();
 // 把模板内的三元 / 比较收进脚本侧，降低段落认知与圈复杂度
 const greetingSub = computed(() =>
   ctx.continueReadingBook.value
-    ? `上次停在《${ctx.continueReadingBook.value.title}》。`
-    : '今晚是翻译的好夜色。',
+    ? i18nT('libraryUi.lastBook', { title: ctx.continueReadingBook.value.title })
+    : i18nT('libraryUi.goodNight'),
 );
 </script>
 
@@ -28,7 +31,8 @@ const greetingSub = computed(() =>
             {{ ctx.greeting.value }} · {{ APP_NAME.en }} {{ APP_NAME.zh }}
           </div>
           <h1 class="th-greeting-title">
-            {{ ctx.greeting.value }}，<span class="th-accent">欢迎回来</span>。
+            {{ ctx.greeting.value }} ·
+            <span class="th-accent">{{ i18nT('libraryUi.welcome') }}</span>
           </h1>
           <p class="th-greeting-sub">
             {{ greetingSub }}
@@ -44,27 +48,27 @@ const greetingSub = computed(() =>
         <div class="th-stat-cell">
           <i class="pi pi-book th-stat-icon th-stat-icon--tsukuyomi" aria-hidden="true" />
           <div class="th-stat-value">{{ ctx.totalBooks.value }}</div>
-          <div class="th-stat-label">总书籍</div>
+          <div class="th-stat-label">{{ i18nT('libraryUi.totalBooks') }}</div>
         </div>
         <div class="th-stat-cell">
           <i class="pi pi-list th-stat-icon th-stat-icon--green" aria-hidden="true" />
           <div class="th-stat-value">{{ ctx.totalChapters.value }}</div>
-          <div class="th-stat-label">总章节</div>
+          <div class="th-stat-label">{{ i18nT('libraryUi.totalChapters') }}</div>
         </div>
         <div class="th-stat-cell">
           <i class="pi pi-file-edit th-stat-icon th-stat-icon--moon" aria-hidden="true" />
           <div class="th-stat-value">{{ ctx.formatWordCount(ctx.totalWords.value) }}</div>
-          <div class="th-stat-label">总字数</div>
+          <div class="th-stat-label">{{ i18nT('libraryUi.totalCharacters') }}</div>
         </div>
         <div class="th-stat-cell">
           <i class="pi pi-star-fill th-stat-icon th-stat-icon--warning" aria-hidden="true" />
           <div class="th-stat-value">{{ ctx.starredBooks.value }}</div>
-          <div class="th-stat-label">收藏</div>
+          <div class="th-stat-label">{{ i18nT('libraryUi.favorites') }}</div>
         </div>
         <div class="th-stat-cell th-stat-cell--last">
           <i class="pi pi-tags th-stat-icon th-stat-icon--sage" aria-hidden="true" />
           <div class="th-stat-value">{{ ctx.totalTerms.value }}</div>
-          <div class="th-stat-label">术语</div>
+          <div class="th-stat-label">{{ i18nT('libraryUi.terms') }}</div>
         </div>
       </section>
 
@@ -72,29 +76,31 @@ const greetingSub = computed(() =>
       <section class="th-section">
         <header class="th-section-head">
           <span class="th-section-title">
-            <i class="pi pi-bolt" aria-hidden="true" /> 快速操作
+            <i class="pi pi-bolt" aria-hidden="true" /> {{ i18nT('libraryUi.quickActions') }}
           </span>
         </header>
         <div class="th-quick-grid">
           <button class="th-quick-btn th-quick-btn--primary" @click="ctx.addBook">
             <i class="pi pi-plus" aria-hidden="true" />
-            <div class="th-quick-title">添加书籍</div>
-            <div class="th-quick-sub">主操作</div>
+            <div class="th-quick-title">{{ i18nT('libraryUi.addBook') }}</div>
+            <div class="th-quick-sub">{{ i18nT('libraryUi.primaryAction') }}</div>
           </button>
           <button class="th-quick-btn" @click="ctx.importBookFromWeb">
             <i class="pi pi-globe" aria-hidden="true" />
-            <div class="th-quick-title">从网站导入</div>
+            <div class="th-quick-title">{{ i18nT('libraryUi.importWeb') }}</div>
             <div class="th-quick-sub">syosetu · kakuyomu</div>
           </button>
           <button class="th-quick-btn" @click="ctx.navigateToBooks">
             <i class="pi pi-book" aria-hidden="true" />
-            <div class="th-quick-title">查看所有书籍</div>
-            <div class="th-quick-sub">{{ ctx.totalBooks.value }} 本已导入</div>
+            <div class="th-quick-title">{{ i18nT('libraryUi.viewBooks') }}</div>
+            <div class="th-quick-sub">
+              {{ i18nT('libraryUi.importedBooks', { count: ctx.totalBooks.value }) }}
+            </div>
           </button>
           <button class="th-quick-btn" @click="ctx.navigateToAI">
             <i class="pi pi-cog" aria-hidden="true" />
-            <div class="th-quick-title">AI 设置</div>
-            <div class="th-quick-sub">管理模型</div>
+            <div class="th-quick-title">{{ i18nT('libraryUi.aiSettings') }}</div>
+            <div class="th-quick-sub">{{ i18nT('libraryUi.manageModels') }}</div>
           </button>
         </div>
       </section>
@@ -102,9 +108,9 @@ const greetingSub = computed(() =>
       <!-- 最近阅读 —— 3 列 -->
       <section v-if="ctx.hasRecent.value" class="th-section">
         <header class="th-section-head">
-          <span class="th-section-title">最近阅读</span>
+          <span class="th-section-title">{{ i18nT('libraryUi.recentlyRead') }}</span>
           <button class="th-section-link" @click="ctx.navigateToBooks">
-            查看书库 <i class="pi pi-arrow-right" aria-hidden="true" />
+            {{ i18nT('libraryUi.viewLibrary') }} <i class="pi pi-arrow-right" aria-hidden="true" />
           </button>
         </header>
         <div class="th-recent-grid">
@@ -124,15 +130,22 @@ const greetingSub = computed(() =>
             <div class="th-recent-body">
               <div class="th-recent-title">{{ book.title }}</div>
               <div class="th-recent-author">
-                {{ book.author || '未知作者' }} · {{ ctx.formatDate(book.lastEdited) }}
+                {{ book.author || i18nT('libraryUi.unknownAuthor') }} ·
+                {{ ctx.formatDate(book.lastEdited) }}
               </div>
               <div class="th-recent-meta">
                 <span v-if="ctx.isLoadingCharCount(book)">
                   <Skeleton width="48px" height="10px" />
                 </span>
-                <span v-else>{{ ctx.formatWordCount(ctx.getTotalWords(book)) }} 字</span>
+                <span v-else>{{
+                  i18nT('libraryUi.characterCount', {
+                    count: ctx.formatWordCount(ctx.getTotalWords(book)),
+                  })
+                }}</span>
                 <span class="th-dot">·</span>
-                <span>{{ ctx.getTotalChapters(book) }} 章</span>
+                <span>{{
+                  i18nT('libraryUi.chapterCount', { count: ctx.getTotalChapters(book) })
+                }}</span>
               </div>
             </div>
           </div>
@@ -140,32 +153,26 @@ const greetingSub = computed(() =>
       </section>
 
       <!-- 空 / 加载状态 -->
-      <div
-        v-if="ctx.isEmptyState.value"
-        class="th-empty"
-      >
+      <div v-if="ctx.isEmptyState.value" class="th-empty">
         <i class="pi pi-book th-empty-icon" aria-hidden="true" />
-        <div class="th-empty-title">还没有书籍</div>
-        <div class="th-empty-sub">开始添加您的第一本书籍吧</div>
+        <div class="th-empty-title">{{ i18nT('libraryUi.noBooksShort') }}</div>
+        <div class="th-empty-sub">{{ i18nT('libraryUi.firstBookHint') }}</div>
         <Button
-          label="添加书籍"
+          :label="i18nT('libraryUi.addBook')"
           icon="pi pi-plus"
           class="p-button-primary mt-4"
           @click="ctx.addBook"
         />
       </div>
 
-      <div
-        v-else-if="ctx.isLoadingState.value"
-        class="th-loading"
-      >
+      <div v-else-if="ctx.isLoadingState.value" class="th-loading">
         <ProgressSpinner
           style="width: 36px; height: 36px"
           stroke-width="4"
           animation-duration=".8s"
-          aria-label="加载中"
+          :aria-label="i18nT('libraryUi.loading')"
         />
-        <span>正在加载数据…</span>
+        <span>{{ i18nT('libraryUi.loadingData') }}</span>
       </div>
     </div>
   </div>
@@ -173,7 +180,11 @@ const greetingSub = computed(() =>
 
 <style scoped>
 .tablet-home {
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 .th-inner {

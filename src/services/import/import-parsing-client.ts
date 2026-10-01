@@ -1,3 +1,7 @@
+import { importCancelled, restoreImportError, importError } from './import-error';
+
+import type { ImportFailure } from 'src/models/import-feedback';
+
 import type { ImportParseRequest, ImportParseResponse } from 'src/models/import-parsing';
 import type { ImportParseLimits, ImportWorkOptions } from './import-work-limits';
 import { IMPORT_FALLBACK_LIMITS, IMPORT_PARSE_LIMITS } from './import-work-limits';
@@ -47,8 +51,10 @@ export class ImportParsingClient {
     options: ImportWorkOptions,
   ): Promise<Result<T>> {
     if (usesRegex(request))
-      throw new Error(
-        'REGEX_WORKER_REQUIRED: 正则处理需要可用的 Worker，请改用字面量或检查运行环境',
+      throw importError(
+        'REGEX_WORKER_REQUIRED',
+        'regexWorkerRequiredRegexProcessingRequiresAWorkerUse',
+        {},
       );
     const { processImportJob } = await import('./import-parsing-jobs');
     const value = await processImportJob(request, {
@@ -62,8 +68,7 @@ export class ImportParsingClient {
     request: T,
     options: ImportWorkOptions = {},
   ): Promise<Result<T>> {
-    if (options.signal?.aborted)
-      throw options.signal.reason ?? new DOMException('解析已取消', 'AbortError');
+    if (options.signal?.aborted) throw options.signal.reason ?? importCancelled('parseCancelled');
     let worker: Worker | undefined;
     try {
       worker = this.createWorker();
@@ -90,9 +95,9 @@ export class ImportParsingClient {
           reject(error);
         }
       };
-      const abort = () => fail(new DOMException('解析已取消', 'AbortError'));
+      const abort = () => fail(importCancelled('parseCancelled'));
       const timeout = setTimeout(
-        () => fail(new Error('PROCESSING_LIMIT: Worker 解析超时')),
+        () => fail(importError('PROCESSING_LIMIT', 'processingLimitWorkerParsingTimedOut', {})),
         request.kind === 'pattern' || usesRegex(request)
           ? Math.min(limits.timeoutMs, 3000)
           : limits.timeoutMs,
@@ -103,13 +108,19 @@ export class ImportParsingClient {
           id: string;
           success: boolean;
           value?: ImportParseResponse<T>;
-          error?: { message: string; name: string };
+          error?: Partial<ImportFailure> & { message: string; name?: string };
         }>,
       ) => {
         if (settled || event.data.id !== id) return;
         if (!event.data.success || event.data.value === undefined) {
-          const error = new Error(event.data.error?.message ?? 'WORKER_FAILED: 解析失败');
-          error.name = event.data.error?.name ?? 'Error';
+          const record = event.data.error;
+          const error = record
+            ? restoreImportError({
+                ...record,
+                code: record.code ?? /^([A-Z_]+):/.exec(record.message)?.[1] ?? 'WORKER_FAILED',
+              })
+            : importError('WORKER_FAILED', 'workerFailed');
+          if (record?.name) error.name = record.name;
           fail(error);
           return;
         }
@@ -125,7 +136,7 @@ export class ImportParsingClient {
       };
       // 保留宿主输入，模块 Worker 启动失败时才能安全走受限回退。
       try {
-        active.postMessage({ id, request, limits });
+        active.postMessage({ id, request, limits, uiLocale: options.uiLocale });
       } catch {
         active.onerror?.(new ErrorEvent('error'));
       }

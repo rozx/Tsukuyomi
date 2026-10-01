@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import type { Volume, Chapter, Novel } from 'src/models/novel';
 import { getChapterDisplayTitle } from 'src/utils';
+
+const { t } = useI18n();
 
 // 平板章节树的单行章节：把状态图标/颜色/标签的多重绑定收敛到叶子组件，
 // 降低 VolumesListTablet 模板的圈复杂度。状态取值函数由父级透传。
@@ -42,7 +46,7 @@ defineEmits<{
     <button
       type="button"
       class="vt-row-more"
-      aria-label="章节操作"
+      :aria-label="t('readerUi.chapterActions')"
       @click.stop="$emit('more', $event)"
       @keydown.enter.stop
       @keydown.space.stop

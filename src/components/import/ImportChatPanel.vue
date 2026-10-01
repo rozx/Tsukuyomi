@@ -4,14 +4,16 @@
  * 替代而非叠加普通月詠聊天，因此任一断点只有一个聊天控制器。导入以对话为核心，
  * 外壳常驻，不提供关闭。
  */
+import { useI18n } from 'vue-i18n';
 import ImportChatHeader from './ImportChatHeader.vue';
 import ImportChatBody from './ImportChatBody.vue';
 
 withDefaults(defineProps<{ safeArea?: boolean }>(), { safeArea: false });
+const { t } = useI18n();
 </script>
 
 <template>
-  <section class="icp-shell" aria-label="月詠 AI 导入助手">
+  <section class="icp-shell" :aria-label="t('importUi.chat.region')">
     <ImportChatHeader />
     <ImportChatBody :safe-area="safeArea" />
   </section>

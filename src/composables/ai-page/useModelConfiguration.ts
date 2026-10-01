@@ -1,11 +1,14 @@
-import { onBeforeUnmount, ref, watch } from 'vue';
+import { onBeforeUnmount, ref, watch, computed } from 'vue';
 import type { WatchSource } from 'vue';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { AIConfigResult } from 'src/services/ai/types/ai-service';
 import { ConfigService } from 'src/services/ai/tasks/config-service';
 import type { ModelAvailabilityResult } from 'src/services/ai/tasks/config-service';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { getErrorMessage } from 'src/utils/error-message';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
+import { localizedErrorMessage } from 'src/utils/localized-error';
 
 /** 绑定当前表单快照，关闭或修改表单后取消测试并丢弃过期结果。 */
 export function useModelConfiguration(options: {
@@ -15,9 +18,23 @@ export function useModelConfiguration(options: {
   applyCatalog: (result: AIConfigResult) => void;
 }) {
   const toast = useToastWithHistory();
+  const { locale } = useI18n();
   const isFetchingConfig = ref(false);
   const isTesting = ref(false);
-  const availabilityResult = ref<ModelAvailabilityResult | null>(null);
+  const rawAvailabilityResult = ref<ModelAvailabilityResult | null>(null);
+  const availabilityResult = computed(() => {
+    const result = rawAvailabilityResult.value;
+    return result?.messageKey
+      ? {
+          ...result,
+          message: translateText(
+            resolveAppLocale(locale.value),
+            result.messageKey,
+            result.messageValues,
+          ),
+        }
+      : result;
+  });
   let revision = 0;
   let controller: AbortController | undefined;
   const cancel = () => {
@@ -26,7 +43,7 @@ export function useModelConfiguration(options: {
     controller = undefined;
     isFetchingConfig.value = false;
     isTesting.value = false;
-    availabilityResult.value = null;
+    rawAvailabilityResult.value = null;
   };
   watch(options.source, cancel, { deep: true, flush: 'sync' });
   onBeforeUnmount(cancel);
@@ -35,14 +52,18 @@ export function useModelConfiguration(options: {
   const fetchModelInfo = async () => {
     cancel();
     const request = revision;
+    const uiLocale = resolveAppLocale(locale.value);
     isFetchingConfig.value = true;
     try {
-      const result = await ConfigService.getConfig(options.model());
+      const result = await ConfigService.getConfig(options.model(), uiLocale);
       if (!current(request)) return;
       if (result.success) options.applyCatalog(result);
       toast.add({
         severity: result.success ? 'success' : 'info',
-        summary: result.success ? '已获取模型资料' : '目录暂无记录',
+        summary: translateText(
+          uiLocale,
+          result.success ? 'aiUi.infoFetched' : 'aiUi.noCatalogRecord',
+        ),
         detail: result.message,
         life: 4000,
       });
@@ -50,8 +71,8 @@ export function useModelConfiguration(options: {
       if (current(request))
         toast.add({
           severity: 'error',
-          summary: '获取模型资料失败',
-          detail: getErrorMessage(error),
+          summary: translateText(uiLocale, 'aiUi.infoFetchFailed'),
+          detail: localizedErrorMessage(error, uiLocale, 'aiUi.infoFetchFailed'),
           life: 5000,
         });
     } finally {
@@ -62,18 +83,20 @@ export function useModelConfiguration(options: {
   const testAvailability = async () => {
     cancel();
     const request = revision;
+    const uiLocale = resolveAppLocale(locale.value);
     const activeController = new AbortController();
     controller = activeController;
     isTesting.value = true;
     try {
       const result = await ConfigService.testAvailability(options.model(), {
         signal: activeController.signal,
+        uiLocale,
       });
       if (!current(request) || activeController.signal.aborted) return;
-      availabilityResult.value = result;
+      rawAvailabilityResult.value = result;
       toast.add({
         severity: result.success ? 'success' : 'error',
-        summary: result.success ? '模型可用' : '模型测试失败',
+        summary: translateText(uiLocale, result.success ? 'aiUi.available' : 'aiUi.testFailed'),
         detail: result.message,
         life: 4000,
       });

@@ -5,6 +5,9 @@
  */
 import Button from 'primevue/button';
 import type { VNodeRef } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { AppLocale } from 'src/models/locale';
+import { taskStatusLabel } from 'src/constants/ai';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { useThinkingTaskCard } from 'src/composables/ai/useThinkingTaskCard';
 
@@ -18,13 +21,7 @@ interface Props {
 
 const props = defineProps<Props>();
 
-const statusLabels: Record<string, string> = {
-  thinking: '思考中',
-  processing: '处理中',
-  end: '已完成',
-  error: '错误',
-  cancelled: '已取消',
-};
+const { t, locale } = useI18n();
 
 // 状态 → 图标 class 查表，替代原先模板里的 4 路 :class 对象
 const STATUS_ICON: Record<string, string> = {
@@ -40,8 +37,9 @@ const { statusIcon, typeLabel, formatDuration, hasThinking } = useThinkingTaskCa
   STATUS_ICON,
 );
 
-const statusLabel = (status: string): string => statusLabels[status] ?? status;
-const isRunning = (t: AIProcessingTask): boolean => t.status === 'thinking' || t.status === 'processing';
+const statusLabel = (status: string): string => taskStatusLabel(locale.value as AppLocale, status);
+const isRunning = (t: AIProcessingTask): boolean =>
+  t.status === 'thinking' || t.status === 'processing';
 
 // 按 task.id 缓存稳定的 ref 回调，避免每次渲染（如 nowMs 刷新）都重建内联函数，
 // 否则会导致父级重挂监听、思考区滚动被拉回底部
@@ -76,8 +74,8 @@ const thinkingMessageRef = (taskId: string): VNodeRef => {
           icon="pi pi-external-link"
           class="p-button-text p-button-sm p-button-rounded"
           :pt="{ root: { class: '!p-1 !min-w-0 !h-6 !w-6' } }"
-          title="查看完整思考过程"
-          aria-label="查看完整思考过程"
+          :title="t('activityUi.thinking.viewFull')"
+          :aria-label="t('activityUi.thinking.viewFull')"
           @click="onOpenDetail(task)"
         />
         <Button
@@ -85,7 +83,7 @@ const thinkingMessageRef = (taskId: string): VNodeRef => {
           icon="pi pi-stop"
           class="p-button-text p-button-sm p-button-rounded p-button-danger"
           :pt="{ root: { class: '!p-1 !min-w-0 !h-6 !w-6' } }"
-          aria-label="停止任务"
+          :aria-label="t('activityUi.thinking.stopTask')"
           @click="onStopTask(task.id)"
         />
       </div>
@@ -96,7 +94,7 @@ const thinkingMessageRef = (taskId: string): VNodeRef => {
     </p>
 
     <div v-if="hasThinking(task)" class="mt-2 p-2 rounded bg-white/3 border border-white/5">
-      <p class="text-xs text-moon/50 mb-1">思考过程：</p>
+      <p class="text-xs text-moon/50 mb-1">{{ t('activityUi.thinking.thinkingLabel') }}</p>
       <p
         :ref="thinkingMessageRef(task.id)"
         class="text-xs text-moon/70 whitespace-pre-wrap break-words max-h-32 overflow-y-auto"
@@ -106,12 +104,18 @@ const thinkingMessageRef = (taskId: string): VNodeRef => {
       </p>
     </div>
 
-    <div
-      class="thinking-task-meta flex items-center gap-2 mt-3 text-xs text-moon/50 break-words"
-    >
-      <span>运行时间: {{ formatDuration(task.startTime, task.endTime) }}</span>
+    <div class="thinking-task-meta flex items-center gap-2 mt-3 text-xs text-moon/50 break-words">
+      <span>{{
+        t('activityUi.thinking.runtimeColon', {
+          duration: formatDuration(task.startTime, task.endTime),
+        })
+      }}</span>
       <span v-if="task.endTime" class="break-words">
-        · 完成于 {{ new Date(task.endTime).toLocaleTimeString('zh-CN') }}
+        {{
+          t('activityUi.thinking.finishedAt', {
+            time: new Date(task.endTime).toLocaleTimeString(locale),
+          })
+        }}
       </span>
     </div>
   </div>

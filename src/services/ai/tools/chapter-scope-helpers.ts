@@ -1,3 +1,4 @@
+import { LocalizedError } from 'src/utils/localized-error';
 import { useBooksStore } from 'src/stores/books';
 import { ensureChapterContentLoaded, getChapterContentText } from 'src/utils/novel-utils';
 import type { Chapter, Novel } from 'src/models/novel';
@@ -50,13 +51,11 @@ export async function filterEntitiesForChapter<T>(
  */
 export function requireValidKeywords(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length === 0) {
-    throw new Error('关键词数组不能为空');
+    throw new LocalizedError('KEYWORDS_REQUIRED', 'aiEntityFeedback.keywordsRequired');
   }
-  const valid = raw.filter(
-    (k): k is string => typeof k === 'string' && k.trim().length > 0,
-  );
+  const valid = raw.filter((k): k is string => typeof k === 'string' && k.trim().length > 0);
   if (valid.length === 0) {
-    throw new Error('关键词数组不能为空');
+    throw new LocalizedError('KEYWORDS_REQUIRED', 'aiEntityFeedback.keywordsRequired');
   }
   return valid;
 }
@@ -71,7 +70,7 @@ export function resolveBookSync(bookId: string): Novel {
   const booksStore = useBooksStore();
   const book = booksStore.getBookById(bookId);
   if (!book) {
-    throw new Error(`书籍不存在: ${bookId}`);
+    throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
   }
   return book;
 }

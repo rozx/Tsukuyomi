@@ -1,3 +1,5 @@
+import type { AppLocale } from './locale';
+
 /**
  * 章节级多向量嵌入记录
  *
@@ -13,6 +15,10 @@ export type ChapterEmbeddingKind = 'content' | 'title';
 export interface ChapterEmbedding {
   /** 章节 ID */
   chapterId: string;
+  /** 旧记录缺失，读取时按过期缓存处理。 */
+  targetLanguage?: AppLocale;
+  /** 实际向量输入的 SHA-256 签名。 */
+  inputSignature?: string;
   /** 书籍 ID(用于 by-bookId 索引批量查询) */
   bookId: string;
   /**

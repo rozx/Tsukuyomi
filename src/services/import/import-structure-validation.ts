@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import { mergeImportRanges } from './import-content-exclusions';
 import type { ImportContentRef, ImportDraft, ImportResource, ImportTask } from 'src/models/import';
 import type { ImportTextStructureBatch } from 'src/models/import-text-structure';
@@ -28,10 +29,10 @@ async function validateOverlap(
 ) {
   const replacements = new Set(batch.input.replace_chapter_ids ?? []);
   if (replacements.size !== (batch.input.replace_chapter_ids?.length ?? 0))
-    throw new Error('INVALID_STRUCTURE: 替换章节不能重复');
+    throw importError('INVALID_STRUCTURE', 'invalidStructureReplacementChaptersMustBeDistinct', {});
   for (const id of replacements)
     if (!draft.chapters.some((c) => c.id === id))
-      throw new Error('CHAPTER_NOT_FOUND: 待替换章节不存在');
+      throw importError('CHAPTER_NOT_FOUND', 'chapterNotFoundTheChapterToReplaceDoesNot', {});
   const ranges = originalRanges(
     resource,
     structureContent(resource).slice(batch.summary.selected).refs,
@@ -44,7 +45,7 @@ async function validateOverlap(
   for (const chapter of draft.chapters) {
     const replacing = replacements.has(chapter.id);
     if (replacing && !chapter.content.length && !chapter.sourceIds.includes(resource.sourceId))
-      throw new Error('REPLACEMENT_SCOPE: 待替换空章节不属于该来源');
+      throw importError('REPLACEMENT_SCOPE', 'replacementScopeTheEmptyChapterToReplaceBelongs', {});
     for (const ref of chapter.content) {
       const previous = await previousExtraction(ref, resource.sourceId, replacing, lookup);
       if (!previous || replacing) continue;
@@ -54,9 +55,9 @@ async function validateOverlap(
           ranges.some((r) => old.start < r.end && old.end > r.start),
         )
       )
-        throw new Error(
-          `CONTENT_OVERLAP: 来源内容已用于「${chapter.title}」，请明确 replace_chapter_ids 或缩小范围`,
-        );
+        throw importError('CONTENT_OVERLAP', 'contentOverlapSourceContentIsAlreadyUsedBy', {
+          value1: String(chapter.title),
+        });
     }
   }
 }
@@ -68,12 +69,22 @@ async function previousExtraction(
   lookup: (id: string) => Promise<ImportResource | undefined>,
 ): Promise<Extraction | undefined> {
   if (ref.kind !== 'extraction') {
-    if (replacing) throw new Error('REPLACEMENT_SCOPE: 不能用单文件拆章替换包含既有书库内容的章节');
+    if (replacing)
+      throw importError(
+        'REPLACEMENT_SCOPE',
+        'replacementScopeSingleFileSplittingCannotReplaceA',
+        {},
+      );
     return;
   }
   const resource = await lookup(ref.resourceId);
   if (resource?.kind === 'extraction' && resource.sourceId === sourceId) return resource;
-  if (replacing) throw new Error('REPLACEMENT_SCOPE: 待替换章节包含其他来源');
+  if (replacing)
+    throw importError(
+      'REPLACEMENT_SCOPE',
+      'replacementScopeTheChapterToReplaceContainsAnother',
+      {},
+    );
 }
 
 export async function validateStructurePlan(
@@ -83,17 +94,17 @@ export async function validateStructurePlan(
 ) {
   const { input, summary } = batch;
   if (task.draft.revision !== input.base_draft_revision)
-    throw new Error('DRAFT_CHANGED: 草稿已变化，请重新预览');
+    throw importError('DRAFT_CHANGED', 'draftChangedTheDraftChangedGenerateAnotherPreview', {});
   const resource = await tx.objectStore('import-resources').get(input.resource_id);
   if (
     resource?.taskId !== task.id ||
     resource.kind !== 'extraction' ||
     resource.snapshotId !== summary.snapshotId
   )
-    throw new Error('SOURCE_CHANGED: 提取资源已变化');
+    throw importError('SOURCE_CHANGED', 'sourceChangedTheExtractionResourceChanged', {});
   const source = await tx.objectStore('import-sources').get(resource.sourceId);
   if (!source || source.taskId !== task.id || source.currentSnapshotId !== resource.snapshotId)
-    throw new Error('SOURCE_CHANGED: 来源快照已变化，请重新提取和预览');
+    throw importError('SOURCE_CHANGED', 'sourceChangedTheSourceSnapshotChangedExtractAnd', {});
   const draft = { ...task.draft, volumes: [...task.draft.volumes] };
   for (const volume of batch.volumes)
     if (!draft.volumes.some((v) => v.id === volume.id)) draft.volumes.push(volume);

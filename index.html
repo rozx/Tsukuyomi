@@ -57,9 +57,8 @@
         radial-gradient(circle at 10% 85%, rgba(109, 136, 168, 0.12), transparent 65%),
         radial-gradient(circle at 90% 90%, rgba(174, 183, 198, 0.15), transparent 70%),
         radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%),
-        linear-gradient(135deg, #0A0C0F 0%, #0F1114 20%, #1C1F26 50%, #242730 80%, #2C2F3A 100%);
+        linear-gradient(135deg, #0a0c0f 0%, #0f1114 20%, #1c1f26 50%, #242730 80%, #2c2f3a 100%);
       background-attachment: fixed;
-      overflow: hidden;
     "
   >
     <!--
@@ -73,6 +72,7 @@
       id="initial-loading-screen"
       style="
         position: fixed;
+        touch-action: none;
         top: 0;
         left: 0;
         width: 100%;
@@ -87,7 +87,7 @@
           radial-gradient(circle at 10% 85%, rgba(109, 136, 168, 0.12), transparent 65%),
           radial-gradient(circle at 90% 90%, rgba(174, 183, 198, 0.15), transparent 70%),
           radial-gradient(circle at 50% 50%, rgba(233, 237, 245, 0.05), transparent 75%),
-          linear-gradient(135deg, #0A0C0F 0%, #0F1114 20%, #1C1F26 50%, #242730 80%, #2C2F3A 100%);
+          linear-gradient(135deg, #0a0c0f 0%, #0f1114 20%, #1c1f26 50%, #242730 80%, #2c2f3a 100%);
         background-attachment: fixed;
         display: flex;
         flex-direction: column;
@@ -105,19 +105,12 @@
             width: 4rem;
             height: 4rem;
             border: 4px solid rgba(233, 237, 245, 0.1);
-            border-top-color: #6D88A8;
+            border-top-color: #6d88a8;
             border-radius: 50%;
             animation: spin 1s linear infinite;
           "
         ></div>
-        <!-- color: rgba(233, 237, 245, 0.9) = Primary（月白），来自 Theme.colors.primary.DEFAULT -->
-        <p
-          style="color: rgba(233, 237, 245, 0.9); font-size: 1.125rem; font-weight: 500; margin: 0"
-        >
-          正在加载应用...
-        </p>
-        <!-- color: rgba(233, 237, 245, 0.6) = Primary（月白）60% 透明度 -->
-        <p style="color: rgba(233, 237, 245, 0.6); font-size: 0.875rem; margin: 0">请稍候</p>
+        <!-- 语言偏好加载前只显示动画，避免首屏闪现错误语言。 -->
       </div>
     </div>
 
@@ -162,8 +155,6 @@
           setTimeout(function () {
             if (loadingScreen && loadingScreen.parentNode) {
               loadingScreen.style.display = 'none';
-              // 恢复 body 的 overflow（CSS 会处理背景）
-              document.body.style.overflow = '';
             }
           }, 300);
         }
@@ -259,6 +250,12 @@
     </script>
 
     <!-- quasar:entry-point -->
-    <!-- Cloudflare Web Analytics --><script defer src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "3ba81e5a0c2646c3b72b4cdecdb1df6b"}'></script><!-- End Cloudflare Web Analytics -->
+    <!-- Cloudflare Web Analytics -->
+    <script
+      defer
+      src="https://static.cloudflareinsights.com/beacon.min.js"
+      data-cf-beacon='{"token": "3ba81e5a0c2646c3b72b4cdecdb1df6b"}'
+    ></script>
+    <!-- End Cloudflare Web Analytics -->
   </body>
 </html>

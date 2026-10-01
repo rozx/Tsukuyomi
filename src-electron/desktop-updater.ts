@@ -1,11 +1,12 @@
 import type { DesktopUpdateState } from '../src/models/desktop-update';
+import { nativeText } from './native-text';
 
 interface UpdateTarget {
   version: string;
 }
 interface UpdaterDependencies<T extends UpdateTarget> {
   version: string;
-  unavailable?: string;
+  unavailable?: string | (() => string);
   check: () => Promise<T | null>;
   download: (target: T, progress: (percent: number) => void) => Promise<void>;
   confirm: () => Promise<boolean>;
@@ -26,11 +27,14 @@ export class DesktopUpdater<T extends UpdateTarget = UpdateTarget> {
     this.state = {
       phase: deps.unavailable ? 'unavailable' : 'idle',
       currentVersion: deps.version,
-      ...(deps.unavailable ? { message: deps.unavailable } : {}),
+      ...(typeof deps.unavailable === 'string' ? { message: deps.unavailable } : {}),
     };
   }
 
   snapshot(): DesktopUpdateState {
+    if (this.state.phase === 'unavailable' && typeof this.deps.unavailable === 'function') {
+      return { ...this.state, message: this.deps.unavailable() };
+    }
     return { ...this.state };
   }
 
@@ -56,7 +60,7 @@ export class DesktopUpdater<T extends UpdateTarget = UpdateTarget> {
       this.checkAndDownload().catch((error: unknown) => {
         this.publish({
           phase: 'error',
-          message: error instanceof Error ? error.message : '更新检查失败',
+          message: error instanceof Error ? error.message : nativeText('native.checkFailed'),
         });
       }),
     );
@@ -120,7 +124,7 @@ export class DesktopUpdater<T extends UpdateTarget = UpdateTarget> {
       this.deps.release();
       this.publish({
         phase: 'ready',
-        message: error instanceof Error ? error.message : '暂时无法重启',
+        message: error instanceof Error ? error.message : nativeText('native.restartFailed'),
       });
     }
   }

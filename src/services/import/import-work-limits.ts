@@ -1,3 +1,6 @@
+import { importCancelled, importError } from './import-error';
+import type { AppLocale } from 'src/models/locale';
+
 import { delayAbortable } from 'src/utils/abortable-operation';
 
 export interface ImportParseLimits {
@@ -34,6 +37,7 @@ export const IMPORT_FALLBACK_LIMITS: ImportParseLimits = {
 };
 
 export interface ImportWorkOptions {
+  uiLocale?: AppLocale;
   signal?: AbortSignal;
   limits?: Partial<ImportParseLimits>;
   yieldControl?: () => Promise<void>;
@@ -42,14 +46,13 @@ export interface ImportWorkOptions {
 export function createImportWork(options: ImportWorkOptions = {}) {
   const limits = { ...IMPORT_PARSE_LIMITS, ...options.limits };
   if (Object.values(limits).some((value) => !Number.isSafeInteger(value) || value <= 0))
-    throw new Error('INVALID_LIMIT: 解析限额必须为正整数');
+    throw importError('INVALID_LIMIT', 'invalidLimitParsingLimitsMustBePositiveIntegers', {});
   const started = Date.now();
   let yielded = started;
   const check = () => {
-    if (options.signal?.aborted)
-      throw options.signal.reason ?? new DOMException('解析已取消', 'AbortError');
+    if (options.signal?.aborted) throw options.signal.reason ?? importCancelled('parseCancelled');
     if (Date.now() - started > limits.timeoutMs)
-      throw new Error('PROCESSING_LIMIT: 解析超过时间上限');
+      throw importError('PROCESSING_LIMIT', 'processingLimitParsingExceededTheTimeLimit', {});
   };
   return {
     limits,

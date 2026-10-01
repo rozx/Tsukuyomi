@@ -1,12 +1,11 @@
+import { LocalizedError } from 'src/utils/localized-error';
+import { v4 } from 'uuid';
+import type { AppLocale } from 'src/models/locale';
+import { buildNameTranslation } from './localization/selection';
 import type { CharacterSetting, Alias, Terminology, Translation } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 import { SettingsService } from 'src/services/settings-service';
-import {
-  UniqueIdGenerator,
-  extractIds,
-  generateShortId,
-  normalizeTranslationQuotes,
-} from 'src/utils';
+import { UniqueIdGenerator, extractIds } from 'src/utils';
 
 /**
  * 角色设定服务
@@ -20,7 +19,10 @@ function assertCharacterNameAvailable(
 ): void {
   if (!newName || newName === existingName) return;
   const nameConflict = currentSettings.find((c) => c.id !== charId && c.name === newName);
-  if (nameConflict) throw new Error(`角色 "${newName}" 已存在`);
+  if (nameConflict)
+    throw new LocalizedError('CHARACTER_NAME_CONFLICT', 'aiEntityFeedback.characterDuplicate', {
+      name: newName,
+    });
 }
 
 /**
@@ -33,38 +35,37 @@ function assertNameNotTerm(
   kind: 'name' | 'alias',
 ): void {
   if (terminologies.some((t) => t.name === name)) {
-    const label = kind === 'name' ? '角色' : '角色别名';
-    throw new Error(`${label} "${name}" 与已有术语重复`);
+    throw new LocalizedError(
+      kind === 'name' ? 'CHARACTER_TERM_CONFLICT' : 'ALIAS_TERM_CONFLICT',
+      kind === 'name'
+        ? 'aiEntityFeedback.characterConflictsTerm'
+        : 'aiEntityFeedback.aliasConflictsTerm',
+      { name },
+    );
   }
 }
 
-function buildUpdatedCharacterTranslation(
-  existing: CharacterSetting,
-  translationUpdate: string | undefined,
-): Translation {
-  if (translationUpdate === undefined) return existing.translation;
-  return {
-    id: existing.translation.id,
-    translation: normalizeTranslationQuotes(translationUpdate),
-    aiModelId: existing.translation.aiModelId,
-  };
-}
-
 function buildUpdatedCharacterAliases(
-  aliasUpdates: Array<{ name: string; translation: string }>,
+  aliasUpdates: Array<{ id?: string; name: string; translation?: string }>,
   existingChar: CharacterSetting,
+  language: AppLocale,
 ): Alias[] {
   const out: Alias[] = [];
   for (const aliasData of aliasUpdates) {
     if (!aliasData.name.trim()) continue;
-    const existingAlias = (existingChar.aliases || []).find((a) => a.name === aliasData.name);
+    const matches = (existingChar.aliases || []).filter((a) => a.name === aliasData.name);
+    if (!aliasData.id && matches.length > 1)
+      throw new LocalizedError('AMBIGUOUS_ALIAS_NAME', 'aiEntityFeedback.ambiguousAlias');
+    const existingAlias = aliasData.id
+      ? existingChar.aliases.find((a) => a.id === aliasData.id)
+      : matches[0];
+    if (aliasData.id && !existingAlias)
+      throw new LocalizedError('ALIAS_MISSING', 'aiEntityFeedback.aliasMissing');
     out.push({
+      ...existingAlias,
+      id: existingAlias?.id ?? v4(),
       name: aliasData.name,
-      translation: {
-        id: existingAlias?.translation.id ?? generateShortId(),
-        translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name),
-        aiModelId: existingAlias?.translation.aiModelId ?? '',
-      },
+      translation: buildNameTranslation(existingAlias, aliasData.translation, language),
     });
   }
   return out;
@@ -82,6 +83,7 @@ function composeUpdatedCharacter(
   updatedAliases: Alias[],
 ): CharacterSetting {
   const updatedChar: CharacterSetting = {
+    ...existing,
     id: existing.id,
     name: updates.name ?? existing.name,
     sex: updates.sex !== undefined ? updates.sex : existing.sex,
@@ -111,7 +113,7 @@ type CharacterMutationFields = {
   translation?: string;
   description?: string;
   speakingStyle?: string;
-  aliases?: Array<{ name: string; translation: string }>;
+  aliases?: Array<{ id?: string; name: string; translation?: string }>;
 };
 
 export class CharacterSettingService {
@@ -130,21 +132,25 @@ export class CharacterSettingService {
   static async addCharacterSetting(
     bookId: string,
     charData: CharacterMutationFields,
+    targetLanguage?: AppLocale,
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
 
     if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
+      throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
     }
 
+    const language = targetLanguage ?? book.targetLanguage ?? 'zh-CN';
     const currentSettings = book.characterSettings || [];
     const currentTerminologies = book.terminologies || [];
 
     // 检查是否已存在同名角色
     const existingChar = currentSettings.find((c) => c.name === charData.name);
     if (existingChar) {
-      throw new Error(`角色 "${charData.name}" 已存在`);
+      throw new LocalizedError('CHARACTER_NAME_CONFLICT', 'aiEntityFeedback.characterDuplicate', {
+        name: charData.name,
+      });
     }
 
     // 检查角色主名 / 别名不与已有术语重复
@@ -163,11 +169,7 @@ export class CharacterSettingService {
     const charId = idGenerator.generate();
 
     // 创建 Translation 对象
-    const translation: Translation = {
-      id: generateShortId(),
-      translation: normalizeTranslationQuotes(charData.translation || ''),
-      aiModelId: '', // 默认为空
-    };
+    const translation = buildNameTranslation(undefined, charData.translation, language);
 
     // 处理别名
     const aliases: Alias[] = [];
@@ -176,12 +178,9 @@ export class CharacterSettingService {
         if (!aliasData.name.trim()) continue;
 
         aliases.push({
+          id: v4(),
           name: aliasData.name,
-          translation: {
-            id: generateShortId(),
-            translation: normalizeTranslationQuotes(aliasData.translation || aliasData.name), // 使用提供的翻译，如果没有则使用名称
-            aiModelId: '',
-          },
+          translation: buildNameTranslation(undefined, aliasData.translation, language),
         });
       }
     }
@@ -199,10 +198,17 @@ export class CharacterSettingService {
 
     // 更新书籍
     const updatedSettings = [...currentSettings, newCharacter];
-    await booksStore.updateBook(bookId, {
-      characterSettings: updatedSettings,
-      lastEdited: new Date(),
-    });
+    await booksStore.updateBook(
+      bookId,
+      {
+        characterSettings: updatedSettings,
+        lastEdited: new Date(),
+      },
+      {
+        targetLanguage: language,
+        ...(targetLanguage === undefined ? { expectedBookLanguage: language } : {}),
+      },
+    );
 
     return newCharacter;
   }
@@ -218,15 +224,21 @@ export class CharacterSettingService {
     bookId: string,
     charId: string,
     updates: Partial<CharacterMutationFields>,
+    targetLanguage?: AppLocale,
   ): Promise<CharacterSetting> {
     const booksStore = useBooksStore();
     const book = booksStore.getBookById(bookId);
-    if (!book) throw new Error(`书籍不存在: ${bookId}`);
+    if (!book)
+      throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
 
+    const language = targetLanguage ?? book.targetLanguage ?? 'zh-CN';
     const currentSettings = book.characterSettings || [];
     const currentTerminologies = book.terminologies || [];
     const existingChar = currentSettings.find((c) => c.id === charId);
-    if (!existingChar) throw new Error(`角色不存在: ${charId}`);
+    if (!existingChar)
+      throw new LocalizedError('CHARACTER_NOT_FOUND', 'aiEntityFeedback.characterMissing', {
+        id: charId,
+      });
 
     assertCharacterNameAvailable(currentSettings, charId, updates.name, existingChar.name);
 
@@ -242,19 +254,31 @@ export class CharacterSettingService {
       }
     }
 
-    const updatedTranslation = buildUpdatedCharacterTranslation(existingChar, updates.translation);
+    const updatedTranslation = buildNameTranslation(existingChar, updates.translation, language);
     const updatedAliases =
       updates.aliases === undefined
         ? existingChar.aliases || []
-        : buildUpdatedCharacterAliases(updates.aliases, existingChar);
+        : buildUpdatedCharacterAliases(updates.aliases, existingChar, language);
 
-    const updatedChar = composeUpdatedCharacter(existingChar, updates, updatedTranslation, updatedAliases);
+    const updatedChar = composeUpdatedCharacter(
+      existingChar,
+      updates,
+      updatedTranslation,
+      updatedAliases,
+    );
 
     const updatedSettings = currentSettings.map((c) => (c.id === charId ? updatedChar : c));
-    await booksStore.updateBook(bookId, {
-      characterSettings: updatedSettings,
-      lastEdited: new Date(),
-    });
+    await booksStore.updateBook(
+      bookId,
+      {
+        characterSettings: updatedSettings,
+        lastEdited: new Date(),
+      },
+      {
+        targetLanguage: language,
+        ...(targetLanguage === undefined ? { expectedBookLanguage: language } : {}),
+      },
+    );
 
     return updatedChar;
   }
@@ -269,14 +293,16 @@ export class CharacterSettingService {
     const book = booksStore.getBookById(bookId);
 
     if (!book) {
-      throw new Error(`书籍不存在: ${bookId}`);
+      throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
     }
 
     const currentSettings = book.characterSettings || [];
     const charExists = currentSettings.some((c) => c.id === charId);
 
     if (!charExists) {
-      throw new Error(`角色不存在: ${charId}`);
+      throw new LocalizedError('CHARACTER_NOT_FOUND', 'aiEntityFeedback.characterMissing', {
+        id: charId,
+      });
     }
 
     const updatedSettings = currentSettings.filter((c) => c.id !== charId);
@@ -305,7 +331,7 @@ export class CharacterSettingService {
     const data = await SettingsService.readJsonFile(file);
 
     if (!Array.isArray(data)) {
-      throw new Error('文件格式错误：应为角色设定数组');
+      throw new LocalizedError('CHARACTER_FILE_SHAPE', 'aiEntityFeedback.characterFileShape');
     }
 
     for (const char of data) {
@@ -315,7 +341,10 @@ export class CharacterSettingService {
         !char.translation ||
         typeof char.translation.translation !== 'string'
       ) {
-        throw new Error('文件格式错误：角色设定数据不完整');
+        throw new LocalizedError(
+          'CHARACTER_FILE_INCOMPLETE',
+          'aiEntityFeedback.characterFileIncomplete',
+        );
       }
     }
 

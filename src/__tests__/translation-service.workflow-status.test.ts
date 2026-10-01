@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
+import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-languages';
 import { TranslationService } from 'src/services/ai/tasks/translation-service';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { Paragraph } from 'src/models/novel';
@@ -156,6 +157,7 @@ describe('TranslationService - workflowStatus 重置', () => {
 
   test('后续 chunk 开始时 workflowStatus 重置为 planning', async () => {
     await TranslationService.translate(paragraphs, model, {
+      languages: captureExecutionLanguages('zh-CN'),
       aiProcessingStore: aiProcessingStore as any,
       bookId: 'book-1',
       chapterId: 'chapter-1',
@@ -178,6 +180,7 @@ describe('TranslationService - workflowStatus 重置', () => {
   });
   test('整章工具循环使用模型的思考等级', async () => {
     await TranslationService.translate(paragraphs, model, {
+      languages: captureExecutionLanguages('zh-CN'),
       aiProcessingStore: aiProcessingStore as never,
     });
     expect(mockExecuteToolCallLoop).toHaveBeenCalledWith(

@@ -1,7 +1,13 @@
 import Fuse from 'fuse.js';
+import { APP_LOCALES } from 'src/models/locale';
+import type { AppLocale } from 'src/models/locale';
+import { hashString } from 'src/utils/content-hash';
+import { LocalizedError } from 'src/utils/localized-error';
+import { getLanguageTranslation, getNameTranslation } from './localization/selection';
 import { getDB } from 'src/utils/indexed-db';
+import { normalizeChapterLanguages } from './localization/normalize';
 import { loadChapterContent } from 'src/utils/chapter-content-loader';
-import type { Novel, Chapter } from 'src/models/novel';
+import type { Novel, Chapter, Paragraph } from 'src/models/novel';
 import type { ParagraphSearchResult } from 'src/models/paragraph-search';
 import { findChapterById } from 'src/utils/novel-utils';
 import { hasNonEmptyTranslation } from 'src/utils/text-utils';
@@ -17,6 +23,8 @@ interface IndexDocument {
   paragraphIndex: number;
   originalText: string;
   translations: string[];
+  translationsByLanguage: Partial<Record<AppLocale, string[]>>;
+  chapterTitlesByLanguage: Partial<Record<AppLocale, string>>;
   chapterTitleOriginal: string;
   chapterTitleTranslation: string;
 }
@@ -26,6 +34,10 @@ interface IndexDocument {
  */
 interface FullTextIndex {
   bookId: string;
+  schemaVersion: number;
+  inputSignature: string;
+  sourceRevision: number;
+  targetLanguage: AppLocale;
   indexData: string; // 序列化的索引文档数组（JSON）
   lastUpdated: string; // ISO 日期字符串
 }
@@ -34,6 +46,9 @@ interface FullTextIndex {
  * 搜索选项
  */
 export interface SearchOptions {
+  language?: AppLocale;
+  /** 原文候选与目标选用译文关键词取交集，过滤先于最终数量限制。 */
+  translationKeywords?: string[];
   chapterId?: string;
   maxResults?: number;
   onlyWithTranslation?: boolean;
@@ -82,13 +97,56 @@ function keywordMatchesDocScope(
   const inOriginal = (): boolean =>
     keywords.some((kw) => doc.originalText.toLowerCase().includes(kw.toLowerCase()));
   const inTranslations = (): boolean =>
-    doc.translations.some((t) =>
-      keywords.some((kw) => t.toLowerCase().includes(kw.toLowerCase())),
-    );
+    doc.translations.some((t) => keywords.some((kw) => t.toLowerCase().includes(kw.toLowerCase())));
   if (searchInOriginal && searchInTranslations) return inOriginal() || inTranslations();
   if (searchInOriginal) return inOriginal();
   if (searchInTranslations) return inTranslations();
   return false;
+}
+
+/** 先核验当前段落的目标选用与关键词交集，再应用结果数量限制。 */
+function matchesCurrentParagraph(
+  doc: IndexDocument,
+  paragraph: Paragraph,
+  keywords: string[],
+  options: {
+    language: AppLocale | undefined;
+    onlyWithTranslation: boolean;
+    translationKeywords: string[];
+    searchInOriginal: boolean;
+    searchInTranslations: boolean;
+  },
+): boolean {
+  const {
+    language,
+    onlyWithTranslation,
+    translationKeywords,
+    searchInOriginal,
+    searchInTranslations,
+  } = options;
+  const targetTranslation = language ? getLanguageTranslation(paragraph, language) : undefined;
+  if (
+    translationKeywords.length > 0 &&
+    !translationKeywords.some((keyword) =>
+      targetTranslation?.translation.toLowerCase().includes(keyword.toLowerCase()),
+    )
+  )
+    return false;
+  if (onlyWithTranslation && (language ? !targetTranslation : !hasNonEmptyTranslation(paragraph)))
+    return false;
+  return (
+    !language ||
+    keywordMatchesDocScope(
+      {
+        ...doc,
+        originalText: paragraph.text,
+        translations: targetTranslation ? [targetTranslation.translation] : [],
+      },
+      keywords,
+      searchInOriginal,
+      searchInTranslations,
+    )
+  );
 }
 
 /**
@@ -135,13 +193,51 @@ async function locateParagraphFromDoc(
   };
 }
 
+const INDEX_STORES = ['books', 'book-revisions', 'chapter-contents', 'full-text-indexes'] as const;
+
+/** 构建、加载和发布共用书籍身份快照，版本与目标的校验只有一处。 */
+async function openIndexIdentity<Mode extends 'readonly' | 'readwrite'>(
+  bookId: string,
+  mode: Mode,
+) {
+  const tx = (await getDB()).transaction(INDEX_STORES, mode);
+  const [book, revision] = await Promise.all([
+    tx.objectStore('books').get(bookId),
+    tx.objectStore('book-revisions').get(bookId),
+  ]);
+  return {
+    tx,
+    book,
+    sourceRevision: revision?.revision ?? 0,
+    targetLanguage: book?.targetLanguage ?? 'zh-CN',
+  };
+}
+
+async function assertIndexIdentity(
+  current: Awaited<ReturnType<typeof openIndexIdentity>>,
+  sourceRevision: number,
+  targetLanguage: AppLocale,
+): Promise<void> {
+  if (
+    !current.book ||
+    current.targetLanguage !== targetLanguage ||
+    current.sourceRevision !== sourceRevision
+  ) {
+    await current.tx.done;
+    throw new LocalizedError('FULL_TEXT_INDEX_CHANGED', 'aiBookFeedback.fullTextChanged');
+  }
+}
+
 /**
  * 全文索引服务
  * 使用 Fuse.js 提供快速全文搜索功能
  */
 export class FullTextIndexService {
   // LRU 内存缓存，避免重复加载
-  private static indexCache = new Map<string, Fuse<IndexDocument>>();
+  private static indexCache = new Map<
+    string,
+    { fuse: Fuse<IndexDocument>; sourceRevision: number; targetLanguage: AppLocale }
+  >();
   private static readonly CACHE_MAX_SIZE = 10; // 最多缓存 10 个索引
 
   /**
@@ -183,16 +279,22 @@ export class FullTextIndexService {
 
     const chapterTitleOriginal =
       typeof chapter.title === 'string' ? chapter.title : chapter.title.original || '';
-    const chapterTitleTranslation =
-      typeof chapter.title === 'string' ? '' : chapter.title.translation?.translation || '';
+    const chapterTitleTranslation = '';
 
     const docs: IndexDocument[] = [];
     for (let pIndex = 0; pIndex < chapterWithContent.content.length; pIndex++) {
       const paragraph = chapterWithContent.content[pIndex];
       if (!paragraph) continue;
-      const translations = paragraph.translations
-        ? paragraph.translations.map((t) => t.translation || '').filter((t) => t.trim())
-        : [];
+      const translationsByLanguage: Partial<Record<AppLocale, string[]>> = {};
+      const chapterTitlesByLanguage: Partial<Record<AppLocale, string>> = {};
+      for (const language of APP_LOCALES) {
+        const selected = getLanguageTranslation(paragraph, language)?.translation;
+        translationsByLanguage[language] = selected ? [selected] : [];
+        chapterTitlesByLanguage[language] =
+          typeof chapter.title === 'string'
+            ? ''
+            : (getNameTranslation(chapter.title, language)?.translation ?? '');
+      }
       docs.push({
         paragraphId: paragraph.id,
         chapterId: chapter.id,
@@ -200,7 +302,9 @@ export class FullTextIndexService {
         chapterIndex,
         paragraphIndex: pIndex,
         originalText: paragraph.text || '',
-        translations,
+        translations: [],
+        translationsByLanguage,
+        chapterTitlesByLanguage,
         chapterTitleOriginal,
         chapterTitleTranslation,
       });
@@ -229,129 +333,111 @@ export class FullTextIndexService {
   /**
    * 构建全文索引
    */
-  static async buildIndex(bookId: string, novel: Novel): Promise<Fuse<IndexDocument>> {
-    // 加载所有未加载章节的内容（直接通过 loader 读，避免 import
-    // chapter-content-service 形成循环依赖）
-    if (novel.volumes) {
-      for (const volume of novel.volumes) {
-        if (!volume.chapters) continue;
-        for (let i = 0; i < volume.chapters.length; i++) {
-          const chapter = volume.chapters[i];
-          if (chapter && chapter.content === undefined) {
-            const content = await loadChapterContent(chapter.id);
-            volume.chapters[i] = {
-              ...chapter,
-              content: content || [],
-              contentLoaded: true,
-            };
-          }
-        }
-      }
+  static async buildIndex(bookId: string, _novel: Novel): Promise<Fuse<IndexDocument>> {
+    const { tx, book, sourceRevision, targetLanguage } = await openIndexIdentity(
+      bookId,
+      'readonly',
+    );
+    if (!book) {
+      await tx.done;
+      throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
     }
-
-    // 构建章节映射（包含已加载的内容）
-    const chaptersMap = new Map<string, Chapter>();
-    if (novel.volumes) {
-      for (const volume of novel.volumes) {
-        if (volume.chapters) {
-          for (const chapter of volume.chapters) {
-            chaptersMap.set(chapter.id, chapter);
-          }
-        }
-      }
+    const chapters = new Map<string, Chapter>();
+    for (const chapter of book.volumes?.flatMap((volume) => volume.chapters ?? []) ?? []) {
+      const row = await tx.objectStore('chapter-contents').get(chapter.id);
+      chapters.set(chapter.id, {
+        ...chapter,
+        content: normalizeChapterLanguages(row ? JSON.parse(row.content) : (chapter.content ?? [])),
+      });
     }
+    await tx.done;
+    const documents = this.buildIndexDocuments(book, chapters);
+    const inputSignature = await hashString(JSON.stringify({ targetLanguage, documents }));
+    const fuse = this.createFuse(documents);
+    await this.saveIndex(bookId, documents, inputSignature, sourceRevision, targetLanguage);
+    await this.publishIndex(bookId, fuse, sourceRevision, targetLanguage);
+    return fuse;
+  }
 
-    // 构建索引文档
-    const documents = this.buildIndexDocuments(novel, chaptersMap);
+  /** 安装内存缓存与最新元数据读取同处只读事务，避免旧加载晚发布。 */
+  private static async publishIndex(
+    bookId: string,
+    fuse: Fuse<IndexDocument>,
+    sourceRevision: number,
+    targetLanguage: AppLocale,
+  ): Promise<void> {
+    const identity = await openIndexIdentity(bookId, 'readonly');
+    const { tx } = identity;
+    await assertIndexIdentity(identity, sourceRevision, targetLanguage);
+    this.indexCache.set(bookId, { fuse, sourceRevision, targetLanguage });
+    this.evictCacheIfNeeded();
+    await tx.done;
+  }
 
-    // 创建 Fuse.js 索引
-    const fuse = new Fuse<IndexDocument>(documents, {
+  private static createFuse(documents: readonly IndexDocument[]): Fuse<IndexDocument> {
+    return new Fuse<IndexDocument>(documents, {
       keys: [
-        { name: 'originalText', weight: 1.0 },
+        { name: 'originalText', weight: 1 },
         { name: 'translations', weight: 0.8 },
         { name: 'chapterTitleOriginal', weight: 0.3 },
         { name: 'chapterTitleTranslation', weight: 0.3 },
       ],
-      threshold: 0.3, // 模糊匹配阈值
+      threshold: 0.3,
       includeScore: true,
       minMatchCharLength: 1,
-      ignoreLocation: true, // 忽略位置，提高性能
+      ignoreLocation: true,
     });
-
-    // 保存到 IndexedDB
-    await this.saveIndex(bookId, documents);
-
-    // 更新内存缓存
-    this.indexCache.set(bookId, fuse);
-    this.evictCacheIfNeeded();
-
-    return fuse;
   }
 
   /**
    * 保存索引到 IndexedDB
    */
-  private static async saveIndex(bookId: string, documents: IndexDocument[]): Promise<void> {
-    try {
-      const db = await getDB();
-      // 检查存储是否存在
-      if (!db.objectStoreNames.contains('full-text-indexes')) {
-        // 存储不存在，说明数据库还未升级，跳过保存
-        console.warn(
-          'full-text-indexes store not found, skipping index save. Database may need to be upgraded.',
-        );
-        return;
-      }
-      const indexData: FullTextIndex = {
-        bookId,
-        indexData: JSON.stringify(documents),
-        lastUpdated: new Date().toISOString(),
-      };
-      await db.put('full-text-indexes', indexData);
-    } catch (error) {
-      // 如果存储不存在，只记录警告，不抛出错误
-      if (error instanceof Error && error.name === 'NotFoundError') {
-        console.warn('full-text-indexes store not found, skipping index save.');
-        return;
-      }
-      console.error(`Failed to save full-text index for ${bookId}:`, error);
-      // 不抛出错误，允许索引构建失败但不影响主流程
-    }
+  private static async saveIndex(
+    bookId: string,
+    documents: IndexDocument[],
+    inputSignature: string,
+    sourceRevision: number,
+    targetLanguage: AppLocale,
+  ): Promise<void> {
+    const identity = await openIndexIdentity(bookId, 'readwrite');
+    const { tx } = identity;
+    await assertIndexIdentity(identity, sourceRevision, targetLanguage);
+    await tx.objectStore('full-text-indexes').put({
+      bookId,
+      schemaVersion: 2,
+      inputSignature,
+      sourceRevision,
+      targetLanguage,
+      indexData: JSON.stringify(documents),
+      lastUpdated: new Date().toISOString(),
+    });
+    await tx.done;
   }
 
   /**
    * 从 IndexedDB 加载索引
    */
-  private static async loadIndexFromDB(bookId: string): Promise<Fuse<IndexDocument> | null> {
+  private static async loadIndexFromDB(
+    bookId: string,
+    sourceRevision: number,
+    targetLanguage: AppLocale,
+  ): Promise<Fuse<IndexDocument> | null> {
     try {
-      const db = await getDB();
-      // 检查存储是否存在
-      if (!db.objectStoreNames.contains('full-text-indexes')) {
-        // 存储不存在，说明数据库还未升级
+      const stored = await (await getDB()).get('full-text-indexes', bookId);
+      if (
+        !stored?.indexData ||
+        stored.schemaVersion !== 2 ||
+        !stored.inputSignature ||
+        stored.sourceRevision !== sourceRevision ||
+        stored.targetLanguage !== targetLanguage
+      )
         return null;
-      }
-      const stored = await db.get('full-text-indexes', bookId);
-      if (!stored?.indexData) {
-        return null;
-      }
-
       const documents = JSON.parse(stored.indexData) as IndexDocument[];
-
-      // 创建 Fuse.js 索引
-      const fuse = new Fuse<IndexDocument>(documents, {
-        keys: [
-          { name: 'originalText', weight: 1.0 },
-          { name: 'translations', weight: 0.8 },
-          { name: 'chapterTitleOriginal', weight: 0.3 },
-          { name: 'chapterTitleTranslation', weight: 0.3 },
-        ],
-        threshold: 0.3,
-        includeScore: true,
-        minMatchCharLength: 1,
-        ignoreLocation: true,
-      });
-
-      return fuse;
+      if (
+        (await hashString(JSON.stringify({ targetLanguage, documents }))) !== stored.inputSignature
+      )
+        return null;
+      return this.createFuse(documents);
     } catch (error) {
       console.error(`Failed to load full-text index for ${bookId}:`, error);
       return null;
@@ -365,17 +451,21 @@ export class FullTextIndexService {
     bookId: string,
     novelForBuild?: Novel,
   ): Promise<Fuse<IndexDocument> | null> {
-    // 检查内存缓存
-    if (this.indexCache.has(bookId)) {
+    const { tx, book, sourceRevision, targetLanguage } = await openIndexIdentity(
+      bookId,
+      'readonly',
+    );
+    await tx.done;
+    if (!book) return null;
+    const cached = this.indexCache.get(bookId);
+    if (cached?.sourceRevision === sourceRevision && cached.targetLanguage === targetLanguage) {
       this.touchCacheEntry(bookId);
-      return this.indexCache.get(bookId)!;
+      return cached.fuse;
     }
-
-    // 从 IndexedDB 加载
-    const fuse = await this.loadIndexFromDB(bookId);
+    this.indexCache.delete(bookId);
+    const fuse = await this.loadIndexFromDB(bookId, sourceRevision, targetLanguage);
     if (fuse) {
-      this.indexCache.set(bookId, fuse);
-      this.evictCacheIfNeeded();
+      await this.publishIndex(bookId, fuse, sourceRevision, targetLanguage);
       return fuse;
     }
 
@@ -403,6 +493,8 @@ export class FullTextIndexService {
   ): Promise<ParagraphSearchResult[]> {
     const {
       chapterId,
+      language = options.novel?.targetLanguage ?? 'zh-CN',
+      translationKeywords = [],
       maxResults = 100,
       onlyWithTranslation = false,
       searchInOriginal = true,
@@ -419,7 +511,13 @@ export class FullTextIndexService {
       return [];
     }
 
-    const searchResults = runFuseKeywordSearch(fuse, keywords, maxResults);
+    const projected = fuse.getIndex().docs.map((document) => ({
+      ...document,
+      translations: document.translationsByLanguage[language] ?? [],
+      chapterTitleTranslation: document.chapterTitlesByLanguage[language] ?? '',
+    }));
+    const targetFuse = this.createFuse(projected);
+    const searchResults = runFuseKeywordSearch(targetFuse, keywords, targetFuse.getIndex().size());
     // novelOverride 应由调用方传入；若缺失则无法把索引匹配映射回具体段落/章节引用
     // (移除对 BookService.getBookById 的反向 lookup 是为了打破 ftis → book-service 的循环依赖)
     if (!novelOverride || !novelOverride.volumes) return [];
@@ -429,11 +527,24 @@ export class FullTextIndexService {
     for (const result of searchResults) {
       const doc = result.item;
       if (chapterId && doc.chapterId !== chapterId) continue;
-      if (!keywordMatchesDocScope(doc, keywords, searchInOriginal, searchInTranslations)) continue;
+      if (
+        !language &&
+        !keywordMatchesDocScope(doc, keywords, searchInOriginal, searchInTranslations)
+      )
+        continue;
 
       const located = await locateParagraphFromDoc(novel, doc);
       if (!located) continue;
-      if (onlyWithTranslation && !hasNonEmptyTranslation(located.paragraph)) continue;
+      if (
+        !matchesCurrentParagraph(doc, located.paragraph, keywords, {
+          language,
+          onlyWithTranslation,
+          translationKeywords,
+          searchInOriginal,
+          searchInTranslations,
+        })
+      )
+        continue;
 
       results.push(located);
       if (results.length >= maxResults) break;
@@ -474,5 +585,4 @@ export class FullTextIndexService {
       console.warn(`Failed to invalidate index for ${bookId}:`, error);
     }
   }
-
 }

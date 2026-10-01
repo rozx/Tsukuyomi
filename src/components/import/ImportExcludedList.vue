@@ -1,11 +1,19 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { importNoticeText } from 'src/services/import/import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 /** 提取时排除的内容（导航、广告、版权等），可展开核对清理是否正确。 */
 import { computed, ref } from 'vue';
 
-const props = defineProps<{ entries: { text: string; reason: string }[] }>();
+const { t, locale } = useI18n();
+const noticeText = (value: unknown) => importNoticeText(value, resolveAppLocale(locale.value));
+
+const props = defineProps<{ entries: { text: string; reason: ImportNotice }[] }>();
 const open = ref(false);
 const chevron = computed(() => (open.value ? 'pi-chevron-down' : 'pi-chevron-right'));
-const label = computed(() => `提取时排除的内容（${props.entries.length} 处）`);
+const label = computed(() => t('importUi.excluded.label', { count: props.entries.length }));
 </script>
 
 <template>
@@ -16,7 +24,7 @@ const label = computed(() => `提取时排除的内容（${props.entries.length}
     </button>
     <ul v-if="open" class="iel-list">
       <li v-for="(entry, index) in entries" :key="index">
-        <span class="iel-reason">{{ entry.reason }}</span>
+        <span class="iel-reason">{{ noticeText(entry.reason) }}</span>
         <span class="iel-text">{{ entry.text }}</span>
       </li>
     </ul>

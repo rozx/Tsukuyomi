@@ -13,11 +13,14 @@
     v-else-if="expanded && (!volume.chapters || volume.chapters.length === 0)"
     class="ml-6 text-xs text-moon/50 italic p-2"
   >
-    暂无章节
+    {{ i18nT('libraryUi.noChapters') }}
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import type { Chapter, Novel, Volume } from 'src/models/novel';
 import BookChapterRow from './BookChapterRow.vue';
 

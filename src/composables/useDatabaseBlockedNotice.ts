@@ -1,6 +1,9 @@
 import { useToast } from 'primevue/usetoast';
 import type { ToastMessageOptions } from 'primevue/toast';
 import { isDbBlocked } from 'src/utils/indexed-db';
+import { useSettingsStore } from 'src/stores/settings';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 
 type BlockedEvent = 'blocked' | 'resolved';
 
@@ -36,11 +39,14 @@ export function watchDatabaseBlocked(
  */
 export function useDatabaseBlockedNotice(): () => void {
   const toast = useToast();
+  // 数据库被阻塞时设置尚未载入，uiLocale 回退到浏览器语言
+  const settingsStore = useSettingsStore();
+  const t = (key: string, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, `syncUi.actions.${key}` as MessageKey, values);
   const warning: ToastMessageOptions = {
     severity: 'warn',
-    summary: '数据库升级等待中',
-    detail:
-      '其他标签页或窗口仍在使用旧版本的本应用，数据暂时无法载入。请关闭这些页面，升级会自动继续。',
+    summary: t('dbBlockedSummary'),
+    detail: t('dbBlockedDetail'),
   };
   return watchDatabaseBlocked(isDbBlocked, (event) => {
     if (event === 'blocked') {
@@ -50,8 +56,8 @@ export function useDatabaseBlockedNotice(): () => void {
     toast.remove(warning);
     toast.add({
       severity: 'success',
-      summary: '数据库升级完成',
-      detail: '数据已可正常载入。',
+      summary: t('dbReadySummary'),
+      detail: t('dbReadyDetail'),
       life: 3000,
     });
   });

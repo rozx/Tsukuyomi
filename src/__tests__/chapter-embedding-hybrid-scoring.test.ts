@@ -9,10 +9,7 @@
 import './setup';
 import { describe, expect, it, beforeEach, afterEach, mock, spyOn } from 'bun:test';
 import { createPinia, setActivePinia } from 'pinia';
-import {
-  ChapterEmbeddingService,
-  TITLE_CHUNK_INDEX,
-} from 'src/services/chapter-embedding-service';
+import { ChapterEmbeddingService, TITLE_CHUNK_INDEX } from 'src/services/chapter-embedding-service';
 import { EmbeddingService } from 'src/services/embedding-service';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel } from 'src/models/novel';
@@ -211,9 +208,9 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     // ch-2: 一个 outlier 稍高 0.90,其它两个仅 0.10 → content_max = 0.90, top3_mean ≈ 0.367
     //        blend = 0.85 × 0.90 + 0.15 × 0.367 ≈ 0.820 → 仍低于 ch-1
     await putContentChunks('ch-2', bookId, [
-      { vector: v(0.90), snippet: 'b1-outlier' },
-      { vector: v(0.10), snippet: 'b2' },
-      { vector: v(0.10), snippet: 'b3' },
+      { vector: v(0.9), snippet: 'b1-outlier' },
+      { vector: v(0.1), snippet: 'b2' },
+      { vector: v(0.1), snippet: 'b3' },
     ]);
     await putChunk('ch-2', bookId, 'title', TITLE_CHUNK_INDEX, v(0.5), '[章] 日常');
 
@@ -262,18 +259,12 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
     // 离群 chunk 的 raw cosine 明显更高，但正确章节正文完整包含 query。
-    await putContentChunks('correct', bookId, [
-      { vector: v(0.7), snippet: '公司合同原文' },
-    ]);
+    await putContentChunks('correct', bookId, [{ vector: v(0.7), snippet: '公司合同原文' }]);
     await putContentChunks('semantic-outlier', bookId, [
       { vector: v(0.98), snippet: '完全无关的暑假日常' },
     ]);
-    await putContentChunks('other-a', bookId, [
-      { vector: v(0.35), snippet: '普通对话' },
-    ]);
-    await putContentChunks('other-b', bookId, [
-      { vector: v(0.34), snippet: '普通场景' },
-    ]);
+    await putContentChunks('other-a', bookId, [{ vector: v(0.35), snippet: '普通对话' }]);
+    await putContentChunks('other-b', bookId, [{ vector: v(0.34), snippet: '普通场景' }]);
 
     const results = await ChapterEmbeddingService.queryChapters(bookId, '公司合同原文', 5);
     expect(results[0]?.chapter_id).toBe('correct');
@@ -295,11 +286,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     await putContentChunks('ch-3', bookId, [{ vector: v(0.48), snippet: '教室里的午餐' }]);
     await putContentChunks('ch-4', bookId, [{ vector: v(0.47), snippet: '社团活动结束' }]);
 
-    const results = await ChapterEmbeddingService.queryChapters(
-      bookId,
-      '宇宙飞船发动机维修',
-      5,
-    );
+    const results = await ChapterEmbeddingService.queryChapters(bookId, '宇宙飞船发动机维修', 5);
     expect(results).toEqual([]);
   });
 
@@ -320,11 +307,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     await putContentChunks('ch-3', bookId, [{ vector: v(0.5), snippet: '社团活动' }]);
     await putContentChunks('ch-4', bookId, [{ vector: v(0.49), snippet: '回家路上' }]);
 
-    const results = await ChapterEmbeddingService.queryChapters(
-      bookId,
-      '量子色动力学实验数据',
-      5,
-    );
+    const results = await ChapterEmbeddingService.queryChapters(bookId, '量子色动力学实验数据', 5);
     expect(results).toEqual([]);
   });
 
@@ -371,9 +354,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
       { vector: [0.4, 0.6], snippet: '次要段落' },
     ]);
 
-    await putContentChunks('ch-2', bookId, [
-      { vector: [0.5, 0.5], snippet: '平庸段落' },
-    ]);
+    await putContentChunks('ch-2', bookId, [{ vector: [0.5, 0.5], snippet: '平庸段落' }]);
     await putChunk('ch-2', bookId, 'title', TITLE_CHUNK_INDEX, [0.5, 0.5], '[章] 另一章');
 
     const results = await ChapterEmbeddingService.queryChapters(bookId, '强命中', 5);
@@ -387,9 +368,7 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     await seedBook(bookId, '本卷', [{ id: 'ch-1', title: '短章' }]);
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
-    await putContentChunks('ch-1', bookId, [
-      { vector: [0.9, 0.1], snippet: 'only' },
-    ]);
+    await putContentChunks('ch-1', bookId, [{ vector: [0.9, 0.1], snippet: 'only' }]);
     await putChunk('ch-1', bookId, 'title', TITLE_CHUNK_INDEX, [0.5, 0.5], '[章] 短章');
 
     // 不抛错,单章候选仍可用绝对语义置信度与关键词正常返回
@@ -422,9 +401,9 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     );
 
     // 仅 stale 记录 → queryChapters 抛错
-    expect(
-      ChapterEmbeddingService.queryChapters(bookId, 'q', 5),
-    ).rejects.toThrow(/章节向量空间已升级/);
+    expect(ChapterEmbeddingService.queryChapters(bookId, 'q', 5)).rejects.toMatchObject({
+      code: 'CHAPTER_CACHE_REBUILDING',
+    });
   });
 
   it('preview:content chunk 缺失时 fallback 到 title snippet', async () => {

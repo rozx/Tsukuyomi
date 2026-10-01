@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
@@ -12,15 +14,16 @@ import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeade
 import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
+const { t } = useI18n();
 
 const ctx = injectAIPage();
 
 const enabledCount = computed(() => ctx.aiModels.value.filter((model) => model.enabled).length);
 const configuredRoutes = computed(() => ctx.taskRouting.value.filter((row) => row.modelId).length);
 const aiMetrics = computed(() => [
-  { label: '模型总数', value: ctx.aiModels.value.length },
-  { label: '已启用', value: enabledCount.value },
-  { label: '任务路由', value: `${configuredRoutes.value}/${ctx.taskRouting.value.length}` },
+  { label: t('aiUi.totalModels'), value: ctx.aiModels.value.length },
+  { label: t('aiUi.enabled'), value: enabledCount.value },
+  { label: t('aiUi.routing'), value: `${configuredRoutes.value}/${ctx.taskRouting.value.length}` },
 ]);
 const filteredProviderGroups = computed(() =>
   ctx.providerGroups.value
@@ -34,15 +37,16 @@ const filteredProviderGroups = computed(() =>
 );
 const pageSummary = computed(() => {
   if (ctx.searchQuery.value) {
-    return `当前筛出 ${ctx.filteredModels.value.length} 个模型，仍可继续编辑、复制或调整任务路由。`;
+    return t('aiUi.filteredSummary', { count: ctx.filteredModels.value.length });
   }
-  return '在桌面工具页里统一维护模型清单、默认任务和任务路由。';
+  return t('aiUi.pageSummary');
 });
 // 模型徽章文案 / 严重度（吸收模板三元）
-const badgeValue = (model: { enabled: boolean }) => (model.enabled ? '已启用' : '已禁用');
+const badgeValue = (model: { enabled: boolean }) =>
+  model.enabled ? t('aiUi.enabled') : t('aiUi.disabled');
 const badgeSeverity = (model: { enabled: boolean }) => (model.enabled ? 'success' : 'secondary');
 const emptyModelsText = computed(() =>
-  ctx.searchQuery.value ? '未找到匹配的 AI 模型' : '暂无配置的 AI 模型',
+  ctx.searchQuery.value ? t('aiUi.noMatches') : t('aiUi.noModels'),
 );
 const hasNoSearch = computed(() => !ctx.searchQuery.value);
 const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0);
@@ -50,28 +54,29 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
 
 <template>
   <div class="desktop-ai-page">
-    <DesktopWorkbenchHeader eyebrow="AI Models" title="AI 模型工作台" :description="pageSummary">
+    <DesktopWorkbenchHeader
+      :eyebrow="t('aiUi.models')"
+      :title="t('aiUi.workbench')"
+      :description="pageSummary"
+    >
       <template #actions>
         <div class="ai-header-actions">
           <InputGroup class="ai-search-group">
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
             </InputGroupAddon>
-            <InputText
-              v-model="ctx.searchQuery.value"
-              placeholder="搜索模型名称、提供商、模型类型或默认任务..."
-            />
+            <InputText v-model="ctx.searchQuery.value" :placeholder="t('aiUi.searchPlaceholder')" />
             <InputGroupAddon v-if="ctx.searchQuery.value">
               <Button
                 icon="pi pi-times"
                 class="p-button-text p-button-sm"
-                title="清除搜索"
+                :title="t('aiUi.clearSearch')"
                 @click="ctx.searchQuery.value = ''"
               />
             </InputGroupAddon>
           </InputGroup>
           <Button
-            label="添加 AI 模型"
+            :label="t('aiUi.addModel')"
             icon="pi pi-plus"
             class="p-button-primary ai-add-model-button"
             @click="ctx.addModel"
@@ -91,9 +96,9 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
             style="width: 46px; height: 46px"
             stroke-width="4"
             animation-duration=".8s"
-            aria-label="加载中"
+            :aria-label="t('aiUi.loading')"
           />
-          <p class="text-moon/70 mt-4">正在加载 AI 模型...</p>
+          <p class="text-moon/70 mt-4">{{ t('aiUi.loadingModelsDots') }}</p>
         </div>
       </DesktopWorkbenchSurface>
     </div>
@@ -102,7 +107,7 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
       <DesktopWorkbenchSurface class="ai-models-surface" :padded="false">
         <div class="ai-surface-banner">
           <i class="pi pi-shield" aria-hidden="true" />
-          <span>BYOK · 密钥保存在本设备 IndexedDB · 开启 Gist 同步时会随模型上传</span>
+          <span>{{ t('aiUi.byokIndexed') }}</span>
         </div>
 
         <DataView
@@ -120,7 +125,7 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
               <p class="text-moon/70">{{ emptyModelsText }}</p>
               <Button
                 v-if="hasNoSearch"
-                label="添加第一个 AI 模型"
+                :label="t('aiUi.firstModel')"
                 icon="pi pi-plus"
                 class="p-button-primary mt-4"
                 @click="ctx.addModel"
@@ -149,7 +154,12 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
                   <div class="ai-provider-copy">
                     <h2 class="ai-provider-title">{{ group.label }}</h2>
                     <p class="ai-provider-summary">
-                      {{ group.models.length }} 个模型 · 已启用 {{ group.enabledCount }} 个
+                      {{
+                        t('aiUi.providerStats', {
+                          total: group.models.length,
+                          enabled: group.enabledCount,
+                        })
+                      }}
                     </p>
                   </div>
                 </header>
@@ -170,19 +180,19 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
                         <Button
                           icon="pi pi-copy"
                           class="p-button-text p-button-sm"
-                          title="复制"
+                          :title="t('aiUi.copy')"
                           @click="ctx.duplicateModel(model)"
                         />
                         <Button
                           icon="pi pi-pencil"
                           class="p-button-text p-button-sm"
-                          title="编辑"
+                          :title="t('aiUi.edit')"
                           @click="ctx.editModel(model)"
                         />
                         <Button
                           icon="pi pi-trash"
                           class="p-button-text p-button-sm p-button-danger"
-                          title="删除"
+                          :title="t('aiUi.delete')"
                           @click="ctx.deleteModel(model)"
                         />
                       </div>
@@ -190,15 +200,15 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
 
                     <div class="ai-model-meta-grid">
                       <div class="ai-model-meta-item">
-                        <span>温度</span>
+                        <span>{{ t('aiUi.temperature') }}</span>
                         <strong>{{ model.temperature }}</strong>
                       </div>
                       <div class="ai-model-meta-item">
-                        <span>上下文窗口</span>
+                        <span>{{ t('aiUi.contextWindow') }}</span>
                         <strong>{{ model.maxInputTokens }}</strong>
                       </div>
                       <div class="ai-model-meta-item">
-                        <span>最大输出</span>
+                        <span>{{ t('aiUi.maxOutput') }}</span>
                         <strong>{{ model.maxOutputTokens }}</strong>
                       </div>
                       <div class="ai-model-meta-item">
@@ -206,11 +216,11 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
                         <strong class="ai-model-mono">{{ ctx.formatApiKey(model.apiKey) }}</strong>
                       </div>
                       <div class="ai-model-meta-item ai-model-meta-item--full">
-                        <span>基础地址</span>
+                        <span>{{ t('aiUi.baseUrl') }}</span>
                         <strong class="ai-model-mono">{{ model.baseUrl }}</strong>
                       </div>
                       <div class="ai-model-meta-item ai-model-meta-item--full">
-                        <span>默认任务</span>
+                        <span>{{ t('aiUi.defaultTasks') }}</span>
                         <strong>{{ ctx.getDefaultTasks(model) }}</strong>
                       </div>
                     </div>
@@ -224,9 +234,9 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
 
       <DesktopWorkbenchSurface class="ai-routing-surface" tone="muted">
         <header class="ai-routing-head">
-          <div class="ai-routing-eyebrow">Task Routing</div>
-          <h2 class="ai-routing-title">任务路由</h2>
-          <p class="ai-routing-description">为不同任务选择默认模型，设置会随导入导出一起保存。</p>
+          <div class="ai-routing-eyebrow">{{ t('aiUi.routing') }}</div>
+          <h2 class="ai-routing-title">{{ t('aiUi.routing') }}</h2>
+          <p class="ai-routing-description">{{ t('aiUi.routingExportHint') }}</p>
         </header>
 
         <div class="ai-routing-list">

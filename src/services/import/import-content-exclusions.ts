@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type { ImportTextRange } from 'src/models/import-pattern';
 
 /** 排除位置相对于该引用原本解析出的文本，保持原资源与原文位置可追溯。 */
@@ -6,7 +7,7 @@ export function retainedImportRanges(
   exclusions: ImportTextRange[] = [],
 ): ImportTextRange[] {
   if (!Array.isArray(exclusions) || exclusions.length > 10000)
-    throw new Error('INVALID_RANGE: 排除范围数量无效');
+    throw importError('INVALID_RANGE', 'invalidRangeInvalidNumberOfExclusionRanges', {});
   const kept: ImportTextRange[] = [];
   let cursor = 0;
   const splits = (i: number) =>
@@ -22,7 +23,7 @@ export function retainedImportRanges(
       splits(range.start) ||
       splits(range.end)
     )
-      throw new Error('INVALID_RANGE: 排除范围越界、重叠或拆开了字符');
+      throw importError('INVALID_RANGE', 'invalidRangeExclusionRangesAreOutOfBounds', {});
     if (range.start > cursor) kept.push({ start: cursor, end: range.start });
     cursor = range.end;
   }

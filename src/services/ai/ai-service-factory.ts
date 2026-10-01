@@ -5,6 +5,7 @@ import type {
   AvailableModelsResult,
 } from 'src/services/ai/types/ai-service';
 import { AiSdkAIService } from 'src/services/ai/providers/ai-sdk/service';
+import { LocalizedError } from 'src/utils/localized-error';
 
 /**
  * AI 服务工厂
@@ -22,7 +23,13 @@ export class AIServiceFactory {
   static getService(provider: AIProvider): AIService {
     const service = this.services.get(provider);
     if (!service) {
-      throw new Error(`不支持的 AI 提供商: ${provider}`);
+      throw new LocalizedError(
+        'AI_PROVIDER_UNSUPPORTED',
+        'settingsUi.models.errors.unsupportedProvider',
+        {
+          provider,
+        },
+      );
     }
     return service;
   }

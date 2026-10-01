@@ -1,3 +1,4 @@
+import { importNoticeText } from '../services/import/import-error';
 import { afterEach, describe, it, mock, spyOn } from 'bun:test';
 import { expect } from 'vitest';
 import './setup';
@@ -44,7 +45,7 @@ describe('快照上的 HTML / XHTML 提取', () => {
     const result = parseImportHtml(html, { selector: '.story', excludeSelectors: ['.recommend'] });
     expect(result.blocks.map((b) => b.text)).toEqual(['相同正文', '相同正文', '无法判断的注释']);
     expect(result.blocks[0]?.start).not.toBe(result.blocks[1]?.start);
-    expect(result.excluded[0]?.reason).toContain('.recommend');
+    expect(importNoticeText(result.excluded[0]?.reason)).toContain('.recommend');
     for (const block of result.blocks)
       expect(html.slice(block.start, block.end)).toContain(block.text);
     expect(() => parseImportHtml(html, { selector: '[:broken' })).toThrow('INVALID_SELECTOR');
@@ -57,7 +58,7 @@ describe('快照上的 HTML / XHTML 提取', () => {
     const result = parseImportHtml(html, { selector: 'article, article div' });
     expect(result.blocks.map((b) => b.text).join('|')).toBe('前置文字|段落强调|尾部文字|嵌套正文');
     expect(request).not.toHaveBeenCalled();
-    expect(result.excluded.some((b) => b.reason.includes('script'))).toBe(true);
+    expect(result.excluded.some((b) => importNoticeText(b.reason).includes('script'))).toBe(true);
   });
 
   it('只返回链接与实际封面地址，保留相对路径语义及查询参数，不跟页', () => {

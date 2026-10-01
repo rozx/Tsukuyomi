@@ -1,5 +1,6 @@
 import type { ImportNovelCandidate, ImportTask } from 'src/models/import';
 import { canonicalStringify } from 'src/utils/canonical-json';
+import { translateText } from 'src/i18n/translate';
 
 export function declareImportCandidates(
   task: ImportTask,
@@ -31,7 +32,7 @@ export function declareImportCandidates(
       toolCallId: id,
       kind: 'novel',
       required: true,
-      question: '检测到多个作品或小说范围发生变化，请选择本次导入的唯一小说。',
+      question: translateText(task.checkpoint?.uiLocale ?? 'zh-CN', 'aiImportPrompt.novelQuestion'),
       options: candidates.map((candidate) => ({
         id: candidate.id,
         label: `${candidate.title}${candidate.author ? ` · ${candidate.author}` : ''}`,

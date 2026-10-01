@@ -1,3 +1,5 @@
+import { BookService } from '../services/book-service';
+import { ChapterContentService } from '../services/chapter-content-service';
 import './setup'; // 导入测试环境设置（IndexedDB polyfill等）
 import { describe, test, expect, beforeEach, afterEach, spyOn, mock } from 'bun:test';
 import { paragraphTools } from '../services/ai/tools/paragraph-tools';
@@ -76,10 +78,16 @@ const mockBooksStore: {
   books: Novel[];
   getBookById: (id: string) => Novel | undefined;
   updateBook: (id: string, updates: Partial<Novel>) => Promise<void>;
+  refreshBookFromStorage: (id: string) => Promise<Novel | undefined>;
 } = {
   books: [],
   getBookById: (id: string) => mockBooksStore.books.find((book) => book.id === id),
   updateBook: mockUpdateBook,
+  refreshBookFromStorage: async (id) => {
+    const saved = await BookService.getBookById(id, true);
+    if (saved) mockBooksStore.books = [saved];
+    return saved;
+  },
 };
 
 const mockUseAIModelsStore = mock(() => ({
@@ -117,6 +125,7 @@ describe('add_translation 选中翻译被 5 条上限逐出', () => {
     para.selectedTranslationId = 'trans-1';
     const novel = createTestNovel([createTestVolume('vol1', [createTestChapter('ch1', [para])])]);
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     const tool = getTool('add_translation');
     const result = await tool.handler(
@@ -125,13 +134,16 @@ describe('add_translation 选中翻译被 5 条上限逐出', () => {
     );
 
     const resultObj = JSON.parse(result);
+    const savedParagraph = (await ChapterContentService.loadChapterContent('ch1'))![0]!;
     expect(resultObj.success).toBe(true);
-    expect(para.translations.length).toBe(5);
+    expect(savedParagraph.translations.length).toBe(5);
     // trans-1 已被逐出
-    expect(para.translations.some((t) => t.id === 'trans-1')).toBe(false);
+    expect(savedParagraph.translations.some((t) => t.id === 'trans-1')).toBe(false);
     // 选中 ID 不得悬空，应落到新添加的翻译上
-    expect(para.selectedTranslationId).toBe(resultObj.translation_id);
-    expect(para.translations.some((t) => t.id === para.selectedTranslationId)).toBe(true);
+    expect(savedParagraph.selectedTranslationId).toBe(resultObj.translation_id);
+    expect(
+      savedParagraph.translations.some((t) => t.id === savedParagraph.selectedTranslationId),
+    ).toBe(true);
   });
 
   test('set_as_selected=false 且选中翻译未被逐出时，应保持原选中不变', async () => {
@@ -140,6 +152,7 @@ describe('add_translation 选中翻译被 5 条上限逐出', () => {
     para.selectedTranslationId = 'trans-2';
     const novel = createTestNovel([createTestVolume('vol1', [createTestChapter('ch1', [para])])]);
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     const tool = getTool('add_translation');
     const result = await tool.handler(
@@ -148,8 +161,9 @@ describe('add_translation 选中翻译被 5 条上限逐出', () => {
     );
 
     const resultObj = JSON.parse(result);
+    const savedParagraph = (await ChapterContentService.loadChapterContent('ch1'))![0]!;
     expect(resultObj.success).toBe(true);
-    expect(para.selectedTranslationId).toBe('trans-2');
+    expect(savedParagraph.selectedTranslationId).toBe('trans-2');
   });
 
   test('set_as_selected=true 时新翻译直接成为选中翻译', async () => {
@@ -158,6 +172,7 @@ describe('add_translation 选中翻译被 5 条上限逐出', () => {
     para.selectedTranslationId = 'trans-1';
     const novel = createTestNovel([createTestVolume('vol1', [createTestChapter('ch1', [para])])]);
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     const tool = getTool('add_translation');
     const result = await tool.handler(
@@ -166,8 +181,9 @@ describe('add_translation 选中翻译被 5 条上限逐出', () => {
     );
 
     const resultObj = JSON.parse(result);
+    const savedParagraph = (await ChapterContentService.loadChapterContent('ch1'))![0]!;
     expect(resultObj.success).toBe(true);
-    expect(para.selectedTranslationId).toBe(resultObj.translation_id);
+    expect(savedParagraph.selectedTranslationId).toBe(resultObj.translation_id);
   });
 });
 
@@ -189,6 +205,7 @@ describe('select_translation action 上报', () => {
     para.selectedTranslationId = 'trans-1';
     const novel = createTestNovel([createTestVolume('vol1', [createTestChapter('ch1', [para])])]);
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     const actions: ActionInfo[] = [];
     const tool = getTool('select_translation');
@@ -198,8 +215,9 @@ describe('select_translation action 上报', () => {
     );
 
     const resultObj = JSON.parse(result);
+    const savedParagraph = (await ChapterContentService.loadChapterContent('ch1'))![0]!;
     expect(resultObj.success).toBe(true);
-    expect(para.selectedTranslationId).toBe('trans-3');
+    expect(savedParagraph.selectedTranslationId).toBe('trans-3');
 
     expect(actions.length).toBe(1);
     const action = actions[0]!;
@@ -219,6 +237,7 @@ describe('select_translation action 上报', () => {
     const para = createTestParagraph('para1', '原文段落', translations);
     const novel = createTestNovel([createTestVolume('vol1', [createTestChapter('ch1', [para])])]);
     mockBooksStore.books = [novel];
+    await BookService.saveBook(novel);
 
     const actions: ActionInfo[] = [];
     const tool = getTool('select_translation');
@@ -228,6 +247,7 @@ describe('select_translation action 上报', () => {
     );
 
     const resultObj = JSON.parse(result);
+    const savedParagraph = (await ChapterContentService.loadChapterContent('ch1'))![0]!;
     expect(resultObj.success).toBe(false);
     expect(actions.length).toBe(0);
   });

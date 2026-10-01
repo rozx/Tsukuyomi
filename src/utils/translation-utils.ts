@@ -1,20 +1,17 @@
 import type { Novel, Chapter, Paragraph } from 'src/models/novel';
 import { normalizeTranslationSymbols } from './translation-normalizer';
+import { getLanguageTranslation } from 'src/services/localization/selection';
 
 /**
  * 根据 preserveIndents 设置过滤翻译文本中的行首空格
  * 这是一个过滤器，用于在显示和导出时移除行首空格（如果设置要求）
- * 
+ *
  * @param translation 翻译文本
  * @param book 书籍对象（可选，用于获取书籍级别的设置）
  * @param chapter 章节对象（可选，用于获取章节级别的设置，优先级高于书籍级别）
  * @returns 过滤后的翻译文本
  */
-function filterIndents(
-  translation: string,
-  book?: Novel,
-  chapter?: Chapter,
-): string {
+function filterIndents(translation: string, book?: Novel, chapter?: Chapter): string {
   if (!translation || typeof translation !== 'string') {
     return translation;
   }
@@ -54,7 +51,7 @@ export function formatTranslationForDisplay(
   let result = filterIndents(translation, book, chapter);
 
   const normalize = book?.normalizeSymbolsOnDisplay ?? false;
-  if (normalize) {
+  if (normalize && book?.targetLanguage !== 'en-US') {
     result = normalizeTranslationSymbols(result);
   }
 
@@ -63,20 +60,14 @@ export function formatTranslationForDisplay(
 
 /**
  * 读取段落的"当前选中"翻译文本并应用显示层格式化。
- * 如果段落没有 selectedTranslationId 或没有匹配的 translation，返回空字符串。
+ * 缺少书籍目标语言的有效选用时返回空字符串，由阅读器回退原文。
  */
 export function getSelectedParagraphTranslationText(
   paragraph: Paragraph,
   book?: Novel | null,
   chapter?: Chapter | null,
 ): string {
-  if (!paragraph.selectedTranslationId || !paragraph.translations) {
-    return '';
-  }
-  const selected = paragraph.translations.find(
-    (t) => t.id === paragraph.selectedTranslationId,
-  );
+  const selected = getLanguageTranslation(paragraph, book?.targetLanguage ?? 'zh-CN');
   const translation = selected?.translation || '';
   return formatTranslationForDisplay(translation, book || undefined, chapter || undefined);
 }
-

@@ -1,6 +1,7 @@
+import { translateText } from 'src/i18n/translate';
 import type { AIModel } from '../types/ai-model';
 import type { AITool, ChatMessage, TextGenerationResult } from '../types/ai-service';
-import type { AssistantServiceOptions } from '../tasks/assistant-service';
+import type { ResolvedAssistantOptions } from '../tasks/assistant-service';
 import type { EffectiveModelLimits } from '../model-limits/resolve';
 import type { ContextAnchor } from './measure';
 import { createContextAnchor, measureContext, modelContextKey } from './measure';
@@ -22,7 +23,7 @@ export class AssistantContext {
       limits: EffectiveModelLimits;
       messages: ChatMessage[];
       tools: AITool[];
-      options: AssistantServiceOptions;
+      options: ResolvedAssistantOptions;
       taskId: string | undefined;
       signal: AbortSignal | undefined;
       prompt(summary?: string): string;
@@ -91,6 +92,7 @@ export class AssistantContext {
     try {
       const result = await compactHistory(
         {
+          uiLocale: options.languages.uiLocale,
           history,
           pinnedIndex,
           keepRecentBudget,
@@ -144,8 +146,8 @@ export class AssistantContext {
         showToolToast(
           {
             severity: 'warn',
-            summary: '上下文压缩失败',
-            detail: '原始历史已保留，将继续发送本次请求。',
+            summary: translateText(options.languages.uiLocale, 'aiAssistant.compactFailed'),
+            detail: translateText(options.languages.uiLocale, 'aiAssistant.historyKept'),
             life: 5000,
           },
           options.onToast,
@@ -188,7 +190,7 @@ export class AssistantContext {
         await options.execution.beforeRequest(messages, signal);
         throw await options.execution.stop('context_limit');
       }
-      throw new Error('会话超出模型上下文，压缩后仍无法继续。请新建会话或改用更大窗口的模型。', {
+      throw new Error(translateText(options.languages.uiLocale, 'aiAssistant.contextLimit'), {
         cause: error,
       });
     }

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
 /**
  * 桌面帮助页左侧文档导航。从 HelpPageDesktop 抽出以降低其模板圈复杂度。
  * 自行注入 useHelpPage 上下文。
@@ -18,8 +20,8 @@ const categoryChevron = (category: string) =>
         <i class="pi pi-book" aria-hidden="true" />
       </div>
       <div class="help-nav-brand-text">
-        <span class="help-nav-brand-eyebrow">HELP CENTER</span>
-        <span class="help-nav-brand-title">帮助中心</span>
+        <span class="help-nav-brand-eyebrow">{{ t('helpUi.center') }}</span>
+        <span class="help-nav-brand-title">{{ t('helpUi.center') }}</span>
       </div>
     </header>
 
@@ -34,7 +36,7 @@ const categoryChevron = (category: string) =>
           class="help-nav-group-head"
           @click="ctx.toggleCategory(category as string)"
         >
-          <span class="help-nav-group-label">{{ category }}</span>
+          <span class="help-nav-group-label">{{ ctx.categoryLabel(category as string) }}</span>
           <i
             class="pi help-nav-group-chev"
             :class="categoryChevron(category as string)"
@@ -122,10 +124,7 @@ const categoryChevron = (category: string) =>
 }
 
 .help-nav-brand-title {
-  font-family:
-    'Noto Serif JP',
-    'Songti SC',
-    serif;
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
   font-size: 1rem;
   font-weight: 600;
   color: var(--moon-opacity-95);

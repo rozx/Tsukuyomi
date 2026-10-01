@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import type { MenuItem } from 'primevue/menuitem';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -89,19 +92,26 @@ onUnmounted(() => {
   }
 });
 
-const topNav = (
-  [
-    { label: '首页', icon: 'pi pi-home', path: '/', tab: 'home' },
-    { label: '书籍列表', icon: 'pi pi-book', path: '/books', tab: 'library' },
-    { label: 'AI 导入', icon: 'pi pi-file-import', path: '/import', tab: 'import' },
-    { label: 'AI 列表', icon: 'pi pi-sparkles', path: '/ai', tab: 'ai' },
-  ] satisfies NavEntry[]
-).filter((entry) => isNavTabEnabled(entry.tab));
+const topNav = computed(() =>
+  (
+    [
+      { label: i18nT('libraryUi.home'), icon: 'pi pi-home', path: '/', tab: 'home' },
+      { label: i18nT('libraryUi.booksList'), icon: 'pi pi-book', path: '/books', tab: 'library' },
+      {
+        label: i18nT('libraryUi.aiImport'),
+        icon: 'pi pi-file-import',
+        path: '/import',
+        tab: 'import',
+      },
+      { label: i18nT('libraryUi.aiList'), icon: 'pi pi-sparkles', path: '/ai', tab: 'ai' },
+    ] satisfies NavEntry[]
+  ).filter((entry) => isNavTabEnabled(entry.tab)),
+);
 
-const bottomNav: NavEntry[] = [
-  { label: '设置', icon: 'pi pi-cog', path: '/settings', tab: 'settings' },
-  { label: '帮助', icon: 'pi pi-question-circle', path: '/help', tab: 'help' },
-];
+const bottomNav = computed<NavEntry[]>(() => [
+  { label: i18nT('libraryUi.settings'), icon: 'pi pi-cog', path: '/settings', tab: 'settings' },
+  { label: i18nT('libraryUi.help'), icon: 'pi pi-question-circle', path: '/help', tab: 'help' },
+]);
 
 const navigate = (path: string) => {
   void router.push(path);
@@ -114,12 +124,17 @@ const toMenuItems = (entries: NavEntry[]): MenuItem[] =>
     command: () => navigate(entry.path),
   }));
 
-const topItems = computed<MenuItem[]>(() => toMenuItems(topNav));
-const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav));
+const topItems = computed<MenuItem[]>(() => toMenuItems(topNav.value));
+const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav.value));
 </script>
 
 <template>
-  <aside v-if="collapsed" ref="menuContainerRef" class="side-rail" aria-label="主导航">
+  <aside
+    v-if="collapsed"
+    ref="menuContainerRef"
+    class="side-rail"
+    :aria-label="i18nT('libraryUi.mainNav')"
+  >
     <div class="side-rail-items">
       <button
         v-for="item in topNav"
@@ -160,7 +175,7 @@ const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav));
 
     <div class="side-nav-body">
       <div class="side-nav-section">
-        <div class="side-nav-section-label">导航</div>
+        <div class="side-nav-section-label">{{ i18nT('libraryUi.navigation') }}</div>
         <Menu :model="topItems" />
       </div>
 
@@ -169,7 +184,7 @@ const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav));
       <div class="side-nav-favorites">
         <div class="side-nav-favorites-head">
           <i class="pi pi-bookmark" />
-          <span>收藏小说</span>
+          <span>{{ i18nT('libraryUi.favoriteBooks') }}</span>
           <span v-if="starredNovels.length > 0" class="side-nav-favorites-count">
             {{ starredNovels.length }}
           </span>
@@ -187,7 +202,7 @@ const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav));
           </button>
         </div>
 
-        <div v-else class="side-nav-favorites-empty">暂无收藏的小说</div>
+        <div v-else class="side-nav-favorites-empty">{{ i18nT('libraryUi.noFavorites') }}</div>
       </div>
     </div>
 

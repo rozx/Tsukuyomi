@@ -18,6 +18,7 @@ function makeConfig(overrides: Partial<SyncConfig> = {}): SyncConfig {
     apiEndpoint: '',
     lastRemoteETag: 'etag-v1',
     knownRemoteHashes: {},
+    knownRemoteSchemaVersion: 4,
     ...overrides,
   };
 }

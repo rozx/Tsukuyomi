@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import { excludeImportText, mergeImportRanges } from './import-content-exclusions';
 import type { ImportContentRef, ImportResource, ImportTextBlock } from 'src/models/import';
 
@@ -14,24 +15,31 @@ export function resolveImportSegments(
   resource: Extraction,
   ref: Reference,
 ): ImportContentSegment[] {
-  if (ref.resourceId !== resource.id) throw new Error('INVALID_CONTENT_REF: 提取结果不匹配');
+  if (ref.resourceId !== resource.id)
+    throw importError(
+      'INVALID_CONTENT_REF',
+      'invalidContentRefTheExtractionResultDoesNotMatch',
+      {},
+    );
   if (
     !ref.blockId &&
     (ref.endBlockId !== undefined || ref.start !== undefined || ref.end !== undefined)
   )
-    throw new Error('INVALID_RANGE: 块内偏移必须指定起始块');
+    throw importError('INVALID_RANGE', 'invalidRangeBlockOffsetsRequireAStartingBlock', {});
   const first = ref.blockId ? resource.blocks.findIndex((block) => block.id === ref.blockId) : 0;
   const last = ref.endBlockId
     ? resource.blocks.findIndex((block) => block.id === ref.endBlockId)
     : ref.blockId
       ? first
       : resource.blocks.length - 1;
-  if (first < 0 || last < first) throw new Error('INVALID_CONTENT_REF: 正文块不存在或顺序无效');
+  if (first < 0 || last < first)
+    throw importError('INVALID_CONTENT_REF', 'invalidContentRefTheContentBlockIsMissingOr', {});
   const segments: ImportContentSegment[] = [];
   for (let index = first; index <= last; index++) {
     const block = resource.blocks[index]!;
     if (block.kind === 'metadata') {
-      if (ref.blockId) throw new Error('CONTENT_ROLE: 元信息块不能作为正文');
+      if (ref.blockId)
+        throw importError('CONTENT_ROLE', 'contentRoleMetadataBlocksCannotBeNovelContent', {});
       continue;
     }
     const start = index === first ? (ref.start ?? 0) : 0;
@@ -49,7 +57,7 @@ export function resolveImportSegments(
       splits(start) ||
       splits(end)
     )
-      throw new Error('INVALID_RANGE: 正文范围越界或拆开了字符');
+      throw importError('INVALID_RANGE', 'invalidRangeTheContentRangeIsOutOf', {});
     segments.push({
       block,
       ref: { kind: 'extraction', resourceId: resource.id, blockId: block.id, start, end },

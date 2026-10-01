@@ -1,3 +1,4 @@
+import { importNoticeText } from '../services/import/import-error';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { ImportParsingClient } from '../services/import/import-parsing-client';
@@ -34,7 +35,7 @@ describe('文本结构预览', () => {
       '',
       '最后\r\n',
     ]);
-    expect(result.chapters[3]?.warnings).toContain('章节正文为空');
+    expect(result.chapters[3]?.warnings?.map((w) => importNoticeText(w))).toContain('章节正文为空');
     const spans = [...result.chapters, ...result.excluded]
       .filter((r) => r.end > r.start)
       .sort((a, b) => a.start - b.start);
@@ -128,9 +129,15 @@ describe('文本结构预览', () => {
       },
     });
     expect(result.chapters[0]?.start).toBe(0);
-    expect(result.chapters[0]?.warnings).toContain('同卷章节标题重复，请检查是否匹配了目录');
-    expect(result.chapters[0]?.warnings).toContain('章节正文较短，请检查边界');
-    expect(result.chapters[1]?.warnings).toContain('章节正文异常长，请检查是否漏掉标题');
+    expect(result.chapters[0]?.warnings?.map((w) => importNoticeText(w))).toContain(
+      '同卷章节标题重复，请检查是否匹配了目录',
+    );
+    expect(result.chapters[0]?.warnings?.map((w) => importNoticeText(w))).toContain(
+      '章节正文较短，请检查边界',
+    );
+    expect(result.chapters[1]?.warnings?.map((w) => importNoticeText(w))).toContain(
+      '章节正文异常长，请检查是否漏掉标题',
+    );
   });
 
   it('带正则的拆章不能降级主线程；纯 Markdown 与字面量选择仍可有界回退', async () => {

@@ -4,6 +4,7 @@
  * 关闭或忽略不会解除等待，部分回答也不会被接受。
  */
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import ImportNovelChoice from './ImportNovelChoice.vue';
@@ -11,10 +12,13 @@ import ImportAskItem from './ImportAskItem.vue';
 import type { ImportAskValue } from './import-ask';
 
 const store = useImportWorkspaceStore();
+const { t } = useI18n();
 const question = computed(() => store.task?.pendingQuestion);
 const visible = computed(() => Boolean(question.value && !question.value.answer));
 const isNovel = computed(() => question.value?.kind === 'novel');
-const title = computed(() => (isNovel.value ? '请选择本次导入的小说' : '月詠在等你回答'));
+const title = computed(() =>
+  t(isNovel.value ? 'importUi.question.chooseNovel' : 'importUi.question.waiting'),
+);
 const items = computed(() => question.value?.items ?? []);
 
 const answers = ref<ImportAskValue[]>([]);
@@ -41,7 +45,12 @@ const submit = () =>
 </script>
 
 <template>
-  <div v-if="visible && question" class="iqc" role="group" aria-label="待回答的问题">
+  <div
+    v-if="visible && question"
+    class="iqc"
+    role="group"
+    :aria-label="t('importUi.question.region')"
+  >
     <div class="iqc-head">
       <i class="pi pi-question-circle" aria-hidden="true" />
       <span>{{ title }}</span>
@@ -55,7 +64,7 @@ const submit = () =>
         :item="item"
       />
       <Button
-        label="提交回答"
+        :label="t('importUi.question.submit')"
         size="small"
         :disabled="submitDisabled"
         :loading="busy"

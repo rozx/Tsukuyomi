@@ -143,7 +143,11 @@ type ReplyOutcome = 'ok' | 'quota' | 'retry' | 'rate-limit' | 'error';
  * 对响应应用策略（锁存额度 / 暂停队列）并给出结果。必须在释放限流名额之前调用，
  * 否则排队中的下一个请求会在暂停或锁存生效前抢先发出。
  */
-function applyReplyPolicy(reply: HttpReply, key: string | undefined, attempt: number): ReplyOutcome {
+function applyReplyPolicy(
+  reply: HttpReply,
+  key: string | undefined,
+  attempt: number,
+): ReplyOutcome {
   if (reply.status >= 200 && reply.status < 300) return 'ok';
   // 浏览器控制台只显示状态码；记录 Firecrawl 返回的原因，便于区分限速 / 并发 / 日限额
   console.warn(`[Firecrawl] 返回 ${reply.status}`, {
@@ -153,7 +157,10 @@ function applyReplyPolicy(reply: HttpReply, key: string | undefined, attempt: nu
     reason: (reply.data as { reason?: unknown } | undefined)?.reason,
     retryAfterMs: retryAfterMs(reply),
   });
-  if (reply.status === 402 || (reply.status === 429 && key === undefined && isKeylessDailyLimit(reply))) {
+  if (
+    reply.status === 402 ||
+    (reply.status === 429 && key === undefined && isKeylessDailyLimit(reply))
+  ) {
     setQuotaLatch(key, reply);
     return 'quota';
   }
@@ -198,10 +205,7 @@ async function postWithPolicy(
     if (outcome === 'quota') throw new FirecrawlQuotaError(key === undefined);
     if (outcome === 'rate-limit') throw new FirecrawlRateLimitError();
     const detail = errorText(reply.data);
-    throw new FirecrawlError(
-      `Firecrawl 请求失败: ${reply.status}${detail ? ` ${detail}` : ''}`,
-      reply.status,
-    );
+    throw FirecrawlError.http(reply.status, detail);
   }
 }
 
@@ -277,7 +281,12 @@ async function getCreditUsage(key: string): Promise<FirecrawlCreditUsage> {
   })) as HttpReply;
   if (reply.status === 401) return { kind: 'invalid-key' };
   if (reply.status < 200 || reply.status >= 300) {
-    throw new FirecrawlError(`额度查询失败: ${reply.status}`, reply.status);
+    throw new FirecrawlError(
+      'FIRECRAWL_CREDIT_FAILED',
+      'bookUi.fetch.firecrawlCreditFailed',
+      { status: reply.status },
+      reply.status,
+    );
   }
   const data = (reply.data as { data?: Record<string, unknown> }).data ?? {};
   const remainingCredits = Number(data.remainingCredits ?? 0);

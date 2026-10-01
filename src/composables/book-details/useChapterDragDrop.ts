@@ -5,6 +5,9 @@ import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
 import { getChapterDisplayTitle } from 'src/utils';
 import type { Chapter, Novel } from 'src/models/novel';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
 
 export function useChapterDragDrop(
   book: Ref<Novel | undefined>,
@@ -12,6 +15,9 @@ export function useChapterDragDrop(
 ) {
   const toast = useToastWithHistory();
   const booksStore = useBooksStore();
+  const settings = useSettingsStore();
+  const text = (key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(settings.uiLocale, key, values);
 
   // 拖拽状态
   const draggedChapter = ref<{
@@ -59,7 +65,7 @@ export function useChapterDragDrop(
     const { chapter, sourceVolumeId } = draggedChapter.value;
 
     // 保存状态用于撤销
-    saveState?.('移动章节');
+    saveState?.(text('bookUi.details.moveChapterState'));
 
     const updatedVolumes = ChapterService.moveChapter(
       book.value,
@@ -76,10 +82,13 @@ export function useChapterDragDrop(
 
     toast.add({
       severity: 'success',
-      summary: '移动成功',
-      detail: `已将章节 "${getChapterDisplayTitle(chapter)}" ${
-        sourceVolumeId === targetVolumeId ? '重新排序' : '移动到新卷'
-      }`,
+      summary: text('bookUi.details.moved'),
+      detail: text(
+        sourceVolumeId === targetVolumeId
+          ? 'bookUi.details.chapterReordered'
+          : 'bookUi.details.chapterMovedVolume',
+        { title: getChapterDisplayTitle(chapter, book.value) },
+      ),
       life: 3000,
     });
 

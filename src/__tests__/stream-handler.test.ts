@@ -15,7 +15,7 @@ describe('stream-handler', () => {
       } as any,
       originalText: 'some original text',
       logLabel: 'TestService',
-      taskType: 'translation' as const,
+      uiLocale: 'zh-CN' as const,
       abortController: new AbortController(),
       ...overrides,
     });

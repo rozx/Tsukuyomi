@@ -1,3 +1,5 @@
+import { importFailure, importError } from './import-error';
+
 import type { Paragraph } from 'src/models/novel';
 import type { ImportParagraphChange } from 'src/models/import';
 import type {
@@ -30,7 +32,8 @@ function explicitMatches(state: MatchState): void {
   const old = new Map(
     state.input.old.map((item, index) => [oldKey(item.chapterId, item.paragraph.id), index]),
   );
-  if (old.size !== state.input.old.length) throw new Error('MATCH_INPUT: 旧段落身份重复');
+  if (old.size !== state.input.old.length)
+    throw importError('MATCH_INPUT', 'matchInputDuplicateOldParagraphIdentity', {});
   for (const [index, item] of state.input.next.entries()) {
     if (!item.existing) continue;
     const before = old.get(oldKey(item.existing.chapterId, item.existing.paragraphId));
@@ -40,8 +43,10 @@ function explicitMatches(state: MatchState): void {
       state.used.has(before)
     ) {
       state.conflicts.push({
-        code: 'INVALID_EXISTING_REFERENCE',
-        message: '既有段落引用缺失、重复或原文不一致',
+        ...importFailure(
+          'INVALID_EXISTING_REFERENCE',
+          'invalidExistingReferenceExistingParagraphReferencesAreMissingDuplicated',
+        ),
         newKeys: [item.key],
       });
     } else assign(state, before, index);
@@ -128,13 +133,14 @@ async function replacement(
   });
   if (!confirmed)
     state.conflicts.push({
-      code,
-      message:
+      ...importFailure(
+        code,
         code === 'AMBIGUOUS_PARAGRAPH'
-          ? '重复原文无法确定对应关系，请指定既有引用或确认替换范围'
+          ? 'matchAmbiguous'
           : code === 'MATCHING_LIMIT'
-            ? '对应范围过大，请细分范围或确认替换'
-            : '多对多修订需要确认替换范围及译文损失',
+            ? 'matchLarge'
+            : 'matchMany',
+      ),
       newKeys: after.map((item) => item.key),
     });
 }
@@ -252,7 +258,8 @@ function materialize(state: MatchState): ImportParagraphMatchResult {
       : { id: item.newId, text: item.text, translations: [], selectedTranslationId: '' };
     const ids = usedIds.get(item.chapterId) ?? new Set<string>();
     if (ids.has(paragraph.id)) paragraph.id = item.newId;
-    if (ids.has(paragraph.id)) throw new Error('MATCH_INPUT: 新段落标识冲突');
+    if (ids.has(paragraph.id))
+      throw importError('MATCH_INPUT', 'matchInputConflictingNewParagraphIDs', {});
     ids.add(paragraph.id);
     usedIds.set(item.chapterId, ids);
     let kind: ImportParagraphChange['kind'] = old
@@ -267,6 +274,7 @@ function materialize(state: MatchState): ImportParagraphMatchResult {
       paragraph.text = item.text;
       paragraph.translations = [];
       paragraph.selectedTranslationId = '';
+      paragraph.selectedTranslations = {};
     }
     paragraphs.push({ key: item.key, chapterId: item.chapterId, paragraph });
     changes.push({
@@ -308,9 +316,9 @@ export async function matchImportParagraphs(
       input.next.reduce((sum, item) => sum + item.text.length, 0) >
       work.limits.textCharacters * 2
   )
-    throw new Error('MATCHING_LIMIT: 匹配范围超过当前环境上限');
+    throw importError('MATCHING_LIMIT', 'matchingLimitTheMatchingScopeExceedsThisEnvironment', {});
   if (new Set(input.next.map((item) => item.key)).size !== input.next.length)
-    throw new Error('MATCH_INPUT: 新段落来源身份重复');
+    throw importError('MATCH_INPUT', 'matchInputDuplicateNewParagraphSourceIdentity', {});
   await work.checkpoint(true);
   const state: MatchState = {
     input,

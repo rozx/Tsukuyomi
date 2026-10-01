@@ -13,13 +13,9 @@ const ctx = injectHelpPage();
 </script>
 
 <template>
-  <div
-    v-for="(docs, category) in ctx.groupedDocuments.value"
-    :key="category"
-    class="ht-nav-group"
-  >
+  <div v-for="(docs, category) in ctx.groupedDocuments.value" :key="category" class="ht-nav-group">
     <button class="ht-nav-category" @click="ctx.toggleCategory(category as string)">
-      <span>{{ category }}</span>
+      <span>{{ ctx.categoryLabel(category as string) }}</span>
       <i class="pi" :class="ctx.categoryChevron(category as string)" aria-hidden="true" />
     </button>
     <ul v-show="ctx.isCategoryExpanded(category as string)" class="ht-nav-items">

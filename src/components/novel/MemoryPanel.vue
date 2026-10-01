@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+import { resolveAppLocale } from 'src/models/locale';
+
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
@@ -22,6 +26,8 @@ import type { EmbeddingQueueProgress } from 'src/services/embedding-queue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { isMemoryEmbeddingStale } from 'src/services/memory-service';
+import { useToolbarExpand } from 'src/composables/useToolbarExpand';
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   book: Novel | null;
@@ -47,8 +53,8 @@ const etaLabel = computed(() => {
   const ms = queueProgress.value.etaMs;
   if (ms == null || ms <= 0) return '';
   const sec = Math.ceil(ms / 1000);
-  if (sec < 60) return `约 ${sec} 秒`;
-  return `约 ${Math.ceil(sec / 60)} 分钟`;
+  if (sec < 60) return t('memoryUi.etaSeconds', { count: sec });
+  return t('memoryUi.etaMinutes', { count: Math.ceil(sec / 60) });
 });
 
 // 搜索关键词
@@ -119,10 +125,7 @@ function clearFilters() {
 }
 
 // 模板内联三元/|| 收敛为 computed，降低模板圈复杂度
-const toolbarExpandIcon = computed(() =>
-  isToolbarExpanded.value ? 'pi pi-chevron-up' : 'pi pi-sliders-h',
-);
-const toolbarExpandTitle = computed(() => (isToolbarExpanded.value ? '收起' : '搜索与筛选'));
+const { toolbarExpandIcon, toolbarExpandTitle } = useToolbarExpand(isToolbarExpanded);
 const reEmbedDisabled = computed(() => !props.book || memories.value.length === 0);
 const deletePreviewText = computed(() => {
   const m = deletingMemory.value;
@@ -141,15 +144,15 @@ const handleReEmbed = async () => {
   if (added > 0) {
     toast.add({
       severity: 'info',
-      summary: '向量化已启动',
-      detail: `已加入 ${added} 条记忆到嵌入队列`,
+      summary: t('memoryUi.embeddingStarted'),
+      detail: t('memoryUi.queuedCount', { count: added }),
       life: 3000,
     });
   } else {
     toast.add({
       severity: 'info',
-      summary: '无需向量化',
-      detail: '所有记忆已是最新向量版本',
+      summary: t('memoryUi.noEmbeddingNeeded'),
+      detail: t('memoryUi.upToDate'),
       life: 3000,
     });
   }
@@ -195,8 +198,8 @@ const loadMemories = async () => {
     console.error('加载 Memory 失败:', error);
     toast.add({
       severity: 'error',
-      summary: '加载失败',
-      detail: '无法加载 记忆列表',
+      summary: t('memoryUi.loadFailed'),
+      detail: t('memoryUi.cannotLoad'),
       life: 3000,
     });
   } finally {
@@ -290,8 +293,8 @@ const confirmDeleteMemory = async () => {
 
     toast.add({
       severity: 'success',
-      summary: '删除成功',
-      detail: `已成功删除 记忆 "${memory.summary || memory.content.slice(0, 20)}..."`,
+      summary: t('memoryUi.deleteSuccess'),
+      detail: t('memoryUi.deleted', { name: memory.summary || memory.content.slice(0, 20) }),
       life: 3000,
     });
 
@@ -304,8 +307,12 @@ const confirmDeleteMemory = async () => {
     console.error('删除 Memory 失败:', error);
     toast.add({
       severity: 'error',
-      summary: '删除失败',
-      detail: error instanceof Error ? error.message : '删除 记忆时发生未知错误',
+      summary: t('memoryUi.deleteFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'memoryUi.deleteUnknown',
+      ),
       life: 5000,
     });
   } finally {
@@ -313,62 +320,66 @@ const confirmDeleteMemory = async () => {
   }
 };
 
+function getMemorySaveBookId(content: string): string | null {
+  const errorKey = !props.book
+    ? 'memoryUi.noBook'
+    : !content.trim()
+      ? 'memoryUi.contentRequired'
+      : null;
+  if (errorKey) {
+    toast.add({
+      severity: 'error',
+      summary: t('memoryUi.saveFailed'),
+      detail: t(errorKey),
+      life: 3000,
+    });
+    return null;
+  }
+  return props.book!.id;
+}
+
+async function runMemorySave(operation: () => Promise<void>): Promise<void> {
+  isSaving.value = true;
+  try {
+    await operation();
+  } catch (error) {
+    console.error('保存 Memory 失败:', error);
+    toast.add({
+      severity: 'error',
+      summary: t('memoryUi.saveFailed'),
+      detail: localizedErrorMessage(error, resolveAppLocale(locale.value), 'memoryUi.saveUnknown'),
+      life: 5000,
+    });
+  } finally {
+    isSaving.value = false;
+  }
+}
+
 // 保存 Memory（仅用于添加新记忆）
 const handleSave = async () => {
-  if (!props.book) {
-    toast.add({
-      severity: 'error',
-      summary: '保存失败',
-      detail: '没有选择书籍',
-      life: 3000,
-    });
-    return;
-  }
-
-  // 验证必填字段
-  if (!formData.value.content.trim()) {
-    toast.add({
-      severity: 'error',
-      summary: '保存失败',
-      detail: '记忆内容不能为空',
-      life: 3000,
-    });
-    return;
-  }
-
-  isSaving.value = true;
-
-  try {
+  const bookId = getMemorySaveBookId(formData.value.content);
+  if (bookId === null) return;
+  await runMemorySave(async () => {
     // 添加新 Memory
     const newMemory = await MemoryService.createMemory(
-      props.book.id,
+      bookId,
       formData.value.content.trim(),
       formData.value.summary.trim(),
     );
 
     toast.add({
       severity: 'success',
-      summary: '保存成功',
-      detail: '已成功添加 记忆',
+      summary: t('memoryUi.saveSuccess'),
+      detail: t('memoryUi.added'),
       life: 3000,
-      onRevert: () => MemoryService.deleteMemory(props.book!.id, newMemory.id),
+      onRevert: () => MemoryService.deleteMemory(bookId, newMemory.id),
     });
 
     showAddDialog.value = false;
 
     // 重新加载列表
     await loadMemories();
-  } catch (error) {
-    console.error('保存 Memory 失败:', error);
-    toast.add({
-      severity: 'error',
-      summary: '保存失败',
-      detail: error instanceof Error ? error.message : '保存 记忆时发生未知错误',
-      life: 5000,
-    });
-  } finally {
-    isSaving.value = false;
-  }
+  });
 };
 
 // 处理删除（保留兼容性，调用新的删除确认函数）
@@ -379,35 +390,15 @@ const handleDelete = (memory: Memory) => {
 
 // 处理从详情对话框保存记忆
 async function handleSaveMemory(memoryId: string, summary: string, content: string) {
-  if (!props.book) {
-    toast.add({
-      severity: 'error',
-      summary: '保存失败',
-      detail: '没有选择书籍',
-      life: 3000,
-    });
-    return;
-  }
-
-  if (!content.trim()) {
-    toast.add({
-      severity: 'error',
-      summary: '保存失败',
-      detail: '记忆内容不能为空',
-      life: 3000,
-    });
-    return;
-  }
-
-  isSaving.value = true;
-
-  try {
-    await MemoryService.updateMemory(props.book.id, memoryId, content.trim(), summary.trim());
+  const bookId = getMemorySaveBookId(content);
+  if (bookId === null) return;
+  await runMemorySave(async () => {
+    await MemoryService.updateMemory(bookId, memoryId, content.trim(), summary.trim());
 
     toast.add({
       severity: 'success',
-      summary: '保存成功',
-      detail: '已成功更新 记忆',
+      summary: t('memoryUi.saveSuccess'),
+      detail: t('memoryUi.updated'),
       life: 3000,
     });
 
@@ -429,31 +420,16 @@ async function handleSaveMemory(memoryId: string, summary: string, content: stri
         content: content.trim(),
       } as Memory;
     }
-  } catch (error) {
-    console.error('保存 Memory 失败:', error);
-    toast.add({
-      severity: 'error',
-      summary: '保存失败',
-      detail: error instanceof Error ? error.message : '保存 记忆时发生未知错误',
-      life: 5000,
-    });
-  } finally {
-    isSaving.value = false;
-  }
+  });
 }
-
-// 格式化时间戳
-const formatDate = (timestamp: number) => {
-  return new Date(timestamp).toLocaleString('zh-CN');
-};
 
 // 导出 Memory 为 JSON
 const handleExport = () => {
   if (!props.book || memories.value.length === 0) {
     toast.add({
       severity: 'warn',
-      summary: '导出失败',
-      detail: '当前没有可导出的 记忆',
+      summary: t('memoryUi.exportFailed'),
+      detail: t('memoryUi.noExport'),
       life: 3000,
     });
     return;
@@ -470,20 +446,27 @@ const handleExport = () => {
 
     SettingsService.downloadJson(
       exportData,
-      `${props.book.title}-记忆-${new Date().toISOString().split('T')[0]}.json`,
+      t('memoryUi.exportFilename', {
+        title: props.book.title,
+        date: new Date().toISOString().split('T')[0]!,
+      }),
     );
 
     toast.add({
       severity: 'success',
-      summary: '导出成功',
-      detail: `已成功导出 ${memories.value.length} 条 记忆`,
+      summary: t('memoryUi.exportSuccess'),
+      detail: t('memoryUi.exported', { count: memories.value.length }),
       life: 3000,
     });
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '导出失败',
-      detail: error instanceof Error ? error.message : '导出 记忆时发生未知错误',
+      summary: t('memoryUi.exportFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'memoryUi.exportUnknown',
+      ),
       life: 5000,
     });
   }
@@ -530,8 +513,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     if (!Array.isArray(importedMemories) || importedMemories.length === 0) {
       toast.add({
         severity: 'warn',
-        summary: '导入失败',
-        detail: '文件中没有有效的 记忆数据',
+        summary: t('memoryUi.importFailed'),
+        detail: t('memoryUi.invalidFile'),
         life: 3000,
       });
       return;
@@ -540,8 +523,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     if (!props.book) {
       toast.add({
         severity: 'error',
-        summary: '导入失败',
-        detail: '没有选择书籍',
+        summary: t('memoryUi.importFailed'),
+        detail: t('memoryUi.noBook'),
         life: 3000,
       });
       return;
@@ -555,8 +538,12 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
 
     toast.add({
       severity: 'success',
-      summary: '导入成功',
-      detail: `已导入 ${importedMemories.length} 条 记忆（新增 ${addedCount} 条，更新 ${updatedCount} 条）`,
+      summary: t('memoryUi.importSuccess'),
+      detail: t('memoryUi.imported', {
+        count: importedMemories.length,
+        added: addedCount,
+        updated: updatedCount,
+      }),
       life: 3000,
     });
 
@@ -565,8 +552,12 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '导入失败',
-      detail: error instanceof Error ? error.message : '导入 记忆时发生未知错误',
+      summary: t('memoryUi.importFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'memoryUi.importUnknown',
+      ),
       life: 5000,
     });
   }
@@ -577,10 +568,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   <div class="memory-panel h-full flex flex-col">
     <!-- 标题区域 -->
     <div class="panel-header border-b border-white/10">
-      <h1 class="panel-title font-semibold text-moon-100">记忆管理</h1>
-      <p class="panel-desc text-sm text-moon/70">
-        管理小说的背景设定和剧情记忆，这些内容会在翻译过程中提供给 AI 作为上下文参考
-      </p>
+      <h1 class="panel-title font-semibold text-moon-100">{{ t('memoryUi.title') }}</h1>
+      <p class="panel-desc text-sm text-moon/70">{{ t('memoryUi.description') }}</p>
     </div>
 
     <!-- 操作栏 -->
@@ -590,7 +579,9 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     >
       <!-- 移动端紧凑操作栏 -->
       <div class="toolbar-mobile-compact">
-        <span class="text-sm text-moon/60">{{ filteredMemories.length }} 条记忆</span>
+        <span class="text-sm text-moon/60">{{
+          t('memoryUi.count', { count: filteredMemories.length })
+        }}</span>
         <Button
           :icon="toolbarExpandIcon"
           size="small"
@@ -608,13 +599,17 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
             </InputGroupAddon>
-            <InputText v-model="searchQuery" placeholder="搜索记忆..." class="search-input" />
+            <InputText
+              v-model="searchQuery"
+              :placeholder="t('memoryUi.searchPlaceholder')"
+              class="search-input"
+            />
             <InputGroupAddon v-if="searchQuery" class="input-action-addon">
               <Button
                 icon="pi pi-times"
                 class="p-button-text p-button-sm input-action-button"
                 @click="searchQuery = ''"
-                title="清除搜索"
+                :title="t('memoryUi.clearSearch')"
               />
             </InputGroupAddon>
           </InputGroup>
@@ -622,7 +617,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
           <!-- 仅显示未向量化 -->
           <label class="flex items-center gap-2 text-sm text-moon-100/70 whitespace-nowrap">
             <Checkbox v-model="filterUnembeddedOnly" :binary="true" />
-            <span>仅显示未向量化</span>
+            <span>{{ t('memoryUi.onlyUnembedded') }}</span>
           </label>
 
           <!-- 清除筛选按钮 -->
@@ -631,7 +626,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
             icon="pi pi-filter-slash"
             class="p-button-text p-button-sm"
             @click="clearFilters"
-            title="清除筛选"
+            :title="t('memoryUi.clearFilters')"
           />
         </div>
 
@@ -642,23 +637,23 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
             class="p-button-outlined p-button-sm"
             :disabled="reEmbedDisabled"
             @click="handleReEmbed"
-            title="重新向量化本书"
+            :title="t('memoryUi.reembedBook')"
           />
           <Button
             icon="pi pi-upload"
             class="p-button-outlined p-button-sm"
             :disabled="exportDisabled"
             @click="handleExport"
-            title="导出"
+            :title="t('memoryUi.export')"
           />
           <Button
             icon="pi pi-download"
             class="p-button-outlined p-button-sm"
             @click="handleImport"
-            title="导入"
+            :title="t('memoryUi.import')"
           />
           <Button
-            label="添加"
+            :label="t('memoryUi.add')"
             icon="pi pi-plus"
             class="p-button-primary p-button-sm"
             :disabled="addDisabled"
@@ -669,7 +664,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       <AppMessage
         severity="info"
         class="panel-message toolbar-expandable"
-        message="记忆由 AI 自动管理，会在翻译过程中自动创建和更新。手动编辑的记忆可能会被覆盖，建议仅在必要时干预。"
+        :message="t('memoryUi.aiHint')"
         :closable="false"
       />
     </div>
@@ -728,9 +723,9 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     <!-- 添加 Memory 对话框 -->
     <AdaptiveDialog
       v-model:visible="showAddDialog"
-      header="添加 记忆"
+      :header="t('memoryUi.addMemory')"
       desktop-width="600px"
-      eyebrow="MEMORY"
+      :eyebrow="t('memoryUi.memoryCategory')"
       :closable="!isSaving"
       :dismissable-mask="!isSaving"
       :close-on-escape="!isSaving"
@@ -738,20 +733,25 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     >
       <div class="space-y-4">
         <div>
-          <label class="block text-sm font-medium text-moon/90 mb-2">
-            摘要 <span class="text-moon/60">(可选)</span>
+          <label class="block text-sm font-medium text-moon/90 mb-2"
+            >{{ t('memoryUi.summary')
+            }}<span class="text-moon/60">{{ t('memoryUi.optional') }}</span>
           </label>
-          <InputText v-model="formData.summary" placeholder="记忆的简短描述..." class="w-full" />
+          <InputText
+            v-model="formData.summary"
+            :placeholder="t('memoryUi.shortDescription')"
+            class="w-full"
+          />
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-moon/90 mb-2">
-            内容 <span class="text-red-500">*</span>
+          <label class="block text-sm font-medium text-moon/90 mb-2"
+            >{{ t('memoryUi.content') }}<span class="text-red-500">*</span>
           </label>
           <Textarea
             v-model="formData.content"
             rows="8"
-            placeholder="输入 记忆的详细内容..."
+            :placeholder="t('memoryUi.contentPlaceholder')"
             class="w-full"
           />
         </div>
@@ -759,40 +759,45 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
 
       <template #footer>
         <Button
-          label="取消"
+          :label="t('memoryUi.cancel')"
           icon="pi pi-times"
           text
           @click="showAddDialog = false"
           :disabled="isSaving"
         />
-        <Button label="保存" icon="pi pi-check" :loading="isSaving" @click="handleSave" />
+        <Button
+          :label="t('memoryUi.save')"
+          icon="pi pi-check"
+          :loading="isSaving"
+          @click="handleSave"
+        />
       </template>
     </AdaptiveDialog>
 
     <!-- 确认删除对话框 -->
     <AdaptiveDialog
       v-model:visible="showDeleteConfirm"
-      header="确认删除 记忆"
+      :header="t('memoryUi.confirmDelete')"
       desktop-width="25rem"
       eyebrow="DELETE"
       sheet-min-height="auto"
     >
       <div class="space-y-4">
-        <p class="text-moon/90">确定要删除这条 记忆吗？</p>
+        <p class="text-moon/90">{{ t('memoryUi.deleteQuestion') }}</p>
         <p v-if="deletingMemory" class="text-sm text-moon/70 truncate">
           {{ deletePreviewText }}
         </p>
-        <p class="text-sm text-moon/70">此操作无法撤销。</p>
+        <p class="text-sm text-moon/70">{{ t('memoryUi.cannotUndo') }}</p>
       </div>
       <template #footer>
         <Button
-          label="取消"
+          :label="t('memoryUi.cancel')"
           class="p-button-text"
           :disabled="isDeleting"
           @click="showDeleteConfirm = false"
         />
         <Button
-          label="删除"
+          :label="t('memoryUi.delete')"
           class="p-button-danger"
           :loading="isDeleting"
           :disabled="isDeleting"

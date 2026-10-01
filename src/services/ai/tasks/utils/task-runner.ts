@@ -1,3 +1,6 @@
+import type { TodoParagraphInput } from 'src/services/todo-list-service';
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import type { ExecutionLanguages } from 'src/models/locale';
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import { ToolRegistry } from 'src/services/ai/tools/tool-registry';
 import type { ActionInfo } from 'src/services/ai/tools/types';
@@ -8,7 +11,7 @@ import {
   type TaskType,
   type AIProcessingStore,
 } from './task-types';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { AIDegradationError } from 'src/services/ai/core/errors';
 import { TOOL_CALL_PLACEHOLDER } from './stream-handler';
 import type {
   TextGenerationRequest,
@@ -34,7 +37,8 @@ import {
 } from './productivity-monitor';
 import { type PerformanceMetrics } from './tool-executor';
 import { buildPostOutputPrompt } from './context-builder';
-import { PromptPolicy } from './prompt-policy';
+import { createPromptPolicy, type IPromptPolicy } from './prompt-policy';
+import { agentText, translateText } from 'src/i18n/translate';
 import { StateMachineEngine } from './state-machine-engine';
 import { ToolDispatcher } from './tool-dispatcher';
 import { TodoWorkflow } from './todo-workflow';
@@ -54,6 +58,8 @@ const ABSOLUTE_MAX_TURNS = 200;
  * 处理工具调用循环
  */
 export interface ToolCallLoopConfig {
+  languages: ExecutionLanguages;
+  paragraphInputs?: readonly TodoParagraphInput[];
   history: ChatMessage[];
   tools: AITool[];
   generateText: (
@@ -214,8 +220,8 @@ class TaskLoopSession {
 
   // Config & Helpers
   private allowedToolNames: Set<string>;
-  private taskLabel: string;
   private metrics: PerformanceMetrics;
+  private readonly promptPolicy: IPromptPolicy;
   private stateMachine: StateMachineEngine;
   private toolDispatcher: ToolDispatcher;
   private todoWorkflow: TodoWorkflow | undefined;
@@ -223,8 +229,8 @@ class TaskLoopSession {
   private lastTodoMessage: ChatMessage | undefined;
 
   constructor(private config: ToolCallLoopConfig) {
+    this.promptPolicy = createPromptPolicy();
     this.allowedToolNames = new Set(config.tools.map((t) => t.function.name));
-    this.taskLabel = TASK_TYPE_LABELS[config.taskType];
     this.stateMachine = new StateMachineEngine(config.taskType, this.currentStatus);
     this.metrics = createInitialMetrics();
     this.toolDispatcher = new ToolDispatcher({
@@ -249,7 +255,7 @@ class TaskLoopSession {
           this.metrics.workingRejectedWriteCount++;
         },
         logLabel: this.config.logLabel,
-        promptPolicy: PromptPolicy,
+        promptPolicy: this.promptPolicy,
         taskType: this.config.taskType,
       },
       allowedToolNames: this.allowedToolNames,
@@ -266,6 +272,7 @@ class TaskLoopSession {
         config.taskId,
         config.chunkIndex ?? 0,
         !!config.isBriefPlanning,
+        config.languages,
       );
       // 生成 planning 阶段的初始待办
       this.todoWorkflow.generateForState('planning');
@@ -317,7 +324,7 @@ class TaskLoopSession {
       aiProcessingStore,
       chunkText,
       logLabel,
-      taskType: this.config.taskType,
+      uiLocale: this.config.languages.uiLocale,
     });
 
     // Save reasoning
@@ -347,9 +354,7 @@ class TaskLoopSession {
     this.finalResponseText = responseText;
 
     if (detectRepeatingCharacters(responseText, chunkText, { logLabel })) {
-      throw new Error(
-        `AI降级检测：最终响应中检测到重复字符（chunkIndex: ${this.config.chunkIndex ?? 'unknown'}）`,
-      );
+      throw new AIDegradationError(this.config.languages.uiLocale);
     }
 
     const previousStatus = this.currentStatus;
@@ -372,17 +377,7 @@ class TaskLoopSession {
       this.executeStatusTransition(previousStatus, newStatus, responseText);
     }
 
-    if (this.pendingTitleTranslation) {
-      this.titleTranslation = this.pendingTitleTranslation;
-      if (this.config.onTitleExtracted) {
-        try {
-          await this.config.onTitleExtracted(this.titleTranslation);
-        } catch (error) {
-          console.error(`[${logLabel}] ⚠️ onTitleExtracted 回调失败:`, error);
-        }
-      }
-      this.pendingTitleTranslation = undefined;
-    }
+    await this.flushPendingTitle();
 
     history.push({ role: 'assistant', content: responseText });
     return this.handleStateLogic();
@@ -433,21 +428,25 @@ class TaskLoopSession {
     const argsStr = toolCall.function.arguments || '';
 
     const start = Date.now();
-    const toolResult = await ToolRegistry.handleToolCall(
-      toolCall,
+    const toolResult = await ToolRegistry.handleToolCall(toolCall, {
+      languages: this.config.languages,
       bookId,
-      handleAction,
-      onToast,
-      taskId,
-      undefined, // sessionId
-      this.config.paragraphIds, // 传入段落 ID 列表以启用块边界限制
-      aiProcessingStore, // 传入 AI 处理 Store
-      this.config.aiModelId,
-      this.config.chunkIndex, // 传入块索引用于 review 检查
-      this.submittedParagraphIds, // 传入已提交段落 ID 集合用于计算剩余 chunk 大小
-      this.accumulatedParagraphs, // 传入已积累的翻译内存，用于 review 完整性检查（避免依赖过时的 DB 数据）
-      this.config.enableOriginalTextValidation, // 传入原文校验设置
-    );
+      ...(handleAction ? { onAction: handleAction } : {}),
+      ...(onToast ? { onToast } : {}),
+      ...(taskId ? { taskId } : {}),
+      // 段落 ID 列表启用块边界限制
+      ...(this.config.paragraphIds ? { paragraphIds: this.config.paragraphIds } : {}),
+      ...(aiProcessingStore ? { aiProcessingStore } : {}),
+      ...(this.config.aiModelId ? { aiModelId: this.config.aiModelId } : {}),
+      // 块索引用于 review 检查
+      ...(this.config.chunkIndex !== undefined ? { chunkIndex: this.config.chunkIndex } : {}),
+      // 已提交段落用于计算剩余 chunk 大小；已积累译文用于 review 完整性检查（避免依赖过时的 DB 数据）
+      submittedParagraphIds: this.submittedParagraphIds,
+      accumulatedParagraphs: this.accumulatedParagraphs,
+      ...(this.config.enableOriginalTextValidation !== undefined
+        ? { enableOriginalTextValidation: this.config.enableOriginalTextValidation }
+        : {}),
+    });
     recordToolCall(this.metrics, Date.now() - start);
 
     // 原子写入 [调用工具] + [工具结果]：避免两次 append 之间发生终态切换（completeTask /
@@ -478,7 +477,11 @@ class TaskLoopSession {
     console.warn(
       `[${this.config.logLabel}] ⛔ Gate 阻塞：${gate.incompleteItems.length} 个未完成待办`,
     );
-    return `⛔ 无法进入 ${newStatus}：还有 ${gate.incompleteItems.length} 个未完成的待办事项\n${todoList}\n\n请先完成所有待办事项后再切换状态。`;
+    return agentText('aiState.gate', {
+      status: newStatus,
+      count: gate.incompleteItems.length,
+      items: todoList,
+    });
   }
 
   /**
@@ -511,6 +514,9 @@ class TaskLoopSession {
           this.todoWorkflow.generateForState(newStatus, {
             paragraphIds: this.config.paragraphIds || [],
             chunkText: this.config.chunkText,
+            ...(this.config.paragraphInputs
+              ? { paragraphInputs: this.config.paragraphInputs }
+              : {}),
             chunkIndex: this.config.chunkIndex ?? 0,
             chapterTitle: this.config.chapterTitle,
           });
@@ -550,11 +556,23 @@ class TaskLoopSession {
     return { role: 'user', content: statusPrompt };
   }
 
+  private async flushPendingTitle(): Promise<void> {
+    const title = this.pendingTitleTranslation;
+    if (!title) return;
+    await this.config.onTitleExtracted?.(title);
+    this.titleTranslation = title;
+    this.pendingTitleTranslation = undefined;
+  }
+
   private async handleBatchExtraction(
     toolName: string,
     toolCall: AIToolCall,
     toolResultContent: string,
   ) {
+    if (toolName === 'update_chapter_title') {
+      await this.flushPendingTitle();
+      return;
+    }
     if (toolName !== 'add_translation_batch') {
       return;
     }
@@ -564,6 +582,17 @@ class TaskLoopSession {
       return;
     }
 
+    if (this.config.onParagraphsExtracted) {
+      try {
+        await this.config.onParagraphsExtracted(extracted);
+      } catch (error) {
+        console.error(
+          `[${this.config.logLabel}] ⚠️ 段落回调失败（工具 add_translation_batch）`,
+          error,
+        );
+        throw error;
+      }
+    }
     // 检测本次会话中重复提交的段落（可能是 AI 修正翻译错误，属于正常行为）
     const duplicateIds: string[] = [];
     for (const para of extracted) {
@@ -578,17 +607,6 @@ class TaskLoopSession {
         duplicateIds.slice(0, 5).join(', ') +
           (duplicateIds.length > 5 ? ` 等 ${duplicateIds.length} 个` : ''),
       );
-    }
-
-    if (this.config.onParagraphsExtracted) {
-      try {
-        await this.config.onParagraphsExtracted(extracted);
-      } catch (error) {
-        console.error(
-          `[${this.config.logLabel}] ⚠️ 段落回调失败（工具 add_translation_batch）`,
-          error,
-        );
-      }
     }
   }
 
@@ -691,7 +709,7 @@ class TaskLoopSession {
     if (keyTools.has(toolName)) {
       if (this.config.isBriefPlanning) {
         console.warn(`[${this.config.logLabel}] ⚠️ 简短规划模式下检测到重复工具调用: ${toolName}`);
-        const warning = PromptPolicy.getBriefPlanningToolWarningPrompt();
+        const warning = this.promptPolicy.getBriefPlanningToolWarningPrompt();
         // 验证 content 不为空
         const toolResultContent = content || '';
         this.config.history.push({
@@ -770,7 +788,7 @@ class TaskLoopSession {
         this.planningResponses.push(this.finalResponseText);
       }
 
-      const prompt = PromptPolicy.getPlanningLoopPrompt(
+      const prompt = this.promptPolicy.getPlanningLoopPrompt(
         this.config.taskType,
         !!this.config.isBriefPlanning,
         this.consecutivePlanningCount >= MAX_CONSECUTIVE_STATUS,
@@ -817,7 +835,8 @@ class TaskLoopSession {
       this.config.history.push({
         role: 'user',
         content:
-          `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingLoopPrompt(taskType),
+          `${this.getCurrentStatusInfoMsg()}\n\n` +
+          this.promptPolicy.getWorkingLoopPrompt(taskType),
       });
       return { shouldContinue: true };
     }
@@ -835,13 +854,15 @@ class TaskLoopSession {
       this.config.history.push({
         role: 'user',
         content:
-          `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingFinishedPrompt(taskType),
+          `${this.getCurrentStatusInfoMsg()}\n\n` +
+          this.promptPolicy.getWorkingFinishedPrompt(taskType),
       });
     } else {
       this.config.history.push({
         role: 'user',
         content:
-          `${this.getCurrentStatusInfoMsg()}\n\n` + PromptPolicy.getWorkingContinuePrompt(taskType),
+          `${this.getCurrentStatusInfoMsg()}\n\n` +
+          this.promptPolicy.getWorkingContinuePrompt(taskType),
       });
     }
     return { shouldContinue: true };
@@ -866,7 +887,7 @@ class TaskLoopSession {
             role: 'user',
             content:
               `${this.getCurrentStatusInfoMsg()}\n\n` +
-              PromptPolicy.getMissingParagraphsPrompt(taskType, dbConfirmedMissing),
+              this.promptPolicy.getMissingParagraphsPrompt(taskType, dbConfirmedMissing),
           });
           this.consecutiveReviewCount = 0;
           return { shouldContinue: true };
@@ -886,7 +907,7 @@ class TaskLoopSession {
         role: 'user',
         content:
           `${this.getCurrentStatusInfoMsg()}\n\n` +
-          PromptPolicy.getReviewLoopPrompt(this.config.taskType),
+          this.promptPolicy.getReviewLoopPrompt(this.config.taskType),
       });
     } else {
       const postOutputPrompt = buildPostOutputPrompt(taskType, this.config.taskId);
@@ -942,19 +963,11 @@ class TaskLoopSession {
 
       for (const id of missingIds) {
         const paragraph = contentMap.get(id);
-        if (paragraph?.translations && paragraph.translations.length > 0) {
-          // 数据库已有翻译，同步到内存
-          const selectedTranslation = paragraph.translations.find(
-            (t) => t.id === paragraph.selectedTranslationId,
-          );
-          const translationText =
-            selectedTranslation?.translation || paragraph.translations[0]?.translation;
-          if (translationText) {
-            this.accumulatedParagraphs.set(id, translationText);
-          }
-        } else {
-          stillMissing.push(id);
-        }
+        const selected = paragraph
+          ? getLanguageTranslation(paragraph, this.config.languages.targetLanguage)
+          : undefined;
+        if (selected) this.accumulatedParagraphs.set(id, selected.translation);
+        else stillMissing.push(id);
       }
 
       return stillMissing;
@@ -1000,7 +1013,7 @@ class TaskLoopSession {
    * 否则每条状态消息都会夹带一份过时快照。
    */
   private getCurrentStatusInfoMsg() {
-    return PromptPolicy.getCurrentStatusInfo(
+    return this.promptPolicy.getCurrentStatusInfo(
       this.config.taskType,
       this.currentStatus,
       this.config.isBriefPlanning,
@@ -1028,7 +1041,10 @@ class TaskLoopSession {
   private checkMaxTurns(effectiveMaxTurns: number) {
     if (this.currentStatus !== 'end' && this.currentTurnCount >= effectiveMaxTurns) {
       throw new Error(
-        `AI在${effectiveMaxTurns}回合内未完成${this.taskLabel}任务（当前状态: ${this.currentStatus}）。请重试。`,
+        translateText(this.config.languages.uiLocale, `aiRun.maxTurns.${this.config.taskType}`, {
+          turns: effectiveMaxTurns,
+          status: this.currentStatus,
+        }),
       );
     }
   }

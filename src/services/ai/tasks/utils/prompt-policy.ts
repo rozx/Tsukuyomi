@@ -47,61 +47,18 @@ export interface IPromptPolicy {
 /**
  * 提示词策略层：集中管理 task-runner 的所有提示词生成
  */
-export const PromptPolicy: IPromptPolicy = {
-  getCurrentStatusInfo(
-    taskType: TaskType,
-    status: TaskStatus,
-    isBriefPlanning?: boolean,
-    hasNextChunk?: boolean,
-  ): string {
-    return getCurrentStatusInfo(taskType, status, isBriefPlanning, hasNextChunk);
-  },
-
-  getPlanningLoopPrompt(
-    taskType: TaskType,
-    isBriefPlanning: boolean,
-    isLoopDetected: boolean,
-  ): string {
-    return getPlanningLoopPrompt(taskType, isBriefPlanning, isLoopDetected);
-  },
-
-  getWorkingLoopPrompt(taskType: TaskType): string {
-    return getWorkingLoopPrompt(taskType);
-  },
-
-  getWorkingFinishedPrompt(taskType: TaskType): string {
-    return getWorkingFinishedPrompt(taskType);
-  },
-
-  getWorkingContinuePrompt(taskType: TaskType): string {
-    return getWorkingContinuePrompt(taskType);
-  },
-
-  getMissingParagraphsPrompt(taskType: TaskType, missingIds: string[]): string {
-    return getMissingParagraphsPrompt(taskType, missingIds);
-  },
-
-  getReviewLoopPrompt(taskType: TaskType): string {
-    return getReviewLoopPrompt(taskType);
-  },
-
-  getUnauthorizedToolPrompt(taskType: TaskType, toolName: string): string {
-    return getUnauthorizedToolPrompt(taskType, toolName);
-  },
-
-  getStatusRestrictedToolPrompt(
-    toolName: string,
-    currentStatus: TaskStatus,
-    taskType?: TaskType,
-  ): string {
-    return getStatusRestrictedToolPrompt(toolName, currentStatus, taskType);
-  },
-
-  getToolLimitReachedPrompt(toolName: string, limit: number): string {
-    return getToolLimitReachedPrompt(toolName, limit);
-  },
-
-  getBriefPlanningToolWarningPrompt(): string {
-    return getBriefPlanningToolWarningPrompt();
-  },
-};
+export function createPromptPolicy(): IPromptPolicy {
+  return {
+    getCurrentStatusInfo,
+    getPlanningLoopPrompt,
+    getWorkingLoopPrompt,
+    getWorkingFinishedPrompt,
+    getWorkingContinuePrompt,
+    getMissingParagraphsPrompt,
+    getReviewLoopPrompt,
+    getUnauthorizedToolPrompt,
+    getStatusRestrictedToolPrompt,
+    getToolLimitReachedPrompt,
+    getBriefPlanningToolWarningPrompt,
+  };
+}

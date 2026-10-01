@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 import './setup';
+import { ManifestProtocolError } from 'src/utils/manifest-protocol';
 
 import { useGistSync } from '../composables/useGistUploadWithConflictCheck';
 import { GistSyncService } from '../services/gist-sync-service';
@@ -43,6 +44,7 @@ function createSyncConfigWithoutGistId(): SyncConfig {
 
 function createMockSettingsStore(overrides: Record<string, unknown> = {}) {
   return {
+    uiLocale: 'zh-CN',
     isSyncing: false,
     gistSync: createSyncConfig(),
     setSyncing: mock(() => {}),
@@ -52,6 +54,7 @@ function createMockSettingsStore(overrides: Record<string, unknown> = {}) {
     updateLastSyncTime: mock(() => Promise.resolve()),
     updateLastRemoteETag: mock(() => Promise.resolve()),
     updateKnownRemoteHashes: mock(() => Promise.resolve()),
+    updateKnownRemoteSchemaVersion: mock((_version: number) => Promise.resolve()),
     updateKnownRemoteEntries: mock(() => Promise.resolve()),
     updateKnownRemoteTombstones: mock(() => Promise.resolve()),
     cleanupOldDeletionRecords: mock(() => Promise.resolve()),
@@ -94,6 +97,7 @@ describe('useGistSync (manifest-driven flow)', () => {
     spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
       covers: [],
       addCover: mock(() => Promise.resolve()),
+      upsertCovers: mock(() => Promise.resolve()),
     } as any);
     spyOn(ToastHistory, 'useToastWithHistory').mockReturnValue({ add: mockToastAdd } as any);
 
@@ -261,6 +265,40 @@ describe('useGistSync (manifest-driven flow)', () => {
         expect.objectContaining({ severity: 'error', summary: '下载失败' }),
       );
     });
+
+    it('数据协议错误码在同步提示中显示为界面语言说明而非原始代码', async () => {
+      mockSettingsStore.uiLocale = 'en-US';
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockRejectedValue(
+        new Error('UNSUPPORTED_ENTITY_SYNC_VERSION'),
+      );
+
+      await useGistSync().sync();
+
+      expect(mockToastAdd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: 'Download failed',
+          detail:
+            'The remote data uses a newer term/character format. Update the app before syncing.',
+        }),
+      );
+    });
+
+    it('英文界面下失败提示为英文，自有错误按界面语言重新渲染', async () => {
+      mockSettingsStore.uiLocale = 'en-US';
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockRejectedValue(
+        new ManifestProtocolError('MANIFEST_INVALID', 'invalid'),
+      );
+
+      await useGistSync().sync();
+
+      expect(mockToastAdd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          severity: 'error',
+          summary: 'Download failed',
+          detail: 'manifest.json has an invalid format',
+        }),
+      );
+    });
   });
 
   describe('upload phase', () => {
@@ -368,6 +406,7 @@ describe('useGistSync (manifest-driven flow)', () => {
           return Promise.resolve();
         }),
         addCover: mock(() => Promise.resolve()),
+        upsertCovers: mock(() => Promise.resolve()),
       };
 
       spyOn(SettingsStore, 'useSettingsStore').mockReturnValue(coldSettingsStore as any);
@@ -498,16 +537,15 @@ describe('useGistSync (manifest-driven flow)', () => {
       });
       spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
 
-      const verifySpy = spyOn(
-        GistSyncService.prototype,
-        'verifyRemoteUnchanged',
-      ).mockResolvedValue({
-        status: 'changed',
-        etag: 'etag-v2',
-        files: {
-          'manifest.json': { content: JSON.stringify(stableManifest) },
+      const verifySpy = spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockResolvedValue(
+        {
+          status: 'changed',
+          etag: 'etag-v2',
+          files: {
+            'manifest.json': { content: JSON.stringify(stableManifest) },
+          },
         },
-      });
+      );
 
       const uploadSpy = spyOn(
         GistSyncService.prototype,
@@ -775,9 +813,7 @@ describe('useGistSync (manifest-driven flow)', () => {
       await sync();
 
       const persisted = (
-        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as
-          | unknown[]
-          | undefined
+        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as unknown[] | undefined
       )?.[0] as Record<string, string>;
       // 失败条目保留旧哈希 → 下轮 diff 会重新拉取；其余条目正常采用新 manifest 值
       expect(persisted?.[novelEntryKey('book-1')]).toBe('old-hash');
@@ -810,9 +846,7 @@ describe('useGistSync (manifest-driven flow)', () => {
       await sync();
 
       const persisted = (
-        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as
-          | unknown[]
-          | undefined
+        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as unknown[] | undefined
       )?.[0] as Record<string, string>;
       expect(persisted?.[novelEntryKey('book-1')]).toBe('old-hash');
     });
@@ -881,6 +915,44 @@ describe('useGistSync (manifest-driven flow)', () => {
       };
       expect(gistSyncPatch?.knownRemoteTombstones?.['novel:novel-1']).toBeUndefined();
       expect(gistSyncPatch?.knownRemoteTombstones?.['novel:other']).toBeDefined();
+    });
+
+    it('恢复已删除封面时保留原 id，只把 addedAt 刷新为当前时刻', async () => {
+      const addCoverSpy = mock(() => Promise.resolve());
+      const upsertCoversSpy = mock((_items: unknown) => Promise.resolve());
+      spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
+        covers: [],
+        addCover: addCoverSpy,
+        upsertCovers: upsertCoversSpy,
+      } as any);
+      const deletedAt = new Date('2023-01-01T00:00:00.000Z').getTime();
+
+      const { restoreDeletedItems } = useGistSync();
+      const before = Date.now();
+      await restoreDeletedItems([
+        {
+          id: 'cover-1',
+          type: 'cover',
+          title: 'https://img.example/c.png',
+          deletedAt,
+          data: {
+            id: 'cover-1',
+            url: 'https://img.example/c.png',
+            addedAt: '2020-01-01T00:00:00.000Z',
+          },
+        },
+      ]);
+
+      expect(addCoverSpy).not.toHaveBeenCalled();
+      const restored = upsertCoversSpy.mock.calls[0]?.[0] as Array<{
+        id: string;
+        url: string;
+        addedAt: Date;
+      }>;
+      expect(restored.map((c) => ({ id: c.id, url: c.url }))).toEqual([
+        { id: 'cover-1', url: 'https://img.example/c.png' },
+      ]);
+      expect(new Date(restored[0]!.addedAt).getTime()).toBeGreaterThanOrEqual(before);
     });
 
     it('首次上传失败但 Gist 已创建时，应持久化 gistId 防止重试产生孤儿 Gist', async () => {

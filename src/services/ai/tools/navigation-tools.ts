@@ -1,22 +1,28 @@
+import { toolErrorJson, caughtToolErrorJson, checkedToolBookContext } from './tool-feedback';
+import { toolDefinition } from './tool-localization';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
+import { describeTool } from './tool-localization';
 import { ChapterService } from 'src/services/chapter-service';
 import { BookService } from 'src/services/book-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { ToolDefinition, ToolContext } from './types';
 import type { Chapter, Novel } from 'src/models/novel';
+import type { AppLocale } from 'src/models/locale';
 
 /**
- * 在书籍卷章结构中查找指定章节，返回章节对象与展示标题
+ * 在书籍卷章结构中查找指定章节，返回章节对象与执行目标语言下的展示标题
  */
 function findChapterInBook(
   book: Novel,
   chapterId: string,
+  language: AppLocale,
 ): { chapter: Chapter; title: string } | null {
   if (!book.volumes) return null;
   for (const volume of book.volumes) {
     if (!volume.chapters) continue;
     const found = volume.chapters.find((ch) => ch.id === chapterId);
     if (found) {
-      return { chapter: found, title: getChapterDisplayTitle(found) };
+      return { chapter: found, title: getChapterDisplayTitle(found, book, language) };
     }
   }
   return null;
@@ -24,59 +30,41 @@ function findChapterInBook(
 
 export const navigationTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'navigate_to_chapter',
-        description:
-          '导航到指定的章节。将用户界面跳转到书籍详情页面并选中指定的章节。当用户需要查看或编辑特定章节时使用此工具。',
-        parameters: {
-          type: 'object',
-          properties: {
-            chapter_id: {
-              type: 'string',
-              description: '要导航到的章节 ID',
-            },
-          },
-          required: ['chapter_id'],
+    definition: toolDefinition('navigate_to_chapter', {
+      type: 'object',
+      properties: {
+        chapter_id: {
+          type: 'string',
+          description: describeTool('navigate_to_chapter.parameters.properties.chapter_id'),
         },
       },
-    },
+      required: ['chapter_id'],
+    }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
-
-      if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '未提供书籍 ID',
-        });
-      }
+      const checked = checkedToolBookContext(context);
+      if ('error' in checked) return checked.error;
+      const { bookId, onAction, language } = checked;
 
       const { chapter_id } = args as {
         chapter_id: string;
       };
       if (!chapter_id) {
-        return JSON.stringify({
-          success: false,
-          error: '章节 ID 不能为空',
-        });
+        return toolErrorJson('CHAPTER_ID_REQUIRED', 'aiEntityFeedback.chapterRequired');
       }
 
       try {
         const book = await BookService.getBookById(bookId);
         if (!book) {
-          return JSON.stringify({
-            success: false,
-            error: `书籍不存在: ${bookId}`,
+          return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', {
+            id: bookId,
           });
         }
 
         // 查找章节
-        const foundChapter = findChapterInBook(book, chapter_id);
+        const foundChapter = findChapterInBook(book, chapter_id, language);
         if (!foundChapter) {
-          return JSON.stringify({
-            success: false,
-            error: `章节不存在: ${chapter_id}`,
+          return toolErrorJson('CHAPTER_NOT_FOUND', 'aiEntityFeedback.chapterMissing', {
+            id: chapter_id,
           });
         }
         const chapterTitle = foundChapter.title;
@@ -96,78 +84,59 @@ export const navigationTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: `已导航到章节: ${chapterTitle}`,
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.navigatedChapter', {
+            title: chapterTitle,
+          }),
           book_id: bookId,
           chapter_id,
           chapter_title: chapterTitle,
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '导航失败',
-        });
+        return caughtToolErrorJson(error, 'NAVIGATION_FAILED', 'aiEntityFeedback.navigationFailed');
       }
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'navigate_to_paragraph',
-        description:
-          '导航到指定的段落。将用户界面跳转到书籍详情页面，选中包含该段落的章节，并滚动到该段落。当用户需要查看或编辑特定段落时使用此工具。',
-        parameters: {
-          type: 'object',
-          properties: {
-            paragraph_id: {
-              type: 'string',
-              description: '要导航到的段落 ID',
-            },
-          },
-          required: ['paragraph_id'],
+    definition: toolDefinition('navigate_to_paragraph', {
+      type: 'object',
+      properties: {
+        paragraph_id: {
+          type: 'string',
+          description: describeTool('navigate_to_paragraph.parameters.properties.paragraph_id'),
         },
       },
-    },
+      required: ['paragraph_id'],
+    }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
-
-      if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '未提供书籍 ID',
-        });
-      }
+      const checked = checkedToolBookContext(context);
+      if ('error' in checked) return checked.error;
+      const { bookId, onAction, language } = checked;
 
       const { paragraph_id } = args as {
         paragraph_id: string;
       };
       if (!paragraph_id) {
-        return JSON.stringify({
-          success: false,
-          error: '段落 ID 不能为空',
-        });
+        return toolErrorJson('PARAGRAPH_ID_REQUIRED', 'aiEntityFeedback.paragraphRequired');
       }
 
       try {
         const book = await BookService.getBookById(bookId);
         if (!book) {
-          return JSON.stringify({
-            success: false,
-            error: `书籍不存在: ${bookId}`,
+          return toolErrorJson('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', {
+            id: bookId,
           });
         }
 
         // 查找段落位置
         const location = await ChapterService.findParagraphLocationAsync(book, paragraph_id);
         if (!location) {
-          return JSON.stringify({
-            success: false,
-            error: `段落不存在: ${paragraph_id}`,
+          return toolErrorJson('PARAGRAPH_NOT_FOUND', 'aiEntityFeedback.paragraphMissing', {
+            id: paragraph_id,
           });
         }
 
         const { chapter } = location;
-        const chapterTitle = getChapterDisplayTitle(chapter);
+        const chapterTitle = getChapterDisplayTitle(chapter, book, language);
 
         // 触发导航操作
         if (onAction) {
@@ -185,17 +154,16 @@ export const navigationTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: `已导航到段落 (章节: ${chapterTitle})`,
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.navigatedParagraph', {
+            title: chapterTitle,
+          }),
           book_id: bookId,
           chapter_id: chapter.id,
           chapter_title: chapterTitle,
           paragraph_id,
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '导航失败',
-        });
+        return caughtToolErrorJson(error, 'NAVIGATION_FAILED', 'aiEntityFeedback.navigationFailed');
       }
     },
   },

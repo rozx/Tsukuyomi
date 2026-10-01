@@ -5,6 +5,7 @@
  * 平板右侧停靠对话后宽度有限，以 tasksInTabs 把任务列表并入标签页。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import Tabs from 'primevue/tabs';
 import TabList from 'primevue/tablist';
@@ -24,6 +25,7 @@ import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 const props = withDefaults(defineProps<{ tasksInTabs?: boolean }>(), { tasksInTabs: false });
 const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
+const { t } = useI18n();
 
 // 对话常驻右侧，不是标签页；桌面的任务列表常驻左侧，平板并入标签页
 const tab = computed({
@@ -55,22 +57,19 @@ const chapterCount = computed(() => store.task?.draft.chapters.length ?? 0);
 
       <DesktopWorkbenchSurface v-else-if="!store.task" class="ipd-surface ipd-empty">
         <i class="pi pi-file-import ipd-empty-icon" aria-hidden="true" />
-        <h1 class="ipd-empty-title">AI 导入</h1>
-        <p class="ipd-empty-text">
-          提供小说网址、TXT / Markdown / HTML / EPUB 文件或整个文件夹，由月詠检查来源、提取正文、
-          整理卷章。你可以随时修改草稿，确认导入方案后才会写入书库，之后在没有后续修改前可以撤销。
-        </p>
-        <Button icon="pi pi-plus" label="新建导入任务" @click="ctx.createTask" />
+        <h1 class="ipd-empty-title">{{ t('importUi.page.title') }}</h1>
+        <p class="ipd-empty-text">{{ t('importUi.page.intro') }}</p>
+        <Button icon="pi pi-plus" :label="t('importUi.page.create')" @click="ctx.createTask" />
       </DesktopWorkbenchSurface>
 
       <DesktopWorkbenchSurface v-else class="ipd-surface ipd-main">
         <ImportRunBar />
         <Tabs v-model:value="tab" class="ipd-tabs">
           <TabList>
-            <Tab v-if="tasksInTabs" value="tasks">任务</Tab>
-            <Tab value="sources">来源（{{ sourceCount }}）</Tab>
-            <Tab value="draft">卷章草稿（{{ chapterCount }}）</Tab>
-            <Tab value="plan">导入方案</Tab>
+            <Tab v-if="tasksInTabs" value="tasks">{{ t('importUi.page.tasks') }}</Tab>
+            <Tab value="sources">{{ t('importUi.page.sourcesTab', { count: sourceCount }) }}</Tab>
+            <Tab value="draft">{{ t('importUi.page.draftTab', { count: chapterCount }) }}</Tab>
+            <Tab value="plan">{{ t('importUi.page.plan') }}</Tab>
           </TabList>
           <TabPanels class="ipd-panels">
             <TabPanel v-if="tasksInTabs" value="tasks">

@@ -1,13 +1,21 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Paragraph } from 'src/models/novel';
 import { useAIModelsStore } from 'src/stores/ai-models';
+import type { AppLocale } from 'src/models/locale';
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import { languageName } from 'src/i18n/translate';
+import { resolveAppLocale } from 'src/models/locale';
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   visible: boolean;
   paragraph: Paragraph | null;
+  targetLanguage: AppLocale;
 }>();
 
 const emit = defineEmits<{
@@ -16,28 +24,38 @@ const emit = defineEmits<{
 }>();
 
 const aiModelsStore = useAIModelsStore();
+const selectedId = computed(() =>
+  props.paragraph ? getLanguageTranslation(props.paragraph, props.targetLanguage)?.id : undefined,
+);
+const languageLabel = (language: AppLocale = 'zh-CN') =>
+  languageName(resolveAppLocale(locale.value), language);
+const canSelect = (language: AppLocale = 'zh-CN') => language === props.targetLanguage;
 
-// 获取可用的翻译历史（最多5个，按时间倒序，最新的在前）
+// 获取可用的翻译历史（最多5个，按时间倒序，最新的在前）。
+// 先取目标语言的版本，剩余名额再给其他语言（只读展示），
+// 避免其他语言的近期版本占满名额后目标语言的旧版本无法选回。
 const translationHistory = computed(() => {
   if (!props.paragraph?.translations || props.paragraph.translations.length === 0) {
     return [];
   }
-  
-  // 按数组顺序，最新的在最后，反转后取前5个
+
+  // 按数组顺序，最新的在最后
   const translations = [...props.paragraph.translations].reverse();
-  
-  // 返回最多5个
-  return translations.slice(0, 5);
+  const selectable = translations.filter((value) => canSelect(value.language)).slice(0, 5);
+  const others = translations.filter((value) => !canSelect(value.language));
+  return [...selectable, ...others.slice(0, 5 - selectable.length)];
 });
 
 // 获取模型名称
 const getModelName = (modelId: string): string => {
   const model = aiModelsStore.getModelById(modelId);
-  return model?.name || '未知模型';
+  return model?.name || t('translationUi.unknownModel');
 };
 
 // 处理选择翻译
 const handleSelectTranslation = (translationId: string) => {
+  const translation = props.paragraph?.translations.find((value) => value.id === translationId);
+  if (!translation || !canSelect(translation.language)) return;
   emit('select-translation', translationId);
   emit('update:visible', false);
 };
@@ -51,14 +69,14 @@ const handleClose = () => {
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="翻译历史"
+    :header="t('translationUi.history')"
     desktop-width="32rem"
-    eyebrow="TRANSLATION"
+    :eyebrow="t('translationUi.translationCategory')"
     @update:visible="handleClose"
   >
     <div v-if="!paragraph || translationHistory.length === 0" class="empty-state">
       <i class="pi pi-history empty-icon" />
-      <p class="empty-text">暂无翻译历史</p>
+      <p class="empty-text">{{ t('translationUi.noHistory') }}</p>
     </div>
 
     <div v-else class="translation-history-content">
@@ -67,18 +85,22 @@ const handleClose = () => {
           v-for="translation in translationHistory"
           :key="translation.id"
           class="translation-history-item"
-          :class="{ 'is-selected': translation.id === paragraph.selectedTranslationId }"
+          :class="{
+            'is-selected': translation.id === selectedId,
+            'is-disabled': !canSelect(translation.language),
+          }"
+          :aria-disabled="!canSelect(translation.language)"
           @click="handleSelectTranslation(translation.id)"
         >
           <div class="translation-history-header">
             <div class="translation-history-info">
-              <span class="translation-history-model">{{ getModelName(translation.aiModelId) }}</span>
+              <span class="translation-history-model">{{
+                getModelName(translation.aiModelId)
+              }}</span>
               <span class="translation-history-id">ID: {{ translation.id }}</span>
+              <span>{{ languageLabel(translation.language) }}</span>
             </div>
-            <i
-              v-if="translation.id === paragraph.selectedTranslationId"
-              class="pi pi-check translation-history-check"
-            />
+            <i v-if="translation.id === selectedId" class="pi pi-check translation-history-check" />
           </div>
           <div class="translation-history-text">
             {{ translation.translation }}
@@ -89,7 +111,7 @@ const handleClose = () => {
 
     <template #footer>
       <Button
-        label="关闭"
+        :label="t('translationUi.close')"
         icon="pi pi-times"
         text
         severity="secondary"
@@ -193,4 +215,3 @@ const handleClose = () => {
   white-space: pre-wrap;
 }
 </style>
-

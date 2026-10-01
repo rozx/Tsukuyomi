@@ -1,3 +1,5 @@
+import { normalizeChapterLanguages } from 'src/services/localization/normalize';
+import { canonicalStringify } from './canonical-json';
 /**
  * 章节内容加载器 — 叶子模块，直接读 IndexedDB 的 `chapter-contents` store，
  * 自带 LRU 内存缓存。
@@ -55,9 +57,7 @@ function touchCacheEntry(chapterId: string): void {
  * 加载章节内容（带缓存）。
  * 找不到返回 undefined；加载失败也返回 undefined 并缓存 null 避免重复尝试。
  */
-export async function loadChapterContent(
-  chapterId: string,
-): Promise<Paragraph[] | undefined> {
+export async function loadChapterContent(chapterId: string): Promise<Paragraph[] | undefined> {
   // 检查缓存
   if (contentCache.has(chapterId)) {
     const cached = contentCache.get(chapterId);
@@ -78,8 +78,8 @@ export async function loadChapterContent(
       evictCacheIfNeeded();
       return undefined;
     }
-    const serialized = chapterContent.content;
-    const parsed = JSON.parse(serialized) as Paragraph[];
+    const parsed = normalizeChapterLanguages(JSON.parse(chapterContent.content));
+    const serialized = canonicalStringify(parsed);
     contentCache.set(chapterId, { parsed, serialized });
     evictCacheIfNeeded();
     return parsed;
@@ -138,8 +138,8 @@ export async function loadChapterContentsBatch(
             contentCache.set(chapterId, null);
             return { chapterId, content: undefined as Paragraph[] | undefined };
           }
-          const serialized = chapterContent.content;
-          const parsed = JSON.parse(serialized) as Paragraph[];
+          const parsed = normalizeChapterLanguages(JSON.parse(chapterContent.content));
+          const serialized = canonicalStringify(parsed);
           contentCache.set(chapterId, { parsed, serialized });
           return { chapterId, content: parsed };
         } catch (error) {
@@ -181,7 +181,10 @@ export function peekCacheEntry(chapterId: string): CacheValue | undefined {
  * 写入缓存（由 chapter-content-service 的写路径调用以保持一致）
  */
 export function setCacheEntry(chapterId: string, entry: ChapterContentCacheEntry): void {
-  contentCache.set(chapterId, entry);
+  contentCache.set(chapterId, {
+    parsed: normalizeChapterLanguages(entry.parsed),
+    serialized: canonicalStringify(normalizeChapterLanguages(JSON.parse(entry.serialized))),
+  });
   evictCacheIfNeeded();
 }
 

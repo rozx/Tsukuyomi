@@ -1,3 +1,4 @@
+import type { ImportNotice } from './import-feedback';
 import type { ImportStructureJob, ImportStructureResult } from './import-text-structure';
 import type { ImportPatternJob, ImportPatternResult } from './import-pattern';
 import type { ImportDiscovery, ImportExtractionRules, ImportTextBlock } from './import';
@@ -7,10 +8,10 @@ export interface ImportParsedContent {
   format: 'text' | 'markdown' | 'html';
   kind: 'content' | 'catalog' | 'copyright' | 'cover' | 'verification' | 'dynamic' | 'empty';
   blocks: Omit<ImportTextBlock, 'id'>[];
-  excluded: { start: number; end: number; text: string; reason: string }[];
+  excluded: { start: number; end: number; text: string; reason: ImportNotice }[];
   metadata: Record<string, string>;
   links: { name: string; href: string; relation: ImportDiscovery['relation'] }[];
-  warnings: string[];
+  warnings: ImportNotice[];
   rules: ImportExtractionRules;
 }
 
@@ -30,7 +31,7 @@ export interface ImportEpub {
   entries: ImportEpubEntry[];
   navigation: { title: string; path: string; anchor?: string }[];
   coverPath?: string;
-  warnings: string[];
+  warnings: ImportNotice[];
   missingEntries: string[];
 }
 
@@ -38,7 +39,7 @@ export interface ImportDecodedText {
   text: string;
   encoding: string;
   bomBytes: number;
-  warnings: string[];
+  warnings: ImportNotice[];
 }
 
 export type ImportParseRequest =

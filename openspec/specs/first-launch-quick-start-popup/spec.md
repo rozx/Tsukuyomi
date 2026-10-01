@@ -23,7 +23,7 @@
 
 ### Requirement: 弹窗内容来自 front-page 帮助文档
 
-系统 SHALL 使用 `public/help/front-page.md` 作为快速开始弹窗内容源，并以 Markdown 形式渲染展示。
+系统 SHALL 使用 `public/help/zh-CN/front-page.md` 作为快速开始弹窗内容源，并以 Markdown 形式渲染展示。
 
 #### Scenario: 文档加载成功
 

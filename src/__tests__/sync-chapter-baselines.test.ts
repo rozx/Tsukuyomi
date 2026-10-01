@@ -35,9 +35,9 @@ afterEach(async () => {
 });
 
 describe('同步章节结构基准存储', () => {
-  it('数据库为 v13，新增基准存储与 by-bookId 索引', async () => {
+  it('数据库为 v15，保留基准存储与 by-bookId 索引', async () => {
     const db = await getDB();
-    expect(db.version).toBe(13);
+    expect(db.version).toBe(15);
     expect(db.objectStoreNames.contains('sync-chapter-baselines')).toBe(true);
     expect(db.transaction('sync-chapter-baselines').store.indexNames.contains('by-bookId')).toBe(
       true,
@@ -62,7 +62,7 @@ describe('同步章节结构基准存储', () => {
     old.close();
 
     const db = await getDB();
-    expect(db.version).toBe(13);
+    expect(db.version).toBe(15);
     expect((await db.get('books', 'old')) as unknown).toEqual(record);
     expect(await db.get('chapter-contents', 'c1')).toEqual(chapter);
     expect(await db.get('book-revisions', 'old')).toEqual({ bookId: 'old', revision: 7 });

@@ -1,3 +1,4 @@
+import { toRaw } from 'vue';
 /**
  * Round 4:在线 TF-IDF 加权(`computeQueryUnitIdf` + 在 scoring 里取代固定 properNoun
  * boost 让数据驱动决定单元权重)。
@@ -50,11 +51,11 @@ function mkChunk(
   };
 }
 
-function seedSeriesBook(
+async function seedSeriesBook(
   bookId: string,
   chapters: Array<{ id: string; title: string }>,
   charName?: string,
-): void {
+): Promise<void> {
   const store = useBooksStore();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (store as any).books = [
@@ -90,6 +91,8 @@ function seedSeriesBook(
       ],
     } as unknown as Novel,
   ];
+  const { getDB } = await import('../utils/indexed-db');
+  await (await getDB()).put('books', toRaw(store.books[0]!));
 }
 
 async function putContentChunks(
@@ -263,7 +266,7 @@ describe('queryChapters — TF-IDF 端到端', () => {
   it('热门角色 + 稀有场景词:稀有词章节胜出(角色名不再误抬)', async () => {
     const bookId = 'b';
     // 阿莉亚 出现在 4 章(常见),新据点 只在 ch-target(稀有)
-    seedSeriesBook(
+    await seedSeriesBook(
       bookId,
       [
         { id: 'ch-1', title: '日常 1' },
@@ -279,9 +282,7 @@ describe('queryChapters — TF-IDF 端到端', () => {
     // 所有章节的语义向量相同(平),让 keyword 决出胜负
     // ch-1/2/3 各有"阿莉亚"(常见词),ch-target 有"阿莉亚 新据点"(稀有词)
     for (const id of ['ch-1', 'ch-2', 'ch-3']) {
-      await putContentChunks(id, bookId, [
-        { vector: [0.5, 0.5], snippet: '阿莉亚 一些剧情' },
-      ]);
+      await putContentChunks(id, bookId, [{ vector: [0.5, 0.5], snippet: '阿莉亚 一些剧情' }]);
       await putTitleChunk(id, bookId, [0.5, 0.5], `日常 ${id}`);
     }
     await putContentChunks('ch-target', bookId, [
@@ -289,11 +290,7 @@ describe('queryChapters — TF-IDF 端到端', () => {
     ]);
     await putTitleChunk('ch-target', bookId, [0.5, 0.5], '日常 4');
 
-    const results = await ChapterEmbeddingService.queryChapters(
-      bookId,
-      '阿莉亚 新据点',
-      5,
-    );
+    const results = await ChapterEmbeddingService.queryChapters(bookId, '阿莉亚 新据点', 5);
     expect(results[0]?.chapter_id).toBe('ch-target');
   });
 
@@ -301,21 +298,17 @@ describe('queryChapters — TF-IDF 端到端', () => {
     // 2 章里:词A 在 ch-noun(1/2),词B 在 ch-other(1/2),两者 idf 相同
     // 此时 IDF 不能区分,但章节本身的命中差异仍能决出胜负
     const bookId = 'b';
-    seedSeriesBook(bookId, [
+    await seedSeriesBook(bookId, [
       { id: 'ch-noun', title: '日常' },
       { id: 'ch-other', title: '日常' },
     ]);
 
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
-    await putContentChunks('ch-noun', bookId, [
-      { vector: [0.5, 0.5], snippet: '阿莉亚 出场' },
-    ]);
+    await putContentChunks('ch-noun', bookId, [{ vector: [0.5, 0.5], snippet: '阿莉亚 出场' }]);
     await putTitleChunk('ch-noun', bookId, [0.5, 0.5], '日常');
 
-    await putContentChunks('ch-other', bookId, [
-      { vector: [0.5, 0.5], snippet: '没相关内容' },
-    ]);
+    await putContentChunks('ch-other', bookId, [{ vector: [0.5, 0.5], snippet: '没相关内容' }]);
     await putTitleChunk('ch-other', bookId, [0.5, 0.5], '日常');
 
     const results = await ChapterEmbeddingService.queryChapters(bookId, '阿莉亚', 5);

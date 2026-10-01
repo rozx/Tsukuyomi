@@ -166,7 +166,12 @@ describe('文本结构方案', () => {
     });
     expect(p.empty).toBe(1);
     expect((await service.read(taskId, p.batchId, 'excluded')).items).toContainEqual(
-      expect.objectContaining({ reason: 'Markdown 元信息定义' }),
+      expect.objectContaining({
+        reason: expect.objectContaining({
+          code: 'MARKDOWN_METADATA',
+          message: 'Markdown 元信息定义',
+        }),
+      }),
     );
     await service.apply(run, p.batchId);
     const chapters = (await ImportRepository.getTask(taskId))!.draft.chapters;

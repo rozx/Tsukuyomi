@@ -4,6 +4,7 @@ import { createApp, defineComponent, h, nextTick, ref } from 'vue';
 import type { App } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import PrimeVue from 'primevue/config';
+import { createAppI18n } from 'src/i18n/vue';
 import type { Novel } from 'src/models/novel';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { provideBookSync } from 'src/composables/book-sync/useBookSync';
@@ -67,6 +68,7 @@ describe('检查更新面板', () => {
     );
     app.use(router);
     app.use(PrimeVue);
+    app.use(createAppI18n('zh-CN'));
     app.mount(host);
     await flush();
 

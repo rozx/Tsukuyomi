@@ -1,3 +1,5 @@
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { createApp, defineComponent, h, nextTick } from 'vue';
@@ -33,7 +35,7 @@ async function mountWith<T>(provide: () => T): Promise<{ ctx: T; path: () => str
       },
     }),
   );
-  app.use(router);
+  app.use(router).use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
   app.mount(document.createElement('div'));
   await nextTick();
   return { ctx, path: () => router.currentRoute.value.fullPath };

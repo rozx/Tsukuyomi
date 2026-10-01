@@ -47,7 +47,7 @@ describe('ToolRegistry: query_chapter gated on enableLocalEmbedding', () => {
 
   test('getAllTools 继承过滤结果:关闭时整个工具图里都不含 query_chapter', () => {
     mockEnableLocalEmbedding = false;
-    const tools = ToolRegistry.getAllTools('book-1');
+    const tools = ToolRegistry.getAllTools('book-1', undefined, {});
     expect(tools.some((t) => t.function.name === 'query_chapter')).toBe(false);
   });
 

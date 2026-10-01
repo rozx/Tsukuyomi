@@ -8,7 +8,11 @@ type CheerioNode = cheerio.Cheerio<any>;
  * - 返回具体字符串即追加
  * - 调用 recurse() 可递归处理子节点
  */
-type TagHandler = (params: { $node: CheerioNode; tagName: string; recurse: () => string }) => string;
+type TagHandler = (params: {
+  $node: CheerioNode;
+  tagName: string;
+  recurse: () => string;
+}) => string;
 
 /**
  * 遍历 Cheerio 元素的 contents：

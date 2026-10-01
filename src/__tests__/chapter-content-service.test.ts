@@ -6,13 +6,14 @@ import { generateShortId } from '../utils/id-generator';
 
 // 辅助函数：创建测试用段落
 function createTestParagraph(id?: string): Paragraph {
+  const translationId = generateShortId();
   return {
     id: id || generateShortId(),
     text: '测试段落文本',
-    selectedTranslationId: generateShortId(),
+    selectedTranslationId: translationId,
     translations: [
       {
-        id: generateShortId(),
+        id: translationId,
         translation: '测试翻译',
         aiModelId: 'model-1',
       },
@@ -73,7 +74,7 @@ describe('ChapterContentService', () => {
 
       // 验证可以从缓存加载
       const cached = await ChapterContentService.loadChapterContent(chapterId);
-      expect(cached).toEqual(content);
+      expect(cached).toMatchObject(content);
     });
 
     it('应该在保存失败时抛出错误', async () => {
@@ -97,10 +98,13 @@ describe('ChapterContentService', () => {
         };
 
         // 先从 DB 加载（此时内容会被立即缓存）
-        await ChapterContentService.saveChapterContent(chapterId, content, { bookId: TEST_BOOK_ID });
+        await ChapterContentService.saveChapterContent(chapterId, content, {
+          bookId: TEST_BOOK_ID,
+        });
 
         const saved = await ChapterContentService.saveChapterContent(chapterId, content, {
-          bookId: TEST_BOOK_ID, skipIfUnchanged: true,
+          bookId: TEST_BOOK_ID,
+          skipIfUnchanged: true,
         });
 
         expect(saved).toBe(false);
@@ -115,13 +119,16 @@ describe('ChapterContentService', () => {
           lastModified: new Date().toISOString(),
         };
 
-        await ChapterContentService.saveChapterContent(chapterId, content, { bookId: TEST_BOOK_ID });
+        await ChapterContentService.saveChapterContent(chapterId, content, {
+          bookId: TEST_BOOK_ID,
+        });
 
         // 模拟就地修改（例如 AI 工具直接修改内存中的段落）
         content[0]!.text = '已修改的段落文本';
 
         const saved = await ChapterContentService.saveChapterContent(chapterId, content, {
-          bookId: TEST_BOOK_ID, skipIfUnchanged: true,
+          bookId: TEST_BOOK_ID,
+          skipIfUnchanged: true,
         });
 
         expect(saved).toBe(true);
@@ -137,7 +144,7 @@ describe('ChapterContentService', () => {
       ChapterContentService.clearCache(chapterId);
 
       const result = await ChapterContentService.loadChapterContent(chapterId);
-      expect(result).toEqual(content);
+      expect(result).toMatchObject(content);
     });
 
     it('应该从缓存加载章节内容（LRU 行为）', async () => {
@@ -148,7 +155,7 @@ describe('ChapterContentService', () => {
       await ChapterContentService.saveChapterContent(chapterId, content, { bookId: TEST_BOOK_ID });
       // 再次加载应该从缓存返回
       const result = await ChapterContentService.loadChapterContent(chapterId);
-      expect(result).toEqual(content);
+      expect(result).toMatchObject(content);
     });
 
     it('应该返回 undefined 当章节内容不存在', async () => {
@@ -181,16 +188,22 @@ describe('ChapterContentService', () => {
         [createTestParagraph()],
       ];
 
-      await ChapterContentService.saveChapterContent(chapterIds[0]!, contents[0]!, { bookId: TEST_BOOK_ID });
-      await ChapterContentService.saveChapterContent(chapterIds[1]!, contents[1]!, { bookId: TEST_BOOK_ID });
-      await ChapterContentService.saveChapterContent(chapterIds[2]!, contents[2]!, { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent(chapterIds[0]!, contents[0]!, {
+        bookId: TEST_BOOK_ID,
+      });
+      await ChapterContentService.saveChapterContent(chapterIds[1]!, contents[1]!, {
+        bookId: TEST_BOOK_ID,
+      });
+      await ChapterContentService.saveChapterContent(chapterIds[2]!, contents[2]!, {
+        bookId: TEST_BOOK_ID,
+      });
 
       const result = await ChapterContentService.loadChapterContentsBatch(chapterIds);
 
       expect(result.size).toBe(3);
-      expect(result.get(chapterIds[0]!)).toEqual(contents[0]);
-      expect(result.get(chapterIds[1]!)).toEqual(contents[1]);
-      expect(result.get(chapterIds[2]!)).toEqual(contents[2]);
+      expect(result.get(chapterIds[0]!)).toMatchObject(contents[0]!);
+      expect(result.get(chapterIds[1]!)).toMatchObject(contents[1]!);
+      expect(result.get(chapterIds[2]!)).toMatchObject(contents[2]!);
     });
 
     it('应该从缓存加载已缓存的章节', async () => {
@@ -200,14 +213,18 @@ describe('ChapterContentService', () => {
       const content2 = [createTestParagraph()];
 
       // 先保存两个章节
-      await ChapterContentService.saveChapterContent(chapterId1, content1, { bookId: TEST_BOOK_ID });
-      await ChapterContentService.saveChapterContent(chapterId2, content2, { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent(chapterId1, content1, {
+        bookId: TEST_BOOK_ID,
+      });
+      await ChapterContentService.saveChapterContent(chapterId2, content2, {
+        bookId: TEST_BOOK_ID,
+      });
       // 批量加载应该从缓存返回
       const result = await ChapterContentService.loadChapterContentsBatch([chapterId1, chapterId2]);
 
       expect(result.size).toBe(2);
-      expect(result.get(chapterId1)).toEqual(content1);
-      expect(result.get(chapterId2)).toEqual(content2);
+      expect(result.get(chapterId1)).toMatchObject(content1);
+      expect(result.get(chapterId2)).toMatchObject(content2);
     });
 
     it('应该混合处理缓存和未缓存的章节', async () => {
@@ -216,16 +233,20 @@ describe('ChapterContentService', () => {
       const content1 = [createTestParagraph()];
 
       // 只保存第一个章节
-      await ChapterContentService.saveChapterContent(chapterId1, content1, { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent(chapterId1, content1, {
+        bookId: TEST_BOOK_ID,
+      });
 
       const content2 = [createTestParagraph()];
-      await ChapterContentService.saveChapterContent(chapterId2, content2, { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent(chapterId2, content2, {
+        bookId: TEST_BOOK_ID,
+      });
 
       const result = await ChapterContentService.loadChapterContentsBatch([chapterId1, chapterId2]);
 
       expect(result.size).toBe(2);
-      expect(result.get(chapterId1)).toEqual(content1);
-      expect(result.get(chapterId2)).toEqual(content2);
+      expect(result.get(chapterId1)).toMatchObject(content1);
+      expect(result.get(chapterId2)).toMatchObject(content2);
     });
 
     it('应该在批量加载失败时回退到单个加载', async () => {
@@ -236,14 +257,18 @@ describe('ChapterContentService', () => {
       // 确保缓存为空
       ChapterContentService.clearAllCache();
 
-      await ChapterContentService.saveChapterContent(chapterIds[0]!, content1, { bookId: TEST_BOOK_ID });
-      await ChapterContentService.saveChapterContent(chapterIds[1]!, content2, { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent(chapterIds[0]!, content1, {
+        bookId: TEST_BOOK_ID,
+      });
+      await ChapterContentService.saveChapterContent(chapterIds[1]!, content2, {
+        bookId: TEST_BOOK_ID,
+      });
 
       const result = await ChapterContentService.loadChapterContentsBatch(chapterIds);
 
       expect(result.size).toBe(2);
-      expect(result.get(chapterIds[0]!)).toEqual(content1);
-      expect(result.get(chapterIds[1]!)).toEqual(content2);
+      expect(result.get(chapterIds[0]!)).toMatchObject(content1);
+      expect(result.get(chapterIds[1]!)).toMatchObject(content2);
     });
   });
 
@@ -261,8 +286,12 @@ describe('ChapterContentService', () => {
       const content2 = [createTestParagraph(para2Id)];
 
       // 保存两个章节
-      await ChapterContentService.saveChapterContent(chapterId1, content1, { bookId: TEST_BOOK_ID });
-      await ChapterContentService.saveChapterContent(chapterId2, content2, { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent(chapterId1, content1, {
+        bookId: TEST_BOOK_ID,
+      });
+      await ChapterContentService.saveChapterContent(chapterId2, content2, {
+        bookId: TEST_BOOK_ID,
+      });
 
       // 访问第一个章节，应该将其移到末尾（LRU 行为）
       const loaded1 = await ChapterContentService.loadChapterContent(chapterId1);
@@ -276,7 +305,9 @@ describe('ChapterContentService', () => {
       // 我们需要填充到 CACHE_MAX_SIZE + 1，所以需要添加 CACHE_MAX_SIZE - 1 个新条目
       for (let i = 3; i <= CACHE_MAX_SIZE + 1; i++) {
         const content = [createTestParagraph()];
-        await ChapterContentService.saveChapterContent(`chapter-${i}`, content, { bookId: TEST_BOOK_ID });
+        await ChapterContentService.saveChapterContent(`chapter-${i}`, content, {
+          bookId: TEST_BOOK_ID,
+        });
       }
 
       // 现在缓存应该被清理，但 chapterId1 应该还在（因为最近访问过，在末尾）
@@ -300,13 +331,17 @@ describe('ChapterContentService', () => {
       // 所以 chapter-1 会在开头，chapter-100 会在末尾
       for (let i = 1; i <= CACHE_MAX_SIZE; i++) {
         const content = [createTestParagraph()];
-        await ChapterContentService.saveChapterContent(`chapter-${i}`, content, { bookId: TEST_BOOK_ID });
+        await ChapterContentService.saveChapterContent(`chapter-${i}`, content, {
+          bookId: TEST_BOOK_ID,
+        });
       }
 
       // 添加一个额外的条目，应该触发清理（清理前 20 个，即 chapter-1 到 chapter-20）
-      await ChapterContentService.saveChapterContent(`chapter-${CACHE_MAX_SIZE + 1}`, [
-        createTestParagraph(),
-      ], { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent(
+        `chapter-${CACHE_MAX_SIZE + 1}`,
+        [createTestParagraph()],
+        { bookId: TEST_BOOK_ID },
+      );
 
       // 前 20 个条目应该被清理，需要从 DB 重新加载
       // 但是，由于我们之前保存了这些章节，它们可能还在缓存中
@@ -340,7 +375,9 @@ describe('ChapterContentService', () => {
 
     it('应该在删除失败时抛出错误', async () => {
       const chapterId = 'chapter-1';
-      await ChapterContentService.saveChapterContent(chapterId, [createTestParagraph()], { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent(chapterId, [createTestParagraph()], {
+        bookId: TEST_BOOK_ID,
+      });
       await ChapterContentService.deleteChapterContent(chapterId, { bookId: TEST_BOOK_ID });
       ChapterContentService.clearCache(chapterId);
       const result = await ChapterContentService.loadChapterContent(chapterId);
@@ -438,11 +475,13 @@ describe('ChapterContentService', () => {
 
       const novel = createTestNovel([volume]);
 
-      await ChapterContentService.saveChapterContent('chapter-2', [createTestParagraph()], { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent('chapter-2', [createTestParagraph()], {
+        bookId: TEST_BOOK_ID,
+      });
 
       const result = await ChapterContentService.loadAllChapterContentsForNovel(novel);
 
-      expect(result.volumes?.[0]?.chapters?.[0]?.content).toEqual(content1);
+      expect(result.volumes?.[0]?.chapters?.[0]?.content).toMatchObject(content1);
     });
 
     it('应该处理没有卷的小说', async () => {
@@ -477,8 +516,12 @@ describe('ChapterContentService', () => {
       const novel1 = createTestNovel([volume]);
       const novel2 = createTestNovel([volume]);
 
-      await ChapterContentService.saveChapterContent('chapter-1', content1, { bookId: TEST_BOOK_ID });
-      await ChapterContentService.saveChapterContent('chapter-2', content2, { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent('chapter-1', content1, {
+        bookId: TEST_BOOK_ID,
+      });
+      await ChapterContentService.saveChapterContent('chapter-2', content2, {
+        bookId: TEST_BOOK_ID,
+      });
 
       const result = await ChapterContentService.loadAllChapterContentsForNovels([novel1, novel2]);
 
@@ -513,8 +556,12 @@ describe('ChapterContentService', () => {
 
       const novel = createTestNovel([volume]);
 
-      await ChapterContentService.saveChapterContent('chapter-1', content1, { bookId: TEST_BOOK_ID });
-      await ChapterContentService.saveChapterContent('chapter-2', content2, { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent('chapter-1', content1, {
+        bookId: TEST_BOOK_ID,
+      });
+      await ChapterContentService.saveChapterContent('chapter-2', content2, {
+        bookId: TEST_BOOK_ID,
+      });
 
       await ChapterContentService.loadAllChapterContents(novel);
 
@@ -547,11 +594,13 @@ describe('ChapterContentService', () => {
 
       const novel = createTestNovel([volume]);
 
-      await ChapterContentService.saveChapterContent('chapter-2', [createTestParagraph()], { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent('chapter-2', [createTestParagraph()], {
+        bookId: TEST_BOOK_ID,
+      });
 
       await ChapterContentService.loadAllChapterContents(novel);
 
-      expect(novel.volumes?.[0]?.chapters?.[0]?.content).toEqual(content1);
+      expect(novel.volumes?.[0]?.chapters?.[0]?.content).toMatchObject(content1);
     });
   });
 
@@ -577,8 +626,12 @@ describe('ChapterContentService', () => {
       const content1 = [createTestParagraph()];
       const content2 = [createTestParagraph()];
 
-      await ChapterContentService.saveChapterContent(chapterId1, content1, { bookId: TEST_BOOK_ID });
-      await ChapterContentService.saveChapterContent(chapterId2, content2, { bookId: TEST_BOOK_ID });
+      await ChapterContentService.saveChapterContent(chapterId1, content1, {
+        bookId: TEST_BOOK_ID,
+      });
+      await ChapterContentService.saveChapterContent(chapterId2, content2, {
+        bookId: TEST_BOOK_ID,
+      });
 
       ChapterContentService.clearAllCache();
 

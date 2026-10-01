@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
 /**
  * 平板书库详情章节树（卷 / 章节折叠列表 + 编辑模式 ⋮ 菜单 + 折叠预览）。
  * 从 BooksPageTablet 抽出。样式由 BooksPageTablet.vue 提供。
@@ -17,23 +19,28 @@ const hasVolumes = computed(() => !!book.value?.volumes && book.value.volumes.le
 const editBtnClass = computed(() => ({
   'tl-chapters-edit-btn--on': t.editMode.value,
 }));
-const editBtnTitle = computed(() => (t.editMode.value ? '完成编辑' : '编辑章节'));
+const editBtnTitle = computed(() =>
+  t.editMode.value ? i18nT('libraryUi.finishEditing') : i18nT('libraryUi.editChapters'),
+);
 const editBtnIcon = computed(() => (t.editMode.value ? 'pi-check' : 'pi-pencil'));
-const editBtnText = computed(() => (t.editMode.value ? '完成' : '编辑'));
+const editBtnText = computed(() =>
+  t.editMode.value ? i18nT('libraryUi.done') : i18nT('libraryUi.edit'),
+);
 
 const volIconClass = (volId: string) =>
   t.isVolumeExpanded(volId)
     ? 'pi-folder-open tl-tree-vol-icon-open'
     : 'pi-folder tl-tree-vol-icon-closed';
-const volTitle = (volume: Volume, vi: number) => getVolumeDisplayTitle(volume) || `卷 ${vi + 1}`;
+const volTitle = (volume: Volume, vi: number) =>
+  getVolumeDisplayTitle(volume, book.value) || i18nT('libraryUi.volumeFallback', { count: vi + 1 });
 const volChapterCount = (volume: Volume) => volume.chapters?.length ?? 0;
 const chapTitle = (chapter: Chapter, ci: number) =>
-  getChapterDisplayTitle(chapter, book.value!) || `第 ${ci + 1} 章`;
+  getChapterDisplayTitle(chapter, book.value!) ||
+  i18nT('libraryUi.chapterFallback', { count: ci + 1 });
 const chaptersOf = (volume: Volume) => volume.chapters ?? [];
 const volKey = (volume: Volume, vi: number) => volume.id ?? vi;
 const chapKey = (chapter: Chapter, ci: number) => chapter.id ?? ci;
-const remainingChapters = (volume: Volume) =>
-  (volume.chapters?.length ?? 0) - t.COLLAPSED_PREVIEW;
+const remainingChapters = (volume: Volume) => (volume.chapters?.length ?? 0) - t.COLLAPSED_PREVIEW;
 const hasCollapsedMore = (volume: Volume) =>
   !t.isVolumeExpanded(volume.id) && volChapterCount(volume) > t.COLLAPSED_PREVIEW;
 // 阻止冒泡到行 click
@@ -47,9 +54,10 @@ const onToggleVolume = (volId: string) => t.toggleVolume(volId);
 <template>
   <section v-if="book" class="tl-chapters">
     <header class="tl-chapters-head">
-      <span>章节 · {{ chapterTotal }}</span>
+      <span>{{ i18nT('libraryUi.chapters') }} · {{ chapterTotal }}</span>
       <span v-if="t.isLoadingProgress.value" class="tl-chapters-loading">
-        <i class="pi pi-spin pi-spinner" aria-hidden="true" /> 正在统计进度…
+        <i class="pi pi-spin pi-spinner" aria-hidden="true" />
+        {{ i18nT('libraryUi.computingProgress') }}
       </span>
       <button
         type="button"
@@ -74,12 +82,14 @@ const onToggleVolume = (volId: string) => t.toggleVolume(volId);
         >
           <i class="pi" :class="volIconClass(volume.id)" aria-hidden="true" />
           <span class="tl-tree-vol-title">{{ volTitle(volume, vi) }}</span>
-          <span class="tl-tree-count">{{ volChapterCount(volume) }} 章</span>
+          <span class="tl-tree-count">{{
+            i18nT('libraryUi.chapterCount', { count: volChapterCount(volume) })
+          }}</span>
           <button
             v-if="t.editMode.value"
             type="button"
             class="tl-tree-more-btn"
-            aria-label="卷操作"
+            :aria-label="i18nT('libraryUi.volumeActions')"
             @click="onVolumeMore($event, volume)"
           >
             <i class="pi pi-ellipsis-v" aria-hidden="true" />
@@ -93,7 +103,12 @@ const onToggleVolume = (volId: string) => t.toggleVolume(volId);
           :role="t.chapterRowRole(chapter)"
           @click="onChapterClick(chapter)"
         >
-          <i class="pi" :class="t.chIcon(chapter.id)" :style="{ color: t.chColor(chapter.id) }" aria-hidden="true" />
+          <i
+            class="pi"
+            :class="t.chIcon(chapter.id)"
+            :style="{ color: t.chColor(chapter.id) }"
+            aria-hidden="true"
+          />
           <span class="tl-tree-chap-title">{{ chapTitle(chapter, ci) }}</span>
           <span class="tl-tree-count" :style="{ color: t.chTextColor(chapter.id) }">
             {{ t.chLabel(chapter.id) }}
@@ -102,7 +117,7 @@ const onToggleVolume = (volId: string) => t.toggleVolume(volId);
             v-if="t.editMode.value"
             type="button"
             class="tl-tree-more-btn"
-            aria-label="章节操作"
+            :aria-label="i18nT('libraryUi.chapterActions')"
             @click="onChapterMore($event, chapter, volume.id, ci)"
           >
             <i class="pi pi-ellipsis-v" aria-hidden="true" />
@@ -114,12 +129,12 @@ const onToggleVolume = (volId: string) => t.toggleVolume(volId);
           role="button"
           @click="onToggleVolume(volume.id)"
         >
-          展开余下 {{ remainingChapters(volume) }} 章
+          {{ i18nT('libraryUi.showRemaining', { count: remainingChapters(volume) }) }}
         </div>
       </div>
     </div>
     <div v-else class="tl-chapters-empty">
-      <i class="pi pi-book" aria-hidden="true" /> 暂无章节
+      <i class="pi pi-book" aria-hidden="true" /> {{ i18nT('libraryUi.noChapters') }}
     </div>
   </section>
 </template>

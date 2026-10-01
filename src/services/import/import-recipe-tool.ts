@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type { BookUpdateRecipe } from 'src/models/book-sync';
 import type { ImportExtractionRules, ImportRunContext } from 'src/models/import';
 import type { ImportSourceFilter } from 'src/models/import-pattern';
@@ -54,7 +55,7 @@ export async function recordImportRecipe(
       saved: false,
       data: {
         success: false,
-        error: { code: test.issues[0]!.code, message: test.issues[0]!.message },
+        error: test.issues[0]!,
         issues: test.issues,
         ...summary,
       },
@@ -62,9 +63,10 @@ export async function recordImportRecipe(
   const data = await ImportRepository.mutateTask(
     run.taskId,
     (task) => {
-      if (task.draft.revision !== base) throw new Error('DRAFT_CHANGED: 草稿已变化，请重新读取');
+      if (task.draft.revision !== base)
+        throw importError('DRAFT_CHANGED', 'draftChangedTheDraftChangedRereadIt', {});
       if (['applying', 'reverting'].includes(task.state))
-        throw new Error('TASK_BUSY: 正在提交导入变更');
+        throw importError('TASK_BUSY', 'taskBusyImportChangesAreBeingCommitted', {});
       invalidateImportPreview(task);
       task.draft.updateRecipe = {
         recipe: { ...recipe, verifiedChapterCount: test.verified },

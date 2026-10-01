@@ -19,6 +19,17 @@ import {
 } from 'src/services/ai/tasks/utils/chunk-formatter';
 
 describe('buildNovelSettingsUpdate（按字段存在性构造 partial update）', () => {
+  it('书籍目标语言显式保存，章节指令不修改目标语言，非法值拒绝', () => {
+    expect(buildNovelSettingsUpdate({ targetLanguage: 'en-US' })).toEqual({
+      targetLanguage: 'en-US',
+    });
+    expect(bookToFormState(null).targetLanguage).toBe('zh-CN');
+    const state = bookToFormState({ id: 'book', targetLanguage: 'zh-TW' } as Novel);
+    expect(formStateToPayload(state).targetLanguage).toBe('zh-TW');
+    expect(() =>
+      buildNovelSettingsUpdate({ targetLanguage: 'fr' } as unknown as ChapterSettingsFormData),
+    ).toThrow('INVALID_LOCALE');
+  });
   it('payload 仅含章节指令时不产生任何书籍级字段更新', () => {
     const data: ChapterSettingsFormData = {
       translationInstructions: '章节指令',
@@ -78,6 +89,7 @@ describe('buildNovelSettingsUpdate（按字段存在性构造 partial update）'
 describe('bookToFormState / formStateToPayload（表单状态映射）', () => {
   it('book 为 null 时回退默认状态', () => {
     expect(bookToFormState(null)).toEqual({
+      targetLanguage: 'zh-CN',
       filterIndents: false,
       normalizeSymbolsOnDisplay: false,
       normalizeTitleOnDisplay: false,
@@ -112,6 +124,7 @@ describe('bookToFormState / formStateToPayload（表单状态映射）', () => {
     expect(state.filterIndents).toBe(true);
     expect(state.translationModelOverride).toBe('model-a');
     expect(formStateToPayload(state)).toEqual({
+      targetLanguage: 'zh-CN',
       preserveIndents: false,
       normalizeSymbolsOnDisplay: true,
       normalizeTitleOnDisplay: true,

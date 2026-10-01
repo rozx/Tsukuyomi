@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 手机端卷 / 章节树（共享片段）。
  *
@@ -11,6 +13,8 @@
 import { computed } from 'vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { Chapter, Volume } from 'src/models/novel';
+
+const { t } = useI18n();
 
 const ctx = injectBookDetailsPage();
 
@@ -46,12 +50,7 @@ const onVolumeMore = (e: Event, vol: Volume) => {
   e.stopPropagation();
   emit('volume-action', vol);
 };
-const onChapterMore = (
-  e: Event,
-  chapter: Chapter,
-  volumeId: string,
-  index: number,
-) => {
+const onChapterMore = (e: Event, chapter: Chapter, volumeId: string, index: number) => {
   e.stopPropagation();
   emit('chapter-action', { chapter, volumeId, index });
 };
@@ -68,20 +67,18 @@ const chapterCount = (vol: Volume) => vol.chapters?.length ?? 0;
       :role="volumeRole"
       @click="ctx.toggleVolumeById(vol.id)"
     >
-      <i
-        class="pi mbd-tree-vol-icon"
-        :class="folderIcon(vol.id)"
-        aria-hidden="true"
-      />
-      <span class="mbd-tree-row-title">{{ ctx.getVolumeDisplayTitle(vol) }}</span>
-      <span class="mbd-tree-row-count">{{ chapterCount(vol) }} 章</span>
-        <button
-          v-if="showRowActions"
-          type="button"
-          class="mbd-tree-row-more"
-          aria-label="卷操作"
-          @click="onVolumeMore($event, vol)"
-        >
+      <i class="pi mbd-tree-vol-icon" :class="folderIcon(vol.id)" aria-hidden="true" />
+      <span class="mbd-tree-row-title">{{ ctx.getVolumeDisplayTitle(vol, ctx.book.value) }}</span>
+      <span class="mbd-tree-row-count">{{
+        t('readerUi.chapterCount', { count: chapterCount(vol) })
+      }}</span>
+      <button
+        v-if="showRowActions"
+        type="button"
+        class="mbd-tree-row-more"
+        :aria-label="t('readerUi.volumeActions')"
+        @click="onVolumeMore($event, vol)"
+      >
         <i class="pi pi-ellipsis-v" aria-hidden="true" />
       </button>
     </component>
@@ -109,7 +106,7 @@ const chapterCount = (vol: Volume) => vol.chapters?.length ?? 0;
           v-if="showRowActions"
           type="button"
           class="mbd-tree-row-more"
-          aria-label="章节操作"
+          :aria-label="t('readerUi.chapterActions')"
           @click="onChapterMore($event, ch, vol.id, chIdx)"
         >
           <i class="pi pi-ellipsis-v" aria-hidden="true" />
@@ -120,6 +117,6 @@ const chapterCount = (vol: Volume) => vol.chapters?.length ?? 0;
 
   <div v-if="ctx.volumes.value.length === 0" class="mbd-tree-empty">
     <i class="pi pi-folder-open" aria-hidden="true" />
-    <span>尚未创建卷或章节</span>
+    <span>{{ t('readerUi.noStructure') }}</span>
   </div>
 </template>

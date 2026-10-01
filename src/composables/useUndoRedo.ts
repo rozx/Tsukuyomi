@@ -1,6 +1,13 @@
 import { ref, computed, nextTick, type Ref } from 'vue';
 import { cloneDeep } from 'lodash';
 import type { Novel } from 'src/models/novel';
+import type { AppLocale } from 'src/models/locale';
+
+export interface TranslationUndoScope {
+  kind: 'translation';
+  language: AppLocale;
+  chapterId: string;
+}
 
 /**
  * 撤销/重做历史记录项
@@ -9,6 +16,7 @@ interface HistoryItem {
   book: Novel;
   timestamp: number;
   description?: string;
+  scope?: TranslationUndoScope;
 }
 
 /**
@@ -19,7 +27,7 @@ interface HistoryItem {
  */
 export function useUndoRedo(
   bookRef: Ref<Novel | undefined>,
-  onStateChange: (book: Novel) => Promise<void> | void,
+  onStateChange: (book: Novel, scope?: TranslationUndoScope) => Promise<void> | void,
   getEnhancedBook?: () => Novel | undefined,
 ) {
   // 历史记录栈（撤销栈）
@@ -63,7 +71,7 @@ export function useUndoRedo(
    * 保存当前状态到历史记录
    * @param description 操作描述（可选）
    */
-  const saveState = (description?: string) => {
+  const saveState = (description?: string, scope?: TranslationUndoScope) => {
     const bookToSave = getEnhancedBook ? getEnhancedBook() : bookRef.value;
     if (!bookToSave || isUndoing.value) return;
 
@@ -72,6 +80,7 @@ export function useUndoRedo(
       timestamp: Date.now(),
     };
     if (description !== undefined) historyItem.description = description;
+    if (scope) historyItem.scope = cloneDeep(scope);
 
     undoStack.value.push(historyItem);
     if (undoStack.value.length > maxHistorySize) undoStack.value.shift();
@@ -85,7 +94,7 @@ export function useUndoRedo(
    */
   const undo = async () => {
     if (!canUndo.value || isUndoing.value) return;
-    
+
     // 使用增强函数获取书籍对象，如果没有提供则使用原始的 bookRef.value
     const currentBook = getEnhancedBook ? getEnhancedBook() : bookRef.value;
     if (!currentBook) return;
@@ -95,25 +104,27 @@ export function useUndoRedo(
     try {
       // 将当前状态保存到重做栈
       const currentState = cloneDeep(currentBook);
-      
+
       // 从撤销栈获取上一个状态
-      const previousState = undoStack.value.pop();
+      const previousState = undoStack.value.at(-1);
       if (!previousState) {
         isUndoing.value = false;
         return;
       }
 
       // 将当前状态保存到重做栈（在恢复之前保存，确保可以重做）
+      await onStateChange(cloneDeep(previousState.book), previousState.scope);
+      undoStack.value.pop();
       redoStack.value.push({
         book: currentState,
         timestamp: Date.now(),
+        ...(previousState.scope ? { scope: cloneDeep(previousState.scope) } : {}),
         // 不复制描述，因为重做时的描述应该是"重做"而不是原操作描述
       });
 
       // 恢复上一个状态（通过 onStateChange 回调更新，而不是直接修改 ref）
       // 注意：如果 bookRef 是 computed，不能直接赋值，需要通过 onStateChange 更新 store
-      await onStateChange(cloneDeep(previousState.book));
-      
+
       // 等待下一个 tick，确保响应式更新已传播
       await nextTick();
     } finally {
@@ -126,7 +137,7 @@ export function useUndoRedo(
    */
   const redo = async () => {
     if (!canRedo.value || isUndoing.value) return;
-    
+
     // 使用增强函数获取书籍对象，如果没有提供则使用原始的 bookRef.value
     const currentBook = getEnhancedBook ? getEnhancedBook() : bookRef.value;
     if (!currentBook) return;
@@ -136,25 +147,27 @@ export function useUndoRedo(
     try {
       // 将当前状态保存到撤销栈
       const currentState = cloneDeep(currentBook);
-      
+
       // 从重做栈获取下一个状态
-      const nextState = redoStack.value.pop();
+      const nextState = redoStack.value.at(-1);
       if (!nextState) {
         isUndoing.value = false;
         return;
       }
 
       // 将当前状态保存到撤销栈（在恢复之前保存，确保可以撤销）
+      await onStateChange(cloneDeep(nextState.book), nextState.scope);
+      redoStack.value.pop();
       undoStack.value.push({
         book: currentState,
         timestamp: Date.now(),
+        ...(nextState.scope ? { scope: cloneDeep(nextState.scope) } : {}),
         // 不复制描述，因为撤销时的描述应该是"撤销"而不是原操作描述
       });
 
       // 恢复下一个状态（通过 onStateChange 回调更新，而不是直接修改 ref）
       // 注意：如果 bookRef 是 computed，不能直接赋值，需要通过 onStateChange 更新 store
-      await onStateChange(cloneDeep(nextState.book));
-      
+
       // 等待下一个 tick，确保响应式更新已传播
       await nextTick();
     } finally {

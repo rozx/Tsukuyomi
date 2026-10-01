@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { importNoticeText } from 'src/services/import/import-error';
+
 /**
  * 方案中的更新配方：新增、替换、保留原有，或声明已失效（本次不写入，保留原配方）。
  * 没有声明且目标书没有配方时不显示。
@@ -8,21 +12,21 @@ import Tag from 'primevue/tag';
 import type { ImportPlan, ImportRecipeSummary } from 'src/models/import';
 import { recipeEngineLabel } from 'src/composables/import-page/import-recipe-description';
 
+const { t, locale } = useI18n();
+const uiLocale = computed(() => resolveAppLocale(locale.value));
+const noticeText = (value: unknown) => importNoticeText(value, uiLocale.value);
+
 const props = defineProps<{ plan: ImportPlan }>();
 
 const KINDS = {
-  add: { label: '新增', severity: 'success', text: '应用后这本书可以按配方检查更新。' },
-  replace: { label: '替换', severity: 'info', text: '应用后用新配方替换这本书原有的配方。' },
-  keep: {
-    label: '保留原有',
-    severity: 'secondary',
-    text: '本次没有声明配方，保留这本书原有的配方。',
+  add: { label: 'importUi.recipe.add', severity: 'success', text: 'importUi.recipe.addText' },
+  replace: {
+    label: 'importUi.recipe.replace',
+    severity: 'info',
+    text: 'importUi.recipe.replaceText',
   },
-  stale: {
-    label: '已失效',
-    severity: 'warn',
-    text: '配方已失效，本次不会写入配方；其余导入内容照常应用，原有配方保持不变。',
-  },
+  keep: { label: 'importUi.recipe.keep', severity: 'secondary', text: 'importUi.recipe.keepText' },
+  stale: { label: 'importUi.recipe.stale', severity: 'warn', text: 'importUi.recipe.staleText' },
 } as const;
 
 const change = computed(() => props.plan.recipeChange);
@@ -36,30 +40,36 @@ const issues = computed(() => change.value?.issues?.slice(0, 5) ?? []);
 <template>
   <section v-if="change && kind" class="ipl-card" data-testid="ipr-recipe">
     <div class="ipl-card-head">
-      <h3 class="ipl-card-title"><i class="pi pi-sync" aria-hidden="true" />更新配方</h3>
-      <Tag :value="kind.label" :severity="kind.severity" data-testid="ipr-kind" />
+      <h3 class="ipl-card-title">
+        <i class="pi pi-sync" aria-hidden="true" />{{ t('importUi.recipe.title') }}
+      </h3>
+      <Tag :value="t(kind.label)" :severity="kind.severity" data-testid="ipr-kind" />
     </div>
-    <p class="ipl-muted">{{ kind.text }}</p>
+    <p class="ipl-muted">{{ t(kind.text) }}</p>
     <dl v-if="shown" class="ipr-facts">
-      <dt>引擎</dt>
-      <dd>{{ recipeEngineLabel(shown.engine) }}</dd>
-      <dt>目录</dt>
+      <dt>{{ t('importUi.recipe.engine') }}</dt>
+      <dd>{{ recipeEngineLabel(shown.engine, uiLocale) }}</dd>
+      <dt>{{ t('importUi.recipe.catalog') }}</dt>
       <dd class="ipr-url">{{ shown.catalogUrls[0] }}</dd>
-      <dt>可复现</dt>
-      <dd data-testid="ipr-verified">{{ change.verified }} 章</dd>
+      <dt>{{ t('importUi.recipe.verified') }}</dt>
+      <dd data-testid="ipr-verified">
+        {{ t('importUi.recipe.chapters', { count: change.verified }) }}
+      </dd>
       <template v-if="shown.pinned">
-        <dt>固定正文</dt>
-        <dd>{{ shown.pinned }} 章</dd>
+        <dt>{{ t('importUi.recipe.pinned') }}</dt>
+        <dd>{{ t('importUi.recipe.chapters', { count: shown.pinned }) }}</dd>
       </template>
       <template v-if="shown.cleanupRules">
-        <dt>清理规则</dt>
-        <dd>{{ shown.cleanupRules }} 条</dd>
+        <dt>{{ t('importUi.recipe.cleanup') }}</dt>
+        <dd>{{ t('importUi.recipe.rules', { count: shown.cleanupRules }) }}</dd>
       </template>
     </dl>
     <template v-if="change.kind === 'stale'">
-      <p v-if="change.reason" class="ipr-reason" data-testid="ipr-reason">{{ change.reason }}</p>
+      <p v-if="change.reason" class="ipr-reason" data-testid="ipr-reason">
+        {{ noticeText(change.reason) }}
+      </p>
       <ul v-if="issues.length" class="ipr-issues">
-        <li v-for="(issue, index) in issues" :key="index">{{ issue.message }}</li>
+        <li v-for="(issue, index) in issues" :key="index">{{ noticeText(issue) }}</li>
       </ul>
     </template>
   </section>

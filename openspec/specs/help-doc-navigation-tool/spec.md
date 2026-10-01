@@ -7,6 +7,8 @@
 
 ### Requirement: AI 助手可导航用户到指定帮助文档
 
+工具返回给模型的反馈 SHALL 为下列简中文案，不随界面语言变化；帮助正文与标题按执行界面语言读取。`doc_id` 和 `section_id` SHALL 为跨语言稳定标识，标题不充当身份。
+
 系统 SHALL 提供 `navigate_to_help_doc` AI 工具，接受 `doc_id`（必填，string）和 `section_id`（可选，string）参数。该工具 SHALL 验证 `doc_id` 在帮助文档索引中存在，并通过 `onAction` 回调触发 UI 导航到对应的帮助文档页面。
 
 #### Scenario: 成功导航到帮助文档
@@ -28,6 +30,12 @@
 
 - **WHEN** AI 助手调用 `navigate_to_help_doc`，`doc_id` 为空或未提供
 - **THEN** 工具返回 `{ success: false, error: "文档 ID 不能为空" }`
+
+#### Scenario: 执行与页面语言不同
+
+- **GIVEN** 英文助手执行读取了指南，用户随后把界面切到繁中
+- **WHEN** 助手导航到该文档章节
+- **THEN** 页面 SHALL 打开繁中版本对应章节，工具自身反馈仍为简中
 
 ### Requirement: 工具仅在聊天助手上下文中可用
 

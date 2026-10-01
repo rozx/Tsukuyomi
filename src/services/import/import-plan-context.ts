@@ -1,3 +1,4 @@
+import { importError, readImportError } from './import-error';
 import type { Novel } from 'src/models/novel';
 import type {
   ImportDraftChapter,
@@ -49,15 +50,19 @@ export async function loadImportPlanContext(
   revision: number,
 ): Promise<ImportPlanContext> {
   const task = await ImportRepository.getTask(taskId);
-  if (!task) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
-  if (task.draft.revision !== revision) throw new Error('DRAFT_CHANGED: 草稿已改变');
+  if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
+  if (task.draft.revision !== revision)
+    throw importError('DRAFT_CHANGED', 'draftChangedTheDraftChangedVariant179', {});
   let snapshot: ImportBookSnapshot | undefined;
   if (task.draft.target.kind === 'existing') {
     const loaded = await ImportLibraryReader.readBook(task.draft.target.bookId);
     if (loaded.kind !== 'loaded')
-      throw new Error(
-        `BOOK_READ_FAILED: ${loaded.kind === 'failed' ? loaded.message : '目标小说不存在'}`,
-      );
+      throw importError('BOOK_READ_FAILED', 'bookReadFailedDetail', {
+        value1:
+          loaded.kind === 'failed'
+            ? readImportError(loaded)
+            : importError('BOOK_READ_FAILED', 'bookReadFailedTheTargetNovelDoesNotExist'),
+      });
     snapshot = loaded;
   }
   const db = await getDB();
@@ -77,7 +82,7 @@ export async function loadImportPlanContext(
     let value = resources.get(id);
     if (!value) {
       value = await ImportRepository.getResource(taskId, id);
-      if (!value) throw new Error('SOURCE_SCOPE: 正文资源不存在');
+      if (!value) throw importError('SOURCE_SCOPE', 'sourceScopeTheBodyResourceDoesNotExist', {});
       resources.set(id, value);
     }
     return value;

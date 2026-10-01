@@ -1,6 +1,7 @@
 import { watch } from 'vue';
 import { useSettingsStore } from 'src/stores/settings';
 import { useSyncExecutor } from 'src/composables/useSyncExecutor';
+import { translateText } from 'src/i18n/translate';
 
 // 单例状态（在模块级别共享）
 let autoSyncInterval: ReturnType<typeof setInterval> | null = null;
@@ -51,7 +52,7 @@ export function useAutoSync() {
       settingsStore.setSyncing(true);
 
       await executeSync({
-        messagePrefix: '[自动同步] ',
+        messagePrefix: translateText(settingsStore.uiLocale, 'syncUi.actions.autoPrefix'),
         isManualRetrieval: false,
         onError: (summary, detail) => {
           console.error(`[useAutoSync] ${summary}: ${detail}`);

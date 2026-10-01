@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import { ref, watch } from 'vue';
-import Button from 'primevue/button';
+import DialogFormActions from './DialogFormActions.vue';
 import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+
+const { t } = useI18n();
 
 interface VolumeOption {
   label: string;
@@ -51,31 +54,35 @@ const handleCancel = () => {
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="添加新章节"
+    :header="t('structureUi.addChapter')"
     desktop-width="25rem"
-    eyebrow="CHAPTER"
+    :eyebrow="t('structureUi.chapter')"
     sheet-min-height="auto"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
       <div class="space-y-2">
-        <label for="volume-select" class="block text-sm font-medium text-moon/90">选择卷</label>
+        <label for="volume-select" class="block text-sm font-medium text-moon/90">{{
+          t('structureUi.selectVolume')
+        }}</label>
         <Select
           id="volume-select"
           v-model="selectedVolumeId"
           :options="volumeOptions"
           optionLabel="label"
           optionValue="value"
-          placeholder="请选择卷"
+          :placeholder="t('structureUi.selectVolumePlaceholder')"
           class="w-full"
         />
       </div>
       <div class="space-y-2">
-        <label for="chapter-title" class="block text-sm font-medium text-moon/90">章节标题</label>
+        <label for="chapter-title" class="block text-sm font-medium text-moon/90">{{
+          t('structureUi.chapterTitle')
+        }}</label>
         <InputText
           id="chapter-title"
           v-model="chapterTitle"
-          placeholder="输入章节标题..."
+          :placeholder="t('structureUi.chapterPlaceholder')"
           class="w-full"
           autofocus
           @keyup.enter="handleSave"
@@ -83,14 +90,13 @@ const handleCancel = () => {
       </div>
     </div>
     <template #footer>
-      <Button label="取消" class="p-button-text" :disabled="loading" @click="handleCancel" />
-      <Button
-        label="添加"
+      <DialogFormActions
+        :submit-label="t('structureUi.add')"
         :loading="loading"
-        :disabled="!chapterTitle.trim() || !selectedVolumeId || loading"
-        @click="handleSave"
+        :disabled="!chapterTitle.trim() || !selectedVolumeId"
+        @cancel="handleCancel"
+        @submit="handleSave"
       />
     </template>
   </AdaptiveDialog>
 </template>
-

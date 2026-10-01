@@ -1,3 +1,6 @@
+import { importFailure, importError } from './import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 import { marked } from 'marked';
 import type { ImportTextBlock } from 'src/models/import';
 
@@ -7,7 +10,11 @@ function decode(bytes: Uint8Array, encoding: string): string {
   const text = new TextDecoder(encoding, { fatal: true }).decode(bytes);
   // eslint-disable-next-line no-control-regex -- 此处有意检测二进制控制字符，不能把它们作为小说正文。
   if (/[\u0000-\u0008\u000e-\u001f\u007f]/u.test(text))
-    throw new Error('BINARY_CONTENT: 内容包含二进制控制字符');
+    throw importError(
+      'BINARY_CONTENT',
+      'binaryContentTheContentContainsBinaryControlCharacters',
+      {},
+    );
   return text;
 }
 
@@ -19,7 +26,7 @@ export function decodeImportText(
   text: string;
   encoding: string;
   bomBytes: number;
-  warnings: string[];
+  warnings: ImportNotice[];
 } {
   let encoding = explicitEncoding;
   let bomBytes = 0;
@@ -43,7 +50,9 @@ export function decodeImportText(
       };
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('BINARY_CONTENT')) throw error;
-      throw new Error(`ENCODING_REQUIRED: 无法按 ${encoding} 解码，请检查编码或文件完整性`);
+      throw importError('ENCODING_REQUIRED', 'encodingRequiredCannotDecodeAsDetailCheckThe', {
+        value1: String(encoding),
+      });
     }
   }
   try {
@@ -65,9 +74,13 @@ export function decodeImportText(
       return {
         ...candidates[0]!,
         bomBytes: 0,
-        warnings: ['UTF-8 解码失败，按唯一可读的日文编码候选解码；请检查预览。'],
+        warnings: [importFailure('ENCODING_FALLBACK', 'noticeEncoding')],
       };
-    throw new Error('ENCODING_REQUIRED: 无法可靠判断文本编码，请指定编码或提供可读文件');
+    throw importError(
+      'ENCODING_REQUIRED',
+      'encodingRequiredTextEncodingCannotBeDeterminedReliably',
+      {},
+    );
   }
 }
 
@@ -110,7 +123,11 @@ export function parseImportMarkdown(text: string): ParsedBlock[] {
   // 只处理顶层 token，避免嵌套列表或引用块重复计算原文。
   for (const token of marked.lexer(normalized)) {
     if (!token.raw || normalized.slice(position, position + token.raw.length) !== token.raw)
-      throw new Error('MARKDOWN_POSITION: 无法核对 Markdown 原文位置');
+      throw importError(
+        'MARKDOWN_POSITION',
+        'markdownPositionCannotVerifyMarkdownSourcePositions',
+        {},
+      );
     const start = offsets[position]!;
     position += token.raw.length;
     const end = offsets[position]!;
@@ -131,6 +148,6 @@ export function parseImportMarkdown(text: string): ParsedBlock[] {
     });
   }
   if (position !== normalized.length)
-    throw new Error('MARKDOWN_POSITION: Markdown 块没有覆盖完整原文');
+    throw importError('MARKDOWN_POSITION', 'markdownPositionMarkdownBlocksDoNotCoverThe', {});
   return blocks;
 }

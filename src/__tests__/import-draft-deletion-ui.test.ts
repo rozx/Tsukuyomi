@@ -1,3 +1,5 @@
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { createApp, h, nextTick } from 'vue';
@@ -70,7 +72,11 @@ async function mountDraft(extraChapters = 0) {
       return () => h(ImportDraftPanel);
     },
   });
-  app.use(getActivePinia()!).use(router).use(PrimeVue, { unstyled: true });
+  app
+    .use(getActivePinia()!)
+    .use(router)
+    .use(PrimeVue, { unstyled: true })
+    .use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
   app.mount(host);
   await vi.waitFor(() => expect(ctx.ready.value).toBe(true));
   return { input, store: useImportWorkspaceStore() };

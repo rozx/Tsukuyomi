@@ -1,4 +1,6 @@
 import type { Novel } from 'src/models/novel';
+import type { AppLocale } from 'src/models/locale';
+import { isAppLocale } from 'src/models/locale';
 import {
   DEFAULT_TASK_CHUNK_SIZE,
   resolveTaskChunkSize,
@@ -10,6 +12,7 @@ import {
  * 手机抽屉 / 翻译设置面板提交全量书籍级字段。
  */
 export type ChapterSettingsFormData = {
+  targetLanguage?: AppLocale;
   preserveIndents?: boolean;
   normalizeSymbolsOnDisplay?: boolean;
   normalizeTitleOnDisplay?: boolean;
@@ -26,6 +29,7 @@ export type ChapterSettingsFormData = {
  * 书籍级翻译设置表单状态（UI 语义：filterIndents = !preserveIndents）。
  */
 export type BookSettingsFormState = {
+  targetLanguage: AppLocale;
   filterIndents: boolean;
   normalizeSymbolsOnDisplay: boolean;
   normalizeTitleOnDisplay: boolean;
@@ -43,6 +47,7 @@ export type BookTranslationSettingsFormHandle = {
 };
 
 const DEFAULT_FORM_STATE: BookSettingsFormState = {
+  targetLanguage: 'zh-CN',
   filterIndents: false,
   normalizeSymbolsOnDisplay: false,
   normalizeTitleOnDisplay: false,
@@ -57,6 +62,7 @@ const DEFAULT_FORM_STATE: BookSettingsFormState = {
 export function bookToFormState(book: Novel | null): BookSettingsFormState {
   if (!book) return { ...DEFAULT_FORM_STATE };
   return {
+    targetLanguage: book.targetLanguage ?? 'zh-CN',
     filterIndents: book.preserveIndents === false,
     normalizeSymbolsOnDisplay: book.normalizeSymbolsOnDisplay === true,
     normalizeTitleOnDisplay: book.normalizeTitleOnDisplay === true,
@@ -71,6 +77,7 @@ export function bookToFormState(book: Novel | null): BookSettingsFormState {
 /** 表单状态 → 书籍级保存 payload（不含章节指令字段） */
 export function formStateToPayload(state: BookSettingsFormState): ChapterSettingsFormData {
   return {
+    targetLanguage: state.targetLanguage,
     preserveIndents: !state.filterIndents,
     normalizeSymbolsOnDisplay: state.normalizeSymbolsOnDisplay,
     normalizeTitleOnDisplay: state.normalizeTitleOnDisplay,
@@ -102,6 +109,10 @@ export function hasChapterInstructionPayload(data: ChapterSettingsFormData): boo
  */
 export function buildNovelSettingsUpdate(data: ChapterSettingsFormData): Partial<Novel> {
   const updates: Partial<Novel> = {};
+  if (data.targetLanguage !== undefined) {
+    if (!isAppLocale(data.targetLanguage)) throw new Error('INVALID_LOCALE');
+    updates.targetLanguage = data.targetLanguage;
+  }
   if (data.preserveIndents !== undefined) updates.preserveIndents = data.preserveIndents;
   if (data.normalizeSymbolsOnDisplay !== undefined) {
     updates.normalizeSymbolsOnDisplay = data.normalizeSymbolsOnDisplay;

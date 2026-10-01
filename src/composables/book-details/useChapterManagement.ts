@@ -6,7 +6,14 @@ import { useBooksStore } from 'src/stores/books';
 import { ChapterService } from 'src/services/chapter-service';
 import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
-import { generateShortId } from 'src/utils/id-generator';
+import { getNameTranslation } from 'src/services/localization/selection';
+import { normalizeNameTranslations } from 'src/services/localization/normalize';
+import { titleOriginal } from 'src/services/localization/title-edit';
+import type { TitleEdit } from 'src/services/localization/title-edit';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
+import { useSettingsStore } from 'src/stores/settings';
 import { getVolumeDisplayTitle, getChapterDisplayTitle } from 'src/utils';
 import { cloneDeep } from 'lodash';
 
@@ -16,6 +23,9 @@ export function useChapterManagement(
 ) {
   const booksStore = useBooksStore();
   const toast = useToastWithHistory();
+  const settings = useSettingsStore();
+  const text = (key: MessageKey, values: Record<string, string | number> = {}) =>
+    translateText(settings.uiLocale, key, values);
 
   // Add Volume/Chapter Dialog State
   const showAddVolumeDialog = ref(false);
@@ -29,6 +39,21 @@ export function useChapterManagement(
   const showEditChapterDialog = ref(false);
   const editingVolumeId = ref<string | null>(null);
   const editingChapterId = ref<string | null>(null);
+  const volumeLanguage = ref<AppLocale>('zh-CN');
+  const chapterLanguage = ref<AppLocale>('zh-CN');
+  const volumeOriginal = ref('');
+  const chapterOriginal = ref('');
+  let chapterBefore: Chapter | null = null;
+  const checkLanguage = (language: AppLocale) => {
+    if (language === (book.value?.targetLanguage ?? 'zh-CN')) return true;
+    toast.add({
+      severity: 'warn',
+      summary: translateText(settings.uiLocale, 'books.targetChanged'),
+      detail: translateText(settings.uiLocale, 'books.reopenEditor'),
+      life: 3000,
+    });
+    return false;
+  };
   const editingVolumeTitle = ref('');
   const editingVolumeTranslation = ref('');
   const editingChapterTitle = ref('');
@@ -76,8 +101,8 @@ export function useChapterManagement(
 
       toast.add({
         severity: 'success',
-        summary: '添加成功',
-        detail: `已添加卷 "${newVolumeTitle.value.trim()}"`,
+        summary: text('readerUi.added'),
+        detail: text('readerUi.addedVolume', { name: newVolumeTitle.value.trim() }),
         life: 3000,
       });
 
@@ -116,8 +141,8 @@ export function useChapterManagement(
 
       toast.add({
         severity: 'success',
-        summary: '添加成功',
-        detail: `已添加章节 "${newChapterTitle.value.trim()}"`,
+        summary: text('readerUi.added'),
+        detail: text('readerUi.addedChapter', { name: newChapterTitle.value.trim() }),
         life: 3000,
       });
 
@@ -133,8 +158,8 @@ export function useChapterManagement(
     if (!book.value || !book.value.volumes || book.value.volumes.length === 0) {
       toast.add({
         severity: 'warn',
-        summary: '无法添加章节',
-        detail: '请先添加至少一个卷',
+        summary: text('readerUi.cannotAddChapter'),
+        detail: text('readerUi.addVolumeFirst'),
         life: 3000,
       });
       return;
@@ -146,13 +171,16 @@ export function useChapterManagement(
 
   const openEditVolumeDialog = (volume: Volume) => {
     editingVolumeId.value = volume.id;
+    volumeLanguage.value = book.value?.targetLanguage ?? 'zh-CN';
+    volumeOriginal.value = titleOriginal(volume.title);
     // Compatibility with old data format
     if (typeof volume.title === 'string') {
       editingVolumeTitle.value = volume.title;
       editingVolumeTranslation.value = '';
     } else {
       editingVolumeTitle.value = volume.title?.original || '';
-      editingVolumeTranslation.value = volume.title?.translation?.translation || '';
+      editingVolumeTranslation.value =
+        getNameTranslation(volume.title, volumeLanguage.value)?.translation || '';
     }
     showEditVolumeDialog.value = true;
   };
@@ -163,7 +191,7 @@ export function useChapterManagement(
     if (typeof title === 'string') return { original: title, translation: '' };
     return {
       original: title?.original || '',
-      translation: title?.translation?.translation || '',
+      translation: title ? getNameTranslation(title, chapterLanguage.value)?.translation || '' : '',
     };
   };
 
@@ -181,8 +209,11 @@ export function useChapterManagement(
     if (!book.value) return;
 
     const sourceVolumeId =
-      book.value.volumes?.find((volume) => volume.chapters?.some((c) => c.id === chapter.id))
-        ?.id ?? null;
+      book.value.volumes?.find((volume) => volume.chapters?.some((c) => c.id === chapter.id))?.id ??
+      null;
+    chapterLanguage.value = book.value.targetLanguage ?? 'zh-CN';
+    chapterOriginal.value = titleOriginal(chapter.title);
+    chapterBefore = cloneDeep(chapter);
     const titleFields = extractTitleFields(chapter.title);
 
     editingChapterId.value = chapter.id;
@@ -194,18 +225,29 @@ export function useChapterManagement(
     showEditChapterDialog.value = true;
   };
 
-  type VolumeLike = { title?: { translation?: { id: string; aiModelId: string } } | string };
-
-  const resolveTranslationIdentity = (
-    entity: VolumeLike | null | undefined,
-  ): { translationId: string; aiModelId: string } => {
-    if (!entity || typeof entity.title === 'string') {
-      return { translationId: generateShortId(), aiModelId: '' };
-    }
-    return {
-      translationId: entity.title?.translation?.id || generateShortId(),
-      aiModelId: entity.title?.translation?.aiModelId || '',
+  const revertTitle = async (
+    bookId: string,
+    language: AppLocale,
+    edit: TitleEdit,
+    before: Chapter['title'],
+  ) => {
+    const owner = normalizeNameTranslations(
+      typeof before === 'string'
+        ? { original: before, translation: { id: '', translation: '', aiModelId: '' } }
+        : before,
+      0,
+    );
+    const original = titleOriginal(before);
+    const restore: TitleEdit = {
+      ...edit,
+      expectedOriginal: edit.original ?? edit.expectedOriginal,
     };
+    if (original !== restore.expectedOriginal) {
+      restore.original = original;
+      restore.restoreTranslations = owner.translationsByLanguage!;
+      delete restore.translation;
+    } else restore.translation = getNameTranslation(owner, language)?.translation ?? '';
+    await booksStore.editTitle(bookId, language, restore);
   };
 
   const handleEditVolume = async () => {
@@ -221,40 +263,24 @@ export function useChapterManagement(
     isEditingVolume.value = true;
     try {
       const currentVolume = book.value.volumes?.find((v) => v.id === editingVolumeId.value);
-      const { translationId, aiModelId } = resolveTranslationIdentity(currentVolume);
-
-      // 保存原始数据用于撤销
-      const oldVolumes = book.value.volumes ? cloneDeep(book.value.volumes) : null;
-
-      const updatedVolumes = ChapterService.updateVolume(book.value, editingVolumeId.value, {
-        title: {
-          original: editingVolumeTitle.value.trim(),
-          translation: {
-            id: translationId,
-            translation: editingVolumeTranslation.value.trim(),
-            aiModelId: aiModelId,
-          },
-        },
-      });
-
-      await booksStore.updateBook(book.value.id, {
-        volumes: updatedVolumes,
-        lastEdited: new Date(),
-      });
-
+      if (!currentVolume || !checkLanguage(volumeLanguage.value)) return;
+      const bookId = book.value.id;
+      const language = volumeLanguage.value;
+      const before = cloneDeep(currentVolume.title);
+      const edit: TitleEdit = {
+        kind: 'volume',
+        id: currentVolume.id,
+        expectedOriginal: volumeOriginal.value,
+        original: editingVolumeTitle.value.trim(),
+        translation: editingVolumeTranslation.value.trim(),
+      };
+      await booksStore.editTitle(bookId, language, edit, language);
       toast.add({
         severity: 'success',
-        summary: '更新成功',
-        detail: `已更新卷标题`,
+        summary: text('readerUi.updated'),
+        detail: text('readerUi.volumeUpdated'),
         life: 3000,
-        onRevert: async () => {
-          if (book.value && oldVolumes) {
-            await booksStore.updateBook(book.value.id, {
-              volumes: oldVolumes,
-              lastEdited: new Date(),
-            });
-          }
-        },
+        onRevert: () => revertTitle(bookId, language, edit, before),
       });
 
       showEditVolumeDialog.value = false;
@@ -275,23 +301,19 @@ export function useChapterManagement(
     return null;
   };
 
-  const buildChapterUpdatePayload = (
-    translationId: string,
-    aiModelId: string,
-  ): Parameters<typeof ChapterService.updateChapter>[2] => ({
-    title: {
-      original: editingChapterTitle.value.trim(),
-      translation: {
-        id: translationId,
-        translation: editingChapterTranslation.value.trim(),
-        aiModelId: aiModelId,
-      },
-    },
-    translationInstructions: editingChapterTranslationInstructions.value.trim() || undefined,
-    polishInstructions: editingChapterPolishInstructions.value.trim() || undefined,
-    proofreadingInstructions: editingChapterProofreadingInstructions.value.trim() || undefined,
-    webUrl: editingChapterWebUrl.value.trim() || undefined,
-  });
+  const buildChapterUpdatePayload = (): TitleEdit['updates'] => {
+    const updates: NonNullable<TitleEdit['updates']> = {};
+    const fields = {
+      translationInstructions: editingChapterTranslationInstructions.value.trim(),
+      polishInstructions: editingChapterPolishInstructions.value.trim(),
+      proofreadingInstructions: editingChapterProofreadingInstructions.value.trim(),
+      webUrl: editingChapterWebUrl.value.trim(),
+    };
+    for (const key of Object.keys(fields) as Array<keyof typeof fields>) {
+      if (fields[key] !== (chapterBefore?.[key] ?? '')) updates[key] = fields[key] || undefined;
+    }
+    return updates;
+  };
 
   const resetChapterEditDialog = (): void => {
     showEditChapterDialog.value = false;
@@ -309,28 +331,6 @@ export function useChapterManagement(
     editingChapterCreatedAt.value = undefined;
   };
 
-  const showChapterEditToast = (
-    oldVolumes: Volume[] | null,
-    bookValue: NonNullable<typeof book.value>,
-  ): void => {
-    const moved =
-      editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value;
-    toast.add({
-      severity: 'success',
-      summary: '更新成功',
-      detail: `已更新章节标题${moved ? '并移动到新卷' : ''}`,
-      life: 3000,
-      onRevert: async () => {
-        if (oldVolumes) {
-          await booksStore.updateBook(bookValue.id, {
-            volumes: oldVolumes,
-            lastEdited: new Date(),
-          });
-        }
-      },
-    });
-  };
-
   const handleEditChapter = async () => {
     if (
       !book.value ||
@@ -346,20 +346,46 @@ export function useChapterManagement(
     const bookValue = book.value;
     try {
       const currentChapter = findChapterInAnyVolume(editingChapterId.value);
-      const { translationId, aiModelId } = resolveTranslationIdentity(currentChapter);
-      const oldVolumes = bookValue.volumes ? cloneDeep(bookValue.volumes) : null;
-
-      const updatedVolumes = ChapterService.updateChapter(
-        bookValue,
-        editingChapterId.value,
-        buildChapterUpdatePayload(translationId, aiModelId),
-        editingChapterTargetVolumeId.value,
-      );
-      await booksStore.updateBook(bookValue.id, {
-        volumes: updatedVolumes,
-        lastEdited: new Date(),
+      if (!currentChapter || !checkLanguage(chapterLanguage.value)) return;
+      const language = chapterLanguage.value;
+      const before = cloneDeep(currentChapter);
+      const previousVolumeId = bookValue.volumes?.find((volume) =>
+        volume.chapters?.some((chapter) => chapter.id === currentChapter.id),
+      )?.id;
+      const updates = buildChapterUpdatePayload();
+      const moved = editingChapterSourceVolumeId.value !== editingChapterTargetVolumeId.value;
+      const edit: TitleEdit = {
+        kind: 'chapter',
+        id: currentChapter.id,
+        expectedOriginal: chapterOriginal.value,
+        original: editingChapterTitle.value.trim(),
+        translation: editingChapterTranslation.value.trim(),
+        ...(updates ? { updates } : {}),
+        ...(moved ? { targetVolumeId: editingChapterTargetVolumeId.value } : {}),
+      };
+      await booksStore.editTitle(bookValue.id, language, edit, language);
+      const revertUpdates: NonNullable<TitleEdit['updates']> = {};
+      for (const key of Object.keys(updates ?? {}) as Array<
+        keyof NonNullable<TitleEdit['updates']>
+      >)
+        revertUpdates[key] = before[key];
+      toast.add({
+        severity: 'success',
+        summary: text('readerUi.updated'),
+        detail: text(moved ? 'readerUi.chapterMoved' : 'readerUi.chapterUpdated'),
+        life: 3000,
+        onRevert: () =>
+          revertTitle(
+            bookValue.id,
+            language,
+            {
+              ...edit,
+              updates: revertUpdates,
+              ...(moved && previousVolumeId ? { targetVolumeId: previousVolumeId } : {}),
+            },
+            before.title,
+          ),
       });
-      showChapterEditToast(oldVolumes, bookValue);
       resetChapterEditDialog();
     } finally {
       isEditingChapter.value = false;
@@ -370,13 +396,13 @@ export function useChapterManagement(
 
   const openDeleteVolumeConfirm = (volume: Volume) => {
     deletingVolumeId.value = volume.id;
-    deletingVolumeTitle.value = getVolumeDisplayTitle(volume);
+    deletingVolumeTitle.value = getVolumeDisplayTitle(volume, book.value);
     showDeleteVolumeConfirm.value = true;
   };
 
   const openDeleteChapterConfirm = (chapter: Chapter) => {
     deletingChapterId.value = chapter.id;
-    deletingChapterTitle.value = getChapterDisplayTitle(chapter);
+    deletingChapterTitle.value = getChapterDisplayTitle(chapter, book.value);
     showDeleteChapterConfirm.value = true;
   };
 
@@ -396,8 +422,8 @@ export function useChapterManagement(
 
       toast.add({
         severity: 'success',
-        summary: '删除成功',
-        detail: `已删除卷 "${deletingVolumeTitle.value}"`,
+        summary: text('readerUi.deleted'),
+        detail: text('readerUi.deletedVolume', { name: deletingVolumeTitle.value }),
         life: 3000,
       });
 
@@ -426,8 +452,8 @@ export function useChapterManagement(
 
       toast.add({
         severity: 'success',
-        summary: '删除成功',
-        detail: `已删除章节 "${deletingChapterTitle.value}"`,
+        summary: text('readerUi.deleted'),
+        detail: text('readerUi.deletedChapter', { name: deletingChapterTitle.value }),
         life: 3000,
       });
 

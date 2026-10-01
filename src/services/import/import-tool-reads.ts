@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type { ImportDraftChapter, ImportResource, ImportRunContext } from 'src/models/import';
 import { ImportRepository } from './import-repository';
 import { ImportLibraryService } from './import-library-service';
@@ -9,7 +10,10 @@ export function textArgument(
   fallback?: string,
 ): string {
   const value = args[key] ?? fallback;
-  if (typeof value !== 'string') throw new Error(`INVALID_ARGUMENTS: ${key} 必须是文本`);
+  if (typeof value !== 'string')
+    throw importError('INVALID_ARGUMENTS', 'invalidArgumentsDetailMustBeText', {
+      value1: String(key),
+    });
   return value;
 }
 export function pageArguments(args: Record<string, unknown>, max = 100) {
@@ -22,7 +26,9 @@ export function pageArguments(args: Record<string, unknown>, max = 100) {
     (limit as number) < 1 ||
     (limit as number) > max
   )
-    throw new Error(`INVALID_PAGE: offset 须为非负整数，limit 须为 1–${max}`);
+    throw importError('INVALID_PAGE', 'invalidPageOffsetMustBeANonnegativeInteger', {
+      value1: String(max),
+    });
   return { offset: offset as number, limit: limit as number };
 }
 function chapterInfo(chapter: ImportDraftChapter) {
@@ -31,13 +37,14 @@ function chapterInfo(chapter: ImportDraftChapter) {
 }
 async function readDraft(taskId: string, args: Record<string, unknown>) {
   const task = await ImportRepository.getTask(taskId);
-  if (!task) throw new Error('TASK_NOT_FOUND: 任务不存在');
+  if (!task) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheTaskDoesNotExist', {});
   const { offset, limit } = pageArguments(args);
   if (args.view === 'chapter') {
     const chapter = task.draft.chapters.find(
       (entry) => entry.id === textArgument(args, 'chapter_id'),
     );
-    if (!chapter) throw new Error('CHAPTER_NOT_FOUND: 草稿章节不存在');
+    if (!chapter)
+      throw importError('CHAPTER_NOT_FOUND', 'chapterNotFoundTheDraftChapterDoesNotExist', {});
     return {
       ...chapterInfo(chapter),
       draftRevision: task.draft.revision,
@@ -75,10 +82,15 @@ async function readResource(taskId: string, args: Record<string, unknown>) {
   if (view === 'text')
     return ImportContentService.read(taskId, resourceId, pageArguments(args, 16000));
   const resource = await ImportRepository.getResource(taskId, resourceId);
-  if (!resource) throw new Error('SOURCE_SCOPE: 资源不存在');
+  if (!resource) throw importError('SOURCE_SCOPE', 'sourceScopeTheResourceDoesNotExist', {});
   if (view === 'inspection' && resource.kind === 'snapshot')
     return { resourceId, inspection: resource.inspection };
-  if (resource.kind !== 'extraction') throw new Error('UNREADABLE_RESOURCE: 该视图需要已提取内容');
+  if (resource.kind !== 'extraction')
+    throw importError(
+      'UNREADABLE_RESOURCE',
+      'unreadableResourceThisViewRequiresExtractedContent',
+      {},
+    );
   return extractionPage(resource, view, args);
 }
 function extractionPage(
@@ -151,6 +163,6 @@ export async function readImportTool(
         pageArguments(args),
       );
     default:
-      throw new Error('TOOL_NOT_ALLOWED: 不支持的读取工具');
+      throw importError('TOOL_NOT_ALLOWED', 'toolNotAllowedUnsupportedReadTool', {});
   }
 }

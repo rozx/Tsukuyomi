@@ -1,3 +1,4 @@
+import type { AppLocale } from 'src/models/locale';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
 import type { AssistantServiceOptions, AssistantResult } from './assistant-service';
 import type { ActionInfo } from '../tools/types';
@@ -62,7 +63,7 @@ export interface ExplainResult {
 
 /**
  * 解释服务
- * 使用 AI 助手服务解释日文文本的含义、语法和文化背景
+ * 使用 AI 助手服务解释原文的含义、语法和文化背景
  */
 export class ExplainService {
   /**
@@ -76,10 +77,10 @@ export class ExplainService {
 
   /**
    * 生成解释提示词
-   * @param selectedText 选中的日文文本
+   * @param selectedText 选中的原文
    * @returns 解释提示词
    */
-  static generatePrompt(selectedText: string): string {
-    return buildExplainPrompt(selectedText);
+  static generatePrompt(selectedText: string, uiLocale: AppLocale = 'zh-CN'): string {
+    return buildExplainPrompt(selectedText, uiLocale);
   }
 }

@@ -1,4 +1,5 @@
 import './setup';
+import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { describe, test, expect, spyOn, mock, afterEach } from 'bun:test';
 import type {
   ChatMessage,
@@ -154,14 +155,16 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
 
     // 自动完成预定义待办（此测试关注 crossCheckMissingWithDB 逻辑，不关注 todo gate）
     const origCreateTodo = TodoListService.createTodo.bind(TodoListService);
-    spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
-      const todo = origCreateTodo(...args);
-      if (todo.predefined) {
-        TodoListService.markTodoAsWorking(todo.id);
-        TodoListService.markTodoAsDone(todo.id);
-      }
-      return todo;
-    });
+    spyOn(TodoListService, 'createTodo').mockImplementation(
+      (...args: Parameters<typeof TodoListService.createTodo>) => {
+        const todo = origCreateTodo(...args);
+        if (todo.predefined) {
+          TodoListService.markTodoAsWorking(todo.id);
+          TodoListService.markTodoAsDone(todo.id);
+        }
+        return todo;
+      },
+    );
 
     // 模拟数据库中 p3 已有翻译
     const novel = createMockNovel(chapterId, [
@@ -284,6 +287,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
       onToast: undefined,
       taskId,
       aiProcessingStore: createMockStore(taskId, chapterId),
+      languages: captureExecutionLanguages('zh-CN'),
       logLabel: 'Test-DBSync',
       maxTurns: 15,
     });
@@ -318,14 +322,16 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
 
     // 自动完成预定义待办（此测试关注 crossCheckMissingWithDB 逻辑，不关注 todo gate）
     const origCreateTodo = TodoListService.createTodo.bind(TodoListService);
-    spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
-      const todo = origCreateTodo(...args);
-      if (todo.predefined) {
-        TodoListService.markTodoAsWorking(todo.id);
-        TodoListService.markTodoAsDone(todo.id);
-      }
-      return todo;
-    });
+    spyOn(TodoListService, 'createTodo').mockImplementation(
+      (...args: Parameters<typeof TodoListService.createTodo>) => {
+        const todo = origCreateTodo(...args);
+        if (todo.predefined) {
+          TodoListService.markTodoAsWorking(todo.id);
+          TodoListService.markTodoAsDone(todo.id);
+        }
+        return todo;
+      },
+    );
 
     // 模拟数据库中 p3 没有翻译
     const novel = createMockNovel(chapterId, [
@@ -475,6 +481,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
       onToast: undefined,
       taskId,
       aiProcessingStore: createMockStore(taskId, chapterId),
+      languages: captureExecutionLanguages('zh-CN'),
       logLabel: 'Test-DBMissing',
       maxTurns: 20,
     });
@@ -498,14 +505,16 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
     const paragraphIds = ['p1', 'p2'];
 
     const origCreateTodo2 = TodoListService.createTodo.bind(TodoListService);
-    spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
-      const todo = origCreateTodo2(...args);
-      if (todo.predefined) {
-        TodoListService.markTodoAsWorking(todo.id);
-        TodoListService.markTodoAsDone(todo.id);
-      }
-      return todo;
-    });
+    spyOn(TodoListService, 'createTodo').mockImplementation(
+      (...args: Parameters<typeof TodoListService.createTodo>) => {
+        const todo = origCreateTodo2(...args);
+        if (todo.predefined) {
+          TodoListService.markTodoAsWorking(todo.id);
+          TodoListService.markTodoAsDone(todo.id);
+        }
+        return todo;
+      },
+    );
 
     const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
       (toolCall) => {
@@ -633,6 +642,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
       onToast: undefined,
       taskId: undefined, // 无 taskId
       aiProcessingStore: undefined, // 无 store
+      languages: captureExecutionLanguages('zh-CN'),
       logLabel: 'Test-NoStore',
       maxTurns: 20,
     });
@@ -650,14 +660,16 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
 
   test('无 paragraphIds 时应跳过完整性检查直接进入 review', async () => {
     const origCreateTodo3 = TodoListService.createTodo.bind(TodoListService);
-    spyOn(TodoListService, 'createTodo').mockImplementation((...args: Parameters<typeof TodoListService.createTodo>) => {
-      const todo = origCreateTodo3(...args);
-      if (todo.predefined) {
-        TodoListService.markTodoAsWorking(todo.id);
-        TodoListService.markTodoAsDone(todo.id);
-      }
-      return todo;
-    });
+    spyOn(TodoListService, 'createTodo').mockImplementation(
+      (...args: Parameters<typeof TodoListService.createTodo>) => {
+        const todo = origCreateTodo3(...args);
+        if (todo.predefined) {
+          TodoListService.markTodoAsWorking(todo.id);
+          TodoListService.markTodoAsDone(todo.id);
+        }
+        return todo;
+      },
+    );
 
     const handleToolCallSpy = spyOn(ToolRegistry, 'handleToolCall').mockImplementation(
       (toolCall) => {
@@ -738,6 +750,7 @@ describe('crossCheckMissingWithDB（review 状态数据库交叉验证）', () =
       onToast: undefined,
       taskId: undefined,
       aiProcessingStore: undefined,
+      languages: captureExecutionLanguages('zh-CN'),
       logLabel: 'Test-NoParagraphIds',
       maxTurns: 10,
     });

@@ -14,8 +14,9 @@ import type { Memory } from './memory';
  * - 2：增加 manifest.tombstones (仅 novel:<bookId>)
  * - 3：memories 改为 envelope 格式 `{ memories, tombstones }`，
  *      manifest.tombstones 同时支持 `memories:<bookId>` 形式
+ * - 4：书内实体稳定身份、逻辑版本、长期删除记录和多语言槽
  */
-export const MANIFEST_SCHEMA_VERSION = 3;
+export const MANIFEST_SCHEMA_VERSION = 4;
 
 /** Gist 中 manifest 文件的文件名 */
 export const MANIFEST_FILE_NAME = 'manifest.json';
@@ -69,6 +70,14 @@ export interface GistManifest {
    * 超过 TTL 的墓碑会被修剪。
    */
   tombstones?: Record<string, Tombstone>;
+  /**
+   * 升级围栏：大书库升级到当前协议时，第一批只写入带此字段的 manifest
+   *（schemaVersion 已是新版本，entries 仍描述旧内容），再分批上传内容，
+   * 最后一批写入不带此字段的正式 manifest。值为升级前的协议版本。
+   * 旧版客户端看到更高的 schemaVersion 会停止同步；新版客户端看到此字段时
+   * 视远端仍为旧协议，读取全部条目并在下次上传时完成升级。
+   */
+  pendingUpgradeFrom?: number;
 }
 
 /**
@@ -113,9 +122,7 @@ export function memoriesEntryKey(bookId: string): string {
  * 判断 entry key 是否为 novel 类型，返回 bookId
  */
 export function parseNovelEntryKey(key: string): string | null {
-  return key.startsWith(ENTRY_KEYS.NOVEL_PREFIX)
-    ? key.slice(ENTRY_KEYS.NOVEL_PREFIX.length)
-    : null;
+  return key.startsWith(ENTRY_KEYS.NOVEL_PREFIX) ? key.slice(ENTRY_KEYS.NOVEL_PREFIX.length) : null;
 }
 
 /**

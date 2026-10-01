@@ -1,3 +1,5 @@
+import { serializeImportError, importFailure, importError } from './import-error';
+
 import type { BookUpdateRecipe, CatalogEntry } from 'src/models/book-sync';
 import type {
   ImportDraftChapter,
@@ -113,10 +115,9 @@ async function chapterPage(
 
 function issueFrom(error: unknown, fallback: string, chapterId?: string): ImportRecipeIssue {
   if (error instanceof Error && error.name === 'AbortError') throw error;
-  const message = error instanceof Error ? error.message : String(error);
   return {
+    ...serializeImportError(error, fallback),
     code: error instanceof BookSyncError && /^CLEANUP_/.test(error.code) ? error.code : fallback,
-    message,
     ...(chapterId ? { chapterId } : {}),
   };
 }
@@ -172,7 +173,7 @@ export async function buildImportRecipe(
   declaration: ImportRecipeDeclaration,
 ): Promise<BookUpdateRecipe> {
   if (!declaration.catalogSourceIds.length)
-    throw new Error('SOURCE_NOT_FOUND: 至少需要一个目录来源');
+    throw importError('SOURCE_NOT_FOUND', 'sourceNotFoundAtLeastOneContentsSourceIs', {});
   const catalogs: ImportSource[] = [];
   for (const id of declaration.catalogSourceIds) {
     const source = context.sources.get(id);
@@ -182,23 +183,28 @@ export async function buildImportRecipe(
       source.removedAt !== undefined ||
       source.purpose === 'metadata-only'
     )
-      throw new Error(`SOURCE_NOT_FOUND: 目录来源 ${id} 不是本任务可用的网页来源`);
+      throw importError('SOURCE_NOT_FOUND', 'sourceNotFoundContentsSourceDetailIsNotAn', {
+        value1: String(id),
+      });
     if (!source.currentSnapshotId)
-      throw new Error(
-        `SNAPSHOT_MISSING: 目录来源「${source.name}」还没有快照，请先 inspect_source`,
-      );
+      throw importError('SNAPSHOT_MISSING', 'snapshotMissingContentsSourceDetailHasNoSnapshot', {
+        value1: String(source.name),
+      });
     catalogs.push(source);
   }
   const catalogUrls = [...new Set(catalogs.map((source) => source.url!))];
   const hosts = new Set(catalogUrls.map((url) => hostOf(url)!));
-  if (hosts.size !== 1) throw new Error('SOURCE_NOT_FOUND: 目录网址必须属于同一站点');
+  if (hosts.size !== 1)
+    throw importError('SOURCE_NOT_FOUND', 'sourceNotFoundContentsURLsMustBelongToThe', {});
   const chapters = siteChapters(context, hosts);
   let content = declaration.contentRules;
   if (!content) {
     const variants = await importedRules(context, chapters);
     if (variants.length > 1)
-      throw new Error(
-        'CONTENT_MISMATCH: 各章节导入时使用的提取规则不一致，请在 content_rules 中明确给出',
+      throw importError(
+        'CONTENT_MISMATCH',
+        'contentMismatchChapterExtractionRulesDifferProvideContent',
+        {},
       );
     content = variants[0];
   }
@@ -207,7 +213,9 @@ export async function buildImportRecipe(
       (entry) => entry.chapter.id === id && isImported(context, entry.chapter),
     );
     if (!found || found.urls.length !== 1)
-      throw new Error(`PINNED_LIMIT: 固定正文章节 ${id} 不是本配方站点的已选章节`);
+      throw importError('PINNED_LIMIT', 'pinnedLimitPinnedChapterDetailIsNotA', {
+        value1: String(id),
+      });
     return found.urls[0]!;
   });
   const site = builtinSite(catalogUrls[0]!);
@@ -273,8 +281,13 @@ async function replayCatalog(
         entries: [],
         issues: [
           {
-            code: 'UNSUPPORTED_GRANULARITY',
-            message: `目录页没有识别出章节链接：${url}。请用 catalog_selector 指定目录链接所在范围`,
+            ...importFailure(
+              'UNSUPPORTED_GRANULARITY',
+              'unsupportedGranularityNoChapterLinksWereDetectedOn',
+              {
+                value1: String(url),
+              },
+            ),
           },
         ],
       };
@@ -288,8 +301,13 @@ async function replayCatalog(
       entries: [],
       issues: [
         {
-          code: 'SNAPSHOT_MISSING',
-          message: `缺少目录页快照：${missing.join('、')}。请先 add_sources 并 inspect_source 这些页面`,
+          ...importFailure(
+            'SNAPSHOT_MISSING',
+            'snapshotMissingMissingContentsSnapshotsDetailUseAdd',
+            {
+              value1: String(missing.join('、')),
+            },
+          ),
         },
       ],
     };
@@ -307,8 +325,13 @@ function granularityIssues(
     if (!isImported(context, chapter)) continue;
     if (urls.length !== 1) {
       issues.push({
-        code: 'UNSUPPORTED_GRANULARITY',
-        message: `「${chapter.title}」对应多个来源网址，配方不支持合章`,
+        ...importFailure(
+          'UNSUPPORTED_GRANULARITY',
+          'unsupportedGranularityDetailHasSeveralSourceURLsRecipes',
+          {
+            value1: String(chapter.title),
+          },
+        ),
         chapterId: chapter.id,
       });
       continue;
@@ -316,8 +339,14 @@ function granularityIssues(
     const url = urls[0]!;
     if (!entries.has(url)) {
       issues.push({
-        code: 'UNSUPPORTED_GRANULARITY',
-        message: `「${chapter.title}」的网址不在回放目录中：${url}`,
+        ...importFailure(
+          'UNSUPPORTED_GRANULARITY',
+          'unsupportedGranularityTheURLForDetailIsAbsent',
+          {
+            value1: String(chapter.title),
+            value2: String(url),
+          },
+        ),
         chapterId: chapter.id,
       });
       continue;
@@ -327,15 +356,21 @@ function granularityIssues(
   for (const [url, shared] of owners)
     if (shared.length > 1)
       issues.push({
-        code: 'UNSUPPORTED_GRANULARITY',
-        message: `${shared.map((chapter) => `「${chapter.title}」`).join('')}共用同一网址，配方不支持拆章：${url}`,
+        ...importFailure(
+          'UNSUPPORTED_GRANULARITY',
+          'unsupportedGranularityDetailShareOneURLRecipesCannot',
+          {
+            value1: String(shared.map((chapter) => `「${chapter.title}」`).join('')),
+            value2: String(url),
+          },
+        ),
         chapterId: shared[0]!.id,
       });
   return issues;
 }
 
 /** 差异示例：优先报告多出或缺少的行，否则报告第一处不同的行。 */
-function describeDifference(title: string, draft: string[], replay: string[]): string {
+function describeDifference(title: string, draft: string[], replay: string[]): ImportRecipeIssue {
   const count = (lines: string[]) => {
     const counts = new Map<string, number>();
     for (const line of lines.map((entry) => entry.trim()).filter(Boolean))
@@ -349,12 +384,27 @@ function describeDifference(title: string, draft: string[], replay: string[]): s
       Array<string>(Math.max(0, n - (other.get(line) ?? 0))).fill(line),
     );
   const extra = surplus(replayCounts, draftCounts);
-  if (extra.length) return `「${title}」回放多出 ${extra.length} 行：${extra[0]}`;
+  if (extra.length)
+    return importFailure('CONTENT_MISMATCH', 'recipeExtraLines', {
+      title,
+      count: extra.length,
+      sample: extra[0]!,
+    });
   const lacking = surplus(draftCounts, replayCounts);
-  if (lacking.length) return `「${title}」回放缺少 ${lacking.length} 行：${lacking[0]}`;
+  if (lacking.length)
+    return importFailure('CONTENT_MISMATCH', 'recipeMissingLines', {
+      title,
+      count: lacking.length,
+      sample: lacking[0]!,
+    });
   const index = replay.findIndex((line, i) => line !== draft[i]);
   const at = index < 0 ? Math.min(draft.length, replay.length) : index;
-  return `「${title}」回放与草稿在第 ${at + 1} 行不同：${JSON.stringify(replay[at] ?? '')} ≠ ${JSON.stringify(draft[at] ?? '')}`;
+  return importFailure('CONTENT_MISMATCH', 'recipeDifferentLine', {
+    title,
+    line: at + 1,
+    replay: JSON.stringify(replay[at] ?? ''),
+    draft: JSON.stringify(draft[at] ?? ''),
+  });
 }
 
 async function draftLines(
@@ -394,8 +444,10 @@ function pinnedLimitIssue(pinned: number, total: number): ImportRecipeIssue[] {
   const limit = Math.floor(total / PINNED_DIVISOR);
   return [
     {
-      code: 'PINNED_LIMIT',
-      message: `固定正文章节有 ${pinned} 个，超过对应章节数的 20%（最多 ${limit} 个），请改用清理规则`,
+      ...importFailure('PINNED_LIMIT', 'pinnedLimitThereAreDetailPinnedChaptersExceeding', {
+        value1: String(pinned),
+        value2: String(limit),
+      }),
     },
   ];
 }
@@ -425,8 +477,10 @@ async function compareChapterReplay(
     return {
       kind: 'issue',
       issue: {
-        code: 'SNAPSHOT_MISSING',
-        message: `「${chapter.title}」缺少章节页快照，请先 extract_content 或 inspect_source：${entry.url}`,
+        ...importFailure('SNAPSHOT_MISSING', 'snapshotMissingDetailHasNoPageSnapshotUse', {
+          value1: String(chapter.title),
+          value2: String(entry.url),
+        }),
         chapterId: chapter.id,
       },
     };
@@ -448,8 +502,7 @@ async function compareChapterReplay(
       : {
           kind: 'mismatch',
           issue: {
-            code: 'CONTENT_MISMATCH',
-            message: describeDifference(chapter.title, draft, replay),
+            ...describeDifference(chapter.title, draft, replay),
             chapterId: chapter.id,
           },
         };
@@ -457,8 +510,9 @@ async function compareChapterReplay(
   return {
     kind: 'issue',
     issue: {
-      code: 'PINNED_LIMIT',
-      message: `「${chapter.title}」的回放与草稿相同，不需要固定正文`,
+      ...importFailure('PINNED_LIMIT', 'pinnedLimitReplayForDetailMatchesTheDraft', {
+        value1: String(chapter.title),
+      }),
       chapterId: chapter.id,
     },
   };
@@ -469,8 +523,9 @@ function mismatchExamples(mismatches: ImportRecipeIssue[]): ImportRecipeIssue[] 
   return [
     ...mismatches.slice(0, MAX_EXAMPLES),
     {
-      code: 'CONTENT_MISMATCH',
-      message: `另有 ${mismatches.length - MAX_EXAMPLES} 章回放与草稿不一致`,
+      ...importFailure('CONTENT_MISMATCH', 'contentMismatchReplayDiffersFromTheDraftIn', {
+        value1: String(mismatches.length - MAX_EXAMPLES),
+      }),
     },
   ];
 }

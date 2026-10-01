@@ -25,7 +25,11 @@ export default defineRouter(function (/* { store, ssrContext } */) {
       : createWebHashHistory;
 
   const Router = createRouter({
-    scrollBehavior: () => ({ left: 0, top: 0 }),
+    scrollBehavior: (to, from) => {
+      // 帮助页面自行定位章节；同页 hash 更新不能撤回已经完成的文档滚动。
+      if (to.path === from.path && to.hash !== from.hash) return false;
+      return { left: 0, top: 0 };
+    },
     routes,
 
     // Leave this as is and make changes in quasar.conf.js instead!

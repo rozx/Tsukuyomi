@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t, locale } = useI18n();
 import { ref, computed, watch } from 'vue';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
@@ -82,7 +84,7 @@ const handleCancel = () => {
 // 格式化删除时间
 const formatDeletedAt = (timestamp: number): string => {
   const date = new Date(timestamp);
-  return date.toLocaleString('zh-CN', {
+  return date.toLocaleString(locale.value, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -95,11 +97,13 @@ const formatDeletedAt = (timestamp: number): string => {
 const getTypeLabel = (type: string): string => {
   switch (type) {
     case 'novel':
-      return '书籍';
+      return t('structureUi.book');
     case 'model':
-      return 'AI 模型';
+      return t('structureUi.model');
     case 'cover':
-      return '封面';
+      return t('structureUi.cover');
+    case 'memory':
+      return t('structureUi.memory');
     default:
       return type;
   }
@@ -119,15 +123,13 @@ watch(
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="恢复已删除的项目"
+    :header="t('structureUi.restoreHeader')"
     desktop-width="600px"
-    eyebrow="RESTORE"
+    :eyebrow="t('structureUi.restore')"
     @update:visible="visible = $event"
   >
     <div class="flex flex-col gap-4">
-      <p class="text-sm text-gray-600">
-        以下项目在远程存在，但在本地已被删除。请选择要恢复的项目：
-      </p>
+      <p class="text-sm text-gray-600">{{ t('structureUi.restoreIntro') }}</p>
 
       <DataTable
         :value="items"
@@ -139,13 +141,13 @@ watch(
         class="w-full"
       >
         <Column selection-mode="multiple" :header-style="{ width: '3rem' }" />
-        <Column field="type" header="类型" :style="{ width: '80px' }">
+        <Column field="type" :header="t('structureUi.type')" :style="{ width: '80px' }">
           <template #body="{ data }">
             <span class="text-sm">{{ getTypeLabel(data.type) }}</span>
           </template>
         </Column>
-        <Column field="title" header="名称" />
-        <Column field="deletedAt" header="删除时间" :style="{ width: '160px' }">
+        <Column field="title" :header="t('structureUi.name')" />
+        <Column field="deletedAt" :header="t('structureUi.deletedAt')" :style="{ width: '160px' }">
           <template #body="{ data }">
             <span class="text-sm text-gray-500">{{ formatDeletedAt(data.deletedAt) }}</span>
           </template>
@@ -155,19 +157,26 @@ watch(
       <div class="flex justify-between items-center">
         <div class="flex items-center gap-2">
           <Checkbox v-model="selectAll" :binary="true" input-id="select-all" />
-          <label for="select-all" class="text-sm">全选</label>
+          <label for="select-all" class="text-sm">{{ t('structureUi.selectAll') }}</label>
         </div>
         <div class="text-sm text-gray-500">
-          已选择 {{ selectedItems.size }} / {{ items.length }} 项
+          {{
+            t('structureUi.selectedCount', { selected: selectedItems.size, total: items.length })
+          }}
         </div>
       </div>
     </div>
 
     <template #footer>
       <div class="flex justify-end gap-2">
-        <Button label="取消" icon="pi pi-times" class="p-button-text" @click="handleCancel" />
         <Button
-          label="恢复选中项"
+          :label="t('structureUi.cancel')"
+          icon="pi pi-times"
+          class="p-button-text"
+          @click="handleCancel"
+        />
+        <Button
+          :label="t('structureUi.restoreSelected')"
           icon="pi pi-check"
           :disabled="selectedItems.size === 0"
           @click="handleRestore"
@@ -176,4 +185,3 @@ watch(
     </template>
   </AdaptiveDialog>
 </template>
-

@@ -1,5 +1,6 @@
+import type { LocalizedMap } from 'src/models/localized-data';
 import type { Memory } from 'src/models/memory';
-import type { CoverHistoryItem, Novel } from 'src/models/novel';
+import type { CoverHistoryItem, Novel, Translation } from 'src/models/novel';
 import type { AppSettings } from 'src/models/settings';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 
@@ -35,33 +36,79 @@ function stripMemoryLocalFields(memory: Memory): Memory {
  * 剥离 Novel 树中所有 Translation 的 `memoryScoreBreakdown` 字段。
  * 该字段是记忆打分的 UI 调试数据，AI 翻译时填充，不参与同步。
  */
-export function stripNovelLocalFields(novel: Novel): Novel {
-  if (!novel || !Array.isArray(novel.volumes)) return novel;
+function stripTranslation(translation: Translation): Translation {
+  if (!translation || typeof translation !== 'object') return translation;
+  const { memoryScoreBreakdown: _diagnostics, ...rest } = translation;
+  return rest;
+}
 
-  const stripTranslation = (t: unknown): unknown => {
-    if (!t || typeof t !== 'object') return t;
-
-    const { memoryScoreBreakdown: _b, ...rest } = t as Record<string, unknown>;
-    return rest;
+function stripName<
+  T extends {
+    translation: Translation;
+    translationsByLanguage?: LocalizedMap<Translation>;
+  },
+>(owner: T): T {
+  return {
+    ...owner,
+    translation: stripTranslation(owner.translation),
+    ...(owner.translationsByLanguage !== undefined
+      ? {
+          translationsByLanguage: Object.fromEntries(
+            Object.entries(owner.translationsByLanguage).map(([locale, slot]) => [
+              locale,
+              {
+                ...slot,
+                value: slot.value === null ? null : stripTranslation(slot.value),
+              },
+            ]),
+          ),
+        }
+      : {}),
   };
+}
 
-  const cleanedVolumes = novel.volumes.map((volume) => {
-    if (!volume || !Array.isArray(volume.chapters)) return volume;
-    const cleanedChapters = volume.chapters.map((chapter) => {
-      if (!chapter || !Array.isArray(chapter.content)) return chapter;
-      const cleanedContent = chapter.content.map((paragraph) => {
-        if (!paragraph) return paragraph;
-        const cleanedTranslations = Array.isArray(paragraph.translations)
-          ? (paragraph.translations.map(stripTranslation) as typeof paragraph.translations)
-          : paragraph.translations;
-        return { ...paragraph, translations: cleanedTranslations };
-      });
-      return { ...chapter, content: cleanedContent };
-    });
-    return { ...volume, chapters: cleanedChapters };
-  });
+function stripTitle(title: NonNullable<Novel['volumes']>[number]['title']) {
+  return typeof title === 'object' && title !== null ? stripName(title) : title;
+}
 
-  return { ...novel, volumes: cleanedVolumes } as Novel;
+export function stripNovelLocalFields(novel: Novel): Novel {
+  if (!novel) return novel;
+  return {
+    ...novel,
+    ...(novel.terminologies ? { terminologies: novel.terminologies.map(stripName) } : {}),
+    ...(novel.characterSettings
+      ? {
+          characterSettings: novel.characterSettings.map((character) => ({
+            ...stripName(character),
+            aliases: character.aliases.map(stripName),
+          })),
+        }
+      : {}),
+    ...(Array.isArray(novel.volumes)
+      ? {
+          volumes: novel.volumes.map((volume) => ({
+            ...volume,
+            title: stripTitle(volume.title),
+            ...(Array.isArray(volume.chapters)
+              ? {
+                  chapters: volume.chapters.map((chapter) => ({
+                    ...chapter,
+                    title: stripTitle(chapter.title),
+                    ...(Array.isArray(chapter.content)
+                      ? {
+                          content: chapter.content.map((paragraph) => ({
+                            ...paragraph,
+                            translations: paragraph.translations?.map(stripTranslation),
+                          })),
+                        }
+                      : {}),
+                  })),
+                }
+              : {}),
+          })),
+        }
+      : {}),
+  };
 }
 
 /**

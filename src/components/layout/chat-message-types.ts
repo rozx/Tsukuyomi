@@ -6,6 +6,7 @@
  * 两个组件直接 `import type` 复用，消除重复（行为与渲染结果完全不变）。
  */
 import type { ChatSessionMessage, MessageAction } from 'src/stores/chat-sessions';
+import type { AppLocale } from 'src/models/locale';
 
 /** 单条消息拆分出的可渲染条目（正文 / 单个动作 / 分组动作）。 */
 export interface MessageDisplayItem {
@@ -38,7 +39,10 @@ export type GroupedActionHoverHandler = (
 export interface MessageItemHandlers {
   renderMarkdown: (text: string) => string;
   formatMessageTime: (timestamp: number) => string;
-  getChapterTitleForAction: (chapterId: string | undefined) => string | undefined;
+  getChapterTitleForAction: (
+    chapterId: string | undefined,
+    language?: AppLocale,
+  ) => string | undefined;
   onActionHover: ActionHoverHandler;
   onActionLeave: () => void;
   onGroupedActionHover: GroupedActionHoverHandler;

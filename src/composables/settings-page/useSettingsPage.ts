@@ -1,3 +1,9 @@
+import { useI18n } from 'vue-i18n';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
+import { resolveAppLocale } from 'src/models/locale';
+import type { AppLocale } from 'src/models/locale';
+import GeneralSettingsTab from 'src/components/settings/GeneralSettingsTab.vue';
 import {
   computed,
   inject,
@@ -63,7 +69,7 @@ export function injectSettingsPage(): SettingsPageContext {
 }
 
 interface SettingsTabDef {
-  label: string;
+  label: MessageKey;
   /** 持久化到 lastOpenedSettingsTab 的稳定序号（沿用旧 SettingsDialog 语义，新增标签取新值） */
   savedIndex: number;
   component: Component;
@@ -71,18 +77,19 @@ interface SettingsTabDef {
   webOnly?: boolean;
 }
 
-// 标签顺序与 public/help/settings-guide.md 一致。savedIndex 历史值：
+// 标签顺序与 public/help/zh-CN/settings-guide.md 一致。savedIndex 历史值：
 //   0=AI 模型 1=代理设置 2=同步 3=爬虫 4=导入/导出 6=API Keys 7=本地嵌入 8=关于 9=网站映射（新增）
 const SETTINGS_TAB_DEFS: readonly SettingsTabDef[] = [
-  { label: 'AI 模型', savedIndex: 0, component: AIModelSettingsTab },
-  { label: '代理设置', savedIndex: 1, component: ProxySettingsTab, webOnly: true },
-  { label: '网站映射', savedIndex: 9, component: SiteMappingSettingsTab },
-  { label: 'API Keys', savedIndex: 6, component: ApiKeysSettingsTab },
-  { label: '同步设置', savedIndex: 2, component: SyncSettingsTab },
-  { label: '本地嵌入', savedIndex: 7, component: EmbeddingSettingsTab },
-  { label: '爬虫设置', savedIndex: 3, component: ScraperSettingsTab },
-  { label: '导入/导出', savedIndex: 4, component: ImportExportTab },
-  { label: '关于', savedIndex: 8, component: AboutSection },
+  { label: 'settings.tabs.general', savedIndex: 10, component: GeneralSettingsTab },
+  { label: 'settings.tabs.models', savedIndex: 0, component: AIModelSettingsTab },
+  { label: 'settings.tabs.proxies', savedIndex: 1, component: ProxySettingsTab, webOnly: true },
+  { label: 'settings.tabs.sites', savedIndex: 9, component: SiteMappingSettingsTab },
+  { label: 'settings.tabs.apiKeys', savedIndex: 6, component: ApiKeysSettingsTab },
+  { label: 'settings.tabs.sync', savedIndex: 2, component: SyncSettingsTab },
+  { label: 'settings.tabs.embedding', savedIndex: 7, component: EmbeddingSettingsTab },
+  { label: 'settings.tabs.scraper', savedIndex: 3, component: ScraperSettingsTab },
+  { label: 'settings.tabs.importExport', savedIndex: 4, component: ImportExportTab },
+  { label: 'settings.tabs.about', savedIndex: 8, component: AboutSection },
 ];
 
 /** Electron 上不存在的标签（旧代理设置）回退到 API Keys */
@@ -93,8 +100,11 @@ function platformTabDefs(isElectron: boolean): SettingsTabDef[] {
 }
 
 /** 当前平台的标签列表；value 为位置序号字符串 */
-export function settingsTabsFor(isElectron: boolean): SettingsTab[] {
-  return platformTabDefs(isElectron).map((def, index) => ({ value: String(index), label: def.label }));
+export function settingsTabsFor(isElectron: boolean, locale: AppLocale = 'zh-CN'): SettingsTab[] {
+  return platformTabDefs(isElectron).map((def, index) => ({
+    value: String(index),
+    label: translateText(locale, def.label),
+  }));
 }
 
 export function getSettingsPanelComponent(isElectron: boolean, value: string): Component {
@@ -115,6 +125,7 @@ export function tabValueToSavedIndex(isElectron: boolean, value: string): number
 }
 
 function createSettingsPageContext(): SettingsPageContext {
+  const { locale } = useI18n();
   const settingsStore = useSettingsStore();
   const router = useRouter();
   const { isElectron } = useElectron();
@@ -122,7 +133,9 @@ function createSettingsPageContext(): SettingsPageContext {
   // 当前选中的标签页值（字符串）
   const activeTab = ref('0');
 
-  const tabs = computed<SettingsTab[]>(() => settingsTabsFor(isElectron.value));
+  const tabs = computed<SettingsTab[]>(() =>
+    settingsTabsFor(isElectron.value, resolveAppLocale(locale.value, [])),
+  );
 
   // 确保 store 已加载
   const ensureStoreLoaded = async () => {
@@ -142,7 +155,9 @@ function createSettingsPageContext(): SettingsPageContext {
     const stringValue = String(value);
     activeTab.value = stringValue;
     if (tabs.value.some((tab) => tab.value === stringValue)) {
-      void settingsStore.setLastOpenedSettingsTab(tabValueToSavedIndex(isElectron.value, stringValue));
+      void settingsStore.setLastOpenedSettingsTab(
+        tabValueToSavedIndex(isElectron.value, stringValue),
+      );
     }
   };
 

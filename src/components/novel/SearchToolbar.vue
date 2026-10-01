@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import InputText from 'primevue/inputtext';
 import Button from 'primevue/button';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   visible: boolean;
@@ -46,7 +50,7 @@ const handleReplaceInput = (event: Event) => {
           <InputText
             :value="searchQuery"
             @input="handleSearchInput"
-            placeholder="查找翻译内容..."
+            :placeholder="t('readerUi.searchPlaceholder')"
             class="!pl-9 !py-1.5 !text-sm w-full"
             @keydown.enter="emit('next')"
           />
@@ -83,7 +87,7 @@ const handleReplaceInput = (event: Event) => {
       <div class="search-toolbar-actions">
         <Button
           :icon="showReplace ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
-          :label="showReplace ? '隐藏替换' : '替换'"
+          :label="showReplace ? t('readerUi.hideReplace') : t('readerUi.replace')"
           text
           size="small"
           class="!text-xs !px-2"
@@ -107,7 +111,7 @@ const handleReplaceInput = (event: Event) => {
         <InputText
           :value="replaceQuery"
           @input="handleReplaceInput"
-          placeholder="替换为...（留空可删除）"
+          :placeholder="t('readerUi.replacePlaceholder')"
           class="!pl-9 !py-1.5 !text-sm w-full"
           @keydown.enter="emit('replace')"
         />
@@ -115,7 +119,7 @@ const handleReplaceInput = (event: Event) => {
 
       <div class="flex gap-2 flex-shrink-0">
         <Button
-          label="替换"
+          :label="t('readerUi.replace')"
           size="small"
           outlined
           class="!text-xs !px-3 !py-1.5"
@@ -123,7 +127,7 @@ const handleReplaceInput = (event: Event) => {
           @click="emit('replace')"
         />
         <Button
-          label="全部替换"
+          :label="t('readerUi.replaceAll')"
           size="small"
           outlined
           class="!text-xs !px-3 !py-1.5"

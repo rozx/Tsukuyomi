@@ -1,5 +1,10 @@
+import { importFailure, importError } from './import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 import { assertImportWorkspaceEnabled } from 'src/constants/features';
 import type { ImportOperation } from 'src/models/import';
+import type { AppLocale } from 'src/models/locale';
+import { isAppLocale, resolveAppLocale } from 'src/models/locale';
 import { getDB } from 'src/utils/indexed-db';
 import { completeIdbTransaction } from 'src/utils/complete-idb-transaction';
 import { BookExecutionGuard } from 'src/services/book-execution-guard';
@@ -15,14 +20,23 @@ import {
 export interface ImportConfirmation {
   readonly nonce: symbol;
 }
-type ConfirmationContext = { taskId: string; operationId: string; action: 'apply' | 'revert' };
+type ConfirmationContext = {
+  taskId: string;
+  operationId: string;
+  action: 'apply' | 'revert';
+  creationLocale?: AppLocale;
+};
 
 /** 实例属于工作台宿主，确认不持久化，也不注册为模型工具。 */
 export class ImportApplicationService {
   private readonly confirmations = new WeakMap<ImportConfirmation, ConfirmationContext>();
 
-  async confirmApply(taskId: string, planId: string): Promise<ImportConfirmation> {
-    return this.confirm(taskId, planId, 'apply');
+  async confirmApply(
+    taskId: string,
+    planId: string,
+    expectedLocale?: AppLocale,
+  ): Promise<ImportConfirmation> {
+    return this.confirm(taskId, planId, 'apply', expectedLocale);
   }
 
   async confirmRevert(taskId: string, operationId: string): Promise<ImportConfirmation> {
@@ -33,10 +47,27 @@ export class ImportApplicationService {
     taskId: string,
     operationId: string,
     action: ConfirmationContext['action'],
+    expectedLocale?: AppLocale,
   ) {
-    await readImportOperation(taskId, operationId);
+    const operation = await readImportOperation(taskId, operationId);
+    let creationLocale: AppLocale | undefined;
+    if (action === 'apply' && operation.plan.targetKind === 'new') {
+      const settings = await (await getDB()).get('settings', 'app');
+      creationLocale =
+        expectedLocale ??
+        resolveAppLocale(
+          settings?.uiLocale,
+          typeof navigator === 'undefined' ? [] : navigator.languages,
+        );
+      if (!isAppLocale(creationLocale)) throw new Error('INVALID_LOCALE');
+    }
     const token = Object.freeze({ nonce: Symbol('import-confirmation') });
-    this.confirmations.set(token, { taskId, operationId, action });
+    this.confirmations.set(token, {
+      taskId,
+      operationId,
+      action,
+      ...(creationLocale ? { creationLocale } : {}),
+    });
     return token;
   }
 
@@ -55,7 +86,11 @@ export class ImportApplicationService {
   ): Promise<ImportOperation> {
     const confirmation = this.confirmations.get(token);
     if (!confirmation || confirmation.action !== action)
-      throw new Error('CONFIRMATION_REQUIRED: 需要当前工作台对具体方案的用户确认');
+      throw importError(
+        'CONFIRMATION_REQUIRED',
+        'confirmationRequiredThisWorkspaceRequiresUserConfirmationOf',
+        {},
+      );
     const operation = await readImportOperation(confirmation.taskId, confirmation.operationId);
     const terminal = action === 'apply' ? 'applied' : 'reverted';
     if (operation.state === terminal) return operation;
@@ -64,7 +99,7 @@ export class ImportApplicationService {
       if (latest.state === terminal) return latest;
       const result =
         action === 'apply'
-          ? await applyImportOperation(latest)
+          ? await applyImportOperation(latest, confirmation.creationLocale)
           : await revertImportOperation(latest);
       return this.maintain(result);
     });
@@ -74,19 +109,21 @@ export class ImportApplicationService {
   async revertStatus(
     taskId: string,
     operationId: string,
-  ): Promise<{ available: true } | { available: false; reason: string }> {
+  ): Promise<{ available: true } | { available: false; reason: ImportNotice }> {
     const operation = await readImportOperation(taskId, operationId);
     if (operation.state === 'planned')
-      return { available: false, reason: '该方案尚未应用，没有可撤销的内容。' };
-    if (operation.state === 'reverted') return { available: false, reason: '该次导入已撤销。' };
+      return { available: false, reason: importFailure('UNDO_NOT_APPLIED', 'undoNotApplied') };
+    if (operation.state === 'reverted')
+      return { available: false, reason: importFailure('UNDO_ALREADY_REVERTED', 'undoAlready') };
     const db = await getDB();
     const revision = (await db.get('book-revisions', operation.plan.targetBookId))?.revision ?? 0;
     const exists = (await db.getKey('books', operation.plan.targetBookId)) !== undefined;
-    if (!exists) return { available: false, reason: '目标小说已被删除。' };
+    if (!exists)
+      return { available: false, reason: importFailure('UNDO_BOOK_DELETED', 'undoDeleted') };
     if (revision !== operation.postApplyBookRevision)
       return {
         available: false,
-        reason: '导入后这本小说已有后续修改（翻译、编辑、同步或其他导入），不能整次撤销。',
+        reason: importFailure('UNDO_BOOK_CHANGED', 'undoChanged'),
       };
     return { available: true };
   }

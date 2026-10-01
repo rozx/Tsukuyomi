@@ -1,3 +1,8 @@
+import { toolErrorJson, caughtToolErrorJson, checkedToolBookContext } from './tool-feedback';
+import { toolDefinition } from './tool-localization';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
+import { LocalizedError } from 'src/utils/localized-error';
+import { describeTool } from './tool-localization';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
@@ -10,11 +15,13 @@ import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
  */
 async function requireMemoryById(bookId: string, memoryId: string | undefined): Promise<Memory> {
   if (!memoryId) {
-    throw new Error('Memory ID 不能为空');
+    throw new LocalizedError('MEMORY_ID_REQUIRED', 'aiEntityFeedback.memoryIdRequired');
   }
   const memory = await MemoryService.getMemory(bookId, memoryId);
   if (!memory) {
-    throw new Error(`Memory 不存在: ${memoryId}`);
+    throw new LocalizedError('MEMORY_NOT_FOUND', 'aiEntityFeedback.memoryMissing', {
+      id: memoryId,
+    });
   }
   return memory;
 }
@@ -30,10 +37,14 @@ function parseContentSummary(
 ): { content: string; summary: string } | { error: string } {
   const { content, summary } = args as { content?: string; summary?: string };
   if (!content?.trim()) {
-    return { error: JSON.stringify({ success: false, error: '内容不能为空' }) };
+    return {
+      error: toolErrorJson('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired'),
+    };
   }
   if (!summary?.trim()) {
-    return { error: JSON.stringify({ success: false, error: '摘要不能为空' }) };
+    return {
+      error: toolErrorJson('MEMORY_SUMMARY_REQUIRED', 'aiEntityFeedback.memorySummaryRequired'),
+    };
   }
   return { content: content.trim(), summary: summary.trim() };
 }
@@ -44,21 +55,6 @@ function parseContentSummary(
  * update_memory / delete_memory 等按 memory_id 操作的 handler 共用前置样板：
  * 若 bookId 为空则返回统一的错误 JSON 字符串，否则返回 bookId / memoryId。
  */
-function requireBookIdWithMemoryId(
-  bookId: string | undefined,
-  args: Record<string, unknown>,
-): { error: string } | { bookId: string; memoryId: string } {
-  if (!bookId) {
-    return {
-      error: JSON.stringify({
-        success: false,
-        error: '书籍 ID 不能为空',
-      }),
-    };
-  }
-  const { memory_id } = args as { memory_id: string };
-  return { bookId, memoryId: memory_id };
-}
 
 function createListMemoriesHandler(toolName: 'list_memories') {
   return async (args: Record<string, unknown>, context: ToolContext) => {
@@ -70,10 +66,7 @@ function createListMemoriesHandler(toolName: 'list_memories') {
       include_content?: boolean;
     }>(args);
     if (!bookId) {
-      return JSON.stringify({
-        success: false,
-        error: '书籍 ID 不能为空',
-      });
+      return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
 
     const {
@@ -134,80 +127,70 @@ function createListMemoriesHandler(toolName: 'list_memories') {
         sort_by: validSortBy,
       });
     } catch (error) {
-      return JSON.stringify({
-        success: false,
-        error: error instanceof Error ? error.message : '列出 Memory 失败',
-      });
+      return caughtToolErrorJson(error, 'MEMORY_LIST_FAILED', 'aiEntityFeedback.memoryListFailed');
     }
+  };
+}
+
+function memoryIdHandler(
+  handler: (
+    args: Record<string, unknown>,
+    context: ToolContext & { bookId: string; memory_id: string },
+  ) => Promise<string>,
+): ToolDefinition['handler'] {
+  return (args, context) => {
+    const checked = checkedToolBookContext(context);
+    if ('error' in checked) return checked.error;
+    return handler(args, { ...checked, memory_id: args.memory_id as string });
   };
 }
 
 export const memoryTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'list_memories',
-        description:
-          '列出指定书籍的 Memory 列表（用于管理/调试）。支持分页与排序，默认仅返回轻量字段（id/summary/createdAt/lastAccessedAt）。如需完整内容，请设置 include_content=true。',
-        parameters: {
-          type: 'object',
-          properties: {
-            offset: {
-              type: 'number',
-              description: '分页偏移量（从 0 开始）',
-              minimum: 0,
-            },
-            limit: {
-              type: 'number',
-              description: '返回数量（默认 20，建议不超过 50）',
-              minimum: 1,
-              maximum: 100,
-            },
-            sort_by: {
-              type: 'string',
-              enum: ['createdAt', 'lastAccessedAt'],
-              description:
-                '排序方式：createdAt 按创建时间（最新在前），lastAccessedAt 按最后访问时间（默认）',
-            },
-            include_content: {
-              type: 'boolean',
-              description: '是否返回完整内容 content（默认 false）',
-            },
-          },
-          required: [],
+    definition: toolDefinition('list_memories', {
+      type: 'object',
+      properties: {
+        offset: {
+          type: 'number',
+          description: describeTool('list_memories.parameters.properties.offset'),
+          minimum: 0,
+        },
+        limit: {
+          type: 'number',
+          description: describeTool('list_memories.parameters.properties.limit'),
+          minimum: 1,
+          maximum: 100,
+        },
+        sort_by: {
+          type: 'string',
+          enum: ['createdAt', 'lastAccessedAt'],
+          description: describeTool('list_memories.parameters.properties.sort_by'),
+        },
+        include_content: {
+          type: 'boolean',
+          description: describeTool('list_memories.parameters.properties.include_content'),
         },
       },
-    },
+      required: [],
+    }),
     handler: createListMemoriesHandler('list_memories'),
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_memory',
-        description:
-          '根据 Memory ID 获取指定的 Memory 内容。当需要查看之前存储的背景设定、关键情节等记忆内容时使用此工具。',
-        parameters: {
-          type: 'object',
-          properties: {
-            memory_id: {
-              type: 'string',
-              description: 'Memory ID（从 create_memory 或 search_memories 获取）',
-            },
-          },
-          required: ['memory_id'],
+    definition: toolDefinition('get_memory', {
+      type: 'object',
+      properties: {
+        memory_id: {
+          type: 'string',
+          description: describeTool('get_memory.parameters.properties.memory_id'),
         },
       },
-    },
+      required: ['memory_id'],
+    }),
     handler: async (args, context: ToolContext) => {
       const { bookId, onAction } = context;
       const parsedArgs = parseToolArgs<{ memory_id: string }>(args);
       if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '书籍 ID 不能为空',
-        });
+        return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
       }
       const { memory_id } = parsedArgs;
 
@@ -237,49 +220,32 @@ export const memoryTools: ToolDefinition[] = [
           },
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '获取 Memory 失败',
-        });
+        return caughtToolErrorJson(error, 'MEMORY_GET_FAILED', 'aiEntityFeedback.memoryGetFailed');
       }
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'search_memories',
-        description:
-          '搜索 Memory（混合检索：关键词匹配 + 语义相似度）。当需要查找相关记忆内容（如背景设定、关键情节、角色关系等）时使用此工具。传入自然语言查询，自动结合关键词匹配和语义向量进行排序。[警告] **重要**：当查询角色或术语信息时，必须**先**使用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，**只有在数据库中没有找到时**才可以使用此工具搜索记忆。此工具主要用于查找背景设定、世界观、剧情要点等非结构化信息，不应用于替代角色或术语数据库查询。[警告] **敬语翻译**：翻译敬语时，必须**首先**使用此工具搜索记忆中关于该角色敬语翻译的相关信息（如角色关系、敬语使用习惯等），然后再使用 find_paragraph_by_keywords 搜索段落。',
-        parameters: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: '搜索查询（自然语言描述或关键词，用于关键词匹配和语义检索）',
-            },
-          },
-          required: ['query'],
+    definition: toolDefinition('search_memories', {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: describeTool('search_memories.parameters.properties.query'),
         },
       },
-    },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '书籍 ID 不能为空',
-        });
-      }
+      required: ['query'],
+    }),
+    handler: async (args, context) => {
+      const checked = checkedToolBookContext(context);
+      if ('error' in checked) return checked.error;
+      const { bookId, onAction, language } = checked;
       const { query } = args as { query: string };
       if (!query || typeof query !== 'string' || !query.trim()) {
-        return JSON.stringify({
-          success: false,
-          error: '搜索查询不能为空',
-        });
+        return toolErrorJson('MEMORY_QUERY_REQUIRED', 'aiEntityFeedback.memoryQueryRequired');
       }
 
       try {
-        const memories = await MemoryService.searchMemories(bookId, query.trim());
+        const memories = await MemoryService.searchMemories(bookId, query.trim(), language);
 
         if (onAction) {
           onAction({
@@ -305,44 +271,33 @@ export const memoryTools: ToolDefinition[] = [
           count: memories.length,
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '搜索 Memory 失败',
-        });
+        return caughtToolErrorJson(
+          error,
+          'MEMORY_SEARCH_FAILED',
+          'aiEntityFeedback.memorySearchFailed',
+        );
       }
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'create_memory',
-        description:
-          '创建新的 Memory 记录（请谨慎使用）。优先用 search/list 找到相关记忆并用 update_memory 合并更新；仅当不存在任何可更新的相关记忆时才创建。一条 memory 尽量只解决一个问题（称呼规则、关系、术语翻译等分开写）。系统按部分子串匹配召回，summary 是"检索标题"权重最高；务必在 summary 中塞入所有同义表达以提高命中率，例如：「イレギュラー / irregular / 异常者 / 不规则者 的统一翻译」「セラ / 塞拉 / 塞拉小姐 / 塞拉菲娜 的称呼规则」「おまけ / 附属品 / 顺带送的 / 附带品 的翻译」。content 用少量要点表达。',
-        parameters: {
-          type: 'object',
-          properties: {
-            content: {
-              type: 'string',
-              description: '要存储的实际内容（少量要点）',
-            },
-            summary: {
-              type: 'string',
-              description:
-                '摘要 / 检索标题。建议在摘要中并列写出所有可能被搜索到的同义表达（原文术语、别名、俗称、不同语言版本），以"/"分隔，例如「イレギュラー / 异常者 / 不规则者 的统一翻译」。summary 的命中权重远高于 content，直接决定能否被检索到。',
-            },
-          },
-          required: ['content', 'summary'],
+    definition: toolDefinition('create_memory', {
+      type: 'object',
+      properties: {
+        content: {
+          type: 'string',
+          description: describeTool('create_memory.parameters.properties.content'),
+        },
+        summary: {
+          type: 'string',
+          description: describeTool('create_memory.parameters.properties.summary'),
         },
       },
-    },
-    handler: async (args, { bookId, onAction }) => {
-      if (!bookId) {
-        return JSON.stringify({
-          success: false,
-          error: '书籍 ID 不能为空',
-        });
-      }
+      required: ['content', 'summary'],
+    }),
+    handler: async (args, context) => {
+      const checked = checkedToolBookContext(context);
+      if ('error' in checked) return checked.error;
+      const { bookId, onAction, language } = checked;
       const parsed = parseContentSummary(args);
       if ('error' in parsed) {
         return parsed.error;
@@ -366,7 +321,7 @@ export const memoryTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: 'Memory 创建成功',
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.memoryCreated'),
           memory: {
             id: memory.id,
             summary: memory.summary,
@@ -374,46 +329,36 @@ export const memoryTools: ToolDefinition[] = [
           },
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '创建 Memory 失败',
-        });
+        return caughtToolErrorJson(
+          error,
+          'MEMORY_CREATE_FAILED',
+          'aiEntityFeedback.memoryCreateFailed',
+        );
       }
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'update_memory',
-        description:
-          '更新指定的 Memory 记录（推荐）。当发现新信息或需要修正时，优先把新旧信息合并成更短、更清晰、可复用的规则/约定；避免重复创建多条相似记忆。summary 请保留可检索关键词，content 用少量要点表达。',
-        parameters: {
-          type: 'object',
-          properties: {
-            memory_id: {
-              type: 'string',
-              description: 'Memory ID（从 get_memory 或 search_memories 获取）',
-            },
-            content: {
-              type: 'string',
-              description: '更新后的实际内容',
-            },
-            summary: {
-              type: 'string',
-              description: '更新后的摘要（由 AI 生成，用于后续搜索）',
-            },
-          },
-          required: ['memory_id', 'content', 'summary'],
+    definition: toolDefinition('update_memory', {
+      type: 'object',
+      properties: {
+        memory_id: {
+          type: 'string',
+          description: describeTool('update_memory.parameters.properties.memory_id'),
+        },
+        content: {
+          type: 'string',
+          description: describeTool('update_memory.parameters.properties.content'),
+        },
+        summary: {
+          type: 'string',
+          description: describeTool('update_memory.parameters.properties.summary'),
         },
       },
-    },
-    handler: async (args, { bookId: rawBookId, onAction }) => {
-      const bookCheck = requireBookIdWithMemoryId(rawBookId, args);
-      if ('error' in bookCheck) return bookCheck.error;
+      required: ['memory_id', 'content', 'summary'],
+    }),
+    handler: memoryIdHandler(async (args, { bookId, onAction, memory_id }) => {
       const parsed = parseContentSummary(args);
       if ('error' in parsed) return parsed.error;
-      const { bookId, memoryId: memory_id } = bookCheck;
       const { content, summary } = parsed;
 
       try {
@@ -437,7 +382,7 @@ export const memoryTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: 'Memory 更新成功',
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.memoryUpdated'),
           memory: {
             id: memory.id,
             summary: memory.summary,
@@ -446,36 +391,26 @@ export const memoryTools: ToolDefinition[] = [
           },
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '更新 Memory 失败',
-        });
+        return caughtToolErrorJson(
+          error,
+          'MEMORY_UPDATE_FAILED',
+          'aiEntityFeedback.memoryUpdateFailed',
+        );
       }
-    },
+    }),
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'delete_memory',
-        description: '删除指定的 Memory 记录。当确定某个 Memory 不再需要时，可以使用此工具删除。',
-        parameters: {
-          type: 'object',
-          properties: {
-            memory_id: {
-              type: 'string',
-              description: 'Memory ID（从 get_memory 或 search_memories 获取）',
-            },
-          },
-          required: ['memory_id'],
+    definition: toolDefinition('delete_memory', {
+      type: 'object',
+      properties: {
+        memory_id: {
+          type: 'string',
+          description: describeTool('delete_memory.parameters.properties.memory_id'),
         },
       },
-    },
-    handler: async (args, { bookId: rawBookId, onAction }) => {
-      const bookCheck = requireBookIdWithMemoryId(rawBookId, args);
-      if ('error' in bookCheck) return bookCheck.error;
-      const { bookId, memoryId: memory_id } = bookCheck;
-
+      required: ['memory_id'],
+    }),
+    handler: memoryIdHandler(async (args, { bookId, onAction, memory_id }) => {
       try {
         // 在删除前获取 Memory 信息，以便在 action 中显示
         const memory = await requireMemoryById(bookId, memory_id);
@@ -496,14 +431,15 @@ export const memoryTools: ToolDefinition[] = [
 
         return JSON.stringify({
           success: true,
-          message: 'Memory 删除成功',
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.memoryDeleted'),
         });
       } catch (error) {
-        return JSON.stringify({
-          success: false,
-          error: error instanceof Error ? error.message : '删除 Memory 失败',
-        });
+        return caughtToolErrorJson(
+          error,
+          'MEMORY_DELETE_FAILED',
+          'aiEntityFeedback.memoryDeleteFailed',
+        );
       }
-    },
+    }),
   },
 ];

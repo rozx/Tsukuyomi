@@ -3,12 +3,16 @@ import { MemoryService } from 'src/services/memory-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
+import type { CoverRecordInput } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { Novel } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSyncExecutor } from 'src/composables/useSyncExecutor';
 import type { SyncConfig } from 'src/models/sync';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 
 /**
  * Gist 同步 composable
@@ -21,6 +25,14 @@ export function useGistSync() {
   const coverHistoryStore = useCoverHistoryStore();
   const toast = useToastWithHistory();
   const { executeSync, executeForceSync } = useSyncExecutor();
+  const t = (key: string, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, `syncUi.actions.${key}` as MessageKey, values);
+  const errText = (error: unknown, fallback: string) =>
+    localizedErrorMessage(
+      error,
+      settingsStore.uiLocale,
+      `syncUi.actions.${fallback}` as MessageKey,
+    );
 
   /**
    * 构造传给 executeSync / executeForceSync 的选项
@@ -70,10 +82,10 @@ export function useGistSync() {
       return result.restorableItems;
     } catch (error) {
       console.error('[useGistSync] 同步异常:', error);
-      const errorMsg = error instanceof Error ? error.message : '同步时发生未知错误';
+      const errorMsg = errText(error, 'syncUnknown');
       toast.add({
         severity: 'error',
-        summary: '同步失败',
+        summary: t('syncFailed'),
         detail: errorMsg,
         life: 5000,
       });
@@ -99,16 +111,19 @@ export function useGistSync() {
 
     toast.add({
       severity: 'success',
-      summary: '恢复成功',
-      detail: `已恢复 ${items.length} 个项目`,
+      summary: t('restored'),
+      detail: t('restoredCount', { count: items.length }),
       life: 3000,
     });
   };
 
   /** 按 type 把待恢复项分成 novels / models / covers / memories 四组 */
-  function groupRestorableItems(
-    items: RestorableItem[],
-  ): { novels: unknown[]; models: unknown[]; covers: unknown[]; memories: unknown[] } {
+  function groupRestorableItems(items: RestorableItem[]): {
+    novels: unknown[];
+    models: unknown[];
+    covers: unknown[];
+    memories: unknown[];
+  } {
     const novels: unknown[] = [];
     const models: unknown[] = [];
     const covers: unknown[] = [];
@@ -152,10 +167,13 @@ export function useGistSync() {
         lastEdited: new Date(now),
       });
     }
-    // 封面无需手动刷新时间戳：addCover 内部总会写入当前时刻的 addedAt
-    for (const cover of grouped.covers) {
-      await coverHistoryStore.addCover(cover as Parameters<typeof coverHistoryStore.addCover>[0]);
-    }
+    // 封面保留原 id（跨设备删除记录按 id 匹配），只把 addedAt 刷新为当前时刻
+    await coverHistoryStore.upsertCovers(
+      grouped.covers.map((cover) => ({
+        ...(cover as CoverRecordInput),
+        addedAt: new Date(now),
+      })),
+    );
     // Memory 恢复：data 是携带 bookId 的完整 Memory，走 upsertMemoryForSync 写回 IndexedDB
     for (const memory of grouped.memories) {
       await MemoryService.upsertMemoryForSync({ ...(memory as Memory), lastAccessedAt: now });
@@ -260,10 +278,10 @@ export function useGistSync() {
       await executeForceSync(buildExecutorOptions(config));
     } catch (error) {
       console.error('[useGistSync] 强制推送异常:', error);
-      const errorMsg = error instanceof Error ? error.message : '强制推送时发生未知错误';
+      const errorMsg = errText(error, 'forceUnknown');
       toast.add({
         severity: 'error',
-        summary: '强制推送失败',
+        summary: t('forceFailed'),
         detail: errorMsg,
         life: 5000,
       });

@@ -1,3 +1,4 @@
+import { importFailure, restoreImportError } from './import-error';
 import type { BookUpdateRecipe } from 'src/models/book-sync';
 import type { ImportPlan } from 'src/models/import';
 import type { ImportParsingClient } from './import-parsing-client';
@@ -40,7 +41,9 @@ export async function evaluateImportRecipe(
         verified: test.verified,
         ...previous,
         after: summarizeImportRecipe(declared.recipe),
-        reason: `配方已失效，本次不会写入配方：${test.issues[0]!.message}`,
+        reason: importFailure('RECIPE_STALE', 'recipeStale', {
+          detail: restoreImportError(test.issues[0]!),
+        }),
         issues: test.issues,
       },
     };

@@ -1,10 +1,7 @@
 import './setup';
+import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { describe, test, expect, spyOn, mock, afterEach } from 'bun:test';
-import type {
-  ChatMessage,
-  AIToolCall,
-  AITool,
-} from 'src/services/ai/types/ai-service';
+import type { ChatMessage, AIToolCall, AITool } from 'src/services/ai/types/ai-service';
 import { executeToolCallLoop } from 'src/services/ai/tasks/utils';
 import { ToolRegistry } from 'src/services/ai/tools';
 import { TodoListService } from 'src/services/todo-list-service';
@@ -113,7 +110,10 @@ describe('task-runner 待办清单上下文', () => {
             {
               id: `call-${turn}`,
               type: 'function',
-              function: { name: 'mark_todo_done', arguments: JSON.stringify({ id: pending[0]!.id }) },
+              function: {
+                name: 'mark_todo_done',
+                arguments: JSON.stringify({ id: pending[0]!.id }),
+              },
             },
           ],
         });
@@ -149,6 +149,7 @@ describe('task-runner 待办清单上下文', () => {
       onToast: undefined,
       taskId,
       aiProcessingStore: createMockStore(),
+      languages: captureExecutionLanguages('zh-CN'),
       logLabel: 'Test',
       maxTurns: 30,
       chunkIndex: 0,
@@ -230,6 +231,7 @@ describe('task-runner 待办清单上下文', () => {
       onToast: undefined,
       taskId,
       aiProcessingStore: createMockStore(),
+      languages: captureExecutionLanguages('zh-CN'),
       logLabel: 'Test',
       maxTurns: 30,
       chunkIndex: 0,

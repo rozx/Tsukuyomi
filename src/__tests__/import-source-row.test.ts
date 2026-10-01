@@ -1,3 +1,5 @@
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { createApp, h, nextTick, reactive } from 'vue';
@@ -38,7 +40,7 @@ describe('来源行删除入口', () => {
       onOpen: open,
     });
     app = createApp({ render: () => h(ImportSourceRow, props) });
-    app.mount(host);
+    app.use(createI18n({ legacy: false, locale: 'zh-CN', messages })).mount(host);
     const button = host.querySelector<HTMLButtonElement>('button[aria-label="删除来源 小说.txt"]');
     expect(button).not.toBeNull();
     button!.click();

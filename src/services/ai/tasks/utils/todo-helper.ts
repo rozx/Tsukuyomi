@@ -1,3 +1,4 @@
+import { agentText } from 'src/i18n/translate';
 /**
  * Todo 辅助函数
  * 用于在 AI 任务服务中管理待办事项
@@ -10,18 +11,7 @@ import { TodoListService, type TodoItem } from 'src/services/todo-list-service';
  * @param hasContext 是否存在任务/会话上下文（无上下文时不注入待办说明）
  */
 export function getTodosSystemPrompt(hasContext: boolean): string {
-  if (!hasContext) {
-    return '';
-  }
-
-  return (
-    '\n**待办系统**：\n' +
-    '- 系统自动生成预定义待办，【待办清单】始终显示在上下文中，无需调用 list_todos\n' +
-    '- 完成一项就调用 `mark_todo_done` 标记；一次完成多项时用 `ids` 批量标记\n' +
-    '- 标记完成后系统会自动把下一项待办标记为进行中，无需再调用 `mark_todo_working`\n' +
-    '- `mark_todo_working` 仅在需要手动切换当前进行项时使用\n' +
-    '- 所有预定义待办标记 done 后才能切换到下一阶段\n'
-  );
+  return hasContext ? agentText('aiTodo.system') : '';
 }
 
 /**
@@ -52,14 +42,14 @@ export function getPostToolCallReminder(
   const workingTodo = todos.find((t) => t.status === 'working');
   const pendingTodos = todos.filter((t) => t.status === 'pending');
 
-  let reminder = '\n**[待办提醒]**\n';
+  let reminder = agentText('aiWorkflow.reminder');
   if (workingTodo) {
     const firstLine = workingTodo.text.split('\n')[0]!;
-    reminder += `→ 当前进行中：${firstLine}\n`;
-    reminder += '  完成后请调用 mark_todo_done 标记\n';
+    reminder += agentText('aiWorkflow.workingReminder', { text: firstLine });
   } else if (pendingTodos.length > 0) {
-    reminder += `还有 ${pendingTodos.length} 个待办事项待处理\n`;
-    reminder += '完成后调用 mark_todo_done 标记（多项可用 ids 批量标记）\n';
+    reminder += agentText('aiWorkflow.pendingReminder', {
+      count: pendingTodos.length,
+    });
   }
 
   return reminder;

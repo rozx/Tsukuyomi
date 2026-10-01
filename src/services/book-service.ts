@@ -1,15 +1,219 @@
+import { normalizeBookLanguages } from './localization/normalize';
 import { deserializeDates, serializeDates } from 'src/utils/serialize-dates';
 import { getDB } from 'src/utils/indexed-db';
-import type { Novel } from 'src/models/novel';
+import type { Novel, Terminology, CharacterSetting } from 'src/models/novel';
 import { ChapterContentService } from './chapter-content-service';
 import { LibraryPersistence } from './library-persistence';
 import { maintainLibraryChanges } from './chapter-content-maintenance';
+import type { AppLocale } from 'src/models/locale';
+import type { EntityUpdates } from './localization/entity-edit';
+import { prepareForceBook } from './localization/force';
+import type {
+  ParagraphTranslationEdit,
+  ChapterTranslationEditGroup,
+} from './localization/paragraph-edit';
+import { prepareImportedEntities } from './localization/entity-import';
+import type { TitleEdit } from './localization/title-edit';
+import type { BookFieldPatch } from './book-field-patch';
+
+async function maintainWholeBooks(books: Novel[]): Promise<void> {
+  await maintainLibraryChanges(
+    new Map(
+      books.map((book) => [
+        book.id,
+        (book.volumes ?? []).flatMap((volume) =>
+          (volume.chapters ?? []).map((chapter) => chapter.id),
+        ),
+      ]),
+    ),
+  );
+}
 
 /**
  * 书籍服务
  * 负责书籍的 CRUD 操作和持久化
  */
 export class BookService {
+  static async editTitle(
+    bookId: string,
+    language: AppLocale,
+    edit: TitleEdit,
+    expectedBookLanguage?: AppLocale,
+  ): Promise<Novel> {
+    const book = deserializeDates(
+      await LibraryPersistence.editTitle(
+        await getDB(),
+        bookId,
+        language,
+        edit,
+        expectedBookLanguage,
+      ),
+    );
+    await maintainWholeBooks([book]);
+    return book;
+  }
+
+  static async importEntities<T extends Terminology | CharacterSetting>(
+    bookId: string,
+    kind: 'term' | 'character',
+    incoming: readonly T[],
+  ) {
+    const base = await BookService.getBookById(bookId);
+    if (!base) throw new Error('BOOK_MISSING');
+    const prepared = prepareImportedEntities(base, kind, incoming);
+    const book = await BookService.editEntities(base, prepared.updates, 'zh-CN');
+    return { book, addedIds: prepared.addedIds, updatedBefore: prepared.updatedBefore };
+  }
+
+  static async restoreTranslationHistory(snapshot: Novel, chapterId: string, language: AppLocale) {
+    const chapter = snapshot.volumes
+      ?.flatMap((volume) => volume.chapters ?? [])
+      .find((value) => value.id === chapterId);
+    if (!chapter?.content) throw new Error('UNDO_CHAPTER_CONTENT_MISSING');
+    const edits: ParagraphTranslationEdit[] = chapter.content.map((paragraph) => ({
+      type: 'restore-language',
+      paragraphId: paragraph.id,
+      originalText: paragraph.text,
+      translations: paragraph.translations.filter(
+        (value) => (value.language ?? 'zh-CN') === language,
+      ),
+      selectedTranslationId:
+        paragraph.selectedTranslations !== undefined
+          ? (paragraph.selectedTranslations[language]?.value ?? null)
+          : language === 'zh-CN'
+            ? paragraph.selectedTranslationId || null
+            : null,
+    }));
+    return BookService.editParagraphTranslations(snapshot.id, chapterId, language, edits);
+  }
+
+  static async editParagraphTranslationGroups(
+    bookId: string,
+    language: AppLocale,
+    groups: readonly ChapterTranslationEditGroup[],
+    expectedBookLanguage?: AppLocale,
+  ) {
+    const result = await LibraryPersistence.editParagraphTranslationGroups(
+      await getDB(),
+      bookId,
+      language,
+      groups,
+      expectedBookLanguage,
+    );
+    if (groups.length)
+      await maintainLibraryChanges(new Map([[bookId, groups.map((group) => group.chapterId)]]));
+    return { ...result, book: deserializeDates(result.book) };
+  }
+
+  static async editParagraphTranslations(
+    bookId: string,
+    chapterId: string,
+    language: AppLocale,
+    edits: readonly ParagraphTranslationEdit[],
+    expectedBookLanguage?: AppLocale,
+  ) {
+    const result = await LibraryPersistence.editParagraphTranslations(
+      await getDB(),
+      bookId,
+      chapterId,
+      language,
+      edits,
+      expectedBookLanguage,
+    );
+    await maintainLibraryChanges(new Map([[bookId, [chapterId]]]));
+    return { ...result, book: deserializeDates(result.book) };
+  }
+
+  static async rollbackBooks(books: Novel[]): Promise<void> {
+    await LibraryPersistence.rollbackBooks(await getDB(), books);
+    await maintainWholeBooks(books);
+  }
+
+  static async prepareForceBooks(
+    sources: Novel[],
+    remoteBooks: Novel[],
+    operationId: string,
+  ): Promise<Novel[]> {
+    const remote = remoteBooks.map(normalizeBookLanguages);
+    const normalized = sources.map(normalizeBookLanguages);
+    const db = await getDB();
+    const prepared: Novel[] = [];
+    for (const source of normalized)
+      prepared.push(
+        await prepareForceBook(
+          db,
+          source,
+          remote.find((book) => book.id === source.id),
+          operationId,
+        ),
+      );
+    await BookService.commitForceBooks(sources, prepared);
+    return prepared;
+  }
+
+  static async commitForceBooks(sources: Novel[], prepared: Novel[]): Promise<void> {
+    await maintainLibraryChanges(
+      await LibraryPersistence.commitForceBooks(await getDB(), sources, prepared),
+    );
+  }
+
+  static async replaceBooks(books: Novel[], operationId: string): Promise<void> {
+    await LibraryPersistence.replaceBooks(await getDB(), books, operationId);
+    await maintainWholeBooks(books);
+  }
+
+  static async restoreEntity<T extends Terminology | CharacterSetting>(
+    bookId: string,
+    kind: 'term' | 'character',
+    entity: T,
+    operationId: string,
+  ): Promise<T> {
+    return LibraryPersistence.restoreEntity(await getDB(), bookId, kind, entity, operationId);
+  }
+
+  static async editEntities(
+    base: Novel,
+    updates: EntityUpdates,
+    locale: AppLocale,
+    expectedBookLanguage?: AppLocale,
+  ): Promise<Novel> {
+    return (await BookService.commitEntityEdit(base, updates, locale, expectedBookLanguage)).book;
+  }
+
+  /** 同 editEntities，并返回提交后记录对应的书籍修改序号 */
+  static async commitEntityEdit(
+    base: Novel,
+    updates: EntityUpdates,
+    locale: AppLocale,
+    expectedBookLanguage?: AppLocale,
+  ): Promise<{ book: Novel; revision: number }> {
+    const result = await LibraryPersistence.commitEntityEdit(
+      await getDB(),
+      base,
+      updates,
+      locale,
+      expectedBookLanguage,
+    );
+    return { book: deserializeDates(result.book), revision: result.revision };
+  }
+
+  /**
+   * 按字段增量更新书籍元数据（基于库中最新记录，不写回旧快照）
+   * @returns 已提交的书籍记录（不含章节正文）及其修改序号；库中没有该书时返回 undefined
+   */
+  static async updateBookFields(
+    bookId: string,
+    patch: BookFieldPatch,
+  ): Promise<{ book: Novel; revision: number } | undefined> {
+    const result = await LibraryPersistence.updateBookFields(await getDB(), bookId, patch);
+    if (!result) return undefined;
+    if (result.changes.size) await maintainLibraryChanges(result.changes);
+    return {
+      book: normalizeBookLanguages(deserializeDates(serializeDates(result.book))),
+      revision: result.revision,
+    };
+  }
+
   /**
    * 获取所有书籍（不包含章节内容）
    */
@@ -17,8 +221,16 @@ export class BookService {
     try {
       const db = await getDB();
       const books = await db.getAll('books');
-      // 书籍列表不需要加载章节内容，直接返回
-      return books.map((book) => deserializeDates(serializeDates(book)));
+      // 书籍列表不需要加载章节内容，直接返回。
+      // 逐本规范化：单本记录损坏时只跳过该书（原记录保留在库中），不能让整个书库显示为空
+      return books.flatMap((book) => {
+        try {
+          return [normalizeBookLanguages(deserializeDates(serializeDates(book)))];
+        } catch (error) {
+          console.error(`Failed to load book ${book.id}:`, error);
+          return [];
+        }
+      });
     } catch (error) {
       console.error('Failed to load books:', error);
       return [];
@@ -35,7 +247,7 @@ export class BookService {
       const book = await db.get('books', id);
       if (!book) return undefined;
 
-      const deserializedBook = deserializeDates(serializeDates(book));
+      const deserializedBook = normalizeBookLanguages(deserializeDates(serializeDates(book)));
 
       // 如果需要加载内容，遍历所有章节并加载
       if (loadContent && deserializedBook.volumes) {
@@ -72,18 +284,22 @@ export class BookService {
    * @param book 书籍对象
    * @param options 保存选项
    * @param options.saveChapterContent 是否保存章节内容，默认为 true。如果为 false，则只保存书籍元数据（适用于仅更新术语、角色设定等元数据的场景）
+   * @returns 提交后记录对应的书籍修改序号
    */
   static async saveBook(
     this: void,
     book: Novel,
-    options?: { saveChapterContent?: boolean },
-  ): Promise<void> {
+    options?: { saveChapterContent?: boolean; keepStoredTargetLanguage?: boolean },
+  ): Promise<number | undefined> {
+    const revisions = new Map<string, number>();
     const changes = await LibraryPersistence.saveBooks(
       await getDB(),
       [book],
       options?.saveChapterContent !== false,
+      { keepStoredTargetLanguage: options?.keepStoredTargetLanguage === true, revisions },
     );
     await maintainLibraryChanges(changes);
+    return revisions.get(book.id);
   }
 
   /**

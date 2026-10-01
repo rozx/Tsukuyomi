@@ -28,6 +28,7 @@ const state = {
 };
 
 const makeMockSettingsStore = () => ({
+  uiLocale: 'zh-CN',
   get gistSync() {
     return {
       enabled: true,
@@ -53,6 +54,7 @@ const makeMockSettingsStore = () => ({
     return Promise.resolve();
   },
   updateKnownRemoteEntries: () => Promise.resolve(),
+  updateKnownRemoteSchemaVersion: () => Promise.resolve(),
   updateKnownRemoteTombstones: () => Promise.resolve(),
   updateLastSyncTime: () => Promise.resolve(),
   cleanupOldDeletionRecords: () => Promise.resolve(),
@@ -271,6 +273,31 @@ describe('结构冲突提示', () => {
     expect(message.detail).toContain('等 7 章');
   });
 
+  it('英文界面下结构冲突提示与失败说明均为英文', async () => {
+    spyOn(SettingsStore, 'useSettingsStore').mockImplementation((() => ({
+      ...makeMockSettingsStore(),
+      uiLocale: 'en-US',
+    })) as unknown as typeof SettingsStore.useSettingsStore);
+    stubDownloadWithNovelChange();
+    spyOn(GistSyncService.prototype, 'uploadToGistIncremental').mockRejectedValue('offline');
+    mockBooksStore.books = [book('b1', [p('p1', '一')])];
+    spyOn(SyncDataService, 'applyPartialRemoteData').mockImplementation((_entries, report) => {
+      report?.structureConflicts.push(conflict(1));
+      return Promise.resolve([]);
+    });
+    const errors: string[] = [];
+
+    await useSyncExecutor().executeSync({
+      ...callbacks,
+      onError: (summary, detail) => errors.push(summary, detail),
+    });
+
+    const message = toastAdd.mock.calls[0]![0] as { summary: string; detail: string };
+    expect(message.summary).toBe('Sync found paragraph structure conflicts');
+    expect(message.detail).toContain('测试书 · 第1话: the paragraph structure was changed');
+    expect(errors).toEqual(['Upload failed', 'offline']);
+  });
+
   it('同步失败时，已合并章节的冲突仍然提示', async () => {
     stubDownloadWithNovelChange();
     spyOn(GistSyncService.prototype, 'uploadToGistIncremental').mockRejectedValue(
@@ -297,4 +324,70 @@ describe('结构冲突提示', () => {
 
     expect(toastAdd).not.toHaveBeenCalled();
   });
+});
+
+it('协议升级在内容 hash 相同仍上传，读取或应用失败不发布新协议', async () => {
+  stubDownloadNoChanges();
+  const upload = stubUpload();
+  await useSyncExecutor().executeSync(callbacks);
+  upload.mockClear();
+  const current = await buildLocalManifest({
+    appSettings: { lastEdited: new Date(0), scraperConcurrencyLimit: 3 },
+    aiModels: [],
+    coverHistory: [],
+    novels: [],
+    memoriesByBook: {},
+  });
+  const download = spyOn(
+    GistSyncService.prototype,
+    'downloadFromGistWithManifest',
+  ).mockResolvedValue({
+    success: true,
+    skipped: false,
+    remoteETag: 'etag',
+    remoteUpdatedAt: '',
+    remoteFilesSnapshot: {},
+    manifest: { ...current, schemaVersion: 3 },
+    needsSchemaUpgrade: true,
+    changedEntries: {},
+    deletedEntries: [],
+    remoteTombstones: {},
+    remoteEntryKeys: Object.keys(current.entries),
+  });
+  spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([]);
+  expect((await useSyncExecutor().executeSync(callbacks)).success).toBe(true);
+  expect(upload).toHaveBeenCalledTimes(1);
+  upload.mockClear();
+  download.mockResolvedValue({
+    success: true,
+    skipped: false,
+    remoteETag: 'etag',
+    remoteUpdatedAt: '',
+    remoteFilesSnapshot: {},
+    manifest: { ...current, schemaVersion: 3 },
+    needsSchemaUpgrade: true,
+    changedEntries: {},
+    deletedEntries: [],
+    remoteTombstones: {},
+    remoteEntryKeys: [],
+    failedEntryKeys: ['novel:missing'],
+  });
+  expect((await useSyncExecutor().executeSync(callbacks)).success).toBe(false);
+  expect(upload).not.toHaveBeenCalled();
+  download.mockResolvedValue({
+    success: true,
+    skipped: false,
+    remoteETag: 'etag',
+    remoteUpdatedAt: '',
+    remoteFilesSnapshot: {},
+    manifest: { ...current, schemaVersion: 3 },
+    needsSchemaUpgrade: true,
+    changedEntries: {},
+    deletedEntries: [],
+    remoteTombstones: {},
+    remoteEntryKeys: [],
+  });
+  spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue(['novel:failed-write']);
+  expect((await useSyncExecutor().executeSync(callbacks)).success).toBe(false);
+  expect(upload).not.toHaveBeenCalled();
 });

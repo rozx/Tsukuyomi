@@ -1,15 +1,22 @@
 ---
 name: release-ready
-description: Prepare a release by verifying version consistency, generating release notes, updating help docs, running quality checks, and (when asked) opening the release PR. Use when on a release branch (release/vX.X.X) and ready to finalize a version for deployment.
+description: Prepare a release by verifying version consistency, generating release notes, updating help docs and READMEs in all three languages (zh-CN / zh-TW / en-US), running quality checks, and (when asked) opening the release PR. Use when on a release branch (release/vX.X.X) and ready to finalize a version for deployment.
 license: MIT
 metadata:
   author: rozx
-  version: '1.1'
+  version: '1.2'
 ---
 
 Prepare the current branch for release. This is a multi-step workflow that ensures version consistency, generates documentation, and validates code quality.
 
-**All generated content (release notes, help docs) MUST be written in Chinese (中文).** The release PR itself (title/body) is in English.
+**Languages:**
+
+- **Release notes** are written in Simplified Chinese only. All three help indexes link to the same file.
+- **Help docs** exist in three languages: `public/help/zh-CN/` (the source), `public/help/zh-TW/` (Traditional Chinese), and `public/help/en-US/` (English). Every change to a zh-CN doc MUST be mirrored into the zh-TW and en-US docs in their own language, with the same file names and the same explicit heading IDs (`{#...}`).
+- **README** exists in three languages: `README.md` (Simplified Chinese), `README.zh-TW.md`, `README.en-US.md`. Keep them in sync.
+- **The release PR** (title/body) is in English.
+
+When quoting UI labels, use the exact text from that language's resources in `src/i18n/<locale>/`, not a fresh translation.
 
 ---
 
@@ -97,7 +104,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
 
    ## 📚 相关文档
 
-   - **<Doc Title>**: [`help/<filename>.md`](../help/<filename>.md)
+   - **<Doc Title>**: [`help/zh-CN/<filename>.md`](../help/zh-CN/<filename>.md)
 
    ---
 
@@ -112,7 +119,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
    - Quote UI labels exactly as they appear in source.
    - Reference related help docs at the bottom.
 
-6. **Update `public/help/index.json`**:
+6. **Update the help index in every locale** (`public/help/zh-CN/index.json`, `public/help/zh-TW/index.json`, `public/help/en-US/index.json` — all three must keep the same entry ids in the same order):
    - Add a new entry for the release note at the **top of the release notes section** (after the help doc entries, before other release note entries):
      ```json
      {
@@ -121,9 +128,11 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
        "file": "RELEASE_NOTES_vX.X.X.md",
        "path": "releaseNotes",
        "category": "更新日志",
-       "description": "<Brief summary of key changes in Chinese>"
+       "categoryId": "release-notes",
+       "description": "<Brief summary of key changes in Simplified Chinese>"
      }
      ```
+   - In `zh-TW/index.json` use `"category": "更新紀錄"` and a Traditional Chinese description; in `en-US/index.json` use `"category": "Release notes"` and an English description. `id`, `title`, `file`, `path`, and `categoryId` are identical in all three.
    - The new entry should be inserted **before** the existing release note entries (newest first).
 
 ---
@@ -133,7 +142,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
 1. **Find every help doc that touches the changed areas**, not just ones already edited on the branch:
 
    ```bash
-   grep -rn -E '<old label>|<feature keyword>|<removed behavior>' public/help/*.md
+   grep -rn -E '<old label>|<feature keyword>|<removed behavior>' public/help/*/*.md
    ```
 
    Search for old UI labels, removed behaviors, and feature keywords from Step 2. Getting-started pages (e.g. `front-page.md`) often repeat steps from feature guides.
@@ -142,29 +151,36 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
    - Read the whole file.
    - Read the corresponding page/dialog/variant components (Desktop / Tablet / Mobile) and compare section by section: fields, their order, labels, buttons, what cards display, which conditions show/hide fields.
    - Rewrite stale sections; add sections for new features; update FAQ.
-   - Maintain the existing format and style. All content MUST be in Chinese.
+   - Maintain the existing format and style. Write the zh-CN doc first, then apply the same changes to the zh-TW doc (Traditional Chinese, Taiwan wording) and the en-US doc (English). Keep section order and heading IDs identical across the three.
 
-3. **Verify quoted labels.** Every button/field label quoted in the docs must exist in source:
+3. **Verify quoted labels.** Every button/field label quoted in the docs must exist in that language's resources:
 
    ```bash
-   grep -rn -E '<label1>|<label2>' src | grep -v __tests__
+   grep -rn -E '<label1>|<label2>' src/i18n/zh-CN
+   grep -rn -E '<label1>|<label2>' src/i18n/zh-TW
+   grep -rn -E '<label1>|<label2>' src/i18n/en-US
    ```
 
 4. **If a new help doc is needed**:
-   - Create it in `public/help/` following the naming convention of existing files.
-   - Add a corresponding entry to `public/help/index.json` in the appropriate category:
+   - Create it in `public/help/zh-CN/` following the naming convention of existing files, plus its `zh-TW/` and `en-US/` counterparts with the same file name and heading IDs.
+   - Add a corresponding entry to each locale's `public/help/<locale>/index.json` in the appropriate category (`path` is `help/<locale>`):
      ```json
      {
        "id": "<kebab-case-id>",
-       "title": "<Chinese title>",
+       "title": "<title in that language>",
        "file": "<filename>.md",
-       "path": "help",
-       "category": "<使用指南 or 书籍详情页>",
-       "description": "<Brief description in Chinese>"
+       "path": "help/zh-CN",
+       "category": "<category label in that language>",
+       "categoryId": "<guides or book-details>",
+       "description": "<brief description in that language>"
      }
      ```
+   - Category labels: zh-CN `使用指南` / `书籍详情页`, zh-TW `使用指南` / `書籍詳情頁`, en-US `User guides` / `Book details`. Keep entry order identical in all three indexes.
+   - Update the guide count in `src/__tests__/help-collection-languages.test.ts` (it asserts the number of guides and three-language parity).
 
 5. **If no help doc changes are needed**, explicitly state so and explain why.
+
+6. **Update the READMEs** when the release changes something the README describes (feature summary, "What's new" section, quick start, tech stack, commands). Apply the same change to `README.md`, `README.zh-TW.md`, and `README.en-US.md`; each links to its own language's help docs (`public/help/<locale>/`). The GitHub Wiki is generated from the help docs by `scripts/sync-docs-to-wiki.ts` after merge to `main` — do not edit the wiki directly.
 
 ---
 
@@ -189,10 +205,16 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
 3. **Check formatting of changed docs** (also validates `index.json` parses):
 
    ```bash
-   bunx prettier --check public/help/index.json public/releaseNotes/RELEASE_NOTES_vX.X.X.md <changed help docs>
+   bunx prettier --check public/help/*/index.json public/releaseNotes/RELEASE_NOTES_vX.X.X.md README*.md <changed help docs>
    ```
 
-4. **Report final status**:
+4. **Check three-language help parity** (same ids, same heading IDs, full content in every language):
+
+   ```bash
+   bunx vitest run help
+   ```
+
+5. **Report final status**:
    - Summarize all changes made during this release preparation.
    - List all files created or modified.
    - Confirm the release is ready (or report remaining issues).
@@ -232,8 +254,10 @@ After completing Steps 1–4, provide a summary:
 ────────────────────────────────────────
 ✅ Version: package.json and version.ts updated to X.X.X
 ✅ Release Notes: public/releaseNotes/RELEASE_NOTES_vX.X.X.md created
-✅ Help Docs: [updated/no changes needed]
-✅ index.json: Updated with new entries
+✅ Help Docs: [updated in zh-CN / zh-TW / en-US | no changes needed]
+✅ index.json: Updated in all three locales
+✅ README: [updated in all three languages | no changes needed]
+✅ Help parity tests: Passed
 ✅ Type Check: Passed
 ✅ Lint: Passed
 ✅ Prettier: Passed

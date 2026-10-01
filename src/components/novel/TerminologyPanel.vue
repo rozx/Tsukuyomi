@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+import { resolveAppLocale } from 'src/models/locale';
 import Button from 'primevue/button';
 import DataView from 'primevue/dataview';
-import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import EntityDeleteConfirmDialog from 'src/components/dialogs/EntityDeleteConfirmDialog.vue';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import ConfirmDialog from 'primevue/confirmdialog';
@@ -17,14 +20,19 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { useToolbarExpand } from 'src/composables/useToolbarExpand';
 import { TerminologyService } from 'src/services/terminology-service';
+import { BookService } from 'src/services/book-service';
+import { getNameTranslation } from 'src/services/localization/selection';
+import { hasDuplicateEntityNames } from 'src/services/localization/entity-identity';
 import { useBooksStore } from 'src/stores/books';
 import { cloneDeep } from 'lodash';
 import co from 'co';
+import { v4 } from 'uuid';
 
 const props = defineProps<{
   book: Novel | null;
 }>();
 
+const { t, locale } = useI18n();
 // 搜索关键词
 const searchQuery = ref('');
 
@@ -40,7 +48,7 @@ const allTerminologies = computed(() => {
     id: term.id,
     name: term.name,
     description: term.description,
-    translation: term.translation.translation,
+    translation: getNameTranslation(term, props.book?.targetLanguage ?? 'zh-CN')?.translation ?? '',
   }));
 });
 
@@ -65,11 +73,14 @@ const selectedTerminology = ref<Terminology | null>(null);
 
 // 工具栏展开图标/标题、空状态文案、导出可用性：把模板内联三元与 || 收敛为 computed
 const { toolbarExpandIcon, toolbarExpandTitle } = useToolbarExpand(isToolbarExpanded);
-const emptyStateText = computed(() => (searchQuery.value ? '未找到匹配的术语' : '暂无术语'));
+const emptyStateText = computed(() =>
+  searchQuery.value ? t('panelUi.noTermMatches') : t('panelUi.noTerms'),
+);
 const canExportTerms = computed(
   () => !!props.book?.terminologies && props.book.terminologies.length > 0,
 );
 
+const hasNameConflicts = computed(() => hasDuplicateEntityNames(props.book?.terminologies ?? []));
 const toast = useToastWithHistory();
 const confirm = useConfirm();
 const isSaving = ref(false);
@@ -138,7 +149,10 @@ const buildTermUpdates = (
   if (data.name.trim() !== existing.name) {
     updates.name = data.name.trim();
   }
-  if (data.translation.trim() !== existing.translation.translation) {
+  if (
+    data.translation.trim() !==
+    (getNameTranslation(existing, props.book?.targetLanguage ?? 'zh-CN')?.translation ?? '')
+  ) {
     updates.translation = data.translation.trim();
   }
   if (data.description.trim() !== (existing.description || '')) {
@@ -158,8 +172,8 @@ const addTerm = async (data: {
 
   toast.add({
     severity: 'success',
-    summary: '保存成功',
-    detail: `已成功添加术语 "${data.name.trim()}"`,
+    summary: t('panelUi.saved'),
+    detail: t('panelUi.termAdded', { name: data.name.trim() }),
     life: 3000,
     onRevert: () => TerminologyService.deleteTerminology(props.book!.id, newTerm.id),
   });
@@ -175,25 +189,24 @@ const updateTerm = async (data: {
 }): Promise<void> => {
   if (!selectedTerminology.value) return;
   const oldTermSnapshot = cloneDeep(selectedTerminology.value);
+  const restoreBookId = props.book!.id;
+  const restoreOperationId = v4();
   const updates = buildTermUpdates(data, selectedTerminology.value);
 
   await TerminologyService.updateTerminology(props.book!.id, selectedTerminology.value.id, updates);
 
   toast.add({
     severity: 'success',
-    summary: '保存成功',
-    detail: `已成功更新术语 "${data.name.trim()}"`,
+    summary: t('panelUi.saved'),
+    detail: t('panelUi.termUpdated', { name: data.name.trim() }),
     life: 3000,
     onRevert: async () => {
-      if (oldTermSnapshot && props.book) {
-        await TerminologyService.updateTerminology(props.book.id, oldTermSnapshot.id, {
-          name: oldTermSnapshot.name,
-          translation: oldTermSnapshot.translation.translation,
-          ...(oldTermSnapshot.description !== undefined && {
-            description: oldTermSnapshot.description,
-          }),
-        });
-      }
+      await useBooksStore().restoreEntity(
+        restoreBookId,
+        'term',
+        oldTermSnapshot,
+        restoreOperationId,
+      );
     },
   });
 
@@ -206,8 +219,8 @@ const handleSave = async (data: { name: string; translation: string; description
   if (!props.book) {
     toast.add({
       severity: 'error',
-      summary: '保存失败',
-      detail: '没有选择书籍',
+      summary: t('panelUi.saveFailed'),
+      detail: t('panelUi.noBook'),
       life: 3000,
     });
     return;
@@ -217,8 +230,8 @@ const handleSave = async (data: { name: string; translation: string; description
   if (!data.name.trim()) {
     toast.add({
       severity: 'error',
-      summary: '保存失败',
-      detail: '术语名称不能为空',
+      summary: t('panelUi.saveFailed'),
+      detail: t('panelUi.termNameRequired'),
       life: 3000,
     });
     return;
@@ -236,8 +249,12 @@ const handleSave = async (data: { name: string; translation: string; description
     console.error('保存术语失败:', error);
     toast.add({
       severity: 'error',
-      summary: '保存失败',
-      detail: error instanceof Error ? error.message : '保存术语时发生未知错误',
+      summary: t('panelUi.saveFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'panelUi.unknownTermSave',
+      ),
       life: 3000,
     });
   } finally {
@@ -264,28 +281,24 @@ const confirmDeleteTerm = async () => {
     // 保存要删除的术语数据用于撤销
     const termToRestore = props.book?.terminologies?.find((t) => t.id === terminology.id);
     const termSnapshot = termToRestore ? cloneDeep(termToRestore) : null;
+    const restoreBookId = props.book.id;
+    const restoreOperationId = v4();
 
     await TerminologyService.deleteTerminology(props.book.id, terminology.id);
 
     toast.add({
       severity: 'success',
-      summary: '删除成功',
-      detail: `已成功删除术语 "${terminology.name}"`,
+      summary: t('panelUi.deleted'),
+      detail: t('panelUi.termDeleted', { name: terminology.name }),
       life: 3000,
       onRevert: async () => {
-        if (termSnapshot && props.book) {
-          const booksStore = useBooksStore();
-          const book = booksStore.getBookById(props.book.id);
-          if (book) {
-            const current = book.terminologies || [];
-            if (!current.some((t) => t.id === termSnapshot.id)) {
-              await booksStore.updateBook(book.id, {
-                terminologies: [...current, termSnapshot],
-                lastEdited: new Date(),
-              });
-            }
-          }
-        }
+        if (termSnapshot)
+          await useBooksStore().restoreEntity(
+            restoreBookId,
+            'term',
+            termSnapshot,
+            restoreOperationId,
+          );
       },
     });
 
@@ -295,8 +308,12 @@ const confirmDeleteTerm = async () => {
     console.error('删除术语失败:', error);
     toast.add({
       severity: 'error',
-      summary: '删除失败',
-      detail: error instanceof Error ? error.message : '删除术语时发生未知错误',
+      summary: t('panelUi.deleteFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'panelUi.unknownTermDelete',
+      ),
       life: 3000,
     });
   } finally {
@@ -309,8 +326,8 @@ const handleDelete = (terminology: (typeof terminologies.value)[number]) => {
   if (!props.book) {
     toast.add({
       severity: 'error',
-      summary: '删除失败',
-      detail: '没有选择书籍',
+      summary: t('panelUi.deleteFailed'),
+      detail: t('panelUi.noBook'),
       life: 3000,
     });
     return;
@@ -365,37 +382,50 @@ const handleBulkDelete = () => {
   const selectedNames = terminologies.value
     .filter((t) => selectedTermIds.value.has(t.id))
     .map((t) => t.name)
-    .slice(0, 3)
-    .join('、');
-  const moreText = selectedCount > 3 ? `等 ${selectedCount} 个` : '';
+    .slice(0, 3);
 
+  const restoreBookId = props.book.id;
+  const restoreOperationId = v4();
+  const idsToDelete = Array.from(selectedTermIds.value);
+  const termsSnapshot = cloneDeep(
+    props.book.terminologies?.filter((term) => selectedTermIds.value.has(term.id)) ?? [],
+  );
   confirm.require({
     group: 'terminology',
-    message: `确定要删除选中的 ${selectedCount} 个术语吗？\n${selectedNames}${moreText}`,
-    header: '确认批量删除',
+    get message() {
+      return t('panelUi.bulkDeleteQuestion', {
+        count: selectedCount,
+        names: selectedNames.join(t('panelUi.separator')),
+        more: selectedCount > 3 ? t('panelUi.moreNames', { count: selectedCount }) : '',
+      });
+    },
+    get header() {
+      return t('panelUi.confirmBulkDelete');
+    },
     icon: 'pi pi-exclamation-triangle',
     rejectProps: {
-      label: '取消',
+      get label() {
+        return t('panelUi.cancel');
+      },
       severity: 'secondary',
     },
     acceptProps: {
-      label: '删除',
+      get label() {
+        return t('panelUi.delete');
+      },
       severity: 'danger',
     },
     accept: () => {
       void co(function* () {
-        const idsToDelete = Array.from(selectedTermIds.value);
-        // 保存要删除的术语数据用于撤销
-        const termsToRestore =
-          props.book?.terminologies?.filter((t) => selectedTermIds.value.has(t.id)) || [];
-        const termsSnapshot = cloneDeep(termsToRestore);
+        const deletedIds = new Set<string>();
 
         let successCount = 0;
         let failCount = 0;
 
         for (const id of idsToDelete) {
           try {
-            yield TerminologyService.deleteTerminology(props.book!.id, id);
+            yield TerminologyService.deleteTerminology(restoreBookId, id);
+            deletedIds.add(id);
             successCount++;
           } catch (error) {
             console.error('删除术语失败:', error);
@@ -406,25 +436,17 @@ const handleBulkDelete = () => {
         if (successCount > 0) {
           toast.add({
             severity: 'success',
-            summary: '批量删除成功',
-            detail: `已成功删除 ${successCount} 个术语`,
+            summary: t('panelUi.bulkDeleted'),
+            detail: t('panelUi.deletedTerms', { count: successCount }),
             life: 3000,
             onRevert: async () => {
-              if (termsSnapshot.length > 0 && props.book) {
-                const booksStore = useBooksStore();
-                const book = booksStore.getBookById(props.book.id);
-                if (book) {
-                  const current = book.terminologies || [];
-                  const toAdd = termsSnapshot.filter(
-                    (t: Terminology) => !current.some((c) => c.id === t.id),
-                  );
-                  if (toAdd.length > 0) {
-                    await booksStore.updateBook(book.id, {
-                      terminologies: [...current, ...toAdd],
-                      lastEdited: new Date(),
-                    });
-                  }
-                }
+              for (const term of termsSnapshot.filter((item) => deletedIds.has(item.id))) {
+                await useBooksStore().restoreEntity(
+                  restoreBookId,
+                  'term',
+                  term,
+                  `${restoreOperationId}:${term.id}`,
+                );
               }
             },
           });
@@ -433,8 +455,8 @@ const handleBulkDelete = () => {
         if (failCount > 0) {
           toast.add({
             severity: 'warn',
-            summary: '部分删除失败',
-            detail: `${failCount} 个术语删除失败`,
+            summary: t('panelUi.partialDeleteFailed'),
+            detail: t('panelUi.failedTerms', { count: failCount }),
             life: 3000,
           });
         }
@@ -451,8 +473,8 @@ const handleExport = () => {
   if (!props.book?.terminologies || props.book.terminologies.length === 0) {
     toast.add({
       severity: 'warn',
-      summary: '导出失败',
-      detail: '当前没有可导出的术语',
+      summary: t('panelUi.exportFailed'),
+      detail: t('panelUi.noExportTerms'),
       life: 3000,
     });
     return;
@@ -462,91 +484,66 @@ const handleExport = () => {
     TerminologyService.exportTerminologiesToJson(props.book.terminologies);
     toast.add({
       severity: 'success',
-      summary: '导出成功',
-      detail: `已成功导出 ${props.book.terminologies.length} 个术语`,
+      summary: t('panelUi.exported'),
+      detail: t('panelUi.exportedTerms', { count: props.book.terminologies.length }),
       life: 3000,
     });
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '导出失败',
-      detail: error instanceof Error ? error.message : '导出术语时发生未知错误',
+      summary: t('panelUi.exportFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'panelUi.unknownTermExport',
+      ),
       life: 5000,
     });
   }
 };
 
 // 导入术语的撤销快照（仅记录被更新条目的可恢复字段）
-type UpdatedTermSnapshot = {
-  id: string;
-  name: string;
-  translation: string;
-  description?: string;
-};
+type UpdatedTermSnapshot = Terminology;
 
 interface TermsImportResult {
+  revertOperationId: string;
   addedCount: number;
   updatedCount: number;
   addedTermIds: string[];
   updatedTermsSnapshot: UpdatedTermSnapshot[];
 }
 
-const buildUpdatedTermSnapshot = (existingTerm: Terminology): UpdatedTermSnapshot => ({
-  id: existingTerm.id,
-  name: existingTerm.name,
-  translation: existingTerm.translation.translation,
-  ...(existingTerm.description !== undefined ? { description: existingTerm.description } : {}),
-});
-
-// 执行导入：名称相同的更新，否则新增。返回新增/更新计数与撤销所需的快照
+// 整次导入保留文件的语言归属，并按稳定身份做差异写入。
 const executeTermsImport = async (
   bookId: string,
   importedTerminologies: Terminology[],
-  existingTerms: Terminology[] | undefined,
 ): Promise<TermsImportResult> => {
-  let addedCount = 0;
-  let updatedCount = 0;
-  const addedTermIds: string[] = [];
-  const updatedTermsSnapshot: UpdatedTermSnapshot[] = [];
-
-  for (const importedTerm of importedTerminologies) {
-    const existingTerm = existingTerms?.find((t) => t.name === importedTerm.name);
-    if (existingTerm) {
-      updatedTermsSnapshot.push(buildUpdatedTermSnapshot(existingTerm));
-      await TerminologyService.updateTerminology(bookId, existingTerm.id, {
-        translation: importedTerm.translation.translation,
-        ...(importedTerm.description !== undefined
-          ? { description: importedTerm.description }
-          : {}),
-      });
-      updatedCount++;
-    } else {
-      const newTerm = await TerminologyService.addTerminology(bookId, {
-        name: importedTerm.name,
-        translation: importedTerm.translation.translation,
-        ...(importedTerm.description !== undefined
-          ? { description: importedTerm.description }
-          : {}),
-      });
-      addedTermIds.push(newTerm.id);
-      addedCount++;
-    }
-  }
-
-  return { addedCount, updatedCount, addedTermIds, updatedTermsSnapshot };
+  const result = await BookService.importEntities(bookId, 'term', importedTerminologies);
+  await useBooksStore().refreshBookFromStorage(bookId);
+  return {
+    addedCount: result.addedIds.length,
+    updatedCount: result.updatedBefore.length,
+    addedTermIds: result.addedIds,
+    updatedTermsSnapshot: result.updatedBefore,
+    revertOperationId: v4(),
+  };
 };
 
 // 撤销导入：删除新增条目，恢复被更新条目的快照字段
 const revertTermsImport = async (bookId: string, result: TermsImportResult): Promise<void> => {
   for (const id of result.addedTermIds) {
-    await TerminologyService.deleteTerminology(bookId, id);
+    const book = useBooksStore().getBookById(bookId);
+    if (!book) throw new Error('BOOK_MISSING');
+    if (book.terminologies?.some((item) => item.id === id))
+      await TerminologyService.deleteTerminology(bookId, id);
   }
   for (const snapshot of result.updatedTermsSnapshot) {
-    await TerminologyService.updateTerminology(bookId, snapshot.id, {
-      name: snapshot.name,
-      translation: snapshot.translation,
-      ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
-    });
+    await useBooksStore().restoreEntity(
+      bookId,
+      'term',
+      snapshot,
+      `${result.revertOperationId}:${snapshot.id}`,
+    );
   }
 };
 
@@ -558,8 +555,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     if (importedTerminologies.length === 0) {
       toast.add({
         severity: 'warn',
-        summary: '导入失败',
-        detail: '文件中没有有效的术语数据',
+        summary: t('panelUi.importFailed'),
+        detail: t('panelUi.noImportTerms'),
         life: 3000,
       });
       return;
@@ -568,26 +565,26 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     if (!props.book) {
       toast.add({
         severity: 'error',
-        summary: '导入失败',
-        detail: '没有选择书籍',
+        summary: t('panelUi.importFailed'),
+        detail: t('panelUi.noBook'),
         life: 3000,
       });
       return;
     }
 
-    const result = await executeTermsImport(
-      props.book.id,
-      importedTerminologies,
-      props.book.terminologies,
-    );
+    const result = await executeTermsImport(props.book.id, importedTerminologies);
 
     // 与 CharacterSettingPanel 的导入成功 toast 结构高度相似（onRevert 前序步骤一致），
     // 但后续恢复更新逻辑各自维护不同字段集合，强行抽公共回调反而更复杂，保留两处实现。
     toast.add({
       severity: 'success',
-      summary: '导入成功',
+      summary: t('panelUi.imported'),
       // fallow-ignore-next-line code-duplication
-      detail: `已导入 ${importedTerminologies.length} 个术语（新增 ${result.addedCount} 个，更新 ${result.updatedCount} 个）`,
+      detail: t('panelUi.importedTerms', {
+        count: importedTerminologies.length,
+        added: result.addedCount,
+        updated: result.updatedCount,
+      }),
       life: 3000,
       onRevert: async () => {
         if (!props.book) return;
@@ -600,8 +597,12 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '导入失败',
-      detail: error instanceof Error ? error.message : '导入术语时发生未知错误',
+      summary: t('panelUi.importFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'panelUi.unknownTermImport',
+      ),
       life: 5000,
     });
   }
@@ -612,10 +613,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   <div class="terminology-panel h-full flex flex-col">
     <!-- 标题区域 -->
     <div class="panel-header border-b border-white/10">
-      <h1 class="panel-title font-semibold text-moon-100">术语设置</h1>
-      <p class="panel-desc text-sm text-moon/70">
-        管理小说中的术语及其翻译，这些术语会在翻译过程中被优先使用
-      </p>
+      <h1 class="panel-title font-semibold text-moon-100">{{ t('panelUi.termTitle') }}</h1>
+      <p class="panel-desc text-sm text-moon/70">{{ t('panelUi.termDescription') }}</p>
     </div>
 
     <!-- 操作栏 -->
@@ -625,7 +624,9 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     >
       <!-- 移动端紧凑操作栏 -->
       <div class="toolbar-mobile-compact">
-        <span class="text-sm text-moon/60">{{ terminologies.length }} 条术语</span>
+        <span class="text-sm text-moon/60">{{
+          t('panelUi.termCount', { count: terminologies.length })
+        }}</span>
         <Button
           :icon="toolbarExpandIcon"
           size="small"
@@ -654,7 +655,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
           </InputGroupAddon>
           <InputText
             v-model="searchQuery"
-            placeholder="搜索术语名称、翻译或描述..."
+            :placeholder="t('panelUi.termSearch')"
             class="search-input"
           />
           <InputGroupAddon v-if="searchQuery" class="input-action-addon">
@@ -662,7 +663,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
               icon="pi pi-times"
               class="p-button-text p-button-sm input-action-button"
               @click="searchQuery = ''"
-              title="清除搜索"
+              :title="t('panelUi.clearSearch')"
             />
           </InputGroupAddon>
         </InputGroup>
@@ -672,14 +673,14 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
           <!-- 批量模式下的按钮 -->
           <template v-if="bulkActionMode">
             <Button
-              label="删除"
+              :label="t('panelUi.delete')"
               icon="pi pi-trash"
               class="p-button-danger flex-shrink-0"
               :disabled="selectedTermIds.size === 0"
               @click="handleBulkDelete"
             />
             <Button
-              label="取消"
+              :label="t('panelUi.cancel')"
               icon="pi pi-times"
               class="p-button-text flex-shrink-0"
               @click="toggleBulkActionMode"
@@ -688,14 +689,14 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
           <!-- 普通模式下的按钮 -->
           <template v-else>
             <Button
-              label="批量"
+              :label="t('panelUi.batch')"
               icon="pi pi-check-square"
               size="small"
               class="p-button-outlined flex-shrink-0"
               @click="toggleBulkActionMode"
             />
             <Button
-              label="导出"
+              :label="t('panelUi.export')"
               icon="pi pi-upload"
               size="small"
               class="p-button-outlined flex-shrink-0"
@@ -703,14 +704,14 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
               @click="handleExport"
             />
             <Button
-              label="导入"
+              :label="t('panelUi.import')"
               icon="pi pi-download"
               size="small"
               class="p-button-outlined flex-shrink-0"
               @click="handleImport"
             />
             <Button
-              label="添加术语"
+              :label="t('panelUi.addTerm')"
               icon="pi pi-plus"
               size="small"
               class="p-button-primary flex-shrink-0"
@@ -722,10 +723,18 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       <AppMessage
         severity="info"
         class="panel-message toolbar-expandable"
-        message="翻译和描述字段留空时，AI 会在翻译过程中自动填充。AI 也会根据需要自动创建、更新或删除术语以优化翻译质量。"
+        :message="t('panelUi.termAiHint')"
         :closable="false"
       />
     </div>
+
+    <AppMessage
+      v-if="hasNameConflicts"
+      severity="warn"
+      :message="t('books.nameConflict')"
+      :closable="false"
+      class="m-4"
+    />
 
     <!-- 内容区域 -->
     <div class="flex-1 p-6 min-h-0">
@@ -746,7 +755,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
             <p class="text-moon/70">{{ emptyStateText }}</p>
             <Button
               v-if="!searchQuery"
-              label="添加第一个术语"
+              :label="t('panelUi.firstTerm')"
               icon="pi pi-plus"
               class="p-button-primary mt-4"
               @click="openAddDialog"
@@ -779,6 +788,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
 
     <!-- 添加术语对话框 -->
     <TermEditDialog
+      :target-language="book?.targetLanguage ?? 'zh-CN'"
       v-model:visible="showAddDialog"
       mode="add"
       :loading="isSaving"
@@ -787,6 +797,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
 
     <!-- 编辑术语对话框 -->
     <TermEditDialog
+      :target-language="book?.targetLanguage ?? 'zh-CN'"
       v-model:visible="showEditDialog"
       mode="edit"
       :term="selectedTerminology"
@@ -795,35 +806,15 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     />
 
     <!-- 确认删除对话框 -->
-    <AdaptiveDialog
+    <EntityDeleteConfirmDialog
       v-model:visible="showDeleteConfirm"
-      header="确认删除术语"
-      desktop-width="25rem"
-      eyebrow="DELETE"
-      sheet-min-height="auto"
-    >
-      <div class="space-y-4">
-        <p class="text-moon/90">
-          确定要删除术语 <strong>"{{ deletingTerminology?.name }}"</strong> 吗？
-        </p>
-        <p class="text-sm text-moon/70">此操作无法撤销。</p>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isDeleting"
-          @click="showDeleteConfirm = false"
-        />
-        <Button
-          label="删除"
-          class="p-button-danger"
-          :loading="isDeleting"
-          :disabled="isDeleting"
-          @click="confirmDeleteTerm"
-        />
-      </template>
-    </AdaptiveDialog>
+      :name="deletingTerminology?.name ?? null"
+      :loading="isDeleting"
+      header-key="structureUi.confirmDeleteTerm"
+      question-key="structureUi.deleteTermQuestion"
+      warning-key="structureUi.cannotUndo"
+      @confirm="confirmDeleteTerm"
+    />
 
     <!-- 保留 ConfirmDialog 用于其他可能的确认操作 -->
     <ConfirmDialog group="terminology" />

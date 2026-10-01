@@ -113,6 +113,29 @@ describe('来源快照与显式提取步骤', () => {
     expect(await (await getDB()).count('books')).toBe(0);
   });
 
+  it('站点检查生成的下一页名称使用本次执行的界面语言，而不是任务检查点的旧语言', async () => {
+    const task = await ImportRepository.createTask();
+    const url = 'https://kakuyomu.jp/works/777';
+    const source = await ImportSourceService.registerUrl(task.id, url);
+    const adapter = NovelScraperFactory.getScraper(url)!;
+    spyOn(adapter, 'fetchPageSnapshot').mockResolvedValue({
+      html: '<main></main>',
+      requestUrl: url,
+      transportUrl: url,
+      status: 200,
+      contentType: 'text/html',
+    });
+    spyOn(adapter, 'parseNovelSnapshot').mockReturnValue({
+      info: { title: 'T', chapters: [] },
+      nextPageUrls: ['https://kakuyomu.jp/works/777?page=2'],
+    } as unknown as ReturnType<typeof adapter.parseNovelSnapshot>);
+
+    const result = await service.prepareInspection(task.id, source.id, { uiLocale: 'en-US' });
+
+    expect(result.result.discoveries?.map((item) => item.name)).toContain('Next page');
+    expect(result.result.discoveries?.map((item) => item.name)).not.toContain('下一页');
+  });
+
   it('URL 只读取指定资源，发现链接返回引用而不自动登记和跟页', async () => {
     const task = await ImportRepository.createTask();
     const source = await ImportSourceService.registerUrl(task.id, 'https://example.com/book');

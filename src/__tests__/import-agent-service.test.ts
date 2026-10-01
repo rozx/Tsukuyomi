@@ -1,3 +1,4 @@
+import { importError } from '../services/import/import-error';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { File } from 'node:buffer';
@@ -8,7 +9,9 @@ import { AIServiceFactory } from '../services/ai/ai-service-factory';
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { AIServiceConfig, TextGenerationRequest } from '../services/ai/types/ai-service';
 import { deferred, webLocksFixture } from './web-locks-fixture';
-import { getDB } from '../utils/indexed-db';
+import { getDB, __resetDbPromiseForTesting } from '../utils/indexed-db';
+import { createPinia, setActivePinia } from 'pinia';
+import { useSettingsStore } from '../stores/settings';
 import { ImportToolExecutor } from '../services/import/import-tool-executor';
 import { ImportExtractionService } from '../services/import/import-extraction-service';
 import type { ImportRunContext } from '../models/import';
@@ -52,6 +55,50 @@ afterEach(() => {
 });
 
 describe('导入 Agent 执行生命周期', () => {
+  it('持久化失败记录和抛出反馈使用本次执行语言，运行中切设置不改归属', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().setUiLocale('en-US');
+    const task = await ImportRepository.createTask();
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
+      generateText: async () => {
+        await useSettingsStore().setUiLocale('zh-TW');
+        throw importError('EMPTY_CONTENT', 'emptyContentNoBodyTextWasExtractedAdjust');
+      },
+    } as never);
+    await expect(ImportAgentService.run(task.id, model)).rejects.toThrow('extracted');
+    const failed = (await ImportRepository.getTask(task.id))!;
+    expect(failed.lastError?.message).toContain('extracted');
+    expect(failed.lastError?.message).not.toMatch(/\p{Script=Han}/u);
+  });
+
+  it('启动失败使用当前 UI 语言并保留稳定错误前缀', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().setUiLocale('en-US');
+    const task = await ImportRepository.createTask();
+    await expect(ImportAgentService.run(task.id, { ...model, enabled: false })).rejects.toThrow(
+      'MODEL_UNAVAILABLE: Select an available assistant model first',
+    );
+  });
+  it('恢复中断通知使用检查点语言而非当前设置', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().setUiLocale('zh-TW');
+    const task = await ImportRepository.createTask();
+    await ImportRepository.mutateTask(task.id, (current) => {
+      current.state = 'running';
+      current.checkpoint = {
+        uiLocale: 'en-US',
+        messages: [],
+        remainingCalls: [],
+        completedCallIds: [],
+      };
+      return Promise.resolve();
+    });
+    await ImportAgentService.recover(task.id);
+    const recovered = (await ImportRepository.getTask(task.id))!;
+    expect(recovered.lastError?.code).toBe('INTERRUPTED');
+    expect(recovered.lastError?.message).toContain('previous execution was interrupted');
+    expect(recovered.state).toBe('paused');
+  });
   it('一个批次调用处理多个章节，进行中的已保存进度通知工作台且不会逐章请求模型', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
     const task = await ImportRepository.createTask();
@@ -408,6 +455,57 @@ describe('导入 Agent 执行生命周期', () => {
     expect(inspect).toHaveBeenCalledTimes(2);
     expect(await results()).toHaveLength(1);
     expect(requests).toBe(2);
+  });
+
+  it('检查点只持久化启动 UI 语言，关闭数据库并切设置后恢复仍按原语言回复', async () => {
+    setActivePinia(createPinia());
+    const settings = useSettingsStore();
+    await settings.setUiLocale('en-US');
+    const task = await ImportRepository.createTask();
+    const languagesAtRequest: unknown[] = [];
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
+      generateText: async (_config: AIServiceConfig, request: TextGenerationRequest) => {
+        const checkpoint = (await ImportRepository.getTask(task.id))!.checkpoint!;
+        languagesAtRequest.push(checkpoint.uiLocale);
+        // 工具说明与规则为简中单源；恢复后仍按检查点的英文要求回复语言
+        const previewTool = request.tools!.find((tool) => tool.function.name === 'preview_import')!;
+        expect(previewTool.function.description).toMatch(/[\p{Script=Han}]/u);
+        const system = request.messages!.find((message) => message.role === 'system')!
+          .content as string;
+        expect(system).toContain('说明与交互使用英文');
+        expect(system).not.toContain('月詠');
+        const latestUser = request.messages!.findLast((message) => message.role === 'user')!
+          .content as string;
+        if (languagesAtRequest.length === 2) expect(latestUser).toContain('Continue organizing');
+        expect(checkpoint).not.toHaveProperty('targetLanguage');
+        await settings.setUiLocale('zh-TW');
+        return { text: 'Waiting for more input' };
+      },
+    } as never);
+    await ImportAgentService.run(task.id, model, 'Inspect');
+    await __resetDbPromiseForTesting();
+    setActivePinia(createPinia());
+    await useSettingsStore().loadSettings();
+    expect(useSettingsStore().uiLocale).toBe('zh-TW');
+    await ImportAgentService.recover(task.id);
+    await ImportAgentService.run(task.id, model);
+    expect(languagesAtRequest).toEqual(['en-US', 'en-US']);
+    expect((await ImportRepository.getTask(task.id))!.checkpoint!.uiLocale).toBe('en-US');
+  });
+
+  it('旧检查点缺失语言时按简中恢复，不使用当前英文 UI', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().setUiLocale('en-US');
+    const task = await ImportRepository.createTask();
+    await ImportRepository.mutateTask(task.id, (value) => {
+      value.checkpoint = { messages: [], remainingCalls: [], completedCallIds: [] };
+      return Promise.resolve();
+    });
+    vi.spyOn(AIServiceFactory, 'getService').mockReturnValue({
+      generateText: () => Promise.resolve({ text: 'Done' }),
+    } as never);
+    await ImportAgentService.run(task.id, model);
+    expect((await ImportRepository.getTask(task.id))!.checkpoint!.uiLocale).toBe('zh-CN');
   });
 
   it('模型服务返回整页 HTML 错误时只保存简短说明，不把网页写入任务或界面', async () => {

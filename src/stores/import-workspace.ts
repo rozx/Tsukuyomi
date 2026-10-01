@@ -1,3 +1,6 @@
+import { useSettingsStore } from 'src/stores/settings';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 import { defineStore, acceptHMRUpdate } from 'pinia';
 import { computed, ref, shallowRef } from 'vue';
 import type {
@@ -30,6 +33,7 @@ import {
 } from 'src/services/import/import-storage-status';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { conciseErrorText } from 'src/services/import/import-error-text';
+import { importErrorText } from 'src/services/import/import-error';
 import {
   importSuccess,
   importFailure,
@@ -46,9 +50,12 @@ const MAX_EVENTS = 5000;
 const CHANNEL = 'tsukuyomi:import-tasks';
 const ACTIVE_STATES = new Set<ImportTask['state']>(['running', 'pausing']);
 
-function message(error: unknown): string {
-  return conciseErrorText(error instanceof Error ? error.message : String(error));
+/** 自有错误按当前界面语言显示（保留 CODE: 前缀供判断）；外部诊断保持原文。 */
+function message(error: unknown, locale: AppLocale): string {
+  return conciseErrorText(importErrorText(error, locale), locale);
 }
+
+const uiLocale = (): AppLocale => useSettingsStore().uiLocale;
 
 async function allSources(taskId: string): Promise<ImportSource[]> {
   const items: ImportSource[] = [];
@@ -113,7 +120,11 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
 
   function publishFeedback(value: ImportFeedback | undefined, name?: string): void {
     if (!value) return;
-    feedback.value = { ...value, detail: [name, value.detail].filter(Boolean).join('：') };
+    const detail =
+      name && value.detail
+        ? translateText(uiLocale(), 'importUi.action.labeled', { label: name, value: value.detail })
+        : name || value.detail || '';
+    feedback.value = { ...value, detail };
   }
 
   function reportFailure(
@@ -122,9 +133,10 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     taskId?: string,
     name = taskId ? taskName(taskId) : undefined,
   ): void {
-    const detail = message(failure);
+    const locale = uiLocale();
+    const detail = message(failure, locale);
     if (!taskId || selectedTaskId.value === taskId) setError(detail, action);
-    publishFeedback(importFailure(action, detail), name);
+    publishFeedback(importFailure(action, detail, locale), name);
   }
 
   function setError(text: string | null, action: string | null = null): void {
@@ -272,14 +284,15 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     label: ImportAction,
     taskId: string,
     work: () => Promise<T>,
-    success: (value: T) => ImportFeedback | undefined = () => importSuccess(label),
+    success: (value: T, locale: AppLocale) => ImportFeedback | undefined = (_value, locale) =>
+      importSuccess(label, locale),
   ) {
     const name = taskName(taskId);
     pendingAction.value = label;
     setError(null);
     try {
       const result = await work();
-      publishFeedback(success(result), name);
+      publishFeedback(success(result, uiLocale()), name);
       return result;
     } catch (failure) {
       reportFailure(label, failure, taskId, name);
@@ -291,17 +304,20 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   }
 
   function selectedOrThrow(): string {
-    if (!selectedTaskId.value) throw new Error('TASK_NOT_SELECTED: 请先选择导入任务');
+    if (!selectedTaskId.value)
+      throw new Error(
+        `TASK_NOT_SELECTED: ${translateText(uiLocale(), 'importUi.feedback.taskNotSelected')}`,
+      );
     return selectedTaskId.value;
   }
 
   async function createTask(name?: string): Promise<ImportTask | undefined> {
     try {
-      const created = await ImportRepository.createTask(name);
+      const created = await ImportRepository.createTask(name, useSettingsStore().uiLocale);
       upsertTask(created, created.id);
       channel?.postMessage({ taskId: created.id });
       setError(null);
-      publishFeedback(importSuccess('create'), created.name);
+      publishFeedback(importSuccess('create', uiLocale()), created.name);
       return created;
     } catch (failure) {
       reportFailure('create', failure, undefined, name);
@@ -330,7 +346,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     upsertTask(undefined, taskId);
     channel?.postMessage({ taskId });
     if (selectedTaskId.value === taskId) await selectTask(null);
-    publishFeedback(importSuccess('delete'), name);
+    publishFeedback(importSuccess('delete', uiLocale()), name);
     return true;
   }
 
@@ -341,7 +357,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   async function send(text: string, model: AIModel | undefined = defaultModel()): Promise<void> {
     const taskId = selectedOrThrow();
     if (!model) {
-      reportFailure('run', '未配置助手模型：请先在「AI 模型」中为助手指定默认模型。', taskId);
+      reportFailure('run', translateText(uiLocale(), 'importUi.feedback.noModel'), taskId);
       return;
     }
     await act(
@@ -365,7 +381,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
   async function compact(model: AIModel | undefined = defaultModel()): Promise<void> {
     const taskId = selectedOrThrow();
     if (!model) {
-      reportFailure('compact', '未配置助手模型：请先在「AI 模型」中为助手指定默认模型。', taskId);
+      reportFailure('compact', translateText(uiLocale(), 'importUi.feedback.noModel'), taskId);
       return;
     }
     await act('compact', taskId, () => ImportAgentService.compact(taskId, model));
@@ -427,7 +443,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
           },
           { actor: 'user' },
         ),
-      () => importDraftRemovalFeedback(removal),
+      (_value, locale) => importDraftRemovalFeedback(removal, locale),
     );
     return result !== undefined;
   }
@@ -446,7 +462,8 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
           question.scopeRevision,
           candidateId,
         ),
-      () => (candidateId === null ? undefined : importSuccess('choose-novel')),
+      (_value, locale) =>
+        candidateId === null ? undefined : importSuccess('choose-novel', locale),
     );
     if (result !== undefined && candidateId !== null) await continueAfterAnswer(current.id);
   }
@@ -548,14 +565,26 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     );
 
   /** 仅由用户在确认对话框中点击确认后调用；确认只授权当前方案。 */
-  async function applyPlan(): Promise<ImportOperation | undefined> {
+  async function applyPlan(confirmation?: {
+    planId: string;
+    targetLanguage: AppLocale;
+  }): Promise<ImportOperation | undefined> {
     const current = task.value;
     const currentPlan = plan.value;
     if (!current || !currentPlan) return undefined;
     return act(
       'apply',
       current.id,
-      async () => application.apply(await application.confirmApply(current.id, currentPlan.id)),
+      async () => {
+        if (confirmation && confirmation.planId !== currentPlan.id) {
+          throw new Error(
+            `PLAN_STALE: ${translateText(useSettingsStore().uiLocale, 'import.planChanged')}`,
+          );
+        }
+        return application.apply(
+          await application.confirmApply(current.id, currentPlan.id, confirmation?.targetLanguage),
+        );
+      },
       importApplicationFeedback,
     );
   }

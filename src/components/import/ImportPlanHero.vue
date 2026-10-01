@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /** 方案页头部：目标、整体状态与说明，以及生成与确认导入的操作。 */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import type { ImportPlan } from 'src/models/import';
@@ -11,6 +13,7 @@ import { formatTime } from './import-labels';
 const props = defineProps<{ plan: ImportPlan | null; status: ImportPlanStatus }>();
 const emit = defineEmits<{ preview: []; apply: []; openBook: [] }>();
 const store = useImportWorkspaceStore();
+const { t, locale } = useI18n();
 
 const ICONS: Record<ImportPlanStatus['kind'], string> = {
   none: 'pi-list-check',
@@ -22,15 +25,25 @@ const ICONS: Record<ImportPlanStatus['kind'], string> = {
 };
 
 const title = computed(() => {
-  if (!props.plan) return '还没有导入方案';
-  const name = props.plan.book.title || '（未命名）';
-  return props.plan.targetKind === 'new' ? `新建《${name}》` : `更新《${name}》`;
+  if (!props.plan) return t('importUi.planHero.noPlan');
+  const title = props.plan.book.title || t('importUi.common.untitled');
+  return t(
+    props.plan.targetKind === 'new' ? 'importUi.common.newBook' : 'importUi.common.updateBook',
+    { title },
+  );
 });
 const meta = computed(() => {
   const plan = props.plan;
-  if (!plan) return '方案只计算实际变化，生成后不会写入书库。';
-  const target = plan.targetKind === 'new' ? '书库中新建小说' : '更新书库中已有的小说';
-  return `${target} · 生成于 ${formatTime(plan.createdAt)} · 草稿版本 ${plan.draftRevision}`;
+  if (!plan) return t('importUi.planHero.noPlanMeta');
+  return t('importUi.planHero.meta', {
+    target: t(
+      plan.targetKind === 'new'
+        ? 'importUi.planHero.targetNew'
+        : 'importUi.planHero.targetExisting',
+    ),
+    time: formatTime(plan.createdAt, resolveAppLocale(locale.value)),
+    revision: plan.draftRevision,
+  });
 });
 const showApply = computed(() => Boolean(props.plan) && props.status.kind !== 'applied');
 </script>
@@ -43,7 +56,7 @@ const showApply = computed(() => Boolean(props.plan) && props.status.kind !== 'a
       </div>
       <div class="iph-text">
         <div class="iph-eyebrow">
-          <span>导入方案</span>
+          <span>{{ t('importUi.planHero.eyebrow') }}</span>
           <Tag :value="status.label" :severity="status.severity" />
         </div>
         <h2 class="iph-title">{{ title }}</h2>
@@ -57,14 +70,14 @@ const showApply = computed(() => Boolean(props.plan) && props.status.kind !== 'a
       <Button
         v-if="status.kind === 'applied'"
         icon="pi pi-book"
-        label="打开小说"
+        :label="t('importUi.planHero.openBook')"
         size="small"
         outlined
         @click="emit('openBook')"
       />
       <Button
         :icon="plan ? 'pi pi-refresh' : 'pi pi-list-check'"
-        :label="plan ? '重新生成' : '生成导入方案'"
+        :label="t(plan ? 'importUi.planHero.regenerate' : 'importUi.planHero.generate')"
         size="small"
         :outlined="Boolean(plan)"
         :disabled="!status.canPreview"
@@ -74,7 +87,7 @@ const showApply = computed(() => Boolean(props.plan) && props.status.kind !== 'a
       <Button
         v-if="showApply"
         icon="pi pi-check"
-        label="确认导入"
+        :label="t('importUi.planHero.apply')"
         size="small"
         severity="success"
         :disabled="!status.canApply || store.pendingAction === 'apply'"

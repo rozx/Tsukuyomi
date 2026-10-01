@@ -4,6 +4,16 @@
  */
 import { groupChunkFiles } from 'src/services/gist-sync-service';
 import { formatFileSize as formatFileSizeBase } from 'src/utils/format';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
+
+type RevisionText = (key: string, values?: Record<string, string | number>) => string;
+
+const revisionText =
+  (locale: AppLocale): RevisionText =>
+  (key, values) =>
+    translateText(locale, `syncUi.revision.${key}` as MessageKey, values);
 
 // 格式化文件大小（复用 utils/format 的共享实现，此处保留 1 位小数）
 export const formatFileSize = (bytes: number): string => formatFileSizeBase(bytes, 1);
@@ -43,47 +53,53 @@ const extractMemoriesBookIdFromChunkFilename = (filename: string): string | null
   return match && match[1] ? match[1] : null;
 };
 
-const GLOBAL_FILE_DISPLAY: Record<string, { displayName: string; icon: string }> = {
-  'tsukuyomi-settings.json': { displayName: '应用设置', icon: 'pi pi-cog' },
-  'manifest.json': { displayName: '同步清单', icon: 'pi pi-list' },
-  'ai-models.json': { displayName: 'AI 模型配置', icon: 'pi pi-microchip-ai' },
-  'cover-history.json': { displayName: '封面历史', icon: 'pi pi-images' },
+const GLOBAL_FILE_DISPLAY: Record<string, { key: string; icon: string }> = {
+  'tsukuyomi-settings.json': { key: 'settingsFile', icon: 'pi pi-cog' },
+  'manifest.json': { key: 'manifestFile', icon: 'pi pi-list' },
+  'ai-models.json': { key: 'aiModelsFile', icon: 'pi pi-microchip-ai' },
+  'cover-history.json': { key: 'coverHistoryFile', icon: 'pi pi-images' },
 };
 
 const findNovelFileDisplay = (
   filename: string,
   novels: Array<{ id: string; title?: string }>,
+  t: RevisionText,
 ): { displayName: string; icon: string } | null => {
   const novelId = extractNovelIdFromFilename(filename);
   if (!novelId) return null;
   const novel = novels.find((b) => b.id === novelId);
   return novel
     ? { displayName: novel.title || filename, icon: 'pi pi-book' }
-    : { displayName: `[已删除] ${filename}`, icon: 'pi pi-trash' };
+    : { displayName: t('deletedFile', { name: filename }), icon: 'pi pi-trash' };
 };
 
 const findMemoriesFileDisplay = (
   filename: string,
   novels: Array<{ id: string; title?: string }>,
+  t: RevisionText,
 ): { displayName: string; icon: string } | null => {
   const memoriesBookId =
     extractMemoriesBookIdFromFilename(filename) || extractMemoriesBookIdFromChunkFilename(filename);
   if (!memoriesBookId) return null;
   const novel = novels.find((b) => b.id === memoriesBookId);
   return novel
-    ? { displayName: `[记忆] ${novel.title || memoriesBookId}`, icon: 'pi pi-bookmark' }
-    : { displayName: `[记忆-已删除] ${filename}`, icon: 'pi pi-trash' };
+    ? {
+        displayName: t('memories', { title: novel.title || memoriesBookId }),
+        icon: 'pi pi-bookmark',
+      }
+    : { displayName: t('memoriesDeleted', { name: filename }), icon: 'pi pi-trash' };
 };
 
 const getFileDisplayInfo = (
   filename: string,
   novels: Array<{ id: string; title?: string }>,
+  t: RevisionText,
 ): { displayName: string; icon: string } => {
   const global = GLOBAL_FILE_DISPLAY[filename];
-  if (global) return global;
+  if (global) return { displayName: t(global.key), icon: global.icon };
   return (
-    findNovelFileDisplay(filename, novels) ||
-    findMemoriesFileDisplay(filename, novels) || { displayName: filename, icon: 'pi pi-file' }
+    findNovelFileDisplay(filename, novels, t) ||
+    findMemoriesFileDisplay(filename, novels, t) || { displayName: filename, icon: 'pi pi-file' }
   );
 };
 
@@ -166,13 +182,15 @@ export const getGroupedFiles = (
     sizeDiff?: number;
   }>,
   novels: Array<{ id: string; title?: string }>,
+  locale: AppLocale = 'zh-CN',
 ): GroupedRevisionFile[] => {
+  const t = revisionText(locale);
   const filteredFiles = files.filter((file) => !isMetaFile(file.filename));
   const afterNovelGrouping = groupChunkFiles(filteredFiles);
   const grouped = groupMemoriesChunks(afterNovelGrouping);
 
   const filesWithDisplayInfo = grouped.map((file) => {
-    const displayInfo = getFileDisplayInfo(file.filename, novels);
+    const displayInfo = getFileDisplayInfo(file.filename, novels, t);
     return {
       ...file,
       displayName: displayInfo.displayName,
@@ -184,6 +202,6 @@ export const getGroupedFiles = (
     const priA = fileSortPriority(a.filename);
     const priB = fileSortPriority(b.filename);
     if (priA !== priB) return priA - priB;
-    return a.displayName.localeCompare(b.displayName, 'zh-CN');
+    return a.displayName.localeCompare(b.displayName, locale);
   });
 };

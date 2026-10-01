@@ -4,16 +4,19 @@
  * 未变化的段落只计数不展示，避免长章节淹没真正的变化。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { MessageKey } from 'src/i18n/types';
 import type { ImportParagraphChange } from 'src/models/import';
 
 const props = defineProps<{ changes: ImportParagraphChange[] }>();
+const { t } = useI18n();
 
-const KIND_LABEL: Record<ImportParagraphChange['kind'], string> = {
-  revise: '修订',
-  insert: '新增',
-  remove: '移除',
-  move: '移动',
-  retain: '未变化',
+const KIND_LABEL: Record<ImportParagraphChange['kind'], MessageKey> = {
+  revise: 'bookUi.sync.kindRevise',
+  insert: 'bookUi.sync.kindInsert',
+  remove: 'bookUi.sync.kindRemove',
+  move: 'bookUi.sync.kindMove',
+  retain: 'bookUi.sync.kindRetain',
 };
 
 const shown = computed(() => props.changes.filter((change) => change.kind !== 'retain'));
@@ -22,7 +25,7 @@ const retained = computed(() => props.changes.length - shown.value.length);
 
 <template>
   <div class="pdv">
-    <p v-if="shown.length === 0" class="pdv-empty">段落结构没有变化</p>
+    <p v-if="shown.length === 0" class="pdv-empty">{{ t('bookUi.sync.noStructureChange') }}</p>
     <ol v-else class="pdv-list">
       <li
         v-for="change in shown"
@@ -32,10 +35,10 @@ const retained = computed(() => props.changes.length - shown.value.length);
       >
         <div class="pdv-head">
           <span class="pdv-kind" :class="`pdv-kind--${change.kind}`">
-            {{ KIND_LABEL[change.kind] }}
+            {{ t(KIND_LABEL[change.kind]) }}
           </span>
           <span v-if="change.clearedVersions > 0" class="pdv-loss">
-            清空 {{ change.clearedVersions }} 个译文版本
+            {{ t('bookUi.sync.clearVersions', { count: change.clearedVersions }) }}
           </span>
         </div>
         <p v-if="change.before && change.kind !== 'insert'" class="pdv-text pdv-text--before">
@@ -46,7 +49,9 @@ const retained = computed(() => props.changes.length - shown.value.length);
         </p>
       </li>
     </ol>
-    <p v-if="retained > 0" class="pdv-retained">其余 {{ retained }} 段未变化</p>
+    <p v-if="retained > 0" class="pdv-retained">
+      {{ t('bookUi.sync.retainedCount', { count: retained }) }}
+    </p>
   </div>
 </template>
 

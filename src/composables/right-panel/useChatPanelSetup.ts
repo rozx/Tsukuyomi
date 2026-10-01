@@ -17,15 +17,13 @@ export function useChatPanelSetup() {
   // 模板里通过 :ref 回调写入的三个 popover 引用。PrimeVue 实例类型复杂，
   // 这里保持和原始变体文件里一致的 unknown → 目标 ref 类型断言。
   const bindSessionListRef = (el: unknown) => {
-    panel.sessionListPopoverRef.value =
-      el as typeof panel.sessionListPopoverRef.value;
+    panel.sessionListPopoverRef.value = el as typeof panel.sessionListPopoverRef.value;
   };
   const bindActionPopoverRef = (el: unknown) => {
     panel.actionPopoverRef.value = el as typeof panel.actionPopoverRef.value;
   };
   const bindGroupedActionPopoverRef = (el: unknown) => {
-    panel.groupedActionPopoverRef.value =
-      el as typeof panel.groupedActionPopoverRef.value;
+    panel.groupedActionPopoverRef.value = el as typeof panel.groupedActionPopoverRef.value;
   };
 
   return {

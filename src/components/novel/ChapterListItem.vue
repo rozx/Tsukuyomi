@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import type { Chapter, Novel } from 'src/models/novel';
 import Button from 'primevue/button';
 import { getChapterDisplayTitle } from 'src/utils';
+
+const { t } = useI18n();
 
 // 卷章节列表中的单行章节：把多重 class 绑定、加载/拖拽/触屏按钮收敛到叶子组件。
 // 父级 VolumesList 通过函数把布尔状态算好传入，避免在父模板里写 === / && 表达式。
@@ -56,14 +60,9 @@ defineEmits<{
         v-if="isLoading"
         class="pi pi-spinner pi-spin loading-icon"
         role="status"
-        aria-label="章节加载中"
+        :aria-label="t('readerUi.chapterLoading')"
       />
-      <i
-        v-else-if="!touchMode"
-        class="pi pi-bars drag-handle"
-        aria-hidden="true"
-        @click.stop
-      />
+      <i v-else-if="!touchMode" class="pi pi-bars drag-handle" aria-hidden="true" @click.stop />
       <i class="pi pi-file chapter-icon"></i>
       <span class="chapter-title">{{ getChapterDisplayTitle(chapter, book || undefined) }}</span>
     </div>
@@ -77,7 +76,7 @@ defineEmits<{
         icon="pi pi-arrow-up"
         class="p-button-text p-button-sm p-button-rounded action-button"
         size="small"
-        title="上移"
+        :title="t('readerUi.moveUp')"
         :disabled="isMovingChapter || index === 0"
         @click="$emit('move', 'up')"
       />
@@ -86,7 +85,7 @@ defineEmits<{
         icon="pi pi-arrow-down"
         class="p-button-text p-button-sm p-button-rounded action-button"
         size="small"
-        title="下移"
+        :title="t('readerUi.moveDown')"
         :disabled="isMovingChapter || index === volumeChaptersCount - 1"
         @click="$emit('move', 'down')"
       />
@@ -94,14 +93,14 @@ defineEmits<{
         icon="pi pi-pencil"
         class="p-button-text p-button-sm p-button-rounded action-button"
         size="small"
-        title="编辑"
+        :title="t('readerUi.edit')"
         @click="$emit('edit')"
       />
       <Button
         icon="pi pi-trash"
         class="p-button-text p-button-sm p-button-rounded p-button-danger action-button"
         size="small"
-        title="删除"
+        :title="t('readerUi.delete')"
         @click="$emit('delete')"
       />
     </div>

@@ -35,9 +35,7 @@ export interface BuildChangedParagraphsExtractCallbackOptions {
  */
 export function buildChangedParagraphsExtractCallback(
   options: BuildChangedParagraphsExtractCallbackOptions,
-):
-  | ((params: ParagraphExtractCallbackParams) => Promise<void>)
-  | undefined {
+): ((params: ParagraphExtractCallbackParams) => Promise<void>) | undefined {
   const { onChangedParagraphs, logLabel, taskLabel } = options;
   if (!onChangedParagraphs) return undefined;
 
@@ -57,6 +55,7 @@ export function buildChangedParagraphsExtractCallback(
         await Promise.resolve(onChangedParagraphs(changedParagraphs));
       } catch (error) {
         console.error(`[${logLabel}] ⚠️ ${taskLabel}回调失败:`, error);
+        throw error;
       }
     }
   };

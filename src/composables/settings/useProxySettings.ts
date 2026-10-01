@@ -7,8 +7,10 @@
  */
 import { ref, computed, onMounted, watch, provide, inject, type InjectionKey } from 'vue';
 import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { DEFAULT_CORS_PROXY_FOR_AI, DEFAULT_PROXY_LIST } from 'src/constants/proxy';
+import { DEFAULT_CORS_PROXY_FOR_AI, DEFAULT_PROXY_LIST, displayProxy } from 'src/constants/proxy';
 import axios from 'axios';
 
 export type ProxySettingsContext = ReturnType<typeof createProxySettingsContext>;
@@ -18,8 +20,14 @@ const PROXY_SETTINGS_KEY: InjectionKey<ProxySettingsContext> = Symbol('proxy-set
 function createProxySettingsContext() {
   const settingsStore = useSettingsStore();
   const toast = useToastWithHistory();
+  // 在组件外（测试、服务）也可调用：按当前界面语言取文案，computed 中随语言切换更新
+  const t = (key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, key, values);
 
-  const proxyList = computed(() => settingsStore.proxyList);
+  // 显示用列表：内置代理未改动时按界面语言显示名称/说明
+  const proxyList = computed(() =>
+    settingsStore.proxyList.map((proxy) => displayProxy(proxy, settingsStore.uiLocale)),
+  );
   const selectedProxyId = ref<string | null>(null);
 
   const findProxyIdByUrl = (url: string): string | null => {
@@ -73,11 +81,15 @@ function createProxySettingsContext() {
 
   // 代理列表管理
   const showProxyDialog = ref(false);
-  const editingProxy = ref<{ id: string; name: string; url: string; description?: string } | null>(null);
+  const editingProxy = ref<{ id: string; name: string; url: string; description?: string } | null>(
+    null,
+  );
   const newProxyName = ref('');
   const newProxyUrl = ref('');
   const newProxyDescription = ref('');
-  const proxyDialogHeader = computed(() => (editingProxy.value ? '编辑代理' : '添加代理'));
+  const proxyDialogHeader = computed(() =>
+    editingProxy.value ? t('settingsUi.proxy.editProxy') : t('settingsUi.proxy.add'),
+  );
 
   const openAddProxyDialog = () => {
     editingProxy.value = null;
@@ -87,11 +99,18 @@ function createProxySettingsContext() {
     showProxyDialog.value = true;
   };
 
-  const openEditProxyDialog = (proxy: { id: string; name: string; url: string; description?: string }) => {
-    editingProxy.value = proxy;
-    newProxyName.value = proxy.name;
-    newProxyUrl.value = proxy.url;
-    newProxyDescription.value = proxy.description ?? '';
+  const openEditProxyDialog = (proxy: {
+    id: string;
+    name: string;
+    url: string;
+    description?: string;
+  }) => {
+    // 编辑以存储原文为准，避免把显示投影写回数据
+    const stored = settingsStore.proxyList.find((entry) => entry.id === proxy.id) ?? proxy;
+    editingProxy.value = stored;
+    newProxyName.value = stored.name;
+    newProxyUrl.value = stored.url;
+    newProxyDescription.value = stored.description ?? '';
     showProxyDialog.value = true;
   };
 
@@ -140,13 +159,19 @@ function createProxySettingsContext() {
     value: Array<{ id: string; name: string; url: string; description?: string }>;
   }) => {
     await settingsStore.reorderProxies(event.value);
-    toast.add({ severity: 'success', summary: '代理列表已排序', detail: '代理列表的顺序已更新', life: 2000 });
+    toast.add({
+      severity: 'success',
+      summary: t('settingsUi.proxy.sorted'),
+      detail: t('settingsUi.proxy.sortedDetail'),
+      life: 2000,
+    });
   };
 
   // 测试代理
   const testingProxies = ref<Set<string>>(new Set());
   const isTestingProxy = (id: string) => testingProxies.value.has(id);
-  const testProxyTitle = (id: string) => (testingProxies.value.has(id) ? '测试中...' : '测试代理');
+  const testProxyTitle = (id: string) =>
+    testingProxies.value.has(id) ? t('settingsUi.proxy.testing') : t('settingsUi.proxy.test');
 
   const testProxy = async (proxy: { id: string; name: string; url: string }) => {
     if (testingProxies.value.has(proxy.id)) {
@@ -158,13 +183,24 @@ function createProxySettingsContext() {
       const proxiedUrl = proxy.url.replace('{url}', encodeURIComponent(testUrl));
       const response = await axios.get(proxiedUrl, { timeout: 10000, validateStatus: () => true });
       if (response.status >= 200 && response.status < 400) {
-        toast.add({ severity: 'success', summary: '代理测试成功', detail: `${proxy.name} 测试通过`, life: 3000 });
+        toast.add({
+          severity: 'success',
+          summary: t('settingsUi.proxy.testSucceeded'),
+          detail: t('settingsUi.proxy.testSucceededDetail', { name: proxy.name }),
+          life: 3000,
+        });
       } else {
         throw new Error(`HTTP ${response.status}`);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '未知错误';
-      toast.add({ severity: 'error', summary: '代理测试失败', detail: `${proxy.name}: ${errorMessage}`, life: 5000 });
+      const errorMessage =
+        error instanceof Error ? error.message : t('settingsUi.common.unknownError');
+      toast.add({
+        severity: 'error',
+        summary: t('settingsUi.proxy.testFailed'),
+        detail: `${proxy.name}: ${errorMessage}`,
+        life: 5000,
+      });
     } finally {
       testingProxies.value.delete(proxy.id);
     }
@@ -184,7 +220,8 @@ function createProxySettingsContext() {
   const proxyEnabled = computed(() => settingsStore.proxyEnabled);
   const proxyUrl = computed(() => settingsStore.proxyUrl ?? '');
   // toggle 设置封装：吸收 Boolean(... ?? ...) 逻辑，保持模板零分支
-  const setProxyEnabled = (v: boolean | undefined) => settingsStore.setProxyEnabled(Boolean(v ?? false));
+  const setProxyEnabled = (v: boolean | undefined) =>
+    settingsStore.setProxyEnabled(Boolean(v ?? false));
 
   onMounted(async () => {
     if (!settingsStore.isLoaded) {

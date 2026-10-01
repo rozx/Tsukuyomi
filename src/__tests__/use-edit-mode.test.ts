@@ -1,3 +1,5 @@
+import { useSettingsStore } from '../stores/settings';
+import { createPinia, setActivePinia } from 'pinia';
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref, computed } from 'vue';
 import { useEditMode } from '../composables/book-details/useEditMode';
@@ -25,7 +27,6 @@ const mockBooksStoreUpdateBook = mock(() => Promise.resolve());
 const mockUseBooksStore = mock(() => ({
   updateBook: mockBooksStoreUpdateBook,
 }));
-
 
 // Helper functions
 function createTestParagraph(id: string, text: string): Paragraph {
@@ -71,6 +72,8 @@ function createTestNovel(chapters: Chapter[]): Novel {
 
 describe('useEditMode', () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
+    useSettingsStore().settings.uiLocale = 'zh-CN';
     mockToastAdd.mockClear();
     mockUpdateChapter.mockClear();
     mockBooksStoreUpdateBook.mockClear();

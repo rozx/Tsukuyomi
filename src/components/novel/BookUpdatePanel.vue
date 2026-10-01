@@ -4,19 +4,21 @@
  * 壳组件：panel-header 标题区 + 同步工作区。会话由 BookDetailsPage dispatcher 按路由提供，
  * 应用与撤销都经过同步服务的写入保护。与其他设置面板一样没有返回按钮，由侧栏切换。
  */
+import { useI18n } from 'vue-i18n';
 import BookSyncWorkspace from 'src/components/book-sync/BookSyncWorkspace.vue';
 
 // 桌面页用同一个动态组件切换各设置面板并统一传入 book；本面板的会话由页面提供，不需要它
 defineOptions({ inheritAttrs: false });
+const { t } = useI18n();
 </script>
 
 <template>
   <div class="book-update-panel h-full flex flex-col">
     <div class="panel-header border-b border-white/10">
       <div class="min-w-0">
-        <h1 class="panel-title font-semibold text-moon-100">检查更新</h1>
+        <h1 class="panel-title font-semibold text-moon-100">{{ t('bookUi.sync.updateTitle') }}</h1>
         <p class="panel-desc text-sm text-moon/70">
-          从来源网站检查新章节和原文修订，确认后才写入书籍
+          {{ t('bookUi.sync.updateDesc') }}
         </p>
       </div>
     </div>

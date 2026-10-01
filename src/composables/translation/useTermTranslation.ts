@@ -1,6 +1,10 @@
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { useSettingsStore } from 'src/stores/settings';
+import { useBooksStore } from 'src/stores/books';
+import { captureExecutionLanguages } from 'src/services/ai/tasks/utils/execution-languages';
 import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { TermTranslationService } from 'src/services/ai';
@@ -21,6 +25,7 @@ import { createAIProcessingStoreAdapter } from 'src/services/ai/tasks/utils/task
  * vs 直接展示）保持在各自组件里；本 composable 只处理“中间这一段”共享流程。
  */
 export function useTermTranslation() {
+  const { t } = useI18n();
   const aiModelsStore = useAIModelsStore();
   const aiProcessingStore = useAIProcessingStore();
   const contextStore = useContextStore();
@@ -44,7 +49,7 @@ export function useTermTranslation() {
       return lines.length > 0 ? lines[lines.length - 1] : task.thinkingMessage;
     }
 
-    return task.message || `${task.modelName} 正在处理...`;
+    return task.message || t('structureUi.modelProcessing', { model: task.modelName });
   });
 
   // 获取所有可用的术语翻译模型
@@ -76,8 +81,8 @@ export function useTermTranslation() {
     if (!selectedModel) {
       toast.add({
         severity: 'error',
-        summary: '翻译失败',
-        detail: '未找到可用的术语翻译模型，请在设置中配置',
+        summary: t('structureUi.translationFailed'),
+        detail: t('structureUi.noModel'),
         life: 3000,
       });
       translating.value = false;
@@ -87,9 +92,17 @@ export function useTermTranslation() {
     try {
       // 获取当前上下文
       const context = contextStore.getContext;
+      const uiLocale = useSettingsStore().uiLocale;
+      const languages = captureExecutionLanguages(
+        uiLocale,
+        context.currentBookId
+          ? (useBooksStore().getBookById(context.currentBookId)?.targetLanguage ?? 'zh-CN')
+          : uiLocale,
+      );
 
       // 构建选项对象，只在有值时才传递 bookId 和 chapterId
       const options: Parameters<typeof TermTranslationService.translate>[2] = {
+        languages,
         taskType: 'termsTranslation',
         aiProcessingStore: createAIProcessingStoreAdapter(aiProcessingStore),
       };

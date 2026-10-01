@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import type { TestResultItem, TestTarget } from './batch-query-types';
+const { t } = useI18n();
 
 defineProps<{
   results: TestResultItem[];
@@ -15,17 +18,24 @@ const emit = defineEmits<{
 <template>
   <div class="flex items-center justify-between text-xs text-moon/60">
     <span>
-      {{ targetLabel }}查询结果
+      {{ t('embeddingUi.queryResults', { target: targetLabel }) }}
       <span class="opacity-70">({{ results.length }})</span>
     </span>
-    <span class="opacity-70">点击条目{{ lastTarget === 'chapter' ? '跳转章节' : '查看详情' }}</span>
+    <span class="opacity-70">{{
+      t('embeddingUi.clickResult', {
+        action:
+          lastTarget === 'chapter'
+            ? t('embeddingUi.navigateChapter')
+            : t('embeddingUi.viewDetails'),
+      })
+    }}</span>
   </div>
 
   <div
     v-if="results.length === 0"
     class="text-sm text-moon/60 italic py-4 text-center border border-white/5 rounded"
   >
-    无匹配结果
+    {{ t('embeddingUi.noMatches') }}
   </div>
 
   <ul v-else class="flex flex-col gap-2 m-0 p-0 list-none min-w-0">
@@ -41,7 +51,11 @@ const emit = defineEmits<{
     >
       <div class="flex items-center justify-between gap-3 min-w-0">
         <span class="font-medium text-moon-100 truncate min-w-0 flex-1">
-          {{ idx + 1 }}. {{ item.title }}
+          {{ idx + 1 }}.
+          {{
+            item.title ||
+            t(item.kind === 'chapter' ? 'embeddingUi.noTitle' : 'embeddingUi.noSummary')
+          }}
         </span>
         <span class="font-mono text-xs text-primary-400 shrink-0">
           {{ item.score.toFixed(3) }}

@@ -1,3 +1,6 @@
+import type { AppLocale } from 'src/models/locale';
+import { agentText } from 'src/i18n/translate';
+import { getNameTranslation } from 'src/services/localization/selection';
 import type {
   Paragraph,
   CharacterSetting,
@@ -21,7 +24,9 @@ import {
 import { EmbeddingService } from 'src/services/embedding-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { type TaskType, MAX_DESC_LEN } from './task-types';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import { taskPromptLabel } from '../prompts/runner';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from './execution-languages';
 import { getPostToolCallReminder } from './todo-helper';
 import { getCurrentStatusInfo } from '../prompts/common';
 import { useBooksStore } from 'src/stores/books';
@@ -69,12 +74,9 @@ export function getHasPreviousParagraphs(
  * 构建维护提醒（用于每个文本块）- 精简版
  */
 export function buildMaintenanceReminder(taskType: TaskType): string {
-  const reminders = {
-    translation: `\n[提示] 空段落已过滤（无需输出/无需补回）。`,
-    proofreading: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
-    polish: `\n[提示] 空段落已过滤；只需返回有变化的段落（无变化可直接结束）。`,
-  };
-  return reminders[taskType];
+  return agentText(
+    taskType === 'translation' ? 'aiContext.maintenance' : 'aiContext.changedMaintenance',
+  );
 }
 
 /**
@@ -86,12 +88,14 @@ export function buildMaintenanceReminder(taskType: TaskType): string {
 export function buildChapterContextSection(chapterId?: string, chapterTitle?: string): string {
   const parts: string[] = [];
   if (chapterId) {
-    parts.push(`**当前章节 ID**: \`${chapterId}\``);
+    parts.push(agentText('aiContext.chapterId') + ': ' + chapterId);
   }
   if (chapterTitle) {
-    parts.push(`**当前章节标题**: ${chapterTitle}`);
+    parts.push(agentText('aiContext.chapterTitle') + ': ' + chapterTitle);
   }
-  return parts.length > 0 ? `\n\n【当前章节信息】\n${parts.join('\n')}\n` : '';
+  return parts.length > 0
+    ? '\n\n[' + agentText('aiContext.chapter') + ']\n' + parts.join('\n') + '\n'
+    : '';
 }
 
 /**
@@ -102,7 +106,15 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
  */
 export function buildPreviousChapterSection(title?: string): string {
   if (!title) return '';
-  return `\n\n【前文信息】\n**前一章节标题**: ${title}\n`;
+  return (
+    '\n\n[' +
+    agentText('aiContext.previous') +
+    ']\n' +
+    agentText('aiContext.previousTitle') +
+    ': ' +
+    title +
+    '\n'
+  );
 }
 
 /**
@@ -130,24 +142,32 @@ export function buildBookContextSectionFromBook(book: {
   // 简介可能很长，做一个保守截断（避免提示词过长）
   const normalizedDesc =
     description.length > MAX_DESC_LEN
-      ? `${description.slice(0, MAX_DESC_LEN)}...(已截断)`
+      ? description.slice(0, MAX_DESC_LEN) + agentText('aiContext.truncated')
       : description;
 
   const parts: string[] = [];
   if (title) {
-    parts.push(`**书名**: ${title}`);
+    parts.push(agentText('aiContext.title') + ': ' + title);
   }
   if (normalizedDesc) {
-    parts.push(`**简介**: ${normalizedDesc}`);
+    parts.push(agentText('aiContext.description') + ': ' + normalizedDesc);
   }
   if (tags.length > 0) {
-    parts.push(`**标签**: ${tags.join('、')}`);
+    parts.push(agentText('aiContext.tags') + ': ' + tags.join('、'));
   }
   if (skipAskUser) {
-    parts.push('**已开启跳过 AI 追问**: 是（禁止调用 `ask_user`）');
+    parts.push(agentText('aiContext.skipAsk'));
   }
 
-  return `\n\n【书籍信息】\n${parts.join('\n')}\n`;
+  return (
+    '\n\n' +
+    agentText('aiContext.heading', {
+      label: agentText('aiContext.book'),
+    }) +
+    '\n' +
+    parts.join('\n') +
+    '\n'
+  );
 }
 
 /**
@@ -215,22 +235,27 @@ export function isOriginalTextValidationEnabled(bookId?: string): boolean {
 /**
  * 构建输出内容后的后续操作提示 - 精简版
  */
-export function buildPostOutputPrompt(taskType: TaskType, taskId?: string): string {
-  const todosReminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
-
-  // 翻译相关任务：在 review 阶段额外提醒可回到 working 更新既有译文
-  const canGoBackToWorkingReminder =
-    taskType === 'translation' || taskType === 'polish' || taskType === 'proofreading'
-      ? '如果你想更新任何已输出的译文/润色/校对结果，请用 `update_task_status({"status":"working"})` 切回 working，并只提交需要更新的段落；'
-      : '';
-
-  return `完成。${todosReminder}${canGoBackToWorkingReminder}如需后续操作请调用工具，否则使用 \`update_task_status({"status":"end"})\` 结束。`;
+export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): string {
+  const reminder = taskId ? getPostToolCallReminder(undefined, taskId) : '';
+  return agentText('aiWorkflow.postOutput', { reminder });
 }
 
 /**
  * 遗留 LRU 实现:纯粹的"最近访问时间"兜底。
  * 保留作为新打分路径出错或无可用数据时的 fallback。
  */
+function formatMemoryContext(memories: Memory[]): string {
+  const lines = memories.map((memory) => `  - [${memory.id}] ${memory.summary}`);
+  return (
+    '\n\n' +
+    agentText('aiContext.heading', {
+      label: agentText('aiContext.memories'),
+    }) +
+    '\n' +
+    lines.join('\n')
+  );
+}
+
 export async function getRelatedMemoriesForChunkLegacy(
   bookId: string,
   chunkText: string,
@@ -245,8 +270,7 @@ export async function getRelatedMemoriesForChunkLegacy(
       false,
     );
     if (recentMemories.length === 0) return '';
-    const lines = recentMemories.map((m: Memory) => `  - [${m.id}] ${m.summary}`);
-    return `\n\n【相关记忆】\n${lines.join('\n')}`;
+    return formatMemoryContext(recentMemories);
   } catch (error) {
     console.warn('Failed to get related memories (legacy fallback):', error);
     return '';
@@ -349,11 +373,17 @@ export interface SelectedMemories {
  * 构建章节级查询上下文。原文和已有译文都会送入 embedding 模型，以增强跨语言标题语义；
  * 同一文本也作为低权重关键词辅助信号，但在语义模式下不能单独触发召回。
  */
-export function buildChapterSemanticQuery(chapter: Chapter | undefined): string | undefined {
+export function buildChapterSemanticQuery(
+  chapter: Chapter | undefined,
+  targetLanguage: AppLocale = 'zh-CN',
+): string | undefined {
   if (!chapter?.title) return undefined;
   if (typeof chapter.title === 'string') return chapter.title.trim() || undefined;
 
-  const titles = [chapter.title.original, chapter.title.translation?.translation]
+  const titles = [
+    chapter.title.original,
+    getNameTranslation(chapter.title, targetLanguage)?.translation,
+  ]
     .map((title) => title?.trim())
     .filter((title): title is string => Boolean(title));
   const uniqueTitles = [...new Set(titles)];
@@ -370,27 +400,25 @@ export function buildChapterSemanticQuery(chapter: Chapter | undefined): string 
  * 4. 逐条打分 → 阈值过滤 → 字符预算填充
  * 5. 严格返回通过相关性门槛的记忆；不按访问时间凑数
  *
- * 同时写入 `lastScoreBreakdownsByBook`,供 translation-service 读取。
+ * 纯选择入口；生产评分旁路仅由实际注入入口发布，预览不修改执行数据。
  */
 function buildChunkEntities(
   terms: Terminology[] | undefined,
   characters: CharacterSetting[] | undefined,
+  targetLanguage: AppLocale,
 ): Array<{ name: string }> {
   const out: Array<{ name: string }> = [];
-  if (terms) {
-    for (const t of terms) {
-      if (t?.name) out.push({ name: t.name });
-    }
-  }
-  if (characters) {
-    for (const c of characters) {
-      if (c?.name) out.push({ name: c.name });
-      if (c?.aliases) {
-        for (const alias of c.aliases) {
-          if (alias?.name) out.push({ name: alias.name });
-        }
-      }
-    }
+  const addNames = (
+    entity: Terminology | CharacterSetting | CharacterSetting['aliases'][number],
+  ) => {
+    if (entity.name) out.push({ name: entity.name });
+    const translation = getNameTranslation(entity, targetLanguage)?.translation;
+    if (translation) out.push({ name: translation });
+  };
+  for (const term of terms ?? []) addNames(term);
+  for (const character of characters ?? []) {
+    addNames(character);
+    for (const alias of character.aliases ?? []) addNames(alias);
   }
   return out;
 }
@@ -422,12 +450,13 @@ function collectBreakdownsForMemories(
   return breakdowns;
 }
 
-export async function selectRelevantMemoriesForChunk(
+async function selectMemoriesByScore(
   bookId: string,
   chunkText: string,
   existingTerms?: Terminology[],
   existingCharacters?: CharacterSetting[],
   semanticQueryContext?: string,
+  targetLanguage: AppLocale = 'zh-CN',
 ): Promise<SelectedMemories> {
   const empty: SelectedMemories = {
     memories: [],
@@ -437,10 +466,9 @@ export async function selectRelevantMemoriesForChunk(
   };
   if (!bookId || !chunkText) return empty;
 
+  const chunkEntities = buildChunkEntities(existingTerms, existingCharacters, targetLanguage);
   const allMemories = await MemoryService.getAllBookMemories(bookId);
   if (allMemories.length === 0) return empty;
-
-  const chunkEntities = buildChunkEntities(existingTerms, existingCharacters);
   const semanticContextEmbeddings = semanticQueryContext?.trim()
     ? await computeChunkEmbeddings(semanticQueryContext)
     : [];
@@ -458,14 +486,37 @@ export async function selectRelevantMemoriesForChunk(
   const memories = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
   const breakdowns = collectBreakdownsForMemories(memories, scored);
 
-  lastScoreBreakdownsByBook.set(bookId, breakdowns);
-
   return {
     memories,
     breakdowns,
     fromFallback: false,
     totalMemoryCount: allMemories.length,
   };
+}
+
+/** 预览与实际注入共用的只读选择入口，评分失败统一回退最近记忆。 */
+export async function selectRelevantMemoriesForChunk(
+  bookId: string,
+  chunkText: string,
+  existingTerms?: Terminology[],
+  existingCharacters?: CharacterSetting[],
+  semanticQueryContext?: string,
+  targetLanguage: AppLocale = 'zh-CN',
+): Promise<SelectedMemories> {
+  try {
+    return await selectMemoriesByScore(
+      bookId,
+      chunkText,
+      existingTerms,
+      existingCharacters,
+      semanticQueryContext,
+      targetLanguage,
+    );
+  } catch (error) {
+    console.warn('[context-builder] 混合相关性打分失败,退回最近记忆:', error);
+    const memories = await MemoryService.getRecentMemories(bookId, 15, 'lastAccessedAt', false);
+    return { memories, breakdowns: {}, fromFallback: true, totalMemoryCount: memories.length };
+  }
 }
 
 /**
@@ -482,6 +533,7 @@ export async function getRelatedMemoriesForChunk(
   existingTerms?: Terminology[],
   existingCharacters?: CharacterSetting[],
   semanticQueryContext?: string,
+  targetLanguage: AppLocale = 'zh-CN',
 ): Promise<string> {
   if (!bookId || !chunkText) return '';
 
@@ -493,8 +545,10 @@ export async function getRelatedMemoriesForChunk(
         existingTerms,
         existingCharacters,
         semanticQueryContext,
+        targetLanguage,
       );
 
+    lastScoreBreakdownsByBook.set(bookId, breakdowns);
     if (memories.length === 0) return '';
 
     const logLines = memories.map((m) => {
@@ -509,9 +563,9 @@ export async function getRelatedMemoriesForChunk(
       `[context-builder] 注入 ${memories.length}/${totalMemoryCount} 条记忆${fromFallback ? ' (LRU 兜底)' : ''}:\n${logLines.join('\n')}`,
     );
 
-    const lines = memories.map((m) => `  - [${m.id}] ${m.summary}`);
-    return `\n\n【相关记忆】\n${lines.join('\n')}`;
+    return formatMemoryContext(memories);
   } catch (error) {
+    lastScoreBreakdownsByBook.set(bookId, {});
     console.warn('[context-builder] 混合相关性打分失败,退回 legacy LRU:', error);
     return getRelatedMemoriesForChunkLegacy(bookId, chunkText, 15);
   }
@@ -520,19 +574,26 @@ export async function getRelatedMemoriesForChunk(
 /**
  * 构建当前 chunk 中出现的术语片段
  */
-function buildChunkTermsSection(terms: Terminology[]): string {
+function buildChunkTermsSection(terms: Terminology[], languages: ExecutionLanguages): string {
   if (terms.length === 0) return '';
-  const termList = terms.map((t) => `${t.name} → ${t.translation.translation}`).join('、');
-  return `**术语**：${termList}`;
+  const termList = terms
+    .map(
+      (term) =>
+        term.name + ' → ' + (getNameTranslation(term, languages.targetLanguage)?.translation ?? ''),
+    )
+    .join('、');
+  return '**' + agentText('aiContext.terms') + '**: ' + termList;
 }
 
-/**
- * 构建当前 chunk 中出现的角色片段
- */
-function buildChunkCharactersSection(characters: CharacterSetting[]): string {
+function buildChunkCharactersSection(
+  characters: CharacterSetting[],
+  languages: ExecutionLanguages,
+): string {
   if (characters.length === 0) return '';
-  const characterDetails = characters.map(formatCharacterDetail);
-  return `**角色**：\n${characterDetails.map((d) => `  - ${d}`).join('\n')}`;
+  const details = characters.map(
+    (character) => '  - ' + formatCharacterDetail(character, languages),
+  );
+  return '**' + agentText('aiContext.characters') + '**:\n' + details.join('\n');
 }
 
 /**
@@ -543,6 +604,7 @@ async function buildCurrentChunkContext(
   bookId: string | undefined,
   chunkText: string,
   chapterId?: string,
+  languages: ExecutionLanguages = captureExecutionLanguages('zh-CN'),
 ): Promise<string> {
   if (!bookId || !chunkText) return '';
 
@@ -557,17 +619,25 @@ async function buildCurrentChunkContext(
         ?.flatMap((volume) => volume.chapters ?? [])
         .find((candidate) => candidate.id === chapterId)
     : undefined;
-  const semanticQueryContext = buildChapterSemanticQuery(chapter);
+  const semanticQueryContext = buildChapterSemanticQuery(chapter, languages.targetLanguage);
 
   const contextParts = [
-    buildChunkTermsSection(terms),
-    buildChunkCharactersSection(characters),
+    buildChunkTermsSection(terms, languages),
+    buildChunkCharactersSection(characters, languages),
   ].filter(Boolean);
 
   let currentChunkContext = '';
   if (contextParts.length > 0) {
-    currentChunkContext = `\n\n【当前部分出现的术语和角色】\n${contextParts.join('\n')}\n`;
-    currentChunkContext += `提供的角色以及术语信息已为最新，不必使用工具再次获取检查。\n`;
+    currentChunkContext =
+      '\n\n' +
+      agentText('aiContext.heading', {
+        label: agentText('aiContext.entities'),
+      }) +
+      '\n' +
+      contextParts.join('\n') +
+      '\n' +
+      agentText('aiContext.fresh') +
+      '\n';
   }
 
   // 获取相关记忆（传入已提取的 terms 和 characters，避免重复计算）
@@ -579,6 +649,7 @@ async function buildCurrentChunkContext(
     terms,
     characters,
     semanticQueryContext,
+    languages.targetLanguage,
   );
   if (memoryContext) {
     currentChunkContext += memoryContext;
@@ -596,7 +667,7 @@ function buildStartContextHint(
   taskLabel: string,
 ): string {
   if (hasPreviousParagraphs !== true || !firstParagraphId) return '';
-  return `\n\n【起始段落位置】\n**起始段落ID**: \`${firstParagraphId}\`\n[提示] 在此之前还有段落。如需前文上下文，可调用 \`get_previous_paragraphs\`（参数 \`paragraph_id\` 传入起始段落ID）。仅用于上下文，不要把工具返回内容当作${taskLabel}结果输出。\n`;
+  return '\n\n' + agentText('aiContext.start', { id: firstParagraphId, task: taskLabel }) + '\n';
 }
 
 interface FirstChunkPromptParams {
@@ -614,45 +685,42 @@ interface FirstChunkPromptParams {
 }
 
 function buildFirstChunkPrompt(p: FirstChunkPromptParams): string {
-  const titleInstruction =
-    p.chapterTitle && p.taskType === 'translation'
-      ? `\n\n**章节标题翻译**：请翻译以下章节标题，并在输出 JSON 中包含 \`titleTranslation\` 字段：\n【章节标题】${p.chapterTitle}`
-      : '';
-
-  const planningStatus = getCurrentStatusInfo(p.taskType, 'planning', false);
-
-  return `开始${p.taskLabel}任务。当前处于 **planning 阶段**，请按待办清单逐项完成。
-
-${planningStatus}${titleInstruction}${p.currentChunkContext}${p.startContextHint}
-
-以下是第一部分内容（第 ${p.chunkIndex + 1}/${p.totalChunks} 部分）：${p.paragraphCountNote}\n\n${p.chunkText}${p.maintenanceReminder}${p.contextToolsReminder}`;
+  return agentText('aiContext.first', {
+    task: p.taskLabel,
+    status: getCurrentStatusInfo(p.taskType, 'planning', false),
+    title:
+      p.chapterTitle && p.taskType === 'translation'
+        ? agentText('aiContext.titleInstruction', { title: p.chapterTitle })
+        : '',
+    context: p.currentChunkContext,
+    start: p.startContextHint,
+    index: p.chunkIndex + 1,
+    total: p.totalChunks,
+    count: p.paragraphCountNote,
+    text: p.chunkText,
+    maintenance: p.maintenanceReminder,
+    reminder: p.contextToolsReminder,
+  });
 }
 
-interface SubsequentChunkPromptParams {
-  taskType: TaskType;
-  taskLabel: string;
-  chunkIndex: number;
-  totalChunks: number;
-  currentChunkContext: string;
-  startContextHint: string;
-  chunkText: string;
-  paragraphCountNote: string;
-  maintenanceReminder: string;
-}
+type SubsequentChunkPromptParams = Omit<
+  FirstChunkPromptParams,
+  'chapterTitle' | 'contextToolsReminder'
+>;
 
 function buildSubsequentChunkPrompt(p: SubsequentChunkPromptParams): string {
-  const briefPlanningNote = p.currentChunkContext
-    ? '以上是当前部分中出现的术语和角色，请确保翻译时使用这些术语和角色的正确翻译。'
-    : '';
-
-  const briefPlanningStatus = getCurrentStatusInfo(p.taskType, 'planning', true);
-
-  return `继续${p.taskLabel}任务（第 ${p.chunkIndex + 1}/${p.totalChunks} 部分）。当前处于 **planning 阶段**。${p.currentChunkContext}${p.startContextHint}
-
-${briefPlanningStatus}
-${briefPlanningNote}
-
-以下是待${p.taskLabel}内容：${p.paragraphCountNote}\n\n${p.chunkText}${p.maintenanceReminder}`;
+  return agentText('aiContext.subsequent', {
+    task: p.taskLabel,
+    index: p.chunkIndex + 1,
+    total: p.totalChunks,
+    context: p.currentChunkContext,
+    start: p.startContextHint,
+    status: getCurrentStatusInfo(p.taskType, 'planning', true),
+    reference: p.currentChunkContext ? agentText('aiContext.reference') : '',
+    count: p.paragraphCountNote,
+    text: p.chunkText,
+    maintenance: p.maintenanceReminder,
+  });
 }
 
 /**
@@ -683,13 +751,19 @@ export async function buildIndependentChunkPrompt(
   bookId?: string,
   hasPreviousParagraphs?: boolean,
   firstParagraphId?: string,
+  languages: ExecutionLanguages = captureExecutionLanguages('zh-CN'),
 ): Promise<string> {
-  const taskLabel = TASK_TYPE_LABELS[taskType];
+  const taskLabel = taskPromptLabel(taskType);
 
   // 工具提示：避免与 system prompt 重复，只保留最小必要提醒
-  const contextToolsReminder = `\n\n[警告] **上下文获取**：如需上下文信息可调用工具获取；工具返回内容**不要**当作${taskLabel}结果直接输出。`;
+  const contextToolsReminder = '\n\n' + agentText('aiContext.contextReminder', { task: taskLabel });
 
-  const currentChunkContext = await buildCurrentChunkContext(bookId, chunkText, chapterId);
+  const currentChunkContext = await buildCurrentChunkContext(
+    bookId,
+    chunkText,
+    chapterId,
+    languages,
+  );
 
   const startContextHint = buildStartContextHint(
     hasPreviousParagraphs,
@@ -733,7 +807,11 @@ export async function buildIndependentChunkPrompt(
  */
 export function buildSpecialInstructionsSection(specialInstructions?: string): string {
   return specialInstructions
-    ? `\n\n========================================\n【特殊指令（用户自定义）】\n========================================\n${specialInstructions}\n`
+    ? '\n\n========================================\n[' +
+        agentText('aiContext.special') +
+        ']\n========================================\n' +
+        specialInstructions +
+        '\n'
     : '';
 }
 
@@ -816,14 +894,18 @@ function buildSurroundingParagraphsContext(
   currentParagraphId: string,
   allParagraphs: Paragraph[],
   count: number = 3,
+  languages: ExecutionLanguages = captureExecutionLanguages('zh-CN'),
 ): string {
   const currentIndex = allParagraphs.findIndex((p) => p.id === currentParagraphId);
   if (currentIndex === -1) return '';
 
   const formatParagraph = (p: Paragraph): string => {
-    const translation = getSelectedTranslation(p);
-    const translationPart = translation ? `\n  翻译: ${translation}` : '';
-    return `[ID: ${p.id}] 原文: ${p.text}${translationPart}`;
+    const translation = getSelectedTranslation(p, languages.targetLanguage);
+    return agentText('aiContext.surrounding', {
+      id: p.id,
+      original: p.text,
+      translation: translation ? agentText('aiContext.translationLine', { translation }) : '',
+    });
   };
 
   const parts: string[] = [];
@@ -832,7 +914,7 @@ function buildSurroundingParagraphsContext(
   const prevStart = Math.max(0, currentIndex - count);
   const prevParagraphs = allParagraphs.slice(prevStart, currentIndex).filter((p) => p.text?.trim());
   if (prevParagraphs.length > 0) {
-    parts.push('【前文段落】');
+    parts.push('[' + agentText('aiContext.previousParagraphs') + ']');
     parts.push(...prevParagraphs.map(formatParagraph));
   }
 
@@ -841,7 +923,7 @@ function buildSurroundingParagraphsContext(
     .slice(currentIndex + 1, currentIndex + 1 + count)
     .filter((p) => p.text?.trim());
   if (nextParagraphs.length > 0) {
-    parts.push('【后文段落】');
+    parts.push('[' + agentText('aiContext.nextParagraphs') + ']');
     parts.push(...nextParagraphs.map(formatParagraph));
   }
 
@@ -856,43 +938,39 @@ function buildSurroundingParagraphsContext(
  */
 export function formatCharacterAliases(
   aliases: CharacterSetting['aliases'] | undefined,
+  language: AppLocale = 'zh-CN',
 ): string | null {
   if (!aliases || aliases.length === 0) return null;
-  const aliasList = aliases.map((a) => `${a.name} → ${a.translation.translation}`).join('、');
-  return `别名：${aliasList}`;
+  const aliasList = aliases
+    .map((alias) => `${alias.name} → ${getNameTranslation(alias, language)?.translation ?? ''}`)
+    .join('、');
+  return agentText('aiTasks.context.aliases', { aliases: aliasList });
 }
 
 /**
  * 将单个角色格式化为单行详情字符串：`name → translation | 性别：... | 描述：... | 说话风格：... | 别名：...`
  * 仅在文件内部使用，供多个上下文构建器复用，保证角色信息格式一致
  */
-function formatCharacterDetail(c: CharacterSetting): string {
-  const sexLabels: Record<string, string> = {
-    male: '男',
-    female: '女',
-    other: '其他',
-  };
-
-  const parts: string[] = [];
-  parts.push(`${c.name} → ${c.translation.translation}`);
-
+function formatCharacterDetail(c: CharacterSetting, languages: ExecutionLanguages): string {
+  const { targetLanguage } = languages;
+  const parts = [c.name + ' → ' + (getNameTranslation(c, targetLanguage)?.translation ?? '')];
   if (c.sex) {
-    parts.push(`性别：${sexLabels[c.sex] || c.sex}`);
+    const sexKeys = {
+      male: 'aiTasks.term.male',
+      female: 'aiTasks.term.female',
+      other: 'aiTasks.term.other',
+    } as const;
+    parts.push(
+      agentText('aiTasks.term.sex', {
+        value: agentText(sexKeys[c.sex]),
+      }),
+    );
   }
-
-  if (c.description) {
-    parts.push(`描述：${c.description}`);
-  }
-
-  if (c.speakingStyle) {
-    parts.push(`说话风格：${c.speakingStyle}`);
-  }
-
-  const aliasPart = formatCharacterAliases(c.aliases);
-  if (aliasPart) {
-    parts.push(aliasPart);
-  }
-
+  if (c.description) parts.push(agentText('aiTasks.term.description', { value: c.description }));
+  if (c.speakingStyle)
+    parts.push(agentText('aiTasks.term.speakingStyle', { value: c.speakingStyle }));
+  const aliases = formatCharacterAliases(c.aliases, targetLanguage);
+  if (aliases) parts.push(aliases);
   return parts.join(' | ');
 }
 
@@ -900,12 +978,23 @@ function formatCharacterDetail(c: CharacterSetting): string {
  * 构建章节角色上下文（用于单段落润色/校对）
  * @param characters 本章出场的角色列表
  */
-function buildChapterCharactersContext(characters: CharacterSetting[]): string {
-  if (!characters || characters.length === 0) return '';
-
-  const characterDetails = characters.map((c) => `  - ${formatCharacterDetail(c)}`);
-
-  return `\n\n【本章出场角色】\n${characterDetails.join('\n')}\n`;
+function buildChapterCharactersContext(
+  characters: CharacterSetting[],
+  languages: ExecutionLanguages,
+): string {
+  if (characters.length === 0) return '';
+  const details = characters.map(
+    (character) => '  - ' + formatCharacterDetail(character, languages),
+  );
+  return (
+    '\n\n' +
+    agentText('aiContext.heading', {
+      label: agentText('aiContext.chapterCharacters'),
+    }) +
+    '\n' +
+    details.join('\n') +
+    '\n'
+  );
 }
 
 /**
@@ -914,6 +1003,7 @@ function buildChapterCharactersContext(characters: CharacterSetting[]): string {
 function buildCharactersContextPart(
   bookId: string | undefined,
   allChapterParagraphs: Paragraph[],
+  languages: ExecutionLanguages,
 ): string {
   if (!bookId) return '';
   const booksStore = useBooksStore();
@@ -922,7 +1012,7 @@ function buildCharactersContextPart(
   // 用全章段落文本匹配角色
   const allText = allChapterParagraphs.map((p) => p.text).join('\n');
   const characters = findUniqueCharactersInText(allText, book.characterSettings || []);
-  return buildChapterCharactersContext(characters);
+  return buildChapterCharactersContext(characters, languages);
 }
 
 /**
@@ -932,6 +1022,7 @@ function buildTermsContextPart(
   bookId: string | undefined,
   allChapterParagraphs: Paragraph[],
   currentParagraphId: string,
+  languages: ExecutionLanguages,
 ): string {
   if (!bookId) return '';
   const booksStore = useBooksStore();
@@ -942,17 +1033,30 @@ function buildTermsContextPart(
   if (terms.length === 0) return '';
   const termList = terms
     .map(
-      (t) =>
-        `- ${t.name} → ${t.translation.translation}${t.description ? `: ${t.description}` : ''}`,
+      (term) =>
+        '- ' +
+        term.name +
+        ' → ' +
+        (getNameTranslation(term, languages.targetLanguage)?.translation ?? '') +
+        (term.description ? ': ' + term.description : ''),
     )
     .join('\n');
-  return `\n\n【相关术语】\n${termList}\n`;
+  return (
+    '\n\n' +
+    agentText('aiContext.heading', {
+      label: agentText('aiContext.relatedTerms'),
+    }) +
+    '\n' +
+    termList +
+    '\n'
+  );
 }
 
 /**
  * 构建单段落润色/校对的完整默认上下文
  */
 export async function buildSingleParagraphDefaultContext(options: {
+  languages?: ExecutionLanguages;
   currentParagraphId: string;
   allChapterParagraphs: Paragraph[];
   bookId?: string;
@@ -960,6 +1064,7 @@ export async function buildSingleParagraphDefaultContext(options: {
   chapterTitle?: string;
 }): Promise<string> {
   const { currentParagraphId, allChapterParagraphs, bookId, chapterId, chapterTitle } = options;
+  const languages = options.languages ?? captureExecutionLanguages('zh-CN');
 
   const parts: string[] = [];
 
@@ -974,17 +1079,24 @@ export async function buildSingleParagraphDefaultContext(options: {
   if (chapterContext) parts.push(chapterContext);
 
   // 3. 本章角色
-  const charactersContext = buildCharactersContextPart(bookId, allChapterParagraphs);
+  const charactersContext = buildCharactersContextPart(bookId, allChapterParagraphs, languages);
   if (charactersContext) parts.push(charactersContext);
 
   // 4. 相关术语（基于当前段落文本匹配）
-  const termsContext = buildTermsContextPart(bookId, allChapterParagraphs, currentParagraphId);
+  const termsContext = buildTermsContextPart(
+    bookId,
+    allChapterParagraphs,
+    currentParagraphId,
+    languages,
+  );
   if (termsContext) parts.push(termsContext);
 
   // 5. 前后段落上下文
   const surroundingContext = buildSurroundingParagraphsContext(
     currentParagraphId,
     allChapterParagraphs,
+    3,
+    languages,
   );
   if (surroundingContext) parts.push(surroundingContext);
 

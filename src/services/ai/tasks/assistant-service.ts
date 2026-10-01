@@ -1,3 +1,5 @@
+import { agentText, translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
 import { buildModelServiceConfig } from '../core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type {
@@ -15,6 +17,10 @@ import type { ActionInfo } from '../tools/types';
 import type { ToastCallback } from '../tools/toast-helper';
 import type { AIProcessingStore } from './utils/task-types';
 import { useContextStore } from 'src/stores/context';
+import { useSettingsStore } from 'src/stores/settings';
+import { useBooksStore } from 'src/stores/books';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from './utils/execution-languages';
 import { getTodosSystemPrompt } from './utils/todo-helper';
 import { TOOL_CALL_PLACEHOLDER } from './utils/stream-handler';
 import { AssistantExecutionPaused } from './utils/assistant-execution';
@@ -29,6 +35,8 @@ import { resolveModelLimits } from '../model-limits/resolve';
 import type { EffectiveModelLimits } from '../model-limits/resolve';
 import type { ContextAnchor } from '../context/measure';
 import { AssistantContext } from '../context/assistant-context';
+import { isCancelledError } from 'src/utils/is-cancelled-error';
+import { describeAIError } from '../core/errors';
 
 const MAX_TOOL_CALL_TURNS = 50;
 const DEFAULT_TEMPERATURE = 0.7;
@@ -72,6 +80,7 @@ const TOOLS_REQUIRING_BOOK_ID = [
 ];
 
 export interface AssistantServiceOptions {
+  languages?: ExecutionLanguages;
   /** 宿主专属执行配置；省略时保持普通聊天的上下文和工具行为。 */
   execution?: AssistantExecution;
   /**
@@ -125,6 +134,9 @@ export interface AssistantServiceOptions {
   onTaskCreated?: (taskId: string) => void;
 }
 
+/** chat() 解析后的内部选项：执行语言已固定，内部步骤不再回退默认语言。 */
+export type ResolvedAssistantOptions = AssistantServiceOptions & { languages: ExecutionLanguages };
+
 export interface AssistantResult {
   paused?: AssistantPauseReason;
   checkpoint?: AssistantExecutionCheckpoint;
@@ -144,24 +156,26 @@ export class AssistantService {
       selectedParagraphId: string | null;
     },
     tools: AITool[],
-    taskId?: string,
-    sessionId?: string,
+    taskId: string | undefined,
+    sessionId: string | undefined,
+    languages: ExecutionLanguages,
   ): string {
     const todosPrompt = getTodosSystemPrompt(!!taskId || !!sessionId);
 
-    return getAssistantSystemPrompt(todosPrompt, tools, context);
+    return getAssistantSystemPrompt(todosPrompt, tools, context, languages);
   }
 
   private static async handleToolCalls(
     toolCalls: AIToolCall[],
     tools: AITool[],
     bookId: string | null,
-    onAction?: (action: ActionInfo) => void,
-    onToast?: ToastCallback,
-    taskId?: string,
-    sessionId?: string,
-    aiModelId?: string,
-    signal?: AbortSignal,
+    onAction: ((action: ActionInfo) => void) | undefined,
+    onToast: ToastCallback | undefined,
+    taskId: string | undefined,
+    sessionId: string | undefined,
+    aiModelId: string | undefined,
+    signal: AbortSignal | undefined,
+    languages: ExecutionLanguages,
   ): Promise<Array<{ tool_call_id: string; role: 'tool'; name: string; content: string }>> {
     const allowedToolNames = new Set(tools.map((t) => t.function.name));
 
@@ -171,7 +185,7 @@ export class AssistantService {
     const results = [];
     for (const toolCall of toolCalls) {
       // 用户取消后立即停止执行剩余工具，避免已取消的 CRUD 写入继续落库
-      this.ensureRequestActive(signal);
+      this.ensureRequestActive(signal, languages.uiLocale);
 
       // [警告] 严格限制：只能调用本次会话提供的 tools
       if (!allowedToolNames.has(toolCall.function.name)) {
@@ -181,7 +195,10 @@ export class AssistantService {
           name: toolCall.function.name,
           content: JSON.stringify({
             success: false,
-            error: `工具 ${toolCall.function.name} 未在本次会话提供的 tools 列表中，禁止调用`,
+            error_code: 'TOOL_NOT_ALLOWED',
+            error: agentText('aiAssistant.toolNotAllowed', {
+              tool: toolCall.function.name,
+            }),
           }),
         });
         continue;
@@ -195,24 +212,23 @@ export class AssistantService {
           name: toolCall.function.name,
           content: JSON.stringify({
             success: false,
-            error: '没有当前书籍上下文，无法执行此工具操作',
+            error_code: 'BOOK_CONTEXT_REQUIRED',
+            error: agentText('aiAssistant.bookRequired'),
           }),
         });
         continue;
       }
 
       // 调用工具处理函数（对于不需要 bookId 的工具，可以传递空字符串）
-      const result = await ToolRegistry.handleToolCall(
-        toolCall,
-        bookId || '',
-        onAction,
-        onToast,
-        taskId,
-        sessionId,
-        undefined, // paragraphIds
-        undefined, // aiProcessingStore
-        aiModelId,
-      );
+      const result = await ToolRegistry.handleToolCall(toolCall, {
+        languages,
+        bookId: bookId || '',
+        ...(onAction ? { onAction } : {}),
+        ...(onToast ? { onToast } : {}),
+        ...(taskId ? { taskId } : {}),
+        ...(sessionId ? { sessionId } : {}),
+        ...(aiModelId ? { aiModelId } : {}),
+      });
       results.push(result);
     }
     return results;
@@ -405,7 +421,11 @@ export class AssistantService {
         role: 'tool' as const,
         tool_call_id: call.id,
         name: call.function.name,
-        content: JSON.stringify({ success: false, error: '已达到工具调用轮次上限，调用未执行' }),
+        content: JSON.stringify({
+          success: false,
+          error_code: 'TOOL_TURN_LIMIT',
+          error: agentText('aiAssistant.toolLimit'),
+        }),
       })),
     );
   }
@@ -419,8 +439,12 @@ export class AssistantService {
     this.fillPendingToolCallResults(messages, calls);
   }
 
-  private static ensureRequestActive(signal?: AbortSignal): void {
-    if (signal?.aborted) throw new Error('请求已取消');
+  private static ensureRequestActive(signal?: AbortSignal, uiLocale: AppLocale = 'zh-CN'): void {
+    if (signal?.aborted) {
+      const error = new Error(translateText(uiLocale, 'aiAssistant.cancelRequest'));
+      error.name = 'AbortError';
+      throw error;
+    }
   }
 
   /**
@@ -433,7 +457,7 @@ export class AssistantService {
 
   private static async prepareTaskAndSignal(
     model: AIModel,
-    options: AssistantServiceOptions,
+    options: ResolvedAssistantOptions,
   ): Promise<{ taskId: string | undefined; taskAbortSignal: AbortSignal | undefined }> {
     const { aiProcessingStore } = options;
     if (!aiProcessingStore) {
@@ -444,7 +468,7 @@ export class AssistantService {
       type: 'assistant',
       modelName: model.name || model.id,
       status: 'processing',
-      message: '正在处理助手请求...',
+      message: translateText(options.languages.uiLocale, 'aiAssistant.processing'),
     });
 
     // 通知外部任务已创建
@@ -465,10 +489,15 @@ export class AssistantService {
     taskId: string | undefined,
     sessionId: string | undefined,
     sessionSummary: string | undefined,
+    languages: ExecutionLanguages,
   ): string {
-    let systemPrompt = this.buildSystemPrompt(context, tools, taskId, sessionId);
+    let systemPrompt = this.buildSystemPrompt(context, tools, taskId, sessionId, languages);
     if (sessionSummary) {
-      systemPrompt += `\n\n## 之前的对话总结\n\n${sessionSummary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
+      systemPrompt +=
+        '\n\n' +
+        agentText('aiAssistant.summaryWrap', {
+          summary: sessionSummary,
+        });
     }
     return systemPrompt;
   }
@@ -511,24 +540,25 @@ export class AssistantService {
     error: unknown,
     aiProcessingStore: AssistantServiceOptions['aiProcessingStore'] | undefined,
     taskId: string | undefined,
+    uiLocale: AppLocale,
   ): Promise<void> {
     if (!aiProcessingStore || !taskId) return;
 
-    const isCancelled =
-      error instanceof Error &&
-      (error.message === '请求已取消' ||
-        error.message.includes('aborted') ||
-        error.name === 'AbortError');
+    const isCancelled = isCancelledError(error);
 
     if (isCancelled) {
       await aiProcessingStore.updateTask(taskId, {
         status: 'cancelled',
-        message: '已取消',
+        message: translateText(uiLocale, 'aiAssistant.cancelled'),
       });
     } else {
       await aiProcessingStore.updateTask(taskId, {
         status: 'error',
-        message: error instanceof Error ? error.message : '未知错误',
+        message: describeAIError(
+          error,
+          uiLocale,
+          translateText(uiLocale, 'aiAssistant.unknownError'),
+        ),
       });
     }
   }
@@ -539,7 +569,7 @@ export class AssistantService {
     messages: ChatMessage[];
     tools: AITool[];
     context: AssistantContext;
-    options: AssistantServiceOptions;
+    options: ResolvedAssistantOptions;
     taskId: string | undefined;
     signal: AbortSignal | undefined;
     initial: boolean;
@@ -607,7 +637,7 @@ export class AssistantService {
     messages: ChatMessage[];
     tools: AITool[];
     bookId: string | null;
-    options: AssistantServiceOptions;
+    options: ResolvedAssistantOptions;
     context: AssistantContext;
     taskId: string | undefined;
     sessionId: string | undefined;
@@ -622,7 +652,7 @@ export class AssistantService {
     const actions: ActionInfo[] = [];
     const turnLimit = options.execution?.maxToolTurns ?? MAX_TOOL_CALL_TURNS;
     for (let turn = 0; response.toolCalls.length && turn < turnLimit; turn++) {
-      this.ensureRequestActive(signal);
+      this.ensureRequestActive(signal, options.languages.uiLocale);
       if (options.execution) await options.execution.runTools(response.toolCalls, messages, signal);
       else
         messages.push(
@@ -639,6 +669,7 @@ export class AssistantService {
             sessionId,
             model.id,
             signal,
+            options.languages,
           )),
         );
       response = await this.executeAIRequest({ ...params, initial: false });
@@ -649,15 +680,27 @@ export class AssistantService {
     if (options.aiProcessingStore && taskId)
       await options.aiProcessingStore.updateTask(taskId, {
         status: 'end',
-        message: '助手回复完成',
+        message: translateText(options.languages.uiLocale, 'aiAssistant.finished'),
       });
     return {
-      text: finalText.trim() || '抱歉，我没有收到有效的回复。请重试。',
+      text: finalText.trim() || translateText(options.languages.uiLocale, 'aiAssistant.emptyReply'),
       ...(taskId ? { taskId } : {}),
       actions,
       messageHistory: messages,
       ...context.result,
     };
+  }
+
+  /**
+   * 新助手执行的语言快照：当前界面语言 + 当前书籍目标语言（无书籍时以界面语言为目标）。
+   * 上下文用量统计也以此构建提示词，保证统计与真实请求一致。
+   */
+  static currentLanguages(bookId: string | null): ExecutionLanguages {
+    const uiLocale = useSettingsStore().uiLocale;
+    return captureExecutionLanguages(
+      uiLocale,
+      bookId ? (useBooksStore().getBookById(bookId)?.targetLanguage ?? 'zh-CN') : uiLocale,
+    );
   }
 
   static async chat(
@@ -666,13 +709,22 @@ export class AssistantService {
     options: AssistantServiceOptions = {},
   ): Promise<AssistantResult> {
     const context = options.execution?.context ?? useContextStore().getContext;
+    const requested =
+      options.execution?.languages ??
+      options.languages ??
+      this.currentLanguages(context.currentBookId);
+    const languages = captureExecutionLanguages(requested.uiLocale, requested.targetLanguage);
     const tools =
       options.execution?.tools ??
       ToolRegistry.getAssistantToolsExcludingTranslationManagement(
         context.currentBookId || undefined,
       );
     const history = options.messageHistory ?? options.execution?.history;
-    const configured = { ...options, ...(history?.length ? { messageHistory: history } : {}) };
+    const configured = {
+      ...options,
+      languages,
+      ...(history?.length ? { messageHistory: history } : {}),
+    };
     const run = () => this.chatWithContext(model, userMessage, configured, context, tools);
     return options.execution
       ? run()
@@ -682,14 +734,21 @@ export class AssistantService {
   private static async chatWithContext(
     model: AIModel,
     userMessage: string,
-    options: AssistantServiceOptions,
+    options: ResolvedAssistantOptions,
     bookContext: ReturnType<typeof useContextStore>['getContext'],
     tools: AITool[],
   ): Promise<AssistantResult> {
     const { taskId, taskAbortSignal } = await this.prepareTaskAndSignal(model, options);
     const signal = options.signal || taskAbortSignal;
     const prompt = (summary?: string) =>
-      this.composeSystemPrompt(bookContext, tools, taskId, options.sessionId, summary);
+      this.composeSystemPrompt(
+        bookContext,
+        tools,
+        taskId,
+        options.sessionId,
+        summary,
+        options.languages,
+      );
     try {
       const systemPrompt = options.execution
         ? await options.execution.prompt()
@@ -737,7 +796,12 @@ export class AssistantService {
           contextAnchor: paused.checkpoint.contextAnchor,
         };
       this.logChatError(error, model, taskId);
-      await this.finalizeErrorTask(error, options.aiProcessingStore, taskId);
+      await this.finalizeErrorTask(
+        error,
+        options.aiProcessingStore,
+        taskId,
+        options.languages.uiLocale,
+      );
       throw error;
     }
   }

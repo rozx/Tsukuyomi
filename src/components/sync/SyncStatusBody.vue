@@ -23,6 +23,9 @@ import { useGistSync } from 'src/composables/useGistUploadWithConflictCheck';
 import { useForceSync } from 'src/composables/useForceSync';
 import { useSyncStatusDisplay } from 'src/composables/useSyncPendingChanges';
 import type { RestorableItem } from 'src/services/sync-data-service';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const settingsStore = useSettingsStore();
 const aiModelsStore = useAIModelsStore();
@@ -133,8 +136,8 @@ const syncData = async () => {
   if (!config.enabled || !config.syncParams.username || !config.secret) {
     toast.add({
       severity: 'warn',
-      summary: '同步失败',
-      detail: '请先在设置中配置 Gist 同步',
+      summary: t('syncUi.panel.syncFailed'),
+      detail: t('syncUi.panel.configureFirst'),
       life: 3000,
     });
     return;
@@ -185,8 +188,8 @@ const skipRestore = () => {
 
   toast.add({
     severity: 'info',
-    summary: '跳过恢复',
-    detail: '已跳过恢复已删除的项目',
+    summary: t('syncUi.panel.restoreSkipped'),
+    detail: t('syncUi.panel.restoreSkippedDetail'),
     life: 3000,
   });
 };
@@ -194,18 +197,10 @@ const skipRestore = () => {
 const syncProgress = computed(() => settingsStore.syncProgress);
 
 const syncStageLabel = computed(() => {
-  switch (syncProgress.value.stage) {
-    case 'downloading':
-      return '下载中';
-    case 'uploading':
-      return '上传中';
-    case 'applying':
-      return '应用中';
-    case 'merging':
-      return '合并中';
-    default:
-      return '';
-  }
+  const stage = syncProgress.value.stage;
+  return stage && ['downloading', 'uploading', 'applying', 'merging'].includes(stage)
+    ? t(`syncUi.panel.stage.${stage}`)
+    : '';
 });
 
 // 以下 computed 把模板里剩余的 && / 三元收敛进来，进一步压低模板圈复杂度
@@ -216,7 +211,9 @@ const showRemote = computed(
 const syncButtonDisabled = computed(
   () => !gistSync.value.enabled || isSyncing.value || isRestoringRevision.value,
 );
-const syncButtonLabel = computed(() => (forceMode.value ? '强制推送到远程' : '同步'));
+const syncButtonLabel = computed(() =>
+  t(forceMode.value ? 'syncUi.panel.forcePush' : 'syncUi.panel.sync'),
+);
 const syncButtonSeverity = computed<'danger' | 'primary'>(() =>
   forceMode.value ? 'danger' : 'primary',
 );
@@ -228,20 +225,14 @@ const onSyncButtonClick = () => {
 
 <template>
   <div class="flex flex-col space-y-4">
-    <div
-      v-if="!isPhone"
-      class="flex items-center justify-between pb-3 border-b border-white/10"
-    >
-      <h3 class="text-lg font-semibold text-moon/90">同步状态</h3>
+    <div v-if="!isPhone" class="flex items-center justify-between pb-3 border-b border-white/10">
+      <h3 class="text-lg font-semibold text-moon/90">{{ t('syncUi.panel.title') }}</h3>
       <i :class="[syncStatus.icon, syncStatus.color]" />
     </div>
 
     <div class="space-y-3 max-w-full min-w-0">
-      <div
-        v-if="isPhone"
-        class="flex items-center justify-between pb-2 border-b border-white/10"
-      >
-        <span class="text-xs text-moon/60">当前状态</span>
+      <div v-if="isPhone" class="flex items-center justify-between pb-2 border-b border-white/10">
+        <span class="text-xs text-moon/60">{{ t('syncUi.panel.currentStatus') }}</span>
         <span class="flex items-center gap-2 text-xs text-moon/90">
           <i :class="[syncStatus.icon, syncStatus.color]" />
           <span>{{ syncStatus.label }}</span>
@@ -249,17 +240,17 @@ const onSyncButtonClick = () => {
       </div>
 
       <div>
-        <label class="text-xs text-moon/60">最后同步时间</label>
+        <label class="text-xs text-moon/60">{{ t('syncUi.panel.lastSync') }}</label>
         <p class="text-sm text-moon/90 mt-1">
-          {{ formatRelativeTime(gistSync.lastSyncTime, nowMs) }}
+          {{ formatRelativeTime(gistSync.lastSyncTime, nowMs, settingsStore.uiLocale) }}
         </p>
       </div>
 
       <SyncNextTime :enabled="gistSync.enabled" :next-sync-time="nextSyncTime" :now-ms="nowMs" />
 
       <div v-if="!gistSync.enabled">
-        <p class="text-sm text-moon/60">Gist 同步未启用</p>
-        <p class="text-xs text-moon/50 mt-1">请在设置中启用 Gist 同步</p>
+        <p class="text-sm text-moon/60">{{ t('syncUi.panel.disabled') }}</p>
+        <p class="text-xs text-moon/50 mt-1">{{ t('syncUi.panel.enableHint') }}</p>
       </div>
 
       <div v-if="showProgress" class="pt-2 border-t border-white/10">
@@ -287,14 +278,18 @@ const onSyncButtonClick = () => {
       />
 
       <div v-if="showRemote" class="pt-2 border-t border-white/10 space-y-2">
-        <label class="text-xs text-moon/60">远程数据</label>
+        <label class="text-xs text-moon/60">{{ t('syncUi.panel.remoteData') }}</label>
         <div class="flex items-center gap-2">
           <i class="pi pi-book text-sm text-moon/70" />
-          <span class="text-sm text-moon/90">书籍: {{ remoteStats!.booksCount }}</span>
+          <span class="text-sm text-moon/90">
+            {{ t('syncUi.panel.books', { count: remoteStats!.booksCount }) }}
+          </span>
         </div>
         <div class="flex items-center gap-2">
           <i class="pi pi-cog text-sm text-moon/70" />
-          <span class="text-sm text-moon/90">AI 模型: {{ remoteStats!.aiModelsCount }}</span>
+          <span class="text-sm text-moon/90">
+            {{ t('syncUi.panel.aiModels', { count: remoteStats!.aiModelsCount }) }}
+          </span>
         </div>
       </div>
     </div>

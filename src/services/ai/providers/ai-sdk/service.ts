@@ -12,11 +12,17 @@ import { toModelMessages } from 'src/services/ai/providers/ai-sdk/messages';
 import { collectStream } from 'src/services/ai/providers/ai-sdk/stream';
 import { listModels } from 'src/services/ai/providers/ai-sdk/models';
 import { providerError } from 'src/services/ai/providers/ai-sdk/errors';
+import { LocalizedError } from 'src/utils/localized-error';
 
 function validateConfig(config: AIServiceConfig) {
-  if (!config.apiKey?.trim()) throw new Error('API Key 不能为空');
-  if (!config.model?.trim()) throw new Error('模型名称不能为空');
+  if (!config.apiKey?.trim()) throw apiKeyRequired();
+  if (!config.model?.trim())
+    throw new LocalizedError('AI_MODEL_REQUIRED', 'settingsUi.models.errors.modelRequired');
 }
+
+/** 自有校验错误带错误码；说明默认简中，界面显示处按界面语言重新渲染 */
+const apiKeyRequired = () =>
+  new LocalizedError('AI_API_KEY_REQUIRED', 'settingsUi.models.errors.apiKeyRequired');
 
 /** 单次请求适配；工具仍由应用已有的循环执行。 */
 export class AiSdkAIService implements AIService {
@@ -29,7 +35,7 @@ export class AiSdkAIService implements AIService {
   ) {
     validateConfig(config);
     if (!request.prompt?.trim() && !request.messages?.length)
-      throw new Error('提示词或消息列表不能为空');
+      throw new LocalizedError('AI_PROMPT_REQUIRED', 'settingsUi.models.errors.promptRequired');
     const model = createModel(this.provider, config, request);
     const messages = toModelMessages(request, this.provider);
     const limit = request.maxOutputTokens ?? config.maxOutputTokens;
@@ -77,7 +83,7 @@ export class AiSdkAIService implements AIService {
     config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
   ) {
     try {
-      if (!config.apiKey?.trim()) throw new Error('API Key 不能为空');
+      if (!config.apiKey?.trim()) throw apiKeyRequired();
       return {
         success: true,
         message: '模型列表获取成功',

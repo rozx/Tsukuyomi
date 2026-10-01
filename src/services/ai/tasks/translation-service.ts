@@ -1,8 +1,6 @@
+import type { ExecutionLanguages } from 'src/models/locale';
 import type { AIModel } from 'src/services/ai/types/ai-model';
-import type {
-  TextGenerationStreamCallback,
-  AITool,
-} from 'src/services/ai/types/ai-service';
+import type { TextGenerationStreamCallback, AITool } from 'src/services/ai/types/ai-service';
 import type { Paragraph, ScoreBreakdown } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
@@ -20,6 +18,7 @@ import { buildTranslationSystemPrompt } from './prompts/translation';
  * 翻译服务选项
  */
 export interface TranslationServiceOptions {
+  languages: ExecutionLanguages;
   /**
    * 流式数据回调函数
    */
@@ -103,10 +102,10 @@ export class TranslationService {
   static async translate(
     content: Paragraph[],
     model: AIModel,
-    options?: TranslationServiceOptions,
+    options: TranslationServiceOptions,
   ): Promise<TranslationResult> {
     // 构建段落提取回调
-    const onParagraphsExtracted = options?.onParagraphTranslation
+    const onParagraphsExtracted = options.onParagraphTranslation
       ? async (params: ParagraphExtractCallbackParams) => {
           const { paragraphs, actions, actionStartIndex } = params;
           const referencedMemoryIds = collectChunkReferencedMemoryIds(
@@ -127,23 +126,26 @@ export class TranslationService {
             await Promise.resolve(options.onParagraphTranslation!(enrichedParagraphs));
           } catch (error) {
             console.error('[TranslationService] ⚠️ 段落翻译回调失败:', error);
+            throw error;
           }
         }
       : undefined;
 
     // 构建标题提取回调
-    const onTitleExtracted = options?.onTitleTranslation
+    const onTitleExtracted = options.onTitleTranslation
       ? async (params: TitleExtractCallbackParams) => {
           try {
             await Promise.resolve(options.onTitleTranslation!(params.title));
           } catch (error) {
             console.error('[TranslationService] ⚠️ 标题回调失败:', error);
+            throw error;
           }
         }
       : undefined;
 
     // 构建系统提示词函数（支持第一个/后续 chunk 不同提示词）
     const buildSystemPrompt = (params: {
+      languages: ExecutionLanguages;
       todosPrompt: string;
       bookContextSection: string;
       chapterContextSection: string;
@@ -154,6 +156,7 @@ export class TranslationService {
       enableOriginalTextValidation: boolean;
     }) => {
       return buildTranslationSystemPrompt({
+        languages: params.languages,
         todosPrompt: params.todosPrompt,
         bookContextSection: params.bookContextSection,
         chapterContextSection: params.chapterContextSection,
@@ -166,23 +169,18 @@ export class TranslationService {
       });
     };
 
-    return processTextTask(
-      content,
-      model,
-      pickTextTaskOptions(options),
-      {
-        taskType: 'translation',
-        logLabel: 'TranslationService',
-        temperature: model.isDefault.translation?.temperature ?? 0.7,
-        requiresTranslation: false,
-        onlyChangedParagraphs: false,
-        buildSystemPrompt,
-        onParagraphsExtracted,
-        onTitleExtracted,
-        enablePreviousChapter: true,
-        enableBriefPlanning: true,
-      },
-    );
+    return processTextTask(content, model, pickTextTaskOptions(options), {
+      taskType: 'translation',
+      logLabel: 'TranslationService',
+      temperature: model.isDefault.translation?.temperature ?? 0.7,
+      requiresTranslation: false,
+      onlyChangedParagraphs: false,
+      buildSystemPrompt,
+      onParagraphsExtracted,
+      onTitleExtracted,
+      enablePreviousChapter: true,
+      enableBriefPlanning: true,
+    });
   }
 }
 
@@ -231,7 +229,12 @@ function enrichParagraphsWithMemory(
   paragraphs: { id: string; translation: string }[],
   referencedMemories: string[],
   memoryScoreBreakdown: Record<string, ScoreBreakdown> | undefined,
-): Array<{ id: string; translation: string; referencedMemories?: string[]; memoryScoreBreakdown?: Record<string, ScoreBreakdown> }> {
+): Array<{
+  id: string;
+  translation: string;
+  referencedMemories?: string[];
+  memoryScoreBreakdown?: Record<string, ScoreBreakdown>;
+}> {
   return paragraphs.map((p) => ({
     ...p,
     ...(referencedMemories.length > 0 ? { referencedMemories } : {}),

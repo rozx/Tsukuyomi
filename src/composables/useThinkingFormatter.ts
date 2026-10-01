@@ -1,6 +1,8 @@
 import { ref, watch, onUnmounted, type Ref } from 'vue';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { throttle } from 'src/utils/throttle';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 
 // 常量
 const FORMAT_CACHE_THROTTLE_MS = 200;
@@ -86,6 +88,28 @@ export function inferStreamMode(message: string | undefined): StreamMode {
 }
 
 const CHUNK_SEPARATOR_PATTERN = /\[=== (翻译|润色|校对)块 (\d+\/\d+) ===\]/g;
+
+/** 分块标记里的任务名（简中存储协议）→ 界面任务类型代码 */
+const CHUNK_TASK_TYPES = {
+  翻译: 'translation',
+  润色: 'polish',
+  校对: 'proofreading',
+} as const;
+const CHUNK_INFO_PATTERN = /^(翻译|润色|校对)块 (\d+\/\d+)$/;
+
+/**
+ * 分块分隔条的显示文字：思考流里存的是简中协议标记（`润色块 2/5`），
+ * 显示时按界面语言重绘；无法识别的旧文本原样显示。
+ */
+export function chunkSeparatorLabel(chunkInfo: string, locale: AppLocale): string {
+  const match = CHUNK_INFO_PATTERN.exec(chunkInfo);
+  if (!match) return chunkInfo;
+  const type = CHUNK_TASK_TYPES[match[1] as keyof typeof CHUNK_TASK_TYPES];
+  return translateText(locale, 'activityUi.chunkSeparator', {
+    task: translateText(locale, `activityUi.taskType.${type}`),
+    progress: match[2]!,
+  });
+}
 const TOOL_CALL_PATTERN = /\[调用工具: ([^\]]+)\]/g;
 const TOOL_CALL_ARGS_PREFIX = '[调用参数: ';
 const TOOL_RESULT_ERROR_PATTERN =
@@ -512,9 +536,7 @@ interface WatchedTaskSnapshot {
   status: string;
 }
 
-export function useThinkingFormatter(
-  tasks: Ref<AIProcessingTask[]>,
-) {
+export function useThinkingFormatter(tasks: Ref<AIProcessingTask[]>) {
   const cache = ref<Record<string, FormattedMessagePart[]>>({});
   // 记录每个任务已解析到的消息长度，用于判断是否可以走增量快速路径
   const parsedLengths = new Map<string, number>();

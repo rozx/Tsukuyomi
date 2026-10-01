@@ -3,21 +3,24 @@
  * translation 系徽章细节（批量替换 / 段落翻译更新 / 段落翻译）。从 ChatBadgeReadInfo 拆出，
  * 避免单个子组件圈复杂度过高。用到 extAction 的扩展字段（replaced_*、old/new_translation）。
  */
+import { useI18n } from 'vue-i18n';
 import type { BadgeDetailProps } from 'src/components/layout/chat-badge/badge-detail';
 
 defineProps<BadgeDetailProps>();
+const { t } = useI18n();
 </script>
 
 <template>
   <span v-if="kind === 'translation_batch_replace'" class="font-semibold text-xs">
-    批量替换
-    {{ extAction.replaced_paragraph_count ?? 0 }}
-    个段落（共
-    {{ extAction.replaced_translation_count ?? 0 }}
-    个翻译版本）
+    {{
+      t('activityUi.badge.batchReplace', {
+        paragraphs: extAction.replaced_paragraph_count ?? 0,
+        translations: extAction.replaced_translation_count ?? 0,
+      })
+    }}
   </span>
   <span v-else-if="kind === 'translation_update'" class="font-semibold text-xs">
-    段落翻译更新
+    {{ t('activityUi.badge.translationUpdate') }}
     <span v-if="action.paragraph_id" class="opacity-70 ml-1"
       >({{ getShortId(action.paragraph_id) }})</span
     >
@@ -29,7 +32,7 @@ defineProps<BadgeDetailProps>();
     </span>
   </span>
   <span v-else-if="kind === 'translation_paragraph'" class="font-semibold text-xs">
-    段落翻译
+    {{ t('activityUi.badge.paragraphTranslation') }}
     <span v-if="action.paragraph_id" class="opacity-70 ml-1"
       >({{ getShortId(action.paragraph_id) }})</span
     >

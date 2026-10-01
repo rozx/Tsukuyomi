@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
 /**
  * 平板帮助页——横屏三栏（文档导航 + TOC + 正文），竖屏两个 overlay 抽屉。
  *
@@ -59,26 +61,16 @@ watch(
     :class="{ 'help-tablet--nav-open': isNavOpen, 'help-tablet--toc-open': isTocOpen }"
   >
     <!-- 竖屏 overlay 用的遮罩 -->
-    <div
-      v-if="isNavOpen"
-      class="ht-scrim ht-scrim--nav"
-      aria-hidden="true"
-      @click="toggleNav"
-    />
-    <div
-      v-if="isTocOpen"
-      class="ht-scrim ht-scrim--toc"
-      aria-hidden="true"
-      @click="toggleToc"
-    />
+    <div v-if="isNavOpen" class="ht-scrim ht-scrim--nav" aria-hidden="true" @click="toggleNav" />
+    <div v-if="isTocOpen" class="ht-scrim ht-scrim--toc" aria-hidden="true" @click="toggleToc" />
 
     <!-- 左：文档导航 -->
     <aside class="ht-nav">
       <header class="ht-nav-head">
         <div class="ht-nav-icon"><i class="pi pi-book" aria-hidden="true" /></div>
         <div>
-          <h2 class="ht-nav-title">帮助中心</h2>
-          <p class="ht-nav-sub">Documentation</p>
+          <h2 class="ht-nav-title">{{ t('helpUi.center') }}</h2>
+          <p class="ht-nav-sub">{{ t('helpUi.documentation') }}</p>
         </div>
       </header>
       <nav class="ht-nav-list">
@@ -98,7 +90,7 @@ watch(
           @click="toggleNav"
         >
           <i class="pi pi-bars" aria-hidden="true" />
-          <span>文档</span>
+          <span>{{ t('helpUi.documents') }}</span>
         </button>
         <div v-if="ctx.currentDoc.value" class="ht-breadcrumb">
           <span>{{ ctx.currentDoc.value.category }}</span>
@@ -114,7 +106,7 @@ watch(
           @click="toggleToc"
         >
           <i class="pi pi-list" aria-hidden="true" />
-          <span>目录</span>
+          <span>{{ t('helpUi.toc') }}</span>
         </button>
       </div>
 
@@ -139,11 +131,7 @@ watch(
               {{ ctx.currentDoc.value.description }}
             </p>
           </header>
-          <article
-            class="doc-content"
-            v-html="ctx.content.value"
-            @click="ctx.handleContentClick"
-          />
+          <article class="doc-content" v-html="ctx.content.value" @click="ctx.handleContentClick" />
         </div>
       </div>
     </main>
@@ -152,7 +140,7 @@ watch(
     <aside v-if="hasToc" class="ht-toc">
       <header class="ht-toc-head">
         <i class="pi pi-list" aria-hidden="true" />
-        <span>目录</span>
+        <span>{{ t('helpUi.toc') }}</span>
       </header>
       <nav class="ht-toc-list">
         <HelpTabletTocList @select="selectHeading" />
@@ -165,7 +153,11 @@ watch(
 .help-tablet {
   position: relative;
   overflow: hidden;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 /* ───────────── 通用遮罩（仅竖屏 overlay 时显示） ───────────── */

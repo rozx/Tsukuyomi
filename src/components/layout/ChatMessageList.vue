@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import type { ChatSessionMessage } from 'src/stores/chat-sessions';
 import type { ChatMessageListData, MessageItemHandlers } from './chat-message-types';
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
@@ -12,6 +13,7 @@ import { useThinkingPhrase } from 'src/composables/chat/useThinkingPhrase';
 interface Props extends ChatMessageListData, MessageItemHandlers {}
 
 const props = defineProps<Props>();
+const { t } = useI18n();
 
 // 思考态文案：每条助手消息一旦进入活跃思考态，就锁定一句池中文案不再随机切换。
 const thinkingPhrasesById = new Map<string, string>();
@@ -75,8 +77,8 @@ const itemCountFor = (id: string): number => props.messageDisplayItemsById[id]?.
     class="flex flex-col items-center justify-center h-full text-center px-6"
   >
     <AssistantAvatar :size="128" glowing class="mb-5" />
-    <p class="empty-hero-title text-moon-90 mb-2">妾身月詠，于此恭候</p>
-    <p class="text-xs text-moon-50">可问翻译、术语、章节诸事</p>
+    <p class="empty-hero-title text-moon-90 mb-2">{{ t('activityUi.chat.emptyTitle') }}</p>
+    <p class="text-xs text-moon-50">{{ t('activityUi.chat.emptyHint') }}</p>
   </div>
   <div v-else class="flex flex-col gap-4 w-full">
     <template v-for="message in props.messages" :key="message.id">

@@ -97,9 +97,13 @@ describe('AI Tools Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     // 确保 findChapterById 默认返回 undefined（防止跨测试泄露）
-    (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+    (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      undefined,
+    );
     // 默认不返回章节内容，避免上一个测试的 mock 实现泄露到下一个测试
-    (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    (
+      ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue(null);
     // Reset store mock
     mockContext.aiProcessingStore.activeTasks = [
       {
@@ -366,7 +370,9 @@ describe('AI Tools Tests', () => {
           },
         ],
       };
-      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(mockBook);
+      (BookService.getBookById as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        mockBook,
+      );
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
         volume: mockBook.volumes[0],
@@ -488,9 +494,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-        mockChapter.content,
-      );
+      (
+        ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockChapter.content);
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -541,9 +547,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-        mockChapter.content,
-      );
+      (
+        ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockChapter.content);
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -598,9 +604,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-        mockChapter.content,
-      );
+      (
+        ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockChapter.content);
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -655,9 +661,9 @@ describe('AI Tools Tests', () => {
       (ChapterService.findChapterById as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
         chapter: mockChapter,
       });
-      (ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-        mockChapter.content,
-      );
+      (
+        ChapterContentService.loadChapterContent as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue(mockChapter.content);
 
       const handler = updateTaskStatusTool!.handler;
       const result = await handler({ status: 'review' }, reviewContext);
@@ -814,7 +820,12 @@ describe('AI Tools Tests', () => {
       };
       const mockStore = {
         getBookById: jest.fn().mockReturnValue(mockBook),
-        updateBook: jest.fn().mockResolvedValue(undefined),
+        editTitle: jest.fn().mockImplementation(() => {
+          Object.assign(mockChapter.title, {
+            translation: { id: 'cn', translation: 'New Title', aiModelId: mockAIModelId },
+          });
+          return Promise.resolve();
+        }),
       };
       (useBooksStore as unknown as unknown as ReturnType<typeof vi.fn>).mockReturnValue(mockStore);
       (ChapterService.updateChapter as unknown as ReturnType<typeof vi.fn>).mockReturnValue([]); // mock return updated volumes
@@ -834,7 +845,16 @@ describe('AI Tools Tests', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(true);
-      expect(ChapterService.updateChapter).toHaveBeenCalled();
+      expect(mockStore.editTitle).toHaveBeenCalledWith(
+        mockBookId,
+        'zh-CN',
+        expect.objectContaining({
+          expectedOriginal: 'Old Title',
+          translation: 'New Title',
+          aiModelId: mockAIModelId,
+        }),
+      );
+      expect(parsed.new_title_translation).toBe('New Title');
       expect(mockContext.onAction).toHaveBeenCalled();
     });
   });
@@ -842,10 +862,7 @@ describe('AI Tools Tests', () => {
   // 断言 handler 调用会抛出包含指定消息的错误
   // （handler 返回类型是 Promise<string> | string，不能直接用 expect().rejects，
   // 否则会触发 @typescript-eslint/await-thenable）
-  const expectThrows = async (
-    invoke: () => Promise<string> | string,
-    message: string,
-  ) => {
+  const expectThrows = async (invoke: () => Promise<string> | string, message: string) => {
     let caught: unknown;
     try {
       await Promise.resolve(invoke());
@@ -855,6 +872,12 @@ describe('AI Tools Tests', () => {
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toContain(message);
   };
+
+  function mockEntityReadback(kind: 'terminologies' | 'characterSettings', entity: { id: string }) {
+    vi.mocked(useBooksStore).mockReturnValue({
+      getBookById: () => ({ id: mockBookId, [kind]: [entity] }),
+    } as never);
+  }
 
   describe('Terminology Tools (blank-value validation)', () => {
     const createTermTool = terminologyTools.find(
@@ -891,20 +914,20 @@ describe('AI Tools Tests', () => {
       });
 
       it('trims name and translation before persisting', async () => {
-        const addSpy = spyOn(TerminologyService, 'addTerminology').mockResolvedValue({
+        const persisted = {
           id: 'term-1',
           name: 'hero',
           translation: { translation: '英雄' },
-        } as any);
+        } as any;
+        mockEntityReadback('terminologies', persisted);
+        const addSpy = spyOn(TerminologyService, 'addTerminology').mockResolvedValue(persisted);
 
-        await createTermTool!.handler(
-          { name: '  hero  ', translation: '  英雄  ' },
-          mockContext,
-        );
+        await createTermTool!.handler({ name: '  hero  ', translation: '  英雄  ' }, mockContext);
 
         expect(addSpy).toHaveBeenCalledWith(
           mockBookId,
           expect.objectContaining({ name: 'hero', translation: '英雄' }),
+          'zh-CN',
         );
         addSpy.mockRestore();
       });
@@ -919,42 +942,46 @@ describe('AI Tools Tests', () => {
       });
 
       it('allows empty description (intentional delete)', async () => {
-        const updateSpy = spyOn(TerminologyService, 'updateTerminology').mockResolvedValue({
+        const persisted = {
           id: 't1',
           name: 'hero',
           translation: { translation: '英雄' },
           description: '',
-        } as any);
-
-        await updateTermTool!.handler(
-          { term_id: 't1', description: '' },
-          mockContext,
+        } as any;
+        mockEntityReadback('terminologies', persisted);
+        const updateSpy = spyOn(TerminologyService, 'updateTerminology').mockResolvedValue(
+          persisted,
         );
+
+        await updateTermTool!.handler({ term_id: 't1', description: '' }, mockContext);
 
         expect(updateSpy).toHaveBeenCalledWith(
           mockBookId,
           't1',
           expect.objectContaining({ description: '' }),
+          'zh-CN',
         );
         updateSpy.mockRestore();
       });
 
       it('trims translation before persisting', async () => {
-        const updateSpy = spyOn(TerminologyService, 'updateTerminology').mockResolvedValue({
+        const persisted = {
           id: 't1',
           name: 'hero',
           translation: { translation: '英雄' },
-        } as any);
-
-        await updateTermTool!.handler(
-          { term_id: 't1', translation: '  英雄  ' },
-          mockContext,
+        } as any;
+        mockEntityReadback('terminologies', persisted);
+        const updateSpy = spyOn(TerminologyService, 'updateTerminology').mockResolvedValue(
+          persisted,
         );
+
+        await updateTermTool!.handler({ term_id: 't1', translation: '  英雄  ' }, mockContext);
 
         expect(updateSpy).toHaveBeenCalledWith(
           mockBookId,
           't1',
           expect.objectContaining({ translation: '英雄' }),
+          'zh-CN',
         );
         updateSpy.mockRestore();
       });
@@ -984,7 +1011,7 @@ describe('AI Tools Tests', () => {
         );
       });
 
-      it('rejects aliases with blank name or translation', async () => {
+      it('rejects aliases with blank name or non-string translation', async () => {
         await expectThrows(
           () =>
             createCharacterTool!.handler(
@@ -995,7 +1022,7 @@ describe('AI Tools Tests', () => {
               },
               mockContext,
             ),
-          '别名的名称和翻译不能为空',
+          '别名名称不能为空，翻译必须是字符串',
         );
 
         await expectThrows(
@@ -1004,21 +1031,25 @@ describe('AI Tools Tests', () => {
               {
                 name: '田中太郎',
                 translation: '田中太郎',
-                aliases: [{ name: '太郎', translation: '   ' }],
+                aliases: [{ name: '太郎', translation: 42 }],
               },
               mockContext,
             ),
-          '别名的名称和翻译不能为空',
+          '别名名称不能为空，翻译必须是字符串',
         );
       });
 
       it('trims name, translation and aliases before persisting', async () => {
-        const addSpy = spyOn(CharacterSettingService, 'addCharacterSetting').mockResolvedValue({
+        const persisted = {
           id: 'char-1',
           name: '田中太郎',
           translation: { translation: '田中太郎' },
           aliases: [],
-        } as any);
+        } as any;
+        mockEntityReadback('characterSettings', persisted);
+        const addSpy = spyOn(CharacterSettingService, 'addCharacterSetting').mockResolvedValue(
+          persisted,
+        );
 
         await createCharacterTool!.handler(
           {
@@ -1036,6 +1067,7 @@ describe('AI Tools Tests', () => {
             translation: '田中太郎',
             aliases: [{ name: '田中', translation: '田中' }],
           }),
+          'zh-CN',
         );
         addSpy.mockRestore();
       });
@@ -1044,8 +1076,7 @@ describe('AI Tools Tests', () => {
     describe('update_character', () => {
       it('rejects whitespace-only name', async () => {
         await expectThrows(
-          () =>
-            updateCharacterTool!.handler({ character_id: 'c1', name: '   ' }, mockContext),
+          () => updateCharacterTool!.handler({ character_id: 'c1', name: '   ' }, mockContext),
           '角色名称不能为空',
         );
       });
@@ -1053,39 +1084,38 @@ describe('AI Tools Tests', () => {
       it('rejects whitespace-only translation', async () => {
         await expectThrows(
           () =>
-            updateCharacterTool!.handler(
-              { character_id: 'c1', translation: '   ' },
-              mockContext,
-            ),
+            updateCharacterTool!.handler({ character_id: 'c1', translation: '   ' }, mockContext),
           '角色翻译不能为空',
         );
       });
 
-      it('rejects aliases with blank values', async () => {
+      it('rejects aliases with non-string translation', async () => {
         await expectThrows(
           () =>
             updateCharacterTool!.handler(
               {
                 character_id: 'c1',
-                aliases: [{ name: '田中', translation: '   ' }],
+                aliases: [{ name: '田中', translation: 42 }],
               },
               mockContext,
             ),
-          '别名的名称和翻译不能为空',
+          '别名名称不能为空，翻译必须是字符串',
         );
       });
 
       it('allows empty description and speaking_style (intentional delete)', async () => {
-        const updateSpy = spyOn(
-          CharacterSettingService,
-          'updateCharacterSetting',
-        ).mockResolvedValue({
+        const persisted = {
           id: 'c1',
           name: '田中',
           translation: { translation: '田中' },
           description: '',
           speakingStyle: '',
-        } as any);
+        } as any;
+        mockEntityReadback('characterSettings', persisted);
+        const updateSpy = spyOn(
+          CharacterSettingService,
+          'updateCharacterSetting',
+        ).mockResolvedValue(persisted);
 
         await updateCharacterTool!.handler(
           { character_id: 'c1', description: '', speaking_style: '' },
@@ -1096,6 +1126,7 @@ describe('AI Tools Tests', () => {
           mockBookId,
           'c1',
           expect.objectContaining({ description: '', speakingStyle: '' }),
+          'zh-CN',
         );
         updateSpy.mockRestore();
       });
@@ -1140,10 +1171,7 @@ describe('AI Tools Tests', () => {
           lastAccessedAt: 0,
         } as any);
 
-        await createMemoryTool!.handler(
-          { content: '  内容  ', summary: '  摘要  ' },
-          mockContext,
-        );
+        await createMemoryTool!.handler({ content: '  内容  ', summary: '  摘要  ' }, mockContext);
 
         expect(createSpy).toHaveBeenCalledWith(mockBookId, '内容', '摘要');
         createSpy.mockRestore();

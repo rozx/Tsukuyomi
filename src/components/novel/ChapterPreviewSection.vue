@@ -1,10 +1,15 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+
 import type { ComponentPublicInstance } from 'vue';
 import PreviewParagraphItem from 'src/components/novel/PreviewParagraphItem.vue';
 import ChapterEmptyState from 'src/components/novel/ChapterEmptyState.vue';
 import ChapterNavigation from 'src/components/novel/ChapterNavigation.vue';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import { formatWordCount } from 'src/utils';
+
+const { t, locale } = useI18n();
 
 // 预览模式整段视图：标题/统计 + 虚拟列表 + 空状态 + 导航。
 // 从 ChapterContentPanel 拆出以降低父模板圈复杂度；listStart / header 通过回调
@@ -47,8 +52,10 @@ const paragraphAt = (paragraphs: Paragraph[], index: number) => paragraphs[index
       <div v-if="hasParagraphs" class="preview-chapter-stats">
         <div class="preview-stat-item">
           <i class="pi pi-align-left preview-stat-icon"></i>
-          <span class="preview-stat-value">{{ formatWordCount(translatedCharCount) }}</span>
-          <span class="preview-stat-label">已翻译</span>
+          <span class="preview-stat-value">{{
+            formatWordCount(translatedCharCount, resolveAppLocale(locale))
+          }}</span>
+          <span class="preview-stat-label">{{ t('readerUi.translated') }}</span>
         </div>
       </div>
     </div>
@@ -115,8 +122,7 @@ const paragraphAt = (paragraphs: Paragraph[], index: number) => paragraphs[index
 }
 
 .preview-chapter-title {
-  font-family:
-    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-family: 'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
   font-size: 1.875rem;
   font-weight: 600;
   letter-spacing: -0.01em;

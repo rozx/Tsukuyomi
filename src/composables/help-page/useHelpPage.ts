@@ -1,26 +1,30 @@
-import { ref, onMounted, computed, nextTick, watch, inject, provide, type InjectionKey } from 'vue';
+import { translateText } from 'src/i18n/translate';
+import type { MessageKey } from 'src/i18n/types';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { HelpService, parseHelpHeading, resolveHelpSection } from 'src/services/help-service';
+import {
+  ref,
+  onMounted,
+  onUnmounted,
+  computed,
+  nextTick,
+  watch,
+  inject,
+  provide,
+  type InjectionKey,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { marked, type Token } from 'marked';
 import DOMPurify from 'dompurify';
-import { useResponsiveLayout } from 'src/composables/useResponsiveLayout';
+import { useDeviceVariant } from 'src/composables/useDeviceVariant';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+import type { HelpDocument, HelpHeading } from 'src/models/help';
 import { resolveHelpDocumentByHref } from 'src/utils/help-navigation';
 import { getAssetUrl } from 'src/utils/assets';
 
-export interface HelpDocument {
-  id: string;
-  title: string;
-  file: string;
-  path: string;
-  category: string;
-  description: string;
-}
-
-export interface TocItem {
-  id: string;
-  text: string;
-  level: number;
-}
-
+export type { HelpDocument } from 'src/models/help';
+export type TocItem = HelpHeading;
 export type HelpPageContext = ReturnType<typeof createHelpPageContext>;
 
 const HELP_PAGE_KEY: InjectionKey<HelpPageContext> = Symbol('help-page');
@@ -43,9 +47,17 @@ export function injectHelpPage(): HelpPageContext {
 
 function createHelpPageContext() {
   const route = useRoute();
+  const { locale } = useI18n();
+  const uiLocale = computed(() => resolveAppLocale(locale.value));
   const router = useRouter();
-  const { isPhone, isTablet } = useResponsiveLayout();
+  const { variant } = useDeviceVariant();
+  const isPhone = computed(() => variant.value === 'mobile');
+  const isTablet = computed(() => variant.value === 'tablet');
 
+  let indexRequest = 0;
+  let documentRequest = 0;
+  let disposed = false;
+  let categoriesInitialized = false;
   const documents = ref<HelpDocument[]>([]);
   const currentDoc = ref<HelpDocument | null>(null);
   const content = ref('');
@@ -58,31 +70,32 @@ function createHelpPageContext() {
 
   const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
-  const quickStartSteps = [
-    { n: '01', t: '配置您的 AI 模型', d: '在 AI 设置中输入一个或多个服务商的密钥。' },
-    { n: '02', t: '导入或添加书籍', d: '从 syosetu / kakuyomu 抓取，或手动添加。' },
-    { n: '03', t: '建立术语与角色', d: '让 AI 理解「月詠」、「白銀の騎士」等专有名词。' },
-    { n: '04', t: '开始翻译', d: '单段翻译或批量翻译；多模型多版本自由切换。' },
-  ];
-
-  const helpTopicsByKeyword: Array<{ icon: string; label: string; keywords: string[] }> = [
-    { icon: 'pi-book', label: '图书馆', keywords: ['图书', '库', '书籍'] },
-    { icon: 'pi-file-edit', label: '翻译功能', keywords: ['翻译'] },
-    { icon: 'pi-tags', label: '术语管理', keywords: ['术语'] },
-    { icon: 'pi-users', label: '角色设定', keywords: ['角色'] },
-    { icon: 'pi-objects-column', label: '记忆系统', keywords: ['记忆', '记忆库'] },
-    { icon: 'pi-sparkles', label: 'AI 助手', keywords: ['助手', 'AI'] },
-  ];
-
+  const quickStartSteps = computed(() =>
+    [
+      ['configureTitle', 'configureDescription'],
+      ['importTitle', 'importDescription'],
+      ['referencesTitle', 'referencesDescription'],
+      ['translateTitle', 'translateDescription'],
+    ].map(([title, description], index) => ({
+      n: String(index + 1).padStart(2, '0'),
+      t: translateText(uiLocale.value, `helpUi.${title}` as MessageKey),
+      d: translateText(uiLocale.value, `helpUi.${description}` as MessageKey),
+    })),
+  );
   const topicTiles = computed(() =>
-    helpTopicsByKeyword.map((topic) => {
-      const match = documents.value.find((d) =>
-        topic.keywords.some(
-          (k) => d.title.includes(k) || d.description.includes(k) || d.category.includes(k),
-        ),
-      );
-      return { ...topic, doc: match };
-    }),
+    [
+      ['books-page-guide', 'pi-book', 'library'],
+      ['book-details-translation', 'pi-file-edit', 'translation'],
+      ['book-details-terminology', 'pi-tags', 'terminology'],
+      ['book-details-characters', 'pi-users', 'characters'],
+      ['book-details-memory', 'pi-objects-column', 'memories'],
+      ['chat-assistant-guide', 'pi-sparkles', 'assistant'],
+    ].map(([id, icon, label]) => ({
+      id,
+      icon,
+      label: translateText(uiLocale.value, `helpUi.${label}` as MessageKey),
+      doc: documents.value.find((doc) => doc.id === id),
+    })),
   );
 
   const expandedCategories = ref<Set<string>>(new Set());
@@ -99,10 +112,10 @@ function createHelpPageContext() {
   const groupedDocuments = computed(() => {
     const groups: Record<string, HelpDocument[]> = {};
     for (const doc of documents.value) {
-      if (!groups[doc.category]) {
-        groups[doc.category] = [];
+      if (!groups[doc.categoryId ?? 'guides']) {
+        groups[doc.categoryId ?? 'guides'] = [];
       }
-      groups[doc.category]!.push(doc);
+      groups[doc.categoryId ?? 'guides']!.push(doc);
     }
     return groups;
   });
@@ -119,14 +132,9 @@ function createHelpPageContext() {
     const headingToken = token as Token & { depth: number; text: string; raw: string };
     const text = headingToken.text;
     const level = headingToken.depth;
-    const raw = headingToken.raw.replace(/^#+\s*/, '');
-    const anchor = raw
-      .toLowerCase()
-      .replace(/[^\w\s\u4e00-\u9fa5-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/^-+|-+$/g, '');
-
-    return `<h${level} id="${anchor}" class="doc-heading doc-heading-${level}">${text}</h${level}>`;
+    const heading = parseHelpHeading(text, level);
+    const anchor = heading.id;
+    return `<h${level} id="${anchor}" class="doc-heading doc-heading-${level}">${heading.text}</h${level}>`;
   };
 
   renderer.link = (token: Token) => {
@@ -144,35 +152,38 @@ function createHelpPageContext() {
   };
 
   async function loadDocumentIndex() {
+    if (disposed) return;
+    const request = ++indexRequest;
+    const language = uiLocale.value;
+    const current = () => !disposed && request === indexRequest && uiLocale.value === language;
     try {
-      const response = await fetch(getAssetUrl('help/index.json'));
-      if (!response.ok) throw new Error('Failed to load document index');
-      documents.value = (await response.json()) as HelpDocument[];
-
-      const categories = new Set(documents.value.map((doc) => doc.category));
-      categories.delete('更新日志');
-      expandedCategories.value = categories;
-
-      const docId = route.params.docId as string;
-      if (docId) {
-        const doc = documents.value.find((d) => d.id === docId);
-        if (doc) {
-          await loadDocumentContent(doc);
-          return;
-        }
+      const result = await HelpService.getIndex(language);
+      if (!current()) return;
+      documents.value = result;
+      if (!categoriesInitialized) {
+        expandedCategories.value = new Set(
+          result
+            .filter((doc) => doc.categoryId !== 'release-notes')
+            .map((doc) => doc.categoryId ?? 'guides'),
+        );
+        categoriesInitialized = true;
       }
-
-      // 桌面：不自动打开第一篇文档，保留品牌化的帮助中心入口态；
-      // 平板：沿用之前的自动跳转行为（平板没有落地态模板，避免主内容空白）。
-      if (isTablet.value && documents.value.length > 0 && !currentDoc.value) {
-        const firstDoc = documents.value[0];
-        if (firstDoc) {
-          await router.replace(`/help/${firstDoc.id}`);
-        }
+      const id =
+        typeof route.params.docId === 'string' && route.params.docId
+          ? route.params.docId
+          : (currentDoc.value?.id ?? 'front-page');
+      const doc = result.find((entry) => entry.id === id);
+      if (doc) {
+        await loadDocumentContent(doc);
+        return;
       }
-
-    } catch {
-      error.value = '无法加载帮助文档索引';
+      if (isTablet.value && result.length && !currentDoc.value)
+        await router.replace(`/help/${result[0]!.id}`);
+    } catch (failure) {
+      if (current()) {
+        error.value = localizedErrorMessage(failure, language, 'helpFeedback.requestFailed');
+        loading.value = false;
+      }
     }
   }
 
@@ -213,82 +224,120 @@ function createHelpPageContext() {
     },
   );
 
+  function getContentScrollElement(): HTMLElement | null {
+    return isPhone.value
+      ? ((document.scrollingElement as HTMLElement | null) ?? document.documentElement)
+      : document.querySelector<HTMLElement>('.help-content-scroll');
+  }
+
+  function captureReadingSection(): string {
+    const container = getContentScrollElement();
+    if (!container || !content.value) return activeHeading.value;
+    if (container.scrollTop === 0 && route.hash) return route.hash.substring(1);
+    const top =
+      (isPhone.value
+        ? (document.querySelector('.mobile-shell-sysbar')?.getBoundingClientRect().bottom ?? 0)
+        : container.getBoundingClientRect().top) + 8;
+    const visible = toc.value.filter((heading) => {
+      const element = document.getElementById(heading.id);
+      return element && element.getBoundingClientRect().top <= top;
+    });
+    return visible.at(-1)?.id ?? toc.value[0]?.id ?? activeHeading.value;
+  }
+
+  let loadedKey = '';
+  watch(
+    uiLocale,
+    () => {
+      activeHeading.value = captureReadingSection();
+      ++indexRequest;
+      ++documentRequest;
+      loadedKey = '';
+      content.value = '';
+      toc.value = [];
+      error.value = '';
+      loading.value = Boolean(route.params.docId || currentDoc.value);
+      void loadDocumentIndex();
+    },
+    { flush: 'sync' },
+  );
+
   async function loadDocumentContent(doc: HelpDocument) {
-    if (currentDoc.value?.id === doc.id) {
+    if (disposed) return;
+    const language = uiLocale.value;
+    const key = `${language}:${doc.id}`;
+    if (loadedKey === key && currentDoc.value?.id === doc.id) {
+      const request = documentRequest;
       if (route.hash) {
         await nextTick();
+        if (
+          disposed ||
+          request !== documentRequest ||
+          uiLocale.value !== language ||
+          currentDoc.value?.id !== doc.id
+        )
+          return;
         scrollToHeading(route.hash.substring(1), false);
       }
       return;
     }
-
+    const request = ++documentRequest;
+    const current = () =>
+      !disposed &&
+      request === documentRequest &&
+      uiLocale.value === language &&
+      currentDoc.value?.id === doc.id;
+    const position =
+      currentDoc.value?.id === doc.id
+        ? activeHeading.value || route.hash.substring(1)
+        : route.hash.substring(1);
+    if (currentDoc.value?.id !== doc.id) {
+      expandedCategories.value = new Set([...expandedCategories.value, doc.categoryId ?? 'guides']);
+    }
     loading.value = true;
     error.value = '';
     currentDoc.value = doc;
     toc.value = [];
     activeHeading.value = '';
-
-    if (!expandedCategories.value.has(doc.category)) {
-      expandedCategories.value.add(doc.category);
-      expandedCategories.value = new Set(expandedCategories.value);
-    }
-
     try {
-      const response = await fetch(getAssetUrl(`${doc.path}/${doc.file}`));
-      if (!response.ok) throw new Error(`Failed to load ${doc.file}`);
-      const markdown = await response.text();
-
-      const tokens = marked.lexer(markdown);
-      const headings: TocItem[] = [];
-      tokens.forEach((token) => {
-        if (token.type === 'heading') {
-          const headingToken = token as Token & { depth: number; text: string; raw: string };
-          const raw = headingToken.raw.replace(/^#+\s*/, '');
-          const anchor = raw
-            .toLowerCase()
-            .replace(/[^\w\s\u4e00-\u9fa5-]/g, '')
-            .replace(/\s+/g, '-')
-            .replace(/^-+|-+$/g, '');
-
-          headings.push({
-            id: anchor,
-            text: headingToken.text,
-            level: headingToken.depth,
-          });
-        }
-      });
-      toc.value = headings.filter((h) => h.level >= 1 && h.level <= 4);
-
-      const html = await marked.parse(markdown, { renderer });
-      content.value = DOMPurify.sanitize(html, {
-        ADD_ATTR: ['data-href'],
-      });
-
+      const resource = await HelpService.getDocument(doc.id, language);
+      if (!current()) return;
+      const html = await marked.parse(resource.markdown, { renderer });
+      if (!current()) return;
+      currentDoc.value = resource.doc;
+      toc.value = resource.headings.filter((heading) => heading.level >= 1 && heading.level <= 4);
+      content.value = DOMPurify.sanitize(html, { ADD_ATTR: ['data-href'] });
+      loadedKey = key;
       await nextTick();
-      const container = document.querySelector('.help-content-scroll');
-      if (container) container.scrollTop = 0;
-
-      if (route.hash) {
-        setTimeout(() => {
-          scrollToHeading(route.hash.substring(1), false);
-        }, 100);
+      if (!current()) return;
+      const headingId = position ? resolveHelpSection(resource.doc, position) : '';
+      if (headingId) scrollToHeading(headingId, false);
+      else {
+        const container = getContentScrollElement();
+        if (container) container.scrollTop = 0;
       }
-    } catch {
-      error.value = `无法加载文档: ${doc.title}`;
+      if (route.hash && headingId !== route.hash.substring(1))
+        await router.replace({ ...route, hash: `#${headingId}` });
+    } catch (failure) {
+      if (current())
+        error.value = localizedErrorMessage(failure, language, 'helpFeedback.requestFailed');
     } finally {
-      loading.value = false;
+      if (current()) loading.value = false;
     }
   }
 
-  function scrollToHeading(id: string, updateUrl = true) {
+  async function scrollToHeading(section: string, updateUrl = true) {
+    const id = currentDoc.value ? resolveHelpSection(currentDoc.value, section) : section;
     const element = document.getElementById(id);
     if (element) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       activeHeading.value = id;
       showTocDrawer.value = false;
       if (updateUrl) {
-        router.replace({ ...route, hash: `#${id}` });
+        await router.replace({ ...route, hash: `#${id}` });
       }
+      await nextTick();
+      if (disposed || !element.isConnected) return;
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }
 
@@ -325,6 +374,14 @@ function createHelpPageContext() {
   onMounted(() => {
     void loadDocumentIndex();
   });
+  onUnmounted(() => {
+    disposed = true;
+    ++indexRequest;
+    ++documentRequest;
+    loading.value = false;
+  });
+  const categoryLabel = (id: string) =>
+    documents.value.find((doc) => doc.categoryId === id)?.category ?? id;
 
   return {
     // state
@@ -343,6 +400,7 @@ function createHelpPageContext() {
     quickStartSteps,
     topicTiles,
     groupedDocuments,
+    categoryLabel,
     categoryChevron,
     isCategoryExpanded,
     isActiveDoc,

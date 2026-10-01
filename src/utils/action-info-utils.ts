@@ -1,6 +1,9 @@
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { MessageAction } from 'src/stores/chat-sessions';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 import type { ActionDetail, ActionDetailsContext } from './action-info/types';
+import { detailText } from './action-info/types';
 import { appendNamedEntityDetails } from './action-info/named-entity-details';
 import { appendTranslationDetails } from './action-info/translation-details';
 import { appendMemoryDetails } from './action-info/memory-details';
@@ -33,36 +36,32 @@ import {
 export type { ActionDetail, ActionDetailsContext } from './action-info/types';
 
 /**
- * 操作类型标签映射
+ * 操作类型标签（按界面语言渲染；存储只保留 type 代码）
  */
-export const ACTION_LABELS: Record<MessageAction['type'], string> = {
-  create: '创建',
-  update: '更新',
-  delete: '删除',
-  web_search: '网络搜索',
-  web_fetch: '网页获取',
-  read: '读取',
-  navigate: '导航',
-  ask: '提问',
-  search: '搜索',
-};
+export function actionTypeLabel(locale: AppLocale, type: MessageAction['type']): string {
+  return translateText(locale, `activityUi.action.${type}`);
+}
 
 /**
- * 实体类型标签映射
+ * 实体类型标签（按界面语言渲染；存储只保留 entity 代码）
  */
-export const ENTITY_LABELS: Record<MessageAction['entity'], string> = {
-  term: '术语',
-  character: '角色',
-  web: '网络',
-  translation: '翻译',
-  chapter: '章节',
-  paragraph: '段落',
-  book: '书籍',
-  memory: '记忆',
-  todo: '待办事项',
-  user: '用户',
-  help_doc: '帮助文档',
-};
+export function entityTypeLabel(locale: AppLocale, entity: MessageAction['entity']): string {
+  return translateText(locale, `activityUi.entity.${entity}`);
+}
+
+/**
+ * 「操作 + 实体」摘要，如「创建术语」/「Create term」
+ */
+export function actionSummaryLabel(
+  locale: AppLocale,
+  type: MessageAction['type'],
+  entity: MessageAction['entity'],
+): string {
+  return translateText(locale, 'activityUi.actionSummary', {
+    action: actionTypeLabel(locale, type),
+    entity: entityTypeLabel(locale, entity),
+  });
+}
 
 /**
  * 将 ActionInfo 转换为 MessageAction
@@ -70,10 +69,12 @@ export const ENTITY_LABELS: Record<MessageAction['entity'], string> = {
  */
 export function createMessageActionFromActionInfo(action: ActionInfo): MessageAction {
   const actionName = extractActionName(action.data);
+  const language = action.execution?.languages.targetLanguage;
   return {
     type: action.type,
     entity: action.entity,
     timestamp: Date.now(),
+    ...(language ? { language } : {}),
     ...(actionName ? { name: actionName } : {}),
     ...buildWebFields(action),
     ...buildTranslationFields(action),
@@ -92,8 +93,8 @@ export function createMessageActionFromActionInfo(action: ActionInfo): MessageAc
 /**
  * 格式化时间戳为本地时间字符串。
  */
-function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleString('zh-CN', {
+function formatTimestamp(timestamp: number, locale: AppLocale): string {
+  return new Date(timestamp).toLocaleString(locale, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -110,62 +111,68 @@ function formatTimestamp(timestamp: number): string {
 export function getActionDetails(
   action: MessageAction,
   context: ActionDetailsContext,
+  locale: AppLocale = 'zh-CN',
 ): ActionDetail[] {
+  const timeDetail = (): ActionDetail => ({
+    label: detailText(locale, 'time'),
+    value: formatTimestamp(action.timestamp, locale),
+  });
   if (action.nameIsDescription) {
+    // 说明与结构化详情是写入时的历史自由文本，原样展示；只重绘自有固定标签
     return [
-      { label: '操作说明', value: action.name ?? '' },
+      { label: detailText(locale, 'description'), value: action.name ?? '' },
       ...(action.descriptionDetails ?? []),
-      { label: '操作时间', value: formatTimestamp(action.timestamp) },
+      timeDetail(),
     ];
   }
   const details: ActionDetail[] = [
-    { label: '操作类型', value: ACTION_LABELS[action.type] },
-    { label: '实体类型', value: ENTITY_LABELS[action.entity] },
+    { label: detailText(locale, 'actionType'), value: actionTypeLabel(locale, action.type) },
+    { label: detailText(locale, 'entityType'), value: entityTypeLabel(locale, action.entity) },
   ];
 
   if (action.name) {
-    details.push({ label: '名称', value: action.name });
+    details.push({ label: detailText(locale, 'name'), value: action.name });
   }
 
   if (action.type === 'ask' && action.entity === 'user' && action.tool_name === 'ask_user_batch') {
-    appendAskUserBatchDetails(details, action);
+    appendAskUserBatchDetails(details, action, locale);
   }
 
-  appendNamedEntityDetails(details, action, context);
+  appendNamedEntityDetails(details, action, context, locale);
 
   if (action.type === 'web_search' || action.type === 'web_fetch') {
-    appendWebDetails(details, action);
+    appendWebDetails(details, action, locale);
   }
 
   if (action.entity === 'todo') {
-    appendTodoDetails(details, action);
+    appendTodoDetails(details, action, locale);
   }
 
   if (action.entity === 'translation') {
-    appendTranslationDetails(details, action, context);
+    appendTranslationDetails(details, action, context, locale);
   }
 
   if (action.entity === 'memory') {
-    appendMemoryDetails(details, action);
+    appendMemoryDetails(details, action, locale);
   }
 
   if (action.type === 'read') {
-    appendReadDetails(details, action, context);
+    appendReadDetails(details, action, context, locale);
   }
 
   if (action.type === 'search') {
-    appendSearchDetails(details, action);
+    appendSearchDetails(details, action, locale);
   }
 
   if (action.type === 'update' && action.entity === 'chapter') {
-    appendChapterUpdateDetails(details, action, context);
+    appendChapterUpdateDetails(details, action, context, locale);
   }
 
   if (action.type === 'navigate') {
-    appendNavigateDetails(details, action, context);
+    appendNavigateDetails(details, action, context, locale);
   }
 
-  details.push({ label: '操作时间', value: formatTimestamp(action.timestamp) });
+  details.push(timeDetail());
 
   return details;
 }

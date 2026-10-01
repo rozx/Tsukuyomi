@@ -1,3 +1,6 @@
+import { useMemoryReferences } from './useMemoryReferences';
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import { BookService } from 'src/services/book-service';
 import {
   computed,
   ref,
@@ -16,6 +19,9 @@ import {
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+import { localizedErrorMessage } from 'src/utils/localized-error';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useContextStore } from 'src/stores/context';
 import { useUiStore } from 'src/stores/ui';
@@ -39,7 +45,7 @@ import {
   formatRelativeBookDate,
 } from 'src/utils';
 import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
-import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
+import { buildNovelRevertUpdates, buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { toMillis } from 'src/utils/time-utils';
 import { cloneDeep } from 'lodash';
@@ -50,9 +56,7 @@ import type {
   Terminology,
   CharacterSetting,
   Paragraph,
-  ScoreBreakdown,
 } from 'src/models/novel';
-import type { MemoryReference } from 'src/components/novel/memory-reference-types';
 import { useSearchReplace } from 'src/composables/book-details/useSearchReplace';
 import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import {
@@ -71,14 +75,7 @@ import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { MemoryService } from 'src/services/memory-service';
-import {
-  buildChapterSemanticQuery,
-  selectRelevantMemoriesForChunk,
-} from 'src/services/ai/tasks/utils/context-builder';
-import {
-  buildNovelSettingsUpdate,
-  hasChapterInstructionPayload,
-} from './chapter-settings-update';
+import { buildNovelSettingsUpdate, hasChapterInstructionPayload } from './chapter-settings-update';
 import type { ChapterSettingsFormData } from './chapter-settings-update';
 import type { Memory } from 'src/models/memory';
 import type { BookWorkspaceMode } from 'src/constants/responsive';
@@ -170,9 +167,7 @@ function buildMergedSelectedChapter(
     ...current,
     ...(shouldUpdateMetadata ? updated : {}),
     content: shouldUpdateContent ? updated.content : (current.content ?? updated.content),
-    contentLoaded: shouldUpdateContent
-      ? true
-      : (current.contentLoaded ?? updated.contentLoaded),
+    contentLoaded: shouldUpdateContent ? true : (current.contentLoaded ?? updated.contentLoaded),
     lastEdited: shouldUpdateMetadata ? updated.lastEdited : current.lastEdited,
   };
 }
@@ -212,6 +207,7 @@ export function injectBookDetailsPage(): BookDetailsPageContext {
 }
 
 function createBookDetailsPageContext() {
+  const settings = useSettingsStore();
   const route = useRoute();
   const router = useRouter();
   const booksStore = useBooksStore();
@@ -371,9 +367,22 @@ function createBookDetailsPageContext() {
     clearHistory,
   } = useUndoRedo(
     book,
-    async (updatedBook) => {
+    async (updatedBook, scope) => {
       if (!updatedBook) return;
-      await booksStore.updateBook(updatedBook.id, updatedBook);
+      if (scope) {
+        await BookService.restoreTranslationHistory(updatedBook, scope.chapterId, scope.language);
+        const current = await booksStore.refreshBookFromStorage(updatedBook.id, scope.chapterId);
+        if (current)
+          await syncSelectedChapterAfterUndoRedo(
+            current,
+            selectedChapterId.value,
+            selectedChapterWithContent,
+          );
+        return;
+      }
+      const currentTarget = booksStore.getBookById(updatedBook.id)?.targetLanguage ?? 'zh-CN';
+      const restored = { ...updatedBook, targetLanguage: currentTarget };
+      await booksStore.updateBook(updatedBook.id, restored);
       await syncSelectedChapterAfterUndoRedo(
         updatedBook,
         selectedChapterId.value,
@@ -382,6 +391,16 @@ function createBookDetailsPageContext() {
     },
     getEnhancedBook,
   );
+
+  const saveTranslationState = (description?: string) => {
+    const chapterId = selectedChapterWithContent.value?.id;
+    if (chapterId)
+      saveState(description, {
+        kind: 'translation',
+        chapterId,
+        language: book.value?.targetLanguage ?? 'zh-CN',
+      });
+  };
 
   // 监听书籍ID变化，切换书籍时清空历史记录
   watch(
@@ -471,29 +490,43 @@ function createBookDetailsPageContext() {
     void originalHandleEditChapter();
   };
 
-  const getCoverUrl = (b: Novel): string => CoverService.getCoverUrl(b);
+  const getCoverUrl = (b: Novel): string => CoverService.getCoverUrl(b, settings.uiLocale);
 
   // 页面加载状态
   const isPageLoading = ref(true);
   const isStatsCalculating = ref(false);
 
   const stats = ref<{ wordCount: number; chapterCount: number; volumeCount: number } | null>(null);
+  let statsRequest = 0;
+  let statsDisposed = false;
+  onUnmounted(() => {
+    statsDisposed = true;
+    statsRequest++;
+  });
 
   const calculateStats = async () => {
-    if (!book.value || isStatsCalculating.value) return;
-
+    if (statsDisposed || !book.value) return;
+    const currentBook = book.value;
+    const request = ++statsRequest;
     isStatsCalculating.value = true;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    const wordCount = await getNovelCharCountAsync(book.value);
-
-    stats.value = {
-      wordCount,
-      chapterCount: getTotalChapters(book.value),
-      volumeCount: book.value.volumes?.length || 0,
-    };
-
-    isStatsCalculating.value = false;
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (request !== statsRequest) return;
+      const wordCount = await getNovelCharCountAsync(currentBook);
+      if (request !== statsRequest || book.value !== currentBook) return;
+      stats.value = {
+        wordCount,
+        chapterCount: getTotalChapters(currentBook),
+        volumeCount: currentBook.volumes?.length || 0,
+      };
+    } catch (error) {
+      if (request === statsRequest) {
+        stats.value = null;
+        console.error('Failed to calculate book stats:', error);
+      }
+    } finally {
+      if (request === statsRequest) isStatsCalculating.value = false;
+    }
   };
 
   watch(
@@ -503,6 +536,8 @@ function createBookDetailsPageContext() {
         void calculateStats();
         void calculateTranslationProgress();
       } else {
+        statsRequest++;
+        isStatsCalculating.value = false;
         stats.value = null;
         translationProgressState.value = null;
       }
@@ -519,7 +554,7 @@ function createBookDetailsPageContext() {
 
   const volumeOptions = computed(() => {
     return volumes.value.map((volume) => ({
-      label: getVolumeDisplayTitle(volume),
+      label: getVolumeDisplayTitle(volume, book.value),
       value: volume.id,
     }));
   });
@@ -646,8 +681,7 @@ function createBookDetailsPageContext() {
     bookValue: NonNullable<typeof book.value>,
     payload: MoveChapterPayload,
   ): number | null => {
-    const targetIndex =
-      payload.direction === 'up' ? payload.index - 1 : payload.index + 1;
+    const targetIndex = payload.direction === 'up' ? payload.index - 1 : payload.index + 1;
     if (targetIndex < 0) return null;
     const targetVolume = bookValue.volumes?.find((volume) => volume.id === payload.volumeId);
     if (!targetVolume?.chapters) return null;
@@ -663,7 +697,7 @@ function createBookDetailsPageContext() {
 
     isMovingChapter.value = true;
     try {
-      saveState?.('触控排序章节');
+      saveState?.(translateText(settings.uiLocale, 'bookUi.details.touchSortState'));
       const updatedVolumes = ChapterService.moveChapter(
         book.value,
         payload.chapter.id,
@@ -835,13 +869,8 @@ function createBookDetailsPageContext() {
     byChapter: Map<string, ChapterProgress>;
   };
 
-  const computeChapterProgress = (
-    paragraphs: Paragraph[] | undefined,
-  ): ChapterProgress => {
-    const nonEmpty = (paragraphs ?? []).filter((p) => (p.text ?? '').trim().length > 0);
-    const total = nonEmpty.length;
-    const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
-    return { total, translated };
+  const computeChapterProgress = (paragraphs: Paragraph[] | undefined): ChapterProgress => {
+    return getChapterTranslationStats(paragraphs, book.value?.targetLanguage ?? 'zh-CN');
   };
 
   const aggregateProgressByChapter = (
@@ -858,7 +887,10 @@ function createBookDetailsPageContext() {
       total += progress.total;
       translated += progress.translated;
       byChapter.set(id, progress);
-      if (firstIncompleteChapterId === null && (progress.total === 0 || progress.translated < progress.total)) {
+      if (
+        firstIncompleteChapterId === null &&
+        (progress.total === 0 || progress.translated < progress.total)
+      ) {
         firstIncompleteChapterId = id;
       }
     }
@@ -909,9 +941,7 @@ function createBookDetailsPageContext() {
     return null;
   };
 
-  const firstChapterInBook = (
-    bookValue: NonNullable<typeof book.value>,
-  ): Chapter | null => {
+  const firstChapterInBook = (bookValue: NonNullable<typeof book.value>): Chapter | null => {
     for (const vol of bookValue.volumes || []) {
       for (const ch of vol.chapters || []) return ch;
     }
@@ -934,7 +964,7 @@ function createBookDetailsPageContext() {
 
   const formatRelativeDate = (date: Date | string | number | null | undefined): string => {
     if (date === null || date === undefined) return '—';
-    return formatRelativeBookDate(date as Date | string);
+    return formatRelativeBookDate(date as Date | string, settings.uiLocale);
   };
 
   const continueReadingOnPhone = () => {
@@ -980,10 +1010,14 @@ function createBookDetailsPageContext() {
   });
 
   const chapterStatusIcon = (chapterId: string): string =>
-    chapterStatusIconPure(getChapterStatusPure(translationProgressState.value?.byChapter, chapterId));
+    chapterStatusIconPure(
+      getChapterStatusPure(translationProgressState.value?.byChapter, chapterId),
+    );
 
   const chapterStatusColor = (chapterId: string): string =>
-    chapterStatusColorPure(getChapterStatusPure(translationProgressState.value?.byChapter, chapterId));
+    chapterStatusColorPure(
+      getChapterStatusPure(translationProgressState.value?.byChapter, chapterId),
+    );
 
   const chapterStatusTextColor = (chapterId: string): string =>
     chapterStatusTextColorPure(
@@ -1007,9 +1041,7 @@ function createBookDetailsPageContext() {
   });
 
   const getParagraphModelName = (paragraph: Paragraph): string | null => {
-    const list = paragraph.translations ?? [];
-    if (list.length === 0) return null;
-    const sel = list.find((t) => t.id === paragraph.selectedTranslationId) ?? list[0];
+    const sel = getLanguageTranslation(paragraph, book.value?.targetLanguage ?? 'zh-CN');
     if (!sel) return null;
     const model = aiModelsStore.models.find((m) => m.id === sel.aiModelId);
     return model?.name ?? null;
@@ -1017,11 +1049,14 @@ function createBookDetailsPageContext() {
 
   const mobileReaderModelName = computed<string>(() => {
     const model = aiModelsStore.getModelForTask('translation', book.value);
-    return model?.name ?? '未配置模型';
+    return model?.name ?? translateText(settings.uiLocale, 'readerUi.noModel');
   });
 
   const mobileReaderStats = computed(() =>
-    getChapterTranslationStats(selectedChapterParagraphs.value),
+    getChapterTranslationStats(
+      selectedChapterParagraphs.value,
+      book.value?.targetLanguage ?? 'zh-CN',
+    ),
   );
 
   // 段落翻译 composable
@@ -1030,7 +1065,7 @@ function createBookDetailsPageContext() {
     updateParagraphTranslation,
     selectParagraphTranslation,
     updateSelectedChapterWithContent,
-  } = useParagraphTranslation(book, selectedChapterWithContent, saveState);
+  } = useParagraphTranslation(book, selectedChapterWithContent, saveTranslationState);
 
   // 编辑模式 composable
   const {
@@ -1119,8 +1154,8 @@ function createBookDetailsPageContext() {
       console.error('Failed to load chapter content:', error);
       toast.add({
         severity: 'error',
-        summary: '加载失败',
-        detail: '无法加载章节内容',
+        summary: translateText(settings.uiLocale, 'translationUi.loadFailed'),
+        detail: translateText(settings.uiLocale, 'translationUi.cannotLoadChapter'),
         life: 3000,
       });
       selectedChapterWithContent.value = null;
@@ -1304,19 +1339,6 @@ function createBookDetailsPageContext() {
     }
   };
 
-  let memoryPreviewTimer: ReturnType<typeof setTimeout> | null = null;
-  const scheduleMemoryPreview = (delayMs = 500) => {
-    if (memoryPreviewTimer) clearTimeout(memoryPreviewTimer);
-    if (selectedChapterParagraphs.value.length === 0) {
-      usedMemoryReferences.value = [];
-      mergedScoreBreakdowns.value = {};
-      return;
-    }
-    memoryPreviewTimer = setTimeout(() => {
-      void refreshReferencedMemories();
-    }, delayMs);
-  };
-
   onMounted(() => {
     setTimeout(() => {
       isPageLoading.value = false;
@@ -1344,10 +1366,7 @@ function createBookDetailsPageContext() {
     contextStore.clearContext();
     embeddingUnsubscribers.forEach((u) => u());
     embeddingUnsubscribers.length = 0;
-    if (memoryPreviewTimer) {
-      clearTimeout(memoryPreviewTimer);
-      memoryPreviewTimer = null;
-    }
+
     cleanupParagraphNavigation();
     window.removeEventListener('keydown', handleKeydown, true);
     window.removeEventListener('click', handleClick);
@@ -1373,7 +1392,7 @@ function createBookDetailsPageContext() {
     selectedChapterParagraphs,
     updateParagraphTranslation,
     currentlyEditingParagraphId,
-    saveState,
+    saveTranslationState,
     updateSelectedChapterWithContent,
     chapterScrollToIndex,
   );
@@ -1607,49 +1626,15 @@ function createBookDetailsPageContext() {
 
   const memoryPopover = ref<InstanceType<typeof Popover> | null>(null);
   const isMemoryPopoverOpen = ref(false);
-  const usedMemoryReferences = ref<MemoryReference[]>([]);
-  const isLoadingMemoryReferences = ref(false);
   const showMemoryDetailDialog = ref(false);
   const detailMemory = ref<Memory | null>(null);
-  const mergedScoreBreakdowns = ref<Record<string, ScoreBreakdown>>({});
-
-  const refreshReferencedMemories = async () => {
-    if (!bookId.value || !selectedChapterParagraphs.value.length) {
-      usedMemoryReferences.value = [];
-      mergedScoreBreakdowns.value = {};
-      return;
-    }
-
-    isLoadingMemoryReferences.value = true;
-    try {
-      const chunkText = selectedChapterParagraphs.value.map((p) => p.text).join('\n');
-      if (!chunkText.trim()) {
-        usedMemoryReferences.value = [];
-        mergedScoreBreakdowns.value = {};
-        return;
-      }
-
-      const { memories, breakdowns } = await selectRelevantMemoriesForChunk(
-        bookId.value,
-        chunkText,
-        usedTerms.value,
-        usedCharacters.value,
-        buildChapterSemanticQuery(selectedChapterWithContent.value ?? undefined),
-      );
-
-      mergedScoreBreakdowns.value = breakdowns;
-      usedMemoryReferences.value = memories.map((m) => ({
-        memoryId: m.id,
-        summary: m.summary,
-        accessedAt: m.lastAccessedAt,
-        toolName: 'search_memories' as const,
-      }));
-    } catch (error) {
-      console.warn('Failed to compute memory preview:', error);
-    } finally {
-      isLoadingMemoryReferences.value = false;
-    }
-  };
+  const {
+    usedMemoryReferences,
+    isLoadingMemoryReferences,
+    mergedScoreBreakdowns,
+    refreshReferencedMemories,
+    scheduleMemoryPreview,
+  } = useMemoryReferences(book, selectedChapterWithContent, usedTerms, usedCharacters);
 
   const handleToggleMemoryPopover = (event: Event) => {
     memoryPopover.value?.toggle(event);
@@ -1662,12 +1647,6 @@ function createBookDetailsPageContext() {
   const handleMemoryPopoverHide = () => {
     isMemoryPopoverOpen.value = false;
   };
-
-  watch(
-    () => [selectedChapterId.value, selectedChapterParagraphs.value.length] as const,
-    () => scheduleMemoryPreview(),
-    { immediate: true },
-  );
 
   const closeMemoryPopover = () => {
     memoryPopover.value?.hide();
@@ -1768,20 +1747,28 @@ function createBookDetailsPageContext() {
       };
       await booksStore.updateBook(book.value.id, updates);
       const savedItems: string[] = [];
-      if (Object.keys(bookLevelUpdates).length > 0) savedItems.push('全局设置');
-      if (chapterUpdates) savedItems.push('章节特殊指令');
+      if (Object.keys(bookLevelUpdates).length > 0)
+        savedItems.push(translateText(settings.uiLocale, 'translationUi.globalSettings'));
+      if (chapterUpdates)
+        savedItems.push(translateText(settings.uiLocale, 'translationUi.chapterInstructions'));
       toast.add({
         severity: 'success',
-        summary: '保存成功',
-        detail: `已保存 ${savedItems.join('和')}`,
+        summary: translateText(settings.uiLocale, 'translationUi.saved'),
+        detail: translateText(settings.uiLocale, 'translationUi.savedSettings', {
+          items: savedItems.join(translateText(settings.uiLocale, 'translationUi.settingsJoin')),
+        }),
         life: 3000,
       });
     } catch (error) {
       console.error('保存设置失败:', error);
       toast.add({
         severity: 'error',
-        summary: '保存失败',
-        detail: error instanceof Error ? error.message : '保存设置时发生错误',
+        summary: translateText(settings.uiLocale, 'translationUi.saveFailed'),
+        detail: localizedErrorMessage(
+          error,
+          settings.uiLocale,
+          'translationUi.settingsSaveUnknown',
+        ),
         life: 3000,
       });
     }
@@ -1809,7 +1796,7 @@ function createBookDetailsPageContext() {
   };
 
   const addCharacterFromForm = async (bookId: string, data: CharacterFormData): Promise<void> => {
-    saveState('添加角色设定');
+    saveState(translateText(settings.uiLocale, 'translationUi.addCharacterState'));
     await CharacterSettingService.addCharacterSetting(bookId, {
       name: data.name,
       sex: data.sex,
@@ -1820,8 +1807,8 @@ function createBookDetailsPageContext() {
     });
     toast.add({
       severity: 'success',
-      summary: '保存成功',
-      detail: `已添加角色 "${data.name}"`,
+      summary: translateText(settings.uiLocale, 'translationUi.saved'),
+      detail: translateText(settings.uiLocale, 'translationUi.characterAdded', { name: data.name }),
       life: 3000,
     });
   };
@@ -1838,18 +1825,22 @@ function createBookDetailsPageContext() {
     if (nameConflict) {
       toast.add({
         severity: 'warn',
-        summary: '保存失败',
-        detail: `角色 "${data.name}" 已存在`,
+        summary: translateText(settings.uiLocale, 'translationUi.saveFailed'),
+        detail: translateText(settings.uiLocale, 'translationUi.characterExists', {
+          name: data.name,
+        }),
         life: 3000,
       });
       return false;
     }
-    saveState('保存角色设定');
+    saveState(translateText(settings.uiLocale, 'translationUi.saveCharacterState'));
     await CharacterSettingService.updateCharacterSetting(bookValue.id, editing.id, data);
     toast.add({
       severity: 'success',
-      summary: '保存成功',
-      detail: `已更新角色 "${data.name}"`,
+      summary: translateText(settings.uiLocale, 'translationUi.saved'),
+      detail: translateText(settings.uiLocale, 'translationUi.characterUpdated', {
+        name: data.name,
+      }),
       life: 3000,
     });
     return true;
@@ -1860,8 +1851,8 @@ function createBookDetailsPageContext() {
     if (!data.name) {
       toast.add({
         severity: 'error',
-        summary: '保存失败',
-        detail: '角色名称不能为空',
+        summary: translateText(settings.uiLocale, 'translationUi.saveFailed'),
+        detail: translateText(settings.uiLocale, 'translationUi.characterNameRequired'),
         life: 3000,
       });
       return;
@@ -1879,8 +1870,17 @@ function createBookDetailsPageContext() {
       editingCharacter.value = null;
     } catch (error) {
       console.error('保存角色失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '保存角色时发生错误';
-      toast.add({ severity: 'error', summary: '保存失败', detail: errorMessage, life: 3000 });
+      const errorMessage = localizedErrorMessage(
+        error,
+        settings.uiLocale,
+        'translationUi.characterSaveUnknown',
+      );
+      toast.add({
+        severity: 'error',
+        summary: translateText(settings.uiLocale, 'translationUi.saveFailed'),
+        detail: errorMessage,
+        life: 3000,
+      });
     } finally {
       isSavingCharacter.value = false;
     }
@@ -1901,15 +1901,17 @@ function createBookDetailsPageContext() {
 
     isDeletingCharacter.value = true;
     try {
-      saveState('删除角色设定');
+      saveState(translateText(settings.uiLocale, 'translationUi.deleteCharacterState'));
       await CharacterSettingService.deleteCharacterSetting(
         book.value.id,
         deletingCharacter.value.id,
       );
       toast.add({
         severity: 'success',
-        summary: '删除成功',
-        detail: `已删除角色 "${deletingCharacter.value.name}"`,
+        summary: translateText(settings.uiLocale, 'translationUi.deleted'),
+        detail: translateText(settings.uiLocale, 'translationUi.characterDeleted', {
+          name: deletingCharacter.value.name,
+        }),
         life: 3000,
       });
       showDeleteCharacterConfirm.value = false;
@@ -1918,8 +1920,8 @@ function createBookDetailsPageContext() {
       console.error('删除角色失败:', error);
       toast.add({
         severity: 'error',
-        summary: '删除失败',
-        detail: '删除角色时发生错误',
+        summary: translateText(settings.uiLocale, 'translationUi.deleteFailed'),
+        detail: translateText(settings.uiLocale, 'translationUi.characterDeleteUnknown'),
         life: 3000,
       });
     } finally {
@@ -1937,7 +1939,7 @@ function createBookDetailsPageContext() {
   type TermFormData = { name: string; translation: string; description: string };
 
   const addTerm = async (bookId: string, data: TermFormData): Promise<void> => {
-    saveState('添加术语');
+    saveState(translateText(settings.uiLocale, 'translationUi.addTermState'));
     await TerminologyService.addTerminology(bookId, {
       name: data.name,
       ...(data.translation ? { translation: data.translation } : {}),
@@ -1945,30 +1947,11 @@ function createBookDetailsPageContext() {
     });
     toast.add({
       severity: 'success',
-      summary: '保存成功',
-      detail: `已添加术语 "${data.name}"`,
+      summary: translateText(settings.uiLocale, 'translationUi.saved'),
+      detail: translateText(settings.uiLocale, 'translationUi.termAdded', { name: data.name }),
       life: 3000,
     });
     termDialogMode.value = 'edit';
-  };
-
-  const buildUpdatedTerm = (
-    term: Terminology,
-    editingId: string,
-    data: TermFormData,
-  ): Terminology => {
-    if (term.id !== editingId) return term;
-    const updated: Terminology = {
-      ...term,
-      name: data.name,
-      translation: { ...term.translation, translation: data.translation },
-    };
-    if (data.description) {
-      updated.description = data.description;
-    } else {
-      delete updated.description;
-    }
-    return updated;
   };
 
   const updateExistingTerm = async (
@@ -1983,24 +1966,22 @@ function createBookDetailsPageContext() {
     if (nameConflict) {
       toast.add({
         severity: 'warn',
-        summary: '保存失败',
-        detail: `术语 "${data.name}" 已存在`,
+        summary: translateText(settings.uiLocale, 'translationUi.saveFailed'),
+        detail: translateText(settings.uiLocale, 'translationUi.termExists', { name: data.name }),
         life: 3000,
       });
       return false;
     }
-    saveState('保存术语');
-    const updatedTerminologies = currentTerminologies.map((term) =>
-      buildUpdatedTerm(term, editing.id, data),
-    );
-    await booksStore.updateBook(bookValue.id, {
-      terminologies: updatedTerminologies,
-      lastEdited: new Date(),
+    saveState(translateText(settings.uiLocale, 'translationUi.saveTermState'));
+    await TerminologyService.updateTerminology(bookValue.id, editing.id, {
+      name: data.name,
+      translation: data.translation,
+      description: data.description,
     });
     toast.add({
       severity: 'success',
-      summary: '保存成功',
-      detail: `已更新术语 "${data.name}"`,
+      summary: translateText(settings.uiLocale, 'translationUi.saved'),
+      detail: translateText(settings.uiLocale, 'translationUi.termUpdated', { name: data.name }),
       life: 3000,
     });
     return true;
@@ -2011,8 +1992,8 @@ function createBookDetailsPageContext() {
     if (!data.name) {
       toast.add({
         severity: 'error',
-        summary: '保存失败',
-        detail: '术语名称不能为空',
+        summary: translateText(settings.uiLocale, 'translationUi.saveFailed'),
+        detail: translateText(settings.uiLocale, 'translationUi.termNameRequired'),
         life: 3000,
       });
       return;
@@ -2031,8 +2012,17 @@ function createBookDetailsPageContext() {
       editingTerm.value = null;
     } catch (error) {
       console.error('保存术语失败:', error);
-      const errorMessage = error instanceof Error ? error.message : '保存术语时发生错误';
-      toast.add({ severity: 'error', summary: '保存失败', detail: errorMessage, life: 3000 });
+      const errorMessage = localizedErrorMessage(
+        error,
+        settings.uiLocale,
+        'translationUi.termSaveUnknown',
+      );
+      toast.add({
+        severity: 'error',
+        summary: translateText(settings.uiLocale, 'translationUi.saveFailed'),
+        detail: errorMessage,
+        life: 3000,
+      });
     } finally {
       isSavingTerm.value = false;
     }
@@ -2053,7 +2043,7 @@ function createBookDetailsPageContext() {
 
     isDeletingTerm.value = true;
     try {
-      saveState('删除术语');
+      saveState(translateText(settings.uiLocale, 'translationUi.deleteTermState'));
       const updatedTerminologies = (book.value.terminologies || []).filter(
         (t) => t.id !== deletingTerm.value!.id,
       );
@@ -2063,8 +2053,10 @@ function createBookDetailsPageContext() {
       });
       toast.add({
         severity: 'success',
-        summary: '删除成功',
-        detail: `已删除术语 "${deletingTerm.value.name}"`,
+        summary: translateText(settings.uiLocale, 'translationUi.deleted'),
+        detail: translateText(settings.uiLocale, 'translationUi.termDeleted', {
+          name: deletingTerm.value.name,
+        }),
         life: 3000,
       });
       showDeleteTermConfirm.value = false;
@@ -2073,8 +2065,8 @@ function createBookDetailsPageContext() {
       console.error('删除术语失败:', error);
       toast.add({
         severity: 'error',
-        summary: '删除失败',
-        detail: '删除术语时发生错误',
+        summary: translateText(settings.uiLocale, 'translationUi.deleteFailed'),
+        detail: translateText(settings.uiLocale, 'translationUi.termDeleteUnknown'),
         life: 3000,
       });
     } finally {
@@ -2089,23 +2081,22 @@ function createBookDetailsPageContext() {
 
     isSavingBook.value = true;
     try {
-      saveState('编辑书籍信息');
+      saveState(translateText(settings.uiLocale, 'translationUi.editBookState'));
 
       const updates = buildNovelUpdatesFromFormData(formData);
-      const oldBook = cloneDeep(book.value);
-      await booksStore.updateBook(book.value.id, updates);
-      showBookDialog.value = false;
+      // 撤销只恢复本次表单写入的字段，不回滚保存之后其他流程写入的译文、卷章节等
+      const revertUpdates = buildNovelRevertUpdates(cloneDeep(book.value), updates);
+      // 撤销回调会进入消息历史，之后可能在另一本书的页面触发，必须锁定被保存书籍的 id
+      const savedBookId = book.value.id;
       const bookTitle = updates.title || book.value.title;
+      await booksStore.updateBook(savedBookId, updates);
+      showBookDialog.value = false;
       toast.add({
         severity: 'success',
-        summary: '更新成功',
-        detail: `已成功更新书籍 "${bookTitle}"`,
+        summary: translateText(settings.uiLocale, 'translationUi.updated'),
+        detail: translateText(settings.uiLocale, 'translationUi.bookUpdated', { name: bookTitle }),
         life: 3000,
-        onRevert: async () => {
-          if (book.value) {
-            await booksStore.updateBook(book.value.id, oldBook);
-          }
-        },
+        onRevert: () => booksStore.updateBook(savedBookId, revertUpdates),
       });
     } finally {
       isSavingBook.value = false;
@@ -2238,25 +2229,25 @@ function createBookDetailsPageContext() {
 
       if (status.hasNone) {
         items.push({
-          label: '翻译本章',
+          label: translateText(settings.uiLocale, 'readerUi.translateChapter'),
           icon: 'pi pi-sparkles',
           command: () => void translateAllParagraphs(),
         });
       } else if (status.hasPartial) {
         items.push({
-          label: '继续翻译',
+          label: translateText(settings.uiLocale, 'readerUi.continueTranslation'),
           icon: 'pi pi-play',
           command: () => void continueTranslation(),
         });
       }
       if (status.hasPartial || status.hasAll) {
         items.push({
-          label: '润色本章',
+          label: translateText(settings.uiLocale, 'readerUi.polishChapter'),
           icon: 'pi pi-pencil',
           command: () => void polishAllParagraphs(),
         });
         items.push({
-          label: '校对本章',
+          label: translateText(settings.uiLocale, 'readerUi.proofreadChapter'),
           icon: 'pi pi-check-circle',
           command: () => void proofreadAllParagraphs(),
         });
@@ -2264,7 +2255,7 @@ function createBookDetailsPageContext() {
       if (status.hasPartial || status.hasAll) {
         items.push({ separator: true });
         items.push({
-          label: '重新翻译',
+          label: translateText(settings.uiLocale, 'readerUi.retranslate'),
           icon: 'pi pi-refresh',
           class: 'mbr-menu-danger',
           command: () => void retranslateAllParagraphs(),
@@ -2293,7 +2284,7 @@ function createBookDetailsPageContext() {
     continueReadingChapter,
     formatRelativeDate,
     continueReadingOnPhone,
-    formatWordCount,
+    formatWordCount: (count: number | null) => formatWordCount(count, settings.uiLocale),
     getVolumeDisplayTitle,
     getChapterDisplayTitle,
     chapterStatusIcon,

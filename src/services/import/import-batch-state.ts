@@ -1,3 +1,5 @@
+import { truncateImportNotice, importFailure, importError } from './import-error';
+
 import type { ImportChapterBatch, ImportChapterBatchItem } from 'src/models/import-batch';
 import type { ImportResource, ImportRunContext, ImportTask } from 'src/models/import';
 import { ImportRepository } from './import-repository';
@@ -42,10 +44,18 @@ export function chapterBatchSummary(batch: ImportChapterBatch) {
       title: item.chapter.title,
       sourceId: item.sourceId,
       ...(item.error
-        ? { error: { code: item.error.code, message: item.error.message.slice(0, 300) } }
+        ? {
+            error: {
+              ...item.error,
+              message: item.error.message.slice(0, 300),
+              ...(item.error.localization
+                ? { localization: { ...item.error.localization, maxLength: 300 } }
+                : {}),
+            },
+          }
         : {}),
       ...(item.warnings?.length
-        ? { warnings: item.warnings.slice(0, 3).map((w) => w.slice(0, 200)) }
+        ? { warnings: item.warnings.slice(0, 3).map((w) => truncateImportNotice(w, 200)) }
         : {}),
     })),
   };
@@ -53,7 +63,7 @@ export function chapterBatchSummary(batch: ImportChapterBatch) {
 
 function requireBatch(resource: ImportResource | undefined, taskId: string): BatchResource {
   if (resource?.taskId !== taskId || resource.kind !== 'chapter-batch')
-    throw new Error('BATCH_NOT_FOUND: 批次不存在或不属于当前任务');
+    throw importError('BATCH_NOT_FOUND', 'batchNotFoundTheBatchDoesNotExistOr', {});
   return resource;
 }
 
@@ -67,9 +77,9 @@ async function transactionBatch(tx: ImportTransaction, taskId: string, id: strin
 
 function assertBatchDraft(task: ImportTask, batch: ImportChapterBatch): void {
   if (task.draft.revision !== batch.draftRevision)
-    throw new Error('DRAFT_CHANGED: 草稿已变化，批次已停止；请重读草稿后继续');
+    throw importError('DRAFT_CHANGED', 'draftChangedTheDraftChangedAndTheBatch', {});
   if (task.draft.novelScope.revision !== batch.scopeRevision)
-    throw new Error('SOURCE_SCOPE: 小说范围已改变，请重新检查批次');
+    throw importError('SOURCE_SCOPE', 'sourceScopeTheNovelScopeChangedReviewThe', {});
 }
 
 function assertReservedChapter(task: ImportTask, item: ImportChapterBatchItem): number {
@@ -78,7 +88,7 @@ function assertReservedChapter(task: ImportTask, item: ImportChapterBatchItem): 
     index < 0 ||
     canonicalStringify(task.draft.chapters[index]) !== canonicalStringify(item.chapter)
   )
-    throw new Error('DRAFT_CHANGED: 批次章节已被编辑或删除，请单独整理该章节');
+    throw importError('DRAFT_CHANGED', 'draftChangedABatchChapterWasEditedOr', {});
   return index;
 }
 
@@ -105,7 +115,8 @@ export async function startChapterBatch(
       const resource = await transactionBatch(tx, task.id, id);
       const batch = resource.batch;
       if (batch.runCallId !== callId) {
-        if (task.draft.revision !== revision) throw new Error('DRAFT_CHANGED: 请先读取最新草稿');
+        if (task.draft.revision !== revision)
+          throw importError('DRAFT_CHANGED', 'draftChangedReadTheLatestDraftFirst', {});
         batch.draftRevision = revision;
       }
       assertBatchDraft(task, batch);
@@ -163,7 +174,9 @@ export async function saveBatchChapter(
       } else {
         item.status = 'failed';
         item.chapter = { ...item.chapter, status: 'failed' };
-        item.error = result.error ?? { code: 'SOURCE_FAILED', message: '未取得正文' };
+        item.error = result.error ?? {
+          ...importFailure('SOURCE_FAILED', 'sourceFailedNoBodyTextWasRetrieved'),
+        };
       }
       task.draft.chapters[chapterIndex] = item.chapter;
       task.draft.revision++;

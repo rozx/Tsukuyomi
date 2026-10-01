@@ -1,3 +1,6 @@
+import { importFailure, importError } from './import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 import { load } from 'cheerio';
 import type {
   ImportDraft,
@@ -13,7 +16,7 @@ function imageUrl(value: string, base?: string): string {
       throw new Error();
     return url.href;
   } catch {
-    throw new Error('INVALID_COVER: 封面必须是 HTTP(S) 图片地址或当前任务中的图片资源');
+    throw importError('INVALID_COVER', 'invalidCoverCoversRequireAnHTTPSImage', {});
   }
 }
 
@@ -48,12 +51,12 @@ function coverValue(
 ): string {
   if (resource?.kind === 'input') {
     if (!resource.blob.type.startsWith('image/'))
-      throw new Error('INVALID_COVER: 指定资源不是图片');
+      throw importError('INVALID_COVER', 'invalidCoverTheSpecifiedResourceIsNotAn', {});
     return `resource:${resource.id}`;
   }
   const url = imageUrl(value);
   if (actor === 'agent' && (!source || !resource || !observedImage(source, resource, url)))
-    throw new Error('INVALID_COVER: 来源中没有观察到该图片地址');
+    throw importError('INVALID_COVER', 'invalidCoverTheImageURLWasNotObserved', {});
   return url;
 }
 
@@ -62,17 +65,23 @@ function metadataConflicts(
   field: keyof ImportDraft['metadata'],
   value: string,
   metadata?: Record<string, string>,
-): string[] {
+): ImportNotice[] {
   const selected = draft.novelScope.candidates.find(
     (candidate) => candidate.id === draft.novelScope.selectedCandidateId,
   );
-  const conflicts: string[] = [];
+  const conflicts: ImportNotice[] = [];
   if (selected && metadata?.title && metadata.title !== selected.title)
-    conflicts.push(`信息页书名“${metadata.title}”与所选小说不同，请检查版本。`);
+    conflicts.push(
+      importFailure('METADATA_TITLE_CONFLICT', 'metadataTitleConflict', { title: metadata.title }),
+    );
   if (selected?.author && metadata?.author && metadata.author !== selected.author)
-    conflicts.push(`信息页作者“${metadata.author}”与所选作者不同。`);
+    conflicts.push(
+      importFailure('METADATA_AUTHOR_CONFLICT', 'metadataAuthorConflict', {
+        author: metadata.author,
+      }),
+    );
   if (field === 'author' && selected?.author && value !== selected.author)
-    conflicts.push('候选作者不同于当前小说作者，需要用户决定。');
+    conflicts.push(importFailure('METADATA_AUTHOR_CHOICE', 'metadataCandidateAuthor'));
   return conflicts;
 }
 
@@ -83,7 +92,7 @@ export function validateImportMetadata(
   actor: 'user' | 'agent',
   source?: ImportSource,
   resource?: ImportResource,
-): { value: ImportMetadataValue; conflicts: string[] } {
+): { value: ImportMetadataValue; conflicts: ImportNotice[] } {
   const limit =
     field === 'description'
       ? 20000
@@ -92,12 +101,13 @@ export function validateImportMetadata(
         : field === 'cover'
           ? 10000
           : 500;
-  if (value.length > limit) throw new Error('METADATA_LIMIT: 元信息超过字段长度上限');
+  if (value.length > limit)
+    throw importError('METADATA_LIMIT', 'metadataLimitMetadataExceedsTheFieldLengthLimit', {});
   if (
     resource &&
     (!source || (resource.sourceId !== source.id && source.inputResourceId !== resource.id))
   )
-    throw new Error('SOURCE_SCOPE: 元信息资源不属于所声明来源');
+    throw importError('SOURCE_SCOPE', 'sourceScopeTheMetadataResourceBelongsToAnother', {});
   const content = field === 'cover' ? coverValue(value, actor, source, resource) : value;
   const metadata = resource?.kind === 'snapshot' ? resource.inspection?.metadata : undefined;
   const directEvidence = metadata?.[field] === value;

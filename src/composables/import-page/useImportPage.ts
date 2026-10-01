@@ -1,3 +1,6 @@
+import { useSettingsStore } from 'src/stores/settings';
+import { importNoticeText, serializeImportError } from 'src/services/import/import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
 /**
  * /import 页面的业务状态。dispatcher 调 `provideImportPage()`，三个设备变体调
  * `injectImportPage()`；一次性初始化与路由同步只在 dispatcher 挂载时执行一次，
@@ -24,11 +27,16 @@ function createImportPage() {
   const ready = ref(false);
   const selectedChapterId = ref<string | null>(null);
   const preview = ref<ImportChapterPreview | null>(null);
-  const previewError = ref<string | null>(null);
+  const previewError = ref<ImportNotice | null>(null);
   const previewLoading = ref(false);
   const selectedSourceId = ref<string | null>(null);
   const sourceText = ref<{ sourceId: string; text: string; nextOffset?: number } | null>(null);
-  const sourceTextError = ref<string | null>(null);
+  const rawSourceTextError = ref<ImportNotice | null>(null);
+  const sourceTextError = computed(() =>
+    rawSourceTextError.value === null
+      ? null
+      : importNoticeText(rawSourceTextError.value, useSettingsStore().uiLocale),
+  );
   const section = ref<ImportSection>('chat');
   // 各卷用户选择显示的章节数（0 为折叠），未选择的卷按默认分批规则显示
   const draftWindows = ref<Record<string, number>>({});
@@ -87,7 +95,7 @@ function createImportPage() {
     } catch (error) {
       if (token === previewToken) {
         preview.value = null;
-        previewError.value = error instanceof Error ? error.message : String(error);
+        previewError.value = serializeImportError(error, 'PREVIEW_FAILED');
       }
     } finally {
       if (token === previewToken) previewLoading.value = false;
@@ -108,7 +116,7 @@ function createImportPage() {
   /** 查看来源的原始或已保存内容（分页读取，不触发新的抓取或解析）。 */
   async function showSource(sourceId: string, offset = 0): Promise<void> {
     selectedSourceId.value = sourceId;
-    sourceTextError.value = null;
+    rawSourceTextError.value = null;
     const taskId = store.selectedTaskId;
     if (!taskId) return;
     const previous = sourceText.value?.sourceId === sourceId ? sourceText.value.text : '';
@@ -116,7 +124,7 @@ function createImportPage() {
       const page = await ImportPreviewService.source(taskId, sourceId, { offset });
       if (page.kind === 'note') {
         sourceText.value = null;
-        sourceTextError.value = page.note;
+        rawSourceTextError.value = page.note;
         return;
       }
       // 续读时接在已显示内容之后
@@ -127,14 +135,14 @@ function createImportPage() {
       };
     } catch (error) {
       sourceText.value = null;
-      sourceTextError.value = error instanceof Error ? error.message : String(error);
+      rawSourceTextError.value = serializeImportError(error, 'SOURCE_PREVIEW_FAILED');
     }
   }
 
   function closeSource(): void {
     selectedSourceId.value = null;
     sourceText.value = null;
-    sourceTextError.value = null;
+    rawSourceTextError.value = null;
   }
 
   // 任务切换时清空章节、来源的查看状态及卷的显示选择；草稿更新后刷新当前预览

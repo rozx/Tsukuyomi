@@ -1,3 +1,5 @@
+import { createI18n } from 'vue-i18n';
+import messages from '../i18n';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
 import { createApp, h, nextTick } from 'vue';
@@ -41,6 +43,16 @@ describe('页脚更新徽标状态', () => {
     ).toMatchObject({ tone: 'update', label: 'v0.16.1 available', clickable: true });
   });
 
+  it('提示文字按界面语言生成，版本号原样保留', () => {
+    expect(describeUpdateBadge({ ...base, checkedAt: 1 }, 'en-US')!.title).toBe(
+      'You are on the latest version',
+    );
+    expect(
+      describeUpdateBadge({ ...base, phase: 'ready', targetVersion: '0.16.1' }, 'en-US')!.title,
+    ).toBe('v0.16.1 is downloaded. Select to restart and update');
+    expect(describeUpdateBadge({ ...base, checkedAt: 1 }, 'zh-TW')!.title).toBe('已是最新版本');
+  });
+
   it('准备或安装中显示更新中，不可点击', () => {
     for (const phase of ['preparing', 'installing'] as const) {
       expect(describeUpdateBadge({ ...base, phase, targetVersion: '0.16.1' })).toMatchObject({
@@ -76,7 +88,7 @@ describe('页脚更新徽标交互', () => {
         return () => h(AppFooter);
       },
     });
-    app.use(createPinia());
+    app.use(createPinia()).use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
     app.mount(element);
     return { element, restart, unmount: () => app.unmount() };
   }
@@ -91,7 +103,7 @@ describe('页脚更新徽标交互', () => {
   it('Web 端不显示徽标', () => {
     const element = document.createElement('div');
     const app = createApp(AppFooter);
-    app.use(createPinia());
+    app.use(createPinia()).use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
     app.mount(element);
     expect(element.querySelector('.dsk-statusbar-update')).toBeNull();
     app.unmount();

@@ -1,8 +1,11 @@
+import type { AppLocale } from 'src/models/locale';
+import { serializeImportError } from 'src/services/import/import-error';
 import type { ImportParseRequest } from 'src/models/import-parsing';
 import type { ImportParseLimits } from 'src/services/import/import-work-limits';
 import { processImportJob } from 'src/services/import/import-parsing-jobs';
 
 interface Request {
+  uiLocale?: AppLocale;
   id: string;
   request: ImportParseRequest;
   limits: ImportParseLimits;
@@ -12,9 +15,9 @@ const scope = self as unknown as {
   postMessage(message: unknown, transfer?: Transferable[]): void;
 };
 
-async function handle({ id, request, limits }: Request): Promise<void> {
+async function handle({ id, request, limits, uiLocale }: Request): Promise<void> {
   try {
-    const value = await processImportJob(request, { limits });
+    const value = await processImportJob(request, { limits, ...(uiLocale ? { uiLocale } : {}) });
     const transfer =
       !Array.isArray(value) && 'entries' in value
         ? value.entries
@@ -28,7 +31,7 @@ async function handle({ id, request, limits }: Request): Promise<void> {
       success: false,
       error: {
         name: error instanceof Error ? error.name : 'Error',
-        message: error instanceof Error ? error.message : String(error),
+        ...serializeImportError(error, 'WORKER_FAILED'),
       },
     });
   }

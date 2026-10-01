@@ -9,6 +9,23 @@ import {
 import type { Paragraph } from 'src/models/novel';
 
 describe('text-utils', () => {
+  test('选用读取与原始译文映射按显式目标隔离', () => {
+    const paragraph: Paragraph = {
+      id: 'p',
+      text: 'source',
+      selectedTranslationId: 'cn',
+      translations: [
+        { id: 'cn', translation: '简中', aiModelId: '' },
+        { id: 'en', translation: 'English', language: 'en-US', aiModelId: '' },
+      ],
+      selectedTranslations: {
+        'en-US': { value: 'en', revision: { counter: 1, actorId: 'a' }, updatedAt: 1 },
+      },
+    };
+    expect(getSelectedTranslation(paragraph, 'en-US')).toBe('English');
+    expect(getSelectedTranslation(paragraph, 'zh-TW')).toBe('');
+    expect(buildOriginalTranslationsMap([paragraph], 'en-US').get('p')).toBe('English');
+  });
   describe('isSymbolOnly', () => {
     test('纯符号文本应返回 true', () => {
       expect(isSymbolOnly('***')).toBe(true);
@@ -129,28 +146,45 @@ describe('text-utils', () => {
     };
 
     const exampleBefore = [
-      L.l1, '',
-      L.l2, '', '',
-      L.l3, '',
-      L.l4, '',
-      L.l5, '',
-      L.l6, '', '',
-      L.l7, '', '',
-      L.l8, '',
-      L.l9, '', '',
+      L.l1,
+      '',
+      L.l2,
+      '',
+      '',
+      L.l3,
+      '',
+      L.l4,
+      '',
+      L.l5,
+      '',
+      L.l6,
+      '',
+      '',
+      L.l7,
+      '',
+      '',
+      L.l8,
+      '',
+      L.l9,
+      '',
+      '',
       L.l10,
     ].join('\n');
 
     const exampleAfter = [
       L.l1,
-      L.l2, '',
+      L.l2,
+      '',
       L.l3,
       L.l4,
       L.l5,
-      L.l6, '',
-      L.l7, '',
+      L.l6,
+      '',
+      L.l7,
+      '',
       L.l8,
-      L.l9, '',
+      L.l9,
+      '',
       L.l10,
     ].join('\n');
 
@@ -168,25 +202,49 @@ describe('text-utils', () => {
     };
 
     const example2Before = [
-      M.m1, '', '',
-      M.m2, '', '',
-      M.m3, '',
-      M.m4, '', '', '', '', '', '',
-      M.m5, '',
-      M.m6, '',
-      M.m7, '', '',
-      M.m8, '',
+      M.m1,
+      '',
+      '',
+      M.m2,
+      '',
+      '',
+      M.m3,
+      '',
+      M.m4,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      M.m5,
+      '',
+      M.m6,
+      '',
+      M.m7,
+      '',
+      '',
+      M.m8,
+      '',
       M.m9,
     ].join('\n');
 
     const example2After = [
-      M.m1, '',
-      M.m2, '',
+      M.m1,
+      '',
+      M.m2,
+      '',
       M.m3,
-      M.m4, '', '', '', '', '',
+      M.m4,
+      '',
+      '',
+      '',
+      '',
+      '',
       M.m5,
       M.m6,
-      M.m7, '',
+      M.m7,
+      '',
       M.m8,
       M.m9,
     ].join('\n');

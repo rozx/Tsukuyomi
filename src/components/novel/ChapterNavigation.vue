@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import Button from 'primevue/button';
 import type { Chapter, Novel } from 'src/models/novel';
 import { getChapterDisplayTitle } from 'src/utils';
+
+const { t } = useI18n();
 
 // 章节导航按钮（上一章 / 章节列表 / 下一章）。预览模式与默认模式各用一次。
 const props = defineProps<{
@@ -17,19 +21,25 @@ defineEmits<{
 }>();
 
 const prevLabel = (chapter: Chapter | null): string => {
-  if (!chapter) return props.isSmallScreen ? '上一章' : '没有上一章';
-  return props.isSmallScreen ? '上一章' : getChapterDisplayTitle(chapter, props.book || undefined);
+  if (!chapter)
+    return props.isSmallScreen ? t('readerUi.prevChapter') : t('readerUi.noPrevChapter');
+  return props.isSmallScreen
+    ? t('readerUi.prevChapter')
+    : getChapterDisplayTitle(chapter, props.book || undefined);
 };
 
 const nextLabel = (chapter: Chapter | null): string => {
-  if (!chapter) return props.isSmallScreen ? '下一章' : '没有下一章';
-  return props.isSmallScreen ? '下一章' : getChapterDisplayTitle(chapter, props.book || undefined);
+  if (!chapter)
+    return props.isSmallScreen ? t('readerUi.nextChapter') : t('readerUi.noNextChapter');
+  return props.isSmallScreen
+    ? t('readerUi.nextChapter')
+    : getChapterDisplayTitle(chapter, props.book || undefined);
 };
 
 const prevTooltip = (chapter: Chapter | null): string =>
-  chapter ? getChapterDisplayTitle(chapter, props.book || undefined) : '没有上一章';
+  chapter ? getChapterDisplayTitle(chapter, props.book || undefined) : t('readerUi.noPrevChapter');
 const nextTooltip = (chapter: Chapter | null): string =>
-  chapter ? getChapterDisplayTitle(chapter, props.book || undefined) : '没有下一章';
+  chapter ? getChapterDisplayTitle(chapter, props.book || undefined) : t('readerUi.noNextChapter');
 </script>
 
 <template>
@@ -46,10 +56,10 @@ const nextTooltip = (chapter: Chapter | null): string =>
     <Button
       v-if="isSmallScreen"
       icon="pi pi-list"
-      label="章节列表"
+      :label="t('readerUi.chapterList')"
       class="p-button-outlined p-button-sm chapter-nav-btn chapter-nav-list"
       @click="$emit('navigate-list')"
-      v-tooltip.top="'返回章节列表'"
+      v-tooltip.top="t('readerUi.backToChapterList')"
     />
     <Button
       :disabled="!nextChapter"

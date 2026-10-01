@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import SplitButton from 'primevue/splitbutton';
@@ -21,30 +24,35 @@ const totalBooks = computed(() => ctx.booksStore.books.length);
 const starredBooks = computed(() => ctx.booksStore.books.filter((book) => book.starred).length);
 const visibleBooks = computed(() => ctx.filteredBooks.value.length);
 const libraryMetrics = computed(() => [
-  { label: '全部', value: totalBooks.value },
-  { label: '筛选', value: visibleBooks.value },
-  { label: '收藏', value: starredBooks.value },
+  { label: i18nT('libraryUi.all'), value: totalBooks.value },
+  { label: i18nT('libraryUi.filtered'), value: visibleBooks.value },
+  { label: i18nT('libraryUi.favorites'), value: starredBooks.value },
 ]);
 const librarySummary = computed(() => {
   if (ctx.searchQuery.value) {
-    return `当前筛出 ${visibleBooks.value} 本书，可直接继续管理、编辑或进入阅读工作区。`;
+    return i18nT('libraryUi.libraryFilteredSummary', { count: visibleBooks.value });
   }
-  return '在桌面工作台里集中浏览、整理并进入你的翻译书库。';
+  return i18nT('libraryUi.librarySummary');
 });
 
 // 以下 computed / 方法把模板里的 || / ?: 收进脚本侧，降低模板圈复杂度
 const isLoadingState = computed(() => ctx.booksStore.isLoading || !ctx.booksStore.isLoaded);
 const sortButtonLabel = computed(
-  () => ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label || '排序',
+  () =>
+    ctx.sortOptions.value.find((opt) => opt.value === ctx.selectedSort.value)?.label ||
+    i18nT('libraryUi.sort'),
 );
-const emptyText = computed(() => (ctx.searchQuery.value ? '未找到匹配的书籍' : '暂无书籍'));
-const bookAuthor = (book: Novel) => book.author || '未署名作品';
+const emptyText = computed(() =>
+  ctx.searchQuery.value ? i18nT('libraryUi.noMatches') : i18nT('libraryUi.noBooks'),
+);
+const bookAuthor = (book: Novel) => book.author || i18nT('libraryUi.unsigned');
 const starIcon = (book: Novel) => (book.starred ? 'pi pi-star-fill' : 'pi pi-star');
 const starButtonClass = (book: Novel) => [
   'p-button-text p-button-sm flex-1 !text-xs !py-1 !px-1',
   book.starred ? '!text-warning' : '',
 ];
-const starTitle = (book: Novel) => (book.starred ? '取消收藏' : '收藏');
+const starTitle = (book: Novel) =>
+  book.starred ? i18nT('libraryUi.unstar') : i18nT('libraryUi.star');
 const toggleSortMenu = (e: Event) => {
   const menu = ctx.sortMenuRef.value;
   if (menu) menu.toggle(e);
@@ -56,7 +64,11 @@ const onCoverError = (e: Event, book: Novel) => {
 
 <template>
   <div class="desktop-library-page">
-    <DesktopWorkbenchHeader eyebrow="Library" title="书库工作台" :description="librarySummary">
+    <DesktopWorkbenchHeader
+      :eyebrow="i18nT('libraryUi.library')"
+      :title="i18nT('libraryUi.libraryWorkbench')"
+      :description="librarySummary"
+    >
       <template #actions>
         <div class="books-toolbar">
           <InputGroup class="search-input-group">
@@ -65,14 +77,14 @@ const onCoverError = (e: Event, book: Novel) => {
             </InputGroupAddon>
             <InputText
               v-model="ctx.searchQuery.value"
-              placeholder="搜索书籍标题、别名、作者、描述或标签..."
+              :placeholder="i18nT('libraryUi.searchBooks')"
               class="search-input"
             />
             <InputGroupAddon v-if="ctx.searchQuery.value" class="input-action-addon">
               <Button
                 icon="pi pi-times"
                 class="p-button-text p-button-sm input-action-button"
-                title="清除搜索"
+                :title="i18nT('libraryUi.clearSearch')"
                 @click="ctx.searchQuery.value = ''"
               />
             </InputGroupAddon>
@@ -86,7 +98,7 @@ const onCoverError = (e: Event, book: Novel) => {
               @click="toggleSortMenu"
             />
             <SplitButton
-              label="添加书籍"
+              :label="i18nT('libraryUi.addBook')"
               icon="pi pi-plus"
               :model="ctx.addBookMenuItems.value"
               class="books-add-split-button p-button-primary icon-button-hover"
@@ -108,9 +120,9 @@ const onCoverError = (e: Event, book: Novel) => {
             style="width: 50px; height: 50px"
             stroke-width="4"
             animation-duration=".8s"
-            aria-label="加载中"
+            :aria-label="i18nT('libraryUi.loading')"
           />
-          <p class="text-moon/70 mt-4">正在加载书籍列表...</p>
+          <p class="text-moon/70 mt-4">{{ i18nT('libraryUi.loadingBooks') }}</p>
         </div>
       </div>
       <DataView
@@ -133,7 +145,7 @@ const onCoverError = (e: Event, book: Novel) => {
             </p>
             <Button
               v-if="!ctx.searchQuery.value"
-              label="添加第一本书籍"
+              :label="i18nT('libraryUi.addFirst')"
               icon="pi pi-plus"
               class="p-button-primary mt-4 icon-button-hover"
               @click="ctx.addBook"
@@ -153,7 +165,7 @@ const onCoverError = (e: Event, book: Novel) => {
                 />
                 <div class="library-book-overlay"></div>
                 <div v-if="book.starred" class="library-book-flag">
-                  <i class="pi pi-star-fill" /> 收藏
+                  <i class="pi pi-star-fill" /> {{ i18nT('libraryUi.favorites') }}
                 </div>
               </div>
               <div class="library-book-content">
@@ -171,11 +183,11 @@ const onCoverError = (e: Event, book: Novel) => {
 
                 <div class="library-book-stats">
                   <div class="library-book-stat-row">
-                    <span>章节:</span>
+                    <span>{{ i18nT('libraryUi.chapters') }}</span>
                     <strong>{{ ctx.getTotalChapters(book) }}</strong>
                   </div>
                   <div class="library-book-stat-row">
-                    <span>字数:</span>
+                    <span>{{ i18nT('libraryUi.characters') }}</span>
                     <span v-if="ctx.isLoadingCharCount(book)" class="font-medium">
                       <Skeleton width="40px" height="12px" />
                     </span>
@@ -184,11 +196,11 @@ const onCoverError = (e: Event, book: Novel) => {
                     </strong>
                   </div>
                   <div class="library-book-stat-row">
-                    <span>创建:</span>
+                    <span>{{ i18nT('libraryUi.created') }}</span>
                     <strong>{{ ctx.formatDate(book.createdAt) }}</strong>
                   </div>
                   <div class="library-book-stat-row">
-                    <span>更新:</span>
+                    <span>{{ i18nT('libraryUi.updated') }}</span>
                     <strong>{{ ctx.formatDate(book.lastEdited) }}</strong>
                   </div>
                 </div>
@@ -203,13 +215,13 @@ const onCoverError = (e: Event, book: Novel) => {
                   <Button
                     icon="pi pi-pencil"
                     class="p-button-text p-button-sm flex-1 !text-xs !py-1 !px-1"
-                    title="编辑"
+                    :title="i18nT('libraryUi.edit')"
                     @click.stop="ctx.editBook(book)"
                   />
                   <Button
                     icon="pi pi-trash"
                     class="p-button-text p-button-sm p-button-danger flex-1 !text-xs !py-1 !px-1"
-                    title="删除"
+                    :title="i18nT('libraryUi.delete')"
                     @click.stop="ctx.deleteBook(book)"
                   />
                 </div>
@@ -319,7 +331,6 @@ const onCoverError = (e: Event, book: Novel) => {
   box-shadow: 0 18px 36px rgba(2, 6, 16, 0.24);
 }
 
-
 .library-book-cover-shell {
   position: relative;
   aspect-ratio: 5 / 7;
@@ -342,7 +353,11 @@ const onCoverError = (e: Event, book: Novel) => {
   position: absolute;
   inset: auto 0 0 0;
   height: 40%;
-  background: linear-gradient(180deg, transparent, rgba(7, 10, 16, 0.92)); /* token: near night-500 @ 92% */
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(7, 10, 16, 0.92)
+  ); /* token: near night-500 @ 92% */
   pointer-events: none;
 }
 

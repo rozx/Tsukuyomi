@@ -1,11 +1,18 @@
+import type webFeedback from 'src/i18n/zh-CN/web-feedback';
+import { agentText } from 'src/i18n/translate';
+import { toolErrorJson } from './tool-feedback';
+import { validToolQuery } from './tool-feedback';
+import { describeTool, stringToolParameter, toolDefinition } from './tool-localization';
 import axios from 'axios';
 import type { ToolDefinition, ToolContext } from './types';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import {
+  FirecrawlError,
   FirecrawlQuotaError,
   FirecrawlRateLimitError,
   FirecrawlTargetError,
+  FirecrawlEmptyContentError,
 } from 'src/services/firecrawl/firecrawl-errors';
 
 /**
@@ -19,6 +26,23 @@ const SEARCH_RESULT_LIMIT = 5;
 
 type Provider = 'tavily' | 'firecrawl';
 
+type WebFeedbackKey = keyof typeof webFeedback.aiWebFeedback;
+
+/** 自有失败说明的身份（aiWebFeedback 下的 key 与参数）。 */
+export interface WebFeedbackEntry {
+  key: WebFeedbackKey;
+  values: Record<string, string | number>;
+}
+
+/**
+ * 失败说明的结构化身份，供导入工作台按界面语言重新投影；返回给模型的 JSON 中不包含它。
+ * error 缺省表示错误原因为外部原始诊断，保持原文。
+ */
+export interface WebFailureFeedback {
+  error?: WebFeedbackEntry;
+  message: WebFeedbackEntry;
+}
+
 interface SearchResultItem {
   title: string;
   snippet: string;
@@ -31,7 +55,9 @@ interface SearchWebResult {
   results?: SearchResultItem[];
   answer?: string;
   error?: string;
+  error_code?: string;
   message?: string;
+  feedback?: WebFailureFeedback;
 }
 
 interface FetchWebpageResult {
@@ -41,7 +67,16 @@ interface FetchWebpageResult {
   content?: string;
   text?: string;
   error?: string;
+  error_code?: string;
   message?: string;
+  feedback?: WebFailureFeedback;
+}
+
+/** 返回给模型的 JSON：去掉仅供界面重投影的结构化身份。 */
+function modelJson(result: SearchWebResult | FetchWebpageResult): string {
+  const { feedback, ...rest } = result;
+  void feedback;
+  return JSON.stringify(rest);
 }
 
 function errorMessageOf(error: unknown): string {
@@ -94,32 +129,63 @@ function extractHtmlTitle(rawContent: string, fallback: string): string {
 }
 
 /** Firecrawl 失败时给 AI 的说明：区分额度（有 Key / keyless）、限速与目标网页错误 */
-function firecrawlFailure(error: unknown): { success: false; error: string; message: string } {
-  if (error instanceof FirecrawlQuotaError) {
-    return {
-      success: false,
-      error: 'Firecrawl 额度已用尽',
-      message: error.keyless
-        ? 'Firecrawl 免费额度（按 IP 每日限额）已用尽。可在设置 → API Keys 中配置 Firecrawl 或 Tavily API Key 后重试。'
-        : 'Firecrawl 额度已用尽，请在设置 → API Keys 中检查额度。',
-    };
+function webFailure(
+  code: string,
+  errorKey: WebFeedbackKey,
+  messageKey: WebFeedbackKey,
+  values: Record<string, string | number> = {},
+) {
+  return {
+    success: false as const,
+    error_code: code,
+    error: agentText(`aiWebFeedback.${errorKey}`, values),
+    message: agentText(`aiWebFeedback.${messageKey}`, values),
+    feedback: { error: { key: errorKey, values }, message: { key: messageKey, values } },
+  };
+}
+
+/** 错误原因为外部原始诊断（保持原文）时，只有说明带有自有身份。 */
+function rawFailure(
+  code: string,
+  detail: string,
+  messageKey: WebFeedbackKey,
+  values: Record<string, string | number>,
+) {
+  return {
+    success: false as const,
+    error_code: code,
+    error: detail,
+    message: agentText(`aiWebFeedback.${messageKey}`, values),
+    feedback: { message: { key: messageKey, values } },
+  };
+}
+function firecrawlFailure(error: unknown): SearchWebResult {
+  if (error instanceof FirecrawlQuotaError)
+    return webFailure(
+      'FIRECRAWL_QUOTA_EXHAUSTED',
+      'quota',
+      error.keyless ? 'quotaKeyless' : 'quotaKey',
+    );
+  if (error instanceof FirecrawlRateLimitError)
+    return webFailure('FIRECRAWL_RATE_LIMITED', 'rate', 'retryLater');
+  if (error instanceof FirecrawlTargetError)
+    return webFailure('FIRECRAWL_TARGET_FAILED', 'targetError', 'targetMessage', {
+      status: error.targetStatus,
+    });
+  if (error instanceof FirecrawlEmptyContentError)
+    return webFailure('FIRECRAWL_EMPTY_CONTENT', 'empty', 'empty');
+  if (
+    error instanceof FirecrawlError &&
+    error.status !== undefined &&
+    error.diagnostic !== undefined
+  ) {
+    return webFailure('FIRECRAWL_HTTP_FAILED', 'httpError', 'httpMessage', {
+      status: error.status,
+      detail: error.diagnostic,
+    });
   }
-  if (error instanceof FirecrawlRateLimitError) {
-    return {
-      success: false,
-      error: 'Firecrawl 请求过于频繁',
-      message: 'Firecrawl 请求过于频繁，请稍后再试。',
-    };
-  }
-  if (error instanceof FirecrawlTargetError) {
-    return {
-      success: false,
-      error: `目标网页返回错误 ${error.targetStatus}`,
-      message: `目标网页返回错误 ${error.targetStatus}，无法读取该网页。`,
-    };
-  }
-  const message = errorMessageOf(error);
-  return { success: false, error: message, message: `Firecrawl 请求失败: ${message}` };
+  const detail = errorMessageOf(error);
+  return rawFailure('FIRECRAWL_FAILED', detail, 'failed', { detail });
 }
 
 async function tavilySearch(
@@ -161,20 +227,10 @@ async function tavilySearch(
 }
 
 function tavilySearchFailure(error: unknown, query: string): SearchWebResult {
-  const errorMessage = errorMessageOf(error);
-  if (isUnauthorizedError(error, errorMessage)) {
-    return {
-      success: false,
-      error: 'Tavily API Key 无效',
-      message:
-        '请检查设置的 Tavily API Key 是否正确。您可以在 https://tavily.com/ 获取有效的 API Key。',
-    };
-  }
-  return {
-    success: false,
-    error: errorMessage,
-    message: `网络搜索暂时不可用: ${errorMessage}。建议使用 AI 模型的内置知识库来回答关于"${query}"的问题。`,
-  };
+  const detail = errorMessageOf(error);
+  if (isUnauthorizedError(error, detail))
+    return webFailure('TAVILY_UNAUTHORIZED', 'keyInvalid', 'checkSearchKey');
+  return rawFailure('WEB_SEARCH_FAILED', detail, 'searchFailed', { detail, query });
 }
 
 async function firecrawlSearch(query: string, signal?: AbortSignal): Promise<SearchWebResult> {
@@ -209,12 +265,7 @@ export async function searchWeb(query: string, signal?: AbortSignal): Promise<Se
       }
     }
   } else if (!fallbackEnabled) {
-    return {
-      success: false,
-      error: '未配置网络搜索',
-      message:
-        '请在设置 → API Keys 中配置 Tavily API Key，或启用 Firecrawl 回退以使用网络搜索功能。',
-    };
+    return webFailure('WEB_SEARCH_NOT_CONFIGURED', 'searchMissing', 'searchConfigure');
   }
   return firecrawlSearch(query, signal);
 }
@@ -238,11 +289,7 @@ async function tavilyExtract(apiKey: string, url: string): Promise<FetchWebpageR
   // Tavily extract 返回 results 数组，取第一个结果
   const firstResult = response.data.results?.[0];
   if (!firstResult) {
-    return {
-      success: false,
-      error: '无法提取网页内容',
-      message: `Tavily 无法提取网页 ${url} 的内容。该网页可能无法访问或内容为空。`,
-    };
+    return webFailure('WEB_EXTRACT_EMPTY', 'extractEmpty', 'extractMessage', { url });
   }
   const rawContent = firstResult.rawContent || '';
   const text = rawContent
@@ -259,19 +306,10 @@ async function tavilyExtract(apiKey: string, url: string): Promise<FetchWebpageR
 }
 
 function tavilyExtractFailure(error: unknown, url: string): FetchWebpageResult {
-  const errorMessage = errorMessageOf(error);
-  if (isUnauthorizedError(error, errorMessage)) {
-    return {
-      success: false,
-      error: 'Tavily API Key 无效',
-      message: '请检查设置的 Tavily API Key 是否正确。',
-    };
-  }
-  return {
-    success: false,
-    error: errorMessage,
-    message: `无法访问网页 ${url}: ${errorMessage}。`,
-  };
+  const detail = errorMessageOf(error);
+  if (isUnauthorizedError(error, detail))
+    return webFailure('TAVILY_UNAUTHORIZED', 'keyInvalid', 'checkFetchKey');
+  return rawFailure('WEB_FETCH_FAILED', detail, 'fetchFailed', { url, detail });
 }
 
 async function firecrawlExtract(url: string): Promise<FetchWebpageResult> {
@@ -294,11 +332,9 @@ async function firecrawlExtract(url: string): Promise<FetchWebpageResult> {
  */
 async function fetchWebpage(url: string): Promise<FetchWebpageResult> {
   if (!isValidUrl(url)) {
-    return {
-      success: false,
-      error: '无效的 URL 格式',
-      message: `无法解析 URL: ${url}`,
-    };
+    return webFailure('WEB_URL_INVALID', 'urlInvalid', 'urlParse', {
+      url,
+    });
   }
   await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
   const apiKey = GlobalConfig.getTavilyApiKey();
@@ -314,52 +350,29 @@ async function fetchWebpage(url: string): Promise<FetchWebpageResult> {
       }
     }
   } else if (!fallbackEnabled) {
-    return {
-      success: false,
-      error: '未配置网页读取',
-      message:
-        '请在设置 → API Keys 中配置 Tavily API Key，或启用 Firecrawl 回退以使用网页读取功能。',
-    };
+    return webFailure('WEB_FETCH_NOT_CONFIGURED', 'fetchMissing', 'fetchConfigure');
   }
   return firecrawlExtract(url);
 }
 
 export const webSearchTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'search_web',
-        description:
-          '搜索网络以获取最新信息或回答一般性问题。当用户询问需要最新信息、实时数据或超出 AI 模型训练数据范围的问题时，可以使用此工具。[警告] 重要：当工具返回 results 数组时，必须仔细阅读每个结果的 title 和 snippet，从中提取关键信息来回答用户的问题。如果返回了 answer 字段，直接使用该答案。只有在搜索失败（success: false）时才使用 AI 的内置知识库。',
-        parameters: {
-          type: 'object',
-          properties: {
-            query: {
-              type: 'string',
-              description: '搜索查询关键词或问题',
-            },
-          },
-          required: ['query'],
-        },
+    definition: toolDefinition('search_web', {
+      type: 'object',
+      properties: {
+        query: stringToolParameter('search_web.parameters.properties.query'),
       },
-    },
+      required: ['query'],
+    }),
     handler: async (args, context: ToolContext) => {
       const { query } = args;
       const { onAction } = context;
 
-      if (!query || typeof query !== 'string') {
-        console.error('[WebSearch] ❌ 无效的搜索查询', {
-          query,
-          queryType: typeof query,
-        });
-        return JSON.stringify({
-          success: false,
-          error: '搜索查询不能为空',
-        });
+      if (!validToolQuery(query, 'WebSearch')) {
+        return toolErrorJson('WEB_QUERY_REQUIRED', 'aiWebFeedback.queryRequired');
       }
 
-      const result = await searchWeb(query);
+      const result = await searchWeb(query, undefined);
 
       // 报告操作
       if (onAction) {
@@ -373,28 +386,20 @@ export const webSearchTools: ToolDefinition[] = [
         });
       }
 
-      return JSON.stringify(result);
+      return modelJson(result);
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'fetch_webpage',
-        description:
-          '直接访问指定的网页并提取其内容。当用户提供了具体的网页 URL 或需要查看特定网页的详细内容时使用此工具。工具会提取网页的标题和主要内容文本，供 AI 分析。[警告] 重要：使用此工具时，必须仔细阅读返回的 text 内容，从中提取关键信息来回答用户的问题。如果返回了 error，说明无法访问该网页。',
-        parameters: {
-          type: 'object',
-          properties: {
-            url: {
-              type: 'string',
-              description: '要访问的网页 URL（必须是完整的 URL，包含 http:// 或 https://）',
-            },
-          },
-          required: ['url'],
+    definition: toolDefinition('fetch_webpage', {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: describeTool('fetch_webpage.parameters.properties.url'),
         },
       },
-    },
+      required: ['url'],
+    }),
     handler: async (args, context: ToolContext) => {
       const { url } = args;
       const { onAction } = context;
@@ -404,10 +409,7 @@ export const webSearchTools: ToolDefinition[] = [
           url,
           urlType: typeof url,
         });
-        return JSON.stringify({
-          success: false,
-          error: 'URL 不能为空',
-        });
+        return toolErrorJson('WEB_URL_REQUIRED', 'aiWebFeedback.urlRequired');
       }
 
       const result = await fetchWebpage(url);
@@ -428,7 +430,7 @@ export const webSearchTools: ToolDefinition[] = [
         });
       }
 
-      return JSON.stringify(result);
+      return modelJson(result);
     },
   },
 ];

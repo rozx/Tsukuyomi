@@ -7,16 +7,26 @@
 
 ### Requirement: Help documentation storage
 
-The system SHALL store help documentation files in `public/help/` directory using Markdown format.
+The system SHALL store help documentation files in `public/help/` directory using Markdown format. The 16 user guides SHALL have complete zh-CN, zh-TW and en-US versions with identical document IDs and localized titles, descriptions and category labels. Each language SHALL live in its own folder (`public/help/zh-CN/`, `public/help/zh-TW/`, `public/help/en-US/`), each with its own `index.json`; no language SHALL be stored at the `public/help/` root.
 
 #### Scenario: Accessing help documentation
 
 - **WHEN** the application needs to display help content
-- **THEN** it SHALL read Markdown files from `public/help/` directory
+- **THEN** it SHALL read Markdown files from the `public/help/<locale>/` folder of the active language
+
+#### Scenario: Three complete guide collections
+
+- **WHEN** the user selects any supported UI language
+- **THEN** all 16 guides SHALL resolve to the corresponding translated Markdown and localized index metadata
+
+#### Scenario: Historical release notes
+
+- **WHEN** a user opens a historical release note in any UI language
+- **THEN** its body SHALL remain the published original; navigation category and description SHALL use the UI language
 
 ### Requirement: Front page help document
 
-The system SHALL provide a front-page help document at `public/help/front-page.md` that introduces core application features.
+The system SHALL provide a front-page help document at `public/help/<locale>/front-page.md` that introduces core application features. Its stable document ID SHALL resolve to the active language version.
 
 #### Scenario: User views front page help
 
@@ -31,6 +41,11 @@ The system SHALL make help documents accessible to both the web UI and AI assist
 
 - **WHEN** the AI assistant needs to answer user questions about features
 - **THEN** it SHALL be able to read and reference help documentation files
+
+#### Scenario: UI and assistant use the same localized resource
+
+- **WHEN** UI and assistant request the same guide with the same language
+- **THEN** both SHALL receive the same title, full body and stable section identifiers
 
 ### Requirement: Multiple help documents support
 

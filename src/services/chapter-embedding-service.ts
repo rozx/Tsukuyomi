@@ -21,16 +21,19 @@
  */
 
 import { getDB } from 'src/utils/indexed-db';
-import { getSelectedTranslation } from 'src/utils/text-utils';
+import type { TsukuyomiDB } from 'src/utils/indexed-db';
+import type { IDBPTransaction } from 'idb';
+import type { AppLocale } from 'src/models/locale';
+import { getLanguageTranslation, getNameTranslation } from './localization/selection';
+import { hashString } from 'src/utils/content-hash';
+import { LocalizedError } from 'src/utils/localized-error';
+import { normalizeChapterLanguages } from './localization/normalize';
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
 import type { Novel, Paragraph } from 'src/models/novel';
 import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import { loadChapterContent } from 'src/utils/chapter-content-loader';
-import {
-  lookupChapterBookFromDB,
-  loadBookMetaFromDB,
-} from 'src/utils/chapter-book-lookup';
+import { lookupChapterBookFromDB, loadBookMetaFromDB } from 'src/utils/chapter-book-lookup';
 import {
   calculateNormalizedRrfScores,
   calculateQueryKeywordScore,
@@ -125,7 +128,8 @@ export function computeQueryUnitIdf(
  * 但只筛出 identifier 类。因 extractQueryUnits 没有 export,此处独立实现一份规则匹配。
  * 保持两边正则一致是契约 — 单测会覆盖。
  */
-const QUERY_IDENTIFIER_RUN_GLOBAL = /[\u2460-\u24ff\u2160-\u217f]|[0-9]+|[〇一二三四五六七八九十百千]+/g;
+const QUERY_IDENTIFIER_RUN_GLOBAL =
+  /[\u2460-\u24ff\u2160-\u217f]|[0-9]+|[〇一二三四五六七八九十百千]+/g;
 function extractIdentifiersFromQuery(query: string): string[] {
   if (!query) return [];
   const lower = query.toLowerCase();
@@ -155,7 +159,10 @@ export interface BookAliasIndex {
   aliasGroups: string[][];
 }
 
-export function buildBookAliasIndex(book: Novel | null | undefined): BookAliasIndex {
+export function buildBookAliasIndex(
+  book: Novel | null | undefined,
+  language: AppLocale = book?.targetLanguage ?? 'zh-CN',
+): BookAliasIndex {
   const properNouns = new Set<string>();
   const aliasGroups: string[][] = [];
   if (!book) return { properNouns, aliasGroups };
@@ -170,16 +177,16 @@ export function buildBookAliasIndex(book: Novel | null | undefined): BookAliasIn
   for (const term of book.terminologies ?? []) {
     const group = new Set<string>();
     addToGroup(group, term?.name);
-    addToGroup(group, term?.translation?.translation);
+    addToGroup(group, getNameTranslation(term, language)?.translation);
     if (group.size > 0) aliasGroups.push([...group]);
   }
   for (const ch of book.characterSettings ?? []) {
     const group = new Set<string>();
     addToGroup(group, ch?.name);
-    addToGroup(group, ch?.translation?.translation);
+    addToGroup(group, getNameTranslation(ch, language)?.translation);
     for (const a of ch?.aliases ?? []) {
       addToGroup(group, a?.name);
-      addToGroup(group, a?.translation?.translation);
+      addToGroup(group, getNameTranslation(a, language)?.translation);
     }
     if (group.size > 0) aliasGroups.push([...group]);
   }
@@ -254,7 +261,7 @@ export const CHAPTER_MODEL_VERSION = `${MODEL_VERSION}@${CHAPTER_CHUNK_LAYOUT_VE
  * CHAPTER_MODEL_VERSION,所有调用方自动跟上。
  */
 export function isChapterChunkStale(chunk: ChapterEmbedding): boolean {
-  return chunk.model !== CHAPTER_MODEL_VERSION;
+  return chunk.model !== CHAPTER_MODEL_VERSION || !chunk.targetLanguage || !chunk.inputSignature;
 }
 /** preview 前缀长度(给 query_chapter 返回用) */
 export const PREVIEW_CHARS = 200;
@@ -324,11 +331,7 @@ const IDF_FLOOR_FOR_DOC = 0.5;
  * IDB 复合 key 工厂。集中在一处避免多处手写出错。
  * v11 后所有新写入都用复合 key;v10 旧 key 已在 upgrade 里 migrate。
  */
-function chunkKey(
-  chapterId: string,
-  kind: ChapterEmbeddingKind,
-  chunkIndex: number,
-): string {
+function chunkKey(chapterId: string, kind: ChapterEmbeddingKind, chunkIndex: number): string {
   return `${chapterId}:${kind}:${chunkIndex}`;
 }
 
@@ -371,9 +374,9 @@ export interface ChapterQueryMatch {
  * - 译文为空时只返回原文。
  * - 两端 trim 但保留段内空白。
  */
-function paragraphToText(p: Paragraph): string {
+function paragraphToText(p: Paragraph, language: AppLocale): string {
   const original = (p.text ?? '').trim();
-  const translation = getSelectedTranslation(p).trim();
+  const translation = (getLanguageTranslation(p, language)?.translation ?? '').trim();
   if (!original && !translation) return '';
   if (!translation) return original;
   if (!original) return translation;
@@ -385,7 +388,10 @@ function paragraphToText(p: Paragraph): string {
  * - 单段超过目标时独占一个 chunk(不切段)。
  * - 空段落被跳过(不贡献字符数、不进 chunk)。
  */
-export function splitChapterIntoChunks(paragraphs: Paragraph[]): ChapterChunkDraft[] {
+export function splitChapterIntoChunks(
+  paragraphs: Paragraph[],
+  language: AppLocale = 'zh-CN',
+): ChapterChunkDraft[] {
   const chunks: ChapterChunkDraft[] = [];
   let buffer: string[] = [];
   let bufferChars = 0;
@@ -408,7 +414,7 @@ export function splitChapterIntoChunks(paragraphs: Paragraph[]): ChapterChunkDra
   };
 
   for (const p of paragraphs) {
-    const piece = paragraphToText(p);
+    const piece = paragraphToText(p, language);
     if (!piece) continue;
 
     // 单段超大时独占一块:先把 buffer 冲掉,再独立成块
@@ -481,7 +487,10 @@ function aggregateChunksByChapter(
 }
 
 /** 从 book.volumes 建章节 ID → 标题 / 卷标题的反向查找表 */
-function buildChapterTitleLookups(book: Novel | null | undefined): {
+function buildChapterTitleLookups(
+  book: Novel | null | undefined,
+  language: AppLocale,
+): {
   chapterTitleLookup: Map<string, string>;
   volumeTitleLookup: Map<string, string>;
 } {
@@ -489,9 +498,15 @@ function buildChapterTitleLookups(book: Novel | null | undefined): {
   const volumeTitleLookup = new Map<string, string>();
   if (!book?.volumes) return { chapterTitleLookup, volumeTitleLookup };
   for (const v of book.volumes) {
-    const volumeTitle = typeof v.title === 'string' ? v.title : '';
+    const volumeTitle =
+      typeof v.title === 'string'
+        ? v.title
+        : (getNameTranslation(v.title, language)?.translation ?? v.title.original);
     for (const ch of v.chapters || []) {
-      const title = typeof ch.title === 'string' ? ch.title : ch.title?.original || '';
+      const title =
+        typeof ch.title === 'string'
+          ? ch.title
+          : (getNameTranslation(ch.title, language)?.translation ?? ch.title.original);
       chapterTitleLookup.set(ch.id, title);
       volumeTitleLookup.set(ch.id, volumeTitle);
     }
@@ -554,6 +569,123 @@ function pickChapterPreview(agg: ChapterAgg): string {
   if (agg.contentSnippets.length === 0) return agg.titleSnippet;
   const best = [...agg.contentSnippets].sort((a, b) => b.score - a.score)[0]!;
   return best.snippet;
+}
+
+interface ChapterInputState {
+  targetLanguage: AppLocale;
+  serialized: string;
+  batchInputs: string[];
+  contentDrafts: ChapterChunkDraft[];
+  titleInput: string | null;
+}
+interface ChapterInputSnapshot extends ChapterInputState {
+  inputSignature: string;
+}
+
+/** 从同一数据库快照构造实际输入；事务中只做同步计算。 */
+function chapterInputState(
+  book: Novel | undefined | null,
+  chapterId: string,
+  record: { content: string } | undefined,
+  language: AppLocale = book?.targetLanguage ?? 'zh-CN',
+): ChapterInputState | null {
+  const chapter = book?.volumes
+    ?.flatMap((volume) => volume.chapters ?? [])
+    .find((value) => value.id === chapterId);
+  if (!chapter) return null;
+  const paragraphs = normalizeChapterLanguages(
+    record ? JSON.parse(record.content) : (chapter.content ?? []),
+  );
+  const originalTitle = typeof chapter.title === 'string' ? chapter.title : chapter.title.original;
+  const targetTitle =
+    typeof chapter.title === 'string'
+      ? ''
+      : (getNameTranslation(chapter.title, language)?.translation ?? '');
+  const contentDrafts = splitChapterIntoChunks(paragraphs, language);
+  const titleInput = composeTitleChunkInput(
+    [originalTitle, targetTitle].filter(Boolean).join('\n'),
+    paragraphs,
+  );
+  const batchInputs = [
+    ...contentDrafts.map((draft) => draft.text),
+    ...(titleInput ? [titleInput] : []),
+  ];
+  return {
+    targetLanguage: language,
+    serialized: JSON.stringify({ language, batchInputs }),
+    batchInputs,
+    contentDrafts,
+    titleInput,
+  };
+}
+
+async function loadChapterInput(
+  bookId: string,
+  chapterId: string,
+  language?: AppLocale,
+): Promise<ChapterInputSnapshot | null> {
+  const db = await getDB();
+  const tx = db.transaction(['books', 'chapter-contents'], 'readonly');
+  const [book, record] = await Promise.all([
+    tx.objectStore('books').get(bookId),
+    tx.objectStore('chapter-contents').get(chapterId),
+  ]);
+  await tx.done;
+  const state = chapterInputState(book, chapterId, record, language);
+  return state ? { ...state, inputSignature: await hashString(state.serialized) } : null;
+}
+
+/** 查询的书籍、正文输入及向量来自同一只读事务，不混用等待前元数据。 */
+async function loadQuerySnapshot(bookId: string, language: AppLocale) {
+  const db = await getDB();
+  const tx = db.transaction(['books', 'chapter-contents', 'chapter-embeddings'], 'readonly');
+  const [book, rows] = await Promise.all([
+    tx.objectStore('books').get(bookId),
+    tx.objectStore('chapter-embeddings').index('by-bookId').getAll(bookId),
+  ]);
+  const inputs = new Map<string, ChapterInputState>();
+  for (const chapter of book?.volumes?.flatMap((volume) => volume.chapters ?? []) ?? []) {
+    const record = await tx.objectStore('chapter-contents').get(chapter.id);
+    const state = chapterInputState(book, chapter.id, record, language);
+    if (state) inputs.set(chapter.id, state);
+  }
+  await tx.done;
+  const signatures = new Map(
+    await Promise.all(
+      [...inputs].map(async ([id, state]) => [id, await hashString(state.serialized)] as const),
+    ),
+  );
+  const chunks = rows.filter(
+    (row) =>
+      !isChapterChunkStale(row) &&
+      row.targetLanguage === language &&
+      row.inputSignature === signatures.get(row.chapterId),
+  );
+  return {
+    book,
+    chunks,
+    hasUnavailableInput:
+      rows.length > 0 || [...inputs.values()].some((input) => input.batchInputs.length > 0),
+  };
+}
+
+const CHAPTER_CACHE_STORES = ['books', 'chapter-contents', 'chapter-embeddings'] as const;
+type ChapterCacheTransaction = IDBPTransaction<
+  TsukuyomiDB,
+  typeof CHAPTER_CACHE_STORES,
+  'readwrite'
+>;
+async function inputStillCurrent(
+  tx: ChapterCacheTransaction,
+  bookId: string,
+  chapterId: string,
+  snapshot: ChapterInputSnapshot,
+): Promise<boolean> {
+  const [book, record] = await Promise.all([
+    tx.objectStore('books').get(bookId),
+    tx.objectStore('chapter-contents').get(chapterId),
+  ]);
+  return chapterInputState(book, chapterId, record)?.serialized === snapshot.serialized;
 }
 
 export class ChapterEmbeddingService {
@@ -622,23 +754,29 @@ export class ChapterEmbeddingService {
       vector: number[];
       textSnippet: string;
     }>,
+    source?: ChapterInputSnapshot,
   ): Promise<void> {
     if (!chapterId) return;
-    if (chunks.length === 0) return;
+    if (chunks.length === 0 && !source) return;
+    const snapshot = source ?? (await loadChapterInput(bookId, chapterId));
 
     const kindsToReplace = new Set<ChapterEmbeddingKind>(chunks.map((c) => c.kind));
 
     try {
       const db = await getDB();
-      const tx = db.transaction('chapter-embeddings', 'readwrite');
-      const store = tx.store;
+      const tx = db.transaction(CHAPTER_CACHE_STORES, 'readwrite');
+      const store = tx.objectStore('chapter-embeddings');
+      if (snapshot && !(await inputStillCurrent(tx, bookId, chapterId, snapshot))) {
+        await tx.done;
+        return;
+      }
       const index = store.index('by-chapterId');
 
       // 先清除本次要写入的 kind 对应的旧记录
       let cursor = await index.openCursor(chapterId);
       while (cursor) {
         const record = cursor.value as ChapterEmbedding;
-        if (kindsToReplace.has(record.kind)) {
+        if (source || kindsToReplace.has(record.kind)) {
           await cursor.delete();
         }
         cursor = await cursor.continue();
@@ -656,6 +794,9 @@ export class ChapterEmbeddingService {
           textSnippet: chunk.textSnippet,
           model: CHAPTER_MODEL_VERSION,
           updatedAt: now,
+          ...(snapshot
+            ? { targetLanguage: snapshot.targetLanguage, inputSignature: snapshot.inputSignature }
+            : {}),
         };
         await store.put(record, chunkKey(chapterId, chunk.kind, chunk.chunkIndex));
       }
@@ -665,6 +806,35 @@ export class ChapterEmbeddingService {
       console.error(`[ChapterEmbeddingService] writeChunksForChapter(${chapterId}) 失败:`, error);
       throw error;
     }
+  }
+
+  /** 派生维护只删除已过期缓存，不删除刚按当前输入提交的新缓存。 */
+  static async invalidateStaleChunksForChapter(chapterId: string): Promise<void> {
+    const lookup = await lookupChapterBookFromDB(chapterId);
+    if (!lookup) return;
+    const snapshot = await loadChapterInput(lookup.bookId, chapterId);
+    if (!snapshot) return;
+    const db = await getDB();
+    const tx = db.transaction(CHAPTER_CACHE_STORES, 'readwrite');
+    if (!(await inputStillCurrent(tx, lookup.bookId, chapterId, snapshot))) {
+      await tx.done;
+      return;
+    }
+    let cursor = await tx
+      .objectStore('chapter-embeddings')
+      .index('by-chapterId')
+      .openCursor(chapterId);
+    while (cursor) {
+      const row = cursor.value;
+      if (
+        isChapterChunkStale(row) ||
+        row.targetLanguage !== snapshot.targetLanguage ||
+        row.inputSignature !== snapshot.inputSignature
+      )
+        await cursor.delete();
+      cursor = await cursor.continue();
+    }
+    await tx.done;
   }
 
   /**
@@ -683,20 +853,12 @@ export class ChapterEmbeddingService {
       await this.deleteChunksForChapter(chapterId);
       return;
     }
-    const { bookId, chapterTitle } = lookup;
-
-    const paragraphs = await loadChapterContent(chapterId);
-    if (!paragraphs || paragraphs.length === 0) {
-      await this.deleteChunksForChapter(chapterId);
-      return;
-    }
-
-    const contentDrafts = splitChapterIntoChunks(paragraphs);
-    const titleInput = composeTitleChunkInput(chapterTitle, paragraphs);
-
-    if (contentDrafts.length === 0 && !titleInput) {
-      // 章节非空但每段都是空白 → 没东西能嵌入,清残留
-      await this.deleteChunksForChapter(chapterId);
+    const { bookId } = lookup;
+    const snapshot = await loadChapterInput(bookId, chapterId);
+    if (!snapshot) return;
+    const { contentDrafts, titleInput, batchInputs } = snapshot;
+    if (batchInputs.length === 0) {
+      await this.writeChunksForChapter(chapterId, bookId, [], snapshot);
       return;
     }
 
@@ -704,11 +866,6 @@ export class ChapterEmbeddingService {
       throw new Error('EmbeddingService 未就绪');
     }
 
-    // 把 title input 拼到 batch 末尾,一次 embedBatch 调用共用模型 warmup
-    const batchInputs: string[] = [
-      ...contentDrafts.map((c) => c.text),
-      ...(titleInput ? [titleInput] : []),
-    ];
     const vectors = await EmbeddingService.embedBatch(batchInputs, 'document');
 
     const chunks: Array<{
@@ -747,7 +904,7 @@ export class ChapterEmbeddingService {
       throw new Error(`章节 ${chapterId} 的所有 chunk 嵌入失败`);
     }
 
-    await this.writeChunksForChapter(chapterId, bookId, chunks);
+    await this.writeChunksForChapter(chapterId, bookId, chunks, snapshot);
   }
 
   /**
@@ -767,25 +924,25 @@ export class ChapterEmbeddingService {
     bookId: string,
     query: string,
     limit = 5,
+    targetLanguage?: AppLocale,
   ): Promise<ChapterQueryMatch[]> {
-    if (!bookId) throw new Error('bookId 不能为空');
-    if (!query || !query.trim()) throw new Error('query 不能为空');
+    if (!bookId) throw new LocalizedError('BOOK_ID_REQUIRED', 'embeddingUi.bookRequired');
+    if (!query || !query.trim())
+      throw new LocalizedError('EMBEDDING_QUERY_REQUIRED', 'embeddingUi.queryRequired');
     if (!EmbeddingService.isReady()) {
-      throw new Error('EmbeddingService 未就绪');
+      throw new LocalizedError('EMBEDDING_NOT_READY', 'embeddingUi.serviceNotReady');
     }
 
+    const initialBook = await loadBookMetaFromDB(bookId);
+    const language = targetLanguage ?? initialBook?.targetLanguage ?? 'zh-CN';
     const queryVec = await EmbeddingService.embed(query, 'query');
-    if (!queryVec) throw new Error('query embedding 计算失败');
+    if (!queryVec)
+      throw new LocalizedError('QUERY_EMBEDDING_FAILED', 'embeddingUi.calculationFailed');
 
-    const allChunks = await this.getChunksForBook(bookId);
-    if (allChunks.length === 0) return [];
-
-    // 过滤 stale chunk(embedding 空间不一致 → 余弦无意义)
-    const chunks = allChunks.filter((c) => !isChapterChunkStale(c));
+    const { book, chunks, hasUnavailableInput } = await loadQuerySnapshot(bookId, language);
     if (chunks.length === 0) {
-      throw new Error(
-        '章节向量空间已升级,正在后台重算。请稍后重试,或在设置中查看重建进度。',
-      );
+      if (!hasUnavailableInput) return [];
+      throw new LocalizedError('CHAPTER_CACHE_REBUILDING', 'aiBookFeedback.cacheRebuilding');
     }
 
     // ===== Pass 1:全池 raw cosine =====
@@ -796,9 +953,8 @@ export class ChapterEmbeddingService {
 
     // ===== 标题 / 卷标题 + 别名 / Identifier / IDF =====
     // 直接从 IndexedDB 加载 book 元数据,避免 import stores/books 形成循环依赖
-    const book = await loadBookMetaFromDB(bookId);
-    const { chapterTitleLookup, volumeTitleLookup } = buildChapterTitleLookups(book);
-    const aliasIndex = buildBookAliasIndex(book);
+    const { chapterTitleLookup, volumeTitleLookup } = buildChapterTitleLookups(book, language);
+    const aliasIndex = buildBookAliasIndex(book, language);
     const expandedQuery = expandQueryWithAliases(query, aliasIndex);
     const properNouns = aliasIndex.properNouns.size > 0 ? aliasIndex.properNouns : undefined;
     // 用原 query 抽 identifier,避免别名扩展污染
@@ -839,15 +995,12 @@ export class ChapterEmbeddingService {
     const semanticRanks = calculateNormalizedRrfScores(semanticRawValues);
     const semanticConfidences = calculateSemanticConfidenceScores(semanticRawValues);
     const keywordRanks = calculateNormalizedRrfScores(
-      candidates.map((candidate) =>
-        candidate.keywordRaw > 0 ? candidate.keywordRaw : null,
-      ),
+      candidates.map((candidate) => (candidate.keywordRaw > 0 ? candidate.keywordRaw : null)),
     );
 
     const results: ChapterQueryMatch[] = [];
     candidates.forEach((candidate, index) => {
-      const semantic =
-        (semanticRanks[index] ?? 0) * (semanticConfidences[index] ?? 0);
+      const semantic = (semanticRanks[index] ?? 0) * (semanticConfidences[index] ?? 0);
       const keyword = candidate.keywordRaw * (keywordRanks[index] ?? 0);
       const total = applyIdentifierPenalty(
         CHAPTER_SEMANTIC_WEIGHT * semantic + CHAPTER_KEYWORD_WEIGHT * keyword,
@@ -917,7 +1070,13 @@ export class ChapterEmbeddingService {
       }
 
       // 条件 2:任一 chunk model 过期
-      const anyStale = arr.some(isChapterChunkStale);
+      const input = await loadChapterInput(bookId, chId);
+      const anyStale = arr.some(
+        (row) =>
+          isChapterChunkStale(row) ||
+          row.targetLanguage !== input?.targetLanguage ||
+          row.inputSignature !== input?.inputSignature,
+      );
       if (anyStale) {
         needsEmbed.push(chId);
         continue;

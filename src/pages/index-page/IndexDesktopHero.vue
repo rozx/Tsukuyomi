@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 /**
  * 桌面首页「继续阅读」Hero 卡。从 IndexPageDesktop 抽出以降低其模板圈复杂度。
  * 自行注入 useIndexPage 与 ai-processing store。
@@ -13,11 +16,11 @@ const ctx = injectIndexPage();
 const aiProcessing = useAIProcessingStore();
 
 const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
-const heroEyebrow = computed(() => (hasActiveJob.value ? 'ACTIVE JOB' : 'CONTINUE READING'));
+const heroEyebrow = computed(() =>
+  hasActiveJob.value ? i18nT('libraryUi.activeJob') : i18nT('libraryUi.continueReading'),
+);
 const heroUpdatedAt = computed(() =>
-  ctx.continueReadingBook.value
-    ? ctx.formatDate(ctx.continueReadingBook.value.lastEdited)
-    : '',
+  ctx.continueReadingBook.value ? ctx.formatDate(ctx.continueReadingBook.value.lastEdited) : '',
 );
 const onHeroCoverError = (e: Event) => {
   const target = e.target as HTMLImageElement;
@@ -44,14 +47,13 @@ const onHeroCoverError = (e: Event) => {
       <div class="continue-hero-body">
         <div class="continue-hero-eyebrow-row">
           <span class="continue-hero-eyebrow">{{ heroEyebrow }}</span>
-          <span
-            v-if="hasActiveJob"
-            class="continue-hero-status continue-hero-status--active"
-          >
+          <span v-if="hasActiveJob" class="continue-hero-status continue-hero-status--active">
             <i class="pi pi-spin pi-spinner" aria-hidden="true" />
-            AI 正在处理
+            {{ i18nT('libraryUi.aiWorking') }}
           </span>
-          <span v-else class="continue-hero-status">更新于 {{ heroUpdatedAt }}</span>
+          <span v-else class="continue-hero-status">{{
+            i18nT('libraryUi.updatedAt', { date: heroUpdatedAt })
+          }}</span>
         </div>
 
         <h2 class="continue-hero-title">
@@ -63,11 +65,11 @@ const onHeroCoverError = (e: Event) => {
 
         <dl class="continue-hero-stats">
           <div class="continue-hero-stat">
-            <dt>章节</dt>
+            <dt>{{ i18nT('libraryUi.chapters') }}</dt>
             <dd>{{ ctx.getTotalChapters(ctx.continueReadingBook.value) }}</dd>
           </div>
           <div class="continue-hero-stat">
-            <dt>字数</dt>
+            <dt>{{ i18nT('libraryUi.characters') }}</dt>
             <dd v-if="ctx.isLoadingCharCount(ctx.continueReadingBook.value)">
               <Skeleton width="48px" height="14px" />
             </dd>
@@ -76,10 +78,10 @@ const onHeroCoverError = (e: Event) => {
             </dd>
           </div>
           <div v-if="ctx.continueReadingBook.value.starred" class="continue-hero-stat">
-            <dt>状态</dt>
+            <dt>{{ i18nT('libraryUi.status') }}</dt>
             <dd class="continue-hero-stat--star">
               <i class="pi pi-star-fill" aria-hidden="true" />
-              已收藏
+              {{ i18nT('libraryUi.starred') }}
             </dd>
           </div>
         </dl>
@@ -91,10 +93,14 @@ const onHeroCoverError = (e: Event) => {
             @click="ctx.navigateToBookDetails(ctx.continueReadingBook.value)"
           >
             <i class="pi pi-arrow-right" aria-hidden="true" />
-            <span>继续阅读</span>
+            <span>{{ i18nT('libraryUi.continueReading') }}</span>
           </button>
-          <button type="button" class="continue-hero-cta continue-hero-cta--ghost" @click="ctx.navigateToBooks">
-            查看全部书籍
+          <button
+            type="button"
+            class="continue-hero-cta continue-hero-cta--ghost"
+            @click="ctx.navigateToBooks"
+          >
+            {{ i18nT('libraryUi.viewAllBooks') }}
           </button>
         </div>
       </div>

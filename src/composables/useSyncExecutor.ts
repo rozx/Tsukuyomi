@@ -27,9 +27,21 @@ import {
 } from 'src/utils/sync-strip';
 import type { SyncConfig } from 'src/models/sync';
 import type { Memory } from 'src/models/memory';
-import { MANIFEST_FILE_NAME, novelEntryKey, type GistManifest } from 'src/models/manifest';
+import { MANIFEST_FILE_NAME, novelEntryKey } from 'src/models/manifest';
 import { readFile, type GistFileLike } from 'src/services/gist-sync-incremental';
 import { recordStructureBaselines } from 'src/services/sync-chapter-baselines';
+import { BookService } from 'src/services/book-service';
+import type { Novel } from 'src/models/novel';
+import { v4 } from 'uuid';
+import {
+  effectiveSchemaVersion,
+  parseGistManifest,
+  UnsupportedManifestVersionError,
+} from 'src/utils/manifest-protocol';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
+import { LocalizedError, localizedErrorMessage } from 'src/utils/localized-error';
 
 /** downloadFromGistWithManifest 的非跳过分支（含 changedEntries/manifest 等字段） */
 type DownloadResult = Awaited<ReturnType<GistSyncService['downloadFromGistWithManifest']>>;
@@ -90,17 +102,38 @@ function uniqueStructureConflicts(conflicts: SyncStructureConflict[]): SyncStruc
   });
 }
 
-function formatStructureConflictDetail(conflicts: SyncStructureConflict[]): string {
+function formatStructureConflictDetail(
+  conflicts: SyncStructureConflict[],
+  locale: AppLocale,
+): string {
+  const t = (key: string, values?: Record<string, string | number>) =>
+    executorText(locale, key, values);
   const listed = conflicts
     .slice(0, MAX_LISTED_STRUCTURE_CONFLICTS)
     .map((conflict) => `${conflict.bookTitle} · ${conflict.chapterTitle}`)
-    .join('、');
+    .join(t('listSeparator'));
   const suffix =
-    conflicts.length > MAX_LISTED_STRUCTURE_CONFLICTS ? ` 等 ${conflicts.length} 章` : '';
-  return (
-    `${listed}${suffix} 在两台设备上都修改了段落结构。` +
-    '已按较新的章节保留，并附加了另一方独有的段落，建议检查这些章节。'
-  );
+    conflicts.length > MAX_LISTED_STRUCTURE_CONFLICTS
+      ? t('structureMore', { count: conflicts.length })
+      : '';
+  return t('structureDetail', { listed, suffix });
+}
+
+/** 数据层直接以错误码作为 message 抛出、可能到达同步提示的错误 */
+const SYNC_ERROR_CODES = new Set([
+  'UNSUPPORTED_ENTITY_SYNC_VERSION',
+  'INVALID_LOCALE',
+  'INVALID_FORCE_OPERATION',
+  'FORCE_OPERATION_CHANGED',
+]);
+
+/** 同步执行器的用户可见文案（syncUi.executor.*） */
+function executorText(
+  locale: AppLocale,
+  key: string,
+  values: Record<string, string | number> = {},
+): string {
+  return translateText(locale, `syncUi.executor.${key}` as MessageKey, values);
 }
 
 /**
@@ -116,13 +149,46 @@ function formatStructureConflictDetail(conflicts: SyncStructureConflict[]): stri
  *   3. 基于 hash 比对检测本地是否有待上传的变更
  *   4. 伪 CAS 预检 + 增量上传（失败则重试）
  */
+/** 去掉章节正文，只保留书籍元数据（与 refreshBookFromStorage 后的 store 形态一致）。 */
+function withoutChapterContent(book: Novel): Novel {
+  if (!book.volumes) return book;
+  return {
+    ...book,
+    volumes: book.volumes.map((volume) =>
+      volume.chapters
+        ? {
+            ...volume,
+            chapters: volume.chapters.map(({ content: _content, ...chapter }) => ({
+              ...chapter,
+              contentLoaded: false,
+            })),
+          }
+        : volume,
+    ),
+  };
+}
+
 export function useSyncExecutor() {
   const settingsStore = useSettingsStore();
   const aiModelsStore = useAIModelsStore();
   const booksStore = useBooksStore();
   const coverHistoryStore = useCoverHistoryStore();
-  const gistSyncService = new GistSyncService();
+  const gistSyncService = new GistSyncService(() => settingsStore.uiLocale);
   const toast = useToastWithHistory();
+  const t = (key: string, values?: Record<string, string | number>) =>
+    executorText(settingsStore.uiLocale, key, values);
+  /**
+   * 自有错误按当前界面语言渲染，第三方诊断保持原文；
+   * 数据层以错误码为 message 的协议错误（见 SYNC_ERROR_CODES）映射为说明，避免提示原始代码。
+   */
+  const errText = (error: unknown, fallback: string) =>
+    error instanceof Error && SYNC_ERROR_CODES.has(error.message)
+      ? translateText(settingsStore.uiLocale, `syncUi.codes.${error.message}` as MessageKey)
+      : localizedErrorMessage(
+          error,
+          settingsStore.uiLocale,
+          `syncUi.executor.${fallback}` as MessageKey,
+        );
 
   /** 同步结束后提示两方都改过结构的章节；每次同步最多提示一次 */
   const notifyStructureConflicts = (report: SyncMergeReport): void => {
@@ -130,8 +196,8 @@ export function useSyncExecutor() {
     if (conflicts.length === 0) return;
     toast.add({
       severity: 'warn',
-      summary: '同步发现段落结构冲突',
-      detail: formatStructureConflictDetail(conflicts),
+      summary: t('structureSummary'),
+      detail: formatStructureConflictDetail(conflicts, settingsStore.uiLocale),
       life: 10000,
     });
   };
@@ -323,7 +389,7 @@ export function useSyncExecutor() {
   > => {
     settingsStore.updateSyncProgress({
       stage: 'downloading',
-      message: prefixMsg('正在检查远程变更...'),
+      message: prefixMsg(t('checkingRemote')),
       current: 0,
       total: OVERALL_TOTAL,
     });
@@ -339,9 +405,9 @@ export function useSyncExecutor() {
       );
       return { ok: true, result };
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '下载时发生未知错误';
+      const errorMsg = errText(error, 'downloadUnknown');
       console.error('[useSyncExecutor] 同步下载失败:', errorMsg);
-      onError('下载失败', errorMsg);
+      onError(t('downloadFailed'), errorMsg);
       return { ok: false };
     }
   };
@@ -360,7 +426,7 @@ export function useSyncExecutor() {
     const { onError } = options;
     settingsStore.updateSyncProgress({
       stage: 'downloading',
-      message: prefixMsg('检测到旧布局 Gist，正在执行一次性迁移...'),
+      message: prefixMsg(t('migrating')),
       current: DOWNLOAD_PHASE_MAX / 2,
       total: OVERALL_TOTAL,
     });
@@ -369,15 +435,15 @@ export function useSyncExecutor() {
     try {
       legacyDownload = await gistSyncService.downloadFromGist(config);
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '迁移下载失败';
+      const errorMsg = errText(error, 'migrationDownloadFailed');
       console.error('[useSyncExecutor] 迁移下载失败:', errorMsg);
-      onError('迁移失败', `${errorMsg}（本地数据未改动，下次同步将重试）`);
+      onError(t('migrationFailed'), t('migrationRetry', { error: errorMsg }));
       return false;
     }
 
     if (!legacyDownload.success) {
-      const errorMsg = legacyDownload.error || '旧布局下载失败';
-      onError('迁移失败', `${errorMsg}（本地数据未改动，下次同步将重试）`);
+      const errorMsg = legacyDownload.error || t('legacyDownloadFailed');
+      onError(t('migrationFailed'), t('migrationRetry', { error: errorMsg }));
       return false;
     }
 
@@ -391,9 +457,9 @@ export function useSyncExecutor() {
         );
         restorableItems.push(...applied);
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : '应用旧布局数据失败';
+        const errorMsg = errText(error, 'legacyApplyFailed');
         console.error('[useSyncExecutor] 迁移 apply 失败:', errorMsg);
-        onError('迁移失败', `${errorMsg}（本地数据已回滚）`);
+        onError(t('migrationFailed'), t('migrationRolledBack', { error: errorMsg }));
         return false;
       }
     }
@@ -409,7 +475,7 @@ export function useSyncExecutor() {
 
     settingsStore.updateSyncProgress({
       stage: 'applying',
-      message: prefixMsg('迁移合并完成，准备写入新布局...'),
+      message: prefixMsg(t('migrationMerged')),
       current: UPLOAD_PHASE_START,
       total: OVERALL_TOTAL,
     });
@@ -419,33 +485,10 @@ export function useSyncExecutor() {
   /**
    * 阶段 2：应用 changedEntries 并持久化已知远端状态。失败时调用 onError 并返回 false。
    */
-  const runApplyPhase = async (
+  const persistDownloadedManifest = async (
     downloadResult: DownloadResultActive,
-    prefixMsg: (m: string) => string,
-    onError: SyncExecutorOptions['onError'],
-    report: SyncMergeReport,
-  ): Promise<boolean> => {
-    settingsStore.updateSyncProgress({
-      stage: 'applying',
-      message: prefixMsg('正在应用下载的数据...'),
-      current: DOWNLOAD_PHASE_MAX,
-      total: OVERALL_TOTAL,
-    });
-
-    let applyFailedKeys: string[] = [];
-    try {
-      applyFailedKeys =
-        (await SyncDataService.applyPartialRemoteData(downloadResult.changedEntries, report)) ?? [];
-      if (downloadResult.deletedEntries.length > 0) {
-        await SyncDataService.applyRemoteDeletions(downloadResult.deletedEntries);
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '应用远程数据时发生未知错误';
-      console.error('[useSyncExecutor] 应用失败:', errorMsg);
-      onError('应用失败', errorMsg);
-      return false;
-    }
-
+    applyFailedKeys: string[],
+  ) => {
     // 更新本地持久化的已知远端状态——每步独立 try/catch，单步失败不回滚前序持久化
     if (downloadResult.manifest) {
       try {
@@ -476,10 +519,49 @@ export function useSyncExecutor() {
         }
         await settingsStore.updateKnownRemoteHashes(hashes);
         await settingsStore.updateKnownRemoteEntries(entries);
+        if (failedKeys.size === 0)
+          await settingsStore.updateKnownRemoteSchemaVersion(
+            effectiveSchemaVersion(downloadResult.manifest),
+          );
       } catch (error) {
         console.error('[useSyncExecutor] 保存 knownRemoteHashes 失败:', error);
       }
     }
+  };
+
+  const runApplyPhase = async (
+    downloadResult: DownloadResultActive,
+    prefixMsg: (m: string) => string,
+    onError: SyncExecutorOptions['onError'],
+    report: SyncMergeReport,
+  ): Promise<boolean> => {
+    settingsStore.updateSyncProgress({
+      stage: 'applying',
+      message: prefixMsg(t('applying')),
+      current: DOWNLOAD_PHASE_MAX,
+      total: OVERALL_TOTAL,
+    });
+
+    let applyFailedKeys: string[] = [];
+    try {
+      applyFailedKeys =
+        (await SyncDataService.applyPartialRemoteData(downloadResult.changedEntries, report)) ?? [];
+      if (downloadResult.needsSchemaUpgrade && applyFailedKeys.length)
+        throw new LocalizedError(
+          'SCHEMA_UPGRADE_APPLY_FAILED',
+          'syncUi.executor.schemaUpgradeApplyFailed',
+        );
+      if (downloadResult.deletedEntries.length > 0) {
+        await SyncDataService.applyRemoteDeletions(downloadResult.deletedEntries);
+      }
+    } catch (error) {
+      const errorMsg = errText(error, 'applyUnknown');
+      console.error('[useSyncExecutor] 应用失败:', errorMsg);
+      onError(t('applyFailed'), errorMsg);
+      return false;
+    }
+
+    await persistDownloadedManifest(downloadResult, applyFailedKeys);
     try {
       await settingsStore.updateKnownRemoteTombstones(downloadResult.remoteTombstones);
     } catch (error) {
@@ -493,7 +575,7 @@ export function useSyncExecutor() {
 
     settingsStore.updateSyncProgress({
       stage: 'applying',
-      message: prefixMsg('应用完成'),
+      message: prefixMsg(t('applied')),
       current: UPLOAD_PHASE_START,
       total: OVERALL_TOTAL,
     });
@@ -545,7 +627,7 @@ export function useSyncExecutor() {
         },
       );
       if (!content) return null;
-      return manifestToHashes(JSON.parse(content) as GistManifest);
+      return manifestToHashes(parseGistManifest(content));
     } catch {
       return null;
     }
@@ -577,7 +659,7 @@ export function useSyncExecutor() {
   > => {
     settingsStore.updateSyncProgress({
       stage: 'uploading',
-      message: prefixMsg('正在检查远程并发写入...'),
+      message: prefixMsg(t('checkingConcurrent')),
       current: UPLOAD_PHASE_START,
       total: OVERALL_TOTAL,
     });
@@ -605,12 +687,12 @@ export function useSyncExecutor() {
         );
         return { status: 'retry', files: verify.files };
       }
-      onError('同步冲突', '其他设备正在频繁写入，请稍后再试');
+      onError(t('conflict'), t('concurrentWrites'));
       return { status: 'abort' };
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '伪 CAS 检查失败';
+      const errorMsg = errText(error, 'casFailed');
       console.error('[useSyncExecutor] 伪 CAS 失败:', errorMsg);
-      onError('同步失败', errorMsg);
+      onError(t('syncFailed'), errorMsg);
       return { status: 'abort' };
     }
   };
@@ -647,7 +729,7 @@ export function useSyncExecutor() {
         if (uploadResult.gistId) {
           await settingsStore.setGistId(uploadResult.gistId);
         }
-        onError('上传失败', uploadResult.error || '创建 Gist 失败');
+        onError(t('uploadFailed'), uploadResult.error || t('createFailed'));
         return { success: false, restorableItems };
       }
       if (uploadResult.gistId) {
@@ -655,11 +737,11 @@ export function useSyncExecutor() {
       }
       await settingsStore.updateLastSyncTime(syncSnapshotTime);
       await recordSyncedStructureBaselines(bundle, 'all');
-      if (onSuccess) onSuccess('同步完成', '数据已同步到 Gist（首次）');
+      if (onSuccess) onSuccess(t('syncDone'), t('firstSynced'));
       return { success: true, restorableItems };
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '上传时发生未知错误';
-      onError('上传失败', errorMsg);
+      const errorMsg = errText(error, 'uploadUnknown');
+      onError(t('uploadFailed'), errorMsg);
       return { success: false, restorableItems };
     }
   };
@@ -697,6 +779,7 @@ export function useSyncExecutor() {
       await settingsStore.updateLastRemoteETag(uploadResult.remoteETag);
       await settingsStore.updateKnownRemoteHashes(manifestToHashes(uploadResult.manifest));
       await settingsStore.updateKnownRemoteEntries(manifestToEntries(uploadResult.manifest));
+      await settingsStore.updateKnownRemoteSchemaVersion(uploadResult.manifest.schemaVersion);
       const uploadedTombstones: Record<string, string> = {};
       for (const [k, v] of Object.entries(uploadResult.manifest.tombstones ?? {})) {
         uploadedTombstones[k] = v.deletedAt;
@@ -746,17 +829,17 @@ export function useSyncExecutor() {
 
       settingsStore.updateSyncProgress({
         stage: 'uploading',
-        message: prefixMsg('同步完成'),
+        message: prefixMsg(t('syncDone')),
         current: OVERALL_TOTAL,
         total: OVERALL_TOTAL,
       });
 
-      if (onSuccess) onSuccess('同步完成', '数据已同步到 Gist');
+      if (onSuccess) onSuccess(t('syncDone'), t('synced'));
       return { success: true, restorableItems };
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '上传时发生未知错误';
+      const errorMsg = errText(error, 'uploadUnknown');
       console.error('[useSyncExecutor] 上传失败:', errorMsg);
-      onError('上传失败', errorMsg);
+      onError(t('uploadFailed'), errorMsg);
       return { success: false, restorableItems };
     }
   };
@@ -774,7 +857,7 @@ export function useSyncExecutor() {
   ): Promise<SyncExecutorResult> => {
     settingsStore.updateSyncProgress({
       stage: 'uploading',
-      message: prefixMsg('同步完成（无更改需要上传）'),
+      message: prefixMsg(t('doneNoChanges')),
       current: OVERALL_TOTAL,
       total: OVERALL_TOTAL,
     });
@@ -785,7 +868,7 @@ export function useSyncExecutor() {
       console.error('[useSyncExecutor] 更新同步状态失败:', error);
     }
     await recordSyncedStructureBaselines(bundle, knownHashes);
-    if (onSuccess) onSuccess('同步完成', '数据已是最新，无需上传');
+    if (onSuccess) onSuccess(t('syncDone'), t('upToDate'));
     return { success: true, restorableItems };
   };
 
@@ -813,7 +896,11 @@ export function useSyncExecutor() {
       : undefined;
 
     if (activeDownload?.schemaVersionTooNew) {
-      onError('同步中止', '远程数据由较新版本的应用写入，请升级客户端后再同步');
+      onError(t('aborted'), t('schemaTooNew'));
+      return { success: false, restorableItems: [] };
+    }
+    if (activeDownload?.needsSchemaUpgrade && activeDownload.failedEntryKeys?.length) {
+      onError(t('aborted'), t('schemaUpgradeReadFailed'));
       return { success: false, restorableItems: [] };
     }
 
@@ -843,7 +930,9 @@ export function useSyncExecutor() {
     const bundle = await buildLocalSyncBundle(latestConfig);
     const knownHashes = latestConfig.knownRemoteHashes ?? {};
     const localHashes = manifestToHashes(bundle.localManifest);
-    const shouldUpload = SyncDataService.hasLocalChangesByHash(localHashes, knownHashes);
+    const shouldUpload =
+      activeDownload?.needsSchemaUpgrade === true ||
+      SyncDataService.hasLocalChangesByHash(localHashes, knownHashes);
 
     if (!shouldUpload) {
       return finalizeNoUploadNeeded(
@@ -871,7 +960,7 @@ export function useSyncExecutor() {
 
     settingsStore.updateSyncProgress({
       stage: 'uploading',
-      message: prefixMsg(`正在上传数据 (${booksStore.books.length} 本书籍)...`),
+      message: prefixMsg(t('uploadingBooks', { count: booksStore.books.length })),
       current: UPLOAD_PHASE_START,
       total: OVERALL_TOTAL,
     });
@@ -921,7 +1010,7 @@ export function useSyncExecutor() {
       }
 
       // 超出重试预算
-      onError('同步冲突', '其他设备正在频繁写入，请稍后再试');
+      onError(t('conflict'), t('concurrentWrites'));
       return { success: false, restorableItems };
     } finally {
       // 合并已写入本地，即使后续上传失败也要让用户知道哪些章节需要检查
@@ -942,15 +1031,67 @@ export function useSyncExecutor() {
    * 首次同步（无 gistId）会被判定为"无可覆盖远端"，退化为 executeSync 首次上传路径，
    * 并强制重置 forceSyncMode。
    */
+  const readForceRemote = async (config: SyncConfig, prefixMsg: (message: string) => string) => {
+    let remoteBooks: Novel[] = [];
+    // 绕过 If-None-Match：强制推送时总是需要最新的远端文件清单用于删除对比
+    const { lastRemoteETag: _discarded, ...configWithoutETag } = config;
+    void _discarded;
+    const forceFetchConfig: SyncConfig = {
+      ...configWithoutETag,
+      knownRemoteHashes: {},
+      knownRemoteEntries: {},
+    };
+    const downloadResult = await gistSyncService.downloadFromGistWithManifest(
+      forceFetchConfig,
+      makeDownloadProgressHandler(prefixMsg),
+    );
+    if (downloadResult.skipped) {
+      throw new LocalizedError(
+        'FORCE_REMOTE_UNAVAILABLE',
+        'syncUi.executor.forceRemoteUnavailable',
+      );
+    } else {
+      if (downloadResult.schemaVersionTooNew)
+        throw new UnsupportedManifestVersionError(downloadResult.manifest?.schemaVersion ?? 0);
+      if (downloadResult.failedEntryKeys?.length)
+        throw new LocalizedError(
+          'FORCE_REMOTE_UNREADABLE',
+          'syncUi.executor.forceRemoteUnreadable',
+        );
+      if (downloadResult.needsMigration) {
+        const legacy = await gistSyncService.downloadFromGist(forceFetchConfig);
+        if (!legacy.success || !legacy.data)
+          throw legacy.error
+            ? new Error(legacy.error)
+            : new LocalizedError(
+                'FORCE_REMOTE_UNREADABLE',
+                'syncUi.executor.forceRemoteUnreadable',
+              );
+        remoteBooks = legacy.data.novels ?? [];
+      } else {
+        remoteBooks = Object.values(downloadResult.changedEntries).flatMap((entry) =>
+          entry.kind === 'novel' ? [entry.value] : [],
+        );
+      }
+      const remoteFilesSnapshot = downloadResult.remoteFilesSnapshot ?? {};
+      const remoteETag = downloadResult.remoteETag ?? '';
+      return { remoteFilesSnapshot, remoteETag, remoteBooks };
+    }
+  };
+
   const executeForceSync = async (options: SyncExecutorOptions): Promise<SyncExecutorResult> => {
     const { messagePrefix, onError, onSuccess, configOverride } = options;
     const prefixMsg = (msg: string) => (messagePrefix ? `${messagePrefix}${msg}` : msg);
     await ensureSyncStoresInitialized();
     const config = resolveConfig(configOverride);
+    const operationId = config.forceSyncMode?.operationId ?? v4();
 
     const markFailure = async () => {
       try {
-        await settingsStore.updateForceSyncMode({ active: true, lastFailedAt: Date.now() });
+        await settingsStore.updateForceSyncMode(
+          { active: true, lastFailedAt: Date.now() },
+          operationId,
+        );
       } catch (e) {
         console.error('[useSyncExecutor] 写入 forceSyncMode 失败状态出错:', e);
       }
@@ -965,50 +1106,45 @@ export function useSyncExecutor() {
         console.error('[useSyncExecutor] 重置 forceSyncMode 失败:', e);
       }
       if (fallback.success && onSuccess) {
-        onSuccess('同步完成', '未检测到远程 Gist，已按普通同步处理');
+        onSuccess(t('syncDone'), t('normalFallback'));
       }
       return fallback;
+    }
+    try {
+      await settingsStore.updateForceSyncMode({ active: true, operationId });
+    } catch (error) {
+      onError(t('forceFailed'), errText(error, 'forceStateUnsaved'));
+      return { success: false, restorableItems: [] };
     }
 
     // ── 阶段 1：获取远端文件清单（不 apply）──
     settingsStore.updateSyncProgress({
       stage: 'downloading',
-      message: prefixMsg('正在获取远程文件清单...'),
+      message: prefixMsg(t('fetchingFileList')),
       current: 0,
       total: OVERALL_TOTAL,
     });
 
     let remoteFilesSnapshot: Record<string, unknown> = {};
     let remoteETag = '';
+    let remoteBooks: Novel[] = [];
     try {
-      // 绕过 If-None-Match：强制推送时总是需要最新的远端文件清单用于删除对比
-      const { lastRemoteETag: _discarded, ...configWithoutETag } = config;
-      void _discarded;
-      const forceFetchConfig: SyncConfig = configWithoutETag;
-      const downloadResult = await gistSyncService.downloadFromGistWithManifest(
-        forceFetchConfig,
-        makeDownloadProgressHandler(prefixMsg),
-      );
-      if (downloadResult.skipped) {
-        // 绕过 ETag 后理论上不会走 304；保底兜底：没拿到 snapshot 直接上传所有本地条目
-        remoteFilesSnapshot = {};
-        remoteETag = config.lastRemoteETag ?? '';
-      } else {
-        remoteFilesSnapshot = downloadResult.remoteFilesSnapshot ?? {};
-        remoteETag = downloadResult.remoteETag ?? '';
-      }
+      const remote = await readForceRemote(config, prefixMsg);
+      remoteFilesSnapshot = remote.remoteFilesSnapshot;
+      remoteETag = remote.remoteETag;
+      remoteBooks = remote.remoteBooks;
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '获取远端文件清单失败';
+      const errorMsg = errText(error, 'fileListFailed');
       console.error('[useSyncExecutor] 强制推送 阶段 1 失败:', errorMsg);
       await markFailure();
-      onError('强制推送失败', errorMsg);
+      onError(t('forceFailed'), errorMsg);
       return { success: false, restorableItems: [] };
     }
 
     // ── 阶段 2：构建本地 bundle ──
     settingsStore.updateSyncProgress({
       stage: 'applying',
-      message: prefixMsg('正在准备本地数据...'),
+      message: prefixMsg(t('preparingLocal')),
       current: DOWNLOAD_PHASE_MAX,
       total: OVERALL_TOTAL,
     });
@@ -1016,6 +1152,21 @@ export function useSyncExecutor() {
     // 快照时刻取在 bundle 构建之前（与 executeSync 同语义，见 persistUploadState）
     const syncSnapshotTime = Date.now();
     const bundle = await buildLocalSyncBundle(config);
+    try {
+      const prepared = await BookService.prepareForceBooks(
+        bundle.novelsWithContent,
+        remoteBooks,
+        `${operationId}:${config.syncParams.gistId}`,
+      );
+      bundle.novelsWithContent = prepared;
+      // 载荷需要全部正文，但放回 Pinia 只保留元数据：正文按需从 chapter-contents 读取
+      const byId = new Map(prepared.map((book) => [book.id, withoutChapterContent(book)]));
+      booksStore.books = booksStore.books.map((book) => byId.get(book.id) ?? book);
+    } catch (error) {
+      await markFailure();
+      onError(t('forceFailed'), errText(error, 'forcePrepareFailed'));
+      return { success: false, restorableItems: [] };
+    }
     const {
       appSettingsForSync,
       aiModelsForSync,
@@ -1029,7 +1180,7 @@ export function useSyncExecutor() {
     // ── 阶段 3：上传（清空 known 状态，跳过 pseudo-CAS）──
     settingsStore.updateSyncProgress({
       stage: 'uploading',
-      message: prefixMsg(`正在强制推送到远程 (${booksStore.books.length} 本书籍)...`),
+      message: prefixMsg(t('forcePushing', { count: booksStore.books.length })),
       current: UPLOAD_PHASE_START,
       total: OVERALL_TOTAL,
     });
@@ -1064,29 +1215,29 @@ export function useSyncExecutor() {
 
       // 关闭强制模式 —— 即使上面的状态持久化失败，推送本身已经成功，不应把用户困在强制模式里
       try {
-        await settingsStore.updateForceSyncMode({ active: false });
+        await settingsStore.updateForceSyncMode({ active: false }, operationId);
       } catch (error) {
         console.error('[useSyncExecutor] 重置 forceSyncMode 失败:', error);
       }
 
       settingsStore.updateSyncProgress({
         stage: 'uploading',
-        message: prefixMsg('强制推送完成'),
+        message: prefixMsg(t('forceDone')),
         current: OVERALL_TOTAL,
         total: OVERALL_TOTAL,
       });
 
-      if (onSuccess) onSuccess('强制推送完成', '本地数据已覆盖远端');
+      if (onSuccess) onSuccess(t('forceDone'), t('forceOverwritten'));
       // 避免未使用变量警告：remoteETag 仅作日志留痕
       if (remoteETag) {
         console.info('[useSyncExecutor] 强制推送替换 ETag:', remoteETag);
       }
       return { success: true, restorableItems: [] };
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '上传时发生未知错误';
+      const errorMsg = errText(error, 'uploadUnknown');
       console.error('[useSyncExecutor] 强制推送上传失败:', errorMsg);
       await markFailure();
-      onError('强制推送失败', errorMsg);
+      onError(t('forceFailed'), errorMsg);
       return { success: false, restorableItems: [] };
     }
   };

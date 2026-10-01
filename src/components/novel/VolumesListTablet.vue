@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+
 /**
  * 平板章节树——视觉完全对齐 BookDetailsMobile 的 `.mbd-tree`：
  * 卷折叠行（folder 图标 + 标题 + 章数 + ⋮）、展开后的章节行（状态图标 +
@@ -19,6 +22,8 @@ import {
   buildChapterActionMenuItems,
 } from 'src/components/novel/volumes-list-utils';
 import TabletChapterRow from 'src/components/novel/TabletChapterRow.vue';
+
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   volumes: Volume[];
@@ -58,31 +63,37 @@ const actionMenuItems = computed<MenuItem[]>(() => {
   const target = actionTarget.value;
   if (!target) return [];
   if (target.kind === 'volume') {
-    return buildVolumeActionMenuItems({
-      onEdit: () => emit('edit-volume', target.volume),
-      onDelete: () => emit('delete-volume', target.volume),
-    });
+    return buildVolumeActionMenuItems(
+      {
+        onEdit: () => emit('edit-volume', target.volume),
+        onDelete: () => emit('delete-volume', target.volume),
+      },
+      resolveAppLocale(locale.value),
+    );
   }
-  return buildChapterActionMenuItems({
-    canMoveUp: target.index > 0,
-    canMoveDown: target.index < target.chaptersLen - 1,
-    onEdit: () => emit('edit-chapter', target.chapter),
-    onMoveUp: () =>
-      emit('move-chapter', {
-        chapter: target.chapter,
-        volumeId: target.volumeId,
-        index: target.index,
-        direction: 'up',
-      }),
-    onMoveDown: () =>
-      emit('move-chapter', {
-        chapter: target.chapter,
-        volumeId: target.volumeId,
-        index: target.index,
-        direction: 'down',
-      }),
-    onDelete: () => emit('delete-chapter', target.chapter),
-  });
+  return buildChapterActionMenuItems(
+    {
+      canMoveUp: target.index > 0,
+      canMoveDown: target.index < target.chaptersLen - 1,
+      onEdit: () => emit('edit-chapter', target.chapter),
+      onMoveUp: () =>
+        emit('move-chapter', {
+          chapter: target.chapter,
+          volumeId: target.volumeId,
+          index: target.index,
+          direction: 'up',
+        }),
+      onMoveDown: () =>
+        emit('move-chapter', {
+          chapter: target.chapter,
+          volumeId: target.volumeId,
+          index: target.index,
+          direction: 'down',
+        }),
+      onDelete: () => emit('delete-chapter', target.chapter),
+    },
+    resolveAppLocale(locale.value),
+  );
 });
 
 const openVolumeActions = (event: Event, volume: Volume) => {
@@ -130,12 +141,14 @@ const volumeFolderIcon = (volumeId: string) =>
         @click="emit('toggle-volume', vol.id)"
       >
         <i class="pi vt-vol-icon" :class="volumeFolderIcon(vol.id)" aria-hidden="true" />
-        <span class="vt-row-title">{{ getVolumeDisplayTitle(vol) }}</span>
-        <span class="vt-row-count">{{ vol.chapters?.length ?? 0 }} 章</span>
+        <span class="vt-row-title">{{ getVolumeDisplayTitle(vol, book) }}</span>
+        <span class="vt-row-count">{{
+          t('readerUi.chapterCount', { count: vol.chapters?.length ?? 0 })
+        }}</span>
         <button
           type="button"
           class="vt-row-more"
-          aria-label="卷操作"
+          :aria-label="t('readerUi.volumeActions')"
           @click.stop="(event: Event) => openVolumeActions(event, vol)"
         >
           <i class="pi pi-ellipsis-v" aria-hidden="true" />
@@ -164,7 +177,7 @@ const volumeFolderIcon = (volumeId: string) =>
 
     <div v-if="volumes.length === 0" class="vt-empty">
       <i class="pi pi-folder-open" aria-hidden="true" />
-      <span>尚未创建卷或章节</span>
+      <span>{{ t('readerUi.noStructure') }}</span>
     </div>
 
     <Menu ref="actionMenuRef" :model="actionMenuItems" popup />

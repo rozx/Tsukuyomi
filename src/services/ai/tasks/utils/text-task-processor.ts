@@ -1,3 +1,8 @@
+import type { TodoParagraphInput } from 'src/services/todo-list-service';
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import { agentText, translateText } from 'src/i18n/translate';
+import { captureExecutionLanguages } from './execution-languages';
+import { createCancelledError, isAIDegradationError } from 'src/services/ai/core/errors';
 import { buildModelServiceConfig } from 'src/services/ai/core/model-config';
 /**
  * 通用文本任务处理器
@@ -64,16 +69,6 @@ import { ChapterService } from 'src/services/chapter-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 
 /**
- * 检查是否为 AI 降级错误
- */
-function isAIDegradationError(error: unknown): boolean {
-  if (error instanceof Error) {
-    return error.message.includes('AI降级检测') || error.message.includes('重复字符');
-  }
-  return false;
-}
-
-/**
  * 进度回调类型
  */
 export interface ProgressInfo {
@@ -86,6 +81,7 @@ export interface ProgressInfo {
  * 通用文本任务选项
  */
 export interface TextTaskOptions {
+  languages: ExecutionLanguages;
   // 回调函数
   onChunk?: TextGenerationStreamCallback | undefined;
   onProgress?: ((progress: ProgressInfo) => void) | undefined;
@@ -115,6 +111,7 @@ export interface TextTaskOptions {
  * 被遗忘导致静默丢字段。
  */
 const TEXT_TASK_OPTION_KEYS = [
+  'languages',
   'onChunk',
   'onProgress',
   'onAction',
@@ -136,13 +133,12 @@ type _MissingTextTaskOptionKey = Exclude<
 const _textTaskOptionsExhaustive: [_MissingTextTaskOptionKey] extends [never] ? true : never = true;
 void _textTaskOptionsExhaustive;
 
-export function pickTextTaskOptions(options: TextTaskOptions | undefined): TextTaskOptions {
-  if (!options) return {};
-  const picked: TextTaskOptions = {};
+export function pickTextTaskOptions(options: TextTaskOptions): TextTaskOptions {
+  const picked: TextTaskOptions = { languages: options.languages };
   for (const key of TEXT_TASK_OPTION_KEYS) {
     if (key in options) {
       // 保留 exactOptionalPropertyTypes 下的"仅在存在时赋值"语义
-      (picked as Record<string, unknown>)[key] = options[key];
+      (picked as unknown as Record<string, unknown>)[key] = options[key];
     }
   }
   return picked;
@@ -198,6 +194,7 @@ export interface TaskSpecificConfig {
   onTitleExtracted?: ((params: TitleExtractCallbackParams) => void | Promise<void>) | undefined;
   // 构建系统提示词函数
   buildSystemPrompt: (params: {
+    languages: ExecutionLanguages;
     todosPrompt: string;
     bookContextSection: string;
     chapterContextSection: string;
@@ -285,14 +282,19 @@ function buildOriginalIndices(
 /**
  * 过滤出有效段落（有文本 + 可选翻译要求）
  */
-function filterValidParagraphs(content: Paragraph[], requiresTranslation: boolean): Paragraph[] {
+function filterValidParagraphs(
+  content: Paragraph[],
+  requiresTranslation: boolean,
+  targetLanguage: AppLocale,
+): Paragraph[] {
   const validParagraphs: Paragraph[] = [];
   for (let i = 0; i < content.length; i++) {
     const paragraph = content[i];
     if (!paragraph) continue;
 
     const hasText = paragraph.text?.trim();
-    const hasSelectedTranslation = getSelectedTranslation(paragraph).trim().length > 0;
+    const hasSelectedTranslation =
+      getSelectedTranslation(paragraph, targetLanguage).trim().length > 0;
     const isValid = requiresTranslation ? hasText && hasSelectedTranslation : hasText;
 
     if (isValid) {
@@ -329,6 +331,11 @@ export async function processTextTask(
   const { onChunk, onProgress, signal, bookId, aiProcessingStore, chapterId, chapterTitle } =
     options;
 
+  const requestedLanguages = options.languages;
+  const languages = captureExecutionLanguages(
+    requestedLanguages.uiLocale,
+    requestedLanguages.targetLanguage,
+  );
   const actions: ActionInfo[] = [...collectedActions];
   const taskLabel = TASK_TYPE_LABELS[taskType];
   let titleTranslation: string | undefined;
@@ -343,24 +350,31 @@ export async function processTextTask(
 
   // 验证输入
   if (!content || content.length === 0) {
-    throw new Error(`要${taskLabel}的内容不能为空`);
+    throw new Error(translateText(languages.uiLocale, `aiRun.emptyContent.${taskType}`));
   }
 
   // 构建原始索引映射 + 过滤有效段落
   const allParagraphs = options.allChapterParagraphs;
   const originalIndices = buildOriginalIndices(content, allParagraphs);
-  const validParagraphs = filterValidParagraphs(content, requiresTranslation);
+  const validParagraphs = filterValidParagraphs(
+    content,
+    requiresTranslation,
+    languages.targetLanguage,
+  );
 
   if (validParagraphs.length === 0) {
     throw new Error(
-      requiresTranslation
-        ? `要${taskLabel}的段落必须包含当前选中的翻译`
-        : `要${taskLabel}的内容不能为空`,
+      translateText(
+        languages.uiLocale,
+        requiresTranslation
+          ? `aiRun.needsTranslation.${taskType}`
+          : `aiRun.emptyContent.${taskType}`,
+      ),
     );
   }
 
   if (!model.enabled) {
-    throw new Error('所选模型未启用');
+    throw new Error(translateText(languages.uiLocale, 'aiRun.modelDisabled'));
   }
 
   // console.log(`[${logLabel}] 🚀 开始${taskLabel}任务`, {
@@ -378,6 +392,7 @@ export async function processTextTask(
     aiProcessingStore,
     taskType,
     model.name,
+    languages.uiLocale,
     {
       ...(typeof bookId === 'string' ? { bookId } : {}),
       ...(typeof chapterId === 'string' ? { chapterId } : {}),
@@ -426,6 +441,7 @@ export async function processTextTask(
 
     // 获取前一章节标题（仅翻译服务;摘要字段已移除,仅注入标题保持时序感知）
     const previousChapterSection = resolvePreviousChapterSection({
+      languages,
       enablePreviousChapter,
       bookId,
       chapterId,
@@ -434,6 +450,7 @@ export async function processTextTask(
 
     // 构建系统提示词（第一个 chunk）
     const systemPromptFirst = buildSystemPrompt({
+      languages,
       todosPrompt,
       bookContextSection,
       chapterContextSection: chapterContextSection + previousChapterSection,
@@ -446,6 +463,7 @@ export async function processTextTask(
 
     // 构建系统提示词（后续 chunk）
     const systemPromptSubsequent = buildSystemPrompt({
+      languages,
       todosPrompt,
       bookContextSection,
       chapterContextSection: chapterContextSection + previousChapterSection,
@@ -458,7 +476,7 @@ export async function processTextTask(
 
     if (aiProcessingStore && taskId) {
       aiProcessingStore
-        .updateTask(taskId, { message: '正在建立连接...' })
+        .updateTask(taskId, { message: translateText(languages.uiLocale, 'aiRun.connecting') })
         .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
     }
 
@@ -474,6 +492,7 @@ export async function processTextTask(
     // 这样 buildChunks 在遍历 allChapterParagraphs 时，只会包含目标段落，而非所有段落
     const validParagraphIds = new Set(validParagraphs.map((p) => p.id));
     const buildChunksForIds = makeBuildChunksForIds({
+      targetLanguage: languages.targetLanguage,
       requiresTranslation,
       validParagraphs,
       translationSourceParagraphs,
@@ -487,7 +506,7 @@ export async function processTextTask(
 
     // 存储原始翻译（用于比较变化）
     const originalTranslations = requiresTranslation
-      ? buildOriginalTranslationsMap(validParagraphs)
+      ? buildOriginalTranslationsMap(validParagraphs, languages.targetLanguage)
       : new Map<string, string>();
 
     // 跟踪已处理的段落
@@ -502,6 +521,11 @@ export async function processTextTask(
     // 处理每个块
     const MAX_RETRIES = 2;
     const appendedText = await runChunkProcessingLoop({
+      paragraphInputs: content.map((paragraph, index) => ({
+        id: paragraph.id,
+        displayIndex: (originalIndices.get(paragraph.id) ?? index) + 1,
+      })),
+      languages,
       chunks,
       buildChunksForIds,
       finalSignal,
@@ -555,7 +579,7 @@ export async function processTextTask(
     }
 
     // 完成任务
-    void completeTask(taskId, aiProcessingStore, taskType);
+    void completeTask(taskId, aiProcessingStore, taskType, languages.uiLocale);
 
     // 收集引用的记忆 ID
     const referencedMemoryIds = new Set<string>();
@@ -574,7 +598,7 @@ export async function processTextTask(
       ...(taskId ? { taskId } : {}),
     };
   } catch (error) {
-    void handleTaskError(error, taskId, aiProcessingStore, taskType);
+    void handleTaskError(error, taskId, aiProcessingStore, taskType, languages.uiLocale);
     throw error;
   } finally {
     cleanupAbort();
@@ -585,6 +609,7 @@ export async function processTextTask(
  * 获取前一章节标题注入的 section（仅启用 enablePreviousChapter 时）
  */
 function resolvePreviousChapterSection(params: {
+  languages: ExecutionLanguages;
   enablePreviousChapter: boolean;
   bookId: string | undefined;
   chapterId: string | undefined;
@@ -604,7 +629,10 @@ function resolvePreviousChapterSection(params: {
     if (!prev) {
       return '';
     }
-    const prevTitle = getChapterDisplayTitle(prev.chapter);
+    const prevTitle = getChapterDisplayTitle(prev.chapter, {
+      ...book,
+      targetLanguage: params.languages.targetLanguage,
+    });
     return buildPreviousChapterSection(prevTitle);
   } catch (error) {
     console.warn(`[${logLabel}] 获取前一章节信息失败:`, error);
@@ -617,6 +645,7 @@ function resolvePreviousChapterSection(params: {
  * 其余任务走 buildChunks + ID 谓词。初次分块与后续重建都复用此闭包。
  */
 function makeBuildChunksForIds(params: {
+  targetLanguage: AppLocale;
   requiresTranslation: boolean;
   validParagraphs: Paragraph[];
   translationSourceParagraphs: Paragraph[];
@@ -634,7 +663,12 @@ function makeBuildChunksForIds(params: {
     const idSet = targetIds instanceof Set ? targetIds : new Set(targetIds);
     if (requiresTranslation) {
       const filteredParagraphs = validParagraphs.filter((p) => idSet.has(p.id));
-      return buildFormattedChunks(filteredParagraphs, chunkSize, originalIndices);
+      return buildFormattedChunks(
+        filteredParagraphs,
+        chunkSize,
+        originalIndices,
+        params.targetLanguage,
+      );
     }
     return buildChunks(
       translationSourceParagraphs,
@@ -680,7 +714,9 @@ function maybeRebuildChunk(params: {
 function updateChunkStartStatus(params: {
   aiProcessingStore: AIProcessingStore | undefined;
   taskId: string | undefined;
+  taskType: TaskType;
   taskLabel: string;
+  uiLocale: AppLocale;
   chunkIndex: number;
   totalChunks: number;
   logLabel: string;
@@ -690,7 +726,10 @@ function updateChunkStartStatus(params: {
 
   aiProcessingStore
     .updateTask(taskId, {
-      message: `正在${taskLabel}第 ${chunkIndex + 1}/${totalChunks} 部分...`,
+      message: translateText(params.uiLocale, `aiRun.chunk.${params.taskType}`, {
+        current: chunkIndex + 1,
+        total: totalChunks,
+      }),
       status: 'processing',
       workflowStatus: 'planning',
     })
@@ -699,6 +738,7 @@ function updateChunkStartStatus(params: {
   aiProcessingStore
     .appendThinkingMessage(
       taskId,
+      // 协议标记，由思考面板格式化器解析，不随执行语言变化
       `\n\n[=== ${taskLabel}块 ${chunkIndex + 1}/${totalChunks} ===]\n\n`,
     )
     .catch((error) => console.error(`[${logLabel}] Failed to append thinking message:`, error));
@@ -788,6 +828,7 @@ function prepareChunkRetry(params: {
   aiProcessingStore: AIProcessingStore | undefined;
   taskId: string | undefined;
   logLabel: string;
+  uiLocale: AppLocale;
 }): void {
   const {
     chunkHistory,
@@ -813,7 +854,10 @@ function prepareChunkRetry(params: {
   if (aiProcessingStore && taskId) {
     aiProcessingStore
       .updateTask(taskId, {
-        message: `检测到AI降级，正在重试第 ${retryCount}/${maxRetries} 次...`,
+        message: translateText(params.uiLocale, 'aiRun.retrying', {
+          count: retryCount,
+          max: maxRetries,
+        }),
         status: 'processing',
       })
       .catch((error) => console.error(`[${logLabel}] Failed to update task:`, error));
@@ -946,6 +990,7 @@ function handleChunkError(params: {
   retryCount: number;
   maxRetries: number;
   logLabel: string;
+  uiLocale: AppLocale;
 }): number {
   const { error, chunkIndex, totalChunks, retryCount, maxRetries, logLabel } = params;
   if (!isAIDegradationError(error)) {
@@ -961,9 +1006,7 @@ function handleChunkError(params: {
         重试次数: maxRetries,
       },
     );
-    throw new Error(
-      `AI降级：检测到重复字符，已重试 ${maxRetries} 次仍失败。请检查AI服务状态或稍后重试。`,
-    );
+    throw new Error(translateText(params.uiLocale, 'aiRun.degradedFinal', { max: maxRetries }));
   }
   return next;
 }
@@ -1000,6 +1043,8 @@ function verifyTranslationCompleteness(
  * 单个 chunk 处理所需的上下文
  */
 interface ChunkProcessingContext {
+  paragraphInputs: readonly TodoParagraphInput[];
+  languages: ExecutionLanguages;
   chunks: TextChunk[];
   buildChunksForIds: (targetIds: Set<string> | string[]) => TextChunk[];
   finalSignal: AbortSignal;
@@ -1048,7 +1093,7 @@ async function runChunkProcessingLoop(ctx: ChunkProcessingContext): Promise<stri
 
   while (chunkIndex < ctx.chunks.length) {
     if (ctx.finalSignal.aborted) {
-      throw new Error('请求已取消');
+      throw createCancelledError(ctx.languages.uiLocale);
     }
 
     const chunk = ctx.chunks[chunkIndex];
@@ -1101,7 +1146,9 @@ async function processSingleChunk(
   updateChunkStartStatus({
     aiProcessingStore: ctx.aiProcessingStore,
     taskId: ctx.taskId,
+    taskType: ctx.taskType,
     taskLabel: ctx.taskLabel,
+    uiLocale: ctx.languages.uiLocale,
     chunkIndex,
     totalChunks: ctx.chunks.length,
     logLabel: ctx.logLabel,
@@ -1146,6 +1193,7 @@ async function processSingleChunk(
           aiProcessingStore: ctx.aiProcessingStore,
           taskId: ctx.taskId,
           logLabel: ctx.logLabel,
+          uiLocale: ctx.languages.uiLocale,
         });
       }
 
@@ -1163,7 +1211,11 @@ async function processSingleChunk(
       });
 
       if (loopResult.status !== 'end') {
-        throw new Error(`${ctx.taskLabel}任务未完成（状态: ${loopResult.status}）。请重试。`);
+        throw new Error(
+          translateText(ctx.languages.uiLocale, `aiRun.incomplete.${ctx.taskType}`, {
+            status: loopResult.status,
+          }),
+        );
       }
 
       markProcessedParagraphsFromMap(loopResult.paragraphs, ctx.processedParagraphIds);
@@ -1183,11 +1235,16 @@ async function processSingleChunk(
         retryCount,
         maxRetries: ctx.maxRetries,
         logLabel: ctx.logLabel,
+        uiLocale: ctx.languages.uiLocale,
       });
     }
   }
   // 防御性兜底：handleChunkError 应当已经抛出，这里仅为 TS 控制流
-  throw new Error(`${ctx.taskLabel}任务重试 ${ctx.maxRetries} 次后仍未完成`);
+  throw new Error(
+    translateText(ctx.languages.uiLocale, `aiRun.retriesExhausted.${ctx.taskType}`, {
+      max: ctx.maxRetries,
+    }),
+  );
 }
 
 /**
@@ -1203,7 +1260,9 @@ async function buildChunkUserContent(params: {
   const { ctx, actualChunk, chunkIndex, chunkText, isFirstChunk } = params;
   const maintenanceReminder = buildMaintenanceReminder(ctx.taskType);
   const currentChunkParagraphCount = actualChunk.paragraphIds?.length || 0;
-  const paragraphCountNote = `\n[警告] 注意：本部分包含 ${currentChunkParagraphCount} 个段落（空段落已过滤）。段落标签 [index] 为章节原始位置（从 1 开始，可能跳号），仅用于阅读定位。提交翻译必须使用 paragraph_id（即 [ID: ...] 中的值）。`;
+  const paragraphCountNote = agentText('aiContext.count', {
+    count: currentChunkParagraphCount,
+  });
 
   const firstParagraphId = actualChunk.paragraphIds?.[0];
   const hasPreviousParagraphs = getHasPreviousParagraphs(
@@ -1223,6 +1282,7 @@ async function buildChunkUserContent(params: {
     ctx.bookId,
     hasPreviousParagraphs,
     firstParagraphId,
+    ctx.languages,
   );
 }
 
@@ -1242,6 +1302,10 @@ async function runToolLoopForChunk(params: {
     params;
 
   return executeToolCallLoop({
+    languages: ctx.languages,
+    paragraphInputs: ctx.paragraphInputs.filter((paragraph) =>
+      actualChunk.paragraphIds.includes(paragraph.id),
+    ),
     history: chunkHistory,
     tools: ctx.tools,
     generateText: withContextUsage(ctx.service.generateText.bind(ctx.service), {
@@ -1299,12 +1363,11 @@ function wrapOnParagraphsExtracted(params: {
   const onParagraphsExtracted = ctx.onParagraphsExtracted;
   const paragraphIds = actualChunk.paragraphIds;
 
-  return (paragraphs: { id: string; translation: string }[]) => {
-    markProcessedParagraphs(paragraphs, ctx.processedParagraphIds);
+  return async (paragraphs: { id: string; translation: string }[]) => {
     // 必须返回 Promise，以便 task-runner 中的 await 能正确等待回调完成。
     // 之前使用 void 导致 fire-and-forget，翻译数据写入内存/存储的操作可能
     // 在 batchSaveChapter 之后才完成，造成切换页面时丢失最后批次翻译的 bug。
-    return Promise.resolve(
+    await Promise.resolve(
       onParagraphsExtracted({
         paragraphs,
         paragraphIds,
@@ -1320,7 +1383,9 @@ function wrapOnParagraphsExtracted(params: {
         `[${ctx.logLabel}] ⚠️ 段落回调失败（块 ${chunkIndex + 1}/${ctx.chunks.length}）`,
         error,
       );
+      throw error;
     });
+    markProcessedParagraphs(paragraphs, ctx.processedParagraphIds);
   };
 }
 
@@ -1338,6 +1403,7 @@ function wrapOnTitleExtracted(params: { ctx: ChunkProcessingContext; isFirstChun
     ctx.setTitleTranslation(title);
     return Promise.resolve(onTitleExtracted({ title })).catch((error) => {
       console.error(`[${ctx.logLabel}] ⚠️ 标题回调失败`, error);
+      throw error;
     });
   };
 }

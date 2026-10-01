@@ -13,11 +13,7 @@ import * as BooksStoreModule from 'src/stores/books';
 import type { Paragraph, Novel } from 'src/models/novel';
 import { getDB } from 'src/utils/indexed-db';
 
-function makeParagraph(
-  id: string,
-  text: string,
-  translationText?: string,
-): Paragraph {
+function makeParagraph(id: string, text: string, translationText?: string): Paragraph {
   if (!translationText) {
     return { id, text, selectedTranslationId: '', translations: [] };
   }
@@ -26,9 +22,7 @@ function makeParagraph(
     id,
     text,
     selectedTranslationId: tid,
-    translations: [
-      { id: tid, translation: translationText, aiModelId: 'model-1' },
-    ],
+    translations: [{ id: tid, translation: translationText, aiModelId: 'model-1' }],
   };
 }
 
@@ -126,10 +120,7 @@ describe('ChapterEmbeddingService.splitChapterIntoChunks', () => {
 
   test('单段超长(> CHUNK_TARGET_CHARS)独占一个 chunk', () => {
     const huge = 'か'.repeat(CHUNK_TARGET_CHARS + 100);
-    const paragraphs = [
-      makeParagraph('p1', '短段', '短译'),
-      makeParagraph('p2', huge),
-    ];
+    const paragraphs = [makeParagraph('p1', '短段', '短译'), makeParagraph('p2', huge)];
     const chunks = splitChapterIntoChunks(paragraphs);
 
     expect(chunks).toHaveLength(2);
@@ -154,9 +145,7 @@ describe('ChapterEmbeddingService.splitChapterIntoChunks', () => {
 
   test('chunkIndex 从 0 递增', () => {
     const longText = 'あ'.repeat(800);
-    const paragraphs = Array.from({ length: 5 }, (_, i) =>
-      makeParagraph(`p${i}`, longText),
-    );
+    const paragraphs = Array.from({ length: 5 }, (_, i) => makeParagraph(`p${i}`, longText));
     const chunks = splitChapterIntoChunks(paragraphs);
 
     for (let i = 0; i < chunks.length; i++) {
@@ -289,7 +278,14 @@ describe('ChapterEmbeddingService.embedChapter', () => {
     };
     await mockBooksStoreWith(book);
 
-    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([]);
+    await (
+      await getDB()
+    ).put('chapter-contents', {
+      chapterId: 'ch-1',
+      bookId: 'book-1',
+      content: JSON.stringify([]),
+      lastModified: new Date().toISOString(),
+    });
     const embedSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([]);
 
     await ChapterEmbeddingService.embedChapter('ch-empty');
@@ -299,7 +295,9 @@ describe('ChapterEmbeddingService.embedChapter', () => {
   });
 
   test('EmbeddingService 未就绪时抛错,不写入', async () => {
-    (EmbeddingService.isReady as unknown as { mockReturnValue: (v: boolean) => void }).mockReturnValue(false);
+    (
+      EmbeddingService.isReady as unknown as { mockReturnValue: (v: boolean) => void }
+    ).mockReturnValue(false);
     const book: Novel = {
       id: 'book-1',
       title: 'T',
@@ -321,9 +319,14 @@ describe('ChapterEmbeddingService.embedChapter', () => {
       ],
     };
     await mockBooksStoreWith(book);
-    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
-      makeParagraph('p1', '原文', '译文'),
-    ]);
+    await (
+      await getDB()
+    ).put('chapter-contents', {
+      chapterId: 'ch-1',
+      bookId: 'book-1',
+      content: JSON.stringify([makeParagraph('p1', '原文', '译文')]),
+      lastModified: new Date().toISOString(),
+    });
 
     await (expect(ChapterEmbeddingService.embedChapter('ch-1')).rejects.toThrow(
       /未就绪/,
@@ -353,10 +356,17 @@ describe('ChapterEmbeddingService.embedChapter', () => {
       ],
     };
     await mockBooksStoreWith(book);
-    spyOn(chapterContentLoader, 'loadChapterContent').mockResolvedValue([
-      makeParagraph('p1', '原文1', '译文1'),
-      makeParagraph('p2', '原文2', '译文2'),
-    ]);
+    await (
+      await getDB()
+    ).put('chapter-contents', {
+      chapterId: 'ch-1',
+      bookId: 'book-1',
+      content: JSON.stringify([
+        makeParagraph('p1', '原文1', '译文1'),
+        makeParagraph('p2', '原文2', '译文2'),
+      ]),
+      lastModified: new Date().toISOString(),
+    });
     const embedSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([
       new Float32Array([0.1, 0.2]),
     ]);
@@ -402,7 +412,9 @@ describe('ChapterEmbeddingService.queryChapters', () => {
   });
 
   test('EmbeddingService 未就绪时抛错', async () => {
-    (EmbeddingService.isReady as unknown as { mockReturnValue: (v: boolean) => void }).mockReturnValue(false);
+    (
+      EmbeddingService.isReady as unknown as { mockReturnValue: (v: boolean) => void }
+    ).mockReturnValue(false);
     await (expect(ChapterEmbeddingService.queryChapters('book-1', 'q')).rejects.toThrow(
       /未就绪/,
     ) as unknown as Promise<void>);
@@ -465,9 +477,7 @@ describe('ChapterEmbeddingService.queryChapters', () => {
       volumes: [{ id: 'v1', title: 'V', chapters }],
     };
     await mockBooksStoreWith(book);
-    const semanticCosines = [
-      0.99, 0.95, 0.91, 0.87, 0.83, 0.79, 0.2, 0.19, 0.18, 0.17, 0.16, 0.15,
-    ];
+    const semanticCosines = [0.99, 0.95, 0.91, 0.87, 0.83, 0.79, 0.2, 0.19, 0.18, 0.17, 0.16, 0.15];
     for (let i = 0; i < semanticCosines.length; i++) {
       const cosine = semanticCosines[i]!;
       await ChapterEmbeddingService.writeChunksForChapter(`ch-${i}`, 'book-1', [

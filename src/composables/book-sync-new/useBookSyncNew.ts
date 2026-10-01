@@ -1,7 +1,9 @@
-import { inject, provide, ref, type InjectionKey, type Ref } from 'vue';
+import { computed, inject, provide, ref, type InjectionKey, type Ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { BookSyncApplyResult } from 'src/models/book-sync';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
 import {
   provideBookSync,
   type BookSyncContext,
@@ -15,7 +17,8 @@ import {
  */
 export interface BookSyncNewContext {
   url: Ref<string>;
-  error: Ref<string>;
+  /** 网址校验说明：按当前界面语言渲染 */
+  error: Readonly<Ref<string>>;
   sync: BookSyncContext;
   submit: () => void;
   goBack: () => void;
@@ -38,8 +41,12 @@ export function provideBookSyncNew(): BookSyncNewContext {
   const coverHistoryStore = useCoverHistoryStore();
 
   const initial = typeof route.query.url === 'string' ? normalizeUrl(route.query.url) : null;
+  const settingsStore = useSettingsStore();
   const url = ref(initial ?? '');
-  const error = ref('');
+  const invalidUrl = ref(false);
+  const error = computed(() =>
+    invalidUrl.value ? translateText(settingsStore.uiLocale, 'bookUi.sync.urlInvalid') : '',
+  );
   const target = ref<BookSyncTarget | null>(initial ? { newFrom: initial } : null);
 
   const onApplied = async (result: BookSyncApplyResult): Promise<void> => {
@@ -53,10 +60,10 @@ export function provideBookSyncNew(): BookSyncNewContext {
   const submit = (): void => {
     const value = normalizeUrl(url.value);
     if (!value) {
-      error.value = '请输入以 http:// 或 https:// 开头的小说目录网址';
+      invalidUrl.value = true;
       return;
     }
-    error.value = '';
+    invalidUrl.value = false;
     url.value = value;
     // 同一网址再次提交视为重新检查
     if (target.value && 'newFrom' in target.value && target.value.newFrom === value)

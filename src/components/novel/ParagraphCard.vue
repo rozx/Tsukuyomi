@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed, ref, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick } from 'vue';
 import Inplace from 'primevue/inplace';
 import Skeleton from 'primevue/skeleton';
@@ -15,6 +17,11 @@ import { ChapterService } from 'src/services/chapter-service';
 import { parseTextForHighlightingMemoized, escapeRegex } from 'src/utils/text-matcher';
 import { formatTranslationForDisplay } from 'src/utils';
 import { ExplainService } from 'src/services/ai/tasks/explain-service';
+import { getLanguageTranslation } from 'src/services/localization/selection';
+import { useToastWithHistory } from 'src/composables/useToastHistory';
+import { useSettingsStore } from 'src/stores/settings';
+import { translateText } from 'src/i18n/translate';
+const { t } = useI18n();
 
 const props = defineProps<{
   paragraph: Paragraph;
@@ -55,13 +62,12 @@ const hasContent = computed(() => {
 });
 
 // 获取当前段落的原始翻译文本（未格式化，用于编辑和保存）
+const targetLanguage = computed(
+  () =>
+    (props.bookId ? booksStore.getBookById(props.bookId)?.targetLanguage : undefined) ?? 'zh-CN',
+);
 const rawTranslationText = computed(() => {
-  if (!props.paragraph.selectedTranslationId || !props.paragraph.translations) {
-    return '';
-  }
-  const selectedTranslation = props.paragraph.translations.find(
-    (t) => t.id === props.paragraph.selectedTranslationId,
-  );
+  const selectedTranslation = getLanguageTranslation(props.paragraph, targetLanguage.value);
   return selectedTranslation?.translation || '';
 });
 
@@ -108,7 +114,9 @@ const mostRecentTranslation = computed(() => {
 
   // 过滤掉当前选中的翻译
   const otherTranslations = props.paragraph.translations.filter(
-    (t) => t.id !== props.paragraph.selectedTranslationId,
+    (t) =>
+      (t.language ?? 'zh-CN') === targetLanguage.value &&
+      t.id !== getLanguageTranslation(props.paragraph, targetLanguage.value)?.id,
   );
 
   if (otherTranslations.length === 0) {
@@ -371,6 +379,9 @@ const handleParagraphMouseEnter = () => {
 // 翻译编辑状态
 const editingTranslationValue = ref('');
 const isEditingTranslation = ref(false);
+const editingLanguage = ref(targetLanguage.value);
+const toast = useToastWithHistory();
+const settingsStore = useSettingsStore();
 // 重挂载恢复编辑态时，待写回的草稿值（让 onTranslationOpen 用它而非已保存的 rawTranslationText 初始化）
 const pendingRestoreDraft = ref<string | null>(null);
 const translationTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
@@ -383,7 +394,11 @@ const clickedCharIndex = ref<number | null>(null);
 // 当 undo/redo、chat assistant edit、revert 等操作修改了段落数据时，
 // rawTranslationText 会更新，需要同步到 editingTranslationValue
 watch(rawTranslationText, (newVal) => {
-  if (isEditingTranslation.value && newVal !== editingTranslationValue.value) {
+  if (
+    isEditingTranslation.value &&
+    editingLanguage.value === targetLanguage.value &&
+    newVal !== editingTranslationValue.value
+  ) {
     editingTranslationValue.value = newVal;
   }
 });
@@ -401,10 +416,7 @@ const getComponentElement = (componentInstance: unknown): HTMLElement | undefine
  * 使用 Range API 来精确定位光标位置
  */
 // Firefox caretPositionFromPoint 的类型签名
-type CaretPositionFromPoint = (
-  x: number,
-  y: number,
-) => { offsetNode: Node; offset: number } | null;
+type CaretPositionFromPoint = (x: number, y: number) => { offsetNode: Node; offset: number } | null;
 
 const hasCaretPositionFromPoint = (): boolean =>
   typeof (document as unknown as { caretPositionFromPoint?: CaretPositionFromPoint })
@@ -560,6 +572,7 @@ const handleTranslationDisplayClick = (event: MouseEvent) => {
 
 // 开始编辑翻译
 const onTranslationOpen = () => {
+  editingLanguage.value = targetLanguage.value;
   // 恢复重挂载草稿时用草稿值；否则用原始翻译文本初始化（避免格式化后的文本被保存到数据库）
   editingTranslationValue.value = pendingRestoreDraft.value ?? rawTranslationText.value;
   pendingRestoreDraft.value = null;
@@ -609,14 +622,25 @@ const onTranslationOpen = () => {
 
 // 保存翻译
 const onTranslationClose = () => {
+  if (!isEditingTranslation.value) return;
   // 与原始翻译文本比较，而不是格式化后的文本
-  if (editingTranslationValue.value !== rawTranslationText.value) {
+  if (editingLanguage.value !== targetLanguage.value) {
+    toast.add({
+      severity: 'warn',
+      summary: translateText(settingsStore.uiLocale, 'books.targetChanged'),
+      detail: translateText(settingsStore.uiLocale, 'books.reopenEditor'),
+      life: 3000,
+    });
+  } else if (editingTranslationValue.value !== rawTranslationText.value) {
     emit('update-translation', props.paragraph.id, editingTranslationValue.value);
   }
+  endTranslationEdit();
+};
+
+// 结束编辑的公共清理（apply / cancel / Esc / 失焦共用）：清除暂存草稿并通知父组件停止编辑
+const endTranslationEdit = () => {
   isEditingTranslation.value = false;
-  // 编辑结束，清除暂存草稿（apply / cancel / Esc / 失焦都经此关闭路径）
-  props.editDraftStore?.delete(props.paragraph.id);
-  // 通知父组件停止编辑
+  props.editDraftStore?.delete(`${props.paragraph.id}:${editingLanguage.value}`);
   emit('paragraph-edit-stop', props.paragraph.id);
 };
 
@@ -630,7 +654,8 @@ const applyTranslation = (closeCallback: () => void) => {
 const cancelTranslation = (closeCallback: () => void) => {
   // 恢复为原始翻译文本，而不是格式化后的文本
   editingTranslationValue.value = rawTranslationText.value;
-  isEditingTranslation.value = false;
+  // 先做公共清理再关闭：之后触发的 @close 因已不在编辑态而直接返回，不会保存
+  endTranslationEdit();
   closeCallback();
 };
 
@@ -738,7 +763,6 @@ const handleRecentTranslationMouseLeave = () => {
   popoversRef.value?.hideRecent();
 };
 
-
 // 处理校对段落
 const handleProofread = () => {
   closeContextMenu();
@@ -819,7 +843,7 @@ const handleExplainSelection = () => {
   const selectedText = getSelectedText();
   if (selectedText) {
     // 使用 ExplainService 生成解释提示词并发送到助手输入框
-    const explainPrompt = ExplainService.generatePrompt(selectedText);
+    const explainPrompt = ExplainService.generatePrompt(selectedText, settingsStore.uiLocale);
     uiStore.setAssistantInputMessage(explainPrompt);
   }
 };
@@ -851,7 +875,7 @@ const handleDialogSelectTranslation = (translationId: string) => {
 // 否则滚回窗口时新实例的 onMounted 会先读到旧草稿、旧钉住实例的 onBeforeUnmount 后写入，导致最新输入回退。
 watch(editingTranslationValue, (draft) => {
   if (isEditingTranslation.value) {
-    props.editDraftStore?.set(props.paragraph.id, draft);
+    props.editDraftStore?.set(`${props.paragraph.id}:${editingLanguage.value}`, draft);
   }
 });
 
@@ -859,14 +883,17 @@ watch(editingTranslationValue, (draft) => {
 // 以便重挂载（滚回 / 切到钉住层）后恢复，避免本地编辑态随实例销毁而丢失（实时 watch 之外的兜底）。
 onBeforeUnmount(() => {
   if (isEditingTranslation.value && props.editDraftStore) {
-    props.editDraftStore.set(props.paragraph.id, editingTranslationValue.value);
+    props.editDraftStore.set(
+      `${props.paragraph.id}:${editingLanguage.value}`,
+      editingTranslationValue.value,
+    );
   }
 });
 
 // 重挂载后恢复编辑态：若父级 editDraftStore 中存有本段落的草稿，则自动重新进入编辑并写回草稿。
 onMounted(() => {
   if (!props.editDraftStore || !hasTranslation.value) return;
-  const draft = props.editDraftStore.get(props.paragraph.id);
+  const draft = props.editDraftStore.get(`${props.paragraph.id}:${targetLanguage.value}`);
   if (draft === undefined) return;
   pendingRestoreDraft.value = draft;
   // 等 Inplace 的 display 区域挂好后再触发进入编辑（onTranslationOpen 会用 pendingRestoreDraft 初始化）
@@ -1022,24 +1049,25 @@ defineExpose({
               <Textarea
                 ref="translationTextareaRef"
                 v-model="editingTranslationValue"
+                :data-target-language="editingLanguage"
                 class="translation-textarea"
                 :auto-resize="true"
                 @keydown="(e) => handleTranslationKeydown(e, closeCallback)"
               />
               <div class="translation-edit-actions">
                 <div class="translation-edit-hints">
-                  <span class="hint-text">Enter 保存，Shift+Enter 换行，Esc 取消</span>
+                  <span class="hint-text">{{ t('translationUi.editorHint') }}</span>
                 </div>
                 <div class="translation-edit-buttons">
                   <Button
-                    label="取消"
+                    :label="t('translationUi.cancel')"
                     icon="pi pi-times"
                     class="p-button-text p-button-sm"
                     size="small"
                     @click="cancelTranslation(closeCallback)"
                   />
                   <Button
-                    label="应用"
+                    :label="t('translationUi.apply')"
                     icon="pi pi-check"
                     class="p-button-sm"
                     size="small"
@@ -1056,6 +1084,7 @@ defineExpose({
     <!-- 性能关键：所有 Popover 延迟挂载（首次交互后 nextTick 内完成），
          避免在 2000 段的章节里一次性创建 8000 个 Popover 实例。 -->
     <ParagraphPopovers
+      :target-language="targetLanguage"
       v-if="popoversMounted"
       ref="popoversRef"
       :term="hoveredTerm"
@@ -1079,6 +1108,7 @@ defineExpose({
     <!-- 翻译历史对话框 -->
     <TranslationHistoryDialog
       :visible="showTranslationHistoryDialog"
+      :target-language="targetLanguage"
       :paragraph="paragraph"
       @update:visible="(val) => (showTranslationHistoryDialog = val)"
       @select-translation="handleDialogSelectTranslation"
@@ -1217,8 +1247,7 @@ defineExpose({
 .paragraph-text {
   margin: 0;
   /* 设计系统：原文用显示字体（Noto Serif JP），正文色 fg-2 */
-  font-family:
-    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-family: 'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
   color: rgba(247, 244, 236, 0.9);
   font-size: 0.9375rem;
   line-height: 1.8;
@@ -1231,12 +1260,7 @@ defineExpose({
   margin: 0.75rem 0 0 0;
   padding-top: 0.75rem;
   border-top: none;
-  background-image: linear-gradient(
-    to right,
-    transparent,
-    rgba(255, 255, 255, 0.15),
-    transparent
-  );
+  background-image: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.15), transparent);
   background-size: 100% 1px;
   background-repeat: no-repeat;
   background-position: top;
@@ -1273,8 +1297,7 @@ defineExpose({
    *   后者在极暗底上对比度约 5:1，长段阅读偏吃力；
    *   提亮到 200 级可达约 10:1，同时仍保留"冷月蓝"的身份色以区别原文。
    */
-  font-family:
-    'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-family: 'Noto Serif JP', 'Songti SC', 'STSong', 'SimSun', serif;
   color: rgba(186, 201, 219, 0.95);
   font-size: 0.9375rem;
   line-height: 1.8;

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
+import type { AppLocale } from 'src/models/locale';
+import { getNameTranslation } from 'src/services/localization/selection';
 import Popover from 'primevue/popover';
 import Button from 'primevue/button';
 import type { Terminology, CharacterSetting, Translation } from 'src/models/novel';
@@ -10,6 +14,7 @@ import ParagraphCharacterPopoverList from 'src/components/novel/ParagraphCharact
 // toggle/hide 给父级调用；hide/mouseenter 通过事件回传父级以管理延迟关闭定时器。
 const props = defineProps<{
   term: Terminology | null;
+  targetLanguage?: AppLocale;
   character: CharacterSetting | null;
   characters: CharacterSetting[];
   recentTranslation: Translation | null | undefined;
@@ -38,6 +43,7 @@ const contextMenuPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 const recentTranslationPopoverRef = ref<InstanceType<typeof Popover> | null>(null);
 
 import { ref, computed } from 'vue';
+const { t } = useI18n();
 
 const characterPopoverWidth = computed(() => (props.characters.length > 1 ? '24rem' : '20rem'));
 
@@ -92,6 +98,8 @@ const onOpenHistory = () => {
   hideRecent();
   emit('open-history');
 };
+const translationText = (owner: Terminology) =>
+  getNameTranslation(owner, props.targetLanguage ?? 'zh-CN')?.translation ?? '';
 </script>
 
 <template>
@@ -112,7 +120,7 @@ const onOpenHistory = () => {
     >
       <div class="popover-header">
         <span class="popover-term-name">{{ term.name }}</span>
-        <span class="popover-translation">{{ term.translation.translation }}</span>
+        <span class="popover-translation">{{ translationText(term) }}</span>
       </div>
       <div v-if="term.description" class="popover-description">{{ term.description }}</div>
     </div>
@@ -133,7 +141,10 @@ const onOpenHistory = () => {
       @mouseenter="$emit('character-enter')"
       @mouseleave="hideCharacter"
     >
-      <ParagraphCharacterPopoverList :characters="characters" />
+      <ParagraphCharacterPopoverList
+        :characters="characters"
+        :target-language="targetLanguage ?? 'zh-CN'"
+      />
     </div>
   </Popover>
 
@@ -147,10 +158,10 @@ const onOpenHistory = () => {
   >
     <div v-if="recentTranslation" class="recent-translation-popover-content">
       <div class="popover-header">
-        <span class="popover-label">最近的翻译</span>
+        <span class="popover-label">{{ t('translationUi.recentTranslation') }}</span>
       </div>
       <div class="recent-translation-text">{{ recentTranslation.translation }}</div>
-      <div class="recent-translation-hint">点击按钮查看完整翻译历史</div>
+      <div class="recent-translation-hint">{{ t('translationUi.historyHint') }}</div>
     </div>
   </Popover>
 
@@ -165,7 +176,7 @@ const onOpenHistory = () => {
     <div class="context-menu-content">
       <Button
         v-if="hasTextSelection"
-        label="解释选中文本"
+        :label="t('translationUi.explainSelection')"
         icon="pi pi-question-circle"
         class="context-menu-button"
         text
@@ -173,28 +184,28 @@ const onOpenHistory = () => {
       />
       <div v-if="hasTextSelection" class="context-menu-divider" />
       <Button
-        label="校对段落"
+        :label="t('translationUi.proofreadParagraph')"
         icon="pi pi-check-circle"
         class="context-menu-button"
         text
         @click="onProofread"
       />
       <Button
-        label="润色段落"
+        :label="t('translationUi.polishParagraph')"
         icon="pi pi-sparkles"
         class="context-menu-button"
         text
         @click="onPolish"
       />
       <Button
-        label="重新翻译"
+        :label="t('translationUi.retranslate')"
         icon="pi pi-refresh"
         class="context-menu-button"
         text
         @click="onRetranslate"
       />
       <Button
-        label="复制原文到助手"
+        :label="t('translationUi.copyOriginalToAssistant')"
         icon="pi pi-copy"
         class="context-menu-button"
         text
@@ -207,7 +218,7 @@ const onOpenHistory = () => {
       <!-- 翻译历史按钮 -->
       <Button
         v-if="translationHistoryCount > 0"
-        :label="`翻译历史 (${translationHistoryCount})`"
+        :label="t('translationUi.historyCount', { count: translationHistoryCount })"
         icon="pi pi-history"
         class="context-menu-button"
         text

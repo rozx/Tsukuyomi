@@ -1,4 +1,6 @@
 import type { Paragraph } from 'src/models/novel';
+import type { AppLocale } from 'src/models/locale';
+import { getLanguageTranslation } from 'src/services/localization/selection';
 
 /**
  * CJK 字符类正则表达式字符串（中文、日文、韩文）
@@ -132,12 +134,12 @@ export function hasNonEmptyTranslation(paragraph: Paragraph): boolean {
 }
 
 /**
- * 检查文本是否仅包含符号（不包含字母、数字或CJK字符）
+ * 检查文本是否仅包含符号（不包含任何 Unicode 字母或数字）
  * @param text 文本
  * @returns 如果仅包含符号，返回 true
  */
 export function isSymbolOnly(text: string): boolean {
-  const hasContent = new RegExp(`[a-zA-Z0-9${CJK_CHAR_CLASS}]`).test(text);
+  const hasContent = /[\p{L}\p{N}]/u.test(text);
   return !hasContent;
 }
 
@@ -158,16 +160,11 @@ export function isEmptyOrSymbolOnly(text: string | null | undefined): boolean {
  * @param paragraph 段落对象
  * @returns 当前选中的翻译文本，不存在则返回空字符串
  */
-export function getSelectedTranslation(paragraph: Paragraph): string {
-  if (!paragraph.selectedTranslationId || !paragraph.translations?.length) {
-    return '';
-  }
-
-  const selectedTranslation = paragraph.translations.find(
-    (translation) => translation.id === paragraph.selectedTranslationId,
-  );
-
-  return selectedTranslation?.translation || '';
+export function getSelectedTranslation(
+  paragraph: Paragraph,
+  targetLanguage: AppLocale = 'zh-CN',
+): string {
+  return getLanguageTranslation(paragraph, targetLanguage)?.translation || '';
 }
 
 /**
@@ -175,10 +172,13 @@ export function getSelectedTranslation(paragraph: Paragraph): string {
  * @param paragraphs 段落数组
  * @returns 段落ID到原始翻译文本的映射
  */
-export function buildOriginalTranslationsMap(paragraphs: Paragraph[]): Map<string, string> {
+export function buildOriginalTranslationsMap(
+  paragraphs: Paragraph[],
+  targetLanguage: AppLocale = 'zh-CN',
+): Map<string, string> {
   const originalTranslations = new Map<string, string>();
   for (const paragraph of paragraphs) {
-    const currentTranslation = getSelectedTranslation(paragraph);
+    const currentTranslation = getSelectedTranslation(paragraph, targetLanguage);
     if (currentTranslation) {
       originalTranslations.set(paragraph.id, currentTranslation.trim());
     }

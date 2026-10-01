@@ -20,6 +20,10 @@ import RestoreDeletedItemsDialog from 'src/components/dialogs/RestoreDeletedItem
 import SyncRevisionCard from 'src/components/settings/SyncRevisionCard.vue';
 import { isRevisionRestoreBlocked } from 'src/utils/sync-revision-guards';
 import co from 'co';
+import { useI18n } from 'vue-i18n';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   visible: boolean;
@@ -31,7 +35,7 @@ const confirm = useConfirm();
 const { stopAutoSync, setupAutoSync } = useAutoSync();
 
 // Gist 同步相关
-const gistSyncService = new GistSyncService();
+const gistSyncService = new GistSyncService(() => settingsStore.uiLocale);
 const gistUsername = ref('');
 const gistToken = ref('');
 const gistEnabled = ref(false);
@@ -132,7 +136,9 @@ const hasNoRevisions = computed(() => revisions.value.length === 0 && !loadingRe
 const deleteGistDisabled = computed(
   () => !gistEnabled.value || gistSyncing.value || isRestoringRevision.value || !gistId.value,
 );
-const syncButtonLabel = computed(() => (forceMode.value ? '强制推送到远程' : '同步'));
+const syncButtonLabel = computed(() =>
+  forceMode.value ? t('syncUi.settings.forcePushLabel') : t('syncUi.settings.sync'),
+);
 const syncButtonSeverity = computed(() => (forceMode.value ? 'danger' : 'primary'));
 const handleSyncClick = () => {
   if (forceMode.value) {
@@ -155,15 +161,12 @@ const isRevisionRestoreDisabled = (version: string): boolean =>
 // 同一批次（2 分钟内）的修订合并显示，每批只保留列表中第一条（即最新一条）
 const REVISION_BATCH_WINDOW_MS = 120000;
 
-const shouldStartNewBatch = <T extends { committedAt: string }>(
-  lastRev: T,
-  rev: T,
-): boolean => {
+const shouldStartNewBatch = <T extends { committedAt: string }>(lastRev: T, rev: T): boolean => {
   const timeDiff = new Date(lastRev.committedAt).getTime() - new Date(rev.committedAt).getTime();
   return Math.abs(timeDiff) > REVISION_BATCH_WINDOW_MS;
 };
 
-const finalizeBatch = <T>(combined: T[], batch: T[]): void => {
+const finalizeBatch = <T,>(combined: T[], batch: T[]): void => {
   const first = batch[0];
   if (batch.length > 0 && first) {
     combined.push(first);
@@ -178,7 +181,10 @@ const combineNearbyRevisions = <T extends { committedAt: string }>(revs: T[]): T
     const rev = revs[index]!;
     const lastRev = currentBatch[currentBatch.length - 1];
 
-    if (currentBatch.length === 0 || (lastRev !== undefined && !shouldStartNewBatch(lastRev, rev))) {
+    if (
+      currentBatch.length === 0 ||
+      (lastRev !== undefined && !shouldStartNewBatch(lastRev, rev))
+    ) {
       currentBatch.push(rev);
     } else if (lastRev !== undefined) {
       // 当前批次结束，取最新一条（列表第一条）写入合并结果
@@ -198,7 +204,12 @@ const combineNearbyRevisions = <T extends { committedAt: string }>(revs: T[]): T
 // 修订文件状态枚举
 type RevisionFileStatus = 'added' | 'removed' | 'modified' | 'renamed';
 type RevisionFileEntry = { filename: string; status?: RevisionFileStatus; size?: number };
-type BuiltRevisionFile = { filename: string; status: RevisionFileStatus; size: number; sizeDiff?: number };
+type BuiltRevisionFile = {
+  filename: string;
+  status: RevisionFileStatus;
+  size: number;
+  sizeDiff?: number;
+};
 
 // 用当前表单值构造用于调用 Gist API 的同步配置（loadRevisions / loadRevisionDetails 共用）
 const buildGistFetchConfig = (): SyncConfig => {
@@ -233,16 +244,20 @@ const loadRevisions = async () => {
     } else {
       toast.add({
         severity: 'warn',
-        summary: '加载失败',
-        detail: result.error || '加载修订历史失败',
+        summary: t('syncUi.settings.loadFailed'),
+        detail: result.error || t('syncUi.settings.loadRevisionsFailed'),
         life: 3000,
       });
     }
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '加载失败',
-      detail: error instanceof Error ? error.message : '加载修订历史时发生错误',
+      summary: t('syncUi.settings.loadFailed'),
+      detail: localizedErrorMessage(
+        error,
+        settingsStore.uiLocale,
+        'syncUi.settings.loadRevisionsError',
+      ),
       life: 3000,
     });
   } finally {
@@ -433,8 +448,12 @@ const loadRevisionDetails = async (version: string) => {
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '加载失败',
-      detail: error instanceof Error ? error.message : '加载修订版本详情时发生错误',
+      summary: t('syncUi.settings.loadFailed'),
+      detail: localizedErrorMessage(
+        error,
+        settingsStore.uiLocale,
+        'syncUi.settings.loadRevisionError',
+      ),
       life: 3000,
     });
   } finally {
@@ -486,16 +505,15 @@ const revertToRevision = (version: string, event?: Event) => {
 
   confirm.require({
     group: 'sync',
-    message:
-      '确定要恢复到该修订版本吗？这将用该版本的快照完全覆盖本地数据，本地独有且未同步的内容（包括书籍、记忆、AI 模型等）将会丢失，无法找回。',
-    header: '确认恢复',
+    message: t('syncUi.settings.restoreConfirm'),
+    header: t('syncUi.settings.restoreHeader'),
     icon: 'pi pi-exclamation-triangle',
     rejectProps: {
-      label: '取消',
+      label: t('syncUi.settings.cancel'),
       severity: 'secondary',
     },
     acceptProps: {
-      label: '恢复',
+      label: t('syncUi.settings.restore'),
       severity: 'danger',
     },
     accept: () => {
@@ -533,23 +551,27 @@ const revertToRevision = (version: string, event?: Event) => {
             setupAutoSync();
             toast.add({
               severity: 'success',
-              summary: '恢复成功',
-              detail: '已恢复到指定修订版本',
+              summary: t('syncUi.settings.restoreSucceeded'),
+              detail: t('syncUi.settings.restoredRevision'),
               life: 3000,
             });
           } else {
             toast.add({
               severity: 'error',
-              summary: '恢复失败',
-              detail: result.error || '恢复修订版本时发生错误',
+              summary: t('syncUi.settings.restoreFailed'),
+              detail: result.error || t('syncUi.settings.restoreRevisionError'),
               life: 5000,
             });
           }
         } catch (error) {
           toast.add({
             severity: 'error',
-            summary: '恢复失败',
-            detail: error instanceof Error ? error.message : '恢复时发生未知错误',
+            summary: t('syncUi.settings.restoreFailed'),
+            detail: localizedErrorMessage(
+              error,
+              settingsStore.uiLocale,
+              'syncUi.settings.restoreUnknown',
+            ),
             life: 5000,
           });
         } finally {
@@ -671,8 +693,8 @@ const validateGistToken = async () => {
   if (!gistUsername.value.trim() || !gistToken.value.trim()) {
     toast.add({
       severity: 'warn',
-      summary: '验证失败',
-      detail: '请先输入 GitHub 用户名和 token',
+      summary: t('syncUi.settings.validateFailed'),
+      detail: t('syncUi.settings.credentialsRequired'),
       life: 3000,
     });
     return;
@@ -696,23 +718,27 @@ const validateGistToken = async () => {
       saveGistConfig();
       toast.add({
         severity: 'success',
-        summary: '验证成功',
-        detail: 'GitHub token 验证通过',
+        summary: t('syncUi.settings.validateSucceeded'),
+        detail: t('syncUi.settings.tokenValid'),
         life: 3000,
       });
     } else {
       toast.add({
         severity: 'error',
-        summary: '验证失败',
-        detail: result.error || 'Token 验证失败',
+        summary: t('syncUi.settings.validateFailed'),
+        detail: result.error || t('syncUi.settings.tokenInvalid'),
         life: 5000,
       });
     }
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '验证失败',
-      detail: error instanceof Error ? error.message : '验证时发生未知错误',
+      summary: t('syncUi.settings.validateFailed'),
+      detail: localizedErrorMessage(
+        error,
+        settingsStore.uiLocale,
+        'syncUi.settings.validateUnknown',
+      ),
       life: 5000,
     });
   } finally {
@@ -729,8 +755,8 @@ const syncToGist = async () => {
   if (!gistUsername.value.trim() || !gistToken.value.trim()) {
     toast.add({
       severity: 'warn',
-      summary: '同步失败',
-      detail: '请先配置 GitHub 用户名和 token',
+      summary: t('syncUi.settings.syncFailed'),
+      detail: t('syncUi.settings.configureCredentials'),
       life: 3000,
     });
     return;
@@ -810,8 +836,8 @@ const deleteGist = () => {
   if (!gistId.value.trim()) {
     toast.add({
       severity: 'warn',
-      summary: '删除失败',
-      detail: '请先配置 Gist ID',
+      summary: t('syncUi.settings.deleteFailed'),
+      detail: t('syncUi.settings.configureGistId'),
       life: 3000,
     });
     return;
@@ -820,8 +846,8 @@ const deleteGist = () => {
   if (!gistUsername.value.trim() || !gistToken.value.trim()) {
     toast.add({
       severity: 'warn',
-      summary: '删除失败',
-      detail: '请先配置 GitHub 用户名和 token',
+      summary: t('syncUi.settings.deleteFailed'),
+      detail: t('syncUi.settings.configureCredentials'),
       life: 3000,
     });
     return;
@@ -830,15 +856,15 @@ const deleteGist = () => {
   // 使用 ConfirmDialog 确认删除
   confirm.require({
     group: 'sync',
-    message: `确定要删除 Gist (ID: ${gistId.value}) 吗？此操作不可撤销，将永久删除 Gist 中的所有数据。`,
-    header: '确认删除 Gist',
+    message: t('syncUi.settings.deleteConfirm', { id: gistId.value }),
+    header: t('syncUi.settings.deleteHeader'),
     icon: 'pi pi-exclamation-triangle',
     rejectProps: {
-      label: '取消',
+      label: t('syncUi.settings.cancel'),
       severity: 'secondary',
     },
     acceptProps: {
-      label: '删除',
+      label: t('syncUi.settings.delete'),
       severity: 'danger',
     },
     accept: () => {
@@ -872,23 +898,27 @@ const deleteGist = () => {
             saveGistConfig();
             toast.add({
               severity: 'success',
-              summary: '删除成功',
-              detail: result.message || 'Gist 已成功删除',
+              summary: t('syncUi.settings.deleteSucceeded'),
+              detail: result.message || t('syncUi.settings.deleted'),
               life: 3000,
             });
           } else {
             toast.add({
               severity: 'error',
-              summary: '删除失败',
-              detail: result.error || '删除 Gist 时发生未知错误',
+              summary: t('syncUi.settings.deleteFailed'),
+              detail: result.error || t('syncUi.settings.deleteUnknown'),
               life: 5000,
             });
           }
         } catch (error) {
           toast.add({
             severity: 'error',
-            summary: '删除失败',
-            detail: error instanceof Error ? error.message : '删除时发生未知错误',
+            summary: t('syncUi.settings.deleteFailed'),
+            detail: localizedErrorMessage(
+              error,
+              settingsStore.uiLocale,
+              'syncUi.settings.deleteUnknown',
+            ),
             life: 5000,
           });
         } finally {
@@ -903,12 +933,12 @@ const deleteGist = () => {
 <template>
   <div class="p-4 space-y-4">
     <div>
-      <h3 class="text-sm font-medium text-moon/90 mb-1">Gist 同步设置</h3>
+      <h3 class="text-sm font-medium text-moon/90 mb-1">{{ t('syncUi.settings.title') }}</h3>
       <p class="text-xs text-moon/70">
-        使用 GitHub Gist 同步您的设置和书籍数据。所有数据将保存在一个私有 Gist 中。
+        {{ t('syncUi.settings.description') }}
       </p>
       <p class="text-xs text-moon/60 mt-1">
-        需要 GitHub Personal Access Token，权限需要包含 <code class="text-xs">gist</code>
+        {{ t('syncUi.settings.tokenScope') }} <code class="text-xs">gist</code>
       </p>
     </div>
 
@@ -923,18 +953,20 @@ const deleteGist = () => {
           @update:model-value="(value) => handleGistEnabledChange(value as boolean)"
         />
         <label for="gist-enabled" class="text-xs text-moon/80 cursor-pointer">
-          启用 Gist 同步
+          {{ t('syncUi.settings.enable') }}
         </label>
       </div>
     </div>
 
     <!-- GitHub 用户名 -->
     <div class="space-y-2">
-      <label for="gist-username" class="text-xs text-moon/80">GitHub 用户名</label>
+      <label for="gist-username" class="text-xs text-moon/80">{{
+        t('syncUi.settings.username')
+      }}</label>
       <InputText
         id="gist-username"
         v-model="gistUsername"
-        placeholder="输入您的 GitHub 用户名"
+        :placeholder="t('syncUi.settings.usernamePlaceholder')"
         class="w-full"
         :disabled="gistInputDisabled"
         @blur="() => saveGistConfig()"
@@ -947,7 +979,7 @@ const deleteGist = () => {
       <Password
         id="gist-token"
         v-model="gistToken"
-        placeholder="输入您的 GitHub token"
+        :placeholder="t('syncUi.settings.tokenPlaceholder')"
         class="w-full"
         :disabled="gistInputDisabled"
         :feedback="false"
@@ -955,22 +987,24 @@ const deleteGist = () => {
         @blur="() => saveGistConfig()"
       />
       <p class="text-xs text-moon/60">
-        在 GitHub Settings → Developer settings → Personal access tokens 中创建
+        {{ t('syncUi.settings.tokenHelp') }}
       </p>
     </div>
 
     <!-- Gist ID -->
     <div class="space-y-2">
-      <label for="gist-id" class="text-xs text-moon/80">Gist ID（可选）</label>
+      <label for="gist-id" class="text-xs text-moon/80">{{
+        t('syncUi.settings.gistIdLabel')
+      }}</label>
       <InputText
         id="gist-id"
         v-model="gistId"
-        placeholder="留空将自动创建新的 Gist"
+        :placeholder="t('syncUi.settings.gistIdPlaceholder')"
         class="w-full"
         :disabled="gistInputDisabled"
         @blur="() => saveGistConfig()"
       />
-      <p class="text-xs text-moon/60">如果已有 Gist，请输入 Gist ID。留空将自动创建新的 Gist</p>
+      <p class="text-xs text-moon/60">{{ t('syncUi.settings.gistIdHelp') }}</p>
     </div>
 
     <!-- 自动同步设置 -->
@@ -984,11 +1018,13 @@ const deleteGist = () => {
           @update:model-value="handleAutoSyncEnabledChange"
         />
         <label for="auto-sync-enabled" class="text-xs text-moon/80 cursor-pointer">
-          启用自动同步
+          {{ t('syncUi.settings.autoSync') }}
         </label>
       </div>
       <div v-if="autoSyncEnabled" class="space-y-2">
-        <label for="sync-interval" class="text-xs text-moon/80">同步间隔（分钟）</label>
+        <label for="sync-interval" class="text-xs text-moon/80">{{
+          t('syncUi.settings.interval')
+        }}</label>
         <InputNumber
           id="sync-interval"
           :model-value="syncIntervalMinutes"
@@ -1001,22 +1037,25 @@ const deleteGist = () => {
           @update:model-value="handleSyncIntervalChange"
         />
         <p class="text-xs text-moon/60">
-          每 {{ syncIntervalMinutes }} 分钟自动同步一次（1-1440 分钟，即最多 24 小时）
+          {{ t('syncUi.settings.intervalHint', { minutes: syncIntervalMinutes ?? 0 }) }}
         </p>
       </div>
     </div>
 
     <!-- 最后同步时间 -->
     <div v-if="gistLastSyncTime" class="text-xs text-moon/60">
-      最后同步时间：
-      {{ new Date(gistLastSyncTime).toLocaleString('zh-CN') }}
+      {{
+        t('syncUi.settings.lastSync', {
+          time: new Date(gistLastSyncTime).toLocaleString(locale),
+        })
+      }}
     </div>
 
     <!-- 操作按钮 -->
     <div class="space-y-3 pt-2">
       <ForceSyncToggle :disabled="syncActionDisabled" />
       <Button
-        label="验证 Token"
+        :label="t('syncUi.settings.validateToken')"
         icon="pi pi-check-circle"
         class="p-button-outlined w-full"
         :disabled="validateTokenDisabled"
@@ -1037,7 +1076,7 @@ const deleteGist = () => {
     <!-- 修订历史 -->
     <div v-if="hasRevisionHistory" class="border-t border-white/10 pt-6 mt-6">
       <div class="flex items-center justify-between mb-4">
-        <h3 class="text-sm font-medium text-moon/90">修订历史</h3>
+        <h3 class="text-sm font-medium text-moon/90">{{ t('syncUi.settings.revisions') }}</h3>
         <Button
           icon="pi pi-refresh"
           class="p-button-text p-button-sm"
@@ -1065,19 +1104,18 @@ const deleteGist = () => {
         />
       </div>
 
-      <div
-        v-if="hasNoRevisions"
-        class="text-sm text-moon/60 text-center py-4"
-      >
-        暂无修订历史
+      <div v-if="hasNoRevisions" class="text-sm text-moon/60 text-center py-4">
+        {{ t('syncUi.settings.noRevisions') }}
       </div>
-      <div v-if="loadingRevisions" class="text-sm text-moon/60 text-center py-4">加载中...</div>
+      <div v-if="loadingRevisions" class="text-sm text-moon/60 text-center py-4">
+        {{ t('syncUi.settings.loading') }}
+      </div>
     </div>
 
     <!-- 删除 Gist 按钮（独立区域） -->
     <div class="border-t border-white/10 pt-6 mt-6">
       <Button
-        label="删除当前 Gist"
+        :label="t('syncUi.settings.deleteGist')"
         icon="pi pi-trash"
         class="p-button-danger w-full"
         :disabled="deleteGistDisabled"

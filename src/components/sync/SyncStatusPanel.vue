@@ -11,6 +11,9 @@ import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import SyncStatusBody from './SyncStatusBody.vue';
 import { SyncPanelCloseKey } from './sync-panel-injection';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const uiStore = useUiStore();
 const isPhone = computed(() => uiStore.deviceType === 'phone');
@@ -54,7 +57,12 @@ defineExpose({
   </Popover>
 
   <!-- 手机：底部抽屉 -->
-  <MobileBottomSheet v-else v-model:visible="mobileVisible" title="同步状态" eyebrow="CLOUD · GIST">
+  <MobileBottomSheet
+    v-else
+    v-model:visible="mobileVisible"
+    :title="t('syncUi.panel.title')"
+    eyebrow="CLOUD · GIST"
+  >
     <SyncStatusBody />
   </MobileBottomSheet>
 </template>

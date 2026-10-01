@@ -5,6 +5,7 @@
  * 从不自动勾选；批量勾选时标出合计清空的译文版本，避免误操作。
  */
 import { computed, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
 import ParagraphDiffView from './ParagraphDiffView.vue';
@@ -12,6 +13,7 @@ import SelectableChapterRow from './SelectableChapterRow.vue';
 
 const { changeset, selected, setUpdatedSelected } = injectBookSync();
 
+const { t } = useI18n();
 const chapters = computed(() => changeset.value?.updated ?? []);
 const allSelected = computed(
   () => chapters.value.length > 0 && chapters.value.every((c) => selected.value.has(c.url)),
@@ -33,18 +35,22 @@ function toggleDiff(url: string): void {
   <section v-if="chapters.length" class="ipl-card">
     <div class="ipl-card-head">
       <h3 class="ipl-card-title">
-        <i class="pi pi-sync" aria-hidden="true" />原文有修订
+        <i class="pi pi-sync" aria-hidden="true" />{{ t('bookUi.sync.updatedTitle') }}
         <span class="ipl-count">{{ chapters.length }}</span>
       </h3>
       <Button
-        :label="allSelected ? '全部取消' : `全部勾选（清空 ${totalCleared} 个译文版本）`"
+        :label="
+          allSelected
+            ? t('bookUi.sync.deselectAll')
+            : t('bookUi.sync.selectAllClear', { count: totalCleared })
+        "
         size="small"
         text
         @click="setUpdatedSelected(!allSelected)"
       />
     </div>
     <p class="ipl-muted">
-      更新会替换章节原文；原文被修订的段落会清空译文，未变化的段落保留译文。有修订的章节不会被自动勾选。
+      {{ t('bookUi.sync.updatedHint') }}
     </p>
     <ul class="bsw-list">
       <SelectableChapterRow
@@ -54,13 +60,21 @@ function toggleDiff(url: string): void {
         :title="chapter.title"
       >
         <span class="bsw-sub">
-          改 {{ chapter.revised }} · 增 {{ chapter.inserted }} · 删 {{ chapter.removed }}
+          {{
+            t('bookUi.sync.revisionStats', {
+              revised: chapter.revised,
+              inserted: chapter.inserted,
+              removed: chapter.removed,
+            })
+          }}
         </span>
         <span v-if="chapter.clearedVersions > 0" class="bsw-badge bsw-badge--loss">
-          清空 {{ chapter.clearedVersions }} 个译文版本
+          {{ t('bookUi.sync.clearVersions', { count: chapter.clearedVersions }) }}
         </span>
         <Button
-          :label="expanded.has(chapter.url) ? '收起差异' : '查看差异'"
+          :label="
+            t(expanded.has(chapter.url) ? 'bookUi.sync.collapseDiff' : 'bookUi.sync.viewDiff')
+          "
           size="small"
           text
           @click="toggleDiff(chapter.url)"

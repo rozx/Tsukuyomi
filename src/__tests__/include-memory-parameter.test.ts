@@ -154,6 +154,7 @@ describe('include_memory 参数测试', () => {
         [{ type: 'term', id: 'term-1' }],
         ['テスト'],
         5,
+        'zh-CN',
       );
     });
 
@@ -209,6 +210,7 @@ describe('include_memory 参数测试', () => {
         [{ type: 'term', id: 'term-1' }],
         ['テスト'],
         5,
+        'zh-CN',
       );
     });
 
@@ -278,6 +280,7 @@ describe('include_memory 参数测试', () => {
         [{ type: 'character', id: 'char-1' }],
         ['テストキャラ'],
         5,
+        'zh-CN',
       );
     });
 
@@ -316,6 +319,7 @@ describe('include_memory 参数测试', () => {
         [{ type: 'character', id: 'char-1' }],
         ['テスト'],
         5,
+        'zh-CN',
       );
     });
   });
@@ -357,6 +361,7 @@ describe('include_memory 参数测试', () => {
         [{ type: 'book', id: bookId }],
         ['Test Book', 'Test Author'],
         5,
+        'zh-CN',
       );
     });
 
@@ -483,7 +488,13 @@ describe('include_memory 参数测试', () => {
       expect(parsed.success).toBe(true);
       expect(parsed.paragraphs).toBeDefined();
       expect(parsed.related_memories).toEqual(mockMemories);
-      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(bookId, [], ['テスト'], 5);
+      expect(mockSearchRelatedMemoriesHybrid).toHaveBeenCalledWith(
+        bookId,
+        [],
+        ['テスト'],
+        5,
+        'zh-CN',
+      );
     });
   });
 

@@ -1,3 +1,10 @@
+import { agentText, translateText } from 'src/i18n/translate';
+import { agentErrorMessage, AgentError } from 'src/utils/localized-error';
+import { toolDefinition } from './tool-localization';
+import { describeTool } from './tool-localization';
+import type { AppLocale } from 'src/models/locale';
+import type { Chapter } from 'src/models/novel';
+import { getLanguageTranslation, getNameTranslation } from 'src/services/localization/selection';
 import type { ToolDefinition, ToolContext } from './types';
 import type {
   TaskType,
@@ -45,23 +52,26 @@ function getTransitionErrorMessage(
   newStatus: TaskStatus,
 ): string {
   if (newStatus === 'preparing') {
-    return 'preparing 阶段已并入 planning，请直接切换到 working';
+    return agentText('aiTaskFeedback.preparing');
   }
 
   if (taskType === 'translation' && currentStatus === 'working' && newStatus === 'end') {
-    return '翻译任务必须先进入 review 状态';
+    return agentText('aiTaskFeedback.translationReview');
   }
 
   if (newStatus === 'review') {
     if (taskType === 'polish') {
-      return '润色任务不支持 review 状态';
+      return agentText('aiTaskFeedback.polishReview');
     }
     if (taskType === 'proofreading') {
-      return '校对任务不支持 review 状态';
+      return agentText('aiTaskFeedback.proofreadReview');
     }
   }
 
-  return `无效的状态转换: ${currentStatus} → ${newStatus}`;
+  return agentText('aiTaskFeedback.invalidTransition', {
+    previous: currentStatus,
+    next: newStatus,
+  });
 }
 
 /**
@@ -84,7 +94,7 @@ function isValidTransition(
     if (newStatus !== 'planning') {
       return {
         valid: false,
-        error: '初始状态必须是 planning',
+        error: agentText('aiTaskFeedback.initial'),
       };
     }
     return { valid: true };
@@ -94,7 +104,7 @@ function isValidTransition(
   if (!rules) {
     return {
       valid: false,
-      error: `未知的任务类型: ${taskType}`,
+      error: agentText('aiTaskFeedback.unknownType', { type: taskType }),
     };
   }
 
@@ -141,7 +151,7 @@ async function updateTaskStatus(
   newStatus: TaskStatus,
 ): Promise<void> {
   if (!aiProcessingStore) {
-    throw new Error('AI 处理 Store 未初始化');
+    throw new AgentError('AI_STORE_REQUIRED', 'aiTaskFeedback.storeMissing');
   }
 
   // 只更新 workflowStatus，不要设置 store 级 status。
@@ -160,22 +170,20 @@ const MAX_IDS_SHOW = 10;
  */
 function formatMissingIds(ids: string[]): string {
   const head = ids.slice(0, MAX_IDS_SHOW).join(', ');
-  return ids.length > MAX_IDS_SHOW ? `${head}... (等共 ${ids.length} 个)` : head;
+  return ids.length > MAX_IDS_SHOW
+    ? agentText('aiTaskFeedback.idSummary', { head, count: ids.length })
+    : head;
 }
 
 /**
  * 判断章节标题是否已翻译
  */
-function hasTitleTranslation(chapter: { title: unknown }): boolean {
-  const title = chapter.title as
-    | string
-    | { translation?: { translation?: string } | null }
-    | undefined;
-  if (typeof title === 'string') {
-    // 旧格式，无法区分，假设已翻译或是原文
-    return true;
-  }
-  return !!(title && title.translation && title.translation.translation);
+function hasTitleTranslation(chapter: Pick<Chapter, 'title'>, language: AppLocale): boolean {
+  const title = chapter.title;
+  if (typeof title === 'string') return !title.trim();
+  if (!title) return false;
+  if (typeof title.original === 'string' && !title.original.trim()) return true;
+  return !!getNameTranslation(title, language);
 }
 
 interface ReviewCheckFailure {
@@ -232,7 +240,10 @@ async function checkReviewWithAccumulated(params: {
     );
     if (missingIds.length > 0) {
       return {
-        error: `无法提交复核：当前分块内仍有 ${missingIds.length} 个非空段落未翻译 (ID: ${formatMissingIds(missingIds)})`,
+        error: agentText('aiTaskFeedback.missingChunk', {
+          count: missingIds.length,
+          ids: formatMissingIds(missingIds),
+        }),
       };
     }
     // fullContent 有数据且所有非空段落均已翻译，允许 review
@@ -249,10 +260,10 @@ async function checkReviewWithAccumulated(params: {
   const notSubmitted = paragraphIdsToCheck.filter((id) => !accumulatedParagraphs.has(id));
   if (notSubmitted.length > 0) {
     return {
-      error:
-        `无法提交复核：章节内容未在本地存储中初始化，` +
-        `且当前分块内有 ${notSubmitted.length} 个段落尚未提交翻译` +
-        `（可能包含空段落，若确认均为空段落请手动继续）(ID: ${formatMissingIds(notSubmitted)})`,
+      error: agentText('aiTaskFeedback.missingUninitialized', {
+        count: notSubmitted.length,
+        ids: formatMissingIds(notSubmitted),
+      }),
     };
   }
   return null;
@@ -262,10 +273,11 @@ async function checkReviewWithAccumulated(params: {
  * 通过数据库内容进行 review 校验（向后兼容路径）
  */
 async function checkReviewWithDatabase(params: {
+  language: AppLocale;
   chapterId: string;
   chunkBoundaries: { allowedParagraphIds: Set<string> } | undefined;
 }): Promise<ReviewCheckFailure | null> {
-  const { chapterId, chunkBoundaries } = params;
+  const { chapterId, chunkBoundaries, language } = params;
   const { ChapterContentService } = await import('src/services/chapter-content-service');
   const dbContent = await ChapterContentService.loadChapterContent(chapterId);
   const contentToCheck =
@@ -278,17 +290,19 @@ async function checkReviewWithDatabase(params: {
   }
 
   const nonEmptyParagraphs = contentToCheck.filter((p) => p.text && p.text.trim().length > 0);
-  const untranslated = nonEmptyParagraphs.filter(
-    (p) => !p.translations || p.translations.length === 0,
-  );
+  const untranslated = nonEmptyParagraphs.filter((p) => !getLanguageTranslation(p, language));
   if (untranslated.length === 0) {
     return null;
   }
 
-  const scopeMsg = chunkBoundaries ? '当前分块' : '全文章节';
+  const scopeMsg = agentText(chunkBoundaries ? 'aiTaskFeedback.chunk' : 'aiTaskFeedback.chapter');
   const ids = untranslated.map((p) => p.id);
   return {
-    error: `无法提交复核：${scopeMsg}内仍有 ${untranslated.length} 个非空段落未翻译 (ID: ${formatMissingIds(ids)})`,
+    error: agentText('aiTaskFeedback.missingDatabase', {
+      scope: scopeMsg,
+      count: untranslated.length,
+      ids: formatMissingIds(ids),
+    }),
   };
 }
 
@@ -300,6 +314,7 @@ async function validateTranslationReview(
   task: { chapterId?: string; bookId?: string },
   context: ToolContext,
 ): Promise<ReviewCheckFailure | null> {
+  const language = context.languages?.targetLanguage ?? 'zh-CN';
   const chapterId = task.chapterId;
   const bookId = task.bookId || context.bookId;
   // 非首块不需要检查标题翻译（标题仅在首块处理）
@@ -307,7 +322,11 @@ async function validateTranslationReview(
 
   if (!chapterId || !bookId) {
     return {
-      error: `无法提交复核：任务缺少${!chapterId ? '章节' : '书籍'}关联信息，无法验证翻译完整性`,
+      error: agentText('aiTaskFeedback.missingScope', {
+        scope: agentText(
+          !chapterId ? 'aiTaskFeedback.chapterAssociation' : 'aiTaskFeedback.bookAssociation',
+        ),
+      }),
     };
   }
 
@@ -323,23 +342,11 @@ async function validateTranslationReview(
     const { chapter } = chapterInfo;
 
     // 检查: 章节标题是否已翻译（仅首块需要检查）
-    if (isFirstChunk && !hasTitleTranslation(chapter)) {
-      return { error: '无法提交复核：章节标题尚未翻译' };
+    if (isFirstChunk && !hasTitleTranslation(chapter, language)) {
+      return { error: agentText('aiTaskFeedback.missingTitle') };
     }
 
-    // 检查: 所有非空段落是否有翻译
-    //
-    // ⚠️ 重要：不要依赖 BookService.getBookById() 返回的 chapter.content 或
-    // ChapterContentService.loadChapterContent() 的数据。
-    //
-    // 根本原因：translateAllParagraphs 使用 skipSave:true 优化，翻译实时写入
-    // 内存的 book.value.volumes（Vue 响应式对象），但直到整个翻译完成才批量落盘
-    // 到 IndexedDB。BookService.getBookById() 读取的是 IndexedDB 快照，不包含
-    // 这部分尚未落盘的翻译，导致误报"段落未翻译"。
-    //
-    // 修复策略：优先使用 accumulatedParagraphs（task-runner.ts 在内存中实时维护
-    // 的、本次 session 已成功翻译的段落 ID → 翻译文本映射）。若存在该数据，直接
-    // 以此为准；否则回退到数据库检查（保持向后兼容）。
+    // 分块优先使用本次已完成保存的提交记录；全章/旧调用按执行语言读正文。
     const accumulatedParagraphs = context.accumulatedParagraphs;
 
     if (accumulatedParagraphs && accumulatedParagraphs.size > 0) {
@@ -355,6 +362,7 @@ async function validateTranslationReview(
       // 路径二：回退到数据库检查（向后兼容）
       // 当 accumulatedParagraphs 为空，或者是全章非分块场景时使用
       const failure = await checkReviewWithDatabase({
+        language,
         chapterId,
         chunkBoundaries: context.chunkBoundaries,
       });
@@ -365,7 +373,9 @@ async function validateTranslationReview(
   } catch (checkError) {
     console.error('Review check failed:', checkError);
     return {
-      error: `完整性检查失败: ${checkError instanceof Error ? checkError.message : String(checkError)}`,
+      error: agentText('aiTaskFeedback.reviewFailed', {
+        detail: agentErrorMessage(checkError, 'aiTaskFeedback.unknownError'),
+      }),
     };
   }
 }
@@ -387,44 +397,40 @@ function collectTodoReminder(
   };
 }
 
-function jsonError(error: string): string {
-  return JSON.stringify({ success: false, error });
+function jsonError(error: string, code: string): string {
+  return JSON.stringify({ success: false, error_code: code, error });
 }
 
 export const taskStatusTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'update_task_status',
-        description:
-          '更新当前 AI 任务的状态。翻译任务：planning(规划中) → working(执行中) → review(复核中) → end(完成)；润色/校对任务：planning → working → end。注意：翻译任务支持 review → working 返回修改。',
-        parameters: {
-          type: 'object',
-          properties: {
-            status: {
-              type: 'string',
-              enum: ['planning', 'working', 'review', 'end'],
-              description:
-                '新的任务状态。planning: 正在规划并维护术语/角色/记忆；working: 正在执行翻译/润色/校对；review: 正在复核（仅翻译任务可用）；end: 任务完成',
-            },
-            reason: {
-              type: 'string',
-              description: '状态变更的原因（可选）',
-            },
-          },
-          required: ['status'],
+    definition: toolDefinition('update_task_status', {
+      type: 'object',
+      properties: {
+        status: {
+          type: 'string',
+          enum: ['planning', 'working', 'review', 'end'],
+          description: describeTool('update_task_status.parameters.properties.status'),
+        },
+        reason: {
+          type: 'string',
+          description: describeTool('update_task_status.parameters.properties.reason'),
         },
       },
-    },
+      required: ['status'],
+    }),
     handler: async (args, context: ToolContext) => {
+      const actionLocale = context.languages?.uiLocale ?? 'zh-CN';
       const { taskId, onAction } = context;
       const { status, reason: _reason } = args as { status: string; reason?: string };
 
       // 验证状态值
       if (!isValidStatus(status)) {
         return jsonError(
-          `无效的状态值: "${status}"。有效的状态值为：${VALID_STATUSES.join('、')}`,
+          agentText('aiTaskFeedback.invalidStatus', {
+            status,
+            valid: VALID_STATUSES.join('、'),
+          }),
+          'TASK_STATUS_INVALID',
         );
       }
 
@@ -433,16 +439,16 @@ export const taskStatusTools: ToolDefinition[] = [
       const aiProcessingStore = context.aiProcessingStore;
 
       if (!taskId) {
-        return jsonError('未提供任务 ID');
+        return jsonError(agentText('aiTaskFeedback.taskMissingId'), 'TASK_ID_REQUIRED');
       }
       if (!aiProcessingStore) {
-        return jsonError('AI 处理 Store 未初始化');
+        return jsonError(agentText('aiTaskFeedback.storeMissing'), 'AI_STORE_REQUIRED');
       }
 
       // 获取当前任务信息以确定任务类型
       const task = aiProcessingStore.activeTasks.find((t) => t.id === taskId);
       if (!task) {
-        return jsonError(`任务不存在: ${taskId}`);
+        return jsonError(agentText('aiTaskFeedback.taskMissing', { id: taskId }), 'TASK_NOT_FOUND');
       }
 
       const taskType = task.type as TaskType;
@@ -451,14 +457,17 @@ export const taskStatusTools: ToolDefinition[] = [
       const currentStatus = getTaskCurrentStatus(aiProcessingStore, taskId);
       const validation = isValidTransition(taskType, currentStatus, status);
       if (!validation.valid) {
-        return jsonError(validation.error ?? '状态转换验证失败');
+        return jsonError(
+          validation.error ?? agentText('aiTaskFeedback.validationFailed'),
+          'TASK_TRANSITION_INVALID',
+        );
       }
 
       // 特殊检查：当翻译任务状态变更为 review 时，进行完整性检查
       if (taskType === 'translation' && status === 'review') {
         const reviewFailure = await validateTranslationReview(task, context);
         if (reviewFailure) {
-          return jsonError(reviewFailure.error);
+          return jsonError(reviewFailure.error, 'TRANSLATION_INCOMPLETE');
         }
       }
 
@@ -473,7 +482,12 @@ export const taskStatusTools: ToolDefinition[] = [
             entity: 'todo',
             data: {
               id: taskId,
-              name: `任务状态更新: ${currentStatus || '初始'} → ${status}`,
+              // 操作名称展示在界面上，使用执行的界面语言
+              name: translateText(actionLocale, 'aiTaskFeedback.actionName', {
+                previous:
+                  currentStatus || translateText(actionLocale, 'aiTaskFeedback.initialLabel'),
+                next: status,
+              }),
             },
           });
         }
@@ -483,7 +497,10 @@ export const taskStatusTools: ToolDefinition[] = [
 
         const result: Record<string, unknown> = {
           success: true,
-          message: `任务状态已更新: ${currentStatus || '初始'} → ${status}`,
+          message: agentText('aiTaskFeedback.changed', {
+            previous: currentStatus || agentText('aiTaskFeedback.initialLabel'),
+            next: status,
+          }),
           task_id: taskId,
           new_status: status,
         };
@@ -493,8 +510,11 @@ export const taskStatusTools: ToolDefinition[] = [
 
         return JSON.stringify(result);
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : '未知错误';
-        return jsonError(`状态更新失败: ${errorMsg}`);
+        const errorMsg = agentErrorMessage(error, 'aiTaskFeedback.unknownError');
+        return jsonError(
+          agentText('aiTaskFeedback.updateFailed', { detail: errorMsg }),
+          'TASK_STATUS_UPDATE_FAILED',
+        );
       }
     },
   },

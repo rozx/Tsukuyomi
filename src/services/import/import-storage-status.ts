@@ -1,10 +1,12 @@
+import type { ImportFailure } from 'src/models/import-feedback';
+import { importError, serializeImportError } from './import-error';
 /**
  * 导入任务的本地保存状态（仅内存）。
  *
  * 写入失败时无法再把「保存失败」写进同一个数据库，因此在当前页记录，供工作台显示
  * 「尚未可靠保存」；同一任务下一次写入成功后清除。
  */
-export interface ImportStorageIssue {
+export interface ImportStorageIssue extends ImportFailure {
   code: 'STORAGE_FAILED';
   message: string;
   quota: boolean;
@@ -62,12 +64,20 @@ export const ImportStorageStatus = {
       const failure = storageError(error);
       if (!failure) throw error;
       const quota = failure.name === 'QuotaExceededError';
-      const message = quota
-        ? '本地存储空间不足，最新进度尚未可靠保存。请清理空间后重试。'
-        : `本地保存失败（${failure.name}），最新进度尚未可靠保存。`;
-      issues.set(taskId, { code: 'STORAGE_FAILED', message, quota, at: Date.now() });
+      const localized = importError(
+        'STORAGE_FAILED',
+        quota ? 'storageQuota' : 'storageFailed',
+        { name: failure.name },
+        { cause: error },
+      );
+      issues.set(taskId, {
+        ...serializeImportError(localized),
+        code: 'STORAGE_FAILED',
+        quota,
+        at: Date.now(),
+      });
       emit(taskId);
-      throw new Error(`STORAGE_FAILED: ${message}`, { cause: error });
+      throw localized;
     }
   },
 };

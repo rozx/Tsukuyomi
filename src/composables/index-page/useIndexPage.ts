@@ -1,13 +1,11 @@
+import { useI18n } from 'vue-i18n';
 import { computed, onMounted, watch, ref, inject, provide, type InjectionKey } from 'vue';
 import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
+import { useSettingsStore } from 'src/stores/settings';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
-import {
-  getTotalChapters,
-  getAssetUrl,
-  formatWordCount,
-  formatRelativeBookDate,
-} from 'src/utils';
+import { getTotalChapters, getAssetUrl } from 'src/utils';
+import { useLibraryFormatting } from 'src/composables/shared/useLibraryFormatting';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { CoverService } from 'src/services/cover-service';
 import type { Novel } from 'src/models/novel';
@@ -41,8 +39,10 @@ export function injectIndexPage(): IndexPageContext {
 }
 
 function createIndexPageContext() {
+  const { t } = useI18n();
   const router = useRouter();
   const booksStore = useBooksStore();
+  const settingsStore = useSettingsStore();
   const coverHistoryStore = useCoverHistoryStore();
   const toast = useToastWithHistory();
 
@@ -79,16 +79,17 @@ function createIndexPageContext() {
 
   const greeting = computed(() => {
     const h = new Date().getHours();
-    if (h < 5) return '夜深了';
-    if (h < 11) return '早安';
-    if (h < 14) return '午安';
-    if (h < 18) return '下午好';
-    return '晚上好';
+    if (h < 5) return t('libraryUi.late');
+    if (h < 11) return t('libraryUi.morning');
+    if (h < 14) return t('libraryUi.noon');
+    if (h < 18) return t('libraryUi.afternoon');
+    return t('libraryUi.evening');
   });
 
-  const formatDate = formatRelativeBookDate;
+  const { formatDate, formatWordCount } = useLibraryFormatting();
 
-  const getCoverUrl = (book: Novel): string => CoverService.getCoverUrl(book);
+  const getCoverUrl = (book: Novel): string =>
+    CoverService.getCoverUrl(book, settingsStore.uiLocale);
 
   const addBook = () => {
     showAddDialog.value = true;
@@ -99,6 +100,7 @@ function createIndexPageContext() {
   };
 
   const handleSave = createSaveNewBookHandler({
+    getUiLocale: () => settingsStore.uiLocale,
     booksStore,
     coverHistoryStore,
     toast,

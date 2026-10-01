@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { ref, computed, watch, provide } from 'vue';
 import { cloneDeep, isEqual } from 'lodash';
 import Button from 'primevue/button';
@@ -17,6 +19,7 @@ import type { AIModelFormData, TaskDefaultsKey } from './ai-model-form-types';
 import { AI_MODEL_FORM_KEY } from './ai-model-form-types';
 import { AIServiceFactory } from 'src/services/ai';
 import { useModelConfiguration } from 'src/composables/ai-page/useModelConfiguration';
+const { t } = useI18n();
 
 const props = withDefaults(
   defineProps<{
@@ -111,23 +114,23 @@ const canFetchConfigDisabled = computed(
 const limitsSourceLabel = computed(() => {
   switch (formData.value.limitsSource) {
     case 'catalog':
-      return '来源：models.dev 模型目录';
+      return t('aiUi.catalogSource');
     case 'probe':
-      return '来源：历史模型自述';
+      return t('aiUi.probeSource');
     case 'manual':
-      return '来源：手动设置';
+      return t('aiUi.manualSource');
     default:
       return '';
   }
 });
 
 // 默认任务列表（标签 + isDefault 键），供 v-for 渲染
-const taskItems: ReadonlyArray<{ key: TaskDefaultsKey; label: string }> = [
-  { key: 'translation', label: '翻译' },
-  { key: 'proofreading', label: '校对/润色' },
-  { key: 'termsTranslation', label: '术语翻译' },
-  { key: 'assistant', label: '助手' },
-];
+const taskItems = computed<ReadonlyArray<{ key: TaskDefaultsKey; label: string }>>(() => [
+  { key: 'translation', label: t('aiUi.translation') },
+  { key: 'proofreading', label: t('aiUi.proofreadingCompact') },
+  { key: 'termsTranslation', label: t('aiUi.termsTranslation') },
+  { key: 'assistant', label: t('aiUi.assistantShort') },
+]);
 
 // 重置表单
 const resetForm = () => {
@@ -142,18 +145,18 @@ const fieldValidations = (): ReadonlyArray<{
   message: string;
   ok: () => boolean;
 }> => [
-  { field: 'name', message: '模型名称不能为空', ok: () => !!formData.value.name?.trim() },
-  { field: 'model', message: '模型标识不能为空', ok: () => !!formData.value.model?.trim() },
-  { field: 'apiKey', message: 'API Key 不能为空', ok: () => !!formData.value.apiKey?.trim() },
+  { field: 'name', message: 'aiUi.nameRequired', ok: () => !!formData.value.name?.trim() },
+  { field: 'model', message: 'aiUi.identifierRequired', ok: () => !!formData.value.model?.trim() },
+  { field: 'apiKey', message: 'aiUi.apiKeyRequired', ok: () => !!formData.value.apiKey?.trim() },
   {
     field: 'baseUrl',
-    message: '基础地址不能为空',
+    message: 'aiUi.urlRequired',
     // Gemini 不需要 baseUrl，其他提供商需要
     ok: () => formData.value.provider === 'gemini' || !!formData.value.baseUrl?.trim(),
   },
   {
     field: 'temperature',
-    message: '温度值必须在 0-2 之间',
+    message: 'aiUi.temperatureInvalid',
     ok: () => {
       const t = formData.value.temperature;
       return t !== undefined && t >= 0 && t <= 2;
@@ -162,13 +165,13 @@ const fieldValidations = (): ReadonlyArray<{
   {
     // maxInputTokens 为 0 表示无限制，不需要验证非负
     field: 'maxInputTokens',
-    message: '上下文窗口不能为负数',
+    message: 'aiUi.contextInvalid',
     ok: () => formData.value.maxInputTokens !== undefined && formData.value.maxInputTokens >= 0,
   },
   {
     // maxOutputTokens 为 0 表示无限制，不需要验证非负
     field: 'maxOutputTokens',
-    message: '最大输出 Token 数不能为负数',
+    message: 'aiUi.outputInvalid',
     ok: () => formData.value.maxOutputTokens !== undefined && formData.value.maxOutputTokens >= 0,
   },
 ];
@@ -187,7 +190,7 @@ const validateForm = (): boolean => {
 // 解析临时模型的身份字段（id/name/model/apiKey），均带空值回退
 const resolveTempIdentity = (): Pick<AIModel, 'id' | 'name' | 'model' | 'apiKey'> => ({
   id: props.model?.id || 'temp',
-  name: formData.value.name || '临时模型',
+  name: formData.value.name || t('aiUi.temporaryModel'),
   model: formData.value.model || '',
   apiKey: formData.value.apiKey || '',
 });
@@ -245,15 +248,15 @@ const canTestDisabled = computed(
     !formData.value.apiKey?.trim() ||
     (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()),
 );
-const thinkingLevels = [
-  { label: '默认（跟随模型）', value: 'provider-default' },
-  { label: '关闭 / 最低', value: 'none' },
-  { label: '极低', value: 'minimal' },
-  { label: '低', value: 'low' },
-  { label: '中', value: 'medium' },
-  { label: '高', value: 'high' },
-  { label: '极高', value: 'xhigh' },
-];
+const thinkingLevels = computed(() => [
+  { label: t('aiUi.providerDefault'), value: 'provider-default' },
+  { label: t('aiUi.thinkingNone'), value: 'none' },
+  { label: t('aiUi.minimal'), value: 'minimal' },
+  { label: t('aiUi.low'), value: 'low' },
+  { label: t('aiUi.medium'), value: 'medium' },
+  { label: t('aiUi.high'), value: 'high' },
+  { label: t('aiUi.xhigh'), value: 'xhigh' },
+]);
 let initializingForm = false;
 
 // 处理保存
@@ -459,10 +462,10 @@ watch(
 <template>
   <AdaptiveDialog
     :visible="visible"
-    :header="mode === 'add' ? '添加 AI 模型' : '编辑 AI 模型'"
+    :header="mode === 'add' ? t('aiUi.addModel') : t('aiUi.editModel')"
     desktop-width="750px"
     desktop-height="90vh"
-    eyebrow="AI · MODEL"
+    :eyebrow="t('appUi.eyebrow.aiModel')"
     :closable="!hasChildDialogOpen"
     :dismissable-mask="!hasChildDialogOpen"
     :close-on-escape="!hasChildDialogOpen"
@@ -483,9 +486,9 @@ watch(
       />
 
       <div class="space-y-2">
-        <label for="edit-thinkingLevel" class="block text-sm font-medium text-moon/90"
-          >思考等级</label
-        >
+        <label for="edit-thinkingLevel" class="block text-sm font-medium text-moon/90">{{
+          t('aiUi.thinkingLevel')
+        }}</label>
         <Select
           input-id="edit-thinkingLevel"
           v-model="formData.thinkingLevel"
@@ -494,23 +497,18 @@ watch(
           option-value="value"
           class="w-full"
         />
-        <small class="block text-xs text-moon/60"
-          >默认由模型决定；较高等级通常增加耗时和 Token
-          消耗。可用等级取决于模型，可通过测试验证。</small
-        >
+        <small class="block text-xs text-moon/60">{{ t('aiUi.thinkingHint') }}</small>
       </div>
       <div class="space-y-2">
         <Button
-          label="测试可用性"
+          :label="t('aiUi.testAvailability')"
           icon="pi pi-bolt"
           outlined
           :loading="isTesting"
           :disabled="canTestDisabled"
           @click="testAvailability"
         />
-        <small class="block text-xs text-moon/60"
-          >使用当前配置发送一条简短请求，可能产生少量 API 用量。</small
-        >
+        <small class="block text-xs text-moon/60">{{ t('aiUi.testHint') }}</small>
         <div
           v-if="availabilityResult"
           :role="availabilityResult.success ? 'status' : 'alert'"
@@ -518,16 +516,18 @@ watch(
           :class="availabilityResult.success ? 'text-green-400' : 'text-red-400'"
         >
           {{ availabilityResult.message }}
-          <span class="text-moon/60">（{{ availabilityResult.durationMs }} ms）</span>
+          <span class="text-moon/60">{{
+            t('appUi.modelTestDuration', { ms: availabilityResult.durationMs })
+          }}</span>
         </div>
       </div>
 
       <!-- models.dev 模型资料 -->
       <div class="space-y-3 pt-3 border-t border-white/10">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <label class="block text-sm font-medium text-moon/90">模型资料</label>
+          <label class="block text-sm font-medium text-moon/90">{{ t('aiUi.modelInfo') }}</label>
           <Button
-            label="获取模型资料"
+            :label="t('aiUi.fetchInfo')"
             icon="pi pi-download"
             class="p-button-text p-button-sm icon-button-hover"
             :disabled="canFetchConfigDisabled"
@@ -536,31 +536,31 @@ watch(
           />
         </div>
         <p class="text-xs text-moon/60">
-          资料来自
+          {{ t('aiUi.catalogPrefix') }}
           <a href="https://models.dev" target="_blank" rel="noopener noreferrer" class="underline"
             >models.dev</a
           >
-          目录；未收录的型号可手动填写。
+          {{ t('aiUi.catalogSuffix') }}
         </p>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <AiTokenField
             v-model="formData.maxInputTokens"
             input-id="edit-maxInputTokens"
-            label="上下文窗口"
+            :label="t('aiUi.contextWindow')"
             :max="10000000"
-            :error="formErrors.maxInputTokens"
+            :error="formErrors.maxInputTokens ? t(formErrors.maxInputTokens) : undefined"
             :ai-config-value="aiConfig?.maxInputTokens"
-            ai-hint-label="参考窗口"
+            :ai-hint-label="t('aiUi.referenceContext')"
             @update:model-value="formData.limitsSource = 'manual'"
           />
           <AiTokenField
             v-model="formData.maxOutputTokens"
             input-id="edit-maxOutputTokens"
-            label="最大输出 Token"
+            :label="t('aiUi.maxOutputTokens')"
             :max="100000000"
-            :error="formErrors.maxOutputTokens"
+            :error="formErrors.maxOutputTokens ? t(formErrors.maxOutputTokens) : undefined"
             :ai-config-value="aiConfig?.maxOutputTokens"
-            ai-hint-label="参考上限"
+            :ai-hint-label="t('aiUi.referenceLimit')"
             @update:model-value="formData.limitsSource = 'manual'"
           />
         </div>
@@ -572,9 +572,11 @@ watch(
       <!-- 高级选项 (自定义 Headers) -->
       <div class="space-y-4 pt-3 border-t border-white/10">
         <div class="flex items-center justify-between mb-2">
-          <label class="block text-sm font-medium text-moon/90">高级选项 (自定义请求头)</label>
+          <label class="block text-sm font-medium text-moon/90">{{
+            t('aiUi.advancedHeaders')
+          }}</label>
           <Button
-            label="添加 Header"
+            :label="t('aiUi.addHeader')"
             icon="pi pi-plus"
             class="p-button-text p-button-sm icon-button-hover"
             @click="addCustomHeader"
@@ -589,7 +591,9 @@ watch(
 
       <!-- 默认任务 -->
       <div class="space-y-4 pt-3 border-t border-white/10">
-        <label class="block text-sm font-medium text-moon/90 mb-3">默认任务</label>
+        <label class="block text-sm font-medium text-moon/90 mb-3">{{
+          t('aiUi.defaultTasks')
+        }}</label>
         <div class="space-y-4">
           <AiTaskDefaultItem
             v-for="task in taskItems"
@@ -606,13 +610,13 @@ watch(
     <template #footer>
       <div class="ai-model-dialog-footer flex w-full gap-2 sm:justify-end">
         <Button
-          label="取消"
+          :label="t('aiUi.cancel')"
           icon="pi pi-times"
           class="p-button-text icon-button-hover flex-1 sm:flex-none"
           @click="requestCloseDialog"
         />
         <Button
-          label="保存"
+          :label="t('aiUi.save')"
           icon="pi pi-check"
           class="p-button-primary icon-button-hover flex-1 sm:flex-none"
           @click="handleSave"
@@ -622,23 +626,23 @@ watch(
 
     <AdaptiveDialog
       v-model:visible="showUnsavedCloseConfirm"
-      header="放弃未保存修改？"
+      :header="t('aiUi.discardTitle')"
       desktop-width="420px"
-      eyebrow="UNSAVED"
+      :eyebrow="t('bookDialogUi.unsaved')"
       sheet-min-height="auto"
     >
       <div class="space-y-3">
-        <p class="text-moon/90">当前模型配置有未保存修改，关闭后这些修改将丢失。</p>
+        <p class="text-moon/90">{{ t('aiUi.discardHint') }}</p>
       </div>
       <template #footer>
         <Button
-          label="继续编辑"
+          :label="t('aiUi.keepEditing')"
           icon="pi pi-pencil"
           class="p-button-text"
           @click="cancelDiscardAndKeepEditing"
         />
         <Button
-          label="放弃修改并关闭"
+          :label="t('aiUi.discardClose')"
           icon="pi pi-times"
           class="p-button-danger"
           @click="confirmDiscardAndClose"

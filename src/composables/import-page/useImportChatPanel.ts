@@ -9,6 +9,8 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
+import { useSettingsStore } from 'src/stores/settings';
+import { formatClockTime } from 'src/utils/format';
 import { useThinkingDisplay } from 'src/composables/chat/useThinkingDisplay';
 import { useChatMessageDisplay } from 'src/composables/chat/useChatMessageDisplay';
 import { useMarkdownRenderer } from 'src/composables/chat/useMarkdownRenderer';
@@ -32,6 +34,7 @@ export function useImportChatPanel() {
 
   const messages = computed<ChatSessionMessage[]>(() =>
     importEventsToMessages(store.events, {
+      uiLocale: useSettingsStore().uiLocale,
       sourceNames: store.sourceNames,
       sources: store.sources,
       ...(store.task ? { task: store.task } : {}),
@@ -65,7 +68,7 @@ export function useImportChatPanel() {
     () => [store.task, store.events.length] as const,
     ([task, count]) => {
       if (!task || prefilledFor === task.id || inputMessage.value) return;
-      const text = importRepairPrefill(task, count);
+      const text = importRepairPrefill(task, count, useSettingsStore().uiLocale);
       if (!text) return;
       prefilledFor = task.id;
       inputMessage.value = text;
@@ -133,7 +136,7 @@ export function useImportChatPanel() {
     toggleThinking: thinking.toggleThinking,
     renderMarkdown,
     formatMessageTime: (timestamp: number) =>
-      new Date(timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+      formatClockTime(timestamp, useSettingsStore().uiLocale),
     getChapterTitleForAction: () => undefined,
     hoveredAction,
     hoveredGroupedAction,

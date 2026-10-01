@@ -1,5 +1,11 @@
+import { singleIdToolParameters } from './tool-localization';
+import { bookToolContext, fuzzyMatches } from './tool-feedback';
+import { toolDefinition } from './tool-localization';
+import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
+import { LocalizedError } from 'src/utils/localized-error';
+import { describeTool, stringToolParameter } from './tool-localization';
 import { CharacterSettingService } from 'src/services/character-setting-service';
-import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
+import { getNameTranslation } from 'src/services/localization/selection';
 import { useBooksStore } from 'src/stores/books';
 import type { CharacterSetting } from 'src/models/novel';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
@@ -13,7 +19,7 @@ import {
 import {
   assertAliasesNotBlank,
   normalizeAliasList,
-  requireCharacterContext,
+  characterEditContext,
   resolveCharacterForTool,
   serializeCharacterForTool,
 } from './character-tool-helpers';
@@ -21,80 +27,87 @@ import {
 /** 回退搜索最大返回条目数，避免 token 膨胀 */
 const MAX_FALLBACK_RESULTS = 10;
 
+function savedCharacter(bookId: string, id: string): CharacterSetting {
+  const character = resolveCharacterForTool(bookId, id).character;
+  if (!character)
+    throw new LocalizedError('CHARACTER_WRITE_REJECTED', 'aiEntityFeedback.characterWriteRejected');
+  return character;
+}
+
 export const characterTools: ToolDefinition[] = [
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'create_character',
-        description:
-          '创建新角色设定。[警告] 重要：在创建新角色之前，必须使用 list_characters 或 get_character 工具检查该角色是否已存在，或者是否应该是已存在角色的别名。如果发现该角色实际上是已存在角色的别名，应该使用 update_character 工具将新名称添加为别名，而不是创建新角色。[禁止] **错误处理**：如果尝试创建的角色名称已存在（作为其他角色的主名称），将抛出错误 "角色 {name} 已存在"，操作将失败。',
-        parameters: {
-          type: 'object',
-          properties: {
-            name: {
-              type: 'string',
-              description: '角色名称（日文原文，必须是全名，例如"田中太郎"而不是"田中"或"太郎"）',
-            },
-            translation: {
-              type: 'string',
-              description: '角色的中文翻译（全名的翻译）',
-            },
-            sex: {
-              type: 'string',
-              enum: ['male', 'female', 'other'],
-              description: '角色性别（可选）',
-            },
-            description: {
-              type: 'string',
-              description:
-                '角色的简短描述（可选）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
-            },
-            speaking_style: {
-              type: 'string',
-              description: '角色的说话口吻（可选）。例如：粗鲁、古风、口癖(desu/nya)等',
-            },
-            aliases: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  name: {
-                    type: 'string',
-                    description:
-                      '别名名称（日文原文，通常是名字或姓氏的单独部分，例如"田中"、"太郎"）',
-                  },
-                  translation: {
-                    type: 'string',
-                    description: '别名的中文翻译',
-                  },
-                },
-                required: ['name', 'translation'],
+    definition: toolDefinition('create_character', {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: describeTool('create_character.parameters.properties.name'),
+        },
+        translation: {
+          type: 'string',
+          description: describeTool('create_character.parameters.properties.translation'),
+        },
+        sex: {
+          type: 'string',
+          enum: ['male', 'female', 'other'],
+          description: describeTool('create_character.parameters.properties.sex'),
+        },
+        description: {
+          type: 'string',
+          description: describeTool('create_character.parameters.properties.description'),
+        },
+        speaking_style: {
+          type: 'string',
+          description: describeTool('create_character.parameters.properties.speaking_style'),
+        },
+        aliases: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                description: describeTool(
+                  'create_character.parameters.properties.aliases.items.properties.id',
+                ),
               },
-              description:
-                '角色别名数组（可选）。别名应该包括角色的名字和姓氏的单独部分，例如如果角色全名是"田中太郎"，别名应该包括"田中"和"太郎"',
+              name: {
+                type: 'string',
+                description: describeTool(
+                  'create_character.parameters.properties.aliases.items.properties.name',
+                ),
+              },
+              translation: {
+                type: 'string',
+                description: describeTool(
+                  'create_character.parameters.properties.aliases.items.properties.translation',
+                ),
+              },
             },
+            required: ['name', 'translation'],
           },
-          required: ['name', 'translation'],
+          description: describeTool('create_character.parameters.properties.aliases'),
         },
       },
-    },
+      required: ['name', 'translation'],
+    }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
+      const { bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{
         name: string;
         translation: string;
         sex?: string;
         description?: string;
         speaking_style?: string;
-        aliases?: Array<{ name: string; translation: string }>;
+        aliases?: Array<{ id?: string; name: string; translation: string }>;
       }>(args);
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
       const { name, translation, sex, description, speaking_style, aliases } = parsedArgs;
       if (!name?.trim() || !translation?.trim()) {
-        throw new Error('角色名称和翻译不能为空');
+        throw new LocalizedError(
+          'CHARACTER_FIELDS_REQUIRED',
+          'aiEntityFeedback.characterNameAndTranslation',
+          {},
+        );
       }
       assertAliasesNotBlank(aliases);
 
@@ -104,22 +117,28 @@ export const characterTools: ToolDefinition[] = [
         sex?: 'male' | 'female' | 'other';
         description?: string;
         speakingStyle?: string;
-        aliases?: Array<{ name: string; translation: string }>;
+        aliases?: Array<{ id?: string; name: string; translation: string }>;
       } = {
         name: name.trim(),
-        translation: normalizeTranslationQuotes(translation.trim()),
+        translation: translation.trim(),
       };
 
       // 规范化别名翻译
       if (aliases && Array.isArray(aliases)) {
-        characterData.aliases = normalizeAliasList(aliases);
+        characterData.aliases = normalizeAliasList(aliases, language);
       }
 
       if (sex) characterData.sex = sex as 'male' | 'female' | 'other';
       if (description) characterData.description = description;
       if (speaking_style) characterData.speakingStyle = speaking_style;
 
-      const character = await CharacterSettingService.addCharacterSetting(bookId, characterData);
+      const created = await CharacterSettingService.addCharacterSetting(
+        bookId,
+        characterData,
+        language,
+      );
+
+      const character = savedCharacter(bookId, created.id);
 
       if (onAction) {
         onAction({
@@ -131,54 +150,50 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '角色创建成功',
-        character: serializeCharacterForTool(character),
+        message: translateText(AGENT_LOCALE, 'aiEntityFeedback.characterCreated'),
+        character: serializeCharacterForTool(character, language),
       });
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'get_character',
-        description:
-          '根据角色名称获取角色信息。在翻译过程中，如果遇到已存在的角色，可以使用此工具查询其翻译和设定。[注意] **极重要**：如果名称无法精确匹配，该工具会自动在后台对角色的原名、翻译文本记录以及全部已收录的别名进行模糊搜索和部分匹配，并返回最相关的结果列表。[警告] **重要**：查询角色信息时，必须**先**使用此工具或 search_characters_by_keywords 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
-        parameters: {
-          type: 'object',
-          properties: {
-            name: {
-              type: 'string',
-              description: '角色名称（日文原文）',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
-          },
-          required: ['name'],
+    definition: toolDefinition('get_character', {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: describeTool('get_character.parameters.properties.name'),
+        },
+        include_memory: {
+          type: 'boolean',
+          description: describeTool('get_character.parameters.properties.include_memory'),
         },
       },
-    },
+      required: ['name'],
+    }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
+      const { bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{ name: string; include_memory?: boolean }>(args);
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
       const { include_memory = true } = parsedArgs;
       // 类型守卫：确保 name 为有效字符串
       const name = typeof parsedArgs.name === 'string' ? parsedArgs.name.trim() : '';
       if (!name) {
-        throw new Error('角色名称不能为空');
+        throw new LocalizedError(
+          'CHARACTER_NAME_REQUIRED',
+          'aiEntityFeedback.characterNameRequired',
+          {},
+        );
       }
 
-      const booksStore = useBooksStore();
-      const book = booksStore.getBookById(bookId);
-      if (!book) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
+      const book = resolveBookSync(bookId);
 
-      const character = book.characterSettings?.find((c) => c.name === name);
+      const exactMatches = book.characterSettings?.filter((c) => c.name === name) ?? [];
+      if (exactMatches.length > 1)
+        throw new LocalizedError(
+          'AMBIGUOUS_CHARACTER_NAME',
+          'aiEntityFeedback.ambiguousCharacter',
+          {},
+        );
+      const character = exactMatches[0];
 
       if (!character) {
         // Fallback search
@@ -186,12 +201,15 @@ export const characterTools: ToolDefinition[] = [
         const allCharacters = book.characterSettings || [];
         const fallbackMatches = allCharacters.filter((char) => {
           if (char.name.toLowerCase().includes(keywordLower)) return true;
-          if (char.translation?.translation?.toLowerCase().includes(keywordLower)) return true;
+          if (getNameTranslation(char, language)?.translation.toLowerCase().includes(keywordLower))
+            return true;
           if (
             char.aliases?.some(
               (alias) =>
                 alias.name.toLowerCase().includes(keywordLower) ||
-                alias.translation?.translation?.toLowerCase().includes(keywordLower),
+                getNameTranslation(alias, language)
+                  ?.translation.toLowerCase()
+                  .includes(keywordLower),
             )
           ) {
             return true;
@@ -212,23 +230,22 @@ export const characterTools: ToolDefinition[] = [
           }
 
           // 限制返回条目数，避免 token 膨胀
-          const limitedMatches = fallbackMatches.slice(0, MAX_FALLBACK_RESULTS);
-          const truncated = fallbackMatches.length > MAX_FALLBACK_RESULTS;
+          const { items: limitedMatches, ...matchSummary } = fuzzyMatches(
+            fallbackMatches,
+            MAX_FALLBACK_RESULTS,
+            name,
+          );
 
           return JSON.stringify({
-            success: true,
-            message: `精确匹配未找到 "${name}"。已返回相关的模糊匹配结果${
-              truncated ? `（前 ${MAX_FALLBACK_RESULTS} 条，共 ${fallbackMatches.length} 条）` : ''
-            }。`,
-            characters: limitedMatches.map((char) => serializeCharacterForTool(char)),
-            total_matches: fallbackMatches.length,
-            truncated,
+            ...matchSummary,
+            characters: limitedMatches.map((char) => serializeCharacterForTool(char, language)),
           });
         }
 
         return JSON.stringify({
           success: false,
-          message: `角色 "${name}" 不存在，且没有找到相关匹配项。`,
+          error_code: 'CHARACTER_NOT_FOUND',
+          message: translateText(AGENT_LOCALE, 'aiEntityFeedback.characterNoMatch', { name }),
         });
       }
 
@@ -253,12 +270,13 @@ export const characterTools: ToolDefinition[] = [
           [{ type: 'character', id: character.id }],
           [name, ...aliasKeywords],
           5,
+          language,
         );
       }
 
       return JSON.stringify({
         success: true,
-        character: serializeCharacterForTool(character),
+        character: serializeCharacterForTool(character, language),
         ...(include_memory && relatedMemories.length > 0
           ? { related_memories: relatedMemories }
           : {}),
@@ -266,83 +284,88 @@ export const characterTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'update_character',
-        description:
-          '更新现有角色的翻译、描述、性别或别名。[警告] **重要**：当发现角色的信息需要修正时（如格式错误、翻译错误、描述格式不符合要求等），**必须**使用此工具进行更新，而不是仅仅告诉用户问题所在。在更新别名时，必须确保提供的别名数组只包含该角色自己的别名，不能包含其他角色的名称或别名。在更新前，应使用 list_characters 或 get_character 工具检查每个别名是否属于其他角色。[禁止] **错误处理**：如果尝试添加的别名已属于其他角色（作为其他角色的主名称或别名），该别名将被**静默跳过**，不会添加到当前角色，也不会抛出错误。因此必须在更新前检查所有别名，避免无效操作。',
-        parameters: {
-          type: 'object',
-          properties: {
-            character_id: {
-              type: 'string',
-              description: '角色 ID（从 get_character 或 list_characters 获取）',
-            },
-            name: {
-              type: 'string',
-              description: '新的角色名称（可选，必须是全名，例如"田中太郎"而不是"田中"或"太郎"）',
-            },
-            translation: {
-              type: 'string',
-              description: '新的翻译文本（可选）',
-            },
-            sex: {
-              type: 'string',
-              enum: ['male', 'female', 'other'],
-              description: '新的性别（可选）',
-            },
-            description: {
-              type: 'string',
-              description:
-                '新的描述（可选，设置为空字符串可删除描述）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
-            },
-            speaking_style: {
-              type: 'string',
-              description: '新的说话口吻（可选，设置为空字符串可删除口吻）',
-            },
-            aliases: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  name: {
-                    type: 'string',
-                    description: '别名名称（日文原文）',
-                  },
-                  translation: {
-                    type: 'string',
-                    description: '别名的中文翻译',
-                  },
-                },
-                required: ['name', 'translation'],
+    definition: toolDefinition('update_character', {
+      type: 'object',
+      properties: {
+        character_id: stringToolParameter('update_character.parameters.properties.character_id'),
+        name: {
+          type: 'string',
+          description: describeTool('update_character.parameters.properties.name'),
+        },
+        translation: {
+          type: 'string',
+          description: describeTool('update_character.parameters.properties.translation'),
+        },
+        sex: {
+          type: 'string',
+          enum: ['male', 'female', 'other'],
+          description: describeTool('update_character.parameters.properties.sex'),
+        },
+        description: {
+          type: 'string',
+          description: describeTool('update_character.parameters.properties.description'),
+        },
+        speaking_style: {
+          type: 'string',
+          description: describeTool('update_character.parameters.properties.speaking_style'),
+        },
+        aliases: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: {
+                type: 'string',
+                description: describeTool(
+                  'update_character.parameters.properties.aliases.items.properties.id',
+                ),
               },
-              description:
-                '新的别名数组（可选，将替换所有现有别名）。别名应该包括角色的名字和姓氏的单独部分，例如如果角色全名是"田中太郎"，别名应该包括"田中"和"太郎"。[警告] 重要：必须确保数组中的每个别名都属于当前角色，不能包含其他角色的名称或别名。在更新前应使用 list_characters 检查每个别名是否属于其他角色。[禁止] **错误处理**：如果数组中包含的别名已属于其他角色（作为其他角色的主名称或别名），这些冲突的别名将被**静默跳过**，不会添加到当前角色，也不会在返回结果中显示。',
+              name: {
+                type: 'string',
+                description: describeTool(
+                  'update_character.parameters.properties.aliases.items.properties.name',
+                ),
+              },
+              translation: {
+                type: 'string',
+                description: describeTool(
+                  'update_character.parameters.properties.aliases.items.properties.translation',
+                ),
+              },
             },
+            required: ['name', 'translation'],
           },
-          required: ['character_id'],
+          description: describeTool('update_character.parameters.properties.aliases'),
         },
       },
-    },
+      required: ['character_id'],
+    }),
     handler: async (args, context: ToolContext) => {
-      const parsedArgs = parseToolArgs<{
+      const { parsedArgs, bookId, onAction, language, character_id } = characterEditContext<{
         character_id: string;
         name?: string;
         translation?: string;
         sex?: string;
         description?: string;
         speaking_style?: string;
-        aliases?: Array<{ name: string; translation: string }>;
-      }>(args);
-      const { bookId, onAction, character_id } = requireCharacterContext(context, parsedArgs);
+        aliases?: Array<{ id?: string; name: string; translation: string }>;
+      }>(args, context);
       const { name, translation, sex, description, speaking_style, aliases } = parsedArgs;
       if (name !== undefined && !name.trim()) {
-        throw new Error('角色名称不能为空');
+        throw new LocalizedError(
+          'CHARACTER_NAME_REQUIRED',
+          'aiEntityFeedback.characterNameRequired',
+          {},
+        );
       }
-      if (translation !== undefined && !translation.trim()) {
-        throw new Error('角色翻译不能为空');
+      if (translation !== undefined && translation !== '' && !translation.trim()) {
+        throw new LocalizedError(
+          'CHARACTER_TRANSLATION_REQUIRED',
+          'aiEntityFeedback.characterTranslationRequired',
+          {},
+        );
       }
+
       if (aliases !== undefined) {
         assertAliasesNotBlank(aliases);
       }
@@ -356,14 +379,14 @@ export const characterTools: ToolDefinition[] = [
         translation?: string;
         description?: string;
         speakingStyle?: string;
-        aliases?: Array<{ name: string; translation: string }>;
+        aliases?: Array<{ id?: string; name: string; translation: string }>;
       } = {};
 
       if (name !== undefined) {
         updates.name = name.trim();
       }
       if (translation !== undefined) {
-        updates.translation = normalizeTranslationQuotes(translation.trim());
+        updates.translation = translation.trim();
       }
       if (sex !== undefined) {
         updates.sex = sex as 'male' | 'female' | 'other' | undefined;
@@ -375,14 +398,17 @@ export const characterTools: ToolDefinition[] = [
         updates.speakingStyle = speaking_style;
       }
       if (aliases !== undefined) {
-        updates.aliases = normalizeAliasList(aliases);
+        updates.aliases = normalizeAliasList(aliases, language);
       }
 
-      const character = await CharacterSettingService.updateCharacterSetting(
+      const changed = await CharacterSettingService.updateCharacterSetting(
         bookId,
         character_id,
         updates,
+        language,
       );
+
+      const character = savedCharacter(bookId, changed.id);
 
       if (onAction) {
         onAction({
@@ -395,32 +421,20 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '角色更新成功',
-        character: serializeCharacterForTool(character),
+        message: translateText(AGENT_LOCALE, 'aiEntityFeedback.characterUpdated'),
+        character: serializeCharacterForTool(character, language),
       });
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'delete_character',
-        description: '删除角色设定。当确定某个角色不再需要时，可以使用此工具删除。',
-        parameters: {
-          type: 'object',
-          properties: {
-            character_id: {
-              type: 'string',
-              description: '角色 ID（从 get_character 或 list_characters 获取）',
-            },
-          },
-          required: ['character_id'],
-        },
-      },
-    },
+    definition: toolDefinition(
+      'delete_character',
+      singleIdToolParameters('delete_character', 'character_id'),
+    ),
     handler: async (args, context: ToolContext) => {
-      const parsedArgs = parseToolArgs<{ character_id: string }>(args);
-      const { bookId, onAction, character_id } = requireCharacterContext(context, parsedArgs);
+      const { parsedArgs, bookId, onAction, language, character_id } = characterEditContext<{
+        character_id: string;
+      }>(args, context);
 
       // 在删除前获取角色信息，以便在 toast 中显示详细信息和 revert
       const { character, previousData } = resolveCharacterForTool(bookId, character_id);
@@ -438,50 +452,43 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        message: '角色删除成功',
+        message: translateText(AGENT_LOCALE, 'aiEntityFeedback.characterDeleted'),
       });
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'search_characters_by_keywords',
-        description:
-          '根据多个关键词搜索角色。可以搜索角色主名称、别名或翻译。支持多个关键词，返回包含任一关键词的角色（OR 逻辑）。支持可选参数 translationOnly 只返回有翻译的角色。[警告] **重要**：查询角色信息时，必须**先**使用此工具或 get_character 查询角色数据库，**只有在数据库中没有找到时**才可以使用 search_memories 搜索记忆。',
-        parameters: {
-          type: 'object',
-          properties: {
-            keywords: {
-              type: 'array',
-              items: {
-                type: 'string',
-              },
-              description: '搜索关键词数组（返回包含任一关键词的角色）',
-            },
-            translation_only: {
-              type: 'boolean',
-              description: '是否只返回有翻译的角色（默认 false）',
-            },
-            include_memory: {
-              type: 'boolean',
-              description: '是否在响应中包含相关的记忆信息（默认 true）',
-            },
+    definition: toolDefinition('search_characters_by_keywords', {
+      type: 'object',
+      properties: {
+        keywords: {
+          type: 'array',
+          items: {
+            type: 'string',
           },
-          required: ['keywords'],
+          description: describeTool('search_characters_by_keywords.parameters.properties.keywords'),
+        },
+        translation_only: {
+          type: 'boolean',
+          description: describeTool(
+            'search_characters_by_keywords.parameters.properties.translation_only',
+          ),
+        },
+        include_memory: {
+          type: 'boolean',
+          description: describeTool(
+            'search_characters_by_keywords.parameters.properties.include_memory',
+          ),
         },
       },
-    },
+      required: ['keywords'],
+    }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
+      const { bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{
         keywords: string[];
         translation_only?: boolean;
         include_memory?: boolean;
       }>(args);
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
       const { keywords, translation_only = false, include_memory = true } = parsedArgs;
       const validKeywords = requireValidKeywords(keywords);
 
@@ -509,20 +516,22 @@ export const characterTools: ToolDefinition[] = [
         );
         // 搜索翻译
         const translationMatch = keywordsLower.some((keyword) =>
-          char.translation?.translation?.toLowerCase().includes(keyword),
+          getNameTranslation(char, language)?.translation.toLowerCase().includes(keyword),
         );
         // 搜索别名
         const aliasMatch = char.aliases?.some((alias) =>
           keywordsLower.some(
             (keyword) =>
               alias.name.toLowerCase().includes(keyword) ||
-              alias.translation?.translation?.toLowerCase().includes(keyword),
+              getNameTranslation(alias, language)?.translation.toLowerCase().includes(keyword),
           ),
         );
 
         if (translation_only) {
           // 如果设置了只返回有翻译的，则必须同时有翻译且匹配
-          return (translationMatch || aliasMatch) && char.translation?.translation;
+          return (
+            (translationMatch || aliasMatch) && getNameTranslation(char, language)?.translation
+          );
         }
 
         // 否则只要名称、翻译或别名匹配任一关键词即可（OR 逻辑）
@@ -536,13 +545,19 @@ export const characterTools: ToolDefinition[] = [
           type: 'character' as const,
           id: char.id,
         }));
-        relatedMemories = await searchRelatedMemoriesHybrid(bookId, attachments, validKeywords, 5);
+        relatedMemories = await searchRelatedMemoriesHybrid(
+          bookId,
+          attachments,
+          validKeywords,
+          5,
+          language,
+        );
       }
 
       return JSON.stringify({
         success: true,
         characters: filteredCharacters.map((char: CharacterSetting) =>
-          serializeCharacterForTool(char),
+          serializeCharacterForTool(char, language),
         ),
         count: filteredCharacters.length,
         ...(include_memory && relatedMemories.length > 0
@@ -552,44 +567,31 @@ export const characterTools: ToolDefinition[] = [
     },
   },
   {
-    definition: {
-      type: 'function',
-      function: {
-        name: 'list_characters',
-        description:
-          '列出角色设定。可以通过 chapter_id 参数指定章节（只返回该章节中出现的角色），或设置 all_chapters=true 列出所有章节的角色。如果不提供 chapter_id 且 all_chapters 为 false，则返回所有角色。在翻译开始前，可以使用此工具获取相关角色，以便在翻译时保持一致性。',
-        parameters: {
-          type: 'object',
-          properties: {
-            chapter_id: {
-              type: 'string',
-              description:
-                '章节 ID（可选）。如果提供，只返回在该章节中出现的角色。如果不提供且 all_chapters 为 false，则返回所有角色。',
-            },
-            all_chapters: {
-              type: 'boolean',
-              description:
-                '是否列出所有章节的角色（默认 false）。如果为 true，忽略 chapter_id 参数，返回所有角色。',
-            },
-            limit: {
-              type: 'number',
-              description: '返回的角色数量限制（可选，默认返回所有）',
-            },
-          },
-          required: [],
+    definition: toolDefinition('list_characters', {
+      type: 'object',
+      properties: {
+        chapter_id: {
+          type: 'string',
+          description: describeTool('list_characters.parameters.properties.chapter_id'),
+        },
+        all_chapters: {
+          type: 'boolean',
+          description: describeTool('list_characters.parameters.properties.all_chapters'),
+        },
+        limit: {
+          type: 'number',
+          description: describeTool('list_characters.parameters.properties.limit'),
         },
       },
-    },
+      required: [],
+    }),
     handler: async (args, context: ToolContext) => {
-      const { bookId, onAction } = context;
+      const { bookId, onAction, language } = bookToolContext(context);
       const parsedArgs = parseToolArgs<{
         chapter_id?: string;
         all_chapters?: boolean;
         limit?: number;
       }>(args);
-      if (!bookId) {
-        throw new Error('书籍 ID 不能为空');
-      }
       const { chapter_id, all_chapters = false, limit } = parsedArgs;
       const book = resolveBookSync(bookId);
 
@@ -623,7 +625,7 @@ export const characterTools: ToolDefinition[] = [
 
       return JSON.stringify({
         success: true,
-        characters: characters.map((char) => serializeCharacterForTool(char)),
+        characters: characters.map((char) => serializeCharacterForTool(char, language)),
         total: characters.length,
         all_characters_count: book.characterSettings?.length || 0,
         ...(chapter_id ? { chapter_id } : {}),

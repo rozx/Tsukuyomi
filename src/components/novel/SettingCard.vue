@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed } from 'vue';
 import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import SettingCardTranslations from './SettingCardTranslations.vue';
 import SettingCardAliases from './SettingCardAliases.vue';
+const { t } = useI18n();
 
 interface Props {
   title: string;
@@ -57,7 +60,13 @@ const isCharacterCard = computed(() => {
 
 // 性别相关展示文案/图标/标题：把模板内的多重三元收敛为 computed
 const sexLabel = computed(() =>
-  props.sex === 'male' ? '男性' : props.sex === 'female' ? '女性' : props.sex === 'other' ? '其他/未知' : '',
+  props.sex === 'male'
+    ? t('panelUi.male')
+    : props.sex === 'female'
+      ? t('panelUi.female')
+      : props.sex === 'other'
+        ? t('panelUi.otherUnknown')
+        : '',
 );
 const sexIconClass = computed(() =>
   props.sex === 'male'
@@ -101,7 +110,10 @@ const isRingVisible = computed(() => props.showCheckbox && props.checked);
         <div class="flex-1 min-w-0 pr-10 max-w-full">
           <div class="flex items-center min-w-0 w-full">
             <div class="flex-1 min-w-0 mr-2 max-w-full overflow-hidden">
-              <h3 class="text-lg font-medium text-moon-100 line-clamp-2 break-words w-full" :title="title">
+              <h3
+                class="text-lg font-medium text-moon-100 line-clamp-2 break-words w-full"
+                :title="title"
+              >
                 {{ title }}
               </h3>
             </div>
@@ -117,11 +129,13 @@ const isRingVisible = computed(() => props.showCheckbox && props.checked);
       >
         <Button
           icon="pi pi-pencil"
+          :aria-label="t('panelUi.edit')"
           class="p-button-text p-button-sm !w-8 !h-8 !text-white/80 hover:!text-white"
           @click.stop="$emit('edit')"
         />
         <Button
           icon="pi pi-trash"
+          :aria-label="t('panelUi.delete')"
           class="p-button-text p-button-sm p-button-danger !w-8 !h-8"
           @click.stop="$emit('delete')"
         />
@@ -130,23 +144,33 @@ const isRingVisible = computed(() => props.showCheckbox && props.checked);
 
     <!-- 描述 -->
     <div v-if="description" class="mb-4 w-full">
-      <p 
-        class="text-sm text-moon-100/70 break-words overflow-hidden" 
+      <p
+        class="text-sm text-moon-100/70 break-words overflow-hidden"
         :title="description"
-        style="display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;"
+        style="
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+          line-clamp: 2;
+        "
       >
         {{ description }}
       </p>
     </div>
-    <div v-else class="mb-4 text-sm text-moon-100/30 italic">暂无描述</div>
+    <div v-else class="mb-4 text-sm text-moon-100/30 italic">{{ t('panelUi.noDescription') }}</div>
 
     <!-- 说话口吻 (仅 Character) -->
     <div v-if="speakingStyle" class="mb-4">
-      <span class="text-xs text-moon-100/50 block mb-1.5">说话口吻</span>
-      <p 
-        class="text-sm text-moon-100/70 break-words overflow-hidden" 
+      <span class="text-xs text-moon-100/50 block mb-1.5">{{ t('panelUi.speakingStyle') }}</span>
+      <p
+        class="text-sm text-moon-100/70 break-words overflow-hidden"
         :title="speakingStyle"
-        style="display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;"
+        style="
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+          line-clamp: 2;
+        "
       >
         {{ speakingStyle }}
       </p>
@@ -157,7 +181,6 @@ const isRingVisible = computed(() => props.showCheckbox && props.checked);
 
     <!-- 别名 (仅 Character) -->
     <SettingCardAliases :aliases="aliases" />
-
   </div>
 </template>
 
@@ -170,4 +193,3 @@ const isRingVisible = computed(() => props.showCheckbox && props.checked);
   text-overflow: ellipsis;
 }
 </style>
-

@@ -14,6 +14,9 @@ import {
   injectSettingsPage,
 } from 'src/composables/settings-page/useSettingsPage';
 import SyncSettingsTab from 'src/components/settings/SyncSettingsTab.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const ctx = injectSettingsPage();
 
@@ -32,7 +35,7 @@ const settingsTabBindings = computed(() =>
     <!-- 大标题区 -->
     <div class="tsm-largetitle">
       <div class="eyebrow">SETTINGS</div>
-      <h1>设置</h1>
+      <h1>{{ t('settingsUi.page.title') }}</h1>
     </div>
 
     <!-- 横向滚动分段 tab 栏 -->
@@ -51,7 +54,7 @@ const settingsTabBindings = computed(() =>
       </button>
     </div>
 
-    <!-- 内容区（一次只渲染激活 tab）。顺序对应 public/help/settings-guide.md：
+    <!-- 内容区（一次只渲染激活 tab）。顺序对应 public/help/zh-CN/settings-guide.md：
          AI 模型 → (代理) → API Keys → 同步 → 本地嵌入 → 爬虫 → 导入/导出 -->
     <div class="tsm-settings-scroll">
       <component :is="settingsTabComponent" v-bind="settingsTabBindings" />
@@ -63,7 +66,6 @@ const settingsTabBindings = computed(() =>
 .tsm-settings-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
   background: transparent;
 }
@@ -75,7 +77,11 @@ const settingsTabBindings = computed(() =>
 }
 
 .tsm-largetitle .eyebrow {
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   font-weight: 500;
   font-size: 10px;
   color: var(--tsukuyomi-300-opacity-85); /* token: tsukuyomi-300 @ 85% */
@@ -85,7 +91,11 @@ const settingsTabBindings = computed(() =>
 }
 
 .tsm-largetitle h1 {
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   font-weight: 600;
   font-size: 28px;
   line-height: 1.15;
@@ -117,7 +127,11 @@ const settingsTabBindings = computed(() =>
   margin-right: 18px;
   background: none;
   border: none;
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
   font-size: 13px;
   font-weight: 500;
   color: rgba(138, 147, 160, 0.9); /* neutral grey, untokenized */
@@ -155,7 +169,7 @@ const settingsTabBindings = computed(() =>
 /* 滚动内容 */
 .tsm-settings-scroll {
   flex: 1;
-  overflow-y: auto;
+  overflow: visible;
   -webkit-overflow-scrolling: touch;
   padding: 18px 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
   min-height: 0;

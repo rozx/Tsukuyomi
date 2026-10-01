@@ -1,3 +1,6 @@
+import './setup';
+import { createPinia, setActivePinia } from 'pinia';
+import { useSettingsStore } from '../stores/settings';
 import { describe, expect, it, mock, beforeEach, spyOn, afterEach } from 'bun:test';
 import { ref } from 'vue';
 import { useChapterExport } from '../composables/book-details/useChapterExport';
@@ -20,6 +23,8 @@ const mockExportChapter = mock(() => Promise.resolve());
 
 describe('useChapterExport', () => {
   beforeEach(() => {
+    setActivePinia(createPinia());
+    useSettingsStore().settings.uiLocale = 'zh-CN';
     mockToastAdd.mockClear();
     mockExportChapter.mockClear();
     spyOn(ChapterService, 'exportChapter').mockImplementation(mockExportChapter);

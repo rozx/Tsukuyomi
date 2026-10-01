@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { translateText } from '../i18n/translate';
 import './setup';
 import { createApp, defineComponent, h, nextTick, ref, shallowRef } from 'vue';
 import type { App, Component, Ref } from 'vue';
@@ -8,6 +9,7 @@ import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { BookSyncError } from 'src/services/book-sync/errors';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import { ImportRecipeRepair } from 'src/services/import/import-recipe-repair';
+import { useSettingsStore } from 'src/stores/settings';
 import { ImportAgentService } from 'src/services/import/import-agent-service';
 import { useBooksStore } from 'src/stores/books';
 import {
@@ -130,9 +132,11 @@ async function flush() {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   toastAdd.mockClear();
   seen.length = 0;
+  // 这些用例断言简中提示；英文见 book-sync-ui-languages.test.ts
+  await useSettingsStore().setUiLocale('zh-CN');
 });
 
 afterEach(() => {
@@ -488,12 +492,16 @@ describe('配方修复入口', () => {
     const { router } = await mount(ref({ bookId: 'b1' }), shallowRef(VariantA));
     await ctx.handoff();
     await flush();
-    expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }), '目录无法复现');
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'b1' }),
+      '目录无法复现',
+      useSettingsStore().uiLocale,
+    );
     expect(router.currentRoute.value.path).toBe('/import/task-1');
     expect(run).not.toHaveBeenCalled();
   });
 
-  it('缺少配方时以「还没有更新配方」作为原因', async () => {
+  it('缺少配方时以当前界面语言的「还没有更新配方」作为原因', async () => {
     vi.spyOn(BookSyncService, 'openSession').mockRejectedValue(
       new BookSyncError('RECIPE_MISSING', '尚未建立更新配方'),
     );
@@ -501,6 +509,11 @@ describe('配方修复入口', () => {
     await mount(ref({ bookId: 'b1' }), shallowRef(VariantA));
     expect(ctx.phase.value).toBe('missing');
     await ctx.handoff();
-    expect(open).toHaveBeenCalledWith(expect.anything(), '这本书还没有更新配方');
+    const uiLocale = useSettingsStore().uiLocale;
+    expect(open).toHaveBeenCalledWith(
+      expect.anything(),
+      translateText(uiLocale, 'aiImportPrompt.recipeMissingReason'),
+      uiLocale,
+    );
   });
 });

@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import Badge from 'primevue/badge';
 import type { Paragraph } from 'src/models/novel';
+const { t } = useI18n();
 
 // 预览模式单段渲染：有译文显示译文，无译文但有原文显示"未翻译"徽章 + 原文。
 defineProps<{
@@ -15,7 +17,7 @@ defineProps<{
   </template>
   <template v-else-if="paragraph.text.trim()">
     <div class="untranslated-content">
-      <Badge value="未翻译" severity="warning" class="untranslated-badge" />
+      <Badge :value="t('readerUi.untranslated')" severity="warning" class="untranslated-badge" />
       <p class="original-text">{{ paragraph.text }}</p>
     </div>
   </template>

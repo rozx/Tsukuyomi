@@ -5,6 +5,8 @@ import type { AITool, ChatMessage as AIChatMessage } from 'src/services/ai/types
 import type { ChatSessionMessage, ChatSession } from 'src/stores/chat-sessions';
 import { measureContext, modelContextKey } from 'src/services/ai/context/measure';
 import type { AIModel } from 'src/services/ai/types/ai-model';
+import type { ExecutionLanguages } from 'src/models/locale';
+import { agentText } from 'src/i18n/translate';
 
 export type SessionWithSummaryIndex = ChatSession & { lastSummarizedMessageIndex?: number };
 
@@ -18,6 +20,8 @@ export interface AssistantStatsParams {
   context: AssistantContextInfo;
   session: SessionWithSummaryIndex | null;
   currentMessages: ChatSessionMessage[];
+  /** 与下一次助手执行相同的语言快照，保证统计的提示词与真实请求一致 */
+  languages: ExecutionLanguages;
   includeToolSchemas?: boolean;
 }
 
@@ -77,21 +81,22 @@ const ensurePendingUserMessage = (
 const buildAssistantSystemPromptForStats = (
   context: AssistantContextInfo,
   session: SessionWithSummaryIndex | null,
+  languages: ExecutionLanguages,
 ): { prompt: string; tools: AITool[] } => {
   const tools = ToolRegistry.getAssistantToolsExcludingTranslationManagement(
     context.currentBookId || undefined,
   );
   const todosPrompt = getTodosSystemPrompt(!!session?.id);
-  let systemPrompt = getAssistantSystemPrompt(todosPrompt, tools, context);
+  let systemPrompt = getAssistantSystemPrompt(todosPrompt, tools, context, languages);
   if (session?.summary) {
-    systemPrompt += `\n\n## 之前的对话总结\n\n${session.summary}\n\n**注意**：以上是之前对话的总结。当前对话从总结后的内容继续。`;
+    systemPrompt += '\n\n' + agentText('aiAssistant.summaryWrap', { summary: session.summary });
   }
   return { prompt: systemPrompt, tools };
 };
 
 export const measureAssistantContext = (params: AssistantStatsParams, model: AIModel) => {
   const { context, session, currentMessages } = params;
-  const { prompt, tools } = buildAssistantSystemPromptForStats(context, session);
+  const { prompt, tools } = buildAssistantSystemPromptForStats(context, session, params.languages);
   const history =
     ensurePendingUserMessage(buildAssistantMessageHistory(session), currentMessages) || [];
   return measureContext({

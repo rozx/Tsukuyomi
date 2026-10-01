@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import { excludeImportText } from './import-content-exclusions';
 import type { ImportContentRef, ImportDraftChapter } from 'src/models/import';
 import type { ImportNewParagraph } from 'src/models/import-matching';
@@ -45,7 +46,11 @@ export async function assembleImportParagraphs(
         ref.bookId !== context.snapshot?.book.id ||
         ref.bookRevision !== context.snapshot.revision
       )
-        throw new Error('BOOK_CHANGED: 既有正文引用已过时');
+        throw importError(
+          'BOOK_CHANGED',
+          'bookChangedTheExistingContentReferenceIsOutdatedVariant177',
+          {},
+        );
       const text = excludeImportText(paragraph.text, ref.excludeRanges);
       if (!text && ref.excludeRanges?.length) continue;
       output.push({
@@ -59,7 +64,8 @@ export async function assembleImportParagraphs(
       });
     } else {
       const resource = await context.resource(ref.resourceId);
-      if (resource.kind !== 'extraction') throw new Error('INVALID_CONTENT_REF: 正文不是提取结果');
+      if (resource.kind !== 'extraction')
+        throw importError('INVALID_CONTENT_REF', 'invalidContentRefTheBodyIsNotAnExtraction', {});
       const text = resolveImportText(resource, ref);
       const previous = refs.at(-1);
       const adjacent =

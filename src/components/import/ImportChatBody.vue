@@ -4,6 +4,8 @@
  * 待办区和发送按钮；数据全部来自 useImportChatPanel（当前导入任务），每次只挂载一个。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import ChatActionPopovers from 'src/components/layout/ChatActionPopovers.vue';
 import ChatSendButton from 'src/components/layout/ChatSendButton.vue';
 import ChatMessageList from 'src/components/layout/ChatMessageList.vue';
@@ -14,6 +16,7 @@ import ImportQuestionCard from './ImportQuestionCard.vue';
 import { CHAT_ERROR_ACTIONS, readableError } from './import-labels';
 
 withDefaults(defineProps<{ safeArea?: boolean }>(), { safeArea: false });
+const { t, locale } = useI18n();
 
 const panel = useImportChatPanel();
 const {
@@ -29,20 +32,23 @@ const {
 
 const { composer, actionPopoverBindings, messageListBindings } = useChatPanelBindings(panel, {
   sendClassPrefix: 'tcp-send',
-  readyPlaceholder: '告诉月詠要怎样整理这些来源…',
+  readyPlaceholderKey: 'importUi.chat.readyPlaceholder',
 });
 const { inputPlaceholder, sendButton, onSendClick } = composer;
 
 const blockedReason = computed(() => {
-  if (!store.task) return '请先选择或新建导入任务';
-  if (awaitingAnswer.value) return '请先回答上方的问题';
-  if (store.task.compacting || store.pendingAction === 'compact') return '正在压缩对话上下文…';
+  if (!store.task) return t('importUi.chat.noTask');
+  if (awaitingAnswer.value) return t('importUi.chat.answerFirst');
+  if (store.task.compacting || store.pendingAction === 'compact')
+    return t('importUi.chat.compacting');
   if (store.runningTaskId && store.runningTaskId !== store.selectedTaskId)
-    return '另一个导入任务正在运行';
+    return t('importUi.chat.otherRunning');
   return '';
 });
 const chatError = computed(() =>
-  store.error && CHAT_ERROR_ACTIONS.has(store.errorAction ?? '') ? readableError(store.error) : '',
+  store.error && CHAT_ERROR_ACTIONS.has(store.errorAction ?? '')
+    ? readableError(store.error, resolveAppLocale(locale.value))
+    : '',
 );
 const inputDisabled = computed(() => composer.inputDisabled.value || Boolean(blockedReason.value));
 const placeholder = computed(() => blockedReason.value || inputPlaceholder.value);
@@ -62,7 +68,7 @@ const sendBindings = computed(() => ({
     />
 
     <div ref="messagesContainerRef" class="icb-messages">
-      <p v-if="!store.task" class="icb-empty">先在工作台选择或新建一个导入任务，再与月詠对话。</p>
+      <p v-if="!store.task" class="icb-empty">{{ t('importUi.chat.empty') }}</p>
       <ChatMessageList v-else v-bind="messageListBindings" />
     </div>
 
@@ -71,7 +77,12 @@ const sendBindings = computed(() => ({
     <div v-if="chatError" class="icb-error" role="alert">
       <i class="pi pi-exclamation-circle" aria-hidden="true" />
       <span class="icb-error-text">{{ chatError }}</span>
-      <button type="button" class="icb-error-close" aria-label="关闭错误" @click="store.clearError">
+      <button
+        type="button"
+        class="icb-error-close"
+        :aria-label="t('importUi.chat.closeError')"
+        @click="store.clearError"
+      >
         <i class="pi pi-times" aria-hidden="true" />
       </button>
     </div>
@@ -83,7 +94,7 @@ const sendBindings = computed(() => ({
           :disabled="inputDisabled"
           :placeholder="placeholder"
           class="tcp-input"
-          aria-label="发给月詠的消息"
+          :aria-label="t('importUi.chat.input')"
           @keydown.enter.exact.prevent="sendMessage"
         />
         <ChatSendButton v-bind="sendBindings" @click="onSendClick" />

@@ -96,8 +96,8 @@ describe('上下文与拼接', () => {
 
 describe('内部任务保持中性', () => {
   it('getStructuredSummaryPrompt 输出不含月詠人格元素', () => {
-    const newSummary = getStructuredSummaryPrompt('', '对话内容...');
-    const updatedSummary = getStructuredSummaryPrompt('【已有摘要】xxx', '新增...');
+    const newSummary = getStructuredSummaryPrompt('', '对话内容...', 'zh-CN');
+    const updatedSummary = getStructuredSummaryPrompt('【已有摘要】xxx', '新增...', 'zh-CN');
     for (const out of [newSummary, updatedSummary]) {
       expect(out).not.toContain('月詠');
       expect(out).not.toContain('妾身');

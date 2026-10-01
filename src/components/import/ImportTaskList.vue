@@ -3,6 +3,9 @@
  * 导入任务列表：创建、切换与删除任务。桌面作为左侧栏，手机作为「任务」分段。
  * 删除只清理任务自身的来源、对话和撤销记录，不删除已导入的小说。
  */
+import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import { useConfirm } from 'primevue/useconfirm';
@@ -13,6 +16,8 @@ import { TASK_STATE, formatTime } from './import-labels';
 
 const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
+const { t, locale } = useI18n();
+const uiLocale = computed(() => resolveAppLocale(locale.value));
 const confirm = useConfirm();
 
 const isActive = (task: ImportTask) => task.id === store.selectedTaskId;
@@ -20,11 +25,11 @@ const isRunningElsewhere = (task: ImportTask) => store.runningTaskId === task.id
 
 const confirmDelete = (task: ImportTask) => {
   confirm.require({
-    header: '删除导入任务',
-    message: `删除「${task.name}」会清除它的来源、提取结果、对话和撤销记录，已导入书库的小说不会被删除。删除后将无法再撤销该任务的导入。`,
+    header: t('importUi.tasks.removeHeader'),
+    message: t('importUi.tasks.removeMessage', { name: task.name }),
     icon: 'pi pi-exclamation-triangle',
-    acceptLabel: '删除任务',
-    rejectLabel: '取消',
+    acceptLabel: t('importUi.tasks.removeAccept'),
+    rejectLabel: t('importUi.common.cancel'),
     acceptClass: 'p-button-danger',
     accept: () => void ctx.deleteTask(task.id),
   });
@@ -32,12 +37,12 @@ const confirmDelete = (task: ImportTask) => {
 </script>
 
 <template>
-  <section class="itl" aria-label="导入任务">
+  <section class="itl" :aria-label="t('importUi.tasks.title')">
     <header class="itl-head">
-      <span class="itl-title">导入任务</span>
+      <span class="itl-title">{{ t('importUi.tasks.title') }}</span>
       <Button
         icon="pi pi-plus"
-        label="新任务"
+        :label="t('importUi.tasks.new')"
         size="small"
         class="itl-new"
         @click="ctx.createTask"
@@ -45,7 +50,7 @@ const confirmDelete = (task: ImportTask) => {
     </header>
 
     <p v-if="!store.tasks.length" class="itl-empty">
-      还没有导入任务。新建一个任务，提供网址或文件后与月詠一起整理。
+      {{ t('importUi.tasks.empty') }}
     </p>
 
     <ul v-else class="itl-list">
@@ -62,24 +67,25 @@ const confirmDelete = (task: ImportTask) => {
           <div class="itl-item-main">
             <span class="itl-item-name">{{ task.name }}</span>
             <span class="itl-item-meta">
-              {{ formatTime(task.updatedAt) }} · {{ task.draft.chapters.length }} 章草稿
+              {{ formatTime(task.updatedAt, uiLocale) }} ·
+              {{ t('importUi.tasks.draftChapters', { count: task.draft.chapters.length }) }}
             </span>
           </div>
           <div class="itl-item-side">
             <i
               v-if="isRunningElsewhere(task)"
               class="pi pi-spin pi-spinner itl-running"
-              aria-label="月詠正在处理"
+              :aria-label="t('importUi.tasks.running')"
             />
             <Tag
-              :value="TASK_STATE[task.state].label"
+              :value="t(TASK_STATE[task.state].label)"
               :severity="TASK_STATE[task.state].severity"
               class="itl-tag"
             />
             <button
               type="button"
               class="itl-delete"
-              :aria-label="`删除任务 ${task.name}`"
+              :aria-label="t('importUi.tasks.removeLabel', { name: task.name })"
               @click.stop="confirmDelete(task)"
             >
               <i class="pi pi-trash" aria-hidden="true" />
@@ -184,6 +190,7 @@ const confirmDelete = (task: ImportTask) => {
 
 .itl-tag {
   font-size: 0.65rem;
+  white-space: nowrap;
 }
 
 .itl-running {

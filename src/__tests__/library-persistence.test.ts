@@ -61,7 +61,9 @@ describe('书库原子保存与语义修改序号', () => {
     await db.put('books', original);
     await db.put('book-revisions', { bookId: original.id, revision: 5 });
     await BookService.saveBook(original, { saveChapterContent: false });
-    expect(await content()).toBe(JSON.stringify(original.volumes![0]!.chapters![0]!.content));
+    expect(JSON.parse((await content())!)).toMatchObject(
+      original.volumes![0]!.chapters![0]!.content!,
+    );
     expect(await revision()).toBe(5);
     expect(
       (await db.get('books', original.id))?.volumes?.[0]?.chapters?.[0]?.content,
@@ -154,15 +156,16 @@ describe('书库原子保存与语义修改序号', () => {
         skipIfUnchanged: true,
       }),
     ).toBe(true);
-    expect(await content()).toBe(JSON.stringify(changed));
+    const persisted = (await content())!;
+    expect(JSON.parse(persisted)).toMatchObject(changed);
     expect(await revision()).toBe(2);
     const db = await getDB();
     await db.put('book-revisions', { bookId: 'b1', revision: Number.MAX_SAFE_INTEGER });
     await expect(
       ChapterContentService.saveChapterContent('b1-c1', old, { bookId: 'b1' }),
     ).rejects.toThrow('REVISION_OVERFLOW');
-    expect(await content()).toBe(JSON.stringify(changed));
-    expect(peekCacheEntry('b1-c1')?.parsed).toEqual(changed);
+    expect(await content()).toBe(persisted);
+    expect(peekCacheEntry('b1-c1')?.parsed).toMatchObject(changed);
   });
 
   it('批量删除正文只递增一次，失败时缓存和索引保持原状', async () => {

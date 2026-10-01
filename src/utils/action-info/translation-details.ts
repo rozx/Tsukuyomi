@@ -1,8 +1,9 @@
 import { ChapterService } from 'src/services/chapter-service';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import type { MessageAction } from 'src/stores/chat-sessions';
+import type { AppLocale } from 'src/models/locale';
 import type { ActionDetail, ActionDetailsContext } from './types';
-import { preview } from './types';
+import { detailText, joinList, preview } from './types';
 
 /**
  * 批量替换翻译的详情字段。
@@ -10,30 +11,33 @@ import { preview } from './types';
 function appendBatchReplaceTranslationDetails(
   details: ActionDetail[],
   action: MessageAction,
+  locale: AppLocale,
 ): void {
+  const push = (label: Parameters<typeof detailText>[1], value: string) =>
+    details.push({ label: detailText(locale, label), value });
   if (action.replaced_paragraph_count !== undefined) {
-    details.push({ label: '替换段落数', value: `${action.replaced_paragraph_count} 个` });
+    push(
+      'replacedParagraphs',
+      detailText(locale, 'countValue', { count: action.replaced_paragraph_count }),
+    );
   }
   if (action.replaced_translation_count !== undefined) {
-    details.push({
-      label: '替换翻译版本数',
-      value: `${action.replaced_translation_count} 个`,
-    });
+    push(
+      'replacedVersions',
+      detailText(locale, 'countValue', { count: action.replaced_translation_count }),
+    );
   }
   if (action.replacement_text) {
-    details.push({ label: '替换文本', value: preview(action.replacement_text, 50) });
+    push('replacementText', preview(action.replacement_text, 50));
   }
   if (action.keywords && action.keywords.length > 0) {
-    details.push({ label: '翻译关键词', value: action.keywords.join('、') });
+    push('translationKeywords', joinList(locale, action.keywords));
   }
   if (action.original_keywords && action.original_keywords.length > 0) {
-    details.push({ label: '原文关键词', value: action.original_keywords.join('、') });
+    push('originalKeywords', joinList(locale, action.original_keywords));
   }
   if (action.replace_all_translations !== undefined) {
-    details.push({
-      label: '替换所有版本',
-      value: action.replace_all_translations ? '是' : '否',
-    });
+    push('replaceAll', detailText(locale, action.replace_all_translations ? 'yes' : 'no'));
   }
 }
 
@@ -44,19 +48,26 @@ function appendSingleTranslationDetails(
   details: ActionDetail[],
   action: MessageAction,
   context: ActionDetailsContext,
+  locale: AppLocale,
 ): void {
   if (action.paragraph_id) {
-    details.push({ label: '段落 ID', value: action.paragraph_id });
-    appendParagraphContextByBook(details, action, context);
+    details.push({ label: detailText(locale, 'paragraphId'), value: action.paragraph_id });
+    appendParagraphContextByBook(details, action, context, locale);
   }
 
   if (action.translation_id) {
-    details.push({ label: '翻译 ID', value: action.translation_id });
+    details.push({ label: detailText(locale, 'translationId'), value: action.translation_id });
   }
 
   if (action.old_translation && action.new_translation) {
-    details.push({ label: '旧翻译', value: preview(action.old_translation, 100) });
-    details.push({ label: '新翻译', value: preview(action.new_translation, 100) });
+    details.push({
+      label: detailText(locale, 'oldTranslation'),
+      value: preview(action.old_translation, 100),
+    });
+    details.push({
+      label: detailText(locale, 'newTranslation'),
+      value: preview(action.new_translation, 100),
+    });
   }
 }
 
@@ -67,6 +78,7 @@ function appendParagraphContextByBook(
   details: ActionDetail[],
   action: MessageAction,
   context: ActionDetailsContext,
+  locale: AppLocale,
 ): void {
   const currentBookId = context.getCurrentBookId();
   if (!currentBookId || !action.paragraph_id) return;
@@ -78,16 +90,25 @@ function appendParagraphContextByBook(
   if (!location) return;
 
   const { paragraph, chapter } = location;
-  details.push({ label: '章节', value: getChapterDisplayTitle(chapter) });
+  details.push({
+    label: detailText(locale, 'chapter'),
+    value: getChapterDisplayTitle(chapter, book, action.language),
+  });
 
   if (paragraph.text) {
-    details.push({ label: '原文预览', value: preview(paragraph.text, 50) });
+    details.push({
+      label: detailText(locale, 'sourcePreview'),
+      value: preview(paragraph.text, 50),
+    });
   }
 
   if (action.translation_id) {
     const translation = paragraph.translations?.find((t) => t.id === action.translation_id);
     if (translation?.translation) {
-      details.push({ label: '翻译预览', value: preview(translation.translation, 50) });
+      details.push({
+        label: detailText(locale, 'translationPreview'),
+        value: preview(translation.translation, 50),
+      });
     }
   }
 }
@@ -96,10 +117,11 @@ export function appendTranslationDetails(
   details: ActionDetail[],
   action: MessageAction,
   context: ActionDetailsContext,
+  locale: AppLocale = 'zh-CN',
 ): void {
   if (action.tool_name === 'batch_replace_translations') {
-    appendBatchReplaceTranslationDetails(details, action);
+    appendBatchReplaceTranslationDetails(details, action, locale);
     return;
   }
-  appendSingleTranslationDetails(details, action, context);
+  appendSingleTranslationDetails(details, action, context, locale);
 }

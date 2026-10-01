@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import { computed, ref } from 'vue';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
@@ -8,6 +9,8 @@ import Button from 'primevue/button';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import ProgressSpinner from 'primevue/progressspinner';
 import { useTermTranslation } from 'src/composables/translation/useTermTranslation';
+
+const { t } = useI18n();
 
 interface Props {
   modelValue: string;
@@ -88,8 +91,10 @@ const applyTranslationResult = () => {
   showTranslationDialog.value = false;
   toast.add({
     severity: 'success',
-    summary: '翻译已应用',
-    detail: props.applyTranslationToInput ? '翻译结果已应用到输入框' : '翻译完成',
+    summary: t('structureUi.applied'),
+    detail: props.applyTranslationToInput
+      ? t('structureUi.appliedDetail')
+      : t('structureUi.translated'),
     life: 3000,
   });
 };
@@ -112,6 +117,7 @@ const applyTranslationResult = () => {
       <div class="translatable-input-addon-content">
         <Button
           icon="pi pi-language"
+          :aria-label="t('structureUi.translate')"
           :loading="translating"
           :disabled="isTranslateDisabled"
           class="translatable-input-button"
@@ -140,6 +146,7 @@ const applyTranslationResult = () => {
     />
     <Button
       icon="pi pi-language"
+      :aria-label="t('structureUi.translate')"
       :loading="translating"
       :disabled="isTranslateDisabled"
       class="translatable-icon-button translatable-textarea-button"
@@ -149,25 +156,25 @@ const applyTranslationResult = () => {
   <!-- 翻译结果对话框 -->
   <AdaptiveDialog
     v-model:visible="showTranslationDialog"
-    header="翻译完成"
+    :header="t('structureUi.translated')"
     desktop-width="50rem"
-    eyebrow="TRANSLATION"
+    :eyebrow="t('structureUi.translation')"
     dialog-class="translation-dialog"
   >
     <div class="translation-result-container">
-      <div class="translation-result-label">翻译结果：</div>
+      <div class="translation-result-label">{{ t('structureUi.result') }}</div>
       <div class="translation-result-content">{{ translationResult }}</div>
-      <div class="translation-result-question">是否要应用此翻译？</div>
+      <div class="translation-result-question">{{ t('structureUi.applyQuestion') }}</div>
     </div>
     <template #footer>
       <Button
-        label="取消"
+        :label="t('structureUi.cancel')"
         icon="pi pi-times"
         class="p-button-text"
         @click="showTranslationDialog = false"
       />
       <Button
-        label="应用"
+        :label="t('structureUi.apply')"
         icon="pi pi-check"
         class="p-button-primary"
         @click="applyTranslationResult"

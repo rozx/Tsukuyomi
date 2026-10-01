@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
 /**
  * 手机帮助页的「文档抽屉 + TOC 抽屉」（均为底部抽屉）。
  * 从 HelpPageMobile 抽出以降低其模板圈复杂度。自行注入 useHelpPage 上下文。
@@ -30,8 +32,8 @@ const tocItemClass = (item: TocItem) => [
   <!-- 文档抽屉（底部抽屉） -->
   <MobileBottomSheet
     v-model:visible="ctx.showDocumentNavDrawer.value"
-    title="帮助文档"
-    eyebrow="HELP · DOCS"
+    :title="t('helpUi.documents')"
+    :eyebrow="t('appUi.eyebrow.helpDocs')"
     max-height="86dvh"
   >
     <nav class="space-y-1">
@@ -43,17 +45,14 @@ const tocItemClass = (item: TocItem) => [
           <h3
             class="font-ui font-medium text-[11px] uppercase tracking-[0.2em] text-moon/60 group-hover:text-moon-100 transition-colors"
           >
-            {{ category }}
+            {{ ctx.categoryLabel(category as string) }}
           </h3>
           <i
             class="pi text-moon/30 text-[10px] transition-transform duration-200"
             :class="ctx.categoryChevron(category as string)"
           />
         </button>
-        <ul
-          v-show="ctx.isCategoryExpanded(category as string)"
-          class="space-y-0.5 mt-1.5"
-        >
+        <ul v-show="ctx.isCategoryExpanded(category as string)" class="space-y-0.5 mt-1.5">
           <li v-for="doc in docs" :key="doc.id">
             <button
               class="w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 border-l-2"
@@ -72,8 +71,8 @@ const tocItemClass = (item: TocItem) => [
   <MobileBottomSheet
     v-if="hasToc"
     v-model:visible="ctx.showTocDrawer.value"
-    title="目录"
-    eyebrow="TABLE OF CONTENTS"
+    :title="t('helpUi.toc')"
+    :eyebrow="t('appUi.eyebrow.toc')"
     max-height="82dvh"
   >
     <nav class="space-y-1">

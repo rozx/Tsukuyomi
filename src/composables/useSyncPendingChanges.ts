@@ -4,6 +4,8 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 
 /**
  * 一条待同步变更（UI 展示用，非权威）。
@@ -32,6 +34,8 @@ export function useSyncPendingChanges() {
   const booksStore = useBooksStore();
   const aiModelsStore = useAIModelsStore();
   const coverHistoryStore = useCoverHistoryStore();
+  const t = (key: string, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, `syncUi.pending.${key}` as MessageKey, values);
 
   const lastSyncTime = computed(() => settingsStore.gistSync.lastSyncTime ?? 0);
 
@@ -50,7 +54,7 @@ export function useSyncPendingChanges() {
     const normalizedSummary = summary?.trim();
     if (normalizedSummary) return normalizedSummary;
     const normalizedContent = content?.trim() ?? '';
-    return normalizedContent ? normalizedContent.slice(0, 24) : '记忆';
+    return normalizedContent ? normalizedContent.slice(0, 24) : t('memory');
   };
 
   const collectEditedBooks = (baseline: number): PendingChangeItem[] => {
@@ -62,7 +66,7 @@ export function useSyncPendingChanges() {
       items.push({
         kind: 'book',
         action: createdMs > baseline ? 'added' : 'edited',
-        label: book.title || '未命名书籍',
+        label: book.title || t('untitledBook'),
         changedAt: ms,
       });
     }
@@ -77,7 +81,7 @@ export function useSyncPendingChanges() {
       items.push({
         kind: 'ai-model',
         action: 'edited',
-        label: model.name || model.model || 'AI 模型',
+        label: model.name || model.model || t('aiModel'),
         changedAt: ms,
       });
     }
@@ -92,7 +96,7 @@ export function useSyncPendingChanges() {
       items.push({
         kind: 'cover',
         action: 'added',
-        label: cover.url?.split('/').pop() || '封面',
+        label: cover.url?.split('/').pop() || t('cover'),
         changedAt: ms,
       });
     }
@@ -102,7 +106,7 @@ export function useSyncPendingChanges() {
   const collectSettingsChange = (baseline: number): PendingChangeItem[] => {
     const ms = toMs(settingsStore.settings.lastEdited);
     if (ms <= baseline) return [];
-    return [{ kind: 'settings', action: 'edited', label: '应用设置', changedAt: ms }];
+    return [{ kind: 'settings', action: 'edited', label: t('appSettings'), changedAt: ms }];
   };
 
   const refreshMemoryPendingItems = async (): Promise<void> => {
@@ -171,10 +175,18 @@ export function useSyncPendingChanges() {
         }
       }
     };
-    pushDeletions(gistSync.deletedNovelIds, 'book', (r) => `书籍 ${r.id ?? ''}`.trim());
-    pushDeletions(gistSync.deletedModelIds, 'ai-model', (r) => `模型 ${r.id ?? ''}`.trim());
-    pushDeletions(gistSync.deletedCoverIds, 'cover', (r) => `封面 ${r.id ?? ''}`.trim());
-    pushDeletions(gistSync.deletedMemoryIds, 'memory', (r) => `记忆 ${r.id ?? ''}`.trim());
+    pushDeletions(gistSync.deletedNovelIds, 'book', (r) =>
+      t('deletedBook', { id: r.id ?? '' }).trim(),
+    );
+    pushDeletions(gistSync.deletedModelIds, 'ai-model', (r) =>
+      t('deletedModel', { id: r.id ?? '' }).trim(),
+    );
+    pushDeletions(gistSync.deletedCoverIds, 'cover', (r) =>
+      t('deletedCover', { id: r.id ?? '' }).trim(),
+    );
+    pushDeletions(gistSync.deletedMemoryIds, 'memory', (r) =>
+      t('deletedMemory', { id: r.id ?? '' }).trim(),
+    );
     return items;
   };
 
@@ -245,26 +257,29 @@ export function useSyncComputations() {
  */
 export function useSyncStatusDisplay(colors: SyncStatusColors) {
   const core = useSyncComputations();
+  const settingsStore = useSettingsStore();
+  const t = (key: string, values?: Record<string, string | number>) =>
+    translateText(settingsStore.uiLocale, `syncUi.pending.${key}` as MessageKey, values);
   const { gistSync, isSyncing, pendingCount, hasPendingChanges } = core;
 
   const syncStatus = computed<SyncStatusDescriptor>(() => {
     if (!gistSync.value.enabled) {
-      return { icon: 'pi pi-cloud', color: colors.disabled, label: '未启用' };
+      return { icon: 'pi pi-cloud', color: colors.disabled, label: t('disabled') };
     }
     if (isSyncing.value) {
-      return { icon: 'pi pi-spin pi-spinner', color: colors.syncing, label: '同步中' };
+      return { icon: 'pi pi-spin pi-spinner', color: colors.syncing, label: t('syncing') };
     }
     if (hasPendingChanges.value) {
       return {
         icon: 'pi pi-cloud-upload',
         color: colors.pending,
-        label: `${pendingCount.value} 项变更`,
+        label: t('changes', { count: pendingCount.value }),
       };
     }
     if (gistSync.value.lastSyncTime && gistSync.value.lastSyncTime > 0) {
-      return { icon: 'pi pi-cloud-check', color: colors.synced, label: '已同步' };
+      return { icon: 'pi pi-cloud-check', color: colors.synced, label: t('synced') };
     }
-    return { icon: 'pi pi-cloud', color: colors.unsynced, label: '未同步' };
+    return { icon: 'pi pi-cloud', color: colors.unsynced, label: t('unsynced') };
   });
 
   return { ...core, syncStatus };

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { computed } from 'vue';
 import ProgressSpinner from 'primevue/progressspinner';
 import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
@@ -16,58 +19,58 @@ const aiProcessing = useAIProcessingStore();
 const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
 
 const headerTitle = computed(() =>
-  hasActiveJob.value ? '工作台正在运行' : '欢迎回来',
+  hasActiveJob.value ? i18nT('libraryUi.running') : i18nT('libraryUi.welcome'),
 );
 const headerDescription = computed(() => {
   const greeting = ctx.greeting.value;
   const book = ctx.continueReadingBook.value;
   if (hasActiveJob.value && book) {
-    return `${greeting}。AI 正在处理《${book.title}》的翻译，这里是你最近的工作上下文。`;
+    return i18nT('libraryUi.activeDescription', { greeting, title: book.title });
   }
   if (book) {
-    return `${greeting}。上次停在《${book.title}》，从下方卡片继续，或进入书库挑选新的章节。`;
+    return i18nT('libraryUi.recentDescription', { greeting, title: book.title });
   }
-  return `${greeting}。先添加一本书或从日站导入，然后我们就可以开始今晚的翻译。`;
+  return i18nT('libraryUi.emptyDescription', { greeting });
 });
 
 const workbenchMetrics = computed(() => [
-  { label: '书籍', value: ctx.totalBooks.value },
-  { label: '章节', value: ctx.totalChapters.value },
-  { label: '字数', value: ctx.formatWordCount(ctx.totalWords.value) },
-  { label: '术语', value: ctx.totalTerms.value },
-  { label: '收藏', value: ctx.starredBooks.value },
+  { label: i18nT('libraryUi.books'), value: ctx.totalBooks.value },
+  { label: i18nT('libraryUi.chapters'), value: ctx.totalChapters.value },
+  { label: i18nT('libraryUi.characters'), value: ctx.formatWordCount(ctx.totalWords.value) },
+  { label: i18nT('libraryUi.terms'), value: ctx.totalTerms.value },
+  { label: i18nT('libraryUi.favorites'), value: ctx.starredBooks.value },
 ]);
-const quickActions = [
+const quickActions = computed(() => [
   {
     key: 'add',
     icon: 'pi pi-plus',
-    label: '添加书籍',
-    hint: '手动新建一本',
+    label: i18nT('libraryUi.addBook'),
+    hint: i18nT('libraryUi.manualHint'),
     handler: () => ctx.addBook(),
     primary: true,
   },
   {
     key: 'import',
     icon: 'pi pi-globe',
-    label: '从网站导入',
+    label: i18nT('libraryUi.importWeb'),
     hint: 'Syosetu / Kakuyomu',
     handler: () => ctx.importBookFromWeb(),
   },
   {
     key: 'library',
     icon: 'pi pi-book',
-    label: '打开书库',
-    hint: '浏览全部书籍',
+    label: i18nT('libraryUi.openLibrary'),
+    hint: i18nT('libraryUi.browseBooks'),
     handler: () => ctx.navigateToBooks(),
   },
   {
     key: 'ai',
     icon: 'pi pi-cog',
-    label: 'AI 设置',
-    hint: '管理模型与密钥',
+    label: i18nT('libraryUi.aiSettings'),
+    hint: i18nT('libraryUi.manageKeys'),
     handler: () => ctx.navigateToAI(),
   },
-];
+]);
 </script>
 
 <template>
@@ -88,8 +91,8 @@ const quickActions = [
     <!-- 快速操作 -->
     <section class="quick-actions">
       <header class="section-head">
-        <span class="section-eyebrow">QUICK ACTIONS</span>
-        <h2 class="section-title">快速操作</h2>
+        <span class="section-eyebrow">{{ i18nT('libraryUi.quickActions') }}</span>
+        <h2 class="section-title">{{ i18nT('libraryUi.quickActions') }}</h2>
       </header>
       <div class="quick-actions-grid">
         <button
@@ -113,11 +116,11 @@ const quickActions = [
     <section v-if="ctx.hasRecent.value" class="recent-books">
       <header class="section-head section-head--with-action">
         <div class="section-head-copy">
-          <span class="section-eyebrow">RECENT</span>
-          <h2 class="section-title">最近编辑</h2>
+          <span class="section-eyebrow">{{ i18nT('libraryUi.recent') }}</span>
+          <h2 class="section-title">{{ i18nT('libraryUi.recentlyEdited') }}</h2>
         </div>
         <button type="button" class="section-head-action" @click="ctx.navigateToBooks">
-          <span>查看全部</span>
+          <span>{{ i18nT('libraryUi.viewAll') }}</span>
           <i class="pi pi-arrow-right" aria-hidden="true" />
         </button>
       </header>
@@ -130,9 +133,9 @@ const quickActions = [
         style="width: 42px; height: 42px"
         stroke-width="3"
         animation-duration=".8s"
-        aria-label="加载中"
+        :aria-label="i18nT('libraryUi.loading')"
       />
-      <p class="state-surface-text">正在加载数据...</p>
+      <p class="state-surface-text">{{ i18nT('libraryUi.loadingData') }}</p>
     </section>
 
     <section v-else-if="ctx.isEmptyState.value" class="state-surface">
@@ -140,10 +143,10 @@ const quickActions = [
         <img :src="ctx.logoPath" :alt="APP_NAME.full" class="state-empty-logo" />
       </div>
       <div class="state-empty-copy">
-        <span class="section-eyebrow">GET STARTED</span>
-        <h2 class="state-empty-title">开始你的第一本书</h2>
+        <span class="section-eyebrow">{{ i18nT('libraryUi.getStarted') }}</span>
+        <h2 class="state-empty-title">{{ i18nT('libraryUi.firstBook') }}</h2>
         <p class="state-empty-desc">
-          添加一本自有文本，或从 Syosetu / Kakuyomu 抓取一本新作品进入工作台。
+          {{ i18nT('libraryUi.firstBookDescription') }}
         </p>
       </div>
       <div class="state-empty-actions">
@@ -151,14 +154,14 @@ const quickActions = [
           <span class="quick-action-icon">
             <i class="pi pi-plus" aria-hidden="true" />
           </span>
-          <span class="quick-action-label">添加书籍</span>
-          <span class="quick-action-hint">手动新建一本</span>
+          <span class="quick-action-label">{{ i18nT('libraryUi.addBook') }}</span>
+          <span class="quick-action-hint">{{ i18nT('libraryUi.manualHint') }}</span>
         </button>
         <button type="button" class="quick-action" @click="ctx.importBookFromWeb">
           <span class="quick-action-icon">
             <i class="pi pi-globe" aria-hidden="true" />
           </span>
-          <span class="quick-action-label">从网站导入</span>
+          <span class="quick-action-label">{{ i18nT('libraryUi.importWeb') }}</span>
           <span class="quick-action-hint">Syosetu / Kakuyomu</span>
         </button>
       </div>

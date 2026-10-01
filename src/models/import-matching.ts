@@ -1,3 +1,4 @@
+import type { ImportFailure } from './import-feedback';
 import type { Paragraph } from './novel';
 import type { ImportParagraphChange } from './import';
 
@@ -28,6 +29,6 @@ export interface ImportReplacementRange {
 export interface ImportParagraphMatchResult {
   paragraphs: { key: string; chapterId: string; paragraph: Paragraph }[];
   changes: ImportParagraphChange[];
-  conflicts: { code: string; message: string; newKeys: string[] }[];
+  conflicts: (ImportFailure & { newKeys: string[] })[];
   replacements: ImportReplacementRange[];
 }

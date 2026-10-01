@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import { ref, computed } from 'vue';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
@@ -14,10 +17,14 @@ const hasStarred = computed(() => starredCount.value > 0);
 const isListLoading = computed(() => ctx.booksStore.isLoading || !ctx.booksStore.isLoaded);
 const isEmptyList = computed(() => ctx.filteredBooks.value.length === 0);
 const hasNoSearch = computed(() => !ctx.searchQuery.value);
-const emptyText = computed(() => (ctx.searchQuery.value ? '未找到匹配的书籍' : '暂无书籍'));
+const emptyText = computed(() =>
+  ctx.searchQuery.value ? i18nT('libraryUi.noMatches') : i18nT('libraryUi.noBooks'),
+);
 const libraryMetaText = computed(() => {
-  const base = `共 ${ctx.booksStore.books.length} 本`;
-  return hasStarred.value ? `${base} · ${starredCount.value} 本收藏` : base;
+  const base = i18nT('libraryUi.bookCount', { count: ctx.booksStore.books.length });
+  return hasStarred.value
+    ? `${base} · ${i18nT('libraryUi.starredCount', { count: starredCount.value })}`
+    : base;
 });
 
 // 添加书籍 picker（底部抽屉）：展开手动 / 从网站 / 从 JSON 三个入口
@@ -43,11 +50,11 @@ const pickImportFromJson = () => {
 </script>
 
 <template>
-  <div class="mobile-library w-full h-full flex flex-col">
+  <div class="mobile-library w-full flex flex-col flex-nowrap">
     <!-- 大标题区 -->
     <header class="ml-largetitle">
-      <div class="ml-eyebrow">LIBRARY</div>
-      <h1 class="ml-title">书库</h1>
+      <div class="ml-eyebrow">{{ i18nT('libraryUi.library') }}</div>
+      <h1 class="ml-title">{{ i18nT('libraryUi.library') }}</h1>
       <div class="ml-meta">
         {{ libraryMetaText }}
       </div>
@@ -57,17 +64,21 @@ const pickImportFromJson = () => {
     <div class="ml-toolbar">
       <div class="ml-input-wrap">
         <i class="pi pi-search" aria-hidden="true" />
-        <input v-model="ctx.searchQuery.value" class="ml-input" placeholder="搜索书名、作者…" />
+        <input
+          v-model="ctx.searchQuery.value"
+          class="ml-input"
+          :placeholder="i18nT('libraryUi.searchShort')"
+        />
         <button
           v-if="ctx.searchQuery.value"
           class="ml-input-clear"
-          aria-label="清除搜索"
+          :aria-label="i18nT('libraryUi.clearSearch')"
           @click="ctx.searchQuery.value = ''"
         >
           <i class="pi pi-times" />
         </button>
       </div>
-      <button class="ml-icon-btn" title="添加书籍" @click="openAddPicker">
+      <button class="ml-icon-btn" :title="i18nT('libraryUi.addBook')" @click="openAddPicker">
         <i class="pi pi-plus" aria-hidden="true" />
       </button>
     </div>
@@ -78,9 +89,9 @@ const pickImportFromJson = () => {
         style="width: 36px; height: 36px"
         stroke-width="4"
         animation-duration=".8s"
-        aria-label="加载中"
+        :aria-label="i18nT('libraryUi.loading')"
       />
-      <span>正在加载书籍列表…</span>
+      <span>{{ i18nT('libraryUi.loadingBooks') }}</span>
     </div>
 
     <!-- 空状态 -->
@@ -91,7 +102,7 @@ const pickImportFromJson = () => {
       </span>
       <Button
         v-if="hasNoSearch"
-        label="添加第一本书籍"
+        :label="i18nT('libraryUi.addFirst')"
         icon="pi pi-plus"
         class="p-button-primary"
         @click="openAddPicker"
@@ -118,9 +129,15 @@ const pickImportFromJson = () => {
             <span v-if="ctx.isLoadingCharCount(book)">
               <Skeleton width="36px" height="10px" />
             </span>
-            <span v-else>{{ ctx.formatWordCount(ctx.getTotalWords(book)) }} 字</span>
+            <span v-else>{{
+              i18nT('libraryUi.characterCount', {
+                count: ctx.formatWordCount(ctx.getTotalWords(book)),
+              })
+            }}</span>
             <span class="ml-dot">·</span>
-            <span>{{ ctx.getTotalChapters(book) }} 章</span>
+            <span>{{
+              i18nT('libraryUi.chapterCount', { count: ctx.getTotalChapters(book) })
+            }}</span>
           </div>
         </div>
       </div>
@@ -129,7 +146,11 @@ const pickImportFromJson = () => {
     <!-- 隐藏的文件输入（JSON 导入）—— 桌面变体在自己模板里挂一份，手机这里再挂
          一份，否则 ctx.fileInputRef 为空，importBookFromJson 触发不到点击。 -->
     <input
-      :ref="(el) => { ctx.fileInputRef.value = el as HTMLInputElement | null; }"
+      :ref="
+        (el) => {
+          ctx.fileInputRef.value = el as HTMLInputElement | null;
+        }
+      "
       type="file"
       accept=".json,.txt"
       class="hidden"
@@ -139,23 +160,23 @@ const pickImportFromJson = () => {
     <!-- 添加书籍 picker —— 使用共享 MobileBottomSheet 外壳 -->
     <MobileBottomSheet
       v-model:visible="showAddPicker"
-      title="添加书籍"
-      eyebrow="LIBRARY"
+      :title="i18nT('libraryUi.addBook')"
+      :eyebrow="i18nT('libraryUi.library')"
     >
       <button type="button" class="ml-add-picker-option" @click="pickManualAdd">
         <i class="pi pi-plus ml-add-picker-option-icon" aria-hidden="true" />
         <div class="ml-add-picker-option-main">
-          <div class="ml-add-picker-option-name">手动添加</div>
-          <div class="ml-add-picker-option-meta">创建空白书籍，手动录入章节</div>
+          <div class="ml-add-picker-option-name">{{ i18nT('libraryUi.manualAdd') }}</div>
+          <div class="ml-add-picker-option-meta">{{ i18nT('libraryUi.manualDescription') }}</div>
         </div>
         <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
       </button>
       <button type="button" class="ml-add-picker-option" @click="pickImportFromWeb">
         <i class="pi pi-globe ml-add-picker-option-icon" aria-hidden="true" />
         <div class="ml-add-picker-option-main">
-          <div class="ml-add-picker-option-name">从网站导入</div>
+          <div class="ml-add-picker-option-name">{{ i18nT('libraryUi.importWeb') }}</div>
           <div class="ml-add-picker-option-meta">
-            syosetu / kakuyomu 等站点直接抓取
+            {{ i18nT('libraryUi.websiteHint') }}
           </div>
         </div>
         <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
@@ -163,8 +184,10 @@ const pickImportFromJson = () => {
       <button type="button" class="ml-add-picker-option" @click="pickImportFromJson">
         <i class="pi pi-file-import ml-add-picker-option-icon" aria-hidden="true" />
         <div class="ml-add-picker-option-main">
-          <div class="ml-add-picker-option-name">从 JSON 导入</div>
-          <div class="ml-add-picker-option-meta">从导出文件批量恢复书籍</div>
+          <div class="ml-add-picker-option-name">{{ i18nT('libraryUi.importJson') }}</div>
+          <div class="ml-add-picker-option-meta">
+            {{ i18nT('libraryUi.importJsonDescription') }}
+          </div>
         </div>
         <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
       </button>
@@ -174,7 +197,11 @@ const pickImportFromJson = () => {
 
 <style scoped>
 .mobile-library {
-  font-family: 'Noto Sans SC', 'PingFang SC', -apple-system, sans-serif;
+  font-family:
+    'Noto Sans SC',
+    'PingFang SC',
+    -apple-system,
+    sans-serif;
 }
 
 .ml-largetitle {
@@ -304,8 +331,7 @@ const pickImportFromJson = () => {
 .ml-scroll {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
 }
 
 .ml-scroll::-webkit-scrollbar {

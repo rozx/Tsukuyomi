@@ -1,0 +1,26 @@
+export default {
+  aiImportPrompt: {
+    novelQuestion: '偵測到多個作品或小說範圍改變，請選擇本次匯入的唯一小說。',
+    contextLimit: '上下文達到上限，已儲存進度，請繼續整理或縮小目前範圍。',
+    toolLimit: '本輪工具呼叫達到上限，已儲存剩餘呼叫，可繼續執行。',
+    ownerStale: '匯入執行已被取代',
+    continue: '請根據當前來源與草稿繼續整理，並生成可檢查的匯入方案。',
+    taskMissing: '匯入任務不存在',
+    lockUnavailable: '當前環境不能協調匯入運行',
+    modelUnavailable: '請先選擇可用的助手模型',
+    busy: '已有匯入任務正在運行，請先暫停該任務',
+    questionPending: '請先完成當前任務的必要選擇',
+    ownerBusy: '當前任務仍有未結束的執行',
+    recovered: '上次執行在頁面關閉或刷新時中斷，已保存的進度可以繼續。',
+    runStale: '執行已停止',
+    credentialsHidden: '[已隱藏憑據]',
+    compactNoConversation: '沒有可壓縮的對話，或還有未完成的工具調用',
+    compactNoSafePart: '當前歷史沒有可以安全壓縮的部分',
+    compactStale: '對話在壓縮期間已更新，請重試',
+    recipeMissingReason: '這本書還沒有更新配方',
+    recipeReplayFailed: '配方回放失敗',
+    recipeName: '修復更新配方：{title}',
+    recipePrefill:
+      '這本書的更新配方需要修復：{reason}。請檢查目錄來源和章節頁，建立一份通過自測的更新配方；站點沒有新章節時，可以只提交配方變化。',
+  },
+};

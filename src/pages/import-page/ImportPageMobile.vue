@@ -4,6 +4,8 @@
  * 月詠对话是常驻分区（打开任务默认停在对话）；底部栏的「月詠」在导入路由下切到该分区。
  */
 import { computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { MessageKey } from 'src/i18n/types';
 import ImportTaskList from 'src/components/import/ImportTaskList.vue';
 import ImportRunBar from 'src/components/import/ImportRunBar.vue';
 import ImportSourcePanel from 'src/components/import/ImportSourcePanel.vue';
@@ -18,13 +20,14 @@ import { useUiStore } from 'src/stores/ui';
 const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
 const ui = useUiStore();
+const { t } = useI18n();
 
-const sections: { id: ImportSection; label: string }[] = [
-  { id: 'tasks', label: '任务' },
-  { id: 'chat', label: '对话' },
-  { id: 'sources', label: '来源' },
-  { id: 'draft', label: '草稿' },
-  { id: 'plan', label: '方案' },
+const sections: { id: ImportSection; label: MessageKey }[] = [
+  { id: 'tasks', label: 'importUi.page.tasks' },
+  { id: 'chat', label: 'importUi.page.chat' },
+  { id: 'sources', label: 'importUi.page.sources' },
+  { id: 'draft', label: 'importUi.page.draft' },
+  { id: 'plan', label: 'importUi.page.planShort' },
 ];
 
 // 没有选中任务时只显示任务分区
@@ -47,7 +50,7 @@ watch(
 
 <template>
   <div class="ipm" :class="{ 'ipm--chat': current === 'chat' }">
-    <nav class="ipm-seg" aria-label="导入工作台分区">
+    <nav class="ipm-seg" :aria-label="t('importUi.page.sections')">
       <button
         v-for="item in sections"
         :key="item.id"
@@ -58,7 +61,7 @@ watch(
         :aria-pressed="current === item.id"
         @click="select(item.id)"
       >
-        {{ item.label }}
+        {{ t(item.label) }}
       </button>
     </nav>
 
@@ -102,7 +105,12 @@ watch(
 }
 
 .ipm-seg-btn {
+  min-width: 0;
   min-height: 36px;
+  padding: 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border-radius: 10px;
   font-size: 0.82rem;
   color: rgba(226, 232, 240, 0.65);

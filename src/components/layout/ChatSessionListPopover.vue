@@ -6,8 +6,12 @@
  * sessionListPopoverRef 的既有调用（parent 拿 template ref 后直接调方法）。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { AppLocale } from 'src/models/locale';
+import { sessionDisplayTitle } from 'src/constants/chat';
 import Popover from 'primevue/popover';
 import MobileBottomSheet from './MobileBottomSheet.vue';
+import ChatSessionRows from './ChatSessionRows.vue';
 import { usePopoverBottomSheet } from 'src/composables/layout/usePopoverBottomSheet';
 import type { ChatSession } from 'src/stores/chat-sessions';
 
@@ -27,6 +31,11 @@ const emit = defineEmits<{
 
 const { isPhone, popoverRef, mobileVisible, onMobileVisibleChange, toggle, hide } =
   usePopoverBottomSheet(() => emit('hide'));
+const { t, locale } = useI18n();
+
+// 默认会话标题是存储哨兵，按当前界面语言显示；用户消息生成的标题原样显示
+const displayTitle = (title: string): string =>
+  sessionDisplayTitle(title, locale.value as AppLocale);
 
 const formatSessionTime = (timestamp: number): string => {
   const now = Date.now();
@@ -35,18 +44,29 @@ const formatSessionTime = (timestamp: number): string => {
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
 
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  if (hours < 24) return `${hours}小时前`;
-  if (days < 7) return `${days}天前`;
+  if (minutes < 1) return t('activityUi.chat.justNow');
+  if (minutes < 60) return t('activityUi.chat.minutesAgo', { count: minutes });
+  if (hours < 24) return t('activityUi.chat.hoursAgo', { count: hours });
+  if (days < 7) return t('activityUi.chat.daysAgo', { count: days });
 
-  return new Date(timestamp).toLocaleDateString('zh-CN', {
+  return new Date(timestamp).toLocaleDateString(locale.value, {
     month: 'short',
     day: 'numeric',
   });
 };
 
 const sessionCount = computed(() => props.sessions.length);
+
+// 显示用行数据：标题 / 时间 / 消息数等固定标签随界面语言重绘，桌面与手机共用。
+// 用函数而非 computed：相对时间依赖 Date.now()，每次渲染（如重新打开面板）都要重新计算
+const sessionRows = () =>
+  props.sessions.map((session) => ({
+    id: session.id,
+    title: displayTitle(session.title),
+    time: formatSessionTime(session.updatedAt),
+    count: session.messages.length,
+    countLabel: t('activityUi.chat.messageCount', { count: session.messages.length }),
+  }));
 
 const onSelect = (sessionId: string) => {
   emit('select', sessionId);
@@ -71,7 +91,7 @@ defineExpose({ toggle, hide });
   >
     <div class="session-list-popover-content">
       <div class="popover-header">
-        <span class="popover-title">最近会话</span>
+        <span class="popover-title">{{ t('activityUi.chat.recentSessions') }}</span>
         <span
           v-if="sessionCount > 0"
           class="px-1.5 py-0.5 text-xs font-medium rounded bg-primary-500/30 text-primary-200"
@@ -80,29 +100,14 @@ defineExpose({ toggle, hide });
         </span>
       </div>
       <div v-if="sessionCount === 0" class="px-4 py-3 text-xs text-moon-60 text-center">
-        暂无其他会话
+        {{ t('activityUi.chat.noOtherSessions') }}
       </div>
-      <div v-else class="popover-sessions-list">
-        <button
-          v-for="session in props.sessions"
-          :key="session.id"
-          class="session-item"
-          :class="{ 'session-item-active': session.id === props.currentSessionId }"
-          @click="onSelect(session.id)"
-        >
-          <div class="session-item-header">
-            <span class="session-item-title" :title="session.title">
-              {{ session.title }}
-            </span>
-            <span class="session-item-time">
-              {{ formatSessionTime(session.updatedAt) }}
-            </span>
-          </div>
-          <div v-if="session.messages.length > 0" class="session-item-meta">
-            <span class="text-xs text-moon-60">{{ session.messages.length }} 条消息</span>
-          </div>
-        </button>
-      </div>
+      <ChatSessionRows
+        v-else
+        :rows="sessionRows()"
+        :current-session-id="props.currentSessionId"
+        @select="onSelect"
+      />
     </div>
   </Popover>
 
@@ -110,35 +115,20 @@ defineExpose({ toggle, hide });
   <MobileBottomSheet
     v-else
     :visible="mobileVisible"
-    title="最近会话"
+    :title="t('activityUi.chat.recentSessions')"
     eyebrow="CHAT · SESSIONS"
     max-height="82dvh"
     @update:visible="onMobileVisibleChange"
   >
     <div v-if="sessionCount === 0" class="px-4 py-8 text-sm text-moon-60 text-center">
-      暂无其他会话
+      {{ t('activityUi.chat.noOtherSessions') }}
     </div>
-    <div v-else class="popover-sessions-list">
-      <button
-        v-for="session in props.sessions"
-        :key="session.id"
-        class="session-item"
-        :class="{ 'session-item-active': session.id === props.currentSessionId }"
-        @click="onSelect(session.id)"
-      >
-        <div class="session-item-header">
-          <span class="session-item-title" :title="session.title">
-            {{ session.title }}
-          </span>
-          <span class="session-item-time">
-            {{ formatSessionTime(session.updatedAt) }}
-          </span>
-        </div>
-        <div v-if="session.messages.length > 0" class="session-item-meta">
-          <span class="text-xs text-moon-60">{{ session.messages.length }} 条消息</span>
-        </div>
-      </button>
-    </div>
+    <ChatSessionRows
+      v-else
+      :rows="sessionRows()"
+      :current-session-id="props.currentSessionId"
+      @select="onSelect"
+    />
   </MobileBottomSheet>
 </template>
 
@@ -168,69 +158,5 @@ defineExpose({ toggle, hide });
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--moon-opacity-100);
-}
-
-.popover-sessions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.session-item {
-  width: 100%;
-  text-align: left;
-  padding: 0.625rem;
-  border-radius: 0.375rem;
-  background: transparent;
-  border: 1px solid transparent;
-  transition: all 0.2s;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.session-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.session-item-active {
-  background: rgba(var(--primary-rgb), 0.2);
-  border-color: rgba(var(--primary-rgb), 0.4);
-}
-
-.session-item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.session-item-title {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--moon-opacity-90);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-item-active .session-item-title {
-  color: var(--moon-opacity-100);
-  font-weight: 600;
-}
-
-.session-item-time {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-50);
-  flex-shrink: 0;
-}
-
-.session-item-meta {
-  font-size: 0.75rem;
-  color: var(--moon-opacity-60);
 }
 </style>

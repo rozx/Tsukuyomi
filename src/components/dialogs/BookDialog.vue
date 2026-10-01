@@ -1,7 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+const { t: i18nT, locale } = useI18n();
+
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { cloneDeep, isEqual } from 'lodash';
+import { cloneDeep } from 'lodash';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
@@ -28,6 +32,7 @@ import { useChapterCharCount } from 'src/composables/useChapterCharCount';
 import { useFormDialogCloseGuard } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import { useUiStore } from 'src/stores/ui';
 import { copyTextWithToast } from 'src/utils/clipboard';
+import { pickChangedFormFields } from 'src/utils/novel-form';
 
 const props = withDefaults(
   defineProps<{
@@ -166,7 +171,7 @@ const validateForm = (): boolean => {
   formErrors.value = {};
 
   if (!formData.value.title?.trim()) {
-    formErrors.value.title = '书籍标题不能为空';
+    formErrors.value.title = 'titleRequired';
   }
 
   return Object.keys(formErrors.value).length === 0;
@@ -177,7 +182,12 @@ const handleSave = () => {
   if (!validateForm()) {
     return;
   }
-  emit('save', formData.value);
+  // 编辑模式只提交相对打开时快照改动的字段，避免旧值覆盖其他标签页或后台任务的改动
+  const payload =
+    props.mode === 'edit'
+      ? pickChangedFormFields(formData.value, initialFormSnapshot.value)
+      : formData.value;
+  emit('save', payload);
 };
 
 const captureSnapshot = () => {
@@ -285,15 +295,20 @@ const handleExportJson = async () => {
 
     toast.add({
       severity: 'success',
-      summary: '导出成功',
-      detail: `书籍数据已成功导出为 JSON 文件${memories.length > 0 ? `（含 ${memories.length} 条记忆）` : ''}`,
+      summary: i18nT('bookDialogUi.exportSuccess'),
+      detail: i18nT('bookDialogUi.exported', {
+        memories:
+          memories.length > 0
+            ? i18nT('bookDialogUi.exportMemories', { count: memories.length })
+            : '',
+      }),
       life: 3000,
     });
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '导出失败',
-      detail: error instanceof Error ? error.message : '导出 JSON 时发生未知错误',
+      summary: i18nT('bookDialogUi.exportFailure'),
+      detail: error instanceof Error ? error.message : i18nT('bookDialogUi.exportUnknown'),
       life: 3000,
     });
   }
@@ -305,10 +320,14 @@ const handleSpecialInstructionsTabChange = (value: string | number) => {
 };
 
 // 导出按钮文案（手机端简短显示）
-const exportLabel = computed(() => (isPhone.value ? '导出' : '导出 JSON'));
+const exportLabel = computed(() =>
+  isPhone.value ? i18nT('bookDialogUi.export') : i18nT('bookDialogUi.exportJson'),
+);
 
 // 对话框标题与可关闭状态（集中处理模板中的条件，降低圈复杂度）
-const dialogHeader = computed(() => (props.mode === 'add' ? '添加书籍' : '编辑书籍'));
+const dialogHeader = computed(() =>
+  props.mode === 'add' ? i18nT('libraryUi.addBook') : i18nT('bookDialogUi.editBook'),
+);
 const dialogClosable = computed(() => !props.loading && !hasChildDialogOpen.value);
 
 // 表单字段的回退值（将模板里的 `|| []` / `|| ''` 收敛到 computed）
@@ -342,8 +361,9 @@ const clearConfirmDisabled = computed(() => {
 // 复制封面 URL
 const handleCopyUrl = async () => {
   await copyTextWithToast(formData.value.cover?.url, toast, {
-    successDetail: '封面 URL 已复制到剪贴板',
-    errorDetail: '无法复制 URL 到剪贴板',
+    locale: resolveAppLocale(locale.value),
+    successDetail: i18nT('bookDialogUi.copyCoverSuccess'),
+    errorDetail: i18nT('bookDialogUi.copyCoverFailure'),
   });
 };
 
@@ -352,8 +372,8 @@ const handleClearCover = () => {
   delete formData.value.cover;
   toast.add({
     severity: 'success',
-    summary: '已清除',
-    detail: '封面已清除',
+    summary: i18nT('bookDialogUi.cleared'),
+    detail: i18nT('bookDialogUi.coverCleared'),
     life: 2000,
   });
 };
@@ -374,15 +394,15 @@ const confirmClearVolumes = () => {
     clearConfirmInput.value = '';
     toast.add({
       severity: 'success',
-      summary: '已清除',
-      detail: '所有卷和章节已被清除',
+      summary: i18nT('bookDialogUi.cleared'),
+      detail: i18nT('bookDialogUi.structureCleared'),
       life: 3000,
     });
   } else {
     toast.add({
       severity: 'error',
-      summary: '书名不匹配',
-      detail: '请输入正确的书名以确认清除操作',
+      summary: i18nT('bookDialogUi.bookMismatch'),
+      detail: i18nT('bookDialogUi.clearMismatch'),
       life: 3000,
     });
   }
@@ -401,15 +421,15 @@ const handleCopyBookTitle = async () => {
     await navigator.clipboard.writeText(bookTitle);
     toast.add({
       severity: 'success',
-      summary: '已复制',
-      detail: '书名已复制到剪贴板',
+      summary: i18nT('libraryUi.copied'),
+      detail: i18nT('bookDialogUi.copyNameSuccess'),
       life: 2000,
     });
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '复制失败',
-      detail: '无法复制书名到剪贴板',
+      summary: i18nT('bookDialogUi.copyFailure'),
+      detail: i18nT('bookDialogUi.copyNameFailure'),
       life: 3000,
     });
   }
@@ -421,8 +441,8 @@ const handleCopyTags = async () => {
   if (tags.length === 0) {
     toast.add({
       severity: 'warn',
-      summary: '无标签',
-      detail: '当前没有标签可复制',
+      summary: i18nT('bookDialogUi.noTags'),
+      detail: i18nT('bookDialogUi.noTagsHint'),
       life: 2000,
     });
     return;
@@ -433,15 +453,15 @@ const handleCopyTags = async () => {
     await navigator.clipboard.writeText(tagsText);
     toast.add({
       severity: 'success',
-      summary: '已复制',
-      detail: '所有标签已复制到剪贴板',
+      summary: i18nT('libraryUi.copied'),
+      detail: i18nT('bookDialogUi.copyTagsSuccess'),
       life: 2000,
     });
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '复制失败',
-      detail: '无法复制标签到剪贴板',
+      summary: i18nT('bookDialogUi.copyFailure'),
+      detail: i18nT('bookDialogUi.copyTagsFailure'),
       life: 3000,
     });
   }
@@ -492,10 +512,11 @@ watch(
       // 重置到默认标签页
       specialInstructionsActiveTab.value = 'translation';
       formErrors.value = {};
-      // 等待 DOM 更新后加载字符数
+      // 填充表单后立即捕获快照：编辑保存只提交与快照不同的字段，晚于用户输入捕获会吞掉改动
+      captureSnapshot();
+      // 等待 DOM 更新后加载字符数（不改写 formData）
       await nextTick();
       await loadAllVisibleChapterCharCounts();
-      captureSnapshot();
     } else {
       // 关闭时重置
       resetForm();
@@ -516,7 +537,7 @@ watch(
     :header="dialogHeader"
     desktop-width="900px"
     desktop-height="90vh"
-    eyebrow="BOOK"
+    :eyebrow="i18nT('structureUi.book')"
     :closable="dialogClosable"
     :dismissable-mask="!hasChildDialogOpen"
     :close-on-escape="!hasChildDialogOpen"
@@ -529,22 +550,26 @@ watch(
       <div class="flex-1 space-y-5 min-w-0">
         <!-- 书籍标题 -->
         <div class="space-y-2">
-          <label :for="titleInputId" class="block text-sm font-medium text-moon/90"
-            >书籍标题 *</label
-          >
+          <label :for="titleInputId" class="block text-sm font-medium text-moon/90">{{
+            i18nT('bookDialogUi.title')
+          }}</label>
           <TranslatableInput
             v-model="formData.title!"
-            :placeholder="'例如: 转生成为史莱姆'"
+            :placeholder="i18nT('bookDialogUi.titlePlaceholder')"
             :id="titleInputId"
             :invalid="!!formErrors.title"
           />
-          <small v-if="formErrors.title" class="p-error block mt-1">{{ formErrors.title }}</small>
+          <small v-if="formErrors.title" class="p-error block mt-1">{{
+            i18nT('bookDialogUi.titleRequired')
+          }}</small>
         </div>
 
         <!-- 别名标题 -->
         <div class="space-y-2">
-          <label :for="`${idPrefix}-alternateTitles`" class="block text-sm font-medium text-moon/90"
-            >别名标题</label
+          <label
+            :for="`${idPrefix}-alternateTitles`"
+            class="block text-sm font-medium text-moon/90"
+            >{{ i18nT('bookDialogUi.alternateTitles') }}</label
           >
           <TranslatableChips
             :id="`${idPrefix}-alternateTitles`"
@@ -554,30 +579,30 @@ watch(
                 formData.alternateTitles = value;
               }
             "
-            placeholder="输入别名标题后按回车"
+            :placeholder="i18nT('bookDialogUi.alternatePlaceholder')"
             class="w-full"
           />
-          <small class="text-moon/60 block mt-1">输入别名标题后按回车键添加</small>
+          <small class="text-moon/60 block mt-1">{{ i18nT('bookDialogUi.alternateHint') }}</small>
         </div>
 
         <!-- 作者 -->
         <div class="space-y-2">
-          <label :for="`${idPrefix}-author`" class="block text-sm font-medium text-moon/90"
-            >作者</label
-          >
+          <label :for="`${idPrefix}-author`" class="block text-sm font-medium text-moon/90">{{
+            i18nT('bookDialogUi.author')
+          }}</label>
           <InputText
             :id="`${idPrefix}-author`"
             v-model="formData.author"
-            placeholder="例如: 伏瀬"
+            :placeholder="i18nT('bookDialogUi.authorPlaceholder')"
             class="w-full"
           />
         </div>
 
         <!-- 描述 -->
         <div class="space-y-2">
-          <label :for="`${idPrefix}-description`" class="block text-sm font-medium text-moon/90"
-            >描述</label
-          >
+          <label :for="`${idPrefix}-description`" class="block text-sm font-medium text-moon/90">{{
+            i18nT('bookDialogUi.description')
+          }}</label>
           <TranslatableInput
             :id="`${idPrefix}-description`"
             :model-value="descriptionValue"
@@ -589,19 +614,19 @@ watch(
             type="textarea"
             :rows="4"
             :auto-resize="true"
-            placeholder="输入书籍描述..."
+            :placeholder="i18nT('bookDialogUi.descriptionPlaceholder')"
           />
         </div>
 
         <!-- 标签 -->
         <div class="space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <label :for="`${idPrefix}-tags`" class="block text-sm font-medium text-moon/90"
-              >标签</label
-            >
+            <label :for="`${idPrefix}-tags`" class="block text-sm font-medium text-moon/90">{{
+              i18nT('bookDialogUi.tags')
+            }}</label>
             <Button
               icon="pi pi-copy"
-              label="复制标签"
+              :label="i18nT('bookDialogUi.copyTags')"
               class="p-button-text p-button-sm"
               size="small"
               :disabled="tagsCopyDisabled"
@@ -616,23 +641,21 @@ watch(
                 formData.tags = value;
               }
             "
-            placeholder="输入标签后按回车，或用逗号分隔输入多个标签"
+            :placeholder="i18nT('bookDialogUi.tagsPlaceholder')"
             class="w-full"
             separator=","
           />
-          <small class="text-moon/60 block mt-1"
-            >输入标签后按回车键添加，或用逗号分隔一次性添加多个标签</small
-          >
+          <small class="text-moon/60 block mt-1">{{ i18nT('bookDialogUi.tagsHint') }}</small>
         </div>
 
         <!-- 网络地址 -->
         <div class="space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <label :for="`${idPrefix}-webUrl`" class="block text-sm font-medium text-moon/90"
-              >网络地址</label
-            >
+            <label :for="`${idPrefix}-webUrl`" class="block text-sm font-medium text-moon/90">{{
+              i18nT('bookDialogUi.webAddresses')
+            }}</label>
             <Button
-              label="从网站获取"
+              :label="i18nT('bookDialogUi.fetchWeb')"
               icon="pi pi-download"
               class="p-button-text p-button-sm"
               size="small"
@@ -649,24 +672,24 @@ watch(
             "
             :suggestions="[]"
             multiple
-            placeholder="输入网络地址后按回车"
+            :placeholder="i18nT('bookDialogUi.webPlaceholder')"
             class="w-full"
             @complete="() => {}"
           />
           <!-- 显示可点击的 URL 列表 -->
           <BookWebUrlList :urls="formData.webUrl" @scrape="openSyncWorkspace" />
-          <small class="text-moon/60 block mt-1"
-            >输入网络地址后按回车键添加，或点击按钮从支持的网站获取</small
-          >
+          <small class="text-moon/60 block mt-1">{{ i18nT('bookDialogUi.webHint') }}</small>
         </div>
 
         <!-- 特殊指令 -->
         <div class="space-y-2">
           <div>
-            <label class="block text-sm font-medium text-moon/90">特殊指令（书籍级别）</label>
-            <small class="text-moon/60 text-xs block mt-1"
-              >这些指令将应用于该书籍的所有章节。章节级别的指令会覆盖书籍级别的指令。</small
-            >
+            <label class="block text-sm font-medium text-moon/90">{{
+              i18nT('bookDialogUi.instructions')
+            }}</label>
+            <small class="text-moon/60 text-xs block mt-1">{{
+              i18nT('bookDialogUi.instructionsHint')
+            }}</small>
           </div>
           <Tabs
             :value="currentSpecialInstructionsActiveTab"
@@ -674,9 +697,9 @@ watch(
             class="special-instructions-tabs"
           >
             <TabList>
-              <Tab value="translation">翻译指令</Tab>
-              <Tab value="polish">润色指令</Tab>
-              <Tab value="proofreading">校对指令</Tab>
+              <Tab value="translation">{{ i18nT('bookDialogUi.translationInstructions') }}</Tab>
+              <Tab value="polish">{{ i18nT('bookDialogUi.polishInstructions') }}</Tab>
+              <Tab value="proofreading">{{ i18nT('bookDialogUi.proofreadInstructions') }}</Tab>
             </TabList>
             <TabPanels>
               <TabPanel value="translation">
@@ -684,14 +707,14 @@ watch(
                   <Textarea
                     :id="`${idPrefix}-translationInstructions`"
                     v-model="formData.translationInstructions"
-                    placeholder="输入翻译任务的特殊指令（可选）"
+                    :placeholder="i18nT('bookDialogUi.translationPlaceholder')"
                     :rows="6"
                     :auto-resize="true"
                     class="w-full"
                   />
-                  <small class="text-moon/60 text-xs block"
-                    >这些指令将在执行翻译任务时添加到系统提示词中</small
-                  >
+                  <small class="text-moon/60 text-xs block">{{
+                    i18nT('bookDialogUi.translationHint')
+                  }}</small>
                 </div>
               </TabPanel>
               <TabPanel value="polish">
@@ -699,14 +722,14 @@ watch(
                   <Textarea
                     :id="`${idPrefix}-polishInstructions`"
                     v-model="formData.polishInstructions"
-                    placeholder="输入润色任务的特殊指令（可选）"
+                    :placeholder="i18nT('bookDialogUi.polishPlaceholder')"
                     :rows="6"
                     :auto-resize="true"
                     class="w-full"
                   />
-                  <small class="text-moon/60 text-xs block"
-                    >这些指令将在执行润色任务时添加到系统提示词中</small
-                  >
+                  <small class="text-moon/60 text-xs block">{{
+                    i18nT('bookDialogUi.polishHint')
+                  }}</small>
                 </div>
               </TabPanel>
               <TabPanel value="proofreading">
@@ -714,14 +737,14 @@ watch(
                   <Textarea
                     :id="`${idPrefix}-proofreadingInstructions`"
                     v-model="formData.proofreadingInstructions"
-                    placeholder="输入校对任务的特殊指令（可选）"
+                    :placeholder="i18nT('bookDialogUi.proofreadPlaceholder')"
                     :rows="6"
                     :auto-resize="true"
                     class="w-full"
                   />
-                  <small class="text-moon/60 text-xs block"
-                    >这些指令将在执行校对任务时添加到系统提示词中</small
-                  >
+                  <small class="text-moon/60 text-xs block">{{
+                    i18nT('bookDialogUi.proofreadHint')
+                  }}</small>
                 </div>
               </TabPanel>
             </TabPanels>
@@ -762,14 +785,14 @@ watch(
         />
         <div class="flex w-full gap-2 sm:w-auto sm:justify-end">
           <Button
-            label="取消"
+            :label="i18nT('libraryUi.cancel')"
             icon="pi pi-times"
             class="p-button-text icon-button-hover flex-1 sm:flex-none"
             :disabled="loading"
             @click="requestCloseDialog"
           />
           <Button
-            label="保存"
+            :label="i18nT('bookDialogUi.save')"
             icon="pi pi-check"
             class="p-button-primary icon-button-hover flex-1 sm:flex-none"
             :loading="loading"
@@ -789,24 +812,24 @@ watch(
 
     <AdaptiveDialog
       v-model:visible="showUnsavedCloseConfirm"
-      header="放弃未保存修改？"
+      :header="i18nT('bookDialogUi.discardTitle')"
       desktop-width="460px"
-      eyebrow="UNSAVED"
+      :eyebrow="i18nT('bookDialogUi.unsaved')"
       sheet-min-height="auto"
     >
       <div class="space-y-3">
-        <p class="text-moon/90">当前表单有未保存修改，关闭后这些修改将丢失。</p>
-        <p class="text-moon/70 text-sm">建议先保存，或确认放弃修改后关闭。</p>
+        <p class="text-moon/90">{{ i18nT('bookDialogUi.unsavedHint') }}</p>
+        <p class="text-moon/70 text-sm">{{ i18nT('bookDialogUi.unsavedAdvice') }}</p>
       </div>
       <template #footer>
         <Button
-          label="继续编辑"
+          :label="i18nT('bookDialogUi.continueEditing')"
           icon="pi pi-pencil"
           class="p-button-text"
           @click="cancelDiscardAndKeepEditing"
         />
         <Button
-          label="放弃修改并关闭"
+          :label="i18nT('bookDialogUi.discardClose')"
           icon="pi pi-times"
           class="p-button-danger"
           @click="confirmDiscardAndClose"
@@ -817,15 +840,17 @@ watch(
     <!-- 清除确认对话框 -->
     <AdaptiveDialog
       v-model:visible="showClearConfirm"
-      header="确认清除所有卷和章节"
+      :header="i18nT('bookDialogUi.clearStructure')"
       desktop-width="500px"
-      eyebrow="CLEAR"
+      :eyebrow="i18nT('bookDialogUi.clear')"
     >
       <div class="space-y-4">
         <p class="text-moon/90">
-          此操作将永久删除所有卷和章节数据，<strong class="text-red-400">无法撤销</strong>。
+          {{ i18nT('bookDialogUi.clearWarning')
+          }}<strong class="text-red-400">{{ i18nT('bookDialogUi.cannotUndo') }}</strong
+          >。
         </p>
-        <p class="text-moon/90">请输入书籍名称以确认：</p>
+        <p class="text-moon/90">{{ i18nT('bookDialogUi.clearPrompt') }}</p>
         <div class="card-base p-3 flex items-center justify-between gap-2">
           <p class="text-primary font-medium break-all flex-1">
             {{ clearConfirmBookTitle }}
@@ -834,22 +859,27 @@ watch(
             icon="pi pi-copy"
             class="p-button-text p-button-sm flex-shrink-0"
             size="small"
-            title="复制书名"
+            :title="i18nT('bookDialogUi.copyBookName')"
             @click="handleCopyBookTitle"
           />
         </div>
         <InputText
           v-model="clearConfirmInput"
-          placeholder="输入书籍名称"
+          :placeholder="i18nT('bookDialogUi.enterBookName')"
           class="w-full"
           @keyup.enter="confirmClearVolumes"
         />
-        <small class="text-moon/60 block">输入书名后按回车或点击"确认清除"按钮</small>
+        <small class="text-moon/60 block">{{ i18nT('bookDialogUi.clearHint') }}</small>
       </div>
       <template #footer>
-        <Button label="取消" icon="pi pi-times" class="p-button-text" @click="cancelClearVolumes" />
         <Button
-          label="确认清除"
+          :label="i18nT('libraryUi.cancel')"
+          icon="pi pi-times"
+          class="p-button-text"
+          @click="cancelClearVolumes"
+        />
+        <Button
+          :label="i18nT('bookDialogUi.confirmClear')"
           icon="pi pi-trash"
           class="p-button-danger"
           :disabled="clearConfirmDisabled"

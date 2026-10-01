@@ -4,7 +4,11 @@ import type {
   ImportPlan,
   ImportTask,
 } from 'src/models/import';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 import { conciseErrorText } from 'src/services/import/import-error-text';
+import { importNoticeText } from 'src/services/import/import-error';
 
 export interface ImportFeedback {
   severity: 'success' | 'error' | 'info' | 'warn';
@@ -13,125 +17,166 @@ export interface ImportFeedback {
 }
 
 const ACTION_NAMES = {
-  create: '创建导入任务',
-  rename: '重命名任务',
-  delete: '删除导入任务',
-  'add-source': '添加来源',
-  'remove-source': '删除来源',
-  'edit-draft': '保存草稿',
-  'delete-draft': '删除草稿',
-  metadata: '更新书籍信息',
-  'choose-novel': '选择小说',
-  answer: '保存回答',
-  resolve: '处理导入冲突',
-  preview: '生成导入方案',
-  apply: '导入',
-  revert: '撤销导入',
-  run: '整理导入草稿',
-  pause: '暂停导入',
-  compact: '压缩对话',
-} as const;
+  create: 'importUi.feedback.action.create',
+  rename: 'importUi.feedback.action.rename',
+  delete: 'importUi.feedback.action.delete',
+  'add-source': 'importUi.feedback.action.addSource',
+  'remove-source': 'importUi.feedback.action.removeSource',
+  'edit-draft': 'importUi.feedback.action.editDraft',
+  'delete-draft': 'importUi.feedback.action.deleteDraft',
+  metadata: 'importUi.feedback.action.metadata',
+  'choose-novel': 'importUi.feedback.action.chooseNovel',
+  answer: 'importUi.feedback.action.answer',
+  resolve: 'importUi.feedback.action.resolve',
+  preview: 'importUi.feedback.action.preview',
+  apply: 'importUi.feedback.action.apply',
+  revert: 'importUi.feedback.action.revert',
+  run: 'importUi.feedback.action.run',
+  pause: 'importUi.feedback.action.pause',
+  compact: 'importUi.feedback.action.compact',
+} as const satisfies Record<string, MessageKey>;
 export type ImportAction = keyof typeof ACTION_NAMES;
 
-const SUCCESS_MESSAGES: Partial<Record<ImportAction, string>> = {
-  create: '导入任务已创建',
-  rename: '任务名称已保存',
-  delete: '导入任务已删除',
-  'add-source': '来源已添加',
-  'remove-source': '来源已删除',
-  'edit-draft': '草稿已保存',
-  metadata: '书籍信息已更新',
-  'choose-novel': '已选择本次小说',
-  answer: '回答已保存',
-  compact: '对话已压缩',
+const SUCCESS_MESSAGES: Partial<Record<ImportAction, MessageKey>> = {
+  create: 'importUi.feedback.success.create',
+  rename: 'importUi.feedback.success.rename',
+  delete: 'importUi.feedback.success.delete',
+  'add-source': 'importUi.feedback.success.addSource',
+  'remove-source': 'importUi.feedback.success.removeSource',
+  'edit-draft': 'importUi.feedback.success.editDraft',
+  metadata: 'importUi.feedback.success.metadata',
+  'choose-novel': 'importUi.feedback.success.chooseNovel',
+  answer: 'importUi.feedback.success.answer',
+  compact: 'importUi.feedback.success.compact',
 };
 
-export function importSuccess(action: ImportAction): ImportFeedback | undefined {
-  const summary = SUCCESS_MESSAGES[action];
-  return summary
+/** 通知文字按生成时的界面语言显示（通知是一次性的，不持久化后重投影）。 */
+export function importSuccess(
+  action: ImportAction,
+  locale: AppLocale = 'zh-CN',
+): ImportFeedback | undefined {
+  const key = SUCCESS_MESSAGES[action];
+  return key
     ? {
         severity: 'success',
-        summary,
-        ...(action === 'add-source' ? { detail: '来源已登记，可让月詠继续读取和整理。' } : {}),
+        summary: translateText(locale, key),
+        ...(action === 'add-source'
+          ? { detail: translateText(locale, 'importUi.feedback.addSourceDetail') }
+          : {}),
       }
     : undefined;
 }
 
-export function importFailure(action: ImportAction, error: string): ImportFeedback {
+export function importFailure(
+  action: ImportAction,
+  error: string,
+  locale: AppLocale = 'zh-CN',
+): ImportFeedback {
   return {
     severity: 'error',
-    summary: `${ACTION_NAMES[action]}失败`,
-    detail: conciseErrorText(error.replace(/^[A-Z_]+:\s*/, '')),
+    summary: translateText(locale, 'importUi.feedback.failed', {
+      action: translateText(locale, ACTION_NAMES[action]),
+    }),
+    detail: conciseErrorText(error.replace(/^[A-Z_]+:\s*/, ''), locale),
   };
 }
 
-export function importDraftRemovalFeedback(removal: ImportDraftRemoval): ImportFeedback {
-  const summaries = {
-    remove_chapter: '草稿章节已删除',
-    remove_volume: '草稿卷及其章节已删除',
-    clear_structure: '卷章草稿已清空',
-  };
-  return { severity: 'success', summary: summaries[removal.op] };
+const REMOVAL_SUMMARIES = {
+  remove_chapter: 'importUi.feedback.removal.chapter',
+  remove_volume: 'importUi.feedback.removal.volume',
+  clear_structure: 'importUi.feedback.removal.structure',
+} as const satisfies Record<ImportDraftRemoval['op'], MessageKey>;
+
+export function importDraftRemovalFeedback(
+  removal: ImportDraftRemoval,
+  locale: AppLocale = 'zh-CN',
+): ImportFeedback {
+  return { severity: 'success', summary: translateText(locale, REMOVAL_SUMMARIES[removal.op]) };
 }
 
-export function importApplicationFeedback(operation: ImportOperation): ImportFeedback {
+export function importApplicationFeedback(
+  operation: ImportOperation,
+  locale: AppLocale = 'zh-CN',
+): ImportFeedback {
+  const t = (key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(locale, key, values);
   const reverting = operation.state === 'reverted';
-  const summary = reverting ? '已撤销导入' : '导入成功';
+  const summary = t(reverting ? 'importUi.feedback.reverted' : 'importUi.feedback.applied');
   if (operation.pendingMaintenance.length)
-    return {
-      severity: 'warn',
-      summary,
-      detail: '书库变更已保存，部分缓存或索引维护尚未完成。',
-    };
+    return { severity: 'warn', summary, detail: t('importUi.feedback.maintenancePending') };
   return {
     severity: 'success',
     summary,
     detail: reverting
-      ? '已恢复本次导入前的书库状态。'
-      : `已将 ${operation.plan.summary?.selectedChapters ?? operation.plan.chapters.length} 章写入书库${operation.plan.summary?.partial ? '，本次为部分导入' : ''}。`,
+      ? t('importUi.feedback.revertedDetail')
+      : t('importUi.feedback.appliedDetail', {
+          count: operation.plan.summary?.selectedChapters ?? operation.plan.chapters.length,
+          partial: operation.plan.summary?.partial ? t('importUi.feedback.partialSuffix') : '',
+        }),
   };
 }
 
-export function importPlanFeedback(plan: ImportPlan): ImportFeedback {
+export function importPlanFeedback(plan: ImportPlan, locale: AppLocale = 'zh-CN'): ImportFeedback {
+  const t = (key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(locale, key, values);
   return plan.conflicts.length
     ? {
         severity: 'warn',
-        summary: '导入方案仍有待处理项',
-        detail: `有 ${plan.conflicts.length} 项需要处理，请检查方案。`,
+        summary: t('importUi.feedback.planPending'),
+        detail: t('importUi.feedback.planPendingDetail', { count: plan.conflicts.length }),
       }
     : {
         severity: 'success',
-        summary: '导入方案已生成',
-        detail: '请检查方案并确认后再写入书库。',
+        summary: t('importUi.feedback.planReady'),
+        detail: t('importUi.feedback.planReadyDetail'),
       };
 }
 
-export function importRunFeedback(task: ImportTask): ImportFeedback | undefined {
+export function importRunFeedback(
+  task: ImportTask,
+  locale: AppLocale = 'zh-CN',
+): ImportFeedback | undefined {
+  const t = (key: MessageKey) => translateText(locale, key);
   if (task.state === 'ready')
-    return { severity: 'success', summary: '导入草稿已就绪', detail: '请检查导入方案并确认应用。' };
+    return {
+      severity: 'success',
+      summary: t('importUi.feedback.runReady'),
+      detail: t('importUi.feedback.runReadyDetail'),
+    };
   if (task.state === 'waiting_user')
     return {
       severity: 'info',
-      summary: '导入任务需要你的回答',
-      detail: '请在导入对话区完成必要选择后继续。',
+      summary: t('importUi.feedback.runWaiting'),
+      detail: t('importUi.feedback.runWaitingDetail'),
     };
   if (task.state === 'failed')
-    return importFailure('run', task.lastError?.message ?? '请查看任务中的错误详情。');
+    return importFailure(
+      'run',
+      task.lastError
+        ? importNoticeText(task.lastError, locale)
+        : t('importUi.feedback.runFailedDetail'),
+      locale,
+    );
   if (task.lastError && ['CONTEXT_LIMIT', 'TOOL_LIMIT'].includes(task.lastError.code))
     return {
       severity: 'warn',
-      summary: '导入整理已暂停',
-      detail: task.lastError.message,
+      summary: t('importUi.feedback.runPaused'),
+      detail: importNoticeText(task.lastError, locale),
     };
   return undefined;
 }
 
-export function importPauseFeedback(task: ImportTask): ImportFeedback {
+export function importPauseFeedback(task: ImportTask, locale: AppLocale = 'zh-CN'): ImportFeedback {
+  const t = (key: MessageKey) => translateText(locale, key);
   return task.state === 'pausing'
     ? {
         severity: 'info',
-        summary: '正在暂停导入任务',
-        detail: '正在等待当前操作结束，已保存的进度会保留。',
+        summary: t('importUi.feedback.pausing'),
+        detail: t('importUi.feedback.pausingDetail'),
       }
-    : { severity: 'info', summary: '导入任务已暂停', detail: '已保存进度，可以稍后继续。' };
+    : {
+        severity: 'info',
+        summary: t('importUi.feedback.paused'),
+        detail: t('importUi.feedback.pausedDetail'),
+      };
 }

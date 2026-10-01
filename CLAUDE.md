@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-**Tsukuyomi (月詠)** — AI 驱动的日本轻小说翻译工具。Vue 3 + Quasar + TypeScript，支持 Web SPA 和 Electron 桌面端。数据存储在 IndexedDB（完全离线），可选 GitHub Gist 云同步。
+**Tsukuyomi (月詠)** — AI 驱动的小说翻译工具：原文不限语言（AI 按段落判断），译文支持 zh-CN / zh-TW / en-US（按书设置目标语言），对日文网文/轻小说有专门支持。Vue 3 + Quasar + TypeScript，支持 Web SPA 和 Electron 桌面端。数据存储在 IndexedDB（完全离线），可选 GitHub Gist 云同步。
 
 ## 开发命令
 
@@ -188,6 +188,8 @@ AI: Vercel AI SDK 7 + OpenAI Compatible / Google provider；保留现有单步�
 
 ## 相关文档
 
+- **代理 skill 位置**：项目 skill 只放 `.agents/skills/`（通用标准）和 `.claude/skills/`（Claude Code），两处保持一致；不要再建 `.agent/`、`.kilocode/`、`.opencode/`、`.github/skills` 等工具专属副本
+- **多语言文档**：帮助文档在 `public/help/<locale>/`（zh-CN 为源，zh-TW / en-US 同步，文件名与 `{#id}` 锚点一致）；README 有 `README.md`（简中）/ `README.zh-TW.md` / `README.en-US.md`；更新日志仅简中。改一种语言时同步另外两种，发版流程见 `release-ready` skill
 - [AGENTS.md](AGENTS.md) — AI 编码代理指南（与本文件有重叠，更简洁）
 - [docs/TRANSLATION_GUIDE.md](docs/TRANSLATION_GUIDE.md) — 翻译规则、敬语处理、AI 提示词
 - [docs/BUILD_TROUBLESHOOTING.md](docs/BUILD_TROUBLESHOOTING.md) — 构建问题排查

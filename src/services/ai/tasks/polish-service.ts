@@ -1,3 +1,4 @@
+import type { ExecutionLanguages } from 'src/models/locale';
 // fallow-ignore-next-line code-duplication
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
@@ -22,6 +23,7 @@ import {
  * 润色服务选项
  */
 export interface PolishServiceOptions {
+  languages: ExecutionLanguages;
   /**
    * 流式数据回调函数，用于接收润色过程中的数据块
    */
@@ -101,38 +103,34 @@ export class PolishService {
   static async polish(
     content: Paragraph[],
     model: AIModel,
-    options?: PolishServiceOptions,
+    options: PolishServiceOptions,
   ): Promise<PolishResult> {
     // 构建段落提取回调
     const onParagraphsExtracted = buildChangedParagraphsExtractCallback({
-      onChangedParagraphs: options?.onParagraphPolish,
+      onChangedParagraphs: options.onParagraphPolish,
       logLabel: 'PolishService',
       taskLabel: '段落润色',
     });
 
-    return processTextTask(
-      content,
-      model,
-      pickTextTaskOptions(options),
-      {
-        taskType: 'polish',
-        logLabel: 'PolishService',
-        temperature: model.isDefault.proofreading?.temperature ?? 0.7,
-        requiresTranslation: true,
-        onlyChangedParagraphs: true,
-        buildSystemPrompt: (params) =>
-          buildPolishSystemPrompt({
-            todosPrompt: params.todosPrompt,
-            bookContextSection: params.bookContextSection,
-            chapterContextSection: params.chapterContextSection,
-            specialInstructionsSection: params.specialInstructionsSection,
-            tools: params.tools,
-            skipAskUser: params.skipAskUser,
-            enableOriginalTextValidation: params.enableOriginalTextValidation,
-          }),
-        onParagraphsExtracted,
-      },
-    );
+    return processTextTask(content, model, pickTextTaskOptions(options), {
+      taskType: 'polish',
+      logLabel: 'PolishService',
+      temperature: model.isDefault.proofreading?.temperature ?? 0.7,
+      requiresTranslation: true,
+      onlyChangedParagraphs: true,
+      buildSystemPrompt: (params) =>
+        buildPolishSystemPrompt({
+          languages: params.languages,
+          todosPrompt: params.todosPrompt,
+          bookContextSection: params.bookContextSection,
+          chapterContextSection: params.chapterContextSection,
+          specialInstructionsSection: params.specialInstructionsSection,
+          tools: params.tools,
+          skipAskUser: params.skipAskUser,
+          enableOriginalTextValidation: params.enableOriginalTextValidation,
+        }),
+      onParagraphsExtracted,
+    });
   }
 
   /**
@@ -144,14 +142,15 @@ export class PolishService {
   static async polishSingle(
     paragraph: Paragraph,
     model: AIModel,
-    options?: SingleParagraphOptions,
+    options: SingleParagraphOptions,
   ): Promise<SingleParagraphResult> {
-    return processSingleParagraph(paragraph, model, options || {}, {
+    return processSingleParagraph(paragraph, model, options, {
       taskType: 'polish',
       logLabel: 'PolishService',
       temperature: model.isDefault.proofreading?.temperature ?? 0.7,
       buildSystemPrompt: (params) =>
         buildSingleParagraphPolishSystemPrompt({
+          languages: params.languages,
           bookContextSection: params.bookContextSection,
           chapterContextSection: params.chapterContextSection,
           specialInstructionsSection: params.specialInstructionsSection,

@@ -1,20 +1,26 @@
 <template>
   <div v-if="available" class="desktop-update-section" aria-live="polite">
     <p>
-      {{ labels[state.phase] }}<span v-if="state.targetVersion"> · v{{ state.targetVersion }}</span>
+      {{ t(`settingsUi.update.phase.${state.phase}`)
+      }}<span v-if="state.targetVersion"> · v{{ state.targetVersion }}</span>
     </p>
     <progress
       v-if="state.phase === 'downloading'"
       :value="state.progress ?? 0"
       max="100"
-      aria-label="更新下载进度"
+      :aria-label="t('settingsUi.update.progress')"
     />
     <p v-if="state.message" class="update-message">{{ state.message }}</p>
     <div class="update-actions">
-      <Button v-if="state.phase === 'ready'" label="重启并更新" size="small" @click="restart" />
+      <Button
+        v-if="state.phase === 'ready'"
+        :label="t('settingsUi.update.restart')"
+        size="small"
+        @click="restart"
+      />
       <Button
         v-else
-        label="检查更新"
+        :label="t('settingsUi.update.check')"
         size="small"
         outlined
         :disabled="busy || state.phase === 'unavailable'"
@@ -24,7 +30,7 @@
         href="https://github.com/rozx/Tsukuyomi/releases/latest"
         target="_blank"
         rel="noopener noreferrer"
-        >查看发布版本</a
+        >{{ t('settingsUi.update.releases') }}</a
       >
     </div>
   </div>
@@ -33,17 +39,10 @@
 <script setup lang="ts">
 import Button from 'primevue/button';
 import { useDesktopUpdates } from 'src/composables/useDesktopUpdates';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 const { state, available, busy, check, restart } = useDesktopUpdates();
-const labels = {
-  unavailable: '自动更新不可用',
-  idle: '暂无待安装更新',
-  checking: '正在检查更新',
-  downloading: '正在下载更新',
-  ready: '更新已下载',
-  preparing: '正在检查任务与保存状态',
-  installing: '正在重启更新',
-  error: '更新失败，可以重试',
-};
 </script>
 
 <style scoped>

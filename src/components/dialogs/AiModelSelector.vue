@@ -1,12 +1,12 @@
 <template>
   <div class="space-y-2">
     <div class="flex items-center justify-between">
-      <label :for="`${idPrefix}-model`" class="block text-sm font-medium text-moon/90"
-        >模型标识 *</label
-      >
+      <label :for="`${idPrefix}-model`" class="block text-sm font-medium text-moon/90">{{
+        t('aiUi.modelIdentifier')
+      }}</label>
       <Button
         v-if="canRefreshModels"
-        label="刷新列表"
+        :label="t('aiUi.refreshList')"
         icon="pi pi-refresh"
         class="p-button-text p-button-sm icon-button-hover"
         :loading="isLoadingModels"
@@ -21,7 +21,7 @@
       optionValue="value"
       :editable="true"
       :loading="isLoadingModels"
-      placeholder="例如: gpt-4, gemini-pro"
+      :placeholder="t('aiUi.modelPlaceholder')"
       class="w-full"
       :class="{ 'p-invalid': formErrors.model }"
       filter
@@ -38,19 +38,22 @@
         </div>
       </template>
     </Select>
-    <small v-if="formErrors.model" class="p-error block mt-1">{{ formErrors.model }}</small>
+    <small v-if="formErrors.model" class="p-error block mt-1">{{ t(formErrors.model) }}</small>
     <small v-if="availableModels.length > 0" class="text-moon/60 text-xs block mt-1">
-      找到 {{ availableModels.length }} 个可用模型
+      {{ t('aiUi.availableCount', { count: availableModels.length }) }}
     </small>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed, inject } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import { AI_MODEL_FORM_KEY } from './ai-model-form-types';
+const { t } = useI18n();
 
 defineProps<{
   modelOptions: { label: string; value: string; model: ModelInfo }[];

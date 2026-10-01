@@ -1,3 +1,4 @@
+import { importFailure } from './import-error';
 import type { Chapter, Novel, Paragraph, Volume } from 'src/models/novel';
 import type { ImportPlan } from 'src/models/import';
 import type { ImportPlanContext } from './import-plan-context';
@@ -53,8 +54,13 @@ function chapterMetadata(
   const variants = new Set(sourceSettings.map((chapter) => canonicalStringify(settings(chapter))));
   if (variants.size > 1 && !chosen)
     plan.conflicts.push({
-      code: 'CHAPTER_SETTINGS_CONFLICT',
-      message: `“${resolved.match.draft.title}”合并范围的章节设置不同，请选择保留来源`,
+      ...importFailure(
+        'CHAPTER_SETTINGS_CONFLICT',
+        'chapterSettingsConflictTheMergedScopeForDetailHas',
+        {
+          value1: String(resolved.match.draft.title),
+        },
+      ),
       chapterId: resolved.match.draft.id,
     });
   const now = new Date(plan.createdAt);
@@ -163,7 +169,9 @@ async function adoptBookMetadata(
     Object.assign(book, { [field]: after });
   }
   if (!book.title?.trim())
-    plan.conflicts.push({ code: 'TITLE_REQUIRED', message: '新建小说需要书名' });
+    plan.conflicts.push({
+      ...importFailure('TITLE_REQUIRED', 'titleRequiredANewNovelRequiresATitle'),
+    });
 }
 
 function layoutVolumes(

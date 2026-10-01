@@ -1,3 +1,6 @@
+import { importFailure, importError } from './import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 import { load } from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
 import type { ImportEpub, ImportEpubEntry } from 'src/models/import-parsing';
@@ -22,14 +25,19 @@ export function resolveEpubPath(
   try {
     decoded = decodeURIComponent(location.split('?')[0]!);
   } catch {
-    throw new Error('INVALID_ARCHIVE_PATH: EPUB URI 编码无效');
+    throw importError('INVALID_ARCHIVE_PATH', 'invalidArchivePathInvalidEPUBURIEncoding', {});
   }
   const segments = decoded.startsWith('/') ? [] : base.split('/').slice(0, -1);
   if (!decoded) return { path: base, ...(fragment ? { anchor: `#${fragment}` } : {}) };
   for (const part of decoded.split('/')) {
     if (!part || part === '.') continue;
     if (part === '..') {
-      if (!segments.length) throw new Error('INVALID_ARCHIVE_PATH: EPUB 引用越出包根目录');
+      if (!segments.length)
+        throw importError(
+          'INVALID_ARCHIVE_PATH',
+          'invalidArchivePathTheEPUBReferenceEscapesThePackage',
+          {},
+        );
       segments.pop();
     } else segments.push(part);
   }
@@ -60,9 +68,11 @@ function packageMetadata($: CheerioAPI): Record<string, string> {
 
 function readXml(files: Map<string, Uint8Array>, path: string, characterLimit: number): CheerioAPI {
   const bytes = files.get(path);
-  if (!bytes) throw new Error(`EPUB_STRUCTURE: 缺少 ${path}`);
+  if (!bytes)
+    throw importError('EPUB_STRUCTURE', 'epubStructureMissingDetail', { value1: String(path) });
   const { text } = decodeImportText(bytes);
-  if (text.length > characterLimit) throw new Error('ARCHIVE_LIMIT: XML 资源超过解析上限');
+  if (text.length > characterLimit)
+    throw importError('ARCHIVE_LIMIT', 'archiveLimitTheXMLResourceExceedsTheParsing', {});
   return load(text, { xml: true });
 }
 
@@ -112,21 +122,22 @@ function checkEncryption(files: Map<string, Uint8Array>, characterLimit: number)
     const fontOnly =
       /(?:idpf\.org\/2008\/embedding|ns\.adobe\.com\/pdf\/enc#RC)$/.test(method) &&
       /\.(?:otf|ttf|woff2?)$/i.test(uri);
-    if (!fontOnly) throw new Error('EPUB_ENCRYPTED: EPUB 正文或资源已加密，无法提取');
+    if (!fontOnly)
+      throw importError('EPUB_ENCRYPTED', 'epubEncryptedEPUBContentOrResourcesAreEncrypted', {});
   });
 }
 
-function parseManifest($: CheerioAPI, packagePath: string, warnings: string[]) {
+function parseManifest($: CheerioAPI, packagePath: string, warnings: ImportNotice[]) {
   const manifest = new Map<string, { path: string; mediaType: string; properties: string[] }>();
   elements($, 'item').each((_, node) => {
     const item = $(node);
     const id = item.attr('id');
     const href = item.attr('href');
     if (!id || !href || manifest.has(id))
-      throw new Error('EPUB_STRUCTURE: manifest 标识或资源无效');
+      throw importError('EPUB_STRUCTURE', 'epubStructureInvalidManifestIDOrResource', {});
     const location = resolveEpubPath(packagePath, href);
     if (!location) {
-      warnings.push(`远程资源未自动读取：${href}`);
+      warnings.push(importFailure('REMOTE_RESOURCE', 'noticeRemoteResource', { url: href }));
       return;
     }
     manifest.set(id, {
@@ -160,7 +171,7 @@ async function collectEntries(
     if (reading && /(?:xhtml|html)/.test(item?.mediaType ?? '')) {
       const decoded = decodeImportText(data).text;
       if (decoded.length > work.limits.textCharacters)
-        throw new Error('ARCHIVE_LIMIT: EPUB 文本条目超过解析上限');
+        throw importError('ARCHIVE_LIMIT', 'archiveLimitTheEPUBTextEntryExceedsThe', {});
       const parsed = parseImportHtml(decoded);
       kind = ['catalog', 'copyright', 'cover'].includes(parsed.kind)
         ? (parsed.kind as ImportEpubEntry['kind'])
@@ -188,14 +199,15 @@ export async function parseImportEpub(
   const work = createImportWork(options);
   const files = await unpackImportZip(bytes, options);
   if (new TextDecoder().decode(files.get('mimetype')).trim() !== 'application/epub+zip')
-    throw new Error('EPUB_STRUCTURE: 文件不是 EPUB 容器');
+    throw importError('EPUB_STRUCTURE', 'epubStructureTheFileIsNotAnEPUB', {});
   checkEncryption(files, work.limits.textCharacters);
   const container = readXml(files, 'META-INF/container.xml', work.limits.textCharacters);
   const packagePaths = elements(container, 'rootfile')
     .toArray()
     .map((node) => container(node).attr('full-path'))
     .filter((path): path is string => Boolean(path));
-  if (!packagePaths.length) throw new Error('EPUB_STRUCTURE: 容器缺少 OPF');
+  if (!packagePaths.length)
+    throw importError('EPUB_STRUCTURE', 'epubStructureTheContainerHasNoOPF', {});
   const packages = packagePaths.map((path) => ({
     path: validateArchivePath(path),
     ...packageMetadata(readXml(files, path, work.limits.textCharacters)),
@@ -203,8 +215,8 @@ export async function parseImportEpub(
   const packagePath = packagePaths[0]!;
   const $ = readXml(files, packagePath, work.limits.textCharacters);
   const info = packageMetadata($);
-  const warnings: string[] =
-    packages.length > 1 ? ['EPUB 包含多个 package，请检查它们是否属于同一部作品。'] : [];
+  const warnings: ImportNotice[] =
+    packages.length > 1 ? [importFailure('MULTIPLE_PACKAGES', 'noticeMultiplePackages')] : [];
   const manifest = parseManifest($, packagePath, warnings);
   const spine = new Map<string, { index: number; linear: boolean }>();
   const missingEntries: string[] = [];
@@ -215,7 +227,8 @@ export async function parseImportEpub(
       missingEntries.push(`manifest:${id}`);
       return;
     }
-    if (spine.has(item.path)) throw new Error('EPUB_STRUCTURE: spine 重复引用同一正文资源');
+    if (spine.has(item.path))
+      throw importError('EPUB_STRUCTURE', 'epubStructureTheSpineReferencesTheSameBody', {});
     spine.set(item.path, { index, linear: $(node).attr('linear') !== 'no' });
     if (!files.has(item.path)) missingEntries.push(item.path);
   });
@@ -240,7 +253,10 @@ export async function parseImportEpub(
     { cover: cover?.path, nav: navItem?.path, ncx: ncxItem?.path },
     work,
   );
-  if (missingEntries.length) warnings.push(`EPUB 缺少 ${missingEntries.length} 个阅读资源。`);
+  if (missingEntries.length)
+    warnings.push(
+      importFailure('MISSING_EPUB_RESOURCE', 'noticeMissingEpub', { count: missingEntries.length }),
+    );
   return {
     packages,
     metadata: info,

@@ -1,3 +1,4 @@
+import { useI18n } from 'vue-i18n';
 import { computed, ref, watch, inject, provide, type InjectionKey } from 'vue';
 import { useRouter } from 'vue-router';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,14 +14,12 @@ import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
 import { SettingsService } from 'src/services/settings-service';
 import type { Novel } from 'src/models/novel';
-import {
-  formatWordCount,
-  formatRelativeBookDate,
-  getTotalChapters as utilGetTotalChapters,
-} from 'src/utils';
-import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
+import { getTotalChapters as utilGetTotalChapters } from 'src/utils';
+import { useLibraryFormatting } from 'src/composables/shared/useLibraryFormatting';
+import { buildNovelRevertUpdates, buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { isConfirmationTextMatch } from 'src/utils/text-utils';
 import { cloneDeep } from 'lodash';
+import { localizedErrorMessage } from 'src/utils/localized-error';
 
 export type BooksPageContext = ReturnType<typeof createBooksPageContext>;
 
@@ -43,6 +42,7 @@ export function injectBooksPage(): BooksPageContext {
 }
 
 function createBooksPageContext() {
+  const { t, locale } = useI18n();
   const router = useRouter();
   const booksStore = useBooksStore();
   const coverHistoryStore = useCoverHistoryStore();
@@ -70,7 +70,7 @@ function createBooksPageContext() {
     hide: () => void;
   } | null>(null);
   const sortMenuItems = computed(() =>
-    sortOptions.map((option) => ({
+    sortOptions.value.map((option) => ({
       label: option.label,
       icon: selectedSort.value === option.value ? 'pi pi-check' : '',
       command: () => {
@@ -90,64 +90,64 @@ function createBooksPageContext() {
     sortFn: (a: Novel, b: Novel) => number;
   };
 
-  const sortOptions: SortOption[] = [
+  const sortOptions = computed<SortOption[]>(() => [
     {
-      label: '默认',
+      label: t('libraryUi.sortDefault'),
       value: 'default',
       sortFn: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     },
     {
-      label: '标题 (A-Z)',
+      label: t('libraryUi.sortTitleAsc'),
       value: 'title-asc',
-      sortFn: (a, b) => a.title.localeCompare(b.title, 'zh-CN'),
+      sortFn: (a, b) => a.title.localeCompare(b.title, locale.value),
     },
     {
-      label: '标题 (Z-A)',
+      label: t('libraryUi.sortTitleDesc'),
       value: 'title-desc',
-      sortFn: (a, b) => b.title.localeCompare(a.title, 'zh-CN'),
+      sortFn: (a, b) => b.title.localeCompare(a.title, locale.value),
     },
     {
-      label: '创建时间 (最新)',
+      label: t('libraryUi.sortCreatedDesc'),
       value: 'created-desc',
       sortFn: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     },
     {
-      label: '创建时间 (最早)',
+      label: t('libraryUi.sortCreatedAsc'),
       value: 'created-asc',
       sortFn: (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     },
     {
-      label: '更新时间 (最新)',
+      label: t('libraryUi.sortUpdatedDesc'),
       value: 'updated-desc',
       sortFn: (a, b) => new Date(b.lastEdited).getTime() - new Date(a.lastEdited).getTime(),
     },
     {
-      label: '更新时间 (最早)',
+      label: t('libraryUi.sortUpdatedAsc'),
       value: 'updated-asc',
       sortFn: (a, b) => new Date(a.lastEdited).getTime() - new Date(b.lastEdited).getTime(),
     },
     {
-      label: '章节数 (多→少)',
+      label: t('libraryUi.sortChaptersDesc'),
       value: 'chapters-desc',
       sortFn: (a, b) => getTotalChapters(b) - getTotalChapters(a),
     },
     {
-      label: '章节数 (少→多)',
+      label: t('libraryUi.sortChaptersAsc'),
       value: 'chapters-asc',
       sortFn: (a, b) => getTotalChapters(a) - getTotalChapters(b),
     },
     {
-      label: '字数 (多→少)',
+      label: t('libraryUi.sortWordsDesc'),
       value: 'words-desc',
       sortFn: (a, b) => getTotalWords(b) - getTotalWords(a),
     },
     {
-      label: '字数 (少→多)',
+      label: t('libraryUi.sortWordsAsc'),
       value: 'words-asc',
       sortFn: (a, b) => getTotalWords(a) - getTotalWords(b),
     },
     {
-      label: '收藏优先',
+      label: t('libraryUi.sortStarred'),
       value: 'starred',
       sortFn: (a, b) => {
         const aStarred = a.starred || false;
@@ -158,7 +158,7 @@ function createBooksPageContext() {
         return aStarred ? -1 : 1;
       },
     },
-  ];
+  ]);
 
   const selectedSort = computed({
     get: () => settingsStore.booksSortOption || 'default',
@@ -170,12 +170,12 @@ function createBooksPageContext() {
   // 分割按钮菜单项
   const addBookMenuItems = computed(() => [
     {
-      label: '从网站导入',
+      label: t('libraryUi.importWeb'),
       icon: 'pi pi-globe',
       command: () => importBookFromWeb(),
     },
     {
-      label: '从 JSON 导入',
+      label: t('libraryUi.importJson'),
       icon: 'pi pi-file-import',
       command: () => importBookFromJson(),
     },
@@ -203,7 +203,7 @@ function createBooksPageContext() {
     }
 
     const sortedBooks = [...books];
-    const sortOption = sortOptions.find((opt) => opt.value === selectedSort.value);
+    const sortOption = sortOptions.value.find((opt) => opt.value === selectedSort.value);
     if (sortOption) {
       sortedBooks.sort(sortOption.sortFn);
     }
@@ -225,9 +225,10 @@ function createBooksPageContext() {
     { immediate: true },
   );
 
-  const getCoverUrl = (book: Novel): string => CoverService.getCoverUrl(book);
+  const getCoverUrl = (book: Novel): string =>
+    CoverService.getCoverUrl(book, settingsStore.uiLocale);
 
-  const formatDate = formatRelativeBookDate;
+  const { formatDate, formatWordCount } = useLibraryFormatting();
 
   const addBook = () => {
     selectedBook.value = null;
@@ -316,9 +317,12 @@ function createBooksPageContext() {
 
   const buildMemorySummary = (imported: number, failed: number): string => {
     if (imported > 0) {
-      return `（含 ${imported} 条记忆${failed > 0 ? `，${failed} 条失败` : ''}）`;
+      return t('libraryUi.memorySummary', {
+        count: imported,
+        errors: failed > 0 ? t('libraryUi.memoryFailures', { count: failed }) : '',
+      });
     }
-    if (failed > 0) return `（${failed} 条记忆导入失败）`;
+    if (failed > 0) return t('libraryUi.allMemoryFailed', { count: failed });
     return '';
   };
 
@@ -329,11 +333,16 @@ function createBooksPageContext() {
     if (stats.successCount > 0) {
       const idsToDelete = [...stats.importedIds];
       const memSummary = buildMemorySummary(memory.imported, memory.failed);
-      const errorSuffix = stats.errorCount > 0 ? `，${stats.errorCount} 本失败` : '';
+      const errorSuffix =
+        stats.errorCount > 0 ? t('libraryUi.bookFailures', { count: stats.errorCount }) : '';
       toast.add({
         severity: 'success',
-        summary: '导入成功',
-        detail: `成功导入 ${stats.successCount} 本书籍${memSummary}${errorSuffix}`,
+        summary: t('libraryUi.importSuccess'),
+        detail: t('libraryUi.importedSummary', {
+          count: stats.successCount,
+          memory: memSummary,
+          errors: errorSuffix,
+        }),
         life: 3000,
         onRevert: async () => {
           for (const id of idsToDelete) {
@@ -345,8 +354,11 @@ function createBooksPageContext() {
     }
     toast.add({
       severity: 'error',
-      summary: '导入失败',
-      detail: `未能导入任何书籍${stats.errorCount > 0 ? `（${stats.errorCount} 本失败）` : ''}`,
+      summary: t('libraryUi.importFailure'),
+      detail: t('libraryUi.noBooksImported', {
+        errors:
+          stats.errorCount > 0 ? t('libraryUi.bookFailures', { count: stats.errorCount }) : '',
+      }),
       life: 3000,
     });
   };
@@ -358,8 +370,7 @@ function createBooksPageContext() {
 
     try {
       const data = await SettingsService.readJsonFile(file);
-      const { novels: importedBooks, memoriesByBookId } =
-        SettingsService.parseBookImportData(data);
+      const { novels: importedBooks, memoriesByBookId } = SettingsService.parseBookImportData(data);
 
       const stats = await importBookEntries(importedBooks);
       const memory = await importMemoriesForBooks(memoriesByBookId, stats.oldIdToNewId);
@@ -367,8 +378,8 @@ function createBooksPageContext() {
     } catch (error) {
       toast.add({
         severity: 'error',
-        summary: '导入失败',
-        detail: error instanceof Error ? error.message : '解析文件时发生未知错误',
+        summary: t('libraryUi.importFailure'),
+        detail: localizedErrorMessage(error, settingsStore.uiLocale, 'libraryUi.unknownParse'),
         life: 5000,
       });
     }
@@ -402,8 +413,8 @@ function createBooksPageContext() {
     if (!isConfirmationTextMatch(deleteConfirmInput.value, bookTitle)) {
       toast.add({
         severity: 'error',
-        summary: '标题不匹配',
-        detail: '输入的标题与书籍标题不一致，请重新输入',
+        summary: t('libraryUi.titleMismatch'),
+        detail: t('libraryUi.titleMismatchHint'),
         life: 3000,
       });
       return;
@@ -420,8 +431,8 @@ function createBooksPageContext() {
 
       toast.add({
         severity: 'success',
-        summary: '删除成功',
-        detail: `已成功删除书籍 "${bookTitle}"`,
+        summary: t('libraryUi.deleteSuccess'),
+        detail: t('libraryUi.deletedBook', { title: bookTitle }),
         life: 3000,
         onRevert: () => booksStore.addBook(bookToRestore),
       });
@@ -446,16 +457,16 @@ function createBooksPageContext() {
       deleteConfirmInput.value = title;
       toast.add({
         severity: 'success',
-        summary: '已复制',
-        detail: '书籍标题已复制并填充到输入框',
+        summary: t('libraryUi.copied'),
+        detail: t('libraryUi.copiedTitle'),
         life: 2000,
       });
     } catch {
       deleteConfirmInput.value = title;
       toast.add({
         severity: 'info',
-        summary: '已填充',
-        detail: '书籍标题已填充到输入框（复制到剪贴板失败）',
+        summary: t('libraryUi.filled'),
+        detail: t('libraryUi.filledTitle'),
         life: 2000,
       });
     }
@@ -471,8 +482,10 @@ function createBooksPageContext() {
     await booksStore.updateBook(book.id, { starred: !isStarred });
     toast.add({
       severity: 'success',
-      summary: isStarred ? '已取消收藏' : '已收藏',
-      detail: `已${isStarred ? '取消收藏' : '收藏'}书籍 "${book.title}"`,
+      summary: isStarred ? t('libraryUi.favoriteRemoved') : t('libraryUi.favoriteAdded'),
+      detail: t(isStarred ? 'libraryUi.bookUnfavorited' : 'libraryUi.bookFavorited', {
+        title: book.title,
+      }),
       life: 2000,
     });
   };
@@ -482,6 +495,7 @@ function createBooksPageContext() {
   };
 
   const saveNewBook = createSaveNewBookHandler({
+    getUiLocale: () => settingsStore.uiLocale,
     booksStore,
     coverHistoryStore,
     toast,
@@ -494,16 +508,17 @@ function createBooksPageContext() {
     if (!selectedBook.value) return;
     const updates = buildNovelUpdatesFromFormData(formData);
     const oldBook = cloneDeep(selectedBook.value);
+    const revertUpdates = buildNovelRevertUpdates(oldBook, updates);
     await booksStore.updateBook(selectedBook.value.id, updates);
     showEditDialog.value = false;
     const bookTitle = updates.title || selectedBook.value.title;
     selectedBook.value = null;
     toast.add({
       severity: 'success',
-      summary: '更新成功',
-      detail: `已成功更新书籍 "${bookTitle}"`,
+      summary: t('libraryUi.updateSuccess'),
+      detail: t('libraryUi.updatedBook', { title: bookTitle }),
       life: 3000,
-      onRevert: () => booksStore.updateBook(oldBook.id, oldBook),
+      onRevert: () => booksStore.updateBook(oldBook.id, revertUpdates),
     });
   };
 

@@ -5,6 +5,8 @@
  */
 import { useRouter } from 'vue-router';
 import Button from 'primevue/button';
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import BookSyncWorkspace from 'src/components/book-sync/BookSyncWorkspace.vue';
 
@@ -19,9 +21,15 @@ const goBack = () => {
 <template>
   <div class="mbs">
     <header class="mbs-bar">
-      <Button icon="pi pi-arrow-left" text rounded aria-label="返回书籍概览" @click="goBack" />
+      <Button
+        icon="pi pi-arrow-left"
+        text
+        rounded
+        :aria-label="t('readerUi.backToBook')"
+        @click="goBack"
+      />
       <div class="mbs-heading">
-        <h1 class="mbs-title">检查更新</h1>
+        <h1 class="mbs-title">{{ t('readerUi.checkUpdates') }}</h1>
         <p v-if="ctx.book.value" class="mbs-book">{{ ctx.book.value.title }}</p>
       </div>
     </header>
@@ -35,7 +43,6 @@ const goBack = () => {
 .mbs {
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
   width: 100%;
 }
@@ -71,7 +78,7 @@ const goBack = () => {
 .mbs-body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: visible;
   padding: 0.85rem 1rem;
 }
 </style>

@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { localizedErrorMessage } from 'src/utils/localized-error';
+import { resolveAppLocale } from 'src/models/locale';
 import Button from 'primevue/button';
-import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import EntityDeleteConfirmDialog from 'src/components/dialogs/EntityDeleteConfirmDialog.vue';
 import ConfirmDialog from 'primevue/confirmdialog';
 import { useConfirm } from 'primevue/useconfirm';
 import InputGroup from 'primevue/inputgroup';
@@ -14,15 +17,32 @@ import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { useToolbarExpand } from 'src/composables/useToolbarExpand';
 import { CharacterSettingService } from 'src/services/character-setting-service';
+import { BookService } from 'src/services/book-service';
+import { getNameTranslation } from 'src/services/localization/selection';
+import { hasDuplicateEntityNames } from 'src/services/localization/entity-identity';
 import { useBooksStore } from 'src/stores/books';
 import type { Novel, Alias, CharacterSetting } from 'src/models/novel';
 import { cloneDeep } from 'lodash';
 import co from 'co';
+import { v4 } from 'uuid';
 
 const props = defineProps<{
   book: Novel | null;
 }>();
 
+const { t, locale } = useI18n();
+const hasAliasConflicts = computed(() =>
+  (props.book?.characterSettings ?? []).some((character) =>
+    character.aliases.some(
+      (alias, index, aliases) =>
+        alias.legacyConflict ||
+        aliases.some((other, otherIndex) => otherIndex !== index && other.name === alias.name),
+    ),
+  ),
+);
+const hasNameConflicts = computed(() =>
+  hasDuplicateEntityNames(props.book?.characterSettings ?? []),
+);
 const toast = useToastWithHistory();
 const confirm = useConfirm();
 
@@ -56,7 +76,8 @@ const allCharacterSettings = computed(() => {
     sex: char.sex,
     description: char.description,
     speakingStyle: char.speakingStyle,
-    translations: char.translation.translation,
+    translations:
+      getNameTranslation(char, props.book?.targetLanguage ?? 'zh-CN')?.translation ?? '',
     aliases: char.aliases.map((a: Alias) => a.name),
     // 保留原始对象引用以便需要时使用
     _original: char,
@@ -93,7 +114,7 @@ const isSaving = ref(false);
 // 工具栏展开图标/标题、空状态文案、编辑对话框角色：把模板内联三元与 || 收敛为 computed
 const { toolbarExpandIcon, toolbarExpandTitle } = useToolbarExpand(isToolbarExpanded);
 const emptyStateText = computed(() =>
-  searchQuery.value ? '未找到匹配的角色设定' : '暂无角色设定',
+  searchQuery.value ? t('panelUi.noCharacterMatches') : t('panelUi.noCharacters'),
 );
 const editDialogCharacter = computed(() => selectedCharacter.value?._original ?? null);
 const canExportCharacters = computed(
@@ -122,15 +143,15 @@ const handleSave = async (data: {
   translation: string;
   description: string;
   speakingStyle: string;
-  aliases: Array<{ name: string; translation: string }>;
+  aliases: Array<{ id?: string; name: string; translation: string }>;
 }) => {
   if (!props.book) return;
 
   if (!data.name.trim()) {
     toast.add({
       severity: 'warn',
-      summary: '校验失败',
-      detail: '角色名称不能为空',
+      summary: t('panelUi.validationFailed'),
+      detail: t('panelUi.characterNameRequired'),
       life: 3000,
     });
     return;
@@ -145,6 +166,8 @@ const handleSave = async (data: {
       const originalChar = props.book.characterSettings?.find((c) => c.id === charId);
       // 深拷贝保留原始数据用于撤销
       const previousCharData = originalChar ? cloneDeep(originalChar) : null;
+      const restoreBookId = props.book.id;
+      const restoreOperationId = v4();
 
       await CharacterSettingService.updateCharacterSetting(
         props.book.id,
@@ -153,31 +176,17 @@ const handleSave = async (data: {
       );
       toast.add({
         severity: 'success',
-        summary: '更新成功',
-        detail: `已更新角色 "${data.name}"`,
+        summary: t('panelUi.updated'),
+        detail: t('panelUi.characterUpdated', { name: data.name }),
         life: 3000,
         onRevert: async () => {
-          if (previousCharData && props.book) {
-            await CharacterSettingService.updateCharacterSetting(
-              props.book.id,
-              previousCharData.id,
-              {
-                name: previousCharData.name,
-                ...(previousCharData.sex !== undefined && { sex: previousCharData.sex }),
-                translation: previousCharData.translation.translation,
-                ...(previousCharData.description !== undefined && {
-                  description: previousCharData.description,
-                }),
-                ...(previousCharData.speakingStyle !== undefined && {
-                  speakingStyle: previousCharData.speakingStyle,
-                }),
-                aliases: previousCharData.aliases.map((a: Alias) => ({
-                  name: a.name,
-                  translation: a.translation.translation,
-                })),
-              },
+          if (previousCharData)
+            await useBooksStore().restoreEntity(
+              restoreBookId,
+              'character',
+              previousCharData,
+              restoreOperationId,
             );
-          }
         },
       });
     } else {
@@ -185,8 +194,8 @@ const handleSave = async (data: {
       const newChar = await CharacterSettingService.addCharacterSetting(props.book.id, data);
       toast.add({
         severity: 'success',
-        summary: '添加成功',
-        detail: `已添加角色 "${data.name}"`,
+        summary: t('panelUi.added'),
+        detail: t('panelUi.characterAdded', { name: data.name }),
         life: 3000,
         onRevert: () => CharacterSettingService.deleteCharacterSetting(props.book!.id, newChar.id),
       });
@@ -195,8 +204,8 @@ const handleSave = async (data: {
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: selectedCharacter.value ? '更新失败' : '添加失败',
-      detail: error instanceof Error ? error.message : '未知错误',
+      summary: selectedCharacter.value ? t('panelUi.updateFailed') : t('panelUi.addFailed'),
+      detail: localizedErrorMessage(error, resolveAppLocale(locale.value), 'panelUi.unknownError'),
       life: 5000,
     });
   } finally {
@@ -220,28 +229,24 @@ const confirmDeleteCharacter = async () => {
 
   try {
     // 保存要删除的角色数据用于撤销
-    const charToRestore = cloneDeep(character._original);
+    const charToRestore = cloneDeep(character._original) as CharacterSetting;
+    const restoreBookId = props.book.id;
+    const restoreOperationId = v4();
 
     await CharacterSettingService.deleteCharacterSetting(props.book.id, character.id);
 
     toast.add({
       severity: 'success',
-      summary: '删除成功',
-      detail: `已删除角色 "${character.name}"`,
+      summary: t('panelUi.deleted'),
+      detail: t('panelUi.characterDeleted', { name: character.name }),
       life: 3000,
       onRevert: async () => {
-        const booksStore = useBooksStore();
-        const book = booksStore.getBookById(props.book!.id);
-        if (book) {
-          const current = book.characterSettings || [];
-          // 检查是否存在（避免重复）
-          if (!current.some((c) => c.id === charToRestore.id)) {
-            await booksStore.updateBook(book.id, {
-              characterSettings: [...current, charToRestore],
-              lastEdited: new Date(),
-            });
-          }
-        }
+        await useBooksStore().restoreEntity(
+          restoreBookId,
+          'character',
+          charToRestore,
+          restoreOperationId,
+        );
       },
     });
 
@@ -250,8 +255,8 @@ const confirmDeleteCharacter = async () => {
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '删除失败',
-      detail: error instanceof Error ? error.message : '未知错误',
+      summary: t('panelUi.deleteFailed'),
+      detail: localizedErrorMessage(error, resolveAppLocale(locale.value), 'panelUi.unknownError'),
       life: 5000,
     });
   } finally {
@@ -270,8 +275,8 @@ const handleExport = () => {
   if (!props.book?.characterSettings || props.book.characterSettings.length === 0) {
     toast.add({
       severity: 'warn',
-      summary: '导出失败',
-      detail: '当前没有可导出的角色设定',
+      summary: t('panelUi.exportFailed'),
+      detail: t('panelUi.noExportCharacters'),
       life: 3000,
     });
     return;
@@ -281,126 +286,65 @@ const handleExport = () => {
     CharacterSettingService.exportCharacterSettingsToJson(props.book.characterSettings);
     toast.add({
       severity: 'success',
-      summary: '导出成功',
-      detail: `已成功导出 ${props.book.characterSettings.length} 个角色设定`,
+      summary: t('panelUi.exported'),
+      detail: t('panelUi.exportedCharacters', { count: props.book.characterSettings.length }),
       life: 3000,
     });
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '导出失败',
-      detail: error instanceof Error ? error.message : '导出角色设定时发生未知错误',
+      summary: t('panelUi.exportFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'panelUi.unknownCharacterExport',
+      ),
       life: 5000,
     });
   }
 };
 
-/**
- * 导入场景下把外部角色条目规整为 addCharacterSetting / updateCharacterSetting 所需的扁平载荷。
- * add 分支会在外层加 `name` 字段，update 分支直接传该对象。
- */
-type ImportedCharLike = {
-  sex?: 'male' | 'female' | 'other' | undefined;
-  translation: { translation: string };
-  description?: string | undefined;
-  speakingStyle?: string | undefined;
-  aliases: Array<{ name: string; translation: { translation: string } }>;
-};
-const buildImportedCharPayload = (importedChar: ImportedCharLike) => ({
-  ...(importedChar.sex !== undefined ? { sex: importedChar.sex } : {}),
-  translation: importedChar.translation.translation,
-  ...(importedChar.description !== undefined ? { description: importedChar.description } : {}),
-  ...(importedChar.speakingStyle !== undefined
-    ? { speakingStyle: importedChar.speakingStyle }
-    : {}),
-  aliases: importedChar.aliases.map((a) => ({
-    name: a.name,
-    translation: a.translation.translation,
-  })),
-});
-
 // 导入角色的撤销快照（仅记录被更新条目的可恢复字段）
-type UpdatedCharSnapshot = {
-  id: string;
-  name: string;
-  sex?: 'male' | 'female' | 'other';
-  translation: string;
-  description?: string;
-  speakingStyle?: string;
-  aliases: Array<{ name: string; translation: string }>;
-};
+type UpdatedCharSnapshot = CharacterSetting;
 
 interface CharsImportResult {
+  revertOperationId: string;
   addedCount: number;
   updatedCount: number;
   addedCharIds: string[];
   updatedCharsSnapshot: UpdatedCharSnapshot[];
-};
+}
 
-const buildUpdatedCharSnapshot = (existingChar: CharacterSetting): UpdatedCharSnapshot => ({
-  id: existingChar.id,
-  name: existingChar.name,
-  ...(existingChar.sex !== undefined ? { sex: existingChar.sex } : {}),
-  translation: existingChar.translation.translation,
-  ...(existingChar.description !== undefined ? { description: existingChar.description } : {}),
-  ...(existingChar.speakingStyle !== undefined
-    ? { speakingStyle: existingChar.speakingStyle }
-    : {}),
-  aliases: existingChar.aliases.map((a: Alias) => ({
-    name: a.name,
-    translation: a.translation.translation,
-  })),
-});
-
-// 执行导入：名称相同的更新，否则新增。返回新增/更新计数与撤销所需的快照
 const executeCharsImport = async (
   bookId: string,
   importedCharacters: CharacterSetting[],
-  existingCharacters: CharacterSetting[] | undefined,
 ): Promise<CharsImportResult> => {
-  let addedCount = 0;
-  let updatedCount = 0;
-  const addedCharIds: string[] = [];
-  const updatedCharsSnapshot: UpdatedCharSnapshot[] = [];
-
-  for (const importedChar of importedCharacters) {
-    const existingChar = existingCharacters?.find((c) => c.name === importedChar.name);
-    if (existingChar) {
-      updatedCharsSnapshot.push(buildUpdatedCharSnapshot(existingChar));
-      // 更新现有角色：buildImportedCharPayload 不含 name，保持与原始实现一致
-      await CharacterSettingService.updateCharacterSetting(
-        bookId,
-        existingChar.id,
-        buildImportedCharPayload(importedChar),
-      );
-      updatedCount++;
-    } else {
-      const newChar = await CharacterSettingService.addCharacterSetting(bookId, {
-        name: importedChar.name,
-        ...buildImportedCharPayload(importedChar),
-      });
-      addedCharIds.push(newChar.id);
-      addedCount++;
-    }
-  }
-
-  return { addedCount, updatedCount, addedCharIds, updatedCharsSnapshot };
+  const result = await BookService.importEntities(bookId, 'character', importedCharacters);
+  await useBooksStore().refreshBookFromStorage(bookId);
+  return {
+    addedCount: result.addedIds.length,
+    updatedCount: result.updatedBefore.length,
+    addedCharIds: result.addedIds,
+    updatedCharsSnapshot: result.updatedBefore,
+    revertOperationId: v4(),
+  };
 };
 
 // 撤销导入：删除新增条目，恢复被更新条目的快照字段
 const revertCharsImport = async (bookId: string, result: CharsImportResult): Promise<void> => {
   for (const id of result.addedCharIds) {
-    await CharacterSettingService.deleteCharacterSetting(bookId, id);
+    const book = useBooksStore().getBookById(bookId);
+    if (!book) throw new Error('BOOK_MISSING');
+    if (book.characterSettings?.some((item) => item.id === id))
+      await CharacterSettingService.deleteCharacterSetting(bookId, id);
   }
   for (const snapshot of result.updatedCharsSnapshot) {
-    await CharacterSettingService.updateCharacterSetting(bookId, snapshot.id, {
-      name: snapshot.name,
-      ...(snapshot.sex !== undefined ? { sex: snapshot.sex } : {}),
-      translation: snapshot.translation,
-      ...(snapshot.description !== undefined ? { description: snapshot.description } : {}),
-      ...(snapshot.speakingStyle !== undefined ? { speakingStyle: snapshot.speakingStyle } : {}),
-      aliases: snapshot.aliases,
-    });
+    await useBooksStore().restoreEntity(
+      bookId,
+      'character',
+      snapshot,
+      `${result.revertOperationId}:${snapshot.id}`,
+    );
   }
 };
 
@@ -412,8 +356,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     if (importedCharacters.length === 0) {
       toast.add({
         severity: 'warn',
-        summary: '导入失败',
-        detail: '文件中没有有效的角色设定数据',
+        summary: t('panelUi.importFailed'),
+        detail: t('panelUi.noImportCharacters'),
         life: 3000,
       });
       return;
@@ -422,26 +366,26 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     if (!props.book) {
       toast.add({
         severity: 'error',
-        summary: '导入失败',
-        detail: '没有选择书籍',
+        summary: t('panelUi.importFailed'),
+        detail: t('panelUi.noBook'),
         life: 3000,
       });
       return;
     }
 
-    const result = await executeCharsImport(
-      props.book.id,
-      importedCharacters,
-      props.book.characterSettings,
-    );
+    const result = await executeCharsImport(props.book.id, importedCharacters);
 
     // 与 TerminologyPanel 的导入成功 toast 结构高度相似（onRevert 前序步骤一致），
     // 但后续恢复更新逻辑各自维护不同字段集合，强行抽公共回调反而更复杂，保留两处实现。
     toast.add({
       severity: 'success',
-      summary: '导入成功',
+      summary: t('panelUi.imported'),
       // fallow-ignore-next-line code-duplication
-      detail: `已导入 ${importedCharacters.length} 个角色设定（新增 ${result.addedCount} 个，更新 ${result.updatedCount} 个）`,
+      detail: t('panelUi.importedCharacters', {
+        count: importedCharacters.length,
+        added: result.addedCount,
+        updated: result.updatedCount,
+      }),
       life: 3000,
       onRevert: async () => {
         if (!props.book) return;
@@ -454,8 +398,12 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   } catch (error) {
     toast.add({
       severity: 'error',
-      summary: '导入失败',
-      detail: error instanceof Error ? error.message : '导入角色设定时发生未知错误',
+      summary: t('panelUi.importFailed'),
+      detail: localizedErrorMessage(
+        error,
+        resolveAppLocale(locale.value),
+        'panelUi.unknownCharacterImport',
+      ),
       life: 5000,
     });
   }
@@ -466,10 +414,8 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
   <div class="character-setting-panel h-full flex flex-col">
     <!-- 标题区域 -->
     <div class="panel-header border-b border-white/10">
-      <h1 class="panel-title font-semibold text-moon-100">角色设置</h1>
-      <p class="panel-desc text-sm text-moon-100/70">
-        管理小说中的角色及其翻译和别名，这些设定会在翻译过程中被优先使用
-      </p>
+      <h1 class="panel-title font-semibold text-moon-100">{{ t('panelUi.characterTitle') }}</h1>
+      <p class="panel-desc text-sm text-moon-100/70">{{ t('panelUi.characterDescription') }}</p>
     </div>
 
     <!-- 操作栏 -->
@@ -479,7 +425,9 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     >
       <!-- 移动端紧凑操作栏 -->
       <div class="toolbar-mobile-compact">
-        <span class="text-sm text-moon/60">{{ characterSettings.length }} 位角色</span>
+        <span class="text-sm text-moon/60">{{
+          t('panelUi.characterCount', { count: characterSettings.length })
+        }}</span>
         <Button
           :icon="toolbarExpandIcon"
           size="small"
@@ -498,7 +446,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
             </InputGroupAddon>
             <InputText
               v-model="searchQuery"
-              placeholder="搜索角色名称、翻译、描述、说话风格或别名..."
+              :placeholder="t('panelUi.characterSearch')"
               class="search-input"
             />
             <InputGroupAddon v-if="searchQuery" class="input-action-addon">
@@ -506,7 +454,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
                 icon="pi pi-times"
                 class="p-button-text p-button-sm input-action-button"
                 @click="searchQuery = ''"
-                title="清除搜索"
+                :title="t('panelUi.clearSearch')"
               />
             </InputGroupAddon>
           </InputGroup>
@@ -515,7 +463,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
         <!-- 右侧：操作按钮 -->
         <div class="toolbar-actions">
           <Button
-            label="导出"
+            :label="t('panelUi.export')"
             icon="pi pi-upload"
             size="small"
             class="p-button-outlined"
@@ -523,14 +471,14 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
             @click="handleExport"
           />
           <Button
-            label="导入"
+            :label="t('panelUi.import')"
             icon="pi pi-download"
             size="small"
             class="p-button-outlined"
             @click="handleImport"
           />
           <Button
-            label="添加角色"
+            :label="t('panelUi.addCharacter')"
             icon="pi pi-plus"
             size="small"
             class="p-button-primary"
@@ -541,10 +489,25 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       <AppMessage
         severity="info"
         class="panel-message toolbar-expandable"
-        message="翻译、别名和描述字段留空时，AI 会在翻译过程中自动填充。AI 也会根据需要自动创建、更新或删除角色以优化翻译质量。"
+        :message="t('panelUi.characterAiHint')"
         :closable="false"
       />
     </div>
+
+    <AppMessage
+      v-if="hasNameConflicts"
+      severity="warn"
+      :message="t('books.nameConflict')"
+      :closable="false"
+      class="m-4"
+    />
+
+    <AppMessage
+      v-if="hasAliasConflicts"
+      severity="warn"
+      :message="t('books.aliasConflict')"
+      :closable="false"
+    />
 
     <!-- 内容区域 -->
     <div class="flex-1 p-6 overflow-y-auto">
@@ -578,6 +541,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
 
     <!-- 角色编辑对话框 -->
     <CharacterEditDialog
+      :target-language="book?.targetLanguage ?? 'zh-CN'"
       v-model:visible="showDialog"
       :character="editDialogCharacter"
       :loading="isSaving"
@@ -585,35 +549,15 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
     />
 
     <!-- 确认删除对话框 -->
-    <AdaptiveDialog
+    <EntityDeleteConfirmDialog
       v-model:visible="showDeleteConfirm"
-      header="确认删除角色"
-      desktop-width="25rem"
-      eyebrow="DELETE"
-      sheet-min-height="auto"
-    >
-      <div class="space-y-4">
-        <p class="text-moon/90">
-          确定要删除角色 <strong>"{{ deletingCharacter?.name }}"</strong> 吗？
-        </p>
-        <p class="text-sm text-moon/70">此操作无法撤销。</p>
-      </div>
-      <template #footer>
-        <Button
-          label="取消"
-          class="p-button-text"
-          :disabled="isDeleting"
-          @click="showDeleteConfirm = false"
-        />
-        <Button
-          label="删除"
-          class="p-button-danger"
-          :loading="isDeleting"
-          :disabled="isDeleting"
-          @click="confirmDeleteCharacter"
-        />
-      </template>
-    </AdaptiveDialog>
+      :name="deletingCharacter?.name ?? null"
+      :loading="isDeleting"
+      header-key="structureUi.confirmDeleteCharacter"
+      question-key="structureUi.deleteCharacterQuestion"
+      warning-key="structureUi.cannotUndo"
+      @confirm="confirmDeleteCharacter"
+    />
 
     <!-- 保留 ConfirmDialog 用于其他可能的确认操作 -->
     <ConfirmDialog group="character" />

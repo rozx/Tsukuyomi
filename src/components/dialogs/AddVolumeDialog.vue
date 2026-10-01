@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import { ref, watch } from 'vue';
-import Button from 'primevue/button';
+import DialogFormActions from './DialogFormActions.vue';
 import InputText from 'primevue/inputtext';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   visible: boolean;
@@ -39,19 +42,21 @@ const handleCancel = () => {
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="添加新卷"
+    :header="t('structureUi.addVolume')"
     desktop-width="25rem"
-    eyebrow="VOLUME"
+    :eyebrow="t('structureUi.volume')"
     sheet-min-height="auto"
     @update:visible="(val) => emit('update:visible', val)"
   >
     <div class="space-y-4">
       <div class="space-y-2">
-        <label for="volume-title" class="block text-sm font-medium text-moon/90">卷标题</label>
+        <label for="volume-title" class="block text-sm font-medium text-moon/90">{{
+          t('structureUi.volumeTitle')
+        }}</label>
         <InputText
           id="volume-title"
           v-model="volumeTitle"
-          placeholder="输入卷标题..."
+          :placeholder="t('structureUi.volumePlaceholder')"
           class="w-full"
           autofocus
           @keyup.enter="handleSave"
@@ -59,14 +64,13 @@ const handleCancel = () => {
       </div>
     </div>
     <template #footer>
-      <Button label="取消" class="p-button-text" :disabled="loading" @click="handleCancel" />
-      <Button
-        label="添加"
+      <DialogFormActions
+        :submit-label="t('structureUi.add')"
         :loading="loading"
-        :disabled="!volumeTitle.trim() || loading"
-        @click="handleSave"
+        :disabled="!volumeTitle.trim()"
+        @cancel="handleCancel"
+        @submit="handleSave"
       />
     </template>
   </AdaptiveDialog>
 </template>
-

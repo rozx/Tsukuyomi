@@ -1,20 +1,28 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
+import type { AppLocale } from 'src/models/locale';
+import { getNameTranslation } from 'src/services/localization/selection';
 import type { CharacterSetting } from 'src/models/novel';
+const { t } = useI18n();
 
 // 角色提示框内容：多个匹配角色（按出现次数排序）的列表渲染。
 // 从 ParagraphPopovers 拆出以降低其模板认知复杂度。
-defineProps<{
+const props = defineProps<{
   characters: CharacterSetting[];
+  targetLanguage?: AppLocale;
 }>();
+const translationText = (owner: CharacterSetting) =>
+  getNameTranslation(owner, props.targetLanguage ?? 'zh-CN')?.translation ?? '';
 </script>
 
 <template>
   <div>
     <!-- 角色列表已按出现次数排序（出现次数多的在前） -->
     <div v-if="characters.length > 1" class="popover-multiple-characters-hint">
-      <span class="hint-text"
-        >该文本可能匹配 {{ characters.length }} 个角色（按出现次数排序）：</span
-      >
+      <span class="hint-text">{{
+        t('panelUi.matchingCharacters', { count: characters.length })
+      }}</span>
     </div>
 
     <template v-for="(char, index) in characters" :key="char.id">
@@ -24,16 +32,22 @@ defineProps<{
           <div class="popover-character-name-row">
             <span class="popover-character-name">{{ char.name }}</span>
             <span v-if="char.sex" class="popover-character-sex">
-              {{ char.sex === 'male' ? '男' : char.sex === 'female' ? '女' : '其他' }}
+              {{
+                char.sex === 'male'
+                  ? t('panelUi.maleShort')
+                  : char.sex === 'female'
+                    ? t('panelUi.femaleShort')
+                    : t('panelUi.other')
+              }}
             </span>
           </div>
-          <span class="popover-translation">{{ char.translation.translation }}</span>
+          <span class="popover-translation">{{ translationText(char) }}</span>
         </div>
         <div v-if="char.description" class="popover-description">{{ char.description }}</div>
         <div v-if="char.aliases && char.aliases.length > 0" class="popover-aliases">
-          <span class="popover-aliases-label">别名：</span>
+          <span class="popover-aliases-label">{{ t('panelUi.aliasesLabel') }}</span>
           <span class="popover-aliases-list">
-            {{ char.aliases.map((a) => a.name).join('、') }}
+            {{ char.aliases.map((a) => a.name).join(t('panelUi.separator')) }}
           </span>
         </div>
       </div>

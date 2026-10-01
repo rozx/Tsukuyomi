@@ -1,4 +1,9 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { serializeImportError } from 'src/services/import/import-error';
+import type { ImportNotice } from 'src/models/import-feedback';
+
 /**
  * 本任务的导入记录与撤销。书籍在导入后有任何后续修改时撤销不可用，并说明原因。
  */
@@ -9,10 +14,13 @@ import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import type { ImportOperation } from 'src/models/import';
 import { formatTime, readableError } from './import-labels';
 
+const { t, locale } = useI18n();
+const uiLocale = computed(() => resolveAppLocale(locale.value));
+
 const store = useImportWorkspaceStore();
 const confirm = useConfirm();
 
-type RevertState = { available: boolean; reason?: string };
+type RevertState = { available: boolean; reason?: ImportNotice };
 const revertState = ref<Record<string, RevertState>>({});
 
 const history = computed(() => store.operations.filter((entry) => entry.state !== 'planned'));
@@ -24,7 +32,10 @@ watch(
       try {
         next[entry.id] = await store.revertStatus(entry.id);
       } catch (error) {
-        next[entry.id] = { available: false, reason: readableError(String(error)) };
+        next[entry.id] = {
+          available: false,
+          reason: serializeImportError(error, 'REVERT_STATUS_FAILED'),
+        };
       }
     }
     revertState.value = next;
@@ -40,9 +51,16 @@ const rows = computed(() =>
     return {
       entry,
       applied,
-      title: `${entry.plan.targetKind === 'new' ? '新建' : '更新'}《${entry.plan.book.title}》`,
-      time: `${applied ? '导入于' : '撤销于'} ${formatTime(time)}`,
-      reason: state?.reason ?? '',
+      title: t(
+        entry.plan.targetKind === 'new' ? 'importUi.common.newBook' : 'importUi.common.updateBook',
+        {
+          title: entry.plan.book.title,
+        },
+      ),
+      time: t(applied ? 'importUi.history.appliedAt' : 'importUi.history.revertedAt', {
+        time: formatTime(time, uiLocale.value),
+      }),
+      reason: state?.reason === undefined ? '' : readableError(state.reason, uiLocale.value),
       canRevert: Boolean(state?.available) && !store.isRunning,
     };
   }),
@@ -51,14 +69,15 @@ const reverting = computed(() => store.pendingAction === 'revert');
 
 const requestRevert = (entry: ImportOperation) => {
   confirm.require({
-    header: '撤销这次导入',
-    message:
+    header: t('importUi.history.revertHeader'),
+    message: t(
       entry.plan.targetKind === 'new'
-        ? '将删除这次导入新建的小说及其正文。'
-        : '将恢复导入前的元信息、卷章、原文和全部译文。',
+        ? 'importUi.history.revertNewMessage'
+        : 'importUi.history.revertUpdateMessage',
+    ),
     icon: 'pi pi-undo',
-    acceptLabel: '撤销导入',
-    rejectLabel: '取消',
+    acceptLabel: t('importUi.history.revertAccept'),
+    rejectLabel: t('importUi.common.cancel'),
     acceptClass: 'p-button-danger',
     accept: () => void store.revertOperation(entry.id),
   });
@@ -69,7 +88,7 @@ const requestRevert = (entry: ImportOperation) => {
   <section v-if="rows.length" class="ipl-card">
     <div class="ipl-card-head">
       <h3 class="ipl-card-title">
-        <i class="pi pi-history" aria-hidden="true" />导入记录
+        <i class="pi pi-history" aria-hidden="true" />{{ t('importUi.history.title') }}
         <span class="ipl-count">{{ rows.length }}</span>
       </h3>
     </div>
@@ -88,7 +107,7 @@ const requestRevert = (entry: ImportOperation) => {
         <Button
           v-if="row.applied"
           icon="pi pi-undo"
-          label="撤销"
+          :label="t('importUi.history.revert')"
           size="small"
           severity="danger"
           outlined

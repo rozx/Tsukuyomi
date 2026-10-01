@@ -1,3 +1,6 @@
+import { LocalizedError } from 'src/utils/localized-error';
+import type { AppLocale } from 'src/models/locale';
+import { isAppLocale } from 'src/models/locale';
 /**
  * 待办事项服务
  * 负责管理待办事项（使用 localStorage 存储）
@@ -8,7 +11,14 @@ import type { TaskStatus } from 'src/services/ai/tasks/utils/task-types';
 
 export type TodoStatus = 'pending' | 'working' | 'done';
 
+export interface TodoParagraphInput {
+  id: string;
+  displayIndex: number;
+}
+
 export interface TodoItem {
+  uiLocale?: AppLocale;
+  paragraphInputs?: TodoParagraphInput[];
   id: string;
   text: string;
   status: TodoStatus;
@@ -29,6 +39,12 @@ let cachedTodos: TodoItem[] | null = null;
 /**
  * 从 localStorage 加载所有待办事项（带内存缓存）
  */
+function requireTodoIndex(todos: TodoItem[], id: string): number {
+  const index = todos.findIndex((todo) => todo.id === id);
+  if (index === -1) throw new LocalizedError('TODO_NOT_FOUND', 'aiTodoFeedback.missing', { id });
+  return index;
+}
+
 function loadTodosFromStorage(): TodoItem[] {
   if (cachedTodos) return cachedTodos;
   try {
@@ -67,7 +83,7 @@ function saveTodosToStorage(todos: TodoItem[]): void {
   } catch (error) {
     cachedTodos = null;
     console.error('[TodoListService] 保存待办事项失败:', error);
-    throw new Error('保存待办事项失败');
+    throw new LocalizedError('TODO_SAVE_FAILED', 'aiTodoFeedback.saveFailed');
   }
 }
 
@@ -113,17 +129,25 @@ export class TodoListService {
     text: string,
     taskId: string,
     sessionId?: string,
-    options?: { predefined?: boolean; taskState?: TaskStatus; chunkIndex?: number },
+    options?: {
+      predefined?: boolean;
+      taskState?: TaskStatus;
+      chunkIndex?: number;
+      uiLocale?: AppLocale;
+      paragraphInputs?: TodoParagraphInput[];
+    },
   ): TodoItem {
+    if (options?.uiLocale !== undefined && !isAppLocale(options.uiLocale))
+      throw new Error('INVALID_TODO_LANGUAGE');
     const trimmedText = text.trim();
     const trimmedTaskId = taskId.trim();
     const trimmedSessionId = sessionId?.trim();
 
     if (!trimmedText) {
-      throw new Error('待办事项内容不能为空');
+      throw new LocalizedError('TODO_CONTENT_REQUIRED', 'aiTodoFeedback.contentRequired');
     }
     if (!trimmedTaskId) {
-      throw new Error('任务 ID 不能为空');
+      throw new LocalizedError('TODO_CONTEXT_REQUIRED', 'aiTodoFeedback.taskRequired');
     }
 
     const todos = this.getAllTodos();
@@ -136,6 +160,10 @@ export class TodoListService {
       updatedAt: now,
       taskId: trimmedTaskId,
       ...(trimmedSessionId ? { sessionId: trimmedSessionId } : {}),
+      ...(options?.uiLocale ? { uiLocale: options.uiLocale } : {}),
+      ...(options?.paragraphInputs
+        ? { paragraphInputs: structuredClone(options.paragraphInputs) }
+        : {}),
       ...(options?.predefined ? { predefined: true } : {}),
       ...(options?.taskState ? { taskState: options.taskState } : {}),
       ...(options?.chunkIndex !== undefined ? { chunkIndex: options.chunkIndex } : {}),
@@ -155,22 +183,19 @@ export class TodoListService {
    */
   static updateTodo(id: string, updates: { text?: string; status?: TodoStatus }): TodoItem {
     const todos = this.getAllTodos();
-    const todoIndex = todos.findIndex((todo) => todo.id === id);
-
-    if (todoIndex === -1) {
-      throw new Error(`待办事项不存在: ${id}`);
-    }
+    const todoIndex = requireTodoIndex(todos, id);
 
     const todo = todos[todoIndex];
     if (!todo) {
-      throw new Error(`待办事项不存在: ${id}`);
+      throw new LocalizedError('TODO_NOT_FOUND', 'aiTodoFeedback.missing', { id });
     }
 
     const VALID_STATUSES: TodoStatus[] = ['pending', 'working', 'done'];
     if (updates.status !== undefined && !VALID_STATUSES.includes(updates.status)) {
-      throw new Error(
-        `无效的待办事项状态: "${updates.status}"，有效值为: ${VALID_STATUSES.join(', ')}`,
-      );
+      throw new LocalizedError('TODO_STATUS_INVALID', 'aiTodoFeedback.invalidStatus', {
+        status: updates.status,
+        valid: VALID_STATUSES.join(', '),
+      });
     }
 
     const updatedTodo: TodoItem = {
@@ -180,6 +205,8 @@ export class TodoListService {
       createdAt: todo.createdAt,
       updatedAt: Date.now(),
       taskId: todo.taskId,
+      ...(todo.uiLocale ? { uiLocale: todo.uiLocale } : {}),
+      ...(todo.paragraphInputs ? { paragraphInputs: todo.paragraphInputs } : {}),
       ...(todo.sessionId ? { sessionId: todo.sessionId } : {}),
       ...(todo.predefined ? { predefined: true } : {}),
       ...(todo.taskState ? { taskState: todo.taskState } : {}),
@@ -187,7 +214,7 @@ export class TodoListService {
     };
 
     if (!updatedTodo.text || !updatedTodo.text.trim()) {
-      throw new Error('待办事项内容不能为空');
+      throw new LocalizedError('TODO_CONTENT_REQUIRED', 'aiTodoFeedback.contentRequired');
     }
 
     todos[todoIndex] = updatedTodo;
@@ -213,7 +240,7 @@ export class TodoListService {
   static markTodoAsWorking(id: string): TodoItem {
     const todo = this.getTodoById(id);
     if (todo && todo.status === 'done') {
-      throw new Error('该待办已完成，无法重新标记为进行中');
+      throw new LocalizedError('TODO_ALREADY_DONE', 'aiTodoFeedback.alreadyDone');
     }
     return this.updateTodo(id, { status: 'working' });
   }
@@ -246,11 +273,7 @@ export class TodoListService {
    */
   static deleteTodo(id: string): void {
     const todos = this.getAllTodos();
-    const todoIndex = todos.findIndex((todo) => todo.id === id);
-
-    if (todoIndex === -1) {
-      throw new Error(`待办事项不存在: ${id}`);
-    }
+    const todoIndex = requireTodoIndex(todos, id);
 
     todos.splice(todoIndex, 1);
     saveTodosToStorage(todos);

@@ -1,6 +1,6 @@
 # Tsukuyomi Translator - AI Coding Agent Guide
 
-> **项目**: AI 驱动的日本小说翻译器 (Vue 3 + Quasar + TypeScript + Electron)
+> **项目**: AI 驱动的多语言小说翻译器，原文不限语言，译为简中 / 繁中 / 英文 (Vue 3 + Quasar + TypeScript + Electron)
 
 ---
 
@@ -311,3 +311,5 @@ AI: OpenAI SDK + Google Generative AI | 存储: IndexedDB (idb) + GitHub Gist (@
 5. **DRY 原则**: 不重复代码，提取可复用函数
 6. **路径别名**: 使用 `src/` 前缀导入模块 (tsconfig paths 配置)
 7. **设备变体**: 新建页面 / 布局必须遵循 dispatcher + Desktop/Tablet/Mobile 三变体结构（见上节）；严禁在页面或布局内写 `v-if="isPhone"` / `v-if="isElectron"`
+8. **代理 skill 位置**: 项目 skill 只放 `.agents/skills/`（Agent Skills 通用标准，Codex / Gemini CLI / Cursor / OpenCode / Kilo Code 等读取）和 `.claude/skills/`（Claude Code 只读这里），两处内容保持一致；不要再建 `.agent/`、`.kilocode/`、`.opencode/`、`.github/skills` 等工具专属副本（`openspec init/update` 选工具时只选 Claude Code 和通用 `.agents`）
+9. **多语言文档**: 帮助文档 `public/help/<locale>/` 与 README（`README.md` / `README.zh-TW.md` / `README.en-US.md`）三语同步，更新日志仅简中

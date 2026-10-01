@@ -55,11 +55,11 @@ The system SHALL split chapter content into chunks along paragraph boundaries wi
 
 ### Requirement: Embedding input composition
 
-The system SHALL compose each `content` chunk's embedding input by concatenating original text and selected translation per paragraph. Title chunks follow the separate "Title chunk for chapter heading semantics" requirement.
+The system SHALL compose each `content` chunk's embedding input by concatenating original text and selected translation for the cache's target language per paragraph; translations in other languages SHALL be excluded. Title chunks follow the separate "Title chunk for chapter heading semantics" requirement.
 
 #### Scenario: Paragraph has selected translation
 
-- **GIVEN** a paragraph with a non-empty `selectedTranslationId` pointing to a translation
+- **GIVEN** a paragraph with a non-empty language-specific selection pointing to a translation in that same target language
 - **WHEN** composing a content chunk's embedding input
 - **THEN** the paragraph contributes `${originalText}\n${selectedTranslationText}` to the input
 - **AND** paragraphs within a chunk are joined by blank lines
@@ -209,6 +209,8 @@ The system SHALL provide a popup UI that surfaces chapter and memory embedding p
 
 ### Requirement: Title chunk for chapter heading semantics
 
+Title text SHALL resolve from the same target language used for the content cache, falling back to the original title when that language has no translation; title chunk metadata SHALL identify that language.
+
 The system SHALL embed each chapter's title together with its first paragraph as a dedicated `title` chunk, distinct from the content chunks, to support title-driven and theme-driven semantic queries.
 
 #### Scenario: Compose title chunk input
@@ -338,8 +340,8 @@ The system SHALL compute chapter retrieval scores by combining a population-awar
 - **GIVEN** a query string, a book with `terminologies` and `characterSettings` (each may have `aliases`), and a chapter with title `T`, optional volume title `V`, and content chunks with `textSnippet`
 - **WHEN** the system computes the keyword signal
 - **THEN** the system SHALL build an alias index from the book containing:
-  - a `properNouns` set: every non-empty trimmed `name`, `translation.translation`, and `aliases[].name` / `aliases[].translation.translation` from terminologies and characterSettings
-  - `aliasGroups`: each terminology / character contributes one synonym group containing all of its name forms (Japanese name + Chinese translation + each alias's name + each alias's translation)
+  - a `properNouns` set: every non-empty original name plus selected-target-language terminology, character and alias translation from the book; translations in other languages SHALL be excluded
+  - `aliasGroups`: each terminology / character contributes one synonym group containing its original name forms and the requested target language's translated name forms
 - **AND** the system SHALL alias-expand the query: for every group whose name forms appear as a substring of the original query, append all OTHER forms in the group to the query string (separated by spaces) so that a Chinese query mentioning "莉莉花园" also matches a chunk containing "リリーガーデン" (and vice versa)
 - **AND** during keyword scoring, when a query unit (CJK run / alphanumeric word) is itself a member of `properNouns`, that unit's per-unit match score SHALL be multiplied by `PROPER_NOUN_BOOST = 2.0` and clamped to `[0, 1]`
 - **AND** `title_kw` SHALL be the keyword score of the alias-expanded query against `"${T} ${V}".trim()` with proper-noun boost applied
@@ -361,3 +363,25 @@ The system SHALL compute chapter retrieval scores by combining a population-awar
 - **WHEN** the response includes a `preview` field
 - **THEN** the preview SHALL be the `textSnippet` of the highest-scoring **content** chunk in that chapter
 - **AND** when no content chunks exist (only a title chunk), the preview SHALL be the title chunk's `textSnippet`
+
+### Requirement: 章节检索缓存具有语言归属
+
+章节向量、标题及片段缓存 SHALL 标记其目标语言及相关内容版本；每次查询现算的别名索引 SHALL 使用执行目标语言；仅匹配查询执行目标语言的缓存可参与检索。书籍目标改变后 SHALL 使不匹配缓存失效并通过现有后台队列重建，查询 SHALL 明确返回重建/不可用状态而不泄漏其他语言片段。共享记忆向量 SHALL 保留。
+
+#### Scenario: 目标语言变化后查询
+
+- **GIVEN** 缓存包含简中译文，书籍目标已切英文
+- **WHEN** 英文任务查询章节
+- **THEN** SHALL 使用英文缓存或返回重建状态，不能把简中片段当作英文参考
+
+#### Scenario: 旧任务仍查询旧目标
+
+- **GIVEN** 英文任务仍在运行，书籍切繁中且缓存已重建为繁中
+- **WHEN** 旧任务执行章节语义查询
+- **THEN** SHALL 明确表示英文缓存不可用，并允许任务用原文及英文读取工具继续，不使用繁中缓存代替
+
+#### Scenario: 旧语言计算晚于新语言完成
+
+- **GIVEN** 英文向量开始计算后书籍切换繁中，新的繁中向量已完成
+- **WHEN** 旧英文计算尝试提交
+- **THEN** 系统 SHALL 核对语言和输入版本并丢弃过时结果，不覆盖当前繁中缓存

@@ -1,3 +1,4 @@
+import type { Novel } from '../models/novel';
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 import { SyncDataService } from '../services/sync-data-service';
 import { ChapterContentService } from '../services/chapter-content-service';
@@ -23,6 +24,7 @@ const mockBooksStore = {
   books: [] as unknown[],
   clearBooks: mock(() => Promise.resolve()),
   bulkAddBooks: mock((_books: unknown[]) => Promise.resolve()),
+  rollbackBooks: mock((books: unknown[]) => mockBooksStore.bulkAddBooks(books)),
   getBookById: mock(() => null),
   updateBook: mock(() => Promise.resolve()),
 };
@@ -31,6 +33,7 @@ const mockCoverHistoryStore = {
   covers: [] as unknown[],
   clearHistory: mock(() => Promise.resolve()),
   addCover: mock((_cover: unknown) => Promise.resolve()),
+  replaceHistory: mock((_items: unknown) => Promise.resolve()),
 };
 
 const mockSettingsStore = {
@@ -211,6 +214,7 @@ describe('数据同步服务 (SyncDataService)', () => {
     mockCoverHistoryStore.covers = [];
     mockCoverHistoryStore.clearHistory.mockClear();
     mockCoverHistoryStore.addCover.mockClear();
+    mockCoverHistoryStore.replaceHistory.mockClear();
 
     mockSettingsStore.importSettings.mockClear();
     mockSettingsStore.replaceSettingsFromSyncSnapshot.mockClear();
@@ -302,11 +306,11 @@ describe('数据同步服务 (SyncDataService)', () => {
         }),
       );
 
-      // Verify Cover History
-      expect(mockCoverHistoryStore.clearHistory).toHaveBeenCalled();
-      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
+      // Verify Cover History：按远端身份整体替换，不走会重铸 id 的 addCover
+      expect(mockCoverHistoryStore.addCover).not.toHaveBeenCalled();
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([
         expect.objectContaining({ id: 'c1', url: 'remote.jpg' }),
-      );
+      ]);
     });
 
     it('当远程数据较新时，应更新本地数据', async () => {
@@ -854,7 +858,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       );
     });
 
-    it('当本地书籍较新时，应保留本地段落的 selectedTranslationId', async () => {
+    it('选用按逻辑版本合并，不由书籍修改时间决定', async () => {
       const oldDate = new Date('2024-01-01').toISOString();
       const newDate = new Date('2024-01-02').toISOString();
 
@@ -877,6 +881,13 @@ describe('数据同步服务 (SyncDataService)', () => {
                       id: 'p1',
                       text: '原文',
                       selectedTranslationId: 't-local',
+                      selectedTranslations: {
+                        'zh-CN': {
+                          value: 't-local',
+                          revision: { counter: 2, actorId: 'local' },
+                          updatedAt: 0,
+                        },
+                      },
                       translations: [
                         { id: 't-local', translation: '本地译文', aiModelId: 'm1' },
                         { id: 't-remote', translation: '远程译文', aiModelId: 'm2' },
@@ -910,6 +921,13 @@ describe('数据同步服务 (SyncDataService)', () => {
                         id: 'p1',
                         text: '原文',
                         selectedTranslationId: 't-remote',
+                        selectedTranslations: {
+                          'zh-CN': {
+                            value: 't-remote',
+                            revision: { counter: 1, actorId: 'remote' },
+                            updatedAt: 0,
+                          },
+                        },
                         translations: [
                           { id: 't-local', translation: '本地译文', aiModelId: 'm1' },
                           { id: 't-remote', translation: '远程译文', aiModelId: 'm2' },
@@ -1092,7 +1110,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(selectedId).toBe('t-local');
     });
 
-    it('当主导与副方的 selectedTranslationId 都失效时，应回退到合并后的首个翻译', async () => {
+    it('当主导与副方的 selectedTranslationId 都失效时，保留版本但不伪造选用', async () => {
       const localDate = new Date('2024-01-01').toISOString();
       const remoteDate = new Date('2024-01-03').toISOString();
 
@@ -1163,7 +1181,7 @@ describe('数据同步服务 (SyncDataService)', () => {
       const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
       const paragraph = addedBooks[0]?.volumes?.[0]?.chapters?.[0]?.content?.[0];
 
-      expect(paragraph.selectedTranslationId).toBe('t-remote');
+      expect(paragraph.selectedTranslationId).toBe('');
       expect(paragraph.translations.map((translation: { id: string }) => translation.id)).toEqual([
         't-remote',
         't-local',
@@ -1560,8 +1578,9 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       const result = await SyncDataService.applyDownloadedData(remoteData, lastSyncTime, false);
       expect(result).toEqual([]);
-      // 不应把该封面写回（即 addCover 不应被调用）
+      // 不应把该封面写回（替换后的封面历史为空）
       expect(mockCoverHistoryStore.addCover).not.toHaveBeenCalled();
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([]);
     });
 
     it('同步 Memory 时不应因为生成新 ID 而重复创建（应保留远程 memory.id）', async () => {
@@ -2097,7 +2116,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         't-1',
       );
       expect(chapters?.[0]?.content?.[0]?.selectedTranslationId).toBe('t-1');
-      expect(chapters?.[0]?.title).toEqual({
+      expect(chapters?.[0]?.title).toMatchObject({
         original: '第五章',
         translation: { id: 'tt-1', translation: '第五章·译', aiModelId: 'm1' },
       });
@@ -3179,6 +3198,57 @@ describe('数据同步服务 (SyncDataService)', () => {
   });
 
   describe('overwriteFromSnapshot (恢复修订版本完全覆盖)', () => {
+    it('修订恢复为已删除实体建立新身份，并保留旧 tombstone', async () => {
+      const current = {
+        id: 'b',
+        title: 'Book',
+        lastEdited: new Date(0).toISOString(),
+        createdAt: new Date(0).toISOString(),
+        characterSettings: [],
+        entityTombstones: {
+          '["character",null,"c"]': {
+            kind: 'character' as const,
+            id: 'c',
+            revision: { counter: 90, actorId: 'old' },
+            deletedAt: 0,
+          },
+        },
+      };
+      mockBooksStore.books = [current];
+      await SyncDataService.overwriteFromSnapshot(
+        {
+          novels: [
+            {
+              ...current,
+              entityTombstones: {},
+              characterSettings: [
+                {
+                  id: 'c',
+                  name: 'Alice',
+                  sex: undefined,
+                  translation: { id: 'cn', translation: '爱丽丝', aiModelId: 'm' },
+                  aliases: [
+                    {
+                      id: 'a',
+                      name: 'Al',
+                      translation: { id: 'cn-a', translation: '小爱', aiModelId: 'm' },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        'restore-test',
+      );
+      const written = (mockBooksStore.bulkAddBooks.mock.calls[0]![0] as Novel[])[0]!;
+      expect(written.characterSettings![0]!.id).not.toBe('c');
+      expect(written.characterSettings![0]!.aliases[0]!.id).not.toBe('a');
+      expect(written.entityTombstones!['["character",null,"c"]']).toEqual(
+        current.entityTombstones['["character",null,"c"]'],
+      );
+    });
+
     it('覆盖后本地独有的书籍/模型/封面/记忆不再出现', async () => {
       // 本地独有数据
       mockBooksStore.books = [
@@ -3229,9 +3299,9 @@ describe('数据同步服务 (SyncDataService)', () => {
         expect.arrayContaining([expect.objectContaining({ id: 'snap-book' })]),
       );
       expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'snap-model' }));
-      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([
         expect.objectContaining({ id: 'snap-cover' }),
-      );
+      ]);
 
       // store 内存状态仅包含快照模型
       expect(mockAIModelsStore.models).toHaveLength(1);
@@ -3271,9 +3341,9 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       // 模型、封面、记忆都被写入
       expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'm1' }));
-      expect(mockCoverHistoryStore.addCover).toHaveBeenCalledWith(
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([
         expect.objectContaining({ id: 'c1' }),
-      );
+      ]);
       expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
         'b1',
         'mem1',
@@ -3572,6 +3642,8 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(lastRestoreCall).toEqual(
         expect.arrayContaining([expect.objectContaining({ id: 'orig-book' })]),
       );
+      // 封面历史按备份原样写回（保留身份），回滚走完全程
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalled();
     });
 
     it('回滚时必须还原章节内容——备份需内联章节内容而非仅元数据', async () => {

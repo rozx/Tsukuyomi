@@ -1,16 +1,27 @@
 import { useConfirm } from 'primevue/useconfirm';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
+import { useSettingsStore } from 'src/stores/settings';
 import type { ImportDraft, ImportDraftRemoval } from 'src/models/import';
+import type { AppLocale } from 'src/models/locale';
+import type { MessageKey } from 'src/i18n/types';
+import { translateText } from 'src/i18n/translate';
 
-function deletionDetails(draft: ImportDraft, removal: ImportDraftRemoval) {
+/** 确认弹窗的标题、说明与按钮，按界面语言生成；删除范围不存在时返回 undefined。 */
+export function importDraftDeletionDetails(
+  draft: Pick<ImportDraft, 'volumes' | 'chapters'>,
+  removal: ImportDraftRemoval,
+  locale: AppLocale,
+) {
+  const t = (key: MessageKey, values?: Record<string, string | number>) =>
+    translateText(locale, key, values);
   switch (removal.op) {
     case 'remove_chapter': {
       const chapter = draft.chapters.find((entry) => entry.id === removal.chapterId);
       return chapter
         ? {
-            header: '删除草稿章节',
-            message: `将从草稿中删除「${chapter.title}」。`,
-            acceptLabel: '删除章节',
+            header: t('importUi.deletion.chapterHeader'),
+            message: t('importUi.deletion.chapterMessage', { title: chapter.title }),
+            acceptLabel: t('importUi.deletion.chapterAccept'),
           }
         : undefined;
     }
@@ -19,18 +30,21 @@ function deletionDetails(draft: ImportDraft, removal: ImportDraftRemoval) {
       const count = draft.chapters.filter((entry) => entry.volumeId === removal.volumeId).length;
       return volume
         ? {
-            header: '删除草稿卷',
-            message: `将从草稿中删除「${volume.title}」及其中的 ${count} 章。`,
-            acceptLabel: '删除整卷',
+            header: t('importUi.deletion.volumeHeader'),
+            message: t('importUi.deletion.volumeMessage', { title: volume.title, count }),
+            acceptLabel: t('importUi.deletion.volumeAccept'),
           }
         : undefined;
     }
     case 'clear_structure':
       return draft.volumes.length || draft.chapters.length
         ? {
-            header: '清空全部卷章草稿',
-            message: `将清空草稿中的 ${draft.volumes.length} 卷、${draft.chapters.length} 章。`,
-            acceptLabel: '清空卷章',
+            header: t('importUi.deletion.structureHeader'),
+            message: t('importUi.deletion.structureMessage', {
+              volumes: draft.volumes.length,
+              chapters: draft.chapters.length,
+            }),
+            acceptLabel: t('importUi.deletion.structureAccept'),
           }
         : undefined;
   }
@@ -39,20 +53,22 @@ function deletionDetails(draft: ImportDraft, removal: ImportDraftRemoval) {
 /** 三个设备变体共用一个确认入口，确认范围固定在打开弹窗时。 */
 export function useImportDraftDeletion() {
   const store = useImportWorkspaceStore();
+  const settings = useSettingsStore();
   const confirm = useConfirm();
   return (removal: ImportDraftRemoval): void => {
     const task = store.task;
     if (!task) return;
-    const details = deletionDetails(task.draft, removal);
+    const locale = settings.uiLocale;
+    const details = importDraftDeletionDetails(task.draft, removal, locale);
     if (!details) return;
     const taskId = task.id;
     const revision = task.draft.revision;
     const operation = { ...removal };
     confirm.require({
       ...details,
-      message: `${details.message}来源、书籍信息和已导入书库的内容会保留。`,
+      message: translateText(locale, 'importUi.deletion.kept', { message: details.message }),
       icon: 'pi pi-exclamation-triangle',
-      rejectLabel: '取消',
+      rejectLabel: translateText(locale, 'importUi.common.cancel'),
       acceptClass: 'p-button-danger',
       accept: () => void store.removeDraft(taskId, revision, operation),
     });

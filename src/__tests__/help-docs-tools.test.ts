@@ -16,7 +16,7 @@ const mockHelpIndex = [
     id: 'front-page',
     title: '快速开始',
     file: 'front-page.md',
-    path: 'help',
+    path: 'help/zh-CN',
     category: '使用指南',
     description: 'Tsukuyomi 翻译器核心功能介绍和快速入门',
   },
@@ -24,7 +24,7 @@ const mockHelpIndex = [
     id: 'ai-models-guide',
     title: 'AI 模型配置',
     file: 'ai-models-guide.md',
-    path: 'help',
+    path: 'help/zh-CN',
     category: '使用指南',
     description: 'AI 模型的配置、管理和最佳实践指南',
   },
@@ -32,7 +32,7 @@ const mockHelpIndex = [
     id: 'book-details-terminology',
     title: '术语管理',
     file: 'book-details-terminology.md',
-    path: 'help',
+    path: 'help/zh-CN',
     category: '书籍详情页',
     description: '术语库的创建、管理和使用,确保翻译一致性',
   },
@@ -299,7 +299,8 @@ describe('HelpDocsTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('获取帮助文档索引失败');
+      expect(parsed.error_code).toBe('HELP_INDEX_LOAD_FAILED');
+      expect(parsed.error).toContain('Network Error');
     });
 
     test('get_help_doc 在网络错误时应返回错误信息', async () => {
@@ -321,7 +322,8 @@ describe('HelpDocsTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('获取帮助文档内容失败');
+      expect(parsed.error_code).toBe('HELP_DOCUMENT_LOAD_FAILED');
+      expect(parsed.error).toContain('Network Error');
     });
 
     test('list_help_docs 在网络错误时应返回错误信息', async () => {
@@ -337,7 +339,8 @@ describe('HelpDocsTools', () => {
       const parsed = JSON.parse(result);
 
       expect(parsed.success).toBe(false);
-      expect(parsed.error).toContain('获取帮助文档索引失败');
+      expect(parsed.error_code).toBe('HELP_INDEX_LOAD_FAILED');
+      expect(parsed.error).toContain('Network Error');
     });
   });
 });

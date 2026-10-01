@@ -5,6 +5,8 @@
  */
 
 import { ProxyService } from 'src/services/proxy-service';
+import type { AppLocale } from 'src/models/locale';
+import { LocalizedError } from 'src/utils/localized-error';
 
 export interface UploadResult {
   url: string;
@@ -41,22 +43,27 @@ export class ImageUploadService {
    * @param file 文件对象
    * @throws {Error} 如果文件无效
    */
-  private static validateFile(file: File): void {
+  private static validateFile(file: File, locale: AppLocale): void {
     // 验证文件类型
     if (!file.type.startsWith('image/')) {
-      throw new Error('请选择图片文件');
+      throw new LocalizedError('IMAGE_REQUIRED', 'coverUi.chooseImage', {}, locale);
     }
 
     // 验证文件扩展名
     const ext = file.name.split('.').pop()?.toLowerCase() || '';
     if (!this.SUPPORTED_FORMATS.includes(ext)) {
-      throw new Error(`不支持的图片格式。支持的格式：${this.SUPPORTED_FORMATS.join(', ')}`);
+      throw new LocalizedError(
+        'IMAGE_FORMAT_UNSUPPORTED',
+        'coverUi.unsupportedFormat',
+        { formats: this.SUPPORTED_FORMATS.join(', ') },
+        locale,
+      );
     }
 
     // 验证文件大小
     if (file.size > this.MAX_FILE_SIZE) {
       const maxSizeMB = this.MAX_FILE_SIZE / (1024 * 1024);
-      throw new Error(`图片大小不能超过 ${maxSizeMB}MB`);
+      throw new LocalizedError('IMAGE_TOO_LARGE', 'coverUi.fileTooLarge', { maxSizeMB }, locale);
     }
   }
 
@@ -80,6 +87,7 @@ export class ImageUploadService {
     apiUrl: string,
     contentType: string,
     imageBuffer: Uint8Array,
+    locale: AppLocale,
   ): Promise<{ data?: { url?: string; delete_url?: string } }> {
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -91,18 +99,24 @@ export class ImageUploadService {
       body: imageBuffer as unknown as BodyInit,
     });
     if (!response.ok) {
-      throw new Error(`上传失败: ${response.status} ${response.statusText}`);
+      throw new LocalizedError(
+        'IMAGE_UPLOAD_HTTP',
+        'coverUi.httpUploadFailed',
+        { status: response.status, diagnostic: response.statusText },
+        locale,
+      );
     }
     return (await response.json()) as { data?: { url?: string; delete_url?: string } };
   }
 
   private static parseUploadResult(
     result: { data?: { url?: string; delete_url?: string } },
+    locale: AppLocale,
   ): UploadResult {
     const imageUrl = result.data?.url;
     if (!imageUrl) {
       console.error('上传响应:', result);
-      throw new Error('上传响应中未找到图片 URL');
+      throw new LocalizedError('IMAGE_URL_MISSING', 'coverUi.missingImageUrl', {}, locale);
     }
     const deleteUrl = result.data?.delete_url;
     if (import.meta.env.DEV) {
@@ -115,15 +129,22 @@ export class ImageUploadService {
     };
   }
 
-  private static translateUploadError(error: unknown): Error {
+  private static translateUploadError(error: unknown, locale: AppLocale): Error {
     if (error instanceof TypeError && error.message.includes('fetch')) {
-      return new Error('网络连接失败，请检查网络设置');
+      return new LocalizedError(
+        'IMAGE_UPLOAD_NETWORK',
+        'coverUi.networkFailed',
+        { diagnostic: error.message },
+        locale,
+      );
     }
-    return error instanceof Error ? error : new Error('上传图片时发生未知错误');
+    return error instanceof Error
+      ? error
+      : new LocalizedError('IMAGE_UPLOAD_UNKNOWN', 'coverUi.unknownUploadError', {}, locale);
   }
 
-  static async uploadImage(file: File): Promise<UploadResult> {
-    this.validateFile(file);
+  static async uploadImage(file: File, locale: AppLocale = 'zh-CN'): Promise<UploadResult> {
+    this.validateFile(file, locale);
     const contentType = this.getContentType(file.name);
     const imageBuffer = new Uint8Array(await file.arrayBuffer());
 
@@ -134,10 +155,10 @@ export class ImageUploadService {
     }
 
     try {
-      const result = await this.postImageBuffer(apiUrl, contentType, imageBuffer);
-      return this.parseUploadResult(result);
+      const result = await this.postImageBuffer(apiUrl, contentType, imageBuffer, locale);
+      return this.parseUploadResult(result, locale);
     } catch (error) {
-      throw this.translateUploadError(error);
+      throw this.translateUploadError(error, locale);
     }
   }
 
@@ -148,9 +169,14 @@ export class ImageUploadService {
    * @returns Promise<void>
    * @throws {Error} 如果删除失败
    */
-  static async deleteImage(deleteUrl: string): Promise<void> {
+  static async deleteImage(deleteUrl: string, locale: AppLocale = 'zh-CN'): Promise<void> {
     if (!deleteUrl) {
-      throw new Error('删除 URL 不能为空');
+      throw new LocalizedError(
+        'IMAGE_DELETE_URL_REQUIRED',
+        'coverUi.deleteUrlRequired',
+        {},
+        locale,
+      );
     }
 
     // 如果是外部 URL，在 SPA 构建中使用 CORS 代理
@@ -165,12 +191,19 @@ export class ImageUploadService {
       });
 
       if (!response.ok) {
-        throw new Error(`删除失败: ${response.status} ${response.statusText}`);
+        throw new LocalizedError(
+          'IMAGE_DELETE_HTTP',
+          'coverUi.httpDeleteFailed',
+          { status: response.status, diagnostic: response.statusText },
+          locale,
+        );
       }
     } catch (error) {
       // 删除失败不应该阻止操作，只记录错误
       console.warn('删除远程图片失败:', error);
-      throw error instanceof Error ? error : new Error('删除图片时发生未知错误');
+      throw error instanceof Error
+        ? error
+        : new LocalizedError('IMAGE_DELETE_UNKNOWN', 'coverUi.unknownDeleteError', {}, locale);
     }
   }
 }

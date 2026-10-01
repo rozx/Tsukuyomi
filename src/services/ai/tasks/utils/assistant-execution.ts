@@ -1,13 +1,19 @@
+import { AGENT_LOCALE } from 'src/i18n/translate';
+import { LocalizedError } from 'src/utils/localized-error';
+import type { MessageKey } from 'src/i18n/types';
 import type {
   AITool,
   AIToolCall,
   AIToolCallResult,
   ChatMessage,
 } from 'src/services/ai/types/ai-service';
+import type { AppLocale, ExecutionLanguages } from 'src/models/locale';
+import { captureExecutionLanguages } from './execution-languages';
 import type { ContextAnchor } from 'src/services/ai/context/measure';
 
 export type AssistantPauseReason = 'waiting_user' | 'user' | 'tool_limit' | 'context_limit';
 export interface AssistantExecutionCheckpoint {
+  uiLocale?: AppLocale;
   messages: ChatMessage[];
   remainingCalls: AIToolCall[];
   completedCallIds: string[];
@@ -22,6 +28,7 @@ interface ToolOutcome {
   checkpointCommitted?: boolean;
 }
 export interface AssistantExecutionProfile {
+  languages?: ExecutionLanguages;
   context: {
     currentBookId: string | null;
     currentChapterId: string | null;
@@ -45,6 +52,12 @@ export interface AssistantExecutionProfile {
   maxToolTurns?: number;
 }
 
+function executionError(code: string, locale: AppLocale, key: MessageKey): LocalizedError {
+  const error = new LocalizedError(code, key, {}, locale);
+  error.message = `${error.code}: ${error.message}`;
+  return error;
+}
+
 export class AssistantExecutionPaused extends Error {
   constructor(
     readonly reason: AssistantPauseReason,
@@ -58,11 +71,18 @@ export class AssistantExecutionPaused extends Error {
 export class AssistantExecution {
   private current: AssistantExecutionCheckpoint;
   readonly maxToolTurns: number;
+  readonly languages: ExecutionLanguages;
 
   constructor(readonly profile: AssistantExecutionProfile) {
+    const uiLocale = profile.languages?.uiLocale ?? profile.resume?.uiLocale ?? 'zh-CN';
+    this.languages = captureExecutionLanguages(
+      uiLocale,
+      profile.languages?.targetLanguage ?? uiLocale,
+    );
     this.current = structuredClone(
       profile.resume ?? { messages: [], remainingCalls: [], completedCallIds: [] },
     );
+    this.current.uiLocale = this.languages.uiLocale;
     this.maxToolTurns = Math.min(50, Math.max(1, profile.maxToolTurns ?? 50));
   }
   get context() {
@@ -118,10 +138,18 @@ export class AssistantExecution {
       try {
         argumentsValue = JSON.parse(call.function.arguments);
       } catch {
-        throw new Error('INCOMPLETE_TOOL_CALL: 工具参数不是完整 JSON');
+        throw executionError(
+          'INCOMPLETE_TOOL_CALL',
+          this.languages.uiLocale,
+          'aiToolFeedback.incompleteCallJson',
+        );
       }
       if (!argumentsValue || typeof argumentsValue !== 'object' || Array.isArray(argumentsValue))
-        throw new Error('INCOMPLETE_TOOL_CALL: 工具参数必须是对象');
+        throw executionError(
+          'INCOMPLETE_TOOL_CALL',
+          this.languages.uiLocale,
+          'aiToolFeedback.incompleteCallObject',
+        );
     }
     // 兼容服务常在每次回复中复用 tool_call_0；宿主身份必须跨恢复和多轮唯一。
     return calls.map((call) => ({
@@ -193,18 +221,33 @@ export class AssistantExecution {
               name: call.function.name,
               content: JSON.stringify({
                 success: false,
-                error: 'TOOL_NOT_ALLOWED: 工具不在当前执行配置中',
+                // 返回给模型的说明固定简中
+                error: executionError(
+                  'TOOL_NOT_ALLOWED',
+                  AGENT_LOCALE,
+                  'aiToolFeedback.toolNotAllowed',
+                ).message,
+                error_code: 'TOOL_NOT_ALLOWED',
               }),
             },
           };
       if (outcome.result) {
         if (outcome.result.tool_call_id !== call.id || outcome.result.name !== call.function.name)
-          throw new Error('TOOL_PAIR: 工具结果身份不一致');
+          throw executionError(
+            'TOOL_PAIR',
+            this.languages.uiLocale,
+            'aiToolFeedback.toolPairIdentity',
+          );
         const next = afterResult(outcome.result);
         if (outcome.checkpointCommitted) this.current = next;
         else await this.save(next, 'running');
         messages.push(outcome.result);
-      } else if (!outcome.pause) throw new Error('TOOL_PAIR: 工具没有完成结果或让出原因');
+      } else if (!outcome.pause)
+        throw executionError(
+          'TOOL_PAIR',
+          this.languages.uiLocale,
+          'aiToolFeedback.toolPairMissing',
+        );
       if (outcome.pause) throw await this.stop(outcome.pause);
     }
   }

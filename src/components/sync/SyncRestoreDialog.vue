@@ -7,7 +7,11 @@ import Button from 'primevue/button';
 import Checkbox from 'primevue/checkbox';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import { formatRelativeTime } from 'src/utils/format';
+import { useSettingsStore } from 'src/stores/settings';
 import type { RestorableItem } from 'src/services/sync-data-service';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 interface Props {
   visible: boolean;
@@ -33,29 +37,23 @@ const TYPE_ICON: Record<RestorableItem['type'], string> = {
   memory: 'pi pi-image',
 };
 
-const TYPE_LABEL: Record<RestorableItem['type'], string> = {
-  novel: '书籍',
-  model: 'AI 模型',
-  cover: '封面',
-  // memory 在原 getItemTypeLabel 的 default 分支返回「项目」，保持逐字一致
-  memory: '项目',
-};
-
 const onSelectedUpdate = (value: string[]) => emit('update:selectedRestoreItems', value);
 const onVisibleUpdate = (value: boolean) => emit('update:visible', value);
-const formatDeletedTime = (timestamp: number) => formatRelativeTime(timestamp, props.nowMs);
+const settingsStore = useSettingsStore();
+const formatDeletedTime = (timestamp: number) =>
+  formatRelativeTime(timestamp, props.nowMs, settingsStore.uiLocale);
 </script>
 
 <template>
   <AdaptiveDialog
     :visible="visible"
-    header="发现已删除的项目"
+    :header="t('syncUi.restore.header')"
     desktop-width="450px"
     eyebrow="RESTORE"
     @update:visible="onVisibleUpdate"
   >
     <div class="space-y-4">
-      <p class="text-moon/80">远程存在以下您之前删除的项目，您可以选择恢复它们：</p>
+      <p class="text-moon/80">{{ t('syncUi.restore.intro') }}</p>
 
       <div class="max-h-60 overflow-y-auto space-y-2">
         <div
@@ -74,10 +72,12 @@ const formatDeletedTime = (timestamp: number) => formatRelativeTime(timestamp, p
             <div class="flex items-center gap-2">
               <i :class="[TYPE_ICON[item.type], 'text-moon/70']" />
               <span class="text-moon/90">{{ item.title }}</span>
-              <span class="text-xs text-moon/50"> ({{ TYPE_LABEL[item.type] }}) </span>
+              <span class="text-xs text-moon/50">
+                ({{ t(`syncUi.restore.type.${item.type}`) }})
+              </span>
             </div>
             <div class="text-xs text-moon/50 mt-1">
-              删除于: {{ formatDeletedTime(item.deletedAt) }}
+              {{ t('syncUi.restore.deletedAt', { time: formatDeletedTime(item.deletedAt) }) }}
             </div>
           </label>
         </div>
@@ -85,9 +85,14 @@ const formatDeletedTime = (timestamp: number) => formatRelativeTime(timestamp, p
     </div>
 
     <template #footer>
-      <Button label="跳过" class="p-button-text" :disabled="isRestoringRevision" @click="emit('skip')" />
       <Button
-        label="恢复选中项目"
+        :label="t('syncUi.restore.skip')"
+        class="p-button-text"
+        :disabled="isRestoringRevision"
+        @click="emit('skip')"
+      />
+      <Button
+        :label="t('syncUi.restore.confirm')"
         class="p-button-primary"
         :disabled="isRestoringRevision || selectedRestoreItems.length === 0"
         @click="emit('confirm')"

@@ -1,3 +1,7 @@
+import { importFailure, importError } from './import-error';
+import { translateText } from 'src/i18n/translate';
+import type { AppLocale } from 'src/models/locale';
+
 import { parseImportMarkdown } from './import-text-parser';
 import { selectStructureRange } from './import-structure-selection';
 import type { ImportStructureJob, ImportStructureResult } from 'src/models/import-text-structure';
@@ -14,7 +18,8 @@ interface Heading {
 function headings(text: string, pattern: ImportTextPattern, kind: Heading['kind']): Heading[] {
   const found: Heading[] = [];
   for (const match of text.matchAll(importExpression(pattern))) {
-    if (!match[0].length) throw new Error('EMPTY_MATCH: 标题不能匹配空字符串');
+    if (!match[0].length)
+      throw importError('EMPTY_MATCH', 'emptyMatchTitlesCannotMatchAnEmptyString', {});
     const start =
       Math.max(text.lastIndexOf('\n', match.index - 1), text.lastIndexOf('\r', match.index - 1)) +
       1;
@@ -28,52 +33,90 @@ function headings(text: string, pattern: ImportTextPattern, kind: Heading['kind'
       text.slice(start, match.index).trim() ||
       text.slice(end, lineEnd).trim()
     )
-      throw new Error('INVALID_BOUNDARY: 标题规则必须匹配独立标题行');
+      throw importError(
+        'INVALID_BOUNDARY',
+        'invalidBoundaryTitleRulesMustMatchStandaloneHeading',
+        {},
+      );
     const title = (match.groups?.title ?? match[0]).trim();
     found.push({ start, end: lineEnd + (newline?.[0].length ?? 0), title, kind });
-    if (found.length > 1000) throw new Error('PROCESSING_LIMIT: 标题命中过多，请缩小范围');
+    if (found.length > 1000)
+      throw importError('PROCESSING_LIMIT', 'processingLimitTooManyHeadingMatchesReduceThe', {});
   }
   return found;
 }
 
-export function parseImportStructure(input: ImportStructureJob): ImportStructureResult {
+export function parseImportStructure(
+  input: ImportStructureJob,
+  uiLocale: AppLocale = 'zh-CN',
+): ImportStructureResult {
   const { text, rules } = input;
   const selected = selectStructureRange(text, rules.selection);
   const boundaries = structureHeadings(input, selected).sort((a, b) => a.start - b.start);
   if (boundaries.some((h) => !h.title || h.title.length > 500))
-    throw new Error('INVALID_BOUNDARY: 标题为空或超过 500 字符');
+    throw importError('INVALID_BOUNDARY', 'invalidBoundaryTitlesMustBeNonemptyAndAt', {});
   if (rules.mode !== 'single' && !boundaries.some((h) => h.kind === 'chapter'))
-    throw new Error('NO_CHAPTERS: 未找到章节标题，请调整规则');
+    throw importError('NO_CHAPTERS', 'noChaptersNoChapterHeadingsFoundAdjustThe', {});
   if (boundaries.some((h, i) => i > 0 && h.start < boundaries[i - 1]!.end))
-    throw new Error('INVALID_BOUNDARY: 卷章标题范围重叠');
+    throw importError(
+      'INVALID_BOUNDARY',
+      'invalidBoundaryVolumeAndChapterHeadingRangesOverlap',
+      {},
+    );
   const result: ImportStructureResult = { volumes: [], chapters: [], excluded: [], selected };
   let volumeIndex = -1;
   if (selected.start)
-    result.excluded.push({ start: 0, end: selected.start, reason: '正文选择范围之前' });
+    result.excluded.push({
+      start: 0,
+      end: selected.start,
+      reason: importFailure('BEFORE_BODY', 'noticeBeforeBody'),
+    });
   if (selected.end < text.length)
-    result.excluded.push({ start: selected.end, end: text.length, reason: '正文选择范围之后' });
+    result.excluded.push({
+      start: selected.end,
+      end: text.length,
+      reason: importFailure('AFTER_BODY', 'noticeAfterBody'),
+    });
   let cursor = selected.start;
   let active: Heading | undefined =
-    rules.mode === 'single' ? { ...selected, title: '正文', kind: 'chapter' } : undefined;
+    rules.mode === 'single'
+      ? {
+          ...selected,
+          title: translateText(uiLocale, 'aiImportErrors.defaultBody'),
+          kind: 'chapter',
+        }
+      : undefined;
   const finish = (end: number) => {
     const bodyStart = active && rules.mode !== 'single' ? active.end : cursor;
     const body = text.slice(bodyStart, end);
     if (!active && !body.trim()) {
-      if (end > cursor) result.excluded.push({ start: cursor, end, reason: '标题间空白' });
+      if (end > cursor)
+        result.excluded.push({
+          start: cursor,
+          end,
+          reason: importFailure('HEADING_WHITESPACE', 'noticeHeadingWhitespace'),
+        });
       return;
     }
     if (volumeIndex < 0) {
       volumeIndex = result.volumes.length;
-      result.volumes.push({ title: '未分卷', inferred: true });
+      result.volumes.push({
+        title: translateText(uiLocale, 'aiImportErrors.defaultVolume'),
+        inferred: true,
+      });
     }
     result.chapters.push({
-      title: active?.title ?? '待归类内容',
+      title: active?.title ?? translateText(uiLocale, 'aiImportErrors.defaultUnassigned'),
       volumeIndex,
       start: cursor,
       bodyStart,
       end,
       unassigned: !active,
-      warnings: !body.trim() ? ['章节正文为空'] : !active ? ['标题前内容待归类，默认不选中'] : [],
+      warnings: !body.trim()
+        ? [importFailure('EMPTY_CHAPTER', 'noticeEmptyChapter')]
+        : !active
+          ? [importFailure('UNASSIGNED_CONTENT', 'noticeUnassigned')]
+          : [],
     });
   };
   for (const heading of boundaries) {
@@ -88,13 +131,16 @@ export function parseImportStructure(input: ImportStructureJob): ImportStructure
       result.excluded.push({
         start: heading.start,
         end: heading.end,
-        reason: heading.kind === 'volume' ? '卷标题已提取到结构' : '章标题已提取到标题栏',
+        reason:
+          heading.kind === 'volume'
+            ? importFailure('VOLUME_HEADING', 'noticeVolumeHeading')
+            : importFailure('CHAPTER_HEADING', 'noticeChapterHeading'),
       });
   }
   finish(selected.end);
   addWarnings(text, result);
   if (result.chapters.length > 500)
-    throw new Error('PROCESSING_LIMIT: 每批最多 500 章（含待归类内容）');
+    throw importError('PROCESSING_LIMIT', 'processingLimitEachBatchIsLimitedToChapters', {});
   return result;
 }
 
@@ -105,12 +151,16 @@ function structureHeadings(
   const { text, rules } = input;
   if (rules.mode === 'single') {
     if (rules.chapter_pattern || rules.volume_pattern || rules.chapter_level || rules.volume_level)
-      throw new Error('INVALID_STRUCTURE: single 不接受卷章规则');
+      throw importError(
+        'INVALID_STRUCTURE',
+        'invalidStructureSingleDoesNotAcceptVolumeChapter',
+        {},
+      );
     return [];
   }
   if (rules.mode === 'regex') {
     if (!rules.chapter_pattern || rules.chapter_level || rules.volume_level)
-      throw new Error('INVALID_STRUCTURE: regex 需要章节规则，不能同时使用标题层级');
+      throw importError('INVALID_STRUCTURE', 'invalidStructureRegexRequiresAChapterRuleAnd', {});
     const window = text.slice(selected.start, selected.end);
     return [
       ...headings(window, rules.chapter_pattern, 'chapter'),
@@ -130,7 +180,11 @@ function structureHeadings(
         rules.volume_level < 1 ||
         rules.volume_level >= rules.chapter_level!))
   )
-    throw new Error('INVALID_STRUCTURE: Markdown 需要有效的章节层级，卷层级必须小于章层级');
+    throw importError(
+      'INVALID_STRUCTURE',
+      'invalidStructureMarkdownRequiresAValidChapterLevel',
+      {},
+    );
   return parseImportMarkdown(text)
     .filter(
       (b) =>
@@ -161,9 +215,10 @@ function addWarnings(text: string, result: ImportStructureResult): void {
   for (const chapter of result.chapters) {
     if (chapter.unassigned) continue;
     if (counts.get(`${chapter.volumeIndex}:${chapter.title}`)! > 1)
-      chapter.warnings.push('同卷章节标题重复，请检查是否匹配了目录');
+      chapter.warnings.push(importFailure('DUPLICATE_HEADING', 'noticeDuplicateHeading'));
     const size = text.slice(chapter.bodyStart, chapter.end).trim().length;
-    if (size && size < 20) chapter.warnings.push('章节正文较短，请检查边界');
-    if (size > longLimit) chapter.warnings.push('章节正文异常长，请检查是否漏掉标题');
+    if (size && size < 20)
+      chapter.warnings.push(importFailure('SHORT_CHAPTER', 'noticeShortChapter'));
+    if (size > longLimit) chapter.warnings.push(importFailure('LONG_CHAPTER', 'noticeLongChapter'));
   }
 }

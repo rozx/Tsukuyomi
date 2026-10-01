@@ -1,6 +1,7 @@
 import type { AITool, AIToolCall, AIToolCallResult } from 'src/services/ai/types/ai-service';
 import type { ActionInfo, ToolDefinition } from './types';
 import type { ToastCallback } from './toast-helper';
+import { finalizeToolDefinition } from './tool-localization';
 import {
   buildErrorToolResult,
   buildUnknownToolResult,
@@ -78,25 +79,25 @@ export class ToolRegistry {
    * 通用的工具映射方法
    */
   private static mapTools(toolDefinitions: ToolDefinition[]): AITool[] {
-    return toolDefinitions.map((t) => t.definition);
+    return toolDefinitions.map((tool) => finalizeToolDefinition(tool.definition));
   }
 
-  static getTerminologyTools(bookId?: string): AITool[] {
+  static getTerminologyTools(bookId: string | undefined): AITool[] {
     if (!bookId) return [];
     return this.mapTools(terminologyTools);
   }
 
-  static getCharacterSettingTools(bookId?: string): AITool[] {
+  static getCharacterSettingTools(bookId: string | undefined): AITool[] {
     if (!bookId) return [];
     return this.mapTools(characterTools);
   }
 
-  static getParagraphTools(bookId?: string): AITool[] {
+  static getParagraphTools(bookId: string | undefined): AITool[] {
     if (!bookId) return [];
     return this.mapTools(paragraphTools);
   }
 
-  static getBookTools(bookId?: string): AITool[] {
+  static getBookTools(bookId: string | undefined): AITool[] {
     if (!bookId) return [];
     const all = this.mapTools(bookTools);
     // 本地嵌入关闭(手机端 / 用户 toggle off)时,剔除依赖嵌入的工具,
@@ -107,12 +108,12 @@ export class ToolRegistry {
     return all;
   }
 
-  static getMemoryTools(bookId?: string): AITool[] {
+  static getMemoryTools(bookId: string | undefined): AITool[] {
     if (!bookId) return [];
     return this.mapTools(memoryTools);
   }
 
-  static getNavigationTools(bookId?: string): AITool[] {
+  static getNavigationTools(bookId: string | undefined): AITool[] {
     if (!bookId) return [];
     return this.mapTools(navigationTools);
   }
@@ -122,7 +123,7 @@ export class ToolRegistry {
    * allowFirecrawlOnly（助手聊天）时，Firecrawl 回退开启也可提供（未配置 Tavily 时经 Firecrawl）。
    * 翻译 / 润色 / 校对任务不传该选项，避免长任务消耗与网页抓取共用的 keyless 额度。
    */
-  static getWebSearchTools(options: { allowFirecrawlOnly?: boolean } = {}): AITool[] {
+  static getWebSearchTools(options: { allowFirecrawlOnly?: boolean }): AITool[] {
     if (GlobalConfig.getTavilyApiKey()) return this.mapTools(webSearchTools);
     if (options.allowFirecrawlOnly && GlobalConfig.getFirecrawlFallbackEnabled()) {
       return this.mapTools(webSearchTools);
@@ -149,21 +150,21 @@ export class ToolRegistry {
   /**
    * 仅用于聊天助手的工具集合（包含帮助文档工具）
    */
-  static getAssistantTools(bookId?: string): AITool[] {
+  static getAssistantTools(bookId: string | undefined): AITool[] {
     return [
       ...this.getAllTools(bookId, undefined, { allowFirecrawlOnly: true }),
       ...this.getHelpDocsTools(),
     ];
   }
 
-  static getTranslationToolsForAI(options?: CreateTranslationToolsOptions): AITool[] {
+  static getTranslationToolsForAI(options: CreateTranslationToolsOptions | undefined): AITool[] {
     return this.mapTools(createTranslationTools(options));
   }
 
   static getAllTools(
-    bookId?: string,
-    toolOptions?: CreateTranslationToolsOptions,
-    webSearchOptions: { allowFirecrawlOnly?: boolean } = {},
+    bookId: string | undefined,
+    toolOptions: CreateTranslationToolsOptions | undefined,
+    webSearchOptions: { allowFirecrawlOnly?: boolean },
   ): AITool[] {
     const tools: AITool[] = [
       // 网络搜索工具（不需要 bookId；可用性见 getWebSearchTools）
@@ -198,10 +199,10 @@ export class ToolRegistry {
    * 用于需要避免 AI 直接修改翻译历史的服务（例如：润色/校对等只返回 JSON 的服务）
    */
   static getToolsExcludingTranslationManagement(
-    bookId?: string,
-    toolOptions?: CreateTranslationToolsOptions,
+    bookId: string | undefined,
+    toolOptions: CreateTranslationToolsOptions | undefined,
   ): AITool[] {
-    const allTools = this.getAllTools(bookId, toolOptions);
+    const allTools = this.getAllTools(bookId, toolOptions, {});
     return this.filterTools(allTools, TRANSLATION_MANAGEMENT_TOOLS);
   }
 
@@ -211,7 +212,7 @@ export class ToolRegistry {
    * - add_translation_batch: 翻译/润色/校对专用，不在助手聊天中可用
    * - update_task_status: 任务状态管理专用，不在助手聊天中可用
    */
-  static getAssistantToolsExcludingTranslationManagement(bookId?: string): AITool[] {
+  static getAssistantToolsExcludingTranslationManagement(bookId: string | undefined): AITool[] {
     const allTools = this.getAssistantTools(bookId);
     return this.filterTools(allTools, ['add_translation_batch', 'update_task_status']);
   }
@@ -221,7 +222,7 @@ export class ToolRegistry {
    * 包含只读上下文工具 + add_translation_batch
    * 排除数据修改工具、update_task_status、ask_user、待办事项和导航工具
    */
-  static getSingleParagraphPolishTools(bookId?: string): AITool[] {
+  static getSingleParagraphPolishTools(bookId: string | undefined): AITool[] {
     if (!bookId) return [];
 
     const allowedToolNames = [
@@ -262,8 +263,8 @@ export class ToolRegistry {
       ...this.getCharacterSettingTools(bookId),
       ...this.getMemoryTools(bookId),
       ...this.getBookTools(bookId),
-      ...this.getWebSearchTools(),
-      ...this.getTranslationToolsForAI(),
+      ...this.getWebSearchTools({}),
+      ...this.getTranslationToolsForAI(undefined),
     ];
 
     return allTools.filter((tool) => allowedToolNames.includes(tool.function.name));
@@ -274,8 +275,8 @@ export class ToolRegistry {
    * 排除翻译管理工具和导航/列表工具，让AI专注于当前文本块
    */
   static getTranslationTools(
-    bookId?: string,
-    options?: { excludeAskUser?: boolean; enableOriginalTextValidation?: boolean },
+    bookId: string | undefined,
+    options: { excludeAskUser?: boolean; enableOriginalTextValidation?: boolean } | undefined,
   ): AITool[] {
     const toolOptions: CreateTranslationToolsOptions | undefined =
       options?.enableOriginalTextValidation !== undefined
@@ -313,21 +314,13 @@ export class ToolRegistry {
     ];
   }
 
+  /**
+   * 执行一次工具调用。languages 为执行启动时的快照，handler 的自然语言反馈使用同一语言；
+   * 必填以避免调用方遗漏时静默回退简中。
+   */
   static async handleToolCall(
     toolCall: AIToolCall,
-    bookId: string,
-    onAction?: (action: ActionInfo) => void,
-    onToast?: ToastCallback,
-    taskId?: string,
-    sessionId?: string,
-    paragraphIds?: string[],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    aiProcessingStore?: any,
-    aiModelId?: string,
-    chunkIndex?: number,
-    submittedParagraphIds?: Set<string>,
-    accumulatedParagraphs?: Map<string, string>,
-    enableOriginalTextValidation?: boolean,
+    options: HandleToolCallOptions,
   ): Promise<AIToolCallResult> {
     const functionName = toolCall.function.name;
     const tool = this.getAllToolDefinitions().find(
@@ -336,30 +329,6 @@ export class ToolRegistry {
 
     if (!tool) {
       return buildUnknownToolResult(toolCall);
-    }
-
-    // truthy 的可选参数统一拷贝进 options（数据驱动，避免逐字段写三元）
-    const options: HandleToolCallOptions = { bookId };
-    const optionalTruthy: Record<string, unknown> = {
-      onAction,
-      onToast,
-      taskId,
-      sessionId,
-      paragraphIds,
-      aiProcessingStore,
-      aiModelId,
-      submittedParagraphIds,
-      accumulatedParagraphs,
-    };
-    for (const key of Object.keys(optionalTruthy)) {
-      const value = optionalTruthy[key];
-      if (value) {
-        (options as unknown as Record<string, unknown>)[key] = value;
-      }
-    }
-    if (chunkIndex !== undefined) options.chunkIndex = chunkIndex;
-    if (enableOriginalTextValidation !== undefined) {
-      options.enableOriginalTextValidation = enableOriginalTextValidation;
     }
 
     try {

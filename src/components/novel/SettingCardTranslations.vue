@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t } = useI18n();
+
 // 设置卡片翻译展示：数组（角色，多译名标签）/ 字符串（术语）/ 无，三态收敛到叶子组件。
 defineProps<{
   translations?: string | string[] | undefined;
@@ -7,17 +10,19 @@ defineProps<{
 
 <template>
   <div class="mb-3">
-    <span class="text-xs text-moon-100/50 block mb-1.5">翻译</span>
+    <span class="text-xs text-moon-100/50 block mb-1.5">{{ t('panelUi.translation') }}</span>
     <!-- 数组情况 (Character) -->
     <div v-if="Array.isArray(translations)" class="flex flex-wrap gap-1.5">
       <span
-        v-for="(t, index) in translations"
+        v-for="(translation, index) in translations"
         :key="index"
         class="px-2 py-0.5 rounded bg-primary/20 text-primary-200 text-xs border border-primary/10"
       >
-        {{ t }}
+        {{ translation }}
       </span>
-      <span v-if="translations.length === 0" class="text-moon-100/30 text-xs italic">无</span>
+      <span v-if="translations.length === 0" class="text-moon-100/30 text-xs italic">{{
+        t('panelUi.none')
+      }}</span>
     </div>
     <!-- 字符串情况 (Term) -->
     <div v-else-if="translations" class="min-w-0 max-w-full overflow-hidden">
@@ -28,7 +33,7 @@ defineProps<{
         {{ translations }}
       </p>
     </div>
-    <div v-else class="text-moon-100/30 text-xs italic">无</div>
+    <div v-else class="text-moon-100/30 text-xs italic">{{ t('panelUi.none') }}</div>
   </div>
 </template>
 

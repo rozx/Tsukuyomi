@@ -1,3 +1,11 @@
+import type { ImportFailure } from 'src/models/import-feedback';
+import {
+  importError,
+  readImportError,
+  restoreImportError,
+  serializeImportError,
+} from 'src/services/import/import-error';
+import { LocalizedError } from 'src/utils/localized-error';
 import type { Novel, Paragraph } from 'src/models/novel';
 import type {
   BookSyncChangeset,
@@ -15,7 +23,7 @@ import { BookSyncReplay, FIRECRAWL_QUOTA_CODE } from './replay';
 import { getCachedRemoteChapter, setCachedRemoteChapter } from './remote-chapter-cache';
 import { BookSyncError } from './errors';
 import { compareChapter, inferNewChapters, linkManualChapters } from './changes';
-import { BookExecutionGuard } from 'src/services/book-execution-guard';
+import { BookExecutionGuard, executionOwnersError } from 'src/services/book-execution-guard';
 import { UniqueIdGenerator } from 'src/utils/id-generator';
 import {
   commitSyncChanges,
@@ -51,7 +59,12 @@ async function readBook(id: string): Promise<Snapshot> {
   if (value.kind !== 'loaded')
     throw new BookSyncError(
       'BOOK_READ_FAILED',
-      value.kind === 'failed' ? value.message : '书籍不存在',
+      value.kind === 'failed'
+        ? readImportError(value)
+        : new LocalizedError(
+            'BOOK_READ_FAILED',
+            'aiImportErrors.bookSyncBookReadFailedTheBookDoesNotExist',
+          ),
     );
   return value;
 }
@@ -64,8 +77,7 @@ const invalidRecipeCodes = new Set([
 
 async function assertAvailable(bookId: string): Promise<void> {
   const occupants = await BookExecutionGuard.occupants(bookId);
-  if (occupants.length)
-    throw new BookSyncError('TARGET_BUSY', occupants.map((o) => o.label).join('、'));
+  if (occupants.length) throw new BookSyncError('TARGET_BUSY', executionOwnersError(occupants));
 }
 
 /** 仅持有本次页面会话的数据；对外返回副本，避免预览组件改变提交内容。 */
@@ -95,7 +107,14 @@ class BookSyncSession {
   }
 
   private async exclusive<T>(work: () => Promise<T>): Promise<T> {
-    if (this.busy) throw new BookSyncError('SESSION_BUSY', '检查或应用仍在执行');
+    if (this.busy)
+      throw new BookSyncError(
+        'SESSION_BUSY',
+        new LocalizedError(
+          'SESSION_BUSY',
+          'aiImportErrors.bookSyncSessionBusyCheckingOrApplyingIsStill',
+        ),
+      );
     this.busy = true;
     try {
       return await work();
@@ -145,11 +164,16 @@ class BookSyncSession {
     );
   }
 
-  private invalidate(code: string, message: string, url = ''): void {
+  private invalidate(
+    code: string,
+    message: string,
+    url = '',
+    localization?: ImportFailure['localization'],
+  ): void {
     this.state = {
       ...emptyChanges(this.snapshot?.revision ?? null),
       status: 'invalid',
-      failed: [{ code, message, url }],
+      failed: [{ code, message, url, ...(localization ? { localization } : {}) }],
     };
   }
 
@@ -162,8 +186,9 @@ class BookSyncSession {
     );
     if (!result.ok) {
       // 额度耗尽不代表配方失效：报检查失败（可稍后重试 / 补充额度），不引导重建配方
-      if (result.code === FIRECRAWL_QUOTA_CODE) throw new BookSyncError(result.code, result.message);
-      this.invalidate(result.code, result.message);
+      if (result.code === FIRECRAWL_QUOTA_CODE)
+        throw new BookSyncError(result.code, restoreImportError(result));
+      this.invalidate(result.code, result.message, '', result.localization);
       return false;
     }
     this.catalog = result.catalog;
@@ -200,7 +225,11 @@ class BookSyncSession {
   private entry(value: CatalogEntry | string): CatalogEntry {
     const url = typeof value === 'string' ? value : value.url;
     const entry = this.catalog?.entries.find((e) => e.url === url);
-    if (!entry) throw new BookSyncError('ENTRY_MISSING', '章节不属于本次目录');
+    if (!entry)
+      throw new BookSyncError(
+        'ENTRY_MISSING',
+        new LocalizedError('ENTRY_MISSING', 'aiImportErrors.bookSyncEntryMissingTheChapterIsNotIn'),
+      );
     return entry;
   }
 
@@ -232,8 +261,8 @@ class BookSyncSession {
         if (!result.ok) {
           const imported = this.chapters().some((c) => c.webUrl === entry.url);
           if (invalidRecipeCodes.has(result.code) && (imported || result.code !== 'CONTENT_EMPTY'))
-            this.invalidate(result.code, result.message, entry.url);
-          throw new BookSyncError(result.code, result.message);
+            this.invalidate(result.code, result.message, entry.url, result.localization);
+          throw new BookSyncError(result.code, restoreImportError(result));
         }
         this.cache.set(entry.url, result.paragraphs);
         setCachedRemoteChapter(this.remoteCacheKey(entry), result.paragraphs);
@@ -251,7 +280,8 @@ class BookSyncSession {
 
   private localContent(chapterId: string): Paragraph[] {
     const loaded = this.snapshot?.chapters[chapterId];
-    if (loaded?.kind === 'failed') throw new BookSyncError('BOOK_READ_FAILED', loaded.message);
+    if (loaded?.kind === 'failed')
+      throw new BookSyncError('BOOK_READ_FAILED', readImportError(loaded));
     return loaded?.kind === 'loaded' ? loaded.content : [];
   }
 
@@ -295,13 +325,18 @@ class BookSyncSession {
               const code = error instanceof BookSyncError ? error.code : 'CONTENT_FETCH_FAILED';
               const message = error instanceof Error ? error.message : String(error);
               if (invalidRecipeCodes.has(code)) {
-                this.invalidate(code, message, entry.url);
+                this.invalidate(
+                  code,
+                  message,
+                  entry.url,
+                  serializeImportError(error, code).localization,
+                );
                 controller.abort();
                 break;
               }
               this.state.failed = [
                 ...this.state.failed.filter((e) => e.url !== entry.url),
-                { url: entry.url, code, message },
+                { ...serializeImportError(error, code), url: entry.url, code, message },
               ];
               // Firecrawl 额度耗尽：停止剩余章节（保持未检查），不作废配方
               if (code === FIRECRAWL_QUOTA_CODE) {
@@ -326,7 +361,11 @@ class BookSyncSession {
     const extraction = (r: BookUpdateRecipe) =>
       JSON.stringify([r.engine, r.catalogUrls, r.cleanup, r.stripHeading]);
     if (extraction(currentRecipe) !== extraction(this.recipe)) {
-      this.invalidate('RECIPE_CHANGED', '更新配方已修改，请重新打开检查会话');
+      const failure = serializeImportError(
+        importError('RECIPE_CHANGED', 'recipeChangedReopen'),
+        'RECIPE_CHANGED',
+      );
+      this.invalidate(failure.code, failure.message, '', failure.localization);
       return false;
     }
     this.recipe = currentRecipe;
@@ -343,6 +382,20 @@ class BookSyncSession {
     }
   }
 
+  private collectFailure(
+    error: unknown,
+    url: string,
+  ): { failure: SyncFailure; fatal?: BookSyncError } {
+    const code = error instanceof BookSyncError ? error.code : 'CONTENT_FETCH_FAILED';
+    const message = error instanceof Error ? error.message : String(error);
+    const failure = { ...serializeImportError(error, code), url, code, message };
+    if (invalidRecipeCodes.has(code) && code !== 'CONTENT_EMPTY') {
+      this.invalidate(code, message, url, failure.localization);
+      return { failure, fatal: new BookSyncError(code, error instanceof Error ? error : message) };
+    }
+    return { failure };
+  }
+
   private async collectWrites(
     selection: BookSyncSelection,
   ): Promise<{ writes: SyncWrite[]; failed: SyncFailure[] }> {
@@ -350,7 +403,13 @@ class BookSyncSession {
     const selected = new Set(selection.urls);
     const entries = this.catalog!.entries.filter((e) => selected.has(e.url));
     if (entries.length !== selected.size)
-      throw new BookSyncError('ENTRY_MISSING', '所选章节不属于本次目录');
+      throw new BookSyncError(
+        'ENTRY_MISSING',
+        new LocalizedError(
+          'ENTRY_MISSING',
+          'aiImportErrors.bookSyncEntryMissingASelectedChapterIsNot',
+        ),
+      );
     const ids = new UniqueIdGenerator();
     const writes = new Map<string, SyncWrite>();
     const failed: SyncFailure[] = [];
@@ -364,7 +423,13 @@ class BookSyncSession {
           const update = this.state.updated.find((e) => e.url === entry.url);
           const added = inferred.find((e) => e.url === entry.url);
           if (!update && !added) {
-            fatal = new BookSyncError('ENTRY_UNCHECKED', '所选既有章节没有已确认的更新');
+            fatal = new BookSyncError(
+              'ENTRY_UNCHECKED',
+              new LocalizedError(
+                'ENTRY_UNCHECKED',
+                'aiImportErrors.bookSyncEntryUncheckedASelectedExistingChapterHas',
+              ),
+            );
             break;
           }
           try {
@@ -381,6 +446,7 @@ class BookSyncSession {
                   text,
                   translations: [],
                   selectedTranslationId: '',
+                  selectedTranslations: {},
                 })),
               ...(update ? { chapterId: update.chapterId } : {}),
               ...(proposed
@@ -388,13 +454,10 @@ class BookSyncSession {
                 : {}),
             });
           } catch (error) {
-            const code = error instanceof BookSyncError ? error.code : 'CONTENT_FETCH_FAILED';
-            const message = error instanceof Error ? error.message : String(error);
-            if (invalidRecipeCodes.has(code) && code !== 'CONTENT_EMPTY') {
-              fatal = new BookSyncError(code, message);
-              this.invalidate(code, message, entry.url);
-            } else failed.push({ url: entry.url, code, message });
-            if (code === FIRECRAWL_QUOTA_CODE) quotaFailure ??= { url: entry.url, code, message };
+            const outcome = this.collectFailure(error, entry.url);
+            if (outcome.fatal) fatal = outcome.fatal;
+            else failed.push(outcome.failure);
+            if (outcome.failure.code === FIRECRAWL_QUOTA_CODE) quotaFailure ??= outcome.failure;
           }
         }
       }),
@@ -402,9 +465,7 @@ class BookSyncSession {
     if (fatal) throw fatal;
     // Firecrawl 额度耗尽：未抓取的所选章节同样记为额度失败，已抓取的照常写入
     if (quotaFailure) {
-      const { code, message } = quotaFailure;
-      for (const entry of entries.slice(cursor))
-        failed.push({ url: entry.url, code, message });
+      for (const entry of entries.slice(cursor)) failed.push({ ...quotaFailure, url: entry.url });
     }
     return {
       writes: entries.flatMap((e) => (writes.has(e.url) ? [writes.get(e.url)!] : [])),
@@ -447,7 +508,12 @@ class BookSyncSession {
       await this.recompute();
       return this.state.status !== 'invalid';
     } catch (error) {
-      this.invalidate('BOOK_READ_FAILED', error instanceof Error ? error.message : String(error));
+      this.invalidate(
+        'BOOK_READ_FAILED',
+        error instanceof Error ? error.message : String(error),
+        '',
+        serializeImportError(error, 'BOOK_READ_FAILED').localization,
+      );
       return false;
     }
   }
@@ -456,8 +522,21 @@ class BookSyncSession {
     const selected = structuredClone(selection);
     return this.exclusive(async () => {
       if (!this.catalog || this.state.status === 'invalid' || this.state.status === 'unchecked')
-        throw new BookSyncError('CHECK_REQUIRED', '请先完成目录检查');
-      if (!selected.urls.length) throw new BookSyncError('SELECTION_EMPTY', '请选择章节');
+        throw new BookSyncError(
+          'CHECK_REQUIRED',
+          new LocalizedError(
+            'CHECK_REQUIRED',
+            'aiImportErrors.bookSyncCheckRequiredCheckTheContentsFirst',
+          ),
+        );
+      if (!selected.urls.length)
+        throw new BookSyncError(
+          'SELECTION_EMPTY',
+          new LocalizedError(
+            'SELECTION_EMPTY',
+            'aiImportErrors.bookSyncSelectionEmptySelectChapters',
+          ),
+        );
       const bookId = 'bookId' in this.target ? this.target.bookId : this.newBookId;
       await assertAvailable(bookId);
       const { writes, failed } = await this.collectWrites(selected);
@@ -528,7 +607,13 @@ class BookSyncSession {
   ): Promise<BookSyncChangeset> {
     return this.exclusive(async () => {
       if (!this.catalog || this.state.status === 'invalid')
-        throw new BookSyncError('CHECK_REQUIRED', '请先完成目录检查');
+        throw new BookSyncError(
+          'CHECK_REQUIRED',
+          new LocalizedError(
+            'CHECK_REQUIRED',
+            'aiImportErrors.bookSyncCheckRequiredCheckTheContentsFirst',
+          ),
+        );
       if ('bookId' in this.target) {
         await BookSyncService.setSkipped(this.target.bookId, entries, skipped);
         await this.recompute();
@@ -546,7 +631,14 @@ class BookSyncSession {
   async undo(): Promise<void> {
     return this.exclusive(async () => {
       const before = this.before;
-      if (!before) throw new BookSyncError('UNDO_UNAVAILABLE', '本次会话没有可撤销的应用');
+      if (!before)
+        throw new BookSyncError(
+          'UNDO_UNAVAILABLE',
+          new LocalizedError(
+            'UNDO_UNAVAILABLE',
+            'aiImportErrors.bookSyncUndoUnavailableThereIsNoApplicationTo',
+          ),
+        );
       await assertAvailable(before.bookId);
       const restored = await BookExecutionGuard.commit(before.bookId, () =>
         undoSyncChanges(before),

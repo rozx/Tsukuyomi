@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed, ref, watch, toRef, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import type { ComponentPublicInstance } from 'vue';
 import Button from 'primevue/button';
@@ -12,17 +14,8 @@ import ChapterNavigation from 'src/components/novel/ChapterNavigation.vue';
 import ChapterEmptyState from 'src/components/novel/ChapterEmptyState.vue';
 import ChapterHeader from 'src/components/novel/ChapterHeader.vue';
 import ChapterPreviewSection from 'src/components/novel/ChapterPreviewSection.vue';
-import type {
-  Chapter,
-  Novel,
-  Paragraph,
-  Terminology,
-  CharacterSetting,
-} from 'src/models/novel';
-import {
-  getChapterDisplayTitle,
-  getChapterCharCount,
-} from 'src/utils';
+import type { Chapter, Novel, Paragraph, Terminology, CharacterSetting } from 'src/models/novel';
+import { getChapterDisplayTitle, getChapterCharCount } from 'src/utils';
 import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
 import { removeExtraBlankLines } from 'src/utils/text-utils';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
@@ -32,6 +25,8 @@ import {
   type ChapterListMode,
 } from 'src/composables/book-details/useChapterVirtualizer';
 import type { ScrollToOptions as VirtualScrollToOptions } from '@tanstack/vue-virtual';
+
+const { t } = useI18n();
 
 const props = defineProps<{
   selectedChapter: Chapter | null;
@@ -109,7 +104,9 @@ const containerClass = computed(() => ({
   'chapter-content-container--reading':
     !props.isLoadingChapterContent && !isOriginalMode.value && !isPreviewMode.value,
 }));
-const headerChapter = computed(() => props.selectedChapterWithContent ?? props.selectedChapter ?? null);
+const headerChapter = computed(
+  () => props.selectedChapterWithContent ?? props.selectedChapter ?? null,
+);
 const previewTitle = computed(() =>
   headerChapter.value ? getChapterDisplayTitle(headerChapter.value, props.book || undefined) : '',
 );
@@ -121,8 +118,7 @@ const headerStats = computed(() => ({
 
 // 按索引取段落与翻译/润色/校对状态：避免在模板里写 .has(...!.id) 链
 const paragraphAt = (index: number) => props.selectedChapterParagraphs[index]!;
-const isTranslatingAt = (index: number) =>
-  props.translatingParagraphIds.has(paragraphAt(index).id);
+const isTranslatingAt = (index: number) => props.translatingParagraphIds.has(paragraphAt(index).id);
 const isPolishingAt = (index: number) => props.polishingParagraphIds.has(paragraphAt(index).id);
 const isProofreadingAt = (index: number) =>
   props.proofreadingParagraphIds.has(paragraphAt(index).id);
@@ -168,9 +164,10 @@ const originalTextareaRef = ref<InstanceType<typeof Textarea> | null>(null);
 
 // PrimeVue Textarea 内部是 textarea 元素；不同版本暴露方式不同，防御式解析。
 const resolveOriginalTextarea = (): HTMLTextAreaElement | null => {
-  const inst = originalTextareaRef.value as unknown as
-    | { $el?: HTMLElement; input?: HTMLTextAreaElement }
-    | null;
+  const inst = originalTextareaRef.value as unknown as {
+    $el?: HTMLElement;
+    input?: HTMLTextAreaElement;
+  } | null;
   if (!inst) return null;
   const root = inst.$el;
   if (root instanceof HTMLTextAreaElement) return root;
@@ -199,8 +196,8 @@ const formatOriginalText = () => {
   if (current === lastFormattedValue.value) {
     toast.add({
       severity: 'info',
-      summary: '无需格式化',
-      detail: '已是格式化后的结果',
+      summary: t('readerUi.formatNotNeeded'),
+      detail: t('readerUi.alreadyFormatted'),
       life: 2000,
     });
     return;
@@ -210,8 +207,8 @@ const formatOriginalText = () => {
   if (formatted === current) {
     toast.add({
       severity: 'info',
-      summary: '无需格式化',
-      detail: '没有需要清理的空行',
+      summary: t('readerUi.formatNotNeeded'),
+      detail: t('readerUi.noBlankLines'),
       life: 2000,
     });
     lastFormattedValue.value = current;
@@ -234,14 +231,13 @@ const formatOriginalText = () => {
 
   toast.add({
     severity: 'success',
-    summary: '已格式化',
-    detail: '已去除多余空行（可按 Ctrl+Z 撤销）',
+    summary: t('readerUi.formatted'),
+    detail: t('readerUi.removedBlankLines'),
     life: 2000,
   });
 };
 
 // 章节导航按钮的 label/tooltip 逻辑已迁移到 ChapterNavigation.vue
-
 
 // ---- 虚拟滚动（block translation）----
 // 编辑/列表模式与预览模式共用同一个 virtualizer（任一时刻只渲染其中一个分支）。
@@ -375,11 +371,7 @@ defineExpose({ scrollToParagraphIndex });
 </script>
 
 <template>
-  <div
-    v-if="selectedChapter"
-    class="chapter-content-container"
-    :class="containerClass"
-  >
+  <div v-if="selectedChapter" class="chapter-content-container" :class="containerClass">
     <!-- 自定义索引驱动滚动条（Teleport 到非滚动祖先 .page-container，避免随内容滚走） -->
     <ChapterScrollbar
       v-if="showScrollbar"
@@ -391,31 +383,35 @@ defineExpose({ scrollToParagraphIndex });
     <!-- 加载中状态 -->
     <div v-if="isLoadingChapterContent" class="loading-container">
       <ProgressSpinner style="width: 3rem; height: 3rem" stroke-width="4" animation-duration="1s" />
-      <p class="loading-text">正在加载章节内容...</p>
+      <p class="loading-text">{{ t('readerUi.loadingChapterDots') }}</p>
     </div>
 
     <!-- 原始文本编辑模式 -->
     <div v-else-if="isOriginalMode" class="original-text-edit-container">
-      <label class="block text-sm font-medium text-moon/90">原始文本</label>
+      <label class="block text-sm font-medium text-moon/90">{{ t('readerUi.originalText') }}</label>
       <Textarea
         ref="originalTextareaRef"
         :value="originalTextEditValue"
         @input="handleOriginalTextInput"
         :auto-resize="false"
         class="w-full original-text-textarea"
-        placeholder="输入原始文本..."
+        :placeholder="t('readerUi.originalPlaceholder')"
       />
       <div class="flex gap-2 justify-between items-center">
         <Button
-          label="格式化"
+          :label="t('readerUi.format')"
           icon="pi pi-eraser"
           class="p-button-outlined p-button-sm"
-          title="去除多余空行（可 Ctrl+Z 撤销）"
+          :title="t('readerUi.formatHint')"
           @click="formatOriginalText"
         />
         <div class="flex gap-2">
-          <Button label="取消" class="p-button-text" @click="emit('cancel-original-text-edit')" />
-          <Button label="保存" @click="emit('save-original-text-edit')" />
+          <Button
+            :label="t('readerUi.cancel')"
+            class="p-button-text"
+            @click="emit('cancel-original-text-edit')"
+          />
+          <Button :label="t('readerUi.save')" @click="emit('save-original-text-edit')" />
         </div>
       </div>
     </div>
@@ -451,7 +447,9 @@ defineExpose({ scrollToParagraphIndex });
           :book="book"
           :paragraph-count="headerStats.paragraphCount"
           :char-count="headerStats.charCount"
-          @open-edit-chapter-dialog="(chapter: Chapter) => emit('open-edit-chapter-dialog', chapter)"
+          @open-edit-chapter-dialog="
+            (chapter: Chapter) => emit('open-edit-chapter-dialog', chapter)
+          "
         />
       </div>
 

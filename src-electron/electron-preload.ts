@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopUpdateAPI } from '../src/models/desktop-update';
+import type { AppLocale } from '../src/models/locale';
 
 const updates: DesktopUpdateAPI = {
   getState: () => ipcRenderer.invoke('desktop-update:getState'),
@@ -20,7 +21,7 @@ const updates: DesktopUpdateAPI = {
         (error: unknown) =>
           ipcRenderer.send('desktop-update:prepared', {
             id,
-            error: error instanceof Error ? error.message : '保存检查失败',
+            error: error instanceof Error ? error.message : 'DESKTOP_SAVE_CHECK_FAILED',
           }),
       );
     };
@@ -45,6 +46,7 @@ const updates: DesktopUpdateAPI = {
 
 // 暴露安全的 API 到渲染进程
 contextBridge.exposeInMainWorld('electronAPI', {
+  setUiLocale: (locale: AppLocale) => ipcRenderer.invoke('interface-locale:set', locale),
   updates,
   /**
    * 通过 Electron 的 net 模块发起 HTTP 请求

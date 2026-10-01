@@ -1,3 +1,5 @@
+import { resolveAppLocale } from 'src/models/locale';
+import { useI18n } from 'vue-i18n';
 /**
  * BooksPageTablet（书库 · 平板主从布局）业务逻辑 composable + provide/inject 辅助。
  *
@@ -18,7 +20,7 @@ import { useChapterManagement } from 'src/composables/book-details/useChapterMan
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { isPortrait } from 'src/utils/device-orientation';
-import { getVolumeDisplayTitle } from 'src/utils/novel-utils';
+import { getVolumeDisplayTitle, getChapterTranslationStats } from 'src/utils/novel-utils';
 import {
   getChapterStatus,
   chapterStatusIcon,
@@ -32,6 +34,7 @@ import {
   buildChapterActionMenuItems,
 } from 'src/components/novel/volumes-list-utils';
 import type Menu from 'primevue/menu';
+import type { AppLocale } from 'src/models/locale';
 import type { Chapter, Novel, Paragraph, Volume } from 'src/models/novel';
 
 export type BooksTabletPageContext = ReturnType<typeof createBooksTabletPageContext>;
@@ -49,19 +52,18 @@ function collectChapterIds(book: Novel): string[] {
 function buildChapterProgressMap(
   chapterIds: string[],
   contents: Map<string, Paragraph[] | undefined>,
+  targetLanguage: AppLocale,
 ): ChapterProgressMap {
   const map: ChapterProgressMap = new Map();
   for (const id of chapterIds) {
     const paras = contents.get(id) ?? [];
-    const nonEmpty = paras.filter((p) => (p.text ?? '').trim().length > 0);
-    const total = nonEmpty.length;
-    const translated = nonEmpty.filter((p) => (p.translations?.length ?? 0) > 0).length;
-    map.set(id, { total, translated });
+    map.set(id, getChapterTranslationStats(paras, targetLanguage));
   }
   return map;
 }
 
 function createBooksTabletPageContext() {
+  const { t: i18nT, locale } = useI18n();
   const ctx = injectBooksPage();
   const router = useRouter();
   const bookDetailsStore = useBookDetailsStore();
@@ -73,16 +75,26 @@ function createBooksTabletPageContext() {
   // 添加书籍菜单：与桌面 SplitButton、手机底部选择器语义一致
   const addMenuRef = ref<InstanceType<typeof Menu> | null>(null);
   const addMenuItems = computed(() => [
-    { label: '新建书籍', icon: 'pi pi-plus', command: () => ctx.addBook() },
-    { label: '从网站导入', icon: 'pi pi-globe', command: () => ctx.importBookFromWeb() },
-    { label: '从 JSON 导入', icon: 'pi pi-file-import', command: () => ctx.importBookFromJson() },
+    { label: i18nT('libraryUi.newBook'), icon: 'pi pi-plus', command: () => ctx.addBook() },
+    {
+      label: i18nT('libraryUi.importWeb'),
+      icon: 'pi pi-globe',
+      command: () => ctx.importBookFromWeb(),
+    },
+    {
+      label: i18nT('libraryUi.importJson'),
+      icon: 'pi pi-file-import',
+      command: () => ctx.importBookFromJson(),
+    },
   ]);
   const toggleAddMenu = (event: Event) => addMenuRef.value?.toggle(event);
   const toggleSortMenu = (event: Event) => {
     ctx.sortMenuRef.value?.toggle(event);
   };
   const currentSortLabel = computed(
-    () => ctx.sortOptions.find((opt) => opt.value === ctx.selectedSort.value)?.label ?? '排序',
+    () =>
+      ctx.sortOptions.value.find((opt) => opt.value === ctx.selectedSort.value)?.label ??
+      i18nT('libraryUi.sort'),
   );
 
   // 本地 UI 状态：当前选中的书（主从布局右侧详情）。不写入任何 store。
@@ -120,6 +132,7 @@ function createBooksTabletPageContext() {
   const progressByChapter = ref<ChapterProgressMap | null>(null);
   const isLoadingProgress = ref(false);
   let progressLoadToken = 0;
+  const progressLanguage = computed(() => selectedBook.value?.targetLanguage ?? 'zh-CN');
   async function loadProgressFor(book: Novel | null) {
     const token = ++progressLoadToken;
     if (!book) {
@@ -139,7 +152,11 @@ function createBooksTabletPageContext() {
     try {
       const contents = await ChapterContentService.loadChapterContentsBatch(chapterIds);
       if (token !== progressLoadToken) return; // 切书后丢弃旧结果
-      progressByChapter.value = buildChapterProgressMap(chapterIds, contents);
+      progressByChapter.value = buildChapterProgressMap(
+        chapterIds,
+        contents,
+        progressLanguage.value,
+      );
     } catch (err) {
       // 章节内容批量加载失败：记录并提示，同时清空进度避免显示陈旧状态。
       // 否则异常会穿透到 watch 的 void loadProgressFor(...) 形成未处理 Promise，用户也看不到错误。
@@ -147,7 +164,7 @@ function createBooksTabletPageContext() {
       console.error('[useBooksTabletPage] 加载章节翻译进度失败:', err);
       toast.add({
         severity: 'error',
-        summary: '进度加载失败',
+        summary: i18nT('libraryUi.progressFailed'),
         detail: err instanceof Error ? err.message : String(err),
         life: 3000,
       });
@@ -156,7 +173,7 @@ function createBooksTabletPageContext() {
     }
   }
   watch(
-    () => selectedBook.value?.id ?? null,
+    () => [selectedBook.value?.id, selectedBook.value?.targetLanguage],
     () => void loadProgressFor(selectedBook.value),
     { immediate: true },
   );
@@ -193,7 +210,10 @@ function createBooksTabletPageContext() {
   const selectedBookForEdit = computed<Novel | undefined>(() => selectedBook.value ?? undefined);
   const chapterMgmt = useChapterManagement(selectedBookForEdit);
   const volumeOptions = computed(() =>
-    (selectedBook.value?.volumes ?? []).map((v) => ({ label: getVolumeDisplayTitle(v), value: v.id })),
+    (selectedBook.value?.volumes ?? []).map((v) => ({
+      label: getVolumeDisplayTitle(v, selectedBook.value),
+      value: v.id,
+    })),
   );
 
   // ⋮ 动作菜单：单个 Menu 实例，根据当前 target 动态生成菜单项
@@ -206,33 +226,34 @@ function createBooksTabletPageContext() {
     const target = actionTarget.value;
     if (!target) return [];
     if (target.kind === 'volume') {
-      return buildVolumeActionMenuItems({
-        onEdit: () => chapterMgmt.openEditVolumeDialog(target.volume),
-        onDelete: () => chapterMgmt.openDeleteVolumeConfirm(target.volume),
-      });
+      return buildVolumeActionMenuItems(
+        {
+          onEdit: () => chapterMgmt.openEditVolumeDialog(target.volume),
+          onDelete: () => chapterMgmt.openDeleteVolumeConfirm(target.volume),
+        },
+        resolveAppLocale(locale.value),
+      );
     }
     const vol = selectedBook.value?.volumes?.find((v) => v.id === target.volumeId);
     const canMoveDown = !!vol?.chapters && target.index < vol.chapters.length - 1;
-    return buildChapterActionMenuItems({
-      canMoveUp: target.index > 0,
-      canMoveDown,
-      onEdit: () => chapterMgmt.openEditChapterDialog(target.chapter),
-      onMoveUp: () => void moveChapter(target, 'up'),
-      onMoveDown: () => void moveChapter(target, 'down'),
-      onDelete: () => chapterMgmt.openDeleteChapterConfirm(target.chapter),
-    });
+    return buildChapterActionMenuItems(
+      {
+        canMoveUp: target.index > 0,
+        canMoveDown,
+        onEdit: () => chapterMgmt.openEditChapterDialog(target.chapter),
+        onMoveUp: () => void moveChapter(target, 'up'),
+        onMoveDown: () => void moveChapter(target, 'down'),
+        onDelete: () => chapterMgmt.openDeleteChapterConfirm(target.chapter),
+      },
+      resolveAppLocale(locale.value),
+    );
   });
   const openVolumeMenu = (event: Event, volume: Volume) => {
     event.stopPropagation();
     actionTarget.value = { kind: 'volume', volume };
     actionMenuRef.value?.toggle(event);
   };
-  const openChapterMenu = (
-    event: Event,
-    chapter: Chapter,
-    volumeId: string,
-    index: number,
-  ) => {
+  const openChapterMenu = (event: Event, chapter: Chapter, volumeId: string, index: number) => {
     event.stopPropagation();
     actionTarget.value = { kind: 'chapter', chapter, volumeId, index };
     actionMenuRef.value?.toggle(event);
@@ -270,7 +291,7 @@ function createBooksTabletPageContext() {
     } catch (err) {
       toast.add({
         severity: 'error',
-        summary: '排序失败',
+        summary: i18nT('libraryUi.sortFailed'),
         detail: err instanceof Error ? err.message : String(err),
         life: 3000,
       });

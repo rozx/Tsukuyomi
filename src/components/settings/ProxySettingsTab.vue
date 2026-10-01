@@ -13,6 +13,9 @@ import ProxyOptionLabel from './ProxyOptionLabel.vue';
 import { provideProxySettings } from 'src/composables/settings/useProxySettings';
 import ProxyListTable from './ProxyListTable.vue';
 import ProxyEditDialog from './ProxyEditDialog.vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 const s = provideProxySettings();
 </script>
@@ -20,23 +23,23 @@ const s = provideProxySettings();
 <template>
   <div class="proxy-settings-tab p-4 space-y-3">
     <div>
-      <h3 class="text-sm font-medium text-moon/90 mb-1">代理设置</h3>
-      <p class="text-xs text-moon/70">配置 CORS 代理服务器，用于网页端的爬虫与 AI 请求</p>
+      <h3 class="text-sm font-medium text-moon/90 mb-1">{{ t('settingsUi.proxy.title') }}</h3>
+      <p class="text-xs text-moon/70">{{ t('settingsUi.proxy.description') }}</p>
     </div>
     <div class="space-y-2">
       <div class="proxy-toggle-row flex items-center justify-between gap-3">
-        <label class="text-xs text-moon/80">启用代理</label>
+        <label class="text-xs text-moon/80">{{ t('settingsUi.proxy.enable') }}</label>
         <ToggleSwitch :model-value="s.proxyEnabled.value" @update:model-value="s.setProxyEnabled" />
       </div>
-      <p class="text-xs text-moon/60">启用后，爬虫和网络工具将使用代理服务器访问网页</p>
+      <p class="text-xs text-moon/60">{{ t('settingsUi.proxy.enableHint') }}</p>
       <div v-if="s.proxyEnabled.value" class="space-y-2 mt-2">
-        <label class="text-xs text-moon/80">选择代理服务</label>
+        <label class="text-xs text-moon/80">{{ t('settingsUi.proxy.select') }}</label>
         <Select
           :model-value="s.selectedProxyId.value"
           :options="s.proxyList.value"
           option-label="name"
           option-value="id"
-          placeholder="选择代理服务"
+          :placeholder="t('settingsUi.proxy.select')"
           class="w-full"
           @update:model-value="s.handleProxyChange"
         >
@@ -48,7 +51,7 @@ const s = provideProxySettings();
           </template>
         </Select>
         <div class="space-y-2">
-          <label class="text-xs text-moon/80">代理 URL</label>
+          <label class="text-xs text-moon/80">{{ t('settingsUi.proxy.url') }}</label>
           <InputText
             :model-value="s.proxyUrl.value"
             placeholder="http://abc.xyz?url={url}"
@@ -58,17 +61,24 @@ const s = provideProxySettings();
           />
         </div>
         <p class="text-xs text-moon/60">
-          代理 URL 格式：http://abc.xyz?url={url}，其中 {url} 会被替换为实际要请求的 URL
+          {{ t('settingsUi.proxy.urlFormat') }}
         </p>
 
         <!-- 代理列表管理 -->
         <div class="space-y-2 mt-4 pt-4 border-t border-moon/20">
           <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h4 class="text-sm font-medium text-moon/90 mb-1">代理列表</h4>
-              <p class="text-xs text-moon/70">管理可用的代理服务列表</p>
+              <h4 class="text-sm font-medium text-moon/90 mb-1">
+                {{ t('settingsUi.proxy.list') }}
+              </h4>
+              <p class="text-xs text-moon/70">{{ t('settingsUi.proxy.listHint') }}</p>
             </div>
-            <Button label="添加代理" size="small" class="w-full sm:w-auto" @click="s.openAddProxyDialog" />
+            <Button
+              :label="t('settingsUi.proxy.add')"
+              size="small"
+              class="w-full sm:w-auto"
+              @click="s.openAddProxyDialog"
+            />
           </div>
 
           <ProxyListTable />

@@ -1,11 +1,16 @@
+import { LocalizedError } from 'src/utils/localized-error';
 import { cloneDeep } from 'lodash';
 import { useBooksStore } from 'src/stores/books';
-import { normalizeTranslationQuotes } from 'src/utils/translation-normalizer';
+import type { AppLocale } from 'src/models/locale';
+import { getNameTranslation } from 'src/services/localization/selection';
+import { normalizeTranslationForLanguage } from 'src/utils/translation-normalizer';
 import type { CharacterSetting, Novel } from 'src/models/novel';
 import type { ToolContext } from './types';
+import { parseToolArgs } from './types';
 
 /** 角色别名入参（工具层使用的扁平结构，翻译已是字符串） */
 export interface CharacterAliasInput {
+  id?: string;
   name: string;
   translation: string;
 }
@@ -17,10 +22,10 @@ export interface CharacterAliasInput {
 export function assertAliasesNotBlank(aliases: CharacterAliasInput[] | undefined): void {
   if (!aliases || !Array.isArray(aliases)) return;
   const hasBlankAlias = aliases.some(
-    (alias) => !alias?.name?.trim() || !alias?.translation?.trim(),
+    (alias) => !alias?.name?.trim() || typeof alias.translation !== 'string',
   );
   if (hasBlankAlias) {
-    throw new Error('别名的名称和翻译不能为空');
+    throw new LocalizedError('ALIAS_INVALID', 'aiEntityFeedback.aliasInvalid');
   }
 }
 
@@ -28,20 +33,21 @@ export function assertAliasesNotBlank(aliases: CharacterAliasInput[] | undefined
  * 规范化别名数组：去除首尾空白并对翻译文本做引号规范化。
  * 调用前应先用 `assertAliasesNotBlank` 校验。
  */
-export function normalizeAliasList(aliases: CharacterAliasInput[]): CharacterAliasInput[] {
+export function normalizeAliasList(
+  aliases: CharacterAliasInput[],
+  language: AppLocale = 'zh-CN',
+): CharacterAliasInput[] {
   return aliases.map((alias) => ({
+    ...(alias.id ? { id: alias.id } : {}),
     name: alias.name.trim(),
-    translation: normalizeTranslationQuotes(alias.translation.trim()),
+    translation: normalizeTranslationForLanguage(alias.translation.trim(), language),
   }));
-}
-
-function serializeTranslationText(translation: { translation?: string } | undefined): string {
-  return typeof translation?.translation === 'string' ? translation.translation : '';
 }
 
 function serializeCharacterAliasesForTool(
   aliases: CharacterSetting['aliases'] | undefined,
-): Array<{ name: string; translation: string }> {
+  language: AppLocale,
+): Array<{ id?: string; name: string; translation: string }> {
   if (!Array.isArray(aliases) || aliases.length === 0) {
     return [];
   }
@@ -52,8 +58,9 @@ function serializeCharacterAliasesForTool(
         !!alias && typeof alias.name === 'string' && alias.name.length > 0,
     )
     .map((alias) => ({
+      ...(alias.id ? { id: alias.id } : {}),
       name: alias.name,
-      translation: serializeTranslationText(alias.translation),
+      translation: getNameTranslation(alias, language)?.translation ?? '',
     }));
 }
 
@@ -61,23 +68,26 @@ function serializeCharacterAliasesForTool(
  * 将 `CharacterSetting` 序列化为工具返回给 AI 的扁平 JSON 结构。
  * 所有 character* 工具的响应都使用这同一套字段命名（snake_case）。
  */
-export function serializeCharacterForTool(char: CharacterSetting): {
+export function serializeCharacterForTool(
+  char: CharacterSetting,
+  language: AppLocale = 'zh-CN',
+): {
   id: string;
   name: string;
   translation: string;
   sex: CharacterSetting['sex'];
   description: CharacterSetting['description'];
   speaking_style: CharacterSetting['speakingStyle'];
-  aliases: Array<{ name: string; translation: string }>;
+  aliases: Array<{ id?: string; name: string; translation: string }>;
 } {
   return {
     id: char.id,
     name: typeof char.name === 'string' ? char.name : '',
-    translation: serializeTranslationText(char.translation),
+    translation: getNameTranslation(char, language)?.translation ?? '',
     sex: char.sex,
     description: char.description,
     speaking_style: char.speakingStyle,
-    aliases: serializeCharacterAliasesForTool(char.aliases),
+    aliases: serializeCharacterAliasesForTool(char.aliases, language),
   };
 }
 
@@ -102,11 +112,11 @@ export function requireCharacterContext<T extends { character_id: string }>(
 ): { bookId: string; onAction: ToolContext['onAction']; character_id: string } {
   const { bookId, onAction } = context;
   if (!bookId) {
-    throw new Error('书籍 ID 不能为空');
+    throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
   }
   const character_id = parsedArgs.character_id;
   if (!character_id) {
-    throw new Error('角色 ID 不能为空');
+    throw new LocalizedError('CHARACTER_ID_REQUIRED', 'aiEntityFeedback.characterIdRequired');
   }
   return { bookId, onAction, character_id };
 }
@@ -124,4 +134,16 @@ export function resolveCharacterForTool(
   const character = book?.characterSettings?.find((c) => c.id === characterId);
   const previousData = character ? cloneDeep(character) : undefined;
   return { book, character, previousData };
+}
+
+export function characterEditContext<T extends { character_id: string }>(
+  args: Record<string, unknown>,
+  context: ToolContext,
+) {
+  const parsedArgs = parseToolArgs<T>(args);
+  return {
+    parsedArgs,
+    language: context.languages?.targetLanguage ?? 'zh-CN',
+    ...requireCharacterContext(context, parsedArgs),
+  };
 }

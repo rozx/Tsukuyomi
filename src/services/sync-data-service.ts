@@ -1,19 +1,37 @@
+import { mergeParagraphLanguageState } from './localization/merge';
+import { mergeBookEntityState } from './localization/entities';
+import { mergeTitlePreservingTranslation } from './localization/title-merge';
+import {
+  completeRestoreOperation,
+  prepareBookRestore,
+  resetRestoreCompletion,
+  restoreOperationApplied,
+} from './localization/restore';
+import { completeIdbTransaction } from 'src/utils/complete-idb-transaction';
+import { canonicalStringify } from 'src/utils/canonical-json';
+import { getDB } from 'src/utils/indexed-db';
+import { v4 } from 'uuid';
+import { mergeUiLocalePreference } from 'src/models/locale';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
-import { useCoverHistoryStore } from 'src/stores/cover-history';
+import { normalizeCoverBatch, useCoverHistoryStore } from 'src/stores/cover-history';
+import type { CoverRecordInput } from 'src/stores/cover-history';
 import { useSettingsStore, getSyncDeletionPropagationStateClearedPatch } from 'src/stores/settings';
 import type { GistSyncData } from 'src/services/gist-sync-service';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { aiModelService } from 'src/services/ai-model-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
-import type { Novel, Volume, Chapter, Paragraph, Translation } from 'src/models/novel';
+import type { Novel, Volume, Chapter, Paragraph } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
-import type { DeletionRecord } from 'src/models/sync';
+import type { DeletionRecord, SyncConfig } from 'src/models/sync';
+import type { AppSettings, ImportResult } from 'src/models/settings';
+import { importMemoriesPreservingIdentity } from './settings/memory-import';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 import { stripNovelLocalFields } from 'src/utils/sync-strip';
 import { getErrorMessage } from 'src/utils/error-message';
+import { LocalizedError } from 'src/utils/localized-error';
 import { chapterStructureHash } from 'src/utils/chapter-structure-hash';
 import { getChapterBaselines, recordStructureBaselines } from 'src/services/sync-chapter-baselines';
 
@@ -114,28 +132,6 @@ function shouldKeepLocalOnlyItem(
   }
 
   return localItemTime > lastSyncTime;
-}
-
-/** 章节/卷标题的通用形态（原文字符串或带译文的对象） */
-type OriginalTitle = string | { original: string; translation: Translation };
-
-/**
- * 合并配对章节/卷的标题：胜者标题还是纯原文、败者已带同原文的译文对象时，采用败者，
- * 避免"重新抓取的一侧获胜"把另一侧已翻译的标题冲掉。其余情况保持胜者标题。
- */
-function mergeTitlePreservingTranslation(
-  winnerTitle: OriginalTitle,
-  loserTitle: OriginalTitle,
-): OriginalTitle {
-  if (
-    typeof winnerTitle === 'string' &&
-    typeof loserTitle === 'object' &&
-    loserTitle !== null &&
-    loserTitle.original === winnerTitle
-  ) {
-    return loserTitle;
-  }
-  return winnerTitle;
 }
 
 /** 取卷原文标题（兼容 string / {original, translation} 两种格式），与本地导入的卷匹配语义一致 */
@@ -624,11 +620,7 @@ async function mergeNovelKeepingPrimary(
     ),
     tags: mergeUniqueStrings(primaryNovel.tags, secondaryNovel.tags),
     webUrl: mergeUniqueStrings(primaryNovel.webUrl, secondaryNovel.webUrl),
-    characterSettings: mergeUniqueById(
-      primaryNovel.characterSettings,
-      secondaryNovel.characterSettings,
-    ),
-    terminologies: mergeUniqueById(primaryNovel.terminologies, secondaryNovel.terminologies),
+    ...mergeBookEntityState(primaryNovel, secondaryNovel),
     notes: mergeNotes(primaryNovel.notes, secondaryNovel.notes),
     volumes: await mergeNovelVolumes(
       primaryNovel.volumes,
@@ -717,39 +709,7 @@ function mergeParagraphTranslations(
       return primaryPara;
     }
 
-    const seen = new Set<string>();
-    const merged: Translation[] = [];
-    for (const t of primaryPara.translations ?? []) {
-      if (!seen.has(t.id)) {
-        seen.add(t.id);
-        merged.push(t);
-      }
-    }
-    for (const t of match.translations ?? []) {
-      if (!seen.has(t.id)) {
-        seen.add(t.id);
-        merged.push(t);
-      }
-    }
-
-    let selectedTranslationId = primaryPara.selectedTranslationId;
-    const primarySelectedValid =
-      !!selectedTranslationId && merged.some((t) => t.id === selectedTranslationId);
-    if (!primarySelectedValid) {
-      const secondarySelectedValid =
-        !!match.selectedTranslationId && merged.some((t) => t.id === match.selectedTranslationId);
-      if (secondarySelectedValid) {
-        selectedTranslationId = match.selectedTranslationId;
-      } else if (merged.length > 0 && merged[0]) {
-        selectedTranslationId = merged[0].id;
-      }
-    }
-
-    return {
-      ...primaryPara,
-      translations: merged,
-      selectedTranslationId,
-    };
+    return mergeParagraphLanguageState(primaryPara, match);
   };
 
   const result: Paragraph[] = primary.map(mergeOne);
@@ -929,6 +889,12 @@ function mergeUrlDeletionRecords(
   return Array.from(mergedMap.values());
 }
 
+/** 封面 addedAt 的毫秒值：缺失或无法解析时按 0 处理，避免 NaN 比较让有效记录被丢弃 */
+function coverAddedTime(cover: { addedAt?: unknown } | null | undefined): number {
+  const time = cover?.addedAt ? new Date(cover.addedAt as string | number | Date).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
 /**
  * 按 URL 去重封面历史：同一 URL 只保留 addedAt 最新的那条
  */
@@ -944,9 +910,7 @@ function dedupeCoverHistoryByUrl(
       map.set(url, cover);
       continue;
     }
-    const existingTime = existing?.addedAt ? new Date(existing.addedAt).getTime() : 0;
-    const currentTime = cover?.addedAt ? new Date(cover.addedAt).getTime() : 0;
-    if (currentTime >= existingTime) {
+    if (coverAddedTime(cover) >= coverAddedTime(existing)) {
       map.set(url, cover);
     }
   }
@@ -990,6 +954,8 @@ interface DataBackup {
   covers: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
   settings: any; // eslint-disable-line @typescript-eslint/no-explicit-any
   gistSync: any; // eslint-disable-line @typescript-eslint/no-explicit-any
+  memories: Memory[];
+  syncs?: SyncConfig[];
 }
 
 /**
@@ -997,6 +963,51 @@ interface DataBackup {
  * 处理上传/下载配置的通用逻辑
  */
 export class SyncDataService {
+  /** 两端共用导入入口：缺省字段跳过，后续失败还原全部业务数据。 */
+  static async importSettingsSnapshot(
+    data: Partial<NonNullable<ImportResult['data']>>,
+    operationId: string,
+  ): Promise<void> {
+    await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
+    const settings = useSettingsStore();
+    const models = useAIModelsStore();
+    const books = useBooksStore();
+    const covers = useCoverHistoryStore();
+    const db = await getDB();
+    const signature = canonicalStringify(data);
+    const scopeId = `settings:${operationId}`;
+    const bookScope = `${scopeId}:books`;
+    if (
+      await restoreOperationApplied(
+        { get: (id) => db.get('entity-operations', id) },
+        'snapshot',
+        scopeId,
+        signature,
+      )
+    )
+      return;
+    const backup = await SyncDataService.createBackup();
+    try {
+      if (data.models !== undefined) await models.bulkImportModels(data.models);
+      if (data.novels !== undefined) await books.replaceBooks(data.novels, bookScope);
+      // 按导入记录原样写入（保留 id 与添加时间），同一 URL 只留最新一条
+      if (data.coverHistory !== undefined)
+        await covers.replaceHistory(dedupeCoverHistoryByUrl(data.coverHistory));
+      await importMemoriesPreservingIdentity(data.memories, '[SyncDataService]');
+      if (data.appSettings !== undefined) await settings.importSettings(data.appSettings);
+      if (data.sync !== undefined) await settings.importSyncs(data.sync);
+      else await settings.clearSyncDeletionPropagationState();
+      const tx = db.transaction('entity-operations', 'readwrite');
+      await completeIdbTransaction(tx, () =>
+        completeRestoreOperation(tx.store, 'snapshot', scopeId, signature, []),
+      );
+    } catch (error) {
+      await SyncDataService.restoreFromBackup(backup);
+      await resetRestoreCompletion(db, bookScope, data.novels?.map((book) => book.id) ?? []);
+      throw error;
+    }
+  }
+
   /**
    * 剥离 Memory 的本地字段（embeddings / embeddingModel / 已弃用的 embedding、attachedTo）
    * 用于 Gist 上传时 strip，以及下载时防御性 strip 旧版本 payload
@@ -1069,6 +1080,10 @@ export class SyncDataService {
       covers: JSON.parse(JSON.stringify(coverHistoryStore.covers)),
       settings: JSON.parse(JSON.stringify(settings ?? {})),
       gistSync: JSON.parse(JSON.stringify(gistSync ?? {})),
+      memories: await (await getDB()).getAll('memories'),
+      ...(useSettingsStore().syncs
+        ? { syncs: JSON.parse(JSON.stringify(useSettingsStore().syncs)) as SyncConfig[] }
+        : {}),
     };
   }
 
@@ -1106,34 +1121,21 @@ export class SyncDataService {
       }));
 
       // 恢复书籍（使用 bulkAddBooks 的 put/upsert，再清理旧书籍）
-      const backupBookIds = new Set(backup.books.map((b: Novel) => b.id));
-      const staleBookIdsForRestore = booksStore.books
-        .filter((b) => !backupBookIds.has(b.id))
-        .map((b) => b.id);
+      await booksStore.rollbackBooks(backup.books);
+      await MemoryService.rollbackMemories(backup.memories);
 
-      await booksStore.bulkAddBooks(backup.books);
-      for (const staleId of staleBookIdsForRestore) {
-        try {
-          await booksStore.deleteBook(staleId);
-        } catch {
-          /* 忽略 */
-        }
-      }
-
-      // 恢复封面历史
-      await coverHistoryStore.clearHistory();
-      for (const cover of backup.covers) {
-        await coverHistoryStore.addCover(cover);
-      }
+      // 恢复封面历史：按备份原样写回，保留 id 与添加时间
+      await coverHistoryStore.replaceHistory(backup.covers);
 
       // 恢复设置
-      await settingsStore.importSettings(backup.settings);
-      await settingsStore.updateGistSync(backup.gistSync);
+      await settingsStore.replaceSettingsFromSyncSnapshot(backup.settings);
+      if (backup.syncs !== undefined) await settingsStore.importSyncs(backup.syncs);
+      else await settingsStore.updateGistSync(backup.gistSync);
 
       console.log('[SyncDataService] 数据恢复完成');
     } catch (restoreError) {
       console.error('[SyncDataService] 恢复数据失败:', restoreError);
-      throw new Error('数据恢复失败，请检查本地数据完整性');
+      throw new LocalizedError('SYNC_RESTORE_FAILED', 'syncUi.data.restoreFailed');
     }
   }
 
@@ -1167,7 +1169,7 @@ export class SyncDataService {
     // 验证远程数据的完整性
     if (!SyncDataService.validateRemoteData(remoteData)) {
       console.error('[SyncDataService] 远程数据验证失败，拒绝应用数据');
-      throw new Error('远程数据格式无效，无法应用');
+      throw new LocalizedError('SYNC_REMOTE_INVALID', 'syncUi.data.remoteInvalid');
     }
 
     // 创建数据备份（用于回滚，含内联章节内容）
@@ -1238,7 +1240,7 @@ export class SyncDataService {
     } catch (error) {
       // 发生错误，回滚到备份数据
       console.error('[SyncDataService] 应用下载数据时发生错误，正在回滚:', error);
-      await SyncDataService.rollbackWithBackupOrThrow(backup, error, '应用数据失败');
+      await SyncDataService.rollbackWithBackupOrThrow(backup, error, 'syncUi.data.rollbackApply');
       throw error; // unreachable，但 TS 的控制流推断需要这行
     }
   }
@@ -1250,16 +1252,16 @@ export class SyncDataService {
   private static async rollbackWithBackupOrThrow(
     backup: DataBackup,
     error: unknown,
-    errorPrefix: string,
+    failureKey: 'syncUi.data.rollbackApply' | 'syncUi.data.rollbackSnapshot',
   ): Promise<never> {
     try {
       await SyncDataService.restoreFromBackup(backup);
     } catch (rollbackError) {
       console.error('[SyncDataService] 回滚失败:', rollbackError);
-      throw new Error(
-        `${errorPrefix}: ${getErrorMessage(error)}; ` +
-          `回滚也失败: ${getErrorMessage(rollbackError)}`,
-      );
+      throw new LocalizedError('SYNC_ROLLBACK_FAILED', failureKey, {
+        error: getErrorMessage(error),
+        rollback: getErrorMessage(rollbackError),
+      });
     }
     throw error;
   }
@@ -1755,7 +1757,7 @@ export class SyncDataService {
   }
 
   /**
-   * 应用远端封面历史到本地：合并远端/本地、URL 去重，最后 clear+add 重建。
+   * 应用远端封面历史到本地：合并远端/本地、URL 去重，最后按原身份整体替换。
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private static async applyDownloadedCoverHistory(
@@ -1806,12 +1808,8 @@ export class SyncDataService {
       ...SyncDataService.collectLocalOnlyCovers(coverHistoryStore.covers, remoteCovers, syncTime),
     );
 
-    const deduped = dedupeCoverHistoryByUrl(finalCovers);
-
-    await coverHistoryStore.clearHistory();
-    for (const cover of deduped) {
-      await coverHistoryStore.addCover(cover);
-    }
+    // 原样写入合并结果（保留 id 与 addedAt），否则每次同步都会重铸身份，删除墓碑随之失配
+    await coverHistoryStore.replaceHistory(dedupeCoverHistoryByUrl(finalCovers));
   }
 
   /**
@@ -2022,18 +2020,26 @@ export class SyncDataService {
       isManualRetrieval ||
       SyncDataService.shouldUseRemoteByTime(localSettings.lastEdited, remoteAppSettings.lastEdited);
 
+    const uiLocale = shouldApplyRemoteSettings
+      ? mergeUiLocalePreference(remoteAppSettings.uiLocale, localSettings.uiLocale)
+      : mergeUiLocalePreference(localSettings.uiLocale, remoteAppSettings.uiLocale);
     if (shouldApplyRemoteSettings) {
       const currentGistSync = GlobalConfig.getGistSyncSnapshot();
       await settingsStore.importSettings({
         ...remoteAppSettings,
+        ...(uiLocale ? { uiLocale } : {}),
         quickStartDismissed: mergedQuickStartDismissed,
       });
       if (currentGistSync) {
         await settingsStore.updateGistSync(currentGistSync);
       }
-    } else if (mergedQuickStartDismissed && localSettings.quickStartDismissed !== true) {
-      // 即便不整体采用远程设置，也要同步“已关闭”语义，避免状态回退
-      await settingsStore.importSettings({ quickStartDismissed: true });
+    } else {
+      const updates: Partial<AppSettings> = {};
+      if (mergedQuickStartDismissed && localSettings.quickStartDismissed !== true) {
+        updates.quickStartDismissed = true;
+      }
+      if (uiLocale && uiLocale !== localSettings.uiLocale) updates.uiLocale = uiLocale;
+      if (Object.keys(updates).length) await settingsStore.importSettings(updates);
     }
   }
 
@@ -2094,6 +2100,7 @@ export class SyncDataService {
       coverHistory?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
       memories?: any[] | null; // eslint-disable-line @typescript-eslint/no-explicit-any
     } | null,
+    operationId = v4(),
   ): Promise<void> {
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
 
@@ -2101,18 +2108,55 @@ export class SyncDataService {
 
     if (!SyncDataService.validateRemoteData(remoteData)) {
       console.error('[SyncDataService] 远程数据验证失败，拒绝覆盖');
-      throw new Error('远程数据格式无效，无法应用');
+      throw new LocalizedError('SYNC_REMOTE_INVALID', 'syncUi.data.remoteInvalid');
     }
+
+    const db = await getDB();
+    const signature = canonicalStringify(remoteData);
+    if (
+      await restoreOperationApplied(
+        { get: (id) => db.get('entity-operations', id) },
+        'snapshot',
+        operationId,
+        signature,
+      )
+    )
+      return;
 
     const backup = await SyncDataService.createBackup();
 
     try {
+      const novels: Novel[] = [];
+      for (const book of remoteData.novels ?? []) {
+        novels.push(
+          await prepareBookRestore(
+            db,
+            book as Novel,
+            backup.books.find((previous) => previous.id === (book as Novel).id),
+            operationId,
+          ),
+        );
+      }
       await SyncDataService.clearLocalSyncedData(backup);
-      await SyncDataService.writeSnapshotData(remoteData);
+      await SyncDataService.writeSnapshotData({ ...remoteData, novels });
       await SyncDataService.restoreGistSyncConfigAfterSnapshot(remoteData.appSettings);
+      const completed = db.transaction('entity-operations', 'readwrite');
+      await completeIdbTransaction(completed, () =>
+        completeRestoreOperation(
+          completed.store,
+          'snapshot',
+          operationId,
+          signature,
+          novels.map((book) => book.id),
+        ),
+      );
     } catch (error) {
       console.error('[SyncDataService] 覆盖快照时发生错误，正在回滚:', error);
-      await SyncDataService.rollbackWithBackupOrThrow(backup, error, '应用快照失败');
+      await SyncDataService.rollbackWithBackupOrThrow(
+        backup,
+        error,
+        'syncUi.data.rollbackSnapshot',
+      );
     }
   }
 
@@ -2171,9 +2215,7 @@ export class SyncDataService {
     }));
 
     const remoteCovers = Array.isArray(remoteData.coverHistory) ? remoteData.coverHistory : [];
-    for (const cover of remoteCovers) {
-      await coverHistoryStore.addCover(cover);
-    }
+    await coverHistoryStore.replaceHistory(dedupeCoverHistoryByUrl(remoteCovers));
 
     const remoteMemories = Array.isArray(remoteData.memories) ? remoteData.memories : [];
     for (const memory of remoteMemories) {
@@ -2560,6 +2602,7 @@ export class SyncDataService {
     ) {
       return {
         ...localAppSettings,
+        uiLocale: mergeUiLocalePreference(localAppSettings.uiLocale, remoteAppSettings.uiLocale),
         quickStartDismissed: mergedQuickStartDismissed,
       };
     }
@@ -2588,6 +2631,7 @@ export class SyncDataService {
 
     return {
       ...remoteAppSettings,
+      uiLocale: mergeUiLocalePreference(remoteAppSettings.uiLocale, localAppSettings.uiLocale),
       syncs: mergedSyncs,
       quickStartDismissed: mergedQuickStartDismissed,
     };
@@ -2982,25 +3026,31 @@ export class SyncDataService {
     const coverHistoryStore = useCoverHistoryStore();
     const gistSync = GlobalConfig.getGistSyncSnapshot();
     const lastSyncTime = gistSync?.lastSyncTime ?? 0;
-    const deletedCoverMap = new Map<string, number>(
-      (gistSync?.deletedCoverIds ?? []).map((r) => [r.id, r.deletedAt]),
-    );
+    const { deletedCoverIdsMap, deletedCoverUrlsMap } =
+      SyncDataService.buildCoverDeletionMaps(gistSync);
 
-    const remoteCoverIds = new Set<string>();
-    for (const rc of remoteCovers) {
-      const rcId = rc.id as string;
-      remoteCoverIds.add(rcId);
-      const deletedAt = deletedCoverMap.get(rcId);
-      if (deletedAt !== undefined && deletedAt > lastSyncTime) continue;
-      await coverHistoryStore.addCover(
-        rc as unknown as Parameters<typeof coverHistoryStore.addCover>[0],
+    // 先按 URL / id 去重出远端赢家，删除保护集合必须只由实际写入的记录构成
+    const normalizedRemote = normalizeCoverBatch(remoteCovers as unknown as CoverRecordInput[]);
+    const remoteCoverIds = new Set(normalizedRemote.map((rc) => rc.id));
+    const remoteCoverUrls = new Set(normalizedRemote.map((rc) => rc.url).filter(Boolean));
+    // 本设备自上次同步后按 id 或 URL 删除过的封面不复活
+    const kept = normalizedRemote.filter((rc) => {
+      const deletedAt = SyncDataService.lookupCoverDeletionRecord(
+        rc.id,
+        rc.url,
+        deletedCoverIdsMap,
+        deletedCoverUrlsMap,
       );
-    }
+      return deletedAt === undefined || deletedAt <= lastSyncTime;
+    });
+    // 原样合并远端记录（保留 id 与 addedAt），同 URL 的旧本地记录被远端身份取代
+    await coverHistoryStore.upsertCovers(kept);
 
-    // 跨设备删除传播
+    // 跨设备删除传播：远端按 id 与 URL 都找不到的本地封面才视为远端已删除
     const localCoversSnapshot = [...coverHistoryStore.covers];
     for (const localCover of localCoversSnapshot) {
       if (remoteCoverIds.has(localCover.id)) continue;
+      if (remoteCoverUrls.has(normalizeCoverUrl(localCover.url))) continue;
       const addedAt = localCover.addedAt
         ? new Date(localCover.addedAt as unknown as string | number | Date).getTime()
         : 0;

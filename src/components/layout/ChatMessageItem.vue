@@ -4,6 +4,9 @@
  * 从 ChatMessageList 的 v-for 循环体里拆出，降低父模板圈复杂度。
  */
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
+import type { AppLocale } from 'src/models/locale';
+import { chatMessageDisplayContent } from 'src/composables/chat/constants';
 import type { ChatSessionMessage } from 'src/stores/chat-sessions';
 import type { MessageDisplayItem, MessageItemHandlers } from './chat-message-types';
 import ChatActionBadge from 'src/components/layout/ChatActionBadge.vue';
@@ -17,12 +20,23 @@ interface Props extends MessageItemHandlers {
 }
 
 const props = defineProps<Props>();
+const { t, locale } = useI18n();
 
 const isContent = computed(() => props.item.type === 'content' && !!props.item.content);
 // 流式输出时节流渲染 Markdown（120ms），避免每个 token 都全量重解析整条消息；
 // trailing 渲染保证流结束后最终内容与完整文本一致
 const renderedContent = useThrottledMarkdown(
-  () => (props.item.type === 'content' ? (props.item.content ?? '') : ''),
+  // 系统生成的总结提示按当前界面语言显示；用户与 AI 的自由文本原样渲染
+  () =>
+    props.item.type === 'content'
+      ? chatMessageDisplayContent(
+          {
+            content: props.item.content ?? '',
+            isSummarization: props.message.isSummarization ?? false,
+          },
+          locale.value as AppLocale,
+        )
+      : '',
   (text) => props.renderMarkdown(text),
 );
 const isGroupedAction = computed(
@@ -61,7 +75,7 @@ const bubbleClass = computed(() =>
         @mouseleave="onGroupedActionLeave"
       >
         <i class="text-sm pi pi-list" />
-        <span> 创建 {{ item.groupedActions!.length }} 个待办事项 </span>
+        <span>{{ t('activityUi.badge.todoGroup', { count: item.groupedActions!.length }) }}</span>
       </div>
     </div>
   </div>
@@ -141,7 +155,7 @@ const bubbleClass = computed(() =>
 .markdown-content :deep(code) {
   /* 设计系统：行内代码—薄藍色调 + JetBrains Mono */
   background-color: rgba(109, 136, 168, 0.12);
-  color: #A3B7CF;
+  color: #a3b7cf;
   padding: 0.125em 0.4em;
   border-radius: 6px;
   font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;

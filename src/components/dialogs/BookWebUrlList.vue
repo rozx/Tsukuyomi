@@ -14,7 +14,7 @@
         icon="pi pi-download"
         class="p-button-text p-button-sm"
         size="small"
-        title="爬取此 URL 的内容"
+        :title="i18nT('libraryUi.fetchUrl')"
         @click="emit('scrape', url)"
       />
     </div>
@@ -22,6 +22,9 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 import Button from 'primevue/button';
 import { NovelScraperFactory } from 'src/services/scraper';
 

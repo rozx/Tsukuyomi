@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+import { resolveAppLocale } from 'src/models/locale';
+import { formatWordCount } from 'src/utils/format';
+
 /**
  * 平板专用章节头部：参考 tablet 手写稿——标题行 + 状态行 + 右侧动作区。
  *
@@ -14,6 +18,8 @@ import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import { getChapterDisplayTitle, getChapterTranslationStats } from 'src/utils';
+
+const { t, locale } = useI18n();
 
 interface TranslationStatus {
   hasNone: boolean;
@@ -55,81 +61,80 @@ const emit = defineEmits<{
 const overflowMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
 const translateMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
 
-const stats = computed(() => getChapterTranslationStats(props.selectedChapterParagraphs));
+const stats = computed(() =>
+  getChapterTranslationStats(
+    props.selectedChapterParagraphs,
+    props.book?.targetLanguage ?? 'zh-CN',
+  ),
+);
 
 const translatedCharLabel = computed(() => {
   const count = props.translatedCharCount;
-  if (count >= 10000) return `约 ${(count / 10000).toFixed(1)} 万字`;
-  if (count >= 1000) return `约 ${(count / 1000).toFixed(1)}k 字`;
-  return `约 ${count} 字`;
+  return t('readerUi.approxCharacters', {
+    count: formatWordCount(count, resolveAppLocale(locale.value)),
+  });
 });
 
 const title = computed(() =>
   props.selectedChapter
     ? getChapterDisplayTitle(props.selectedChapter, props.book || undefined)
-    : '未选择章节',
+    : t('readerUi.notSelectedChapter'),
 );
 
 const overflowMenuItems = computed<MenuItem[]>(() => [
   {
-    label: '撤销',
+    label: t('readerUi.undo'),
     icon: 'pi pi-undo',
     disabled: !props.canUndo,
     command: () => emit('undo'),
   },
   {
-    label: '重做',
+    label: t('readerUi.redo'),
     icon: 'pi pi-refresh',
     disabled: !props.canRedo,
     command: () => emit('redo'),
   },
   { separator: true },
   {
-    label: props.isSearchVisible ? '关闭搜索' : '搜索与替换',
+    label: props.isSearchVisible ? t('readerUi.closeSearch') : t('readerUi.searchReplace'),
     icon: props.isSearchVisible ? 'pi pi-search-minus' : 'pi pi-search',
     command: () => emit('toggleSearch'),
   },
   {
-    label: '导出章节',
+    label: t('readerUi.exportChapter'),
     icon: 'pi pi-file-export',
     // PrimeVue Menu command 回调只暴露 MenuItemCommandEvent，originalEvent 可能缺失，
     // 这里仅用 event 用于 Popover 定位；缺失时使用 document.body 兜底。
-    command: (event) => emit('toggleExport', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleExport', event.originalEvent ?? new Event('click')),
   },
   { separator: true },
   {
-    label: `术语（${props.usedTermCount}）`,
+    label: t('readerUi.termsCount', { count: props.usedTermCount }),
     icon: 'pi pi-bookmark',
-    command: (event) =>
-      emit('toggleTermPopover', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleTermPopover', event.originalEvent ?? new Event('click')),
   },
   {
-    label: `角色（${props.usedCharacterCount}）`,
+    label: t('readerUi.charactersCount', { count: props.usedCharacterCount }),
     icon: 'pi pi-user',
-    command: (event) =>
-      emit('toggleCharacterPopover', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleCharacterPopover', event.originalEvent ?? new Event('click')),
   },
   {
-    label: `记忆（${props.usedMemoryCount}）`,
+    label: t('readerUi.memoriesCount', { count: props.usedMemoryCount }),
     icon: 'pi pi-lightbulb',
-    command: (event) =>
-      emit('toggleMemoryPopover', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleMemoryPopover', event.originalEvent ?? new Event('click')),
   },
   { separator: true },
   {
-    label: '键盘快捷键',
+    label: t('readerUi.shortcuts'),
     icon: 'pi pi-info-circle',
-    command: (event) =>
-      emit('toggleKeyboardShortcuts', (event.originalEvent) ?? new Event('click')),
+    command: (event) => emit('toggleKeyboardShortcuts', event.originalEvent ?? new Event('click')),
   },
 ]);
 
 const onOverflowToggle = (event: Event) => overflowMenuRef.value?.toggle(event);
 const onTranslateMenuToggle = (event: Event) => translateMenuRef.value?.toggle(event);
 
-const translateBusy = computed(
-  () => props.isTranslatingChapter || props.isPolishingChapter,
-);
+const translateBusy = computed(() => props.isTranslatingChapter || props.isPolishingChapter);
 const translateIcon = computed(() => {
   if (translateBusy.value) return 'pi pi-spin pi-spinner';
   return props.translationStatus.hasAll ? 'pi pi-sparkles' : 'pi pi-play';
@@ -146,9 +151,9 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
       <div class="ctt-text">
         <h1 class="ctt-title" :title="title">{{ title }}</h1>
         <div class="ctt-stats">
-          <span>共 {{ stats.total }} 段</span>
+          <span>{{ t('readerUi.totalParagraphs', { count: stats.total }) }}</span>
           <span class="ctt-stats-sep">·</span>
-          <span>已译 {{ stats.translated }}</span>
+          <span>{{ t('readerUi.translatedParagraphs', { count: stats.translated }) }}</span>
           <span class="ctt-stats-sep">·</span>
           <span>{{ translatedCharLabel }}</span>
         </div>
@@ -175,7 +180,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
             type="button"
             class="ctt-primary-caret"
             :disabled="translateDisabled"
-            aria-label="更多翻译操作"
+            :aria-label="t('readerUi.moreTranslationActions')"
             @click="onTranslateMenuToggle"
           >
             <i class="pi pi-chevron-down" aria-hidden="true" />
@@ -186,7 +191,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
         <button
           type="button"
           class="ctt-icon-btn"
-          title="章节设置"
+          :title="t('readerUi.chapterSettings')"
           @click="(event: Event) => emit('toggleSpecialInstructions', event)"
         >
           <i class="pi pi-cog" aria-hidden="true" />
@@ -195,7 +200,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
         <button
           type="button"
           class="ctt-icon-btn"
-          title="更多操作"
+          :title="t('readerUi.moreActions')"
           @click="onOverflowToggle"
         >
           <i class="pi pi-ellipsis-v" aria-hidden="true" />
@@ -369,5 +374,4 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 .ctt-icon-btn i {
   font-size: 13px;
 }
-
 </style>

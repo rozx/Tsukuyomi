@@ -1,3 +1,4 @@
+import type { AppLocale } from 'src/models/locale';
 import { MemoryService } from 'src/services/memory-service';
 
 /**
@@ -27,12 +28,13 @@ async function searchRelatedMemories(
   bookId: string,
   keywords: string[],
   limit: number = 5,
+  language?: AppLocale,
 ): Promise<Array<{ id: string; summary: string }>> {
   if (!bookId || !keywords || keywords.length === 0) {
     return [];
   }
   try {
-    const memories = await MemoryService.searchMemories(bookId, keywords.join(' '));
+    const memories = await MemoryService.searchMemories(bookId, keywords.join(' '), language);
 
     // 限制返回数量，只返回 id 和 summary（不返回 content）
     // 如果 AI 需要完整内容，可以调用 get_memory 工具
@@ -54,10 +56,11 @@ async function searchRelatedMemories(
  */
 export async function searchRelatedMemoriesHybrid(
   bookId: string,
-   
+
   _attachments: DeprecatedAttachmentRef[],
   keywords: string[],
   limit: number = 5,
+  language?: AppLocale,
 ): Promise<Array<{ id: string; summary: string }>> {
-  return searchRelatedMemories(bookId, keywords, limit);
+  return searchRelatedMemories(bookId, keywords, limit, language);
 }

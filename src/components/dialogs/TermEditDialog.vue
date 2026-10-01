@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
 import { ref, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -6,19 +7,21 @@ import Textarea from 'primevue/textarea';
 import AppMessage from 'src/components/common/AppMessage.vue';
 import TranslatableInput from 'src/components/translation/TranslatableInput.vue';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
+import type { EntityDialogProps, EntityDialogEmits, EntityNameForm } from './entity-dialog-types';
+import { getNameTranslation } from 'src/services/localization/selection';
+import { useLanguageEditGuard } from 'src/composables/translation/useLanguageEditGuard';
 import type { Terminology } from 'src/models/novel';
 
-const props = defineProps<{
-  visible: boolean;
-  term?: Terminology | null; // If provided, we are in edit mode
-  mode: 'add' | 'edit';
-  loading?: boolean;
-}>();
+const { t } = useI18n();
 
-const emit = defineEmits<{
-  (e: 'update:visible', value: boolean): void;
-  (e: 'save', data: { name: string; translation: string; description: string }): void;
-}>();
+const props = defineProps<
+  EntityDialogProps & { term?: Terminology | null; mode: 'add' | 'edit' }
+>();
+const emit = defineEmits<EntityDialogEmits<EntityNameForm>>();
+
+const { languageChanged, languageChangedMessage, captureLanguage } = useLanguageEditGuard(
+  () => props.targetLanguage ?? 'zh-CN',
+);
 
 const formData = ref({
   name: '',
@@ -31,11 +34,13 @@ watch(
   () => props.visible,
   (newVal) => {
     if (newVal) {
+      captureLanguage();
       if (props.mode === 'edit' && props.term) {
         formData.value = {
           name: props.term.name,
           description: props.term.description || '',
-          translation: props.term.translation.translation,
+          translation:
+            getNameTranslation(props.term, props.targetLanguage ?? 'zh-CN')?.translation ?? '',
         };
       } else {
         formData.value = {
@@ -52,11 +57,12 @@ watch(
 watch(
   () => props.term,
   (newTerm) => {
-    if (props.visible && props.mode === 'edit' && newTerm) {
+    if (props.visible && props.mode === 'edit' && newTerm && !languageChanged.value) {
       formData.value = {
         name: newTerm.name,
         description: newTerm.description || '',
-        translation: newTerm.translation.translation,
+        translation:
+          getNameTranslation(newTerm, props.targetLanguage ?? 'zh-CN')?.translation ?? '',
       };
     }
   },
@@ -71,6 +77,7 @@ const handleTranslationApplied = (result: string) => {
 };
 
 const handleSave = () => {
+  if (languageChanged.value) return;
   // 验证必填字段
   const trimmedName = formData.value.name.trim();
   if (!trimmedName) {
@@ -93,17 +100,23 @@ const handleClose = () => {
 <template>
   <AdaptiveDialog
     :visible="visible"
-    :header="mode === 'add' ? '添加术语' : '编辑术语'"
+    :header="mode === 'add' ? t('entityUi.addTerm') : t('entityUi.editTerm')"
     desktop-width="30rem"
-    eyebrow="TERM"
+    :eyebrow="t('entityUi.term')"
     @update:visible="emit('update:visible', $event)"
   >
     <div class="space-y-4">
+      <AppMessage
+        v-if="languageChanged"
+        severity="warn"
+        :message="languageChangedMessage"
+        :closable="false"
+      />
       <div class="space-y-2">
-        <label class="text-sm text-moon/80">术语名称 *</label>
+        <label class="text-sm text-moon/80">{{ t('entityUi.termName') }}</label>
         <TranslatableInput
           v-model="formData.name"
-          placeholder="输入术语名称"
+          :placeholder="t('entityUi.termPlaceholder')"
           :apply-translation-to-input="false"
           @update:model-value="handleNameUpdate"
           @translation-applied="handleTranslationApplied"
@@ -111,26 +124,26 @@ const handleClose = () => {
       </div>
 
       <div class="space-y-2">
-        <label class="text-sm text-moon/80">翻译</label>
-        <InputText v-model="formData.translation" placeholder="输入翻译" class="w-full" />
-        <AppMessage
-          severity="info"
-          message="留空则让翻译 AI 在翻译章节时自动翻译此术语"
-          :closable="false"
+        <label class="text-sm text-moon/80">{{ t('entityUi.translation') }}</label>
+        <InputText
+          v-model="formData.translation"
+          :placeholder="t('entityUi.translationPlaceholder')"
+          class="w-full"
         />
+        <AppMessage severity="info" :message="t('entityUi.termAiHint')" :closable="false" />
       </div>
 
       <div class="space-y-2">
-        <label class="text-sm text-moon/80">描述</label>
+        <label class="text-sm text-moon/80">{{ t('entityUi.description') }}</label>
         <Textarea
           v-model="formData.description"
-          placeholder="输入描述（可选）"
+          :placeholder="t('entityUi.descriptionPlaceholder')"
           :rows="3"
           class="w-full"
         />
         <AppMessage
           severity="info"
-          message="留空则让翻译 AI 在翻译章节时自动更新描述内容"
+          :message="t('entityUi.termDescriptionHint')"
           :closable="false"
         />
       </div>
@@ -138,14 +151,14 @@ const handleClose = () => {
 
     <template #footer>
       <Button
-        label="取消"
+        :label="t('entityUi.cancel')"
         icon="pi pi-times"
         class="p-button-text"
         :disabled="loading"
         @click="handleClose"
       />
       <Button
-        label="保存"
+        :label="t('entityUi.save')"
         icon="pi pi-check"
         class="p-button-primary"
         :loading="loading"

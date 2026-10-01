@@ -4,7 +4,10 @@ import type {
   TextGenerationResult,
   TextGenerationStreamCallback,
 } from 'src/services/ai/types/ai-service';
-import type { AIProcessingStore, TaskType } from './task-types';
+import type { AIProcessingStore } from './task-types';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
+import { isCancelledError } from 'src/utils/is-cancelled-error';
 import {
   createStreamCallback,
   createUnifiedAbortController,
@@ -23,7 +26,7 @@ export interface LLMStreamAdapterOptions {
   aiProcessingStore: AIProcessingStore | undefined;
   chunkText: string;
   logLabel: string;
-  taskType: TaskType;
+  uiLocale: AppLocale;
 }
 
 export async function runLLMRequest(
@@ -37,7 +40,7 @@ export async function runLLMRequest(
     aiProcessingStore,
     chunkText,
     logLabel,
-    taskType,
+    uiLocale,
   } = options;
 
   let streamedText = '';
@@ -51,7 +54,7 @@ export async function runLLMRequest(
       aiProcessingStore,
       originalText: chunkText,
       logLabel,
-      taskType,
+      uiLocale,
       abortController: streamAbortController,
     },
     (text) => {
@@ -67,12 +70,12 @@ export async function runLLMRequest(
     );
 
     if (!result) {
-      throw new Error('AI 返回结果为空');
+      throw new Error(translateText(uiLocale, 'aiRun.emptyResult'));
     }
 
     return { result, streamedText };
   } catch (error) {
-    if (error instanceof Error && (error.message.includes('取消') || error.name === 'AbortError')) {
+    if (isCancelledError(error)) {
       throw error;
     }
 

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 /**
  * 任务路由 picker（手机端底部抽屉）。从 AIPageMobile 抽出以降低其模板圈复杂度。
  * 自行注入 useAIPage 上下文，无需父级 prop 传递。
@@ -6,16 +8,12 @@
 import { computed } from 'vue';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
+const { t } = useI18n();
 
 const ctx = injectAIPage();
 
-const routingPickerVisible = computed({
-  get: () => !!ctx.routingPickerTask.value,
-  set: (open: boolean) => {
-    if (!open) ctx.closeTaskRoutingPicker();
-  },
-});
-const routingPickerTitle = computed(() => ctx.routingPickerTaskLabel.value || '任务路由');
+const routingPickerVisible = ctx.routingPickerVisible;
+const routingPickerTitle = ctx.routingPickerTitle;
 const hasNoPickerModel = computed(() => !ctx.routingPickerCurrentModelId.value);
 const isPickerActive = (model: { id: string }) =>
   model.id === ctx.routingPickerCurrentModelId.value;
@@ -25,7 +23,7 @@ const isPickerActive = (model: { id: string }) =>
   <MobileBottomSheet
     v-model:visible="routingPickerVisible"
     :title="routingPickerTitle"
-    eyebrow="任务路由"
+    :eyebrow="t('aiUi.routing')"
   >
     <!-- 未设置 -->
     <button
@@ -35,14 +33,10 @@ const isPickerActive = (model: { id: string }) =>
       @click="ctx.pickModelForTask(null)"
     >
       <div class="ma-picker-option-main">
-        <div class="ma-picker-option-name">未设置</div>
-        <div class="ma-picker-option-meta">该任务将无默认模型</div>
+        <div class="ma-picker-option-name">{{ t('aiUi.unset') }}</div>
+        <div class="ma-picker-option-meta">{{ t('aiUi.unsetHint') }}</div>
       </div>
-      <i
-        v-if="hasNoPickerModel"
-        class="pi pi-check ma-picker-option-check"
-        aria-hidden="true"
-      />
+      <i v-if="hasNoPickerModel" class="pi pi-check ma-picker-option-check" aria-hidden="true" />
     </button>
 
     <!-- 可选模型 -->
@@ -70,7 +64,7 @@ const isPickerActive = (model: { id: string }) =>
     <!-- 空状态 -->
     <div v-if="ctx.routingPickerOptions.value.length === 0" class="ma-picker-empty">
       <i class="pi pi-info-circle" aria-hidden="true" />
-      <span>暂无支持此任务的模型，请在模型编辑页面中启用该任务。</span>
+      <span>{{ t('aiUi.noTaskModels') }}</span>
     </div>
   </MobileBottomSheet>
 </template>

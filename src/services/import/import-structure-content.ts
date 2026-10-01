@@ -1,3 +1,4 @@
+import { importFailure } from './import-error';
 import type { ImportContentRef, ImportResource } from 'src/models/import';
 import type { ImportStructureResult } from 'src/models/import-text-structure';
 import type { ImportTextRange } from 'src/models/import-pattern';
@@ -33,7 +34,11 @@ export function structureContent(resource: Extraction) {
       if (block.kind === 'metadata') {
         if (pending) refs.push(pending);
         pending = undefined;
-        excluded.push({ start: from, end: to, reason: 'Markdown 元信息定义' });
+        excluded.push({
+          start: from,
+          end: to,
+          reason: importFailure('MARKDOWN_METADATA', 'noticeMarkdownMetadata'),
+        });
         continue;
       }
       original += block.text.slice(from - start, to - start);

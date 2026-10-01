@@ -8,21 +8,26 @@
       :max="max"
       :use-grouping="true"
       :show-buttons="false"
-      placeholder="0 表示未设置"
+      :placeholder="t('aiUi.zeroUnset')"
       class="w-full"
       :class="{ 'p-invalid': !!error }"
     />
     <small v-if="error" class="p-error block mt-1">{{ error }}</small>
     <small v-else-if="showAiHint" class="text-xs text-moon/70 block mt-1">
-      {{ aiHintLabel }}: {{ aiConfigValue?.toLocaleString() }}
+      {{ aiHintLabel }}: {{ aiConfigValue?.toLocaleString(locale) }}
     </small>
-    <small v-else-if="isZero" class="text-xs text-moon/70 block mt-1"> 0 表示未设置 </small>
+    <small v-else-if="isZero" class="text-xs text-moon/70 block mt-1">{{
+      t('aiUi.zeroUnset')
+    }}</small>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
 import { computed } from 'vue';
 import InputNumber from 'primevue/inputnumber';
+const { t, locale } = useI18n();
 
 const props = defineProps<{
   label: string;

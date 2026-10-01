@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import type { AppLocale } from 'src/models/locale';
+import { taskStatusLabel, taskTypeLabel } from 'src/constants/ai';
 import { formatTaskDuration } from 'src/utils';
 
 const props = defineProps<{
@@ -15,18 +17,12 @@ const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
 }>();
 
-const statusLabels: Record<string, string> = {
-  thinking: '思考中',
-  processing: '处理中',
-  end: '已完成',
-  error: '错误',
-  cancelled: '已取消',
-};
+const { t, locale } = useI18n();
+const uiLocale = computed(() => locale.value as AppLocale);
 
 const headerText = computed(() => {
-  if (!props.task) return '思考过程';
-  const typeLabel = TASK_TYPE_LABELS[props.task.type] || props.task.type;
-  return `${props.task.modelName} · ${typeLabel}`;
+  if (!props.task) return t('activityUi.thinking.fallbackHeader');
+  return `${props.task.modelName} · ${taskTypeLabel(uiLocale.value, props.task.type)}`;
 });
 
 const handleClose = () => {
@@ -45,25 +41,42 @@ const handleClose = () => {
     <div v-if="task" class="thinking-detail-body">
       <div class="thinking-detail-meta">
         <span class="meta-pill" :class="`status-${task.status}`">
-          {{ statusLabels[task.status] || task.status }}
+          {{ taskStatusLabel(uiLocale, task.status) }}
         </span>
-        <span class="meta-text">运行时间 {{ formatTaskDuration(task.startTime, task.endTime) }}</span>
+        <span class="meta-text">{{
+          t('activityUi.thinking.runtime', {
+            duration: formatTaskDuration(task.startTime, task.endTime, undefined, uiLocale),
+          })
+        }}</span>
         <span v-if="task.endTime" class="meta-text">
-          · 完成于 {{ new Date(task.endTime).toLocaleString('zh-CN') }}
+          {{
+            t('activityUi.thinking.finishedAt', {
+              time: new Date(task.endTime).toLocaleString(uiLocale),
+            })
+          }}
         </span>
       </div>
 
-      <div v-if="task.thinkingMessage && task.thinkingMessage.trim()" class="thinking-detail-scroll">
+      <div
+        v-if="task.thinkingMessage && task.thinkingMessage.trim()"
+        class="thinking-detail-scroll"
+      >
         <pre class="thinking-detail-text">{{ task.thinkingMessage }}</pre>
       </div>
       <div v-else class="thinking-detail-empty">
         <i class="pi pi-info-circle" />
-        <span>该任务暂无思考过程记录</span>
+        <span>{{ t('activityUi.thinking.noThinking') }}</span>
       </div>
     </div>
 
     <template #footer>
-      <Button label="关闭" icon="pi pi-times" text severity="secondary" @click="handleClose" />
+      <Button
+        :label="t('activityUi.thinking.close')"
+        icon="pi pi-times"
+        text
+        severity="secondary"
+        @click="handleClose"
+      />
     </template>
   </AdaptiveDialog>
 </template>

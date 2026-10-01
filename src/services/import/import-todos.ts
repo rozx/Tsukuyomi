@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type { ImportTask, ImportTodo } from 'src/models/import';
 
 /**
@@ -21,13 +22,17 @@ function view(todo: ImportTodo) {
 
 function find(task: ImportTask, id: string): ImportTodo {
   const todo = task.todos.find((entry) => entry.id === id);
-  if (!todo) throw new Error(`TODO_NOT_FOUND: 待办事项不存在: ${id}`);
+  if (!todo)
+    throw importError('TODO_NOT_FOUND', 'todoNotFoundTheTodoDoesNotExistDetail', {
+      value1: String(id),
+    });
   return todo;
 }
 
 function text(value: unknown): string {
   const trimmed = typeof value === 'string' ? value.trim() : '';
-  if (!trimmed) throw new Error('INVALID_ARGUMENTS: 待办内容不能为空');
+  if (!trimmed)
+    throw importError('INVALID_ARGUMENTS', 'invalidArgumentsTodoContentMustBeNonempty', {});
   return trimmed;
 }
 
@@ -53,7 +58,7 @@ function update(task: ImportTask, change: TodoUpdate): ImportTodo {
 function ids(args: Record<string, unknown>): string[] {
   const list = Array.isArray(args.ids) ? (args.ids as string[]) : [];
   if (typeof args.id === 'string') list.push(args.id);
-  if (!list.length) throw new Error('INVALID_ARGUMENTS: 必须提供 id 或 ids');
+  if (!list.length) throw importError('INVALID_ARGUMENTS', 'invalidArgumentsProvideIdOrIds', {});
   return list;
 }
 
@@ -105,7 +110,7 @@ export function applyImportTodoTool(
       return create(task, args);
     case 'update_todos': {
       if (!Array.isArray(args.items) && typeof args.id !== 'string')
-        throw new Error('INVALID_ARGUMENTS: 必须提供 id 或 items');
+        throw importError('INVALID_ARGUMENTS', 'invalidArgumentsProvideIdOrItems', {});
       const changes = Array.isArray(args.items)
         ? (args.items as TodoUpdate[])
         : [args as unknown as TodoUpdate];

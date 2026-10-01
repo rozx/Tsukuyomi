@@ -1,3 +1,5 @@
+import { importFailure, importError } from './import-error';
+
 import type { ImportDraft, ImportResource } from 'src/models/import';
 import type {
   ImportStructureInput,
@@ -15,7 +17,8 @@ export function buildStructurePlan(
 ): ImportTextStructureBatch {
   const content = structureContent(resource);
   const fallback = input.volume_id && draft.volumes.find((v) => v.id === input.volume_id);
-  if (input.volume_id && !fallback) throw new Error('VOLUME_NOT_FOUND: 指定卷不存在');
+  if (input.volume_id && !fallback)
+    throw importError('VOLUME_NOT_FOUND', 'volumeNotFoundTheSpecifiedVolumeDoesNotExist', {});
   const volumes = result.volumes.map((v) =>
     v.inferred && fallback ? fallback : { ...v, id: crypto.randomUUID() },
   );
@@ -25,7 +28,8 @@ export function buildStructurePlan(
     excluded.push(...body.excluded);
     const warnings = [...c.warnings];
     const hasBody = Boolean(content.slice({ start: c.bodyStart, end: c.end }).text.trim());
-    if (!hasBody && !warnings.includes('章节正文为空')) warnings.push('章节正文为空');
+    if (!hasBody && !warnings.some((w) => typeof w === 'string' || w.code === 'EMPTY_CHAPTER'))
+      warnings.push(importFailure('EMPTY_CHAPTER', 'noticeEmptyChapter'));
     return {
       ...c,
       warnings,

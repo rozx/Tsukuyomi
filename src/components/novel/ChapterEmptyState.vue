@@ -1,12 +1,16 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
+
 // 章节空状态：预览模式与默认模式各用一次。
 </script>
 
 <template>
   <div class="empty-chapter-content">
     <i class="pi pi-file empty-icon"></i>
-    <p class="empty-text">该章节暂无内容</p>
-    <p class="empty-hint text-moon/60 text-sm">章节内容将在这里显示</p>
+    <p class="empty-text">{{ t('readerUi.noChapterContent') }}</p>
+    <p class="empty-hint text-moon/60 text-sm">{{ t('readerUi.contentPlaceholder') }}</p>
   </div>
 </template>
 

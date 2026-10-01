@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n';
+const { t: i18nT } = useI18n();
+
 /**
  * 手机端翻译进度底部抽屉。与 MobileChatSheet 独立挂载；
  * header 走 MobileBottomSheet 的 #header slot 单行紧凑布局（icon + 标题 +
@@ -7,6 +10,7 @@
 import { computed } from 'vue';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import TranslationProgress from 'src/components/novel/TranslationProgress.vue';
+import TranslationProgressSubtitle from 'src/components/layout/TranslationProgressSubtitle.vue';
 import { useTranslationProgressPanel } from 'src/composables/translation-progress/useTranslationProgressPanel';
 
 const props = defineProps<{
@@ -22,27 +26,32 @@ const localVisible = computed({
   set: (v) => emit('update:visible', v),
 });
 
-// header 副标题：当前任务的章节 + workflow；空闲时显示"暂无翻译任务"
+// 关闭抽屉时仍保持任务选中与未读状态监听。
 const { currentTask, mobileCurrentChapterLabel, mobileWorkflowLabel } =
   useTranslationProgressPanel();
 </script>
 
 <template>
-  <MobileBottomSheet v-model:visible="localVisible" title="翻译进度" full-bleed>
+  <MobileBottomSheet v-model:visible="localVisible" :title="i18nT('libraryUi.progress')" full-bleed>
     <template #header="{ close }">
       <header class="mps-appbar">
         <div class="mps-appbar-icon"><i class="pi pi-bolt" aria-hidden="true" /></div>
         <div class="mps-appbar-text">
-          <div class="mps-appbar-title">翻译进度</div>
+          <div class="mps-appbar-title">{{ i18nT('libraryUi.progress') }}</div>
           <div class="mps-appbar-sub">
-            <template v-if="currentTask && mobileCurrentChapterLabel">
-              {{ mobileCurrentChapterLabel }} · {{ mobileWorkflowLabel }}
-            </template>
-            <template v-else-if="currentTask">{{ mobileWorkflowLabel }}</template>
-            <template v-else>暂无翻译任务</template>
+            <TranslationProgressSubtitle
+              :has-task="!!currentTask"
+              :chapter-label="mobileCurrentChapterLabel"
+              :workflow-label="mobileWorkflowLabel"
+            />
           </div>
         </div>
-        <button type="button" class="mps-close" aria-label="关闭" @click="close">
+        <button
+          type="button"
+          class="mps-close"
+          :aria-label="i18nT('libraryUi.close')"
+          @click="close"
+        >
           <i class="pi pi-times" aria-hidden="true" />
         </button>
       </header>

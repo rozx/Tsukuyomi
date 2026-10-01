@@ -1,10 +1,13 @@
 import { detectRepeatingCharacters } from 'src/services/ai/degradation-detector';
 import type { TaskType, AIProcessingStore } from './task-types';
-import { TASK_TYPE_LABELS } from 'src/constants/ai';
+import type { AppLocale } from 'src/models/locale';
+import { translateText } from 'src/i18n/translate';
 import {
-  TOOL_CALL_PLACEHOLDER,
-  TOOL_CALL_PLACEHOLDER_VARIANTS,
-} from 'src/constants/chat';
+  AIDegradationError,
+  createCancelledError,
+  describeAIError,
+} from 'src/services/ai/core/errors';
+import { TOOL_CALL_PLACEHOLDER, TOOL_CALL_PLACEHOLDER_VARIANTS } from 'src/constants/chat';
 import type { TextGenerationStreamCallback } from 'src/services/ai/types/ai-service';
 import { isCancelledError } from 'src/utils/is-cancelled-error';
 
@@ -86,10 +89,8 @@ export interface StreamCallbackConfig {
   aiProcessingStore: AIProcessingStore | undefined;
   originalText: string;
   logLabel: string;
-  /**
-   * 任务类型（用于生成警告消息）
-   */
-  taskType?: TaskType;
+  /** 执行启动时固定的界面语言，用于降级错误说明 */
+  uiLocale: AppLocale;
   /**
    * 用于停止流的 AbortController（当检测到降级时）
    */
@@ -102,7 +103,7 @@ export interface StreamCallbackConfig {
  * 详见 OpenSpec 变更说明：openspec/changes/agent-tools-instead-of-json/design.md
  */
 export function createStreamCallback(config: StreamCallbackConfig): TextGenerationStreamCallback {
-  const { taskId, aiProcessingStore, originalText, logLabel, taskType, abortController } = config;
+  const { taskId, aiProcessingStore, originalText, logLabel, uiLocale, abortController } = config;
   let accumulatedText = '';
   const filterOutputText = createPlaceholderFilter(OUTPUT_PLACEHOLDERS);
 
@@ -139,11 +140,8 @@ export function createStreamCallback(config: StreamCallbackConfig): TextGenerati
       ) {
         try {
           if (detectRepeatingCharacters(accumulatedText, originalText, { logLabel })) {
-            const errMsg = `AI降级检测：检测到重复字符，停止${
-              taskType ? TASK_TYPE_LABELS[taskType] : logLabel.replace('Service', '')
-            }`;
             if (abortController) abortController.abort();
-            return Promise.reject(new Error(errMsg));
+            return Promise.reject(new AIDegradationError(uiLocale));
           }
         } catch (error) {
           console.error(`[${logLabel}] Error in repetition detection:`, {
@@ -181,9 +179,9 @@ export interface TaskChunkForwarderOptions {
    */
   processingMessage: string;
   /**
-   * signal 已 aborted 时抛出的错误消息（默认 '请求已取消'）
+   * 执行语言；signal 已 aborted 时按此语言抛出取消错误
    */
-  abortMessage?: string;
+  uiLocale: AppLocale;
   /**
    * 调用方的原始流式回调
    */
@@ -193,23 +191,11 @@ export interface TaskChunkForwarderOptions {
 export function createTaskChunkForwarder(
   options: TaskChunkForwarderOptions,
 ): TextGenerationStreamCallback {
-  const {
-    aiProcessingStore,
-    taskId,
-    finalSignal,
-    processingMessage,
-    abortMessage = '请求已取消',
-    onChunk,
-  } = options;
+  const { aiProcessingStore, taskId, finalSignal, processingMessage, uiLocale, onChunk } = options;
 
   let firstChunkReceived = false;
   return async (chunk) => {
-    if (finalSignal?.aborted) {
-      // 标记 name='AbortError'，让下游 isCancelledError 在 message 被调用方自定义时也能可靠识别
-      const err = new Error(abortMessage);
-      err.name = 'AbortError';
-      throw err;
-    }
+    if (finalSignal?.aborted) throw createCancelledError(uiLocale);
 
     if (aiProcessingStore && taskId) {
       if (!firstChunkReceived) {
@@ -301,6 +287,7 @@ export async function initializeTask(
   aiProcessingStore: AIProcessingStore | undefined,
   taskType: TaskType,
   modelName: string,
+  uiLocale: AppLocale,
   context?: {
     bookId?: string;
     chapterId?: string;
@@ -319,7 +306,7 @@ export async function initializeTask(
       type: taskType,
       modelName,
       status: 'thinking',
-      message: `正在初始化${TASK_TYPE_LABELS[taskType]}会话...`,
+      message: translateText(uiLocale, `aiRun.init.${taskType}`),
       thinkingMessage: '',
       workflowStatus: 'planning',
       ...(context?.bookId ? { bookId: context.bookId } : {}),
@@ -357,6 +344,7 @@ export async function handleTaskError(
   taskId: string | undefined,
   aiProcessingStore: AIProcessingStore | undefined,
   taskType: TaskType,
+  uiLocale: AppLocale,
 ): Promise<void> {
   if (!aiProcessingStore || !taskId) {
     return;
@@ -369,12 +357,16 @@ export async function handleTaskError(
     if (isCancelled) {
       await aiProcessingStore.updateTask(taskId, {
         status: 'cancelled',
-        message: '已取消',
+        message: translateText(uiLocale, 'aiRun.cancelled'),
       });
     } else {
       await aiProcessingStore.updateTask(taskId, {
         status: 'error',
-        message: error instanceof Error ? error.message : `${TASK_TYPE_LABELS[taskType]}出错`,
+        message: describeAIError(
+          error,
+          uiLocale,
+          translateText(uiLocale, `aiRun.failed.${taskType}`),
+        ),
       });
     }
   } catch (storeError) {
@@ -392,6 +384,7 @@ export async function completeTask(
   taskId: string | undefined,
   aiProcessingStore: AIProcessingStore | undefined,
   taskType: TaskType,
+  uiLocale: AppLocale,
 ): Promise<void> {
   if (!aiProcessingStore || !taskId) {
     return;
@@ -401,7 +394,7 @@ export async function completeTask(
     await aiProcessingStore.updateTask(taskId, {
       status: 'end',
       workflowStatus: 'end',
-      message: `${TASK_TYPE_LABELS[taskType]}完成`,
+      message: translateText(uiLocale, `aiRun.done.${taskType}`),
     });
   } catch (error) {
     console.error('Failed to complete task in store:', error);

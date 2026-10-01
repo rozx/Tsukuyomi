@@ -59,6 +59,27 @@ describe('BookService', () => {
     expect(loaded?.volumes?.[0]?.chapters?.[0]?.content?.[0]?.text).toBe(text);
   });
 
+  it('单本书记录无法规范化时只跳过该书，不让整个书库变空', async () => {
+    const date = new Date('2026-01-01T00:00:00.000Z');
+    const db = await getDB();
+    await db.put('books', { id: 'good', title: 'Good', createdAt: date, lastEdited: date });
+    await db.put('books', {
+      id: 'bad',
+      title: 'Bad',
+      targetLanguage: 'xx-XX',
+      createdAt: date,
+      lastEdited: date,
+    } as unknown as Novel);
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const books = await BookService.getAllBooks();
+
+    expect(books.map((book) => book.id)).toEqual(['good']);
+    expect(errorSpy).toHaveBeenCalled();
+    // 原记录仍在库中，没有被删除或改写
+    expect((await db.get('books', 'bad'))?.title).toBe('Bad');
+  });
+
   it('should get all books', async () => {
     const books = await BookService.getAllBooks();
     expect(books).toEqual([]);
@@ -70,7 +91,7 @@ describe('BookService', () => {
     await BookService.saveBook(mockBook as Novel, { saveChapterContent: false });
 
     const book = await BookService.getBookById('1');
-    expect(book).toEqual(mockBook as Novel);
+    expect(book).toMatchObject({ ...mockBook, targetLanguage: 'zh-CN' });
   });
 
   it('should save a book', async () => {
@@ -106,13 +127,14 @@ describe('BookService', () => {
   describe('saveBook with saveChapterContent option', () => {
     // 辅助函数：创建测试用段落
     function createTestParagraph(id?: string): Paragraph {
+      const translationId = generateShortId();
       return {
         id: id || generateShortId(),
         text: '测试段落文本',
-        selectedTranslationId: generateShortId(),
+        selectedTranslationId: translationId,
         translations: [
           {
-            id: generateShortId(),
+            id: translationId,
             translation: '测试翻译',
             aiModelId: 'model-1',
           },
@@ -162,8 +184,8 @@ describe('BookService', () => {
 
       // 应该保存两个章节的内容
       expect(await countSavedContent()).toBe(2);
-      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
-      expect(await readSavedContent('chapter-2')).toEqual(chapter2.content);
+      expect(await readSavedContent('chapter-1')).toMatchObject(chapter1.content!);
+      expect(await readSavedContent('chapter-2')).toMatchObject(chapter2.content!);
       // 应该保存书籍元数据
       const saved = await BookService.getBookById('book-1');
       expect(saved).toBeTruthy();
@@ -185,8 +207,8 @@ describe('BookService', () => {
 
       // 应该保存两个章节的内容
       expect(await countSavedContent()).toBe(2);
-      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
-      expect(await readSavedContent('chapter-2')).toEqual(chapter2.content);
+      expect(await readSavedContent('chapter-1')).toMatchObject(chapter1.content!);
+      expect(await readSavedContent('chapter-2')).toMatchObject(chapter2.content!);
       // 应该保存书籍元数据
       const saved = await BookService.getBookById('book-1');
       expect(saved).toBeTruthy();
@@ -230,8 +252,8 @@ describe('BookService', () => {
 
       // 应该只保存有内容的章节（chapter-1 和 chapter-3）
       expect(await countSavedContent()).toBe(2);
-      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
-      expect(await readSavedContent('chapter-3')).toEqual(chapter3.content);
+      expect(await readSavedContent('chapter-1')).toMatchObject(chapter1.content!);
+      expect(await readSavedContent('chapter-3')).toMatchObject(chapter3.content!);
       expect(await readSavedContent('chapter-2')).toBeUndefined();
     });
 
@@ -286,8 +308,8 @@ describe('BookService', () => {
 
       // 应该保存所有章节的内容
       expect(await countSavedContent()).toBe(2);
-      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
-      expect(await readSavedContent('chapter-2')).toEqual(chapter2.content);
+      expect(await readSavedContent('chapter-1')).toMatchObject(chapter1.content!);
+      expect(await readSavedContent('chapter-2')).toMatchObject(chapter2.content!);
     });
 
     it('should bulk save chapter content with skipIfUnchanged to avoid spurious re-embedding', async () => {
@@ -317,8 +339,8 @@ describe('BookService', () => {
       await BookService.bulkSaveBooks([book1, book2]);
 
       expect(await countSavedContent()).toBe(2);
-      expect(await readSavedContent('chapter-1')).toEqual(chapter1.content);
-      expect(await readSavedContent('chapter-2')).toEqual(chapter2.content);
+      expect(await readSavedContent('chapter-1')).toMatchObject(chapter1.content!);
+      expect(await readSavedContent('chapter-2')).toMatchObject(chapter2.content!);
       const records = await (await getDB()).getAll('chapter-contents');
       vi.clearAllMocks();
       await BookService.bulkSaveBooks([book1, book2]);

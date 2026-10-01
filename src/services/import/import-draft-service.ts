@@ -1,3 +1,4 @@
+import { importError } from './import-error';
 import type {
   ImportDraft,
   ImportDraftEdit,
@@ -53,10 +54,14 @@ function assertEdit(input: ImportDraftEdit): void {
     !input.operations.length ||
     input.operations.length > 128
   )
-    throw new Error('INVALID_OPERATION: 草稿版本或操作数量无效');
+    throw importError(
+      'INVALID_OPERATION',
+      'invalidOperationInvalidDraftRevisionOrOperationCount',
+      {},
+    );
   for (const operation of input.operations) {
     if (!operation || !Object.hasOwn(OPERATION_FIELDS, operation.op))
-      throw new Error('INVALID_OPERATION: 未知草稿操作');
+      throw importError('INVALID_OPERATION', 'invalidOperationUnknownDraftOperation', {});
     assertImportKeys(operation, OPERATION_FIELDS[operation.op]);
   }
 }
@@ -68,7 +73,11 @@ function reorder<T extends { id: string }>(values: T[], ids: string[]): T[] {
     new Set(ids).size !== ids.length ||
     ids.some((id) => !values.some((value) => value.id === id))
   )
-    throw new Error('INVALID_OPERATION: 排序必须包含全部条目且不能重复');
+    throw importError(
+      'INVALID_OPERATION',
+      'invalidOperationOrderingMustIncludeEveryItemExactly',
+      {},
+    );
   const byId = new Map(values.map((value) => [value.id, value]));
   return ids.map((id) => byId.get(id)!);
 }
@@ -104,8 +113,8 @@ async function metadataOperation(
       operation.field,
     )
   )
-    throw new Error('INVALID_OPERATION: 未知元信息字段');
-  assertImportString(operation.value, '元信息', operation.field !== 'title');
+    throw importError('INVALID_OPERATION', 'invalidOperationUnknownMetadataField', {});
+  assertImportString(operation.value, 'metadata', operation.field !== 'title');
   const candidate = await validator.metadata(
     task.draft,
     operation.field,
@@ -141,9 +150,9 @@ function targetOperation(
   books: ImportBookSnapshots,
 ): void {
   if (bookId !== null) {
-    assertImportString(bookId, '目标小说');
+    assertImportString(bookId, 'bookId');
     if (books.get(bookId)?.kind !== 'loaded')
-      throw new Error('BOOK_READ_FAILED: 目标小说不存在或无法读取');
+      throw importError('BOOK_READ_FAILED', 'bookReadFailedTheTargetNovelDoesNotExist', {});
   }
   if (
     actor === 'agent' &&
@@ -186,9 +195,13 @@ function matchOperation(
     new Set(operation.targetChapterIds).size !== operation.targetChapterIds.length ||
     operation.targetChapterIds.some((id) => !(id in book.chapters))
   )
-    throw new Error('INVALID_OPERATION: 章节匹配目标无效');
+    throw importError('INVALID_OPERATION', 'invalidOperationInvalidChapterMatchTarget', {});
   if (actor === 'agent' && chapter.match?.basis === 'user')
-    throw new Error('USER_MATCH_PROTECTED: 请保留用户已选择的对应关系');
+    throw importError(
+      'USER_MATCH_PROTECTED',
+      'userMatchProtectedPreserveTheUserSSelectedChapter',
+      {},
+    );
   chapter.match = {
     chapterIds: operation.targetChapterIds,
     basis: actor === 'user' ? 'user' : 'suggestion',
@@ -215,11 +228,13 @@ async function applyOperation(
       declareImportCandidates(task, operation.candidates);
       return;
     case 'upsert_volume': {
-      if (draft.novelScope.needsChoice) throw new Error('NOVEL_CHOICE_REQUIRED: 请先选择小说');
-      assertImportString(operation.title, '卷标题');
-      if (operation.title.length > 500) throw new Error('METADATA_LIMIT: 卷标题超过 500 字符');
+      if (draft.novelScope.needsChoice)
+        throw importError('NOVEL_CHOICE_REQUIRED', 'novelChoiceRequiredSelectANovelFirst', {});
+      assertImportString(operation.title, 'volume.title');
+      if (operation.title.length > 500)
+        throw importError('METADATA_LIMIT', 'metadataLimitVolumeTitlesAreLimitedToCharacters', {});
       const id = operation.id ?? crypto.randomUUID();
-      assertImportString(id, '卷 ID');
+      assertImportString(id, 'volume.id');
       const index = draft.volumes.findIndex((volume) => volume.id === id);
       const volume = {
         id,
@@ -243,13 +258,13 @@ async function applyOperation(
     }
     case 'remove_chapter': {
       if (!draft.chapters.some((chapter) => chapter.id === operation.chapterId))
-        throw new Error('INVALID_OPERATION: 章节不存在');
+        throw importError('INVALID_OPERATION', 'invalidOperationTheChapterDoesNotExist', {});
       draft.chapters = draft.chapters.filter((chapter) => chapter.id !== operation.chapterId);
       return;
     }
     case 'remove_volume': {
       if (!draft.volumes.some((volume) => volume.id === operation.volumeId))
-        throw new Error('INVALID_OPERATION: 卷不存在');
+        throw importError('INVALID_OPERATION', 'invalidOperationTheVolumeDoesNotExist', {});
       draft.chapters = draft.chapters.filter((chapter) => chapter.volumeId !== operation.volumeId);
       draft.volumes = draft.volumes.filter((volume) => volume.id !== operation.volumeId);
       return;
@@ -277,7 +292,11 @@ async function applyOperation(
         (value.knownTotal !== undefined &&
           (!Number.isSafeInteger(value.knownTotal) || value.knownTotal < 0))
       )
-        throw new Error('INVALID_OPERATION: 完整性信息无效');
+        throw importError(
+          'INVALID_OPERATION',
+          'invalidOperationInvalidCompletenessInformation',
+          {},
+        );
       draft.completeness = value;
       return;
     }
@@ -292,16 +311,16 @@ export class ImportDraftService {
   ): Promise<ImportDraft> {
     assertEdit(input);
     const before = await ImportRepository.getTask(taskId);
-    if (!before) throw new Error('TASK_NOT_FOUND: 导入任务不存在');
+    if (!before) throw importError('TASK_NOT_FOUND', 'taskNotFoundTheImportTaskDoesNotExist', {});
     const clean = JSON.parse(JSON.stringify(input)) as ImportDraftEdit;
     const books = await loadBooks(before, clean);
     return ImportRepository.mutateTask(
       taskId,
       async (task, tx) => {
         if (task.draft.revision !== clean.baseDraftRevision)
-          throw new Error('DRAFT_CHANGED: 草稿已变化，请重新读取');
+          throw importError('DRAFT_CHANGED', 'draftChangedTheDraftChangedRereadIt', {});
         if (['applying', 'reverting'].includes(task.state))
-          throw new Error('TASK_BUSY: 正在提交导入变更');
+          throw importError('TASK_BUSY', 'taskBusyImportChangesAreBeingCommitted', {});
         if (
           options.actor === 'user' &&
           clean.operations.some((operation) =>
@@ -309,7 +328,7 @@ export class ImportDraftService {
           ) &&
           (task.run || ['running', 'pausing'].includes(task.state))
         )
-          throw new Error('TASK_BUSY: 请先暂停月詠并等待当前操作结束，再删除草稿');
+          throw importError('TASK_BUSY', 'taskBusyPauseTheAssistantAndWaitFor', {});
         const validator = transactionValidator(taskId, tx, books);
         invalidateImportPreview(task);
         for (const operation of clean.operations)
@@ -346,10 +365,15 @@ export class ImportDraftService {
         question.scopeRevision !== scopeRevision ||
         scope.revision !== scopeRevision
       )
-        throw new Error('QUESTION_CHANGED: 选择问题或来源范围已变化');
+        throw importError(
+          'QUESTION_CHANGED',
+          'questionChangedTheSelectionQuestionOrSourceScope',
+          {},
+        );
       if (candidateId === null) return task.draft;
       const candidate = scope.candidates.find((item) => item.id === candidateId);
-      if (!candidate) throw new Error('INVALID_SELECTION: 小说候选不存在');
+      if (!candidate)
+        throw importError('INVALID_SELECTION', 'invalidSelectionTheNovelCandidateDoesNotExist', {});
       const prior = scope.previousSelection;
       scope.selectedCandidateId = candidateId;
       scope.needsChoice = false;

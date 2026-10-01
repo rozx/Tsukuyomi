@@ -55,7 +55,7 @@ const makeAssistantModel = (overrides: Partial<AIModel> = {}): AIModel => ({
 });
 
 const isSummaryRequest = (request: TextGenerationRequest): boolean =>
-  request.messages?.[0]?.content?.includes('【新增对话内容】') ?? false;
+  request.messages?.length === 1 && request.messages[0]?.role === 'user';
 
 describe('AssistantService - 摘要失败与安全性', () => {
   beforeEach(() => {
