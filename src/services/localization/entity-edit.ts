@@ -211,8 +211,13 @@ export function collectBookRevisions(book: Novel): SyncRevision[] {
   return revisions;
 }
 
+/**
+ * 段落内所有逻辑版本：各语言选用槽，以及原地修改过的译文版本自身的 revision。
+ * 后者也必须交给同步时钟观察，否则同步下来的高版本会让本机后续修改预留到更低的 revision。
+ */
 export function collectParagraphRevisions(content: Paragraph[]): SyncRevision[] {
-  return content.flatMap((paragraph) =>
-    Object.values(paragraph.selectedTranslations ?? {}).map((slot) => slot.revision),
-  );
+  return content.flatMap((paragraph) => [
+    ...Object.values(paragraph.selectedTranslations ?? {}).map((slot) => slot.revision),
+    ...paragraph.translations.flatMap((value) => (value.revision ? [value.revision] : [])),
+  ]);
 }
