@@ -26,8 +26,10 @@ export type BookFieldPatch = Omit<
   | 'entitySyncVersion'
 >;
 
-function sameValue(left: unknown, right: unknown): boolean {
-  return canonicalStringify(left ?? null) === canonicalStringify(right ?? null);
+/** 与快照值相同即视为未改动；同一对象引用可能已被调用方原地修改，无法判断，按已改动处理 */
+function unchangedFromBase(value: unknown, base: unknown): boolean {
+  if (value === base && typeof value === 'object' && value !== null) return false;
+  return canonicalStringify(value ?? null) === canonicalStringify(base ?? null);
 }
 
 /**
@@ -38,7 +40,7 @@ export function buildBookFieldPatch(base: Novel, updates: Partial<Novel>): BookF
   const patch: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(updates)) {
     if (NON_PATCH_KEYS.has(key)) continue;
-    if (key !== 'lastEdited' && sameValue(value, base[key as keyof Novel])) continue;
+    if (key !== 'lastEdited' && unchangedFromBase(value, base[key as keyof Novel])) continue;
     patch[key] = value;
   }
   return patch as BookFieldPatch;

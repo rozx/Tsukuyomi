@@ -105,6 +105,17 @@ describe('书籍元数据按字段增量保存', () => {
     expect(saved.starred).toBe(true);
   });
 
+  it('调用方原地修改内存数组后按同一引用提交，修改仍会保存', async () => {
+    await BookService.saveBook(baseBook('delta-inplace', { tags: ['a'] }));
+    const books = await tab();
+    const tags = books.getBookById('delta-inplace')!.tags!;
+    tags.push('b');
+
+    await books.updateBook('delta-inplace', { tags });
+
+    expect((await BookService.getBookById('delta-inplace'))!.tags).toEqual(['a', 'b']);
+  });
+
   it('cover: null 会删除封面字段', async () => {
     await BookService.saveBook(
       baseBook('delta-null', { cover: { id: 'c1', url: 'https://a/1.png' } as Novel['cover'] }),
