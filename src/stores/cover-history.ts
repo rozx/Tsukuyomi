@@ -110,8 +110,8 @@ function dedupeCoverBatch(items: readonly CoverHistoryItem[]): CoverHistoryItem[
 
 /**
  * 与对应的本地记录（同 id 或同 URL）合并，身份始终取传入记录：
- * 本地较新（如刚重新添加过）时沿用完整本地记录，避免丢失 deleteUrl 等字段；
- * 否则在传入记录缺 deleteUrl 时补回同 URL 本地记录的删除凭据
+ * 本地较新（如刚重新添加过）时沿用完整本地记录，否则用传入记录；
+ * 胜出记录缺 deleteUrl 时从同 URL 的另一侧补回删除凭据
  */
 function mergeWithLocal(
   item: CoverHistoryItem,
@@ -119,12 +119,16 @@ function mergeWithLocal(
 ): CoverHistoryItem {
   const matches = existing.filter((local) => local.id === item.id || local.url.trim() === item.url);
   const newest = keepLatestBy(matches, () => '')[0];
-  if (newest && newest.addedAt.getTime() > item.addedAt.getTime()) {
-    return { ...newest, url: newest.url.trim(), id: item.id };
-  }
+  const winner =
+    newest && newest.addedAt.getTime() > item.addedAt.getTime()
+      ? { ...newest, url: newest.url.trim(), id: item.id }
+      : item;
+  // 删除凭据双向补齐：胜出记录缺 deleteUrl 时，沿用同 URL 另一侧记录的凭据
   const deleteUrl =
-    item.deleteUrl ?? matches.find((local) => local.url.trim() === item.url)?.deleteUrl;
-  return deleteUrl ? { ...item, deleteUrl } : item;
+    winner.deleteUrl ??
+    [item, ...matches].find((cover) => cover.url.trim() === winner.url && cover.deleteUrl)
+      ?.deleteUrl;
+  return deleteUrl ? { ...winner, deleteUrl } : winner;
 }
 
 /**

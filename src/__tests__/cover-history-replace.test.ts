@@ -154,6 +154,35 @@ describe('封面历史按原身份合并', () => {
     expect(covers.covers).toEqual(expected);
   });
 
+  it('本地记录较新但缺 deleteUrl 时沿用同 URL 传入记录的 deleteUrl', async () => {
+    setActivePinia(createPinia());
+    const db = await getDB();
+    await db.clear('cover-history');
+    await db.put('cover-history', { id: 'local-a', url: URL_A, addedAt: new Date(900) });
+    const covers = useCoverHistoryStore();
+    await covers.loadCoverHistory();
+
+    await covers.upsertCovers([
+      {
+        id: 'remote-a',
+        url: URL_A,
+        addedAt: new Date(100),
+        deleteUrl: 'https://img.example/delete/a',
+      },
+    ]);
+
+    const expected = [
+      {
+        id: 'remote-a',
+        url: URL_A,
+        addedAt: new Date(900),
+        deleteUrl: 'https://img.example/delete/a',
+      },
+    ];
+    expect(await persisted()).toEqual(expected);
+    expect(covers.covers).toEqual(expected);
+  });
+
   it('远端身份取代本地记录时保留较新的本地 addedAt', async () => {
     setActivePinia(createPinia());
     const db = await getDB();
