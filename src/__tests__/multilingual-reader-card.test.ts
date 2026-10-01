@@ -207,6 +207,8 @@ describe('阅读卡片目标语言', () => {
     )!;
     cancel.click();
     await nextTick();
+    // Inplace 关闭后用 setTimeout(0) 聚焦展示区，需等它执行完再卸载，避免未处理异常
+    await new Promise((resolve) => setTimeout(resolve, 5));
     expect(stops).toEqual(['p']);
     expect(drafts.has('p:zh-CN')).toBe(false);
     expect(writes).toEqual([]);

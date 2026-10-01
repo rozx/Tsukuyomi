@@ -33,6 +33,7 @@ const mockCoverHistoryStore = {
   covers: [] as unknown[],
   clearHistory: mock(() => Promise.resolve()),
   addCover: mock((_cover: unknown) => Promise.resolve()),
+  replaceHistory: mock((_items: unknown) => Promise.resolve()),
 };
 
 const mockSettingsStore = {
@@ -213,6 +214,7 @@ describe('数据同步服务 (SyncDataService)', () => {
     mockCoverHistoryStore.covers = [];
     mockCoverHistoryStore.clearHistory.mockClear();
     mockCoverHistoryStore.addCover.mockClear();
+    mockCoverHistoryStore.replaceHistory.mockClear();
 
     mockSettingsStore.importSettings.mockClear();
     mockSettingsStore.replaceSettingsFromSyncSnapshot.mockClear();
@@ -3639,6 +3641,8 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(lastRestoreCall).toEqual(
         expect.arrayContaining([expect.objectContaining({ id: 'orig-book' })]),
       );
+      // 封面历史按备份原样写回（保留身份），回滚走完全程
+      expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalled();
     });
 
     it('回滚时必须还原章节内容——备份需内联章节内容而非仅元数据', async () => {
