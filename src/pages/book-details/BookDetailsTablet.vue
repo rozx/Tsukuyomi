@@ -208,9 +208,8 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 
 .book-details-tablet :deep(.book-stats) {
   font-size: 0.68rem;
-  gap: 0.3rem;
-  flex-wrap: nowrap;
-  overflow: hidden;
+  /* 平板列宽总在窄列区间，分隔符被隐藏，靠列间距区分各项 */
+  gap: 0.1rem 0.5rem;
 }
 
 .book-details-tablet :deep(.book-stats .stat-icon) {

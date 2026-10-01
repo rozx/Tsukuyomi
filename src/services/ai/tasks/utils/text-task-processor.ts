@@ -523,7 +523,6 @@ export async function processTextTask(
     const appendedText = await runChunkProcessingLoop({
       paragraphInputs: content.map((paragraph, index) => ({
         id: paragraph.id,
-        originalText: paragraph.text,
         displayIndex: (originalIndices.get(paragraph.id) ?? index) + 1,
       })),
       languages,

@@ -113,9 +113,9 @@ describe('TodoWorkflow', () => {
       const todos = workflow.generateForState('working', {
         paragraphIds: ['abc12345', 'def67890', 'ghi11111'],
         paragraphInputs: [
-          { id: 'abc12345', displayIndex: 1, originalText: 'これは最初の段落です。テスト' },
-          { id: 'def67890', displayIndex: 2, originalText: '次の段落は少し長くなります。' },
-          { id: 'ghi11111', displayIndex: 3, originalText: '三番目の段落です。' },
+          { id: 'abc12345', displayIndex: 1 },
+          { id: 'def67890', displayIndex: 2 },
+          { id: 'ghi11111', displayIndex: 3 },
         ],
         chunkText,
         chunkIndex: 1,
@@ -126,7 +126,11 @@ describe('TodoWorkflow', () => {
       expect(todos[0]!.text).toContain('abc12345');
       expect(todos[0]!.text).toContain('def67890');
       expect(todos[0]!.text).toContain('ghi11111');
-      expect(todos[0]!.text).toContain('これは最初の段落です。テスト');
+      expect(todos[0]!.text).toContain('[1] [abc12345]');
+      expect(todos[0]!.text).toContain('[3] [ghi11111]');
+      // 待办文本只列段落编号与 ID，不带原文预览，避免长原文反复进入上下文
+      expect(todos[0]!.text).not.toContain('これは最初の段落です');
+      expect(todos[0]!.text).not.toContain('三番目の段落です');
     });
 
     test('第一个 chunk 有标题时应生成标题翻译待办', () => {

@@ -267,6 +267,8 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
 .book-info {
   flex: 1;
   min-width: 0;
+  /* 统计行按书籍信息列的实际宽度换行（侧栏宽度随变体和窗口变化） */
+  container-type: inline-size;
 }
 
 .book-title {
@@ -298,6 +300,7 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+  white-space: nowrap;
 }
 
 .stat-icon {
@@ -322,6 +325,19 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
   opacity: 0.35;
 }
 
+/* 窄列（平板侧栏 / 英文较长的单位）放不下一行时整项换行，隐藏会悬在行尾的分隔符 */
+@container (max-width: 15rem) {
+  .book-stats {
+    flex-wrap: wrap;
+    column-gap: 0.6rem;
+    row-gap: 0.1rem;
+  }
+
+  .stat-separator {
+    display: none;
+  }
+}
+
 .book-separator {
   height: 1px;
   background: var(--white-opacity-6);
@@ -331,9 +347,10 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
 .sidebar-title-wrapper {
   flex-shrink: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.25rem 0.5rem;
   padding: 0.75rem 0.9rem 0.4rem;
 }
 
@@ -352,6 +369,12 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
 .sidebar-actions {
   display: inline-flex;
   gap: 0.15rem;
+  /* 放不下时整组按钮换到标题下一行并靠右，而不是把按钮文字折成两行 */
+  margin-left: auto;
+}
+
+.sidebar-actions .p-button {
+  white-space: nowrap;
 }
 
 /* 小屏切换显示/隐藏辅助类 */

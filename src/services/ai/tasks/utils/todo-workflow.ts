@@ -84,14 +84,11 @@ function buildWorkingTodos(
         inputs.get(id) ?? {
           id,
           displayIndex: index * MAX_TRANSLATION_BATCH_SIZE + offset + 1,
-          originalText: '',
         },
     );
+    // 只列编号与 ID：原文已在分块上下文里，待办文本每轮都会进上下文，带原文预览会重复堆积
     const lines = paragraphInputs
-      .map(
-        (paragraph) =>
-          `  [${paragraph.displayIndex}] [${paragraph.id}] ${paragraph.originalText.length > 20 ? paragraph.originalText.slice(0, 20) + '...' : paragraph.originalText}`,
-      )
+      .map((paragraph) => `  [${paragraph.displayIndex}] [${paragraph.id}]`)
       .join('\n');
     todos.push({
       text: translateText(uiLocale, total > 1 ? 'aiWorkflow.batch' : 'aiWorkflow.all', {

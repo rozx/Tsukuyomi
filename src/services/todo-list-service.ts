@@ -14,7 +14,6 @@ export type TodoStatus = 'pending' | 'working' | 'done';
 export interface TodoParagraphInput {
   id: string;
   displayIndex: number;
-  originalText: string;
 }
 
 export interface TodoItem {
