@@ -61,6 +61,27 @@ describe('撤销 / 重做书籍快照中的术语与角色', () => {
     expect(termNames(books)).toEqual(['勇者']);
   });
 
+  it('删除角色的别名后应用删除前的快照，别名以新身份恢复，角色身份不变', async () => {
+    const books = await setup();
+    const withAlias = {
+      ...character,
+      aliases: [{ name: 'サトウ', translation: { id: 'a1', translation: '萨托', aiModelId: '' } }],
+    } as unknown as CharacterSetting;
+    await books.updateBook('a', { characterSettings: [withAlias] });
+    const before = cloneDeep(books.getBookById('a')!);
+    const aliasId = before.characterSettings![0]!.aliases[0]!.id;
+    await books.updateBook('a', {
+      characterSettings: [{ ...before.characterSettings![0]!, aliases: [] }],
+    });
+
+    await applyBookSnapshot(books, before);
+
+    const restored = books.getBookById('a')!.characterSettings!;
+    expect(restored.map((value) => value.id)).toEqual(['char-1']);
+    expect(restored[0]!.aliases.map((value) => value.name)).toEqual(['サトウ']);
+    expect(restored[0]!.aliases[0]!.id).not.toBe(aliasId);
+  });
+
   it('普通字段照常按快照恢复，并保留当前目标语言', async () => {
     const books = await setup();
     const before = cloneDeep(books.getBookById('a')!);
