@@ -59,6 +59,27 @@ describe('BookService', () => {
     expect(loaded?.volumes?.[0]?.chapters?.[0]?.content?.[0]?.text).toBe(text);
   });
 
+  it('单本书记录无法规范化时只跳过该书，不让整个书库变空', async () => {
+    const date = new Date('2026-01-01T00:00:00.000Z');
+    const db = await getDB();
+    await db.put('books', { id: 'good', title: 'Good', createdAt: date, lastEdited: date });
+    await db.put('books', {
+      id: 'bad',
+      title: 'Bad',
+      targetLanguage: 'xx-XX',
+      createdAt: date,
+      lastEdited: date,
+    } as unknown as Novel);
+    const errorSpy = spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const books = await BookService.getAllBooks();
+
+    expect(books.map((book) => book.id)).toEqual(['good']);
+    expect(errorSpy).toHaveBeenCalled();
+    // 原记录仍在库中，没有被删除或改写
+    expect((await db.get('books', 'bad'))?.title).toBe('Bad');
+  });
+
   it('should get all books', async () => {
     const books = await BookService.getAllBooks();
     expect(books).toEqual([]);

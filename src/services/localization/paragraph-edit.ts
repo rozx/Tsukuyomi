@@ -8,6 +8,7 @@ import {
   updateLanguageTranslation,
 } from './selection';
 import { normalizeParagraphLanguages } from './normalize';
+import { assertNewRevision } from './revision';
 
 export type ParagraphTranslationEdit = {
   paragraphId: string;
@@ -35,6 +36,8 @@ function restoreLanguageHistory(
 ): Paragraph {
   if (edit.translations.some((value) => (value.language ?? 'zh-CN') !== language))
     throw new Error('TRANSLATION_LANGUAGE_MISMATCH');
+  // 与其他选用写入路径一致：版本号必须单调递增，避免重放旧编辑让选用版本倒退
+  assertNewRevision(revision, paragraph.selectedTranslations?.[language]?.revision);
   const selectedTranslations = {
     ...paragraph.selectedTranslations,
     [language]: { value: edit.selectedTranslationId, revision: { ...revision }, updatedAt },

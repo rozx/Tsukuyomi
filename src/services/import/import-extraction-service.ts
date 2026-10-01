@@ -53,6 +53,8 @@ interface InspectionOptions {
   signal?: AbortSignal;
   offset?: number;
   limit?: number;
+  /** 本次执行捕获的界面语言；缺省时回退到任务检查点 */
+  uiLocale?: AppLocale;
 }
 
 function ensureActive(signal?: AbortSignal): void {
@@ -273,6 +275,7 @@ export class ImportExtractionService {
     source: ImportSource,
     snapshot: Snapshot,
     signal?: AbortSignal,
+    uiLocale?: AppLocale,
   ): Promise<ImportResource[]> {
     const format =
       source.kind === 'url' ? 'html' : formatOf(source, new Uint8Array(), snapshot.text);
@@ -289,7 +292,7 @@ export class ImportExtractionService {
       source,
       snapshot,
       parsed,
-      (await ImportRepository.getTask(source.taskId))?.checkpoint?.uiLocale ?? 'zh-CN',
+      uiLocale ?? (await ImportRepository.getTask(source.taskId))?.checkpoint?.uiLocale ?? 'zh-CN',
     );
     const observed =
       source.kind === 'url'
@@ -380,7 +383,7 @@ export class ImportExtractionService {
         resources.push(
           ...(await (snapshot.text === undefined
             ? this.inspectEpub(source, snapshot, options.signal)
-            : this.inspectText(source, snapshot, options.signal))),
+            : this.inspectText(source, snapshot, options.signal, options.uiLocale))),
         );
         resources.unshift(snapshot);
       }

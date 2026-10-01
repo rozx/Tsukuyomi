@@ -281,7 +281,7 @@ export class ImportToolExecutor {
         );
       case 'inspect_source':
       case 'extract_novel_info':
-        return this.inspect(args, save, options.signal);
+        return this.inspect(args, save, uiLocale, options.signal);
       case 'extract_content': {
         const inputs = extractionInputs(args);
         const ids = new Set(
@@ -387,6 +387,7 @@ export class ImportToolExecutor {
   private async inspect(
     args: Record<string, unknown>,
     save: (data: unknown, step?: SavedStep) => Promise<unknown>,
+    uiLocale: AppLocale,
     signal?: AbortSignal,
   ): Promise<unknown> {
     const taskId = this.run.taskId;
@@ -416,6 +417,7 @@ export class ImportToolExecutor {
       ...(typeof args.encoding === 'string' ? { encoding: args.encoding } : {}),
       ...(typeof args.snapshot_id === 'string' ? { snapshotId: args.snapshot_id } : {}),
       ...(signal ? { signal } : {}),
+      uiLocale,
     });
     return save(prepared.result, prepared);
   }

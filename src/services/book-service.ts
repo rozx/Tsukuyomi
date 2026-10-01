@@ -194,8 +194,16 @@ export class BookService {
     try {
       const db = await getDB();
       const books = await db.getAll('books');
-      // 书籍列表不需要加载章节内容，直接返回
-      return books.map((book) => normalizeBookLanguages(deserializeDates(serializeDates(book))));
+      // 书籍列表不需要加载章节内容，直接返回。
+      // 逐本规范化：单本记录损坏时只跳过该书（原记录保留在库中），不能让整个书库显示为空
+      return books.flatMap((book) => {
+        try {
+          return [normalizeBookLanguages(deserializeDates(serializeDates(book)))];
+        } catch (error) {
+          console.error(`Failed to load book ${book.id}:`, error);
+          return [];
+        }
+      });
     } catch (error) {
       console.error('Failed to load books:', error);
       return [];
