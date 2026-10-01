@@ -16,24 +16,23 @@
 
 ### 用户帮助文档
 
-从 `public/help/zh-CN/` 目录同步所有简体中文 `.md` 文件：
+从 `public/help/<locale>/` 同步三种语言的 `.md` 文件。GitHub Wiki 是扁平命名空间，页面名按语言区分：
 
-- 快速开始
-- 主页介绍
-- 书籍列表页
-- AI 模型配置
-- 聊天助手
-- 顶部工具栏
-- 设置说明
-- 书籍详情页相关文档（章节管理、内容编辑、翻译功能等）
+| 语言     | 来源目录             | Wiki 页面名                     |
+| :------- | :------------------- | :------------------------------ |
+| 简体中文 | `public/help/zh-CN/` | 原文件名，例如 `front-page`     |
+| 繁體中文 | `public/help/zh-TW/` | 加后缀，例如 `front-page-zh-TW` |
+| English  | `public/help/en-US/` | 加后缀，例如 `front-page-en-US` |
+
+简中保留原页面名，已有的 Wiki 链接不会失效。
 
 ### 发布说明
 
-从 `public/releaseNotes/` 目录同步所有版本的发布说明。
+从 `public/releaseNotes/` 目录同步所有版本的发布说明。发布说明只有简体中文，三种语言的首页和侧边栏共用。
 
 ### 开发者文档
 
-从 `docs/` 目录同步：
+从 `docs/` 目录同步（仅简体中文，三种语言共用）：
 
 - `BUILD_TROUBLESHOOTING.md` - 构建故障排查
 - `THEME_GUIDE.md` - 主题指南
@@ -41,34 +40,37 @@
 
 ## Wiki 结构
 
-### Home.md (首页)
+### Home.md / Home-zh-TW.md / Home-en-US.md (首页)
 
-自动生成的 Wiki 首页，包含：
+每种语言各生成一个首页（标题、说明和分类名取自对应语言的 `index.json`），包含：
 
+- 语言切换
 - 项目简介
 - 按分类组织的用户帮助文档索引
 - 最近 5 个版本的更新日志
 - 开发者文档索引
 - 相关链接
 
-### _Sidebar.md (侧边栏)
+### \_Sidebar.md (侧边栏)
 
-自动生成的 Wiki 侧边栏导航，包含：
+GitHub Wiki 只有一个侧边栏，按语言分节，包含：
 
-- 首页链接
+- 三种语言首页的切换链接
+- 每种语言的首页链接
 - 按分类组织的文档导航
 - 开发者文档链接
 - 更新日志链接
 
 ### 文档页面
 
-每个 Markdown 文件都会被同步到 Wiki，文件名保持不变。同步过程中会：
+每个 Markdown 文件都会被同步到 Wiki。帮助文档同步过程中会：
 
-1. 转换内部链接：`[文本](/help/xxx)` → `[[xxx|文本]]` (Wiki 链接格式：页面名|显示文本)
-2. 转换相对链接：`[文本](help/xxx)` → `[[xxx|文本]]`
-3. 保持其他内容不变
+1. 在页面顶部加入语言切换（链接到另外两种语言的同名页面）
+2. 转换内部链接：`[文本](/help/xxx#锚点)` → `[[文本|xxx-<后缀>#锚点]]`，指向同一语言的页面（简中无后缀）
+3. 转换相对链接：`[文本](help/xxx)`、`[文本](./xxx.md)` → 同上
+4. 保持其他内容不变
 
-> 注意：GitHub Wiki 链接格式为 `[[PageName|Display Text]]`，即页面名在前，显示文本在后。
+> 注意：GitHub Wiki 链接格式为 `[[Display Text|PageName]]`，即显示文本在前，页面名在后。
 
 ## 手动触发同步
 
@@ -93,7 +95,7 @@ curl -fsSL https://bun.sh/install | bash
 bun run scripts/sync-docs-to-wiki.ts
 ```
 
-这会在本地创建一个 `wiki/` 目录，包含所有同步的文档。测试完成后可以删除该目录。
+这会在本地创建一个 `wiki/` 目录，包含所有同步的文档。测试完成后可以删除该目录。也可以用 `WIKI_DIR=/tmp/wiki bun run scripts/sync-docs-to-wiki.ts` 输出到其他目录。
 
 ### 修改同步逻辑
 

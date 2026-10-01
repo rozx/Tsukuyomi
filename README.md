@@ -1,5 +1,7 @@
 # Tsukuyomi (月詠) - Moonlit Translator
 
+**简体中文** | [繁體中文](README.zh-TW.md) | [English](README.en-US.md)
+
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg) ![GitHub Release](https://img.shields.io/github/v/release/rozx/Tsukuyomi) ![Vue](https://img.shields.io/badge/Vue.js-3.5-4FC08D?logo=vue.js&logoColor=white) ![Quasar](https://img.shields.io/badge/Quasar-2.20-1976D2?logo=quasar&logoColor=white) ![Electron](https://img.shields.io/badge/Electron-39-47848F?logo=electron&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white) ![Bun](https://img.shields.io/badge/Bun-1.0%2B-000000?logo=bun&logoColor=white)
 
 [![Github All Releases](https://img.shields.io/github/downloads/rozx/Tsukuyomi/total.svg)](https://github.com/rozx/Tsukuyomi/releases)
@@ -8,7 +10,7 @@
 
 <img width="192" height="192" alt="android-chrome-192x192" src="https://github.com/user-attachments/assets/80e77fc0-9aa6-4900-9b5f-7420672a12a4" />
 
-> 面向日本轻小说的 AI 导入、阅读与翻译工具。
+> 面向小说的 AI 导入、阅读与翻译工具：原文不限语言，可译为简体中文、繁體中文或 English；对日文网络小说与轻小说有专门支持。
 
 **Tsukuyomi (月詠)** 将小说导入、双语阅读、翻译、润色和校对放在同一个工作台中。使用自己的 API Key 接入 OpenAI、Gemini 或兼容 OpenAI 协议的服务，通过术语、角色设定和记忆库为翻译提供上下文。支持网页版与 Electron 桌面版。
 
@@ -36,6 +38,13 @@
 
 ## ✨ 核心功能详情
 
+### 🌐 多语言翻译
+
+- **原文不限语言**: AI 按段落判断原文语言，同一本书可以混用多种语言；已经是目标语言的段落可原样保留。
+- **按书设置目标语言**: 每本书可选简体中文、繁體中文或 English 作为译文语言，新书默认跟随当前界面语言。
+- **各语言译文分开保存**: 段落译文、卷章标题、术语和角色译名按目标语言分别保存，切换目标语言不会覆盖已有译文。
+- **三语界面与帮助**: 界面和帮助文档提供简体中文、繁體中文和 English。
+
 ### 🤖 AI 模型配置
 
 Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
@@ -54,7 +63,7 @@ Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
 - **双语对照**: 按段落查看原文与译文，支持翻译、原文编辑和译文预览三种模式。
 - **全流程 AI 操作**:
   - **初翻 (Translate)**: 结合术语、角色设定和检索到的上下文生成译文。
-  - **润色 (Polish)**: 消除"翻译腔"，让译文更符合中文地道表达。
+  - **润色 (Polish)**: 消除"翻译腔"，让译文更符合目标语言的地道表达。
   - **校对 (Proofreading)**: 自动检查漏译、错别字及格式问题。
 - **多版本并存**: 对同一段落可尝试不同模型，一键切换各版本择优使用。
 - **任务进度**: 查看翻译进度、待办事项、思考与输出时间线，以及工具调用详情。
@@ -180,7 +189,7 @@ Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
 4. 在「卷章草稿」检查书籍资料、章节顺序和正文。
 5. 生成「导入方案」，核对目标书籍、缺失章节和译文影响，再点击「确认导入」。完成后点「打开小说」。
 
-更多例子见 [AI 导入工作台指南](public/help/zh-CN/import-guide.md)。也可以在书库中选择「从网站导入」，使用内置规则处理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他站点可转交 AI 导入器。应用格式的 JSON 书籍文件可通过「从 JSON 导入」添加，完整资料备份在设置中恢复。
+更多例子见 [AI 导入工作台指南](public/help/zh-CN/import-guide.md)。也可以在书库中选择「从网站导入」，使用内置的日文小说网站规则处理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他站点可转交 AI 导入器。应用格式的 JSON 书籍文件可通过「从 JSON 导入」添加，完整资料备份在设置中恢复。
 
 ### 3. 从源码运行
 
