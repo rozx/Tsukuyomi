@@ -274,6 +274,52 @@ describe('executeForceSync', () => {
     expect(upload).not.toHaveBeenCalled();
   });
 
+  it('强制推送后放回 Pinia 的书籍不带章节正文，上传载荷仍包含正文', async () => {
+    const { BookService } = await import('../services/book-service');
+    const chapter = { id: 'c1', title: '第一章', createdAt: new Date(0), lastEdited: new Date(0) };
+    mockBooksStore.books = [
+      {
+        id: 'b1',
+        title: '书',
+        lastEdited: new Date(0),
+        volumes: [{ id: 'v1', title: '卷', chapters: [chapter] }],
+      },
+    ];
+    const body = [{ id: 'p1', text: '原文', translations: [], selectedTranslationId: '' }];
+    (
+      ChapterContentService.loadAllChapterContentsForNovels as ReturnType<typeof spyOn>
+    ).mockImplementation((novels: any[]) =>
+      Promise.resolve(
+        novels.map((novel) => ({
+          ...novel,
+          volumes: novel.volumes.map((volume: any) => ({
+            ...volume,
+            chapters: volume.chapters.map((item: any) => ({ ...item, content: body })),
+          })),
+        })),
+      ),
+    );
+    spyOn(BookService, 'prepareForceBooks').mockImplementation((books: any) =>
+      Promise.resolve(books),
+    );
+    stubSuccessfulDownload();
+    const uploadSpy = stubSuccessfulUpload();
+
+    const { executeForceSync } = useSyncExecutor();
+    const result = await executeForceSync({
+      messagePrefix: '',
+      isManualRetrieval: true,
+      onError: () => {},
+      onSuccess: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    const stored = mockBooksStore.books[0] as any;
+    expect(stored.volumes[0].chapters[0].content).toBeUndefined();
+    const uploaded = (uploadSpy.mock.calls[0]![1] as any).novels[0];
+    expect(uploaded.volumes[0].chapters[0].content).toEqual(body);
+  });
+
   it('跳过 pseudo-CAS —— 不调用 verifyRemoteUnchanged', async () => {
     stubSuccessfulDownload();
     stubSuccessfulUpload();

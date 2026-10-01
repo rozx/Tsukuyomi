@@ -1,5 +1,6 @@
-import { mergeLanguageSlots, mergeParagraphLanguageState } from './localization/merge';
+import { mergeParagraphLanguageState } from './localization/merge';
 import { mergeBookEntityState } from './localization/entities';
+import { mergeTitlePreservingTranslation } from './localization/title-merge';
 import {
   completeRestoreOperation,
   prepareBookRestore,
@@ -10,7 +11,6 @@ import { completeIdbTransaction } from 'src/utils/complete-idb-transaction';
 import { canonicalStringify } from 'src/utils/canonical-json';
 import { getDB } from 'src/utils/indexed-db';
 import { v4 } from 'uuid';
-import { normalizeNameTranslations } from './localization/normalize';
 import { mergeUiLocalePreference } from 'src/models/locale';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
@@ -131,35 +131,6 @@ function shouldKeepLocalOnlyItem(
   }
 
   return localItemTime > lastSyncTime;
-}
-
-/** 仅相同原文标题合并语言槽；结构裁决选中的新原文不能携带旧译名。 */
-function mergeTitlePreservingTranslation(
-  winnerTitle: Chapter['title'],
-  loserTitle: Chapter['title'],
-): Chapter['title'] {
-  const original = typeof winnerTitle === 'string' ? winnerTitle : winnerTitle?.original;
-  const otherOriginal = typeof loserTitle === 'string' ? loserTitle : loserTitle?.original;
-  if (original !== otherOriginal || !original) return winnerTitle;
-  if (typeof winnerTitle === 'string')
-    return typeof loserTitle === 'string' ? winnerTitle : normalizeNameTranslations(loserTitle, 0);
-  if (typeof loserTitle === 'string') return normalizeNameTranslations(winnerTitle, 0);
-  const left = normalizeNameTranslations(winnerTitle, 0);
-  const right = normalizeNameTranslations(loserTitle, 0);
-  const translationsByLanguage = mergeLanguageSlots(
-    left.translationsByLanguage,
-    right.translationsByLanguage,
-  );
-  return {
-    ...left,
-    translationsByLanguage,
-    translation: translationsByLanguage['zh-CN']?.value ?? {
-      id: '',
-      translation: '',
-      aiModelId: '',
-      language: 'zh-CN',
-    },
-  };
 }
 
 /** 取卷原文标题（兼容 string / {original, translation} 两种格式），与本地导入的卷匹配语义一致 */

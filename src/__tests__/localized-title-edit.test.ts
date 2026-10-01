@@ -180,4 +180,37 @@ describe('卷章译名编辑事务', () => {
     expect(saved.volumes![0]!.chapters).toEqual([]);
     expect(saved.targetLanguage).toBe('en-US');
   });
+  it('持有旧快照的元数据保存不能回滚其他标签页刚写入的卷章译名', async () => {
+    await BookService.saveBook(book);
+    const stale = (await BookService.getBookById('b'))!;
+    // 另一个标签页给卷和章节新增英文译名
+    await BookService.editTitle('b', 'en-US', {
+      kind: 'chapter',
+      id: 'c',
+      expectedOriginal: '原始标题',
+      translation: 'Chapter title',
+    });
+    await BookService.editTitle('b', 'en-US', {
+      kind: 'volume',
+      id: 'v',
+      expectedOriginal: '原始标题',
+      translation: 'Volume title',
+    });
+    // 本标签页仍持有旧快照，只改了翻译设置就整本保存
+    await BookService.saveBook(
+      { ...stale, translationInstructions: '新的书籍指令' },
+      {
+        saveChapterContent: false,
+      },
+    );
+    const saved = (await BookService.getBookById('b'))!;
+    const volume = saved.volumes![0]!;
+    const chapterTitle = volume.chapters![0]!.title as Exclude<typeof title, string>;
+    expect(getNameTranslation(chapterTitle, 'en-US')?.translation).toBe('Chapter title');
+    expect(
+      getNameTranslation(volume.title as Exclude<typeof title, string>, 'en-US')?.translation,
+    ).toBe('Volume title');
+    expect(getNameTranslation(chapterTitle, 'zh-CN')?.translation).toBe('简中标题');
+    expect(saved.translationInstructions).toBe('新的书籍指令');
+  });
 });

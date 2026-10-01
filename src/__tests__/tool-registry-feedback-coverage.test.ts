@@ -9,6 +9,7 @@ import { createAIProcessingStoreAdapter } from '../services/ai/tasks/utils/task-
 import { APP_LOCALES } from '../models/locale';
 import type { AppLocale } from '../models/locale';
 import type { AIToolCall } from '../services/ai/types/ai-service';
+import { getDB } from '../utils/indexed-db';
 import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
 import { useBooksStore } from '../stores/books';
 
@@ -122,6 +123,8 @@ function find(value: unknown, key: string): string | undefined {
 
 async function scenario(locale: AppLocale): Promise<{ name: string; content: string }[]> {
   TodoListService.clearAllTodos();
+  // 每种语言从全新书籍开始：上一轮 update_chapter_title 写入的译名不能靠重新保存旧快照回滚
+  await (await getDB()).delete('books', BOOK);
   const first = translationChapter('c', '11111111');
   first.title = 'Chapter one';
   const second = translationChapter('c2', '22222222');

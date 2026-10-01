@@ -174,3 +174,61 @@ describe('术语/角色译名按操作语言读取', () => {
     expect(createMessageActionFromActionInfo(info).language).toBe('en-US');
   });
 });
+
+describe('操作详情中的章节标题语言', () => {
+  function bookWithChapter(): Novel {
+    const slot = (id: string, text: string, language: Translation['language']) => ({
+      value: { id, translation: text, aiModelId: '', language },
+      revision,
+      updatedAt: 0,
+    });
+    return {
+      id: 'b1',
+      title: '用户书名',
+      targetLanguage: 'en-US',
+      createdAt: new Date(),
+      lastEdited: new Date(),
+      volumes: [
+        {
+          id: 'v',
+          title: '卷',
+          chapters: [
+            {
+              id: 'c1',
+              title: {
+                original: '第1話',
+                translation: tr('cn', '第一话'),
+                translationsByLanguage: {
+                  'zh-CN': slot('cn', '第一话', 'zh-CN'),
+                  'en-US': slot('en', 'Chapter One', 'en-US'),
+                },
+              },
+              createdAt: new Date(),
+              lastEdited: new Date(),
+            },
+          ],
+        },
+      ],
+    } as Novel;
+  }
+  const searchAction: MessageAction = {
+    type: 'read',
+    entity: 'paragraph',
+    tool_name: 'find_paragraph_by_keywords',
+    keywords: ['勇者'],
+    chapter_id: 'c1',
+    timestamp: 0,
+  } as MessageAction;
+  const chapterValue = (action: MessageAction) =>
+    getActionDetails(action, context(bookWithChapter()), 'zh-CN').find(
+      (detail) => detail.label === '章节',
+    )?.value;
+
+  it('默认按书籍目标语言显示章节标题', () => {
+    expect(chapterValue(searchAction)).toBe('Chapter One');
+  });
+
+  it('操作记录了执行语言时优先使用该语言', () => {
+    expect(chapterValue({ ...searchAction, language: 'zh-CN' })).toBe('第一话');
+  });
+});

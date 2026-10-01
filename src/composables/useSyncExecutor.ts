@@ -149,6 +149,25 @@ function executorText(
  *   3. 基于 hash 比对检测本地是否有待上传的变更
  *   4. 伪 CAS 预检 + 增量上传（失败则重试）
  */
+/** 去掉章节正文，只保留书籍元数据（与 refreshBookFromStorage 后的 store 形态一致）。 */
+function withoutChapterContent(book: Novel): Novel {
+  if (!book.volumes) return book;
+  return {
+    ...book,
+    volumes: book.volumes.map((volume) =>
+      volume.chapters
+        ? {
+            ...volume,
+            chapters: volume.chapters.map(({ content: _content, ...chapter }) => ({
+              ...chapter,
+              contentLoaded: false,
+            })),
+          }
+        : volume,
+    ),
+  };
+}
+
 export function useSyncExecutor() {
   const settingsStore = useSettingsStore();
   const aiModelsStore = useAIModelsStore();
@@ -1140,7 +1159,8 @@ export function useSyncExecutor() {
         `${operationId}:${config.syncParams.gistId}`,
       );
       bundle.novelsWithContent = prepared;
-      const byId = new Map(prepared.map((book) => [book.id, book]));
+      // 载荷需要全部正文，但放回 Pinia 只保留元数据：正文按需从 chapter-contents 读取
+      const byId = new Map(prepared.map((book) => [book.id, withoutChapterContent(book)]));
       booksStore.books = booksStore.books.map((book) => byId.get(book.id) ?? book);
     } catch (error) {
       await markFailure();

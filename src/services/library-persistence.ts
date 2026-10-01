@@ -26,6 +26,7 @@ import {
   restoreOperationApplied,
 } from './localization/restore';
 import { mergeBookEntityState } from './localization/entities';
+import { preserveStoredTitleSlots } from './localization/title-merge';
 import type { CharacterSetting, Terminology } from 'src/models/novel';
 import { applyParagraphTranslationEdits } from './localization/paragraph-edit';
 import type {
@@ -661,8 +662,12 @@ export class LibraryPersistence {
       for (const { record: requested, chapters } of prepared) {
         const saved: string[] = [];
         const prior = await tx.objectStore('books').get(requested.id);
+        // 调用方可能持有旧快照：术语/角色状态与卷章标题语言槽都按 revision 与已存储记录合并
         const record = prior
-          ? { ...requested, ...mergeBookEntityState(prior, requested) }
+          ? preserveStoredTitleSlots(
+              { ...requested, ...mergeBookEntityState(prior, requested) },
+              prior,
+            )
           : requested;
         const embedded = new Map(
           (prior?.volumes ?? []).flatMap((volume) =>

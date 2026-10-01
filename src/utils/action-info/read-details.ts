@@ -109,13 +109,17 @@ const READ_TOOL_HANDLERS: Record<string, ReadToolHandler> = {
     appendKeywordsLine(details, action.keywords, 'originalKeywords', locale);
     appendKeywordsLine(details, action.translation_keywords, 'translationKeywords', locale);
     if (action.chapter_id) {
-      appendChapterDetailByChapterId(details, action.chapter_id, context, locale);
+      appendChapterDetailByChapterId(details, action.chapter_id, context, locale, {
+        language: action.language,
+      });
     }
   },
   search_paragraphs_by_regex: (details, action, context, locale) => {
     appendRegexLine(details, action, locale);
     if (action.chapter_id) {
-      appendChapterDetailByChapterId(details, action.chapter_id, context, locale);
+      appendChapterDetailByChapterId(details, action.chapter_id, context, locale, {
+        language: action.language,
+      });
     }
   },
   get_occurrences_by_keywords: (details, action, _context, locale) => {
@@ -132,7 +136,9 @@ function appendDefaultReadFields(
   appendKeywordsLine(details, action.keywords, 'keywords', locale);
   appendRegexLine(details, action, locale);
   if (action.chapter_id) {
-    appendChapterDetailByChapterId(details, action.chapter_id, context, locale);
+    appendChapterDetailByChapterId(details, action.chapter_id, context, locale, {
+      language: action.language,
+    });
   }
 }
 

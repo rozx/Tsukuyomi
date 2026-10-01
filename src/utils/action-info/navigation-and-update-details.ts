@@ -18,7 +18,9 @@ export function appendChapterUpdateDetails(
   appendDetail(details, locale, 'oldTitle', action.old_title);
   appendDetail(details, locale, 'newTitle', action.new_title);
   if (action.chapter_id) {
-    appendChapterDetailByChapterId(details, action.chapter_id, context, locale);
+    appendChapterDetailByChapterId(details, action.chapter_id, context, locale, {
+      language: action.language,
+    });
   }
 }
 
@@ -52,7 +54,10 @@ export function appendNavigateDetails(
 
   if (action.chapter_id) {
     const bookIdOverride = action.book_id ?? undefined;
-    appendChapterDetailByChapterId(details, action.chapter_id, context, locale, bookIdOverride);
+    appendChapterDetailByChapterId(details, action.chapter_id, context, locale, {
+      bookIdOverride,
+      language: action.language,
+    });
   }
 
   appendDetail(details, locale, 'chapterTitle', action.chapter_title);
