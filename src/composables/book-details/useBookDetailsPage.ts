@@ -45,7 +45,7 @@ import {
   formatRelativeBookDate,
 } from 'src/utils';
 import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
-import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
+import { buildNovelRevertUpdates, buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { toMillis } from 'src/utils/time-utils';
 import { cloneDeep } from 'lodash';
@@ -2084,7 +2084,8 @@ function createBookDetailsPageContext() {
       saveState(translateText(settings.uiLocale, 'translationUi.editBookState'));
 
       const updates = buildNovelUpdatesFromFormData(formData);
-      const oldBook = cloneDeep(book.value);
+      // 撤销只恢复本次表单写入的字段，不回滚保存之后其他流程写入的译文、卷章节等
+      const revertUpdates = buildNovelRevertUpdates(cloneDeep(book.value), updates);
       await booksStore.updateBook(book.value.id, updates);
       showBookDialog.value = false;
       const bookTitle = updates.title || book.value.title;
@@ -2095,7 +2096,7 @@ function createBookDetailsPageContext() {
         life: 3000,
         onRevert: async () => {
           if (book.value) {
-            await booksStore.updateBook(book.value.id, oldBook);
+            await booksStore.updateBook(book.value.id, revertUpdates);
           }
         },
       });

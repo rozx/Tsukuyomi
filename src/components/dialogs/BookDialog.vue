@@ -5,7 +5,7 @@ const { t: i18nT, locale } = useI18n();
 
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { cloneDeep, isEqual } from 'lodash';
+import { cloneDeep } from 'lodash';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
@@ -32,6 +32,7 @@ import { useChapterCharCount } from 'src/composables/useChapterCharCount';
 import { useFormDialogCloseGuard } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import { useUiStore } from 'src/stores/ui';
 import { copyTextWithToast } from 'src/utils/clipboard';
+import { pickChangedFormFields } from 'src/utils/novel-form';
 
 const props = withDefaults(
   defineProps<{
@@ -181,7 +182,12 @@ const handleSave = () => {
   if (!validateForm()) {
     return;
   }
-  emit('save', formData.value);
+  // 编辑模式只提交相对打开时快照改动的字段，避免旧值覆盖其他标签页或后台任务的改动
+  const payload =
+    props.mode === 'edit'
+      ? pickChangedFormFields(formData.value, initialFormSnapshot.value)
+      : formData.value;
+  emit('save', payload);
 };
 
 const captureSnapshot = () => {
