@@ -3,6 +3,7 @@ import { MemoryService } from 'src/services/memory-service';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
+import type { CoverRecordInput } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { Novel } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
@@ -166,10 +167,13 @@ export function useGistSync() {
         lastEdited: new Date(now),
       });
     }
-    // 封面无需手动刷新时间戳：addCover 内部总会写入当前时刻的 addedAt
-    for (const cover of grouped.covers) {
-      await coverHistoryStore.addCover(cover as Parameters<typeof coverHistoryStore.addCover>[0]);
-    }
+    // 封面保留原 id（跨设备删除记录按 id 匹配），只把 addedAt 刷新为当前时刻
+    await coverHistoryStore.upsertCovers(
+      grouped.covers.map((cover) => ({
+        ...(cover as CoverRecordInput),
+        addedAt: new Date(now),
+      })),
+    );
     // Memory 恢复：data 是携带 bookId 的完整 Memory，走 upsertMemoryForSync 写回 IndexedDB
     for (const memory of grouped.memories) {
       await MemoryService.upsertMemoryForSync({ ...(memory as Memory), lastAccessedAt: now });

@@ -286,6 +286,7 @@ describe('applyPartialRemoteData: AI models deletion propagation (C3)', () => {
     spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
       covers: [],
       addCover: mock(() => Promise.resolve()),
+      upsertCovers: mock(() => Promise.resolve()),
       removeCover: mock(() => Promise.resolve()),
     } as any);
     spyOn(SettingsStore, 'useSettingsStore').mockReturnValue({
@@ -362,6 +363,7 @@ describe('applyPartialRemoteData: cover history deletion propagation (C3)', () =
     spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
       covers: localCovers,
       addCover: addCoverSpy,
+      upsertCovers: mock(() => Promise.resolve()),
       removeCover: removeCoverSpy,
     } as any);
     spyOn(SettingsStore, 'useSettingsStore').mockReturnValue({
@@ -429,6 +431,7 @@ describe('applyPartialRemoteData: memories deletion propagation (C2)', () => {
     spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
       covers: [],
       addCover: mock(() => Promise.resolve()),
+      upsertCovers: mock(() => Promise.resolve()),
       removeCover: mock(() => Promise.resolve()),
     } as any);
     spyOn(SettingsStore, 'useSettingsStore').mockReturnValue({
@@ -580,6 +583,7 @@ describe('applyPartialRemoteData: novel structure merge regression', () => {
     spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
       covers: [],
       addCover: mock(() => Promise.resolve()),
+      upsertCovers: mock(() => Promise.resolve()),
       removeCover: mock(() => Promise.resolve()),
     } as any);
     spyOn(SettingsStore, 'useSettingsStore').mockReturnValue({
@@ -1288,6 +1292,7 @@ describe('applyPartialRemoteData: memories envelope tombstones', () => {
     spyOn(CoverHistoryStore, 'useCoverHistoryStore').mockReturnValue({
       covers: [],
       addCover: mock(() => Promise.resolve()),
+      upsertCovers: mock(() => Promise.resolve()),
       removeCover: mock(() => Promise.resolve()),
     } as any);
     spyOn(SettingsStore, 'useSettingsStore').mockReturnValue({
