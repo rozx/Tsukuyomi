@@ -226,6 +226,12 @@ function editBookEntities(
   );
 }
 
+/** 已提交的书籍记录；revision 为该记录对应的书籍修改序号（实体编辑路径未提供） */
+interface CommittedBook {
+  book: Novel;
+  revision?: number;
+}
+
 /**
  * 普通元数据更新：实体走 editEntities，其余字段只把相对内存快照真正改动的部分
  * 应用到事务内读取的最新记录，持有旧快照的标签页不会覆盖其他标签页刚写入的字段。
@@ -235,10 +241,10 @@ async function saveBookFieldUpdates(
   existingBook: Novel,
   updates: Partial<Novel>,
   options?: UpdateBookOptions,
-): Promise<Novel | undefined> {
-  let committed: Novel | undefined;
+): Promise<CommittedBook | undefined> {
+  let committed: CommittedBook | undefined;
   if (updates.terminologies !== undefined || updates.characterSettings !== undefined) {
-    committed = await editBookEntities(existingBook, updates, options);
+    committed = { book: await editBookEntities(existingBook, updates, options) };
   }
   const patch = buildBookFieldPatch(existingBook, updates);
   const { lastEdited: _time, ...fields } = patch;
@@ -486,6 +492,20 @@ export const useBooksStore = defineStore('books', {
     },
 
     /**
+     * 采用已提交的记录，并沿用内存中已加载的章节正文。并发保存时较晚返回的旧提交
+     * （修改序号低于内存已采用的序号）不覆盖内存中更新的记录。
+     */
+    adoptCommittedBook(existingBook: Novel, committed: CommittedBook): void {
+      const { id } = existingBook;
+      const known = this.storageRevisions[id];
+      if (committed.revision !== undefined && known !== undefined && committed.revision < known)
+        return;
+      const index = this.books.findIndex((book) => book.id === id);
+      if (index >= 0) this.books[index] = withLoadedContent(committed.book, existingBook);
+      if (committed.revision !== undefined) this.storageRevisions[id] = committed.revision;
+    },
+
+    /**
      * 更新书籍
      */
     async updateBook(
@@ -499,8 +519,7 @@ export const useBooksStore = defineStore('books', {
       if (isFieldUpdate(updates, options)) {
         const committed = await saveBookFieldUpdates(existingBook, updates, options);
         if (committed) {
-          const current = this.books.findIndex((book) => book.id === id);
-          if (current >= 0) this.books[current] = withLoadedContent(committed, existingBook);
+          this.adoptCommittedBook(existingBook, committed);
           return;
         }
       }

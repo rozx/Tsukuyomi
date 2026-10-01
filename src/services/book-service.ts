@@ -190,13 +190,19 @@ export class BookService {
 
   /**
    * 按字段增量更新书籍元数据（基于库中最新记录，不写回旧快照）
-   * @returns 已提交的书籍记录（不含章节正文）；库中没有该书时返回 undefined
+   * @returns 已提交的书籍记录（不含章节正文）及其修改序号；库中没有该书时返回 undefined
    */
-  static async updateBookFields(bookId: string, patch: BookFieldPatch): Promise<Novel | undefined> {
+  static async updateBookFields(
+    bookId: string,
+    patch: BookFieldPatch,
+  ): Promise<{ book: Novel; revision: number } | undefined> {
     const result = await LibraryPersistence.updateBookFields(await getDB(), bookId, patch);
     if (!result) return undefined;
     if (result.changes.size) await maintainLibraryChanges(result.changes);
-    return normalizeBookLanguages(deserializeDates(serializeDates(result.book)));
+    return {
+      book: normalizeBookLanguages(deserializeDates(serializeDates(result.book))),
+      revision: result.revision,
+    };
   }
 
   /**

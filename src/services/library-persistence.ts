@@ -635,13 +635,13 @@ export class LibraryPersistence {
   /**
    * 按字段增量更新书籍元数据：在读写事务内读取最新记录，只应用补丁字段，
    * 不写回调用方持有的旧快照。补丁无实际变化时不写入、不递增修改序号。
-   * @returns 已提交的记录与需维护的章节；库中没有该书时返回 undefined
+   * @returns 已提交的记录、需维护的章节与该记录对应的书籍修改序号；库中没有该书时返回 undefined
    */
   static async updateBookFields(
     db: IDBPDatabase<TsukuyomiDB>,
     bookId: string,
     patch: BookFieldPatch,
-  ): Promise<{ book: Novel; changes: Changes } | undefined> {
+  ): Promise<{ book: Novel; changes: Changes; revision: number } | undefined> {
     const { lastEdited, ...fields } = patch;
     return transaction(db, async (tx) => {
       const prior = await tx.objectStore('books').get(bookId);
@@ -650,13 +650,15 @@ export class LibraryPersistence {
       // 卷章原样保留：重新剥离正文会改写已存的 contentLoaded 约定，造成无意义写入
       if (prior.volumes) next.volumes = prior.volumes;
       const changes: Changes = new Map();
-      if (semanticBook(prior) === semanticBook(next)) return { book: prior, changes };
+      const revisions = tx.objectStore('book-revisions');
+      if (semanticBook(prior) === semanticBook(next))
+        return { book: prior, changes, revision: (await revisions.get(bookId))?.revision ?? 0 };
       next.lastEdited = new Date(lastEdited ?? Date.now()).toISOString() as unknown as Date;
       await tx.objectStore('books').put(next);
-      await bumpBookRevision(tx.objectStore('book-revisions'), bookId);
+      const revision = await bumpBookRevision(revisions, bookId);
       if ((prior.targetLanguage ?? 'zh-CN') !== (next.targetLanguage ?? 'zh-CN'))
         changes.set(bookId, chapterIds(next));
-      return { book: next, changes };
+      return { book: next, changes, revision };
     });
   }
 
