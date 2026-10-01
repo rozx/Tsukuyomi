@@ -46,7 +46,10 @@ function appendParagraphPreviewByPath(
   const { paragraph, chapter } = location;
   const chapterLabel = detailText(locale, 'chapter');
   if (!details.some((d) => d.label === chapterLabel)) {
-    details.push({ label: chapterLabel, value: getChapterDisplayTitle(chapter) });
+    details.push({
+      label: chapterLabel,
+      value: getChapterDisplayTitle(chapter, book, action.language),
+    });
   }
   if (paragraph.text) {
     details.push({

@@ -19,7 +19,7 @@ import type {
   CatalogEntry,
   SyncVolumeTarget,
 } from 'src/models/book-sync';
-import type { Volume } from 'src/models/novel';
+import type { Novel, Volume } from 'src/models/novel';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import { resolveRecipe } from 'src/services/book-sync/recipe';
@@ -84,6 +84,8 @@ export interface BookSyncContext {
   message: Readonly<Ref<string>>;
   changeset: Ref<BookSyncChangeset | null>;
   recipe: ComputedRef<BookSyncRecipeView | null>;
+  /** 同步目标书籍（新建书籍流程中为 undefined），用于按其目标语言显示卷章标题 */
+  book: ComputedRef<Novel | undefined>;
   volumes: ComputedRef<Volume[]>;
   selected: Ref<Set<string>>;
   volumeOverrides: Ref<Map<string, SyncVolumeTarget>>;
@@ -516,6 +518,7 @@ function createBookSyncContext(
     message,
     changeset,
     recipe,
+    book,
     volumes,
     selected,
     volumeOverrides,

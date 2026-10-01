@@ -15,20 +15,18 @@ export function mergeTitlePreservingTranslation(
   if (typeof loserTitle === 'string') return normalizeNameTranslations(winnerTitle, 0);
   const left = normalizeNameTranslations(winnerTitle, 0);
   const right = normalizeNameTranslations(loserTitle, 0);
-  const translationsByLanguage = mergeLanguageSlots(
-    left.translationsByLanguage,
-    right.translationsByLanguage,
-  );
-  return {
-    ...left,
-    translationsByLanguage,
-    translation: translationsByLanguage['zh-CN']?.value ?? {
-      id: '',
-      translation: '',
-      aiModelId: '',
-      language: 'zh-CN',
+  // 简中投影交给规范化统一推导：槽为空时保留原有 id / aiModelId，与其他写入路径一致，
+  // 避免合并结果与已存记录逐字不同而触发无意义的写入和修改序号递增
+  return normalizeNameTranslations(
+    {
+      ...left,
+      translationsByLanguage: mergeLanguageSlots(
+        left.translationsByLanguage,
+        right.translationsByLanguage,
+      ),
     },
-  };
+    0,
+  );
 }
 
 /**

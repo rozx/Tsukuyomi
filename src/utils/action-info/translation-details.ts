@@ -90,7 +90,10 @@ function appendParagraphContextByBook(
   if (!location) return;
 
   const { paragraph, chapter } = location;
-  details.push({ label: detailText(locale, 'chapter'), value: getChapterDisplayTitle(chapter) });
+  details.push({
+    label: detailText(locale, 'chapter'),
+    value: getChapterDisplayTitle(chapter, book, action.language),
+  });
 
   if (paragraph.text) {
     details.push({

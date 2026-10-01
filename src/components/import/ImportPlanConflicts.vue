@@ -29,13 +29,13 @@ const bookChapters = computed(() =>
 const matchOptions = computed(() => [
   { label: t('importUi.planConflicts.newChapter'), value: NEW_CHAPTER },
   ...bookChapters.value.map(({ volume, chapter }) => ({
-    label: `${getVolumeDisplayTitle(volume)} · ${getChapterDisplayTitle(chapter)}`,
+    label: `${getVolumeDisplayTitle(volume, targetBook.value)} · ${getChapterDisplayTitle(chapter, targetBook.value)}`,
     value: chapter.id,
   })),
 ]);
 const chapterTitle = (id: string) => {
   const entry = bookChapters.value.find(({ chapter }) => chapter.id === id);
-  return entry ? getChapterDisplayTitle(entry.chapter) : id;
+  return entry ? getChapterDisplayTitle(entry.chapter, targetBook.value) : id;
 };
 const settingsOptions = (draftChapterId: string) =>
   (

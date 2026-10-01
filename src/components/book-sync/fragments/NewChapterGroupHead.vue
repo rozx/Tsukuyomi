@@ -13,7 +13,7 @@ import type { NewChapterGroup } from 'src/composables/book-sync/book-sync-rules'
 import { getVolumeDisplayTitle } from 'src/utils/novel-utils';
 
 const props = defineProps<{ group: NewChapterGroup }>();
-const { volumes, selected, working, toggle, setGroupTarget } = injectBookSync();
+const { book, volumes, selected, working, toggle, setGroupTarget } = injectBookSync();
 
 const { t } = useI18n();
 const editing = ref(false);
@@ -22,7 +22,7 @@ const newTitle = ref('');
 function targetName(target: SyncVolumeTarget): string {
   if ('newTitle' in target) return target.newTitle;
   const volume = volumes.value.find((entry) => entry.id === target.volumeId);
-  return volume ? getVolumeDisplayTitle(volume) : t('bookUi.sync.existingVolume');
+  return volume ? getVolumeDisplayTitle(volume, book.value) : t('bookUi.sync.existingVolume');
 }
 
 function targetLabel(target: SyncVolumeTarget): string {
@@ -110,7 +110,7 @@ function useNewVolume(): void {
       <Button
         v-for="volume in volumes"
         :key="volume.id"
-        :label="getVolumeDisplayTitle(volume)"
+        :label="getVolumeDisplayTitle(volume, book)"
         size="small"
         severity="secondary"
         outlined

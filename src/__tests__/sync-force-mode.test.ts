@@ -294,7 +294,11 @@ describe('executeForceSync', () => {
           ...novel,
           volumes: novel.volumes.map((volume: any) => ({
             ...volume,
-            chapters: volume.chapters.map((item: any) => ({ ...item, content: body })),
+            chapters: volume.chapters.map((item: any) => ({
+              ...item,
+              content: body,
+              contentLoaded: true,
+            })),
           })),
         })),
       ),
@@ -316,6 +320,7 @@ describe('executeForceSync', () => {
     expect(result.success).toBe(true);
     const stored = mockBooksStore.books[0] as any;
     expect(stored.volumes[0].chapters[0].content).toBeUndefined();
+    expect(stored.volumes[0].chapters[0].contentLoaded).toBe(false);
     const uploaded = (uploadSpy.mock.calls[0]![1] as any).novels[0];
     expect(uploaded.volumes[0].chapters[0].content).toEqual(body);
   });

@@ -205,6 +205,9 @@ describe('操作详情中的章节标题语言', () => {
               },
               createdAt: new Date(),
               lastEdited: new Date(),
+              content: [
+                { id: 'p1', text: '原文段落', translations: [], selectedTranslationId: '' },
+              ],
             },
           ],
         },
@@ -230,5 +233,25 @@ describe('操作详情中的章节标题语言', () => {
 
   it('操作记录了执行语言时优先使用该语言', () => {
     expect(chapterValue({ ...searchAction, language: 'zh-CN' })).toBe('第一话');
+  });
+
+  it('段落查询与单段翻译操作的章节标题同样跟随执行语言', () => {
+    const paragraphQuery = {
+      type: 'read',
+      entity: 'paragraph',
+      tool_name: 'get_paragraph_info',
+      paragraph_id: 'p1',
+      timestamp: 0,
+    } as MessageAction;
+    const translation = {
+      type: 'update',
+      entity: 'translation',
+      paragraph_id: 'p1',
+      timestamp: 0,
+    } as MessageAction;
+    for (const action of [paragraphQuery, translation]) {
+      expect(chapterValue(action)).toBe('Chapter One');
+      expect(chapterValue({ ...action, language: 'zh-CN' })).toBe('第一话');
+    }
   });
 });

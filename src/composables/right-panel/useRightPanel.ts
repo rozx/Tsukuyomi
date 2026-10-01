@@ -199,7 +199,7 @@ export function useRightPanel() {
     if (!book) return undefined;
     const chapterResult = ChapterService.findChapterById(book, chapterId);
     if (chapterResult && chapterResult.chapter) {
-      return getChapterDisplayTitle(chapterResult.chapter);
+      return getChapterDisplayTitle(chapterResult.chapter, book);
     }
     return undefined;
   };
