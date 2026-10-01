@@ -3041,7 +3041,7 @@ export class SyncDataService {
       return deletedAt === undefined || deletedAt <= lastSyncTime;
     });
     // 原样合并远端记录（保留 id 与 addedAt），同 URL 的旧本地记录被远端身份取代
-    await coverHistoryStore.upsertCovers(kept);
+    await coverHistoryStore.upsertCovers(dedupeCoverHistoryByUrl(kept));
 
     // 跨设备删除传播：远端按 id 与 URL 都找不到的本地封面才视为远端已删除
     const localCoversSnapshot = [...coverHistoryStore.covers];
