@@ -228,3 +228,103 @@ it('撤销书籍表单只恢复表单改动字段，保留范围外的多语言�
     volumes: [],
   });
 });
+
+describe('pickChangedFormFields', () => {
+  const volumes = [
+    {
+      id: 'v1',
+      title: '第一卷',
+      chapters: [{ id: 'c1', title: '序章', createdAt: new Date(0), lastEdited: new Date(0) }],
+    },
+  ] as unknown as Novel['volumes'];
+  const snapshot: Partial<Novel> = {
+    title: '书',
+    author: '作者',
+    tags: ['奇幻'],
+    translationInstructions: '',
+    cover: { url: 'http://c' },
+    volumes,
+  };
+
+  it('只保留相对打开时快照改动的字段，未改动的 volumes 等字段不携带', async () => {
+    const { pickChangedFormFields } = await import('../utils/novel-form');
+    const formData = { ...structuredClone(snapshot), author: '新作者' };
+    expect(pickChangedFormFields(formData, snapshot)).toEqual({ author: '新作者' });
+  });
+
+  it('未改动时返回空对象（title 也不携带）', async () => {
+    const { pickChangedFormFields } = await import('../utils/novel-form');
+    const result = pickChangedFormFields(structuredClone(snapshot), snapshot);
+    expect(result).toEqual({});
+    expect(result).not.toHaveProperty('title');
+  });
+
+  it('清空卷章节时携带 volumes: []', async () => {
+    const { pickChangedFormFields } = await import('../utils/novel-form');
+    const formData = { ...structuredClone(snapshot), volumes: [] };
+    expect(pickChangedFormFields(formData, snapshot)).toEqual({ volumes: [] });
+  });
+
+  it('章节被修改时携带完整 volumes', async () => {
+    const { pickChangedFormFields } = await import('../utils/novel-form');
+    const edited = structuredClone(volumes)!;
+    edited[0]!.chapters![0]!.title = '改名';
+    const formData = { ...structuredClone(snapshot), volumes: edited };
+    expect(pickChangedFormFields(formData, snapshot)).toEqual({ volumes: edited });
+  });
+
+  it('表单删除的字段（清除封面）以显式 undefined 键表示清除', async () => {
+    const { pickChangedFormFields } = await import('../utils/novel-form');
+    const { cover: _cover, ...formData } = structuredClone(snapshot);
+    const result = pickChangedFormFields(formData, snapshot);
+    expect(result).toHaveProperty('cover');
+    expect(result.cover).toBeUndefined();
+    expect(Object.keys(result)).toEqual(['cover']);
+  });
+
+  it('快照尚未捕获时保守返回完整表单数据', async () => {
+    const { pickChangedFormFields } = await import('../utils/novel-form');
+    const formData = structuredClone(snapshot);
+    expect(pickChangedFormFields(formData, null)).toBe(formData);
+  });
+
+  it('不修改传入的表单对象', async () => {
+    const { pickChangedFormFields } = await import('../utils/novel-form');
+    const formData = { ...structuredClone(snapshot), author: '新作者' };
+    pickChangedFormFields(formData, snapshot);
+    expect(formData.volumes).toEqual(volumes);
+    expect(formData.title).toBe('书');
+  });
+});
+
+describe('buildNovelUpdatesFromFormData 处理部分表单载荷', () => {
+  it('title 未携带时不写入 title 键（避免字段增量把书名删掉）', () => {
+    const updates = buildNovelUpdatesFromFormData({ author: '新作者' });
+    expect('title' in updates).toBe(false);
+    expect(updates.author).toBe('新作者');
+    expect(updates.lastEdited).toBeInstanceOf(Date);
+  });
+
+  it('显式 cover: undefined 写入 cover 键，表示清除封面', () => {
+    const updates = buildNovelUpdatesFromFormData({ cover: undefined });
+    expect('cover' in updates).toBe(true);
+    expect(updates.cover).toBeUndefined();
+  });
+
+  it('部分载荷的撤销只恢复携带的字段', async () => {
+    const { buildNovelRevertUpdates } = await import('../utils/novel-form');
+    const book = {
+      id: 'b',
+      title: '书',
+      author: '作者',
+      cover: { url: 'http://c' },
+      createdAt: new Date(0),
+      lastEdited: new Date(0),
+    } as Novel;
+    const updates = buildNovelUpdatesFromFormData({ author: '新作者', cover: undefined });
+    expect(buildNovelRevertUpdates(book, updates)).toEqual({
+      author: '作者',
+      cover: { url: 'http://c' },
+    });
+  });
+});

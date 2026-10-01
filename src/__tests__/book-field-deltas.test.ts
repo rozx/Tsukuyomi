@@ -164,6 +164,22 @@ describe('书籍元数据按字段增量保存', () => {
     expect('cover' in books.getBookById('delta-null')!).toBe(false);
   });
 
+  it('整本快照路径（同时改卷章节）中 cover: undefined 也删除封面字段', async () => {
+    await BookService.saveBook(
+      baseBook('snapshot-undef-cover', {
+        cover: { id: 'c1', url: 'https://a/1.png' } as Novel['cover'],
+      }),
+    );
+    const books = await tab();
+    await books.updateBook('snapshot-undef-cover', { cover: undefined, volumes: [] });
+
+    const db = await getDB();
+    const raw = (await db.get('books', 'snapshot-undef-cover'))!;
+    expect('cover' in raw).toBe(false);
+    expect(raw.volumes).toEqual([]);
+    expect('cover' in books.getBookById('snapshot-undef-cover')!).toBe(false);
+  });
+
   it('撤销时值为 undefined 的字段被删除而不是存成 undefined', async () => {
     await BookService.saveBook(baseBook('delta-undef', { author: '甲' }));
     const books = await tab();

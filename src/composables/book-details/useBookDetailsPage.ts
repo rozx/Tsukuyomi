@@ -45,7 +45,7 @@ import {
   formatRelativeBookDate,
 } from 'src/utils';
 import { getSelectedParagraphTranslationText } from 'src/utils/translation-utils';
-import { buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
+import { buildNovelRevertUpdates, buildNovelUpdatesFromFormData } from 'src/utils/novel-form';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { toMillis } from 'src/utils/time-utils';
 import { cloneDeep } from 'lodash';
@@ -2084,20 +2084,19 @@ function createBookDetailsPageContext() {
       saveState(translateText(settings.uiLocale, 'translationUi.editBookState'));
 
       const updates = buildNovelUpdatesFromFormData(formData);
-      const oldBook = cloneDeep(book.value);
-      await booksStore.updateBook(book.value.id, updates);
-      showBookDialog.value = false;
+      // 撤销只恢复本次表单写入的字段，不回滚保存之后其他流程写入的译文、卷章节等
+      const revertUpdates = buildNovelRevertUpdates(cloneDeep(book.value), updates);
+      // 撤销回调会进入消息历史，之后可能在另一本书的页面触发，必须锁定被保存书籍的 id
+      const savedBookId = book.value.id;
       const bookTitle = updates.title || book.value.title;
+      await booksStore.updateBook(savedBookId, updates);
+      showBookDialog.value = false;
       toast.add({
         severity: 'success',
         summary: translateText(settings.uiLocale, 'translationUi.updated'),
         detail: translateText(settings.uiLocale, 'translationUi.bookUpdated', { name: bookTitle }),
         life: 3000,
-        onRevert: async () => {
-          if (book.value) {
-            await booksStore.updateBook(book.value.id, oldBook);
-          }
-        },
+        onRevert: () => booksStore.updateBook(savedBookId, revertUpdates),
       });
     } finally {
       isSavingBook.value = false;

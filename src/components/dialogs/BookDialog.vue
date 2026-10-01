@@ -5,7 +5,7 @@ const { t: i18nT, locale } = useI18n();
 
 import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { cloneDeep, isEqual } from 'lodash';
+import { cloneDeep } from 'lodash';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
@@ -32,6 +32,7 @@ import { useChapterCharCount } from 'src/composables/useChapterCharCount';
 import { useFormDialogCloseGuard } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import { useUiStore } from 'src/stores/ui';
 import { copyTextWithToast } from 'src/utils/clipboard';
+import { pickChangedFormFields } from 'src/utils/novel-form';
 
 const props = withDefaults(
   defineProps<{
@@ -181,7 +182,12 @@ const handleSave = () => {
   if (!validateForm()) {
     return;
   }
-  emit('save', formData.value);
+  // 编辑模式只提交相对打开时快照改动的字段，避免旧值覆盖其他标签页或后台任务的改动
+  const payload =
+    props.mode === 'edit'
+      ? pickChangedFormFields(formData.value, initialFormSnapshot.value)
+      : formData.value;
+  emit('save', payload);
 };
 
 const captureSnapshot = () => {
@@ -506,10 +512,11 @@ watch(
       // 重置到默认标签页
       specialInstructionsActiveTab.value = 'translation';
       formErrors.value = {};
-      // 等待 DOM 更新后加载字符数
+      // 填充表单后立即捕获快照：编辑保存只提交与快照不同的字段，晚于用户输入捕获会吞掉改动
+      captureSnapshot();
+      // 等待 DOM 更新后加载字符数（不改写 formData）
       await nextTick();
       await loadAllVisibleChapterCharCounts();
-      captureSnapshot();
     } else {
       // 关闭时重置
       resetForm();

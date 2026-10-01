@@ -1,3 +1,4 @@
+import { isEqual } from 'lodash';
 import type { Novel } from 'src/models/novel';
 import { v4 as uuidv4 } from 'uuid';
 import type { AppLocale } from 'src/models/locale';
@@ -42,14 +43,16 @@ export function buildNovelFromFormData(formData: Partial<Novel>, targetLanguage:
  * 从 BookDialog 的 `Partial<Novel>` 表单数据构造书籍更新对象。
  * 区分"未在表单里提供"（保持现状）与"用户显式清空"（写空值），
  * 后者允许用户在编辑时清除作者 / 描述 / 标签 / 网址 / 别名等字段。
- * - `title` 来自表单，调用方负责校验非空
+ * 表单数据可以只含改动字段（见 `pickChangedFormFields`）：
+ * - `title` 仅在携带时写入，调用方负责校验非空；未携带时不能写 undefined，否则字段增量会删掉书名
+ * - 携带 `cover` 键但值为 undefined 表示用户清除了封面
  * - `lastEdited` 总是刷新为当前时间
  */
 export function buildNovelUpdatesFromFormData(formData: Partial<Novel>): Partial<Novel> {
   const updates: Partial<Novel> = {
-    title: formData.title!,
     lastEdited: new Date(),
   };
+  if (formData.title !== undefined) updates.title = formData.title;
   if (formData.alternateTitles !== undefined) {
     updates.alternateTitles = formData.alternateTitles;
   }
@@ -57,7 +60,7 @@ export function buildNovelUpdatesFromFormData(formData: Partial<Novel>): Partial
   if (formData.description !== undefined) updates.description = formData.description.trim();
   if (formData.tags !== undefined) updates.tags = formData.tags;
   if (formData.webUrl !== undefined) updates.webUrl = formData.webUrl;
-  if (formData.cover !== undefined) updates.cover = formData.cover;
+  if ('cover' in formData) updates.cover = formData.cover;
   if (formData.volumes !== undefined) updates.volumes = formData.volumes;
   if (formData.translationInstructions !== undefined) {
     updates.translationInstructions = formData.translationInstructions;
@@ -69,6 +72,27 @@ export function buildNovelUpdatesFromFormData(formData: Partial<Novel>): Partial
     updates.proofreadingInstructions = formData.proofreadingInstructions;
   }
   return updates;
+}
+
+/**
+ * 编辑书籍时只保留相对打开对话框时快照改动的字段。
+ * 对话框持有的是打开时的旧值，未改动字段若一并提交，会覆盖其他标签页或后台任务写入的新值；
+ * 未改动的 `volumes` 还会把保存推到整本快照路径。
+ * - 表单里被删除的字段（如清除封面）以显式 `undefined` 键表示清除
+ * - 快照尚未捕获（`null`）时无法判断，保守返回完整表单数据
+ * - 不修改传入的表单数据（对话框仍需用它展示）
+ */
+export function pickChangedFormFields(
+  formData: Partial<Novel>,
+  snapshot: Partial<Novel> | null,
+): Partial<Novel> {
+  if (!snapshot) return formData;
+  const keys = new Set([...Object.keys(snapshot), ...Object.keys(formData)]) as Set<keyof Novel>;
+  const changed: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (!isEqual(formData[key], snapshot[key])) changed[key] = formData[key];
+  }
+  return changed as Partial<Novel>;
 }
 
 /** 仅撤销这次表单写入的字段，后续译文、实体与正文继续保留。 */
