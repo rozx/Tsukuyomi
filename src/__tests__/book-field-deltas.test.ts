@@ -1,0 +1,266 @@
+import { describe, expect, it } from 'vitest';
+import './setup';
+import { createPinia, setActivePinia } from 'pinia';
+import { useBooksStore } from '../stores/books';
+import { BookService } from '../services/book-service';
+import { LibraryPersistence } from '../services/library-persistence';
+import { getDB } from '../utils/indexed-db';
+import { canonicalStringify } from '../utils/canonical-json';
+import type { Novel } from '../models/novel';
+
+async function tab() {
+  setActivePinia(createPinia());
+  const books = useBooksStore();
+  await books.loadBooks();
+  return books;
+}
+
+function baseBook(id: string, extra: Partial<Novel> = {}): Novel {
+  return {
+    id,
+    title: '书',
+    targetLanguage: 'zh-CN',
+    createdAt: new Date(0),
+    lastEdited: new Date(0),
+    volumes: [
+      {
+        id: 'v1',
+        title: '第一卷',
+        chapters: [
+          {
+            id: `${id}-c1`,
+            title: '第一章',
+            lastEdited: new Date(0),
+            createdAt: new Date(0),
+          },
+        ],
+      },
+    ],
+    ...extra,
+  };
+}
+
+async function storedSnapshot(id: string) {
+  const db = await getDB();
+  return {
+    book: canonicalStringify(await db.get('books', id)),
+    revision: canonicalStringify(await db.get('book-revisions', id)),
+  };
+}
+
+describe('书籍元数据按字段增量保存', () => {
+  it('两个标签页分别修改不同字段，旧快照保存后两处修改都保留', async () => {
+    await BookService.saveBook(baseBook('delta-1', { author: '旧作者', preserveIndents: true }));
+    const stale = await tab();
+    const other = await tab();
+    await other.updateBook('delta-1', {
+      author: '新作者',
+      preserveIndents: false,
+      translationChunkSize: 4000,
+      taskModelOverrides: { translation: 'model-x' },
+    });
+
+    await stale.updateBook('delta-1', { description: '新简介' });
+
+    const saved = (await BookService.getBookById('delta-1'))!;
+    expect(saved.description).toBe('新简介');
+    expect(saved.author).toBe('新作者');
+    expect(saved.preserveIndents).toBe(false);
+    expect(saved.translationChunkSize).toBe(4000);
+    expect(saved.taskModelOverrides).toEqual({ translation: 'model-x' });
+    const inStale = stale.getBookById('delta-1')!;
+    expect(inStale.author).toBe('新作者');
+    expect(inStale.preserveIndents).toBe(false);
+    expect(inStale.description).toBe('新简介');
+  });
+
+  it('表单整体提交时，与旧快照相同的字段不会覆盖其他标签页的修改', async () => {
+    await BookService.saveBook(baseBook('delta-form', { author: '甲', tags: ['a'] }));
+    const stale = await tab();
+    const other = await tab();
+    await other.updateBook('delta-form', { author: '乙', tags: ['b'] });
+
+    await stale.updateBook('delta-form', { title: '书', author: '甲', tags: ['a'], notes: [] });
+
+    const saved = (await BookService.getBookById('delta-form'))!;
+    expect(saved.author).toBe('乙');
+    expect(saved.tags).toEqual(['b']);
+    expect(saved.notes).toEqual([]);
+  });
+
+  it('另一标签页更换了封面后，旧快照保存无关字段不会把封面改回去', async () => {
+    await BookService.saveBook(
+      baseBook('delta-cover', { cover: { id: 'c1', url: 'https://a/1.png' } as Novel['cover'] }),
+    );
+    const stale = await tab();
+    const other = await tab();
+    await other.updateBook('delta-cover', {
+      cover: { id: 'c2', url: 'https://a/2.png' } as Novel['cover'],
+    });
+
+    await stale.updateBook('delta-cover', { starred: true });
+
+    const saved = (await BookService.getBookById('delta-cover'))!;
+    expect(saved.cover?.url).toBe('https://a/2.png');
+    expect(saved.starred).toBe(true);
+  });
+
+  it('cover: null 会删除封面字段', async () => {
+    await BookService.saveBook(
+      baseBook('delta-null', { cover: { id: 'c1', url: 'https://a/1.png' } as Novel['cover'] }),
+    );
+    const books = await tab();
+    await books.updateBook('delta-null', { cover: null as unknown as undefined });
+
+    const db = await getDB();
+    const raw = (await db.get('books', 'delta-null'))!;
+    expect('cover' in raw).toBe(false);
+    expect('cover' in books.getBookById('delta-null')!).toBe(false);
+  });
+
+  it('撤销时值为 undefined 的字段被删除而不是存成 undefined', async () => {
+    await BookService.saveBook(baseBook('delta-undef', { author: '甲' }));
+    const books = await tab();
+    await books.updateBook('delta-undef', { author: undefined });
+
+    const db = await getDB();
+    const raw = (await db.get('books', 'delta-undef'))!;
+    expect('author' in raw).toBe(false);
+  });
+
+  it('未提供 lastEdited 时自动刷新，调用方提供时使用调用方的值', async () => {
+    await BookService.saveBook(baseBook('delta-time'));
+    const books = await tab();
+    const before = Date.now();
+    await books.updateBook('delta-time', { description: '一' });
+    const auto = (await BookService.getBookById('delta-time'))!.lastEdited;
+    expect(auto.getTime()).toBeGreaterThanOrEqual(before);
+
+    const explicit = new Date('2020-01-02T03:04:05.000Z');
+    await books.updateBook('delta-time', { description: '二', lastEdited: explicit });
+    const saved = (await BookService.getBookById('delta-time'))!;
+    expect(saved.lastEdited.toISOString()).toBe(explicit.toISOString());
+    expect(books.getBookById('delta-time')!.lastEdited.toISOString()).toBe(explicit.toISOString());
+  });
+
+  it('补丁无实际变化时不写入、不递增修改序号', async () => {
+    await BookService.saveBook(baseBook('delta-noop', { author: '甲' }));
+    const books = await tab();
+    const before = await storedSnapshot('delta-noop');
+
+    await books.updateBook('delta-noop', {});
+    await books.updateBook('delta-noop', { title: '书', author: '甲' });
+    await books.updateBook('delta-noop', { author: '甲', lastEdited: new Date() });
+
+    expect(await storedSnapshot('delta-noop')).toEqual(before);
+  });
+
+  it('内存中已加载的章节正文在元数据保存后仍保留', async () => {
+    await BookService.saveBook(baseBook('delta-content'));
+    const books = await tab();
+    const chapter = books.getBookById('delta-content')!.volumes![0]!.chapters![0]!;
+    chapter.content = [{ id: 'p1', text: '原文', selectedTranslationId: '', translations: [] }];
+    chapter.contentLoaded = true;
+
+    await books.updateBook('delta-content', { description: '简介' });
+
+    const after = books.getBookById('delta-content')!.volumes![0]!.chapters![0]!;
+    expect(after.content).toEqual([
+      { id: 'p1', text: '原文', selectedTranslationId: '', translations: [] },
+    ]);
+    expect(after.contentLoaded).toBe(true);
+  });
+
+  it('库中不存在的书籍仍按原有方式写入', async () => {
+    const books = await tab();
+    books.books.push(baseBook('delta-absent'));
+
+    await books.updateBook('delta-absent', { description: '简介' });
+
+    const saved = (await BookService.getBookById('delta-absent'))!;
+    expect(saved.description).toBe('简介');
+    expect(saved.title).toBe('书');
+  });
+});
+
+describe('卷章结构更新仍走整本保存', () => {
+  it('同时更新卷章与术语时提交术语并写入新卷章结构', async () => {
+    await BookService.saveBook(baseBook('snap-1'));
+    const books = await tab();
+    const volumes = [
+      ...books.getBookById('snap-1')!.volumes!,
+      { id: 'v2', title: '第二卷', chapters: [] },
+    ];
+    await books.updateBook('snap-1', {
+      volumes,
+      terminologies: [
+        {
+          id: 't1',
+          name: 'Term',
+          translation: { id: 'tt', translation: '术语', aiModelId: 'm' },
+        },
+      ],
+    });
+
+    const saved = (await BookService.getBookById('snap-1'))!;
+    expect(saved.volumes?.map((volume) => volume.id)).toEqual(['v1', 'v2']);
+    expect(saved.terminologies?.map((term) => term.id)).toEqual(['t1']);
+    expect(books.getBookById('snap-1')!.terminologies?.map((term) => term.id)).toEqual(['t1']);
+  });
+
+  it('只更新术语且要求保存正文时提交术语后不再整本写入', async () => {
+    await BookService.saveBook(baseBook('snap-2'));
+    const books = await tab();
+    await books.updateBook(
+      'snap-2',
+      {
+        terminologies: [
+          {
+            id: 't2',
+            name: 'Term',
+            translation: { id: 'tt', translation: '术语', aiModelId: 'm' },
+          },
+        ],
+      },
+      { saveChapterContent: true },
+    );
+
+    const saved = (await BookService.getBookById('snap-2'))!;
+    expect(saved.terminologies?.map((term) => term.id)).toEqual(['t2']);
+    expect(books.getBookById('snap-2')!.volumes?.[0]?.chapters?.[0]?.id).toBe('snap-2-c1');
+  });
+});
+
+describe('LibraryPersistence.updateBookFields', () => {
+  it('在事务内读取最新记录并只应用补丁字段，返回已提交记录', async () => {
+    await BookService.saveBook(baseBook('lp-1', { author: '甲', description: '旧' }));
+    const db = await getDB();
+    const result = await LibraryPersistence.updateBookFields(db, 'lp-1', {
+      description: '新',
+      lastEdited: new Date(5),
+    });
+    expect(result?.book.author).toBe('甲');
+    expect(result?.book.description).toBe('新');
+    const raw = (await db.get('books', 'lp-1'))!;
+    expect(raw.description).toBe('新');
+    expect(raw.volumes?.[0]?.chapters?.[0]?.id).toBe('lp-1-c1');
+  });
+
+  it('修改目标语言时返回全书章节作为待维护变更', async () => {
+    await BookService.saveBook(baseBook('lp-2'));
+    const db = await getDB();
+    const result = await LibraryPersistence.updateBookFields(db, 'lp-2', {
+      targetLanguage: 'en-US',
+    });
+    expect(result?.book.targetLanguage).toBe('en-US');
+    expect(result?.changes.get('lp-2')).toEqual(['lp-2-c1']);
+  });
+
+  it('记录不存在时返回 undefined 且不写入', async () => {
+    const db = await getDB();
+    expect(await LibraryPersistence.updateBookFields(db, 'missing', { title: 'x' })).toBe(
+      undefined,
+    );
+    expect(await db.get('books', 'missing')).toBe(undefined);
+  });
+});

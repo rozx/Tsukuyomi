@@ -15,6 +15,7 @@ import { deleteCacheEntry } from 'src/utils/chapter-content-loader';
 import type { AppLocale } from 'src/models/locale';
 import type { ParagraphTranslationEdit } from 'src/services/localization/paragraph-edit';
 import type { TitleEdit } from 'src/services/localization/title-edit';
+import { buildBookFieldPatch } from 'src/services/book-field-patch';
 
 function collectRemovedChapterIds(
   previousVolumes: Volume[] | undefined,
@@ -171,6 +172,123 @@ async function saveBookMetadata(
   return stored?.targetLanguage
     ? { ...updatedBook, targetLanguage: stored.targetLanguage }
     : updatedBook;
+}
+
+interface UpdateBookOptions {
+  persist?: boolean;
+  saveChapterContent?: boolean;
+  targetLanguage?: AppLocale;
+  expectedBookLanguage?: AppLocale;
+}
+
+/** 不涉及卷章结构和正文的更新走字段增量保存 */
+function isFieldUpdate(updates: Partial<Novel>, options?: UpdateBookOptions): boolean {
+  return options?.persist !== false && !updates.volumes && options?.saveChapterContent !== true;
+}
+
+/** 经 editEntities 按 revision 提交术语/角色修改 */
+function editBookEntities(
+  existingBook: Novel,
+  updates: Partial<Novel>,
+  options?: UpdateBookOptions,
+): Promise<Novel> {
+  return BookService.editEntities(
+    existingBook,
+    updates,
+    options?.targetLanguage ?? existingBook.targetLanguage ?? 'zh-CN',
+    options?.expectedBookLanguage,
+  );
+}
+
+/**
+ * 普通元数据更新：实体走 editEntities，其余字段只把相对内存快照真正改动的部分
+ * 应用到事务内读取的最新记录，持有旧快照的标签页不会覆盖其他标签页刚写入的字段。
+ * @returns 已提交的记录；库中没有该书时返回 undefined，由调用方回退整本写入
+ */
+async function saveBookFieldUpdates(
+  existingBook: Novel,
+  updates: Partial<Novel>,
+  options?: UpdateBookOptions,
+): Promise<Novel | undefined> {
+  let committed: Novel | undefined;
+  if (updates.terminologies !== undefined || updates.characterSettings !== undefined) {
+    committed = await editBookEntities(existingBook, updates, options);
+  }
+  const patch = buildBookFieldPatch(existingBook, updates);
+  const { lastEdited: _time, ...fields } = patch;
+  if (committed && Object.keys(fields).length === 0) return committed;
+  return (await BookService.updateBookFields(existingBook.id, patch)) ?? committed;
+}
+
+/** 已提交记录不含章节正文：内存中的卷章（含已加载正文）原样保留 */
+function withMemoryVolumes(committed: Novel, existingBook: Novel): Novel {
+  return existingBook.volumes ? { ...committed, volumes: existingBook.volumes } : committed;
+}
+
+/** 在内存快照上合并更新；更新了 volumes 时保留现有章节正文（独立 IndexedDB 存储不应丢失） */
+async function mergeBookUpdates(existingBook: Novel, updates: Partial<Novel>): Promise<Novel> {
+  // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
+  const updatedBook = {
+    ...existingBook,
+    ...updates,
+    lastEdited: updates.lastEdited ?? new Date(),
+  } as Novel;
+  // 如果 cover 是 null，删除该属性
+  if ('cover' in updates && updates.cover === null) {
+    delete updatedBook.cover;
+  }
+  if (updates.volumes && existingBook.volumes) {
+    updatedBook.volumes = await preserveChapterContentsOnVolumesUpdate(
+      existingBook.volumes,
+      updates.volumes,
+    );
+  }
+  return updatedBook;
+}
+
+/**
+ * 整本保存路径中的实体编辑：先经 editEntities 提交术语/角色。
+ * @returns complete 为 true 表示没有其他字段需要整本保存
+ */
+async function commitSnapshotEntityEdit(
+  existingBook: Novel,
+  updates: Partial<Novel>,
+  options?: UpdateBookOptions,
+): Promise<{ book: Novel; complete: boolean }> {
+  const committed = await editBookEntities(existingBook, updates, options);
+  const {
+    terminologies: _terms,
+    characterSettings: _characters,
+    lastEdited: _time,
+    ...otherUpdates
+  } = updates;
+  const book = { ...committed, ...otherUpdates };
+  const volumes = updates.volumes ?? committed.volumes;
+  if (volumes) {
+    book.volumes = await preserveChapterContentsOnVolumesUpdate(
+      existingBook.volumes ?? [],
+      volumes,
+    );
+  }
+  return { book, complete: Object.keys(otherUpdates).length === 0 };
+}
+
+/** 卷章结构等整本保存路径（含正文），保持原有的整本写入语义 */
+async function persistBookSnapshot(
+  existingBook: Novel,
+  updatedBook: Novel,
+  updates: Partial<Novel>,
+  options?: UpdateBookOptions,
+): Promise<Novel> {
+  let book = updatedBook;
+  if (updates.terminologies !== undefined || updates.characterSettings !== undefined) {
+    const edited = await commitSnapshotEntityEdit(existingBook, updates, options);
+    if (edited.complete) return edited.book;
+    book = edited.book;
+  }
+  // 优化：只更新元数据时跳过保存章节内容
+  const saveChapterContent = options?.saveChapterContent ?? Boolean(updates.volumes);
+  return saveBookMetadata(book, existingBook, updates, saveChapterContent);
 }
 
 export const useBooksStore = defineStore('books', {
@@ -352,81 +470,23 @@ export const useBooksStore = defineStore('books', {
     async updateBook(
       id: string,
       updates: Partial<Novel>,
-      options?: {
-        persist?: boolean;
-        saveChapterContent?: boolean;
-        targetLanguage?: AppLocale;
-        expectedBookLanguage?: AppLocale;
-      },
+      options?: UpdateBookOptions,
     ): Promise<void> {
       const index = this.books.findIndex((book) => book.id === id);
-      if (index < 0) return;
       const existingBook = this.books[index];
-      const persist = options?.persist !== false;
-      const removedChapterIds = collectRemovedChapterIds(existingBook?.volumes, updates.volumes);
-
-      // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
-      const updatesWithLastEdited: Partial<Novel> = {
-        ...updates,
-        lastEdited: updates.lastEdited ?? new Date(),
-      };
-      let updatedBook = { ...existingBook, ...updatesWithLastEdited } as Novel;
-      // 如果 cover 是 null，删除该属性
-      if ('cover' in updates && updates.cover === null) {
-        delete updatedBook.cover;
-      }
-
-      // 如果更新了 volumes，需要保留现有章节的 content（独立 IndexedDB 存储不应丢失）
-      if (updates.volumes && existingBook && existingBook.volumes) {
-        updatedBook.volumes = await preserveChapterContentsOnVolumesUpdate(
-          existingBook.volumes,
-          updates.volumes,
-        );
-      }
-
-      if (persist) {
-        const entityEdit =
-          updates.terminologies !== undefined || updates.characterSettings !== undefined;
-        if (entityEdit && existingBook) {
-          const committed = await BookService.editEntities(
-            existingBook,
-            updates,
-            options?.targetLanguage ?? existingBook.targetLanguage ?? 'zh-CN',
-            options?.expectedBookLanguage,
-          );
-          const {
-            terminologies: _terms,
-            characterSettings: _characters,
-            lastEdited: _time,
-            ...otherUpdates
-          } = updates;
-          updatedBook = { ...committed, ...otherUpdates };
-          if (committed.volumes && existingBook.volumes && !updates.volumes) {
-            updatedBook.volumes = await preserveChapterContentsOnVolumesUpdate(
-              existingBook.volumes,
-              committed.volumes,
-            );
-          } else if (updates.volumes) {
-            updatedBook.volumes = await preserveChapterContentsOnVolumesUpdate(
-              existingBook.volumes ?? [],
-              updates.volumes,
-            );
-          }
-          if (Object.keys(otherUpdates).length === 0) {
-            this.books[index] = updatedBook;
-            return;
-          }
+      if (!existingBook) return;
+      if (isFieldUpdate(updates, options)) {
+        const committed = await saveBookFieldUpdates(existingBook, updates, options);
+        if (committed) {
+          const current = this.books.findIndex((book) => book.id === id);
+          if (current >= 0) this.books[current] = withMemoryVolumes(committed, existingBook);
+          return;
         }
-        // 优化：只更新元数据（如 terminologies、characterSettings）时跳过保存章节内容
-        const isOnlyMetadataUpdate = !updates.volumes;
-        const saveChapterContent =
-          options?.saveChapterContent ?? (isOnlyMetadataUpdate ? false : true);
-        updatedBook = await saveBookMetadata(
-          updatedBook,
-          existingBook,
-          updates,
-          saveChapterContent,
-        );
+      }
+      const removedChapterIds = collectRemovedChapterIds(existingBook.volumes, updates.volumes);
+      let updatedBook = await mergeBookUpdates(existingBook, updates);
+      if (options?.persist !== false) {
+        updatedBook = await persistBookSnapshot(existingBook, updatedBook, updates, options);
         await cleanupRemovedChapterData(id, removedChapterIds);
       }
       this.books[index] = updatedBook;

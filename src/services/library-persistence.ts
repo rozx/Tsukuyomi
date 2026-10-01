@@ -35,6 +35,8 @@ import type {
 } from './localization/paragraph-edit';
 import { applyTitleEdit } from './localization/title-edit';
 import type { TitleEdit } from './localization/title-edit';
+import { applyBookFieldPatch } from './book-field-patch';
+import type { BookFieldPatch } from './book-field-patch';
 
 const STORES = [
   'books',
@@ -628,6 +630,34 @@ export class LibraryPersistence {
       },
       'ENTITY_EDIT_CONFLICT',
     );
+  }
+
+  /**
+   * 按字段增量更新书籍元数据：在读写事务内读取最新记录，只应用补丁字段，
+   * 不写回调用方持有的旧快照。补丁无实际变化时不写入、不递增修改序号。
+   * @returns 已提交的记录与需维护的章节；库中没有该书时返回 undefined
+   */
+  static async updateBookFields(
+    db: IDBPDatabase<TsukuyomiDB>,
+    bookId: string,
+    patch: BookFieldPatch,
+  ): Promise<{ book: Novel; changes: Changes } | undefined> {
+    const { lastEdited, ...fields } = patch;
+    return transaction(db, async (tx) => {
+      const prior = await tx.objectStore('books').get(bookId);
+      if (!prior) return undefined;
+      const next = serializeBookRecord(applyBookFieldPatch(prior, fields));
+      // 卷章原样保留：重新剥离正文会改写已存的 contentLoaded 约定，造成无意义写入
+      if (prior.volumes) next.volumes = prior.volumes;
+      const changes: Changes = new Map();
+      if (semanticBook(prior) === semanticBook(next)) return { book: prior, changes };
+      next.lastEdited = new Date(lastEdited ?? Date.now()).toISOString() as unknown as Date;
+      await tx.objectStore('books').put(next);
+      await bumpBookRevision(tx.objectStore('book-revisions'), bookId);
+      if ((prior.targetLanguage ?? 'zh-CN') !== (next.targetLanguage ?? 'zh-CN'))
+        changes.set(bookId, chapterIds(next));
+      return { book: next, changes };
+    });
   }
 
   /**
