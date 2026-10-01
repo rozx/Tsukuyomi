@@ -20,6 +20,11 @@ function formatNumber(count: number | null, locale: AppLocale = 'zh-CN'): string
  * @param count 字符数
  * @returns 格式化后的字符串（如：3.2k 字, 6.7万 字）
  */
+/** 聊天消息等处的时:分，按界面语言的区域格式显示。 */
+export function formatClockTime(timestamp: number, locale: AppLocale): string {
+  return new Date(timestamp).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
+}
+
 export function formatCharCount(count: number | null, locale: AppLocale = 'zh-CN'): string {
   const formatted = formatNumber(count, locale);
   return formatted === '-' ? '-' : `${formatted}`;

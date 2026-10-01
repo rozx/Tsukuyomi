@@ -4,8 +4,8 @@ import type { SyncRevision } from 'src/models/localized-data';
 import {
   appendLanguageTranslation,
   removeLanguageTranslation,
+  reviseLanguageTranslation,
   selectLanguageTranslation,
-  updateLanguageTranslation,
 } from './selection';
 import { normalizeParagraphLanguages } from './normalize';
 import { assertNewRevision } from './revision';
@@ -36,6 +36,14 @@ function restoreLanguageHistory(
 ): Paragraph {
   if (edit.translations.some((value) => (value.language ?? 'zh-CN') !== language))
     throw new Error('TRANSLATION_LANGUAGE_MISMATCH');
+  // 恢复的是旧文本但沿用原 ID：内容与当前版本不同时盖上本次 revision，否则合并时
+  // 另一设备上修改过的同 ID 副本会以较新的 revision 把撤销结果改回去
+  const current = new Map(paragraph.translations.map((value) => [value.id, value]));
+  const restored = edit.translations.map((value) =>
+    current.has(value.id) && current.get(value.id)!.translation !== value.translation
+      ? { ...value, revision: { ...revision } }
+      : value,
+  );
   // 与其他选用写入路径一致：版本号必须单调递增，避免重放旧编辑让选用版本倒退
   assertNewRevision(revision, paragraph.selectedTranslations?.[language]?.revision);
   const selectedTranslations = {
@@ -46,7 +54,7 @@ function restoreLanguageHistory(
     ...paragraph,
     translations: [
       ...paragraph.translations.filter((value) => (value.language ?? 'zh-CN') !== language),
-      ...edit.translations,
+      ...restored,
     ],
     selectedTranslations,
     selectedTranslationId: selectedTranslations['zh-CN']?.value ?? '',
@@ -88,7 +96,13 @@ export function applyParagraphTranslationEdits(
           : edit.type === 'restore-language'
             ? restoreLanguageHistory(paragraph, language, edit, revision, updatedAt)
             : edit.type === 'update'
-              ? updateLanguageTranslation(paragraph, language, edit.translationId, edit.text)
+              ? reviseLanguageTranslation(
+                  paragraph,
+                  language,
+                  edit.translationId,
+                  edit.text,
+                  revision,
+                )
               : selectLanguageTranslation(
                   paragraph,
                   language,
