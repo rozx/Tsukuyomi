@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import './setup';
 import { createPinia, setActivePinia } from 'pinia';
 import { useBooksStore } from '../stores/books';
@@ -242,6 +242,55 @@ describe('书籍元数据按字段增量保存', () => {
     const saved = (await BookService.getBookById('delta-absent'))!;
     expect(saved.description).toBe('简介');
     expect(saved.title).toBe('书');
+  });
+});
+
+describe('实体与其他元数据字段同时更新', () => {
+  it('先提交术语，再按字段增量保存其余字段，旧快照不覆盖其他标签页的修改', async () => {
+    await BookService.saveBook(baseBook('mixed-1', { author: '甲' }));
+    const stale = await tab();
+    const other = await tab();
+    await other.updateBook('mixed-1', { author: '乙', preserveIndents: false });
+    const chapter = stale.getBookById('mixed-1')!.volumes![0]!.chapters![0]!;
+    chapter.content = [{ id: 'p1', text: '原文', selectedTranslationId: '', translations: [] }];
+
+    await stale.updateBook('mixed-1', {
+      terminologies: [
+        { id: 't1', name: 'Term', translation: { id: 'tt', translation: '术语', aiModelId: 'm' } },
+      ],
+      description: '新简介',
+    });
+
+    const saved = (await BookService.getBookById('mixed-1'))!;
+    expect(saved.terminologies?.map((term) => term.id)).toEqual(['t1']);
+    expect(saved.description).toBe('新简介');
+    expect(saved.author).toBe('乙');
+    expect(saved.preserveIndents).toBe(false);
+    const inMemory = stale.getBookById('mixed-1')!;
+    expect(inMemory.terminologies?.map((term) => term.id)).toEqual(['t1']);
+    expect(inMemory.description).toBe('新简介');
+    expect(inMemory.author).toBe('乙');
+    expect(inMemory.volumes![0]!.chapters![0]!.content?.[0]?.id).toBe('p1');
+  });
+
+  it('只有实体修改、其余字段与快照相同时只提交实体，不再额外写入', async () => {
+    await BookService.saveBook(baseBook('mixed-2', { author: '甲' }));
+    const books = await tab();
+    const update = vi.spyOn(BookService, 'updateBookFields');
+
+    await books.updateBook('mixed-2', {
+      terminologies: [
+        { id: 't2', name: 'Term', translation: { id: 'tt', translation: '术语', aiModelId: 'm' } },
+      ],
+      author: '甲',
+    });
+
+    expect(update).not.toHaveBeenCalled();
+    update.mockRestore();
+    expect((await BookService.getBookById('mixed-2'))!.terminologies?.map((t) => t.id)).toEqual([
+      't2',
+    ]);
+    expect(books.getBookById('mixed-2')!.terminologies?.map((t) => t.id)).toEqual(['t2']);
   });
 });
 

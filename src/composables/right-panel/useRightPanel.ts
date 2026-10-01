@@ -7,6 +7,7 @@ import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useSettingsStore } from 'src/stores/settings';
+import { formatClockTime } from 'src/utils/format';
 import { translateText } from 'src/i18n/translate';
 import type { AppLocale } from 'src/models/locale';
 import {
@@ -264,12 +265,8 @@ export function useRightPanel() {
   };
 
   // 时间显示
-  const formatMessageTime = (timestamp: number): string => {
-    return new Date(timestamp).toLocaleTimeString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const formatMessageTime = (timestamp: number): string =>
+    formatClockTime(timestamp, settingsStore.uiLocale);
 
   // 待办事项加载
   const loadTodos = () => {

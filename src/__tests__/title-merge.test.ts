@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import './setup';
 import { mergeTitlePreservingTranslation } from '../services/localization/title-merge';
 import { normalizeNameTranslations } from '../services/localization/normalize';
 
