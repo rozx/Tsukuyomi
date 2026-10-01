@@ -70,6 +70,14 @@ export interface GistManifest {
    * 超过 TTL 的墓碑会被修剪。
    */
   tombstones?: Record<string, Tombstone>;
+  /**
+   * 升级围栏：大书库升级到当前协议时，第一批只写入带此字段的 manifest
+   *（schemaVersion 已是新版本，entries 仍描述旧内容），再分批上传内容，
+   * 最后一批写入不带此字段的正式 manifest。值为升级前的协议版本。
+   * 旧版客户端看到更高的 schemaVersion 会停止同步；新版客户端看到此字段时
+   * 视远端仍为旧协议，读取全部条目并在下次上传时完成升级。
+   */
+  pendingUpgradeFrom?: number;
 }
 
 /**

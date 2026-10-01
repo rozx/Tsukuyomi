@@ -33,7 +33,11 @@ import { recordStructureBaselines } from 'src/services/sync-chapter-baselines';
 import { BookService } from 'src/services/book-service';
 import type { Novel } from 'src/models/novel';
 import { v4 } from 'uuid';
-import { parseGistManifest, UnsupportedManifestVersionError } from 'src/utils/manifest-protocol';
+import {
+  effectiveSchemaVersion,
+  parseGistManifest,
+  UnsupportedManifestVersionError,
+} from 'src/utils/manifest-protocol';
 import type { AppLocale } from 'src/models/locale';
 import type { MessageKey } from 'src/i18n/types';
 import { translateText } from 'src/i18n/translate';
@@ -497,7 +501,9 @@ export function useSyncExecutor() {
         await settingsStore.updateKnownRemoteHashes(hashes);
         await settingsStore.updateKnownRemoteEntries(entries);
         if (failedKeys.size === 0)
-          await settingsStore.updateKnownRemoteSchemaVersion(downloadResult.manifest.schemaVersion);
+          await settingsStore.updateKnownRemoteSchemaVersion(
+            effectiveSchemaVersion(downloadResult.manifest),
+          );
       } catch (error) {
         console.error('[useSyncExecutor] 保存 knownRemoteHashes 失败:', error);
       }

@@ -35,5 +35,19 @@ export function parseGistManifest(content: string): GistManifest {
   if (version > MANIFEST_SCHEMA_VERSION) throw new UnsupportedManifestVersionError(version);
   if (!root.entries || typeof root.entries !== 'object' || Array.isArray(root.entries))
     throw new ManifestProtocolError('MANIFEST_ENTRIES_MISSING', 'entriesMissing');
+  const pending = root.pendingUpgradeFrom;
+  if (
+    pending !== undefined &&
+    (typeof pending !== 'number' ||
+      !Number.isSafeInteger(pending) ||
+      pending < 1 ||
+      pending >= MANIFEST_SCHEMA_VERSION)
+  )
+    throw new ManifestProtocolError('MANIFEST_INVALID', 'invalid');
   return value as GistManifest;
+}
+
+/** 远端实际所处的协议版本：升级围栏未完成时按升级前版本处理。 */
+export function effectiveSchemaVersion(manifest: GistManifest): number {
+  return manifest.pendingUpgradeFrom ?? manifest.schemaVersion;
 }

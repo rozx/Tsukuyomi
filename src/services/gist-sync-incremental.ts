@@ -21,7 +21,11 @@ import {
   buildMemoriesPayload,
   diffManifests,
 } from 'src/services/sync-manifest-builder';
-import { parseGistManifest, UnsupportedManifestVersionError } from 'src/utils/manifest-protocol';
+import {
+  effectiveSchemaVersion,
+  parseGistManifest,
+  UnsupportedManifestVersionError,
+} from 'src/utils/manifest-protocol';
 import type { AppLocale } from 'src/models/locale';
 import type { MessageKey } from 'src/i18n/types';
 import { translateText } from 'src/i18n/translate';
@@ -1079,7 +1083,7 @@ export async function downloadWithManifest(
   const diff = diffManifests(remoteManifest, buildKnownAsManifest(config.knownRemoteHashes));
 
   // 仅需要反序列化 changed + added（即远端有而本地尚未见过的）
-  const needsSchemaUpgrade = remoteManifest.schemaVersion < MANIFEST_SCHEMA_VERSION;
+  const needsSchemaUpgrade = effectiveSchemaVersion(remoteManifest) < MANIFEST_SCHEMA_VERSION;
   const toRead = needsSchemaUpgrade
     ? Object.keys(remoteManifest.entries)
     : [...diff.changed, ...diff.added];
@@ -1147,7 +1151,7 @@ export async function uploadIncremental(
   if (remoteManifest && remoteManifest.schemaVersion > MANIFEST_SCHEMA_VERSION)
     throw new UnsupportedManifestVersionError(remoteManifest.schemaVersion);
   const upgrading = remoteManifest
-    ? remoteManifest.schemaVersion < MANIFEST_SCHEMA_VERSION
+    ? effectiveSchemaVersion(remoteManifest) < MANIFEST_SCHEMA_VERSION
     : config.knownRemoteSchemaVersion !== MANIFEST_SCHEMA_VERSION;
 
   // 整个 uploadIncremental 对外以统一的 0-100 进度标度输出——executor 把它
@@ -1249,7 +1253,9 @@ export async function uploadIncremental(
     message: progressText(locale, 'uploading'),
   });
 
-  const additionBatches = upgrading ? [{ ...allFiles }] : buildAdditionBatches(allFiles);
+  const additionBatches = upgrading
+    ? buildUpgradeBatches(allFiles, remoteManifest)
+    : buildAdditionBatches(allFiles);
   appendDeletionsAndManifestToFinalBatch(additionBatches, allFiles, localManifest);
 
   const {
@@ -1335,6 +1341,33 @@ async function serializeEntriesIntoFiles(
   }
 }
 
+// 单批请求体字节预算：GitHub Gist PATCH 的有效请求上限经验值约为 8-10 MB，我们取 4 MB 留足余量
+const BATCH_BYTE_BUDGET = 4 * 1024 * 1024;
+
+/**
+ * 协议升级的批次：整个书库装得进一个字节预算时仍一次原子 PATCH（不受文件数限制）。
+ * 装不下且远端已有 manifest 时，先单独写入升级围栏 manifest——旧版客户端看到新
+ * schemaVersion 即停止同步，新版客户端按旧协议读取并接手完成升级——再按普通预算
+ * 分批上传内容，正式 manifest 与删除由调用方追加到最后一批。
+ * 远端没有 manifest（旧布局或空 Gist）时没有可保留的旧条目，按普通分批上传。
+ */
+function buildUpgradeBatches(
+  allFiles: Record<string, { content: string } | null>,
+  remoteManifest: GistManifest | undefined,
+): Array<Record<string, { content: string } | null>> {
+  const single = buildAdditionBatches(allFiles, Number.POSITIVE_INFINITY);
+  if (single.length <= 1) return single;
+  const batches = buildAdditionBatches(allFiles);
+  if (!remoteManifest) return batches;
+  const fence: GistManifest = {
+    ...remoteManifest,
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
+    updatedAt: new Date().toISOString(),
+    pendingUpgradeFrom: effectiveSchemaVersion(remoteManifest),
+  };
+  return [{ [MANIFEST_FILE_NAME]: { content: JSON.stringify(fence) } }, ...batches];
+}
+
 /**
  * 把 allFiles 中的新增/变更按字节预算 + 文件数双重上限切分为多个 PATCH 批次。
  *
@@ -1343,10 +1376,8 @@ async function serializeEntriesIntoFiles(
  */
 function buildAdditionBatches(
   allFiles: Record<string, { content: string } | null>,
+  BATCH_SIZE = 10,
 ): Array<Record<string, { content: string } | null>> {
-  const BATCH_SIZE = 10;
-  // 单批请求体字节预算：GitHub Gist PATCH 的有效请求上限经验值约为 8-10 MB，我们取 4 MB 留足余量
-  const BATCH_BYTE_BUDGET = 4 * 1024 * 1024;
   const additions = Object.entries(allFiles).filter(
     (kv): kv is [string, { content: string }] => kv[1] !== null,
   );

@@ -484,3 +484,122 @@ it('已知未来协议但缺少远端快照时不能重建低版本 manifest', a
   ).rejects.toThrow('较新版本');
   expect(patches).toEqual([]);
 });
+
+describe('大书库 v4 升级：先写围栏 manifest 再分批', () => {
+  const BUDGET = 4 * 1024 * 1024;
+  // 随机内容抵消压缩，让序列化后的总量超过单批字节预算
+  function bigNovel(id: string, bytes: number) {
+    const random = new Uint8Array(bytes / 2);
+    for (let i = 0; i < random.length; i += 65536)
+      crypto.getRandomValues(random.subarray(i, Math.min(i + 65536, random.length)));
+    const text = Array.from(random, (b) => b.toString(16).padStart(2, '0')).join('');
+    return { ...makeNovel(id), description: text };
+  }
+  function batchBytes(files: Record<string, { content: string } | null>): number {
+    return Object.entries(files).reduce(
+      (sum, [name, file]) => sum + name.length + (file?.content.length ?? 0),
+      0,
+    );
+  }
+
+  it('超过单批预算时第一批只写 schemaVersion 4 的围栏 manifest，内容分批，最后写正式 manifest', async () => {
+    const payload = makePayload({
+      novels: [bigNovel('a', 3_000_000), bigNovel('b', 3_000_000)],
+    });
+    const local = await buildLocalManifest({
+      appSettings: payload.appSettings,
+      aiModels: [],
+      coverHistory: [],
+      novels: payload.novels,
+      memoriesByBook: {},
+    });
+    const old: GistManifest = { ...local, schemaVersion: 3 };
+    const patches: Record<string, { content: string } | null>[] = [];
+    const result = await uploadIncremental(
+      makeOctokit((params) => patches.push(params.files)),
+      makeConfig({ knownRemoteHashes: manifestToHashes(local), knownRemoteSchemaVersion: 3 }),
+      payload,
+      { 'manifest.json': { content: JSON.stringify(old) } },
+    );
+
+    expect(patches.length).toBeGreaterThan(2);
+    expect(Object.keys(patches[0]!)).toEqual([MANIFEST_FILE_NAME]);
+    const fence = JSON.parse(patches[0]![MANIFEST_FILE_NAME]!.content) as GistManifest;
+    expect(fence.schemaVersion).toBe(4);
+    expect(fence.pendingUpgradeFrom).toBe(3);
+    expect(fence.entries).toEqual(old.entries);
+    for (const batch of patches.slice(1))
+      expect(batchBytes(batch)).toBeLessThanOrEqual(BUDGET * 1.1);
+    const last = patches[patches.length - 1]!;
+    const final = JSON.parse(last[MANIFEST_FILE_NAME]!.content) as GistManifest;
+    expect(final.schemaVersion).toBe(4);
+    expect(final.pendingUpgradeFrom).toBeUndefined();
+    expect(patches.slice(1, -1).every((batch) => !(MANIFEST_FILE_NAME in batch))).toBe(true);
+    expect(result.manifest.pendingUpgradeFrom).toBeUndefined();
+  });
+
+  it('远端是未完成升级的围栏且内容装得下一批时，一次 PATCH 完成升级', async () => {
+    const payload = makePayload({ novels: [makeNovel('small')] });
+    const local = await buildLocalManifest({
+      appSettings: payload.appSettings,
+      aiModels: [],
+      coverHistory: [],
+      novels: payload.novels,
+      memoriesByBook: {},
+    });
+    const fence: GistManifest = { ...local, schemaVersion: 4, pendingUpgradeFrom: 3 };
+    const patches: Record<string, { content: string } | null>[] = [];
+    await uploadIncremental(
+      makeOctokit((params) => patches.push(params.files)),
+      makeConfig({ knownRemoteHashes: manifestToHashes(local), knownRemoteSchemaVersion: 4 }),
+      payload,
+      { 'manifest.json': { content: JSON.stringify(fence) } },
+    );
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!['novel-small.json']).toBeDefined();
+    const final = JSON.parse(patches[0]![MANIFEST_FILE_NAME]!.content) as GistManifest;
+    expect(final.pendingUpgradeFrom).toBeUndefined();
+  });
+
+  it('远端缺少 manifest 且超过预算时按普通分批上传，manifest 在最后一批', async () => {
+    const payload = makePayload({
+      novels: [bigNovel('x', 3_000_000), bigNovel('y', 3_000_000)],
+    });
+    const patches: Record<string, { content: string } | null>[] = [];
+    await uploadIncremental(
+      makeOctokit((params) => patches.push(params.files)),
+      Object.fromEntries(
+        Object.entries(makeConfig()).filter(([key]) => key !== 'knownRemoteSchemaVersion'),
+      ) as unknown as SyncConfig,
+      payload,
+      { 'novel-old.json': { content: '{}' } },
+    );
+    expect(patches.length).toBeGreaterThan(1);
+    for (const batch of patches) expect(batchBytes(batch)).toBeLessThanOrEqual(BUDGET * 1.1);
+    expect(patches.slice(0, -1).every((batch) => !(MANIFEST_FILE_NAME in batch))).toBe(true);
+    expect(patches[patches.length - 1]![MANIFEST_FILE_NAME]).toBeDefined();
+  });
+
+  it('下载到围栏 manifest 时视为仍需升级，忽略已知 hash 读取全部条目', async () => {
+    const novel = makeNovel('fenced');
+    const manifest: GistManifest = {
+      schemaVersion: 4,
+      pendingUpgradeFrom: 3,
+      updatedAt: new Date(0).toISOString(),
+      entries: { 'novel:fenced': { hash: 'same', lastEdited: new Date(0).toISOString() } },
+    };
+    mockFetchJson({
+      files: {
+        'manifest.json': { content: JSON.stringify(manifest) },
+        'novel-fenced.json': { content: JSON.stringify(novel) },
+      },
+      updated_at: '',
+    });
+    const result = await downloadWithManifest(
+      makeConfig({ knownRemoteHashes: { 'novel:fenced': 'same' } }),
+    );
+    if (result.skipped) throw new Error('unexpected skipped');
+    expect(result.needsSchemaUpgrade).toBe(true);
+    expect(result.changedEntries['novel:fenced']).toBeDefined();
+  });
+});

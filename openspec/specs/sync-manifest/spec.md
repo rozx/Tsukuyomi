@@ -137,8 +137,16 @@ The manifest SHALL include a numeric `schemaVersion` field. The current version 
 
 - **GIVEN** a supported schema 1–3 Gist contains old-format books
 - **WHEN** the upgraded client first publishes schema 4
-- **THEN** the manifest and all book files requiring migration SHALL be published in one PATCH; unchanged content hashes alone MUST NOT skip the protocol upgrade
+- **THEN** the manifest and all book files requiring migration SHALL be published in one PATCH when they fit within one PATCH byte budget; unchanged content hashes alone MUST NOT skip the protocol upgrade
 - **AND** unreadable required books or a failed PATCH SHALL prevent the migration being marked complete
+
+#### Scenario: Protocol migration larger than one PATCH
+
+- **GIVEN** a schema 1–3 Gist whose migration payload exceeds one PATCH byte budget
+- **WHEN** the upgraded client publishes schema 4
+- **THEN** the first PATCH SHALL contain only a fence `manifest.json` with `schemaVersion: 4`, `pendingUpgradeFrom` set to the previous schema and the previous entries unchanged; content SHALL then be uploaded in budgeted batches, and the final batch SHALL write the complete schema 4 manifest without `pendingUpgradeFrom` together with deletions
+- **AND** older clients SHALL stop on the fence as a newer schema, while schema 4 clients SHALL treat a manifest carrying `pendingUpgradeFrom` as still requiring the upgrade: read all entries regardless of cached hashes, record the previous schema as the known remote schema, and complete the upgrade on their next upload
+- **AND** a Gist without any manifest (legacy layout or empty) whose payload exceeds one PATCH SHALL be uploaded in ordinary budgeted batches with the manifest in the final batch
 
 #### Scenario: Local actor metadata is not exported
 
