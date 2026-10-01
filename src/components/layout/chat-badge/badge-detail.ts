@@ -1,3 +1,4 @@
+import type { AppLocale } from 'src/models/locale';
 import type { MessageAction } from 'src/stores/chat-sessions';
 
 /**
@@ -24,5 +25,8 @@ export interface BadgeDetailProps {
   extAction: MessageActionExt;
   getShortId: (value: string | undefined, length?: number) => string;
   getTextPreview: (value: string | undefined, maxLength?: number) => string;
-  getChapterTitleForAction: (chapterId: string | undefined) => string | undefined;
+  getChapterTitleForAction: (
+    chapterId: string | undefined,
+    language?: AppLocale,
+  ) => string | undefined;
 }

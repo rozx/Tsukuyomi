@@ -31,7 +31,7 @@ const translationKeywordsText = computed(() =>
 );
 const chapterText = computed(
   () =>
-    props.getChapterTitleForAction(props.action.chapter_id) ||
+    props.getChapterTitleForAction(props.action.chapter_id, props.action.language) ||
     props.getShortId(props.action.chapter_id),
 );
 </script>

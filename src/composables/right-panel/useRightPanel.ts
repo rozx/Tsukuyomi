@@ -191,7 +191,11 @@ export function useRightPanel() {
   );
 
   // 获取章节标题的辅助函数（用于 action 显示）
-  const getChapterTitleForAction = (chapterId: string | undefined): string | undefined => {
+  // 章节标题按操作记录的执行语言解析，旧记录缺省时回退书籍目标语言
+  const getChapterTitleForAction = (
+    chapterId: string | undefined,
+    language?: AppLocale,
+  ): string | undefined => {
     if (!chapterId) return undefined;
     const currentBookId = contextStore.getContext.currentBookId;
     if (!currentBookId) return undefined;
@@ -199,7 +203,7 @@ export function useRightPanel() {
     if (!book) return undefined;
     const chapterResult = ChapterService.findChapterById(book, chapterId);
     if (chapterResult && chapterResult.chapter) {
-      return getChapterDisplayTitle(chapterResult.chapter, book);
+      return getChapterDisplayTitle(chapterResult.chapter, book, language);
     }
     return undefined;
   };

@@ -30,7 +30,10 @@ interface Props {
   messageId: string;
   timestamp: number;
   popoverKey: string;
-  getChapterTitleForAction: (chapterId: string | undefined) => string | undefined;
+  getChapterTitleForAction: (
+    chapterId: string | undefined,
+    language?: AppLocale,
+  ) => string | undefined;
 }
 
 const props = defineProps<Props>();

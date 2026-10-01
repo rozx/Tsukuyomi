@@ -22,20 +22,24 @@ async function loadCoverHistoryFromDB(): Promise<CoverHistoryItem[]> {
 }
 
 /**
+ * 创建一个纯净的对象以避免 Proxy 相关的克隆错误（手动构建，不依赖 structuredClone）
+ */
+function plainCoverItem(item: CoverHistoryItem): CoverHistoryItem {
+  return {
+    id: item.id,
+    url: item.url,
+    addedAt: item.addedAt,
+    ...(item.deleteUrl ? { deleteUrl: item.deleteUrl } : {}),
+  };
+}
+
+/**
  * 保存单个封面历史到 IndexedDB
  */
 async function saveCoverHistoryItemToDB(item: CoverHistoryItem): Promise<void> {
   try {
     const db = await getDB();
-    // 创建一个纯净的对象以避免 Proxy 相关的克隆错误
-    // 使用 structuredClone 进行深拷贝，或者手动构建对象
-    const plainItem: CoverHistoryItem = {
-      id: item.id,
-      url: item.url,
-      addedAt: item.addedAt,
-      ...(item.deleteUrl ? { deleteUrl: item.deleteUrl } : {}),
-    };
-    await db.put('cover-history', plainItem);
+    await db.put('cover-history', plainCoverItem(item));
   } catch (error) {
     console.error('Failed to save cover history item to DB:', error);
   }
@@ -155,12 +159,26 @@ export const useCoverHistoryStore = defineStore('coverHistory', {
      * addCover 会重新生成身份，回滚若走它会让同步身份与删除记录失配。
      */
     async replaceHistory(items: readonly CoverHistoryItem[]): Promise<void> {
-      await this.clearHistory();
       const restored = items.map((item) => ({
         ...item,
         addedAt: item.addedAt instanceof Date ? item.addedAt : new Date(item.addedAt),
       }));
-      for (const item of restored) await saveCoverHistoryItemToDB(item);
+      // 清空与写入在同一事务内：任一写入失败整体回滚并向上抛出，提交成功后才更新内存
+      const db = await getDB();
+      const tx = db.transaction('cover-history', 'readwrite');
+      try {
+        await tx.store.clear();
+        for (const item of restored) await tx.store.put(plainCoverItem(item));
+        await tx.done;
+      } catch (error) {
+        try {
+          tx.abort();
+        } catch {
+          /* 事务已因错误自动中止 */
+        }
+        await tx.done.catch(() => undefined);
+        throw error;
+      }
       this.covers = restored;
     },
 

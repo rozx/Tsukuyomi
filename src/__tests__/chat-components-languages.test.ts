@@ -60,6 +60,26 @@ describe('聊天组件固定标签随界面语言即时重绘', () => {
     expect(text()).toContain('用户术语');
   });
 
+  it('关键词搜索徽章按操作记录的执行语言解析章节标题', () => {
+    const titleFor = vi.fn((_id: string | undefined, language?: string) =>
+      language === 'en-US' ? 'Chapter One' : '第一话',
+    );
+    const { text } = mount(ChatActionBadge, {
+      action: {
+        type: 'read',
+        entity: 'paragraph',
+        tool_name: 'find_paragraph_by_keywords',
+        keywords: ['勇者'],
+        chapter_id: 'c1',
+        language: 'en-US',
+        timestamp: 0,
+      } as MessageAction,
+      getChapterTitleForAction: titleFor,
+    });
+    expect(titleFor).toHaveBeenCalledWith('c1', 'en-US');
+    expect(text()).toContain('Chapter One');
+  });
+
   it('批量替换徽章的计数说明本地化', () => {
     const { text } = mount(ChatBadgeTranslation, {
       kind: 'translation_batch_replace',

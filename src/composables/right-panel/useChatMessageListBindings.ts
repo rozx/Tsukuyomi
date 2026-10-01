@@ -9,6 +9,7 @@
 import { computed } from 'vue';
 import type { Ref } from 'vue';
 import type { ChatSessionMessage } from 'src/stores/chat-sessions';
+import type { AppLocale } from 'src/models/locale';
 import type {
   MessageDisplayItem,
   ActionHoverHandler,
@@ -29,7 +30,10 @@ export interface ChatMessageListSource {
   toggleThinking: (id: string) => void;
   renderMarkdown: (text: string) => string;
   formatMessageTime: (timestamp: number) => string;
-  getChapterTitleForAction: (chapterId: string | undefined) => string | undefined;
+  getChapterTitleForAction: (
+    chapterId: string | undefined,
+    language?: AppLocale,
+  ) => string | undefined;
   toggleActionPopover: ActionHoverHandler;
   handleActionMouseLeave: () => void;
   toggleGroupedActionPopover: GroupedActionHoverHandler;
