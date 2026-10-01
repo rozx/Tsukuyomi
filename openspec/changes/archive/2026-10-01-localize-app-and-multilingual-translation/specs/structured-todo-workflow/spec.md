@@ -2,7 +2,7 @@
 
 ### Requirement: Pre-defined todo generation on state entry
 
-The system SHALL generate natural-language text using the AI execution's captured UI language; quoted Chinese labels in the following scenarios denote zh-CN examples with equivalent zh-TW/en-US resources. IDs, status values, batch membership, state gates and paragraph source previews SHALL remain language-independent.
+The system SHALL generate natural-language text using the AI execution's captured UI language; quoted Chinese labels in the following scenarios denote zh-CN examples with equivalent zh-TW/en-US resources. IDs, display indexes, status values, batch membership and state gates SHALL remain language-independent.
 
 When a chunked task enters a state for the first time in the current chunk, the system SHALL create that state's pre-defined todos. Re-entering a state in the same chunk (for example `review → working`) MUST NOT create them again.
 
@@ -22,7 +22,7 @@ When a chunked task enters a state for the first time in the current chunk, the 
 
 - **GIVEN** a task enters `working` with N paragraphs in the current chunk
 - **WHEN** the todos are generated
-- **THEN** one batch todo is created per `MAX_TRANSLATION_BATCH_SIZE` paragraphs, listing each paragraph's display index, ID, and the first 20 characters of its original text
+- **THEN** one batch todo is created per `MAX_TRANSLATION_BATCH_SIZE` paragraphs, listing only each paragraph's display index and ID; source text is not copied into the todo because it is already in the chunk context and the current todo is re-sent every turn
 - **AND** for the first chunk of a chapter with a title, a todo "翻译章节标题：「{title}」" is created first
 
 #### Scenario: First entry into review (translation only)
@@ -44,14 +44,14 @@ When a chunked task enters a state for the first time in the current chunk, the 
 - **WHEN** the todo workflow for that chunk starts
 - **THEN** todos left over from earlier chunks are deleted
 
-#### Scenario: Localized batch preview
+#### Scenario: Localized batch todo
 
 - **WHEN** a working todo is generated in English
-- **THEN** its instruction SHALL be English and the same paragraph IDs, order and original-text previews SHALL appear without depending on a Chinese label in formatted chunk text
+- **THEN** its instruction SHALL be English and the same paragraph display indexes, IDs and order SHALL appear without depending on a Chinese label in formatted chunk text
 
 ### Requirement: Always-in-context todo block
 
-The system SHALL generate natural-language text using the AI execution's captured UI language; quoted Chinese labels in the following scenarios denote zh-CN examples with equivalent zh-TW/en-US resources. IDs, status values, batch membership, state gates and paragraph source previews SHALL remain language-independent.
+The system SHALL generate natural-language text using the AI execution's captured UI language; quoted Chinese labels in the following scenarios denote zh-CN examples with equivalent zh-TW/en-US resources. IDs, display indexes, status values, batch membership and state gates SHALL remain language-independent.
 
 Every turn SHALL include a `【待办清单】` block for the current state's pre-defined todos.
 
