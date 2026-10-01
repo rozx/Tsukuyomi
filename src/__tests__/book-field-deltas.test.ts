@@ -233,6 +233,39 @@ describe('书籍元数据按字段增量保存', () => {
     expect(after.contentLoaded).toBe(true);
   });
 
+  it('并发保存时，较晚返回的旧提交结果不会覆盖内存中更新的记录', async () => {
+    await BookService.saveBook(baseBook('delta-race'));
+    const books = await tab();
+    const real = BookService.updateBookFields.bind(BookService);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let firstCommitted!: () => void;
+    const committed = new Promise<void>((resolve) => (firstCommitted = resolve));
+    let calls = 0;
+    const spy = vi
+      .spyOn(BookService, 'updateBookFields')
+      .mockImplementation(async (...args: Parameters<typeof BookService.updateBookFields>) => {
+        const first = calls++ === 0;
+        const result = await real(...args);
+        if (first) {
+          firstCommitted();
+          await gate;
+        }
+        return result;
+      });
+
+    const slow = books.updateBook('delta-race', { targetLanguage: 'en-US' });
+    await committed;
+    await books.updateBook('delta-race', { description: '新简介' });
+    release();
+    await slow;
+    spy.mockRestore();
+
+    const inMemory = books.getBookById('delta-race')!;
+    expect(inMemory.targetLanguage).toBe('en-US');
+    expect(inMemory.description).toBe('新简介');
+  });
+
   it('库中不存在的书籍仍按原有方式写入', async () => {
     const books = await tab();
     books.books.push(baseBook('delta-absent'));
@@ -355,6 +388,10 @@ describe('LibraryPersistence.updateBookFields', () => {
     const raw = (await db.get('books', 'lp-1'))!;
     expect(raw.description).toBe('新');
     expect(raw.volumes?.[0]?.chapters?.[0]?.id).toBe('lp-1-c1');
+    const stored = (await db.get('book-revisions', 'lp-1'))!.revision;
+    expect(result?.revision).toBe(stored);
+    const noop = await LibraryPersistence.updateBookFields(db, 'lp-1', { description: '新' });
+    expect(noop?.revision).toBe(stored);
   });
 
   it('修改目标语言时返回全书章节作为待维护变更', async () => {
