@@ -107,14 +107,24 @@ function restoreIdentity(
   return v5(canonicalStringify([key, bookId, kind, parentId ?? null, id]), RESTORE_NAMESPACE);
 }
 
-/** 书籍恢复操作为该实体分配的新身份；同一操作 ID 总是得到同一身份，可据此判断是否已恢复。 */
+/**
+ * 书籍恢复操作为该实体分配的新身份；同一操作 ID 总是得到同一身份，可据此判断是否已恢复。
+ * 别名传所属角色 ID 作为 parentId。
+ */
 export function restoredEntityId(
   operationId: string,
   bookId: string,
-  kind: 'term' | 'character',
+  kind: 'term' | 'character' | 'alias',
   id: string,
+  parentId?: string,
 ): string {
-  return restoreIdentity(restoreOperationKey('book', operationId, bookId), bookId, kind, id);
+  return restoreIdentity(
+    restoreOperationKey('book', operationId, bookId),
+    bookId,
+    kind,
+    id,
+    parentId,
+  );
 }
 
 function restoreBook(

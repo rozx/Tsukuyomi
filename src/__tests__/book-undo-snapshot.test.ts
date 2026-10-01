@@ -2,7 +2,7 @@ import './setup';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { cloneDeep } from 'lodash';
-import type { CharacterSetting } from '../models/novel';
+import type { CharacterSetting, Novel } from '../models/novel';
 import { useBooksStore } from '../stores/books';
 import { BookService } from '../services/book-service';
 import { applyBookSnapshot } from '../composables/book-details/book-undo-snapshot';
@@ -153,5 +153,66 @@ describe('撤销 / 重做书籍快照中的术语与角色', () => {
 
     expect(termNames(books)).toEqual(['勇者']);
     expect(characterNames(books)).toEqual(['佐藤']);
+  });
+
+  describe('本标签页书籍副本尚未收到其他标签页的删除', () => {
+    const aliasCharacter = {
+      ...character,
+      aliases: [{ name: 'サトウ', translation: { id: 'a1', translation: '萨托', aiModelId: '' } }],
+    } as unknown as CharacterSetting;
+
+    /** 快照之后在本标签页改书名，再由其他标签页直接改库，本标签页的书籍副本保持旧状态 */
+    async function staleAfterOtherTab(updates: Partial<Novel>) {
+      const books = await setup();
+      await books.updateBook('a', { terminologies: [term], characterSettings: [aliasCharacter] });
+      const before = cloneDeep(books.getBookById('a')!);
+      await books.updateBook('a', { title: '新书名' });
+      const stored = (await BookService.getBookById('a'))!;
+      await BookService.editEntities(stored, updates, 'zh-CN');
+      return { books, before };
+    }
+
+    it('其他标签页删除的术语按快照恢复，不会被静默跳过', async () => {
+      const { books, before } = await staleAfterOtherTab({ terminologies: [] });
+
+      await applyBookSnapshot(books, before, 'op-1');
+
+      expect(termNames(books)).toEqual(['勇者']);
+      const stored = await BookService.getBookById('a');
+      expect(stored?.terminologies?.map((value) => value.name)).toEqual(['勇者']);
+    });
+
+    it('其他标签页删除的别名按快照以新身份恢复', async () => {
+      const { books, before } = await staleAfterOtherTab({
+        characterSettings: [{ ...aliasCharacter, aliases: [] }],
+      });
+
+      await applyBookSnapshot(books, before, 'op-1');
+
+      const stored = await BookService.getBookById('a');
+      expect(stored?.characterSettings?.[0]?.aliases.map((value) => value.name)).toEqual([
+        'サトウ',
+      ]);
+    });
+  });
+
+  it('同一操作 ID 重试时，重新加入的别名沿用同一个新 ID', async () => {
+    const books = await setup();
+    const withAlias = {
+      ...character,
+      aliases: [{ name: 'サトウ', translation: { id: 'a1', translation: '萨托', aiModelId: '' } }],
+    } as unknown as CharacterSetting;
+    await books.updateBook('a', { characterSettings: [withAlias] });
+    const before = cloneDeep(books.getBookById('a')!);
+    await books.updateBook('a', {
+      characterSettings: [{ ...before.characterSettings![0]!, aliases: [] }],
+    });
+
+    await applyBookSnapshot(books, before, 'op-1');
+    const first = books.getBookById('a')!.characterSettings![0]!.aliases[0]!.id;
+    await applyBookSnapshot(books, before, 'op-1');
+
+    const aliases = books.getBookById('a')!.characterSettings![0]!.aliases;
+    expect(aliases.map((value) => value.id)).toEqual([first]);
   });
 });
