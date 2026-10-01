@@ -14,6 +14,7 @@ import type {
 } from './localization/paragraph-edit';
 import { prepareImportedEntities } from './localization/entity-import';
 import type { TitleEdit } from './localization/title-edit';
+import type { BookFieldPatch } from './book-field-patch';
 
 async function maintainWholeBooks(books: Novel[]): Promise<void> {
   await maintainLibraryChanges(
@@ -176,15 +177,41 @@ export class BookService {
     locale: AppLocale,
     expectedBookLanguage?: AppLocale,
   ): Promise<Novel> {
-    return deserializeDates(
-      await LibraryPersistence.editEntities(
-        await getDB(),
-        base,
-        updates,
-        locale,
-        expectedBookLanguage,
-      ),
+    return (await BookService.commitEntityEdit(base, updates, locale, expectedBookLanguage)).book;
+  }
+
+  /** 同 editEntities，并返回提交后记录对应的书籍修改序号 */
+  static async commitEntityEdit(
+    base: Novel,
+    updates: EntityUpdates,
+    locale: AppLocale,
+    expectedBookLanguage?: AppLocale,
+  ): Promise<{ book: Novel; revision: number }> {
+    const result = await LibraryPersistence.commitEntityEdit(
+      await getDB(),
+      base,
+      updates,
+      locale,
+      expectedBookLanguage,
     );
+    return { book: deserializeDates(result.book), revision: result.revision };
+  }
+
+  /**
+   * 按字段增量更新书籍元数据（基于库中最新记录，不写回旧快照）
+   * @returns 已提交的书籍记录（不含章节正文）及其修改序号；库中没有该书时返回 undefined
+   */
+  static async updateBookFields(
+    bookId: string,
+    patch: BookFieldPatch,
+  ): Promise<{ book: Novel; revision: number } | undefined> {
+    const result = await LibraryPersistence.updateBookFields(await getDB(), bookId, patch);
+    if (!result) return undefined;
+    if (result.changes.size) await maintainLibraryChanges(result.changes);
+    return {
+      book: normalizeBookLanguages(deserializeDates(serializeDates(result.book))),
+      revision: result.revision,
+    };
   }
 
   /**
@@ -257,19 +284,22 @@ export class BookService {
    * @param book 书籍对象
    * @param options 保存选项
    * @param options.saveChapterContent 是否保存章节内容，默认为 true。如果为 false，则只保存书籍元数据（适用于仅更新术语、角色设定等元数据的场景）
+   * @returns 提交后记录对应的书籍修改序号
    */
   static async saveBook(
     this: void,
     book: Novel,
     options?: { saveChapterContent?: boolean; keepStoredTargetLanguage?: boolean },
-  ): Promise<void> {
+  ): Promise<number | undefined> {
+    const revisions = new Map<string, number>();
     const changes = await LibraryPersistence.saveBooks(
       await getDB(),
       [book],
       options?.saveChapterContent !== false,
-      { keepStoredTargetLanguage: options?.keepStoredTargetLanguage === true },
+      { keepStoredTargetLanguage: options?.keepStoredTargetLanguage === true, revisions },
     );
     await maintainLibraryChanges(changes);
+    return revisions.get(book.id);
   }
 
   /**
