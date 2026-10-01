@@ -7,16 +7,16 @@
 
 ### Requirement: Help documentation storage
 
-The system SHALL store help documentation files in `public/help/` directory using Markdown format.
+The system SHALL store help documentation files in `public/help/zh-CN/` directory using Markdown format.
 
 #### Scenario: Accessing help documentation
 
 - **WHEN** the application needs to display help content
-- **THEN** it SHALL read Markdown files from `public/help/` directory
+- **THEN** it SHALL read Markdown files from `public/help/zh-CN/` directory
 
 ### Requirement: Front page help document
 
-The system SHALL provide a front-page help document at `public/help/front-page.md` that introduces core application features.
+The system SHALL provide a front-page help document at `public/help/zh-CN/front-page.md` that introduces core application features.
 
 #### Scenario: User views front page help
 

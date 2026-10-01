@@ -8,7 +8,9 @@ import { helpDocsTools } from '../services/ai/tools/help-docs-tools';
 import { captureExecutionLanguages } from '../services/ai/tasks/utils/execution-languages';
 import type { AppLocale } from '../models/locale';
 import type { HelpDocument } from '../models/help';
-const originalIndex = JSON.parse(readFileSync('public/help/index.json', 'utf8')) as HelpDocument[];
+const originalIndex = JSON.parse(
+  readFileSync('public/help/zh-CN/index.json', 'utf8'),
+) as HelpDocument[];
 const guides = originalIndex.filter((doc) => doc.path !== 'releaseNotes');
 afterEach(() => vi.restoreAllMocks());
 function resources() {
@@ -27,8 +29,7 @@ describe('真实三语帮助集合', () => {
       expect(index.map((d) => d.id)).toEqual(originalIndex.map((d) => d.id));
       for (const doc of guides) {
         const resource = await HelpService.getDocument(doc.id, locale);
-        const folder = locale === 'zh-CN' ? 'help' : `help/${locale}`;
-        expect(resource.markdown).toBe(readFileSync(`public/${folder}/${doc.file}`, 'utf8'));
+        expect(resource.markdown).toBe(readFileSync(`public/help/${locale}/${doc.file}`, 'utf8'));
         const cn = await HelpService.getDocument(doc.id, 'zh-CN');
         expect(resource.headings.map((h) => h.id)).toEqual(cn.headings.map((h) => h.id));
         const result = JSON.parse(

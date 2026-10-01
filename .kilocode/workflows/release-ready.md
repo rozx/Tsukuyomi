@@ -8,7 +8,7 @@ description: Prepare the project for a new release
    - File naming convention: `public/releaseNotes/RELEASE_NOTES_vx.xx.md` (replace `x.xx` with the actual version).
    - Use other files in `public/releaseNotes/` as a reference for the format.
    - Compare changes between current version (current branch) and last version (last release tag).
-   - Update `public/help/index.json` to include the new release note.
+   - Update `public/help/<locale>/index.json` to include the new release note.
    - **Important**: The content of the release note MUST be in **Chinese**.
 
 3. Perform a final quality check to ensure deployment readiness.

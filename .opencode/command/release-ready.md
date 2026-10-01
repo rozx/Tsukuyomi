@@ -10,13 +10,13 @@ description: Prepare the project for a new release
    - The change log should based on all changes comparing last released version.
    - Use other files in `public/releaseNotes/` as a reference for the format.
    - Compare changes between current version (current branch) and last version (last release tag).
-   - Update `public/help/index.json` to include the new release note.
+   - Update `public/help/<locale>/index.json` to include the new release note.
 
    - **Important**: The content of the release note MUST be in **Chinese**.
 
-3. Base on the changes, update help docs under `public/help`.
+3. Base on the changes, update help docs under `public/help/<locale>/`.
    - Add/update doc if required.
-   - Make sure to dpdate `public/help/index.json` to include the newly created help doc.
+   - Make sure to dpdate `public/help/<locale>/index.json` to include the newly created help doc.
    - **Important**: The content of the release note MUST be in **Chinese**.
 
 4. Perform a final quality check to ensure deployment readiness.

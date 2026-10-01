@@ -46,7 +46,7 @@ function resources() {
             title: english ? 'Quick start' : '快速开始',
             description: '',
             category: 'guides',
-            path: english ? 'help/en-US' : 'help',
+            path: english ? 'help/en-US' : 'help/zh-CN',
             file: 'front-page.md',
           },
         ],

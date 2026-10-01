@@ -77,7 +77,7 @@ interface SettingsTabDef {
   webOnly?: boolean;
 }
 
-// 标签顺序与 public/help/settings-guide.md 一致。savedIndex 历史值：
+// 标签顺序与 public/help/zh-CN/settings-guide.md 一致。savedIndex 历史值：
 //   0=AI 模型 1=代理设置 2=同步 3=爬虫 4=导入/导出 6=API Keys 7=本地嵌入 8=关于 9=网站映射（新增）
 const SETTINGS_TAB_DEFS: readonly SettingsTabDef[] = [
   { label: 'settings.tabs.general', savedIndex: 10, component: GeneralSettingsTab },

@@ -30,7 +30,7 @@
 
 流程：**添加来源 → 与月詠对话 → 检查卷章草稿 → 确认导入**。开始前需配置「助手」默认模型；需要登录或人机验证的网站可能需要改为提供文件。
 
-[查看分步操作与示例指令](public/help/import-guide.md) · [阅读 v0.16.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)
+[查看分步操作与示例指令](public/help/zh-CN/import-guide.md) · [阅读 v0.16.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)
 
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
@@ -45,7 +45,7 @@ Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
 
 其他模型需要通过受支持的兼容接口接入，具体可用模型与工具调用能力取决于服务端。可在界面拉取模型列表、验证连接，并配置自定义请求头及浏览器 CORS 代理。
 
-翻译、校对/润色、术语翻译和助手可分别设置默认模型；单本书还可覆盖翻译与校对/润色模型。详见 [AI 模型配置](public/help/ai-models-guide.md)。
+翻译、校对/润色、术语翻译和助手可分别设置默认模型；单本书还可覆盖翻译与校对/润色模型。详见 [AI 模型配置](public/help/zh-CN/ai-models-guide.md)。
 
 ### 📚 智能翻译与阅读
 
@@ -85,7 +85,7 @@ Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
 
 - **多向量章节索引**: 启用本地嵌入后，为每个章节按约 100 字的段落边界建立原生 768 维多向量索引，并额外为"章节标题 + 首段"写入专属向量，支持标题 / 系列 / 主题型查询。
 - **`query_chapter` 混合检索**: AI 可用自然语言跨章节搜索原文；先在章节粒度校准语义置信度并融合语义 / 关键词 RRF 排名，再按 `0.85 × 语义 + 0.15 × 关键词` 排序并过滤弱匹配。翻译、润色、校对、聊天助手四类任务的提示词已学会调用该工具获取前文上下文。
-- **批量管理**: 在书籍详情的「向量索引」面板查看索引记录、重建和批量重算，也可测试查询结果。详见 [本地嵌入](public/help/local-embedding.md)。
+- **批量管理**: 在书籍详情的「向量索引」面板查看索引记录、重建和批量重算，也可测试查询结果。详见 [本地嵌入](public/help/zh-CN/local-embedding.md)。
 
 ### 💬 AI 协作聊天助手
 
@@ -180,7 +180,7 @@ Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
 4. 在「卷章草稿」检查书籍资料、章节顺序和正文。
 5. 生成「导入方案」，核对目标书籍、缺失章节和译文影响，再点击「确认导入」。完成后点「打开小说」。
 
-更多例子见 [AI 导入工作台指南](public/help/import-guide.md)。也可以在书库中选择「从网站导入」，使用内置规则处理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他站点可转交 AI 导入器。应用格式的 JSON 书籍文件可通过「从 JSON 导入」添加，完整资料备份在设置中恢复。
+更多例子见 [AI 导入工作台指南](public/help/zh-CN/import-guide.md)。也可以在书库中选择「从网站导入」，使用内置规则处理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他站点可转交 AI 导入器。应用格式的 JSON 书籍文件可通过「从 JSON 导入」添加，完整资料备份在设置中恢复。
 
 ### 3. 从源码运行
 
@@ -205,14 +205,14 @@ bun run dev
 
 ## 📖 文档索引
 
-| 文档类别     | 详细指南 (位于 `public/help`)                                                                                                                                |
-| :----------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **基础配置** | [快速开始](public/help/front-page.md) \| [AI 模型配置](public/help/ai-models-guide.md) \| [设置与同步](public/help/settings-guide.md)                        |
-| **书籍管理** | [图书馆介绍](public/help/library-guide.md) \| [导入与抓取](public/help/books-page-guide.md) \| [章节管理](public/help/book-details-chapters.md)              |
-| **翻译实战** | [翻译功能面板](public/help/book-details-translation.md) \| [三种编辑模式](public/help/book-details-editing.md) \| [工具栏详解](public/help/toolbar-guide.md) |
-| **核心逻辑** | [术语管理](public/help/book-details-terminology.md) \| [角色设定](public/help/book-details-characters.md) \| [记忆系统](public/help/book-details-memory.md)  |
-| **AI 导入**  | [导入工作台：分步操作、拆章与补章](public/help/import-guide.md) \| [v0.16.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)                          |
-| **进阶工具** | [聊天助手实战](public/help/chat-assistant-guide.md) \| [本地嵌入与章节检索](public/help/local-embedding.md)                                                  |
+| 文档类别     | 详细指南 (位于 `public/help/zh-CN`)                                                                                                                                            |
+| :----------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **基础配置** | [快速开始](public/help/zh-CN/front-page.md) \| [AI 模型配置](public/help/zh-CN/ai-models-guide.md) \| [设置与同步](public/help/zh-CN/settings-guide.md)                        |
+| **书籍管理** | [图书馆介绍](public/help/zh-CN/library-guide.md) \| [导入与抓取](public/help/zh-CN/books-page-guide.md) \| [章节管理](public/help/zh-CN/book-details-chapters.md)              |
+| **翻译实战** | [翻译功能面板](public/help/zh-CN/book-details-translation.md) \| [三种编辑模式](public/help/zh-CN/book-details-editing.md) \| [工具栏详解](public/help/zh-CN/toolbar-guide.md) |
+| **核心逻辑** | [术语管理](public/help/zh-CN/book-details-terminology.md) \| [角色设定](public/help/zh-CN/book-details-characters.md) \| [记忆系统](public/help/zh-CN/book-details-memory.md)  |
+| **AI 导入**  | [导入工作台：分步操作、拆章与补章](public/help/zh-CN/import-guide.md) \| [v0.16.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)                                      |
+| **进阶工具** | [聊天助手实战](public/help/zh-CN/chat-assistant-guide.md) \| [本地嵌入与章节检索](public/help/zh-CN/local-embedding.md)                                                        |
 
 > 应用内「帮助」可查阅使用指南；主分支文档通过工作流同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)。
 

@@ -5,7 +5,7 @@ import { HelpService, parseHelpHeading, resolveHelpSection } from '../services/h
 const base = {
   id: 'front-page',
   file: 'front-page.md',
-  path: 'help',
+  path: 'help/zh-CN',
   category: '使用指南',
   description: '快速开始',
   categoryId: 'guides' as const,
@@ -19,6 +19,7 @@ function resources() {
         data: [
           {
             ...base,
+            path: 'help/en-US',
             title: 'Quick start',
             category: 'User guides',
             description: 'Getting started',
@@ -27,9 +28,17 @@ function resources() {
       });
     if (String(url).endsWith('help/zh-TW/index.json'))
       return Promise.resolve({
-        data: [{ ...base, title: '快速開始', category: '使用指南', description: '開始使用' }],
+        data: [
+          {
+            ...base,
+            path: 'help/zh-TW',
+            title: '快速開始',
+            category: '使用指南',
+            description: '開始使用',
+          },
+        ],
       });
-    if (String(url).endsWith('help/index.json'))
+    if (String(url).endsWith('help/zh-CN/index.json'))
       return Promise.resolve({
         data: [
           { ...base, title: '快速开始' },
@@ -47,7 +56,7 @@ function resources() {
       return Promise.resolve({ data: '# Quick start {#front-page-start}\n\nFull English guide.' });
     if (String(url).endsWith('help/zh-TW/front-page.md'))
       return Promise.resolve({ data: '# 快速開始 {#front-page-start}\n\n完整繁中指南。' });
-    if (String(url).endsWith('help/front-page.md'))
+    if (String(url).endsWith('help/zh-CN/front-page.md'))
       return Promise.resolve({ data: '# 快速开始 {#front-page-start}\n\n完整简中指南。' });
     if (String(url).includes('releaseNotes/'))
       return Promise.resolve({ data: '# 历史日志\n\n原文逐字保留。' });
@@ -59,7 +68,7 @@ describe('页面与AI共用帮助语言资源', () => {
     resources();
     vi.spyOn(axios, 'get').mockImplementation((url) =>
       String(url).endsWith('index.json')
-        ? Promise.resolve({ data: [{ ...base, title: '快速開始' }] })
+        ? Promise.resolve({ data: [{ ...base, path: 'help/zh-TW', title: '快速開始' }] })
         : Promise.resolve({ data: ' ' }),
     );
     await expect(HelpService.getDocument('front-page', 'zh-TW')).rejects.toMatchObject({
@@ -110,7 +119,7 @@ describe('页面与AI共用帮助语言资源', () => {
     resources();
     vi.spyOn(axios, 'get').mockImplementation((url) =>
       String(url).endsWith('index.json')
-        ? Promise.resolve({ data: [{ ...base, title: 'Quick start' }] })
+        ? Promise.resolve({ data: [{ ...base, path: 'help/en-US', title: 'Quick start' }] })
         : Promise.reject(new Error('missing English guide')),
     );
     await expect(HelpService.getDocument('front-page', 'en-US')).rejects.toMatchObject({

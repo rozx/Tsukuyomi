@@ -54,7 +54,7 @@ const settingsTabBindings = computed(() =>
       </button>
     </div>
 
-    <!-- 内容区（一次只渲染激活 tab）。顺序对应 public/help/settings-guide.md：
+    <!-- 内容区（一次只渲染激活 tab）。顺序对应 public/help/zh-CN/settings-guide.md：
          AI 模型 → (代理) → API Keys → 同步 → 本地嵌入 → 爬虫 → 导入/导出 -->
     <div class="tsm-settings-scroll">
       <component :is="settingsTabComponent" v-bind="settingsTabBindings" />

@@ -42,7 +42,7 @@ function normalizeDocument(value: unknown, locale: AppLocale): HelpDocument {
     ) ||
     !/^[\w.-]+\.md$/.test(doc.file) ||
     !doc.id ||
-    !['help', `help/${locale}`, 'releaseNotes'].includes(doc.path)
+    ![`help/${locale}`, 'releaseNotes'].includes(doc.path)
   ) {
     throw new LocalizedError('HELP_INDEX_INVALID', 'helpFeedback.indexInvalid', {}, locale);
   }
@@ -61,8 +61,9 @@ function normalizeDocument(value: unknown, locale: AppLocale): HelpDocument {
 export class HelpService {
   static async getIndex(locale: AppLocale): Promise<HelpDocument[]> {
     try {
-      const path = locale === 'zh-CN' ? 'help/index.json' : `help/${locale}/index.json`;
-      const response = await axios.get<unknown>(getAssetUrl(path), { timeout: 10000 });
+      const response = await axios.get<unknown>(getAssetUrl(`help/${locale}/index.json`), {
+        timeout: 10000,
+      });
       if (!Array.isArray(response.data))
         throw new LocalizedError('HELP_INDEX_INVALID', 'helpFeedback.indexInvalid', {}, locale);
       const documents = response.data.map((value) => normalizeDocument(value, locale));
@@ -84,8 +85,7 @@ export class HelpService {
     if (!doc)
       throw new LocalizedError('HELP_DOCUMENT_NOT_FOUND', 'helpFeedback.notFound', { id }, locale);
     try {
-      const path =
-        doc.path === 'releaseNotes' ? doc.path : locale === 'zh-CN' ? 'help' : `help/${locale}`;
+      const path = doc.path === 'releaseNotes' ? doc.path : `help/${locale}`;
       const response = await axios.get<unknown>(getAssetUrl(`${path}/${doc.file}`), {
         timeout: 10000,
         responseType: 'text',

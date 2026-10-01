@@ -17,13 +17,13 @@ afterEach(() => vi.restoreAllMocks());
 function resources() {
   return vi.spyOn(axios, 'get').mockImplementation((url) => {
     if (String(url).endsWith('help/en-US/index.json')) return Promise.resolve({ data: [doc] });
-    if (String(url).endsWith('help/index.json'))
+    if (String(url).endsWith('help/zh-CN/index.json'))
       return Promise.resolve({
         data: [
           {
             ...doc,
             title: '快速开始',
-            path: 'help',
+            path: 'help/zh-CN',
             category: '使用指南',
             description: '翻译入门',
           },
@@ -33,7 +33,7 @@ function resources() {
       return Promise.resolve({
         data: '# Quick start {#front-page-section-1}\nFull English content.',
       });
-    if (String(url).endsWith('help/front-page.md'))
+    if (String(url).endsWith('help/zh-CN/front-page.md'))
       return Promise.resolve({ data: '# 快速开始\n简中正文。' });
     return Promise.reject(new Error('fixture missing guide'));
   });

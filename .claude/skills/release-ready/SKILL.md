@@ -97,7 +97,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
 
    ## 📚 相关文档
 
-   - **<Doc Title>**: [`help/<filename>.md`](../help/<filename>.md)
+   - **<Doc Title>**: [`help/zh-CN/<filename>.md`](../help/zh-CN/<filename>.md)
 
    ---
 
@@ -112,7 +112,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
    - Quote UI labels exactly as they appear in source.
    - Reference related help docs at the bottom.
 
-6. **Update `public/help/index.json`**:
+6. **Update the help index in every locale** (`public/help/zh-CN/index.json`, `public/help/zh-TW/index.json`, `public/help/en-US/index.json` — all three must keep the same entry ids in the same order):
    - Add a new entry for the release note at the **top of the release notes section** (after the help doc entries, before other release note entries):
      ```json
      {
@@ -133,7 +133,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
 1. **Find every help doc that touches the changed areas**, not just ones already edited on the branch:
 
    ```bash
-   grep -rn -E '<old label>|<feature keyword>|<removed behavior>' public/help/*.md
+   grep -rn -E '<old label>|<feature keyword>|<removed behavior>' public/help/*/*.md
    ```
 
    Search for old UI labels, removed behaviors, and feature keywords from Step 2. Getting-started pages (e.g. `front-page.md`) often repeat steps from feature guides.
@@ -151,14 +151,14 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
    ```
 
 4. **If a new help doc is needed**:
-   - Create it in `public/help/` following the naming convention of existing files.
-   - Add a corresponding entry to `public/help/index.json` in the appropriate category:
+   - Create it in `public/help/zh-CN/` following the naming convention of existing files, plus its `zh-TW/` and `en-US/` counterparts with the same file name and heading IDs.
+   - Add a corresponding entry to each locale's `public/help/<locale>/index.json` in the appropriate category (`path` is `help/<locale>`):
      ```json
      {
        "id": "<kebab-case-id>",
        "title": "<Chinese title>",
        "file": "<filename>.md",
-       "path": "help",
+       "path": "help/zh-CN",
        "category": "<使用指南 or 书籍详情页>",
        "description": "<Brief description in Chinese>"
      }
@@ -189,7 +189,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
 3. **Check formatting of changed docs** (also validates `index.json` parses):
 
    ```bash
-   bunx prettier --check public/help/index.json public/releaseNotes/RELEASE_NOTES_vX.X.X.md <changed help docs>
+   bunx prettier --check public/help/*/index.json public/releaseNotes/RELEASE_NOTES_vX.X.X.md <changed help docs>
    ```
 
 4. **Report final status**:

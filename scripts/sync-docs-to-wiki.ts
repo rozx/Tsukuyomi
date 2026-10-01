@@ -3,10 +3,10 @@
  * 将 Tsukuyomi 仓库的帮助文档同步到 GitHub Wiki
  *
  * 功能：
- * 1. 复制 public/help/*.md 文件到 wiki
+ * 1. 复制 public/help/zh-CN/*.md 文件到 wiki
  * 2. 复制 docs/*.md 文件到 wiki
- * 3. 基于 public/help/index.json 生成 Home.md（首页）
- * 4. 基于 public/help/index.json 生成 _Sidebar.md（侧边栏）
+ * 3. 基于 public/help/zh-CN/index.json 生成 Home.md（首页）
+ * 4. 基于 public/help/zh-CN/index.json 生成 _Sidebar.md（侧边栏）
  * 5. 转换内部文档链接为 wiki 链接
  */
 
@@ -33,12 +33,12 @@ if (!existsSync(WIKI_DIR)) {
 
 // 1. 读取帮助文档索引
 console.log('📖 Reading help documentation index...');
-const indexPath = join(REPO_ROOT, 'public/help/index.json');
+const indexPath = join(REPO_ROOT, 'public/help/zh-CN/index.json');
 const helpIndex: HelpArticle[] = JSON.parse(readFileSync(indexPath, 'utf-8'));
 
 // 2. 复制帮助文档文件到 wiki
 console.log('📝 Copying help documentation files...');
-const helpDir = join(REPO_ROOT, 'public/help');
+const helpDir = join(REPO_ROOT, 'public/help/zh-CN');
 const helpFiles = readdirSync(helpDir).filter((file) => file.endsWith('.md'));
 
 for (const file of helpFiles) {

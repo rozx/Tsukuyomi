@@ -2,12 +2,12 @@
 
 ### Requirement: Help documentation storage
 
-The system SHALL store help documentation files in `public/help/` directory using Markdown format. The 16 user guides SHALL have complete zh-CN, zh-TW and en-US versions with identical document IDs and localized titles, descriptions and category labels. Legacy root paths SHALL remain valid for the Simplified Chinese documents.
+The system SHALL store help documentation files in `public/help/` directory using Markdown format. The 16 user guides SHALL have complete zh-CN, zh-TW and en-US versions with identical document IDs and localized titles, descriptions and category labels. Each language SHALL live in its own folder (`public/help/zh-CN/`, `public/help/zh-TW/`, `public/help/en-US/`), each with its own `index.json`; no language SHALL be stored at the `public/help/` root.
 
 #### Scenario: Accessing help documentation
 
 - **WHEN** the application needs to display help content
-- **THEN** it SHALL read Markdown files from `public/help/` directory
+- **THEN** it SHALL read Markdown files from the `public/help/<locale>/` folder of the active language
 
 #### Scenario: Three complete guide collections
 
@@ -21,7 +21,7 @@ The system SHALL store help documentation files in `public/help/` directory usin
 
 ### Requirement: Front page help document
 
-The system SHALL provide a front-page help document at `public/help/front-page.md` that introduces core application features. Its stable document ID SHALL resolve to the active language version; the original root file remains the zh-CN compatibility resource.
+The system SHALL provide a front-page help document at `public/help/<locale>/front-page.md` that introduces core application features. Its stable document ID SHALL resolve to the active language version.
 
 #### Scenario: User views front page help
 

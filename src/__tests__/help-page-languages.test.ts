@@ -43,12 +43,14 @@ afterEach(() => {
   if (oldScroll) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', oldScroll);
   else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
 });
-const index = (title: string) => [
+const urlLocale = (url: unknown) =>
+  String(url).includes('/en-US/') ? 'en-US' : String(url).includes('/zh-TW/') ? 'zh-TW' : 'zh-CN';
+const index = (title: string, locale: string) => [
   {
     id: 'front-page',
     title,
     file: 'front-page.md',
-    path: 'help',
+    path: `help/${locale}`,
     category: title === 'Quick start' ? 'User guides' : '使用指南',
     categoryId: 'guides',
     description: '',
@@ -57,15 +59,12 @@ const index = (title: string) => [
 ];
 function resources() {
   return vi.spyOn(axios, 'get').mockImplementation((url) => {
-    const locale = String(url).includes('/en-US/')
-      ? 'en-US'
-      : String(url).includes('/zh-TW/')
-        ? 'zh-TW'
-        : 'zh-CN';
+    const locale = urlLocale(url);
     if (String(url).endsWith('index.json'))
       return Promise.resolve({
         data: index(
           locale === 'en-US' ? 'Quick start' : locale === 'zh-TW' ? '快速開始' : '快速开始',
+          locale,
         ),
       });
     return Promise.resolve({
@@ -185,8 +184,12 @@ describe('帮助页面语言切换', () => {
         if (String(url).endsWith('index.json'))
           return Promise.resolve({
             data: [
-              ...index('快速开始'),
-              { ...index('模型指南')[0], id: 'ai-models-guide', file: 'ai-models-guide.md' },
+              ...index('快速开始', urlLocale(url)),
+              {
+                ...index('模型指南', urlLocale(url))[0],
+                id: 'ai-models-guide',
+                file: 'ai-models-guide.md',
+              },
             ],
           });
         if (String(url).endsWith('ai-models-guide.md'))
@@ -217,9 +220,9 @@ Configure models.`,
       if (String(url).endsWith('index.json'))
         return Promise.resolve({
           data: [
-            ...index(String(url).includes('/en-US/') ? 'Quick start' : '快速开始'),
+            ...index(String(url).includes('/en-US/') ? 'Quick start' : '快速开始', urlLocale(url)),
             {
-              ...index('Quick start')[0],
+              ...index('Quick start', urlLocale(url))[0],
               id: 'books-page-guide',
               file: 'books-page-guide.md',
               title: String(url).includes('/en-US/') ? 'Book library' : '书籍列表页',
@@ -243,7 +246,7 @@ Configure models.`,
       String(url).endsWith('index.json')
         ? Promise.resolve({
             data: [
-              ...index('快速开始'),
+              ...index('快速开始', urlLocale(url)),
               {
                 id: 'v1',
                 title: 'v1',
@@ -345,7 +348,11 @@ Configure models.`,
       const release = Promise.withResolvers<void>();
       get.mockImplementation(async (url, options) => {
         const path = String(url);
-        if (path.endsWith(pendingPart === 'index' ? 'help/index.json' : 'help/front-page.md')) {
+        if (
+          path.endsWith(
+            pendingPart === 'index' ? 'help/zh-CN/index.json' : 'help/zh-CN/front-page.md',
+          )
+        ) {
           entered.resolve();
           await release.promise;
         }
@@ -384,7 +391,7 @@ Configure models.`,
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     get.mockImplementation(async (url, options) => {
-      if (String(url).endsWith('help/front-page.md')) {
+      if (String(url).endsWith('help/zh-CN/front-page.md')) {
         entered.resolve();
         await release.promise;
       }

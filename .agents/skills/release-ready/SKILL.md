@@ -83,7 +83,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
 
    ## 📚 相关文档
 
-   - **<Doc Title>**: `help/<filename>.md`
+   - **<Doc Title>**: `help/zh-CN/<filename>.md`
 
    ---
 
@@ -97,7 +97,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
    - Be specific about what changed and why it matters to users.
    - Reference related help docs at the bottom.
 
-5. **Update `public/help/index.json`**:
+5. **Update `public/help/<locale>/index.json`**:
    - Add a new entry for the release note at the **top of the release notes section** (after the help doc entries, before other release note entries):
      ```json
      {
@@ -117,7 +117,7 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
 
 1. **Review the changes** identified in Step 2 and determine if any help docs need updating.
    - New features may require new help docs or updates to existing ones.
-   - Read existing help docs in `public/help/` to understand current coverage.
+   - Read existing help docs in `public/help/zh-CN/` to understand current coverage.
 
 2. **For each help doc that needs updating**:
    - Read the existing file first.
@@ -126,14 +126,14 @@ Prepare the current branch for release. This is a multi-step workflow that ensur
    - All content MUST be in Chinese.
 
 3. **If a new help doc is needed**:
-   - Create it in `public/help/` following the naming convention of existing files.
-   - Add a corresponding entry to `public/help/index.json` in the appropriate category:
+   - Create it in `public/help/zh-CN/` following the naming convention of existing files.
+   - Add a corresponding entry to `public/help/<locale>/index.json` in the appropriate category:
      ```json
      {
        "id": "<kebab-case-id>",
        "title": "<Chinese title>",
        "file": "<filename>.md",
-       "path": "help",
+       "path": "help/zh-CN",
        "category": "<使用指南 or 书籍详情页>",
        "description": "<Brief description in Chinese>"
      }

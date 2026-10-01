@@ -12,7 +12,7 @@ The system SHALL enhance the existing `src/pages/HelpPage.vue` component to rend
 #### Scenario: Rendering Markdown content
 
 - **WHEN** the help page loads
-- **THEN** it SHALL fetch and render the Markdown content from `public/help/` directory
+- **THEN** it SHALL fetch and render the Markdown content from `public/help/zh-CN/` directory
 
 ### Requirement: Help navigation
 

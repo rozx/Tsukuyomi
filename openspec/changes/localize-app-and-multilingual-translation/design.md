@@ -183,7 +183,7 @@ manifest schema 升至 4，书籍 payload 中保存 `entitySyncVersion: 1`；正
 
 ### 10. 帮助指南和稳定导航
 
-保留现有 `public/help/*.md` 为简中兼容路径，增加 `public/help/zh-TW/`、`public/help/en-US/`，三套目录元信息均有相同文档 ID。16 篇指南全部翻译；历史日志继续指向原来的 releaseNotes 文件，其标题/简介/分类的固定文案本地化。
+三种语言各自一个目录：`public/help/zh-CN/`、`public/help/zh-TW/`、`public/help/en-US/`（各含 `index.json`，`path` 为 `help/<locale>`），根目录不再存放任何语言的正文；三套目录元信息均有相同文档 ID。16 篇指南全部翻译；历史日志继续指向原来的 releaseNotes 文件，其标题/简介/分类的固定文案本地化。
 
 页面和 AI 工具共用一个按 locale 解析文档资源的入口。分类和首页主题以稳定 ID 关联，不再用中文关键词决定文档。指南为章节提供跨语言稳定 anchor ID，保留旧中文链接别名；切换语言时保留文档/章节，文档加载竞态只允许最新语言响应更新页面。AI 工具以执行 uiLocale 搜索/读取，导航 action 用稳定文档/章节 ID，页面以当前 UI locale 打开，避免执行期间切换界面导致锚点失效。资源加载失败显示明确错误，不悄悄把缺失译本当作成功的完整本地化。
 
