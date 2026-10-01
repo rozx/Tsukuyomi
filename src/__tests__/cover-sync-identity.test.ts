@@ -220,3 +220,19 @@ describe('远端快照覆盖路径保留封面身份', () => {
     expect(await snapshotIdentities()).toEqual({ db: expected, store: expected });
   });
 });
+
+describe('损坏时间戳不影响按 URL 去重', () => {
+  it('快照里同 URL 较早一条 addedAt 损坏时，仍保留后面时间有效的记录', async () => {
+    await useCoverHistoryStore().loadCoverHistory();
+
+    await SyncDataService.overwriteFromSnapshot({
+      coverHistory: [
+        { id: 'broken', url: URL_A, addedAt: 'not-a-date' },
+        { id: 'valid', url: URL_A, addedAt: '2025-06-01T00:00:00.000Z' },
+      ],
+    });
+
+    const expected = [{ id: 'valid', url: URL_A, addedAt: Date.parse('2025-06-01T00:00:00.000Z') }];
+    expect(await snapshotIdentities()).toEqual({ db: expected, store: expected });
+  });
+});

@@ -889,6 +889,12 @@ function mergeUrlDeletionRecords(
   return Array.from(mergedMap.values());
 }
 
+/** 封面 addedAt 的毫秒值：缺失或无法解析时按 0 处理，避免 NaN 比较让有效记录被丢弃 */
+function coverAddedTime(cover: { addedAt?: unknown } | null | undefined): number {
+  const time = cover?.addedAt ? new Date(cover.addedAt as string | number | Date).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
 /**
  * 按 URL 去重封面历史：同一 URL 只保留 addedAt 最新的那条
  */
@@ -904,9 +910,7 @@ function dedupeCoverHistoryByUrl(
       map.set(url, cover);
       continue;
     }
-    const existingTime = existing?.addedAt ? new Date(existing.addedAt).getTime() : 0;
-    const currentTime = cover?.addedAt ? new Date(cover.addedAt).getTime() : 0;
-    if (currentTime >= existingTime) {
+    if (coverAddedTime(cover) >= coverAddedTime(existing)) {
       map.set(url, cover);
     }
   }
