@@ -135,7 +135,6 @@ export default {
       'Send a short request using the current configuration. This may use a small amount of API quota.',
     modelInfo: 'Model information',
     fetchInfo: 'Fetch model information',
-    catalogHint: 'Information comes from models.dev. Enter limits manually for models not listed.',
     catalogPrefix: 'Information comes from the',
     catalogSuffix: 'catalog. Enter limits manually for models not listed.',
     noTaskModels: 'No models support this task yet. Enable the task on a model’s edit page.',

@@ -130,7 +130,6 @@ export default {
     testHint: '以目前設定傳送簡短請求，可能產生少量 API 用量。',
     modelInfo: '模型資料',
     fetchInfo: '取得模型資料',
-    catalogHint: '資料來自 models.dev 目錄；未收錄的型號可手動填寫。',
     catalogPrefix: '資料來自',
     catalogSuffix: '目錄；未收錄的型號可手動填寫。',
     noTaskModels: '暫無支援此任務的模型，請在模型編輯頁面中啟用該任務。',

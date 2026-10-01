@@ -130,7 +130,6 @@ export default {
     testHint: '使用当前配置发送一条简短请求，可能产生少量 API 用量。',
     modelInfo: '模型资料',
     fetchInfo: '获取模型资料',
-    catalogHint: '资料来自 models.dev 目录；未收录的型号可手动填写。',
     catalogPrefix: '资料来自',
     catalogSuffix: '目录；未收录的型号可手动填写。',
     noTaskModels: '暂无支持此任务的模型，请在模型编辑页面中启用该任务。',
