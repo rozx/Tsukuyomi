@@ -37,7 +37,10 @@ function supersedes(value: Translation, record: TranslationDeletion): boolean {
   return value.revision !== undefined && compareRevision(value.revision, record.revision) > 0;
 }
 
-/** 校验删除记录；与存活版本同 ID 的记录说明写入路径漏了裁决，拒绝加载。 */
+/**
+ * 校验删除记录。同 ID 同时存在存活版本与记录（例如尚未升级的客户端按旧规则把副本合并回来）
+ * 时按合并规则裁决而不是拒绝加载，否则该书会一直无法同步。
+ */
 export function normalizeTranslationDeletions(paragraph: Paragraph): Paragraph {
   const value: unknown = paragraph.deletedTranslations;
   if (value === undefined) return paragraph;
@@ -53,11 +56,12 @@ export function normalizeTranslationDeletions(paragraph: Paragraph): Paragraph {
       !validRevision(record.revision)
     )
       throw new Error('INVALID_TRANSLATION_DELETION');
-    if (paragraph.translations.some((entry) => entry.id === id))
-      throw new Error('TRANSLATION_DELETION_CONFLICT');
     records[id] = { revision: { ...record.revision }, deletedAt: record.deletedAt };
   }
-  return withDeletions(paragraph, records);
+  return withDeletions(
+    { ...paragraph, translations: reconcileTranslations(paragraph, records) },
+    records,
+  );
 }
 
 /** 同 ID 两条记录取 revision 较新者；revision 相同是同一次删除，取较晚的时间保证对称。 */
@@ -70,6 +74,20 @@ export function mergeTranslationDeletions(a: Deletions = {}, b: Deletions = {}):
     else if (order === 0 && record.deletedAt > existing!.deletedAt) result[id] = record;
   }
   return result;
+}
+
+/** 返回存活版本；被保留版本的记录从 `records` 中撤销。 */
+function reconcileTranslations(paragraph: Paragraph, records: Deletions): Translation[] {
+  const selected = new Set(
+    Object.values(paragraph.selectedTranslations ?? {}).map((slot) => slot.value),
+  );
+  return paragraph.translations.filter((value) => {
+    const record = records[value.id];
+    if (!record) return true;
+    const keep = selected.has(value.id) || supersedes(value, record);
+    if (keep) delete records[value.id];
+    return keep;
+  });
 }
 
 function pruneDeletions(records: Deletions, paragraph: Paragraph): Deletions {
@@ -90,16 +108,7 @@ function pruneDeletions(records: Deletions, paragraph: Paragraph): Deletions {
  */
 export function settleTranslationDeletions(paragraph: Paragraph): Paragraph {
   const records: Deletions = { ...paragraph.deletedTranslations };
-  const selected = new Set(
-    Object.values(paragraph.selectedTranslations ?? {}).map((slot) => slot.value),
-  );
-  const translations = paragraph.translations.filter((value) => {
-    const record = records[value.id];
-    if (!record) return true;
-    const keep = selected.has(value.id) || supersedes(value, record);
-    if (keep) delete records[value.id];
-    return keep;
-  });
+  const translations = reconcileTranslations(paragraph, records);
   return withDeletions({ ...paragraph, translations }, pruneDeletions(records, paragraph));
 }
 

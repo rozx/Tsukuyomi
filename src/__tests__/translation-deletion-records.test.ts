@@ -162,7 +162,7 @@ describe('译文版本删除记录：规范化与时钟', () => {
     expect('deletedTranslations' in normalizeParagraphLanguages(base())).toBe(false);
   });
 
-  it('拒绝格式错误的记录，以及与存活版本冲突的记录', () => {
+  it('拒绝格式错误的删除记录', () => {
     const bad = [
       { e9: { revision: rev(1), deletedAt: -1 } },
       { e9: { revision: { counter: -1, actorId: 'a' }, deletedAt: 1 } },
@@ -176,12 +176,28 @@ describe('译文版本删除记录：规范化与时钟', () => {
           deletedTranslations: records as unknown as NonNullable<Paragraph['deletedTranslations']>,
         }),
       ).toThrow('INVALID_TRANSLATION_DELETION');
-    expect(() =>
-      normalizeParagraphLanguages({
-        ...base(),
-        deletedTranslations: { e1: { revision: rev(1), deletedAt: 1 } },
-      }),
-    ).toThrow('TRANSLATION_DELETION_CONFLICT');
+  });
+
+  it('未升级客户端把已删除版本按旧规则合并回来（副本与记录并存）时，按合并规则裁决而不拒绝加载', () => {
+    const record = { revision: rev(2), deletedAt: 1 };
+    // 未修改过的旧副本输给删除记录
+    const stale = normalizeParagraphLanguages({ ...base(), deletedTranslations: { e1: record } });
+    expect(ids(stale)).toEqual(['e2']);
+    expect(stale.deletedTranslations?.e1).toEqual(record);
+    // revision 更新的副本、仍被选用的版本保留，记录撤销
+    const newer = normalizeParagraphLanguages({
+      ...base(),
+      translations: [{ ...en('e1'), revision: rev(3) }, en('e2')],
+      deletedTranslations: { e1: record },
+    });
+    expect(ids(newer)).toEqual(['e1', 'e2']);
+    expect('deletedTranslations' in newer).toBe(false);
+    const selected = normalizeParagraphLanguages({
+      ...base(),
+      deletedTranslations: { e2: record },
+    });
+    expect(ids(selected)).toEqual(['e1', 'e2']);
+    expect('deletedTranslations' in selected).toBe(false);
   });
 
   it('删除记录的 revision 交给同步时钟观察', () => {
