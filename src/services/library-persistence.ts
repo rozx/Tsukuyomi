@@ -630,10 +630,15 @@ export class LibraryPersistence {
     );
   }
 
+  /**
+   * @param options.keepStoredTargetLanguage 本次保存不是在修改目标语言：保留库中已存的目标语言，
+   *   防止持有旧快照的元数据保存把其他标签页刚改的目标语言改回去
+   */
   static async saveBooks(
     db: IDBPDatabase<TsukuyomiDB>,
     books: Novel[],
     saveContent = true,
+    options: { keepStoredTargetLanguage?: boolean } = {},
   ): Promise<Changes> {
     const prepared = books.map((book) => ({
       observed: collectBookRevisions(normalizeBookLanguages(book)),
@@ -669,6 +674,10 @@ export class LibraryPersistence {
               prior,
             )
           : requested;
+        if (prior && options.keepStoredTargetLanguage) {
+          if (prior.targetLanguage === undefined) delete record.targetLanguage;
+          else record.targetLanguage = prior.targetLanguage;
+        }
         const embedded = new Map(
           (prior?.volumes ?? []).flatMap((volume) =>
             (volume.chapters ?? [])

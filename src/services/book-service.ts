@@ -261,12 +261,13 @@ export class BookService {
   static async saveBook(
     this: void,
     book: Novel,
-    options?: { saveChapterContent?: boolean },
+    options?: { saveChapterContent?: boolean; keepStoredTargetLanguage?: boolean },
   ): Promise<void> {
     const changes = await LibraryPersistence.saveBooks(
       await getDB(),
       [book],
       options?.saveChapterContent !== false,
+      { keepStoredTargetLanguage: options?.keepStoredTargetLanguage === true },
     );
     await maintainLibraryChanges(changes);
   }

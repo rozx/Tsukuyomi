@@ -8,7 +8,9 @@
       "WebSearch",
       "WebFetch(domain:help.router-for.me)",
       "Bash(bunx tsc:*)",
-      "Bash(bunx fallow *)"
+      "Bash(bunx fallow *)",
+      "Bash(echo \"quality exit=$?\")",
+      "Bash(echo \"coverage exit=$?\")"
     ]
   }
 }

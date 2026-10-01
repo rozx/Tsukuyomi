@@ -150,6 +150,29 @@ async function preserveChapterContentsOnVolumesUpdate(
   return mergePreservedChapterContents(updatedVolumes, chaptersById, contentMap);
 }
 
+/**
+ * 保存书籍元数据。未修改目标语言的保存保留库中已存值（其他标签页可能刚改过），
+ * 并把已存目标语言同步回内存副本。
+ */
+async function saveBookMetadata(
+  updatedBook: Novel,
+  existingBook: Novel | undefined,
+  updates: Partial<Novel>,
+  saveChapterContent: boolean,
+): Promise<Novel> {
+  const changesTarget =
+    'targetLanguage' in updates && updates.targetLanguage !== existingBook?.targetLanguage;
+  await BookService.saveBook(updatedBook, {
+    saveChapterContent,
+    keepStoredTargetLanguage: !changesTarget,
+  });
+  if (changesTarget) return updatedBook;
+  const stored = await BookService.getBookById(updatedBook.id);
+  return stored?.targetLanguage
+    ? { ...updatedBook, targetLanguage: stored.targetLanguage }
+    : updatedBook;
+}
+
 export const useBooksStore = defineStore('books', {
   state: () => ({
     storageRevisions: {} as Record<string, number>,
@@ -398,7 +421,12 @@ export const useBooksStore = defineStore('books', {
         const isOnlyMetadataUpdate = !updates.volumes;
         const saveChapterContent =
           options?.saveChapterContent ?? (isOnlyMetadataUpdate ? false : true);
-        await BookService.saveBook(updatedBook, { saveChapterContent });
+        updatedBook = await saveBookMetadata(
+          updatedBook,
+          existingBook,
+          updates,
+          saveChapterContent,
+        );
         await cleanupRemovedChapterData(id, removedChapterIds);
       }
       this.books[index] = updatedBook;
