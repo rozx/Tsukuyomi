@@ -62,4 +62,30 @@ describe('启动语言与框架集成', () => {
     app.mount(document.createElement('div'));
     app.unmount();
   });
+
+  it('数据库升级被旧标签页阻塞时不卡住启动，读到设置后再切换到已存语言', async () => {
+    const pinia = createPinia();
+    const settings = useSettingsStore(pinia);
+    let finish!: () => void;
+    spyOn(settings, 'loadSettings').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            settings.settings = { ...settings.settings, uiLocale: 'en-US' };
+            settings.isLoaded = true;
+            resolve();
+          };
+        }),
+    );
+    const app = createApp({ render: () => null });
+    app.use(pinia);
+    const i18n = await initializeI18n(app, pinia, ['zh-TW'], {
+      isDatabaseBlocked: () => true,
+      pollMs: 1,
+    });
+    expect(i18n.global.locale.value).toBe('zh-TW');
+    finish();
+    await nextTick();
+    expect(i18n.global.locale.value).toBe('en-US');
+  });
 });

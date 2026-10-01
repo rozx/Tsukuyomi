@@ -10,7 +10,8 @@
       "Bash(bunx tsc:*)",
       "Bash(bunx fallow *)",
       "Bash(echo \"quality exit=$?\")",
-      "Bash(echo \"coverage exit=$?\")"
+      "Bash(echo \"coverage exit=$?\")",
+      "Bash(git --no-pager log --oneline -4)"
     ]
   }
 }
