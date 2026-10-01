@@ -250,6 +250,72 @@ describe('书籍元数据按字段增量保存', () => {
     expect(inMemory.description).toBe('新简介');
   });
 
+  it('较早提交但较晚返回的实体编辑结果不会覆盖内存中更新的记录', async () => {
+    await BookService.saveBook(baseBook('race-entity'));
+    const books = await tab();
+    const real = BookService.commitEntityEdit.bind(BookService);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let firstCommitted!: () => void;
+    const committed = new Promise<void>((resolve) => (firstCommitted = resolve));
+    const spy = vi
+      .spyOn(BookService, 'commitEntityEdit')
+      .mockImplementation(async (...args: Parameters<typeof BookService.commitEntityEdit>) => {
+        const result = await real(...args);
+        firstCommitted();
+        await gate;
+        return result;
+      });
+
+    const slow = books.updateBook('race-entity', {
+      terminologies: [
+        { id: 't1', name: 'Term', translation: { id: 'tt', translation: '术语', aiModelId: 'm' } },
+      ],
+    });
+    await committed;
+    await books.updateBook('race-entity', { description: '新简介' });
+    release();
+    await slow;
+    spy.mockRestore();
+
+    const inMemory = books.getBookById('race-entity')!;
+    expect(inMemory.description).toBe('新简介');
+    expect(inMemory.terminologies?.map((term) => term.id)).toEqual(['t1']);
+  });
+
+  it('较早提交但较晚返回的字段增量结果不会覆盖之后整本保存的卷章', async () => {
+    await BookService.saveBook(baseBook('race-snapshot'));
+    const books = await tab();
+    const real = BookService.updateBookFields.bind(BookService);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let firstCommitted!: () => void;
+    const committed = new Promise<void>((resolve) => (firstCommitted = resolve));
+    const spy = vi
+      .spyOn(BookService, 'updateBookFields')
+      .mockImplementation(async (...args: Parameters<typeof BookService.updateBookFields>) => {
+        const result = await real(...args);
+        firstCommitted();
+        await gate;
+        return result;
+      });
+
+    const slow = books.updateBook('race-snapshot', { targetLanguage: 'en-US' });
+    await committed;
+    const volumes = [
+      ...books.getBookById('race-snapshot')!.volumes!,
+      { id: 'v2', title: '第二卷', chapters: [] },
+    ];
+    await books.updateBook('race-snapshot', { volumes });
+    release();
+    await slow;
+    spy.mockRestore();
+
+    const inMemory = books.getBookById('race-snapshot')!;
+    expect(inMemory.volumes?.map((volume) => volume.id)).toEqual(['v1', 'v2']);
+    expect(inMemory.targetLanguage).toBe('en-US');
+  });
+
   it('库中不存在的书籍仍按原有方式写入', async () => {
     const books = await tab();
     books.books.push(baseBook('delta-absent'));

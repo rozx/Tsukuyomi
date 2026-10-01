@@ -294,6 +294,13 @@ async function replaceLibraryRecords(
     await bumpBookRevision(tx.objectStore('book-revisions'), id);
 }
 
+/** 有语义修改时递增书籍修改序号，否则读取当前序号；返回提交后记录对应的序号。 */
+async function commitBookRevision(tx: Transaction, bookId: string, changed: boolean) {
+  const store = tx.objectStore('book-revisions');
+  if (changed) return bumpBookRevision(store, bookId);
+  return (await store.get(bookId))?.revision ?? 0;
+}
+
 /** 只处理持久化，不依赖 UI、缓存、网络或模型。 */
 export class LibraryPersistence {
   static async editTitle(
@@ -604,6 +611,17 @@ export class LibraryPersistence {
     locale: AppLocale,
     expectedBookLanguage?: AppLocale,
   ): Promise<Novel> {
+    return (await this.commitEntityEdit(db, base, updates, locale, expectedBookLanguage)).book;
+  }
+
+  /** 同 editEntities，并返回提交后记录对应的书籍修改序号 */
+  static async commitEntityEdit(
+    db: IDBPDatabase<TsukuyomiDB>,
+    base: Novel,
+    updates: EntityUpdates,
+    locale: AppLocale,
+    expectedBookLanguage?: AppLocale,
+  ): Promise<{ book: Novel; revision: number }> {
     const identified = identifyEntityUpdates(normalizeBookLanguages(base), updates);
     let observed = [
       ...collectBookRevisions(normalizeBookLanguages(base)),
@@ -621,12 +639,12 @@ export class LibraryPersistence {
           ...current,
           ...applyBookEntityEdit(base, identified, current, locale, revision, Date.now()),
         });
-        if (semanticBook(current) !== semanticBook(next)) {
+        const changed = semanticBook(current) !== semanticBook(next);
+        if (changed) {
           next.lastEdited = new Date().toISOString() as unknown as Date;
           await tx.objectStore('books').put(next);
-          await bumpBookRevision(tx.objectStore('book-revisions'), base.id);
         }
-        return next;
+        return { book: next, revision: await commitBookRevision(tx, base.id, changed) };
       },
       'ENTITY_EDIT_CONFLICT',
     );
@@ -650,12 +668,11 @@ export class LibraryPersistence {
       // 卷章原样保留：重新剥离正文会改写已存的 contentLoaded 约定，造成无意义写入
       if (prior.volumes) next.volumes = prior.volumes;
       const changes: Changes = new Map();
-      const revisions = tx.objectStore('book-revisions');
       if (semanticBook(prior) === semanticBook(next))
-        return { book: prior, changes, revision: (await revisions.get(bookId))?.revision ?? 0 };
+        return { book: prior, changes, revision: await commitBookRevision(tx, bookId, false) };
       next.lastEdited = new Date(lastEdited ?? Date.now()).toISOString() as unknown as Date;
       await tx.objectStore('books').put(next);
-      const revision = await bumpBookRevision(revisions, bookId);
+      const revision = await commitBookRevision(tx, bookId, true);
       if ((prior.targetLanguage ?? 'zh-CN') !== (next.targetLanguage ?? 'zh-CN'))
         changes.set(bookId, chapterIds(next));
       return { book: next, changes, revision };
@@ -665,12 +682,13 @@ export class LibraryPersistence {
   /**
    * @param options.keepStoredTargetLanguage 本次保存不是在修改目标语言：保留库中已存的目标语言，
    *   防止持有旧快照的元数据保存把其他标签页刚改的目标语言改回去
+   * @param options.revisions 传入时填入每本书提交后记录对应的修改序号
    */
   static async saveBooks(
     db: IDBPDatabase<TsukuyomiDB>,
     books: Novel[],
     saveContent = true,
-    options: { keepStoredTargetLanguage?: boolean } = {},
+    options: { keepStoredTargetLanguage?: boolean; revisions?: Map<string, number> } = {},
   ): Promise<Changes> {
     const prepared = books.map((book) => ({
       observed: collectBookRevisions(normalizeBookLanguages(book)),
@@ -730,8 +748,14 @@ export class LibraryPersistence {
         // 保留原有 contentLoaded 存储约定，但派生标记变化不递增语义序号。
         if (canonicalStringify(prior) !== canonicalStringify(record))
           await tx.objectStore('books').put(record);
-        if (metadataChanged || contentChanged)
-          await bumpBookRevision(tx.objectStore('book-revisions'), record.id);
+        if (metadataChanged || contentChanged || options.revisions) {
+          const revision = await commitBookRevision(
+            tx,
+            record.id,
+            metadataChanged || contentChanged,
+          );
+          options.revisions?.set(record.id, revision);
+        }
         const targetChanged =
           prior && (prior.targetLanguage ?? 'zh-CN') !== (record.targetLanguage ?? 'zh-CN');
         if (targetChanged) saved.push(...chapterIds(record));

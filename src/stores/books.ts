@@ -151,6 +151,12 @@ async function preserveChapterContentsOnVolumesUpdate(
   return mergePreservedChapterContents(updatedVolumes, chaptersById, contentMap);
 }
 
+/** 已提交的书籍记录；revision 为该记录对应的书籍修改序号（未知时缺省） */
+interface CommittedBook {
+  book: Novel;
+  revision?: number | undefined;
+}
+
 /**
  * 保存书籍元数据。未修改目标语言的保存保留库中已存值（其他标签页可能刚改过）；
  * 保存后以库中合并后的记录（目标语言、卷章标题语言槽、术语角色）作为内存副本，
@@ -161,15 +167,15 @@ async function saveBookMetadata(
   existingBook: Novel | undefined,
   updates: Partial<Novel>,
   saveChapterContent: boolean,
-): Promise<Novel> {
+): Promise<CommittedBook> {
   const changesTarget =
     'targetLanguage' in updates && updates.targetLanguage !== existingBook?.targetLanguage;
-  await BookService.saveBook(updatedBook, {
+  const revision = await BookService.saveBook(updatedBook, {
     saveChapterContent,
     keepStoredTargetLanguage: !changesTarget,
   });
   const stored = await BookService.getBookById(updatedBook.id);
-  return stored ? withLoadedContent(stored, updatedBook) : updatedBook;
+  return { book: stored ? withLoadedContent(stored, updatedBook) : updatedBook, revision };
 }
 
 /** 把内存副本里已加载的章节正文挂到库中读取的书籍记录上（库记录不含正文）。 */
@@ -217,19 +223,13 @@ function editBookEntities(
   existingBook: Novel,
   updates: Partial<Novel>,
   options?: UpdateBookOptions,
-): Promise<Novel> {
-  return BookService.editEntities(
+): Promise<CommittedBook> {
+  return BookService.commitEntityEdit(
     existingBook,
     updates,
     options?.targetLanguage ?? existingBook.targetLanguage ?? 'zh-CN',
     options?.expectedBookLanguage,
   );
-}
-
-/** 已提交的书籍记录；revision 为该记录对应的书籍修改序号（实体编辑路径未提供） */
-interface CommittedBook {
-  book: Novel;
-  revision?: number;
 }
 
 /**
@@ -244,7 +244,7 @@ async function saveBookFieldUpdates(
 ): Promise<CommittedBook | undefined> {
   let committed: CommittedBook | undefined;
   if (updates.terminologies !== undefined || updates.characterSettings !== undefined) {
-    committed = { book: await editBookEntities(existingBook, updates, options) };
+    committed = await editBookEntities(existingBook, updates, options);
   }
   const patch = buildBookFieldPatch(existingBook, updates);
   const { lastEdited: _time, ...fields } = patch;
@@ -281,23 +281,23 @@ async function commitSnapshotEntityEdit(
   existingBook: Novel,
   updates: Partial<Novel>,
   options?: UpdateBookOptions,
-): Promise<{ book: Novel; complete: boolean }> {
-  const committed = await editBookEntities(existingBook, updates, options);
+): Promise<{ committed: CommittedBook; complete: boolean }> {
+  const { book: entityBook, revision } = await editBookEntities(existingBook, updates, options);
   const {
     terminologies: _terms,
     characterSettings: _characters,
     lastEdited: _time,
     ...otherUpdates
   } = updates;
-  const book = { ...committed, ...otherUpdates };
-  const volumes = updates.volumes ?? committed.volumes;
+  const book = { ...entityBook, ...otherUpdates };
+  const volumes = updates.volumes ?? entityBook.volumes;
   if (volumes) {
     book.volumes = await preserveChapterContentsOnVolumesUpdate(
       existingBook.volumes ?? [],
       volumes,
     );
   }
-  return { book, complete: Object.keys(otherUpdates).length === 0 };
+  return { committed: { book, revision }, complete: Object.keys(otherUpdates).length === 0 };
 }
 
 /** 卷章结构等整本保存路径（含正文），保持原有的整本写入语义 */
@@ -306,12 +306,12 @@ async function persistBookSnapshot(
   updatedBook: Novel,
   updates: Partial<Novel>,
   options?: UpdateBookOptions,
-): Promise<Novel> {
+): Promise<CommittedBook> {
   let book = updatedBook;
   if (updates.terminologies !== undefined || updates.characterSettings !== undefined) {
     const edited = await commitSnapshotEntityEdit(existingBook, updates, options);
-    if (edited.complete) return edited.book;
-    book = edited.book;
+    if (edited.complete) return edited.committed;
+    book = edited.committed.book;
   }
   // 优化：只更新元数据时跳过保存章节内容
   const saveChapterContent = options?.saveChapterContent ?? Boolean(updates.volumes);
@@ -492,16 +492,15 @@ export const useBooksStore = defineStore('books', {
     },
 
     /**
-     * 采用已提交的记录，并沿用内存中已加载的章节正文。并发保存时较晚返回的旧提交
+     * 采用已提交的记录作为内存副本。并发保存时较晚返回的旧提交
      * （修改序号低于内存已采用的序号）不覆盖内存中更新的记录。
      */
-    adoptCommittedBook(existingBook: Novel, committed: CommittedBook): void {
-      const { id } = existingBook;
+    adoptCommittedBook(id: string, committed: CommittedBook): void {
       const known = this.storageRevisions[id];
       if (committed.revision !== undefined && known !== undefined && committed.revision < known)
         return;
       const index = this.books.findIndex((book) => book.id === id);
-      if (index >= 0) this.books[index] = withLoadedContent(committed.book, existingBook);
+      if (index >= 0) this.books[index] = committed.book;
       if (committed.revision !== undefined) this.storageRevisions[id] = committed.revision;
     },
 
@@ -519,17 +518,20 @@ export const useBooksStore = defineStore('books', {
       if (isFieldUpdate(updates, options)) {
         const committed = await saveBookFieldUpdates(existingBook, updates, options);
         if (committed) {
-          this.adoptCommittedBook(existingBook, committed);
+          const book = withLoadedContent(committed.book, existingBook);
+          this.adoptCommittedBook(id, { ...committed, book });
           return;
         }
       }
       const removedChapterIds = collectRemovedChapterIds(existingBook.volumes, updates.volumes);
-      let updatedBook = await mergeBookUpdates(existingBook, updates);
-      if (options?.persist !== false) {
-        updatedBook = await persistBookSnapshot(existingBook, updatedBook, updates, options);
-        await cleanupRemovedChapterData(id, removedChapterIds);
+      const updatedBook = await mergeBookUpdates(existingBook, updates);
+      if (options?.persist === false) {
+        this.books[index] = updatedBook;
+        return;
       }
-      this.books[index] = updatedBook;
+      const committed = await persistBookSnapshot(existingBook, updatedBook, updates, options);
+      await cleanupRemovedChapterData(id, removedChapterIds);
+      this.adoptCommittedBook(id, committed);
     },
 
     /**

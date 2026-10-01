@@ -177,15 +177,24 @@ export class BookService {
     locale: AppLocale,
     expectedBookLanguage?: AppLocale,
   ): Promise<Novel> {
-    return deserializeDates(
-      await LibraryPersistence.editEntities(
-        await getDB(),
-        base,
-        updates,
-        locale,
-        expectedBookLanguage,
-      ),
+    return (await BookService.commitEntityEdit(base, updates, locale, expectedBookLanguage)).book;
+  }
+
+  /** 同 editEntities，并返回提交后记录对应的书籍修改序号 */
+  static async commitEntityEdit(
+    base: Novel,
+    updates: EntityUpdates,
+    locale: AppLocale,
+    expectedBookLanguage?: AppLocale,
+  ): Promise<{ book: Novel; revision: number }> {
+    const result = await LibraryPersistence.commitEntityEdit(
+      await getDB(),
+      base,
+      updates,
+      locale,
+      expectedBookLanguage,
     );
+    return { book: deserializeDates(result.book), revision: result.revision };
   }
 
   /**
@@ -275,19 +284,22 @@ export class BookService {
    * @param book 书籍对象
    * @param options 保存选项
    * @param options.saveChapterContent 是否保存章节内容，默认为 true。如果为 false，则只保存书籍元数据（适用于仅更新术语、角色设定等元数据的场景）
+   * @returns 提交后记录对应的书籍修改序号
    */
   static async saveBook(
     this: void,
     book: Novel,
     options?: { saveChapterContent?: boolean; keepStoredTargetLanguage?: boolean },
-  ): Promise<void> {
+  ): Promise<number | undefined> {
+    const revisions = new Map<string, number>();
     const changes = await LibraryPersistence.saveBooks(
       await getDB(),
       [book],
       options?.saveChapterContent !== false,
-      { keepStoredTargetLanguage: options?.keepStoredTargetLanguage === true },
+      { keepStoredTargetLanguage: options?.keepStoredTargetLanguage === true, revisions },
     );
     await maintainLibraryChanges(changes);
+    return revisions.get(book.id);
   }
 
   /**
