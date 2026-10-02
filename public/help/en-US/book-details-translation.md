@@ -125,7 +125,7 @@ Changing target selects another language for reading and new tasks, without dele
 ### Book model overrides {#book-details-translation-section-18}
 
 - **Translation model**: chapter/paragraph translation and fallback for tool-added translations.
-- **Proofreading/polishing model**: corresponding chapter/paragraph tasks.
+- **Proofreading / polishing model**: corresponding chapter/paragraph tasks.
 
 Follow global default uses the task model configured on AI models. A disabled/deleted override falls back silently; settings retain an invalid-selection placeholder until changed and saved.
 

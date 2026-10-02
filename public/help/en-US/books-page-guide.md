@@ -8,7 +8,7 @@ The book library manages all your projects, with search, sorting, import, editin
 
 - **Search**: filter by title, alternate title, author, description, or tag.
 - **Sort**: several options, with your previous choice remembered.
-- **Add books**: manually, from a website, or from JSON.
+- **Add book**: manually, from a website, or from JSON.
 - **Card actions**: favorite, edit, and delete.
 - **Pagination**: 10/20/50/100 books per page.
 
@@ -70,11 +70,11 @@ Built-in sites:
 - `kakuyomu.jp`
 - `syosetu.org`
 
-Use **Hand over to AI importer** in the workspace for other sites.
+Use **Hand off to the AI importer** in the workspace for other sites.
 
 ### 3) Import JSON {#books-page-guide-section-8}
 
-Choose **Import from JSON** and select a `.json` or `.txt` file.
+Choose **Import JSON** and select a `.json` or `.txt` file.
 
 Accepted structures:
 

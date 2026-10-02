@@ -197,7 +197,7 @@
   {
     "category": "使用指南",
     "categoryId": "guides",
-    "description": "設定頁各選項卡詳解：AI 模型、代理設定、網站映射與 Firecrawl 回退、API Keys、同步等",
+    "description": "設定頁各選項卡詳解：AI 模型、代理設定、網站對應與 Firecrawl 備援、API Keys、同步等",
     "file": "settings-guide.md",
     "id": "settings-guide",
     "path": "help/zh-TW",
@@ -538,6 +538,15 @@
       "记忆和章节向量索引有什么区别": "book-details-memory-section-34",
       "如何决定什么信息值得记录": "book-details-memory-section-35"
     }
+  },
+  {
+    "category": "更新紀錄",
+    "categoryId": "release-notes",
+    "description": "簡中 / 繁中 / 英文三語言介面與說明文件、按書設定譯文目標語言、Firecrawl 抓取備援與網站對應、書籍更新檢查只讀目錄及同步協議 v4",
+    "file": "RELEASE_NOTES_v0.17.0.md",
+    "id": "v0.17.0",
+    "path": "releaseNotes",
+    "title": "v0.17.0"
   },
   {
     "category": "更新紀錄",
