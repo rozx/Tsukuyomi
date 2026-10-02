@@ -182,6 +182,8 @@ When quoting UI labels, use the exact text from that language's resources in `sr
 
 6. **Update the READMEs** when the release changes something the README describes (feature summary, "What's new" section, quick start, tech stack, commands). Apply the same change to `README.md`, `README.zh-TW.md`, and `README.en-US.md`; each links to its own language's help docs (`public/help/<locale>/`). The GitHub Wiki is generated from the help docs by `scripts/sync-docs-to-wiki.ts` after merge to `main` — do not edit the wiki directly.
 
+   **"What's new" section — latest release only.** The README highlights only the current release's key features: replace the previous release's "New in vX.Y" section (heading, bullets, release-notes link) with one for this release instead of stacking a new section on top, and drop links to older release notes from the docs index. Older features belong in the feature details / quick start sections, not in a version highlight. Write each README in its own script: `README.md` is Simplified Chinese, so never paste Traditional terms such as 備援 / 設定 into it.
+
 ---
 
 ## Step 4: Quality Checks

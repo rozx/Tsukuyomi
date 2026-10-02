@@ -24,27 +24,10 @@
 - **界面语言**：在「设置 → 通用设置 → 界面语言」切换，首次使用时匹配系统语言，偏好随设置同步。
 - **按书目标语言**：在书籍「翻译设置」选择简体中文、繁體中文或 English；新书默认取创建时的界面语言，各语言的译文、卷章标题和术语 / 角色译名分别保存，互不覆盖。
 - **原文不限语言**：AI 按段落判断原文语言，已经是目标语言的段落可原样保留。
-- **Firecrawl 抓取備援**：网站拦截代理访问时自动改用 Firecrawl（无需 Key 也可使用），取代原来的「自动切换代理服务」；书籍更新检查改为只读目录，按需逐章比对正文。
+- **Firecrawl 抓取回退**：网站拦截代理访问时自动改用 Firecrawl（无需 Key 也可使用），取代原来的「自动切换代理服务」；书籍更新检查改为只读目录，按需逐章比对正文。
 - **同步协议 v4**：术语、角色、别名和译文版本的删除不会再被其他设备的旧数据带回。**多设备同步请先备份并把所有设备升级到 v0.17.0，再逐台同步。**
 
 [阅读 v0.17.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.17.0.md) · [设置说明](public/help/zh-CN/settings-guide.md)
-
-## 📥 AI 导入工作台（v0.16 起）
-
-给月詠一个小说网址，或拖入 TXT、Markdown、HTML、EPUB 文件，再说明要导入哪些内容。她会检查来源、提取正文并整理卷章，你可以直接修改草稿，检查方案后再确认导入书库。
-
-例如，添加 EPUB 后可以这样说：
-
-> 请把这个 EPUB 导入为一本新小说，按目录分卷分章，保留序言和后记，并列出缺失章节。
-
-- **批量整理**：支持整本 TXT 按标题拆章、Markdown 按标题层级分卷，以及批量清理正文杂质、替换卷章标题。
-- **检查后导入**：预览正文、选择章节、编辑书籍资料与标签；可新建小说，也可给已有小说补章。方案会列出变化和将清空的译文数量。
-- **暂停与补齐**：任务保存在当前设备，可以暂停后继续、重试失败章节，或先导入已成功的部分。书籍没有后续修改时可整次撤销。
-- **连载后续更新**：符合条件的网站可保存「更新配方」，记录目录、正文提取和清理规则，以后直接在书籍详情中检查新章与原文修订。
-
-流程：**添加来源 → 与月詠对话 → 检查卷章草稿 → 确认导入**。开始前需配置「助手」默认模型；需要登录或人机验证的网站可能需要改为提供文件。
-
-[查看分步操作与示例指令](public/help/zh-CN/import-guide.md) · [阅读 v0.16.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)
 
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
@@ -233,7 +216,7 @@ bun run dev
 | **书籍管理** | [图书馆介绍](public/help/zh-CN/library-guide.md) \| [导入与抓取](public/help/zh-CN/books-page-guide.md) \| [章节管理](public/help/zh-CN/book-details-chapters.md)              |
 | **翻译实战** | [翻译功能面板](public/help/zh-CN/book-details-translation.md) \| [三种编辑模式](public/help/zh-CN/book-details-editing.md) \| [工具栏详解](public/help/zh-CN/toolbar-guide.md) |
 | **核心逻辑** | [术语管理](public/help/zh-CN/book-details-terminology.md) \| [角色设定](public/help/zh-CN/book-details-characters.md) \| [记忆系统](public/help/zh-CN/book-details-memory.md)  |
-| **AI 导入**  | [导入工作台：分步操作、拆章与补章](public/help/zh-CN/import-guide.md) \| [v0.16.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)                                      |
+| **AI 导入**  | [导入工作台：分步操作、拆章与补章](public/help/zh-CN/import-guide.md)                                                                                                          |
 | **进阶工具** | [聊天助手实战](public/help/zh-CN/chat-assistant-guide.md) \| [本地嵌入与章节检索](public/help/zh-CN/local-embedding.md)                                                        |
 | **更新日志** | [v0.17.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.17.0.md)                                                                                                               |
 

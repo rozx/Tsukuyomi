@@ -29,23 +29,6 @@
 
 [閱讀 v0.17.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.17.0.md) · [設定說明](public/help/zh-TW/settings-guide.md)
 
-## 📥 AI 匯入工作台（v0.16 起）
-
-給月詠一個小說網址，或拖入 TXT、Markdown、HTML、EPUB 檔案，再說明要匯入哪些內容。她會檢查來源、提取正文並整理卷章，你可以直接修改草稿，檢查方案後再確認匯入書庫。
-
-例如，添加 EPUB 後可以這樣說：
-
-> 請把這個 EPUB 匯入為一本新小說，按目錄分卷分章，保留序言和後記，並列出缺失章節。
-
-- **批次整理**：支援整本 TXT 按標題拆章、Markdown 按標題層級分卷，以及批次清理正文雜質、替換卷章標題。
-- **檢查後匯入**：預覽正文、選擇章節、編輯書籍資料與標籤；可新建小說，也可給已有小說補章。方案會列出變化和將清空的譯文數量。
-- **暫停與補齊**：任務保存在目前裝置，可以暫停後繼續、重試失敗章節，或先匯入已成功的部分。書籍沒有後續修改時可整次復原。
-- **連載後續更新**：符合條件的網站可保存「更新配方」，記錄目錄、正文提取和清理規則，以後直接在書籍詳情中檢查新章與原文修訂。
-
-流程：**添加來源 → 與月詠對話 → 檢查卷章草稿 → 確認匯入**。開始前需設定「助手」預設模型；需要登入或人機驗證的網站可能需要改為提供檔案。
-
-[查看分步操作與範例指令](public/help/zh-TW/import-guide.md) · [閱讀 v0.16.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)
-
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
 ## ✨ 核心功能詳情
@@ -233,7 +216,7 @@ bun run dev
 | **書籍管理** | [圖書館介紹](public/help/zh-TW/library-guide.md) \| [匯入與抓取](public/help/zh-TW/books-page-guide.md) \| [章節管理](public/help/zh-TW/book-details-chapters.md)              |
 | **翻譯實戰** | [翻譯功能面板](public/help/zh-TW/book-details-translation.md) \| [三種編輯模式](public/help/zh-TW/book-details-editing.md) \| [工具列詳解](public/help/zh-TW/toolbar-guide.md) |
 | **核心邏輯** | [術語管理](public/help/zh-TW/book-details-terminology.md) \| [角色設定](public/help/zh-TW/book-details-characters.md) \| [記憶系統](public/help/zh-TW/book-details-memory.md)  |
-| **AI 匯入**  | [匯入工作台：分步操作、拆章與補章](public/help/zh-TW/import-guide.md) \| [v0.16.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)                          |
+| **AI 匯入**  | [匯入工作台：分步操作、拆章與補章](public/help/zh-TW/import-guide.md)                                                                                                          |
 | **進階工具** | [聊天助手實戰](public/help/zh-TW/chat-assistant-guide.md) \| [本地嵌入與章節檢索](public/help/zh-TW/local-embedding.md)                                                        |
 | **更新紀錄** | [v0.17.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.17.0.md)                                                                                                   |
 

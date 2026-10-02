@@ -29,23 +29,6 @@ The interface, help docs, and README are available in Simplified Chinese, Tradit
 
 [v0.17.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.17.0.md) · [Settings guide](public/help/en-US/settings-guide.md)
 
-## 📥 AI Import Workspace (since v0.16)
-
-Give Tsukuyomi a novel URL, or drop in TXT, Markdown, HTML, or EPUB files, and describe what to import. She checks the sources, extracts the text, and organizes volumes and chapters. You can edit the draft directly and review the plan before confirming the import into your library.
-
-For example, after adding an EPUB you could say:
-
-> Import this EPUB as a new novel. Split volumes and chapters by its table of contents, keep the prologue and afterword, and list any missing chapters.
-
-- **Batch cleanup**: split a whole TXT into chapters by heading, turn Markdown heading levels into volumes, and clean up stray text or rename volume/chapter titles in bulk.
-- **Review before import**: preview text, select chapters, and edit book details and tags. Create a new novel or add chapters to an existing one. The plan lists every change and how many translations would be cleared.
-- **Pause and resume**: tasks are saved on the current device. Pause and continue later, retry failed chapters, or import the parts that already succeeded. The whole import can be undone as long as the book has not been modified since.
-- **Ongoing serials**: supported sites can save an **Update recipe** that records the contents page, text extraction, and cleanup rules, so you can check for new chapters and source revisions directly from book details.
-
-Workflow: **Add sources → Chat with Tsukuyomi → Review the draft → Confirm import**. Set a default **Assistant** model first. Sites that require sign-in or a CAPTCHA may need to be provided as files instead.
-
-[Step-by-step guide and example prompts](public/help/en-US/import-guide.md) · [v0.16.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)
-
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
 ## ✨ Features
@@ -233,7 +216,7 @@ bun run dev
 | **Books**         | [Library and home](public/help/en-US/library-guide.md) \| [Import and scraping](public/help/en-US/books-page-guide.md) \| [Chapter management](public/help/en-US/book-details-chapters.md)          |
 | **Translation**   | [Translation panel](public/help/en-US/book-details-translation.md) \| [Editing modes](public/help/en-US/book-details-editing.md) \| [System bar and navigation](public/help/en-US/toolbar-guide.md) |
 | **Context**       | [Terminology](public/help/en-US/book-details-terminology.md) \| [Character settings](public/help/en-US/book-details-characters.md) \| [Memory](public/help/en-US/book-details-memory.md)            |
-| **AI import**     | [Import workspace: steps, splitting, and adding chapters](public/help/en-US/import-guide.md) \| [v0.16.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)          |
+| **AI import**     | [Import workspace: steps, splitting, and adding chapters](public/help/en-US/import-guide.md)                                                                                                        |
 | **Advanced**      | [Chat assistant](public/help/en-US/chat-assistant-guide.md) \| [Local embeddings and chapter search](public/help/en-US/local-embedding.md)                                                          |
 | **Release notes** | [v0.17.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.17.0.md)                                                                                                          |
 
