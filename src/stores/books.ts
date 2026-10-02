@@ -8,6 +8,7 @@ import type {
   CharacterSetting,
 } from 'src/models/novel';
 import { BookService } from 'src/services/book-service';
+import type { EntityRestoreSet } from 'src/services/library-persistence';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { ImportLibraryReader } from 'src/services/import/import-library-reader';
@@ -391,6 +392,18 @@ export const useBooksStore = defineStore('books', {
       const value = await BookService.restoreEntity(bookId, kind, entity, operationId);
       await this.refreshBookFromStorage(bookId);
       return value;
+    },
+
+    /** 多个实体在同一事务中恢复，供撤销 / 重做快照使用。 */
+    // 撤销 helper 通过传入的 store 参数调用，Fallow 不追踪该参数绑定。
+    // fallow-ignore-next-line unused-store-member
+    async restoreEntities(
+      bookId: string,
+      entities: Partial<EntityRestoreSet>,
+      operationId: string,
+    ): Promise<void> {
+      await BookService.restoreEntities(bookId, entities, operationId);
+      await this.refreshBookFromStorage(bookId);
     },
 
     /**

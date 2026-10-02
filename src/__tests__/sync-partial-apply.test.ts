@@ -783,9 +783,10 @@ describe('applyPartialRemoteData: novel structure merge regression', () => {
     const mergedChapter = mergedBook.volumes?.[0]?.chapters?.[0];
     expect(mergedChapter?.title).toBe('新标题');
     expect(mergedChapter?.content?.[0]?.selectedTranslationId).toBe('t-remote');
+    // 合并后的版本顺序与哪一侧为主方无关（ID 序列较小的一侧为基）
     expect(mergedChapter?.content?.[0]?.translations.map((translation) => translation.id)).toEqual([
-      't-remote',
       't-local',
+      't-remote',
     ]);
   });
 

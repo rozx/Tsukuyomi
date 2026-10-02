@@ -4,6 +4,7 @@ import { getDB } from 'src/utils/indexed-db';
 import type { Novel, Terminology, CharacterSetting } from 'src/models/novel';
 import { ChapterContentService } from './chapter-content-service';
 import { LibraryPersistence } from './library-persistence';
+import type { EntityRestoreSet } from './library-persistence';
 import { maintainLibraryChanges } from './chapter-content-maintenance';
 import type { AppLocale } from 'src/models/locale';
 import type { EntityUpdates } from './localization/entity-edit';
@@ -169,6 +170,14 @@ export class BookService {
     operationId: string,
   ): Promise<T> {
     return LibraryPersistence.restoreEntity(await getDB(), bookId, kind, entity, operationId);
+  }
+
+  static async restoreEntities(
+    bookId: string,
+    entities: Partial<EntityRestoreSet>,
+    operationId: string,
+  ): Promise<EntityRestoreSet> {
+    return LibraryPersistence.restoreEntities(await getDB(), bookId, entities, operationId);
   }
 
   static async editEntities(

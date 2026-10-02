@@ -71,6 +71,7 @@ import { useParagraphNavigation } from 'src/composables/book-details/useParagrap
 import type { ChapterScrollToIndex } from 'src/composables/book-details/useChapterVirtualizer';
 import { useKeyboardShortcuts } from 'src/composables/book-details/useKeyboardShortcuts';
 import { useChapterTranslation } from 'src/composables/book-details/useChapterTranslation';
+import { applyBookSnapshot } from './book-undo-snapshot';
 import { useUndoRedo } from 'src/composables/useUndoRedo';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -367,7 +368,7 @@ function createBookDetailsPageContext() {
     clearHistory,
   } = useUndoRedo(
     book,
-    async (updatedBook, scope) => {
+    async (updatedBook, scope, operationId) => {
       if (!updatedBook) return;
       if (scope) {
         await BookService.restoreTranslationHistory(updatedBook, scope.chapterId, scope.language);
@@ -380,9 +381,7 @@ function createBookDetailsPageContext() {
           );
         return;
       }
-      const currentTarget = booksStore.getBookById(updatedBook.id)?.targetLanguage ?? 'zh-CN';
-      const restored = { ...updatedBook, targetLanguage: currentTarget };
-      await booksStore.updateBook(updatedBook.id, restored);
+      await applyBookSnapshot(booksStore, updatedBook, operationId);
       await syncSelectedChapterAfterUndoRedo(
         updatedBook,
         selectedChapterId.value,

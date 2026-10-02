@@ -5,6 +5,14 @@ import { canonicalStringify } from '../utils/canonical-json';
 import { hashJson } from '../utils/content-hash';
 
 describe('canonicalStringify', () => {
+  it('keeps own keys named like Object.prototype members (e.g. translation version IDs)', () => {
+    const value = JSON.parse('{"__proto__":{"at":1},"constructor":2,"toString":3}');
+    expect(JSON.parse(canonicalStringify(value))).toEqual(value);
+    expect(canonicalStringify(value)).toBe('{"__proto__":{"at":1},"constructor":2,"toString":3}');
+    const nested = { when: new Date(0), records: value };
+    expect(canonicalStringify(nested)).toContain('"__proto__":{"at":1}');
+  });
+
   it('sorts object keys alphabetically regardless of insertion order', () => {
     const a = { b: 1, a: 2, c: 3 };
     const b = { c: 3, a: 2, b: 1 };

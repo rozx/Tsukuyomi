@@ -641,9 +641,10 @@ describe('数据同步服务 (SyncDataService)', () => {
       const chapter = addedBooks?.[0]?.volumes?.[0]?.chapters?.[0];
       expect(chapter?.title).toBe('新标题');
       expect(chapter?.content?.[0]?.selectedTranslationId).toBe('t-remote');
+      // 合并后的版本顺序与哪一侧为主方无关（ID 序列较小的一侧为基）
       expect(
         chapter?.content?.[0]?.translations?.map((translation: { id: string }) => translation.id),
-      ).toEqual(['t-remote', 't-local']);
+      ).toEqual(['t-local', 't-remote']);
     });
 
     it('当远程书籍较新且已删除本地旧卷时，不应在合并后复活该卷', async () => {
@@ -856,6 +857,64 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(addedBooks?.[0]?.volumes?.map((volume: { id: string }) => volume.id)).toContain(
         'v-empty-local',
       );
+    });
+
+    it('已删除的译文版本不会被仍持有它的一侧合并回来（无论哪一侧较新）', async () => {
+      const oldDate = new Date('2024-01-01').toISOString();
+      const newDate = new Date('2024-01-02').toISOString();
+      const slots = {
+        'zh-CN': { value: 't-keep', revision: { counter: 1, actorId: 'base' }, updatedAt: 0 },
+      };
+      const deleted = {
+        id: 'p1',
+        text: '原文',
+        selectedTranslationId: 't-keep',
+        selectedTranslations: slots,
+        translations: [{ id: 't-keep', translation: '保留', aiModelId: 'm1' }],
+        deletedTranslations: {
+          't-old': { revision: { counter: 5, actorId: 'remote' }, deletedAt: 100 },
+        },
+      };
+      const stale = {
+        id: 'p1',
+        text: '原文',
+        selectedTranslationId: 't-keep',
+        selectedTranslations: slots,
+        translations: [
+          { id: 't-old', translation: '旧版本', aiModelId: 'm1' },
+          { id: 't-keep', translation: '保留', aiModelId: 'm1' },
+        ],
+      };
+      const novel = (paragraph: unknown, date: string) => ({
+        id: 'n1',
+        title: 'Novel',
+        lastEdited: date,
+        createdAt: oldDate,
+        volumes: [
+          {
+            id: 'v1',
+            chapters: [{ id: 'c1', lastEdited: date, createdAt: oldDate, content: [paragraph] }],
+          },
+        ],
+      });
+
+      for (const [local, remote] of [
+        [novel(stale, newDate), novel(deleted, oldDate)],
+        [novel(deleted, oldDate), novel(stale, newDate)],
+      ]) {
+        mockBooksStore.bulkAddBooks.mockClear();
+        mockBooksStore.books = [local] as unknown[];
+        await SyncDataService.applyDownloadedData({ novels: [remote] });
+        const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
+        const paragraph = addedBooks?.[0]?.volumes?.[0]?.chapters?.[0]?.content?.[0];
+        expect(paragraph.translations.map((value: { id: string }) => value.id)).toEqual([
+          't-keep',
+        ]);
+        expect(paragraph.deletedTranslations?.['t-old']?.revision).toEqual({
+          counter: 5,
+          actorId: 'remote',
+        });
+      }
     });
 
     it('选用按逻辑版本合并，不由书籍修改时间决定', async () => {
@@ -1183,8 +1242,8 @@ describe('数据同步服务 (SyncDataService)', () => {
 
       expect(paragraph.selectedTranslationId).toBe('');
       expect(paragraph.translations.map((translation: { id: string }) => translation.id)).toEqual([
-        't-remote',
         't-local',
+        't-remote',
       ]);
     });
 

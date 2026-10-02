@@ -1,4 +1,10 @@
 import { mergeParagraphLanguageState } from './localization/merge';
+import {
+  chapterPairKey,
+  pairByIdThenKey,
+  paragraphPairKey,
+  volumePairKey,
+} from './localization/sync-pairing';
 import { mergeBookEntityState } from './localization/entities';
 import { mergeTitlePreservingTranslation } from './localization/title-merge';
 import {
@@ -135,13 +141,6 @@ function shouldKeepLocalOnlyItem(
 }
 
 /** 取卷原文标题（兼容 string / {original, translation} 两种格式），与本地导入的卷匹配语义一致 */
-function getVolumeOriginalTitle(volume: Volume): string {
-  if (typeof volume.title === 'string') {
-    return volume.title;
-  }
-  return volume.title?.original ?? '';
-}
-
 function mergeNotes(primaryNotes: Novel['notes'], secondaryNotes: Novel['notes']): Novel['notes'] {
   return mergeUniqueById(primaryNotes, secondaryNotes, (primaryNote, secondaryNote) => {
     const primaryTime = getMergeTimestamp(primaryNote.lastEdited);
@@ -313,40 +312,17 @@ async function mergeNovelChapters(
   }
 
   const primaryChapterIds = new Set(primaryChapters.map((chapter) => chapter.id));
-  const secondaryChapterMap = new Map<string, Chapter>();
-  // webUrl 回退索引：两台设备各自抓取同一章节会生成不同的章节 id，
-  // webUrl 才是跨设备稳定标识（与本地导入 mergeChapterInto 的去重键一致）。
-  // 用 FIFO 队列 + 消费标记，与段落文本回退同构，防止同 URL 被双重消费。
-  // 已与某个 primary 同 id 的章节不进回退索引，避免被别的章节抢先消费。
-  const secondaryByWebUrl = new Map<string, Chapter[]>();
-  for (const chapter of secondaryChapters) {
-    secondaryChapterMap.set(chapter.id, chapter);
-    if (chapter.webUrl && !primaryChapterIds.has(chapter.id)) {
-      const queue = secondaryByWebUrl.get(chapter.webUrl);
-      if (queue) queue.push(chapter);
-      else secondaryByWebUrl.set(chapter.webUrl, [chapter]);
-    }
-  }
-
-  // 同步预配对（先按 id，再按 webUrl 回退），避免在并发的 async 回调里竞争消费队列
-  const consumedSecondaryIds = new Set<string>();
-  const chapterPairs = primaryChapters.map((primaryChapter) => {
-    let secondaryChapter = secondaryChapterMap.get(primaryChapter.id);
-    if (!secondaryChapter && primaryChapter.webUrl) {
-      const queue = secondaryByWebUrl.get(primaryChapter.webUrl);
-      while (queue && queue.length > 0) {
-        const candidate = queue.shift();
-        if (candidate && !consumedSecondaryIds.has(candidate.id)) {
-          secondaryChapter = candidate;
-          break;
-        }
-      }
-    }
-    if (secondaryChapter) {
-      consumedSecondaryIds.add(secondaryChapter.id);
-    }
-    return { primaryChapter, secondaryChapter };
-  });
+  // 同步预配对（先按 id，再按 webUrl 回退：两台设备各自抓取同一章节会生成不同的章节 id，
+  // webUrl 才是跨设备稳定标识），避免在并发的 async 回调里竞争消费队列
+  const { pairs: secondaryChapterPairs, consumed: consumedSecondaryIds } = pairByIdThenKey(
+    primaryChapters,
+    secondaryChapters,
+    chapterPairKey,
+  );
+  const chapterPairs = primaryChapters.map((primaryChapter, index) => ({
+    primaryChapter,
+    secondaryChapter: secondaryChapterPairs[index],
+  }));
 
   const mergedChapters = await Promise.all(
     chapterPairs.map(async ({ primaryChapter, secondaryChapter }) => {
@@ -505,39 +481,17 @@ async function mergeNovelVolumes(
   }
 
   const primaryVolumeIds = new Set(primaryVolumes.map((volume) => volume.id));
-  const secondaryVolumeMap = new Map<string, Volume>();
-  // 原文标题回退索引：两台设备各自抓取同一卷会生成不同的卷 id，
-  // 原文标题才是跨设备稳定标识（与本地导入 findVolumeIndexByOriginalTitle 语义一致）。
-  const secondaryByTitle = new Map<string, Volume[]>();
-  for (const volume of secondaryVolumes) {
-    secondaryVolumeMap.set(volume.id, volume);
-    if (!primaryVolumeIds.has(volume.id)) {
-      const titleKey = getVolumeOriginalTitle(volume);
-      const queue = secondaryByTitle.get(titleKey);
-      if (queue) queue.push(volume);
-      else secondaryByTitle.set(titleKey, [volume]);
-    }
-  }
-
-  // 同步预配对（先按 id，再按原文标题回退），与章节配对同构
-  const consumedSecondaryVolumeIds = new Set<string>();
-  const volumePairs = primaryVolumes.map((primaryVolume) => {
-    let secondaryVolume = secondaryVolumeMap.get(primaryVolume.id);
-    if (!secondaryVolume) {
-      const queue = secondaryByTitle.get(getVolumeOriginalTitle(primaryVolume));
-      while (queue && queue.length > 0) {
-        const candidate = queue.shift();
-        if (candidate && !consumedSecondaryVolumeIds.has(candidate.id)) {
-          secondaryVolume = candidate;
-          break;
-        }
-      }
-    }
-    if (secondaryVolume) {
-      consumedSecondaryVolumeIds.add(secondaryVolume.id);
-    }
-    return { primaryVolume, secondaryVolume };
-  });
+  // 同步预配对（先按 id，再按原文标题回退：两台设备各自抓取同一卷会生成不同的卷 id），
+  // 与章节配对同构
+  const { pairs: secondaryVolumePairs, consumed: consumedSecondaryVolumeIds } = pairByIdThenKey(
+    primaryVolumes,
+    secondaryVolumes,
+    volumePairKey,
+  );
+  const volumePairs = primaryVolumes.map((primaryVolume, index) => ({
+    primaryVolume,
+    secondaryVolume: secondaryVolumePairs[index],
+  }));
 
   const mergedVolumes = await Promise.all(
     volumePairs.map(async ({ primaryVolume, secondaryVolume }) => {
@@ -671,48 +625,19 @@ function mergeParagraphTranslations(
   const primary = preferRemoteSelection ? remoteParagraphs : localParagraphs;
   const secondary = preferRemoteSelection ? localParagraphs : remoteParagraphs;
 
-  const secondaryById = new Map<string, Paragraph>();
-  for (const p of secondary) secondaryById.set(p.id, p);
+  // 配对规则（id 优先、按原文 FIFO 回退）与覆盖准备共用，见 pairByIdThenKey
+  const { pairs, consumed: consumedSecondaryIds } = pairByIdThenKey(
+    primary,
+    secondary,
+    paragraphPairKey,
+  );
 
-  // 文本回退：用于同段落在不同设备 ID 不同（例如重新抓取）的匹配。
-  // 用 FIFO 队列而非单值映射——否则小说里常见的重复文本（分隔符、「……」、
-  // 重复台词等）会让多个 primary 段落同时吃到同一个 secondary，造成错误翻译
-  // 被复制到多处 + 副方段落在末尾重复追加。每条文本按顺序只消费一次。
-  const secondaryByText = new Map<string, Paragraph[]>();
-  for (const p of secondary) {
-    const queue = secondaryByText.get(p.text);
-    if (queue) queue.push(p);
-    else secondaryByText.set(p.text, [p]);
-  }
-
-  const consumedSecondaryIds = new Set<string>();
-
-  const mergeOne = (primaryPara: Paragraph): Paragraph => {
-    let match = secondaryById.get(primaryPara.id);
-    if (!match) {
-      const queue = secondaryByText.get(primaryPara.text);
-      // 注意：队列里可能放着已经通过 id 匹配被消费过的段落；跳过它们，
-      // 保证同一 secondary 段落不会被双重消费
-      while (queue && queue.length > 0) {
-        const candidate = queue.shift();
-        if (candidate && !consumedSecondaryIds.has(candidate.id)) {
-          match = candidate;
-          break;
-        }
-      }
-    }
-    if (!match) {
-      return primaryPara;
-    }
-    consumedSecondaryIds.add(match.id);
-    if (match.text !== primaryPara.text) {
-      return primaryPara;
-    }
-
-    return mergeParagraphLanguageState(primaryPara, match);
-  };
-
-  const result: Paragraph[] = primary.map(mergeOne);
+  const result: Paragraph[] = primary.map((primaryPara, index) => {
+    const match = pairs[index];
+    return match && match.text === primaryPara.text
+      ? mergeParagraphLanguageState(primaryPara, match)
+      : primaryPara;
+  });
 
   if (!appendSecondaryOnly) {
     return result;
