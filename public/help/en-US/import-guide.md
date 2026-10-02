@@ -24,9 +24,9 @@ Follow these steps with an EPUB. URL, TXT, and Markdown examples appear below.
 
 ### 1. Create a task and add the file {#import-guide-section-4}
 
-Choose **New task** or **Create import task** on an empty page. One task organizes one novel; several files from the same book can share a task.
+Choose **New task** or **New import task** on an empty page. One task organizes one novel; several files from the same book can share a task.
 
-Open Sources and choose **Select files**, or drag the EPUB into the source area. A new source is Unread until you send a request.
+Open Sources and choose **Choose files**, or drag the EPUB into the source area. A new source shows **Not read yet** until you send a request.
 
 ### 2. Explain the goal {#import-guide-section-5}
 
@@ -184,7 +184,7 @@ The assistant tests saved contents/chapter pages against the draft. Self-test us
 
 - **Add/Replace**: confirmation saves the recipe. Reproducible shows the verified chapter count.
 - **Keep existing**: retain the book's prior recipe.
-- **Invalid**: inspect the reason, ask for repair, and regenerate. You may import chapters without saving the invalid recipe; the old recipe remains.
+- **Stale**: inspect the reason, ask for repair, and regenerate. You may import chapters without saving the invalid recipe; the old recipe remains.
 
 After cleaning navigation text, ask:
 

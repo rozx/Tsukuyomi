@@ -540,6 +540,15 @@
     }
   },
   {
+    "id": "v0.17.0",
+    "title": "v0.17.0",
+    "file": "RELEASE_NOTES_v0.17.0.md",
+    "path": "releaseNotes",
+    "category": "Release notes",
+    "description": "Three-language UI and help (Simplified Chinese, Traditional Chinese, English), per-book translation target language, Firecrawl fetch fallback and site mappings, catalog-only update checks, and sync protocol v4",
+    "categoryId": "release-notes"
+  },
+  {
     "id": "v0.16.2",
     "title": "v0.16.2",
     "file": "RELEASE_NOTES_v0.16.2.md",

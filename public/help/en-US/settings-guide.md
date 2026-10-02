@@ -103,7 +103,7 @@ Assign ordered fetch methods to a website. Available on Web and desktop.
 
 ### Automatic mapping {#settings-guide-section-14}
 
-- **Automatically add mapping when only Firecrawl works** puts Firecrawl first after a successful fallback, so future requests skip proxy attempts.
+- **Add a mapping automatically when only Firecrawl works** puts Firecrawl first after a successful fallback, so future requests skip proxy attempts.
 - Requires the Firecrawl fallback switch under API keys.
 - This happens without a notification. Remove/reorder Firecrawl if proxy access becomes usable again.
 
@@ -204,6 +204,7 @@ For remote corruption or device migration, replace remote visible data with loca
 - Protocols 1–3 upgrade after successful migration. Future protocols stop writes. Older clients' ordinary sync cannot process v4. New code cannot remotely fix already released older force-push implementations: disable their sync or upgrade first, and do not force-push to the shared Gist.
 - Terms, characters, and aliases use stable identities and logical field revisions. Renaming an alias retains its identity. Different language changes merge separately; conflicts on one field use deterministic logical versions, independent of device wall clocks.
 - Entity deletion wins over late offline edits. Deletion records for entities within a book are retained indefinitely, including beyond 90 days offline. Deleting a character also prevents its old aliases from returning. Clearing a language translation clears only that slot.
+- Deleting a translation version of a paragraph leaves a deletion record, so stale copies on other devices cannot bring it back during sync. Editing a translation in place also advances its version, so merges keep the newer edit. Translation-version deletion records are cleared 90 days after the paragraph last changed; a device offline longer than that may still bring an old version back.
 - Explicit undo, backup/revision replacement, and force-push restoration create new identities when required, retain known deletion records, and rebuild affected references. The visible snapshot is restored without letting deleted old identities replace restored entries later.
 - Full backups retain targets, all language results, and deletion records. Device sync identity is not cloned onto another device.
 

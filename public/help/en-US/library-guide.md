@@ -47,7 +47,7 @@ The most recently used book appears as a large cover card:
 - **Eyebrow**: Continue Reading.
 - **Status**: Translating with animated dots, or Updated on a date when idle.
 - **Title and author**.
-- **Statistics**: chapters, word count (a skeleton while loading), and favorite marker.
+- **Stats**: chapters, word count (a skeleton while loading), and favorite marker.
 - **Primary action**: open book details to continue translating or view progress.
 - **Secondary action**: Open library (`/books`).
 
@@ -170,7 +170,7 @@ Home does not manage sync directly:
 ## ❓ Frequently asked questions {#library-guide-section-18}
 
 **Q: What should I do if website import fails?**
-A: Check the URL and network connection. On Web, configure **Settings → Proxy**. Open message history 🔔 to read the error details.
+A: Check the URL and network connection. On Web, configure **Settings → Proxies**. Open message history 🔔 to read the error details.
 
 **Q: Can I export everything?**
 A: Yes. **Settings → Import/export → Export data** includes AI models, books with chapter content, cover history, memories, sync configuration, and app settings.

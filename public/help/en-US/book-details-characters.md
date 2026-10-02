@@ -6,14 +6,14 @@ Character settings record names and personalities so AI can translate character-
 
 Basic information:
 
-- **Name**: required source name
+- **Character name**: required source name
 - **Translation**: current-target name
 - **Gender**: male, female, other, or unknown
 
 Details:
 
 - **Description**: personality, appearance, and background
-- **Speech style**: tone, register, verbal habits
+- **Speaking style**: tone, register, verbal habits
 - **Aliases**: other names and their translations
 
 Character/alias names are stored separately in Simplified Chinese, Traditional Chinese, and English. Missing translations stay blank, without source or another-language fallback. Original names remain visible; gender, descriptions, and speech style are shared. Clearing a name affects only its current slot. Reopen a form if the target changes while editing.

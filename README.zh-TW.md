@@ -17,7 +17,19 @@
 - [開啟網頁版](https://tsukuyomi.rozx.moe/)
 - [下載桌面版](https://github.com/rozx/Tsukuyomi/releases/latest)
 
-## 📥 v0.16 新增：AI 匯入工作台
+## 🌐 v0.17 新增：三語言介面與按書目標語言
+
+介面、說明文件與 README 提供簡體中文、繁體中文和 English。每本書可以單獨選擇譯文目標語言，原文不再限定日語。
+
+- **介面語言**：在「設定 → 一般設定 → 介面語言」切換，首次使用時配對系統語言，偏好隨設定同步。
+- **按書目標語言**：在書籍「翻譯設定」選擇簡體中文、繁體中文或 English；新書預設取建立時的介面語言，各語言的譯文、卷章標題和術語 / 角色譯名分別保存，互不覆蓋。
+- **原文不限語言**：AI 按段落判斷原文語言，已經是目標語言的段落可原樣保留。
+- **Firecrawl 抓取備援**：網站攔截代理存取時自動改用 Firecrawl（無需 Key 也可使用），取代原來的「自動切換代理服務」；書籍更新檢查改為只讀目錄，按需逐章比對正文。
+- **同步協議 v4**：術語、角色、別名和譯文版本的刪除不會再被其他裝置的舊資料帶回。**多裝置同步請先備份並把所有裝置升級到 v0.17.0，再逐台同步。**
+
+[閱讀 v0.17.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.17.0.md) · [設定說明](public/help/zh-TW/settings-guide.md)
+
+## 📥 AI 匯入工作台（v0.16 起）
 
 給月詠一個小說網址，或拖入 TXT、Markdown、HTML、EPUB 檔案，再說明要匯入哪些內容。她會檢查來源、提取正文並整理卷章，你可以直接修改草稿，檢查方案後再確認匯入書庫。
 
@@ -109,6 +121,7 @@ Tsukuyomi 採用 Bring Your Own Key 模式，內建兩種提供商：
 - **Gist 雲端同步**: 可選擇將資料同步到自己的 GitHub Gist，支援查看修訂歷史和還原可用快照。
 - **Manifest 增量同步**: 基於 `manifest.json` 與 SHA-256 雜湊選擇變化條目，使用條件請求減少下載；上傳前複核 ETag，偵測到並行變化後重新合併重試。
 - **跨端刪除一致**: Manifest 使用墓碑（tombstones）傳遞刪除語意，A 裝置刪除的條目不會被 B 裝置重新推回。
+- **書內實體刪除記錄**: 術語、角色、別名擁有穩定身分，刪除記錄隨書長期保留；刪除的譯文版本同樣留有記錄，離線裝置回流時不會復活。
 - **段落合併**: 有同步結構基準時，保留單端的原文修訂與刪除；只有原文一致的段落才合併譯文，兩端都改過結構時提示檢查衝突。
 - **強制推送模式**: 將遠端資料替換為本機快照，覆蓋前可核對來源裝置與目標 Gist。
 
@@ -222,6 +235,7 @@ bun run dev
 | **核心邏輯** | [術語管理](public/help/zh-TW/book-details-terminology.md) \| [角色設定](public/help/zh-TW/book-details-characters.md) \| [記憶系統](public/help/zh-TW/book-details-memory.md)  |
 | **AI 匯入**  | [匯入工作台：分步操作、拆章與補章](public/help/zh-TW/import-guide.md) \| [v0.16.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)                          |
 | **進階工具** | [聊天助手實戰](public/help/zh-TW/chat-assistant-guide.md) \| [本地嵌入與章節檢索](public/help/zh-TW/local-embedding.md)                                                        |
+| **更新紀錄** | [v0.17.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.17.0.md)                                                                                                   |
 
 > 應用程式內「說明」可查閱使用指南；主分支文件透過工作流程同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)（簡體中文）。
 
@@ -235,7 +249,7 @@ bun run dev
 | **AI SDK**          | OpenAI SDK · Google Generative AI；透過 OpenAI 配置接入相容協定服務（BYOK）                                           |
 | **本機嵌入**        | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · 768 維 · WebGPU + q4f16（優先）/ WASM + int8（回退）   |
 | **儲存 / 同步**     | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 雜湊 manifest · 條件 GET + 偽 CAS 並行保護                |
-| **抓取**            | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ HTTP 代理輪詢（Web 版）                              |
+| **抓取**            | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ CORS 代理（Web 版）· 被攔截時回退 Firecrawl          |
 | **AI 匯入**         | 工具呼叫整理草稿 · Web Worker 檔案解析 · EPUB/ZIP（fflate）· Web Locks 跨分頁互斥                                     |
 | **測試 / 品質**     | Vitest（jsdom）· fake-indexeddb · Istanbul 覆蓋率 · ESLint · vue-tsc · Fallow                                         |
 

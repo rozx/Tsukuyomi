@@ -21,7 +21,7 @@ Welcome to **Tsukuyomi**. This guide introduces the main features and workflows 
    - Supported providers are **OpenAI** and **Gemini**.
    - Enter an API key.
    - OpenAI requires a Base URL; Gemini can use its default endpoint.
-3. Use **Get model information** to read context and output limits from the bundled models.dev catalog. Use **Test connection** to check the connection, then save.
+3. Use **Fetch model information** to read context and output limits from the bundled models.dev catalog. Use **Test availability** to check the connection, then save.
 
 > 💡 See [AI model configuration](/help/ai-models-guide).
 
@@ -85,7 +85,7 @@ The built-in assistant is named **Tsukuyomi (月詠)**, the application's moonli
 ### 🛠️ System bar and right panels {#front-page-section-11}
 
 - **AI thinking**: task status and reasoning messages.
-- **Sync**: Gist sync status and controls.
+- **Sync status**: Gist sync status and controls.
 - **Message history**: previous notifications.
 - **Tsukuyomi / Translation progress**: right rail entries for chat and task progress.
 - **Vector index**: inspect or rebuild chapter and memory vectors, available in book details when local embeddings are enabled.

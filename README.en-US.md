@@ -17,7 +17,19 @@
 - [Open the web app](https://tsukuyomi.rozx.moe/)
 - [Download the desktop app](https://github.com/rozx/Tsukuyomi/releases/latest)
 
-## 📥 New in v0.16: AI Import Workspace
+## 🌐 New in v0.17: Three-Language UI and Per-Book Target Language
+
+The interface, help docs, and README are available in Simplified Chinese, Traditional Chinese, and English. Each book now has its own translation target language, and source text is no longer limited to Japanese.
+
+- **Interface language**: switch it under Settings → General → Interface language. On first launch it matches your system language, and the preference syncs with your settings.
+- **Per-book target language**: choose Simplified Chinese, Traditional Chinese, or English in the book's Translation settings. New books start with the interface language at creation time. Translations, volume and chapter titles, and term / character names are stored per language and never overwrite each other.
+- **Any source language**: the AI detects the source language paragraph by paragraph; paragraphs already in the target language can be kept as-is.
+- **Firecrawl fetch fallback**: when a site blocks proxy access, fetching falls back to Firecrawl (works without a key), replacing the old automatic proxy switching. Book update checks now read only the catalog and compare chapter text on demand.
+- **Sync protocol v4**: deleted terms, characters, aliases, and translation versions are no longer brought back by stale data from other devices. **If you sync across devices, back up first, upgrade every device to v0.17.0, then sync them one at a time.**
+
+[v0.17.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.17.0.md) · [Settings guide](public/help/en-US/settings-guide.md)
+
+## 📥 AI Import Workspace (since v0.16)
 
 Give Tsukuyomi a novel URL, or drop in TXT, Markdown, HTML, or EPUB files, and describe what to import. She checks the sources, extracts the text, and organizes volumes and chapters. You can edit the draft directly and review the plan before confirming the import into your library.
 
@@ -109,6 +121,7 @@ Tsukuyomi answers questions with the current book as context and can act through
 - **Gist cloud sync**: optionally sync your data to your own GitHub Gist, with revision history and restore from usable snapshots.
 - **Incremental manifest sync**: `manifest.json` with SHA-256 hashes picks out changed entries, and conditional requests cut down downloads. ETags are re-checked before upload; concurrent changes trigger a re-merge and retry.
 - **Consistent deletes**: the manifest carries deletions as tombstones, so an entry deleted on device A is not pushed back by device B.
+- **In-book deletion records**: terms, characters, and aliases have stable identities, and their deletion records stay with the book; deleted translation versions are recorded too, so devices returning from offline cannot resurrect them.
 - **Paragraph merging**: with a synced structural baseline, source edits and deletions made on one side are kept; translations are merged only for paragraphs whose source matches, and you are asked to review conflicts when both sides changed the structure.
 - **Force push**: replace the remote data with a local snapshot, after checking the source device and target Gist.
 
@@ -214,14 +227,15 @@ bun run dev
 
 ## 📖 Documentation
 
-| Category        | Guides (in `public/help/en-US`)                                                                                                                                                                     |
-| :-------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Basics**      | [Quick start](public/help/en-US/front-page.md) \| [AI models](public/help/en-US/ai-models-guide.md) \| [Settings and sync](public/help/en-US/settings-guide.md)                                     |
-| **Books**       | [Library and home](public/help/en-US/library-guide.md) \| [Import and scraping](public/help/en-US/books-page-guide.md) \| [Chapter management](public/help/en-US/book-details-chapters.md)          |
-| **Translation** | [Translation panel](public/help/en-US/book-details-translation.md) \| [Editing modes](public/help/en-US/book-details-editing.md) \| [System bar and navigation](public/help/en-US/toolbar-guide.md) |
-| **Context**     | [Terminology](public/help/en-US/book-details-terminology.md) \| [Character settings](public/help/en-US/book-details-characters.md) \| [Memory](public/help/en-US/book-details-memory.md)            |
-| **AI import**   | [Import workspace: steps, splitting, and adding chapters](public/help/en-US/import-guide.md) \| [v0.16.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)          |
-| **Advanced**    | [Chat assistant](public/help/en-US/chat-assistant-guide.md) \| [Local embeddings and chapter search](public/help/en-US/local-embedding.md)                                                          |
+| Category          | Guides (in `public/help/en-US`)                                                                                                                                                                     |
+| :---------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Basics**        | [Quick start](public/help/en-US/front-page.md) \| [AI models](public/help/en-US/ai-models-guide.md) \| [Settings and sync](public/help/en-US/settings-guide.md)                                     |
+| **Books**         | [Library and home](public/help/en-US/library-guide.md) \| [Import and scraping](public/help/en-US/books-page-guide.md) \| [Chapter management](public/help/en-US/book-details-chapters.md)          |
+| **Translation**   | [Translation panel](public/help/en-US/book-details-translation.md) \| [Editing modes](public/help/en-US/book-details-editing.md) \| [System bar and navigation](public/help/en-US/toolbar-guide.md) |
+| **Context**       | [Terminology](public/help/en-US/book-details-terminology.md) \| [Character settings](public/help/en-US/book-details-characters.md) \| [Memory](public/help/en-US/book-details-memory.md)            |
+| **AI import**     | [Import workspace: steps, splitting, and adding chapters](public/help/en-US/import-guide.md) \| [v0.16.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.16.0.md)          |
+| **Advanced**      | [Chat assistant](public/help/en-US/chat-assistant-guide.md) \| [Local embeddings and chapter search](public/help/en-US/local-embedding.md)                                                          |
+| **Release notes** | [v0.17.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.17.0.md)                                                                                                          |
 
 > The in-app **Help** page has the user guides; docs on the main branch are synced to the [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki) by a workflow.
 
@@ -235,7 +249,7 @@ bun run dev
 | **AI SDK**            | OpenAI SDK · Google Generative AI; compatible services connect through the OpenAI provider (BYOK)                            |
 | **Local embeddings**  | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · 768-dim · WebGPU + q4f16 (preferred) / WASM + int8 (fallback) |
 | **Storage / sync**    | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 hash manifest · conditional GET + pseudo-CAS concurrency guard   |
-| **Scraping**          | Puppeteer + `puppeteer-extra-plugin-stealth` (Electron desktop) / HTTP proxy rotation (web)                                  |
+| **Scraping**          | Puppeteer + `puppeteer-extra-plugin-stealth` (Electron desktop) / CORS proxy (web) · Firecrawl fallback when blocked         |
 | **AI import**         | Tool calls organize drafts · Web Worker file parsing · EPUB/ZIP (fflate) · Web Locks for cross-tab exclusion                 |
 | **Testing / quality** | Vitest (jsdom) · fake-indexeddb · Istanbul coverage · ESLint · vue-tsc · Fallow                                              |
 

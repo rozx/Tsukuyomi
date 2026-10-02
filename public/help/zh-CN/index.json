@@ -540,6 +540,15 @@
     }
   },
   {
+    "id": "v0.17.0",
+    "title": "v0.17.0",
+    "file": "RELEASE_NOTES_v0.17.0.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "简中 / 繁中 / 英文三语言界面与帮助文档、按书设置译文目标语言、Firecrawl 抓取回退与网站映射、书籍更新检查只读目录及同步协议 v4",
+    "categoryId": "release-notes"
+  },
+  {
     "id": "v0.16.2",
     "title": "v0.16.2",
     "file": "RELEASE_NOTES_v0.16.2.md",

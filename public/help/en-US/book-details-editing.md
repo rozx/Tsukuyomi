@@ -8,7 +8,7 @@ This guide covers chapter editing, paragraph actions, and shortcuts.
 
 Choose from the chapter toolbar:
 
-1. **Source editing** (pencil)
+1. **Edit original** (pencil)
 2. **Translation** (language icon)
 3. **Translation preview** (eye)
 
@@ -18,7 +18,7 @@ Translation is the default.
 
 ### Enter {#book-details-editing-section-4}
 
-Choose Source editing to edit the whole chapter.
+Choose **Edit original** to edit the whole chapter.
 
 ### Edit and save {#book-details-editing-section-5}
 

@@ -8,7 +8,7 @@ This guide covers the current AI model page and model dialog.
 
 ### Desktop {#ai-models-guide-section-3}
 
-The **AI model workspace** has three areas:
+The **AI model workbench** has three areas:
 
 - **Header**: search by name, provider, model ID, or default task; Add AI model; model counts below.
 - **Model list**: grouped by OpenAI or Google Gemini, with total and enabled counts. Cards support **Duplicate** (disabled initially), **Edit**, and **Delete** (confirmation required, with undo).
@@ -19,7 +19,7 @@ The **AI model workspace** has three areas:
 - AI models title and Add button.
 - With no models, an introductory card explains the two steps: add a connection, then select default tasks.
 - **My models**: provider groups with total/enabled counts. Tap a model to edit.
-- **Default task models**: tap a task to select from a bottom sheet. Choose **Not set** to leave it without a default.
+- **Task defaults**: tap a task to select from a bottom sheet. Choose **Not set** to leave it without a default.
 - The model dialog is a bottom sheet with the same fields as desktop.
 
 ---
@@ -51,7 +51,7 @@ Choose **Add AI model** and fill in:
    - OpenAI: required
    - Gemini: hidden; uses Google's endpoint
 8. **Model ID** (required; select or type)
-9. **Reasoning level** (optional)
+9. **Thinking level** (optional)
 10. **Model information**: context window and maximum output tokens
 11. **Custom headers** (optional)
 12. **Default tasks**
@@ -64,7 +64,7 @@ Closing with unsaved changes asks you to continue editing or discard the changes
 
 ## ⚙️ Model information and connection testing {#ai-models-guide-section-7}
 
-**Get model information** queries only the bundled [models.dev](https://models.dev) catalog. It works offline, does not generate model output, and needs no API key. For an unknown model, it asks you to enter limits manually without clearing existing values.
+**Fetch model information** queries only the bundled [models.dev](https://models.dev) catalog. It works offline, does not generate model output, and needs no API key. For an unknown model, it asks you to enter limits manually without clearing existing values.
 
 - **Context window**: input limit; 0 means unset.
 - **Maximum output tokens**: response limit; 0 means unset.
@@ -74,11 +74,11 @@ Closing with unsaved changes asks you to continue editing or discard the changes
 
 The context window determines when chat and import assistants compress older conversation. Without a configured window, proactive compression is disabled; one recovery attempt is made after a provider context-limit error. See [Chat assistant](./chat-assistant-guide.md).
 
-**Test connection** sends a short request using the current unsaved URL, key, headers, proxy, and reasoning level. It reports success/failure and elapsed time. Enter the model ID and API key first, plus a Base URL for OpenAI. Testing waits up to 30 seconds, consumes a little API usage, and neither changes model limits nor saves configuration. Editing or closing cancels the test; old results do not apply to a new configuration.
+**Test availability** sends a short request using the current unsaved URL, key, headers, proxy, and thinking level. It reports success/failure and elapsed time. Enter the model ID and API key first, plus a Base URL for OpenAI. Testing waits up to 30 seconds, consumes a little API usage, and neither changes model limits nor saves configuration. Editing or closing cancels the test; old results do not apply to a new configuration.
 
 ---
 
-## 🧠 Reasoning level {#ai-models-guide-section-8}
+## 🧠 Thinking level {#ai-models-guide-section-8}
 
 Options include Default (model behavior), Off/minimum, Very low, Low, Medium, High, and Very high. Default leaves provider settings untouched; older models without this field behave as before. Higher levels usually increase response time and token usage. Support varies by model; test the selected combination.
 
@@ -124,7 +124,7 @@ Mark a model as eligible for each task and set a separate temperature:
 - Terminology translation
 - Assistant
 
-> Eligibility controls whether the model appears in that task's default selector. The actual model is chosen under **Task routing**, called Default task models on mobile.
+> Eligibility controls whether the model appears in that task's default selector. The actual model is chosen under **Task routing**, called **Task defaults** on mobile.
 
 ---
 
@@ -169,9 +169,9 @@ API keys are stored in plaintext in local IndexedDB:
 ## 💡 Suggestions {#ai-models-guide-section-15}
 
 1. Set an assistant default before using chat.
-2. Get model information, test the connection, then save a new model.
+2. Use **Fetch model information** and **Test availability**, then save a new model.
 3. Use separate temperatures for translation and proofreading/polishing.
-4. Test changes on a duplicate, such as a different reasoning level, before enabling it.
+4. Test changes on a duplicate, such as a different thinking level, before enabling it.
 5. Remove unused models to keep selectors manageable.
 
 ---

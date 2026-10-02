@@ -87,7 +87,7 @@ Workspace:
 - **New chapters**: checked initially and grouped by destination volume. Change destination volume to an existing/new volume; preview each body.
 - **Revisions**: added/changed/deleted paragraph counts and all-language translation versions to clear. Inspect differences. Revised chapters are never checked automatically. Changed source clears all language versions/selections; unchanged paragraphs retain them.
 - **Quick check**: reads contents only, without fetching existing bodies. Built-in update dates classify unchanged, possibly revised, or uncompared chapters.
-- **Compare bodies**: check chapters individually with progress and cancellation. Completed comparisons remain. An unchanged result records the site's date for future checks. Firecrawl throttling shows an approximate wait. Blank-line-only differences are not revisions.
+- **Compare chapter bodies**: check chapters individually with progress and cancellation. Completed comparisons remain. An unchanged result records the site's date for future checks. Firecrawl throttling shows an approximate wait. Blank-line-only differences are not revisions.
 - **Manual chapters**: title or position between linked chapters can match a contents entry and record its URL; unmatched entries remain new.
 - **Widespread differences**: when at least five chapters are compared and more than half changed, a warning suggests site changes or a stale recipe. Inspect samples first.
 - **Skip**: unwanted chapters remain Skipped in future checks. Expand that group to undo a skip.
