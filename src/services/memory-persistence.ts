@@ -14,7 +14,8 @@ function semanticChange(before: MemoryRecord | undefined, after: MemoryRecord): 
     before.bookId !== after.bookId ||
     before.content !== after.content ||
     before.summary !== after.summary ||
-    before.createdAt !== after.createdAt
+    before.createdAt !== after.createdAt ||
+    before.updatedAt !== after.updatedAt
   );
 }
 

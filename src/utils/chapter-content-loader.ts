@@ -30,11 +30,14 @@ const CACHE_MAX_SIZE = 100;
 const contentCache = new Map<string, CacheValue>();
 
 /**
- * LRU 淘汰：缓存超过 CACHE_MAX_SIZE 时删除最旧的 20%
+ * LRU 淘汰：至少删除最旧的 20%；批量填充时直接缩回上限
  */
 function evictCacheIfNeeded(): void {
   if (contentCache.size > CACHE_MAX_SIZE) {
-    const entriesToDelete = Math.floor(CACHE_MAX_SIZE * 0.2);
+    const entriesToDelete = Math.max(
+      Math.floor(CACHE_MAX_SIZE * 0.2),
+      contentCache.size - CACHE_MAX_SIZE,
+    );
     const keysToDelete = Array.from(contentCache.keys()).slice(0, entriesToDelete);
     for (const key of keysToDelete) {
       contentCache.delete(key);
@@ -153,6 +156,7 @@ export async function loadChapterContentsBatch(
       for (const { chapterId, content } of batchResults) {
         result.set(chapterId, content);
       }
+      evictCacheIfNeeded();
     }
 
     await tx.done;

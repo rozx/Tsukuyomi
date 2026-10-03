@@ -6,10 +6,14 @@ import * as BooksStore from 'src/stores/books';
 import * as CoverHistoryStore from 'src/stores/cover-history';
 import * as SettingsStore from 'src/stores/settings';
 import { buildLocalManifest } from 'src/services/sync-manifest-builder';
+import * as ManifestBuilder from '../services/sync-manifest-builder';
+import { uploadIncremental } from '../services/gist-sync-incremental';
+import type { Octokit } from '@octokit/rest';
 import { getChapterBaselines } from 'src/services/sync-chapter-baselines';
 import { chapterStructureHash } from 'src/utils/chapter-structure-hash';
 import { getDB } from 'src/utils/indexed-db';
 import type { Novel, Paragraph } from 'src/models/novel';
+import type { AppSettings } from '../models/settings';
 
 /**
  * 执行器写入章节结构基准的时机：
@@ -155,6 +159,50 @@ afterEach(() => {
 });
 
 describe('执行器写入章节结构基准', () => {
+  it('伪 CAS 等待期间编辑嵌套设置，不应改变已经哈希的上传快照', async () => {
+    const localSettings = {
+      lastEdited: new Date(0),
+      memoryInjection: { charBudget: 1000 },
+    } as AppSettings;
+    spyOn(SettingsStore, 'useSettingsStore').mockReturnValue({
+      ...makeMockSettingsStore(),
+      getAllSettings: () => localSettings,
+    } as never);
+    stubDownloadNoChanges();
+    spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockImplementation(() => {
+      localSettings.memoryInjection!.charBudget = 2000;
+      return Promise.resolve({ status: 'unchanged', etag: 'etag' });
+    });
+    const upload = stubUpload();
+
+    const result = await useSyncExecutor().executeSync(callbacks);
+
+    expect(result.success).toBe(true);
+    const payload = upload.mock.calls[0]![1];
+    expect(payload.appSettings.memoryInjection!.charBudget).toBe(1000);
+    expect(payload.appSettings.lastEdited).toBeInstanceOf(Date);
+    expect(localSettings.memoryInjection!.charBudget).toBe(2000);
+  });
+  it('普通同步应复用本轮 manifest，上传时不再次遍历并哈希整个书库', async () => {
+    mockBooksStore.books = [book('b1', [p('p1', '正文')])];
+    stubDownloadNoChanges();
+    const build = spyOn(ManifestBuilder, 'buildLocalManifest');
+    const octokit = {
+      rest: {
+        gists: { update: () => Promise.resolve({ headers: { etag: 'new-etag' }, data: {} }) },
+      },
+    } as unknown as Octokit;
+    spyOn(GistSyncService.prototype, 'uploadToGistIncremental').mockImplementation(
+      (config, payload, files, progress, options) =>
+        uploadIncremental(octokit, config, payload, files, progress, 'zh-CN', options),
+    );
+
+    const result = await useSyncExecutor().executeSync(callbacks);
+
+    expect(result.success).toBe(true);
+    expect(await baselineOf('b1-c1')).toBe(await chapterStructureHash([p('p1', '正文')]));
+    expect(build).toHaveBeenCalledTimes(1);
+  });
   it('上传成功后，用本次上传时的数据写入基准，而不是上传后被修改的本地数据', async () => {
     const uploaded = [p('p1', '一')];
     mockBooksStore.books = [book('b1', uploaded)];

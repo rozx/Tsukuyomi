@@ -1,8 +1,10 @@
 import './setup';
-import { describe, expect, it, beforeEach } from 'bun:test';
+import { describe, expect, it, beforeEach, spyOn } from 'bun:test';
 import { ChapterContentService } from '../services/chapter-content-service';
 import type { Paragraph, Novel, Volume, Chapter } from '../models/novel';
 import { generateShortId } from '../utils/id-generator';
+import { getDB } from '../utils/indexed-db';
+import { peekCacheEntry } from '../utils/chapter-content-loader';
 
 // 辅助函数：创建测试用段落
 function createTestParagraph(id?: string): Paragraph {
@@ -494,6 +496,56 @@ describe('ChapterContentService', () => {
   });
 
   describe('loadAllChapterContentsForNovels', () => {
+    it('同步冷缓存书库时应批量读取，避免每章开启独立事务', async () => {
+      const db = await getDB();
+      const chapterCount = 200;
+      const tx = db.transaction('chapter-contents', 'readwrite');
+      await Promise.all(
+        Array.from({ length: chapterCount }, (_, i) =>
+          tx.store.put({
+            chapterId: `perf-${i}`,
+            content: JSON.stringify([createTestParagraph(`paragraph-${i}`)]),
+            lastModified: new Date(0).toISOString(),
+          }),
+        ),
+      );
+      await tx.done;
+      const novels = Array.from({ length: 2 }, (_, bookIndex) => ({
+        ...createTestNovel([
+          {
+            id: `volume-${bookIndex}`,
+            title: '卷',
+            chapters: Array.from({ length: 100 }, (_, i) =>
+              createTestChapter(`perf-${bookIndex * 100 + i}`),
+            ),
+          },
+        ]),
+        id: `book-${bookIndex}`,
+      }));
+      const transaction = spyOn(db, 'transaction');
+      try {
+        const start = performance.now();
+        const result = await ChapterContentService.loadAllChapterContentsForNovels(novels);
+        const reads = transaction.mock.calls.filter(
+          ([store]) => store === 'chapter-contents',
+        ).length;
+        console.info(
+          `[sync-perf] ${chapterCount} chapters: ${(performance.now() - start).toFixed(0)} ms, transactions=${reads}`,
+        );
+        expect(
+          result.flatMap((novel) => novel.volumes!.flatMap((volume) => volume.chapters!)),
+        ).toHaveLength(chapterCount);
+        expect(result[1]!.volumes![0]!.chapters![99]!.content?.[0]?.id).toBe('paragraph-199');
+        expect(novels[0]!.volumes![0]!.chapters![0]!.content).toBeUndefined();
+        expect(reads).toBe(1);
+        const cachedCount = Array.from({ length: chapterCount }, (_, i) =>
+          peekCacheEntry(`perf-${i}`),
+        ).filter((entry) => entry !== undefined).length;
+        expect(cachedCount).toBeLessThanOrEqual(100);
+      } finally {
+        transaction.mockRestore();
+      }
+    });
     it('应该为多个小说加载所有章节内容', async () => {
       const chapter1 = createTestChapter('chapter-1');
       const chapter2 = createTestChapter('chapter-2');

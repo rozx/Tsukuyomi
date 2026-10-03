@@ -97,6 +97,28 @@ function mockFetchJson(body: unknown) {
 }
 
 describe('uploadIncremental — 未上传条目的 chunks 元数据继承', () => {
+  it('复用本轮 manifest 时应继承远端 chunks，且不修改调用方的快照', async () => {
+    const payload = makePayload({ novels: [makeNovel('chunked')] });
+    const preparedManifest = await buildLocalManifest(payload);
+    const novelKey = novelEntryKey('chunked');
+    const result = await uploadIncremental(
+      makeOctokit(() => {}),
+      makeConfig({
+        knownRemoteHashes: { [novelKey]: preparedManifest.entries[novelKey]!.hash },
+        knownRemoteEntries: {
+          [novelKey]: { hash: preparedManifest.entries[novelKey]!.hash, chunks: 3 },
+        },
+      }),
+      payload,
+      {},
+      undefined,
+      'zh-CN',
+      { preparedManifest },
+    );
+    expect(result.manifest.entries[novelKey]!.chunks).toBe(3);
+    expect(preparedManifest.entries[novelKey]!.chunks).toBeUndefined();
+    expect(result.uploadedEntries).not.toContain(novelKey);
+  });
   it('批次间 ETag 不同但修订版本仍是刚写入的版本时继续上传', async () => {
     const patches: Record<string, unknown>[] = [];
     const octokit = makeOctokit(() => {});

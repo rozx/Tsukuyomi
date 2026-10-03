@@ -43,6 +43,14 @@ import type { AppLocale } from 'src/models/locale';
 import type { MessageKey } from 'src/i18n/types';
 import { translateText } from 'src/i18n/translate';
 import { LocalizedError, localizedErrorMessage } from 'src/utils/localized-error';
+import { cloneDeep } from 'lodash';
+import { canonicalStringify } from 'src/utils/canonical-json';
+import {
+  captureSyncLocalState,
+  canSkipLocalSyncScan,
+  syncLocalStateMatchesPayload,
+  type SyncLocalState,
+} from 'src/services/sync-local-checkpoint';
 
 /** downloadFromGistWithManifest 的非跳过分支（含 changedEntries/manifest 等字段） */
 type DownloadResult = Awaited<ReturnType<GistSyncService['downloadFromGistWithManifest']>>;
@@ -252,6 +260,13 @@ export function useSyncExecutor() {
     return result;
   };
 
+  const localFingerprintInput = () => ({
+    appSettings: settingsStore.getAllSettings(),
+    aiModels: aiModelsStore.models,
+    coverHistory: coverHistoryStore.covers,
+    novels: booksStore.books,
+  });
+
   /**
    * 从本地 stores 构建同步上传所需的完整 bundle（manifest + 规范化的各 payload + 合并墓碑）
    * 供 executeSync（阶段 3）和 executeForceSync 复用。
@@ -260,7 +275,7 @@ export function useSyncExecutor() {
    * 让本地 deleted*Ids 与下面构造的 `tombstones` 在同一时间锚点上完成 TTL 过滤，
    * 避免 builder 端的"再过滤"和上传后清理这两层窗口出现 1ms 级漂移。
    */
-  const buildLocalSyncBundle = async (config: SyncConfig) => {
+  const buildLocalSyncBundle = async (config: SyncConfig, localState?: SyncLocalState) => {
     // 先修剪本地 deleted*Ids；buildLocalManifest 会再做一次墓碑级过滤兜底。
     try {
       await settingsStore.cleanupOldDeletionRecords();
@@ -274,11 +289,15 @@ export function useSyncExecutor() {
     );
     const rawMemoriesByBook = await collectMemoriesByBook();
 
-    const novelsWithContent = novelsLoaded.map(stripNovelLocalFields);
-    const memoriesByBook = normalizeMemoriesForSync(rawMemoriesByBook);
-    const aiModelsForSync = sortAIModelsById(aiModelsStore.models);
-    const coverHistoryForSync = sortCoversById(coverHistoryStore.covers);
-    const appSettingsForSync = stripAppSettingsLocalFields(settingsStore.getAllSettings());
+    // 深拷贝为上传用的普通数据，让哈希与上传共用同一份快照，保留 Date 类型。
+    // 仅浅拷贝会保留 Pinia 内嵌对象的引用，伪 CAS 等待期间的编辑可能使正文与哈希不一致。
+    const novelsWithContent = cloneDeep(novelsLoaded.map(stripNovelLocalFields));
+    const memoriesByBook = cloneDeep(normalizeMemoriesForSync(rawMemoriesByBook));
+    const aiModelsForSync = cloneDeep(sortAIModelsById(aiModelsStore.models));
+    const coverHistoryForSync = cloneDeep(sortCoversById(coverHistoryStore.covers));
+    const appSettingsForSync = cloneDeep(
+      stripAppSettingsLocalFields(settingsStore.getAllSettings()),
+    );
 
     // 合并 manifest 级墓碑（仅 collection 级：novel:<id> / memories:<id>）：
     // - 上次从远端拉取的墓碑快照（knownRemoteTombstones）
@@ -319,6 +338,7 @@ export function useSyncExecutor() {
     });
 
     return {
+      localState,
       localManifest,
       appSettingsForSync,
       aiModelsForSync,
@@ -701,14 +721,48 @@ export function useSyncExecutor() {
   const recordSyncedStructureBaselines = async (
     bundle: Awaited<ReturnType<typeof buildLocalSyncBundle>>,
     remoteHashes: Record<string, string> | 'all',
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const localHashes = manifestToHashes(bundle.localManifest);
     const synced = bundle.novelsWithContent.filter((novel) => {
       if (remoteHashes === 'all') return true;
       const key = novelEntryKey(novel.id);
       return localHashes[key] !== undefined && localHashes[key] === remoteHashes[key];
     });
-    await recordStructureBaselines(synced);
+    return recordStructureBaselines(synced);
+  };
+
+  /** 只有真实载荷、当前本地状态和最终远端哈希都匹配，才持久化快速路径检查点。 */
+  const confirmLocalCheckpoint = async (
+    bundle: Awaited<ReturnType<typeof buildLocalSyncBundle>>,
+    baselinesRecorded: boolean,
+  ): Promise<void> => {
+    if (
+      !baselinesRecorded ||
+      !bundle.localState ||
+      typeof settingsStore.updateLocalSyncCheckpoint !== 'function'
+    )
+      return;
+    try {
+      const config = resolveConfig();
+      const hashes = manifestToHashes(bundle.localManifest);
+      if (canonicalStringify(hashes) !== canonicalStringify(config.knownRemoteHashes ?? {})) return;
+      const input = {
+        appSettings: bundle.appSettingsForSync,
+        aiModels: bundle.aiModelsForSync,
+        coverHistory: bundle.coverHistoryForSync,
+        novels: bundle.novelsWithContent,
+      };
+      if (!(await syncLocalStateMatchesPayload(bundle.localState, input, config))) return;
+      const current = await captureSyncLocalState(localFingerprintInput(), config);
+      if (current?.fingerprint !== bundle.localState.fingerprint) return;
+      await settingsStore.updateLocalSyncCheckpoint({
+        version: 1,
+        fingerprint: current.fingerprint,
+        hashes,
+      });
+    } catch (error) {
+      console.warn('[useSyncExecutor] 保存本地同步检查点失败，下次使用完整扫描:', error);
+    }
   };
 
   /**
@@ -766,10 +820,15 @@ export function useSyncExecutor() {
         },
         remoteFilesSnapshot as Parameters<typeof gistSyncService.uploadToGistIncremental>[2],
         makeUploadProgressHandler(prefixMsg),
+        { preparedManifest: bundle.localManifest },
       );
 
       await persistUploadState(uploadResult, syncSnapshotTime);
-      await recordSyncedStructureBaselines(bundle, manifestToHashes(uploadResult.manifest));
+      const baselinesRecorded = await recordSyncedStructureBaselines(
+        bundle,
+        manifestToHashes(uploadResult.manifest),
+      );
+      await confirmLocalCheckpoint(bundle, baselinesRecorded);
 
       settingsStore.updateSyncProgress({
         stage: 'uploading',
@@ -792,7 +851,7 @@ export function useSyncExecutor() {
    * 无需上传分支：仅更新 lastSyncTime、清理过期墓碑，并报告成功
    */
   const finalizeNoUploadNeeded = async (
-    bundle: Awaited<ReturnType<typeof buildLocalSyncBundle>>,
+    bundle: Awaited<ReturnType<typeof buildLocalSyncBundle>> | undefined,
     knownHashes: Record<string, string>,
     syncSnapshotTime: number,
     prefixMsg: (m: string) => string,
@@ -811,7 +870,10 @@ export function useSyncExecutor() {
     } catch (error) {
       console.error('[useSyncExecutor] 更新同步状态失败:', error);
     }
-    await recordSyncedStructureBaselines(bundle, knownHashes);
+    if (bundle) {
+      const baselinesRecorded = await recordSyncedStructureBaselines(bundle, knownHashes);
+      await confirmLocalCheckpoint(bundle, baselinesRecorded);
+    }
     if (onSuccess) onSuccess(t('syncDone'), t('upToDate'));
     return { success: true, restorableItems };
   };
@@ -875,8 +937,19 @@ export function useSyncExecutor() {
     // 它们的 lastEdited 必须 > lastSyncTime（见 persistUploadState）
     const syncSnapshotTime = Date.now();
     const latestConfig = resolveConfig(configOverride);
-    const bundle = await buildLocalSyncBundle(latestConfig);
     const knownHashes = latestConfig.knownRemoteHashes ?? {};
+    const localState = await captureSyncLocalState(localFingerprintInput(), latestConfig);
+    if (!activeDownload?.needsSchemaUpgrade && canSkipLocalSyncScan(localState, latestConfig)) {
+      return finalizeNoUploadNeeded(
+        undefined,
+        knownHashes,
+        syncSnapshotTime,
+        prefixMsg,
+        onSuccess,
+        restorableItems,
+      );
+    }
+    const bundle = await buildLocalSyncBundle(latestConfig, localState);
     const localHashes = manifestToHashes(bundle.localManifest);
     const shouldUpload =
       activeDownload?.needsSchemaUpgrade === true ||

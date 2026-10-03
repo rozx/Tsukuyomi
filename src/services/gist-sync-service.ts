@@ -11,7 +11,7 @@ import { serializeDates, deserializeDates } from 'src/utils/serialize-dates';
 import { toError } from 'src/utils/error-message';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
-import { MANIFEST_FILE_NAME } from 'src/models/manifest';
+import { MANIFEST_FILE_NAME, type GistManifest } from 'src/models/manifest';
 import {
   downloadWithManifest,
   uploadIncremental,
@@ -2512,7 +2512,8 @@ export class GistSyncService {
       }
     >,
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
-    options: { skipConcurrencyCheck?: boolean } = {},
+    /** preparedManifest 必须对应本次 payload；强制同步修改 payload 后不能复用。 */
+    options: { skipConcurrencyCheck?: boolean; preparedManifest?: GistManifest } = {},
   ): Promise<IncrementalUploadResult> {
     this.validateConfig(config);
     this.initializeOctokit(config);
@@ -2526,7 +2527,10 @@ export class GistSyncService {
       remoteFilesSnapshot,
       onProgress,
       this.getLocale(),
-      { checkConcurrency: !options.skipConcurrencyCheck },
+      {
+        checkConcurrency: !options.skipConcurrencyCheck,
+        ...(options.preparedManifest ? { preparedManifest: options.preparedManifest } : {}),
+      },
     );
   }
 

@@ -63,6 +63,33 @@ import { hashJson } from 'src/utils/content-hash';
  */
 const MAX_FILE_SIZE = 900 * 1024;
 const CHUNK_SIZE = MAX_FILE_SIZE;
+const DOWNLOAD_CONCURRENCY = 4;
+
+/** 有界并发处理，结果保留输入顺序；失败后等在途任务结束再抛错。 */
+async function mapConcurrent<T, R>(
+  items: readonly T[],
+  process: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  let stopped = false;
+  const workers = Array.from({ length: Math.min(DOWNLOAD_CONCURRENCY, items.length) }, async () => {
+    while (!stopped && nextIndex < items.length) {
+      const index = nextIndex++;
+      try {
+        results[index] = await process(items[index]!);
+      } catch (error) {
+        stopped = true;
+        throw error;
+      }
+    }
+  });
+  const settled = await Promise.allSettled(workers);
+  for (const result of settled) {
+    if (result.status === 'rejected') throw result.reason;
+  }
+  return results;
+}
 
 /**
  * 文件名常量（模块内使用；与 GistSyncService 中的 GIST_FILE_NAMES 保持一致）
@@ -376,7 +403,7 @@ function locateChunkFilename(
 }
 
 /**
- * 依次读取所有 chunk 文件并拼接；任意一块缺失返回 null
+ * 并发读取 chunk，按原始索引拼接；任意一块缺失返回 null
  */
 async function readChunkedContent(
   chunkPrefix: string,
@@ -385,18 +412,17 @@ async function readChunkedContent(
   gistFiles: Record<string, GistFileLike>,
   fetchRaw: (url: string) => Promise<string>,
 ): Promise<string | null> {
-  const pieces: string[] = [];
+  const names: string[] = [];
   for (let i = 0; i < chunks; i++) {
     const resolvedName = locateChunkFilename(chunkPrefix, bookId, i, gistFiles);
-    const name = resolvedName ?? `${chunkPrefix}${bookId}_${i}.json`;
-    const content = await readFile(name, gistFiles, fetchRaw);
-    if (content === null) {
-      console.warn(`[gist-sync-incremental] 分块缺失或读取失败: ${name}`);
+    if (!resolvedName) {
+      console.warn(`[gist-sync-incremental] 分块缺失: ${chunkPrefix}${bookId}_${i}.json`);
       return null;
     }
-    pieces.push(content);
+    names.push(resolvedName);
   }
-  return pieces.join('');
+  const pieces = await mapConcurrent(names, (name) => readFile(name, gistFiles, fetchRaw));
+  return pieces.some((piece) => piece === null) ? null : pieces.join('');
 }
 
 /**
@@ -918,10 +944,24 @@ function resolveGistToken(config: SyncConfig): string {
 
 /** 构造 raw_url 拉取函数（非 2xx 抛错） */
 function createFetchRaw(): (url: string) => Promise<string> {
+  let active = 0;
+  const waiting: Array<() => void> = [];
   return async (url) => {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return resp.text();
+    // 书籍与分块共用同一个请求池，避免两层并发相乘。
+    if (active >= DOWNLOAD_CONCURRENCY) {
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    } else {
+      active++;
+    }
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return await resp.text();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active--;
+    }
   };
 }
 
@@ -1014,12 +1054,16 @@ async function readChangedEntries(
   const changedEntries: Record<string, EntryValue> = {};
   const failedEntryKeys: string[] = [];
   const total = toRead.length;
+  let completed = 0;
 
-  for (let i = 0; i < toRead.length; i++) {
-    const key = toRead[i]!;
+  const values = await mapConcurrent(toRead, async (key) => {
     const entry = remoteManifest.entries[key];
-    if (!entry) continue;
-    onProgress?.({ current: i, total, message: progressText(locale, 'downloadingEntry', { key }) });
+    if (!entry) return null;
+    onProgress?.({
+      current: completed,
+      total,
+      message: progressText(locale, 'downloadingEntry', { key }),
+    });
     let value: EntryValue | null = null;
     try {
       value = await deserializeEntry(key, entry, files, fetchRaw);
@@ -1040,6 +1084,19 @@ async function readChangedEntries(
         throw error;
       console.error(`[gist-sync-incremental] 反序列化条目 ${key} 失败:`, error);
     }
+    completed++;
+    onProgress?.({
+      current: completed,
+      total,
+      message: progressText(locale, 'downloadingEntry', { key }),
+    });
+    return value;
+  });
+  // 保留 manifest diff 的顺序，避免网络完成顺序改变后续合并顺序。
+  for (let i = 0; i < toRead.length; i++) {
+    const key = toRead[i]!;
+    if (!remoteManifest.entries[key]) continue;
+    const value = values[i];
     if (value) {
       changedEntries[key] = value;
     } else {
@@ -1162,7 +1219,7 @@ export async function uploadIncremental(
   remoteFilesSnapshot: Record<string, GistFileLike>,
   onProgress?: SyncProgress,
   locale: AppLocale = 'zh-CN',
-  options: { checkConcurrency?: boolean } = {},
+  options: { checkConcurrency?: boolean; preparedManifest?: GistManifest } = {},
 ): Promise<IncrementalUploadResult> {
   const gistId = config.syncParams.gistId;
   if (!gistId) throw new LocalizedError('GIST_ID_MISSING', 'syncUi.service.gistIdMissing');
@@ -1194,17 +1251,28 @@ export async function uploadIncremental(
     message: progressText(locale, 'computingManifest'),
   });
 
-  const localManifest = await buildLocalManifest({
-    appSettings: payload.appSettings,
-    aiModels: payload.aiModels,
-    coverHistory: payload.coverHistory,
-    novels: payload.novels,
-    memoriesByBook: payload.memoriesByBook,
-    ...(payload.memoryTombstonesByBook
-      ? { memoryTombstonesByBook: payload.memoryTombstonesByBook }
-      : {}),
-    ...(payload.tombstones ? { tombstones: payload.tombstones } : {}),
-  });
+  // 仅复用调用方为同一份载荷构建的本轮快照；拷贝条目，避免 chunks 回写污染快照。
+  const localManifest = options.preparedManifest
+    ? {
+        ...options.preparedManifest,
+        entries: Object.fromEntries(
+          Object.entries(options.preparedManifest.entries).map(([key, entry]) => [
+            key,
+            { ...entry },
+          ]),
+        ),
+      }
+    : await buildLocalManifest({
+        appSettings: payload.appSettings,
+        aiModels: payload.aiModels,
+        coverHistory: payload.coverHistory,
+        novels: payload.novels,
+        memoriesByBook: payload.memoriesByBook,
+        ...(payload.memoryTombstonesByBook
+          ? { memoryTombstonesByBook: payload.memoryTombstonesByBook }
+          : {}),
+        ...(payload.tombstones ? { tombstones: payload.tombstones } : {}),
+      });
 
   const knownEntries = config.knownRemoteEntries ?? {};
   const diff = diffManifests(localManifest, buildKnownAsManifest(config.knownRemoteHashes));

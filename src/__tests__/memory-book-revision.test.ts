@@ -20,6 +20,21 @@ beforeEach(() => {
 afterEach(() => mock.restore());
 
 describe('记忆语义修改接入书籍序号', () => {
+  it('同步内容修改时间变化也应递增序号，避免缓存漏掉时间戳变化', async () => {
+    const memory = {
+      id: 'm',
+      bookId: 'b',
+      content: '相同内容',
+      summary: '',
+      createdAt: 100,
+      updatedAt: 100,
+      lastAccessedAt: 100,
+    };
+    await MemoryService.upsertMemoryForSync(memory);
+    const before = await revision();
+    await MemoryService.upsertMemoryForSync({ ...memory, updatedAt: 200, lastAccessedAt: 200 });
+    expect(await revision()).toBe(before + 1);
+  });
   it('创建、修改、改后改回及删除都递增；无语义变化不递增', async () => {
     const memory = await MemoryService.createMemory('b', '原内容', '摘要');
     expect(await revision()).toBe(1);
@@ -49,6 +64,7 @@ describe('记忆语义修改接入书籍序号', () => {
       content: '内容',
       summary: '摘要',
       createdAt: 100,
+      updatedAt: 200,
       lastAccessedAt: 400,
     });
     expect(await revision()).toBe(1);

@@ -515,6 +515,7 @@ describe('useGistSync (manifest-driven flow)', () => {
         }),
         expect.any(Object),
         expect.any(Function),
+        expect.objectContaining({ preparedManifest: expect.any(Object) }),
       );
     });
 

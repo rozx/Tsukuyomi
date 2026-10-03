@@ -48,7 +48,7 @@ export async function putChapterBaselines(entries: readonly ChapterBaselineInput
  * 没有内联正文（或正文为空）的章节不写：无法确认其结构，下次按没有基准处理。
  * 写入失败只记录日志，不影响同步。
  */
-export async function recordStructureBaselines(novels: readonly Novel[]): Promise<void> {
+export async function recordStructureBaselines(novels: readonly Novel[]): Promise<boolean> {
   try {
     const entries: ChapterBaselineInput[] = [];
     for (const novel of novels) {
@@ -67,7 +67,9 @@ export async function recordStructureBaselines(novels: readonly Novel[]): Promis
     await putChapterBaselines(
       entries.filter((entry) => existing.get(entry.chapterId) !== entry.hash),
     );
+    return true;
   } catch (error) {
     console.warn('[sync-chapter-baselines] 写入章节结构基准失败，下次同步按没有基准处理:', error);
+    return false;
   }
 }

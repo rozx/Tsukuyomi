@@ -192,44 +192,7 @@ export class ChapterContentService {
    * @returns 包含所有章节内容的小说对象
    */
   static async loadAllChapterContentsForNovel(novel: Novel): Promise<Novel> {
-    if (!novel.volumes) {
-      return novel;
-    }
-
-    const volumes = await Promise.all(
-      novel.volumes.map(async (volume) => {
-        if (!volume.chapters) {
-          return volume;
-        }
-
-        const chapters = await Promise.all(
-          volume.chapters.map(async (chapter) => {
-            // 如果内容已加载，直接返回
-            if (chapter.content !== undefined) {
-              return chapter;
-            }
-
-            // 从独立存储加载内容
-            const content = await ChapterContentService.loadChapterContent(chapter.id);
-            return {
-              ...chapter,
-              content: content || [],
-              contentLoaded: true,
-            };
-          }),
-        );
-
-        return {
-          ...volume,
-          chapters,
-        };
-      }),
-    );
-
-    return {
-      ...novel,
-      volumes,
-    };
+    return (await ChapterContentService.loadAllChapterContentsForNovels([novel]))[0]!;
   }
 
   /**
@@ -238,9 +201,33 @@ export class ChapterContentService {
    * @returns 包含所有章节内容的小说数组
    */
   static async loadAllChapterContentsForNovels(novels: Novel[]): Promise<Novel[]> {
-    return Promise.all(
-      novels.map((novel) => ChapterContentService.loadAllChapterContentsForNovel(novel)),
-    );
+    const missingIds = new Set<string>();
+    for (const novel of novels) {
+      for (const volume of novel.volumes ?? []) {
+        for (const chapter of volume.chapters ?? []) {
+          if (chapter.content === undefined) missingIds.add(chapter.id);
+        }
+      }
+    }
+    // 复用单事务批量加载器，不为每章单独开启事务；已内联的正文保持原样。
+    const contents = await ChapterContentService.loadChapterContentsBatch([...missingIds]);
+    return novels.map((novel) => {
+      if (!novel.volumes) return novel;
+      return {
+        ...novel,
+        volumes: novel.volumes.map((volume) => {
+          if (!volume.chapters) return volume;
+          return {
+            ...volume,
+            chapters: volume.chapters.map((chapter) =>
+              chapter.content !== undefined
+                ? chapter
+                : { ...chapter, content: contents.get(chapter.id) ?? [], contentLoaded: true },
+            ),
+          };
+        }),
+      };
+    });
   }
 
   /**

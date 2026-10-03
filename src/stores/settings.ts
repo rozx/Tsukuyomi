@@ -1114,6 +1114,12 @@ export const useSettingsStore = defineStore('settings', {
       await this.updateGistSync({ knownRemoteHashes: hashes });
     },
 
+    async updateLocalSyncCheckpoint(
+      checkpoint: NonNullable<SyncConfig['localSyncCheckpoint']>,
+    ): Promise<void> {
+      await this.updateGistSync({ localSyncCheckpoint: checkpoint });
+    },
+
     async updateKnownRemoteSchemaVersion(version: number): Promise<void> {
       if (!Number.isSafeInteger(version) || version < 1)
         throw new Error('INVALID_MANIFEST_VERSION');
